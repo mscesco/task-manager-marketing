@@ -15,11 +15,13 @@ export default function TaskCard({
   members,
   subtaskCount = 0,
   subtaskDone = 0,
+  projectName,
 }: {
   task: Task;
   members?: Map<string, CardMember>; // resolve id -> nome (mapa memoizado do quadro)
   subtaskCount?: number; // filhos DIRETOS
   subtaskDone?: number; // filhos diretos concluidos
+  projectName?: string; // nome do projeto p/ a tag (so no quadro geral)
 }) {
   const ids = task.assignee_ids ?? [];
   const mostra = ids.slice(0, MAX_BOLINHAS);
@@ -34,6 +36,20 @@ export default function TaskCard({
       }}
     >
       <div style={{ fontSize: 13.5, fontWeight: 600, lineHeight: 1.35 }}>{task.title}</div>
+      {projectName && (
+        <span
+          title={`Projeto: ${projectName}`}
+          style={{
+            alignSelf: "flex-start", maxWidth: "100%",
+            fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 6,
+            background: "var(--surface-2)", color: "var(--text-soft)",
+            border: "1px solid var(--border)",
+            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+          }}
+        >
+          ▦ {projectName}
+        </span>
+      )}
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
         <span
           style={{

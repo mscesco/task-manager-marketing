@@ -37,6 +37,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   const nav = [
     { href: "/quadro", label: "Quadro geral" },
+    { href: "/projetos", label: "Projetos" },
     { href: "/minhas-tarefas", label: "Minhas tarefas" },
   ];
 

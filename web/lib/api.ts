@@ -166,11 +166,13 @@ export async function listTasks(params: {
   page?: number;
   size?: number;
   status?: string;
+  project_id?: string;
 } = {}): Promise<TaskListResponse> {
   const q = new URLSearchParams();
   q.set("page", String(params.page ?? 1));
   q.set("size", String(params.size ?? 100));
   if (params.status) q.set("status", params.status);
+  if (params.project_id) q.set("project_id", params.project_id);
   return api<TaskListResponse>(`/api/v1/tasks?${q.toString()}`);
 }
 
@@ -229,6 +231,7 @@ export type TaskCreateInput = {
   description?: string;
   priority?: string;
   due_date?: string | null;
+  project_id?: string | null; // criar dentro de um projeto (Entrega 11)
 };
 
 export async function createTask(input: TaskCreateInput): Promise<Task> {
@@ -242,7 +245,8 @@ export async function createTask(input: TaskCreateInput): Promise<Task> {
       due_date: input.due_date ?? null,
       // pin: so manda team_id se a raiz foi resolvida.
       ...(teamId ? { team_id: teamId } : {}),
-      // project_id / parent_task_id de fora: task avulsa no time raiz.
+      // project_id explicito (task de projeto) ou ausente (avulsa no raiz).
+      ...(input.project_id ? { project_id: input.project_id } : {}),
     },
   });
 }
@@ -338,15 +342,132 @@ export async function removeAssignee(
 // SUBTAREFAS  -- Entrega 10 (fatia 3)
 // ---------------------------------------------------------------
 // Cria uma subtarefa pendurada num pai. NAO manda team_id: o backend herda
-// o time do pai (ADR 0024) -- por isso nasce no mesmo time do pai (o raiz,
-// no quadro geral) e nao no subtime do criador. Sem project_id (avulsa, como
-// o pai do quadro). Status default BACKLOG no backend.
+// o time do pai (ADR 0024). MANDA o project_id do pai porque o backend EXIGE
+// que subtarefa e pai estejam no mesmo projeto (task_service: parent.project_id
+// != command.project_id -> erro). Avulsa => parentProjectId null, casa com null.
 export async function createSubtask(
   parentTaskId: string,
-  title: string
+  title: string,
+  parentProjectId: string | null
 ): Promise<Task> {
   return api<Task>("/api/v1/tasks", {
     method: "POST",
-    body: { title, parent_task_id: parentTaskId },
+    body: {
+      title,
+      parent_task_id: parentTaskId,
+      ...(parentProjectId ? { project_id: parentProjectId } : {}),
+    },
   });
+}
+
+// ===============================================================
+// PROJETOS  -- Entrega 11 (pasta: agrupa tasks; tudo no time raiz)
+// ===============================================================
+// Projeto = "pasta" de um trabalho maior. Pertence a um time (o raiz,
+// Marketing geral) -> aparece pra todos. Designar e so nas tasks; o projeto
+// nao tem membros proprios. Backend ja tinha o CRUD completo desde a E1.
+export type ProjectStatus =
+  | "PLANNING"
+  | "ACTIVE"
+  | "BLOCKED"
+  | "COMPLETED"
+  | "CANCELLED";
+
+export type Project = {
+  id: string;
+  title: string;
+  description: string;
+  status: ProjectStatus;
+  priority: string;
+  start_date: string | null;
+  due_date: string | null;
+  completed_at: string | null;
+  is_archived: boolean;
+  is_personal: boolean;
+  team_id: string | null;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ProjectListResponse = {
+  items: Project[];
+  total: number;
+  page: number;
+  size: number;
+};
+
+// Lista projetos do workspace (paginado). NAO filtra pessoal -> o pessoal do
+// proprio usuario vem junto; a tela de pastas descarta is_personal no front.
+export async function listProjects(
+  params: {
+    page?: number;
+    size?: number;
+    status?: ProjectStatus;
+    include_archived?: boolean;
+  } = {}
+): Promise<ProjectListResponse> {
+  const q = new URLSearchParams();
+  q.set("page", String(params.page ?? 1));
+  q.set("size", String(params.size ?? 100));
+  if (params.status) q.set("status", params.status);
+  if (params.include_archived) q.set("include_archived", "true");
+  return api<ProjectListResponse>(`/api/v1/projects?${q.toString()}`);
+}
+
+export async function getProject(id: string): Promise<Project> {
+  return api<Project>(`/api/v1/projects/${id}`);
+}
+
+export type ProjectCreateInput = {
+  title: string;
+  description?: string;
+  status?: ProjectStatus;
+  priority?: string;
+  start_date?: string | null;
+  due_date?: string | null;
+  team_id?: string; // omitido -> resolve o time raiz (pin, ADR 0001)
+};
+
+// Cria projeto COMUM. Se team_id nao vier, usa o time raiz (Marketing geral)
+// -> a pasta fica visivel pra todos, coerente com o pin do quadro.
+export async function createProject(input: ProjectCreateInput): Promise<Project> {
+  const team_id = input.team_id ?? (await getRootTeamId());
+  if (!team_id) throw new Error("Time raiz nao encontrado para criar o projeto.");
+  return api<Project>("/api/v1/projects", {
+    method: "POST",
+    body: {
+      title: input.title,
+      team_id,
+      description: input.description ?? "",
+      ...(input.status ? { status: input.status } : {}),
+      ...(input.priority ? { priority: input.priority } : {}),
+      ...(input.start_date !== undefined ? { start_date: input.start_date } : {}),
+      ...(input.due_date !== undefined ? { due_date: input.due_date } : {}),
+    },
+  });
+}
+
+export type ProjectUpdateInput = {
+  title?: string;
+  description?: string;
+  status?: ProjectStatus;
+  priority?: string;
+  start_date?: string | null;
+  due_date?: string | null;
+};
+
+export async function updateProject(
+  id: string,
+  patch: ProjectUpdateInput
+): Promise<Project> {
+  return api<Project>(`/api/v1/projects/${id}`, { method: "PATCH", body: patch });
+}
+
+export async function archiveProject(id: string): Promise<Project> {
+  return api<Project>(`/api/v1/projects/${id}/archive`, { method: "POST" });
+}
+
+export async function unarchiveProject(id: string): Promise<Project> {
+  return api<Project>(`/api/v1/projects/${id}/unarchive`, { method: "POST" });
 }

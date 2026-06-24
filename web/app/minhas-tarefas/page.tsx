@@ -1,8 +1,16 @@
 "use client";
 import { useEffect, useState } from "react";
 import AppShell from "@/components/AppShell";
+import TaskModal from "@/components/TaskModal";
+import TaskDetail from "@/components/TaskDetail";
 import { STATUSES, PRIORITY_LABEL, PRIORITY_COLOR } from "@/lib/status";
-import { listMyAssignments, ApiError, type MyTaskItem } from "@/lib/api";
+import {
+  listMyAssignments,
+  listMembers,
+  ApiError,
+  type Task,
+  type MyTaskItem,
+} from "@/lib/api";
 
 const RELATION_LABEL: Record<string, string> = {
   assignee: "Responsavel",
@@ -26,7 +34,12 @@ export default function MinhasTarefasPage() {
 
 function Minhas() {
   const [items, setItems] = useState<MyTaskItem[] | null>(null);
+  const [members, setMembers] = useState<Map<string, { name: string }>>(new Map());
   const [erro, setErro] = useState<string | null>(null);
+
+  const [detalhe, setDetalhe] = useState<Task | null>(null);
+  const [pilha, setPilha] = useState<Task[]>([]);
+  const [editando, setEditando] = useState<Task | null>(null);
 
   useEffect(() => {
     listMyAssignments({ size: 100 })
@@ -36,10 +49,74 @@ function Minhas() {
         setItems(r.items.filter((t) => !t.out_of_scope));
       })
       .catch((e: ApiError) => setErro(e.message));
+    listMembers()
+      .then((ms) => setMembers(new Map(ms.map((m) => [m.id, { name: m.name }]))))
+      .catch(() => {});
   }, []);
+
+  // --- abrir / navegar / fechar o detalhe (mesma logica do quadro) ---
+  function abrirDetalhe(t: Task) {
+    setPilha([]);
+    setDetalhe(t);
+  }
+  function abrirSubtarefa(sub: Task) {
+    setPilha((p) => (detalhe ? [...p, detalhe] : p));
+    setDetalhe(sub);
+  }
+  function voltarDetalhe() {
+    setPilha((p) => {
+      if (p.length === 0) return p;
+      setDetalhe(p[p.length - 1]);
+      return p.slice(0, -1);
+    });
+  }
+  function fecharDetalhe() {
+    setDetalhe(null);
+    setPilha([]);
+  }
+
+  // Upsert preservando os campos que /me/assignments adiciona ao Task
+  // (relations, out_of_scope) e o assignee_ids (mutacao nao devolve -- ADR 0025).
+  function aoUpsert(t: Task) {
+    setItems((prev) => {
+      if (!prev) return prev;
+      const existente = prev.find((x) => x.id === t.id);
+      if (!existente) {
+        // subtarefa criada aqui: eu sou o criador, entra como "Criei".
+        const nova: MyTaskItem = {
+          ...t,
+          relations: ["creator"],
+          out_of_scope: false,
+          assignee_ids: t.assignee_ids ?? [],
+        };
+        return [nova, ...prev];
+      }
+      const merged: MyTaskItem = {
+        ...t,
+        relations: existente.relations,
+        out_of_scope: existente.out_of_scope,
+        assignee_ids: t.assignee_ids ?? existente.assignee_ids,
+      };
+      return prev.map((x) => (x.id === t.id ? merged : x));
+    });
+  }
+
+  function aoMudarResponsaveis(taskId: string, userIds: string[]) {
+    setItems((prev) =>
+      prev ? prev.map((t) => (t.id === taskId ? { ...t, assignee_ids: userIds } : t)) : prev
+    );
+  }
+
+  function aoSalvar(saved: Task) {
+    aoUpsert(saved);
+    setEditando(null);
+  }
 
   if (erro) return <div className="error-box" style={{ maxWidth: 480 }}>{erro}</div>;
   if (!items) return <div className="muted">Carregando…</div>;
+
+  const focado = detalhe ? items.find((t) => t.id === detalhe.id) ?? detalhe : null;
+  const filhosFocado = focado ? items.filter((t) => t.parent_task_id === focado.id) : [];
 
   return (
     <div>
@@ -70,9 +147,11 @@ function Minhas() {
           {items.map((t, i) => (
             <div
               key={t.id}
+              onClick={() => abrirDetalhe(t)}
               style={{
                 display: "flex", alignItems: "center", gap: 14, padding: "12px 16px",
                 borderTop: i === 0 ? "none" : "1px solid var(--border)",
+                cursor: "pointer",
               }}
             >
               <span
@@ -120,6 +199,29 @@ function Minhas() {
           ))}
         </div>
       )}
+
+      <TaskModal
+        open={editando !== null}
+        task={editando}
+        onClose={() => setEditando(null)}
+        onSaved={aoSalvar}
+      />
+
+      <TaskDetail
+        task={focado}
+        members={members}
+        filhos={filhosFocado}
+        temVoltar={pilha.length > 0}
+        onVoltar={voltarDetalhe}
+        onClose={fecharDetalhe}
+        onEditar={(t) => {
+          fecharDetalhe();
+          setEditando(t);
+        }}
+        onAssigneesChange={aoMudarResponsaveis}
+        onAbrirSubtarefa={abrirSubtarefa}
+        onSubtaskUpsert={aoUpsert}
+      />
     </div>
   );
 }

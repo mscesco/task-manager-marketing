@@ -12,9 +12,11 @@ import { useEffect, useState } from "react";
 import {
   createTask,
   updateTask,
+  listProjects,
   ApiError,
   type Task,
   type TaskUpdateInput,
+  type Project,
 } from "@/lib/api";
 import { PRIORITY_LABEL, STATUSES } from "@/lib/status";
 
@@ -25,11 +27,13 @@ export default function TaskModal({
   task,
   onClose,
   onSaved,
+  defaultProjectId = null,
 }: {
   open: boolean;
   task?: Task | null; // presente => modo editar
   onClose: () => void;
   onSaved: (task: Task) => void;
+  defaultProjectId?: string | null; // criar dentro deste projeto (Entrega 11)
 }) {
   const editando = !!task;
 
@@ -41,6 +45,11 @@ export default function TaskModal({
   const [saving, setSaving] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
+  // Seletor de projeto: so ao CRIAR fora de um projeto fixo (quadro geral).
+  const mostrarSeletorProjeto = !editando && !defaultProjectId;
+  const [projetos, setProjetos] = useState<Project[]>([]);
+  const [projetoSel, setProjetoSel] = useState(""); // "" => avulsa
+
   // Prefilla (ou limpa) sempre que abre / troca a task alvo.
   useEffect(() => {
     if (!open) return;
@@ -49,8 +58,17 @@ export default function TaskModal({
     setPriority(task?.priority ?? "MEDIUM");
     setDueDate(task?.due_date ?? "");
     setStatus(task?.status ?? "BACKLOG");
+    setProjetoSel("");
     setErro(null);
   }, [open, task]);
+
+  // Carrega projetos comuns pro seletor (so quando ele aparece).
+  useEffect(() => {
+    if (!open || !mostrarSeletorProjeto) return;
+    listProjects({ size: 100 })
+      .then((r) => setProjetos(r.items.filter((p) => !p.is_personal)))
+      .catch(() => {});
+  }, [open, mostrarSeletorProjeto]);
 
   // Esc fecha (quando aberto e nao salvando).
   useEffect(() => {
@@ -105,6 +123,7 @@ export default function TaskModal({
           description: description.trim(),
           priority,
           due_date: dueDate || null,
+          project_id: defaultProjectId ?? (projetoSel || null),
         });
       }
       setSaving(false);
@@ -191,6 +210,23 @@ export default function TaskModal({
             />
           </div>
         </div>
+
+        {mostrarSeletorProjeto && (
+          <div className="field">
+            <label className="label" htmlFor="t-proj">
+              Projeto <span className="muted" style={{ fontWeight: 400 }}>(opcional)</span>
+            </label>
+            <select
+              id="t-proj" className="input" value={projetoSel}
+              onChange={(e) => setProjetoSel(e.target.value)}
+            >
+              <option value="">Nenhum (avulsa)</option>
+              {projetos.map((p) => (
+                <option key={p.id} value={p.id}>{p.title}</option>
+              ))}
+            </select>
+          </div>
+        )}
 
         {/* Status so no modo editar -- na criacao nasce BACKLOG e arrasta-se depois. */}
         {editando && (

@@ -98,6 +98,7 @@ export default function TaskDetail({
 
   if (!task) return null;
   const tid = task.id;
+  const tidProjeto = task.project_id ?? null; // pai e subtarefa no mesmo projeto
   const concluidas = filhos.filter((f) => f.status === "COMPLETED").length;
 
   async function toggle(userId: string) {
@@ -148,7 +149,7 @@ export default function TaskDetail({
     setSalvandoSub(true);
     setErroSub(null);
     try {
-      const nova = await createSubtask(tid, t);
+      const nova = await createSubtask(tid, t, tidProjeto);
       onSubtaskUpsert(nova);
       setNovoTitulo("");
       setCriandoSub(false);
