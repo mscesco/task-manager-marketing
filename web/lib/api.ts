@@ -240,3 +240,26 @@ export async function createTask(input: TaskCreateInput): Promise<Task> {
     },
   });
 }
+
+// ---------------------------------------------------------------
+// EDICAO / MUDANCA DE STATUS  (Slice 2: mover; Slice 3: editar)
+// ---------------------------------------------------------------
+// PATCH parcial: so os campos presentes mudam. project_id e
+// parent_task_id NAO entram aqui (seriam /move). O drag entre colunas
+// usa isto enviando so { status }. O backend ajusta completed_at sozinho
+// ao entrar/sair de COMPLETED.
+
+export type TaskUpdateInput = {
+  title?: string;
+  description?: string;
+  priority?: string;
+  status?: string;
+  due_date?: string | null;
+};
+
+export async function updateTask(
+  id: string,
+  input: TaskUpdateInput
+): Promise<Task> {
+  return api<Task>(`/api/v1/tasks/${id}`, { method: "PATCH", body: input });
+}
