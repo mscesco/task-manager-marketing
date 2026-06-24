@@ -21,7 +21,7 @@ import TaskCard from "@/components/TaskCard";
 import TaskModal from "@/components/TaskModal";
 import TaskDetail from "@/components/TaskDetail";
 import { STATUSES } from "@/lib/status";
-import { listTasks, updateTask, listMembers, listProjects, ApiError, type Task } from "@/lib/api";
+import { listTasks, updateTask, listMembers, listProjects, listSubteams, ApiError, type Task, type Team } from "@/lib/api";
 
 // Tira acento e caixa pra busca casar "midia" com "Midia Paga" etc.
 function normalizar(s: string) {
@@ -65,6 +65,14 @@ export default function Board({
   // filtram em memoria sobre o lote ja carregado, sem bater na API.
   const [busca, setBusca] = useState("");
   const [prazo, setPrazo] = useState<FiltroPrazo>("todos");
+  // Fatia 3: filtro por subtime. memberTeam resolve id->subtime (vem do
+  // /members, agora com team_id pela Fatia 2). subtimes alimenta o dropdown
+  // (so times nao-raiz). "" em `subtime` = sem filtro.
+  const [memberTeam, setMemberTeam] = useState<Map<string, string | null>>(
+    new Map()
+  );
+  const [subtimes, setSubtimes] = useState<Team[]>([]);
+  const [subtime, setSubtime] = useState<string>("");
 
   // Guarda contra "clique fantasma" logo apos um arrasto.
   const suprimirClique = useRef(false);
@@ -78,7 +86,10 @@ export default function Board({
       .then((r) => setTasks(r.items))
       .catch((e: ApiError) => setErro(e.message));
     listMembers()
-      .then((ms) => setMembers(new Map(ms.map((m) => [m.id, { name: m.name }]))))
+      .then((ms) => {
+        setMembers(new Map(ms.map((m) => [m.id, { name: m.name }])));
+        setMemberTeam(new Map(ms.map((m) => [m.id, m.team_id])));
+      })
       .catch(() => {});
     // Tag de projeto so faz sentido no quadro geral. No board de projeto a
     // tag e redundante, entao nem busca.
@@ -88,6 +99,12 @@ export default function Board({
         .catch(() => {});
     }
   }, [projectId, mostrarArquivadas]);
+
+  // Subtimes sao estaveis no workspace -> busca uma vez (listSubteams e
+  // memoizado no api.ts). So times nao-raiz entram no dropdown.
+  useEffect(() => {
+    listSubteams().then(setSubtimes).catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (!toast) return;
@@ -213,7 +230,7 @@ export default function Board({
   // porStatus saem de `raizes` pra nao mentir quando ha filtro ativo.
   const buscaNorm = normalizar(busca);
   const hoje = hojeISO();
-  const temFiltro = buscaNorm !== "" || prazo !== "todos";
+  const temFiltro = buscaNorm !== "" || prazo !== "todos" || subtime !== "";
 
   const visiveis = tasks.filter(
     (t) => t.depth === 0 && (mostrarArquivadas || !t.is_archived)
@@ -226,6 +243,13 @@ export default function Board({
       const atrasada = t.status !== "COMPLETED" && t.due_date < hoje;
       if (prazo === "atrasadas" && !atrasada) return false;
       if (prazo === "em-dia" && atrasada) return false;
+    }
+    // Subtime: passa se ALGUM responsavel pertence ao subtime escolhido.
+    // NAO toca em task.team_id -> o bug E6 continua dormente. Task sem
+    // responsavel some ao filtrar por subtime (decisao da Camila).
+    if (subtime) {
+      const ids = t.assignee_ids ?? [];
+      if (!ids.some((id) => memberTeam.get(id) === subtime)) return false;
     }
     return true;
   });
@@ -266,6 +290,22 @@ export default function Board({
           <option value="atrasadas">Atrasadas</option>
           <option value="em-dia">Em dia</option>
         </select>
+        {subtimes.length > 0 && (
+          <select
+            value={subtime}
+            onChange={(e) => setSubtime(e.target.value)}
+            style={{
+              fontSize: 13, padding: "6px 10px", borderRadius: 8,
+              border: "1px solid var(--border)", background: "var(--surface)",
+              color: "var(--text)", cursor: "pointer",
+            }}
+          >
+            <option value="">Subtime: todos</option>
+            {subtimes.map((s) => (
+              <option key={s.id} value={s.id}>{s.name}</option>
+            ))}
+          </select>
+        )}
         <label
           style={{
             marginLeft: "auto", display: "flex", alignItems: "center", gap: 6,
@@ -294,6 +334,7 @@ export default function Board({
             onLimpar={() => {
               setBusca("");
               setPrazo("todos");
+              setSubtime("");
             }}
           />
         ) : (
@@ -467,7 +508,8 @@ function SemResultado({ onLimpar }: { onLimpar: () => void }) {
       <p style={{ margin: 0, fontWeight: 600 }}>Nada encontrado</p>
       <p className="muted" style={{ margin: "6px 0 14px", fontSize: 13 }}>
         Nenhuma tarefa bate com o filtro atual. As subtarefas e tarefas de
-        outras paginas nao entram na busca.
+        outras paginas nao entram na busca. No filtro de subtime, tarefas sem
+        responsavel (ou so com responsaveis de outro subtime) nao aparecem.
       </p>
       <button className="btn" onClick={onLimpar}>Limpar filtros</button>
     </div>

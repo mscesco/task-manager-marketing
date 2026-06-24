@@ -251,3 +251,46 @@ class MyAssignmentsResponse(BaseModel):
     total: int
     page: int
     size: int
+
+
+# =========================================================
+# COMMENT (Entrega 14)
+# =========================================================
+class CommentCreateRequest(BaseModel):
+    """Cria um comentario. content e validado de novo no dominio (strip,
+    1..5000); o max_length aqui so barra payload absurdo cedo."""
+
+    content: str = Field(min_length=1, max_length=5000)
+    #: opcional -- responde um comentario de TOPO da mesma task (1 nivel, D4).
+    parent_comment_id: uuid.UUID | None = None
+
+
+class CommentUpdateRequest(BaseModel):
+    """Edita o conteudo de um comentario (so o autor)."""
+
+    content: str = Field(min_length=1, max_length=5000)
+
+
+class CommentResponse(BaseModel):
+    """Representacao de um comentario na API. Quando is_deleted, `content` ja
+    vem mascarado (tombstone) -- ver D5."""
+
+    model_config = {"from_attributes": True}
+
+    id: uuid.UUID
+    task_id: uuid.UUID
+    user_id: uuid.UUID
+    parent_comment_id: uuid.UUID | None
+    content: str
+    edited_at: datetime | None
+    created_at: datetime
+    is_deleted: bool
+
+
+class CommentListResponse(BaseModel):
+    """Pagina do thread de comentarios de uma task (created_at ASC)."""
+
+    items: list[CommentResponse]
+    total: int
+    page: int
+    size: int

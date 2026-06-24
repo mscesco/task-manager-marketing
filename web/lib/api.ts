@@ -29,9 +29,9 @@ export function setTokens(access: string, refresh: string) {
 export function clearTokens() {
   localStorage.removeItem(ACCESS_KEY);
   localStorage.removeItem(REFRESH_KEY);
-  // O time raiz e a lista de membros sao por-workspace; ao trocar de
+  // Os times e a lista de membros sao por-workspace; ao trocar de
   // sessao, descarta os caches.
-  _rootTeamId = undefined;
+  _teams = undefined;
   _members = undefined;
 }
 
@@ -214,18 +214,38 @@ export type Team = {
 
 type TeamListResponse = { items: Team[]; total: number };
 
-let _rootTeamId: string | null | undefined; // undefined = ainda nao buscado
+// Lista de times do workspace (raiz + subtimes). Estavel na sessao ->
+// buscada UMA vez e memoizada. getRootTeamId e listSubteams derivam daqui,
+// entao o endpoint /teams e batido uma unica vez por sessao. Limpa no
+// clearTokens.
+let _teams: Team[] | undefined; // undefined = ainda nao buscado
+
+async function listTeams(): Promise<Team[]> {
+  if (_teams !== undefined) return _teams;
+  const res = await api<TeamListResponse>("/api/v1/workspaces/current/teams");
+  _teams = res.items;
+  return _teams;
+}
 
 export async function getRootTeamId(): Promise<string | null> {
-  if (_rootTeamId !== undefined) return _rootTeamId;
-  const res = await api<TeamListResponse>("/api/v1/workspaces/current/teams");
-  const root = res.items.find((t) => t.parent_team_id === null);
+  const teams = await listTeams();
+  const root = teams.find((t) => t.parent_team_id === null);
   // DIVIDA DOCUMENTADA (ADR 0001 do front): se a raiz nao for achada,
   // cai-se no null e o backend deriva o time pela membership -- hoje
   // identico ao pin (sem subtimes). QUANDO subtimes existirem, trocar
   // este null por erro duro, senao a heranca silenciosa volta.
-  _rootTeamId = root ? root.id : null;
-  return _rootTeamId;
+  return root ? root.id : null;
+}
+
+// Subtimes = times NAO-raiz (parent_team_id != null). Alimenta o dropdown
+// de subtime do quadro (Entrega 13, Fatia 3). Ordenado por nome (pt-BR) pra
+// UI estavel. Espelha a regra do backend (list_all_with_subteam): a raiz
+// nunca entra.
+export async function listSubteams(): Promise<Team[]> {
+  const teams = await listTeams();
+  return teams
+    .filter((t) => t.parent_team_id !== null)
+    .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
 }
 
 export type TaskCreateInput = {
@@ -289,6 +309,10 @@ export type Member = {
   name: string;
   email: string;
   is_active: boolean;
+  // Entrega 13 (Fatia 2): id do SUBTIME do membro (time nao-raiz) ou null.
+  // Pelo ADR 0008 e no maximo um. O backend nunca devolve aqui o time raiz.
+  // Usado pelo filtro de subtime no quadro (Fatia 3).
+  team_id: string | null;
 };
 
 type MemberListResponse = { items: Member[]; total: number };

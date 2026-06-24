@@ -24,6 +24,11 @@ class MemberResponse(BaseModel):
     email: EmailStr
     is_active: bool
     created_at: datetime
+    #: Entrega 13 (Fatia 2): id do SUBTIME do membro (time nao-raiz), ou
+    #: None. Pelo ADR 0008 e no maximo um. NAO e o time principal. Usado
+    #: pelo filtro de subtime no quadro. Em respostas de mutacao
+    #: (criar/desativar) sai None -- so a listagem resolve o subtime.
+    team_id: uuid.UUID | None = None
 
 
 class MemberCreateRequest(BaseModel):

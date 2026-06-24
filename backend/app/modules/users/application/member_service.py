@@ -73,6 +73,18 @@ class ProvisionedMember:
     temporary_password: str
 
 
+@dataclass(frozen=True, slots=True)
+class MemberWithSubteam:
+    """Membro + id do subtime ao qual pertence (ou None).
+
+    Subtime = time NAO-raiz. O time principal nao rotula (Fatia 2 da
+    Entrega 13). Pelo ADR 0008, subteam_id e 0 ou 1 -- nunca ambiguo.
+    """
+
+    user: User
+    subteam_id: uuid.UUID | None
+
+
 def _temp_password_expiry() -> datetime:
     """Calcula o instante de expiracao da provisoria a partir do TTL."""
     return datetime.now(UTC) + timedelta(
@@ -206,9 +218,18 @@ class MemberService:
         logger.info("member.password_reset", user_id=str(user_id))
         return ProvisionedMember(user=user, temporary_password=temporary_password)
 
-    async def list_members(self) -> list[User]:
-        """Lista todos os membros ativos do workspace corrente."""
-        return await self._users.list_all()
+    async def list_members(self) -> list[MemberWithSubteam]:
+        """Lista os membros ativos do workspace, cada um com seu SUBTIME.
+
+        Subtime = time nao-raiz; o principal nao rotula (ver
+        UserRepository.list_all_with_subteam). Pelo ADR 0008, cada membro
+        tem no maximo um subtime -- subteam_id e None quando nao ha.
+        """
+        rows = await self._users.list_all_with_subteam()
+        return [
+            MemberWithSubteam(user=user, subteam_id=subteam_id)
+            for user, subteam_id in rows
+        ]
 
     async def assign_to_team(
         self,

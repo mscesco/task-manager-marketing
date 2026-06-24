@@ -18,6 +18,7 @@ from app.modules.auth.api.router import router as auth_router
 from app.modules.tasks.api.collaboration_router import (
     router as collaboration_router,
 )
+from app.modules.tasks.api.comment_router import router as comment_router
 from app.modules.tasks.api.me_router import router as me_router
 from app.modules.tasks.api.projects_router import router as projects_router
 from app.modules.tasks.api.tasks_router import router as tasks_router
@@ -37,3 +38,4 @@ api_v1_router.include_router(projects_router)
 api_v1_router.include_router(me_router)
 api_v1_router.include_router(tasks_router)
 api_v1_router.include_router(collaboration_router)
+api_v1_router.include_router(comment_router)

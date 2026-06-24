@@ -17,7 +17,7 @@ import uuid
 from sqlalchemy import select
 
 from app.core.tenant import require_tenant
-from app.db.models import User, UserTeam
+from app.db.models import Team, User, UserTeam
 from app.db.models.enums import UserTeamRole
 from app.db.repository import BaseRepository
 
@@ -49,6 +49,51 @@ class UserRepository(BaseRepository[User]):
         stmt = self._base_select().order_by(User.name)
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
+
+    async def list_all_with_subteam(
+        self,
+    ) -> list[tuple[User, uuid.UUID | None]]:
+        """Lista os membros (mesmos de list_all) + o id do SUBTIME de cada um.
+
+        Subtime = time com parent_team_id != NULL. O time PRINCIPAL (raiz)
+        e ignorado DE PROPOSITO: quem esta na raiz (ex.: managers do seed)
+        nao deve ser rotulado com o id do Marketing geral, senao o filtro
+        de subtime no quadro (Fatia 3) perde o sentido.
+
+        Pelo invariante "um subtime por usuario" (ADR 0008), o LEFT JOIN
+        com a subconsulta de subtimes devolve no MAXIMO uma linha por
+        membro -- entao nao ha duplicacao mesmo para quem esta em raiz +
+        subtime. Membro sem subtime vem com None.
+
+        Tenant: a subconsulta filtra UserTeam.workspace_id explicitamente;
+        o _base_select() ja escopa o User. Sem cruzamento entre tenants.
+        """
+        workspace_id = require_tenant().workspace_id
+        # (user_id -> subteam_id) apenas para vinculos com time NAO-raiz.
+        subteam = (
+            select(
+                UserTeam.user_id.label("user_id"),
+                UserTeam.team_id.label("subteam_id"),
+            )
+            .join(
+                Team,
+                (Team.id == UserTeam.team_id)
+                & (Team.workspace_id == UserTeam.workspace_id),
+            )
+            .where(
+                UserTeam.workspace_id == workspace_id,
+                Team.parent_team_id.isnot(None),
+            )
+            .subquery()
+        )
+        stmt = (
+            self._base_select()
+            .add_columns(subteam.c.subteam_id)
+            .outerjoin(subteam, subteam.c.user_id == User.id)
+            .order_by(User.name)
+        )
+        result = await self.session.execute(stmt)
+        return [(row[0], row[1]) for row in result.all()]
 
     # ----------------------------------------------------
     # Vinculo user <-> team (papeis)

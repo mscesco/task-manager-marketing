@@ -47,6 +47,7 @@ from app.modules.tasks.domain.history import (
     build_status_change_entry,
     build_unarchived_entry,
 )
+from app.modules.tasks.infrastructure.comment_repository import CommentRepository
 from app.modules.tasks.infrastructure.project_repository import ProjectRepository
 from app.modules.tasks.infrastructure.task_repository import TaskRepository
 from app.shared.exceptions.base import (
@@ -133,6 +134,8 @@ class TaskService:
         self._repo = TaskRepository(session)
         self._projects = ProjectRepository(session)
         self._guards = TaskScopeGuards(session)
+        # Entrega 14: cascata de comentarios no soft-delete (D11).
+        self._comments = CommentRepository(session)
 
     # ----------------------------------------------------
     # CRUD (publico)
@@ -480,6 +483,10 @@ class TaskService:
         await self._assert_editable(task)
 
         cascade_count = await self._repo.soft_delete_subtree(task=task)
+
+        # Entrega 14 (D11): os comentarios das tasks da subtree vao junto.
+        # NAO entram no cascade_count (que conta so tarefas-filhas).
+        await self._comments.soft_delete_for_task_subtree(task_path=task.path)
 
         tenant = require_tenant()
         entry = build_deleted_entry(cascade_count=cascade_count)

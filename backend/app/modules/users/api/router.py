@@ -47,7 +47,18 @@ async def list_members(
     """Lista todos os membros ativos do workspace corrente."""
     members = await MemberService(session).list_members()
     return MemberListResponse(
-        items=[MemberResponse.model_validate(m) for m in members],
+        items=[
+            MemberResponse(
+                id=m.user.id,
+                workspace_id=m.user.workspace_id,
+                name=m.user.name,
+                email=m.user.email,
+                is_active=m.user.is_active,
+                created_at=m.user.created_at,
+                team_id=m.subteam_id,
+            )
+            for m in members
+        ],
         total=len(members),
     )
 
