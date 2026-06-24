@@ -43,6 +43,7 @@ export default function Board({
   const [pilha, setPilha] = useState<Task[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [mostrarArquivadas, setMostrarArquivadas] = useState(false);
 
   // Guarda contra "clique fantasma" logo apos um arrasto.
   const suprimirClique = useRef(false);
@@ -52,7 +53,7 @@ export default function Board({
   );
 
   useEffect(() => {
-    listTasks({ size: 100, project_id: projectId })
+    listTasks({ size: 100, project_id: projectId, include_archived: mostrarArquivadas })
       .then((r) => setTasks(r.items))
       .catch((e: ApiError) => setErro(e.message));
     listMembers()
@@ -65,7 +66,7 @@ export default function Board({
         .then((r) => setProjectNames(new Map(r.items.map((p) => [p.id, p.title]))))
         .catch(() => {});
     }
-  }, [projectId]);
+  }, [projectId, mostrarArquivadas]);
 
   useEffect(() => {
     if (!toast) return;
@@ -186,7 +187,9 @@ export default function Board({
       subDone[t.parent_task_id] = (subDone[t.parent_task_id] ?? 0) + 1;
   }
 
-  const raizes = tasks.filter((t) => t.depth === 0);
+  const raizes = tasks.filter(
+    (t) => t.depth === 0 && (mostrarArquivadas || !t.is_archived)
+  );
   const porStatus: Record<string, Task[]> = {};
   for (const s of STATUSES) porStatus[s.key] = [];
   for (const t of raizes) (porStatus[t.status] ??= []).push(t);
@@ -199,10 +202,23 @@ export default function Board({
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 18 }}>
         <h1 style={{ margin: 0, fontSize: 19, letterSpacing: "-0.02em" }}>{title}</h1>
         <span className="muted" style={{ fontSize: 13 }}>{raizes.length} tarefas</span>
+        <label
+          style={{
+            marginLeft: "auto", display: "flex", alignItems: "center", gap: 6,
+            fontSize: 13, color: "var(--text-soft)", cursor: "pointer",
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={mostrarArquivadas}
+            onChange={(e) => setMostrarArquivadas(e.target.checked)}
+          />
+          Mostrar arquivadas
+        </label>
         <button
           className="btn btn-primary"
           onClick={() => setCriando(true)}
-          style={{ marginLeft: "auto", padding: "8px 14px" }}
+          style={{ padding: "8px 14px" }}
         >
           + Nova tarefa
         </button>
@@ -351,7 +367,7 @@ function CardArrastavel({
       {...attributes}
       onClick={() => onAbrir(task)}
       style={{
-        opacity: isDragging ? 0.4 : 1,
+        opacity: isDragging ? 0.4 : task.is_archived ? 0.55 : 1,
         cursor: "grab",
         touchAction: "none",
       }}

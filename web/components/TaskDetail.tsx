@@ -15,6 +15,8 @@ import {
   removeAssignee,
   createSubtask,
   updateTask,
+  archiveTask,
+  unarchiveTask,
   ApiError,
   type Task,
 } from "@/lib/api";
@@ -64,6 +66,7 @@ export default function TaskDetail({
   const [subSaving, setSubSaving] = useState<Set<string>>(new Set());
   // Status de antes de concluir, pra desmarcar voltar pra ele (sessao).
   const [statusAnterior, setStatusAnterior] = useState<Record<string, string>>({});
+  const [arquivando, setArquivando] = useState(false);
 
   // Reset sempre que abre / troca / navega de tarefa.
   useEffect(() => {
@@ -77,6 +80,7 @@ export default function TaskDetail({
     setErroSub(null);
     setSubSaving(new Set());
     setStatusAnterior({});
+    setArquivando(false);
   }, [task?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -182,6 +186,23 @@ export default function TaskDetail({
         n.delete(f.id);
         return n;
       });
+    }
+  }
+
+  async function alternarArquivo() {
+    setErro(null);
+    setArquivando(true);
+    try {
+      const r = task!.is_archived ? await unarchiveTask(tid) : await archiveTask(tid);
+      onSubtaskUpsert(r); // upsert generico: o quadro reflete is_archived
+    } catch (e) {
+      setErro(
+        (e as ApiError).status === 403
+          ? "Voce nao pode arquivar esta tarefa."
+          : "Nao consegui arquivar a tarefa."
+      );
+    } finally {
+      setArquivando(false);
     }
   }
 
@@ -481,6 +502,12 @@ export default function TaskDetail({
         </div>
 
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 4 }}>
+          <button
+            type="button" className="btn btn-ghost" onClick={alternarArquivo}
+            disabled={arquivando} style={{ marginRight: "auto" }}
+          >
+            {arquivando ? "…" : task.is_archived ? "Desarquivar" : "Arquivar"}
+          </button>
           <button type="button" className="btn btn-ghost" onClick={onClose}>
             Fechar
           </button>

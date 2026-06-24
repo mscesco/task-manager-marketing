@@ -167,12 +167,14 @@ export async function listTasks(params: {
   size?: number;
   status?: string;
   project_id?: string;
+  include_archived?: boolean;
 } = {}): Promise<TaskListResponse> {
   const q = new URLSearchParams();
   q.set("page", String(params.page ?? 1));
   q.set("size", String(params.size ?? 100));
   if (params.status) q.set("status", params.status);
   if (params.project_id) q.set("project_id", params.project_id);
+  if (params.include_archived) q.set("include_archived", "true");
   return api<TaskListResponse>(`/api/v1/tasks?${q.toString()}`);
 }
 
@@ -358,6 +360,16 @@ export async function createSubtask(
       ...(parentProjectId ? { project_id: parentProjectId } : {}),
     },
   });
+}
+
+// Arquivar/desarquivar (Entrega 12). Exige task.update -> TODOS os papeis
+// podem (e a saida pra quem nao tem task.delete). Idempotente, SEM cascata
+// (nao mexe nas subtarefas). Resposta NAO traz assignee_ids -> upsert preserva.
+export async function archiveTask(id: string): Promise<Task> {
+  return api<Task>(`/api/v1/tasks/${id}/archive`, { method: "POST" });
+}
+export async function unarchiveTask(id: string): Promise<Task> {
+  return api<Task>(`/api/v1/tasks/${id}/unarchive`, { method: "POST" });
 }
 
 // ===============================================================
