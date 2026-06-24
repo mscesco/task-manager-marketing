@@ -29,10 +29,11 @@ export function setTokens(access: string, refresh: string) {
 export function clearTokens() {
   localStorage.removeItem(ACCESS_KEY);
   localStorage.removeItem(REFRESH_KEY);
-  // Os times e a lista de membros sao por-workspace; ao trocar de
-  // sessao, descarta os caches.
+  // Os times, a lista de membros e o usuario logado sao por-sessao; ao
+  // trocar de sessao, descarta os caches.
   _teams = undefined;
   _members = undefined;
+  _me = undefined;
 }
 
 export class ApiError extends Error {
@@ -506,4 +507,99 @@ export async function archiveProject(id: string): Promise<Project> {
 
 export async function unarchiveProject(id: string): Promise<Project> {
   return api<Project>(`/api/v1/projects/${id}/unarchive`, { method: "POST" });
+}
+
+
+// ---------------------------------------------------------------
+// USUARIO LOGADO (memoizado)  -- Entrega 14
+// ---------------------------------------------------------------
+// getMe() bate na API toda vez. O thread de comentarios precisa do `id`
+// (mostrar editar/apagar so no proprio comentario) e das `permissions`
+// (task.delete -> moderacao). Memoiza igual aos outros caches; limpa no
+// clearTokens. O AppShell continua usando getMe() direto (revalida a sessao).
+let _me: CurrentUser | undefined; // undefined = ainda nao buscado
+
+export async function currentUser(): Promise<CurrentUser> {
+  if (_me !== undefined) return _me;
+  _me = await getMe();
+  return _me;
+}
+
+// ---------------------------------------------------------------
+// COMENTARIOS  (Entrega 14)
+// ---------------------------------------------------------------
+// Thread por task, 1 nivel de replica. Visibilidade = visibilidade da task
+// (404 se nao ve -> o backend ja garante; o front so propaga o erro).
+// is_deleted=true => tombstone (content ja vem mascarado pelo backend).
+// edited_at != null => foi editado.
+
+export type Comment = {
+  id: string;
+  task_id: string;
+  user_id: string;
+  parent_comment_id: string | null;
+  content: string;
+  edited_at: string | null;
+  created_at: string;
+  is_deleted: boolean;
+};
+
+export type CommentList = {
+  items: Comment[];
+  total: number;
+  page: number;
+  size: number;
+};
+
+// Thread da task, created_at ASC (mais antigo -> mais novo). size default 50
+// no backend; aqui so manda o que for passado.
+export async function listComments(
+  taskId: string,
+  params: { page?: number; size?: number } = {}
+): Promise<CommentList> {
+  const q = new URLSearchParams();
+  if (params.page) q.set("page", String(params.page));
+  if (params.size) q.set("size", String(params.size));
+  const qs = q.toString();
+  return api<CommentList>(
+    `/api/v1/tasks/${taskId}/comments${qs ? `?${qs}` : ""}`
+  );
+}
+
+// parentCommentId so quando for replica. Regra de 1 nivel (pai tem que ser de
+// topo) e validada no backend -> 422 se furar.
+export async function createComment(
+  taskId: string,
+  content: string,
+  parentCommentId?: string | null
+): Promise<Comment> {
+  return api<Comment>(`/api/v1/tasks/${taskId}/comments`, {
+    method: "POST",
+    body: {
+      content,
+      ...(parentCommentId ? { parent_comment_id: parentCommentId } : {}),
+    },
+  });
+}
+
+// So o autor edita (403 senao). O backend seta edited_at.
+export async function editComment(
+  taskId: string,
+  commentId: string,
+  content: string
+): Promise<Comment> {
+  return api<Comment>(`/api/v1/tasks/${taskId}/comments/${commentId}`, {
+    method: "PATCH",
+    body: { content },
+  });
+}
+
+// Soft-delete. Autor ou moderador (task.delete). 204 sem corpo.
+export async function deleteComment(
+  taskId: string,
+  commentId: string
+): Promise<void> {
+  await api<void>(`/api/v1/tasks/${taskId}/comments/${commentId}`, {
+    method: "DELETE",
+  });
 }

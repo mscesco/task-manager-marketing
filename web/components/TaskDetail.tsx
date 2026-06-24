@@ -17,8 +17,15 @@ import {
   updateTask,
   archiveTask,
   unarchiveTask,
+  listComments,
+  createComment,
+  editComment,
+  deleteComment,
+  currentUser,
   ApiError,
   type Task,
+  type Comment,
+  type CurrentUser,
 } from "@/lib/api";
 import { PRIORITY_LABEL, PRIORITY_COLOR, STATUSES } from "@/lib/status";
 import { iniciais, nomeCurto, corAvatar } from "@/lib/people";
@@ -29,6 +36,17 @@ const STATUS_LABEL: Record<string, string> = Object.fromEntries(
 const STATUS_COLOR: Record<string, string> = Object.fromEntries(
   STATUSES.map((s) => [s.key, s.color])
 );
+
+// Data/hora curta do comentario (ex.: "24/06 14:30"). created_at vem ISO
+// com timezone; o browser converte pro fuso local.
+function quando(iso: string): string {
+  return new Date(iso).toLocaleString("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
 
 export default function TaskDetail({
   task,
@@ -68,6 +86,18 @@ export default function TaskDetail({
   const [statusAnterior, setStatusAnterior] = useState<Record<string, string>>({});
   const [arquivando, setArquivando] = useState(false);
 
+  // ---- Comentarios (Entrega 14, Fatia 2) ----
+  const [comentarios, setComentarios] = useState<Comment[] | null>(null);
+  const [erroCom, setErroCom] = useState<string | null>(null);
+  const [novoComent, setNovoComent] = useState("");
+  const [enviandoComent, setEnviandoComent] = useState(false);
+  const [respondendoId, setRespondendoId] = useState<string | null>(null);
+  const [textoResposta, setTextoResposta] = useState("");
+  const [enviandoResp, setEnviandoResp] = useState(false);
+  // Usuario logado: define quem ve lapis (autor) e lixeira (autor ou
+  // task.delete). Buscado uma vez (currentUser e memoizado no api.ts).
+  const [me, setMe] = useState<CurrentUser | null>(null);
+
   // Reset sempre que abre / troca / navega de tarefa.
   useEffect(() => {
     setAssignees(task?.assignee_ids ?? []);
@@ -81,6 +111,13 @@ export default function TaskDetail({
     setSubSaving(new Set());
     setStatusAnterior({});
     setArquivando(false);
+    setComentarios(null);
+    setErroCom(null);
+    setNovoComent("");
+    setEnviandoComent(false);
+    setRespondendoId(null);
+    setTextoResposta("");
+    setEnviandoResp(false);
   }, [task?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -91,6 +128,34 @@ export default function TaskDetail({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [task, onClose]);
+
+  // Usuario logado: uma vez (memoizado). Falha silenciosa -> sem acoes
+  // inline, mas o thread ainda renderiza.
+  useEffect(() => {
+    currentUser()
+      .then(setMe)
+      .catch(() => {});
+  }, []);
+
+  // Carrega o thread ao abrir/trocar de tarefa. size 100 cobre threads do
+  // tamanho do time sem UI de paginacao (limite conhecido: acima disso,
+  // trunca -- aceitavel em v1).
+  useEffect(() => {
+    if (!task) return;
+    let vivo = true;
+    setComentarios(null);
+    setErroCom(null);
+    listComments(task.id, { size: 100 })
+      .then((r) => {
+        if (vivo) setComentarios(r.items);
+      })
+      .catch((e: ApiError) => {
+        if (vivo) setErroCom(e.message || "Nao consegui carregar os comentarios.");
+      });
+    return () => {
+      vivo = false;
+    };
+  }, [task?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const filtrados = useMemo(() => {
     const q = busca.trim().toLowerCase();
@@ -203,6 +268,58 @@ export default function TaskDetail({
       );
     } finally {
       setArquivando(false);
+    }
+  }
+
+  async function enviarComentario() {
+    const txt = novoComent.trim();
+    if (!txt) return;
+    setEnviandoComent(true);
+    setErroCom(null);
+    try {
+      const novo = await createComment(tid, txt);
+      setComentarios((prev) => [...(prev ?? []), novo]);
+      setNovoComent("");
+    } catch (e) {
+      setErroCom((e as ApiError).message || "Nao consegui comentar.");
+    } finally {
+      setEnviandoComent(false);
+    }
+  }
+
+  async function enviarResposta(parentId: string) {
+    const txt = textoResposta.trim();
+    if (!txt) return;
+    setEnviandoResp(true);
+    setErroCom(null);
+    try {
+      const novo = await createComment(tid, txt, parentId);
+      setComentarios((prev) => [...(prev ?? []), novo]);
+      setTextoResposta("");
+      setRespondendoId(null);
+    } catch (e) {
+      setErroCom((e as ApiError).message || "Nao consegui responder.");
+    } finally {
+      setEnviandoResp(false);
+    }
+  }
+
+  // Edicao devolve o comentario atualizado -> troca em memoria.
+  function aoEditado(atualizado: Comment) {
+    setComentarios((prev) =>
+      prev ? prev.map((c) => (c.id === atualizado.id ? atualizado : c)) : prev
+    );
+  }
+
+  // Apagar e 204 (sem corpo) e o resultado depende de ter replica viva
+  // (some) ou nao (tombstone). Em vez de reimplementar a regra D5 aqui,
+  // recarrego o thread -- o backend decide.
+  async function recarregarComentarios() {
+    try {
+      const r = await listComments(tid, { size: 100 });
+      setComentarios(r.items);
+    } catch (e) {
+      setErroCom((e as ApiError).message || "Nao consegui recarregar os comentarios.");
     }
   }
 
@@ -501,6 +618,134 @@ export default function TaskDetail({
           )}
         </div>
 
+        {/* ---- Comentarios (Entrega 14) ---- */}
+        <div className="field">
+          <span className="label">
+            Comentarios
+            {comentarios && comentarios.length > 0 ? ` (${comentarios.length})` : ""}
+          </span>
+
+          {comentarios === null ? (
+            <span className="muted" style={{ fontSize: 13 }}>Carregando…</span>
+          ) : comentarios.length === 0 ? (
+            <span className="muted" style={{ fontSize: 13 }}>
+              Nenhum comentario ainda.
+            </span>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              {comentarios
+                .filter((c) => !c.parent_comment_id)
+                .map((c) => (
+                  <div key={c.id} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    <LinhaComentario
+                      c={c}
+                      members={members}
+                      me={me}
+                      taskId={tid}
+                      onEditado={aoEditado}
+                      onApagado={recarregarComentarios}
+                    />
+
+                    {comentarios
+                      .filter((r) => r.parent_comment_id === c.id)
+                      .map((r) => (
+                        <div key={r.id} style={{ marginLeft: 30 }}>
+                          <LinhaComentario
+                            c={r}
+                            members={members}
+                            me={me}
+                            taskId={tid}
+                            onEditado={aoEditado}
+                            onApagado={recarregarComentarios}
+                          />
+                        </div>
+                      ))}
+
+                    {respondendoId === c.id ? (
+                      <div style={{ marginLeft: 30, display: "flex", flexDirection: "column", gap: 6 }}>
+                        <textarea
+                          className="input"
+                          autoFocus
+                          rows={2}
+                          placeholder="Responder…"
+                          value={textoResposta}
+                          disabled={enviandoResp}
+                          maxLength={5000}
+                          onChange={(e) => setTextoResposta(e.target.value)}
+                          style={{ resize: "vertical" }}
+                        />
+                        <div style={{ display: "flex", gap: 8 }}>
+                          <button
+                            type="button"
+                            className="btn btn-primary"
+                            onClick={() => enviarResposta(c.id)}
+                            disabled={enviandoResp || !textoResposta.trim()}
+                            style={{ padding: "5px 12px", fontSize: 13 }}
+                          >
+                            {enviandoResp ? "…" : "Responder"}
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-ghost"
+                            onClick={() => {
+                              setRespondendoId(null);
+                              setTextoResposta("");
+                            }}
+                            style={{ padding: "5px 12px", fontSize: 13 }}
+                          >
+                            Cancelar
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      !c.is_deleted && (
+                        <button
+                          type="button"
+                          className="btn btn-ghost"
+                          onClick={() => {
+                            setRespondendoId(c.id);
+                            setTextoResposta("");
+                          }}
+                          style={{
+                            marginLeft: 30, alignSelf: "flex-start",
+                            padding: "2px 8px", fontSize: 12,
+                          }}
+                        >
+                          Responder
+                        </button>
+                      )
+                    )}
+                  </div>
+                ))}
+            </div>
+          )}
+
+          {/* caixa de novo comentario (quem ve a tarefa pode comentar) */}
+          <textarea
+            className="input"
+            rows={2}
+            placeholder="Escreva um comentario… (de topo)"
+            value={novoComent}
+            disabled={enviandoComent}
+            maxLength={5000}
+            onChange={(e) => setNovoComent(e.target.value)}
+            style={{ marginTop: 10, resize: "vertical" }}
+          />
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={enviarComentario}
+            disabled={enviandoComent || !novoComent.trim()}
+            style={{ alignSelf: "flex-start", marginTop: 6, padding: "6px 12px" }}
+          >
+            {enviandoComent ? "Enviando…" : "Comentar"}
+          </button>
+
+          {erroCom && (
+            <div className="error-box" style={{ marginTop: 8 }}>{erroCom}</div>
+          )}
+        </div>
+
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 4 }}>
           <button
             type="button" className="btn btn-ghost" onClick={alternarArquivo}
@@ -515,6 +760,211 @@ export default function TaskDetail({
             Editar
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// Uma linha do thread: avatar + autor + hora + conteudo, com acoes inline.
+// Lapis (editar) so pro autor; lixeira (apagar) pro autor OU quem tem
+// task.delete (mirror do backend). Tombstone nao tem acao. Apagar e 204:
+// quem decide tombstone-vs-some e o backend -> a linha so dispara o reload.
+function LinhaComentario({
+  c,
+  members,
+  me,
+  taskId,
+  onEditado,
+  onApagado,
+}: {
+  c: Comment;
+  members: Map<string, { name: string }>;
+  me: CurrentUser | null;
+  taskId: string;
+  onEditado: (atualizado: Comment) => void;
+  onApagado: () => void;
+}) {
+  const [editando, setEditando] = useState(false);
+  const [texto, setTexto] = useState(c.content);
+  const [salvando, setSalvando] = useState(false);
+  const [confirmando, setConfirmando] = useState(false);
+  const [apagando, setApagando] = useState(false);
+  const [erroLinha, setErroLinha] = useState<string | null>(null);
+
+  const nome = members.get(c.user_id)?.name ?? "";
+  const souAutor = me != null && me.id === c.user_id;
+  const podeModerar = me?.permissions.includes("task.delete") ?? false;
+  const temAcao = !c.is_deleted && me != null;
+  const podeEditar = temAcao && souAutor;
+  const podeApagar = temAcao && (souAutor || podeModerar);
+
+  async function salvarEdicao() {
+    const t = texto.trim();
+    if (!t) return;
+    setSalvando(true);
+    setErroLinha(null);
+    try {
+      const atualizado = await editComment(taskId, c.id, t);
+      onEditado(atualizado);
+      setEditando(false);
+    } catch (e) {
+      const err = e as ApiError;
+      setErroLinha(
+        err.status === 403
+          ? "So o autor pode editar."
+          : err.message || "Nao consegui editar."
+      );
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  async function apagar() {
+    setApagando(true);
+    setErroLinha(null);
+    try {
+      await deleteComment(taskId, c.id);
+      setConfirmando(false);
+      onApagado(); // recarrega: backend decide tombstone vs some
+    } catch (e) {
+      const err = e as ApiError;
+      setErroLinha(
+        err.status === 403
+          ? "Voce nao pode apagar este comentario."
+          : err.message || "Nao consegui apagar."
+      );
+      setApagando(false);
+    }
+  }
+
+  return (
+    <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+      <span
+        title={nome}
+        style={{
+          width: 24, height: 24, borderRadius: 999, flexShrink: 0,
+          background: c.is_deleted ? "var(--text-faint)" : corAvatar(c.user_id),
+          color: "#fff", fontSize: 10, fontWeight: 700,
+          display: "flex", alignItems: "center", justifyContent: "center",
+        }}
+      >
+        {nome ? iniciais(nome) : "?"}
+      </span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+          <span style={{ fontSize: 13, fontWeight: 600 }}>
+            {nome ? nomeCurto(nome) : "Alguem"}
+          </span>
+          <span className="muted" style={{ fontSize: 11.5 }}>{quando(c.created_at)}</span>
+          {c.edited_at && !c.is_deleted && (
+            <span className="muted" style={{ fontSize: 11.5 }}>(editado)</span>
+          )}
+
+          {/* acoes inline (lapis / lixeira) */}
+          {!editando && !confirmando && (podeEditar || podeApagar) && (
+            <span style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+              {podeEditar && (
+                <button
+                  type="button" className="btn btn-ghost"
+                  onClick={() => {
+                    setTexto(c.content);
+                    setErroLinha(null);
+                    setEditando(true);
+                  }}
+                  title="Editar"
+                  style={{ padding: "0 6px", fontSize: 12 }}
+                >
+                  ✎
+                </button>
+              )}
+              {podeApagar && (
+                <button
+                  type="button" className="btn btn-ghost"
+                  onClick={() => {
+                    setErroLinha(null);
+                    setConfirmando(true);
+                  }}
+                  title="Apagar"
+                  style={{ padding: "0 6px", fontSize: 12 }}
+                >
+                  🗑
+                </button>
+              )}
+            </span>
+          )}
+
+          {/* confirmacao de apagar (inline, sem dialog do browser) */}
+          {confirmando && (
+            <span style={{ marginLeft: "auto", display: "flex", gap: 6, alignItems: "center" }}>
+              <span className="muted" style={{ fontSize: 12 }}>Apagar?</span>
+              <button
+                type="button" className="btn btn-ghost"
+                onClick={apagar} disabled={apagando}
+                style={{ padding: "0 8px", fontSize: 12, color: "var(--danger, #ef4444)" }}
+              >
+                {apagando ? "…" : "Sim"}
+              </button>
+              <button
+                type="button" className="btn btn-ghost"
+                onClick={() => setConfirmando(false)} disabled={apagando}
+                style={{ padding: "0 8px", fontSize: 12 }}
+              >
+                Nao
+              </button>
+            </span>
+          )}
+        </div>
+
+        {editando ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 4 }}>
+            <textarea
+              className="input"
+              autoFocus
+              rows={2}
+              value={texto}
+              disabled={salvando}
+              maxLength={5000}
+              onChange={(e) => setTexto(e.target.value)}
+              style={{ resize: "vertical" }}
+            />
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                type="button" className="btn btn-primary"
+                onClick={salvarEdicao}
+                disabled={salvando || !texto.trim()}
+                style={{ padding: "4px 12px", fontSize: 13 }}
+              >
+                {salvando ? "…" : "Salvar"}
+              </button>
+              <button
+                type="button" className="btn btn-ghost"
+                onClick={() => {
+                  setEditando(false);
+                  setTexto(c.content);
+                }}
+                disabled={salvando}
+                style={{ padding: "4px 12px", fontSize: 13 }}
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div
+            style={{
+              fontSize: 13.5, lineHeight: 1.45, whiteSpace: "pre-wrap",
+              wordBreak: "break-word",
+              color: c.is_deleted ? "var(--text-faint)" : "var(--text)",
+              fontStyle: c.is_deleted ? "italic" : "normal",
+            }}
+          >
+            {c.content}
+          </div>
+        )}
+
+        {erroLinha && (
+          <div className="error-box" style={{ marginTop: 6 }}>{erroLinha}</div>
+        )}
       </div>
     </div>
   );
