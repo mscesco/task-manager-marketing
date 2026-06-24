@@ -39,6 +39,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     { href: "/quadro", label: "Quadro geral" },
     { href: "/projetos", label: "Projetos" },
     { href: "/minhas-tarefas", label: "Minhas tarefas" },
+    { href: "/membros", label: "Membros" },
   ];
 
   function sair() {
@@ -78,7 +79,17 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           })}
         </nav>
         <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 12 }}>
-          <span className="muted" style={{ fontSize: 13 }}>{user?.name}</span>
+          <a
+            href="/perfil"
+            title="Meu perfil"
+            style={{
+              fontSize: 13, fontWeight: 600, padding: "5px 10px", borderRadius: 8,
+              color: pathname === "/perfil" ? "var(--accent)" : "var(--text-soft)",
+              background: pathname === "/perfil" ? "var(--accent-soft)" : "transparent",
+            }}
+          >
+            {user?.name}
+          </a>
           <button className="btn btn-ghost" onClick={sair} style={{ padding: "6px 12px" }}>
             Sair
           </button>

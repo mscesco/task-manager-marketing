@@ -328,6 +328,77 @@ export async function listMembers(): Promise<Member[]> {
 }
 
 // ---------------------------------------------------------------
+// GESTAO DE MEMBROS  (Entrega 15) -- exige team.manage no backend
+// ---------------------------------------------------------------
+
+export type MemberRole = "ADMIN" | "MANAGER" | "SUPERVISOR" | "OPERATOR";
+
+// POST /members devolve a senha provisoria UMA vez (ADR 0021 backend /
+// 0008 front). So existe nesta resposta; nao e re-buscavel.
+export type MemberCreated = Member & {
+  must_change_password: boolean;
+  password_expires_at: string | null;
+  temporary_password: string;
+};
+
+export type ResetPasswordResult = {
+  user_id: string;
+  must_change_password: boolean;
+  password_expires_at: string | null;
+  temporary_password: string;
+};
+
+// Zera o cache de membros -> a proxima listMembers() rebusca. Chamar apos
+// cadastrar/desativar pra lista e seletores de responsavel (Board/TaskDetail)
+// nao ficarem defasados (D8).
+export function invalidateMembers() {
+  _members = undefined;
+}
+
+// Cadastra um membro. teamId e role andam juntos (vincula a um subtime) ou
+// ambos ausentes. Exige team.manage (403 senao); 409 = e-mail repetido;
+// 422 = "1 subtime" ou campos invalidos. Invalida o cache no sucesso.
+export async function createMember(input: {
+  name: string;
+  email: string;
+  teamId?: string | null;
+  role?: MemberRole | null;
+}): Promise<MemberCreated> {
+  const r = await api<MemberCreated>("/api/v1/members", {
+    method: "POST",
+    body: {
+      name: input.name,
+      email: input.email,
+      ...(input.teamId && input.role
+        ? { team_id: input.teamId, role: input.role }
+        : {}),
+    },
+  });
+  invalidateMembers();
+  return r;
+}
+
+// Reset administrativo: gera nova senha provisoria, devolvida UMA vez
+// (team.manage). Nao invalida _members (so muda senha, nao a lista).
+export async function resetMemberPassword(
+  userId: string
+): Promise<ResetPasswordResult> {
+  return api<ResetPasswordResult>(`/api/v1/members/${userId}/reset-password`, {
+    method: "POST",
+  });
+}
+
+// Desativa (soft). VIA UNICA: nao ha endpoint de reativar (D5). O backend
+// barra desativar a si mesmo. Invalida o cache no sucesso.
+export async function deactivateMember(userId: string): Promise<Member> {
+  const r = await api<Member>(`/api/v1/members/${userId}/deactivate`, {
+    method: "POST",
+  });
+  invalidateMembers();
+  return r;
+}
+
+// ---------------------------------------------------------------
 // RESPONSAVEIS (assignees)  -- Entrega 10
 // ---------------------------------------------------------------
 // Rotas idempotentes do backend (Entrega 4): POST -> 201 (novo) / 200 (no-op);
