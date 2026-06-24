@@ -149,10 +149,28 @@ class TaskService:
 
         tenant = require_tenant()
 
-        # Entrega 3: resolve o time da task. Default = subtime do criador
-        # (regra 5-7 da spec); sem time resolvido -> 422.
-        team_id = command.team_id or team_scope.default_team_id(
-            tenant.memberships, tenant.team_tree
+        # Se tem pai: deve existir, no mesmo workspace, e no mesmo projeto.
+        # Carregado ANTES da resolucao de time porque a subtarefa HERDA o
+        # team_id do pai (Entrega 10 / ADR 0024): mantem a subtree coerente e
+        # evita o fallback silencioso pro subtime do criador (divida #2).
+        parent: Task | None = None
+        if command.parent_task_id is not None:
+            parent = await self._repo.get_by_id_or_raise(command.parent_task_id)
+            if parent.project_id != command.project_id:
+                raise ValidationError(
+                    "Task pai esta em projeto diferente do informado.",
+                    details={"field": "parent_task_id"},
+                )
+
+        # Resolve o time da task, em ordem de precedencia:
+        #   1. team_id explicito (quem manda, manda);
+        #   2. team_id do pai (heranca de subtarefa -- Entrega 10);
+        #   3. subtime default do criador (avulsa -- Entrega 3, regra 5-7).
+        # Sem nada resolvido -> 422.
+        team_id = (
+            command.team_id
+            or (parent.team_id if parent is not None else None)
+            or team_scope.default_team_id(tenant.memberships, tenant.team_tree)
         )
         if team_id is None:
             raise ValidationError(
@@ -167,7 +185,8 @@ class TaskService:
             project = await self._projects.get_by_id_or_raise(command.project_id)
             ProjectService._assert_visible_to_current_user(project)
             # Em projeto comum, o time da task fica na subarvore do time
-            # do projeto (regra 8 da spec).
+            # do projeto (regra 8 da spec). A heranca do pai ja satisfaz isto
+            # por construcao (o pai passou pela mesma checagem ao nascer).
             if not project.is_personal and project.team_id is not None:
                 allowed = {project.team_id} | team_scope.descendants(
                     project.team_id, tenant.team_tree
@@ -177,16 +196,6 @@ class TaskService:
                         "Time da task fora da subarvore do time do projeto.",
                         details={"field": "team_id"},
                     )
-
-        # Se tem pai: deve existir, no mesmo workspace, e no mesmo projeto.
-        parent: Task | None = None
-        if command.parent_task_id is not None:
-            parent = await self._repo.get_by_id_or_raise(command.parent_task_id)
-            if parent.project_id != command.project_id:
-                raise ValidationError(
-                    "Task pai esta em projeto diferente do informado.",
-                    details={"field": "parent_task_id"},
-                )
 
         task_id = uuid.uuid4()
         label = self._label_for(task_id)
