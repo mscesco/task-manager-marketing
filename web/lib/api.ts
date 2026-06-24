@@ -1,13 +1,18 @@
 // lib/api.ts
 // Cliente unico de acesso ao backend FastAPI. Centraliza:
-//  - a URL base (vem de env, nao chumbada -- troca local <-> VPS sem mexer no codigo)
+//  - a URL base (RELATIVA por padrao -- topologia A, ADR 0001 da raiz)
 //  - o token de acesso (guardado em memoria + localStorage)
 //  - tratamento de 401 (token expirado) e do gate 409 (troca de senha)
 //
 // Tudo que fala com a API passa por aqui. Nenhum componente monta URL na mao.
+//
+// BASE RELATIVA: por padrao API_URL = "" -> as chamadas viram "/api/v1/..."
+// relativas a origem do browser. Em DEV, o next.config reescreve /api ->
+// localhost:8000. Em PROD, o Traefik roteia /api -> backend. Mesma origem
+// nos dois -> CORS nao aparece. So defina NEXT_PUBLIC_API_URL (absoluta) se
+// algum dia precisar furar isso de proposito.
 
-const API_URL =
-  process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") || "http://localhost:8000";
+const API_URL = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") ?? "";
 const WORKSPACE_SLUG = process.env.NEXT_PUBLIC_WORKSPACE_SLUG || "unifecaf";
 
 const ACCESS_KEY = "tm_access_token";
@@ -24,6 +29,8 @@ export function setTokens(access: string, refresh: string) {
 export function clearTokens() {
   localStorage.removeItem(ACCESS_KEY);
   localStorage.removeItem(REFRESH_KEY);
+  // O time raiz e por-workspace; ao trocar de sessao, descarta o cache.
+  _rootTeamId = undefined;
 }
 
 export class ApiError extends Error {
@@ -62,7 +69,7 @@ export async function api<T>(path: string, opts: Options = {}): Promise<T> {
     // fetch so estoura assim em rede/CORS. Mensagem util em vez de "Failed to fetch".
     throw new ApiError(
       0,
-      "Nao consegui falar com o servidor. O backend esta rodando na porta 8000? (CORS liberado?)"
+      "Nao consegui falar com o servidor. O backend esta rodando na porta 8000?"
     );
   }
 
@@ -177,4 +184,59 @@ export async function listMyAssignments(params: {
   q.set("page", String(params.page ?? 1));
   q.set("size", String(params.size ?? 100));
   return api<MyAssignmentsResponse>(`/api/v1/me/assignments?${q.toString()}`);
+}
+
+// ---------------------------------------------------------------
+// TIMES + CRIACAO  (pin na raiz -- ver web/docs/adr/0001-pin-time-raiz-criacao.md)
+// ---------------------------------------------------------------
+// Toda task criada pelo quadro nasce DONA do time raiz (Marketing geral),
+// nao do subtime de quem cria. E o que garante que todo mundo enxerga E
+// edita o quadro geral mesmo depois de subtimes existirem. O id da raiz e
+// o time com parent_team_id == null. Buscado uma vez e memoizado.
+
+export type Team = {
+  id: string;
+  workspace_id: string;
+  parent_team_id: string | null;
+  name: string;
+  slug: string;
+};
+
+type TeamListResponse = { items: Team[]; total: number };
+
+let _rootTeamId: string | null | undefined; // undefined = ainda nao buscado
+
+export async function getRootTeamId(): Promise<string | null> {
+  if (_rootTeamId !== undefined) return _rootTeamId;
+  const res = await api<TeamListResponse>("/api/v1/workspaces/current/teams");
+  const root = res.items.find((t) => t.parent_team_id === null);
+  // DIVIDA DOCUMENTADA (ADR 0001 do front): se a raiz nao for achada,
+  // cai-se no null e o backend deriva o time pela membership -- hoje
+  // identico ao pin (sem subtimes). QUANDO subtimes existirem, trocar
+  // este null por erro duro, senao a heranca silenciosa volta.
+  _rootTeamId = root ? root.id : null;
+  return _rootTeamId;
+}
+
+export type TaskCreateInput = {
+  title: string;
+  description?: string;
+  priority?: string;
+  due_date?: string | null;
+};
+
+export async function createTask(input: TaskCreateInput): Promise<Task> {
+  const teamId = await getRootTeamId();
+  return api<Task>("/api/v1/tasks", {
+    method: "POST",
+    body: {
+      title: input.title,
+      description: input.description ?? "",
+      priority: input.priority, // ausente => backend usa MEDIUM
+      due_date: input.due_date ?? null,
+      // pin: so manda team_id se a raiz foi resolvida.
+      ...(teamId ? { team_id: teamId } : {}),
+      // project_id / parent_task_id de fora: task avulsa no time raiz.
+    },
+  });
 }

@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import AppShell from "@/components/AppShell";
 import TaskCard from "@/components/TaskCard";
+import TaskModal from "@/components/TaskModal";
 import { STATUSES } from "@/lib/status";
 import { listTasks, ApiError, type Task } from "@/lib/api";
 
@@ -16,12 +17,20 @@ export default function QuadroPage() {
 function Quadro() {
   const [tasks, setTasks] = useState<Task[] | null>(null);
   const [erro, setErro] = useState<string | null>(null);
+  const [modalAberto, setModalAberto] = useState(false);
 
   useEffect(() => {
     listTasks({ size: 100 })
       .then((r) => setTasks(r.items))
       .catch((e: ApiError) => setErro(e.message));
   }, []);
+
+  // Prepend otimista: o POST devolve a Task completa, entao o card aparece
+  // na hora (na coluna do status dela, BACKLOG por default) sem refetch.
+  function aoCriar(nova: Task) {
+    setTasks((prev) => [nova, ...(prev ?? [])]);
+    setModalAberto(false);
+  }
 
   if (erro) return <div className="error-box" style={{ maxWidth: 480 }}>{erro}</div>;
   if (!tasks) return <div className="muted">Carregando tarefas…</div>;
@@ -33,13 +42,20 @@ function Quadro() {
 
   return (
     <div>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 18 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 18 }}>
         <h1 style={{ margin: 0, fontSize: 19, letterSpacing: "-0.02em" }}>Quadro geral</h1>
         <span className="muted" style={{ fontSize: 13 }}>{tasks.length} tarefas</span>
+        <button
+          className="btn btn-primary"
+          onClick={() => setModalAberto(true)}
+          style={{ marginLeft: "auto", padding: "8px 14px" }}
+        >
+          + Nova tarefa
+        </button>
       </div>
 
       {tasks.length === 0 ? (
-        <EmptyState />
+        <EmptyState onNova={() => setModalAberto(true)} />
       ) : (
         <div style={{ display: "flex", gap: 14, overflowX: "auto", paddingBottom: 8 }}>
           {STATUSES.map((s) => {
@@ -69,11 +85,17 @@ function Quadro() {
           })}
         </div>
       )}
+
+      <TaskModal
+        open={modalAberto}
+        onClose={() => setModalAberto(false)}
+        onCreated={aoCriar}
+      />
     </div>
   );
 }
 
-function EmptyState() {
+function EmptyState({ onNova }: { onNova: () => void }) {
   return (
     <div
       style={{
@@ -82,9 +104,10 @@ function EmptyState() {
       }}
     >
       <p style={{ margin: 0, fontWeight: 600 }}>Nenhuma tarefa ainda</p>
-      <p className="muted" style={{ margin: "6px 0 0", fontSize: 13 }}>
-        As tarefas criadas vao aparecer aqui, organizadas por status.
+      <p className="muted" style={{ margin: "6px 0 14px", fontSize: 13 }}>
+        Crie a primeira — ela aparece aqui, organizada por status.
       </p>
+      <button className="btn btn-primary" onClick={onNova}>+ Nova tarefa</button>
     </div>
   );
 }
