@@ -1,0 +1,217 @@
+"""Models ORM operacionais: project e task.
+
+task e o agregado central do sistema. Pontos de atencao:
+    - hierarquia via parent_task_id + LTREE (path) + depth;
+    - subtask NAO tem tabela propria -- tudo e task;
+    - ciclos indiretos (A->B->C->A) sao validados na
+      service layer usando LTREE (o banco so impede
+      self-reference direta);
+    - soft delete + archive coexistem.
+"""
+
+from __future__ import annotations
+
+import uuid
+from datetime import date, datetime
+
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    Date,
+    DateTime,
+    Enum,
+    ForeignKey,
+    ForeignKeyConstraint,
+    Integer,
+    String,
+    UniqueConstraint,
+)
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.types import UserDefinedType
+
+from app.db.base import Base
+from app.db.mixins import (
+    ArchivableMixin,
+    SoftDeleteMixin,
+    TimestampMixin,
+    UUIDPrimaryKeyMixin,
+)
+from app.db.models.enums import PriorityLevel, ProjectStatus, TaskStatus
+
+
+class Ltree(UserDefinedType):
+    """Tipo LTREE do PostgreSQL (extensao ltree).
+
+    Mapeado como string no lado Python. Operacoes de
+    hierarquia (ancestral, descendente, @>, <@) sao feitas
+    com SQL textual na service/repository de task -- nao
+    precisamos de um ORM-type sofisticado para a foundation.
+    """
+
+    cache_ok = True
+
+    def get_col_spec(self, **kw: object) -> str:
+        return "LTREE"
+
+
+class Project(
+    UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, ArchivableMixin, Base
+):
+    """Projeto. Container de tasks.
+
+    is_personal:
+        True identifica o projeto pessoal de um user (1 por user,
+        garantido pelo indice parcial `project_personal_per_user`).
+        Pessoais nao podem ser deletados, arquivados nem editados
+        via PATCH (regras no ProjectService). Pessoal alheio eh
+        invisivel em list/get. Ver ADR 0001.
+    """
+
+    __tablename__ = "project"
+    __table_args__ = (
+        UniqueConstraint("id", "workspace_id", name="project_id_workspace"),
+        ForeignKeyConstraint(
+            ["created_by", "workspace_id"],
+            ["users.id", "users.workspace_id"],
+            ondelete="RESTRICT",
+            name="project_created_by",
+        ),
+        # Entrega 3: time dono do projeto (FK composta). Nulo no pessoal.
+        ForeignKeyConstraint(
+            ["team_id", "workspace_id"],
+            ["team.id", "team.workspace_id"],
+            ondelete="RESTRICT",
+            name="project_team",
+        ),
+        # Entrega 3 (ADR 0007): projeto comum exige time. Pessoal e
+        # soft-deleted ficam isentos.
+        CheckConstraint(
+            "is_personal OR team_id IS NOT NULL OR deleted_at IS NOT NULL",
+            name="project_team_required_when_common",
+        ),
+    )
+
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("workspace.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str] = mapped_column(String, nullable=False)
+    status: Mapped[ProjectStatus] = mapped_column(
+        Enum(ProjectStatus, name="project_status", create_type=False),
+        nullable=False,
+        server_default=ProjectStatus.PLANNING.value,
+        default=ProjectStatus.PLANNING,
+    )
+    priority: Mapped[PriorityLevel] = mapped_column(
+        Enum(PriorityLevel, name="priority_level", create_type=False),
+        nullable=False,
+        server_default=PriorityLevel.MEDIUM.value,
+        default=PriorityLevel.MEDIUM,
+    )
+    start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_by: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    # Entrega 3: time dono do projeto. Nulo no pessoal (ver CHECK).
+    team_id: Mapped[uuid.UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True), nullable=True
+    )
+    # Adicionado na migration 0002. server_default garante valor
+    # para linhas pre-existentes e para INSERTs que omitam o campo.
+    is_personal: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        server_default="false",
+        default=False,
+    )
+
+
+class Task(
+    UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, ArchivableMixin, Base
+):
+    """Task -- agregado central. Subtasks sao tasks com parent_task_id."""
+
+    __tablename__ = "task"
+    __table_args__ = (
+        UniqueConstraint("id", "workspace_id", name="task_id_workspace"),
+        ForeignKeyConstraint(
+            ["project_id", "workspace_id"],
+            ["project.id", "project.workspace_id"],
+            ondelete="RESTRICT",
+            name="task_project",
+        ),
+        ForeignKeyConstraint(
+            ["parent_task_id", "workspace_id"],
+            ["task.id", "task.workspace_id"],
+            ondelete="RESTRICT",
+            name="task_parent",
+        ),
+        ForeignKeyConstraint(
+            ["team_id", "workspace_id"],
+            ["team.id", "team.workspace_id"],
+            ondelete="RESTRICT",
+            name="task_team",
+        ),
+        ForeignKeyConstraint(
+            ["created_by", "workspace_id"],
+            ["users.id", "users.workspace_id"],
+            ondelete="RESTRICT",
+            name="task_created_by",
+        ),
+        CheckConstraint(
+            "parent_task_id IS NULL OR parent_task_id <> id",
+            name="task_no_self_parent",
+        ),
+        CheckConstraint("depth >= 0", name="task_depth_non_negative"),
+        CheckConstraint("position >= 0", name="task_position_non_negative"),
+    )
+
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("workspace.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    # Entrega 3: nullable -> tarefa avulsa (sem projeto). ADR 0006.
+    project_id: Mapped[uuid.UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True), nullable=True
+    )
+    parent_task_id: Mapped[uuid.UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True), nullable=True
+    )
+    team_id: Mapped[uuid.UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True), nullable=True
+    )
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str] = mapped_column(String, nullable=False)
+    status: Mapped[TaskStatus] = mapped_column(
+        Enum(TaskStatus, name="task_status", create_type=False),
+        nullable=False,
+        server_default=TaskStatus.BACKLOG.value,
+        default=TaskStatus.BACKLOG,
+    )
+    priority: Mapped[PriorityLevel] = mapped_column(
+        Enum(PriorityLevel, name="priority_level", create_type=False),
+        nullable=False,
+        server_default=PriorityLevel.MEDIUM.value,
+        default=PriorityLevel.MEDIUM,
+    )
+    position: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="0", default=0
+    )
+    depth: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="0", default=0
+    )
+    # path LTREE: NOT NULL no schema. Setado pela service de task
+    # ao criar/mover a task.
+    path: Mapped[str] = mapped_column(Ltree(), nullable=False)
+    start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_by: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)

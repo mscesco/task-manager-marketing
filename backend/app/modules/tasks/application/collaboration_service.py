@@ -1,0 +1,252 @@
+"""Casos de uso de colaboracao: responsaveis (assignees) e observadores
+(watchers) de uma task -- Entrega 4.
+
+Regras (fonte da verdade: specs/004-assignment-watchers/spec.md):
+    - assignment reusa os gates de time (TaskScopeGuards, ADR 0010) e NAO
+      concede edicao;
+    - designado precisa alcancar a task (lente DELE) -> 422 senao;
+    - pessoal e monouser -> 409 pra terceiro;
+    - watcher: self exige so ver; terceiro exige task.assign+edicao (ADR 0011);
+    - assigned/unassigned entram no history; watcher nao (ADR 0012);
+    - idempotente: re-adicionar -> no-op; remover inexistente -> 404.
+
+Reuso do gate de time: via TaskScopeGuards (helpers extraidos do
+TaskService). NAO duplica logica de time.
+"""
+
+from __future__ import annotations
+
+import uuid
+
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.logging import get_logger
+from app.core.tenant import Membership, require_tenant
+from app.db.models import Task
+from app.modules.auth.domain import team_scope
+from app.modules.tasks.application.task_guards import TaskScopeGuards, task_visible
+from app.modules.tasks.domain.history import (
+    build_assigned_entry,
+    build_unassigned_entry,
+)
+from app.modules.tasks.infrastructure.collaboration_repository import (
+    TaskAssignmentRepository,
+    TaskWatcherRepository,
+)
+from app.modules.tasks.infrastructure.project_repository import ProjectRepository
+from app.modules.tasks.infrastructure.task_repository import TaskRepository
+from app.modules.users.infrastructure.membership_repository import (
+    MembershipRepository,
+)
+from app.shared.exceptions.base import (
+    AuthorizationError,
+    ConflictError,
+    EntityNotFoundError,
+    ValidationError,
+)
+
+logger = get_logger(__name__)
+
+_ASSIGN_PERMISSION = "task.assign"
+
+
+class CollaborationService:
+    """Responsaveis e observadores de uma task. Commit no UoW (router)."""
+
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+        self._tasks = TaskRepository(session)
+        self._assignees = TaskAssignmentRepository(session)
+        self._watchers = TaskWatcherRepository(session)
+        self._projects = ProjectRepository(session)
+        self._members = MembershipRepository(session)
+        self._guards = TaskScopeGuards(session)
+
+    # ----------------------------------------------------
+    # Assignees
+    # ----------------------------------------------------
+    async def add_assignee(
+        self, *, task_id: uuid.UUID, user_id: uuid.UUID
+    ) -> tuple[Task, bool]:
+        """Designa um responsavel. Retorna (task, created).
+
+        created=False => no-op idempotente (ja era responsavel), sem
+        linha de history. Gates: visivel(404)+editavel(403); pessoal
+        monouser(409); designado alcanca a task(422).
+        """
+        task = await self._tasks.get_by_id_or_raise(task_id)
+        await self._guards.assert_visible(task)
+        await self._guards.assert_editable(task)
+        await self._assert_personal_monouser(task=task, user_id=user_id)
+        await self._assert_target_reaches_task(task=task, user_id=user_id)
+
+        if await self._assignees.get(task_id=task_id, user_id=user_id) is not None:
+            return task, False  # idempotente
+
+        tenant = require_tenant()
+        self._assignees.add(
+            task_id=task_id, user_id=user_id, assigned_by=tenant.user_id
+        )
+        await self._session.flush()
+        await self._tasks.write_history(
+            task=task,
+            user_id=tenant.user_id,
+            entries=[
+                build_assigned_entry(user_id=user_id, assigned_by=tenant.user_id)
+            ],
+        )
+        await self._session.flush()
+        logger.info("task.assigned", task_id=str(task_id), user_id=str(user_id))
+        return task, True
+
+    async def remove_assignee(
+        self, *, task_id: uuid.UUID, user_id: uuid.UUID
+    ) -> Task:
+        """Remove um responsavel. Par inexistente -> 404. Grava `unassigned`."""
+        task = await self._tasks.get_by_id_or_raise(task_id)
+        await self._guards.assert_visible(task)
+        await self._guards.assert_editable(task)
+
+        if not await self._assignees.remove(task_id=task_id, user_id=user_id):
+            raise EntityNotFoundError("TaskAssignment", identifier=user_id)
+
+        tenant = require_tenant()
+        await self._session.flush()
+        await self._tasks.write_history(
+            task=task,
+            user_id=tenant.user_id,
+            entries=[build_unassigned_entry(user_id=user_id)],
+        )
+        await self._session.flush()
+        logger.info("task.unassigned", task_id=str(task_id), user_id=str(user_id))
+        return task
+
+    async def list_assignees(self, *, task_id: uuid.UUID) -> list[uuid.UUID]:
+        """user_ids dos responsaveis. Exige ver a task (404 senao)."""
+        task = await self._tasks.get_by_id_or_raise(task_id)
+        await self._guards.assert_visible(task)
+        return await self._assignees.list_user_ids(task_id)
+
+    # ----------------------------------------------------
+    # Watchers
+    # ----------------------------------------------------
+    async def add_watcher(
+        self, *, task_id: uuid.UUID, user_id: uuid.UUID | None
+    ) -> tuple[Task, bool]:
+        """Inscreve observador. Self (user_id None/==eu) exige so ver;
+        terceiro exige task.assign+edicao + alcance + monouser.
+        Idempotente. Sem history (ADR 0012)."""
+        task = await self._tasks.get_by_id_or_raise(task_id)
+        await self._guards.assert_visible(task)
+
+        tenant = require_tenant()
+        target = user_id if user_id is not None else tenant.user_id
+        if target != tenant.user_id:
+            await self._assert_can_manage_others(task)
+            await self._assert_personal_monouser(task=task, user_id=target)
+            await self._assert_target_reaches_task(task=task, user_id=target)
+
+        if await self._watchers.get(task_id=task_id, user_id=target) is not None:
+            return task, False  # idempotente
+
+        self._watchers.add(task_id=task_id, user_id=target)
+        await self._session.flush()
+        logger.info("task.watched", task_id=str(task_id), user_id=str(target))
+        return task, True
+
+    async def remove_watcher(
+        self, *, task_id: uuid.UUID, user_id: uuid.UUID
+    ) -> Task:
+        """Remove observador. Self exige so ver; terceiro exige permissao.
+        Par inexistente -> 404."""
+        task = await self._tasks.get_by_id_or_raise(task_id)
+        await self._guards.assert_visible(task)
+
+        tenant = require_tenant()
+        if user_id != tenant.user_id:
+            await self._assert_can_manage_others(task)
+
+        if not await self._watchers.remove(task_id=task_id, user_id=user_id):
+            raise EntityNotFoundError("TaskWatcher", identifier=user_id)
+        logger.info("task.unwatched", task_id=str(task_id), user_id=str(user_id))
+        return task
+
+    async def list_watchers(self, *, task_id: uuid.UUID) -> list[uuid.UUID]:
+        task = await self._tasks.get_by_id_or_raise(task_id)
+        await self._guards.assert_visible(task)
+        return await self._watchers.list_user_ids(task_id)
+
+    # ----------------------------------------------------
+    # Hidratacao do detalhe (GET /tasks/{id})
+    # ----------------------------------------------------
+    async def assignee_ids_for(self, task: Task) -> list[uuid.UUID]:
+        """IDs pro TaskDetailResponse. Assume task ja visivel."""
+        return await self._assignees.list_user_ids(task.id)
+
+    async def watcher_ids_for(self, task: Task) -> list[uuid.UUID]:
+        return await self._watchers.list_user_ids(task.id)
+
+    # ----------------------------------------------------
+    # Helpers privados
+    # ----------------------------------------------------
+    async def _assert_can_manage_others(self, task: Task) -> None:
+        """Gate pra mexer em colaborador de TERCEIRO: task.assign + edicao."""
+        tenant = require_tenant()
+        if not tenant.has_permission(_ASSIGN_PERMISSION):
+            raise AuthorizationError(
+                f"Permissao necessaria: {_ASSIGN_PERMISSION}.",
+                details={"required_permission": _ASSIGN_PERMISSION},
+            )
+        await self._guards.assert_editable(task)
+
+    async def _assert_target_reaches_task(
+        self, *, task: Task, user_id: uuid.UUID
+    ) -> None:
+        """422 se o `user_id` alvo nao alcanca (nao enxerga) a task.
+
+        Usa a lente do ALVO (memberships dele), nao do ator. Valida tambem
+        que o alvo e usuario ativo do workspace.
+        """
+        tenant = require_tenant()
+        membership = await self._members.get_membership(
+            user_id=user_id, workspace_id=tenant.workspace_id
+        )
+        if membership is None or not membership.is_active:
+            raise ValidationError(
+                "Usuario designado inexistente ou inativo no workspace.",
+                details={"field": "user_id"},
+            )
+        target_memberships = tuple(
+            Membership(team_id=tid, role=role)
+            for tid, role in membership.team_roles
+        )
+        visible = team_scope.visible_team_ids(target_memberships, tenant.team_tree)
+        project = (
+            await self._projects.get_by_id(task.project_id)
+            if task.project_id is not None
+            else None
+        )
+        if not task_visible(
+            task=task, project=project, viewer_user_id=user_id, visible=visible
+        ):
+            raise ValidationError(
+                "Usuario designado nao alcanca a task.",
+                details={"field": "user_id"},
+            )
+
+    async def _assert_personal_monouser(
+        self, *, task: Task, user_id: uuid.UUID
+    ) -> None:
+        """409 se a task e de projeto pessoal e `user_id` nao e o dono."""
+        if task.project_id is None:
+            return
+        project = await self._projects.get_by_id(task.project_id)
+        if (
+            project is not None
+            and project.is_personal
+            and project.created_by != user_id
+        ):
+            raise ConflictError(
+                "Task de projeto pessoal e monouser.",
+                details={"task_id": str(task.id)},
+            )

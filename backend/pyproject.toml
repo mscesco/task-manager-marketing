@@ -1,0 +1,75 @@
+[project]
+name = "task-manager-backend"
+version = "0.1.0"
+description = "Sistema de gestao de demandas/tarefas multi-tenant - backend"
+requires-python = ">=3.12"
+dependencies = [
+    # --- Web framework ---
+    "fastapi==0.115.6",
+    "uvicorn[standard]==0.34.0",
+    # --- ORM / DB ---
+    "sqlalchemy==2.0.36",
+    "asyncpg==0.30.0",
+    "alembic==1.14.0",
+    # --- Config / validacao ---
+    # [email] traz o pacote email-validator, exigido pelo
+    # tipo EmailStr usado nos schemas de autenticacao.
+    "pydantic[email]==2.10.4",
+    "pydantic-settings==2.7.0",
+    # --- Auth ---
+    "pyjwt==2.10.1",
+    "passlib[bcrypt]==1.7.4",
+    # bcrypt fixado em 4.0.1: versoes 4.1+ removeram o atributo
+    # __about__ que o passlib 1.7.4 ainda inspeciona, gerando
+    # um warning ruidoso a cada hash. 4.0.1 e a ultima compativel.
+    "bcrypt==4.0.1",
+    # --- Logging estruturado ---
+    "structlog==24.4.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==8.3.4",
+    "pytest-asyncio==0.25.0",
+    "httpx==0.28.1",
+    "ruff==0.8.6",
+    "mypy==1.14.1",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["app", "tests"]
+
+[tool.ruff.lint]
+# E/F = pyflakes+pycodestyle, I = isort, UP = pyupgrade,
+# B = bugbear, ASYNC = flake8-async, RUF = ruff-specific
+select = ["E", "F", "I", "UP", "B", "ASYNC", "RUF"]
+ignore = ["B008"]  # B008: chamadas em defaults sao o padrao do FastAPI (Depends())
+
+[tool.ruff.lint.isort]
+known-first-party = ["app"]
+
+[tool.mypy]
+python_version = "3.12"
+plugins = ["pydantic.mypy"]
+strict = true
+# SQLAlchemy 2.0 ja tem typing nativo; sem plugin extra.
+warn_unused_ignores = true
+disallow_untyped_defs = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+# Garante que o pacote `app` seja importavel ao rodar pytest
+# a partir da raiz do projeto (necessario no container api-dev,
+# onde o projeto e montado por volume e nao instalado).
+pythonpath = ["."]
+markers = [
+    "integration: requer Postgres de teste (TEST_DATABASE_URL); pulado sem ele",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"

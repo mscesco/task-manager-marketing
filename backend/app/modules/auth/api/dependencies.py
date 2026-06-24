@@ -1,0 +1,208 @@
+"""Dependencies de autenticacao e autorizacao.
+
+Implementa o fluxo pedido na foundation:
+
+    JWT  ->  dependency  ->  current user  ->  workspace
+         ->  membership (roles)  ->  TenantContext
+
+Estas dependencies sao o ponto onde:
+    1. o JWT do header Authorization e validado;
+    2. o usuario e a membership (papeis no workspace) sao
+       carregados do banco;
+    3. as permissions sao derivadas dos papeis;
+    4. o TenantContext (ContextVar) e POPULADO -- a partir
+       dai, repositories e services enxergam workspace,
+       roles e permissions sem receber parametro.
+
+Uma rota fica protegida ao depender de `CurrentUserDep` ou
+`TenantContextDep`. Rotas sem essas dependencies sao
+publicas (login, health). Isso torna explicito, rota a
+rota, o que exige autenticacao.
+
+`require_permission(...)` e uma fabrica de dependency para
+proteger rotas por permissao especifica.
+"""
+
+from __future__ import annotations
+
+import uuid
+from collections.abc import Callable
+from typing import Annotated
+
+from fastapi import Depends
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+
+from app.core.deps import SessionDep
+from app.core.tenant import Membership, TeamNode, TenantContext, set_tenant
+from app.db.models import User
+from app.modules.auth.domain.permissions import permissions_for_roles
+from app.modules.auth.infrastructure.security import TokenType, decode_token
+from app.modules.users.infrastructure.membership_repository import (
+    MembershipRepository,
+)
+from app.shared.exceptions.base import (
+    AuthenticationError,
+    AuthorizationError,
+    PasswordChangeRequiredError,
+)
+
+# auto_error=False: nos mesmos lancamos AuthenticationError,
+# para a resposta seguir o formato de erro padrao da app.
+_bearer_scheme = HTTPBearer(auto_error=False)
+
+
+async def get_tenant_context(
+    credentials: Annotated[
+        HTTPAuthorizationCredentials | None, Depends(_bearer_scheme)
+    ],
+    session: SessionDep,
+) -> TenantContext:
+    """Resolve o TenantContext completo da requisicao.
+
+    Esta e a dependency central de autenticacao. Apos ela, o
+    ContextVar de tenant esta populado com workspace, user,
+    roles e permissions.
+    """
+    if credentials is None or not credentials.credentials:
+        raise AuthenticationError("Credenciais ausentes.")
+
+    payload = decode_token(credentials.credentials, expected_type=TokenType.ACCESS)
+
+    try:
+        user_id = uuid.UUID(payload["sub"])
+        workspace_id = uuid.UUID(payload["ws"])
+    except (KeyError, ValueError) as exc:
+        raise AuthenticationError("Token malformado.") from exc
+
+    # Carrega a membership (usuario + papeis no workspace).
+    membership_repo = MembershipRepository(session)
+    membership = await membership_repo.get_membership(
+        user_id=user_id, workspace_id=workspace_id
+    )
+    if membership is None:
+        raise AuthenticationError("Usuario do token nao encontrado.")
+    if not membership.is_active:
+        raise AuthenticationError("Usuario inativo.")
+
+    # Entrega 7 (ADR 0020): gate de troca obrigatoria. Aplicado AQUI, no
+    # ponto unico por onde passa toda rota de negocio, falha fechado --
+    # rota nova futura ja nasce coberta. As rotas que precisam funcionar
+    # com a pendencia (auth/change-password, auth/me) usam a dependency
+    # leniente get_user_allowing_pending, que NAO passa por aqui.
+    if membership.must_change_password:
+        raise PasswordChangeRequiredError()
+
+    # Deriva permissoes dos papeis (mapa estatico, sem RBAC em tabela).
+    permissions = permissions_for_roles(membership.roles)
+
+    # Entrega 3: pares (time, papel) + arvore de times, para o escopo
+    # por time. roles/permissions seguem como camada de "quais acoes".
+    memberships = tuple(
+        Membership(team_id=team_id, role=role)
+        for team_id, role in membership.team_roles
+    )
+    tree_rows = await membership_repo.load_team_tree(workspace_id=workspace_id)
+    team_tree = tuple(
+        TeamNode(team_id=tid, parent_team_id=pid) for tid, pid in tree_rows
+    )
+
+    context = TenantContext(
+        workspace_id=workspace_id,
+        user_id=user_id,
+        roles=membership.roles,
+        permissions=permissions,
+        memberships=memberships,
+        team_tree=team_tree,
+    )
+
+    # Popula o ContextVar. Escopo da task asyncio da requisicao;
+    # nao precisa reset manual.
+    set_tenant(context)
+    return context
+
+
+async def get_current_user(
+    context: Annotated[TenantContext, Depends(get_tenant_context)],
+    session: SessionDep,
+) -> User:
+    """Carrega a entidade User do usuario autenticado.
+
+    Depende de get_tenant_context (que ja validou o token e
+    populou o contexto). Use quando a rota precisa dos dados
+    do usuario; para apenas autorizar, TenantContextDep basta.
+    """
+    user = await session.get(User, context.user_id)
+    if user is None:
+        # Inconsistente: a membership existia mas o user sumiu.
+        raise AuthenticationError("Usuario nao encontrado.")
+    return user
+
+
+def require_permission(permission: str) -> Callable[..., TenantContext]:
+    """Fabrica de dependency: protege uma rota por permissao.
+
+    Uso na rota::
+
+        @router.post(
+            "/tasks",
+            dependencies=[Depends(require_permission("task.create"))],
+        )
+
+    Retorna o TenantContext (a rota pode receber tambem, se
+    quiser). Lanca AuthorizationError (-> HTTP 403) se o
+    usuario autenticado nao tiver a permissao.
+    """
+
+    def _guard(
+        context: Annotated[TenantContext, Depends(get_tenant_context)],
+    ) -> TenantContext:
+        if not context.has_permission(permission):
+            raise AuthorizationError(
+                f"Permissao necessaria: {permission}.",
+                details={"required_permission": permission},
+            )
+        return context
+
+    return _guard
+
+
+# Type aliases para deixar as assinaturas das rotas limpas.
+TenantContextDep = Annotated[TenantContext, Depends(get_tenant_context)]
+CurrentUserDep = Annotated[User, Depends(get_current_user)]
+
+
+async def get_user_allowing_pending(
+    credentials: Annotated[
+        HTTPAuthorizationCredentials | None, Depends(_bearer_scheme)
+    ],
+    session: SessionDep,
+) -> User:
+    """Valida o token e carrega o User SEM aplicar o gate de troca (ADR 0020).
+
+    Uso EXCLUSIVO das rotas que precisam funcionar com a pendencia ativa:
+    auth/change-password (onde a pessoa destrava) e auth/me (para o front
+    saber o estado e renderizar a tela de troca). NAO popula
+    permissions/lente -- e so "quem e o portador deste token".
+
+    Mantem as checagens que NAO dependem da pendencia: token valido,
+    usuario existe, usuario do workspace do token, usuario ativo.
+    """
+    if credentials is None or not credentials.credentials:
+        raise AuthenticationError("Credenciais ausentes.")
+
+    payload = decode_token(credentials.credentials, expected_type=TokenType.ACCESS)
+    try:
+        user_id = uuid.UUID(payload["sub"])
+        workspace_id = uuid.UUID(payload["ws"])
+    except (KeyError, ValueError) as exc:
+        raise AuthenticationError("Token malformado.") from exc
+
+    user = await session.get(User, user_id)
+    if user is None or user.workspace_id != workspace_id:
+        raise AuthenticationError("Usuario do token nao encontrado.")
+    if not user.is_active:
+        raise AuthenticationError("Usuario inativo.")
+    return user
+
+
+PendingUserDep = Annotated[User, Depends(get_user_allowing_pending)]

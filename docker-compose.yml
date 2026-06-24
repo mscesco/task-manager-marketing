@@ -1,0 +1,76 @@
+# =====================================================
+# docker-compose.yml - RAIZ DO MONOREPO (desenvolvimento)
+# -----------------------------------------------------
+# Mudou em relacao ao compose antigo (que vivia dentro do
+# backend): os contexts e volumes agora apontam pra ./backend.
+# O front (web/) roda via `npm run dev` em DEV -- nao tem
+# service aqui ainda. O Dockerfile do web + service entram na
+# ENTREGA DE INFRA, no dia do deploy na VPS (com Traefik).
+#
+# O PostgreSQL continua EXTERNO (VPS Hostinger, a mesma do
+# N8N), acessado via DATABASE_URL no backend/.env. Nao ha
+# Postgres aqui de proposito.
+# =====================================================
+
+services:
+  # -----------------------------------------------------
+  # api -- servico de APLICACAO (rodar o backend)
+  # -----------------------------------------------------
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: runtime
+    container_name: task_manager_api
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    ports:
+      - "8000:8000"
+    # Hot-reload em dev: monta o codigo do backend.
+    volumes:
+      - ./backend/app:/app/app
+      - ./backend/alembic:/app/alembic
+    command: >
+      uvicorn app.main:app
+      --host 0.0.0.0
+      --port 8000
+      --reload
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # -----------------------------------------------------
+  # api-dev -- DESENVOLVIMENTO / TESTES (alembic, pytest, ruff, mypy)
+  # Uso: docker compose run --rm api-dev alembic upgrade head
+  #      docker compose run --rm api-dev pytest
+  # -----------------------------------------------------
+  api-dev:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: dev
+    env_file:
+      - ./backend/.env
+    volumes:
+      - ./backend:/app
+    working_dir: /app
+    entrypoint: []
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # -----------------------------------------------------
+  # db-test -- Postgres EFEMERO da suite de integracao.
+  # Suba com: docker compose up -d db-test
+  # -----------------------------------------------------
+  db-test:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: test
+      POSTGRES_PASSWORD: test
+      POSTGRES_DB: taskmanager_test
+    tmpfs:
+      - /var/lib/postgresql/data
+    volumes:
+      - ./backend/schema/00_test_extensions.sql:/docker-entrypoint-initdb.d/00_test_extensions.sql:ro
+
+# Sem volumes de banco: Postgres externo, persiste fora deste compose.

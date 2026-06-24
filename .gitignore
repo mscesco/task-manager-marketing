@@ -1,0 +1,30 @@
+# ===== segredos / ambiente (NUNCA versionar) =====
+# Recriados na maquina; ficam fora do git e dos zips.
+backend/.env
+web/.env.local
+.env
+.env.*
+!.env.example
+!backend/.env.example
+
+# ===== Python (backend) =====
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+.venv/
+venv/
+
+# ===== Node / Next (web) =====
+node_modules/
+web/.next/
+web/out/
+web/build/
+.next/
+
+# ===== misc =====
+.DS_Store
+Thumbs.db
+*.log
