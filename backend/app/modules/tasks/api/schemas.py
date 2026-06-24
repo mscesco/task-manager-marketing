@@ -164,10 +164,22 @@ class TaskMoveRequest(BaseModel):
     project_id: uuid.UUID | None = None
 
 
+class TaskListItem(TaskResponse):
+    """Item da listagem do quadro: TaskResponse + responsaveis (so IDs).
+
+    assignee_ids vem em LOTE (1 query pra pagina inteira) -- alimenta o selo
+    do card sem N+1. Supera a "decisao 9" original (lista enxuta) porque o
+    quadro precisa mostrar quem e responsavel de relance (Entrega 10 / ADR
+    0025). watcher_ids segue FORA da lista (so no detalhe).
+    """
+
+    assignee_ids: list[uuid.UUID] = []
+
+
 class TaskListResponse(BaseModel):
     """Pagina de tasks."""
 
-    items: list[TaskResponse]
+    items: list[TaskListItem]
     total: int
     page: int
     size: int

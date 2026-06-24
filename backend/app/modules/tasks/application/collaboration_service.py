@@ -183,6 +183,15 @@ class CollaborationService:
         """IDs pro TaskDetailResponse. Assume task ja visivel."""
         return await self._assignees.list_user_ids(task.id)
 
+    async def assignee_ids_for_tasks(
+        self, tasks: list[Task]
+    ) -> dict[uuid.UUID, list[uuid.UUID]]:
+        """assignees de uma pagina de tasks em LOTE (1 query) -- pro selo do
+        quadro. Assume as tasks ja visiveis (vieram da listagem escopada)."""
+        return await self._assignees.list_user_ids_for_tasks(
+            [t.id for t in tasks]
+        )
+
     async def watcher_ids_for(self, task: Task) -> list[uuid.UUID]:
         return await self._watchers.list_user_ids(task.id)
 

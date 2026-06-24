@@ -14,8 +14,9 @@ import {
 import AppShell from "@/components/AppShell";
 import TaskCard from "@/components/TaskCard";
 import TaskModal from "@/components/TaskModal";
+import TaskDetail from "@/components/TaskDetail";
 import { STATUSES } from "@/lib/status";
-import { listTasks, updateTask, ApiError, type Task } from "@/lib/api";
+import { listTasks, updateTask, listMembers, ApiError, type Task } from "@/lib/api";
 
 export default function QuadroPage() {
   return (
@@ -27,9 +28,14 @@ export default function QuadroPage() {
 
 function Quadro() {
   const [tasks, setTasks] = useState<Task[] | null>(null);
+  const [members, setMembers] = useState<Map<string, { name: string }>>(
+    new Map()
+  );
   const [erro, setErro] = useState<string | null>(null);
   const [criando, setCriando] = useState(false);
   const [editando, setEditando] = useState<Task | null>(null);
+  const [detalhe, setDetalhe] = useState<Task | null>(null);
+  const [pilha, setPilha] = useState<Task[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
@@ -46,6 +52,11 @@ function Quadro() {
     listTasks({ size: 100 })
       .then((r) => setTasks(r.items))
       .catch((e: ApiError) => setErro(e.message));
+    // Mapa id->nome pro selo. Se falhar, o selo cai pra "?" -- nao quebra
+    // o quadro (o dado de quem-e-responsavel ja veio no assignee_ids).
+    listMembers()
+      .then((ms) => setMembers(new Map(ms.map((m) => [m.id, { name: m.name }]))))
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -59,17 +70,65 @@ function Quadro() {
   function aoSalvar(saved: Task) {
     setTasks((prev) => {
       const lista = prev ?? [];
-      return lista.some((t) => t.id === saved.id)
-        ? lista.map((t) => (t.id === saved.id ? saved : t))
-        : [saved, ...lista];
+      const existente = lista.find((t) => t.id === saved.id);
+      // Mutacao NAO devolve assignee_ids (ADR 0025) -> preserva o que ja
+      // tinhamos, senao o selo sumiria ao editar.
+      const m = {
+        ...saved,
+        assignee_ids: saved.assignee_ids ?? existente?.assignee_ids ?? [],
+      };
+      return existente
+        ? lista.map((t) => (t.id === saved.id ? m : t))
+        : [m, ...lista];
     });
     setCriando(false);
     setEditando(null);
   }
 
-  function abrirEdicao(task: Task) {
+  function abrirDetalhe(task: Task) {
     if (suprimirClique.current) return; // veio logo apos um arrasto: ignora
-    setEditando(task);
+    setPilha([]);
+    setDetalhe(task);
+  }
+
+  // Navegacao dentro do detalhe: clicar numa subtarefa empilha a atual e
+  // foca a subtarefa; "voltar" desempilha.
+  function abrirSubtarefa(sub: Task) {
+    setPilha((p) => (detalhe ? [...p, detalhe] : p));
+    setDetalhe(sub);
+  }
+  function voltarDetalhe() {
+    setPilha((p) => {
+      if (p.length === 0) return p;
+      setDetalhe(p[p.length - 1]);
+      return p.slice(0, -1);
+    });
+  }
+  function fecharDetalhe() {
+    setDetalhe(null);
+    setPilha([]);
+  }
+
+  // Upsert generico (subtarefa criada no detalhe entra na lista do quadro ->
+  // alimenta a propria sublista e o badge do card pai).
+  function aoUpsert(t: Task) {
+    setTasks((prev) => {
+      if (!prev) return [t];
+      const existente = prev.find((x) => x.id === t.id);
+      if (!existente) return [t, ...prev];
+      // updateTask NAO retorna assignee_ids (ADR 0025) -> preserva o que tinha,
+      // senao concluir-rapido zerava os responsaveis da subtarefa.
+      const merged = { ...t, assignee_ids: t.assignee_ids ?? existente.assignee_ids };
+      return prev.map((x) => (x.id === t.id ? merged : x));
+    });
+  }
+
+  // Responsaveis mudaram no detalhe -> reflete no assignee_ids do card (selo)
+  // sem recarregar. O detalhe ja gravou no backend (otimista).
+  function aoMudarResponsaveis(taskId: string, userIds: string[]) {
+    setTasks((prev) =>
+      prev ? prev.map((t) => (t.id === taskId ? { ...t, assignee_ids: userIds } : t)) : prev
+    );
   }
 
   const activeTask = useMemo(
@@ -102,7 +161,13 @@ function Quadro() {
 
     try {
       const atualizada = await updateTask(taskId, { status: destino });
-      setTasks((prev) => prev!.map((t) => (t.id === taskId ? atualizada : t)));
+      // PATCH nao devolve assignee_ids (ADR 0025) -> preserva, senao o selo
+      // some ao mover o card.
+      setTasks((prev) =>
+        prev!.map((t) =>
+          t.id === taskId ? { ...atualizada, assignee_ids: t.assignee_ids } : t
+        )
+      );
     } catch (err) {
       setTasks((prev) =>
         prev!.map((t) => (t.id === taskId ? { ...t, status: statusAnterior } : t))
@@ -119,15 +184,32 @@ function Quadro() {
   if (erro) return <div className="error-box" style={{ maxWidth: 480 }}>{erro}</div>;
   if (!tasks) return <div className="muted">Carregando tarefas…</div>;
 
+  // Filhos DIRETOS por pai (badge do card) -- conta antes de filtrar raizes.
+  const subCount: Record<string, number> = {};
+  const subDone: Record<string, number> = {};
+  for (const t of tasks) {
+    if (!t.parent_task_id) continue;
+    subCount[t.parent_task_id] = (subCount[t.parent_task_id] ?? 0) + 1;
+    if (t.status === "COMPLETED")
+      subDone[t.parent_task_id] = (subDone[t.parent_task_id] ?? 0) + 1;
+  }
+
+  // O quadro mostra SO raizes (subtarefa vive dentro do card pai). depth===0.
+  const raizes = tasks.filter((t) => t.depth === 0);
   const porStatus: Record<string, Task[]> = {};
   for (const s of STATUSES) porStatus[s.key] = [];
-  for (const t of tasks) (porStatus[t.status] ??= []).push(t);
+  for (const t of raizes) (porStatus[t.status] ??= []).push(t);
+
+  // Tarefa focada no detalhe: versao FRESCA da lista (reflete assignees/status
+  // atualizados), e os filhos diretos dela pra sublista.
+  const focado = detalhe ? tasks.find((t) => t.id === detalhe.id) ?? detalhe : null;
+  const filhosFocado = focado ? tasks.filter((t) => t.parent_task_id === focado.id) : [];
 
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 18 }}>
         <h1 style={{ margin: 0, fontSize: 19, letterSpacing: "-0.02em" }}>Quadro geral</h1>
-        <span className="muted" style={{ fontSize: 13 }}>{tasks.length} tarefas</span>
+        <span className="muted" style={{ fontSize: 13 }}>{raizes.length} tarefas</span>
         <button
           className="btn btn-primary"
           onClick={() => setCriando(true)}
@@ -137,7 +219,7 @@ function Quadro() {
         </button>
       </div>
 
-      {tasks.length === 0 ? (
+      {raizes.length === 0 ? (
         <EmptyState onNova={() => setCriando(true)} />
       ) : (
         <DndContext sensors={sensors} onDragStart={onDragStart} onDragEnd={onDragEnd}>
@@ -145,7 +227,14 @@ function Quadro() {
             {STATUSES.map((s) => (
               <Coluna key={s.key} status={s} count={(porStatus[s.key] || []).length}>
                 {(porStatus[s.key] || []).map((t) => (
-                  <CardArrastavel key={t.id} task={t} onAbrir={abrirEdicao} />
+                  <CardArrastavel
+                    key={t.id}
+                    task={t}
+                    onAbrir={abrirDetalhe}
+                    members={members}
+                    subtaskCount={subCount[t.id] ?? 0}
+                    subtaskDone={subDone[t.id] ?? 0}
+                  />
                 ))}
               </Coluna>
             ))}
@@ -154,7 +243,12 @@ function Quadro() {
           <DragOverlay>
             {activeTask ? (
               <div style={{ width: 256, cursor: "grabbing" }}>
-                <TaskCard task={activeTask} />
+                <TaskCard
+                  task={activeTask}
+                  members={members}
+                  subtaskCount={subCount[activeTask.id] ?? 0}
+                  subtaskDone={subDone[activeTask.id] ?? 0}
+                />
               </div>
             ) : null}
           </DragOverlay>
@@ -169,6 +263,22 @@ function Quadro() {
           setEditando(null);
         }}
         onSaved={aoSalvar}
+      />
+
+      <TaskDetail
+        task={focado}
+        members={members}
+        filhos={filhosFocado}
+        temVoltar={pilha.length > 0}
+        onVoltar={voltarDetalhe}
+        onClose={fecharDetalhe}
+        onEditar={(t) => {
+          fecharDetalhe();
+          setEditando(t);
+        }}
+        onAssigneesChange={aoMudarResponsaveis}
+        onAbrirSubtarefa={abrirSubtarefa}
+        onSubtaskUpsert={aoUpsert}
       />
 
       {toast && (
@@ -229,9 +339,15 @@ function Coluna({
 function CardArrastavel({
   task,
   onAbrir,
+  members,
+  subtaskCount,
+  subtaskDone,
 }: {
   task: Task;
   onAbrir: (task: Task) => void;
+  members: Map<string, { name: string }>;
+  subtaskCount: number;
+  subtaskDone: number;
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: task.id });
   return (
@@ -246,7 +362,12 @@ function CardArrastavel({
         touchAction: "none",
       }}
     >
-      <TaskCard task={task} />
+      <TaskCard
+        task={task}
+        members={members}
+        subtaskCount={subtaskCount}
+        subtaskDone={subtaskDone}
+      />
     </div>
   );
 }

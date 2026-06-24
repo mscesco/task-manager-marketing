@@ -29,8 +29,10 @@ export function setTokens(access: string, refresh: string) {
 export function clearTokens() {
   localStorage.removeItem(ACCESS_KEY);
   localStorage.removeItem(REFRESH_KEY);
-  // O time raiz e por-workspace; ao trocar de sessao, descarta o cache.
+  // O time raiz e a lista de membros sao por-workspace; ao trocar de
+  // sessao, descarta os caches.
   _rootTeamId = undefined;
+  _members = undefined;
 }
 
 export class ApiError extends Error {
@@ -147,6 +149,10 @@ export type Task = {
   is_archived: boolean;
   created_at: string;
   updated_at: string;
+  // So a listagem (GET /tasks) traz isto, em lote (selo do card). As
+  // respostas de mutacao (POST/PATCH/move) NAO trazem -> opcional, e o
+  // estado local PRESERVA o valor no merge (nao sobrescrever com undefined).
+  assignee_ids?: string[];
 };
 
 export type TaskListResponse = {
@@ -262,4 +268,85 @@ export async function updateTask(
   input: TaskUpdateInput
 ): Promise<Task> {
   return api<Task>(`/api/v1/tasks/${id}`, { method: "PATCH", body: input });
+}
+
+// ---------------------------------------------------------------
+// MEMBROS  (dropdown de responsavel + resolucao de nome/iniciais do selo)
+// ---------------------------------------------------------------
+// O /assignees devolve so user_ids; o nome e as iniciais do selo saem daqui.
+// Lista por-workspace, estavel na sessao -> buscada uma vez e memoizada
+// (mesmo padrao do time raiz). Limpa no clearTokens.
+
+export type Member = {
+  id: string;
+  workspace_id: string;
+  name: string;
+  email: string;
+  is_active: boolean;
+};
+
+type MemberListResponse = { items: Member[]; total: number };
+
+let _members: Member[] | undefined; // undefined = ainda nao buscado
+
+export async function listMembers(): Promise<Member[]> {
+  if (_members !== undefined) return _members;
+  const res = await api<MemberListResponse>("/api/v1/members");
+  _members = res.items;
+  return _members;
+}
+
+// ---------------------------------------------------------------
+// RESPONSAVEIS (assignees)  -- Entrega 10
+// ---------------------------------------------------------------
+// Rotas idempotentes do backend (Entrega 4): POST -> 201 (novo) / 200 (no-op);
+// DELETE -> 200 com a lista, ou 404 se o par nao existia. Todas devolvem a
+// lista atual de user_ids da task. N responsaveis por (sub)tarefa.
+
+export type CollaboratorList = { task_id: string; user_ids: string[] };
+
+export async function listAssignees(taskId: string): Promise<string[]> {
+  const res = await api<CollaboratorList>(`/api/v1/tasks/${taskId}/assignees`);
+  return res.user_ids;
+}
+
+export async function addAssignee(
+  taskId: string,
+  userId: string
+): Promise<string[]> {
+  const res = await api<CollaboratorList>(
+    `/api/v1/tasks/${taskId}/assignees`,
+    { method: "POST", body: { user_id: userId } }
+  );
+  return res.user_ids;
+}
+
+// Remove um responsavel. O backend devolve 404 se o par nao existia; o
+// chamador (UI) trata isso como "ja removido" (idempotente na tela).
+export async function removeAssignee(
+  taskId: string,
+  userId: string
+): Promise<string[]> {
+  const res = await api<CollaboratorList>(
+    `/api/v1/tasks/${taskId}/assignees/${userId}`,
+    { method: "DELETE" }
+  );
+  return res.user_ids;
+}
+
+// ---------------------------------------------------------------
+// SUBTAREFAS  -- Entrega 10 (fatia 3)
+// ---------------------------------------------------------------
+// Cria uma subtarefa pendurada num pai. NAO manda team_id: o backend herda
+// o time do pai (ADR 0024) -- por isso nasce no mesmo time do pai (o raiz,
+// no quadro geral) e nao no subtime do criador. Sem project_id (avulsa, como
+// o pai do quadro). Status default BACKLOG no backend.
+export async function createSubtask(
+  parentTaskId: string,
+  title: string
+): Promise<Task> {
+  return api<Task>("/api/v1/tasks", {
+    method: "POST",
+    body: { title, parent_task_id: parentTaskId },
+  });
 }

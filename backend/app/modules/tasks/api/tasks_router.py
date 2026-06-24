@@ -27,6 +27,7 @@ from app.modules.tasks.api.schemas import (
     DeleteTaskResponse,
     TaskCreateRequest,
     TaskDetailResponse,
+    TaskListItem,
     TaskListResponse,
     TaskMoveRequest,
     TaskResponse,
@@ -82,8 +83,18 @@ async def list_tasks(
             include_archived=include_archived,
         ),
     )
+    # Selo de responsaveis: assignees da pagina inteira em UMA query (lote),
+    # nao 1 por card (Entrega 10 / ADR 0025).
+    amap = await CollaborationService(session).assignee_ids_for_tasks(
+        page_result.items
+    )
     return TaskListResponse(
-        items=[TaskResponse.model_validate(t) for t in page_result.items],
+        items=[
+            TaskListItem.model_validate(t).model_copy(
+                update={"assignee_ids": amap.get(t.id, [])}
+            )
+            for t in page_result.items
+        ],
         total=page_result.total,
         page=page_result.page,
         size=page_result.size,

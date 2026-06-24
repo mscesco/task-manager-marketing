@@ -33,6 +33,28 @@ class TaskAssignmentRepository(BaseRepository[TaskAssignment]):
         rows = (await self.session.execute(stmt)).scalars().all()
         return list(rows)
 
+    async def list_user_ids_for_tasks(
+        self, task_ids: list[uuid.UUID]
+    ) -> dict[uuid.UUID, list[uuid.UUID]]:
+        """assignees de VARIAS tasks em UMA query (evita N+1 no quadro).
+
+        Devolve {task_id: [user_id, ...]} com toda task pedida presente
+        (lista vazia se nao tem responsavel). Ordem estavel por assigned_at.
+        """
+        if not task_ids:
+            return {}
+        stmt = (
+            self._base_select()
+            .with_only_columns(TaskAssignment.task_id, TaskAssignment.user_id)
+            .where(TaskAssignment.task_id.in_(task_ids))
+            .order_by(TaskAssignment.assigned_at.asc())
+        )
+        rows = (await self.session.execute(stmt)).all()
+        out: dict[uuid.UUID, list[uuid.UUID]] = {tid: [] for tid in task_ids}
+        for task_id, user_id in rows:
+            out.setdefault(task_id, []).append(user_id)
+        return out
+
     async def get(
         self, *, task_id: uuid.UUID, user_id: uuid.UUID
     ) -> TaskAssignment | None:
