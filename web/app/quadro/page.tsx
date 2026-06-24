@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   DndContext,
   DragOverlay,
@@ -28,12 +28,16 @@ export default function QuadroPage() {
 function Quadro() {
   const [tasks, setTasks] = useState<Task[] | null>(null);
   const [erro, setErro] = useState<string | null>(null);
-  const [modalAberto, setModalAberto] = useState(false);
+  const [criando, setCriando] = useState(false);
+  const [editando, setEditando] = useState<Task | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
-  // Drag so comeca depois de mover ~8px. Assim um clique seco (abrir editar,
-  // Slice 3) nao vira arrasto -- e no touch o toque nao "gruda" no card.
+  // Guarda contra "clique fantasma" logo apos um arrasto: o dnd dispara
+  // onDragEnd, ligamos a trava, e o click que o browser as vezes emite em
+  // seguida e ignorado. Um clique de verdade nunca passa por onDragEnd.
+  const suprimirClique = useRef(false);
+
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
   );
@@ -44,16 +48,28 @@ function Quadro() {
       .catch((e: ApiError) => setErro(e.message));
   }, []);
 
-  // Toast some sozinho.
   useEffect(() => {
     if (!toast) return;
     const id = setTimeout(() => setToast(null), 3500);
     return () => clearTimeout(id);
   }, [toast]);
 
-  function aoCriar(nova: Task) {
-    setTasks((prev) => [nova, ...(prev ?? [])]);
-    setModalAberto(false);
+  // Create e edit caem aqui: se o id ja existe, substitui in-place;
+  // senao, prepend (tarefa nova).
+  function aoSalvar(saved: Task) {
+    setTasks((prev) => {
+      const lista = prev ?? [];
+      return lista.some((t) => t.id === saved.id)
+        ? lista.map((t) => (t.id === saved.id ? saved : t))
+        : [saved, ...lista];
+    });
+    setCriando(false);
+    setEditando(null);
+  }
+
+  function abrirEdicao(task: Task) {
+    if (suprimirClique.current) return; // veio logo apos um arrasto: ignora
+    setEditando(task);
   }
 
   const activeTask = useMemo(
@@ -67,30 +83,29 @@ function Quadro() {
 
   async function onDragEnd(e: DragEndEvent) {
     setActiveId(null);
+    // Houve arrasto -> trava o proximo clique por um instante.
+    suprimirClique.current = true;
+    setTimeout(() => (suprimirClique.current = false), 60);
+
     const taskId = String(e.active.id);
-    const destino = e.over ? String(e.over.id) : null; // id da coluna = status
-    if (!destino) return; // soltou fora de qualquer coluna
+    const destino = e.over ? String(e.over.id) : null;
+    if (!destino) return;
 
     const atual = tasks?.find((t) => t.id === taskId);
-    if (!atual || atual.status === destino) return; // sem mudanca real
+    if (!atual || atual.status === destino) return;
 
     const statusAnterior = atual.status;
 
-    // Otimista: o card pula pra coluna nova na hora.
     setTasks((prev) =>
       prev!.map((t) => (t.id === taskId ? { ...t, status: destino } : t))
     );
 
     try {
       const atualizada = await updateTask(taskId, { status: destino });
-      // Sincroniza com o servidor (ex.: completed_at setado/limpo).
       setTasks((prev) => prev!.map((t) => (t.id === taskId ? atualizada : t)));
     } catch (err) {
-      // Reverte pra coluna de origem e avisa.
       setTasks((prev) =>
-        prev!.map((t) =>
-          t.id === taskId ? { ...t, status: statusAnterior } : t
-        )
+        prev!.map((t) => (t.id === taskId ? { ...t, status: statusAnterior } : t))
       );
       const e2 = err as ApiError;
       setToast(
@@ -115,7 +130,7 @@ function Quadro() {
         <span className="muted" style={{ fontSize: 13 }}>{tasks.length} tarefas</span>
         <button
           className="btn btn-primary"
-          onClick={() => setModalAberto(true)}
+          onClick={() => setCriando(true)}
           style={{ marginLeft: "auto", padding: "8px 14px" }}
         >
           + Nova tarefa
@@ -123,21 +138,19 @@ function Quadro() {
       </div>
 
       {tasks.length === 0 ? (
-        <EmptyState onNova={() => setModalAberto(true)} />
+        <EmptyState onNova={() => setCriando(true)} />
       ) : (
         <DndContext sensors={sensors} onDragStart={onDragStart} onDragEnd={onDragEnd}>
           <div style={{ display: "flex", gap: 14, overflowX: "auto", paddingBottom: 8 }}>
             {STATUSES.map((s) => (
               <Coluna key={s.key} status={s} count={(porStatus[s.key] || []).length}>
                 {(porStatus[s.key] || []).map((t) => (
-                  <CardArrastavel key={t.id} task={t} />
+                  <CardArrastavel key={t.id} task={t} onAbrir={abrirEdicao} />
                 ))}
               </Coluna>
             ))}
           </div>
 
-          {/* O card "fantasma" que segue o cursor durante o arrasto.
-              Renderiza num portal -> nao e cortado pela rolagem das colunas. */}
           <DragOverlay>
             {activeTask ? (
               <div style={{ width: 256, cursor: "grabbing" }}>
@@ -149,9 +162,13 @@ function Quadro() {
       )}
 
       <TaskModal
-        open={modalAberto}
-        onClose={() => setModalAberto(false)}
-        onCreated={aoCriar}
+        open={criando || editando !== null}
+        task={editando}
+        onClose={() => {
+          setCriando(false);
+          setEditando(null);
+        }}
+        onSaved={aoSalvar}
       />
 
       {toast && (
@@ -170,7 +187,6 @@ function Quadro() {
   );
 }
 
-// ---- coluna que aceita soltar (droppable) ----
 function Coluna({
   status,
   count,
@@ -210,18 +226,24 @@ function Coluna({
   );
 }
 
-// ---- card arrastavel (draggable) ----
-function CardArrastavel({ task }: { task: Task }) {
+function CardArrastavel({
+  task,
+  onAbrir,
+}: {
+  task: Task;
+  onAbrir: (task: Task) => void;
+}) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: task.id });
   return (
     <div
       ref={setNodeRef}
       {...listeners}
       {...attributes}
+      onClick={() => onAbrir(task)}
       style={{
         opacity: isDragging ? 0.4 : 1,
         cursor: "grab",
-        touchAction: "none", // necessario pro arrasto funcionar no touch
+        touchAction: "none",
       }}
     >
       <TaskCard task={task} />

@@ -26,9 +26,8 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from datetime import date
+from datetime import UTC, date, datetime
 
-from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger
@@ -210,7 +209,7 @@ class TaskService:
         )
         # Se ja vem como COMPLETED, marca completed_at.
         if command.status == TaskStatus.COMPLETED:
-            task.completed_at = func.now()  # type: ignore[assignment]
+            task.completed_at = datetime.now(UTC)  # type: ignore[assignment]
 
         self._repo.add(task)
         await self._session.flush()
@@ -290,7 +289,7 @@ class TaskService:
         # Status com ajuste de completed_at.
         if command.status is not None and command.status != task.status:
             if command.status == TaskStatus.COMPLETED:
-                task.completed_at = func.now()  # type: ignore[assignment]
+                task.completed_at = datetime.now(UTC) # type: ignore[assignment]
             elif task.status == TaskStatus.COMPLETED:
                 task.completed_at = None
             task.status = command.status

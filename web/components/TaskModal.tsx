@@ -1,35 +1,58 @@
 "use client";
 // components/TaskModal.tsx
-// Modal de CRIAR tarefa (Slice 1). O modo EDITAR entra no Slice 3
-// reusando este mesmo componente (recebera uma `task` opcional).
+// Modal de CRIAR e EDITAR tarefa.
+//  - sem `task`  -> criar  (POST /tasks, pin do time raiz no api.ts)
+//  - com `task`  -> editar (PATCH /tasks/{id} SO com o que mudou)
 //
-// Campos: titulo (obrigatorio), descricao (opcional), prioridade, prazo.
-// O time NAO aparece aqui de proposito (pin na raiz, ADR 0001 do front):
-// quem define o time e o quadro, nao o formulario.
+// EDITAR prefilla com o objeto que a listagem ja trouxe -- nao ha
+// GET /tasks/{id} (contorna o bug E6, ver web/docs/adr/0002).
+// O time NAO aparece de proposito: o quadro define o time (ADR 0001).
 
 import { useEffect, useState } from "react";
-import { createTask, ApiError, type Task } from "@/lib/api";
-import { PRIORITY_LABEL } from "@/lib/status";
+import {
+  createTask,
+  updateTask,
+  ApiError,
+  type Task,
+  type TaskUpdateInput,
+} from "@/lib/api";
+import { PRIORITY_LABEL, STATUSES } from "@/lib/status";
 
 const PRIORITIES = ["LOW", "MEDIUM", "HIGH", "URGENT"] as const;
 
 export default function TaskModal({
   open,
+  task,
   onClose,
-  onCreated,
+  onSaved,
 }: {
   open: boolean;
+  task?: Task | null; // presente => modo editar
   onClose: () => void;
-  onCreated: (task: Task) => void;
+  onSaved: (task: Task) => void;
 }) {
+  const editando = !!task;
+
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [priority, setPriority] = useState<string>("MEDIUM");
   const [dueDate, setDueDate] = useState("");
+  const [status, setStatus] = useState<string>("BACKLOG");
   const [saving, setSaving] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
-  // Esc fecha o modal (so quando aberto e nao salvando).
+  // Prefilla (ou limpa) sempre que abre / troca a task alvo.
+  useEffect(() => {
+    if (!open) return;
+    setTitle(task?.title ?? "");
+    setDescription(task?.description ?? "");
+    setPriority(task?.priority ?? "MEDIUM");
+    setDueDate(task?.due_date ?? "");
+    setStatus(task?.status ?? "BACKLOG");
+    setErro(null);
+  }, [open, task]);
+
+  // Esc fecha (quando aberto e nao salvando).
   useEffect(() => {
     if (!open) return;
     function onKey(e: KeyboardEvent) {
@@ -42,17 +65,8 @@ export default function TaskModal({
 
   if (!open) return null;
 
-  function limpar() {
-    setTitle("");
-    setDescription("");
-    setPriority("MEDIUM");
-    setDueDate("");
-    setErro(null);
-  }
-
   function fechar() {
     if (saving) return;
-    limpar();
     onClose();
   }
 
@@ -60,24 +74,43 @@ export default function TaskModal({
     e.preventDefault();
     const t = title.trim();
     if (!t) {
-      // So o titulo e obrigatorio (descricao e opcional -- decisao de produto).
       setErro("O titulo e obrigatorio.");
       return;
     }
     setSaving(true);
     setErro(null);
     try {
-      const task = await createTask({
-        title: t,
-        description: description.trim(),
-        priority,
-        due_date: dueDate || null,
-      });
+      let saved: Task;
+      if (editando && task) {
+        // PATCH parcial: monta so o que mudou em relacao ao original.
+        const diff: TaskUpdateInput = {};
+        if (t !== task.title) diff.title = t;
+        const d = description.trim();
+        if (d !== (task.description ?? "")) diff.description = d;
+        if (priority !== task.priority) diff.priority = priority;
+        if (status !== task.status) diff.status = status;
+        const due = dueDate || null;
+        if (due !== (task.due_date ?? null)) diff.due_date = due;
+
+        if (Object.keys(diff).length === 0) {
+          // Nada mudou: nao chama a API, so fecha.
+          setSaving(false);
+          onClose();
+          return;
+        }
+        saved = await updateTask(task.id, diff);
+      } else {
+        saved = await createTask({
+          title: t,
+          description: description.trim(),
+          priority,
+          due_date: dueDate || null,
+        });
+      }
       setSaving(false);
-      limpar();
-      onCreated(task);
+      onSaved(saved);
     } catch (err) {
-      setErro((err as ApiError).message || "Nao foi possivel criar a tarefa.");
+      setErro((err as ApiError).message || "Nao foi possivel salvar a tarefa.");
       setSaving(false);
     }
   }
@@ -102,7 +135,9 @@ export default function TaskModal({
         }}
       >
         <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
-          <h2 style={{ margin: 0, fontSize: 18, letterSpacing: "-0.02em" }}>Nova tarefa</h2>
+          <h2 style={{ margin: 0, fontSize: 18, letterSpacing: "-0.02em" }}>
+            {editando ? "Editar tarefa" : "Nova tarefa"}
+          </h2>
           <button
             type="button" className="btn btn-ghost" onClick={fechar}
             style={{ padding: "4px 10px" }} aria-label="Fechar"
@@ -157,12 +192,27 @@ export default function TaskModal({
           </div>
         </div>
 
+        {/* Status so no modo editar -- na criacao nasce BACKLOG e arrasta-se depois. */}
+        {editando && (
+          <div className="field">
+            <label className="label" htmlFor="t-status">Status</label>
+            <select
+              id="t-status" className="input" value={status}
+              onChange={(e) => setStatus(e.target.value)}
+            >
+              {STATUSES.map((s) => (
+                <option key={s.key} value={s.key}>{s.label}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 4 }}>
           <button type="button" className="btn btn-ghost" onClick={fechar} disabled={saving}>
             Cancelar
           </button>
           <button type="submit" className="btn btn-primary" disabled={saving}>
-            {saving ? "Criando…" : "Criar tarefa"}
+            {saving ? "Salvando…" : editando ? "Salvar" : "Criar tarefa"}
           </button>
         </div>
       </form>
