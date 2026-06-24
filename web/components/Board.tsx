@@ -23,6 +23,23 @@ import TaskDetail from "@/components/TaskDetail";
 import { STATUSES } from "@/lib/status";
 import { listTasks, updateTask, listMembers, listProjects, ApiError, type Task } from "@/lib/api";
 
+// Tira acento e caixa pra busca casar "midia" com "Midia Paga" etc.
+function normalizar(s: string) {
+  return s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+}
+
+// "Hoje" como YYYY-MM-DD no fuso LOCAL. due_date vem do backend como date
+// pura (sem hora), entao a comparacao e string vs string (ISO ordena certo).
+// Nada de new Date(due_date): isso interpretaria como UTC e escorregaria 1 dia.
+function hojeISO() {
+  const d = new Date();
+  const mes = String(d.getMonth() + 1).padStart(2, "0");
+  const dia = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${mes}-${dia}`;
+}
+
+type FiltroPrazo = "todos" | "atrasadas" | "em-dia";
+
 export default function Board({
   projectId,
   title,
@@ -44,6 +61,10 @@ export default function Board({
   const [activeId, setActiveId] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [mostrarArquivadas, setMostrarArquivadas] = useState(false);
+  // Filtros client-side (Entrega 13). NAO entram no useEffect de fetch:
+  // filtram em memoria sobre o lote ja carregado, sem bater na API.
+  const [busca, setBusca] = useState("");
+  const [prazo, setPrazo] = useState<FiltroPrazo>("todos");
 
   // Guarda contra "clique fantasma" logo apos um arrasto.
   const suprimirClique = useRef(false);
@@ -187,9 +208,27 @@ export default function Board({
       subDone[t.parent_task_id] = (subDone[t.parent_task_id] ?? 0) + 1;
   }
 
-  const raizes = tasks.filter(
+  // visiveis = raizes apos o toggle de arquivadas (eixo que SOMA). raizes =
+  // visiveis apos busca + prazo (eixos que ESTREITAM). Os contadores e o
+  // porStatus saem de `raizes` pra nao mentir quando ha filtro ativo.
+  const buscaNorm = normalizar(busca);
+  const hoje = hojeISO();
+  const temFiltro = buscaNorm !== "" || prazo !== "todos";
+
+  const visiveis = tasks.filter(
     (t) => t.depth === 0 && (mostrarArquivadas || !t.is_archived)
   );
+  const raizes = visiveis.filter((t) => {
+    if (buscaNorm && !normalizar(t.title).includes(buscaNorm)) return false;
+    // Sem data: aparece em qualquer filtro de prazo (decisao da Camila).
+    if (prazo !== "todos" && t.due_date) {
+      // Concluida nunca e atrasada (ja foi entregue).
+      const atrasada = t.status !== "COMPLETED" && t.due_date < hoje;
+      if (prazo === "atrasadas" && !atrasada) return false;
+      if (prazo === "em-dia" && atrasada) return false;
+    }
+    return true;
+  });
   const porStatus: Record<string, Task[]> = {};
   for (const s of STATUSES) porStatus[s.key] = [];
   for (const t of raizes) (porStatus[t.status] ??= []).push(t);
@@ -199,9 +238,34 @@ export default function Board({
 
   return (
     <div>
-      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 18 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 18, flexWrap: "wrap" }}>
         <h1 style={{ margin: 0, fontSize: 19, letterSpacing: "-0.02em" }}>{title}</h1>
-        <span className="muted" style={{ fontSize: 13 }}>{raizes.length} tarefas</span>
+        <span className="muted" style={{ fontSize: 13 }}>
+          {temFiltro ? `${raizes.length} de ${visiveis.length}` : raizes.length} tarefas
+        </span>
+        <input
+          value={busca}
+          onChange={(e) => setBusca(e.target.value)}
+          placeholder="Buscar por titulo…"
+          style={{
+            fontSize: 13, padding: "6px 10px", borderRadius: 8,
+            border: "1px solid var(--border)", background: "var(--surface)",
+            color: "var(--text)", minWidth: 170,
+          }}
+        />
+        <select
+          value={prazo}
+          onChange={(e) => setPrazo(e.target.value as FiltroPrazo)}
+          style={{
+            fontSize: 13, padding: "6px 10px", borderRadius: 8,
+            border: "1px solid var(--border)", background: "var(--surface)",
+            color: "var(--text)", cursor: "pointer",
+          }}
+        >
+          <option value="todos">Prazo: todos</option>
+          <option value="atrasadas">Atrasadas</option>
+          <option value="em-dia">Em dia</option>
+        </select>
         <label
           style={{
             marginLeft: "auto", display: "flex", alignItems: "center", gap: 6,
@@ -225,7 +289,16 @@ export default function Board({
       </div>
 
       {raizes.length === 0 ? (
-        <EmptyState onNova={() => setCriando(true)} />
+        temFiltro ? (
+          <SemResultado
+            onLimpar={() => {
+              setBusca("");
+              setPrazo("todos");
+            }}
+          />
+        ) : (
+          <EmptyState onNova={() => setCriando(true)} />
+        )
       ) : (
         <DndContext sensors={sensors} onDragStart={onDragStart} onDragEnd={onDragEnd}>
           <div style={{ display: "flex", gap: 14, overflowX: "auto", paddingBottom: 8 }}>
@@ -379,6 +452,24 @@ function CardArrastavel({
         subtaskDone={subtaskDone}
         projectName={projectName}
       />
+    </div>
+  );
+}
+
+function SemResultado({ onLimpar }: { onLimpar: () => void }) {
+  return (
+    <div
+      style={{
+        border: "1px dashed var(--border)", borderRadius: 12, padding: 40,
+        textAlign: "center", maxWidth: 480,
+      }}
+    >
+      <p style={{ margin: 0, fontWeight: 600 }}>Nada encontrado</p>
+      <p className="muted" style={{ margin: "6px 0 14px", fontSize: 13 }}>
+        Nenhuma tarefa bate com o filtro atual. As subtarefas e tarefas de
+        outras paginas nao entram na busca.
+      </p>
+      <button className="btn" onClick={onLimpar}>Limpar filtros</button>
     </div>
   );
 }

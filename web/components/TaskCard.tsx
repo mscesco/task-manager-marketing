@@ -62,7 +62,7 @@ export default function TaskCard({
         </span>
         {task.due_date && (
           <span className="muted" style={{ fontSize: 11.5 }}>
-            ◷ {new Date(task.due_date).toLocaleDateString("pt-BR")}
+            ◷ {new Date(task.due_date + "T00:00:00").toLocaleDateString("pt-BR")}
           </span>
         )}
         {subtaskCount > 0 && (
