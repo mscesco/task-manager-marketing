@@ -34,6 +34,7 @@ from app.modules.tasks.application.project_service import ProjectService
 from app.modules.users.infrastructure.user_repository import UserRepository
 from app.modules.workspaces.infrastructure.team_repository import TeamRepository
 from app.shared.exceptions.base import (
+    AuthorizationError,
     BusinessRuleError,
     ConflictError,
     EntityNotFoundError,
@@ -48,15 +49,19 @@ class CreateMemberCommand:
     """Dados para cadastrar um novo membro.
 
     Entrega 7: SEM senha -- o backend gera uma provisoria aleatoria
-    (ADR 0019). O cliente so informa identidade e vinculo opcional.
+    (ADR 0019). O cliente so informa identidade e vinculo.
+
+    Spec 014: team_id e role sao AMBOS obrigatorios. O time pode ser o
+    principal (raiz) OU um subtime. Nao ha mais membro orfao -- o estado
+    sem vinculo deixa de ser construivel.
     """
 
     name: str
     email: str
-    #: equipe opcional para ja vincular o membro ao cria-lo
-    team_id: uuid.UUID | None = None
-    #: papel na equipe (obrigatorio se team_id for informado)
-    role: UserTeamRole | None = None
+    #: equipe (principal ou subtime) onde o membro nasce vinculado
+    team_id: uuid.UUID
+    #: papel do membro na equipe
+    role: UserTeamRole
 
 
 @dataclass(frozen=True, slots=True)
@@ -104,7 +109,8 @@ class MemberService:
     async def create_member(self, command: CreateMemberCommand) -> ProvisionedMember:
         """Cadastra um usuario no workspace corrente com senha PROVISORIA.
 
-        Opcionalmente ja vincula o usuario a uma equipe com um papel.
+        Vincula o usuario a uma equipe (principal OU subtime) com um papel.
+        Ambos sao obrigatorios (Spec 014) -- nao existe membro orfao.
         workspace_id vem sempre do tenant corrente.
 
         Entrega 7: o backend gera uma senha provisoria aleatoria, marca
@@ -112,14 +118,18 @@ class MemberService:
         provisoria em claro volta no ProvisionedMember para o router
         serializar UMA vez (ADR 0021).
 
+        Spec 014 (gate D2): criar um membro com role=ADMIN exige que o
+        ATOR corrente seja ADMIN. MANAGER (que tem team.manage) cadastra
+        membros, mas nao consegue criar ADMIN.
+
         Cria TAMBEM o projeto pessoal do novo membro (ADR 0001), no mesmo
         Unit of Work -- atomico.
 
         Erros:
             ValidationError   -- campos mal formados.
+            AuthorizationError -- ator nao-ADMIN tentando criar ADMIN.
             ConflictError     -- e-mail ja usado no workspace.
             EntityNotFoundError -- team_id informado nao existe.
-            BusinessRuleError -- team_id sem role (ou vice-versa).
         """
         name = command.name.strip()
         email = command.email.strip().lower()
@@ -134,11 +144,13 @@ class MemberService:
             raise ValidationError(
                 "E-mail invalido.", details={"field": "email"}
             )
-        # team_id e role andam juntos: ou ambos, ou nenhum.
-        if (command.team_id is None) != (command.role is None):
-            raise BusinessRuleError(
-                "Para vincular a uma equipe, informe equipe E papel.",
-                details={"fields": ["team_id", "role"]},
+        # --- gate D2: so um ADMIN pode criar outro ADMIN ---
+        if command.role is UserTeamRole.ADMIN and not require_tenant().has_role(
+            "ADMIN"
+        ):
+            raise AuthorizationError(
+                "Apenas um ADMIN pode criar um membro ADMIN.",
+                details={"field": "role"},
             )
 
         # --- unicidade de e-mail ---
@@ -148,14 +160,10 @@ class MemberService:
                 details={"field": "email", "value": email},
             )
 
-        # --- equipe (se informada) deve existir no workspace ---
-        team: Team | None = None
-        if command.team_id is not None:
-            team = await self._teams.get_by_id(command.team_id)
-            if team is None:
-                raise EntityNotFoundError(
-                    "Team", identifier=command.team_id
-                )
+        # --- equipe (principal ou subtime) deve existir no workspace ---
+        team = await self._teams.get_by_id(command.team_id)
+        if team is None:
+            raise EntityNotFoundError("Team", identifier=command.team_id)
 
         # --- cria o usuario com senha provisoria (Entrega 7) ---
         temporary_password = generate_temporary_password()
@@ -170,15 +178,15 @@ class MemberService:
         self._users.add(user)
         await self._session.flush()  # garante user.id
 
-        # --- vinculo opcional com a equipe ---
-        if team is not None and command.role is not None:
-            await self._assert_one_subteam(user_id=user.id, team=team)
-            self._users.add_team_membership(
-                user_id=user.id,
-                team_id=team.id,
-                role=command.role,
-            )
-            await self._session.flush()
+        # --- vinculo com a equipe (sempre: nao ha mais membro orfao) ---
+        # _assert_one_subteam e no-op no principal (parent_team_id is None).
+        await self._assert_one_subteam(user_id=user.id, team=team)
+        self._users.add_team_membership(
+            user_id=user.id,
+            team_id=team.id,
+            role=command.role,
+        )
+        await self._session.flush()
 
         # --- projeto pessoal automatico (ADR 0001) ---
         # No mesmo UoW: se algo abaixo falhar, o user tambem rola
@@ -189,7 +197,7 @@ class MemberService:
         logger.info(
             "member.created",
             user_id=str(user.id),
-            team_id=str(team.id) if team else None,
+            team_id=str(team.id),
         )
         return ProvisionedMember(user=user, temporary_password=temporary_password)
 

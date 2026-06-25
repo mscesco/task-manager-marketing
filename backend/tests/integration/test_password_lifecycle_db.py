@@ -18,6 +18,7 @@ import pytest
 
 from app.db.models import User, Workspace
 from app.modules.auth.application.service import AuthService
+from app.db.models.enums import UserTeamRole
 from app.modules.users.application.member_service import (
     CreateMemberCommand,
     MemberService,
@@ -51,7 +52,10 @@ async def _create_member(db, ws, team, admin):
     ):
         return await MemberService(db).create_member(
             CreateMemberCommand(
-                name="Novato", email=f"novato-{team.hex[:6]}@fecaf.com.br"
+                name="Novato",
+                email=f"novato-{team.hex[:6]}@fecaf.com.br",
+                team_id=team,
+                role=UserTeamRole.OPERATOR,
             )
         )
 

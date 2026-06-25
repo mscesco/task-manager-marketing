@@ -88,19 +88,18 @@ def test_provisioning_rejects_bad_email() -> None:
 # --------------------------------------------------------
 # CreateMemberCommand -- estrutura (Entrega 7: sem senha)
 # --------------------------------------------------------
-def test_create_member_command_team_and_role_optional() -> None:
-    """team_id e role sao opcionais (membro sem equipe inicial).
+def test_create_member_command_requires_team_and_role() -> None:
+    """Spec 014: team_id e role sao obrigatorios -- sem default.
 
-    Entrega 7: o command nao carrega mais senha -- o backend gera a
-    provisoria. Aqui so se valida a estrutura do vinculo opcional.
+    Construir o command sem eles e um erro de tipo (TypeError): o estado
+    orfao (membro sem vinculo) deixa de ser construivel.
     """
-    cmd = CreateMemberCommand(name="Fulano", email="f@unifecaf.com.br")
-    assert cmd.team_id is None
-    assert cmd.role is None
+    with pytest.raises(TypeError):
+        CreateMemberCommand(name="Fulano", email="f@unifecaf.com.br")  # type: ignore[call-arg]
 
 
 def test_create_member_command_with_team() -> None:
-    """team_id e role podem ser informados juntos."""
+    """team_id e role informados juntos (principal ou subtime)."""
     from app.db.models.enums import UserTeamRole
 
     team_id = uuid.uuid4()

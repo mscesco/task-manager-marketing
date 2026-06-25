@@ -38,14 +38,16 @@ class MemberCreateRequest(BaseModel):
     senha provisoria aleatoria e a devolve uma unica vez em
     MemberCreatedResponse (ADR 0019/0021).
 
-    team_id e role sao opcionais, mas andam juntos: para ja vincular
-    o membro a uma equipe, informe os dois.
+    Spec 014: team_id e role sao AMBOS obrigatorios. O time pode ser o
+    principal (raiz) OU um subtime -- a escolha e explicita na tela. Nao
+    existe mais membro orfao (sem vinculo). Criar com role=ADMIN exige
+    que o ator seja ADMIN (gate no service).
     """
 
     name: str = Field(min_length=1, max_length=255)
     email: EmailStr
-    team_id: uuid.UUID | None = None
-    role: UserTeamRole | None = None
+    team_id: uuid.UUID
+    role: UserTeamRole
 
 
 class MemberCreatedResponse(MemberResponse):
