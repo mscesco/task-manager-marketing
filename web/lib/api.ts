@@ -53,8 +53,83 @@ type Options = {
   auth?: boolean; // anexa o Bearer token (default true)
 };
 
+// ---------------------------------------------------------------
+// RECUPERACAO DE 401  (refresh do access token)
+// ---------------------------------------------------------------
+// O access token dura ~15 min. Quando expira, a proxima request volta 401.
+// Aqui a gente troca o refresh (longo, dias) por um par novo e RETENTA a
+// request UMA vez -- transparente pro usuario, sem F5.
+//
+// Duas travas que importam (ver consultoria, nao remover):
+//   1. SINGLE-FLIGHT: varias requests batendo 401 ao mesmo tempo disparam
+//      UM unico refresh; todas aguardam a MESMA promise. Sem isso, N
+//      requests concorrentes fariam N refreshes correndo pra gravar o token.
+//   2. ANTI-LOOP: a retentativa carrega isRetry=true e NAO dispara outro
+//      refresh. Se o refresh tambem falha (refresh expirado/revogado), a
+//      sessao esta morta -> limpa e manda pro login. Sem retentativa infinita.
+
+let _refreshing: Promise<string | null> | null = null;
+
+function getRefreshToken(): string | null {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem(REFRESH_KEY);
+}
+
+// Chama /auth/refresh DIRETO no fetch -- nao passa por api()/_request, senao
+// recursa no proprio tratamento de 401. Devolve o access novo, ou null se o
+// refresh tambem falhou (sessao morta).
+async function doRefresh(): Promise<string | null> {
+  const refresh = getRefreshToken();
+  if (!refresh) return null;
+  try {
+    const res = await fetch(`${API_URL}/api/v1/auth/refresh`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refresh_token: refresh }),
+    });
+    if (!res.ok) return null;
+    const pair = (await res.json()) as TokenPair;
+    setTokens(pair.access_token, pair.refresh_token);
+    return pair.access_token;
+  } catch {
+    // Rede caiu no meio do refresh: trata como falha (nao derruba a sessao
+    // a forca; o proximo 401 tenta de novo).
+    return null;
+  }
+}
+
+// Single-flight: se ja ha um refresh em voo, devolve a mesma promise.
+function refreshAccessToken(): Promise<string | null> {
+  if (_refreshing === null) {
+    _refreshing = doRefresh().finally(() => {
+      _refreshing = null;
+    });
+  }
+  return _refreshing;
+}
+
+// Sessao morta: limpa tokens e caches e manda pro login UMA vez. Hard-nav de
+// proposito -- garante o redirect venha a request da tela que for (e o buraco
+// de hoje: cada .catch trata do seu jeito, a maioria nao redireciona).
+function killSession() {
+  clearTokens();
+  if (typeof window !== "undefined" && window.location.pathname !== "/login") {
+    window.location.replace("/login");
+  }
+}
+
 export async function api<T>(path: string, opts: Options = {}): Promise<T> {
   const { method = "GET", body, auth = true } = opts;
+  return _request<T>(path, method, body, auth, false);
+}
+
+async function _request<T>(
+  path: string,
+  method: string,
+  body: unknown,
+  auth: boolean,
+  isRetry: boolean
+): Promise<T> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (auth) {
     const token = getToken();
@@ -74,6 +149,19 @@ export async function api<T>(path: string, opts: Options = {}): Promise<T> {
       0,
       "Nao consegui falar com o servidor. O backend esta rodando na porta 8000?"
     );
+  }
+
+  // 401 com token anexado, e ainda nao e a retentativa: access expirou.
+  // Tenta UM refresh (single-flight) + UM retry. So entra aqui quando a
+  // request usa auth E mandou token -- 401 de rota publica (login) cai fora.
+  if (res.status === 401 && auth && !isRetry && getToken()) {
+    const newToken = await refreshAccessToken();
+    if (newToken) {
+      // Retry pega o token novo via getToken() (isRetry=true: nao recursa).
+      return _request<T>(path, method, body, auth, true);
+    }
+    killSession();
+    throw new ApiError(401, "Sessao expirada. Faca login novamente.");
   }
 
   if (res.status === 204) return undefined as T;
@@ -177,6 +265,53 @@ export async function listTasks(params: {
   if (params.project_id) q.set("project_id", params.project_id);
   if (params.include_archived) q.set("include_archived", "true");
   return api<TaskListResponse>(`/api/v1/tasks?${q.toString()}`);
+}
+
+// ---------------------------------------------------------------
+// BUSCA COMPLETA (anti-teto silencioso)  -- P0.2
+// ---------------------------------------------------------------
+// O quadro filtra/busca no cliente, entao precisa do conjunto COMPLETO, nao
+// de uma pagina. Antes batia size=100 fixo: alem de 100, tasks sumiam do
+// quadro E da busca sem aviso. Aqui pagina ate o total, com TETO DE SEGURANCA:
+// se o total passar do teto, devolve truncated=true para a tela AVISAR (em
+// vez de perder em silencio). O teto definitivo vem do auto-arquivamento de
+// concluidas/canceladas (proxima entrega) -- aqui so paramos de mentir.
+
+const TASK_FETCH_CEILING = 1000;
+
+export type AllTasksResult = { items: Task[]; total: number; truncated: boolean };
+
+export async function listAllTasks(
+  params: { project_id?: string; include_archived?: boolean; status?: string } = {}
+): Promise<AllTasksResult> {
+  const pageSize = 100; // teto do backend (size <= 100)
+  const first = await listTasks({ ...params, page: 1, size: pageSize });
+  const total = first.total;
+  const cap = Math.min(total, TASK_FETCH_CEILING);
+
+  // Dedupe por id: paginacao por offset pode repetir um item na borda se
+  // alguem cria/edita task durante a carga (ordenada por created_at desc).
+  const seen = new Set<string>();
+  const items: Task[] = [];
+  const push = (arr: Task[]) => {
+    for (const t of arr) {
+      if (!seen.has(t.id)) {
+        seen.add(t.id);
+        items.push(t);
+      }
+    }
+  };
+  push(first.items);
+
+  let page = 2;
+  while (items.length < cap) {
+    const next = await listTasks({ ...params, page, size: pageSize });
+    if (next.items.length === 0) break; // defensivo: nada mais a buscar
+    push(next.items);
+    page++;
+  }
+
+  return { items, total, truncated: total > items.length };
 }
 
 export type MyTaskItem = Task & { relations: string[]; out_of_scope: boolean };
@@ -521,6 +656,39 @@ export async function listProjects(
   if (params.status) q.set("status", params.status);
   if (params.include_archived) q.set("include_archived", "true");
   return api<ProjectListResponse>(`/api/v1/projects?${q.toString()}`);
+}
+
+// Versao completa (anti-teto): pagina ate o total, com o mesmo teto das
+// tasks. Usada pelo quadro geral pra montar o mapa id->titulo do selo de
+// projeto -- antes batia size=100 fixo e perdia projetos alem disso.
+export async function listAllProjects(
+  params: { status?: ProjectStatus; include_archived?: boolean } = {}
+): Promise<{ items: Project[]; total: number; truncated: boolean }> {
+  const pageSize = 100;
+  const first = await listProjects({ ...params, page: 1, size: pageSize });
+  const total = first.total;
+  const cap = Math.min(total, TASK_FETCH_CEILING);
+
+  const seen = new Set<string>();
+  const items: Project[] = [];
+  const push = (arr: Project[]) => {
+    for (const p of arr) {
+      if (!seen.has(p.id)) {
+        seen.add(p.id);
+        items.push(p);
+      }
+    }
+  };
+  push(first.items);
+
+  let page = 2;
+  while (items.length < cap) {
+    const next = await listProjects({ ...params, page, size: pageSize });
+    if (next.items.length === 0) break;
+    push(next.items);
+    page++;
+  }
+  return { items, total, truncated: total > items.length };
 }
 
 export async function getProject(id: string): Promise<Project> {

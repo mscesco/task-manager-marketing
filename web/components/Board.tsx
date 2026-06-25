@@ -21,7 +21,7 @@ import TaskCard from "@/components/TaskCard";
 import TaskModal from "@/components/TaskModal";
 import TaskDetail from "@/components/TaskDetail";
 import { STATUSES } from "@/lib/status";
-import { listTasks, updateTask, listMembers, listProjects, listSubteams, ApiError, type Task, type Team } from "@/lib/api";
+import { listAllTasks, listAllProjects, updateTask, listMembers, listSubteams, ApiError, type Task, type Team } from "@/lib/api";
 
 // Tira acento e caixa pra busca casar "midia" com "Midia Paga" etc.
 function normalizar(s: string) {
@@ -73,6 +73,9 @@ export default function Board({
   );
   const [subtimes, setSubtimes] = useState<Team[]>([]);
   const [subtime, setSubtime] = useState<string>("");
+  // P0.2: total real quando o fetch bateu o teto de seguranca (truncou).
+  // null = nao truncou. Vira aviso honesto no lugar de perda silenciosa.
+  const [truncadoTotal, setTruncadoTotal] = useState<number | null>(null);
 
   // Guarda contra "clique fantasma" logo apos um arrasto.
   const suprimirClique = useRef(false);
@@ -82,8 +85,11 @@ export default function Board({
   );
 
   useEffect(() => {
-    listTasks({ size: 100, project_id: projectId, include_archived: mostrarArquivadas })
-      .then((r) => setTasks(r.items))
+    listAllTasks({ project_id: projectId, include_archived: mostrarArquivadas })
+      .then((r) => {
+        setTasks(r.items);
+        setTruncadoTotal(r.truncated ? r.total : null);
+      })
       .catch((e: ApiError) => setErro(e.message));
     listMembers()
       .then((ms) => {
@@ -94,7 +100,7 @@ export default function Board({
     // Tag de projeto so faz sentido no quadro geral. No board de projeto a
     // tag e redundante, entao nem busca.
     if (!projectId) {
-      listProjects({ size: 100 })
+      listAllProjects()
         .then((r) => setProjectNames(new Map(r.items.map((p) => [p.id, p.title]))))
         .catch(() => {});
     }
@@ -327,6 +333,22 @@ export default function Board({
           + Nova tarefa
         </button>
       </div>
+
+      {truncadoTotal !== null && (
+        <div
+          role="alert"
+          style={{
+            marginBottom: 16, padding: "10px 14px", borderRadius: 8,
+            border: "1px solid var(--border)", background: "var(--accent-soft)",
+            color: "var(--text)", fontSize: 13,
+          }}
+        >
+          Este quadro tem <strong>{truncadoTotal}</strong> tarefas, acima do
+          limite de exibição. Mostrando as mais recentes — algumas podem não
+          aparecer no quadro nem na busca. Arquive tarefas concluídas para
+          reduzir o volume.
+        </div>
+      )}
 
       {raizes.length === 0 ? (
         temFiltro ? (
