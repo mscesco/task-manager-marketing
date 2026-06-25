@@ -65,6 +65,7 @@ async def list_tasks(
     team_id: uuid.UUID | None = None,
     created_by: uuid.UUID | None = None,
     include_archived: bool = False,
+    archived_only: bool = False,
 ) -> TaskListResponse:
     """Lista tasks do workspace, paginado, com filtros.
 
@@ -81,6 +82,7 @@ async def list_tasks(
             team_id=team_id,
             created_by=created_by,
             include_archived=include_archived,
+            archived_only=archived_only,
         ),
     )
     # Selo de responsaveis: assignees da pagina inteira em UMA query (lote),

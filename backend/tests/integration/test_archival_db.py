@@ -140,3 +140,29 @@ async def test_isolamento_entre_workspaces(db) -> None:
     assert count == 0
     await db.refresh(t_b)
     assert t_b.is_archived is False  # WS-B intocado
+
+
+async def test_filtro_archived_only(db) -> None:
+    # archived_only=True traz so arquivadas; default so ativas; include traz ambas.
+    from app.modules.tasks.application.task_service import TaskFilters
+    from app.shared.pagination import PageParams
+
+    ctx, ws, team, user = await _ws_admin(db)
+    ativa = await _mk(db, ws, user, team, "ativa")
+    arquivada = await _mk(db, ws, user, team, "arquivada")
+    arquivada.is_archived = True
+    await db.flush()
+
+    with acting_as(**ctx):
+        svc = TaskService(db)
+        so_arq = await svc.list_page(PageParams(page=1, size=50), TaskFilters(archived_only=True))
+        so_ativas = await svc.list_page(PageParams(page=1, size=50), TaskFilters())
+        ambas = await svc.list_page(PageParams(page=1, size=50), TaskFilters(include_archived=True))
+
+    so_arq_ids = {t.id for t in so_arq.items}
+    so_ativas_ids = {t.id for t in so_ativas.items}
+    ambas_ids = {t.id for t in ambas.items}
+
+    assert so_arq_ids == {arquivada.id}
+    assert so_ativas_ids == {ativa.id}
+    assert ambas_ids == {ativa.id, arquivada.id}

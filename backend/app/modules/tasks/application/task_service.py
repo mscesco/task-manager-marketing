@@ -115,6 +115,7 @@ class TaskFilters:
     priority: PriorityLevel | None = None
     team_id: uuid.UUID | None = None
     include_archived: bool = False
+    archived_only: bool = False
     created_by: uuid.UUID | None = None
 
 
@@ -266,6 +267,7 @@ class TaskService:
             team_id=filters.team_id,
             created_by=filters.created_by,
             include_archived=filters.include_archived,
+            archived_only=filters.archived_only,
         )
 
     async def update(

@@ -51,6 +51,7 @@ class TaskRepository(BaseRepository[Task]):
         team_id: uuid.UUID | None = None,
         created_by: uuid.UUID | None = None,
         include_archived: bool = False,
+        archived_only: bool = False,
     ) -> Page[Task]:
         """Lista tasks com filtros + privacidade do pessoal.
 
@@ -122,7 +123,12 @@ class TaskRepository(BaseRepository[Task]):
             base = base.where(Task.team_id == team_id)
         if created_by is not None:
             base = base.where(Task.created_by == created_by)
-        if not include_archived:
+        # archived_only tem precedencia: so arquivadas (tela de arquivadas,
+        # Spec 013 fatia 3). Senao, include_archived controla: default so
+        # ativas; True traz ambas.
+        if archived_only:
+            base = base.where(Task.is_archived.is_(True))
+        elif not include_archived:
             base = base.where(Task.is_archived.is_(False))
 
         # Count + page seguindo o padrao do BaseRepository.list_page.
