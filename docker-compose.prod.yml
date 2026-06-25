@@ -46,6 +46,17 @@ services:
       - "traefik.http.routers.tm-api.tls=true"
       - "traefik.http.routers.tm-api.tls.certresolver=mytlschallenge"
       - "traefik.http.services.tm-api.loadbalancer.server.port=8000"
+    # Healthcheck: bate em /health/ready (readiness -> confirma o Postgres).
+    # Usa o proprio Python: a imagem slim NAO tem curl/wget. urlopen lanca em
+    # 5xx/conexao recusada -> exit != 0 -> unhealthy. Marca o container como
+    # unhealthy no `docker ps` e da ao Traefik sinal pra nao rotear pra ele.
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/ready', timeout=4)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      # start_period generoso: migration e boot do pool nao contam como falha.
+      start_period: 40s
 
   web:
     build:
@@ -66,3 +77,11 @@ services:
       - "traefik.http.routers.tm-web.tls=true"
       - "traefik.http.routers.tm-web.tls.certresolver=mytlschallenge"
       - "traefik.http.services.tm-web.loadbalancer.server.port=3000"
+    # Healthcheck: o server standalone do Next responde 200 em "/". node:alpine
+    # tb nao tem curl -> usa o proprio node. Erro de conexao ou 5xx -> exit 1.
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/', r => process.exit(r.statusCode < 500 ? 0 : 1)).on('error', () => process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
