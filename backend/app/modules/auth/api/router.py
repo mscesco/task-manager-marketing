@@ -12,9 +12,10 @@ Rotas:
 
 from __future__ import annotations
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Depends, status
 
 from app.core.deps import SessionDep, UoWDep
+from app.core.rate_limit import login_limiter, rate_limit, refresh_limiter
 from app.modules.auth.api.dependencies import PendingUserDep
 from app.modules.auth.api.schemas import (
     ChangePasswordRequest,
@@ -33,7 +34,11 @@ from app.shared.exceptions.base import AuthenticationError
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
-@router.post("/login", response_model=TokenPair)
+@router.post(
+    "/login",
+    response_model=TokenPair,
+    dependencies=[Depends(rate_limit(login_limiter))],
+)
 async def login(payload: LoginRequest, session: SessionDep) -> TokenPair:
     """Autentica por e-mail + senha + workspace e devolve o par de tokens."""
     service = AuthService(session)
@@ -44,7 +49,11 @@ async def login(payload: LoginRequest, session: SessionDep) -> TokenPair:
     )
 
 
-@router.post("/refresh", response_model=TokenPair)
+@router.post(
+    "/refresh",
+    response_model=TokenPair,
+    dependencies=[Depends(rate_limit(refresh_limiter))],
+)
 async def refresh(payload: RefreshRequest, session: SessionDep) -> TokenPair:
     """Renova o access token a partir de um refresh token valido."""
     service = AuthService(session)

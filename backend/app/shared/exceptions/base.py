@@ -118,6 +118,21 @@ class PasswordChangeRequiredError(DomainError):
     message = "Troca de senha obrigatoria antes de prosseguir."
 
 
+class RateLimitError(AppError):
+    """Limite de requisicoes excedido (anti brute-force). -> HTTP 429.
+
+    Nao e erro de dominio nem de auth: e um freio de borda. Carrega
+    `retry_after` (segundos) em details -- o handler usa para o header
+    Retry-After. Mensagem generica de proposito (nao revela o alvo).
+    """
+
+    code = "rate_limited"
+    message = "Muitas tentativas. Tente novamente em instantes."
+
+    def __init__(self, *, retry_after: int) -> None:
+        super().__init__(details={"retry_after": retry_after})
+
+
 # --------------------------------------------------------
 # Autenticacao / autorizacao
 # --------------------------------------------------------

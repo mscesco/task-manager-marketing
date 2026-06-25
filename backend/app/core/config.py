@@ -60,6 +60,13 @@ class Settings(BaseSettings):
     # Provisoria expirada => login 401 (ADR 0019). 72h por decisao.
     temporary_password_ttl_hours: int = 72
 
+    # --- Rate limit (rotas publicas de auth) ---
+    # Freio por IP em /auth/login e /auth/refresh -- anti brute-force. Default
+    # generoso pra uso real (ninguem erra senha 10x/min de boa-fe), apertado
+    # pra ataque automatizado. Janela deslizante: ver app.core.rate_limit.
+    auth_rate_limit_max: int = 10
+    auth_rate_limit_window_seconds: int = 60
+
     # --- Logging ---
     log_level: str = "INFO"
     log_format: LogFormat = LogFormat.CONSOLE

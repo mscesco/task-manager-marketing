@@ -34,6 +34,7 @@ from app.shared.exceptions.base import (
     EntityNotFoundError,
     InfrastructureError,
     PasswordChangeRequiredError,
+    RateLimitError,
     ValidationError,
 )
 
@@ -46,6 +47,7 @@ _STATUS_MAP: list[tuple[type[AppError], int]] = [
     (ValidationError, status.HTTP_422_UNPROCESSABLE_ENTITY),
     (PasswordChangeRequiredError, status.HTTP_409_CONFLICT),
     (BusinessRuleError, status.HTTP_409_CONFLICT),
+    (RateLimitError, status.HTTP_429_TOO_MANY_REQUESTS),
     (AuthenticationError, status.HTTP_401_UNAUTHORIZED),
     (AuthorizationError, status.HTTP_403_FORBIDDEN),
     (DomainError, status.HTTP_400_BAD_REQUEST),
@@ -83,6 +85,12 @@ async def _app_error_handler(request: Request, exc: AppError) -> JSONResponse:
     else:
         logger.info("app_error.handled", code=exc.code, status=http_status)
 
+    # 429 carrega Retry-After (segundos) -- padrao HTTP, o cliente respeita.
+    headers: dict[str, str] | None = None
+    retry_after = exc.details.get("retry_after")
+    if retry_after is not None:
+        headers = {"Retry-After": str(retry_after)}
+
     return JSONResponse(
         status_code=http_status,
         content=_error_body(
@@ -91,6 +99,7 @@ async def _app_error_handler(request: Request, exc: AppError) -> JSONResponse:
             request=request,
             details=exc.details,
         ),
+        headers=headers,
     )
 
 
