@@ -73,6 +73,10 @@ class Settings(BaseSettings):
     # COMPLETED por completed_at (DECISAO A da spec).
     stale_archive_days: int = 20
 
+    # Token de maquina-a-maquina do endpoint de varredura (Fatia 2). VAZIO =
+    # endpoint DESLIGADO (fail closed). Em prod, gere: openssl rand -hex 32.
+    system_api_token: str = ""
+
     # --- Logging ---
     log_level: str = "INFO"
     log_format: LogFormat = LogFormat.CONSOLE
