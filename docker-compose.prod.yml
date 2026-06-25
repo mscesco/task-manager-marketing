@@ -1,0 +1,68 @@
+# =====================================================
+# docker-compose.prod.yml — deploy na VPS
+# -----------------------------------------------------
+# Anexa o app a infra que JA roda na VPS:
+#   - rede  : root_default (onde vivem traefik e postgres do stack do n8n)
+#   - banco : container `postgres` (postgres:16) -> alcancado por nome de
+#             servico na rede, em postgres:5432 (NAO ha tunel aqui; o 15432
+#             do dev e so da maquina local).
+#   - proxy : container `traefik` ja existente -> roteamento por labels.
+#
+# NAO sobe Postgres nem Traefik aqui (eles ja existem). NAO expoe portas no
+# host: todo o ingresso passa pelo Traefik (80/443).
+#
+# Migrations e bootstrap sao passos MANUAIS de deploy (ver DEPLOY.md / ADR 0022).
+# =====================================================
+
+name: task-manager
+
+networks:
+  # Rede ja existente (do compose do n8n). external=true: nao criamos, so
+  # entramos nela. Confirme o nome com `docker network ls` (aqui: root_default).
+  proxy:
+    external: true
+    name: root_default
+
+services:
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: runtime
+    image: task-manager-api:latest
+    container_name: task-manager-api
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env.prod
+    networks:
+      - proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=root_default"
+      # /api -> backend. Prioridade ALTA pra ganhar do catch-all do web.
+      - "traefik.http.routers.tm-api.rule=Host(`task.srv1186064.hstgr.cloud`) && PathPrefix(`/api`)"
+      - "traefik.http.routers.tm-api.priority=100"
+      - "traefik.http.routers.tm-api.entrypoints=web,websecure"
+      - "traefik.http.routers.tm-api.tls=true"
+      - "traefik.http.routers.tm-api.tls.certresolver=mytlschallenge"
+      - "traefik.http.services.tm-api.loadbalancer.server.port=8000"
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    image: task-manager-web:latest
+    container_name: task-manager-web
+    restart: unless-stopped
+    networks:
+      - proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=root_default"
+      # Catch-all do mesmo host -> front. Prioridade menor que a do /api.
+      - "traefik.http.routers.tm-web.rule=Host(`task.srv1186064.hstgr.cloud`)"
+      - "traefik.http.routers.tm-web.priority=1"
+      - "traefik.http.routers.tm-web.entrypoints=web,websecure"
+      - "traefik.http.routers.tm-web.tls=true"
+      - "traefik.http.routers.tm-web.tls.certresolver=mytlschallenge"
+      - "traefik.http.services.tm-web.loadbalancer.server.port=3000"

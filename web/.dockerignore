@@ -1,0 +1,13 @@
+# Nao mandar pro contexto de build do front (imagem menor, build mais rapido)
+node_modules
+.next
+out
+.git
+.gitignore
+npm-debug.log*
+Dockerfile
+.dockerignore
+.env*
+README.md
+docs
+specs

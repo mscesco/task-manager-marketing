@@ -1,0 +1,20 @@
+# Nao mandar pro contexto de build do backend
+.venv
+venv
+__pycache__
+*.pyc
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.git
+.gitignore
+.env
+.env.*
+tests
+docs
+specs
+schema
+README.md
+CHANGELOG_*.md
+Dockerfile
+.dockerignore

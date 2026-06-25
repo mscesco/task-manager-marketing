@@ -1,5 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Build standalone: gera .next/standalone (server.js + node_modules minimo)
+  // para uma imagem Docker enxuta. Sem isto, a imagem precisaria do
+  // node_modules inteiro + `next start`.
+  output: "standalone",
   // Topologia A (ver docs/adr/0001-topologia-mesmo-host.md):
   // o front sempre fala com a API por caminho RELATIVO (/api/...), mesma
   // origem do browser. Em produção o Traefik roteia /api -> backend ANTES
