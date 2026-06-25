@@ -5,18 +5,19 @@ import {
   listMembers,
   listSubteams,
   createMember,
+  resetMemberPassword,
+  deactivateMember,
   currentUser,
   ApiError,
   type Member,
   type Team,
   type MemberRole,
-  type MemberCreated,
   type CurrentUser,
 } from "@/lib/api";
 import { iniciais, corAvatar } from "@/lib/people";
 
-// Membros: lista (Fatia 3) + cadastro com reveal-once da senha (Fatia 4a),
-// gated por team.manage. Resetar senha e desativar entram na 4b.
+// Membros: lista + cadastro (4a) + resetar senha / desativar (4b), gated por
+// team.manage. Reset e cadastro compartilham o reveal-once da senha (ADR 0008).
 const PAPEL_LABEL: Record<MemberRole, string> = {
   ADMIN: "Administrador",
   MANAGER: "Gerente",
@@ -24,6 +25,8 @@ const PAPEL_LABEL: Record<MemberRole, string> = {
   OPERATOR: "Operador",
 };
 const PAPEIS: MemberRole[] = ["OPERATOR", "SUPERVISOR", "MANAGER", "ADMIN"];
+
+type Revelado = { titulo: string; email: string; senha: string };
 
 export default function MembrosPage() {
   return (
@@ -39,6 +42,9 @@ function Membros() {
   const [erro, setErro] = useState<string | null>(null);
   const [me, setMe] = useState<CurrentUser | null>(null);
 
+  // reveal-once compartilhado por cadastro e reset (ADR 0008).
+  const [revelado, setRevelado] = useState<Revelado | null>(null);
+
   // cadastro
   const [criando, setCriando] = useState(false);
   const [nome, setNome] = useState("");
@@ -47,8 +53,6 @@ function Membros() {
   const [papel, setPapel] = useState<MemberRole | "">("");
   const [salvando, setSalvando] = useState(false);
   const [erroForm, setErroForm] = useState<string | null>(null);
-  // reveal-once: so existe enquanto o admin nao fecha (ADR 0008).
-  const [criado, setCriado] = useState<MemberCreated | null>(null);
 
   const podeGerenciar = me?.permissions.includes("team.manage") ?? false;
 
@@ -87,7 +91,6 @@ function Membros() {
       setErroForm("Nome e e-mail sao obrigatorios.");
       return;
     }
-    // subtime e papel andam juntos (backend exige os dois ou nenhum).
     if ((subtimeId === "") !== (papel === "")) {
       setErroForm("Para vincular a um subtime, escolha o subtime E o papel (ou deixe ambos vazios).");
       return;
@@ -101,10 +104,14 @@ function Membros() {
         teamId: subtimeId || null,
         role: (papel || null) as MemberRole | null,
       });
-      setCriado(novo); // dispara o reveal-once
+      setRevelado({
+        titulo: `Membro cadastrado: ${novo.name}`,
+        email: novo.email,
+        senha: novo.temporary_password,
+      });
       setCriando(false);
       limparForm();
-      await carregar(); // createMember ja invalidou o cache
+      await carregar();
     } catch (err) {
       const a = err as ApiError;
       setErroForm(
@@ -129,7 +136,7 @@ function Membros() {
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 18 }}>
         <h1 style={{ margin: 0, fontSize: 19, letterSpacing: "-0.02em" }}>Membros</h1>
         <span className="muted" style={{ fontSize: 13 }}>{membros.length}</span>
-        {podeGerenciar && !criando && !criado && (
+        {podeGerenciar && !criando && !revelado && (
           <button
             className="btn btn-primary"
             onClick={() => setCriando(true)}
@@ -140,17 +147,15 @@ function Membros() {
         )}
       </div>
 
-      {/* reveal-once da senha provisoria (ADR 0008) */}
-      {criado && (
+      {revelado && (
         <SenhaProvisoria
-          titulo={`Membro cadastrado: ${criado.name}`}
-          email={criado.email}
-          senha={criado.temporary_password}
-          onFechar={() => setCriado(null)}
+          titulo={revelado.titulo}
+          email={revelado.email}
+          senha={revelado.senha}
+          onFechar={() => setRevelado(null)}
         />
       )}
 
-      {/* formulario de cadastro */}
       {criando && (
         <div
           style={{
@@ -215,47 +220,171 @@ function Membros() {
       ) : (
         <div style={{ border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden" }}>
           {membros.map((m, i) => (
-            <div
+            <LinhaMembro
               key={m.id}
-              style={{
-                display: "flex", alignItems: "center", gap: 12, padding: "12px 16px",
-                borderTop: i === 0 ? "none" : "1px solid var(--border)",
-                background: "var(--surface)", opacity: m.is_active ? 1 : 0.6,
-              }}
-            >
-              <span style={{
-                width: 32, height: 32, borderRadius: 999, flexShrink: 0,
-                background: corAvatar(m.id), color: "#fff", fontSize: 12, fontWeight: 700,
-                display: "flex", alignItems: "center", justifyContent: "center",
-              }}>
-                {iniciais(m.name)}
-              </span>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 14, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {m.name}
-                </div>
-                <div className="muted" style={{ fontSize: 12.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {m.email}
-                </div>
-              </div>
-              <span className="muted" style={{
-                fontSize: 12, padding: "3px 9px", borderRadius: 999,
-                background: "var(--surface-2)", border: "1px solid var(--border)", flexShrink: 0,
-              }}>
-                {nomeSubtime(m.team_id)}
-              </span>
-              {!m.is_active && (
-                <span style={{
-                  fontSize: 11.5, fontWeight: 700, padding: "3px 9px", borderRadius: 999,
-                  color: "var(--text-faint)", border: "1px solid var(--border)", flexShrink: 0,
-                }}>
-                  inativo
-                </span>
-              )}
-            </div>
+              m={m}
+              subtime={nomeSubtime(m.team_id)}
+              primeira={i === 0}
+              podeGerenciar={podeGerenciar}
+              isSelf={me?.id === m.id}
+              onRevelar={setRevelado}
+              onMudou={carregar}
+            />
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+// Linha da lista + acoes de gestao (4b). Resetar/desativar so aparecem pra
+// quem tem team.manage, em membro ATIVO que nao e voce mesmo. Confirmacao
+// inline (sem dialog do browser). Reset alimenta o reveal-once do pai.
+function LinhaMembro({
+  m,
+  subtime,
+  primeira,
+  podeGerenciar,
+  isSelf,
+  onRevelar,
+  onMudou,
+}: {
+  m: Member;
+  subtime: string;
+  primeira: boolean;
+  podeGerenciar: boolean;
+  isSelf: boolean;
+  onRevelar: (r: Revelado) => void;
+  onMudou: () => void;
+}) {
+  const [confirmReset, setConfirmReset] = useState(false);
+  const [confirmDesativar, setConfirmDesativar] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [erroLinha, setErroLinha] = useState<string | null>(null);
+
+  const mostraAcoes = podeGerenciar && !isSelf && m.is_active;
+
+  async function resetar() {
+    setBusy(true);
+    setErroLinha(null);
+    try {
+      const r = await resetMemberPassword(m.id);
+      setConfirmReset(false);
+      onRevelar({
+        titulo: `Senha resetada: ${m.name}`,
+        email: m.email,
+        senha: r.temporary_password,
+      });
+    } catch (e) {
+      const a = e as ApiError;
+      setErroLinha(a.status === 403 ? "Sem permissao." : a.message || "Nao consegui resetar.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function desativar() {
+    setBusy(true);
+    setErroLinha(null);
+    try {
+      await deactivateMember(m.id);
+      setConfirmDesativar(false);
+      onMudou(); // recarrega a lista (cache ja invalidado)
+    } catch (e) {
+      const a = e as ApiError;
+      setErroLinha(a.status === 403 ? "Sem permissao." : a.message || "Nao consegui desativar.");
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div
+      style={{
+        display: "flex", flexDirection: "column", gap: 8, padding: "12px 16px",
+        borderTop: primeira ? "none" : "1px solid var(--border)",
+        background: "var(--surface)", opacity: m.is_active ? 1 : 0.6,
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <span style={{
+          width: 32, height: 32, borderRadius: 999, flexShrink: 0,
+          background: corAvatar(m.id), color: "#fff", fontSize: 12, fontWeight: 700,
+          display: "flex", alignItems: "center", justifyContent: "center",
+        }}>
+          {iniciais(m.name)}
+        </span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 14, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {m.name}{isSelf && <span className="muted" style={{ fontWeight: 400 }}> (voce)</span>}
+          </div>
+          <div className="muted" style={{ fontSize: 12.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {m.email}
+          </div>
+        </div>
+        <span className="muted" style={{
+          fontSize: 12, padding: "3px 9px", borderRadius: 999,
+          background: "var(--surface-2)", border: "1px solid var(--border)", flexShrink: 0,
+        }}>
+          {subtime}
+        </span>
+        {!m.is_active && (
+          <span style={{
+            fontSize: 11.5, fontWeight: 700, padding: "3px 9px", borderRadius: 999,
+            color: "var(--text-faint)", border: "1px solid var(--border)", flexShrink: 0,
+          }}>
+            inativo
+          </span>
+        )}
+
+        {mostraAcoes && !confirmReset && !confirmDesativar && (
+          <span style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+            <button className="btn btn-ghost" onClick={() => { setErroLinha(null); setConfirmReset(true); }}
+              style={{ padding: "4px 10px", fontSize: 12 }}>
+              Resetar senha
+            </button>
+            <button className="btn btn-ghost" onClick={() => { setErroLinha(null); setConfirmDesativar(true); }}
+              style={{ padding: "4px 10px", fontSize: 12, color: "var(--danger, #b42318)" }}>
+              Desativar
+            </button>
+          </span>
+        )}
+      </div>
+
+      {/* confirmacao: resetar senha */}
+      {confirmReset && (
+        <div style={{ display: "flex", alignItems: "center", gap: 10, paddingLeft: 44 }}>
+          <span className="muted" style={{ fontSize: 12.5 }}>
+            Gerar nova senha provisoria para {m.name}? A senha atual dele deixa de valer.
+          </span>
+          <button className="btn btn-primary" onClick={resetar} disabled={busy}
+            style={{ padding: "4px 12px", fontSize: 12 }}>
+            {busy ? "…" : "Resetar"}
+          </button>
+          <button className="btn btn-ghost" onClick={() => setConfirmReset(false)} disabled={busy}
+            style={{ padding: "4px 12px", fontSize: 12 }}>
+            Cancelar
+          </button>
+        </div>
+      )}
+
+      {/* confirmacao: desativar */}
+      {confirmDesativar && (
+        <div style={{ display: "flex", alignItems: "center", gap: 10, paddingLeft: 44, flexWrap: "wrap" }}>
+          <span className="muted" style={{ fontSize: 12.5 }}>
+            Desativar {m.name}? Hoje <strong>não tem como reativar pela tela</strong>.
+          </span>
+          <button className="btn btn-primary" onClick={desativar} disabled={busy}
+            style={{ padding: "4px 12px", fontSize: 12, background: "var(--danger, #b42318)", borderColor: "transparent" }}>
+            {busy ? "…" : "Desativar"}
+          </button>
+          <button className="btn btn-ghost" onClick={() => setConfirmDesativar(false)} disabled={busy}
+            style={{ padding: "4px 12px", fontSize: 12 }}>
+            Cancelar
+          </button>
+        </div>
+      )}
+
+      {erroLinha && <div className="error-box" style={{ marginLeft: 44 }}>{erroLinha}</div>}
     </div>
   );
 }
@@ -293,17 +422,12 @@ function SenhaProvisoria({
     >
       <strong style={{ fontSize: 14 }}>{titulo}</strong>
       <span className="muted" style={{ fontSize: 13 }}>{email}</span>
-      <div style={{ fontSize: 13 }}>
-        Senha provisoria (o membro troca no 1º acesso):
-      </div>
+      <div style={{ fontSize: 13 }}>Senha provisoria (o membro troca no 1º acesso):</div>
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-        <code
-          style={{
-            fontSize: 15, fontWeight: 700, padding: "6px 12px", borderRadius: 8,
-            background: "var(--surface)", border: "1px solid var(--border)",
-            userSelect: "all",
-          }}
-        >
+        <code style={{
+          fontSize: 15, fontWeight: 700, padding: "6px 12px", borderRadius: 8,
+          background: "var(--surface)", border: "1px solid var(--border)", userSelect: "all",
+        }}>
           {senha}
         </code>
         <button className="btn btn-ghost" onClick={copiar} style={{ padding: "6px 12px" }}>
