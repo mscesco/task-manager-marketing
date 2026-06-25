@@ -17,12 +17,14 @@ Metodos especificos:
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timedelta
 
 from sqlalchemy import and_, exists, func, or_, select, text
 from sqlalchemy.sql.elements import ColumnElement
 
 from app.core.tenant import require_tenant
 from app.db.models import Project, Task, TaskAssignment, TaskHistory, TaskWatcher
+from app.db.models.enums import TaskStatus
 from app.db.repository import BaseRepository
 from app.modules.auth.domain import team_scope
 from app.modules.tasks.domain.history import HistoryEntry
@@ -399,6 +401,34 @@ class TaskRepository(BaseRepository[Task]):
     # ----------------------------------------------------
     # task_history
     # ----------------------------------------------------
+    async def list_stale_terminal(
+        self, *, now: datetime, days: int
+    ) -> list[Task]:
+        """Tasks terminais paradas ha mais de `days` dias (Spec 013).
+
+        Espelha app.modules.tasks.domain.archival.is_stale_terminal:
+            COMPLETED por completed_at, CANCELLED por updated_at.
+        `_base_select` ja filtra tenant + soft-delete. Excluimos arquivadas
+        (nao reentram). Sem paginacao -- e um job de varredura.
+        """
+        cutoff = now - timedelta(days=days)
+        stmt = self._base_select().where(
+            Task.is_archived.is_(False),
+            or_(
+                and_(
+                    Task.status == TaskStatus.COMPLETED,
+                    Task.completed_at.is_not(None),
+                    Task.completed_at < cutoff,
+                ),
+                and_(
+                    Task.status == TaskStatus.CANCELLED,
+                    Task.updated_at < cutoff,
+                ),
+            ),
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
     async def write_history(
         self,
         *,

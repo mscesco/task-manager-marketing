@@ -67,6 +67,12 @@ class Settings(BaseSettings):
     auth_rate_limit_max: int = 10
     auth_rate_limit_window_seconds: int = 60
 
+    # --- Auto-arquivamento (Spec 013) ---
+    # Tarefa COMPLETED/CANCELLED parada ha mais de N dias e auto-arquivada
+    # pela varredura (job diario via n8n). CANCELLED medido por updated_at,
+    # COMPLETED por completed_at (DECISAO A da spec).
+    stale_archive_days: int = 20
+
     # --- Logging ---
     log_level: str = "INFO"
     log_format: LogFormat = LogFormat.CONSOLE

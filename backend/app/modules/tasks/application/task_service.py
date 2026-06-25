@@ -30,6 +30,7 @@ from datetime import UTC, date, datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.logging import get_logger
 from app.core.tenant import require_tenant
 from app.db.models import Project, Task
@@ -470,6 +471,45 @@ class TaskService:
             logger.info("task.unarchived", task_id=str(task.id))
 
         return task
+
+    async def archive_stale(
+        self,
+        *,
+        now: datetime,
+        actor_user_id: uuid.UUID,
+        days: int | None = None,
+    ) -> int:
+        """Varredura: arquiva tasks terminais paradas ha mais de N dias (Spec 013).
+
+        Caminho de SISTEMA, nao de usuario: NAO passa pelos guards por-task
+        (assert_editable) -- opera workspace-wide sob tenant_scope confiavel,
+        montado pelo endpoint trancado (Fatia 2). `now`/`actor` injetados
+        (testavel). Historico atribuido ao ator (admin do workspace) com
+        flag automated. Idempotente: 2a rodada no mesmo dia arquiva 0.
+        """
+        effective_days = (
+            settings.stale_archive_days if days is None else days
+        )
+        stale = await self._repo.list_stale_terminal(
+            now=now, days=effective_days
+        )
+        count = 0
+        for task in stale:
+            task.is_archived = True
+            await self._repo.write_history(
+                task=task,
+                user_id=actor_user_id,
+                entries=[
+                    build_archived_entry(
+                        automated=True, reason="stale_terminal"
+                    )
+                ],
+            )
+            count += 1
+        if count:
+            await self._session.flush()
+            logger.info("task.archive_stale", archived=count)
+        return count
 
     async def soft_delete(self, *, task_id: uuid.UUID) -> SoftDeleteResult:
         """Soft-delete CASCATEADO (ADR 0005).

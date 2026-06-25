@@ -130,8 +130,23 @@ def build_move_entry(
     )
 
 
-def build_archived_entry() -> HistoryEntry:
-    return HistoryEntry(event_type=TaskHistoryEventType.ARCHIVED)
+def build_archived_entry(
+    *, automated: bool = False, reason: str | None = None
+) -> HistoryEntry:
+    """Evento de arquivamento.
+
+    `automated=True` (varredura de auto-arquivamento, Spec 013) marca o
+    metadata para a auditoria distinguir acao humana de job. Chamada sem
+    args permanece identica ao comportamento anterior (metadata None).
+    """
+    metadata: dict[str, Any] | None = None
+    if automated:
+        metadata = {"automated": True}
+        if reason:
+            metadata["reason"] = reason
+    return HistoryEntry(
+        event_type=TaskHistoryEventType.ARCHIVED, metadata=metadata
+    )
 
 
 def build_unarchived_entry() -> HistoryEntry:
