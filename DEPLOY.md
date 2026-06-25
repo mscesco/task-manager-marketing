@@ -26,26 +26,27 @@ Arquitetura (Topologia A, ADR 0001): um domínio só; o Traefik roteia
    cd task-manager-marketing
    ```
 
-3. **Banco + usuário + extensões** no Postgres existente. Entre como superuser
-   (ajuste `-U` se o superuser do seu container não for `postgres` — veja o env
-   do serviço postgres no compose do n8n):
+3. **Banco + usuário dedicado + extensões** no Postgres existente. Gere uma
+   senha sem caracteres especiais (evita escapar na URL): `openssl rand -hex 24`.
+   Confirme o superuser do container (provavelmente `postgres`):
+   `docker exec root-postgres-1 env | grep POSTGRES_USER`. Entre no psql:
    ```bash
    docker exec -it root-postgres-1 psql -U postgres
    ```
-   No psql:
+   No psql (troque a senha pela gerada):
    ```sql
-   CREATE DATABASE task_manager;
-   CREATE USER app_user WITH PASSWORD 'ESCOLHA_UMA_SENHA_FORTE';
-   GRANT ALL PRIVILEGES ON DATABASE task_manager TO app_user;
+   -- usuario dedicado do app (isolado do n8n e do task_manager_dev)
+   CREATE USER taskmanager WITH PASSWORD 'COLE_A_SENHA_DO_OPENSSL';
+   -- banco de prod JA com o app como DONO: dono cria tabela no schema public
+   -- sem GRANT extra (resolve o schema travado do Postgres 16).
+   CREATE DATABASE task_manager OWNER taskmanager;
    \c task_manager
-   -- extensoes criadas como superuser (a migration so faz IF NOT EXISTS):
+   -- extensoes como superuser (idempotente; a migration so confirma):
    CREATE EXTENSION IF NOT EXISTS ltree;
    CREATE EXTENSION IF NOT EXISTS pgcrypto;
-   -- Postgres 16: o schema public e travado p/ nao-donos. Libera o app_user
-   -- pra criar tabelas:
-   GRANT ALL ON SCHEMA public TO app_user;
    \q
    ```
+   Como o `taskmanager` é dono do banco, NAO precisa de `GRANT ON SCHEMA public`.
 
 4. **Env de produção:**
    ```bash
