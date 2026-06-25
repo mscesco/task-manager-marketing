@@ -221,6 +221,15 @@ function Minhas() {
         onAssigneesChange={aoMudarResponsaveis}
         onAbrirSubtarefa={abrirSubtarefa}
         onSubtaskUpsert={aoUpsert}
+        onExcluir={(t) => {
+          // Remove a task (e a subtree por path) da lista e fecha.
+          setItems((prev) =>
+            (prev ?? []).filter(
+              (x) => x.id !== t.id && !x.path.startsWith(t.path + ".")
+            )
+          );
+          fecharDetalhe();
+        }}
       />
     </div>
   );

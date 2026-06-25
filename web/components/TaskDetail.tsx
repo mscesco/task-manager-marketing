@@ -17,6 +17,7 @@ import {
   updateTask,
   archiveTask,
   unarchiveTask,
+  deleteTask,
   listComments,
   createComment,
   editComment,
@@ -59,6 +60,7 @@ export default function TaskDetail({
   onAssigneesChange,
   onAbrirSubtarefa,
   onSubtaskUpsert,
+  onExcluir,
 }: {
   task: Task | null; // tarefa focada; null => fechado
   members: Map<string, { name: string }>;
@@ -70,6 +72,7 @@ export default function TaskDetail({
   onAssigneesChange: (taskId: string, userIds: string[]) => void;
   onAbrirSubtarefa: (sub: Task) => void;
   onSubtaskUpsert: (sub: Task) => void; // criar OU concluir rapido
+  onExcluir: (task: Task, cascadeCount: number) => void; // soft-delete cascateado
 }) {
   const [assignees, setAssignees] = useState<string[]>([]);
   const [abertoResp, setAbertoResp] = useState(false);
@@ -85,6 +88,9 @@ export default function TaskDetail({
   // Status de antes de concluir, pra desmarcar voltar pra ele (sessao).
   const [statusAnterior, setStatusAnterior] = useState<Record<string, string>>({});
   const [arquivando, setArquivando] = useState(false);
+  // Exclusao (soft-delete cascateado). Confirmacao inline mostra o estrago.
+  const [confirmandoExcluir, setConfirmandoExcluir] = useState(false);
+  const [excluindo, setExcluindo] = useState(false);
 
   // ---- Comentarios (Entrega 14, Fatia 2) ----
   const [comentarios, setComentarios] = useState<Comment[] | null>(null);
@@ -268,6 +274,22 @@ export default function TaskDetail({
       );
     } finally {
       setArquivando(false);
+    }
+  }
+
+  async function excluir() {
+    setErro(null);
+    setExcluindo(true);
+    try {
+      const r = await deleteTask(tid);
+      onExcluir(task!, r.cascade_count); // quadro remove a subtree e fecha
+    } catch (e) {
+      setErro(
+        (e as ApiError).status === 403
+          ? "Voce nao pode excluir esta tarefa."
+          : "Nao consegui excluir a tarefa."
+      );
+      setExcluindo(false);
     }
   }
 
@@ -746,6 +768,37 @@ export default function TaskDetail({
           )}
         </div>
 
+        {confirmandoExcluir && (
+          <div
+            style={{
+              display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap",
+              marginTop: 4, padding: "10px 12px", borderRadius: 8,
+              border: "1px solid var(--danger, #b42318)",
+              background: "color-mix(in srgb, var(--danger, #b42318) 8%, transparent)",
+            }}
+          >
+            <span style={{ fontSize: 12.5, flex: 1, minWidth: 220 }}>
+              Excluir <strong>{task.title}</strong>? Isto apaga a tarefa e todos os comentários.
+              {filhos.length > 0 && (
+                <> Também apaga as <strong>{filhos.length}</strong> subtarefa(s) diretas e as subtarefas delas.</>
+              )}{" "}
+              <strong>Não dá para desfazer pela tela.</strong>
+            </span>
+            <button
+              type="button" className="btn btn-primary" onClick={excluir} disabled={excluindo}
+              style={{ padding: "6px 14px", background: "var(--danger, #b42318)", borderColor: "transparent" }}
+            >
+              {excluindo ? "…" : "Excluir"}
+            </button>
+            <button
+              type="button" className="btn btn-ghost" onClick={() => setConfirmandoExcluir(false)}
+              disabled={excluindo} style={{ padding: "6px 14px" }}
+            >
+              Cancelar
+            </button>
+          </div>
+        )}
+
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 4 }}>
           <button
             type="button" className="btn btn-ghost" onClick={alternarArquivo}
@@ -753,6 +806,15 @@ export default function TaskDetail({
           >
             {arquivando ? "…" : task.is_archived ? "Desarquivar" : "Arquivar"}
           </button>
+          {(me?.permissions.includes("task.delete") ?? false) && !confirmandoExcluir && (
+            <button
+              type="button" className="btn btn-ghost"
+              onClick={() => { setErro(null); setConfirmandoExcluir(true); }}
+              style={{ color: "var(--danger, #b42318)" }}
+            >
+              Excluir
+            </button>
+          )}
           <button type="button" className="btn btn-ghost" onClick={onClose}>
             Fechar
           </button>

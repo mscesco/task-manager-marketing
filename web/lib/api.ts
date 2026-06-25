@@ -630,6 +630,15 @@ export async function reactivateTask(id: string): Promise<Task> {
   return unarchiveTask(id);
 }
 
+// Soft-delete CASCATEADO (ADR 0005): apaga a task, toda a subtree e os
+// comentarios. Exige task.delete (so ADMIN/MANAGER). A resposta traz
+// cascade_count = quantas FILHAS foram apagadas junto (nao conta a raiz).
+export type DeleteTaskResult = Task & { cascade_count: number };
+
+export async function deleteTask(id: string): Promise<DeleteTaskResult> {
+  return api<DeleteTaskResult>(`/api/v1/tasks/${id}`, { method: "DELETE" });
+}
+
 // ===============================================================
 // PROJETOS  -- Entrega 11 (pasta: agrupa tasks; tudo no time raiz)
 // ===============================================================

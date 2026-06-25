@@ -156,6 +156,19 @@ export default function Board({
     setPilha([]);
   }
 
+  // Soft-delete cascateado: remove a task E a subtree (por path) do estado,
+  // fecha o detalhe e avisa quantas filhas foram junto.
+  function aoExcluir(t: Task, cascadeCount: number) {
+    setTasks((prev) =>
+      (prev ?? []).filter(
+        (x) => x.id !== t.id && !x.path.startsWith(t.path + ".")
+      )
+    );
+    fecharDetalhe();
+    const extra = cascadeCount > 0 ? ` e ${cascadeCount} subtarefa(s)` : "";
+    setToast(`Tarefa${extra} excluída(s).`);
+  }
+
   function aoUpsert(t: Task) {
     setTasks((prev) => {
       if (!prev) return [t];
@@ -423,6 +436,7 @@ export default function Board({
         onAssigneesChange={aoMudarResponsaveis}
         onAbrirSubtarefa={abrirSubtarefa}
         onSubtaskUpsert={aoUpsert}
+        onExcluir={aoExcluir}
       />
 
       {toast && (
