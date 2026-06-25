@@ -40,6 +40,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     { href: "/projetos", label: "Projetos" },
     { href: "/minhas-tarefas", label: "Minhas tarefas" },
     { href: "/membros", label: "Membros" },
+    { href: "/arquivadas", label: "Arquivadas" },
   ];
 
   function sair() {

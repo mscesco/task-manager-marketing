@@ -257,6 +257,7 @@ export async function listTasks(params: {
   status?: string;
   project_id?: string;
   include_archived?: boolean;
+  archived_only?: boolean;
 } = {}): Promise<TaskListResponse> {
   const q = new URLSearchParams();
   q.set("page", String(params.page ?? 1));
@@ -264,6 +265,7 @@ export async function listTasks(params: {
   if (params.status) q.set("status", params.status);
   if (params.project_id) q.set("project_id", params.project_id);
   if (params.include_archived) q.set("include_archived", "true");
+  if (params.archived_only) q.set("archived_only", "true");
   return api<TaskListResponse>(`/api/v1/tasks?${q.toString()}`);
 }
 
@@ -601,6 +603,31 @@ export async function archiveTask(id: string): Promise<Task> {
 }
 export async function unarchiveTask(id: string): Promise<Task> {
   return api<Task>(`/api/v1/tasks/${id}/unarchive`, { method: "POST" });
+}
+
+// ---------------------------------------------------------------
+// ARQUIVADAS  (tela dedicada -- Spec 013, fatia 4)
+// ---------------------------------------------------------------
+// Lista pagina DE VERDADE (page/size): o conjunto de arquivadas cresce sem
+// fim, entao nao usa fetch-all/teto como o quadro -- uma lista pagina natural.
+export async function listArchivedTasks(
+  params: { page?: number; size?: number } = {}
+): Promise<TaskListResponse> {
+  return listTasks({
+    page: params.page ?? 1,
+    size: params.size ?? 30,
+    archived_only: true,
+  });
+}
+
+// Reativar = desarquivar + voltar pra BACKLOG (Spec 013, DECISAO C). ORDEM
+// importa: muda o status PRIMEIRO (tira a task da elegibilidade da varredura),
+// depois desarquiva. Se o unarchive falhar no meio, a task fica
+// BACKLOG+arquivada e NAO e re-arquivada pela varredura (BACKLOG nao e
+// terminal) -- sem loop, e o usuario pode tentar de novo.
+export async function reactivateTask(id: string): Promise<Task> {
+  await updateTask(id, { status: "BACKLOG" });
+  return unarchiveTask(id);
 }
 
 // ===============================================================
