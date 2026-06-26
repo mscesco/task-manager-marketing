@@ -101,3 +101,17 @@ class TeamMembershipResponse(BaseModel):
     team_id: uuid.UUID
     role: UserTeamRole
     joined_at: datetime
+
+
+class MemberTeamResponse(BaseModel):
+    """Vinculo enxuto (time, papel) de um membro (Spec 015, Fatia 1).
+
+    Usado por GET /members/{id}/teams para a UI mostrar o papel atual por
+    time antes de oferecer alteracao. Mais leve que TeamMembershipResponse
+    (so o que a tela precisa).
+    """
+
+    model_config = {"from_attributes": True}
+
+    team_id: uuid.UUID
+    role: UserTeamRole

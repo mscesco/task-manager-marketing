@@ -9,6 +9,7 @@ Listar membros exige apenas estar autenticado.
 
 Rotas:
     GET    /members                       -- listar membros
+    GET    /members/{user_id}/teams        -- papeis do membro por time
     POST   /members                       -- cadastrar membro (team.manage)
     POST   /members/{user_id}/reset-password -- resetar senha (team.manage)
     POST   /members/{user_id}/team         -- vincular a equipe (team.manage)
@@ -28,6 +29,7 @@ from app.modules.users.api.schemas import (
     MemberCreateRequest,
     MemberListResponse,
     MemberResponse,
+    MemberTeamResponse,
     ResetPasswordResponse,
     TeamAssignmentRequest,
     TeamMembershipResponse,
@@ -61,6 +63,28 @@ async def list_members(
         ],
         total=len(members),
     )
+
+
+@router.get(
+    "/{user_id}/teams",
+    response_model=list[MemberTeamResponse],
+)
+async def list_member_teams(
+    user_id: uuid.UUID, _: TenantContextDep, session: SessionDep
+) -> list[MemberTeamResponse]:
+    """Lista os vinculos (time, papel) de um membro. Spec 015, Fatia 1.
+
+    Leitura -- exige apenas estar autenticado (mesmo nivel de list_members).
+    Alimenta a UI de administracao de papel, que precisa do papel atual
+    antes de oferecer alteracao.
+    """
+    memberships = await MemberService(session).list_member_teams(
+        user_id=user_id
+    )
+    return [
+        MemberTeamResponse(team_id=m.team_id, role=m.role)
+        for m in memberships
+    ]
 
 
 @router.post(

@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import AppShell from "@/components/AppShell";
 import {
   listMembers,
-  listSubteams,
+  listTeamsAll,
   createMember,
   resetMemberPassword,
   deactivateMember,
@@ -38,7 +38,7 @@ export default function MembrosPage() {
 
 function Membros() {
   const [membros, setMembros] = useState<Member[] | null>(null);
-  const [subtimes, setSubtimes] = useState<Team[]>([]);
+  const [times, setTimes] = useState<Team[]>([]);
   const [erro, setErro] = useState<string | null>(null);
   const [me, setMe] = useState<CurrentUser | null>(null);
 
@@ -49,16 +49,20 @@ function Membros() {
   const [criando, setCriando] = useState(false);
   const [nome, setNome] = useState("");
   const [email, setEmail] = useState("");
-  const [subtimeId, setSubtimeId] = useState("");
+  const [timeId, setTimeId] = useState("");
   const [papel, setPapel] = useState<MemberRole | "">("");
   const [salvando, setSalvando] = useState(false);
   const [erroForm, setErroForm] = useState<string | null>(null);
 
   const podeGerenciar = me?.permissions.includes("team.manage") ?? false;
+  // Spec 014 (gate D2): so um ADMIN ve a opcao ADMIN no dropdown. O backend
+  // trava de qualquer jeito -- isto e so conveniencia de UI.
+  const souAdmin = me?.roles.includes("ADMIN") ?? false;
+  const papeisDisponiveis = souAdmin ? PAPEIS : PAPEIS.filter((p) => p !== "ADMIN");
 
   function nomeSubtime(id: string | null): string {
     if (!id) return "—";
-    return subtimes.find((t) => t.id === id)?.name ?? "—";
+    return times.find((t) => t.id === id)?.name ?? "—";
   }
 
   async function carregar() {
@@ -72,14 +76,14 @@ function Membros() {
 
   useEffect(() => {
     carregar();
-    listSubteams().then(setSubtimes).catch(() => {});
+    listTeamsAll().then(setTimes).catch(() => {});
     currentUser().then(setMe).catch(() => {});
   }, []);
 
   function limparForm() {
     setNome("");
     setEmail("");
-    setSubtimeId("");
+    setTimeId("");
     setPapel("");
     setErroForm(null);
   }
@@ -91,8 +95,8 @@ function Membros() {
       setErroForm("Nome e e-mail sao obrigatorios.");
       return;
     }
-    if ((subtimeId === "") !== (papel === "")) {
-      setErroForm("Para vincular a um subtime, escolha o subtime E o papel (ou deixe ambos vazios).");
+    if (!timeId || !papel) {
+      setErroForm("Escolha o time e o papel.");
       return;
     }
     setSalvando(true);
@@ -101,8 +105,8 @@ function Membros() {
       const novo = await createMember({
         name: n,
         email: e,
-        teamId: subtimeId || null,
-        role: (papel || null) as MemberRole | null,
+        teamId: timeId,
+        role: papel as MemberRole,
       });
       setRevelado({
         titulo: `Membro cadastrado: ${novo.name}`,
@@ -116,11 +120,11 @@ function Membros() {
       const a = err as ApiError;
       setErroForm(
         a.status === 409
-          ? "Ja existe um membro com esse e-mail (ou faltou subtime+papel juntos)."
+          ? "Ja existe um membro com esse e-mail."
           : a.status === 422
           ? "Dados invalidos (e-mail, ou a pessoa ja esta em outro subtime)."
           : a.status === 403
-          ? "Voce nao tem permissao para cadastrar membros."
+          ? "Sem permissao: criar membro ADMIN exige que voce seja ADMIN."
           : a.message || "Nao consegui cadastrar."
       );
     } finally {
@@ -176,32 +180,40 @@ function Membros() {
           </div>
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
             <div className="field" style={{ flex: 1, minWidth: 180 }}>
-              <span className="label">Subtime (opcional)</span>
-              <select className="input" value={subtimeId} disabled={salvando}
-                onChange={(ev) => setSubtimeId(ev.target.value)}>
-                <option value="">— sem subtime —</option>
-                {subtimes.map((t) => (
-                  <option key={t.id} value={t.id}>{t.name}</option>
+              <span className="label">Time</span>
+              <select className="input" value={timeId} disabled={salvando}
+                onChange={(ev) => setTimeId(ev.target.value)}>
+                <option value="">— selecione o time —</option>
+                {times.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.parent_team_id === null ? `${t.name} (geral)` : t.name}
+                  </option>
                 ))}
               </select>
             </div>
             <div className="field" style={{ flex: 1, minWidth: 180 }}>
-              <span className="label">Papel (se houver subtime)</span>
-              <select className="input" value={papel} disabled={salvando || subtimeId === ""}
+              <span className="label">Papel</span>
+              <select className="input" value={papel} disabled={salvando}
                 onChange={(ev) => setPapel(ev.target.value as MemberRole | "")}>
                 <option value="">—</option>
-                {PAPEIS.map((p) => (
+                {papeisDisponiveis.map((p) => (
                   <option key={p} value={p}>{PAPEL_LABEL[p]}</option>
                 ))}
               </select>
             </div>
           </div>
 
+          <div className="muted" style={{ fontSize: 12, lineHeight: 1.45 }}>
+            Hoje todo membro do Marketing enxerga o quadro geral inteiro. O time
+            escolhido alimenta o filtro por time no quadro — não esconde tarefas.
+            Isso muda quando existir um quadro de subtime.
+          </div>
+
           {erroForm && <div className="error-box">{erroForm}</div>}
 
           <div style={{ display: "flex", gap: 8 }}>
             <button className="btn btn-primary" onClick={cadastrar}
-              disabled={salvando || !nome.trim() || !email.trim()}
+              disabled={salvando || !nome.trim() || !email.trim() || !timeId || !papel}
               style={{ padding: "8px 14px" }}>
               {salvando ? "Cadastrando…" : "Cadastrar"}
             </button>

@@ -386,6 +386,20 @@ export async function listSubteams(): Promise<Team[]> {
     .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
 }
 
+// Spec 014: raiz + subtimes, para o seletor de TIME no cadastro de membro.
+// Diferente de listSubteams, a RAIZ entra (a admin pode vincular alguem no
+// principal). Ordena raiz primeiro (parent_team_id === null), subtimes por
+// nome (pt-BR). Deriva do mesmo listTeams() memoizado.
+export async function listTeamsAll(): Promise<Team[]> {
+  const teams = await listTeams();
+  return [...teams].sort((a, b) => {
+    const ra = a.parent_team_id === null ? 0 : 1;
+    const rb = b.parent_team_id === null ? 0 : 1;
+    if (ra !== rb) return ra - rb;
+    return a.name.localeCompare(b.name, "pt-BR");
+  });
+}
+
 export type TaskCreateInput = {
   title: string;
   description?: string;
@@ -470,6 +484,10 @@ export async function listMembers(): Promise<Member[]> {
 
 export type MemberRole = "ADMIN" | "MANAGER" | "SUPERVISOR" | "OPERATOR";
 
+// Spec 015, Fatia 1: vinculo (time, papel) de um membro. Alimenta a UI de
+// administracao de papel (mostrar o papel atual antes de oferecer alterar).
+export type MemberTeam = { team_id: string; role: MemberRole };
+
 // POST /members devolve a senha provisoria UMA vez (ADR 0021 backend /
 // 0008 front). So existe nesta resposta; nao e re-buscavel.
 export type MemberCreated = Member & {
@@ -492,27 +510,34 @@ export function invalidateMembers() {
   _members = undefined;
 }
 
-// Cadastra um membro. teamId e role andam juntos (vincula a um subtime) ou
-// ambos ausentes. Exige team.manage (403 senao); 409 = e-mail repetido;
-// 422 = "1 subtime" ou campos invalidos. Invalida o cache no sucesso.
+// Spec 014: cadastra um membro. teamId e role sao OBRIGATORIOS -- o time pode
+// ser o principal (raiz) ou um subtime, escolha explicita na tela. Exige
+// team.manage (403); criar role=ADMIN exige ator ADMIN (403 do gate D2);
+// 409 = e-mail repetido; 422 = campos invalidos / "1 subtime". Invalida o
+// cache no sucesso.
 export async function createMember(input: {
   name: string;
   email: string;
-  teamId?: string | null;
-  role?: MemberRole | null;
+  teamId: string;
+  role: MemberRole;
 }): Promise<MemberCreated> {
   const r = await api<MemberCreated>("/api/v1/members", {
     method: "POST",
     body: {
       name: input.name,
       email: input.email,
-      ...(input.teamId && input.role
-        ? { team_id: input.teamId, role: input.role }
-        : {}),
+      team_id: input.teamId,
+      role: input.role,
     },
   });
   invalidateMembers();
   return r;
+}
+
+// Spec 015, Fatia 1: papeis de um membro por time. Leitura -- so exige estar
+// autenticado. Nao usa o cache de membros (e detalhe sob demanda).
+export async function listMemberTeams(userId: string): Promise<MemberTeam[]> {
+  return api<MemberTeam[]>(`/api/v1/members/${userId}/teams`);
 }
 
 // Reset administrativo: gera nova senha provisoria, devolvida UMA vez

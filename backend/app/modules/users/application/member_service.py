@@ -239,6 +239,23 @@ class MemberService:
             for user, subteam_id in rows
         ]
 
+    async def list_member_teams(
+        self, *, user_id: uuid.UUID
+    ) -> list[UserTeam]:
+        """Lista os vinculos (time, papel) de UM membro (Spec 015, Fatia 1).
+
+        Pre-requisito da UI de administracao de papel: a tela precisa ver o
+        papel atual por time antes de oferecer "alterar". Nao mexe na lista
+        geral nem no cache module-level de listMembers.
+
+        Erros:
+            EntityNotFoundError -- usuario inexistente no workspace.
+        """
+        user = await self._users.get_by_id(user_id)
+        if user is None:
+            raise EntityNotFoundError("User", identifier=user_id)
+        return await self._users.list_team_memberships(user_id=user_id)
+
     async def assign_to_team(
         self,
         *,
