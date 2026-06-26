@@ -350,6 +350,127 @@ class MemberService:
         )
         return membership
 
+    async def remove_member_from_team(
+        self, *, user_id: uuid.UUID, team_id: uuid.UUID
+    ) -> None:
+        """Remove um vinculo (user, team). Spec 015, F4 (B3).
+
+        Regra C1: a pessoa perde o acesso aquele time; as tarefas FICAM no
+        time (nao acompanham). Matriz C2 + anti-lockout C3 aplicam.
+
+        Erros:
+            EntityNotFoundError -- vinculo inexistente.
+            BusinessRuleError   -- tentativa de remover o proprio vinculo.
+            AuthorizationError  -- viola a matriz C2.
+        """
+        membership = await self._users.get_team_membership(
+            user_id=user_id, team_id=team_id
+        )
+        if membership is None:
+            raise EntityNotFoundError(
+                "UserTeam", identifier=f"{user_id}/{team_id}"
+            )
+        if user_id == require_tenant().user_id:
+            raise BusinessRuleError(
+                "Um membro nao pode remover o proprio vinculo.",
+                details={"user_id": str(user_id)},
+            )
+        self._assert_actor_can_target(membership.role)
+
+        # Nao pode remover o ULTIMO vinculo: deixaria o membro orfao (sem
+        # time, sem acesso) -- exatamente o estado que a Spec 014 eliminou.
+        # Para tirar de um time, mova-o ou remova um vinculo nao-unico.
+        vinculos = await self._users.list_team_memberships(user_id=user_id)
+        if len(vinculos) <= 1:
+            raise BusinessRuleError(
+                "Nao e possivel remover o ultimo vinculo do membro "
+                "(ele ficaria sem time).",
+                details={"user_id": str(user_id)},
+            )
+
+        await self._users.remove_team_membership(membership)
+        await self._session.flush()
+        logger.info(
+            "member.removed_from_team",
+            user_id=str(user_id),
+            team_id=str(team_id),
+        )
+
+    async def move_member_subteam(
+        self,
+        *,
+        user_id: uuid.UUID,
+        from_team_id: uuid.UUID,
+        to_team_id: uuid.UUID,
+    ) -> UserTeam:
+        """Move um membro de um time para outro, preservando o papel. F4 (B2).
+
+        Atomico: remove o vinculo de origem ANTES de adicionar o de destino,
+        para nunca violar a invariante "1 subtime por pessoa" (ADR 0008). Se
+        algo abaixo falhar, o UoW nao commita e tudo rola back.
+
+        Regra C1: a pessoa perde o acesso ao time de origem (tarefas ficam).
+        Matriz C2 (sobre o papel atual, preservado) + anti-lockout C3 aplicam.
+
+        Erros:
+            BusinessRuleError   -- origem == destino, ou mover a si mesmo.
+            EntityNotFoundError -- vinculo de origem ou time de destino ausente.
+            ConflictError       -- ja existe vinculo no destino.
+            AuthorizationError  -- viola a matriz C2.
+        """
+        if from_team_id == to_team_id:
+            raise BusinessRuleError(
+                "Time de origem e destino sao o mesmo.",
+                details={"fields": ["from_team_id", "to_team_id"]},
+            )
+        origem = await self._users.get_team_membership(
+            user_id=user_id, team_id=from_team_id
+        )
+        if origem is None:
+            raise EntityNotFoundError(
+                "UserTeam", identifier=f"{user_id}/{from_team_id}"
+            )
+        if user_id == require_tenant().user_id:
+            raise BusinessRuleError(
+                "Um membro nao pode mover a si mesmo.",
+                details={"user_id": str(user_id)},
+            )
+        destino = await self._teams.get_by_id(to_team_id)
+        if destino is None:
+            raise EntityNotFoundError("Team", identifier=to_team_id)
+
+        # Matriz: o papel e preservado, entao checa alvo E atribuicao do mesmo.
+        role = origem.role
+        self._assert_actor_can_target(role)
+        self._assert_actor_can_assign(role)
+
+        # Remove a origem PRIMEIRO -> ao adicionar, _assert_one_subteam ve
+        # apenas o destino como (eventual) subtime.
+        await self._users.remove_team_membership(origem)
+        await self._session.flush()
+
+        existing = await self._users.get_team_membership(
+            user_id=user_id, team_id=to_team_id
+        )
+        if existing is not None:
+            raise ConflictError(
+                "Membro ja faz parte do time de destino.",
+                details={"user_id": str(user_id), "team_id": str(to_team_id)},
+            )
+        await self._assert_one_subteam(user_id=user_id, team=destino)
+        nova = self._users.add_team_membership(
+            user_id=user_id, team_id=to_team_id, role=role
+        )
+        await self._session.flush()
+        logger.info(
+            "member.moved_subteam",
+            user_id=str(user_id),
+            from_team_id=str(from_team_id),
+            to_team_id=str(to_team_id),
+            role=role.value,
+        )
+        return nova
+
     async def deactivate_member(self, *, user_id: uuid.UUID) -> User:
         """Desativa um membro (is_active = False).
 

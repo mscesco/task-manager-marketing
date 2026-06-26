@@ -14,6 +14,8 @@ Rotas:
     POST   /members/{user_id}/reset-password -- resetar senha (team.manage)
     POST   /members/{user_id}/team         -- vincular a equipe (team.manage)
     PATCH  /members/{user_id}/teams/{team_id} -- trocar papel (team.manage)
+    DELETE /members/{user_id}/teams/{team_id} -- remover do time (team.manage)
+    POST   /members/{user_id}/move-subteam -- mover de time (team.manage)
     POST   /members/{user_id}/deactivate   -- desativar membro (team.manage)
 """
 
@@ -21,7 +23,7 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Response, status
 
 from app.core.deps import SessionDep, UoWDep
 from app.modules.auth.api.dependencies import TenantContextDep, require_permission
@@ -32,6 +34,7 @@ from app.modules.users.api.schemas import (
     MemberListResponse,
     MemberResponse,
     MemberTeamResponse,
+    MoveSubteamRequest,
     ResetPasswordResponse,
     TeamAssignmentRequest,
     TeamMembershipResponse,
@@ -192,6 +195,52 @@ async def change_member_role(
     """
     membership = await MemberService(uow.session).change_member_role(
         user_id=user_id, team_id=team_id, new_role=payload.role
+    )
+    await uow.commit()
+    return MemberTeamResponse(team_id=membership.team_id, role=membership.role)
+
+
+@router.delete(
+    "/{user_id}/teams/{team_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+    dependencies=[Depends(require_permission("team.manage"))],
+)
+async def remove_member_from_team(
+    user_id: uuid.UUID, team_id: uuid.UUID, uow: UoWDep
+) -> Response:
+    """Remove um membro de um time. Exige team.manage. Spec 015, F4 (B3).
+
+    A pessoa perde o acesso aquele time; as tarefas ficam (C1). Matriz C2 +
+    anti-lockout C3. 403 na violacao de matriz; 404 se o vinculo nao existe.
+
+    Responde 204 sem corpo (response_class=Response evita o FastAPI inferir
+    um response_model a partir do retorno).
+    """
+    await MemberService(uow.session).remove_member_from_team(
+        user_id=user_id, team_id=team_id
+    )
+    await uow.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post(
+    "/{user_id}/move-subteam",
+    response_model=MemberTeamResponse,
+    dependencies=[Depends(require_permission("team.manage"))],
+)
+async def move_member_subteam(
+    user_id: uuid.UUID, payload: MoveSubteamRequest, uow: UoWDep
+) -> MemberTeamResponse:
+    """Move um membro de um time para outro, preservando o papel. F4 (B2).
+
+    Atomico (remove origem antes de adicionar destino). Matriz C2 + C3.
+    400/404/409 conforme a regra; 403 na matriz.
+    """
+    membership = await MemberService(uow.session).move_member_subteam(
+        user_id=user_id,
+        from_team_id=payload.from_team_id,
+        to_team_id=payload.to_team_id,
     )
     await uow.commit()
     return MemberTeamResponse(team_id=membership.team_id, role=membership.role)

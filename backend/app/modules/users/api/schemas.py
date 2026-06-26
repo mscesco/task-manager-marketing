@@ -97,6 +97,13 @@ class ChangeMemberRoleRequest(BaseModel):
     role: UserTeamRole
 
 
+class MoveSubteamRequest(BaseModel):
+    """Move um membro de um time para outro, preservando o papel. F4 (B2)."""
+
+    from_team_id: uuid.UUID
+    to_team_id: uuid.UUID
+
+
 class TeamMembershipResponse(BaseModel):
     """Representacao de um vinculo membro<->equipe."""
 

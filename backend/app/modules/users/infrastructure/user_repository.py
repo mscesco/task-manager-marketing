@@ -133,6 +133,14 @@ class UserRepository(BaseRepository[User]):
         self.session.add(membership)
         return membership
 
+    async def remove_team_membership(self, membership: UserTeam) -> None:
+        """Remove (hard delete) um vinculo user<->team. Nao faz commit.
+
+        UserTeam e pivot sem soft delete -- a remocao e fisica. O commit e
+        do Unit of Work. Spec 015, Fatia 4.
+        """
+        await self.session.delete(membership)
+
     async def list_team_memberships(
         self, *, user_id: uuid.UUID
     ) -> list[UserTeam]:
