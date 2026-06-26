@@ -91,6 +91,12 @@ class TeamAssignmentRequest(BaseModel):
     role: UserTeamRole
 
 
+class ChangeMemberRoleRequest(BaseModel):
+    """Troca o papel de um vinculo (user, team) existente. Spec 015, F2."""
+
+    role: UserTeamRole
+
+
 class TeamMembershipResponse(BaseModel):
     """Representacao de um vinculo membro<->equipe."""
 

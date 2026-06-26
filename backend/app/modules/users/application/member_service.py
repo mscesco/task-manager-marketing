@@ -303,6 +303,53 @@ class MemberService:
         )
         return membership
 
+    async def change_member_role(
+        self,
+        *,
+        user_id: uuid.UUID,
+        team_id: uuid.UUID,
+        new_role: UserTeamRole,
+    ) -> UserTeam:
+        """Troca o papel de um vinculo (user, team) existente. Spec 015, F2.
+
+        Regras:
+            C3 (anti-lockout): ninguem altera o proprio papel.
+            C2 (matriz): ADMIN mexe em qualquer papel; MANAGER so atua sobre
+                alvo SUPERVISOR/OPERATOR e so atribui SUPERVISOR/OPERATOR.
+
+        Erros:
+            EntityNotFoundError -- vinculo (user, team) inexistente.
+            BusinessRuleError   -- tentativa de alterar o proprio papel.
+            AuthorizationError  -- viola a matriz C2.
+        """
+        membership = await self._users.get_team_membership(
+            user_id=user_id, team_id=team_id
+        )
+        if membership is None:
+            raise EntityNotFoundError(
+                "UserTeam", identifier=f"{user_id}/{team_id}"
+            )
+
+        # C3 -- nao pode rebaixar/promover a si mesmo (evita auto-lockout).
+        if user_id == require_tenant().user_id:
+            raise BusinessRuleError(
+                "Um membro nao pode alterar o proprio papel.",
+                details={"user_id": str(user_id)},
+            )
+
+        # C2 -- matriz de autorizacao (alvo atual + papel a atribuir).
+        self._assert_actor_can_target(membership.role)
+        self._assert_actor_can_assign(new_role)
+
+        membership.role = new_role
+        logger.info(
+            "member.role_changed",
+            user_id=str(user_id),
+            team_id=str(team_id),
+            role=new_role.value,
+        )
+        return membership
+
     async def deactivate_member(self, *, user_id: uuid.UUID) -> User:
         """Desativa um membro (is_active = False).
 
@@ -347,3 +394,34 @@ class MemberService:
                     "(regra: um subtime por usuario).",
                     details={"field": "team_id"},
                 )
+
+    # ----------------------------------------------------
+    # Matriz de autorizacao (Spec 015, C2) -- reusada por F2 e F4
+    # ----------------------------------------------------
+    def _assert_actor_can_target(self, current_role: UserTeamRole) -> None:
+        """ADMIN atua sobre qualquer papel; MANAGER so sobre SUPERVISOR/OPERATOR.
+
+        Levanta AuthorizationError (403) quando um nao-ADMIN tenta mexer num
+        membro que e MANAGER ou ADMIN.
+        """
+        if require_tenant().has_role("ADMIN"):
+            return
+        if current_role not in (UserTeamRole.SUPERVISOR, UserTeamRole.OPERATOR):
+            raise AuthorizationError(
+                "Sem permissao para administrar um membro com este papel.",
+                details={"role": current_role.value},
+            )
+
+    def _assert_actor_can_assign(self, new_role: UserTeamRole) -> None:
+        """ADMIN atribui qualquer papel; MANAGER so SUPERVISOR/OPERATOR.
+
+        Impede que um MANAGER promova alguem acima do proprio teto (criar par
+        ou superior). Levanta AuthorizationError (403) na violacao.
+        """
+        if require_tenant().has_role("ADMIN"):
+            return
+        if new_role not in (UserTeamRole.SUPERVISOR, UserTeamRole.OPERATOR):
+            raise AuthorizationError(
+                "Sem permissao para atribuir este papel.",
+                details={"role": new_role.value},
+            )

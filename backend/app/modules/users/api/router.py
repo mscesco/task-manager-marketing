@@ -13,6 +13,7 @@ Rotas:
     POST   /members                       -- cadastrar membro (team.manage)
     POST   /members/{user_id}/reset-password -- resetar senha (team.manage)
     POST   /members/{user_id}/team         -- vincular a equipe (team.manage)
+    PATCH  /members/{user_id}/teams/{team_id} -- trocar papel (team.manage)
     POST   /members/{user_id}/deactivate   -- desativar membro (team.manage)
 """
 
@@ -25,6 +26,7 @@ from fastapi import APIRouter, Depends, status
 from app.core.deps import SessionDep, UoWDep
 from app.modules.auth.api.dependencies import TenantContextDep, require_permission
 from app.modules.users.api.schemas import (
+    ChangeMemberRoleRequest,
     MemberCreatedResponse,
     MemberCreateRequest,
     MemberListResponse,
@@ -168,6 +170,31 @@ async def assign_member_to_team(
     )
     await uow.commit()
     return TeamMembershipResponse.model_validate(membership)
+
+
+@router.patch(
+    "/{user_id}/teams/{team_id}",
+    response_model=MemberTeamResponse,
+    dependencies=[Depends(require_permission("team.manage"))],
+)
+async def change_member_role(
+    user_id: uuid.UUID,
+    team_id: uuid.UUID,
+    payload: ChangeMemberRoleRequest,
+    uow: UoWDep,
+) -> MemberTeamResponse:
+    """Troca o papel de um membro num time. Exige team.manage. Spec 015, F2.
+
+    Matriz (C2): ADMIN mexe em qualquer papel; MANAGER so em SUPERVISOR/
+    OPERATOR e so atribui SUPERVISOR/OPERATOR. Ninguem altera o proprio
+    papel (C3, anti-lockout). 403 na violacao de matriz; 404 se o vinculo
+    nao existe.
+    """
+    membership = await MemberService(uow.session).change_member_role(
+        user_id=user_id, team_id=team_id, new_role=payload.role
+    )
+    await uow.commit()
+    return MemberTeamResponse(team_id=membership.team_id, role=membership.role)
 
 
 @router.post(
