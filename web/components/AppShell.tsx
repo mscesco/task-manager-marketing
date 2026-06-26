@@ -49,45 +49,41 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div style={{ minHeight: "100vh" }}>
-      <header
-        style={{
-          display: "flex", alignItems: "center", gap: 24,
-          padding: "0 24px", height: 56, background: "var(--surface)",
-          borderBottom: "1px solid var(--border)", position: "sticky", top: 0, zIndex: 10,
-        }}
-      >
-        <strong style={{ fontSize: 15, letterSpacing: "-0.01em" }}>
-          Gestor de Tarefas
-        </strong>
-        <nav style={{ display: "flex", gap: 4 }}>
+    <div className="min-h-screen">
+      <header className="sticky top-0 z-10 flex h-14 items-center gap-3 border-b border-border bg-surface px-4 sm:gap-6 sm:px-6">
+        <div className="flex shrink-0 items-center gap-2">
+          <img
+            src="/fecaf-simbolo.png"
+            alt="UniFECAF"
+            className="h-7 w-7 rounded-md bg-accent p-1"
+          />
+          <strong className="text-[15px] font-bold tracking-[-0.01em]">
+            Gestor de Tarefas
+          </strong>
+        </div>
+        <nav className="flex min-w-0 gap-1 overflow-x-auto">
           {nav.map((n) => {
             const active = pathname === n.href;
             return (
               <a
                 key={n.href}
                 href={n.href}
-                style={{
-                  padding: "7px 12px", borderRadius: 8, fontWeight: 600,
-                  fontSize: 14,
-                  color: active ? "var(--accent)" : "var(--text-soft)",
-                  background: active ? "var(--accent-soft)" : "transparent",
-                }}
+                className={`shrink-0 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-semibold ${
+                  active ? "bg-accent-soft text-accent" : "text-ink-soft"
+                }`}
               >
                 {n.label}
               </a>
             );
           })}
         </nav>
-        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 12 }}>
+        <div className="ml-auto flex shrink-0 items-center gap-2 sm:gap-3">
           <a
             href="/perfil"
             title="Meu perfil"
-            style={{
-              fontSize: 13, fontWeight: 600, padding: "5px 10px", borderRadius: 8,
-              color: pathname === "/perfil" ? "var(--accent)" : "var(--text-soft)",
-              background: pathname === "/perfil" ? "var(--accent-soft)" : "transparent",
-            }}
+            className={`max-w-[110px] truncate rounded-lg px-2.5 py-1 text-[13px] font-semibold sm:max-w-none ${
+              pathname === "/perfil" ? "bg-accent-soft text-accent" : "text-ink-soft"
+            }`}
           >
             {user?.name}
           </a>
@@ -96,7 +92,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           </button>
         </div>
       </header>
-      <main style={{ padding: 24 }}>{children}</main>
+      <main className="p-4 sm:p-6">{children}</main>
     </div>
   );
 }

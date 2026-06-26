@@ -431,7 +431,6 @@ export default function Board({
         onVoltar={voltarDetalhe}
         onClose={fecharDetalhe}
         onEditar={(t) => {
-          fecharDetalhe();
           setEditando(t);
         }}
         onAssigneesChange={aoMudarResponsaveis}
@@ -470,7 +469,7 @@ function Coluna({
     <div
       ref={setNodeRef}
       style={{
-        minWidth: 264, width: 264, flexShrink: 0, borderRadius: 10, padding: 4,
+        flex: 1, minWidth: 240, borderRadius: 10, padding: 4,
         background: isOver ? "var(--surface-2)" : "transparent",
         transition: "background .12s",
       }}
@@ -517,6 +516,14 @@ function CardArrastavel({
       {...listeners}
       {...attributes}
       onClick={() => onAbrir(task)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onAbrir(task);
+        }
+      }}
+      tabIndex={0}
+      className="tappable"
       style={{
         opacity: isDragging ? 0.4 : task.is_archived ? 0.55 : 1,
         cursor: "grab",

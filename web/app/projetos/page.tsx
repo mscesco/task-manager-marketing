@@ -7,6 +7,7 @@ import PageHeader from "@/components/PageHeader";
 import {
   listProjects,
   createProject,
+  currentUser,
   ApiError,
   type Project,
   type ProjectStatus,
@@ -40,6 +41,7 @@ function Projetos() {
   const [erro, setErro] = useState<string | null>(null);
 
   const [criando, setCriando] = useState(false);
+  const [podeCriar, setPodeCriar] = useState(false);
   const [titulo, setTitulo] = useState("");
   const [status, setStatus] = useState<ProjectStatus>("PLANNING");
   const [salvando, setSalvando] = useState(false);
@@ -50,6 +52,9 @@ function Projetos() {
       // pasta = projeto comum; o pessoal do proprio usuario nao entra aqui.
       .then((r) => setItems(r.items.filter((p) => !p.is_personal)))
       .catch((e: ApiError) => setErro(e.message));
+    currentUser()
+      .then((me) => setPodeCriar(me.permissions.includes("project.create")))
+      .catch(() => {});
   }, []);
 
   async function criar() {
@@ -78,10 +83,9 @@ function Projetos() {
       <PageHeader
         title="Projetos"
         count={`${items.length} projetos`}
-        className="max-w-[860px]"
         actions={
-          !criando && (
-            <button type="button" className="btn btn-primary ml-auto" onClick={() => setCriando(true)}>
+          podeCriar && !criando && (
+            <button type="button" className="btn btn-primary" onClick={() => setCriando(true)}>
               + Novo projeto
             </button>
           )
@@ -146,6 +150,13 @@ function Projetos() {
         <EmptyState
           title="Nenhum projeto ainda"
           description="Crie um projeto para agrupar tarefas de um trabalho maior."
+          action={
+            podeCriar && (
+              <button type="button" className="btn btn-primary" onClick={() => setCriando(true)}>
+                + Novo projeto
+              </button>
+            )
+          }
         />
       ) : (
         <div
@@ -158,6 +169,7 @@ function Projetos() {
             <a
               key={p.id}
               href={`/projetos/${p.id}`}
+              className="tappable"
               style={{
                 background: "var(--surface)", border: "1px solid var(--border)",
                 borderRadius: 12, padding: 16, textDecoration: "none", color: "inherit",

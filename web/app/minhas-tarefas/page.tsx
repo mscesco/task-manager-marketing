@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import AppShell from "@/components/AppShell";
 import EmptyState from "@/components/EmptyState";
 import PageHeader from "@/components/PageHeader";
@@ -26,6 +26,13 @@ const STATUS_LABEL: Record<string, string> = Object.fromEntries(
 const STATUS_COLOR: Record<string, string> = Object.fromEntries(
   STATUSES.map((s) => [s.key, s.color])
 );
+
+// Rotulo legivel do cabecalho de grupo (ex.: "Sexta-feira, 22 de agosto").
+function rotuloData(d: string): string {
+  const dt = new Date(d + "T00:00:00");
+  const s = dt.toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" });
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
 
 export default function MinhasTarefasPage() {
   return (
@@ -115,11 +122,77 @@ function Minhas() {
     setEditando(null);
   }
 
+  // Agrupa por data de entrega (D, estilo Runrunit): so aparece o dia que tem
+  // tarefa; grupos em ordem cronologica; sem-prazo por ultimo. due_date e
+  // "YYYY-MM-DD", entao ordenacao por string ja e cronologica.
+  const grupos = useMemo(() => {
+    const map = new Map<string, MyTaskItem[]>();
+    for (const t of items ?? []) {
+      const key = t.due_date ?? "";
+      const arr = map.get(key);
+      if (arr) arr.push(t);
+      else map.set(key, [t]);
+    }
+    const comData = [...map.entries()]
+      .filter(([k]) => k !== "")
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+    const semData = map.get("") ?? [];
+    return { comData, semData };
+  }, [items]);
+
   if (erro) return <div className="error-box" style={{ maxWidth: 480 }}>{erro}</div>;
   if (!items) return <div className="muted">Carregando…</div>;
 
   const focado = detalhe ? items.find((t) => t.id === detalhe.id) ?? detalhe : null;
   const filhosFocado = focado ? items.filter((t) => t.parent_task_id === focado.id) : [];
+
+  // Uma linha de tarefa. A data saiu daqui — agora vive no cabeçalho do grupo.
+  function linhaTarefa(t: MyTaskItem, i: number) {
+    return (
+      <div
+        key={t.id}
+        onClick={() => abrirDetalhe(t)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            abrirDetalhe(t);
+          }
+        }}
+        role="button"
+        tabIndex={0}
+        className="tappable"
+        style={{
+          display: "flex", alignItems: "center", gap: 14, padding: "12px 16px",
+          borderTop: i === 0 ? "none" : "1px solid var(--border)",
+          cursor: "pointer",
+        }}
+      >
+        <span
+          title={STATUS_LABEL[t.status]}
+          style={{
+            width: 9, height: 9, borderRadius: 999, flexShrink: 0,
+            background: STATUS_COLOR[t.status] || "#999",
+          }}
+        />
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{ fontSize: 14, fontWeight: 600, lineHeight: 1.35 }}>{t.title}</div>
+          <div style={{ display: "flex", gap: 8, marginTop: 3, flexWrap: "wrap" }}>
+            <span className="muted" style={{ fontSize: 12 }}>
+              {STATUS_LABEL[t.status] || t.status}
+            </span>
+            {t.relations.map((r) => (
+              <Badge key={r} tone="neutral" size="sm" weight="semibold" className="bg-surface-2 text-ink-soft">
+                {RELATION_LABEL[r] || r}
+              </Badge>
+            ))}
+          </div>
+        </div>
+        <Badge tone="soft" size="sm" color={PRIORITY_COLOR[t.priority]} className="shrink-0">
+          {PRIORITY_LABEL[t.priority] || t.priority}
+        </Badge>
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -131,52 +204,23 @@ function Minhas() {
           description="Tarefas em que voce e responsavel, criador ou acompanha aparecem aqui."
         />
       ) : (
-        <div
-          style={{
-            background: "var(--surface)", border: "1px solid var(--border)",
-            borderRadius: 12, overflow: "hidden", maxWidth: 860,
-          }}
-        >
-          {items.map((t, i) => (
-            <div
-              key={t.id}
-              onClick={() => abrirDetalhe(t)}
-              style={{
-                display: "flex", alignItems: "center", gap: 14, padding: "12px 16px",
-                borderTop: i === 0 ? "none" : "1px solid var(--border)",
-                cursor: "pointer",
-              }}
-            >
-              <span
-                title={STATUS_LABEL[t.status]}
-                style={{
-                  width: 9, height: 9, borderRadius: 999, flexShrink: 0,
-                  background: STATUS_COLOR[t.status] || "#999",
-                }}
-              />
-              <div style={{ minWidth: 0, flex: 1 }}>
-                <div style={{ fontSize: 14, fontWeight: 600, lineHeight: 1.35 }}>{t.title}</div>
-                <div style={{ display: "flex", gap: 8, marginTop: 3, flexWrap: "wrap" }}>
-                  <span className="muted" style={{ fontSize: 12 }}>
-                    {STATUS_LABEL[t.status] || t.status}
-                  </span>
-                  {t.relations.map((r) => (
-                    <Badge key={r} tone="neutral" size="sm" weight="semibold" className="bg-surface-2 text-ink-soft">
-                      {RELATION_LABEL[r] || r}
-                    </Badge>
-                  ))}
-                </div>
+        <div className="max-w-[1100px]">
+          {grupos.comData.map(([data, tarefas]) => (
+            <section key={data} className="mb-5">
+              <h2 className="mb-2 text-base font-semibold text-ink-soft">{rotuloData(data)}</h2>
+              <div className="overflow-hidden rounded-lg border border-border bg-surface">
+                {tarefas.map((t, i) => linhaTarefa(t, i))}
               </div>
-              <Badge tone="soft" size="sm" color={PRIORITY_COLOR[t.priority]} className="shrink-0">
-                {PRIORITY_LABEL[t.priority] || t.priority}
-              </Badge>
-              {t.due_date && (
-                <span className="muted" style={{ fontSize: 12, flexShrink: 0, width: 84, textAlign: "right" }}>
-                  {new Date(t.due_date + "T00:00:00").toLocaleDateString("pt-BR")}
-                </span>
-              )}
-            </div>
+            </section>
           ))}
+          {grupos.semData.length > 0 && (
+            <section className="mb-5">
+              <h2 className="mb-2 text-base font-semibold text-ink-soft">Sem prazo</h2>
+              <div className="overflow-hidden rounded-lg border border-border bg-surface">
+                {grupos.semData.map((t, i) => linhaTarefa(t, i))}
+              </div>
+            </section>
+          )}
         </div>
       )}
 
@@ -195,7 +239,6 @@ function Minhas() {
         onVoltar={voltarDetalhe}
         onClose={fecharDetalhe}
         onEditar={(t) => {
-          fecharDetalhe();
           setEditando(t);
         }}
         onAssigneesChange={aoMudarResponsaveis}

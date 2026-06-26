@@ -138,7 +138,7 @@ export default function TaskModal({
     <div
       onClick={fechar}
       style={{
-        position: "fixed", inset: 0, zIndex: 50,
+        position: "fixed", inset: 0, zIndex: 60,
         background: "rgba(16,24,40,0.45)",
         display: "flex", alignItems: "flex-start", justifyContent: "center",
         padding: "10vh 16px 16px",
