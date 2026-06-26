@@ -192,7 +192,7 @@ function Minhas() {
               </span>
               {t.due_date && (
                 <span className="muted" style={{ fontSize: 12, flexShrink: 0, width: 84, textAlign: "right" }}>
-                  {new Date(t.due_date).toLocaleDateString("pt-BR")}
+                  {new Date(t.due_date + "T00:00:00").toLocaleDateString("pt-BR")}
                 </span>
               )}
             </div>

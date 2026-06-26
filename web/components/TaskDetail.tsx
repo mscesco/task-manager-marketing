@@ -405,7 +405,7 @@ export default function TaskDetail({
           </span>
           {task.due_date && (
             <span className="muted" style={{ fontSize: 12.5 }}>
-              ◷ {new Date(task.due_date).toLocaleDateString("pt-BR")}
+              ◷ {new Date(task.due_date + "T00:00:00").toLocaleDateString("pt-BR")}
             </span>
           )}
           {task.is_archived && (
