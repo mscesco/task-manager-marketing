@@ -540,6 +540,20 @@ export async function listMemberTeams(userId: string): Promise<MemberTeam[]> {
   return api<MemberTeam[]>(`/api/v1/members/${userId}/teams`);
 }
 
+// Spec 015, Fatia 2: troca o papel de um membro num time. Exige team.manage;
+// matriz no backend (ADMIN qualquer; MANAGER so SUPERVISOR/OPERATOR; ninguem
+// altera o proprio). 403 = matriz; 404 = vinculo inexistente.
+export async function changeMemberRole(
+  userId: string,
+  teamId: string,
+  role: MemberRole
+): Promise<MemberTeam> {
+  return api<MemberTeam>(`/api/v1/members/${userId}/teams/${teamId}`, {
+    method: "PATCH",
+    body: { role },
+  });
+}
+
 // Reset administrativo: gera nova senha provisoria, devolvida UMA vez
 // (team.manage). Nao invalida _members (so muda senha, nao a lista).
 export async function resetMemberPassword(

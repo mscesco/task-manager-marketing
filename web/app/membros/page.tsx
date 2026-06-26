@@ -7,11 +7,14 @@ import {
   createMember,
   resetMemberPassword,
   deactivateMember,
+  listMemberTeams,
+  changeMemberRole,
   currentUser,
   ApiError,
   type Member,
   type Team,
   type MemberRole,
+  type MemberTeam,
   type CurrentUser,
 } from "@/lib/api";
 import { iniciais, corAvatar } from "@/lib/people";
@@ -236,6 +239,8 @@ function Membros() {
               key={m.id}
               m={m}
               subtime={nomeSubtime(m.team_id)}
+              times={times}
+              souAdmin={souAdmin}
               primeira={i === 0}
               podeGerenciar={podeGerenciar}
               isSelf={me?.id === m.id}
@@ -255,6 +260,8 @@ function Membros() {
 function LinhaMembro({
   m,
   subtime,
+  times,
+  souAdmin,
   primeira,
   podeGerenciar,
   isSelf,
@@ -263,6 +270,8 @@ function LinhaMembro({
 }: {
   m: Member;
   subtime: string;
+  times: Team[];
+  souAdmin: boolean;
   primeira: boolean;
   podeGerenciar: boolean;
   isSelf: boolean;
@@ -274,7 +283,61 @@ function LinhaMembro({
   const [busy, setBusy] = useState(false);
   const [erroLinha, setErroLinha] = useState<string | null>(null);
 
+  // painel de papel (Spec 015, F3) -- carregado sob demanda.
+  const [editandoPapel, setEditandoPapel] = useState(false);
+  const [vinculos, setVinculos] = useState<MemberTeam[] | null>(null);
+  const [papelBusy, setPapelBusy] = useState<string | null>(null); // team_id salvando
+
   const mostraAcoes = podeGerenciar && !isSelf && m.is_active;
+
+  // Papeis atribuiveis pelo ator: ADMIN => todos; senao so SUPERVISOR/OPERATOR.
+  // Espelha a matriz C2 do backend (que trava de qualquer jeito).
+  const papeisAtribuiveis: MemberRole[] = souAdmin
+    ? PAPEIS
+    : ["OPERATOR", "SUPERVISOR"];
+
+  function nomeTime(id: string): string {
+    return times.find((t) => t.id === id)?.name ?? "—";
+  }
+
+  // C2 (front): o ator so edita vinculo cujo papel atual ele alcanca.
+  function podeEditarVinculo(papelAtual: MemberRole): boolean {
+    return souAdmin || papelAtual === "SUPERVISOR" || papelAtual === "OPERATOR";
+  }
+
+  async function abrirPapel() {
+    setErroLinha(null);
+    setEditandoPapel(true);
+    setVinculos(null);
+    try {
+      setVinculos(await listMemberTeams(m.id));
+    } catch (e) {
+      setErroLinha((e as ApiError).message || "Nao consegui carregar os papeis.");
+      setEditandoPapel(false);
+    }
+  }
+
+  async function salvarPapel(teamId: string, novo: MemberRole) {
+    setPapelBusy(teamId);
+    setErroLinha(null);
+    try {
+      const r = await changeMemberRole(m.id, teamId, novo);
+      setVinculos((vs) =>
+        (vs ?? []).map((v) => (v.team_id === teamId ? { ...v, role: r.role } : v))
+      );
+    } catch (e) {
+      const a = e as ApiError;
+      setErroLinha(
+        a.status === 403
+          ? "Sem permissao para esse papel (a matriz do servidor recusou)."
+          : a.status === 404
+          ? "Vinculo nao encontrado (a pessoa pode ter saido do time)."
+          : a.message || "Nao consegui alterar o papel."
+      );
+    } finally {
+      setPapelBusy(null);
+    }
+  }
 
   async function resetar() {
     setBusy(true);
@@ -348,8 +411,12 @@ function LinhaMembro({
           </span>
         )}
 
-        {mostraAcoes && !confirmReset && !confirmDesativar && (
+        {mostraAcoes && !confirmReset && !confirmDesativar && !editandoPapel && (
           <span style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+            <button className="btn btn-ghost" onClick={abrirPapel}
+              style={{ padding: "4px 10px", fontSize: 12 }}>
+              Alterar papel
+            </button>
             <button className="btn btn-ghost" onClick={() => { setErroLinha(null); setConfirmReset(true); }}
               style={{ padding: "4px 10px", fontSize: 12 }}>
               Resetar senha
@@ -393,6 +460,52 @@ function LinhaMembro({
             style={{ padding: "4px 12px", fontSize: 12 }}>
             Cancelar
           </button>
+        </div>
+      )}
+
+      {/* painel: alterar papel (Spec 015, F3) */}
+      {editandoPapel && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, paddingLeft: 44 }}>
+          {vinculos === null ? (
+            <span className="muted" style={{ fontSize: 12.5 }}>Carregando papeis…</span>
+          ) : vinculos.length === 0 ? (
+            <span className="muted" style={{ fontSize: 12.5 }}>
+              Este membro nao tem vinculo de time.
+            </span>
+          ) : (
+            vinculos.map((v) => {
+              const editavel = podeEditarVinculo(v.role);
+              return (
+                <div key={v.team_id} style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                  <span style={{ fontSize: 12.5, minWidth: 120 }}>{nomeTime(v.team_id)}</span>
+                  {editavel ? (
+                    <select
+                      className="input"
+                      value={v.role}
+                      disabled={papelBusy === v.team_id}
+                      onChange={(ev) => salvarPapel(v.team_id, ev.target.value as MemberRole)}
+                      style={{ padding: "4px 8px", fontSize: 12, width: "auto" }}
+                    >
+                      {papeisAtribuiveis.map((p) => (
+                        <option key={p} value={p}>{PAPEL_LABEL[p]}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <span className="muted" style={{ fontSize: 12.5 }}>
+                      {PAPEL_LABEL[v.role]} <span style={{ fontStyle: "italic" }}>(so um ADMIN altera)</span>
+                    </span>
+                  )}
+                  {papelBusy === v.team_id && <span className="muted" style={{ fontSize: 12 }}>salvando…</span>}
+                </div>
+              );
+            })
+          )}
+          <div>
+            <button className="btn btn-ghost" onClick={() => { setEditandoPapel(false); setVinculos(null); }}
+              disabled={papelBusy !== null} style={{ padding: "4px 12px", fontSize: 12 }}>
+              Fechar
+            </button>
+          </div>
         </div>
       )}
 
