@@ -23,6 +23,7 @@ from app.db.models.enums import (
     TaskStatus,
     UserTeamRole,
 )
+from app.db.models.notifications import Notification
 from app.db.models.operational import Project, Task
 from app.db.models.organization import Team, User, UserTeam, Workspace
 
@@ -42,6 +43,8 @@ __all__ = [
     "Attachment",
     "TimeEntry",
     "TaskHistory",
+    # Notificacoes
+    "Notification",
     # Enums
     "UserTeamRole",
     "ProjectStatus",

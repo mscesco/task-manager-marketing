@@ -24,6 +24,9 @@ from app.core.logging import get_logger
 from app.core.tenant import Membership, require_tenant
 from app.db.models import Task
 from app.modules.auth.domain import team_scope
+from app.modules.notifications.application.notification_emitter import (
+    NotificationEmitter,
+)
 from app.modules.tasks.application.task_guards import TaskScopeGuards, task_visible
 from app.modules.tasks.domain.history import (
     build_assigned_entry,
@@ -61,6 +64,7 @@ class CollaborationService:
         self._projects = ProjectRepository(session)
         self._members = MembershipRepository(session)
         self._guards = TaskScopeGuards(session)
+        self._notify = NotificationEmitter(session)
 
     # ----------------------------------------------------
     # Assignees
@@ -96,6 +100,14 @@ class CollaborationService:
             ],
         )
         await self._session.flush()
+        # Emissao de notificacao (Spec 018, F2): na MESMA transacao.
+        # No-op se for auto-designacao (tratado no emitter).
+        await self._notify.task_assigned(
+            recipient_id=user_id,
+            actor_id=tenant.user_id,
+            task_id=task.id,
+            task_title=task.title,
+        )
         logger.info("task.assigned", task_id=str(task_id), user_id=str(user_id))
         return task, True
 
