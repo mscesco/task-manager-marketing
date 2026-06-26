@@ -11,7 +11,10 @@ Roda so com db-test de pe + TEST_DATABASE_URL (senao e PULADO).
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
+
 import pytest
+from sqlalchemy import update
 
 from app.db.models import Comment
 from app.modules.tasks.application.comment_service import CommentService
@@ -56,9 +59,22 @@ async def test_cria_e_lista_em_ordem(db) -> None:
                memberships=(mship(r, "MANAGER"),), team_tree=_forest(r, a, b))
     with acting_as(**ctx):
         svc = CommentService(db)
-        await svc.create_comment(task_id=task.id, content="primeiro")
-        await svc.create_comment(task_id=task.id, content="segundo")
-        await svc.create_comment(task_id=task.id, content="terceiro")
+        c1 = await svc.create_comment(task_id=task.id, content="primeiro")
+        c2 = await svc.create_comment(task_id=task.id, content="segundo")
+        c3 = await svc.create_comment(task_id=task.id, content="terceiro")
+
+        # created_at vem de func.now() -> CONSTANTE na mesma transacao, entao no
+        # teste os tres empatam. Em producao cada comentario nasce numa
+        # request/transacao distinta, com created_at distinto. Carimba instantes
+        # crescentes pra refletir isso e a ordem ser deterministica.
+        base_ts = datetime(2026, 1, 1, tzinfo=UTC)
+        for i, cid in enumerate((c1.id, c2.id, c3.id)):
+            await db.execute(
+                update(Comment)
+                .where(Comment.id == cid)
+                .values(created_at=base_ts + timedelta(seconds=i))
+                .execution_options(synchronize_session=False)
+            )
 
         page = await svc.list_comments(task_id=task.id, params=PAGE)
 

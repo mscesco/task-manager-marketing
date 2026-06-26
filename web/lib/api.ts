@@ -554,6 +554,49 @@ export async function changeMemberRole(
   });
 }
 
+// Spec 016: adiciona um membro EXISTENTE a um time, com um papel. Exige
+// team.manage; matriz no backend (ADMIN qualquer; MANAGER SUP/OP -> 403);
+// 409 = ja no time; 422 = 2o subtime. Invalida o cache (a lista pode mudar).
+export async function assignMemberToTeam(
+  userId: string,
+  teamId: string,
+  role: MemberRole
+): Promise<MemberTeam> {
+  const r = await api<MemberTeam>(`/api/v1/members/${userId}/team`, {
+    method: "POST",
+    body: { team_id: teamId, role },
+  });
+  invalidateMembers();
+  return r;
+}
+
+// Spec 015, Fatia 4: remove um membro de um time (B3). 204 sem corpo. Matriz
+// (403) + anti-lockout/anti-orfao (409 se for o ultimo vinculo) no backend.
+export async function removeMemberFromTeam(
+  userId: string,
+  teamId: string
+): Promise<void> {
+  await api<void>(`/api/v1/members/${userId}/teams/${teamId}`, {
+    method: "DELETE",
+  });
+  invalidateMembers(); // o subtime exibido na lista pode mudar
+}
+
+// Spec 015, Fatia 4: move um membro de um time para outro (B2), preservando o
+// papel. Atomico no backend; matriz (403); 409 = mesmo time ou ja no destino.
+export async function moveMemberSubteam(
+  userId: string,
+  fromTeamId: string,
+  toTeamId: string
+): Promise<MemberTeam> {
+  const r = await api<MemberTeam>(`/api/v1/members/${userId}/move-subteam`, {
+    method: "POST",
+    body: { from_team_id: fromTeamId, to_team_id: toTeamId },
+  });
+  invalidateMembers(); // o subtime exibido na lista mudou
+  return r;
+}
+
 // Reset administrativo: gera nova senha provisoria, devolvida UMA vez
 // (team.manage). Nao invalida _members (so muda senha, nao a lista).
 export async function resetMemberPassword(

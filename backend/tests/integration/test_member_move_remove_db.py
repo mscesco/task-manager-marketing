@@ -162,6 +162,35 @@ async def test_move_subtime_preserva_papel_e_um_subtime(db) -> None:
         assert len(todos) == 1
 
 
+async def test_move_subtime_para_raiz_vira_geral(db) -> None:
+    """'Tirar do subtime' = mover pra raiz, preservando o papel.
+
+    A pessoa estava so no subtime; apos mover, fica so na raiz (geral) e
+    deixa de ter subtime.
+    """
+    ws = await f.make_workspace(db)
+    raiz = await f.make_team(db, workspace_id=ws, slug="marketing")
+    dev = await f.make_team(db, workspace_id=ws, parent_team_id=raiz, slug="dev")
+    admin = await f.make_user(db, workspace_id=ws, email="admin@t.dev")
+    await f.add_member(db, workspace_id=ws, user_id=admin, team_id=raiz, role="ADMIN")
+    alvo = await f.make_user(db, workspace_id=ws, email="jaque@t.dev")
+    await f.add_member(db, workspace_id=ws, user_id=alvo, team_id=dev, role="SUPERVISOR")
+
+    with acting_as(
+        workspace_id=ws, user_id=admin,
+        memberships=(Membership(team_id=raiz, role="ADMIN"),),
+    ):
+        await MemberService(db).move_member_subteam(
+            user_id=alvo, from_team_id=dev, to_team_id=raiz
+        )
+        assert await _membership(db, user_id=alvo, team_id=dev) is None
+        na_raiz = await _membership(db, user_id=alvo, team_id=raiz)
+        assert na_raiz is not None
+        assert na_raiz.role == UserTeamRole.SUPERVISOR  # papel preservado
+        todos = await MemberService(db)._users.list_team_memberships(user_id=alvo)
+        assert len(todos) == 1
+
+
 async def test_move_origem_destino_iguais(db) -> None:
     ws = await f.make_workspace(db)
     raiz = await f.make_team(db, workspace_id=ws, slug="marketing")

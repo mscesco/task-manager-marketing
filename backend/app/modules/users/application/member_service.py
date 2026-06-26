@@ -265,9 +265,15 @@ class MemberService:
     ) -> UserTeam:
         """Vincula um membro existente a uma equipe, com um papel.
 
+        Spec 016: passa pela matriz de autorizacao -- ADMIN atribui qualquer
+        papel; MANAGER so SUPERVISOR/OPERATOR. Adicionar e aditivo, entao nao
+        ha self-guard (diferente de trocar/remover).
+
         Erros:
             EntityNotFoundError -- usuario ou equipe inexistente.
+            AuthorizationError  -- ator nao pode atribuir esse papel (matriz).
             ConflictError       -- usuario ja esta nessa equipe.
+            ValidationError     -- ja pertence a outro subtime (1-subtime).
         """
         # usuario deve existir no workspace
         user = await self._users.get_by_id(user_id)
@@ -278,6 +284,9 @@ class MemberService:
         team = await self._teams.get_by_id(team_id)
         if team is None:
             raise EntityNotFoundError("Team", identifier=team_id)
+
+        # matriz (Spec 016): so pode atribuir papel que o ator alcanca.
+        self._assert_actor_can_assign(role)
 
         # nao pode duplicar o vinculo (UNIQUE user_id, team_id)
         existing = await self._users.get_team_membership(

@@ -2,7 +2,7 @@
 
 Comment tem workspace_id -> herda BaseRepository (queries ja escopadas por
 tenant e por soft-delete). Metodos especificos:
-    - list_for_task: pagina do thread, created_at ASC, ja aplicando a regra
+    - list_for_task: pagina do thread, created_at ASC (desempate por id), aplicando a regra
       de exibicao do tombstone (D5) no proprio SELECT, pra `total` e `items`
       nao divergirem;
     - add: insere (flush no service);
@@ -30,7 +30,7 @@ class CommentRepository(BaseRepository[Comment]):
     async def list_for_task(
         self, *, task_id: uuid.UUID, limit: int, offset: int
     ) -> tuple[list[Comment], int]:
-        """Comentarios visiveis da task, created_at ASC, paginado.
+        """Comentarios visiveis da task, created_at ASC (desempate por id), paginado.
 
         Visivel = ativo OU (apagado e com ao menos uma replica ATIVA) -- o
         tombstone (D5). A condicao mora no SELECT pra `total` casar com o que
@@ -56,7 +56,9 @@ class CommentRepository(BaseRepository[Comment]):
         total = (await self.session.execute(count_stmt)).scalar_one()
 
         page_stmt = (
-            base.order_by(Comment.created_at.asc()).limit(limit).offset(offset)
+            base.order_by(Comment.created_at.asc(), Comment.id.asc())
+            .limit(limit)
+            .offset(offset)
         )
         items = list((await self.session.execute(page_stmt)).scalars().all())
         return items, total

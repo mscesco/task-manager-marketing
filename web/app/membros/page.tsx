@@ -9,6 +9,9 @@ import {
   deactivateMember,
   listMemberTeams,
   changeMemberRole,
+  removeMemberFromTeam,
+  moveMemberSubteam,
+  assignMemberToTeam,
   currentUser,
   ApiError,
   type Member,
@@ -287,6 +290,12 @@ function LinhaMembro({
   const [editandoPapel, setEditandoPapel] = useState(false);
   const [vinculos, setVinculos] = useState<MemberTeam[] | null>(null);
   const [papelBusy, setPapelBusy] = useState<string | null>(null); // team_id salvando
+  const [confirmRemover, setConfirmRemover] = useState<string | null>(null); // team_id
+  // adicionar a um time (Spec 016)
+  const [adicionando, setAdicionando] = useState(false);
+  const [novoTimeId, setNovoTimeId] = useState("");
+  const [novoPapel, setNovoPapel] = useState<MemberRole | "">("");
+  const [addBusy, setAddBusy] = useState(false);
 
   const mostraAcoes = podeGerenciar && !isSelf && m.is_active;
 
@@ -305,6 +314,58 @@ function LinhaMembro({
     return souAdmin || papelAtual === "SUPERVISOR" || papelAtual === "OPERATOR";
   }
 
+  function ehSubtime(teamId: string): boolean {
+    return (times.find((t) => t.id === teamId)?.parent_team_id ?? null) !== null;
+  }
+
+  // Destinos de "mover": qualquer time onde a pessoa AINDA nao esta (exclui o
+  // atual e os que ela ja tem). Inclui a raiz (Marketing geral) -> "tirar do
+  // subtime" = mover pra raiz. Evita oferecer destino que daria 409.
+  function destinosDeMover(exceto: string): Team[] {
+    const jaEsta = new Set((vinculos ?? []).map((x) => x.team_id));
+    return times.filter((t) => t.id !== exceto && !jaEsta.has(t.id));
+  }
+
+  // Times para ADICIONAR (Spec 016): onde a pessoa ainda nao esta. Se ela ja
+  // tem um subtime, nao oferece outro (regra 1-subtime -> seria 422); a raiz
+  // continua valida.
+  function timesParaAdicionar(): Team[] {
+    const jaEsta = new Set((vinculos ?? []).map((x) => x.team_id));
+    const temSubtime = (vinculos ?? []).some((x) => ehSubtime(x.team_id));
+    return times.filter((t) => {
+      if (jaEsta.has(t.id)) return false;
+      if (temSubtime && t.parent_team_id !== null) return false;
+      return true;
+    });
+  }
+
+  async function adicionarVinculo() {
+    if (!novoTimeId || !novoPapel) return;
+    setAddBusy(true);
+    setErroLinha(null);
+    try {
+      await assignMemberToTeam(m.id, novoTimeId, novoPapel as MemberRole);
+      setAdicionando(false);
+      setNovoTimeId("");
+      setNovoPapel("");
+      await recarregarVinculos();
+      onMudou();
+    } catch (e) {
+      const a = e as ApiError;
+      setErroLinha(
+        a.status === 403
+          ? "Sem permissao para esse papel (a matriz do servidor recusou)."
+          : a.status === 409
+          ? "A pessoa ja faz parte desse time."
+          : a.status === 422
+          ? "Invalido: a pessoa ja esta em outro subtime (regra: 1 subtime)."
+          : a.message || "Nao consegui adicionar."
+      );
+    } finally {
+      setAddBusy(false);
+    }
+  }
+
   async function abrirPapel() {
     setErroLinha(null);
     setEditandoPapel(true);
@@ -314,6 +375,14 @@ function LinhaMembro({
     } catch (e) {
       setErroLinha((e as ApiError).message || "Nao consegui carregar os papeis.");
       setEditandoPapel(false);
+    }
+  }
+
+  async function recarregarVinculos() {
+    try {
+      setVinculos(await listMemberTeams(m.id));
+    } catch (e) {
+      setErroLinha((e as ApiError).message || "Nao consegui recarregar os papeis.");
     }
   }
 
@@ -333,6 +402,53 @@ function LinhaMembro({
           : a.status === 404
           ? "Vinculo nao encontrado (a pessoa pode ter saido do time)."
           : a.message || "Nao consegui alterar o papel."
+      );
+    } finally {
+      setPapelBusy(null);
+    }
+  }
+
+  async function removerVinculo(teamId: string) {
+    setPapelBusy(teamId);
+    setErroLinha(null);
+    try {
+      await removeMemberFromTeam(m.id, teamId);
+      setConfirmRemover(null);
+      await recarregarVinculos();
+      onMudou(); // o subtime na lista pode ter mudado
+    } catch (e) {
+      const a = e as ApiError;
+      setErroLinha(
+        a.status === 403
+          ? "Sem permissao para remover esse vinculo."
+          : a.status === 409
+          ? "Nao da pra remover: e o unico time da pessoa (ela ficaria sem time)."
+          : a.status === 404
+          ? "Vinculo nao encontrado (pode ter mudado)."
+          : a.message || "Nao consegui remover."
+      );
+    } finally {
+      setPapelBusy(null);
+    }
+  }
+
+  async function moverPara(fromTeamId: string, toTeamId: string) {
+    setPapelBusy(fromTeamId);
+    setErroLinha(null);
+    try {
+      await moveMemberSubteam(m.id, fromTeamId, toTeamId);
+      await recarregarVinculos();
+      onMudou(); // o subtime na lista mudou
+    } catch (e) {
+      const a = e as ApiError;
+      setErroLinha(
+        a.status === 403
+          ? "Sem permissao para mover esse membro."
+          : a.status === 409
+          ? "Movimento invalido (mesmo time ou ja faz parte do destino)."
+          : a.status === 404
+          ? "Time de origem ou destino nao encontrado."
+          : a.message || "Nao consegui mover."
       );
     } finally {
       setPapelBusy(null);
@@ -475,34 +591,121 @@ function LinhaMembro({
           ) : (
             vinculos.map((v) => {
               const editavel = podeEditarVinculo(v.role);
+              const destinos = destinosDeMover(v.team_id);
+              const podeMover = editavel && ehSubtime(v.team_id) && destinos.length > 0;
+              const podeRemover = editavel && vinculos.length > 1;
+              const ocupada = papelBusy === v.team_id;
               return (
-                <div key={v.team_id} style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                  <span style={{ fontSize: 12.5, minWidth: 120 }}>{nomeTime(v.team_id)}</span>
-                  {editavel ? (
-                    <select
-                      className="input"
-                      value={v.role}
-                      disabled={papelBusy === v.team_id}
-                      onChange={(ev) => salvarPapel(v.team_id, ev.target.value as MemberRole)}
-                      style={{ padding: "4px 8px", fontSize: 12, width: "auto" }}
-                    >
-                      {papeisAtribuiveis.map((p) => (
-                        <option key={p} value={p}>{PAPEL_LABEL[p]}</option>
-                      ))}
-                    </select>
-                  ) : (
-                    <span className="muted" style={{ fontSize: 12.5 }}>
-                      {PAPEL_LABEL[v.role]} <span style={{ fontStyle: "italic" }}>(so um ADMIN altera)</span>
-                    </span>
+                <div key={v.team_id} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                    <span style={{ fontSize: 12.5, minWidth: 120 }}>{nomeTime(v.team_id)}</span>
+                    {editavel ? (
+                      <select
+                        className="input"
+                        value={v.role}
+                        disabled={ocupada}
+                        onChange={(ev) => salvarPapel(v.team_id, ev.target.value as MemberRole)}
+                        style={{ padding: "4px 8px", fontSize: 12, width: "auto" }}
+                      >
+                        {papeisAtribuiveis.map((p) => (
+                          <option key={p} value={p}>{PAPEL_LABEL[p]}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <span className="muted" style={{ fontSize: 12.5 }}>
+                        {PAPEL_LABEL[v.role]} <span style={{ fontStyle: "italic" }}>(so um ADMIN altera)</span>
+                      </span>
+                    )}
+                    {podeMover && (
+                      <select
+                        className="input"
+                        value=""
+                        disabled={ocupada}
+                        onChange={(ev) => { if (ev.target.value) moverPara(v.team_id, ev.target.value); }}
+                        style={{ padding: "4px 8px", fontSize: 12, width: "auto" }}
+                      >
+                        <option value="">Mover para…</option>
+                        {destinos.map((t) => (
+                          <option key={t.id} value={t.id}>
+                            {t.parent_team_id === null ? `${t.name} (geral)` : t.name}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                    {podeRemover && confirmRemover !== v.team_id && (
+                      <button className="btn btn-ghost" disabled={ocupada}
+                        onClick={() => { setErroLinha(null); setConfirmRemover(v.team_id); }}
+                        style={{ padding: "4px 10px", fontSize: 12, color: "var(--danger, #b42318)" }}>
+                        Remover
+                      </button>
+                    )}
+                    {ocupada && <span className="muted" style={{ fontSize: 12 }}>salvando…</span>}
+                  </div>
+
+                  {confirmRemover === v.team_id && (
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                      <span className="muted" style={{ fontSize: 12 }}>
+                        Tirar {m.name} de <strong>{nomeTime(v.team_id)}</strong>? Perde o acesso a esse time; as tarefas dele ficam.
+                      </span>
+                      <button className="btn btn-primary" disabled={ocupada}
+                        onClick={() => removerVinculo(v.team_id)}
+                        style={{ padding: "4px 12px", fontSize: 12, background: "var(--danger, #b42318)", borderColor: "transparent" }}>
+                        {ocupada ? "…" : "Remover"}
+                      </button>
+                      <button className="btn btn-ghost" disabled={ocupada}
+                        onClick={() => setConfirmRemover(null)}
+                        style={{ padding: "4px 12px", fontSize: 12 }}>
+                        Cancelar
+                      </button>
+                    </div>
                   )}
-                  {papelBusy === v.team_id && <span className="muted" style={{ fontSize: 12 }}>salvando…</span>}
                 </div>
               );
             })
           )}
+          {/* adicionar a um time (Spec 016) */}
+          {vinculos !== null && mostraAcoes && timesParaAdicionar().length > 0 && (
+            adicionando ? (
+              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                <select className="input" value={novoTimeId} disabled={addBusy}
+                  onChange={(ev) => setNovoTimeId(ev.target.value)}
+                  style={{ padding: "4px 8px", fontSize: 12, width: "auto" }}>
+                  <option value="">— time —</option>
+                  {timesParaAdicionar().map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.parent_team_id === null ? `${t.name} (geral)` : t.name}
+                    </option>
+                  ))}
+                </select>
+                <select className="input" value={novoPapel} disabled={addBusy}
+                  onChange={(ev) => setNovoPapel(ev.target.value as MemberRole | "")}
+                  style={{ padding: "4px 8px", fontSize: 12, width: "auto" }}>
+                  <option value="">— papel —</option>
+                  {papeisAtribuiveis.map((p) => (
+                    <option key={p} value={p}>{PAPEL_LABEL[p]}</option>
+                  ))}
+                </select>
+                <button className="btn btn-primary" onClick={adicionarVinculo}
+                  disabled={addBusy || !novoTimeId || !novoPapel}
+                  style={{ padding: "4px 12px", fontSize: 12 }}>
+                  {addBusy ? "…" : "Adicionar"}
+                </button>
+                <button className="btn btn-ghost" disabled={addBusy}
+                  onClick={() => { setAdicionando(false); setNovoTimeId(""); setNovoPapel(""); }}
+                  style={{ padding: "4px 12px", fontSize: 12 }}>
+                  Cancelar
+                </button>
+              </div>
+            ) : (
+              <button className="btn btn-ghost" onClick={() => { setErroLinha(null); setAdicionando(true); }}
+                style={{ padding: "4px 10px", fontSize: 12, alignSelf: "flex-start" }}>
+                + Adicionar a um time
+              </button>
+            )
+          )}
           <div>
-            <button className="btn btn-ghost" onClick={() => { setEditandoPapel(false); setVinculos(null); }}
-              disabled={papelBusy !== null} style={{ padding: "4px 12px", fontSize: 12 }}>
+            <button className="btn btn-ghost" onClick={() => { setEditandoPapel(false); setVinculos(null); setConfirmRemover(null); setAdicionando(false); }}
+              disabled={papelBusy !== null || addBusy} style={{ padding: "4px 12px", fontSize: 12 }}>
               Fechar
             </button>
           </div>
