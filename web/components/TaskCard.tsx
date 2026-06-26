@@ -1,7 +1,9 @@
 "use client";
 import { PRIORITY_LABEL, PRIORITY_COLOR } from "@/lib/status";
+import Badge from "@/components/Badge";
+import Avatar from "@/components/Avatar";
 import type { Task } from "@/lib/api";
-import { iniciais, nomeCurto, corAvatar } from "@/lib/people";
+import { nomeCurto } from "@/lib/people";
 
 // Selo do card: SO os responsaveis do proprio card (Entrega 10). Os das
 // subtarefas vivem na sublista do modal -- nao sao agregados aqui (assignee
@@ -51,15 +53,9 @@ export default function TaskCard({
         </span>
       )}
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-        <span
-          style={{
-            fontSize: 11, fontWeight: 700, padding: "2px 7px", borderRadius: 999,
-            color: PRIORITY_COLOR[task.priority] || "var(--text-soft)",
-            background: (PRIORITY_COLOR[task.priority] || "#999") + "1a",
-          }}
-        >
+        <Badge tone="soft" size="sm" color={PRIORITY_COLOR[task.priority]}>
           {PRIORITY_LABEL[task.priority] || task.priority}
-        </span>
+        </Badge>
         {task.due_date && (
           <span className="muted" style={{ fontSize: 11.5 }}>
             ◷ {new Date(task.due_date + "T00:00:00").toLocaleDateString("pt-BR")}
@@ -83,20 +79,15 @@ export default function TaskCard({
             {mostra.map((id, i) => {
               const nome = members?.get(id)?.name ?? "";
               return (
-                <span
+                <Avatar
                   key={id}
+                  id={id}
+                  name={nome}
+                  size="sm"
                   title={nome ? nomeCurto(nome) : "Responsavel"}
-                  style={{
-                    width: 20, height: 20, borderRadius: 999,
-                    background: corAvatar(id), color: "#fff",
-                    fontSize: 9.5, fontWeight: 700,
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    border: "1.5px solid var(--surface)",
-                    marginLeft: i === 0 ? 0 : -6,
-                  }}
-                >
-                  {nome ? iniciais(nome) : "?"}
-                </span>
+                  className="border-[1.5px] border-surface"
+                  style={{ marginLeft: i === 0 ? 0 : -6 }}
+                />
               );
             })}
             {resto > 0 && (

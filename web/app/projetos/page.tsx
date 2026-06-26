@@ -1,6 +1,9 @@
 "use client";
 import { useEffect, useState } from "react";
 import AppShell from "@/components/AppShell";
+import EmptyState from "@/components/EmptyState";
+import Card from "@/components/Card";
+import PageHeader from "@/components/PageHeader";
 import {
   listProjects,
   createProject,
@@ -72,31 +75,21 @@ function Projetos() {
 
   return (
     <div>
-      <div
-        style={{
-          display: "flex", alignItems: "baseline", justifyContent: "space-between",
-          gap: 12, marginBottom: 18, maxWidth: 860,
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
-          <h1 style={{ margin: 0, fontSize: 19, letterSpacing: "-0.02em" }}>Projetos</h1>
-          <span className="muted" style={{ fontSize: 13 }}>{items.length} projetos</span>
-        </div>
-        {!criando && (
-          <button type="button" className="btn btn-primary" onClick={() => setCriando(true)}>
-            + Novo projeto
-          </button>
-        )}
-      </div>
+      <PageHeader
+        title="Projetos"
+        count={`${items.length} projetos`}
+        className="max-w-[860px]"
+        actions={
+          !criando && (
+            <button type="button" className="btn btn-primary ml-auto" onClick={() => setCriando(true)}>
+              + Novo projeto
+            </button>
+          )
+        }
+      />
 
       {criando && (
-        <div
-          style={{
-            background: "var(--surface)", border: "1px solid var(--border)",
-            borderRadius: 12, padding: 18, marginBottom: 18, maxWidth: 860,
-            display: "flex", flexDirection: "column", gap: 12,
-          }}
-        >
+        <Card className="mb-[18px] flex max-w-[860px] flex-col gap-3">
           <div className="field">
             <span className="label">Titulo do projeto</span>
             <input
@@ -146,21 +139,14 @@ function Projetos() {
               {salvando ? "Criando…" : "Criar projeto"}
             </button>
           </div>
-        </div>
+        </Card>
       )}
 
       {items.length === 0 ? (
-        <div
-          style={{
-            border: "1px dashed var(--border)", borderRadius: 12, padding: 40,
-            textAlign: "center", maxWidth: 480,
-          }}
-        >
-          <p style={{ margin: 0, fontWeight: 600 }}>Nenhum projeto ainda</p>
-          <p className="muted" style={{ margin: "6px 0 0", fontSize: 13 }}>
-            Crie um projeto para agrupar tarefas de um trabalho maior.
-          </p>
-        </div>
+        <EmptyState
+          title="Nenhum projeto ainda"
+          description="Crie um projeto para agrupar tarefas de um trabalho maior."
+        />
       ) : (
         <div
           style={{

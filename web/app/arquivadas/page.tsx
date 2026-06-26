@@ -1,6 +1,9 @@
 "use client";
 import { useEffect, useState } from "react";
 import AppShell from "@/components/AppShell";
+import EmptyState from "@/components/EmptyState";
+import PageHeader from "@/components/PageHeader";
+import Badge from "@/components/Badge";
 import {
   listArchivedTasks,
   reactivateTask,
@@ -63,18 +66,13 @@ function Arquivadas() {
 
   return (
     <div style={{ maxWidth: 720 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 18 }}>
-        <h1 style={{ margin: 0, fontSize: 19, letterSpacing: "-0.02em" }}>Arquivadas</h1>
-        <span className="muted" style={{ fontSize: 13 }}>{total}</span>
-      </div>
+      <PageHeader title="Arquivadas" count={total} />
 
       {tasks.length === 0 ? (
-        <div style={{ border: "1px dashed var(--border)", borderRadius: 12, padding: 40, textAlign: "center", maxWidth: 480 }}>
-          <p style={{ margin: 0, fontWeight: 600 }}>Nenhuma tarefa arquivada</p>
-          <p className="muted" style={{ margin: "6px 0 0", fontSize: 13 }}>
-            Tarefas concluídas ou canceladas antigas aparecem aqui.
-          </p>
-        </div>
+        <EmptyState
+          title="Nenhuma tarefa arquivada"
+          description="Tarefas concluídas ou canceladas antigas aparecem aqui."
+        />
       ) : (
         <div style={{ border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden" }}>
           {tasks.map((t, i) => (
@@ -159,13 +157,9 @@ function LinhaArquivada({
             {t.title}
           </div>
         </div>
-        <span style={{
-          fontSize: 12, padding: "3px 9px", borderRadius: 999, flexShrink: 0,
-          color: STATUS_COLOR[t.status] || "var(--text-soft)",
-          border: `1px solid ${STATUS_COLOR[t.status] || "var(--border)"}`,
-        }}>
+        <Badge tone="outline" size="md" weight="normal" color={STATUS_COLOR[t.status]} className="shrink-0">
           {STATUS_LABEL[t.status] || t.status}
-        </span>
+        </Badge>
 
         {!confirmar && (
           <button

@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import AppShell from "@/components/AppShell";
 import Board from "@/components/Board";
+import Card from "@/components/Card";
 import {
   getProject,
   updateProject,
@@ -208,13 +209,7 @@ function EditPanel({
   }
 
   return (
-    <div
-      style={{
-        background: "var(--surface)", border: "1px solid var(--border)",
-        borderRadius: 12, padding: 18, marginBottom: 18,
-        display: "flex", flexDirection: "column", gap: 12,
-      }}
-    >
+    <Card className="mb-[18px] flex flex-col gap-3">
       <div className="field">
         <span className="label">Titulo</span>
         <input
@@ -309,6 +304,6 @@ function EditPanel({
           {salvando ? "Salvando…" : "Salvar"}
         </button>
       </div>
-    </div>
+    </Card>
   );
 }

@@ -1,6 +1,11 @@
 "use client";
 import { useEffect, useState } from "react";
 import AppShell from "@/components/AppShell";
+import EmptyState from "@/components/EmptyState";
+import Badge from "@/components/Badge";
+import Avatar from "@/components/Avatar";
+import Card from "@/components/Card";
+import PageHeader from "@/components/PageHeader";
 import {
   listMembers,
   listTeamsAll,
@@ -20,7 +25,6 @@ import {
   type MemberTeam,
   type CurrentUser,
 } from "@/lib/api";
-import { iniciais, corAvatar } from "@/lib/people";
 
 // Membros: lista + cadastro (4a) + resetar senha / desativar (4b), gated por
 // team.manage. Reset e cadastro compartilham o reveal-once da senha (ADR 0008).
@@ -143,19 +147,21 @@ function Membros() {
 
   return (
     <div style={{ maxWidth: 720 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 18 }}>
-        <h1 style={{ margin: 0, fontSize: 19, letterSpacing: "-0.02em" }}>Membros</h1>
-        <span className="muted" style={{ fontSize: 13 }}>{membros.length}</span>
-        {podeGerenciar && !criando && !revelado && (
-          <button
-            className="btn btn-primary"
-            onClick={() => setCriando(true)}
-            style={{ marginLeft: "auto", padding: "8px 14px" }}
-          >
-            + Cadastrar membro
-          </button>
-        )}
-      </div>
+      <PageHeader
+        title="Membros"
+        count={membros.length}
+        actions={
+          podeGerenciar && !criando && !revelado && (
+            <button
+              className="btn btn-primary ml-auto"
+              onClick={() => setCriando(true)}
+              style={{ padding: "8px 14px" }}
+            >
+              + Cadastrar membro
+            </button>
+          )
+        }
+      />
 
       {revelado && (
         <SenhaProvisoria
@@ -167,13 +173,7 @@ function Membros() {
       )}
 
       {criando && (
-        <div
-          style={{
-            background: "var(--surface)", border: "1px solid var(--border)",
-            borderRadius: 12, padding: 20, marginBottom: 16,
-            display: "flex", flexDirection: "column", gap: 12,
-          }}
-        >
+        <Card className="mb-4 flex flex-col gap-3">
           <div className="field">
             <span className="label">Nome</span>
             <input className="input" value={nome} disabled={salvando} autoFocus
@@ -228,13 +228,11 @@ function Membros() {
               Cancelar
             </button>
           </div>
-        </div>
+        </Card>
       )}
 
       {membros.length === 0 ? (
-        <div style={{ border: "1px dashed var(--border)", borderRadius: 12, padding: 40, textAlign: "center", maxWidth: 480 }}>
-          <p style={{ margin: 0, fontWeight: 600 }}>Nenhum membro</p>
-        </div>
+        <EmptyState title="Nenhum membro" />
       ) : (
         <div style={{ border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden" }}>
           {membros.map((m, i) => (
@@ -497,13 +495,7 @@ function LinhaMembro({
       }}
     >
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        <span style={{
-          width: 32, height: 32, borderRadius: 999, flexShrink: 0,
-          background: corAvatar(m.id), color: "#fff", fontSize: 12, fontWeight: 700,
-          display: "flex", alignItems: "center", justifyContent: "center",
-        }}>
-          {iniciais(m.name)}
-        </span>
+        <Avatar id={m.id} name={m.name} size="lg" />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 14, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {m.name}{isSelf && <span className="muted" style={{ fontWeight: 400 }}> (voce)</span>}
@@ -512,19 +504,13 @@ function LinhaMembro({
             {m.email}
           </div>
         </div>
-        <span className="muted" style={{
-          fontSize: 12, padding: "3px 9px", borderRadius: 999,
-          background: "var(--surface-2)", border: "1px solid var(--border)", flexShrink: 0,
-        }}>
+        <Badge tone="neutral" size="md" weight="normal" className="shrink-0 bg-surface-2 border border-border text-ink-faint">
           {subtime}
-        </span>
+        </Badge>
         {!m.is_active && (
-          <span style={{
-            fontSize: 11.5, fontWeight: 700, padding: "3px 9px", borderRadius: 999,
-            color: "var(--text-faint)", border: "1px solid var(--border)", flexShrink: 0,
-          }}>
+          <Badge tone="neutral" size="md" weight="bold" className="shrink-0 border border-border text-ink-faint">
             inativo
-          </span>
+          </Badge>
         )}
 
         {mostraAcoes && !confirmReset && !confirmDesativar && !editandoPapel && (

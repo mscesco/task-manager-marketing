@@ -29,7 +29,9 @@ import {
   type CurrentUser,
 } from "@/lib/api";
 import { PRIORITY_LABEL, PRIORITY_COLOR, STATUSES } from "@/lib/status";
-import { iniciais, nomeCurto, corAvatar } from "@/lib/people";
+import Badge from "@/components/Badge";
+import Avatar from "@/components/Avatar";
+import { nomeCurto } from "@/lib/people";
 
 const STATUS_LABEL: Record<string, string> = Object.fromEntries(
   STATUSES.map((s) => [s.key, s.label])
@@ -386,23 +388,12 @@ export default function TaskDetail({
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-          <span
-            style={{
-              fontSize: 12, fontWeight: 700, padding: "3px 9px", borderRadius: 999,
-              color: "#fff", background: STATUS_COLOR[task.status] || "#999",
-            }}
-          >
+          <Badge tone="solid" size="md" color={STATUS_COLOR[task.status]}>
             {STATUS_LABEL[task.status] || task.status}
-          </span>
-          <span
-            style={{
-              fontSize: 12, fontWeight: 700, padding: "3px 9px", borderRadius: 999,
-              color: PRIORITY_COLOR[task.priority] || "var(--text-soft)",
-              background: (PRIORITY_COLOR[task.priority] || "#999") + "1a",
-            }}
-          >
+          </Badge>
+          <Badge tone="soft" size="md" color={PRIORITY_COLOR[task.priority]}>
             {PRIORITY_LABEL[task.priority] || task.priority}
-          </span>
+          </Badge>
           {task.due_date && (
             <span className="muted" style={{ fontSize: 12.5 }}>
               ◷ {new Date(task.due_date + "T00:00:00").toLocaleDateString("pt-BR")}
@@ -441,16 +432,7 @@ export default function TaskDetail({
                       padding: "2px 10px 2px 2px", fontSize: 12.5,
                     }}
                   >
-                    <span
-                      style={{
-                        width: 20, height: 20, borderRadius: 999,
-                        background: corAvatar(id), color: "#fff",
-                        fontSize: 9.5, fontWeight: 700,
-                        display: "flex", alignItems: "center", justifyContent: "center",
-                      }}
-                    >
-                      {nome ? iniciais(nome) : "?"}
-                    </span>
+                    <Avatar id={id} name={nome} size="sm" />
                     {nome ? nomeCurto(nome) : "Responsavel"}
                   </span>
                 );
@@ -507,16 +489,7 @@ export default function TaskDetail({
                           disabled={ocupado}
                           onChange={() => toggle(m.id)}
                         />
-                        <span
-                          style={{
-                            width: 20, height: 20, borderRadius: 999,
-                            background: corAvatar(m.id), color: "#fff",
-                            fontSize: 9.5, fontWeight: 700, flexShrink: 0,
-                            display: "flex", alignItems: "center", justifyContent: "center",
-                          }}
-                        >
-                          {iniciais(m.name)}
-                        </span>
+                        <Avatar id={m.id} name={m.name} size="sm" />
                         <span style={{ fontSize: 13.5 }}>{m.name}</span>
                       </label>
                     );
@@ -581,20 +554,15 @@ export default function TaskDetail({
                       </span>
                       <span style={{ display: "flex", alignItems: "center" }}>
                         {(f.assignee_ids ?? []).slice(0, 2).map((id, j) => (
-                          <span
+                          <Avatar
                             key={id}
+                            id={id}
+                            name={members.get(id)?.name}
+                            size="xs"
                             title={members.get(id)?.name ?? ""}
-                            style={{
-                              width: 18, height: 18, borderRadius: 999,
-                              background: corAvatar(id), color: "#fff",
-                              fontSize: 8.5, fontWeight: 700,
-                              display: "flex", alignItems: "center", justifyContent: "center",
-                              border: "1.5px solid var(--surface)",
-                              marginLeft: j === 0 ? 0 : -5,
-                            }}
-                          >
-                            {members.get(id)?.name ? iniciais(members.get(id)!.name) : "?"}
-                          </span>
+                            className="border-[1.5px] border-surface"
+                            style={{ marginLeft: j === 0 ? 0 : -5 }}
+                          />
                         ))}
                       </span>
                       <span className="muted" style={{ fontSize: 14, flexShrink: 0 }}>›</span>
@@ -901,17 +869,13 @@ function LinhaComentario({
 
   return (
     <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
-      <span
+      <Avatar
+        id={c.user_id}
+        name={nome}
+        size="md"
         title={nome}
-        style={{
-          width: 24, height: 24, borderRadius: 999, flexShrink: 0,
-          background: c.is_deleted ? "var(--text-faint)" : corAvatar(c.user_id),
-          color: "#fff", fontSize: 10, fontWeight: 700,
-          display: "flex", alignItems: "center", justifyContent: "center",
-        }}
-      >
-        {nome ? iniciais(nome) : "?"}
-      </span>
+        color={c.is_deleted ? "var(--color-ink-faint)" : undefined}
+      />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
           <span style={{ fontSize: 13, fontWeight: 600 }}>

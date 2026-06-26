@@ -1,6 +1,8 @@
 "use client";
 import { useEffect, useState } from "react";
 import AppShell from "@/components/AppShell";
+import Card from "@/components/Card";
+import PageHeader from "@/components/PageHeader";
 import { currentUser, ApiError, type CurrentUser } from "@/lib/api";
 
 // Perfil v1: SO leitura (nome, e-mail, papeis) + atalho pra trocar senha.
@@ -40,17 +42,9 @@ function Perfil() {
 
   return (
     <div style={{ maxWidth: 480 }}>
-      <h1 style={{ margin: "0 0 18px", fontSize: 19, letterSpacing: "-0.02em" }}>
-        Meu perfil
-      </h1>
+      <PageHeader title="Meu perfil" />
 
-      <div
-        style={{
-          background: "var(--surface)", border: "1px solid var(--border)",
-          borderRadius: 12, padding: 20,
-          display: "flex", flexDirection: "column", gap: 16,
-        }}
-      >
+      <Card className="flex flex-col gap-4">
         <div className="field">
           <span className="label">Nome</span>
           <div style={{ fontSize: 14 }}>{me.name}</div>
@@ -71,7 +65,7 @@ function Perfil() {
         >
           Trocar senha
         </a>
-      </div>
+      </Card>
     </div>
   );
 }

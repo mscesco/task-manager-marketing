@@ -20,6 +20,7 @@ import {
 import TaskCard from "@/components/TaskCard";
 import TaskModal from "@/components/TaskModal";
 import TaskDetail from "@/components/TaskDetail";
+import EmptyStateBox from "@/components/EmptyState";
 import { STATUSES } from "@/lib/status";
 import { listAllTasks, listAllProjects, updateTask, listMembers, listSubteams, ApiError, type Task, type Team } from "@/lib/api";
 
@@ -535,36 +536,20 @@ function CardArrastavel({
 
 function SemResultado({ onLimpar }: { onLimpar: () => void }) {
   return (
-    <div
-      style={{
-        border: "1px dashed var(--border)", borderRadius: 12, padding: 40,
-        textAlign: "center", maxWidth: 480,
-      }}
-    >
-      <p style={{ margin: 0, fontWeight: 600 }}>Nada encontrado</p>
-      <p className="muted" style={{ margin: "6px 0 14px", fontSize: 13 }}>
-        Nenhuma tarefa bate com o filtro atual. As subtarefas e tarefas de
-        outras paginas nao entram na busca. No filtro de subtime, tarefas sem
-        responsavel (ou so com responsaveis de outro subtime) nao aparecem.
-      </p>
-      <button className="btn" onClick={onLimpar}>Limpar filtros</button>
-    </div>
+    <EmptyStateBox
+      title="Nada encontrado"
+      description="Nenhuma tarefa bate com o filtro atual. As subtarefas e tarefas de outras paginas nao entram na busca. No filtro de subtime, tarefas sem responsavel (ou so com responsaveis de outro subtime) nao aparecem."
+      action={<button className="btn" onClick={onLimpar}>Limpar filtros</button>}
+    />
   );
 }
 
 function EmptyState({ onNova }: { onNova: () => void }) {
   return (
-    <div
-      style={{
-        border: "1px dashed var(--border)", borderRadius: 12, padding: 40,
-        textAlign: "center", maxWidth: 480,
-      }}
-    >
-      <p style={{ margin: 0, fontWeight: 600 }}>Nenhuma tarefa ainda</p>
-      <p className="muted" style={{ margin: "6px 0 14px", fontSize: 13 }}>
-        Crie a primeira — ela aparece aqui, organizada por status.
-      </p>
-      <button className="btn btn-primary" onClick={onNova}>+ Nova tarefa</button>
-    </div>
+    <EmptyStateBox
+      title="Nenhuma tarefa ainda"
+      description="Crie a primeira — ela aparece aqui, organizada por status."
+      action={<button className="btn btn-primary" onClick={onNova}>+ Nova tarefa</button>}
+    />
   );
 }
