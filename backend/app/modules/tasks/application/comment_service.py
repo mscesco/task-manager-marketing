@@ -22,6 +22,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.logging import get_logger
 from app.core.tenant import require_tenant
 from app.db.models import Comment
+from app.modules.notifications.application.notification_emitter import (
+    NotificationEmitter,
+)
 from app.modules.tasks.application.task_guards import TaskScopeGuards
 from app.modules.tasks.domain.comment import (
     assert_reply_target,
@@ -29,6 +32,9 @@ from app.modules.tasks.domain.comment import (
     can_edit,
     mask_content,
     normalize_content,
+)
+from app.modules.tasks.infrastructure.collaboration_repository import (
+    TaskAssignmentRepository,
 )
 from app.modules.tasks.infrastructure.comment_repository import CommentRepository
 from app.modules.tasks.infrastructure.task_repository import TaskRepository
@@ -68,6 +74,8 @@ class CommentService:
         self._tasks = TaskRepository(session)
         self._comments = CommentRepository(session)
         self._guards = TaskScopeGuards(session)
+        self._assignees = TaskAssignmentRepository(session)
+        self._notify = NotificationEmitter(session)
 
     async def list_comments(
         self, *, task_id: uuid.UUID, params: PageParams
@@ -120,6 +128,17 @@ class CommentService:
         )
         self._comments.add(comment)
         await self._session.flush()
+
+        # Emissao de notificacao (Spec 018, F3): fan-out pros responsaveis
+        # da task, menos o autor. Mesma transacao. Replica tambem notifica.
+        recipient_ids = await self._assignees.list_user_ids(task_id)
+        await self._notify.comment_on_task(
+            recipient_ids=recipient_ids,
+            actor_id=tenant.user_id,
+            task_id=task_id,
+            task_title=task.title,
+            comment_id=comment.id,
+        )
 
         logger.info(
             "comment.created",

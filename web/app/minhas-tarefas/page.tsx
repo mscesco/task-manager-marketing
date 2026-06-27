@@ -50,6 +50,7 @@ function Minhas() {
   const [detalhe, setDetalhe] = useState<Task | null>(null);
   const [pilha, setPilha] = useState<Task[]>([]);
   const [editando, setEditando] = useState<Task | null>(null);
+  const [deepLinkFeito, setDeepLinkFeito] = useState(false);
 
   useEffect(() => {
     listMyAssignments({ size: 100 })
@@ -63,6 +64,22 @@ function Minhas() {
       .then((ms) => setMembers(new Map(ms.map((m) => [m.id, { name: m.name }]))))
       .catch(() => {});
   }, []);
+
+  // Deep-link da notificacao: ?task=<id> abre o detalhe da task da PROPRIA
+  // lista (E6-safe: reusa o objeto que listMyAssignments ja trouxe, sem
+  // GET /tasks/{id}). Roda uma vez, depois da lista carregar. Se a task nao
+  // estiver na lista (ex.: out_of_scope, filtrada acima), no-op gracioso.
+  useEffect(() => {
+    if (deepLinkFeito || items === null) return;
+    setDeepLinkFeito(true);
+    const alvo = new URLSearchParams(window.location.search).get("task");
+    if (!alvo) return;
+    const t = items.find((x) => x.id === alvo);
+    if (t) {
+      setPilha([]);
+      setDetalhe(t);
+    }
+  }, [items, deepLinkFeito]);
 
   // --- abrir / navegar / fechar o detalhe (mesma logica do quadro) ---
   function abrirDetalhe(t: Task) {

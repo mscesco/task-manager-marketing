@@ -1,0 +1,44 @@
+"""Schemas de API de notificacoes (Spec 018, F4)."""
+
+from __future__ import annotations
+
+import uuid
+from datetime import datetime
+
+from pydantic import BaseModel
+
+
+class NotificationResponse(BaseModel):
+    """Uma notificacao do usuario logado."""
+
+    model_config = {"from_attributes": True}
+
+    id: uuid.UUID
+    type: str
+    actor_id: uuid.UUID | None
+    task_id: uuid.UUID | None
+    comment_id: uuid.UUID | None
+    payload: dict | None
+    read_at: datetime | None
+    created_at: datetime
+
+
+class NotificationListResponse(BaseModel):
+    """Feed paginado."""
+
+    items: list[NotificationResponse]
+    total: int
+    page: int
+    size: int
+
+
+class UnreadCountResponse(BaseModel):
+    """Contagem de nao-lidas (badge do sino)."""
+
+    count: int
+
+
+class MarkAllReadResponse(BaseModel):
+    """Resultado de marcar todas como lidas."""
+
+    updated: int

@@ -60,6 +60,37 @@ class NotificationEmitter:
             },
         )
 
+    async def comment_on_task(
+        self,
+        *,
+        recipient_ids: list[uuid.UUID],
+        actor_id: uuid.UUID,
+        task_id: uuid.UUID,
+        task_title: str,
+        comment_id: uuid.UUID,
+    ) -> None:
+        """Notifica os responsaveis da task de que houve um comentario.
+
+        Fan-out: uma notificacao por responsavel, EXCETO o proprio autor
+        do comentario. Se nao sobrar ninguem (autor e o unico responsavel,
+        ou a task nao tem responsavel), nao emite nada -- e o `actor_name`
+        nem chega a ser consultado.
+        """
+        actor_name: str | None = None
+        for rid in recipient_ids:
+            if rid == actor_id:
+                continue  # o autor nao se notifica
+            if actor_name is None:
+                actor_name = await self._actor_name(actor_id)
+            self._repo.create(
+                recipient_id=rid,
+                actor_id=actor_id,
+                type=NotificationType.TASK_COMMENTED.value,
+                task_id=task_id,
+                comment_id=comment_id,
+                payload={"actor_name": actor_name, "task_title": task_title},
+            )
+
     async def _actor_name(self, actor_id: uuid.UUID) -> str:
         """Nome do ator (snapshot), escopado ao tenant. '' se nao achar."""
         stmt = select(User.name).where(

@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { getMe, clearTokens, getToken, ApiError, type CurrentUser } from "@/lib/api";
+import NotificationBell from "@/components/NotificationBell";
 
 // Envolve as telas autenticadas: valida o token, trata o gate de troca de
 // senha (409) e desenha o cabecalho com navegacao. Se nao ha sessao, manda
@@ -78,6 +79,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           })}
         </nav>
         <div className="ml-auto flex shrink-0 items-center gap-2 sm:gap-3">
+          <NotificationBell />
           <a
             href="/perfil"
             title="Meu perfil"

@@ -960,3 +960,62 @@ export async function deleteComment(
     method: "DELETE",
   });
 }
+
+// ---------------------------------------------------------------
+// NOTIFICACOES IN-APP  (Spec 018)
+// ---------------------------------------------------------------
+// Pessoais: o backend escopa tudo por recipient == usuario logado.
+// Sem cache: o badge e pollado e o feed e sempre buscado fresco.
+// O type se chama AppNotification (e nao Notification) de proposito --
+// "Notification" e um tipo GLOBAL do DOM (Web Notifications API) e
+// sombrea-lo causaria confusao/erro de tipo.
+
+export type NotificationType = "TASK_ASSIGNED" | "TASK_COMMENTED";
+
+export type AppNotification = {
+  id: string;
+  type: NotificationType;
+  actor_id: string | null;
+  task_id: string | null;
+  comment_id: string | null;
+  payload: { actor_name?: string; task_title?: string } | null;
+  read_at: string | null; // null = nao lida
+  created_at: string;
+};
+
+export type NotificationListResponse = {
+  items: AppNotification[];
+  total: number;
+  page: number;
+  size: number;
+};
+
+// Feed paginado, mais novas primeiro.
+export async function listNotifications(
+  params: { unread_only?: boolean; page?: number; size?: number } = {}
+): Promise<NotificationListResponse> {
+  const q = new URLSearchParams();
+  if (params.unread_only) q.set("unread_only", "true");
+  q.set("page", String(params.page ?? 1));
+  q.set("size", String(params.size ?? 20));
+  return api<NotificationListResponse>(`/api/v1/notifications?${q.toString()}`);
+}
+
+// Contagem de nao-lidas (endpoint leve; e o que o sino polla).
+export async function getUnreadCount(): Promise<number> {
+  const r = await api<{ count: number }>("/api/v1/notifications/unread-count");
+  return r.count;
+}
+
+// Marca UMA como lida. 204 sem corpo. 404 se nao for sua.
+export async function markNotificationRead(id: string): Promise<void> {
+  await api<void>(`/api/v1/notifications/${id}/read`, { method: "POST" });
+}
+
+// Marca todas as nao-lidas como lidas. Retorna quantas.
+export async function markAllNotificationsRead(): Promise<number> {
+  const r = await api<{ updated: number }>("/api/v1/notifications/read-all", {
+    method: "POST",
+  });
+  return r.updated;
+}
