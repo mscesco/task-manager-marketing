@@ -110,6 +110,39 @@ class NotificationEmitter:
 
         await self._emit_safely("TASK_COMMENTED", _do)
 
+    async def mentioned(
+        self,
+        *,
+        recipient_ids: list[uuid.UUID],
+        actor_id: uuid.UUID,
+        task_id: uuid.UUID,
+        task_title: str,
+        comment_id: uuid.UUID,
+    ) -> None:
+        """Notifica quem foi @mencionado num comentario (Spec 019).
+
+        Fan-out com DEDUP e EXCLUINDO o autor (auto-mencao nao notifica). Se
+        nao sobrar ninguem, nao emite. Mesmo savepoint best-effort: falha aqui
+        nunca derruba o comentario.
+        """
+        alvos = [r for r in dict.fromkeys(recipient_ids) if r != actor_id]
+        if not alvos:
+            return
+
+        async def _do() -> None:
+            actor_name = await self._actor_name(actor_id)
+            for rid in alvos:
+                self._repo.create(
+                    recipient_id=rid,
+                    actor_id=actor_id,
+                    type=NotificationType.TASK_MENTIONED.value,
+                    task_id=task_id,
+                    comment_id=comment_id,
+                    payload={"actor_name": actor_name, "task_title": task_title},
+                )
+
+        await self._emit_safely("TASK_MENTIONED", _do)
+
     async def _emit_safely(
         self, tipo: str, do: Callable[[], Awaitable[None]]
     ) -> None:

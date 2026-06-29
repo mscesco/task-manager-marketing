@@ -18,6 +18,7 @@ class NotificationType(str, Enum):
 
     TASK_ASSIGNED = "TASK_ASSIGNED"
     TASK_COMMENTED = "TASK_COMMENTED"
+    TASK_MENTIONED = "TASK_MENTIONED"
 
 
 @dataclass(frozen=True, slots=True)

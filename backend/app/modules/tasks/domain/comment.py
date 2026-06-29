@@ -11,6 +11,7 @@ O service so orquestra: carrega do banco e chama estas funcoes.
 
 from __future__ import annotations
 
+import re
 import uuid
 
 from app.shared.exceptions.base import ValidationError
@@ -22,6 +23,35 @@ CONTENT_MAX = 5000
 #: Texto que substitui o conteudo de um comentario apagado que ainda aparece
 #: no thread por ter replicas vivas (D5).
 TOMBSTONE_TEXT = "[comentário removido]"
+
+#: Padrao de mencao inline (Spec 019, D1): @[Nome](uuid). O nome e livre
+#: (qualquer coisa menos `]`); o id e um UUID com forma rigida. Linear e
+#: ancorado -> sem catastrophic backtracking, seguro contra content hostil.
+_MENTION_RE = re.compile(
+    r"@\[[^\]]+\]\("
+    r"([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
+    r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\)"
+)
+
+
+def extract_mentions(content: str) -> list[uuid.UUID]:
+    """Extrai os ids mencionados de `@[Nome](uuid)` no conteudo (Spec 019).
+
+    Pura, sem DB: dedup preservando ordem; descarta qualquer uuid que nao
+    parseie (a regex ja garante a forma, o try/except e cinto-e-suspensorio).
+    Nao valida se o id e membro de verdade -- isso e papel do service.
+    """
+    out: list[uuid.UUID] = []
+    seen: set[uuid.UUID] = set()
+    for m in _MENTION_RE.finditer(content or ""):
+        try:
+            uid = uuid.UUID(m.group(1))
+        except ValueError:
+            continue
+        if uid not in seen:
+            seen.add(uid)
+            out.append(uid)
+    return out
 
 
 def normalize_content(raw: str) -> str:
