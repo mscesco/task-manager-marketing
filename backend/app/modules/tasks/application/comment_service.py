@@ -17,11 +17,12 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger
 from app.core.tenant import require_tenant
-from app.db.models import Comment
+from app.db.models import Comment, User
 from app.modules.notifications.application.notification_emitter import (
     NotificationEmitter,
 )
@@ -30,6 +31,7 @@ from app.modules.tasks.domain.comment import (
     assert_reply_target,
     can_delete,
     can_edit,
+    extract_mentions,
     mask_content,
     normalize_content,
 )
@@ -129,13 +131,46 @@ class CommentService:
         self._comments.add(comment)
         await self._session.flush()
 
-        # Emissao de notificacao (Spec 018): fan-out pros responsaveis da
-        # task E pro criador dela, menos o autor. O emitter deduplica (criador
-        # que tambem e responsavel recebe UMA) e exclui o autor (quem cria/
-        # comenta na propria task nao se notifica). Replica tambem notifica.
+        # --- Notificacoes (Spec 018 + 019) ---
+        # 1) Mencoes @[Nome](id) no conteudo: valida que os ids sao usuarios
+        #    REAIS do workspace (a FK do recipient e users -> um id invalido
+        #    quebraria o INSERT e, no savepoint do emitter, derrubaria TODAS as
+        #    mencoes do comentario) e emite TASK_MENTIONED. O emitter deduplica
+        #    e exclui o autor (auto-mencao nao notifica).
+        mencionados = extract_mentions(clean)
+        if mencionados:
+            validos = set(
+                (
+                    await self._session.execute(
+                        select(User.id).where(
+                            User.id.in_(mencionados),
+                            User.workspace_id == tenant.workspace_id,
+                        )
+                    )
+                ).scalars().all()
+            )
+            mencionados = [m for m in mencionados if m in validos]
+            if mencionados:
+                await self._notify.mentioned(
+                    recipient_ids=mencionados,
+                    actor_id=tenant.user_id,
+                    task_id=task_id,
+                    task_title=task.title,
+                    comment_id=comment.id,
+                )
+
+        # 2) Comentario: fan-out pros responsaveis E pro criador, menos o autor
+        #    (emitter) e MENOS quem ja foi mencionado (D3: a mencao tem
+        #    prioridade -- ninguem recebe duas notificacoes pelo mesmo
+        #    comentario). Replica tambem notifica.
+        mencionados_set = set(mencionados)
         recipient_ids = [
-            *await self._assignees.list_user_ids(task_id),
-            task.created_by,
+            uid
+            for uid in (
+                *await self._assignees.list_user_ids(task_id),
+                task.created_by,
+            )
+            if uid not in mencionados_set
         ]
         await self._notify.comment_on_task(
             recipient_ids=recipient_ids,
