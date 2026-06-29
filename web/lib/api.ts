@@ -970,7 +970,10 @@ export async function deleteComment(
 // "Notification" e um tipo GLOBAL do DOM (Web Notifications API) e
 // sombrea-lo causaria confusao/erro de tipo.
 
-export type NotificationType = "TASK_ASSIGNED" | "TASK_COMMENTED";
+export type NotificationType =
+  | "TASK_ASSIGNED"
+  | "TASK_COMMENTED"
+  | "TASK_MENTIONED";
 
 export type AppNotification = {
   id: string;

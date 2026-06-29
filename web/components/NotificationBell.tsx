@@ -22,6 +22,7 @@ function texto(n: AppNotification): string {
   const task = n.payload?.task_title || "uma tarefa";
   if (n.type === "TASK_ASSIGNED") return `${ator} designou voce em "${task}"`;
   if (n.type === "TASK_COMMENTED") return `${ator} comentou em "${task}"`;
+  if (n.type === "TASK_MENTIONED") return `${ator} mencionou voce em "${task}"`;
   return `Atualizacao em "${task}"`;
 }
 

@@ -9,7 +9,7 @@
 //   checkbox da linha conclui rapido (desmarcar volta pro status anterior,
 //   guardado na sessao); clicar no titulo NAVEGA pra dentro (voltar desempilha).
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   addAssignee,
   removeAssignee,
@@ -31,6 +31,9 @@ import {
 import { PRIORITY_LABEL, PRIORITY_COLOR, STATUSES } from "@/lib/status";
 import Badge from "@/components/Badge";
 import Avatar from "@/components/Avatar";
+import EmojiPicker from "@/components/EmojiPicker";
+import CommentText from "@/components/CommentText";
+import MentionTextarea from "@/components/MentionTextarea";
 import { nomeCurto } from "@/lib/people";
 
 const STATUS_LABEL: Record<string, string> = Object.fromEntries(
@@ -102,6 +105,30 @@ export default function TaskDetail({
   const [respondendoId, setRespondendoId] = useState<string | null>(null);
   const [textoResposta, setTextoResposta] = useState("");
   const [enviandoResp, setEnviandoResp] = useState(false);
+  const topComentRef = useRef<HTMLTextAreaElement>(null);
+  const respostaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Insere um trecho (emoji) na posicao do cursor do textarea e mantem foco.
+  function inserirNoCursor(
+    ref: { current: HTMLTextAreaElement | null },
+    valor: string,
+    setValor: (s: string) => void,
+    trecho: string
+  ) {
+    const el = ref.current;
+    if (!el) {
+      setValor(valor + trecho);
+      return;
+    }
+    const ini = el.selectionStart ?? valor.length;
+    const fim = el.selectionEnd ?? valor.length;
+    setValor(valor.slice(0, ini) + trecho + valor.slice(fim));
+    requestAnimationFrame(() => {
+      el.focus();
+      const pos = ini + trecho.length;
+      el.setSelectionRange(pos, pos);
+    });
+  }
   // Usuario logado: define quem ve lapis (autor) e lixeira (autor ou
   // task.delete). Buscado uma vez (currentUser e memoizado no api.ts).
   const [me, setMe] = useState<CurrentUser | null>(null);
@@ -653,18 +680,30 @@ export default function TaskDetail({
 
                     {respondendoId === c.id ? (
                       <div style={{ marginLeft: 30, display: "flex", flexDirection: "column", gap: 6 }}>
-                        <textarea
-                          className="input"
+                        <MentionTextarea
+                          ref={respostaRef}
+                          value={textoResposta}
+                          onChange={setTextoResposta}
+                          members={members}
                           autoFocus
                           rows={2}
-                          placeholder="Responder…"
-                          value={textoResposta}
+                          placeholder="Responder… (@ menciona)"
                           disabled={enviandoResp}
                           maxLength={5000}
-                          onChange={(e) => setTextoResposta(e.target.value)}
                           style={{ resize: "vertical" }}
                         />
-                        <div style={{ display: "flex", gap: 8 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <EmojiPicker
+                            disabled={enviandoResp}
+                            onPick={(e) =>
+                              inserirNoCursor(
+                                respostaRef,
+                                textoResposta,
+                                setTextoResposta,
+                                e
+                              )
+                            }
+                          />
                           <button
                             type="button"
                             className="btn btn-primary"
@@ -711,25 +750,35 @@ export default function TaskDetail({
           )}
 
           {/* caixa de novo comentario (quem ve a tarefa pode comentar) */}
-          <textarea
-            className="input"
-            rows={2}
-            placeholder="Escreva um comentario… (de topo)"
+          <MentionTextarea
+            ref={topComentRef}
             value={novoComent}
+            onChange={setNovoComent}
+            members={members}
+            rows={2}
+            placeholder="Escreva um comentario… (@ menciona)"
             disabled={enviandoComent}
             maxLength={5000}
-            onChange={(e) => setNovoComent(e.target.value)}
-            style={{ marginTop: 10, resize: "vertical" }}
+            wrapperStyle={{ marginTop: 10 }}
+            style={{ resize: "vertical" }}
           />
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={enviarComentario}
-            disabled={enviandoComent || !novoComent.trim()}
-            style={{ alignSelf: "flex-start", marginTop: 6, padding: "6px 12px" }}
-          >
-            {enviandoComent ? "Enviando…" : "Comentar"}
-          </button>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
+            <EmojiPicker
+              disabled={enviandoComent}
+              onPick={(e) =>
+                inserirNoCursor(topComentRef, novoComent, setNovoComent, e)
+              }
+            />
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={enviarComentario}
+              disabled={enviandoComent || !novoComent.trim()}
+              style={{ padding: "6px 12px" }}
+            >
+              {enviandoComent ? "Enviando…" : "Comentar"}
+            </button>
+          </div>
 
           {erroCom && (
             <div className="error-box" style={{ marginTop: 8 }}>{erroCom}</div>
@@ -984,7 +1033,7 @@ function LinhaComentario({
               fontStyle: c.is_deleted ? "italic" : "normal",
             }}
           >
-            {c.content}
+            <CommentText content={c.content} deleted={c.is_deleted} />
           </div>
         )}
 
