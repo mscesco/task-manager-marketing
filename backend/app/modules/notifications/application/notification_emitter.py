@@ -5,21 +5,31 @@ instanciam um `NotificationEmitter(session)` e chamam UM metodo por tipo
 de evento. Nada de `if` de notificacao espalhado pelos services: cada
 tipo novo no futuro = um metodo novo aqui, chamado de um lugar so.
 
-Compartilha a `session` do service -> a notificacao entra na MESMA
-transacao do evento (commit junto, rollback junto; sem fantasma).
+BEST-EFFORT (blindagem): a emissao roda num SAVEPOINT (`begin_nested`) com
+flush forcado dentro dele. Se a notificacao falhar por QUALQUER motivo
+(tabela ausente, constraint, erro de query), faz rollback SO do savepoint
+-- a acao principal (assignment/comentario), ja flushada ANTES, sobrevive
+-- e loga loud. A emissao NUNCA propaga excecao: notificacao e efeito
+colateral e jamais pode derrubar a acao que a disparou.
+
+Por que savepoint e nao try/except simples: o INSERT da notificacao, se
+adiado pro commit da transacao compartilhada, aborta a transacao INTEIRA
+no Postgres quando falha -- envenenando tambem a acao principal. O flush
+DENTRO do savepoint faz a falha acontecer isolada e reversivel.
 
 Snapshot de exibicao (D1): no momento da emissao gravamos
 `{actor_name, task_title}` no payload. O read fica barato (scan de 1
-tabela) ao custo de o titulo ficar "congelado" se a task for renomeada
--- aceitavel para um feed de eventos historicos.
+tabela) ao custo de o titulo ficar "congelado" se a task for renomeada.
 """
 
 from __future__ import annotations
 
 import uuid
+from collections.abc import Awaitable, Callable
 
 from sqlalchemy import select
 
+from app.core.logging import get_logger
 from app.core.tenant import require_tenant
 from app.db.models import User
 from app.modules.notifications.domain.notification import NotificationType
@@ -27,9 +37,11 @@ from app.modules.notifications.infrastructure.notification_repository import (
     NotificationRepository,
 )
 
+logger = get_logger(__name__)
+
 
 class NotificationEmitter:
-    """Emite notificacoes para os eventos do dominio. Nao comita."""
+    """Emite notificacoes para os eventos do dominio. Best-effort, nao comita."""
 
     def __init__(self, session) -> None:
         self._session = session
@@ -49,16 +61,20 @@ class NotificationEmitter:
         """
         if recipient_id == actor_id:
             return
-        self._repo.create(
-            recipient_id=recipient_id,
-            actor_id=actor_id,
-            type=NotificationType.TASK_ASSIGNED.value,
-            task_id=task_id,
-            payload={
-                "actor_name": await self._actor_name(actor_id),
-                "task_title": task_title,
-            },
-        )
+
+        async def _do() -> None:
+            self._repo.create(
+                recipient_id=recipient_id,
+                actor_id=actor_id,
+                type=NotificationType.TASK_ASSIGNED.value,
+                task_id=task_id,
+                payload={
+                    "actor_name": await self._actor_name(actor_id),
+                    "task_title": task_title,
+                },
+            )
+
+        await self._emit_safely("TASK_ASSIGNED", _do)
 
     async def comment_on_task(
         self,
@@ -69,27 +85,46 @@ class NotificationEmitter:
         task_title: str,
         comment_id: uuid.UUID,
     ) -> None:
-        """Notifica os responsaveis da task de que houve um comentario.
+        """Notifica a audiencia da task de que houve um comentario.
 
-        Fan-out: uma notificacao por responsavel, EXCETO o proprio autor
-        do comentario. Se nao sobrar ninguem (autor e o unico responsavel,
-        ou a task nao tem responsavel), nao emite nada -- e o `actor_name`
-        nem chega a ser consultado.
+        Fan-out: uma notificacao por destinatario, com DEDUP (mesmo id nao
+        notifica duas vezes) e EXCLUINDO o autor do comentario. Se nao
+        sobrar ninguem, nao emite nada.
         """
-        actor_name: str | None = None
-        for rid in recipient_ids:
-            if rid == actor_id:
-                continue  # o autor nao se notifica
-            if actor_name is None:
-                actor_name = await self._actor_name(actor_id)
-            self._repo.create(
-                recipient_id=rid,
-                actor_id=actor_id,
-                type=NotificationType.TASK_COMMENTED.value,
-                task_id=task_id,
-                comment_id=comment_id,
-                payload={"actor_name": actor_name, "task_title": task_title},
-            )
+        # dict.fromkeys: dedup preservando ordem; depois tira o autor.
+        alvos = [r for r in dict.fromkeys(recipient_ids) if r != actor_id]
+        if not alvos:
+            return
+
+        async def _do() -> None:
+            actor_name = await self._actor_name(actor_id)
+            for rid in alvos:
+                self._repo.create(
+                    recipient_id=rid,
+                    actor_id=actor_id,
+                    type=NotificationType.TASK_COMMENTED.value,
+                    task_id=task_id,
+                    comment_id=comment_id,
+                    payload={"actor_name": actor_name, "task_title": task_title},
+                )
+
+        await self._emit_safely("TASK_COMMENTED", _do)
+
+    async def _emit_safely(
+        self, tipo: str, do: Callable[[], Awaitable[None]]
+    ) -> None:
+        """Roda a criacao de notificacao(oes) num SAVEPOINT, best-effort.
+
+        Em caso de falha: rollback SO do savepoint (a acao principal
+        sobrevive) + log loud. NUNCA propaga.
+        """
+        try:
+            async with self._session.begin_nested():
+                await do()
+                await self._session.flush()
+        except Exception:
+            # logger.exception captura o traceback -> loud no log do deploy.
+            logger.exception("notification.emit_failed", tipo=tipo)
 
     async def _actor_name(self, actor_id: uuid.UUID) -> str:
         """Nome do ator (snapshot), escopado ao tenant. '' se nao achar."""
