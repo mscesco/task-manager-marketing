@@ -129,9 +129,14 @@ class CommentService:
         self._comments.add(comment)
         await self._session.flush()
 
-        # Emissao de notificacao (Spec 018, F3): fan-out pros responsaveis
-        # da task, menos o autor. Mesma transacao. Replica tambem notifica.
-        recipient_ids = await self._assignees.list_user_ids(task_id)
+        # Emissao de notificacao (Spec 018): fan-out pros responsaveis da
+        # task E pro criador dela, menos o autor. O emitter deduplica (criador
+        # que tambem e responsavel recebe UMA) e exclui o autor (quem cria/
+        # comenta na propria task nao se notifica). Replica tambem notifica.
+        recipient_ids = [
+            *await self._assignees.list_user_ids(task_id),
+            task.created_by,
+        ]
         await self._notify.comment_on_task(
             recipient_ids=recipient_ids,
             actor_id=tenant.user_id,
