@@ -27,6 +27,16 @@ const STATUS_COLOR: Record<string, string> = Object.fromEntries(
   STATUSES.map((s) => [s.key, s.color])
 );
 
+// Opcoes do seletor de relacao. "todas" = sem filtro de relacao.
+const RELACOES = [
+  { key: "todas", label: "Todas" },
+  { key: "creator", label: "Que criei" },
+  { key: "assignee", label: "Designadas a mim" },
+  { key: "watcher", label: "Que acompanho" },
+] as const;
+
+const TODOS_STATUS = STATUSES.map((s) => s.key);
+
 // Rotulo legivel do cabecalho de grupo (ex.: "Sexta-feira, 22 de agosto").
 function rotuloData(d: string): string {
   const dt = new Date(d + "T00:00:00");
@@ -46,6 +56,10 @@ function Minhas() {
   const [items, setItems] = useState<MyTaskItem[] | null>(null);
   const [members, setMembers] = useState<Map<string, { name: string }>>(new Map());
   const [erro, setErro] = useState<string | null>(null);
+
+  // Filtros (client-side, sobre a lista ja carregada). Comecam "tudo visivel".
+  const [relFiltro, setRelFiltro] = useState<string>("todas");
+  const [statusOn, setStatusOn] = useState<Set<string>>(() => new Set(TODOS_STATUS));
 
   const [detalhe, setDetalhe] = useState<Task | null>(null);
   const [pilha, setPilha] = useState<Task[]>([]);
@@ -67,8 +81,8 @@ function Minhas() {
 
   // Deep-link da notificacao: ?task=<id> abre o detalhe da task da PROPRIA
   // lista (E6-safe: reusa o objeto que listMyAssignments ja trouxe, sem
-  // GET /tasks/{id}). Roda uma vez, depois da lista carregar. Se a task nao
-  // estiver na lista (ex.: out_of_scope, filtrada acima), no-op gracioso.
+  // GET /tasks/{id}). Roda uma vez, depois da lista carregar. Procura na lista
+  // COMPLETA (items), nao na filtrada -- um filtro ativo nao deve furar o link.
   useEffect(() => {
     if (deepLinkFeito || items === null) return;
     setDeepLinkFeito(true);
@@ -139,12 +153,41 @@ function Minhas() {
     setEditando(null);
   }
 
+  // --- filtros ---
+  function toggleStatus(key: string) {
+    setStatusOn((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+  function todosStatus() {
+    setStatusOn(new Set(TODOS_STATUS));
+  }
+  function limparStatus() {
+    setStatusOn(new Set());
+  }
+  function limparTudo() {
+    setRelFiltro("todas");
+    setStatusOn(new Set(TODOS_STATUS));
+  }
+
+  // Aplica relacao + status sobre a lista carregada.
+  const filtrados = useMemo(() => {
+    return (items ?? []).filter((t) => {
+      const okStatus = statusOn.has(t.status);
+      const okRel = relFiltro === "todas" || t.relations.includes(relFiltro);
+      return okStatus && okRel;
+    });
+  }, [items, statusOn, relFiltro]);
+
   // Agrupa por data de entrega (D, estilo Runrunit): so aparece o dia que tem
-  // tarefa; grupos em ordem cronologica; sem-prazo por ultimo. due_date e
-  // "YYYY-MM-DD", entao ordenacao por string ja e cronologica.
+  // tarefa; grupos em ordem cronologica; sem-prazo por ultimo. Agrupa sobre a
+  // lista FILTRADA. due_date e "YYYY-MM-DD" -> ordenacao por string ja e cronologica.
   const grupos = useMemo(() => {
     const map = new Map<string, MyTaskItem[]>();
-    for (const t of items ?? []) {
+    for (const t of filtrados) {
       const key = t.due_date ?? "";
       const arr = map.get(key);
       if (arr) arr.push(t);
@@ -155,13 +198,20 @@ function Minhas() {
       .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
     const semData = map.get("") ?? [];
     return { comData, semData };
-  }, [items]);
+  }, [filtrados]);
 
   if (erro) return <div className="error-box" style={{ maxWidth: 480 }}>{erro}</div>;
   if (!items) return <div className="muted">Carregando…</div>;
 
+  // Detalhe e subtarefas SEMPRE sobre a lista completa (um filtro ativo nao
+  // pode quebrar abrir/navegar uma task que esta fora do filtro atual).
   const focado = detalhe ? items.find((t) => t.id === detalhe.id) ?? detalhe : null;
   const filhosFocado = focado ? items.filter((t) => t.parent_task_id === focado.id) : [];
+
+  const visiveis = filtrados.length;
+  const todosLigados = statusOn.size === TODOS_STATUS.length;
+  const contagem =
+    visiveis === items.length ? `${items.length} tarefas` : `${visiveis} de ${items.length}`;
 
   // Uma linha de tarefa. A data saiu daqui — agora vive no cabeçalho do grupo.
   function linhaTarefa(t: MyTaskItem, i: number) {
@@ -211,9 +261,102 @@ function Minhas() {
     );
   }
 
+  // Barra de filtros: seletor de relacao + chips de status (liga/desliga).
+  function barraFiltros() {
+    return (
+      <div
+        style={{
+          display: "flex", flexWrap: "wrap", alignItems: "center", gap: 10,
+          marginBottom: 18,
+        }}
+      >
+        <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <span className="muted" style={{ fontSize: 12 }}>Mostrar</span>
+          <select
+            value={relFiltro}
+            onChange={(e) => setRelFiltro(e.target.value)}
+            style={{
+              fontSize: 13, padding: "6px 28px 6px 10px",
+              borderRadius: "var(--radius)", border: "1px solid var(--border)",
+              background: "var(--surface)", color: "var(--text)", cursor: "pointer",
+            }}
+          >
+            {RELACOES.map((r) => (
+              <option key={r.key} value={r.key}>{r.label}</option>
+            ))}
+          </select>
+        </label>
+
+        <span style={{ width: 1, height: 22, background: "var(--border)", flexShrink: 0 }} />
+
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
+          {STATUSES.map((s) => {
+            const on = statusOn.has(s.key);
+            return (
+              <button
+                key={s.key}
+                type="button"
+                onClick={() => toggleStatus(s.key)}
+                aria-pressed={on}
+                className="tappable"
+                style={{
+                  display: "inline-flex", alignItems: "center", gap: 6,
+                  padding: "5px 10px", borderRadius: 999,
+                  border: "1px solid var(--border)",
+                  background: on ? "var(--surface)" : "var(--surface-2)",
+                  color: on ? "var(--text)" : "var(--text-faint)",
+                  fontSize: 12, fontWeight: 600, cursor: "pointer", lineHeight: 1,
+                }}
+              >
+                <span
+                  style={{
+                    width: 8, height: 8, borderRadius: 999, flexShrink: 0,
+                    background: on ? s.color : "var(--text-faint)",
+                    opacity: on ? 1 : 0.45,
+                  }}
+                />
+                {s.label}
+              </button>
+            );
+          })}
+
+          <span style={{ width: 1, height: 18, background: "var(--border)", flexShrink: 0, margin: "0 2px" }} />
+
+          <button
+            type="button"
+            onClick={todosStatus}
+            disabled={todosLigados}
+            className="tappable"
+            style={{
+              padding: "5px 8px", borderRadius: "var(--radius)", border: "none",
+              background: "transparent", color: todosLigados ? "var(--text-faint)" : "var(--accent)",
+              fontSize: 12, fontWeight: 600, cursor: todosLigados ? "default" : "pointer",
+            }}
+          >
+            Todos
+          </button>
+          <button
+            type="button"
+            onClick={limparStatus}
+            disabled={statusOn.size === 0}
+            className="tappable"
+            style={{
+              padding: "5px 8px", borderRadius: "var(--radius)", border: "none",
+              background: "transparent",
+              color: statusOn.size === 0 ? "var(--text-faint)" : "var(--accent)",
+              fontSize: 12, fontWeight: 600, cursor: statusOn.size === 0 ? "default" : "pointer",
+            }}
+          >
+            Limpar
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div>
-      <PageHeader title="Minhas tarefas" count={`${items.length} tarefas`} />
+      <PageHeader title="Minhas tarefas" count={contagem} />
 
       {items.length === 0 ? (
         <EmptyState
@@ -222,21 +365,41 @@ function Minhas() {
         />
       ) : (
         <div className="max-w-[1100px]">
-          {grupos.comData.map(([data, tarefas]) => (
-            <section key={data} className="mb-5">
-              <h2 className="mb-2 text-base font-semibold text-ink-soft">{rotuloData(data)}</h2>
-              <div className="overflow-hidden rounded-lg border border-border bg-surface">
-                {tarefas.map((t, i) => linhaTarefa(t, i))}
-              </div>
-            </section>
-          ))}
-          {grupos.semData.length > 0 && (
-            <section className="mb-5">
-              <h2 className="mb-2 text-base font-semibold text-ink-soft">Sem prazo</h2>
-              <div className="overflow-hidden rounded-lg border border-border bg-surface">
-                {grupos.semData.map((t, i) => linhaTarefa(t, i))}
-              </div>
-            </section>
+          {barraFiltros()}
+
+          {visiveis === 0 ? (
+            <div className="muted" style={{ padding: "20px 2px", fontSize: 14 }}>
+              Nenhuma tarefa com esses filtros.{" "}
+              <button
+                type="button"
+                onClick={limparTudo}
+                style={{
+                  border: "none", background: "transparent", padding: 0,
+                  color: "var(--accent)", fontWeight: 600, cursor: "pointer",
+                }}
+              >
+                Limpar filtros
+              </button>
+            </div>
+          ) : (
+            <>
+              {grupos.comData.map(([data, tarefas]) => (
+                <section key={data} className="mb-5">
+                  <h2 className="mb-2 text-base font-semibold text-ink-soft">{rotuloData(data)}</h2>
+                  <div className="overflow-hidden rounded-lg border border-border bg-surface">
+                    {tarefas.map((t, i) => linhaTarefa(t, i))}
+                  </div>
+                </section>
+              ))}
+              {grupos.semData.length > 0 && (
+                <section className="mb-5">
+                  <h2 className="mb-2 text-base font-semibold text-ink-soft">Sem prazo</h2>
+                  <div className="overflow-hidden rounded-lg border border-border bg-surface">
+                    {grupos.semData.map((t, i) => linhaTarefa(t, i))}
+                  </div>
+                </section>
+              )}
+            </>
           )}
         </div>
       )}
