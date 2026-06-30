@@ -13,10 +13,12 @@ import {
   createTask,
   updateTask,
   listProjects,
+  listMembers,
   ApiError,
   type Task,
   type TaskUpdateInput,
   type Project,
+  type Member,
 } from "@/lib/api";
 import { PRIORITY_LABEL, STATUSES } from "@/lib/status";
 
@@ -50,6 +52,12 @@ export default function TaskModal({
   const [projetos, setProjetos] = useState<Project[]>([]);
   const [projetoSel, setProjetoSel] = useState(""); // "" => avulsa
 
+  // Spec 021: responsaveis na criacao (so no modo CRIAR). invalidIds = quem o
+  // backend recusou no 422 -> fica marcado em vermelho, com a selecao preservada.
+  const [membros, setMembros] = useState<Member[]>([]);
+  const [assigneeIds, setAssigneeIds] = useState<string[]>([]);
+  const [invalidIds, setInvalidIds] = useState<Set<string>>(new Set());
+
   // Prefilla (ou limpa) sempre que abre / troca a task alvo.
   useEffect(() => {
     if (!open) return;
@@ -59,6 +67,8 @@ export default function TaskModal({
     setDueDate(task?.due_date ?? "");
     setStatus(task?.status ?? "BACKLOG");
     setProjetoSel("");
+    setAssigneeIds([]);
+    setInvalidIds(new Set());
     setErro(null);
   }, [open, task]);
 
@@ -69,6 +79,14 @@ export default function TaskModal({
       .then((r) => setProjetos(r.items.filter((p) => !p.is_personal)))
       .catch(() => {});
   }, [open, mostrarSeletorProjeto]);
+
+  // Carrega membros pro seletor de responsaveis (so ao CRIAR).
+  useEffect(() => {
+    if (!open || editando) return;
+    listMembers()
+      .then((ms) => setMembros(ms.filter((m) => m.is_active)))
+      .catch(() => {});
+  }, [open, editando]);
 
   // Esc fecha (quando aberto e nao salvando).
   useEffect(() => {
@@ -86,6 +104,19 @@ export default function TaskModal({
   function fechar() {
     if (saving) return;
     onClose();
+  }
+
+  function toggleAssignee(id: string) {
+    setAssigneeIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+    // Corrigiu: tira a marca vermelha desse id.
+    setInvalidIds((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
   }
 
   async function salvar(e: React.FormEvent) {
@@ -124,12 +155,27 @@ export default function TaskModal({
           priority,
           due_date: dueDate || null,
           project_id: defaultProjectId ?? (projetoSel || null),
+          assignee_ids: assigneeIds,
         });
       }
       setSaving(false);
       onSaved(saved);
     } catch (err) {
-      setErro((err as ApiError).message || "Nao foi possivel salvar a tarefa.");
+      const e = err as ApiError;
+      const invalidos: string[] | undefined = e.details?.invalid_ids;
+      if (invalidos?.length) {
+        // Marca os recusados em vermelho, mantem o resto da selecao.
+        setInvalidIds(new Set(invalidos));
+        const nomes = invalidos
+          .map((id) => membros.find((m) => m.id === id)?.name ?? "alguem")
+          .join(", ");
+        setErro(
+          `Nao foi possivel atribuir: ${nomes}. ` +
+            "Essas pessoas nao alcancam o time desta tarefa — remova-as para criar."
+        );
+      } else {
+        setErro(e.message || "Nao foi possivel salvar a tarefa.");
+      }
       setSaving(false);
     }
   }
@@ -225,6 +271,49 @@ export default function TaskModal({
                 <option key={p.id} value={p.id}>{p.title}</option>
               ))}
             </select>
+          </div>
+        )}
+
+        {/* Spec 021: responsaveis -- so na criacao (na edicao, mexe-se no detalhe).
+            Lista todos os membros ativos; o backend valida escopo e recusa os
+            invalidos com 422 (que ficam vermelhos aqui, sem perder a selecao). */}
+        {!editando && (
+          <div className="field">
+            <label className="label">
+              Responsaveis <span className="muted" style={{ fontWeight: 400 }}>(opcional)</span>
+            </label>
+            {membros.length === 0 ? (
+              <span className="muted" style={{ fontSize: 13 }}>Carregando membros…</span>
+            ) : (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {membros.map((m) => {
+                  const on = assigneeIds.includes(m.id);
+                  const bad = invalidIds.has(m.id);
+                  return (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => toggleAssignee(m.id)}
+                      aria-pressed={on}
+                      className="tappable"
+                      style={{
+                        padding: "5px 10px", borderRadius: 999, fontSize: 12,
+                        fontWeight: 600, cursor: "pointer", lineHeight: 1,
+                        border: `1px solid ${bad ? "var(--danger)" : "var(--border)"}`,
+                        background: bad
+                          ? "rgba(220,38,38,0.08)"
+                          : on ? "var(--accent-soft)" : "var(--surface-2)",
+                        color: bad
+                          ? "var(--danger)"
+                          : on ? "var(--accent)" : "var(--text-faint)",
+                      }}
+                    >
+                      {m.name}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
 

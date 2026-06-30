@@ -111,6 +111,93 @@ class CollaborationService:
         logger.info("task.assigned", task_id=str(task_id), user_id=str(user_id))
         return task, True
 
+    async def assign_many_or_fail(
+        self, *, task: Task, user_ids: list[uuid.UUID]
+    ) -> list[uuid.UUID]:
+        """Designa varios responsaveis de uma vez, ATOMICO (Spec 021).
+
+        Valida TODOS os ids ANTES de aplicar qualquer um. Havendo invalido(s),
+        levanta ValidationError (422) com a lista em details["invalid_ids"] e
+        NAO aplica nenhum -- a transacao do chamador (que ainda nao commitou)
+        reverte. Senao, aplica cada um reusando o mesmo caminho de add_assignee
+        (gravar + history + notificacao). Idempotente: ja-responsavel e pulado.
+        Retorna os ids efetivamente designados.
+
+        Os gates de TASK (visivel/editavel) rodam uma vez; os gates por-ALVO
+        (alcance/ativo, pessoal-monouser) rodam por id, COLETANDO as falhas em
+        vez de estourar na primeira. Nota: violacao de monouser (que isolada
+        seria 409) entra aqui na lista de invalidos do 422 unico -- decisao
+        consciente pra dar UMA resposta coerente "estes nao podem ser
+        responsaveis" (Spec 021, decisao B).
+        """
+        # Dedup preservando ordem (id repetido vira um so).
+        ids: list[uuid.UUID] = []
+        vistos: set[uuid.UUID] = set()
+        for u in user_ids:
+            if u not in vistos:
+                vistos.add(u)
+                ids.append(u)
+        if not ids:
+            return []
+
+        # Gates de task (uma vez). Quem cria a task pode edita-la; se nao
+        # puder, a criacao inteira falha (403) -- correto: nao se designa
+        # responsavel numa task que voce nao pode editar.
+        await self._guards.assert_visible(task)
+        await self._guards.assert_editable(task)
+
+        # Validacao em lote: coleta TODOS os invalidos.
+        invalidos: list[uuid.UUID] = []
+        for uid in ids:
+            try:
+                await self._assert_personal_monouser(task=task, user_id=uid)
+                await self._assert_target_reaches_task(task=task, user_id=uid)
+            except (ValidationError, ConflictError):
+                invalidos.append(uid)
+        if invalidos:
+            raise ValidationError(
+                "Um ou mais responsaveis nao podem ser designados a esta task.",
+                details={
+                    "field": "assignee_ids",
+                    "invalid_ids": [str(u) for u in invalidos],
+                },
+            )
+
+        # Aplicacao: todos validos -> grava + history + notifica cada um.
+        tenant = require_tenant()
+        designados: list[uuid.UUID] = []
+        for uid in ids:
+            if await self._assignees.get(task_id=task.id, user_id=uid) is not None:
+                continue  # idempotente
+            self._assignees.add(
+                task_id=task.id, user_id=uid, assigned_by=tenant.user_id
+            )
+            await self._session.flush()
+            await self._tasks.write_history(
+                task=task,
+                user_id=tenant.user_id,
+                entries=[
+                    build_assigned_entry(user_id=uid, assigned_by=tenant.user_id)
+                ],
+            )
+            await self._session.flush()
+            # No-op se auto-designacao do criador (tratado no emitter).
+            await self._notify.task_assigned(
+                recipient_id=uid,
+                actor_id=tenant.user_id,
+                task_id=task.id,
+                task_title=task.title,
+            )
+            designados.append(uid)
+
+        if designados:
+            logger.info(
+                "task.assigned_many",
+                task_id=str(task.id),
+                count=len(designados),
+            )
+        return designados
+
     async def remove_assignee(
         self, *, task_id: uuid.UUID, user_id: uuid.UUID
     ) -> Task:

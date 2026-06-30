@@ -25,7 +25,7 @@ docs/adr/0002 / 0003 / 0004 / 0005):
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -74,6 +74,9 @@ class CreateTaskCommand:
     priority: PriorityLevel = PriorityLevel.MEDIUM
     start_date: date | None = None
     due_date: date | None = None
+    # Spec 021: responsaveis aplicados APOS a task nascer, reusando os gates
+    # de atribuicao. Atomico: invalido(s) -> 422 e a criacao inteira reverte.
+    assignee_ids: list[uuid.UUID] = field(default_factory=list)
 
 
 @dataclass(frozen=True, slots=True)
@@ -245,6 +248,23 @@ class TaskService:
             project_id=str(task.project_id),
             title=task.title,
         )
+
+        # Spec 021: responsaveis na criacao. So agora (task ja flushada, com id
+        # e team_id resolvido) -- os gates de atribuicao precisam da task
+        # persistida. Atomico: a validacao em lote levanta ValidationError (422)
+        # nomeando TODOS os invalidos sem aplicar nenhum; como ainda nao houve
+        # commit (quem commita e o router), a criacao inteira reverte. Reusa o
+        # caminho de atribuicao -> ganha escopo, history e notificacao.
+        if command.assignee_ids:
+            # Import local: evita ciclo de import no nivel de modulo.
+            from app.modules.tasks.application.collaboration_service import (
+                CollaborationService,
+            )
+
+            await CollaborationService(self._session).assign_many_or_fail(
+                task=task, user_ids=command.assignee_ids
+            )
+
         return task
 
     async def get(self, task_id: uuid.UUID) -> Task:

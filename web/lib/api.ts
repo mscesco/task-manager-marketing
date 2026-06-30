@@ -40,10 +40,13 @@ export class ApiError extends Error {
   status: number;
   // 'password_change_required' chega no corpo do 409 do gate (E7).
   code?: string;
-  constructor(status: number, message: string, code?: string) {
+  // details estruturado do erro (ex.: invalid_ids no 422 de assignee).
+  details?: Record<string, any>;
+  constructor(status: number, message: string, code?: string, details?: Record<string, any>) {
     super(message);
     this.status = status;
     this.code = code;
+    this.details = details;
   }
 }
 
@@ -181,7 +184,8 @@ async function _request<T>(
       (data && (data.detail?.message || data.detail || data.message)) ||
       `Erro ${res.status}`;
     const code = data?.detail?.code || data?.code;
-    throw new ApiError(res.status, typeof detail === "string" ? detail : "Erro", code);
+    const details = data?.detail?.details || data?.details;
+    throw new ApiError(res.status, typeof detail === "string" ? detail : "Erro", code, details);
   }
   return data as T;
 }
@@ -406,6 +410,7 @@ export type TaskCreateInput = {
   priority?: string;
   due_date?: string | null;
   project_id?: string | null; // criar dentro de um projeto (Entrega 11)
+  assignee_ids?: string[]; // Spec 021: responsaveis ja na criacao
 };
 
 export async function createTask(input: TaskCreateInput): Promise<Task> {
@@ -421,6 +426,8 @@ export async function createTask(input: TaskCreateInput): Promise<Task> {
       ...(teamId ? { team_id: teamId } : {}),
       // project_id explicito (task de projeto) ou ausente (avulsa no raiz).
       ...(input.project_id ? { project_id: input.project_id } : {}),
+      // Spec 021: responsaveis na criacao (so manda se houver).
+      ...(input.assignee_ids?.length ? { assignee_ids: input.assignee_ids } : {}),
     },
   });
 }

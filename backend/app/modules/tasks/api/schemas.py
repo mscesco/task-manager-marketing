@@ -136,6 +136,10 @@ class TaskCreateRequest(BaseModel):
     priority: PriorityLevel = PriorityLevel.MEDIUM
     start_date: date | None = None
     due_date: date | None = None
+    # Spec 021: 0+ responsaveis ja na criacao. Vazio = sem responsavel
+    # (comportamento anterior). Validacao (alcance/ativo/monouser) e atomica
+    # no service: qualquer invalido -> 422 listando todos, nada criado.
+    assignee_ids: list[uuid.UUID] = Field(default_factory=list)
 
 
 class TaskUpdateRequest(BaseModel):
