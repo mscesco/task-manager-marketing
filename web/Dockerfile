@@ -17,6 +17,11 @@ RUN npm ci
 FROM node:20-alpine AS builder
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
+# Chave GIPHY: NEXT_PUBLIC_* e assada no bundle em BUILD TIME (nao em runtime).
+# Chega aqui via build-arg (docker-compose.prod.yml -> args). Se vier vazia, o
+# picker de GIF some (GIPHY_ENABLED=false) sem quebrar o build.
+ARG NEXT_PUBLIC_GIPHY_KEY
+ENV NEXT_PUBLIC_GIPHY_KEY=$NEXT_PUBLIC_GIPHY_KEY
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 # public/ e opcional no projeto; garante que exista para o COPY do runner.

@@ -62,6 +62,11 @@ services:
     build:
       context: ./web
       dockerfile: Dockerfile
+      # NEXT_PUBLIC_GIPHY_KEY e assada no bundle em build time. Vem do arquivo
+      # .env na raiz (mesma pasta deste compose), lido pelo compose p/
+      # interpolar ${...}. Ausente -> vazia -> picker de GIF some, sem quebrar.
+      args:
+        NEXT_PUBLIC_GIPHY_KEY: ${NEXT_PUBLIC_GIPHY_KEY:-}
     image: task-manager-web:latest
     container_name: task-manager-web
     restart: unless-stopped
