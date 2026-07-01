@@ -5,11 +5,11 @@
 export const STATUSES = [
   { key: "BACKLOG", label: "Backlog", color: "#64748b" },
   { key: "PLANNED", label: "Planejado", color: "#6366f1" },
-  { key: "IN_PROGRESS", label: "Em andamento", color: "#0ea5e9" },
-  { key: "IN_REVIEW", label: "Em revisao", color: "#f59e0b" },
-  { key: "BLOCKED", label: "Bloqueado", color: "#ef4444" },
-  { key: "COMPLETED", label: "Concluido", color: "#22c55e" },
+  { key: "IN_PROGRESS", label: "Em Andamento", color: "#0ea5e9" },
+  { key: "IN_REVIEW", label: "Em Aprovação", color: "#f59e0b" },
+  { key: "COMPLETED", label: "Concluído", color: "#22c55e" },
   { key: "CANCELLED", label: "Cancelado", color: "#94a3b8" },
+  { key: "BLOCKED", label: "Bloqueado", color: "#ef4444" },
 ] as const;
 
 export const PRIORITY_LABEL: Record<string, string> = {
