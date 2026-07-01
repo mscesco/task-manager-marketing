@@ -214,4 +214,9 @@ class Task(
     completed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # Spec 023: dedup do aviso de prazo. Cada coluna guarda o due_date pra qual
+    # aquele aviso JA saiu. O job so notifica se difere do due_date atual --
+    # se o prazo mudar, reabilita sozinho (self-healing). So o job escreve aqui.
+    due_soon_notified_for: Mapped[date | None] = mapped_column(Date, nullable=True)
+    overdue_notified_for: Mapped[date | None] = mapped_column(Date, nullable=True)
     created_by: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
