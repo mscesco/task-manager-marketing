@@ -33,6 +33,8 @@ import { PRIORITY_LABEL, PRIORITY_COLOR, STATUSES, deadlineTone, DEADLINE_COLOR 
 import Badge from "@/components/Badge";
 import Avatar from "@/components/Avatar";
 import EmojiPicker from "@/components/EmojiPicker";
+import GifPicker from "@/components/GifPicker";
+import { isGiphyUrl } from "@/lib/giphy";
 import CommentText from "@/components/CommentText";
 import MentionTextarea from "@/components/MentionTextarea";
 import { nomeCurto } from "@/lib/people";
@@ -117,6 +119,11 @@ export default function TaskDetail({
   const [enviandoComent, setEnviandoComent] = useState(false);
   const [respondendoId, setRespondendoId] = useState<string | null>(null);
   const [textoResposta, setTextoResposta] = useState("");
+
+  // GIFs escolhidos no rascunho (viram token [gif:URL] so no envio). Ficam como
+  // chip de preview abaixo do campo -- o textarea nao mostra o link.
+  const [gifsNovo, setGifsNovo] = useState<string[]>([]);
+  const [gifsResp, setGifsResp] = useState<string[]>([]);
   const [enviandoResp, setEnviandoResp] = useState(false);
   const topComentRef = useRef<HTMLTextAreaElement>(null);
   const respostaRef = useRef<HTMLTextAreaElement>(null);
@@ -170,7 +177,14 @@ export default function TaskDetail({
     setRespondendoId(null);
     setTextoResposta("");
     setEnviandoResp(false);
+    setGifsNovo([]);
+    setGifsResp([]);
   }, [task?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Ao trocar/fechar a resposta, zera os GIFs de rascunho da resposta.
+  useEffect(() => {
+    setGifsResp([]);
+  }, [respondendoId]);
 
   useEffect(() => {
     if (!task) return;
@@ -381,15 +395,27 @@ export default function TaskDetail({
     }
   }
 
+  // Junta o texto digitado com os GIFs do rascunho: cada GIF vira um token
+  // [gif:URL] no fim. So aceita URL de dominio GIPHY (defesa a mais).
+  function montarConteudo(texto: string, gifs: string[]): string {
+    const t = texto.trim();
+    const tokens = gifs
+      .filter(isGiphyUrl)
+      .map((u) => `[gif:${u}]`)
+      .join(" ");
+    return [t, tokens].filter(Boolean).join("\n");
+  }
+
   async function enviarComentario() {
-    const txt = novoComent.trim();
-    if (!txt) return;
+    const conteudo = montarConteudo(novoComent, gifsNovo);
+    if (!conteudo) return;
     setEnviandoComent(true);
     setErroCom(null);
     try {
-      const novo = await createComment(tid, txt);
+      const novo = await createComment(tid, conteudo);
       setComentarios((prev) => [...(prev ?? []), novo]);
       setNovoComent("");
+      setGifsNovo([]);
     } catch (e) {
       setErroCom((e as ApiError).message || "Nao consegui comentar.");
     } finally {
@@ -398,14 +424,15 @@ export default function TaskDetail({
   }
 
   async function enviarResposta(parentId: string) {
-    const txt = textoResposta.trim();
-    if (!txt) return;
+    const conteudo = montarConteudo(textoResposta, gifsResp);
+    if (!conteudo) return;
     setEnviandoResp(true);
     setErroCom(null);
     try {
-      const novo = await createComment(tid, txt, parentId);
+      const novo = await createComment(tid, conteudo, parentId);
       setComentarios((prev) => [...(prev ?? []), novo]);
       setTextoResposta("");
+      setGifsResp([]);
       setRespondendoId(null);
     } catch (e) {
       setErroCom((e as ApiError).message || "Nao consegui responder.");
@@ -832,6 +859,12 @@ export default function TaskDetail({
                           maxLength={5000}
                           style={{ resize: "vertical" }}
                         />
+                        <GifDraftStrip
+                          gifs={gifsResp}
+                          onRemove={(i) =>
+                            setGifsResp((g) => g.filter((_, j) => j !== i))
+                          }
+                        />
                         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                           <EmojiPicker
                             disabled={enviandoResp}
@@ -844,11 +877,18 @@ export default function TaskDetail({
                               )
                             }
                           />
+                          <GifPicker
+                            disabled={enviandoResp}
+                            onPick={(url) => setGifsResp((g) => [...g, url])}
+                          />
                           <button
                             type="button"
                             className="btn btn-primary"
                             onClick={() => enviarResposta(c.id)}
-                            disabled={enviandoResp || !textoResposta.trim()}
+                            disabled={
+                              enviandoResp ||
+                              (!textoResposta.trim() && gifsResp.length === 0)
+                            }
                             style={{ padding: "5px 12px", fontSize: 13 }}
                           >
                             {enviandoResp ? "…" : "Responder"}
@@ -902,6 +942,10 @@ export default function TaskDetail({
             wrapperStyle={{ marginTop: 10 }}
             style={{ resize: "vertical" }}
           />
+          <GifDraftStrip
+            gifs={gifsNovo}
+            onRemove={(i) => setGifsNovo((g) => g.filter((_, j) => j !== i))}
+          />
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
             <EmojiPicker
               disabled={enviandoComent}
@@ -909,11 +953,15 @@ export default function TaskDetail({
                 inserirNoCursor(topComentRef, novoComent, setNovoComent, e)
               }
             />
+            <GifPicker
+              disabled={enviandoComent}
+              onPick={(url) => setGifsNovo((g) => [...g, url])}
+            />
             <button
               type="button"
               className="btn btn-primary"
               onClick={enviarComentario}
-              disabled={enviandoComent || !novoComent.trim()}
+              disabled={enviandoComent || (!novoComent.trim() && gifsNovo.length === 0)}
               style={{ padding: "6px 12px" }}
             >
               {enviandoComent ? "Enviando…" : "Comentar"}
@@ -1181,6 +1229,64 @@ function LinhaComentario({
           <div className="error-box" style={{ marginTop: 6 }}>{erroLinha}</div>
         )}
       </div>
+    </div>
+  );
+}
+
+// Tira de preview dos GIFs em rascunho (abaixo do campo de comentario). Mostra
+// o GIF, nao o link; o "x" remove antes de enviar. As URLs vem do picker (ja
+// sao do dominio GIPHY).
+function GifDraftStrip({
+  gifs,
+  onRemove,
+}: {
+  gifs: string[];
+  onRemove: (i: number) => void;
+}) {
+  if (gifs.length === 0) return null;
+  return (
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8 }}>
+      {gifs.map((u, i) => (
+        <div key={`${u}-${i}`} style={{ position: "relative", lineHeight: 0 }}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={u}
+            alt="GIF"
+            style={{
+              height: 64,
+              borderRadius: 6,
+              border: "1px solid var(--border)",
+              display: "block",
+            }}
+          />
+          <button
+            type="button"
+            aria-label="Remover GIF"
+            title="Remover"
+            onClick={() => onRemove(i)}
+            style={{
+              position: "absolute",
+              top: -6,
+              right: -6,
+              width: 18,
+              height: 18,
+              borderRadius: 999,
+              border: "1px solid var(--border)",
+              background: "var(--surface)",
+              color: "var(--text)",
+              fontSize: 12,
+              lineHeight: 1,
+              cursor: "pointer",
+              padding: 0,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            ×
+          </button>
+        </div>
+      ))}
     </div>
   );
 }
