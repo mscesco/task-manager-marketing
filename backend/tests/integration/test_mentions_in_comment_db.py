@@ -137,3 +137,51 @@ async def test_mencionado_nao_responsavel_recebe_so_mencao(db) -> None:
         await db.flush()
         assert len(await _by_type(db, bystander, "TASK_MENTIONED")) == 1
         assert len(await _by_type(db, bystander, "TASK_COMMENTED")) == 0
+
+
+async def test_mencao_fora_de_escopo_nao_notifica(db) -> None:
+    """Mencionar alguem que NAO enxerga a task nao gera TASK_MENTIONED.
+
+    Sem o filtro de visibilidade, o mencionado fora de escopo recebia uma
+    notificacao com deep-link morto (404) e o titulo da task vazava no payload
+    pra fora do escopo. (achado da auditoria pre-lancamento.) Aqui: quem ve a
+    task recebe a mencao; quem nao ve NAO recebe.
+    """
+    ws = await f.make_workspace(db)
+    r = await f.make_team(db, workspace_id=ws)
+    a = await f.make_team(db, workspace_id=ws, parent_team_id=r)
+    b = await f.make_team(db, workspace_id=ws, parent_team_id=r)
+    comentador = await f.make_user(db, workspace_id=ws)
+    await f.add_member(
+        db, workspace_id=ws, user_id=comentador, team_id=r, role="MANAGER"
+    )
+    proj = await f.make_project(
+        db, workspace_id=ws, created_by=comentador, team_id=a
+    )
+    task = await f.make_task(
+        db, workspace_id=ws, created_by=comentador, team_id=a, project_id=proj,
+        title="Brief A",
+    )
+    # dentro: OPERATOR do time A enxerga a task (lente = A + raiz).
+    dentro = await f.make_user(db, workspace_id=ws)
+    await f.add_member(
+        db, workspace_id=ws, user_id=dentro, team_id=a, role="OPERATOR"
+    )
+    # fora: OPERATOR do time B (irmao) NAO enxerga a task de A (lente = B + raiz).
+    fora = await f.make_user(db, workspace_id=ws)
+    await f.add_member(
+        db, workspace_id=ws, user_id=fora, team_id=b, role="OPERATOR"
+    )
+    forest = (node(r), node(a, r), node(b, r))
+    ctx = dict(
+        workspace_id=ws, user_id=comentador,
+        memberships=(mship(r, "MANAGER"),), team_tree=forest,
+    )
+    with acting_as(**ctx):
+        await CommentService(db).create_comment(
+            task_id=task.id,
+            content=f"@[Dentro]({dentro}) e @[Fora]({fora}), olhem isso",
+        )
+        await db.flush()
+        assert len(await _by_type(db, dentro, "TASK_MENTIONED")) == 1
+        assert len(await _by_type(db, fora, "TASK_MENTIONED")) == 0

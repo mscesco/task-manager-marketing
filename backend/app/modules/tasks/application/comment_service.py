@@ -26,7 +26,10 @@ from app.db.models import Comment, User
 from app.modules.notifications.application.notification_emitter import (
     NotificationEmitter,
 )
-from app.modules.tasks.application.task_guards import TaskScopeGuards
+from app.modules.tasks.application.task_guards import (
+    TaskScopeGuards,
+    user_can_view_task,
+)
 from app.modules.tasks.domain.comment import (
     assert_reply_target,
     can_delete,
@@ -150,6 +153,18 @@ class CommentService:
                 ).scalars().all()
             )
             mencionados = [m for m in mencionados if m in validos]
+            # So notifica quem ENXERGA a task pela lente dele. Sem este filtro,
+            # mencionar alguem fora do escopo gera notificacao com deep-link
+            # morto (404) e ainda vaza o titulo da task no payload pra fora do
+            # escopo. (achado da auditoria pre-lancamento.)
+            if mencionados:
+                mencionados = [
+                    m
+                    for m in mencionados
+                    if await user_can_view_task(
+                        self._session, task=task, user_id=m
+                    )
+                ]
             if mencionados:
                 await self._notify.mentioned(
                     recipient_ids=mencionados,

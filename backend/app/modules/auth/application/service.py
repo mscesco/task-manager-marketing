@@ -38,6 +38,15 @@ from app.shared.exceptions.base import (
 
 logger = get_logger(__name__)
 
+#: Hash bcrypt descartavel, calculado UMA vez no import com o MESMO custo das
+#: senhas reais. Serve para equalizar o tempo do login quando o workspace ou o
+#: usuario NAO existe: sem isso, o caminho "nao existe" retorna sem rodar bcrypt
+#: (~100ms a menos que o caminho de senha errada), e essa diferenca de tempo
+#: denuncia quais e-mails/workspaces existem (enumeracao de contas). Nesses
+#: caminhos rodamos um verify_password contra este hash e descartamos o
+#: resultado -- so pelo custo de CPU equivalente. (achado da auditoria.)
+_TIMING_EQUALIZER_HASH = hash_password("timing-equalizer-not-a-real-password")
+
 
 class AuthService:
     """Casos de uso de autenticacao."""
@@ -61,6 +70,8 @@ class AuthService:
             )
         ).scalar_one_or_none()
         if workspace is None:
+            # Equaliza o tempo: roda bcrypt mesmo sem workspace (ver constante).
+            verify_password(password, _TIMING_EQUALIZER_HASH)
             raise AuthenticationError("Credenciais invalidas.")
 
         # 2. Resolve o usuario pelo par (workspace, email).
@@ -73,6 +84,8 @@ class AuthService:
             )
         ).scalar_one_or_none()
         if user is None or not user.is_active:
+            # Equaliza o tempo: roda bcrypt mesmo sem usuario (ver constante).
+            verify_password(password, _TIMING_EQUALIZER_HASH)
             raise AuthenticationError("Credenciais invalidas.")
 
         # 3. Confere a senha.

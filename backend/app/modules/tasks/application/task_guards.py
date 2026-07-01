@@ -21,10 +21,13 @@ import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.tenant import require_tenant
+from app.core.tenant import Membership, require_tenant
 from app.db.models import Project, Task
 from app.modules.auth.domain import team_scope
 from app.modules.tasks.infrastructure.project_repository import ProjectRepository
+from app.modules.users.infrastructure.membership_repository import (
+    MembershipRepository,
+)
 from app.shared.exceptions.base import AuthorizationError, EntityNotFoundError
 
 
@@ -92,6 +95,37 @@ def task_editable(
     ):
         return True
     return task.team_id is not None and task.team_id in editable
+
+
+async def user_can_view_task(
+    session: AsyncSession, *, task: Task, user_id: uuid.UUID
+) -> bool:
+    """Nao-lancante: o `user_id` enxerga a `task` pela lente DELE?
+
+    Ausente/inativo no workspace -> False. Reusa a MESMA regra pura
+    (task_visible + visible_team_ids) do resto do app, so que aplicada a um
+    usuario que NAO e o corrente. Usado para so notificar mencoes a quem
+    realmente alcanca a task (senao o deep-link leva a 404 e o titulo da task
+    vazaria pra fora do escopo).
+    """
+    tenant = require_tenant()
+    membership = await MembershipRepository(session).get_membership(
+        user_id=user_id, workspace_id=tenant.workspace_id
+    )
+    if membership is None or not membership.is_active:
+        return False
+    target_memberships = tuple(
+        Membership(team_id=tid, role=role) for tid, role in membership.team_roles
+    )
+    visible = team_scope.visible_team_ids(target_memberships, tenant.team_tree)
+    project = (
+        await ProjectRepository(session).get_by_id(task.project_id)
+        if task.project_id is not None
+        else None
+    )
+    return task_visible(
+        task=task, project=project, viewer_user_id=user_id, visible=visible
+    )
 
 
 # --------------------------------------------------------

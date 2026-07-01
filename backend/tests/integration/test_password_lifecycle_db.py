@@ -185,3 +185,49 @@ async def test_admin_from_factory_not_pending(db) -> None:
     ws, team, admin = await _ws_admin(db)
     admin_row = await db.get(User, admin)
     assert admin_row.must_change_password is False
+
+
+# --------------------------------------------------------
+# Equalizacao de tempo no login (anti-enumeracao) -- achado da auditoria
+# --------------------------------------------------------
+async def test_login_inexistente_roda_bcrypt_equalizando_tempo(db, monkeypatch) -> None:
+    """Login com e-mail/workspace inexistente ainda roda bcrypt (equaliza tempo).
+
+    Sem isso, o caminho "nao existe" retornava sem rodar bcrypt (~100ms a menos
+    que o de senha errada) e a diferenca de tempo denunciava quais contas/
+    workspaces existem (enumeracao). Timing em si nao e testavel de forma
+    estavel; aqui provamos o MECANISMO: verify_password e de fato invocado nos
+    dois caminhos de falha por inexistencia.
+    """
+    ws, team, admin = await _ws_admin(db)
+    ws_row = await db.get(Workspace, ws)
+
+    import app.modules.auth.application.service as svc
+
+    chamadas = {"n": 0}
+
+    def _spy(_plain: str, _hashed: str) -> bool:
+        chamadas["n"] += 1
+        return False
+
+    monkeypatch.setattr(svc, "verify_password", _spy)
+
+    # (a) e-mail inexistente, workspace valido -> roda bcrypt uma vez.
+    chamadas["n"] = 0
+    with pytest.raises(AuthenticationError):
+        await AuthService(db).login(
+            email="nao-existe@fecaf.com.br",
+            password="qualquer-coisa",
+            workspace_slug=ws_row.slug,
+        )
+    assert chamadas["n"] == 1
+
+    # (b) workspace inexistente -> roda bcrypt uma vez.
+    chamadas["n"] = 0
+    with pytest.raises(AuthenticationError):
+        await AuthService(db).login(
+            email="qualquer@fecaf.com.br",
+            password="qualquer-coisa",
+            workspace_slug="workspace-que-nao-existe",
+        )
+    assert chamadas["n"] == 1
