@@ -40,6 +40,7 @@ function hojeISO() {
 }
 
 type FiltroPrazo = "todos" | "atrasadas" | "em-dia";
+type Ordenacao = "criacao" | "prazo" | "prioridade";
 
 export default function Board({
   projectId,
@@ -66,6 +67,8 @@ export default function Board({
   // filtram em memoria sobre o lote ja carregado, sem bater na API.
   const [busca, setBusca] = useState("");
   const [prazo, setPrazo] = useState<FiltroPrazo>("todos");
+  // Ordenacao do quadro -- so na sessao (nao persiste; reseta no reload).
+  const [ordenacao, setOrdenacao] = useState<Ordenacao>("criacao");
   // Fatia 3: filtro por subtime. memberTeam resolve id->subtime (vem do
   // /members, agora com team_id pela Fatia 2). subtimes alimenta o dropdown
   // (so times nao-raiz). "" em `subtime` = sem filtro.
@@ -273,9 +276,38 @@ export default function Board({
     }
     return true;
   });
+  // Ordenacao escolhida (so na sessao). Reordena as raizes pelo criterio e
+  // depois distribui nas colunas -- a distribuicao preserva a ordem. Empate
+  // SEMPRE cai pra created_at desc (mais nova primeiro), pra coluna nao "tremer".
+  const PRIO_RANK: Record<string, number> = {
+    URGENT: 4, HIGH: 3, MEDIUM: 2, LOW: 1,
+  };
+  const porData = (a: Task, b: Task) =>
+    a.created_at < b.created_at ? 1 : a.created_at > b.created_at ? -1 : 0;
+  const comparador = (a: Task, b: Task) => {
+    if (ordenacao === "prazo") {
+      // Sem prazo vai pro FIM; entre os com prazo, vencimento mais proximo no topo.
+      const da = a.due_date ?? "";
+      const db = b.due_date ?? "";
+      if (!da && !db) return porData(a, b);
+      if (!da) return 1;
+      if (!db) return -1;
+      if (da !== db) return da < db ? -1 : 1;
+      return porData(a, b);
+    }
+    if (ordenacao === "prioridade") {
+      const pa = PRIO_RANK[a.priority] ?? 0;
+      const pb = PRIO_RANK[b.priority] ?? 0;
+      if (pa !== pb) return pb - pa; // Urgente primeiro.
+      return porData(a, b);
+    }
+    return porData(a, b); // "criacao" (padrao de hoje).
+  };
+  const ordenadas = [...raizes].sort(comparador);
+
   const porStatus: Record<string, Task[]> = {};
   for (const s of STATUSES) porStatus[s.key] = [];
-  for (const t of raizes) (porStatus[t.status] ??= []).push(t);
+  for (const t of ordenadas) (porStatus[t.status] ??= []).push(t);
 
   const focado = detalhe ? tasks.find((t) => t.id === detalhe.id) ?? detalhe : null;
   const filhosFocado = focado ? tasks.filter((t) => t.parent_task_id === focado.id) : [];
@@ -309,6 +341,19 @@ export default function Board({
           <option value="todos">Prazo: todos</option>
           <option value="atrasadas">Atrasadas</option>
           <option value="em-dia">Em dia</option>
+        </select>
+        <select
+          value={ordenacao}
+          onChange={(e) => setOrdenacao(e.target.value as Ordenacao)}
+          style={{
+            fontSize: 13, padding: "6px 10px", borderRadius: 8,
+            border: "1px solid var(--border)", background: "var(--surface)",
+            color: "var(--text)", cursor: "pointer",
+          }}
+        >
+          <option value="criacao">Ordenar: criacao</option>
+          <option value="prazo">Ordenar: prazo</option>
+          <option value="prioridade">Ordenar: prioridade</option>
         </select>
         {subtimes.length > 0 && (
           <select
