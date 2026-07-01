@@ -8,7 +8,7 @@ import TaskModal from "@/components/TaskModal";
 import TaskDetail from "@/components/TaskDetail";
 import { STATUSES, PRIORITY_LABEL, PRIORITY_COLOR } from "@/lib/status";
 import {
-  listMyAssignments,
+  listAllMyAssignments,
   listMembers,
   ApiError,
   type Task,
@@ -56,6 +56,9 @@ function Minhas() {
   const [items, setItems] = useState<MyTaskItem[] | null>(null);
   const [members, setMembers] = useState<Map<string, { name: string }>>(new Map());
   const [erro, setErro] = useState<string | null>(null);
+  // null = nao truncou. Se a lista passar do teto de busca, vira aviso honesto
+  // no lugar de perda silenciosa (mesmo padrao do quadro).
+  const [truncadoTotal, setTruncadoTotal] = useState<number | null>(null);
 
   // Filtros (client-side, sobre a lista ja carregada). Comecam "tudo visivel".
   const [relFiltro, setRelFiltro] = useState<string>("todas");
@@ -67,11 +70,12 @@ function Minhas() {
   const [deepLinkFeito, setDeepLinkFeito] = useState(false);
 
   useEffect(() => {
-    listMyAssignments({ size: 100 })
+    listAllMyAssignments()
       .then((r) => {
         // Camila (E9): esconder out_of_scope por ora -- essas tarefas dao 404
         // no detalhe (bug conhecido E6). Quando for tratar, troca este filtro.
         setItems(r.items.filter((t) => !t.out_of_scope));
+        setTruncadoTotal(r.truncated ? r.total : null);
       })
       .catch((e: ApiError) => setErro(e.message));
     listMembers()
@@ -80,7 +84,7 @@ function Minhas() {
   }, []);
 
   // Deep-link da notificacao: ?task=<id> abre o detalhe da task da PROPRIA
-  // lista (E6-safe: reusa o objeto que listMyAssignments ja trouxe, sem
+  // lista (E6-safe: reusa o objeto que listAllMyAssignments ja trouxe, sem
   // GET /tasks/{id}). Roda uma vez, depois da lista carregar. Procura na lista
   // COMPLETA (items), nao na filtrada -- um filtro ativo nao deve furar o link.
   useEffect(() => {
@@ -357,6 +361,22 @@ function Minhas() {
   return (
     <div>
       <PageHeader title="Minhas tarefas" count={contagem} />
+
+      {truncadoTotal !== null && (
+        <div
+          role="alert"
+          style={{
+            marginBottom: 16, padding: "10px 14px", borderRadius: 8,
+            border: "1px solid var(--border)", background: "var(--accent-soft)",
+            color: "var(--text)", fontSize: 13,
+          }}
+        >
+          Voce tem <strong>{truncadoTotal}</strong> tarefas relacionadas, acima
+          do limite de exibicao. Mostrando as mais recentes — algumas podem nao
+          aparecer aqui nem entrar nos filtros. Arquive tarefas concluidas para
+          reduzir o volume.
+        </div>
+      )}
 
       {items.length === 0 ? (
         <EmptyState

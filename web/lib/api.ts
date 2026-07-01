@@ -339,6 +339,51 @@ export async function listMyAssignments(params: {
 }
 
 // ---------------------------------------------------------------
+// BUSCA COMPLETA de "minhas tarefas" (anti-teto silencioso)
+// ---------------------------------------------------------------
+// A tela minhas-tarefas filtra (status/relacao) no CLIENTE, entao precisa do
+// conjunto COMPLETO -- nao de uma pagina. Antes batia size=100 fixo: alem de
+// 100 relacoes, tarefas sumiam da lista E os filtros/contadores passavam a
+// mentir (filtravam um recorte truncado). Mesmo padrao de listAllTasks: pagina
+// ate o total, com TETO DE SEGURANCA; se estourar, truncated=true pra tela
+// AVISAR em vez de perder em silencio. Dedupe por id porque paginacao por
+// offset pode repetir um item na borda se algo muda durante a carga.
+export type AllMyAssignmentsResult = {
+  items: MyTaskItem[];
+  total: number;
+  truncated: boolean;
+};
+
+export async function listAllMyAssignments(): Promise<AllMyAssignmentsResult> {
+  const pageSize = 100; // teto do backend por pagina
+  const first = await listMyAssignments({ page: 1, size: pageSize });
+  const total = first.total;
+  const cap = Math.min(total, TASK_FETCH_CEILING);
+
+  const seen = new Set<string>();
+  const items: MyTaskItem[] = [];
+  const push = (arr: MyTaskItem[]) => {
+    for (const t of arr) {
+      if (!seen.has(t.id)) {
+        seen.add(t.id);
+        items.push(t);
+      }
+    }
+  };
+  push(first.items);
+
+  let page = 2;
+  while (items.length < cap) {
+    const next = await listMyAssignments({ page, size: pageSize });
+    if (next.items.length === 0) break; // defensivo: nada mais a buscar
+    push(next.items);
+    page++;
+  }
+
+  return { items, total, truncated: total > items.length };
+}
+
+// ---------------------------------------------------------------
 // TIMES + CRIACAO  (pin na raiz -- ver web/docs/adr/0001-pin-time-raiz-criacao.md)
 // ---------------------------------------------------------------
 // Toda task criada pelo quadro nasce DONA do time raiz (Marketing geral),
