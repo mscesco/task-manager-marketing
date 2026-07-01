@@ -1,16 +1,29 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  DndContext,
+  DragEndEvent,
+  DragStartEvent,
+  DragOverlay,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  useDroppable,
+  useDraggable,
+} from "@dnd-kit/core";
 import AppShell from "@/components/AppShell";
 import EmptyState from "@/components/EmptyState";
 import PageHeader from "@/components/PageHeader";
 import Badge from "@/components/Badge";
 import TaskModal from "@/components/TaskModal";
 import TaskDetail from "@/components/TaskDetail";
+import TaskCard from "@/components/TaskCard";
 import { STATUSES, PRIORITY_LABEL, PRIORITY_COLOR, deadlineTone, deadlineLabel, DEADLINE_COLOR } from "@/lib/status";
 import {
   listAllMyAssignments,
   listMembers,
   listAllProjects,
+  updateTask,
   ApiError,
   type Task,
   type MyTaskItem,
@@ -71,6 +84,16 @@ function Minhas() {
   const [editando, setEditando] = useState<Task | null>(null);
   const [deepLinkFeito, setDeepLinkFeito] = useState(false);
 
+  // Vista: lista (agrupada por prazo) x quadro (kanban por status). Sessao-only.
+  const [vista, setVista] = useState<"lista" | "quadro">("lista");
+  // Drag no modo quadro (mesmo padrao do Board).
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
+  );
+  const suprimirClique = useRef(false);
+
   useEffect(() => {
     listAllMyAssignments()
       .then((r) => {
@@ -105,8 +128,16 @@ function Minhas() {
     }
   }, [items, deepLinkFeito]);
 
+  // Toast do drag (auto-some).
+  useEffect(() => {
+    if (!toast) return;
+    const id = setTimeout(() => setToast(null), 3500);
+    return () => clearTimeout(id);
+  }, [toast]);
+
   // --- abrir / navegar / fechar o detalhe (mesma logica do quadro) ---
   function abrirDetalhe(t: Task) {
+    if (suprimirClique.current) return; // acabou de arrastar: nao abre
     setPilha([]);
     setDetalhe(t);
   }
@@ -156,6 +187,45 @@ function Minhas() {
     setItems((prev) =>
       prev ? prev.map((t) => (t.id === taskId ? { ...t, assignee_ids: userIds } : t)) : prev
     );
+  }
+
+  // --- Drag no modo quadro: arrastar card muda o status (mesmo padrao do Board) ---
+  function onDragStart(e: DragStartEvent) {
+    setActiveId(String(e.active.id));
+  }
+
+  async function onDragEnd(e: DragEndEvent) {
+    setActiveId(null);
+    suprimirClique.current = true;
+    setTimeout(() => (suprimirClique.current = false), 60);
+
+    const taskId = String(e.active.id);
+    const destino = e.over ? String(e.over.id) : null;
+    if (!destino) return;
+
+    const atual = (items ?? []).find((t) => t.id === taskId);
+    if (!atual || atual.status === destino) return;
+    const statusAnterior = atual.status;
+
+    // Otimista.
+    setItems((prev) =>
+      prev ? prev.map((t) => (t.id === taskId ? { ...t, status: destino } : t)) : prev
+    );
+
+    try {
+      const atualizada = await updateTask(taskId, { status: destino });
+      aoUpsert(atualizada); // re-merge do servidor, preservando relations/assignees
+    } catch (err) {
+      setItems((prev) =>
+        prev ? prev.map((t) => (t.id === taskId ? { ...t, status: statusAnterior } : t)) : prev
+      );
+      const e2 = err as ApiError;
+      setToast(
+        e2.status === 403
+          ? "Voce nao pode mover esta tarefa. Voltei pra coluna anterior."
+          : "Nao consegui mover o card. Voltei pra coluna anterior."
+      );
+    }
   }
 
   function aoSalvar(saved: Task) {
@@ -210,6 +280,21 @@ function Minhas() {
     return { comData, semData };
   }, [filtrados]);
 
+  // Modo QUADRO: filtra so por relacao (o status vira coluna, nao filtro) e
+  // agrupa por status. As colunas sao sempre as 7 (STATUSES).
+  const porRelacao = useMemo(() => {
+    return (items ?? []).filter(
+      (t) => relFiltro === "todas" || t.relations.includes(relFiltro)
+    );
+  }, [items, relFiltro]);
+
+  const porStatus = useMemo(() => {
+    const map: Record<string, MyTaskItem[]> = {};
+    for (const s of STATUSES) map[s.key] = [];
+    for (const t of porRelacao) (map[t.status] ??= []).push(t);
+    return map;
+  }, [porRelacao]);
+
   if (erro) return <div className="error-box" style={{ maxWidth: 480 }}>{erro}</div>;
   if (!items) return <div className="muted">Carregando…</div>;
 
@@ -218,7 +303,7 @@ function Minhas() {
   const focado = detalhe ? items.find((t) => t.id === detalhe.id) ?? detalhe : null;
   const filhosFocado = focado ? items.filter((t) => t.parent_task_id === focado.id) : [];
 
-  const visiveis = filtrados.length;
+  const visiveis = vista === "quadro" ? porRelacao.length : filtrados.length;
   const todosLigados = statusOn.size === TODOS_STATUS.length;
   const contagem =
     visiveis === items.length ? `${items.length} tarefas` : `${visiveis} de ${items.length}`;
@@ -311,7 +396,31 @@ function Minhas() {
           </select>
         </label>
 
-        <span style={{ width: 1, height: 22, background: "var(--border)", flexShrink: 0 }} />
+        {/* Toggle de vista (sessao-only). No quadro, os status viram colunas. */}
+        <div style={{ display: "inline-flex", gap: 4 }}>
+          {(["lista", "quadro"] as const).map((v) => (
+            <button
+              key={v}
+              type="button"
+              onClick={() => setVista(v)}
+              aria-pressed={vista === v}
+              className="tappable"
+              style={{
+                padding: "5px 12px", borderRadius: 999, fontSize: 12,
+                fontWeight: 600, cursor: "pointer", lineHeight: 1,
+                border: "1px solid var(--border)",
+                background: vista === v ? "var(--accent-soft)" : "var(--surface-2)",
+                color: vista === v ? "var(--accent)" : "var(--text-faint)",
+              }}
+            >
+              {v === "lista" ? "Lista" : "Quadro"}
+            </button>
+          ))}
+        </div>
+
+        {vista === "lista" && (
+          <>
+            <span style={{ width: 1, height: 22, background: "var(--border)", flexShrink: 0 }} />
 
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
           {STATUSES.map((s) => {
@@ -374,6 +483,8 @@ function Minhas() {
             Limpar
           </button>
         </div>
+          </>
+        )}
       </div>
     );
   }
@@ -404,12 +515,47 @@ function Minhas() {
           description="Tarefas em que voce e responsavel, criador ou acompanha aparecem aqui."
         />
       ) : (
-        <div className="max-w-[1100px]">
+        <div className={vista === "quadro" ? "" : "max-w-[1100px]"}>
           {barraFiltros()}
 
-          {visiveis === 0 ? (
+          {vista === "lista" ? (
+            visiveis === 0 ? (
+              <div className="muted" style={{ padding: "20px 2px", fontSize: 14 }}>
+                Nenhuma tarefa com esses filtros.{" "}
+                <button
+                  type="button"
+                  onClick={limparTudo}
+                  style={{
+                    border: "none", background: "transparent", padding: 0,
+                    color: "var(--accent)", fontWeight: 600, cursor: "pointer",
+                  }}
+                >
+                  Limpar filtros
+                </button>
+              </div>
+            ) : (
+              <>
+                {grupos.comData.map(([data, tarefas]) => (
+                  <section key={data} className="mb-5">
+                    <h2 className="mb-2 text-base font-semibold text-ink-soft">{rotuloData(data)}</h2>
+                    <div className="overflow-hidden rounded-lg border border-border bg-surface">
+                      {tarefas.map((t, i) => linhaTarefa(t, i))}
+                    </div>
+                  </section>
+                ))}
+                {grupos.semData.length > 0 && (
+                  <section className="mb-5">
+                    <h2 className="mb-2 text-base font-semibold text-ink-soft">Sem prazo</h2>
+                    <div className="overflow-hidden rounded-lg border border-border bg-surface">
+                      {grupos.semData.map((t, i) => linhaTarefa(t, i))}
+                    </div>
+                  </section>
+                )}
+              </>
+            )
+          ) : porRelacao.length === 0 ? (
             <div className="muted" style={{ padding: "20px 2px", fontSize: 14 }}>
-              Nenhuma tarefa com esses filtros.{" "}
+              Nenhuma tarefa com esse filtro.{" "}
               <button
                 type="button"
                 onClick={limparTudo}
@@ -422,24 +568,39 @@ function Minhas() {
               </button>
             </div>
           ) : (
-            <>
-              {grupos.comData.map(([data, tarefas]) => (
-                <section key={data} className="mb-5">
-                  <h2 className="mb-2 text-base font-semibold text-ink-soft">{rotuloData(data)}</h2>
-                  <div className="overflow-hidden rounded-lg border border-border bg-surface">
-                    {tarefas.map((t, i) => linhaTarefa(t, i))}
-                  </div>
-                </section>
-              ))}
-              {grupos.semData.length > 0 && (
-                <section className="mb-5">
-                  <h2 className="mb-2 text-base font-semibold text-ink-soft">Sem prazo</h2>
-                  <div className="overflow-hidden rounded-lg border border-border bg-surface">
-                    {grupos.semData.map((t, i) => linhaTarefa(t, i))}
-                  </div>
-                </section>
-              )}
-            </>
+            <DndContext sensors={sensors} onDragStart={onDragStart} onDragEnd={onDragEnd}>
+              <div style={{ display: "flex", gap: 14, overflowX: "auto", paddingBottom: 8 }}>
+                {STATUSES.map((s) => (
+                  <ColunaMinhas key={s.key} status={s} count={porStatus[s.key]?.length ?? 0}>
+                    {(porStatus[s.key] ?? []).map((t) => (
+                      <CardArrastavelMinhas
+                        key={t.id}
+                        task={t}
+                        onAbrir={abrirDetalhe}
+                        members={members}
+                        projectName={t.project_id ? projectNames.get(t.project_id) : undefined}
+                      />
+                    ))}
+                  </ColunaMinhas>
+                ))}
+              </div>
+              <DragOverlay>
+                {activeId
+                  ? (() => {
+                      const at = (items ?? []).find((t) => t.id === activeId);
+                      return at ? (
+                        <div style={{ width: 256, cursor: "grabbing" }}>
+                          <TaskCard
+                            task={at}
+                            members={members}
+                            projectName={at.project_id ? projectNames.get(at.project_id) : undefined}
+                          />
+                        </div>
+                      ) : null;
+                    })()
+                  : null}
+              </DragOverlay>
+            </DndContext>
           )}
         </div>
       )}
@@ -476,6 +637,98 @@ function Minhas() {
           fecharDetalhe();
         }}
       />
+
+      {toast && (
+        <div
+          role="status"
+          style={{
+            position: "fixed", left: "50%", bottom: 24, transform: "translateX(-50%)",
+            background: "var(--surface)", border: "1px solid var(--border)",
+            borderRadius: 10, padding: "10px 16px", boxShadow: "var(--shadow)",
+            fontSize: 13, zIndex: 80, maxWidth: "90vw",
+          }}
+        >
+          {toast}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// --- Kanban do minhas-tarefas (duplicado do Board de proposito: mantem o
+// quadro geral intocado). Coluna droppable + card draggable, reusando TaskCard. ---
+function ColunaMinhas({
+  status,
+  count,
+  children,
+}: {
+  status: (typeof STATUSES)[number];
+  count: number;
+  children: React.ReactNode;
+}) {
+  const { setNodeRef, isOver } = useDroppable({ id: status.key });
+  return (
+    <div
+      ref={setNodeRef}
+      style={{
+        flex: 1, minWidth: 240, borderRadius: 10, padding: 4,
+        background: isOver ? "var(--surface-2)" : "transparent",
+        transition: "background .12s",
+      }}
+    >
+      <div
+        style={{
+          display: "flex", alignItems: "center", gap: 8, marginBottom: 10,
+          paddingBottom: 8, borderBottom: `2px solid ${status.color}`,
+        }}
+      >
+        <span style={{ width: 8, height: 8, borderRadius: 999, background: status.color }} />
+        <span style={{ fontWeight: 700, fontSize: 13 }}>{status.label}</span>
+        <span className="muted" style={{ fontSize: 12, marginLeft: "auto" }}>{count}</span>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, minHeight: 24 }}>
+        {children}
+        {count === 0 && (
+          <div className="muted" style={{ fontSize: 12, padding: "8px 2px" }}>—</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function CardArrastavelMinhas({
+  task,
+  onAbrir,
+  members,
+  projectName,
+}: {
+  task: MyTaskItem;
+  onAbrir: (task: Task) => void;
+  members: Map<string, { name: string }>;
+  projectName?: string;
+}) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: task.id });
+  return (
+    <div
+      ref={setNodeRef}
+      {...listeners}
+      {...attributes}
+      onClick={() => onAbrir(task)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onAbrir(task);
+        }
+      }}
+      tabIndex={0}
+      className="tappable"
+      style={{
+        opacity: isDragging ? 0.4 : task.is_archived ? 0.55 : 1,
+        cursor: "grab",
+        touchAction: "none",
+      }}
+    >
+      <TaskCard task={task} members={members} projectName={projectName} />
     </div>
   );
 }
