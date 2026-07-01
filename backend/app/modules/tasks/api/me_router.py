@@ -21,6 +21,9 @@ from app.modules.tasks.api.schemas import (
     ProjectResponse,
     TaskResponse,
 )
+from app.modules.tasks.application.collaboration_service import (
+    CollaborationService,
+)
 from app.modules.tasks.application.me_service import MeService
 from app.modules.tasks.application.project_service import ProjectService
 from app.shared.pagination import PageParams
@@ -62,11 +65,19 @@ async def list_my_assignments(
     result = await MeService(session).list_assignments(
         PageParams(page=page, size=size), relations=rels
     )
+    # Responsaveis da pagina em UMA query (lote), igual a listagem do quadro
+    # (ADR 0025). Sem isto, /me/assignments nao devolve assignee_ids e o
+    # detalhe reaproveitado na tela "Minhas tarefas" mostra "Ninguem designado"
+    # mesmo pra quem esta designado.
+    amap = await CollaborationService(session).assignee_ids_for_tasks(
+        [row.task for row in result.items]
+    )
     items = [
         MyTaskItem(
             **TaskResponse.model_validate(row.task).model_dump(),
             relations=sorted(row.relations),
             out_of_scope=row.out_of_scope,
+            assignee_ids=amap.get(row.task.id, []),
         )
         for row in result.items
     ]

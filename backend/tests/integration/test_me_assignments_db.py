@@ -311,3 +311,31 @@ async def test_http_paginacao(db) -> None:
     assert resp.status_code == 200
     assert body["total"] == 3
     assert len(body["items"]) == 2
+
+
+async def test_http_item_traz_assignee_ids(db) -> None:
+    """Regressao: /me/assignments deve carregar assignee_ids (paridade com a
+    lista do quadro, ADR 0025). Sem o campo, a tela "Minhas tarefas" reaproveita
+    o item e o detalhe mostra "Ninguem designado" mesmo pra quem esta designado.
+
+    Cenario do print: sou responsavel de uma task que NAO criei (creator=outro).
+    """
+    ws, r, a, b = await _tree(db)
+    me = await f.make_user(db, workspace_id=ws)
+    await f.add_member(db, workspace_id=ws, user_id=me, team_id=a, role="OPERATOR")
+    outro = await f.make_user(db, workspace_id=ws)
+    proj = await f.make_project(db, workspace_id=ws, created_by=outro, team_id=a)
+    t = await f.make_task(
+        db, workspace_id=ws, created_by=outro, team_id=a, project_id=proj
+    )
+    await f.make_assignment(
+        db, workspace_id=ws, task_id=t.id, user_id=me, assigned_by=outro
+    )
+    await db.commit()
+    ctx = await _ctx_for(ws, a, me, _forest(r, a, b))
+    async with _client(db, ctx) as c:
+        resp = await c.get("/api/v1/me/assignments")
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    item = next(i for i in body["items"] if i["id"] == str(t.id))
+    assert item["assignee_ids"] == [str(me)]

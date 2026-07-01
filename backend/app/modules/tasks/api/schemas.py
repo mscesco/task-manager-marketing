@@ -246,6 +246,10 @@ class MyTaskItem(TaskResponse):
 
     relations: list[str]
     out_of_scope: bool
+    # Responsaveis (so IDs), em LOTE como o TaskListItem do quadro (ADR 0025).
+    # Sem isto, a tela "Minhas tarefas" reaproveita o item e o detalhe mostra
+    # "Ninguem designado" mesmo pra quem esta designado.
+    assignee_ids: list[uuid.UUID] = []
 
 
 class MyAssignmentsResponse(BaseModel):
