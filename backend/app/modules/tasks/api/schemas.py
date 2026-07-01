@@ -162,10 +162,14 @@ class TaskMoveRequest(BaseModel):
     """Move pra novo pai e/ou projeto. Pelo menos um dos dois.
 
     No-op silencioso se nada muda no final.
+
+    Spec 022: `detach_project=True` tira a task de projeto (avulsa). Nao combina
+    com project_id/parent_task_id; so vale em task de topo.
     """
 
     parent_task_id: uuid.UUID | None = None
     project_id: uuid.UUID | None = None
+    detach_project: bool = False
 
 
 class TaskListItem(TaskResponse):

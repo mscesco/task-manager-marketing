@@ -101,10 +101,16 @@ class MoveTaskCommand:
 
     Pelo menos um deve vir. None = nao mexe naquele campo. No-op
     silencioso se nada muda no final.
+
+    Spec 022: `detach_project=True` tira a task de projeto (avulsa). Sinal
+    EXPLICITO -- `project_id=None` continua significando "nao mexe no projeto",
+    entao null nao serve pra desassociar. So vale em task de topo; nao combina
+    com project_id/parent_task_id preenchidos.
     """
 
     parent_task_id: uuid.UUID | None = None
     project_id: uuid.UUID | None = None
+    detach_project: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -358,9 +364,13 @@ class TaskService:
 
         No-op silencioso se nada muda.
         """
-        # Pelo menos um dos dois.
-        if command.parent_task_id is None and command.project_id is None:
-            # Nem pai nem projeto informados -- nao eh erro, eh no-op.
+        # Pelo menos um dos tres (pai, projeto, ou detach).
+        if (
+            command.parent_task_id is None
+            and command.project_id is None
+            and not command.detach_project
+        ):
+            # Nada informado -- nao eh erro, eh no-op.
             task = await self._repo.get_by_id_or_raise(task_id)
             await self._assert_visible_via_project(task)
             return task
@@ -369,13 +379,33 @@ class TaskService:
         await self._assert_visible_via_project(task)
         await self._assert_editable(task)
 
-        # Estado resultante.
-        new_project_id = command.project_id or task.project_id
-        new_parent_task_id = (
-            command.parent_task_id
-            if command.parent_task_id is not None
-            else task.parent_task_id
-        )
+        # Spec 022 -- detach (tornar avulsa): valida combinacoes e escopo ANTES
+        # de resolver o destino. Sinal explicito, nao combina com projeto/pai,
+        # e so vale em task de topo (subtarefa segue o projeto do pai).
+        if command.detach_project:
+            if command.project_id is not None or command.parent_task_id is not None:
+                raise ValidationError(
+                    "detach_project nao combina com project_id ou parent_task_id.",
+                    details={"field": "detach_project"},
+                )
+            if task.parent_task_id is not None:
+                raise ValidationError(
+                    "Subtarefa nao vira avulsa; mova o pai.",
+                    details={"field": "detach_project"},
+                )
+
+        # Estado resultante. Detach zera projeto (e pai, por coerencia -- avulsa
+        # nao tem pai; ja garantimos acima que a task e de topo).
+        if command.detach_project:
+            new_project_id: uuid.UUID | None = None
+            new_parent_task_id: uuid.UUID | None = None
+        else:
+            new_project_id = command.project_id or task.project_id
+            new_parent_task_id = (
+                command.parent_task_id
+                if command.parent_task_id is not None
+                else task.parent_task_id
+            )
 
         # Se nao mudou nada de fato, no-op.
         if (
@@ -392,7 +422,8 @@ class TaskService:
             )
 
         # Projeto novo deve existir e ser visivel (pessoal alheio -> 404).
-        if new_project_id != task.project_id:
+        # Detach (new_project_id None) pula: nao ha projeto destino pra validar.
+        if new_project_id is not None and new_project_id != task.project_id:
             new_project = await self._projects.get_by_id_or_raise(new_project_id)
             ProjectService._assert_visible_to_current_user(new_project)
 

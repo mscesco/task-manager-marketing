@@ -196,6 +196,7 @@ async def move_task(
         command=MoveTaskCommand(
             parent_task_id=payload.parent_task_id,
             project_id=payload.project_id,
+            detach_project=payload.detach_project,
         ),
     )
     await uow.commit()

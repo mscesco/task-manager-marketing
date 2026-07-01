@@ -113,12 +113,12 @@ def build_status_change_entry(
 
 def build_move_entry(
     *,
-    old_project_id: uuid.UUID,
-    new_project_id: uuid.UUID,
+    old_project_id: uuid.UUID | None,
+    new_project_id: uuid.UUID | None,
     old_parent_task_id: uuid.UUID | None,
     new_parent_task_id: uuid.UUID | None,
 ) -> HistoryEntry:
-    """Evento atomico de move."""
+    """Evento atomico de move. project_id pode ser None (avulsa, Spec 022)."""
     return HistoryEntry(
         event_type=TaskHistoryEventType.MOVED,
         metadata={

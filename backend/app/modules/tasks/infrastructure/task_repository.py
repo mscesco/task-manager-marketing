@@ -246,10 +246,13 @@ class TaskRepository(BaseRepository[Task]):
         new_parent_path: str | None,
         new_parent_depth: int | None,
         new_parent_task_id: uuid.UUID | None,
-        new_project_id: uuid.UUID,
+        new_project_id: uuid.UUID | None,
     ) -> None:
         """Atualiza path/depth/project_id/parent_task_id da task e
         de toda a subtree.
+
+        `new_project_id=None` (Spec 022): task vira avulsa -- SET project_id =
+        NULL na task e na subtree (coluna nullable, SQL valido).
 
         EXCECAO AUTORIZADA ao `_base_select` (ADR 0003).
         SQL textual com predicado de tenant manual.
