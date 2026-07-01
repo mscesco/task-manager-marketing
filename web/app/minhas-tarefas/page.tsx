@@ -628,13 +628,15 @@ function Minhas() {
         onSubtaskUpsert={aoUpsert}
         onTaskMoved={aoUpsert}
         onExcluir={(t) => {
-          // Remove a task (e a subtree por path) da lista e fecha.
+          // Remove a task (e a subtree por path) da lista.
           setItems((prev) =>
             (prev ?? []).filter(
               (x) => x.id !== t.id && !x.path.startsWith(t.path + ".")
             )
           );
-          fecharDetalhe();
+          // Se veio de um pai (pilha), volta pro pai; senao fecha.
+          if (pilha.length > 0) voltarDetalhe();
+          else fecharDetalhe();
         }}
       />
 

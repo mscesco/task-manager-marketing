@@ -8,7 +8,7 @@
 // GET /tasks/{id} (contorna o bug E6, ver web/docs/adr/0002).
 // O time NAO aparece de proposito: o quadro define o time (ADR 0001).
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   createTask,
   updateTask,
@@ -21,8 +21,30 @@ import {
   type Member,
 } from "@/lib/api";
 import { PRIORITY_LABEL, STATUSES } from "@/lib/status";
+import Avatar from "@/components/Avatar";
+import { nomeCurto } from "@/lib/people";
 
 const PRIORITIES = ["LOW", "MEDIUM", "HIGH", "URGENT"] as const;
+
+// Gatilho compacto redondo (mesmo padrao do detalhe): troca o despejo de 30
+// chips por um "+" que abre a lista com busca. Duplicado de proposito -- se
+// virar mais lugares, extrai pra um modulo compartilhado.
+const GATILHO_STYLE: CSSProperties = {
+  width: 26,
+  height: 26,
+  borderRadius: 999,
+  flexShrink: 0,
+  border: "1px dashed var(--border)",
+  background: "var(--surface)",
+  color: "var(--text-soft)",
+  cursor: "pointer",
+  fontSize: 15,
+  lineHeight: 1,
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  padding: 0,
+};
 
 export default function TaskModal({
   open,
@@ -57,6 +79,10 @@ export default function TaskModal({
   const [membros, setMembros] = useState<Member[]>([]);
   const [assigneeIds, setAssigneeIds] = useState<string[]>([]);
   const [invalidIds, setInvalidIds] = useState<Set<string>>(new Set());
+  // Picker com busca (popover): abre/fecha, termo, e ref pra clique-fora.
+  const [abertoResp, setAbertoResp] = useState(false);
+  const [buscaResp, setBuscaResp] = useState("");
+  const respWrapRef = useRef<HTMLDivElement>(null);
 
   // Prefilla (ou limpa) sempre que abre / troca a task alvo.
   useEffect(() => {
@@ -69,6 +95,8 @@ export default function TaskModal({
     setProjetoSel("");
     setAssigneeIds([]);
     setInvalidIds(new Set());
+    setAbertoResp(false);
+    setBuscaResp("");
     setErro(null);
   }, [open, task]);
 
@@ -98,6 +126,26 @@ export default function TaskModal({
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, saving]);
+
+  // Fecha o picker de responsaveis ao clicar fora (padrao EmojiPicker/detalhe).
+  useEffect(() => {
+    if (!abertoResp) return;
+    function onDown(e: MouseEvent) {
+      if (respWrapRef.current && !respWrapRef.current.contains(e.target as Node)) {
+        setAbertoResp(false);
+      }
+    }
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [abertoResp]);
+
+  // Membros filtrados pela busca do picker, ordenados por nome.
+  const membrosFiltrados = useMemo(() => {
+    const q = buscaResp.trim().toLowerCase();
+    return membros
+      .filter((m) => (q ? m.name.toLowerCase().includes(q) : true))
+      .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+  }, [membros, buscaResp]);
 
   if (!open) return null;
 
@@ -187,14 +235,15 @@ export default function TaskModal({
         position: "fixed", inset: 0, zIndex: 60,
         background: "rgba(16,24,40,0.45)",
         display: "flex", alignItems: "flex-start", justifyContent: "center",
-        padding: "10vh 16px 16px",
+        padding: "6vh 16px 24px",
       }}
     >
       <form
         onClick={(e) => e.stopPropagation()}
         onSubmit={salvar}
         style={{
-          width: 460, maxWidth: "100%", background: "var(--surface)",
+          width: 700, maxWidth: "100%", maxHeight: "88vh", overflowY: "auto",
+          background: "var(--surface)",
           border: "1px solid var(--border)", borderRadius: 14, padding: 24,
           boxShadow: "var(--shadow)", display: "flex", flexDirection: "column", gap: 16,
         }}
@@ -285,33 +334,118 @@ export default function TaskModal({
             {membros.length === 0 ? (
               <span className="muted" style={{ fontSize: 13 }}>Carregando membros…</span>
             ) : (
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                {membros.map((m) => {
-                  const on = assigneeIds.includes(m.id);
-                  const bad = invalidIds.has(m.id);
-                  return (
-                    <button
-                      key={m.id}
-                      type="button"
-                      onClick={() => toggleAssignee(m.id)}
-                      aria-pressed={on}
-                      className="tappable"
+              <div ref={respWrapRef} style={{ position: "relative" }}>
+                <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6 }}>
+                  {assigneeIds.length === 0 && (
+                    <span className="muted" style={{ fontSize: 13 }}>Ninguem designado.</span>
+                  )}
+                  {assigneeIds.map((id) => {
+                    const m = membros.find((x) => x.id === id);
+                    const nome = m?.name ?? "";
+                    const bad = invalidIds.has(id);
+                    return (
+                      <span
+                        key={id}
+                        style={{
+                          display: "inline-flex", alignItems: "center", gap: 6,
+                          borderRadius: 999, padding: "2px 4px 2px 2px", fontSize: 12.5,
+                          background: bad ? "rgba(220,38,38,0.08)" : "var(--surface-2)",
+                          border: `1px solid ${bad ? "var(--danger)" : "transparent"}`,
+                          color: bad ? "var(--danger)" : "var(--text)",
+                        }}
+                      >
+                        <Avatar id={id} name={nome} size="sm" />
+                        {nome ? nomeCurto(nome) : "Responsavel"}
+                        <button
+                          type="button"
+                          aria-label={`Remover ${nome || "responsavel"}`}
+                          title="Remover"
+                          onClick={() => toggleAssignee(id)}
+                          style={{
+                            width: 16, height: 16, borderRadius: 999, border: "none",
+                            background: "transparent", color: "inherit", cursor: "pointer",
+                            fontSize: 13, lineHeight: 1, padding: 0,
+                            display: "inline-flex", alignItems: "center", justifyContent: "center",
+                          }}
+                        >
+                          ×
+                        </button>
+                      </span>
+                    );
+                  })}
+
+                  <button
+                    type="button"
+                    onClick={() => setAbertoResp((v) => !v)}
+                    aria-label="Designar responsavel"
+                    aria-expanded={abertoResp}
+                    title="Designar"
+                    style={GATILHO_STYLE}
+                  >
+                    {abertoResp ? "×" : "+"}
+                  </button>
+                </div>
+
+                {abertoResp && (
+                  <div
+                    style={{
+                      position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 40,
+                      width: 300, maxWidth: "100%",
+                      background: "var(--surface)", border: "1px solid var(--border)",
+                      borderRadius: 10, boxShadow: "var(--shadow)", padding: 8,
+                    }}
+                  >
+                    <input
+                      className="input"
+                      placeholder="Buscar pessoa…"
+                      value={buscaResp}
+                      autoFocus
+                      onChange={(e) => setBuscaResp(e.target.value)}
+                    />
+                    <div
                       style={{
-                        padding: "5px 10px", borderRadius: 999, fontSize: 12,
-                        fontWeight: 600, cursor: "pointer", lineHeight: 1,
-                        border: `1px solid ${bad ? "var(--danger)" : "var(--border)"}`,
-                        background: bad
-                          ? "rgba(220,38,38,0.08)"
-                          : on ? "var(--accent-soft)" : "var(--surface-2)",
-                        color: bad
-                          ? "var(--danger)"
-                          : on ? "var(--accent)" : "var(--text-faint)",
+                        maxHeight: 240, overflowY: "auto", marginTop: 6,
+                        border: "1px solid var(--border)", borderRadius: 8,
                       }}
                     >
-                      {m.name}
-                    </button>
-                  );
-                })}
+                      {membrosFiltrados.length === 0 ? (
+                        <div className="muted" style={{ fontSize: 13, padding: "10px 12px" }}>
+                          Ninguem encontrado.
+                        </div>
+                      ) : (
+                        membrosFiltrados.map((m, i) => {
+                          const on = assigneeIds.includes(m.id);
+                          const bad = invalidIds.has(m.id);
+                          return (
+                            <label
+                              key={m.id}
+                              style={{
+                                display: "flex", alignItems: "center", gap: 10,
+                                padding: "8px 12px", cursor: "pointer",
+                                borderTop: i === 0 ? "none" : "1px solid var(--border)",
+                              }}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={on}
+                                onChange={() => toggleAssignee(m.id)}
+                              />
+                              <Avatar id={m.id} name={m.name} size="sm" />
+                              <span
+                                style={{
+                                  fontSize: 13.5,
+                                  color: bad ? "var(--danger)" : undefined,
+                                }}
+                              >
+                                {m.name}
+                              </span>
+                            </label>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>

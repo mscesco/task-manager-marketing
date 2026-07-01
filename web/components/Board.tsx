@@ -170,7 +170,10 @@ export default function Board({
         (x) => x.id !== t.id && !x.path.startsWith(t.path + ".")
       )
     );
-    fecharDetalhe();
+    // Se a task excluida foi aberta a partir de um pai (pilha nao-vazia),
+    // volta pro pai em vez de fechar o detalhe inteiro. Sem pilha -> fecha.
+    if (pilha.length > 0) voltarDetalhe();
+    else fecharDetalhe();
     const extra = cascadeCount > 0 ? ` e ${cascadeCount} subtarefa(s)` : "";
     setToast(`Tarefa${extra} excluída(s).`);
   }

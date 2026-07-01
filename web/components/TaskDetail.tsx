@@ -3,13 +3,14 @@
 // Painel de DETALHE da tarefa (padrao Trello): clicar no card abre isto.
 // Reusa o objeto da lista (sem GET /tasks/{id} -- dodge do bug E6, ADR 0002).
 //
-// Responsaveis: bolinhas dos atuais SEMPRE visiveis + botao "Designar" que
-//   abre/fecha a lista suspensa (busca + checkbox). Grava na hora (otimista).
-// Subtarefas: lista os filhos diretos (do quadro); "+ Subtarefa" cria; o
-//   checkbox da linha conclui rapido (desmarcar volta pro status anterior,
-//   guardado na sessao); clicar no titulo NAVEGA pra dentro (voltar desempilha).
+// Responsaveis: pilulas dos atuais SEMPRE visiveis + gatilho "+" que abre a
+//   lista (busca + checkbox) como POPOVER flutuante (fecha ao clicar fora).
+//   Grava na hora (otimista).
+// Subtarefas: lista os filhos diretos (do quadro); gatilho "+" ao lado do titulo
+//   cria; o checkbox da linha conclui rapido (desmarcar volta pro status
+//   anterior, guardado na sessao); clicar no titulo NAVEGA pra dentro.
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   addAssignee,
   removeAssignee,
@@ -45,6 +46,26 @@ const STATUS_LABEL: Record<string, string> = Object.fromEntries(
 const STATUS_COLOR: Record<string, string> = Object.fromEntries(
   STATUSES.map((s) => [s.key, s.color])
 );
+
+// Fatia B/C: gatilho compacto redondo -- substitui os botoes-fantasma gordos
+// ("Designar" / "Mudar projeto" / "+ Subtarefa") por um alvo pequeno inline.
+// "+" adiciona, "✎" edita, "×" fecha. Reusado nos tres campos.
+const GATILHO_STYLE: CSSProperties = {
+  width: 26,
+  height: 26,
+  borderRadius: 999,
+  flexShrink: 0,
+  border: "1px dashed var(--border)",
+  background: "var(--surface)",
+  color: "var(--text-soft)",
+  cursor: "pointer",
+  fontSize: 15,
+  lineHeight: 1,
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  padding: 0,
+};
 
 // Data/hora curta do comentario (ex.: "24/06 14:30"). created_at vem ISO
 // com timezone; o browser converte pro fuso local.
@@ -119,6 +140,10 @@ export default function TaskDetail({
   const [enviandoComent, setEnviandoComent] = useState(false);
   const [respondendoId, setRespondendoId] = useState<string | null>(null);
   const [textoResposta, setTextoResposta] = useState("");
+  // Fatia A: historico de comentarios colavel (o composer abaixo fica SEMPRE
+  // visivel). Sessao-level de proposito: NAO entra no reset por task -- fica
+  // como a pessoa deixou enquanto navega entre tarefas.
+  const [threadAberto, setThreadAberto] = useState(true);
 
   // GIFs escolhidos no rascunho (viram token [gif:URL] so no envio). Ficam como
   // chip de preview abaixo do campo -- o textarea nao mostra o link.
@@ -127,6 +152,8 @@ export default function TaskDetail({
   const [enviandoResp, setEnviandoResp] = useState(false);
   const topComentRef = useRef<HTMLTextAreaElement>(null);
   const respostaRef = useRef<HTMLTextAreaElement>(null);
+  // Fatia B: wrapper do popover de responsaveis (ancora + deteccao de clique-fora).
+  const respWrapRef = useRef<HTMLDivElement>(null);
 
   // Insere um trecho (emoji) na posicao do cursor do textarea e mantem foco.
   function inserirNoCursor(
@@ -170,6 +197,10 @@ export default function TaskDetail({
     setSubSaving(new Set());
     setStatusAnterior({});
     setArquivando(false);
+    // Estado de exclusao: ANTES nao era zerado aqui -> a confirmacao (e o
+    // "excluindo") ficavam grudados e reapareciam travados ao reabrir/trocar.
+    setConfirmandoExcluir(false);
+    setExcluindo(false);
     setComentarios(null);
     setErroCom(null);
     setNovoComent("");
@@ -194,6 +225,19 @@ export default function TaskDetail({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [task, onClose]);
+
+  // Fatia B: fecha o popover de responsaveis ao clicar fora (mesmo padrao do
+  // EmojiPicker: mousedown no documento, ignora cliques dentro do wrapper).
+  useEffect(() => {
+    if (!abertoResp) return;
+    function onDown(e: MouseEvent) {
+      if (respWrapRef.current && !respWrapRef.current.contains(e.target as Node)) {
+        setAbertoResp(false);
+      }
+    }
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [abertoResp]);
 
   // Usuario logado: uma vez (memoizado). Falha silenciosa -> sem acoes
   // inline, mas o thread ainda renderiza.
@@ -467,13 +511,13 @@ export default function TaskDetail({
         position: "fixed", inset: 0, zIndex: 50,
         background: "rgba(16,24,40,0.45)",
         display: "flex", alignItems: "flex-start", justifyContent: "center",
-        padding: "10vh 16px 16px",
+        padding: "6vh 16px 24px",
       }}
     >
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
-          width: 520, maxWidth: "100%", maxHeight: "80vh", overflowY: "auto",
+          width: 700, maxWidth: "100%", maxHeight: "88vh", overflowY: "auto",
           background: "var(--surface)",
           border: "1px solid var(--border)", borderRadius: 14, padding: 24,
           boxShadow: "var(--shadow)", display: "flex", flexDirection: "column", gap: 16,
@@ -553,37 +597,38 @@ export default function TaskDetail({
           <div className="field">
             <span className="label">Projeto</span>
 
-            {projetoAtual ? (
-              <span
-                style={{
-                  display: "inline-flex", alignItems: "center",
-                  background: "var(--surface-2)", borderRadius: 999,
-                  padding: "3px 12px", fontSize: 12.5, alignSelf: "flex-start",
-                }}
-              >
-                {nomeProjetoAtual ?? "Projeto atual"}
-              </span>
-            ) : (
-              <span className="muted" style={{ fontSize: 13 }}>
-                Sem projeto atrelado.
-              </span>
-            )}
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              {projetoAtual ? (
+                <span
+                  style={{
+                    display: "inline-flex", alignItems: "center",
+                    background: "var(--surface-2)", borderRadius: 999,
+                    padding: "3px 12px", fontSize: 12.5,
+                  }}
+                >
+                  {nomeProjetoAtual ?? "Projeto atual"}
+                </span>
+              ) : (
+                <span className="muted" style={{ fontSize: 13 }}>
+                  Sem projeto atrelado.
+                </span>
+              )}
 
-            <button
-              type="button" className="btn btn-ghost"
-              onClick={() => setAbertoProj((v) => !v)}
-              disabled={movendoProj}
-              style={{ alignSelf: "flex-start", padding: "6px 10px", marginTop: 2 }}
-            >
-              {abertoProj
-                ? "Fechar"
-                : projetoAtual
-                ? "Mudar projeto"
-                : "Adicionar a um projeto"}
-            </button>
+              <button
+                type="button"
+                onClick={() => setAbertoProj((v) => !v)}
+                disabled={movendoProj}
+                aria-label={projetoAtual ? "Mudar projeto" : "Adicionar a um projeto"}
+                aria-expanded={abertoProj}
+                title={projetoAtual ? "Mudar projeto" : "Adicionar a um projeto"}
+                style={{ ...GATILHO_STYLE, opacity: movendoProj ? 0.5 : 1 }}
+              >
+                {abertoProj ? "×" : projetoAtual ? "✎" : "+"}
+              </button>
+            </div>
 
             {abertoProj && (
-              <div style={{ marginTop: 2 }}>
+              <div style={{ marginTop: 6 }}>
                 <select
                   className="input"
                   value={projetoAtual ?? ""}
@@ -609,89 +654,102 @@ export default function TaskDetail({
           </div>
         )}
 
-        {/* ---- Responsaveis: atuais sempre visiveis + dropdown "Designar" ---- */}
+        {/* ---- Responsaveis: pilulas atuais + gatilho "+" que abre a lista
+             como POPOVER flutuante (nao empurra o layout; fecha ao clicar fora) ---- */}
         <div className="field">
           <span className="label">Responsaveis</span>
 
-          {assignees.length > 0 ? (
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-              {assignees.map((id) => {
-                const nome = members.get(id)?.name ?? "";
-                return (
-                  <span
-                    key={id}
-                    style={{
-                      display: "inline-flex", alignItems: "center", gap: 6,
-                      background: "var(--surface-2)", borderRadius: 999,
-                      padding: "2px 10px 2px 2px", fontSize: 12.5,
-                    }}
-                  >
-                    <Avatar id={id} name={nome} size="sm" />
-                    {nome ? nomeCurto(nome) : "Responsavel"}
-                  </span>
-                );
-              })}
+          <div ref={respWrapRef} style={{ position: "relative" }}>
+            <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6 }}>
+              {assignees.length > 0 ? (
+                assignees.map((id) => {
+                  const nome = members.get(id)?.name ?? "";
+                  return (
+                    <span
+                      key={id}
+                      style={{
+                        display: "inline-flex", alignItems: "center", gap: 6,
+                        background: "var(--surface-2)", borderRadius: 999,
+                        padding: "2px 10px 2px 2px", fontSize: 12.5,
+                      }}
+                    >
+                      <Avatar id={id} name={nome} size="sm" />
+                      {nome ? nomeCurto(nome) : "Responsavel"}
+                    </span>
+                  );
+                })
+              ) : (
+                <span className="muted" style={{ fontSize: 13 }}>Ninguem designado.</span>
+              )}
+
+              <button
+                type="button"
+                onClick={() => setAbertoResp((v) => !v)}
+                aria-label="Designar responsavel"
+                aria-expanded={abertoResp}
+                title="Designar"
+                style={GATILHO_STYLE}
+              >
+                {abertoResp ? "×" : "+"}
+              </button>
             </div>
-          ) : (
-            <span className="muted" style={{ fontSize: 13 }}>Ninguem designado.</span>
-          )}
 
-          <button
-            type="button" className="btn btn-ghost"
-            onClick={() => setAbertoResp((v) => !v)}
-            style={{ alignSelf: "flex-start", padding: "6px 10px", marginTop: 2 }}
-          >
-            {abertoResp ? "Fechar" : "Designar"}
-          </button>
-
-          {abertoResp && (
-            <div style={{ marginTop: 2 }}>
-              <input
-                className="input"
-                placeholder="Buscar pessoa…"
-                value={busca}
-                autoFocus
-                onChange={(e) => setBusca(e.target.value)}
-              />
+            {abertoResp && (
               <div
                 style={{
-                  maxHeight: 220, overflowY: "auto", marginTop: 6,
-                  border: "1px solid var(--border)", borderRadius: 8,
+                  position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 40,
+                  width: 300, maxWidth: "100%",
+                  background: "var(--surface)", border: "1px solid var(--border)",
+                  borderRadius: 10, boxShadow: "var(--shadow)", padding: 8,
                 }}
               >
-                {filtrados.length === 0 ? (
-                  <div className="muted" style={{ fontSize: 13, padding: "10px 12px" }}>
-                    Ninguem encontrado.
-                  </div>
-                ) : (
-                  filtrados.map((m, i) => {
-                    const marcado = assignees.includes(m.id);
-                    const ocupado = saving.has(m.id);
-                    return (
-                      <label
-                        key={m.id}
-                        style={{
-                          display: "flex", alignItems: "center", gap: 10,
-                          padding: "8px 12px", cursor: ocupado ? "wait" : "pointer",
-                          borderTop: i === 0 ? "none" : "1px solid var(--border)",
-                          opacity: ocupado ? 0.6 : 1,
-                        }}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={marcado}
-                          disabled={ocupado}
-                          onChange={() => toggle(m.id)}
-                        />
-                        <Avatar id={m.id} name={m.name} size="sm" />
-                        <span style={{ fontSize: 13.5 }}>{m.name}</span>
-                      </label>
-                    );
-                  })
-                )}
+                <input
+                  className="input"
+                  placeholder="Buscar pessoa…"
+                  value={busca}
+                  autoFocus
+                  onChange={(e) => setBusca(e.target.value)}
+                />
+                <div
+                  style={{
+                    maxHeight: 240, overflowY: "auto", marginTop: 6,
+                    border: "1px solid var(--border)", borderRadius: 8,
+                  }}
+                >
+                  {filtrados.length === 0 ? (
+                    <div className="muted" style={{ fontSize: 13, padding: "10px 12px" }}>
+                      Ninguem encontrado.
+                    </div>
+                  ) : (
+                    filtrados.map((m, i) => {
+                      const marcado = assignees.includes(m.id);
+                      const ocupado = saving.has(m.id);
+                      return (
+                        <label
+                          key={m.id}
+                          style={{
+                            display: "flex", alignItems: "center", gap: 10,
+                            padding: "8px 12px", cursor: ocupado ? "wait" : "pointer",
+                            borderTop: i === 0 ? "none" : "1px solid var(--border)",
+                            opacity: ocupado ? 0.6 : 1,
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={marcado}
+                            disabled={ocupado}
+                            onChange={() => toggle(m.id)}
+                          />
+                          <Avatar id={m.id} name={m.name} size="sm" />
+                          <span style={{ fontSize: 13.5 }}>{m.name}</span>
+                        </label>
+                      );
+                    })
+                  )}
+                </div>
               </div>
-            </div>
-          )}
+            )}
+          </div>
 
           {erro && (
             <div className="error-box" style={{ marginTop: 8 }}>{erro}</div>
@@ -700,9 +758,22 @@ export default function TaskDetail({
 
         {/* ---- Subtarefas ---- */}
         <div className="field">
-          <span className="label">
-            Subtarefas{filhos.length > 0 ? ` (${concluidas}/${filhos.length})` : ""}
-          </span>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span className="label">
+              Subtarefas{filhos.length > 0 ? ` (${concluidas}/${filhos.length})` : ""}
+            </span>
+            {!criandoSub && (
+              <button
+                type="button"
+                onClick={() => setCriandoSub(true)}
+                aria-label="Adicionar subtarefa"
+                title="Adicionar subtarefa"
+                style={GATILHO_STYLE}
+              >
+                +
+              </button>
+            )}
+          </div>
 
           {filhos.length > 0 && (
             <div style={{ border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden" }}>
@@ -767,7 +838,7 @@ export default function TaskDetail({
             </div>
           )}
 
-          {criandoSub ? (
+          {criandoSub && (
             <input
               className="input"
               autoFocus
@@ -787,14 +858,6 @@ export default function TaskDetail({
               }}
               style={{ marginTop: filhos.length > 0 ? 8 : 0 }}
             />
-          ) : (
-            <button
-              type="button" className="btn btn-ghost"
-              onClick={() => setCriandoSub(true)}
-              style={{ alignSelf: "flex-start", marginTop: filhos.length > 0 ? 8 : 0, padding: "6px 10px" }}
-            >
-              + Subtarefa
-            </button>
           )}
 
           {erroSub && (
@@ -804,10 +867,33 @@ export default function TaskDetail({
 
         {/* ---- Comentarios (Entrega 14) ---- */}
         <div className="field">
-          <span className="label">
-            Comentarios
-            {comentarios && comentarios.length > 0 ? ` (${comentarios.length})` : ""}
-          </span>
+          {comentarios && comentarios.length > 0 ? (
+            <button
+              type="button"
+              onClick={() => setThreadAberto((v) => !v)}
+              aria-expanded={threadAberto}
+              className="label"
+              style={{
+                background: "transparent", border: "none", padding: 0,
+                cursor: "pointer", display: "inline-flex", alignItems: "center",
+                gap: 6, textAlign: "left", alignSelf: "flex-start",
+              }}
+            >
+              <span>Comentarios ({comentarios.length})</span>
+              <span
+                aria-hidden
+                style={{
+                  fontSize: 13, lineHeight: 1, display: "inline-block",
+                  transition: "transform 120ms ease",
+                  transform: threadAberto ? "rotate(90deg)" : "rotate(0deg)",
+                }}
+              >
+                ›
+              </span>
+            </button>
+          ) : (
+            <span className="label">Comentarios</span>
+          )}
 
           {comentarios === null ? (
             <span className="muted" style={{ fontSize: 13 }}>Carregando…</span>
@@ -815,7 +901,7 @@ export default function TaskDetail({
             <span className="muted" style={{ fontSize: 13 }}>
               Nenhum comentario ainda.
             </span>
-          ) : (
+          ) : !threadAberto ? null : (
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
               {comentarios
                 .filter((c) => !c.parent_comment_id)
