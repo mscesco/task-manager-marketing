@@ -1,5 +1,5 @@
 "use client";
-import { PRIORITY_LABEL, PRIORITY_COLOR } from "@/lib/status";
+import { PRIORITY_LABEL, PRIORITY_COLOR, deadlineTone, DEADLINE_COLOR } from "@/lib/status";
 import Badge from "@/components/Badge";
 import Avatar from "@/components/Avatar";
 import type { Task } from "@/lib/api";
@@ -28,6 +28,7 @@ export default function TaskCard({
   const ids = task.assignee_ids ?? [];
   const mostra = ids.slice(0, MAX_BOLINHAS);
   const resto = ids.length - mostra.length;
+  const dueTone = deadlineTone(task.due_date, task.status, task.is_archived);
 
   return (
     <div
@@ -57,7 +58,14 @@ export default function TaskCard({
           {PRIORITY_LABEL[task.priority] || task.priority}
         </Badge>
         {task.due_date && (
-          <span className="muted" style={{ fontSize: 11.5 }}>
+          <span
+            className={dueTone ? undefined : "muted"}
+            style={{
+              fontSize: 11.5,
+              color: dueTone ? DEADLINE_COLOR[dueTone] : undefined,
+              fontWeight: dueTone ? 600 : undefined,
+            }}
+          >
             ◷ {new Date(task.due_date + "T00:00:00").toLocaleDateString("pt-BR")}
           </span>
         )}

@@ -6,7 +6,7 @@ import PageHeader from "@/components/PageHeader";
 import Badge from "@/components/Badge";
 import TaskModal from "@/components/TaskModal";
 import TaskDetail from "@/components/TaskDetail";
-import { STATUSES, PRIORITY_LABEL, PRIORITY_COLOR } from "@/lib/status";
+import { STATUSES, PRIORITY_LABEL, PRIORITY_COLOR, deadlineTone, deadlineLabel, DEADLINE_COLOR } from "@/lib/status";
 import {
   listAllMyAssignments,
   listMembers,
@@ -225,6 +225,9 @@ function Minhas() {
 
   // Uma linha de tarefa. A data saiu daqui — agora vive no cabeçalho do grupo.
   function linhaTarefa(t: MyTaskItem, i: number) {
+    // Spec 023: cor de prazo por-card (respeita status/arquivada). null = sem
+    // alerta. Barra lateral colorida + chip com o motivo.
+    const dueTone = deadlineTone(t.due_date, t.status, t.is_archived);
     return (
       <div
         key={t.id}
@@ -241,6 +244,8 @@ function Minhas() {
         style={{
           display: "flex", alignItems: "center", gap: 14, padding: "12px 16px",
           borderTop: i === 0 ? "none" : "1px solid var(--border)",
+          // Reserva sempre a borda (transparente) pra nao deslocar o texto.
+          borderLeft: `3px solid ${dueTone ? DEADLINE_COLOR[dueTone] : "transparent"}`,
           cursor: "pointer",
         }}
       >
@@ -253,7 +258,7 @@ function Minhas() {
         />
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ fontSize: 14, fontWeight: 600, lineHeight: 1.35 }}>{t.title}</div>
-          <div style={{ display: "flex", gap: 8, marginTop: 3, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", gap: 8, marginTop: 3, flexWrap: "wrap", alignItems: "center" }}>
             <span className="muted" style={{ fontSize: 12 }}>
               {STATUS_LABEL[t.status] || t.status}
             </span>
@@ -262,6 +267,15 @@ function Minhas() {
                 {RELATION_LABEL[r] || r}
               </Badge>
             ))}
+            {dueTone && t.due_date && (
+              <span
+                style={{
+                  fontSize: 11.5, fontWeight: 600, color: DEADLINE_COLOR[dueTone],
+                }}
+              >
+                {deadlineLabel(t.due_date)}
+              </span>
+            )}
           </div>
         </div>
         <Badge tone="soft" size="sm" color={PRIORITY_COLOR[t.priority]} className="shrink-0">

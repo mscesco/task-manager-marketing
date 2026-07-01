@@ -22,9 +22,11 @@ Tornar o prazo visível e ativo. Duas frentes:
 - **D1 — Dois eventos, um disparo cada (do seu aval).** `due_soon` (~2 dias
   antes) e `overdue` (no dia que atrasa). **Não** repete diariamente enquanto
   atrasada — isso treinaria o time a ignorar o sino.
-- **D2 — Destinatários: só responsáveis.** `task_assignment` da task. Sem
-  criador, sem watchers. **Consequência (ver R1):** task com prazo e **sem
-  responsável** não notifica ninguém.
+- **D2 — Destinatários: responsáveis; se não houver, o criador.** `task_
+  assignment` da task. Se a task **não tem responsável**, cai pro `created_by`
+  (fallback). Sem watchers. `created_by` é NOT NULL, então toda task com prazo
+  tem ao menos um destinatário. Fan-out com dedup; se o criador também for
+  responsável, não duplica.
 - **D3 — Idempotência via 2 colunas na task (RECOMENDADO).** Adicionar
   `due_soon_notified_for date NULL` e `overdue_notified_for date NULL`, cada uma
   guardando o `due_date` para o qual aquele aviso já saiu. Condição do job:
@@ -48,7 +50,10 @@ Tornar o prazo visível e ativo. Duas frentes:
   hoje+2` (não só o dia exato — se o job pular um dia, a task ainda é pega no
   seguinte; a coluna evita re-disparo). `overdue`: `due_date < hoje`.
 - **D6 — Filtros do candidato:** `due_date IS NOT NULL`, `status NOT IN
-  (COMPLETED, CANCELLED)`, `is_archived = false`, `deleted_at IS NULL`.
+  (COMPLETED, CANCELLED, BLOCKED)`, `is_archived = false`, `deleted_at IS NULL`.
+  BLOCKED entra na exclusao: task travada nao tem o que agir no prazo. Se
+  destravar e seguir vencida, o job volta a considerar (a coluna de dedup nao
+  foi tocada enquanto bloqueada).
 - **D7 — Timezone (subtil, mas real).** `due_date` é data pura. "Hoje" precisa
   ser a data em **America/Sao_Paulo** (UTC-3), não UTC — senão, perto da
   meia-noite, o job julga a task contra o dia errado (BRT vs UTC diverge até 3h).
@@ -57,13 +62,13 @@ Tornar o prazo visível e ativo. Duas frentes:
 - **D8 — Sistema, sem ator.** `actor_id = None`. Novos tipos
   `TASK_DUE_SOON` e `TASK_OVERDUE`. Payload: `{task_title, due_date}`.
 - **D9 — Cor (front) derivada do mesmo critério.** dias até `due_date` (tz
-  local): `< 0` → vermelho; `0..2` → laranja; senão neutro. Só em task aberta
-  (não concluída/cancelada/arquivada). Puramente visual, sem backend.
+  local): `< 0` → vermelho; `0..2` → laranja; senão neutro. Só em task ativa
+  (não concluída/cancelada/**bloqueada**/arquivada). Puramente visual, sem backend.
 
 ## Riscos residuais
-- **R1 — Task sem responsável não é avisada.** Decisão D2. Se isso incomodar,
-  a saída é notificar o criador como fallback quando não há responsável — fica
-  parqueado até você pedir.
+- **R1 — RESOLVIDO por D2 (fallback pro criador).** Task sem responsável avisa o
+  `created_by`. Borda: se o criador estiver inativo/removido, a notificação é
+  gravada mas fica sem leitor — inócuo (não quebra nada). Não vale caso especial.
 - **R2 — Migration no deploy.** As colunas exigem `alembic upgrade head` no
   deploy. É o ponto de falha canônico de vocês; entra explícito no `DEPLOY.md`.
 - **R3 — Escorregão de 1 dia se o job falhar.** Com a janela de `due_soon`
@@ -86,9 +91,9 @@ Tornar o prazo visível e ativo. Duas frentes:
    `TASK_OVERDUE`; re-execução não duplica.
 3. Mudar o `due_date` de uma task já notificada → reabilita e notifica de novo
    pro novo prazo.
-4. Task concluída/cancelada/arquivada/deletada → **nunca** notifica, mesmo com
-   `due_date` vencido.
-5. Task sem responsável → nenhuma notificação (R1).
+4. Task concluída/cancelada/**bloqueada**/arquivada/deletada → **nunca** notifica,
+   mesmo com `due_date` vencido.
+5. Task sem responsável, mas com prazo → notifica o **criador** (fallback D2).
 6. Falha de um workspace não derruba os outros (isolamento por workspace, igual
    archive-stale).
 7. Endpoint `/system/tasks/notify-deadlines` fechado sem `X-System-Token` (401).
@@ -97,4 +102,4 @@ Tornar o prazo visível e ativo. Duas frentes:
 
 **Front (Fatia 4):**
 9. Card e detalhe: prazo em ≤2 dias → laranja; atrasado → vermelho; task
-   concluída/arquivada → sem cor de alerta.
+   concluída/cancelada/bloqueada/arquivada → sem cor de alerta.

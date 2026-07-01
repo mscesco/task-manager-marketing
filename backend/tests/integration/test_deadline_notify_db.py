@@ -110,13 +110,15 @@ async def test_mudar_prazo_reabilita(db) -> None:
     assert await _count(db, recipient=user, type_="TASK_DUE_SOON", task_id=t.id) == 2
 
 
-# 4 -- task terminal/arquivada/deletada nunca notifica.
+# 4 -- task terminal/bloqueada/arquivada/deletada nunca notifica.
 async def test_terminal_arquivada_deletada_nao_notifica(db) -> None:
     ws, team, user = await _ws(db)
     concluida = await _task(db, ws=ws, team=team, user=user, due=OVERDUE, title="c")
     concluida.status = TaskStatus.COMPLETED
     cancelada = await _task(db, ws=ws, team=team, user=user, due=OVERDUE, title="x")
     cancelada.status = TaskStatus.CANCELLED
+    bloqueada = await _task(db, ws=ws, team=team, user=user, due=OVERDUE, title="b")
+    bloqueada.status = TaskStatus.BLOCKED
     arquivada = await _task(db, ws=ws, team=team, user=user, due=OVERDUE, title="a")
     arquivada.is_archived = True
     deletada = await _task(db, ws=ws, team=team, user=user, due=OVERDUE, title="d")

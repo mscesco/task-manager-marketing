@@ -29,7 +29,7 @@ import {
   type Comment,
   type CurrentUser,
 } from "@/lib/api";
-import { PRIORITY_LABEL, PRIORITY_COLOR, STATUSES } from "@/lib/status";
+import { PRIORITY_LABEL, PRIORITY_COLOR, STATUSES, deadlineTone, DEADLINE_COLOR } from "@/lib/status";
 import Badge from "@/components/Badge";
 import Avatar from "@/components/Avatar";
 import EmojiPicker from "@/components/EmojiPicker";
@@ -224,6 +224,7 @@ export default function TaskDetail({
   // (read-only). Nome do projeto atual resolve do Map (null/ausente => avulsa).
   const ehTopo = !task.parent_task_id;
   const nomeProjetoAtual = projetoAtual ? projects.get(projetoAtual) ?? null : null;
+  const dueTone = deadlineTone(task.due_date, task.status, task.is_archived);
   const concluidas = filhos.filter((f) => f.status === "COMPLETED").length;
 
   async function toggle(userId: string) {
@@ -492,7 +493,14 @@ export default function TaskDetail({
             <span className="muted" style={{ fontSize: 12.5 }}>Sem projeto</span>
           )}
           {task.due_date && (
-            <span className="muted" style={{ fontSize: 12.5 }}>
+            <span
+              className={dueTone ? undefined : "muted"}
+              style={{
+                fontSize: 12.5,
+                color: dueTone ? DEADLINE_COLOR[dueTone] : undefined,
+                fontWeight: dueTone ? 600 : undefined,
+              }}
+            >
               ◷ {new Date(task.due_date + "T00:00:00").toLocaleDateString("pt-BR")}
             </span>
           )}

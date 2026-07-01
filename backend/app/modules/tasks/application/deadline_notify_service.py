@@ -40,7 +40,14 @@ from app.modules.notifications.application.notification_emitter import (
 logger = get_logger(__name__)
 
 _TZ_SP = ZoneInfo("America/Sao_Paulo")
-_TERMINAIS = (TaskStatus.COMPLETED, TaskStatus.CANCELLED)
+# Status que NAO recebem aviso de prazo: concluida/cancelada (terminais) e
+# bloqueada (nao ha o que agir enquanto travada). Se destravar e seguir
+# vencida, o job volta a considerar (a coluna de dedup nao foi tocada).
+_STATUS_SEM_AVISO = (
+    TaskStatus.COMPLETED,
+    TaskStatus.CANCELLED,
+    TaskStatus.BLOCKED,
+)
 
 
 class DeadlineNotifyService:
@@ -125,7 +132,7 @@ class DeadlineNotifyService:
             .where(
                 Task.workspace_id == ws_id,
                 Task.due_date.is_not(None),
-                Task.status.not_in(_TERMINAIS),
+                Task.status.not_in(_STATUS_SEM_AVISO),
                 Task.is_archived.is_(False),
                 Task.deleted_at.is_(None),
             )

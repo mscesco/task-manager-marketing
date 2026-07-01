@@ -24,3 +24,48 @@ export const PRIORITY_COLOR: Record<string, string> = {
   HIGH: "#f59e0b",
   URGENT: "#ef4444",
 };
+
+// Cor de prazo (Spec 023): laranja perto de vencer, vermelho atrasado.
+// null = sem alerta (sem prazo, arquivada, ou status terminal).
+export type DeadlineTone = "overdue" | "soon" | null;
+
+export const DEADLINE_COLOR: Record<"overdue" | "soon", string> = {
+  overdue: "#dc2626", // vermelho (atrasada)
+  soon: "#f59e0b", // laranja/ambar (vence em <=2 dias)
+};
+
+// Compara em DATA local (meia-noite), nao em instante -- o prazo e um dia, nao
+// uma hora. Assume o fuso do browser (equipe no Brasil -> BRT, casa com o
+// backend que usa America/Sao_Paulo). Concluida/cancelada/arquivada -> null.
+function deadlineDays(dueDate: string): number {
+  const due = new Date(dueDate + "T00:00:00"); // meia-noite local
+  const agora = new Date();
+  const hoje = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate());
+  return Math.round((due.getTime() - hoje.getTime()) / 86400000);
+}
+
+export function deadlineTone(
+  dueDate: string | null | undefined,
+  status: string,
+  isArchived: boolean
+): DeadlineTone {
+  if (!dueDate || isArchived) return null;
+  // Concluida/cancelada/bloqueada -> sem alerta (nao ha o que agir no prazo).
+  if (status === "COMPLETED" || status === "CANCELLED" || status === "BLOCKED") {
+    return null;
+  }
+  const dias = deadlineDays(dueDate);
+  if (dias < 0) return "overdue";
+  if (dias <= 2) return "soon";
+  return null;
+}
+
+// Rotulo relativo do prazo (ex.: "Atrasada 2 dias", "Vence hoje", "Vence em 2
+// dias"). So chamar quando deadlineTone != null.
+export function deadlineLabel(dueDate: string): string {
+  const dias = deadlineDays(dueDate);
+  if (dias < 0) return dias === -1 ? "Atrasada 1 dia" : `Atrasada ${-dias} dias`;
+  if (dias === 0) return "Vence hoje";
+  if (dias === 1) return "Vence amanhã";
+  return `Vence em ${dias} dias`;
+}
