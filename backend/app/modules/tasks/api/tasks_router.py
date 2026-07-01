@@ -146,6 +146,11 @@ async def create_task(
             priority=payload.priority,
             start_date=payload.start_date,
             due_date=payload.due_date,
+            # Spec 021: responsaveis ja na criacao. Sem esta linha o campo
+            # chega no payload e e descartado -- a task nasce sem responsavel,
+            # sem erro (o CreateTaskCommand tem default []). Coberto por
+            # test_task_create_assignees_http_db.py (fatia HTTP).
+            assignee_ids=payload.assignee_ids,
         )
     )
     await uow.commit()
