@@ -10,6 +10,7 @@ import { STATUSES, PRIORITY_LABEL, PRIORITY_COLOR } from "@/lib/status";
 import {
   listAllMyAssignments,
   listMembers,
+  listAllProjects,
   ApiError,
   type Task,
   type MyTaskItem,
@@ -55,6 +56,7 @@ export default function MinhasTarefasPage() {
 function Minhas() {
   const [items, setItems] = useState<MyTaskItem[] | null>(null);
   const [members, setMembers] = useState<Map<string, { name: string }>>(new Map());
+  const [projectNames, setProjectNames] = useState<Map<string, string>>(new Map());
   const [erro, setErro] = useState<string | null>(null);
   // null = nao truncou. Se a lista passar do teto de busca, vira aviso honesto
   // no lugar de perda silenciosa (mesmo padrao do quadro).
@@ -80,6 +82,10 @@ function Minhas() {
       .catch((e: ApiError) => setErro(e.message));
     listMembers()
       .then((ms) => setMembers(new Map(ms.map((m) => [m.id, { name: m.name }]))))
+      .catch(() => {});
+    // Spec 022: alimenta o chip de projeto e o seletor de "mudar projeto" no detalhe.
+    listAllProjects()
+      .then((r) => setProjectNames(new Map(r.items.map((p) => [p.id, p.title]))))
       .catch(() => {});
   }, []);
 
@@ -434,6 +440,7 @@ function Minhas() {
       <TaskDetail
         task={focado}
         members={members}
+        projects={projectNames}
         filhos={filhosFocado}
         temVoltar={pilha.length > 0}
         onVoltar={voltarDetalhe}
@@ -444,6 +451,7 @@ function Minhas() {
         onAssigneesChange={aoMudarResponsaveis}
         onAbrirSubtarefa={abrirSubtarefa}
         onSubtaskUpsert={aoUpsert}
+        onTaskMoved={aoUpsert}
         onExcluir={(t) => {
           // Remove a task (e a subtree por path) da lista e fecha.
           setItems((prev) =>

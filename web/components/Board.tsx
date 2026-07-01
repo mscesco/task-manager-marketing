@@ -5,7 +5,7 @@
 // (a listagem ja vem filtrada pelo backend; subtarefa compartilha o project_id
 // do pai, entao a subarvore inteira vem junta). Extraido do antigo
 // quadro/page.tsx na Entrega 11 sem mudar comportamento do geral.
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   DndContext,
   DragOverlay,
@@ -88,27 +88,29 @@ export default function Board({
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
   );
 
-  useEffect(() => {
+  const recarregarTasks = useCallback(() => {
     listAllTasks({ project_id: projectId, include_archived: mostrarArquivadas })
       .then((r) => {
         setTasks(r.items);
         setTruncadoTotal(r.truncated ? r.total : null);
       })
       .catch((e: ApiError) => setErro(e.message));
+  }, [projectId, mostrarArquivadas]);
+
+  useEffect(() => {
+    recarregarTasks();
     listMembers()
       .then((ms) => {
         setMembers(new Map(ms.map((m) => [m.id, { name: m.name }])));
         setMemberTeam(new Map(ms.map((m) => [m.id, m.team_id])));
       })
       .catch(() => {});
-    // Tag de projeto so faz sentido no quadro geral. No board de projeto a
-    // tag e redundante, entao nem busca.
-    if (!projectId) {
-      listAllProjects()
-        .then((r) => setProjectNames(new Map(r.items.map((p) => [p.id, p.title]))))
-        .catch(() => {});
-    }
-  }, [projectId, mostrarArquivadas]);
+    // Spec 022: projectNames alimenta o chip E o seletor de "mudar projeto" no
+    // detalhe -> carrega em qualquer quadro (antes so no geral).
+    listAllProjects()
+      .then((r) => setProjectNames(new Map(r.items.map((p) => [p.id, p.title]))))
+      .catch(() => {});
+  }, [projectId, mostrarArquivadas, recarregarTasks]);
 
   // Subtimes sao estaveis no workspace -> busca uma vez (listSubteams e
   // memoizado no api.ts). So times nao-raiz entram no dropdown.
@@ -471,6 +473,7 @@ export default function Board({
       <TaskDetail
         task={focado}
         members={members}
+        projects={projectNames}
         filhos={filhosFocado}
         temVoltar={pilha.length > 0}
         onVoltar={voltarDetalhe}
@@ -481,6 +484,7 @@ export default function Board({
         onAssigneesChange={aoMudarResponsaveis}
         onAbrirSubtarefa={abrirSubtarefa}
         onSubtaskUpsert={aoUpsert}
+        onTaskMoved={() => recarregarTasks()}
         onExcluir={aoExcluir}
       />
 

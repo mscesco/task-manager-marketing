@@ -500,6 +500,23 @@ export async function updateTask(
   return api<Task>(`/api/v1/tasks/${id}`, { method: "PATCH", body: input });
 }
 
+// Move a task pra outro projeto e/ou pai, OU tira de projeto (avulsa, Spec 022:
+// detach_project=true). Endpoint SEPARADO do PATCH -- project_id/parent_task_id
+// NAO entram no updateTask de proposito. Como toda mutacao de task, a resposta
+// NAO traz assignee_ids -> preservar no merge do estado local (ADR 0025).
+export type TaskMoveInput = {
+  project_id?: string;
+  parent_task_id?: string;
+  detach_project?: boolean;
+};
+
+export async function moveTask(
+  id: string,
+  input: TaskMoveInput
+): Promise<Task> {
+  return api<Task>(`/api/v1/tasks/${id}/move`, { method: "POST", body: input });
+}
+
 // ---------------------------------------------------------------
 // MEMBROS  (dropdown de responsavel + resolucao de nome/iniciais do selo)
 // ---------------------------------------------------------------

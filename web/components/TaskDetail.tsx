@@ -15,6 +15,7 @@ import {
   removeAssignee,
   createSubtask,
   updateTask,
+  moveTask,
   archiveTask,
   unarchiveTask,
   deleteTask,
@@ -57,6 +58,7 @@ function quando(iso: string): string {
 export default function TaskDetail({
   task,
   members,
+  projects,
   filhos,
   temVoltar,
   onVoltar,
@@ -65,10 +67,12 @@ export default function TaskDetail({
   onAssigneesChange,
   onAbrirSubtarefa,
   onSubtaskUpsert,
+  onTaskMoved,
   onExcluir,
 }: {
   task: Task | null; // tarefa focada; null => fechado
   members: Map<string, { name: string }>;
+  projects: Map<string, string>; // id do projeto -> titulo (Spec 022)
   filhos: Task[]; // filhos DIRETOS da tarefa focada (do quadro)
   temVoltar: boolean;
   onVoltar: () => void;
@@ -77,6 +81,7 @@ export default function TaskDetail({
   onAssigneesChange: (taskId: string, userIds: string[]) => void;
   onAbrirSubtarefa: (sub: Task) => void;
   onSubtaskUpsert: (sub: Task) => void; // criar OU concluir rapido
+  onTaskMoved: (task: Task) => void; // Spec 022: task mudou de projeto/avulsa
   onExcluir: (task: Task, cascadeCount: number) => void; // soft-delete cascateado
 }) {
   const [assignees, setAssignees] = useState<string[]>([]);
@@ -84,6 +89,14 @@ export default function TaskDetail({
   const [busca, setBusca] = useState("");
   const [saving, setSaving] = useState<Set<string>>(new Set());
   const [erro, setErro] = useState<string | null>(null);
+
+  // Projeto (Spec 022): eco local do project_id exibido -- atualiza no sucesso
+  // do move sem depender do round-trip do pai. abertoProj abre o seletor;
+  // movendoProj bloqueia (nao-otimista, aplica so no sucesso).
+  const [projetoAtual, setProjetoAtual] = useState<string | null>(null);
+  const [abertoProj, setAbertoProj] = useState(false);
+  const [movendoProj, setMovendoProj] = useState(false);
+  const [erroProj, setErroProj] = useState<string | null>(null);
 
   const [criandoSub, setCriandoSub] = useState(false);
   const [novoTitulo, setNovoTitulo] = useState("");
@@ -140,6 +153,10 @@ export default function TaskDetail({
     setBusca("");
     setErro(null);
     setSaving(new Set());
+    setProjetoAtual(task?.project_id ?? null);
+    setAbertoProj(false);
+    setMovendoProj(false);
+    setErroProj(null);
     setCriandoSub(false);
     setNovoTitulo("");
     setErroSub(null);
@@ -203,6 +220,10 @@ export default function TaskDetail({
   if (!task) return null;
   const tid = task.id;
   const tidProjeto = task.project_id ?? null; // pai e subtarefa no mesmo projeto
+  // Spec 022: task de topo pode trocar/tirar projeto; subtarefa herda do pai
+  // (read-only). Nome do projeto atual resolve do Map (null/ausente => avulsa).
+  const ehTopo = !task.parent_task_id;
+  const nomeProjetoAtual = projetoAtual ? projects.get(projetoAtual) ?? null : null;
   const concluidas = filhos.filter((f) => f.status === "COMPLETED").length;
 
   async function toggle(userId: string) {
@@ -240,6 +261,43 @@ export default function TaskDetail({
         n.delete(userId);
         return n;
       });
+    }
+  }
+
+  // Spec 022: move a task pra outro projeto (destino) OU tira de projeto
+  // (destino === null -> detach). NAO otimista: o move reparenta a subtree e
+  // pode ser recusado (visibilidade, 422), entao so aplica no sucesso. So faz
+  // sentido em task de topo -- a UI abaixo esconde o controle em subtarefa.
+  async function mudarProjeto(destino: string | null) {
+    if (movendoProj) return;
+    // No-op: ja esta no destino.
+    if ((projetoAtual ?? null) === destino) {
+      setAbertoProj(false);
+      return;
+    }
+    setErroProj(null);
+    setMovendoProj(true);
+    try {
+      const t = await moveTask(
+        tid,
+        destino === null ? { detach_project: true } : { project_id: destino }
+      );
+      setProjetoAtual(t.project_id ?? null); // eco local
+      setAbertoProj(false);
+      onTaskMoved(t); // pai reagrupa/refetcha (Board) ou faz upsert (minhas)
+    } catch (e) {
+      const err = e as ApiError;
+      setErroProj(
+        err.status === 403
+          ? "Voce nao pode mover esta tarefa."
+          : err.status === 422
+          ? "Nao foi possivel mover pra esse projeto."
+          : err.status === 404
+          ? "Projeto nao encontrado ou sem acesso."
+          : "Nao consegui mover a tarefa de projeto."
+      );
+    } finally {
+      setMovendoProj(false);
     }
   }
 
@@ -421,6 +479,18 @@ export default function TaskDetail({
           <Badge tone="soft" size="md" color={PRIORITY_COLOR[task.priority]}>
             {PRIORITY_LABEL[task.priority] || task.priority}
           </Badge>
+          {/* Spec 022: chip do projeto (glance). Com projeto resolvido -> nome;
+              sem projeto (avulsa) -> "Sem projeto"; com projeto NAO resolvido no
+              Map (arquivado/fora da lista) -> nao inventa, nao renderiza. */}
+          {projetoAtual ? (
+            nomeProjetoAtual ? (
+              <Badge tone="soft" size="md" color="var(--text-faint)">
+                {nomeProjetoAtual}
+              </Badge>
+            ) : null
+          ) : (
+            <span className="muted" style={{ fontSize: 12.5 }}>Sem projeto</span>
+          )}
           {task.due_date && (
             <span className="muted" style={{ fontSize: 12.5 }}>
               ◷ {new Date(task.due_date + "T00:00:00").toLocaleDateString("pt-BR")}
@@ -441,6 +511,68 @@ export default function TaskDetail({
             <span className="muted" style={{ fontSize: 13 }}>Sem descricao.</span>
           )}
         </div>
+
+        {/* ---- Projeto (Spec 022): chip acima; aqui o controle de trocar/tirar.
+             So em task de topo -- subtarefa herda o projeto do pai (read-only). ---- */}
+        {ehTopo && (
+          <div className="field">
+            <span className="label">Projeto</span>
+
+            {projetoAtual ? (
+              <span
+                style={{
+                  display: "inline-flex", alignItems: "center",
+                  background: "var(--surface-2)", borderRadius: 999,
+                  padding: "3px 12px", fontSize: 12.5, alignSelf: "flex-start",
+                }}
+              >
+                {nomeProjetoAtual ?? "Projeto atual"}
+              </span>
+            ) : (
+              <span className="muted" style={{ fontSize: 13 }}>
+                Sem projeto atrelado.
+              </span>
+            )}
+
+            <button
+              type="button" className="btn btn-ghost"
+              onClick={() => setAbertoProj((v) => !v)}
+              disabled={movendoProj}
+              style={{ alignSelf: "flex-start", padding: "6px 10px", marginTop: 2 }}
+            >
+              {abertoProj
+                ? "Fechar"
+                : projetoAtual
+                ? "Mudar projeto"
+                : "Adicionar a um projeto"}
+            </button>
+
+            {abertoProj && (
+              <div style={{ marginTop: 2 }}>
+                <select
+                  className="input"
+                  value={projetoAtual ?? ""}
+                  disabled={movendoProj}
+                  onChange={(e) => mudarProjeto(e.target.value || null)}
+                >
+                  <option value="">— Sem projeto (tirar) —</option>
+                  {Array.from(projects.entries())
+                    .sort((a, b) => a[1].localeCompare(b[1], "pt-BR"))
+                    .map(([id, titulo]) => (
+                      <option key={id} value={id}>{titulo}</option>
+                    ))}
+                </select>
+              </div>
+            )}
+
+            {movendoProj && (
+              <span className="muted" style={{ fontSize: 13, marginTop: 4 }}>Movendo…</span>
+            )}
+            {erroProj && (
+              <div className="error-box" style={{ marginTop: 8 }}>{erroProj}</div>
+            )}
+          </div>
+        )}
 
         {/* ---- Responsaveis: atuais sempre visiveis + dropdown "Designar" ---- */}
         <div className="field">
