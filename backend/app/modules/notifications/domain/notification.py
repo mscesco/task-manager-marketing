@@ -19,6 +19,9 @@ class NotificationType(str, Enum):
     TASK_ASSIGNED = "TASK_ASSIGNED"
     TASK_COMMENTED = "TASK_COMMENTED"
     TASK_MENTIONED = "TASK_MENTIONED"
+    # Spec 023: avisos de prazo (gerados por job de sistema, sem ator).
+    TASK_DUE_SOON = "TASK_DUE_SOON"
+    TASK_OVERDUE = "TASK_OVERDUE"
 
 
 @dataclass(frozen=True, slots=True)

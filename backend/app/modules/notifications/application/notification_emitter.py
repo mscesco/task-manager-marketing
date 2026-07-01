@@ -143,6 +143,65 @@ class NotificationEmitter:
 
         await self._emit_safely("TASK_MENTIONED", _do)
 
+    async def due_soon(
+        self,
+        *,
+        recipient_ids: list[uuid.UUID],
+        task_id: uuid.UUID,
+        task_title: str,
+        due_date_iso: str,
+    ) -> None:
+        """Spec 023: avisa os destinatarios que a task vence em ~2 dias.
+
+        Notificacao de SISTEMA -- `actor_id=None`, sem _actor_name. Fan-out com
+        DEDUP. Sem auto-exclusao (nao ha ator). Se nao houver destinatario,
+        nao emite.
+        """
+        alvos = list(dict.fromkeys(recipient_ids))
+        if not alvos:
+            return
+
+        async def _do() -> None:
+            for rid in alvos:
+                self._repo.create(
+                    recipient_id=rid,
+                    actor_id=None,
+                    type=NotificationType.TASK_DUE_SOON.value,
+                    task_id=task_id,
+                    payload={"task_title": task_title, "due_date": due_date_iso},
+                )
+
+        await self._emit_safely("TASK_DUE_SOON", _do)
+
+    async def overdue(
+        self,
+        *,
+        recipient_ids: list[uuid.UUID],
+        task_id: uuid.UUID,
+        task_title: str,
+        due_date_iso: str,
+    ) -> None:
+        """Spec 023: avisa os destinatarios que a task atrasou.
+
+        Notificacao de SISTEMA -- `actor_id=None`, sem _actor_name. Fan-out com
+        DEDUP. Sem auto-exclusao. Se nao houver destinatario, nao emite.
+        """
+        alvos = list(dict.fromkeys(recipient_ids))
+        if not alvos:
+            return
+
+        async def _do() -> None:
+            for rid in alvos:
+                self._repo.create(
+                    recipient_id=rid,
+                    actor_id=None,
+                    type=NotificationType.TASK_OVERDUE.value,
+                    task_id=task_id,
+                    payload={"task_title": task_title, "due_date": due_date_iso},
+                )
+
+        await self._emit_safely("TASK_OVERDUE", _do)
+
     async def _emit_safely(
         self, tipo: str, do: Callable[[], Awaitable[None]]
     ) -> None:

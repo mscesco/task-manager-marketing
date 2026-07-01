@@ -25,6 +25,11 @@ dependencies = [
     "bcrypt==4.0.1",
     # --- Logging estruturado ---
     "structlog==24.4.0",
+    # --- Timezone (Spec 023) ---
+    # ZoneInfo("America/Sao_Paulo") precisa da base de fusos; imagens slim
+    # frequentemente nao trazem /usr/share/zoneinfo. tzdata (pure-data)
+    # garante o fuso independente do SO base.
+    "tzdata==2025.1",
 ]
 
 [project.optional-dependencies]

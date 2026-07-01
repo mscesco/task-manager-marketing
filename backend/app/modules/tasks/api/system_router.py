@@ -16,6 +16,9 @@ from fastapi import APIRouter, Depends, Header
 
 from app.core.config import settings
 from app.core.deps import SessionDep
+from app.modules.tasks.application.deadline_notify_service import (
+    DeadlineNotifyService,
+)
 from app.modules.tasks.application.stale_archival_service import (
     StaleArchivalService,
 )
@@ -51,3 +54,17 @@ async def archive_stale(session: SessionDep) -> dict:
     Idempotente. Disparada por job diario (n8n). `now` resolvido no servidor.
     """
     return await StaleArchivalService(session).run(now=datetime.now(UTC))
+
+
+@router.post(
+    "/tasks/notify-deadlines",
+    dependencies=[Depends(require_system_token)],
+)
+async def notify_deadlines(session: SessionDep) -> dict:
+    """Varre todos os workspaces emitindo avisos de prazo (Spec 023).
+
+    due-soon (2 dias antes) + overdue (no dia que atrasa). Idempotente (dedup
+    por coluna). Disparada por job diario (n8n). `now` resolvido no servidor;
+    o servico converte pra data em America/Sao_Paulo.
+    """
+    return await DeadlineNotifyService(session).run(now=datetime.now(UTC))
