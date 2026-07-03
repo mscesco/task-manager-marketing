@@ -111,6 +111,15 @@ export default function NotificationBell() {
       markNotificationRead(n.id).catch(() => {});
     }
     router.push(n.task_id ? `/minhas-tarefas?task=${n.task_id}` : "/minhas-tarefas");
+    // Se ja estamos em /minhas-tarefas, o push acima so troca a query e NAO
+    // remonta a pagina -> o deep-link de mount nao roda. Este evento abre o
+    // detalhe na hora nesse caso. Vindo de outra rota, ninguem escuta ainda
+    // (pagina nao montada) e o mount le a query -- os dois caminhos se cobrem.
+    if (n.task_id) {
+      window.dispatchEvent(
+        new CustomEvent("abrir-tarefa", { detail: { id: n.task_id } })
+      );
+    }
   }
 
   async function marcarTodas() {

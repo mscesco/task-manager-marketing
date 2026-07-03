@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   DndContext,
   DragEndEvent,
@@ -112,21 +112,45 @@ function Minhas() {
       .catch(() => {});
   }, []);
 
-  // Deep-link da notificacao: ?task=<id> abre o detalhe da task da PROPRIA
-  // lista (E6-safe: reusa o objeto que listAllMyAssignments ja trouxe, sem
-  // GET /tasks/{id}). Roda uma vez, depois da lista carregar. Procura na lista
-  // COMPLETA (items), nao na filtrada -- um filtro ativo nao deve furar o link.
+  // Abre o detalhe de uma task pelo id, procurando na lista COMPLETA (items),
+  // nao na filtrada -- um filtro ativo nao deve furar o link. Se a task nao
+  // esta na lista (mencao/comentario em tarefa que nao e sua, ou out_of_scope
+  // filtrada), avisa em vez de falhar em silencio.
+  const abrirTarefaDaLista = useCallback(
+    (id: string) => {
+      if (items === null) return;
+      const t = items.find((x) => x.id === id);
+      if (t) {
+        setPilha([]);
+        setDetalhe(t);
+      } else {
+        setToast("Nao foi possivel abrir: essa tarefa nao esta na sua lista.");
+      }
+    },
+    [items]
+  );
+
+  // Deep-link ao ENTRAR na pagina vindo de outra rota: le ?task=<id> depois
+  // que a lista carrega (uma vez). E6-safe: reusa o objeto ja carregado.
   useEffect(() => {
     if (deepLinkFeito || items === null) return;
     setDeepLinkFeito(true);
     const alvo = new URLSearchParams(window.location.search).get("task");
-    if (!alvo) return;
-    const t = items.find((x) => x.id === alvo);
-    if (t) {
-      setPilha([]);
-      setDetalhe(t);
+    if (alvo) abrirTarefaDaLista(alvo);
+  }, [items, deepLinkFeito, abrirTarefaDaLista]);
+
+  // Deep-link com a pagina JA ABERTA: o sino faz router.push da mesma rota
+  // (so muda a query), o que NAO remonta a pagina nem re-dispara o efeito de
+  // cima -> era o "clico e nao acontece nada". O sino tambem emite este evento,
+  // que abre o detalhe na hora, sem depender de remontar.
+  useEffect(() => {
+    function onAbrir(e: Event) {
+      const id = (e as CustomEvent<{ id?: string }>).detail?.id;
+      if (id) abrirTarefaDaLista(id);
     }
-  }, [items, deepLinkFeito]);
+    window.addEventListener("abrir-tarefa", onAbrir);
+    return () => window.removeEventListener("abrir-tarefa", onAbrir);
+  }, [abrirTarefaDaLista]);
 
   // Toast do drag (auto-some).
   useEffect(() => {
