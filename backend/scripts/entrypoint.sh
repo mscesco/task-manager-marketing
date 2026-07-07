@@ -15,4 +15,4 @@ set -euo pipefail
 # Migration agora e passo MANUAL de deploy:
 #     docker compose run --rm api alembic upgrade head
 echo "[entrypoint] Iniciando servidor (migrations sao passo manual de deploy)..."
-exec uvicorn app.main:app --host 0.0.0.0 --port 8000
+exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2
