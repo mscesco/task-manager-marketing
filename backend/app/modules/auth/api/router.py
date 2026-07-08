@@ -20,6 +20,7 @@ from app.modules.auth.api.dependencies import PendingUserDep
 from app.modules.auth.api.schemas import (
     ChangePasswordRequest,
     CurrentUserResponse,
+    TeamMembershipOut,
     LoginRequest,
     RefreshRequest,
     TokenPair,
@@ -86,6 +87,10 @@ async def me(user: PendingUserDep, session: SessionDep) -> CurrentUserResponse:
         must_change_password=user.must_change_password,
         roles=sorted(membership.roles),
         permissions=sorted(permissions),
+        teams=[
+            TeamMembershipOut(team_id=team_id, role=role)
+            for team_id, role in membership.team_roles
+        ],
     )
 
 

@@ -202,6 +202,11 @@ export async function login(email: string, password: string): Promise<TokenPair>
   });
 }
 
+export type TeamMembership = {
+  team_id: string;
+  role: string;
+};
+
 export type CurrentUser = {
   id: string;
   workspace_id: string;
@@ -211,6 +216,9 @@ export type CurrentUser = {
   must_change_password: boolean;
   roles: string[];
   permissions: string[];
+  // Trabalho 2: vinculos (time, papel) do usuario -> base da lente
+  // (quais quadros de subtime mostrar, qual e a raiz).
+  teams: TeamMembership[];
 };
 
 export async function getMe(): Promise<CurrentUser> {

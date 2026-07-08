@@ -41,6 +41,14 @@ class ChangePasswordRequest(BaseModel):
     new_password: str = Field(min_length=8, max_length=128)
 
 
+class TeamMembershipOut(BaseModel):
+    """Um vinculo (time, papel) do usuario. Base para o front derivar a
+    lente: quais quadros de time mostrar e qual e a raiz. So leitura."""
+
+    team_id: uuid.UUID
+    role: str
+
+
 class TokenPair(BaseModel):
     """Par de tokens devolvido no login e no refresh."""
 
@@ -65,3 +73,6 @@ class CurrentUserResponse(BaseModel):
     must_change_password: bool = False
     roles: list[str]
     permissions: list[str]
+    #: Trabalho 2: vinculos (time, papel) para o front derivar a lente
+    #: (quais quadros de subtime mostrar, qual e a raiz).
+    teams: list[TeamMembershipOut] = []
