@@ -70,9 +70,17 @@ function Membros() {
   const souAdmin = me?.roles.includes("ADMIN") ?? false;
   const papeisDisponiveis = souAdmin ? PAPEIS : PAPEIS.filter((p) => p !== "ADMIN");
 
+// Rotulo do time COM a hierarquia: se o time tem pai, mostra
+  // "Pai › Filho" (ex.: "Marketing › CRM e Automacao"), deixando claro
+  // que o subtime pertence ao time-pai. Time raiz mostra so o nome.
+  // O parent_team_id ja vem do backend em cada Team; aqui so montamos o texto.
   function nomeSubtime(id: string | null): string {
     if (!id) return "—";
-    return times.find((t) => t.id === id)?.name ?? "—";
+    const t = times.find((x) => x.id === id);
+    if (!t) return "—";
+    if (t.parent_team_id === null) return t.name;
+    const pai = times.find((x) => x.id === t.parent_team_id);
+    return pai ? `${pai.name} › ${t.name}` : t.name;
   }
 
   async function carregar() {
