@@ -410,6 +410,15 @@ type TeamListResponse = { items: Team[]; total: number };
 // buscada UMA vez e memoizada. getRootTeamId e listSubteams derivam daqui,
 // entao o endpoint /teams e batido uma unica vez por sessao. Limpa no
 // clearTokens.
+//
+// INVARIANTE (por que NAO existe um invalidateTeams()): hoje nenhum fluxo do
+// front MUTA a arvore de times -- criar/mover/remover time e so via banco. Um
+// invalidateTeams() nao teria chamador (codigo morto). Alem disso a navegacao
+// e por <a href> (recarga total), entao este cache de modulo ja reinicia a
+// cada troca de pagina; ele so vive dentro de UMA pagina. SE um dia entrar uma
+// tela que cria/edita subtime no front, ela PRECISA zerar _teams aqui
+// (espelhe invalidateMembers), senao sub-abas/lente/filtros ficam stale ate
+// recarregar.
 let _teams: Team[] | undefined; // undefined = ainda nao buscado
 
 async function listTeams(): Promise<Team[]> {

@@ -74,7 +74,12 @@ export default function TaskModal({
   const [erro, setErro] = useState<string | null>(null);
 
   // Seletor de projeto: so ao CRIAR fora de um projeto fixo (quadro geral).
-  const mostrarSeletorProjeto = !editando && !defaultProjectId;
+  // No quadro de SUBTIME (defaultTeamId setado) a task de topo nasce INTERNA
+  // do subtime por decisao do modelo -> esconder o seletor. Sem isto, dava
+  // pra criar uma task com team_id=subtime E project_id=projeto-da-raiz (o
+  // backend aceita, pois o subtime e descendente da raiz), e essa task sumia
+  // do quadro geral e aparecia so no projeto + como "Interna" no subtime.
+  const mostrarSeletorProjeto = !editando && !defaultProjectId && !defaultTeamId;
   const [projetos, setProjetos] = useState<Project[]>([]);
   const [projetoSel, setProjetoSel] = useState(""); // "" => avulsa
 

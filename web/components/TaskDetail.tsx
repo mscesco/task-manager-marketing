@@ -284,6 +284,8 @@ export default function TaskDetail({
   const nomeProjetoAtual = projetoAtual ? projects.get(projetoAtual) ?? null : null;
   const dueTone = deadlineTone(task.due_date, task.status, task.is_archived);
   const concluidas = filhos.filter((f) => f.status === "COMPLETED").length;
+  // Porcentagem concluida (0 quando nao ha subtarefas) -- alimenta a barra E o rotulo.
+  const pctSub = filhos.length ? Math.round((concluidas / filhos.length) * 100) : 0;
 
   async function toggle(userId: string) {
     const jaEra = assignees.includes(userId);
@@ -775,8 +777,48 @@ export default function TaskDetail({
             )}
           </div>
 
+          {/* Barra de progresso das subtarefas. Anima sozinha: `concluidas`
+              recomputa quando alternarConclusao faz o upsert OTIMISTA no estado
+              do pai (a caixa marca -> a barra enche na hora, sem esperar a API;
+              reverte se o PATCH falhar). Proporcao = concluidas / filhos. */}
           {filhos.length > 0 && (
-            <div style={{ border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 8 }}>
+              <div
+                role="progressbar"
+                aria-valuenow={concluidas}
+                aria-valuemin={0}
+                aria-valuemax={filhos.length}
+                aria-label={`${concluidas} de ${filhos.length} subtarefas concluídas (${pctSub}%)`}
+                style={{
+                  flex: 1, height: 8, borderRadius: 999,
+                  background: "var(--surface-2)", overflow: "hidden",
+                }}
+              >
+                <div
+                  style={{
+                    height: "100%",
+                    width: `${pctSub}%`,
+                    background: "var(--accent)",
+                    borderRadius: 999,
+                    transition: "width .25s ease",
+                  }}
+                />
+              </div>
+              <span
+                className="muted"
+                style={{
+                  fontSize: 12, fontWeight: 600, flexShrink: 0,
+                  minWidth: 34, textAlign: "right",
+                  fontVariantNumeric: "tabular-nums",
+                }}
+              >
+                {pctSub}%
+              </span>
+            </div>
+          )}
+
+          {filhos.length > 0 && (
+            <div style={{ border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden", marginTop: 8 }}>
               {filhos.map((f, i) => {
                 const concluida = f.status === "COMPLETED";
                 const ocupado = subSaving.has(f.id);

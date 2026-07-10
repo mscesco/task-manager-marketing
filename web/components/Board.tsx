@@ -77,6 +77,13 @@ export default function Board({
   const [memberTeam, setMemberTeam] = useState<Map<string, string | null>>(
     new Map()
   );
+  // Distingue "membros ainda nao carregaram" de "carregaram". No modo
+  // SUBTIME as tasks "compartilhadas" dependem de memberTeam (resolve quem
+  // pertence ao subtime). Sem esta guarda, o quadro renderiza antes dos
+  // membros chegarem e as compartilhadas APARECEM ATRASADAS (mesma classe da
+  // piscada do rootId, na direcao oposta). Vira true quando listMembers
+  // RESPONDE -- inclusive no erro, pra nao travar a tela em "Carregando".
+  const [membrosCarregados, setMembrosCarregados] = useState(false);
   const [subtimes, setSubtimes] = useState<Team[]>([]);
   // Fatia 3: id do time raiz. O quadro GERAL mostra so tasks da raiz
   // (internas de subtime nao vazam pro geral). null = ainda nao carregado
@@ -117,7 +124,8 @@ export default function Board({
         setMembers(new Map(ms.map((m) => [m.id, { name: m.name }])));
         setMemberTeam(new Map(ms.map((m) => [m.id, m.team_id])));
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setMembrosCarregados(true));
     // Spec 022: projectNames alimenta o chip E o seletor de "mudar projeto" no
     // detalhe -> carrega em qualquer quadro (antes so no geral).
     listAllProjects()
@@ -264,6 +272,11 @@ export default function Board({
   // carregar pra nao piscar tasks que o filtro vai esconder. Projeto
   // (projectId) nao usa rootId -> nao espera.
   if (!projectId && !rootCarregado)
+    return <div className="muted">Carregando tarefas…</div>;
+  // Modo SUBTIME depende TAMBEM dos membros: o filtro hibrido usa memberTeam
+  // pra decidir as "compartilhadas". Espera os membros pra elas nao aparecerem
+  // atrasadas. Geral e projeto nao dependem disso -> nao esperam.
+  if (!projectId && subteamId && !membrosCarregados)
     return <div className="muted">Carregando tarefas…</div>;
 
   const subCount: Record<string, number> = {};
@@ -462,10 +475,10 @@ export default function Board({
             color: "var(--text)", fontSize: 13,
           }}
         >
-          Este quadro tem <strong>{truncadoTotal}</strong> tarefas, acima do
-          limite de exibição. Mostrando as mais recentes — algumas podem não
-          aparecer no quadro nem na busca. Arquive tarefas concluídas para
-          reduzir o volume.
+          O carregamento atingiu o limite de exibição
+          (<strong>{truncadoTotal}</strong> tarefas no total). Mostrando as mais
+          recentes — algumas podem não aparecer no quadro nem na busca. Arquive
+          tarefas concluídas para reduzir o volume.
         </div>
       )}
 

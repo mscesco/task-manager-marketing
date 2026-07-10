@@ -6,6 +6,7 @@ import {
   listNotifications,
   markAllNotificationsRead,
   markNotificationRead,
+  ApiError,
   type AppNotification,
 } from "@/lib/api";
 
@@ -49,24 +50,40 @@ export default function NotificationBell() {
   // Poll do badge (pausa em background).
   useEffect(() => {
     let parado = false;
+    let id: ReturnType<typeof setInterval> | null = null;
+    function parar() {
+      parado = true;
+      if (id !== null) {
+        clearInterval(id);
+        id = null;
+      }
+    }
     async function tick() {
       if (typeof document !== "undefined" && document.hidden) return;
       try {
         const n = await getUnreadCount();
         if (!parado) setUnread(n);
-      } catch {
-        /* silencioso: o badge nunca deve quebrar a tela */
+      } catch (e) {
+        // Sessao morta (401): PARA de pollar. Sem isto, um token invalido
+        // (ex.: logout em outra aba) fazia o sino martelar /unread-count a
+        // cada 30s pra sempre -- o wrapper do api so redireciona pro login
+        // quando AINDA ha token, entao o caso "sem token" ficava em loop
+        // silencioso. Aqui cortamos o loop. Outros erros: silencioso, o
+        // badge nunca derruba a tela.
+        if (e instanceof ApiError && e.status === 401) {
+          parar();
+          return;
+        }
       }
     }
     tick();
-    const id = setInterval(tick, POLL_MS);
+    id = setInterval(tick, POLL_MS);
     const onVis = () => {
       if (!document.hidden) tick();
     };
     document.addEventListener("visibilitychange", onVis);
     return () => {
-      parado = true;
-      clearInterval(id);
+      parar();
       document.removeEventListener("visibilitychange", onVis);
     };
   }, []);
