@@ -52,12 +52,16 @@ export default function TaskModal({
   onClose,
   onSaved,
   defaultProjectId = null,
+  defaultTeamId = null,
 }: {
   open: boolean;
   task?: Task | null; // presente => modo editar
   onClose: () => void;
   onSaved: (task: Task) => void;
   defaultProjectId?: string | null; // criar dentro deste projeto (Entrega 11)
+  // Fatia 5: time da task de topo. So o quadro de SUBTIME passa (o id do
+  // subtime) -> task nasce interna. Null nos demais -> pin na raiz.
+  defaultTeamId?: string | null;
 }) {
   const editando = !!task;
 
@@ -204,6 +208,7 @@ export default function TaskModal({
           due_date: dueDate || null,
           project_id: defaultProjectId ?? (projetoSel || null),
           assignee_ids: assigneeIds,
+          team_id: defaultTeamId,
         });
       }
       setSaving(false);

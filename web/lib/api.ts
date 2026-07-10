@@ -202,10 +202,7 @@ export async function login(email: string, password: string): Promise<TokenPair>
   });
 }
 
-export type TeamMembership = {
-  team_id: string;
-  role: string;
-};
+export type TeamMembership = { team_id: string; role: string };
 
 export type CurrentUser = {
   id: string;
@@ -464,10 +461,19 @@ export type TaskCreateInput = {
   due_date?: string | null;
   project_id?: string | null; // criar dentro de um projeto (Entrega 11)
   assignee_ids?: string[]; // Spec 021: responsaveis ja na criacao
+  // Fatia 5: time EXPLICITO da task de topo. Ausente => pin na raiz
+  // (ADR 0001, comportamento de hoje). Presente => usa este time
+  // (ex.: quadro de subtime cria task INTERNA daquele subtime).
+  team_id?: string | null;
 };
 
 export async function createTask(input: TaskCreateInput): Promise<Task> {
-  const teamId = await getRootTeamId();
+  // Fatia 5: se o chamador deu um team_id explicito (quadro de subtime),
+  // usa ele; senao mantem o pin na raiz (ADR 0001, comportamento atual).
+  const teamId =
+    input.team_id !== undefined && input.team_id !== null
+      ? input.team_id
+      : await getRootTeamId();
   return api<Task>("/api/v1/tasks", {
     method: "POST",
     body: {

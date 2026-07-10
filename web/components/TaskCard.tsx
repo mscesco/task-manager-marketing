@@ -18,12 +18,17 @@ export default function TaskCard({
   subtaskCount = 0,
   subtaskDone = 0,
   projectName,
+  escopo,
 }: {
   task: Task;
   members?: Map<string, CardMember>; // resolve id -> nome (mapa memoizado do quadro)
   subtaskCount?: number; // filhos DIRETOS
   subtaskDone?: number; // filhos diretos concluidos
   projectName?: string; // nome do projeto p/ a tag (so no quadro geral)
+  // Fatia 4b: origem da task no quadro de SUBTIME. "compartilhada" = veio
+  // da raiz (responsavel do subtime); "interna" = nasceu no subtime.
+  // undefined em outros quadros (nao mostra pill).
+  escopo?: "compartilhada" | "interna";
 }) {
   const ids = task.assignee_ids ?? [];
   const mostra = ids.slice(0, MAX_BOLINHAS);
@@ -51,6 +56,26 @@ export default function TaskCard({
           }}
         >
           ▦ {projectName}
+        </span>
+      )}
+      {escopo && (
+        <span
+          title={
+            escopo === "compartilhada"
+              ? "Tarefa do quadro geral (responsavel deste subtime)"
+              : "Tarefa interna deste subtime"
+          }
+          style={{
+            alignSelf: "flex-start",
+            fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 6,
+            background:
+              escopo === "compartilhada" ? "var(--accent-soft)" : "var(--surface-2)",
+            color:
+              escopo === "compartilhada" ? "var(--accent)" : "var(--text-soft)",
+            border: "1px solid var(--border)",
+          }}
+        >
+          {escopo === "compartilhada" ? "Compartilhada" : "Interna"}
         </span>
       )}
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>

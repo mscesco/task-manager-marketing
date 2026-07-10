@@ -22,7 +22,7 @@ import TaskModal from "@/components/TaskModal";
 import TaskDetail from "@/components/TaskDetail";
 import EmptyStateBox from "@/components/EmptyState";
 import { STATUSES } from "@/lib/status";
-import { listAllTasks, listAllProjects, updateTask, listMembers, listSubteams, ApiError, type Task, type Team } from "@/lib/api";
+import { listAllTasks, listAllProjects, updateTask, listMembers, listSubteams, getRootTeamId, ApiError, type Task, type Team } from "@/lib/api";
 
 // Tira acento e caixa pra busca casar "midia" com "Midia Paga" etc.
 function normalizar(s: string) {
@@ -44,9 +44,11 @@ type Ordenacao = "criacao" | "prazo" | "prioridade";
 
 export default function Board({
   projectId,
+  subteamId,
   title,
 }: {
-  projectId?: string; // ausente => quadro geral
+  projectId?: string; // presente => quadro de PROJETO
+  subteamId?: string; // presente => quadro de SUBTIME (modo hibrido, Fatia 4)
   title: string;
 }) {
   const [tasks, setTasks] = useState<Task[] | null>(null);
@@ -76,6 +78,17 @@ export default function Board({
     new Map()
   );
   const [subtimes, setSubtimes] = useState<Team[]>([]);
+  // Fatia 3: id do time raiz. O quadro GERAL mostra so tasks da raiz
+  // (internas de subtime nao vazam pro geral). null = ainda nao carregado
+  // OU raiz nao encontrada -> nesse caso NAO filtra (mostra tudo), pra
+  // nunca esconder o quadro inteiro por engano.
+  const [rootId, setRootId] = useState<string | null>(null);
+  // Distingue "ainda nao carregou" de "carregou (id ou null)". Sem isso,
+  // o quadro geral renderiza antes do rootId chegar e as tasks internas
+  // piscam na tela antes do filtro ligar. Vira true assim que o
+  // getRootTeamId RESPONDE -- inclusive se responder null (raiz ausente),
+  // pra nao travar a tela em "Carregando".
+  const [rootCarregado, setRootCarregado] = useState(false);
   const [subtime, setSubtime] = useState<string>("");
   // P0.2: total real quando o fetch bateu o teto de seguranca (truncou).
   // null = nao truncou. Vira aviso honesto no lugar de perda silenciosa.
@@ -116,6 +129,10 @@ export default function Board({
   // memoizado no api.ts). So times nao-raiz entram no dropdown.
   useEffect(() => {
     listSubteams().then(setSubtimes).catch(() => {});
+    getRootTeamId()
+      .then((id) => setRootId(id))
+      .catch(() => {})
+      .finally(() => setRootCarregado(true));
   }, []);
 
   useEffect(() => {
@@ -243,6 +260,11 @@ export default function Board({
 
   if (erro) return <div className="error-box" style={{ maxWidth: 480 }}>{erro}</div>;
   if (!tasks) return <div className="muted">Carregando tarefas…</div>;
+  // Quadro geral/subtime dependem do rootId pro filtro. Espera ele
+  // carregar pra nao piscar tasks que o filtro vai esconder. Projeto
+  // (projectId) nao usa rootId -> nao espera.
+  if (!projectId && !rootCarregado)
+    return <div className="muted">Carregando tarefas…</div>;
 
   const subCount: Record<string, number> = {};
   const subDone: Record<string, number> = {};
@@ -260,9 +282,42 @@ export default function Board({
   const hoje = hojeISO();
   const temFiltro = buscaNorm !== "" || prazo !== "todos" || subtime !== "";
 
-  const visiveis = tasks.filter(
-    (t) => t.depth === 0 && (mostrarArquivadas || !t.is_archived)
-  );
+  // Fatia 3/4: lente de exibicao por MODO de quadro.
+  //   - PROJETO (projectId): sem filtro de time (tasks sao do projeto).
+  //   - SUBTIME (subteamId): modelo hibrido -> mostra a UNIAO de
+  //       (A) tasks da RAIZ cujo ALGUM responsavel pertence ao subtime
+  //           (as "compartilhadas", vindas do quadro geral); e
+  //       (B) tasks INTERNAS do subtime (team_id === subteamId).
+  //   - GERAL (nenhum): so tasks da raiz (Fatia 3).
+  // Guarda: rootId null (nao carregou) -> nao filtra por raiz, pra nao
+  // esconder o quadro. No modo subtime a guarda cai sobre a fonte (A).
+  const modoSubtime = !projectId && !!subteamId;
+  const soRaiz = !projectId && !subteamId && rootId !== null;
+  const pertenceAoSubtime = (t: Task) => {
+    const ids = t.assignee_ids ?? [];
+    return ids.some((id) => memberTeam.get(id) === subteamId);
+  };
+  const visiveis = tasks.filter((t) => {
+    if (t.depth !== 0) return false;
+    if (!(mostrarArquivadas || !t.is_archived)) return false;
+    if (modoSubtime) {
+      // (B) interna do subtime OU (A) da raiz com responsavel do subtime.
+      const interna = t.team_id === subteamId;
+      const compartilhada =
+        (rootId === null || t.team_id === rootId) && pertenceAoSubtime(t);
+      return interna || compartilhada;
+    }
+    return !soRaiz || t.team_id === rootId;
+  });
+  // Fatia 4b: no modo subtime, classifica cada task pra tag do card.
+  //   interna     -> team_id === subteamId (nasceu aqui)
+  //   compartilhada-> veio da raiz (as demais que passaram o filtro hibrido)
+  // Fora do modo subtime, undefined (sem pill).
+  const escopoDaTask = (t: Task): "compartilhada" | "interna" | undefined => {
+    if (!modoSubtime) return undefined;
+    return t.team_id === subteamId ? "interna" : "compartilhada";
+  };
+
   const raizes = visiveis.filter((t) => {
     if (buscaNorm && !normalizar(t.title).includes(buscaNorm)) return false;
     // Sem data: aparece em qualquer filtro de prazo (decisao da Camila).
@@ -360,7 +415,7 @@ export default function Board({
           <option value="prazo">Ordenar: prazo</option>
           <option value="prioridade">Ordenar: prioridade</option>
         </select>
-        {subtimes.length > 0 && (
+        {!subteamId && subtimes.length > 0 && (
           <select
             value={subtime}
             onChange={(e) => setSubtime(e.target.value)}
@@ -440,6 +495,7 @@ export default function Board({
                     subtaskCount={subCount[t.id] ?? 0}
                     subtaskDone={subDone[t.id] ?? 0}
                     projectName={t.project_id ? projectNames.get(t.project_id) : undefined}
+                    escopo={escopoDaTask(t)}
                   />
                 ))}
               </Coluna>
@@ -455,6 +511,7 @@ export default function Board({
                   subtaskCount={subCount[activeTask.id] ?? 0}
                   subtaskDone={subDone[activeTask.id] ?? 0}
                   projectName={activeTask.project_id ? projectNames.get(activeTask.project_id) : undefined}
+                  escopo={escopoDaTask(activeTask)}
                 />
               </div>
             ) : null}
@@ -466,6 +523,7 @@ export default function Board({
         open={criando || editando !== null}
         task={editando}
         defaultProjectId={projectId ?? null}
+        defaultTeamId={subteamId ?? null}
         onClose={() => {
           setCriando(false);
           setEditando(null);
@@ -553,6 +611,7 @@ function CardArrastavel({
   subtaskCount,
   subtaskDone,
   projectName,
+  escopo,
 }: {
   task: Task;
   onAbrir: (task: Task) => void;
@@ -560,6 +619,7 @@ function CardArrastavel({
   subtaskCount: number;
   subtaskDone: number;
   projectName?: string;
+  escopo?: "compartilhada" | "interna";
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: task.id });
   return (
@@ -588,6 +648,7 @@ function CardArrastavel({
         subtaskCount={subtaskCount}
         subtaskDone={subtaskDone}
         projectName={projectName}
+        escopo={escopo}
       />
     </div>
   );
