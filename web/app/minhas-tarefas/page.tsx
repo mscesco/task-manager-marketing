@@ -78,6 +78,8 @@ function Minhas() {
   // Filtros (client-side, sobre a lista ja carregada). Comecam "tudo visivel".
   const [relFiltro, setRelFiltro] = useState<string>("todas");
   const [statusOn, setStatusOn] = useState<Set<string>>(() => new Set(TODOS_STATUS));
+  // Arquivadas escondidas por padrao (paridade com o quadro). Sessao-only.
+  const [mostrarArquivadas, setMostrarArquivadas] = useState(false);
 
   const [detalhe, setDetalhe] = useState<Task | null>(null);
   const [pilha, setPilha] = useState<Task[]>([]);
@@ -277,14 +279,24 @@ function Minhas() {
     setStatusOn(new Set(TODOS_STATUS));
   }
 
+  // Arquivadas: escondidas por padrao. O backend de assignments INCLUI
+  // arquivadas na resposta, entao o filtro e no cliente -- o toggle liga/desliga
+  // sem refetch. `itemsBase` e a FONTE das duas vistas (lista e quadro).
+  // Detalhe/subtarefas seguem na lista COMPLETA `items` (mais abaixo): um
+  // filtro de view nao pode quebrar abrir uma task fora do filtro.
+  const itemsBase = useMemo(
+    () => (items ?? []).filter((t) => mostrarArquivadas || !t.is_archived),
+    [items, mostrarArquivadas]
+  );
+
   // Aplica relacao + status sobre a lista carregada.
   const filtrados = useMemo(() => {
-    return (items ?? []).filter((t) => {
+    return itemsBase.filter((t) => {
       const okStatus = statusOn.has(t.status);
       const okRel = relFiltro === "todas" || t.relations.includes(relFiltro);
       return okStatus && okRel;
     });
-  }, [items, statusOn, relFiltro]);
+  }, [itemsBase, statusOn, relFiltro]);
 
   // Agrupa por data de entrega (D, estilo Runrunit): so aparece o dia que tem
   // tarefa; grupos em ordem cronologica; sem-prazo por ultimo. Agrupa sobre a
@@ -307,10 +319,10 @@ function Minhas() {
   // Modo QUADRO: filtra so por relacao (o status vira coluna, nao filtro) e
   // agrupa por status. As colunas sao sempre as 7 (STATUSES).
   const porRelacao = useMemo(() => {
-    return (items ?? []).filter(
+    return itemsBase.filter(
       (t) => relFiltro === "todas" || t.relations.includes(relFiltro)
     );
-  }, [items, relFiltro]);
+  }, [itemsBase, relFiltro]);
 
   const porStatus = useMemo(() => {
     const map: Record<string, MyTaskItem[]> = {};
@@ -509,6 +521,22 @@ function Minhas() {
         </div>
           </>
         )}
+
+        {/* Arquivadas: vale pras duas vistas -> fora do bloco `vista==="lista"`.
+            marginLeft auto empurra pra direita, como no quadro. */}
+        <label
+          style={{
+            marginLeft: "auto", display: "inline-flex", alignItems: "center",
+            gap: 6, fontSize: 13, color: "var(--text-soft)", cursor: "pointer",
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={mostrarArquivadas}
+            onChange={(e) => setMostrarArquivadas(e.target.checked)}
+          />
+          Mostrar arquivadas
+        </label>
       </div>
     );
   }
