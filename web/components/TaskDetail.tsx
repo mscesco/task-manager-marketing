@@ -83,6 +83,7 @@ export default function TaskDetail({
   members,
   projects,
   filhos,
+  pai,
   temVoltar,
   onVoltar,
   onClose,
@@ -97,6 +98,7 @@ export default function TaskDetail({
   members: Map<string, { name: string }>;
   projects: Map<string, string>; // id do projeto -> titulo (Spec 022)
   filhos: Task[]; // filhos DIRETOS da tarefa focada (do quadro)
+  pai?: Task | null; // pai DIRETO (topo da pilha), pra rotular "Subtarefa de X"
   temVoltar: boolean;
   onVoltar: () => void;
   onClose: () => void;
@@ -286,6 +288,11 @@ export default function TaskDetail({
   const concluidas = filhos.filter((f) => f.status === "COMPLETED").length;
   // Porcentagem concluida (0 quando nao ha subtarefas) -- alimenta a barra E o rotulo.
   const pctSub = filhos.length ? Math.round((concluidas / filhos.length) * 100) : 0;
+  // Criacao: created_at e ISO com fuso (nao date-only) -> new Date direto ja
+  // resolve pro fuso local. Nome do criador via members; se nao resolver
+  // (ex.: usuario desativado / fora da lista), mostra so a data (nunca o UUID).
+  const criadoEm = new Date(task.created_at).toLocaleDateString("pt-BR");
+  const criador = members.get(task.created_by)?.name ?? null;
 
   async function toggle(userId: string) {
     const jaEra = assignees.includes(userId);
@@ -528,9 +535,14 @@ export default function TaskDetail({
         {temVoltar && (
           <button
             type="button" className="btn btn-ghost" onClick={onVoltar}
-            style={{ alignSelf: "flex-start", padding: "2px 8px", fontSize: 13 }}
+            style={{
+              alignSelf: "flex-start", padding: "2px 8px", fontSize: 13,
+              maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+            title={pai ? `Voltar para ${pai.title}` : "Voltar"}
           >
-            ‹ Voltar
+            ‹ Voltar{pai ? ` para ${pai.title}` : ""}
           </button>
         )}
 
@@ -547,6 +559,11 @@ export default function TaskDetail({
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          {task.parent_task_id && (
+            <Badge tone="soft" size="md" color="var(--accent)">
+              Subtarefa
+            </Badge>
+          )}
           <Badge tone="solid" size="md" color={STATUS_COLOR[task.status]}>
             {STATUS_LABEL[task.status] || task.status}
           </Badge>
@@ -580,6 +597,12 @@ export default function TaskDetail({
           {task.is_archived && (
             <span className="muted" style={{ fontSize: 12.5 }}>arquivada</span>
           )}
+        </div>
+
+        {/* Criacao: data + quem criou (nome resolvido; sem nome -> so a data). */}
+        <div className="muted" style={{ fontSize: 12.5 }}>
+          Criada em {criadoEm}
+          {criador ? ` por ${criador}` : ""}
         </div>
 
         <div className="field">
@@ -1148,9 +1171,6 @@ export default function TaskDetail({
               Excluir
             </button>
           )}
-          <button type="button" className="btn btn-ghost" onClick={onClose}>
-            Fechar
-          </button>
           <button type="button" className="btn btn-primary" onClick={() => onEditar(task)}>
             Editar
           </button>

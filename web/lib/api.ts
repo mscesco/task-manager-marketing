@@ -265,6 +265,7 @@ export async function listTasks(params: {
   size?: number;
   status?: string;
   project_id?: string;
+  parent_task_id?: string;
   include_archived?: boolean;
   archived_only?: boolean;
 } = {}): Promise<TaskListResponse> {
@@ -273,6 +274,7 @@ export async function listTasks(params: {
   q.set("size", String(params.size ?? 100));
   if (params.status) q.set("status", params.status);
   if (params.project_id) q.set("project_id", params.project_id);
+  if (params.parent_task_id) q.set("parent_task_id", params.parent_task_id);
   if (params.include_archived) q.set("include_archived", "true");
   if (params.archived_only) q.set("archived_only", "true");
   return api<TaskListResponse>(`/api/v1/tasks?${q.toString()}`);
@@ -521,6 +523,14 @@ export async function updateTask(
   input: TaskUpdateInput
 ): Promise<Task> {
   return api<Task>(`/api/v1/tasks/${id}`, { method: "PATCH", body: input });
+}
+
+// Busca UMA task por id (GET /tasks/{id}). Usado pra reconstruir a cadeia de
+// pais quando abro uma subtarefa por deep-link e o pai nao esta na minha lista.
+// O backend responde TaskResponse + ids de colaboradores (campos a mais, que o
+// tipo Task ignora sem problema).
+export async function getTask(id: string): Promise<Task> {
+  return api<Task>(`/api/v1/tasks/${id}`);
 }
 
 // Move a task pra outro projeto e/ou pai, OU tira de projeto (avulsa, Spec 022:

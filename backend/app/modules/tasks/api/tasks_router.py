@@ -176,6 +176,9 @@ async def update_task(
             team_id=payload.team_id,
             start_date=payload.start_date,
             due_date=payload.due_date,
+            # Campos presentes no PATCH (mesmo com valor None) -> permite LIMPAR
+            # datas. Sem isto, null explicito virava "nao mexer" (bug).
+            fields_set=frozenset(payload.model_fields_set),
         ),
     )
     await uow.commit()

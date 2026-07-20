@@ -375,6 +375,40 @@ class TaskRepository(BaseRepository[Task]):
         task.deleted_at = func.now()  # type: ignore[assignment]
         return cascade_count
 
+    async def complete_descendants(self, *, task: Task) -> int:
+        """Marca TODOS os descendentes de `task` como COMPLETED (cascata de
+        conclusao). NAO inclui a propria task (o service ja a concluiu).
+
+        Pula descendentes ja COMPLETED, CANCELLED (decisao deliberada de nao
+        fazer) e arquivados. UPDATE em massa via ltree, mesma transacao do UoW.
+        Retorna quantos descendentes mudaram.
+        """
+        tenant = require_tenant()
+        result = await self.session.execute(
+            text(
+                """
+                UPDATE task
+                SET status = CAST('COMPLETED' AS task_status),
+                    completed_at = NOW()
+                WHERE path <@ CAST(:task_path AS ltree)
+                  AND id <> :task_id
+                  AND workspace_id = :tenant_id
+                  AND deleted_at IS NULL
+                  AND is_archived = false
+                  AND status NOT IN (
+                        CAST('COMPLETED' AS task_status),
+                        CAST('CANCELLED' AS task_status)
+                      )
+                """
+            ),
+            {
+                "task_path": task.path,
+                "task_id": task.id,
+                "tenant_id": tenant.workspace_id,
+            },
+        )
+        return result.rowcount or 0
+
     async def detect_cycle(
         self,
         *,

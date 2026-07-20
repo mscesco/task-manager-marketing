@@ -81,7 +81,10 @@ class CreateTaskCommand:
 
 @dataclass(frozen=True, slots=True)
 class UpdateTaskCommand:
-    """Patch parcial. None = nao mexer.
+    """Patch parcial. None = nao mexer -- EXCETO nos campos nullable (datas),
+    onde None significa LIMPAR. Pra distinguir "omitido" de "null explicito"
+    nesses campos, o router preenche `fields_set` com os campos que vieram no
+    JSON (Pydantic model_fields_set); o apply consulta esse conjunto.
 
     project_id e parent_task_id NAO entram aqui -- usar move.
     """
@@ -93,6 +96,8 @@ class UpdateTaskCommand:
     team_id: uuid.UUID | None = None
     start_date: date | None = None
     due_date: date | None = None
+    # Nomes dos campos presentes no PATCH (mesmo quando o valor e None).
+    fields_set: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True, slots=True)
@@ -328,16 +333,21 @@ class TaskService:
             task.team_id = command.team_id
 
         # Status com ajuste de completed_at.
+        virou_concluido = False
         if command.status is not None and command.status != task.status:
             if command.status == TaskStatus.COMPLETED:
                 task.completed_at = datetime.now(UTC) # type: ignore[assignment]
+                virou_concluido = True
             elif task.status == TaskStatus.COMPLETED:
                 task.completed_at = None
             task.status = command.status
 
-        if command.start_date is not None:
+        # Datas sao nullable: presenca no PATCH manda (None = limpar). Usar
+        # `is not None` aqui era o bug de "limpar data nao salvava" -- o null
+        # explicito era tratado como "nao mexer".
+        if "start_date" in command.fields_set:
             task.start_date = command.start_date
-        if command.due_date is not None:
+        if "due_date" in command.fields_set:
             task.due_date = command.due_date
 
         # Valida estado resultante.
@@ -348,6 +358,13 @@ class TaskService:
             await self._repo.write_history(
                 task=task, user_id=tenant.user_id, entries=entries
             )
+
+        # Cascata de conclusao: concluir o PAI conclui toda a subtree (regra de
+        # negocio -- vale pra qualquer caminho: quadro, modal, API). Roda so na
+        # TRANSICAO pra COMPLETED. Nao gera history por subtarefa (UPDATE em
+        # massa) -- se precisar de rastro por-item, e outra entrega.
+        if virou_concluido:
+            await self._repo.complete_descendants(task=task)
 
         await self._session.flush()
         logger.info(
@@ -715,9 +732,10 @@ class TaskService:
                 )
             )
 
-        # Datas.
+        # Datas: presenca no PATCH manda (mesmo motivo do apply). Assim limpar
+        # uma data (None) tambem entra no historico (old=data, new=None).
         if (
-            command.start_date is not None
+            "start_date" in command.fields_set
             and command.start_date != task.start_date
         ):
             entries.append(
@@ -727,7 +745,7 @@ class TaskService:
                     new=command.start_date,
                 )
             )
-        if command.due_date is not None and command.due_date != task.due_date:
+        if "due_date" in command.fields_set and command.due_date != task.due_date:
             entries.append(
                 build_field_update_entry(
                     field_name="due_date",

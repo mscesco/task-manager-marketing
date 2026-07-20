@@ -235,7 +235,25 @@ export default function Board({
       const existente = prev.find((x) => x.id === t.id);
       if (!existente) return [t, ...prev];
       const merged = { ...t, assignee_ids: t.assignee_ids ?? existente.assignee_ids };
-      return prev.map((x) => (x.id === t.id ? merged : x));
+      // Transicao PARA concluido -> cascata otimista pros descendentes (espelha
+      // o backend: pula ja concluidas, canceladas e arquivadas). Sem transicao
+      // (ex.: so editou titulo de uma ja concluida), nao mexe nas subtarefas.
+      const virouConcluido =
+        t.status === "COMPLETED" && existente.status !== "COMPLETED";
+      const prefixo = existente.path + ".";
+      return prev.map((x) => {
+        if (x.id === t.id) return merged;
+        if (
+          virouConcluido &&
+          x.path.startsWith(prefixo) &&
+          x.status !== "COMPLETED" &&
+          x.status !== "CANCELLED" &&
+          !x.is_archived
+        ) {
+          return { ...x, status: "COMPLETED" };
+        }
+        return x;
+      });
     });
   }
 
@@ -268,8 +286,32 @@ export default function Board({
 
     const statusAnterior = atual.status;
 
+    // Cascata de conclusao: arrastar um PAI pro "Concluido" conclui a subtree
+    // (espelha o backend). Aplica otimista pros cards de subtarefa refletirem na
+    // hora (quadros de projeto/subtime). Guarda os status antigos pra reverter
+    // se o PATCH falhar. Pula ja concluidas, canceladas e arquivadas.
+    const concluindo = destino === "COMPLETED";
+    const prefixo = atual.path + ".";
+    const anteriores = new Map<string, string>();
+    if (concluindo) {
+      for (const t of tasks ?? []) {
+        if (
+          t.path.startsWith(prefixo) &&
+          t.status !== "COMPLETED" &&
+          t.status !== "CANCELLED" &&
+          !t.is_archived
+        ) {
+          anteriores.set(t.id, t.status);
+        }
+      }
+    }
+
     setTasks((prev) =>
-      prev!.map((t) => (t.id === taskId ? { ...t, status: destino } : t))
+      prev!.map((t) => {
+        if (t.id === taskId) return { ...t, status: destino };
+        if (anteriores.has(t.id)) return { ...t, status: "COMPLETED" };
+        return t;
+      })
     );
 
     try {
@@ -281,7 +323,11 @@ export default function Board({
       );
     } catch (err) {
       setTasks((prev) =>
-        prev!.map((t) => (t.id === taskId ? { ...t, status: statusAnterior } : t))
+        prev!.map((t) => {
+          if (t.id === taskId) return { ...t, status: statusAnterior };
+          const ant = anteriores.get(t.id);
+          return ant !== undefined ? { ...t, status: ant } : t;
+        })
       );
       const e2 = err as ApiError;
       setToast(
@@ -312,6 +358,40 @@ export default function Board({
     subCount[t.parent_task_id] = (subCount[t.parent_task_id] ?? 0) + 1;
     if (t.status === "COMPLETED")
       subDone[t.parent_task_id] = (subDone[t.parent_task_id] ?? 0) + 1;
+  }
+
+  // Herança de subtimes pro filtro do dropdown. Uma tarefa-RAIZ "pertence" a um
+  // subtime se ELA ou QUALQUER subtarefa dela tem responsavel desse subtime.
+  // Sem isto, uma raiz cujo unico responsavel e de um time (ex.: "Aniversario"
+  // com so a Monique/CRM) sumia ao filtrar pelos times que tocam as SUBTAREFAS
+  // (design, video, midia...). O front ja carrega a subarvore inteira, entao da
+  // pra agregar aqui. subtimesPorRaiz: id_da_raiz -> conjunto de subtimes.
+  const byId = new Map(tasks.map((t) => [t.id, t]));
+  const raizDe = (t: Task): string => {
+    let atual = t;
+    const vistos = new Set<string>();
+    while (atual.parent_task_id && !vistos.has(atual.id)) {
+      vistos.add(atual.id);
+      const pai = byId.get(atual.parent_task_id);
+      if (!pai) break; // pai fora do conjunto carregado -> para no topo visivel
+      atual = pai;
+    }
+    return atual.id;
+  };
+  const subtimesPorRaiz = new Map<string, Set<string>>();
+  for (const t of tasks) {
+    const ids = t.assignee_ids ?? [];
+    if (ids.length === 0) continue;
+    const raizId = raizDe(t);
+    let set = subtimesPorRaiz.get(raizId);
+    if (!set) {
+      set = new Set<string>();
+      subtimesPorRaiz.set(raizId, set);
+    }
+    for (const id of ids) {
+      const st = memberTeam.get(id);
+      if (st) set.add(st);
+    }
   }
 
   // visiveis = raizes apos o toggle de arquivadas (eixo que SOMA). raizes =
@@ -366,12 +446,13 @@ export default function Board({
       if (prazo === "atrasadas" && !atrasada) return false;
       if (prazo === "em-dia" && atrasada) return false;
     }
-    // Subtime: passa se ALGUM responsavel pertence ao subtime escolhido.
-    // NAO toca em task.team_id -> o bug E6 continua dormente. Task sem
-    // responsavel some ao filtrar por subtime (decisao da Camila).
+    // Subtime: passa se ALGUM responsavel da RAIZ OU DE SUAS SUBTAREFAS
+    // pertence ao subtime escolhido (herança -- ver subtimesPorRaiz). NAO toca
+    // em task.team_id -> o bug E6 continua dormente. Task (subarvore inteira)
+    // sem nenhum responsavel some ao filtrar por subtime (decisao da Camila).
     if (subtime) {
-      const ids = t.assignee_ids ?? [];
-      if (!ids.some((id) => memberTeam.get(id) === subtime)) return false;
+      const times = subtimesPorRaiz.get(t.id);
+      if (!times || !times.has(subtime)) return false;
     }
     return true;
   });
@@ -582,6 +663,7 @@ export default function Board({
         projects={projectNames}
         filhos={filhosFocado}
         temVoltar={pilha.length > 0}
+        pai={pilha[pilha.length - 1] ?? null}
         onVoltar={voltarDetalhe}
         onClose={fecharDetalhe}
         onEditar={(t) => {

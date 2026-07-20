@@ -21,6 +21,8 @@ import TaskCard from "@/components/TaskCard";
 import { STATUSES, PRIORITY_LABEL, PRIORITY_COLOR, deadlineTone, deadlineLabel, DEADLINE_COLOR } from "@/lib/status";
 import {
   listAllMyAssignments,
+  getTask,
+  listTasks,
   listMembers,
   listAllProjects,
   updateTask,
@@ -83,6 +85,13 @@ function Minhas() {
 
   const [detalhe, setDetalhe] = useState<Task | null>(null);
   const [pilha, setPilha] = useState<Task[]>([]);
+  // Filhos COMPLETOS da tarefa focada (todas as subtarefas, nao so as minhas).
+  // minhas-tarefas so carrega minhas atribuicoes, entao o pai mostraria uma
+  // lista de subtarefas incompleta (bug: no quadro geral aparecem todas). Busca
+  // sob demanda por parent_task_id. null = ainda carregando -> cai no fallback
+  // de `items` (evita flash de lista vazia). O fetch keys por detalhe?.id (=
+  // id do foco); `focado` so existe depois das guardas, entao uso detalhe.
+  const [filhosDoFocado, setFilhosDoFocado] = useState<Task[] | null>(null);
   const [editando, setEditando] = useState<Task | null>(null);
   const [deepLinkFeito, setDeepLinkFeito] = useState(false);
 
@@ -142,15 +151,37 @@ function Minhas() {
   // esta na lista (mencao/comentario em tarefa que nao e sua, ou out_of_scope
   // filtrada), avisa em vez de falhar em silencio.
   const abrirTarefaDaLista = useCallback(
-    (id: string) => {
+    async (id: string) => {
       if (items === null) return;
       const t = items.find((x) => x.id === id);
-      if (t) {
-        setPilha([]);
-        setDetalhe(t);
-      } else {
+      if (!t) {
         setToast("Nao foi possivel abrir: essa tarefa nao esta na sua lista.");
+        return;
       }
+      // Se for SUBTAREFA, abre no modo sub com "voltar" pro(s) pai(s) -- mesma
+      // UX de quando navego manualmente de um pai pra um filho. Monta a cadeia
+      // de ancestrais: cada pai pode nao estar na minha lista (posso estar so
+      // na sub), entao busca por id nesse caso. A pilha fica [raiz..paiDireto];
+      // voltarDetalhe tira do fim -> volta um nivel por vez ate a raiz.
+      const pilhaPais: Task[] = [];
+      const vistos = new Set<string>([t.id]); // guarda anti-ciclo
+      let paiId = t.parent_task_id;
+      while (paiId && !vistos.has(paiId)) {
+        vistos.add(paiId);
+        let pai: Task | null = items.find((x) => x.id === paiId) ?? null;
+        if (!pai) {
+          try {
+            pai = await getTask(paiId);
+          } catch {
+            pai = null;
+          }
+        }
+        if (!pai) break; // pai inacessivel -> para a cadeia (volta ate onde deu)
+        pilhaPais.unshift(pai);
+        paiId = pai.parent_task_id;
+      }
+      setPilha(pilhaPais);
+      setDetalhe(t);
     },
     [items]
   );
@@ -184,11 +215,37 @@ function Minhas() {
     return () => clearTimeout(id);
   }, [toast]);
 
+  // Busca as subtarefas COMPLETAS do foco (todas, nao so as minhas) quando o
+  // detalhe muda. Sem include_archived (paridade com o padrao do quadro geral).
+  // Erro -> null (cai no fallback de items). Cap de 100 filhos diretos (limite
+  // do backend) -- suficiente; se um dia passar disso, so os 100 primeiros.
+  useEffect(() => {
+    const id = detalhe?.id;
+    if (!id) {
+      setFilhosDoFocado(null);
+      return;
+    }
+    let vivo = true;
+    setFilhosDoFocado(null); // carregando -> fallback de items enquanto isso
+    listTasks({ parent_task_id: id, size: 100 })
+      .then((r) => {
+        if (vivo) setFilhosDoFocado(r.items);
+      })
+      .catch(() => {
+        if (vivo) setFilhosDoFocado(null);
+      });
+    return () => {
+      vivo = false;
+    };
+  }, [detalhe?.id]);
+
   // --- abrir / navegar / fechar o detalhe (mesma logica do quadro) ---
   function abrirDetalhe(t: Task) {
     if (suprimirClique.current) return; // acabou de arrastar: nao abre
-    setPilha([]);
-    setDetalhe(t);
+    // Reusa a construcao de cadeia de pais: se `t` for subtarefa, abre no modo
+    // sub com "voltar" pro pai -- igual ao deep-link da notificacao. `t` veio da
+    // lista, entao esta em items (nao dispara o toast de "nao esta na lista").
+    abrirTarefaDaLista(t.id);
   }
   function abrirSubtarefa(sub: Task) {
     setPilha((p) => (detalhe ? [...p, detalhe] : p));
@@ -232,6 +289,20 @@ function Minhas() {
     });
   }
 
+  // Upsert que TAMBEM reflete na lista de filhos buscada do foco, pra o detalhe
+  // atualizar na hora (marcar/desmarcar subtarefa, criar subtarefa) sem esperar
+  // refetch. Atualiza in-place se ja existe; adiciona se for filho do foco atual.
+  function aoUpsertComFilhos(t: Task) {
+    aoUpsert(t);
+    setFilhosDoFocado((prev) => {
+      if (prev === null) return prev;
+      if (prev.some((x) => x.id === t.id)) {
+        return prev.map((x) => (x.id === t.id ? { ...x, ...t } : x));
+      }
+      return t.parent_task_id === detalhe?.id ? [...prev, t] : prev;
+    });
+  }
+
   function aoMudarResponsaveis(taskId: string, userIds: string[]) {
     setItems((prev) =>
       prev ? prev.map((t) => (t.id === taskId ? { ...t, assignee_ids: userIds } : t)) : prev
@@ -256,9 +327,35 @@ function Minhas() {
     if (!atual || atual.status === destino) return;
     const statusAnterior = atual.status;
 
-    // Otimista.
+    // Cascata de conclusao (espelha o backend): arrastar um PAI pro "Concluido"
+    // conclui a subtree. Aqui items so tem MINHAS tasks -> cascateia as minhas
+    // subtarefas visiveis. Guarda os status antigos pra reverter se falhar.
+    // Pula ja concluidas, canceladas e arquivadas.
+    const concluindo = destino === "COMPLETED";
+    const prefixo = atual.path + ".";
+    const anteriores = new Map<string, string>();
+    if (concluindo) {
+      for (const t of items ?? []) {
+        if (
+          t.path.startsWith(prefixo) &&
+          t.status !== "COMPLETED" &&
+          t.status !== "CANCELLED" &&
+          !t.is_archived
+        ) {
+          anteriores.set(t.id, t.status);
+        }
+      }
+    }
+
+    // Otimista (pai + cascata).
     setItems((prev) =>
-      prev ? prev.map((t) => (t.id === taskId ? { ...t, status: destino } : t)) : prev
+      prev
+        ? prev.map((t) => {
+            if (t.id === taskId) return { ...t, status: destino };
+            if (anteriores.has(t.id)) return { ...t, status: "COMPLETED" };
+            return t;
+          })
+        : prev
     );
 
     try {
@@ -266,7 +363,13 @@ function Minhas() {
       aoUpsert(atualizada); // re-merge do servidor, preservando relations/assignees
     } catch (err) {
       setItems((prev) =>
-        prev ? prev.map((t) => (t.id === taskId ? { ...t, status: statusAnterior } : t)) : prev
+        prev
+          ? prev.map((t) => {
+              if (t.id === taskId) return { ...t, status: statusAnterior };
+              const ant = anteriores.get(t.id);
+              return ant !== undefined ? { ...t, status: ant } : t;
+            })
+          : prev
       );
       const e2 = err as ApiError;
       setToast(
@@ -361,6 +464,12 @@ function Minhas() {
   // pode quebrar abrir/navegar uma task que esta fora do filtro atual).
   const focado = detalhe ? items.find((t) => t.id === detalhe.id) ?? detalhe : null;
   const filhosFocado = focado ? items.filter((t) => t.parent_task_id === focado.id) : [];
+  // Filhos exibidos no detalhe: os COMPLETOS (buscados) quando prontos; enquanto
+  // carrega/erro, cai nos meus (items) pra nao piscar vazio. So os do foco atual.
+  const filhosParaDetalhe: Task[] =
+    filhosDoFocado !== null && focado
+      ? filhosDoFocado.filter((f) => f.parent_task_id === focado.id)
+      : filhosFocado;
 
   const visiveis = vista === "quadro" ? porRelacao.length : filtrados.length;
   const todosLigados = statusOn.size === TODOS_STATUS.length;
@@ -406,6 +515,11 @@ function Minhas() {
             <span className="muted" style={{ fontSize: 12 }}>
               {STATUS_LABEL[t.status] || t.status}
             </span>
+            {t.parent_task_id && (
+              <Badge tone="soft" size="sm" color="var(--accent)">
+                Subtarefa
+              </Badge>
+            )}
             {t.relations.map((r) => (
               <Badge key={r} tone="neutral" size="sm" weight="semibold" className="bg-surface-2 text-ink-soft">
                 {RELATION_LABEL[r] || r}
@@ -697,8 +811,9 @@ function Minhas() {
         task={focado}
         members={members}
         projects={projectNames}
-        filhos={filhosFocado}
+        filhos={filhosParaDetalhe}
         temVoltar={pilha.length > 0}
+        pai={pilha[pilha.length - 1] ?? null}
         onVoltar={voltarDetalhe}
         onClose={fecharDetalhe}
         onEditar={(t) => {
@@ -706,14 +821,22 @@ function Minhas() {
         }}
         onAssigneesChange={aoMudarResponsaveis}
         onAbrirSubtarefa={abrirSubtarefa}
-        onSubtaskUpsert={aoUpsert}
-        onTaskMoved={aoUpsert}
+        onSubtaskUpsert={aoUpsertComFilhos}
+        onTaskMoved={aoUpsertComFilhos}
         onExcluir={(t) => {
           // Remove a task (e a subtree por path) da lista.
           setItems((prev) =>
             (prev ?? []).filter(
               (x) => x.id !== t.id && !x.path.startsWith(t.path + ".")
             )
+          );
+          // E tambem da lista de filhos buscada do foco (se estiver la).
+          setFilhosDoFocado((prev) =>
+            prev
+              ? prev.filter(
+                  (x) => x.id !== t.id && !x.path.startsWith(t.path + ".")
+                )
+              : prev
           );
           // Se veio de um pai (pilha), volta pro pai; senao fecha.
           if (pilha.length > 0) voltarDetalhe();
