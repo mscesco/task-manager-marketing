@@ -5,7 +5,7 @@
 // (a listagem ja vem filtrada pelo backend; subtarefa compartilha o project_id
 // do pai, entao a subarvore inteira vem junta). Extraido do antigo
 // quadro/page.tsx na Entrega 11 sem mudar comportamento do geral.
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   DndContext,
   DragOverlay,
@@ -103,6 +103,32 @@ export default function Board({
 
   // Guarda contra "clique fantasma" logo apos um arrasto.
   const suprimirClique = useRef(false);
+
+  // --- Trava o quadro na altura da viewport (scroll por coluna) ---
+  // Mede a distancia REAL do topo das colunas ate o rodape e usa como altura
+  // fixa do container -> cada coluna rola por dentro, a pagina nao rola inteira.
+  // Mede a posicao real (nao um offset fixo) porque cada pagina tem altura
+  // diferente acima do quadro (a de projeto, por ex., tem cabecalho).
+  const colunasRef = useRef<HTMLDivElement>(null);
+  const [alturaColunas, setAlturaColunas] = useState<number | null>(null);
+  const medirAltura = useCallback(() => {
+    const el = colunasRef.current;
+    if (!el) return; // so existe quando ha colunas (raizes > 0)
+    const top = el.getBoundingClientRect().top;
+    const RODAPE = 24; // respiro pro padding inferior do <main>
+    const h = Math.max(240, Math.round(window.innerHeight - top - RODAPE));
+    setAlturaColunas((atual) => (atual === h ? atual : h));
+  }, []);
+  useEffect(() => {
+    window.addEventListener("resize", medirAltura);
+    return () => window.removeEventListener("resize", medirAltura);
+  }, [medirAltura]);
+  // Roda apos cada commit (barato): pega banner, filtros quebrando, header de
+  // projeto e a transicao vazio->colunas sem precisar listar dependencias.
+  // setState so dispara quando a altura muda -> nao ha loop.
+  useLayoutEffect(() => {
+    medirAltura();
+  });
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
@@ -496,7 +522,13 @@ export default function Board({
         )
       ) : (
         <DndContext sensors={sensors} onDragStart={onDragStart} onDragEnd={onDragEnd}>
-          <div style={{ display: "flex", gap: 14, overflowX: "auto", paddingBottom: 8 }}>
+          <div
+            ref={colunasRef}
+            style={{
+              display: "flex", gap: 14, overflowX: "auto", overflowY: "hidden",
+              paddingBottom: 8, height: alturaColunas ?? undefined,
+            }}
+          >
             {STATUSES.map((s) => (
               <Coluna key={s.key} status={s} count={(porStatus[s.key] || []).length}>
                 {(porStatus[s.key] || []).map((t) => (
@@ -592,7 +624,8 @@ function Coluna({
     <div
       ref={setNodeRef}
       style={{
-        flex: 1, minWidth: 240, borderRadius: 10, padding: 4,
+        flex: 1, minWidth: 240, minHeight: 0, borderRadius: 10, padding: 4,
+        display: "flex", flexDirection: "column",
         background: isOver ? "var(--surface-2)" : "transparent",
         transition: "background .12s",
       }}
@@ -601,13 +634,19 @@ function Coluna({
         style={{
           display: "flex", alignItems: "center", gap: 8, marginBottom: 10,
           paddingBottom: 8, borderBottom: `2px solid ${status.color}`,
+          flexShrink: 0,
         }}
       >
         <span style={{ width: 8, height: 8, borderRadius: 999, background: status.color }} />
         <span style={{ fontWeight: 700, fontSize: 13 }}>{status.label}</span>
         <span className="muted" style={{ fontSize: 12, marginLeft: "auto" }}>{count}</span>
       </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 8, minHeight: 24 }}>
+      <div
+        style={{
+          display: "flex", flexDirection: "column", gap: 8,
+          flex: 1, minHeight: 0, overflowY: "auto",
+        }}
+      >
         {children}
         {count === 0 && (
           <div className="muted" style={{ fontSize: 12, padding: "8px 2px" }}>—</div>
