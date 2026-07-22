@@ -115,7 +115,9 @@ function Minhas() {
   const medirAltura = useCallback(() => {
     const el = colunasRef.current;
     if (!el) return;
-    const top = el.getBoundingClientRect().top;
+    // Clamp em 0: pagina rolada pra baixo -> top negativo estourava a altura
+    // (innerHeight - top). Cobre o commit-durante-scroll; nao cobre o mobile.
+    const top = Math.max(0, el.getBoundingClientRect().top);
     const RODAPE = 24;
     const h = Math.max(240, Math.round(window.innerHeight - top - RODAPE));
     setAlturaColunas((atual) => (atual === h ? atual : h));
@@ -331,6 +333,9 @@ function Minhas() {
     // conclui a subtree. Aqui items so tem MINHAS tasks -> cascateia as minhas
     // subtarefas visiveis. Guarda os status antigos pra reverter se falhar.
     // Pula ja concluidas, canceladas e arquivadas.
+    // DIVERGENCIA CONHECIDA: o backend conclui a subarvore INTEIRA no banco;
+    // este otimista so alcanca as minhas tasks carregadas. As demais (de outros
+    // responsaveis, ou fora do limite de exibicao) so aparecem no reload.
     const concluindo = destino === "COMPLETED";
     const prefixo = atual.path + ".";
     const anteriores = new Map<string, string>();

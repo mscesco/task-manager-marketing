@@ -381,7 +381,10 @@ class TaskRepository(BaseRepository[Task]):
 
         Pula descendentes ja COMPLETED, CANCELLED (decisao deliberada de nao
         fazer) e arquivados. UPDATE em massa via ltree, mesma transacao do UoW.
-        Retorna quantos descendentes mudaram.
+        Seta updated_at = NOW() no SQL porque o onupdate do ORM NAO dispara em
+        UPDATE textual (updated_at nao tem trigger no banco -- e mantido pelo
+        SQLAlchemy). Sem isto os descendentes cascateados ficavam com updated_at
+        velho. Retorna quantos descendentes mudaram.
         """
         tenant = require_tenant()
         result = await self.session.execute(
@@ -389,7 +392,8 @@ class TaskRepository(BaseRepository[Task]):
                 """
                 UPDATE task
                 SET status = CAST('COMPLETED' AS task_status),
-                    completed_at = NOW()
+                    completed_at = NOW(),
+                    updated_at = NOW()
                 WHERE path <@ CAST(:task_path AS ltree)
                   AND id <> :task_id
                   AND workspace_id = :tenant_id

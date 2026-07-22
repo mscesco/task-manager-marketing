@@ -114,7 +114,10 @@ export default function Board({
   const medirAltura = useCallback(() => {
     const el = colunasRef.current;
     if (!el) return; // so existe quando ha colunas (raizes > 0)
-    const top = el.getBoundingClientRect().top;
+    // Clamp em 0: se a medicao cair com a pagina rolada pra baixo, top vem
+    // negativo e a altura estourava (innerHeight - top). Nao resolve o caso
+    // do mobile (barra de URL mexendo innerHeight) -- so o commit-durante-scroll.
+    const top = Math.max(0, el.getBoundingClientRect().top);
     const RODAPE = 24; // respiro pro padding inferior do <main>
     const h = Math.max(240, Math.round(window.innerHeight - top - RODAPE));
     setAlturaColunas((atual) => (atual === h ? atual : h));
@@ -238,6 +241,8 @@ export default function Board({
       // Transicao PARA concluido -> cascata otimista pros descendentes (espelha
       // o backend: pula ja concluidas, canceladas e arquivadas). Sem transicao
       // (ex.: so editou titulo de uma ja concluida), nao mexe nas subtarefas.
+      // Mesma divergencia do drag: so reflete o que esta carregado em `prev`;
+      // subarvore fora do limite de exibicao so aparece concluida no reload.
       const virouConcluido =
         t.status === "COMPLETED" && existente.status !== "COMPLETED";
       const prefixo = existente.path + ".";
@@ -290,6 +295,10 @@ export default function Board({
     // (espelha o backend). Aplica otimista pros cards de subtarefa refletirem na
     // hora (quadros de projeto/subtime). Guarda os status antigos pra reverter
     // se o PATCH falhar. Pula ja concluidas, canceladas e arquivadas.
+    // DIVERGENCIA CONHECIDA: o backend cascateia TODA a subarvore no banco; aqui
+    // so mexemos no que esta carregado em `tasks` (que pode vir truncado). Se a
+    // subarvore ultrapassa o limite de exibicao, os descendentes fora da janela
+    // nao refletem na hora -- aparecem concluidos no proximo reload.
     const concluindo = destino === "COMPLETED";
     const prefixo = atual.path + ".";
     const anteriores = new Map<string, string>();

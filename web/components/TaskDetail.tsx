@@ -39,6 +39,7 @@ import { isGiphyUrl } from "@/lib/giphy";
 import CommentText from "@/components/CommentText";
 import MentionTextarea from "@/components/MentionTextarea";
 import { nomeCurto } from "@/lib/people";
+import { linkify } from "@/lib/linkify";
 
 const STATUS_LABEL: Record<string, string> = Object.fromEntries(
   STATUSES.map((s) => [s.key, s.label])
@@ -608,8 +609,19 @@ export default function TaskDetail({
         <div className="field">
           <span className="label">Descricao</span>
           {task.description && task.description.trim().length > 0 ? (
-            <div style={{ fontSize: 14, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>
-              {task.description}
+            // linkify: URL http/https vira <a>. Descricao NAO passa pelo
+            // parser de mencao/gif -- esses tokens so existem em comentario.
+            // overflowWrap: URL longa SEM hifen (so barras/underscore) nao tem
+            // ponto de quebra natural e vazaria a largura do modal.
+            <div
+              style={{
+                fontSize: 14,
+                lineHeight: 1.5,
+                whiteSpace: "pre-wrap",
+                overflowWrap: "anywhere",
+              }}
+            >
+              {linkify(task.description, "desc-")}
             </div>
           ) : (
             <span className="muted" style={{ fontSize: 13 }}>Sem descricao.</span>

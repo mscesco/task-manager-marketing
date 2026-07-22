@@ -59,6 +59,10 @@ export default function NotificationBell() {
       }
     }
     async function tick() {
+      // Sessao ja encerrada (401 anterior): nao dispara mais requisicao.
+      // Cobre o caminho do visibilitychange, que chama tick() a cada foco de
+      // aba independente do intervalo ja ter sido limpo em parar().
+      if (parado) return;
       if (typeof document !== "undefined" && document.hidden) return;
       try {
         const n = await getUnreadCount();
