@@ -23,6 +23,7 @@ import TaskDetail from "@/components/TaskDetail";
 import EmptyStateBox from "@/components/EmptyState";
 import { STATUSES } from "@/lib/status";
 import { listAllTasks, listAllProjects, updateTask, listMembers, listSubteams, getRootTeamId, ApiError, type Task, type Team } from "@/lib/api";
+import { sincronizarTaskNaUrl, lerTaskDaUrl } from "@/lib/urlTarefa";
 
 // Tira acento e caixa pra busca casar "midia" com "Midia Paga" etc.
 function normalizar(s: string) {
@@ -62,6 +63,9 @@ export default function Board({
   const [editando, setEditando] = useState<Task | null>(null);
   const [detalhe, setDetalhe] = useState<Task | null>(null);
   const [pilha, setPilha] = useState<Task[]>([]);
+  // Trava do deep-link: garante leitura unica do ?task= e libera a escrita
+  // da URL so depois dela (ver os efeitos de "URL viva").
+  const [deepLinkFeito, setDeepLinkFeito] = useState(false);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [mostrarArquivadas, setMostrarArquivadas] = useState(false);
@@ -171,6 +175,48 @@ export default function Board({
       .catch(() => {})
       .finally(() => setRootCarregado(true));
   }, []);
+
+  // ---- URL viva (?task=<id>) ----
+  //
+  // Leitura: ao chegar na pagina com ?task= (F5, ou link colado), abre a
+  // tarefa. Roda UMA vez, quando o lote de tasks fica disponivel. Se a tarefa
+  // nao esta neste quadro (link velho, outro projeto, arquivada fora do
+  // filtro), ignora em silencio -- a URL nao vale um aviso de erro na cara.
+  //
+  // Reconstroi a cadeia de pais pela subarvore ja carregada, pra subtarefa
+  // abrir no modo "sub" com o botao voltar, igual a navegacao manual.
+  useEffect(() => {
+    if (deepLinkFeito || tasks === null) return;
+    setDeepLinkFeito(true);
+    const alvo = lerTaskDaUrl();
+    if (!alvo) return;
+    const t = tasks.find((x) => x.id === alvo);
+    if (!t) return;
+    const pilhaPais: Task[] = [];
+    const vistos = new Set<string>([t.id]); // guarda anti-ciclo
+    let paiId = t.parent_task_id;
+    while (paiId && !vistos.has(paiId)) {
+      vistos.add(paiId);
+      const pai = tasks.find((x) => x.id === paiId);
+      if (!pai) break; // pai fora do lote -> para onde deu
+      pilhaPais.unshift(pai);
+      paiId = pai.parent_task_id;
+    }
+    setPilha(pilhaPais);
+    setDetalhe(t);
+  }, [tasks, deepLinkFeito]);
+
+  // Escrita: espelha a tarefa aberta na URL. Cobre abrir, fechar, entrar numa
+  // subtarefa e voltar -- todos passam por `detalhe`, entao um efeito so da
+  // conta (nao da pra esquecer um caminho).
+  //
+  // Gated no deepLinkFeito de PROPOSITO: sem isso, na montagem (detalhe=null)
+  // este efeito apagaria o ?task= da URL antes do efeito de leitura acima
+  // conseguir le-lo -- e o F5 nunca reabriria a tarefa.
+  useEffect(() => {
+    if (!deepLinkFeito) return;
+    sincronizarTaskNaUrl(detalhe?.id ?? null);
+  }, [detalhe, deepLinkFeito]);
 
   useEffect(() => {
     if (!toast) return;

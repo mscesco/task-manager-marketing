@@ -94,6 +94,7 @@ export default function TaskDetail({
   onSubtaskUpsert,
   onTaskMoved,
   onExcluir,
+  modo = "modal",
 }: {
   task: Task | null; // tarefa focada; null => fechado
   members: Map<string, { name: string }>;
@@ -109,6 +110,15 @@ export default function TaskDetail({
   onSubtaskUpsert: (sub: Task) => void; // criar OU concluir rapido
   onTaskMoved: (task: Task) => void; // Spec 022: task mudou de projeto/avulsa
   onExcluir: (task: Task, cascadeCount: number) => void; // soft-delete cascateado
+  // Como renderizar o container externo:
+  //   "modal"  (padrao) -> overlay fixo com scrim, clique fora e Esc fecham.
+  //                        Comportamento historico; quadro e minhas-tarefas
+  //                        NAO passam esta prop e seguem identicos.
+  //   "pagina"          -> card no fluxo normal, sem scrim e sem Esc. Usado
+  //                        pela rota /tarefa/[id], onde um scrim escuro por
+  //                        cima de uma pagina vazia pareceria bug e Esc
+  //                        "fechando" (= navegar pra outra rota) surpreende.
+  modo?: "modal" | "pagina";
 }) {
   const [assignees, setAssignees] = useState<string[]>([]);
   const [abertoResp, setAbertoResp] = useState(false);
@@ -132,6 +142,12 @@ export default function TaskDetail({
   // Status de antes de concluir, pra desmarcar voltar pra ele (sessao).
   const [statusAnterior, setStatusAnterior] = useState<Record<string, string>>({});
   const [arquivando, setArquivando] = useState(false);
+  // Feedback do botao "Copiar link" (volta pro texto normal sozinho).
+  const [copiado, setCopiado] = useState(false);
+  // Falha de copia tem estado PROPRIO em vez de reusar `erro`: a caixa de
+  // `erro` renderiza no meio do card e o botao fica no rodape -- num card com
+  // rolagem a mensagem cairia fora da vista de quem acabou de clicar.
+  const [copiaErro, setCopiaErro] = useState<string | null>(null);
   // Exclusao (soft-delete cascateado). Confirmacao inline mostra o estrago.
   const [confirmandoExcluir, setConfirmandoExcluir] = useState(false);
   const [excluindo, setExcluindo] = useState(false);
@@ -221,13 +237,15 @@ export default function TaskDetail({
   }, [respondendoId]);
 
   useEffect(() => {
-    if (!task) return;
+    // Esc so faz sentido no modo modal. Na rota /tarefa/[id] "fechar" e
+    // navegar pra outra pagina -- disparar isso com Esc seria surpresa.
+    if (!task || modo !== "modal") return;
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") onClose();
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [task, onClose]);
+  }, [task, onClose, modo]);
 
   // Fatia B: fecha o popover de responsaveis ao clicar fora (mesmo padrao do
   // EmojiPicker: mousedown no documento, ignora cliques dentro do wrapper).
@@ -416,6 +434,50 @@ export default function TaskDetail({
     }
   }
 
+  // Copia o link canonico da tarefa (/tarefa/<id>) pra area de transferencia.
+  // A rota /tarefa/[id] e o endereco ESTAVEL: nao depende de qual quadro,
+  // projeto ou lista a pessoa estava olhando quando copiou.
+  //
+  // navigator.clipboard so existe em contexto seguro (https ou localhost). O
+  // prod e https, mas testar por IP na rede local cai no fallback do
+  // execCommand (obsoleto, porem e o unico caminho fora de contexto seguro).
+  // Se os dois falharem, mostra a URL pra pessoa copiar na mao -- nunca fica
+  // um clique que aparentemente nao fez nada.
+  async function copiarLink() {
+    if (!task) return;
+    const url = `${window.location.origin}/tarefa/${task.id}`;
+    let ok = false;
+    try {
+      if (window.isSecureContext && navigator.clipboard) {
+        await navigator.clipboard.writeText(url);
+        ok = true;
+      }
+    } catch {
+      ok = false;
+    }
+    if (!ok) {
+      try {
+        const ta = document.createElement("textarea");
+        ta.value = url;
+        ta.style.position = "fixed";
+        ta.style.opacity = "0";
+        document.body.appendChild(ta);
+        ta.select();
+        ok = document.execCommand("copy");
+        document.body.removeChild(ta);
+      } catch {
+        ok = false;
+      }
+    }
+    if (ok) {
+      setCopiaErro(null);
+      setCopiado(true);
+      setTimeout(() => setCopiado(false), 2000);
+    } else {
+      setCopiaErro(url);
+    }
+  }
+
   async function alternarArquivo() {
     setErro(null);
     setArquivando(true);
@@ -516,21 +578,33 @@ export default function TaskDetail({
 
   return (
     <div
-      onClick={onClose}
-      style={{
-        position: "fixed", inset: 0, zIndex: 50,
-        background: "rgba(16,24,40,0.45)",
-        display: "flex", alignItems: "flex-start", justifyContent: "center",
-        padding: "6vh 16px 24px",
-      }}
+      // Modo modal: o scrim inteiro e clicavel pra fechar. Modo pagina: nao ha
+      // scrim nem "fora" pra clicar -- o container vira um bloco comum.
+      onClick={modo === "modal" ? onClose : undefined}
+      style={
+        modo === "modal"
+          ? {
+              position: "fixed", inset: 0, zIndex: 50,
+              background: "rgba(16,24,40,0.45)",
+              display: "flex", alignItems: "flex-start", justifyContent: "center",
+              padding: "6vh 16px 24px",
+            }
+          : { display: "block" }
+      }
     >
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
-          width: 700, maxWidth: "100%", maxHeight: "88vh", overflowY: "auto",
+          width: 700, maxWidth: "100%",
           background: "var(--surface)",
           border: "1px solid var(--border)", borderRadius: 14, padding: 24,
           boxShadow: "var(--shadow)", display: "flex", flexDirection: "column", gap: 16,
+          // Modal: altura travada e rolagem POR DENTRO do card (a pagina atras
+          // nao rola). Pagina: sem trava -- quem rola e a propria pagina, senao
+          // o card ganharia uma segunda barra de rolagem aninhada.
+          ...(modo === "modal"
+            ? { maxHeight: "88vh", overflowY: "auto" as const }
+            : { margin: "0 auto" }),
         }}
       >
         {temVoltar && (
@@ -1167,12 +1241,31 @@ export default function TaskDetail({
           </div>
         )}
 
+        {copiaErro && (
+          // Fallback visivel: a copia automatica falhou, entao mostra o
+          // endereco pra pessoa selecionar e copiar na mao. Fica coladinho no
+          // botao que ela acabou de clicar.
+          <div
+            className="error-box"
+            style={{ marginTop: 8, fontSize: 13, wordBreak: "break-all" }}
+          >
+            Não consegui copiar automaticamente. O endereço é:{" "}
+            <span style={{ userSelect: "all" }}>{copiaErro}</span>
+          </div>
+        )}
+
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 4 }}>
           <button
             type="button" className="btn btn-ghost" onClick={alternarArquivo}
             disabled={arquivando} style={{ marginRight: "auto" }}
           >
             {arquivando ? "…" : task.is_archived ? "Desarquivar" : "Arquivar"}
+          </button>
+          <button
+            type="button" className="btn btn-ghost" onClick={copiarLink}
+            title="Copia o endereco desta tarefa pra compartilhar"
+          >
+            {copiado ? "Copiado!" : "Copiar link"}
           </button>
           {(me?.permissions.includes("task.delete") ?? false) && !confirmandoExcluir && (
             <button

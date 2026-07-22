@@ -1,0 +1,240 @@
+"use client";
+import { useCallback, useEffect, useState } from "react";
+import { useParams, useRouter } from "next/navigation";
+import AppShell from "@/components/AppShell";
+import TaskDetail from "@/components/TaskDetail";
+import TaskModal from "@/components/TaskModal";
+import {
+  getTask,
+  listTasks,
+  listMembers,
+  listAllProjects,
+  ApiError,
+  type Task,
+} from "@/lib/api";
+
+// Rota CANONICA de uma tarefa: /tarefa/<id>.
+//
+// Por que ela existe: abrir uma tarefa no quadro nao mudava a URL, entao nao
+// havia endereco pra compartilhar. O deep-link que ja existia
+// (/minhas-tarefas?task=<id>) so funciona pra quem tem a tarefa na PROPRIA
+// lista de atribuicoes -- mandar aquele link pra outra pessoa cai no aviso
+// "essa tarefa nao esta na sua lista". Esta rota nao depende de lista
+// nenhuma: busca a tarefa por id.
+//
+// Ela CONVIVE com o modal (decisao de produto): clicar num card no quadro
+// segue abrindo o modal, rapido e sem sair da pagina. Esta rota e o destino
+// de link compartilhado. O mesmo componente (TaskDetail) serve os dois, via
+// prop `modo` -- aqui "pagina" (sem scrim, sem Esc).
+//
+// Permissao: quem valida e o backend (task_visible). Sem acesso -> 404, que
+// e o mesmo retorno de "nao existe" (de proposito: nao vaza a existencia da
+// tarefa). Por isso a mensagem cobre os dois casos.
+//
+// Limite conhecido (bug E6, ADR 0002): task `out_of_scope` da 404 no
+// GET /tasks/{id}. Quem e responsavel por uma tarefa fora da propria lente
+// cai nesse caso e ve "nao encontrada" mesmo tendo a tarefa na lista dele.
+// Raro, e consertar isso e frente de backend -- nao foi tocado aqui.
+
+const CAP_FILHOS = 100; // limite do backend; mesmo cap do detalhe no quadro
+
+export default function TarefaPage() {
+  return (
+    <AppShell>
+      <Tarefa />
+    </AppShell>
+  );
+}
+
+function Tarefa() {
+  const params = useParams();
+  const router = useRouter();
+  const id = typeof params.id === "string" ? params.id : "";
+
+  const [task, setTask] = useState<Task | null>(null);
+  const [pai, setPai] = useState<Task | null>(null);
+  const [filhos, setFilhos] = useState<Task[]>([]);
+  const [members, setMembers] = useState<Map<string, { name: string }>>(
+    new Map()
+  );
+  const [projectNames, setProjectNames] = useState<Map<string, string>>(
+    new Map()
+  );
+  const [carregando, setCarregando] = useState(true);
+  const [erro, setErro] = useState<string | null>(null);
+  const [editando, setEditando] = useState<Task | null>(null);
+
+  // Contexto que nao depende do id (nomes de pessoa e de projeto). listMembers
+  // tem cache de modulo; listAllProjects nao, mas roda uma vez por navegacao.
+  // Falha aqui NAO derruba a pagina: sem o nome, o detalhe degrada sozinho.
+  useEffect(() => {
+    let vivo = true;
+    listMembers()
+      .then((ms) => {
+        if (vivo) setMembers(new Map(ms.map((m) => [m.id, { name: m.name }])));
+      })
+      .catch(() => {});
+    listAllProjects()
+      .then((r) => {
+        if (vivo)
+          setProjectNames(new Map(r.items.map((p) => [p.id, p.title])));
+      })
+      .catch(() => {});
+    return () => {
+      vivo = false;
+    };
+  }, []);
+
+  // Carga principal, chaveada pelo id. Navegar de uma subtarefa pra outra
+  // (/tarefa/A -> /tarefa/B) NAO remonta o componente no App Router: so muda
+  // o param. Por isso o efeito depende de `id` e zera o estado antes de
+  // buscar -- senao a tela mostraria a tarefa anterior enquanto carrega.
+  useEffect(() => {
+    if (!id) return;
+    let vivo = true;
+    setCarregando(true);
+    setErro(null);
+    setTask(null);
+    setPai(null);
+    setFilhos([]);
+
+    (async () => {
+      let alvo: Task;
+      try {
+        alvo = await getTask(id);
+      } catch (e) {
+        if (!vivo) return;
+        const err = e as ApiError;
+        setErro(
+          err.status === 404
+            ? "Tarefa não encontrada, ou você não tem acesso a ela."
+            : err.message || "Não consegui carregar esta tarefa."
+        );
+        setCarregando(false);
+        return;
+      }
+      if (!vivo) return;
+      setTask(alvo);
+      setCarregando(false);
+
+      // Filhos diretos e pai sao complementares: falha em qualquer um dos
+      // dois nao invalida a tarefa em si, entao degradam em silencio.
+      listTasks({ parent_task_id: alvo.id, size: CAP_FILHOS })
+        .then((r) => {
+          if (vivo) setFilhos(r.items);
+        })
+        .catch(() => {});
+
+      if (alvo.parent_task_id) {
+        getTask(alvo.parent_task_id)
+          .then((p) => {
+            if (vivo) setPai(p);
+          })
+          .catch(() => {
+            // Pai inacessivel (lente ou E6): a tarefa continua utilizavel,
+            // so fica sem o botao "voltar para <pai>".
+            if (vivo) setPai(null);
+          });
+      }
+    })();
+
+    return () => {
+      vivo = false;
+    };
+  }, [id]);
+
+  // Merge que PRESERVA assignee_ids: respostas de mutacao (PATCH/move) nao
+  // trazem esse campo, e sobrescrever com undefined apagaria o selo do card.
+  const mesclar = useCallback((antigo: Task, novo: Task): Task => {
+    return {
+      ...novo,
+      assignee_ids: novo.assignee_ids ?? antigo.assignee_ids,
+    };
+  }, []);
+
+  const aoUpsertFilho = useCallback(
+    (sub: Task) => {
+      setFilhos((prev) => {
+        const i = prev.findIndex((x) => x.id === sub.id);
+        if (i === -1) {
+          // Só entra na lista se for filho DIRETO desta tarefa.
+          return sub.parent_task_id === id ? [...prev, sub] : prev;
+        }
+        const copia = [...prev];
+        copia[i] = mesclar(copia[i], sub);
+        return copia;
+      });
+    },
+    [id, mesclar]
+  );
+
+  const aoMudarResponsaveis = useCallback(
+    (taskId: string, userIds: string[]) => {
+      setTask((prev) =>
+        prev && prev.id === taskId ? { ...prev, assignee_ids: userIds } : prev
+      );
+      setFilhos((prev) =>
+        prev.map((x) =>
+          x.id === taskId ? { ...x, assignee_ids: userIds } : x
+        )
+      );
+    },
+    []
+  );
+
+  if (carregando) return <div className="muted">Carregando…</div>;
+
+  if (erro || !task) {
+    return (
+      <div className="muted">
+        {erro ?? "Tarefa não encontrada."} Volte ao{" "}
+        <a href="/quadro" className="text-accent underline">
+          quadro geral
+        </a>
+        .
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <TaskDetail
+        modo="pagina"
+        task={task}
+        members={members}
+        projects={projectNames}
+        filhos={filhos}
+        pai={pai}
+        // "Voltar" so aparece quando o pai foi carregado de fato -- e leva pra
+        // rota do pai (cada nivel tem endereco proprio, entao nao ha pilha).
+        temVoltar={pai !== null}
+        onVoltar={() => {
+          if (pai) router.push(`/tarefa/${pai.id}`);
+        }}
+        // Nesta rota nao existe "fechar": o X leva pro quadro.
+        onClose={() => router.push("/quadro")}
+        onEditar={(t) => setEditando(t)}
+        onAssigneesChange={aoMudarResponsaveis}
+        // Subtarefa vira NAVEGACAO: ganha endereco proprio, compartilhavel em
+        // qualquer profundidade (era o ganho principal sobre a pilha de modal).
+        onAbrirSubtarefa={(sub) => router.push(`/tarefa/${sub.id}`)}
+        onSubtaskUpsert={aoUpsertFilho}
+        onTaskMoved={(t) => setTask((prev) => (prev ? mesclar(prev, t) : t))}
+        onExcluir={() => {
+          // A tarefa desta pagina deixou de existir -> nao ha o que mostrar.
+          router.push("/quadro");
+        }}
+      />
+
+      <TaskModal
+        open={editando !== null}
+        task={editando}
+        onClose={() => setEditando(null)}
+        onSaved={(t) => {
+          setTask((prev) => (prev ? mesclar(prev, t) : t));
+          setEditando(null);
+        }}
+      />
+    </>
+  );
+}

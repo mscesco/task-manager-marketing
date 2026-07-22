@@ -30,6 +30,7 @@ import {
   type Task,
   type MyTaskItem,
 } from "@/lib/api";
+import { sincronizarTaskNaUrl } from "@/lib/urlTarefa";
 
 const RELATION_LABEL: Record<string, string> = {
   assignee: "Responsavel",
@@ -94,6 +95,9 @@ function Minhas() {
   const [filhosDoFocado, setFilhosDoFocado] = useState<Task[] | null>(null);
   const [editando, setEditando] = useState<Task | null>(null);
   const [deepLinkFeito, setDeepLinkFeito] = useState(false);
+  // Libera a ESCRITA do ?task= na URL. Separado do deepLinkFeito porque a
+  // leitura e async: so vira true quando a abertura inicial resolve.
+  const [urlLiberada, setUrlLiberada] = useState(false);
 
   // Vista: lista (agrupada por prazo) x quadro (kanban por status). Sessao-only.
   const [vista, setVista] = useState<"lista" | "quadro">("lista");
@@ -194,7 +198,17 @@ function Minhas() {
     if (deepLinkFeito || items === null) return;
     setDeepLinkFeito(true);
     const alvo = new URLSearchParams(window.location.search).get("task");
-    if (alvo) abrirTarefaDaLista(alvo);
+    if (!alvo) {
+      setUrlLiberada(true);
+      return;
+    }
+    // So libera a escrita da URL quando a abertura RESOLVER. abrirTarefaDaLista
+    // e async (pode esperar getTask pra montar a cadeia de pais); liberar antes
+    // deixaria o efeito de escrita rodar com detalhe=null e apagar o ?task=
+    // no meio do caminho -- um F5 nessa janela perderia a tarefa.
+    // finally e nao then: se a abertura falhar (tarefa fora da lista), a URL
+    // tambem precisa voltar a mandar, pra nao ficar travada mentindo.
+    abrirTarefaDaLista(alvo).finally(() => setUrlLiberada(true));
   }, [items, deepLinkFeito, abrirTarefaDaLista]);
 
   // Deep-link com a pagina JA ABERTA: o sino faz router.push da mesma rota
@@ -209,6 +223,20 @@ function Minhas() {
     window.addEventListener("abrir-tarefa", onAbrir);
     return () => window.removeEventListener("abrir-tarefa", onAbrir);
   }, [abrirTarefaDaLista]);
+
+  // Escrita da URL viva (?task=<id>): espelha a tarefa aberta. Cobre abrir,
+  // fechar, entrar em subtarefa e voltar -- todos passam por `detalhe`.
+  //
+  // Gated no urlLiberada (nao no deepLinkFeito): a leitura acima e async, e
+  // liberar cedo demais faria este efeito apagar o ?task= antes de a tarefa
+  // abrir. Ver o comentario do efeito de leitura.
+  //
+  // replaceState: o Voltar do navegador segue saindo da pagina, nao virando
+  // um "desfazer" de cada abertura de tarefa.
+  useEffect(() => {
+    if (!urlLiberada) return;
+    sincronizarTaskNaUrl(detalhe?.id ?? null);
+  }, [detalhe, urlLiberada]);
 
   // Toast do drag (auto-some).
   useEffect(() => {
