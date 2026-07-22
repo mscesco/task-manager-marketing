@@ -735,7 +735,10 @@ export default function Board({
         <div
           style={{
             position: "fixed", left: "50%", bottom: 24, transform: "translateX(-50%)",
-            background: "var(--text)", color: "#fff", padding: "10px 16px",
+            // color usa --surface (e nao "#fff" cravado): o fundo e --text, e
+            // os dois invertem juntos no tema escuro. Com branco fixo, o toast
+            // ficaria branco sobre fundo claro -- ilegivel.
+            background: "var(--text)", color: "var(--surface)", padding: "10px 16px",
             borderRadius: 10, fontSize: 13, fontWeight: 500, zIndex: 60,
             boxShadow: "var(--shadow)", maxWidth: 420,
           }}

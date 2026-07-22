@@ -43,10 +43,79 @@
   --accent: #2563eb;
   --accent-soft: #dbe7ff;
   --danger: #dc2626;
+  /* Cor do TEXTO quando o fundo e --danger. Token proprio porque --danger
+     serve a dois papeis (texto sobre superficie E fundo de selo); no tema
+     escuro ele clareia, e branco por cima deixaria de ser legivel. */
+  --on-danger: #ffffff;
   --radius: 10px;
   --shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 1px 3px rgba(16, 24, 40, 0.06);
   --shadow-card: 0 1px 2px rgba(16, 24, 40, 0.06);
   --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+/* ---------------------------------------------------------------
+   TEMA ESCURO
+   Ativado por data-theme="escuro" no <html> (posto pelo script
+   bloqueante do layout.tsx antes da primeira pintura, e depois
+   mantido por lib/tema.ts).
+
+   ATENCAO -- sobrescreve os DOIS conjuntos de token de proposito:
+     --color-*  alimenta as classes do Tailwind v4 (bg-surface, text-ink…)
+     --*        alimenta os estilos inline e as classes .btn/.input daqui
+   O CSS compilado do Tailwind referencia var(--color-*) em vez de gravar
+   o hex, entao trocar a variavel em runtime realmente vira a utility.
+   Esquecer um dos conjuntos = metade da tela vira e a outra metade nao.
+
+   A paleta nao e o claro invertido: fundo levemente azulado (nao preto
+   puro, que cansa e achata a hierarquia), azul de acao mais claro pra
+   segurar contraste, e --accent-soft deixa de ser um azul palido pra ser
+   um azul ESCURO -- senao fundos de badge e anel de foco viram um borrao
+   claro no meio do escuro.
+   Contraste conferido (WCAG, sobre --surface): texto 13.9, texto-suave
+   7.4, texto-fraco 4.6, accent 6.0, danger 6.1.
+   --------------------------------------------------------------- */
+[data-theme="escuro"] {
+  --color-canvas: #0f1520;
+  --color-surface: #161d2b;
+  --color-surface-2: #1e2637;
+  --color-border: #2b3547;
+  --color-ink: #e6eaf0;
+  --color-ink-soft: #a3adbd;
+  --color-ink-faint: #7b8698;
+  --color-accent: #5b9aff;
+  --color-accent-soft: #1d3054;
+  --color-danger: #f87171;
+
+  --bg: #0f1520;
+  --surface: #161d2b;
+  --surface-2: #1e2637;
+  --border: #2b3547;
+  --text: #e6eaf0;
+  --text-soft: #a3adbd;
+  --text-faint: #7b8698;
+  --accent: #5b9aff;
+  --accent-soft: #1d3054;
+  --danger: #f87171;
+  /* Texto sobre fundo --danger: branco daria 2.77 de contraste sobre este
+     vermelho claro (reprova AA). Este marrom quase preto da 6.9. */
+  --on-danger: #1f0a0a;
+
+  /* Sombra no escuro precisa de mais opacidade: a de baixo relevo do tema
+     claro simplesmente some e os cards perdem a separacao do fundo. */
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 1px 3px rgba(0, 0, 0, 0.3);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+
+/* Hover do botao primario: no claro escurece o azul, no escuro precisa
+   CLAREAR -- escurecer sobre fundo escuro le como "desabilitado". */
+[data-theme="escuro"] .btn-primary:hover { background: #7db0ff; }
+[data-theme="escuro"] .btn-primary { color: #0f1520; }
+
+/* .error-box tinha as tres cores cravadas (rosa claro) -- sumia no escuro. */
+[data-theme="escuro"] .error-box {
+  background: #3a1a1d;
+  border-color: #6d2a2f;
+  color: #fca5a5;
 }
 
 * { box-sizing: border-box; }

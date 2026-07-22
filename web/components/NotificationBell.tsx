@@ -181,7 +181,10 @@ export default function NotificationBell() {
           <path d="M13.7 21a2 2 0 0 1-3.4 0" />
         </svg>
         {unread > 0 && (
-          <span className="absolute -right-0.5 -top-0.5 flex min-w-[16px] items-center justify-center rounded-full bg-danger px-1 text-[10px] font-bold leading-[16px] text-white">
+          <span
+            className="absolute -right-0.5 -top-0.5 flex min-w-[16px] items-center justify-center rounded-full bg-danger px-1 text-[10px] font-bold leading-[16px]"
+            style={{ color: "var(--on-danger)" }}
+          >
             {unread > 9 ? "9+" : unread}
           </span>
         )}

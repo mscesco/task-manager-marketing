@@ -11,6 +11,15 @@ import {
   type Team,
 } from "@/lib/api";
 import { computeLens } from "@/lib/lens";
+import {
+  lerTema,
+  gravarTema,
+  aplicarTema,
+  observarTemaDoSistema,
+  proximoTema,
+  ROTULO_TEMA,
+  type Tema,
+} from "@/lib/tema";
 import NotificationBell from "@/components/NotificationBell";
 import {
   LayoutGrid,
@@ -25,6 +34,9 @@ import {
   ChevronDown,
   ChevronRight,
   Columns3,
+  Sun,
+  Moon,
+  Monitor,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -41,6 +53,29 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState(true);
   const [teams, setTeams] = useState<Team[]>([]);
   const [quadrosOpen, setQuadrosOpen] = useState(true); // accordion "Quadros"
+  // Preferencia de tema. Ler localStorage no inicializador e seguro aqui: com
+  // `loading` comecando true, a barra so renderiza depois do check de auth, ja
+  // no cliente -- entao nao ha divergencia de hidratacao com o SSR.
+  const [tema, setTema] = useState<Tema>(lerTema);
+
+  // Pinta o tema quando a preferencia muda. Na montagem apenas confirma o que
+  // o script bloqueante do layout ja aplicou (nao ha piscada).
+  useEffect(() => {
+    aplicarTema(tema);
+  }, [tema]);
+
+  // Com "sistema", acompanhar o SO em tempo real: a pessoa troca o tema do
+  // Windows e o app vira junto, sem F5. Nos modos explicitos a escolha manda.
+  useEffect(() => {
+    if (tema !== "sistema") return;
+    return observarTemaDoSistema(() => aplicarTema("sistema"));
+  }, [tema]);
+
+  function trocarTema() {
+    const prox = proximoTema(tema);
+    setTema(prox);
+    gravarTema(prox); // grava so quando a pessoa AGE, nao a cada montagem
+  }
 
   useEffect(() => {
     if (!getToken()) {
@@ -200,6 +235,26 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             <User size={18} className="shrink-0" />
             {open && <span className="truncate">{user?.name}</span>}
           </a>
+          <button
+            type="button"
+            onClick={trocarTema}
+            // Cicla claro -> escuro -> sistema. Um botao so (em vez de tres
+            // opcoes lado a lado) porque a barra retrai pra 16px de largura:
+            // um controle segmentado nao caberia e viraria um segundo layout
+            // pra manter. O rotulo diz o estado atual, entao nao vira adivinha.
+            title={ROTULO_TEMA[tema]}
+            aria-label={ROTULO_TEMA[tema]}
+            className={itemCls(false)}
+          >
+            {tema === "claro" ? (
+              <Sun size={18} className="shrink-0" />
+            ) : tema === "escuro" ? (
+              <Moon size={18} className="shrink-0" />
+            ) : (
+              <Monitor size={18} className="shrink-0" />
+            )}
+            {open && <span className="truncate">{ROTULO_TEMA[tema]}</span>}
+          </button>
           <button type="button" onClick={sair} title={!open ? "Sair" : undefined} className={itemCls(false)}>
             <LogOut size={18} className="shrink-0" />
             {open && <span className="truncate">Sair</span>}
