@@ -68,10 +68,30 @@ class Settings(BaseSettings):
     auth_rate_limit_window_seconds: int = 60
 
     # --- Rate limit (formulario publico de solicitacoes) ---
-    # Unica rota de escrita publica alem do auth. Ninguem de boa-fe envia
-    # mais de 5 solicitacoes em 10 minutos do mesmo IP; script sim.
-    public_form_rate_limit_max: int = 5
-    public_form_rate_limit_window_seconds: int = 600
+    # Unica rota de escrita publica alem do auth.
+    #
+    # A premissa antiga era "ninguem de boa-fe envia mais de 5 solicitacoes
+    # em 10 minutos do mesmo IP". Isso vale por PESSOA e falha por IP: os
+    # times que usam o formulario saem pela rede da instituicao, entao
+    # dezenas de pessoas compartilham UM endereco publico (NAT). O balde e
+    # por IP, logo o teto antigo era 5 envios por 10 min para a instituicao
+    # INTEIRA -- 30 por hora no total. No dia em que o link e divulgado,
+    # que e justamente quando os envios se concentram, isso barra gente de
+    # boa-fe.
+    #
+    # A JANELA importa mais que o teto. Com 600s, quem esbarra fica preso
+    # ate 10 minutos; com 60s, destrava em um minuto. Como o formulario
+    # PRESERVA o rascunho no erro (limparRascunho() so roda no sucesso), a
+    # pessoa so precisa reenviar -- e esperar 1 min e aceitavel, 10 nao.
+    #
+    # O freio contra bot aqui nunca foi este limite: e o honeypot + os
+    # tetos de payload (11 itens x 60 respostas x 5000 chars). Este numero
+    # e anti-enxurrada, nao cota por pessoa.
+    #
+    # Ajustavel por env (PUBLIC_FORM_RATE_LIMIT_MAX) sem mexer no codigo:
+    # se aparecer abuso real, aperta; se barrar gente de boa-fe, afrouxa.
+    public_form_rate_limit_max: int = 30
+    public_form_rate_limit_window_seconds: int = 60
 
     # --- Auto-arquivamento (Spec 013) ---
     # Tarefa COMPLETED/CANCELLED parada ha mais de N dias e auto-arquivada
