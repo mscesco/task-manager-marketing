@@ -99,3 +99,16 @@ class TeamRepository(BaseRepository[Team]):
             f"Arvore de equipes excedeu profundidade maxima ({max_depth}). "
             "Possivel ciclo no banco."
         )
+
+    async def root_exists(self) -> bool:
+        """Ja existe um time RAIZ neste workspace? (Spec 024/D2)
+
+        Sustenta a checagem de dominio ANTES do flush em
+        TeamService.create/move -- sem ela, o indice unico parcial
+        `team_unica_raiz_por_workspace` devolveria IntegrityError cru
+        (HTTP 500) em vez de ConflictError (409).
+        """
+        stmt = select(func.count()).select_from(
+            self._base_select().where(Team.parent_team_id.is_(None)).subquery()
+        )
+        return bool((await self.session.execute(stmt)).scalar_one())

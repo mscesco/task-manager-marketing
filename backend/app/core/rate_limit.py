@@ -159,3 +159,9 @@ refresh_limiter = SlidingWindowRateLimiter(
     max_hits=settings.auth_rate_limit_max,
     window_seconds=settings.auth_rate_limit_window_seconds,
 )
+# Formulario publico de solicitacoes (FazAe): balde proprio, janela mais
+# longa -- envio de formulario e raro por natureza, ao contrario de login.
+public_form_limiter = SlidingWindowRateLimiter(
+    max_hits=settings.public_form_rate_limit_max,
+    window_seconds=settings.public_form_rate_limit_window_seconds,
+)

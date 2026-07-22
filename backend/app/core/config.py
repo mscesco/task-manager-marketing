@@ -67,6 +67,12 @@ class Settings(BaseSettings):
     auth_rate_limit_max: int = 10
     auth_rate_limit_window_seconds: int = 60
 
+    # --- Rate limit (formulario publico de solicitacoes) ---
+    # Unica rota de escrita publica alem do auth. Ninguem de boa-fe envia
+    # mais de 5 solicitacoes em 10 minutos do mesmo IP; script sim.
+    public_form_rate_limit_max: int = 5
+    public_form_rate_limit_window_seconds: int = 600
+
     # --- Auto-arquivamento (Spec 013) ---
     # Tarefa COMPLETED/CANCELLED parada ha mais de N dias e auto-arquivada
     # pela varredura (job diario via n8n). CANCELLED medido por updated_at,

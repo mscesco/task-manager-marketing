@@ -26,6 +26,7 @@ from app.core.logging import get_logger
 from app.core.tenant import require_tenant
 from app.db.models import Team, User, UserTeam
 from app.db.models.enums import UserTeamRole
+from app.modules.auth.domain.team_scope import assert_role_permitido_no_nivel
 from app.modules.auth.infrastructure.security import (
     generate_temporary_password,
     hash_password,
@@ -165,6 +166,11 @@ class MemberService:
         if team is None:
             raise EntityNotFoundError("Team", identifier=command.team_id)
 
+        # Spec 024/D3 -- porta 1 de 4 da invariante de papel por nivel.
+        assert_role_permitido_no_nivel(
+            command.role, is_root=team.parent_team_id is None
+        )
+
         # --- cria o usuario com senha provisoria (Entrega 7) ---
         temporary_password = generate_temporary_password()
         user = User(
@@ -288,6 +294,9 @@ class MemberService:
         # matriz (Spec 016): so pode atribuir papel que o ator alcanca.
         self._assert_actor_can_assign(role)
 
+        # Spec 024/D3 -- porta 2 de 4.
+        assert_role_permitido_no_nivel(role, is_root=team.parent_team_id is None)
+
         # nao pode duplicar o vinculo (UNIQUE user_id, team_id)
         existing = await self._users.get_team_membership(
             user_id=user_id, team_id=team_id
@@ -349,6 +358,16 @@ class MemberService:
         # C2 -- matriz de autorizacao (alvo atual + papel a atribuir).
         self._assert_actor_can_target(membership.role)
         self._assert_actor_can_assign(new_role)
+
+        # Spec 024/D3 -- porta 3 de 4. Diferente das outras, este caso de uso
+        # nao carregava o time (so o vinculo); precisa carregar pra saber o
+        # nivel. O vinculo existe, entao o time existe.
+        team = await self._teams.get_by_id(team_id)
+        if team is None:
+            raise EntityNotFoundError("Team", identifier=team_id)
+        assert_role_permitido_no_nivel(
+            new_role, is_root=team.parent_team_id is None
+        )
 
         membership.role = new_role
         logger.info(
@@ -452,6 +471,13 @@ class MemberService:
         role = origem.role
         self._assert_actor_can_target(role)
         self._assert_actor_can_assign(role)
+
+        # Spec 024/D3 -- porta 4 de 4. O papel VIAJA junto, entao o que
+        # importa e se ele cabe no nivel do DESTINO: mover um MANAGER pra
+        # subtime, ou um SUPERVISOR pra raiz, viola a invariante.
+        assert_role_permitido_no_nivel(
+            role, is_root=destino.parent_team_id is None
+        )
 
         # Remove a origem PRIMEIRO -> ao adicionar, _assert_one_subteam ve
         # apenas o destino como (eventual) subtime.

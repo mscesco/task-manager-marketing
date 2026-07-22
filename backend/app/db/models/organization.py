@@ -22,9 +22,11 @@ from sqlalchemy import (
     Enum,
     ForeignKey,
     ForeignKeyConstraint,
+    Index,
     String,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -69,6 +71,17 @@ class Team(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             name="team_no_self_parent",
         ),
         CheckConstraint(f"slug ~ '{_SLUG_REGEX}'", name="team_slug_format"),
+        # Spec 024/D2: UM unico time raiz por workspace.
+        # Parcial (so parent_team_id IS NULL) -- subtimes sao ilimitados.
+        # E o que torna "time principal" um fato estrutural em vez de
+        # convencao de slug, e o que sustenta a invariante de papeis
+        # (ADMIN/MANAGER so existem na raiz).
+        Index(
+            "team_unica_raiz_por_workspace",
+            "workspace_id",
+            unique=True,
+            postgresql_where=text("parent_team_id IS NULL"),
+        ),
     )
 
     workspace_id: Mapped[uuid.UUID] = mapped_column(

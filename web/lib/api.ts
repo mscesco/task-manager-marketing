@@ -1124,3 +1124,153 @@ export async function markAllNotificationsRead(): Promise<number> {
   });
   return r.updated;
 }
+
+// ---------------------------------------------------------------
+// SOLICITAÇÕES (formulário público FazAê + fila de triagem)
+// ---------------------------------------------------------------
+
+export type SolicitacaoStatus = "PENDING" | "APPROVED" | "REJECTED";
+
+export type SolicitacaoAnswer = { label: string; value: string };
+
+/**
+ * Detalhe de UMA solicitação — espelha `SolicitationResponse` do backend.
+ * Retorno de aprovar / rejeitar / marcar tarefa.
+ *
+ * Não existe mais listagem plana: a fila é agrupada por envio
+ * (`listarEnvios`), e o card já traz as `answers` de cada seção.
+ */
+export type Solicitacao = {
+  id: string;
+  batch_id: string;
+  batch_seq: number;
+  batch_total: number;
+  requester_name: string;
+  requester_email: string;
+  requester_phone: string;
+  requester_department: string;
+  requester_polo: string;
+  category: string;
+  summary: string;
+  answers: SolicitacaoAnswer[];
+  status: SolicitacaoStatus;
+  review_note: string | null;
+  reviewed_by_user_id: string | null;
+  reviewed_at: string | null;
+  task_created_at: string | null;
+  task_ref: string | null;
+  created_at: string;
+};
+
+export type SolicitacaoItemEnvio = {
+  category: string;
+  summary: string;
+  answers: SolicitacaoAnswer[];
+};
+
+// PÚBLICA (sem auth): entrada do formulário /solicitar.
+// UM POST por envio, mesmo com várias categorias selecionadas — o rate
+// limit é por IP (5/10min), então N requests bloqueariam o solicitante no
+// meio do próprio pedido. A ORDEM de `items` é a ordem de seleção dele.
+// O campo `website` é o honeypot anti-bot: SEMPRE enviar vazio da UI.
+export async function enviarSolicitacaoPublica(payload: {
+  requester_name: string;
+  requester_email: string;
+  requester_phone: string;
+  requester_department: string;
+  requester_polo: string;
+  items: SolicitacaoItemEnvio[];
+  website?: string;
+}): Promise<{ protocol: string; created: number }> {
+  return api<{ protocol: string; created: number }>(
+    "/api/v1/solicitacoes/publico",
+    {
+      method: "POST",
+      auth: false,
+      body: { workspace_slug: WORKSPACE_SLUG, website: "", ...payload },
+    }
+  );
+}
+
+// ---- Fila agrupada por ENVIO (visão principal da triagem) ----
+
+export type SolicitacaoFiltro =
+  | SolicitacaoStatus
+  | "SEM_TAREFA"; // aprovadas que ninguém virou tarefa
+
+export type BatchItem = {
+  id: string;
+  batch_seq: number;
+  category: string;
+  summary: string;
+  status: SolicitacaoStatus;
+  answers: SolicitacaoAnswer[];
+  review_note: string | null;
+  reviewed_at: string | null;
+  task_created_at: string | null;
+  task_ref: string | null;
+};
+
+export type Batch = {
+  batch_id: string;
+  protocol: string;
+  requester_name: string;
+  requester_email: string;
+  requester_phone: string;
+  requester_department: string;
+  requester_polo: string;
+  created_at: string;
+  items: BatchItem[];
+};
+
+export type BatchListResponse = {
+  items: Batch[];
+  total: number; // total de ENVIOS, não de demandas
+  page: number;
+  size: number;
+  pending_total: number;
+  approved_without_task_total: number;
+};
+
+/** Fila de triagem: um card por envio, com todas as seções dentro. */
+export async function listarEnvios(
+  params: { filtro?: SolicitacaoFiltro; page?: number; size?: number } = {}
+): Promise<BatchListResponse> {
+  const q = new URLSearchParams();
+  if (params.filtro) q.set("status", params.filtro);
+  q.set("page", String(params.page ?? 1));
+  q.set("size", String(params.size ?? 20));
+  return api<BatchListResponse>(`/api/v1/solicitacoes?${q.toString()}`);
+}
+
+/** Marca/desmarca "tarefa criada" numa solicitação APROVADA. */
+export async function marcarTarefaCriada(
+  id: string,
+  created: boolean,
+  taskRef?: string
+): Promise<Solicitacao> {
+  return api<Solicitacao>(`/api/v1/solicitacoes/${id}/tarefa`, {
+    method: "POST",
+    body: { created, task_ref: taskRef ?? null },
+  });
+}
+
+export async function aprovarSolicitacao(
+  id: string,
+  note?: string
+): Promise<Solicitacao> {
+  return api<Solicitacao>(`/api/v1/solicitacoes/${id}/aprovar`, {
+    method: "POST",
+    body: { note: note ?? null },
+  });
+}
+
+export async function rejeitarSolicitacao(
+  id: string,
+  note: string
+): Promise<Solicitacao> {
+  return api<Solicitacao>(`/api/v1/solicitacoes/${id}/rejeitar`, {
+    method: "POST",
+    body: { note },
+  });
+}

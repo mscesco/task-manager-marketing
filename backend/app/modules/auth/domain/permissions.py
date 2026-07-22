@@ -15,6 +15,28 @@ Evolucao futura (sem quebrar contrato):
     funcao `permissions_for_roles` por uma que consulte o
     banco. O TenantContext e os guards continuam iguais.
 
+POR QUE ESTE MAPA IGNORA O TIME (Spec 024 -- leia antes de "consertar"):
+    `permissions_for_roles` recebe a UNIAO dos papeis do usuario e nao
+    olha em qual time cada papel foi concedido. Isso parece um furo --
+    e era, ate a Spec 024.
+
+    A correcao NAO foi criar permissao por time. Foi restringir ONDE
+    cada papel pode existir: ADMIN e MANAGER so existem no time RAIZ
+    (`team_scope.assert_role_permitido_no_nivel`, aplicado nas quatro
+    portas do MemberService). Como quem carrega esses papeis e
+    necessariamente membro da raiz, "uniao dos papeis" e "autoridade
+    sobre a arvore" (`team_scope.visible_team_ids`) coincidem por
+    construcao.
+
+    Consequencia pratica: este mapa CONTINUA sendo o unico lugar a
+    editar quando surgir permissao nova. Se voce esta aqui pensando em
+    adicionar escopo de time a uma permissao, provavelmente a resposta
+    e outra -- confira se a invariante de nivel ja resolve.
+
+    Cuidado: SUPERVISOR e OPERATOR existem nos DOIS niveis (estar so no
+    time geral e estado valido -- Spec 003, decisoes 7 e 17). A
+    exclusividade vale so pra ADMIN e MANAGER.
+
 CONVENCAO de nome de permissao: "<recurso>.<acao>", ex.
 "task.create", "project.delete", "workspace.manage".
 """
@@ -32,6 +54,7 @@ _ROLE_PERMISSIONS: dict[UserTeamRole, frozenset[str]] = {
     UserTeamRole.ADMIN: frozenset(
         {
             "workspace.manage",
+            "solicitation.review",
             "team.manage",
             "project.create",
             "project.update",
@@ -45,6 +68,7 @@ _ROLE_PERMISSIONS: dict[UserTeamRole, frozenset[str]] = {
     UserTeamRole.MANAGER: frozenset(
         {
             "team.manage",
+            "solicitation.review",
             "project.create",
             "project.update",
             "project.delete",  # Adicionado na Entrega 1 (decisao 25 da spec).

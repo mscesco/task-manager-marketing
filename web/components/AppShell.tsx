@@ -34,6 +34,7 @@ import {
   ChevronDown,
   ChevronRight,
   Columns3,
+  Inbox,
   Sun,
   Moon,
   Monitor,
@@ -107,10 +108,20 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const lens = user ? computeLens(user.teams, teams) : null;
   const subteams = lens ? lens.boardSubteams : [];
 
+  // Spec 025/D11: a fila de solicitações é do time principal. Só quem
+  // tem `solicitation.review` (ADMIN/MANAGER — que, pela invariante da
+  // Spec 024, só existem na raiz) enxerga a aba. O backend também barra
+  // por 403; esconder aqui evita oferecer uma porta que não abre.
+  const podeVerSolicitacoes =
+    user?.permissions.includes("solicitation.review") ?? false;
+
   // Itens simples (fora do grupo Quadros).
   const nav: { href: string; label: string; icon: LucideIcon }[] = [
     { href: "/projetos", label: "Projetos", icon: FolderKanban },
     { href: "/minhas-tarefas", label: "Minhas tarefas", icon: ListChecks },
+    ...(podeVerSolicitacoes
+      ? [{ href: "/solicitacoes", label: "Solicitações", icon: Inbox }]
+      : []),
     { href: "/membros", label: "Membros", icon: Users },
     { href: "/arquivadas", label: "Arquivadas", icon: Archive },
   ];

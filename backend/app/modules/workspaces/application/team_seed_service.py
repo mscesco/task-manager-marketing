@@ -92,6 +92,10 @@ class TeamSeedService:
             raise EntityNotFoundError("Workspace", identifier=workspace_slug)
 
         # 2. Time principal (raiz: parent NULL).
+        # Spec 024/D2: existe no MAXIMO um time raiz por workspace
+        # (indice unico parcial `team_unica_raiz_por_workspace`). Por isso
+        # este lookup por slug + parent NULL identifica O time principal,
+        # e nao "um dos" times de topo.
         principal = (
             await self._session.execute(
                 select(Team).where(
@@ -105,6 +109,9 @@ class TeamSeedService:
             raise EntityNotFoundError("Team", identifier=principal_team_slug)
 
         # 3. Subtimes faltantes (idempotente por slug).
+        # Spec 024/D6: subtimes aceitam apenas SUPERVISOR e OPERATOR.
+        # Este seed nao cria vinculos de membro, entao nao esbarra na
+        # invariante -- mas quem for popular estes times depois esbarra.
         existing_slugs = set(
             (
                 await self._session.execute(

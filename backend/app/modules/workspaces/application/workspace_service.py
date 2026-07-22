@@ -167,6 +167,16 @@ class TeamService:
                 details={"field": "slug", "value": slug},
             )
 
+        # Spec 024/D4 -- mesma logica do comentario abaixo, agora para o
+        # indice unico `team_unica_raiz_por_workspace`: sem esta checagem,
+        # criar um segundo time raiz vira IntegrityError cru (HTTP 500).
+        if parent_team_id is None and await self._repo.root_exists():
+            raise ConflictError(
+                "Este workspace ja possui um time principal. Novos times "
+                "precisam ser criados como subtime de algum time existente.",
+                details={"field": "parent_team_id"},
+            )
+
         # Se o pai foi informado, ele precisa existir no workspace.
         # A FK composta no banco ja garantiria, mas falhar aqui
         # da uma mensagem de dominio clara em vez de IntegrityError.
@@ -215,9 +225,20 @@ class TeamService:
         if team is None:
             raise EntityNotFoundError("Team", identifier=team_id)
 
-        # No-op: pai novo igual ao atual, nada a fazer.
+        # No-op: pai novo igual ao atual, nada a fazer. (Cobre tambem o caso
+        # "raiz continua raiz", que por isso nunca chega na checagem abaixo.)
         if team.parent_team_id == new_parent_id:
             return team
+
+        # Spec 024/D4 -- promover subtime a raiz quando ja existe uma esbarra
+        # no indice unico. Falha aqui, com mensagem de dominio, em vez de
+        # IntegrityError (HTTP 500).
+        if new_parent_id is None and await self._repo.root_exists():
+            raise ConflictError(
+                "Este workspace ja possui um time principal. Para trocar qual "
+                "time e o principal, mova o atual para baixo de outro antes.",
+                details={"field": "new_parent_id"},
+            )
 
         if new_parent_id is not None:
             # Banco ja bloquearia, mas mensagem clara antes do flush.

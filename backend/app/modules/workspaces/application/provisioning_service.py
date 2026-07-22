@@ -138,6 +138,11 @@ class WorkspaceProvisioningService:
         await self._session.flush()  # ids de team e admin
 
         # 4. Vinculo admin <-> equipe, com papel ADMIN.
+        # Spec 024/D6: o time criado no passo 1 e a RAIZ
+        # (parent_team_id=None), e ADMIN so existe na raiz -- entao este
+        # vinculo ja nasce conforme a invariante de nivel. E tambem o que
+        # garante que todo workspace novo tem alguem apto a triar
+        # solicitacoes (anti-lockout).
         membership = UserTeam(
             workspace_id=workspace.id,
             user_id=admin.id,

@@ -73,6 +73,17 @@ Sempre da raiz do repo, usando o `-f docker-compose.prod.yml`.
      alembic upgrade head
    ```
 
+   > **`0004_unique_root_team` (Spec 024) — atenção neste deploy.** Cria o índice
+   > único de **um time raiz por workspace**. Produção já está conforme
+   > (verificado por query antes da spec), então não há backfill nem risco de
+   > falha na aplicação do índice.
+   >
+   > **Precisa subir junto com o código da Fatia 2 da Spec 024.** Sozinho, o
+   > índice faz `TeamService.create(parent_team_id=null)` e
+   > `TeamService.move(new_parent_id=null)` responderem **HTTP 500**
+   > (`IntegrityError` cru) em vez de 409. Se for inevitável separar, mande o
+   > **código antes** da migration — a ordem inversa é segura.
+
 3. **Bootstrap — só na PRIMEIRA vez** (cria workspace `unifecaf` + admin, depois os subtimes):
    ```bash
    docker compose -f docker-compose.prod.yml run --rm --entrypoint "" api \

@@ -20,7 +20,7 @@ from app.modules.workspaces.application.provisioning_service import (
     ProvisionWorkspaceCommand,
     WorkspaceProvisioningService,
 )
-from app.shared.exceptions.base import ValidationError
+from app.shared.exceptions.base import ConflictError, ValidationError
 
 
 def _provisioning_service() -> WorkspaceProvisioningService:
@@ -139,6 +139,14 @@ class _FakeTeamRepo:
 
         return _T(team_id, self._tree[team_id])
 
+    async def root_exists(self):
+        """Spec 024/D2: ja existe raiz nesta arvore?
+
+        No repo real e um COUNT com filtro de tenant; aqui e derivado do
+        dict {team_id: parent_id}.
+        """
+        return any(parent is None for parent in self._tree.values())
+
     async def collect_ancestor_ids(self, team_id, *, max_depth=50):
         ancestors = []
         current = self._tree.get(team_id)
@@ -167,13 +175,35 @@ def _build_team_service_with_tree(tree: dict):
     return svc
 
 
-async def test_team_move_to_root_works() -> None:
-    """Mover uma equipe para a raiz (new_parent_id=None) e valido."""
+async def test_team_move_to_root_conflita_quando_ja_existe_raiz() -> None:
+    """Spec 024/D4: promover subtime a raiz com raiz existente e RECUSADO.
+
+    Este teste AFIRMAVA o contrario ate a Spec 024 ("mover para a raiz e
+    valido"). A regra mudou de proposito: um workspace tem UMA raiz, e ela
+    e o time principal. O importante e que a recusa venha como erro de
+    DOMINIO (ConflictError -> 409), e nao como IntegrityError do indice
+    unico (-> 500).
+    """
     marketing = uuid.uuid4()
     crm = uuid.uuid4()
     svc = _build_team_service_with_tree({marketing: None, crm: marketing})
 
-    result = await svc.move(team_id=crm, new_parent_id=None)
+    with pytest.raises(ConflictError):
+        await svc.move(team_id=crm, new_parent_id=None)
+
+
+async def test_team_move_to_root_works_quando_nao_ha_raiz() -> None:
+    """Sem raiz na arvore, promover a raiz continua valido.
+
+    Cenario de borda (o indice parcial permite ZERO raizes): a trava e
+    "no maximo uma", nao "sempre exatamente uma".
+    """
+    orfao = uuid.uuid4()
+    filho = uuid.uuid4()
+    # nenhum time com parent None -> arvore sem raiz
+    svc = _build_team_service_with_tree({orfao: filho, filho: orfao})
+
+    result = await svc.move(team_id=filho, new_parent_id=None)
     assert result.parent_team_id is None
 
 
