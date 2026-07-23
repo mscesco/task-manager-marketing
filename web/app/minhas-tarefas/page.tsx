@@ -913,6 +913,10 @@ function ColunaMinhas({
         flex: 1, minWidth: 240, minHeight: 0, borderRadius: 10, padding: 4,
         display: "flex", flexDirection: "column",
         background: isOver ? "var(--surface-2)" : "transparent",
+        // Espelha o Board.tsx: anel na cor da coluna marca o alvo do drop.
+        // `outline` nao ocupa espaco -> as colunas nao pulam de largura.
+        outline: isOver ? `2px solid ${status.color}` : "none",
+        outlineOffset: -2,
         transition: "background .12s",
       }}
     >
@@ -967,11 +971,11 @@ function CardArrastavelMinhas({
         }
       }}
       tabIndex={0}
-      className="tappable"
+      className="card-elev"
       style={{
         opacity: isDragging ? 0.4 : task.is_archived ? 0.55 : 1,
-        cursor: "grab",
         touchAction: "none",
+        ...(isDragging ? { transform: "none", boxShadow: "none" } : null),
       }}
     >
       <TaskCard task={task} members={members} projectName={projectName} />

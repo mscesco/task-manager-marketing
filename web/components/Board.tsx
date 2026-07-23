@@ -767,6 +767,12 @@ function Coluna({
         flex: 1, minWidth: 240, minHeight: 0, borderRadius: 10, padding: 4,
         display: "flex", flexDirection: "column",
         background: isOver ? "var(--surface-2)" : "transparent",
+        // O fundo sozinho e quase invisivel (surface-2 x canvas = ~2% de
+        // diferenca). O anel na cor da propria coluna diz PARA ONDE o card
+        // vai. `outline` (nao `border`) de proposito: nao ocupa espaco, entao
+        // as colunas nao pulam de largura quando o alvo muda.
+        outline: isOver ? `2px solid ${status.color}` : "none",
+        outlineOffset: -2,
         transition: "background .12s",
       }}
     >
@@ -827,11 +833,13 @@ function CardArrastavel({
         }
       }}
       tabIndex={0}
-      className="tappable"
+      className="card-elev"
       style={{
         opacity: isDragging ? 0.4 : task.is_archived ? 0.55 : 1,
-        cursor: "grab",
         touchAction: "none",
+        // Enquanto arrasta, sem elevacao: o card ja esta com o ghost do
+        // dnd-kit e a sombra dupla ficava suja por cima dele.
+        ...(isDragging ? { transform: "none", boxShadow: "none" } : null),
       }}
     >
       <TaskCard

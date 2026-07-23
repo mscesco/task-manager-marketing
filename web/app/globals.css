@@ -169,6 +169,40 @@ button { font-family: inherit; cursor: pointer; }
   * { transition: none !important; animation: none !important; }
 }
 
+/* --- Animacao de entrada/saida do modal de tarefa ---------------------
+   Curtas de proposito (150ms): o suficiente pra tirar o "corte seco",
+   curto o bastante pra nao atrasar quem usa o app o dia inteiro.
+   A saida e disparada por estado no TaskDetail (data-saindo), que segura
+   o unmount pelo mesmo tempo. O bloco de prefers-reduced-motion acima
+   desliga as duas -- e o JS pula a espera, senao fechar ficaria lento
+   sem animacao nenhuma pra justificar. */
+@keyframes tm-scrim-entra {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes tm-card-entra {
+  from { opacity: 0; transform: translateY(8px) scale(0.985); }
+  to   { opacity: 1; transform: none; }
+}
+.modal-scrim { animation: tm-scrim-entra .15s ease-out; }
+.modal-card  { animation: tm-card-entra .15s ease-out; }
+.modal-scrim[data-saindo="true"] { animation: tm-scrim-entra .14s ease-in reverse forwards; }
+.modal-card[data-saindo="true"]  { animation: tm-card-entra .14s ease-in reverse forwards; }
+
+/* --- Card do quadro: elevacao no hover -------------------------------
+   Substitui o outline duro do .tappable NESTE caso: em card arrastavel a
+   elevacao le como "pegavel", o outline lia como "selecionado". O foco por
+   teclado continua vindo da regra [tabindex]:focus-visible abaixo. */
+.card-elev {
+  cursor: grab;
+  border-radius: var(--radius);
+  transition: transform .12s ease-out, box-shadow .12s ease-out;
+}
+.card-elev:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(16, 24, 40, 0.07), 0 4px 12px rgba(16, 24, 40, 0.08);
+}
+
 /* --- Affordance de clique: hover + foco visivel por teclado (C1/C2) --- */
 /* outline funciona por cima de estilos inline: border e box-shadow inline
    ganham de :hover, mas outline nao e setado inline. O mesmo anel accent
