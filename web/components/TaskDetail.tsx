@@ -10,7 +10,9 @@
 //   cria; o checkbox da linha conclui rapido (desmarcar volta pro status
 //   anterior, guardado na sessao); clicar no titulo NAVEGA pra dentro.
 
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+
+import { useSaidaAnimada } from "@/lib/useSaidaAnimada";
 import {
   addAssignee,
   removeAssignee,
@@ -236,50 +238,14 @@ export default function TaskDetail({
     setGifsResp([]);
   }, [respondendoId]);
 
-  // --- Saida animada (Fatia visual 1) ---------------------------------
-  // O pai NAO desmonta este componente: `Board.tsx` e `minhas-tarefas`
-  // renderizam <TaskDetail task={focado}> sempre montado, e o early return
-  // (`if (!task) return null`) e que apaga a tela. Logo, todo estado daqui
-  // SOBREVIVE ao fechamento e precisa ser zerado na reabertura.
-  const [saindo, setSaindo] = useState(false);
-  const timerSaida = useRef<number | null>(null);
-  useEffect(() => {
-    return () => {
-      if (timerSaida.current !== null) window.clearTimeout(timerSaida.current);
-    };
-  }, []);
-
-  // Zera `saindo` quando o modal reabre. Ajuste durante o render (padrao do
-  // React pra estado derivado de prop): roda ANTES da pintura, entao nao ha
-  // um frame com o modal ja invisivel. Comparar por id -- e nao um booleano
-  // "abriu" -- cobre tambem reabrir a MESMA tarefa.
-  const [idVisivel, setIdVisivel] = useState<string | null>(null);
-  const idAtual = task?.id ?? null;
-  if (idAtual !== idVisivel) {
-    setIdVisivel(idAtual);
-    if (idAtual !== null && saindo) setSaindo(false);
-  }
-
-  const fecharSuave = useCallback(() => {
-    // Modo pagina nao tem scrim nem animacao -> fecha direto.
-    // Quem pediu menos movimento tambem fecha direto: com a animacao
-    // desligada pelo CSS, esperar 140ms seria so lentidao sem contrapartida.
-    const semMovimento =
-      typeof window !== "undefined" &&
-      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-    if (modo !== "modal" || semMovimento) {
-      onClose();
-      return;
-    }
-    if (timerSaida.current !== null) return; // ja esta saindo
-    setSaindo(true);
-    timerSaida.current = window.setTimeout(() => {
-      // Libera o ref ANTES de fechar: ele e o guard de "ja esta saindo", e
-      // sem zerar aqui o segundo fechamento seria ignorado pra sempre.
-      timerSaida.current = null;
-      onClose();
-    }, 140);
-  }, [modo, onClose]);
+  // --- Saida animada (Spec 027, D4) ------------------------------------
+  // A maquina de estados vive em `lib/useSaidaAnimada.ts`, coberta por teste.
+  // Aqui fica so o consumo: este componente desenha, nao decide.
+  const { saindo, fecharSuave } = useSaidaAnimada({
+    idAtual: task?.id ?? null,
+    animar: modo === "modal", // modo pagina nao tem scrim nem animacao
+    onFechar: onClose,
+  });
 
   useEffect(() => {
     // Esc so faz sentido no modo modal. Na rota /tarefa/[id] "fechar" e

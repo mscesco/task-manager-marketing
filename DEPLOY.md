@@ -67,8 +67,22 @@ código, o índice/constraint chega depois — ver aviso do `0004` abaixo). A
 ordem inversa (migration com código velho rodando) é a que devolve HTTP 500.
 Exceção só se o cabeçalho da própria migration mandar o contrário.
 
-0. **Pré-voo:** conferir `DATABASE_URL` (dev e prod moram na MESMA instância),
-   `pg_dump` do banco, e taguear as imagens atuais para ter rollback:
+0. **Pré-voo.**
+
+   **a) Portões de teste — rodar ANTES de buildar.** Não há CI neste projeto
+   (Spec 027, D6): os dois portões dependem de alguém lembrar, e este passo é
+   esse lembrete.
+   ```bash
+   # backend (precisa do TEST_DATABASE_URL apontando pro Postgres de teste)
+   cd backend && python -m pytest -q          # esperado: 379 passed
+   # front
+   cd web && npm test && npx tsc --noEmit     # esperado: 89 passed, 0 erros
+   ```
+   > `npm test` cobre as regras puras de `web/lib/` — NÃO cobre a tela.
+   > Mudança visual continua exigindo teste manual no dev.
+
+   **b) Conferir `DATABASE_URL`** (dev e prod moram na MESMA instância),
+   **`pg_dump` do banco**, e taguear as imagens atuais para ter rollback:
    ```bash
    docker tag task-manager-api:latest task-manager-api:pre-deploy-$(date +%Y%m%d)
    docker tag task-manager-web:latest task-manager-web:pre-deploy-$(date +%Y%m%d)
@@ -144,3 +158,15 @@ O primeiro login do admin força troca de senha. O bootstrap NÃO se repete.
   Atualização. Bootstrap NÃO se repete.
 - **Rollback de imagem:** as imagens ficam tagueadas `:latest`; pra rollback
   real, taguear por versão antes de subir (melhoria futura).
+- **`npm audit` no `web/` acusa vulnerabilidades do Next — NÃO rode
+  `npm audit fix --force`.** Ele instala `next@16` (dois majors de salto,
+  breaking change). Triagem feita em 2026-07-22 contra a superfície real
+  deste app: **não se aplicam** os avisos de Image Optimizer (não usamos
+  `next/image`), middleware (não existe), Server Actions (nenhum
+  `"use server"`), i18n de Pages Router (é App Router), `beforeInteractive`
+  (o script de tema é `<script>` cru com string literal) e SSRF via rewrites
+  (só há rewrite em dev, com destino fixo). **Resta** a superfície de RSC,
+  fina num app com 24 arquivos `"use client"` atrás do Traefik.
+  `14.2.35` é a ÚLTIMA versão da linha 14.2 — não existe patch para onde
+  subir; corrigir significa migrar para o Next 15/16, que é projeto próprio.
+  A Spec 027 (testes do front) é o que torna essa migração viável.

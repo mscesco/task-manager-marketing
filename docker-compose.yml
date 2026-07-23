@@ -1,15 +1,20 @@
 # =====================================================
 # docker-compose.yml - RAIZ DO MONOREPO (desenvolvimento)
 # -----------------------------------------------------
-# Mudou em relacao ao compose antigo (que vivia dentro do
-# backend): os contexts e volumes agora apontam pra ./backend.
-# O front (web/) roda via `npm run dev` em DEV -- nao tem
-# service aqui ainda. O Dockerfile do web + service entram na
-# ENTREGA DE INFRA, no dia do deploy na VPS (com Traefik).
+# Existem DOIS composes no projeto, ambos AQUI na raiz:
+#   docker-compose.yml       <- este, desenvolvimento
+#   docker-compose.prod.yml  <- producao (VPS + Traefik)
+# NAO ha compose dentro de backend/ nem de web/.
 #
-# O PostgreSQL continua EXTERNO (VPS Hostinger, a mesma do
-# N8N), acessado via DATABASE_URL no backend/.env. Nao ha
-# Postgres aqui de proposito.
+# O front (web/) roda via `npm run dev` no HOST -- de proposito, nao por
+# falta de service. Montar o codigo do Windows dentro do container exigiria
+# polling pra detectar mudanca de arquivo, deixando o hot-reload mais lento
+# que rodar direto. Em producao o web TEM service (build standalone, sem
+# reload) -- por isso os dois composes diferem aqui, e isso e intencional.
+#
+# O PostgreSQL continua EXTERNO (VPS Hostinger, a mesma do N8N), acessado
+# via DATABASE_URL no backend/.env. Nao ha Postgres de aplicacao aqui de
+# proposito -- o `db-test` abaixo e efemero, so pra suite de integracao.
 # =====================================================
 
 services:
