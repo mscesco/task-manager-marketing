@@ -10,11 +10,16 @@ ESTRATEGIA:
       dentro da janela e poda os que sairam. Evita o "burst de borda" do
       fixed-window (2x no limiar). Memoria por chave limitada ao numero de
       hits dentro da janela.
-    - Store EM MEMORIA, no processo. O entrypoint sobe `uvicorn` SEM
-      `--workers` => processo unico, event loop unico. A checagem e
-      sincrona (sem await no meio) => atomica entre corrotinas. Se um dia
-      escalar pra multiplas replicas/workers, troca o store por Redis sem
-      mexer no resto (a dependency continua igual).
+    - Store EM MEMORIA, POR PROCESSO. ATENCAO: o entrypoint de producao
+      sobe `uvicorn --workers 2`, entao existem DOIS baldes independentes.
+      Efeito real: o limite efetivo e ate 2x o configurado e o corte e
+      nao-deterministico (depende de qual worker atende a requisicao).
+      A premissa original deste modulo era processo unico; ela deixou de
+      valer quando o `--workers 2` entrou no entrypoint. Correcao esta em
+      decisao aberta (offload+1 worker, limite no Traefik, ou store
+      compartilhado em Redis/Postgres) -- ao mudar o numero de workers ou
+      o store, ATUALIZAR este docstring. Dentro de um processo a checagem
+      e sincrona (sem await no meio) => atomica entre corrotinas.
     - Relogio via `time.monotonic` (nao afetado por ajuste de relogio de
       parede). Injetavel pra teste (fake clock).
 

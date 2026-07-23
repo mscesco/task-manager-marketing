@@ -38,6 +38,11 @@ class TaskStatus(StrEnum):
     PLANNED = "PLANNED"
     IN_PROGRESS = "IN_PROGRESS"
     IN_REVIEW = "IN_REVIEW"
+    # Spec 026: aprovacao de FORA do time (cliente/fornecedor/outra area),
+    # distinta da revisao interna (IN_REVIEW). Estado EXCLUSIVo -- um card
+    # so tem um status. Adicionado ao enum nativo via migration 0006
+    # (ALTER TYPE ADD VALUE, sem downgrade -- Postgres nao remove valor).
+    EXTERNAL_APPROVAL = "EXTERNAL_APPROVAL"
     BLOCKED = "BLOCKED"
     COMPLETED = "COMPLETED"
     CANCELLED = "CANCELLED"

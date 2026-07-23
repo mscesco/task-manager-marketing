@@ -58,59 +58,78 @@ Arquitetura (Topologia A, ADR 0001): um domínio só; o Traefik roteia
 
 ---
 
-## Deploy (e cada atualização)
+## Atualização (deploy do dia a dia)
 
 Sempre da raiz do repo, usando o `-f docker-compose.prod.yml`.
+**Ordem: código no ar ANTES da migration.** As migrations deste repo são
+escritas para o código novo tolerar o schema velho (padrão: o guard chega no
+código, o índice/constraint chega depois — ver aviso do `0004` abaixo). A
+ordem inversa (migration com código velho rodando) é a que devolve HTTP 500.
+Exceção só se o cabeçalho da própria migration mandar o contrário.
+
+0. **Pré-voo:** conferir `DATABASE_URL` (dev e prod moram na MESMA instância),
+   `pg_dump` do banco, e taguear as imagens atuais para ter rollback:
+   ```bash
+   docker tag task-manager-api:latest task-manager-api:pre-deploy-$(date +%Y%m%d)
+   docker tag task-manager-web:latest task-manager-web:pre-deploy-$(date +%Y%m%d)
+   ```
 
 1. **Build das imagens** (backend runtime + front standalone):
    ```bash
    docker compose -f docker-compose.prod.yml build
    ```
 
-2. **Migrations** (manual — `--entrypoint ""` porque o entrypoint padrão ignora args):
-   ```bash
-   docker compose -f docker-compose.prod.yml run --rm --entrypoint "" api \
-     alembic upgrade head
-   ```
-
-   > **`0004_unique_root_team` (Spec 024) — atenção neste deploy.** Cria o índice
-   > único de **um time raiz por workspace**. Produção já está conforme
-   > (verificado por query antes da spec), então não há backfill nem risco de
-   > falha na aplicação do índice.
-   >
-   > **Precisa subir junto com o código da Fatia 2 da Spec 024.** Sozinho, o
-   > índice faz `TeamService.create(parent_team_id=null)` e
-   > `TeamService.move(new_parent_id=null)` responderem **HTTP 500**
-   > (`IntegrityError` cru) em vez de 409. Se for inevitável separar, mande o
-   > **código antes** da migration — a ordem inversa é segura.
-
-3. **Bootstrap — só na PRIMEIRA vez** (cria workspace `unifecaf` + admin, depois os subtimes):
-   ```bash
-   docker compose -f docker-compose.prod.yml run --rm --entrypoint "" api \
-     python -m scripts.provision_workspace \
-       --workspace-slug unifecaf \
-       --team-slug marketing \
-       --admin-email admin@unifecaf.com.br \
-       --admin-password "UMA_SENHA_FORTE"
-
-   docker compose -f docker-compose.prod.yml run --rm --entrypoint "" api \
-     python -m scripts.seed_unifecaf_teams --workspace-slug unifecaf
-   ```
-   (Rode `... --entrypoint "" api python -m scripts.provision_workspace --help`
-   se quiser ver todos os argumentos.)
-
-4. **Subir:**
+2. **Subir o código novo:**
    ```bash
    docker compose -f docker-compose.prod.yml up -d
    ```
 
-5. **Conferir:**
+3. **Migrations** (manual — `--entrypoint ""` porque o entrypoint padrão ignora args):
+   ```bash
+   docker compose -f docker-compose.prod.yml run --rm --entrypoint "" api \
+     alembic upgrade head
+   docker compose -f docker-compose.prod.yml exec api alembic current  # confere a head
+   ```
+   Se não houver migration nova, o passo é um no-op inofensivo.
+
+   > **`0004_unique_root_team` (Spec 024) — exemplo do porquê da ordem.** Cria o
+   > índice único de **um time raiz por workspace**. O índice sozinho, com
+   > código velho rodando, faz `TeamService.create(parent_team_id=null)` e
+   > `TeamService.move(new_parent_id=null)` responderem **HTTP 500**
+   > (`IntegrityError` cru) em vez de 409. Código antes, migration depois.
+   > (Aplicada em produção em 2026-07-22, junto com a `0005`.)
+
+4. **Conferir:**
    ```bash
    docker compose -f docker-compose.prod.yml ps
    docker compose -f docker-compose.prod.yml logs -f api   # Ctrl-C pra sair
    ```
-   Abra `https://task.srv1186064.hstgr.cloud` e logue com o admin do passo 3.
-   O primeiro acesso força troca de senha.
+   Abra `https://task.srv1186064.hstgr.cloud` e faça um smoke do que o deploy
+   tocou (o schema existir não prova que o fluxo funciona).
+
+---
+
+## Primeiro deploy (uma vez só)
+
+Aqui não há código velho rodando, então a ordem é a natural:
+`build` → `migrations` → `bootstrap` → `up -d`.
+
+**Bootstrap** (cria workspace `unifecaf` + admin, depois os subtimes):
+```bash
+docker compose -f docker-compose.prod.yml run --rm --entrypoint "" api \
+  python -m scripts.provision_workspace \
+    --workspace-slug unifecaf \
+    --team-slug marketing \
+    --admin-email admin@unifecaf.com.br \
+    --admin-password "UMA_SENHA_FORTE"
+
+docker compose -f docker-compose.prod.yml run --rm --entrypoint "" api \
+  python -m scripts.seed_unifecaf_teams --workspace-slug unifecaf
+```
+(Rode `... --entrypoint "" api python -m scripts.provision_workspace --help`
+se quiser ver todos os argumentos.)
+
+O primeiro login do admin força troca de senha. O bootstrap NÃO se repete.
 
 ---
 
@@ -120,7 +139,8 @@ Sempre da raiz do repo, usando o `-f docker-compose.prod.yml`.
   containers `api` e `web` só são alcançáveis pela rede `root_default`.
 - **Rede:** o compose entra na rede externa `root_default` (onde estão Traefik
   e Postgres). Se o nome mudar, ajuste em `docker-compose.prod.yml`.
-- **Atualizar o app:** `git pull` → `build` → `migrations` (se houver nova) →
-  `up -d`. O passo 3 (bootstrap) NÃO se repete.
+- **Atualizar o app:** `git pull` → `build` → `up -d` → `migrations` (se
+  houver nova). Código primeiro, migration depois — mesma ordem da seção de
+  Atualização. Bootstrap NÃO se repete.
 - **Rollback de imagem:** as imagens ficam tagueadas `:latest`; pra rollback
   real, taguear por versão antes de subir (melhoria futura).
