@@ -629,6 +629,12 @@ export default function TaskDetail({
               alignSelf: "flex-start", padding: "2px 8px", fontSize: 13,
               maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis",
               whiteSpace: "nowrap",
+              // `overflow: hidden` zera o min-height automatico deste flex item
+              // (CSS Flexbox 4.5). Sem flexShrink 0, o botao encolhe na vertical
+              // quando o conteudo do modal estoura 88vh e o texto sai cortado
+              // pela metade. NAO remover junto com o overflow.
+              flexShrink: 0,
+              lineHeight: 1.6,
             }}
             title={pai ? `Voltar para ${pai.title}` : "Voltar"}
           >
