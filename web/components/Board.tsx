@@ -18,6 +18,14 @@ import {
   type DragEndEvent,
 } from "@dnd-kit/core";
 import TaskCard from "@/components/TaskCard";
+import {
+  escopoDaTask as classificaEscopo,
+  passaEscopo,
+  responsaveisPorRaiz,
+  passaResponsavel,
+  temFiltroNovo,
+  type FiltroEscopo,
+} from "@/lib/filtrosQuadro";
 import TaskModal from "@/components/TaskModal";
 import TaskDetail from "@/components/TaskDetail";
 import EmptyStateBox from "@/components/EmptyState";
@@ -101,6 +109,11 @@ export default function Board({
   // pra nao travar a tela em "Carregando".
   const [rootCarregado, setRootCarregado] = useState(false);
   const [subtime, setSubtime] = useState<string>("");
+  // Filtros pedidos pela gestao (2026-07-27). Regras em lib/filtrosQuadro.
+  //   escopoFiltro -- interna x compartilhada (so faz sentido no modo subtime)
+  //   pessoaFiltro -- "o que a fulana esta fazendo", em qualquer quadro
+  const [escopoFiltro, setEscopoFiltro] = useState<FiltroEscopo>("todos");
+  const [pessoaFiltro, setPessoaFiltro] = useState<string>("");
   // P0.2: total real quando o fetch bateu o teto de seguranca (truncou).
   // null = nao truncou. Vira aviso honesto no lugar de perda silenciosa.
   const [truncadoTotal, setTruncadoTotal] = useState<number | null>(null);
@@ -454,7 +467,11 @@ export default function Board({
   // porStatus saem de `raizes` pra nao mentir quando ha filtro ativo.
   const buscaNorm = normalizar(busca);
   const hoje = hojeISO();
-  const temFiltro = buscaNorm !== "" || prazo !== "todos" || subtime !== "";
+  const temFiltro =
+    buscaNorm !== "" ||
+    prazo !== "todos" ||
+    subtime !== "" ||
+    temFiltroNovo(escopoFiltro, pessoaFiltro);
 
   // Fatia 3/4: lente de exibicao por MODO de quadro.
   //   - PROJETO (projectId): sem filtro de time (tasks sao do projeto).
@@ -487,10 +504,22 @@ export default function Board({
   //   interna     -> team_id === subteamId (nasceu aqui)
   //   compartilhada-> veio da raiz (as demais que passaram o filtro hibrido)
   // Fora do modo subtime, undefined (sem pill).
-  const escopoDaTask = (t: Task): "compartilhada" | "interna" | undefined => {
-    if (!modoSubtime) return undefined;
-    return t.team_id === subteamId ? "interna" : "compartilhada";
-  };
+  // Delega ao modulo puro: a pill do card e o filtro TEM de usar a mesma
+  // regra, senao a tela mostra "interna" e o filtro "interna" a esconde.
+  const escopoDaTask = (t: Task): "compartilhada" | "interna" | undefined =>
+    classificaEscopo(t, modoSubtime ? subteamId : null);
+
+  // Responsaveis agregados por raiz (herda de subtarefa) -- alimenta o filtro
+  // por pessoa. Mesmo desenho do subtimesPorRaiz logo acima.
+  const respPorRaiz = responsaveisPorRaiz(tasks);
+
+  // Pessoas do seletor. No quadro de SUBTIME, so quem e daquela equipe
+  // (pedido da Camila: "filtrar por pessoa que faz parte daquela equipe").
+  // No quadro geral / de projeto, todo mundo. Ordenado por nome pt-BR.
+  const pessoasDoFiltro = Array.from(members.entries())
+    .filter(([id]) => !modoSubtime || memberTeam.get(id) === subteamId)
+    .map(([id, m]) => ({ id, name: m.name }))
+    .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
 
   const raizes = visiveis.filter((t) => {
     if (buscaNorm && !normalizar(t.title).includes(buscaNorm)) return false;
@@ -509,6 +538,10 @@ export default function Board({
       const times = subtimesPorRaiz.get(t.id);
       if (!times || !times.has(subtime)) return false;
     }
+    // Escopo (interna x compartilhada) -- mesma classificacao da pill.
+    if (!passaEscopo(escopoFiltro, escopoDaTask(t))) return false;
+    // Pessoa: herda da subarvore, entao designacao em subtarefa mantem a raiz.
+    if (!passaResponsavel(pessoaFiltro, t.id, respPorRaiz)) return false;
     return true;
   });
   // Ordenacao escolhida (so na sessao). Reordena as raizes pelo criterio e
@@ -603,6 +636,40 @@ export default function Board({
             <option value="">Subtime: todos</option>
             {subtimes.map((s) => (
               <option key={s.id} value={s.id}>{s.name}</option>
+            ))}
+          </select>
+        )}
+        {modoSubtime && (
+          <select
+            value={escopoFiltro}
+            onChange={(e) => setEscopoFiltro(e.target.value as FiltroEscopo)}
+            title="Interna nasceu neste subtime; compartilhada veio do quadro geral"
+            style={{
+              fontSize: 13, padding: "6px 10px", borderRadius: 8,
+              border: "1px solid var(--border)", background: "var(--surface)",
+              color: "var(--text)", cursor: "pointer",
+            }}
+          >
+            <option value="todos">Origem: todas</option>
+            <option value="interna">Só internas</option>
+            <option value="compartilhada">Só compartilhadas</option>
+          </select>
+        )}
+        {pessoasDoFiltro.length > 0 && (
+          <select
+            value={pessoaFiltro}
+            onChange={(e) => setPessoaFiltro(e.target.value)}
+            title="Mostra as tarefas em que a pessoa está designada, inclusive por subtarefa"
+            style={{
+              fontSize: 13, padding: "6px 10px", borderRadius: 8,
+              border: "1px solid var(--border)", background: "var(--surface)",
+              color: "var(--text)", cursor: "pointer",
+              maxWidth: 220,
+            }}
+          >
+            <option value="">Responsável: todos</option>
+            {pessoasDoFiltro.map((p) => (
+              <option key={p.id} value={p.id}>{p.name}</option>
             ))}
           </select>
         )}
