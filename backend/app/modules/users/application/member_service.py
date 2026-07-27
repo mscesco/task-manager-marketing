@@ -294,6 +294,10 @@ class MemberService:
         # matriz (Spec 016): so pode atribuir papel que o ator alcanca.
         self._assert_actor_can_assign(role)
 
+        # Spec 028: se o ator for SUPERVISOR, so OPERATOR e so no proprio
+        # subtime. No-op para ADMIN/MANAGER.
+        self._assert_escopo_supervisor(team_id=team_id, papel_alvo=role)
+
         # Spec 024/D3 -- porta 2 de 4.
         assert_role_permitido_no_nivel(role, is_root=team.parent_team_id is None)
 
@@ -355,6 +359,10 @@ class MemberService:
                 details={"user_id": str(user_id)},
             )
 
+        # Spec 028: trocar papel NAO foi aberto ao supervisor (D2 -- ele nao
+        # promove; criar outro SUPERVISOR e trabalho do MANAGER).
+        self._assert_gestao_ampla(acao="change_member_role")
+
         # C2 -- matriz de autorizacao (alvo atual + papel a atribuir).
         self._assert_actor_can_target(membership.role)
         self._assert_actor_can_assign(new_role)
@@ -404,6 +412,12 @@ class MemberService:
                 details={"user_id": str(user_id)},
             )
         self._assert_actor_can_target(membership.role)
+
+        # Spec 028: se o ator for SUPERVISOR, so OPERATOR e so no proprio
+        # subtime. No-op para ADMIN/MANAGER.
+        self._assert_escopo_supervisor(
+            team_id=team_id, papel_alvo=membership.role
+        )
 
         # Nao pode remover o ULTIMO vinculo: deixaria o membro orfao (sem
         # time, sem acesso) -- exatamente o estado que a Spec 014 eliminou.
@@ -467,6 +481,10 @@ class MemberService:
         if destino is None:
             raise EntityNotFoundError("Team", identifier=to_team_id)
 
+        # Spec 028: mover entre subtimes NAO foi aberto ao supervisor -- a
+        # operacao toca o subtime de ORIGEM, que nao e dele (viola D1).
+        self._assert_gestao_ampla(acao="move_member_subteam")
+
         # Matriz: o papel e preservado, entao checa alvo E atribuicao do mesmo.
         role = origem.role
         self._assert_actor_can_target(role)
@@ -516,6 +534,9 @@ class MemberService:
         Regra de seguranca: um usuario nao pode desativar a si
         mesmo -- evita o admin se trancar para fora.
         """
+        # Spec 028/D4: supervisor tira do subtime, mas NUNCA desativa conta.
+        self._assert_gestao_ampla(acao="deactivate_member")
+
         tenant = require_tenant()
         if user_id == tenant.user_id:
             raise BusinessRuleError(
@@ -550,6 +571,89 @@ class MemberService:
                     "(regra: um subtime por usuario).",
                     details={"field": "team_id"},
                 )
+
+    # ----------------------------------------------------
+    # Escopo do SUPERVISOR (Spec 028) -- camada NOVA, ortogonal a matriz C2
+    # ----------------------------------------------------
+    #
+    # Ate a Spec 028, so ADMIN/MANAGER chegavam neste service: as rotas
+    # exigiam "team.manage" e ninguem mais tinha. A 028 abriu DUAS rotas
+    # (assign / remove) para "member.manage.subteam", entao o SUPERVISOR
+    # passou a alcancar o service -- e a matriz C2 sozinha o deixaria
+    # passar, porque ela so recusa alvo MANAGER/ADMIN. Um SUPERVISOR
+    # mexendo num OPERATOR passaria por ela sem barreira alguma.
+    #
+    # Por isso os dois gates abaixo. Eles NAO substituem a matriz C2:
+    # rodam junto com ela.
+
+    def _tem_gestao_ampla(self) -> bool:
+        """True para quem tem `team.manage` -- hoje ADMIN e MANAGER.
+
+        Checa PERMISSAO, nao papel: se um papel novo ganhar `team.manage`
+        no mapa, este gate acompanha sozinho.
+        """
+        return require_tenant().has_permission("team.manage")
+
+    def _subtimes_supervisionados(self) -> frozenset[uuid.UUID]:
+        """team_ids onde o ator e SUPERVISOR.
+
+        Sai do TenantContext (`memberships`), populado por requisicao em
+        `get_tenant_context`. Sem ida ao banco.
+        """
+        return frozenset(
+            m.team_id
+            for m in require_tenant().memberships
+            if m.role == UserTeamRole.SUPERVISOR.value
+        )
+
+    def _assert_escopo_supervisor(
+        self, *, team_id: uuid.UUID, papel_alvo: UserTeamRole
+    ) -> None:
+        """Spec 028: SUPERVISOR so mexe em OPERATOR do PROPRIO subtime.
+
+        No-op para ADMIN/MANAGER -- eles seguem governados pela matriz C2.
+
+        As duas travas, nesta ordem:
+            D2 -- o alvo tem de ser OPERATOR. Supervisor nao promove nem
+                  mexe em par (criar outro SUPERVISOR e trabalho do MANAGER).
+            D1 -- o time tem de ser um subtime ONDE O ATOR E SUPERVISOR.
+                  Sem esta linha, qualquer supervisor alcanca o operator de
+                  qualquer subtime. E a trava que a spec chama de
+                  inegociavel; o teste de sabotagem existe por causa dela.
+
+        Levanta AuthorizationError (403) na violacao.
+        """
+        if self._tem_gestao_ampla():
+            return
+
+        # Daqui pra baixo o ator so pode ter chegado por
+        # "member.manage.subteam" -- ou seja, e SUPERVISOR.
+        if papel_alvo is not UserTeamRole.OPERATOR:
+            raise AuthorizationError(
+                "Supervisor so administra membros OPERATOR.",
+                details={"role": papel_alvo.value},
+            )
+        if team_id not in self._subtimes_supervisionados():
+            raise AuthorizationError(
+                "Supervisor so administra membros do proprio subtime.",
+                details={"team_id": str(team_id)},
+            )
+
+    def _assert_gestao_ampla(self, *, acao: str) -> None:
+        """Barra o ator supervisor-only em operacoes que a 028 NAO abriu.
+
+        Defesa em profundidade: hoje as rotas de trocar papel, mover de
+        subtime, desativar, cadastrar e resetar senha continuam exigindo
+        `team.manage`, entao o supervisor nem chega aqui. Este gate existe
+        para o dia em que alguem afrouxar uma dessas rotas sem ler a spec
+        -- o service recusa mesmo assim.
+        """
+        if self._tem_gestao_ampla():
+            return
+        raise AuthorizationError(
+            "Esta operacao exige gestao ampla de membros.",
+            details={"acao": acao},
+        )
 
     # ----------------------------------------------------
     # Matriz de autorizacao (Spec 015, C2) -- reusada por F2 e F4

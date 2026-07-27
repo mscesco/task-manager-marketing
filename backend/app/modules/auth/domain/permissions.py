@@ -84,6 +84,13 @@ _ROLE_PERMISSIONS: dict[UserTeamRole, frozenset[str]] = {
             "task.create",
             "task.update",
             "task.assign",
+            # Spec 028: alocar braco operacional no PROPRIO subtime.
+            # Deliberadamente DISTINTA de "team.manage" (ADMIN/MANAGER):
+            # esta so abre adicionar/remover OPERATOR, e so no subtime onde
+            # o ator e SUPERVISOR. A trava de escopo NAO mora aqui -- mora
+            # em MemberService._assert_escopo_supervisor, que e quem tem o
+            # team_id do alvo. Este mapa diz "o que", nao "onde".
+            "member.manage.subteam",
         }
     ),
     UserTeamRole.OPERATOR: frozenset(

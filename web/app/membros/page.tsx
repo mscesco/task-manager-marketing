@@ -1,5 +1,20 @@
 "use client";
 import { useEffect, useState } from "react";
+import {
+  alcanceDe,
+  podeGerenciarAlgo,
+  podeCadastrarMembro,
+  temAcaoPossivel,
+  podeResetarSenha,
+  podeDesativarConta,
+  podeTrocarPapel,
+  podeMoverSubtime,
+  podeAdicionarAoTime,
+  podeRemoverDoTime,
+  papeisAtribuiveis,
+  timesParaAdicionar as timesPermitidos,
+  type Alcance,
+} from "@/lib/permissoesMembros";
 import AppShell from "@/components/AppShell";
 import EmptyState from "@/components/EmptyState";
 import Badge from "@/components/Badge";
@@ -64,7 +79,10 @@ function Membros() {
   const [salvando, setSalvando] = useState(false);
   const [erroForm, setErroForm] = useState<string | null>(null);
 
-  const podeGerenciar = me?.permissions.includes("team.manage") ?? false;
+  // Spec 028: o gate deixou de ser "tem team.manage?" e virou um ALCANCE.
+  // A regra mora em lib/permissoesMembros (pura, testada); aqui so lemos.
+  const alcance = alcanceDe(me);
+  const podeGerenciar = podeGerenciarAlgo(alcance);
   // Spec 014 (gate D2): so um ADMIN ve a opcao ADMIN no dropdown. O backend
   // trava de qualquer jeito -- isto e so conveniencia de UI.
   const souAdmin = me?.roles.includes("ADMIN") ?? false;
@@ -159,7 +177,7 @@ function Membros() {
         title="Membros"
         count={membros.length}
         actions={
-          podeGerenciar && !criando && !revelado && (
+          podeCadastrarMembro(alcance) && !criando && !revelado && (
             <button
               className="btn btn-primary ml-auto"
               onClick={() => setCriando(true)}
@@ -220,7 +238,8 @@ function Membros() {
           <div className="muted" style={{ fontSize: 12, lineHeight: 1.45 }}>
             Hoje todo membro do Marketing enxerga o quadro geral inteiro. O time
             escolhido alimenta o filtro por time no quadro — não esconde tarefas.
-            Isso muda quando existir um quadro de subtime.
+            O supervisor do subtime pode adicionar e remover operadores dele
+            próprio (Spec 028).
           </div>
 
           {erroForm && <div className="error-box">{erroForm}</div>}
@@ -251,6 +270,7 @@ function Membros() {
               times={times}
               souAdmin={souAdmin}
               primeira={i === 0}
+              alcance={alcance}
               podeGerenciar={podeGerenciar}
               isSelf={me?.id === m.id}
               onRevelar={setRevelado}
@@ -272,6 +292,7 @@ function LinhaMembro({
   times,
   souAdmin,
   primeira,
+  alcance,
   podeGerenciar,
   isSelf,
   onRevelar,
@@ -282,6 +303,7 @@ function LinhaMembro({
   times: Team[];
   souAdmin: boolean;
   primeira: boolean;
+  alcance: Alcance;
   podeGerenciar: boolean;
   isSelf: boolean;
   onRevelar: (r: Revelado) => void;
@@ -303,21 +325,35 @@ function LinhaMembro({
   const [novoPapel, setNovoPapel] = useState<MemberRole | "">("");
   const [addBusy, setAddBusy] = useState(false);
 
-  const mostraAcoes = podeGerenciar && !isSelf && m.is_active;
+  // Spec 028: a linha aparece SEMPRE (lista completa do time). O que o
+  // alcance decide e se ela tem botao -- para o supervisor, so em membro do
+  // proprio subtime ou sem subtime. Para ADMIN/MANAGER nada muda.
+  const mostraAcoes =
+    podeGerenciar &&
+    !isSelf &&
+    m.is_active &&
+    temAcaoPossivel(alcance, m.team_id);
 
-  // Papeis atribuiveis pelo ator: ADMIN => todos; senao so SUPERVISOR/OPERATOR.
-  // Espelha a matriz C2 do backend (que trava de qualquer jeito).
-  const papeisAtribuiveis: MemberRole[] = souAdmin
-    ? PAPEIS
-    : ["OPERATOR", "SUPERVISOR"];
+  // Papeis atribuiveis pelo ator. Spec 028: sai do modulo puro -- supervisor
+  // so oferece OPERATOR. Espelha a matriz C2 + a trava D2 do backend (que
+  // travam de qualquer jeito; aqui e so para nao oferecer o que dara 403).
+  const papeisDoAtor: MemberRole[] = papeisAtribuiveis(alcance, souAdmin);
 
   function nomeTime(id: string): string {
     return times.find((t) => t.id === id)?.name ?? "—";
   }
 
   // C2 (front): o ator so edita vinculo cujo papel atual ele alcanca.
+  // Spec 028: trocar papel exige alcance amplo -- supervisor nao promove.
   function podeEditarVinculo(papelAtual: MemberRole): boolean {
+    if (!podeTrocarPapel(alcance)) return false;
     return souAdmin || papelAtual === "SUPERVISOR" || papelAtual === "OPERATOR";
+  }
+
+  // Spec 028: remover vinculo -- amplo remove qualquer um; supervisor so
+  // OPERATOR do proprio subtime.
+  function podeRemoverVinculo(teamId: string, papelAtual: MemberRole): boolean {
+    return podeRemoverDoTime(alcance, teamId, papelAtual);
   }
 
   function ehSubtime(teamId: string): boolean {
@@ -338,11 +374,14 @@ function LinhaMembro({
   function timesParaAdicionar(): Team[] {
     const jaEsta = new Set((vinculos ?? []).map((x) => x.team_id));
     const temSubtime = (vinculos ?? []).some((x) => ehSubtime(x.team_id));
-    return times.filter((t) => {
+    const candidatos = times.filter((t) => {
       if (jaEsta.has(t.id)) return false;
       if (temSubtime && t.parent_team_id !== null) return false;
       return true;
     });
+    // Spec 028: o supervisor so enxerga aqui os subtimes onde ele e
+    // supervisor -- nunca a raiz, nunca subtime alheio.
+    return timesPermitidos(alcance, candidatos);
   }
 
   async function adicionarVinculo() {
@@ -525,16 +564,20 @@ function LinhaMembro({
           <span style={{ display: "flex", gap: 6, flexShrink: 0 }}>
             <button className="btn btn-ghost" onClick={abrirPapel}
               style={{ padding: "4px 10px", fontSize: 12 }}>
-              Alterar papel
+              {podeTrocarPapel(alcance) ? "Alterar papel" : "Times"}
             </button>
-            <button className="btn btn-ghost" onClick={() => { setErroLinha(null); setConfirmReset(true); }}
-              style={{ padding: "4px 10px", fontSize: 12 }}>
-              Resetar senha
-            </button>
-            <button className="btn btn-ghost" onClick={() => { setErroLinha(null); setConfirmDesativar(true); }}
-              style={{ padding: "4px 10px", fontSize: 12, color: "var(--danger, #b42318)" }}>
-              Desativar
-            </button>
+            {podeResetarSenha(alcance) && (
+              <button className="btn btn-ghost" onClick={() => { setErroLinha(null); setConfirmReset(true); }}
+                style={{ padding: "4px 10px", fontSize: 12 }}>
+                Resetar senha
+              </button>
+            )}
+            {podeDesativarConta(alcance) && (
+              <button className="btn btn-ghost" onClick={() => { setErroLinha(null); setConfirmDesativar(true); }}
+                style={{ padding: "4px 10px", fontSize: 12, color: "var(--danger, #b42318)" }}>
+                Desativar
+              </button>
+            )}
           </span>
         )}
       </div>
@@ -586,8 +629,16 @@ function LinhaMembro({
             vinculos.map((v) => {
               const editavel = podeEditarVinculo(v.role);
               const destinos = destinosDeMover(v.team_id);
-              const podeMover = editavel && ehSubtime(v.team_id) && destinos.length > 0;
-              const podeRemover = editavel && vinculos.length > 1;
+              const podeMover =
+                podeMoverSubtime(alcance) &&
+                editavel &&
+                ehSubtime(v.team_id) &&
+                destinos.length > 0;
+              // Spec 028: remover tem gate PROPRIO. Nao pode sair de
+              // `editavel` -- o supervisor nao edita papel (D2) mas remove
+              // OPERATOR do proprio subtime (D1), que e o objetivo da spec.
+              const podeRemover =
+                podeRemoverVinculo(v.team_id, v.role) && vinculos.length > 1;
               const ocupada = papelBusy === v.team_id;
               return (
                 <div key={v.team_id} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -601,7 +652,7 @@ function LinhaMembro({
                         onChange={(ev) => salvarPapel(v.team_id, ev.target.value as MemberRole)}
                         style={{ padding: "4px 8px", fontSize: 12, width: "auto" }}
                       >
-                        {papeisAtribuiveis.map((p) => (
+                        {papeisDoAtor.map((p) => (
                           <option key={p} value={p}>{PAPEL_LABEL[p]}</option>
                         ))}
                       </select>
@@ -675,12 +726,22 @@ function LinhaMembro({
                   onChange={(ev) => setNovoPapel(ev.target.value as MemberRole | "")}
                   style={{ padding: "4px 8px", fontSize: 12, width: "auto" }}>
                   <option value="">— papel —</option>
-                  {papeisAtribuiveis.map((p) => (
+                  {papeisDoAtor.map((p) => (
                     <option key={p} value={p}>{PAPEL_LABEL[p]}</option>
                   ))}
                 </select>
                 <button className="btn btn-primary" onClick={adicionarVinculo}
-                  disabled={addBusy || !novoTimeId || !novoPapel}
+                  disabled={
+                    addBusy ||
+                    !novoTimeId ||
+                    !novoPapel ||
+                    // Spec 028: ultima checagem antes de disparar. Os selects
+                    // ja sao filtrados, mas a combinacao (time, papel) so e
+                    // valida junta -- e o backend recusa com 403 se passar.
+                    !podeAdicionarAoTime(
+                      alcance, novoTimeId, novoPapel as MemberRole,
+                    )
+                  }
                   style={{ padding: "4px 12px", fontSize: 12 }}>
                   {addBusy ? "…" : "Adicionar"}
                 </button>

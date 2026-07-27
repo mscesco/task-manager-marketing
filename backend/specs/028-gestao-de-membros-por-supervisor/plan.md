@@ -1,8 +1,24 @@
 # Plan 028 — Supervisor gerencia operators do próprio subtime
 
-> **Não iniciar sem D1–D5 da spec fechadas.** O plan assume as propostas
-> aceitas como estão; se a Camila mudar D3 (deixar supervisor cadastrar pessoa
-> nova) ou D1 (escopo além do próprio subtime), a Fatia 1 muda de tamanho.
+> **CONCLUÍDO em 2026-07-27.** D1–D5 fechadas conforme as propostas. As 4
+> fatias foram executadas, mais uma quinta não prevista (ver abaixo).
+> Placar: backend **400**, front **121**.
+>
+> **Desvio do plano, registrado:** a Fatia 2 dizia *"Portão: testes de
+> integração da Fatia 3"* — e a Fatia 3, como escrita, testava só o service.
+> O gate da rota ficou sem cobertura até ser detectado numa revisão de
+> fechamento. Daí a **Fatia 5**. Lição para os próximos planos: quando uma
+> fatia muda um gate de rota, o portão dela tem de ser um teste que
+> **percorre a rota**, não o serviço por baixo.
+
+## Fatia 5 (não prevista) — testes de rota
+
+`backend/tests/integration/test_supervisor_member_routes_http_db.py` — 9 testes
+via cliente ASGI: as 2 rotas abertas, as 4 que seguem fechadas, as travas D1/D2
+pelo caminho HTTP e o MANAGER sem regressão.
+
+Sem ela, reverter o gate do router deixava a suíte inteira verde com a
+funcionalidade morta.
 
 Porte: **pequeno-médio.** O volume está na autorização e nos testes de
 vazamento entre subtimes, não em código novo de negócio. Nenhuma migration de

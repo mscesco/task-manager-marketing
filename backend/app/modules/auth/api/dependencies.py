@@ -166,6 +166,45 @@ def require_permission(permission: str) -> Callable[..., TenantContext]:
     return _guard
 
 
+def require_any_permission(*permissions: str) -> Callable[..., TenantContext]:
+    """Fabrica de dependency: passa se o ator tiver QUALQUER uma das permissoes.
+
+    Uso na rota::
+
+        @router.post(
+            "/{user_id}/teams",
+            dependencies=[Depends(require_any_permission(
+                "team.manage", "member.manage.subteam",
+            ))],
+        )
+
+    Introduzida pela Spec 028, onde a mesma rota atende dois perfis com
+    alcances diferentes: ADMIN/MANAGER (amplo) e SUPERVISOR (so OPERATOR do
+    proprio subtime).
+
+    IMPORTANTE -- este guard e a porta, nao a regra. Ele so responde "pode
+    bater nesta rota?". QUEM pode mexer em QUEM continua sendo decidido no
+    service, que e onde existe o team_id do alvo. Nunca afrouxe uma rota
+    para `member.manage.subteam` sem o gate correspondente no service.
+
+    Lanca AuthorizationError (-> HTTP 403) se nao tiver nenhuma.
+    """
+
+    def _guard(
+        context: Annotated[TenantContext, Depends(get_tenant_context)],
+    ) -> TenantContext:
+        if not any(context.has_permission(p) for p in permissions):
+            raise AuthorizationError(
+                "Permissao necessaria: "
+                + " ou ".join(permissions)
+                + ".",
+                details={"required_any_of": list(permissions)},
+            )
+        return context
+
+    return _guard
+
+
 # Type aliases para deixar as assinaturas das rotas limpas.
 TenantContextDep = Annotated[TenantContext, Depends(get_tenant_context)]
 CurrentUserDep = Annotated[User, Depends(get_current_user)]

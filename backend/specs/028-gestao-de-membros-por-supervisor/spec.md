@@ -1,8 +1,10 @@
 # Spec 028 — Supervisor gerencia operators do próprio subtime
 
-> **Status: RASCUNHO. Não construir sem fechar as decisões abertas (§ Decisões
-> a fechar).** Escrita durante a semana do lançamento (dia 27) para ser
-> executada **depois** dele, com dados reais de como os times se organizam.
+> **Status: IMPLEMENTADA (2026-07-27), NÃO DEPLOYADA.** As cinco decisões
+> foram fechadas pela Camila em 2026-07-27 (todas conforme a proposta) e o
+> código está no repo com 21 testes próprios. Falta subir para produção — a
+> recomendação registrada é fazê-lo **depois da apresentação de sexta**, por
+> ser código de autorização e não ter prazo.
 
 ## Objetivo
 
@@ -57,36 +59,36 @@ esta spec — e a Camila cravar as decisões abaixo antes de qualquer código.
   máximo um subtime — invariante que a fatia de "adicionar" precisa respeitar
   e que já está implementada.
 
-## Decisões a fechar (só a Camila) — a spec NÃO avança sem elas
+## Decisões — FECHADAS pela Camila em 2026-07-27
 
 - **D1 — Escopo do supervisor: só o próprio subtime, confirmar.**
   Proposta: SUPERVISOR só enxerga e só mexe em membros **do subtime onde ele
   é supervisor**. Supervisor do subtime A **não alcança** o subtime B. Esta é a
   trava que **não existe hoje** e é o furo perigoso: sem ela, uma permissão
   `member.manage.subteam` global deixaria supervisor mexer em qualquer time.
-  ☐ Confirmar: escopo por subtime do ator.
+  ☑ Confirmado: escopo por subtime do ator.
 
 - **D2 — Só OPERATOR, confirmar.** Proposta: supervisor adiciona/remove apenas
   OPERATOR. Não promove ninguém a SUPERVISOR (isso seria criar par → viola a
-  024). ☐ Confirmar: alvo restrito a OPERATOR.
+  024). ☑ Confirmado: alvo restrito a OPERATOR. Se precisar de outro SUPERVISOR, quem cria é o MANAGER.
 
 - **D3 — "Adicionar" = mover pessoa existente, ou cadastrar do zero?**
   Cadastrar membro novo dispara senha temporária (ADR 0008), reveal-once, etc.
   Proposta: supervisor **só move um membro que já existe no workspace** para o
   seu subtime (`assign_to_team`), **não cadastra pessoa nova** — cadastro
   continua ADMIN/MANAGER. Reduz o blast radius e reaproveita `assign_to_team`
-  puro. ☐ Confirmar: supervisor move, não cadastra.
+  puro. ☑ Confirmado: supervisor move, não cadastra.
 
 - **D4 — "Remover do subtime" tira do subtime ou desativa a pessoa?**
   Proposta: `remove_member_from_team` tira o vínculo com o subtime; a pessoa
   continua ativa no workspace. Supervisor **nunca** desativa conta
-  (`deactivate_member`, linha 509, segue ADMIN/MANAGER). ☐ Confirmar.
+  (`deactivate_member`, linha 509, segue ADMIN/MANAGER). ☑ Confirmado: tira do subtime; desativar conta é do MANAGER.
 
 - **D5 — Nome da permissão nova.** Proposta: `member.manage.subteam`
   (concedida a SUPERVISOR), distinta de `team.manage` (ADMIN/MANAGER, poder
   amplo). O gate do front passa a ser
   `team.manage || member.manage.subteam`, e o backend escopa por subtime
-  quando é a segunda. ☐ Confirmar o nome.
+  quando é a segunda. ☑ Confirmado.
 
 ## Regra de autorização — o coração da spec
 
@@ -117,8 +119,17 @@ provar por sabotagem (ver plan, Fatia 3).
 5. SUPERVISOR tenta mexer num MANAGER/ADMIN → **403**.
 6. MANAGER e ADMIN continuam com o poder amplo de hoje, **sem regressão** (a
    suíte atual de membros passa inalterada).
-7. Na tela, um SUPERVISOR vê **só** os membros do próprio subtime e **só** o
-   botão de adicionar/remover OPERATOR — não vê promoção, não vê outros times.
+7. Na tela, um SUPERVISOR vê **a lista completa de membros** e só tem **botão**
+   em quem está no próprio subtime ou sem subtime. Não vê promoção, resetar
+   senha nem desativar.
+
+   > **Revisão de 2026-07-27 — este critério foi INVERTIDO em campo.** A versão
+   > original filtrava a lista (supervisor via só o próprio subtime). Ao testar
+   > no dev, a Camila vetou: o cabeçalho contava 8 e o corpo listava 4, porque
+   > o contador lia a lista inteira e o `map` lia a filtrada. Esconder linha faz
+   > a ferramenta parecer que perdeu registros. A decisão passou a ser **lista
+   > completa, ação condicional** — `membrosVisiveis` (filtro de lista) virou
+   > `temAcaoPossivel` (predicado por linha). A trava de backend não mudou.
 
 ## O que esta spec explicitamente NÃO faz
 
@@ -134,3 +145,47 @@ Blast radius baixo **se** a trava de subtime (D1) entrar e for testada por
 sabotagem. O único jeito de esta spec causar dano é a autorização vazar entre
 subtimes — por isso o critério 2 e o critério 7 são inegociáveis, e por isso o
 plan sabota a trava de propósito antes de dar por pronto.
+
+
+---
+
+## Implementação (2026-07-27)
+
+| Camada | Arquivo |
+|---|---|
+| Permissão nova | `app/modules/auth/domain/permissions.py` |
+| Gate de rota (any-of) | `app/modules/auth/api/dependencies.py` |
+| Travas D1/D2 + negações | `app/modules/users/application/member_service.py` |
+| Rotas abertas (2) | `app/modules/users/api/router.py` |
+| Testes de service (12) | `tests/integration/test_supervisor_member_scope_db.py` |
+| Testes de rota (9) | `tests/integration/test_supervisor_member_routes_http_db.py` |
+| Regra pura do front | `web/lib/permissoesMembros.ts` |
+| Testes do front (32) | `web/lib/__tests__/permissoesMembros.test.ts` |
+| Tela | `web/app/membros/page.tsx` |
+
+**Placar após a spec:** backend **400**, front **121**.
+
+### Por que existem DOIS arquivos de teste no backend
+
+Os de service provam as travas D1/D2. Os de rota provam o gate
+`require_any_permission` — e só eles. Verificado por sabotagem: revertendo o
+gate do router para `require_permission("team.manage")`, os 12 testes de
+service **continuam verdes** enquanto a funcionalidade some. Só o arquivo HTTP
+acusa. É a armadilha do §8 do handoff, e a razão de o arquivo existir.
+
+### Sabotagens executadas (todas restauradas)
+
+| O que foi quebrado de propósito | Quem acusou |
+|---|---|
+| Trava D1 no service | `nao_alcanca_outro_subtime`, `nao_remove_de_outro_subtime` |
+| Trava D2 no service | `nao_atribui_supervisor`, `nao_remove_par_supervisor` |
+| Gate `require_any_permission` no router | `test_http_supervisor_adiciona`, `test_http_supervisor_remove` |
+| Trava de subtime no front | `A TRAVA D1`, `nao adiciona na raiz` |
+| `temAcaoPossivel` no front | `A TRAVA D1: sem acao sobre quem esta em OUTRO subtime` |
+
+### Consequência conhecida, aceita
+
+Quem sai da raiz para um subtime não pode ir para um segundo (regra 1-subtime,
+ADR 0008). Com vários subtimes disputando a mesma pessoa, vale o
+primeiro que a puxar. Não é bug; é a invariante funcionando. Registrado porque
+com 27 pessoas isso pode gerar atrito entre áreas.

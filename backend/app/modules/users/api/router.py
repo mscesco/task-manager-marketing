@@ -26,7 +26,11 @@ import uuid
 from fastapi import APIRouter, Depends, Response, status
 
 from app.core.deps import SessionDep, UoWDep
-from app.modules.auth.api.dependencies import TenantContextDep, require_permission
+from app.modules.auth.api.dependencies import (
+    TenantContextDep,
+    require_any_permission,
+    require_permission,
+)
 from app.modules.users.api.schemas import (
     ChangeMemberRoleRequest,
     MemberCreatedResponse,
@@ -162,12 +166,22 @@ async def reset_member_password(
     "/{user_id}/team",
     response_model=TeamMembershipResponse,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_permission("team.manage"))],
+    dependencies=[
+        Depends(
+            require_any_permission("team.manage", "member.manage.subteam")
+        )
+    ],
 )
 async def assign_member_to_team(
     user_id: uuid.UUID, payload: TeamAssignmentRequest, uow: UoWDep
 ) -> TeamMembershipResponse:
-    """Vincula um membro existente a uma equipe, com um papel."""
+    """Vincula um membro existente a uma equipe, com um papel.
+
+    Spec 028: alem de ADMIN/MANAGER (`team.manage`), aceita o SUPERVISOR
+    (`member.manage.subteam`). O guard so abre a porta -- o alcance real do
+    supervisor (so OPERATOR, so o proprio subtime) e decidido no service,
+    que e quem tem o team_id do alvo.
+    """
     membership = await MemberService(uow.session).assign_to_team(
         user_id=user_id, team_id=payload.team_id, role=payload.role
     )
@@ -204,7 +218,11 @@ async def change_member_role(
     "/{user_id}/teams/{team_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     response_class=Response,
-    dependencies=[Depends(require_permission("team.manage"))],
+    dependencies=[
+        Depends(
+            require_any_permission("team.manage", "member.manage.subteam")
+        )
+    ],
 )
 async def remove_member_from_team(
     user_id: uuid.UUID, team_id: uuid.UUID, uow: UoWDep
