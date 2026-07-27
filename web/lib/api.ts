@@ -327,7 +327,22 @@ export async function listAllTasks(
   return { items, total, truncated: total > items.length };
 }
 
-export type MyTaskItem = Task & { relations: string[]; out_of_scope: boolean };
+export type MyTaskItem = Task & {
+  relations: string[];
+  out_of_scope: boolean;
+  /**
+   * Titulo da tarefa-mae, quando esta e subtarefa. Vem em LOTE do backend
+   * (1 query por pagina) -- ver ADR 0025 para o mesmo padrao em assignee_ids.
+   *
+   * `null` quando nao ha mae OU quando a mae esta fora da lente do usuario.
+   * A tela cai no rotulo generico "Subtarefa"; NUNCA inventa titulo.
+   *
+   * Resolver isto no front, procurando a mae entre os itens carregados, nao
+   * serve: o caso que importa e estar designado SO na filha -- e ai a mae
+   * nao esta na lista.
+   */
+  parent_title: string | null;
+};
 export type MyAssignmentsResponse = {
   items: MyTaskItem[];
   total: number;

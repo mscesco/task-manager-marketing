@@ -25,6 +25,9 @@ from app.modules.tasks.application.collaboration_service import (
     CollaborationService,
 )
 from app.modules.tasks.application.me_service import MeService
+from app.modules.tasks.infrastructure.task_repository import (
+    TaskRepository,
+)
 from app.modules.tasks.application.project_service import ProjectService
 from app.shared.pagination import PageParams
 
@@ -72,12 +75,35 @@ async def list_my_assignments(
     amap = await CollaborationService(session).assignee_ids_for_tasks(
         [row.task for row in result.items]
     )
+    # Titulo da mae, tambem em LOTE (1 query pra pagina). Esta tela e a unica
+    # que mostra subtarefa como card SOLTO -- no quadro geral ela vive dentro
+    # do card da mae (ADR 0004) e o contexto e obvio. Aqui nao era: o selo
+    # dizia so "Subtarefa", sem dizer de que.
+    #
+    # Buscar 1 mae por card seria N+1, e o caso que MAIS importa e justamente
+    # aquele em que a mae NAO esta na pagina (a pessoa esta designada so na
+    # filha) -- resolver no front pela lista carregada falharia exatamente ali.
+    pais = await TaskRepository(session).titles_for_ids(
+        list({
+            row.task.parent_task_id
+            for row in result.items
+            if row.task.parent_task_id is not None
+        })
+    )
     items = [
         MyTaskItem(
             **TaskResponse.model_validate(row.task).model_dump(),
             relations=sorted(row.relations),
             out_of_scope=row.out_of_scope,
             assignee_ids=amap.get(row.task.id, []),
+            # None quando nao ha mae OU quando a mae esta fora da lente: o
+            # `_base_select` do repo filtra por tenant, entao titulo alheio
+            # nunca vaza -- o front cai no rotulo generico.
+            parent_title=(
+                pais.get(row.task.parent_task_id)
+                if row.task.parent_task_id
+                else None
+            ),
         )
         for row in result.items
     ]

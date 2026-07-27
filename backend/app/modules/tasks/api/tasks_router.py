@@ -127,14 +127,31 @@ async def get_task(
 # --------------------------------------------------------
 @router.post(
     "",
-    response_model=TaskResponse,
+    response_model=TaskListItem,
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(require_permission("task.create"))],
 )
 async def create_task(
     payload: TaskCreateRequest, uow: UoWDep
-) -> TaskResponse:
-    """Cria task. Exige task.create."""
+) -> TaskListItem:
+    """Cria task. Exige task.create.
+
+    Responde **TaskListItem** (com `assignee_ids`), nao `TaskResponse`.
+
+    O ADR 0025 poe `POST`/`PATCH`/`/move`/`/archive` no mesmo balaio: nenhum
+    devolve `assignee_ids`, para uma mutacao nao zerar o selo do card. O
+    raciocinio vale para PATCH/move/archive -- que nao tocam em responsavel --
+    mas **envelheceu para o POST**: a Spec 021 deu a criacao a capacidade de
+    DEFINIR responsaveis, e o ADR e anterior a ela.
+
+    Sintoma real (relatado em 2026-07-27): criar tarefa com responsavel
+    gravava certo no banco e o card nascia sem ninguem, porque o front recebia
+    a resposta sem o campo e caia no ramo `?? []` do merge.
+
+    Correcao cirurgica: SO o POST muda. PATCH/move/archive seguem com
+    `TaskResponse` e a protecao do ADR fica intacta. Ver a emenda no
+    `docs/adr/0025-listagem-traz-assignees-em-lote.md`.
+    """
     task = await TaskService(uow.session).create(
         CreateTaskCommand(
             project_id=payload.project_id,
@@ -153,8 +170,14 @@ async def create_task(
             assignee_ids=payload.assignee_ids,
         )
     )
+    # Le do BANCO o que foi de fato gravado -- nao ecoa payload.assignee_ids.
+    # Se um dia a atribuicao filtrar/deduplicar, a resposta acompanha sozinha.
+    # Antes do commit, de proposito: mesma transacao que criou.
+    assignee_ids = await CollaborationService(uow.session).assignee_ids_for(task)
     await uow.commit()
-    return TaskResponse.model_validate(task)
+    return TaskListItem.model_validate(task).model_copy(
+        update={"assignee_ids": assignee_ids}
+    )
 
 
 @router.patch(

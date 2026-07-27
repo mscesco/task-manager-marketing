@@ -254,6 +254,16 @@ class MyTaskItem(TaskResponse):
     # Sem isto, a tela "Minhas tarefas" reaproveita o item e o detalhe mostra
     # "Ninguem designado" mesmo pra quem esta designado.
     assignee_ids: list[uuid.UUID] = []
+    #: Titulo da tarefa-mae, quando esta e subtarefa. Tambem em LOTE.
+    #:
+    #: POR QUE existe: "Minhas tarefas" e a UNICA tela que mostra subtarefa
+    #: como card solto -- o quadro geral so exibe raizes (ADR 0004) e a
+    #: subtarefa aparece DENTRO do card da mae, onde o contexto e obvio.
+    #: Solta, ela perdia a ancora: o selo dizia so "Subtarefa".
+    #:
+    #: `None` quando nao ha mae, ou quando a mae nao e visivel pela lente do
+    #: usuario. O front cai no rotulo generico -- nunca inventa titulo.
+    parent_title: str | None = None
 
 
 class MyAssignmentsResponse(BaseModel):

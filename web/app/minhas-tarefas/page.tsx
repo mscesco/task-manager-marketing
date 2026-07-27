@@ -306,6 +306,14 @@ function Minhas() {
           relations: ["creator"],
           out_of_scope: false,
           assignee_ids: t.assignee_ids ?? [],
+          // A resposta de criacao nao traz parent_title (so /me/assignments
+          // monta o lote). Como a subtarefa nasceu daqui, a mae e a task que
+          // esta aberta -- resolvemos localmente e o selo ja aparece certo,
+          // sem esperar recarregar a pagina.
+          parent_title:
+            t.parent_task_id
+              ? prev.find((x) => x.id === t.parent_task_id)?.title ?? null
+              : null,
         };
         return [nova, ...prev];
       }
@@ -314,6 +322,9 @@ function Minhas() {
         relations: existente.relations,
         out_of_scope: existente.out_of_scope,
         assignee_ids: t.assignee_ids ?? existente.assignee_ids,
+        // Mutacao de task nao devolve parent_title -> preserva o local, mesma
+        // regra do assignee_ids (ADR 0025). Sem isto o selo sumiria ao editar.
+        parent_title: existente.parent_title,
       };
       return prev.map((x) => (x.id === t.id ? merged : x));
     });
@@ -549,9 +560,20 @@ function Minhas() {
               {STATUS_LABEL[t.status] || t.status}
             </span>
             {t.parent_task_id && (
-              <Badge tone="soft" size="sm" color="var(--accent)">
-                Subtarefa
-              </Badge>
+              // Nomeia a mae quando o backend a resolveu. Cai no generico se
+              // parent_title vier null (mae fora da lente) -- nunca inventa.
+              <span
+                title={
+                  t.parent_title
+                    ? `Subtarefa de: ${t.parent_title}`
+                    : "Subtarefa"
+                }
+                style={{ display: "inline-flex", maxWidth: 260, minWidth: 0 }}
+              >
+                <Badge tone="soft" size="sm" color="var(--accent)">
+                  {t.parent_title ? `↳ ${t.parent_title}` : "Subtarefa"}
+                </Badge>
+              </span>
             )}
             {t.relations.map((r) => (
               <Badge key={r} tone="neutral" size="sm" weight="semibold" className="bg-surface-2 text-ink-soft">
@@ -978,7 +1000,12 @@ function CardArrastavelMinhas({
         ...(isDragging ? { transform: "none", boxShadow: "none" } : null),
       }}
     >
-      <TaskCard task={task} members={members} projectName={projectName} />
+      <TaskCard
+        task={task}
+        members={members}
+        projectName={projectName}
+        parentTitle={(task as MyTaskItem).parent_title}
+      />
     </div>
   );
 }

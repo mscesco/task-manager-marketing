@@ -143,6 +143,28 @@ class TaskRepository(BaseRepository[Task]):
     # ----------------------------------------------------
     # /me/assignments -- relacoes do usuario corrente (ADR 0018)
     # ----------------------------------------------------
+    async def titles_for_ids(
+        self, task_ids: list[uuid.UUID]
+    ) -> dict[uuid.UUID, str]:
+        """Titulos de um conjunto de tasks em UMA query (lote).
+
+        Alimenta o selo "Subtarefa de X" em /me/assignments: a pagina pode
+        ter N subtarefas cujas maes NAO estao na lista (a pessoa esta so na
+        filha), e buscar uma a uma seria N+1 -- exatamente o que o ADR 0025
+        rejeitou para o selo de responsavel.
+
+        Passa pelo `_base_select()`, entao herda o filtro de tenant: mae de
+        outro workspace nao volta, e o chamador cai no rotulo generico em vez
+        de vazar titulo alheio.
+
+        Lista vazia -> dict vazio, sem ir ao banco.
+        """
+        if not task_ids:
+            return {}
+        stmt = self._base_select().where(Task.id.in_(task_ids))
+        rows = (await self.session.execute(stmt)).scalars().all()
+        return {t.id: t.title for t in rows}
+
     async def list_my_relations(
         self,
         params: PageParams,

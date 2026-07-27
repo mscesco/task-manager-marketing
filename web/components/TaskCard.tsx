@@ -18,6 +18,7 @@ export default function TaskCard({
   subtaskCount = 0,
   subtaskDone = 0,
   projectName,
+  parentTitle,
   escopo,
 }: {
   task: Task;
@@ -25,6 +26,12 @@ export default function TaskCard({
   subtaskCount?: number; // filhos DIRETOS
   subtaskDone?: number; // filhos diretos concluidos
   projectName?: string; // nome do projeto p/ a tag (so no quadro geral)
+  /**
+   * Titulo da tarefa-mae. So "Minhas tarefas" passa: e a unica tela que
+   * mostra subtarefa como card SOLTO -- no quadro geral ela vive dentro do
+   * card da mae (ADR 0004) e o contexto ja e obvio.
+   */
+  parentTitle?: string | null;
   // Fatia 4b: origem da task no quadro de SUBTIME. "compartilhada" = veio
   // da raiz (responsavel do subtime); "interna" = nasceu no subtime.
   // undefined em outros quadros (nao mostra pill).
@@ -56,6 +63,20 @@ export default function TaskCard({
           }}
         >
           ▦ {projectName}
+        </span>
+      )}
+      {parentTitle && (
+        <span
+          title={`Subtarefa de: ${parentTitle}`}
+          style={{
+            alignSelf: "flex-start", maxWidth: "100%",
+            fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 6,
+            background: "var(--surface-2)", color: "var(--text-soft)",
+            border: "1px solid var(--border)",
+            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+          }}
+        >
+          ↳ {parentTitle}
         </span>
       )}
       {escopo && (
