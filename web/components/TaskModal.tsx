@@ -21,6 +21,11 @@ import {
   type Member,
 } from "@/lib/api";
 import { PRIORITY_LABEL, STATUSES } from "@/lib/status";
+import {
+  deveBloquearEnter,
+  ehAtalhoDeSalvar,
+  primeiroSelecionavel,
+} from "@/lib/teclasFormulario";
 import Avatar from "@/components/Avatar";
 import { nomeCurto } from "@/lib/people";
 
@@ -176,8 +181,10 @@ export default function TaskModal({
     });
   }
 
-  async function salvar(e: React.FormEvent) {
-    e.preventDefault();
+  // `e` e opcional: o <form onSubmit> passa o evento; o atalho Ctrl/Cmd+Enter
+  // chama sem evento (ja tratou o preventDefault no handler de tecla).
+  async function salvar(e?: React.FormEvent) {
+    e?.preventDefault();
     const t = title.trim();
     if (!t) {
       setErro("O titulo e obrigatorio.");
@@ -251,6 +258,22 @@ export default function TaskModal({
       <form
         onClick={(e) => e.stopPropagation()}
         onSubmit={salvar}
+        // Mata o "submit implicito" do HTML: sem isto, Enter em QUALQUER input
+        // deste form criava a tarefa com o que estivesse preenchido no
+        // instante -- em geral so o titulo, e sem responsavel. Regras em
+        // lib/teclasFormulario (textarea e botao seguem funcionando; o atalho
+        // deliberado passa a ser Ctrl/Cmd+Enter).
+        onKeyDown={(e) => {
+          if (ehAtalhoDeSalvar(e)) {
+            e.preventDefault();
+            if (!saving) void salvar();
+            return;
+          }
+          if (e.key !== "Enter") return;
+          if (deveBloquearEnter((e.target as HTMLElement).tagName)) {
+            e.preventDefault();
+          }
+        }}
         style={{
           width: 700, maxWidth: "100%", maxHeight: "88vh", overflowY: "auto",
           background: "var(--surface)",
@@ -411,6 +434,22 @@ export default function TaskModal({
                       value={buscaResp}
                       autoFocus
                       onChange={(e) => setBuscaResp(e.target.value)}
+                      // Enter aqui SELECIONA o primeiro da lista filtrada. Era
+                      // o pior caso do submit implicito: a pessoa digitava o
+                      // nome, apertava Enter esperando escolher, e a tarefa
+                      // nascia sem responsavel nenhum. Deixar o Enter inerte
+                      // consertaria pela metade -- o que se espera dele aqui e
+                      // escolher. Para o form nao ver a tecla (o handler de
+                      // cima ja bloquearia, mas explicito e melhor que sorte).
+                      onKeyDown={(e) => {
+                        if (e.key !== "Enter") return;
+                        e.preventDefault();
+                        e.stopPropagation();
+                        const id = primeiroSelecionavel(membrosFiltrados);
+                        if (id === null) return;
+                        toggleAssignee(id);
+                        setBuscaResp("");
+                      }}
                     />
                     <div
                       style={{

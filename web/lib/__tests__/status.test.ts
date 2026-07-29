@@ -7,7 +7,7 @@
 // do fuso da maquina.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { deadlineLabel, deadlineTone } from "@/lib/status";
+import { deadlineLabel, deadlineTone, prioridadeEmDestaque } from "@/lib/status";
 
 const HOJE = "2026-06-25";
 const ONTEM = "2026-06-24";
@@ -96,5 +96,27 @@ describe("deadlineLabel", () => {
 
   it("vence em N dias", () => {
     expect(deadlineLabel(EM_2_DIAS)).toBe("Vence em 2 dias");
+  });
+});
+
+// -------------------------------------------------------------------
+// prioridadeEmDestaque -- selo de urgencia na linha de subtarefa (29/07)
+// -------------------------------------------------------------------
+describe("prioridadeEmDestaque", () => {
+  it("destaca ALTA e URGENTE -- o que a equipe chamou de urgencia", () => {
+    expect(prioridadeEmDestaque("HIGH")).toBe(true);
+    expect(prioridadeEmDestaque("URGENT")).toBe(true);
+  });
+
+  it("NAO destaca baixa nem media -- seriam ruido em 11 linhas", () => {
+    expect(prioridadeEmDestaque("LOW")).toBe(false);
+    expect(prioridadeEmDestaque("MEDIUM")).toBe(false);
+  });
+
+  it("aguenta valor ausente ou desconhecido sem quebrar a linha", () => {
+    expect(prioridadeEmDestaque(null)).toBe(false);
+    expect(prioridadeEmDestaque(undefined)).toBe(false);
+    expect(prioridadeEmDestaque("")).toBe(false);
+    expect(prioridadeEmDestaque("SEI_LA")).toBe(false);
   });
 });

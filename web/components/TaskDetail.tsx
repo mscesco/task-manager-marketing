@@ -32,7 +32,13 @@ import {
   type Comment,
   type CurrentUser,
 } from "@/lib/api";
-import { PRIORITY_LABEL, PRIORITY_COLOR, STATUSES, deadlineTone, DEADLINE_COLOR } from "@/lib/status";
+import {
+  PRIORITY_LABEL,
+  PRIORITY_COLOR,
+  STATUSES,
+  deadlineTone,
+  DEADLINE_COLOR,
+} from "@/lib/status";
 import Badge from "@/components/Badge";
 import Avatar from "@/components/Avatar";
 import EmojiPicker from "@/components/EmojiPicker";
@@ -952,6 +958,10 @@ export default function TaskDetail({
               {filhos.map((f, i) => {
                 const concluida = f.status === "COMPLETED";
                 const ocupado = subSaving.has(f.id);
+                // Mesma regra do card do quadro: concluida/arquivada nao alerta.
+                const tone = deadlineTone(f.due_date, f.status, f.is_archived);
+                // Rotulo da prioridade; mesmo fallback do card do quadro.
+                const rotuloPrio = PRIORITY_LABEL[f.priority] || f.priority;
                 return (
                   <div
                     key={f.id}
@@ -981,13 +991,66 @@ export default function TaskDetail({
                     >
                       <span
                         style={{
-                          flex: 1, fontSize: 13.5, minWidth: 0,
-                          textDecoration: concluida ? "line-through" : "none",
-                          color: concluida ? "var(--text-faint)" : "var(--text)",
-                          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                          flex: 1, minWidth: 0,
+                          display: "flex", flexDirection: "column",
+                          alignItems: "flex-start", gap: 3,
                         }}
                       >
-                        {f.title}
+                        <span
+                          style={{
+                            width: "100%", fontSize: 13.5,
+                            textDecoration: concluida ? "line-through" : "none",
+                            color: concluida ? "var(--text-faint)" : "var(--text)",
+                            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                          }}
+                        >
+                          {f.title}
+                        </span>
+                        {/* Prazo e urgencia da subtarefa (pedido da equipe,
+                            29/07). Os dados JA vinham no objeto -- a linha so
+                            nao os desenhava. Mesma regra de cor do card do
+                            quadro (deadlineTone), pra atrasada nao ser
+                            vermelha la e cinza aqui, e a prioridade com o
+                            mesmo selo e fallback que o card usa: TODAS
+                            aparecem (decisao da Camila, 29/07). */}
+                        {(f.due_date || rotuloPrio) && (
+                          <span
+                            style={{
+                              display: "flex", alignItems: "center", gap: 6,
+                              flexWrap: "wrap", fontSize: 11,
+                            }}
+                          >
+                            {rotuloPrio && (
+                              <Badge
+                                tone="soft"
+                                size="sm"
+                                color={PRIORITY_COLOR[f.priority]}
+                              >
+                                {rotuloPrio}
+                              </Badge>
+                            )}
+                            {f.due_date && (
+                              <span
+                                className={tone ? undefined : "muted"}
+                                title={new Date(
+                                  f.due_date + "T00:00:00"
+                                ).toLocaleDateString("pt-BR")}
+                                style={{
+                                  color: tone ? DEADLINE_COLOR[tone] : undefined,
+                                  fontWeight: tone ? 600 : undefined,
+                                }}
+                              >
+                                ◷{" "}
+                                {new Date(
+                                  f.due_date + "T00:00:00"
+                                ).toLocaleDateString("pt-BR", {
+                                  day: "2-digit",
+                                  month: "2-digit",
+                                })}
+                              </span>
+                            )}
+                          </span>
+                        )}
                       </span>
                       <span style={{ display: "flex", alignItems: "center" }}>
                         {(f.assignee_ids ?? []).slice(0, 2).map((id, j) => (

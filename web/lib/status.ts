@@ -29,6 +29,18 @@ export const PRIORITY_COLOR: Record<string, string> = {
   URGENT: "#ef4444",
 };
 
+// Prioridades que merecem selo em lista COMPACTA (linha de subtarefa no
+// detalhe -- pedido da equipe, 29/07). Numa lista de 11 itens, marcar toda
+// linha como "Media" e ruido: some com o sinal em vez de dar. O pedido foi
+// "urgencia", entao so ALTA e URGENTE ganham selo; as demais ficam sem.
+// O card do quadro segue mostrando TODAS -- la ha espaco e o card e a unidade
+// de leitura do quadro. Se quiser igualar as duas telas, e aqui que muda.
+const PRIORIDADES_EM_DESTAQUE = new Set(["HIGH", "URGENT"]);
+
+export function prioridadeEmDestaque(priority: string | null | undefined): boolean {
+  return PRIORIDADES_EM_DESTAQUE.has((priority ?? "").toUpperCase());
+}
+
 // Cor de prazo (Spec 023): laranja perto de vencer, vermelho atrasado.
 // null = sem alerta (sem prazo, arquivada, ou status terminal).
 export type DeadlineTone = "overdue" | "soon" | null;
