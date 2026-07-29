@@ -18,7 +18,15 @@ import Badge from "@/components/Badge";
 import TaskModal from "@/components/TaskModal";
 import TaskDetail from "@/components/TaskDetail";
 import TaskCard from "@/components/TaskCard";
-import { STATUSES, PRIORITY_LABEL, PRIORITY_COLOR, deadlineTone, deadlineLabel, DEADLINE_COLOR } from "@/lib/status";
+import {
+  STATUSES,
+  PRIORITY_LABEL,
+  PRIORITY_COLOR,
+  deadlineTone,
+  deadlineLabel,
+  DEADLINE_COLOR,
+  statusPadraoMinhasTarefas,
+} from "@/lib/status";
 import {
   listAllMyAssignments,
   getTask,
@@ -80,7 +88,10 @@ function Minhas() {
 
   // Filtros (client-side, sobre a lista ja carregada). Comecam "tudo visivel".
   const [relFiltro, setRelFiltro] = useState<string>("todas");
-  const [statusOn, setStatusOn] = useState<Set<string>>(() => new Set(TODOS_STATUS));
+  // Abre sem as concluidas (ver statusPadraoMinhasTarefas). "Todos" religa.
+  const [statusOn, setStatusOn] = useState<Set<string>>(
+    () => new Set(statusPadraoMinhasTarefas())
+  );
   // Arquivadas escondidas por padrao (paridade com o quadro). Sessao-only.
   const [mostrarArquivadas, setMostrarArquivadas] = useState(false);
 
@@ -446,7 +457,9 @@ function Minhas() {
   }
   function limparTudo() {
     setRelFiltro("todas");
-    setStatusOn(new Set(TODOS_STATUS));
+    // Volta ao PADRAO da tela, nao a "tudo ligado": limpar filtro e voltar ao
+    // estado de abertura, e nele as concluidas nao aparecem.
+    setStatusOn(new Set(statusPadraoMinhasTarefas()));
   }
 
   // Arquivadas: escondidas por padrao. O backend de assignments INCLUI

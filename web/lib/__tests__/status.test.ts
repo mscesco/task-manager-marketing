@@ -7,7 +7,11 @@
 // do fuso da maquina.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { deadlineLabel, deadlineTone, prioridadeEmDestaque } from "@/lib/status";
+import {
+  deadlineLabel,
+  deadlineTone,
+  statusPadraoMinhasTarefas,
+} from "@/lib/status";
 
 const HOJE = "2026-06-25";
 const ONTEM = "2026-06-24";
@@ -100,23 +104,32 @@ describe("deadlineLabel", () => {
 });
 
 // -------------------------------------------------------------------
-// prioridadeEmDestaque -- selo de urgencia na linha de subtarefa (29/07)
+// statusPadraoMinhasTarefas -- filtro inicial da tela (29/07)
 // -------------------------------------------------------------------
-describe("prioridadeEmDestaque", () => {
-  it("destaca ALTA e URGENTE -- o que a equipe chamou de urgencia", () => {
-    expect(prioridadeEmDestaque("HIGH")).toBe(true);
-    expect(prioridadeEmDestaque("URGENT")).toBe(true);
+describe("statusPadraoMinhasTarefas", () => {
+  it("esconde CONCLUIDO -- a tela responde 'o que tenho pra fazer'", () => {
+    expect(statusPadraoMinhasTarefas()).not.toContain("COMPLETED");
   });
 
-  it("NAO destaca baixa nem media -- seriam ruido em 11 linhas", () => {
-    expect(prioridadeEmDestaque("LOW")).toBe(false);
-    expect(prioridadeEmDestaque("MEDIUM")).toBe(false);
+  it("mantem CANCELLED ligado -- cancelamento e noticia, conclusao e rotina", () => {
+    expect(statusPadraoMinhasTarefas()).toContain("CANCELLED");
   });
 
-  it("aguenta valor ausente ou desconhecido sem quebrar a linha", () => {
-    expect(prioridadeEmDestaque(null)).toBe(false);
-    expect(prioridadeEmDestaque(undefined)).toBe(false);
-    expect(prioridadeEmDestaque("")).toBe(false);
-    expect(prioridadeEmDestaque("SEI_LA")).toBe(false);
+  it("mantem todos os status de trabalho em aberto", () => {
+    const padrao = statusPadraoMinhasTarefas();
+    for (const k of [
+      "BACKLOG",
+      "PLANNED",
+      "IN_PROGRESS",
+      "IN_REVIEW",
+      "EXTERNAL_APPROVAL",
+      "BLOCKED",
+    ]) {
+      expect(padrao).toContain(k);
+    }
+  });
+
+  it("esconde exatamente um status -- nao virou lista curta por acidente", () => {
+    expect(statusPadraoMinhasTarefas()).toHaveLength(7);
   });
 });

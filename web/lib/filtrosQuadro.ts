@@ -141,3 +141,54 @@ export function temFiltroNovo(
 ): boolean {
   return escopo !== "todos" || pessoaId !== "";
 }
+
+// =====================================================================
+// Painel de filtros do quadro (29/07)
+//
+// A barra tinha ate SEIS controles soltos na mesma linha do titulo -- busca,
+// prazo, ordenacao, subtime, origem e pessoa -- e no quadro de subtime todos
+// apareciam de uma vez. O painel recolhe os FILTROS atras de um botao; busca
+// e ordenacao ficam de fora de proposito:
+//
+//   - busca e o controle mais usado, e esconder custa um clique por uso;
+//   - ordenacao NAO E FILTRO. Ela nao esconde nada, so muda a ordem. Contar
+//     ordenacao como "filtro ativo" faria o badge mentir sobre quantas
+//     tarefas estao sendo omitidas.
+// =====================================================================
+
+/** O estado dos filtros que o painel recolhe. Ordenacao e busca ficam fora. */
+export type EstadoFiltros = {
+  prazo: "todos" | "atrasadas" | "em-dia";
+  subtime: string;
+  escopo: FiltroEscopo;
+  pessoa: string;
+};
+
+export const FILTROS_LIMPOS: EstadoFiltros = {
+  prazo: "todos",
+  subtime: "",
+  escopo: "todos",
+  pessoa: "",
+};
+
+/**
+ * Quantos filtros estao ESTREITANDO o quadro agora.
+ *
+ * Alimenta o badge do botao. Conta so o que esconde tarefa: se o numero
+ * aparece, existe coisa fora da tela por causa dele. E o antidoto para o
+ * problema que o painel cria -- filtro recolhido e filtro esquecido, e
+ * "cade minha tarefa?" nasce justamente disso.
+ */
+export function contaFiltrosAtivos(f: EstadoFiltros): number {
+  let n = 0;
+  if (f.prazo !== "todos") n++;
+  if (f.subtime !== "") n++;
+  if (f.escopo !== "todos") n++;
+  if (f.pessoa !== "") n++;
+  return n;
+}
+
+/** Ha algum filtro ligado? Atalho de leitura para o JSX. */
+export function temFiltroAtivo(f: EstadoFiltros): boolean {
+  return contaFiltrosAtivos(f) > 0;
+}

@@ -12,10 +12,13 @@
 
 import { describe, it, expect } from "vitest";
 import {
+  contaFiltrosAtivos,
   escopoDaTask,
+  FILTROS_LIMPOS,
   passaEscopo,
   responsaveisPorRaiz,
   passaResponsavel,
+  temFiltroAtivo,
   temFiltroNovo,
   type TaskMin,
 } from "../filtrosQuadro";
@@ -169,5 +172,39 @@ describe("temFiltroNovo", () => {
     expect(temFiltroNovo("interna", "")).toBe(true);
     expect(temFiltroNovo("todos", ANA)).toBe(true);
     expect(temFiltroNovo("compartilhada", ANA)).toBe(true);
+  });
+});
+
+// -------------------------------------------------------------------
+// Painel de filtros (29/07)
+// -------------------------------------------------------------------
+describe("contaFiltrosAtivos", () => {
+  it("zero quando nada estreita o quadro", () => {
+    expect(contaFiltrosAtivos(FILTROS_LIMPOS)).toBe(0);
+    expect(temFiltroAtivo(FILTROS_LIMPOS)).toBe(false);
+  });
+
+  it("conta cada eixo ligado", () => {
+    expect(contaFiltrosAtivos({ ...FILTROS_LIMPOS, prazo: "atrasadas" })).toBe(1);
+    expect(contaFiltrosAtivos({ ...FILTROS_LIMPOS, subtime: "t1" })).toBe(1);
+    expect(contaFiltrosAtivos({ ...FILTROS_LIMPOS, escopo: "interna" })).toBe(1);
+    expect(contaFiltrosAtivos({ ...FILTROS_LIMPOS, pessoa: "u1" })).toBe(1);
+  });
+
+  it("soma quando ha varios", () => {
+    expect(
+      contaFiltrosAtivos({
+        prazo: "em-dia",
+        subtime: "t1",
+        escopo: "compartilhada",
+        pessoa: "u1",
+      })
+    ).toBe(4);
+  });
+
+  it("string vazia NAO conta -- e o estado 'todos' dos seletores", () => {
+    // Se contasse, o badge apareceria com o quadro inteiro visivel e a pessoa
+    // ficaria procurando um filtro que nao existe.
+    expect(contaFiltrosAtivos({ ...FILTROS_LIMPOS, subtime: "", pessoa: "" })).toBe(0);
   });
 });

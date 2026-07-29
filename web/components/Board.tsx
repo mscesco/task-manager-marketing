@@ -6,6 +6,7 @@
 // do pai, entao a subarvore inteira vem junta). Extraido do antigo
 // quadro/page.tsx na Entrega 11 sem mudar comportamento do geral.
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { SlidersHorizontal } from "lucide-react";
 import {
   DndContext,
   DragOverlay,
@@ -24,6 +25,8 @@ import {
   responsaveisPorRaiz,
   passaResponsavel,
   temFiltroNovo,
+  contaFiltrosAtivos,
+  FILTROS_LIMPOS,
   type FiltroEscopo,
 } from "@/lib/filtrosQuadro";
 import TaskModal from "@/components/TaskModal";
@@ -114,12 +117,29 @@ export default function Board({
   //   pessoaFiltro -- "o que a fulana esta fazendo", em qualquer quadro
   const [escopoFiltro, setEscopoFiltro] = useState<FiltroEscopo>("todos");
   const [pessoaFiltro, setPessoaFiltro] = useState<string>("");
+  // Painel de filtros (29/07): recolhe prazo/subtime/origem/pessoa atras de um
+  // botao. Busca e ordenacao ficam FORA -- busca e o controle mais usado, e
+  // ordenacao nao esconde tarefa nenhuma (nao e filtro).
+  const [painelAberto, setPainelAberto] = useState(false);
+  const painelRef = useRef<HTMLDivElement>(null);
   // P0.2: total real quando o fetch bateu o teto de seguranca (truncou).
   // null = nao truncou. Vira aviso honesto no lugar de perda silenciosa.
   const [truncadoTotal, setTruncadoTotal] = useState<number | null>(null);
 
   // Guarda contra "clique fantasma" logo apos um arrasto.
   const suprimirClique = useRef(false);
+
+  // Fecha o painel ao clicar fora (mesmo padrao do picker de responsavel).
+  useEffect(() => {
+    if (!painelAberto) return;
+    function onDown(e: MouseEvent) {
+      if (painelRef.current && !painelRef.current.contains(e.target as Node)) {
+        setPainelAberto(false);
+      }
+    }
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [painelAberto]);
 
   // --- Trava o quadro na altura da viewport (scroll por coluna) ---
   // Mede a distancia REAL do topo das colunas ate o rodape e usa como altura
@@ -467,6 +487,21 @@ export default function Board({
   // porStatus saem de `raizes` pra nao mentir quando ha filtro ativo.
   const buscaNorm = normalizar(busca);
   const hoje = hojeISO();
+  // Estado agregado dos filtros recolhidos -> alimenta o badge e o "Limpar".
+  const estadoFiltros = {
+    prazo,
+    subtime,
+    escopo: escopoFiltro,
+    pessoa: pessoaFiltro,
+  };
+  const qtdFiltros = contaFiltrosAtivos(estadoFiltros);
+  function limparFiltros() {
+    setPrazo(FILTROS_LIMPOS.prazo);
+    setSubtime(FILTROS_LIMPOS.subtime);
+    setEscopoFiltro(FILTROS_LIMPOS.escopo);
+    setPessoaFiltro(FILTROS_LIMPOS.pessoa);
+  }
+
   const temFiltro =
     buscaNorm !== "" ||
     prazo !== "todos" ||
@@ -597,19 +632,9 @@ export default function Board({
             color: "var(--text)", minWidth: 170,
           }}
         />
-        <select
-          value={prazo}
-          onChange={(e) => setPrazo(e.target.value as FiltroPrazo)}
-          style={{
-            fontSize: 13, padding: "6px 10px", borderRadius: 8,
-            border: "1px solid var(--border)", background: "var(--surface)",
-            color: "var(--text)", cursor: "pointer",
-          }}
-        >
-          <option value="todos">Prazo: todos</option>
-          <option value="atrasadas">Atrasadas</option>
-          <option value="em-dia">Em dia</option>
-        </select>
+        {/* Ordenacao fica FORA do painel: ela nao esconde tarefa, so muda a
+            ordem. Recolher junto com os filtros faria o badge sugerir que ha
+            coisa omitida quando so a ordem mudou. */}
         <select
           value={ordenacao}
           onChange={(e) => setOrdenacao(e.target.value as Ordenacao)}
@@ -623,56 +648,144 @@ export default function Board({
           <option value="prazo">Ordenar: prazo</option>
           <option value="prioridade">Ordenar: prioridade</option>
         </select>
-        {!subteamId && subtimes.length > 0 && (
-          <select
-            value={subtime}
-            onChange={(e) => setSubtime(e.target.value)}
+
+        {/* ---- Painel de filtros ---- */}
+        <div ref={painelRef} style={{ position: "relative" }}>
+          <button
+            type="button"
+            onClick={() => setPainelAberto((v) => !v)}
+            aria-expanded={painelAberto}
+            aria-label="Filtros"
             style={{
+              display: "inline-flex", alignItems: "center", gap: 6,
               fontSize: 13, padding: "6px 10px", borderRadius: 8,
-              border: "1px solid var(--border)", background: "var(--surface)",
-              color: "var(--text)", cursor: "pointer",
+              border: "1px solid var(--border)",
+              background: qtdFiltros > 0 ? "var(--accent-soft)" : "var(--surface)",
+              color: qtdFiltros > 0 ? "var(--accent)" : "var(--text)",
+              fontWeight: qtdFiltros > 0 ? 600 : 400,
+              cursor: "pointer",
             }}
           >
-            <option value="">Subtime: todos</option>
-            {subtimes.map((s) => (
-              <option key={s.id} value={s.id}>{s.name}</option>
-            ))}
-          </select>
-        )}
-        {modoSubtime && (
-          <select
-            value={escopoFiltro}
-            onChange={(e) => setEscopoFiltro(e.target.value as FiltroEscopo)}
-            title="Interna nasceu neste subtime; compartilhada veio do quadro geral"
-            style={{
-              fontSize: 13, padding: "6px 10px", borderRadius: 8,
-              border: "1px solid var(--border)", background: "var(--surface)",
-              color: "var(--text)", cursor: "pointer",
-            }}
-          >
-            <option value="todos">Origem: todas</option>
-            <option value="interna">Só internas</option>
-            <option value="compartilhada">Só compartilhadas</option>
-          </select>
-        )}
-        {pessoasDoFiltro.length > 0 && (
-          <select
-            value={pessoaFiltro}
-            onChange={(e) => setPessoaFiltro(e.target.value)}
-            title="Mostra as tarefas em que a pessoa está designada, inclusive por subtarefa"
-            style={{
-              fontSize: 13, padding: "6px 10px", borderRadius: 8,
-              border: "1px solid var(--border)", background: "var(--surface)",
-              color: "var(--text)", cursor: "pointer",
-              maxWidth: 220,
-            }}
-          >
-            <option value="">Responsável: todos</option>
-            {pessoasDoFiltro.map((p) => (
-              <option key={p.id} value={p.id}>{p.name}</option>
-            ))}
-          </select>
-        )}
+            <SlidersHorizontal size={14} />
+            Filtros
+            {/* O badge e o antidoto do painel: filtro recolhido e filtro
+                esquecido, e "cade minha tarefa?" nasce dai. */}
+            {qtdFiltros > 0 && (
+              <span
+                style={{
+                  minWidth: 18, height: 18, borderRadius: 999,
+                  background: "var(--accent)", color: "#fff",
+                  fontSize: 11, fontWeight: 700,
+                  display: "inline-flex", alignItems: "center",
+                  justifyContent: "center", padding: "0 5px",
+                }}
+              >
+                {qtdFiltros}
+              </span>
+            )}
+          </button>
+
+          {painelAberto && (
+            <div
+              style={{
+                position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 40,
+                width: 260, background: "var(--surface)",
+                border: "1px solid var(--border)", borderRadius: 12,
+                boxShadow: "var(--shadow)", padding: 14,
+                display: "flex", flexDirection: "column", gap: 14,
+              }}
+            >
+              <div
+                style={{
+                  display: "flex", alignItems: "center",
+                  justifyContent: "space-between",
+                }}
+              >
+                <strong style={{ fontSize: 13 }}>Filtros</strong>
+                <button
+                  type="button"
+                  onClick={limparFiltros}
+                  disabled={qtdFiltros === 0}
+                  style={{
+                    border: "none", background: "transparent", padding: 0,
+                    fontSize: 12, fontWeight: 600,
+                    color: qtdFiltros === 0 ? "var(--text-faint)" : "var(--accent)",
+                    cursor: qtdFiltros === 0 ? "default" : "pointer",
+                  }}
+                >
+                  Limpar
+                </button>
+              </div>
+
+              <div className="field">
+                <label className="label" htmlFor="f-prazo">Prazo</label>
+                <select
+                  id="f-prazo"
+                  className="input"
+                  value={prazo}
+                  onChange={(e) => setPrazo(e.target.value as FiltroPrazo)}
+                >
+                  <option value="todos">Todos</option>
+                  <option value="atrasadas">Atrasadas</option>
+                  <option value="em-dia">Em dia</option>
+                </select>
+              </div>
+
+              {!subteamId && subtimes.length > 0 && (
+                <div className="field">
+                  <label className="label" htmlFor="f-subtime">Equipe</label>
+                  <select
+                    id="f-subtime"
+                    className="input"
+                    value={subtime}
+                    onChange={(e) => setSubtime(e.target.value)}
+                  >
+                    <option value="">Todas</option>
+                    {subtimes.map((sub) => (
+                      <option key={sub.id} value={sub.id}>{sub.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {modoSubtime && (
+                <div className="field">
+                  <label className="label" htmlFor="f-escopo">Origem</label>
+                  <select
+                    id="f-escopo"
+                    className="input"
+                    value={escopoFiltro}
+                    onChange={(e) => setEscopoFiltro(e.target.value as FiltroEscopo)}
+                    title="Interna nasceu neste subtime; compartilhada veio do quadro geral"
+                  >
+                    <option value="todos">Todas</option>
+                    <option value="interna">Só internas</option>
+                    <option value="compartilhada">Só compartilhadas</option>
+                  </select>
+                </div>
+              )}
+
+              {pessoasDoFiltro.length > 0 && (
+                <div className="field">
+                  <label className="label" htmlFor="f-pessoa">Responsável</label>
+                  <select
+                    id="f-pessoa"
+                    className="input"
+                    value={pessoaFiltro}
+                    onChange={(e) => setPessoaFiltro(e.target.value)}
+                    title="Mostra as tarefas em que a pessoa está designada, inclusive por subtarefa"
+                  >
+                    <option value="">Todos</option>
+                    {pessoasDoFiltro.map((pes) => (
+                      <option key={pes.id} value={pes.id}>{pes.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
         <label
           style={{
             marginLeft: "auto", display: "flex", alignItems: "center", gap: 6,

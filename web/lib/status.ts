@@ -29,16 +29,23 @@ export const PRIORITY_COLOR: Record<string, string> = {
   URGENT: "#ef4444",
 };
 
-// Prioridades que merecem selo em lista COMPACTA (linha de subtarefa no
-// detalhe -- pedido da equipe, 29/07). Numa lista de 11 itens, marcar toda
-// linha como "Media" e ruido: some com o sinal em vez de dar. O pedido foi
-// "urgencia", entao so ALTA e URGENTE ganham selo; as demais ficam sem.
-// O card do quadro segue mostrando TODAS -- la ha espaco e o card e a unidade
-// de leitura do quadro. Se quiser igualar as duas telas, e aqui que muda.
-const PRIORIDADES_EM_DESTAQUE = new Set(["HIGH", "URGENT"]);
+// Status que "Minhas tarefas" mostra ao ABRIR (pedido da Camila, 29/07).
+//
+// COMPLETED fica de fora: a tela responde "o que eu tenho pra fazer", e o que
+// ja foi feito nao e resposta pra isso. Antes, toda visita comecava com a
+// pessoa desmarcando "Concluido" na mao.
+//
+// CANCELLED continua LIGADO de proposito, mesmo sendo terminal: cancelamento
+// costuma ser noticia ("por que isso foi cancelado?"), enquanto conclusao e
+// rotina. Se incomodar, e so incluir "CANCELLED" no Set abaixo.
+//
+// O filtro segue manual: "Todos" traz tudo de volta em um clique.
+const STATUS_OCULTOS_POR_PADRAO = new Set<string>(["COMPLETED"]);
 
-export function prioridadeEmDestaque(priority: string | null | undefined): boolean {
-  return PRIORIDADES_EM_DESTAQUE.has((priority ?? "").toUpperCase());
+export function statusPadraoMinhasTarefas(): string[] {
+  return STATUSES.map((s) => s.key).filter(
+    (k) => !STATUS_OCULTOS_POR_PADRAO.has(k)
+  );
 }
 
 // Cor de prazo (Spec 023): laranja perto de vencer, vermelho atrasado.
