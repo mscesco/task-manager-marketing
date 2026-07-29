@@ -419,6 +419,16 @@ export type Team = {
   parent_team_id: string | null;
   name: string;
   slug: string;
+  description?: string | null;
+  // Spec 029: o que aponta para o time, em LOTE (uma query pra lista toda).
+  // Alimenta a tela de gestao -- informa e desabilita botao obvio; NAO
+  // autoriza (o DELETE recheca no backend, porque estes numeros envelhecem).
+  // `tarefas` inclui as que estao na lixeira: elas sumiram do quadro mas
+  // seguram a foreign key e o banco recusa o DELETE por causa delas.
+  tarefas?: number;
+  projetos?: number;
+  membros?: number;
+  filhos?: number;
 };
 
 type TeamListResponse = { items: Team[]; total: number };
@@ -428,14 +438,13 @@ type TeamListResponse = { items: Team[]; total: number };
 // entao o endpoint /teams e batido uma unica vez por sessao. Limpa no
 // clearTokens.
 //
-// INVARIANTE (por que NAO existe um invalidateTeams()): hoje nenhum fluxo do
-// front MUTA a arvore de times -- criar/mover/remover time e so via banco. Um
-// invalidateTeams() nao teria chamador (codigo morto). Alem disso a navegacao
-// e por <a href> (recarga total), entao este cache de modulo ja reinicia a
-// cada troca de pagina; ele so vive dentro de UMA pagina. SE um dia entrar uma
-// tela que cria/edita subtime no front, ela PRECISA zerar _teams aqui
-// (espelhe invalidateMembers), senao sub-abas/lente/filtros ficam stale ate
-// recarregar.
+// HISTORICO DA INVARIANTE: ate a Spec 029 nenhum fluxo do front mutava a
+// arvore de times, entao um invalidateTeams() seria codigo morto -- e o
+// comentario que estava aqui avisava que, SE um dia entrasse uma tela de
+// gestao de subtime, ela PRECISARIA zerar `_teams`. Esse dia chegou:
+// `/times` cria, edita e remove. O `invalidateTeams()` abaixo e o cumprimento
+// desse aviso; sem ele, criar um subtime nao o faz aparecer no seletor do
+// quadro nem na lente ate a proxima recarga.
 let _teams: Team[] | undefined; // undefined = ainda nao buscado
 
 async function listTeams(): Promise<Team[]> {
@@ -470,6 +479,86 @@ export async function listSubteams(): Promise<Team[]> {
 // Diferente de listSubteams, a RAIZ entra (a admin pode vincular alguem no
 // principal). Ordena raiz primeiro (parent_team_id === null), subtimes por
 // nome (pt-BR). Deriva do mesmo listTeams() memoizado.
+// Zera o cache de times -> a proxima listTeams() rebusca. Chamar apos criar,
+// editar ou remover. Espelha invalidateMembers.
+export function invalidateTeams() {
+  _teams = undefined;
+}
+
+// Spec 029/D1: criar exige team.manage (ADMIN ou MANAGER). 409 = slug repetido
+// ou segundo time raiz; 422 = slug fora de ^[a-z0-9-]+$.
+export async function createTeam(input: {
+  name: string;
+  slug: string;
+  parent_team_id: string;
+}): Promise<Team> {
+  const t = await api<Team>("/api/v1/workspaces/current/teams", {
+    method: "POST",
+    body: input,
+  });
+  invalidateTeams();
+  return t;
+}
+
+// Spec 029/D6: edita nome e descricao. O SLUG NAO ENTRA -- e identificador
+// estavel, e o backend nem o aceita neste endpoint. 409 = tentou editar a raiz.
+// `description` ausente preserva a atual; string vazia limpa.
+export async function updateTeam(
+  id: string,
+  input: { name: string; description?: string | null }
+): Promise<Team> {
+  const t = await api<Team>(`/api/v1/workspaces/current/teams/${id}`, {
+    method: "PATCH",
+    body: input,
+  });
+  invalidateTeams();
+  return t;
+}
+
+// Spec 029/D1 e D3-A: remover exige workspace.manage (SO ADMIN) e time vazio.
+// 403 = nao e admin; 409 = e a raiz OU ainda tem tarefa/projeto/membro/subtime
+// (a mensagem do backend traz os numeros); 404 = time inexistente. 204 sem corpo.
+export async function deleteTeam(id: string): Promise<void> {
+  await api<void>(`/api/v1/workspaces/current/teams/${id}`, {
+    method: "DELETE",
+  });
+  invalidateTeams();
+}
+
+// Spec 029/D3-B: o que sai junto se o time for esvaziado e removido.
+// Somente leitura. Numeros do MOMENTO DA CHAMADA -- os da listagem podem ter
+// envelhecido desde o carregamento da tela.
+export type PreviaRemocao = {
+  team_id: string;
+  nome: string;
+  eh_raiz: boolean;
+  tarefas_vivas: number;
+  tarefas_na_lixeira: number;
+  projetos: number;
+  membros: number;
+  filhos: number;
+};
+
+export async function previaRemocaoTeam(id: string): Promise<PreviaRemocao> {
+  return api<PreviaRemocao>(
+    `/api/v1/workspaces/current/teams/${id}/previa-remocao`
+  );
+}
+
+// Move o conteudo para o time principal, ARQUIVA as tarefas vivas e apaga o
+// time. Exige workspace.manage (so ADMIN). Uma transacao no backend: ou tudo
+// ou nada. 409 = e a raiz ou tem subtime filho. Devolve o que FOI feito.
+export async function esvaziarERemoverTeam(
+  id: string
+): Promise<PreviaRemocao> {
+  const r = await api<PreviaRemocao>(
+    `/api/v1/workspaces/current/teams/${id}/esvaziar-e-remover`,
+    { method: "POST" }
+  );
+  invalidateTeams();
+  return r;
+}
+
 export async function listTeamsAll(): Promise<Team[]> {
   const teams = await listTeams();
   return [...teams].sort((a, b) => {

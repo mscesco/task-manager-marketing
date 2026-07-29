@@ -11,18 +11,29 @@ Casos de uso:
     TeamService.create             -- criar uma equipe (raiz ou subtime)
     TeamService.list_teams         -- listar equipes
     TeamService.move               -- mover equipe (validando ciclos)
+    TeamService.update             -- renomear equipe (Spec 029)
+    TeamService.delete             -- remover equipe VAZIA (Spec 029)
+    TeamService.previa_remocao     -- o que sai junto (Spec 029)
+    TeamService.esvaziar_e_remover -- move pra raiz, arquiva e apaga (Spec 029)
 """
 
 from __future__ import annotations
 
 import re
 import uuid
+from dataclasses import dataclass
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger
-from app.db.models import Team, Workspace
-from app.modules.workspaces.infrastructure.team_repository import TeamRepository
+from app.core.tenant import require_tenant
+from app.db.models import Team, UserTeam, UserTeamRole, Workspace
+from app.modules.tasks.domain.history import build_archived_entry
+from app.modules.tasks.infrastructure.task_repository import TaskRepository
+from app.modules.workspaces.infrastructure.team_repository import (
+    TeamContagens,
+    TeamRepository,
+)
 from app.modules.workspaces.infrastructure.workspace_repository import (
     WorkspaceRepository,
 )
@@ -36,6 +47,37 @@ from app.shared.exceptions.base import (
 logger = get_logger(__name__)
 
 _SLUG_REGEX = re.compile(r"^[a-z0-9-]+$")
+
+
+@dataclass(frozen=True)
+class PreviaRemocao:
+    """O que acontece (ou aconteceu) ao esvaziar e remover um time."""
+
+    team_id: uuid.UUID
+    nome: str
+    eh_raiz: bool
+    tarefas_vivas: int
+    tarefas_na_lixeira: int
+    projetos: int
+    membros: int
+    filhos: int
+
+
+def _descreve(c: TeamContagens) -> str:
+    """Lista so o que EXISTE, em portugues, para a mensagem de bloqueio.
+
+    "3 tarefas, 2 membros" e acionavel; "3 tarefas, 0 projetos, 2 membros,
+    0 subtimes" faz a pessoa procurar o que importa no meio de zeros.
+    """
+    partes = [
+        (c.tarefas, "tarefa", "tarefas"),
+        (c.projetos, "projeto", "projetos"),
+        (c.membros, "membro", "membros"),
+        (c.filhos, "subtime", "subtimes"),
+    ]
+    return ", ".join(
+        f"{n} {sing if n == 1 else plur}" for n, sing, plur in partes if n
+    )
 
 
 class WorkspaceService:
@@ -198,6 +240,110 @@ class TeamService:
         """Lista todas as equipes do workspace corrente."""
         return await self._repo.list_all()
 
+    async def contagens_de_todos(self) -> dict[uuid.UUID, TeamContagens]:
+        """Dependencias de cada time do workspace, em lote (Spec 029)."""
+        return await self._repo.contagens_em_lote()
+
+    async def update(
+        self,
+        *,
+        team_id: uuid.UUID,
+        name: str,
+        description: str | None = None,
+    ) -> Team:
+        """Renomeia uma equipe e ajusta a descricao (Spec 029/D6).
+
+        O SLUG NAO E EDITAVEL, de proposito -- mesma razao do
+        `WorkspaceService.rename` acima: ele e unico no workspace e serve de
+        identificador estavel. Trocar o rotulo ("Copy" -> "Copywriting") e
+        barato; trocar o identificador so cria chance de colisao sem ganho.
+
+        A RAIZ nao e editavel pela tela (D5): ela e a ancora do tenant.
+
+        Erros:
+            EntityNotFoundError -- equipe inexistente no workspace.
+            BusinessRuleError   -- tentou editar a raiz.
+            ValidationError     -- nome vazio.
+        """
+        team = await self._repo.get_by_id(team_id)
+        if team is None:
+            raise EntityNotFoundError("Team", identifier=team_id)
+
+        if team.parent_team_id is None:
+            raise BusinessRuleError(
+                "O time principal nao pode ser editado por aqui.",
+                details={"team_id": str(team_id)},
+            )
+
+        novo_nome = name.strip()
+        if not novo_nome:
+            raise ValidationError(
+                "Nome da equipe nao pode ser vazio.",
+                details={"field": "name"},
+            )
+
+        team.name = novo_nome
+        # `description` ausente (None) preserva o valor atual; string vazia
+        # limpa. Sem isso, um PATCH que so muda o nome apagaria a descricao.
+        if description is not None:
+            team.description = description.strip() or None
+
+        await self._session.flush()
+        logger.info("team.updated", team_id=str(team_id))
+        return team
+
+    async def delete(self, *, team_id: uuid.UUID) -> None:
+        """Remove uma equipe VAZIA (Spec 029/D3, caminho A).
+
+        "Vazio" = nenhuma tarefa, projeto, membro ou subtime filho. A
+        contagem INCLUI a lixeira -- ver `TeamRepository.contagens`.
+
+        Esta guarda existe pela MENSAGEM, nao pela seguranca: o banco ja
+        recusaria por `fk_task_team`, `project_team` e `fk_team_parent`
+        (todas RESTRICT). Sem ela, quem esta na tela veria um erro de chave
+        estrangeira. `user_team` e a excecao -- ela e CASCADE, entao os
+        vinculos sumiriam calados; por isso membros contam como bloqueio.
+
+        Esvaziar (arquivar tarefas e mover membros para a raiz) e o caminho
+        B, entrega separada -- ver plan.md, Fatia 3.
+
+        Erros:
+            EntityNotFoundError -- equipe inexistente no workspace.
+            BusinessRuleError   -- e a raiz, ou o time nao esta vazio.
+        """
+        team = await self._repo.get_by_id(team_id)
+        if team is None:
+            raise EntityNotFoundError("Team", identifier=team_id)
+
+        if team.parent_team_id is None:
+            raise BusinessRuleError(
+                "O time principal nao pode ser removido.",
+                details={"team_id": str(team_id)},
+            )
+
+        contagens = await self._repo.contagens(team_id)
+        if not contagens.vazio:
+            raise BusinessRuleError(
+                f"O time '{team.name}' nao esta vazio: "
+                f"{_descreve(contagens)}. "
+                "Mova ou arquive esses itens antes de remover.",
+                details={
+                    "team_id": str(team_id),
+                    "tarefas": contagens.tarefas,
+                    "projetos": contagens.projetos,
+                    "membros": contagens.membros,
+                    "filhos": contagens.filhos,
+                },
+            )
+
+        # O nome e capturado ANTES do delete: apos o flush (e mais ainda apos
+        # um eventual rollback) o objeto ORM esta expirado e ler `team.name`
+        # dispararia um refresh contra uma linha que nao existe mais.
+        nome = team.name
+        await self._repo.remove(team)
+        await self._session.flush()
+        logger.info("team.deleted", team_id=str(team_id), name=nome)
+
     async def move(
         self,
         *,
@@ -275,3 +421,170 @@ class TeamService:
             new_parent_id=str(new_parent_id) if new_parent_id else None,
         )
         return team
+
+    # ----------------------------------------------------
+    # Esvaziar e remover (Spec 029 / D3-B, Fatia 3)
+    # ----------------------------------------------------
+    async def previa_remocao(self, *, team_id: uuid.UUID) -> PreviaRemocao:
+        """O que vai acontecer se este time for esvaziado e removido.
+
+        Existe para a tela mostrar ANTES da confirmacao. Os numeros saem do
+        banco no momento da chamada -- nao do carregamento da lista -- porque
+        eles mudam sozinhos: medido em 29/07, um subtime foi de 0 para 2
+        membros em vinte minutos.
+        """
+        team = await self._repo.get_by_id(team_id)
+        if team is None:
+            raise EntityNotFoundError("Team", identifier=team_id)
+
+        tarefas = await self._repo.tarefas_do_time(team_id)
+        c = await self._repo.contagens(team_id)
+        return PreviaRemocao(
+            team_id=team_id,
+            nome=team.name,
+            eh_raiz=team.parent_team_id is None,
+            tarefas_vivas=sum(1 for t in tarefas if t.deleted_at is None),
+            tarefas_na_lixeira=sum(1 for t in tarefas if t.deleted_at is not None),
+            projetos=c.projetos,
+            membros=c.membros,
+            filhos=c.filhos,
+        )
+
+    async def esvaziar_e_remover(self, *, team_id: uuid.UUID) -> PreviaRemocao:
+        """Move o conteudo para a raiz, arquiva as tarefas e apaga o time.
+
+        UMA transacao (o UoW do router commita no fim): se qualquer passo
+        falhar, nada e aplicado. Sem isso, um erro no meio deixaria um time
+        semi-esvaziado -- tarefas ja arquivadas, membros ainda dentro, time
+        ainda existindo -- que ninguem sabe consertar.
+
+        Ordem e regras:
+
+        1. **Tarefas** -> `team_id` da raiz.
+           - vivas: viram `is_archived=True` e ganham linha `archived` no
+             historico. Arquivar (e nao soft-deletar) porque desarquivar
+             existe na UI e restaurar deletada NAO -- soft delete e caminho
+             so de ida pela aplicacao (D4).
+           - na lixeira: SO trocam de time. Elas ja estao fora de tudo;
+             arquivar e escrever historico numa tarefa deletada seria ruido.
+             Mas precisam ser reatribuidas, senao `fk_task_team` recusa o
+             DELETE do time.
+        2. **Projetos** -> `team_id` da raiz.
+        3. **Membros** -> vinculo na raiz, SUPERVISOR rebaixado a OPERATOR
+           (D5: `member.manage.subteam` da Spec 028 ficaria orfao sem subtime).
+           Quem JA tem vinculo com a raiz so perde o do subtime.
+        4. **Time** -> apagado.
+
+        NAO reusa `MemberService.move_member_subteam` de proposito: as travas
+        de la sao interpessoais ("nao mexer em si mesmo", matriz de quem pode
+        mirar quem, conflito de destino) e quebram numa operacao em lote. Caso
+        real: quem executa pode ser MANAGER na raiz E membro do subtime que
+        esta removendo -- a trava de "si mesmo" pararia a operacao no meio.
+
+        Erros:
+            EntityNotFoundError -- time inexistente.
+            BusinessRuleError   -- e a raiz, ou tem subtime filho.
+        """
+        team = await self._repo.get_by_id(team_id)
+        if team is None:
+            raise EntityNotFoundError("Team", identifier=team_id)
+
+        if team.parent_team_id is None:
+            raise BusinessRuleError(
+                "O time principal nao pode ser removido.",
+                details={"team_id": str(team_id)},
+            )
+
+        contagens = await self._repo.contagens(team_id)
+        if contagens.filhos:
+            raise BusinessRuleError(
+                f"O time '{team.name}' tem {contagens.filhos} subtime(s). "
+                "Remova os subtimes antes.",
+                details={"team_id": str(team_id), "filhos": contagens.filhos},
+            )
+
+        raiz_id = await self._repo.root_id()
+        if raiz_id is None:
+            # Estado impossivel (indice unico garante uma raiz), mas se
+            # acontecer e melhor parar do que mover tarefas para lugar nenhum.
+            raise BusinessRuleError(
+                "Workspace sem time principal: nao ha destino para o conteudo.",
+                details={"team_id": str(team_id)},
+            )
+
+        tenant = require_tenant()
+        historico = TaskRepository(self._session)
+
+        # --- 1. tarefas ---
+        tarefas = await self._repo.tarefas_do_time(team_id)
+        vivas = 0
+        lixeira = 0
+        for tarefa in tarefas:
+            tarefa.team_id = raiz_id
+            if tarefa.deleted_at is not None:
+                lixeira += 1
+                continue
+            if not tarefa.is_archived:
+                tarefa.is_archived = True
+                await historico.write_history(
+                    task=tarefa,
+                    user_id=tenant.user_id,
+                    entries=[build_archived_entry()],
+                )
+            vivas += 1
+
+        # --- 2. projetos ---
+        projetos = await self._repo.projetos_do_time(team_id)
+        for projeto in projetos:
+            projeto.team_id = raiz_id
+
+        # --- 3. membros ---
+        vinculos = await self._repo.vinculos_do_time(team_id)
+        for vinculo in vinculos:
+            ja_na_raiz = await self._repo.vinculo(
+                user_id=vinculo.user_id, team_id=raiz_id
+            )
+            if ja_na_raiz is None:
+                # Sobe preservando o papel, mas SUPERVISOR vira OPERATOR: o
+                # poder de gerir o proprio subtime nao faz sentido sem subtime.
+                novo_papel = (
+                    UserTeamRole.OPERATOR
+                    if vinculo.role == UserTeamRole.SUPERVISOR
+                    else vinculo.role
+                )
+                self._session.add(
+                    UserTeam(
+                        workspace_id=tenant.workspace_id,
+                        user_id=vinculo.user_id,
+                        team_id=raiz_id,
+                        role=novo_papel,
+                    )
+                )
+            await self._session.delete(vinculo)
+
+        await self._session.flush()
+
+        # --- 4. o time ---
+        # Nome capturado ANTES do delete: depois o objeto ORM esta expirado.
+        nome = team.name
+        await self._repo.remove(team)
+        await self._session.flush()
+
+        logger.info(
+            "team.emptied_and_deleted",
+            team_id=str(team_id),
+            tarefas_arquivadas=vivas,
+            tarefas_na_lixeira=lixeira,
+            projetos=len(projetos),
+            membros=len(vinculos),
+        )
+        return PreviaRemocao(
+            team_id=team_id,
+            nome=nome,
+            eh_raiz=False,
+            tarefas_vivas=vivas,
+            tarefas_na_lixeira=lixeira,
+            projetos=len(projetos),
+            membros=len(vinculos),
+            filhos=0,
+        )

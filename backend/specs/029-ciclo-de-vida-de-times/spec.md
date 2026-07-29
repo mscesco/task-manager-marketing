@@ -1,124 +1,228 @@
-# Spec 029 — Ciclo de vida de times (criar, mover, aposentar subtimes)
+# Spec 029 — Tela de gestão de times
 
-> **Status: RASCUNHO. Não construir sem fechar as decisões abertas.** A decisão
-> mais pesada (§D2 — o que acontece com as tarefas de um time aposentado) é
-> migração de dados sobre uma tabela imutável. Tratar com o mesmo cuidado que a
-> Camila trata migration em banco compartilhado com o n8n.
+> **Status: pronta para execução. Não há migration.**
+> A tabela `team` já tem tudo o que a tela precisa, e nenhuma coluna nova é
+> criada em lugar nenhum.
 
 ## Objetivo
 
-Permitir que ADMIN e MANAGER do **time raiz** (`parent_team_id IS NULL`) mexam
-na **existência** de subtimes pela UI — hoje isso só acontece por código, junto
-com o seed do schema. Caso motivador da Camila: adicionar "Influenciadores"
-como subtime e **aposentar "Copy"**.
+Dar à gestão uma tela para **criar, editar e remover** subtimes, para que mexer
+no organograma deixe de exigir alteração de código.
 
-Duas operações têm dificuldade radicalmente diferente e a spec as separa:
+Caso motivador: criar "Influenciadores"; remover "Copy".
 
-- **Criar / mover subtime** — o backend **já faz**. É quase só UI.
-- **Aposentar subtime** — o backend **não faz**, e não é esquecimento: há
-  tarefas, projetos, membros e histórico imutável pendurados no time. É
-  migração de dados, não um botão.
+---
 
-## Por que "remover time" não existe hoje (VERIFICADO no código)
+## O que o banco permite (testado em Postgres real, 29/07)
 
-- `TeamService` (`workspace_service.py`) tem **`create` (131), `move` (201),
-  `list_teams` (197)**. **Não tem `delete` nem `deactivate`.** Grep no repo
-  inteiro: zero remoção de time.
-- O que **aponta** para um time e quebraria se ele sumisse:
-  - `task.team_id` (`operational.py:121`) — tarefas moram no time.
-  - `project.team_id` (`operational.py:186`) — projetos idem.
-  - vínculo membro–time (`user_team`) — operators que só existem naquele subtime.
-  - `task_history` — **append-only, imutável por trigger** (o banco bloqueia
-    UPDATE/DELETE). O histórico das tarefas do time aposentado **não pode** ser
-    reescrito para apontar para outro time.
-- Isto é exatamente o cenário do **§5.4 do handoff** ("script de reestruturação
-  transacional") — a Camila já havia marcado essa classe como o caminho caro.
+Esta seção existe porque duas versões anteriores desta spec foram escritas sobre
+suposições erradas. Tudo abaixo foi executado.
 
-## O que já existe (reuso, não invento) — VERIFICADO
+| Tentativa | Resultado |
+|---|---|
+| `DELETE` de time vazio | apaga limpo |
+| `DELETE` de time com tarefa (viva **ou na lixeira**) | **bloqueado** — `fk_task_team`, RESTRICT |
+| `DELETE` de time com projeto | **bloqueado** — `project_team`, RESTRICT |
+| `DELETE` de time com subtime filho | **bloqueado** — `fk_team_parent`, RESTRICT |
+| Vínculos de membro (`user_team`) | caem por **CASCADE** — único efeito silencioso |
 
-- **Criar subtime:** `POST /api/v1/current/teams` com `parent_team_id`
-  preenchido (`workspaces/api/router.py:94`, gated por `workspace.manage` →
-  hoje só ADMIN). `TeamService.create` valida slug e hierarquia.
-- **Mover subtime:** `POST /api/v1/current/teams/{id}/move`
-  (`router.py:116`), com detecção de **ciclo → 409** já implementada.
-- **Listar:** `GET /api/v1/current/teams` (`router.py:77`) →
-  `TeamListResponse`. O front já consome via `listTeams()` (`api.ts:426`) e já
-  monta o texto "subtime pertence ao pai" (`membros/page.tsx:81`).
-- **NÃO existe UI de gestão de times** — só de membros. Grep confirma:
-  nenhuma tela chama `createTeam`/`moveTeam`. A tela é nova.
-- **Permissão `team.manage`** já é de ADMIN e MANAGER (`permissions.py`).
-  `workspace.manage` (usada hoje pelas rotas de time) é só ADMIN — ver D5.
+### Hard-delete de tarefa é impossível
 
-## Decisões a fechar (só a Camila)
+```
+DELETE FROM task ...
+  → ERROR: violates foreign key constraint "fk_history_task" on table "task_history"
+DELETE FROM task_history ...
+  → ERROR: task_history eh append-only: UPDATE/DELETE bloqueado.
+```
 
-- **D1 — Quem cria/move subtime: ADMIN só, ou ADMIN + MANAGER do raiz?**
-  As rotas hoje exigem `workspace.manage` (só ADMIN). O pedido da Camila fala
-  em "managers e admins do time raiz". Proposta: baixar o gate de criar/mover
-  para `team.manage` (ADMIN + MANAGER), mantendo aposentar mais restrito (D3).
-  ☐ Confirmar.
+Toda tarefa tem ao menos uma linha de histórico (o evento `created`). A tarefa
+não sai enquanto o histórico existir; o histórico não sai porque a trigger
+`task_history_immutable` proíbe. `comment`, `time_entry` e `attachment` também
+seguram por RESTRICT.
 
-- **D2 — A DECISÃO PESADA: o que acontece com as tarefas de um subtime
-  aposentado?** Opções, em ordem de custo:
-  - **(a) Soft-delete / aposentar (RECOMENDADO).** Um `deactivated_at` no
-    time. O time some da UI e não aceita tarefa/membro novo, mas **as tarefas,
-    projetos e histórico continuam existindo e legíveis**. Zero migração de
-    dados. Custo: 1 migration de coluna + filtrar `deactivated_at IS NULL` nas
-    queries de listagem de time. **Reversível** (reativar). Cobre "tirar Copy
-    da vista" sem risco.
-  - **(b) Hard-delete com realocação.** Antes de apagar, mover todas as
-    tarefas/projetos do Copy para outro time (qual? escolhido na hora?), tirar
-    os membros, e só então apagar. Migração transacional, irreversível, e
-    esbarra no `task_history` imutável (o histórico ainda referencia o
-    `team_id` antigo via as linhas de evento). **Alto risco**, e o backup de
-    restauração **nunca foi testado** (§6 do handoff).
-  - **(c) Hard-delete bloqueado se não-vazio.** Só apaga time sem nenhuma
-    tarefa/projeto/membro. Simples, mas "Copy" tem conteúdo → não resolve o
-    caso motivador.
-  ☐ **Recomendação forte: (a).** "Aposentar" quase sempre é o que se quer;
-  "apagar de verdade" é raro e caro. Confirmar (a) fecha 90% do escopo com 10%
-  do risco.
+**Consequência de projeto:** apagar tarefas junto com o time não é uma opção
+arriscada — é uma opção inexistente. O esvaziamento tem de preservar as tarefas.
 
-- **D3 — Aposentar exige confirmação forte.** Proposta: a ação de aposentar um
-  subtime pede **digitar o nome do time** para confirmar (estilo GitHub), num
-  fluxo separado da criação. Motivo: aposentar mexe em N tarefas de N pessoas;
-  um clique acidental não pode fazer isso. ☐ Confirmar.
+### `task_history` não referencia time
 
-- **D4 — Time raiz é intocável pela tela.** Proposta: a tela **nunca** deixa
-  aposentar nem mover o time raiz (`parent_team_id IS NULL`). Só subtimes.
-  Raiz é a âncora do tenant. ☐ Confirmar.
+A tabela não tem `team_id`. Remover um time não toca na tabela imutável.
 
-- **D5 — Membros de um subtime aposentado.** Se D2=(a): os operators que só
-  estavam no Copy ficam **sem subtime** (vínculo `user_team` do Copy inativo).
-  Eles continuam ativos no workspace? Proposta: sim — ficam ativos, sem
-  subtime, aparecendo para ADMIN/MANAGER realocarem. **Não** desativar contas
-  em massa junto com o time. ☐ Confirmar.
+---
 
-## Critérios de aceitação (a VERIFICAR na execução)
+## Decisões
 
-Assumindo D2=(a) aprovado:
+### D1 — Quem pode o quê
 
-1. ADMIN/MANAGER (conforme D1) cria subtime "Influenciadores" pela tela → ele
-   aparece no quadro e em `listTeams`.
-2. Aposentar "Copy" → ele some da UI de times e do seletor de time; **as
-   tarefas de Copy continuam existindo** e legíveis (query direta as encontra).
-3. `task_history` das tarefas de Copy **intacto** (trigger não foi violado).
-4. Não é possível aposentar nem mover o time **raiz** pela tela.
-5. Aposentar exige digitar o nome (D3); cancelar não faz nada.
-6. Subtime aposentado **não aceita** tarefa nova nem membro novo.
-7. Reativar "Copy" (se D2=a) o traz de volta com as tarefas ainda lá.
-8. Cadeia de migration sobe do vazio até a nova head (Postgres real).
+- **Criar e editar:** `team.manage` (ADMIN + MANAGER). Troca
+  `require_permission("workspace.manage")` por `team.manage` em `create_team`.
+  Verificado: `TeamService.create` não assume ADMIN internamente.
+- **Remover:** `workspace.manage` (**só ADMIN**).
 
-## O que esta spec NÃO faz
+Criar e renomear são reversíveis; remover não é.
 
-- Não mexe em **membros** (adicionar/remover operator) → Spec 028.
-- Não implementa hard-delete com realocação **a menos que** D2=(b) seja
-  escolhido — e, se for, vira uma spec própria de migração de dados, porque o
-  risco justifica isolamento.
-- Não toca no tenant/workspace, só em times dentro dele.
+### D2 — Remover exige digitar o nome do time, sempre
+
+Vale para os dois caminhos do D3, inclusive quando o time está vazio. Um clique
+não apaga um departamento.
+
+### D3 — Dois caminhos para remover
+
+**Caminho A — time vazio** (nenhuma tarefa, projeto, membro ou filho): remove
+direto, após a confirmação por digitação.
+
+**Caminho B — time com conteúdo:** o sistema **esvazia e remove**, numa
+transação só:
+
+1. Tarefas do time → `team_id` passa para a **raiz** e são **arquivadas**.
+2. Projetos do time → `team_id` passa para a raiz.
+3. Membros do time → vínculo movido para a raiz (SUPERVISOR vira OPERATOR).
+4. O time é removido.
+
+A tela mostra o que vai acontecer antes de confirmar: *"10 tarefas serão
+arquivadas e movidas para Marketing. 3 membros irão para Marketing."*
+
+> **"Vazio" inclui a lixeira.** Tarefa com `deleted_at` preenchido sumiu da tela
+> mas mantém a chave estrangeira. Uma guarda que filtre `deleted_at IS NULL` diz
+> "vazio" e o banco recusa, com erro incompreensível para quem está na tela.
+> Medido: CRM e Automação tem 3 tarefas vivas e **7 na lixeira** — 10 amarradas.
+
+### D4 — Arquivar, não deletar
+
+As tarefas movidas são **arquivadas** (`is_archived = true`), não soft-deletadas.
+
+Razão: **não existe restaurar tarefa deletada pela interface.** O soft-delete é
+caminho só de ida pela aplicação; desfazer exigiria SQL. Já **desarquivar
+existe**, no detalhe da tarefa, a um clique.
+
+O efeito prático é o mesmo que o pedido: o `Board` filtra `is_archived` fora do
+quadro por padrão, então a tarefa some do quadro geral e do quadro de subtime, e
+fica localizável em `/arquivadas`.
+
+A arquivação passa pelo serviço normal, então cada tarefa ganha uma linha
+`archived` no histórico — fica o rastro.
+
+### D5 — A raiz não é editada nem removida pela tela
+
+Nem por ADMIN. Existe uma só (índice único parcial); sem ela `getRootTeamId()`
+devolve `null`, o pin de criação de tarefa perde referência e a lente de
+visibilidade fica sem base. Se um dia for necessário, é operação de banco com
+dump antes — nunca botão.
+
+A raiz aparece na tela como cabeçalho, sem ações. É também o **destino fixo** do
+esvaziamento (D3-B): não há escolha de destino, porque só existe um.
+
+### D6 — Editar mexe em nome e descrição; slug é imutável
+
+O slug é único no workspace e serve de identificador estável. Renomear "Copy"
+para "Copywriting" muda o rótulo; o slug continua `copy`. Editar slug só criaria
+chance de colisão sem ganho.
+
+### D7 — Mover não entra na tela
+
+A rota `POST /current/teams/{id}/move` continua existindo no backend e não é
+removida. Só não ganha botão.
+
+Hoje há uma raiz e nove subtimes irmãos. A única coisa que mover faria é pendurar
+um subtime debaixo de outro, criando um segundo nível de hierarquia que não
+existe e que trouxe boa parte da complexidade das versões anteriores desta spec.
+Sem demanda real, não abrir a porta.
+
+### D8 — O cache de times do front precisa ser invalidado
+
+`web/lib/api.ts`, linhas 431-437, já traz o aviso escrito: se entrar uma tela que
+cria ou edita subtime, ela **precisa** zerar `_teams`, espelhando
+`invalidateMembers`. Sem isso, criar um subtime não o faz aparecer no seletor até
+recarregar a página.
+
+---
+
+## Contexto medido em 29/07
+
+**Árvore — 10 times, profundidade máxima 1.** Marketing (raiz) e nove subtimes
+irmãos. Nenhum sub-subtime.
+
+**Onde as tarefas estão:**
+
+| Time | Nível | Vivas | Na lixeira |
+|---|---|---|---|
+| Marketing | RAIZ | 214 | 22 |
+| SEO | subtime | 14 | 0 |
+| CRM e Automação | subtime | 3 | 7 |
+| Mídias Sociais | subtime | 1 | 1 |
+
+**92% das tarefas vivas já estão na raiz.** Os subtimes agrupam pessoas, não
+trabalho — o quadro de subtime mostra as tarefas da raiz pelos responsáveis, não
+pelo `team_id`. Isso é o que torna o D3-B barato: mover tarefas de um subtime
+para o Marketing é colocá-las onde quase tudo já está.
+
+**Ocupação por time (com lixeira e membros):**
+
+| Time | Tarefas (total) | Membros | Removível direto? |
+|---|---|---|---|
+| SEO | 14 | 2 | não |
+| CRM e Automação | 10 | 3 | não |
+| Mídias Sociais | 2 | 3 | não |
+| Design | 0 | 5 | não |
+| Audiovisual | 0 | 4 | não |
+| Eventos | 0 | 2 | não |
+| Desenvolvimento | 0 | 1 | não |
+| **Copy** | **0** | **0** | **sim** |
+| **Tráfego Pago** | **0** | **0** | **sim** |
+
+> Estes números mudam sozinhos — "Eventos" tinha zero membros numa consulta e
+> dois vinte minutos depois. **A contagem tem de acontecer no clique, no
+> backend.** Uma lista carregada há cinco minutos já pode estar mentindo sobre
+> qual botão devia estar habilitado.
+
+**Papéis:** Monique Lopez é a **única ADMIN**. Amanda Torres, Camila Cesco
+Ferreira, Paulo Perboni e Taila Silva Oliveira são MANAGER, todos na raiz.
+
+⚠️ Se a Monique sair, ninguém tem `workspace.manage`, e não há caminho pela
+aplicação para criar um novo ADMIN. Recuperação seria SQL direto no banco. Fora
+do escopo desta spec, mas vale resolver — só a Monique pode promover alguém.
+
+---
+
+## Critérios de aceitação
+
+1. MANAGER cria "Influenciadores" → aparece no seletor de time **sem recarregar
+   a página** (D8).
+2. MANAGER renomeia um subtime → novo nome aparece, slug não muda (D6).
+3. ADMIN remove "Copy" (vazio) após digitar o nome (D2).
+4. Confirmação em branco ou com o nome errado **não remove nada**.
+5. MANAGER não consegue remover (403); ADMIN consegue (D1).
+6. Remover time com conteúdo (caminho B): as tarefas continuam existindo,
+   `team_id` na raiz, `is_archived = true`; o time some.
+7. **As tarefas movidas não aparecem no quadro geral** — só em `/arquivadas`.
+8. Cada tarefa movida ganha linha `archived` no histórico (D4).
+9. Tarefa **na lixeira** também é reatribuída à raiz — senão o `DELETE` do time
+   falha por chave estrangeira (D3).
+10. Membros do time removido ficam na raiz, ativos; SUPERVISOR vira OPERATOR.
+11. Time com subtime filho **não** é removido — a mensagem manda remover o filho
+    antes.
+12. A raiz não tem botão de editar nem de remover (D5).
+13. Slug de time removido pode ser reusado num time novo.
+14. A operação inteira do caminho B é **uma transação**: se qualquer passo
+    falhar, nada é aplicado.
+
+## Fora de escopo
+
+- Apagar tarefas (impossível — ver §"O que o banco permite").
+- Escolher outro destino que não a raiz no esvaziamento (D5).
+- Mover subtime pela tela (D7).
+- Gestão de membros — Spec 028.
+- Purgar a lixeira (30 tarefas soft-deletadas, 22 delas na raiz; não incomoda
+  ninguém hoje).
 
 ## Fronteira de risco
 
-Com D2=(a): **baixo** — uma coluna, um filtro, uma confirmação forte, nenhuma
-tarefa tocada. Com D2=(b): **alto** — migração transacional sobre tabela
-imutável, irreversível, sem restore de backup testado. A escolha de D2 é, na
-prática, a escolha entre uma spec de baixo risco e um projeto.
+**Baixo-médio.** Sem migration e sem dado destruído — o pior caso do caminho B é
+tarefa arquivada no lugar errado, e desarquivar é um clique.
+
+Dois pontos exigem cuidado:
+
+- **A contagem da guarda.** Se divergir do que o banco enxerga (lixeira!), a tela
+  promete algo que a transação recusa.
+- **A atomicidade do caminho B.** Arquivar 10 tarefas, mover 3 membros e apagar o
+  time é uma sequência; se quebrar no meio sem transação, sobra um time
+  semi-esvaziado que ninguém sabe consertar.

@@ -1,136 +1,152 @@
-# Plan 029 — Ciclo de vida de times
+# Plan 029 — Tela de gestão de times
 
-> **Não iniciar sem D1–D5 fechadas, D2 acima de tudo.** Este plan assume
-> **D2=(a) soft-delete/aposentar** — a recomendação. Se a Camila escolher
-> D2=(b) hard-delete, **este plan não serve**: (b) é uma spec própria de
-> migração de dados e deve ser tratada isolada, com dump antes e restore
-> testado (o §6 registra que o restore nunca foi testado).
+> Decisões fechadas na `spec.md`. **Não há migration.** Deploy padrão.
 
-Porte com D2=(a): **pequeno-médio.** Uma migration de coluna, um filtro, uma
-tela nova, uma confirmação forte. As rotas de criar/mover já existem.
+Porte: **pequeno-médio.** Três funções de serviço, três rotas, uma tela.
 
-Ordem de deploy: **padrão** (código antes; a migration desta spec adiciona
-coluna nullable com default, não é o caso da exceção da 026). A migration é
-segura para código velho (coluna nova que ninguém lê ainda).
+Quatro fatias com portão próprio. A Fatia 1 sobe sozinha se necessário.
 
 ---
 
-## Fatia 1 — Aposentar no domínio + migration (backend, auto-suficiente)
+## Fatia 1 — Editar e remover time vazio (backend)
 
-Arquivos:
-- `backend/alembic/versions/00NN_team_deactivated_at.py` (novo)
-  - `ADD COLUMN deactivated_at TIMESTAMPTZ NULL` em `team`.
-  - `downgrade()` remove a coluna — aqui **há** downgrade real (coluna nullable,
-    diferente do `ADD VALUE` de enum da 026).
-  - Migration mora dentro da imagem (`COPY alembic`) → **build antes de rodar**
-    (achado da 026, vale para toda migration).
-  - ⚠️ `DATABASE_URL` aponta para o banco certo? `task_manager_dev` e
-    `task_manager` (prod) na **mesma instância** — conferir antes (§2 do
-    handoff).
-- `backend/app/db/models/organization.py` — `deactivated_at` no modelo `Team`.
+O caminho simples primeiro. Resolve Copy e Tráfego Pago sem nenhuma lógica de
+esvaziamento.
+
+**Arquivos:**
+
+- `backend/app/modules/workspaces/infrastructure/team_repository.py`
+  - `contagens(team_id)` → tarefas, projetos, membros, filhos, **numa query só**.
+    ⚠️ **Sem filtro de `deleted_at`.** Registro na lixeira mantém a FK; contar só
+    os vivos faz a guarda aprovar um `DELETE` que o banco recusa. Medido: CRM e
+    Automação tem 3 vivas e 7 na lixeira.
+
 - `backend/app/modules/workspaces/application/workspace_service.py`
-  - `TeamService.deactivate(team_id)`: seta `deactivated_at = now()`.
-    - **Recusa** se o time for raiz (`parent_team_id IS NULL`) → D4.
-    - Idempotente: reaposentar não erra.
-  - `TeamService.reactivate(team_id)` (se D5/D2=a): zera `deactivated_at`.
-  - `list_teams` (linha 197): filtrar `deactivated_at IS NULL` **por padrão**;
-    parâmetro opcional `incluir_inativos` para uma futura tela de auditoria.
-  - `create` e `assign_to_team`: **recusar** criar tarefa/vincular membro em
-    time aposentado (D2=a, critério 6). Rever onde `team_id` é aceito.
-
-> **`session.rollback()` expira objetos ORM** (§8) — capturar o `id` do time
-> antes de qualquer ponto que possa dar rollback ao ler atributo depois.
-
-**Portão:** `pytest` inteiro + testes novos (Fatia 2). Cadeia de migration sobe
-do vazio (Postgres real).
-
----
-
-## Fatia 2 — Testes de integração (backend) — prova o que não pode quebrar
-
-Arquivo novo: `backend/tests/integration/test_team_lifecycle_db.py`
-
-1. `test_aposentar_subtime_preserva_tarefas` — cria subtime, cria tarefa nele,
-   aposenta o time, **a tarefa ainda existe e é legível** por query direta.
-   Este é o critério que separa (a) de (b): o dado sobrevive.
-2. `test_aposentar_nao_viola_task_history` — o histórico das tarefas do time
-   aposentado continua lá; nenhum UPDATE/DELETE na tabela imutável.
-3. `test_nao_aposenta_raiz` → erro de regra (D4).
-4. `test_subtime_aposentado_recusa_tarefa_nova` (D2=a, critério 6).
-5. `test_subtime_aposentado_recusa_membro_novo`.
-6. `test_reativar_traz_de_volta` (se D5/D2=a).
-7. `test_list_teams_esconde_inativos_por_padrao`.
-
-> **Sabotagem (§8):** quebrar de propósito o filtro `deactivated_at IS NULL` do
-> `list_teams` e confirmar que o teste 7 **fica vermelho**. Conferir com `grep`
-> que a sabotagem entrou antes de rodar. Idem para a recusa da raiz (teste 3).
-
-Sem espião de símbolo renomeável — rota/serviço real contra Postgres real.
-
----
-
-## Fatia 3 — Baixar o gate de criar/mover (backend, D1)
+  - `TeamService.update(team_id, *, name, description)` — recusa a raiz (D5),
+    valida nome não-vazio, **não toca no slug** (D6).
+  - `TeamService.delete(team_id)` — recusa a raiz; recusa se `contagens` não for
+    toda zero, com os números na mensagem; então apaga.
 
 - `backend/app/modules/workspaces/api/router.py`
-  - Se D1 = "ADMIN + MANAGER": trocar `require_permission("workspace.manage")`
-    por `require_permission("team.manage")` em `create_team` e `move_team`.
-    Revisar se alguma regra dentro do service assumia só-ADMIN.
-  - `deactivate`/`reactivate`: gate `team.manage`, **mais** a checagem de raiz
-    no service (D4). Aposentar é a ação destrutiva — se a Camila quiser
-    restringir aposentar a ADMIN mesmo com criar liberado a MANAGER, é aqui.
+  - `PATCH /current/teams/{team_id}` → `team.manage`
+  - `DELETE /current/teams/{team_id}` → `workspace.manage`
+  - `create_team`: `workspace.manage` → **`team.manage`** (D1)
 
-**Portão:** testes da Fatia 2 cobrindo os papéis.
+> `session.rollback()` expira objetos ORM — capturar `id` e nome do time antes de
+> qualquer ponto que possa rolar back, se forem usados no log ou na resposta.
 
----
-
-## Fatia 4 — Front: tela nova de gestão de times
-
-Arquivos:
-- `web/app/times/page.tsx` (novo) — ou uma aba dentro de `membros`. Decidir na
-  execução; **provavelmente rota própria**, porque membros já é uma tela cheia
-  e misturar "aposentar um departamento" com "cadastrar uma pessoa" repete o
-  erro de escopo que esta dupla de specs separou de propósito.
-  - Lista subtimes ativos, botão **criar** (nome + slug), botão **mover**.
-  - **Aposentar**: fluxo separado com **digitar o nome do time para confirmar**
-    (D3). Um clique não aposenta.
-  - Time raiz aparece como âncora, **sem** botão de aposentar/mover (D4).
-- `web/lib/api.ts` — adicionar `createTeam`, `moveTeam`, `deactivateTeam`,
-  `reactivateTeam` (os dois primeiros batem em rotas que já existem).
-
-> **Fronteira do front (Spec 027):** a regra "este time pode ser aposentado?"
-> (não-raiz, ativo, ator tem poder) é **decisão** → `web/lib/`, função pura,
-> testada. O JSX só desenha. Ex.: `web/lib/gestaoTimes.ts::podeAposentar(team,
-> me)`. **Não** espalhar `if` de permissão pelo componente — foi assim que
-> nasceu o bug do modal (§8).
-
-**Portão:** `npm test` (função pura de regra de time testada), `tsc --noEmit`,
-`next build`.
+**Portão:** `pytest` inteiro (esperado 408 + os novos).
 
 ---
 
-## Fatia 5 — Criar "Influenciadores" / aposentar "Copy" (operação, não código)
+## Fatia 2 — Testes da Fatia 1
 
-Depois de tudo no ar: fazer a operação real pela tela. Antes de aposentar Copy:
-- **dump do banco** (`~/backups/`, padrão da Camila) — mesmo com soft-delete,
-  é a primeira vez exercitando a aposentadoria em prod.
-- conferir que as tarefas de Copy que ainda importam foram movidas/tratadas, ou
-  aceitar que ficam legíveis mas fora da vista.
+Arquivo novo: `backend/tests/integration/test_team_management_db.py`
+
+Contra Postgres real, **pela rota** — a lição da Spec 028 foi que 12 testes de
+service ficaram verdes com o gate da rota revertido.
+
+1. `test_manager_cria_subtime` (D1)
+2. `test_manager_edita_nome_slug_nao_muda` (D6)
+3. `test_admin_remove_time_vazio`
+4. `test_manager_nao_remove` (403)
+5. `test_nao_remove_time_com_tarefa_viva`
+6. **`test_nao_remove_time_com_tarefa_na_lixeira`** — erro de regra com mensagem
+   clara, **não** `IntegrityError`
+7. `test_nao_remove_time_com_membro`
+8. `test_nao_remove_time_com_filho`
+9. `test_nao_remove_nem_edita_raiz` (D5)
+10. `test_slug_liberado_apos_remocao`
+
+> **Sabotagens** (confirmar com `grep` que entraram antes de rodar):
+> - filtrar `deleted_at IS NULL` na contagem → teste 6 vermelho
+> - remover a recusa da raiz → teste 9 vermelho
+> - deixar o `update` mexer no slug → teste 2 vermelho
+> - trocar o gate do `DELETE` para `team.manage` → teste 4 vermelho
 
 ---
 
-## Se D2=(b) for escolhido (hard-delete) — AVISO
+## Fatia 3 — Esvaziar e remover (backend, D3-B)
 
-Este plan é descartado. (b) exige: dump obrigatório + **restore testado antes**
-(hoje nunca foi), script transacional que move tarefas/projetos para um destino
-escolhido, tratamento explícito do `task_history` imutável (provavelmente
-manter as linhas com o `team_id` antigo e aceitar referência a time inexistente,
-ou nunca hard-deletar a linha do time e só marcá-la). É projeto, não fatia.
-**Recomendação do assistente: não escolher (b) sem uma razão concreta que (a)
-não cubra.**
+- `TeamService.esvaziar_e_remover(team_id)` — **uma transação**:
+  1. tarefas do time (incluindo as da lixeira) → `team_id` = raiz,
+     `is_archived = true`, via o caminho que grava histórico `archived` (D4);
+  2. projetos do time → `team_id` = raiz;
+  3. membros → vínculo movido para a raiz, SUPERVISOR vira OPERATOR;
+  4. `DELETE` do time.
+  - **Recusa se houver subtime filho** — remover o filho é ação separada (D3/11).
+  - Gate: `workspace.manage`.
+
+- `TeamService.previa(team_id)` → o que a tela mostra antes de confirmar
+  ("10 tarefas serão arquivadas, 3 membros irão para Marketing"). **Calculada no
+  backend, no momento do clique** — os números mudam sozinhos.
+
+⚠️ **Não reusar `move_member_subteam`.** As travas dela são interpessoais — "não
+mexer em si mesmo", matriz de quem-pode-mirar-quem, conflito de destino — e
+quebram numa operação em lote. Caso real: a Camila é MANAGER na raiz **e**
+OPERATOR no CRM e Automação; se ela remover esse time, a trava de "si mesmo"
+dispara e a operação para no meio. O desligamento vai direto no repositório, com
+duas regras: quem **já** tem vínculo na raiz só perde o do subtime; quem **não**
+tem, ganha o da raiz.
+
+**Testes (mesmo arquivo):**
+
+11. `test_esvaziar_preserva_tarefas` — continuam existindo, `team_id` = raiz,
+    `is_archived = true`
+12. `test_esvaziar_arquiva_tambem_as_da_lixeira` — senão o `DELETE` falha
+13. `test_esvaziar_grava_historico_archived` (D4)
+14. `test_esvaziar_move_membros_e_rebaixa_supervisor`
+15. **`test_esvaziar_time_onde_o_ator_e_membro`** — o caso da Camila
+16. `test_membro_ja_na_raiz_so_perde_o_subtime`
+17. `test_esvaziar_recusa_time_com_filho`
+18. **`test_falha_no_meio_nao_deixa_time_semi_esvaziado`** — força erro no passo
+    3 e confirma que nenhuma tarefa foi arquivada
+
+> **Sabotagem:** tirar o `is_archived = true` do passo 1 → teste 11 vermelho.
+> Trocar a transação por commits parciais → teste 18 vermelho.
+
+---
+
+## Fatia 4 — Tela
+
+- `web/app/times/page.tsx` (novo). Rota própria, não aba dentro de membros.
+  - raiz no topo como cabeçalho, **sem ações** (D5);
+  - subtimes em lista, com contagem de tarefas e membros;
+  - **criar**: nome + slug;
+  - **editar**: nome e descrição (slug visível, desabilitado);
+  - **remover**: sempre pede digitar o nome (D2). Se o time tiver conteúdo, a
+    prévia vinda do backend aparece antes da confirmação;
+  - time com subtime filho: remover desabilitado, com o motivo.
+
+- `web/lib/api.ts` — `createTeam`, `updateTeam`, `deleteTeam`, `previaRemocao`,
+  e **`invalidateTeams()`** zerando `_teams` após cada mutação (D8, aviso já
+  escrito no próprio arquivo).
+
+- `web/lib/gestaoTimes.ts` (novo) — regra pura, testada:
+  `ehRaiz(time)`, `podeEditar(time, me)`, `podeRemover(time, me)`,
+  `confirmacaoValida(digitado, nomeDoTime)`, `motivoBloqueio(contagens)`.
+  A decisão mora aqui; o JSX desenha.
+
+**Portão:** `npm test`, `npx tsc --noEmit`, `npx next build`.
+
+---
+
+## Fatia 5 — Operação (não é código)
+
+1. Dump do banco antes da primeira remoção.
+2. Criar "Influenciadores".
+3. Remover Copy e Tráfego Pago (vazios, caminho A).
+4. Só depois, se ainda fizer sentido, exercitar o caminho B em algum time com
+   conteúdo — e conferir em `/arquivadas` que as tarefas estão lá.
+
+---
 
 ## Estimativa honesta
 
-Com D2=(a): factível como spec normal pós-lançamento. O risco real está
-concentrado na Fatia 1 (recusar operações em time inativo sem quebrar as
-existentes) e na Fatia 5 (primeira aposentadoria em prod). **Não é trabalho de
-semana de lançamento.**
+A Fatia 1 é mecânica e entrega o caso motivador (Copy). A Fatia 3 é onde mora o
+risco: sequência de quatro passos que tem de ser atômica, sobre uma função de
+movimentação de membros que **não pode** ser reusada.
+
+Se a Fatia 3 parecer cara na hora de escrever, ela é adiável — as fatias 1, 2 e 4
+já entregam uma tela útil, e o botão do caminho B pode nascer desabilitado com
+"em breve".

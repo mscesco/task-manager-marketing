@@ -49,7 +49,23 @@ class TeamResponse(BaseModel):
     parent_team_id: uuid.UUID | None
     name: str
     slug: str
+    description: str | None = None
     created_at: datetime
+
+
+class TeamListItem(TeamResponse):
+    """Time na listagem: TeamResponse + o que impede remove-lo (Spec 029).
+
+    As contagens vem em LOTE (uma query para a pagina inteira) e existem para
+    a tela INFORMAR -- "14 tarefas, 2 membros" -- e desabilitar o botao obvio.
+    Elas NAO autorizam nada: a checagem que vale roda no DELETE, porque estes
+    numeros envelhecem entre carregar a tela e clicar.
+    """
+
+    tarefas: int = 0
+    projetos: int = 0
+    membros: int = 0
+    filhos: int = 0
 
 
 class TeamCreateRequest(BaseModel):
@@ -64,6 +80,20 @@ class TeamCreateRequest(BaseModel):
     parent_team_id: uuid.UUID | None = None
 
 
+class TeamUpdateRequest(BaseModel):
+    """Edicao de uma equipe (Spec 029/D6).
+
+    O SLUG NAO ENTRA aqui, de proposito: ele e unico no workspace e serve de
+    identificador estavel. Editar o rotulo e barato; editar o identificador
+    so cria chance de colisao.
+
+    `description` ausente preserva o valor atual; string vazia limpa.
+    """
+
+    name: str = Field(min_length=1, max_length=255)
+    description: str | None = None
+
+
 class TeamMoveRequest(BaseModel):
     """Move uma equipe para um novo pai.
 
@@ -73,8 +103,29 @@ class TeamMoveRequest(BaseModel):
     new_parent_id: uuid.UUID | None = None
 
 
+class PreviaRemocaoResponse(BaseModel):
+    """O que sai junto se o time for esvaziado e removido (Spec 029/D3-B).
+
+    `tarefas_vivas` sao arquivadas e movidas para o time principal;
+    `tarefas_na_lixeira` so trocam de time (ja estao fora de tudo, mas
+    seguram a foreign key). Numeros do MOMENTO DA CHAMADA -- os da listagem
+    podem ter envelhecido.
+    """
+
+    model_config = {"from_attributes": True}
+
+    team_id: uuid.UUID
+    nome: str
+    eh_raiz: bool
+    tarefas_vivas: int
+    tarefas_na_lixeira: int
+    projetos: int
+    membros: int
+    filhos: int
+
+
 class TeamListResponse(BaseModel):
     """Lista de equipes do workspace."""
 
-    items: list[TeamResponse]
+    items: list[TeamListItem]
     total: int

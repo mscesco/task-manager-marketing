@@ -9,12 +9,19 @@ import {
   ApiError,
   type AppNotification,
 } from "@/lib/api";
+import { destinoDaNotificacao } from "@/lib/notificacoes";
 
 // Sino de notificacoes (Spec 018, Front-B). Polla a contagem de nao-lidas
 // a cada 30s (pausando quando a aba esta em background) e, ao abrir, busca
-// o feed. Clicar numa notificacao marca lida (otimista) e navega pro
-// deep-link E6-safe: /minhas-tarefas?task=<id> (a task sempre esta la,
-// porque o destinatario e sempre responsavel dela).
+// o feed. Clicar numa notificacao marca lida (otimista) e navega pro destino
+// resolvido em `lib/notificacoes`.
+//
+// O destino era `/minhas-tarefas?task=<id>`, sob a premissa de que "a task
+// sempre esta la, porque o destinatario e sempre responsavel dela". A
+// premissa vale para TASK_ASSIGNED e FALHA para TASK_MENTIONED e
+// TASK_COMMENTED -- mencao e comentario alcancam quem nao e responsavel, a
+// tarefa nao esta na lista, e o clique nao abria nada. Agora vai para a rota
+// canonica `/tarefa/<id>`, que busca por id e nao depende de lista.
 
 const POLL_MS = 30_000;
 
@@ -131,16 +138,13 @@ export default function NotificationBell() {
       setUnread((u) => Math.max(0, u - 1));
       markNotificationRead(n.id).catch(() => {});
     }
-    router.push(n.task_id ? `/minhas-tarefas?task=${n.task_id}` : "/minhas-tarefas");
-    // Se ja estamos em /minhas-tarefas, o push acima so troca a query e NAO
-    // remonta a pagina -> o deep-link de mount nao roda. Este evento abre o
-    // detalhe na hora nesse caso. Vindo de outra rota, ninguem escuta ainda
-    // (pagina nao montada) e o mount le a query -- os dois caminhos se cobrem.
-    if (n.task_id) {
-      window.dispatchEvent(
-        new CustomEvent("abrir-tarefa", { detail: { id: n.task_id } })
-      );
-    }
+    // `/tarefa/<id>` e uma rota propria: o push remonta a pagina e o effect
+    // dela (dep `[id]`) busca a tarefa. Nao ha mais o caso "ja estou na
+    // pagina e a query so mudou", entao o CustomEvent "abrir-tarefa" que
+    // existia aqui saiu -- ele so cobria aquele caso. O listener em
+    // /minhas-tarefas continua no lugar: ele ainda serve ao deep-link
+    // `?task=` de links antigos que ja circularam.
+    router.push(destinoDaNotificacao(n));
   }
 
   async function marcarTodas() {

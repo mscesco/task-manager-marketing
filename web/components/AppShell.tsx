@@ -26,6 +26,7 @@ import {
   FolderKanban,
   ListChecks,
   Users,
+  Network,
   Archive,
   User,
   LogOut,
@@ -115,6 +116,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const podeVerSolicitacoes =
     user?.permissions.includes("solicitation.review") ?? false;
 
+  const podeGerirTimes = user?.permissions.includes("team.manage") ?? false;
+
   // Itens simples (fora do grupo Quadros).
   const nav: { href: string; label: string; icon: LucideIcon }[] = [
     { href: "/projetos", label: "Projetos", icon: FolderKanban },
@@ -123,6 +126,13 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       ? [{ href: "/solicitacoes", label: "Solicitações", icon: Inbox }]
       : []),
     { href: "/membros", label: "Membros", icon: Users },
+    // Spec 029: gestao da arvore de times. Gate no mesmo espirito de
+    // Solicitacoes -- quem nao tem `team.manage` nao veria botao nenhum
+    // util la dentro, entao nem oferecemos a porta. O backend barra por 403
+    // de qualquer forma.
+    ...(podeGerirTimes
+      ? [{ href: "/times", label: "Times", icon: Network }]
+      : []),
     { href: "/arquivadas", label: "Arquivadas", icon: Archive },
   ];
 
