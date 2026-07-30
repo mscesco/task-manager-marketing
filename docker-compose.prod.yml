@@ -12,6 +12,47 @@
 # host: todo o ingresso passa pelo Traefik (80/443).
 #
 # Migrations e bootstrap sao passos MANUAIS de deploy (ver DEPLOY.md / ADR 0022).
+#
+# -----------------------------------------------------
+# HTTPS E CABECALHOS DE SEGURANCA
+# -----------------------------------------------------
+# A versao anterior deste arquivo colocava CADA servico em UM router ligado
+# aos dois entrypoints (`web,websecure`) com `tls=true`. Isso deixa o
+# comportamento do :80 dependente da configuracao estatica do Traefik, que
+# mora no stack `root` (o do n8n) e nao aqui -- ou seja, fora do controle
+# deste repo. Enquanto o token de sessao vive em localStorage, uma unica
+# resposta servida em texto puro entrega a sessao inteira.
+#
+# Agora sao DOIS routers por servico:
+#   - `*-http`  : entrypoint `web` (:80), sem TLS, unica funcao e devolver
+#                 301 para https. Nao roteia para a aplicacao.
+#   - `*` (o de sempre) : entrypoint `websecure` (:443), com TLS e os
+#                 cabecalhos de seguranca.
+#
+# Os middlewares sao declarados UMA vez (no servico `api`) e referenciados
+# pelos dois servicos. Prefixo `tm-` evita colisao com middlewares do stack
+# do n8n, que dividem o mesmo Traefik.
+#
+# ⚠️ HSTS -- ESTE ARQUIVO ESTA EM MODO ENSAIO (stsSeconds=300).
+#
+# O HSTS e gravado NO BROWSER DE CADA PESSOA: enquanto o prazo nao vence, o
+# browser recusa http neste host sozinho, e NAO existe nada do lado do
+# servidor que desfaca isso. Um prazo de um ano assumido cedo demais e um
+# ano de convivencia com qualquer surpresa.
+#
+# Por isso ele sobe com 300 (cinco minutos): protege igual no dia a dia e
+# expira sozinho se algo der errado.
+#
+# ⚠️ 300 NAO E O VALOR FINAL. Com cinco minutos, o HSTS praticamente nao
+# protege ninguem -- o valor existe so para o ensaio. DEPOIS DE UM DIA no ar
+# sem problema, trocar por 31536000 (um ano) e subir de novo. Se este
+# comentario ainda estiver aqui daqui a um mes com 300 na linha abaixo, a
+# fatia ficou pela metade.
+#
+# CSP FICOU DE FORA DE PROPOSITO. O Next injeta script inline (inclusive o
+# script de tema em app/layout.tsx) e uma CSP sem nonce derruba a aplicacao
+# em branco, sem erro visivel. CSP e entrega propria, com nonce, testada em
+# dev antes. Nao acrescente aqui na pressa.
 # =====================================================
 
 name: task-manager
@@ -39,12 +80,50 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=root_default"
-      # /api -> backend. Prioridade ALTA pra ganhar do catch-all do web.
+
+      # ---------------------------------------------------------------
+      # MIDDLEWARES (declarados aqui, usados pelos dois servicos)
+      # ---------------------------------------------------------------
+      # Redirect permanente http -> https.
+      - "traefik.http.middlewares.tm-https.redirectscheme.scheme=https"
+      - "traefik.http.middlewares.tm-https.redirectscheme.permanent=true"
+
+      # Cabecalhos de seguranca aplicados a toda resposta em https.
+      #   stsSeconds            : 300 = MODO ENSAIO. Trocar por 31536000
+      #                           (um ano) apos um dia no ar. Ver o aviso no
+      #                           topo do arquivo antes de mexer.
+      #   stsIncludeSubdomains  : FALSE de proposito -- hstgr.cloud e dominio
+      #                           de terceiro, compartilhado. Nunca marque
+      #                           true aqui.
+      #   frameDeny             : proibe <iframe> do app (anti clickjacking).
+      #   contentTypeNosniff    : impede o browser de adivinhar Content-Type.
+      #   referrerPolicy        : nao vaza o path (que contem id de tarefa)
+      #                           para dominios de terceiros.
+      - "traefik.http.middlewares.tm-sec.headers.stsSeconds=300"
+      - "traefik.http.middlewares.tm-sec.headers.stsIncludeSubdomains=false"
+      - "traefik.http.middlewares.tm-sec.headers.stsPreload=false"
+      - "traefik.http.middlewares.tm-sec.headers.frameDeny=true"
+      - "traefik.http.middlewares.tm-sec.headers.contentTypeNosniff=true"
+      - "traefik.http.middlewares.tm-sec.headers.referrerPolicy=strict-origin-when-cross-origin"
+
+      # ---------------------------------------------------------------
+      # ROUTER :80 -- so redireciona, nao entrega conteudo
+      # ---------------------------------------------------------------
+      - "traefik.http.routers.tm-api-http.rule=Host(`task.srv1186064.hstgr.cloud`) && PathPrefix(`/api`)"
+      - "traefik.http.routers.tm-api-http.priority=100"
+      - "traefik.http.routers.tm-api-http.entrypoints=web"
+      - "traefik.http.routers.tm-api-http.middlewares=tm-https"
+
+      # ---------------------------------------------------------------
+      # ROUTER :443 -- /api -> backend. Prioridade ALTA pra ganhar do
+      # catch-all do web.
+      # ---------------------------------------------------------------
       - "traefik.http.routers.tm-api.rule=Host(`task.srv1186064.hstgr.cloud`) && PathPrefix(`/api`)"
       - "traefik.http.routers.tm-api.priority=100"
-      - "traefik.http.routers.tm-api.entrypoints=web,websecure"
+      - "traefik.http.routers.tm-api.entrypoints=websecure"
       - "traefik.http.routers.tm-api.tls=true"
       - "traefik.http.routers.tm-api.tls.certresolver=mytlschallenge"
+      - "traefik.http.routers.tm-api.middlewares=tm-sec"
       - "traefik.http.services.tm-api.loadbalancer.server.port=8000"
     # Healthcheck: bate em /health/ready (readiness -> confirma o Postgres).
     # Usa o proprio Python: a imagem slim NAO tem curl/wget. urlopen lanca em
@@ -75,12 +154,25 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=root_default"
-      # Catch-all do mesmo host -> front. Prioridade menor que a do /api.
+
+      # ---------------------------------------------------------------
+      # ROUTER :80 -- so redireciona.
+      # ---------------------------------------------------------------
+      - "traefik.http.routers.tm-web-http.rule=Host(`task.srv1186064.hstgr.cloud`)"
+      - "traefik.http.routers.tm-web-http.priority=1"
+      - "traefik.http.routers.tm-web-http.entrypoints=web"
+      - "traefik.http.routers.tm-web-http.middlewares=tm-https"
+
+      # ---------------------------------------------------------------
+      # ROUTER :443 -- catch-all do mesmo host -> front. Prioridade menor
+      # que a do /api.
+      # ---------------------------------------------------------------
       - "traefik.http.routers.tm-web.rule=Host(`task.srv1186064.hstgr.cloud`)"
       - "traefik.http.routers.tm-web.priority=1"
-      - "traefik.http.routers.tm-web.entrypoints=web,websecure"
+      - "traefik.http.routers.tm-web.entrypoints=websecure"
       - "traefik.http.routers.tm-web.tls=true"
       - "traefik.http.routers.tm-web.tls.certresolver=mytlschallenge"
+      - "traefik.http.routers.tm-web.middlewares=tm-sec"
       - "traefik.http.services.tm-web.loadbalancer.server.port=3000"
     # Healthcheck: o server standalone do Next responde 200 em "/". node:alpine
     # tb nao tem curl -> usa o proprio node. Erro de conexao ou 5xx -> exit 1.
