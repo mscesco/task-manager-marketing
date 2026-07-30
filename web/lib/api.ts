@@ -150,7 +150,7 @@ async function _request<T>(
     // fetch so estoura assim em rede/CORS. Mensagem util em vez de "Failed to fetch".
     throw new ApiError(
       0,
-      "Nao consegui falar com o servidor. O backend esta rodando na porta 8000?"
+      "Não consegui falar com o servidor. O backend está rodando na porta 8000?"
     );
   }
 
@@ -1078,7 +1078,7 @@ export type ProjectCreateInput = {
 // -> a pasta fica visivel pra todos, coerente com o pin do quadro.
 export async function createProject(input: ProjectCreateInput): Promise<Project> {
   const team_id = input.team_id ?? (await getRootTeamId());
-  if (!team_id) throw new Error("Time raiz nao encontrado para criar o projeto.");
+  if (!team_id) throw new Error("Time raiz não encontrado para criar o projeto.");
   return api<Project>("/api/v1/projects", {
     method: "POST",
     body: {

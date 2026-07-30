@@ -22,7 +22,7 @@ const PROJECT_STATUS: { key: ProjectStatus; label: string; color: string }[] = [
   { key: "PLANNING", label: "Planejamento", color: "#8b8f9a" },
   { key: "ACTIVE", label: "Ativo", color: "#2e7d32" },
   { key: "BLOCKED", label: "Bloqueado", color: "#c62828" },
-  { key: "COMPLETED", label: "Concluido", color: "#1565c0" },
+  { key: "COMPLETED", label: "Concluído", color: "#1565c0" },
   { key: "CANCELLED", label: "Cancelado", color: "#9e9e9e" },
 ];
 const STATUS_LABEL: Record<string, string> = Object.fromEntries(
@@ -61,7 +61,7 @@ function Projeto() {
     getProject(id)
       .then(setProject)
       .catch((e: ApiError) =>
-        setErro(e.status === 404 ? "Projeto nao encontrado." : e.message)
+        setErro(e.status === 404 ? "Projeto não encontrado." : e.message)
       );
   }, [id]);
 
@@ -118,7 +118,7 @@ function Projeto() {
               <span>
                 Prioridade: {PRIORITY_LABEL[project.priority] || project.priority}
               </span>
-              {project.start_date && <span>Inicio: {dataBR(project.start_date)}</span>}
+              {project.start_date && <span>Início: {dataBR(project.start_date)}</span>}
               {project.due_date && <span>Prazo: {dataBR(project.due_date)}</span>}
               {project.is_archived && <span>· arquivado</span>}
             </div>
@@ -182,7 +182,7 @@ function EditPanel({
   async function salvar() {
     const t = title.trim();
     if (!t) {
-      setErroForm("Titulo nao pode ser vazio.");
+      setErroForm("Título não pode ser vazio.");
       return;
     }
     setSalvando(true);
@@ -202,7 +202,7 @@ function EditPanel({
       const atualizado = await updateProject(project.id, patch);
       onSaved(atualizado);
     } catch (e) {
-      setErroForm((e as ApiError).message || "Nao consegui salvar o projeto.");
+      setErroForm((e as ApiError).message || "Não consegui salvar o projeto.");
     } finally {
       setSalvando(false);
     }
@@ -211,7 +211,7 @@ function EditPanel({
   return (
     <Card className="mb-[18px] flex flex-col gap-3">
       <div className="field">
-        <span className="label">Titulo</span>
+        <span className="label">Título</span>
         <input
           className="input"
           value={title}
@@ -222,7 +222,7 @@ function EditPanel({
         />
       </div>
       <div className="field">
-        <span className="label">Descricao</span>
+        <span className="label">Descrição</span>
         <textarea
           className="input"
           value={description}
@@ -262,7 +262,7 @@ function EditPanel({
       </div>
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
         <div className="field" style={{ flex: 1, minWidth: 160 }}>
-          <span className="label">Inicio</span>
+          <span className="label">Início</span>
           <input
             className="input"
             type="date"
@@ -283,7 +283,7 @@ function EditPanel({
         </div>
       </div>
       <span className="muted" style={{ fontSize: 12 }}>
-        Datas so podem ser alteradas, nao removidas (limitacao atual do backend).
+        Datas só podem ser alteradas, não removidas (limitação atual do backend).
       </span>
       {erroForm && <div className="error-box">{erroForm}</div>}
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>

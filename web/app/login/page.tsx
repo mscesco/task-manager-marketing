@@ -26,7 +26,7 @@ export default function LoginPage() {
       setErro(
         e.status === 401
           ? "E-mail ou senha incorretos."
-          : e.message || "Nao foi possivel entrar."
+          : e.message || "Não foi possível entrar."
       );
       setCarregando(false);
     }
@@ -72,7 +72,7 @@ export default function LoginPage() {
           {carregando ? "Entrando…" : "Entrar"}
         </button>
         <p className="muted" style={{ fontSize: 12, margin: 0, textAlign: "center" }}>
-          Primeiro acesso? Use a senha provisoria que voce recebeu — o sistema
+          Primeiro acesso? Use a senha provisória que você recebeu — o sistema
           pedira uma nova.
         </p>
       </form>

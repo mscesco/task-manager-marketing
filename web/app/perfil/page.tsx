@@ -29,7 +29,7 @@ function Perfil() {
   useEffect(() => {
     currentUser()
       .then(setMe)
-      .catch((e: ApiError) => setErro(e.message || "Nao consegui carregar seu perfil."));
+      .catch((e: ApiError) => setErro(e.message || "Não consegui carregar seu perfil."));
   }, []);
 
   if (erro) return <div className="error-box" style={{ maxWidth: 480 }}>{erro}</div>;

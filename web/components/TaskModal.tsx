@@ -161,7 +161,7 @@ export default function TaskModal({
   const motivoBloqueio = editando
     ? title.trim()
       ? null
-      : "Escreva o titulo da tarefa."
+      : "Escreva o título da tarefa."
     : motivoNaoCria({ titulo: title, assigneeIds, dueDate });
   const podeSalvar = motivoBloqueio === null;
 
@@ -198,7 +198,7 @@ export default function TaskModal({
     e?.preventDefault();
     const t = title.trim();
     if (!t) {
-      setErro("O titulo e obrigatorio.");
+      setErro("O título é obrigatório.");
       return;
     }
     // Responsavel obrigatorio ao CRIAR (29/07). Nao vale na edicao: o modal de
@@ -266,11 +266,11 @@ export default function TaskModal({
           .map((id) => membros.find((m) => m.id === id)?.name ?? "alguem")
           .join(", ");
         setErro(
-          `Nao foi possivel atribuir: ${nomes}. ` +
-            "Essas pessoas nao alcancam o time desta tarefa — remova-as para criar."
+          `Não foi possível atribuir: ${nomes}. ` +
+            "Essas pessoas não alcançam o time desta tarefa — remova-as para criar."
         );
       } else {
-        setErro(e.message || "Nao foi possivel salvar a tarefa.");
+        setErro(e.message || "Não foi possível salvar a tarefa.");
       }
       setSaving(false);
     }
@@ -327,7 +327,7 @@ export default function TaskModal({
         {erro && <div className="error-box">{erro}</div>}
 
         <div className="field">
-          <label className="label" htmlFor="t-title">Titulo</label>
+          <label className="label" htmlFor="t-title">Título</label>
           <input
             id="t-title" className="input" value={title} autoFocus
             onChange={(e) => setTitle(e.target.value)}
@@ -337,7 +337,7 @@ export default function TaskModal({
 
         <div className="field">
           <label className="label" htmlFor="t-desc">
-            Descricao <span className="muted" style={{ fontWeight: 400 }}>(opcional)</span>
+            Descrição <span className="muted" style={{ fontWeight: 400 }}>(opcional)</span>
           </label>
           <textarea
             id="t-desc" className="input" value={description}
@@ -393,7 +393,7 @@ export default function TaskModal({
         {!editando && (
           <div className="field">
             <label className="label">
-              Responsaveis{" "}
+              Responsáveis{" "}
               <span
                 style={{ fontWeight: 400, color: "#dc2626" }}
                 aria-hidden="true"
@@ -401,7 +401,7 @@ export default function TaskModal({
                 *
               </span>{" "}
               <span className="muted" style={{ fontWeight: 400 }}>
-                (obrigatorio)
+                (obrigatório)
               </span>
             </label>
             {membros.length === 0 ? (
@@ -428,10 +428,10 @@ export default function TaskModal({
                         }}
                       >
                         <Avatar id={id} name={nome} size="sm" />
-                        {nome ? nomeCurto(nome) : "Responsavel"}
+                        {nome ? nomeCurto(nome) : "Responsável"}
                         <button
                           type="button"
-                          aria-label={`Remover ${nome || "responsavel"}`}
+                          aria-label={`Remover ${nome || "responsável"}`}
                           title="Remover"
                           onClick={() => toggleAssignee(id)}
                           style={{
@@ -450,7 +450,7 @@ export default function TaskModal({
                   <button
                     type="button"
                     onClick={() => setAbertoResp((v) => !v)}
-                    aria-label="Designar responsavel"
+                    aria-label="Designar responsável"
                     aria-expanded={abertoResp}
                     title="Designar"
                     style={GATILHO_STYLE}

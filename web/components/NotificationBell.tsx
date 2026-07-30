@@ -28,9 +28,9 @@ const POLL_MS = 30_000;
 function texto(n: AppNotification): string {
   const ator = n.payload?.actor_name || "Alguem";
   const task = n.payload?.task_title || "uma tarefa";
-  if (n.type === "TASK_ASSIGNED") return `${ator} designou voce em "${task}"`;
+  if (n.type === "TASK_ASSIGNED") return `${ator} designou você em "${task}"`;
   if (n.type === "TASK_COMMENTED") return `${ator} comentou em "${task}"`;
-  if (n.type === "TASK_MENTIONED") return `${ator} mencionou voce em "${task}"`;
+  if (n.type === "TASK_MENTIONED") return `${ator} mencionou você em "${task}"`;
   return `Atualizacao em "${task}"`;
 }
 

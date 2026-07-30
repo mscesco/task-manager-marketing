@@ -15,6 +15,8 @@ import {
   contaFiltrosAtivos,
   escopoDaTask,
   FILTROS_LIMPOS,
+  listaFiltrosAtivos,
+  normalizarBusca,
   passaEscopo,
   responsaveisPorRaiz,
   passaResponsavel,
@@ -194,6 +196,7 @@ describe("contaFiltrosAtivos", () => {
   it("soma quando ha varios", () => {
     expect(
       contaFiltrosAtivos({
+        ...FILTROS_LIMPOS,
         prazo: "em-dia",
         subtime: "t1",
         escopo: "compartilhada",
@@ -206,5 +209,93 @@ describe("contaFiltrosAtivos", () => {
     // Se contasse, o badge apareceria com o quadro inteiro visivel e a pessoa
     // ficaria procurando um filtro que nao existe.
     expect(contaFiltrosAtivos({ ...FILTROS_LIMPOS, subtime: "", pessoa: "" })).toBe(0);
+  });
+});
+
+// -------------------------------------------------------------------
+// Pastilhas de filtro ativo (Spec 031, C3)
+// -------------------------------------------------------------------
+describe("listaFiltrosAtivos", () => {
+  const rotulos = (
+    f: Parameters<typeof listaFiltrosAtivos>[0],
+    n?: Parameters<typeof listaFiltrosAtivos>[1]
+  ) => listaFiltrosAtivos(f, n).map((c) => c.rotulo);
+
+  it("nada ligado -> lista vazia", () => {
+    expect(listaFiltrosAtivos(FILTROS_LIMPOS)).toEqual([]);
+  });
+
+  it("BUSCA vira pastilha -- era o furo numero um do badge", () => {
+    // Antes da C3 o badge dizia "0" com a busca preenchida.
+    expect(rotulos({ ...FILTROS_LIMPOS, busca: "landing" })).toEqual([
+      "Busca: landing",
+    ]);
+    expect(contaFiltrosAtivos({ ...FILTROS_LIMPOS, busca: "landing" })).toBe(1);
+  });
+
+  it("busca so de espaco NAO vira pastilha", () => {
+    expect(listaFiltrosAtivos({ ...FILTROS_LIMPOS, busca: "   " })).toEqual([]);
+  });
+
+  it("busca longa e truncada -- a pastilha divide a linha com outras", () => {
+    const longa = "a".repeat(60);
+    const [chip] = listaFiltrosAtivos({ ...FILTROS_LIMPOS, busca: longa });
+    expect(chip.rotulo.length).toBeLessThan(40);
+    expect(chip.rotulo.endsWith("\u2026")).toBe(true);
+  });
+
+  it("ARQUIVADAS vira pastilha -- era o furo numero dois", () => {
+    expect(rotulos({ ...FILTROS_LIMPOS, arquivadas: true })).toEqual([
+      "Incluindo arquivadas",
+    ]);
+  });
+
+  it("arquivadas NAO entra na contagem -- ela alarga, nao estreita", () => {
+    // A contagem responde "quanta coisa esta escondida de mim". Ver MAIS
+    // coisa nao pode fazer esse numero subir.
+    const f = { ...FILTROS_LIMPOS, arquivadas: true };
+    expect(listaFiltrosAtivos(f)).toHaveLength(1);
+    expect(contaFiltrosAtivos(f)).toBe(0);
+  });
+
+  it("resolve id -> nome; sem o nome, nao vaza uuid na tela", () => {
+    const f = { ...FILTROS_LIMPOS, subtime: "t1", pessoa: "u9" };
+    expect(rotulos(f, { subtimes: new Map([["t1", "M\u00eddia Paga"]]) })).toEqual([
+      "Equipe: M\u00eddia Paga",
+      "Respons\u00e1vel: outra pessoa",
+    ]);
+    for (const chip of listaFiltrosAtivos(f)) {
+      expect(chip.rotulo).not.toContain("t1");
+      expect(chip.rotulo).not.toContain("u9");
+    }
+  });
+
+  it("campo aponta o que o botao de remover limpa", () => {
+    const f = { ...FILTROS_LIMPOS, busca: "x", prazo: "atrasadas" as const };
+    expect(listaFiltrosAtivos(f).map((c) => c.campo)).toEqual(["busca", "prazo"]);
+  });
+
+  it("contagem e lista NAO podem divergir nos eixos que estreitam", () => {
+    const f = {
+      ...FILTROS_LIMPOS,
+      busca: "x",
+      prazo: "em-dia" as const,
+      subtime: "t1",
+      escopo: "interna" as const,
+      pessoa: "u1",
+    };
+    expect(listaFiltrosAtivos(f)).toHaveLength(5);
+    expect(contaFiltrosAtivos(f)).toBe(5);
+    expect(contaFiltrosAtivos({ ...f, arquivadas: true })).toBe(5);
+  });
+});
+
+describe("normalizarBusca", () => {
+  it("casa sem acento e sem caixa -- 'midia' acha 'Midia Paga'", () => {
+    expect(normalizarBusca("  MÍDIA Paga ")).toBe("midia paga");
+    expect(normalizarBusca("Ação")).toBe("acao");
+  });
+  it("e a MESMA regra nas duas telas -- funcao unica, sem copia local", () => {
+    expect(normalizarBusca("Órçãmento")).toBe(normalizarBusca("orcamento"));
   });
 });

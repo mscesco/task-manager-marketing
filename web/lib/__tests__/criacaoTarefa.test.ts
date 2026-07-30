@@ -28,7 +28,7 @@ describe("motivoNaoCria / podeCriar", () => {
   });
 
   it("sem titulo nao cria, e o motivo fala do titulo", () => {
-    expect(motivoNaoCria(r({ assigneeIds: ["u1"] }))).toContain("titulo");
+    expect(motivoNaoCria(r({ assigneeIds: ["u1"] }))).toContain("título");
   });
 
   it("titulo so com espacos conta como vazio", () => {
@@ -42,7 +42,7 @@ describe("motivoNaoCria / podeCriar", () => {
   it("titulo cobrado antes do responsavel", () => {
     // Pedir "escolha quem vai fazer" para um campo vazio manda a pessoa
     // resolver a coisa errada primeiro.
-    expect(motivoNaoCria(RASCUNHO_VAZIO)).toContain("titulo");
+    expect(motivoNaoCria(RASCUNHO_VAZIO)).toContain("título");
   });
 });
 

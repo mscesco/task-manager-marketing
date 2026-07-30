@@ -26,6 +26,8 @@ import {
   passaResponsavel,
   temFiltroNovo,
   contaFiltrosAtivos,
+  listaFiltrosAtivos,
+  normalizarBusca,
   FILTROS_LIMPOS,
   type FiltroEscopo,
 } from "@/lib/filtrosQuadro";
@@ -36,10 +38,9 @@ import { STATUSES } from "@/lib/status";
 import { listAllTasks, listAllProjects, updateTask, listMembers, listSubteams, getRootTeamId, ApiError, type Task, type Team } from "@/lib/api";
 import { sincronizarTaskNaUrl, lerTaskDaUrl } from "@/lib/urlTarefa";
 
-// Tira acento e caixa pra busca casar "midia" com "Midia Paga" etc.
-function normalizar(s: string) {
-  return s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
-}
+// Spec 031 (C3): `normalizar` saiu daqui pra lib/filtrosQuadro (agora
+// `normalizarBusca`) -- "Minhas tarefas" tambem busca, e duas copias da
+// mesma regra sao um bug esperando.
 
 // "Hoje" como YYYY-MM-DD no fuso LOCAL. due_date vem do backend como date
 // pura (sem hora), entao a comparacao e string vs string (ISO ordena certo).
@@ -420,8 +421,8 @@ export default function Board({
       const e2 = err as ApiError;
       setToast(
         e2.status === 403
-          ? "Voce nao pode mover esta tarefa. Voltei pra coluna anterior."
-          : "Nao consegui mover o card. Voltei pra coluna anterior."
+          ? "Você não pode mover esta tarefa. Voltei pra coluna anterior."
+          : "Não consegui mover o card. Voltei pra coluna anterior."
       );
     }
   }
@@ -485,7 +486,7 @@ export default function Board({
   // visiveis = raizes apos o toggle de arquivadas (eixo que SOMA). raizes =
   // visiveis apos busca + prazo (eixos que ESTREITAM). Os contadores e o
   // porStatus saem de `raizes` pra nao mentir quando ha filtro ativo.
-  const buscaNorm = normalizar(busca);
+  const buscaNorm = normalizarBusca(busca);
   const hoje = hojeISO();
   // Estado agregado dos filtros recolhidos -> alimenta o badge e o "Limpar".
   const estadoFiltros = {
@@ -493,13 +494,22 @@ export default function Board({
     subtime,
     escopo: escopoFiltro,
     pessoa: pessoaFiltro,
+    busca,
+    arquivadas: mostrarArquivadas,
   };
   const qtdFiltros = contaFiltrosAtivos(estadoFiltros);
+  // Spec 031 (C3): um setter por campo, para o ✕ da pastilha saber o que
+  // limpar sem a pastilha precisar conhecer o estado do componente.
+  const LIMPA: Record<string, () => void> = {
+    busca: () => setBusca(FILTROS_LIMPOS.busca),
+    prazo: () => setPrazo(FILTROS_LIMPOS.prazo),
+    subtime: () => setSubtime(FILTROS_LIMPOS.subtime),
+    escopo: () => setEscopoFiltro(FILTROS_LIMPOS.escopo),
+    pessoa: () => setPessoaFiltro(FILTROS_LIMPOS.pessoa),
+    arquivadas: () => setMostrarArquivadas(FILTROS_LIMPOS.arquivadas),
+  };
   function limparFiltros() {
-    setPrazo(FILTROS_LIMPOS.prazo);
-    setSubtime(FILTROS_LIMPOS.subtime);
-    setEscopoFiltro(FILTROS_LIMPOS.escopo);
-    setPessoaFiltro(FILTROS_LIMPOS.pessoa);
+    for (const limpar of Object.values(LIMPA)) limpar();
   }
 
   const temFiltro =
@@ -556,8 +566,14 @@ export default function Board({
     .map(([id, m]) => ({ id, name: m.name }))
     .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
 
+  // Nomes para as pastilhas -- id cru nao vira rotulo na tela.
+  const chipsFiltro = listaFiltrosAtivos(estadoFiltros, {
+    subtimes: new Map(subtimes.map((t) => [t.id, t.name])),
+    pessoas: new Map(pessoasDoFiltro.map((p) => [p.id, p.name])),
+  });
+
   const raizes = visiveis.filter((t) => {
-    if (buscaNorm && !normalizar(t.title).includes(buscaNorm)) return false;
+    if (buscaNorm && !normalizarBusca(t.title).includes(buscaNorm)) return false;
     // Sem data: aparece em qualquer filtro de prazo (decisao da Camila).
     if (prazo !== "todos" && t.due_date) {
       // Concluida nunca e atrasada (ja foi entregue).
@@ -625,7 +641,7 @@ export default function Board({
         <input
           value={busca}
           onChange={(e) => setBusca(e.target.value)}
-          placeholder="Buscar por titulo…"
+          placeholder="Buscar por título…"
           style={{
             fontSize: 13, padding: "6px 10px", borderRadius: 8,
             border: "1px solid var(--border)", background: "var(--surface)",
@@ -644,7 +660,7 @@ export default function Board({
             color: "var(--text)", cursor: "pointer",
           }}
         >
-          <option value="criacao">Ordenar: criacao</option>
+          <option value="criacao">Ordenar: criação</option>
           <option value="prazo">Ordenar: prazo</option>
           <option value="prioridade">Ordenar: prioridade</option>
         </select>
@@ -668,21 +684,6 @@ export default function Board({
           >
             <SlidersHorizontal size={14} />
             Filtros
-            {/* O badge e o antidoto do painel: filtro recolhido e filtro
-                esquecido, e "cade minha tarefa?" nasce dai. */}
-            {qtdFiltros > 0 && (
-              <span
-                style={{
-                  minWidth: 18, height: 18, borderRadius: 999,
-                  background: "var(--accent)", color: "#fff",
-                  fontSize: 11, fontWeight: 700,
-                  display: "inline-flex", alignItems: "center",
-                  justifyContent: "center", padding: "0 5px",
-                }}
-              >
-                {qtdFiltros}
-              </span>
-            )}
           </button>
 
           {painelAberto && (
@@ -807,6 +808,51 @@ export default function Board({
           + Nova tarefa
         </button>
       </div>
+
+      {/* --- Pastilhas de filtro ativo (Spec 031, C3) ---------------------
+          Substituem o badge numerico do botao. O numero dizia QUANTOS; a
+          pastilha diz QUAIS e desfaz em um clique. Fica FORA do painel de
+          proposito: filtro recolhido e filtro esquecido. */}
+      {chipsFiltro.length > 0 && (
+        <div
+          style={{
+            display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6,
+            marginTop: -8, marginBottom: 16,
+          }}
+        >
+          {chipsFiltro.map((c) => (
+            <button
+              key={c.campo}
+              type="button"
+              onClick={() => LIMPA[c.campo]?.()}
+              title={`Remover filtro: ${c.rotulo}`}
+              style={{
+                display: "inline-flex", alignItems: "center", gap: 6,
+                height: 26, padding: "0 8px 0 10px", borderRadius: 999,
+                border: "1px solid var(--border)",
+                background: "var(--accent-soft)", color: "var(--accent)",
+                fontSize: 12, fontWeight: 600, cursor: "pointer", lineHeight: 1,
+              }}
+            >
+              {c.rotulo}
+              <span aria-hidden="true" style={{ fontSize: 13, opacity: 0.8 }}>×</span>
+            </button>
+          ))}
+          {chipsFiltro.length > 1 && (
+            <button
+              type="button"
+              onClick={limparFiltros}
+              style={{
+                border: "none", background: "transparent", padding: "0 4px",
+                fontSize: 12, fontWeight: 600, color: "var(--text-soft)",
+                cursor: "pointer",
+              }}
+            >
+              Limpar tudo
+            </button>
+          )}
+        </div>
+      )}
 
       {truncadoTotal !== null && (
         <div
@@ -1038,7 +1084,7 @@ function SemResultado({ onLimpar }: { onLimpar: () => void }) {
   return (
     <EmptyStateBox
       title="Nada encontrado"
-      description="Nenhuma tarefa bate com o filtro atual. As subtarefas e tarefas de outras paginas nao entram na busca. No filtro de subtime, tarefas sem responsavel (ou so com responsaveis de outro subtime) nao aparecem."
+      description="Nenhuma tarefa bate com o filtro atual. As subtarefas e tarefas de outras páginas não entram na busca. No filtro de subtime, tarefas sem responsável (ou só com responsáveis de outro subtime) não aparecem."
       action={<button className="btn" onClick={onLimpar}>Limpar filtros</button>}
     />
   );

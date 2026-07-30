@@ -162,6 +162,11 @@ export type EstadoFiltros = {
   subtime: string;
   escopo: FiltroEscopo;
   pessoa: string;
+  // Spec 031 (C3). Os dois entraram porque MUDAM O QUE APARECE e ficavam de
+  // fora da conta: com a busca preenchida o badge dizia "0", e o checkbox de
+  // arquivadas nunca apareceu em lugar nenhum. Eram dois furos no antidoto.
+  busca: string;
+  arquivadas: boolean;
 };
 
 export const FILTROS_LIMPOS: EstadoFiltros = {
@@ -169,23 +174,108 @@ export const FILTROS_LIMPOS: EstadoFiltros = {
   subtime: "",
   escopo: "todos",
   pessoa: "",
+  busca: "",
+  arquivadas: false,
 };
+
+/**
+ * Tira acento e caixa pra busca casar "midia" com "Midia Paga".
+ *
+ * Estava duplicado como `normalizar` local no Board; com "Minhas tarefas"
+ * ganhando busca (C3), viraria a segunda copia -- e duas buscas com regra
+ * diferente e um bug esperando. Fronteira da Spec 027: e decisao, mora aqui.
+ */
+export function normalizarBusca(s: string): string {
+  return s
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
+/** Uma pastilha de filtro ligado: o rotulo que aparece e o campo que o ✕ limpa. */
+export type ChipFiltro = {
+  campo: keyof EstadoFiltros;
+  rotulo: string;
+};
+
+/** Mapas id -> nome, para o chip dizer "Equipe: Midia Paga" e nao um uuid. */
+export type NomesDeFiltro = {
+  subtimes?: Map<string, string>;
+  pessoas?: Map<string, string>;
+};
+
+const ROTULO_PRAZO: Record<string, string> = {
+  atrasadas: "Atrasadas",
+  "em-dia": "Em dia",
+};
+const ROTULO_ESCOPO: Record<string, string> = {
+  interna: "Só internas",
+  compartilhada: "Só compartilhadas",
+};
+
+// Busca longa vira "..." -- o chip mora numa linha que ja compete com outros.
+const MAX_BUSCA_NO_CHIP = 24;
+
+/**
+ * Os filtros ligados AGORA, em ordem estavel, prontos para virar pastilha.
+ *
+ * Isto substitui o badge numerico. O numero dizia QUANTOS; a pastilha diz
+ * QUAIS e desfaz em um clique. Filtro recolhido e filtro esquecido, e
+ * "cade minha tarefa?" nasce dai -- um "2" nao responde a pergunta, "Equipe:
+ * Midia Paga ✕" responde.
+ *
+ * Id sem nome no mapa nao vira uuid na tela: cai para um rotulo generico.
+ * Acontece de verdade -- o membro pode ter saido do time depois do filtro.
+ */
+export function listaFiltrosAtivos(
+  f: EstadoFiltros,
+  nomes: NomesDeFiltro = {}
+): ChipFiltro[] {
+  const chips: ChipFiltro[] = [];
+  const busca = f.busca.trim();
+  if (busca !== "") {
+    const curta =
+      busca.length > MAX_BUSCA_NO_CHIP
+        ? busca.slice(0, MAX_BUSCA_NO_CHIP) + "…"
+        : busca;
+    chips.push({ campo: "busca", rotulo: `Busca: ${curta}` });
+  }
+  if (f.prazo !== "todos") {
+    chips.push({ campo: "prazo", rotulo: ROTULO_PRAZO[f.prazo] ?? f.prazo });
+  }
+  if (f.subtime !== "") {
+    const nome = nomes.subtimes?.get(f.subtime);
+    chips.push({ campo: "subtime", rotulo: `Equipe: ${nome ?? "outra equipe"}` });
+  }
+  if (f.escopo !== "todos") {
+    chips.push({ campo: "escopo", rotulo: ROTULO_ESCOPO[f.escopo] ?? f.escopo });
+  }
+  if (f.pessoa !== "") {
+    const nome = nomes.pessoas?.get(f.pessoa);
+    chips.push({
+      campo: "pessoa",
+      rotulo: `Responsável: ${nome ?? "outra pessoa"}`,
+    });
+  }
+  if (f.arquivadas) {
+    chips.push({ campo: "arquivadas", rotulo: "Incluindo arquivadas" });
+  }
+  return chips;
+}
 
 /**
  * Quantos filtros estao ESTREITANDO o quadro agora.
  *
- * Alimenta o badge do botao. Conta so o que esconde tarefa: se o numero
- * aparece, existe coisa fora da tela por causa dele. E o antidoto para o
- * problema que o painel cria -- filtro recolhido e filtro esquecido, e
- * "cade minha tarefa?" nasce justamente disso.
+ * ⚠️ NAO e o mesmo que `listaFiltrosAtivos().length`, e a diferenca e de
+ * proposito: "incluindo arquivadas" ALARGA o quadro, nao estreita. Ela vira
+ * pastilha (e estado que a pessoa quer ver e desfazer) mas nao entra na conta
+ * de "quanta coisa esta escondida de mim". Contar tudo faria o numero subir
+ * quando a pessoa passa a ver MAIS -- exatamente o contrario do que o
+ * contador promete.
  */
 export function contaFiltrosAtivos(f: EstadoFiltros): number {
-  let n = 0;
-  if (f.prazo !== "todos") n++;
-  if (f.subtime !== "") n++;
-  if (f.escopo !== "todos") n++;
-  if (f.pessoa !== "") n++;
-  return n;
+  return listaFiltrosAtivos(f).filter((c) => c.campo !== "arquivadas").length;
 }
 
 /** Ha algum filtro ligado? Atalho de leitura para o JSX. */

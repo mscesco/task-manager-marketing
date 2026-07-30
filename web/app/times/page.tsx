@@ -95,7 +95,7 @@ export default function TimesPage() {
     try {
       setTimes(await listTeamsAll());
     } catch (e) {
-      setErro((e as ApiError).message || "Nao consegui carregar os times.");
+      setErro((e as ApiError).message || "Não consegui carregar os times.");
     }
   }
 
@@ -125,7 +125,7 @@ export default function TimesPage() {
     const n = nome.trim();
     const s = slug.trim();
     if (!n || !s) {
-      setErroCriar("Nome e identificador sao obrigatorios.");
+      setErroCriar("Nome e identificador são obrigatórios.");
       return;
     }
     setSalvandoCriar(true);
@@ -138,12 +138,12 @@ export default function TimesPage() {
       const err = e as ApiError;
       setErroCriar(
         err.status === 403
-          ? "Voce nao tem permissao para criar times."
+          ? "Você não tem permissão para criar times."
           : err.status === 409
-          ? "Ja existe um time com esse identificador."
+          ? "Já existe um time com esse identificador."
           : err.status === 422
-          ? "Identificador invalido: use so letras minusculas, numeros e hifen."
-          : err.message || "Nao consegui criar o time."
+          ? "Identificador inválido: use só letras minúsculas, números e hífen."
+          : err.message || "Não consegui criar o time."
       );
     } finally {
       setSalvandoCriar(false);
@@ -162,7 +162,7 @@ export default function TimesPage() {
     if (!editando) return;
     const n = nomeEdit.trim();
     if (!n) {
-      setErroEdit("O nome e obrigatorio.");
+      setErroEdit("O nome é obrigatório.");
       return;
     }
     setSalvandoEdit(true);
@@ -175,10 +175,10 @@ export default function TimesPage() {
       const err = e as ApiError;
       setErroEdit(
         err.status === 403
-          ? "Voce nao tem permissao para editar times."
+          ? "Você não tem permissão para editar times."
           : err.status === 409
-          ? "O time principal nao pode ser editado."
-          : err.message || "Nao consegui salvar."
+          ? "O time principal não pode ser editado."
+          : err.message || "Não consegui salvar."
       );
     } finally {
       setSalvandoEdit(false);
@@ -228,8 +228,8 @@ export default function TimesPage() {
         err.status === 403
           ? "So um administrador pode remover times."
           : err.status === 404
-          ? "Este time nao existe mais. Atualize a pagina."
-          : err.message || "Nao consegui remover o time."
+          ? "Este time não existe mais. Atualize a página."
+          : err.message || "Não consegui remover o time."
       );
       await carregar();
     } finally {
@@ -373,7 +373,7 @@ export default function TimesPage() {
             <label className="label" htmlFor="t-slug">
               Identificador{" "}
               <span className="muted" style={{ fontWeight: 400 }}>
-                (nao muda depois)
+                (não muda depois)
               </span>
             </label>
             <input
@@ -415,7 +415,7 @@ export default function TimesPage() {
           </div>
           <div className="field">
             <label className="label" htmlFor="t-desc-e">
-              Descricao{" "}
+              Descrição{" "}
               <span className="muted" style={{ fontWeight: 400 }}>
                 (opcional)
               </span>

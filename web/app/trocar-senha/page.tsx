@@ -19,7 +19,7 @@ export default function TrocarSenhaPage() {
     e.preventDefault();
     setErro(null);
     if (nova.length < 8) return setErro("A nova senha precisa de ao menos 8 caracteres.");
-    if (nova !== confirma) return setErro("As senhas nao conferem.");
+    if (nova !== confirma) return setErro("As senhas não conferem.");
     if (nova === atual) return setErro("A nova senha precisa ser diferente da atual.");
     setCarregando(true);
     try {
@@ -28,7 +28,7 @@ export default function TrocarSenhaPage() {
     } catch (err) {
       const e = err as ApiError;
       setErro(
-        e.status === 401 ? "Senha atual incorreta." : e.message || "Nao foi possivel trocar."
+        e.status === 401 ? "Senha atual incorreta." : e.message || "Não foi possível trocar."
       );
       setCarregando(false);
     }
@@ -47,14 +47,14 @@ export default function TrocarSenhaPage() {
         <div>
           <h1 style={{ margin: 0, fontSize: 20, letterSpacing: "-0.02em" }}>Defina sua senha</h1>
           <p className="muted" style={{ margin: "6px 0 0", fontSize: 13 }}>
-            No primeiro acesso voce precisa trocar a senha provisoria por uma sua.
+            No primeiro acesso você precisa trocar a senha provisória por uma sua.
           </p>
         </div>
 
         {erro && <div className="error-box">{erro}</div>}
 
         <div className="field">
-          <label className="label">Senha atual (provisoria)</label>
+          <label className="label">Senha atual (provisória)</label>
           <input className="input" type="password" value={atual}
             onChange={(e) => setAtual(e.target.value)} required autoComplete="current-password" />
         </div>

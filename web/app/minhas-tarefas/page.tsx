@@ -27,6 +27,7 @@ import {
   DEADLINE_COLOR,
   statusPadraoMinhasTarefas,
 } from "@/lib/status";
+import { normalizarBusca } from "@/lib/filtrosQuadro";
 import {
   listAllMyAssignments,
   getTask,
@@ -41,7 +42,7 @@ import {
 import { sincronizarTaskNaUrl } from "@/lib/urlTarefa";
 
 const RELATION_LABEL: Record<string, string> = {
-  assignee: "Responsavel",
+  assignee: "Responsável",
   creator: "Criei",
   watcher: "Acompanho",
 };
@@ -94,6 +95,9 @@ function Minhas() {
   );
   // Arquivadas escondidas por padrao (paridade com o quadro). Sessao-only.
   const [mostrarArquivadas, setMostrarArquivadas] = useState(false);
+  // Spec 031 (C3, D4-ter): esta tela nao tinha busca. Uma linha de pastilhas
+  // com "Busca:" numa tela e nao na outra e a mesma deriva que a fatia mata.
+  const [busca, setBusca] = useState("");
 
   const [detalhe, setDetalhe] = useState<Task | null>(null);
   const [pilha, setPilha] = useState<Task[]>([]);
@@ -172,7 +176,7 @@ function Minhas() {
       if (items === null) return;
       const t = items.find((x) => x.id === id);
       if (!t) {
-        setToast("Nao foi possivel abrir: essa tarefa nao esta na sua lista.");
+        setToast("Não foi possível abrir: essa tarefa não está na sua lista.");
         return;
       }
       // Se for SUBTAREFA, abre no modo sub com "voltar" pro(s) pai(s) -- mesma
@@ -429,8 +433,8 @@ function Minhas() {
       const e2 = err as ApiError;
       setToast(
         e2.status === 403
-          ? "Voce nao pode mover esta tarefa. Voltei pra coluna anterior."
-          : "Nao consegui mover o card. Voltei pra coluna anterior."
+          ? "Você não pode mover esta tarefa. Voltei pra coluna anterior."
+          : "Não consegui mover o card. Voltei pra coluna anterior."
       );
     }
   }
@@ -467,6 +471,8 @@ function Minhas() {
   // sem refetch. `itemsBase` e a FONTE das duas vistas (lista e quadro).
   // Detalhe/subtarefas seguem na lista COMPLETA `items` (mais abaixo): um
   // filtro de view nao pode quebrar abrir uma task fora do filtro.
+  const buscaNorm = normalizarBusca(busca);
+
   const itemsBase = useMemo(
     () => (items ?? []).filter((t) => mostrarArquivadas || !t.is_archived),
     [items, mostrarArquivadas]
@@ -477,9 +483,11 @@ function Minhas() {
     return itemsBase.filter((t) => {
       const okStatus = statusOn.has(t.status);
       const okRel = relFiltro === "todas" || t.relations.includes(relFiltro);
-      return okStatus && okRel;
+      const okBusca =
+        buscaNorm === "" || normalizarBusca(t.title).includes(buscaNorm);
+      return okStatus && okRel && okBusca;
     });
-  }, [itemsBase, statusOn, relFiltro]);
+  }, [itemsBase, statusOn, relFiltro, buscaNorm]);
 
   // Agrupa por data de entrega (D, estilo Runrunit): so aparece o dia que tem
   // tarefa; grupos em ordem cronologica; sem-prazo por ultimo. Agrupa sobre a
@@ -503,9 +511,11 @@ function Minhas() {
   // agrupa por status. As colunas sao sempre as 7 (STATUSES).
   const porRelacao = useMemo(() => {
     return itemsBase.filter(
-      (t) => relFiltro === "todas" || t.relations.includes(relFiltro)
+      (t) =>
+        (relFiltro === "todas" || t.relations.includes(relFiltro)) &&
+        (buscaNorm === "" || normalizarBusca(t.title).includes(buscaNorm))
     );
-  }, [itemsBase, relFiltro]);
+  }, [itemsBase, relFiltro, buscaNorm]);
 
   const porStatus = useMemo(() => {
     const map: Record<string, MyTaskItem[]> = {};
@@ -567,9 +577,25 @@ function Minhas() {
           }}
         />
         <div style={{ minWidth: 0, flex: 1 }}>
-          <div style={{ fontSize: 14, fontWeight: 600, lineHeight: 1.35 }}>{t.title}</div>
-          <div style={{ display: "flex", gap: 8, marginTop: 3, flexWrap: "wrap", alignItems: "center" }}>
-            <span className="muted" style={{ fontSize: 12 }}>
+          {/* Spec 031 (C6): titulo em UMA linha, com reticencias.
+              Antes ele quebrava em 2-3 linhas e a segunda linha encostava na
+              faixa de meta abaixo -- o "aparece por baixo de Responsavel".
+              `title` preserva o texto inteiro no hover, e o detalhe esta a um
+              clique. Lista com altura de linha uniforme e o ponto de ser lista. */}
+          <div
+            title={t.title}
+            style={{
+              fontSize: 14, fontWeight: 600, lineHeight: 1.35,
+              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+            }}
+          >
+            {t.title}
+          </div>
+          {/* `minWidth: 0` deixa os filhos ENCOLHEREM. Sem isso o padrao e
+              `min-width: auto` = "nao encolho abaixo do meu conteudo", e a
+              pastilha longa empurra o resto da faixa pra fora. */}
+          <div style={{ display: "flex", gap: 8, marginTop: 3, flexWrap: "wrap", alignItems: "center", minWidth: 0 }}>
+            <span className="muted" style={{ fontSize: 12, flexShrink: 0 }}>
               {STATUS_LABEL[t.status] || t.status}
             </span>
             {t.parent_task_id && (
@@ -581,7 +607,7 @@ function Minhas() {
                     ? `Subtarefa de: ${t.parent_title}`
                     : "Subtarefa"
                 }
-                style={{ display: "inline-flex", maxWidth: 260, minWidth: 0 }}
+                style={{ display: "inline-flex", maxWidth: 260, minWidth: 0, flexShrink: 1 }}
               >
                 <Badge tone="soft" size="sm" color="var(--accent)">
                   {t.parent_title ? `↳ ${t.parent_title}` : "Subtarefa"}
@@ -597,6 +623,7 @@ function Minhas() {
               <span
                 style={{
                   fontSize: 11.5, fontWeight: 600, color: DEADLINE_COLOR[dueTone],
+                  flexShrink: 0,
                 }}
               >
                 {deadlineLabel(t.due_date)}
@@ -613,6 +640,25 @@ function Minhas() {
 
   // Barra de filtros: seletor de relacao + chips de status (liga/desliga).
   function barraFiltros() {
+    // Definido UMA vez e posicionado em dois lugares conforme a vista --
+    // duplicar o JSX seria duas fontes de verdade pro mesmo controle.
+    const arquivadasCheck = (
+      <label
+        style={{
+          display: "inline-flex", alignItems: "center", gap: 6,
+          fontSize: 13, color: "var(--text-soft)", cursor: "pointer",
+          marginLeft: 4,
+        }}
+      >
+        <input
+          type="checkbox"
+          checked={mostrarArquivadas}
+          onChange={(e) => setMostrarArquivadas(e.target.checked)}
+        />
+        Mostrar arquivadas
+      </label>
+    );
+
     return (
       <div
         style={{
@@ -636,6 +682,18 @@ function Minhas() {
             ))}
           </select>
         </label>
+
+        {/* Spec 031 (C3, D4-ter): busca. A tela nao tinha. */}
+        <input
+          value={busca}
+          onChange={(e) => setBusca(e.target.value)}
+          placeholder="Buscar por título…"
+          style={{
+            fontSize: 13, padding: "6px 10px", borderRadius: "var(--radius)",
+            border: "1px solid var(--border)", background: "var(--surface)",
+            color: "var(--text)", minWidth: 170,
+          }}
+        />
 
         {/* Toggle de vista (sessao-only). No quadro, os status viram colunas. */}
         <div style={{ display: "inline-flex", gap: 4 }}>
@@ -723,28 +781,32 @@ function Minhas() {
           >
             Limpar
           </button>
+
+          {vista === "lista" && arquivadasCheck}
         </div>
           </>
         )}
 
-        {/* Arquivadas: vale pras duas vistas -> fora do bloco `vista==="lista"`.
-            marginLeft auto empurra pra direita, como no quadro. */}
-        <label
-          style={{
-            marginLeft: "auto", display: "inline-flex", alignItems: "center",
-            gap: 6, fontSize: 13, color: "var(--text-soft)", cursor: "pointer",
-          }}
-        >
-          <input
-            type="checkbox"
-            checked={mostrarArquivadas}
-            onChange={(e) => setMostrarArquivadas(e.target.checked)}
-          />
-          Mostrar arquivadas
-        </label>
+        {/* Spec 031 (C9): na vista LISTA o checkbox mora ao lado de "Limpar",
+            dentro da faixa de chips. Antes ele era irmao da faixa com
+            `marginLeft: auto`, e como a faixa e larga ele quebrava sozinho
+            numa terceira linha, encostado na direita, longe de tudo.
+            Na vista QUADRO nao ha faixa de chips -> ele volta pra esta linha. */}
+        {vista === "quadro" && arquivadasCheck}
       </div>
     );
   }
+
+  // ⚠️ NAO ha barra de pastilhas de filtro ativo aqui, e isso e DECISAO
+  // (Spec 031, C6 -- revoga o D4/D4-bis). Ela existe no Quadro porque la os
+  // filtros moram dentro de um popover FECHADO: a pastilha responde "o que
+  // esta ligado que eu nao estou vendo". Nesta tela todo controle esta visivel
+  // o tempo todo -- o select "Mostrar", o campo de busca, os 8 chips de status
+  // e o checkbox de arquivadas. A pastilha nao acrescentava informacao, so
+  // repetia o que estava dois centimetros acima.
+  //
+  // Se um dia algum controle daqui for recolhido, ela volta -- o
+  // `listaFiltrosAtivos` do lib continua servindo o Quadro.
 
   return (
     <div>
@@ -759,8 +821,8 @@ function Minhas() {
             color: "var(--text)", fontSize: 13,
           }}
         >
-          Voce tem <strong>{truncadoTotal}</strong> tarefas relacionadas, acima
-          do limite de exibicao. Mostrando as mais recentes — algumas podem nao
+          Você tem <strong>{truncadoTotal}</strong> tarefas relacionadas, acima
+          do limite de exibição. Mostrando as mais recentes — algumas podem não
           aparecer aqui nem entrar nos filtros. Arquive tarefas concluidas para
           reduzir o volume.
         </div>
@@ -768,8 +830,8 @@ function Minhas() {
 
       {items.length === 0 ? (
         <EmptyState
-          title="Voce esta em dia"
-          description="Tarefas em que voce e responsavel, criador ou acompanha aparecem aqui."
+          title="Você está em dia"
+          description="Tarefas em que você é responsável, criador ou acompanha aparecem aqui."
         />
       ) : (
         <div className={vista === "quadro" ? "" : "max-w-[1100px]"}>

@@ -18,7 +18,7 @@ const PROJECT_STATUS: { key: ProjectStatus; label: string; color: string }[] = [
   { key: "PLANNING", label: "Planejamento", color: "#8b8f9a" },
   { key: "ACTIVE", label: "Ativo", color: "#2e7d32" },
   { key: "BLOCKED", label: "Bloqueado", color: "#c62828" },
-  { key: "COMPLETED", label: "Concluido", color: "#1565c0" },
+  { key: "COMPLETED", label: "Concluído", color: "#1565c0" },
   { key: "CANCELLED", label: "Cancelado", color: "#9e9e9e" },
 ];
 const STATUS_LABEL: Record<string, string> = Object.fromEntries(
@@ -69,7 +69,7 @@ function Projetos() {
       setStatus("PLANNING");
       setCriando(false);
     } catch (e) {
-      setErroForm((e as ApiError).message || "Nao consegui criar o projeto.");
+      setErroForm((e as ApiError).message || "Não consegui criar o projeto.");
     } finally {
       setSalvando(false);
     }
@@ -95,7 +95,7 @@ function Projetos() {
       {criando && (
         <Card className="mb-[18px] flex max-w-[860px] flex-col gap-3">
           <div className="field">
-            <span className="label">Titulo do projeto</span>
+            <span className="label">Título do projeto</span>
             <input
               className="input"
               autoFocus

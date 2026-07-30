@@ -1,5 +1,12 @@
 "use client";
-import { PRIORITY_LABEL, PRIORITY_COLOR, deadlineTone, DEADLINE_COLOR } from "@/lib/status";
+import {
+  PRIORITY_LABEL,
+  PRIORITY_COLOR,
+  deadlineTone,
+  DEADLINE_COLOR,
+  diasParado,
+  paradaLabel,
+} from "@/lib/status";
 import Badge from "@/components/Badge";
 import Avatar from "@/components/Avatar";
 import type { Task } from "@/lib/api";
@@ -41,6 +48,10 @@ export default function TaskCard({
   const mostra = ids.slice(0, MAX_BOLINHAS);
   const resto = ids.length - mostra.length;
   const dueTone = deadlineTone(task.due_date, task.status, task.is_archived);
+  // Spec 031 / C2. `updated_at` ja vem no payload da listagem -- custo zero de
+  // rede. Ver o aviso sobre o que ele NAO mede em lib/status.ts.
+  const parada = diasParado(task.updated_at, task.status, task.is_archived);
+  const semResponsavel = ids.length === 0;
 
   return (
     <div
@@ -83,7 +94,7 @@ export default function TaskCard({
         <span
           title={
             escopo === "compartilhada"
-              ? "Tarefa do quadro geral (responsavel deste subtime)"
+              ? "Tarefa do quadro geral (responsável deste subtime)"
               : "Tarefa interna deste subtime"
           }
           style={{
@@ -97,6 +108,27 @@ export default function TaskCard({
           }}
         >
           {escopo === "compartilhada" ? "Compartilhada" : "Interna"}
+        </span>
+      )}
+      {parada !== null && (
+        <span
+          title="Sem mudança de status, título ou prazo. Comentário e designação não contam."
+          style={{
+            alignSelf: "flex-start",
+            display: "inline-flex", alignItems: "center", gap: 5,
+            fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 6,
+            color: "var(--stale-text)",
+            background: "color-mix(in srgb, var(--stale-text) 12%, transparent)",
+          }}
+        >
+          <span
+            aria-hidden="true"
+            style={{
+              width: 6, height: 6, borderRadius: 999,
+              background: "var(--stale-dot)", flexShrink: 0,
+            }}
+          />
+          {paradaLabel(parada)}
         </span>
       )}
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
@@ -128,6 +160,16 @@ export default function TaskCard({
           <span className="muted" style={{ fontSize: 11.5 }}>arquivada</span>
         )}
 
+        {/* Spec 031 / C2: ausencia de responsavel precisa ser DITA. Um card
+            sem bolinha nenhuma nao le como "falta alguem", le como nada --
+            e sao 44 tarefas nesse estado hoje. Tom neutro de proposito: e
+            pendencia de preenchimento, nao erro. */}
+        {semResponsavel && (
+          <span className="muted" style={{ fontSize: 11.5, marginLeft: "auto" }}>
+            sem responsável
+          </span>
+        )}
+
         {ids.length > 0 && (
           <span style={{ display: "flex", alignItems: "center", marginLeft: "auto" }}>
             {mostra.map((id, i) => {
@@ -138,7 +180,7 @@ export default function TaskCard({
                   id={id}
                   name={nome}
                   size="sm"
-                  title={nome ? nomeCurto(nome) : "Responsavel"}
+                  title={nome ? nomeCurto(nome) : "Responsável"}
                   className="border-[1.5px] border-surface"
                   style={{ marginLeft: i === 0 ? 0 : -6 }}
                 />

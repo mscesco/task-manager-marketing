@@ -106,7 +106,7 @@ function Membros() {
       const ms = await listMembers();
       setMembros([...ms].sort((a, b) => a.name.localeCompare(b.name, "pt-BR")));
     } catch (e) {
-      setErro((e as ApiError).message || "Nao consegui carregar os membros.");
+      setErro((e as ApiError).message || "Não consegui carregar os membros.");
     }
   }
 
@@ -128,7 +128,7 @@ function Membros() {
     const n = nome.trim();
     const e = email.trim();
     if (!n || !e) {
-      setErroForm("Nome e e-mail sao obrigatorios.");
+      setErroForm("Nome e e-mail são obrigatórios.");
       return;
     }
     if (!timeId || !papel) {
@@ -156,12 +156,12 @@ function Membros() {
       const a = err as ApiError;
       setErroForm(
         a.status === 409
-          ? "Ja existe um membro com esse e-mail."
+          ? "Já existe um membro com esse e-mail."
           : a.status === 422
-          ? "Dados invalidos (e-mail, ou a pessoa ja esta em outro subtime)."
+          ? "Dados inválidos (e-mail, ou a pessoa já está em outro subtime)."
           : a.status === 403
-          ? "Sem permissao: criar membro ADMIN exige que voce seja ADMIN."
-          : a.message || "Nao consegui cadastrar."
+          ? "Sem permissão: criar membro ADMIN exige que você seja ADMIN."
+          : a.message || "Não consegui cadastrar."
       );
     } finally {
       setSalvando(false);
@@ -399,12 +399,12 @@ function LinhaMembro({
       const a = e as ApiError;
       setErroLinha(
         a.status === 403
-          ? "Sem permissao para esse papel (a matriz do servidor recusou)."
+          ? "Sem permissão para esse papel (a matriz do servidor recusou)."
           : a.status === 409
-          ? "A pessoa ja faz parte desse time."
+          ? "A pessoa já faz parte desse time."
           : a.status === 422
-          ? "Invalido: a pessoa ja esta em outro subtime (regra: 1 subtime)."
-          : a.message || "Nao consegui adicionar."
+          ? "Inválido: a pessoa já está em outro subtime (regra: 1 subtime)."
+          : a.message || "Não consegui adicionar."
       );
     } finally {
       setAddBusy(false);
@@ -418,7 +418,7 @@ function LinhaMembro({
     try {
       setVinculos(await listMemberTeams(m.id));
     } catch (e) {
-      setErroLinha((e as ApiError).message || "Nao consegui carregar os papeis.");
+      setErroLinha((e as ApiError).message || "Não consegui carregar os papéis.");
       setEditandoPapel(false);
     }
   }
@@ -427,7 +427,7 @@ function LinhaMembro({
     try {
       setVinculos(await listMemberTeams(m.id));
     } catch (e) {
-      setErroLinha((e as ApiError).message || "Nao consegui recarregar os papeis.");
+      setErroLinha((e as ApiError).message || "Não consegui recarregar os papéis.");
     }
   }
 
@@ -443,10 +443,10 @@ function LinhaMembro({
       const a = e as ApiError;
       setErroLinha(
         a.status === 403
-          ? "Sem permissao para esse papel (a matriz do servidor recusou)."
+          ? "Sem permissão para esse papel (a matriz do servidor recusou)."
           : a.status === 404
-          ? "Vinculo nao encontrado (a pessoa pode ter saido do time)."
-          : a.message || "Nao consegui alterar o papel."
+          ? "Vínculo não encontrado (a pessoa pode ter saído do time)."
+          : a.message || "Não consegui alterar o papel."
       );
     } finally {
       setPapelBusy(null);
@@ -465,12 +465,12 @@ function LinhaMembro({
       const a = e as ApiError;
       setErroLinha(
         a.status === 403
-          ? "Sem permissao para remover esse vinculo."
+          ? "Sem permissão para remover esse vínculo."
           : a.status === 409
-          ? "Nao da pra remover: e o unico time da pessoa (ela ficaria sem time)."
+          ? "Não dá pra remover: é o único time da pessoa (ela ficaria sem time)."
           : a.status === 404
-          ? "Vinculo nao encontrado (pode ter mudado)."
-          : a.message || "Nao consegui remover."
+          ? "Vínculo não encontrado (pode ter mudado)."
+          : a.message || "Não consegui remover."
       );
     } finally {
       setPapelBusy(null);
@@ -488,12 +488,12 @@ function LinhaMembro({
       const a = e as ApiError;
       setErroLinha(
         a.status === 403
-          ? "Sem permissao para mover esse membro."
+          ? "Sem permissão para mover esse membro."
           : a.status === 409
-          ? "Movimento invalido (mesmo time ou ja faz parte do destino)."
+          ? "Movimento inválido (mesmo time ou já faz parte do destino)."
           : a.status === 404
-          ? "Time de origem ou destino nao encontrado."
-          : a.message || "Nao consegui mover."
+          ? "Time de origem ou destino não encontrado."
+          : a.message || "Não consegui mover."
       );
     } finally {
       setPapelBusy(null);
@@ -513,7 +513,7 @@ function LinhaMembro({
       });
     } catch (e) {
       const a = e as ApiError;
-      setErroLinha(a.status === 403 ? "Sem permissao." : a.message || "Nao consegui resetar.");
+      setErroLinha(a.status === 403 ? "Sem permissão." : a.message || "Não consegui resetar.");
     } finally {
       setBusy(false);
     }
@@ -528,7 +528,7 @@ function LinhaMembro({
       onMudou(); // recarrega a lista (cache ja invalidado)
     } catch (e) {
       const a = e as ApiError;
-      setErroLinha(a.status === 403 ? "Sem permissao." : a.message || "Nao consegui desativar.");
+      setErroLinha(a.status === 403 ? "Sem permissão." : a.message || "Não consegui desativar.");
       setBusy(false);
     }
   }
@@ -545,7 +545,7 @@ function LinhaMembro({
         <Avatar id={m.id} name={m.name} size="lg" />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 14, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {m.name}{isSelf && <span className="muted" style={{ fontWeight: 400 }}> (voce)</span>}
+            {m.name}{isSelf && <span className="muted" style={{ fontWeight: 400 }}> (você)</span>}
           </div>
           <div className="muted" style={{ fontSize: 12.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {m.email}
@@ -620,10 +620,10 @@ function LinhaMembro({
       {editandoPapel && (
         <div style={{ display: "flex", flexDirection: "column", gap: 8, paddingLeft: 44 }}>
           {vinculos === null ? (
-            <span className="muted" style={{ fontSize: 12.5 }}>Carregando papeis…</span>
+            <span className="muted" style={{ fontSize: 12.5 }}>Carregando papéis…</span>
           ) : vinculos.length === 0 ? (
             <span className="muted" style={{ fontSize: 12.5 }}>
-              Este membro nao tem vinculo de time.
+              Este membro não tem vínculo de time.
             </span>
           ) : (
             vinculos.map((v) => {
@@ -805,7 +805,7 @@ function SenhaProvisoria({
     >
       <strong style={{ fontSize: 14 }}>{titulo}</strong>
       <span className="muted" style={{ fontSize: 13 }}>{email}</span>
-      <div style={{ fontSize: 13 }}>Senha provisoria (o membro troca no 1º acesso):</div>
+      <div style={{ fontSize: 13 }}>Senha provisória (o membro troca no 1º acesso):</div>
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
         <code style={{
           fontSize: 15, fontWeight: 700, padding: "6px 12px", borderRadius: 8,

@@ -118,6 +118,89 @@
   color: #fca5a5;
 }
 
+
+/* --- Cor de status / prioridade / prazo (Spec 031, C1a) -----------------
+   DOIS papeis por familia, e eles NAO podem ser o mesmo valor:
+
+     --*-dot   cromatico. Bolinha, borda de coluna, outline de drop, borda
+               esquerda de linha. NAO e texto -> AA nao se aplica. Valor
+               IDENTICO ao de hoje, de proposito: nenhum elemento nao-textual
+               muda de aparencia nesta fatia.
+     --*-text  stop escuro da mesma familia. Serve a DOIS usos: texto sobre
+               --surface, e FUNDO sob texto branco (Badge tone="solid").
+               Contraste e simetrico, entao um valor cobre os dois.
+
+   O fundo do Badge tone="soft" NAO e token: o Badge calcula com color-mix
+   a partir da propria cor. Ver o comentario do Badge.tsx.
+
+   ⚠️ Os numeros abaixo sao o texto sobre --surface PURO. O caso que manda e
+   OUTRO: dentro do Badge tone="soft" o fundo e a propria cor a 12%, o que
+   escurece a base e DERRUBA o contraste. Medido com a tinta aplicada, o pior
+   caso desta tabela e 4.98 -- margem de 0.48 sobre AA. Amber e verde usam o
+   stop 800 (nao o 700) exatamente por isso: com o 700 o selo "Alta" dava 4.25
+   e reprovava. Mexeu em cor aqui, remede COM a tinta. */
+:root {
+  --status-backlog-dot:  #64748b;  --status-backlog-text:  #334155; /* 10.35 */
+  --status-planned-dot:  #6366f1;  --status-planned-text:  #4338ca; /*  7.90 */
+  --status-progress-dot: #0ea5e9;  --status-progress-text: #0369a1; /*  5.93 */
+  --status-review-dot:   #f59e0b;  --status-review-text:   #92400e; /*  7.09 */
+  --status-external-dot: #8b5cf6;  --status-external-text: #6d28d9; /*  7.10 */
+  --status-done-dot:     #22c55e;  --status-done-text:     #166534; /*  7.13 */
+  --status-cancel-dot:   #94a3b8;  --status-cancel-text:   #475569; /*  7.58 */
+  --status-blocked-dot:  #ef4444;  --status-blocked-text:  #b91c1c; /*  6.47 */
+
+  --prio-low-dot:    #64748b;  --prio-low-text:    #334155; /* 10.35 */
+  --prio-medium-dot: #0ea5e9;  --prio-medium-text: #0369a1; /*  5.93 */
+  --prio-high-dot:   #f59e0b;  --prio-high-text:   #92400e; /*  7.09 */
+  --prio-urgent-dot: #ef4444;  --prio-urgent-text: #b91c1c; /*  6.47 */
+
+  --due-overdue-dot:  #dc2626;  --due-overdue-text:  #b91c1c; /*  6.47 */
+  --due-soon-dot:     #f59e0b;  --due-soon-text:     #92400e; /*  7.09 */
+
+  /* Selo "parada ha X d" (C2). Token PROPRIO, mesmo tendo o valor do prazo:
+     parada e estagnacao, prazo e data -- se um dia divergirem, divergem sem
+     tocar no outro. */
+  --stale-dot: #f59e0b;  --stale-text: #92400e; /*  7.09 */
+
+  /* Texto POR CIMA de um fundo `-text` (Badge tone="solid"). Mesmo papel
+     que --on-danger, e pelo mesmo motivo: no escuro o fundo vira o stop
+     CLARO da familia, e branco em cima dele reprova. Pior caso medido:
+     5.02 no claro, 8.46 no escuro. */
+  --on-chroma: #ffffff;
+}
+
+/* --- Cor de status / prioridade / prazo, tema escuro (Spec 031, C1a) ----
+   ⚠️ ESQUECER UM PAR AQUI NAO E PEGO POR TESTE NENHUM: o vitest.config.ts
+   limita o include a lib/**, entao ele nao le este arquivo. A var some,
+   o CSS cai no valor do :root (claro) e o selo fica ilegivel no escuro.
+   Conferir com grep que cada nome aparece nos DOIS blocos.
+
+   O `dot` clareia junto com o resto da paleta escura; o `text` vira o stop
+   CLARO da familia -- sobre --surface (#161d2b) o stop escuro sumiria.
+   Contraste conferido, texto sobre --surface do tema escuro: */
+[data-theme="escuro"] {
+  --status-backlog-dot:  #94a3b8;  --status-backlog-text:  #cbd5e1; /* 11.36 */
+  --status-planned-dot:  #818cf8;  --status-planned-text:  #a5b4fc; /*  8.46 */
+  --status-progress-dot: #38bdf8;  --status-progress-text: #7dd3fc; /* 10.12 */
+  --status-review-dot:   #fbbf24;  --status-review-text:   #fcd34d; /* 11.70 */
+  --status-external-dot: #a78bfa;  --status-external-text: #c4b5fd; /*  9.14 */
+  --status-done-dot:     #4ade80;  --status-done-text:     #86efac; /* 12.02 */
+  --status-cancel-dot:   #cbd5e1;  --status-cancel-text:   #cbd5e1; /* 11.36 */
+  --status-blocked-dot:  #f87171;  --status-blocked-text:  #fca5a5; /*  8.89 */
+
+  --prio-low-dot:    #94a3b8;  --prio-low-text:    #cbd5e1; /* 11.36 */
+  --prio-medium-dot: #38bdf8;  --prio-medium-text: #7dd3fc; /* 10.12 */
+  --prio-high-dot:   #fbbf24;  --prio-high-text:   #fcd34d; /* 11.70 */
+  --prio-urgent-dot: #f87171;  --prio-urgent-text: #fca5a5; /*  8.89 */
+
+  --due-overdue-dot:  #f87171;  --due-overdue-text:  #fca5a5; /*  8.89 */
+  --due-soon-dot:     #fbbf24;  --due-soon-text:     #fcd34d; /* 11.70 */
+
+  --stale-dot: #fbbf24;  --stale-text: #fcd34d; /* 11.70 */
+
+  --on-chroma: #161d2b;
+}
+
 * { box-sizing: border-box; }
 html, body { padding: 0; margin: 0; }
 body {

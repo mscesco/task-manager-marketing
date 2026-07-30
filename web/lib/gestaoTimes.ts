@@ -131,7 +131,7 @@ export function motivoNaoRemove(
   time: TimeGerenciavel,
   permissoes: readonly string[]
 ): string | null {
-  if (ehRaiz(time)) return "O time principal nao pode ser removido.";
+  if (ehRaiz(time)) return "O time principal não pode ser removido.";
   if (!permissoes.includes("workspace.manage")) {
     return "Só um administrador pode remover times.";
   }

@@ -52,7 +52,7 @@ export default function GifPicker({
         } catch {
           if (!cancelado) {
             setGifs([]);
-            setErro("Nao consegui buscar GIFs agora. Tente de novo.");
+            setErro("Não consegui buscar GIFs agora. Tente de novo.");
           }
         } finally {
           if (!cancelado) setLoading(false);

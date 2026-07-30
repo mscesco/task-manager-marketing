@@ -51,7 +51,7 @@ export const RASCUNHO_VAZIO: Rascunho = {
 
 /** Motivo pelo qual ainda nao da pra criar. `null` = pode criar. */
 export function motivoNaoCria(r: Rascunho): string | null {
-  if (!r.titulo.trim()) return "Escreva o titulo da subtarefa.";
+  if (!r.titulo.trim()) return "Escreva o título da subtarefa.";
   if (r.assigneeIds.length === 0) return "Escolha quem vai fazer.";
   return null;
 }

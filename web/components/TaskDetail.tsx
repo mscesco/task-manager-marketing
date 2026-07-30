@@ -37,6 +37,7 @@ import {
   PRIORITY_LABEL,
   PRIORITY_COLOR,
   STATUSES,
+  STATUS_TEXT,
   deadlineTone,
   DEADLINE_COLOR,
 } from "@/lib/status";
@@ -61,9 +62,10 @@ import { linkify } from "@/lib/linkify";
 const STATUS_LABEL: Record<string, string> = Object.fromEntries(
   STATUSES.map((s) => [s.key, s.label])
 );
-const STATUS_COLOR: Record<string, string> = Object.fromEntries(
-  STATUSES.map((s) => [s.key, s.color])
-);
+// Spec 031 (C1a): a cor do BADGE vem de STATUS_TEXT, nao de STATUSES[].color.
+// STATUSES[].color e o token de TRACO (bolinha, borda de coluna) -- como texto
+// ou como fundo sob texto ele reprova AA. Ver Spec 031 §2.2b/§2.2c.
+const STATUS_COLOR: Record<string, string> = STATUS_TEXT;
 
 // Fatia B/C: gatilho compacto redondo -- substitui os botoes-fantasma gordos
 // ("Designar" / "Mudar projeto" / "+ Subtarefa") por um alvo pequeno inline.
@@ -316,7 +318,7 @@ export default function TaskDetail({
         if (vivo) setComentarios(r.items);
       })
       .catch((e: ApiError) => {
-        if (vivo) setErroCom(e.message || "Nao consegui carregar os comentarios.");
+        if (vivo) setErroCom(e.message || "Não consegui carregar os comentários.");
       });
     return () => {
       vivo = false;
@@ -395,10 +397,10 @@ export default function TaskDetail({
       const err = e as ApiError;
       setErro(
         err.status === 403
-          ? "Voce nao pode designar nesta tarefa."
+          ? "Você não pode designar nesta tarefa."
           : err.status === 422
-          ? "Essa pessoa nao alcanca esta tarefa (fora do time)."
-          : "Nao consegui atualizar o responsavel."
+          ? "Essa pessoa não alcança esta tarefa (fora do time)."
+          : "Não consegui atualizar o responsável."
       );
     } finally {
       setSaving((s) => {
@@ -434,12 +436,12 @@ export default function TaskDetail({
       const err = e as ApiError;
       setErroProj(
         err.status === 403
-          ? "Voce nao pode mover esta tarefa."
+          ? "Você não pode mover esta tarefa."
           : err.status === 422
-          ? "Nao foi possivel mover pra esse projeto."
+          ? "Não foi possível mover pra esse projeto."
           : err.status === 404
-          ? "Projeto nao encontrado ou sem acesso."
-          : "Nao consegui mover a tarefa de projeto."
+          ? "Projeto não encontrado ou sem acesso."
+          : "Não consegui mover a tarefa de projeto."
       );
     } finally {
       setMovendoProj(false);
@@ -487,7 +489,7 @@ export default function TaskDetail({
       setSubBusca("");
       subTituloRef.current?.focus();
     } catch (e) {
-      setErroSub((e as ApiError).message || "Nao consegui criar a subtarefa.");
+      setErroSub((e as ApiError).message || "Não consegui criar a subtarefa.");
     } finally {
       setSalvandoSub(false);
     }
@@ -508,7 +510,7 @@ export default function TaskDetail({
       onSubtaskUpsert(atualizada);
     } catch (e) {
       onSubtaskUpsert(f); // revert
-      setErroSub("Nao consegui atualizar a subtarefa.");
+      setErroSub("Não consegui atualizar a subtarefa.");
     } finally {
       setSubSaving((s) => {
         const n = new Set(s);
@@ -571,8 +573,8 @@ export default function TaskDetail({
     } catch (e) {
       setErro(
         (e as ApiError).status === 403
-          ? "Voce nao pode arquivar esta tarefa."
-          : "Nao consegui arquivar a tarefa."
+          ? "Você não pode arquivar esta tarefa."
+          : "Não consegui arquivar a tarefa."
       );
     } finally {
       setArquivando(false);
@@ -588,8 +590,8 @@ export default function TaskDetail({
     } catch (e) {
       setErro(
         (e as ApiError).status === 403
-          ? "Voce nao pode excluir esta tarefa."
-          : "Nao consegui excluir a tarefa."
+          ? "Você não pode excluir esta tarefa."
+          : "Não consegui excluir a tarefa."
       );
       setExcluindo(false);
     }
@@ -617,7 +619,7 @@ export default function TaskDetail({
       setNovoComent("");
       setGifsNovo([]);
     } catch (e) {
-      setErroCom((e as ApiError).message || "Nao consegui comentar.");
+      setErroCom((e as ApiError).message || "Não consegui comentar.");
     } finally {
       setEnviandoComent(false);
     }
@@ -635,7 +637,7 @@ export default function TaskDetail({
       setGifsResp([]);
       setRespondendoId(null);
     } catch (e) {
-      setErroCom((e as ApiError).message || "Nao consegui responder.");
+      setErroCom((e as ApiError).message || "Não consegui responder.");
     } finally {
       setEnviandoResp(false);
     }
@@ -656,7 +658,7 @@ export default function TaskDetail({
       const r = await listComments(tid, { size: 100 });
       setComentarios(r.items);
     } catch (e) {
-      setErroCom((e as ApiError).message || "Nao consegui recarregar os comentarios.");
+      setErroCom((e as ApiError).message || "Não consegui recarregar os comentários.");
     }
   }
 
@@ -775,7 +777,7 @@ export default function TaskDetail({
         </div>
 
         <div className="field">
-          <span className="label">Descricao</span>
+          <span className="label">Descrição</span>
           {task.description && task.description.trim().length > 0 ? (
             // linkify: URL http/https vira <a>. Descricao NAO passa pelo
             // parser de mencao/gif -- esses tokens so existem em comentario.
@@ -792,7 +794,7 @@ export default function TaskDetail({
               {linkify(task.description, "desc-")}
             </div>
           ) : (
-            <span className="muted" style={{ fontSize: 13 }}>Sem descricao.</span>
+            <span className="muted" style={{ fontSize: 13 }}>Sem descrição.</span>
           )}
         </div>
 
@@ -862,7 +864,7 @@ export default function TaskDetail({
         {/* ---- Responsaveis: pilulas atuais + gatilho "+" que abre a lista
              como POPOVER flutuante (nao empurra o layout; fecha ao clicar fora) ---- */}
         <div className="field">
-          <span className="label">Responsaveis</span>
+          <span className="label">Responsáveis</span>
 
           <div ref={respWrapRef} style={{ position: "relative" }}>
             <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6 }}>
@@ -879,7 +881,7 @@ export default function TaskDetail({
                       }}
                     >
                       <Avatar id={id} name={nome} size="sm" />
-                      {nome ? nomeCurto(nome) : "Responsavel"}
+                      {nome ? nomeCurto(nome) : "Responsável"}
                     </span>
                   );
                 })
@@ -890,7 +892,7 @@ export default function TaskDetail({
               <button
                 type="button"
                 onClick={() => setAbertoResp((v) => !v)}
-                aria-label="Designar responsavel"
+                aria-label="Designar responsável"
                 aria-expanded={abertoResp}
                 title="Designar"
                 style={GATILHO_STYLE}
@@ -1156,7 +1158,7 @@ export default function TaskDetail({
                 ref={subTituloRef}
                 className="input"
                 autoFocus
-                placeholder="Titulo da subtarefa…"
+                placeholder="Título da subtarefa…"
                 value={novoTitulo}
                 disabled={salvandoSub}
                 maxLength={255}
@@ -1341,7 +1343,7 @@ export default function TaskDetail({
                 gap: 6, textAlign: "left", alignSelf: "flex-start",
               }}
             >
-              <span>Comentarios ({comentarios.length})</span>
+              <span>Comentários ({comentarios.length})</span>
               <span
                 aria-hidden
                 style={{
@@ -1354,14 +1356,14 @@ export default function TaskDetail({
               </span>
             </button>
           ) : (
-            <span className="label">Comentarios</span>
+            <span className="label">Comentários</span>
           )}
 
           {comentarios === null ? (
             <span className="muted" style={{ fontSize: 13 }}>Carregando…</span>
           ) : comentarios.length === 0 ? (
             <span className="muted" style={{ fontSize: 13 }}>
-              Nenhum comentario ainda.
+              Nenhum comentário ainda.
             </span>
           ) : !threadAberto ? null : (
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -1484,7 +1486,7 @@ export default function TaskDetail({
             onChange={setNovoComent}
             members={members}
             rows={2}
-            placeholder="Escreva um comentario… (@ menciona)"
+            placeholder="Escreva um comentário… (@ menciona)"
             disabled={enviandoComent}
             maxLength={5000}
             wrapperStyle={{ marginTop: 10 }}
@@ -1574,7 +1576,7 @@ export default function TaskDetail({
           </button>
           <button
             type="button" className="btn btn-ghost" onClick={copiarLink}
-            title="Copia o endereco desta tarefa pra compartilhar"
+            title="Copia o endereço desta tarefa pra compartilhar"
           >
             {copiado ? "Copiado!" : "Copiar link"}
           </button>
@@ -1643,7 +1645,7 @@ function LinhaComentario({
       setErroLinha(
         err.status === 403
           ? "So o autor pode editar."
-          : err.message || "Nao consegui editar."
+          : err.message || "Não consegui editar."
       );
     } finally {
       setSalvando(false);
@@ -1661,8 +1663,8 @@ function LinhaComentario({
       const err = e as ApiError;
       setErroLinha(
         err.status === 403
-          ? "Voce nao pode apagar este comentario."
-          : err.message || "Nao consegui apagar."
+          ? "Você não pode apagar este comentário."
+          : err.message || "Não consegui apagar."
       );
       setApagando(false);
     }
@@ -1736,7 +1738,7 @@ function LinhaComentario({
                 onClick={() => setConfirmando(false)} disabled={apagando}
                 style={{ padding: "0 8px", fontSize: 12 }}
               >
-                Nao
+                Não
               </button>
             </span>
           )}
