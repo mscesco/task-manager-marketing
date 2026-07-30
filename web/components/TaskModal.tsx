@@ -26,6 +26,7 @@ import {
   ehAtalhoDeSalvar,
   primeiroSelecionavel,
 } from "@/lib/teclasFormulario";
+import { motivoNaoCria } from "@/lib/criacaoTarefa";
 import Avatar from "@/components/Avatar";
 import { nomeCurto } from "@/lib/people";
 
@@ -154,6 +155,16 @@ export default function TaskModal({
   }, [abertoResp]);
 
   // Membros filtrados pela busca do picker, ordenados por nome.
+  // Bloqueio do botao: no modo CRIAR exige titulo E responsavel; na edicao
+  // basta o titulo. A mensagem vai no `title` do botao, para a pessoa saber o
+  // que falta antes de tentar.
+  const motivoBloqueio = editando
+    ? title.trim()
+      ? null
+      : "Escreva o titulo da tarefa."
+    : motivoNaoCria({ titulo: title, assigneeIds, dueDate });
+  const podeSalvar = motivoBloqueio === null;
+
   const membrosFiltrados = useMemo(() => {
     const q = buscaResp.trim().toLowerCase();
     return membros
@@ -189,6 +200,26 @@ export default function TaskModal({
     if (!t) {
       setErro("O titulo e obrigatorio.");
       return;
+    }
+    // Responsavel obrigatorio ao CRIAR (29/07). Nao vale na edicao: o modal de
+    // edicao nao mexe em responsaveis (Spec 021), e cobrar aqui travaria quem
+    // so quer corrigir um titulo.
+    //
+    // Medido antes da regra: 50 tarefas ativas sem ninguem designado. Nas
+    // raizes o habito ja era atribuir -- nenhuma das 13 em Backlog estava sem
+    // responsavel -- entao a trava formaliza a pratica em vez de mudar
+    // comportamento. A obrigacao e de UI: o POST segue aceitando sem
+    // responsavel, senao n8n e triagem de solicitacao quebravam.
+    if (!editando) {
+      const impedimento = motivoNaoCria({
+        titulo: t,
+        assigneeIds: assigneeIds,
+        dueDate: dueDate,
+      });
+      if (impedimento) {
+        setErro(impedimento);
+        return;
+      }
     }
     setSaving(true);
     setErro(null);
@@ -362,7 +393,16 @@ export default function TaskModal({
         {!editando && (
           <div className="field">
             <label className="label">
-              Responsaveis <span className="muted" style={{ fontWeight: 400 }}>(opcional)</span>
+              Responsaveis{" "}
+              <span
+                style={{ fontWeight: 400, color: "#dc2626" }}
+                aria-hidden="true"
+              >
+                *
+              </span>{" "}
+              <span className="muted" style={{ fontWeight: 400 }}>
+                (obrigatorio)
+              </span>
             </label>
             {membros.length === 0 ? (
               <span className="muted" style={{ fontSize: 13 }}>Carregando membros…</span>
@@ -519,7 +559,12 @@ export default function TaskModal({
           <button type="button" className="btn btn-ghost" onClick={fechar} disabled={saving}>
             Cancelar
           </button>
-          <button type="submit" className="btn btn-primary" disabled={saving}>
+          <button
+          type="submit"
+          className="btn btn-primary"
+          disabled={saving || !podeSalvar}
+          title={motivoBloqueio ?? undefined}
+        >
             {saving ? "Salvando…" : editando ? "Salvar" : "Criar tarefa"}
           </button>
         </div>

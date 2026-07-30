@@ -868,10 +868,18 @@ export async function removeAssignee(
 // o time do pai (ADR 0024). MANDA o project_id do pai porque o backend EXIGE
 // que subtarefa e pai estejam no mesmo projeto (task_service: parent.project_id
 // != command.project_id -> erro). Avulsa => parentProjectId null, casa com null.
+// 29/07: passou a aceitar RESPONSAVEL e PRAZO na criacao rapida. Antes so o
+// titulo cabia aqui, entao designar alguem numa subtarefa exigia cria-la,
+// abri-la e editar -- tres passos. O atalho que as pessoas encontraram foi
+// designar todo mundo na TAREFA-MAE (ha cards com treze responsaveis), o que
+// desmonta a leitura de quem faz o que.
+//
+// O endpoint sempre aceitou os dois campos; era a chamada que nao os mandava.
 export async function createSubtask(
   parentTaskId: string,
   title: string,
-  parentProjectId: string | null
+  parentProjectId: string | null,
+  extras: { assigneeIds?: string[]; dueDate?: string | null } = {}
 ): Promise<Task> {
   return api<Task>("/api/v1/tasks", {
     method: "POST",
@@ -879,6 +887,10 @@ export async function createSubtask(
       title,
       parent_task_id: parentTaskId,
       ...(parentProjectId ? { project_id: parentProjectId } : {}),
+      ...(extras.assigneeIds?.length
+        ? { assignee_ids: extras.assigneeIds }
+        : {}),
+      ...(extras.dueDate ? { due_date: extras.dueDate } : {}),
     },
   });
 }

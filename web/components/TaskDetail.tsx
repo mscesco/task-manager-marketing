@@ -11,6 +11,7 @@
 //   anterior, guardado na sessao); clicar no titulo NAVEGA pra dentro.
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { UserPlus } from "lucide-react";
 
 import { useSaidaAnimada } from "@/lib/useSaidaAnimada";
 import {
@@ -47,6 +48,14 @@ import { isGiphyUrl } from "@/lib/giphy";
 import CommentText from "@/components/CommentText";
 import MentionTextarea from "@/components/MentionTextarea";
 import { nomeCurto } from "@/lib/people";
+import {
+  acaoDoEnterNoTitulo,
+  alternaResponsavel,
+  motivoNaoCria,
+  podeCriar,
+  resumoResponsaveis,
+  proximoDaSequencia,
+} from "@/lib/criacaoTarefa";
 import { linkify } from "@/lib/linkify";
 
 const STATUS_LABEL: Record<string, string> = Object.fromEntries(
@@ -144,6 +153,15 @@ export default function TaskDetail({
 
   const [criandoSub, setCriandoSub] = useState(false);
   const [novoTitulo, setNovoTitulo] = useState("");
+  // Criacao rapida de subtarefa (29/07): responsavel OBRIGATORIO, prazo
+  // opcional. 44 das 50 tarefas ativas sem responsavel eram subtarefas --
+  // porque este campo aceitava so o titulo. Regras em lib/criacaoSubtarefa.
+  const [subAssignees, setSubAssignees] = useState<string[]>([]);
+  const [subPrazo, setSubPrazo] = useState("");
+  const [subPickerAberto, setSubPickerAberto] = useState(false);
+  const [subBusca, setSubBusca] = useState("");
+  const subPickerRef = useRef<HTMLDivElement>(null);
+  const subTituloRef = useRef<HTMLInputElement>(null);
   const [salvandoSub, setSalvandoSub] = useState(false);
   const [erroSub, setErroSub] = useState<string | null>(null);
   const [subSaving, setSubSaving] = useState<Set<string>>(new Set());
@@ -305,6 +323,29 @@ export default function TaskDetail({
     };
   }, [task?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Fecha o picker de responsavel da subtarefa ao clicar fora.
+  useEffect(() => {
+    if (!subPickerAberto) return;
+    function onDown(e: MouseEvent) {
+      if (subPickerRef.current && !subPickerRef.current.contains(e.target as Node)) {
+        setSubPickerAberto(false);
+      }
+    }
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [subPickerAberto]);
+
+  // Lista do picker da subtarefa. Separada de `filtrados` (que serve ao
+  // picker da tarefa mae) porque as buscas sao independentes -- compartilhar
+  // o termo faria digitar num lugar filtrar o outro.
+  const membrosParaSub = useMemo(() => {
+    const q = subBusca.trim().toLowerCase();
+    return Array.from(members.entries())
+      .map(([id, m]) => ({ id, name: m.name }))
+      .filter((e) => (q ? e.name.toLowerCase().includes(q) : true))
+      .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+  }, [members, subBusca]);
+
   const filtrados = useMemo(() => {
     const q = busca.trim().toLowerCase();
     return Array.from(members.entries())
@@ -405,20 +446,46 @@ export default function TaskDetail({
     }
   }
 
+  function fecharCriacaoSub() {
+    setCriandoSub(false);
+    setNovoTitulo("");
+    setSubAssignees([]);
+    setSubPrazo("");
+    setSubPickerAberto(false);
+    setSubBusca("");
+    setErroSub(null);
+  }
+
   async function criarSub() {
-    const t = novoTitulo.trim();
-    if (!t) {
-      setCriandoSub(false);
-      setNovoTitulo("");
+    const rascunho = { titulo: novoTitulo, assigneeIds: subAssignees, dueDate: subPrazo };
+    const impedimento = motivoNaoCria(rascunho);
+    if (impedimento) {
+      // Trava de UI. O backend segue aceitando subtarefa sem responsavel de
+      // proposito (n8n, triagem de solicitacao) -- a exigencia e daqui.
+      setErroSub(impedimento);
       return;
     }
     setSalvandoSub(true);
     setErroSub(null);
     try {
-      const nova = await createSubtask(tid, t, tidProjeto);
+      const nova = await createSubtask(tid, novoTitulo.trim(), tidProjeto, {
+        assigneeIds: subAssignees,
+        dueDate: subPrazo || null,
+      });
       onSubtaskUpsert(nova);
-      setNovoTitulo("");
-      setCriandoSub(false);
+      // Fica ABERTO para a proxima: decompor trabalho vem em rajada, e fechar
+      // a cada criacao custava uma ida ao "+" por subtarefa. Responsavel e
+      // prazo ficam; o titulo limpa e recebe o foco de volta.
+      const proximo = proximoDaSequencia({
+        titulo: novoTitulo,
+        assigneeIds: subAssignees,
+        dueDate: subPrazo,
+      });
+      setNovoTitulo(proximo.titulo);
+      setSubAssignees(proximo.assigneeIds);
+      setSubPrazo(proximo.dueDate);
+      setSubBusca("");
+      subTituloRef.current?.focus();
     } catch (e) {
       setErroSub((e as ApiError).message || "Nao consegui criar a subtarefa.");
     } finally {
@@ -1074,25 +1141,185 @@ export default function TaskDetail({
           )}
 
           {criandoSub && (
-            <input
-              className="input"
-              autoFocus
-              placeholder="Titulo da subtarefa… (Enter cria, Esc cancela)"
-              value={novoTitulo}
-              disabled={salvandoSub}
-              maxLength={255}
-              onChange={(e) => setNovoTitulo(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  criarSub();
-                } else if (e.key === "Escape") {
-                  setCriandoSub(false);
-                  setNovoTitulo("");
-                }
+            <div
+              style={{
+                marginTop: filhos.length > 0 ? 8 : 0,
+                border: "1px solid var(--border)",
+                borderRadius: 10,
+                padding: 10,
+                display: "flex",
+                flexDirection: "column",
+                gap: 8,
               }}
-              style={{ marginTop: filhos.length > 0 ? 8 : 0 }}
-            />
+            >
+              <input
+                ref={subTituloRef}
+                className="input"
+                autoFocus
+                placeholder="Titulo da subtarefa…"
+                value={novoTitulo}
+                disabled={salvandoSub}
+                maxLength={255}
+                onChange={(e) => setNovoTitulo(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") {
+                    fecharCriacaoSub();
+                    return;
+                  }
+                  if (e.key !== "Enter") return;
+                  e.preventDefault();
+                  // Enter com titulo e SEM responsavel abre o seletor em vez
+                  // de criar. Criar aqui repetiria o bug do TaskModal, onde o
+                  // Enter gerava tarefa sem ninguem designado.
+                  const acao = acaoDoEnterNoTitulo({
+                    titulo: novoTitulo,
+                    assigneeIds: subAssignees,
+                    dueDate: subPrazo,
+                  });
+                  if (acao === "criar") criarSub();
+                  else if (acao === "escolher") setSubPickerAberto(true);
+                }}
+              />
+
+              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                {/* Responsavel: obrigatorio. O botao carrega o estado no
+                    proprio rotulo, para a exigencia ficar visivel antes do
+                    erro aparecer. */}
+                <div ref={subPickerRef} style={{ position: "relative" }}>
+                  <button
+                    type="button"
+                    onClick={() => setSubPickerAberto((v) => !v)}
+                    disabled={salvandoSub}
+                    aria-expanded={subPickerAberto}
+                    style={{
+                      display: "inline-flex", alignItems: "center", gap: 6,
+                      fontSize: 12.5, padding: "5px 9px", borderRadius: 8,
+                      border: `1px ${subAssignees.length ? "solid" : "dashed"} var(--border)`,
+                      background: "var(--surface)",
+                      color: subAssignees.length ? "var(--text)" : "var(--text-soft)",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <UserPlus size={13} />
+                    {resumoResponsaveis(
+                      subAssignees,
+                      (id) => members.get(id)?.name
+                    )}
+                  </button>
+
+                  {subPickerAberto && (
+                    <div
+                      style={{
+                        position: "absolute", top: "calc(100% + 6px)", left: 0,
+                        zIndex: 40, width: 260, background: "var(--surface)",
+                        border: "1px solid var(--border)", borderRadius: 10,
+                        boxShadow: "var(--shadow)", padding: 8,
+                      }}
+                    >
+                      <input
+                        className="input"
+                        placeholder="Buscar pessoa…"
+                        value={subBusca}
+                        autoFocus
+                        onChange={(e) => setSubBusca(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key !== "Enter") return;
+                          e.preventDefault();
+                          e.stopPropagation();
+                          const primeiro = membrosParaSub[0];
+                          if (!primeiro) return;
+                          setSubAssignees((prev) =>
+                            alternaResponsavel(prev, primeiro.id)
+                          );
+                          setSubBusca("");
+                        }}
+                      />
+                      <div
+                        style={{
+                          maxHeight: 200, overflowY: "auto", marginTop: 6,
+                          border: "1px solid var(--border)", borderRadius: 8,
+                        }}
+                      >
+                        {membrosParaSub.length === 0 ? (
+                          <div className="muted" style={{ fontSize: 12.5, padding: "8px 10px" }}>
+                            Ninguem encontrado.
+                          </div>
+                        ) : (
+                          membrosParaSub.map((m, i) => (
+                            <label
+                              key={m.id}
+                              style={{
+                                display: "flex", alignItems: "center", gap: 8,
+                                padding: "7px 10px", cursor: "pointer",
+                                borderTop: i === 0 ? "none" : "1px solid var(--border)",
+                              }}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={subAssignees.includes(m.id)}
+                                onChange={() =>
+                                  setSubAssignees((prev) =>
+                                    alternaResponsavel(prev, m.id)
+                                  )
+                                }
+                              />
+                              <Avatar id={m.id} name={m.name} size="xs" />
+                              <span style={{ fontSize: 13 }}>{m.name}</span>
+                            </label>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Prazo: opcional. "Faz quando der" e decisao legitima. */}
+                <input
+                  type="date"
+                  className="input"
+                  value={subPrazo}
+                  disabled={salvandoSub}
+                  onChange={(e) => setSubPrazo(e.target.value)}
+                  style={{ fontSize: 12.5, padding: "5px 9px", width: "auto" }}
+                  aria-label="Data de entrega (opcional)"
+                />
+
+                <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    onClick={fecharCriacaoSub}
+                    disabled={salvandoSub}
+                    style={{ padding: "5px 10px", fontSize: 12.5 }}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    onClick={criarSub}
+                    disabled={
+                      salvandoSub ||
+                      !podeCriar({
+                        titulo: novoTitulo,
+                        assigneeIds: subAssignees,
+                        dueDate: subPrazo,
+                      })
+                    }
+                    title={
+                      motivoNaoCria({
+                        titulo: novoTitulo,
+                        assigneeIds: subAssignees,
+                        dueDate: subPrazo,
+                      }) ?? "Adicionar subtarefa"
+                    }
+                    style={{ padding: "5px 12px", fontSize: 12.5 }}
+                  >
+                    {salvandoSub ? "…" : "Adicionar"}
+                  </button>
+                </div>
+              </div>
+            </div>
           )}
 
           {erroSub && (
