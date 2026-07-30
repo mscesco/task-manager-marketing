@@ -36,6 +36,8 @@ type Props = {
   value: string;
   onChange: (v: string) => void;
   members: MembersMap;
+  /** Ids desativados: ficam fora do autocompletar de @ (Spec 031, C15). */
+  inativos?: Set<string>;
   placeholder?: string;
   disabled?: boolean;
   rows?: number;
@@ -51,6 +53,7 @@ const MentionTextarea = forwardRef<HTMLTextAreaElement, Props>(
       value,
       onChange,
       members,
+      inativos,
       placeholder,
       disabled,
       rows,
@@ -69,8 +72,13 @@ const MentionTextarea = forwardRef<HTMLTextAreaElement, Props>(
     const [query, setQuery] = useState("");
     const [hi, setHi] = useState(0);
 
+    // Spec 031 (C15): desativado nao entra no autocompletar de @. Mencao vira
+    // notificacao, e notificar quem nao entra mais no sistema e escrever pra
+    // ninguem -- com o agravante de quem escreveu achar que avisou alguem.
+    // `members` continua completo: ele resolve NOME de mencao ja existente.
     const lista = open
       ? Array.from(members.entries())
+          .filter(([id]) => !inativos?.has(id))
           .map(([id, m]) => ({ id, name: m.name }))
           .filter((m) => m.name.toLowerCase().includes(query.toLowerCase()))
           .slice(0, 6)

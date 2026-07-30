@@ -70,6 +70,7 @@ export default function Board({
   );
   // Mapa project_id -> titulo, so no quadro geral (pra tag do card).
   const [projectNames, setProjectNames] = useState<Map<string, string>>(new Map());
+  const [projetosPessoais, setProjetosPessoais] = useState<Set<string>>(new Set());
   const [erro, setErro] = useState<string | null>(null);
   const [criando, setCriando] = useState(false);
   const [editando, setEditando] = useState<Task | null>(null);
@@ -90,6 +91,7 @@ export default function Board({
   // Fatia 3: filtro por subtime. memberTeam resolve id->subtime (vem do
   // /members, agora com team_id pela Fatia 2). subtimes alimenta o dropdown
   // (so times nao-raiz). "" em `subtime` = sem filtro.
+  const [membrosInativos, setMembrosInativos] = useState<Set<string>>(new Set());
   const [memberTeam, setMemberTeam] = useState<Map<string, string | null>>(
     new Map()
   );
@@ -189,6 +191,10 @@ export default function Board({
     listMembers()
       .then((ms) => {
         setMembers(new Map(ms.map((m) => [m.id, { name: m.name }])));
+        // Spec 031 (C14): a parte, pelo mesmo motivo de `projetosPessoais` --
+        // o mapa de nomes precisa de TODOS (pra resolver quem ja esta
+        // designado), o seletor e que nao deve OFERECER desativado.
+        setMembrosInativos(new Set(ms.filter((m) => !m.is_active).map((m) => m.id)));
         setMemberTeam(new Map(ms.map((m) => [m.id, m.team_id])));
       })
       .catch(() => {})
@@ -196,7 +202,13 @@ export default function Board({
     // Spec 022: projectNames alimenta o chip E o seletor de "mudar projeto" no
     // detalhe -> carrega em qualquer quadro (antes so no geral).
     listAllProjects()
-      .then((r) => setProjectNames(new Map(r.items.map((p) => [p.id, p.title]))))
+      .then((r) => {
+        setProjectNames(new Map(r.items.map((p) => [p.id, p.title])));
+        // Spec 031 (C13): guardado a parte -- o mapa de nomes precisa de TODOS
+        // (inclusive pessoal, pra resolver o nome de quem ja mora la), mas o
+        // seletor de "mudar projeto" nao deve OFERECER pessoal.
+        setProjetosPessoais(new Set(r.items.filter((p) => p.is_personal).map((p) => p.id)));
+      })
       .catch(() => {});
   }, [projectId, mostrarArquivadas, recarregarTasks]);
 
@@ -558,12 +570,31 @@ export default function Board({
   // por pessoa. Mesmo desenho do subtimesPorRaiz logo acima.
   const respPorRaiz = responsaveisPorRaiz(tasks);
 
+  // Quem tem ALGUMA tarefa neste quadro (raiz ou subtarefa). Usado so pra
+  // decidir se um desativado ainda merece aparecer no filtro.
+  const comTrabalhoAqui = new Set<string>();
+  for (const t of tasks) for (const id of t.assignee_ids ?? []) comTrabalhoAqui.add(id);
+
   // Pessoas do seletor. No quadro de SUBTIME, so quem e daquela equipe
   // (pedido da Camila: "filtrar por pessoa que faz parte daquela equipe").
   // No quadro geral / de projeto, todo mundo. Ordenado por nome pt-BR.
+  //
+  // Spec 031 (C15): DESATIVADO sai daqui tambem -- este e um seletor de
+  // responsavel como qualquer outro, e a lista nao pode encher de gente que
+  // nao entra mais no sistema.
+  //
+  // ⚠️ MENOS quem ainda tem tarefa neste quadro. Quem sai do time deixa
+  // trabalho para tras, e "o que a fulana deixou pendente?" e exatamente a
+  // pergunta que se faz DEPOIS que ela sai. Tirar da lista quem tem tarefa
+  // aqui esconderia esse trabalho em vez de limpar a lista.
   const pessoasDoFiltro = Array.from(members.entries())
     .filter(([id]) => !modoSubtime || memberTeam.get(id) === subteamId)
-    .map(([id, m]) => ({ id, name: m.name }))
+    .filter(([id]) => !membrosInativos.has(id) || comTrabalhoAqui.has(id))
+    .map(([id, m]) => ({
+      id,
+      name: m.name,
+      inativo: membrosInativos.has(id),
+    }))
     .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
 
   // Nomes para as pastilhas -- id cru nao vira rotulo na tela.
@@ -778,7 +809,9 @@ export default function Board({
                   >
                     <option value="">Todos</option>
                     {pessoasDoFiltro.map((pes) => (
-                      <option key={pes.id} value={pes.id}>{pes.name}</option>
+                      <option key={pes.id} value={pes.id}>
+                        {pes.inativo ? `${pes.name} (inativo)` : pes.name}
+                      </option>
                     ))}
                   </select>
                 </div>
@@ -955,6 +988,9 @@ export default function Board({
         onSubtaskUpsert={aoUpsert}
         onTaskMoved={() => recarregarTasks()}
         onExcluir={aoExcluir}
+        mostrarArquivadas={mostrarArquivadas}
+        projetosPessoais={projetosPessoais}
+        membrosInativos={membrosInativos}
       />
 
       {toast && (

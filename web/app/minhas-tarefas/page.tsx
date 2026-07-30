@@ -14,6 +14,7 @@ import {
 import AppShell from "@/components/AppShell";
 import EmptyState from "@/components/EmptyState";
 import PageHeader from "@/components/PageHeader";
+import { CornerDownRight } from "lucide-react";
 import Badge from "@/components/Badge";
 import TaskModal from "@/components/TaskModal";
 import TaskDetail from "@/components/TaskDetail";
@@ -82,6 +83,7 @@ function Minhas() {
   const [items, setItems] = useState<MyTaskItem[] | null>(null);
   const [members, setMembers] = useState<Map<string, { name: string }>>(new Map());
   const [projectNames, setProjectNames] = useState<Map<string, string>>(new Map());
+  const [projetosPessoais, setProjetosPessoais] = useState<Set<string>>(new Set());
   const [erro, setErro] = useState<string | null>(null);
   // null = nao truncou. Se a lista passar do teto de busca, vira aviso honesto
   // no lugar de perda silenciosa (mesmo padrao do quadro).
@@ -163,7 +165,13 @@ function Minhas() {
       .catch(() => {});
     // Spec 022: alimenta o chip de projeto e o seletor de "mudar projeto" no detalhe.
     listAllProjects()
-      .then((r) => setProjectNames(new Map(r.items.map((p) => [p.id, p.title]))))
+      .then((r) => {
+        setProjectNames(new Map(r.items.map((p) => [p.id, p.title])));
+        // Spec 031 (C13): guardado a parte -- o mapa de nomes precisa de TODOS
+        // (inclusive pessoal, pra resolver o nome de quem ja mora la), mas o
+        // seletor de "mudar projeto" nao deve OFERECER pessoal.
+        setProjetosPessoais(new Set(r.items.filter((p) => p.is_personal).map((p) => p.id)));
+      })
       .catch(() => {});
   }, []);
 
@@ -610,7 +618,14 @@ function Minhas() {
                 style={{ display: "inline-flex", maxWidth: 260, minWidth: 0, flexShrink: 1 }}
               >
                 <Badge tone="soft" size="sm" color="var(--accent)">
-                  {t.parent_title ? `↳ ${t.parent_title}` : "Subtarefa"}
+                  {t.parent_title ? (
+                    <>
+                      <CornerDownRight size={12} strokeWidth={2} aria-hidden style={{ flexShrink: 0, marginRight: 4 }} />
+                      {t.parent_title}
+                    </>
+                  ) : (
+                    "Subtarefa"
+                  )}
                 </Badge>
               </span>
             )}
@@ -950,6 +965,8 @@ function Minhas() {
           setEditando(t);
         }}
         onAssigneesChange={aoMudarResponsaveis}
+        mostrarArquivadas={mostrarArquivadas}
+        projetosPessoais={projetosPessoais}
         onAbrirSubtarefa={abrirSubtarefa}
         onSubtaskUpsert={aoUpsertComFilhos}
         onTaskMoved={aoUpsertComFilhos}

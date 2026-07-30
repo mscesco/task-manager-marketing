@@ -64,6 +64,7 @@ function Arquivadas() {
   // detalhe abre com os nomes em branco em vez de nao abrir.
   const [members, setMembers] = useState<Map<string, { name: string }>>(new Map());
   const [projectNames, setProjectNames] = useState<Map<string, string>>(new Map());
+  const [projetosPessoais, setProjetosPessoais] = useState<Set<string>>(new Set());
   const [detalhe, setDetalhe] = useState<Task | null>(null);
   const [pilha, setPilha] = useState<Task[]>([]);
   // Filhos da tarefa focada. A listagem de arquivadas NAO traz a subarvore
@@ -78,9 +79,10 @@ function Arquivadas() {
       .then((ms) => setMembers(new Map(ms.map((m) => [m.id, { name: m.name }]))))
       .catch(() => {});
     listAllProjects()
-      .then((r) =>
-        setProjectNames(new Map(r.items.map((p) => [p.id, p.title])))
-      )
+      .then((r) => {
+        setProjectNames(new Map(r.items.map((p) => [p.id, p.title])));
+        setProjetosPessoais(new Set(r.items.filter((p) => p.is_personal).map((p) => p.id)));
+      })
       .catch(() => {});
   }, []);
 
@@ -173,6 +175,10 @@ function Arquivadas() {
           if (detalhe) setPilha((s2) => [...s2, detalhe]);
           abrirDetalhe(sub);
         }}
+        // Esta tela E o arquivo: esconder subtarefa arquivada aqui seria
+        // esconder justamente o que a pessoa veio ver.
+        mostrarArquivadas
+        projetosPessoais={projetosPessoais}
         onSubtaskUpsert={() => carregar(page)}
         onTaskMoved={() => carregar(page)}
         onExcluir={(t, cascade) => {

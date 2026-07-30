@@ -1,4 +1,5 @@
 "use client";
+import { FolderKanban, CornerDownRight, Calendar, CheckSquare } from "lucide-react";
 import {
   PRIORITY_LABEL,
   PRIORITY_COLOR,
@@ -16,6 +17,15 @@ import { nomeCurto } from "@/lib/people";
 // subtarefas vivem na sublista do modal -- nao sao agregados aqui (assignee
 // e por task; a subtarefa e uma task separada). 2 bolinhas, depois "+N".
 const MAX_BOLINHAS = 2;
+
+// Spec 031 (C10): os selos usavam glifo Unicode (▦ ↳ ◷ ☑). Trocados por
+// `lucide-react`, que ja e dependencia e ja desenha a navegacao do AppShell.
+// Motivo: glifo nao e icone -- a forma muda com a fonte do sistema (no Windows
+// varios caem no fallback), o tamanho nao e controlavel, e o leitor de tela
+// anuncia o nome do caractere ("quadrado com preenchimento") no meio da frase.
+// `aria-hidden` em todos: o texto ao lado ja diz o que e, e o `title` do span
+// carrega o resto.
+const ICONE = { size: 12, strokeWidth: 2, "aria-hidden": true as const };
 
 type CardMember = { name: string };
 
@@ -70,10 +80,14 @@ export default function TaskCard({
             fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 6,
             background: "var(--surface-2)", color: "var(--text-soft)",
             border: "1px solid var(--border)",
-            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+            display: "inline-flex", alignItems: "center", gap: 4, minWidth: 0,
+            overflow: "hidden", whiteSpace: "nowrap",
           }}
         >
-          ▦ {projectName}
+          <FolderKanban {...ICONE} style={{ flexShrink: 0 }} />
+          <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
+            {projectName}
+          </span>
         </span>
       )}
       {parentTitle && (
@@ -84,10 +98,14 @@ export default function TaskCard({
             fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 6,
             background: "var(--surface-2)", color: "var(--text-soft)",
             border: "1px solid var(--border)",
-            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+            display: "inline-flex", alignItems: "center", gap: 4, minWidth: 0,
+            overflow: "hidden", whiteSpace: "nowrap",
           }}
         >
-          ↳ {parentTitle}
+          <CornerDownRight {...ICONE} style={{ flexShrink: 0 }} />
+          <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
+            {parentTitle}
+          </span>
         </span>
       )}
       {escopo && (
@@ -139,21 +157,24 @@ export default function TaskCard({
           <span
             className={dueTone ? undefined : "muted"}
             style={{
+              display: "inline-flex", alignItems: "center", gap: 4,
               fontSize: 11.5,
               color: dueTone ? DEADLINE_COLOR[dueTone] : undefined,
               fontWeight: dueTone ? 600 : undefined,
             }}
           >
-            ◷ {new Date(task.due_date + "T00:00:00").toLocaleDateString("pt-BR")}
+            <Calendar {...ICONE} />
+            {new Date(task.due_date + "T00:00:00").toLocaleDateString("pt-BR")}
           </span>
         )}
         {subtaskCount > 0 && (
           <span
             className="muted"
-            title={`${subtaskDone} de ${subtaskCount} subtarefas concluidas`}
-            style={{ fontSize: 11.5 }}
+            title={`${subtaskDone} de ${subtaskCount} subtarefas concluídas`}
+            style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11.5 }}
           >
-            ☑ {subtaskDone}/{subtaskCount}
+            <CheckSquare {...ICONE} />
+            {subtaskDone}/{subtaskCount}
           </span>
         )}
         {task.is_archived && (

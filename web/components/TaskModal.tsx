@@ -9,6 +9,7 @@
 // O time NAO aparece de proposito: o quadro define o time (ADR 0001).
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { X } from "lucide-react";
 import {
   createTask,
   updateTask,
@@ -320,7 +321,7 @@ export default function TaskModal({
             type="button" className="btn btn-ghost" onClick={fechar}
             style={{ padding: "4px 10px" }} aria-label="Fechar"
           >
-            ✕
+            <X size={15} strokeWidth={2} aria-hidden />
           </button>
         </div>
 

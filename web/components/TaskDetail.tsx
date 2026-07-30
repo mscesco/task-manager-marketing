@@ -11,7 +11,7 @@
 //   anterior, guardado na sessao); clicar no titulo NAVEGA pra dentro.
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { UserPlus } from "lucide-react";
+import { UserPlus, X, Pencil, Plus, Calendar, ChevronLeft } from "lucide-react";
 
 import { useSaidaAnimada } from "@/lib/useSaidaAnimada";
 import {
@@ -49,6 +49,7 @@ import { isGiphyUrl } from "@/lib/giphy";
 import CommentText from "@/components/CommentText";
 import MentionTextarea from "@/components/MentionTextarea";
 import { nomeCurto } from "@/lib/people";
+import { paraChecklist, progresso } from "@/lib/subtarefas";
 import {
   acaoDoEnterNoTitulo,
   alternaResponsavel,
@@ -69,7 +70,10 @@ const STATUS_COLOR: Record<string, string> = STATUS_TEXT;
 
 // Fatia B/C: gatilho compacto redondo -- substitui os botoes-fantasma gordos
 // ("Designar" / "Mudar projeto" / "+ Subtarefa") por um alvo pequeno inline.
-// "+" adiciona, "✎" edita, "×" fecha. Reusado nos tres campos.
+// Spec 031 (C10): os tres estados usavam glifo Unicode ("+", "✎", "×").
+// Viraram icone `lucide-react` -- glifo muda de forma conforme a fonte do
+// sistema e o leitor de tela le o nome do caractere. O `aria-label` de cada
+// botao ja diz a acao, entao o icone vai `aria-hidden`. Reusado nos tres campos.
 const GATILHO_STYLE: CSSProperties = {
   width: 26,
   height: 26,
@@ -113,6 +117,9 @@ export default function TaskDetail({
   onSubtaskUpsert,
   onTaskMoved,
   onExcluir,
+  mostrarArquivadas = false,
+  projetosPessoais,
+  membrosInativos,
   modo = "modal",
 }: {
   task: Task | null; // tarefa focada; null => fechado
@@ -129,6 +136,31 @@ export default function TaskDetail({
   onSubtaskUpsert: (sub: Task) => void; // criar OU concluir rapido
   onTaskMoved: (task: Task) => void; // Spec 022: task mudou de projeto/avulsa
   onExcluir: (task: Task, cascadeCount: number) => void; // soft-delete cascateado
+  // Espelha a caixa "Mostrar arquivadas" da tela de fora. Sem ela, a checklist
+  // esconde a subtarefa arquivada (Spec 031, C11); com ela, a subtarefa volta
+  // APAGADA -- mesmo tratamento que o card arquivado ja recebe no quadro.
+  // ⚠️ O quadro so BUSCA arquivada quando a caixa esta marcada
+  // (`include_archived: mostrarArquivadas`), entao sem esta prop o componente
+  // nao teria como distinguir "nao ha arquivada" de "ha, mas escondida".
+  mostrarArquivadas?: boolean;
+  // Ids de projeto PESSOAL. Eles continuam em `projects` -- o mapa resolve
+  // NOME e a tarefa que ja mora num pessoal precisa exibir o dela. O que este
+  // conjunto muda e o SELETOR: pessoal nao e destino oferecido.
+  //
+  // ⚠️ Mover tarefa de time pra projeto pessoal a faz sumir do quadro dos
+  // outros -- o backend filtra por `is_personal=false OR created_by=me`
+  // (task_repository:82-95). Nao e um bug do seletor: e o seletor oferecendo
+  // um caminho que produz sumico silencioso.
+  projetosPessoais?: Set<string>;
+  // Ids de membro DESATIVADO. Mesmo desenho de `projetosPessoais`: `members`
+  // continua completo (a tarefa que ja tem um inativo designado precisa
+  // resolver o NOME dele), e o conjunto so tira do SELETOR.
+  //
+  // ⚠️ Quem JA esta designado continua na lista, mesmo inativo -- senao nao
+  // haveria como DESIGNAR DE VOLTA pra ninguem: a unica forma de tirar a
+  // pessoa e desmarcando a caixa dela. `TaskModal` ja filtrava assim desde
+  // sempre (linha 131); o detalhe e que ficou de fora.
+  membrosInativos?: Set<string>;
   // Como renderizar o container externo:
   //   "modal"  (padrao) -> overlay fixo com scrim, clique fora e Esc fecham.
   //                        Comportamento historico; quadro e minhas-tarefas
@@ -201,6 +233,10 @@ export default function TaskDetail({
   const respostaRef = useRef<HTMLTextAreaElement>(null);
   // Fatia B: wrapper do popover de responsaveis (ancora + deteccao de clique-fora).
   const respWrapRef = useRef<HTMLDivElement>(null);
+  // Spec 031 (C8): o seletor de projeto virou painel flutuante e ganhou a
+  // mesma ancora + fechar-ao-clicar-fora. Antes era um <select> inline: nao
+  // precisava fechar sozinho porque nao flutuava sobre nada.
+  const projWrapRef = useRef<HTMLDivElement>(null);
 
   // Insere um trecho (emoji) na posicao do cursor do textarea e mantem foco.
   function inserirNoCursor(
@@ -297,6 +333,18 @@ export default function TaskDetail({
     return () => document.removeEventListener("mousedown", onDown);
   }, [abertoResp]);
 
+  // Fecha o painel de projeto ao clicar fora (mesmo padrao do de responsaveis).
+  useEffect(() => {
+    if (!abertoProj) return;
+    function onDown(e: MouseEvent) {
+      if (projWrapRef.current && !projWrapRef.current.contains(e.target as Node)) {
+        setAbertoProj(false);
+      }
+    }
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [abertoProj]);
+
   // Usuario logado: uma vez (memoizado). Falha silenciosa -> sem acoes
   // inline, mas o thread ainda renderiza.
   useEffect(() => {
@@ -344,17 +392,21 @@ export default function TaskDetail({
     const q = subBusca.trim().toLowerCase();
     return Array.from(members.entries())
       .map(([id, m]) => ({ id, name: m.name }))
+      // Subtarefa nasce sem ninguem -> inativo nunca e opcao aqui.
+      .filter((e) => !membrosInativos?.has(e.id))
       .filter((e) => (q ? e.name.toLowerCase().includes(q) : true))
       .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
-  }, [members, subBusca]);
+  }, [members, subBusca, membrosInativos]);
 
   const filtrados = useMemo(() => {
     const q = busca.trim().toLowerCase();
     return Array.from(members.entries())
-      .map(([id, m]) => ({ id, name: m.name }))
+      .map(([id, m]) => ({ id, name: m.name, inativo: membrosInativos?.has(id) ?? false }))
+      // Inativo sai, MENOS quem ja esta designado -- ver `membrosInativos`.
+      .filter((e) => !e.inativo || assignees.includes(e.id))
       .filter((e) => (q ? e.name.toLowerCase().includes(q) : true))
       .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
-  }, [members, busca]);
+  }, [members, busca, membrosInativos, assignees]);
 
   if (!task) return null;
   const tid = task.id;
@@ -364,9 +416,19 @@ export default function TaskDetail({
   const ehTopo = !task.parent_task_id;
   const nomeProjetoAtual = projetoAtual ? projects.get(projetoAtual) ?? null : null;
   const dueTone = deadlineTone(task.due_date, task.status, task.is_archived);
-  const concluidas = filhos.filter((f) => f.status === "COMPLETED").length;
+  // ⚠️ ARQUIVADA SAI DA CHECKLIST (Spec 031, C11). O quadro entrega `filhos`
+  // sem filtrar -- a lista dele nao sabe que esta alimentando um checklist.
+  // Filtrar AQUI conserta os tres chamadores de uma vez (quadro, minhas
+  // tarefas, arquivadas) e evita a regra em triplicata.
+  //
+  // Por que a checklist e diferente do resto: ela responde "o que falta
+  // fazer", e arquivar E dizer "isto saiu do fluxo". A subtarefa continua no
+  // banco e no quadro com "Mostrar arquivadas" -- so nao conta mais aqui, nem
+  // na barra de progresso, nem no "(2/5)" do titulo.
+  const filhosAtivos = paraChecklist(filhos, mostrarArquivadas);
+  const { concluidas } = progresso(filhos);
   // Porcentagem concluida (0 quando nao ha subtarefas) -- alimenta a barra E o rotulo.
-  const pctSub = filhos.length ? Math.round((concluidas / filhos.length) * 100) : 0;
+  const { pct: pctSub } = progresso(filhos);
   // Criacao: created_at e ISO com fuso (nao date-only) -> new Date direto ja
   // resolve pro fuso local. Nome do criador via members; se nao resolver
   // (ex.: usuario desativado / fora da lista), mostra so a data (nunca o UUID).
@@ -702,8 +764,8 @@ export default function TaskDetail({
             type="button" className="btn btn-ghost" onClick={onVoltar}
             style={{
               alignSelf: "flex-start", padding: "2px 8px", fontSize: 13,
-              maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
+              maxWidth: "100%", overflow: "hidden", whiteSpace: "nowrap",
+              display: "inline-flex", alignItems: "center", gap: 4,
               // `overflow: hidden` zera o min-height automatico deste flex item
               // (CSS Flexbox 4.5). Sem flexShrink 0, o botao encolhe na vertical
               // quando o conteudo do modal estoura 88vh e o texto sai cortado
@@ -713,7 +775,10 @@ export default function TaskDetail({
             }}
             title={pai ? `Voltar para ${pai.title}` : "Voltar"}
           >
-            ‹ Voltar{pai ? ` para ${pai.title}` : ""}
+            <ChevronLeft size={13} strokeWidth={2} aria-hidden style={{ flexShrink: 0 }} />
+            <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
+              Voltar{pai ? ` para ${pai.title}` : ""}
+            </span>
           </button>
         )}
 
@@ -725,7 +790,7 @@ export default function TaskDetail({
             type="button" className="btn btn-ghost" onClick={fecharSuave}
             style={{ padding: "4px 10px", flexShrink: 0 }} aria-label="Fechar"
           >
-            ✕
+            <X size={15} strokeWidth={2} aria-hidden />
           </button>
         </div>
 
@@ -741,28 +806,28 @@ export default function TaskDetail({
           <Badge tone="soft" size="md" color={PRIORITY_COLOR[task.priority]}>
             {PRIORITY_LABEL[task.priority] || task.priority}
           </Badge>
-          {/* Spec 022: chip do projeto (glance). Com projeto resolvido -> nome;
-              sem projeto (avulsa) -> "Sem projeto"; com projeto NAO resolvido no
-              Map (arquivado/fora da lista) -> nao inventa, nao renderiza. */}
-          {projetoAtual ? (
-            nomeProjetoAtual ? (
-              <Badge tone="soft" size="md" color="var(--text-faint)">
-                {nomeProjetoAtual}
-              </Badge>
-            ) : null
-          ) : (
-            <span className="muted" style={{ fontSize: 12.5 }}>Sem projeto</span>
-          )}
+          {/* Spec 031 (C8): a pilula de projeto SAIU daqui. Ela era read-only e
+              o controle de projeto ficava 200px abaixo, dizendo a mesma coisa --
+              duas representacoes do mesmo dado na mesma tela. Agora ha UMA, na
+              faixa de metadados logo abaixo, e ela e o proprio controle. */}
           {task.due_date && (
             <span
               className={dueTone ? undefined : "muted"}
               style={{
+                // ⚠️ inline-flex + flexShrink 0 + nowrap, NAO verticalAlign.
+                // Este span e filho de um flex com flexWrap: sem flexShrink 0
+                // ele encolhe ate o minimo e QUEBRA entre o icone e a data --
+                // foi o que aconteceu na entrega da C10. O mesmo tratamento ja
+                // estava certo no TaskCard; aqui ficou de fora.
+                display: "inline-flex", alignItems: "center", gap: 4,
+                flexShrink: 0, whiteSpace: "nowrap",
                 fontSize: 12.5,
                 color: dueTone ? DEADLINE_COLOR[dueTone] : undefined,
                 fontWeight: dueTone ? 600 : undefined,
               }}
             >
-              ◷ {new Date(task.due_date + "T00:00:00").toLocaleDateString("pt-BR")}
+              <Calendar size={13} strokeWidth={2} aria-hidden />
+              {new Date(task.due_date + "T00:00:00").toLocaleDateString("pt-BR")}
             </span>
           )}
           {task.is_archived && (
@@ -776,136 +841,86 @@ export default function TaskDetail({
           {criador ? ` por ${criador}` : ""}
         </div>
 
-        <div className="field">
-          <span className="label">Descrição</span>
-          {task.description && task.description.trim().length > 0 ? (
-            // linkify: URL http/https vira <a>. Descricao NAO passa pelo
-            // parser de mencao/gif -- esses tokens so existem em comentario.
-            // overflowWrap: URL longa SEM hifen (so barras/underscore) nao tem
-            // ponto de quebra natural e vazaria a largura do modal.
-            <div
-              style={{
-                fontSize: 14,
-                lineHeight: 1.5,
-                whiteSpace: "pre-wrap",
-                overflowWrap: "anywhere",
-              }}
-            >
-              {linkify(task.description, "desc-")}
-            </div>
-          ) : (
-            <span className="muted" style={{ fontSize: 13 }}>Sem descrição.</span>
-          )}
-        </div>
+        {/* ---- Faixa de metadados (Spec 031, C8) -------------------------
+             Responsaveis e Projeto eram DOIS blocos `field` empilhados, ~104px
+             para dizer "duas pessoas" e "nenhum projeto", e o de projeto ainda
+             repetia a pilula do cabecalho. Viraram uma linha so, ACIMA da
+             descricao: metadado primeiro, conteudo depois. Quem abre a tarefa
+             quer ler a descricao e os comentarios, nao confirmar que nao ha
+             projeto.
 
-        {/* ---- Projeto (Spec 022): chip acima; aqui o controle de trocar/tirar.
-             So em task de topo -- subtarefa herda o projeto do pai (read-only). ---- */}
-        {ehTopo && (
-          <div className="field">
-            <span className="label">Projeto</span>
-
-            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-              {projetoAtual ? (
-                <span
-                  style={{
-                    display: "inline-flex", alignItems: "center",
-                    background: "var(--surface-2)", borderRadius: 999,
-                    padding: "3px 12px", fontSize: 12.5,
-                  }}
-                >
-                  {nomeProjetoAtual ?? "Projeto atual"}
-                </span>
-              ) : (
-                <span className="muted" style={{ fontSize: 13 }}>
-                  Sem projeto atrelado.
-                </span>
-              )}
-
-              <button
-                type="button"
-                onClick={() => setAbertoProj((v) => !v)}
-                disabled={movendoProj}
-                aria-label={projetoAtual ? "Mudar projeto" : "Adicionar a um projeto"}
-                aria-expanded={abertoProj}
-                title={projetoAtual ? "Mudar projeto" : "Adicionar a um projeto"}
-                style={{ ...GATILHO_STYLE, opacity: movendoProj ? 0.5 : 1 }}
-              >
-                {abertoProj ? "×" : projetoAtual ? "✎" : "+"}
-              </button>
-            </div>
-
-            {abertoProj && (
-              <div style={{ marginTop: 6 }}>
-                <select
-                  className="input"
-                  value={projetoAtual ?? ""}
-                  disabled={movendoProj}
-                  onChange={(e) => mudarProjeto(e.target.value || null)}
-                >
-                  <option value="">— Sem projeto (tirar) —</option>
-                  {Array.from(projects.entries())
-                    .sort((a, b) => a[1].localeCompare(b[1], "pt-BR"))
-                    .map(([id, titulo]) => (
-                      <option key={id} value={id}>{titulo}</option>
-                    ))}
-                </select>
-              </div>
-            )}
-
-            {movendoProj && (
-              <span className="muted" style={{ fontSize: 13, marginTop: 4 }}>Movendo…</span>
-            )}
-            {erroProj && (
-              <div className="error-box" style={{ marginTop: 8 }}>{erroProj}</div>
-            )}
-          </div>
-        )}
-
-        {/* ---- Responsaveis: pilulas atuais + gatilho "+" que abre a lista
-             como POPOVER flutuante (nao empurra o layout; fecha ao clicar fora) ---- */}
-        <div className="field">
-          <span className="label">Responsáveis</span>
-
-          <div ref={respWrapRef} style={{ position: "relative" }}>
-            <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6 }}>
-              {assignees.length > 0 ? (
-                assignees.map((id) => {
-                  const nome = members.get(id)?.name ?? "";
-                  return (
-                    <span
-                      key={id}
-                      style={{
-                        display: "inline-flex", alignItems: "center", gap: 6,
-                        background: "var(--surface-2)", borderRadius: 999,
-                        padding: "2px 10px 2px 2px", fontSize: 12.5,
-                      }}
-                    >
-                      <Avatar id={id} name={nome} size="sm" />
+             Os dois popovers continuam iguais -- so mudaram de ancora. Cada um
+             tem seu wrapper `position: relative` proprio, senao abririam
+             relativos a faixa inteira e cairiam no lugar errado. ---- */}
+        <div
+          style={{
+            display: "flex", flexWrap: "wrap", alignItems: "center",
+            gap: 18, rowGap: 10,
+          }}
+        >
+          {/* -- Responsaveis -- */}
+          <div
+            ref={respWrapRef}
+            style={{
+              position: "relative", display: "flex", flexWrap: "wrap",
+              alignItems: "center", gap: 6, minWidth: 0,
+            }}
+          >
+            <span style={{ fontSize: 12, color: "var(--text-soft)", flexShrink: 0 }}>
+              Responsáveis
+            </span>
+            {assignees.length > 0 ? (
+              assignees.map((id) => {
+                const nome = members.get(id)?.name ?? "";
+                const inativo = membrosInativos?.has(id) ?? false;
+                return (
+                  <span
+                    key={id}
+                    // Responsavel desativado precisa ser VISIVEL como tal: a
+                    // tarefa esta designada pra quem nao entra mais no sistema.
+                    title={inativo ? `${nome} (desativado)` : nome}
+                    style={{
+                      display: "inline-flex", alignItems: "center", gap: 6,
+                      background: "var(--surface-2)", borderRadius: 999,
+                      padding: "2px 10px 2px 2px", fontSize: 12.5, maxWidth: 180,
+                      overflow: "hidden", whiteSpace: "nowrap",
+                      color: inativo ? "var(--text-faint)" : undefined,
+                      textDecoration: inativo ? "line-through" : undefined,
+                    }}
+                  >
+                    <Avatar id={id} name={nome} size="sm" />
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
                       {nome ? nomeCurto(nome) : "Responsável"}
                     </span>
-                  );
-                })
-              ) : (
-                <span className="muted" style={{ fontSize: 13 }}>Ninguem designado.</span>
-              )}
+                  </span>
+                );
+              })
+            ) : (
+              <span className="muted" style={{ fontSize: 12.5 }}>ninguém</span>
+            )}
 
-              <button
-                type="button"
-                onClick={() => setAbertoResp((v) => !v)}
-                aria-label="Designar responsável"
-                aria-expanded={abertoResp}
-                title="Designar"
-                style={GATILHO_STYLE}
-              >
-                {abertoResp ? "×" : "+"}
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={() => setAbertoResp((v) => !v)}
+              aria-label="Designar responsável"
+              aria-expanded={abertoResp}
+              title="Designar"
+              style={GATILHO_STYLE}
+            >
+              {abertoResp ? (
+                <X size={13} strokeWidth={2.2} aria-hidden />
+              ) : (
+                <Plus size={13} strokeWidth={2.2} aria-hidden />
+              )}
+            </button>
 
             {abertoResp && (
               <div
                 style={{
+                  // Mesmo motivo do painel de projeto: sem responsavel nenhum o
+                  // ancora tem ~90px e o maxWidth relativo espremeria a busca.
                   position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 40,
-                  width: 300, maxWidth: "100%",
+                  width: 300, maxWidth: "80vw",
                   background: "var(--surface)", border: "1px solid var(--border)",
                   borderRadius: 10, boxShadow: "var(--shadow)", padding: 8,
                 }}
@@ -925,7 +940,7 @@ export default function TaskDetail({
                 >
                   {filtrados.length === 0 ? (
                     <div className="muted" style={{ fontSize: 13, padding: "10px 12px" }}>
-                      Ninguem encontrado.
+                      Ninguém encontrado.
                     </div>
                   ) : (
                     filtrados.map((m, i) => {
@@ -949,6 +964,16 @@ export default function TaskDetail({
                           />
                           <Avatar id={m.id} name={m.name} size="sm" />
                           <span style={{ fontSize: 13.5 }}>{m.name}</span>
+                          {/* So aparece porque JA esta designado. O selo diz
+                              por que ela esta aqui e nao na busca. */}
+                          {m.inativo && (
+                            <span
+                              className="muted"
+                              style={{ fontSize: 11, marginLeft: "auto" }}
+                            >
+                              inativo
+                            </span>
+                          )}
                         </label>
                       );
                     })
@@ -958,8 +983,125 @@ export default function TaskDetail({
             )}
           </div>
 
-          {erro && (
-            <div className="error-box" style={{ marginTop: 8 }}>{erro}</div>
+          {/* -- Projeto. Subtarefa herda do pai (Spec 022): mostra, nao edita. -- */}
+          <div
+            ref={projWrapRef}
+            style={{
+              position: "relative", display: "flex", alignItems: "center",
+              gap: 6, minWidth: 0,
+            }}
+          >
+            <span style={{ fontSize: 12, color: "var(--text-soft)", flexShrink: 0 }}>
+              Projeto
+            </span>
+            {/* Os dois estados usam a MESMA caixa: mesma altura, mesmo raio,
+                mesmo padding. Antes "nenhum" era texto solto ao lado de uma
+                pilula e de um botao de 26px -- tres alturas diferentes na
+                mesma linha, e o olho lia como desalinhado. O vazio se
+                distingue por borda tracejada e tom, nao por forma. */}
+            <span
+              style={{
+                display: "inline-flex", alignItems: "center", height: 24,
+                borderRadius: 999, padding: "0 10px", fontSize: 12.5,
+                maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+                background: projetoAtual ? "var(--surface-2)" : "transparent",
+                border: projetoAtual ? "1px solid transparent" : "1px dashed var(--border)",
+                color: projetoAtual ? "var(--text)" : "var(--text-faint)",
+              }}
+            >
+              {projetoAtual ? nomeProjetoAtual ?? "Projeto atual" : "nenhum"}
+            </span>
+
+            {ehTopo && (
+              <button
+                type="button"
+                onClick={() => setAbertoProj((v) => !v)}
+                disabled={movendoProj}
+                aria-label={projetoAtual ? "Mudar projeto" : "Adicionar a um projeto"}
+                aria-expanded={abertoProj}
+                title={projetoAtual ? "Mudar projeto" : "Adicionar a um projeto"}
+                style={{ ...GATILHO_STYLE, opacity: movendoProj ? 0.5 : 1 }}
+              >
+                {abertoProj ? (
+                  <X size={13} strokeWidth={2.2} aria-hidden />
+                ) : projetoAtual ? (
+                  <Pencil size={12} strokeWidth={2.2} aria-hidden />
+                ) : (
+                  <Plus size={13} strokeWidth={2.2} aria-hidden />
+                )}
+              </button>
+            )}
+
+            {movendoProj && (
+              <span className="muted" style={{ fontSize: 12.5 }}>movendo…</span>
+            )}
+
+            {/* O seletor virou PAINEL FLUTUANTE. Antes empurrava o layout com
+                `marginTop: 6` -- numa linha compacta isso deslocaria a faixa
+                inteira a cada abertura. */}
+            {abertoProj && (
+              <div
+                style={{
+                  // ⚠️ NAO usar maxWidth: "100%". O ancora e um flex item do
+                  // tamanho do conteudo ("Projeto nenhum +", ~110px), entao 100%
+                  // dele espremia o painel de 280 para 110 e o <select> saia
+                  // cortado ("— Sem proj⌄"). Erro da entrega da C8.
+                  position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 40,
+                  width: 280, maxWidth: "80vw",
+                  background: "var(--surface)", border: "1px solid var(--border)",
+                  borderRadius: 10, boxShadow: "var(--shadow)", padding: 8,
+                }}
+              >
+                <select
+                  className="input"
+                  style={{ width: "100%" }}
+                  value={projetoAtual ?? ""}
+                  disabled={movendoProj}
+                  autoFocus
+                  onChange={(e) => mudarProjeto(e.target.value || null)}
+                >
+                  <option value="">— Sem projeto (tirar) —</option>
+                  {Array.from(projects.entries())
+                    // Pessoal fora, MENOS o atual: se a tarefa ja esta num
+                    // pessoal e ele nao entrasse na lista, o <select> ficaria
+                    // com valor que nao existe entre as opcoes e o browser
+                    // mostraria a primeira -- dando a impressao de que o
+                    // projeto mudou sozinho.
+                    .filter(([id]) => !projetosPessoais?.has(id) || id === projetoAtual)
+                    .sort((a, b) => a[1].localeCompare(b[1], "pt-BR"))
+                    .map(([id, titulo]) => (
+                      <option key={id} value={id}>{titulo}</option>
+                    ))}
+                </select>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Erro do move fica FORA da faixa: dentro dela a caixa de erro
+            espremeria os controles e sumiria junto com o painel. */}
+        {erroProj && <div className="error-box">{erroProj}</div>}
+
+        <div className="field">
+          <span className="label">Descrição</span>
+          {task.description && task.description.trim().length > 0 ? (
+            // linkify: URL http/https vira <a>. Descricao NAO passa pelo
+            // parser de mencao/gif -- esses tokens so existem em comentario.
+            // overflowWrap: URL longa SEM hifen (so barras/underscore) nao tem
+            // ponto de quebra natural e vazaria a largura do modal.
+            <div
+              style={{
+                fontSize: 14,
+                lineHeight: 1.5,
+                whiteSpace: "pre-wrap",
+                overflowWrap: "anywhere",
+              }}
+            >
+              {linkify(task.description, "desc-")}
+            </div>
+          ) : (
+            <span className="muted" style={{ fontSize: 13 }}>Sem descrição.</span>
           )}
         </div>
 
@@ -967,7 +1109,7 @@ export default function TaskDetail({
         <div className="field">
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <span className="label">
-              Subtarefas{filhos.length > 0 ? ` (${concluidas}/${filhos.length})` : ""}
+              Subtarefas{filhosAtivos.length > 0 ? ` (${concluidas}/${filhosAtivos.length})` : ""}
             </span>
             {!criandoSub && (
               <button
@@ -977,7 +1119,7 @@ export default function TaskDetail({
                 title="Adicionar subtarefa"
                 style={GATILHO_STYLE}
               >
-                +
+                <Plus size={13} strokeWidth={2.2} aria-hidden />
               </button>
             )}
           </div>
@@ -985,15 +1127,15 @@ export default function TaskDetail({
           {/* Barra de progresso das subtarefas. Anima sozinha: `concluidas`
               recomputa quando alternarConclusao faz o upsert OTIMISTA no estado
               do pai (a caixa marca -> a barra enche na hora, sem esperar a API;
-              reverte se o PATCH falhar). Proporcao = concluidas / filhos. */}
-          {filhos.length > 0 && (
+              reverte se o PATCH falhar). Proporcao = concluidas / filhos ATIVOS. */}
+          {filhosAtivos.length > 0 && (
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 8 }}>
               <div
                 role="progressbar"
                 aria-valuenow={concluidas}
                 aria-valuemin={0}
-                aria-valuemax={filhos.length}
-                aria-label={`${concluidas} de ${filhos.length} subtarefas concluídas (${pctSub}%)`}
+                aria-valuemax={filhosAtivos.length}
+                aria-label={`${concluidas} de ${filhosAtivos.length} subtarefas concluídas (${pctSub}%)`}
                 style={{
                   flex: 1, height: 8, borderRadius: 999,
                   background: "var(--surface-2)", overflow: "hidden",
@@ -1022,11 +1164,14 @@ export default function TaskDetail({
             </div>
           )}
 
-          {filhos.length > 0 && (
+          {filhosAtivos.length > 0 && (
             <div style={{ border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden", marginTop: 8 }}>
-              {filhos.map((f, i) => {
+              {filhosAtivos.map((f, i) => {
                 const concluida = f.status === "COMPLETED";
                 const ocupado = subSaving.has(f.id);
+                // Mesmo 0.55 do card arquivado no quadro -- arquivada le como
+                // "fora do fluxo" pelo tom, nao por um rotulo so.
+                const apagada = f.is_archived;
                 // Mesma regra do card do quadro: concluida/arquivada nao alerta.
                 const tone = deadlineTone(f.due_date, f.status, f.is_archived);
                 // Rotulo da prioridade; mesmo fallback do card do quadro.
@@ -1038,7 +1183,7 @@ export default function TaskDetail({
                       display: "flex", alignItems: "center", gap: 10,
                       padding: "8px 12px",
                       borderTop: i === 0 ? "none" : "1px solid var(--border)",
-                      opacity: ocupado ? 0.6 : 1,
+                      opacity: ocupado ? 0.6 : apagada ? 0.55 : 1,
                     }}
                   >
                     <input
@@ -1082,13 +1227,18 @@ export default function TaskDetail({
                             vermelha la e cinza aqui, e a prioridade com o
                             mesmo selo e fallback que o card usa: TODAS
                             aparecem (decisao da Camila, 29/07). */}
-                        {(f.due_date || rotuloPrio) && (
+                        {(f.due_date || rotuloPrio || apagada) && (
                           <span
                             style={{
                               display: "flex", alignItems: "center", gap: 6,
                               flexWrap: "wrap", fontSize: 11,
                             }}
                           >
+                            {apagada && (
+                              <span className="muted" style={{ fontSize: 11 }}>
+                                arquivada
+                              </span>
+                            )}
                             {rotuloPrio && (
                               <Badge
                                 tone="soft"
@@ -1105,11 +1255,13 @@ export default function TaskDetail({
                                   f.due_date + "T00:00:00"
                                 ).toLocaleDateString("pt-BR")}
                                 style={{
+                                  display: "inline-flex", alignItems: "center",
+                                  gap: 3, flexShrink: 0, whiteSpace: "nowrap",
                                   color: tone ? DEADLINE_COLOR[tone] : undefined,
                                   fontWeight: tone ? 600 : undefined,
                                 }}
                               >
-                                ◷{" "}
+                                <Calendar size={12} strokeWidth={2} aria-hidden />
                                 {new Date(
                                   f.due_date + "T00:00:00"
                                 ).toLocaleDateString("pt-BR", {
@@ -1145,7 +1297,7 @@ export default function TaskDetail({
           {criandoSub && (
             <div
               style={{
-                marginTop: filhos.length > 0 ? 8 : 0,
+                marginTop: filhosAtivos.length > 0 ? 8 : 0,
                 border: "1px solid var(--border)",
                 borderRadius: 10,
                 padding: 10,
@@ -1402,6 +1554,7 @@ export default function TaskDetail({
                           value={textoResposta}
                           onChange={setTextoResposta}
                           members={members}
+            inativos={membrosInativos}
                           autoFocus
                           rows={2}
                           placeholder="Responder… (@ menciona)"
@@ -1485,6 +1638,7 @@ export default function TaskDetail({
             value={novoComent}
             onChange={setNovoComent}
             members={members}
+            inativos={membrosInativos}
             rows={2}
             placeholder="Escreva um comentário… (@ menciona)"
             disabled={enviandoComent}
@@ -1534,6 +1688,8 @@ export default function TaskDetail({
           >
             <span style={{ fontSize: 12.5, flex: 1, minWidth: 220 }}>
               Excluir <strong>{task.title}</strong>? Isto apaga a tarefa e todos os comentários.
+              {/* ⚠️ `filhos`, NAO `filhosAtivos`: a cascata (ADR 0005) leva a
+                  subarvore inteira, arquivada ou nao. Ver lib/subtarefas.ts. */}
               {filhos.length > 0 && (
                 <> Também apaga as <strong>{filhos.length}</strong> subtarefa(s) diretas e as subtarefas delas.</>
               )}{" "}
@@ -1702,8 +1858,9 @@ function LinhaComentario({
                   }}
                   title="Editar"
                   style={{ padding: "0 6px", fontSize: 12 }}
+                  aria-label="Editar comentário"
                 >
-                  ✎
+                  <Pencil size={13} strokeWidth={2} aria-hidden />
                 </button>
               )}
               {podeApagar && (
