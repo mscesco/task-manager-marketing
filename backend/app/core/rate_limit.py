@@ -117,6 +117,52 @@ class SlidingWindowRateLimiter:
         self._sweep()
         return RateLimitDecision(allowed=True, retry_after=0.0)
 
+    # ----------------------------------------------------------------
+    # Spec 030 (D5) -- trio para o freio POR CONTA.
+    #
+    # `hit()` decide e registra no mesmo passo, que serve ao login por IP:
+    # toda tentativa conta. Por CONTA a regra e outra -- so FALHA conta, e
+    # o acerto zera o balde -- e isso exige separar decidir de registrar.
+    #
+    # `hit()` NAO foi alterado: ele ja tem teste e ja esta em producia nas
+    # tres rotas publicas. O trio abaixo e adicao, nao reescrita.
+    # ----------------------------------------------------------------
+    def check(self, key: str) -> RateLimitDecision:
+        """Avalia a `key` SEM registrar tentativa.
+
+        ⚠️ Usa `.get`, nao `self._hits[key]`. O store e um defaultdict: ler
+        pelo indice CRIA um balde vazio, e uma sondagem de milhares de
+        e-mails inexistentes viraria crescimento de memoria por consulta.
+        """
+        bucket = self._hits.get(key)
+        if bucket is None:
+            return RateLimitDecision(allowed=True, retry_after=0.0)
+
+        now = self._now()
+        self._prune(bucket, now)
+        if len(bucket) >= self._max:
+            retry_after = self._window - (now - bucket[0])
+            return RateLimitDecision(
+                allowed=False, retry_after=max(0.0, retry_after)
+            )
+        return RateLimitDecision(allowed=True, retry_after=0.0)
+
+    def record(self, key: str) -> None:
+        """Registra uma ocorrencia da `key` (no login por conta: uma FALHA)."""
+        now = self._now()
+        bucket = self._hits[key]
+        self._prune(bucket, now)
+        bucket.append(now)
+        self._sweep()
+
+    def reset(self, key: str) -> None:
+        """Esvazia o balde da `key` (no login por conta: acertou a senha).
+
+        Remove a chave em vez de esvaziar o deque -- nao deixa entrada morta
+        ocupando espaco ate o proximo `_sweep`.
+        """
+        self._hits.pop(key, None)
+
 
 def client_ip(request: Request) -> str:
     """IP do cliente, confiando no ULTIMO item do X-Forwarded-For.
@@ -170,3 +216,28 @@ public_form_limiter = SlidingWindowRateLimiter(
     max_hits=settings.public_form_rate_limit_max,
     window_seconds=settings.public_form_rate_limit_window_seconds,
 )
+# Spec 030 (D5): freio por CONTA no login. Chave = e-mail + workspace, nao
+# IP -- o balde por IP nao ve o atacante que distribui as tentativas por
+# varios enderecos, que e como forca bruta de senha acontece de verdade.
+#
+# Usa o trio check/record/reset (nao `hit`): so FALHA registra, e o acerto
+# zera. Sem isso, quem digita a senha certa dez vezes num dia se trancaria.
+#
+# Janela DESLIZANTE, sem bloqueio permanente: quem souber o e-mail de
+# alguem consegue trancar essa pessoa por, no maximo, a janela. Um bloqueio
+# que so um humano destrava seria pior -- viraria negacao de servico
+# permanente contra qualquer pessoa de e-mail conhecido.
+account_login_limiter = SlidingWindowRateLimiter(
+    max_hits=settings.account_login_limit_max,
+    window_seconds=settings.account_login_limit_window_seconds,
+)
+
+
+def account_key(*, email: str, workspace_slug: str) -> str:
+    """Chave do balde por conta.
+
+    ⚠️ NORMALIZA o e-mail (strip + lower). Sem isso `Fulano@x.com` e
+    `fulano@x.com` caem em baldes diferentes e o freio vira decorativo --
+    basta alternar a caixa das letras para multiplicar o teto.
+    """
+    return f"{email.strip().lower()}|{workspace_slug.strip().lower()}"

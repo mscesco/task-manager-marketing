@@ -88,7 +88,8 @@ def _create_token(
         type : access | refresh
         iat  : emitido em
         exp  : expira em
-        jti  : id unico do token (permite revogacao futura)
+        jti  : id unico do token (emitido, ainda sem uso -- ver Spec 030 D4)
+        tv   : token_version do usuario no momento da emissao (Spec 030)
     """
     now = datetime.now(UTC)
     payload: dict[str, Any] = {
@@ -107,19 +108,24 @@ def _create_token(
 
 
 def create_access_token(
-    *, user_id: uuid.UUID, workspace_id: uuid.UUID
+    *, user_id: uuid.UUID, workspace_id: uuid.UUID, token_version: int = 0
 ) -> str:
-    """Cria um access token (curta duracao)."""
+    """Cria um access token (curta duracao).
+
+    `token_version` grava o claim `tv` (Spec 030). Quem confere e quem tem a
+    linha do usuario em maos -- ver app.modules.auth.api.dependencies.
+    """
     return _create_token(
         subject=user_id,
         workspace_id=workspace_id,
         token_type=TokenType.ACCESS,
         expires_delta=timedelta(minutes=settings.jwt_access_token_expire_minutes),
+        extra_claims={"tv": token_version},
     )
 
 
 def create_refresh_token(
-    *, user_id: uuid.UUID, workspace_id: uuid.UUID
+    *, user_id: uuid.UUID, workspace_id: uuid.UUID, token_version: int = 0
 ) -> str:
     """Cria um refresh token (longa duracao)."""
     return _create_token(
@@ -127,6 +133,7 @@ def create_refresh_token(
         workspace_id=workspace_id,
         token_type=TokenType.REFRESH,
         expires_delta=timedelta(days=settings.jwt_refresh_token_expire_days),
+        extra_claims={"tv": token_version},
     )
 
 
@@ -153,3 +160,15 @@ def decode_token(token: str, *, expected_type: TokenType) -> dict[str, Any]:
             f"Tipo de token invalido (esperado: {expected_type.value})."
         )
     return payload
+
+
+def token_version_of(payload: dict[str, Any]) -> int:
+    """Le o claim `tv` de um payload ja decodificado (Spec 030).
+
+    ⚠️ AUSENTE => 0, NUNCA erro. Todo token emitido ANTES do deploy da Spec
+    030 nao tem este claim, e precisa continuar valendo -- as contas ativas
+    estao logadas neste momento. Trocar isto por `payload["tv"]` desloga o
+    workspace inteiro no instante do deploy.
+    """
+    valor = payload.get("tv", 0)
+    return valor if isinstance(valor, int) else 0

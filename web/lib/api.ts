@@ -222,6 +222,39 @@ export async function getMe(): Promise<CurrentUser> {
   return api<CurrentUser>("/api/v1/auth/me");
 }
 
+// Spec 030 (D4): avisa o servidor que a sessao acabou. O backend incrementa
+// users.token_version, o que mata o access E o refresh -- de TODOS os
+// aparelhos da pessoa, nao so deste. Antes disto, "Sair" era so
+// clearTokens(): uma copia do refresh continuava valendo por 7 dias.
+//
+// DUAS DECISOES DE IMPLEMENTACAO, as duas de proposito:
+//
+// 1. FETCH DIRETO, sem passar por api()/_request. Se o access ja estiver
+//    expirado, o 401 acionaria refresh + retentativa + killSession(), que faz
+//    hard-nav pra /login no meio de um logout que ja esta indo pra /login.
+//    Igual ao doRefresh: a rota de sessao nao pode usar a maquinaria de sessao.
+//
+// 2. NUNCA LANCA. Sair nao pode falhar por causa de rede, servidor fora do ar
+//    ou token ja morto. Quem chama limpa o local e navega de qualquer jeito;
+//    se o aviso nao chegou, a sessao morre sozinha quando o refresh expirar.
+//
+// ⚠️ O token e lido na PRIMEIRA linha, sincrona, antes de qualquer await.
+// `sair()` dispara esta funcao sem esperar e chama clearTokens() logo em
+// seguida -- se a leitura do token migrar para depois de um await, o header
+// sai vazio e o logout vira no-op silencioso.
+export async function logout(): Promise<void> {
+  const token = getToken();
+  if (!token) return;
+  try {
+    await fetch(`${API_URL}/api/v1/auth/logout`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+  } catch {
+    // Rede caiu: ignorado de proposito (ver decisao 2 acima).
+  }
+}
+
 export async function changePassword(current: string, next: string): Promise<void> {
   await api("/api/v1/auth/change-password", {
     method: "POST",

@@ -93,6 +93,18 @@ class Settings(BaseSettings):
     public_form_rate_limit_max: int = 30
     public_form_rate_limit_window_seconds: int = 60
 
+    # --- Rate limit (login, por CONTA) -- Spec 030 D5 ---
+    # O freio por IP acima nao ve o atacante que distribui as tentativas por
+    # varios enderecos. Este balde e por (e-mail + workspace) e conta apenas
+    # FALHA -- acertar a senha zera. 10 falhas / 15 min: ninguem erra a
+    # propria senha dez vezes em quinze minutos de boa-fe.
+    #
+    # Janela deslizante, sem bloqueio permanente (ver rate_limit.py): o
+    # destravamento e automatico, para o freio nao virar arma de negacao de
+    # servico contra quem tem e-mail conhecido.
+    account_login_limit_max: int = 10
+    account_login_limit_window_seconds: int = 900
+
     # --- Auto-arquivamento (Spec 013) ---
     # Tarefa COMPLETED/CANCELLED parada ha mais de N dias e auto-arquivada
     # pela varredura (job diario via n8n). CANCELLED medido por updated_at,

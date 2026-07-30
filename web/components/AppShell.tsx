@@ -5,6 +5,7 @@ import {
   getMe,
   clearTokens,
   getToken,
+  logout,
   listTeamsAll,
   ApiError,
   type CurrentUser,
@@ -98,6 +99,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           .catch(() => {});
       })
       .catch((_e: ApiError) => {
+        // ⚠️ NAO chamar logout() aqui. Este caminho e "o getMe falhou", ou
+        // seja, a sessao JA esta morta -- o servidor recusaria o aviso com
+        // 401 e nao ha nada para revogar. logout() so no botao Sair (Spec 030).
         clearTokens();
         router.replace("/login");
       });
@@ -137,6 +141,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   ];
 
   function sair() {
+    // Spec 030 (D4): avisa o servidor ANTES de limpar o localStorage -- a
+    // funcao le o token na primeira linha sincrona. Disparada SEM await de
+    // proposito: sair nao pode ficar preso esperando rede. Ela nunca lanca.
+    void logout();
     clearTokens();
     router.replace("/login");
   }

@@ -7,12 +7,13 @@ regra de negocio aqui -- tudo delegado ao AuthService.
 Rotas:
     POST /auth/login    -- publica
     POST /auth/refresh  -- publica
+    POST /auth/logout   -- protegida (leniente: funciona com troca pendente)
     GET  /auth/me       -- protegida (exige access token)
 """
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Response, status
 
 from app.core.deps import SessionDep, UoWDep
 from app.core.rate_limit import login_limiter, rate_limit, refresh_limiter
@@ -111,3 +112,16 @@ async def change_password(
     )
     await uow.commit()
     return {"changed": True}
+
+
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+async def logout(user: PendingUserDep, uow: UoWDep) -> Response:
+    """Encerra TODAS as sessoes do usuario (Spec 030, D4).
+
+    Usa a dependency leniente (PendingUserDep) de proposito: quem esta preso
+    no gate de troca de senha precisa conseguir sair. Ela ja confere a
+    revogacao, entao um token morto nao chega aqui.
+    """
+    await AuthService(uow.session).logout(user_id=user.id)
+    await uow.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

@@ -62,6 +62,9 @@ class MembershipRepository:
             roles=roles,
             is_active=user.is_active,
             must_change_password=user.must_change_password,
+            # Spec 030: NENHUMA query nova -- a linha do usuario ja veio no
+            # session.get() acima, que existe desde sempre para is_active.
+            token_version=user.token_version,
             team_roles=team_roles,
         )
 

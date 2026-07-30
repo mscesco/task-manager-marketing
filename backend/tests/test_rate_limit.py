@@ -178,3 +178,95 @@ async def test_http_ips_diferentes_nao_compartilham_balde():
     assert a.status_code == 200
     assert a2.status_code == 429   # 1.1.1.1 estourou
     assert b.status_code == 200    # 2.2.2.2 livre
+
+
+# --------------------------------------------------------
+# 4. Trio check/record/reset -- freio por CONTA (Spec 030, D5)
+# --------------------------------------------------------
+def test_check_nao_registra_tentativa():
+    """`check` so LE. Se ele registrasse, consultar viraria gastar cota."""
+    clock = FakeClock()
+    limiter = SlidingWindowRateLimiter(max_hits=2, window_seconds=60, now=clock)
+    for _ in range(10):
+        assert limiter.check("conta").allowed is True
+    limiter.record("conta")
+    limiter.record("conta")
+    assert limiter.check("conta").allowed is False
+
+
+def test_check_nao_cria_balde_para_chave_desconhecida():
+    """Sondar mil e-mails inexistentes nao pode virar mil baldes na memoria.
+
+    Guarda contra a volta do `self._hits[key]` (defaultdict cria no acesso)
+    no lugar do `.get`.
+    """
+    limiter = SlidingWindowRateLimiter(max_hits=2, window_seconds=60, now=FakeClock())
+    for i in range(1000):
+        limiter.check(f"nao-existe-{i}")
+    assert len(limiter._hits) == 0
+
+
+def test_record_enche_e_bloqueia():
+    clock = FakeClock()
+    limiter = SlidingWindowRateLimiter(max_hits=3, window_seconds=60, now=clock)
+    for _ in range(3):
+        limiter.record("conta")
+    d = limiter.check("conta")
+    assert d.allowed is False
+    assert d.retry_after > 0
+
+
+def test_reset_libera_na_hora():
+    """Acertar a senha zera o balde -- senao quem loga muito se trancaria."""
+    clock = FakeClock()
+    limiter = SlidingWindowRateLimiter(max_hits=2, window_seconds=60, now=clock)
+    limiter.record("conta")
+    limiter.record("conta")
+    assert limiter.check("conta").allowed is False
+    limiter.reset("conta")
+    assert limiter.check("conta").allowed is True
+
+
+def test_reset_de_chave_inexistente_nao_estoura():
+    limiter = SlidingWindowRateLimiter(max_hits=2, window_seconds=60, now=FakeClock())
+    limiter.reset("nunca-vista")  # nao deve lancar
+
+
+def test_destrava_sozinho_ao_fim_da_janela():
+    """Sem bloqueio permanente: o freio nao vira arma de negacao de servico."""
+    clock = FakeClock()
+    limiter = SlidingWindowRateLimiter(max_hits=2, window_seconds=60, now=clock)
+    limiter.record("conta")
+    limiter.record("conta")
+    assert limiter.check("conta").allowed is False
+    clock.advance(61)
+    assert limiter.check("conta").allowed is True
+
+
+def test_baldes_de_contas_diferentes_sao_independentes():
+    clock = FakeClock()
+    limiter = SlidingWindowRateLimiter(max_hits=2, window_seconds=60, now=clock)
+    limiter.record("a@x.com|ws")
+    limiter.record("a@x.com|ws")
+    assert limiter.check("a@x.com|ws").allowed is False
+    assert limiter.check("b@x.com|ws").allowed is True
+
+
+# --------------------------------------------------------
+# 5. account_key -- normalizacao da chave
+# --------------------------------------------------------
+def test_account_key_normaliza_caixa_e_espacos():
+    """Sem normalizar, alternar a caixa das letras multiplica o teto."""
+    from app.core.rate_limit import account_key
+
+    a = account_key(email="  Fulano@X.com ", workspace_slug="UniFECAF")
+    b = account_key(email="fulano@x.com", workspace_slug="unifecaf")
+    assert a == b
+
+
+def test_account_key_separa_workspaces():
+    from app.core.rate_limit import account_key
+
+    a = account_key(email="f@x.com", workspace_slug="ws-a")
+    b = account_key(email="f@x.com", workspace_slug="ws-b")
+    assert a != b

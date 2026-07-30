@@ -47,6 +47,9 @@ class WorkspaceMembership:
     #: Senha provisoria pendente de troca? (espelha users.must_change_password)
     #: Entrega 7 -- alimenta o gate em get_tenant_context (ADR 0020).
     must_change_password: bool = False
+    #: Contador de revogacao de sessao (espelha users.token_version).
+    #: Spec 030 -- comparado com o claim `tv` do token em toda requisicao.
+    token_version: int = 0
     #: Pares (team_id, role) do usuario neste workspace (Entrega 3).
     #: `roles` continua sendo a projecao "so os papeis"; este campo
     #: preserva de qual time veio cada papel, para o escopo por time.

@@ -134,6 +134,16 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     password_expires_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # Spec 030: contador de revogacao de sessao. Todo token carrega o valor
+    # do momento em que foi emitido (claim `tv`); incrementar aqui invalida
+    # de uma vez TODOS os tokens ja emitidos para este usuario.
+    #
+    # Quem incrementa (Spec 030, D3): troca de senha, reset pelo gestor e
+    # logout. Criar membro NAO incrementa (nao ha sessao para matar), e
+    # desativar tambem nao (is_active ja e conferido a cada requisicao).
+    token_version: Mapped[int] = mapped_column(
+        nullable=False, server_default="0", default=0
+    )
 
 
 class UserTeam(UUIDPrimaryKeyMixin, Base):

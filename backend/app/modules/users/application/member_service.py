@@ -228,8 +228,16 @@ class MemberService:
         user.password_hash = hash_password(temporary_password)
         user.must_change_password = True
         user.password_expires_at = _temp_password_expiry()
+        # Spec 030 (D3): derruba as sessoes ATIVAS do alvo. E esta a acao de
+        # resposta a "a conta de fulano vazou" -- sem o incremento, a senha
+        # nova nao expulsa quem ja estava dentro.
+        user.token_version += 1
 
-        logger.info("member.password_reset", user_id=str(user_id))
+        logger.info(
+            "member.password_reset",
+            user_id=str(user_id),
+            token_version=user.token_version,
+        )
         return ProvisionedMember(user=user, temporary_password=temporary_password)
 
     async def list_members(self) -> list[MemberWithSubteam]:

@@ -36,7 +36,11 @@ from app.core.deps import SessionDep
 from app.core.tenant import Membership, TeamNode, TenantContext, set_tenant
 from app.db.models import User
 from app.modules.auth.domain.permissions import permissions_for_roles
-from app.modules.auth.infrastructure.security import TokenType, decode_token
+from app.modules.auth.infrastructure.security import (
+    TokenType,
+    decode_token,
+    token_version_of,
+)
 from app.modules.users.infrastructure.membership_repository import (
     MembershipRepository,
 )
@@ -83,6 +87,13 @@ async def get_tenant_context(
         raise AuthenticationError("Usuario do token nao encontrado.")
     if not membership.is_active:
         raise AuthenticationError("Usuario inativo.")
+
+    # Spec 030: revogacao de sessao. O token carrega a versao do momento da
+    # emissao; se o contador do usuario avancou (troca de senha, reset pelo
+    # gestor, logout), este token morreu. Custo zero -- a linha do usuario ja
+    # foi lida acima, junto de is_active.
+    if token_version_of(payload) != membership.token_version:
+        raise AuthenticationError("Sessao revogada. Faca login novamente.")
 
     # Entrega 7 (ADR 0020): gate de troca obrigatoria. Aplicado AQUI, no
     # ponto unico por onde passa toda rota de negocio, falha fechado --
@@ -241,6 +252,12 @@ async def get_user_allowing_pending(
         raise AuthenticationError("Usuario do token nao encontrado.")
     if not user.is_active:
         raise AuthenticationError("Usuario inativo.")
+
+    # Spec 030: a checagem de revogacao vale AQUI TAMBEM. Esta dependency e
+    # leniente quanto a troca de senha pendente, nao quanto a token morto --
+    # sem isto, um token revogado ainda leria /auth/me e chamaria /auth/logout.
+    if token_version_of(payload) != user.token_version:
+        raise AuthenticationError("Sessao revogada. Faca login novamente.")
     return user
 
 
