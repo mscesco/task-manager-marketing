@@ -34,6 +34,7 @@ import {
   getTask,
   listTasks,
   listMembers,
+  getRootTeamId,
   listAllProjects,
   updateTask,
   ApiError,
@@ -41,10 +42,14 @@ import {
   type MyTaskItem,
 } from "@/lib/api";
 import { sincronizarTaskNaUrl } from "@/lib/urlTarefa";
+import { ORDENACOES, ordenar, type Ordenacao } from "@/lib/ordenacao";
 
 const RELATION_LABEL: Record<string, string> = {
   assignee: "Responsável",
   creator: "Criei",
+  // ⚠️ FICA, mesmo com o filtro removido. O `/me` continua devolvendo a
+  // relacao `watcher` se ela existir no banco (n8n, API direta), e sem este
+  // rotulo a linha mostraria a string crua "watcher" na tela.
   watcher: "Acompanho",
 };
 const STATUS_LABEL: Record<string, string> = Object.fromEntries(
@@ -59,7 +64,12 @@ const RELACOES = [
   { key: "todas", label: "Todas" },
   { key: "creator", label: "Que criei" },
   { key: "assignee", label: "Designadas a mim" },
-  { key: "watcher", label: "Que acompanho" },
+  // ⚠️ "Que acompanho" (watcher) SAIU. O backend tem a feature inteira
+  // (TaskWatcher, GET/POST/DELETE /tasks/{id}/watchers, e o /me ja filtra por
+  // relacao), mas o front nao tem UMA funcao de watcher em `lib/api.ts` --
+  // nao existe lugar nenhum no produto onde alguem passe a acompanhar. O
+  // filtro estava na tela prometendo uma lista que jamais teria item.
+  // Voltar aqui QUANDO existir o botao de acompanhar, nao antes.
 ] as const;
 
 const TODOS_STATUS = STATUSES.map((s) => s.key);
@@ -84,6 +94,17 @@ function Minhas() {
   const [members, setMembers] = useState<Map<string, { name: string }>>(new Map());
   const [projectNames, setProjectNames] = useState<Map<string, string>>(new Map());
   const [projetosPessoais, setProjetosPessoais] = useState<Set<string>>(new Set());
+  // Spec 031 (C14): mesmo desenho de `projetosPessoais` -- `members` continua
+  // COMPLETO (resolve o nome de quem ja esta designado) e este conjunto so
+  // tira do seletor e marca a pilula como desativado.
+  const [membrosInativos, setMembrosInativos] = useState<Set<string>>(new Set());
+  // Spec 031 + escopo de time: quem alcanca a tarefa depende do subtime da
+  // pessoa e do time DA TAREFA -- por isso vai o dado cru pro TaskDetail, que
+  // e quem sabe qual tarefa esta focada. Ver `lib/escopoTarefa.ts`.
+  const [subtimePorMembro, setSubtimePorMembro] = useState<Map<string, string | null>>(
+    new Map()
+  );
+  const [rootTeamId, setRootTeamId] = useState<string | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   // null = nao truncou. Se a lista passar do teto de busca, vira aviso honesto
   // no lugar de perda silenciosa (mesmo padrao do quadro).
@@ -118,6 +139,14 @@ function Minhas() {
 
   // Vista: lista (agrupada por prazo) x quadro (kanban por status). Sessao-only.
   const [vista, setVista] = useState<"lista" | "quadro">("lista");
+  // Mesmo seletor do quadro geral, mesmo comparador (`lib/ordenacao.ts`).
+  // ⚠️ So no modo QUADRO. No modo lista as tarefas ja vem agrupadas por dia
+  // de entrega, com cabecalho de data: um "Ordenar: prazo" ali nao teria o
+  // que fazer e um "Ordenar: prioridade" so reordenaria DENTRO do dia --
+  // dois rotulos prometendo mais do que entregam. Se a lista tiver que
+  // ordenar tambem, o agrupamento por data e que precisa sair, e isso e
+  // outra decisao.
+  const [ordenacao, setOrdenacao] = useState<Ordenacao>("criacao");
   // Drag no modo quadro (mesmo padrao do Board).
   const [activeId, setActiveId] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -161,7 +190,16 @@ function Minhas() {
       })
       .catch((e: ApiError) => setErro(e.message));
     listMembers()
-      .then((ms) => setMembers(new Map(ms.map((m) => [m.id, { name: m.name }]))))
+      .then((ms) => {
+        setMembers(new Map(ms.map((m) => [m.id, { name: m.name }])));
+        setMembrosInativos(new Set(ms.filter((m) => !m.is_active).map((m) => m.id)));
+        setSubtimePorMembro(new Map(ms.map((m) => [m.id, m.team_id ?? null])));
+      })
+      .catch(() => {});
+    // Memoizado no api.ts (uma chamada por navegacao). Falha => segue null, e
+    // `foraDoEscopo` devolve conjunto vazio: nao esconde ninguem.
+    getRootTeamId()
+      .then(setRootTeamId)
       .catch(() => {});
     // Spec 022: alimenta o chip de projeto e o seletor de "mudar projeto" no detalhe.
     listAllProjects()
@@ -528,9 +566,11 @@ function Minhas() {
   const porStatus = useMemo(() => {
     const map: Record<string, MyTaskItem[]> = {};
     for (const s of STATUSES) map[s.key] = [];
-    for (const t of porRelacao) (map[t.status] ??= []).push(t);
+    // Ordena ANTES de distribuir: a distribuicao preserva a ordem, entao uma
+    // passada resolve as 7 colunas (mesmo caminho do Board).
+    for (const t of ordenar(porRelacao, ordenacao)) (map[t.status] ??= []).push(t);
     return map;
-  }, [porRelacao]);
+  }, [porRelacao, ordenacao]);
 
   if (erro) return <div className="error-box" style={{ maxWidth: 480 }}>{erro}</div>;
   if (!items) return <div className="muted">Carregando…</div>;
@@ -710,6 +750,25 @@ function Minhas() {
           }}
         />
 
+        {/* Ordenacao: so no modo quadro, e FORA do bloco de filtros -- ela
+            nao esconde tarefa, so muda a ordem (mesma razao do quadro geral). */}
+        {vista === "quadro" && (
+          <select
+            value={ordenacao}
+            onChange={(e) => setOrdenacao(e.target.value as Ordenacao)}
+            aria-label="Ordenar tarefas"
+            style={{
+              fontSize: 13, padding: "6px 10px", borderRadius: "var(--radius)",
+              border: "1px solid var(--border)", background: "var(--surface)",
+              color: "var(--text)", cursor: "pointer",
+            }}
+          >
+            {ORDENACOES.map((o) => (
+              <option key={o.key} value={o.key}>{o.label}</option>
+            ))}
+          </select>
+        )}
+
         {/* Toggle de vista (sessao-only). No quadro, os status viram colunas. */}
         <div style={{ display: "inline-flex", gap: 4 }}>
           {(["lista", "quadro"] as const).map((v) => (
@@ -846,7 +905,7 @@ function Minhas() {
       {items.length === 0 ? (
         <EmptyState
           title="Você está em dia"
-          description="Tarefas em que você é responsável, criador ou acompanha aparecem aqui."
+          description="Tarefas em que você é responsável ou criador aparecem aqui."
         />
       ) : (
         <div className={vista === "quadro" ? "" : "max-w-[1100px]"}>
@@ -967,6 +1026,9 @@ function Minhas() {
         onAssigneesChange={aoMudarResponsaveis}
         mostrarArquivadas={mostrarArquivadas}
         projetosPessoais={projetosPessoais}
+        membrosInativos={membrosInativos}
+        subtimePorMembro={subtimePorMembro}
+        rootTeamId={rootTeamId}
         onAbrirSubtarefa={abrirSubtarefa}
         onSubtaskUpsert={aoUpsertComFilhos}
         onTaskMoved={aoUpsertComFilhos}

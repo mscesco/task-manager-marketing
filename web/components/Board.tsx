@@ -37,6 +37,7 @@ import EmptyStateBox from "@/components/EmptyState";
 import { STATUSES } from "@/lib/status";
 import { listAllTasks, listAllProjects, updateTask, listMembers, listSubteams, getRootTeamId, ApiError, type Task, type Team } from "@/lib/api";
 import { sincronizarTaskNaUrl, lerTaskDaUrl } from "@/lib/urlTarefa";
+import { ORDENACOES, ordenar, type Ordenacao } from "@/lib/ordenacao";
 
 // Spec 031 (C3): `normalizar` saiu daqui pra lib/filtrosQuadro (agora
 // `normalizarBusca`) -- "Minhas tarefas" tambem busca, e duas copias da
@@ -53,7 +54,6 @@ function hojeISO() {
 }
 
 type FiltroPrazo = "todos" | "atrasadas" | "em-dia";
-type Ordenacao = "criacao" | "prazo" | "prioridade";
 
 export default function Board({
   projectId,
@@ -629,31 +629,8 @@ export default function Board({
   // Ordenacao escolhida (so na sessao). Reordena as raizes pelo criterio e
   // depois distribui nas colunas -- a distribuicao preserva a ordem. Empate
   // SEMPRE cai pra created_at desc (mais nova primeiro), pra coluna nao "tremer".
-  const PRIO_RANK: Record<string, number> = {
-    URGENT: 4, HIGH: 3, MEDIUM: 2, LOW: 1,
-  };
-  const porData = (a: Task, b: Task) =>
-    a.created_at < b.created_at ? 1 : a.created_at > b.created_at ? -1 : 0;
-  const comparador = (a: Task, b: Task) => {
-    if (ordenacao === "prazo") {
-      // Sem prazo vai pro FIM; entre os com prazo, vencimento mais proximo no topo.
-      const da = a.due_date ?? "";
-      const db = b.due_date ?? "";
-      if (!da && !db) return porData(a, b);
-      if (!da) return 1;
-      if (!db) return -1;
-      if (da !== db) return da < db ? -1 : 1;
-      return porData(a, b);
-    }
-    if (ordenacao === "prioridade") {
-      const pa = PRIO_RANK[a.priority] ?? 0;
-      const pb = PRIO_RANK[b.priority] ?? 0;
-      if (pa !== pb) return pb - pa; // Urgente primeiro.
-      return porData(a, b);
-    }
-    return porData(a, b); // "criacao" (padrao de hoje).
-  };
-  const ordenadas = [...raizes].sort(comparador);
+  // O comparador saiu pra `lib/ordenacao.ts` -- "Minhas tarefas" usa o MESMO.
+  const ordenadas = ordenar(raizes, ordenacao);
 
   const porStatus: Record<string, Task[]> = {};
   for (const s of STATUSES) porStatus[s.key] = [];
@@ -691,9 +668,9 @@ export default function Board({
             color: "var(--text)", cursor: "pointer",
           }}
         >
-          <option value="criacao">Ordenar: criação</option>
-          <option value="prazo">Ordenar: prazo</option>
-          <option value="prioridade">Ordenar: prioridade</option>
+          {ORDENACOES.map((o) => (
+            <option key={o.key} value={o.key}>{o.label}</option>
+          ))}
         </select>
 
         {/* ---- Painel de filtros ---- */}
@@ -991,6 +968,8 @@ export default function Board({
         mostrarArquivadas={mostrarArquivadas}
         projetosPessoais={projetosPessoais}
         membrosInativos={membrosInativos}
+        subtimePorMembro={memberTeam}
+        rootTeamId={rootId}
       />
 
       {toast && (

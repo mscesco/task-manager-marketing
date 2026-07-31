@@ -53,3 +53,34 @@ export function progresso(filhos: Pick<Task, "status" | "is_archived">[]): {
   const total = vivas.length;
   return { concluidas, total, pct: total ? Math.round((concluidas / total) * 100) : 0 };
 }
+
+/**
+ * O que a checklist DESENHA e o que ela CONTA, de uma chamada so.
+ *
+ * ⚠️ Existe porque separar as duas coisas em duas chamadas ja produziu o bug:
+ * a tela pegava `concluidas` de `progresso` (que ignora arquivada) e usava
+ * `paraChecklist(...).length` como denominador (que INCLUI arquivada quando a
+ * caixa esta marcada). O rotulo dizia "(1/3)" com a barra em 50%, e em
+ * `/arquivadas` -- onde `mostrarArquivadas` e fixo -- uma tarefa de filhas so
+ * arquivadas e concluidas mostrava "(0/2)" com a barra vazia e as duas caixas
+ * marcadas logo abaixo.
+ *
+ *   linhas  -> as LINHAS a desenhar (arquivada entra quando a caixa esta
+ *              marcada; a tela so a apaga visualmente).
+ *   total   -> o denominador do "(x/y)" e da barra. SEMPRE trabalho vivo:
+ *              `concluidas`, `total` e `pct` vem do mesmo `progresso`, entao
+ *              numerador e denominador nao tem como divergir de novo.
+ *
+ * Consequencia deliberada: filhas SO arquivadas dao `total: 0` com
+ * `linhas.length: 2`. A tela desenha as duas linhas e NAO desenha contador
+ * nem barra -- nao ha trabalho vivo sobre o que informar progresso.
+ */
+export function checklist<T extends Pick<Task, "status" | "is_archived">>(
+  filhos: T[],
+  mostrarArquivadas: boolean
+): { linhas: T[]; concluidas: number; total: number; pct: number } {
+  return {
+    linhas: paraChecklist(filhos, mostrarArquivadas),
+    ...progresso(filhos),
+  };
+}

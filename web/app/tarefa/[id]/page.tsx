@@ -60,6 +60,12 @@ function Tarefa() {
   const [projectNames, setProjectNames] = useState<Map<string, string>>(
     new Map()
   );
+  // Spec 031 (C13/C14): conjuntos de EXCLUSAO do seletor. Os mapas acima ficam
+  // completos (resolvem nome de quem/do que ja esta na tarefa); estes so tiram
+  // da lista de escolha -- projeto pessoal como destino some a tarefa do quadro
+  // dos outros, e membro desativado nao deve receber tarefa nova.
+  const [projetosPessoais, setProjetosPessoais] = useState<Set<string>>(new Set());
+  const [membrosInativos, setMembrosInativos] = useState<Set<string>>(new Set());
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
   const [editando, setEditando] = useState<Task | null>(null);
@@ -71,13 +77,18 @@ function Tarefa() {
     let vivo = true;
     listMembers()
       .then((ms) => {
-        if (vivo) setMembers(new Map(ms.map((m) => [m.id, { name: m.name }])));
+        if (!vivo) return;
+        setMembers(new Map(ms.map((m) => [m.id, { name: m.name }])));
+        setMembrosInativos(new Set(ms.filter((m) => !m.is_active).map((m) => m.id)));
       })
       .catch(() => {});
     listAllProjects()
       .then((r) => {
-        if (vivo)
-          setProjectNames(new Map(r.items.map((p) => [p.id, p.title])));
+        if (!vivo) return;
+        setProjectNames(new Map(r.items.map((p) => [p.id, p.title])));
+        setProjetosPessoais(
+          new Set(r.items.filter((p) => p.is_personal).map((p) => p.id))
+        );
       })
       .catch(() => {});
     return () => {
@@ -205,6 +216,13 @@ function Tarefa() {
         projects={projectNames}
         filhos={filhos}
         pai={pai}
+        // ⚠️ Esta rota NAO pede `include_archived` no `listTasks` que carrega
+        // `filhos`, entao nao ha arquivada ali pra esconder ou mostrar.
+        // `false` explicito em vez de default: a prop e obrigatoria justamente
+        // pra esta decisao aparecer na chamada.
+        mostrarArquivadas={false}
+        projetosPessoais={projetosPessoais}
+        membrosInativos={membrosInativos}
         // "Voltar" so aparece quando o pai foi carregado de fato -- e leva pra
         // rota do pai (cada nivel tem endereco proprio, entao nao ha pilha).
         temVoltar={pai !== null}

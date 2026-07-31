@@ -4,7 +4,7 @@
 // confundidas. Trocar uma pela outra apaga um aviso de exclusao em silencio.
 import { describe, expect, it } from "vitest";
 
-import { ativas, paraChecklist, progresso } from "@/lib/subtarefas";
+import { ativas, checklist, paraChecklist, progresso } from "@/lib/subtarefas";
 
 const f = (status: string, is_archived = false) => ({ status, is_archived });
 
@@ -57,6 +57,49 @@ describe("paraChecklist", () => {
     // porcentagem sem ninguem ter trabalhado.
     expect(progresso(filhos).total).toBe(1);
     expect(progresso(paraChecklist(filhos, true)).total).toBe(1);
+  });
+});
+
+describe("checklist", () => {
+  // Regressao do rotulo "(x/y)" e da barra: o numerador vinha de `progresso`
+  // (so vivas) e o denominador de `paraChecklist(...).length` (com arquivada,
+  // quando a caixa esta marcada). Os dois agora saem da MESMA chamada.
+  it("numerador e denominador saem da mesma conta -- nunca divergem", () => {
+    const filhos = [f("COMPLETED"), f("BACKLOG"), f("COMPLETED", true)];
+    const r = checklist(filhos, true);
+    expect(r.linhas).toHaveLength(3); // desenha as tres
+    expect(r.concluidas).toBe(1); // conta 1 de 2 vivas
+    expect(r.total).toBe(2);
+    expect(r.pct).toBe(50); // a barra bate com o rotulo
+  });
+
+  it("marcar 'mostrar arquivadas' muda as LINHAS, nao a conta", () => {
+    const filhos = [f("COMPLETED"), f("BACKLOG"), f("COMPLETED", true)];
+    const escondendo = checklist(filhos, false);
+    const mostrando = checklist(filhos, true);
+    expect(escondendo.linhas).toHaveLength(2);
+    expect(mostrando.linhas).toHaveLength(3);
+    expect(mostrando.concluidas).toBe(escondendo.concluidas);
+    expect(mostrando.total).toBe(escondendo.total);
+    expect(mostrando.pct).toBe(escondendo.pct);
+  });
+
+  it("filhas SO arquivadas: ha linha pra desenhar, mas nao ha o que contar", () => {
+    // O caso permanente de `/arquivadas`. Antes: "(0/2)" com barra vazia
+    // embaixo de duas caixas marcadas. Agora `total: 0` -- a tela sabe que
+    // nao deve desenhar contador nem barra.
+    const r = checklist([f("COMPLETED", true), f("BACKLOG", true)], true);
+    expect(r.linhas).toHaveLength(2);
+    expect(r.total).toBe(0);
+    expect(r.concluidas).toBe(0);
+    expect(r.pct).toBe(0);
+  });
+
+  it("sem arquivada nenhuma, linhas e total andam juntos", () => {
+    const r = checklist([f("COMPLETED"), f("BACKLOG")], false);
+    expect(r.linhas).toHaveLength(2);
+    expect(r.total).toBe(2);
+    expect(r.pct).toBe(50);
   });
 });
 

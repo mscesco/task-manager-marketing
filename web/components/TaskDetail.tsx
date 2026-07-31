@@ -49,7 +49,8 @@ import { isGiphyUrl } from "@/lib/giphy";
 import CommentText from "@/components/CommentText";
 import MentionTextarea from "@/components/MentionTextarea";
 import { nomeCurto } from "@/lib/people";
-import { paraChecklist, progresso } from "@/lib/subtarefas";
+import { checklist } from "@/lib/subtarefas";
+import { foraDoEscopo } from "@/lib/escopoTarefa";
 import {
   acaoDoEnterNoTitulo,
   alternaResponsavel,
@@ -117,9 +118,11 @@ export default function TaskDetail({
   onSubtaskUpsert,
   onTaskMoved,
   onExcluir,
-  mostrarArquivadas = false,
+  mostrarArquivadas,
   projetosPessoais,
   membrosInativos,
+  subtimePorMembro,
+  rootTeamId,
   modo = "modal",
 }: {
   task: Task | null; // tarefa focada; null => fechado
@@ -136,13 +139,27 @@ export default function TaskDetail({
   onSubtaskUpsert: (sub: Task) => void; // criar OU concluir rapido
   onTaskMoved: (task: Task) => void; // Spec 022: task mudou de projeto/avulsa
   onExcluir: (task: Task, cascadeCount: number) => void; // soft-delete cascateado
+  // ⚠️ AS TRES PROPS ABAIXO SAO OBRIGATORIAS DE PROPOSITO. Elas eram
+  // opcionais, e o resultado foi que a C13, a C14 e a C15 chegaram em UM dos
+  // quatro chamadores (`Board`) e ficaram de fora dos outros tres -- sem
+  // nenhum portao reclamar, porque prop opcional ausente e codigo valido. O
+  // `?` era o que transformava "esqueci um chamador" em silencio.
+  //
+  // Custo aceito: quem montar o quinto chamador PRECISA decidir os tres
+  // valores. E o ponto -- `tsc` passa a fazer a pergunta que o handoff vinha
+  // fazendo em texto, quatro entregas seguidas.
+  //
+  // Quem nao busca arquivada (a rota /tarefa/[id]) passa `false` explicito;
+  // quem nao tem o dado a mao passa `new Set()`, e isso fica VISIVEL na
+  // chamada em vez de escondido no default.
+  //
   // Espelha a caixa "Mostrar arquivadas" da tela de fora. Sem ela, a checklist
   // esconde a subtarefa arquivada (Spec 031, C11); com ela, a subtarefa volta
   // APAGADA -- mesmo tratamento que o card arquivado ja recebe no quadro.
   // ⚠️ O quadro so BUSCA arquivada quando a caixa esta marcada
   // (`include_archived: mostrarArquivadas`), entao sem esta prop o componente
   // nao teria como distinguir "nao ha arquivada" de "ha, mas escondida".
-  mostrarArquivadas?: boolean;
+  mostrarArquivadas: boolean;
   // Ids de projeto PESSOAL. Eles continuam em `projects` -- o mapa resolve
   // NOME e a tarefa que ja mora num pessoal precisa exibir o dela. O que este
   // conjunto muda e o SELETOR: pessoal nao e destino oferecido.
@@ -151,7 +168,7 @@ export default function TaskDetail({
   // outros -- o backend filtra por `is_personal=false OR created_by=me`
   // (task_repository:82-95). Nao e um bug do seletor: e o seletor oferecendo
   // um caminho que produz sumico silencioso.
-  projetosPessoais?: Set<string>;
+  projetosPessoais: Set<string>;
   // Ids de membro DESATIVADO. Mesmo desenho de `projetosPessoais`: `members`
   // continua completo (a tarefa que ja tem um inativo designado precisa
   // resolver o NOME dele), e o conjunto so tira do SELETOR.
@@ -160,7 +177,17 @@ export default function TaskDetail({
   // haveria como DESIGNAR DE VOLTA pra ninguem: a unica forma de tirar a
   // pessoa e desmarcando a caixa dela. `TaskModal` ja filtrava assim desde
   // sempre (linha 131); o detalhe e que ficou de fora.
-  membrosInativos?: Set<string>;
+  membrosInativos: Set<string>;
+  // Subtime de cada membro (id -> subtime, ou null pra quem so esta na raiz)
+  // e o id do time raiz. Juntos com `task.team_id` respondem quem ALCANCA
+  // esta tarefa -- ver `lib/escopoTarefa.ts` para a regra e para a ressalva
+  // sobre gestor/admin.
+  //
+  // ⚠️ Por que o dado CRU e nao um `Set` pronto: a resposta depende da tarefa
+  // FOCADA, e a tarefa focada muda aqui dentro (navegar pra subtarefa). Um
+  // conjunto calculado la fora congelaria no escopo da tarefa de entrada.
+  subtimePorMembro: Map<string, string | null>;
+  rootTeamId: string | null;
   // Como renderizar o container externo:
   //   "modal"  (padrao) -> overlay fixo com scrim, clique fora e Esc fecham.
   //                        Comportamento historico; quadro e minhas-tarefas
@@ -385,6 +412,22 @@ export default function TaskDetail({
     return () => document.removeEventListener("mousedown", onDown);
   }, [subPickerAberto]);
 
+  // Quem nao alcanca ESTA tarefa. Vazio em tarefa da raiz (todo mundo
+  // enxerga) e enquanto `rootTeamId` nao chegou. Ver `lib/escopoTarefa.ts`.
+  const foraDoEscopoAqui = useMemo(
+    () => foraDoEscopo(subtimePorMembro, task?.team_id ?? null, rootTeamId),
+    [subtimePorMembro, task?.team_id, rootTeamId]
+  );
+
+  // Nao entra no autocompletar de @: desativado (nao le mais) + fora do
+  // escopo (recebe notificacao de tarefa que nao consegue abrir). Aqui NAO
+  // ha a excecao do "ja designado" do seletor: mencionar quem nao ve a
+  // tarefa e sempre escrever pra ninguem.
+  const foraDoAutocompletar = useMemo(
+    () => new Set<string>([...membrosInativos, ...foraDoEscopoAqui]),
+    [membrosInativos, foraDoEscopoAqui]
+  );
+
   // Lista do picker da subtarefa. Separada de `filtrados` (que serve ao
   // picker da tarefa mae) porque as buscas sao independentes -- compartilhar
   // o termo faria digitar num lugar filtrar o outro.
@@ -392,21 +435,26 @@ export default function TaskDetail({
     const q = subBusca.trim().toLowerCase();
     return Array.from(members.entries())
       .map(([id, m]) => ({ id, name: m.name }))
-      // Subtarefa nasce sem ninguem -> inativo nunca e opcao aqui.
-      .filter((e) => !membrosInativos?.has(e.id))
+      // Subtarefa nasce sem ninguem -> inativo nunca e opcao aqui. Fora do
+      // escopo tambem nao: a subtarefa herda o time da mae.
+      .filter((e) => !membrosInativos.has(e.id) && !foraDoEscopoAqui.has(e.id))
       .filter((e) => (q ? e.name.toLowerCase().includes(q) : true))
       .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
-  }, [members, subBusca, membrosInativos]);
+  }, [members, subBusca, membrosInativos, foraDoEscopoAqui]);
 
   const filtrados = useMemo(() => {
     const q = busca.trim().toLowerCase();
     return Array.from(members.entries())
-      .map(([id, m]) => ({ id, name: m.name, inativo: membrosInativos?.has(id) ?? false }))
+      .map(([id, m]) => ({ id, name: m.name, inativo: membrosInativos.has(id) }))
       // Inativo sai, MENOS quem ja esta designado -- ver `membrosInativos`.
       .filter((e) => !e.inativo || assignees.includes(e.id))
+      // Fora do escopo sai pela MESMA excecao: quem ja esta designado fica,
+      // senao a unica forma de tirar a pessoa (desmarcar a caixa dela)
+      // desapareceria junto.
+      .filter((e) => !foraDoEscopoAqui.has(e.id) || assignees.includes(e.id))
       .filter((e) => (q ? e.name.toLowerCase().includes(q) : true))
       .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
-  }, [members, busca, membrosInativos, assignees]);
+  }, [members, busca, membrosInativos, assignees, foraDoEscopoAqui]);
 
   if (!task) return null;
   const tid = task.id;
@@ -425,10 +473,19 @@ export default function TaskDetail({
   // fazer", e arquivar E dizer "isto saiu do fluxo". A subtarefa continua no
   // banco e no quadro com "Mostrar arquivadas" -- so nao conta mais aqui, nem
   // na barra de progresso, nem no "(2/5)" do titulo.
-  const filhosAtivos = paraChecklist(filhos, mostrarArquivadas);
-  const { concluidas } = progresso(filhos);
-  // Porcentagem concluida (0 quando nao ha subtarefas) -- alimenta a barra E o rotulo.
-  const { pct: pctSub } = progresso(filhos);
+  //
+  // ⚠️ UMA chamada so, de proposito. As LINHAS e a CONTA vinham de duas
+  // chamadas separadas e divergiram: o numerador era o trabalho vivo e o
+  // denominador era `linhas.length`, que INCLUI arquivada quando a caixa esta
+  // marcada. Dava "(1/3)" com a barra em 50%. Ver `lib/subtarefas.ts`.
+  //   linhasSub -> o que DESENHA (arquivada entra apagada)
+  //   totalSub  -> o denominador do rotulo E da barra (so trabalho vivo)
+  const {
+    linhas: linhasSub,
+    concluidas,
+    total: totalSub,
+    pct: pctSub,
+  } = checklist(filhos, mostrarArquivadas);
   // Criacao: created_at e ISO com fuso (nao date-only) -> new Date direto ja
   // resolve pro fuso local. Nome do criador via members; se nao resolver
   // (ex.: usuario desativado / fora da lista), mostra so a data (nunca o UUID).
@@ -872,7 +929,7 @@ export default function TaskDetail({
             {assignees.length > 0 ? (
               assignees.map((id) => {
                 const nome = members.get(id)?.name ?? "";
-                const inativo = membrosInativos?.has(id) ?? false;
+                const inativo = membrosInativos.has(id);
                 return (
                   <span
                     key={id}
@@ -1068,7 +1125,7 @@ export default function TaskDetail({
                     // com valor que nao existe entre as opcoes e o browser
                     // mostraria a primeira -- dando a impressao de que o
                     // projeto mudou sozinho.
-                    .filter(([id]) => !projetosPessoais?.has(id) || id === projetoAtual)
+                    .filter(([id]) => !projetosPessoais.has(id) || id === projetoAtual)
                     .sort((a, b) => a[1].localeCompare(b[1], "pt-BR"))
                     .map(([id, titulo]) => (
                       <option key={id} value={id}>{titulo}</option>
@@ -1109,7 +1166,7 @@ export default function TaskDetail({
         <div className="field">
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <span className="label">
-              Subtarefas{filhosAtivos.length > 0 ? ` (${concluidas}/${filhosAtivos.length})` : ""}
+              Subtarefas{totalSub > 0 ? ` (${concluidas}/${totalSub})` : ""}
             </span>
             {!criandoSub && (
               <button
@@ -1128,14 +1185,14 @@ export default function TaskDetail({
               recomputa quando alternarConclusao faz o upsert OTIMISTA no estado
               do pai (a caixa marca -> a barra enche na hora, sem esperar a API;
               reverte se o PATCH falhar). Proporcao = concluidas / filhos ATIVOS. */}
-          {filhosAtivos.length > 0 && (
+          {totalSub > 0 && (
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 8 }}>
               <div
                 role="progressbar"
                 aria-valuenow={concluidas}
                 aria-valuemin={0}
-                aria-valuemax={filhosAtivos.length}
-                aria-label={`${concluidas} de ${filhosAtivos.length} subtarefas concluídas (${pctSub}%)`}
+                aria-valuemax={totalSub}
+                aria-label={`${concluidas} de ${totalSub} subtarefas concluídas (${pctSub}%)`}
                 style={{
                   flex: 1, height: 8, borderRadius: 999,
                   background: "var(--surface-2)", overflow: "hidden",
@@ -1164,9 +1221,9 @@ export default function TaskDetail({
             </div>
           )}
 
-          {filhosAtivos.length > 0 && (
+          {linhasSub.length > 0 && (
             <div style={{ border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden", marginTop: 8 }}>
-              {filhosAtivos.map((f, i) => {
+              {linhasSub.map((f, i) => {
                 const concluida = f.status === "COMPLETED";
                 const ocupado = subSaving.has(f.id);
                 // Mesmo 0.55 do card arquivado no quadro -- arquivada le como
@@ -1297,7 +1354,7 @@ export default function TaskDetail({
           {criandoSub && (
             <div
               style={{
-                marginTop: filhosAtivos.length > 0 ? 8 : 0,
+                marginTop: linhasSub.length > 0 ? 8 : 0,
                 border: "1px solid var(--border)",
                 borderRadius: 10,
                 padding: 10,
@@ -1554,7 +1611,7 @@ export default function TaskDetail({
                           value={textoResposta}
                           onChange={setTextoResposta}
                           members={members}
-            inativos={membrosInativos}
+            excluidos={foraDoAutocompletar}
                           autoFocus
                           rows={2}
                           placeholder="Responder… (@ menciona)"
@@ -1638,7 +1695,7 @@ export default function TaskDetail({
             value={novoComent}
             onChange={setNovoComent}
             members={members}
-            inativos={membrosInativos}
+            excluidos={foraDoAutocompletar}
             rows={2}
             placeholder="Escreva um comentário… (@ menciona)"
             disabled={enviandoComent}
@@ -1688,7 +1745,7 @@ export default function TaskDetail({
           >
             <span style={{ fontSize: 12.5, flex: 1, minWidth: 220 }}>
               Excluir <strong>{task.title}</strong>? Isto apaga a tarefa e todos os comentários.
-              {/* ⚠️ `filhos`, NAO `filhosAtivos`: a cascata (ADR 0005) leva a
+              {/* ⚠️ `filhos`, NAO `linhasSub`: a cascata (ADR 0005) leva a
                   subarvore inteira, arquivada ou nao. Ver lib/subtarefas.ts. */}
               {filhos.length > 0 && (
                 <> Também apaga as <strong>{filhos.length}</strong> subtarefa(s) diretas e as subtarefas delas.</>

@@ -32,7 +32,18 @@
 /* Tokens de design. Tom: ferramenta interna calma e legivel -- o oposto
    de "cheio de abas". Paleta sobria, um unico azul de acao, tipografia
    com peso pra dar hierarquia sem decoracao. */
+/* ⚠️ color-scheme NAO e cosmetica: e o que informa ao BROWSER qual paleta
+   usar nos controles que ele desenha sozinho e que nenhum CSS nosso alcanca
+   -- icone do <input type="date">, painel que abre no <select>, caixa do
+   <input type="checkbox">, barra de rolagem, fundo de autofill.
+   Sem esta declaracao o browser assume claro SEMPRE, e no tema escuro o
+   icone do calendario fica preto sobre fundo escuro (invisivel), o dropdown
+   do select abre branco no meio da tela escura e as barras de rolagem
+   voltam claras. Sao 5 <input type="date">, 22 <select> e 7 checkbox.
+   Alterar junto com a paleta: os dois blocos, sempre. */
 :root {
+  color-scheme: light;
+
   --bg: #f6f7f9;
   --surface: #ffffff;
   --surface-2: #f1f3f5;
@@ -75,6 +86,8 @@
    7.4, texto-fraco 4.6, accent 6.0, danger 6.1.
    --------------------------------------------------------------- */
 [data-theme="escuro"] {
+  color-scheme: dark;
+
   --color-canvas: #0f1520;
   --color-surface: #161d2b;
   --color-surface-2: #1e2637;

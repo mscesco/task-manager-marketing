@@ -15,6 +15,7 @@ import {
   updateTask,
   listProjects,
   listMembers,
+  getRootTeamId,
   ApiError,
   type Task,
   type TaskUpdateInput,
@@ -28,6 +29,7 @@ import {
   primeiroSelecionavel,
 } from "@/lib/teclasFormulario";
 import { motivoNaoCria } from "@/lib/criacaoTarefa";
+import { foraDoEscopo, timeDaTarefaNova } from "@/lib/escopoTarefa";
 import Avatar from "@/components/Avatar";
 import { nomeCurto } from "@/lib/people";
 
@@ -93,6 +95,9 @@ export default function TaskModal({
   // Spec 021: responsaveis na criacao (so no modo CRIAR). invalidIds = quem o
   // backend recusou no 422 -> fica marcado em vermelho, com a selecao preservada.
   const [membros, setMembros] = useState<Member[]>([]);
+  // Id do time raiz -- necessario pra distinguir "tarefa geral" (todo mundo
+  // alcanca) de "tarefa interna de subtime" (so o subtime alcanca).
+  const [rootTeamId, setRootTeamId] = useState<string | null>(null);
   const [assigneeIds, setAssigneeIds] = useState<string[]>([]);
   const [invalidIds, setInvalidIds] = useState<Set<string>>(new Set());
   // Picker com busca (popover): abre/fecha, termo, e ref pra clique-fora.
@@ -130,6 +135,11 @@ export default function TaskModal({
     listMembers()
       .then((ms) => setMembros(ms.filter((m) => m.is_active)))
       .catch(() => {});
+    // Memoizado no api.ts. Falha => segue null e `foraDoEscopo` devolve
+    // conjunto vazio (nao esconde ninguem), que e o comportamento antigo.
+    getRootTeamId()
+      .then(setRootTeamId)
+      .catch(() => {});
   }, [open, editando]);
 
   // Esc fecha (quando aberto e nao salvando).
@@ -166,12 +176,34 @@ export default function TaskModal({
     : motivoNaoCria({ titulo: title, assigneeIds, dueDate });
   const podeSalvar = motivoBloqueio === null;
 
+  // ⚠️ ESCOPO DE TIME NA CRIACAO.
+  // A tarefa nova ja nasce com time decidido AQUI: `defaultTeamId` (quadro de
+  // subtime -> nasce INTERNA daquele subtime) ou, quando null, a raiz -- e o
+  // que o `createTask` faz com o pin (`lib/api.ts`). Logo da pra saber, antes
+  // de oferecer, quem vai alcancar a tarefa.
+  //
+  // Antes esta lista era TODO MUNDO e o comentario acima do campo dizia "o
+  // backend valida escopo e recusa os invalidos com 422". Recusava mesmo --
+  // depois de a pessoa escolher, escrever o resto e apertar Salvar.
+  const foraDoEscopoAqui = useMemo(
+    () =>
+      foraDoEscopo(
+        new Map(membros.map((m) => [m.id, m.team_id ?? null])),
+        timeDaTarefaNova(defaultTeamId, rootTeamId),
+        rootTeamId
+      ),
+    [membros, defaultTeamId, rootTeamId]
+  );
+
   const membrosFiltrados = useMemo(() => {
     const q = buscaResp.trim().toLowerCase();
     return membros
+      // Quem ja foi escolhido fica, mesmo fora do escopo: senao a pessoa nao
+      // teria como DESMARCAR (a caixa dela sumiria marcada).
+      .filter((m) => !foraDoEscopoAqui.has(m.id) || assigneeIds.includes(m.id))
       .filter((m) => (q ? m.name.toLowerCase().includes(q) : true))
       .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
-  }, [membros, buscaResp]);
+  }, [membros, buscaResp, foraDoEscopoAqui, assigneeIds]);
 
   if (!open) return null;
 
@@ -389,8 +421,10 @@ export default function TaskModal({
         )}
 
         {/* Spec 021: responsaveis -- so na criacao (na edicao, mexe-se no detalhe).
-            Lista todos os membros ativos; o backend valida escopo e recusa os
-            invalidos com 422 (que ficam vermelhos aqui, sem perder a selecao). */}
+            Lista os membros ativos que ALCANCAM a tarefa que vai nascer (ver
+            `foraDoEscopoAqui`). O 422 do backend continua sendo a trava real
+            -- os recusados ficam vermelhos aqui, sem perder a selecao --, mas
+            agora ele e a rede de seguranca, nao o primeiro aviso. */}
         {!editando && (
           <div className="field">
             <label className="label">

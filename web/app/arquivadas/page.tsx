@@ -65,6 +65,9 @@ function Arquivadas() {
   const [members, setMembers] = useState<Map<string, { name: string }>>(new Map());
   const [projectNames, setProjectNames] = useState<Map<string, string>>(new Map());
   const [projetosPessoais, setProjetosPessoais] = useState<Set<string>>(new Set());
+  // Spec 031 (C14): so tira do seletor e marca a pilula. `members` fica
+  // completo -- tarefa arquivada costuma ter justamente quem ja saiu do time.
+  const [membrosInativos, setMembrosInativos] = useState<Set<string>>(new Set());
   const [detalhe, setDetalhe] = useState<Task | null>(null);
   const [pilha, setPilha] = useState<Task[]>([]);
   // Filhos da tarefa focada. A listagem de arquivadas NAO traz a subarvore
@@ -76,7 +79,10 @@ function Arquivadas() {
 
   useEffect(() => {
     listMembers()
-      .then((ms) => setMembers(new Map(ms.map((m) => [m.id, { name: m.name }]))))
+      .then((ms) => {
+        setMembers(new Map(ms.map((m) => [m.id, { name: m.name }])));
+        setMembrosInativos(new Set(ms.filter((m) => !m.is_active).map((m) => m.id)));
+      })
       .catch(() => {});
     listAllProjects()
       .then((r) => {
@@ -179,6 +185,7 @@ function Arquivadas() {
         // esconder justamente o que a pessoa veio ver.
         mostrarArquivadas
         projetosPessoais={projetosPessoais}
+        membrosInativos={membrosInativos}
         onSubtaskUpsert={() => carregar(page)}
         onTaskMoved={() => carregar(page)}
         onExcluir={(t, cascade) => {
