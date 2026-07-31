@@ -26,12 +26,12 @@ import { destinoDaNotificacao } from "@/lib/notificacoes";
 const POLL_MS = 30_000;
 
 function texto(n: AppNotification): string {
-  const ator = n.payload?.actor_name || "Alguem";
+  const ator = n.payload?.actor_name || "Alguém";
   const task = n.payload?.task_title || "uma tarefa";
   if (n.type === "TASK_ASSIGNED") return `${ator} designou você em "${task}"`;
   if (n.type === "TASK_COMMENTED") return `${ator} comentou em "${task}"`;
   if (n.type === "TASK_MENTIONED") return `${ator} mencionou você em "${task}"`;
-  return `Atualizacao em "${task}"`;
+  return `Atualização em "${task}"`;
 }
 
 // created_at vem como ISO COMPLETO com timezone -> new Date() e seguro aqui
@@ -197,7 +197,7 @@ export default function NotificationBell() {
       {open && (
         <div className="absolute right-0 z-20 mt-2 w-80 overflow-hidden rounded-lg border border-border bg-surface shadow-lg">
           <div className="flex items-center justify-between border-b border-border px-3 py-2">
-            <strong className="text-sm">Notificacoes</strong>
+            <strong className="text-sm">Notificações</strong>
             {temNaoLida && (
               <button
                 type="button"
