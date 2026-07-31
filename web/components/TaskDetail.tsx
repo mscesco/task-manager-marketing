@@ -14,6 +14,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
 import { UserPlus, X, Pencil, Plus, Calendar, ChevronLeft } from "lucide-react";
 
 import { useSaidaAnimada } from "@/lib/useSaidaAnimada";
+import { useFecharAoClicarFora } from "@/lib/useCliqueFora";
 import {
   addAssignee,
   removeAssignee,
@@ -335,6 +336,9 @@ export default function TaskDetail({
     animar: modo === "modal", // modo pagina nao tem scrim nem animacao
     onFechar: onClose,
   });
+
+  // Clicar no scrim fecha; ARRASTAR de dentro pra fora nao (ver o modulo).
+  const scrimProps = useFecharAoClicarFora(fecharSuave);
 
   useEffect(() => {
     // Esc so faz sentido no modo modal. Na rota /tarefa/[id] "fechar" e
@@ -783,9 +787,10 @@ export default function TaskDetail({
 
   return (
     <div
-      // Modo modal: o scrim inteiro e clicavel pra fechar. Modo pagina: nao ha
-      // scrim nem "fora" pra clicar -- o container vira um bloco comum.
-      onClick={modo === "modal" ? fecharSuave : undefined}
+      // Modo modal: o scrim inteiro e clicavel pra fechar -- mas so no CLIQUE,
+      // nao no arraste que termina aqui (`lib/useCliqueFora.ts`). Modo pagina:
+      // nao ha scrim nem "fora" pra clicar -- o container vira um bloco comum.
+      {...(modo === "modal" ? scrimProps : {})}
       className={modo === "modal" ? "modal-scrim" : undefined}
       data-saindo={saindo ? "true" : undefined}
       style={

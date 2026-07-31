@@ -29,6 +29,7 @@ import {
   primeiroSelecionavel,
 } from "@/lib/teclasFormulario";
 import { motivoNaoCria } from "@/lib/criacaoTarefa";
+import { useFecharAoClicarFora } from "@/lib/useCliqueFora";
 import { foraDoEscopo, timeDaTarefaNova } from "@/lib/escopoTarefa";
 import Avatar from "@/components/Avatar";
 import { nomeCurto } from "@/lib/people";
@@ -205,6 +206,10 @@ export default function TaskModal({
       .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
   }, [membros, buscaResp, foraDoEscopoAqui, assigneeIds]);
 
+  // ⚠️ ANTES do `if (!open)`: hook nao pode ficar depois de return
+  // condicional. `fechar` e declaracao de funcao, entao ja esta no escopo.
+  const scrimProps = useFecharAoClicarFora(fechar);
+
   if (!open) return null;
 
   function fechar() {
@@ -311,7 +316,10 @@ export default function TaskModal({
 
   return (
     <div
-      onClick={fechar}
+      // ⚠️ Arrastar pra selecionar texto e soltar aqui NAO fecha. Antes
+      // fechava, e neste modal fechar significa perder o formulario inteiro
+      // sem pergunta nenhuma. Ver `lib/useCliqueFora.ts`.
+      {...scrimProps}
       style={{
         position: "fixed", inset: 0, zIndex: 60,
         background: "rgba(16,24,40,0.45)",

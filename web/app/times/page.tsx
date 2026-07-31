@@ -20,6 +20,7 @@ import { useEffect, useState } from "react";
 import { Pencil, Plus, Trash2, X } from "lucide-react";
 import AppShell from "@/components/AppShell";
 import PageHeader from "@/components/PageHeader";
+import { useFecharAoClicarFora } from "@/lib/useCliqueFora";
 import {
   ApiError,
   createTeam,
@@ -522,9 +523,12 @@ function Dialogo({
   onFechar: () => void;
   children: React.ReactNode;
 }) {
+  // Mesmo defeito dos outros dois modais: selecionar texto num campo e soltar
+  // o mouse no fundo fechava o dialogo e perdia o que estava digitado.
+  const scrimProps = useFecharAoClicarFora(onFechar);
   return (
     <div
-      onClick={onFechar}
+      {...scrimProps}
       style={{
         position: "fixed",
         inset: 0,
