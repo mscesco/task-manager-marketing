@@ -247,32 +247,59 @@ describe("passaResponsavel", () => {
   ]);
 
   it("filtro vazio deixa tudo passar", () => {
-    expect(passaResponsavel("", "r3", porRaiz)).toBe(true);
+    expect(passaResponsavel([], "r3", porRaiz)).toBe(true);
   });
 
   it("O CASO DA GESTAO: pessoa designada so na subtarefa mantem a raiz", () => {
-    expect(passaResponsavel(ANA, "r1", porRaiz)).toBe(true);
+    expect(passaResponsavel([ANA], "r1", porRaiz)).toBe(true);
   });
 
   it("pessoa sem relacao com a raiz nao passa", () => {
-    expect(passaResponsavel(BRUNO, "r1", porRaiz)).toBe(false);
+    expect(passaResponsavel([BRUNO], "r1", porRaiz)).toBe(false);
   });
 
   it("raiz sem responsavel nenhum some quando ha filtro", () => {
-    expect(passaResponsavel(ANA, "r3", porRaiz)).toBe(false);
+    expect(passaResponsavel([ANA], "r3", porRaiz)).toBe(false);
   });
 
   it("raiz desconhecida no mapa nao quebra", () => {
-    expect(passaResponsavel(ANA, "inexistente", porRaiz)).toBe(false);
+    expect(passaResponsavel([ANA], "inexistente", porRaiz)).toBe(false);
+  });
+
+  // ---------------- multi-selecao: UNIAO (03/08/2026) ----------------
+
+  /**
+   * O TESTE QUE CARREGA A DECISAO. Com Ana e Bruno marcados, r1 (so Ana, via
+   * subtarefa) e r2 (so Bruno) passam AS DUAS. Com "E" nenhuma passaria, e o
+   * quadro ficaria vazio quando a gestao marcasse duas pessoas -- que e o
+   * momento em que ela mais espera ver coisa.
+   */
+  it("UNIAO: duas marcadas mostram as tarefas de CADA uma", () => {
+    expect(passaResponsavel([ANA, BRUNO], "r1", porRaiz)).toBe(true);
+    expect(passaResponsavel([ANA, BRUNO], "r2", porRaiz)).toBe(true);
+  });
+
+  it("UNIAO: quem nao tem nenhuma das marcadas continua fora", () => {
+    expect(passaResponsavel([ANA, BRUNO], "r3", porRaiz)).toBe(false);
+  });
+
+  it("UNIAO: uma marcada irrelevante nao arrasta a raiz", () => {
+    // r1 e da Ana. Marcar Bruno + um terceiro nao pode trazer r1.
+    expect(passaResponsavel([BRUNO, "user-clara"], "r1", porRaiz)).toBe(false);
+  });
+
+  it("id repetido na selecao nao muda nada", () => {
+    expect(passaResponsavel([ANA, ANA], "r1", porRaiz)).toBe(true);
   });
 });
 
 describe("temFiltroNovo", () => {
   it("detecta cada eixo e a combinacao", () => {
-    expect(temFiltroNovo("todos", "")).toBe(false);
-    expect(temFiltroNovo("interna", "")).toBe(true);
-    expect(temFiltroNovo("todos", ANA)).toBe(true);
-    expect(temFiltroNovo("compartilhada", ANA)).toBe(true);
+    expect(temFiltroNovo("todos", [])).toBe(false);
+    expect(temFiltroNovo("interna", [])).toBe(true);
+    expect(temFiltroNovo("todos", [ANA])).toBe(true);
+    expect(temFiltroNovo("compartilhada", [ANA])).toBe(true);
+    expect(temFiltroNovo("todos", [ANA, BRUNO])).toBe(true);
   });
 });
 
@@ -289,7 +316,7 @@ describe("contaFiltrosAtivos", () => {
     expect(contaFiltrosAtivos({ ...FILTROS_LIMPOS, prazo: "atrasadas" })).toBe(1);
     expect(contaFiltrosAtivos({ ...FILTROS_LIMPOS, subtime: "t1" })).toBe(1);
     expect(contaFiltrosAtivos({ ...FILTROS_LIMPOS, escopo: "interna" })).toBe(1);
-    expect(contaFiltrosAtivos({ ...FILTROS_LIMPOS, pessoa: "u1" })).toBe(1);
+    expect(contaFiltrosAtivos({ ...FILTROS_LIMPOS, pessoas: ["u1"] })).toBe(1);
   });
 
   it("soma quando ha varios", () => {
@@ -299,7 +326,7 @@ describe("contaFiltrosAtivos", () => {
         prazo: "em-dia",
         subtime: "t1",
         escopo: "compartilhada",
-        pessoa: "u1",
+        pessoas: ["u1"],
       })
     ).toBe(4);
   });
@@ -307,7 +334,7 @@ describe("contaFiltrosAtivos", () => {
   it("string vazia NAO conta -- e o estado 'todos' dos seletores", () => {
     // Se contasse, o badge apareceria com o quadro inteiro visivel e a pessoa
     // ficaria procurando um filtro que nao existe.
-    expect(contaFiltrosAtivos({ ...FILTROS_LIMPOS, subtime: "", pessoa: "" })).toBe(0);
+    expect(contaFiltrosAtivos({ ...FILTROS_LIMPOS, subtime: "", pessoas: [] })).toBe(0);
   });
 });
 
@@ -330,6 +357,26 @@ describe("listaFiltrosAtivos", () => {
       "Busca: landing",
     ]);
     expect(contaFiltrosAtivos({ ...FILTROS_LIMPOS, busca: "landing" })).toBe(1);
+  });
+
+  it("DUAS pessoas viram UMA pastilha, com contagem", () => {
+    // Uma pastilha por pessoa recriaria a barra lotada que o painel resolveu.
+    const nomes = {
+      pessoas: new Map([
+        ["u1", "Beatriz"],
+        ["u2", "Clara"],
+      ]),
+    };
+    expect(rotulos({ ...FILTROS_LIMPOS, pessoas: ["u1"] }, nomes)).toEqual([
+      "Respons\u00e1vel: Beatriz",
+    ]);
+    expect(
+      rotulos({ ...FILTROS_LIMPOS, pessoas: ["u1", "u2"] }, nomes),
+    ).toEqual(["Respons\u00e1veis: Beatriz +1"]);
+    // Duas pessoas = UM filtro estreitando, nao dois.
+    expect(
+      contaFiltrosAtivos({ ...FILTROS_LIMPOS, pessoas: ["u1", "u2"] }),
+    ).toBe(1);
   });
 
   it("busca so de espaco NAO vira pastilha", () => {
@@ -358,7 +405,7 @@ describe("listaFiltrosAtivos", () => {
   });
 
   it("resolve id -> nome; sem o nome, nao vaza uuid na tela", () => {
-    const f = { ...FILTROS_LIMPOS, subtime: "t1", pessoa: "u9" };
+    const f = { ...FILTROS_LIMPOS, subtime: "t1", pessoas: ["u9"] };
     expect(rotulos(f, { subtimes: new Map([["t1", "M\u00eddia Paga"]]) })).toEqual([
       "Equipe: M\u00eddia Paga",
       "Respons\u00e1vel: outra pessoa",
@@ -381,7 +428,7 @@ describe("listaFiltrosAtivos", () => {
       prazo: "em-dia" as const,
       subtime: "t1",
       escopo: "interna" as const,
-      pessoa: "u1",
+      pessoas: ["u1"],
     };
     expect(listaFiltrosAtivos(f)).toHaveLength(5);
     expect(contaFiltrosAtivos(f)).toBe(5);

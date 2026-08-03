@@ -132,7 +132,14 @@ export default function Board({
   //   escopoFiltro -- interna x compartilhada (so faz sentido no modo subtime)
   //   pessoaFiltro -- "o que a fulana esta fazendo", em qualquer quadro
   const [escopoFiltro, setEscopoFiltro] = useState<FiltroEscopo>("todos");
-  const [pessoaFiltro, setPessoaFiltro] = useState<string>("");
+  // Multi-selecao (03/08/2026): UNIAO. Marcar Beatriz e Clara mostra as
+  // tarefas de CADA uma, nao so as que as duas dividem. Regra e testes em
+  // lib/filtrosQuadro:passaResponsavel.
+  const [pessoasFiltro, setPessoasFiltro] = useState<string[]>([]);
+  const alternarPessoa = (id: string) =>
+    setPessoasFiltro((atual) =>
+      atual.includes(id) ? atual.filter((x) => x !== id) : [...atual, id]
+    );
   // Painel de filtros (29/07): recolhe prazo/subtime/origem/pessoa atras de um
   // botao. Busca e ordenacao ficam FORA -- busca e o controle mais usado, e
   // ordenacao nao esconde tarefa nenhuma (nao e filtro).
@@ -525,7 +532,7 @@ export default function Board({
     prazo,
     subtime,
     escopo: escopoFiltro,
-    pessoa: pessoaFiltro,
+    pessoas: pessoasFiltro,
     busca,
     arquivadas: mostrarArquivadas,
   };
@@ -537,7 +544,7 @@ export default function Board({
     prazo: () => setPrazo(FILTROS_LIMPOS.prazo),
     subtime: () => setSubtime(FILTROS_LIMPOS.subtime),
     escopo: () => setEscopoFiltro(FILTROS_LIMPOS.escopo),
-    pessoa: () => setPessoaFiltro(FILTROS_LIMPOS.pessoa),
+    pessoas: () => setPessoasFiltro([...FILTROS_LIMPOS.pessoas]),
     arquivadas: () => setMostrarArquivadas(FILTROS_LIMPOS.arquivadas),
   };
   function limparFiltros() {
@@ -548,7 +555,7 @@ export default function Board({
     buscaNorm !== "" ||
     prazo !== "todos" ||
     subtime !== "" ||
-    temFiltroNovo(escopoFiltro, pessoaFiltro);
+    temFiltroNovo(escopoFiltro, pessoasFiltro);
 
   // Fatia 3/4: lente de exibicao por MODO de quadro.
   //   - PROJETO (projectId): sem filtro de time (tasks sao do projeto).
@@ -646,7 +653,7 @@ export default function Board({
     // Escopo (interna x compartilhada) -- mesma classificacao da pill.
     if (!passaEscopo(escopoFiltro, escopoDaTask(t))) return false;
     // Pessoa: herda da subarvore, entao designacao em subtarefa mantem a raiz.
-    if (!passaResponsavel(pessoaFiltro, t.id, respPorRaiz)) return false;
+    if (!passaResponsavel(pessoasFiltro, t.id, respPorRaiz)) return false;
     return true;
   });
   // Ordenacao escolhida (so na sessao). Reordena as raizes pelo criterio e
@@ -799,21 +806,53 @@ export default function Board({
 
               {pessoasDoFiltro.length > 0 && (
                 <div className="field">
-                  <label className="label" htmlFor="f-pessoa">Responsável</label>
-                  <select
-                    id="f-pessoa"
-                    className="input"
-                    value={pessoaFiltro}
-                    onChange={(e) => setPessoaFiltro(e.target.value)}
-                    title="Mostra as tarefas em que a pessoa está designada, inclusive por subtarefa"
+                  <span className="label" id="f-pessoa-rotulo">
+                    Responsável
+                    {pessoasFiltro.length > 0 && ` (${pessoasFiltro.length})`}
+                  </span>
+                  {/* Lista de checkboxes, nao <select multiple>: o nativo
+                      exige ctrl+clique pra somar e desfaz a selecao inteira
+                      num clique solto -- perder o filtro por engano e o
+                      caminho mais curto pra "cade minha tarefa?". */}
+                  <div
+                    role="group"
+                    aria-labelledby="f-pessoa-rotulo"
+                    title="Mostra as tarefas em que QUALQUER uma das marcadas está designada, inclusive por subtarefa"
+                    style={{
+                      maxHeight: 168, overflowY: "auto",
+                      border: "1px solid var(--border)", borderRadius: 8,
+                      padding: "6px 8px", display: "flex",
+                      flexDirection: "column", gap: 2,
+                    }}
                   >
-                    <option value="">Todos</option>
                     {pessoasDoFiltro.map((pes) => (
-                      <option key={pes.id} value={pes.id}>
+                      <label
+                        key={pes.id}
+                        style={{
+                          display: "flex", alignItems: "center", gap: 7,
+                          fontSize: 13, padding: "3px 2px", cursor: "pointer",
+                          color: pes.inativo ? "var(--text-soft)" : undefined,
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={pessoasFiltro.includes(pes.id)}
+                          onChange={() => alternarPessoa(pes.id)}
+                        />
                         {pes.inativo ? `${pes.name} (inativo)` : pes.name}
-                      </option>
+                      </label>
                     ))}
-                  </select>
+                  </div>
+                  {pessoasFiltro.length > 0 && (
+                    <button
+                      type="button"
+                      className="btn btn-ghost"
+                      onClick={() => setPessoasFiltro([])}
+                      style={{ alignSelf: "flex-start", fontSize: 12, marginTop: 4 }}
+                    >
+                      Limpar responsáveis
+                    </button>
+                  )}
                 </div>
               )}
             </div>

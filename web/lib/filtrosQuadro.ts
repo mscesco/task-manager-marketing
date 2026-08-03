@@ -165,17 +165,26 @@ export function responsaveisPorRaiz(
 /**
  * A raiz passa no filtro por pessoa?
  *
- * `pessoaId` vazio = sem filtro. Raiz cuja subarvore inteira nao tem NENHUM
+ * ⚠️ A regra e OU (UNIAO), decidida em 03/08/2026. Com Beatriz e Clara
+ * marcadas, passa a tarefa da Beatriz, a da Clara E a das duas. O "E"
+ * (intersecao) mostraria so a ultima -- e quando a gestao marca duas pessoas
+ * a pergunta e "o que essas duas estao tocando", nao "o que elas dividem".
+ * Trocar para "E" e uma linha (`every` no lugar de `some`), mas e mudanca de
+ * PRODUTO: nao troque sem pedir.
+ *
+ * Lista vazia = sem filtro. Raiz cuja subarvore inteira nao tem NENHUM
  * responsavel some quando ha filtro -- mesma decisao ja tomada para o filtro
  * de subtime, para o resultado nao misturar "e dela" com "nao e de ninguem".
  */
 export function passaResponsavel(
-  pessoaId: string,
+  pessoaIds: readonly string[],
   raizId: string,
   porRaiz: Map<string, Set<string>>,
 ): boolean {
-  if (!pessoaId) return true;
-  return porRaiz.get(raizId)?.has(pessoaId) ?? false;
+  if (pessoaIds.length === 0) return true;
+  const doRaiz = porRaiz.get(raizId);
+  if (!doRaiz) return false;
+  return pessoaIds.some((id) => doRaiz.has(id));
 }
 
 // ====================================================================
@@ -185,9 +194,9 @@ export function passaResponsavel(
 /** Ha algum filtro desta spec ativo? Alimenta o contador "X de Y". */
 export function temFiltroNovo(
   escopo: FiltroEscopo,
-  pessoaId: string,
+  pessoaIds: readonly string[],
 ): boolean {
-  return escopo !== "todos" || pessoaId !== "";
+  return escopo !== "todos" || pessoaIds.length > 0;
 }
 
 // =====================================================================
@@ -209,7 +218,8 @@ export type EstadoFiltros = {
   prazo: "todos" | "atrasadas" | "em-dia";
   subtime: string;
   escopo: FiltroEscopo;
-  pessoa: string;
+  // Multi-selecao (03/08/2026): UNIAO. Ver passaResponsavel.
+  pessoas: readonly string[];
   // Spec 031 (C3). Os dois entraram porque MUDAM O QUE APARECE e ficavam de
   // fora da conta: com a busca preenchida o badge dizia "0", e o checkbox de
   // arquivadas nunca apareceu em lugar nenhum. Eram dois furos no antidoto.
@@ -221,7 +231,7 @@ export const FILTROS_LIMPOS: EstadoFiltros = {
   prazo: "todos",
   subtime: "",
   escopo: "todos",
-  pessoa: "",
+  pessoas: [],
   busca: "",
   arquivadas: false,
 };
@@ -299,11 +309,18 @@ export function listaFiltrosAtivos(
   if (f.escopo !== "todos") {
     chips.push({ campo: "escopo", rotulo: ROTULO_ESCOPO[f.escopo] ?? f.escopo });
   }
-  if (f.pessoa !== "") {
-    const nome = nomes.pessoas?.get(f.pessoa);
+  if (f.pessoas.length > 0) {
+    // UMA pastilha, nao uma por pessoa: com quatro marcadas a linha das
+    // pastilhas viraria a propria barra de filtros de novo -- o problema que
+    // o painel resolveu. O ✕ limpa TODAS; desmarcar uma e no painel.
+    const primeiro = nomes.pessoas?.get(f.pessoas[0]) ?? "outra pessoa";
+    const resto = f.pessoas.length - 1;
     chips.push({
-      campo: "pessoa",
-      rotulo: `Responsável: ${nome ?? "outra pessoa"}`,
+      campo: "pessoas",
+      rotulo:
+        resto === 0
+          ? `Responsável: ${primeiro}`
+          : `Responsáveis: ${primeiro} +${resto}`,
     });
   }
   if (f.arquivadas) {
