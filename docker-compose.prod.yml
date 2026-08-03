@@ -99,7 +99,7 @@ services:
       #   contentTypeNosniff    : impede o browser de adivinhar Content-Type.
       #   referrerPolicy        : nao vaza o path (que contem id de tarefa)
       #                           para dominios de terceiros.
-      - "traefik.http.middlewares.tm-sec.headers.stsSeconds=300"
+      - "traefik.http.middlewares.tm-sec.headers.stsSeconds=31536000"
       - "traefik.http.middlewares.tm-sec.headers.stsIncludeSubdomains=false"
       - "traefik.http.middlewares.tm-sec.headers.stsPreload=false"
       - "traefik.http.middlewares.tm-sec.headers.frameDeny=true"
