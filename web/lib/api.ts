@@ -710,11 +710,64 @@ type MemberListResponse = { items: Member[]; total: number };
 
 let _members: Member[] | undefined; // undefined = ainda nao buscado
 
-export async function listMembers(): Promise<Member[]> {
-  if (_members !== undefined) return _members;
-  const res = await api<MemberListResponse>("/api/v1/members");
-  _members = res.items;
-  return _members;
+// Spec 034: cache SEPARADO por tarefa. ⚠️ NAO reaproveitar `_members` aqui --
+// a lista filtrada depende da tarefa, e compartilhar a mesma entrada faria a
+// PRIMEIRA tarefa aberta na sessao definir os seletores de todas as outras. O
+// sintoma seria "as vezes o gestor aparece, as vezes nao": intermitente,
+// invisivel pros tres portoes, e caro de reproduzir.
+const _membersPorTarefa = new Map<string, Member[]>();
+
+/**
+ * Lista os membros do workspace.
+ *
+ * Sem argumento: lista completa, memoizada -- comportamento historico, usado
+ * por seis telas.
+ *
+ * Com `reachesTaskId` (Spec 034): so quem ALCANCA aquela tarefa, pela regra do
+ * backend (`user_can_view_task`, a MESMA que o POST de designacao usa). Serve
+ * os dois seletores da tela de tarefa: responsavel e `@`.
+ *
+ * ⚠️ Nao serve o modal de CRIAR: la a tarefa ainda nao existe, entao nao ha
+ * id pra perguntar. Aquele caminho segue em `lib/escopoTarefa.ts`.
+ */
+export async function listMembers(reachesTaskId?: string): Promise<Member[]> {
+  if (reachesTaskId === undefined) {
+    if (_members !== undefined) return _members;
+    const res = await api<MemberListResponse>("/api/v1/members");
+    _members = res.items;
+    return _members;
+  }
+  const emCache = _membersPorTarefa.get(reachesTaskId);
+  if (emCache !== undefined) return emCache;
+  const res = await api<MemberListResponse>(
+    `/api/v1/members?reaches_task=${encodeURIComponent(reachesTaskId)}`
+  );
+  _membersPorTarefa.set(reachesTaskId, res.items);
+  return res.items;
+}
+
+// Cache por TIME, separado dos outros dois pelo mesmo motivo (Spec 034).
+const _membersPorTime = new Map<string, Member[]>();
+
+/**
+ * Membros que enxergam as tasks de um TIME (Spec 034, Fatia 5).
+ *
+ * Serve o modal de CRIAR: a tarefa ainda nao existe, entao nao ha id pra
+ * `listMembers(taskId)`. A pergunta vira "quem enxerga este time".
+ *
+ * ⚠️ Funcao SEPARADA, e nao um segundo argumento de `listMembers`. Com dois
+ * argumentos opcionais, `listMembers(undefined, teamId)` compila e
+ * `listMembers(teamId)` tambem -- e a segunda manda um id de TIME no
+ * parametro de TAREFA, o que devolve 404 em vez de erro de tipo.
+ */
+export async function listMembersDoTime(teamId: string): Promise<Member[]> {
+  const emCache = _membersPorTime.get(teamId);
+  if (emCache !== undefined) return emCache;
+  const res = await api<MemberListResponse>(
+    `/api/v1/members?reaches_team=${encodeURIComponent(teamId)}`
+  );
+  _membersPorTime.set(teamId, res.items);
+  return res.items;
 }
 
 // ---------------------------------------------------------------
@@ -747,6 +800,11 @@ export type ResetPasswordResult = {
 // nao ficarem defasados (D8).
 export function invalidateMembers() {
   _members = undefined;
+  // ⚠️ Limpar TAMBEM o cache por tarefa (Spec 034). Desativar alguem e zerar
+  // so `_members` deixaria a pessoa viva nos seletores de toda tarefa que ja
+  // tivesse sido aberta na sessao.
+  _membersPorTarefa.clear();
+  _membersPorTime.clear();
 }
 
 // Spec 014: cadastra um membro. teamId e role sao OBRIGATORIOS -- o time pode

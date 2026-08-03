@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger
 from app.core.tenant import require_tenant
-from app.db.models import Comment, User
+from app.db.models import Comment, Task, User
 from app.modules.notifications.application.notification_emitter import (
     NotificationEmitter,
 )
@@ -95,6 +95,70 @@ class CommentService:
         dtos = [self._to_dto(c) for c in items]
         return Page(items=dtos, total=total, page=params.page, size=params.size)
 
+    async def _emitir_mencoes(
+        self,
+        *,
+        task: Task,
+        comment_id: uuid.UUID,
+        conteudo: str,
+        ja_mencionados: set[uuid.UUID] | None = None,
+    ) -> list[uuid.UUID]:
+        """Extrai, filtra e emite TASK_MENTIONED. Devolve quem foi notificado.
+
+        Extraido de `create_comment` na Spec 032 (Fatia 1) SEM mudanca de
+        comportamento, pra que `edit_comment` use a MESMA regra. Escrever a
+        logica de novo la dentro faria a criacao ganhar um filtro que a edicao
+        nao tem -- e em alguns meses ninguem saberia qual das duas esta certa.
+
+        A ordem dos tres filtros NAO muda:
+          1. `extract_mentions` -- puro, dedup preservando ordem;
+          2. usuarios REAIS do workspace -- a FK do recipient e `users`; um id
+             invalido quebraria o INSERT e, no savepoint do emitter, derrubaria
+             TODAS as mencoes do comentario;
+          3. `user_can_view_task` -- so notifica quem ENXERGA a task pela lente
+             dele. Sem isso, mencionar alguem fora do escopo gera notificacao
+             com deep-link morto (404) e vaza o titulo da task no payload.
+        Inverter 2 e 3 faria uma consulta de visibilidade com id inexistente.
+
+        `ja_mencionados` (Spec 032, D2): quem ja constava no conteudo ANTERIOR
+        nao e notificado de novo. Na criacao e None -- nao havia conteudo antes.
+
+        O emitter deduplica e exclui o autor (auto-mencao nao notifica).
+        """
+        tenant = require_tenant()
+        mencionados = extract_mentions(conteudo)
+        if ja_mencionados:
+            mencionados = [m for m in mencionados if m not in ja_mencionados]
+        if not mencionados:
+            return []
+
+        validos = set(
+            (
+                await self._session.execute(
+                    select(User.id).where(
+                        User.id.in_(mencionados),
+                        User.workspace_id == tenant.workspace_id,
+                    )
+                )
+            ).scalars().all()
+        )
+        mencionados = [m for m in mencionados if m in validos]
+        if mencionados:
+            mencionados = [
+                m
+                for m in mencionados
+                if await user_can_view_task(self._session, task=task, user_id=m)
+            ]
+        if mencionados:
+            await self._notify.mentioned(
+                recipient_ids=mencionados,
+                actor_id=tenant.user_id,
+                task_id=task.id,
+                task_title=task.title,
+                comment_id=comment_id,
+            )
+        return mencionados
+
     async def create_comment(
         self,
         *,
@@ -135,44 +199,10 @@ class CommentService:
         await self._session.flush()
 
         # --- Notificacoes (Spec 018 + 019) ---
-        # 1) Mencoes @[Nome](id) no conteudo: valida que os ids sao usuarios
-        #    REAIS do workspace (a FK do recipient e users -> um id invalido
-        #    quebraria o INSERT e, no savepoint do emitter, derrubaria TODAS as
-        #    mencoes do comentario) e emite TASK_MENTIONED. O emitter deduplica
-        #    e exclui o autor (auto-mencao nao notifica).
-        mencionados = extract_mentions(clean)
-        if mencionados:
-            validos = set(
-                (
-                    await self._session.execute(
-                        select(User.id).where(
-                            User.id.in_(mencionados),
-                            User.workspace_id == tenant.workspace_id,
-                        )
-                    )
-                ).scalars().all()
-            )
-            mencionados = [m for m in mencionados if m in validos]
-            # So notifica quem ENXERGA a task pela lente dele. Sem este filtro,
-            # mencionar alguem fora do escopo gera notificacao com deep-link
-            # morto (404) e ainda vaza o titulo da task no payload pra fora do
-            # escopo. (achado da auditoria pre-lancamento.)
-            if mencionados:
-                mencionados = [
-                    m
-                    for m in mencionados
-                    if await user_can_view_task(
-                        self._session, task=task, user_id=m
-                    )
-                ]
-            if mencionados:
-                await self._notify.mentioned(
-                    recipient_ids=mencionados,
-                    actor_id=tenant.user_id,
-                    task_id=task_id,
-                    task_title=task.title,
-                    comment_id=comment.id,
-                )
+        # 1) Mencoes: ver `_emitir_mencoes` (extraido na Spec 032, Fatia 1).
+        mencionados = await self._emitir_mencoes(
+            task=task, comment_id=comment.id, conteudo=clean
+        )
 
         # 2) Comentario: fan-out pros responsaveis E pro criador, menos o autor
         #    (emitter) e MENOS quem ja foi mencionado (D3: a mencao tem
@@ -206,18 +236,52 @@ class CommentService:
     async def edit_comment(
         self, *, task_id: uuid.UUID, comment_id: uuid.UUID, content: str
     ) -> CommentDTO:
-        """Edita o conteudo. So o autor (D2). Seta edited_at."""
+        """Edita o conteudo. So o autor (D2 da 019). Seta edited_at.
+
+        Spec 032: mencao ACRESCENTADA numa edicao notifica (D1). Ate 03/08 este
+        caminho nunca chamava `extract_mentions` -- o `@` salvava e ninguem era
+        avisado, sem erro e sem log.
+
+        NAO reemite TASK_COMMENTED (D4): ninguem precisa saber que um
+        comentario mudou de virgula.
+        """
         comment = await self._load_active(task_id=task_id, comment_id=comment_id)
         tenant = require_tenant()
         if not can_edit(author_id=comment.user_id, actor_id=tenant.user_id):
             raise AuthorizationError(
                 "So o autor edita o proprio comentario."
             )
-        comment.content = normalize_content(content)
+
+        # ⚠️ ANTES de sobrescrever `comment.content`. Ler DEPOIS da atribuicao
+        # da o conteudo NOVO nos dois lados: `antigas == novas`, o delta sai
+        # vazio, e a edicao deixa de notificar QUALQUER UM -- ou seja, o
+        # defeito de 03/08 volta inteiro, so que agora com codigo que parece
+        # certo. Medido com sabotagem em 03/08: 4 testes vermelhos.
+        # (A versao anterior deste comentario dizia "notifica todo mundo".
+        # Estava errado, e no sentido oposto -- ver Spec 032, D2.)
+        antigas = set(extract_mentions(comment.content))
+
+        clean = normalize_content(content)
+        comment.content = clean
         comment.edited_at = datetime.now(UTC)
         await self._session.flush()
 
-        logger.info("comment.edited", comment_id=str(comment_id))
+        # `edit_comment` nao carregava a task ate aqui -- `_load_active` so
+        # traz o comentario. Necessaria pro filtro de visibilidade e pro
+        # `task_title` do payload. Consulta a mais num caminho raro.
+        task = await self._tasks.get_by_id_or_raise(task_id)
+        novos = await self._emitir_mencoes(
+            task=task,
+            comment_id=comment.id,
+            conteudo=clean,
+            ja_mencionados=antigas,
+        )
+
+        logger.info(
+            "comment.edited",
+            comment_id=str(comment_id),
+            mencoes_novas=len(novos),
+        )
         return self._to_dto(comment)
 
     async def delete_comment(

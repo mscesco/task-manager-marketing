@@ -15,6 +15,7 @@ import {
   updateTask,
   listProjects,
   listMembers,
+  listMembersDoTime,
   getRootTeamId,
   ApiError,
   type Task,
@@ -30,7 +31,7 @@ import {
 } from "@/lib/teclasFormulario";
 import { motivoNaoCria } from "@/lib/criacaoTarefa";
 import { useFecharAoClicarFora } from "@/lib/useCliqueFora";
-import { foraDoEscopo, timeDaTarefaNova } from "@/lib/escopoTarefa";
+import { timeDaTarefaNova } from "@/lib/escopoTarefa";
 import Avatar from "@/components/Avatar";
 import { nomeCurto } from "@/lib/people";
 
@@ -186,15 +187,48 @@ export default function TaskModal({
   // Antes esta lista era TODO MUNDO e o comentario acima do campo dizia "o
   // backend valida escopo e recusa os invalidos com 422". Recusava mesmo --
   // depois de a pessoa escolher, escrever o resto e apertar Salvar.
-  const foraDoEscopoAqui = useMemo(
-    () =>
-      foraDoEscopo(
-        new Map(membros.map((m) => [m.id, m.team_id ?? null])),
-        timeDaTarefaNova(defaultTeamId, rootTeamId),
-        rootTeamId
-      ),
-    [membros, defaultTeamId, rootTeamId]
-  );
+  // Spec 034 (Fatia 5): quem alcanca vem do BACKEND, pela mesma regra do
+  // POST de designacao -- agora por TIME, porque a tarefa ainda nao existe.
+  //
+  // ⚠️ Ate 03/08 isto era `foraDoEscopo(...)`, que so tinha `team_id` e nunca
+  // papel. Reportado com captura: criando tarefa no quadro do subtime "CRM e
+  // Automacao", a GESTORA sumia do seletor. `timeDaTarefaNova` continua sendo
+  // quem decide QUAL time perguntar -- ela espelha o pin do `createTask`.
+  //
+  // `null` = ainda carregando (ou falhou) => nao esconde ninguem, com o 422
+  // do backend ainda de pe.
+  const timeAlvo = timeDaTarefaNova(defaultTeamId, rootTeamId);
+  const [alcancamTime, setAlcancamTime] = useState<Set<string> | null>(null);
+
+  useEffect(() => {
+    if (!open || !timeAlvo) {
+      setAlcancamTime(null);
+      return;
+    }
+    let vivo = true;
+    setAlcancamTime(null);
+    listMembersDoTime(timeAlvo)
+      .then((ms) => {
+        // Guarda de corrida: abrir o modal em quadros diferentes em sequencia
+        // pode fazer a resposta do time ANTERIOR chegar depois.
+        if (vivo) setAlcancamTime(new Set(ms.map((m) => m.id)));
+      })
+      .catch(() => {
+        if (vivo) setAlcancamTime(null);
+      });
+    return () => {
+      vivo = false;
+    };
+  }, [open, timeAlvo]);
+
+  const foraDoEscopoAqui = useMemo(() => {
+    const fora = new Set<string>();
+    if (alcancamTime === null) return fora;
+    for (const m of membros) {
+      if (!alcancamTime.has(m.id)) fora.add(m.id);
+    }
+    return fora;
+  }, [alcancamTime, membros]);
 
   const membrosFiltrados = useMemo(() => {
     const q = buscaResp.trim().toLowerCase();

@@ -97,6 +97,35 @@ def task_editable(
     return task.team_id is not None and task.team_id in editable
 
 
+_SEM_ACESSO = object()  # sentinela: nao e membro ativo do workspace
+
+
+async def _lente_do_usuario(
+    session: AsyncSession, *, user_id: uuid.UUID
+) -> frozenset[uuid.UUID] | None | object:
+    """Times que o `user_id` ENXERGA, pela lente DELE.
+
+    ⚠️ TRES retornos distintos, e confundi-los inverte a regra:
+        `_SEM_ACESSO` -> nao e membro ativo do workspace -> nao ve NADA
+        `None`        -> ADMIN -> ve TUDO (contrato de `visible_team_ids`)
+        frozenset     -> o conjunto de times
+
+    Extraido na Spec 034 (Fatia 5) porque `user_can_view_task` e
+    `user_can_view_team` precisam do MESMO carregamento. Escrever duas vezes
+    era como a regra de alcance ja tinha divergido antes (ver D2/D4).
+    """
+    tenant = require_tenant()
+    membership = await MembershipRepository(session).get_membership(
+        user_id=user_id, workspace_id=tenant.workspace_id
+    )
+    if membership is None or not membership.is_active:
+        return _SEM_ACESSO
+    target_memberships = tuple(
+        Membership(team_id=tid, role=role) for tid, role in membership.team_roles
+    )
+    return team_scope.visible_team_ids(target_memberships, tenant.team_tree)
+
+
 async def user_can_view_task(
     session: AsyncSession, *, task: Task, user_id: uuid.UUID
 ) -> bool:
@@ -106,26 +135,46 @@ async def user_can_view_task(
     (task_visible + visible_team_ids) do resto do app, so que aplicada a um
     usuario que NAO e o corrente. Usado para so notificar mencoes a quem
     realmente alcanca a task (senao o deep-link leva a 404 e o titulo da task
-    vazaria pra fora do escopo).
+    vazaria pra fora do escopo) e, desde a Spec 034, para montar a lista dos
+    seletores de responsavel e `@`.
     """
-    tenant = require_tenant()
-    membership = await MembershipRepository(session).get_membership(
-        user_id=user_id, workspace_id=tenant.workspace_id
-    )
-    if membership is None or not membership.is_active:
+    visible = await _lente_do_usuario(session, user_id=user_id)
+    if visible is _SEM_ACESSO:
         return False
-    target_memberships = tuple(
-        Membership(team_id=tid, role=role) for tid, role in membership.team_roles
-    )
-    visible = team_scope.visible_team_ids(target_memberships, tenant.team_tree)
     project = (
         await ProjectRepository(session).get_by_id(task.project_id)
         if task.project_id is not None
         else None
     )
     return task_visible(
-        task=task, project=project, viewer_user_id=user_id, visible=visible
+        task=task,
+        project=project,
+        viewer_user_id=user_id,
+        visible=visible,  # type: ignore[arg-type]
     )
+
+
+async def user_can_view_team(
+    session: AsyncSession, *, team_id: uuid.UUID, user_id: uuid.UUID
+) -> bool:
+    """Nao-lancante: o `user_id` enxerga as tasks do time `team_id`?
+
+    Spec 034, Fatia 5. Existe porque o modal de CRIAR precisa da lista de
+    responsaveis para uma tarefa que AINDA NAO EXISTE -- nao ha id pra
+    perguntar em `user_can_view_task`. Ate 03/08 esse caminho era aproximado
+    no front por `lib/escopoTarefa.ts`, que so tinha `team_id` e nunca papel;
+    o resultado, reportado com captura: criando tarefa no quadro de um
+    subtime, a GESTORA sumia do seletor.
+
+    ⚠️ NAO considera projeto. A tarefa nova ainda nao tem um. Se o modal
+    passar a escolher projeto antes de criar, esta funcao deixa de bastar.
+    """
+    visible = await _lente_do_usuario(session, user_id=user_id)
+    if visible is _SEM_ACESSO:
+        return False
+    if visible is None:
+        return True  # ADMIN enxerga tudo
+    return team_id in visible  # type: ignore[operator]
 
 
 # --------------------------------------------------------

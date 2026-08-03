@@ -9,6 +9,8 @@ Listar membros exige apenas estar autenticado.
 
 Rotas:
     GET    /members                       -- listar membros
+                                             (?reaches_task=<uuid> filtra por
+                                              quem alcanca a task -- Spec 034)
     GET    /members/{user_id}/teams        -- papeis do membro por time
     POST   /members                       -- cadastrar membro (team.manage)
     POST   /members/{user_id}/reset-password -- resetar senha (team.manage)
@@ -23,7 +25,7 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, Response, status
+from fastapi import APIRouter, Depends, Query, Response, status
 
 from app.core.deps import SessionDep, UoWDep
 from app.modules.auth.api.dependencies import (
@@ -53,10 +55,33 @@ router = APIRouter(prefix="/members", tags=["members"])
 
 @router.get("", response_model=MemberListResponse)
 async def list_members(
-    _: TenantContextDep, session: SessionDep
+    _: TenantContextDep,
+    session: SessionDep,
+    reaches_task: uuid.UUID | None = Query(
+        None,
+        description=(
+            "Filtra a lista para quem ALCANCA esta task (Spec 034). "
+            "Ausente = lista completa, comportamento historico."
+        ),
+    ),
+    reaches_team: uuid.UUID | None = Query(
+        None,
+        description=(
+            "Filtra para quem enxerga as tasks deste TIME (Spec 034, Fatia 5). "
+            "Para o modal de criar, onde a task ainda nao existe. "
+            "Mutuamente exclusivo com reaches_task (422)."
+        ),
+    ),
 ) -> MemberListResponse:
-    """Lista todos os membros ativos do workspace corrente."""
-    members = await MemberService(session).list_members()
+    """Lista todos os membros ativos do workspace corrente.
+
+    ⚠️ Sem `reaches_task` o comportamento e o de sempre. Seis telas consomem
+    esta rota (TaskModal, Board, tarefa/[id], membros, arquivadas,
+    minhas-tarefas); mexer no caminho padrao quebra as seis juntas.
+    """
+    members = await MemberService(session).list_members(
+        reaches_task_id=reaches_task, reaches_team_id=reaches_team
+    )
     return MemberListResponse(
         items=[
             MemberResponse(

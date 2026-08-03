@@ -25,6 +25,7 @@ import {
   unarchiveTask,
   deleteTask,
   listComments,
+  listMembers,
   createComment,
   editComment,
   deleteComment,
@@ -51,7 +52,6 @@ import CommentText from "@/components/CommentText";
 import MentionTextarea from "@/components/MentionTextarea";
 import { nomeCurto } from "@/lib/people";
 import { checklist } from "@/lib/subtarefas";
-import { foraDoEscopo } from "@/lib/escopoTarefa";
 import {
   acaoDoEnterNoTitulo,
   alternaResponsavel,
@@ -416,12 +416,52 @@ export default function TaskDetail({
     return () => document.removeEventListener("mousedown", onDown);
   }, [subPickerAberto]);
 
-  // Quem nao alcanca ESTA tarefa. Vazio em tarefa da raiz (todo mundo
-  // enxerga) e enquanto `rootTeamId` nao chegou. Ver `lib/escopoTarefa.ts`.
-  const foraDoEscopoAqui = useMemo(
-    () => foraDoEscopo(subtimePorMembro, task?.team_id ?? null, rootTeamId),
-    [subtimePorMembro, task?.team_id, rootTeamId]
-  );
+  // Spec 034: quem alcanca ESTA tarefa vem do BACKEND, pela mesma regra que o
+  // POST de designacao usa (`user_can_view_task`). Ate 03/08 isto era
+  // reconstruido aqui com `foraDoEscopo(subtimePorMembro, ...)`, e a regra do
+  // front so tinha `team_id` -- nunca papel. Consequencia reportada: gestor e
+  // admin sumiam do seletor de tarefa interna de subtime, embora a API
+  // aceitasse os dois.
+  //
+  // `null` = ainda carregando (ou a chamada falhou).
+  const [alcancamAqui, setAlcancamAqui] = useState<Set<string> | null>(null);
+
+  useEffect(() => {
+    const id = task?.id;
+    if (!id) {
+      setAlcancamAqui(null);
+      return;
+    }
+    let vivo = true;
+    setAlcancamAqui(null);
+    listMembers(id)
+      .then((ms) => {
+        // ⚠️ Guarda de corrida: trocar de tarefa rapido pode fazer a resposta
+        // da ANTERIOR chegar depois e pintar o seletor da atual com a lista
+        // errada. Nenhum portao pega isso.
+        if (vivo) setAlcancamAqui(new Set(ms.map((m) => m.id)));
+      })
+      .catch(() => {
+        // Falha => segue `null` => nao esconde ninguem. Mesma filosofia do
+        // `foraDoEscopo`: errar oferecendo demais devolve o comportamento
+        // anterior, com o 422 do backend ainda de pe; errar escondendo demais
+        // tira gente do trabalho sem explicar por que.
+        if (vivo) setAlcancamAqui(null);
+      });
+    return () => {
+      vivo = false;
+    };
+  }, [task?.id]);
+
+  // Quem NAO alcanca. Vazio enquanto a lista nao chegou (ver acima).
+  const foraDoEscopoAqui = useMemo(() => {
+    const fora = new Set<string>();
+    if (alcancamAqui === null) return fora;
+    for (const id of members.keys()) {
+      if (!alcancamAqui.has(id)) fora.add(id);
+    }
+    return fora;
+  }, [alcancamAqui, members]);
 
   // Nao entra no autocompletar de @: desativado (nao le mais) + fora do
   // escopo (recebe notificacao de tarefa que nao consegue abrir). Aqui NAO
@@ -1588,6 +1628,7 @@ export default function TaskDetail({
                     <LinhaComentario
                       c={c}
                       members={members}
+                      excluidos={foraDoAutocompletar}
                       me={me}
                       taskId={tid}
                       onEditado={aoEditado}
@@ -1601,6 +1642,7 @@ export default function TaskDetail({
                           <LinhaComentario
                             c={r}
                             members={members}
+                            excluidos={foraDoAutocompletar}
                             me={me}
                             taskId={tid}
                             onEditado={aoEditado}
@@ -1823,6 +1865,7 @@ export default function TaskDetail({
 function LinhaComentario({
   c,
   members,
+  excluidos,
   me,
   taskId,
   onEditado,
@@ -1830,6 +1873,17 @@ function LinhaComentario({
 }: {
   c: Comment;
   members: Map<string, { name: string }>;
+  /**
+   * Spec 032: ids que NAO entram no autocompletar de `@` da caixa de EDICAO --
+   * desativados + quem nao alcanca a tarefa. Mesmo conjunto que as caixas de
+   * criar e responder ja usavam.
+   *
+   * ⚠️ OBRIGATORIA de proposito, sem `?`. Prop opcional e onde "esqueci um
+   * chamador" vira silencio: o `tsc` aceita a ausencia e o segundo chamador
+   * (a REPLICA) sairia sem filtro nenhum, sem ninguem notar. Foi assim que
+   * C13/C14/C15 chegou em um dos quatro chamadores do TaskDetail em 31/07.
+   */
+  excluidos: Set<string>;
   me: CurrentUser | null;
   taskId: string;
   onEditado: (atualizado: Comment) => void;
@@ -1965,14 +2019,24 @@ function LinhaComentario({
 
         {editando ? (
           <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 4 }}>
-            <textarea
-              className="input"
+            {/* Spec 032: era um <textarea> cru -- digitar `@` na edicao nao
+                abria lista nenhuma. As caixas de criar e responder ja usavam
+                o MentionTextarea; esta ficou de fora.
+                ⚠️ `onChange` do MentionTextarea entrega a STRING, nao o
+                evento. Manter `(e) => setTexto(e.target.value)` compila e
+                quebra em runtime.
+                ⚠️ O token cru (`@[Nome](uuid)`) CONTINUA aparecendo aqui --
+                a caixa de criar tambem mostra, e sempre mostrou. Medido em
+                03/08; render de nome e entrega propria. */}
+            <MentionTextarea
+              value={texto}
+              onChange={setTexto}
+              members={members}
+              excluidos={excluidos}
               autoFocus
               rows={2}
-              value={texto}
               disabled={salvando}
               maxLength={5000}
-              onChange={(e) => setTexto(e.target.value)}
               style={{ resize: "vertical" }}
             />
             <div style={{ display: "flex", gap: 8 }}>

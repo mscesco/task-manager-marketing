@@ -21,13 +21,15 @@ import uuid
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger
-from app.core.tenant import Membership, require_tenant
+from app.core.tenant import require_tenant
 from app.db.models import Task
-from app.modules.auth.domain import team_scope
 from app.modules.notifications.application.notification_emitter import (
     NotificationEmitter,
 )
-from app.modules.tasks.application.task_guards import TaskScopeGuards, task_visible
+from app.modules.tasks.application.task_guards import (
+    TaskScopeGuards,
+    user_can_view_task,
+)
 from app.modules.tasks.domain.history import (
     build_assigned_entry,
     build_unassigned_entry,
@@ -38,9 +40,6 @@ from app.modules.tasks.infrastructure.collaboration_repository import (
 )
 from app.modules.tasks.infrastructure.project_repository import ProjectRepository
 from app.modules.tasks.infrastructure.task_repository import TaskRepository
-from app.modules.users.infrastructure.membership_repository import (
-    MembershipRepository,
-)
 from app.shared.exceptions.base import (
     AuthorizationError,
     ConflictError,
@@ -62,7 +61,6 @@ class CollaborationService:
         self._assignees = TaskAssignmentRepository(session)
         self._watchers = TaskWatcherRepository(session)
         self._projects = ProjectRepository(session)
-        self._members = MembershipRepository(session)
         self._guards = TaskScopeGuards(session)
         self._notify = NotificationEmitter(session)
 
@@ -312,33 +310,30 @@ class CollaborationService:
     ) -> None:
         """422 se o `user_id` alvo nao alcanca (nao enxerga) a task.
 
-        Usa a lente do ALVO (memberships dele), nao do ator. Valida tambem
-        que o alvo e usuario ativo do workspace.
+        Usa a lente do ALVO (memberships dele), nao do ator. Cobre tambem
+        alvo inexistente ou inativo no workspace.
+
+        Spec 034 (D2/D4): a regra vive em UM lugar so -- `user_can_view_task`
+        em `task_guards.py`. Ate 03/08 este metodo tinha uma copia byte a byte
+        daquele corpo (get_membership -> is_active -> team_roles ->
+        visible_team_ids -> task_visible). Duas copias de uma regra de
+        VISIBILIDADE divergem em silencio: o sintoma seria o seletor oferecer
+        alguem que o salvar recusa, que e exatamente o defeito que a 034
+        existe pra acabar. NAO reintroduzir a logica aqui -- se a regra
+        precisar mudar, ela muda em `user_can_view_task` e os tres chamadores
+        acompanham juntos.
         """
-        tenant = require_tenant()
-        membership = await self._members.get_membership(
-            user_id=user_id, workspace_id=tenant.workspace_id
-        )
-        if membership is None or not membership.is_active:
-            raise ValidationError(
-                "Usuario designado inexistente ou inativo no workspace.",
-                details={"field": "user_id"},
-            )
-        target_memberships = tuple(
-            Membership(team_id=tid, role=role)
-            for tid, role in membership.team_roles
-        )
-        visible = team_scope.visible_team_ids(target_memberships, tenant.team_tree)
-        project = (
-            await self._projects.get_by_id(task.project_id)
-            if task.project_id is not None
-            else None
-        )
-        if not task_visible(
-            task=task, project=project, viewer_user_id=user_id, visible=visible
+        if not await user_can_view_task(
+            self._session, task=task, user_id=user_id
         ):
             raise ValidationError(
-                "Usuario designado nao alcanca a task.",
+                # Mensagem UNICA de proposito. `user_can_view_task` devolve
+                # False sem distinguir "nao e membro ativo" de "nao alcanca",
+                # e as duas mensagens antigas nao eram afirmadas por nenhum
+                # teste (conferido por grep em 03/08). Recuperar a distincao
+                # exigiria uma consulta de membership so pra escolher texto --
+                # a segunda copia voltando pela porta dos fundos.
+                "Usuario designado inexistente, inativo ou sem acesso a esta task.",
                 details={"field": "user_id"},
             )
 

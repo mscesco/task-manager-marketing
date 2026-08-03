@@ -1,59 +1,18 @@
 import { describe, expect, it } from "vitest";
 
-import { foraDoEscopo, timeDaTarefaNova } from "@/lib/escopoTarefa";
+import { timeDaTarefaNova } from "@/lib/escopoTarefa";
 
 const RAIZ = "raiz";
 const SUB_A = "sub-a";
-const SUB_B = "sub-b";
 
-// ana e do subtime A, bruno do B, carla so da raiz (subtime null).
-const membros = new Map<string, string | null>([
-  ["ana", SUB_A],
-  ["bruno", SUB_B],
-  ["carla", null],
-]);
-
-describe("foraDoEscopo", () => {
-  it("tarefa da RAIZ nao esconde ninguem", () => {
-    // Designar alguem de outra area numa tarefa geral e permitido pelo
-    // backend de proposito -- todo mundo enxerga a raiz.
-    expect(foraDoEscopo(membros, RAIZ, RAIZ).size).toBe(0);
-  });
-
-  it("tarefa INTERNA de subtime esconde quem nao e do subtime", () => {
-    const fora = foraDoEscopo(membros, SUB_A, RAIZ);
-    expect(fora.has("ana")).toBe(false); // e do subtime A
-    expect(fora.has("bruno")).toBe(true); // outro subtime
-    expect(fora.has("carla")).toBe(true); // so raiz
-  });
-
-  it("subtime B esconde quem e do A", () => {
-    const fora = foraDoEscopo(membros, SUB_B, RAIZ);
-    expect([...fora].sort()).toEqual(["ana", "carla"]);
-  });
-
-  it("sem o id da raiz -> nao esconde ninguem", () => {
-    // `getRootTeamId` ainda nao respondeu. Sem saber qual e a raiz nao da
-    // pra distinguir tarefa geral de tarefa interna; esconder aqui tiraria
-    // gente do seletor por meio segundo, piscando.
-    expect(foraDoEscopo(membros, SUB_A, null).size).toBe(0);
-  });
-
-  it("tarefa sem time resolvido -> nao esconde ninguem", () => {
-    expect(foraDoEscopo(membros, null, RAIZ).size).toBe(0);
-    expect(foraDoEscopo(membros, undefined, RAIZ).size).toBe(0);
-  });
-
-  it("mapa vazio devolve conjunto vazio, nunca quebra", () => {
-    expect(foraDoEscopo(new Map(), SUB_A, RAIZ).size).toBe(0);
-  });
-
-  it("nao devolve o mesmo conjunto entre chamadas (sem estado compartilhado)", () => {
-    const a = foraDoEscopo(membros, SUB_A, RAIZ);
-    const b = foraDoEscopo(membros, SUB_B, RAIZ);
-    expect(a).not.toBe(b);
-  });
-});
+// ⚠️ Os testes de `foraDoEscopo` sairam na Spec 034 (03/08) junto com a funcao.
+// Deixar teste orfao verde de codigo que ninguem chama e pior que nao ter
+// teste: parece cobertura. A regra que eles cobriam -- quem alcanca a tarefa --
+// agora e provada contra Postgres em
+// `backend/tests/integration/test_members_reaches_task_db.py`, onde ela
+// enxerga PAPEL, coisa que este modulo nunca conseguiu.
+//
+// A queda de 301 para 289 testes e esperada e proposital.
 
 describe("timeDaTarefaNova", () => {
   it("quadro de subtime -> a tarefa nasce INTERNA daquele subtime", () => {
@@ -65,18 +24,19 @@ describe("timeDaTarefaNova", () => {
     expect(timeDaTarefaNova(undefined, RAIZ)).toBe(RAIZ);
   });
 
-  it("raiz ainda nao carregou -> null, e ai foraDoEscopo nao esconde ninguem", () => {
+  it("raiz ainda nao carregou -> null", () => {
+    // O chamador (TaskModal) trata null como "nao sei qual time perguntar" e
+    // NAO chama `listMembersDoTime`, deixando a lista sem filtro. Errar
+    // oferecendo demais devolve o comportamento anterior, com o 422 do
+    // backend ainda de pe; errar escondendo demais tira gente do trabalho.
     expect(timeDaTarefaNova(null, null)).toBe(null);
-    expect(foraDoEscopo(membros, timeDaTarefaNova(null, null), null).size).toBe(0);
+    expect(timeDaTarefaNova(undefined, null)).toBe(null);
   });
 
-  it("criando no quadro de subtime, so o subtime e oferecido", () => {
-    // O caso reportado: o seletor de CRIAR tarefa mostrava o workspace todo.
-    const fora = foraDoEscopo(membros, timeDaTarefaNova(SUB_A, RAIZ), RAIZ);
-    expect([...fora].sort()).toEqual(["bruno", "carla"]);
-  });
-
-  it("criando no quadro geral, ninguem e escondido", () => {
-    expect(foraDoEscopo(membros, timeDaTarefaNova(null, RAIZ), RAIZ).size).toBe(0);
+  it("e um CONTRATO com o pin do createTask", () => {
+    // Existe como funcao nomeada -- e nao como `a ?? b` solto no componente --
+    // porque se o pin do `createTask` mudar, o seletor passa a perguntar pelo
+    // time errado e este teste e o unico lugar que grita.
+    expect(timeDaTarefaNova(SUB_A, RAIZ)).not.toBe(RAIZ);
   });
 });

@@ -32,6 +32,12 @@ from app.modules.auth.infrastructure.security import (
     hash_password,
 )
 from app.modules.tasks.application.project_service import ProjectService
+from app.modules.tasks.application.task_guards import (
+    TaskScopeGuards,
+    user_can_view_task,
+    user_can_view_team,
+)
+from app.modules.tasks.infrastructure.task_repository import TaskRepository
 from app.modules.users.infrastructure.user_repository import UserRepository
 from app.modules.workspaces.infrastructure.team_repository import TeamRepository
 from app.shared.exceptions.base import (
@@ -240,18 +246,100 @@ class MemberService:
         )
         return ProvisionedMember(user=user, temporary_password=temporary_password)
 
-    async def list_members(self) -> list[MemberWithSubteam]:
+    async def list_members(
+        self,
+        *,
+        reaches_task_id: uuid.UUID | None = None,
+        reaches_team_id: uuid.UUID | None = None,
+    ) -> list[MemberWithSubteam]:
         """Lista os membros ativos do workspace, cada um com seu SUBTIME.
 
         Subtime = time nao-raiz; o principal nao rotula (ver
         UserRepository.list_all_with_subteam). Pelo ADR 0008, cada membro
         tem no maximo um subtime -- subteam_id e None quando nao ha.
+
+        `reaches_team_id` (Spec 034, Fatia 5): mesma pergunta para uma tarefa
+        que AINDA NAO EXISTE -- o modal de CRIAR. Sem tarefa nao ha id, entao
+        a pergunta e "quem enxerga as tasks deste time". ⚠️ Nao considera
+        projeto: a tarefa nova ainda nao tem um.
+
+        Os dois parametros sao MUTUAMENTE EXCLUSIVOS (422). Aceitar ambos
+        exigiria decidir qual vence, e a escolha silenciosa seria a errada
+        metade das vezes.
+
+        `reaches_task_id` (Spec 034): quando informado, devolve so quem
+        ALCANCA aquela task pela lente DELE. Serve os dois seletores da tela
+        de tarefa -- responsavel e `@` -- porque as duas perguntas sao a
+        mesma (D2/D4: `_assert_target_reaches_task` e `user_can_view_task`
+        eram copias, e agora sao uma).
+
+        Sem o parametro, o caminho e EXATAMENTE o de antes. Seis telas
+        consomem esta rota; qualquer mudanca no comportamento padrao quebra
+        as seis de uma vez.
+
+        ⚠️ Este filtro NAO decide se da pra DESIGNAR -- so se alcanca.
+        Designar tem uma segunda validacao (`_assert_personal_monouser`,
+        409 em projeto pessoal alheio) que segue vivendo no
+        CollaborationService. A D3 da 034 mediu que projeto pessoal nao tem
+        como ser criado pela interface (`GET /me/personal-project` existe e
+        o front nunca chama), entao expor isso aqui seria campo de API
+        defendendo zero linha.
+
+        ⚠️ Custo: uma consulta de membership POR MEMBRO. Com 24 contas e
+        aceitavel. Passando de algumas centenas, carregar os memberships em
+        lote e rodar `visible_team_ids`/`task_visible` (ambas PURAS) sobre
+        eles -- nao espalhar a regra pra ca.
+
+        Erros:
+            EntityNotFoundError -- task inexistente ou invisivel pra quem
+            pergunta (404: nao confirma existencia fora do escopo).
         """
+        if reaches_task_id is not None and reaches_team_id is not None:
+            raise ValidationError(
+                "Informe reaches_task OU reaches_team, nao os dois.",
+                details={"field": "reaches_team"},
+            )
         rows = await self._users.list_all_with_subteam()
-        return [
+        todos = [
             MemberWithSubteam(user=user, subteam_id=subteam_id)
             for user, subteam_id in rows
         ]
+        if reaches_task_id is None and reaches_team_id is None:
+            return todos
+
+        if reaches_team_id is not None:
+            alcancam_time = [
+                m
+                for m in todos
+                if await user_can_view_team(
+                    self._session, team_id=reaches_team_id, user_id=m.user.id
+                )
+            ]
+            logger.info(
+                "members.listed_for_team",
+                team_id=str(reaches_team_id),
+                total=len(todos),
+                alcancam=len(alcancam_time),
+            )
+            return alcancam_time
+
+        task = await TaskRepository(self._session).get_by_id_or_raise(
+            reaches_task_id
+        )
+        await TaskScopeGuards(self._session).assert_visible(task)
+        alcancam = []
+        for m in todos:
+            if await user_can_view_task(
+                self._session, task=task, user_id=m.user.id
+            ):
+                alcancam.append(m)
+        logger.info(
+            "members.listed_for_task",
+            task_id=str(reaches_task_id),
+            total=len(todos),
+            alcancam=len(alcancam),
+        )
+        return alcancam
 
     async def list_member_teams(
         self, *, user_id: uuid.UUID
