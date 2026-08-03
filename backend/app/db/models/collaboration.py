@@ -21,6 +21,7 @@ from sqlalchemy import (
     ForeignKeyConstraint,
     Integer,
     String,
+    Text,
     UniqueConstraint,
     func,
 )
@@ -65,7 +66,17 @@ class TaskAssignment(UUIDPrimaryKeyMixin, Base):
             ondelete="RESTRICT",
             name="task_assignment_assigned_by",
         ),
-        UniqueConstraint("task_id", "user_id", name="task_assignment_task_user"),
+        UniqueConstraint("task_id", "user_id", name="uq_assignment_task_user"),
+        # COMMENT da TABELA no schema v5 -- declarado pra o autogenerate
+        # nao propor drop_table_comment. Dict de opcoes vai por ULTIMO.
+        {
+            "comment": (
+                "PIVOT task<->users. O frontend inicialmente usa apenas 1 "
+                "responsavel por task, mas a modelagem suporta MULTIPLOS "
+                "responsaveis (N:N). Essa restricao NAO deve ser imposta no "
+                "banco: e decisao de UI, nao de schema."
+            )
+        },
     )
 
     workspace_id: Mapped[uuid.UUID] = _ws_fk()
@@ -73,6 +84,13 @@ class TaskAssignment(UUIDPrimaryKeyMixin, Base):
     user_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
     assigned_by: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
     assigned_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    # ⚠️ Coluna do baseline 0001, redundante com assigned_at (as duas
+    # nascem now()). Mapeada aqui SO pra o autogenerate parar de propor
+    # `drop_column`. Nada le este valor; remover de verdade e migration
+    # propria, com quem confirme que nenhum relatorio depende dela.
+    created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
@@ -94,12 +112,17 @@ class TaskWatcher(UUIDPrimaryKeyMixin, Base):
             ondelete="CASCADE",
             name="task_watcher_user",
         ),
-        UniqueConstraint("task_id", "user_id", name="task_watcher_task_user"),
+        UniqueConstraint("task_id", "user_id", name="uq_watcher_task_user"),
     )
 
     workspace_id: Mapped[uuid.UUID] = _ws_fk()
     task_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
     user_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    # ⚠️ Mesma historia do created_at de task_assignment: existe no banco
+    # desde 0001, ninguem le, mapeada pra evitar o drop_column.
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
 
 
 class Comment(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
@@ -107,7 +130,7 @@ class Comment(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
 
     __tablename__ = "comment"
     __table_args__ = (
-        UniqueConstraint("id", "workspace_id", name="comment_id_workspace"),
+        UniqueConstraint("id", "workspace_id", name="uq_comment_id_workspace"),
         ForeignKeyConstraint(
             ["task_id", "workspace_id"],
             ["task.id", "task.workspace_id"],
@@ -134,7 +157,7 @@ class Comment(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
     parent_comment_id: Mapped[uuid.UUID | None] = mapped_column(
         PG_UUID(as_uuid=True), nullable=True
     )
-    content: Mapped[str] = mapped_column(String, nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
     edited_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
@@ -204,7 +227,7 @@ class TimeEntry(UUIDPrimaryKeyMixin, Base):
     workspace_id: Mapped[uuid.UUID] = _ws_fk()
     task_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
     user_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
-    description: Mapped[str | None] = mapped_column(String, nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
     started_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
     )
@@ -249,7 +272,13 @@ class TaskHistory(UUIDPrimaryKeyMixin, Base):
     old_value: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     new_value: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     event_metadata: Mapped[dict | None] = mapped_column(
-        "metadata", JSONB, nullable=True
+        "metadata",
+        JSONB,
+        nullable=True,
+        comment=(
+            "Contexto do evento para sistema futuro: source, trigger, "
+            "automation, websocket, activity feed."
+        ),
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

@@ -74,12 +74,34 @@ Exceção só se o cabeçalho da própria migration mandar o contrário.
    esse lembrete.
    ```bash
    # backend (precisa do TEST_DATABASE_URL apontando pro Postgres de teste)
-   cd backend && python -m pytest -q          # esperado: 379 passed
-   # front
-   cd web && npm test && npx tsc --noEmit     # esperado: 89 passed, 0 erros
+   cd backend && python -m pytest -q          # esperado: 0 failed
+   # front — os TRÊS, nesta ordem
+   cd web && npm test && npx tsc --noEmit && npx next build   # 0 failed, 0 erros
    ```
-   > `npm test` cobre as regras puras de `web/lib/` — NÃO cobre a tela.
-   > Mudança visual continua exigindo teste manual no dev.
+   > ⚠️ **O critério é `0 failed`, não um número.** Este arquivo já ficou
+   > meses dizendo `379 passed` quando o real era 493 — e roteiro que mente
+   > treina quem faz o deploy a ignorar o portão. Se quiser conferir a ordem
+   > de grandeza: em 03/08/2026 eram **493** (backend) e **293** (front).
+   > Número absoluto MENOR que o esperado sem uma spec ter removido testes de
+   > propósito é motivo pra parar, não pra seguir.
+   >
+   > ⚠️ **Sem `TEST_DATABASE_URL` o backend dá `165 passed + 328 skipped`** e
+   > ainda assim imprime `0 failed`. Os pulados incluem TODA a regra de
+   > visibilidade. Confira a linha de `skipped` antes de aceitar o portão.
+
+   **a.2) Drift de schema.** Contra um banco em `head`:
+   ```bash
+   cd backend && alembic revision --autogenerate -m drift_check
+   # esperado: upgrade() e downgrade() so com `pass` -> APAGUE o arquivo
+   ```
+   Diff sujo = model divergiu do banco. **Não aplique**: conserte o model.
+   Até 03/08/2026 esse comando gerava 86 operações, incluindo `drop_column` e
+   33 `drop_index` — aplicar teria custado índices de produção.
+
+   > `npm test` cobre as regras puras de `web/lib/` — NÃO cobre a tela
+   > (o `include` do vitest é `lib/**`). Os três portões passam com a
+   > interface quebrada. Mudança visual continua exigindo teste manual no dev,
+   > nos DOIS temas.
 
    **b) Conferir `DATABASE_URL`** (dev e prod moram na MESMA instância),
    **`pg_dump` do banco**, e taguear as imagens atuais para ter rollback:
@@ -156,8 +178,21 @@ O primeiro login do admin força troca de senha. O bootstrap NÃO se repete.
 - **Atualizar o app:** `git pull` → `build` → `up -d` → `migrations` (se
   houver nova). Código primeiro, migration depois — mesma ordem da seção de
   Atualização. Bootstrap NÃO se repete.
-- **Rollback de imagem:** as imagens ficam tagueadas `:latest`; pra rollback
-  real, taguear por versão antes de subir (melhoria futura).
+- **Rollback de imagem: JÁ EXISTE, é o passo 0.b.** As imagens em uso ficam
+  `:latest`, e o pré-voo tagueia as anteriores como
+  `:pre-deploy-AAAAMMDD`. Para voltar, aponte o compose para a tag antiga e
+  suba:
+  ```bash
+  docker tag task-manager-api:pre-deploy-20260803 task-manager-api:latest
+  docker tag task-manager-web:pre-deploy-20260803 task-manager-web:latest
+  docker compose -f docker-compose.prod.yml up -d
+  ```
+  ⚠️ **Rollback de imagem NÃO desfaz migration.** Se o deploy aplicou uma,
+  volte o schema primeiro (`alembic downgrade`) ou restaure o `pg_dump` do
+  passo 0.b — código velho contra schema novo falha de formas silenciosas.
+  ⚠️ **Este procedimento nunca foi executado de verdade.** Procedimento de
+  emergência não testado é ficção: rode uma vez em horário calmo, como foi
+  feito com o restore de backup em 03/08.
 - **`npm audit` no `web/` acusa vulnerabilidades do Next — NÃO rode
   `npm audit fix --force`.** Ele instala `next@16` (dois majors de salto,
   breaking change). Triagem feita em 2026-07-22 contra a superfície real

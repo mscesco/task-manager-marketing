@@ -24,6 +24,7 @@ from sqlalchemy import (
     ForeignKeyConstraint,
     Index,
     String,
+    Text,
     UniqueConstraint,
     func,
     text,
@@ -45,10 +46,15 @@ class Workspace(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "workspace"
     __table_args__ = (
         CheckConstraint(f"slug ~ '{_SLUG_REGEX}'", name="workspace_slug_format"),
+        # No banco esta UNIQUE se chama `workspace_slug_key` (nome default do
+        # Postgres, herdado do baseline). Declarada explicitamente porque
+        # `unique=True` geraria `uq_workspace_slug` pela NAMING_CONVENTION --
+        # e nome divergente vira drop+create no autogenerate.
+        UniqueConstraint("slug", name="workspace_slug_key"),
     )
 
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    slug: Mapped[str] = mapped_column(String(120), nullable=False, unique=True)
+    slug: Mapped[str] = mapped_column(String(120), nullable=False)
 
 
 class Team(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -58,14 +64,14 @@ class Team(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __table_args__ = (
         # FK simples: workspace.
         # FK composta: parent_team -> (team.id, team.workspace_id).
-        UniqueConstraint("id", "workspace_id", name="team_id_workspace"),
+        UniqueConstraint("id", "workspace_id", name="uq_team_id_workspace"),
         ForeignKeyConstraint(
             ["parent_team_id", "workspace_id"],
             ["team.id", "team.workspace_id"],
             ondelete="RESTRICT",
             name="team_parent",
         ),
-        UniqueConstraint("workspace_id", "slug", name="team_workspace_slug"),
+        UniqueConstraint("workspace_id", "slug", name="uq_team_workspace_slug"),
         CheckConstraint(
             "parent_team_id IS NULL OR parent_team_id <> id",
             name="team_no_self_parent",
@@ -94,7 +100,7 @@ class Team(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     slug: Mapped[str] = mapped_column(String(120), nullable=False)
-    description: Mapped[str | None] = mapped_column(String, nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -106,8 +112,8 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     __tablename__ = "users"
     __table_args__ = (
-        UniqueConstraint("id", "workspace_id", name="users_id_workspace"),
-        UniqueConstraint("workspace_id", "email", name="users_workspace_email"),
+        UniqueConstraint("id", "workspace_id", name="uq_users_id_workspace"),
+        UniqueConstraint("workspace_id", "email", name="uq_users_workspace_email"),
     )
 
     workspace_id: Mapped[uuid.UUID] = mapped_column(
@@ -163,7 +169,7 @@ class UserTeam(UUIDPrimaryKeyMixin, Base):
             ondelete="CASCADE",
             name="user_team_team",
         ),
-        UniqueConstraint("user_id", "team_id", name="user_team_user_team"),
+        UniqueConstraint("user_id", "team_id", name="uq_userteam_user_team"),
     )
 
     workspace_id: Mapped[uuid.UUID] = mapped_column(
@@ -178,5 +184,10 @@ class UserTeam(UUIDPrimaryKeyMixin, Base):
         nullable=False,
     )
     joined_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    # ⚠️ Coluna do baseline 0001, redundante com joined_at. Mapeada so pra
+    # o autogenerate parar de propor `drop_column`. Ninguem le.
+    created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

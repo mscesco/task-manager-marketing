@@ -69,22 +69,42 @@ _UNMANAGED_NAMES = frozenset(
 
 
 def include_object(
-    obj: object, name: str | None, type_: str, *_: object
+    obj: object,
+    name: str | None,
+    type_: str,
+    reflected: bool,
+    compare_to: object | None,
 ) -> bool:
     """Filtra objetos que o Alembic NAO deve gerenciar.
 
-    A funcao task_history_immutable(), a trigger
-    task_history_no_update_delete e as extensoes ltree/pgcrypto
-    sao criadas pelo baseline 0001, nao por models ORM. Sem este
-    filtro, um autogenerate futuro (ex.: Entrega 9 / SSO) poderia
-    emitir DROP desses objetos. Retornamos False para eles.
+    Dois filtros, por motivos diferentes:
 
-    NOTA: divergencias de INDICE entre ORM e banco (indices
-    parciais, GIST, ou os duplicados herdados de 0004/0006) sao
-    um problema separado -- nao resolvido aqui. Revisar todo
-    autogenerate a mao continua obrigatorio.
+    1. NOMES do baseline 0001 sem model ORM (a funcao
+       task_history_immutable(), a trigger
+       task_history_no_update_delete, as extensoes ltree/pgcrypto).
+       Sem o filtro, um autogenerate futuro emitiria DROP neles.
+
+    2. INDICES que existem no BANCO e nao no metadata
+       (`reflected and compare_to is None`). O baseline 0001 criou
+       33 indices -- parciais (`WHERE deleted_at IS NULL`), GIST de
+       ltree, e os herdados de 0004/0006 -- que nenhum model declara.
+       Sem o filtro, todo autogenerate nascia com 33 `drop_index`.
+       Indice perdido em producao NAO da erro: da lentidao tres
+       semanas depois, sem ninguem ligar uma coisa na outra.
+
+    ⚠️ O filtro 2 corta nos DOIS sentidos: indice declarado so no
+    ORM tambem para de ser gerado. Indice novo entra por migration
+    escrita a mao, como todos os outros deste repo ja entraram.
+
+    ⚠️ Meta a defender: `alembic revision --autogenerate` contra um
+    banco em `head` tem que sair VAZIO (so `pass`). Enquanto nao
+    sair, o diff nao e revisavel -- e diff nao revisavel e aplicado
+    no escuro. Se voltar a sair sujo, o model divergiu do banco;
+    conserte o model, nao o filtro.
     """
     if name in _UNMANAGED_NAMES:
+        return False
+    if type_ == "index" and reflected and compare_to is None:
         return False
     return True
 

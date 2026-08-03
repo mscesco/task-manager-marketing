@@ -24,6 +24,7 @@ from sqlalchemy import (
     ForeignKeyConstraint,
     Integer,
     String,
+    Text,
     UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
@@ -70,7 +71,7 @@ class Project(
 
     __tablename__ = "project"
     __table_args__ = (
-        UniqueConstraint("id", "workspace_id", name="project_id_workspace"),
+        UniqueConstraint("id", "workspace_id", name="uq_project_id_workspace"),
         ForeignKeyConstraint(
             ["created_by", "workspace_id"],
             ["users.id", "users.workspace_id"],
@@ -98,7 +99,7 @@ class Project(
         nullable=False,
     )
     title: Mapped[str] = mapped_column(String(255), nullable=False)
-    description: Mapped[str] = mapped_column(String, nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[ProjectStatus] = mapped_column(
         Enum(ProjectStatus, name="project_status", create_type=False),
         nullable=False,
@@ -138,7 +139,7 @@ class Task(
 
     __tablename__ = "task"
     __table_args__ = (
-        UniqueConstraint("id", "workspace_id", name="task_id_workspace"),
+        UniqueConstraint("id", "workspace_id", name="uq_task_id_workspace"),
         ForeignKeyConstraint(
             ["project_id", "workspace_id"],
             ["project.id", "project.workspace_id"],
@@ -187,7 +188,7 @@ class Task(
         PG_UUID(as_uuid=True), nullable=True
     )
     title: Mapped[str] = mapped_column(String(255), nullable=False)
-    description: Mapped[str] = mapped_column(String, nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[TaskStatus] = mapped_column(
         Enum(TaskStatus, name="task_status", create_type=False),
         nullable=False,
@@ -201,14 +202,22 @@ class Task(
         default=PriorityLevel.MEDIUM,
     )
     position: Mapped[int] = mapped_column(
-        Integer, nullable=False, server_default="0", default=0
+        Integer,
+        nullable=False,
+        server_default="0",
+        default=0,
+        comment="Ordenacao temporaria. Futuro: fractional indexing.",
     )
     depth: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default="0", default=0
     )
     # path LTREE: NOT NULL no schema. Setado pela service de task
     # ao criar/mover a task.
-    path: Mapped[str] = mapped_column(Ltree(), nullable=False)
+    path: Mapped[str] = mapped_column(
+        Ltree(),
+        nullable=False,
+        comment="Hierarquia LTREE. Exemplo: root.child.subchild",
+    )
     start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(
@@ -217,6 +226,20 @@ class Task(
     # Spec 023: dedup do aviso de prazo. Cada coluna guarda o due_date pra qual
     # aquele aviso JA saiu. O job so notifica se difere do due_date atual --
     # se o prazo mudar, reabilita sozinho (self-healing). So o job escreve aqui.
-    due_soon_notified_for: Mapped[date | None] = mapped_column(Date, nullable=True)
-    overdue_notified_for: Mapped[date | None] = mapped_column(Date, nullable=True)
+    due_soon_notified_for: Mapped[date | None] = mapped_column(
+        Date,
+        nullable=True,
+        comment=(
+            "Spec 023: due_date pra qual o aviso de \"2 dias\" ja saiu "
+            "(dedup). Difere do due_date atual => reabilita."
+        ),
+    )
+    overdue_notified_for: Mapped[date | None] = mapped_column(
+        Date,
+        nullable=True,
+        comment=(
+            "Spec 023: due_date pra qual o aviso de atraso ja saiu "
+            "(dedup). Difere do due_date atual => reabilita."
+        ),
+    )
     created_by: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)

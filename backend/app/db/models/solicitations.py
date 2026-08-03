@@ -52,6 +52,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    func,
     text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
@@ -127,6 +128,14 @@ class Solicitation(
                 "status = 'APPROVED' AND task_created_at IS NULL"
             ),
         ),
+        # COMMENT da TABELA no schema v5 (dict de opcoes vai por ULTIMO).
+        {
+            "comment": (
+                "Spec 025: demandas do formulario publico FazAe. Uma linha "
+                "por categoria escolhida; triagem e tarefa independentes "
+                "por linha."
+            )
+        },
     )
 
     # ---------------- identificacao do solicitante ----------------
@@ -139,15 +148,34 @@ class Solicitation(
 
     # ---------------- lote (D4) ----------------
     batch_id: Mapped[uuid.UUID] = mapped_column(
-        PG_UUID(as_uuid=True), nullable=False
+        PG_UUID(as_uuid=True),
+        nullable=False,
+        comment=(
+            "Submissao do formulario. Irmas do mesmo envio compartilham; "
+            "gera o protocolo mostrado ao solicitante."
+        ),
     )
-    batch_seq: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
-    batch_total: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    # ⚠️ server_default no banco (DEFAULT 1). Sem declarar aqui, o
+    # autogenerate propoe DROP DEFAULT -- e INSERT fora do ORM (psql, n8n)
+    # passa a violar o NOT NULL.
+    batch_seq: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="1", default=1
+    )
+    batch_total: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="1", default=1
+    )
 
     # ---------------- conteudo ----------------
     category: Mapped[str] = mapped_column(String(60), nullable=False)
     summary: Mapped[str] = mapped_column(String(500), nullable=False)
-    answers: Mapped[list] = mapped_column(JSONB, nullable=False)
+    answers: Mapped[list] = mapped_column(
+        JSONB,
+        nullable=False,
+        comment=(
+            "Lista JSONB de {label, value}: pergunta/resposta como exibido "
+            "ao solicitante."
+        ),
+    )
 
     # ---------------- triagem ----------------
     status: Mapped[str] = mapped_column(
@@ -163,7 +191,23 @@ class Solicitation(
 
     # ---------------- tarefa (D9) ----------------
     task_created_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
+        DateTime(timezone=True),
+        nullable=True,
+        comment=(
+            "Autodeclarado pelo aprovador. Alimenta o filtro \"aprovadas "
+            "sem tarefa\" -- o valor esta no que fica SEM marca."
+        ),
+    )
+    # ⚠️ Override do TimestampMixin: `solicitation` e a UNICA tabela com
+    # updated_at SEM comment no banco (0005 foi escrita a mao e esqueceu).
+    # Redeclarada sem comment pra o diff do autogenerate fechar em zero.
+    # Se um dia rodar uma migration que acrescente o comment la, apague
+    # estas linhas e deixe o mixin valer.
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
     )
     task_marked_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         PG_UUID(as_uuid=True), nullable=True

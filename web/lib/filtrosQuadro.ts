@@ -34,32 +34,80 @@ export type FiltroEscopo = "todos" | "interna" | "compartilhada";
 export type Escopo = "interna" | "compartilhada";
 
 /**
+ * "indefinido" = estamos no modo subtime mas NAO da pra classificar (o
+ * projeto da tarefa nao esta no mapa, ou nao tem time). Diferente de
+ * `undefined`, que significa "fora do modo subtime, a pergunta nao existe".
+ *
+ * ⚠️ A distincao existe porque as duas situacoes exigem respostas OPOSTAS no
+ * filtro: fora do modo subtime, esconder deixaria a tela vazia sem
+ * explicacao; DENTRO dele, mostrar em "So internas" e justamente a promessa
+ * quebrada que este ajuste conserta.
+ */
+export type EscopoClassificado = Escopo | "indefinido" | undefined;
+
+/**
  * Classifica a tarefa no quadro de SUBTIME.
  *
- * O quadro de subtime e hibrido: mostra a uniao de (A) tarefas da raiz cujo
- * algum responsavel pertence ao subtime -- as "compartilhadas" -- e (B)
- * tarefas que nasceram no subtime (`team_id === subteamId`).
+ * "interna" = SO o subtime enxerga. E uma promessa de confidencialidade, nao
+ * de procedencia (decisao D1 de 03/08/2026).
+ *
+ * ⚠️ POR QUE O PROJETO MANDA. A visibilidade real esta em
+ * `task_guards.py:67-69`: quando a tarefa esta num projeto, o `team_id` DELA
+ * e IGNORADO -- quem ve o projeto ve a tarefa. Ate 03/08 esta funcao olhava
+ * `task.team_id` sempre, entao tarefa criada com time do CRM dentro de um
+ * projeto do Marketing aparecia marcada "Interna" e era visivel pelo
+ * workspace inteiro. Sete tarefas em producao nessa situacao.
+ *
+ * ⚠️ A combinacao (time do CRM + projeto do Marketing) e LEGITIMA e o backend
+ * aceita de proposito -- e alguem do CRM organizando trabalho dentro dos
+ * projetos do Marketing. O defeito era o ROTULO, nunca a combinacao.
+ *
+ * `timeDoProjeto`: project_id -> team_id do projeto. Obrigatorio de
+ * proposito: opcional aqui seria um chamador esquecido virando pill errada
+ * em silencio, e pill errada e o bug que estamos consertando.
  *
  * `undefined` fora do modo subtime (quadro geral e de projeto nao tem a
  * distincao, entao nao mostram pill nem filtro).
  */
 export function escopoDaTask(
-  task: Pick<TaskMin, "team_id">,
+  task: Pick<TaskMin, "team_id"> & { project_id: string | null },
   subteamId: string | null | undefined,
-): Escopo | undefined {
+  timeDoProjeto: ReadonlyMap<string, string | null>,
+): EscopoClassificado {
   if (!subteamId) return undefined;
+  if (task.project_id !== null) {
+    const timeDoProj = timeDoProjeto.get(task.project_id);
+    // D3 -- projeto AUSENTE do mapa (lista truncada em 1000, arquivado, ou a
+    // chamada falhou). D4 -- projeto SEM time (pessoal, ou comum sem time).
+    // Nos dois casos nao da pra prometer nada: sem pill, e fora do filtro
+    // especifico. Cair de volta em `task.team_id` aqui reintroduziria a
+    // mentira, so que intermitente -- o pior tipo, porque nao reproduz.
+    if (!timeDoProj) return "indefinido";
+    return timeDoProj === subteamId ? "interna" : "compartilhada";
+  }
+  // Avulsa: nao ha projeto, entao o time da tarefa E a lente.
   return task.team_id === subteamId ? "interna" : "compartilhada";
+}
+
+/** A pill do card so aceita escopo REAL -- "indefinido" nao desenha nada. */
+export function pillDoEscopo(escopo: EscopoClassificado): Escopo | undefined {
+  return escopo === "indefinido" ? undefined : escopo;
 }
 
 /** O escopo passa no filtro escolhido? `todos` sempre passa. */
 export function passaEscopo(
   filtro: FiltroEscopo,
-  escopo: Escopo | undefined,
+  escopo: EscopoClassificado,
 ): boolean {
   if (filtro === "todos") return true;
   // Fora do modo subtime nao ha escopo definido: um filtro especifico nao
   // pode esconder tudo, entao trata como "nao se aplica" e deixa passar.
   if (escopo === undefined) return true;
+  // ⚠️ DENTRO do modo subtime, "indefinido" e o oposto: nao sabemos se o
+  // subtime e o unico que ve, entao "So internas" NAO pode mostrar. O custo
+  // de esconder e um card a menos numa visao filtrada; o de mostrar e repetir
+  // a promessa de confidencialidade que este ajuste veio consertar.
+  if (escopo === "indefinido") return false;
   return escopo === filtro;
 }
 

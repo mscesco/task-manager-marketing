@@ -53,6 +53,15 @@ class TimestampMixin:
         server_default=func.now(),
         onupdate=func.now(),
         nullable=False,
+        # COMMENT do schema v5. Declarado aqui pra o autogenerate nao
+        # propor apagar a documentacao que esta no banco.
+        # ⚠️ `solicitation` usa este mixin e NAO tem o comment no banco
+        # (0005 foi escrita a mao e esqueceu) -- por isso o model
+        # Solicitation redeclara updated_at sem comment.
+        comment=(
+            "Nao atualiza sozinho. Setado pelo backend via "
+            "SQLAlchemy onupdate."
+        ),
     )
 
 
@@ -68,6 +77,10 @@ class SoftDeleteMixin:
         DateTime(timezone=True),
         nullable=True,
         default=None,
+        comment=(
+            "Soft delete real. NULL = ativo. Queries operacionais "
+            "filtram deleted_at IS NULL."
+        ),
     )
 
     @property
@@ -88,6 +101,10 @@ class ArchivableMixin:
         nullable=False,
         server_default="false",
         default=False,
+        comment=(
+            "Ocultacao operacional, NAO e delecao. Entidade segue "
+            "valida; archived != deleted."
+        ),
     )
 
 

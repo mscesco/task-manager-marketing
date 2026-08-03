@@ -21,6 +21,7 @@ import {
 import TaskCard from "@/components/TaskCard";
 import {
   escopoDaTask as classificaEscopo,
+  pillDoEscopo,
   passaEscopo,
   responsaveisPorRaiz,
   passaResponsavel,
@@ -71,6 +72,18 @@ export default function Board({
   // Mapa project_id -> titulo, so no quadro geral (pra tag do card).
   const [projectNames, setProjectNames] = useState<Map<string, string>>(new Map());
   const [projetosPessoais, setProjetosPessoais] = useState<Set<string>>(new Set());
+  // §8 (03/08): project_id -> team_id do projeto. Alimenta escopoDaTask, que
+  // ate entao classificava a pill por `task.team_id` -- fonte DIFERENTE da que
+  // o backend usa pra decidir visibilidade (`project.team_id`, task_guards
+  // :67-69). O dado ja vinha no payload de listAllProjects; era descartado.
+  const [timeDoProjeto, setTimeDoProjeto] = useState<Map<string, string | null>>(
+    new Map()
+  );
+  // Mesma funcao do membrosCarregados: sem esta guarda o quadro de subtime
+  // pinta as pills como "indefinido" (mapa vazio) e elas mudam sozinhas
+  // quando os projetos chegam. Vira true quando listAllProjects RESPONDE --
+  // inclusive no erro, pra nao travar a tela em "Carregando".
+  const [projetosCarregados, setProjetosCarregados] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [criando, setCriando] = useState(false);
   const [editando, setEditando] = useState<Task | null>(null);
@@ -208,8 +221,10 @@ export default function Board({
         // (inclusive pessoal, pra resolver o nome de quem ja mora la), mas o
         // seletor de "mudar projeto" nao deve OFERECER pessoal.
         setProjetosPessoais(new Set(r.items.filter((p) => p.is_personal).map((p) => p.id)));
+        setTimeDoProjeto(new Map(r.items.map((p) => [p.id, p.team_id])));
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setProjetosCarregados(true));
   }, [projectId, mostrarArquivadas, recarregarTasks]);
 
   // Subtimes sao estaveis no workspace -> busca uma vez (listSubteams e
@@ -451,6 +466,11 @@ export default function Board({
   // atrasadas. Geral e projeto nao dependem disso -> nao esperam.
   if (!projectId && subteamId && !membrosCarregados)
     return <div className="muted">Carregando tarefas…</div>;
+  // §8: o modo SUBTIME tambem depende dos PROJETOS -- a pill e o filtro de
+  // origem classificam pelo time do projeto. Sem esperar, tudo nasce
+  // "indefinido" (sem pill) e se corrige sozinho na tela um instante depois.
+  if (!projectId && subteamId && !projetosCarregados)
+    return <div className="muted">Carregando tarefas…</div>;
 
   const subCount: Record<string, number> = {};
   const subDone: Record<string, number> = {};
@@ -563,8 +583,11 @@ export default function Board({
   // Fora do modo subtime, undefined (sem pill).
   // Delega ao modulo puro: a pill do card e o filtro TEM de usar a mesma
   // regra, senao a tela mostra "interna" e o filtro "interna" a esconde.
-  const escopoDaTask = (t: Task): "compartilhada" | "interna" | undefined =>
-    classificaEscopo(t, modoSubtime ? subteamId : null);
+  const escopoDaTask = (t: Task) =>
+    classificaEscopo(t, modoSubtime ? subteamId : null, timeDoProjeto);
+  // A pill nao desenha "indefinido"; o FILTRO precisa dele (esconde em "So
+  // internas"). Por isso sao duas leituras da mesma classificacao.
+  const pillDaTask = (t: Task) => pillDoEscopo(escopoDaTask(t));
 
   // Responsaveis agregados por raiz (herda de subtarefa) -- alimenta o filtro
   // por pessoa. Mesmo desenho do subtimesPorRaiz logo acima.
@@ -912,7 +935,7 @@ export default function Board({
                     subtaskCount={subCount[t.id] ?? 0}
                     subtaskDone={subDone[t.id] ?? 0}
                     projectName={t.project_id ? projectNames.get(t.project_id) : undefined}
-                    escopo={escopoDaTask(t)}
+                    escopo={pillDaTask(t)}
                   />
                 ))}
               </Coluna>
@@ -928,7 +951,7 @@ export default function Board({
                   subtaskCount={subCount[activeTask.id] ?? 0}
                   subtaskDone={subDone[activeTask.id] ?? 0}
                   projectName={activeTask.project_id ? projectNames.get(activeTask.project_id) : undefined}
-                  escopo={escopoDaTask(activeTask)}
+                  escopo={pillDaTask(activeTask)}
                 />
               </div>
             ) : null}

@@ -15,6 +15,7 @@ import {
   contaFiltrosAtivos,
   escopoDaTask,
   FILTROS_LIMPOS,
+  pillDoEscopo,
   listaFiltrosAtivos,
   normalizarBusca,
   passaEscopo,
@@ -27,6 +28,27 @@ import {
 
 const SEO = "team-seo";
 const RAIZ = "team-raiz";
+const PROJ_SEO = "proj-do-seo";
+const PROJ_RAIZ = "proj-da-raiz";
+const PROJ_PESSOAL = "proj-pessoal";
+const PROJ_FORA_DO_MAPA = "proj-truncado";
+
+/** project_id -> team_id do projeto, como o Board monta de listAllProjects. */
+const PROJETOS = new Map<string, string | null>([
+  [PROJ_SEO, SEO],
+  [PROJ_RAIZ, RAIZ],
+  [PROJ_PESSOAL, null],
+]);
+
+/** Tarefa avulsa (sem projeto), no minimo que escopoDaTask precisa. */
+function avulsa(team_id: string | null) {
+  return { team_id, project_id: null };
+}
+
+/** Tarefa dentro de um projeto. */
+function noProjeto(team_id: string | null, project_id: string) {
+  return { team_id, project_id };
+}
 const ANA = "user-ana";
 const BRUNO = "user-bruno";
 
@@ -44,17 +66,84 @@ function t(
 }
 
 describe("escopoDaTask", () => {
-  it("nasceu no subtime -> interna", () => {
-    expect(escopoDaTask({ team_id: SEO }, SEO)).toBe("interna");
+  // ---- avulsa: o time da TAREFA e a lente (comportamento de sempre) ----
+  it("avulsa que nasceu no subtime -> interna", () => {
+    expect(escopoDaTask(avulsa(SEO), SEO, PROJETOS)).toBe("interna");
   });
 
-  it("veio da raiz -> compartilhada", () => {
-    expect(escopoDaTask({ team_id: RAIZ }, SEO)).toBe("compartilhada");
+  it("avulsa que veio da raiz -> compartilhada", () => {
+    expect(escopoDaTask(avulsa(RAIZ), SEO, PROJETOS)).toBe("compartilhada");
+  });
+
+  it("avulsa sem time -> compartilhada", () => {
+    expect(escopoDaTask(avulsa(null), SEO, PROJETOS)).toBe("compartilhada");
   });
 
   it("fora do modo subtime -> sem escopo", () => {
-    expect(escopoDaTask({ team_id: RAIZ }, null)).toBeUndefined();
-    expect(escopoDaTask({ team_id: RAIZ }, undefined)).toBeUndefined();
+    expect(escopoDaTask(avulsa(RAIZ), null, PROJETOS)).toBeUndefined();
+    expect(escopoDaTask(avulsa(RAIZ), undefined, PROJETOS)).toBeUndefined();
+  });
+
+  // ---- em projeto: o time do PROJETO manda (§8) ----
+  it("em projeto do subtime -> interna", () => {
+    expect(escopoDaTask(noProjeto(SEO, PROJ_SEO), SEO, PROJETOS)).toBe(
+      "interna",
+    );
+  });
+
+  /**
+   * ESTE e o teste que carrega o §8. As 7 tarefas encontradas em producao
+   * tinham exatamente esta forma: team_id do subtime, dentro de um projeto da
+   * raiz. Ate 03/08 vinham marcadas "Interna" -- e o workspace inteiro as via,
+   * porque quem ve o projeto ve a tarefa (task_guards.py:67-69).
+   */
+  it("time do subtime MAS projeto da raiz -> compartilhada, nao interna", () => {
+    expect(escopoDaTask(noProjeto(SEO, PROJ_RAIZ), SEO, PROJETOS)).toBe(
+      "compartilhada",
+    );
+  });
+
+  it("o team_id da tarefa nao muda nada quando ha projeto", () => {
+    // Mesmo projeto, tres times diferentes na tarefa: o rotulo nao se mexe.
+    for (const time of [SEO, RAIZ, null]) {
+      expect(escopoDaTask(noProjeto(time, PROJ_SEO), SEO, PROJETOS)).toBe(
+        "interna",
+      );
+    }
+  });
+
+  // ---- D3/D4: quando nao da pra prometer nada ----
+  it("D3 -- projeto AUSENTE do mapa -> indefinido, nunca interna", () => {
+    // Lista truncada em 1000, projeto arquivado, ou listAllProjects falhou.
+    expect(
+      escopoDaTask(noProjeto(SEO, PROJ_FORA_DO_MAPA), SEO, PROJETOS),
+    ).toBe("indefinido");
+  });
+
+  it("D3 -- mapa VAZIO nao faz nada virar interna", () => {
+    // O caso da chamada que falhou: nenhuma tarefa em projeto pode ser
+    // classificada, e nenhuma pode ser prometida como confidencial.
+    expect(escopoDaTask(noProjeto(SEO, PROJ_SEO), SEO, new Map())).toBe(
+      "indefinido",
+    );
+  });
+
+  it("D4 -- projeto SEM time -> indefinido", () => {
+    expect(escopoDaTask(noProjeto(SEO, PROJ_PESSOAL), SEO, PROJETOS)).toBe(
+      "indefinido",
+    );
+  });
+});
+
+describe("pillDoEscopo", () => {
+  it("indefinido NAO desenha pill", () => {
+    expect(pillDoEscopo("indefinido")).toBeUndefined();
+  });
+
+  it("escopo real passa direto", () => {
+    expect(pillDoEscopo("interna")).toBe("interna");
+    expect(pillDoEscopo("compartilhada")).toBe("compartilhada");
+    expect(pillDoEscopo(undefined)).toBeUndefined();
   });
 });
 
@@ -76,6 +165,16 @@ describe("passaEscopo", () => {
     // Quadro geral / de projeto nao tem a distincao. Se o filtro escondesse,
     // uma troca de aba deixaria a tela vazia sem explicacao.
     expect(passaEscopo("interna", undefined)).toBe(true);
+  });
+
+  it("indefinido e o OPOSTO de undefined: filtro especifico esconde", () => {
+    // Dentro do modo subtime, "nao sei classificar" nao pode aparecer em
+    // "So internas" -- seria repetir a promessa quebrada do §8.
+    expect(passaEscopo("interna", "indefinido")).toBe(false);
+    expect(passaEscopo("compartilhada", "indefinido")).toBe(false);
+    // Mas "Todas" continua mostrando: esconder da visao sem filtro seria
+    // sumir com a tarefa do quadro de quem a criou.
+    expect(passaEscopo("todos", "indefinido")).toBe(true);
   });
 });
 

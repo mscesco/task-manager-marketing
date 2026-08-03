@@ -41,6 +41,15 @@ class Notification(UUIDPrimaryKeyMixin, Base):
             ondelete="CASCADE",
             name="fk_notification_recipient",
         ),
+        # COMMENT da TABELA no schema v5 (dict de opcoes vai por ULTIMO).
+        {
+            "comment": (
+                "Notificacoes in-app pessoais (Spec 018). type via String; "
+                "payload JSONB com snapshot de exibicao; "
+                "task_id/comment_id/actor_id sem FK (registro historico que "
+                "sobrevive a task/comentario sumir)."
+            )
+        },
     )
 
     workspace_id: Mapped[uuid.UUID] = mapped_column(
