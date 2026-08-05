@@ -26,7 +26,9 @@ coluna nova é configuração; hoje é mudança de schema.
 
 | Fato | Onde |
 |---|---|
-| `task_status` é ENUM **nativo** com 7 valores: `BACKLOG`, `PLANNED`, `IN_PROGRESS`, `IN_REVIEW`, `BLOCKED`, `COMPLETED`, `CANCELLED` | `db/models/enums.py` |
+| `task_status` é ENUM **nativo** com **8** valores: `BACKLOG`, `PLANNED`, `IN_PROGRESS`, `IN_REVIEW`, `EXTERNAL_APPROVAL`, `BLOCKED`, `COMPLETED`, `CANCELLED` | `db/models/enums.py` |
+| `EXTERNAL_APPROVAL` entrou pela Spec 026, via `ALTER TYPE ADD VALUE` — **sem downgrade** (Postgres não remove valor de enum) | `0006_external_approval_status` |
+| A cor da coluna é **token de tema** (`var(--status-*-dot)`), não hex — Spec 031 C1a | `web/lib/status.ts` |
 | 39 referências a `TaskStatus`/`task_status` em 9 arquivos do backend | grep |
 | 104 referências a nomes de status em 16 arquivos do front | grep |
 | Apenas **11** perguntam pela semântica (`COMPLETED`/`CANCELLED`) | grep |
@@ -160,15 +162,32 @@ reinicia mais. É correção, não regressão.
 O quadro migrado nasce com uma coluna por status existente, **com os nomes de
 hoje e na ordem de hoje**, mapeadas assim:
 
+⚠️ **São OITO, e os rótulos são os que a tela já mostra hoje** (`web/lib/status.ts`).
+Inventar rótulo novo aqui mudaria a tela no dia do deploy, que é o oposto do
+que esta migração existe para fazer.
+
 | status | nome da coluna | semântica | flags |
 |---|---|---|---|
-| `BACKLOG` | Backlog | `ABERTA` | `is_destino` |
-| `PLANNED` | Planejada | `ABERTA` | |
-| `IN_PROGRESS` | Em andamento | `EM_ANDAMENTO` | `is_destino` |
-| `IN_REVIEW` | Em revisão | `EM_ANDAMENTO` | |
-| `BLOCKED` | Bloqueada | `EM_ANDAMENTO` | `avisa_prazo = false` |
-| `COMPLETED` | Concluída | `CONCLUIDA` | `is_destino` |
-| `CANCELLED` | Cancelada | `CANCELADA` | `is_destino` |
+| `BACKLOG` | Backlog | `OPEN` | `is_default_target` |
+| `PLANNED` | Planejado | `OPEN` | |
+| `IN_PROGRESS` | Em Andamento | `IN_PROGRESS` | `is_default_target` |
+| `IN_REVIEW` | Aprovação Interna | `IN_PROGRESS` | |
+| `EXTERNAL_APPROVAL` | Aprovação Externa | `IN_PROGRESS` | |
+| `BLOCKED` | Bloqueado | `IN_PROGRESS` | `notify_deadline = false` |
+| `COMPLETED` | Concluído | `DONE` | `is_default_target` |
+| `CANCELLED` | Cancelado | `CANCELLED` | `is_default_target` |
+
+⚠️ **Nomes de coluna e de enum em INGLÊS, valores de rótulo em português.**
+A spec original escrevia a semântica como `ABERTA/EM_ANDAMENTO/...`; o schema
+v5 inteiro usa identificadores em inglês (`is_archived`, `completed_at`,
+`task_status`), e um enum em português no meio deles é uma pedra no sapato de
+quem ler daqui a um ano. O que a pessoa vê continua em português, porque vem
+da coluna `name`.
+
+⚠️ **`color` guarda o TOKEN, não hex.** A Spec 031 (C1a) tirou os hex fixos
+justamente porque não invertiam no tema escuro. As colunas migradas levam
+`var(--status-backlog-dot)` e companhia; coluna criada à mão no futuro pode
+levar hex. O campo é string livre e o front já resolve os dois.
 
 ⚠️ **Quadro NOVO nasce com três** (A fazer / Fazendo / Feito) — isso é a spec
 seguinte. Migrar para três empurraria sete colunas de tarefas reais em três no

@@ -48,6 +48,25 @@ class TaskStatus(StrEnum):
     CANCELLED = "CANCELLED"
 
 
+class ColumnSemantic(StrEnum):
+    """O que uma COLUNA de quadro significa (Spec 035, ADR 0030).
+
+    ⚠️ Existe porque quatro subsistemas dependem do SIGNIFICADO do status, e
+    nao do rotulo: a cascata de conclusao, a varredura de arquivamento, a
+    proporcao da checklist e o aviso de prazo. Com coluna configuravel, o
+    rotulo deixa de ser confiavel -- a semantica e o que sobra pra eles
+    perguntarem.
+
+    ⚠️ DONE e CANCELLED sao os dois TERMINAIS, e nao sao intercambiaveis: a
+    proporcao da checklist conta concluidas e ignora canceladas.
+    """
+
+    OPEN = "OPEN"
+    IN_PROGRESS = "IN_PROGRESS"
+    DONE = "DONE"
+    CANCELLED = "CANCELLED"
+
+
 class PriorityLevel(StrEnum):
     LOW = "LOW"
     MEDIUM = "MEDIUM"

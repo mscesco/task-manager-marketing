@@ -168,6 +168,24 @@ class Task(
             "parent_task_id IS NULL OR parent_task_id <> id",
             name="task_no_self_parent",
         ),
+        # Spec 035: tenancy do quadro, no mesmo formato dos outros.
+        ForeignKeyConstraint(
+            ["board_id", "workspace_id"],
+            ["board.id", "board.workspace_id"],
+            ondelete="RESTRICT",
+            name="task_board",
+        ),
+        # ⚠️ A FK COMPOSTA E O PONTO, nao detalhe: ela torna impossivel NO
+        # BANCO que uma tarefa aponte pra coluna de OUTRO quadro. Sem ela esse
+        # estado e questao de tempo, nao aparece na tela, e entra na mesma
+        # familia de `path`/`depth` -- corrupcao sem sintoma e sem conserto
+        # por deploy.
+        ForeignKeyConstraint(
+            ["column_id", "board_id"],
+            ["board_column.id", "board_column.board_id"],
+            ondelete="RESTRICT",
+            name="task_board_column",
+        ),
         CheckConstraint("depth >= 0", name="task_depth_non_negative"),
         CheckConstraint("position >= 0", name="task_position_non_negative"),
     )
@@ -186,6 +204,35 @@ class Task(
     )
     team_id: Mapped[uuid.UUID | None] = mapped_column(
         PG_UUID(as_uuid=True), nullable=True
+    )
+    # Spec 035. NULLABLE nesta migration, NOT NULL na proxima -- criar ja
+    # obrigatorio quebraria em qualquer banco com dados, inclusive no dump de
+    # producao que a suite usa.
+    board_id: Mapped[uuid.UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True), nullable=True
+    )
+    column_id: Mapped[uuid.UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True), nullable=True
+    )
+    # ⚠️ RELOGIO DO ARQUIVAMENTO (Spec 035, D6). Gravado quando a tarefa ENTRA
+    # numa coluna terminal, limpo quando sai. Nao e refatoracao: quando a
+    # semantica de uma coluna puder ser editada, marcar "Aprovacao" como
+    # terminal numa terca a tarde faria o job arquivar de madrugada tudo que
+    # esta parado ali ha mais de 20 dias -- de uma vez, sem aviso. E o formato
+    # do incidente das 177 emissoes. Com esta coluna, mudar a semantica grava
+    # `now()` e o relogio recomeca.
+    terminal_since: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        # ⚠️ O COMMENT esta no BANCO (migration 0008) e por isso precisa ser
+        # DECLARADO aqui, palavra por palavra -- senao o autogenerate propoe
+        # apagar a documentacao a cada rodada e o portao de drift nunca fecha.
+        comment=(
+            "Spec 035: quando a tarefa ENTROU em coluna terminal. Relogio "
+            "do arquivamento automatico -- editar a semantica de uma coluna "
+            "passa a reiniciar a contagem em vez de arquivar tudo na "
+            "madrugada seguinte."
+        ),
     )
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)

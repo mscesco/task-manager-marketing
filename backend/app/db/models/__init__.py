@@ -9,6 +9,7 @@ Sempre que um novo model for criado, adicione-o aqui.
 
 from __future__ import annotations
 
+from app.db.models.boards import Board, BoardColumn
 from app.db.models.collaboration import (
     Attachment,
     Comment,
@@ -18,6 +19,7 @@ from app.db.models.collaboration import (
     TimeEntry,
 )
 from app.db.models.enums import (
+    ColumnSemantic,
     PriorityLevel,
     ProjectStatus,
     TaskStatus,
@@ -37,6 +39,9 @@ __all__ = [
     # Operacional
     "Project",
     "Task",
+    # Quadro (Spec 035)
+    "Board",
+    "BoardColumn",
     # Colaboracao / tempo / auditoria
     "TaskAssignment",
     "TaskWatcher",
@@ -53,4 +58,5 @@ __all__ = [
     "ProjectStatus",
     "TaskStatus",
     "PriorityLevel",
+    "ColumnSemantic",
 ]
