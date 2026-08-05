@@ -615,6 +615,68 @@ export type TaskCreateInput = {
   team_id?: string | null;
 };
 
+/**
+ * Spec 033. ⚠️ NAO TEM CAMPO DE DATA, e isso e a D5 defendida no cliente.
+ * A copia nasce sem prazo; um `due_date` aqui e a copia de uma campanha de
+ * marco nasce vencida e o job dispara TASK_OVERDUE em lote.
+ * ⚠️ NAO TEM CAMPO DE STATUS: copia nasce BACKLOG, sempre.
+ */
+export type TaskDuplicateInput = {
+  title: string;
+  description?: string;
+  priority?: string;
+  project_id?: string | null;
+  parent_task_id?: string | null;
+  team_id?: string | null;
+  /** Responsaveis do PAI, ja revisados no modal. */
+  assignee_ids?: string[];
+  include_subtasks?: boolean;
+  /** D13: controla SO os responsaveis das SUBTAREFAS. Default true. */
+  include_assignees?: boolean;
+};
+
+export type TaskDuplicateResult = Task & {
+  /**
+   * D9-c: responsaveis de SUBTAREFA descartados por nao alcancarem mais a
+   * task. Vazio e o normal. Nao vazio = alguma subtarefa nasceu sem
+   * responsavel, e a tela avisa.
+   */
+  skipped_assignees: string[];
+  /**
+   * True = a copia virou tarefa de TOPO porque a irma que ela seria nasceria
+   * dentro de um pai ARQUIVADO -- e o quadro so desenha raiz (Board.tsx:580),
+   * entao ela existiria sem nenhuma tela pra mostra-la. A tela AVISA.
+   */
+  promoted_to_root: boolean;
+};
+
+export async function duplicateTask(
+  taskId: string,
+  input: TaskDuplicateInput
+): Promise<TaskDuplicateResult> {
+  // ⚠️ Sem o pin na raiz do `createTask`: aqui o time vem do modal (que
+  // herdou o da origem) ou fica ausente pro backend resolver pela
+  // precedencia normal. Chamar `getRootTeamId()` aqui jogaria toda copia
+  // feita num quadro de subtime para a raiz.
+  return api<TaskDuplicateResult>(
+    `/api/v1/tasks/${encodeURIComponent(taskId)}/duplicate`,
+    {
+      method: "POST",
+      body: {
+        title: input.title,
+        description: input.description ?? "",
+        priority: input.priority,
+        project_id: input.project_id ?? null,
+        parent_task_id: input.parent_task_id ?? null,
+        team_id: input.team_id ?? null,
+        assignee_ids: input.assignee_ids ?? [],
+        include_subtasks: input.include_subtasks ?? false,
+        include_assignees: input.include_assignees ?? true,
+      },
+    }
+  );
+}
+
 export async function createTask(input: TaskCreateInput): Promise<Task> {
   // Fatia 5: se o chamador deu um team_id explicito (quadro de subtime),
   // usa ele; senao mantem o pin na raiz (ADR 0001, comportamento atual).

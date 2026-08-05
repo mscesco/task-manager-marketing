@@ -12,6 +12,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
 import { X } from "lucide-react";
 import {
   createTask,
+  duplicateTask,
   updateTask,
   listProjects,
   listMembers,
@@ -30,6 +31,11 @@ import {
   primeiroSelecionavel,
 } from "@/lib/teclasFormulario";
 import { motivoNaoCria } from "@/lib/criacaoTarefa";
+import {
+  avisoSemResponsaveis,
+  rotuloCaixaSubtarefas,
+  valoresIniciaisDaCopia,
+} from "@/lib/duplicacaoTarefa";
 import { useFecharAoClicarFora } from "@/lib/useCliqueFora";
 import { timeDaTarefaNova } from "@/lib/escopoTarefa";
 import Avatar from "@/components/Avatar";
@@ -64,6 +70,8 @@ export default function TaskModal({
   onSaved,
   defaultProjectId = null,
   defaultTeamId = null,
+  duplicarDe = null,
+  filhosDaOrigem = [],
 }: {
   open: boolean;
   task?: Task | null; // presente => modo editar
@@ -73,8 +81,15 @@ export default function TaskModal({
   // Fatia 5: time da task de topo. So o quadro de SUBTIME passa (o id do
   // subtime) -> task nasce interna. Null nos demais -> pin na raiz.
   defaultTeamId?: string | null;
+  // Spec 033: presente => modo DUPLICAR. Mutuamente exclusivo com `task`
+  // (nao se duplica editando). O modal abre pre-preenchido a partir daqui.
+  duplicarDe?: Task | null;
+  // Filhas DIRETAS da origem, pra contar o rotulo da caixa (D7). Vem do
+  // chamador porque quem tem a arvore e o quadro, nao o modal.
+  filhosDaOrigem?: Task[];
 }) {
   const editando = !!task;
+  const duplicando = !editando && !!duplicarDe;
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -90,7 +105,11 @@ export default function TaskModal({
   // pra criar uma task com team_id=subtime E project_id=projeto-da-raiz (o
   // backend aceita, pois o subtime e descendente da raiz), e essa task sumia
   // do quadro geral e aparecia so no projeto + como "Interna" no subtime.
-  const mostrarSeletorProjeto = !editando && !defaultProjectId && !defaultTeamId;
+  // ⚠️ Ao DUPLICAR o seletor some: a cópia herda o projeto da origem
+  // (critério 8 -- cópia de subtarefa nasce irmã, e irmã fora do projeto
+  // do pai é combinação que o backend recusa).
+  const mostrarSeletorProjeto =
+    !editando && !duplicando && !defaultProjectId && !defaultTeamId;
   const [projetos, setProjetos] = useState<Project[]>([]);
   const [projetoSel, setProjetoSel] = useState(""); // "" => avulsa
 
@@ -103,6 +122,12 @@ export default function TaskModal({
   const [assigneeIds, setAssigneeIds] = useState<string[]>([]);
   const [invalidIds, setInvalidIds] = useState<Set<string>>(new Set());
   // Picker com busca (popover): abre/fecha, termo, e ref pra clique-fora.
+  // Spec 033: as duas caixas. `levarSubtarefas` = D7; `levarResponsaveis` =
+  // D13, e manda SO nas subtarefas -- os do pai estao no campo acima, que a
+  // pessoa edita direto.
+  const [levarSubtarefas, setLevarSubtarefas] = useState(true);
+  const [levarResponsaveis, setLevarResponsaveis] = useState(true);
+  const [aviso, setAviso] = useState<string | null>(null);
   const [abertoResp, setAbertoResp] = useState(false);
   const [buscaResp, setBuscaResp] = useState("");
   const respWrapRef = useRef<HTMLDivElement>(null);
@@ -121,6 +146,9 @@ export default function TaskModal({
     setAbertoResp(false);
     setBuscaResp("");
     setErro(null);
+    setLevarSubtarefas(true);
+    setLevarResponsaveis(true);
+    setAviso(null);
   }, [open, task]);
 
   // Carrega projetos comuns pro seletor (so quando ele aparece).
@@ -221,6 +249,14 @@ export default function TaskModal({
     };
   }, [open, timeAlvo]);
 
+  // Spec 033 (D9): inativo tambem nao pode entrar no pre-preenchimento --
+  // `assign_many_or_fail` recusa inativo do mesmo jeito que recusa quem nao
+  // alcanca, e o 422 sai igual.
+  const membrosInativosDaqui = useMemo(
+    () => new Set(membros.filter((m) => !m.is_active).map((m) => m.id)),
+    [membros]
+  );
+
   const foraDoEscopoAqui = useMemo(() => {
     const fora = new Set<string>();
     if (alcancamTime === null) return fora;
@@ -229,6 +265,39 @@ export default function TaskModal({
     }
     return fora;
   }, [alcancamTime, membros]);
+
+  // Spec 033 -- pre-preenchimento do modo DUPLICAR.
+  //
+  // ⚠️ EFEITO SEPARADO, e depende de `foraDoEscopoAqui`, que so fica pronto
+  // quando `listMembersDoTime` responde. Juntar isto ao efeito acima faria o
+  // pre-preenchimento rodar com o conjunto de excluidos AINDA VAZIO: um
+  // responsavel sem alcance entraria marcado, e a pessoa levaria um 422 no
+  // salvar nomeando alguem que ela talvez nem conheca (D9).
+  useEffect(() => {
+    if (!open || !duplicarDe) return;
+    const v = valoresIniciaisDaCopia(
+      {
+        title: duplicarDe.title,
+        description: duplicarDe.description ?? "",
+        priority: duplicarDe.priority,
+        assignee_ids: duplicarDe.assignee_ids ?? [],
+      },
+      new Set([...membrosInativosDaqui, ...foraDoEscopoAqui]),
+      filhosDaOrigem.map((f) => ({ is_archived: f.is_archived }))
+    );
+    setTitle(v.title);
+    setDescription(v.description);
+    setPriority(v.priority);
+    // D5: as duas datas ficam vazias. Ver lib/duplicacaoTarefa.
+    setDueDate(v.dueDate);
+    setAssigneeIds(v.assigneeIds);
+  }, [
+    open,
+    duplicarDe,
+    foraDoEscopoAqui,
+    membrosInativosDaqui,
+    filhosDaOrigem,
+  ]);
 
   const membrosFiltrados = useMemo(() => {
     const q = buscaResp.trim().toLowerCase();
@@ -239,6 +308,25 @@ export default function TaskModal({
       .filter((m) => (q ? m.name.toLowerCase().includes(q) : true))
       .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
   }, [membros, buscaResp, foraDoEscopoAqui, assigneeIds]);
+
+  // Spec 033 (D14): o aviso e recalculado a cada mudanca das caixas.
+  const subtarefasVivas = useMemo(
+    () => filhosDaOrigem.filter((f) => !f.is_archived).length,
+    [filhosDaOrigem]
+  );
+  useEffect(() => {
+    if (!duplicando) {
+      setAviso(null);
+      return;
+    }
+    setAviso(
+      avisoSemResponsaveis(
+        levarSubtarefas,
+        levarResponsaveis,
+        subtarefasVivas
+      )
+    );
+  }, [duplicando, levarSubtarefas, levarResponsaveis, subtarefasVivas]);
 
   // ⚠️ ANTES do `if (!open)`: hook nao pode ficar depois de return
   // condicional. `fechar` e declaracao de funcao, entao ja esta no escopo.
@@ -315,6 +403,55 @@ export default function TaskModal({
           return;
         }
         saved = await updateTask(task.id, diff);
+      } else if (duplicando && duplicarDe) {
+        // ⚠️ `duplicateTask`, nao `createTask`: a subarvore inteira precisa
+        // nascer na MESMA transacao do backend (criterio 10). Criar o pai
+        // aqui e depois criar as filhas em chamadas separadas devolveria
+        // "meia arvore no quadro" a cada falha de rede.
+        //
+        // ⚠️ Sem `due_date` no payload, de proposito (D5) -- o campo nem
+        // aparece no modo copia.
+        const copia = await duplicateTask(duplicarDe.id, {
+          title: t,
+          description: description.trim(),
+          priority,
+          project_id: duplicarDe.project_id,
+          // D3: copia de subtarefa nasce IRMA, sob o mesmo pai.
+          parent_task_id: duplicarDe.parent_task_id,
+          team_id: duplicarDe.team_id,
+          assignee_ids: assigneeIds,
+          include_subtasks: levarSubtarefas,
+          include_assignees: levarResponsaveis,
+        });
+        // ⚠️ UM alerta só, com tudo que a pessoa precisa saber. Dois alertas
+        // seguidos fazem qualquer um clicar OK no segundo sem ler.
+        //
+        // Nenhum dos dois avisos é erro: a cópia JÁ existe. Segurar o modal
+        // aberto aqui faria a pessoa clicar de novo e duplicar duas vezes.
+        const avisos: string[] = [];
+        if (copia.promoted_to_root) {
+          // A cópia seria irmã dentro de um pai arquivado, e o quadro só
+          // desenha raiz -- ela nasceria invisível. Promover em silêncio
+          // mudaria a hierarquia pelas costas de quem clicou.
+          avisos.push(
+            "A cópia foi criada como tarefa de topo, porque a original " +
+              "estava dentro de uma tarefa arquivada."
+          );
+        }
+        if (copia.skipped_assignees?.length) {
+          // D9-c.
+          const nomes = copia.skipped_assignees
+            .map((id) => membros.find((m) => m.id === id)?.name ?? "alguém")
+            .join(", ");
+          avisos.push(
+            "Estas pessoas não foram levadas para as subtarefas porque não " +
+              `alcançam mais a tarefa: ${nomes}.`
+          );
+        }
+        if (avisos.length) {
+          window.alert(`Cópia criada. ${avisos.join(" ")}`);
+        }
+        saved = copia;
       } else {
         saved = await createTask({
           title: t,
@@ -389,7 +526,11 @@ export default function TaskModal({
       >
         <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
           <h2 style={{ margin: 0, fontSize: 18, letterSpacing: "-0.02em" }}>
-            {editando ? "Editar tarefa" : "Nova tarefa"}
+            {editando
+              ? "Editar tarefa"
+              : duplicando
+                ? "Duplicar tarefa"
+                : "Nova tarefa"}
           </h2>
           <button
             type="button" className="btn btn-ghost" onClick={fechar}
@@ -434,15 +575,23 @@ export default function TaskModal({
               ))}
             </select>
           </div>
-          <div className="field" style={{ flex: 1 }}>
-            <label className="label" htmlFor="t-due">
-              Prazo <span className="muted" style={{ fontWeight: 400 }}>(opcional)</span>
-            </label>
-            <input
-              id="t-due" className="input" type="date" value={dueDate}
-              onChange={(e) => setDueDate(e.target.value)}
-            />
-          </div>
+          {/* ⚠️ D5: no modo COPIA o campo de prazo NAO aparece.
+              Esconder e mais forte que abrir vazio -- vazio convida a
+              preencher com a data da origem, e cópia com data velha nasce
+              vencida: o job de prazo dispara TASK_OVERDUE para todas na
+              primeira execução (51 numa única execução em 01/08). A pessoa
+              define o prazo depois, na tarefa criada. */}
+          {!duplicando && (
+            <div className="field" style={{ flex: 1 }}>
+              <label className="label" htmlFor="t-due">
+                Prazo <span className="muted" style={{ fontWeight: 400 }}>(opcional)</span>
+              </label>
+              <input
+                id="t-due" className="input" type="date" value={dueDate}
+                onChange={(e) => setDueDate(e.target.value)}
+              />
+            </div>
+          )}
         </div>
 
         {mostrarSeletorProjeto && (
@@ -632,6 +781,71 @@ export default function TaskModal({
           </div>
         )}
 
+        {duplicando && (
+          <div
+            className="field"
+            style={{
+              gap: 6,
+              border: "1px solid var(--border)",
+              borderRadius: 8,
+              padding: "10px 12px",
+            }}
+          >
+            {/* Critério 16: sem filha viva, a caixa não aparece -- oferecer
+                "levar 0 subtarefas" é ruído. */}
+            {rotuloCaixaSubtarefas(subtarefasVivas) !== null && (
+              <>
+                <label
+                  style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13.5 }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={levarSubtarefas}
+                    disabled={saving}
+                    onChange={(e) => setLevarSubtarefas(e.target.checked)}
+                  />
+                  {rotuloCaixaSubtarefas(subtarefasVivas)}
+                </label>
+
+                {/* D13: esta caixa manda SÓ nas subtarefas. Os responsáveis
+                    do pai estão no campo acima, editáveis um a um -- uma
+                    caixa para eles duplicaria um controle que já existe. */}
+                <label
+                  style={{
+                    display: "flex", alignItems: "center", gap: 8,
+                    fontSize: 13.5, marginLeft: 22,
+                    opacity: levarSubtarefas ? 1 : 0.5,
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={levarResponsaveis}
+                    disabled={saving || !levarSubtarefas}
+                    onChange={(e) => setLevarResponsaveis(e.target.checked)}
+                  />
+                  Levar os responsáveis das subtarefas
+                </label>
+              </>
+            )}
+
+            {/* ⚠️ D14: este aviso é a ÚNICA proteção contra o passivo que a
+                regra de 29/07 combate (44 das 50 tarefas ativas sem
+                responsável eram subtarefas). Não remova sem remover a caixa. */}
+            {aviso && (
+              <p
+                className="muted"
+                style={{ margin: "2px 0 0 22px", fontSize: 12.5, color: "var(--warn, var(--text-soft))" }}
+              >
+                ⚠️ {aviso}
+              </p>
+            )}
+
+            <p className="muted" style={{ margin: "4px 0 0", fontSize: 12.5 }}>
+              A cópia nasce em <strong>Backlog</strong> e <strong>sem prazo</strong>.
+            </p>
+          </div>
+        )}
+
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 4 }}>
           <button type="button" className="btn btn-ghost" onClick={fechar} disabled={saving}>
             Cancelar
@@ -642,7 +856,13 @@ export default function TaskModal({
           disabled={saving || !podeSalvar}
           title={motivoBloqueio ?? undefined}
         >
-            {saving ? "Salvando…" : editando ? "Salvar" : "Criar tarefa"}
+            {saving
+              ? "Salvando…"
+              : editando
+                ? "Salvar"
+                : duplicando
+                  ? "Duplicar"
+                  : "Criar tarefa"}
           </button>
         </div>
       </form>

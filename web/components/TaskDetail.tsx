@@ -114,6 +114,7 @@ export default function TaskDetail({
   onVoltar,
   onClose,
   onEditar,
+  onDuplicar,
   onAssigneesChange,
   onAbrirSubtarefa,
   onSubtaskUpsert,
@@ -135,6 +136,11 @@ export default function TaskDetail({
   onVoltar: () => void;
   onClose: () => void;
   onEditar: (task: Task) => void;
+  // Spec 033. ⚠️ OBRIGATORIA, pelo mesmo motivo das tres props abaixo: o
+  // TaskDetail tem QUATRO chamadores, e prop opcional e onde "esqueci um
+  // chamador" vira silencio -- o botao simplesmente nao apareceria em tres
+  // telas e nenhum portao reclamaria. `tsc` faz a pergunta.
+  onDuplicar: (task: Task) => void;
   onAssigneesChange: (taskId: string, userIds: string[]) => void;
   onAbrirSubtarefa: (sub: Task) => void;
   onSubtaskUpsert: (sub: Task) => void; // criar OU concluir rapido
@@ -1849,6 +1855,19 @@ export default function TaskDetail({
               Excluir
             </button>
           )}
+          {/* Spec 033. Exige `task.create`: duplicar E criar. Sem a checagem,
+              quem so pode comentar veria o botao e levaria 403 no salvar. */}
+          {(me?.permissions.includes("task.create") ?? false) &&
+            !confirmandoExcluir && (
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={() => onDuplicar(task)}
+                title="Criar uma cópia desta tarefa"
+              >
+                Duplicar
+              </button>
+            )}
           <button type="button" className="btn btn-primary" onClick={() => onEditar(task)}>
             Editar
           </button>

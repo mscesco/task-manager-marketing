@@ -27,6 +27,8 @@ from app.modules.tasks.api.schemas import (
     DeleteTaskResponse,
     TaskCreateRequest,
     TaskDetailResponse,
+    TaskDuplicateRequest,
+    TaskDuplicateResponse,
     TaskListItem,
     TaskListResponse,
     TaskMoveRequest,
@@ -38,6 +40,7 @@ from app.modules.tasks.application.collaboration_service import (
 )
 from app.modules.tasks.application.task_service import (
     CreateTaskCommand,
+    DuplicateTaskCommand,
     MoveTaskCommand,
     TaskFilters,
     TaskService,
@@ -177,6 +180,59 @@ async def create_task(
     await uow.commit()
     return TaskListItem.model_validate(task).model_copy(
         update={"assignee_ids": assignee_ids}
+    )
+
+
+@router.post(
+    "/{task_id}/duplicate",
+    response_model=TaskDuplicateResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_permission("task.create"))],
+)
+async def duplicate_task(
+    task_id: uuid.UUID, payload: TaskDuplicateRequest, uow: UoWDep
+) -> TaskDuplicateResponse:
+    """Duplica a task `task_id` (Spec 033).
+
+    ⚠️ MESMA permissao de criar (`task.create`), mais a visibilidade da
+    origem, que o service confere. Nao existe permissao de "duplicar": criar
+    uma copia e criar uma task, e inventar permissao nova aqui daria a alguem
+    a chance de duplicar sem poder criar.
+
+    ⚠️ Rota NOMEADA em vez de um `copy_subtasks_from` no POST comum. A
+    alternativa tem menos superficie, mas contrabandearia a LEITURA de outro
+    agregado pra dentro de uma criacao generica -- a autorizacao de "posso ver
+    a origem?" ficaria implicita num endpoint cujo contrato e "crio uma task".
+
+    Origem invisivel -> 404, nao 403 (criterio 11): nao se confirma a
+    existencia de uma task fora do escopo de quem pergunta.
+    """
+    resultado = await TaskService(uow.session).duplicate(
+        DuplicateTaskCommand(
+            source_id=task_id,
+            title=payload.title,
+            description=payload.description,
+            project_id=payload.project_id,
+            parent_task_id=payload.parent_task_id,
+            team_id=payload.team_id,
+            priority=payload.priority,
+            assignee_ids=payload.assignee_ids,
+            include_subtasks=payload.include_subtasks,
+            include_assignees=payload.include_assignees,
+        )
+    )
+    # Le do BANCO, mesmo motivo do POST comum: nao ecoar o payload.
+    # Antes do commit, de proposito -- mesma transacao que criou a arvore.
+    assignee_ids = await CollaborationService(uow.session).assignee_ids_for(
+        resultado.task
+    )
+    await uow.commit()
+    return TaskDuplicateResponse.model_validate(resultado.task).model_copy(
+        update={
+            "assignee_ids": assignee_ids,
+            "skipped_assignees": resultado.skipped_assignees,
+            "promoted_to_root": resultado.promoted_to_root,
+        }
     )
 
 

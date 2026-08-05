@@ -184,6 +184,47 @@ class TaskListItem(TaskResponse):
     assignee_ids: list[uuid.UUID] = []
 
 
+class TaskDuplicateRequest(BaseModel):
+    """Duplicacao (Spec 033). Os campos ja revisados no modal.
+
+    ⚠️ NAO TEM CAMPO DE DATA, e isso e a D5 defendida na fronteira da API.
+    Um `due_date` aqui e o front acaba mandando: a copia nasce com o prazo
+    velho, ja vencida, e o job de prazo dispara TASK_OVERDUE em lote na
+    primeira execucao. Nada fica vermelho.
+
+    ⚠️ NAO TEM CAMPO DE STATUS. Copia nasce BACKLOG, sempre.
+    """
+
+    title: str = Field(min_length=1, max_length=255)
+    project_id: uuid.UUID | None = None
+    description: str = Field(default="", max_length=_DESCRIPTION_MAX)
+    parent_task_id: uuid.UUID | None = None
+    team_id: uuid.UUID | None = None
+    priority: PriorityLevel = PriorityLevel.MEDIUM
+    assignee_ids: list[uuid.UUID] = Field(default_factory=list)
+    include_subtasks: bool = False
+    # D13: so os responsaveis das SUBTAREFAS. Os do pai vem em assignee_ids.
+    # Default True = comportamento da D6 original (a copia leva tudo igual).
+    include_assignees: bool = True
+
+
+class TaskDuplicateResponse(TaskListItem):
+    """A copia + os responsaveis de SUBTAREFA descartados (D9-c).
+
+    `skipped_assignees` vazio e o caso normal. Nao vazio significa que alguma
+    subtarefa nasceu sem responsavel porque o responsavel original nao alcanca
+    mais a task -- a tela avisa, e a pessoa corrige. Devolver isso e o que
+    impede a excecao de virar orfa invisivel.
+    """
+
+    skipped_assignees: list[uuid.UUID] = []
+    # ⚠️ True = a copia virou tarefa de TOPO porque a irma que ela seria
+    # nasceria dentro de um pai arquivado -- e o quadro so desenha raiz, entao
+    # ela existiria sem nenhuma tela pra mostra-la. A tela AVISA; promover em
+    # silencio mudaria a hierarquia pelas costas de quem clicou.
+    promoted_to_root: bool = False
+
+
 class TaskListResponse(BaseModel):
     """Pagina de tasks."""
 

@@ -87,6 +87,10 @@ export default function Board({
   const [erro, setErro] = useState<string | null>(null);
   const [criando, setCriando] = useState(false);
   const [editando, setEditando] = useState<Task | null>(null);
+  // Spec 033: tarefa que esta sendo DUPLICADA. Separado de `editando` de
+  // proposito -- os dois abrem o mesmo modal em modos diferentes, e um estado
+  // so faria "duplicar" e "editar" se sobrescreverem em silencio.
+  const [duplicando, setDuplicando] = useState<Task | null>(null);
   const [detalhe, setDetalhe] = useState<Task | null>(null);
   const [pilha, setPilha] = useState<Task[]>([]);
   // Trava do deep-link: garante leitura unica do ?task= e libera a escrita
@@ -999,15 +1003,34 @@ export default function Board({
       )}
 
       <TaskModal
-        open={criando || editando !== null}
+        open={criando || editando !== null || duplicando !== null}
         task={editando}
+        duplicarDe={duplicando}
+        filhosDaOrigem={
+          duplicando ? tasks.filter((t) => t.parent_task_id === duplicando.id) : []
+        }
         defaultProjectId={projectId ?? null}
         defaultTeamId={subteamId ?? null}
         onClose={() => {
           setCriando(false);
           setEditando(null);
+          setDuplicando(null);
         }}
-        onSaved={aoSalvar}
+        onSaved={(t) => {
+          if (duplicando) {
+            // ⚠️ Abre a CÓPIA, não a origem. Sem isto o detalhe continua na
+            // tarefa original e a pessoa fica olhando a tela de onde saiu,
+            // sem sinal nenhum de que algo foi criado -- pior ainda quando a
+            // cópia é subtarefa, que não vira card no quadro (`depth !== 0`)
+            // e só existe dentro da checklist do pai.
+            setDuplicando(null);
+            aoSalvar(t);
+            setPilha([]);
+            setDetalhe(t);
+            return;
+          }
+          aoSalvar(t);
+        }}
       />
 
       <TaskDetail
@@ -1022,6 +1045,7 @@ export default function Board({
         onEditar={(t) => {
           setEditando(t);
         }}
+        onDuplicar={(t) => setDuplicando(t)}
         onAssigneesChange={aoMudarResponsaveis}
         onAbrirSubtarefa={abrirSubtarefa}
         onSubtaskUpsert={aoUpsert}

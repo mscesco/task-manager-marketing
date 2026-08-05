@@ -69,6 +69,23 @@ Exceção só se o cabeçalho da própria migration mandar o contrário.
 
 0. **Pré-voo.**
 
+   **a.0) O servidor está igual ao repositório?** Rodar NO SERVIDOR, antes de
+   qualquer outra coisa:
+   ```bash
+   cd ~/task-manager-marketing && git status --porcelain
+   # esperado: VAZIO.
+   ```
+   ⚠️ **Qualquer saída = alguém editou produção à mão e o repositório não
+   sabe. PARE e resolva antes de deployar.** Não é hipótese: em 03/08/2026 o
+   `docker-compose.prod.yml` estava com `stsSeconds=31536000` no servidor e
+   `300` no repo, e só apareceu porque alguém olhou os cabeçalhos de resposta
+   por outro motivo. Enquanto durou, um `git restore` de rotina teria
+   rebaixado o HSTS de um ano para cinco minutos sem log, sem erro e sem
+   ninguém perceber.
+
+   Ao resolver, o valor do SERVIDOR costuma ser o certo (é o que está no ar):
+   commite a partir dele, não descarte por cima.
+
    **a) Portões de teste — rodar ANTES de buildar.** Não há CI neste projeto
    (Spec 027, D6): os dois portões dependem de alguém lembrar, e este passo é
    esse lembrete.

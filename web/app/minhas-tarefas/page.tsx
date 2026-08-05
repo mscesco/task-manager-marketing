@@ -132,6 +132,10 @@ function Minhas() {
   // id do foco); `focado` so existe depois das guardas, entao uso detalhe.
   const [filhosDoFocado, setFilhosDoFocado] = useState<Task[] | null>(null);
   const [editando, setEditando] = useState<Task | null>(null);
+  // Spec 033: tarefa que esta sendo DUPLICADA. Separado de `editando` de
+  // proposito -- os dois abrem o mesmo modal em modos diferentes, e um estado
+  // so faria "duplicar" e "editar" se sobrescreverem em silencio.
+  const [duplicando, setDuplicando] = useState<Task | null>(null);
   const [deepLinkFeito, setDeepLinkFeito] = useState(false);
   // Libera a ESCRITA do ?task= na URL. Separado do deepLinkFeito porque a
   // leitura e async: so vira true quando a abertura inicial resolve.
@@ -1005,10 +1009,35 @@ function Minhas() {
       )}
 
       <TaskModal
-        open={editando !== null}
+        open={editando !== null || duplicando !== null}
         task={editando}
-        onClose={() => setEditando(null)}
-        onSaved={aoSalvar}
+        duplicarDe={duplicando}
+        // ⚠️ `filhosParaDetalhe` e nao `items`: esta tela lista SO as MINHAS
+        // tarefas, entao uma subtarefa de outra pessoa nao esta em `items` e
+        // a contagem sairia MENOR que a real. `filhosParaDetalhe` ja e a
+        // busca completa dos filhos do foco.
+        filhosDaOrigem={
+          duplicando && focado?.id === duplicando.id ? filhosParaDetalhe : []
+        }
+        onClose={() => {
+          setEditando(null);
+          setDuplicando(null);
+        }}
+        onSaved={(t) => {
+          if (duplicando) {
+            // ⚠️ Abre a CÓPIA, não a origem. Sem isto o detalhe continua na
+            // tarefa original e a pessoa fica olhando a tela de onde saiu,
+            // sem sinal nenhum de que algo foi criado -- pior ainda quando a
+            // cópia é subtarefa, que não vira card no quadro (`depth !== 0`)
+            // e só existe dentro da checklist do pai.
+            setDuplicando(null);
+            aoSalvar(t);
+            setPilha([]);
+            setDetalhe(t);
+            return;
+          }
+          aoSalvar(t);
+        }}
       />
 
       <TaskDetail
@@ -1023,6 +1052,7 @@ function Minhas() {
         onEditar={(t) => {
           setEditando(t);
         }}
+        onDuplicar={(t) => setDuplicando(t)}
         onAssigneesChange={aoMudarResponsaveis}
         mostrarArquivadas={mostrarArquivadas}
         projetosPessoais={projetosPessoais}

@@ -76,6 +76,10 @@ function Tarefa() {
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
   const [editando, setEditando] = useState<Task | null>(null);
+  // Spec 033: tarefa que esta sendo DUPLICADA. Separado de `editando` de
+  // proposito -- os dois abrem o mesmo modal em modos diferentes, e um estado
+  // so faria "duplicar" e "editar" se sobrescreverem em silencio.
+  const [duplicando, setDuplicando] = useState<Task | null>(null);
 
   // Contexto que nao depende do id (nomes de pessoa e de projeto). listMembers
   // tem cache de modulo; listAllProjects nao, mas roda uma vez por navegacao.
@@ -247,6 +251,7 @@ function Tarefa() {
         // Nesta rota nao existe "fechar": o X leva pro quadro.
         onClose={() => router.push("/quadro")}
         onEditar={(t) => setEditando(t)}
+        onDuplicar={(t) => setDuplicando(t)}
         onAssigneesChange={aoMudarResponsaveis}
         // Subtarefa vira NAVEGACAO: ganha endereco proprio, compartilhavel em
         // qualquer profundidade (era o ganho principal sobre a pilha de modal).
@@ -260,10 +265,22 @@ function Tarefa() {
       />
 
       <TaskModal
-        open={editando !== null}
+        open={editando !== null || duplicando !== null}
         task={editando}
-        onClose={() => setEditando(null)}
+        duplicarDe={duplicando}
+        filhosDaOrigem={duplicando ? filhos : []}
+        onClose={() => {
+          setEditando(null);
+          setDuplicando(null);
+        }}
         onSaved={(t) => {
+          if (duplicando) {
+            // ⚠️ A copia e outra tarefa: mesclar no `task` da pagina
+            // sobrescreveria a ORIGEM com os dados da copia. Aqui so navega.
+            setDuplicando(null);
+            router.push(`/tarefa/${t.id}`);
+            return;
+          }
           setTask((prev) => (prev ? mesclar(prev, t) : t));
           setEditando(null);
         }}

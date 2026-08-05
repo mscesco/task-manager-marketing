@@ -47,6 +47,18 @@ vi.mock("@/lib/api", async (importOriginal) => {
     listSubteams: vi.fn(),
     getRootTeamId: vi.fn(),
     updateTask: vi.fn(),
+    duplicateTask: vi.fn(),
+    // ⚠️ O botao "Duplicar" do TaskDetail exige `task.create`. Sem mockar o
+    // usuario, `me` fica null, o botao nao renderiza, e o teste falha por
+    // permissao -- nao pelo que ele quer medir.
+    currentUser: vi.fn(),
+    listComments: vi.fn(),
+    // ⚠️ O TaskModal filtra o pre-preenchimento por ALCANCE (D9). Sem este
+    // mock a lista vem vazia, nenhum responsavel sobrevive, e o
+    // `motivoNaoCria` (responsavel obrigatorio, 29/07) bloqueia o Salvar --
+    // o teste falharia por regra de criacao, nao pelo que quer medir.
+    listMembersDoTime: vi.fn(),
+    listProjects: vi.fn(),
   };
 });
 
@@ -129,8 +141,27 @@ function montarApi(tasks: Task[], projetos: Project[]) {
     truncated: false,
   });
   vi.mocked(api.listMembers).mockResolvedValue(MEMBROS);
+  vi.mocked(api.listMembersDoTime).mockResolvedValue(MEMBROS);
+  vi.mocked(api.listProjects).mockResolvedValue({
+    items: [],
+    total: 0,
+    page: 1,
+    size: 100,
+  });
   vi.mocked(api.listSubteams).mockResolvedValue(SUBTIMES);
   vi.mocked(api.getRootTeamId).mockResolvedValue(RAIZ);
+  vi.mocked(api.currentUser).mockResolvedValue({
+    id: ANA,
+    name: "Ana",
+    email: "ana@x.com",
+    permissions: ["task.create", "task.update"],
+  } as Awaited<ReturnType<typeof api.currentUser>>);
+  vi.mocked(api.listComments).mockResolvedValue({
+    items: [],
+    total: 0,
+    page: 1,
+    size: 50,
+  });
 }
 
 /**
@@ -426,5 +457,65 @@ describe("Board -- filtro de responsável (multi-seleção, UNIÃO)", () => {
     abrirPainel();
     marcar("Beatriz");
     expect(screen.getByText("Raiz sem responsável")).toBeTruthy();
+  });
+});
+
+describe("Board -- depois de duplicar, abre a CÓPIA", () => {
+  /**
+   * Defeito encontrado na tela em 04/08: duplicar deixava o detalhe na tarefa
+   * ORIGINAL. A pessoa clicava "Duplicar", o modal fechava, e ela continuava
+   * olhando a mesma tarefa -- sem nenhum sinal de que algo tinha sido criado.
+   *
+   * ⚠️ Pior no caso da subtarefa: a cópia nasce irmã (D3), e o quadro só
+   * desenha `depth === 0`. Ela não vira card em lugar nenhum; só existe
+   * dentro da checklist do pai. Sem abrir a cópia, "sumiu" é a leitura
+   * honesta de quem clicou.
+   */
+  it("o detalhe passa a mostrar a cópia, não a origem", async () => {
+    const ORIGEM = task({ id: "o1", title: "Tarefa original", team_id: CRM });
+    montarApi([ORIGEM], []);
+    // ⚠️ A cópia é SUBTAREFA de propósito (`depth 1`, pai fora da lista). Na
+    // primeira versão deste teste a cópia era raiz, virava CARD no quadro, e
+    // a asserção casava com o card -- a sabotagem "não abrir a cópia" passava
+    // verde. Sendo subtarefa de um pai desconhecido, ela não vira card
+    // (`depth !== 0`) nem entra na checklist da origem: a ÚNICA forma do
+    // título aparecer é o detalhe estar aberto nela.
+    vi.mocked(api.duplicateTask).mockResolvedValue({
+      ...task({
+        id: "c1",
+        title: "Cópia de Tarefa original",
+        team_id: CRM,
+        parent_task_id: "outro-pai",
+        depth: 1,
+      }),
+      skipped_assignees: [],
+      promoted_to_root: false,
+    });
+    render(<Board subteamId={CRM} title="CRM e Automação" />);
+    await screen.findByText("Tarefa original");
+
+    fireEvent.click(screen.getByText("Tarefa original"));
+    await screen.findByRole("button", { name: "Duplicar" });
+    fireEvent.click(screen.getByRole("button", { name: "Duplicar" }));
+
+    // Modal de duplicar aberto, já pré-preenchido.
+    await screen.findByText("Duplicar tarefa");
+    // ⚠️ DOIS botões "Duplicar" no DOM: o do TaskDetail (que abriu isto) e o
+    // do rodapé do modal. Ordem do DOM NÃO resolve -- no Board o TaskModal é
+    // renderizado ANTES do TaskDetail, então "o último" é o errado. O do
+    // detalhe é o único com `title`.
+    const salvar = screen
+      .getAllByRole("button", { name: /^Duplicar$/ })
+      .find((b) => !b.getAttribute("title"));
+    if (!salvar) throw new Error("botão Duplicar do modal não encontrado");
+    fireEvent.click(salvar);
+
+    await waitFor(() => {
+      expect(api.duplicateTask).toHaveBeenCalled();
+    });
+    // O detalhe agora é o da CÓPIA.
+    await waitFor(() => {
+      expect(screen.getAllByText("Cópia de Tarefa original").length).toBeGreaterThan(0);
+    });
   });
 });

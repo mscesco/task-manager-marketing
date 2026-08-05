@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import AppShell from "@/components/AppShell";
 import EmptyState from "@/components/EmptyState";
 import PageHeader from "@/components/PageHeader";
@@ -7,6 +8,7 @@ import Badge from "@/components/Badge";
 import TaskDetail from "@/components/TaskDetail";
 import TaskModal from "@/components/TaskModal";
 import {
+  getTask,
   listArchivedTasks,
   reactivateTask,
   listMembers,
@@ -76,13 +78,27 @@ function Arquivadas() {
     new Map()
   );
   const [rootTeamId, setRootTeamId] = useState<string | null>(null);
+  const router = useRouter();
   const [detalhe, setDetalhe] = useState<Task | null>(null);
-  const [pilha, setPilha] = useState<Task[]>([]);
+  // Pai da subtarefa aberta DIRETO da lista (04/08).
+  //
+  // ⚠️ Abrindo uma subtarefa arquivada DIRETO da lista -- o caso normal
+  // aqui, porque a lista e chapada e nao mostra hierarquia -- nao havia
+  // nenhuma indicacao de onde ela veio. A mensagem de erro do desarquivar
+  // ("desarquive o pai primeiro") virava uma caca ao tesouro.
+  //
+  // Mesmo padrao ja usado em /tarefa/[id]: UMA chamada, so quando o detalhe
+  // abre. Nao e N+1 na lista.
+  const [paiDoDetalhe, setPaiDoDetalhe] = useState<Task | null>(null);
   // Filhos da tarefa focada. A listagem de arquivadas NAO traz a subarvore
   // (ela pagina so as arquivadas), entao busca sob demanda ao abrir -- e o
   // numero que a confirmacao de exclusao usa. `null` = ainda carregando.
   const [filhos, setFilhos] = useState<Task[] | null>(null);
   const [editando, setEditando] = useState<Task | null>(null);
+  // Spec 033: tarefa que esta sendo DUPLICADA. Separado de `editando` de
+  // proposito -- os dois abrem o mesmo modal em modos diferentes, e um estado
+  // so faria "duplicar" e "editar" se sobrescreverem em silencio.
+  const [duplicando, setDuplicando] = useState<Task | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
   useEffect(() => {
@@ -112,8 +128,23 @@ function Arquivadas() {
   // confirmacao apenas omite a contagem -- nunca afirma que nao ha filhas.
   async function abrirDetalhe(t: Task) {
     setDetalhe(t);
-    setPilha([]);
     setFilhos(null);
+    // ⚠️ Busca o pai SEMPRE, em vez de depender da `pilha`.
+    //
+    // A pilha desta tela NUNCA funcionou: `onAbrirSubtarefa` empilhava e
+    // chamava `abrirDetalhe`, que fazia `setPilha([])` logo em seguida --
+    // React agrupa os dois setters e o ultimo vence. `temVoltar` era sempre
+    // false. Buscar o pai cobre os DOIS casos (navegou de dentro, ou abriu
+    // direto da lista) com um caminho so, e some com o estado que mentia.
+    //
+    // Uma chamada por detalhe aberto, igual /tarefa/[id]. Falha em silencio:
+    // sem o pai a tarefa continua utilizavel, so fica sem o "voltar".
+    setPaiDoDetalhe(null);
+    if (t.parent_task_id) {
+      getTask(t.parent_task_id)
+        .then((p) => setPaiDoDetalhe(p))
+        .catch(() => setPaiDoDetalhe(null));
+    }
     try {
       const r = await listAllTasks({ include_archived: true });
       setFilhos(r.items.filter((x) => x.parent_task_id === t.id));
@@ -124,7 +155,7 @@ function Arquivadas() {
 
   function fecharDetalhe() {
     setDetalhe(null);
-    setPilha([]);
+    setPaiDoDetalhe(null);
     setFilhos(null);
   }
 
@@ -181,20 +212,19 @@ function Arquivadas() {
         members={members}
         projects={projectNames}
         filhos={filhos ?? []}
-        temVoltar={pilha.length > 0}
-        pai={pilha[pilha.length - 1] ?? null}
+        temVoltar={paiDoDetalhe !== null}
+        pai={paiDoDetalhe}
+        // Fica NESTA tela de proposito: o pai tambem esta arquivado, e e aqui
+        // que a pessoa vai desarquiva-lo -- que e o que a mensagem de erro do
+        // desarquivar manda fazer.
         onVoltar={() => {
-          const p = pilha[pilha.length - 1];
-          setPilha((s2) => s2.slice(0, -1));
-          if (p) abrirDetalhe(p);
+          if (paiDoDetalhe) abrirDetalhe(paiDoDetalhe);
         }}
         onClose={fecharDetalhe}
         onEditar={(t) => setEditando(t)}
+        onDuplicar={(t) => setDuplicando(t)}
         onAssigneesChange={() => {}}
-        onAbrirSubtarefa={(sub) => {
-          if (detalhe) setPilha((s2) => [...s2, detalhe]);
-          abrirDetalhe(sub);
-        }}
+        onAbrirSubtarefa={(sub) => abrirDetalhe(sub)}
         // Esta tela E o arquivo: esconder subtarefa arquivada aqui seria
         // esconder justamente o que a pessoa veio ver.
         mostrarArquivadas
@@ -213,12 +243,28 @@ function Arquivadas() {
       />
 
       <TaskModal
-        open={editando !== null}
+        open={editando !== null || duplicando !== null}
         task={editando}
+        duplicarDe={duplicando}
+        // A tela de arquivadas nao carrega a arvore: sem filhas conhecidas, a
+        // caixa da D7 nao aparece (criterio 16) e a copia sai so com o pai.
+        // Duplicar uma arquivada COM subarvore se faz pelo quadro.
+        filhosDaOrigem={[]}
         defaultProjectId={null}
         defaultTeamId={null}
-        onClose={() => setEditando(null)}
-        onSaved={() => {
+        onClose={() => {
+          setEditando(null);
+          setDuplicando(null);
+        }}
+        onSaved={(t) => {
+          if (duplicando) {
+            // ⚠️ NAVEGA pra copia. Esta tela lista SO arquivadas, e a copia
+            // nasce ATIVA -- recarregar a lista aqui nao mostraria nada e a
+            // pessoa ficaria sem nenhum sinal de que a tarefa foi criada.
+            setDuplicando(null);
+            router.push(`/tarefa/${t.id}`);
+            return;
+          }
           setEditando(null);
           carregar(page);
         }}

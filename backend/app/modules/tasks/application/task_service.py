@@ -37,7 +37,10 @@ from app.db.models import Project, Task
 from app.db.models.enums import PriorityLevel, TaskStatus
 from app.modules.auth.domain import team_scope
 from app.modules.tasks.application.project_service import ProjectService
-from app.modules.tasks.application.task_guards import TaskScopeGuards
+from app.modules.tasks.application.task_guards import (
+    TaskScopeGuards,
+    user_can_view_task,
+)
 from app.modules.tasks.domain.history import (
     HistoryEntry,
     build_archived_entry,
@@ -77,6 +80,59 @@ class CreateTaskCommand:
     # Spec 021: responsaveis aplicados APOS a task nascer, reusando os gates
     # de atribuicao. Atomico: invalido(s) -> 422 e a criacao inteira reverte.
     assignee_ids: list[uuid.UUID] = field(default_factory=list)
+
+
+@dataclass(frozen=True, slots=True)
+class DuplicateTaskCommand:
+    """Spec 033. Os campos ja REVISADOS no modal + a caixa das subtarefas.
+
+    ⚠️ NAO EXISTE CAMPO DE DATA AQUI, e nao e esquecimento -- e a D5.
+    `start_date`/`due_date` ausentes garantem os criterios 3 e 4 de uma vez:
+    a copia nasce sem prazo, e como `create()` tambem nao aceita
+    `due_soon_notified_for`/`overdue_notified_for`, ela nasce sem as colunas
+    de dedup preenchidas. Acrescentar `due_date: date | None = None` aqui
+    reabre os dois SEM deixar nada vermelho: a copia de uma campanha de marco
+    nasceria vencida e a proxima execucao do job dispararia TASK_OVERDUE em
+    lote (em 01/08 foram 51 numa execucao so).
+
+    ⚠️ NAO EXISTE CAMPO DE STATUS. BACKLOG e o default de CreateTaskCommand;
+    deixar o default agir e mais seguro que repassar o status da origem.
+    """
+
+    source_id: uuid.UUID
+    title: str
+    description: str = ""
+    project_id: uuid.UUID | None = None
+    parent_task_id: uuid.UUID | None = None
+    team_id: uuid.UUID | None = None
+    priority: PriorityLevel = PriorityLevel.MEDIUM
+    assignee_ids: list[uuid.UUID] = field(default_factory=list)
+    include_subtasks: bool = False
+    # D13 (03/08): controla SO os responsaveis das SUBTAREFAS. Os do pai vem
+    # em `assignee_ids`, ja revisados no modal -- la a pessoa edita direto no
+    # campo, entao uma caixa pro pai duplicaria um controle que existe.
+    #
+    # ⚠️ False cria N subtarefas SEM RESPONSAVEL de uma vez, que e o passivo
+    # que a regra de 29/07 combate (44 das 50 tarefas ativas sem responsavel
+    # eram subtarefas). A porta esta aberta por decisao explicita (D14), e a
+    # tela AVISA antes de salvar. Nao remova o aviso sem remover a caixa.
+    include_assignees: bool = True
+
+
+@dataclass(frozen=True, slots=True)
+class DuplicateResult:
+    """A copia + quem ficou pelo caminho (D9-c).
+
+    `skipped_assignees` sao responsaveis de SUBTAREFA descartados por nao
+    alcancarem mais a task. Nao e erro: e o que a tela mostra depois
+    ("2 subtarefas ficaram sem responsavel"), pra pessoa saber o que corrigir.
+    """
+
+    task: Task
+    skipped_assignees: list[uuid.UUID]
+    # ⚠️ True quando a copia foi PROMOVIDA a tarefa de topo porque a irma que
+    # ela seria nasceria dentro de um pai ARQUIVADO. Ver `duplicate`.
+    promoted_to_root: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -277,6 +333,174 @@ class TaskService:
             )
 
         return task
+
+    async def duplicate(self, command: DuplicateTaskCommand) -> DuplicateResult:
+        """Duplica uma task (Spec 033).
+
+        ⚠️ DECISAO DE ARQUITETURA, e a mais importante da spec: duplicar e uma
+        SEQUENCIA DE `create()`, NUNCA copia de linha. Um `INSERT ... SELECT`
+        ou um clone no repositorio passaria por fora de `path`, `depth`,
+        precedencia de time, validacao de projeto e `task_history` -- em
+        silencio, com a tela identica e os portoes verdes. `path` e `depth`
+        sao as duas colunas cuja corrupcao nao aparece na tela e nao tem
+        conserto por deploy.
+
+        ⚠️ NADA de `commit()` aqui dentro. Quem commita e o router. O criterio
+        10 ("falha no meio -> nada persiste") depende de a arvore inteira
+        viver numa unidade de trabalho so; um commit por filho troca "falhou"
+        por "meia arvore no quadro", que e o pior estado possivel -- e os
+        testes continuam passando.
+
+        A copia do PAI usa `command.assignee_ids` cru: eles ja passaram pelo
+        modal, e um invalido ali DEVE dar 422 (a pessoa escolheu). Nas FILHAS
+        e o contrario -- ver `_copiar_subarvore`.
+        """
+        source = await self._repo.get_by_id_or_raise(command.source_id)
+        # 404, nao 403 (criterio 11): quem nao enxerga a origem nao pode nem
+        # descobrir que ela existe.
+        await self._assert_visible_via_project(source)
+
+        # ⚠️ PROMOCAO POR PAI ARQUIVADO (03/08). A D3 manda a copia de uma
+        # subtarefa nascer IRMA, sob o mesmo pai. Isso quebra quando o pai esta
+        # arquivado: o quadro so desenha `depth === 0` (Board.tsx:580), entao a
+        # copia nasce ATIVA, correta no banco, e SEM NENHUMA TELA que a mostre
+        # -- a checklist onde ela mora e a de uma tarefa arquivada, que
+        # ninguem abre. Foi encontrado duplicando a partir de /arquivadas.
+        #
+        # A saida e promover a copia a tarefa de topo. ⚠️ E promover CONTANDO:
+        # `promoted_to_root` volta na resposta e a tela avisa. Promover em
+        # silencio mudaria a hierarquia pelas costas de quem clicou, que e
+        # pior que o defeito original.
+        pai_alvo = command.parent_task_id
+        promovida = False
+        if pai_alvo is not None:
+            pai = await self._repo.get_by_id_or_raise(pai_alvo)
+            if pai.is_archived:
+                pai_alvo = None
+                promovida = True
+
+        novo = await self.create(
+            CreateTaskCommand(
+                title=command.title,
+                description=command.description,
+                project_id=command.project_id,
+                parent_task_id=pai_alvo,
+                team_id=command.team_id,
+                priority=command.priority,
+                assignee_ids=command.assignee_ids,
+            )
+        )
+
+        pulados: list[uuid.UUID] = []
+        if command.include_subtasks:
+            await self._copiar_subarvore(
+                origem=source,
+                destino=novo,
+                pulados=pulados,
+                levar_responsaveis=command.include_assignees,
+            )
+
+        logger.info(
+            "task.duplicated",
+            source_id=str(source.id),
+            task_id=str(novo.id),
+            include_subtasks=command.include_subtasks,
+            include_assignees=command.include_assignees,
+            skipped_assignees=len(pulados),
+            promoted_to_root=promovida,
+        )
+        return DuplicateResult(
+            task=novo, skipped_assignees=pulados, promoted_to_root=promovida
+        )
+
+    async def _copiar_subarvore(
+        self,
+        *,
+        origem: Task,
+        destino: Task,
+        pulados: list[uuid.UUID],
+        levar_responsaveis: bool,
+    ) -> None:
+        """Copia os filhos de `origem` sob `destino`, RECURSIVAMENTE (D4).
+
+        ⚠️ Profundidade nao e limitada em task (o banco so exige `depth >= 0`).
+        A recursao para porque a arvore de origem acaba, nao porque existe
+        trava. Arvore profunda de verdade percorre tudo.
+
+        ⚠️ Sem prefixo "Copia de" nas filhas (D8): so o pai leva. Com prefixo,
+        a checklist inteira da copia fica com "Copia de" repetido em cada
+        linha.
+
+        ⚠️ Sem `team_id` explicito: a filha HERDA o time do pai NOVO pela
+        precedencia normal de `create()` (criterio 9). Repassar o time da
+        origem furaria a heranca quando a copia nasce em outro lugar.
+        """
+        filhos = await self._repo.list_children(parent_task_id=origem.id)
+        for filho in filhos:
+            copia = await self.create(
+                CreateTaskCommand(
+                    title=filho.title,
+                    description=filho.description,
+                    project_id=destino.project_id,
+                    parent_task_id=destino.id,
+                    priority=filho.priority,
+                    # Responsaveis NAO vao aqui: precisam ser filtrados contra
+                    # a task NOVA, que ainda nao existe neste ponto.
+                )
+            )
+            if levar_responsaveis:
+                await self._aplicar_responsaveis_da_filha(
+                    origem=filho, copia=copia, pulados=pulados
+                )
+            await self._copiar_subarvore(
+                origem=filho,
+                destino=copia,
+                pulados=pulados,
+                levar_responsaveis=levar_responsaveis,
+            )
+
+    async def _aplicar_responsaveis_da_filha(
+        self, *, origem: Task, copia: Task, pulados: list[uuid.UUID]
+    ) -> None:
+        """Responsaveis da subtarefa, FILTRADOS por alcance (D9-c).
+
+        ⚠️ Passar a lista crua para `create()` seria o comportamento (b) da
+        D9, que NAO foi o escolhido: `assign_many_or_fail` e atomico, entao um
+        unico responsavel desativado numa das seis filhas derrubaria a
+        duplicacao inteira com um 422 sobre uma pessoa que quem clicou nao
+        sabe que existe, numa subtarefa que ela nao viu.
+
+        ⚠️ O alcance e medido contra a COPIA, nao contra a origem. A copia
+        pode nascer em outro projeto ou sob outro pai, e quem alcanca uma nao
+        alcanca necessariamente a outra. Medir na origem daria a resposta
+        certa por acaso no caso comum e errada exatamente nos casos que a
+        duplicacao existe pra resolver.
+
+        ⚠️ A regra de 29/07 ("responsavel obrigatorio ao criar") CEDE aqui, e
+        por escrito na spec: uma filha pode nascer sem responsavel quando o
+        responsavel original perdeu o alcance. E a unica excecao, e ela e
+        VISIVEL -- por isso o id entra em `pulados` e volta na resposta.
+        """
+        from app.modules.tasks.application.collaboration_service import (
+            CollaborationService,
+        )
+
+        colaboracao = CollaborationService(self._session)
+        ids = await colaboracao.assignee_ids_for(origem)
+        if not ids:
+            return
+
+        validos: list[uuid.UUID] = []
+        for uid in ids:
+            if await user_can_view_task(
+                self._session, task=copia, user_id=uid
+            ):
+                validos.append(uid)
+            elif uid not in pulados:
+                pulados.append(uid)
+
+        if validos:
+            await colaboracao.assign_many_or_fail(task=copia, user_ids=validos)
 
     async def get(self, task_id: uuid.UUID) -> Task:
         """Get com privacidade do pessoal (404 em pessoal alheio)."""
@@ -524,10 +748,37 @@ class TaskService:
         return task
 
     async def unarchive(self, *, task_id: uuid.UUID) -> Task:
-        """Idempotente. Sem cascata."""
+        """Idempotente. Sem cascata.
+
+        ⚠️ RECUSA quando o PAI esta arquivado (04/08). Sem esta trava a
+        operacao "funcionava" e nao entregava nada: a subtarefa voltava a
+        `is_archived=false`, saia de /arquivadas (nao esta mais arquivada) e
+        NAO aparecia no quadro (que so desenha `depth === 0`, Board.tsx:580)
+        nem na checklist do pai (que esta arquivado e ninguem abre). A pessoa
+        pedia "traz de volta", recebia 200, e a tarefa sumia de vez.
+
+        ⚠️ A mensagem NOMEIA o pai. Sem o nome, "desarquive a tarefa pai" e
+        um enigma: a subtarefa esta numa lista de arquivadas que nao mostra
+        hierarquia, e nao ha como adivinhar de qual pai ela veio.
+
+        E a opcao 1 de tres (04/08). A 2 era cascata pra cima com
+        confirmacao -- melhor de usar, mas mexe em OUTRA tarefa; a 3 era
+        promover a subtarefa a topo, recusada porque desarquivar e mover sao
+        coisas diferentes. Se a trava incomodar na pratica, a 2 e o caminho.
+        """
         task = await self._repo.get_by_id_or_raise(task_id)
         await self._assert_visible_via_project(task)
         await self._assert_editable(task)
+
+        if task.is_archived and task.parent_task_id is not None:
+            pai = await self._repo.get_by_id_or_raise(task.parent_task_id)
+            if pai.is_archived:
+                raise ValidationError(
+                    "Esta subtarefa está dentro de "
+                    f"\"{pai.title}\", que está arquivada. Desarquive a "
+                    "tarefa pai primeiro — a subtarefa volta junto.",
+                    details={"field": "parent_task_id", "parent_id": str(pai.id)},
+                )
 
         if task.is_archived:
             task.is_archived = False

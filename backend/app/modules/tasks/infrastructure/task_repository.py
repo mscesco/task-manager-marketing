@@ -37,6 +37,40 @@ class TaskRepository(BaseRepository[Task]):
     model = Task
 
     # ----------------------------------------------------
+    # Filhos diretos (Spec 033)
+    # ----------------------------------------------------
+    async def list_children(
+        self, *, parent_task_id: uuid.UUID, include_archived: bool = False
+    ) -> list[Task]:
+        """Filhos DIRETOS de uma task, em ordem de `position`.
+
+        Spec 033 (D10 + Fatia 1). Duas coisas que parecem detalhe e nao sao:
+
+        ⚠️ ORDER BY position. A checklist da copia sai na ordem do banco se
+        ninguem mandar ordenar, e "ordem do banco" nao e ordem nenhuma --
+        muda com UPDATE. Sem isto a copia sai embaralhada em relacao a
+        original e nenhum teste de path/depth percebe.
+
+        ⚠️ `include_archived=False` por padrao. Duplicar nao ressuscita
+        trabalho encerrado (D10), e a contagem que a tela mostra ("levar as
+        subtarefas (N diretas)") conta as MESMAS linhas que esta consulta
+        devolve -- se as duas divergirem, a pessoa ve 6 e recebe 4.
+
+        Soft delete e tenant ja vem do `_base_select`.
+        """
+        stmt = self._base_select().where(Task.parent_task_id == parent_task_id)
+        if not include_archived:
+            stmt = stmt.where(Task.is_archived.is_(False))
+        # `Task.id` no fim pelo mesmo motivo do desempate da listagem
+        # paginada: irmas criadas na mesma transacao empatam em position
+        # E em created_at.
+        stmt = stmt.order_by(
+            Task.position.asc(), Task.created_at.asc(), Task.id
+        )
+        res = await self.session.execute(stmt)
+        return list(res.scalars().all())
+
+    # ----------------------------------------------------
     # Listagem com filtros + privacidade
     # ----------------------------------------------------
     async def list_page_with_filters(
@@ -135,7 +169,27 @@ class TaskRepository(BaseRepository[Task]):
         count_stmt = select(func.count()).select_from(base.subquery())
         total = (await self.session.execute(count_stmt)).scalar_one()
 
-        page_stmt = base.order_by(Task.created_at.desc()).limit(params.limit).offset(params.offset)
+        # ⚠️ DESEMPATE OBRIGATORIO (Spec 033, D12). `created_at` usa `now()`,
+        # que no Postgres e o instante da TRANSACAO: toda task criada na mesma
+        # transacao tem o MESMO valor. Sem o `Task.id` como criterio de
+        # desempate, essas linhas saem numa ordem que o planner escolhe -- e
+        # pode sair diferente entre um F5 e outro, com a checklist "pulando"
+        # sem ninguem ter mexido em nada.
+        #
+        # Ate 03/08 isso quase nao aparecia porque toda task nascia numa
+        # transacao propria. Duplicar (033) cria a arvore inteira numa
+        # transacao so e trouxe o empate a tona.
+        #
+        # ⚠️ `id` NAO da ordem semantica -- e UUIDv4, ou seja, aleatorio. A
+        # ordem das copias continua ARBITRARIA; o que este desempate garante e
+        # que ela seja ESTAVEL. Ordem semantica exigiria trocar a ordenacao
+        # por `position`, o que mudaria o quadro inteiro (D12, opcao 2 --
+        # recusada por ser entrega propria).
+        page_stmt = (
+            base.order_by(Task.created_at.desc(), Task.id)
+            .limit(params.limit)
+            .offset(params.offset)
+        )
         items = list((await self.session.execute(page_stmt)).scalars().all())
 
         return Page(items=items, total=total, page=params.page, size=params.size)
