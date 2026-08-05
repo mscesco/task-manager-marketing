@@ -134,7 +134,12 @@ async def test_soft_deleted_nao_aparece(db) -> None:
         from app.modules.tasks.application.task_service import CreateTaskCommand
 
         svc = TaskService(db)
-        t = await svc.create(CreateTaskCommand(title="x", project_id=proj, team_id=a))
+        t = await svc.create(CreateTaskCommand(
+            title="x",
+            project_id=proj,
+            team_id=a,
+            assignee_ids=[me]),
+        )
         await svc.soft_delete(task_id=t.id)
         page = await _list(db)
     assert all(row.task.id != t.id for row in page.items)

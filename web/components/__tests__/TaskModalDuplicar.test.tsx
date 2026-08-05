@@ -176,28 +176,121 @@ describe("TaskModal -- modo duplicar", () => {
   });
 
   /**
-   * ⚠️ D14: o aviso é a única proteção contra criar N subtarefas órfãs num
-   * clique. Se ele sumir do modal, o teste de backend
-   * `test_include_assignees_false_cria_subtarefa_sem_responsavel` passa a
-   * defender um buraco.
+   * PASSO 2 (ADR 0031). Substituiu a caixa "Levar os responsáveis" (D13) e o
+   * aviso da D14 -- desmarcar aquela caixa significava "crie N subtarefas sem
+   * ninguém", que é o estado que a ADR proíbe.
+   *
+   * ⚠️ O que estes testes defendem é a REGRA, não a tela: nenhuma subtarefa
+   * sai daqui sem responsável, e o passo 2 NÃO aparece quando não há o que
+   * decidir (senão a duplicação de um clique da Spec 033 morre).
    */
-  it("D14 -- desmarcar responsáveis AVISA, e marcar cala", async () => {
+  it("passo 2 NÃO aparece quando as subtarefas herdam responsável válido", async () => {
     montar();
-    abrir([filha("s1"), filha("s2")]);
+    abrir([filha("s1"), filha("s2")]); // as duas com ANA, que alcança
     await waitFor(() => {
       expect(screen.getByText(/Levar as subtarefas/)).toBeTruthy();
     });
-    const caixa = screen.getByLabelText(/Levar os responsáveis das subtarefas/);
-    fireEvent.click(caixa);
+    expect(screen.queryByText(/precisam de responsável na cópia/)).toBeNull();
+    // ⚠️ Espera o pré-preenchimento: antes dele o botão está travado por
+    // "Escreva o título", e o teste mediria a corrida, não a regra.
     await waitFor(() => {
       expect(
-        screen.getByText(/2 subtarefas copiadas nascerão sem responsável/)
-      ).toBeTruthy();
+        (screen.getByRole("button", { name: /Duplicar$/ }) as HTMLButtonElement)
+          .disabled
+      ).toBe(false);
     });
-    fireEvent.click(caixa);
+  });
+
+  it("subtarefa sem responsável válido -> passo 2 aparece e TRAVA o salvar", async () => {
+    // SUMIDO não alcança: a filha fica sem ninguém que possa assumir.
+    montar([ANA]);
+    abrir([task({ id: "s1", title: "sub s1", parent_task_id: ORIGEM.id, assignee_ids: [SUMIDO] })]);
     await waitFor(() => {
-      expect(screen.queryByText(/nascerão sem responsável/)).toBeNull();
+      expect(screen.getByText(/precisam de responsável na cópia/)).toBeTruthy();
     });
+    const botao = screen.getByRole("button", {
+      name: /Duplicar$/,
+    }) as HTMLButtonElement;
+    expect(botao.disabled).toBe(true);
+    // ⚠️ O motivo TEM de estar no botão: botão travado sem explicação é a
+    // pessoa procurando o que fez de errado.
+    expect(botao.title).toContain("sub s1");
+  });
+
+  it("escolher alguém destrava e o payload leva subtask_assignees", async () => {
+    montar([ANA]);
+    abrir([task({ id: "s1", title: "sub s1", parent_task_id: ORIGEM.id, assignee_ids: [SUMIDO] })]);
+    await waitFor(() => {
+      expect(screen.getByLabelText(/Responsável de sub s1/)).toBeTruthy();
+    });
+    fireEvent.change(screen.getByLabelText(/Responsável de sub s1/), {
+      target: { value: ANA },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Duplicar$/ }));
+    await waitFor(() => {
+      expect(api.duplicateTask).toHaveBeenCalled();
+    });
+    const [, payload] = vi.mocked(api.duplicateTask).mock.calls[0];
+    expect(payload.subtask_assignees).toEqual({ s1: [ANA] });
+    expect(payload.skip_subtasks).toEqual([]);
+  });
+
+  it('"não levar esta" também destrava, e vai em skip_subtasks', async () => {
+    montar([ANA]);
+    abrir([task({ id: "s1", title: "sub s1", parent_task_id: ORIGEM.id, assignee_ids: [SUMIDO] })]);
+    await waitFor(() => {
+      expect(screen.getByLabelText(/Não levar esta subtarefa/)).toBeTruthy();
+    });
+    fireEvent.click(screen.getByLabelText(/Não levar esta subtarefa/));
+    fireEvent.click(screen.getByRole("button", { name: /Duplicar$/ }));
+    await waitFor(() => {
+      expect(api.duplicateTask).toHaveBeenCalled();
+    });
+    const [, payload] = vi.mocked(api.duplicateTask).mock.calls[0];
+    expect(payload.skip_subtasks).toEqual(["s1"]);
+    // ⚠️ Pulada NÃO pode ir também em subtask_assignees: o backend recusa o
+    // lote por incoerência e a pessoa não saberia por quê.
+    expect(payload.subtask_assignees).toEqual({});
+  });
+
+  it("a escolha do passo 2 SOBREVIVE ao re-render do pai", async () => {
+    // ⚠️ ESTE É O TESTE QUE IMPORTA. `filhosDaOrigem` é montado inline no
+    // Board (referência NOVA a cada render do pai), e foi exatamente isso que
+    // apagou o que a pessoa digitava em 04/08. Prop com referência estável no
+    // teste esconde o defeito -- por isso o rerender passa array NOVO.
+    montar([ANA]);
+    const pendente = () =>
+      task({ id: "s1", title: "sub s1", parent_task_id: ORIGEM.id, assignee_ids: [SUMIDO] });
+    const { rerender } = render(
+      <TaskModal
+        open
+        duplicarDe={ORIGEM}
+        filhosDaOrigem={[pendente()]}
+        onClose={() => {}}
+        onSaved={() => {}}
+      />
+    );
+    await waitFor(() => {
+      expect(screen.getByLabelText(/Responsável de sub s1/)).toBeTruthy();
+    });
+    fireEvent.change(screen.getByLabelText(/Responsável de sub s1/), {
+      target: { value: ANA },
+    });
+
+    rerender(
+      <TaskModal
+        open
+        duplicarDe={ORIGEM}
+        filhosDaOrigem={[pendente()]}
+        onClose={() => {}}
+        onSaved={() => {}}
+      />
+    );
+    await new Promise((r) => setTimeout(r, 30));
+    expect(
+      (screen.getByLabelText(/Responsável de sub s1/) as HTMLSelectElement)
+        .value
+    ).toBe(ANA);
   });
 
   /**
@@ -208,8 +301,15 @@ describe("TaskModal -- modo duplicar", () => {
     // A origem tem ANA e SUMIDO; só ANA alcança o time da tarefa.
     montar([ANA]);
     abrir();
+    // ⚠️ ESPERA O PRE-PREENCHIMENTO, nao so o titulo do modal. Clicar assim
+    // que o cabecalho aparece e uma corrida: o botao ainda esta travado por
+    // "Escreva o titulo" e o clique nao faz nada. Este teste passava por
+    // TIMING ate 05/08, quando um render a mais deslocou a corrida e ele caiu
+    // sem que o produto tivesse mudado.
     await waitFor(() => {
-      expect(screen.getByText("Duplicar tarefa")).toBeTruthy();
+      expect(
+        (screen.getByLabelText(/^Título/) as HTMLInputElement).value
+      ).toContain("Cópia de");
     });
     fireEvent.click(screen.getByRole("button", { name: /Duplicar$/ }));
     await waitFor(() => {
@@ -219,15 +319,12 @@ describe("TaskModal -- modo duplicar", () => {
     expect(payload.assignee_ids).toEqual([ANA]);
   });
 
-  it("chama duplicateTask (não createTask) com as duas caixas", async () => {
+  it("chama duplicateTask (não createTask), sem include_assignees", async () => {
     montar();
-    abrir([filha("s1")]);
+    abrir([filha("s1")]); // herda ANA, que alcança -> nada pendente
     await waitFor(() => {
       expect(screen.getByText(/Levar as subtarefas/)).toBeTruthy();
     });
-    fireEvent.click(
-      screen.getByLabelText(/Levar os responsáveis das subtarefas/)
-    );
     fireEvent.click(screen.getByRole("button", { name: /Duplicar$/ }));
 
     await waitFor(() => {
@@ -238,7 +335,12 @@ describe("TaskModal -- modo duplicar", () => {
     const [idOrigem, payload] = vi.mocked(api.duplicateTask).mock.calls[0];
     expect(idOrigem).toBe(ORIGEM.id);
     expect(payload.include_subtasks).toBe(true);
-    expect(payload.include_assignees).toBe(false);
+    // ⚠️ `include_assignees` MORREU com a ADR 0031: não existe mais "leve sem
+    // responsáveis". Se voltar ao payload, a porta da subtarefa órfã reabre.
+    expect(payload.include_assignees).toBeUndefined();
+    // Nada pendente -> nada a decidir -> as duas chaves saem vazias.
+    expect(payload.subtask_assignees).toEqual({});
+    expect(payload.skip_subtasks).toEqual([]);
     // D3: cópia de subtarefa nasce irmã -- o pai da origem é repassado.
     expect(payload.parent_task_id).toBe(ORIGEM.parent_task_id);
     // O projeto vem da origem, não do seletor (que nem aparece).
@@ -436,7 +538,7 @@ describe("TaskModal -- as edições da pessoa SOBREVIVEM", () => {
       expect(screen.getByText(/Levar as subtarefas/)).toBeTruthy();
     });
     const caixa = screen.getByLabelText(
-      /Levar os responsáveis das subtarefas/
+      /Levar as subtarefas/
     ) as HTMLInputElement;
     fireEvent.click(caixa);
     expect(caixa.checked).toBe(false);
@@ -454,12 +556,12 @@ describe("TaskModal -- as edições da pessoa SOBREVIVEM", () => {
     await new Promise((r) => setTimeout(r, 30));
     expect(
       (
-        screen.getByLabelText(
-          /Levar os responsáveis das subtarefas/
-        ) as HTMLInputElement
+        screen.getByLabelText(/Levar as subtarefas/) as HTMLInputElement
       ).checked
     ).toBe(false);
-    expect(screen.getByText(/2 subtarefas copiadas nascerão sem/)).toBeTruthy();
+    // ⚠️ O aviso da D14 saiu junto com a caixa (ADR 0031): não existe mais o
+    // estado "N subtarefas nascerão sem responsável" para avisar.
+    expect(screen.queryByText(/nascerão sem responsável/)).toBeNull();
   });
 });
 

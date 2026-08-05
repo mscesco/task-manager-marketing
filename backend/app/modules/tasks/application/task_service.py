@@ -306,6 +306,22 @@ class TaskService:
                         details={"field": "team_id"},
                     )
 
+        # ⚠️ ADR 0031: NENHUMA tarefa nasce sem responsavel. A regra vivia so
+        # no modal (`criacaoTarefa.motivoNaoCria`) -- ou seja, valia pra quem
+        # usava a tela e nao valia pro n8n, pro Swagger nem pra duplicacao.
+        # Aqui ela passa a valer pra todo cliente.
+        #
+        # ⚠️ Isto NAO retroage: as 37 tarefas vivas sem responsavel medidas em
+        # 05/08 continuam editaveis. A regra mora na escrita de RESPONSAVEL
+        # (criar e remover), nunca no PATCH de outros campos -- validar estado
+        # inteiro num PATCH parcial faria editar o titulo de uma tarefa antiga
+        # devolver 422, que e a forma exata do defeito de 04/08.
+        if not command.assignee_ids:
+            raise ValidationError(
+                "Toda tarefa precisa de pelo menos um responsável.",
+                details={"field": "assignee_ids"},
+            )
+
         task_id = uuid.uuid4()
         label = self._label_for(task_id)
         path, depth = self._compute_path_and_depth(parent, label)
@@ -488,6 +504,38 @@ class TaskService:
         for filho in filhos:
             if filho.id in pular:
                 continue  # ⚠️ leva a SUBARVORE dela junto (ADR 0031)
+            # ⚠️ ORDEM INVERTIDA EM 05/08 (ADR 0031). Antes era criar e depois
+            # designar; com a trava no `create`, criar sem responsavel deixou
+            # de ser possivel -- e "criar e corrigir depois" abriria, dentro da
+            # propria transacao, o estado que a ADR fecha.
+            #
+            # ⚠️ O ALCANCE PASSA A SER MEDIDO CONTRA `destino`, nao contra a
+            # copia. E equivalente e nao e atalho: a filha herda `project_id`
+            # de `destino` e o time do pai por precedencia do `create`, e
+            # alcance se decide por projeto e time. Medir contra `destino`
+            # responde a mesma pergunta ANTES de a filha existir.
+            #
+            # Precedencia: escolha explicita do passo 2 > heranca do nivel de
+            # cima (neto) > responsaveis da origem filtrados por alcance.
+            escolhidos = escolhas.get(filho.id, forcados)
+            if escolhidos is None and levar_responsaveis:
+                escolhidos = await self._herdados_da_filha(
+                    origem=filho, destino=destino, pulados=pulados
+                )
+            if not escolhidos:
+                # ⚠️ Aqui morre a excecao que a Spec 033 (D9-c) abria: "filha
+                # nasce sem responsavel quando o original perdeu o alcance".
+                # Com a ADR 0031 isso vira 422, e a tela resolve ANTES do POST
+                # (passo 2 do modal). A mensagem NOMEIA a subtarefa: sem o
+                # nome, quem clicou nao tem como saber qual das seis travou.
+                raise ValidationError(
+                    f"A subtarefa \"{filho.title}\" ficaria sem responsável "
+                    "na cópia. Escolha quem vai fazer, ou não a leve junto.",
+                    details={
+                        "field": "subtask_assignees",
+                        "subtask_id": str(filho.id),
+                    },
+                )
             copia = await self.create(
                 CreateTaskCommand(
                     title=filho.title,
@@ -495,25 +543,9 @@ class TaskService:
                     project_id=destino.project_id,
                     parent_task_id=destino.id,
                     priority=filho.priority,
-                    # Responsaveis NAO vao aqui: precisam ser filtrados contra
-                    # a task NOVA, que ainda nao existe neste ponto.
+                    assignee_ids=escolhidos,
                 )
             )
-            # Precedencia: escolha explicita do passo 2 > heranca do nivel de
-            # cima (neto) > comportamento antigo (`include_assignees`).
-            escolhidos = escolhas.get(filho.id, forcados)
-            if escolhidos is not None:
-                from app.modules.tasks.application.collaboration_service import (
-                    CollaborationService,
-                )
-
-                await CollaborationService(self._session).assign_many_or_fail(
-                    task=copia, user_ids=escolhidos
-                )
-            elif levar_responsaveis:
-                await self._aplicar_responsaveis_da_filha(
-                    origem=filho, copia=copia, pulados=pulados
-                )
             await self._copiar_subarvore(
                 origem=filho,
                 destino=copia,
@@ -573,27 +605,30 @@ class TaskService:
                 details={"field": "subtask_assignees", "invalid_ids": vazias},
             )
 
-    async def _aplicar_responsaveis_da_filha(
-        self, *, origem: Task, copia: Task, pulados: list[uuid.UUID]
-    ) -> None:
-        """Responsaveis da subtarefa, FILTRADOS por alcance (D9-c).
+    async def _herdados_da_filha(
+        self, *, origem: Task, destino: Task, pulados: list[uuid.UUID]
+    ) -> list[uuid.UUID]:
+        """Responsaveis da subtarefa que PODEM assumir a copia (D9-c).
 
-        ⚠️ Passar a lista crua para `create()` seria o comportamento (b) da
+        Devolve a lista em vez de designar: com a ADR 0031 a filha ja nasce
+        com responsavel, entao a decisao precisa estar pronta ANTES do
+        `create`. Quem foi descartado entra em `pulados` e volta na resposta
+        (`skipped_assignees`) -- a tela avisa, e a pessoa corrige.
+
+        ⚠️ Passar a lista crua para o `create` seria o comportamento (b) da
         D9, que NAO foi o escolhido: `assign_many_or_fail` e atomico, entao um
         unico responsavel desativado numa das seis filhas derrubaria a
         duplicacao inteira com um 422 sobre uma pessoa que quem clicou nao
         sabe que existe, numa subtarefa que ela nao viu.
 
-        ⚠️ O alcance e medido contra a COPIA, nao contra a origem. A copia
-        pode nascer em outro projeto ou sob outro pai, e quem alcanca uma nao
-        alcanca necessariamente a outra. Medir na origem daria a resposta
-        certa por acaso no caso comum e errada exatamente nos casos que a
-        duplicacao existe pra resolver.
+        ⚠️ O alcance e medido contra `destino` -- o pai da copia --, nao
+        contra a origem. A copia pode nascer em outro projeto ou sob outro
+        pai, e quem alcanca uma nao alcanca necessariamente a outra. Medir na
+        origem daria a resposta certa por acaso no caso comum e errada
+        exatamente nos casos que a duplicacao existe pra resolver.
 
-        ⚠️ A regra de 29/07 ("responsavel obrigatorio ao criar") CEDE aqui, e
-        por escrito na spec: uma filha pode nascer sem responsavel quando o
-        responsavel original perdeu o alcance. E a unica excecao, e ela e
-        VISIVEL -- por isso o id entra em `pulados` e volta na resposta.
+        Lista VAZIA e resposta legitima daqui; quem transforma isso em 422 e o
+        chamador, que tem o titulo da subtarefa para a mensagem.
         """
         from app.modules.tasks.application.collaboration_service import (
             CollaborationService,
@@ -602,19 +637,17 @@ class TaskService:
         colaboracao = CollaborationService(self._session)
         ids = await colaboracao.assignee_ids_for(origem)
         if not ids:
-            return
+            return []
 
         validos: list[uuid.UUID] = []
         for uid in ids:
             if await user_can_view_task(
-                self._session, task=copia, user_id=uid
+                self._session, task=destino, user_id=uid
             ):
                 validos.append(uid)
             elif uid not in pulados:
                 pulados.append(uid)
-
-        if validos:
-            await colaboracao.assign_many_or_fail(task=copia, user_ids=validos)
+        return validos
 
     async def get(self, task_id: uuid.UUID) -> Task:
         """Get com privacidade do pessoal (404 em pessoal alheio)."""

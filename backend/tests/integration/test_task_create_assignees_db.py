@@ -164,10 +164,23 @@ async def test_dedup_id_repetido_vira_um(db) -> None:
     assert await _count_assign(db, task.id) == 1
 
 
-async def test_sem_assignees_comportamento_de_hoje(db) -> None:
+async def test_sem_assignees_e_RECUSADO(db) -> None:
+    """⚠️ INVERTIDO EM 05/08 (ADR 0031). Este teste afirmava o contrario --
+    criar sem responsavel era o "comportamento de hoje" e ficava registrado
+    como tal. A regra de 29/07 existia so no modal: valia pra quem usava a
+    tela e nao valia pro n8n, pro Swagger nem pra duplicacao. O passivo
+    medido em 05/08 (37 tarefas vivas sem responsavel, de oito pessoas) e o
+    que essa lacuna produziu."""
     ws, a, b, manager, op_a, op_b, proj, mgr_ctx = await _setup(db)
     with acting_as(**mgr_ctx):
-        task = await TaskService(db).create(
-            CreateTaskCommand(title="Sem ninguem", project_id=proj, team_id=a)
-        )
-    assert await _count_assign(db, task.id) == 0
+        with pytest.raises(ValidationError):
+            # ⚠️ SEM `assignee_ids` DE PROPOSITO -- e o objeto do teste. Em
+            # 05/08 o script que acrescentou responsavel em ~78 fixtures
+            # passou por aqui tambem e transformou este teste num que nao
+            # testava nada: ele criava com responsavel e esperava 422. Edicao
+            # em massa nao distingue fixture de asercao.
+            await TaskService(db).create(
+                CreateTaskCommand(
+                    title="Sem ninguem", project_id=proj, team_id=a
+                )
+            )

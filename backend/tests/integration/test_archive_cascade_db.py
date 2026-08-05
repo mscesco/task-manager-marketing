@@ -50,14 +50,15 @@ async def _mundo(db):
     return ws, team, user, proj, ctx
 
 
-async def _tres_niveis(db, ctx, proj, team):
+async def _tres_niveis(db, ctx, proj, team, user):
     """pai -> sub -> neto. TRES niveis de proposito: cascata de um nivel so
     passaria num teste com dois, e a subarvore real tem netos."""
     with acting_as(**ctx):
         svc = TaskService(db)
         pai = await svc.create(
             CreateTaskCommand(
-                title="Campanha de março", project_id=proj, team_id=team
+                title="Campanha de março", project_id=proj, team_id=team,
+                assignee_ids=[user],
             )
         )
         sub = await svc.create(
@@ -66,6 +67,7 @@ async def _tres_niveis(db, ctx, proj, team):
                 project_id=proj,
                 team_id=team,
                 parent_task_id=pai.id,
+                assignee_ids=[user],
             )
         )
         neto = await svc.create(
@@ -74,6 +76,7 @@ async def _tres_niveis(db, ctx, proj, team):
                 project_id=proj,
                 team_id=team,
                 parent_task_id=sub.id,
+                assignee_ids=[user],
             )
         )
     return pai, sub, neto
@@ -81,7 +84,7 @@ async def _tres_niveis(db, ctx, proj, team):
 
 async def test_arquivar_o_pai_arquiva_a_subarvore_inteira(db) -> None:
     ws, team, user, proj, ctx = await _mundo(db)
-    pai, sub, neto = await _tres_niveis(db, ctx, proj, team)
+    pai, sub, neto = await _tres_niveis(db, ctx, proj, team, user)
 
     with acting_as(**ctx):
         r = await TaskService(db).archive(task_id=pai.id)
@@ -98,11 +101,12 @@ async def test_a_cascata_nao_vaza_para_fora_da_subarvore(db) -> None:
     """Irma de outra raiz nao pode ser tocada. O `path <@` cobre isso, mas e a
     asercao que impede alguem trocar por um filtro mais largo depois."""
     ws, team, user, proj, ctx = await _mundo(db)
-    pai, sub, neto = await _tres_niveis(db, ctx, proj, team)
+    pai, sub, neto = await _tres_niveis(db, ctx, proj, team, user)
     with acting_as(**ctx):
         outra = await TaskService(db).create(
             CreateTaskCommand(
-                title="Newsletter", project_id=proj, team_id=team
+                title="Newsletter", project_id=proj, team_id=team,
+                assignee_ids=[user],
             )
         )
 
@@ -124,7 +128,7 @@ async def test_arquivar_de_novo_nao_conta_nem_escreve_history(db) -> None:
     arquivo, este foi o unico que sobreviveu pelo motivo errado.
     """
     ws, team, user, proj, ctx = await _mundo(db)
-    pai, sub, neto = await _tres_niveis(db, ctx, proj, team)
+    pai, sub, neto = await _tres_niveis(db, ctx, proj, team, user)
 
     with acting_as(**ctx):
         primeira = await TaskService(db).archive(task_id=pai.id)
@@ -152,7 +156,7 @@ async def test_history_so_na_RAIZ_com_a_contagem_no_metadata(db) -> None:
     linha propria -- arquivar 40 subtarefas viraria 40 linhas que ninguem le.
     """
     ws, team, user, proj, ctx = await _mundo(db)
-    pai, sub, neto = await _tres_niveis(db, ctx, proj, team)
+    pai, sub, neto = await _tres_niveis(db, ctx, proj, team, user)
 
     with acting_as(**ctx):
         await TaskService(db).archive(task_id=pai.id)
@@ -192,7 +196,7 @@ async def test_arquivar_folha_nao_muda_o_metadata_antigo(db) -> None:
     ws, team, user, proj, ctx = await _mundo(db)
     with acting_as(**ctx):
         folha = await TaskService(db).create(
-            CreateTaskCommand(title="Avulsa", project_id=proj, team_id=team)
+            CreateTaskCommand(title="Avulsa", project_id=proj, team_id=team, assignee_ids=[user])
         )
         r = await TaskService(db).archive(task_id=folha.id)
 
@@ -216,7 +220,7 @@ async def test_desarquivar_o_pai_traz_a_subarvore_inteira(db) -> None:
     """A promessa que a mensagem de erro do desarquivar ja fazia desde 04/08
     ("a subtarefa volta junto") e que ate 05/08 era MENTIRA."""
     ws, team, user, proj, ctx = await _mundo(db)
-    pai, sub, neto = await _tres_niveis(db, ctx, proj, team)
+    pai, sub, neto = await _tres_niveis(db, ctx, proj, team, user)
 
     with acting_as(**ctx):
         await TaskService(db).archive(task_id=pai.id)
@@ -239,7 +243,7 @@ async def test_desarquivar_TAMBEM_traz_quem_foi_arquivado_antes(db) -> None:
     do arquivamento), e ai ela e consciente em vez de acidental.
     """
     ws, team, user, proj, ctx = await _mundo(db)
-    pai, sub, neto = await _tres_niveis(db, ctx, proj, team)
+    pai, sub, neto = await _tres_niveis(db, ctx, proj, team, user)
 
     with acting_as(**ctx):
         await TaskService(db).archive(task_id=sub.id)  # encerrada sozinha
@@ -260,7 +264,7 @@ async def test_arquivar_recolhe_a_filha_orfa_do_comportamento_antigo(
     recolher a filha, em vez de ser no-op. Sem isto, so SQL na mao consertaria.
     """
     ws, team, user, proj, ctx = await _mundo(db)
-    pai, sub, neto = await _tres_niveis(db, ctx, proj, team)
+    pai, sub, neto = await _tres_niveis(db, ctx, proj, team, user)
     # Estado legado montado a mao: pai arquivado, subarvore ativa.
     pai.is_archived = True
     await db.flush()

@@ -99,9 +99,15 @@ async def test_remove_assignee_history_e_404(db) -> None:
     task = await f.make_task(db, workspace_id=ws, created_by=manager, team_id=a, project_id=proj)
     with acting_as(**mgr_ctx):
         svc = CollaborationService(db)
+        # ⚠️ AJUSTADO EM 05/08 (ADR 0031). Antes o teste designava UMA pessoa e
+        # a removia, ficando com zero -- que e exatamente o estado que a ADR
+        # fecha. Agora ha DOIS responsaveis: remover um continua funcionando
+        # (e e o que este teste mede), remover o ultimo e outro teste, em
+        # test_responsavel_obrigatorio_db.py.
+        await svc.add_assignee(task_id=task.id, user_id=manager)
         await svc.add_assignee(task_id=task.id, user_id=alvo)
         await svc.remove_assignee(task_id=task.id, user_id=alvo)
-        assert await _count_assign(db, task.id) == 0
+        assert await _count_assign(db, task.id) == 1
         with pytest.raises(EntityNotFoundError):
             await svc.remove_assignee(task_id=task.id, user_id=alvo)
     un = (

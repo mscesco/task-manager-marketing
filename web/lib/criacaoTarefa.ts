@@ -81,15 +81,25 @@ export function acaoDoEnterNoTitulo(r: Rascunho): AcaoDoEnter {
 }
 
 /**
- * Depois de criar em sequencia: limpa o titulo e PRESERVA responsavel e prazo.
+ * Depois de criar em sequencia: o formulario volta VAZIO.
  *
- * Quebrar uma tarefa em seis subtarefas eram seis idas ao botao "+", porque o
- * formulario fechava a cada criacao. Manter responsavel e prazo aposta no caso
- * comum -- decompor trabalho da mesma pessoa, para o mesmo prazo. Quem precisa
- * variar troca o campo; quem nao precisa digita titulo, Enter, titulo, Enter.
+ * ⚠️ MUDOU EM 05/08/2026, e a versao anterior preservava responsavel e prazo.
+ * A aposta de entao era o caso comum "decompor trabalho da mesma pessoa, para
+ * o mesmo prazo": digitar titulo, Enter, titulo, Enter. Medido na tela, a
+ * aposta estava errada -- a segunda subtarefa e OUTRA subtarefa, com outra
+ * pessoa, e o campo ja vinha preenchido com quem nao devia. Designar sem
+ * querer e pior do que selecionar de novo: o erro nao aparece na hora, e a
+ * pessoa errada e que descobre.
+ *
+ * ⚠️ CUSTO ACEITO: quem cria seis subtarefas para a MESMA pessoa agora
+ * seleciona seis vezes. Se isso incomodar mais do que o inverso incomodava,
+ * a volta e uma linha -- mas volta como decisao, nao como esquecimento.
  */
-export function proximoDaSequencia(r: Rascunho): Rascunho {
-  return { titulo: "", assigneeIds: [...r.assigneeIds], dueDate: r.dueDate };
+export function proximoDaSequencia(_r: Rascunho): Rascunho {
+  // ⚠️ Array NOVO, nao `{...RASCUNHO_VAZIO}`: espalhamento e copia RASA e o
+  // `assigneeIds` sairia sendo a MESMA referencia da constante do modulo --
+  // uma mutacao em qualquer chamador corromperia o "vazio" de todo mundo.
+  return { titulo: "", assigneeIds: [], dueDate: "" };
 }
 
 /**

@@ -89,7 +89,13 @@ async def test_post_task_ja_completed_201_e_completed_at_setado(db) -> None:
     async with _client(db, ctx) as c:
         resp = await c.post(
             "/api/v1/tasks",
-            json={"title": "ja concluida", "team_id": str(a), "status": "COMPLETED"},
+            json={
+                "title": "ja concluida",
+                "team_id": str(a),
+                "status": "COMPLETED",
+                # ADR 0031: responsavel obrigatorio tambem no POST HTTP.
+                "assignee_ids": [str(manager)],
+            },
         )
     assert resp.status_code == 201
     assert resp.json()["completed_at"] is not None

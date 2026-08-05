@@ -199,10 +199,29 @@ class CollaborationService:
     async def remove_assignee(
         self, *, task_id: uuid.UUID, user_id: uuid.UUID
     ) -> Task:
-        """Remove um responsavel. Par inexistente -> 404. Grava `unassigned`."""
+        """Remove um responsavel. Par inexistente -> 404. Grava `unassigned`.
+
+        ⚠️ RECUSA A REMOCAO DO ULTIMO (ADR 0031). Exigir responsavel so na
+        criacao nao fecha nada: e a MESMA porta, do outro lado. A pessoa
+        criava com alguem e esvaziava depois, e a tarefa ficava exatamente no
+        estado que a ADR existe pra impedir -- viva, sem dono, e (num quadro
+        personalizado) sem aparecer em "Minhas tarefas" de ninguem.
+
+        ⚠️ Nao retroage: tarefa que JA esta sem responsavel nao passa por aqui
+        (nao ha par a remover -> 404). O passivo de 37 medido em 05/08 so
+        encolhe.
+        """
         task = await self._tasks.get_by_id_or_raise(task_id)
         await self._guards.assert_visible(task)
         await self._guards.assert_editable(task)
+
+        atuais = await self._assignees.list_user_ids(task_id)
+        if user_id in atuais and len(atuais) == 1:
+            raise ValidationError(
+                "Toda tarefa precisa de pelo menos um responsável. "
+                "Escolha outro antes de remover este.",
+                details={"field": "assignee_ids"},
+            )
 
         if not await self._assignees.remove(task_id=task_id, user_id=user_id):
             raise EntityNotFoundError("TaskAssignment", identifier=user_id)

@@ -62,11 +62,17 @@ async def test_move_entre_projetos_leva_subtree(db) -> None:
     with acting_as(**ctx):
         svc = TaskService(db)
         raiz = await svc.create(
-            CreateTaskCommand(title="raiz", project_id=proj_a, team_id=team)
+            CreateTaskCommand(
+                title="raiz",
+                project_id=proj_a,
+                team_id=team,
+                assignee_ids=[ctx["user_id"]],
+            )
         )
         filha = await svc.create(
             CreateTaskCommand(
-                title="filha", project_id=proj_a, team_id=team, parent_task_id=raiz.id
+                title="filha", project_id=proj_a, team_id=team, parent_task_id=raiz.id,
+                assignee_ids=[ctx["user_id"]],
             )
         )
         await svc.move(task_id=raiz.id, command=MoveTaskCommand(project_id=proj_b))
@@ -81,11 +87,17 @@ async def test_detach_torna_avulsa_com_subtree(db) -> None:
     with acting_as(**ctx):
         svc = TaskService(db)
         raiz = await svc.create(
-            CreateTaskCommand(title="raiz", project_id=proj_a, team_id=team)
+            CreateTaskCommand(
+                title="raiz",
+                project_id=proj_a,
+                team_id=team,
+                assignee_ids=[ctx["user_id"]],
+            )
         )
         filha = await svc.create(
             CreateTaskCommand(
-                title="filha", project_id=proj_a, team_id=team, parent_task_id=raiz.id
+                title="filha", project_id=proj_a, team_id=team, parent_task_id=raiz.id,
+                assignee_ids=[ctx["user_id"]],
             )
         )
         await svc.move(task_id=raiz.id, command=MoveTaskCommand(detach_project=True))
@@ -100,7 +112,12 @@ async def test_detach_avulsa_e_noop(db) -> None:
     with acting_as(**ctx):
         svc = TaskService(db)
         avulsa = await svc.create(
-            CreateTaskCommand(title="avulsa", project_id=None, team_id=team)
+            CreateTaskCommand(
+                title="avulsa",
+                project_id=None,
+                team_id=team,
+                assignee_ids=[ctx["user_id"]],
+            )
         )
         # nao deve lancar
         await svc.move(task_id=avulsa.id, command=MoveTaskCommand(detach_project=True))
@@ -114,11 +131,17 @@ async def test_detach_subtarefa_422(db) -> None:
     with acting_as(**ctx):
         svc = TaskService(db)
         raiz = await svc.create(
-            CreateTaskCommand(title="raiz", project_id=proj_a, team_id=team)
+            CreateTaskCommand(
+                title="raiz",
+                project_id=proj_a,
+                team_id=team,
+                assignee_ids=[ctx["user_id"]],
+            )
         )
         filha = await svc.create(
             CreateTaskCommand(
-                title="filha", project_id=proj_a, team_id=team, parent_task_id=raiz.id
+                title="filha", project_id=proj_a, team_id=team, parent_task_id=raiz.id,
+                assignee_ids=[ctx["user_id"]],
             )
         )
         with pytest.raises(ValidationError):
@@ -133,7 +156,12 @@ async def test_detach_com_projeto_422(db) -> None:
     with acting_as(**ctx):
         svc = TaskService(db)
         raiz = await svc.create(
-            CreateTaskCommand(title="raiz", project_id=proj_a, team_id=team)
+            CreateTaskCommand(
+                title="raiz",
+                project_id=proj_a,
+                team_id=team,
+                assignee_ids=[ctx["user_id"]],
+            )
         )
         with pytest.raises(ValidationError):
             await svc.move(
@@ -148,10 +176,20 @@ async def test_detach_com_pai_422(db) -> None:
     with acting_as(**ctx):
         svc = TaskService(db)
         raiz = await svc.create(
-            CreateTaskCommand(title="raiz", project_id=proj_a, team_id=team)
+            CreateTaskCommand(
+                title="raiz",
+                project_id=proj_a,
+                team_id=team,
+                assignee_ids=[ctx["user_id"]],
+            )
         )
         outra = await svc.create(
-            CreateTaskCommand(title="outra", project_id=proj_a, team_id=team)
+            CreateTaskCommand(
+                title="outra",
+                project_id=proj_a,
+                team_id=team,
+                assignee_ids=[ctx["user_id"]],
+            )
         )
         with pytest.raises(ValidationError):
             await svc.move(
@@ -166,7 +204,12 @@ async def test_move_vazio_e_noop(db) -> None:
     with acting_as(**ctx):
         svc = TaskService(db)
         raiz = await svc.create(
-            CreateTaskCommand(title="raiz", project_id=proj_a, team_id=team)
+            CreateTaskCommand(
+                title="raiz",
+                project_id=proj_a,
+                team_id=team,
+                assignee_ids=[ctx["user_id"]],
+            )
         )
         await svc.move(task_id=raiz.id, command=MoveTaskCommand())
 

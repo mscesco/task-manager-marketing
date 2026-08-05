@@ -631,8 +631,21 @@ export type TaskDuplicateInput = {
   /** Responsaveis do PAI, ja revisados no modal. */
   assignee_ids?: string[];
   include_subtasks?: boolean;
-  /** D13: controla SO os responsaveis das SUBTAREFAS. Default true. */
+  /**
+   * ⚠️ D13, MORTO em 05/08 pela ADR 0031. O backend ainda aceita por
+   * compatibilidade, mas o modal nao manda mais: nao existe "leve sem
+   * responsaveis". Quem nao pode herdar e resolvido no passo 2, ANTES do
+   * POST. Voltar a mandar `false` reabre a porta da subtarefa orfa.
+   */
   include_assignees?: boolean;
+  /**
+   * PASSO 2 (ADR 0031). Chaves = ids de subtarefa DIRETA da origem.
+   * Ausentes = herda como sempre. Lista vazia e recusada pelo backend com
+   * 422 -- quem nao vai, vai em `skip_subtasks`.
+   */
+  subtask_assignees?: Record<string, string[]>;
+  /** Subtarefas diretas que NAO vao. Leva a subarvore delas junto. */
+  skip_subtasks?: string[];
 };
 
 export type TaskDuplicateResult = Task & {
@@ -672,6 +685,15 @@ export async function duplicateTask(
         assignee_ids: input.assignee_ids ?? [],
         include_subtasks: input.include_subtasks ?? false,
         include_assignees: input.include_assignees ?? true,
+        // ⚠️ ESTE CORPO E MONTADO CAMPO A CAMPO, entao campo novo no tipo
+        // NAO chega ao backend sozinho -- em 05/08 o passo 2 do modal montou
+        // as duas chaves, os testes do componente afirmaram que o modal as
+        // mandava (com `duplicateTask` MOCKADO) e nada chegava na API: a
+        // subtarefa nascia sem responsavel e a "nao levar" ia junto assim
+        // mesmo. Ao acrescentar campo em `TaskDuplicateInput`, acrescente
+        // aqui tambem.
+        subtask_assignees: input.subtask_assignees ?? {},
+        skip_subtasks: input.skip_subtasks ?? [],
       },
     }
   );

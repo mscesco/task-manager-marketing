@@ -47,12 +47,13 @@ async def _mundo(db):
     return ws, team, user, proj, ctx
 
 
-async def _arvore(db, ctx, proj, team):
+async def _arvore(db, ctx, proj, team, user):
     with acting_as(**ctx):
         svc = TaskService(db)
         pai = await svc.create(
             CreateTaskCommand(
-                title="Campanha de março", project_id=proj, team_id=team
+                title="Campanha de março", project_id=proj, team_id=team,
+                assignee_ids=[user],
             )
         )
         sub = await svc.create(
@@ -61,6 +62,7 @@ async def _arvore(db, ctx, proj, team):
                 project_id=proj,
                 team_id=team,
                 parent_task_id=pai.id,
+                assignee_ids=[user],
             )
         )
     return pai, sub
@@ -68,7 +70,7 @@ async def _arvore(db, ctx, proj, team):
 
 async def test_desarquivar_sub_com_pai_arquivado_e_recusado(db) -> None:
     ws, team, user, proj, ctx = await _mundo(db)
-    pai, sub = await _arvore(db, ctx, proj, team)
+    pai, sub = await _arvore(db, ctx, proj, team, user)
     # ⚠️ Arquiva pelo ORM, nao por UPDATE cru: SQL direto nao avisa a sessao e
     # o service leria o objeto CACHEADO com is_archived=False.
     pai.is_archived = True
@@ -89,7 +91,7 @@ async def test_a_sub_continua_arquivada_apos_a_recusa(db) -> None:
     """Recusa TEM de ser atomica. Meio-desarquivada e o estado que o conserto
     existe pra impedir."""
     ws, team, user, proj, ctx = await _mundo(db)
-    pai, sub = await _arvore(db, ctx, proj, team)
+    pai, sub = await _arvore(db, ctx, proj, team, user)
     pai.is_archived = True
     sub.is_archived = True
     await db.flush()
@@ -106,7 +108,7 @@ async def test_pai_ATIVO_desarquiva_normalmente(db) -> None:
     """O outro lado: com o pai vivo a subtarefa volta pra checklist dele, que
     e alcancavel. Recusar aqui seria travar o caso comum."""
     ws, team, user, proj, ctx = await _mundo(db)
-    pai, sub = await _arvore(db, ctx, proj, team)
+    pai, sub = await _arvore(db, ctx, proj, team, user)
     sub.is_archived = True
     await db.flush()
 
@@ -125,7 +127,7 @@ async def test_tarefa_de_TOPO_desarquiva_normalmente(db) -> None:
     ws, team, user, proj, ctx = await _mundo(db)
     with acting_as(**ctx):
         raiz = await TaskService(db).create(
-            CreateTaskCommand(title="raiz", project_id=proj, team_id=team)
+            CreateTaskCommand(title="raiz", project_id=proj, team_id=team, assignee_ids=[user])
         )
     raiz.is_archived = True
     await db.flush()
@@ -149,7 +151,7 @@ async def test_desarquivar_o_PAI_traz_a_arvore_de_volta(db) -> None:
     cascata de verdade e test_archive_cascade_db.py.
     """
     ws, team, user, proj, ctx = await _mundo(db)
-    pai, sub = await _arvore(db, ctx, proj, team)
+    pai, sub = await _arvore(db, ctx, proj, team, user)
     pai.is_archived = True
     await db.flush()
 
@@ -167,7 +169,7 @@ async def test_idempotencia_preservada(db) -> None:
     arquivado. A trava so vale pra quem ESTA arquivada; sem esta condicao,
     um clique repetido viraria erro."""
     ws, team, user, proj, ctx = await _mundo(db)
-    pai, sub = await _arvore(db, ctx, proj, team)
+    pai, sub = await _arvore(db, ctx, proj, team, user)
     pai.is_archived = True
     await db.flush()
 

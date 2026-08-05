@@ -36,7 +36,7 @@ async def test_base_select_filtra_por_workspace(db) -> None:
         team_tree=(node(team_a),),
     ):
         await TaskService(db).create(
-            CreateTaskCommand(title="A", project_id=proj_a, team_id=team_a)
+            CreateTaskCommand(title="A", project_id=proj_a, team_id=team_a, assignee_ids=[user_a])
         )
 
     ws_b, team_b, user_b = await _ws_admin(db)
@@ -58,7 +58,12 @@ async def test_soft_deleted_excluido_por_padrao(db) -> None:
         workspace_id=ws, user_id=user, memberships=(mship(team, "ADMIN"),), team_tree=(node(team),)
     ):
         svc = TaskService(db)
-        task = await svc.create(CreateTaskCommand(title="X", project_id=proj, team_id=team))
+        task = await svc.create(CreateTaskCommand(
+            title="X",
+            project_id=proj,
+            team_id=team,
+            assignee_ids=[user]),
+        )
         await svc.soft_delete(task_id=task.id)
         page = await svc.list_page(PageParams(size=100), TaskFilters())
     assert all(t.id != task.id for t in page.items)
@@ -72,7 +77,7 @@ async def test_workspace_id_gravado_corresponde_ao_tenant(db) -> None:
         workspace_id=ws, user_id=user, memberships=(mship(team, "ADMIN"),), team_tree=(node(team),)
     ):
         task = await TaskService(db).create(
-            CreateTaskCommand(title="X", project_id=proj, team_id=team)
+            CreateTaskCommand(title="X", project_id=proj, team_id=team, assignee_ids=[user])
         )
     row_ws = (
         await db.execute(text("SELECT workspace_id FROM task WHERE id=:i"), {"i": task.id})

@@ -32,15 +32,38 @@ async def test_cascata_cascade_count_e_404(db) -> None:
     ctx, proj, team = await _admin_proj(db)
     with acting_as(**ctx):
         svc = TaskService(db)
-        raiz = await svc.create(CreateTaskCommand(title="raiz", project_id=proj, team_id=team))
+        raiz = await svc.create(CreateTaskCommand(
+            title="raiz",
+            project_id=proj,
+            team_id=team,
+            assignee_ids=[ctx["user_id"]]),
+        )
         f1 = await svc.create(
-            CreateTaskCommand(title="f1", project_id=proj, team_id=team, parent_task_id=raiz.id)
+            CreateTaskCommand(
+                title="f1",
+                project_id=proj,
+                team_id=team,
+                parent_task_id=raiz.id,
+                assignee_ids=[ctx["user_id"]],
+            )
         )
         f2 = await svc.create(
-            CreateTaskCommand(title="f2", project_id=proj, team_id=team, parent_task_id=raiz.id)
+            CreateTaskCommand(
+                title="f2",
+                project_id=proj,
+                team_id=team,
+                parent_task_id=raiz.id,
+                assignee_ids=[ctx["user_id"]],
+            )
         )
         neta = await svc.create(
-            CreateTaskCommand(title="neta", project_id=proj, team_id=team, parent_task_id=f1.id)
+            CreateTaskCommand(
+                title="neta",
+                project_id=proj,
+                team_id=team,
+                parent_task_id=f1.id,
+                assignee_ids=[ctx["user_id"]],
+            )
         )
         result = await svc.soft_delete(task_id=raiz.id)
         assert result.cascade_count == 3  # f1, f2, neta (sem contar a raiz)
@@ -53,9 +76,20 @@ async def test_history_deleted_com_cascade_count(db) -> None:
     ctx, proj, team = await _admin_proj(db)
     with acting_as(**ctx):
         svc = TaskService(db)
-        raiz = await svc.create(CreateTaskCommand(title="raiz", project_id=proj, team_id=team))
+        raiz = await svc.create(CreateTaskCommand(
+            title="raiz",
+            project_id=proj,
+            team_id=team,
+            assignee_ids=[ctx["user_id"]]),
+        )
         await svc.create(
-            CreateTaskCommand(title="f1", project_id=proj, team_id=team, parent_task_id=raiz.id)
+            CreateTaskCommand(
+                title="f1",
+                project_id=proj,
+                team_id=team,
+                parent_task_id=raiz.id,
+                assignee_ids=[ctx["user_id"]],
+            )
         )
         await svc.soft_delete(task_id=raiz.id)
     rows = (

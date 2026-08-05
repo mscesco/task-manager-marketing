@@ -34,7 +34,12 @@ async def test_eventos_create_e_status(db) -> None:
     ctx, proj, team = await _admin_proj(db)
     with acting_as(**ctx):
         svc = TaskService(db)
-        task = await svc.create(CreateTaskCommand(title="t", project_id=proj, team_id=team))
+        task = await svc.create(CreateTaskCommand(
+            title="t",
+            project_id=proj,
+            team_id=team,
+            assignee_ids=[ctx["user_id"]]),
+        )
         await svc.update(task_id=task.id, command=UpdateTaskCommand(status=TaskStatus.IN_PROGRESS))
     tipos = (
         (
@@ -54,7 +59,12 @@ async def test_update_em_task_history_bloqueado(db) -> None:
     ctx, proj, team = await _admin_proj(db)
     with acting_as(**ctx):
         task = await TaskService(db).create(
-            CreateTaskCommand(title="t", project_id=proj, team_id=team)
+            CreateTaskCommand(
+                title="t",
+                project_id=proj,
+                team_id=team,
+                assignee_ids=[ctx["user_id"]],
+            )
         )
     with pytest.raises(DBAPIError):
         await db.execute(
@@ -67,7 +77,12 @@ async def test_delete_em_task_history_bloqueado(db) -> None:
     ctx, proj, team = await _admin_proj(db)
     with acting_as(**ctx):
         task = await TaskService(db).create(
-            CreateTaskCommand(title="t", project_id=proj, team_id=team)
+            CreateTaskCommand(
+                title="t",
+                project_id=proj,
+                team_id=team,
+                assignee_ids=[ctx["user_id"]],
+            )
         )
     with pytest.raises(DBAPIError):
         await db.execute(text("DELETE FROM task_history WHERE task_id=:i"), {"i": task.id})

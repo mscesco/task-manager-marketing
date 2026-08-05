@@ -32,7 +32,13 @@ import {
 } from "@/lib/teclasFormulario";
 import { motivoNaoCria } from "@/lib/criacaoTarefa";
 import {
-  avisoSemResponsaveis,
+  haPendencias,
+  linhasDasSubtarefas,
+  motivoNaoDuplicar,
+  payloadDasSubtarefas,
+  textoDaPendencia,
+} from "@/lib/duplicacaoSubtarefas";
+import {
   rotuloCaixaSubtarefas,
   valoresIniciaisDaCopia,
 } from "@/lib/duplicacaoTarefa";
@@ -122,11 +128,17 @@ export default function TaskModal({
   const [assigneeIds, setAssigneeIds] = useState<string[]>([]);
   const [invalidIds, setInvalidIds] = useState<Set<string>>(new Set());
   // Picker com busca (popover): abre/fecha, termo, e ref pra clique-fora.
-  // Spec 033: as duas caixas. `levarSubtarefas` = D7; `levarResponsaveis` =
+  // Spec 033: a caixa das subtarefas (D7). `levarResponsaveis` (D13) =
   // D13, e manda SO nas subtarefas -- os do pai estao no campo acima, que a
   // pessoa edita direto.
   const [levarSubtarefas, setLevarSubtarefas] = useState(true);
-  const [levarResponsaveis, setLevarResponsaveis] = useState(true);
+  // ⚠️ A caixa "Levar os responsáveis" (D13) SAIU em 05/08 com a ADR 0031.
+  // Desmarcá-la significava "crie N subtarefas sem ninguém", que é o estado
+  // que a ADR proíbe. O que era a caixa virou o passo 2 abaixo: quem não pode
+  // herdar, a pessoa resolve subtarefa a subtarefa. Recolocar a caixa desfaz
+  // a ADR -- não é preferência de tela.
+  const [escolhasSub, setEscolhasSub] = useState<Record<string, string[]>>({});
+  const [puladasSub, setPuladasSub] = useState<Set<string>>(new Set());
   const [aviso, setAviso] = useState<string | null>(null);
   const [abertoResp, setAbertoResp] = useState(false);
   const [buscaResp, setBuscaResp] = useState("");
@@ -147,7 +159,6 @@ export default function TaskModal({
     setBuscaResp("");
     setErro(null);
     setLevarSubtarefas(true);
-    setLevarResponsaveis(true);
     setAviso(null);
     // ⚠️ As flags de "ja respondeu" precisam ZERAR junto: sem isto, reabrir o
     // modal pra outra tarefa pre-preencheria na hora, com o alcance da tarefa
@@ -212,7 +223,7 @@ export default function TaskModal({
       ? null
       : "Escreva o título da tarefa."
     : motivoNaoCria({ titulo: title, assigneeIds, dueDate });
-  const podeSalvar = motivoBloqueio === null;
+
 
   // ⚠️ ESCOPO DE TIME NA CRIACAO.
   // A tarefa nova ja nasce com time decidido AQUI: `defaultTeamId` (quadro de
@@ -377,24 +388,48 @@ export default function TaskModal({
       .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
   }, [membros, buscaResp, foraDoEscopoAqui, assigneeIds]);
 
-  // Spec 033 (D14): o aviso e recalculado a cada mudanca das caixas.
   const subtarefasVivas = useMemo(
     () => filhosDaOrigem.filter((f) => !f.is_archived).length,
     [filhosDaOrigem]
   );
+
+  // PASSO 2 (ADR 0031). Toda a regra mora em lib/duplicacaoSubtarefas; aqui
+  // só se pergunta e se desenha.
+  //
+  // ⚠️ Depende de `permitidosNaCopia`, que só fica correto depois que
+  // `membros` e `alcancamTime` chegam da rede. Antes disso a lista de quem
+  // pode está vazia e TUDO aparece pendente -- por isso o bloco só é
+  // renderizado com as duas buscas resolvidas. Falhar fechado aqui é de
+  // propósito: pendente a pessoa resolve na tela; passar batido é 422.
+  const linhasSub = useMemo(
+    () => linhasDasSubtarefas(filhosDaOrigem, permitidosNaCopia),
+    [filhosDaOrigem, permitidosNaCopia]
+  );
+  const prontoPraDecidir = alcanceResolvido && membrosResolvidos;
+  const mostrarPasso2 =
+    duplicando &&
+    levarSubtarefas &&
+    prontoPraDecidir &&
+    haPendencias(linhasSub);
+  const travaDasSubtarefas =
+    duplicando && levarSubtarefas && prontoPraDecidir
+      ? motivoNaoDuplicar(linhasSub, escolhasSub, puladasSub)
+      : null;
+
+  // As decisões são da CÓPIA aberta: trocar de origem zera. Sem isto, escolha
+  // feita para a subtarefa de uma tarefa vazaria para a duplicação seguinte.
   useEffect(() => {
-    if (!duplicando) {
-      setAviso(null);
-      return;
-    }
-    setAviso(
-      avisoSemResponsaveis(
-        levarSubtarefas,
-        levarResponsaveis,
-        subtarefasVivas
-      )
-    );
-  }, [duplicando, levarSubtarefas, levarResponsaveis, subtarefasVivas]);
+    setEscolhasSub({});
+    setPuladasSub(new Set());
+  }, [duplicarDe?.id, open]);
+
+  // ⚠️ A trava do passo 2 entra no MESMO caminho que já explica o botão
+  // travado (`motivoBloqueio` -> `title` do botão). Um segundo mecanismo de
+  // bloqueio seria uma segunda regra para a pessoa descobrir sozinha.
+  // Declarado AQUI, e não junto do `motivoBloqueio`, porque `linhasSub`
+  // depende de `permitidosNaCopia`, que é definido depois dele.
+  const motivoFinal = motivoBloqueio ?? travaDasSubtarefas;
+  const podeSalvarTudo = motivoFinal === null;
 
   // ⚠️ ANTES do `if (!open)`: hook nao pode ficar depois de return
   // condicional. `fechar` e declaracao de funcao, entao ja esta no escopo.
@@ -489,7 +524,14 @@ export default function TaskModal({
           team_id: duplicarDe.team_id,
           assignee_ids: assigneeIds,
           include_subtasks: levarSubtarefas,
-          include_assignees: levarResponsaveis,
+          // ⚠️ `include_assignees` some do payload: com a ADR 0031 não existe
+          // mais "leve sem responsáveis". Quem não pode herdar é resolvido
+          // subtarefa a subtarefa, ANTES do POST -- criar e perguntar depois
+          // deixaria tarefas órfãs no banco no intervalo, e quebraria a
+          // atomicidade que a Spec 033 defende (falha no meio = nada).
+          ...(levarSubtarefas
+            ? payloadDasSubtarefas(linhasSub, escolhasSub, puladasSub)
+            : {}),
         });
         // ⚠️ UM alerta só, com tudo que a pessoa precisa saber. Dois alertas
         // seguidos fazem qualquer um clicar OK no segundo sem ler.
@@ -875,24 +917,88 @@ export default function TaskModal({
                   {rotuloCaixaSubtarefas(subtarefasVivas)}
                 </label>
 
-                {/* D13: esta caixa manda SÓ nas subtarefas. Os responsáveis
-                    do pai estão no campo acima, editáveis um a um -- uma
-                    caixa para eles duplicaria um controle que já existe. */}
-                <label
-                  style={{
-                    display: "flex", alignItems: "center", gap: 8,
-                    fontSize: 13.5, marginLeft: 22,
-                    opacity: levarSubtarefas ? 1 : 0.5,
-                  }}
-                >
-                  <input
-                    type="checkbox"
-                    checked={levarResponsaveis}
-                    disabled={saving || !levarSubtarefas}
-                    onChange={(e) => setLevarResponsaveis(e.target.checked)}
-                  />
-                  Levar os responsáveis das subtarefas
-                </label>
+                {/* PASSO 2 (ADR 0031). Aparece SÓ quando há o que decidir --
+                    herdando responsáveis válidos, a duplicação continua sendo
+                    um clique, que é o que a Spec 033 entregou. */}
+                {mostrarPasso2 && (
+                  <div
+                    style={{
+                      marginLeft: 22, marginTop: 4, display: "flex",
+                      flexDirection: "column", gap: 10,
+                      borderLeft: "2px solid var(--border)", paddingLeft: 10,
+                    }}
+                  >
+                    <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>
+                      Estas subtarefas precisam de responsável na cópia:
+                    </p>
+                    {linhasSub
+                      .filter((l) => l.pendente !== null)
+                      .map((l) => {
+                        const pulada = puladasSub.has(l.id);
+                        const escolha = escolhasSub[l.id]?.[0] ?? "";
+                        return (
+                          <div
+                            key={l.id}
+                            style={{
+                              display: "flex", flexDirection: "column", gap: 4,
+                              opacity: pulada ? 0.5 : 1,
+                            }}
+                          >
+                            <strong style={{ fontSize: 13 }}>{l.title}</strong>
+                            <span className="muted" style={{ fontSize: 12 }}>
+                              {textoDaPendencia(l)}
+                            </span>
+                            <select
+                              aria-label={`Responsável de ${l.title}`}
+                              value={escolha}
+                              disabled={saving || pulada}
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                setEscolhasSub((prev) => ({
+                                  ...prev,
+                                  [l.id]: v ? [v] : [],
+                                }));
+                              }}
+                            >
+                              <option value="">Escolha quem vai fazer…</option>
+                              {membros
+                                .filter((m) => permitidosNaCopia.has(m.id))
+                                .sort((a, b) =>
+                                  a.name.localeCompare(b.name, "pt-BR")
+                                )
+                                .map((m) => (
+                                  <option key={m.id} value={m.id}>
+                                    {m.name}
+                                  </option>
+                                ))}
+                            </select>
+                            <label
+                              style={{
+                                display: "flex", alignItems: "center",
+                                gap: 6, fontSize: 12.5,
+                              }}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={pulada}
+                                disabled={saving}
+                                onChange={(e) => {
+                                  const marcar = e.target.checked;
+                                  setPuladasSub((prev) => {
+                                    const n = new Set(prev);
+                                    if (marcar) n.add(l.id);
+                                    else n.delete(l.id);
+                                    return n;
+                                  });
+                                }}
+                              />
+                              Não levar esta subtarefa
+                            </label>
+                          </div>
+                        );
+                      })}
+                  </div>
+                )}
               </>
             )}
 
@@ -921,8 +1027,8 @@ export default function TaskModal({
           <button
           type="submit"
           className="btn btn-primary"
-          disabled={saving || !podeSalvar}
-          title={motivoBloqueio ?? undefined}
+          disabled={saving || !podeSalvarTudo}
+          title={motivoFinal ?? undefined}
         >
             {saving
               ? "Salvando…"

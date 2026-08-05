@@ -99,12 +99,16 @@ describe("resumoResponsaveis", () => {
 });
 
 describe("proximoDaSequencia", () => {
-  it("limpa o titulo e mantem responsavel e prazo", () => {
+  it("volta VAZIO -- a proxima subtarefa e OUTRA subtarefa (05/08)", () => {
+    // ⚠️ Ate 05/08 este teste afirmava o contrario (mantinha responsavel e
+    // prazo). Mudou por medicao na tela: o campo vinha preenchido com quem
+    // nao devia, e designar sem querer nao da erro na hora -- quem descobre
+    // e a pessoa errada, depois.
     const feito = r({ titulo: "Primeira", assigneeIds: ["u1"], dueDate: "2026-08-10" });
     const proximo = proximoDaSequencia(feito);
     expect(proximo.titulo).toBe("");
-    expect(proximo.assigneeIds).toEqual(["u1"]);
-    expect(proximo.dueDate).toBe("2026-08-10");
+    expect(proximo.assigneeIds).toEqual([]);
+    expect(proximo.dueDate).toBe("");
   });
 
   it("o proximo ainda NAO pode ser criado -- falta o titulo", () => {
@@ -118,5 +122,17 @@ describe("proximoDaSequencia", () => {
     const proximo = proximoDaSequencia(feito);
     proximo.assigneeIds.push("u2");
     expect(feito.assigneeIds).toEqual(["u1"]);
+  });
+});
+
+describe("proximoDaSequencia -- isolamento de referencia", () => {
+  it("nao devolve a MESMA lista duas vezes", () => {
+    // ⚠️ `{...RASCUNHO_VAZIO}` e copia rasa: os dois resultados dividiriam o
+    // mesmo array, e mutar um mexeria no outro (e na constante do modulo).
+    const a = proximoDaSequencia(r({ titulo: "X", assigneeIds: ["u1"] }));
+    const b = proximoDaSequencia(r({ titulo: "Y", assigneeIds: ["u2"] }));
+    expect(a.assigneeIds).not.toBe(b.assigneeIds);
+    a.assigneeIds.push("u9");
+    expect(b.assigneeIds).toEqual([]);
   });
 });

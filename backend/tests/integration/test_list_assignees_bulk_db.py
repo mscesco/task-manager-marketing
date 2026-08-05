@@ -10,6 +10,7 @@ Roda so com db-test de pe + TEST_DATABASE_URL (senao e PULADO).
 from __future__ import annotations
 
 import pytest
+from sqlalchemy import text
 
 from app.modules.tasks.application.collaboration_service import (
     CollaborationService,
@@ -56,12 +57,29 @@ async def test_lote_assignees_por_task(db) -> None:
         svc = TaskService(db)
         collab = CollaborationService(db)
 
-        t0 = await svc.create(CreateTaskCommand(title="sem ninguem", team_id=team))
-        t1 = await svc.create(CreateTaskCommand(title="um", team_id=team))
-        tn = await svc.create(CreateTaskCommand(title="dois", team_id=team))
+        # ⚠️ t0 tem de terminar com ZERO responsaveis, e desde 05/08 nao da
+        # pra CRIAR assim (ADR 0031). O estado continua existindo -- sao as
+        # 37 tarefas legadas medidas em producao --, entao ele e montado como
+        # elas: por SQL, por fora dos guards. Trocar isto por "t0 com
+        # responsavel" mataria o objeto do teste, que e justamente a task
+        # aparecer no mapa MESMO sem ninguem.
+        t0 = await svc.create(
+            CreateTaskCommand(
+                title="sem ninguem", team_id=team, assignee_ids=[a]
+            )
+        )
+        t1 = await svc.create(
+            CreateTaskCommand(title="um", team_id=team, assignee_ids=[a])
+        )
+        tn = await svc.create(
+            CreateTaskCommand(title="dois", team_id=team, assignee_ids=[a])
+        )
+        await db.execute(
+            text("DELETE FROM task_assignment WHERE task_id = :t"),
+            {"t": t0.id},
+        )
+        await db.flush()
 
-        await collab.add_assignee(task_id=t1.id, user_id=a)
-        await collab.add_assignee(task_id=tn.id, user_id=a)
         await collab.add_assignee(task_id=tn.id, user_id=b)
 
         amap = await collab.assignee_ids_for_tasks([t0, t1, tn])

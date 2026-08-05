@@ -90,8 +90,13 @@ async def _filhos(db, parent_id):
     return rows
 
 
-def _cmd(source_id, **extra):
-    base = dict(source_id=source_id, title="Cópia de X")
+def _cmd(source_id, dono, **extra):
+    """⚠️ `dono` deixou de ser opcional em 05/08 (ADR 0031): a copia do PAI
+    tambem precisa de responsavel, e sem ele TODA duplicacao daria 422 na
+    raiz -- antes de chegar em qualquer coisa que o teste queira medir."""
+    base = dict(
+        source_id=source_id, title="Cópia de X", assignee_ids=[dono]
+    )
     base.update(extra)
     return DuplicateTaskCommand(**base)
 
@@ -110,9 +115,10 @@ async def test_duplicar_sem_subtarefas(db) -> None:
                 team_id=team,
                 status=TaskStatus.IN_PROGRESS,
                 priority=PriorityLevel.HIGH,
+                assignee_ids=[user],
             )
         )
-        r = await svc.duplicate(_cmd(origem.id, project_id=proj, team_id=team))
+        r = await svc.duplicate(_cmd(origem.id, user, project_id=proj, team_id=team))
 
     assert r.task.id != origem.id
     # Copia nasce BACKLOG, independente do status da origem (D11).
@@ -131,7 +137,7 @@ async def test_duplicar_com_subarvore_path_e_depth(db) -> None:
     with acting_as(**ctx):
         svc = TaskService(db)
         raiz = await svc.create(
-            CreateTaskCommand(title="raiz", project_id=proj, team_id=team)
+            CreateTaskCommand(title="raiz", project_id=proj, team_id=team, assignee_ids=[user])
         )
         for t in ("f1", "f2"):
             await svc.create(
@@ -140,11 +146,13 @@ async def test_duplicar_com_subarvore_path_e_depth(db) -> None:
                     project_id=proj,
                     team_id=team,
                     parent_task_id=raiz.id,
+                    assignee_ids=[user],
                 )
             )
         r = await svc.duplicate(
             _cmd(
                 raiz.id,
+                user,
                 project_id=proj,
                 team_id=team,
                 include_subtasks=True,
@@ -174,7 +182,7 @@ async def test_neto_e_copiado(db) -> None:
     with acting_as(**ctx):
         svc = TaskService(db)
         raiz = await svc.create(
-            CreateTaskCommand(title="raiz", project_id=proj, team_id=team)
+            CreateTaskCommand(title="raiz", project_id=proj, team_id=team, assignee_ids=[user])
         )
         filha = await svc.create(
             CreateTaskCommand(
@@ -182,6 +190,7 @@ async def test_neto_e_copiado(db) -> None:
                 project_id=proj,
                 team_id=team,
                 parent_task_id=raiz.id,
+                assignee_ids=[user],
             )
         )
         await svc.create(
@@ -190,10 +199,11 @@ async def test_neto_e_copiado(db) -> None:
                 project_id=proj,
                 team_id=team,
                 parent_task_id=filha.id,
+                assignee_ids=[user],
             )
         )
         r = await svc.duplicate(
-            _cmd(raiz.id, project_id=proj, team_id=team, include_subtasks=True)
+            _cmd(raiz.id, user, project_id=proj, team_id=team, include_subtasks=True)
         )
 
     filhos = await _filhos(db, r.task.id)
@@ -220,6 +230,7 @@ async def test_copia_nao_tem_datas(db) -> None:
                 team_id=team,
                 start_date=date(2026, 3, 1),
                 due_date=date(2026, 3, 10),
+                assignee_ids=[user],
             )
         )
         await svc.create(
@@ -229,10 +240,11 @@ async def test_copia_nao_tem_datas(db) -> None:
                 team_id=team,
                 parent_task_id=raiz.id,
                 due_date=date(2026, 3, 5),
+                assignee_ids=[user],
             )
         )
         r = await svc.duplicate(
-            _cmd(raiz.id, project_id=proj, team_id=team, include_subtasks=True)
+            _cmd(raiz.id, user, project_id=proj, team_id=team, include_subtasks=True)
         )
 
     ids = [r.task.id] + [fid for fid, _t, _p in await _filhos(db, r.task.id)]
@@ -270,6 +282,7 @@ async def test_copia_nao_tem_colunas_de_dedup_de_prazo(db) -> None:
                 project_id=proj,
                 team_id=team,
                 due_date=date(2026, 3, 10),
+                assignee_ids=[user],
             )
         )
     # Simula a origem JA avisada, como estaria uma tarefa antiga de verdade.
@@ -282,7 +295,7 @@ async def test_copia_nao_tem_colunas_de_dedup_de_prazo(db) -> None:
     )
     with acting_as(**ctx):
         r = await TaskService(db).duplicate(
-            _cmd(raiz.id, project_id=proj, team_id=team)
+            _cmd(raiz.id, user, project_id=proj, team_id=team)
         )
 
     row = (
@@ -305,7 +318,7 @@ async def test_cada_copia_gera_uma_linha_created(db) -> None:
     with acting_as(**ctx):
         svc = TaskService(db)
         raiz = await svc.create(
-            CreateTaskCommand(title="raiz", project_id=proj, team_id=team)
+            CreateTaskCommand(title="raiz", project_id=proj, team_id=team, assignee_ids=[user])
         )
         await svc.create(
             CreateTaskCommand(
@@ -313,10 +326,11 @@ async def test_cada_copia_gera_uma_linha_created(db) -> None:
                 project_id=proj,
                 team_id=team,
                 parent_task_id=raiz.id,
+                assignee_ids=[user],
             )
         )
         r = await svc.duplicate(
-            _cmd(raiz.id, project_id=proj, team_id=team, include_subtasks=True)
+            _cmd(raiz.id, user, project_id=proj, team_id=team, include_subtasks=True)
         )
 
     ids = [r.task.id] + [fid for fid, _t, _p in await _filhos(db, r.task.id)]
@@ -361,6 +375,7 @@ async def test_responsaveis_aplicados_nas_copias(db) -> None:
         r = await svc.duplicate(
             _cmd(
                 raiz.id,
+                user,
                 project_id=proj,
                 team_id=team,
                 assignee_ids=[user],
@@ -384,7 +399,7 @@ async def test_subtarefa_arquivada_nao_e_copiada(db) -> None:
     with acting_as(**ctx):
         svc = TaskService(db)
         raiz = await svc.create(
-            CreateTaskCommand(title="raiz", project_id=proj, team_id=team)
+            CreateTaskCommand(title="raiz", project_id=proj, team_id=team, assignee_ids=[user])
         )
         viva = await svc.create(
             CreateTaskCommand(
@@ -392,6 +407,7 @@ async def test_subtarefa_arquivada_nao_e_copiada(db) -> None:
                 project_id=proj,
                 team_id=team,
                 parent_task_id=raiz.id,
+                assignee_ids=[user],
             )
         )
         morta = await svc.create(
@@ -400,6 +416,7 @@ async def test_subtarefa_arquivada_nao_e_copiada(db) -> None:
                 project_id=proj,
                 team_id=team,
                 parent_task_id=raiz.id,
+                assignee_ids=[user],
             )
         )
     await db.execute(
@@ -407,7 +424,7 @@ async def test_subtarefa_arquivada_nao_e_copiada(db) -> None:
     )
     with acting_as(**ctx):
         r = await TaskService(db).duplicate(
-            _cmd(raiz.id, project_id=proj, team_id=team, include_subtasks=True)
+            _cmd(raiz.id, user, project_id=proj, team_id=team, include_subtasks=True)
         )
 
     titulos = {t for _i, t, _p in await _filhos(db, r.task.id)}
@@ -426,7 +443,7 @@ async def test_duplicar_subtarefa_gera_irma(db) -> None:
     with acting_as(**ctx):
         svc = TaskService(db)
         raiz = await svc.create(
-            CreateTaskCommand(title="raiz", project_id=proj, team_id=team)
+            CreateTaskCommand(title="raiz", project_id=proj, team_id=team, assignee_ids=[user])
         )
         filha = await svc.create(
             CreateTaskCommand(
@@ -434,11 +451,13 @@ async def test_duplicar_subtarefa_gera_irma(db) -> None:
                 project_id=proj,
                 team_id=team,
                 parent_task_id=raiz.id,
+                assignee_ids=[user],
             )
         )
         r = await svc.duplicate(
             _cmd(
                 filha.id,
+                user,
                 project_id=proj,
                 team_id=team,
                 parent_task_id=raiz.id,
@@ -462,7 +481,7 @@ async def test_time_da_copia_segue_precedencia(db) -> None:
     with acting_as(**ctx2):
         svc = TaskService(db)
         raiz = await svc.create(
-            CreateTaskCommand(title="raiz", project_id=proj, team_id=team)
+            CreateTaskCommand(title="raiz", project_id=proj, team_id=team, assignee_ids=[user])
         )
         await svc.create(
             CreateTaskCommand(
@@ -470,11 +489,13 @@ async def test_time_da_copia_segue_precedencia(db) -> None:
                 project_id=proj,
                 team_id=team,
                 parent_task_id=raiz.id,
+                assignee_ids=[user],
             )
         )
         r = await svc.duplicate(
             _cmd(
                 raiz.id,
+                user,
                 project_id=proj,
                 team_id=sub,
                 include_subtasks=True,
@@ -501,7 +522,7 @@ async def test_falha_no_meio_nao_persiste_nada(db) -> None:
     with acting_as(**ctx):
         svc = TaskService(db)
         raiz = await svc.create(
-            CreateTaskCommand(title="raiz", project_id=proj, team_id=team)
+            CreateTaskCommand(title="raiz", project_id=proj, team_id=team, assignee_ids=[user])
         )
         await svc.create(
             CreateTaskCommand(
@@ -509,6 +530,7 @@ async def test_falha_no_meio_nao_persiste_nada(db) -> None:
                 project_id=proj,
                 team_id=team,
                 parent_task_id=raiz.id,
+                assignee_ids=[user],
             )
         )
         antes = (
@@ -525,6 +547,7 @@ async def test_falha_no_meio_nao_persiste_nada(db) -> None:
             await svc.duplicate(
                 _cmd(
                     raiz.id,
+                    user,
                     project_id=proj,
                     team_id=team,
                     assignee_ids=[uuid.uuid4()],
@@ -575,7 +598,8 @@ async def test_origem_invisivel_404(db) -> None:
     with acting_as(**ctx_b):
         origem = await TaskService(db).create(
             CreateTaskCommand(
-                title="interna do B", project_id=proj_b, team_id=time_b
+                title="interna do B", project_id=proj_b, team_id=time_b,
+                assignee_ids=[dono_b],
             )
         )
 
@@ -588,7 +612,7 @@ async def test_origem_invisivel_404(db) -> None:
     with acting_as(**ctx_forasteiro):
         # 404 e nao 403: nao se confirma a existencia de task fora do escopo.
         with pytest.raises(EntityNotFoundError):
-            await TaskService(db).duplicate(_cmd(origem.id))
+            await TaskService(db).duplicate(_cmd(origem.id, forasteiro))
 
 
 # ----------------------------------------------------------
@@ -600,14 +624,14 @@ async def test_duplicar_arquivada_gera_copia_ativa(db) -> None:
     ws, team, user, proj, ctx = await _mundo(db)
     with acting_as(**ctx):
         origem = await TaskService(db).create(
-            CreateTaskCommand(title="campanha", project_id=proj, team_id=team)
+            CreateTaskCommand(title="campanha", project_id=proj, team_id=team, assignee_ids=[user])
         )
     await db.execute(
         text("UPDATE task SET is_archived=true WHERE id=:i"), {"i": origem.id}
     )
     with acting_as(**ctx):
         r = await TaskService(db).duplicate(
-            _cmd(origem.id, project_id=proj, team_id=team)
+            _cmd(origem.id, user, project_id=proj, team_id=team)
         )
     assert r.task.is_archived is False
 
@@ -615,13 +639,20 @@ async def test_duplicar_arquivada_gera_copia_ativa(db) -> None:
 # ----------------------------------------------------------
 # D9-c -- responsavel sem alcance: descarta e REPORTA
 # ----------------------------------------------------------
-async def test_responsavel_fora_de_escopo_e_descartado_e_reportado(db) -> None:
-    """O unico ponto da spec em que duas regras se contradizem.
+async def test_responsavel_que_perdeu_o_alcance_agora_TRAVA(db) -> None:
+    """⚠️ INVERTIDO EM 05/08 (ADR 0031). Era o unico ponto da Spec 033 em que
+    duas regras se contradiziam, e a de 29/07 CEDIA por escrito: a filha
+    nascia sem responsavel, com o id voltando em `skipped_assignees` pra tela
+    avisar.
 
-    A regra de 29/07 (responsavel obrigatorio) CEDE, e por escrito: a filha
-    nasce sem responsavel. Mas a excecao e VISIVEL -- o id volta em
-    `skipped_assignees` e a tela avisa. Sem isso, duplicar tarefa antiga
-    simplesmente falharia com 422.
+    A ADR 0031 desempata para o outro lado -- a filha nao nasce. O caso nao
+    virou 422 na cara de ninguem: o passo 2 do modal pergunta ANTES do POST,
+    entao quem clicou escolhe outro responsavel ou nao leva a subtarefa.
+    Chegar aqui significa cliente que nao passou pelo passo 2 (n8n, Swagger).
+
+    `skipped_assignees` continua existindo para o descarte PARCIAL: filha com
+    dois responsaveis, um deles sem alcance, nasce com o que sobrou e reporta
+    o outro.
     """
     ws, team, user, proj, ctx = await _mundo(db)
     sumido = await f.make_user(db, workspace_id=ws)
@@ -631,7 +662,9 @@ async def test_responsavel_fora_de_escopo_e_descartado_e_reportado(db) -> None:
     with acting_as(**ctx):
         svc = TaskService(db)
         raiz = await svc.create(
-            CreateTaskCommand(title="raiz", project_id=proj, team_id=team)
+            CreateTaskCommand(
+                title="raiz", project_id=proj, team_id=team, assignee_ids=[user]
+            )
         )
         await svc.create(
             CreateTaskCommand(
@@ -648,11 +681,61 @@ async def test_responsavel_fora_de_escopo_e_descartado_e_reportado(db) -> None:
         text("UPDATE users SET is_active=false WHERE id=:i"), {"i": sumido}
     )
     with acting_as(**ctx):
-        r = await TaskService(db).duplicate(
-            _cmd(raiz.id, project_id=proj, team_id=team, include_subtasks=True)
-        )
+        with pytest.raises(ValidationError) as e:
+            await TaskService(db).duplicate(
+                _cmd(
+                    raiz.id,
+                    user,
+                    project_id=proj,
+                    team_id=team,
+                    include_subtasks=True,
+                )
+            )
+    assert "filha" in str(e.value)
 
-    # Nao levantou 422: a duplicacao completou.
+
+async def test_descarte_PARCIAL_continua_passando_e_reportando(db) -> None:
+    """O outro lado da mesma moeda: com DOIS responsaveis e so um invalido, a
+    filha nasce com quem sobrou e o descartado volta em `skipped_assignees`.
+
+    ⚠️ Sem este teste, alguem poderia "simplificar" o `_herdados_da_filha`
+    para tudo-ou-nada e nada ficaria vermelho -- o caso comum (um responsavel
+    so) continuaria passando.
+    """
+    ws, team, user, proj, ctx = await _mundo(db)
+    sumido = await f.make_user(db, workspace_id=ws)
+    await f.add_member(
+        db, workspace_id=ws, user_id=sumido, team_id=team, role="OPERATOR"
+    )
+    with acting_as(**ctx):
+        svc = TaskService(db)
+        raiz = await svc.create(
+            CreateTaskCommand(
+                title="raiz", project_id=proj, team_id=team, assignee_ids=[user]
+            )
+        )
+        await svc.create(
+            CreateTaskCommand(
+                title="filha",
+                project_id=proj,
+                team_id=team,
+                parent_task_id=raiz.id,
+                assignee_ids=[user, sumido],
+            )
+        )
+    await db.execute(
+        text("UPDATE users SET is_active=false WHERE id=:i"), {"i": sumido}
+    )
+    with acting_as(**ctx):
+        r = await TaskService(db).duplicate(
+            _cmd(
+                raiz.id,
+                user,
+                project_id=proj,
+                team_id=team,
+                include_subtasks=True,
+            )
+        )
     assert r.skipped_assignees == [sumido]
     filhos = await _filhos(db, r.task.id)
     assert len(filhos) == 1
@@ -662,12 +745,9 @@ async def test_responsavel_fora_de_escopo_e_descartado_e_reportado(db) -> None:
             {"i": filhos[0][0]},
         )
     ).scalar_one()
-    assert n == 0, "a filha nasce sem responsavel, e isso e REPORTADO"
+    assert n == 1
 
 
-# ----------------------------------------------------------
-# Pai arquivado ⭐ -- promocao a topo, com aviso
-# ----------------------------------------------------------
 async def test_pai_arquivado_promove_a_topo(db) -> None:
     """DEFEITO ENCONTRADO NA TELA em 03/08, nao pelos testes.
 
@@ -685,7 +765,7 @@ async def test_pai_arquivado_promove_a_topo(db) -> None:
     with acting_as(**ctx):
         svc = TaskService(db)
         pai = await svc.create(
-            CreateTaskCommand(title="pai", project_id=proj, team_id=team)
+            CreateTaskCommand(title="pai", project_id=proj, team_id=team, assignee_ids=[user])
         )
         sub = await svc.create(
             CreateTaskCommand(
@@ -693,6 +773,7 @@ async def test_pai_arquivado_promove_a_topo(db) -> None:
                 project_id=proj,
                 team_id=team,
                 parent_task_id=pai.id,
+                assignee_ids=[user],
             )
         )
     # ⚠️ Arquiva pelo ORM, NAO por `UPDATE` cru. A primeira versao usava SQL
@@ -709,6 +790,7 @@ async def test_pai_arquivado_promove_a_topo(db) -> None:
         r = await TaskService(db).duplicate(
             _cmd(
                 sub.id,
+                user,
                 project_id=proj,
                 team_id=team,
                 parent_task_id=sub.parent_task_id,
@@ -734,7 +816,7 @@ async def test_pai_ATIVO_mantem_a_copia_como_irma(db) -> None:
     with acting_as(**ctx):
         svc = TaskService(db)
         pai = await svc.create(
-            CreateTaskCommand(title="pai", project_id=proj, team_id=team)
+            CreateTaskCommand(title="pai", project_id=proj, team_id=team, assignee_ids=[user])
         )
         sub = await svc.create(
             CreateTaskCommand(
@@ -742,11 +824,13 @@ async def test_pai_ATIVO_mantem_a_copia_como_irma(db) -> None:
                 project_id=proj,
                 team_id=team,
                 parent_task_id=pai.id,
+                assignee_ids=[user],
             )
         )
         r = await svc.duplicate(
             _cmd(
                 sub.id,
+                user,
                 project_id=proj,
                 team_id=team,
                 parent_task_id=sub.parent_task_id,
@@ -762,61 +846,50 @@ async def test_pai_ATIVO_mantem_a_copia_como_irma(db) -> None:
 # ----------------------------------------------------------
 # D13/D14 -- a caixa "levar os responsaveis das subtarefas"
 # ----------------------------------------------------------
-async def test_include_assignees_false_cria_subtarefa_sem_responsavel(
-    db,
-) -> None:
-    """D14, opcao 2: a porta esta ABERTA, e por decisao explicita.
+async def test_include_assignees_false_agora_e_RECUSADO(db) -> None:
+    """⚠️ INVERTIDO EM 05/08 (ADR 0031). Este teste afirmava a D14 -- "a porta
+    esta ABERTA, e por decisao explicita" -- e a docstring antiga avisava:
+    "se o aviso sumir do modal, este teste passa a defender um buraco".
 
-    ⚠️ Este teste afirma um comportamento que a regra de 29/07 proibe
-    (subtarefa sem responsavel). Nao e engano: com a caixa desmarcada, N
-    subtarefas nascem sem ninguem de uma vez. A protecao nao esta aqui -- esta
-    na TELA, que avisa antes de salvar. Se o aviso sumir do modal, este teste
-    passa a defender um buraco.
+    O aviso sumiu do modal porque a CAIXA sumiu: desmarca-la significava criar
+    N subtarefas sem ninguem de uma vez, que e o passivo que a regra de 29/07
+    combatia (44 das 50 tarefas ativas sem responsavel eram subtarefas). No
+    lugar dela entrou o passo 2, onde quem clica resolve subtarefa a
+    subtarefa ANTES do POST.
+
+    ⚠️ A mensagem NOMEIA a subtarefa. Sem o nome, quem duplicou uma tarefa com
+    seis filhas nao tem como saber qual travou.
     """
     ws, team, user, proj, ctx = await _mundo(db)
     with acting_as(**ctx):
         svc = TaskService(db)
         raiz = await svc.create(
-            CreateTaskCommand(title="raiz", project_id=proj, team_id=team)
-        )
-        for t in ("f1", "f2"):
-            await svc.create(
-                CreateTaskCommand(
-                    title=t,
-                    project_id=proj,
-                    team_id=team,
-                    parent_task_id=raiz.id,
-                    assignee_ids=[user],
-                )
+            CreateTaskCommand(
+                title="raiz", project_id=proj, team_id=team, assignee_ids=[user]
             )
-        r = await svc.duplicate(
-            _cmd(
-                raiz.id,
+        )
+        await svc.create(
+            CreateTaskCommand(
+                title="f1",
                 project_id=proj,
                 team_id=team,
+                parent_task_id=raiz.id,
                 assignee_ids=[user],
-                include_subtasks=True,
-                include_assignees=False,
             )
         )
-        # O PAI continua com responsavel: a caixa nao manda nele (D13).
-        assert await CollaborationService(db).assignee_ids_for(r.task) == [
-            user
-        ]
-
-    filhos = await _filhos(db, r.task.id)
-    assert len(filhos) == 2
-    for fid, _t, _p in filhos:
-        n = (
-            await db.execute(
-                text("SELECT count(*) FROM task_assignment WHERE task_id=:i"),
-                {"i": fid},
+        with pytest.raises(ValidationError) as e:
+            await svc.duplicate(
+                _cmd(
+                    raiz.id,
+                    user,
+                    project_id=proj,
+                    team_id=team,
+                    assignee_ids=[user],
+                    include_subtasks=True,
+                    include_assignees=False,
+                )
             )
-        ).scalar_one()
-        assert n == 0
-
-    # Ninguem foi "pulado por falta de alcance": foi escolha, nao acidente.
-    assert r.skipped_assignees == []
+    assert "f1" in str(e.value)
 
 
 async def test_include_assignees_default_leva_os_responsaveis(db) -> None:
@@ -826,7 +899,7 @@ async def test_include_assignees_default_leva_os_responsaveis(db) -> None:
     with acting_as(**ctx):
         svc = TaskService(db)
         raiz = await svc.create(
-            CreateTaskCommand(title="raiz", project_id=proj, team_id=team)
+            CreateTaskCommand(title="raiz", project_id=proj, team_id=team, assignee_ids=[user])
         )
         await svc.create(
             CreateTaskCommand(
@@ -840,6 +913,7 @@ async def test_include_assignees_default_leva_os_responsaveis(db) -> None:
         r = await svc.duplicate(
             _cmd(
                 raiz.id,
+                user,
                 project_id=proj,
                 team_id=team,
                 assignee_ids=[user],
@@ -885,7 +959,11 @@ def test_duplicacao_nao_commita_por_dentro() -> None:
     for metodo in (
         TaskService.duplicate,
         TaskService._copiar_subarvore,
-        TaskService._aplicar_responsaveis_da_filha,
+        # ⚠️ Renomeado em 05/08 (ADR 0031): era `_aplicar_responsaveis_da_filha`
+        # e designava DEPOIS do create; agora resolve ANTES e devolve a lista,
+        # porque `create` deixou de aceitar tarefa sem responsavel.
+        TaskService._herdados_da_filha,
+        TaskService._validar_mapa_de_subtarefas,
     ):
         fonte = inspect.getsource(metodo)
         # Tira as linhas de comentario/docstring: elas FALAM de commit.

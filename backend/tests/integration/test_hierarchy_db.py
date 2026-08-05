@@ -33,10 +33,21 @@ async def test_create_raiz_e_filha_path_depth(db) -> None:
     ctx, proj, team = await _admin_proj(db)
     with acting_as(**ctx):
         svc = TaskService(db)
-        raiz = await svc.create(CreateTaskCommand(title="raiz", project_id=proj, team_id=team))
+        raiz = await svc.create(CreateTaskCommand(
+            title="raiz",
+            project_id=proj,
+            team_id=team,
+            assignee_ids=[ctx["user_id"]]),
+        )
         assert raiz.depth == 0 and raiz.path == f"t{raiz.id.hex}"
         filha = await svc.create(
-            CreateTaskCommand(title="filha", project_id=proj, team_id=team, parent_task_id=raiz.id)
+            CreateTaskCommand(
+                title="filha",
+                project_id=proj,
+                team_id=team,
+                parent_task_id=raiz.id,
+                assignee_ids=[ctx["user_id"]],
+            )
         )
         assert filha.depth == 1
         assert filha.path == f"{raiz.path}.t{filha.id.hex}"
@@ -46,10 +57,26 @@ async def test_move_reparent_reescreve_subtree(db) -> None:
     ctx, proj, team = await _admin_proj(db)
     with acting_as(**ctx):
         svc = TaskService(db)
-        a = await svc.create(CreateTaskCommand(title="a", project_id=proj, team_id=team))
-        b = await svc.create(CreateTaskCommand(title="b", project_id=proj, team_id=team))
+        a = await svc.create(CreateTaskCommand(
+            title="a",
+            project_id=proj,
+            team_id=team,
+            assignee_ids=[ctx["user_id"]]),
+        )
+        b = await svc.create(CreateTaskCommand(
+            title="b",
+            project_id=proj,
+            team_id=team,
+            assignee_ids=[ctx["user_id"]]),
+        )
         a_filha = await svc.create(
-            CreateTaskCommand(title="af", project_id=proj, team_id=team, parent_task_id=a.id)
+            CreateTaskCommand(
+                title="af",
+                project_id=proj,
+                team_id=team,
+                parent_task_id=a.id,
+                assignee_ids=[ctx["user_id"]],
+            )
         )
         # move a (com a_filha) pra baixo de b
         await svc.move(task_id=a.id, command=MoveTaskCommand(parent_task_id=b.id))
@@ -73,9 +100,20 @@ async def test_move_ciclo_e_auto_pai_409(db) -> None:
     ctx, proj, team = await _admin_proj(db)
     with acting_as(**ctx):
         svc = TaskService(db)
-        raiz = await svc.create(CreateTaskCommand(title="raiz", project_id=proj, team_id=team))
+        raiz = await svc.create(CreateTaskCommand(
+            title="raiz",
+            project_id=proj,
+            team_id=team,
+            assignee_ids=[ctx["user_id"]]),
+        )
         filha = await svc.create(
-            CreateTaskCommand(title="filha", project_id=proj, team_id=team, parent_task_id=raiz.id)
+            CreateTaskCommand(
+                title="filha",
+                project_id=proj,
+                team_id=team,
+                parent_task_id=raiz.id,
+                assignee_ids=[ctx["user_id"]],
+            )
         )
         with pytest.raises(BusinessRuleError):  # auto-pai
             await svc.move(task_id=raiz.id, command=MoveTaskCommand(parent_task_id=raiz.id))

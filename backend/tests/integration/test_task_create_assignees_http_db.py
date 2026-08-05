@@ -159,11 +159,13 @@ async def test_http_resposta_do_post_traz_assignee_ids(db) -> None:
     assert corpo["assignee_ids"] == [str(op_a)]
 
 
-async def test_http_resposta_do_post_sem_responsavel_traz_lista_vazia(db) -> None:
-    """Criar SEM responsavel -> `assignee_ids: []`, nao ausente.
+async def test_http_post_sem_responsavel_e_422(db) -> None:
+    """⚠️ INVERTIDO EM 05/08 (ADR 0031). Antes este teste garantia que criar
+    sem responsavel devolvia 201 com `assignee_ids: []`.
 
-    Garante que o campo e sempre previsivel: o front nunca precisa distinguir
-    "veio vazio" de "nao veio" no caminho de criacao.
+    ESTE e o caminho que importava fechar: e por aqui que o n8n, o Swagger e
+    qualquer script criam tarefa. Enquanto a regra vivia so no modal, ela nao
+    valia para nenhum deles.
     """
     ws, a, b, manager, op_a, op_b, proj, ctx = await _setup(db)
     await db.commit()
@@ -172,8 +174,8 @@ async def test_http_resposta_do_post_sem_responsavel_traz_lista_vazia(db) -> Non
             "/api/v1/tasks",
             json={"title": "Sem ninguem", "project_id": str(proj), "team_id": str(a)},
         )
-    assert resp.status_code == 201, resp.text
-    assert resp.json()["assignee_ids"] == []
+    assert resp.status_code == 422, resp.text
+    assert "responsável" in resp.text
 
 
 async def test_http_patch_NAO_traz_assignee_ids(db) -> None:

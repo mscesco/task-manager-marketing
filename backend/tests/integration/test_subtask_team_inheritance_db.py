@@ -50,12 +50,16 @@ async def test_subtarefa_herda_team_do_pai(db) -> None:
     with acting_as(**ctx):
         svc = TaskService(db)
         # Pai avulso no time RAIZ (como o quadro faz via pin).
-        pai = await svc.create(CreateTaskCommand(title="pai", team_id=root))
+        pai = await svc.create(CreateTaskCommand(
+            title="pai",
+            team_id=root,
+            assignee_ids=[ctx["user_id"]]),
+        )
         assert pai.team_id == root
         # Subtarefa SEM team_id: herda o do pai (root); NAO cai no default
         # do criador (sub).
         filha = await svc.create(
-            CreateTaskCommand(title="filha", parent_task_id=pai.id)
+            CreateTaskCommand(title="filha", parent_task_id=pai.id, assignee_ids=[ctx["user_id"]])
         )
         assert filha.team_id == root
         assert filha.team_id != sub
@@ -65,11 +69,16 @@ async def test_team_explicito_vence_heranca(db) -> None:
     ctx, root, sub = await _ctx_root_sub(db)
     with acting_as(**ctx):
         svc = TaskService(db)
-        pai = await svc.create(CreateTaskCommand(title="pai", team_id=root))
+        pai = await svc.create(CreateTaskCommand(
+            title="pai",
+            team_id=root,
+            assignee_ids=[ctx["user_id"]]),
+        )
         # team_id explicito na subtarefa tem precedencia sobre a heranca.
         filha = await svc.create(
             CreateTaskCommand(
-                title="filha", parent_task_id=pai.id, team_id=sub
+                title="filha", parent_task_id=pai.id, team_id=sub,
+                assignee_ids=[ctx["user_id"]],
             )
         )
         assert filha.team_id == sub
