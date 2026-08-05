@@ -166,11 +166,23 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex min-h-screen">
+      {/* ⚠️ ALTURA FIXA + COLUNA = MENU QUE SOME COM ZOOM.
+          A barra e `h-screen` e nao rola: com zoom do navegador (ou tela
+          baixa) a lista de itens passa de 100vh e o que sobra fica CORTADO
+          e inalcancavel -- nao ha barra de rolagem porque o `overflow`
+          padrao e `visible`, e a rolagem da PAGINA nao ajuda: o `sticky
+          top-0` prende a barra no topo. Relatado em 05/08: com zoom
+          aumentado nao dava pra chegar nas ultimas paginas do menu.
+          O conserto e o `overflow-y-auto` no <nav> junto do `min-h-0` --
+          sem `min-h-0` um filho flex NAO encolhe abaixo do proprio
+          conteudo, e o `overflow` nunca chega a valer. O `overflow-y-auto`
+          do <aside> e o ultimo recurso: se ate os blocos fixos (logo,
+          retrair, rodape) nao couberem, a barra inteira rola. */}
       <aside
-        className={`sticky top-0 flex h-screen ${w} shrink-0 flex-col gap-1 border-r border-border bg-surface px-2 py-2 transition-[width] duration-200`}
+        className={`sticky top-0 flex h-screen ${w} shrink-0 flex-col gap-1 overflow-y-auto border-r border-border bg-surface px-2 py-2 transition-[width] duration-200`}
       >
         {/* Logo */}
-        <div className={`flex items-center gap-3 py-2 ${open ? "px-3" : "justify-center"}`}>
+        <div className={`flex shrink-0 items-center gap-3 py-2 ${open ? "px-3" : "justify-center"}`}>
           <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-accent">
             <img src="/fecaf-simbolo.png" alt="UniFECAF" className="h-5 w-5 object-contain" />
           </span>
@@ -187,14 +199,14 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           onClick={() => setOpen((v) => !v)}
           title={open ? "Retrair menu" : "Expandir menu"}
           aria-label={open ? "Retrair menu" : "Expandir menu"}
-          className={itemCls(false)}
+          className={`${itemCls(false)} shrink-0`}
         >
           {open ? <PanelLeftClose size={18} className="shrink-0" /> : <PanelLeftOpen size={18} className="shrink-0" />}
           {open && <span className="truncate">Retrair</span>}
         </button>
 
         {/* Navegacao */}
-        <nav className="mt-1 flex flex-1 flex-col gap-1">
+        <nav className="mt-1 flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto">
           {/* Grupo QUADROS (accordion). Retraido: vira so o icone, que leva
               ao quadro geral (nao ha espaco pra sub-abas). Expandido:
               cabecalho clicavel que abre/fecha as sub-abas. */}
@@ -254,8 +266,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           })}
         </nav>
 
-        {/* Rodape: perfil + sair */}
-        <div className="flex flex-col gap-1 border-t border-border pt-2">
+        {/* Rodape: perfil + sair. `shrink-0` de proposito -- quem cede
+            espaco quando falta altura e a lista de navegacao (que rola),
+            nunca o rodape (que nao tem como ser alcancado de outro jeito). */}
+        <div className="flex shrink-0 flex-col gap-1 border-t border-border pt-2">
           <a
             href="/perfil"
             title={!open ? "Meu perfil" : undefined}
