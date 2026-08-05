@@ -78,16 +78,6 @@ COLUNAS = [
         True,
         False,
     ),
-    # ⚠️ `notify_deadline=False` reproduz o BLOCKED cravado hoje no
-    # DeadlineNotifyService ("nao ha o que agir enquanto travada").
-    (
-        "BLOCKED",
-        "Bloqueado",
-        "var(--status-blocked-dot)",
-        "IN_PROGRESS",
-        False,
-        False,
-    ),
     ("COMPLETED", "Concluído", "var(--status-done-dot)", "DONE", True, True),
     (
         "CANCELLED",
@@ -96,6 +86,29 @@ COLUNAS = [
         "CANCELLED",
         True,
         True,
+    ),
+    # ⚠️ `notify_deadline=False` reproduz o BLOCKED cravado hoje no
+    # DeadlineNotifyService ("nao ha o que agir enquanto travada").
+    #
+    # ⚠️ BLOCKED E O ULTIMO, e nao o sexto. `web/lib/status.ts` o desenha
+    # DEPOIS de Cancelado, e `Board.tsx` renderiza na ordem daquele array --
+    # entao "Bloqueado" e a ultima coluna da tela hoje. O `position` gravado
+    # aqui e a ordem que a tela vai ler quando o front passar a montar as
+    # colunas a partir do quadro, e naquele dia uma divergencia daqui apareceria
+    # como regressao de front, num diff que nao contem a causa: a causa e dado
+    # gravado em producao meses antes.
+    #
+    # A ordem semantica (BLOCKED junto dos outros IN_PROGRESS) veio da tabela
+    # D7 da spec 035, que dizia "na ordem de hoje" e nao estava. A spec foi
+    # corrigida junto -- se so a migration mudasse, a proxima leitura da spec
+    # "consertaria" de volta.
+    (
+        "BLOCKED",
+        "Bloqueado",
+        "var(--status-blocked-dot)",
+        "IN_PROGRESS",
+        False,
+        False,
     ),
 ]
 

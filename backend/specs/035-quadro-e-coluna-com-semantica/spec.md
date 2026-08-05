@@ -173,9 +173,19 @@ que esta migração existe para fazer.
 | `IN_PROGRESS` | Em Andamento | `IN_PROGRESS` | `is_default_target` |
 | `IN_REVIEW` | Aprovação Interna | `IN_PROGRESS` | |
 | `EXTERNAL_APPROVAL` | Aprovação Externa | `IN_PROGRESS` | |
-| `BLOCKED` | Bloqueado | `IN_PROGRESS` | `notify_deadline = false` |
 | `COMPLETED` | Concluído | `DONE` | `is_default_target` |
 | `CANCELLED` | Cancelado | `CANCELLED` | `is_default_target` |
+| `BLOCKED` | Bloqueado | `IN_PROGRESS` | `notify_deadline = false` |
+
+⚠️ **`BLOCKED` é a ÚLTIMA linha, e isso não é detalhe de formatação.** A ordem
+desta tabela vira o `position` gravado no banco pela migration `0008`, e
+`position` é a ordem que a tela vai ler quando o front passar a montar as
+colunas a partir do quadro. `web/lib/status.ts` desenha Bloqueado **depois** de
+Cancelado, e `Board.tsx` renderiza na ordem daquele array — logo, "na ordem de
+hoje" significa Bloqueado por último. A primeira versão desta tabela agrupava
+`BLOCKED` com os outros `IN_PROGRESS` por semântica; a `0008` copiou daqui, e a
+divergência só apareceria na fatia do front, como regressão visual num diff que
+não contém a causa.
 
 ⚠️ **Nomes de coluna e de enum em INGLÊS, valores de rótulo em português.**
 A spec original escrevia a semântica como `ABERTA/EM_ANDAMENTO/...`; o schema
