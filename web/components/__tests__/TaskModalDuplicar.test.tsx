@@ -328,3 +328,302 @@ describe("TaskModal -- avisos pós-cópia", () => {
     alerta.mockRestore();
   });
 });
+
+describe("TaskModal -- as edições da pessoa SOBREVIVEM", () => {
+  /**
+   * ⚠️ ESTE BLOCO EXISTE POR UM DEFEITO DE PRODUÇÃO (04/08).
+   *
+   * O efeito de pré-preenchimento rodava a cada mudança de dependência, e as
+   * dependências mudam DEPOIS do modal abrir: `alcancamTime` e `membros`
+   * chegam da rede, e `filhosDaOrigem` é montado inline no chamador
+   * (Board.tsx:1009) -- referência nova a cada render do pai. Resultado: o
+   * título voltava para "Cópia de X" depois de reescrito e responsável
+   * removido reaparecia.
+   *
+   * ⚠️ Os testes acima NÃO pegavam, e o motivo importa: eles passam props com
+   * referência ESTÁVEL, então o efeito roda uma vez e o defeito não existe
+   * ali. `rerender` com array novo é o que reproduz o chamador real.
+   */
+  it("editar o título e o pai re-renderizar NÃO desfaz a edição", async () => {
+    montar();
+    const { rerender } = render(
+      <TaskModal
+        open
+        duplicarDe={ORIGEM}
+        filhosDaOrigem={[]}
+        onClose={() => {}}
+        onSaved={() => {}}
+      />
+    );
+    await waitFor(() => {
+      expect(
+        (screen.getByLabelText(/Título/i) as HTMLInputElement).value
+      ).toBe("Cópia de Campanha Black Friday");
+    });
+
+    fireEvent.change(screen.getByLabelText(/Título/i), {
+      target: { value: "Campanha de setembro" },
+    });
+
+    // ARRAY NOVO, como o Board manda a cada render.
+    rerender(
+      <TaskModal
+        open
+        duplicarDe={ORIGEM}
+        filhosDaOrigem={[]}
+        onClose={() => {}}
+        onSaved={() => {}}
+      />
+    );
+    await new Promise((r) => setTimeout(r, 30));
+
+    expect((screen.getByLabelText(/Título/i) as HTMLInputElement).value).toBe(
+      "Campanha de setembro"
+    );
+  });
+
+  it("responsável removido não reaparece após re-render do pai", async () => {
+    montar();
+    const { rerender } = render(
+      <TaskModal
+        open
+        duplicarDe={ORIGEM}
+        filhosDaOrigem={[]}
+        onClose={() => {}}
+        onSaved={() => {}}
+      />
+    );
+    await waitFor(() => {
+      expect(screen.getByText("Duplicar tarefa")).toBeTruthy();
+    });
+    // Origem tem ANA e SUMIDO; os dois alcançam neste cenário.
+    await waitFor(() => {
+      expect(screen.getAllByTitle(/Remover/i).length).toBe(2);
+    });
+
+    const chips = screen.getAllByTitle(/Remover/i);
+    fireEvent.click(chips[chips.length - 1]);
+    await waitFor(() => {
+      expect(screen.getAllByTitle(/Remover/i).length).toBe(1);
+    });
+
+    rerender(
+      <TaskModal
+        open
+        duplicarDe={ORIGEM}
+        filhosDaOrigem={[]}
+        onClose={() => {}}
+        onSaved={() => {}}
+      />
+    );
+    await new Promise((r) => setTimeout(r, 30));
+    expect(screen.getAllByTitle(/Remover/i).length).toBe(1);
+  });
+
+  it("as caixas marcadas pela pessoa sobrevivem ao re-render", async () => {
+    montar();
+    const filhas = [filha("s1"), filha("s2")];
+    const { rerender } = render(
+      <TaskModal
+        open
+        duplicarDe={ORIGEM}
+        filhosDaOrigem={filhas}
+        onClose={() => {}}
+        onSaved={() => {}}
+      />
+    );
+    await waitFor(() => {
+      expect(screen.getByText(/Levar as subtarefas/)).toBeTruthy();
+    });
+    const caixa = screen.getByLabelText(
+      /Levar os responsáveis das subtarefas/
+    ) as HTMLInputElement;
+    fireEvent.click(caixa);
+    expect(caixa.checked).toBe(false);
+
+    // Array NOVO com o mesmo conteúdo -- o que o Board faz.
+    rerender(
+      <TaskModal
+        open
+        duplicarDe={ORIGEM}
+        filhosDaOrigem={[filha("s1"), filha("s2")]}
+        onClose={() => {}}
+        onSaved={() => {}}
+      />
+    );
+    await new Promise((r) => setTimeout(r, 30));
+    expect(
+      (
+        screen.getByLabelText(
+          /Levar os responsáveis das subtarefas/
+        ) as HTMLInputElement
+      ).checked
+    ).toBe(false);
+    expect(screen.getByText(/2 subtarefas copiadas nascerão sem/)).toBeTruthy();
+  });
+});
+
+describe("TaskModal -- guardas do pré-preenchimento", () => {
+  /**
+   * A guarda de `ref` é keyed pelo ID da origem, não pela identidade do
+   * objeto. Isto cobre o caso em que o chamador entrega um objeto NOVO com o
+   * mesmo id -- acontece sempre que a tela refaz a busca de tarefas enquanto
+   * o modal está aberto. Sem a guarda, o pré-preenchimento roda de novo e
+   * apaga o que a pessoa escreveu.
+   */
+  it("objeto novo com o MESMO id não re-preenche", async () => {
+    montar();
+    const { rerender } = render(
+      <TaskModal
+        open
+        duplicarDe={ORIGEM}
+        filhosDaOrigem={[]}
+        onClose={() => {}}
+        onSaved={() => {}}
+      />
+    );
+    await waitFor(() => {
+      expect(
+        (screen.getByLabelText(/Título/i) as HTMLInputElement).value
+      ).toBe("Cópia de Campanha Black Friday");
+    });
+    fireEvent.change(screen.getByLabelText(/Título/i), {
+      target: { value: "Meu título" },
+    });
+
+    // Mesmo id, objeto novo -- o que uma re-busca de tarefas produz.
+    rerender(
+      <TaskModal
+        open
+        duplicarDe={{ ...ORIGEM }}
+        filhosDaOrigem={[]}
+        onClose={() => {}}
+        onSaved={() => {}}
+      />
+    );
+    await new Promise((r) => setTimeout(r, 30));
+    expect((screen.getByLabelText(/Título/i) as HTMLInputElement).value).toBe(
+      "Meu título"
+    );
+  });
+
+  /**
+   * ⚠️ `listMembersDoTime` FALHANDO tem de resolver mesmo assim. Se a espera
+   * dependesse só do sucesso, o modal abriria em branco para sempre -- pior
+   * que o defeito original, porque nem dá pra digitar por cima.
+   */
+  it("alcance que FALHA ainda pré-preenche", async () => {
+    montar();
+    // ⚠️ Rejeicao ADIADA. Com `mockRejectedValue` a promessa ja nasce
+    // rejeitada e o `.then` do sucesso nunca seria alcancado de qualquer
+    // jeito -- o teste passava mesmo com o `.finally` trocado por `.then`.
+    // Adiar e o que separa "resolveu na falha" de "resolveu por acaso".
+    vi.mocked(api.listMembersDoTime).mockReturnValue(
+      new Promise((_res, rej) => setTimeout(() => rej(new Error("500")), 10))
+    );
+    render(
+      <TaskModal
+        open
+        duplicarDe={ORIGEM}
+        filhosDaOrigem={[]}
+        onClose={() => {}}
+        onSaved={() => {}}
+      />
+    );
+    await waitFor(() => {
+      expect(
+        (screen.getByLabelText(/Título/i) as HTMLInputElement).value
+      ).toBe("Cópia de Campanha Black Friday");
+    });
+    // Sem alcance ninguém é escondido -- o 422 do backend segue de pé.
+    expect(screen.getAllByTitle(/Remover/i).length).toBe(2);
+  });
+});
+
+describe("TaskModal -- a espera pelo alcance é real", () => {
+  /**
+   * ⚠️ Os testes acima usam mocks que resolvem NA HORA, e por isso não
+   * distinguem "esperou o alcance" de "preencheu antes e deu sorte com o
+   * timing". Medido em 04/08: com mock instantâneo, remover a espera não
+   * derruba teste nenhum. Só uma promessa CONTROLADA separa os dois.
+   */
+  it("não pré-preenche enquanto o alcance não responde", async () => {
+    montar();
+    let liberar!: (v: Member[]) => void;
+    vi.mocked(api.listMembersDoTime).mockReturnValue(
+      new Promise((res) => {
+        liberar = res;
+      })
+    );
+
+    render(
+      <TaskModal
+        open
+        duplicarDe={ORIGEM}
+        filhosDaOrigem={[]}
+        onClose={() => {}}
+        onSaved={() => {}}
+      />
+    );
+    await waitFor(() => {
+      expect(screen.getByText("Duplicar tarefa")).toBeTruthy();
+    });
+    // Título AINDA vazio: preencher aqui marcaria o SUMIDO, que não alcança.
+    expect((screen.getByLabelText(/Título/i) as HTMLInputElement).value).toBe(
+      ""
+    );
+
+    // Só ANA alcança.
+    liberar([membro(ANA, "Ana")]);
+    await waitFor(() => {
+      expect(
+        (screen.getByLabelText(/Título/i) as HTMLInputElement).value
+      ).toBe("Cópia de Campanha Black Friday");
+    });
+    // E o SUMIDO ficou de fora (D9), agora por espera e não por sorte.
+    expect(screen.getAllByTitle(/Remover/i).length).toBe(1);
+  });
+});
+
+describe("TaskModal -- responsável DESATIVADO depois (o 422 de 04/08)", () => {
+  /**
+   * ⚠️ Caso REAL: duplicar uma tarefa antiga cujo responsável saiu da empresa.
+   * `listMembers` já devolve só ativos, então o desativado nunca aparece na
+   * lista -- e a regra antiga ("remova os excluídos") não tinha como excluir
+   * quem ela não conhece. Ele sobrevivia pré-marcado e o salvar dava 422.
+   *
+   * Este é o teste 13 do roteiro, que falhou na tela.
+   */
+  it("não é pré-marcado e o salvar completa", async () => {
+    montar();
+    // SUMIDO foi desativado: some da lista de membros E do alcance.
+    vi.mocked(api.listMembers).mockResolvedValue([membro(ANA, "Ana")]);
+    vi.mocked(api.listMembersDoTime).mockResolvedValue([membro(ANA, "Ana")]);
+
+    render(
+      <TaskModal
+        open
+        duplicarDe={ORIGEM}
+        filhosDaOrigem={[]}
+        onClose={() => {}}
+        onSaved={() => {}}
+      />
+    );
+    await waitFor(() => {
+      expect(
+        (screen.getByLabelText(/Título/i) as HTMLInputElement).value
+      ).toBe("Cópia de Campanha Black Friday");
+    });
+
+    // Só a Ana ficou.
+    expect(screen.getAllByTitle(/Remover/i).length).toBe(1);
+
+    fireEvent.click(screen.getByRole("button", { name: /^Duplicar$/ }));
+    await waitFor(() => {
+      expect(api.duplicateTask).toHaveBeenCalled();
+    });
+    const [, payload] = vi.mocked(api.duplicateTask).mock.calls[0];
+    // O desativado NÃO vai no payload -- é o que evitava o 422.
+    expect(payload.assignee_ids).toEqual([ANA]);
+  });
+});

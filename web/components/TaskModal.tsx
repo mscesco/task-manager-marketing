@@ -149,6 +149,12 @@ export default function TaskModal({
     setLevarSubtarefas(true);
     setLevarResponsaveis(true);
     setAviso(null);
+    // ⚠️ As flags de "ja respondeu" precisam ZERAR junto: sem isto, reabrir o
+    // modal pra outra tarefa pre-preencheria na hora, com o alcance da tarefa
+    // ANTERIOR ainda em memoria.
+    setMembrosResolvidos(false);
+    setRootResolvido(false);
+    setAlcanceResolvido(false);
   }, [open, task]);
 
   // Carrega projetos comuns pro seletor (so quando ele aparece).
@@ -164,12 +170,14 @@ export default function TaskModal({
     if (!open || editando) return;
     listMembers()
       .then((ms) => setMembros(ms.filter((m) => m.is_active)))
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setMembrosResolvidos(true));
     // Memoizado no api.ts. Falha => segue null e `foraDoEscopo` devolve
     // conjunto vazio (nao esconde ninguem), que e o comportamento antigo.
     getRootTeamId()
       .then(setRootTeamId)
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setRootResolvido(true));
   }, [open, editando]);
 
   // Esc fecha (quando aberto e nao salvando).
@@ -227,14 +235,37 @@ export default function TaskModal({
   // do backend ainda de pe.
   const timeAlvo = timeDaTarefaNova(defaultTeamId, rootTeamId);
   const [alcancamTime, setAlcancamTime] = useState<Set<string> | null>(null);
+  // ⚠️ `alcancamTime === null` e AMBIGUO: significa "ainda carregando" E
+  // "falhou". O pre-preenchimento precisa distinguir os dois -- esperar pelo
+  // primeiro, seguir no segundo -- senao ou preenche cedo demais (com o
+  // conjunto de excluidos vazio, furando a D9) ou nunca preenche.
+  const [alcanceResolvido, setAlcanceResolvido] = useState(false);
+  const [membrosResolvidos, setMembrosResolvidos] = useState(false);
+  // ⚠️ `rootTeamId` tambem vem da rede. Sem esta flag, no PRIMEIRO render
+  // `timeAlvo` e null (raiz ainda desconhecida) e o codigo concluia "nao ha
+  // alcance a esperar" -- pre-preenchia na hora, com o conjunto de excluidos
+  // vazio, exatamente o furo da D9 que a espera existe pra fechar. Medido em
+  // 04/08 por um teste com promessa controlada; com mock instantaneo o
+  // defeito nao aparece.
+  const [rootResolvido, setRootResolvido] = useState(false);
 
   useEffect(() => {
-    if (!open || !timeAlvo) {
+    if (!open) {
       setAlcancamTime(null);
+      setAlcanceResolvido(false);
+      return;
+    }
+    // Ainda nao sabemos qual e o time alvo: NAO e "resolvido por ausencia".
+    if (!rootResolvido) return;
+    if (!timeAlvo) {
+      // Raiz conhecida e mesmo assim sem time alvo: nao ha o que buscar.
+      setAlcancamTime(null);
+      setAlcanceResolvido(true);
       return;
     }
     let vivo = true;
     setAlcancamTime(null);
+    setAlcanceResolvido(false);
     listMembersDoTime(timeAlvo)
       .then((ms) => {
         // Guarda de corrida: abrir o modal em quadros diferentes em sequencia
@@ -243,19 +274,16 @@ export default function TaskModal({
       })
       .catch(() => {
         if (vivo) setAlcancamTime(null);
+      })
+      .finally(() => {
+        // `finally`: falha tambem RESOLVE. Sem isto o modal ficaria em branco
+        // pra sempre quando `listMembersDoTime` cai.
+        if (vivo) setAlcanceResolvido(true);
       });
     return () => {
       vivo = false;
     };
-  }, [open, timeAlvo]);
-
-  // Spec 033 (D9): inativo tambem nao pode entrar no pre-preenchimento --
-  // `assign_many_or_fail` recusa inativo do mesmo jeito que recusa quem nao
-  // alcanca, e o 422 sai igual.
-  const membrosInativosDaqui = useMemo(
-    () => new Set(membros.filter((m) => !m.is_active).map((m) => m.id)),
-    [membros]
-  );
+  }, [open, timeAlvo, rootResolvido]);
 
   const foraDoEscopoAqui = useMemo(() => {
     const fora = new Set<string>();
@@ -268,13 +296,48 @@ export default function TaskModal({
 
   // Spec 033 -- pre-preenchimento do modo DUPLICAR.
   //
-  // ⚠️ EFEITO SEPARADO, e depende de `foraDoEscopoAqui`, que so fica pronto
-  // quando `listMembersDoTime` responde. Juntar isto ao efeito acima faria o
-  // pre-preenchimento rodar com o conjunto de excluidos AINDA VAZIO: um
-  // responsavel sem alcance entraria marcado, e a pessoa levaria um 422 no
-  // salvar nomeando alguem que ela talvez nem conheca (D9).
+  // ⚠️⚠️ ESTE EFEITO APLICA UMA VEZ SO, e a guarda de `ref` NAO e otimizacao.
+  //
+  // DEFEITO ENCONTRADO NA TELA em 04/08: a primeira versao nao tinha a
+  // guarda, e as dependencias mudam DEPOIS que o modal ja esta aberto --
+  // `alcancamTime` chega da rede, `membros` chega da rede, e `filhosDaOrigem`
+  // e um array montado inline no chamador (Board.tsx:1009), ou seja,
+  // referencia NOVA a cada render do pai. Cada uma dessas mudancas rodava o
+  // efeito de novo e fazia `setTitle`/`setAssigneeIds` por cima do que a
+  // pessoa tinha acabado de digitar. Medido: o titulo voltava pra "Cópia de
+  // X" mesmo depois de reescrito, e responsavel removido reaparecia.
+  //
+  // ⚠️ Nenhum portao pegava. Os testes de componente passavam props com
+  // referencia ESTAVEL (um `const` no arquivo de teste), entao o efeito
+  // rodava uma vez e o defeito nao existia ali. Prop instavel vinda do
+  // chamador real e um caso que so a tela mostra.
+  //
+  // ESPERA as duas buscas RESOLVEREM antes de aplicar: sem o alcance, um
+  // responsavel sem acesso entraria marcado e a pessoa levaria 422 no salvar
+  // nomeando alguem que ela talvez nem conheca (D9).
+  //
+  // ⚠️ `filhosDaOrigem` NAO entra nas dependencias. A contagem de subtarefas
+  // e calculada a parte (`subtarefasVivas`); trazer o array pra ca so
+  // reintroduziria a instabilidade de referencia que causou o defeito.
+  const permitidosNaCopia = useMemo(
+    () =>
+      new Set(
+        membros
+          .filter((m) => m.is_active && !foraDoEscopoAqui.has(m.id))
+          .map((m) => m.id)
+      ),
+    [membros, foraDoEscopoAqui]
+  );
+
+  const copiaPrePreenchida = useRef<string | null>(null);
   useEffect(() => {
-    if (!open || !duplicarDe) return;
+    if (!open || !duplicarDe) {
+      copiaPrePreenchida.current = null;
+      return;
+    }
+    if (copiaPrePreenchida.current === duplicarDe.id) return;
+    if (!alcanceResolvido || !membrosResolvidos) return;
+
     const v = valoresIniciaisDaCopia(
       {
         title: duplicarDe.title,
@@ -282,8 +345,12 @@ export default function TaskModal({
         priority: duplicarDe.priority,
         assignee_ids: duplicarDe.assignee_ids ?? [],
       },
-      new Set([...membrosInativosDaqui, ...foraDoEscopoAqui]),
-      filhosDaOrigem.map((f) => ({ is_archived: f.is_archived }))
+      // ⚠️ Lista de QUEM PODE, montada a partir dos membros que o modal
+      // realmente carregou (já sem inativos) menos quem não alcança. Quem
+      // sumiu da lista -- desativado, removido do workspace -- simplesmente
+      // não está aqui, e é isso que fecha o 422 da tarefa antiga.
+      permitidosNaCopia,
+      []
     );
     setTitle(v.title);
     setDescription(v.description);
@@ -291,12 +358,13 @@ export default function TaskModal({
     // D5: as duas datas ficam vazias. Ver lib/duplicacaoTarefa.
     setDueDate(v.dueDate);
     setAssigneeIds(v.assigneeIds);
+    copiaPrePreenchida.current = duplicarDe.id;
   }, [
     open,
     duplicarDe,
-    foraDoEscopoAqui,
-    membrosInativosDaqui,
-    filhosDaOrigem,
+    alcanceResolvido,
+    membrosResolvidos,
+    permitidosNaCopia,
   ]);
 
   const membrosFiltrados = useMemo(() => {

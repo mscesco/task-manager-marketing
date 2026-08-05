@@ -19,6 +19,9 @@ const ORIGEM = {
   assignee_ids: [ANA, SUMIDO],
 };
 
+/** Todo mundo da origem pode -- o caso comum. */
+const TODOS = new Set([ANA, SUMIDO]);
+
 function filha(is_archived = false) {
   return { is_archived };
 }
@@ -50,7 +53,7 @@ describe("tituloDaCopia (D8)", () => {
 
 describe("valoresIniciaisDaCopia", () => {
   it("descrição e prioridade vêm da origem", () => {
-    const v = valoresIniciaisDaCopia(ORIGEM, new Set(), []);
+    const v = valoresIniciaisDaCopia(ORIGEM, TODOS, []);
     expect(v.description).toBe("briefing completo");
     expect(v.priority).toBe("HIGH");
   });
@@ -63,7 +66,7 @@ describe("valoresIniciaisDaCopia", () => {
   it("D5 -- datas SEMPRE vazias, mesmo com a origem cheia", () => {
     const v = valoresIniciaisDaCopia(
       { ...ORIGEM, ...{ start_date: "2026-03-01", due_date: "2026-03-10" } },
-      new Set(),
+      TODOS,
       [],
     );
     expect(v.startDate).toBe("");
@@ -71,19 +74,32 @@ describe("valoresIniciaisDaCopia", () => {
   });
 
   it("D9 -- responsável fora do alcance não entra no pré-preenchimento", () => {
-    const v = valoresIniciaisDaCopia(ORIGEM, new Set([SUMIDO]), []);
+    const v = valoresIniciaisDaCopia(ORIGEM, new Set([ANA]), []);
     expect(v.assigneeIds).toEqual([ANA]);
   });
 
-  it("todos excluídos -> lista vazia, e o modal cobra escolha", () => {
-    const v = valoresIniciaisDaCopia(ORIGEM, new Set([ANA, SUMIDO]), []);
+  it("ninguém permitido -> lista vazia, e o modal cobra escolha", () => {
+    const v = valoresIniciaisDaCopia(ORIGEM, new Set(), []);
     expect(v.assigneeIds).toEqual([]);
+  });
+
+  /**
+   * ⚠️ O DEFEITO DE 04/08, em teste. Regra de "quem NÃO pode" só exclui quem
+   * ela conhece: o modal filtra `is_active` ao carregar a lista, então quem
+   * foi DESATIVADO depois não aparecia em conjunto nenhum, sobrevivia ao
+   * pré-preenchimento, e o salvar devolvia 422 numa tarefa antiga -- que é
+   * justamente o caso que duplicar existe pra resolver.
+   */
+  it("responsável que sumiu da lista NÃO é pré-preenchido", () => {
+    // SUMIDO foi desativado: não está entre os permitidos, e ponto.
+    const v = valoresIniciaisDaCopia(ORIGEM, new Set([ANA]), []);
+    expect(v.assigneeIds).not.toContain(SUMIDO);
   });
 
   it("origem sem responsável não quebra", () => {
     const v = valoresIniciaisDaCopia(
       { title: "t", description: "", priority: "MEDIUM" },
-      new Set(),
+      TODOS,
       [],
     );
     expect(v.assigneeIds).toEqual([]);
@@ -91,7 +107,7 @@ describe("valoresIniciaisDaCopia", () => {
 
   it("D10 -- arquivada NÃO conta em subtarefasVivas", () => {
     // Ver 6 e receber 4 faz a pessoa achar que perdeu duas.
-    const v = valoresIniciaisDaCopia(ORIGEM, new Set(), [
+    const v = valoresIniciaisDaCopia(ORIGEM, TODOS, [
       filha(),
       filha(true),
       filha(),
@@ -101,9 +117,7 @@ describe("valoresIniciaisDaCopia", () => {
   });
 
   it("sem filhas -> zero", () => {
-    expect(valoresIniciaisDaCopia(ORIGEM, new Set(), []).subtarefasVivas).toBe(
-      0,
-    );
+    expect(valoresIniciaisDaCopia(ORIGEM, TODOS, []).subtarefasVivas).toBe(0);
   });
 });
 

@@ -12,9 +12,9 @@
  *   D8 -- prefixo "Cópia de", TRUNCADO ao limite do campo. Título já no
  *         limite + 9 caracteres = 422 numa operação que a pessoa acha que é
  *         um clique.
- *   D9 -- responsável sem alcance NÃO entra no pré-preenchimento do pai. Ele
- *         daria 422 no salvar, nomeando alguém que quem clicou talvez nem
- *         conheça.
+ *   D9 -- só entra no pré-preenchimento do pai quem está na lista de
+ *         PERMITIDOS. Qualquer outro daria 422 no salvar, nomeando alguém que
+ *         quem clicou talvez nem conheça.
  */
 
 export const PREFIXO_COPIA = "Cópia de ";
@@ -63,10 +63,19 @@ export function tituloDaCopia(titulo: string): string {
 /**
  * Monta os valores iniciais do modal em modo cópia.
  *
- * `excluidos` = união de `foraDoEscopo` e `membrosInativos`, que o TaskDetail
- * já calcula para os próprios seletores dele. Passar o conjunto pronto evita
- * reconstruir a regra de alcance aqui -- que foi exatamente o defeito que a
- * Spec 034 acabou de tirar do front.
+ * `permitidos` = quem PODE ser responsável desta cópia: membros ativos que
+ * alcançam a tarefa. Regra POSITIVA, e a escolha é deliberada.
+ *
+ * ⚠️ A primeira versão recebia `excluidos` (quem NÃO pode) e furou em
+ * produção em 04/08: o modal já filtra `is_active` ao carregar a lista de
+ * membros, então quem foi DESATIVADO depois da tarefa original nunca aparecia
+ * na lista -- e por isso não entrava em nenhum conjunto de exclusão. Ele
+ * sobrevivia ao pré-preenchimento e o salvar devolvia 422. Uma lista de
+ * "quem não pode" só sabe excluir quem ela conhece; a de "quem pode" fecha o
+ * caso inteiro.
+ *
+ * O conjunto vem pronto de quem já calculou alcance para os próprios
+ * seletores -- não reconstruir a regra aqui foi o ganho da Spec 034.
  *
  * `filhas` são as filhas DIRETAS. O front não conhece neto; por isso o rótulo
  * da caixa diz "N diretas" (D4) -- havendo neto, chegam mais tarefas do que o
@@ -75,14 +84,14 @@ export function tituloDaCopia(titulo: string): string {
  */
 export function valoresIniciaisDaCopia(
   origem: TarefaParaCopiar,
-  excluidos: Set<string>,
+  permitidos: Set<string>,
   filhas: FilhaParaCopiar[],
 ): ValoresDaCopia {
   return {
     title: tituloDaCopia(origem.title),
     description: origem.description,
     priority: origem.priority,
-    assigneeIds: (origem.assignee_ids ?? []).filter((id) => !excluidos.has(id)),
+    assigneeIds: (origem.assignee_ids ?? []).filter((id) => permitidos.has(id)),
     // D5. Não são "campos que esqueci de preencher" -- são a decisão.
     startDate: "",
     dueDate: "",
