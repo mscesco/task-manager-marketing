@@ -1,0 +1,167 @@
+# =====================================================================
+# CI -- os portoes do projeto, rodando sozinhos a cada push.
+#
+# O QUE ELE PEGA: entrega parcial que quebra o build, `tsc` esquecido,
+# teste que quebrou num arquivo que ninguem abriu, e drift de migration.
+#
+# O QUE ELE NAO PEGA, e nao adianta esperar: fixture cega (o teste da
+# duplicacao passava COM o defeito), CSS quebrado, e regra de produto
+# errada. Ele roda os testes que existem -- nao escreve testes melhores.
+# A conferencia de tela continua sendo a rede que pega essas tres coisas.
+#
+# Ele NAO deploia, NAO toca no servidor e NAO toca no banco de producao.
+# =====================================================================
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+# Push novo na mesma branch cancela a execucao anterior -- nao adianta
+# esperar o resultado de um commit que ja foi substituido.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # -------------------------------------------------------------------
+  # FRONT -- os tres portoes do web/
+  # -------------------------------------------------------------------
+  front:
+    name: front (tsc + vitest + build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      # ⚠️ OS TRES SAO PORTAO, e em passos SEPARADOS de proposito: junto
+      # num `&&` so, a saida do que falhou some no meio do log do resto.
+      - name: tsc --noEmit
+        run: npx tsc --noEmit
+
+      - name: vitest
+        run: npm test
+
+      # `npm test` verde NAO dispensa o build: o build pega erro de rota,
+      # de import de servidor e de geracao estatica que o vitest nao ve.
+      - name: next build
+        run: npx next build
+
+  # -------------------------------------------------------------------
+  # BACKEND -- pytest contra Postgres de verdade + drift de migration
+  # -------------------------------------------------------------------
+  backend:
+    name: backend (pytest + drift)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    # Postgres efemero, equivalente ao servico `db-test` do
+    # docker-compose.yml. Mesma imagem, mesmo usuario/senha/base.
+    services:
+      db-test:
+        image: postgres:16
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: taskmanager_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U test -d taskmanager_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      # ⚠️ SEM esta variavel a suite de integracao PULA e o pytest ainda
+      # imprime "0 failed" -- 328 testes de visibilidade sumindo em
+      # silencio. Ela e o que torna este job util.
+      TEST_DATABASE_URL: postgresql+asyncpg://test:test@localhost:5432/taskmanager_test
+      DATABASE_URL: postgresql+asyncpg://test:test@localhost:5432/taskmanager_test
+      # Valor de teste, sem segredo nenhum: o Settings exige >= 32 chars.
+      JWT_SECRET_KEY: ci-secret-de-teste-sem-valor-nenhum-0123456789
+      APP_ENV: development
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      # As extensoes que o `db-test` local recebe via initdb.d
+      # (backend/schema/00_test_extensions.sql). O service container do
+      # Actions nao monta volume, entao aplicamos por psql.
+      - name: Extensoes do Postgres (pgcrypto, ltree)
+        run: |
+          PGPASSWORD=test psql -h localhost -U test -d taskmanager_test \
+            -f schema/00_test_extensions.sql
+
+      # ⚠️ NAO e `pip install ".[dev]"` daqui. O backend usa flat-layout com
+      # varios diretorios de topo (`app`, `tests`, `alembic`, `scripts`), e o
+      # setuptools RECUSA descobrir pacote nesse cenario:
+      # "Multiple top-level packages discovered in a flat-layout".
+      #
+      # O Dockerfile ja resolve isso sem parecer: no stage builder ele copia
+      # SO o pyproject.toml antes do `pip install .` -- sem os outros
+      # diretorios no contexto, nao ha o que descobrir, e o que se instala
+      # sao as DEPENDENCIAS. Aqui repetimos exatamente isso.
+      #
+      # O codigo nao precisa ser instalado: `pythonpath = ["."]` no
+      # pyproject faz o pytest achar `app` a partir de backend/.
+      - name: Instalar dependencias (so elas -- igual ao stage builder)
+        run: |
+          python -m pip install --upgrade pip
+          mkdir -p /tmp/deps
+          cp pyproject.toml /tmp/deps/
+          pip install "/tmp/deps[dev]"
+
+      # `-rs` lista os pulados NO LOG. Se algum dia a suite de integracao
+      # voltar a pular, aparece aqui em vez de sumir atras do "N passed".
+      - name: pytest
+        run: pytest -q -rs
+
+      # -----------------------------------------------------------------
+      # PORTAO DE DRIFT (modelo x migration).
+      # `alembic revision --autogenerate` SEMPRE gera arquivo, mesmo quando
+      # nao ha diferenca -- e o arquivo nasce como head. Commitar um por
+      # engano faz a proxima migration pendurar nele. Aqui o arquivo e
+      # gerado, inspecionado e APAGADO, sempre.
+      # -----------------------------------------------------------------
+      - name: Drift de migration (autogenerate tem de sair vazio)
+        run: |
+          alembic upgrade head
+          alembic revision --autogenerate -m ci_drift_check
+          gerado="$(ls -t alembic/versions/*ci_drift_check*.py | head -1)"
+          echo "--- arquivo gerado ---"
+          cat "$gerado"
+          if grep -qE '^\s+op\.' "$gerado"; then
+            rm -f "$gerado"
+            echo "::error::Modelo e migrations divergiram -- o autogenerate"
+            echo "::error::produziu operacoes. Crie a migration de verdade."
+            exit 1
+          fi
+          rm -f "$gerado"
+          echo "OK: autogenerate vazio."
+
+      # NAO e portao: 9 erros pre-existentes, conhecidos e aceitos. Fica
+      # informativo pra nao crescer sem ninguem ver.
+      - name: ruff (informativo, nao bloqueia)
+        continue-on-error: true
+        run: ruff check app/
