@@ -131,26 +131,42 @@ def build_move_entry(
 
 
 def build_archived_entry(
-    *, automated: bool = False, reason: str | None = None
+    *,
+    automated: bool = False,
+    reason: str | None = None,
+    cascade_count: int = 0,
 ) -> HistoryEntry:
     """Evento de arquivamento.
 
     `automated=True` (varredura de auto-arquivamento, Spec 013) marca o
     metadata para a auditoria distinguir acao humana de job. Chamada sem
     args permanece identica ao comportamento anterior (metadata None).
+
+    ⚠️ `cascade_count` (05/08) so entra no metadata quando e MAIOR QUE ZERO.
+    Arquivar folha continua gerando `metadata=None`, identico ao que sempre
+    foi -- a auditoria antiga nao passa a ter um campo novo com 0 em toda
+    linha, e as asercoes que ja existiam continuam validas. Mesma forma do
+    `build_deleted_entry`: a contagem NAO inclui a propria task, e as filhas
+    cascateadas NAO ganham linha propria de history.
     """
     metadata: dict[str, Any] | None = None
     if automated:
         metadata = {"automated": True}
         if reason:
             metadata["reason"] = reason
+    if cascade_count:
+        metadata = {**(metadata or {}), "cascade_count": cascade_count}
     return HistoryEntry(
         event_type=TaskHistoryEventType.ARCHIVED, metadata=metadata
     )
 
 
-def build_unarchived_entry() -> HistoryEntry:
-    return HistoryEntry(event_type=TaskHistoryEventType.UNARCHIVED)
+def build_unarchived_entry(*, cascade_count: int = 0) -> HistoryEntry:
+    """Evento de desarquivamento. Ver `build_archived_entry` sobre o zero."""
+    return HistoryEntry(
+        event_type=TaskHistoryEventType.UNARCHIVED,
+        metadata={"cascade_count": cascade_count} if cascade_count else None,
+    )
 
 
 def build_deleted_entry(*, cascade_count: int) -> HistoryEntry:

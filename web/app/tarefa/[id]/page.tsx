@@ -113,6 +113,22 @@ function Tarefa() {
     };
   }, []);
 
+  // ⚠️ EXTRAIDO DO EFEITO em 05/08. A busca dos filhos precisou virar funcao
+  // porque o arquivar passou a CASCATEAR: arquivar esta tarefa arquiva a
+  // subarvore inteira no banco, e a checklist desta pagina continuaria
+  // desenhando subtarefa ativa que ja nao esta mais. `vivo` entra como funcao
+  // para a guarda de corrida continuar valendo quando a chamada vem do efeito.
+  const recarregarFilhos = useCallback(
+    (alvoId: string, vivo: () => boolean = () => true) => {
+      listTasks({ parent_task_id: alvoId, size: CAP_FILHOS })
+        .then((r) => {
+          if (vivo()) setFilhos(r.items);
+        })
+        .catch(() => {});
+    },
+    []
+  );
+
   // Carga principal, chaveada pelo id. Navegar de uma subtarefa pra outra
   // (/tarefa/A -> /tarefa/B) NAO remonta o componente no App Router: so muda
   // o param. Por isso o efeito depende de `id` e zera o estado antes de
@@ -147,11 +163,7 @@ function Tarefa() {
 
       // Filhos diretos e pai sao complementares: falha em qualquer um dos
       // dois nao invalida a tarefa em si, entao degradam em silencio.
-      listTasks({ parent_task_id: alvo.id, size: CAP_FILHOS })
-        .then((r) => {
-          if (vivo) setFilhos(r.items);
-        })
-        .catch(() => {});
+      recarregarFilhos(alvo.id, () => vivo);
 
       if (alvo.parent_task_id) {
         getTask(alvo.parent_task_id)
@@ -257,7 +269,12 @@ function Tarefa() {
         // qualquer profundidade (era o ganho principal sobre a pilha de modal).
         onAbrirSubtarefa={(sub) => router.push(`/tarefa/${sub.id}`)}
         onSubtaskUpsert={aoUpsertFilho}
-        onTaskMoved={(t) => setTask((prev) => (prev ? mesclar(prev, t) : t))}
+        onTaskMoved={(t) => {
+          setTask((prev) => (prev ? mesclar(prev, t) : t));
+          // Cascata de arquivamento (05/08): as filhas mudaram no banco e nao
+          // vieram na resposta. Sem esta recarga a checklist fica velha.
+          recarregarFilhos(t.id);
+        }}
         onExcluir={() => {
           // A tarefa desta pagina deixou de existir -> nao ha o que mostrar.
           router.push("/quadro");

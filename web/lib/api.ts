@@ -1049,13 +1049,26 @@ export async function createSubtask(
 }
 
 // Arquivar/desarquivar (Entrega 12). Exige task.update -> TODOS os papeis
-// podem (e a saida pra quem nao tem task.delete). Idempotente, SEM cascata
-// (nao mexe nas subtarefas). Resposta NAO traz assignee_ids -> upsert preserva.
-export async function archiveTask(id: string): Promise<Task> {
-  return api<Task>(`/api/v1/tasks/${id}/archive`, { method: "POST" });
+// podem (e a saida pra quem nao tem task.delete). Idempotente. Resposta NAO
+// traz assignee_ids -> upsert preserva.
+//
+// ⚠️ COM CASCATA desde 05/08: as duas operacoes levam a SUBARVORE INTEIRA
+// junto, e `cascade_count` diz quantas subtarefas mudaram (sem contar a
+// propria). Antes disso arquivar um pai deixava as filhas ATIVAS debaixo
+// dele -- e nenhuma tela mostra subtarefa ativa de pai arquivado.
+//
+// ⚠️ `cascade_count > 0` significa que o estado local do chamador esta
+// DESATUALIZADO: as filhas mudaram no banco e nao estao em nenhuma resposta.
+// Quem chama precisa recarregar, nao so fazer upsert desta tarefa.
+export type ArchiveResult = Task & { cascade_count: number };
+
+export async function archiveTask(id: string): Promise<ArchiveResult> {
+  return api<ArchiveResult>(`/api/v1/tasks/${id}/archive`, { method: "POST" });
 }
-export async function unarchiveTask(id: string): Promise<Task> {
-  return api<Task>(`/api/v1/tasks/${id}/unarchive`, { method: "POST" });
+export async function unarchiveTask(id: string): Promise<ArchiveResult> {
+  return api<ArchiveResult>(`/api/v1/tasks/${id}/unarchive`, {
+    method: "POST",
+  });
 }
 
 // ---------------------------------------------------------------

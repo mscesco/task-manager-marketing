@@ -197,6 +197,20 @@ class SoftDeleteResult:
     cascade_count: int
 
 
+@dataclass(frozen=True, slots=True)
+class ArchiveResult:
+    """Resultado de archive/unarchive (cascade -- 05/08).
+
+    `cascade_count` = descendentes que mudaram junto, sem contar a propria
+    task. Vai para a resposta da API porque a tela AVISA ("3 subtarefas foram
+    arquivadas junto"): cascatear em silencio mexe em tarefa que a pessoa nao
+    citou, e ela so descobriria pela ausencia.
+    """
+
+    task: Task
+    cascade_count: int
+
+
 # --------------------------------------------------------
 # Service
 # --------------------------------------------------------
@@ -727,28 +741,59 @@ class TaskService:
         )
         return task
 
-    async def archive(self, *, task_id: uuid.UUID) -> Task:
-        """Idempotente. Sem cascata. 1 linha em history se mudou."""
+    async def archive(self, *, task_id: uuid.UUID) -> ArchiveResult:
+        """Arquiva a task E TODA A SUBARVORE (05/08). Idempotente.
+
+        ⚠️ A CASCATA E A CORRECAO DE UMA PORTA ABERTA, nao conveniencia. Sem
+        ela a filha ficava ATIVA debaixo de um pai arquivado: o quadro so
+        desenha `depth === 0`, e a checklist onde ela mora e a de uma tarefa
+        arquivada, que ninguem abre. A tarefa existia e nenhuma tela a
+        mostrava -- a mesma classe de defeito que a promocao da duplicacao e a
+        trava do desarquivar ja fecharam por outros dois caminhos.
+
+        ⚠️ A CASCATA RODA MESMO QUANDO A RAIZ JA ESTAVA ARQUIVADA, e isso e
+        deliberado: e o unico caminho de conserto para as filhas orfas que o
+        comportamento antigo deixou no banco. Arquivar de novo um pai ja
+        arquivado passa a recolher as filhas que ficaram para tras. Continua
+        idempotente no que importa: a segunda chamada muda 0 linhas
+        (`is_archived <> :alvo` no WHERE) e nao escreve history.
+
+        1 linha em history NA RAIZ, com `cascade_count` no metadata quando
+        houve cascata. Filhas NAO ganham linha propria -- mesma forma do
+        soft-delete (ADR 0005): a auditoria de arquivar 40 subtarefas viraria
+        40 linhas que ninguem le.
+        """
         task = await self._repo.get_by_id_or_raise(task_id)
         await self._assert_visible_via_project(task)
         await self._assert_editable(task)
 
-        if not task.is_archived:
+        mudou_raiz = not task.is_archived
+        if mudou_raiz:
             task.is_archived = True
+
+        cascade_count = await self._repo.set_archived_subtree(
+            task=task, archived=True
+        )
+
+        if mudou_raiz or cascade_count:
             tenant = require_tenant()
             await self._repo.write_history(
                 task=task,
                 user_id=tenant.user_id,
-                entries=[build_archived_entry()],
+                entries=[build_archived_entry(cascade_count=cascade_count)],
             )
             await self._session.flush()
-            logger.info("task.archived", task_id=str(task.id))
-        # Idempotente: ja arquivado -> no-op.
+            logger.info(
+                "task.archived",
+                task_id=str(task.id),
+                cascade_count=cascade_count,
+            )
+        # Nada mudou (raiz e subarvore ja arquivadas) -> no-op silencioso.
 
-        return task
+        return ArchiveResult(task=task, cascade_count=cascade_count)
 
-    async def unarchive(self, *, task_id: uuid.UUID) -> Task:
-        """Idempotente. Sem cascata.
+    async def unarchive(self, *, task_id: uuid.UUID) -> ArchiveResult:
+        """Desarquiva a task E TODA A SUBARVORE (05/08). Idempotente.
 
         ⚠️ RECUSA quando o PAI esta arquivado (04/08). Sem esta trava a
         operacao "funcionava" e nao entregava nada: a subtarefa voltava a
@@ -765,6 +810,19 @@ class TaskService:
         confirmacao -- melhor de usar, mas mexe em OUTRA tarefa; a 3 era
         promover a subtarefa a topo, recusada porque desarquivar e mover sao
         coisas diferentes. Se a trava incomodar na pratica, a 2 e o caminho.
+
+        ⚠️ A CASCATA PRA BAIXO EXISTE PORQUE A MENSAGEM ACIMA JA A PROMETIA.
+        "Desarquive a tarefa pai primeiro -- a subtarefa volta junto" estava em
+        producao desde 04/08 e era MENTIRA: `unarchive` nao cascateava, entao
+        a subtarefa continuava arquivada e a pessoa fazia o que a tela mandou
+        sem receber o que a tela prometeu.
+
+        ⚠️ CUSTO ACEITO (decisao de 05/08, opcao 2 de tres): a subarvore volta
+        INTEIRA, inclusive filha que tinha sido arquivada de proposito ANTES
+        do pai. O banco nao guarda quem foi arquivado pela cascata, entao
+        distinguir os dois casos exigiria coluna nova (era a opcao 3). Se
+        ressuscitar subtarefa encerrada incomodar na pratica, a opcao 3 e o
+        caminho -- e ai a migration entra junto.
         """
         task = await self._repo.get_by_id_or_raise(task_id)
         await self._assert_visible_via_project(task)
@@ -780,18 +838,32 @@ class TaskService:
                     details={"field": "parent_task_id", "parent_id": str(pai.id)},
                 )
 
-        if task.is_archived:
+        mudou_raiz = task.is_archived
+        if mudou_raiz:
             task.is_archived = False
+
+        # ⚠️ Mesma decisao do `archive`: a cascata roda mesmo com a raiz ja
+        # ativa. E o caminho de conserto para a arvore que ficou meio
+        # arquivada antes de 05/08.
+        cascade_count = await self._repo.set_archived_subtree(
+            task=task, archived=False
+        )
+
+        if mudou_raiz or cascade_count:
             tenant = require_tenant()
             await self._repo.write_history(
                 task=task,
                 user_id=tenant.user_id,
-                entries=[build_unarchived_entry()],
+                entries=[build_unarchived_entry(cascade_count=cascade_count)],
             )
             await self._session.flush()
-            logger.info("task.unarchived", task_id=str(task.id))
+            logger.info(
+                "task.unarchived",
+                task_id=str(task.id),
+                cascade_count=cascade_count,
+            )
 
-        return task
+        return ArchiveResult(task=task, cascade_count=cascade_count)
 
     async def archive_stale(
         self,

@@ -113,7 +113,10 @@ async def test_pai_ATIVO_desarquiva_normalmente(db) -> None:
     with acting_as(**ctx):
         r = await TaskService(db).unarchive(task_id=sub.id)
 
-    assert r.is_archived is False
+    # ⚠️ `r.task`: desde 05/08 unarchive devolve ArchiveResult (task +
+    # cascade_count), mesma forma do soft_delete.
+    assert r.task.is_archived is False
+    assert r.cascade_count == 0  # folha: nao ha subarvore
     assert pai.is_archived is False
 
 
@@ -129,16 +132,21 @@ async def test_tarefa_de_TOPO_desarquiva_normalmente(db) -> None:
 
     with acting_as(**ctx):
         r = await TaskService(db).unarchive(task_id=raiz.id)
-    assert r.is_archived is False
+    assert r.task.is_archived is False
 
 
 async def test_desarquivar_o_PAI_traz_a_arvore_de_volta(db) -> None:
     """O caminho que a mensagem de erro manda a pessoa seguir.
 
-    ⚠️ Funciona porque arquivar NAO cascateia pra baixo: a subtarefa nunca foi
-    marcada junto com o pai, entao desarquivar o pai basta -- a checklist volta
-    inteira. Se algum dia arquivar passar a cascatear, esta instrucao vira
-    mentira e o teste cai.
+    ⚠️ ATUALIZADO EM 05/08. O aviso desta docstring ("se algum dia arquivar
+    passar a cascatear...") venceu: arquivar passou a cascatear pra baixo E
+    desarquivar tambem. A instrucao da mensagem -- "desarquive a tarefa pai
+    primeiro, a subtarefa volta junto" -- so passou a ser VERDADE agora; antes
+    a subtarefa ficava para tras porque nada a trazia de volta.
+
+    Este cenario especifico (pai arquivado a mao, sub ativa) continua passando
+    porque a sub ja estava ativa: a cascata muda 0 linhas. Quem cobre a
+    cascata de verdade e test_archive_cascade_db.py.
     """
     ws, team, user, proj, ctx = await _mundo(db)
     pai, sub = await _arvore(db, ctx, proj, team)
@@ -165,4 +173,4 @@ async def test_idempotencia_preservada(db) -> None:
 
     with acting_as(**ctx):
         r = await TaskService(db).unarchive(task_id=sub.id)
-    assert r.is_archived is False
+    assert r.task.is_archived is False

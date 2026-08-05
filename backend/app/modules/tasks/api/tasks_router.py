@@ -24,6 +24,7 @@ from app.core.deps import SessionDep, UoWDep
 from app.db.models.enums import PriorityLevel, TaskStatus
 from app.modules.auth.api.dependencies import TenantContextDep, require_permission
 from app.modules.tasks.api.schemas import (
+    ArchiveTaskResponse,
     DeleteTaskResponse,
     TaskCreateRequest,
     TaskDetailResponse,
@@ -287,26 +288,40 @@ async def move_task(
 
 @router.post(
     "/{task_id}/archive",
-    response_model=TaskResponse,
+    response_model=ArchiveTaskResponse,
     dependencies=[Depends(require_permission("task.update"))],
 )
-async def archive_task(task_id: uuid.UUID, uow: UoWDep) -> TaskResponse:
-    """Arquiva. Idempotente. Sem cascata."""
-    task = await TaskService(uow.session).archive(task_id=task_id)
+async def archive_task(task_id: uuid.UUID, uow: UoWDep) -> ArchiveTaskResponse:
+    """Arquiva a task E a subarvore (05/08). Idempotente.
+
+    `cascade_count` = subtarefas arquivadas junto (nao conta a propria).
+    """
+    resultado = await TaskService(uow.session).archive(task_id=task_id)
     await uow.commit()
-    return TaskResponse.model_validate(task)
+    task_data = TaskResponse.model_validate(resultado.task).model_dump()
+    return ArchiveTaskResponse(
+        **task_data, cascade_count=resultado.cascade_count
+    )
 
 
 @router.post(
     "/{task_id}/unarchive",
-    response_model=TaskResponse,
+    response_model=ArchiveTaskResponse,
     dependencies=[Depends(require_permission("task.update"))],
 )
-async def unarchive_task(task_id: uuid.UUID, uow: UoWDep) -> TaskResponse:
-    """Desarquiva. Idempotente."""
-    task = await TaskService(uow.session).unarchive(task_id=task_id)
+async def unarchive_task(
+    task_id: uuid.UUID, uow: UoWDep
+) -> ArchiveTaskResponse:
+    """Desarquiva a task E a subarvore (05/08). Idempotente.
+
+    Recusa (422) quando o PAI esta arquivado -- ver `TaskService.unarchive`.
+    """
+    resultado = await TaskService(uow.session).unarchive(task_id=task_id)
     await uow.commit()
-    return TaskResponse.model_validate(task)
+    task_data = TaskResponse.model_validate(resultado.task).model_dump()
+    return ArchiveTaskResponse(
+        **task_data, cascade_count=resultado.cascade_count
+    )
 
 
 @router.delete(

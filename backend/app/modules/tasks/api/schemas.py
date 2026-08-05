@@ -123,6 +123,17 @@ class DeleteTaskResponse(TaskResponse):
     cascade_count: int
 
 
+class ArchiveTaskResponse(TaskResponse):
+    """Resposta de archive/unarchive -- inclui a contagem da cascata (05/08).
+
+    ⚠️ A contagem existe para a TELA AVISAR. Arquivar um pai mexe em tarefas
+    que a pessoa nao citou; sem o aviso ela so descobriria pela ausencia
+    delas, dias depois. Mesma razao do `promoted_to_root` na duplicacao.
+    """
+
+    cascade_count: int
+
+
 class TaskCreateRequest(BaseModel):
     """Criacao de task. workspace_id, created_by, path e depth sao
     internos -- nunca vem do cliente."""

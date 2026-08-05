@@ -489,6 +489,52 @@ class TaskRepository(BaseRepository[Task]):
         )
         return result.rowcount or 0
 
+    async def set_archived_subtree(self, *, task: Task, archived: bool) -> int:
+        """Arquiva (ou desarquiva) TODOS os descendentes de `task` (05/08).
+
+        NAO inclui a propria task -- o service ja mexeu nela. Retorna quantos
+        descendentes REALMENTE mudaram (o `is_archived <> :alvo` no WHERE faz
+        a segunda chamada devolver 0), e esse numero vai para
+        `event_metadata.cascade_count` e para a tela.
+
+        ⚠️ POR QUE A CASCATA EXISTE. Ate 05/08 arquivar era sem cascata: a
+        filha ficava ATIVA debaixo de um pai arquivado. O quadro so desenha
+        `depth === 0` (Board.tsx:580) e a checklist onde ela mora e a de uma
+        tarefa arquivada, que ninguem abre -- ela existia sem nenhuma tela que
+        a mostrasse. E a MESMA porta que a promocao da duplicacao e a trava do
+        desarquivar ja fecharam por outros dois caminhos.
+
+        ⚠️ `updated_at = NOW()` no SQL, igual ao `complete_descendants`: o
+        `onupdate` do ORM NAO dispara em UPDATE textual e `updated_at` nao tem
+        trigger no banco. Sem isto a filha cascateada fica com data velha.
+
+        ⚠️ UPDATE em massa NAO avisa o ORM. Objeto ja carregado na identity
+        map continua com o valor ANTIGO em memoria -- quem testar isto tem de
+        ler do BANCO (`db.refresh(...)`) ou vai medir memoria, nao banco.
+        """
+        tenant = require_tenant()
+        result = await self.session.execute(
+            text(
+                """
+                UPDATE task
+                SET is_archived = :alvo,
+                    updated_at = NOW()
+                WHERE path <@ CAST(:task_path AS ltree)
+                  AND id <> :task_id
+                  AND workspace_id = :tenant_id
+                  AND deleted_at IS NULL
+                  AND is_archived <> :alvo
+                """
+            ),
+            {
+                "alvo": archived,
+                "task_path": task.path,
+                "task_id": task.id,
+                "tenant_id": tenant.workspace_id,
+            },
+        )
+        return result.rowcount or 0
+
     async def detect_cycle(
         self,
         *,

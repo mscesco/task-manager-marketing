@@ -737,13 +737,39 @@ export default function TaskDetail({
     setErro(null);
     setArquivando(true);
     try {
-      const r = task!.is_archived ? await unarchiveTask(tid) : await archiveTask(tid);
+      const desarquivando = task!.is_archived;
+      const r = desarquivando ? await unarchiveTask(tid) : await archiveTask(tid);
       onSubtaskUpsert(r); // upsert generico: o quadro reflete is_archived
+      // ⚠️ CASCATA (05/08): a subarvore inteira mudou no banco e NENHUMA
+      // dessas filhas veio na resposta -- o estado do chamador esta velho.
+      // `onTaskMoved` e o canal que ja significa "mexeu em mais do que esta
+      // tarefa, reaja": no quadro ele recarrega, em minhas-tarefas faz upsert
+      // com os filhos. Sem isto a checklist continuaria mostrando subtarefa
+      // ativa que ja esta arquivada -- a mesma stale de estado que a
+      // duplicacao tinha.
+      if (r.cascade_count > 0) {
+        onTaskMoved(r);
+        // Avisar nao e opcional: a operacao mexeu em tarefas que a pessoa nao
+        // citou. Em silencio, ela so descobriria pela ausencia delas.
+        const n = r.cascade_count;
+        const plural = n === 1 ? "subtarefa foi" : "subtarefas foram";
+        window.alert(
+          desarquivando
+            ? `${n} ${plural} desarquivada${n === 1 ? "" : "s"} junto.`
+            : `${n} ${plural} arquivada${n === 1 ? "" : "s"} junto.`
+        );
+      }
     } catch (e) {
+      const a = e as ApiError;
       setErro(
-        (e as ApiError).status === 403
+        a.status === 403
           ? "Você não pode arquivar esta tarefa."
-          : "Não consegui arquivar a tarefa."
+          : // ⚠️ `a.message` no 422: e aqui que chega a mensagem que NOMEIA o
+            // pai arquivado ("Desarquive a tarefa pai primeiro…", 04/08).
+            // Trocada por um texto generico, aquela instrucao -- que existe
+            // justamente porque a pessoa nao tem como adivinhar o pai --
+            // nunca aparecia nesta tela. A /arquivadas ja mostrava.
+            a.message || "Não consegui arquivar a tarefa."
       );
     } finally {
       setArquivando(false);
