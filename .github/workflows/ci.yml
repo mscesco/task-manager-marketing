@@ -72,6 +72,15 @@ jobs:
 
     # Postgres efemero, equivalente ao servico `db-test` do
     # docker-compose.yml. Mesma imagem, mesmo usuario/senha/base.
+    #
+    # ⚠️ NAO CONFUNDIR COM O BANCO DA APLICACAO. Sao dois:
+    #   - o banco REAL, na VPS, alcancado em dev pelo tunel SSH
+    #     (`ssh -L 15432:localhost:5432`) + `host.docker.internal` no
+    #     compose. E o que o DATABASE_URL do backend/.env aponta;
+    #   - o `db-test`, efemero, que a suite de integracao usa. Nunca
+    #     precisou de tunel: sobe ao lado do api-dev, na rede do compose.
+    # Aqui recriamos SO o segundo. Nada neste job alcanca a VPS, e o CI
+    # nao tem -- nem deve ter -- credencial de producao.
     services:
       db-test:
         image: postgres:16
@@ -92,6 +101,9 @@ jobs:
       # imprime "0 failed" -- 328 testes de visibilidade sumindo em
       # silencio. Ela e o que torna este job util.
       TEST_DATABASE_URL: postgresql+asyncpg://test:test@localhost:5432/taskmanager_test
+      # ⚠️ DATABASE_URL aponta pro banco DESCARTAVEL de proposito. O
+      # Settings exige a variavel pra aplicacao sequer importar; apontando
+      # pro efemero, teste que a use bate no descartavel e nunca na VPS.
       DATABASE_URL: postgresql+asyncpg://test:test@localhost:5432/taskmanager_test
       # Valor de teste, sem segredo nenhum: o Settings exige >= 32 chars.
       JWT_SECRET_KEY: ci-secret-de-teste-sem-valor-nenhum-0123456789
@@ -159,6 +171,12 @@ jobs:
           fi
           rm -f "$gerado"
           echo "OK: autogenerate vazio."
+
+          # ⚠️ LIMITE DESTE PORTAO: ele compara MODELO x MIGRATIONS num
+          # banco construido do zero. NAO detecta divergencia entre as
+          # migrations e o banco de PRODUCAO (alguem ter mexido na mao la).
+          # Isso segue sendo conferencia manual no deploy -- mesma familia
+          # do docker-compose.prod.yml editado direto no servidor.
 
       # NAO e portao: 9 erros pre-existentes, conhecidos e aceitos. Fica
       # informativo pra nao crescer sem ninguem ver.
