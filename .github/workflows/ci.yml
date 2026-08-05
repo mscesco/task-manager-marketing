@@ -36,9 +36,9 @@ jobs:
         working-directory: web
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: "22"
           cache: npm
@@ -110,9 +110,9 @@ jobs:
       APP_ENV: development
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
           cache: pip
@@ -180,6 +180,11 @@ jobs:
 
       # NAO e portao: 9 erros pre-existentes, conhecidos e aceitos. Fica
       # informativo pra nao crescer sem ninguem ver.
+      #
+      # ⚠️ `|| true` no COMANDO, e nao `continue-on-error: true` no passo.
+      # Os dois deixam o job verde, mas o `continue-on-error` registra uma
+      # ANOTACAO DE ERRO na execucao -- um vermelho decorativo em toda
+      # rodada, que e como se ensina a ignorar alarme. Saindo com 0, a
+      # saida do ruff continua no log e nao ha anotacao.
       - name: ruff (informativo, nao bloqueia)
-        continue-on-error: true
-        run: ruff check app/
+        run: ruff check app/ || true
