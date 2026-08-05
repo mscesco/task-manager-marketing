@@ -176,6 +176,49 @@ export function responsaveisPorRaiz(
  * responsavel some quando ha filtro -- mesma decisao ja tomada para o filtro
  * de subtime, para o resultado nao misturar "e dela" com "nao e de ninguem".
  */
+// ====================================================================
+// 3. BUSCA POR TITULO -- inclui SUBTAREFA (05/08/2026)
+// ====================================================================
+
+/** Tarefa com titulo -- o minimo que a busca precisa. */
+export type TaskComTitulo = TaskMin & { title: string };
+
+/**
+ * Raizes que casam com a busca, contando o titulo das SUBTAREFAS.
+ *
+ * ⚠️ POR QUE DEVOLVE RAIZ, e nao a tarefa que casou. O card do quadro e
+ * sempre a raiz (ADR 0004) -- o quadro so desenha `depth === 0`. Uma
+ * subtarefa nao tem card pra aparecer, entao a unica forma de "achar" uma
+ * subtarefa pela busca e trazer a raiz dela. Mesma agregacao que
+ * `responsaveisPorRaiz` e o `subtimesPorRaiz` do Board ja fazem: a raiz passa
+ * se ELA ou QUALQUER descendente satisfaz o criterio.
+ *
+ * Ate 05/08 a busca comparava so `t.title` das raizes: procurar por uma
+ * subtarefa devolvia lista vazia, e o estado vazio dizia isso com todas as
+ * letras. Decisao de 05/08: SO TITULO. Descricao ficou de fora de proposito
+ * -- casando por descricao o card aparece com o termo buscado em lugar nenhum
+ * da tela, e a leitura honesta de quem olha e "o filtro bugou". Descricao so
+ * entra junto com um "por que este card apareceu" no card.
+ *
+ * ⚠️ So enxerga o que foi CARREGADO. `listAllTasks` tem teto (`truncated`) e
+ * o quadro so traz arquivadas quando a pessoa pede: subtarefa fora do lote ou
+ * arquivada com o toggle desligado nao e encontrada. Busca no servidor e o
+ * conserto de verdade, e e outro tamanho.
+ */
+export function raizesQueCasamBusca(
+  tasks: readonly TaskComTitulo[],
+  buscaNorm: string,
+): Set<string> {
+  const out = new Set<string>();
+  if (buscaNorm === "") return out;
+  const byId = new Map(tasks.map((t) => [t.id, t as TaskMin]));
+  for (const t of tasks) {
+    if (!normalizarBusca(t.title).includes(buscaNorm)) continue;
+    out.add(raizDe(t, byId));
+  }
+  return out;
+}
+
 export function passaResponsavel(
   pessoaIds: readonly string[],
   raizId: string,

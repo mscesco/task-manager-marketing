@@ -21,6 +21,7 @@ import {
   passaEscopo,
   responsaveisPorRaiz,
   passaResponsavel,
+  raizesQueCasamBusca,
   temFiltroAtivo,
   temFiltroNovo,
   type TaskMin,
@@ -443,5 +444,69 @@ describe("normalizarBusca", () => {
   });
   it("e a MESMA regra nas duas telas -- funcao unica, sem copia local", () => {
     expect(normalizarBusca("Órçãmento")).toBe(normalizarBusca("orcamento"));
+  });
+});
+
+describe("raizesQueCasamBusca -- a busca inclui SUBTAREFA (05/08)", () => {
+  /**
+   * O quadro so desenha `depth === 0`: subtarefa nao tem card. Achar uma
+   * subtarefa pela busca so pode significar TRAZER A RAIZ dela -- e essa e a
+   * mesma agregacao que o filtro de pessoa e o de subtime ja fazem.
+   */
+  const t = (
+    id: string,
+    title: string,
+    parent_task_id: string | null = null,
+  ) => ({ id, title, parent_task_id, team_id: RAIZ });
+
+  const ARVORE = [
+    t("r1", "Campanha de matrícula"),
+    t("s1", "Roteiro do vídeo", "r1"),
+    t("n1", "Legendas do roteiro", "s1"),
+    t("r2", "Newsletter de julho"),
+  ];
+
+  it("casa pelo titulo da RAIZ, como antes", () => {
+    expect([...raizesQueCasamBusca(ARVORE, "campanha")]).toEqual(["r1"]);
+  });
+
+  it("casa pelo titulo da SUBTAREFA e devolve a RAIZ -- era o pedido", () => {
+    expect([...raizesQueCasamBusca(ARVORE, "roteiro do video")]).toEqual(["r1"]);
+  });
+
+  it("casa em NETO tambem -- sobe a arvore inteira, nao um nivel so", () => {
+    expect([...raizesQueCasamBusca(ARVORE, "legendas")]).toEqual(["r1"]);
+  });
+
+  it("uma raiz aparece UMA vez, mesmo com varias filhas casando", () => {
+    // "roteiro" bate em s1 E em n1. O conjunto impede o card duplicado.
+    expect(raizesQueCasamBusca(ARVORE, "roteiro").size).toBe(1);
+  });
+
+  it("nao casa nada -> conjunto vazio (o quadro mostra o estado vazio)", () => {
+    expect(raizesQueCasamBusca(ARVORE, "orcamento").size).toBe(0);
+  });
+
+  it("busca vazia devolve vazio -- quem decide 'sem filtro' e o chamador", () => {
+    // ⚠️ Nao devolver "todas" aqui e deliberado: o Board so consulta este
+    // conjunto quando `buscaNorm !== ""`. Devolver todas as raizes daria um
+    // segundo lugar decidindo o que e "sem busca".
+    expect(raizesQueCasamBusca(ARVORE, "").size).toBe(0);
+  });
+
+  it("usa a MESMA normalizacao -- 'video' acha 'vídeo'", () => {
+    expect([...raizesQueCasamBusca(ARVORE, "video")]).toEqual(["r1"]);
+  });
+
+  it("pai FORA do lote carregado: para no topo que da, sem cair", () => {
+    // `listAllTasks` trunca. Se a raiz nao veio, a subtarefa vira o topo
+    // possivel -- mesma decisao ja tomada em `responsaveisPorRaiz`.
+    const soltas = [t("s9", "Peça de mídia", "pai-que-nao-veio")];
+    expect([...raizesQueCasamBusca(soltas, "midia")]).toEqual(["s9"]);
+  });
+
+  it("ciclo em parent_task_id nao trava a busca", () => {
+    const ciclo = [t("a", "Alfa", "b"), t("b", "Beta", "a")];
+    expect(raizesQueCasamBusca(ciclo, "alfa").size).toBe(1);
   });
 });

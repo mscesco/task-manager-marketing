@@ -24,6 +24,7 @@ import {
   pillDoEscopo,
   passaEscopo,
   responsaveisPorRaiz,
+  raizesQueCasamBusca,
   passaResponsavel,
   temFiltroNovo,
   contaFiltrosAtivos,
@@ -604,6 +605,12 @@ export default function Board({
   // por pessoa. Mesmo desenho do subtimesPorRaiz logo acima.
   const respPorRaiz = responsaveisPorRaiz(tasks);
 
+  // Busca por titulo, agora incluindo SUBTAREFA (05/08). O conjunto e de
+  // RAIZES: subtarefa nao tem card (o quadro so desenha `depth === 0`), entao
+  // achar uma subtarefa significa trazer a raiz dela. Regra e testes em
+  // lib/filtrosQuadro:raizesQueCasamBusca -- aqui so se pergunta.
+  const raizesDaBusca = raizesQueCasamBusca(tasks, buscaNorm);
+
   // Quem tem ALGUMA tarefa neste quadro (raiz ou subtarefa). Usado so pra
   // decidir se um desativado ainda merece aparecer no filtro.
   const comTrabalhoAqui = new Set<string>();
@@ -638,7 +645,7 @@ export default function Board({
   });
 
   const raizes = visiveis.filter((t) => {
-    if (buscaNorm && !normalizarBusca(t.title).includes(buscaNorm)) return false;
+    if (buscaNorm && !raizesDaBusca.has(t.id)) return false;
     // Sem data: aparece em qualquer filtro de prazo (decisao da Camila).
     if (prazo !== "todos" && t.due_date) {
       // Concluida nunca e atrasada (ja foi entregue).
@@ -1194,7 +1201,7 @@ function SemResultado({ onLimpar }: { onLimpar: () => void }) {
   return (
     <EmptyStateBox
       title="Nada encontrado"
-      description="Nenhuma tarefa bate com o filtro atual. As subtarefas e tarefas de outras páginas não entram na busca. No filtro de subtime, tarefas sem responsável (ou só com responsáveis de outro subtime) não aparecem."
+      description="Nenhuma tarefa bate com o filtro atual. A busca por título já inclui as subtarefas — a tarefa de topo delas é que aparece. Tarefas arquivadas só entram com o filtro ligado. No filtro de subtime, tarefas sem responsável (ou só com responsáveis de outro subtime) não aparecem."
       action={<button className="btn" onClick={onLimpar}>Limpar filtros</button>}
     />
   );

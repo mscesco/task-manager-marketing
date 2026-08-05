@@ -601,3 +601,43 @@ describe("Board -- depois de duplicar, a CÓPIA aparece com as subtarefas", () =
     });
   });
 });
+
+describe("Board -- busca por título alcança as SUBTAREFAS (05/08)", () => {
+  /**
+   * A REGRA está em `lib/filtrosQuadro:raizesQueCasamBusca`, com os testes
+   * dela. O que este teste trava é a FIAÇÃO: o Board consulta o conjunto de
+   * raízes em vez de comparar `t.title` na mão. Trocar a regra por
+   * `normalizarBusca(t.title).includes(...)` de novo derruba este teste.
+   */
+  it("digitar o título de uma subtarefa mantém o card da tarefa de topo", async () => {
+    montarApi(
+      [
+        task({ id: "r1", title: "Campanha de matrícula", team_id: CRM }),
+        task({
+          id: "s1",
+          title: "Roteiro do vídeo",
+          team_id: CRM,
+          parent_task_id: "r1",
+          depth: 1,
+        }),
+        task({ id: "r2", title: "Newsletter de julho", team_id: CRM }),
+      ],
+      []
+    );
+    render(<Board subteamId={CRM} title="CRM e Automação" />);
+    await screen.findByText("Campanha de matrícula");
+
+    fireEvent.change(screen.getByPlaceholderText("Buscar por título…"), {
+      // Sem acento de propósito: a normalização é a mesma das duas telas.
+      target: { value: "roteiro do video" },
+    });
+
+    // A raiz da subtarefa que casou continua no quadro...
+    expect(screen.getByText("Campanha de matrícula")).toBeTruthy();
+    // ...e a que não tem nada a ver, não.
+    expect(screen.queryByText("Newsletter de julho")).toBeNull();
+    // ⚠️ A subtarefa NÃO vira card (o quadro só desenha `depth === 0`) --
+    // se ela aparecesse, a regra teria virado outra coisa.
+    expect(screen.queryByText("Roteiro do vídeo")).toBeNull();
+  });
+});
