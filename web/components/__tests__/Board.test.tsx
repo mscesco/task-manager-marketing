@@ -519,3 +519,85 @@ describe("Board -- depois de duplicar, abre a CÓPIA", () => {
     });
   });
 });
+
+describe("Board -- depois de duplicar, a CÓPIA aparece com as subtarefas", () => {
+  /**
+   * Defeito relatado na tela em 05/08: "a cópia é criada, mas sem as
+   * subtarefas". As subtarefas EXISTEM no banco -- o backend copia a
+   * subárvore inteira na mesma transação. Quem mente é o quadro.
+   *
+   * `aoSalvar()` insere no estado `tasks` SÓ a tarefa devolvida pelo POST (a
+   * cópia-pai). As filhas nascidas no backend não estão em lugar nenhum do
+   * estado, e `filhosFocado` (Board.tsx:674) é derivado de `tasks`. Como o
+   * `TaskDetail` NÃO busca os próprios filhos -- ele recebe `filhos` como
+   * prop -- a checklist da cópia abre vazia. F5 e elas aparecem.
+   *
+   * ⚠️ O teste de cima ("abre a CÓPIA") não pega isto: a origem dele não tem
+   * filha nenhuma, então não há checklist a conferir. Fixture fraca, mesmo
+   * padrão do §9 do handoff.
+   */
+  it("a checklist da cópia mostra as subtarefas criadas no backend", async () => {
+    const ORIGEM = task({ id: "o1", title: "Tarefa original", team_id: CRM });
+    const FILHA = task({
+      id: "f1",
+      title: "Passo um",
+      team_id: CRM,
+      parent_task_id: "o1",
+      depth: 1,
+    });
+    const COPIA = task({ id: "c1", title: "Cópia de Tarefa original", team_id: CRM });
+    const FILHA_DA_COPIA = task({
+      id: "cf1",
+      title: "Passo um",
+      team_id: CRM,
+      parent_task_id: "c1",
+      depth: 1,
+    });
+
+    montarApi([ORIGEM, FILHA], []);
+    // 1a chamada: estado ANTES de duplicar. Qualquer chamada seguinte já
+    // enxerga a cópia e a filha dela -- é exatamente isso que o refetch
+    // depois de duplicar tem de trazer.
+    vi.mocked(api.listAllTasks)
+      .mockResolvedValueOnce({ items: [ORIGEM, FILHA], total: 2, truncated: false })
+      .mockResolvedValue({
+        items: [ORIGEM, FILHA, COPIA, FILHA_DA_COPIA],
+        total: 4,
+        truncated: false,
+      });
+    vi.mocked(api.duplicateTask).mockResolvedValue({
+      ...COPIA,
+      skipped_assignees: [],
+      promoted_to_root: false,
+    });
+
+    render(<Board subteamId={CRM} title="CRM e Automação" />);
+    await screen.findByText("Tarefa original");
+
+    fireEvent.click(screen.getByText("Tarefa original"));
+    await screen.findByRole("button", { name: "Duplicar" });
+    fireEvent.click(screen.getByRole("button", { name: "Duplicar" }));
+
+    await screen.findByText("Duplicar tarefa");
+    // A caixa da D7 conta a filha viva -- se ela sumir, o defeito é outro.
+    await screen.findByText("Levar as subtarefas (1 diretas)");
+
+    const salvar = screen
+      .getAllByRole("button", { name: /^Duplicar$/ })
+      .find((b) => !b.getAttribute("title"));
+    if (!salvar) throw new Error("botão Duplicar do modal não encontrado");
+    fireEvent.click(salvar);
+
+    await waitFor(() => {
+      expect(api.duplicateTask).toHaveBeenCalled();
+    });
+    await screen.findAllByText("Cópia de Tarefa original");
+
+    // ⚠️ "Passo um" NÃO vira card (depth 1) e a origem não está mais aberta:
+    // a única forma do título aparecer é a checklist da CÓPIA estar montada
+    // com o que o backend criou.
+    await waitFor(() => {
+      expect(screen.getAllByText("Passo um").length).toBeGreaterThan(0);
+    });
+  });
+});

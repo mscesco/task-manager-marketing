@@ -1027,6 +1027,15 @@ export default function Board({
             aoSalvar(t);
             setPilha([]);
             setDetalhe(t);
+            // ⚠️ RECARGA OBRIGATÓRIA. `aoSalvar` insere no estado SÓ a tarefa
+            // devolvida pelo POST -- a cópia-pai. As SUBTAREFAS nasceram no
+            // backend, na mesma transação, e não estão em `tasks`. Como
+            // `filhosFocado` é derivado de `tasks` e o `TaskDetail` não busca
+            // os próprios filhos (recebe `filhos` como prop), a checklist da
+            // cópia abria VAZIA e a leitura honesta era "duplicou sem as
+            // subtarefas". Elas estavam no banco o tempo todo; F5 mostrava.
+            // Mesma razão vale para `subCount` do card.
+            recarregarTasks();
             return;
           }
           aoSalvar(t);
