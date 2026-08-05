@@ -118,6 +118,26 @@ class DuplicateTaskCommand:
     # tela AVISA antes de salvar. Nao remova o aviso sem remover a caixa.
     include_assignees: bool = True
 
+    # ⚠️ PASSO 2 DO MODAL (ADR 0031). As duas chaves sao ids de subtarefa da
+    # ORIGEM, e valem SO no primeiro nivel (filhas diretas) -- neto herda da
+    # filha correspondente na copia, porque listar tres niveis num seletor e
+    # uma parede e arvore de tres niveis e rara.
+    #
+    # `subtask_assignees`: quem responde por cada filha. Presente = escolha
+    # EXPLICITA de quem clicou, entao vai crua pro `assign_many_or_fail` e um
+    # invalido DEVE dar 422 -- mesma regra do `assignee_ids` do pai. Ausente =
+    # comportamento antigo (`include_assignees` decide).
+    #
+    # ⚠️ Lista VAZIA e recusada, nao aceita como "ninguem": criar filha sem
+    # responsavel e exatamente o que a ADR 0031 fecha. Quem nao quer a
+    # subtarefa usa `skip_subtasks`.
+    subtask_assignees: dict[uuid.UUID, list[uuid.UUID]] = field(
+        default_factory=dict
+    )
+    # Filhas diretas que NAO vao. Excluir uma exclui a SUBARVORE dela -- neto
+    # nao tem onde se pendurar se a mae nao veio.
+    skip_subtasks: list[uuid.UUID] = field(default_factory=list)
+
 
 @dataclass(frozen=True, slots=True)
 class DuplicateResult:
@@ -407,11 +427,22 @@ class TaskService:
 
         pulados: list[uuid.UUID] = []
         if command.include_subtasks:
+            await self._validar_mapa_de_subtarefas(command, source)
             await self._copiar_subarvore(
                 origem=source,
                 destino=novo,
                 pulados=pulados,
                 levar_responsaveis=command.include_assignees,
+                responsaveis_por_filha=command.subtask_assignees,
+                pular=frozenset(command.skip_subtasks),
+            )
+        elif command.subtask_assignees or command.skip_subtasks:
+            # ⚠️ Incoerencia do chamador, nao preferencia: mandar decisao
+            # sobre subtarefa pedindo pra nao levar subtarefa nenhuma. Aceitar
+            # em silencio esconderia uma caixa desmarcada por engano na tela.
+            raise ValidationError(
+                "Decisões sobre subtarefas exigem include_subtasks=true.",
+                details={"field": "include_subtasks"},
             )
 
         logger.info(
@@ -434,6 +465,9 @@ class TaskService:
         destino: Task,
         pulados: list[uuid.UUID],
         levar_responsaveis: bool,
+        responsaveis_por_filha: dict[uuid.UUID, list[uuid.UUID]] | None = None,
+        pular: frozenset[uuid.UUID] = frozenset(),
+        forcados: list[uuid.UUID] | None = None,
     ) -> None:
         """Copia os filhos de `origem` sob `destino`, RECURSIVAMENTE (D4).
 
@@ -449,8 +483,11 @@ class TaskService:
         precedencia normal de `create()` (criterio 9). Repassar o time da
         origem furaria a heranca quando a copia nasce em outro lugar.
         """
+        escolhas = responsaveis_por_filha or {}
         filhos = await self._repo.list_children(parent_task_id=origem.id)
         for filho in filhos:
+            if filho.id in pular:
+                continue  # ⚠️ leva a SUBARVORE dela junto (ADR 0031)
             copia = await self.create(
                 CreateTaskCommand(
                     title=filho.title,
@@ -462,7 +499,18 @@ class TaskService:
                     # a task NOVA, que ainda nao existe neste ponto.
                 )
             )
-            if levar_responsaveis:
+            # Precedencia: escolha explicita do passo 2 > heranca do nivel de
+            # cima (neto) > comportamento antigo (`include_assignees`).
+            escolhidos = escolhas.get(filho.id, forcados)
+            if escolhidos is not None:
+                from app.modules.tasks.application.collaboration_service import (
+                    CollaborationService,
+                )
+
+                await CollaborationService(self._session).assign_many_or_fail(
+                    task=copia, user_ids=escolhidos
+                )
+            elif levar_responsaveis:
                 await self._aplicar_responsaveis_da_filha(
                     origem=filho, copia=copia, pulados=pulados
                 )
@@ -471,6 +519,58 @@ class TaskService:
                 destino=copia,
                 pulados=pulados,
                 levar_responsaveis=levar_responsaveis,
+                # ⚠️ Mapa e exclusao valem SO no primeiro nivel -- por isso
+                # nao descem. O que desce e `forcados`: o neto herda de quem
+                # foi decidido pra mae dele.
+                responsaveis_por_filha=None,
+                pular=frozenset(),
+                forcados=escolhidos,
+            )
+
+    async def _validar_mapa_de_subtarefas(
+        self, command: DuplicateTaskCommand, source: Task
+    ) -> None:
+        """Chaves do passo 2 tem de ser filhas DIRETAS e VIVAS da origem.
+
+        ⚠️ Chave desconhecida NAO pode passar em silencio. Um id de neto, ou
+        de subtarefa arquivada, ou de outra tarefa, viraria uma decisao que a
+        pessoa tomou na tela e que o backend ignora -- ela salva achando que
+        designou alguem e a filha nasce sem ninguem. E a mesma familia do
+        query param nao declarado que o FastAPI descarta calado.
+
+        ⚠️ Lista vazia e recusada aqui, e nao mais adiante: `assign_many_or_fail`
+        com lista vazia e no-op silencioso, entao a filha nasceria orfa sem
+        nenhum erro. Quem nao quer a subtarefa manda em `skip_subtasks`.
+        """
+        if not command.subtask_assignees and not command.skip_subtasks:
+            return
+
+        filhas = await self._repo.list_children(parent_task_id=source.id)
+        diretas = {f.id for f in filhas}
+
+        desconhecidas = (
+            set(command.subtask_assignees) | set(command.skip_subtasks)
+        ) - diretas
+        if desconhecidas:
+            raise ValidationError(
+                "Há decisões apontando para subtarefas que não são filhas "
+                "diretas desta tarefa.",
+                details={
+                    "field": "subtask_assignees",
+                    "invalid_ids": sorted(str(i) for i in desconhecidas),
+                },
+            )
+
+        vazias = [
+            str(sid)
+            for sid, ids in command.subtask_assignees.items()
+            if not ids
+        ]
+        if vazias:
+            raise ValidationError(
+                "Toda subtarefa copiada precisa de pelo menos um "
+                "responsável. Para não levá-la, use 'não levar esta'.",
+                details={"field": "subtask_assignees", "invalid_ids": vazias},
             )
 
     async def _aplicar_responsaveis_da_filha(

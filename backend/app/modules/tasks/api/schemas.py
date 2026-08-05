@@ -218,6 +218,18 @@ class TaskDuplicateRequest(BaseModel):
     # Default True = comportamento da D6 original (a copia leva tudo igual).
     include_assignees: bool = True
 
+    # ⚠️ PASSO 2 DO MODAL (ADR 0031). Chaves = ids de subtarefa DIRETA da
+    # origem. Ausentes = comportamento antigo, entao cliente velho nao muda.
+    #
+    # `subtask_assignees` presente para uma filha = escolha explicita de quem
+    # clicou: vai crua e um invalido DA 422, igual ao `assignee_ids` do pai.
+    # Lista vazia e RECUSADA -- filha sem responsavel e o que a ADR 0031
+    # fecha; para nao levar a subtarefa, use `skip_subtasks`.
+    subtask_assignees: dict[uuid.UUID, list[uuid.UUID]] = Field(
+        default_factory=dict
+    )
+    skip_subtasks: list[uuid.UUID] = Field(default_factory=list)
+
 
 class TaskDuplicateResponse(TaskListItem):
     """A copia + os responsaveis de SUBTAREFA descartados (D9-c).

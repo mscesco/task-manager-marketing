@@ -220,6 +220,8 @@ async def duplicate_task(
             assignee_ids=payload.assignee_ids,
             include_subtasks=payload.include_subtasks,
             include_assignees=payload.include_assignees,
+            subtask_assignees=payload.subtask_assignees,
+            skip_subtasks=payload.skip_subtasks,
         )
     )
     # Le do BANCO, mesmo motivo do POST comum: nao ecoar o payload.

@@ -114,14 +114,23 @@ async def test_a_cascata_nao_vaza_para_fora_da_subarvore(db) -> None:
 
 
 async def test_arquivar_de_novo_nao_conta_nem_escreve_history(db) -> None:
-    """Idempotencia: a 2a chamada muda 0 linhas (`is_archived <> :alvo`)."""
+    """Idempotencia: a 2a chamada muda 0 linhas (`is_archived <> :alvo`).
+
+    ⚠️ A PRIMEIRA chamada e afirmada de proposito. Sem isso o teste passava
+    com a cascata QUEBRADA -- 0 na segunda chamada e trivialmente verdade
+    quando o UPDATE nunca muda nada, e a "idempotencia" seria medida sem
+    depender de a cascata ter funcionado. Descoberto por sabotagem em
+    05/08 (`"alvo": archived` -> `not archived`): dos 8 testes deste
+    arquivo, este foi o unico que sobreviveu pelo motivo errado.
+    """
     ws, team, user, proj, ctx = await _mundo(db)
     pai, sub, neto = await _tres_niveis(db, ctx, proj, team)
 
     with acting_as(**ctx):
-        await TaskService(db).archive(task_id=pai.id)
+        primeira = await TaskService(db).archive(task_id=pai.id)
         segunda = await TaskService(db).archive(task_id=pai.id)
 
+    assert primeira.cascade_count == 2  # a cascata TEM de ter acontecido
     assert segunda.cascade_count == 0
     linhas = (
         (

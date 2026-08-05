@@ -92,12 +92,24 @@ modal conhece só as filhas diretas (é o "N diretas" da caixa), e listar 40
 tarefas de três níveis num seletor é uma parede. Três níveis é raro; a
 herança resolve sem tela.
 
-### Ordem de entrega
+### Ordem de entrega: TRÊS fatias, e a trava é a ÚLTIMA
 
-A trava do backend é pequena e vale sozinha — fecha a porta do n8n e do
-Swagger, hoje escancarada. O passo 2 do modal é maior. **Travar o backend
-antes de o modal ter o passo faz a duplicação com a caixa desmarcada dar
-422 na cara da pessoa.** Ou os dois vão juntos, ou a caixa sai antes.
+⚠️ **A trava não pode vir primeiro.** Ela quebraria a duplicação em dois
+casos, um deles sem saída na tela: caixa "levar responsáveis" desmarcada; e
+subtarefa cujo responsável está inativo, que hoje é descartado pela D9 da
+Spec 033 e faria a filha nascer órfã — com a trava, 422, e a pessoa sem
+nenhuma forma de resolver.
+
+1. **Backend ADITIVO.** `duplicate` passa a aceitar `subtask_assignees`
+   (quem responde por cada filha direta) e `skip_subtasks` (quais não vão).
+   Campos opcionais: cliente que não mandar se comporta como hoje. Deployável
+   sozinho, sem mudança de comportamento.
+2. **Front.** O passo 2 do modal usa os campos novos.
+3. **Backend TRAVA.** `create` exige responsável; `remove_assignee` bloqueia o
+   último. Só depois da fatia 2 conferida na tela.
+
+Cada fatia sobe sozinha, e o que muda em relação à regra da casa é que a
+**trava espera a tela**, não o contrário.
 
 ## Consequências
 
