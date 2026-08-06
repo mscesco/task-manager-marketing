@@ -92,26 +92,80 @@ Os dois `NOT NULL` ao fim da migração, com
 estado é questão de tempo, não aparece na tela, e entra na mesma família de
 `path`/`depth` — corrupção sem sintoma e sem conserto por deploy.
 
-### D3 — `status` passa a ser DERIVADO, com um único ponto de escrita
+### D3 — A COLUNA é derivada do STATUS (invertido em 06/08, ver ADR 0033)
 
-Mover a tarefa de coluna é a operação; `status` é consequência:
+⚠️ **ESTA DECISÃO FOI INVERTIDA.** A redação original dizia o contrário —
+`status` derivado da coluna. Ela está preservada logo abaixo, com o motivo da
+inversão, porque a direção certa muda com a fatia do front e alguém vai
+precisar do raciocínio inteiro quando chegar a hora de inverter de volta.
 
-| semântica | status gravado |
-|---|---|
-| `ABERTA` | `BACKLOG` |
-| `EM_ANDAMENTO` | `IN_PROGRESS` |
-| `CONCLUIDA` | `COMPLETED` |
-| `CANCELADA` | `CANCELLED` |
+**Enquanto o front desenhar o quadro por `status`, `status` é a fonte da
+verdade e `column_id` é consequência.** Toda vez que o serviço grava `status`,
+grava também a coluna correspondente daquele quadro.
 
-⚠️ **Um ponto de escrita só**, no service. Nenhuma rota grava `status`
-diretamente; nenhuma outra função deriva a mesma coisa em outro lugar. Duas
-fontes para a mesma verdade é dívida — o que a torna administrável é ela ser
-escrita num lugar só.
+| direção | relação | perde? |
+|---|---|---|
+| `status` → coluna | 1:1 (oito status, oito colunas) | não |
+| coluna → `status` | 8:4 (quatro semânticas) | **sim** |
 
-**Compatibilidade:** `status` recebido no PATCH continua aceito e é traduzido
-para a **coluna de destino daquela semântica no quadro da tarefa** (ver D4).
-Isso mantém o front atual funcionando com o backend novo, e é o que preserva
-a possibilidade de rebobinar só um dos dois.
+⚠️ **A direção original apagava quatro dos oito status.** Quatro colunas
+compartilham a semântica `IN_PROGRESS` (Em Andamento, Aprovação Interna,
+Aprovação Externa, Bloqueado) e duas compartilham `OPEN` (Backlog,
+Planejado). Derivar `status` da semântica gravaria `IN_PROGRESS` para as
+quatro: `PLANNED`, `IN_REVIEW`, `EXTERNAL_APPROVAL` e `BLOCKED` deixariam de
+existir. E como o `Board.tsx` monta as colunas a partir da lista de status,
+toda tarefa nessas colunas pularia para "Em Andamento" **na tela de todo
+mundo** — na entrega cujo critério 10 é "o front não muda".
+
+**Como a coluna é encontrada:** `board_column.legacy_status`, preenchido pela
+migration para as oito colunas migradas e NULL para qualquer coluna criada
+depois. Casar por NOME seria a alternativa sem schema, e quebraria em silêncio
+no dia em que alguém renomeasse uma coluna — gravando a coluna errada, sem
+erro.
+
+⚠️ **`legacy_status` é uma PONTE, e tem data de demolição.** Ela existe porque
+o front ainda lê `status`; morre na spec em que o quadro passa a ler as colunas
+do banco. Coluna criada por gente nunca terá `legacy_status` — e não precisa,
+porque a partir dali quem manda é a coluna.
+
+**Compatibilidade:** o PATCH continua recebendo `status` e devolvendo `status`.
+Nada muda para o front, que é o ponto.
+
+---
+
+<details>
+<summary>Redação original da D3 (superada em 06/08) — <code>status</code> derivado da coluna</summary>
+
+> Mover a tarefa de coluna é a operação; `status` é consequência:
+>
+> | semântica | status gravado |
+> |---|---|
+> | `ABERTA` | `BACKLOG` |
+> | `EM_ANDAMENTO` | `IN_PROGRESS` |
+> | `CONCLUIDA` | `COMPLETED` |
+> | `CANCELADA` | `CANCELLED` |
+>
+> ⚠️ **Um ponto de escrita só**, no service. Nenhuma rota grava `status`
+> diretamente; nenhuma outra função deriva a mesma coisa em outro lugar. Duas
+> fontes para a mesma verdade é dívida — o que a torna administrável é ela ser
+> escrita num lugar só.
+>
+> **Compatibilidade:** `status` recebido no PATCH continua aceito e é traduzido
+> para a **coluna de destino daquela semântica no quadro da tarefa** (ver D4).
+
+**Por que isso vale de novo, e quando.** Esta é a direção CERTA — só está
+cedo. No dia em que o quadro desenhar as colunas vindas do banco, "mover para
+Aprovação Externa" passa a ser a operação de verdade, e `status` vira um
+detalhe interno que ninguém lê. Aí o colapso de oito para quatro não muda nada
+na tela, porque a tela já não olha para ele. **A ordem é: coluna derivada do
+status → front lendo colunas → status derivado da coluna.** Pular o meio é o
+que apaga os quatro status.
+
+</details>
+
+**O que o "um ponto de escrita só" da redação original continua valendo:** a
+derivação mora num lugar do serviço, não espalhada por rota. Só que agora ela
+roda na outra direção.
 
 ### D4 — A coluna de destino é MARCADA, não deduzida
 
@@ -248,8 +302,10 @@ para a spec seguinte do front consumir.
    `coluna_de_destino`.
 7. Aviso de prazo continua pulando concluída, cancelada e bloqueada — agora
    por `avisa_prazo`, não por lista de status.
-8. `PATCH /tasks/{id}` com `status` continua funcionando e move a tarefa para
-   a coluna de destino correta.
+8. `PATCH /tasks/{id}` com `status` continua funcionando, devolve o MESMO
+   `status` que recebeu, e grava a coluna correspondente. ⚠️ Os oito status
+   continuam distinguíveis — mandar `IN_REVIEW` e receber `IN_PROGRESS` de
+   volta é a falha que a inversão da D3 existe para impedir.
 9. `pytest` com `TEST_DATABASE_URL`: 526 + os novos, **zero skipped**.
 10. O front **não muda** e continua verde nos três portões.
 

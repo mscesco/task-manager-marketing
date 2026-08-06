@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted — refinada pela **0032**.
+Accepted — refinada pela **0032** e pela **0033**.
 
 > A fatia 1 da Spec 035 (migration `0008`) subiu para produção em 06/08/2026:
 > `board`, `board_column`, semântica, destino marcado e `terminal_since`
@@ -16,6 +16,12 @@ Accepted — refinada pela **0032**.
 >
 > ⚠️ **Os nomes de campo aqui estão em português; o código está em inglês.**
 > Tabela de correspondência na `0032`. O código está certo.
+>
+> ⚠️ **A DERIVAÇÃO ESTÁ INVERTIDA POR ORA (0033).** Este ADR decide que
+> `task.status` é derivado da coluna. Está certo, mas cedo: com quatro
+> semânticas para oito colunas, derivar nessa direção apaga `PLANNED`,
+> `IN_REVIEW`, `EXTERNAL_APPROVAL` e `BLOCKED`. Até o front ler as colunas do
+> banco, a coluna é derivada do STATUS. Ordem completa e motivo na `0033`.
 
 ## Contexto
 
