@@ -2,7 +2,20 @@
 
 ## Status
 
-Proposed
+Accepted — refinada pela **0032**.
+
+> A fatia 1 da Spec 035 (migration `0008`) subiu para produção em 06/08/2026:
+> `board`, `board_column`, semântica, destino marcado e `terminal_since`
+> existem no banco. O que ainda não existe é escrita (fatia 3) e o front lendo
+> colunas do quadro.
+>
+> ⚠️ **O item 1 da §Migração deste ADR ("um quadro padrão por time existente")
+> está CANCELADO** — contradizia a §Decisão deste mesmo arquivo ("um por
+> workspace") e foi a origem da contradição resolvida pela `0032`. Vale a
+> §Decisão.
+>
+> ⚠️ **Os nomes de campo aqui estão em português; o código está em inglês.**
+> Tabela de correspondência na `0032`. O código está certo.
 
 ## Contexto
 

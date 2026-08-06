@@ -67,6 +67,34 @@ código, o índice/constraint chega depois — ver aviso do `0004` abaixo). A
 ordem inversa (migration com código velho rodando) é a que devolve HTTP 500.
 Exceção só se o cabeçalho da própria migration mandar o contrário.
 
+⚠️ **SEGUNDA EXCEÇÃO, e o cabeçalho da migration pode NÃO avisar: migration
+que acrescenta coluna nova a um model existente INVERTE a ordem.** Se a
+entrega adiciona `mapped_column` numa classe que já existe (foi o caso da
+`0008`, que pôs `board_id`, `column_id` e `terminal_since` no `Task`), o
+código novo NÃO tolera o schema velho: o SQLAlchemy emite lista explícita de
+colunas em todo SELECT daquela entidade, então ele pede colunas que ainda não
+existem e devolve **500 em toda leitura** — o app inteiro, até a migration
+rodar. O contrário é seguro: coluna nullable e tabela nova que ninguém
+referencia não afetam o código velho, que nunca pergunta por elas.
+
+Nesse caso a ordem é **build → migration → up**, e o `build` vem antes porque
+a migration mora dentro da imagem:
+
+```bash
+docker compose -f docker-compose.prod.yml build
+docker compose -f docker-compose.prod.yml run --rm --entrypoint "" api \
+  alembic upgrade head       # imagem nova, containers antigos ainda no ar
+# conferir o dado aqui, com o app ainda no código velho
+docker compose -f docker-compose.prod.yml up -d
+```
+
+A vantagem é que a janela de conferência acontece com o desfazer barato
+disponível: se o dado sair errado, `alembic downgrade -1` e nada subiu.
+
+**Como saber em qual caso você está:** `git diff <tag-do-ultimo-deploy>..HEAD
+-- backend/app/db/models/` — se aparecer `mapped_column` novo em classe que já
+existia, é ordem invertida. Executado assim em 06/08/2026 (`0008`).
+
 0. **Pré-voo.**
 
    **a.0) O servidor está igual ao repositório?** Rodar NO SERVIDOR, antes de
