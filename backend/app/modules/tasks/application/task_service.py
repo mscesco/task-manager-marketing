@@ -1061,29 +1061,94 @@ class TaskService:
         montado pelo endpoint trancado (Fatia 2). `now`/`actor` injetados
         (testavel). Historico atribuido ao ator (admin do workspace) com
         flag automated. Idempotente: 2a rodada no mesmo dia arquiva 0.
+
+        ⚠️ CASCATEIA A SUBARVORE (06/08), igual ao `archive` manual desde
+        05/08. Ate aqui as duas portas de arquivamento faziam coisas
+        DIFERENTES: clicar em "Arquivar" levava as filhas junto e a varredura
+        da madrugada nao levava, deixando a filha ATIVA debaixo de um pai
+        arquivado -- o estado que o quadro nao desenha (`depth === 0`,
+        Board.tsx:580) e que so vive na checklist de uma tarefa que ninguem
+        abre. Era a pendencia aberta desde 04/08.
+
+        ⚠️ A FILHA ATIVA VAI JUNTO, e foi decisao explicita da Camila (06/08).
+        O retorno e SEM PERDA: `set_archived_subtree` nao toca em `status`, e
+        o `unarchive` do pai cascateia para baixo -- a filha volta com o status
+        que tinha. O que se perde ao desarquivar e o status do PAI, que a
+        Spec 013 (DECISAO C) zera para BACKLOG de proposito, por ele ser
+        terminal.
+
+        ⚠️ RAIZ PRIMEIRO, e a lista de `processados` NAO e otimizacao. Quando
+        um pai e concluido, `complete_descendants` marca a subarvore inteira
+        como COMPLETED no MESMO instante -- entao pai e filhas ficam elegiveis
+        na mesma rodada, e esse e o caso COMUM, nao a excecao. Sem a ordem e o
+        filtro, a filha seria arquivada pela cascata do pai E processada de
+        novo pelo laco, ganhando uma linha de history que o arquivamento
+        manual nunca gera.
+
+        O retorno conta TODAS as tarefas arquivadas (raizes + cascateadas), que
+        e o que o `archived=` do log sempre significou. `cascade_count` vai no
+        metadata da linha do pai, igual ao `archive` manual; filha cascateada
+        nao ganha linha propria (ADR 0005, mesma forma do soft-delete).
         """
         effective_days = (
             settings.stale_archive_days if days is None else days
         )
-        stale = await self._repo.list_stale_terminal(
-            now=now, days=effective_days
+        stale = list(
+            await self._repo.list_stale_terminal(now=now, days=effective_days)
         )
+        # Raiz antes de folha. `path` desempata para a ordem ser estavel entre
+        # execucoes -- log de job que muda de ordem sozinho e ruim de diffar.
+        stale.sort(key=lambda t: (t.depth, t.path))
+
+        processados: list[str] = []
         count = 0
+        cascateadas = 0
         for task in stale:
+            if any(task.path.startswith(f"{p}.") for p in processados):
+                # Ja foi arquivada pela cascata de um ancestral NESTA rodada.
+                continue
+
             task.is_archived = True
+            cascade_count = await self._repo.set_archived_subtree(
+                task=task, archived=True
+            )
             await self._repo.write_history(
                 task=task,
                 user_id=actor_user_id,
                 entries=[
                     build_archived_entry(
-                        automated=True, reason="stale_terminal"
+                        automated=True,
+                        reason="stale_terminal",
+                        cascade_count=cascade_count,
                     )
                 ],
             )
-            count += 1
+            processados.append(task.path)
+            count += 1 + cascade_count
+            cascateadas += cascade_count
+
+            if cascade_count:
+                # ⚠️ Log POR PAI, e nao por filha. O `path` do pai e o que
+                # localiza as arrastadas depois
+                # (`WHERE path <@ CAST('<path>' AS ltree)`), entao uma linha
+                # por cascata basta para reconstruir quem sumiu do quadro --
+                # sem uma query a mais por tarefa dentro do job.
+                logger.info(
+                    "task.archive_stale.cascata",
+                    task_id=str(task.id),
+                    task_path=task.path,
+                    task_title=task.title,
+                    cascade_count=cascade_count,
+                )
+
         if count:
             await self._session.flush()
-            logger.info("task.archive_stale", archived=count)
+            logger.info(
+                "task.archive_stale",
+                archived=count,
+                raizes=len(processados),
+                cascateadas=cascateadas,
+            )
         return count
 
     async def soft_delete(self, *, task_id: uuid.UUID) -> SoftDeleteResult:
