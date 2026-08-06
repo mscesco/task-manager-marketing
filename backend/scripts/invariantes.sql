@@ -46,7 +46,26 @@ JOIN board_column c ON c.id = t.column_id
 WHERE c.legacy_status IS NOT NULL
   AND c.legacy_status IS DISTINCT FROM t.status;
 
-\echo '=== 4. contexto: quantos quadros existem, e de quem ==='
+\echo '=== 4. nenhuma tarefa VIVA dentro de quadro apagado (desde a 0012) ==='
+-- A ADR 0034 decidiu que apagar quadro apaga as tarefas junto. Nenhuma
+-- constraint sustenta isso -- e cascata de aplicacao, nao de banco.
+--
+-- ⚠️ ESTA CONSULTA E A UNICA COISA QUE SEGURA A INVARIANTE, e o
+-- `BoardRepository.column_for_status_in_board` depende dela: aquele metodo NAO
+-- faz JOIN em `board` de proposito (custo no caminho mais quente do produto),
+-- apostando que tarefa viva em quadro apagado nao existe. Se este numero der
+-- diferente de zero, o conserto e o DADO -- e so depois, se voltar a
+-- acontecer, o JOIN.
+--
+-- Enquanto a F5 nao existir, nao ha caminho de produto que apague quadro, e
+-- este numero e trivialmente 0.
+SELECT count(*) AS tarefa_viva_em_quadro_apagado
+FROM task t
+JOIN board b ON b.id = t.board_id
+WHERE b.deleted_at IS NOT NULL
+  AND t.deleted_at IS NULL;
+
+\echo '=== 5. contexto: quantos quadros existem, e de quem ==='
 -- Nao e invariante -- e o numero que diz se as consultas acima ainda estao
 -- medindo o mundo que voce acha que elas medem. Enquanto for 1, nenhum teste
 -- de dois quadros esta sendo exercitado em producao.

@@ -24,6 +24,26 @@ essa assimetria e o motivo de a fatia vir antes do quadro interno, e nao junto:
   - **subtarefa**: nasceria com `board_id` do geral E coluna do geral. O par e
     internamente consistente, a FK ACEITA, e o resultado e pai num quadro e
     filha em outro. Este e o silencioso, e e o que a F2 fecha no `create`.
+
+⚠️ ONDE O FILTRO `deleted_at IS NULL` VALE, e onde nao vale (desde a `0012`).
+Este repositorio NAO estende `BaseRepository`, entao o filtro automatico de
+soft delete nao chega aqui: cada consulta decide. A regra e:
+
+  **consulta que DESCOBRE um quadro filtra; consulta que RECEBE o `board_id`
+  nao filtra.**
+
+`default_board_and_column_for_status` descobre -- ela responde "qual e o quadro
+geral deste workspace" -- entao filtra. `column_for_status_in_board` recebe o
+`board_id` de quem ja resolveu o quadro (a propria tarefa, ou o pai) e so
+pergunta a coluna; um `JOIN` em `board` ali seria custo no caminho mais quente
+do produto (`create` de tarefa, chamado uma vez por no na duplicacao) para
+proteger um estado que a ADR 0034 ja impede: apagar quadro apaga as tarefas
+dentro, entao tarefa viva em quadro apagado nao existe.
+
+⚠️ ESSE "nao existe" e uma INVARIANTE, nao uma garantia do banco -- nenhuma
+constraint a sustenta. Ela e medida pela consulta 4 de
+`backend/scripts/invariantes.sql`. Se ela um dia der diferente de zero, o
+conserto e o dado, e nao acrescentar o `JOIN` aqui.
 """
 
 from __future__ import annotations
@@ -70,6 +90,9 @@ class BoardRepository:
         achar" gravaria a tarefa na coluna errada em silencio, que e o defeito
         que esta spec inteira existe para evitar. Falhar aqui e alto, visivel e
         consertavel; falhar fechado nao seria nenhum dos tres.
+
+        ⚠️ `b.deleted_at IS NULL` desde a `0012`. Esta consulta DESCOBRE um
+        quadro, entao ela filtra -- ver a regra no cabecalho do modulo.
         """
         tenant = require_tenant()
         linha = (
@@ -87,6 +110,7 @@ class BoardRepository:
                      AND c.legacy_status = CAST(:status AS task_status)
                     WHERE b.workspace_id = :ws
                       AND b.is_default
+                      AND b.deleted_at IS NULL
                     """
                 ),
                 {"ws": tenant.workspace_id, "status": status.value},

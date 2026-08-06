@@ -31,16 +31,37 @@ from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
-from app.db.mixins import TimestampMixin, UUIDPrimaryKeyMixin
+from app.db.mixins import SoftDeleteMixin, TimestampMixin, UUIDPrimaryKeyMixin
 from app.db.models.enums import ColumnSemantic, TaskStatus
 
 
-class Board(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+class Board(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
     """Quadro. Pertence a um TIME.
 
     ⚠️ Nesta spec existe UM por workspace: o geral, do time raiz. O modelo ja
     comporta o quadro personalizado de subtime (ADR 0030, decisao B), que e
     spec seguinte -- por isso `team_id` e nao `workspace_id` sozinho.
+
+    ⚠️ `SoftDeleteMixin` DESDE A `0012`, e ele vem ANTES de existir tela de
+    apagar quadro, de proposito. A ADR 0034 decidiu que apagar quadro interno
+    apaga as tarefas junto (soft delete, ADR 0005); a coluna precisa existir
+    antes do `GET /boards` (F3), senao o endpoint nasce sem
+    `deleted_at IS NULL` e passa a listar quadro apagado no dia em que apagar
+    existir -- defeito plantado numa fatia e colhido em outra.
+
+    ⚠️ `BoardColumn` NAO ganhou soft delete, e nao e esquecimento. Apagar
+    COLUNA e outra operacao: pela 0030 ela exige escolher a coluna de destino
+    das tarefas e some de verdade. Dar `deleted_at` a ela agora seria schema
+    especulativo para uma decisao que ainda nao foi tomada.
+
+    ⚠️ CONSEQUENCIA NAO OBVIA DO INDICE PARCIAL. `board_um_padrao_por_time` e
+    unico em `team_id WHERE is_default`, e nao sabe de `deleted_at`. Um quadro
+    PADRAO apagado continua bloqueando a criacao de um novo padrao para aquele
+    time -- o time ficaria sem quadro e sem como recriar. Nao ha conserto aqui
+    porque nao ha problema hoje: quadro interno e `is_default=False` e o indice
+    nem se aplica a ele. **A F5 tem de PROIBIR apagar quadro padrao**, e essa
+    trava e a que fecha o caso. Se um dia o padrao virar apagavel, o indice
+    ganha `AND deleted_at IS NULL` na mesma migration.
     """
 
     __tablename__ = "board"
