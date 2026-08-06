@@ -1,0 +1,64 @@
+-- Invariantes de producao -- quadro e coluna (Spec 035, ADR 0032/0033/0036).
+--
+-- Existe porque estas consultas viviam em documento de passagem de bastao, e
+-- documento de passagem de bastao some. Quem confere producao roda ESTE
+-- arquivo; quem muda o modelo de quadro atualiza ESTE arquivo.
+--
+--   docker compose -f docker-compose.prod.yml exec -T db \
+--     psql -U <user> -d <base> -f - < backend/scripts/invariantes.sql
+--
+-- Toda consulta abaixo deve devolver 0. Qualquer outro numero e defeito de
+-- dado, nao de tela -- nenhuma delas aparece para o usuario.
+
+\echo '=== 1. toda tarefa tem quadro e coluna (0011) ==='
+SELECT count(*) AS sem_quadro_ou_coluna
+FROM task
+WHERE board_id IS NULL OR column_id IS NULL;
+
+\echo '=== 2. nenhuma tarefa aponta para coluna de OUTRO quadro ==='
+-- A FK composta (column_id, board_id) promete isto. Medir mesmo assim:
+-- constraint que ninguem testou e promessa, nao garantia (ADR 0032).
+SELECT count(*) AS coluna_de_outro_quadro
+FROM task t
+JOIN board_column c ON c.id = t.column_id
+WHERE c.board_id <> t.board_id;
+
+\echo '=== 3. a coluna e a do STATUS certo (so onde existe a ponte) ==='
+-- ⚠️ O FILTRO `legacy_status IS NOT NULL` NAO E DETALHE.
+--
+-- A versao sem ele (ADR 0033 §Como medir, e a `0011`) estava certa enquanto
+-- todo quadro tinha as oito colunas migradas. Coluna criada por GENTE nasce
+-- com `legacy_status` NULL (D4 / ADR 0036), e `NULL IS DISTINCT FROM
+-- 'BACKLOG'` e TRUE -- ou seja, sem este filtro, no dia do primeiro quadro
+-- interno TODA tarefa dele conta como violacao. Um alarme que grita sem
+-- motivo e desligado em duas semanas, e ai nao grita quando deveria.
+--
+-- A 0033 ja avisava que esta consulta tinha prazo: "vale rodar de novo depois
+-- do passo 2, antes do passo 3 -- e o ultimo instante em que ela ainda faz
+-- sentido". O filtro e o que a faz sobreviver ao passo 3 em vez de expirar.
+--
+-- ⚠️ A `0011` carrega a versao SEM filtro, como guarda de migration. Ela ja
+-- esta em producao e NAO e editavel. Nao ha problema: ela rodou num mundo em
+-- que toda coluna tinha ponte, e nao roda de novo.
+SELECT count(*) AS na_coluna_do_status_errado
+FROM task t
+JOIN board_column c ON c.id = t.column_id
+WHERE c.legacy_status IS NOT NULL
+  AND c.legacy_status IS DISTINCT FROM t.status;
+
+\echo '=== 4. contexto: quantos quadros existem, e de quem ==='
+-- Nao e invariante -- e o numero que diz se as consultas acima ainda estao
+-- medindo o mundo que voce acha que elas medem. Enquanto for 1, nenhum teste
+-- de dois quadros esta sendo exercitado em producao.
+SELECT b.id,
+       b.name,
+       b.is_default,
+       t.name AS time,
+       t.parent_team_id IS NULL AS eh_raiz,
+       (SELECT count(*) FROM board_column c WHERE c.board_id = b.id) AS colunas,
+       (SELECT count(*) FROM board_column c
+         WHERE c.board_id = b.id AND c.legacy_status IS NULL) AS colunas_sem_ponte,
+       (SELECT count(*) FROM task k WHERE k.board_id = b.id) AS tarefas
+FROM board b
+JOIN team t ON t.id = b.team_id AND t.workspace_id = b.workspace_id
+ORDER BY eh_raiz DESC, b.name;
