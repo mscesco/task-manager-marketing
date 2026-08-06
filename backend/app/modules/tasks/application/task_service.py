@@ -361,9 +361,25 @@ class TaskService:
         # `0011`, e resolver depois do flush deixaria uma janela em que a linha
         # existe sem coluna. Se o status nao tiver coluna, a criacao inteira
         # falha aqui -- alto e visivel, em vez de gravar na coluna errada.
-        task.board_id, task.column_id = await BoardRepository(
-            self._session
-        ).board_and_column_for_status(command.status)
+        #
+        # ⚠️ SUBTAREFA HERDA O QUADRO DO PAI (F2, 06/08). Hoje o resultado e
+        # IDENTICO -- ha um quadro so, e o do pai E o geral. Passa a importar no
+        # dia do quadro interno, e o modo de falhar e o pior possivel: sem esta
+        # linha a subtarefa nasceria com `board_id` do geral E coluna do geral,
+        # que e um par internamente consistente. A FK composta ACEITA, e o
+        # resultado e pai num quadro e filha em outro -- sem erro, sem tela.
+        # Consistente com a ADR 0024, que ja manda a subtarefa herdar o time.
+        if parent is not None:
+            task.board_id = parent.board_id
+            task.column_id = await BoardRepository(
+                self._session
+            ).column_for_status_in_board(
+                board_id=parent.board_id, status=command.status
+            )
+        else:
+            task.board_id, task.column_id = await BoardRepository(
+                self._session
+            ).default_board_and_column_for_status(command.status)
 
         self._repo.add(task)
         await self._session.flush()
@@ -756,9 +772,18 @@ class TaskService:
             # so (ADR 0030, decisao B), e mudar de status nunca a muda de
             # quadro. Gravar `board_id` aqui de novo seria inofensivo hoje --
             # ha um quadro so -- e viraria defeito no dia do quadro de subtime.
-            _, task.column_id = await BoardRepository(
+            #
+            # ⚠️ A coluna e procurada DENTRO do quadro DA TAREFA (F2, 06/08).
+            # Antes o repositorio cravava o quadro do time raiz no SQL: com um
+            # quadro so dava a resposta certa, e com dois devolveria a coluna do
+            # geral para uma tarefa do quadro interno. O par
+            # `(coluna do geral, board interno)` nao existe, entao a FK composta
+            # recusaria -- erro alto ao salvar um status. Visivel, mas quebrado.
+            task.column_id = await BoardRepository(
                 self._session
-            ).board_and_column_for_status(command.status)
+            ).column_for_status_in_board(
+                board_id=task.board_id, status=command.status
+            )
 
             task.status = command.status
 
