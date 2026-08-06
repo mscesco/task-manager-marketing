@@ -52,6 +52,7 @@ from app.modules.tasks.domain.history import (
     build_status_change_entry,
     build_unarchived_entry,
 )
+from app.modules.tasks.infrastructure.board_repository import BoardRepository
 from app.modules.tasks.infrastructure.comment_repository import CommentRepository
 from app.modules.tasks.infrastructure.project_repository import ProjectRepository
 from app.modules.tasks.infrastructure.task_repository import TaskRepository
@@ -354,6 +355,15 @@ class TaskService:
         # copia de linha, entao a copia de uma tarefa concluida nasce datada.
         if is_terminal(command.status):
             task.terminal_since = datetime.now(UTC)  # type: ignore[assignment]
+
+        # Spec 035 (D3 invertida, ADR 0033) fatia 3b: a COLUNA vem do STATUS.
+        # ⚠️ ANTES do `add`, nao depois: os dois campos viram NOT NULL na
+        # `0011`, e resolver depois do flush deixaria uma janela em que a linha
+        # existe sem coluna. Se o status nao tiver coluna, a criacao inteira
+        # falha aqui -- alto e visivel, em vez de gravar na coluna errada.
+        task.board_id, task.column_id = await BoardRepository(
+            self._session
+        ).board_and_column_for_status(command.status)
 
         self._repo.add(task)
         await self._session.flush()
@@ -740,6 +750,15 @@ class TaskService:
                 task.terminal_since = datetime.now(UTC)  # type: ignore[assignment]
             elif is_terminal(task.status):
                 task.terminal_since = None
+
+            # Spec 035 fatia 3b: a coluna acompanha o status (ADR 0033).
+            # ⚠️ So a COLUNA muda; `board_id` fica. Uma tarefa vive num quadro
+            # so (ADR 0030, decisao B), e mudar de status nunca a muda de
+            # quadro. Gravar `board_id` aqui de novo seria inofensivo hoje --
+            # ha um quadro so -- e viraria defeito no dia do quadro de subtime.
+            _, task.column_id = await BoardRepository(
+                self._session
+            ).board_and_column_for_status(command.status)
 
             task.status = command.status
 

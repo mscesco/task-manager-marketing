@@ -205,14 +205,25 @@ class Task(
     team_id: Mapped[uuid.UUID | None] = mapped_column(
         PG_UUID(as_uuid=True), nullable=True
     )
-    # Spec 035. NULLABLE nesta migration, NOT NULL na proxima -- criar ja
-    # obrigatorio quebraria em qualquer banco com dados, inclusive no dump de
-    # producao que a suite usa.
-    board_id: Mapped[uuid.UUID | None] = mapped_column(
-        PG_UUID(as_uuid=True), nullable=True
+    # Spec 035, fatia 3b: OBRIGATORIOS desde a `0011`. Toda tarefa vive num
+    # quadro e numa coluna.
+    #
+    # ⚠️ NASCERAM NULLABLE na `0008` DE PROPOSITO, e a trava so veio duas
+    # migrations depois. Criar ja obrigatorio quebra em qualquer banco com
+    # dados -- e, pior, trava a tabela contra o PROPRIO codigo enquanto ele
+    # ainda nao preenche o campo. A primeira versao da `0008` fez isso e
+    # derrubou 196 testes de uma vez. Expande/contrai: coluna e backfill numa
+    # migration, trava depois que o codigo escreve.
+    #
+    # ⚠️ Esta declaracao tem de acompanhar a `0011`. Deixar `| None` aqui com
+    # NOT NULL no banco poe o portao de drift vermelho para sempre -- o
+    # autogenerate propoe `alter_column(..., nullable=True)` toda vez, e
+    # portao que mente vira ruido que as pessoas aprendem a ignorar.
+    board_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True), nullable=False
     )
-    column_id: Mapped[uuid.UUID | None] = mapped_column(
-        PG_UUID(as_uuid=True), nullable=True
+    column_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True), nullable=False
     )
     # ⚠️ RELOGIO DO ARQUIVAMENTO (Spec 035, D6). Gravado quando a tarefa ENTRA
     # numa coluna terminal, limpo quando sai. Nao e refatoracao: quando a

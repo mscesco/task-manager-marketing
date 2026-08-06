@@ -43,6 +43,7 @@ from app.core.tenant import tenant_scope
 from app.db.models import Team, User, UserTeam, Workspace
 from app.db.models.enums import UserTeamRole
 from app.modules.auth.infrastructure.security import hash_password
+from app.modules.tasks.application.board_service import BoardService
 from app.modules.tasks.application.project_service import ProjectService
 from app.shared.exceptions.base import ConflictError, ValidationError
 
@@ -161,12 +162,24 @@ class WorkspaceProvisioningService:
                 admin.id
             )
 
+        # 6. Quadro geral do time RAIZ (Spec 035 fatia 3a, ADR 0032).
+        # ⚠️ Do time raiz, e um so -- subtime nao ganha quadro por existir.
+        # Dentro da mesma transacao: workspace sem quadro e o estado que a
+        # `0008` deixou para tras e que a `0011` tem de consertar. Nao vale a
+        # pena criar mais nenhum.
+        # ⚠️ BoardService nao usa BaseRepository e nao precisa de tenant, mas
+        # fica dentro do escopo por simetria com o passo 5.
+        quadro = await BoardService(self._session).create_default_board(
+            workspace_id=workspace.id, team_id=team.id
+        )
+
         logger.info(
             "workspace.provisioned",
             workspace_id=str(workspace.id),
             workspace_slug=workspace.slug,
             admin_user_id=str(admin.id),
             personal_project_id=str(personal.id),
+            board_id=str(quadro.id),
         )
         return ProvisionWorkspaceResult(
             workspace_id=workspace.id,

@@ -32,7 +32,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
 from app.db.mixins import TimestampMixin, UUIDPrimaryKeyMixin
-from app.db.models.enums import ColumnSemantic
+from app.db.models.enums import ColumnSemantic, TaskStatus
 
 
 class Board(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -113,6 +113,22 @@ class BoardColumn(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             unique=True,
             postgresql_where=text("is_default_target"),
         ),
+        # ⚠️ UM status por quadro (Spec 035 fatia 3a, ADR 0033). Enquanto a
+        # coluna e derivada do status, "qual e a coluna deste status?" tem de
+        # ter UMA resposta -- com duas, o `BoardRepository` escolheria uma
+        # delas em silencio e a tarefa iria para a coluna errada, sem erro e
+        # sem tela.
+        #
+        # ⚠️ PARCIAL: coluna criada por gente tem `legacy_status` NULL, e
+        # varias coexistem no mesmo quadro. Indice unico simples recusaria a
+        # segunda coluna nova de qualquer quadro.
+        Index(
+            "board_column_um_status_por_quadro",
+            "board_id",
+            "legacy_status",
+            unique=True,
+            postgresql_where=text("legacy_status IS NOT NULL"),
+        ),
     )
 
     workspace_id: Mapped[uuid.UUID] = mapped_column(
@@ -142,4 +158,41 @@ class BoardColumn(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     is_default_target: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default=text("false"), default=False
+    )
+    # ⚠️ PONTE COM DATA DE DEMOLICAO (ADR 0033). Guarda de qual `task.status`
+    # esta coluna veio, e existe por um motivo so: enquanto o front desenhar o
+    # quadro a partir de `web/lib/status.ts`, `status` e a fonte da verdade e a
+    # COLUNA e que e derivada dele. Este campo e o que torna essa derivacao
+    # 1:1 e sem perda.
+    #
+    # O caminho inverso (status derivado da semantica, que e a D3 original) e
+    # 8:4 -- quatro colunas compartilham `IN_PROGRESS` e duas compartilham
+    # `OPEN`. Derivar naquela direcao hoje apagaria `PLANNED`, `IN_REVIEW`,
+    # `EXTERNAL_APPROVAL` e `BLOCKED`, e como o `Board.tsx` monta as colunas
+    # pela lista de status, as tarefas dessas colunas pulariam para "Em
+    # Andamento" na tela de todo mundo.
+    #
+    # ⚠️ NULL em coluna criada por GENTE, e isso e o normal, nao um defeito:
+    # coluna nova nao corresponde a status nenhum. Quando o front passar a ler
+    # as colunas do banco, o ADR daquele passo DROPA esta coluna.
+    #
+    # ⚠️ NAO casar coluna por NOME. Foi a alternativa sem schema, e quebraria
+    # em silencio no dia em que alguem renomeasse "Bloqueado" -- gravando a
+    # coluna errada, sem erro e sem tela.
+    legacy_status: Mapped[TaskStatus | None] = mapped_column(
+        Enum(TaskStatus, name="task_status", create_type=False),
+        nullable=True,
+        # ⚠️ TEXTO IDENTICO ao COMMENT da migration `0010`, caractere a
+        # caractere. O drift de comentario e comparado por TEXTO: declarar aqui
+        # e nao gravar la (ou o contrario) deixa o `autogenerate` propondo a
+        # diferenca para sempre, e o portao vermelho vira ruido que as pessoas
+        # aprendem a ignorar. Precedente do conserto ERRADO esta na
+        # `Solicitation`, que redeclara `updated_at` SEM comment porque a 0005
+        # esqueceu de grava-lo -- mutilaram o model para casar com a migration.
+        comment=(
+            "ADR 0033: de qual task.status esta coluna veio. PONTE -- "
+            "enquanto o front desenha o quadro por status, a coluna e "
+            "derivada do status (1:1). NULL em coluna criada por gente. "
+            "Some quando o front passar a ler colunas do banco."
+        ),
     )

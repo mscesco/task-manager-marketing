@@ -59,16 +59,66 @@ async def _mundo(db):
 
 
 async def _quadro(db, ws, team, *, nome="Quadro geral", padrao=True):
+    """⚠️ SUBSTITUIDO pelos tres helpers abaixo. Mantido so como apontador.
+
+    Desde a fatia 3a o time raiz NASCE com quadro (a factory espelha o
+    produto), e o quadro dele ja vem com as oito colunas e quatro destinos
+    marcados. Um helper unico "cria um quadro" passou a significar tres coisas
+    diferentes, e os testes de invariante precisam da terceira -- um quadro
+    VAZIO, sem coluna nenhuma -- senao colidem com as colunas que o quadro
+    padrao ja traz e falham pelo motivo errado.
+    """
+    raise AssertionError(
+        "use _quadro_padrao (o que a factory criou), _quadro_vazio (sem "
+        "colunas, para testar invariante) ou _inserir_quadro_padrao (para "
+        "provocar a colisao de propósito)"
+    )
+
+
+async def _quadro_padrao(db, team):
+    """O quadro que `make_team` criou para o time raiz. NAO insere nada."""
+    return (
+        await db.execute(
+            text("SELECT id FROM board WHERE team_id = :t AND is_default"),
+            {"t": team},
+        )
+    ).scalar_one()
+
+
+async def _quadro_vazio(db, ws, team, *, nome="Interno"):
+    """Quadro NAO-padrao e SEM colunas.
+
+    E o que os testes de invariante precisam: sobre o quadro padrao, que ja
+    tem oito colunas e quatro destinos, qualquer insercao de coluna colide
+    antes de chegar na regra sendo testada. Tambem e a forma do quadro
+    personalizado de subtime, que e a spec seguinte.
+    """
     return (
         await db.execute(
             text(
                 """
                 INSERT INTO board (id, workspace_id, team_id, name, is_default)
-                VALUES (gen_random_uuid(), :ws, :t, :n, :p)
+                VALUES (gen_random_uuid(), :ws, :t, :n, false)
                 RETURNING id
                 """
             ),
-            {"ws": ws, "t": team, "n": nome, "p": padrao},
+            {"ws": ws, "t": team, "n": nome},
+        )
+    ).scalar_one()
+
+
+async def _inserir_quadro_padrao(db, ws, team, *, nome="Outro"):
+    """Insere um SEGUNDO quadro padrao. Existe para provocar a colisao."""
+    return (
+        await db.execute(
+            text(
+                """
+                INSERT INTO board (id, workspace_id, team_id, name, is_default)
+                VALUES (gen_random_uuid(), :ws, :t, :n, true)
+                RETURNING id
+                """
+            ),
+            {"ws": ws, "t": team, "n": nome},
         )
     ).scalar_one()
 
@@ -117,10 +167,10 @@ async def test_um_quadro_padrao_por_time(db) -> None:
     respostas -- e a errada nao aparece na tela: aparece na tarefa que foi
     parar no quadro errado."""
     ws, team, user, proj, ctx = await _mundo(db)
-    await _quadro(db, ws, team)
-    await db.flush()
+    # O primeiro ja existe: `make_team` o criou, como o produto faz.
+    await _quadro_padrao(db, team)
     with pytest.raises(IntegrityError):
-        await _quadro(db, ws, team, nome="Outro")
+        await _inserir_quadro_padrao(db, ws, team)
         await db.flush()
 
 
@@ -128,9 +178,8 @@ async def test_quadro_NAO_padrao_pode_repetir(db) -> None:
     """O indice e PARCIAL (`WHERE is_default`). O subtime vai ter varios
     quadros personalizados -- so o padrao e unico."""
     ws, team, user, proj, ctx = await _mundo(db)
-    await _quadro(db, ws, team)
-    await _quadro(db, ws, team, nome="Interno A", padrao=False)
-    await _quadro(db, ws, team, nome="Interno B", padrao=False)
+    await _quadro_vazio(db, ws, team, nome="Interno A")
+    await _quadro_vazio(db, ws, team, nome="Interno B")
     await db.flush()
     n = (
         await db.execute(
@@ -144,7 +193,10 @@ async def test_uma_coluna_de_destino_por_semantica(db) -> None:
     """⚠️ E o que responde "para onde vai a tarefa concluida?" quando existem
     duas colunas DONE. Duas marcadas = pergunta sem resposta."""
     ws, team, user, proj, ctx = await _mundo(db)
-    quadro = await _quadro(db, ws, team)
+    # ⚠️ Quadro VAZIO: o padrao ja tem "Concluído" marcada como destino DONE,
+    # entao a colisao aconteceria na PRIMEIRA insercao e o teste passaria pelo
+    # motivo errado.
+    quadro = await _quadro_vazio(db, ws, team)
     await _coluna(db, ws, quadro, nome="Publicado", sem="DONE", destino=True)
     await db.flush()
     with pytest.raises(IntegrityError):
@@ -159,7 +211,7 @@ async def test_duas_colunas_da_MESMA_semantica_sao_permitidas(db) -> None:
     IN_PROGRESS -- e isso que torna a coluna de fato livre. Só uma delas e
     destino."""
     ws, team, user, proj, ctx = await _mundo(db)
-    quadro = await _quadro(db, ws, team)
+    quadro = await _quadro_vazio(db, ws, team)
     await _coluna(
         db, ws, quadro, nome="Aprovação interna", sem="IN_PROGRESS", destino=True
     )
@@ -187,9 +239,9 @@ async def test_coluna_de_OUTRO_quadro_e_recusada_pelo_BANCO(db) -> None:
     constraint que ninguem testou e promessa.
     """
     ws, team, user, proj, ctx = await _mundo(db)
-    quadro_a = await _quadro(db, ws, team)
+    quadro_a = await _quadro_vazio(db, ws, team, nome="A")
     coluna_a = await _coluna(db, ws, quadro_a, destino=True)
-    quadro_b = await _quadro(db, ws, team, nome="Outro", padrao=False)
+    quadro_b = await _quadro_vazio(db, ws, team, nome="B")
     await db.flush()
 
     with acting_as(**ctx):
@@ -211,7 +263,7 @@ async def test_coluna_de_OUTRO_quadro_e_recusada_pelo_BANCO(db) -> None:
 
 async def test_posicao_negativa_e_recusada(db) -> None:
     ws, team, user, proj, ctx = await _mundo(db)
-    quadro = await _quadro(db, ws, team)
+    quadro = await _quadro_vazio(db, ws, team)
     with pytest.raises(IntegrityError):
         await _coluna(db, ws, quadro, pos=-1)
         await db.flush()
@@ -221,7 +273,7 @@ async def test_semantica_invalida_e_recusada_pelo_ENUM(db) -> None:
     """Enum NATIVO, e nao texto com CHECK: valor invalido morre no banco, nao
     numa validacao de aplicacao que alguem pode esquecer de chamar."""
     ws, team, user, proj, ctx = await _mundo(db)
-    quadro = await _quadro(db, ws, team)
+    quadro = await _quadro_vazio(db, ws, team)
     # `DBAPIError` e nao `Exception`: asserir excecao cega faria o teste
     # passar tambem quando o erro fosse de digitacao no proprio SQL do teste.
     with pytest.raises(DBAPIError):

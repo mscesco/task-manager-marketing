@@ -469,16 +469,36 @@ class TaskRepository(BaseRepository[Task]):
         apareceria na fatia 2b, como "o job arquivou menos do que devia", sem
         erro nenhum. Nao precisa de condicao: o WHERE ja exclui quem ja e
         terminal, entao toda linha afetada esta ENTRANDO em terminal agora.
+
+        ⚠️ `column_id` pela MESMA razao, e com uma diferenca importante: ele nao
+        e um valor fixo, e sim a coluna `COMPLETED` DO QUADRO DE CADA
+        DESCENDENTE. Hoje ha um quadro so e a subconsulta sempre devolve o
+        mesmo id -- mas escrever assim agora custa a mesma linha, e escrever
+        depois custa reabrir a cascata (Spec 035, D9). O `board_id` NAO e
+        tocado: a tarefa nao muda de quadro ao ser concluida.
+
+        ⚠️ A subconsulta usa `legacy_status`, e nao a semantica `DONE`. Sao
+        quatro semanticas para oito colunas; `is_default_target` responderia
+        certo para DONE hoje, e a direcao `status -> coluna` e a unica 1:1
+        enquanto o front desenha o quadro por status (ADR 0033). Usar a mesma
+        ponte em todos os pontos de escrita e o que impede duas regras
+        parecidas divergirem.
         """
         tenant = require_tenant()
         result = await self.session.execute(
             text(
                 """
-                UPDATE task
+                UPDATE task t
                 SET status = CAST('COMPLETED' AS task_status),
                     completed_at = NOW(),
                     terminal_since = NOW(),
-                    updated_at = NOW()
+                    updated_at = NOW(),
+                    column_id = (
+                        SELECT c.id FROM board_column c
+                        WHERE c.board_id = t.board_id
+                          AND c.legacy_status
+                              = CAST('COMPLETED' AS task_status)
+                    )
                 WHERE path <@ CAST(:task_path AS ltree)
                   AND id <> :task_id
                   AND workspace_id = :tenant_id
