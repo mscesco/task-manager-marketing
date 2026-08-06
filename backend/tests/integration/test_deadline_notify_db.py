@@ -39,8 +39,21 @@ async def _ws(db):
     return ws, team, user
 
 
-async def _task(db, *, ws, team, user, due, title="t"):
-    t = await f.make_task(db, workspace_id=ws, created_by=user, team_id=team, title=title)
+async def _task(db, *, ws, team, user, due, title="t", status=TaskStatus.BACKLOG):
+    # ⚠️ `status` vai para a FACTORY, e nao e atribuido depois. A factory
+    # resolve a COLUNA a partir do status no momento da criacao; atribuir
+    # `t.status` depois deixa a tarefa na coluna do status ANTIGO. Enquanto o
+    # aviso de prazo lia `task.status` isso era inofensivo. Desde a F1a quem
+    # decide o aviso e a coluna, e a atribuicao tardia faria este arquivo
+    # afirmar o contrario do que o produto faz.
+    t = await f.make_task(
+        db,
+        workspace_id=ws,
+        created_by=user,
+        team_id=team,
+        title=title,
+        status=status,
+    )
     t.due_date = due
     return t
 
@@ -113,12 +126,18 @@ async def test_mudar_prazo_reabilita(db) -> None:
 # 4 -- task terminal/bloqueada/arquivada/deletada nunca notifica.
 async def test_terminal_arquivada_deletada_nao_notifica(db) -> None:
     ws, team, user = await _ws(db)
-    concluida = await _task(db, ws=ws, team=team, user=user, due=OVERDUE, title="c")
-    concluida.status = TaskStatus.COMPLETED
-    cancelada = await _task(db, ws=ws, team=team, user=user, due=OVERDUE, title="x")
-    cancelada.status = TaskStatus.CANCELLED
-    bloqueada = await _task(db, ws=ws, team=team, user=user, due=OVERDUE, title="b")
-    bloqueada.status = TaskStatus.BLOCKED
+    await _task(
+        db, ws=ws, team=team, user=user, due=OVERDUE, title="c",
+        status=TaskStatus.COMPLETED,
+    )
+    await _task(
+        db, ws=ws, team=team, user=user, due=OVERDUE, title="x",
+        status=TaskStatus.CANCELLED,
+    )
+    await _task(
+        db, ws=ws, team=team, user=user, due=OVERDUE, title="b",
+        status=TaskStatus.BLOCKED,
+    )
     arquivada = await _task(db, ws=ws, team=team, user=user, due=OVERDUE, title="a")
     arquivada.is_archived = True
     deletada = await _task(db, ws=ws, team=team, user=user, due=OVERDUE, title="d")

@@ -26,13 +26,15 @@ import uuid
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import select
+from typing import Final
+
+from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger
 from app.core.tenant import tenant_scope
-from app.db.models import Task, TaskAssignment, User, Workspace
-from app.db.models.enums import TaskStatus
+from app.db.models import BoardColumn, Task, TaskAssignment, User, Workspace
+from app.modules.tasks.domain.board_semantics import TERMINAL_SEMANTICS
 from app.modules.notifications.application.notification_emitter import (
     NotificationEmitter,
 )
@@ -40,13 +42,22 @@ from app.modules.notifications.application.notification_emitter import (
 logger = get_logger(__name__)
 
 _TZ_SP = ZoneInfo("America/Sao_Paulo")
-# Status que NAO recebem aviso de prazo: concluida/cancelada (terminais) e
-# bloqueada (nao ha o que agir enquanto travada). Se destravar e seguir
-# vencida, o job volta a considerar (a coluna de dedup nao foi tocada).
-_STATUS_SEM_AVISO = (
-    TaskStatus.COMPLETED,
-    TaskStatus.CANCELLED,
-    TaskStatus.BLOCKED,
+# Espelho SQL de `board_semantics.TERMINAL_SEMANTICS`. Tupla ORDENADA, e nao o
+# frozenset direto: a ordem de um frozenset varia entre execucoes e faria o SQL
+# gerado mudar de forma sem nada ter mudado -- ruim para ler EXPLAIN e pior
+# ainda para diffar log de query lenta.
+#
+# ⚠️ Deriva da MESMA constante do dominio, de proposito. A duplicacao desta
+# fatia e do PREDICADO (terminal primeiro, flag depois), nao da lista: duas
+# listas divergiriam, e a divergencia nao apareceria em lugar nenhum ate
+# alguem reclamar de aviso que nao chegou.
+#
+# ⚠️ O que estava aqui antes era `_STATUS_SEM_AVISO`, com COMPLETED, CANCELLED
+# e BLOCKED cravados. Os dois primeiros saem pela SEMANTICA da coluna; o
+# terceiro sai pela flag `notify_deadline`, que e como a ADR 0030 prometeu que
+# um time criaria "Aguardando cliente" sem codigo novo.
+_SEMANTICAS_TERMINAIS_SQL: Final = tuple(
+    sorted(TERMINAL_SEMANTICS, key=lambda s: s.value)
 )
 
 
@@ -127,12 +138,31 @@ class DeadlineNotifyService:
         coluna de dedup. Retorna quantas tasks foram notificadas."""
         emitter = NotificationEmitter(self._session)
 
+        # ⚠️ JOIN INTERNO de proposito. `task.column_id` e NOT NULL desde a
+        # `0011`; se um dia voltar a ser nullable, a tarefa sem coluna para de
+        # receber aviso EM SILENCIO -- sem erro, sem linha no log, e o defeito
+        # so aparece como "ninguem foi avisado do prazo daquela tarefa".
+        #
+        # ⚠️ O `workspace_id` entra no ON junto com o `id`. O `id` sozinho ja e
+        # PK e bastaria; o par e o padrao do schema e o que impede que uma
+        # consulta futura, copiada daqui, cruze tenant sem ninguem notar.
         base = (
             select(Task)
+            .join(
+                BoardColumn,
+                and_(
+                    BoardColumn.id == Task.column_id,
+                    BoardColumn.workspace_id == Task.workspace_id,
+                ),
+            )
             .where(
                 Task.workspace_id == ws_id,
                 Task.due_date.is_not(None),
-                Task.status.not_in(_STATUS_SEM_AVISO),
+                # Espelha `board_semantics.avisa_prazo`, na mesma ordem: o
+                # terminal sai pela SEMANTICA, e so depois a flag decide. Ver o
+                # cabecalho daquele modulo para o motivo (as 136 tarefas).
+                BoardColumn.semantic.not_in(_SEMANTICAS_TERMINAIS_SQL),
+                BoardColumn.notify_deadline.is_(True),
                 Task.is_archived.is_(False),
                 Task.deleted_at.is_(None),
             )
