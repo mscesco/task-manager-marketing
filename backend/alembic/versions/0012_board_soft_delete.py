@@ -9,18 +9,28 @@ delete, ADR 0005). `board` nao tinha `deleted_at` -- so `Task`, `Project` e
 `Comment` tem. Esta migration cria a coluna.
 
 ⚠️ ELA VEM ANTES DA TELA DE APAGAR, E ISSO E O PONTO. A fatia seguinte e o
-`GET /api/v1/boards` (F3). Se o endpoint nascer sem `deleted_at IS NULL`, ele
-lista quadro apagado a partir do dia em que apagar existir -- defeito plantado
-numa fatia e colhido em outra, com a leitura passando verde no meio. Criar a
-coluna agora e o que permite ao F3 ja nascer com o filtro E com teste que pode
-falhar (o teste apaga um quadro na mao).
+`GET /api/v1/boards` -- a FATIA 2 do `plan.md` da Spec 036. Se o endpoint
+nascer sem `deleted_at IS NULL`, ele lista quadro apagado a partir do dia em
+que apagar existir -- defeito plantado numa fatia e colhido em outra, com a
+leitura passando verde no meio. Criar a coluna agora e o que permite a fatia 2
+ja nascer com o filtro E com teste que pode falhar (o teste apaga um quadro na
+mao).
+
+⚠️ NUMERACAO: o roteiro antigo chamava as entregas de F1a/F1b/F2/F3. O
+`plan.md` da Spec 036 numera de 1 a 5, e ELE e a fonte da verdade. As duas
+numeracoes nao coincidem -- "F3" era esta fatia 2.
 
 ⚠️ ORDEM DE DEPLOY: MIGRATION ANTES DO CODIGO. Coluna nova em model existente
 (`Board`) -- o SQLAlchemy emite lista explicita de colunas, entao o codigo novo
 pedindo `deleted_at` contra o schema velho quebra toda leitura de quadro pelo
-ORM. Mesmo caso da `0008` e da `0010`, e a excecao esta escrita no DEPLOY.md. O
-sentido inverso e seguro: coluna nullable que ninguem le nao afeta o codigo
-velho, entao esta migration pode subir sozinha e ficar parada ate a F3.
+ORM. Mesmo caso da `0008` e da `0010`, e a excecao esta escrita no DEPLOY.md.
+
+⚠️ O TEXTO ACIMA JA DIZIA "esta migration pode subir sozinha e ficar parada",
+E ISSO ESTAVA ERRADO NO MOMENTO EM QUE FOI ESCRITO. Valeria se nada lesse a
+coluna -- mas o `board_repository` (`AND b.deleted_at IS NULL`) e o `Board`
+com `SoftDeleteMixin` foram commitados NA MESMA fatia. Subir o `main` sem esta
+migration quebra o `create` de tarefa de topo (`task_service.py:380`) e toda
+leitura ORM de quadro. Ela nao fica parada: ela BLOQUEIA deploy ate subir.
 
 ⚠️ O TEXTO DO `COMMENT` E IDENTICO ao do `SoftDeleteMixin`, caractere a
 caractere, e ao que a `0001` gravou em `comment`, `project` e `task`. O drift

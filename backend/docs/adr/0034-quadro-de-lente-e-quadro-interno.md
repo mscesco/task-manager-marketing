@@ -62,7 +62,7 @@ colateral de uma faxina.
 três opções eram bloquear, mover para o geral, ou levar junto. A terceira é a
 única que não mente sobre o que aconteceu.
 
-⚠️ **`board` NÃO tem `deleted_at` hoje** — verificado em 07/08: `Board` e
+⚠️ **`board` NÃO tem `deleted_at` hoje** — verificado em 06/08: `Board` e
 `BoardColumn` usam só `UUIDPrimaryKeyMixin` e `TimestampMixin`; quem tem
 `SoftDeleteMixin` é `Task`, `Project` e `Comment`. Ou seja, este item **exige
 migration**, e ela não estava contada em lugar nenhum. Ver §Consequências.

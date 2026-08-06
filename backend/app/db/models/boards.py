@@ -45,7 +45,9 @@ class Board(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
     ⚠️ `SoftDeleteMixin` DESDE A `0012`, e ele vem ANTES de existir tela de
     apagar quadro, de proposito. A ADR 0034 decidiu que apagar quadro interno
     apaga as tarefas junto (soft delete, ADR 0005); a coluna precisa existir
-    antes do `GET /boards` (F3), senao o endpoint nasce sem
+    antes do `GET /boards` (FATIA 2 do `plan.md` da Spec 036 -- o roteiro
+    antigo chamava essa entrega de "F3"; as duas numeracoes nao coincidem e o
+    `plan.md` e a fonte da verdade), senao o endpoint nasce sem
     `deleted_at IS NULL` e passa a listar quadro apagado no dia em que apagar
     existir -- defeito plantado numa fatia e colhido em outra.
 

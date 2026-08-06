@@ -77,6 +77,15 @@ existem e devolve **500 em toda leitura** — o app inteiro, até a migration
 rodar. O contrário é seguro: coluna nullable e tabela nova que ninguém
 referencia não afetam o código velho, que nunca pergunta por elas.
 
+⚠️ **A `0012` (`board.deleted_at`) CAI NESTA SEGUNDA EXCEÇÃO, e no momento em
+que este arquivo foi corrigido ela ainda NÃO estava em produção.** Ela põe
+`deleted_at` no `Board`, que já existia, e o `board_repository` já roda
+`AND b.deleted_at IS NULL` em SQL cru. Enquanto ela não subir: qualquer deploy
+do `main` quebra o `create` de tarefa de topo e toda leitura ORM de quadro —
+**inclusive um deploy que você acha que é só de front**, porque o build sobe a
+imagem do backend junto. Na prática **não há caminho de hotfix** até ela ir.
+Ordem: `build` → `migration` → `up`.
+
 Nesse caso a ordem é **build → migration → up**, e o `build` vem antes porque
 a migration mora dentro da imagem:
 
@@ -114,9 +123,28 @@ existia, é ordem invertida. Executado assim em 06/08/2026 (`0008`).
    Ao resolver, o valor do SERVIDOR costuma ser o certo (é o que está no ar):
    commite a partir dele, não descarte por cima.
 
-   **a) Portões de teste — rodar ANTES de buildar.** Não há CI neste projeto
-   (Spec 027, D6): os dois portões dependem de alguém lembrar, e este passo é
-   esse lembrete.
+   **a) Portões de teste — rodar ANTES de buildar.** ⚠️ **EXISTE CI**
+   (`.github/workflows/ci.yml`), com os jobs `front` e `backend`. Este arquivo
+   dizia "não há CI neste projeto" até 06/08/2026 — era verdade quando a Spec
+   027 (D6) foi escrita e deixou de ser depois. Rodar local continua sendo o
+   passo, porque o CI roda no que foi EMPURRADO e o deploy sobe o que está na
+   sua máquina.
+
+   > ⚠️ **"CI VERDE" QUER DIZER QUE O JOB `backend` CHEGOU A EXECUTAR O PASSO
+   > `pytest`.** Não quer dizer "não tem X na lista de runs". Um job pode
+   > morrer no `Set up job` (`Failed to resolve action download info`) ou nunca
+   > ser adquirido por runner (`The job was not acquired by Runner of type
+   > hosted`) — nesses casos o GitHub caiu, o seu código não foi julgado, e na
+   > lista de runs **o X é idêntico ao de um teste reprovado**. Aconteceu nos
+   > runs #16, #17 e #18. O conserto é `Re-run all jobs` na página do run;
+   > **não mexer no `ci.yml`**.
+   >
+   > ⚠️ Se o `Re-run all jobs` também falhar em `Set up job`, confira
+   > `githubstatus.com` antes de procurar defeito no repositório. Em
+   > 06/08/2026 o Actions passou o dia em incidente e nenhum re-run passou.
+   >
+   > ⚠️ O `ci.yml` tem `concurrency: cancel-in-progress: true`. Empurrar
+   > commit novo durante um re-run cancela o re-run.
    ```bash
    # backend (precisa do TEST_DATABASE_URL apontando pro Postgres de teste)
    cd backend && python -m pytest -q          # esperado: 0 failed
@@ -126,7 +154,9 @@ existia, é ordem invertida. Executado assim em 06/08/2026 (`0008`).
    > ⚠️ **O critério é `0 failed`, não um número.** Este arquivo já ficou
    > meses dizendo `379 passed` quando o real era 493 — e roteiro que mente
    > treina quem faz o deploy a ignorar o portão. Se quiser conferir a ordem
-   > de grandeza: em 03/08/2026 eram **493** (backend) e **293** (front).
+   > de grandeza: em 06/08/2026 eram **601** (backend) e **398** (front).
+   > (Em 03/08/2026 eram 493 e 293 — este arquivo ficou defasado três dias e
+   > o aviso acima existe justamente por isso: atualize o número quando mudar.)
    > Número absoluto MENOR que o esperado sem uma spec ter removido testes de
    > propósito é motivo pra parar, não pra seguir.
    >

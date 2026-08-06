@@ -9,6 +9,16 @@
 --
 -- Toda consulta abaixo deve devolver 0. Qualquer outro numero e defeito de
 -- dado, nao de tela -- nenhuma delas aparece para o usuario.
+--
+-- ⚠️ A CONSULTA 4 EXIGE A MIGRATION `0012` APLICADA. Ela le
+-- `board.deleted_at`; contra um banco sem a `0012` o arquivo INTEIRO aborta
+-- com `column b.deleted_at does not exist`. As consultas 1, 2 e 3 rodam antes
+-- e a 5 nunca executa. Conferindo um banco que ainda nao recebeu a `0012`:
+-- rode as consultas uma a uma e PULE a 4.
+--
+-- Medido em producao (`task_manager`) em 06/08/2026, ANTES da `0012`:
+--   1 = 0 | 2 = 0 | 3 = 0 | 4 = nao rodou | 5 = UM quadro (`Quadro geral`,
+--   time raiz, 8 colunas, 0 sem ponte, 696 tarefas).
 
 \echo '=== 1. toda tarefa tem quadro e coluna (0011) ==='
 SELECT count(*) AS sem_quadro_ou_coluna
@@ -46,7 +56,9 @@ JOIN board_column c ON c.id = t.column_id
 WHERE c.legacy_status IS NOT NULL
   AND c.legacy_status IS DISTINCT FROM t.status;
 
-\echo '=== 4. nenhuma tarefa VIVA dentro de quadro apagado (desde a 0012) ==='
+\echo '=== 4. nenhuma tarefa VIVA dentro de quadro apagado (EXIGE a 0012) ==='
+-- ⚠️ NAO RODA EM BANCO SEM A `0012`. Ver o aviso no topo do arquivo: sem a
+-- coluna, esta linha aborta o script e a consulta 5 nunca executa.
 -- A ADR 0034 decidiu que apagar quadro apaga as tarefas junto. Nenhuma
 -- constraint sustenta isso -- e cascata de aplicacao, nao de banco.
 --
@@ -57,8 +69,10 @@ WHERE c.legacy_status IS NOT NULL
 -- diferente de zero, o conserto e o DADO -- e so depois, se voltar a
 -- acontecer, o JOIN.
 --
--- Enquanto a F5 nao existir, nao ha caminho de produto que apague quadro, e
--- este numero e trivialmente 0.
+-- Enquanto a FATIA 5 do `plan.md` da Spec 036 nao existir, nao ha caminho de
+-- produto que apague quadro, e este numero e trivialmente 0. (O roteiro antigo
+-- chamava essa entrega de "F5"; as duas numeracoes nao coincidem em geral --
+-- o `plan.md` e a fonte da verdade.)
 SELECT count(*) AS tarefa_viva_em_quadro_apagado
 FROM task t
 JOIN board b ON b.id = t.board_id

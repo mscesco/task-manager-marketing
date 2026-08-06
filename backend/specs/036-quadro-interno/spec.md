@@ -1,7 +1,7 @@
 # Spec 036 — Quadro interno de subtime
 
 > **Status: decisões fechadas (ADR 0034, 0035, 0036). Fatia 1 escrita em
-> 07/08.** Esta spec entrega o quadro que o subtime cria para si, e por
+> 06/08.** Esta spec entrega o quadro que o subtime cria para si, e por
 > tabela a primeira superfície de API de quadro do produto.
 >
 > Destino: `backend/specs/036-quadro-interno/spec.md`
@@ -26,7 +26,7 @@ restauração. Ver §Fora de escopo.
 
 ---
 
-## O que o código faz hoje (medido no repo, 06–07/08)
+## O que o código faz hoje (medido no repo, 06/08)
 
 | Fato | Onde |
 |---|---|
@@ -41,7 +41,7 @@ restauração. Ver §Fora de escopo.
 | Índice parcial `board_um_padrao_por_time`: único em `team_id WHERE is_default` — **não sabe de `deleted_at`** | `db/models/boards.py` |
 | Índice parcial `board_column_um_status_por_quadro`: único em `(board_id, legacy_status) WHERE legacy_status IS NOT NULL` — várias colunas com NULL coexistem no mesmo quadro | `db/models/boards.py` |
 | **8** arquivos de produção do front importam `@/lib/status`; **5** usam `STATUSES` (9 usos em `minhas-tarefas`, 1195 linhas, zero teste de componente) | grep em `web/` |
-| O arreio de teste sabe montar dois quadros desde 07/08 (`make_board`, `make_task(board_id=)`) | `tests/integration/factories.py` |
+| O arreio de teste sabe montar dois quadros desde 06/08 (`make_board`, `make_task(board_id=)`) | `tests/integration/factories.py` |
 
 ### Os três achados que desenham a spec
 
@@ -65,7 +65,7 @@ passando verde no meio.
 desenhar.** "`Board.tsx` parametrizado por colunas vindas da API" recebe a
 lista de colunas e não sabe em qual colocar cada card. Existe uma fatia de
 contrato entre o endpoint de quadros e o front, e ela não estava no roteiro
-até 07/08.
+até 06/08.
 
 ---
 

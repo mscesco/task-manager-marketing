@@ -33,21 +33,20 @@
 # pelos dois servicos. Prefixo `tm-` evita colisao com middlewares do stack
 # do n8n, que dividem o mesmo Traefik.
 #
-# ⚠️ HSTS -- ESTE ARQUIVO ESTA EM MODO ENSAIO (stsSeconds=300).
+# ⚠️ HSTS -- O ENSAIO ACABOU. A linha efetiva ja esta em `stsSeconds=31536000`
+# (um ano). Ate 06/08/2026 este cabecalho dizia "ESTE ARQUIVO ESTA EM MODO
+# ENSAIO (stsSeconds=300)" enquanto a linha real ja era de um ano ha dias --
+# comentario que mente sobre a configuracao logo abaixo dele e pior que
+# comentario nenhum, porque quem confere le o comentario e para.
 #
 # O HSTS e gravado NO BROWSER DE CADA PESSOA: enquanto o prazo nao vence, o
 # browser recusa http neste host sozinho, e NAO existe nada do lado do
-# servidor que desfaca isso. Um prazo de um ano assumido cedo demais e um
-# ano de convivencia com qualquer surpresa.
+# servidor que desfaca isso. Por isso ele SUBIU com 300 (cinco minutos):
+# protegia igual no dia a dia e expirava sozinho se algo desse errado.
 #
-# Por isso ele sobe com 300 (cinco minutos): protege igual no dia a dia e
-# expira sozinho se algo der errado.
-#
-# ⚠️ 300 NAO E O VALOR FINAL. Com cinco minutos, o HSTS praticamente nao
-# protege ninguem -- o valor existe so para o ensaio. DEPOIS DE UM DIA no ar
-# sem problema, trocar por 31536000 (um ano) e subir de novo. Se este
-# comentario ainda estiver aqui daqui a um mes com 300 na linha abaixo, a
-# fatia ficou pela metade.
+# ⚠️ AGORA QUE E UM ANO, VOLTAR ATRAS NAO E POSSIVEL. Baixar o valor aqui nao
+# limpa o que ja esta gravado nos browsers -- so o tempo faz isso. Se este
+# host precisar de http por qualquer motivo, ele nao vai ter.
 #
 # CSP FICOU DE FORA DE PROPOSITO. O Next injeta script inline (inclusive o
 # script de tema em app/layout.tsx) e uma CSP sem nonce derruba a aplicacao
@@ -89,9 +88,9 @@ services:
       - "traefik.http.middlewares.tm-https.redirectscheme.permanent=true"
 
       # Cabecalhos de seguranca aplicados a toda resposta em https.
-      #   stsSeconds            : 300 = MODO ENSAIO. Trocar por 31536000
-      #                           (um ano) apos um dia no ar. Ver o aviso no
-      #                           topo do arquivo antes de mexer.
+      #   stsSeconds            : 31536000 = UM ANO. O ensaio de 300 acabou;
+      #                           ver o aviso no topo do arquivo. Nao baixar:
+      #                           o valor ja gravado nos browsers nao volta.
       #   stsIncludeSubdomains  : FALSE de proposito -- hstgr.cloud e dominio
       #                           de terceiro, compartilhado. Nunca marque
       #                           true aqui.

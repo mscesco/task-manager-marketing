@@ -3,8 +3,9 @@
 Cinco fatias. As três primeiras são backend e **nada muda na tela**; a quarta
 é o front; a quinta é a feature.
 
-⚠️ **Ordem de deploy no fim do arquivo.** A fatia 1 sobe sozinha e fica
-parada; a 4 e a 5 são as que mudam o que as pessoas veem.
+⚠️ **Ordem de deploy no fim do arquivo.** A fatia 1 foi commitada JUNTO com o
+código que lê `deleted_at` — a migration NÃO pode ficar para trás; a 4 e a 5
+são as que mudam o que as pessoas veem.
 
 ⚠️ **Duas fatias por sessão, no máximo** — a sessão de 05/08 emendou três
 "pequenas" e custou 58 testes vermelhos. A 2 e a 4 pedem sessão própria pelos
@@ -17,7 +18,7 @@ mutilar. Mutilar um `WHERE` de forma que a consulta devolva duas linhas e o
 
 ---
 
-## Fatia 1 — `board.deleted_at` (escrita em 07/08)
+## Fatia 1 — `board.deleted_at` (escrita em 06/08)
 
 `0012_board_soft_delete.py`, sobre a head `0011_task_board_not_null`.
 
@@ -78,7 +79,7 @@ Os quatro precisam de dois quadros no mundo do teste — use `make_board` e
 
 ## Fatia 3 — Quadro e coluna na resposta de tarefa
 
-A que faltava no roteiro até 07/08. Sem ela a fatia 4 não é construível: o
+A que faltava no roteiro até 06/08. Sem ela a fatia 4 não é construível: o
 front recebe a lista de colunas e não sabe em qual colocar cada card.
 
 **Sobe:**
@@ -145,9 +146,17 @@ mostrar estado de erro, não um quadro sem colunas.
 
 ## Ordem de deploy
 
-1. **Fatia 1 sozinha, e ela pode ficar parada.** Migration antes do código.
-   Coluna nullable que ninguém lê não afeta nada; é o deploy mais barato do
-   roteiro e o que evita o defeito plantado na fatia 2.
+1. **Fatia 1 sozinha, e a migration vai ANTES do código — obrigatoriamente.**
+   ⚠️ O texto anterior aqui dizia que ela *"pode ficar parada"*. Era verdade
+   enquanto nada lia a coluna, e deixou de ser no MESMO commit: o
+   `board_repository` roda `AND b.deleted_at IS NULL` em SQL cru, e `Board`
+   tem `deleted_at` mapeado (o ORM emite lista explícita de colunas). Subir o
+   `main` sem a `0012` quebra o `create` de tarefa de topo
+   (`task_service.py:380`) e toda leitura ORM de quadro.
+   ⚠️ **Enquanto a `0012` não estiver em produção, NÃO HÁ CAMINHO DE HOTFIX** —
+   qualquer deploy, inclusive um de front, arrasta esse código junto. Medido
+   em 06/08: produção tem UM quadro (`Quadro geral`, time raiz, 8 colunas,
+   0 sem ponte, 696 tarefas).
 2. **Fatia 2 sozinha.** É permissão. Depois dela, os critérios 4 e 5 da spec.
 3. **Fatia 3** junto ou logo depois da 2 — reusa a mesma lente.
 4. **Fatia 4** quando houver sessão limpa para o front.
