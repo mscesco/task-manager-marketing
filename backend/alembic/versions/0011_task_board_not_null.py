@@ -15,17 +15,28 @@ da `0008` cometeu exatamente esse erro e derrubou 196 testes de uma vez; a
 regra que saiu dali e expande/contrai -- coluna e backfill numa migration,
 trava so DEPOIS que o codigo escreve.
 
-⚠️ ESTA MIGRATION FALHA se sobrar tarefa sem quadro, e isso e o desejado. As
-duas fontes conhecidas de linha orfa:
+⚠️ ESTA MIGRATION FALHA se sobrar tarefa sem quadro ou na coluna errada, e isso
+e o desejado. As TRES fontes de linha fora do lugar:
 
   1. Tarefa criada entre o deploy da `0008` (06/08, manha) e o desta fatia --
-     eram DUAS em producao no meio da tarde. O codigo nao escrevia o campo
-     ainda.
+     eram DUAS em producao no meio da tarde, ONZE ao fim. O codigo nao escrevia
+     o campo ainda.
   2. Workspace criado depois da `0008` e antes da fatia 3a: nasceu sem quadro
      nenhum, entao suas tarefas nao tem para onde apontar. Em producao ha UM
      workspace, criado muito antes -- mas o backfill abaixo cria o quadro
      faltante em vez de assumir isso, porque assumir e como a `0008` deixou a
      lacuna para tras.
+  3. ⚠️ **COLUNA DESSINCRONIZADA, e esta e a que derrubou a primeira tentativa
+     de deploy.** A `0008` congelou `column_id` pelo status daquele instante;
+     toda tarefa que MUDOU de status entre aquele deploy e este manteve a
+     coluna antiga, porque nada escrevia `column_id` ainda. Nao sao linhas
+     orfas -- tem quadro e coluna, so que a coluna e do status velho. Foram
+     ONZE em producao em 06/08.
+
+     A primeira versao do backfill so olhava `board_id IS NULL` e nao as via.
+     Por isso a condicao usa `IS DISTINCT FROM` nos dois campos em vez de
+     `IS NULL`: cobre orfa e dessincronizada com a mesma linha, e continua
+     idempotente (a segunda execucao afeta zero).
 """
 
 from __future__ import annotations
@@ -153,11 +164,17 @@ def upgrade() -> None:
                 },
             )
 
-    # --- 2. Tarefa orfa aponta para a coluna do SEU status ------------------
+    # --- 2. Tarefa orfa OU dessincronizada aponta para a coluna do SEU status -
     # ⚠️ Pelo `legacy_status`, e nao pela semantica. A direcao `status ->
     # coluna` e a unica 1:1 (ADR 0033); pela semantica, quatro colunas
     # dividiriam `IN_PROGRESS` e a tarefa iria para a coluna errada -- sem
     # erro, sem tela.
+    #
+    # ⚠️ `IS DISTINCT FROM` nos dois campos, e nao `IS NULL`. Ver a fonte 3 no
+    # cabecalho: a maioria das linhas fora do lugar em producao NAO estava
+    # nula -- estava na coluna do status ANTIGO, congelada pela `0008`. Um
+    # backfill que so procura NULL passa por elas e a checagem logo abaixo
+    # aborta a migration inteira, que foi o que aconteceu no primeiro deploy.
     # ⚠️ SEM `JOIN` DENTRO DO `FROM`, e isso nao e estilo. No Postgres a tabela
     # ALVO do UPDATE nao pode ser referenciada dentro do `ON` de um JOIN da
     # clausula FROM -- `c.legacy_status = t.status` ali devolve
@@ -179,7 +196,10 @@ def upgrade() -> None:
               AND tm.parent_team_id IS NULL
               AND c.board_id = b.id
               AND c.legacy_status = t.status
-              AND (t.board_id IS NULL OR t.column_id IS NULL)
+              AND (
+                    t.board_id IS DISTINCT FROM b.id
+                 OR t.column_id IS DISTINCT FROM c.id
+              )
             """
         )
     )
