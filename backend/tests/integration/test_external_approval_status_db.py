@@ -118,11 +118,14 @@ async def test_patch_para_external_approval_persiste(db: AsyncSession) -> None:
 # 2 -- sweep NAO arquiva: EXTERNAL_APPROVAL nao e terminal (regra pura).
 def test_sweep_nao_arquiva_external_approval() -> None:
     # Data bem velha: se fosse elegivel, arquivaria com folga.
+    # ⚠️ `terminal_since` preenchido de proposito, e nao None. O teste que
+    # importa e este: mesmo COM o relogio correndo, status nao terminal nao
+    # arquiva. Passar None aqui provaria a coisa errada -- passaria mesmo se a
+    # checagem de status sumisse da regra.
     velha = NOW - timedelta(days=365)
     elegivel = is_stale_terminal(
         status=TaskStatus.EXTERNAL_APPROVAL,
-        completed_at=velha,   # ignorado -- status nao e COMPLETED
-        updated_at=velha,     # ignorado -- status nao e CANCELLED
+        terminal_since=velha,
         now=NOW,
         days=30,
     )

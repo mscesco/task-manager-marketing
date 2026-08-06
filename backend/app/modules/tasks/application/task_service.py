@@ -41,6 +41,7 @@ from app.modules.tasks.application.task_guards import (
     TaskScopeGuards,
     user_can_view_task,
 )
+from app.modules.tasks.domain.archival import is_terminal
 from app.modules.tasks.domain.history import (
     HistoryEntry,
     build_archived_entry,
@@ -344,6 +345,15 @@ class TaskService:
         # Se ja vem como COMPLETED, marca completed_at.
         if command.status == TaskStatus.COMPLETED:
             task.completed_at = datetime.now(UTC)  # type: ignore[assignment]
+
+        # Spec 035 (D6), fatia 2a: relogio do arquivamento. Tarefa que NASCE
+        # terminal ja nasce com o relogio correndo. ⚠️ Cobre COMPLETED e
+        # CANCELLED -- `completed_at` acima so conhece a primeira, e uma tarefa
+        # criada direto como CANCELLED existe (o `status` vem do POST).
+        # `duplicate()` passa por aqui tambem: e uma sequencia de create(), nao
+        # copia de linha, entao a copia de uma tarefa concluida nasce datada.
+        if is_terminal(command.status):
+            task.terminal_since = datetime.now(UTC)  # type: ignore[assignment]
 
         self._repo.add(task)
         await self._session.flush()
@@ -711,6 +721,26 @@ class TaskService:
                 virou_concluido = True
             elif task.status == TaskStatus.COMPLETED:
                 task.completed_at = None
+
+            # Spec 035 (D6), fatia 2a: relogio do arquivamento.
+            #
+            # ⚠️ ENTRAR em terminal SEMPRE regrava, inclusive vindo de OUTRO
+            # terminal (COMPLETED -> CANCELLED). Nao e detalhe: e o que o
+            # produto faz HOJE. Cancelar uma concluida troca a regra de leitura
+            # de `completed_at` para `updated_at`, e `updated_at` acabou de
+            # virar agora -- ou seja, o relogio zera. Preservar `terminal_since`
+            # nesse caso adiantaria o arquivamento em relacao ao comportamento
+            # atual, e a equivalencia com a varredura de hoje e criterio de
+            # aceitacao da spec, nao expectativa.
+            #
+            # Este bloco le `task.status` ANTES da atribuicao abaixo -- e o
+            # status VELHO. Mover a linha `task.status = ...` para cima
+            # transforma "saiu de terminal" em "entrou", em silencio.
+            if is_terminal(command.status):
+                task.terminal_since = datetime.now(UTC)  # type: ignore[assignment]
+            elif is_terminal(task.status):
+                task.terminal_since = None
+
             task.status = command.status
 
         # Datas sao nullable: presenca no PATCH manda (None = limpar). Usar

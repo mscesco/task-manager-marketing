@@ -41,12 +41,19 @@ async def _ws_with_admin(db):
 
 
 async def _stale_completed(db, *, ws, team, user, title="x"):
+    """Tarefa concluida ha muito tempo, plantada direto (sem service).
+
+    ⚠️ `terminal_since` junto com `completed_at`, mesma formula do backfill das
+    0008/0009. Desde a fatia 2b da Spec 035 e ele que a varredura le; sem a
+    linha, estes testes acusam "arquivou 0" com o produto correto.
+    """
     t = await f.make_task(
         db, workspace_id=ws, created_by=user, team_id=team, title=title
     )
     t.status = TaskStatus.COMPLETED
     t.completed_at = VELHO
     t.updated_at = VELHO
+    t.terminal_since = VELHO
     return t
 
 

@@ -24,9 +24,9 @@ from sqlalchemy.sql.elements import ColumnElement
 
 from app.core.tenant import require_tenant
 from app.db.models import Project, Task, TaskAssignment, TaskHistory, TaskWatcher
-from app.db.models.enums import TaskStatus
 from app.db.repository import BaseRepository
 from app.modules.auth.domain import team_scope
+from app.modules.tasks.domain.archival import TERMINAL_STATUSES
 from app.modules.tasks.domain.history import HistoryEntry
 from app.shared.pagination import Page, PageParams
 
@@ -461,6 +461,14 @@ class TaskRepository(BaseRepository[Task]):
         UPDATE textual (updated_at nao tem trigger no banco -- e mantido pelo
         SQLAlchemy). Sem isto os descendentes cascateados ficavam com updated_at
         velho. Retorna quantos descendentes mudaram.
+
+        ⚠️ `terminal_since = NOW()` pela MESMA razao (Spec 035, fatia 2a): o
+        service grava o relogio do arquivamento nas transicoes que passam pelo
+        ORM, e este UPDATE nao passa. Sem a linha aqui, concluir um pai deixaria
+        a subarvore inteira com `terminal_since` NULL -- e o defeito so
+        apareceria na fatia 2b, como "o job arquivou menos do que devia", sem
+        erro nenhum. Nao precisa de condicao: o WHERE ja exclui quem ja e
+        terminal, entao toda linha afetada esta ENTRANDO em terminal agora.
         """
         tenant = require_tenant()
         result = await self.session.execute(
@@ -469,6 +477,7 @@ class TaskRepository(BaseRepository[Task]):
                 UPDATE task
                 SET status = CAST('COMPLETED' AS task_status),
                     completed_at = NOW(),
+                    terminal_since = NOW(),
                     updated_at = NOW()
                 WHERE path <@ CAST(:task_path AS ltree)
                   AND id <> :task_id
@@ -573,27 +582,33 @@ class TaskRepository(BaseRepository[Task]):
     async def list_stale_terminal(
         self, *, now: datetime, days: int
     ) -> list[Task]:
-        """Tasks terminais paradas ha mais de `days` dias (Spec 013).
+        """Tasks terminais paradas ha mais de `days` dias (Spec 013/035).
 
         Espelha app.modules.tasks.domain.archival.is_stale_terminal:
-            COMPLETED por completed_at, CANCELLED por updated_at.
+        `terminal_since` mais velho que o cutoff, em qualquer status terminal.
         `_base_select` ja filtra tenant + soft-delete. Excluimos arquivadas
         (nao reentram). Sem paginacao -- e um job de varredura.
+
+        ⚠️ ESTA QUERY E O PREDICADO PURO SAO UM PAR. Divergiram = o job faz uma
+        coisa e o teste unitario prova outra, e ninguem percebe porque os dois
+        ficam verdes. Mudou aqui, muda la (mesma dupla ja usada em team_scope).
+        O `status IN (...)` e o mesmo cinto do predicado: `terminal_since` numa
+        tarefa viva deve deixar de arquivar, nao arquivar trabalho em
+        andamento.
+
+        ⚠️ SEM INDICE DEDICADO, e de proposito. A varredura roda uma vez por
+        noite sobre a tabela inteira; em 666 linhas (producao, 06/08/2026) o
+        seq scan e irrelevante e um indice seria peso morto mantido para
+        sempre. Se `task` passar da casa das centenas de milhares, o indice e
+        `(workspace_id, terminal_since) WHERE deleted_at IS NULL AND
+        is_archived = false` -- e ai com medicao, nao por precaucao.
         """
         cutoff = now - timedelta(days=days)
         stmt = self._base_select().where(
             Task.is_archived.is_(False),
-            or_(
-                and_(
-                    Task.status == TaskStatus.COMPLETED,
-                    Task.completed_at.is_not(None),
-                    Task.completed_at < cutoff,
-                ),
-                and_(
-                    Task.status == TaskStatus.CANCELLED,
-                    Task.updated_at < cutoff,
-                ),
-            ),
+            Task.status.in_(tuple(TERMINAL_STATUSES)),
+            Task.terminal_since.is_not(None),
+            Task.terminal_since < cutoff,
         )
         result = await self.session.execute(stmt)
         return list(result.scalars().all())

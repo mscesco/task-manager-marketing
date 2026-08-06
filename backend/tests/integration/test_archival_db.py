@@ -1,8 +1,13 @@
-"""Varredura de auto-arquivamento (Spec 013) -- contra Postgres real.
+"""Varredura de auto-arquivamento (Spec 013/035) -- contra Postgres real.
 
-Cobre: arquiva so os elegiveis (COMPLETED por completed_at, CANCELLED por
-updated_at), grava history ARCHIVED com flag automated, e idempotencia.
+Cobre: arquiva so os elegiveis (terminais com `terminal_since` mais velho que
+o limite), grava history ARCHIVED com flag automated, e idempotencia.
 Isolamento de tenant: a varredura num workspace nao toca no outro.
+
+⚠️ A REGRA MUDOU DE FONTE na fatia 2b da Spec 035. Era `completed_at` para
+COMPLETED e `updated_at` para CANCELLED; passou a ser `terminal_since` para as
+duas. Ver `_set_terminal` abaixo, e `test_equivalencia_varredura_db.py`, que
+prova que o conjunto selecionado continua o mesmo.
 """
 
 from __future__ import annotations
@@ -46,10 +51,24 @@ async def _mk(db, ws, user, team, title):
 
 def _set_terminal(task, *, status, completed_at=None, when):
     """Forca status + carimbos no passado. Atribuir updated_at explicito
-    sobrescreve o onupdate ORM (que e ORM-side, nao trigger de banco)."""
+    sobrescreve o onupdate ORM (que e ORM-side, nao trigger de banco).
+
+    ⚠️ `terminal_since` usa a MESMA formula do backfill das migrations 0008 e
+    0009 (`COALESCE(completed_at, updated_at)` para COMPLETED, `updated_at`
+    para CANCELLED). Estes testes plantam linha direto, sem passar pelo
+    service, entao nada preencheria o campo -- e desde a fatia 2b da Spec 035 e
+    ele que a varredura le. Sem esta linha os seis testes de varredura acusam
+    "arquivou 0", que e o produto CERTO agindo sobre um mundo que nao existe
+    em producao (la o backfill ja passou).
+
+    ⚠️ Consequencia aceita: este arquivo deixa de provar que o PRODUTO grava o
+    relogio -- ele planta o valor. Quem prova a escrita e
+    `test_terminal_since_escrita_db.py`, e por isso ele existe separado.
+    """
     task.status = status
     task.completed_at = completed_at
     task.updated_at = when
+    task.terminal_since = completed_at or when
 
 
 async def test_varredura_arquiva_so_os_elegiveis(db) -> None:
