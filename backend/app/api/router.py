@@ -18,6 +18,7 @@ from app.api.client_errors import router as client_errors_router
 from app.modules.auth.api.router import router as auth_router
 from app.modules.notifications.api.router import router as notifications_router
 from app.modules.solicitations.api.router import router as solicitations_router
+from app.modules.tasks.api.boards_router import router as boards_router
 from app.modules.tasks.api.collaboration_router import (
     router as collaboration_router,
 )
@@ -41,6 +42,7 @@ api_v1_router.include_router(members_router)
 api_v1_router.include_router(projects_router)
 api_v1_router.include_router(me_router)
 api_v1_router.include_router(tasks_router)
+api_v1_router.include_router(boards_router)
 api_v1_router.include_router(collaboration_router)
 api_v1_router.include_router(comment_router)
 api_v1_router.include_router(notifications_router)

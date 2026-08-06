@@ -20,7 +20,12 @@ from enum import Enum
 
 from pydantic import BaseModel, Field
 
-from app.db.models.enums import PriorityLevel, ProjectStatus, TaskStatus
+from app.db.models.enums import (
+    ColumnSemantic,
+    PriorityLevel,
+    ProjectStatus,
+    TaskStatus,
+)
 
 # Limite defensivo para description -- generoso, mas evita uploads
 # acidentais de Mb de texto.
@@ -380,3 +385,61 @@ class CommentListResponse(BaseModel):
     total: int
     page: int
     size: int
+
+
+# =========================================================
+# QUADRO (Spec 036 fatia 2)
+# =========================================================
+class BoardColumnResponse(BaseModel):
+    """Uma coluna de quadro, como o front a recebe.
+
+    ⚠️ `semantic` VAI JUNTO desde a primeira versao do contrato, e ele e o
+    unico campo daqui que ainda nao tem leitor. A sondagem de 06/08 mediu que
+    `web/lib/status.ts` reimplementa a semantica a mao, em tres conjuntos de
+    status cravados (`STATUS_OCULTOS_POR_PADRAO`, `STATUS_QUE_PARAM`, e o
+    `COMPLETED || CANCELLED || BLOCKED` dentro de `deadlineTone`) -- sem este
+    campo, a fatia 4 nao teria como substitui-los e a fatia 3 teria de mudar o
+    contrato de novo, com o front ja pendurado nele.
+
+    ⚠️ `notify_deadline` pelo mesmo motivo: o backend ja o respeita
+    (`DeadlineNotifyService`), e hoje o front cobra prazo de coluna que o
+    backend sabe que nao deve cobrar. Expor agora custa uma linha; expor depois
+    custa uma versao de endpoint.
+
+    ⚠️ `legacy_status` NAO entra. Ele e ponte com data de demolicao (ADR 0033)
+    e some quando o front passar a ler colunas do banco -- que e exatamente o
+    que este endpoint existe para permitir. Expo-lo convidaria o front a se
+    amarrar na ponte em vez de na semantica.
+    """
+
+    model_config = {"from_attributes": True}
+
+    id: uuid.UUID
+    name: str
+    color: str
+    position: int
+    semantic: ColumnSemantic
+    notify_deadline: bool
+    is_default_target: bool
+
+
+class BoardResponse(BaseModel):
+    """Um quadro alcancavel, com as colunas na ordem visual.
+
+    ⚠️ `workspace_id` NAO entra. Todo quadro devolvido e do workspace de quem
+    perguntou -- a consulta garante -- e devolver o campo convidaria o front a
+    filtrar por ele, o que seria fazer no cliente uma trava que so vale no
+    servidor.
+
+    ⚠️ `deleted_at` NAO entra: quadro apagado nao e devolvido, entao o campo
+    so poderia valer `null`. Campo que so tem um valor possivel e campo que
+    alguem vai testar um dia e concluir a coisa errada.
+    """
+
+    model_config = {"from_attributes": True}
+
+    id: uuid.UUID
+    name: str
+    team_id: uuid.UUID
+    is_default: bool
+    colunas: list[BoardColumnResponse]

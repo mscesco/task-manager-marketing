@@ -1,6 +1,9 @@
 """Leitura de quadro e coluna (Spec 035 fatia 3b, ADR 0032/0033; F2 em 06/08).
 
-Duas perguntas, e a diferenca entre elas e a fatia F2 inteira:
+⚠️ DESDE A FATIA 2 DA SPEC 036 sao TRES perguntas -- a terceira, `list_visible`,
+esta no fim do arquivo e e a unica com superficie de API.
+
+Duas perguntas herdadas da Spec 035, e a diferenca entre elas e a F2 inteira:
 
   - **"em que quadro nasce uma tarefa nova de topo?"**
     `default_board_and_column_for_status` -- o quadro geral, do time RAIZ.
@@ -50,11 +53,13 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.tenant import require_tenant
+from app.db.models.boards import Board, BoardColumn
 from app.db.models.enums import TaskStatus
+from app.modules.auth.domain import team_scope
 from app.shared.exceptions.base import ValidationError
 
 
@@ -181,3 +186,77 @@ class BoardRepository:
                 },
             )
         return linha[0]
+
+    async def list_visible(self) -> list[tuple[Board, list[BoardColumn]]]:
+        """Quadros que o usuario do contexto ALCANCA, com as colunas de cada.
+
+        Spec 036 fatia 2. Leitura pura -- nao cria, nao altera, nao apaga.
+
+        ⚠️ A LENTE E A MESMA DO RESTO DO APP (`visible_team_ids`), e isso e
+        decisao registrada, nao economia. A ADR 0035 (D3) confirma a 0030: a
+        visibilidade do quadro sai de graca do `team_id` dele, sem eixo novo e
+        sem permissao por quadro. `None` = ADMIN = todos os TIMES.
+
+        ⚠️ `None` NAO SIGNIFICA "SEM FILTRO". Significa "sem filtro de TIME".
+        O `workspace_id` entra SEMPRE, fora do `if`, e essa e a linha que
+        separa "o ADMIN ve todos os quadros da casa dele" de "o ADMIN ve os
+        quadros da casa dos outros". O defeito, se existisse, apareceria SO
+        para o ADMIN -- com a lente restrita, o filtro por `team_id` barraria
+        o quadro de outro workspace por tabela e esconderia o furo. E por isso
+        que `test_quadro_de_outro_workspace_nunca_aparece` roda como ADMIN.
+
+        ⚠️ `deleted_at IS NULL` porque esta consulta DESCOBRE quadro -- a regra
+        do cabecalho do modulo. Ela e o segundo leitor da coluna criada pela
+        `0012`, e o primeiro que uma pessoa ve na tela.
+
+        ⚠️ DUAS QUERIES, de proposito, e aqui isso NAO e defeito. `Board` nao
+        declara `relationship` para `BoardColumn` (o schema usa FK composta e
+        o repo nunca precisou), entao `selectinload` nao esta disponivel. Um
+        JOIN unico devolveria o quadro repetido uma vez por coluna e exigiria
+        agrupar na aplicacao. A segunda query e um `IN` sobre poucos ids, num
+        caminho que NAO e quente: a listagem roda uma vez por abertura de tela,
+        nao uma vez por no de arvore como o `create`. Se um dia o numero de
+        quadros justificar, o lugar de medir e aqui, com o numero na mao.
+
+        Devolve lista de `(quadro, colunas)`, colunas ja ordenadas por
+        `position` -- a ordem VISUAL do quadro, que e o que a fatia 4 desenha.
+        Quadro sem coluna nenhuma volta com lista vazia em vez de sumir: sumir
+        esconderia um quadro defeituoso da unica tela que poderia denuncia-lo.
+        """
+        tenant = require_tenant()
+        visiveis = team_scope.visible_team_ids(
+            tenant.memberships, tenant.team_tree
+        )  # None = ADMIN (sem filtro de TIME -- ver o aviso acima)
+
+        consulta = (
+            select(Board)
+            .where(Board.workspace_id == tenant.workspace_id)
+            .where(Board.deleted_at.is_(None))
+            .order_by(Board.is_default.desc(), Board.name)
+        )
+        if visiveis is not None:
+            consulta = consulta.where(Board.team_id.in_(visiveis))
+
+        quadros = list((await self.session.execute(consulta)).scalars().all())
+        if not quadros:
+            return []
+
+        ids = [q.id for q in quadros]
+        colunas = list(
+            (
+                await self.session.execute(
+                    select(BoardColumn)
+                    .where(BoardColumn.workspace_id == tenant.workspace_id)
+                    .where(BoardColumn.board_id.in_(ids))
+                    .order_by(BoardColumn.board_id, BoardColumn.position)
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+        por_quadro: dict[uuid.UUID, list[BoardColumn]] = {i: [] for i in ids}
+        for coluna in colunas:
+            por_quadro[coluna.board_id].append(coluna)
+
+        return [(q, por_quadro[q.id]) for q in quadros]
