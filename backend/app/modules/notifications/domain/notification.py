@@ -22,6 +22,13 @@ class NotificationType(str, Enum):
     # Spec 023: avisos de prazo (gerados por job de sistema, sem ator).
     TASK_DUE_SOON = "TASK_DUE_SOON"
     TASK_OVERDUE = "TASK_OVERDUE"
+    # Spec 037 (E9): a pessoa perdeu alcance por mudanca de vinculo e deixou
+    # de ser responsavel/observadora. UMA por movimentacao, nunca uma por
+    # tarefa -- ver `NotificationEmitter.alcance_perdido`.
+    #
+    # ⚠️ SEM MIGRATION: `notification.type` e `String(40)` no banco, nao ENUM
+    # nativo. Este enum e a fonte de verdade do CODIGO, e so dele.
+    ACCESS_LOST = "ACCESS_LOST"
 
 
 @dataclass(frozen=True, slots=True)

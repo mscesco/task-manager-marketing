@@ -19,14 +19,27 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timedelta
 
-from sqlalchemy import and_, exists, func, or_, select, text
+from sqlalchemy import and_, delete, exists, func, or_, select, text
 from sqlalchemy.sql.elements import ColumnElement
 
 from app.core.tenant import require_tenant
-from app.db.models import Project, Task, TaskAssignment, TaskHistory, TaskWatcher
+from app.db.models import (
+    BoardColumn,
+    Project,
+    Task,
+    TaskAssignment,
+    TaskHistory,
+    TaskWatcher,
+    Team,
+)
 from app.db.repository import BaseRepository
 from app.modules.auth.domain import team_scope
 from app.modules.tasks.domain.archival import TERMINAL_STATUSES
+from app.modules.tasks.domain.board_semantics import TERMINAL_SEMANTICS
+from app.modules.tasks.domain.perda_de_alcance import (
+    RelacaoPerdida,
+    TarefaBloqueio,
+)
 from app.modules.tasks.domain.history import HistoryEntry
 from app.shared.pagination import Page, PageParams
 
@@ -660,3 +673,260 @@ class TaskRepository(BaseRepository[Task]):
                 event_metadata=entry.metadata,
             )
             self.session.add(row)
+
+    # ----------------------------------------------------
+    # Spec 037, fatia 1 (parte 2) -- o predicado da E4/E7
+    # ----------------------------------------------------
+    async def bloqueios_por_perda_de_alcance(
+        self,
+        *,
+        user_id: uuid.UUID,
+        times_depois: frozenset[uuid.UUID] | None,
+    ) -> list[TarefaBloqueio]:
+        """De quais tarefas ela e a UNICA responsavel e deixaria de alcancar?
+
+        Spec 037, E4. `times_depois` e a lente que a pessoa teria DEPOIS da
+        mudanca de vinculo -- quem a calcula e o chamador (a F3), porque so ele
+        sabe qual das quatro mudancas esta acontecendo.
+
+        ⚠️ ESTE E O PREDICADO UNICO. A F3 o chama nos tres gatilhos que barram
+        (`move_member_subteam`, `remove_member_from_team`, `change_member_role`).
+        **Se aparecer uma segunda copia desta regra em qualquer fatia, e
+        defeito**, nao otimizacao.
+
+        ⚠️ `times_depois=None` significa ADMIN -- continua alcancando tudo,
+        entao NADA bloqueia, e a consulta nem roda. Nao confundir com o `None`
+        das CONSULTAS de listagem, onde ele nunca dispensa o `workspace_id`:
+        aqui o retorno vazio e a resposta certa, nao um filtro esquecido.
+
+        ⚠️ TERMINAL VEM DA SEMANTICA DA COLUNA (`TERMINAL_SEMANTICS`), nunca de
+        uma lista de status escrita a mao. E o primeiro leitor de verdade de
+        `column.semantic`, que estava sem leitor desde a Spec 035 -- e e o que
+        faz a regra continuar valendo quando existir coluna criada por gente,
+        que nao tem `legacy_status` e portanto nao responde por status.
+
+        ⚠️ O TIME QUE DECIDE O ALCANCE E `COALESCE(project.team_id,
+        task.team_id)`, e isso NAO e preferencia: e a mesma regra que
+        `task_guards.task_visible` aplica hoje (projeto comum -> o time do
+        PROJETO decide; avulsa -> o time da task). Usar so `task.team_id` faria
+        o predicado responder uma pergunta diferente da que o produto responde
+        no dia em que existir projeto em subtime -- e a pessoa seria barrada
+        por uma tarefa que ela continuaria enxergando, ou pior, o contrario.
+        Hoje os dois dao o mesmo resultado: os 20 projetos de producao estao
+        todos na raiz (consulta 6 de `scripts/invariantes.sql`).
+
+        ⚠️ PESSOAL NUNCA BLOQUEIA. Projeto pessoal e do dono e a lente de time
+        nao o alcanca nem o perde -- ele sai por `is_personal = false` no
+        filtro, e nao por ausencia de caso de teste.
+
+        ⚠️ `is_archived` E `deleted_at` os DOIS. Arquivar nao e apagar
+        (`ArchivableMixin`): sao dois estados independentes e cada um sozinho
+        deixaria metade do passivo bloqueando movimentacao a toa.
+        """
+        tenant = require_tenant()
+        if times_depois is None:
+            return []
+
+        # Um responsavel SO, e e ela. `having count(*) = 1` sobre o
+        # task_assignment do workspace -- nao sobre o do usuario, senao
+        # qualquer tarefa em que ela aparece uma vez contaria como unica.
+        unico = (
+            select(TaskAssignment.task_id)
+            .where(TaskAssignment.workspace_id == tenant.workspace_id)
+            .group_by(TaskAssignment.task_id)
+            .having(func.count() == 1)
+            # ⚠️ `bool_and`, e nao `min(user_id)`: `min` NAO existe para `uuid`
+            # no Postgres (medido -- `function min(uuid) does not exist`). Com
+            # `count() = 1` ja garantido, `bool_and` diz "o unico e ela".
+            .having(func.bool_and(TaskAssignment.user_id == user_id))
+            .subquery()
+        )
+
+        time_efetivo = func.coalesce(Project.team_id, Task.team_id)
+
+        stmt = (
+            select(
+                Task.id,
+                Task.title,
+                time_efetivo.label("team_id"),
+                Team.name.label("subtime"),
+                BoardColumn.name.label("coluna"),
+            )
+            .join(unico, unico.c.task_id == Task.id)
+            .join(
+                BoardColumn,
+                and_(
+                    BoardColumn.id == Task.column_id,
+                    BoardColumn.board_id == Task.board_id,
+                ),
+            )
+            .outerjoin(
+                Project,
+                and_(
+                    Project.id == Task.project_id,
+                    Project.workspace_id == Task.workspace_id,
+                ),
+            )
+            .outerjoin(
+                Team,
+                and_(
+                    Team.id == time_efetivo,
+                    Team.workspace_id == Task.workspace_id,
+                ),
+            )
+            # ⚠️ FORA de qualquer `if`. Ver a docstring: o tenant entra sempre.
+            .where(Task.workspace_id == tenant.workspace_id)
+            .where(Task.deleted_at.is_(None))
+            .where(Task.is_archived.is_(False))
+            .where(func.coalesce(Project.is_personal, False).is_(False))
+            .where(BoardColumn.semantic.not_in(TERMINAL_SEMANTICS))
+            .where(
+                or_(
+                    time_efetivo.is_(None),
+                    time_efetivo.not_in(times_depois),
+                )
+            )
+            .order_by(Task.title)
+        )
+
+        rows = (await self.session.execute(stmt)).all()
+        return [
+            TarefaBloqueio(
+                task_id=r.id,
+                titulo=r.title,
+                team_id=r.team_id,
+                subtime=r.subtime,
+                coluna=r.coluna,
+            )
+            for r in rows
+        ]
+
+    async def relacoes_perdidas(
+        self,
+        *,
+        user_id: uuid.UUID,
+        times_depois: frozenset[uuid.UUID] | None,
+    ) -> list[RelacaoPerdida]:
+        """Tudo que ela deixa de alcancar e ainda tem relacao (Spec 037, E3).
+
+        ⚠️ CONJUNTO DIFERENTE DO `bloqueios_por_perda_de_alcance`, e as duas
+        consultas existem separadas de proposito:
+
+          - o BLOQUEIO (E4) pergunta "isto ficaria orfao?" -> so nao-terminal,
+            so responsavel unica;
+          - a REMOCAO (E3) pergunta "o que ela perde?" -> terminal tambem,
+            com colega tambem, OBSERVADOR tambem.
+
+        Unificar as duas numa consulta com flag faria a regra do bloqueio ser
+        lida dentro da regra da remocao, e sao decisoes diferentes do ADR.
+
+        ⚠️ `deleted_at`/`is_archived` filtram AQUI TAMBEM, e isso e decisao:
+        apagar a designacao de uma tarefa arquivada reescreveria historico que
+        ninguem consegue ver nem desfazer. A E3 fala de "dono invisivel de
+        trabalho vivo" -- trabalho arquivado nao tem dono a procurar.
+
+        ⚠️ `times_depois=None` = ADMIN: nao perde nada, e a consulta nem roda.
+        """
+        tenant = require_tenant()
+        if times_depois is None:
+            return []
+
+        time_efetivo = func.coalesce(Project.team_id, Task.team_id)
+        eh_resp = exists(
+            select(1).where(
+                TaskAssignment.task_id == Task.id,
+                TaskAssignment.user_id == user_id,
+                TaskAssignment.workspace_id == tenant.workspace_id,
+            )
+        )
+        eh_obs = exists(
+            select(1).where(
+                TaskWatcher.task_id == Task.id,
+                TaskWatcher.user_id == user_id,
+                TaskWatcher.workspace_id == tenant.workspace_id,
+            )
+        )
+
+        stmt = (
+            select(
+                Task.id,
+                Task.title,
+                time_efetivo.label("team_id"),
+                Team.name.label("subtime"),
+                eh_resp.label("era_responsavel"),
+                eh_obs.label("era_observador"),
+            )
+            .outerjoin(
+                Project,
+                and_(
+                    Project.id == Task.project_id,
+                    Project.workspace_id == Task.workspace_id,
+                ),
+            )
+            .outerjoin(
+                Team,
+                and_(
+                    Team.id == time_efetivo,
+                    Team.workspace_id == Task.workspace_id,
+                ),
+            )
+            .where(Task.workspace_id == tenant.workspace_id)
+            .where(Task.deleted_at.is_(None))
+            .where(Task.is_archived.is_(False))
+            .where(func.coalesce(Project.is_personal, False).is_(False))
+            .where(or_(eh_resp, eh_obs))
+            .where(
+                or_(
+                    time_efetivo.is_(None),
+                    time_efetivo.not_in(times_depois),
+                )
+            )
+            .order_by(Task.title)
+        )
+
+        rows = (await self.session.execute(stmt)).all()
+        return [
+            RelacaoPerdida(
+                task_id=r.id,
+                titulo=r.title,
+                team_id=r.team_id,
+                subtime=r.subtime,
+                era_responsavel=r.era_responsavel,
+                era_observador=r.era_observador,
+            )
+            for r in rows
+        ]
+
+    async def apagar_relacoes(
+        self, *, user_id: uuid.UUID, task_ids: list[uuid.UUID]
+    ) -> tuple[int, int]:
+        """Apaga responsavel e observador dela nessas tarefas. (resp, obs).
+
+        ⚠️ `DELETE` em massa, e nao `session.delete` linha a linha: sao ate
+        dezenas de tarefas por movimentacao, e o caminho ORM faria um SELECT
+        por linha.
+
+        ⚠️ `UPDATE`/`DELETE` cru NAO avisa o ORM (armadilha herdada). Quem
+        tiver carregado um `TaskAssignment` nesta sessao continua com o objeto
+        em memoria. Os chamadores desta funcao nao carregam -- e o teste
+        confere o BANCO, nao a sessao.
+        """
+        if not task_ids:
+            return (0, 0)
+
+        tenant = require_tenant()
+        resp = await self.session.execute(
+            delete(TaskAssignment).where(
+                TaskAssignment.workspace_id == tenant.workspace_id,
+                TaskAssignment.user_id == user_id,
+                TaskAssignment.task_id.in_(task_ids),
+            )
+        )
+        obs = await self.session.execute(
+            delete(TaskWatcher).where(
+                TaskWatcher.workspace_id == tenant.workspace_id,
+                TaskWatcher.user_id == user_id,
+                TaskWatcher.task_id.in_(task_ids),
+            )
+        )
+        return (resp.rowcount or 0, obs.rowcount or 0)

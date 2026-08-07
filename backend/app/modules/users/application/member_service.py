@@ -23,10 +23,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.logging import get_logger
-from app.core.tenant import require_tenant
+from app.core.tenant import Membership, require_tenant
 from app.db.models import Team, User, UserTeam
 from app.db.models.enums import UserTeamRole
-from app.modules.auth.domain.team_scope import assert_role_permitido_no_nivel
+from app.modules.auth.domain.team_scope import (
+    assert_role_permitido_no_nivel,
+    visible_team_ids,
+)
 from app.modules.auth.infrastructure.security import (
     generate_temporary_password,
     hash_password,
@@ -36,6 +39,9 @@ from app.modules.tasks.application.task_guards import (
     TaskScopeGuards,
     user_can_view_task,
     user_can_view_team,
+)
+from app.modules.notifications.application.notification_emitter import (
+    NotificationEmitter,
 )
 from app.modules.tasks.infrastructure.task_repository import TaskRepository
 from app.modules.users.infrastructure.user_repository import UserRepository
@@ -112,6 +118,138 @@ class MemberService:
         self._teams = TeamRepository(session)
         self._projects = ProjectService(session)
         self._session = session
+
+    # ----------------------------------------------------
+    # Spec 037, fatia 3 -- E4 + E8. O gatilho, chamado em TRES lugares.
+    # ----------------------------------------------------
+    async def _assert_nao_deixa_orfa(
+        self,
+        *,
+        user_id: uuid.UUID,
+        vinculos_depois: list[tuple[uuid.UUID, UserTeamRole]],
+        acao: str,
+    ) -> None:
+        """Barra a mudanca que deixaria tarefa viva sem ninguem que a alcance.
+
+        Spec 037, E4. `vinculos_depois` e a lista `(team_id, papel)` que a
+        pessoa teria DEPOIS -- quem a monta e cada caso de uso, porque so ele
+        sabe qual das tres mudancas esta acontecendo.
+
+        ⚠️ UM SO PONTO DE REGRA, TRES CHAMADORES. O predicado
+        (`bloqueios_por_perda_de_alcance`) e a traducao de vinculo em lente
+        (`visible_team_ids`) moram fora daqui. Se alguma fatia precisar de uma
+        segunda copia disto, e defeito.
+
+        ⚠️ `deactivate_member` NAO chama este metodo, e a ausencia e decisao
+        (E7): desligar alguem nao pode ser barrado por trabalho pendente --
+        a pessoa ja foi embora. A E7 resolve por outro caminho, na F5.
+
+        ⚠️ A LENTE DEPOIS PODE SER `None` (a pessoa continua ADMIN em algum
+        vinculo). Ai nada barra, e o predicado devolve lista vazia sem tocar o
+        banco. Isso e o certo: ADMIN nao perde alcance de nada.
+
+        ⚠️ `ValidationError` = 422, e isso e DIVERGENTE do resto deste arquivo,
+        onde toda recusa de regra e `BusinessRuleError` = 409 (ultimo vinculo,
+        anti-lockout C3). O 422 esta escrito na E8 e na spec, entao e o que
+        sobe -- mas o front vai ter de tratar DOIS codigos no mesmo botao. Se
+        um dia isso incomodar, a troca e uma linha aqui, e o teste
+        `test_o_corpo_do_422_traz_a_lista` e quem avisa.
+        """
+        tenant = require_tenant()
+        memberships_depois = tuple(
+            Membership(team_id=tid, role=papel.value)
+            for tid, papel in vinculos_depois
+        )
+        bloqueios = await TaskRepository(
+            self._session
+        ).bloqueios_por_perda_de_alcance(
+            user_id=user_id,
+            times_depois=visible_team_ids(memberships_depois, tenant.team_tree),
+        )
+        if not bloqueios:
+            return
+
+        # ⚠️ A LISTA ESTRUTURADA, e nao uma frase (E8). Medido em 06/08: duas
+        # pessoas carregam 30 das 33 tarefas que travariam hoje. Uma frase
+        # serve para quem tem 1 e e uma parede para quem tem 18 -- e regra que
+        # vira parede e contornada, nao seguida.
+        raise ValidationError(
+            "Esta pessoa é a única responsável por tarefas que deixaria de "
+            "alcançar. Reatribua antes de continuar.",
+            details={
+                "acao": acao,
+                "user_id": str(user_id),
+                "tarefas": [
+                    {
+                        "id": str(b.task_id),
+                        "titulo": b.titulo,
+                        "subtime": b.subtime,
+                        "coluna": b.coluna,
+                        "team_id": str(b.team_id) if b.team_id else None,
+                    }
+                    for b in bloqueios
+                ],
+            },
+        )
+
+    async def _remover_relacoes_perdidas(
+        self,
+        *,
+        user_id: uuid.UUID,
+        vinculos_depois: list[tuple[uuid.UUID, UserTeamRole]],
+    ) -> int:
+        """Apaga responsavel/observador do que ela perdeu, e avisa UMA vez.
+
+        Spec 037, E3 + E9. Chamado SEMPRE logo depois de
+        `_assert_nao_deixa_orfa`, e nos mesmos tres casos de uso.
+
+        ⚠️ A ORDEM ENTRE OS DOIS NAO E ESTILO. O assert roda primeiro porque,
+        se a mudanca for barrada, NADA pode ter sido apagado -- e apagar
+        designacao nao se desfaz remendando o vinculo de volta (o ADR 0038 diz
+        isso na E3: esconder e reversivel de graca, remover nao e).
+
+        ⚠️ ESTA E A PRIMEIRA ESCRITA EM DADO DE TAREFA DISPARADA POR MUDANCA DE
+        VINCULO. Errar aqui nao da 500 -- da tarefa sem dono, em silencio. E o
+        motivo de o criterio 6 da spec exigir conferir o BANCO e nao a
+        resposta: precedente literal, a sabotagem da cascata de 05/08, em que
+        `cascade_count` dizia 2 enquanto o produto arquivava ao contrario.
+
+        Devolve quantas tarefas perderam relacao (a contagem que vai na
+        notificacao).
+        """
+        tenant = require_tenant()
+        memberships_depois = tuple(
+            Membership(team_id=tid, role=papel.value)
+            for tid, papel in vinculos_depois
+        )
+        perdidas = await TaskRepository(self._session).relacoes_perdidas(
+            user_id=user_id,
+            times_depois=visible_team_ids(memberships_depois, tenant.team_tree),
+        )
+        if not perdidas:
+            return 0
+
+        await TaskRepository(self._session).apagar_relacoes(
+            user_id=user_id, task_ids=[p.task_id for p in perdidas]
+        )
+
+        # ⚠️ Nomes de subtime SEM repetir e em ordem estavel. `set` daria ordem
+        # de hash, e a mensagem mudaria de forma entre duas execucoes iguais --
+        # o tipo de diferenca que faz um teste piscar sem defeito nenhum.
+        subtimes = sorted({p.subtime for p in perdidas if p.subtime})
+        await NotificationEmitter(self._session).alcance_perdido(
+            recipient_id=user_id,
+            actor_id=tenant.user_id,
+            quantidade=len(perdidas),
+            subtimes=subtimes,
+        )
+        logger.info(
+            "member.alcance_perdido",
+            user_id=str(user_id),
+            tarefas=len(perdidas),
+            subtimes=subtimes,
+        )
+        return len(perdidas)
 
     async def create_member(self, command: CreateMemberCommand) -> ProvisionedMember:
         """Cadastra um usuario no workspace corrente com senha PROVISORIA.
@@ -473,6 +611,30 @@ class MemberService:
             new_role, is_root=team.parent_team_id is None
         )
 
+        # ⚠️ Spec 037, E4 -- ANTES de escrever o papel novo. Rebaixamento tira
+        # os subtimes de uma vez: MANAGER da raiz enxerga raiz + descendentes,
+        # OPERATOR da raiz enxerga so a raiz. Medido em 06/08: hoje nenhuma
+        # pessoa seria barrada por este gatilho, porque os gestores estao na
+        # raiz e tarefa de raiz ninguem perde -- o gatilho com cliente real e o
+        # `move_member_subteam`. Isto NAO torna esta chamada opcional: o dia do
+        # quadro interno (fatia 5 da Spec 036) e o dia em que ela passa a doer.
+        vinculos = await self._users.list_team_memberships(user_id=user_id)
+        await self._assert_nao_deixa_orfa(
+            user_id=user_id,
+            vinculos_depois=[
+                (v.team_id, new_role if v.team_id == team_id else v.role)
+                for v in vinculos
+            ],
+            acao="change_member_role",
+        )
+        await self._remover_relacoes_perdidas(
+            user_id=user_id,
+            vinculos_depois=[
+                (v.team_id, new_role if v.team_id == team_id else v.role)
+                for v in vinculos
+            ],
+        )
+
         membership.role = new_role
         logger.info(
             "member.role_changed",
@@ -525,6 +687,25 @@ class MemberService:
                 "(ele ficaria sem time).",
                 details={"user_id": str(user_id)},
             )
+
+        # ⚠️ Spec 037, E4 -- DEPOIS da trava do ultimo vinculo, e de proposito.
+        # Quem tenta remover o unico vinculo recebe a mensagem sobre ficar sem
+        # time, que e o problema maior e mais facil de entender. Trocar a ordem
+        # faria a pessoa reatribuir dezoito tarefas para so entao descobrir que
+        # a operacao era impossivel de qualquer jeito.
+        await self._assert_nao_deixa_orfa(
+            user_id=user_id,
+            vinculos_depois=[
+                (v.team_id, v.role) for v in vinculos if v.team_id != team_id
+            ],
+            acao="remove_member_from_team",
+        )
+        await self._remover_relacoes_perdidas(
+            user_id=user_id,
+            vinculos_depois=[
+                (v.team_id, v.role) for v in vinculos if v.team_id != team_id
+            ],
+        )
 
         await self._users.remove_team_membership(membership)
         await self._session.flush()
@@ -591,6 +772,32 @@ class MemberService:
         # subtime, ou um SUPERVISOR pra raiz, viola a invariante.
         assert_role_permitido_no_nivel(
             role, is_root=destino.parent_team_id is None
+        )
+
+        # ⚠️ Spec 037, E4 -- ANTES do `remove_team_membership`, que e a primeira
+        # escrita deste caso de uso. O metodo remove a origem primeiro para
+        # nunca violar "1 subtime por pessoa"; barrar depois disso significaria
+        # depender do rollback do UoW para desfazer, e a diferenca aparece no
+        # dia em que alguem chamar este service fora de um UoW.
+        #
+        # ⚠️ ESTE E O GATILHO COM CLIENTE REAL. As 33 tarefas nao-terminais de
+        # subtime com um responsavel so (30 delas em duas pessoas) sao
+        # exatamente movimentacao de time.
+        vinculos = await self._users.list_team_memberships(user_id=user_id)
+        await self._assert_nao_deixa_orfa(
+            user_id=user_id,
+            vinculos_depois=[
+                (v.team_id, v.role) for v in vinculos if v.team_id != from_team_id
+            ]
+            + [(to_team_id, role)],
+            acao="move_member_subteam",
+        )
+        await self._remover_relacoes_perdidas(
+            user_id=user_id,
+            vinculos_depois=[
+                (v.team_id, v.role) for v in vinculos if v.team_id != from_team_id
+            ]
+            + [(to_team_id, role)],
         )
 
         # Remove a origem PRIMEIRO -> ao adicionar, _assert_one_subteam ve

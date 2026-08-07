@@ -248,6 +248,40 @@ class TaskService:
     # ----------------------------------------------------
     # CRUD (publico)
     # ----------------------------------------------------
+    @staticmethod
+    def _assert_team_in_reach(team_id: uuid.UUID) -> None:
+        """`team_id` escrito a mao tem de estar na lente de quem escreve.
+
+        Spec 037 fatia 1, criterio 3 (ADR 0038, E1). Ate 06/08/2026 a
+        precedencia do time em `create` era literalmente *"quem manda,
+        manda"*: qualquer `team_id` passava. A TELA ja respeitava a regra
+        (nao ha seletor de time no modal, e `web/lib/api.ts:702` fixa a
+        raiz) -- n8n, Swagger e chamada direta, nao.
+
+        ⚠️ Mesmo padrao e mesmo motivo da ADR 0031: a regra valia para quem
+        usava a tela e nao valia para o resto dos clientes.
+
+        ⚠️ CHAMADO EM DOIS LUGARES, e o segundo NAO estava no `plan.md`:
+        `create` e `update`. O `PATCH /tasks/{id}` aceita `team_id` e o
+        escrevia direto em `task.team_id` sem checar alcance nenhum -- a
+        mesma porta, do lado de fora. `_assert_editable` guarda o time
+        ATUAL da tarefa, nunca o novo. Fechar so o `create` deixaria a
+        regra valendo na criacao e nao valendo na edicao.
+
+        ⚠️ Lente `None` = ADMIN, e aqui `None` significa mesmo "sem filtro
+        de time" -- diferente das CONSULTAS, onde `None` nunca dispensa o
+        `workspace_id` (ver `board_repository.list_visible`). Nao ha
+        vazamento de tenant aqui: a arvore vem do tenant corrente, entao um
+        `team_id` de outro workspace nao esta nela e cai no 422.
+        """
+        tenant = require_tenant()
+        visible = team_scope.visible_team_ids(tenant.memberships, tenant.team_tree)
+        if visible is not None and team_id not in visible:
+            raise ValidationError(
+                "Time informado esta fora do seu alcance.",
+                details={"field": "team_id"},
+            )
+
     async def create(self, command: CreateTaskCommand) -> Task:
         """Cria task. 1 linha em task_history (CREATED)."""
         title = command.title.strip()
@@ -289,6 +323,17 @@ class TaskService:
                 "informe team_id).",
                 details={"field": "team_id"},
             )
+
+        # ⚠️ Spec 037, fatia 1 (criterio 3 / ADR 0038): `team_id` EXPLICITO tem
+        # de estar dentro da lente de quem escreve. Ver `_assert_team_in_reach`.
+        #
+        # ⚠️ MORDE `command.team_id`, NAO o `team_id` resolvido acima. O valor
+        # resolvido pode vir do PAI (heranca de subtarefa, ADR 0024) ou do
+        # default do criador; enquanto o ramo `created_by` da ADR 0013 existir
+        # (ele so cai na fatia 5), o pai pode estar fora da lente, e validar o
+        # resolvido quebraria a criacao de subtarefa nesse caso.
+        if command.team_id is not None:
+            self._assert_team_in_reach(command.team_id)
 
         # Projeto (opcional). Se informado: deve existir e ser visivel.
         project: Project | None = None
@@ -737,6 +782,9 @@ class TaskService:
             task.priority = command.priority
 
         if command.team_id is not None:
+            # ⚠️ Spec 037 fatia 1: a MESMA regra do `create`. `_assert_editable`
+            # acima guarda o time ATUAL da tarefa; nada guardava o time NOVO.
+            self._assert_team_in_reach(command.team_id)
             task.team_id = command.team_id
 
         # Status com ajuste de completed_at.

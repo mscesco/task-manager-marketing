@@ -1,4 +1,5 @@
--- Invariantes de producao -- quadro e coluna (Spec 035, ADR 0032/0033/0036).
+-- Invariantes de producao -- quadro e coluna (Spec 035, ADR 0032/0033/0036),
+-- e o alarme de projeto fora da raiz (Spec 037, consulta 6).
 --
 -- Existe porque estas consultas viviam em documento de passagem de bastao, e
 -- documento de passagem de bastao some. Quem confere producao roda ESTE
@@ -13,12 +14,17 @@
 -- ⚠️ A CONSULTA 4 EXIGE A MIGRATION `0012` APLICADA. Ela le
 -- `board.deleted_at`; contra um banco sem a `0012` o arquivo INTEIRO aborta
 -- com `column b.deleted_at does not exist`. As consultas 1, 2 e 3 rodam antes
--- e a 5 nunca executa. Conferindo um banco que ainda nao recebeu a `0012`:
--- rode as consultas uma a uma e PULE a 4.
+-- e as 5 e 6 nunca executam. Conferindo um banco que ainda nao recebeu a
+-- `0012`: rode as consultas uma a uma e PULE a 4.
 --
 -- Medido em producao (`task_manager`) em 06/08/2026, ANTES da `0012`:
 --   1 = 0 | 2 = 0 | 3 = 0 | 4 = nao rodou | 5 = UM quadro (`Quadro geral`,
 --   time raiz, 8 colunas, 0 sem ponte, 696 tarefas).
+--
+-- A consulta 6 foi acrescentada em 06/08/2026 e mediu 0 no mesmo dia, por
+-- outra via: a medicao 4 da F1 da Spec 037 devolveu 20 projetos comuns e 480
+-- tarefas vivas, TODOS no time raiz. ⚠️ Ela NAO rodou ainda a partir deste
+-- arquivo -- rode junto da proxima conferencia e confirme o 0.
 
 \echo '=== 1. toda tarefa tem quadro e coluna (0011) ==='
 SELECT count(*) AS sem_quadro_ou_coluna
@@ -95,3 +101,29 @@ SELECT b.id,
 FROM board b
 JOIN team t ON t.id = b.team_id AND t.workspace_id = b.workspace_id
 ORDER BY eh_raiz DESC, b.name;
+
+\echo '=== 6. nenhum projeto comum fora do time raiz (alarme da Spec 037) ==='
+-- ⚠️ ESTA NAO E UMA INVARIANTE DE MODELO -- E UM ALARME.
+--
+-- `project_service` NAO tem lente de time em lugar nenhum: `list_page` (:211) e
+-- `_assert_visible_to_current_user` (:462) so escondem projeto PESSOAL alheio.
+-- Nao existe filtro por `team_id` na listagem nem no detalhe de projeto.
+--
+-- Hoje isso nao expoe nada, e o motivo e este numero: em 06/08/2026 os 20
+-- projetos comuns (480 tarefas vivas) estao TODOS na raiz, que esta na lente
+-- de todo mundo. O buraco e teorico enquanto este numero for 0.
+--
+-- ⚠️ `project_service.py:140` NAO trava projeto na raiz -- aceita qualquer time
+-- da arvore. E comportamento de TELA, nao de API. Basta um projeto nascer em
+-- subtime (n8n, Swagger, chamada direta) para o buraco virar real, e ele nao
+-- avisa: ninguem recebe erro, o projeto so fica visivel para quem nao deveria.
+--
+-- SE ESTE NUMERO DEIXAR DE SER 0: a lente de time sobre `project` sai de
+-- divida e vira spec com prioridade. Ver `specs/037-acesso-deriva-do-time/
+-- spec.md` §Correcao de 06/08 e §Fora de escopo.
+SELECT count(*) AS projeto_comum_fora_da_raiz
+FROM project p
+JOIN team tm ON tm.id = p.team_id
+WHERE p.is_personal = false
+  AND p.deleted_at IS NULL
+  AND tm.parent_team_id IS NOT NULL;

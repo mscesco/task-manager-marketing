@@ -202,6 +202,50 @@ class NotificationEmitter:
 
         await self._emit_safely("TASK_OVERDUE", _do)
 
+    async def alcance_perdido(
+        self,
+        *,
+        recipient_id: uuid.UUID,
+        actor_id: uuid.UUID,
+        quantidade: int,
+        subtimes: list[str],
+    ) -> None:
+        """Avisa que ela deixou de ser responsavel por N tarefas (Spec 037 E9).
+
+        ⚠️ UMA notificacao por MOVIMENTACAO, nunca uma por tarefa. Medido em
+        06/08: duas pessoas carregam 30 das 33 tarefas que travariam hoje --
+        fan-out por tarefa entregaria 18 notificacoes de uma vez a mesma
+        pessoa, no mesmo segundo, e isso nao e aviso, e ruido que ensina a
+        ignorar o sino.
+
+        ⚠️ SEM `task_id`, e a ausencia e o ponto: a notificacao NAO aponta para
+        uma tarefa, porque ela fala de um conjunto. Alem disso, a pessoa acabou
+        de perder o alcance -- um link levaria a um 404.
+
+        ⚠️ `subtimes` no PLURAL. Rebaixar um MANAGER da raiz tira oito subtimes
+        de uma vez; a mensagem tem de caber nesse caso, nao so no de mover
+        alguem de um subtime para outro.
+
+        No-op se `quantidade == 0`: sem perda, sem aviso.
+        """
+        if quantidade <= 0:
+            return
+
+        async def _do() -> None:
+            self._repo.create(
+                recipient_id=recipient_id,
+                actor_id=actor_id,
+                type=NotificationType.ACCESS_LOST.value,
+                task_id=None,
+                payload={
+                    "actor_name": await self._actor_name(actor_id),
+                    "quantidade": quantidade,
+                    "subtimes": subtimes,
+                },
+            )
+
+        await self._emit_safely("ACCESS_LOST", _do)
+
     async def _emit_safely(
         self, tipo: str, do: Callable[[], Awaitable[None]]
     ) -> None:

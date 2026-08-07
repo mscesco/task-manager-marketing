@@ -17,9 +17,9 @@ por motivos diferentes, e nenhuma delas se sabia parte de um conjunto:
 
 1. **`created_by` sempre enxerga** (0013). Nasceu de um caso real: alguém cria
    tarefa avulsa para um subtime irmão e ela some da própria lente no instante
-   seguinte. Implementada em quatro pontos —
-   `task_guards.task_visible`, dois ramos de
-   `task_repository.list_page_with_filters` e `project_service`.
+   seguinte. Implementada em **dois** pontos — `task_guards.task_visible:60` e
+   um ramo do `or_` da lente em
+   `task_repository.list_page_with_filters:126`. Ver §Correção de 06/08.
 2. **`/me/assignments` omite a camada de lente** (0018), de propósito, para a
    tela poder mostrar tarefa fora de escopo.
 3. **`out_of_scope`** (0017) é a marca visual da 2 — "você está ligado a isto e
@@ -44,8 +44,9 @@ e exatamente o caso que a spec do quadro interno torna comum.
 
 **E1 — A lente de time é a única fonte de visibilidade de tarefa.** Nenhuma
 relação (criador, responsável, observador) concede leitura por si. O ramo
-`task.created_by == viewer` sai de `task_visible` e dos dois ramos do
-repositório; o `project_service` acompanha.
+`task.created_by == viewer` sai de `task_visible` e do `or_` da lente no
+repositório. ⚠️ **São dois pontos, e o `project_service` NÃO é um deles** — ver
+§Correção de 06/08.
 
 ⚠️ Isto **simplifica** a regra: cai um ramo inteiro do `or_`. Se a
 implementação ficar mais complicada, foi implementada errado.
@@ -169,10 +170,9 @@ evento, nunca uma por tarefa. O sistema de notificação já existe.
 - **Regra de leitura não conserta dado escrito.** No dia do deploy da E1,
   tarefas hoje alcançadas só pelo `created_by` somem da tela de alguém. A
   medição está em §Como medir.
-- ⚠️ **As 37 tarefas legadas sem responsável** (0031) não têm quem as
-  reencontre. Se alguma for alcançada só pelo criador, ela some e não sobra
-  relação nenhuma apontando para ela. A spec que implementar isto tem de medir
-  essa interseção antes de subir.
+- ✅ **As tarefas legadas sem responsável** (0031) não têm quem as reencontre.
+  **Medido em 06/08: são 36, e ZERO delas é alcançada só pelo criador.** A
+  interseção que podia perder trabalho não existe. Ver §Como medir.
 - **ADMIN não muda.** A lente dele é `None` e nunca dependeu de relação.
 
 ## Como medir
@@ -212,15 +212,59 @@ mover trabalho para dentro dos subtimes** — então estes 33 são o piso, não 
 teto, e vão crescer por desenho. Dimensionar a E4 para 33 é dimensionar para o
 passado.
 
-**O que NÃO foi medido, e a spec tem de medir antes de subir:**
+**O que faltava medir — MEDIDO em 06/08/2026, e deu zero nos três:**
 
-1. A **interseção com as 37 tarefas legadas sem responsável** (0031). Se alguma
-   for alcançada só pelo criador, ela some da tela e não sobra relação nenhuma
-   apontando para ela. É a única parte deste ADR que pode perder trabalho.
-2. Quantas tarefas **hoje** têm `team_id` fora do alcance de quem as criou. A
-   validação nova não retroage, mas a E1 faz essas tarefas sumirem.
-3. Quantas pessoas seriam barradas por `change_member_role` — a medição de
-   §Como medir cobre movimentação de time, não rebaixamento.
+| # | pergunta | resultado |
+|---|---|---|
+| 1 | das tarefas vivas sem responsável, quantas só o criador alcança | **0** (de **36** sem responsável — este ADR dizia 37) |
+| 2 | quantas tarefas têm `team_id` fora do alcance de quem as criou | **0** |
+| 3 | quantas pessoas o `change_member_role` barraria hoje | **nenhuma** |
+
+O SQL está em `specs/037-acesso-deriva-do-time/spec.md` §As medições da F1, com
+a tradução da lente (`team_scope.visible_team_ids`) em SQL.
+
+⚠️ **Consequência para a implementação:** a E1 é inofensiva em produção —
+nenhuma tarefa some da tela de ninguém no dia do deploy, e **não existe fatia
+de resgate**. O risco desta ADR concentra-se todo na **E3/E4** (a escrita), não
+na E1.
+
+⚠️ **Consequência para a leitura destes números:** eles são zero **porque o
+quadro interno ainda não existe.** É a Spec 036 que move trabalho para dentro
+dos subtimes; é ela que faria estas consultas voltarem com número. Este ADR ser
+implementado antes da 036 é o que mantém os zeros em zero.
+
+⚠️ **A medição 3 cobre só ADMIN/MANAGER**, e os gestores estão na raiz. O
+gatilho com cliente real continua sendo movimentação de subtime: as **33**
+tarefas da tabela acima, **30 delas em duas pessoas**.
+
+## ⚠️ Correção de 06/08 — os pontos do `created_by` são DOIS, não quatro
+
+Este ADR afirmava, no §Contexto e na E1, que o furo da 0013 estava implementado
+em quatro pontos, incluindo o `project_service`. **Aberto o código, está
+errado**, e a versão errada é perigosa:
+
+- `project_service.py:215` é o filtro *"Privacidade: esconde pessoal alheio"*.
+  É a única coisa que impede o projeto pessoal de todo mundo de aparecer no
+  `GET /projects` do workspace inteiro;
+- `task_repository.py:117` é o bloco `(A)`, que o próprio código marca como
+  *"vale até pra admin"*, e `:130` é *"pessoal próprio: sempre visível"*.
+  Nenhum dos dois é a 0013.
+
+⚠️ **E não há teste de integração de listagem de projeto** — apagar aquele
+bloco passaria no portão verde e vazaria em produção.
+
+**Os pontos reais da E1: `task_guards.py:60` e `task_repository.py:126`.**
+
+**Achado colateral, e ele fica registrado aqui porque contradiz o título deste
+ADR:** `project_service` **não tem lente de time em lugar nenhum** —
+`list_page` (:211) e `_assert_visible_to_current_user` (:462) só escondem
+pessoal alheio. Acesso a projeto **não** deriva do time hoje. Isso está fora do
+escopo da Spec 037 por decisão (arrastaria uma spec de tarefa para dentro do
+módulo de projeto), e fica como dívida **com alarme**: a consulta 6 de
+`scripts/invariantes.sql` conta projeto comum fora da raiz e deve voltar `0`.
+Em 06/08 voltou `0` — os 20 projetos comuns estão todos na raiz. ⚠️ Se deixar
+de voltar `0`, isto vira spec com prioridade, porque `project_service.py:140`
+não trava projeto na raiz e o vazamento seria silencioso.
 
 **Consulta que sustenta a invariante** (deve voltar `0` depois da
 implementação; hoje volta o número acima):
