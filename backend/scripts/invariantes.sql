@@ -33,9 +33,17 @@
 --     5 = UM quadro (`Quadro geral`, time raiz, 8 colunas, 0 sem ponte,
 --     696 tarefas) | 6 = 0 (por outra via, nao a partir deste arquivo).
 --   10/08/2026, a partir DESTE arquivo: 1, 2, 3, 4 e 6 = 0. A 4 rodou pela
---     primeira vez; a 6 rodou a partir do arquivo pela primeira vez.
---   A consulta 7 entrou em 10/08/2026 e AINDA NAO FOI MEDIDA. Rode junto da
---     proxima conferencia e anote o resultado aqui.
+--     primeira vez; a 6 rodou a partir do arquivo pela primeira vez. A 7
+--     entrou nesta data e ficou sem medir ate a rodada abaixo.
+--   10/08/2026 (rodada POSTERIOR, arquivo inteiro, saida colada no chat):
+--     1 = 0 | 2 = 0 | 3 = 0 | 4 = 0 | 6 = 0 | 7 = 0.
+--     5 = UM quadro (`Quadro geral`, is_default, time `Marketing`, raiz,
+--     8 colunas, 0 sem ponte, **832 tarefas**).
+--     ⚠️ O 7 = 0 e AUSENCIA DE CASO, nao aprovacao -- ver o aviso da propria
+--     consulta 7. Com um quadro so, e da raiz, ela nao tem o que achar.
+--   ⚠️ TAREFAS: 696 (06/08) -> 802 (10/08, manha/tarde) -> 832 (10/08,
+--     rodada acima). O numero da consulta 5 e o unico contador de producao
+--     que este projeto tem escrito em algum lugar. Anote-o SEMPRE.
 
 \echo '=== 1. toda tarefa tem quadro e coluna (0011) ==='
 SELECT count(*) AS sem_quadro_ou_coluna

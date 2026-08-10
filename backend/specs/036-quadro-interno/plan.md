@@ -340,6 +340,48 @@ vez de continuar valendo por acidente.
 **Sabotagem:** reverter a herança de `team_id` (voltar ao `default_team_id`)
 → cai o teste de ADMIN criando tarefa no quadro interno.
 
+### ⚠️ DECISÃO DE 10/08: O QUADRO DO SUBTIME NASCE VAZIO
+
+Decisão de produto, tomada com quem pediu a funcionalidade. **O quadro novo
+não recebe nenhuma tarefa existente.** As tarefas de hoje (832, todas no
+`Quadro geral`) continuam onde estão.
+
+**Por que isso é decisão e não preguiça — medido em 10/08:** *não existe
+caminho no código para mover uma tarefa de quadro.* `task.board_id` é escrito
+no `create` e em mais um lugar só (`task_service.py:423`, subtarefa herdando o
+quadro do pai). Nenhuma rota, nenhum serviço, nenhum script. Fazer o quadro
+novo nascer cheio exigiria escrever essa operação primeiro.
+
+⚠️ **NASCER vazio é a decisão. CONTINUAR vazio é DEFEITO — e é o padrão do
+código hoje.** `BoardRepository.default_board_and_column_for_status` procura
+explicitamente o time SEM PAI (`JOIN team ... AND t.parent_team_id IS NULL`,
+ADR 0032). Enquanto ela não mudar, **tarefa NOVA de subtime também é gravada
+no quadro da raiz**, e o quadro interno fica vazio para sempre. Mexer nela é
+escopo OBRIGATÓRIO desta fatia, não item opcional.
+
+O alarme já está montado: `test_tarefa_de_subtime_nasce_no_quadro_da_raiz`
+fica vermelho no momento em que essa função mudar. **Esse vermelho é o sinal
+de que a fatia funcionou** — reescreva o teste junto com a decisão nova, não
+o apague (ver o portão do vazamento, acima).
+
+### Adendo — mover tarefa entre quadros (NÃO priorizado em 10/08)
+
+Pedido reconhecido, adiado por escolha: há coisas antes. Registrado aqui para
+não ser redescoberto como surpresa no dia em que alguém abrir o quadro novo e
+perguntar "cadê minhas tarefas?". Três saídas, com o custo medido em 10/08:
+
+1. **Só tarefas novas entram** — custo zero. É o estado de hoje e o que foi
+   decidido. O quadro leva semanas para ficar útil.
+2. **Migração única, rodada na VPS** — ~meio dia, sem tela. Move as tarefas de
+   um time para o quadro dele de uma vez. ⚠️ Exige `pg_dump` antes: na
+   prática é irreversível.
+3. **Mover pela tela** — entrega própria, do tamanho desta fatia inteira
+   (mexe em coluna, permissão e histórico ao mesmo tempo).
+
+⚠️ **Nenhuma das três está construída.** Se a opção 1 se mostrar insuficiente
+depois do lançamento, o custo de trocar para a 2 ou a 3 é o mesmo de hoje —
+não fica mais barato por esperar.
+
 ---
 
 ## Ordem de deploy
