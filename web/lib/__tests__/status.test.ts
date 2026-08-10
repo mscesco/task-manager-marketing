@@ -16,7 +16,6 @@ import {
   STATUSES,
   STATUS_TEXT,
   DIAS_PARA_PARADA,
-  plural,
   deadlineLabel,
   diasParado,
   paradaLabel,
@@ -277,20 +276,5 @@ describe("paradaLabel", () => {
   it("usa o numero recebido", () => {
     expect(paradaLabel(7)).toBe("Parada há 7 d");
     expect(paradaLabel(31)).toBe("Parada há 31 d");
-  });
-});
-
-describe("plural (Spec 031, C7)", () => {
-  // Nasceu de um bug em producao: a linha de contadores mostrava
-  // "1 canceladas" porque o plural estava cravado no template.
-  it("um usa SINGULAR", () => {
-    expect(plural(1, "cancelada", "canceladas")).toBe("1 cancelada");
-  });
-  it("zero usa plural", () => {
-    expect(plural(0, "cancelada", "canceladas")).toBe("0 canceladas");
-  });
-  it("mais de um usa plural", () => {
-    expect(plural(2, "cancelada", "canceladas")).toBe("2 canceladas");
-    expect(plural(41, "concluída", "concluídas")).toBe("41 concluídas");
   });
 });

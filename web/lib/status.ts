@@ -123,6 +123,24 @@ export const DEADLINE_DOT: Record<"overdue" | "soon", string> = {
 // SELO "PARADA HA X DIAS" (Spec 031, C2 / D6)
 // ===========================================================================
 //
+// ⚠️⚠️ ESTE BLOCO TEM DATA DE DEMOLICAO (Spec 036, fatia 4c / ADR 0040).
+//
+// `STATUS_QUE_PARAM`, `diasParado`, `deadlineTone` e
+// `statusPadraoMinhasTarefas` reimplementam a mao o que `column.semantic` e
+// `column.notify_deadline` ja dizem. Eles funcionam para os 8 status legados e
+// SO para eles: coluna criada por gente nasce com `legacy_status` NULL e cai
+// fora de todos os conjuntos aqui, em silencio.
+//
+// **As versoes por COLUNA vivem em `lib/coluna.ts`** e sao as que devem ser
+// usadas em codigo novo. Este bloco fica ate a fatia 4c migrar os quatro
+// call-sites (`TaskCard`, `TaskDetail`, `minhas-tarefas`, `Board`), porque
+// troca-los agora deixaria o `tsc` vermelho entre fatias -- entrega parcial
+// que quebra o build.
+//
+// ⚠️ `lib/__tests__/paridadeColuna.test.ts` compara as DUAS implementacoes,
+// caso a caso, contra as 8 colunas padrao. **Ele morre junto com este bloco**;
+// enquanto os dois existirem, ele e o que prova que nada mudou.
+//
 // ⚠️ LEIA ANTES DE CONFIAR NO NUMERO. Isto mede tempo desde o ultimo
 // `updated_at`, e `updated_at` muda com STATUS, TITULO e PRAZO -- NAO muda com
 // comentario nem com designacao de responsavel. Uma tarefa sendo discutida
@@ -170,15 +188,13 @@ export function diasParado(
 }
 
 /**
- * "1 cancelada" / "2 canceladas" (Spec 031, C7).
+ * ⚠️ `plural` SAIU DAQUI na fatia 4a (ADR 0040). Mora em `lib/plural.ts`.
  *
- * Existe porque a linha de contadores da C4 nasceu com o plural cravado no
- * template e mostrava "1 canceladas" em producao. Contador de UI e sempre
- * candidato a n === 1 -- toda contagem que vira texto passa por aqui.
+ * Ela nunca teve relacao com status: `lib/exclusao.ts` a importava daqui so
+ * porque foi aqui que ela nasceu -- evidencia, medida na
+ * `sondagem-fatia-4.md`, de que este modulo tinha virado gaveta. Importe de
+ * `@/lib/plural`.
  */
-export function plural(n: number, singular: string, plural: string): string {
-  return `${n} ${n === 1 ? singular : plural}`;
-}
 
 /** Rotulo do selo. So chamar quando `diasParado` != null. */
 export function paradaLabel(dias: number): string {
@@ -188,7 +204,13 @@ export function paradaLabel(dias: number): string {
 // Compara em DATA local (meia-noite), nao em instante -- o prazo e um dia, nao
 // uma hora. Assume o fuso do browser (equipe no Brasil -> BRT, casa com o
 // backend que usa America/Sao_Paulo). Concluida/cancelada/arquivada -> null.
-function deadlineDays(dueDate: string): number {
+//
+// ⚠️ EXPORTADA NA FATIA 4a (ADR 0040) para que `lib/coluna.ts` reuse a MESMA
+// aritmetica de data. Duplicar o calculo la seria criar duas fontes de verdade
+// para "quantos dias faltam" -- e as duas divergiriam no primeiro ajuste de
+// fuso. Quando a fatia 4c apagar as funcoes por status deste arquivo, esta
+// funcao MUDA DE CASA para `lib/coluna.ts`; ela nao morre junto.
+export function deadlineDays(dueDate: string): number {
   const due = new Date(dueDate + "T00:00:00"); // meia-noite local
   const agora = new Date();
   const hoje = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate());

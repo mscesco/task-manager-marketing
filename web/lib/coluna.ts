@@ -1,0 +1,223 @@
+// lib/coluna.ts
+//
+// AS REGRAS QUE DEPENDEM DO SIGNIFICADO DA COLUNA (Spec 036, fatia 4a /
+// ADR 0040).
+//
+// ⚠️ POR QUE ESTE ARQUIVO EXISTE. `lib/status.ts` reimplementa a mao, em tres
+// conjuntos de status cravados, o que `column.semantic` e
+// `column.notify_deadline` ja dizem -- campos que o backend criou na Spec 035
+// e que ate agora nao tinham leitor no front. Aquilo funciona para os 8 status
+// legados e SO para eles: coluna criada por gente nasce com `legacy_status`
+// NULL (ADR 0033/0036) e cai fora de todos os conjuntos, em silencio -- sem
+// erro, sem log, sem teste vermelho.
+//
+// ⚠️ ESTE MODULO E ADITIVO, DE PROPOSITO. As funcoes por status continuam
+// vivas em `lib/status.ts` ate a fatia 4c migrar os quatro call-sites
+// (`TaskCard`, `TaskDetail`, `minhas-tarefas`, `Board`). Trocar as assinaturas
+// agora deixaria o `tsc` vermelho entre fatias -- entrega parcial que quebra o
+// build, que e armadilha catalogada deste repositorio.
+//
+// ⚠️ E DUAS IMPLEMENTACOES DA MESMA REGRA E EXATAMENTE O DEFEITO QUE ESTE
+// ARQUIVO EXISTE PARA MATAR. O que torna a convivencia aceitavel e
+// `lib/__tests__/paridadeColuna.test.ts`, que compara as duas caso a caso
+// contra as 8 colunas padrao. **Ele morre junto com o bloco antigo, na 4c.**
+// Se voce esta lendo isto depois da 4c e o bloco antigo ainda existe, a
+// migracao ficou pela metade.
+//
+// ESTE MODULO E PURO (Spec 027): sem I/O, sem React, sem `window`. Ele recebe
+// a coluna que o `GET /boards` devolveu e responde perguntas sobre ela.
+
+import { deadlineDays, DIAS_PARA_PARADA, type DeadlineTone } from "@/lib/status";
+
+// ---------------------------------------------------------------------------
+// O CONTRATO
+// ---------------------------------------------------------------------------
+
+/**
+ * As quatro semanticas do backend (`ColumnSemantic`, ADR 0030).
+ *
+ * ⚠️ DONE e CANCELLED sao os dois TERMINAIS e NAO sao intercambiaveis: a
+ * proporcao da checklist conta concluidas e ignora canceladas.
+ */
+export type ColumnSemantic = "OPEN" | "IN_PROGRESS" | "DONE" | "CANCELLED";
+
+/**
+ * Uma coluna como o `GET /api/v1/boards` a devolve (`BoardColumnResponse`).
+ *
+ * ⚠️ `legacy_status` NAO ESTA AQUI, e a ausencia e decisao do backend: ele e
+ * ponte com data de demolicao (ADR 0033) e o endpoint nao o expoe, para nao
+ * convidar o front a se amarrar na ponte em vez de na semantica. Se voce
+ * sentiu falta dele para escrever alguma regra, a regra esta errada.
+ */
+export interface Coluna {
+  id: string;
+  name: string;
+  color: string;
+  position: number;
+  semantic: ColumnSemantic;
+  notify_deadline: boolean;
+  is_default_target: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// OS PREDICADOS
+// ---------------------------------------------------------------------------
+
+const SEMANTICAS_TERMINAIS: ReadonlySet<ColumnSemantic> = new Set<ColumnSemantic>([
+  "DONE",
+  "CANCELLED",
+]);
+
+/** A tarefa acabou (concluida ou cancelada) por estar nesta coluna. */
+export function terminal(coluna: Coluna): boolean {
+  return SEMANTICAS_TERMINAIS.has(coluna.semantic);
+}
+
+/**
+ * Esta coluna cobra prazo?
+ *
+ * Traducao literal de `board_semantics.avisa_prazo` do backend: terminal nunca
+ * avisa, INDEPENDENTE da flag. Nao e redundancia -- deixar a flag decidir o
+ * terminal permitiria uma coluna `DONE` que cobra prazo, estado sem
+ * significado nenhum e alcancavel por um clique no CRUD de coluna da fatia 5.
+ *
+ * ⚠️ PARIDADE MEDIDA (ADR 0040) contra as 8 colunas padrao: silencia
+ * COMPLETED (DONE), CANCELLED (CANCELLED) e BLOCKED (`IN_PROGRESS` com
+ * `notify_deadline = false`) -- exatamente os tres que `deadlineTone` lista a
+ * mao hoje, e so eles.
+ */
+export function avisaPrazo(coluna: Coluna): boolean {
+  if (terminal(coluna)) return false;
+  return coluna.notify_deadline;
+}
+
+/**
+ * Ficar parado NESTA coluna e noticia?
+ *
+ * ⚠️ AQUI MORA A UNICA DECISAO NAO-OBVIA DESTE ARQUIVO, e ela esta registrada
+ * na ADR 0040. A traducao ingenua -- `semantic === "IN_PROGRESS"` -- MUDARIA O
+ * COMPORTAMENTO: o BLOCKED tem semantica `IN_PROGRESS` e passaria a ganhar o
+ * selo "parada ha X dias". A D6 da Spec 031 o excluiu de proposito
+ * ("bloqueio e estado declarado, alguem ja sabe").
+ *
+ * ⚠️ ENTAO ISTO FUNDE DOIS CONCEITOS que nasceram separados: `notify_deadline`
+ * significa "cobra prazo", e aqui passa a significar tambem "parar aqui e
+ * noticia". A fusao foi aceita porque as duas perguntas sao a mesma vista de
+ * dois angulos -- *"a tarefa deveria estar avancando nesta coluna?"*. Quem
+ * criar "Aguardando cliente" com a flag desligada nao quer nem alerta de prazo
+ * nem selo de parada, e recebe os dois comportamentos certos de uma decisao so.
+ *
+ * **Se algum dia alguem quiser cobrar prazo SEM rastrear parada, o campo
+ * proprio se cria entao, com o caso na mao** -- nao antes.
+ */
+export function pararEhNoticia(coluna: Coluna): boolean {
+  return coluna.semantic === "IN_PROGRESS" && avisaPrazo(coluna);
+}
+
+// ---------------------------------------------------------------------------
+// AS FUNCOES QUE SUBSTITUEM AS DE `lib/status.ts`
+// ---------------------------------------------------------------------------
+
+/**
+ * Cor de prazo da tarefa (Spec 023), decidida pela COLUNA.
+ *
+ * Substitui `status.deadlineTone(dueDate, status, isArchived)`.
+ *
+ * A aritmetica de data e a MESMA (`deadlineDays`, importada) -- duplicar o
+ * calculo aqui criaria duas fontes de verdade para "quantos dias faltam", e as
+ * duas divergiriam no primeiro ajuste de fuso.
+ */
+export function deadlineTonePorColuna(
+  coluna: Coluna,
+  dueDate: string | null | undefined,
+  isArchived: boolean
+): DeadlineTone {
+  if (!dueDate || isArchived) return null;
+  if (!avisaPrazo(coluna)) return null;
+  const dias = deadlineDays(dueDate);
+  if (dias < 0) return "overdue";
+  if (dias <= 2) return "soon";
+  return null;
+}
+
+/**
+ * Dias inteiros desde a ultima mudanca, ou `null` quando nao ha selo.
+ *
+ * Substitui `status.diasParado(updatedAt, status, isArchived)`.
+ *
+ * `null` (e nao 0) para "nao se aplica": arquivada, coluna onde parar nao e
+ * noticia, ou abaixo do limiar. Quem chama testa `!= null`, sem confundir com
+ * "0 dias".
+ *
+ * ⚠️ O CORPO E COPIA LITERAL do original, trocando so o predicado de entrada.
+ * Isso e intencional: qualquer "melhoria" na aritmetica aqui tornaria o teste
+ * de paridade incapaz de provar que nada mudou, que e a unica coisa que
+ * autoriza as duas implementacoes a coexistirem.
+ */
+export function diasParadoPorColuna(
+  coluna: Coluna,
+  updatedAt: string | null | undefined,
+  isArchived: boolean
+): number | null {
+  if (!updatedAt || isArchived) return null;
+  if (!pararEhNoticia(coluna)) return null;
+  const t = new Date(updatedAt);
+  if (Number.isNaN(t.getTime())) return null; // data suja nao vira selo
+  const desde = new Date(t.getFullYear(), t.getMonth(), t.getDate());
+  const agora = new Date();
+  const hoje = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate());
+  const dias = Math.round((hoje.getTime() - desde.getTime()) / 86400000);
+  if (dias < DIAS_PARA_PARADA) return null;
+  return dias;
+}
+
+/**
+ * Colunas ligadas quando `/minhas-tarefas` abre: todas menos as CONCLUIDAS.
+ *
+ * Substitui `status.statusPadraoMinhasTarefas()`, que devolvia chaves de
+ * status; esta devolve os `id` das colunas, que e o que a tela vai filtrar
+ * depois da fatia 4b.
+ *
+ * ⚠️ CANCELADO CONTINUA APARECENDO, e isso e decisao explicita (ADR 0040,
+ * item 5). `CANCELLED` tambem e semantica terminal, e esconder as duas seria
+ * o comportamento "coerente" -- mas hoje a coluna Cancelado aparece, e mudar
+ * isso e decisao de produto disfarcada de refatoracao. Se for para esconder,
+ * e outra ADR.
+ */
+export function colunasPadraoMinhasTarefas(colunas: readonly Coluna[]): string[] {
+  return colunas.filter((c) => c.semantic !== "DONE").map((c) => c.id);
+}
+
+/**
+ * A cor da coluna, pronta para ir num `style`.
+ *
+ * ⚠️ O CAMPO `color` GUARDA DOIS FORMATOS, e nao e transicao inacabada -- e
+ * decisao (ADR 0040, item 4):
+ *
+ *   - as 8 colunas padrao guardam `"var(--status-backlog-dot)"`, e continuam
+ *     assim porque o token INVERTE COM O TEMA. Migra-las para hex pioraria o
+ *     que 100% das tarefas de producao usam hoje;
+ *   - coluna criada por gente guarda hex (`"#7C3AED"`), escolhido numa roda
+ *     RGB. Hex nao inverte com o tema -- e o preco aceito de deixar a pessoa
+ *     escolher a cor.
+ *
+ * ⚠️ ESTA FUNCAO NAO VALIDA NADA. A partir da fatia 5 o valor passa a ser
+ * ENTRADA DE USUARIO indo parar num `style`, e **a validacao
+ * (`^#[0-9a-fA-F]{6}$`) e do BACKEND**, no CRUD de coluna. Nao confie no
+ * `<input type="color">`: o campo e `String(60)` e cabe muita coisa que nao e
+ * cor.
+ */
+export function corDaColuna(coluna: Coluna): string {
+  return coluna.color;
+}
+
+/**
+ * A coluna e hex livre (e portanto NAO inverte com o tema)?
+ *
+ * Existe para quem precisar derivar contraste do texto por cima: com token
+ * ha `--*-text` pareado; com hex nao ha par, e a cor do texto tem de sair da
+ * luminancia. Essa derivacao e da fatia 5 -- aqui so se responde a pergunta.
+ */
+export function corEhHex(coluna: Coluna): boolean {
+  return coluna.color.startsWith("#");
+}

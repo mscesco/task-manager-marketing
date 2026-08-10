@@ -1,4 +1,4 @@
-import { plural } from "@/lib/status";
+import { plural } from "@/lib/plural";
 
 /**
  * Regras da exclusao de tarefa (Spec 031, C5).
