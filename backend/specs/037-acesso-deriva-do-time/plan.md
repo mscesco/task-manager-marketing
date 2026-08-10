@@ -1,7 +1,8 @@
 # Spec 037 — plano de execução
 
-> Seis fatias, **cinco deploys** (a F1 e a F2 sobem juntas). As cinco primeiras
-> são backend; a sexta encosta no front. Ordem de deploy no fim do arquivo.
+> Seis fatias. O plano previa **cinco deploys** (a F1 e a F2 sobem juntas); o
+> que aconteceu foram **DOIS** — ver §Ordem de deploy. As cinco primeiras
+> são backend; a sexta encosta no front.
 >
 > ✅ **As medições da F1 estão RODADAS** (06/08, resultado na `spec.md`).
 > Deram zero em tudo: sem fatia de resgate, sem passivo, sem ninguém barrado
@@ -239,6 +240,8 @@ uma sabotagem fraca** — sabotagem que não pode falhar não afirma nada.
 
 ## Ordem de deploy
 
+### O que foi PLANEJADO (fica como registro do raciocínio)
+
 1. **F1 + F2 juntas.** Nenhuma das duas muda comportamento observável: uma
    aperta um caminho que a tela não usa e cujo passivo é zero, a outra é código
    morto até a F3. **Duas sabotagens, uma por parte.**
@@ -251,9 +254,37 @@ uma sabotagem fraca** — sabotagem que não pode falhar não afirma nada.
 4. **F5.** ✅ Medida: não muda o que ninguém vê. Sobe quando der.
 5. **F6.** Deleção, e a única com front.
 
-⚠️ **A `0012` e o `GET /boards` da Spec 036 continuam fora de produção.** Nada
-desta spec depende deles, mas o descongelamento tem que levar os dois, e
-**migration antes do código** (ver `DEPLOY.md` §80).
+### ⚠️ O que ACONTECEU — DOIS deploys de código, não cinco (10/08/2026)
+
+| deploy | commit | fatias | quando |
+|---|---|---|---|
+| Janela 3 | `563b40a` | **F1 + F2 + F3 + F4** | 10/08/2026 |
+| Janela 4 | `cf05336` | **F5 + F6** | 10/08/2026, ~17:30 |
+
+Antes destes, duas janelas sem código desta spec: `ffa38c3` (fix de
+coluna/subtarefa, parado desde 06/08) e `ac26151` (migration `0012` +
+`GET /api/v1/boards` da Spec 036). **Os dois já estão em produção** — o aviso
+que existia aqui dizendo o contrário está superado.
+
+⚠️ **A F3 e a F4 subiram no MESMO deploy, contra a recomendação acima.** A
+consequência prevista se materializou pela metade: a F4 (a escrita) **nunca
+foi exercitada em produção com dado real** — ela só roda numa movimentação que
+passa, e só a F3 (que barra) foi exercitada. Existe dump de
+`task_assignment`/`task_watcher` em `~/pre_037_f4.sql` na VPS (10/08 14:43),
+válido enquanto ninguém for movido.
+
+⚠️ **A F5 NÃO TEM COMMIT PRÓPRIO** — está dentro do `cf05336`. Um `git add -A`
+varreu as duas fatias juntas. **Consequência:** `git revert cf05336` desfaz a
+F5 **e** a F6. A F5 muda o que as pessoas enxergam (o `created_by` deixa de
+conceder leitura); a F6 muda o `/me/assignments`. Se uma der problema, não dá
+para tirar só ela.
+
+⚠️ **NÃO reescreva o histórico por causa disto** — num repo de uma pessoa
+custa mais do que compra. O conserto certo é este registro.
+
+**Causa:** a F6 foi entregue sem esperar a confirmação do commit da F5.
+**Depois de uma fatia validada, peça o commit e espere, antes de entregar a
+próxima.**
 
 ## O que eu NÃO recomendo
 

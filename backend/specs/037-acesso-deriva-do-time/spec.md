@@ -213,11 +213,22 @@ código:
    Nunca uma por tarefa.
 8. **Desligar não barra.** `deactivate_member` passa mesmo deixando órfã, e as
    tarefas ficam marcadas de forma que alguém as encontre.
-9. **`out_of_scope` não existe mais.** Nem no schema, nem no front, nem nos
-   testes. ⚠️ **O portão é `grep -rn "out_of_scope" backend/app backend/tests
-   web/app web/lib` devolvendo zero** — e não `web/` inteiro, que contém
-   `web/specs` e `web/docs`, onde o nome aparece em registro histórico e
-   **deve continuar aparecendo**. Portão que não pode passar não afirma nada.
+9. **`out_of_scope` não existe mais.** Nem no schema, nem no front.
+   ⚠️ **CORRIGIDO EM 10/08/2026.** O portão é
+   `git grep -n "out_of_scope" -- backend/app backend/tests web/app web/lib`
+   devolvendo **EXATAMENTE UMA linha**, e ela é:
+
+       backend/tests/integration/test_me_assignments_db.py:293
+       assert "out_of_scope" not in body["items"][0]
+
+   O critério dizia "zero" e era **inatingível**: essa asserção é o que PROVA
+   que o campo saiu do contrato. Apagá-la para o grep zerar seria apagar a
+   única evidência. **Decisão tomada: mantém a asserção e emenda o critério.**
+   Zero passa a ser MOTIVO PARA PARAR — significa que alguém removeu o teste.
+
+   E não use `web/` inteiro, que contém `web/specs` e `web/docs`, onde o nome
+   aparece em registro histórico e **deve continuar aparecendo**. Portão que
+   não pode passar não afirma nada.
 10. **A invariante volta zero.** A consulta da §Como medir da ADR 0038
     (`responsavel_sem_alcance`) devolve `0` depois do deploy e continua `0`.
 

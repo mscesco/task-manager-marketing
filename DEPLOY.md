@@ -154,9 +154,10 @@ existia, é ordem invertida. Executado assim em 06/08/2026 (`0008`).
    > ⚠️ **O critério é `0 failed`, não um número.** Este arquivo já ficou
    > meses dizendo `379 passed` quando o real era 493 — e roteiro que mente
    > treina quem faz o deploy a ignorar o portão. Se quiser conferir a ordem
-   > de grandeza: em 06/08/2026 eram **601** (backend) e **398** (front).
-   > (Em 03/08/2026 eram 493 e 293 — este arquivo ficou defasado três dias e
-   > o aviso acima existe justamente por isso: atualize o número quando mudar.)
+   > de grandeza: em 10/08/2026 eram **642** (backend) e **432** (front).
+   > (Em 06/08 eram 601 e 398; em 03/08, 493 e 293 — este arquivo já ficou
+   > defasado três dias e o aviso acima existe justamente por isso: atualize
+   > o número quando mudar.)
    > Número absoluto MENOR que o esperado sem uma spec ter removido testes de
    > propósito é motivo pra parar, não pra seguir.
    >

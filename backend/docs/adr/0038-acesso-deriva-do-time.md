@@ -274,17 +274,25 @@ implementação; hoje volta o número acima):
 -- Depois da E1/E3, este numero e zero e continua zero.
 -- (a lente e calculada na aplicacao, entao esta versao SQL e aproximada:
 --  cobre so o caso subtime, que e o unico em que a lente encolhe)
+--
+-- ⚠️ CORRIGIDA EM 10/08/2026. A versao anterior nao tinha o SEGUNDO
+-- NOT EXISTS e contava como violacao quem tem vinculo com a RAIZ --
+-- ADMIN/MANAGER da raiz alcancam os subtimes. Falso positivo garantido,
+-- num criterio de aceite (criterio 10 da spec) que precisa devolver 0.
+-- Nao volte a versao curta: ela devolve numero > 0 num banco saudavel.
 SELECT count(*) AS responsavel_sem_alcance
 FROM task_assignment ta
-JOIN task t ON t.id = ta.task_id
+JOIN task t  ON t.id = ta.task_id
 JOIN team tm ON tm.id = t.team_id
 WHERE t.deleted_at IS NULL
   AND tm.parent_team_id IS NOT NULL
   AND NOT EXISTS (
-    SELECT 1 FROM user_team ut
-    WHERE ut.user_id = ta.user_id
-      AND ut.team_id = t.team_id
-  );
+        SELECT 1 FROM user_team ut
+         WHERE ut.user_id = ta.user_id AND ut.team_id = t.team_id)
+  AND NOT EXISTS (
+        SELECT 1 FROM user_team ut2
+        JOIN team r ON r.id = ut2.team_id
+         WHERE ut2.user_id = ta.user_id AND r.parent_team_id IS NULL);
 ```
 
 ## Alternativas consideradas
