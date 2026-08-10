@@ -77,17 +77,25 @@ existem e devolve **500 em toda leitura** — o app inteiro, até a migration
 rodar. O contrário é seguro: coluna nullable e tabela nova que ninguém
 referencia não afetam o código velho, que nunca pergunta por elas.
 
-⚠️ **A `0012` (`board.deleted_at`) CAI NESTA SEGUNDA EXCEÇÃO, e no momento em
-que este arquivo foi corrigido ela ainda NÃO estava em produção.** Ela põe
-`deleted_at` no `Board`, que já existia, e o `board_repository` já roda
-`AND b.deleted_at IS NULL` em SQL cru. Enquanto ela não subir: qualquer deploy
-do `main` quebra o `create` de tarefa de topo e toda leitura ORM de quadro —
-**inclusive um deploy que você acha que é só de front**, porque o build sobe a
-imagem do backend junto. Na prática **não há caminho de hotfix** até ela ir.
-Ordem: `build` → `migration` → `up`.
+⚠️ **A `0012` (`board.deleted_at`) CAI NESTA SEGUNDA EXCEÇÃO. ✅ ELA ESTÁ EM
+PRODUÇÃO DESDE 10/08/2026** (confirmado em `backend/scripts/invariantes.sql`,
+que só roda a consulta 4 com ela aplicada). Ela põe `deleted_at` no `Board`,
+que já existia, e o `board_repository` já roda `AND b.deleted_at IS NULL` em
+SQL cru — por isso, no intervalo entre o commit e o `alembic upgrade`, qualquer
+deploy do `main` quebrava o `create` de tarefa de topo e toda leitura ORM de
+quadro, **inclusive um deploy que você acha que é só de front**, porque o build
+sobe a imagem do backend junto. **Esse intervalo acabou; não há mais nada a
+fazer por causa da `0012`.**
 
-Nesse caso a ordem é **build → migration → up**, e o `build` vem antes porque
-a migration mora dentro da imagem:
+⚠️ **O parágrafo acima já mentiu.** Ele afirmou "ainda NÃO estava em produção"
+depois de a `0012` ter subido, e no mesmo pacote em que outro documento dizia o
+contrário. Enquanto durou, este arquivo anunciava que **não havia caminho de
+hotfix** num dia em que havia. Quando a próxima migration cair nesta segunda
+exceção, escreva a data de aplicação aqui **no mesmo commit** que a aplica.
+
+Para a PRÓXIMA migration que cair nesta exceção, a ordem é `build` →
+`migration` → `up`, e o `build` vem antes porque a migration mora dentro da
+imagem:
 
 ```bash
 docker compose -f docker-compose.prod.yml build
@@ -154,7 +162,7 @@ existia, é ordem invertida. Executado assim em 06/08/2026 (`0008`).
    > ⚠️ **O critério é `0 failed`, não um número.** Este arquivo já ficou
    > meses dizendo `379 passed` quando o real era 493 — e roteiro que mente
    > treina quem faz o deploy a ignorar o portão. Se quiser conferir a ordem
-   > de grandeza: em 10/08/2026 eram **642** (backend) e **432** (front).
+   > de grandeza: em 10/08/2026 eram **642** (backend) e **503** (front).
    > (Em 06/08 eram 601 e 398; em 03/08, 493 e 293 — este arquivo já ficou
    > defasado três dias e o aviso acima existe justamente por isso: atualize
    > o número quando mudar.)

@@ -3,9 +3,12 @@
 Cinco fatias. As três primeiras são backend e **nada muda na tela**; a quarta
 é o front; a quinta é a feature.
 
-> **Estado em 10/08/2026 — fatias 1, 2 e 3 ESCRITAS E TESTADAS.** As 1 e 2
-> estão em produção; a 3 está commitada e ainda não subiu.
-> Backend: **642 testes**.
+> **Estado em 10/08/2026 (fim do dia) — fatias 1, 2, 3, 4a e 4b EM PRODUÇÃO.**
+> Backend **642**, front **503**.
+>
+> ⚠️ **A fatia 4c está BLOQUEADA por contrato — ver a seção dela.** A ordem
+> deste arquivo deixou de valer: o que vem a seguir é a peça de BACKEND da
+> fatia 5, não a 4c.
 >
 > ⚠️ **A fatia 4 são TRÊS sessões, não uma** (`sondagem-fatia-4.md`, §6), e a
 > sondagem sugere renumerar em 4a/4b/4c. **Este arquivo continua numerando de
@@ -159,7 +162,115 @@ Mesmo viés (para menos) já registrado no handoff de 10/08, §1(f).
 
 ---
 
-## Fatia 4 — `Board.tsx` por colunas da API (sessão própria, front)
+## Fatia 4a — ✅ EM PRODUÇÃO (10/08) — a semântica da coluna no front
+
+Decisões na **ADR 0040**. Nenhuma linha de tela mudou: a fatia é ADITIVA de
+propósito, porque trocar as assinaturas de uma vez deixaria o `tsc` vermelho
+entre fatias.
+
+**Subiu:**
+- `lib/coluna.ts` — `type Coluna`, `terminal`, `avisaPrazo`, `pararEhNoticia`,
+  `deadlineTonePorColuna`, `diasParadoPorColuna`, `colunasPadraoMinhasTarefas`,
+  `corDaColuna`, `corEhHex`;
+- `lib/plural.ts` — `plural` saiu da gaveta que o `lib/status.ts` tinha virado;
+- `lib/status.ts` — `deadlineDays` exportada (reuso da MESMA aritmética de
+  data), e o bloco das funções por status marcado com data de demolição;
+- `lib/__tests__/paridadeColuna.test.ts` — **61 testes**.
+
+⚠️ **DUAS IMPLEMENTAÇÕES DA MESMA REGRA CONVIVEM**, e é o defeito que a fatia
+existe para matar. O que autoriza a convivência é o teste de paridade, que
+compara as duas caso a caso contra as 8 colunas padrão. **Ele morre junto com
+o bloco antigo, na 4c.** Se você está lendo isto depois da 4c e o bloco antigo
+ainda existe, a migração ficou pela metade.
+
+⚠️ **A tabela das 8 colunas no teste de paridade é CÓPIA MANUAL do
+`board_defaults.py`.** Nenhum portão liga os dois. Ao mexer em `COLUNAS_PADRAO`
+lá, mexa aqui.
+
+⚠️ **O ponto não-óbvio, e está na ADR 0040:** `diasParado` NÃO traduz por
+`semantic` sozinho. BLOCKED tem semântica `IN_PROGRESS` e passaria a ganhar o
+selo "parada há X dias", que a D6 excluiu de propósito. A regra é
+`semantic === "IN_PROGRESS" && avisaPrazo(coluna)` — e isso **funde dois
+conceitos**, deliberadamente.
+
+**Sabotagem MEDIDA:** trocar o corpo de `pararEhNoticia` por
+`return coluna.semantic === "IN_PROGRESS";` derruba **dois** —
+`BLOCKED: parada há muito responde igual` e `o selo de parada sai só nas três
+colunas de trabalho ativo`.
+
+---
+
+## Fatia 4b — ✅ EM PRODUÇÃO (10/08) — `/minhas-tarefas` pela API
+
+**Subiu:**
+- `lib/api.ts`: `type Quadro`, `listBoards()`, `colunasDoQuadroGeral()` — e o
+  tipo `Task` ganhou `board_id`/`column_id`, **que a fatia 3 tinha esquecido**;
+- `lib/__tests__/quadros.test.ts` — 8 testes;
+- `app/minhas-tarefas/page.tsx`: as três constantes de escopo de módulo
+  (`STATUS_LABEL`, `STATUS_COLOR`, `TODOS_STATUS`) sumiram; o filtro padrão
+  saiu do inicializador de `useState`; chips, rótulos e cores vêm de
+  `coluna.name`/`coluna.color`; o filtro casa por `t.column_id`;
+- `components/__tests__/minhasTarefas.test.tsx` — 7 testes (era 5).
+
+⚠️ **NADA MUDOU VISUALMENTE, e é o resultado certo.** Produção tem um quadro
+com as 8 colunas padrão, cujos nomes e cores são exatamente os que estavam
+cravados no `STATUSES`. A tela mudou de FONTE, não de conteúdo. O que dá para
+observar: uma requisição a mais (`GET /api/v1/boards`) ao abrir a tela.
+
+⚠️ **O KANBAN DESTA TELA NÃO FOI MIGRADO** — ver o bloqueio na 4c. Dois mundos
+convivem no arquivo: a vista de LISTA lê a API, a de QUADRO lê `STATUSES`. Há
+15 linhas de comentário no `porStatus` explicando por quê.
+
+**Conferência visual da 4b** (não estava prevista neste arquivo, e deveria):
+chips com os 8 nomes reais, Concluído escondido ao abrir, Cancelado aparecendo,
+"Todos" religando, e a vista de Quadro ainda arrastando.
+
+---
+
+## Fatia 4c — ⚠️ BLOQUEADA POR CONTRATO (medido em 10/08)
+
+**NÃO COMECE POR AQUI.** O `plan.md` original a descrevia como "os quatro
+arquivos que sobraram". Aberto o código, ela não é executável antes da 5.
+
+`Board.tsx` usa `STATUSES` em quatro lugares, e **os quatro são o kanban**:
+montar as colunas (`:677`), desenhá-las (`:977`), o tipo do componente
+`Coluna` (`:1101`) e o `onDragEnd` (`:405–411`), que compara
+`atual.status === destino` e manda **status** para o backend.
+
+**Não existe caminho para traduzir coluna → status no front.**
+`legacy_status` NÃO é exposto pelo `GET /boards`, de propósito (ADR 0033:
+expô-lo convidaria o front a se amarrar na ponte em vez da semântica). A
+semântica também não resolve: QUATRO colunas padrão têm `IN_PROGRESS`.
+
+⚠️ **Migrar o `Board.tsx` sem o endpoint quebra o arrastar, e NENHUM PORTÃO
+PEGA:** `tsc` e `next build` não leem estado, e o `Board.test.tsx` registra que
+drag-and-drop não é testável em jsdom.
+
+**Sobra da 4c, sem bloqueio — RECONTADO em 10/08 (à noite):** só
+`app/arquivadas/page.tsx:43` e `components/TaskDetail.tsx:66`, e os dois são
+mapa de RÓTULO (leitura). Vão de carona.
+
+⚠️ **`TaskModal` NÃO vai de carona: é caminho de ESCRITA.** O `<select>` de
+`TaskModal.tsx:887` manda status, igual ao arrastar — depende do MESMO
+endpoint. E `TaskDetail.tsx:678` (`updateTask(f.id, { status: destino })`)
+também escreve, num arquivo de 2186 linhas sem teste de componente.
+
+⚠️ **São QUATRO caminhos de escrita de status no front, não um.** Medido:
+`Board.tsx:onDragEnd`, `app/minhas-tarefas/page.tsx:496`,
+`components/TaskDetail.tsx:678` e `components/TaskModal.tsx:887`. Os quatro
+migram juntos ou nenhum migra — e o `TaskDetail` nem aparecia nesta lista.
+**Reestime a 4c contra esses quatro, não contra "os arquivos que sobraram".**
+
+**O que a 4c ainda carrega quando destravar:** o `(typeof STATUSES)[number]`
+usado como TIPO em `Board.tsx:1101` e `minhas-tarefas/page.tsx:1152`. Morre
+junto com a const; precisa da `interface Coluna` (já existe em
+`lib/coluna.ts`). **O `tsc` pega os dois de uma vez — não dá para fatiar por
+arquivo.** E o quarto problema da sondagem: os 16 tokens de cor declarados por
+NOME de status no `globals.css`, que coluna criada por gente não tem.
+
+---
+
+## Fatia 4 (texto original — mantido como registro)
 
 Uma via de render para geral, projeto, lente e interno.
 
@@ -233,6 +344,8 @@ vez de continuar valendo por acidente.
 
 ## Ordem de deploy
 
+⚠️ **ESTA ORDEM ESTÁ SUPERADA — ver a §Ordem revisada logo abaixo.**
+
 1. **Fatia 1 sozinha, e a migration vai ANTES do código — obrigatoriamente.**
    ⚠️ O texto anterior aqui dizia que ela *"pode ficar parada"*. Era verdade
    enquanto nada lia a coluna, e deixou de ser no MESMO commit: o
@@ -240,16 +353,18 @@ vez de continuar valendo por acidente.
    tem `deleted_at` mapeado (o ORM emite lista explícita de colunas). Subir o
    `main` sem a `0012` quebra o `create` de tarefa de topo
    (`task_service.py:380`) e toda leitura ORM de quadro.
-   ⚠️ **Enquanto a `0012` não estiver em produção, NÃO HÁ CAMINHO DE HOTFIX** —
-   qualquer deploy, inclusive um de front, arrasta esse código junto. Medido
-   em 06/08: produção tem UM quadro (`Quadro geral`, time raiz, 8 colunas,
-   0 sem ponte, 696 tarefas).
+   ✅ **A `0012` ESTÁ EM PRODUÇÃO DESDE 10/08/2026** (`invariantes.sql`, que só
+   roda a consulta 4 com ela aplicada). Enquanto ela não estava, não havia
+   caminho de hotfix — qualquer deploy, inclusive um de front, arrastava esse
+   código junto. **Esse intervalo acabou.** Medido em 06/08: produção tem UM
+   quadro (`Quadro geral`, time raiz, 8 colunas, 0 sem ponte, 696 tarefas).
 2. **Fatia 2 sozinha.** É permissão. Depois dela, os critérios 4 e 5 da spec.
    ✅ **Em produção.**
 3. **Fatia 3** junto ou logo depois da 2 — reusa a mesma lente.
-   ✅ **Commitada em 10/08, ainda NÃO em produção.** Sobe sozinha ou de carona
-   no próximo deploy: o front atual ignora campo novo, então ela não muda tela
-   nenhuma e não tem ordem obrigatória em relação à migration.
+   ✅ **EM PRODUÇÃO desde 10/08.** (Este item dizia "commitada, ainda NÃO em
+   produção" depois de a fatia já ter subido — e as 4a e 4b, que vieram
+   depois, dependem dela. Estado de fatia se escreve no commit que sobe, não
+   na sessão seguinte.)
 4. **Fatia 4** quando houver sessão limpa para o front.
 5. **Fatia 5**, e só depois da 4 estar **no ar**. Criar quadro sem o front ler
    colunas não muda a tela de ninguém.
@@ -264,6 +379,75 @@ comum além do assunto.
 `backend` chegou a executar o passo `pytest`. Um X vindo do `Set up job` é o
 GitHub caindo, não o seu código, e na lista de runs os dois são
 indistinguíveis.
+
+---
+
+## ⚠️ Ordem revisada (10/08/2026, depois de medir o `Board.tsx`)
+
+1–3, 4a, 4b: ✅ **em produção.**
+
+4. **A peça de BACKEND da fatia 5, e ela vem AGORA:** `PATCH /tasks/{id}`
+   aceitando `column_id`, validando que a coluna pertence ao quadro da tarefa.
+   Meia sessão. Destrava, de uma vez: o `Board.tsx`, o kanban de
+   `/minhas-tarefas` e o CRUD de coluna.
+
+   ⚠️ **Não é escopo furando fila.** É a mesma classe de descoberta da fatia 3
+   ("a que faltava no roteiro até 06/08"): este plano foi escrito antes de
+   alguém abrir o `onDragEnd`. O backend hoje resolve coluna A PARTIR do
+   status em dois pontos (`task_service.py:824` e `:838`); aceitar `column_id`
+   direto é inverter essa direção, que é o que a ADR 0033 promete para o fim
+   da ponte.
+
+   ### ⚠️ TRÊS COISAS A DECIDIR ANTES DE ESCREVER A PRIMEIRA LINHA (10/08, noite)
+
+   **1. A derivação pela SEMÂNTICA, sozinha, PERDE STATUS — não a implemente
+   como está escrita na fatia 5.** A semântica é 8:4 nas colunas padrão
+   (`Em Andamento`, `Aprovação Interna`, `Aprovação Externa` e `Bloqueado` são
+   todas `IN_PROGRESS`). Derivar status a partir dela colapsa os quatro em
+   `IN_PROGRESS`, e o comentário de `app/db/models/boards.py:191-196` já diz
+   exatamente isso, com os nomes. **A regra que preserva o quadro de hoje:
+   `legacy_status` quando a coluna tiver um; semântica SÓ quando for `NULL`
+   (coluna criada por gente).** Isso é ADR, e vem antes do código —
+   ⚠️ **nenhum portão pega o erro**, porque o status derivado errado ainda é um
+   status VÁLIDO: só aparece como card pulando de coluna na tela de todo mundo.
+
+   **2. `task.column_id` está gravado DENTRO do `if` de status.** Em
+   `TaskService.update`, a atribuição vive dentro de
+   `if command.status is not None and command.status != task.status`. No dia em
+   que existirem duas colunas de mesma semântica **sem** `legacy_status` (ou
+   seja: na fatia 5, por desenho), mover uma tarefa entre elas não muda o
+   status → o bloco não roda → **a tarefa não sai da coluna, e não há erro**.
+   A gravação por `column_id` tem de sair de dentro daquele bloco.
+   **Sabotagem:** devolver a atribuição para dentro do `if` e nomear o teste
+   que cai.
+
+   **3. `column_id` e `status` no MESMO payload.** Hoje o PATCH aceita `status`.
+   Decida no schema: precedência de um sobre o outro, ou 422 quando vierem os
+   dois. Deixar implícito é entregar dois donos para o mesmo campo.
+
+   **Rastro:** `_diff_for_update` gera `STATUS_CHANGED`. Movimentação entre
+   colunas de MESMO status não deixa linha nenhuma em `task_history` — mesmo
+   buraco que já existe em designação. Decida agora se entra ou se fica
+   escrito como dívida.
+
+5. **4c**, que depois disso vira execução mecânica — ⚠️ **contra os QUATRO
+   caminhos de escrita** listados na seção da 4c, não contra dois arquivos.
+6. **O resto da fatia 5** (criar/renomear/apagar quadro, CRUD de coluna,
+   seletor de cor).
+
+⚠️ **A permissão `board.manage.subteam` tem de entrar nos TRÊS conjuntos**
+(`ADMIN`, `MANAGER`, `SUPERVISOR`) em `permissions.py`. Não há hierarquia
+entre papéis — são listas literais. Se entrar só no SUPERVISOR, o supervisor
+cria quadro e o ADMIN não consegue. A trava de escopo mora no serviço
+(precedente literal: `member.manage.subteam`, Spec 028).
+
+⚠️ **A cor da coluna foi decidida em 10/08: roda RGB livre (hex).** Ver ADR
+0040 item 4. Consequências que precisam de desenho na fatia 5: o campo `color`
+passa a ter DOIS formatos (`var(...)` nas 8 padrão, hex nas novas — e as
+padrão **não** migram, porque token inverte com o tema e hex não); o texto por
+cima precisa sair da luminância; e **o backend TEM de validar
+`^#[0-9a-fA-F]{6}$`**, porque `color` vira entrada de usuário indo parar num
+`style`, e o campo é `String(60)`.
 
 ---
 
