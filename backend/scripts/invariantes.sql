@@ -1,30 +1,41 @@
 -- Invariantes de producao -- quadro e coluna (Spec 035, ADR 0032/0033/0036),
--- e o alarme de projeto fora da raiz (Spec 037, consulta 6).
+-- o alarme de projeto fora da raiz (Spec 037, consulta 6) e o alcance do
+-- quadro devolvido na resposta de tarefa (Spec 036 fatia 3, consulta 7).
 --
 -- Existe porque estas consultas viviam em documento de passagem de bastao, e
 -- documento de passagem de bastao some. Quem confere producao roda ESTE
 -- arquivo; quem muda o modelo de quadro atualiza ESTE arquivo.
 --
---   docker compose -f docker-compose.prod.yml exec -T db \
---     psql -U <user> -d <base> -f - < backend/scripts/invariantes.sql
+--   docker exec -i root-postgres-1 \
+--     psql -U n8n_user -d task_manager < backend/scripts/invariantes.sql
 --
--- Toda consulta abaixo deve devolver 0. Qualquer outro numero e defeito de
--- dado, nao de tela -- nenhuma delas aparece para o usuario.
+-- ⚠️ COMANDO CORRIGIDO EM 10/08/2026. O anterior mandava
+-- `docker compose -f docker-compose.prod.yml exec -T db` e NAO FUNCIONA: nao
+-- existe servico `db` no compose de producao. O Postgres e o container
+-- `root-postgres-1`, do stack do n8n, alcancado pela rede `root_default`.
+-- Rodar da raiz do repo, na VPS.
 --
--- ⚠️ A CONSULTA 4 EXIGE A MIGRATION `0012` APLICADA. Ela le
--- `board.deleted_at`; contra um banco sem a `0012` o arquivo INTEIRO aborta
--- com `column b.deleted_at does not exist`. As consultas 1, 2 e 3 rodam antes
--- e as 5 e 6 nunca executam. Conferindo um banco que ainda nao recebeu a
--- `0012`: rode as consultas uma a uma e PULE a 4.
+-- Toda consulta abaixo deve devolver 0, exceto a 5 (contexto). Qualquer outro
+-- numero e defeito de dado, nao de tela -- nenhuma delas aparece para o
+-- usuario.
 --
--- Medido em producao (`task_manager`) em 06/08/2026, ANTES da `0012`:
---   1 = 0 | 2 = 0 | 3 = 0 | 4 = nao rodou | 5 = UM quadro (`Quadro geral`,
---   time raiz, 8 colunas, 0 sem ponte, 696 tarefas).
+-- ✅ A MIGRATION `0012` ESTA EM PRODUCAO DESDE 10/08/2026. A consulta 4 roda.
 --
--- A consulta 6 foi acrescentada em 06/08/2026 e mediu 0 no mesmo dia, por
--- outra via: a medicao 4 da F1 da Spec 037 devolveu 20 projetos comuns e 480
--- tarefas vivas, TODOS no time raiz. ⚠️ Ela NAO rodou ainda a partir deste
--- arquivo -- rode junto da proxima conferencia e confirme o 0.
+-- ⚠️ E O ARQUIVO NAO ABORTA NUM ERRO. O `psql` sem `ON_ERROR_STOP=1` reclama
+-- da consulta que falhou e SEGUE para a proxima -- a versao anterior deste
+-- cabecalho afirmava o contrario, e quem confiasse nela leria os numeros
+-- seguintes como se fossem validos. Se quiser que ele pare de verdade:
+--
+--   psql -v ON_ERROR_STOP=1 ...
+--
+-- Medido em producao (`task_manager`):
+--   06/08/2026, ANTES da `0012`: 1 = 0 | 2 = 0 | 3 = 0 | 4 = nao rodou |
+--     5 = UM quadro (`Quadro geral`, time raiz, 8 colunas, 0 sem ponte,
+--     696 tarefas) | 6 = 0 (por outra via, nao a partir deste arquivo).
+--   10/08/2026, a partir DESTE arquivo: 1, 2, 3, 4 e 6 = 0. A 4 rodou pela
+--     primeira vez; a 6 rodou a partir do arquivo pela primeira vez.
+--   A consulta 7 entrou em 10/08/2026 e AINDA NAO FOI MEDIDA. Rode junto da
+--     proxima conferencia e anote o resultado aqui.
 
 \echo '=== 1. toda tarefa tem quadro e coluna (0011) ==='
 SELECT count(*) AS sem_quadro_ou_coluna
@@ -63,8 +74,7 @@ WHERE c.legacy_status IS NOT NULL
   AND c.legacy_status IS DISTINCT FROM t.status;
 
 \echo '=== 4. nenhuma tarefa VIVA dentro de quadro apagado (EXIGE a 0012) ==='
--- ⚠️ NAO RODA EM BANCO SEM A `0012`. Ver o aviso no topo do arquivo: sem a
--- coluna, esta linha aborta o script e a consulta 5 nunca executa.
+-- ✅ A `0012` esta em producao desde 10/08/2026; esta consulta roda.
 -- A ADR 0034 decidiu que apagar quadro apaga as tarefas junto. Nenhuma
 -- constraint sustenta isso -- e cascata de aplicacao, nao de banco.
 --
@@ -89,6 +99,9 @@ WHERE b.deleted_at IS NOT NULL
 -- Nao e invariante -- e o numero que diz se as consultas acima ainda estao
 -- medindo o mundo que voce acha que elas medem. Enquanto for 1, nenhum teste
 -- de dois quadros esta sendo exercitado em producao.
+--
+-- ⚠️ ELA E O CONTROLE DA CONSULTA 7. Ver o aviso la embaixo: com um quadro so,
+-- e ele da raiz, a 7 devolve 0 por ausencia de caso, nao por acerto.
 SELECT b.id,
        b.name,
        b.is_default,
@@ -126,4 +139,39 @@ FROM project p
 JOIN team tm ON tm.id = p.team_id
 WHERE p.is_personal = false
   AND p.deleted_at IS NULL
+  AND tm.parent_team_id IS NOT NULL;
+
+\echo '=== 7. nenhuma tarefa viva em quadro de SUBTIME (Spec 036, fatia 3) ==='
+-- ⚠️ ESTA CONSULTA E O PAR EM PRODUCAO DO
+-- `test_tarefa_de_subtime_nasce_no_quadro_da_raiz`
+-- (`tests/integration/test_task_board_no_contrato_db.py`). O teste prende a
+-- regra no codigo; esta consulta prende o DADO. Os dois medem a mesma
+-- afirmacao por vias independentes, e e de proposito: o teste passaria mesmo
+-- que alguem gravasse `board_id` na mao no banco.
+--
+-- POR QUE ISSO IMPORTA A PARTIR DE 10/08/2026: a fatia 3 passou a devolver
+-- `board_id` na resposta de tarefa. Ele so e seguro de devolver porque o
+-- quadro de toda tarefa e o da RAIZ -- que todo mundo alcanca. Quem enxerga a
+-- tarefa enxerga o quadro, e portanto nao ha vazamento.
+--
+-- A regra que sustenta isso e a ADR 0032, implementada em
+-- `BoardRepository.default_board_and_column_for_status` com
+-- `JOIN team ... AND t.parent_team_id IS NULL`.
+--
+-- ⚠️ CONTROLE OBRIGATORIO -- ESTE 0 NAO PROVA NADA SOZINHO. Enquanto a
+-- consulta 5 mostrar UM quadro, e ele da raiz, esta consulta devolve 0 por
+-- AUSENCIA DE CASO. Leia as duas juntas: 7 = 0 so vira afirmacao quando a 5
+-- mostrar pelo menos um quadro de subtime.
+--
+-- ⚠️ SE ESTE NUMERO DEIXAR DE SER 0 (o que a FATIA 5 vai causar por desenho):
+-- pare e responda de novo "quem alcanca a tarefa alcanca o quadro?". A
+-- resposta hoje vale por construcao, nao por trava. Nao ha constraint, nao ha
+-- gate de rota, e o `board_id` sai na resposta sem passar por lente nenhuma --
+-- ele nao precisava passar. **O portao mora na fatia 5, nesta consulta e no
+-- teste citado acima, e em lugar nenhum do schema.**
+SELECT count(*) AS tarefa_viva_em_quadro_de_subtime
+FROM task t
+JOIN board b ON b.id = t.board_id
+JOIN team tm ON tm.id = b.team_id AND tm.workspace_id = b.workspace_id
+WHERE t.deleted_at IS NULL
   AND tm.parent_team_id IS NOT NULL;

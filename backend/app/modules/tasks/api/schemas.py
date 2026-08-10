@@ -97,7 +97,31 @@ class ProjectListResponse(BaseModel):
 # TASK (Entrega 2)
 # =========================================================
 class TaskResponse(BaseModel):
-    """Representacao de uma task na API."""
+    """Representacao de uma task na API.
+
+    ⚠️ `board_id` e `column_id` entraram na Spec 036, fatia 3, e sao o que
+    torna a fatia 4 construivel: sem eles o front recebe a lista de colunas
+    (`GET /boards`) e nao sabe em qual desenhar cada card.
+
+    ⚠️ `semantic` e `notify_deadline` da coluna NAO entram aqui, e isso e
+    decisao, nao esquecimento. Eles ja viajam em `BoardColumnResponse` pelo
+    `GET /boards` -- o front busca o catalogo de colunas UMA vez e cruza por
+    `column_id`. Repeti-los em cada task criaria uma segunda fonte de verdade
+    para o mesmo dado, e a fatia 5 (renomear coluna, mudar semantica) teria de
+    invalidar as duas.
+
+    ⚠️ O NOME DO QUADRO tambem NAO entra, pelo mesmo argumento: `board_id` ->
+    nome resolve no cliente com o `/boards` que ele ja tem. O selo da ADR 0034
+    (item 6) sai de graca. A versao com o nome cravado aqui desatualiza no dia
+    em que a fatia 5 permitir renomear quadro.
+
+    ⚠️ NAO EXISTE VAZAMENTO DE `board_id` HOJE, e o motivo e estrutural:
+    `BoardRepository.default_board_and_column_for_status` resolve o quadro de
+    toda task nova com `JOIN team ... AND t.parent_team_id IS NULL` (ADR 0032),
+    entao `board.team_id` e SEMPRE a raiz -- que todo mundo alcanca. Quem
+    enxerga a task enxerga o quadro. **O portao para o dia em que isso deixar
+    de valer mora na fatia 5**, naquela funcao, e nao neste schema.
+    """
 
     model_config = {"from_attributes": True}
 
@@ -106,6 +130,8 @@ class TaskResponse(BaseModel):
     project_id: uuid.UUID | None
     parent_task_id: uuid.UUID | None
     team_id: uuid.UUID | None
+    board_id: uuid.UUID
+    column_id: uuid.UUID
     title: str
     description: str
     status: TaskStatus
