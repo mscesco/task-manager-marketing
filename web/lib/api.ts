@@ -382,7 +382,6 @@ export async function listAllTasks(
 
 export type MyTaskItem = Task & {
   relations: string[];
-  out_of_scope: boolean;
   /**
    * Titulo da tarefa-mae, quando esta e subtarefa. Vem em LOTE do backend
    * (1 query por pagina) -- ver ADR 0025 para o mesmo padrao em assignee_ids.

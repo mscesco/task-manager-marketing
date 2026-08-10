@@ -32,10 +32,10 @@ import {
 // e o mesmo retorno de "nao existe" (de proposito: nao vaza a existencia da
 // tarefa). Por isso a mensagem cobre os dois casos.
 //
-// Limite conhecido (bug E6, ADR 0002): task `out_of_scope` da 404 no
-// GET /tasks/{id}. Quem e responsavel por uma tarefa fora da propria lente
-// cai nesse caso e ve "nao encontrada" mesmo tendo a tarefa na lista dele.
-// Raro, e consertar isso e frente de backend -- nao foi tocado aqui.
+// ⚠️ O "bug E6" (ADR 0002) FECHOU na Spec 037 (E5). Ele era a incoerencia
+// entre lista e detalhe: a tarefa fora da lente aparecia em /minhas-tarefas
+// e dava 404 aqui. Agora ela nao aparece na lista, e o 404 daqui passou a
+// ser a resposta certa e coerente -- "sem alcance, sem tarefa" (ADR 0038).
 
 const CAP_FILHOS = 100; // limite do backend; mesmo cap do detalhe no quadro
 

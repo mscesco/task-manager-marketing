@@ -329,9 +329,14 @@ class TaskService:
         #
         # ⚠️ MORDE `command.team_id`, NAO o `team_id` resolvido acima. O valor
         # resolvido pode vir do PAI (heranca de subtarefa, ADR 0024) ou do
-        # default do criador; enquanto o ramo `created_by` da ADR 0013 existir
-        # (ele so cai na fatia 5), o pai pode estar fora da lente, e validar o
-        # resolvido quebraria a criacao de subtarefa nesse caso.
+        # default do criador, e nenhum dos dois foi escolhido por quem chama.
+        #
+        # ⚠️ O MOTIVO ORIGINAL ERA OUTRO E JA NAO VALE: ate a F5 o ramo
+        # `created_by` da ADR 0013 deixava o PAI estar fora da lente, e validar
+        # o resolvido quebraria a criacao de subtarefa. A F5 tirou o ramo, e
+        # agora quem enxerga o pai ja o alcanca por time. A regra FICA mesmo
+        # assim: validar o explicito e o que a E1 pede (criterio 3), e validar
+        # o resolvido acrescentaria uma segunda checagem sem regra por tras.
         if command.team_id is not None:
             self._assert_team_in_reach(command.team_id)
 
@@ -1262,9 +1267,9 @@ class TaskService:
         """Bloqueia leitura/escrita em task que o usuario nao enxerga.
 
         Delega ao guard compartilhado (app.modules.tasks.application.
-        task_guards), que cobre privacidade do pessoal, lente de time e a
-        regra `created_by` (ADR 0013). Levanta EntityNotFoundError (404)
-        -- nao 403 -- pra nao vazar existencia.
+        task_guards), que cobre privacidade do pessoal e lente de time.
+        ⚠️ `created_by` NAO entra mais (Spec 037, E1). Levanta
+        EntityNotFoundError (404) -- nao 403 -- pra nao vazar existencia.
         """
         await self._guards.assert_visible(task)
 

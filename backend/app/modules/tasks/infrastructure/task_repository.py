@@ -44,6 +44,52 @@ from app.modules.tasks.domain.history import HistoryEntry
 from app.shared.pagination import Page, PageParams
 
 
+def _lente_de_time(
+    visible: frozenset[uuid.UUID], *, me: uuid.UUID
+) -> ColumnElement[bool]:
+    """A camada (B): a lente de time, em SQL. UM lugar, DOIS chamadores.
+
+    ⚠️ EXTRAIDA NA SPEC 037 (F6), E A EXTRACAO E PARTE DA ENTREGA. Ate a F6
+    este predicado existia so no `list_page`, e o `list_my_relations` OMITIA a
+    camada (B) de proposito (ADR 0018) para poder marcar a task pela ADR 0017. Com a
+    marca da ADR 0017 apagada (E5), os dois passam a aplicar a MESMA lente -- e
+    duas copias de uma regra de visibilidade sao a forma classica de ela
+    divergir sem ninguem notar (precedente: a regra de alcance ja divergiu
+    antes, ver D2/D4 da Spec 034).
+
+    ⚠️ NAO CHAME COM `visible=None`. `None` significa ADMIN e quer dizer "sem
+    filtro de TIME" -- e nao "sem filtro". O `workspace_id` entra sempre, fora
+    do `if`, no `_base_select`. Uma consulta escrita como "se a lente e None,
+    nao filtra nada" vaza tenant, e vaza SO para o ADMIN, que e o unico caso em
+    que o filtro por `team_id` nao esconde o furo por acidente.
+
+    ⚠️ `created_by` NAO ESTA AQUI, e a ausencia e a E1 (F5). Quem criou nao
+    enxerga mais por ter criado. O `Project.created_by` do primeiro ramo e
+    outra coisa -- e "pessoal proprio", e sem ele a pessoa perde o proprio
+    projeto pessoal de vista.
+
+    Exige que `Project` ja esteja no FROM (outerjoin), o que os dois
+    chamadores fazem.
+    """
+    return or_(
+        # pessoal proprio: sempre visivel
+        and_(
+            Project.is_personal.is_(True),
+            Project.created_by == me,
+        ),
+        # projeto comum cujo time esta na lente -> ve tudo dele
+        and_(
+            Project.is_personal.is_(False),
+            Project.team_id.in_(visible),
+        ),
+        # avulsa cujo time esta na lente
+        and_(
+            Task.project_id.is_(None),
+            Task.team_id.in_(visible),
+        ),
+    )
+
+
 class TaskRepository(BaseRepository[Task]):
     """Acesso a dados de tasks, escopado ao tenant corrente."""
 
@@ -133,27 +179,7 @@ class TaskRepository(BaseRepository[Task]):
 
         # (B) lente de time -- pulada para admin (visible is None).
         if visible is not None:
-            base = base.where(
-                or_(
-                    # criador sempre ve a propria task (Entrega 4 -- ADR 0013).
-                    Task.created_by == tenant.user_id,
-                    # pessoal proprio: sempre visivel
-                    and_(
-                        Project.is_personal.is_(True),
-                        Project.created_by == tenant.user_id,
-                    ),
-                    # projeto comum cujo time esta na lente -> ve tudo dele
-                    and_(
-                        Project.is_personal.is_(False),
-                        Project.team_id.in_(visible),
-                    ),
-                    # avulsa cujo time esta na lente
-                    and_(
-                        Task.project_id.is_(None),
-                        Task.team_id.in_(visible),
-                    ),
-                )
-            )
+            base = base.where(_lente_de_time(visible, me=tenant.user_id))
 
         # Filtros opcionais.
         if project_id is not None:
@@ -240,11 +266,34 @@ class TaskRepository(BaseRepository[Task]):
     ) -> Page[tuple[Task, Project | None, frozenset[str]]]:
         """Tasks do tenant (nao deletadas) onde sou assignee/creator/watcher.
 
-        Parte do `_base_select` (tenant + soft-delete). Mantem a camada (A)
-        (pessoal alheio nunca) mas OMITE a camada (B) (lente de time) -- e o
-        que permite a task aparecer marcada como out_of_scope na aplicacao
-        (ADR 0017/0018). Os 3 vinculos sao computados SEMPRE (preenchem
-        `relations`); o recorte e por OR das relacoes selecionadas.
+        Parte do `_base_select` (tenant + soft-delete) e aplica as DUAS
+        camadas: (A) pessoal alheio nunca, (B) lente de time. Os 3 vinculos
+        sao computados SEMPRE (preenchem `relations`); o recorte e por OR das
+        relacoes selecionadas.
+
+        ⚠️ A CAMADA (B) ENTROU NA SPEC 037 (F6), E ELA ERA A EXCECAO DA ADR
+        0018. Ate aqui esta consulta OMITIA a lente de propositoo: era o que
+        permitia a task aparecer em /me/assignments com a marca da ADR 0017 --
+        "estou ligado a ela mas nao a enxergo". A ADR 0038
+        (E5/E6) recusou a marca: nao ha excecao por relacao, e ser
+        responsavel ou observador nao concede leitura. Sem a marca, a task
+        simplesmente nao aparece, como em todo o resto do produto.
+
+        ⚠️ NA TELA, NADA MUDA -- E ISSO FOI CONFERIDO, NAO SUPOSTO.
+        `web/app/minhas-tarefas/page.tsx` ja descartava esses itens no
+        CLIENTE, com um `filter` sobre a flag e um comentario dizendo que era
+        temporario porque essas tarefas davam 404 no detalhe. Ou seja:
+        o backend mandava dado que o front jogava fora. Agora ele nao manda.
+
+        ⚠️ E O 404 DO DETALHE DEIXA DE SER INCOERENCIA. Havia um limite
+        conhecido registrado em dois arquivos do front ("bug E6"): a tarefa
+        aparecia na lista e dava 404 ao abrir. Ela some da lista pela mesma
+        regra que produzia o 404, entao os dois passam a concordar. Nao foi
+        consertado o 404 -- foi removido o estado que o tornava visivel.
+
+        Quem cuida de a pessoa nao ficar responsavel por algo que nao alcanca
+        e a E3 (F4), que remove a relacao na movimentacao. As duas fatias sao
+        os dois lados da mesma decisao.
         """
         tenant = require_tenant()
         me = tenant.user_id
@@ -288,6 +337,12 @@ class TaskRepository(BaseRepository[Task]):
                 Project.created_by == me,
             )
         )
+
+        # (B) lente de time -- pulada para admin (visible is None), igual ao
+        # `list_page`. MESMO predicado, uma copia so: `_lente_de_time`.
+        visible = team_scope.visible_team_ids(tenant.memberships, tenant.team_tree)
+        if visible is not None:
+            base = base.where(_lente_de_time(visible, me=me))
 
         # Recorte por relacao selecionada (OR). `relations` nunca vazio
         # (o router preenche o default com as tres).

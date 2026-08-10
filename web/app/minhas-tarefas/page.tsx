@@ -187,9 +187,13 @@ function Minhas() {
   useEffect(() => {
     listAllMyAssignments()
       .then((r) => {
-        // Camila (E9): esconder out_of_scope por ora -- essas tarefas dao 404
-        // no detalhe (bug conhecido E6). Quando for tratar, troca este filtro.
-        setItems(r.items.filter((t) => !t.out_of_scope));
+        // ⚠️ O FILTRO DE CLIENTE SAIU AQUI (Spec 037, E5). Ele descartava
+        // os itens marcados pela ADR 0017 porque elas davam 404 no detalhe
+        // (o "bug E6"), e o comentario dizia "quando for tratar, troca este
+        // filtro". Foi tratado na origem: o backend nao manda mais esses
+        // itens, entao nao ha o que filtrar -- e lista e detalhe passaram a
+        // concordar.
+        setItems(r.items);
         setTruncadoTotal(r.truncated ? r.total : null);
       })
       .catch((e: ApiError) => setErro(e.message));
@@ -219,8 +223,8 @@ function Minhas() {
 
   // Abre o detalhe de uma task pelo id, procurando na lista COMPLETA (items),
   // nao na filtrada -- um filtro ativo nao deve furar o link. Se a task nao
-  // esta na lista (mencao/comentario em tarefa que nao e sua, ou out_of_scope
-  // filtrada), avisa em vez de falhar em silencio.
+  // esta na lista (mencao/comentario em tarefa que nao e sua, ou tarefa fora
+  // da lente de time), avisa em vez de falhar em silencio.
   const abrirTarefaDaLista = useCallback(
     async (id: string) => {
       if (items === null) return;
@@ -359,7 +363,7 @@ function Minhas() {
   }
 
   // Upsert preservando os campos que /me/assignments adiciona ao Task
-  // (relations, out_of_scope) e o assignee_ids (mutacao nao devolve -- ADR 0025).
+  // (relations) e o assignee_ids (mutacao nao devolve -- ADR 0025).
   function aoUpsert(t: Task) {
     setItems((prev) => {
       if (!prev) return prev;
@@ -369,7 +373,6 @@ function Minhas() {
         const nova: MyTaskItem = {
           ...t,
           relations: ["creator"],
-          out_of_scope: false,
           assignee_ids: t.assignee_ids ?? [],
           // A resposta de criacao nao traz parent_title (so /me/assignments
           // monta o lote). Como a subtarefa nasceu daqui, a mae e a task que
@@ -385,7 +388,6 @@ function Minhas() {
       const merged: MyTaskItem = {
         ...t,
         relations: existente.relations,
-        out_of_scope: existente.out_of_scope,
         assignee_ids: t.assignee_ids ?? existente.assignee_ids,
         // Mutacao de task nao devolve parent_title -> preserva o local, mesma
         // regra do assignee_ids (ADR 0025). Sem isto o selo sumiria ao editar.

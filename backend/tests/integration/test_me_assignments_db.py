@@ -146,9 +146,24 @@ async def test_soft_deleted_nao_aparece(db) -> None:
 
 
 # ----------------------------------------------------------
-# out_of_scope (ADR 0017)
+# A LENTE DE TIME, aqui como em todo o resto (Spec 037, E5/E6)
 # ----------------------------------------------------------
-async def test_designado_em_subtime_invisivel_out_of_scope_true(db) -> None:
+# ⚠️ OS QUATRO TESTES DA MARCA DA ADR 0017 VIRARAM ESTES TRES, E A TROCA E A
+# ENTREGA. Eles afirmavam que a task fora da lente APARECIA nesta lista com um
+# booleano `True`. A ADR 0038 (E6) recusou a excecao por relacao: ser
+# responsavel ou observador nao concede leitura. Sem alcance, a task nao vem.
+#
+# ⚠️ NAO FORAM APAGADOS, foram invertidos -- os cenarios sao os mesmos (a
+# designacao feita por admin, o admin que ve tudo, a edicao que nao passa).
+# Apagar deixaria a regra sem afirmacao e nada impediria a camada (B) de sumir
+# de `list_my_relations` outra vez, em silencio.
+
+
+async def test_designado_em_subtime_invisivel_NAO_aparece(db) -> None:
+    """O cenario classico da ADR 0017: o admin me designou fora da minha lente.
+
+    Antes: aparecia com a marca `True`. Agora: nao aparece.
+    """
     ws, r, a, b = await _tree(db)
     me = await f.make_user(db, workspace_id=ws)
     await f.add_member(db, workspace_id=ws, user_id=me, team_id=a, role="OPERATOR")
@@ -160,11 +175,16 @@ async def test_designado_em_subtime_invisivel_out_of_scope_true(db) -> None:
         workspace_id=ws, user_id=me, memberships=(mship(a, "OPERATOR"),), team_tree=_forest(r, a, b)
     ):
         page = await _list(db)
-    item = next(row for row in page.items if row.task.id == t.id)
-    assert item.out_of_scope is True
+    assert all(row.task.id != t.id for row in page.items)
 
 
-async def test_dentro_da_lente_out_of_scope_false(db) -> None:
+async def test_dentro_da_lente_aparece(db) -> None:
+    """O contrapeso, e ele nao e opcional.
+
+    ⚠️ SEM ESTE TESTE, a camada (B) poderia ser escrita larga demais e sumir
+    com TUDO -- o teste acima passaria verde com a lista vazia. Sao os dois
+    lados do mesmo filtro.
+    """
     ws, r, a, b = await _tree(db)
     me = await f.make_user(db, workspace_id=ws)
     await f.add_member(db, workspace_id=ws, user_id=me, team_id=a, role="OPERATOR")
@@ -175,11 +195,16 @@ async def test_dentro_da_lente_out_of_scope_false(db) -> None:
         workspace_id=ws, user_id=me, memberships=(mship(a, "OPERATOR"),), team_tree=_forest(r, a, b)
     ):
         page = await _list(db)
-    item = next(row for row in page.items if row.task.id == t.id)
-    assert item.out_of_scope is False
+    assert any(row.task.id == t.id for row in page.items)
 
 
-async def test_admin_nada_out_of_scope(db) -> None:
+async def test_admin_ve_de_qualquer_subtime(db) -> None:
+    """Lente `None` = ADMIN: sem filtro de TIME (o de workspace continua).
+
+    ⚠️ ESTE E O TESTE QUE IMPEDE `_lente_de_time` DE SER CHAMADA COM `None`.
+    Escrever a camada (B) sem o `if visible is not None` barraria o admin em
+    tudo -- e os dois testes acima passariam do mesmo jeito.
+    """
     ws, r, a, b = await _tree(db)
     admin = await f.make_user(db, workspace_id=ws)
     await f.add_member(db, workspace_id=ws, user_id=admin, team_id=r, role="ADMIN")
@@ -190,33 +215,9 @@ async def test_admin_nada_out_of_scope(db) -> None:
         workspace_id=ws, user_id=admin, memberships=(mship(r, "ADMIN"),), team_tree=_forest(r, a, b)
     ):
         page = await _list(db)
-    assert all(row.out_of_scope is False for row in page.items)
+    assert any(row.task.id == t.id for row in page.items)
 
 
-async def test_out_of_scope_nao_concede_edicao(db) -> None:
-    ws, r, a, b = await _tree(db)
-    me = await f.make_user(db, workspace_id=ws)
-    await f.add_member(db, workspace_id=ws, user_id=me, team_id=a, role="OPERATOR")
-    outro = await f.make_user(db, workspace_id=ws)
-    t = await f.make_task(db, workspace_id=ws, created_by=outro, team_id=b, project_id=None)
-    await f.make_assignment(db, workspace_id=ws, task_id=t.id, user_id=me, assigned_by=outro)
-    with acting_as(
-        workspace_id=ws, user_id=me, memberships=(mship(a, "OPERATOR"),), team_tree=_forest(r, a, b)
-    ):
-        page = await _list(db)
-        item = next(row for row in page.items if row.task.id == t.id)
-        assert item.out_of_scope is True
-        # Aparece como responsável em /me/assignments, mas o endpoint de task
-        # é escopado pela lente e o assignment NÃO a alarga: update levanta
-        # 404 (não-visível via lente; assignment não concede acesso ao
-        # endpoint de task). O essencial: a edição NÃO passa.
-        with pytest.raises(EntityNotFoundError):
-            await TaskService(db).update(task_id=t.id, command=UpdateTaskCommand(title="x"))
-
-
-# ----------------------------------------------------------
-# ordenação
-# ----------------------------------------------------------
 async def test_ordena_updated_at_desc(db) -> None:
     ws, r, a, b = await _tree(db)
     me = await f.make_user(db, workspace_id=ws)
@@ -284,7 +285,12 @@ async def test_http_200_default(db) -> None:
     assert resp.status_code == 200
     body = resp.json()
     assert body["total"] == 1
-    assert "out_of_scope" in body["items"][0]
+    # ⚠️ O CAMPO DA ADR 0017 SAIU DO CORPO (Spec 037, E5). A assercao
+    # inverteu: antes ela exigia a presenca, agora exige a AUSENCIA. E uma
+    # mudanca de contrato da API, e e por isso que ela e afirmada em HTTP e
+    # nao so no service -- quem consome e o front, e o que ele recebe e este
+    # JSON.
+    assert "out_of_scope" not in body["items"][0]
     assert "creator" in body["items"][0]["relations"]
 
 

@@ -23,10 +23,11 @@
 // lente ou filtro. Ela ja existia exatamente por isso -- foi criada para
 // link compartilhado, que tinha o mesmo problema.
 //
-// LIMITE CONHECIDO (bug E6, ADR 0002 do front): task `out_of_scope` devolve
-// 404 no GET /tasks/{id}. Quem for mencionado numa tarefa fora da propria
-// lente cai nesse caso e ve "nao encontrada". E frente de BACKEND, nao se
-// resolve escolhendo rota -- nenhum destino do front contorna um 404.
+// ⚠️ O "bug E6" (ADR 0002 do front) FECHOU na Spec 037 (E5), e nao pelo
+// caminho que este comentario previa. Quem e mencionado numa tarefa fora da
+// propria lente de time continua vendo "nao encontrada" -- mas isso deixou
+// de ser incoerencia: a tarefa tambem nao aparece mais em lista nenhuma.
+// Sem alcance, sem tarefa, em todo lugar (ADR 0038, E6).
 // =====================================================================
 
 /** O minimo que precisamos saber de uma notificacao para achar o destino. */

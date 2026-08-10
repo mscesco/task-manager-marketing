@@ -98,13 +98,46 @@ async def test_remove_assignee_ausente_404(db) -> None:
     assert resp.status_code == 404
 
 
-async def test_watcher_terceiro_sem_assign_403(db) -> None:
+async def test_watcher_terceiro_fora_do_escopo_de_edicao_403(db) -> None:
+    """403, e nao 404: o ator ENXERGA a task e mesmo assim nao inscreve outro.
+
+    ⚠️ RECONSTRUIDO NA SPEC 037 (F5). A versao anterior usava um ator sem
+    vinculo nenhum, que enxergava por `created_by` (ADR 0013). Sem aquele ramo
+    ele nao enxerga mais nada, e a resposta viraria 404 -- que e outro teste.
+
+    O ponto DESTE arquivo e o mapeamento excecao->status, entao o que importa
+    e a fronteira 403/404: 403 = "vejo e nao posso", 404 = "nao vejo". O
+    cenario que ainda produz 403 e task em PROJETO COMUM do time A (que ele
+    alcanca) pinada no time B (que ele nao alcanca) -- ve pelo projeto, edita
+    pela task.
+
+    A metade da PERMISSAO da ADR 0011 (`task.assign`) ficou sem caminho: os
+    quatro papeis a carregam, e enxergar agora exige vinculo. Ver o comentario
+    em `test_collaboration_db.py`.
+    """
     ws, r, a, manager, proj, ctx = await _world(db)
-    sem_perm = await f.make_user(db, workspace_id=ws)
+    b = await f.make_team(db, workspace_id=ws, parent_team_id=r)
+    op_a = await f.make_user(db, workspace_id=ws)
+    await f.add_member(db, workspace_id=ws, user_id=op_a, team_id=a, role="OPERATOR")
     outro = await f.make_user(db, workspace_id=ws)
-    avulsa = await f.make_task(db, workspace_id=ws, created_by=sem_perm, team_id=a, project_id=None)
+    task_b = await f.make_task(
+        db, workspace_id=ws, created_by=manager, team_id=b, project_id=proj
+    )
     await db.commit()
-    ctx_sem = TenantContext(workspace_id=ws, user_id=sem_perm)  # sem roles/permissoes
-    async with _client(db, ctx_sem) as c:
-        resp = await c.post(f"/api/v1/tasks/{avulsa.id}/watchers", json={"user_id": str(outro)})
-    assert resp.status_code == 403
+
+    forest_b = (
+        TeamNode(team_id=r, parent_team_id=None),
+        TeamNode(team_id=a, parent_team_id=r),
+        TeamNode(team_id=b, parent_team_id=r),
+    )
+    ctx_op = TenantContext(
+        workspace_id=ws,
+        user_id=op_a,
+        roles=frozenset({"OPERATOR"}),
+        permissions=permissions_for_roles(frozenset({"OPERATOR"})),
+        memberships=(Membership(team_id=a, role="OPERATOR"),),
+        team_tree=forest_b,
+    )
+    async with _client(db, ctx_op) as c:
+        resp = await c.post(f"/api/v1/tasks/{task_b.id}/watchers", json={"user_id": str(outro)})
+    assert resp.status_code == 403, resp.text

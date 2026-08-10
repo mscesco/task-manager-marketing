@@ -1,15 +1,17 @@
-"""Visibilidade de tasks: pessoal, lente de time, created_by (ADR 0013)."""
+"""Visibilidade de tasks: pessoal e lente de time.
+
+⚠️ O `created_by` NAO concede mais visibilidade (Spec 037, E1 -- ADR 0038).
+Ate a 037 este arquivo afirmava o furo da ADR 0013 ("quem cria sempre ve");
+agora ele afirma o contrario, no mesmo lugar. A inversao e a entrega -- os
+testes NAO foram apagados, senao nada impediria o ramo de voltar.
+"""
 
 from __future__ import annotations
 
 import pytest
 
-from app.modules.tasks.application.task_service import (
-    TaskFilters,
-    TaskService,
-    UpdateTaskCommand,
-)
-from app.shared.exceptions.base import AuthorizationError, EntityNotFoundError
+from app.modules.tasks.application.task_service import TaskFilters, TaskService
+from app.shared.exceptions.base import EntityNotFoundError
 from app.shared.pagination import PageParams
 from tests.integration import factories as f
 from tests.integration.conftest import acting_as, mship, node
@@ -90,7 +92,19 @@ async def test_avulsa_lente_de_time(db) -> None:
             await svc.get(avulsa_b.id)  # team B (irmao) fora da lente
 
 
-async def test_created_by_ve_avulsa_fora_da_lente_mas_nao_edita(db) -> None:
+async def test_created_by_NAO_ve_avulsa_fora_da_lente(db) -> None:
+    """Spec 037, E1 -- este teste INVERTEU, e a inversao e a entrega.
+
+    Ate a 037 ele se chamava `test_created_by_ve_avulsa_fora_da_lente_mas_nao
+    _edita` e afirmava o furo da ADR 0013: quem criou via a tarefa no detalhe
+    E na listagem, mesmo com o time fora da lente. A ADR 0038 retirou o ramo.
+
+    ⚠️ AFIRMA OS DOIS CAMINHOS DE PROPOSITO -- detalhe (`get`) e listagem
+    (`list_page`). Sao os DOIS pontos da E1, um em `task_guards.py` e outro no
+    `or_` do bloco (B) do `task_repository.py`. Tirar so um deixaria a tarefa
+    fora da lista e acessivel por link direto, ou o contrario -- e um teste
+    que so olhasse um dos lados passaria verde com metade do furo aberto.
+    """
     ws, r, a, b = await _tree(db)
     op = await f.make_user(db, workspace_id=ws)
     await f.add_member(db, workspace_id=ws, user_id=op, team_id=a, role="OPERATOR")
@@ -100,13 +114,40 @@ async def test_created_by_ve_avulsa_fora_da_lente_mas_nao_edita(db) -> None:
         workspace_id=ws, user_id=op, memberships=(mship(a, "OPERATOR"),), team_tree=_forest(r, a, b)
     ):
         svc = TaskService(db)
-        # VE (created_by) ...
-        assert (await svc.get(avulsa_b.id)).id == avulsa_b.id
+        # detalhe: 404, e nao 403 -- quem nao alcanca nao sabe que existe.
+        with pytest.raises(EntityNotFoundError):
+            await svc.get(avulsa_b.id)
+        # listagem: nao aparece.
         page = await svc.list_page(PageParams(size=100), TaskFilters())
-        assert any(t.id == avulsa_b.id for t in page.items)
-        # ... mas NAO edita (team B fora da lente de edicao) -> 403
-        with pytest.raises(AuthorizationError):
-            await svc.update(task_id=avulsa_b.id, command=UpdateTaskCommand(title="x"))
+        assert not any(t.id == avulsa_b.id for t in page.items)
+
+
+async def test_created_by_continua_na_resposta_de_quem_alcanca(db) -> None:
+    """Spec 037, criterio 2 -- a E1 NAO pode ser implementada apagando o campo.
+
+    `created_by` deixa de conceder acesso (E1) e continua sendo HISTORICO (E2):
+    a tarefa mostra quem a criou mesmo depois de essa pessoa perder a lente.
+
+    ⚠️ ESTE TESTE E O QUE IMPEDE O ATALHO. Apagar `Task.created_by` do schema
+    faria os tres testes invertidos passarem verde -- e destruiria o dado.
+    """
+    ws, r, a, b = await _tree(db)
+    op_b = await f.make_user(db, workspace_id=ws)
+    await f.add_member(db, workspace_id=ws, user_id=op_b, team_id=b, role="OPERATOR")
+    # criada por op_b, mas pinada no subtime A -- fora da lente DELE.
+    avulsa_a = await f.make_task(
+        db, workspace_id=ws, created_by=op_b, team_id=a, project_id=None
+    )
+
+    # quem ALCANCA o time A ve a tarefa e ve quem a criou.
+    op_a = await f.make_user(db, workspace_id=ws)
+    await f.add_member(db, workspace_id=ws, user_id=op_a, team_id=a, role="OPERATOR")
+    with acting_as(
+        workspace_id=ws, user_id=op_a, memberships=(mship(a, "OPERATOR"),),
+        team_tree=_forest(r, a, b)
+    ):
+        t = await TaskService(db).get(avulsa_a.id)
+        assert t.created_by == op_b
 
 
 async def test_admin_ve_tudo_menos_pessoal_alheio(db) -> None:

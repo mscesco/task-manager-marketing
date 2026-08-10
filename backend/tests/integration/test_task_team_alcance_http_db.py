@@ -254,26 +254,35 @@ async def test_admin_alcanca_qualquer_time_da_arvore(db) -> None:
     assert uuid.UUID(r.json()["team_id"]) == m["design"]
 
 
-# ------------------------------------------------- 3. a heranca NAO e mordida
+# ------------------------ 3. a heranca NAO e mordida (e o pai tem de ser visto)
 
 
-async def test_subtarefa_com_time_herdado_fora_da_lente_para_no_403(db) -> None:
-    """⚠️ MEDIDO, e o comentario do codigo nasceu errado por causa disto.
+async def test_subtarefa_com_pai_fora_da_lente_para_no_404(db) -> None:
+    """⚠️ A PAREDE MUDOU DE LUGAR NA F5 DESTA MESMA SPEC. Leia isto inteiro.
 
-    A hipotese ao escrever a fatia era: *"se a validacao morder o `team_id`
-    RESOLVIDO em vez do explicito, ela quebra a criacao de subtarefa cujo pai
-    esta fora da lente (heranca da ADR 0024)"*. Rodado, o caminho **ja estava
-    fechado um passo depois**: a ADR 0031 exige responsavel, e
-    `assign_many_or_fail` chama `assert_editable` na tarefa recem-criada --
-    Design nao esta na lente de edicao da supervisora, entao vem **403**.
+    Historico, porque ele e a licao:
 
-    Ou seja: morder o explicito ou o resolvido muda a FORMA da recusa (403 na
-    designacao contra 422 na validacao), nao o fato dela. A implementacao ficou
-    no explicito porque e o que o criterio 3 da spec diz literalmente e e a
-    mudanca menor -- mas **nao** porque ela salva um caminho que funcionava.
+    1. Ao escrever a F1, a hipotese era *"morder o `team_id` RESOLVIDO em vez
+       do explicito quebraria a criacao de subtarefa cujo pai esta fora da
+       lente (heranca da ADR 0024)"*.
+    2. Medido na F1: a hipotese estava errada. O caminho ja morria um passo
+       depois -- a ADR 0031 exige responsavel, `assign_many_or_fail` chama
+       `assert_editable` na tarefa recem-criada, e Design nao esta na lente de
+       EDICAO da supervisora. Vinha **403**. O docstring anterior dizia, com
+       todas as letras, que este teste "documenta onde a parede realmente
+       esta".
+    3. ⚠️ A **F5** moveu a parede para ANTES. Sem o ramo `created_by` (E1), a
+       supervisora nao enxerga mais o proprio pai pinado no Design: o
+       `parent_task_id` nem resolve, e a recusa vem como **404** na
+       visibilidade do pai, antes de qualquer designacao.
 
-    Este teste existe para que a proxima pessoa nao repita a hipotese: ele
-    documenta onde a parede realmente esta.
+    A recusa continua existindo, e agora e mais cedo e mais correta: nao da
+    para nem REFERENCIAR um pai que voce nao alcanca.
+
+    ⚠️ A LICAO, e ela vale alem deste arquivo: teste que documenta ONDE a
+    parede esta tem prazo de validade -- e o prazo pode vencer dentro da
+    PROPRIA spec, por causa de outra fatia. O que nao muda e a conferencia do
+    banco, logo abaixo: qualquer que seja a parede, nao pode sobrar filha.
     """
     m = await _setup(db)
     pai = await f.make_task(
@@ -294,7 +303,8 @@ async def test_subtarefa_com_time_herdado_fora_da_lente_para_no_403(db) -> None:
             },
         )
 
-    assert r.status_code == 403, r.text
+    # 404: quem nao alcanca o pai nao sabe que ele existe (ADR 0038).
+    assert r.status_code == 404, r.text
 
     # ⚠️ CONFERE O BANCO. A tarefa chega a ser inserida e flushada ANTES da
     # designacao (a designacao precisa da linha com id e time resolvidos); o

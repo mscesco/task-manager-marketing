@@ -200,12 +200,46 @@ async def test_watcher_self_sem_permissao_sem_history(db) -> None:
     assert h == 0
 
 
-async def test_watcher_terceiro_sem_assign_403(db) -> None:
+async def test_watcher_terceiro_fora_do_escopo_de_edicao_403(db) -> None:
+    """ADR 0011: inscrever TERCEIRO exige `task.assign` + escopo de EDICAO.
+
+    ⚠️ ESTE TESTE FOI RECONSTRUIDO NA SPEC 037 (F5), e a reconstrucao registra
+    uma perda de cobertura que nao da para desfazer.
+
+    A versao anterior usava um ator SEM VINCULO NENHUM (`acting_as` com roles
+    vazios) que enxergava a task por ter criado (o ramo `created_by` da ADR
+    0013). Ela afirmava a metade da PERMISSAO da regra: ve, mas nao tem
+    `task.assign` -> 403.
+
+    ⚠️ ESSA METADE FICOU SEM CAMINHO. Depois da E1, enxergar exige vinculo de
+    time, e os QUATRO papeis carregam `task.assign`
+    (`permissions.py:65, 78, 86, 100`). Nao existe mais alguem que enxergue uma
+    task e nao tenha a permissao -- o `require_permission` daquele ramo nao e
+    alcancavel pela lente. NAO gaste sessao tentando construir o cenario: ele
+    exigiria um papel novo sem `task.assign`, que e decisao de produto.
+
+    O que continua alcancavel e a metade do ESCOPO DE EDICAO, e este teste
+    passa a afirma-la pelo unico caminho que existe: task dentro de PROJETO
+    COMUM. `task_visible` olha `project.team_id`; `task_editable` olha
+    `task.team_id`. Projeto no time A (na lente), task pinada no time B (fora)
+    -> ve pelo projeto, nao edita pela task.
+    """
     ws, r, a, b, manager, proj, forest, mgr_ctx = await _world(db)
-    # usuario sem papel (sem task.assign), mas que VE a task por ter criado (avulsa)
-    sem_perm = await f.make_user(db, workspace_id=ws)
+    op_a = await f.make_user(db, workspace_id=ws)
+    await f.add_member(db, workspace_id=ws, user_id=op_a, team_id=a, role="OPERATOR")
     outro = await f.make_user(db, workspace_id=ws)
-    avulsa = await f.make_task(db, workspace_id=ws, created_by=sem_perm, team_id=a, project_id=None)
-    with acting_as(workspace_id=ws, user_id=sem_perm):  # roles vazios -> sem permissoes
+    # projeto comum do time A (proj), task pinada no time B.
+    task_b = await f.make_task(
+        db, workspace_id=ws, created_by=manager, team_id=b, project_id=proj
+    )
+
+    with acting_as(
+        workspace_id=ws, user_id=op_a, memberships=(mship(a, "OPERATOR"),),
+        team_tree=forest,
+    ):
+        svc = CollaborationService(db)
+        # ENXERGA (pelo time do projeto) -- e isto e o que separa 403 de 404.
+        await svc.list_watchers(task_id=task_b.id)
+        # ...mas inscrever TERCEIRO exige editar, e o time B nao e dela.
         with pytest.raises(AuthorizationError):
-            await CollaborationService(db).add_watcher(task_id=avulsa.id, user_id=outro)
+            await svc.add_watcher(task_id=task_b.id, user_id=outro)

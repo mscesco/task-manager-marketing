@@ -97,13 +97,28 @@ def test_visible_personal_owner_yes_other_no() -> None:
     )
 
 
-def test_visible_creator_sees_avulsa_outside_lens() -> None:
+def test_visible_creator_NAO_ve_avulsa_fora_da_lente() -> None:
+    """Spec 037, E1 -- este teste INVERTEU, e a inversao e a entrega.
+
+    Ate a Spec 037 ele afirmava o contrario: `created_by` garantia visao mesmo
+    com o time fora da lente (ADR 0013). A ADR 0038 retirou isso -- a lente de
+    time e a unica fonte de visibilidade.
+
+    ⚠️ ELE NAO FOI APAGADO, DE PROPOSITO. Apagar deixaria a regra sem
+    afirmacao nenhuma: nada impediria alguem de reintroduzir o ramo
+    `created_by` mais adiante e ver tudo verde. Inverter mantem o ponto sob
+    vigilancia.
+    """
     creator = _id()
     team_copy = _id()  # subtime irmao, fora da lente do criador
     task = _Task(id=_id(), created_by=creator, team_id=team_copy, project_id=None)
-    # lente do criador NAO contem team_copy, mas created_by garante visao
-    assert task_visible(
+    # criar NAO concede leitura: sem o time na lente, nao ve.
+    assert not task_visible(
         task=task, project=None, viewer_user_id=creator, visible=frozenset()
+    )
+    # e com o time na lente, ve -- como qualquer outra pessoa.
+    assert task_visible(
+        task=task, project=None, viewer_user_id=creator, visible=frozenset({team_copy})
     )
 
 

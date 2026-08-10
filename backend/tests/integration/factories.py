@@ -395,7 +395,8 @@ async def make_assignment(
     assigned_by: uuid.UUID,
 ) -> None:
     """Insere assignment DIRETO (sem as travas do service) -- e assim que
-    cenarios out_of_scope nascem (admin designou, ou pessoa movida depois)."""
+    cenarios de designacao fora da lente nascem (admin designou, ou pessoa
+    movida depois)."""
     from app.db.models import TaskAssignment
 
     db.add(

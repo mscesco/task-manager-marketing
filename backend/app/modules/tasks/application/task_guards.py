@@ -5,7 +5,8 @@ MESMA regra de visibilidade/edicao, sem duplicar logica de time.
 
 Duas camadas, alinhadas a Entrega 3 (ADR 0009) + ADR 0013:
     - visibilidade (leitura): pessoal proprio, OU projeto/avulsa cujo time
-      esta na lente, OU `created_by == eu` (ADR 0013). Pessoal alheio nunca.
+      esta na lente. Pessoal alheio nunca. ⚠️ `created_by` NAO concede
+      leitura desde a Spec 037 (E1) -- a ADR 0013 caiu com a 0038.
     - edicao (escrita): admin tudo; pessoal proprio; time da task na lente
       de edicao. `created_by` NAO concede edicao.
 
@@ -56,9 +57,26 @@ def task_visible(
     if project is not None and project.is_personal:
         return project.created_by == viewer_user_id
 
-    # Criador sempre ve a propria task (ADR 0013) -- so leitura.
-    if task.created_by == viewer_user_id:
-        return True
+    # ⚠️ AQUI HAVIA O RAMO `created_by` DA ADR 0013, E ELE SAIU NA SPEC 037
+    # (E1). A regra era "quem criou sempre ve, mesmo fora da lente" -- ou seja,
+    # uma relacao concedia leitura por cima da hierarquia de time. A ADR 0038
+    # inverteu: a lente de time e a UNICA fonte de visibilidade, e perder a
+    # lente perde a visao.
+    #
+    # ⚠️ ESTE E UM DOS **DOIS** PONTOS DA E1. O outro e o ramo
+    # `Task.created_by == tenant.user_id` do bloco (B) em
+    # `task_repository.py`. NAO existe um terceiro: `task_repository.py:117`,
+    # `:130` e `project_service.py:215` mencionam `created_by` mas sao o filtro
+    # de PESSOAL ALHEIO -- apagar qualquer um deles VAZA projeto pessoal, e o
+    # portao nao pega (ver `spec.md` §Correcao de 06/08).
+    #
+    # ⚠️ `task.created_by` CONTINUA EXISTINDO E SENDO EXIBIDO (E2). A tarefa
+    # mostra "criada por fulano" mesmo depois de fulano perder a lente -- e
+    # historico, nao permissao. A E1 nao pode ser implementada apagando o
+    # campo, e ha teste afirmando isso (criterio 2 da spec).
+    #
+    # ⚠️ O RAMO DE PESSOAL ACIMA NAO E ESTE. `project.is_personal` compara
+    # `project.created_by`, nao `task.created_by`, e ele fica.
 
     # Admin ve o resto.
     if visible is None:
@@ -81,7 +99,8 @@ def task_editable(
 ) -> bool:
     """A task e editavel para o usuario com esta lente de edicao?
 
-    `editable=None` => admin. created_by NAO concede edicao (ADR 0013):
+    `editable=None` => admin. created_by nunca concedeu edicao, e desde a
+    Spec 037 (E1) tambem nao concede LEITURA:
     quem edita e funcao do time da task, nao de quem criou nem de quem e
     responsavel.
     """
@@ -194,8 +213,8 @@ class TaskScopeGuards:
     async def assert_visible(self, task: Task) -> None:
         """404 (EntityNotFound) se o usuario corrente nao enxerga a task.
 
-        Nao 403 -- nao vaza existencia. Cobre privacidade do pessoal,
-        lente de time e a regra `created_by` (ADR 0013).
+        Nao 403 -- nao vaza existencia. Cobre privacidade do pessoal e
+        lente de time. ⚠️ `created_by` NAO entra mais (Spec 037, E1).
         """
         tenant = require_tenant()
         visible = team_scope.visible_team_ids(tenant.memberships, tenant.team_tree)

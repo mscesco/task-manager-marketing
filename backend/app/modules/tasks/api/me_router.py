@@ -61,8 +61,12 @@ async def list_my_assignments(
     """Tasks onde sou assignee/creator/watcher (ADR 0017/0018).
 
     `relation` repetivel; ausente = as tres. Valor invalido -> 422 (enum
-    validado pelo FastAPI). So leitura: ver `out_of_scope` NAO implica
-    poder editar (edicao segue presa a lente de time, ADR 0013).
+    validado pelo FastAPI).
+
+    ⚠️ DESDE A SPEC 037 ESTA LISTA APLICA A LENTE DE TIME, como todo o
+    resto. Ate a F6 ela devolvia tambem as tasks fora da lente, marcadas
+    com a flag da ADR 0017; a ADR 0038 (E5/E6) recusou a excecao por
+    relacao -- sem alcance, a task nao vem.
     """
     rels = frozenset(r.value for r in relation) if relation else _ALL_RELATIONS
     result = await MeService(session).list_assignments(
@@ -94,7 +98,6 @@ async def list_my_assignments(
         MyTaskItem(
             **TaskResponse.model_validate(row.task).model_dump(),
             relations=sorted(row.relations),
-            out_of_scope=row.out_of_scope,
             assignee_ids=amap.get(row.task.id, []),
             # None quando nao ha mae OU quando a mae esta fora da lente: o
             # `_base_select` do repo filtra por tenant, entao titulo alheio

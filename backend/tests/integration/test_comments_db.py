@@ -18,10 +18,7 @@ from sqlalchemy import update
 
 from app.db.models import Comment
 from app.modules.tasks.application.comment_service import CommentService
-from app.modules.tasks.application.task_service import (
-    TaskService,
-    UpdateTaskCommand,
-)
+from app.modules.tasks.application.task_service import TaskService
 from app.shared.exceptions.base import (
     AuthorizationError,
     EntityNotFoundError,
@@ -231,26 +228,33 @@ async def test_visibilidade_fora_da_lente_404(db) -> None:
             await svc.list_comments(task_id=task.id, params=PAGE)
 
 
-async def test_ve_por_created_by_comenta_mas_nao_edita_a_task(db) -> None:
-    """D1: enxergar (mesmo so por created_by, ADR 0013) basta pra comentar;
-    comentar nao depende de poder editar a task."""
+async def test_created_by_NAO_comenta_em_task_fora_da_lente(db) -> None:
+    """Spec 037, E1 -- este teste INVERTEU, e a inversao e a entrega.
+
+    Ate a 037 ele se chamava `test_ve_por_created_by_comenta_mas_nao_edita_a
+    _task` e afirmava a D1 em cima do furo da ADR 0013: enxergar por
+    `created_by` bastava para comentar. Com o ramo fora, o criador nao
+    enxerga -- e comentar cai em 404, nao em 403.
+
+    ⚠️ A D1 CONTINUA VALENDO E NAO FOI REVOGADA: enxergar basta para comentar,
+    e comentar nao exige editar. O que mudou foi a FONTE do enxergar, que
+    agora e so a lente de time. Este teste passa a afirmar o 404; quem afirma
+    a D1 e o teste do time na lente, logo acima.
+    """
     ws, r, a, b = await _tree(db)
     # operador do subtime B cria uma task pinada no subtime A (fora da lente
-    # dele) -> ve por created_by, mas nao edita (time A nao esta no escopo).
+    # dele) -> depois da E1 ele NAO ve, entao nem comenta.
     op_b = await f.make_user(db, workspace_id=ws)
     await f.add_member(db, workspace_id=ws, user_id=op_b, team_id=b, role="OPERATOR")
     task = await f.make_task(db, workspace_id=ws, created_by=op_b, team_id=a)
 
     with acting_as(workspace_id=ws, user_id=op_b,
                    memberships=(mship(b, "OPERATOR"),), team_tree=_forest(r, a, b)):
-        # comenta (so precisa enxergar) -> ok
-        c = await CommentService(db).create_comment(task_id=task.id, content="ok")
-        assert c.id is not None
-        # editar a TASK -> 403 (ve mas nao edita)
-        with pytest.raises(AuthorizationError):
-            await TaskService(db).update(
-                task_id=task.id, command=UpdateTaskCommand(title="novo")
-            )
+        # 404, e nao 403: quem nao alcanca nao sabe que a task existe.
+        with pytest.raises(EntityNotFoundError):
+            await CommentService(db).create_comment(task_id=task.id, content="ok")
+        with pytest.raises(EntityNotFoundError):
+            await CommentService(db).list_comments(task_id=task.id, params=PAGE)
 
 
 async def test_cascata_soft_delete_apaga_comentarios(db) -> None:

@@ -310,15 +310,23 @@ class MeRelation(str, Enum):
 
 
 class MyTaskItem(TaskResponse):
-    """Item de /me/assignments: task + relacoes que tenho + flag de escopo.
+    """Item de /me/assignments: task + relacoes que tenho.
 
-    `relations`: TODAS as relacoes que tenho com a task (independe do
-    filtro). `out_of_scope`: estou ligado mas nao enxergo pela lente atual
-    (ADR 0017) -- calculado por requisicao, nao e coluna.
+    `relations`: TODAS as relacoes que tenho com a task (independe do filtro).
+
+    ⚠️ A FLAG DE ESCOPO DA ADR 0017 SAIU DAQUI NA SPEC 037 (E5), e a
+    remocao MUDA O CONTRATO da API: o campo booleano deixa de existir na
+    resposta. Cliente que o lia (o front de /minhas-tarefas, `lib/api.ts`,
+    `lib/notificacoes.ts` e `tarefa/[id]`) foi ajustado na mesma fatia -- e
+    esta e a unica fatia da Spec 037 que toca o front, por isso.
+
+    ⚠️ NAO E SO O CAMPO QUE SUMIU: a task que a lente nao alcanca deixa de
+    APARECER nesta lista (a camada (B) entrou em `list_my_relations`). Um
+    cliente que so parasse de ler o campo continuaria correto; um que
+    contasse itens vai ver numero menor.
     """
 
     relations: list[str]
-    out_of_scope: bool
     # Responsaveis (so IDs), em LOTE como o TaskListItem do quadro (ADR 0025).
     # Sem isto, a tela "Minhas tarefas" reaproveita o item e o detalhe mostra
     # "Ninguem designado" mesmo pra quem esta designado.
