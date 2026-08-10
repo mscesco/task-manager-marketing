@@ -16,6 +16,7 @@ import {
   type Alcance,
 } from "@/lib/permissoesMembros";
 import AppShell from "@/components/AppShell";
+import BloqueioAlcance from "@/components/BloqueioAlcance";
 import EmptyState from "@/components/EmptyState";
 import Badge from "@/components/Badge";
 import Avatar from "@/components/Avatar";
@@ -40,6 +41,7 @@ import {
   type MemberTeam,
   type CurrentUser,
 } from "@/lib/api";
+import { bloqueioDeAlcance, type ErroDeLinha } from "@/lib/erroAlcance";
 
 // Membros: lista + cadastro (4a) + resetar senha / desativar (4b), gated por
 // team.manage. Reset e cadastro compartilham o reveal-once da senha (ADR 0008).
@@ -312,7 +314,10 @@ function LinhaMembro({
   const [confirmReset, setConfirmReset] = useState(false);
   const [confirmDesativar, setConfirmDesativar] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [erroLinha, setErroLinha] = useState<string | null>(null);
+  // ⚠️ `ErroDeLinha`, e nao `string`. A E8 da Spec 037 devolve uma LISTA de
+  // tarefas no 422; guardar so texto aqui era o que fazia a lista morrer no
+  // ultimo passo, depois de atravessar backend, HTTP e `lib/api.ts`.
+  const [erroLinha, setErroLinha] = useState<ErroDeLinha | null>(null);
 
   // painel de papel (Spec 015, F3) -- carregado sob demanda.
   const [editandoPapel, setEditandoPapel] = useState(false);
@@ -441,12 +446,17 @@ function LinhaMembro({
       );
     } catch (e) {
       const a = e as ApiError;
+      // ⚠️ O REBAIXAMENTO E O GATILHO MAIS LARGO DOS TRES: MANAGER da raiz
+      // virando OPERATOR perde os oito subtimes de uma vez. Se algum handler
+      // tinha de ganhar a lista, era este.
+      const bloqueio = bloqueioDeAlcance(a);
       setErroLinha(
-        a.status === 403
-          ? "Sem permissão para esse papel (a matriz do servidor recusou)."
-          : a.status === 404
-          ? "Vínculo não encontrado (a pessoa pode ter saído do time)."
-          : a.message || "Não consegui alterar o papel."
+        bloqueio ??
+          (a.status === 403
+            ? "Sem permissão para esse papel (a matriz do servidor recusou)."
+            : a.status === 404
+            ? "Vínculo não encontrado (a pessoa pode ter saído do time)."
+            : a.message || "Não consegui alterar o papel.")
       );
     } finally {
       setPapelBusy(null);
@@ -463,14 +473,16 @@ function LinhaMembro({
       onMudou(); // o subtime na lista pode ter mudado
     } catch (e) {
       const a = e as ApiError;
+      const bloqueio = bloqueioDeAlcance(a);
       setErroLinha(
-        a.status === 403
-          ? "Sem permissão para remover esse vínculo."
-          : a.status === 409
-          ? "Não dá pra remover: é o único time da pessoa (ela ficaria sem time)."
-          : a.status === 404
-          ? "Vínculo não encontrado (pode ter mudado)."
-          : a.message || "Não consegui remover."
+        bloqueio ??
+          (a.status === 403
+            ? "Sem permissão para remover esse vínculo."
+            : a.status === 409
+            ? "Não dá pra remover: é o único time da pessoa (ela ficaria sem time)."
+            : a.status === 404
+            ? "Vínculo não encontrado (pode ter mudado)."
+            : a.message || "Não consegui remover.")
       );
     } finally {
       setPapelBusy(null);
@@ -486,14 +498,19 @@ function LinhaMembro({
       onMudou(); // o subtime na lista mudou
     } catch (e) {
       const a = e as ApiError;
+      // Spec 037, E8: o 422 COM lista vira o aviso estruturado. O 422 sem
+      // lista (ex.: a regra de 1 subtime da ADR 0008) continua sendo texto --
+      // quem separa os dois e `bloqueioDeAlcance`, nao o status.
+      const bloqueio = bloqueioDeAlcance(a);
       setErroLinha(
-        a.status === 403
-          ? "Sem permissão para mover esse membro."
-          : a.status === 409
-          ? "Movimento inválido (mesmo time ou já faz parte do destino)."
-          : a.status === 404
-          ? "Time de origem ou destino não encontrado."
-          : a.message || "Não consegui mover."
+        bloqueio ??
+          (a.status === 403
+            ? "Sem permissão para mover esse membro."
+            : a.status === 409
+            ? "Movimento inválido (mesmo time ou já faz parte do destino)."
+            : a.status === 404
+            ? "Time de origem ou destino não encontrado."
+            : a.message || "Não consegui mover.")
       );
     } finally {
       setPapelBusy(null);
@@ -767,7 +784,14 @@ function LinhaMembro({
         </div>
       )}
 
-      {erroLinha && <div className="error-box" style={{ marginLeft: 44 }}>{erroLinha}</div>}
+      {erroLinha !== null &&
+        (typeof erroLinha === "string" ? (
+          <div className="error-box" style={{ marginLeft: 44 }}>{erroLinha}</div>
+        ) : (
+          <div style={{ marginLeft: 44 }}>
+            <BloqueioAlcance bloqueio={erroLinha} />
+          </div>
+        ))}
     </div>
   );
 }
