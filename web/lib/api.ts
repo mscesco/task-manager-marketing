@@ -180,11 +180,31 @@ async function _request<T>(
   }
 
   if (!res.ok) {
-    const detail =
-      (data && (data.detail?.message || data.detail || data.message)) ||
+    // ⚠️ O ENVELOPE DE ERRO DESTA API E `{ error: { code, message, details } }`
+    // -- ver `backend/app/api/errors.py:_error_body`. A versao anterior desta
+    // funcao so procurava em `data.detail.*` (a forma PADRAO do FastAPI, que
+    // este backend NAO usa) e em `data.message` / `data.details` na raiz.
+    // Resultado: `code` e `details` vinham SEMPRE `undefined`, e a mensagem
+    // caia no literal `Erro <status>` em toda falha de dominio.
+    //
+    // Duas coisas que estavam quebradas por causa disso, e nenhum portao
+    // pegava (`tsc` e `next build` nao leem corpo de HTTP; o unico teste que
+    // montava erro usava `{"detail":"nope"}`, que e a forma do FastAPI, nao a
+    // deste backend):
+    //   - `TaskModal.tsx:580` le `e.details?.invalid_ids` -- nunca chegou nada,
+    //     apesar de `test_task_create_assignees_http_db.py:213` existir do lado
+    //     do backend justamente porque "o front depende de details.invalid_ids";
+    //   - toda mensagem de regra de dominio virava "Erro 409" / "Erro 422" em
+    //     vez do texto que o backend escreveu.
+    //
+    // As formas antigas ficam no encadeamento DE PROPOSITO: `data.detail` cobre
+    // o 422 do proprio Pydantic/FastAPI (que nao passa pelo handler da casa) e
+    // o `data = { detail: text }` do corpo nao-JSON, logo acima.
+    const env = data?.error ?? data?.detail ?? data;
+    const detail = env?.message || (typeof env === "string" ? env : null) ||
       `Erro ${res.status}`;
-    const code = data?.detail?.code || data?.code;
-    const details = data?.detail?.details || data?.details;
+    const code = env?.code;
+    const details = env?.details;
     throw new ApiError(res.status, typeof detail === "string" ? detail : "Erro", code, details);
   }
   return data as T;
