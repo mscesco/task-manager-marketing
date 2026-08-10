@@ -1,4 +1,10 @@
 // lib/api.ts
+//
+// ⚠️ UNICO IMPORT DESTE ARQUIVO (fatia 4a/4b da Spec 036): o tipo `Coluna`
+// vem de `lib/coluna.ts`, e nao o contrario. Ver o bloco QUADROS mais
+// abaixo para o motivo (fronteira de pureza da Spec 027).
+import type { Coluna } from "@/lib/coluna";
+
 // Cliente unico de acesso ao backend FastAPI. Centraliza:
 //  - a URL base (RELATIVA por padrao -- topologia A, ADR 0001 da raiz)
 //  - o token de acesso (guardado em memoria + localStorage)
@@ -294,6 +300,18 @@ export type Task = {
   position: number;
   depth: number;
   path: string;
+  // ⚠️ Spec 036, fatia 3. O backend passou a devolver os dois em
+  // `TaskResponse` (e portanto em `TaskListItem`, `TaskDetailResponse` e
+  // `MyTaskItem`, que herdam). NAO SAO OPCIONAIS: as colunas viraram NOT NULL
+  // na migration `0011`, entao toda tarefa tem quadro e coluna.
+  //
+  // ⚠️ ELES FICARAM DE FORA DESTE TIPO ATE 10/08 -- a fatia 3 subiu o backend
+  // e ninguem tocou aqui. O buraco so apareceu quando a fatia 4b tentou
+  // filtrar por `column_id`, porque teste com fixture `as MyTaskItem` cala o
+  // `tsc`. Se voce for acrescentar campo de resposta, acrescente NOS DOIS
+  // lados no mesmo passo.
+  board_id: string;
+  column_id: string;
   due_date: string | null;
   completed_at: string | null;
   created_by: string;
@@ -620,6 +638,83 @@ export async function listTeamsAll(): Promise<Team[]> {
     return a.name.localeCompare(b.name, "pt-BR");
   });
 }
+
+// ===========================================================================
+// QUADROS (Spec 036, fatia 2 no backend / fatia 4b aqui)
+// ===========================================================================
+//
+// ⚠️ O TIPO `Coluna` NAO MORA AQUI, e e a unica excecao a convencao de que
+// tipo de resposta da API vive neste arquivo (`Task`, `Team`, `Member`,
+// `Project`). Ele vive em `lib/coluna.ts` junto com as regras que o
+// interpretam -- e o motivo e a fronteira de pureza da Spec 027: se `Coluna`
+// morasse aqui, `coluna.ts` teria de importar deste modulo, que carrega
+// `fetch`, token e `localStorage`. O modulo de regras deixaria de ser
+// testavel sem mock, que e exatamente o que a fatia 4a comprou.
+//
+// A dependencia fica `api -> coluna -> status`, sem ciclo.
+
+/**
+ * Um quadro alcancavel, com as colunas na ordem visual.
+ *
+ * Espelha `BoardResponse` do backend. `workspace_id` e `deleted_at` NAO vem --
+ * o backend nao os expoe de proposito (o primeiro seria uma trava de servidor
+ * refeita no cliente; o segundo so poderia valer `null`).
+ */
+export type Quadro = {
+  id: string;
+  name: string;
+  team_id: string;
+  is_default: boolean;
+  colunas: Coluna[];
+};
+
+/**
+ * Os quadros que quem pergunta ALCANCA, pela lente de time.
+ *
+ * A trava inteira mora na consulta do backend, nao numa permissao de rota
+ * (ADR 0035, D3): SUPERVISOR/OPERATOR de X ve o quadro geral e os do proprio
+ * subtime; MANAGER/ADMIN da raiz veem os internos tambem.
+ *
+ * ⚠️ SEM MEMOIZACAO, ao contrario de `listTeams`. Nao e esquecimento: a fatia
+ * 5 traz criar/renomear/apagar quadro e CRUD de coluna, e um cache aqui viraria
+ * o mesmo defeito que a Spec 029 criou em `listTeams` -- criar um subtime nao
+ * o fazia aparecer ate a proxima recarga. Producao tem UM quadro
+ * (`scripts/invariantes.sql`, consulta 5, medida em 10/08/2026), entao o custo
+ * de rebuscar por tela e uma requisicao. **Se um dia doer, o lugar de rever e
+ * este comentario -- e ai o cache nasce COM o `invalidateQuadros()`, nao
+ * depois.**
+ *
+ * ⚠️ SEM PAGINACAO, pelo mesmo motivo do router: o front precisa da lista
+ * inteira para desenhar o seletor de quadro. A ADR 0034 preve poucas dezenas
+ * no pior caso, um por subtime.
+ */
+export async function listBoards(): Promise<Quadro[]> {
+  return api<Quadro[]>("/api/v1/boards");
+}
+
+/**
+ * As colunas do quadro PADRAO do time raiz -- o "Quadro geral".
+ *
+ * Existe porque a fatia 4b troca `STATUSES` (const sincrona de 8 status) pela
+ * lista de colunas, e as telas que hoje leem `STATUSES` (`/minhas-tarefas`,
+ * `/arquivadas`, `TaskModal`) desenham o quadro geral, nao um quadro escolhido.
+ *
+ * ⚠️ DEVOLVE `[]`, E NAO LEVANTA, quando nao acha o quadro padrao. Quem chama
+ * distingue "ainda carregando" (`null` no estado) de "carregou e nao ha
+ * coluna" (`[]`) -- e uma tela sem coluna nenhuma e um estado que a fatia 4b
+ * tem de desenhar de propósito (a sabotagem da fatia 4 no `plan.md` e
+ * literalmente "devolver a lista de colunas vazia da API").
+ *
+ * ⚠️ `is_default` E O CRITERIO, nao o nome do quadro. Nome e editavel na
+ * fatia 5; a flag tem indice parcial no banco (`board_um_padrao_por_time`).
+ */
+export async function colunasDoQuadroGeral(): Promise<Coluna[]> {
+  const quadros = await listBoards();
+  const geral = quadros.find((q) => q.is_default);
+  if (!geral) return [];
+  return [...geral.colunas].sort((a, b) => a.position - b.position);
+}
+
 
 export type TaskCreateInput = {
   title: string;

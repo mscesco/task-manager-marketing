@@ -20,17 +20,24 @@ import TaskModal from "@/components/TaskModal";
 import TaskDetail from "@/components/TaskDetail";
 import TaskCard from "@/components/TaskCard";
 import {
+  // ⚠️ STATUSES FICA, e so por causa do KANBAN desta tela. A vista de LISTA
+  // ja le as colunas da API (Spec 036, fatia 4b); a de QUADRO nao pode ser
+  // migrada ainda, ver o comentario em `porStatus`.
   STATUSES,
   PRIORITY_LABEL,
   PRIORITY_COLOR,
-  deadlineTone,
   deadlineLabel,
   DEADLINE_COLOR,
-  statusPadraoMinhasTarefas,
 } from "@/lib/status";
+import {
+  colunasPadraoMinhasTarefas,
+  deadlineTonePorColuna,
+  type Coluna,
+} from "@/lib/coluna";
 import { normalizarBusca } from "@/lib/filtrosQuadro";
 import {
   listAllMyAssignments,
+  colunasDoQuadroGeral,
   getTask,
   listTasks,
   listMembers,
@@ -52,12 +59,11 @@ const RELATION_LABEL: Record<string, string> = {
   // rotulo a linha mostraria a string crua "watcher" na tela.
   watcher: "Acompanho",
 };
-const STATUS_LABEL: Record<string, string> = Object.fromEntries(
-  STATUSES.map((s) => [s.key, s.label])
-);
-const STATUS_COLOR: Record<string, string> = Object.fromEntries(
-  STATUSES.map((s) => [s.key, s.color])
-);
+// ⚠️ `STATUS_LABEL` e `STATUS_COLOR` SAIRAM DAQUI (Spec 036, fatia 4b).
+// Eram derivadas de `STATUSES` em escopo de MODULO -- calculadas no import,
+// antes do primeiro render. Com as colunas vindo da API isso deixa de ser
+// possivel, e as duas viraram `useMemo` dentro do componente (`rotuloDaColuna`
+// e `colunaDe`). Ver `sondagem-fatia-4.md` §2.
 
 // Opcoes do seletor de relacao. "todas" = sem filtro de relacao.
 const RELACOES = [
@@ -72,7 +78,8 @@ const RELACOES = [
   // Voltar aqui QUANDO existir o botao de acompanhar, nao antes.
 ] as const;
 
-const TODOS_STATUS = STATUSES.map((s) => s.key);
+// ⚠️ `TODOS_STATUS` SAIU DAQUI pelo mesmo motivo. Quem responde "todas as
+// colunas" agora e o proprio estado `colunas`, carregado da API.
 
 // Rotulo legivel do cabecalho de grupo (ex.: "Sexta-feira, 22 de agosto").
 function rotuloData(d: string): string {
@@ -110,12 +117,20 @@ function Minhas() {
   // no lugar de perda silenciosa (mesmo padrao do quadro).
   const [truncadoTotal, setTruncadoTotal] = useState<number | null>(null);
 
+  // Colunas do quadro geral, vindas da API (Spec 036, fatia 4b).
+  // `null` = ainda carregando. `[]` = carregou e nao ha coluna -- estado
+  // diferente, e a tela desenha os dois de formas diferentes.
+  const [colunas, setColunas] = useState<Coluna[] | null>(null);
+
   // Filtros (client-side, sobre a lista ja carregada). Comecam "tudo visivel".
   const [relFiltro, setRelFiltro] = useState<string>("todas");
-  // Abre sem as concluidas (ver statusPadraoMinhasTarefas). "Todos" religa.
-  const [statusOn, setStatusOn] = useState<Set<string>>(
-    () => new Set(statusPadraoMinhasTarefas())
-  );
+  // ⚠️ ANTES ISTO ERA UM INICIALIZADOR DE `useState` chamando
+  // `statusPadraoMinhasTarefas()` -- rodava no PRIMEIRO RENDER, antes de
+  // qualquer fetch (`sondagem-fatia-4.md` §5). Com as colunas vindo da API o
+  // dado nao existe nessa hora, entao o conjunto nasce `null` e e preenchido
+  // quando as colunas chegam. **A tela nao renderiza ate la** (decisao de
+  // 10/08), e o portao ja existia: ver `if (!items || !colunas)` mais abaixo.
+  const [colunasOn, setColunasOn] = useState<Set<string> | null>(null);
   // Arquivadas escondidas por padrao (paridade com o quadro). Sessao-only.
   const [mostrarArquivadas, setMostrarArquivadas] = useState(false);
   // Spec 031 (C3, D4-ter): esta tela nao tinha busca. Uma linha de pastilhas
@@ -195,6 +210,14 @@ function Minhas() {
         // concordar.
         setItems(r.items);
         setTruncadoTotal(r.truncated ? r.total : null);
+      })
+      .catch((e: ApiError) => setErro(e.message));
+    // Colunas do quadro geral. O filtro padrao da tela sai daqui: liga todas
+    // menos as de semantica DONE (ADR 0040 -- Cancelado CONTINUA aparecendo).
+    colunasDoQuadroGeral()
+      .then((cs) => {
+        setColunas(cs);
+        setColunasOn(new Set(colunasPadraoMinhasTarefas(cs)));
       })
       .catch((e: ApiError) => setErro(e.message));
     listMembers()
@@ -498,24 +521,24 @@ function Minhas() {
 
   // --- filtros ---
   function toggleStatus(key: string) {
-    setStatusOn((prev) => {
-      const next = new Set(prev);
+    setColunasOn((prev) => {
+      const next = new Set(prev ?? []);
       if (next.has(key)) next.delete(key);
       else next.add(key);
       return next;
     });
   }
   function todosStatus() {
-    setStatusOn(new Set(TODOS_STATUS));
+    setColunasOn(new Set((colunas ?? []).map((c) => c.id)));
   }
   function limparStatus() {
-    setStatusOn(new Set());
+    setColunasOn(new Set());
   }
   function limparTudo() {
     setRelFiltro("todas");
     // Volta ao PADRAO da tela, nao a "tudo ligado": limpar filtro e voltar ao
     // estado de abertura, e nele as concluidas nao aparecem.
-    setStatusOn(new Set(statusPadraoMinhasTarefas()));
+    setColunasOn(new Set(colunasPadraoMinhasTarefas(colunas ?? [])));
   }
 
   // Arquivadas: escondidas por padrao. O backend de assignments INCLUI
@@ -533,13 +556,13 @@ function Minhas() {
   // Aplica relacao + status sobre a lista carregada.
   const filtrados = useMemo(() => {
     return itemsBase.filter((t) => {
-      const okStatus = statusOn.has(t.status);
+      const okStatus = colunasOn === null || colunasOn.has(t.column_id);
       const okRel = relFiltro === "todas" || t.relations.includes(relFiltro);
       const okBusca =
         buscaNorm === "" || normalizarBusca(t.title).includes(buscaNorm);
       return okStatus && okRel && okBusca;
     });
-  }, [itemsBase, statusOn, relFiltro, buscaNorm]);
+  }, [itemsBase, colunasOn, relFiltro, buscaNorm]);
 
   // Agrupa por data de entrega (D, estilo Runrunit): so aparece o dia que tem
   // tarefa; grupos em ordem cronologica; sem-prazo por ultimo. Agrupa sobre a
@@ -560,7 +583,24 @@ function Minhas() {
   }, [filtrados]);
 
   // Modo QUADRO: filtra so por relacao (o status vira coluna, nao filtro) e
-  // agrupa por status. As colunas sao sempre as 7 (STATUSES).
+  // agrupa por status.
+  //
+  // ⚠️⚠️ ESTA VISTA **NAO** FOI MIGRADA NA FATIA 4b, E O MOTIVO E UM BLOQUEIO
+  // DE CONTRATO, nao falta de tempo. Arrastar um card chama `onDragEnd`, que
+  // manda `status` para o backend e olha `destino === "COMPLETED"` para
+  // cascatear a conclusao. Se as colunas viessem da API, o `id` do destino
+  // seria `column_id` -- e **nao ha como traduzir coluna -> status no front**:
+  // `legacy_status` NAO e exposto pelo `GET /boards`, de proposito (ADR 0033;
+  // expo-lo convidaria o front a se amarrar na ponte em vez da semantica). A
+  // semantica tambem nao resolve: QUATRO colunas padrao tem `IN_PROGRESS`.
+  //
+  // **Migrar isto exige `PATCH /tasks/{id}` aceitando `column_id`, e isso e
+  // FATIA 5** (decidido em 10/08). Ate la a vista de LISTA le colunas da API e
+  // esta le `STATUSES` -- dois mundos convivendo, de propósito e registrado.
+  //
+  // ⚠️ Se voce migrar isto sem o endpoint, o arrastar para de funcionar e
+  // NENHUM PORTAO PEGA: `tsc` e `next build` nao leem estado, e o
+  // `Board.test.tsx` registra que drag-and-drop nao e testavel em jsdom.
   const porRelacao = useMemo(() => {
     return itemsBase.filter(
       (t) =>
@@ -579,7 +619,12 @@ function Minhas() {
   }, [porRelacao, ordenacao]);
 
   if (erro) return <div className="error-box" style={{ maxWidth: 480 }}>{erro}</div>;
-  if (!items) return <div className="muted">Carregando…</div>;
+  // ⚠️ O PORTAO ESPERA OS DOIS (Spec 036, fatia 4b). Ele ja existia para
+  // `items`; `colunas` entrou aqui. E a decisao de 10/08: a tela NAO renderiza
+  // ate as colunas chegarem, em vez de pintar sem filtro e reordenar depois --
+  // lista que pisca mostrando concluidas que ninguem pediu e pior que meio
+  // segundo de "Carregando".
+  if (!items || !colunas) return <div className="muted">Carregando…</div>;
 
   // Detalhe e subtarefas SEMPRE sobre a lista completa (um filtro ativo nao
   // pode quebrar abrir/navegar uma task que esta fora do filtro atual).
@@ -593,7 +638,14 @@ function Minhas() {
       : filhosFocado;
 
   const visiveis = vista === "quadro" ? porRelacao.length : filtrados.length;
-  const todosLigados = statusOn.size === TODOS_STATUS.length;
+  const todosLigados = (colunasOn?.size ?? 0) === colunas.length;
+  // Coluna de uma tarefa, pelo `column_id` que a Spec 036 fatia 3 passou a
+  // devolver na resposta. `undefined` nao deveria acontecer -- significaria
+  // tarefa apontando para coluna de outro quadro, o que a FK composta impede
+  // no banco (`invariantes.sql`, consulta 2).
+  const colunaPorId = new Map(colunas.map((c) => [c.id, c]));
+  const colunaDe = (t: MyTaskItem): Coluna | undefined =>
+    colunaPorId.get(t.column_id);
   const contagem =
     visiveis === items.length ? `${items.length} tarefas` : `${visiveis} de ${items.length}`;
 
@@ -601,7 +653,12 @@ function Minhas() {
   function linhaTarefa(t: MyTaskItem, i: number) {
     // Spec 023: cor de prazo por-card (respeita status/arquivada). null = sem
     // alerta. Barra lateral colorida + chip com o motivo.
-    const dueTone = deadlineTone(t.due_date, t.status, t.is_archived);
+    const col = colunaDe(t);
+    // Spec 036 fatia 4a: quem decide se ha alerta e a COLUNA
+    // (`notify_deadline` + semantica), nao mais uma lista de status cravada.
+    // Sem coluna resolvida nao ha como decidir -> sem alerta, que e o lado
+    // seguro (o contrario pintaria de vermelho por falta de dado).
+    const dueTone = col ? deadlineTonePorColuna(col, t.due_date, t.is_archived) : null;
     return (
       <div
         key={t.id}
@@ -624,10 +681,10 @@ function Minhas() {
         }}
       >
         <span
-          title={STATUS_LABEL[t.status]}
+          title={col?.name ?? t.status}
           style={{
             width: 9, height: 9, borderRadius: 999, flexShrink: 0,
-            background: STATUS_COLOR[t.status] || "#999",
+            background: col?.color ?? "#999",
           }}
         />
         <div style={{ minWidth: 0, flex: 1 }}>
@@ -650,7 +707,7 @@ function Minhas() {
               pastilha longa empurra o resto da faixa pra fora. */}
           <div style={{ display: "flex", gap: 8, marginTop: 3, flexWrap: "wrap", alignItems: "center", minWidth: 0 }}>
             <span className="muted" style={{ fontSize: 12, flexShrink: 0 }}>
-              {STATUS_LABEL[t.status] || t.status}
+              {col?.name ?? t.status}
             </span>
             {t.parent_task_id && (
               // Nomeia a mae quando o backend a resolveu. Cai no generico se
@@ -802,13 +859,18 @@ function Minhas() {
             <span style={{ width: 1, height: 22, background: "var(--border)", flexShrink: 0 }} />
 
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
-          {STATUSES.map((s) => {
-            const on = statusOn.has(s.key);
+          {/* ⚠️ `colunas ?? []` e nao `colunas`: o guard de carregamento la em
+              cima ja garante que nao e null, mas este bloco vive dentro de
+              `barraFiltros()`, declarada DEPOIS do guard -- e o `tsc` perde o
+              narrowing em corpo de funcao. O `?? []` e inalcancavel na
+              pratica; trocar por `!` esconderia o dia em que o guard sair. */}
+          {(colunas ?? []).map((s) => {
+            const on = colunasOn?.has(s.id) ?? false;
             return (
               <button
-                key={s.key}
+                key={s.id}
                 type="button"
-                onClick={() => toggleStatus(s.key)}
+                onClick={() => toggleStatus(s.id)}
                 aria-pressed={on}
                 className="tappable"
                 style={{
@@ -827,7 +889,7 @@ function Minhas() {
                     opacity: on ? 1 : 0.45,
                   }}
                 />
-                {s.label}
+                {s.name}
               </button>
             );
           })}
@@ -850,13 +912,13 @@ function Minhas() {
           <button
             type="button"
             onClick={limparStatus}
-            disabled={statusOn.size === 0}
+            disabled={(colunasOn?.size ?? 0) === 0}
             className="tappable"
             style={{
               padding: "5px 8px", borderRadius: "var(--radius)", border: "none",
               background: "transparent",
-              color: statusOn.size === 0 ? "var(--text-faint)" : "var(--accent)",
-              fontSize: 12, fontWeight: 600, cursor: statusOn.size === 0 ? "default" : "pointer",
+              color: (colunasOn?.size ?? 0) === 0 ? "var(--text-faint)" : "var(--accent)",
+              fontSize: 12, fontWeight: 600, cursor: (colunasOn?.size ?? 0) === 0 ? "default" : "pointer",
             }}
           >
             Limpar

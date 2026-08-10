@@ -45,6 +45,7 @@ import {
 
 import MinhasTarefasPage from "@/app/minhas-tarefas/page";
 import type { Member, MyTaskItem, Project } from "@/lib/api";
+import type { Coluna } from "@/lib/coluna";
 
 // ⚠️ O AppShell usa `useRouter`/`usePathname`. Mock incompleto de
 // next/navigation derruba a arvore inteira com `invariant expected app router
@@ -75,6 +76,7 @@ vi.mock("@/lib/api", async (importOriginal) => {
   return {
     ...real,
     listAllMyAssignments: vi.fn(),
+    colunasDoQuadroGeral: vi.fn(),
     listMembers: vi.fn(),
     getRootTeamId: vi.fn(),
     listAllProjects: vi.fn(),
@@ -92,6 +94,44 @@ const api = await import("@/lib/api");
 const RAIZ = "team-marketing";
 const ANA = "user-ana";
 
+/**
+ * As colunas do quadro geral, como o `GET /boards` as devolve.
+ *
+ * ⚠️ SO AS QUE OS TESTES USAM, e nao as oito. A paridade com o backend e
+ * afirmada em `lib/__tests__/paridadeColuna.test.ts`, contra a tabela
+ * completa; repetir as oito aqui seria uma segunda copia da mesma tabela para
+ * manter em dia.
+ */
+const COLUNAS: Coluna[] = [
+  {
+    id: "col-progress",
+    name: "Em Andamento",
+    color: "var(--status-progress-dot)",
+    position: 2,
+    semantic: "IN_PROGRESS",
+    notify_deadline: true,
+    is_default_target: true,
+  },
+  {
+    id: "col-done",
+    name: "Concluído",
+    color: "var(--status-done-dot)",
+    position: 5,
+    semantic: "DONE",
+    notify_deadline: true,
+    is_default_target: true,
+  },
+  {
+    id: "col-cancel",
+    name: "Cancelado",
+    color: "var(--status-cancel-dot)",
+    position: 6,
+    semantic: "CANCELLED",
+    notify_deadline: true,
+    is_default_target: true,
+  },
+];
+
 function item(
   over: Partial<MyTaskItem> & { id: string; title: string }
 ): MyTaskItem {
@@ -101,7 +141,7 @@ function item(
     parent_task_id: null,
     team_id: RAIZ,
     board_id: "board-geral",
-    column_id: "col-backlog",
+    column_id: "col-progress",
     description: "",
     status: "BACKLOG",
     priority: "MEDIUM",
@@ -146,6 +186,7 @@ function montarApi(
     total: opts.total ?? itens.length,
     truncated: opts.truncated ?? false,
   } as Awaited<ReturnType<typeof api.listAllMyAssignments>>);
+  vi.mocked(api.colunasDoQuadroGeral).mockResolvedValue(COLUNAS);
   vi.mocked(api.listMembers).mockResolvedValue(MEMBROS);
   vi.mocked(api.getRootTeamId).mockResolvedValue(RAIZ);
   vi.mocked(api.listAllProjects).mockResolvedValue({
@@ -213,6 +254,66 @@ describe("minhas-tarefas -- fiacao da tela", () => {
     });
   });
 
+  // ------------------------------------------------------------------ 1b
+  it("nao pinta tarefa nenhuma enquanto as COLUNAS nao chegam", async () => {
+    // ⚠️ O IRMAO DO TESTE 1, e o que a fatia 4b acrescentou ao portao: a lista
+    // ja chegou, as colunas nao. Sem esta condicao no `if`, a tela pintaria
+    // sem filtro e reordenaria quando as colunas chegassem -- a lista piscando
+    // com concluidas que ninguem pediu, que e o cenario que a decisao de
+    // 10/08 recusou.
+    let resolver: (v: unknown) => void = () => {};
+    const pendente = new Promise((r) => {
+      resolver = r;
+    });
+    montarApi([item({ id: "t1", title: "Tarefa qualquer" })]);
+    vi.mocked(api.colunasDoQuadroGeral).mockReturnValue(
+      pendente as ReturnType<typeof api.colunasDoQuadroGeral>
+    );
+
+    render(<MinhasTarefasPage />);
+
+    // A lista resolve na hora; as colunas nao. A tela tem de segurar.
+    await waitFor(() => {
+      expect(screen.getByText(/Carregando/i)).toBeTruthy();
+    });
+    expect(screen.queryByText("Tarefa qualquer")).toBeNull();
+
+    resolver(COLUNAS);
+
+    await waitFor(() => {
+      expect(screen.getByText("Tarefa qualquer")).toBeTruthy();
+    });
+  });
+
+  // ------------------------------------------------------------------ 1c
+  it("os chips de filtro vem da API, com o NOME da coluna", async () => {
+    // ⚠️ Antes da 4b os rotulos vinham de `STATUSES`, cravado no front. Este
+    // teste cai se alguem voltar a ler dali -- e e o unico que prova que o
+    // caminho novo chegou na tela, e nao so no modulo.
+    montarApi([item({ id: "t1", title: "Uma tarefa" })]);
+
+    render(<MinhasTarefasPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Uma tarefa")).toBeTruthy();
+    });
+
+    // ⚠️ MIRA NO BOTAO, e nao no texto solto. Medido em 10/08: "Em Andamento"
+    // aparece DUAS vezes na tela depois da 4b -- como chip de filtro e como
+    // rotulo da linha --, e as duas vem de `coluna.name`. Um `getByText`
+    // simples estoura com "Found multiple elements", e a ambiguidade e ela
+    // propria a prova de que a migracao chegou nos dois lugares.
+    const chip = (nome: string) => screen.getByRole("button", { name: nome });
+
+    // Os tres nomes da fixture, que NAO sao os 8 status do `STATUSES`.
+    expect(chip("Em Andamento")).toBeTruthy();
+    expect(chip("Cancelado")).toBeTruthy();
+    expect(chip("Concluído")).toBeTruthy();
+
+    // E o contrario: um rotulo que so existiria se a tela ainda lesse
+    // `STATUSES` (a fixture nao tem coluna "Backlog").
+    expect(screen.queryByRole("button", { name: "Backlog" })).toBeNull();
+  });
+
   // ------------------------------------------------------------------ 2
   it("abre escondendo as CONCLUIDAS, e so elas", async () => {
     // ⚠️ O PONTO DURO DO §5 DA SONDAGEM. `statusPadraoMinhasTarefas()` roda
@@ -224,9 +325,9 @@ describe("minhas-tarefas -- fiacao da tela", () => {
     // ⚠️ Afirma os DOIS lados: a concluida some E as outras ficam. Um teste
     // que so afirmasse "nao aparece a concluida" passaria com a tela vazia.
     montarApi([
-      item({ id: "t1", title: "Em andamento", status: "IN_PROGRESS" }),
-      item({ id: "t2", title: "Ja concluida", status: "COMPLETED" }),
-      item({ id: "t3", title: "Cancelada", status: "CANCELLED" }),
+      item({ id: "t1", title: "Em andamento", status: "IN_PROGRESS", column_id: "col-progress" }),
+      item({ id: "t2", title: "Ja concluida", status: "COMPLETED", column_id: "col-done" }),
+      item({ id: "t3", title: "Cancelada", status: "CANCELLED", column_id: "col-cancel" }),
     ]);
 
     render(<MinhasTarefasPage />);
@@ -243,8 +344,8 @@ describe("minhas-tarefas -- fiacao da tela", () => {
     // O outro lado do teste 2: o padrao esconde, mas o usuario consegue ver.
     // Sem este, uma 4b que simplesmente removesse o filtro passaria no 2.
     montarApi([
-      item({ id: "t1", title: "Em andamento", status: "IN_PROGRESS" }),
-      item({ id: "t2", title: "Ja concluida", status: "COMPLETED" }),
+      item({ id: "t1", title: "Em andamento", status: "IN_PROGRESS", column_id: "col-progress" }),
+      item({ id: "t2", title: "Ja concluida", status: "COMPLETED", column_id: "col-done" }),
     ]);
 
     render(<MinhasTarefasPage />);

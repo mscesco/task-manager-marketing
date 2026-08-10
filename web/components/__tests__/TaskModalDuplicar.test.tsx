@@ -67,6 +67,13 @@ function task(over: Partial<Task> & { id: string; title: string }): Task {
     position: 0,
     depth: 0,
     path: over.id,
+    // ⚠️ Spec 036, fatia 3: `board_id`/`column_id` viraram obrigatorios em
+    // `Task`. Um valor qualquer serve aqui -- este arquivo nao testa quadro --,
+    // mas eles TEM de existir, senao o `tsc` recusa a fixture. Nao troque por
+    // `as Task`: foi exatamente um `as` que escondeu este buraco por horas em
+    // 10/08, no `minhasTarefas.test.tsx`.
+    board_id: "board-geral",
+    column_id: "col-backlog",
     due_date: "2026-03-10",
     completed_at: null,
     created_by: ANA,
