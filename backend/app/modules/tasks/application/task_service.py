@@ -25,7 +25,7 @@ docs/adr/0002 / 0003 / 0004 / 0005):
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -42,6 +42,7 @@ from app.modules.tasks.application.task_guards import (
     user_can_view_task,
 )
 from app.modules.tasks.domain.archival import is_terminal
+from app.modules.tasks.domain.board_semantics import status_da_coluna
 from app.modules.tasks.domain.history import (
     HistoryEntry,
     build_archived_entry,
@@ -174,6 +175,10 @@ class UpdateTaskCommand:
     team_id: uuid.UUID | None = None
     start_date: date | None = None
     due_date: date | None = None
+    # ⚠️ ADR 0041. Mutuamente exclusivo com `status` -- o schema recusa os dois
+    # juntos com 422, antes de chegar aqui. Quando ele vem, o STATUS e derivado
+    # dele, e nao o contrario.
+    column_id: uuid.UUID | None = None
     # Nomes dos campos presentes no PATCH (mesmo quando o valor e None).
     fields_set: frozenset[str] = frozenset()
 
@@ -767,8 +772,47 @@ class TaskService:
         await self._assert_visible_via_project(task)
         await self._assert_editable(task)
 
+        # ⚠️ ADR 0041 -- A ESCRITA POR COLUNA E RESOLVIDA AQUI, ANTES DE TUDO.
+        # Quando o PATCH manda `column_id`, ele e a fonte e o STATUS e o
+        # derivado. A partir desta linha o resto do metodo trabalha com
+        # `command`, que ja carrega o status resultante -- assim existe UM
+        # caminho de aplicacao, e nao dois.
+        #
+        # ⚠️ `coluna_no_quadro` e quem VALIDA que a coluna e do quadro DESTA
+        # tarefa. Sem essa consulta, o par (coluna de outro quadro, board da
+        # tarefa) seria recusado la embaixo pela FK composta -- 500 em vez de
+        # 422.
+        coluna_alvo: uuid.UUID | None = None
+        if command.column_id is not None:
+            ponte, semantica = await BoardRepository(
+                self._session
+            ).coluna_no_quadro(
+                board_id=task.board_id, column_id=command.column_id
+            )
+            coluna_alvo = command.column_id
+            command = replace(
+                command,
+                status=status_da_coluna(
+                    legacy_status=ponte, semantic=semantica
+                ),
+            )
+
         # Calcula entries ANTES de mutar (snapshot do estado antigo).
         entries = self._diff_for_update(task, command)
+
+        # ⚠️ A COLUNA GERA HISTORICO PROPRIO (ADR 0041, D5). Sem esta linha,
+        # mover uma tarefa entre duas colunas de MESMO status nao deixaria
+        # rastro nenhum -- o mesmo buraco que a designacao ja tem, e que ja
+        # custou uma sessao de arqueologia. Calculado aqui porque
+        # `task.column_id` ainda e o VELHO.
+        if coluna_alvo is not None and coluna_alvo != task.column_id:
+            entries.append(
+                build_field_update_entry(
+                    field_name="column_id",
+                    old=task.column_id,
+                    new=coluna_alvo,
+                )
+            )
 
         # Aplica patch campo a campo. None = nao mexer.
         if command.title is not None:
@@ -820,7 +864,9 @@ class TaskService:
             elif is_terminal(task.status):
                 task.terminal_since = None
 
-            # Spec 035 fatia 3b: a coluna acompanha o status (ADR 0033).
+            # Spec 035 fatia 3b: a coluna acompanha o status (ADR 0033) --
+            # ⚠️ MAS SO QUANDO A ESCRITA VEIO POR `status`. Ver o bloco de
+            # coluna logo abaixo do fim deste `if`.
             # ⚠️ So a COLUNA muda; `board_id` fica. Uma tarefa vive num quadro
             # so (ADR 0030, decisao B), e mudar de status nunca a muda de
             # quadro. Gravar `board_id` aqui de novo seria inofensivo hoje --
@@ -832,13 +878,26 @@ class TaskService:
             # geral para uma tarefa do quadro interno. O par
             # `(coluna do geral, board interno)` nao existe, entao a FK composta
             # recusaria -- erro alto ao salvar um status. Visivel, mas quebrado.
-            task.column_id = await BoardRepository(
-                self._session
-            ).column_for_status_in_board(
-                board_id=task.board_id, status=command.status
-            )
+            if coluna_alvo is None:
+                task.column_id = await BoardRepository(
+                    self._session
+                ).column_for_status_in_board(
+                    board_id=task.board_id, status=command.status
+                )
 
             task.status = command.status
+
+        # ⚠️ A GRAVACAO POR COLUNA MORA FORA DO `if` DE STATUS, E ISSO E A
+        # DECISAO D4 DA ADR 0041. Duas colunas de mesma semantica e sem ponte
+        # -- exatamente o que a fatia 5 cria -- derivam o MESMO status: com a
+        # gravacao la dentro, mover a tarefa de uma para a outra nao mudaria o
+        # status, o bloco nao rodaria, e a tarefa NAO SAIRIA DA COLUNA, sem
+        # erro nenhum. Arrastar o card e ve-lo voltar sozinho.
+        #
+        # `board_id` NAO e tocado: mover tarefa de quadro nao existe (adendo do
+        # `plan.md` da 036, 10/08).
+        if coluna_alvo is not None:
+            task.column_id = coluna_alvo
 
         # Datas sao nullable: presenca no PATCH manda (None = limpar). Usar
         # `is not None` aqui era o bug de "limpar data nao salvava" -- o null

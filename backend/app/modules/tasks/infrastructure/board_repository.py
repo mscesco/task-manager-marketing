@@ -58,7 +58,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.tenant import require_tenant
 from app.db.models.boards import Board, BoardColumn
-from app.db.models.enums import TaskStatus
+from app.db.models.enums import ColumnSemantic, TaskStatus
 from app.modules.auth.domain import team_scope
 from app.shared.exceptions.base import ValidationError
 
@@ -186,6 +186,69 @@ class BoardRepository:
                 },
             )
         return linha[0]
+
+    async def coluna_no_quadro(
+        self, *, board_id: uuid.UUID, column_id: uuid.UUID
+    ) -> tuple[TaskStatus | None, ColumnSemantic]:
+        """A PONTE e a SEMANTICA de uma coluna, exigindo que ela seja DAQUELE
+        quadro (Spec 036, fatia 5 / ADR 0041).
+
+        ⚠️ E A PERGUNTA INVERSA de `column_for_status_in_board`, e existe pelo
+        mesmo motivo que ela: quem chama ja sabe o quadro (o da tarefa) e so
+        quer saber o que aquela coluna significa. A direcao `coluna -> status`
+        so passou a existir porque o front vai mandar `column_id` ao arrastar.
+
+        ⚠️ O `board_id` NO WHERE E A VALIDACAO INTEIRA. Sem ele, um `column_id`
+        de OUTRO quadro seria aceito aqui e recusado la embaixo pela FK
+        composta `(column_id, board_id)` -- erro de banco, 500, em vez de um
+        422 dizendo o que aconteceu. `workspace_id` entra junto pelo mesmo
+        motivo do metodo acima: e o padrao do schema, e impede que uma consulta
+        copiada daqui cruze tenant.
+
+        ⚠️ NAO FILTRA `deleted_at`, e e a regra do topo deste arquivo: esta
+        consulta RECEBE o `board_id` de quem ja resolveu o quadro (a propria
+        tarefa), nao DESCOBRE quadro nenhum.
+
+        Levanta `ValidationError` quando a coluna nao e daquele quadro -- o que
+        inclui o caso de ela nao existir. Os dois sao a mesma resposta de
+        propósito: dizer "essa coluna existe, mas nao aqui" vaza a existencia
+        de coluna de quadro que quem pergunta talvez nem alcance.
+        """
+        tenant = require_tenant()
+        linha = (
+            await self.session.execute(
+                text(
+                    """
+                    SELECT c.legacy_status, c.semantic
+                    FROM board_column c
+                    WHERE c.id = :coluna
+                      AND c.board_id = :board
+                      AND c.workspace_id = :ws
+                    """
+                ),
+                {
+                    "coluna": column_id,
+                    "board": board_id,
+                    "ws": tenant.workspace_id,
+                },
+            )
+        ).first()
+
+        if linha is None:
+            raise ValidationError(
+                "A coluna informada nao pertence ao quadro desta tarefa.",
+                details={
+                    "field": "column_id",
+                    "column_id": str(column_id),
+                    "board_id": str(board_id),
+                },
+            )
+
+        ponte, semantica = linha
+        return (
+            TaskStatus(ponte) if ponte is not None else None,
+            ColumnSemantic(semantica),
+        )
 
     async def list_visible(self) -> list[tuple[Board, list[BoardColumn]]]:
         """Quadros que o usuario do contexto ALCANCA, com as colunas de cada.

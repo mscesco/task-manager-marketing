@@ -47,6 +47,7 @@ from app.modules.tasks.application.task_service import (
     TaskService,
     UpdateTaskCommand,
 )
+from app.shared.exceptions.base import ValidationError
 from app.shared.pagination import PageParams
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
@@ -247,7 +248,30 @@ async def duplicate_task(
 async def update_task(
     task_id: uuid.UUID, payload: TaskUpdateRequest, uow: UoWDep
 ) -> TaskResponse:
-    """Patch parcial. project_id e parent_task_id NAO entram (usar move)."""
+    """Patch parcial. project_id e parent_task_id NAO entram (usar move).
+
+    ⚠️ Aceita `status` OU `column_id` (ADR 0041). Com `column_id`, a coluna e a
+    fonte e o status e derivado dela -- pela ponte `legacy_status` quando ela
+    existe, pela semantica quando nao. Os dois juntos: 422, no schema.
+    """
+    # ⚠️ ADR 0041 (D3) -- RECUSA, E NAO PRECEDENCIA. Os dois campos escrevem a
+    # mesma dupla (status, coluna) por caminhos opostos; qualquer ordem de
+    # precedencia faria um deles ser ignorado EM SILENCIO.
+    #
+    # ⚠️ Olha `model_fields_set`, e nao o valor: `status: null` explicito junto
+    # com `column_id` tambem e conflito -- o cliente esta dizendo duas coisas
+    # sobre o mesmo campo na mesma requisicao.
+    #
+    # ⚠️ AQUI, E NAO NUM `@model_validator` DO SCHEMA. Medido: o validador do
+    # Pydantic devolve 500 neste projeto (ver o comentario no schema).
+    veio = payload.model_fields_set
+    if "status" in veio and "column_id" in veio:
+        raise ValidationError(
+            "Mande `status` OU `column_id`, nunca os dois: os dois escrevem "
+            "a mesma dupla (status, coluna).",
+            details={"field": "column_id"},
+        )
+
     task = await TaskService(uow.session).update(
         task_id=task_id,
         command=UpdateTaskCommand(
@@ -258,6 +282,9 @@ async def update_task(
             team_id=payload.team_id,
             start_date=payload.start_date,
             due_date=payload.due_date,
+            # ADR 0041: quando vem, ele manda e o status e derivado dele. O
+            # schema ja garantiu que nao veio junto com `status`.
+            column_id=payload.column_id,
             # Campos presentes no PATCH (mesmo com valor None) -> permite LIMPAR
             # datas. Sem isto, null explicito virava "nao mexer" (bug).
             fields_set=frozenset(payload.model_fields_set),

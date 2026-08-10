@@ -189,6 +189,9 @@ class TaskUpdateRequest(BaseModel):
 
     project_id e parent_task_id NAO entram aqui -- usar
     POST /tasks/{id}/move.
+
+    ⚠️ `status` e `column_id` sao MUTUAMENTE EXCLUSIVOS (ADR 0041, D3). Os dois
+    escrevem a mesma dupla (status, coluna) por caminhos opostos.
     """
 
     title: str | None = Field(default=None, min_length=1, max_length=255)
@@ -198,6 +201,19 @@ class TaskUpdateRequest(BaseModel):
     team_id: uuid.UUID | None = None
     start_date: date | None = None
     due_date: date | None = None
+    # ⚠️ ADR 0041. A coluna tem de ser do quadro DA TAREFA -- quem confere e o
+    # service (`BoardRepository.coluna_no_quadro`), porque o schema nao tem
+    # sessao de banco. O status resultante e DERIVADO dela.
+    #
+    # ⚠️ A EXCLUSAO MUTUA COM `status` NAO MORA AQUI, e a tentativa foi MEDIDA:
+    # um `@model_validator` que levanta `ValueError` faz o endpoint devolver
+    # **500, nao 422**. O `_validation_error_handler` poe `exc.errors()` cru no
+    # envelope, e o `ctx` de um validador custom carrega o proprio objeto
+    # `ValueError`, que o `json.dumps` do Starlette nao serializa. A regra
+    # ficou no ROUTER, com a `ValidationError` de dominio -- mesmo caminho de
+    # todas as outras regras deste projeto. Ver o item pendente sobre o
+    # handler.
+    column_id: uuid.UUID | None = None
 
 
 class TaskMoveRequest(BaseModel):

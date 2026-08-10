@@ -25,7 +25,7 @@ from __future__ import annotations
 
 from typing import Final
 
-from app.db.models.enums import ColumnSemantic
+from app.db.models.enums import ColumnSemantic, TaskStatus
 
 #: As duas semanticas terminais. Espelham `archival.TERMINAL_STATUSES`, que diz
 #: a mesma coisa do lado do `status`. Enquanto as duas direcoes coexistirem
@@ -47,3 +47,57 @@ def avisa_prazo(*, semantic: ColumnSemantic, notify_deadline: bool) -> bool:
     if semantic in TERMINAL_SEMANTICS:
         return False
     return notify_deadline
+
+
+#: ⚠️ ADR 0041 -- O STATUS DE UMA COLUNA SEM PONTE. Usado SO quando
+#: `legacy_status` e NULL, que e como nasce coluna criada por gente. Nas 8
+#: colunas padrao a ponte responde primeiro e este mapa nao e consultado.
+#:
+#: ⚠️ NAO E DERIVAVEL DE `is_default_target`: aquela flag responde "para onde
+#: vai a tarefa desta semantica DENTRO DE UM QUADRO", e um quadro de subtime
+#: pode nao ter nenhuma coluna marcada. Este mapa e fixo e responde mesmo para
+#: quadro malformado.
+#:
+#: ⚠️ `OPEN -> BACKLOG` e nao `PLANNED`: as duas colunas padrao `OPEN` sao
+#: Backlog e Planejado, e Backlog e a marcada como `is_default_target`. Trocar
+#: por `PLANNED` faria toda coluna aberta de quadro novo nascer como planejada.
+STATUS_POR_SEMANTICA: Final[dict[ColumnSemantic, TaskStatus]] = {
+    ColumnSemantic.OPEN: TaskStatus.BACKLOG,
+    ColumnSemantic.IN_PROGRESS: TaskStatus.IN_PROGRESS,
+    ColumnSemantic.DONE: TaskStatus.COMPLETED,
+    ColumnSemantic.CANCELLED: TaskStatus.CANCELLED,
+}
+
+
+def status_da_coluna(
+    *, legacy_status: TaskStatus | None, semantic: ColumnSemantic
+) -> TaskStatus:
+    """O status que uma tarefa recebe ao ser posta NESTA coluna (ADR 0041).
+
+    ⚠️ A ORDEM E A DECISAO INTEIRA, e ela e o contrario da leitura ingenua da
+    ADR 0036:
+
+      1. `legacy_status` preenchido -> e ele. Exato, sem perda. Cobre as 8
+         colunas padrao, que sao 100% da producao hoje.
+      2. `legacy_status` NULL -> `STATUS_POR_SEMANTICA`.
+
+    ⚠️ INVERTER A ORDEM APAGA QUATRO STATUS. A semantica e 8:4 nos defaults --
+    `IN_PROGRESS` cobre Em Andamento, Aprovacao Interna, Aprovacao Externa e
+    Bloqueado; `OPEN` cobre Backlog e Planejado. Derivar por ela primeiro faz
+    uma tarefa em Aprovacao Externa virar `IN_PROGRESS` e pular de coluna na
+    tela de todo mundo. ⚠️ **Nenhum portao pega isso**: o status resultante e
+    um status VALIDO, entao `pytest`, `tsc` e `build` passam.
+
+    ⚠️ MESMA ESCOLHA JA FEITA NO CAMINHO INVERSO:
+    `TaskRepository.complete_descendants` resolve a coluna `COMPLETED` por
+    `legacy_status`, e nao pela semantica `DONE`, com a justificativa escrita
+    no docstring desde a Spec 035. Esta funcao e a simetrica dela.
+
+    ⚠️ UM LUGAR SO. Se esta regra aparecer numa segunda funcao, as duas vao
+    divergir e nada no banco impede que divirjam -- e o mesmo motivo pelo qual
+    `TERMINAL_SEMANTICS` e `archival.TERMINAL_STATUSES` tem teste de
+    equivalencia.
+    """
+    if legacy_status is not None:
+        return legacy_status
+    return STATUS_POR_SEMANTICA[semantic]
