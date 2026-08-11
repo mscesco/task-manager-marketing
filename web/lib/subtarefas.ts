@@ -18,6 +18,7 @@
  * apagava as duas do mesmo jeito. Aviso destrutivo que some em silencio.
  */
 import type { Task } from "@/lib/api";
+import type { Coluna } from "@/lib/coluna";
 
 /**
  * O que a checklist DESENHA.
@@ -42,14 +43,33 @@ export function ativas<T extends { is_archived: boolean }>(filhos: T[]): T[] {
 /**
  * Progresso da checklist. `pct` e inteiro 0..100, e vale 0 (nao NaN) quando
  * nao ha filha ativa -- 0/0 alimentaria a largura da barra com "NaN%".
+ *
+ * ⚠️ DECIDE PELA COLUNA, e nao por `status` (fatia 4c-2, ADR 0040). O motivo
+ * nao foi coerencia: em 10/08 o contador do CARD ja lia coluna e este ainda
+ * lia status, e a conferencia manual mostrou o card dizendo "2/2" com o
+ * detalhe da mesma tarefa dizendo "(0/2)" e a barra em 0%. Dois numeros
+ * discordando sobre a mesma coisa.
+ *
+ * ⚠️ `DONE` E NAO `terminal()`: cancelada NAO conta como concluida. E a mesma
+ * distincao que o enum do backend registra, e trocar por `terminal()` faria
+ * subtarefa cancelada aparecer como entregue na barra.
+ *
+ * ⚠️ COLUNA DESCONHECIDA NAO CONTA COMO CONCLUIDA, e entra no denominador. O
+ * `?.` decide isso: sem coluna no mapa, a filha continua sendo trabalho vivo.
+ * O contrario -- sumir do denominador -- inflaria a porcentagem em silencio.
  */
-export function progresso(filhos: Pick<Task, "status" | "is_archived">[]): {
+export function progresso(
+  filhos: Pick<Task, "column_id" | "is_archived">[],
+  colunaPorId: Map<string, Coluna>
+): {
   concluidas: number;
   total: number;
   pct: number;
 } {
   const vivas = ativas(filhos);
-  const concluidas = vivas.filter((f) => f.status === "COMPLETED").length;
+  const concluidas = vivas.filter(
+    (f) => colunaPorId.get(f.column_id)?.semantic === "DONE"
+  ).length;
   const total = vivas.length;
   return { concluidas, total, pct: total ? Math.round((concluidas / total) * 100) : 0 };
 }
@@ -75,12 +95,13 @@ export function progresso(filhos: Pick<Task, "status" | "is_archived">[]): {
  * `linhas.length: 2`. A tela desenha as duas linhas e NAO desenha contador
  * nem barra -- nao ha trabalho vivo sobre o que informar progresso.
  */
-export function checklist<T extends Pick<Task, "status" | "is_archived">>(
+export function checklist<T extends Pick<Task, "column_id" | "is_archived">>(
   filhos: T[],
-  mostrarArquivadas: boolean
+  mostrarArquivadas: boolean,
+  colunaPorId: Map<string, Coluna>
 ): { linhas: T[]; concluidas: number; total: number; pct: number } {
   return {
     linhas: paraChecklist(filhos, mostrarArquivadas),
-    ...progresso(filhos),
+    ...progresso(filhos, colunaPorId),
   };
 }

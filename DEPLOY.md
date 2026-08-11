@@ -162,7 +162,7 @@ existia, é ordem invertida. Executado assim em 06/08/2026 (`0008`).
    > ⚠️ **O critério é `0 failed`, não um número.** Este arquivo já ficou
    > meses dizendo `379 passed` quando o real era 493 — e roteiro que mente
    > treina quem faz o deploy a ignorar o portão. Se quiser conferir a ordem
-   > de grandeza: em 10/08/2026 eram **657** (backend) e **503** (front).
+   > de grandeza: em 10/08/2026 eram **657** (backend) e **523** (front).
    > (Backend saiu de 642 para 657 com a peca de backend da fatia 5:
    > 8 testes puros de derivacao + 7 de integracao do `PATCH column_id`.)
    > (Em 06/08 eram 601 e 398; em 03/08, 493 e 293 — este arquivo já ficou

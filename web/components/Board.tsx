@@ -36,8 +36,8 @@ import {
 import TaskModal from "@/components/TaskModal";
 import TaskDetail from "@/components/TaskDetail";
 import EmptyStateBox from "@/components/EmptyState";
-import { STATUSES } from "@/lib/status";
-import { listAllTasks, listAllProjects, updateTask, listMembers, listSubteams, getRootTeamId, ApiError, type Task, type Team } from "@/lib/api";
+import { terminal, type Coluna } from "@/lib/coluna";
+import { listAllTasks, listAllProjects, updateTask, listMembers, listSubteams, getRootTeamId, listBoards, ApiError, type Task, type Team, type Quadro } from "@/lib/api";
 import { sincronizarTaskNaUrl, lerTaskDaUrl } from "@/lib/urlTarefa";
 import { ORDENACOES, ordenar, type Ordenacao } from "@/lib/ordenacao";
 
@@ -67,6 +67,11 @@ export default function Board({
   title: string;
 }) {
   const [tasks, setTasks] = useState<Task[] | null>(null);
+  // Fatia 4c: os quadros que quem olha alcanca. `null` = ainda carregando --
+  // a tela NAO desenha coluna nenhuma ate chegarem (mesma decisao de 10/08
+  // tomada em `/minhas-tarefas`), porque pintar um kanban com a lista velha e
+  // trocar depois e pior do que esperar meio segundo.
+  const [quadros, setQuadros] = useState<Quadro[] | null>(null);
   const [members, setMembers] = useState<Map<string, { name: string }>>(
     new Map()
   );
@@ -241,6 +246,15 @@ export default function Board({
 
   // Subtimes sao estaveis no workspace -> busca uma vez (listSubteams e
   // memoizado no api.ts). So times nao-raiz entram no dropdown.
+  // Quadros: uma requisicao por montagem, sem cache -- ver o aviso em
+  // `listBoards`. Em erro fica `[]` e nao `null`, senao a tela trava no
+  // "Carregando" para sempre quando a API de quadros cai mas a de tarefas nao.
+  useEffect(() => {
+    listBoards()
+      .then(setQuadros)
+      .catch(() => setQuadros([]));
+  }, []);
+
   useEffect(() => {
     listSubteams().then(setSubtimes).catch(() => {});
     getRootTeamId()
@@ -374,7 +388,13 @@ export default function Board({
           x.status !== "CANCELLED" &&
           !x.is_archived
         ) {
-          return { ...x, status: "COMPLETED" };
+          // ⚠️ COLUNA JUNTO COM O STATUS (fatia 4c): quem conta a checklist
+          // e quem filtra prazo passaram a olhar a COLUNA. Mexer so no
+          // `status` aqui deixaria o contador parado ate o F5 -- o mesmo
+          // defeito que a conferencia manual pegou no arrastar.
+          // A coluna e a do PAI recem-salvo: subtarefa herda o quadro dele,
+          // entao a coluna de conclusao e a mesma.
+          return { ...x, status: "COMPLETED", column_id: merged.column_id };
         }
         return x;
       });
@@ -402,48 +422,97 @@ export default function Board({
     setTimeout(() => (suprimirClique.current = false), 60);
 
     const taskId = String(e.active.id);
+    // ⚠️ AGORA O DESTINO E UM `column_id`, e nao mais uma chave de status. O
+    // droppable de cada coluna usa `coluna.id` (ver `ColunaKanban`).
     const destino = e.over ? String(e.over.id) : null;
     if (!destino) return;
 
     const atual = tasks?.find((t) => t.id === taskId);
-    if (!atual || atual.status === destino) return;
+    if (!atual || atual.column_id === destino) return;
 
-    const statusAnterior = atual.status;
+    // A coluna de destino tem de estar na lista deste quadro. Nao e paranoia:
+    // e o que impede um `column_id` de outro quadro de virar um PATCH que o
+    // backend vai recusar com 422 (ADR 0041) depois de a tela ja ter mexido o
+    // card na frente da pessoa.
+    const colunaDestino = colunas.find((c) => c.id === destino);
+    if (!colunaDestino) return;
 
-    // Cascata de conclusao: arrastar um PAI pro "Concluido" conclui a subtree
-    // (espelha o backend). Aplica otimista pros cards de subtarefa refletirem na
-    // hora (quadros de projeto/subtime). Guarda os status antigos pra reverter
-    // se o PATCH falhar. Pula ja concluidas, canceladas e arquivadas.
-    // DIVERGENCIA CONHECIDA: o backend cascateia TODA a subarvore no banco; aqui
-    // so mexemos no que esta carregado em `tasks` (que pode vir truncado). Se a
-    // subarvore ultrapassa o limite de exibicao, os descendentes fora da janela
-    // nao refletem na hora -- aparecem concluidos no proximo reload.
-    const concluindo = destino === "COMPLETED";
+    const colunaAnterior = atual.column_id;
+
+    // Cascata de conclusao: arrastar um PAI pra uma coluna de conclusao conclui
+    // a subtree (espelha o backend). Aplica otimista pros cards de subtarefa
+    // refletirem na hora. Guarda as colunas antigas pra reverter se o PATCH
+    // falhar. Pula as que ja estao em coluna terminal e as arquivadas.
+    //
+    // ⚠️ `semantic === "DONE"` E NAO O NOME DA COLUNA. Nome e editavel na fatia
+    // 5; a semantica e o que o backend usa para decidir a mesma coisa.
+    //
+    // ⚠️ AS SUBTAREFAS VAO PARA A MESMA COLUNA, e isso e correto e nao um
+    // atalho: subtarefa herda o quadro do pai (F2 da Spec 035), entao a coluna
+    // de conclusao do pai E a coluna de conclusao delas.
+    //
+    // ⚠️ MEXE NA COLUNA **E** NO STATUS, e o `status` aqui NAO e derivacao da
+    // coluna -- e espelho de um comportamento conhecido do backend.
+    //
+    // A decisao de 10/08 (opcao A) era deixar o `status` velho na memoria ate
+    // a resposta chegar, porque o front nao sabe derivar status de coluna (a
+    // ponte nao viaja no `GET /boards`, ADR 0033). **A conferencia manual
+    // mostrou que essa janela e visivel**: o contador do card ja lia coluna,
+    // mas o do DETALHE (`lib/subtarefas.ts::progresso`) le `status`, e abrir a
+    // tarefa logo depois de arrastar mostrava "Subtarefas (0/2)" com o card
+    // dizendo 2/2. Dois numeros discordando e pior que um numero velho.
+    //
+    // ⚠️ POR QUE `"COMPLETED"` E SEGURO AQUI, e so aqui: este bloco so roda
+    // com `semantic === "DONE"`, e a cascata do backend
+    // (`TaskRepository.complete_descendants`) grava `COMPLETED` fixo, nao
+    // derivado. Nao ha coluna `DONE` que produza outro status: a padrao tem
+    // ponte `COMPLETED`, e coluna criada por gente cai no mapa da ADR 0041,
+    // que manda `DONE -> COMPLETED`. Fora da cascata continua valendo que o
+    // front NAO adivinha status -- ver o `updateTask` mais abaixo, que manda
+    // so `column_id` e le o status da RESPOSTA.
+    //
+    // ⚠️ DIVIDA REGISTRADA: enquanto `progresso` ler `status`, os dois campos
+    // precisam ser mantidos em sincronia na memoria. Quem migrar a checklist
+    // para a coluna (4c-2) apaga a metade `status` daqui.
+    //
+    // DIVERGENCIA CONHECIDA, herdada: o backend cascateia TODA a subarvore no
+    // banco; aqui so mexemos no que esta carregado em `tasks` (que pode vir
+    // truncado).
+    const concluindo = colunaDestino.semantic === "DONE";
     const prefixo = atual.path + ".";
-    const anteriores = new Map<string, string>();
+    // ⚠️ GUARDA OS DOIS CAMPOS, porque a atualizacao otimista mexe nos dois.
+    // Guardar so a coluna deixaria a subtarefa revertida para a coluna certa
+    // com `status: "COMPLETED"` cravado -- e ai o card diria uma coisa e o
+    // detalhe outra, que e exatamente o defeito que este bloco conserta.
+    const anteriores = new Map<string, { coluna: string; status: string }>();
     if (concluindo) {
       for (const t of tasks ?? []) {
+        const colunaDela = colunaPorId.get(t.column_id);
         if (
           t.path.startsWith(prefixo) &&
-          t.status !== "COMPLETED" &&
-          t.status !== "CANCELLED" &&
+          colunaDela &&
+          !terminal(colunaDela) &&
           !t.is_archived
         ) {
-          anteriores.set(t.id, t.status);
+          anteriores.set(t.id, { coluna: t.column_id, status: t.status });
         }
       }
     }
 
     setTasks((prev) =>
       prev!.map((t) => {
-        if (t.id === taskId) return { ...t, status: destino };
-        if (anteriores.has(t.id)) return { ...t, status: "COMPLETED" };
+        if (t.id === taskId) return { ...t, column_id: destino };
+        if (anteriores.has(t.id))
+          return { ...t, column_id: destino, status: "COMPLETED" };
         return t;
       })
     );
 
     try {
-      const atualizada = await updateTask(taskId, { status: destino });
+      // ⚠️ MANDA SO `column_id`. Mandar os dois campos e 422 (ADR 0041, D3), e
+      // o status certo vem NA RESPOSTA -- e por isso que a linha abaixo troca
+      // a task inteira pela devolvida, em vez de remendar so a coluna.
+      const atualizada = await updateTask(taskId, { column_id: destino });
       setTasks((prev) =>
         prev!.map((t) =>
           t.id === taskId ? { ...atualizada, assignee_ids: t.assignee_ids } : t
@@ -452,9 +521,11 @@ export default function Board({
     } catch (err) {
       setTasks((prev) =>
         prev!.map((t) => {
-          if (t.id === taskId) return { ...t, status: statusAnterior };
+          if (t.id === taskId) return { ...t, column_id: colunaAnterior };
           const ant = anteriores.get(t.id);
-          return ant !== undefined ? { ...t, status: ant } : t;
+          return ant !== undefined
+            ? { ...t, column_id: ant.coluna, status: ant.status }
+            : t;
         })
       );
       const e2 = err as ApiError;
@@ -483,13 +554,55 @@ export default function Board({
   // "indefinido" (sem pill) e se corrige sozinho na tela um instante depois.
   if (!projectId && subteamId && !projetosCarregados)
     return <div className="muted">Carregando tarefas…</div>;
+  // Fatia 4c: sem as colunas nao ha kanban. Espera igual aos outros.
+  if (!quadros) return <div className="muted">Carregando tarefas…</div>;
+
+  // ---- As colunas deste quadro (fatia 4c) ----
+  //
+  // ⚠️ O QUADRO SAI DAS TAREFAS, e nao de `is_default` (decisao de 10/08,
+  // opcao C). Toda tarefa carrega `board_id` desde a fatia 3, entao a tela
+  // desenha as colunas DO QUADRO EM QUE AS TAREFAS VIVEM -- e continua certa
+  // no dia do quadro interno, sem ninguem lembrar de voltar aqui.
+  //
+  // Os dois casos em que ele nao sai das tarefas, e o que cada um significa:
+  //   - lote VAZIO: nao ha `board_id` nenhum para ler. Cai no quadro padrao,
+  //     que e o unico palpite honesto -- e e so afordancia, porque um lote
+  //     vazio nao desenha card nenhum de qualquer jeito.
+  //   - lote com MAIS DE UM quadro: hoje impossivel (producao tem um quadro,
+  //     `invariantes.sql` consulta 5) e sem resposta certa depois -- um kanban
+  //     nao desenha duas listas de coluna ao mesmo tempo. Cai no padrao e o
+  //     contador de `foraDaColuna` abaixo denuncia o resto. **Se isso um dia
+  //     acontecer, a decisao e da fatia 5, nao deste arquivo.**
+  const quadrosDoLote = new Set(tasks.map((t) => t.board_id));
+  const quadroDoLote =
+    quadrosDoLote.size === 1
+      ? quadros.find((q) => q.id === [...quadrosDoLote][0])
+      : undefined;
+  const quadro = quadroDoLote ?? quadros.find((q) => q.is_default);
+  const colunas: Coluna[] = quadro
+    ? [...quadro.colunas].sort((a, b) => a.position - b.position)
+    : [];
+  const colunaPorId = new Map(colunas.map((c) => [c.id, c]));
 
   const subCount: Record<string, number> = {};
   const subDone: Record<string, number> = {};
   for (const t of tasks) {
     if (!t.parent_task_id) continue;
     subCount[t.parent_task_id] = (subCount[t.parent_task_id] ?? 0) + 1;
-    if (t.status === "COMPLETED")
+    // ⚠️ A CHECKLIST CONTA PELA COLUNA, e nao por `t.status` (fatia 4c).
+    //
+    // Era o ULTIMO leitor de `status` que a pessoa via na tela, e ele
+    // apareceu na conferencia manual de 10/08, nao em teste nenhum:
+    // arrastar um pai para "Concluído" concluia a subarvore no banco, mas o
+    // contador do card so mudava depois de um F5. A atualizacao otimista mexe
+    // na COLUNA das subtarefas -- que e a unica coisa que o front sabe
+    // derivar -- e quem lia `status` nao via nada acontecer.
+    //
+    // ⚠️ `DONE` E NAO `terminal()`: cancelada NAO conta como concluida na
+    // proporcao. E a mesma distincao que o enum do backend registra
+    // ("DONE e CANCELLED nao sao intercambiaveis"), e trocar por `terminal()`
+    // faria uma subtarefa cancelada contar como entregue.
+    if (colunaPorId.get(t.column_id)?.semantic === "DONE")
       subDone[t.parent_task_id] = (subDone[t.parent_task_id] ?? 0) + 1;
   }
 
@@ -649,7 +762,12 @@ export default function Board({
     // Sem data: aparece em qualquer filtro de prazo (decisao da Camila).
     if (prazo !== "todos" && t.due_date) {
       // Concluida nunca e atrasada (ja foi entregue).
-      const atrasada = t.status !== "COMPLETED" && t.due_date < hoje;
+      // ⚠️ Pela COLUNA (fatia 4c), pelo mesmo motivo do contador acima. E
+      // `!== "DONE"` e nao `!terminal()`: hoje CANCELADA com prazo vencido
+      // CONTA como atrasada, e mudar isso e decisao de produto, nao
+      // refatoracao.
+      const atrasada =
+        colunaPorId.get(t.column_id)?.semantic !== "DONE" && t.due_date < hoje;
       if (prazo === "atrasadas" && !atrasada) return false;
       if (prazo === "em-dia" && atrasada) return false;
     }
@@ -673,9 +791,19 @@ export default function Board({
   // O comparador saiu pra `lib/ordenacao.ts` -- "Minhas tarefas" usa o MESMO.
   const ordenadas = ordenar(raizes, ordenacao);
 
-  const porStatus: Record<string, Task[]> = {};
-  for (const s of STATUSES) porStatus[s.key] = [];
-  for (const t of ordenadas) (porStatus[t.status] ??= []).push(t);
+  // ⚠️ TAREFA CUJA COLUNA NAO ESTA NA LISTA NAO E DESENHADA, e por isso ela e
+  // CONTADA. Some da tela, mas nao em silencio -- perda silenciosa e o defeito
+  // que este projeto mais pagou. A invariante 2 do `invariantes.sql` diz que
+  // isso e zero em producao; o contador existe para o dia em que deixar de
+  // ser, e para o lote de mais de um quadro descrito acima.
+  const porColuna: Record<string, Task[]> = {};
+  for (const c of colunas) porColuna[c.id] = [];
+  let foraDaColuna = 0;
+  for (const t of ordenadas) {
+    const lista = porColuna[t.column_id];
+    if (lista) lista.push(t);
+    else foraDaColuna++;
+  }
 
   const focado = detalhe ? tasks.find((t) => t.id === detalhe.id) ?? detalhe : null;
   const filhosFocado = focado ? tasks.filter((t) => t.parent_task_id === focado.id) : [];
@@ -974,12 +1102,13 @@ export default function Board({
               paddingBottom: 8, height: alturaColunas ?? undefined,
             }}
           >
-            {STATUSES.map((s) => (
-              <Coluna key={s.key} status={s} count={(porStatus[s.key] || []).length}>
-                {(porStatus[s.key] || []).map((t) => (
+            {colunas.map((c) => (
+              <ColunaKanban key={c.id} coluna={c} count={(porColuna[c.id] || []).length}>
+                {(porColuna[c.id] || []).map((t) => (
                   <CardArrastavel
                     key={t.id}
                     task={t}
+                    coluna={c}
                     onAbrir={abrirDetalhe}
                     members={members}
                     subtaskCount={subCount[t.id] ?? 0}
@@ -988,15 +1117,26 @@ export default function Board({
                     escopo={pillDaTask(t)}
                   />
                 ))}
-              </Coluna>
+              </ColunaKanban>
             ))}
           </div>
 
+          {foraDaColuna > 0 && (
+            <div className="muted" role="status" style={{ fontSize: 12, marginTop: 8 }}>
+              {foraDaColuna} {foraDaColuna === 1 ? "tarefa está" : "tarefas estão"} em
+              uma coluna que não é deste quadro e não {foraDaColuna === 1 ? "aparece" : "aparecem"} acima.
+            </div>
+          )}
+
           <DragOverlay>
-            {activeTask ? (
+            {/* ⚠️ `&&` com a coluna, e nao `!`: card cuja coluna nao esta na
+                lista simplesmente nao ganha fantasma de arrasto. O `!`
+                esconderia o dia em que essa combinacao passar a existir. */}
+            {activeTask && colunaPorId.get(activeTask.column_id) ? (
               <div style={{ width: 256, cursor: "grabbing" }}>
                 <TaskCard
                   task={activeTask}
+                  coluna={colunaPorId.get(activeTask.column_id) as Coluna}
                   members={members}
                   subtaskCount={subCount[activeTask.id] ?? 0}
                   subtaskDone={subDone[activeTask.id] ?? 0}
@@ -1093,16 +1233,27 @@ export default function Board({
   );
 }
 
-function Coluna({
-  status,
+/**
+ * Uma coluna do kanban (fatia 4c).
+ *
+ * ⚠️ RENOMEADO de `Coluna` para `ColunaKanban`: `Coluna` agora e o TIPO que
+ * vem da API (`lib/coluna.ts`), e um componente com o mesmo nome do tipo que
+ * ele recebe torna todo import deste arquivo uma adivinhacao.
+ *
+ * ⚠️ O `id` do droppable e o `column_id`, e nao mais a chave do status. E a
+ * troca inteira desta fatia: o que o `onDragEnd` recebe em `e.over.id` passa a
+ * ser a COLUNA de destino, que e o que o `PATCH` agora aceita (ADR 0041).
+ */
+function ColunaKanban({
+  coluna,
   count,
   children,
 }: {
-  status: (typeof STATUSES)[number];
+  coluna: Coluna;
   count: number;
   children: React.ReactNode;
 }) {
-  const { setNodeRef, isOver } = useDroppable({ id: status.key });
+  const { setNodeRef, isOver } = useDroppable({ id: coluna.id });
   return (
     <div
       ref={setNodeRef}
@@ -1114,7 +1265,7 @@ function Coluna({
         // diferenca). O anel na cor da propria coluna diz PARA ONDE o card
         // vai. `outline` (nao `border`) de proposito: nao ocupa espaco, entao
         // as colunas nao pulam de largura quando o alvo muda.
-        outline: isOver ? `2px solid ${status.color}` : "none",
+        outline: isOver ? `2px solid ${coluna.color}` : "none",
         outlineOffset: -2,
         transition: "background .12s",
       }}
@@ -1122,12 +1273,12 @@ function Coluna({
       <div
         style={{
           display: "flex", alignItems: "center", gap: 8, marginBottom: 10,
-          paddingBottom: 8, borderBottom: `2px solid ${status.color}`,
+          paddingBottom: 8, borderBottom: `2px solid ${coluna.color}`,
           flexShrink: 0,
         }}
       >
-        <span style={{ width: 8, height: 8, borderRadius: 999, background: status.color }} />
-        <span style={{ fontWeight: 700, fontSize: 13 }}>{status.label}</span>
+        <span style={{ width: 8, height: 8, borderRadius: 999, background: coluna.color }} />
+        <span style={{ fontWeight: 700, fontSize: 13 }}>{coluna.name}</span>
         <span className="muted" style={{ fontSize: 12, marginLeft: "auto" }}>{count}</span>
       </div>
       <div
@@ -1147,6 +1298,7 @@ function Coluna({
 
 function CardArrastavel({
   task,
+  coluna,
   onAbrir,
   members,
   subtaskCount,
@@ -1155,6 +1307,7 @@ function CardArrastavel({
   escopo,
 }: {
   task: Task;
+  coluna: Coluna;
   onAbrir: (task: Task) => void;
   members: Map<string, { name: string }>;
   subtaskCount: number;
@@ -1187,6 +1340,7 @@ function CardArrastavel({
     >
       <TaskCard
         task={task}
+        coluna={coluna}
         members={members}
         subtaskCount={subtaskCount}
         subtaskDone={subtaskDone}

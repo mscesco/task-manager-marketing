@@ -227,7 +227,84 @@ chips com os 8 nomes reais, Concluído escondido ao abrir, Cancelado aparecendo,
 
 ---
 
-## Fatia 4c — ⚠️ BLOQUEADA POR CONTRATO (medido em 10/08)
+## Fatia 4c — ✅ DESBLOQUEADA em 10/08, e a 4c-1 está ENTREGUE
+
+O bloqueio desta seção acabou no momento em que a **fatia 5a** (backend) subiu:
+o `PATCH /tasks/{id}` aceita `column_id` e deriva o status (ADR 0041). O texto
+do bloqueio fica abaixo, intacto, porque explica POR QUE a ordem foi essa.
+
+### 4c-1 — ✅ ENTREGUE (front: 503 → 514)
+
+**Escopo:** `Board.tsx`, `TaskCard.tsx`, `lib/api.ts` e o repasse da coluna aos
+cards de `/minhas-tarefas`. Os três portões verdes, `next build` compilando.
+
+**Quatro decisões, tomadas com a Camila antes do código:**
+
+1. **O quadro sai das TAREFAS** (`board_id`), não da flag `is_default`. Custa
+   mais hoje e some com um item de dívida: continua certo no dia do quadro
+   interno, sem ninguém lembrar de voltar lá. Lote vazio cai no padrão; lote
+   com mais de um quadro cai no padrão e o contador de "fora da coluna"
+   denuncia o resto.
+2. **`coluna` é prop OBRIGATÓRIA do `TaskCard`.** O `tsc` listou os quatro usos
+   de uma vez — que é exatamente o que faltou na fatia 3.
+3. **Cascata otimista por coluna**, aceitando a janela de `status` velho.
+   ⚠️ **Esta decisão foi CORRIGIDA no mesmo dia** — ver "o que a conferência
+   manual achou", abaixo.
+4. **Duas metades em vez de uma sessão.** A `STATUSES` continua existindo para
+   quem ainda a consome, então o `tsc` não obriga a migrar tudo junto — o
+   plano anterior dizia o contrário, e estava errado.
+
+**Sabotagens medidas (5):** escolher o quadro por `is_default`, card lendo
+`status`, contador da checklist lendo `status`, filtro de prazo lendo `status`,
+apagar o contador de card fora de coluna. Cada uma derruba UM teste, pelo nome
+— registradas no cabeçalho do `Board.test.tsx`.
+
+⚠️ **DUAS DELAS PASSARAM VERDE ANTES DE O TESTE EXISTIR** (a escolha do quadro
+e o filtro de prazo). Os dois portões nasceram de RODAR a sabotagem, não de
+planejar. Repita o procedimento na 4c-2.
+
+### ⚠️ O que a CONFERÊNCIA MANUAL achou, e nenhum portão achou
+
+Três coisas, todas invisíveis para `pytest`, `tsc`, `vitest` e `next build`:
+
+1. **O contador da checklist no card** ainda lia `status` — arrastar um pai
+   para conclusão concluía a subárvore no banco e o número só mudava com F5.
+2. **A proporção no DETALHE da tarefa** (`lib/subtarefas.ts::progresso`) lê
+   `status` e continuou parada depois do conserto do card. **Dois números
+   discordando é pior que um número velho.**
+3. **O filtro de prazo** também lia `status` (achado junto, não pela tela).
+
+O conserto de (2) foi manter coluna **e** status em sincronia na cascata
+otimista — e isso NÃO é o front derivando status: a cascata só roda em coluna
+de conclusão, e a do backend grava `COMPLETED` fixo. **Dívida: quem migrar
+`progresso` para a coluna apaga a metade `status` do `onDragEnd`.**
+
+### ⚠️ O que a 4c-1 NÃO validou
+
+- **O `onDragEnd` inteiro.** Drag-and-drop não é exercitável em jsdom. A rede é
+  a conferência manual, e foi ela que achou as três coisas acima.
+- **O caminho de ERRO do arrastar** (403/500 → reverter card e checklist).
+  Não há tarefa que a Camila não possa mover, então não deu para forçar.
+  ⚠️ **Código de reversão nunca executado**, e ele MUDOU nesta fatia (passou a
+  guardar dois campos). Forçável em 30s com o modo offline do devtools.
+
+### 4c-2 — o que falta
+
+- Kanban de `/minhas-tarefas` (`:614`, `:1040`, `:1174`) e o `onDragEnd` dela
+  (`:496`).
+- Os dois `<select>` de status que ESCREVEM: `TaskModal.tsx:887` e
+  `TaskDetail.tsx:678`.
+- `lib/subtarefas.ts::progresso` → decidir pela coluna. ⚠️ **Toca QUATRO
+  telas** (quadro, minhas tarefas, `/arquivadas`, `/tarefa/[id]`), e as duas
+  últimas **não carregam colunas hoje**. É o item mais caro da 4c-2, e foi o
+  que impediu de resolvê-lo na 4c-1.
+- Só então: apagar `STATUSES` de `lib/status.ts`, o
+  `(typeof STATUSES)[number]`, os 16 tokens de cor por NOME no `globals.css` e
+  o `paridadeColuna.test.ts`.
+
+---
+
+## Fatia 4c — o bloqueio original (histórico, medido em 10/08 de manhã)
 
 **NÃO COMECE POR AQUI.** O `plan.md` original a descrevia como "os quatro
 arquivos que sobraram". Aberto o código, ela não é executável antes da 5.

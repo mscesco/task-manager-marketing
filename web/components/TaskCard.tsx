@@ -3,11 +3,14 @@ import { FolderKanban, CornerDownRight, Calendar, CheckSquare } from "lucide-rea
 import {
   PRIORITY_LABEL,
   PRIORITY_COLOR,
-  deadlineTone,
   DEADLINE_COLOR,
-  diasParado,
   paradaLabel,
 } from "@/lib/status";
+import {
+  deadlineTonePorColuna,
+  diasParadoPorColuna,
+  type Coluna,
+} from "@/lib/coluna";
 import Badge from "@/components/Badge";
 import Avatar from "@/components/Avatar";
 import type { Task } from "@/lib/api";
@@ -37,6 +40,7 @@ export default function TaskCard({
   projectName,
   parentTitle,
   escopo,
+  coluna,
 }: {
   task: Task;
   members?: Map<string, CardMember>; // resolve id -> nome (mapa memoizado do quadro)
@@ -53,14 +57,28 @@ export default function TaskCard({
   // da raiz (responsavel do subtime); "interna" = nasceu no subtime.
   // undefined em outros quadros (nao mostra pill).
   escopo?: "compartilhada" | "interna";
+  /**
+   * A coluna em que esta tarefa esta (fatia 4c). **OBRIGATORIA de proposito.**
+   *
+   * ⚠️ As duas regras visuais deste card -- cor do prazo e selo de "parada ha
+   * X dias" -- decidiam por `task.status` e passaram a decidir pela COLUNA
+   * (ADR 0040). Prop opcional com reserva nas funcoes antigas teria migrado a
+   * tela aos poucos, e o preco seria as duas regras vivas ao mesmo tempo, sem
+   * ninguem sabendo qual roda onde. Obrigatoria, o `tsc` lista todos os usos
+   * de uma vez -- que e exatamente o que faltou na fatia 3, onde um `as` numa
+   * fixture calou o compilador e o buraco durou horas.
+   *
+   * Quem chama resolve por `task.column_id` no mapa de colunas do quadro.
+   */
+  coluna: Coluna;
 }) {
   const ids = task.assignee_ids ?? [];
   const mostra = ids.slice(0, MAX_BOLINHAS);
   const resto = ids.length - mostra.length;
-  const dueTone = deadlineTone(task.due_date, task.status, task.is_archived);
+  const dueTone = deadlineTonePorColuna(coluna, task.due_date, task.is_archived);
   // Spec 031 / C2. `updated_at` ja vem no payload da listagem -- custo zero de
   // rede. Ver o aviso sobre o que ele NAO mede em lib/status.ts.
-  const parada = diasParado(task.updated_at, task.status, task.is_archived);
+  const parada = diasParadoPorColuna(coluna, task.updated_at, task.is_archived);
   const semResponsavel = ids.length === 0;
 
   return (

@@ -716,6 +716,27 @@ export async function colunasDoQuadroGeral(): Promise<Coluna[]> {
 }
 
 
+/**
+ * As colunas do quadro de uma TAREFA (fatia 4c-2), ordenadas por posicao.
+ *
+ * ⚠️ MESMA REGRA DO `Board.tsx`, e ela mora aqui para nao virar duas: o quadro
+ * sai do `board_id` DA TAREFA, e o padrao e so o ultimo recurso -- para o caso
+ * de o quadro nao voltar na lista (sem alcance, apagado). Escolher pelo
+ * padrao direto e o defeito que a sabotagem da 4c-1 pegou.
+ *
+ * ⚠️ DEVOLVE `[]` EM VEZ DE LEVANTAR, igual a `colunasDoQuadroGeral`: quem
+ * chama distingue "ainda carregando" (`null` no estado) de "carregou e nao ha
+ * coluna" (`[]`).
+ */
+export async function colunasDoQuadro(boardId: string): Promise<Coluna[]> {
+  const quadros = await listBoards();
+  const quadro =
+    quadros.find((q) => q.id === boardId) ?? quadros.find((q) => q.is_default);
+  if (!quadro) return [];
+  return [...quadro.colunas].sort((a, b) => a.position - b.position);
+}
+
+
 export type TaskCreateInput = {
   title: string;
   description?: string;
@@ -851,6 +872,22 @@ export type TaskUpdateInput = {
   priority?: string;
   status?: string;
   due_date?: string | null;
+  /**
+   * Fatia 5a do backend (ADR 0041): mover a tarefa de COLUNA, com o status
+   * derivado dela pelo servidor.
+   *
+   * ⚠️ MUTUAMENTE EXCLUSIVO COM `status` -- mandar os dois na mesma chamada
+   * devolve 422 (`validation_error`, `details.field = "column_id"`). O tipo
+   * nao consegue expressar isso sem partir `TaskUpdateInput` em dois, e
+   * partir tornaria toda chamada existente mais verbosa para proteger um erro
+   * que so um caminho novo pode cometer. **A regra vale, e quem a viola
+   * descobre no 422, nao no `tsc`.**
+   *
+   * ⚠️ O front NAO consegue calcular o status resultante: a ponte
+   * (`legacy_status`) nao viaja no `GET /boards`, de proposito (ADR 0033).
+   * Quem precisa do status novo le a RESPOSTA desta chamada.
+   */
+  column_id?: string;
 };
 
 export async function updateTask(

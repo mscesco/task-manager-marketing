@@ -25,6 +25,7 @@ import {
   unarchiveTask,
   deleteTask,
   listComments,
+  colunasDoQuadro,
   listMembers,
   createComment,
   editComment,
@@ -52,6 +53,7 @@ import CommentText from "@/components/CommentText";
 import MentionTextarea from "@/components/MentionTextarea";
 import { nomeCurto } from "@/lib/people";
 import { checklist } from "@/lib/subtarefas";
+import { deadlineTonePorColuna, type Coluna } from "@/lib/coluna";
 import {
   acaoDoEnterNoTitulo,
   alternaResponsavel,
@@ -234,7 +236,13 @@ export default function TaskDetail({
   const [erroSub, setErroSub] = useState<string | null>(null);
   const [subSaving, setSubSaving] = useState<Set<string>>(new Set());
   // Status de antes de concluir, pra desmarcar voltar pra ele (sessao).
-  const [statusAnterior, setStatusAnterior] = useState<Record<string, string>>({});
+  // ⚠️ Fatia 4c-2: a checklist e a caixinha decidem pela COLUNA, entao o
+  // detalhe precisa das colunas do quadro DA TAREFA. `null` = ainda chegando.
+  // Carregado AQUI, e nao recebido por prop, porque o `TaskDetail` e usado por
+  // QUATRO telas (quadro, /minhas-tarefas, /arquivadas, /tarefa/[id]) e duas
+  // delas nao carregam quadro nenhum. Uma requisicao a mais ao abrir o
+  // detalhe; ⚠️ NAO MEDIDA (o item de desempenho do handoff continua aberto).
+  const [colunas, setColunas] = useState<Coluna[] | null>(null);
   const [arquivando, setArquivando] = useState(false);
   // Feedback do botao "Copiar link" (volta pro texto normal sozinho).
   const [copiado, setCopiado] = useState(false);
@@ -312,7 +320,6 @@ export default function TaskDetail({
     setNovoTitulo("");
     setErroSub(null);
     setSubSaving(new Set());
-    setStatusAnterior({});
     setArquivando(false);
     // Estado de exclusao: ANTES nao era zerado aqui -> a confirmacao (e o
     // "excluindo") ficavam grudados e reapareciam travados ao reabrir/trocar.
@@ -409,6 +416,24 @@ export default function TaskDetail({
       vivo = false;
     };
   }, [task?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Colunas do quadro da tarefa focada. Em erro fica `[]` e nao `null`, senao
+  // o contador da checklist nunca aparece quando a API de quadros cai.
+  useEffect(() => {
+    if (!task) return;
+    let vivo = true;
+    setColunas(null);
+    colunasDoQuadro(task.board_id)
+      .then((c) => {
+        if (vivo) setColunas(c);
+      })
+      .catch(() => {
+        if (vivo) setColunas([]);
+      });
+    return () => {
+      vivo = false;
+    };
+  }, [task?.board_id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fecha o picker de responsavel da subtarefa ao clicar fora.
   useEffect(() => {
@@ -530,12 +555,17 @@ export default function TaskDetail({
   // marcada. Dava "(1/3)" com a barra em 50%. Ver `lib/subtarefas.ts`.
   //   linhasSub -> o que DESENHA (arquivada entra apagada)
   //   totalSub  -> o denominador do rotulo E da barra (so trabalho vivo)
+  // ⚠️ `?? []` e nao `!`: enquanto as colunas nao chegam, o mapa e VAZIO e a
+  // conta da 0 -- por isso o rotulo e a barra so aparecem depois (ver o
+  // `colunas &&` no render). Numero errado por meio segundo e o defeito que a
+  // conferencia manual de 10/08 pegou; numero ausente por meio segundo, nao.
+  const colunaPorId = new Map((colunas ?? []).map((c) => [c.id, c]));
   const {
     linhas: linhasSub,
     concluidas,
     total: totalSub,
     pct: pctSub,
-  } = checklist(filhos, mostrarArquivadas);
+  } = checklist(filhos, mostrarArquivadas, colunaPorId);
   // Criacao: created_at e ISO com fuso (nao date-only) -> new Date direto ja
   // resolve pro fuso local. Nome do criador via members; se nao resolver
   // (ex.: usuario desativado / fora da lista), mostra so a data (nunca o UUID).
@@ -664,18 +694,81 @@ export default function TaskDetail({
     }
   }
 
+  /**
+   * A caixinha da subtarefa (fatia 4c-2) -- agora escreve COLUNA.
+   *
+   * ⚠️ MARCAR e "mover para a coluna de conclusao", nao "gravar COMPLETED". O
+   * status vem derivado dela pelo servidor (ADR 0041), e o front NAO o
+   * adivinha: quem le status na resposta e a linha do `onSubtaskUpsert` logo
+   * depois do `await`.
+   *
+   * ⚠️ DESMARCAR MANDA SEMPRE PARA A COLUNA ABERTA PADRAO. Decisao de
+   * 10/08, e ela substitui uma tentativa de ser esperto que a conferencia
+   * manual reprovou.
+   *
+   * A versao anterior (herdada do codigo por `status`) guardava em estado do
+   * componente de onde a subtarefa tinha saido e devolvia para la. O efeito
+   * real: **funcionava na primeira vez e depois nao.** A memoria vive
+   * enquanto o detalhe esta aberto; fechar para conferir no quadro e reabrir
+   * apaga tudo, e o desmarcar seguinte caia num fallback silencioso. Duas
+   * respostas diferentes para o mesmo clique, sem nada na tela explicando a
+   * diferenca.
+   *
+   * ⚠️ REGRA QUE FUNCIONA AS VEZES E PIOR QUE REGRA BURRA, porque ninguem
+   * consegue criar habito em cima dela. O preco aceito: desmarcar sem querer
+   * uma subtarefa que estava em `Em Andamento` a joga para `Backlog`, e
+   * arrastar de volta e trabalho manual.
+   *
+   * A saida boa esta registrada e NAO e esta: o `task_history` passou a
+   * gravar movimentacao de coluna na fatia 5a (ADR 0041, D5), entao existe o
+   * dado para descobrir a coluna real de antes. Ler o historico e entrega
+   * propria.
+   */
   async function alternarConclusao(f: Task) {
-    const concluida = f.status === "COMPLETED";
-    const destino = concluida ? statusAnterior[f.id] ?? "BACKLOG" : "COMPLETED";
-    if (!concluida) {
-      // guarda o status de antes pra um futuro desmarcar
-      setStatusAnterior((m) => ({ ...m, [f.id]: f.status }));
+    if (!colunas) return; // colunas ainda chegando: a caixa nem esta desenhada
+    const concluida = colunaPorId.get(f.column_id)?.semantic === "DONE";
+
+    // ⚠️ `is_default_target` PRIMEIRO, e este e o primeiro leitor que essa flag
+    // ganha no front. Ela responde exatamente "para onde vai a tarefa desta
+    // semantica neste quadro". Sem ela, um quadro com duas colunas de
+    // conclusao mandaria a tarefa para a primeira da lista, que e a ordem de
+    // `position` -- ou seja, arbitraria.
+    const alvo = (semantic: Coluna["semantic"]) =>
+      colunas.find((c) => c.semantic === semantic && c.is_default_target) ??
+      colunas.find((c) => c.semantic === semantic);
+
+    const destino = concluida ? alvo("OPEN")?.id : alvo("DONE")?.id;
+
+    // ⚠️ QUADRO SEM COLUNA DE CONCLUSAO E ESTADO POSSIVEL na fatia 5, quando o
+    // CRUD deixar apagar coluna. Erro visivel e melhor que caixa que nao faz
+    // nada.
+    if (!destino) {
+      setErroSub(
+        concluida
+          ? "Este quadro não tem coluna aberta para onde devolver a subtarefa."
+          : "Este quadro não tem coluna de conclusão."
+      );
+      return;
     }
+
     setErroSub(null);
     setSubSaving((s) => new Set(s).add(f.id));
-    onSubtaskUpsert({ ...f, status: destino }); // otimista
+    // ⚠️ Otimista nos DOIS campos. A coluna e o que a checklist le; o `status`
+    // anda junto para nao deixar os dois discordando na memoria -- mesma
+    // divida registrada no `onDragEnd`, e ela morre quando o ultimo leitor de
+    // `status` do front morrer.
+    // ⚠️ `"BACKLOG"` ao reabrir NAO e chute: o destino e a coluna aberta
+    // padrao, e ela devolve `BACKLOG` nos dois caminhos da ADR 0041 -- pela
+    // ponte (a coluna `Backlog` padrao tem `legacy_status = BACKLOG`) e pela
+    // semantica (o mapa manda `OPEN -> BACKLOG`). Fora deste caso o front
+    // continua NAO adivinhando status: le da resposta.
+    onSubtaskUpsert({
+      ...f,
+      column_id: destino,
+      status: concluida ? "BACKLOG" : "COMPLETED",
+    });
     try {
-      const atualizada = await updateTask(f.id, { status: destino });
+      const atualizada = await updateTask(f.id, { column_id: destino });
       onSubtaskUpsert(atualizada);
     } catch (e) {
       onSubtaskUpsert(f); // revert
@@ -1243,7 +1336,11 @@ export default function TaskDetail({
         <div className="field">
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <span className="label">
-              Subtarefas{totalSub > 0 ? ` (${concluidas}/${totalSub})` : ""}
+              {/* ⚠️ SEM COLUNA, SEM NUMERO. `colunas &&` de proposito: com o
+                  mapa vazio a conta daria "(0/2)" -- que foi exatamente o
+                  numero errado que a conferencia manual de 10/08 pegou. */}
+              Subtarefas
+              {colunas && totalSub > 0 ? ` (${concluidas}/${totalSub})` : ""}
             </span>
             {!criandoSub && (
               <button
@@ -1262,7 +1359,7 @@ export default function TaskDetail({
               recomputa quando alternarConclusao faz o upsert OTIMISTA no estado
               do pai (a caixa marca -> a barra enche na hora, sem esperar a API;
               reverte se o PATCH falhar). Proporcao = concluidas / filhos ATIVOS. */}
-          {totalSub > 0 && (
+          {colunas && totalSub > 0 && (
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 8 }}>
               <div
                 role="progressbar"
@@ -1301,13 +1398,26 @@ export default function TaskDetail({
           {linhasSub.length > 0 && (
             <div style={{ border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden", marginTop: 8 }}>
               {linhasSub.map((f, i) => {
-                const concluida = f.status === "COMPLETED";
-                const ocupado = subSaving.has(f.id);
+                // ⚠️ A MARCA SAI DA COLUNA (fatia 4c-2), igual a conta logo
+                // acima. Se sair de `status`, a caixa fica desmarcada com a
+                // barra em 100% -- os dois numeros discordando de novo, so que
+                // agora dentro da MESMA tela.
+                const colunaDela = colunaPorId.get(f.column_id);
+                const concluida = colunaDela?.semantic === "DONE";
+                // ⚠️ Enquanto as colunas nao chegam a caixa fica DESABILITADA,
+                // e nao so desmarcada: clicar antes disso nao teria coluna de
+                // destino para onde mandar.
+                const ocupado = subSaving.has(f.id) || !colunas;
                 // Mesmo 0.55 do card arquivado no quadro -- arquivada le como
                 // "fora do fluxo" pelo tom, nao por um rotulo so.
                 const apagada = f.is_archived;
                 // Mesma regra do card do quadro: concluida/arquivada nao alerta.
-                const tone = deadlineTone(f.due_date, f.status, f.is_archived);
+                // ⚠️ `null` e nao `"none"`: o tipo `DeadlineTone` usa `null`
+                // para "sem alerta", e e o que o render logo abaixo testa.
+                // Coluna desconhecida = sem alerta, e nao alerta cinza.
+                const tone = colunaDela
+                  ? deadlineTonePorColuna(colunaDela, f.due_date, f.is_archived)
+                  : null;
                 // Rotulo da prioridade; mesmo fallback do card do quadro.
                 const rotuloPrio = PRIORITY_LABEL[f.priority] || f.priority;
                 return (

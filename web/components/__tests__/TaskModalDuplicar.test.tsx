@@ -16,6 +16,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   cleanup,
+  configure,
   fireEvent,
   render,
   screen,
@@ -40,6 +41,32 @@ vi.mock("@/lib/api", async (importOriginal) => {
 });
 
 const api = await import("@/lib/api");
+
+// ⚠️ ESPERA MAIOR NESTE ARQUIVO, E O MOTIVO E MEDIDO -- NAO E "flakiness".
+//
+// O padrao do `@testing-library` e 1000ms por `waitFor`. Este arquivo e o
+// UNICO que depende de uma CADEIA de promessas antes de a tela ficar no
+// estado que os testes medem: `listMembers` -> `listMembersDoTime` (alcance)
+// -> pre-preenchimento do titulo e dos responsaveis. Sao tres ciclos de
+// render encadeados, e so entao o botao Duplicar destrava.
+//
+// Em 10/08/2026 o arquivo falhou DUAS VEZES em maquina carregada (rodando
+// `tsc && npm test && next build` em sequencia), em testes DIFERENTES a cada
+// vez, sempre com a tela parada no estado ANTERIOR ao pre-preenchimento --
+// `title=""` e o botao travado por "Escreva o titulo da subtarefa.". A
+// segunda falha estourou 1660ms, ou seja, passou do teto de 1000ms; na
+// maquina do assistente o arquivo inteiro roda em ~2s e nunca falhou em 10
+// execucoes.
+//
+// ⚠️ NAO E UM DEFEITO DO PRODUTO. A cadeia esta certa; o teto e que foi
+// calibrado para uma maquina ociosa. Cinco segundos nao deixa teste quebrado
+// passar -- assercao errada continua falhando, so demora mais para desistir.
+//
+// ⚠️ O LUGAR CERTO DISTO E UM `setupFiles` do vitest, valendo para todos os
+// arquivos. Nao foi feito aqui porque `vitest.config.ts` e PORTAO, e mexer em
+// portao no fim de uma fatia e como o projeto ja se machucou antes. Fatia
+// propria.
+configure({ asyncUtilTimeout: 5000 });
 
 const RAIZ = "team-raiz";
 const ANA = "user-ana";
@@ -221,7 +248,25 @@ describe("TaskModal -- modo duplicar", () => {
     expect(botao.disabled).toBe(true);
     // ⚠️ O motivo TEM de estar no botão: botão travado sem explicação é a
     // pessoa procurando o que fez de errado.
-    expect(botao.title).toContain("sub s1");
+    //
+    // ⚠️ `waitFor`, E NÃO LEITURA DIRETA — este teste FALHOU INTERMITENTEMENTE
+    // em 10/08/2026, em máquina rápida, com
+    // `expected 'Escreva o título da subtarefa.' to contain 'sub s1'`.
+    //
+    // A corrida: o `waitFor` acima espera o TEXTO do passo 2, que aparece
+    // assim que o alcance responde. O TÍTULO da subtarefa é pré-preenchido em
+    // outro ciclo. Entre um e outro o botão já está travado — mas pelo motivo
+    // ERRADO ("Escreva o título"), e a asserção de `disabled` acima passa
+    // igual nos dois estados, então ela não protege nada aqui.
+    //
+    // ⚠️ O teste vizinho ("passo 2 NÃO aparece...") já tinha o aviso escrito e
+    // já esperava. Este ficou de fora — mesma armadilha, um teste de distância.
+    await waitFor(() => {
+      expect(
+        (screen.getByRole("button", { name: /Duplicar$/ }) as HTMLButtonElement)
+          .title
+      ).toContain("sub s1");
+    });
   });
 
   it("escolher alguém destrava e o payload leva subtask_assignees", async () => {

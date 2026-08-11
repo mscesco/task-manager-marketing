@@ -1039,15 +1039,22 @@ function Minhas() {
               >
                 {STATUSES.map((s) => (
                   <ColunaMinhas key={s.key} status={s} count={porStatus[s.key]?.length ?? 0}>
-                    {(porStatus[s.key] ?? []).map((t) => (
-                      <CardArrastavelMinhas
-                        key={t.id}
-                        task={t}
-                        onAbrir={abrirDetalhe}
-                        members={members}
-                        projectName={t.project_id ? projectNames.get(t.project_id) : undefined}
-                      />
-                    ))}
+                    {(porStatus[s.key] ?? []).map((t) => {
+                      // ⚠️ `?? []` e nao `!`: a coluna vem de um mapa e pode
+                      // faltar. Sem coluna o card nao desenha -- e o `!`
+                      // esconderia o dia em que isso passar a acontecer.
+                      const col = colunaPorId.get(t.column_id);
+                      return col ? (
+                        <CardArrastavelMinhas
+                          key={t.id}
+                          task={t}
+                          coluna={col}
+                          onAbrir={abrirDetalhe}
+                          members={members}
+                          projectName={t.project_id ? projectNames.get(t.project_id) : undefined}
+                        />
+                      ) : null;
+                    })}
                   </ColunaMinhas>
                 ))}
               </div>
@@ -1055,10 +1062,12 @@ function Minhas() {
                 {activeId
                   ? (() => {
                       const at = (items ?? []).find((t) => t.id === activeId);
-                      return at ? (
+                      const colAt = at ? colunaPorId.get(at.column_id) : undefined;
+                      return at && colAt ? (
                         <div style={{ width: 256, cursor: "grabbing" }}>
                           <TaskCard
                             task={at}
+                            coluna={colAt}
                             members={members}
                             projectName={at.project_id ? projectNames.get(at.project_id) : undefined}
                           />
@@ -1218,11 +1227,17 @@ function ColunaMinhas({
 
 function CardArrastavelMinhas({
   task,
+  coluna,
   onAbrir,
   members,
   projectName,
 }: {
   task: MyTaskItem;
+  // Fatia 4c: o card decide prazo e "parada ha X dias" pela COLUNA. Esta tela
+  // ja carrega as colunas da API desde a 4b -- so o repasse era o que faltava.
+  // ⚠️ O KANBAN desta tela continua agrupando por STATUS: a migracao dele e a
+  // 4c-2, e nao muda nada aqui.
+  coluna: Coluna;
   onAbrir: (task: Task) => void;
   members: Map<string, { name: string }>;
   projectName?: string;
@@ -1250,6 +1265,7 @@ function CardArrastavelMinhas({
     >
       <TaskCard
         task={task}
+        coluna={coluna}
         members={members}
         projectName={projectName}
         parentTitle={(task as MyTaskItem).parent_title}
