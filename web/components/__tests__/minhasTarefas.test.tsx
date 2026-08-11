@@ -396,3 +396,102 @@ describe("minhas-tarefas -- fiacao da tela", () => {
     expect(screen.getByText("250")).toBeTruthy();
   });
 });
+
+// =====================================================================
+// Spec 036, fatia 4c-2 -- o KANBAN desta tela tambem le colunas da API.
+//
+// ⚠️ A vista de LISTA foi migrada na 4b; esta ficou para tras por BLOQUEIO DE
+// CONTRATO (o arrastar mandava `status`, e o front nao sabe traduzir coluna ->
+// status). O bloqueio acabou com o `PATCH column_id` da fatia 5a.
+//
+// ⚠️ O ARRASTAR EM SI CONTINUA SEM PORTAO -- jsdom nao exercita drag-and-drop.
+// Estes testes cobrem o DESENHO e o AGRUPAMENTO das colunas; o `onDragEnd`
+// desta tela so tem conferencia manual, igual ao do `Board.tsx`.
+//
+// SABOTAGENS -- ✅ MEDIDAS EM 10/08/2026:
+//
+//   D. `map[t.column_id]` -> `map[t.status]` no agrupamento. **Caem 2**:
+//      "agrupa o card pela COLUNA" e "card em coluna desconhecida nao some em
+//      silencio".
+//   E. Apagar o `else fora++`. **Cai 1**: "card em coluna desconhecida nao
+//      some em silencio".
+//   F. Cabecalho da coluna com nome fixo em vez de `coluna.name`. **Cai 1**:
+//      "as colunas do kanban tem o NOME que veio da API".
+//
+// ⚠️ NENHUMA delas derruba a suite inteira, e isso e o ponto: as tres apontam
+// para decisoes DIFERENTES. Uma sabotagem que derruba tudo prova que a linha e
+// viva, nao QUAL regra ela carrega -- registrado no `Board.test.tsx`.
+// =====================================================================
+describe("minhas-tarefas -- o kanban le colunas da API (fatia 4c-2)", () => {
+  async function abrirQuadro() {
+    render(<MinhasTarefasPage />);
+    await screen.findByRole("button", { name: "Quadro" });
+    fireEvent.click(screen.getByRole("button", { name: "Quadro" }));
+  }
+
+  it("as colunas do kanban tem o NOME que veio da API", async () => {
+    montarApi([
+      item({ id: "t1", title: "Uma tarefa", column_id: "col-progress" }),
+    ]);
+    await abrirQuadro();
+
+    // ⚠️ Na vista de QUADRO os chips de filtro de coluna somem (eles sao da
+    // vista de lista), entao "Em Andamento" aparece UMA vez: o cabecalho da
+    // coluna. Medido -- a primeira versao deste teste esperava duas, herdando
+    // a armadilha da 4b, que vale para a vista de LISTA.
+    await waitFor(() => {
+      expect(screen.getAllByText("Em Andamento")).toHaveLength(1);
+    });
+    // Os nomes vem de `COLUNAS` (a fixture), e as tres estao desenhadas.
+    expect(screen.getByText("Concluído")).toBeTruthy();
+    expect(screen.getByText("Cancelado")).toBeTruthy();
+    // A fixture tem tres; nenhuma outra coluna padrao aparece.
+    expect(screen.queryByText("Bloqueado")).toBeNull();
+    expect(screen.queryByText("Aprovação Externa")).toBeNull();
+  });
+
+  /**
+   * ⚠️ O TESTE QUE SEPARA "le coluna" de "le status": a tarefa tem
+   * `status: "COMPLETED"` e `column_id` de Em Andamento. Agrupando por status
+   * ela cairia em Concluído.
+   */
+  it("agrupa o card pela COLUNA, mesmo com o status dizendo outra coisa", async () => {
+    montarApi([
+      item({
+        id: "t1",
+        title: "Card teimoso",
+        status: "COMPLETED",
+        column_id: "col-progress",
+      }),
+    ]);
+    await abrirQuadro();
+
+    const card = await screen.findByText("Card teimoso");
+    // Sobe do card ate a coluna e confere de quem e o cabecalho. ⚠️ O
+    // `.parentElement` sobe DEMAIS -- chega no container das tres colunas, e
+    // ai "Concluído" aparece por ser o cabecalho da coluna vizinha. A coluna
+    // certa e o proprio `closest`.
+    const coluna = card.closest("div[style*='min-width']");
+    expect(coluna?.textContent).toContain("Em Andamento");
+    expect(coluna?.textContent).not.toContain("Concluído");
+  });
+
+  /**
+   * ⚠️ MAIS PROVAVEL AQUI QUE NO `Board.tsx`: esta tela junta tarefas de
+   * QUALQUER quadro e desenha as colunas do quadro GERAL. No dia do quadro
+   * interno, tarefa de subtime cai exatamente neste contador.
+   */
+  it("card em coluna desconhecida nao some em silencio", async () => {
+    montarApi([
+      item({ id: "t1", title: "Card normal", column_id: "col-progress" }),
+      item({ id: "t2", title: "Card perdido", column_id: "col-de-outro-quadro" }),
+    ]);
+    await abrirQuadro();
+
+    await screen.findByText("Card normal");
+    expect(screen.queryByText("Card perdido")).toBeNull();
+    expect(
+      screen.getByText(/1 tarefa está em uma\s+coluna que não é deste quadro/)
+    ).toBeTruthy();
+  });
+});

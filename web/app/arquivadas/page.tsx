@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import AppShell from "@/components/AppShell";
 import EmptyState from "@/components/EmptyState";
@@ -15,10 +15,12 @@ import {
   getRootTeamId,
   listAllProjects,
   listAllTasks,
+  colunasDoQuadroGeral,
   ApiError,
   type Task,
 } from "@/lib/api";
 import { STATUSES, STATUS_TEXT } from "@/lib/status";
+import type { Coluna } from "@/lib/coluna";
 import { mensagemExclusao } from "@/lib/exclusao";
 
 // Tela de arquivadas (Spec 013, fatia 4). Lista paginada de tarefas
@@ -39,6 +41,11 @@ import { mensagemExclusao } from "@/lib/exclusao";
 
 const PAGE_SIZE = 30;
 
+// ⚠️ RESERVA DO BADGE (fatia 4c-2). O rotulo passou a sair de `coluna.name`;
+// este mapa responde quando a coluna da tarefa nao esta na lista carregada --
+// tarefa de OUTRO quadro (provavel aqui: `/arquivadas` lista o workspace
+// inteiro e as colunas vem do quadro geral), coluna apagada, ou as colunas
+// ainda a caminho. Sem ele o badge ficaria vazio nesses casos.
 const STATUS_LABEL: Record<string, string> = Object.fromEntries(
   STATUSES.map((s) => [s.key, s.label])
 );
@@ -57,6 +64,10 @@ export default function ArquivadasPage() {
 
 function Arquivadas() {
   const [tasks, setTasks] = useState<Task[] | null>(null);
+  // Fatia 4c-2: o badge de cada linha mostra o NOME da coluna. Em erro fica
+  // `[]` e nao `null` -- a lista NAO espera pelas colunas, porque o badge e
+  // acessorio aqui e o assunto da tela e reativar tarefa.
+  const [colunas, setColunas] = useState<Coluna[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [erro, setErro] = useState<string | null>(null);
@@ -80,6 +91,10 @@ function Arquivadas() {
   const [rootTeamId, setRootTeamId] = useState<string | null>(null);
   const router = useRouter();
   const [detalhe, setDetalhe] = useState<Task | null>(null);
+  const colunaPorId = useMemo(
+    () => new Map(colunas.map((c) => [c.id, c])),
+    [colunas]
+  );
   // Pai da subtarefa aberta DIRETO da lista (04/08).
   //
   // ⚠️ Abrindo uma subtarefa arquivada DIRETO da lista -- o caso normal
@@ -100,6 +115,14 @@ function Arquivadas() {
   // so faria "duplicar" e "editar" se sobrescreverem em silencio.
   const [duplicando, setDuplicando] = useState<Task | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+
+  // Colunas do quadro geral, so para o rotulo do badge. Falha em silencio de
+  // proposito: o badge cai na reserva por status e a tela segue funcionando.
+  useEffect(() => {
+    colunasDoQuadroGeral()
+      .then(setColunas)
+      .catch(() => setColunas([]));
+  }, []);
 
   useEffect(() => {
     listMembers()
@@ -199,6 +222,7 @@ function Arquivadas() {
             <LinhaArquivada
               key={t.id}
               t={t}
+              nomeDaColuna={colunaPorId.get(t.column_id)?.name}
               primeira={i === 0}
               onReativou={() => carregar(page)}
               onAbrir={abrirDetalhe}
@@ -312,11 +336,17 @@ function Arquivadas() {
 
 function LinhaArquivada({
   t,
+  nomeDaColuna,
   primeira,
   onReativou,
   onAbrir,
 }: {
   t: Task;
+  // ⚠️ OPCIONAL, ao contrario do `TaskCard`. La a coluna decide REGRA (prazo,
+  // parada) e faltar seria defeito; aqui ela e so um rotulo, e a reserva por
+  // status resolve. Obrigatoria, forcaria esta tela a esperar as colunas para
+  // desenhar a lista -- e o assunto da tela e reativar tarefa.
+  nomeDaColuna?: string;
   primeira: boolean;
   onReativou: () => void;
   onAbrir: (t: Task) => void;
@@ -370,7 +400,11 @@ function LinhaArquivada({
           </button>
         </div>
         <Badge tone="outline" size="md" weight="normal" color={STATUS_COLOR[t.status]} className="shrink-0">
-          {STATUS_LABEL[t.status] || t.status}
+          {/* Nome da coluna; reserva no rotulo do status. A COR continua
+              vindo de `STATUS_TEXT` -- `coluna.color` e token de traco e
+              reprova AA como texto (Spec 031 §2.2b); a derivacao acessivel de
+              cor arbitraria e da fatia 5 (`lib/coluna.ts::corEhHex`). */}
+          {nomeDaColuna ?? STATUS_LABEL[t.status] ?? t.status}
         </Badge>
 
         {!confirmar && (

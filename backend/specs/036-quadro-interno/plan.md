@@ -288,19 +288,91 @@ de conclusão, e a do backend grava `COMPLETED` fixo. **Dívida: quem migrar
   ⚠️ **Código de reversão nunca executado**, e ele MUDOU nesta fatia (passou a
   guardar dois campos). Forçável em 30s com o modo offline do devtools.
 
-### 4c-2 — o que falta
+### 4c-2 — ✅ ENTREGUE (front: 514 → 529)
 
-- Kanban de `/minhas-tarefas` (`:614`, `:1040`, `:1174`) e o `onDragEnd` dela
-  (`:496`).
-- Os dois `<select>` de status que ESCREVEM: `TaskModal.tsx:887` e
-  `TaskDetail.tsx:678`.
-- `lib/subtarefas.ts::progresso` → decidir pela coluna. ⚠️ **Toca QUATRO
-  telas** (quadro, minhas tarefas, `/arquivadas`, `/tarefa/[id]`), e as duas
-  últimas **não carregam colunas hoje**. É o item mais caro da 4c-2, e foi o
-  que impediu de resolvê-lo na 4c-1.
-- Só então: apagar `STATUSES` de `lib/status.ts`, o
-  `(typeof STATUSES)[number]`, os 16 tokens de cor por NOME no `globals.css` e
-  o `paridadeColuna.test.ts`.
+Quatro passos, cada um com portões verdes antes do seguinte:
+
+**a) `lib/subtarefas.ts::progresso` decide pela coluna.** Era o item mais caro
+e a razão de a 4c-1 ter parado onde parou: a regra é lida por QUATRO telas, e
+duas (`/arquivadas`, `/tarefa/[id]`) não carregavam colunas.
+⚠️ **A saída não foi migrar as quatro telas: foi o `TaskDetail` passar a
+carregar as próprias colunas.** As quatro ganharam o comportamento sem serem
+tocadas. Preço: uma requisição a mais ao abrir o detalhe, **não medida** — o
+item de desempenho do §9 do handoff ganhou uma linha.
+
+**b) Kanban de `/minhas-tarefas` + `onDragEnd` dela.** O bloqueio de contrato
+citado abaixo acabou com o `PATCH column_id`. ⚠️ A validação da coluna de
+destino AQUI não é formalidade como no `Board.tsx`: esta tela junta tarefas de
+QUALQUER quadro e desenha as colunas do quadro GERAL. `STATUSES` saiu desta
+tela por inteiro.
+
+**c) `TaskModal` e o badge do `TaskDetail`.** O campo "Status" do modal virou
+**"Coluna"** — o rótulo mudou junto com a fonte. ⚠️ Descoberta ao abrir o
+código: **o `TaskDetail.tsx:678` que o plano listava como `<select>` de status
+era a CAIXINHA da subtarefa**, já migrada no passo (a). O quarto caminho de
+escrita não existia; existia um leitor que ninguém tinha mapeado (o badge).
+
+**d) Badge de `/arquivadas`.** ⚠️ Coluna OPCIONAL aqui, ao contrário do
+`TaskCard`: lá ela decide regra e faltar é defeito; aqui é rótulo, e obrigá-la
+faria a tela esperar as colunas para listar — sendo que o assunto da tela é
+reativar tarefa.
+
+**Sabotagens medidas: 10 no total** (5 na 4c-1, 5 na 4c-2), cada uma derrubando
+1 ou 2 testes NOMEADOS. Registradas no cabeçalho de cada arquivo de teste.
+
+### ⚠️ A DEMOLIÇÃO DO `STATUSES` NÃO É DESTA FATIA — e o plano estava errado
+
+O texto anterior desta seção dizia "só então: apagar `STATUSES`, os 16 tokens
+de cor e o `paridadeColuna.test.ts`". **Medido em 10/08, isso não é executável
+agora**, e por dois motivos independentes:
+
+1. **`STATUSES` virou a RESERVA do badge**, em `/arquivadas` e no
+   `TaskDetail`. Quando a coluna da tarefa não está na lista carregada, o
+   rótulo cai nele. ⚠️ **Em `/arquivadas` esse caso é NORMAL, não defeito**: a
+   tela lista o workspace inteiro e as colunas vêm do quadro geral, então
+   tarefa arquivada de um quadro de subtime cai na reserva por natureza.
+   Apagar `STATUSES` deixa o badge em branco nesses casos.
+2. **A COR do badge continua saindo de `STATUS_TEXT`**, e isso é decisão, não
+   esquecimento: `coluna.color` é token de TRAÇO e reprova AA como fundo sob
+   texto (Spec 031 §2.2b). Cor acessível de coluna arbitrária tem de sair da
+   luminância, e `lib/coluna.ts::corEhHex` já registra, desde a 4a, que essa
+   derivação é da **fatia 5**.
+
+**Conclusão: `STATUSES` sobrevive à 4c e morre na fatia 5**, junto com o CRUD
+de coluna que define cor. O `paridadeColuna.test.ts` (61 testes) segue válido
+até lá — ele afirma a paridade da tabela de reserva com o backend.
+
+### ⚠️ O que a 4c NÃO validou
+
+- **Os dois `onDragEnd`** (quadro e `/minhas-tarefas`). Drag-and-drop não é
+  exercitável em jsdom. Foram conferidos À MÃO, nos dois temas.
+- **O caminho de ERRO do arrastar** (403/500 → reverter card e checklist).
+  Não há tarefa que a Camila não possa mover. ⚠️ **Código de reversão nunca
+  executado, e ele MUDOU duas vezes nesta fatia** (passou a guardar dois
+  campos, nas duas telas). Forçável em 30s com o modo offline do devtools.
+- **`/tarefa/[id]`** — ganhou o comportamento de graça pelo `TaskDetail`, sem
+  teste de montagem próprio. As outras três telas que montam o detalhe também
+  não têm.
+- **Desempenho.** Duas requisições novas (`colunasDoQuadro` no detalhe e no
+  modal), nenhuma medida.
+
+### ⚠️ O que a CONFERÊNCIA MANUAL achou, e nenhum portão achou
+
+Cinco coisas, ao longo da 4c inteira. **Todas invisíveis para `pytest`, `tsc`,
+`vitest` e `next build`** — e é o registro mais útil desta seção:
+
+1. O contador da checklist no card ainda lia `status` (4c-1).
+2. A proporção no DETALHE continuou parada depois do conserto do card — dois
+   números discordando sobre a mesma coisa.
+3. O filtro de prazo lia `status` (achado junto, não pela tela).
+4. **Desmarcar uma subtarefa "funcionava na primeira vez e depois não"**: a
+   memória de qual coluna devolver morria ao fechar o detalhe. Virou regra
+   fixa — ver a seção da decisão, no `TaskDetail`.
+5. Três sabotagens PASSARAM VERDE antes de o teste existir (a escolha do
+   quadro, o filtro de prazo, o `is_default_target`).
+
+⚠️ **A lição, para a fatia 5: sabotagem verde é descoberta, não confirmação.**
+Rodar a sabotagem é o que revela decisão sem portão.
 
 ---
 

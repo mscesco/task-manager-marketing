@@ -21,6 +21,13 @@
 //      ⚠️ Numero alto porque a regra e UMA e e lida por quatro telas -- e
 //      exatamente por isso ela mora numa funcao pura com teste proprio.
 //
+//   G. Badge volta a `STATUS_LABEL[task.status]`. **Cai 1**: "mostra o nome da
+//      coluna, e não o rótulo do status".
+//   H. Badge SEM a reserva (so `coluna?.name`). **Cai 1**: "coluna
+//      desconhecida cai no rótulo do status, e não em branco". ⚠️ Os dois
+//      testes do badge apontam para lados OPOSTOS de propósito -- um exige a
+//      coluna, o outro exige a reserva. Sabotar um so nao derruba o outro.
+//
 //   C. `alvo()` para de olhar `is_default_target` e pega a primeira coluna da
 //      semantica. **Caem 2**, os dois de desmarcar.
 //      ⚠️ ESTA SABOTAGEM PASSOU VERDE NA PRIMEIRA TENTATIVA: a fixture tinha
@@ -147,14 +154,18 @@ function task(over: Partial<Task> = {}): Task {
 function Pai({
   inicial,
   onSubtaskUpsert,
+  tarefa,
 }: {
   inicial: Task[];
   onSubtaskUpsert?: (sub: Task) => void;
+  // A tarefa FOCADA. Default = a mae generica; os testes do badge passam uma
+  // com coluna especifica.
+  tarefa?: Task;
 }) {
   const [filhos, setFilhos] = useState<Task[]>(inicial);
   return (
     <TaskDetail
-      task={task({ id: "pai", title: "Tarefa mãe", path: "pai" })}
+      task={tarefa ?? task({ id: "pai", title: "Tarefa mãe", path: "pai" })}
       members={new Map()}
       projects={new Map()}
       filhos={filhos}
@@ -378,5 +389,52 @@ describe("TaskDetail -- a checklist conta pela coluna (fatia 4c-2)", () => {
 
     liberar(COLUNAS);
     expect(await screen.findByText(/Subtarefas \(1\/1\)/)).toBeTruthy();
+  });
+});
+
+// =====================================================================
+// Fatia 4c-2 -- o BADGE do detalhe mostra o nome da COLUNA.
+// =====================================================================
+describe("TaskDetail -- o badge sai da coluna (fatia 4c-2)", () => {
+  it("mostra o nome da coluna, e não o rótulo do status", async () => {
+    render(
+      <Pai
+        inicial={[]}
+        tarefa={task({
+          id: "pai",
+          title: "Mãe",
+          path: "pai",
+          // ⚠️ PAR TORTO: o status diz BACKLOG, a coluna e `Planejado`. Se o
+          // badge sair do status, aparece "Backlog".
+          status: "BACKLOG",
+          column_id: "col-planejado",
+        })}
+      />
+    );
+
+    expect(await screen.findByText("Planejado")).toBeTruthy();
+    expect(screen.queryByText("Backlog")).toBeNull();
+  });
+
+  /**
+   * ⚠️ A RESERVA. Coluna fora da lista carregada (quadro sem alcance, coluna
+   * apagada na fatia 5) cai no rotulo do status -- e nao em branco. Badge
+   * vazio nao diz nada a ninguem.
+   */
+  it("coluna desconhecida cai no rótulo do status, e não em branco", async () => {
+    render(
+      <Pai
+        inicial={[]}
+        tarefa={task({
+          id: "pai",
+          title: "Mãe",
+          path: "pai",
+          status: "IN_PROGRESS",
+          column_id: "col-de-outro-quadro",
+        })}
+      />
+    );
+
+    expect(await screen.findByText("Em Andamento")).toBeTruthy();
   });
 });

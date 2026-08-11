@@ -14,6 +14,7 @@ import {
   createTask,
   duplicateTask,
   updateTask,
+  colunasDoQuadro,
   listProjects,
   listMembers,
   listMembersDoTime,
@@ -24,7 +25,8 @@ import {
   type Project,
   type Member,
 } from "@/lib/api";
-import { PRIORITY_LABEL, STATUSES } from "@/lib/status";
+import { PRIORITY_LABEL } from "@/lib/status";
+import type { Coluna } from "@/lib/coluna";
 import {
   deveBloquearEnter,
   ehAtalhoDeSalvar,
@@ -101,7 +103,15 @@ export default function TaskModal({
   const [description, setDescription] = useState("");
   const [priority, setPriority] = useState<string>("MEDIUM");
   const [dueDate, setDueDate] = useState("");
-  const [status, setStatus] = useState<string>("BACKLOG");
+  // ⚠️ Fatia 4c-2: o seletor deixou de escolher STATUS e passou a escolher
+  // COLUNA. O estado guarda um `column_id`; `""` = nenhuma (colunas ainda
+  // chegando, ou tarefa em coluna que nao e deste quadro).
+  const [colunaId, setColunaId] = useState<string>("");
+  // As colunas do quadro DA TAREFA. Carregadas AQUI, e nao recebidas por prop,
+  // porque QUATRO telas montam este modal (quadro, /minhas-tarefas,
+  // /arquivadas, /tarefa/[id]) -- mesma decisao tomada no `TaskDetail`.
+  // ⚠️ Uma requisicao a mais ao abrir o modal de edicao; NAO MEDIDA.
+  const [colunas, setColunas] = useState<Coluna[] | null>(null);
   const [saving, setSaving] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
@@ -144,6 +154,24 @@ export default function TaskModal({
   const [buscaResp, setBuscaResp] = useState("");
   const respWrapRef = useRef<HTMLDivElement>(null);
 
+  // Colunas do quadro da tarefa em edicao. Em erro fica `[]` e nao `null`,
+  // senao o seletor some para sempre quando a API de quadros cai.
+  useEffect(() => {
+    if (!open || !task) return;
+    let vivo = true;
+    setColunas(null);
+    colunasDoQuadro(task.board_id)
+      .then((c) => {
+        if (vivo) setColunas(c);
+      })
+      .catch(() => {
+        if (vivo) setColunas([]);
+      });
+    return () => {
+      vivo = false;
+    };
+  }, [open, task?.board_id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Prefilla (ou limpa) sempre que abre / troca a task alvo.
   useEffect(() => {
     if (!open) return;
@@ -151,7 +179,7 @@ export default function TaskModal({
     setDescription(task?.description ?? "");
     setPriority(task?.priority ?? "MEDIUM");
     setDueDate(task?.due_date ?? "");
-    setStatus(task?.status ?? "BACKLOG");
+    setColunaId(task?.column_id ?? "");
     setProjetoSel("");
     setAssigneeIds([]);
     setInvalidIds(new Set());
@@ -495,7 +523,11 @@ export default function TaskModal({
         const d = description.trim();
         if (d !== (task.description ?? "")) diff.description = d;
         if (priority !== task.priority) diff.priority = priority;
-        if (status !== task.status) diff.status = status;
+        // ⚠️ MANDA `column_id`, NUNCA `status` (fatia 4c-2 / ADR 0041). Os dois
+        // no mesmo payload sao 422, e aqui o risco e real: este `diff` junta
+        // varios campos numa chamada so. Como `status` nao entra mais em lugar
+        // nenhum deste arquivo, nao ha como os dois se encontrarem.
+        if (colunaId && colunaId !== task.column_id) diff.column_id = colunaId;
         const due = dueDate || null;
         if (due !== (task.due_date ?? null)) diff.due_date = due;
 
@@ -876,16 +908,32 @@ export default function TaskModal({
           </div>
         )}
 
-        {/* Status so no modo editar -- na criacao nasce BACKLOG e arrasta-se depois. */}
+        {/* Coluna, so no modo editar -- na criacao a tarefa nasce na coluna
+            padrao do quadro e arrasta-se depois.
+            ⚠️ ERA "Status" ate a fatia 4c-2. O rotulo mudou junto com a fonte:
+            chamar de status uma lista de nomes de coluna seria mentir para
+            quem usa. */}
         {editando && (
           <div className="field">
-            <label className="label" htmlFor="t-status">Status</label>
+            <label className="label" htmlFor="t-coluna">Coluna</label>
             <select
-              id="t-status" className="input" value={status}
-              onChange={(e) => setStatus(e.target.value)}
+              id="t-coluna" className="input" value={colunaId}
+              disabled={!colunas}
+              onChange={(e) => setColunaId(e.target.value)}
             >
-              {STATUSES.map((s) => (
-                <option key={s.key} value={s.key}>{s.label}</option>
+              {/* ⚠️ Enquanto as colunas nao chegam, o seletor fica DESABILITADO
+                  com o nome da coluna atual invisivel -- e nao vazio: campo que
+                  pisca de vazio para preenchido parece que perdeu o dado. */}
+              {!colunas && <option value={colunaId}>Carregando…</option>}
+              {/* ⚠️ A COLUNA ATUAL PODE NAO ESTAR NA LISTA (quadro trocado,
+                  coluna apagada na fatia 5). Sem esta opcao o `<select>`
+                  mostraria a PRIMEIRA coluna como se fosse a atual, e salvar
+                  moveria a tarefa sem ninguem pedir. */}
+              {colunas && colunaId && !colunas.some((c) => c.id === colunaId) && (
+                <option value={colunaId}>(coluna atual, fora deste quadro)</option>
+              )}
+              {(colunas ?? []).map((c) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
               ))}
             </select>
           </div>

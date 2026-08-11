@@ -54,6 +54,9 @@ vi.mock("@/lib/api", async (importOriginal) => {
   return {
     ...real,
     listArchivedTasks: vi.fn(),
+    // ⚠️ Fatia 4c-2: o badge de cada linha mostra o NOME da coluna. Sem este
+    // mock a chamada real vaza para o `fetch` do jsdom.
+    colunasDoQuadroGeral: vi.fn(),
     listAllTasks: vi.fn(),
     listAllProjects: vi.fn(),
     listMembers: vi.fn(),
@@ -137,6 +140,17 @@ function montar(itens: Task[]) {
     total: 0,
     truncated: false,
   });
+  vi.mocked(api.colunasDoQuadroGeral).mockResolvedValue([
+    {
+      id: "col-progress",
+      name: "Em Andamento",
+      color: "var(--status-progress-dot)",
+      position: 2,
+      semantic: "IN_PROGRESS",
+      notify_deadline: true,
+      is_default_target: true,
+    },
+  ]);
   vi.mocked(api.listMembers).mockResolvedValue(MEMBROS);
   vi.mocked(api.listMembersDoTime).mockResolvedValue(MEMBROS);
   vi.mocked(api.listProjects).mockResolvedValue({
@@ -228,5 +242,39 @@ describe("/arquivadas -- de onde veio esta subtarefa?", () => {
     expect(screen.getAllByText("Peça para Instagram").length).toBeGreaterThan(
       0,
     );
+  });
+});
+
+// =====================================================================
+// Fatia 4c-2 -- o badge da linha mostra o nome da COLUNA.
+//
+// ⚠️ A RESERVA IMPORTA MAIS AQUI que nas outras telas: `/arquivadas` lista o
+// workspace inteiro e as colunas vem do quadro GERAL, entao tarefa arquivada
+// de um quadro de subtime cai na reserva por natureza -- nao por defeito.
+// =====================================================================
+describe("arquivadas -- o badge sai da coluna (fatia 4c-2)", () => {
+  it("mostra o nome da coluna, com reserva no rótulo do status", async () => {
+    montar([
+      // ⚠️ PAR TORTO: status BACKLOG, coluna Em Andamento. Pelo status o badge
+      // diria "Backlog".
+      task({
+        id: "a1",
+        title: "Arquivada com coluna",
+        status: "BACKLOG",
+        column_id: "col-progress",
+      }),
+      // Coluna de outro quadro -> cai na reserva.
+      task({
+        id: "a2",
+        title: "Arquivada sem coluna",
+        status: "COMPLETED",
+        column_id: "col-de-outro-quadro",
+      }),
+    ]);
+    render(<Arquivadas />);
+
+    expect(await screen.findByText("Em Andamento")).toBeTruthy();
+    expect(screen.getByText("Concluído")).toBeTruthy();
+    expect(screen.queryByText("Backlog")).toBeNull();
   });
 });

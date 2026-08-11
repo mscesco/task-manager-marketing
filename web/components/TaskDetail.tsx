@@ -64,6 +64,10 @@ import {
 } from "@/lib/criacaoTarefa";
 import { linkify } from "@/lib/linkify";
 
+// ⚠️ RESERVA DO BADGE, e so isso (fatia 4c-2). O rotulo do badge passou a sair
+// de `coluna.name`; este mapa responde pelo caso em que a coluna da tarefa nao
+// esta na lista carregada -- quadro sem alcance, coluna apagada na fatia 5, ou
+// as colunas ainda a caminho. Sem ele o badge ficaria vazio nesses casos.
 const STATUS_LABEL: Record<string, string> = Object.fromEntries(
   STATUSES.map((s) => [s.key, s.label])
 );
@@ -1027,8 +1031,18 @@ export default function TaskDetail({
               Subtarefa
             </Badge>
           )}
+          {/* ⚠️ O ROTULO SAI DA COLUNA (fatia 4c-2) -- e o nome que a pessoa
+              ve no kanban e que a fatia 5 vai deixar editar. A COR continua
+              vindo de `STATUS_TEXT`, e isso NAO e esquecimento: `coluna.color`
+              e token de TRACO (bolinha, borda), e como fundo sob texto ele
+              reprova AA (Spec 031 §2.2b). A cor acessivel de uma coluna
+              arbitraria tem de sair da luminancia, e `lib/coluna.ts::corEhHex`
+              ja registra que essa derivacao e da FATIA 5. Ate la, cor por
+              status e rotulo por coluna. */}
           <Badge tone="solid" size="md" color={STATUS_COLOR[task.status]}>
-            {STATUS_LABEL[task.status] || task.status}
+            {colunaPorId.get(task.column_id)?.name ??
+              STATUS_LABEL[task.status] ??
+              task.status}
           </Badge>
           <Badge tone="soft" size="md" color={PRIORITY_COLOR[task.priority]}>
             {PRIORITY_LABEL[task.priority] || task.priority}

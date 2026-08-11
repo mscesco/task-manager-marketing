@@ -20,10 +20,10 @@ import TaskModal from "@/components/TaskModal";
 import TaskDetail from "@/components/TaskDetail";
 import TaskCard from "@/components/TaskCard";
 import {
-  // ⚠️ STATUSES FICA, e so por causa do KANBAN desta tela. A vista de LISTA
-  // ja le as colunas da API (Spec 036, fatia 4b); a de QUADRO nao pode ser
-  // migrada ainda, ver o comentario em `porStatus`.
-  STATUSES,
+  // ⚠️ `STATUSES` SAIU DESTA TELA na fatia 4c-2. A vista de LISTA ja lia as
+  // colunas da API desde a 4b; agora o KANBAN tambem le, e nao sobrou leitor
+  // aqui. O que ainda vem de `lib/status` sao rotulos e cores de PRIORIDADE e
+  // de PRAZO, que nao tem nada a ver com coluna.
   PRIORITY_LABEL,
   PRIORITY_COLOR,
   deadlineLabel,
@@ -32,6 +32,7 @@ import {
 import {
   colunasPadraoMinhasTarefas,
   deadlineTonePorColuna,
+  terminal,
   type Coluna,
 } from "@/lib/coluna";
 import { normalizarBusca } from "@/lib/filtrosQuadro";
@@ -455,28 +456,46 @@ function Minhas() {
     if (!destino) return;
 
     const atual = (items ?? []).find((t) => t.id === taskId);
-    if (!atual || atual.status === destino) return;
-    const statusAnterior = atual.status;
+    // ⚠️ `destino` E UM `column_id` (fatia 4c-2), nao mais uma chave de status.
+    if (!atual || atual.column_id === destino) return;
 
-    // Cascata de conclusao (espelha o backend): arrastar um PAI pro "Concluido"
-    // conclui a subtree. Aqui items so tem MINHAS tasks -> cascateia as minhas
-    // subtarefas visiveis. Guarda os status antigos pra reverter se falhar.
-    // Pula ja concluidas, canceladas e arquivadas.
+    // A coluna tem de estar na lista desta tela. ⚠️ AQUI ISSO NAO E FORMALIDADE
+    // como no `Board.tsx`: `/minhas-tarefas` junta tarefas de QUALQUER quadro e
+    // desenha as colunas do quadro GERAL (`colunasDoQuadroGeral`, fatia 4b).
+    // No dia do quadro interno, arrastar uma tarefa de subtime para uma coluna
+    // do quadro geral seria um 422 do backend depois de o card ja ter pulado
+    // na frente da pessoa.
+    const colunaDestino = (colunas ?? []).find((c) => c.id === destino);
+    if (!colunaDestino) return;
+
+    const colunaAnterior = atual.column_id;
+
+    // Cascata de conclusao (espelha o backend): arrastar um PAI pra coluna de
+    // conclusao conclui a subtree. Aqui items so tem MINHAS tasks -> cascateia
+    // as minhas subtarefas visiveis. Guarda o estado antigo pra reverter.
+    // Pula as que ja estao em coluna terminal e as arquivadas.
+    //
     // DIVERGENCIA CONHECIDA: o backend conclui a subarvore INTEIRA no banco;
     // este otimista so alcanca as minhas tasks carregadas. As demais (de outros
     // responsaveis, ou fora do limite de exibicao) so aparecem no reload.
-    const concluindo = destino === "COMPLETED";
+    //
+    // ⚠️ GUARDA OS DOIS CAMPOS e mexe nos DOIS, igual ao `Board.tsx`: a
+    // checklist do detalhe le coluna e outros pontos ainda leem `status`.
+    // Deixar um dos dois para tras foi o defeito que a conferencia manual de
+    // 10/08 pegou. A metade `status` morre com o ultimo leitor dela.
+    const concluindo = colunaDestino.semantic === "DONE";
     const prefixo = atual.path + ".";
-    const anteriores = new Map<string, string>();
+    const anteriores = new Map<string, { coluna: string; status: string }>();
     if (concluindo) {
       for (const t of items ?? []) {
+        const colunaDela = colunaPorId.get(t.column_id);
         if (
           t.path.startsWith(prefixo) &&
-          t.status !== "COMPLETED" &&
-          t.status !== "CANCELLED" &&
+          colunaDela &&
+          !terminal(colunaDela) &&
           !t.is_archived
         ) {
-          anteriores.set(t.id, t.status);
+          anteriores.set(t.id, { coluna: t.column_id, status: t.status });
         }
       }
     }
@@ -485,23 +504,28 @@ function Minhas() {
     setItems((prev) =>
       prev
         ? prev.map((t) => {
-            if (t.id === taskId) return { ...t, status: destino };
-            if (anteriores.has(t.id)) return { ...t, status: "COMPLETED" };
+            if (t.id === taskId) return { ...t, column_id: destino };
+            if (anteriores.has(t.id))
+              return { ...t, column_id: destino, status: "COMPLETED" };
             return t;
           })
         : prev
     );
 
     try {
-      const atualizada = await updateTask(taskId, { status: destino });
+      // ⚠️ MANDA SO `column_id`: os dois campos juntos e 422 (ADR 0041, D3), e
+      // o status certo vem NA RESPOSTA.
+      const atualizada = await updateTask(taskId, { column_id: destino });
       aoUpsert(atualizada); // re-merge do servidor, preservando relations/assignees
     } catch (err) {
       setItems((prev) =>
         prev
           ? prev.map((t) => {
-              if (t.id === taskId) return { ...t, status: statusAnterior };
+              if (t.id === taskId) return { ...t, column_id: colunaAnterior };
               const ant = anteriores.get(t.id);
-              return ant !== undefined ? { ...t, status: ant } : t;
+              return ant !== undefined
+                ? { ...t, column_id: ant.coluna, status: ant.status }
+                : t;
             })
           : prev
       );
@@ -585,22 +609,21 @@ function Minhas() {
   // Modo QUADRO: filtra so por relacao (o status vira coluna, nao filtro) e
   // agrupa por status.
   //
-  // ⚠️⚠️ ESTA VISTA **NAO** FOI MIGRADA NA FATIA 4b, E O MOTIVO E UM BLOQUEIO
-  // DE CONTRATO, nao falta de tempo. Arrastar um card chama `onDragEnd`, que
-  // manda `status` para o backend e olha `destino === "COMPLETED"` para
-  // cascatear a conclusao. Se as colunas viessem da API, o `id` do destino
-  // seria `column_id` -- e **nao ha como traduzir coluna -> status no front**:
-  // `legacy_status` NAO e exposto pelo `GET /boards`, de proposito (ADR 0033;
-  // expo-lo convidaria o front a se amarrar na ponte em vez da semantica). A
-  // semantica tambem nao resolve: QUATRO colunas padrao tem `IN_PROGRESS`.
+  // ⚠️ MIGRADA NA FATIA 4c-2 (10/08). O bloqueio abaixo, que era real, acabou
+  // quando o `PATCH /tasks/{id}` passou a aceitar `column_id` (fatia 5a, ADR
+  // 0041): agora o `id` do droppable E o `column_id`, o front manda a coluna e
+  // o servidor deriva o status. Fica o registro do que bloqueava, porque
+  // explica por que a 4b entregou so a vista de LISTA:
   //
-  // **Migrar isto exige `PATCH /tasks/{id}` aceitando `column_id`, e isso e
-  // FATIA 5** (decidido em 10/08). Ate la a vista de LISTA le colunas da API e
-  // esta le `STATUSES` -- dois mundos convivendo, de propósito e registrado.
+  //   "arrastar chama `onDragEnd`, que manda `status`; se as colunas viessem
+  //    da API o destino seria `column_id`, e NAO ha como traduzir coluna ->
+  //    status no front -- `legacy_status` nao e exposto pelo `GET /boards`
+  //    (ADR 0033), e a semantica nao resolve porque QUATRO colunas padrao tem
+  //    `IN_PROGRESS`."
   //
-  // ⚠️ Se voce migrar isto sem o endpoint, o arrastar para de funcionar e
-  // NENHUM PORTAO PEGA: `tsc` e `next build` nao leem estado, e o
-  // `Board.test.tsx` registra que drag-and-drop nao e testavel em jsdom.
+  // ⚠️ O AVISO QUE CONTINUA VALENDO: arrastar NAO e testavel em jsdom. Os
+  // testes desta tela cobrem o agrupamento e o desenho; o `onDragEnd` daqui
+  // so tem conferencia manual, igual ao do `Board.tsx`.
   const porRelacao = useMemo(() => {
     return itemsBase.filter(
       (t) =>
@@ -609,14 +632,24 @@ function Minhas() {
     );
   }, [itemsBase, relFiltro, buscaNorm]);
 
-  const porStatus = useMemo(() => {
+  // ⚠️ AGRUPA POR COLUNA (fatia 4c-2). `foraDaColuna` conta o que nao coube em
+  // coluna nenhuma, pelo mesmo motivo do `Board.tsx`: card que some da tela
+  // tem de somer com aviso. Aqui o caso e MAIS provavel que la -- esta tela
+  // mistura tarefas de quadros diferentes assim que o quadro interno existir,
+  // e as colunas vem do quadro GERAL (`colunasDoQuadroGeral`, fatia 4b).
+  const { porColuna, foraDaColuna } = useMemo(() => {
     const map: Record<string, MyTaskItem[]> = {};
-    for (const s of STATUSES) map[s.key] = [];
+    for (const c of colunas ?? []) map[c.id] = [];
     // Ordena ANTES de distribuir: a distribuicao preserva a ordem, entao uma
-    // passada resolve as 7 colunas (mesmo caminho do Board).
-    for (const t of ordenar(porRelacao, ordenacao)) (map[t.status] ??= []).push(t);
-    return map;
-  }, [porRelacao, ordenacao]);
+    // passada resolve todas as colunas (mesmo caminho do Board).
+    let fora = 0;
+    for (const t of ordenar(porRelacao, ordenacao)) {
+      const lista = map[t.column_id];
+      if (lista) lista.push(t);
+      else fora++;
+    }
+    return { porColuna: map, foraDaColuna: fora };
+  }, [porRelacao, ordenacao, colunas]);
 
   if (erro) return <div className="error-box" style={{ maxWidth: 480 }}>{erro}</div>;
   // ⚠️ O PORTAO ESPERA OS DOIS (Spec 036, fatia 4b). Ele ja existia para
@@ -832,7 +865,8 @@ function Minhas() {
           </select>
         )}
 
-        {/* Toggle de vista (sessao-only). No quadro, os status viram colunas. */}
+        {/* Toggle de vista (sessao-only). No quadro, as COLUNAS DA API viram
+            as colunas do kanban (fatia 4c-2; antes eram os status). */}
         <div style={{ display: "inline-flex", gap: 4 }}>
           {(["lista", "quadro"] as const).map((v) => (
             <button
@@ -1037,9 +1071,9 @@ function Minhas() {
                   paddingBottom: 8, height: alturaColunas ?? undefined,
                 }}
               >
-                {STATUSES.map((s) => (
-                  <ColunaMinhas key={s.key} status={s} count={porStatus[s.key]?.length ?? 0}>
-                    {(porStatus[s.key] ?? []).map((t) => {
+                {(colunas ?? []).map((c) => (
+                  <ColunaMinhas key={c.id} coluna={c} count={porColuna[c.id]?.length ?? 0}>
+                    {(porColuna[c.id] ?? []).map((t) => {
                       // ⚠️ `?? []` e nao `!`: a coluna vem de um mapa e pode
                       // faltar. Sem coluna o card nao desenha -- e o `!`
                       // esconderia o dia em que isso passar a acontecer.
@@ -1058,6 +1092,16 @@ function Minhas() {
                   </ColunaMinhas>
                 ))}
               </div>
+
+              {foraDaColuna > 0 && (
+                <div className="muted" role="status" style={{ fontSize: 12, marginTop: 8 }}>
+                  {foraDaColuna}{" "}
+                  {foraDaColuna === 1 ? "tarefa está" : "tarefas estão"} em uma
+                  coluna que não é deste quadro e não{" "}
+                  {foraDaColuna === 1 ? "aparece" : "aparecem"} acima.
+                </div>
+              )}
+
               <DragOverlay>
                 {activeId
                   ? (() => {
@@ -1176,15 +1220,17 @@ function Minhas() {
 // --- Kanban do minhas-tarefas (duplicado do Board de proposito: mantem o
 // quadro geral intocado). Coluna droppable + card draggable, reusando TaskCard. ---
 function ColunaMinhas({
-  status,
+  coluna,
   count,
   children,
 }: {
-  status: (typeof STATUSES)[number];
+  coluna: Coluna;
   count: number;
   children: React.ReactNode;
 }) {
-  const { setNodeRef, isOver } = useDroppable({ id: status.key });
+  // ⚠️ O `id` do droppable e o `column_id` (fatia 4c-2). E o que o `onDragEnd`
+  // recebe em `e.over.id`, e o que o PATCH agora aceita.
+  const { setNodeRef, isOver } = useDroppable({ id: coluna.id });
   return (
     <div
       ref={setNodeRef}
@@ -1194,7 +1240,7 @@ function ColunaMinhas({
         background: isOver ? "var(--surface-2)" : "transparent",
         // Espelha o Board.tsx: anel na cor da coluna marca o alvo do drop.
         // `outline` nao ocupa espaco -> as colunas nao pulam de largura.
-        outline: isOver ? `2px solid ${status.color}` : "none",
+        outline: isOver ? `2px solid ${coluna.color}` : "none",
         outlineOffset: -2,
         transition: "background .12s",
       }}
@@ -1202,12 +1248,12 @@ function ColunaMinhas({
       <div
         style={{
           display: "flex", alignItems: "center", gap: 8, marginBottom: 10,
-          paddingBottom: 8, borderBottom: `2px solid ${status.color}`,
+          paddingBottom: 8, borderBottom: `2px solid ${coluna.color}`,
           flexShrink: 0,
         }}
       >
-        <span style={{ width: 8, height: 8, borderRadius: 999, background: status.color }} />
-        <span style={{ fontWeight: 700, fontSize: 13 }}>{status.label}</span>
+        <span style={{ width: 8, height: 8, borderRadius: 999, background: coluna.color }} />
+        <span style={{ fontWeight: 700, fontSize: 13 }}>{coluna.name}</span>
         <span className="muted" style={{ fontSize: 12, marginLeft: "auto" }}>{count}</span>
       </div>
       <div
