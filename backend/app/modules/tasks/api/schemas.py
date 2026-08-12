@@ -473,6 +473,44 @@ class BoardColumnResponse(BaseModel):
     is_default_target: bool
 
 
+class BoardCreateRequest(BaseModel):
+    """Corpo de `POST /boards` (Spec 036, fatia 5b).
+
+    ⚠️ SEM `@model_validator`, E SEM `Field(min_length=...)`. Regra de request
+    deste projeto NAO mora no Pydantic: o `_validation_error_handler` poe
+    `exc.errors()` cru no envelope, e o `ctx` de um validador custom carrega o
+    objeto `ValueError`, que o `json.dumps` do Starlette recusa -- sai **500,
+    nao 422** (medido em 10/08, e o defeito do handler continua latente).
+    Nome vazio e nome longo demais sao recusados no `BoardService._nome_valido`,
+    com a `ValidationError` de dominio.
+
+    ⚠️ `is_default` NAO ENTRA, e a ausencia e a trava. Quadro criado por pessoa
+    e sempre nao-padrao; aceitar o campo aqui deixaria a API pedir um segundo
+    quadro padrao no mesmo time, que o indice parcial `board_um_padrao_por_time`
+    recusa NO BANCO -- 500 de constraint no lugar de uma regra.
+
+    ⚠️ `colunas` NAO ENTRA. Quadro nasce com as quatro `COLUNAS_BASE`; montar
+    colunas e o CRUD da fatia seguinte. Aceitar a lista aqui abriria criar
+    quadro sem coluna `OPEN` ou sem `DONE`, que e exatamente o estado que a
+    ADR 0042 D4 existe para impedir.
+    """
+
+    name: str
+    team_id: uuid.UUID
+
+
+class BoardRenameRequest(BaseModel):
+    """Corpo de `PATCH /boards/{id}` (Spec 036, fatia 5b).
+
+    ⚠️ SO O NOME. `team_id` fora de proposito: ele decide QUEM ENXERGA o quadro
+    (ADR 0035 D3), entao troca-lo e operacao de visibilidade disfarcada de
+    edicao -- as tarefas de dentro mudariam de publico sem pedido e sem
+    historico. Ver `BoardService.renomear_quadro`.
+    """
+
+    name: str
+
+
 class BoardResponse(BaseModel):
     """Um quadro alcancavel, com as colunas na ordem visual.
 

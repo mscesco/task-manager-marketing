@@ -259,6 +259,43 @@ async def test_renomear_usa_a_mesma_trava_de_escopo(db) -> None:
             )
 
 
+async def test_renomear_recusado_nao_muda_o_nome(db) -> None:
+    """O 403 acontece ANTES da atribuicao -- e isto afirma o banco.
+
+    ⚠️ ESTA AFIRMACAO MORA AQUI E NAO NO TESTE HTTP, e o motivo e transacional:
+    la a requisicao recusada faz o UoW dar rollback ao SAVEPOINT, o que
+    desanexa os objetos e leva junto a linha que a fixture criou. Afirmar o
+    banco depois de um 403 no teste HTTP mediria a transacao do teste, nao o
+    produto. Aqui nao ha UoW: o `acting_as` so seta o contexto.
+
+    ⚠️ Ordem em `renomear_quadro`: busca o quadro, busca o time, PERGUNTA a
+    permissao, e so entao atribui. Inverter a atribuicao para antes da trava
+    deixa o nome trocado em memoria mesmo com o 403 -- e o teste HTTP nao
+    pegaria, pelo motivo acima.
+    """
+    ws, raiz, sub_a, sub_b, user, arvore = await _mundo(db)
+    quadro_b = await f.make_board(
+        db,
+        workspace_id=ws,
+        team_id=sub_b,
+        name="Do B",
+        colunas=COLUNAS_BASE,
+    )
+    await db.flush()
+
+    with acting_as(**_ctx(ws, user, arvore, mship(sub_a, "SUPERVISOR"))):
+        with pytest.raises(AuthorizationError):
+            await BoardService(db).renomear_quadro(
+                board_id=quadro_b.id, nome="Sequestrado"
+            )
+
+    nome = (
+        await db.execute(select(Board.name).where(Board.id == quadro_b.id))
+    ).scalar_one()
+    assert nome == "Do B"
+    assert quadro_b.name == "Do B"
+
+
 async def test_renomear_nao_mexe_em_time_nem_em_colunas(db) -> None:
     """⚠️ Renomear e SO o nome.
 

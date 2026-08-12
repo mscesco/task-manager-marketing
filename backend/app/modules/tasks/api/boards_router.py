@@ -2,12 +2,50 @@
 quadro do produto.
 
 Rotas:
-    GET /boards  -- lista os quadros que quem pergunta ALCANCA
+    GET   /boards        -- lista os quadros que quem pergunta ALCANCA
+    POST  /boards        -- cria quadro avulso (Spec 036, fatia 5b)
+    PATCH /boards/{id}   -- renomeia quadro (Spec 036, fatia 5b)
 
-⚠️ LEITURA SO. Criar, renomear e apagar quadro sao a fatia 5, e vao precisar
-da permissao `board.manage.subteam` com a trava de escopo no SERVICO (o mapa
-diz *o que*, o servico tem o `team_id` do alvo -- precedente literal de
-`member.manage.subteam`, Spec 028). Nada disso existe aqui.
+⚠️ APAGAR QUADRO NAO EXISTE AQUI, e a ausencia e decisao de 11/08: a lixeira e
+fatia propria, com confirmacao digitada, contagem de SUBARVORE no aviso (excluir
+uma mae leva as filhas) e o `UPDATE` de restauracao escrito em
+`backend/scripts/` no mesmo commit. Nao ha tela de restaurar.
+
+⚠️ AS DUAS ROTAS DE ESCRITA NAO TEM `require_permission`, E ISSO E DELIBERADO
+-- LEIA ANTES DE "CONSERTAR". `require_permission` recebe UMA permissao, e a
+autorizacao aqui depende do ALVO: quadro de time raiz exige
+`board.manage.root`; de subtime, `board.manage.subteam` MAIS ser supervisor
+daquele subtime. Quem sabe o `team_id` do alvo e o servico, nao a porta.
+
+    Por que nao pendurar `board.manage.subteam` na porta como filtro grosso:
+    o nome mentiria. A rota que cria quadro NA RAIZ estaria anunciando
+    `subteam`, e a proxima pessoa a ler "conserta" trocando a regra do servico
+    para casar com a porta -- e aí o supervisor cria quadro na raiz.
+
+    ⚠️ CONSEQUENCIA: um OPERATOR chega a fazer UM SELECT (o do time) antes do
+    403. Custo aceito e medido em uma consulta.
+
+⚠️ MAS `TenantContextDep` CONTINUA OBRIGATORIO NAS DUAS ROTAS, E ELE PARECE NAO
+USADO -- E O `_`. Nao apague. `set_tenant` e chamado num lugar so do produto
+(`auth/api/dependencies.py`, dentro de `get_tenant_context`), e nao ha
+middleware que popule o contexto. Rota que nao declara a dependencia roda SEM
+tenant, e o primeiro `require_tenant()` la dentro estoura com
+`missing_tenant_context`.
+
+    ⚠️ ESTE DEFEITO EXISTIU, em 11/08, e nao foi hipotese: a primeira versao
+    destas duas rotas tirou `require_permission` e nao pos nada no lugar. Os
+    11 testes de `test_boards_escrita_http_db.py` falharam TODOS com
+    `missing_tenant_context` -- e teriam falhado igual em producao, em 100%
+    das requisicoes, com a matriz de autorizacao inteira verde no servico.
+
+    ⚠️ A LICAO: `require_permission` faz DUAS coisas -- gate de permissao e
+    `Depends(get_tenant_context)`. Tirar o gate NAO e tirar a dependencia.
+
+⚠️ ENTAO O GATE DE ESCRITA E `BoardService._assert_pode_gerir`, e a matriz de
+4 papeis x 3 alvos vive em `test_board_service_escrita_db.py`. Um teste HTTP
+que so confirme 201/200 NAO prova autorizacao nenhuma; o que este arquivo
+precisa cobrir e que a rota CHAMA o servico e que o erro dele vira o status
+certo.
 
 ⚠️ SEM `require_permission`, E ISSO E DELIBERADO. O padrao da casa para
 LEITURA e exatamente este: `GET /tasks` tambem pede so `TenantContextDep`, e
@@ -32,11 +70,21 @@ este comentario.
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+import uuid
 
-from app.core.deps import SessionDep
+from fastapi import APIRouter, status
+from sqlalchemy import select
+
+from app.core.deps import SessionDep, UoWDep
+from app.db.models.boards import Board, BoardColumn
 from app.modules.auth.api.dependencies import TenantContextDep
-from app.modules.tasks.api.schemas import BoardColumnResponse, BoardResponse
+from app.modules.tasks.api.schemas import (
+    BoardColumnResponse,
+    BoardCreateRequest,
+    BoardRenameRequest,
+    BoardResponse,
+)
+from app.modules.tasks.application.board_service import BoardService
 from app.modules.tasks.infrastructure.board_repository import BoardRepository
 
 router = APIRouter(prefix="/boards", tags=["boards"])
@@ -71,3 +119,98 @@ async def list_boards(
         )
         for quadro, colunas in quadros
     ]
+
+
+async def _resposta(session, quadro: Board) -> BoardResponse:
+    """Monta o `BoardResponse` lendo as colunas DO BANCO.
+
+    ⚠️ LE, e nao ecoa `COLUNAS_BASE`. Se um dia a criacao filtrar, reordenar ou
+    deduplicar coluna, a resposta acompanha sozinha -- mesmo raciocinio do
+    `assignee_ids` no `POST /tasks`, que a Spec 021 aprendeu na marra.
+
+    ⚠️ ORDER BY `position`. Sem ele a ordem e a do banco, que nao e ordem
+    nenhuma e muda com UPDATE -- o seletor de coluna do front sairia
+    embaralhado em relacao ao quadro, sem erro.
+    """
+    colunas = (
+        (
+            await session.execute(
+                select(BoardColumn)
+                .where(BoardColumn.board_id == quadro.id)
+                .order_by(BoardColumn.position)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return BoardResponse(
+        id=quadro.id,
+        name=quadro.name,
+        team_id=quadro.team_id,
+        is_default=quadro.is_default,
+        colunas=[BoardColumnResponse.model_validate(c) for c in colunas],
+    )
+
+
+@router.post(
+    "",
+    response_model=BoardResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_board(
+    payload: BoardCreateRequest, _: TenantContextDep, uow: UoWDep
+) -> BoardResponse:
+    """Cria um quadro avulso para `team_id`, com as quatro colunas base.
+
+    Autorizacao inteira no servico (ver o cabecalho do modulo):
+    `board.manage.root` para time raiz; `board.manage.subteam` **mais** ser
+    supervisor daquele subtime, para subtime. ADMIN e MANAGER passam nos dois
+    pela saida de gestao ampla.
+
+    A resposta e montada antes do commit, na mesma transacao que criou --
+    convencao copiada do `POST /tasks`.
+
+    ⚠️ E CONVENCAO, NAO TRAVA, E ISSO FOI MEDIDO EM 11/08. A versao anterior
+    deste docstring afirmava que inverter a ordem faria os objetos expirarem e
+    dispararia SELECT fora do greenlet. FALSO NESTE PROJETO: o sessionmaker usa
+    `expire_on_commit=False` (`app/db/session.py:62`, com o comentario
+    "objetos seguem usaveis pos-commit"), e o fixture `db` dos testes tambem.
+    Mover o `commit()` para antes do `_resposta` deixa os 714 VERDES.
+
+    ⚠️ ENTAO NAO CONSTRUA REGRA EM CIMA DISTO. Se um dia alguem ligar
+    `expire_on_commit`, esta ordem passa a importar em toda a API de uma vez, e
+    nenhum teste avisa -- nem aqui nem no `POST /tasks`.
+    """
+    quadro = await BoardService(uow.session).criar_quadro(
+        team_id=payload.team_id, nome=payload.name
+    )
+    resposta = await _resposta(uow.session, quadro)
+    await uow.commit()
+    return resposta
+
+
+@router.patch("/{board_id}", response_model=BoardResponse)
+async def rename_board(
+    board_id: uuid.UUID,
+    payload: BoardRenameRequest,
+    _: TenantContextDep,
+    uow: UoWDep,
+) -> BoardResponse:
+    """Renomeia um quadro. NAO mexe em colunas, `team_id` nem `is_default`.
+
+    ⚠️ O QUADRO GERAL PODE SER RENOMEADO, por `board.manage.root`. Renomear nao
+    toca em coluna nenhuma -- as 176 tarefas vivas de 11/08 nao sentem. Editar
+    e apagar COLUNA do geral e que continuam fora, na fatia seguinte.
+
+    ⚠️ 404 vem antes de 403 aqui, e nao e descuido: o servico busca o quadro do
+    workspace (`_quadro_do_workspace`) antes de perguntar permissao, porque a
+    permissao depende do `team_id` DELE. Um `board_id` de outro workspace
+    devolve 404, e nao 403 -- que e a resposta certa: 403 confirmaria que o
+    quadro existe.
+    """
+    quadro = await BoardService(uow.session).renomear_quadro(
+        board_id=board_id, nome=payload.name
+    )
+    resposta = await _resposta(uow.session, quadro)
+    await uow.commit()
+    return resposta
