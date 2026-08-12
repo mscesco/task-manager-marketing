@@ -426,9 +426,15 @@ class TaskService:
         # Consistente com a ADR 0024, que ja manda a subtarefa herdar o time.
         if parent is not None:
             task.board_id = parent.board_id
-            task.column_id = await BoardRepository(
+            # ⚠️ O STATUS VOLTA DA COLUNA (ADR 0042 D2), e nao e sempre o
+            # pedido. O quadro do pai pode ser um quadro de quatro colunas, que
+            # nao conhece `PLANNED`, `IN_REVIEW`, `EXTERNAL_APPROVAL` nem
+            # `BLOCKED`: a subtarefa cai na coluna de destino da semantica e o
+            # status TEM de acompanhar, senao coluna e status discordam e a
+            # invariante 3 do `invariantes.sql` sai de zero.
+            task.column_id, task.status = await BoardRepository(
                 self._session
-            ).column_for_status_in_board(
+            ).coluna_para_status(
                 board_id=parent.board_id, status=command.status
             )
         else:
@@ -879,13 +885,24 @@ class TaskService:
             # `(coluna do geral, board interno)` nao existe, entao a FK composta
             # recusaria -- erro alto ao salvar um status. Visivel, mas quebrado.
             if coluna_alvo is None:
-                task.column_id = await BoardRepository(
+                # ⚠️ `status_efetivo` E NAO `command.status` (ADR 0042 D2). Num
+                # quadro de quatro colunas, pedir `BLOCKED` devolve a coluna
+                # `Em Andamento` e o status `IN_PROGRESS`. Gravar o pedido aqui
+                # deixaria o card em `Em Andamento` e a tarefa agrupada em
+                # `Bloqueado` no `/minhas-tarefas` -- dois lugares discordando
+                # sobre a mesma tarefa, que e pior que um numero velho.
+                task.column_id, status_efetivo = await BoardRepository(
                     self._session
-                ).column_for_status_in_board(
+                ).coluna_para_status(
                     board_id=task.board_id, status=command.status
                 )
+            else:
+                # Escrita veio por `column_id`: a coluna ja foi resolvida acima
+                # e o status dela tambem. Aqui `command.status` e o status que
+                # o proprio caminho da coluna derivou (ADR 0041).
+                status_efetivo = command.status
 
-            task.status = command.status
+            task.status = status_efetivo
 
         # ⚠️ A GRAVACAO POR COLUNA MORA FORA DO `if` DE STATUS, E ISSO E A
         # DECISAO D4 DA ADR 0041. Duas colunas de mesma semantica e sem ponte

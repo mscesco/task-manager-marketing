@@ -101,3 +101,55 @@ def status_da_coluna(
     if legacy_status is not None:
         return legacy_status
     return STATUS_POR_SEMANTICA[semantic]
+
+
+#: ⚠️ ADR 0042 -- A SEMANTICA DE CADA STATUS. E o mapa da direcao inversa do
+#: `STATUS_POR_SEMANTICA`, e ele e 8:4: quatro status caem em `IN_PROGRESS` e
+#: dois em `OPEN`.
+#:
+#: ⚠️ FIXO, E NAO DERIVADO DE `COLUNAS_PADRAO`. Aquela lista e um LAYOUT DE
+#: QUADRO; esta e uma CLASSIFICACAO DE STATUS. Derivar uma da outra faria
+#: "mudar as colunas com que o quadro nasce" mudar, em silencio, "o que cada
+#: status significa" -- dois conceitos com ciclos de vida diferentes amarrados
+#: por acidente. As duas copias tem de CONCORDAR, e quem garante isso e
+#: `test_semantica_do_status.py::test_o_mapa_concorda_com_as_colunas_padrao`,
+#: pelo mesmo remedio ja usado em `TERMINAL_SEMANTICS` x
+#: `archival.TERMINAL_STATUSES`.
+#:
+#: ⚠️ OS OITO STATUS SAO AS OITO COLUNAS DO QUADRO GERAL, FOSSILIZADAS. Quando
+#: elas foram pedidas, coluna ERA status (ADR 0033), entao cada coluna virou um
+#: valor de enum. O produto tem QUATRO estados -- inicio, meio, fim, cancelado
+#: -- e sao eles que decidem cobranca de prazo, terminalidade e arquivamento.
+#: Os oito nao somem (`ALTER TYPE` nao remove valor no Postgres); ficam sendo
+#: ponte de compatibilidade.
+SEMANTICA_POR_STATUS: Final[dict[TaskStatus, ColumnSemantic]] = {
+    TaskStatus.BACKLOG: ColumnSemantic.OPEN,
+    TaskStatus.PLANNED: ColumnSemantic.OPEN,
+    TaskStatus.IN_PROGRESS: ColumnSemantic.IN_PROGRESS,
+    TaskStatus.IN_REVIEW: ColumnSemantic.IN_PROGRESS,
+    TaskStatus.EXTERNAL_APPROVAL: ColumnSemantic.IN_PROGRESS,
+    TaskStatus.BLOCKED: ColumnSemantic.IN_PROGRESS,
+    TaskStatus.COMPLETED: ColumnSemantic.DONE,
+    TaskStatus.CANCELLED: ColumnSemantic.CANCELLED,
+}
+
+
+def semantica_do_status(status: TaskStatus) -> ColumnSemantic:
+    """A semantica de um status (ADR 0042).
+
+    Usada por `BoardRepository.coluna_para_status` no DEGRAU 2, quando o quadro
+    nao tem coluna com aquele `legacy_status` -- caso que passa a existir com
+    quadro criado por pessoa (`COLUNAS_BASE`, quatro colunas).
+
+    ⚠️ NAO E A INVERSA DE `STATUS_POR_SEMANTICA`, e nao pode ser escrita como
+    tal: aquele mapa e 4->4 (uma resposta por semantica) e este e 8->4. Compor
+    os dois PERDE informacao de proposito, e e exatamente essa perda que a
+    ADR 0042 D2 manda gravar: uma tarefa `BLOCKED` num quadro de quatro colunas
+    para em `Em Andamento` E VIRA `IN_PROGRESS`, para que coluna e status nao
+    discordem e a invariante 3 do `invariantes.sql` continue afirmando algo.
+
+    ⚠️ COBRE OS OITO. Um `KeyError` aqui significa status novo no enum sem
+    linha no mapa, e o teste `test_o_mapa_cobre_todo_o_enum` existe para que
+    isso apareca no CI e nao numa tarefa que nao consegue mudar de coluna.
+    """
+    return SEMANTICA_POR_STATUS[status]

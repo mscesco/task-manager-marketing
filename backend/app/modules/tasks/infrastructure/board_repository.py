@@ -8,7 +8,7 @@ Duas perguntas herdadas da Spec 035, e a diferenca entre elas e a F2 inteira:
   - **"em que quadro nasce uma tarefa nova de topo?"**
     `default_board_and_column_for_status` -- o quadro geral, do time RAIZ.
   - **"qual e a coluna deste status DENTRO deste quadro?"**
-    `column_for_status_in_board` -- nao escolhe quadro nenhum, so responde.
+    `coluna_para_status` -- nao escolhe quadro nenhum, so responde.
 
 ⚠️ A DIRECAO E `status -> coluna`, e nao o contrario (ADR 0033). Enquanto o
 front desenha o quadro pela lista de `web/lib/status.ts`, `status` e a fonte da
@@ -36,7 +36,7 @@ soft delete nao chega aqui: cada consulta decide. A regra e:
   nao filtra.**
 
 `default_board_and_column_for_status` descobre -- ela responde "qual e o quadro
-geral deste workspace" -- entao filtra. `column_for_status_in_board` recebe o
+geral deste workspace" -- entao filtra. `coluna_para_status` recebe o
 `board_id` de quem ja resolveu o quadro (a propria tarefa, ou o pai) e so
 pergunta a coluna; um `JOIN` em `board` ali seria custo no caminho mais quente
 do produto (`create` de tarefa, chamado uma vez por no na duplicacao) para
@@ -60,6 +60,10 @@ from app.core.tenant import require_tenant
 from app.db.models.boards import Board, BoardColumn
 from app.db.models.enums import ColumnSemantic, TaskStatus
 from app.modules.auth.domain import team_scope
+from app.modules.tasks.domain.board_semantics import (
+    semantica_do_status,
+    status_da_coluna,
+)
 from app.shared.exceptions.base import ValidationError
 
 
@@ -75,7 +79,7 @@ class BoardRepository:
         """Devolve `(board_id, column_id)` do quadro GERAL para aquele status.
 
         So para tarefa que nasce SEM PAI. Subtarefa herda o quadro do pai e usa
-        `column_for_status_in_board` -- ver o cabecalho do modulo.
+        `coluna_para_status` -- ver o cabecalho do modulo.
 
         UMA query, e nao duas. O `create` de tarefa e chamado em sequencia pela
         duplicacao (uma vez por no da arvore), e a Spec 021 ja mediu o custo de
@@ -131,46 +135,115 @@ class BoardRepository:
             )
         return linha[0], linha[1]
 
-    async def column_for_status_in_board(
+    async def coluna_para_status(
         self, *, board_id: uuid.UUID, status: TaskStatus
-    ) -> uuid.UUID:
-        """Devolve o `column_id` daquele status DENTRO de `board_id`.
+    ) -> tuple[uuid.UUID, TaskStatus]:
+        """Devolve `(column_id, status_efetivo)` daquele status DENTRO de `board_id`.
+
+        ⚠️ CHAMAVA-SE `column_for_status_in_board` E DEVOLVIA SO A COLUNA. O
+        rename e deliberado, e nao e cosmetico: quem chamava gravava
+        `command.status` por conta propria, e com a ADR 0042 esse status pode
+        NAO ser o que a tarefa recebe. Mantendo o nome e acrescentando um item
+        na tupla, um chamador esquecido continuaria compilando e gravaria o
+        status pedido numa coluna que significa outra coisa -- silencioso, e
+        com a invariante 3 do `invariantes.sql` quebrando dias depois. Trocar o
+        nome obriga a visitar os dois chamadores.
 
         ⚠️ NAO ESCOLHE QUADRO. Quem chama ja sabe em qual quadro a tarefa vive
         (o dela, na edicao; o do pai, na subtarefa) e so pergunta a coluna. E a
-        diferenca inteira em relacao ao metodo acima: "mudar de status" e "mudar
-        de quadro" passam a ser operacoes distintas no codigo, como sempre
-        foram no produto.
+        diferenca inteira em relacao a `default_board_and_column_for_status`:
+        "mudar de status" e "mudar de quadro" sao operacoes distintas no
+        codigo, como sempre foram no produto.
+
+        ⚠️ DOIS DEGRAUS, NESTA ORDEM (ADR 0042 D1), E A ORDEM E A DECISAO
+        INTEIRA:
+
+          1. coluna com `legacy_status = :status` -> e ela. Exato, sem perda.
+             Cobre as oito colunas padrao, que sao 100% da producao hoje.
+          2. nao achando: coluna com `is_default_target` e a semantica daquele
+             status -> e ela. E o caso do quadro criado por pessoa, que nasce
+             com quatro colunas (`COLUNAS_BASE`) e nao conhece `PLANNED`,
+             `IN_REVIEW`, `EXTERNAL_APPROVAL` nem `BLOCKED`.
+          3. nao achando nenhuma das duas: `ValidationError`, como antes.
+
+        ⚠️ INVERTER OS DEGRAUS POE A TAREFA NA COLUNA ERRADA, e o resultado e
+        um estado VALIDO: uma tarefa `EXTERNAL_APPROVAL` no Quadro geral para
+        em `Em Andamento` -- coluna do quadro certo, com a semantica certa.
+        Nenhuma FK recusa, nenhum tipo reclama; o card so aparece no lugar
+        errado na tela de todo mundo depois do deploy.
+
+        ⚠️ MEDIDO EM 11/08, e o resultado corrigiu o que estava escrito aqui.
+        A inversao derruba CINCO testes, e tres deles sao desta fatia:
+
+          - `test_o_degrau_exato_vem_antes_do_alvo_da_semantica`
+          - `test_as_oito_colunas_padrao_nunca_alcancam_o_degrau_dois`
+          - `test_coluna_sem_ponte_nao_ganha_do_casamento_exato`
+          - `test_external_approval_status_db::test_patch_para_external_approval_persiste`
+          - `test_task_board_column_db::test_mudar_o_status_MOVE_a_coluna_e_nao_muda_o_quadro`
+
+        Os dois ultimos sao ANTERIORES a esta ADR e cobrem o caminho de
+        produto, nao o repositorio. Esta funcao chegou a ter escrito aqui que
+        nenhum outro portao pegava a inversao -- era falso, e afirmacao de
+        unicidade em comentario e o que faz alguem apagar um teste "redundante"
+        seis meses depois. Se um dia sobrar so um destes cinco, a trava
+        afinou.
+
+        ⚠️ O `status_efetivo` SAI DA COLUNA QUE RECEBEU, sempre -- inclusive no
+        degrau 1, onde por construcao ele e igual ao pedido. Nao ha ramo: e
+        `status_da_coluna()` da ADR 0041, a MESMA funcao usada quando a escrita
+        vem por `column_id`. Uma regra so, um lugar so. E o que sustenta a
+        invariante 3 (`a coluna e a do status certo, so onde existe a ponte`):
+        sem a reescrita, uma tarefa `BLOCKED` numa coluna cujo `legacy_status`
+        e `IN_PROGRESS` poe a invariante em diferente de zero.
+
+        ⚠️ UMA QUERY, e nao duas. O `create` de tarefa e chamado uma vez por no
+        na duplicacao, e a Spec 021 ja mediu "duas queries por membro" como a
+        parede de desempenho deste produto. O `ORDER BY` e que ordena os
+        degraus.
+
+        ⚠️ `DESC NULLS LAST` NAO E ENFEITE. `legacy_status = :status` e NULL
+        (nao FALSE) para coluna criada por gente, e o Postgres poe NULL PRIMEIRO
+        num `ORDER BY ... DESC`. Sem o `NULLS LAST`, uma coluna sem ponte
+        ganharia do casamento exato e o degrau 2 comeria o degrau 1 -- que e
+        exatamente a inversao descrita acima, so que por acidente de SQL.
+
+        ⚠️ ESTA E A TRAVA MAIS FINA DA FATIA, e medida: tirar so o `NULLS LAST`
+        derruba UM teste em 681, `test_coluna_sem_ponte_nao_ganha_do_casamento_
+        exato`. Ele e o unico mundo do repositorio com coluna sem ponte marcada
+        como `is_default_target`. Apagar aquele teste devolve o defeito ao
+        silencio completo.
 
         `board_id` e `workspace_id` juntos no WHERE. O `board_id` sozinho ja
         bastaria -- o quadro pertence a um workspace so -- mas o par e o padrao
         do schema e o que impede que uma consulta futura, copiada daqui, cruze
         tenant sem ninguem notar.
-
-        ⚠️ LEVANTA quando a coluna nao existe naquele quadro, e isso vai
-        acontecer de proposito no quadro interno: coluna criada por gente tem
-        `legacy_status` NULL, entao um quadro com colunas proprias NAO responde
-        por status. A derivacao pela SEMANTICA e o passo seguinte (D4 do memo
-        de decisoes). Ate la, falhar alto e o que impede a tarefa de ser
-        gravada numa coluna arbitraria -- que e o defeito que a Spec 035
-        inteira existe para evitar.
         """
         tenant = require_tenant()
         linha = (
             await self.session.execute(
                 text(
                     """
-                    SELECT c.id
+                    SELECT c.id, c.legacy_status, c.semantic
                     FROM board_column c
                     WHERE c.board_id = :board
                       AND c.workspace_id = :ws
-                      AND c.legacy_status = CAST(:status AS task_status)
+                      AND (
+                        c.legacy_status = CAST(:status AS task_status)
+                        OR (
+                          c.is_default_target
+                          AND c.semantic = CAST(:semantica AS column_semantic)
+                        )
+                      )
+                    ORDER BY (c.legacy_status = CAST(:status AS task_status))
+                             DESC NULLS LAST
+                    LIMIT 1
                     """
                 ),
                 {
                     "board": board_id,
                     "ws": tenant.workspace_id,
                     "status": status.value,
+                    "semantica": semantica_do_status(status).value,
                 },
             )
         ).first()
@@ -178,14 +251,33 @@ class BoardRepository:
         if linha is None:
             raise ValidationError(
                 f"O quadro desta tarefa nao tem coluna para o status "
-                f"{status.value}.",
+                f"{status.value}, nem coluna de destino para a semantica "
+                f"{semantica_do_status(status).value}.",
                 details={
                     "field": "status",
                     "status": status.value,
                     "board_id": str(board_id),
                 },
             )
-        return linha[0]
+
+        # ⚠️ `text()` DEVOLVE A COLUNA CRUA DO DRIVER -- string, nao enum. Sem
+        # esta conversao, `coluna_para_status` devolve `'IN_PROGRESS'` em vez
+        # de `TaskStatus.IN_PROGRESS`, e o valor vai parar em `task.status`.
+        # `TaskStatus` e `ColumnSemantic` sao `StrEnum`, entao `==` continua
+        # respondendo certo e o defeito NAO aparece em quase lugar nenhum: some
+        # em toda comparacao do produto e so reaparece num `is`. E o
+        # `STATUS_POR_SEMANTICA[semantica]` do degrau 2 tambem acerta -- por
+        # coincidencia, porque `name == value` nos dois enums. Coincidencia nao
+        # e contrato.
+        #
+        # ⚠️ MESMA CONVERSAO DE `coluna_no_quadro`, tres metodos abaixo, escrita
+        # na 5a. Este metodo e o unico do repositorio que devolvia enum sem
+        # converter.
+        ponte, semantica = linha[1], linha[2]
+        return linha[0], status_da_coluna(
+            legacy_status=TaskStatus(ponte) if ponte is not None else None,
+            semantic=ColumnSemantic(semantica),
+        )
 
     async def coluna_no_quadro(
         self, *, board_id: uuid.UUID, column_id: uuid.UUID
@@ -193,7 +285,7 @@ class BoardRepository:
         """A PONTE e a SEMANTICA de uma coluna, exigindo que ela seja DAQUELE
         quadro (Spec 036, fatia 5 / ADR 0041).
 
-        ⚠️ E A PERGUNTA INVERSA de `column_for_status_in_board`, e existe pelo
+        ⚠️ E A PERGUNTA INVERSA de `coluna_para_status`, e existe pelo
         mesmo motivo que ela: quem chama ja sabe o quadro (o da tarefa) e so
         quer saber o que aquela coluna significa. A direcao `coluna -> status`
         so passou a existir porque o front vai mandar `column_id` ao arrastar.

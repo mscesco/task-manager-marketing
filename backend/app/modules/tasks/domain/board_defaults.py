@@ -123,5 +123,68 @@ COLUNAS_PADRAO: Final[tuple[ColunaPadrao, ...]] = (
     ),
 )
 
+
+#: As colunas com que nasce um quadro CRIADO POR PESSOA (Spec 036, fatia 5b).
+#:
+#: ⚠️ QUATRO, E NAO OITO. Este e o conjunto que a ADR 0030 tinha decidido e que
+#: o cabecalho deste modulo registrou como adiado: uma coluna por SEMANTICA. O
+#: que destravou foi a ADR 0042 -- status sem coluna no quadro cai na coluna
+#: `is_default_target` da sua semantica --, sem a qual um quadro de quatro
+#: colunas nao teria para onde mandar `PLANNED`, `IN_REVIEW`,
+#: `EXTERNAL_APPROVAL` ou `BLOCKED`.
+#:
+#: ⚠️ NAO E UM SUBCONJUNTO ARBITRARIO DE `COLUNAS_PADRAO`: e a lista medida em
+#: producao em 11/08. No Quadro geral do Marketing, `Aprovacao Interna`,
+#: `Aprovacao Externa` e `Cancelado` somavam 5 cards em 176, contra 42 em
+#: `Em Andamento` e 87 em `Concluido`.
+#:
+#: ⚠️ AS QUATRO NASCEM COM `legacy_status`, e as quatro sao `is_default_target`.
+#: A ponte responde primeiro (ADR 0041) e o alvo responde no fallback (ADR
+#: 0042) -- as duas ADRs precisam das duas coisas verdadeiras desde o
+#: nascimento do quadro.
+#:
+#: ⚠️ `COLUNAS_PADRAO` NAO MUDA. Sao dois conjuntos vivos: as oito continuam
+#: sendo o padrao do quadro DE WORKSPACE, congeladas junto com a copia da
+#: migration `0008` e com `test_quadro_novo_nasce_igual_ao_migrado`. Quem
+#: editar um tem de justificar por que nao editou o outro.
+#:
+#: ⚠️ ROTULOS IDENTICOS aos das oito -- "Concluido" e "Cancelado" no masculino,
+#: como ja estao em producao. Divergir aqui e duas telas do mesmo produto
+#: escrevendo a mesma coluna de dois jeitos.
+COLUNAS_BASE: Final[tuple[ColunaPadrao, ...]] = (
+    ColunaPadrao(
+        TaskStatus.BACKLOG,
+        "Backlog",
+        "var(--status-backlog-dot)",
+        ColumnSemantic.OPEN,
+        True,
+        True,
+    ),
+    ColunaPadrao(
+        TaskStatus.IN_PROGRESS,
+        "Em Andamento",
+        "var(--status-progress-dot)",
+        ColumnSemantic.IN_PROGRESS,
+        True,
+        True,
+    ),
+    ColunaPadrao(
+        TaskStatus.COMPLETED,
+        "Concluído",
+        "var(--status-done-dot)",
+        ColumnSemantic.DONE,
+        True,
+        True,
+    ),
+    ColunaPadrao(
+        TaskStatus.CANCELLED,
+        "Cancelado",
+        "var(--status-cancel-dot)",
+        ColumnSemantic.CANCELLED,
+        True,
+        True,
+    ),
+)
+
 #: Nome do quadro geral criado junto com o workspace.
 NOME_QUADRO_GERAL: Final = "Quadro Geral"

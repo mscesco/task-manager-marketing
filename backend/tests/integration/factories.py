@@ -37,7 +37,10 @@ from app.db.models import (
 from app.db.models.boards import Board, BoardColumn
 from app.db.models.enums import TaskStatus
 from app.modules.tasks.application.board_service import BoardService
-from app.modules.tasks.domain.board_defaults import COLUNAS_PADRAO
+from app.modules.tasks.domain.board_defaults import (
+    COLUNAS_PADRAO,
+    ColunaPadrao,
+)
 
 
 def _label(task_id: uuid.UUID) -> str:
@@ -116,6 +119,7 @@ async def make_board(
     is_default: bool = False,
     name: str | None = None,
     com_legacy_status: bool = True,
+    colunas: tuple[ColunaPadrao, ...] = COLUNAS_PADRAO,
 ) -> Board:
     """Um SEGUNDO quadro, para o teste que precisa de mais de um.
 
@@ -139,12 +143,24 @@ async def make_board(
     campo a campo, pelo mesmo remedio que a 035 usou para a lista da migration
     versus a do servico.
 
+    ⚠️ `colunas=COLUNAS_BASE` monta o quadro de QUATRO colunas da fatia 5b --
+    o que uma pessoa cria. E o fixture da ADR 0042: quatro dos oito status nao
+    tem coluna nele, entao `coluna_para_status` cai no degrau da semantica em
+    vez de responder pela ponte.
+
+    ⚠️ NAO USE `com_legacy_status=False` PARA TESTAR A ADR 0042. Aquele fixture
+    monta OITO colunas sem ponte, e nele varias colunas dividem a mesma
+    semantica -- a regra certa (o alvo) e a errada (a primeira que achar) podem
+    dar a mesma resposta. Fixture que nao discrimina foi o que deixou tres
+    sabotagens passarem verde na 4c.
+
     ⚠️ `com_legacy_status=False` monta o quadro do dia da D4: oito colunas com
     `legacy_status` NULL, que e como nasce coluna criada por GENTE. Um quadro
-    assim NAO responde por status -- `column_for_status_in_board` levanta, e
-    `make_task(board_id=...)` nele tambem. Isso e o comportamento correto ate a
-    derivacao pela semantica existir, e o fixture serve justamente para provar
-    que ele falha alto em vez de escolher uma coluna qualquer.
+    assim NAO responde POR PONTE -- todas as colunas tem `legacy_status` NULL.
+    ⚠️ DESDE A ADR 0042 ELE DEIXOU DE LEVANTAR: `coluna_para_status` cai no
+    degrau do `is_default_target`, e as quatro colunas marcadas continuam
+    marcadas neste fixture. Teste que esperava `ValidationError` aqui esta
+    afirmando o comportamento de antes de 11/08.
     """
     quadro = Board(
         id=uuid.uuid4(),
@@ -156,7 +172,7 @@ async def make_board(
     db.add(quadro)
     await db.flush()  # precisa do id para as colunas
 
-    for posicao, coluna in enumerate(COLUNAS_PADRAO):
+    for posicao, coluna in enumerate(colunas):
         db.add(
             BoardColumn(
                 id=uuid.uuid4(),
@@ -223,9 +239,13 @@ async def make_project(
 async def _coluna_do_status_no_quadro(
     db: AsyncSession, *, workspace_id: uuid.UUID, board_id: uuid.UUID, status: TaskStatus
 ) -> uuid.UUID | None:
-    """`column_id` daquele status DENTRO daquele quadro. Espelha o
-    `BoardRepository.column_for_status_in_board` -- de proposito, para o arreio
-    e o produto responderem a mesma pergunta do mesmo jeito."""
+    """`column_id` daquele status DENTRO daquele quadro, SO PELA PONTE.
+
+    ⚠️ ESPELHA O DEGRAU 1 DE `BoardRepository.coluna_para_status`, E SO ELE.
+    O arreio nao reproduz o degrau da semantica de proposito: um fixture que
+    cai no mesmo fallback do produto nao consegue provar que o produto caiu no
+    fallback. Para montar tarefa num quadro de quatro colunas, passe um status
+    que ELE conhece (`BACKLOG`, `IN_PROGRESS`, `COMPLETED`, `CANCELLED`)."""
     linha = (
         await db.execute(
             text(
