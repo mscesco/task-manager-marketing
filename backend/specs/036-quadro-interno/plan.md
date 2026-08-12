@@ -3,12 +3,19 @@
 Cinco fatias. As três primeiras são backend e **nada muda na tela**; a quarta
 é o front; a quinta é a feature.
 
-> **Estado em 10/08/2026 (fim do dia) — fatias 1, 2, 3, 4a e 4b EM PRODUÇÃO.**
-> Backend **642**, front **503**.
+> ⚠️ **A SEÇÃO "Fatia 5" DESTE ARQUIVO É HISTÓRICA (12/08/2026).** O plano
+> vigente da fatia 5 é `plan-fatia-5.md`, neste mesmo diretório. A seção daqui
+> foi escrita em 10/08 sobre um modelo de produto que a decisão de 11/08
+> substituiu, e **afirma quatro coisas erradas** — lista no cabeçalho dela.
+> Não a apague: o portão do vazamento e o adendo de mover entre quadros
+> continuam válidos e estão recitados no arquivo novo.
 >
-> ⚠️ **A fatia 4c está BLOQUEADA por contrato — ver a seção dela.** A ordem
-> deste arquivo deixou de valer: o que vem a seguir é a peça de BACKEND da
-> fatia 5, não a 4c.
+> **Estado em 12/08/2026 — fatias 1, 2, 3, 4a, 4b, 4c e 5b-1/5b-2/5b-3/5b-5a
+> EM PRODUÇÃO.** Backend **714**, front **541**, migrations `0012`, ADRs
+> backend **42**. Pendentes da fatia 5: **5b-4**, **5b-5b** e **5b-6**.
+>
+> *(Estado anterior, 10/08 fim do dia: backend 642, front 503, com a 4c ainda
+> bloqueada por contrato. O bloqueio acabou no mesmo dia — ver a seção da 4c.)*
 >
 > ⚠️ **A fatia 4 são TRÊS sessões, não uma** (`sondagem-fatia-4.md`, §6), e a
 > sondagem sugere renumerar em 4a/4b/4c. **Este arquivo continua numerando de
@@ -444,7 +451,38 @@ mostrar estado de erro, não um quadro sem colunas.
 
 ---
 
-## Fatia 5 — O quadro interno (provavelmente duas sessões)
+## Fatia 5 — O quadro interno (HISTÓRICO — superseded em 11/08 por `plan-fatia-5.md`)
+
+> ⚠️ **NÃO EXECUTE ESTA SEÇÃO.** O plano vigente é
+> `backend/specs/036-quadro-interno/plan-fatia-5.md`. Este texto é de 10/08 e
+> está mantido como registro, no mesmo padrão da §"Fatia 4c — o bloqueio
+> original" e da §"Fatia 4 (texto original)".
+>
+> **As quatro afirmações erradas, com o que vale no lugar:**
+>
+> 1. **"O quadro do subtime nasce vazio"** — não existe esse quadro.
+>    `/quadro/[teamId]` é **lente**, não registro (ADR 0034). O modelo híbrido
+>    está em produção desde a fatia 4 (`Board.tsx:687-704`). **A migração de
+>    tarefas não existe como questão** — e as três saídas de custo listadas
+>    mais abaixo nesta seção respondem a uma pergunta que não se faz.
+> 2. **"Mexer em `default_board_and_column_for_status` é obrigatório"** — é o
+>    contrário: **mexer é DEFEITO**. Tarefa interna nasce com `board_id` do
+>    geral e `team_id` do subtime, e é isso que a faz aparecer na lente.
+>    ⚠️ **`test_tarefa_de_subtime_nasce_no_quadro_da_raiz` continua CERTO e
+>    VERDE.** Esta seção manda reescrevê-lo; **não reescreva.**
+> 3. **"ADR 0036: derivação do status pela semântica" como entrega da fatia** —
+>    as ADRs 0034, 0035 e 0036 já existiam. Faltava código, não decisão. A
+>    decisão que faltava é a **0042**, escrita em 11/08.
+> 4. **"A cor da coluna roda RGB livre (hex)"** (parágrafo perto do fim deste
+>    arquivo, citando a ADR 0040 item 4, com validação
+>    `^#[0-9a-fA-F]{6}$` no backend) — o corte de 11/08 decidiu o contrário
+>    para a 5b: coluna nova nasce com cor de **token**, por rotação fixa. Sem
+>    hex, sem luminância, sem validação. `lib/coluna.ts::corEhHex` continua sem
+>    leitor, agora com data.
+>
+> **O que desta seção CONTINUA VALENDO** e está recitado no arquivo novo: o
+> §Portão do vazamento de quadro logo abaixo, e a trava da permissão
+> `board.manage.subteam` nos três conjuntos de `permissions.py`.
 
 **Sobe:**
 - migration: quadro não-padrão e coluna sem `legacy_status` já são suportados
@@ -625,12 +663,23 @@ indistinguíveis.
    caminhos de escrita** listados na seção da 4c, não contra dois arquivos.
 6. **O resto da fatia 5** (criar/renomear/apagar quadro, CRUD de coluna,
    seletor de cor).
+   ⚠️ **SUPERSEDED em 11/08 — ver `plan-fatia-5.md`, §3.** O "resto" virou seis
+   fatias (5b-1 a 5b-6), quatro delas já em produção, e **apagar quadro** e
+   **seletor de cor** foram CORTADOS da 5b com o custo na mesa.
 
 ⚠️ **A permissão `board.manage.subteam` tem de entrar nos TRÊS conjuntos**
 (`ADMIN`, `MANAGER`, `SUPERVISOR`) em `permissions.py`. Não há hierarquia
 entre papéis — são listas literais. Se entrar só no SUPERVISOR, o supervisor
 cria quadro e o ADMIN não consegue. A trava de escopo mora no serviço
 (precedente literal: `member.manage.subteam`, Spec 028).
+
+⚠️ **SUPERSEDED EM 11/08 — não implemente hex nesta fatia.** O corte de 11/08
+(`plan-fatia-5.md`, §2) decidiu que coluna nova nasce com cor de **token**, por
+rotação fixa sobre os 8 existentes: sem hex, sem `<input type="color">`, sem
+luminância e **sem** a validação `^#[0-9a-fA-F]{6}$` no backend. O parágrafo
+abaixo continua sendo a descrição correta do custo **da fatia do seletor de
+cor**, que virá depois — e é a lista de coisas que precisam existir junto com
+ela, não antes.
 
 ⚠️ **A cor da coluna foi decidida em 10/08: roda RGB livre (hex).** Ver ADR
 0040 item 4. Consequências que precisam de desenho na fatia 5: o campo `color`
@@ -673,7 +722,11 @@ Nas fatias 4 e 5:
 - ⚠️ **`semantic` JÁ TEM LEITOR desde a Spec 037** — a correção é de 10/08.
   `TaskRepository.bloqueios_por_perda_de_alcance` deriva o que é terminal de
   `TERMINAL_SEMANTICS`, e não de uma lista de status escrita à mão. Ele também
-  viaja no `GET /boards` desde a fatia 2. **`is_default_target` continua sem
-  leitor** até a fatia 5, e esse é o campo a citar quando o assunto voltar.
+  viaja no `GET /boards` desde a fatia 2. ⚠️ **`is_default_target` GANHOU LEITOR
+  na fatia 5b-1 (11/08)** — o degrau 2 da ADR 0042 (`column_for_status_in_board`
+  e a subconsulta da cascata) lê o campo. O texto original desta linha dizia
+  "continua sem leitor até a fatia 5"; deixou de valer. **O campo sem leitor
+  que sobrou é `lib/coluna.ts::corEhHex`**, e é esse o que citar quando o
+  assunto voltar.
 - **A migração contra o volume de produção.** `board` tem uma linha; se isso
   mudar antes da fatia 5, medir de novo.

@@ -55,8 +55,15 @@ async def make_workspace(db: AsyncSession, *, name: str = "WS Teste") -> uuid.UU
 
 
 async def make_user(
-    db: AsyncSession, *, workspace_id: uuid.UUID, email: str | None = None
+    db: AsyncSession,
+    *,
+    workspace_id: uuid.UUID,
+    email: str | None = None,
+    is_active: bool = True,
 ) -> uuid.UUID:
+    """⚠️ `is_active=False` existe para o filtro de destinatario de aviso de
+    prazo (12/08). O PADRAO continua `True` -- nenhuma chamada existente muda
+    de comportamento."""
     uid = uuid.uuid4()
     db.add(
         User(
@@ -65,7 +72,7 @@ async def make_user(
             name="User Teste",
             email=email or f"u-{uid.hex[:8]}@teste.dev",
             password_hash="x",
-            is_active=True,
+            is_active=is_active,
         )
     )
     await db.flush()

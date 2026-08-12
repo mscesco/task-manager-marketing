@@ -189,6 +189,96 @@ async def test_backfill_nao_dispara_retroativo(db) -> None:
     assert r["due_soon_count"] == 0
 
 
+# ---------------------------------------------------------------------------
+# Conta desativada (12/08) -- o filtro `is_active` em `_recipients`.
+#
+# ⚠️ Sao TRES casos e nao um. Os dois caminhos de `_recipients` filtravam
+# errado, e o terceiro teste tranca a consequencia que a correcao cria (aviso
+# que nao vai para ninguem) para ela nao ser redescoberta como surpresa.
+# ---------------------------------------------------------------------------
+
+
+# 9 -- responsavel desativado nao recebe; o ativo do lado dele recebe.
+async def test_responsavel_inativo_nao_recebe_aviso(db) -> None:
+    ws, team, user = await _ws(db)
+    ativo = await f.make_user(db, workspace_id=ws)
+    inativo = await f.make_user(db, workspace_id=ws, is_active=False)
+    await f.add_member(db, workspace_id=ws, user_id=ativo, team_id=team, role="OPERATOR")
+    await f.add_member(
+        db, workspace_id=ws, user_id=inativo, team_id=team, role="OPERATOR"
+    )
+    t = await _task(db, ws=ws, team=team, user=user, due=OVERDUE)
+    await f.make_assignment(
+        db, workspace_id=ws, task_id=t.id, user_id=ativo, assigned_by=user
+    )
+    await f.make_assignment(
+        db, workspace_id=ws, task_id=t.id, user_id=inativo, assigned_by=user
+    )
+    await db.flush()
+
+    r = await DeadlineNotifyService(db).run(now=NOW)
+    assert r["overdue_count"] == 1
+    assert await _count(db, recipient=ativo, type_="TASK_OVERDUE", task_id=t.id) == 1
+    # ⚠️ O QUE ESTE TESTE EXISTE PARA PEGAR. Antes de 12/08 esta linha era 1.
+    assert await _count(db, recipient=inativo, type_="TASK_OVERDUE", task_id=t.id) == 0
+    # ⚠️ E o criador NAO entra: havia responsavel ativo, entao o fallback nao
+    # roda. Sem esta linha, devolver `[ativo, criador]` passaria verde.
+    assert await _count(db, recipient=user, type_="TASK_OVERDUE", task_id=t.id) == 0
+
+
+# 10 -- TODOS os responsaveis inativos -> cai no fallback do criador.
+async def test_todos_responsaveis_inativos_cai_no_criador(db) -> None:
+    ws, team, user = await _ws(db)
+    inativo = await f.make_user(db, workspace_id=ws, is_active=False)
+    await f.add_member(
+        db, workspace_id=ws, user_id=inativo, team_id=team, role="OPERATOR"
+    )
+    t = await _task(db, ws=ws, team=team, user=user, due=OVERDUE)
+    await f.make_assignment(
+        db, workspace_id=ws, task_id=t.id, user_id=inativo, assigned_by=user
+    )
+    await db.flush()
+
+    r = await DeadlineNotifyService(db).run(now=NOW)
+    assert r["overdue_count"] == 1
+    # ⚠️ Lista vazia DEPOIS do filtro conta como "sem responsavel alcancavel",
+    # e nao como "ja resolvido". A tarefa tem prazo e continua sem dono de
+    # fato; alguem tem de ver.
+    assert await _count(db, recipient=user, type_="TASK_OVERDUE", task_id=t.id) == 1
+    assert await _count(db, recipient=inativo, type_="TASK_OVERDUE", task_id=t.id) == 0
+
+
+# 11 -- criador inativo e nenhum responsavel -> ninguem recebe, E a coluna de
+# dedup e gravada assim mesmo (vies at-most-once do cabecalho do modulo).
+async def test_criador_inativo_sem_responsavel_nao_notifica_ninguem(db) -> None:
+    ws = await f.make_workspace(db)
+    team = await f.make_team(db, workspace_id=ws)
+    # ⚠️ O workspace precisa de UM usuario ativo para o `_resolve_ctx_user` nao
+    # pular o workspace inteiro -- sem ele este teste passaria verde por
+    # ausencia de varredura, e nao por ausencia de destinatario.
+    vivo = await f.make_user(db, workspace_id=ws)
+    await f.add_member(db, workspace_id=ws, user_id=vivo, team_id=team, role="ADMIN")
+    criador = await f.make_user(db, workspace_id=ws, is_active=False)
+    await f.add_member(
+        db, workspace_id=ws, user_id=criador, team_id=team, role="OPERATOR"
+    )
+    t = await _task(db, ws=ws, team=team, user=criador, due=OVERDUE)
+    await db.flush()
+
+    r = await DeadlineNotifyService(db).run(now=NOW)
+    # A varredura ACHOU a tarefa -- o contador conta tarefas varridas, nao
+    # notificacoes emitidas.
+    assert r["overdue_count"] == 1
+    assert await _count(db, recipient=criador, type_="TASK_OVERDUE", task_id=t.id) == 0
+    assert await _count(db, recipient=vivo, type_="TASK_OVERDUE", task_id=t.id) == 0
+    # ⚠️ A CONSEQUENCIA, trancada de proposito: zero destinatario ainda grava a
+    # coluna. Se alguem ativo for designado depois, a tarefa so volta a avisar
+    # quando o `due_date` mudar. Se um dia isso deixar de ser aceitavel, e
+    # ESTA linha que muda de cor primeiro.
+    await db.refresh(t)
+    assert t.overdue_notified_for == OVERDUE
+
+
 # 7 -- endpoint trancado: sem token / token errado -> 401; token certo -> 200.
 def _client(db) -> AsyncClient:
     app = create_app()

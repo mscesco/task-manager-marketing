@@ -5,7 +5,9 @@ workspaces e, por workspace, entra em `tenant_scope` e emite:
   - TASK_DUE_SOON  -- task aberta com due_date em [hoje, hoje+2] ainda nao avisada;
   - TASK_OVERDUE   -- task aberta com due_date < hoje ainda nao avisada.
 
-Destinatarios (D2): responsaveis da task; se nao houver, o criador (fallback).
+Destinatarios (D2): responsaveis ATIVOS da task; se nao houver nenhum ativo, o
+criador -- e so se ele tambem estiver ativo (filtro `is_active` acrescentado em
+12/08; ver `_recipients`).
 Idempotencia (D3): cada task tem due_soon_notified_for / overdue_notified_for
 guardando o due_date ja avisado. So dispara se DIFERE do due_date atual -> troca
 de prazo reabilita sozinho. Apos emitir, grava a coluna.
@@ -205,13 +207,74 @@ class DeadlineNotifyService:
     async def _recipients(
         self, *, ws_id: uuid.UUID, task: Task
     ) -> list[uuid.UUID]:
-        """Responsaveis da task; se nao houver, o criador (fallback D2)."""
-        stmt = select(TaskAssignment.user_id).where(
-            TaskAssignment.task_id == task.id,
-            TaskAssignment.workspace_id == ws_id,
+        """Responsaveis ATIVOS da task; se nao houver, o criador se ATIVO.
+
+        ⚠️ O FILTRO `is_active` E O PONTO DESTE METODO, e ele nao existia ate
+        12/08. Sem ele a varredura emitia aviso de prazo para conta desativada:
+        29 notificacoes medidas em producao para gente que ja tinha saido. Elas
+        nao apareciam em lugar nenhum -- o dono da conta nao entra mais, e a
+        tarefa continuava sem dono de fato.
+
+        ⚠️ SAO DOIS CAMINHOS, e os dois filtravam errado:
+          - a lista de responsaveis nao conferia `is_active`;
+          - o fallback `[task.created_by]` devolvia o criador CRU, sem sequer
+            ir ao banco. Criador desativado recebia mesmo assim.
+
+        ⚠️ "TODOS OS RESPONSAVEIS INATIVOS" CAI NO FALLBACK, de proposito.
+        `ids` vazio depois do filtro e tratado como "esta tarefa nao tem
+        responsavel alcancavel", que e a mesma situacao que o fallback D2
+        existe para cobrir. A alternativa -- nao avisar ninguem -- deixaria
+        tarefa com prazo sem dono e sem sinal.
+
+        ⚠️ ZERO DESTINATARIOS AINDA GRAVA A COLUNA DE DEDUP. Se o criador
+        tambem estiver inativo esta lista sai vazia, o emitter nao emite (ele
+        retorna cedo com `alvos` vazio) e `_run_kind` grava
+        `due_soon_notified_for` / `overdue_notified_for` assim mesmo -- o vies
+        at-most-once do cabecalho deste modulo. Consequencia REAL: se alguem
+        ativo for designado depois, a tarefa so volta a avisar quando o
+        `due_date` mudar. Nao e defeito desta entrega; e o preco conhecido do
+        vies, e esta escrito aqui para nao ser redescoberto como surpresa.
+        """
+        # ⚠️ O `workspace_id` entra no ON junto com o `id`, igual ao join de
+        # `_run_kind`. O `id` sozinho e PK e bastaria; o par e o padrao do
+        # schema e o que impede que uma copia futura desta consulta cruze
+        # tenant sem ninguem notar.
+        stmt = (
+            select(TaskAssignment.user_id)
+            .join(
+                User,
+                and_(
+                    User.id == TaskAssignment.user_id,
+                    User.workspace_id == TaskAssignment.workspace_id,
+                ),
+            )
+            .where(
+                TaskAssignment.task_id == task.id,
+                TaskAssignment.workspace_id == ws_id,
+                User.is_active.is_(True),
+            )
         )
         ids = list((await self._session.execute(stmt)).scalars().all())
-        return ids if ids else [task.created_by]
+        if ids:
+            return ids
+        return await self._criador_se_ativo(ws_id=ws_id, task=task)
+
+    async def _criador_se_ativo(
+        self, *, ws_id: uuid.UUID, task: Task
+    ) -> list[uuid.UUID]:
+        """O criador da task, se ele ainda estiver ativo. Lista vazia se nao.
+
+        ⚠️ UMA CONSULTA A MAIS, e so no caminho do fallback. `task.created_by`
+        e um id cru: sem ir ao banco nao ha como saber se a conta continua
+        ativa. O caminho comum (task com responsavel ativo) nao paga nada.
+        """
+        stmt = select(User.id).where(
+            User.id == task.created_by,
+            User.workspace_id == ws_id,
+            User.is_active.is_(True),
+        )
+        achado = (await self._session.execute(stmt)).scalars().first()
+        return [achado] if achado else []
 
     async def _resolve_ctx_user(
         self, workspace_id: uuid.UUID
