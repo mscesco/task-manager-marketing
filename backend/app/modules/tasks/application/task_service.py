@@ -65,6 +65,16 @@ from app.shared.pagination import Page, PageParams
 
 logger = get_logger(__name__)
 
+#: Recusa de `board_id` na criacao de tarefa (Spec 036, fatia 5b-6).
+#:
+#: ⚠️ SEM ELE A TRAVA NAO E TESTAVEL. Quadro inexistente tambem estoura
+#: `ValidationError` -- mas la adiante, quando `coluna_para_status` nao acha
+#: coluna naquele quadro. Sao dois defeitos diferentes com o MESMO tipo de
+#: excecao, e so o codigo separa "voce nao alcanca este quadro" de "este quadro
+#: nao existe". Medido: sem ele, tirar `_assert_board_in_reach` derrubava UM
+#: teste dos dois que deveriam cair.
+CODIGO_QUADRO_FORA_DE_ALCANCE = "board_fora_de_alcance"
+
 
 # --------------------------------------------------------
 # Commands / DTOs
@@ -76,6 +86,17 @@ class CreateTaskCommand:
     description: str = ""
     parent_task_id: uuid.UUID | None = None
     team_id: uuid.UUID | None = None  # default = subtime do criador.
+    # Spec 036, fatia 5b-6: em QUAL quadro a tarefa de topo nasce.
+    #
+    # ⚠️ `None` = o Quadro geral, que e o comportamento de sempre e o de 100%
+    # das tarefas ate aqui. Preencher so faz sentido para quadro AVULSO, e a
+    # tela do time e o unico lugar que preenche.
+    #
+    # ⚠️ IGNORADO EM SUBTAREFA, e nao e descuido: filha herda o quadro do PAI
+    # (ADR 0024, mesma razao do `team_id`). Aceitar os dois abriria pai num
+    # quadro e filha em outro -- sem erro e sem tela, que e o defeito que a
+    # fatia 2 desta spec fechou.
+    board_id: uuid.UUID | None = None
     status: TaskStatus = TaskStatus.BACKLOG
     priority: PriorityLevel = PriorityLevel.MEDIUM
     start_date: date | None = None
@@ -253,6 +274,43 @@ class TaskService:
     # ----------------------------------------------------
     # CRUD (publico)
     # ----------------------------------------------------
+    async def _assert_board_in_reach(self, board_id: uuid.UUID) -> None:
+        """`board_id` escrito a mao tem de estar na lente de quem escreve.
+
+        ⚠️ MESMO PADRAO E MESMO MOTIVO DE `_assert_team_in_reach` (Spec 037,
+        ADR 0038 E1): a TELA so oferece os quadros do time que ela desenha, mas
+        n8n, Swagger e chamada direta montam o JSON que quiserem. Sem esta
+        consulta, `board_id` seria o "quem manda, manda" que a Spec 037 tirou
+        de `team_id` -- e o estrago aqui e maior, porque quadro decide QUEM VE
+        (ADR 0035 D3): a tarefa apareceria na tela de um subtime alheio.
+
+        ⚠️ USA A MESMA LENTE DO `GET /boards` (`list_visible`), e nao uma
+        consulta propria. Duas definicoes de "quadro que eu alcanco"
+        divergiriam, e a divergencia nao apareceria em lugar nenhum ate alguem
+        criar tarefa num quadro que a tela dele nao lista.
+
+        ⚠️ 422 E NAO 404. O `board_id` veio no CORPO de um `POST /tasks`, e nao
+        na URL -- e um campo invalido da requisicao, como qualquer outro. Um
+        404 aqui diria que a rota `/tasks` nao existe.
+        """
+        alcancaveis = {
+            quadro.id
+            for quadro, _ in await BoardRepository(self._session).list_visible()
+        }
+        if board_id not in alcancaveis:
+            raise ValidationError(
+                "Quadro fora do seu alcance.",
+                # ⚠️ CODIGO PROPRIO, e ele existe por causa de uma sabotagem
+                # que so derrubou UM teste quando eu previa dois. Sem o codigo,
+                # `board_id` inexistente e `board_id` de outro time levantam a
+                # MESMA `ValidationError` -- e o caso do inexistente e pego por
+                # acidente, la adiante, quando `coluna_para_status` nao acha
+                # coluna naquele quadro. O teste passava nos dois mundos e nao
+                # provava trava nenhuma.
+                code=CODIGO_QUADRO_FORA_DE_ALCANCE,
+                details={"field": "board_id", "board_id": str(board_id)},
+            )
+
     @staticmethod
     def _assert_team_in_reach(team_id: uuid.UUID) -> None:
         """`team_id` escrito a mao tem de estar na lente de quem escreve.
@@ -436,6 +494,30 @@ class TaskService:
                 self._session
             ).coluna_para_status(
                 board_id=parent.board_id, status=command.status
+            )
+        elif command.board_id is not None:
+            # ⚠️ QUADRO PEDIDO, E NAO DESCOBERTO (Spec 036, fatia 5b-6). Ate
+            # aqui toda tarefa de topo nascia no Quadro geral por construcao --
+            # `default_board_and_column_for_status` filtra o time RAIZ no SQL.
+            # O quadro avulso so recebe tarefa por este caminho.
+            #
+            # ⚠️ A TRAVA VEM PRIMEIRO, e ela e o ponto. Sem `_assert_board_in_reach`,
+            # qualquer cliente que monte o JSON na mao cria tarefa no quadro de
+            # um subtime alheio: a tarefa aparece na tela DELES, com o `team_id`
+            # de quem criou. Mesmo furo que a Spec 037 fechou para `team_id`, e
+            # pela mesma porta -- a tela nao oferece, o resto dos clientes sim.
+            await self._assert_board_in_reach(command.board_id)
+            task.board_id = command.board_id
+            # ⚠️ MESMA REGRA DA SUBTAREFA (ADR 0042 D2): o status VOLTA da
+            # coluna. Quadro avulso tem quatro colunas e nao conhece `PLANNED`,
+            # `IN_REVIEW`, `EXTERNAL_APPROVAL` nem `BLOCKED` -- a tarefa cai na
+            # coluna de destino da semantica e o status acompanha, senao coluna
+            # e status discordam e a invariante 3 do `invariantes.sql` sai de
+            # zero.
+            task.column_id, task.status = await BoardRepository(
+                self._session
+            ).coluna_para_status(
+                board_id=command.board_id, status=command.status
             )
         else:
             task.board_id, task.column_id = await BoardRepository(

@@ -164,6 +164,13 @@ async def create_task(
             description=payload.description,
             parent_task_id=payload.parent_task_id,
             team_id=payload.team_id,
+            # ⚠️ Spec 036, fatia 5b-6. MESMA ARMADILHA do `assignee_ids` logo
+            # abaixo, e ela ja mordeu este arquivo uma vez: sem esta linha o
+            # campo chega no payload e e DESCARTADO -- a tarefa nasce no Quadro
+            # geral, sem erro nenhum, e a pessoa que a criou dentro do quadro
+            # avulso nao a encontra mais. Coberto por
+            # `test_task_nasce_no_quadro_pedido_db.py`.
+            board_id=payload.board_id,
             status=payload.status,
             priority=payload.priority,
             start_date=payload.start_date,

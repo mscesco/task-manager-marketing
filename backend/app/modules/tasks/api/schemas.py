@@ -174,6 +174,20 @@ class TaskCreateRequest(BaseModel):
     description: str = Field(default="", max_length=_DESCRIPTION_MAX)
     parent_task_id: uuid.UUID | None = None
     team_id: uuid.UUID | None = None
+    # Spec 036, fatia 5b-6: em QUAL quadro a tarefa de topo nasce.
+    #
+    # ⚠️ `None` = Quadro geral, que e o comportamento de sempre e o de 100% das
+    # tarefas ate aqui. So a tela do time preenche, e so para quadro avulso.
+    #
+    # ⚠️ IGNORADO EM SUBTAREFA -- filha herda o quadro do PAI (ADR 0024).
+    # Aceitar os dois abriria pai num quadro e filha em outro, sem erro e sem
+    # tela.
+    #
+    # ⚠️ NAO E CONFIAVEL SO POR ESTAR TIPADO. `TaskService._assert_board_in_reach`
+    # confere que o quadro esta na lente de quem escreve; sem ela, montar este
+    # JSON na mao cria tarefa no quadro de um subtime alheio -- e quadro decide
+    # QUEM VE (ADR 0035 D3).
+    board_id: uuid.UUID | None = None
     status: TaskStatus = TaskStatus.BACKLOG
     priority: PriorityLevel = PriorityLevel.MEDIUM
     start_date: date | None = None
