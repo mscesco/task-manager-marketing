@@ -37,7 +37,11 @@ from sqlalchemy import func, select
 from app.db.models.boards import Board, BoardColumn
 from app.db.models.enums import ColumnSemantic, TaskStatus
 from app.db.models.operational import Task
-from app.modules.tasks.application.board_service import BoardService
+from app.modules.tasks.application.board_service import (
+    CODIGO_SEM_DESTINO,
+    CODIGO_SEMANTICA_OBRIGATORIA,
+    BoardService,
+)
 from app.shared.exceptions.base import (
     AuthorizationError,
     EntityNotFoundError,
@@ -177,10 +181,13 @@ async def test_coluna_COM_tarefa_exige_destino(db) -> None:
     )
 
     with acting_as(**_ctx(ws, user, arvore, mship(sub_a, "SUPERVISOR"))):
-        with pytest.raises(ValidationError):
+        with pytest.raises(ValidationError) as erro:
             await BoardService(db).apagar_coluna(
                 board_id=quadro.id, column_id=andamento.id, destino_id=None
             )
+    # ⚠️ O CODIGO, e nao a mensagem. E ele que a tela le para saber se abre o
+    # selector de destino ou mostra um "nao" definitivo.
+    assert erro.value.code == CODIGO_SEM_DESTINO
 
 
 async def test_as_tarefas_vao_PARA_A_ESCOLHIDA_e_nao_para_outra(db) -> None:
@@ -295,10 +302,11 @@ async def test_ultima_OPEN_nao_pode_ser_apagada(db) -> None:
     backlog = _por_nome(await _colunas(db, quadro.id), "Backlog")
 
     with acting_as(**_ctx(ws, user, arvore, mship(sub_a, "SUPERVISOR"))):
-        with pytest.raises(ValidationError):
+        with pytest.raises(ValidationError) as erro:
             await BoardService(db).apagar_coluna(
                 board_id=quadro.id, column_id=backlog.id, destino_id=None
             )
+    assert erro.value.code == CODIGO_SEMANTICA_OBRIGATORIA
 
 
 async def test_ultima_DONE_e_recusada_MESMO_com_destino_escolhido(db) -> None:
@@ -319,12 +327,13 @@ async def test_ultima_DONE_e_recusada_MESMO_com_destino_escolhido(db) -> None:
     )
 
     with acting_as(**_ctx(ws, user, arvore, mship(sub_a, "SUPERVISOR"))):
-        with pytest.raises(ValidationError):
+        with pytest.raises(ValidationError) as erro:
             await BoardService(db).apagar_coluna(
                 board_id=quadro.id,
                 column_id=concluido.id,
                 destino_id=backlog.id,
             )
+    assert erro.value.code == CODIGO_SEMANTICA_OBRIGATORIA
 
 
 async def test_ultima_OPEN_e_recusada_ANTES_de_pedir_destino(db) -> None:
@@ -345,8 +354,12 @@ async def test_ultima_OPEN_e_recusada_ANTES_de_pedir_destino(db) -> None:
             await BoardService(db).apagar_coluna(
                 board_id=quadro.id, column_id=backlog.id, destino_id=None
             )
-    # A recusa e a da SEMANTICA, e nao a do destino faltando.
-    assert "semantica" in str(erro.value).lower()
+    # ⚠️ A RECUSA E A DA SEMANTICA, e nao a do destino faltando. A versao
+    # anterior desta linha comparava a MENSAGEM (`"semantica" in str(...)`), e
+    # era exatamente o acoplamento a texto que o codigo de erro existe para
+    # matar: corrigir uma virgula no aviso quebraria este teste, e trocar as
+    # duas mensagens de lugar o deixaria VERDE com a ordem errada.
+    assert erro.value.code == CODIGO_SEMANTICA_OBRIGATORIA
 
 
 async def test_IN_PROGRESS_e_CANCELLED_PODEM_ser_apagadas(db) -> None:
@@ -489,6 +502,8 @@ async def test_supervisor_NAO_apaga_coluna_de_subtime_alheio(db) -> None:
                 board_id=quadro_b.id, column_id=cancelado.id, destino_id=None
             )
 
+    assert len(await _colunas(db, quadro_b.id)) == 4
+
 
 async def test_NAO_apaga_coluna_do_quadro_geral(db) -> None:
     """⚠️ A 8a coluna sumir do quadro de 176 tarefas nao e risco desta fatia.
@@ -513,6 +528,10 @@ async def test_NAO_apaga_coluna_do_quadro_geral(db) -> None:
             await BoardService(db).apagar_coluna(
                 board_id=geral.id, column_id=alguma.id, destino_id=None
             )
+
+    # ⚠️ AS OITO CONTINUAM LA, e esta afirmacao so cabe no teste de SERVICO: no
+    # HTTP o rollback ao SAVEPOINT levaria a fixture junto.
+    assert len(await _colunas(db, geral.id)) == 8
 
 
 async def test_coluna_inexistente_devolve_404(db) -> None:

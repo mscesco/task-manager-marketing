@@ -90,6 +90,22 @@ SEMANTICAS_QUE_O_SISTEMA_ESCREVE: frozenset[ColumnSemantic] = frozenset(
     {ColumnSemantic.OPEN, ColumnSemantic.DONE}
 )
 
+#: Codigos das DUAS recusas de apagar coluna (ADR 0042 D4 e D5).
+#:
+#: ⚠️ AS DUAS SAO 422, E A TELA REAGE DIFERENTE A CADA UMA: a primeira abre o
+#: selector de destino, a segunda e um "nao" definitivo. Sem codigo, o unico
+#: jeito de distingui-las seria comparar a MENSAGEM -- e aí corrigir uma
+#: virgula no texto quebraria a tela em silencio, e o defeito apareceria como
+#: "o selector abre e o destino escolhido nao adianta".
+#:
+#: ⚠️ O CODIGO VAI NO `code` DA EXCECAO, e nao dentro de `details`. O envelope
+#: de erro deste projeto ja e `{error: {code, message, details}}`, e o status
+#: HTTP e mapeado pelo TIPO da excecao (`_status_for`), nao pelo code -- entao
+#: trocar o code nao mexe no 422. Um segundo `code` aninhado em `details` seria
+#: duas coisas com o mesmo nome no mesmo corpo.
+CODIGO_SEM_DESTINO = "coluna_sem_destino"
+CODIGO_SEMANTICA_OBRIGATORIA = "coluna_semantica_obrigatoria"
+
 
 def _cor_por_rotacao(indice: int) -> str:
     """A cor da n-esima coluna, girando na lista.
@@ -465,6 +481,7 @@ class BoardService:
             if destino_id is None:
                 raise ValidationError(
                     "Escolha para qual coluna as tarefas devem ir.",
+                    code=CODIGO_SEM_DESTINO,
                     details={
                         "field": "destino_id",
                         "tarefas": len(vivas),
@@ -538,6 +555,7 @@ class BoardService:
         if not sobrou:
             raise ValidationError(
                 "O quadro precisa de pelo menos uma coluna desta semantica.",
+                code=CODIGO_SEMANTICA_OBRIGATORIA,
                 details={
                     "column_id": str(coluna.id),
                     "semantic": coluna.semantic.value,

@@ -360,6 +360,8 @@ async def test_coluna_de_OUTRO_quadro_devolve_404(db) -> None:
     await db.flush()
     coluna_de_b = (await _colunas(db, quadro_b.id))[0]
 
+    nome_antes = coluna_de_b.name
+
     with acting_as(**_ctx(ws, user, arvore, mship(sub_a, "SUPERVISOR"))):
         with pytest.raises(EntityNotFoundError):
             await BoardService(db).renomear_coluna(
@@ -367,6 +369,10 @@ async def test_coluna_de_OUTRO_quadro_devolve_404(db) -> None:
                 column_id=coluna_de_b.id,
                 nome="Invadida",
             )
+
+    # ⚠️ E a coluna do outro quadro continua com o nome dela. Sem esta linha, o
+    # teste provaria so que ALGUM erro sai -- nao que a escrita nao aconteceu.
+    assert coluna_de_b.name == nome_antes
 
 
 # -------------------------------------------------------------- autorizacao
@@ -396,6 +402,13 @@ async def test_supervisor_NAO_mexe_em_coluna_de_subtime_alheio(db) -> None:
 
 
 async def test_operator_nao_cria_coluna_nem_no_proprio_subtime(db) -> None:
+    """⚠️ E A AFIRMACAO DE BANCO MORA AQUI, e nao no teste HTTP.
+
+    O teste de servico nao tem UoW, entao a recusa nao da rollback ao SAVEPOINT
+    e o mundo da fixture continua de pe. No HTTP a mesma linha ve zero colunas
+    -- o rollback leva a fixture junto -- e o teste falharia com `assert 0 == 4`
+    pelo motivo errado. Medido em 12/08, com cinco vermelhos.
+    """
     ws, raiz, sub_a, sub_b, user, arvore = await _mundo(db)
     quadro = await _quadro_avulso(db, ws, user, arvore, sub_a)
 
@@ -406,6 +419,8 @@ async def test_operator_nao_cria_coluna_nem_no_proprio_subtime(db) -> None:
                 nome="Em Revisão",
                 semantica=ColumnSemantic.IN_PROGRESS,
             )
+
+    assert len(await _colunas(db, quadro.id)) == 4
 
 
 async def test_admin_mexe_em_coluna_de_subtime_de_que_nao_e_supervisor(
