@@ -1,0 +1,216 @@
+/**
+ * Spec 036, fatia 5b-6 -- o seletor de quadro da tela do time.
+ *
+ * ⚠️ O QUE ESTE ARQUIVO PRENDE E A DISTINCAO ENTRE LENTE E QUADRO. Elas
+ * convivem no mesmo menu porque, para quem usa, sao dois lugares onde a tarefa
+ * pode estar. Mas a lente nao existe como registro (ADR 0034): nao tem
+ * `board_id`, nao se renomeia, nao se apaga. Um seletor que as trate igual
+ * oferece "renomear" numa coisa que nao existe -- e o backend responde 404 a
+ * uma requisicao que a tela nunca deveria ter deixado sair.
+ *
+ * ⚠️ ISTO NAO E SEGURANCA. O backend trava de verdade. Aqui so evitamos
+ * oferecer botao que o servidor vai recusar.
+ *
+ * SABOTAGENS (medidas):
+ *   M. `alcanceDeQuadro`: inverter a ordem -- `subteam` antes de `root`.
+ *   N. `podeGerirQuadrosDe`: `subtime` devolve `true` sem conferir a lista.
+ *   O. `opcoesDoSeletor`: tirar o filtro `q.team_id === teamId`.
+ *   P. `opcoesDoSeletor`: tirar o `!q.is_default`.
+ *   Q. `OpcaoDeQuadro` da lente com `podeRenomear: podeGerir`.
+ */
+
+import { describe, expect, it } from "vitest";
+
+import type { Quadro } from "@/lib/api";
+import {
+  DESCRICAO_DA_LENTE,
+  alcanceDeQuadro,
+  nomeDeQuadroValido,
+  opcaoSelecionada,
+  opcoesDoSeletor,
+  podeGerirQuadrosDe,
+} from "@/lib/seletorDeQuadro";
+
+const RAIZ = "team-marketing";
+const SEO = "team-seo";
+const CRM = "team-crm";
+
+function quadro(over: Partial<Quadro> & { id: string; name: string }): Quadro {
+  return {
+    team_id: SEO,
+    is_default: false,
+    colunas: [],
+    ...over,
+  };
+}
+
+/** O mundo que um supervisor do SEO alcanca: o geral + o dele + o do CRM? Nao. */
+const QUADROS: Quadro[] = [
+  quadro({ id: "b-geral", name: "Quadro geral", team_id: RAIZ, is_default: true }),
+  quadro({ id: "b-pauta", name: "Pauta editorial", team_id: SEO }),
+  quadro({ id: "b-links", name: "Construção de links", team_id: SEO }),
+  quadro({ id: "b-crm", name: "Automações", team_id: CRM }),
+];
+
+describe("alcanceDeQuadro", () => {
+  it("sem usuario, alcance nenhum", () => {
+    expect(alcanceDeQuadro(null).tipo).toBe("nenhum");
+  });
+
+  it("board.manage.root -> amplo", () => {
+    const a = alcanceDeQuadro({
+      permissions: ["board.manage.root", "board.manage.subteam"],
+      teams: [],
+    });
+    expect(a.tipo).toBe("amplo");
+  });
+
+  it("⚠️ root GANHA de subteam quando o ator tem os dois", () => {
+    // ⚠️ E ADMIN E MANAGER TEM OS DOIS. O mapa de permissoes do backend e
+    // uniao de papeis, e `board.manage.subteam` entra em SUPERVISOR, MANAGER e
+    // ADMIN -- se entrasse so no supervisor, o supervisor criaria quadro e o
+    // ADMIN nao. Aqui a consequencia e outra: com a ordem invertida, um ADMIN
+    // sem subtime nenhum cairia em `subtime: []` e perderia o botao em TODO
+    // time. E ele e quem administra os subtimes de que nao e supervisor.
+    const a = alcanceDeQuadro({
+      permissions: ["board.manage.subteam", "board.manage.root"],
+      teams: [],
+    });
+    expect(a.tipo).toBe("amplo");
+  });
+
+  it("so subteam -> lista os subtimes onde e SUPERVISOR", () => {
+    const a = alcanceDeQuadro({
+      permissions: ["board.manage.subteam"],
+      teams: [
+        { team_id: SEO, role: "SUPERVISOR" },
+        { team_id: CRM, role: "OPERATOR" },
+      ],
+    });
+    expect(a).toEqual({ tipo: "subtime", subtimes: [SEO] });
+  });
+
+  it("sem permissao nenhuma -> nenhum", () => {
+    expect(
+      alcanceDeQuadro({ permissions: ["task.create"], teams: [] }).tipo,
+    ).toBe("nenhum");
+  });
+});
+
+describe("podeGerirQuadrosDe", () => {
+  it("amplo pode em qualquer time", () => {
+    expect(podeGerirQuadrosDe({ tipo: "amplo" }, CRM)).toBe(true);
+  });
+
+  it("⚠️ supervisor SO no proprio subtime", () => {
+    // ⚠️ A CELULA QUE O MAPA DE PERMISSAO SOZINHO RESPONDE ERRADO, e a mesma
+    // que o backend guarda em `_assert_pode_gerir`. Sem a conferencia da
+    // lista, a tela ofereceria "novo quadro" no time alheio e a pessoa levaria
+    // 403 depois de digitar o nome.
+    const a = { tipo: "subtime", subtimes: [SEO] } as const;
+    expect(podeGerirQuadrosDe(a, SEO)).toBe(true);
+    expect(podeGerirQuadrosDe(a, CRM)).toBe(false);
+  });
+
+  it("nenhum nunca pode", () => {
+    expect(podeGerirQuadrosDe({ tipo: "nenhum" }, SEO)).toBe(false);
+  });
+});
+
+describe("opcoesDoSeletor", () => {
+  it("a LENTE vem sempre primeiro, e com a descricao fixa", () => {
+    const [primeira] = opcoesDoSeletor(QUADROS, SEO, true);
+    expect(primeira.id).toBeNull();
+    expect(primeira.descricao).toBe(DESCRICAO_DA_LENTE);
+  });
+
+  it("⚠️ a lente NUNCA tem afordancia de renomear -- nem para quem pode tudo", () => {
+    // ADR 0034 item 2: ausente, e nao desabilitada. Nao ha o que renomear --
+    // a lente nao existe como registro no banco.
+    const [lente] = opcoesDoSeletor(QUADROS, SEO, true);
+    expect(lente.podeRenomear).toBe(false);
+  });
+
+  it("⚠️ so os quadros DAQUELE time entram", () => {
+    // ⚠️ `GET /boards` devolve tudo que a pessoa ALCANCA -- para um ADMIN,
+    // isso inclui os quadros de todos os subtimes. Sem o filtro, o seletor do
+    // SEO listaria "Automações" (do CRM), e criar tarefa ali a mandaria para
+    // um quadro que ninguem do SEO ve.
+    const nomes = opcoesDoSeletor(QUADROS, SEO, true).map((o) => o.nome);
+    expect(nomes).not.toContain("Automações");
+  });
+
+  it("⚠️ o quadro PADRAO nao entra -- a lente ja o representa", () => {
+    // Lista-lo poria a mesma coisa duas vezes no menu, uma delas com botao de
+    // renomear que a outra nao tem.
+    const nomes = opcoesDoSeletor(QUADROS, RAIZ, true).map((o) => o.nome);
+    expect(nomes).not.toContain("Quadro geral");
+    expect(nomes).toEqual(["Lente do time"]);
+  });
+
+  it("⚠️ ordena por NOME, e nao pela ordem que a API devolveu", () => {
+    // `GET /boards` nao promete ordem. Sem isto o menu se reordena sozinho
+    // entre dois carregamentos, e o item que a pessoa ia clicar muda de lugar.
+    const nomes = opcoesDoSeletor(QUADROS, SEO, true).map((o) => o.nome);
+    expect(nomes).toEqual([
+      "Lente do time",
+      "Construção de links",
+      "Pauta editorial",
+    ]);
+  });
+
+  it("sem permissao, os avulsos aparecem mas sem renomear", () => {
+    // ⚠️ VER continua valendo: quem alcanca o quadro pela lente alcanca o
+    // conteudo dele. O que some e a afordancia de EDITAR.
+    const opcoes = opcoesDoSeletor(QUADROS, SEO, false);
+    expect(opcoes).toHaveLength(3);
+    expect(opcoes.every((o) => !o.podeRenomear)).toBe(true);
+  });
+
+  it("time sem quadro avulso mostra so a lente", () => {
+    expect(opcoesDoSeletor([], SEO, true)).toHaveLength(1);
+  });
+});
+
+describe("opcaoSelecionada", () => {
+  const OPCOES = opcoesDoSeletor(QUADROS, SEO, true);
+
+  it("acha pelo id", () => {
+    expect(opcaoSelecionada(OPCOES, "b-pauta").nome).toBe("Pauta editorial");
+  });
+
+  it("null seleciona a lente", () => {
+    expect(opcaoSelecionada(OPCOES, null).id).toBeNull();
+  });
+
+  it("⚠️ id que nao existe mais cai na LENTE, sem erro", () => {
+    // O quadro pode ter sido apagado por outra pessoa, ou o id pode vir de um
+    // link velho. Mostrar erro para quem so abriu a tela seria pior que
+    // mostrar o lugar padrao dela.
+    expect(opcaoSelecionada(OPCOES, "b-que-sumiu").id).toBeNull();
+  });
+});
+
+describe("nomeDeQuadroValido", () => {
+  it("apara os espacos", () => {
+    expect(nomeDeQuadroValido("  Pauta  ")).toBe("Pauta");
+  });
+
+  it("⚠️ so espaco NAO e nome", () => {
+    // Sem o `trim` antes da conferencia, "   " passaria e o backend devolveria
+    // 422 -- erro depois de digitar, para uma regra que a tela ja conhecia.
+    expect(nomeDeQuadroValido("   ")).toBeNull();
+  });
+
+  it("vazio nao e nome", () => {
+    expect(nomeDeQuadroValido("")).toBeNull();
+  });
+
+  it("⚠️ 255 passa, 256 nao -- e o teto e o do QUADRO", () => {
+    // ⚠️ Coluna tem outro teto (120). Reaproveitar esta funcao para coluna
+    // deixaria passar um nome que o Postgres recusa com
+    // `StringDataRightTruncation`, que sai como 500.
+    expect(nomeDeQuadroValido("x".repeat(255))).toHaveLength(255);
+    expect(nomeDeQuadroValido("x".repeat(256))).toBeNull();
+  });
+});
