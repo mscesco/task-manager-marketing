@@ -690,10 +690,36 @@ export default function Board({
     const ids = t.assignee_ids ?? [];
     return ids.some((id) => memberTeam.get(id) === subteamId);
   };
+  // ⚠️ D1 (decisao de 11/08): A LENTE SO MOSTRA O QUADRO GERAL.
+  //
+  // A lente e um ESPELHO do Quadro geral filtrado por pessoa (ADR 0034), e ela
+  // desenha as colunas do quadro do lote. Sem esta linha, no dia em que
+  // existir um quadro EXTRA da raiz (fatia 5c), uma tarefa dele passaria no
+  // filtro abaixo (`team_id === rootId` + responsavel do subtime), a tela
+  // desenharia as colunas do geral, `porColuna[t.column_id]` nao acharia nada
+  // e **o card sumiria sem erro nenhum**.
+  //
+  // ⚠️ VALE PARA OS DOIS RAMOS, interna e compartilhada. Tarefa INTERNA de um
+  // subtime que tenha quadro avulso proprio (fatia 5b-6) tambem nao entra: a
+  // lente e o espelho do geral, e o quadro avulso tem tela propria. E o item
+  // 12 da conferencia visual do `plan-fatia-5.md`.
+  //
+  // ⚠️ GUARDA IGUAL A DO `rootId`: sem quadro geral conhecido (`listBoards`
+  // falhou e ficou `[]`), NAO filtra. Esconder o quadro inteiro por falha de
+  // uma requisicao auxiliar e pior que mostrar demais.
+  //
+  // ⚠️ FORA DA LENTE ESTA LINHA NAO ENTRA. A vista do Quadro geral e a de
+  // projeto continuam como estao; quadro extra da raiz e assunto da 5c, e a
+  // escolha do quadro por lote (acima) ja cai no padrao e denuncia o resto no
+  // contador de `foraDaColuna`.
+  const quadroGeralId = quadros.find((q) => q.is_default)?.id ?? null;
+  const noQuadroGeral = (t: Task) =>
+    quadroGeralId === null || t.board_id === quadroGeralId;
   const visiveis = tasks.filter((t) => {
     if (t.depth !== 0) return false;
     if (!(mostrarArquivadas || !t.is_archived)) return false;
     if (modoSubtime) {
+      if (!noQuadroGeral(t)) return false;
       // (B) interna do subtime OU (A) da raiz com responsavel do subtime.
       const interna = t.team_id === subteamId;
       const compartilhada =

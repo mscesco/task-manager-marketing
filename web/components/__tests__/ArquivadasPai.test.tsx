@@ -30,6 +30,7 @@ import {
 
 import Arquivadas from "@/app/arquivadas/page";
 import type { Member, Task } from "@/lib/api";
+import { indiceDeColunas, type Coluna } from "@/lib/coluna";
 
 // ⚠️ O AppShell (importado por 13 paginas) usa `usePathname` pra marcar o
 // item ativo do menu. Mock incompleto de next/navigation derruba a arvore
@@ -56,7 +57,7 @@ vi.mock("@/lib/api", async (importOriginal) => {
     listArchivedTasks: vi.fn(),
     // ⚠️ Fatia 4c-2: o badge de cada linha mostra o NOME da coluna. Sem este
     // mock a chamada real vaza para o `fetch` do jsdom.
-    colunasDoQuadroGeral: vi.fn(),
+    quadroGeralComIndice: vi.fn(),
     listAllTasks: vi.fn(),
     listAllProjects: vi.fn(),
     listMembers: vi.fn(),
@@ -112,6 +113,49 @@ const SUB = task({
   depth: 1,
 });
 
+const GERAL_ID = "board-geral";
+
+const COLUNAS_GERAL: Coluna[] = [
+  {
+    id: "col-backlog",
+    name: "Backlog",
+    color: "var(--status-backlog-dot)",
+    position: 0,
+    semantic: "OPEN",
+    notify_deadline: true,
+    is_default_target: true,
+  },
+  {
+    id: "col-progress",
+    name: "Em Andamento",
+    color: "var(--status-progress-dot)",
+    position: 2,
+    semantic: "IN_PROGRESS",
+    notify_deadline: true,
+    is_default_target: true,
+  },
+];
+
+/** Um quadro avulso, para o badge de tarefa que mora fora do geral. */
+const QUADROS = [
+  { id: GERAL_ID, name: "Quadro geral", colunas: COLUNAS_GERAL },
+  {
+    id: "board-campanhas",
+    name: "Campanhas",
+    colunas: [
+      {
+        id: "av-revisao",
+        name: "Em Revisão",
+        color: "var(--status-progress-dot)",
+        position: 1,
+        semantic: "IN_PROGRESS" as const,
+        notify_deadline: true,
+        is_default_target: false,
+      },
+    ],
+  },
+];
+
 const MEMBROS: Member[] = [
   {
     id: ANA,
@@ -140,17 +184,10 @@ function montar(itens: Task[]) {
     total: 0,
     truncated: false,
   });
-  vi.mocked(api.colunasDoQuadroGeral).mockResolvedValue([
-    {
-      id: "col-progress",
-      name: "Em Andamento",
-      color: "var(--status-progress-dot)",
-      position: 2,
-      semantic: "IN_PROGRESS",
-      notify_deadline: true,
-      is_default_target: true,
-    },
-  ]);
+  vi.mocked(api.quadroGeralComIndice).mockResolvedValue({
+    colunas: COLUNAS_GERAL,
+    indice: indiceDeColunas(QUADROS, GERAL_ID),
+  });
   vi.mocked(api.listMembers).mockResolvedValue(MEMBROS);
   vi.mocked(api.listMembersDoTime).mockResolvedValue(MEMBROS);
   vi.mocked(api.listProjects).mockResolvedValue({
@@ -276,5 +313,73 @@ describe("arquivadas -- o badge sai da coluna (fatia 4c-2)", () => {
     expect(await screen.findByText("Em Andamento")).toBeTruthy();
     expect(screen.getByText("Concluído")).toBeTruthy();
     expect(screen.queryByText("Backlog")).toBeNull();
+  });
+});
+
+// =====================================================================
+// FATIA 5b-5b -- o badge de coluna de `/arquivadas`.
+//
+// ⚠️ ELE JA TEM UM GUARDIAO -- o describe "o badge sai da coluna (fatia 4c-2)"
+// logo acima, que tranca o nome da coluna E a reserva por status. Medido: a
+// sabotagem I derruba os DOIS blocos. Este aqui acrescenta o que a 4c-2 nao
+// tinha como testar, porque nao existia: o NOME DO QUADRO no rotulo.
+//
+// ⚠️ ESTA TELA E O UNICO LUGAR ONDE "NAO SEI QUAL COLUNA" E NORMAL. Ela lista
+// o workspace inteiro PAGINADO; a tarefa pode viver num quadro fora do alcance
+// de quem olha, ou apagado. Por isso `rotuloDeColuna` devolve `null` e a
+// reserva por status resolve -- e por isso a reserva precisa de teste.
+//
+// SABOTAGENS (medidas):
+//   H. Em `arquivadas/page.tsx`, trocar
+//          rotuloDaColuna={rotuloDeColuna(indice?.get(t.column_id))}
+//      por
+//          rotuloDaColuna={indice?.get(t.column_id)?.coluna.name ?? null}
+//      -- ou seja, o nome da coluna sem o nome do quadro. Cai
+//      "o badge diz o QUADRO e a coluna quando a tarefa mora fora do geral".
+//   I. Trocar o `??` da reserva por `rotuloDaColuna ?? ""`. Cai
+//      "coluna desconhecida cai na reserva por status".
+// =====================================================================
+describe("/arquivadas -- o badge de coluna (fatia 5b-5b)", () => {
+  it("tarefa do quadro geral mostra so o nome da coluna", async () => {
+    montar([task({ id: "a1", title: "Antiga", column_id: "col-progress" })]);
+
+    render(<Arquivadas />);
+    await screen.findByText("Antiga");
+
+    expect(screen.getByText("Em Andamento")).toBeTruthy();
+  });
+
+  it("⚠️ o badge diz o QUADRO e a coluna quando a tarefa mora fora do geral", async () => {
+    montar([
+      task({
+        id: "a2",
+        title: "Do Campanhas",
+        board_id: "board-campanhas",
+        column_id: "av-revisao",
+      }),
+    ]);
+
+    render(<Arquivadas />);
+    await screen.findByText("Do Campanhas");
+
+    expect(screen.getByText("Campanhas · Em Revisão")).toBeTruthy();
+  });
+
+  it("⚠️ coluna desconhecida cai na reserva por status", async () => {
+    // ⚠️ O CASO NORMAL DESTA TELA, e nao um defeito: o quadro da tarefa nao
+    // veio na lista de quem olha. `status` da fixture e `BACKLOG`.
+    montar([
+      task({
+        id: "a3",
+        title: "De quadro que nao veio",
+        board_id: "board-sumido",
+        column_id: "col-fantasma",
+      }),
+    ]);
+
+    render(<Arquivadas />);
+    await screen.findByText("De quadro que nao veio");
+
+    expect(screen.getByText("Backlog")).toBeTruthy();
   });
 });

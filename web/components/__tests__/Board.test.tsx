@@ -975,7 +975,19 @@ describe("Board -- o quadro sai das TAREFAS, nao da flag de padrão (fatia 4c)",
     // na lista.
     vi.mocked(api.listBoards).mockResolvedValue([QUADRO, INTERNO]);
 
-    render(<Board subteamId={CRM} title="CRM e Automação" />);
+    // ⚠️ ESTE RENDER PERDEU O `subteamId` NA FATIA 5b-5b, e a troca e a
+    // decisao D1 de 11/08, nao um ajuste para o teste passar. A LENTE agora
+    // filtra por `board_id` do Quadro geral: uma tarefa de outro quadro nao
+    // chega mais nela, entao o cenario que este teste descrevia -- lente
+    // desenhando as colunas de um quadro interno -- deixou de existir por
+    // desenho.
+    //
+    // ⚠️ A REGRA QUE ELE GUARDA CONTINUA VIVA E CONTINUA NECESSARIA: o quadro
+    // sai do `board_id` DAS TAREFAS e nao da flag `is_default`. Ela e o que
+    // faz a tela do quadro avulso (fatia 5b-6) desenhar as colunas certas. O
+    // que mudou foi so ONDE ela e exercitada -- fora da lente, que e o unico
+    // lugar onde o caso ainda pode acontecer.
+    render(<Board title="Quadro geral" />);
     await screen.findByText("Pauta de agosto");
 
     expect(screen.getByText("A escrever")).toBeTruthy();
@@ -1120,5 +1132,84 @@ describe("Board -- checklist e prazo leem a coluna (fatia 4c)", () => {
 
     expect(screen.getByText("Atrasada de verdade")).toBeTruthy();
     expect(screen.queryByText("Entregue mas vencida")).toBeNull();
+  });
+});
+
+// =====================================================================
+// FATIA 5b-5b -- D1: a lente so mostra o Quadro geral.
+//
+// ⚠️ O CASO NAO EXISTE EM PRODUCAO AINDA. Producao tem UM quadro
+// (`invariantes.sql`, consulta 5). Estes testes sao a regra escrita antes do
+// mundo que a exige -- o primeiro quadro nao-padrao nasce na 5b-6.
+//
+// ⚠️ O DEFEITO QUE ELES PEGAM NAO DA ERRO. Sem o filtro, a tarefa de outro
+// quadro passa na lente, a tela desenha as colunas do geral,
+// `porColuna[t.column_id]` nao acha nada e o card SOME -- sem erro, sem log,
+// sem nada. O contador de "fora da coluna" e a unica pista, e ele nao diz qual
+// card.
+//
+// SABOTAGEM: em `Board.tsx`, apagar a linha
+//     if (!noQuadroGeral(t)) return false;
+// -> caem os DOIS testes abaixo.
+// =====================================================================
+describe("Board -- a lente so mostra o Quadro geral (fatia 5b-5b, D1)", () => {
+  const OUTRO_QUADRO = "board-campanhas";
+
+  it("⚠️ tarefa de quadro extra da RAIZ nao entra na lente do subtime", async () => {
+    // Ela passaria no filtro antigo: `team_id === rootId` e a Ana (responsavel)
+    // e do CRM. E o caso literal da decisao D1 de 11/08.
+    montarApi(
+      [
+        task({ id: "t-geral", title: "Do quadro geral", team_id: RAIZ }),
+        task({
+          id: "t-extra",
+          title: "Do quadro extra",
+          team_id: RAIZ,
+          board_id: OUTRO_QUADRO,
+          column_id: "outra-col",
+        }),
+      ],
+      []
+    );
+
+    render(<Board subteamId={CRM} title="CRM e Automação" />);
+    await screen.findByText("Do quadro geral");
+
+    expect(screen.queryByText("Do quadro extra")).toBeNull();
+    // ⚠️ A ASSERCAO QUE DISCRIMINA, e a de cima sozinha NAO discriminava.
+    // Sem o filtro D1 o card tambem some da tela -- so que pelo motivo errado:
+    // ele passa na lente, a coluna dele nao esta no quadro desenhado e ele cai
+    // no contador de "fora da coluna". Card invisivel nos dois mundos. O que
+    // muda e o AVISO: com o filtro a tarefa nem foi considerada e nao ha nada
+    // a avisar; sem ele, a tela cobra a pessoa por um card que nunca deveria
+    // ter chegado ali. Medido -- as duas sabotagens passaram verdes ate esta
+    // linha existir.
+    expect(screen.queryByText(/coluna que não é deste quadro/i)).toBeNull();
+  });
+
+  it("⚠️ tarefa INTERNA do subtime em quadro avulso tambem nao entra", async () => {
+    // ⚠️ O OUTRO RAMO DO FILTRO, e o que uma correcao apressada esquece. A
+    // lente e o espelho do Quadro geral; o quadro avulso do subtime tem tela
+    // propria (fatia 5b-6). Item 12 da conferencia visual.
+    montarApi(
+      [
+        task({ id: "t-interna", title: "Interna no geral", team_id: CRM }),
+        task({
+          id: "t-avulsa",
+          title: "Interna no avulso",
+          team_id: CRM,
+          board_id: OUTRO_QUADRO,
+          column_id: "outra-col",
+        }),
+      ],
+      []
+    );
+
+    render(<Board subteamId={CRM} title="CRM e Automação" />);
+    await screen.findByText("Interna no geral");
+
+    expect(screen.queryByText("Interna no avulso")).toBeNull();
+    // Mesma razao do teste acima: e o AVISO que separa a regra certa da errada.
+    expect(screen.queryByText(/coluna que não é deste quadro/i)).toBeNull();
   });
 });

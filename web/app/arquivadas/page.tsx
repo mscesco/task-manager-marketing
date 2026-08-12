@@ -15,12 +15,12 @@ import {
   getRootTeamId,
   listAllProjects,
   listAllTasks,
-  colunasDoQuadroGeral,
+  quadroGeralComIndice,
   ApiError,
   type Task,
 } from "@/lib/api";
 import { STATUSES, STATUS_TEXT } from "@/lib/status";
-import type { Coluna } from "@/lib/coluna";
+import { rotuloDeColuna, type OrigemDaColuna } from "@/lib/coluna";
 import { mensagemExclusao } from "@/lib/exclusao";
 
 // Tela de arquivadas (Spec 013, fatia 4). Lista paginada de tarefas
@@ -67,7 +67,7 @@ function Arquivadas() {
   // Fatia 4c-2: o badge de cada linha mostra o NOME da coluna. Em erro fica
   // `[]` e nao `null` -- a lista NAO espera pelas colunas, porque o badge e
   // acessorio aqui e o assunto da tela e reativar tarefa.
-  const [colunas, setColunas] = useState<Coluna[]>([]);
+
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [erro, setErro] = useState<string | null>(null);
@@ -91,10 +91,13 @@ function Arquivadas() {
   const [rootTeamId, setRootTeamId] = useState<string | null>(null);
   const router = useRouter();
   const [detalhe, setDetalhe] = useState<Task | null>(null);
-  const colunaPorId = useMemo(
-    () => new Map(colunas.map((c) => [c.id, c])),
-    [colunas]
-  );
+  // ⚠️ `colunas` E O QUE A TELA CONHECE DO QUADRO GERAL; `indice` e o que ela
+  // sabe de TODOS os quadros alcancaveis (fatia 5b-5b). Esta tela nao desenha
+  // colunas -- e uma lista chapada e paginada do workspace inteiro -- entao
+  // aqui o indice serve so ao rotulo do badge. E e justamente aqui que o caso
+  // "nao sei qual coluna" e NORMAL: a tarefa pode viver num quadro que ficou
+  // fora do alcance de quem olha, ou apagado.
+  const [indice, setIndice] = useState<Map<string, OrigemDaColuna> | null>(null);
   // Pai da subtarefa aberta DIRETO da lista (04/08).
   //
   // ⚠️ Abrindo uma subtarefa arquivada DIRETO da lista -- o caso normal
@@ -116,12 +119,14 @@ function Arquivadas() {
   const [duplicando, setDuplicando] = useState<Task | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
-  // Colunas do quadro geral, so para o rotulo do badge. Falha em silencio de
-  // proposito: o badge cai na reserva por status e a tela segue funcionando.
+  // O indice de colunas de TODOS os quadros alcancaveis, so para o rotulo do
+  // badge -- esta tela nao desenha coluna nenhuma.
   useEffect(() => {
-    colunasDoQuadroGeral()
-      .then(setColunas)
-      .catch(() => setColunas([]));
+    quadroGeralComIndice()
+      .then(({ indice: ix }) => setIndice(ix))
+      // ⚠️ FALHA EM SILENCIO, de proposito: o badge cai na reserva por status
+      // e a tela segue funcionando. O assunto desta tela e reativar tarefa.
+      .catch(() => setIndice(new Map()));
   }, []);
 
   useEffect(() => {
@@ -222,7 +227,7 @@ function Arquivadas() {
             <LinhaArquivada
               key={t.id}
               t={t}
-              nomeDaColuna={colunaPorId.get(t.column_id)?.name}
+              rotuloDaColuna={rotuloDeColuna(indice?.get(t.column_id))}
               primeira={i === 0}
               onReativou={() => carregar(page)}
               onAbrir={abrirDetalhe}
@@ -336,17 +341,26 @@ function Arquivadas() {
 
 function LinhaArquivada({
   t,
-  nomeDaColuna,
+  rotuloDaColuna,
   primeira,
   onReativou,
   onAbrir,
 }: {
   t: Task;
-  // ⚠️ OPCIONAL, ao contrario do `TaskCard`. La a coluna decide REGRA (prazo,
-  // parada) e faltar seria defeito; aqui ela e so um rotulo, e a reserva por
-  // status resolve. Obrigatoria, forcaria esta tela a esperar as colunas para
-  // desenhar a lista -- e o assunto da tela e reativar tarefa.
-  nomeDaColuna?: string;
+  /**
+   * `Quadro · Coluna`, ou so a coluna quando a tarefa mora no quadro geral.
+   *
+   * ⚠️ `null` E O CASO NORMAL DESTA TELA, e nao um defeito. Ela lista o
+   * workspace inteiro PAGINADO; a tarefa pode viver num quadro fora do alcance
+   * de quem olha, ou apagado. Ali a reserva por status resolve, e por isso
+   * `rotuloDeColuna` devolve `null` em vez de inventar um rotulo.
+   *
+   * ⚠️ Ao contrario do `TaskCard`, aqui a coluna nao decide REGRA nenhuma
+   * (prazo, parada) -- e so um rotulo. Exigir a coluna forcaria esta tela a
+   * esperar os quadros para desenhar a lista, e o assunto dela e reativar
+   * tarefa.
+   */
+  rotuloDaColuna: string | null;
   primeira: boolean;
   onReativou: () => void;
   onAbrir: (t: Task) => void;
@@ -404,7 +418,7 @@ function LinhaArquivada({
               vindo de `STATUS_TEXT` -- `coluna.color` e token de traco e
               reprova AA como texto (Spec 031 §2.2b); a derivacao acessivel de
               cor arbitraria e da fatia 5 (`lib/coluna.ts::corEhHex`). */}
-          {nomeDaColuna ?? STATUS_LABEL[t.status] ?? t.status}
+          {rotuloDaColuna ?? STATUS_LABEL[t.status] ?? t.status}
         </Badge>
 
         {!confirmar && (
