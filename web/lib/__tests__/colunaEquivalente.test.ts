@@ -18,6 +18,7 @@
 import { describe, expect, it } from "vitest";
 import {
   colunaEquivalente,
+  indiceDeColunas,
   rotuloDeColuna,
   type Coluna,
 } from "@/lib/coluna";
@@ -153,20 +154,90 @@ describe("colunaEquivalente", () => {
   });
 });
 
+describe("indiceDeColunas", () => {
+  const QUADROS = [
+    { id: "b-geral", name: "Quadro geral", colunas: GERAL },
+    { id: "b-campanhas", name: "Campanhas", colunas: AVULSO },
+  ];
+
+  it("coluna do quadro da tela vem com nomeDoQuadro null", () => {
+    const i = indiceDeColunas(QUADROS, "b-geral");
+    expect(i.get("g3")).toEqual({
+      nomeDaColuna: "Em Andamento",
+      nomeDoQuadro: null,
+    });
+  });
+
+  it("coluna de outro quadro vem com o nome do quadro", () => {
+    const i = indiceDeColunas(QUADROS, "b-geral");
+    expect(i.get("a3")).toEqual({
+      nomeDaColuna: "Em Revisão",
+      nomeDoQuadro: "Campanhas",
+    });
+  });
+
+  it("⚠️ o nome da coluna vem do quadro DONO dela, nao do quadro da tela", () => {
+    // `Em Andamento` existe nos DOIS quadros, com ids diferentes. Uma
+    // implementacao que resolvesse o nome pelo quadro da tela (ou pelo nome da
+    // coluna, em vez do id) devolveria a mesma origem para `g3` e `a2` -- e a
+    // tag mentiria sobre onde a tarefa mora, sem erro nenhum.
+    const i = indiceDeColunas(QUADROS, "b-geral");
+    expect(i.get("g3")?.nomeDoQuadro).toBeNull();
+    expect(i.get("a2")?.nomeDoQuadro).toBe("Campanhas");
+    expect(i.get("a2")?.nomeDaColuna).toBe("Em Andamento");
+  });
+
+  it("coluna que nao esta em quadro nenhum nao entra no indice", () => {
+    // O caso NORMAL de `/arquivadas`, que lista o workspace inteiro paginado:
+    // a tarefa pode viver num quadro que nao veio na lista.
+    const i = indiceDeColunas(QUADROS, "b-geral");
+    expect(i.get("nao-existe")).toBeUndefined();
+  });
+
+  it("cobre TODAS as colunas de TODOS os quadros", () => {
+    const i = indiceDeColunas(QUADROS, "b-geral");
+    expect(i.size).toBe(GERAL.length + AVULSO.length);
+  });
+
+  it("⚠️ sem quadro da tela, NENHUMA coluna e 'daqui'", () => {
+    // `quadroDaTela = null` acontece quando nao ha quadro padrao. O indice
+    // continua cheio, e toda coluna carrega o nome do quadro dela.
+    const i = indiceDeColunas(QUADROS, null);
+    expect(i.get("g3")?.nomeDoQuadro).toBe("Quadro geral");
+    expect(i.get("a3")?.nomeDoQuadro).toBe("Campanhas");
+  });
+});
+
 describe("rotuloDeColuna", () => {
   it("quadro da propria tela: so o nome da coluna", () => {
-    expect(rotuloDeColuna("Em Andamento", null)).toBe("Em Andamento");
+    expect(
+      rotuloDeColuna({ nomeDaColuna: "Em Andamento", nomeDoQuadro: null }),
+    ).toBe("Em Andamento");
   });
 
   it("outro quadro: as DUAS informacoes", () => {
-    expect(rotuloDeColuna("Em Revisão", "Campanhas")).toBe(
-      "Campanhas · Em Revisão",
-    );
+    expect(
+      rotuloDeColuna({ nomeDaColuna: "Em Revisão", nomeDoQuadro: "Campanhas" }),
+    ).toBe("Campanhas · Em Revisão");
+  });
+
+  it("⚠️ coluna desconhecida devolve null -- a reserva e do chamador", () => {
+    // ⚠️ O MOTIVO DE ESTA FUNCAO TER MUDADO DE ASSINATURA NA 5b-5b. Na versao
+    // anterior nao havia como dizer "nao sei qual coluna": o chamador tinha de
+    // passar o rotulo do STATUS num parametro chamado `nomeDaColuna`, os dois
+    // eram `string`, e o `tsc` aceitava calado. `null` na saida nao se parece
+    // com rotulo nenhum, e obriga cada tela a escrever qual e a reserva dela.
+    expect(rotuloDeColuna(undefined)).toBeNull();
   });
 
   it("⚠️ string vazia NAO e o mesmo que null", () => {
     // `null` significa "e o quadro desta tela". Quadro sem nome e outra coisa,
-    // e a tela mostra o separador em vez de esconder o caso.
-    expect(rotuloDeColuna("Backlog", "")).toBe(" · Backlog");
+    // e a tela mostra o separador em vez de esconder o caso. O backend recusa
+    // nome vazio (`BoardService._nome_valido`), entao isto nao vem da API --
+    // esta aqui para que trocar `=== null` por um teste de veracidade
+    // (`!nomeDoQuadro`) fique vermelho.
+    expect(rotuloDeColuna({ nomeDaColuna: "Backlog", nomeDoQuadro: "" })).toBe(
+      " · Backlog",
+    );
   });
 });

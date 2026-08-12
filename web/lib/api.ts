@@ -3,7 +3,11 @@
 // ⚠️ UNICO IMPORT DESTE ARQUIVO (fatia 4a/4b da Spec 036): o tipo `Coluna`
 // vem de `lib/coluna.ts`, e nao o contrario. Ver o bloco QUADROS mais
 // abaixo para o motivo (fronteira de pureza da Spec 027).
-import type { Coluna } from "@/lib/coluna";
+import {
+  indiceDeColunas,
+  type Coluna,
+  type OrigemDaColuna,
+} from "@/lib/coluna";
 
 // Cliente unico de acesso ao backend FastAPI. Centraliza:
 //  - a URL base (RELATIVA por padrao -- topologia A, ADR 0001 da raiz)
@@ -709,10 +713,41 @@ export async function listBoards(): Promise<Quadro[]> {
  * fatia 5; a flag tem indice parcial no banco (`board_um_padrao_por_time`).
  */
 export async function colunasDoQuadroGeral(): Promise<Coluna[]> {
+  return (await quadroGeralComIndice()).colunas;
+}
+
+/**
+ * As colunas do Quadro geral E o indice de TODAS as colunas alcancaveis, numa
+ * requisicao so (Spec 036, fatia 5b-5b).
+ *
+ * ⚠️ UMA REQUISICAO, E ISSO E O PONTO. `listBoards()` ja devolve todo quadro
+ * alcancavel COM as colunas dele; a versao anterior desta funcao achava o
+ * padrao e **jogava o resto fora**. As telas transversais precisavam
+ * exatamente do resto: sem ele, tarefa de quadro avulso nao tem nome de coluna
+ * para mostrar, e o rotulo cai na reserva por status. Chamar `listBoards()`
+ * duas vezes -- uma para as colunas, outra para o indice -- resolveria o mesmo
+ * problema pagando duas viagens; e `listBoards` NAO e memoizada de proposito
+ * (ver `lib/__tests__/quadros.test.ts`).
+ *
+ * ⚠️ `colunasDoQuadroGeral` DELEGA PARA CA. Antes eram duas copias de "achar o
+ * padrao e ordenar por position"; duas copias da mesma regra e o defeito que a
+ * Spec 036 passou a fatia inteira matando. Os testes que ja existiam dela
+ * guardam este caminho agora.
+ *
+ * ⚠️ SEM QUADRO PADRAO: `colunas` sai `[]` (e NAO levanta -- o motivo esta no
+ * bloco acima) e o indice **continua cheio**, com nome de quadro em toda
+ * coluna. E o certo: se nao ha quadro desta tela, nenhuma coluna e "daqui".
+ */
+export async function quadroGeralComIndice(): Promise<{
+  colunas: Coluna[];
+  indice: Map<string, OrigemDaColuna>;
+}> {
   const quadros = await listBoards();
   const geral = quadros.find((q) => q.is_default);
-  if (!geral) return [];
-  return [...geral.colunas].sort((a, b) => a.position - b.position);
+  const colunas = geral
+    ? [...geral.colunas].sort((a, b) => a.position - b.position)
+    : [];
+  return { colunas, indice: indiceDeColunas(quadros, geral?.id ?? null) };
 }
 
 

@@ -23,20 +23,35 @@
 // O teste `duas chamadas batem duas vezes` e o que impede alguem de
 // "otimizar" isso de volta antes da fatia 5 trazer o CRUD de quadro.
 //
-// SABOTAGEM (executar antes de commitar):
-//     Em `lib/api.ts`, dentro de `colunasDoQuadroGeral`, trocar
-//         const geral = quadros.find((q) => q.is_default);
-//     por
-//         const geral = quadros.find((q) => q.name === "Quadro geral");
-//     -- ou seja, o criterio por NOME em vez da flag. Nome e editavel na
-//     fatia 5; a flag tem indice parcial no banco.
-//     Deve cair `acha o quadro padrao pela FLAG, nao pelo nome`.
+// ⚠️ `colunasDoQuadroGeral` DELEGA PARA `quadroGeralComIndice` DESDE A 5b-5b.
+// A regra ("achar o padrao pela flag, ordenar por position") mora la agora, e
+// os testes dela abaixo continuam sendo os guardioes dessa regra -- so que por
+// um degrau de indirecao. Se um deles ficar vermelho, olhe
+// `quadroGeralComIndice` primeiro.
+//
+// SABOTAGENS (executar antes de commitar):
+//   1. Em `lib/api.ts`, dentro de `quadroGeralComIndice`, trocar
+//          const geral = quadros.find((q) => q.is_default);
+//      por
+//          const geral = quadros.find((q) => q.name === "Quadro geral");
+//      -- ou seja, o criterio por NOME em vez da flag. Nome e editavel desde a
+//      fatia 5b-3; a flag tem indice parcial no banco.
+//      Deve cair `acha o quadro padrao pela FLAG, nao pelo nome`.
+//   2. Na mesma funcao, trocar
+//          return { colunas, indice: indiceDeColunas(quadros, geral?.id ?? null) };
+//      por
+//          return { colunas, indice: indiceDeColunas(geral ? [geral] : [], geral?.id ?? null) };
+//      -- ou seja, indexar SO o quadro padrao, que e o comportamento que esta
+//      fatia existe para acabar. Deve cair
+//      `⚠️ o indice cobre o quadro AVULSO, que era o que se perdia antes` e
+//      `⚠️ sem quadro padrao: colunas [] e o indice AINDA cheio`.
 // =====================================================
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   clearTokens,
   colunasDoQuadroGeral,
+  quadroGeralComIndice,
   listBoards,
   setTokens,
   type Quadro,
@@ -218,5 +233,84 @@ describe("colunasDoQuadroGeral", () => {
 
     expect(bloqueado.semantic).toBe("IN_PROGRESS");
     expect(bloqueado.notify_deadline).toBe(false);
+  });
+});
+
+describe("quadroGeralComIndice", () => {
+  /** Um geral padrao + um avulso, que e o cenario da 5b-6 em diante. */
+  function doisQuadros() {
+    return [
+      quadro({
+        id: "b-geral",
+        name: "Quadro geral",
+        is_default: true,
+        colunas: [col("g-and", "Em Andamento", 1), col("g-back", "Backlog", 0)],
+      }),
+      quadro({
+        id: "b-campanhas",
+        name: "Campanhas",
+        colunas: [col("c-rev", "Em Revisão", 0)],
+      }),
+    ];
+  }
+
+  it("⚠️ UMA requisicao so -- colunas e indice saem da mesma resposta", async () => {
+    // ⚠️ O PONTO DA FATIA. `listBoards` nao e memoizada (teste acima), entao
+    // pedir as colunas numa chamada e o indice em outra sao DUAS viagens por
+    // tela. Se alguem partir esta funcao em duas depois, e este numero que
+    // muda.
+    const spy = mockFetch(doisQuadros());
+
+    await quadroGeralComIndice();
+
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+
+  it("devolve as colunas do padrao, ordenadas por position", async () => {
+    mockFetch(doisQuadros());
+
+    const { colunas } = await quadroGeralComIndice();
+
+    expect(colunas.map((c) => c.id)).toEqual(["g-back", "g-and"]);
+  });
+
+  it("⚠️ o indice cobre o quadro AVULSO, que era o que se perdia antes", async () => {
+    // Antes da 5b-5b esta funcao descartava todo quadro que nao fosse o
+    // padrao. A tarefa que vivesse em `b-campanhas` chegava na tela sem nome
+    // de coluna, e o rotulo caia na reserva por status -- sem erro nenhum.
+    mockFetch(doisQuadros());
+
+    const { indice } = await quadroGeralComIndice();
+
+    expect(indice.get("c-rev")).toEqual({
+      nomeDaColuna: "Em Revisão",
+      nomeDoQuadro: "Campanhas",
+    });
+  });
+
+  it("coluna do proprio geral vem com nomeDoQuadro null", async () => {
+    mockFetch(doisQuadros());
+
+    const { indice } = await quadroGeralComIndice();
+
+    expect(indice.get("g-and")?.nomeDoQuadro).toBeNull();
+  });
+
+  it("⚠️ sem quadro padrao: colunas [] e o indice AINDA cheio", async () => {
+    // Os dois lados importam. `[]` e o estado que a tela desenha de proposito
+    // (mesma razao de `colunasDoQuadroGeral`); o indice cheio e o que impede
+    // que a ausencia do padrao apague a tag de todo mundo.
+    mockFetch([
+      quadro({
+        id: "b-campanhas",
+        name: "Campanhas",
+        colunas: [col("c-rev", "Em Revisão", 0)],
+      }),
+    ]);
+
+    const { colunas, indice } = await quadroGeralComIndice();
+
+    expect(colunas).toEqual([]);
+    expect(indice.get("c-rev")?.nomeDoQuadro).toBe("Campanhas");
   });
 });

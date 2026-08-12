@@ -257,27 +257,92 @@ export function colunaEquivalente(
 }
 
 /**
+ * De onde vem a coluna de uma tarefa, do ponto de vista da tela que desenha.
+ *
+ * ⚠️ `nomeDoQuadro = null` SIGNIFICA "e o quadro desta tela", e nao "nao sei".
+ * "Nao sei" e a AUSENCIA deste objeto (`undefined` na consulta ao indice), e
+ * nao um valor dentro dele. Sao tres estados e nao dois -- ver
+ * `rotuloDeColuna`.
+ */
+export type OrigemDaColuna = {
+  nomeDaColuna: string;
+  nomeDoQuadro: string | null;
+};
+
+/**
+ * `column_id -> de onde ela vem`, sobre TODOS os quadros que a pessoa alcanca.
+ *
+ * ⚠️ POR QUE ISTO EXISTE. `/minhas-tarefas` e `/arquivadas` atravessam quadros
+ * por decisao (ADR 0034 item 6) enquanto desenham UM conjunto de colunas. O
+ * `GET /boards` ja devolve todos os quadros COM as colunas de cada um -- o
+ * front nao precisa de requisicao nova, precisa parar de jogar fora o que ja
+ * recebe. Antes desta funcao, `colunasDoQuadroGeral` descartava todos os
+ * quadros menos o padrao, e a tarefa de quadro avulso ficava sem nome de
+ * coluna para mostrar.
+ *
+ * ⚠️ `quadroDaTela` E UM `board_id`, NAO UM NOME. Nome e editavel desde a
+ * fatia 5b-3.
+ *
+ * ⚠️ A COLUNA CARREGA O NOME DO QUADRO DONO DELA, e nao o do quadro da tela.
+ * Dois quadros podem ter coluna com o MESMO nome (`Em Andamento` esta nas 8
+ * padrao e nas 4 base, de proposito) -- e e justamente ai que confundir os
+ * dois passa despercebido.
+ *
+ * ⚠️ TIPO ESTRUTURAL, e nao `Quadro` de `lib/api.ts`. Aquele modulo importa
+ * ESTE (`lib/api.ts` linha 6); importar de volta fecharia ciclo. O formato
+ * abaixo e o subconjunto de `Quadro` que esta regra usa, e o `tsc` aceita um
+ * `Quadro` no lugar dele sem conversao.
+ */
+export function indiceDeColunas(
+  quadros: readonly { id: string; name: string; colunas: readonly Coluna[] }[],
+  quadroDaTela: string | null,
+): Map<string, OrigemDaColuna> {
+  const indice = new Map<string, OrigemDaColuna>();
+  for (const q of quadros) {
+    const nomeDoQuadro = q.id === quadroDaTela ? null : q.name;
+    for (const c of q.colunas) {
+      indice.set(c.id, { nomeDaColuna: c.name, nomeDoQuadro });
+    }
+  }
+  return indice;
+}
+
+/**
  * O rotulo de uma tarefa nas telas que atravessam quadros.
  *
  * `Em Andamento` quando a tarefa vive no quadro que a tela desenha;
- * `Campanhas · Em Revisão` quando vive em outro.
+ * `Campanhas · Em Revisão` quando vive em outro;
+ * `null` quando a coluna nao veio em quadro nenhum que a pessoa alcanca.
  *
  * ⚠️ AS DUAS INFORMACOES, E NAO SO O QUADRO. O nome do quadro responde "onde
  * mora"; o da coluna responde "por que este card esta agrupado em Em Andamento
  * se a coluna dele chama outra coisa". Sem a segunda metade, tarefa numa
  * coluna criada por gente parece defeito de agrupamento.
  *
- * ⚠️ `nomeDoQuadro = null` SIGNIFICA "e o quadro desta tela", e nao "nao sei".
- * Quem nao sabe passa a string, e a tela mostra. Confundir os dois esconderia
- * exatamente o caso que esta fatia existe para revelar.
+ * ⚠️ RECEBE UM OBJETO E DEVOLVE `string | null`, e as duas metades sao de
+ * proposito. A versao anterior (5b-5a) era
+ * `rotuloDeColuna(nomeDaColuna: string, nomeDoQuadro: string | null): string`,
+ * e nela o caso "nao sei qual coluna" -- que e NORMAL em `/arquivadas`, tela
+ * que lista o workspace inteiro paginado -- so tinha uma saida: o chamador
+ * passar o rotulo do STATUS no parametro chamado `nomeDaColuna`. Os dois sao
+ * `string`, entao o `tsc` aceitaria calado, e a tela mostraria um status onde
+ * promete uma coluna. Mesma familia do `text()` que devolve string e nao enum:
+ * o tipo responde certo em todo lugar e o valor esta errado.
+ *
+ * Com esta assinatura o desconhecido e `undefined` na ENTRADA e `null` na
+ * SAIDA, e nenhum dos dois se parece com um rotulo. **A reserva por status e
+ * decisao do chamador** -- `rotuloDeColuna(...) ?? STATUS_LABEL[t.status]` --
+ * e o `tsc` obriga cada tela a escrever qual e a dela.
+ *
+ * ⚠️ ESTE MODULO NAO CONHECE STATUS, e nao deve passar a conhecer. Fazer a
+ * reserva aqui exigiria importar a tabela de rotulos de `lib/status.ts`,
+ * modulo que a fatia 5b-5b existe para encolher.
  */
-export function rotuloDeColuna(
-  nomeDaColuna: string,
-  nomeDoQuadro: string | null,
-): string {
-  return nomeDoQuadro === null
-    ? nomeDaColuna
-    : `${nomeDoQuadro} · ${nomeDaColuna}`;
+export function rotuloDeColuna(origem: OrigemDaColuna | undefined): string | null {
+  if (origem === undefined) return null;
+  return origem.nomeDoQuadro === null
+    ? origem.nomeDaColuna
+    : `${origem.nomeDoQuadro} · ${origem.nomeDaColuna}`;
 }
 
 export function corEhHex(coluna: Coluna): boolean {
