@@ -545,7 +545,34 @@ class TaskRepository(BaseRepository[Task]):
         depois custa reabrir a cascata (Spec 035, D9). O `board_id` NAO e
         tocado: a tarefa nao muda de quadro ao ser concluida.
 
-        ⚠️ A subconsulta usa `legacy_status`, e nao a semantica `DONE`. Sao
+        ⚠️ DOIS DEGRAUS, IGUAIS AOS DE `BoardRepository.coluna_para_status`
+        (ADR 0042): ponte primeiro, `is_default_target` da semantica `DONE`
+        depois. ⚠️ E A MESMA REGRA EM SQL, e nao uma segunda regra -- a cascata
+        e um UPDATE em massa por `ltree` e nao pode chamar o repositorio uma
+        vez por linha. A duplicacao e o preco, e o que a mantem honesta e
+        `test_cascata_em_quadro_de_quatro_colunas_db.py`.
+
+        ⚠️ ATE 11/08 ESTA SUBCONSULTA SO CONHECIA A PONTE, e o levantamento da
+        fatia 5b-2 registrou que "a cascata e segura em quadro de quatro
+        colunas porque `DONE` sempre tem ponte". Verdade para `COLUNAS_BASE`, e
+        FALSA no minuto em que o CRUD de coluna existir: basta alguem criar
+        `Entregue` (semantica `DONE`, sem ponte) e apagar `Concluido` -- a
+        ADR 0042 D4 PERMITE, porque continua havendo uma coluna `DONE`. A
+        subconsulta devolveria NULL, `column_id` e NOT NULL desde a `0011`, e
+        concluir uma tarefa-mae explodiria para quem clicou, num quadro que
+        essa pessoa talvez nem conheca.
+
+        ⚠️ O `status` gravado continua sendo `COMPLETED` cravado, e isso esta
+        CERTO -- nao por sorte: `STATUS_POR_SEMANTICA[DONE]` e `COMPLETED`,
+        entao a reescrita da ADR 0042 D2 daria o mesmo valor. Se um dia a
+        semantica `DONE` deixar de ter status canonico unico, esta linha passa
+        a mentir.
+
+        ⚠️ `DESC NULLS LAST` PELO MESMO MOTIVO DO REPOSITORIO: a comparacao e
+        NULL, e nao FALSE, para coluna sem ponte, e o Postgres ordena NULL
+        primeiro num `DESC`. Sem isso o degrau 2 come o degrau 1.
+
+        ⚠️ A escolha original usava `legacy_status` e nao a semantica. Sao
         quatro semanticas para oito colunas; `is_default_target` responderia
         certo para DONE hoje, e a direcao `status -> coluna` e a unica 1:1
         enquanto o front desenha o quadro por status (ADR 0033). Usar a mesma
@@ -564,8 +591,20 @@ class TaskRepository(BaseRepository[Task]):
                     column_id = (
                         SELECT c.id FROM board_column c
                         WHERE c.board_id = t.board_id
-                          AND c.legacy_status
+                          AND (
+                            c.legacy_status
+                                = CAST('COMPLETED' AS task_status)
+                            OR (
+                              c.is_default_target
+                              AND c.semantic
+                                  = CAST('DONE' AS column_semantic)
+                            )
+                          )
+                        ORDER BY (
+                          c.legacy_status
                               = CAST('COMPLETED' AS task_status)
+                        ) DESC NULLS LAST
+                        LIMIT 1
                     )
                 WHERE path <@ CAST(:task_path AS ltree)
                   AND id <> :task_id
