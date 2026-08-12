@@ -162,18 +162,12 @@ describe("indiceDeColunas", () => {
 
   it("coluna do quadro da tela vem com nomeDoQuadro null", () => {
     const i = indiceDeColunas(QUADROS, "b-geral");
-    expect(i.get("g3")).toEqual({
-      nomeDaColuna: "Em Andamento",
-      nomeDoQuadro: null,
-    });
+    expect(i.get("g3")).toEqual({ coluna: GERAL[2], nomeDoQuadro: null });
   });
 
   it("coluna de outro quadro vem com o nome do quadro", () => {
     const i = indiceDeColunas(QUADROS, "b-geral");
-    expect(i.get("a3")).toEqual({
-      nomeDaColuna: "Em Revisão",
-      nomeDoQuadro: "Campanhas",
-    });
+    expect(i.get("a3")).toEqual({ coluna: AVULSO[2], nomeDoQuadro: "Campanhas" });
   });
 
   it("⚠️ o nome da coluna vem do quadro DONO dela, nao do quadro da tela", () => {
@@ -184,7 +178,21 @@ describe("indiceDeColunas", () => {
     const i = indiceDeColunas(QUADROS, "b-geral");
     expect(i.get("g3")?.nomeDoQuadro).toBeNull();
     expect(i.get("a2")?.nomeDoQuadro).toBe("Campanhas");
-    expect(i.get("a2")?.nomeDaColuna).toBe("Em Andamento");
+    expect(i.get("a2")?.coluna.name).toBe("Em Andamento");
+    expect(i.get("a2")?.coluna.id).toBe("a2");
+  });
+
+  it("⚠️ guarda a COLUNA inteira, e nao so o nome dela", () => {
+    // ⚠️ ESTE TESTE E O MOTIVO DE `OrigemDaColuna` TER MUDADO DE FORMA. As
+    // telas transversais precisam de `semantic` e `is_default_target` para
+    // AGRUPAR o card (`colunaEquivalente`) e de `notify_deadline` para decidir
+    // o alerta de prazo (`deadlineTonePorColuna`). Um indice de nomes obriga a
+    // tela a montar um segundo indice em paralelo -- e a ter um sem o outro.
+    const i = indiceDeColunas(QUADROS, "b-geral");
+    const origem = i.get("a3");
+    expect(origem?.coluna.semantic).toBe("IN_PROGRESS");
+    expect(origem?.coluna.is_default_target).toBe(false);
+    expect(origem?.coluna.notify_deadline).toBe(true);
   });
 
   it("coluna que nao esta em quadro nenhum nao entra no indice", () => {
@@ -211,13 +219,13 @@ describe("indiceDeColunas", () => {
 describe("rotuloDeColuna", () => {
   it("quadro da propria tela: so o nome da coluna", () => {
     expect(
-      rotuloDeColuna({ nomeDaColuna: "Em Andamento", nomeDoQuadro: null }),
+      rotuloDeColuna({ coluna: GERAL[2], nomeDoQuadro: null }),
     ).toBe("Em Andamento");
   });
 
   it("outro quadro: as DUAS informacoes", () => {
     expect(
-      rotuloDeColuna({ nomeDaColuna: "Em Revisão", nomeDoQuadro: "Campanhas" }),
+      rotuloDeColuna({ coluna: AVULSO[2], nomeDoQuadro: "Campanhas" }),
     ).toBe("Campanhas · Em Revisão");
   });
 
@@ -236,7 +244,7 @@ describe("rotuloDeColuna", () => {
     // nome vazio (`BoardService._nome_valido`), entao isto nao vem da API --
     // esta aqui para que trocar `=== null` por um teste de veracidade
     // (`!nomeDoQuadro`) fique vermelho.
-    expect(rotuloDeColuna({ nomeDaColuna: "Backlog", nomeDoQuadro: "" })).toBe(
+    expect(rotuloDeColuna({ coluna: GERAL[0], nomeDoQuadro: "" })).toBe(
       " · Backlog",
     );
   });

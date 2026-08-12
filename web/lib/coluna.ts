@@ -259,13 +259,22 @@ export function colunaEquivalente(
 /**
  * De onde vem a coluna de uma tarefa, do ponto de vista da tela que desenha.
  *
+ * ⚠️ CARREGA A `Coluna` INTEIRA, e nao o nome dela. A versao anterior desta
+ * entrega guardava `nomeDaColuna: string`, e nao servia: as telas transversais
+ * precisam de `semantic` e `is_default_target` para AGRUPAR o card
+ * (`colunaEquivalente`) e de `notify_deadline` + `semantic` para decidir o
+ * alerta de prazo (`deadlineTonePorColuna`). Com so o nome, as duas regras
+ * ficariam sem entrada e a tela cairia num segundo indice paralelo -- duas
+ * estruturas montadas do mesmo laco, duas consultas por card, e a chance de
+ * ter uma sem a outra.
+ *
  * ⚠️ `nomeDoQuadro = null` SIGNIFICA "e o quadro desta tela", e nao "nao sei".
  * "Nao sei" e a AUSENCIA deste objeto (`undefined` na consulta ao indice), e
  * nao um valor dentro dele. Sao tres estados e nao dois -- ver
  * `rotuloDeColuna`.
  */
 export type OrigemDaColuna = {
-  nomeDaColuna: string;
+  coluna: Coluna;
   nomeDoQuadro: string | null;
 };
 
@@ -301,7 +310,7 @@ export function indiceDeColunas(
   for (const q of quadros) {
     const nomeDoQuadro = q.id === quadroDaTela ? null : q.name;
     for (const c of q.colunas) {
-      indice.set(c.id, { nomeDaColuna: c.name, nomeDoQuadro });
+      indice.set(c.id, { coluna: c, nomeDoQuadro });
     }
   }
   return indice;
@@ -341,8 +350,8 @@ export function indiceDeColunas(
 export function rotuloDeColuna(origem: OrigemDaColuna | undefined): string | null {
   if (origem === undefined) return null;
   return origem.nomeDoQuadro === null
-    ? origem.nomeDaColuna
-    : `${origem.nomeDoQuadro} · ${origem.nomeDaColuna}`;
+    ? origem.coluna.name
+    : `${origem.nomeDoQuadro} · ${origem.coluna.name}`;
 }
 
 export function corEhHex(coluna: Coluna): boolean {

@@ -282,10 +282,8 @@ describe("quadroGeralComIndice", () => {
 
     const { indice } = await quadroGeralComIndice();
 
-    expect(indice.get("c-rev")).toEqual({
-      nomeDaColuna: "Em Revisão",
-      nomeDoQuadro: "Campanhas",
-    });
+    expect(indice.get("c-rev")?.coluna.name).toBe("Em Revisão");
+    expect(indice.get("c-rev")?.nomeDoQuadro).toBe("Campanhas");
   });
 
   it("coluna do proprio geral vem com nomeDoQuadro null", async () => {
