@@ -63,6 +63,13 @@ _ROLE_PERMISSIONS: dict[UserTeamRole, frozenset[str]] = {
             "task.update",
             "task.delete",
             "task.assign",
+            # Spec 036 fatia 5b. Duas permissoes e nao uma: sem a `.root`, o
+            # ADMIN nao cria quadro nenhum; sem a `.subteam`, o ADMIN nao
+            # alcanca o quadro que o supervisor criou. Nao ha hierarquia neste
+            # mapa -- sao listas literais, e quem exerce as duas precisa das
+            # duas escritas.
+            "board.manage.root",
+            "board.manage.subteam",
         }
     ),
     UserTeamRole.MANAGER: frozenset(
@@ -76,6 +83,10 @@ _ROLE_PERMISSIONS: dict[UserTeamRole, frozenset[str]] = {
             "task.update",
             "task.delete",
             "task.assign",
+            # Spec 036 fatia 5b -- mesmas duas do ADMIN. MANAGER so existe no
+            # time RAIZ (Spec 024), entao "quadro da raiz" e sempre o dele.
+            "board.manage.root",
+            "board.manage.subteam",
         }
     ),
     UserTeamRole.SUPERVISOR: frozenset(
@@ -91,6 +102,15 @@ _ROLE_PERMISSIONS: dict[UserTeamRole, frozenset[str]] = {
             # em MemberService._assert_escopo_supervisor, que e quem tem o
             # team_id do alvo. Este mapa diz "o que", nao "onde".
             "member.manage.subteam",
+            # Spec 036 fatia 5b: quadro proprio do subtime, e SO dele.
+            # ⚠️ NAO ganha `board.manage.root`. E a diferenca inteira entre os
+            # dois papeis nesta spec: o supervisor monta o quadro do time dele,
+            # e nao encosta no Quadro geral -- 176 tarefas vivas em 11/08.
+            # ⚠️ A TRAVA DE ESCOPO NAO MORA AQUI. Mora em
+            # `BoardService._assert_escopo_do_quadro`, que e quem tem o
+            # `team_id` do alvo. Este mapa diz "o que", nao "onde" -- mesmo
+            # desenho da `member.manage.subteam` logo acima.
+            "board.manage.subteam",
         }
     ),
     UserTeamRole.OPERATOR: frozenset(
