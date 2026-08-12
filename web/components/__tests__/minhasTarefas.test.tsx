@@ -45,7 +45,7 @@ import {
 
 import MinhasTarefasPage from "@/app/minhas-tarefas/page";
 import type { Member, MyTaskItem, Project } from "@/lib/api";
-import type { Coluna } from "@/lib/coluna";
+import { indiceDeColunas, type Coluna } from "@/lib/coluna";
 
 // ⚠️ O AppShell usa `useRouter`/`usePathname`. Mock incompleto de
 // next/navigation derruba a arvore inteira com `invariant expected app router
@@ -76,7 +76,7 @@ vi.mock("@/lib/api", async (importOriginal) => {
   return {
     ...real,
     listAllMyAssignments: vi.fn(),
-    colunasDoQuadroGeral: vi.fn(),
+    quadroGeralComIndice: vi.fn(),
     listMembers: vi.fn(),
     getRootTeamId: vi.fn(),
     listAllProjects: vi.fn(),
@@ -130,6 +130,42 @@ const COLUNAS: Coluna[] = [
     notify_deadline: true,
     is_default_target: true,
   },
+];
+
+/**
+ * Um quadro AVULSO, com uma coluna que nao existe no geral.
+ *
+ * ⚠️ `Em Revisão` e `IN_PROGRESS` e NAO e alvo -- entao ela cai em
+ * `Em Andamento` pelo degrau 2 da ADR 0042, e o card fica agrupado numa coluna
+ * com OUTRO nome. E exatamente esse caso que a tag existe para explicar.
+ * ⚠️ `Aguardando cliente` tem `notify_deadline: false`: serve para provar que
+ * o alerta de prazo le a coluna REAL da tarefa, e nao a equivalente.
+ */
+const COLUNAS_AVULSO: Coluna[] = [
+  {
+    id: "av-revisao",
+    name: "Em Revisão",
+    color: "var(--status-progress-dot)",
+    position: 1,
+    semantic: "IN_PROGRESS",
+    notify_deadline: true,
+    is_default_target: false,
+  },
+  {
+    id: "av-espera",
+    name: "Aguardando cliente",
+    color: "var(--status-progress-dot)",
+    position: 2,
+    semantic: "IN_PROGRESS",
+    notify_deadline: false,
+    is_default_target: false,
+  },
+];
+
+const GERAL_ID = "board-geral";
+const QUADROS = [
+  { id: GERAL_ID, name: "Quadro geral", colunas: COLUNAS },
+  { id: "board-campanhas", name: "Campanhas", colunas: COLUNAS_AVULSO },
 ];
 
 function item(
@@ -186,7 +222,10 @@ function montarApi(
     total: opts.total ?? itens.length,
     truncated: opts.truncated ?? false,
   } as Awaited<ReturnType<typeof api.listAllMyAssignments>>);
-  vi.mocked(api.colunasDoQuadroGeral).mockResolvedValue(COLUNAS);
+  vi.mocked(api.quadroGeralComIndice).mockResolvedValue({
+    colunas: COLUNAS,
+    indice: indiceDeColunas(QUADROS, GERAL_ID),
+  });
   vi.mocked(api.listMembers).mockResolvedValue(MEMBROS);
   vi.mocked(api.getRootTeamId).mockResolvedValue(RAIZ);
   vi.mocked(api.listAllProjects).mockResolvedValue({
@@ -266,8 +305,8 @@ describe("minhas-tarefas -- fiacao da tela", () => {
       resolver = r;
     });
     montarApi([item({ id: "t1", title: "Tarefa qualquer" })]);
-    vi.mocked(api.colunasDoQuadroGeral).mockReturnValue(
-      pendente as ReturnType<typeof api.colunasDoQuadroGeral>
+    vi.mocked(api.quadroGeralComIndice).mockReturnValue(
+      pendente as ReturnType<typeof api.quadroGeralComIndice>
     );
 
     render(<MinhasTarefasPage />);
@@ -278,7 +317,7 @@ describe("minhas-tarefas -- fiacao da tela", () => {
     });
     expect(screen.queryByText("Tarefa qualquer")).toBeNull();
 
-    resolver(COLUNAS);
+    resolver({ colunas: COLUNAS, indice: indiceDeColunas(QUADROS, GERAL_ID) });
 
     await waitFor(() => {
       expect(screen.getByText("Tarefa qualquer")).toBeTruthy();
@@ -493,5 +532,125 @@ describe("minhas-tarefas -- o kanban le colunas da API (fatia 4c-2)", () => {
     expect(
       screen.getByText(/1 tarefa está em uma\s+coluna que não é deste quadro/)
     ).toBeTruthy();
+  });
+});
+
+// =====================================================================
+// FATIA 5b-5b -- tarefa que mora em OUTRO quadro.
+//
+// ⚠️ NENHUM DESTES CASOS EXISTE EM PRODUCAO AINDA. O primeiro quadro
+// nao-padrao nasce na 5b-6, e esta fatia e pre-requisito dela: no minuto em
+// que existir uma tarefa fora do Quadro geral, esta tela e a primeira a
+// mostra-la. Sem o que estes testes trancam, ela some -- e some CALADA na
+// vista de lista.
+//
+// SABOTAGENS (executar antes de commitar):
+//   A. Em `page.tsx`, no filtro `filtrados`, voltar para
+//          const okStatus = colunasOn === null || colunasOn.has(t.column_id);
+//      -> some da LISTA. Cai "a tarefa de quadro avulso aparece na LISTA".
+//   B. No agrupamento `porColuna`, voltar para `map[t.column_id]`
+//      -> volta para o contador. Cai "o card de quadro avulso e DESENHADO no
+//      kanban" e "a tag do card diz o quadro e a coluna de origem".
+//   C. Em `colunaDe`, trocar `posicaoDaTarefa.get(t.id)?.origem.coluna` por
+//      `colunaPorId.get(t.column_id)` -> o alerta de prazo morre. Cai
+//      "o alerta de prazo sobrevive".
+//   D. Em `colunaDe`, usar `colunaDaTela` no lugar de `origem.coluna`
+//      -> o alerta passa a sair da coluna equivalente. Cai "coluna com
+//      notify_deadline false NAO ganha alerta".
+// =====================================================================
+describe("minhas-tarefas -- tarefa de outro quadro (fatia 5b-5b)", () => {
+  /** Uma tarefa que vive no quadro Campanhas, na coluna `Em Revisão`. */
+  function tarefaAvulsa(over: Partial<MyTaskItem> = {}) {
+    return item({
+      id: "t-avulsa",
+      title: "Tarefa do Campanhas",
+      board_id: "board-campanhas",
+      column_id: "av-revisao",
+      ...over,
+    });
+  }
+
+  it("⚠️ a tarefa de quadro avulso aparece na LISTA", async () => {
+    // ⚠️ A REGRESSAO MAIS GRAVE DAS QUATRO, porque e a unica sem contador
+    // nenhum. O filtro de coluna da lista guarda ids do quadro GERAL; o
+    // `column_id` desta tarefa nunca esta neles, e ela era descartada em
+    // silencio -- sem aviso, sem numero, sem log.
+    montarApi([tarefaAvulsa()]);
+
+    render(<MinhasTarefasPage />);
+
+    expect(await screen.findByText("Tarefa do Campanhas")).toBeTruthy();
+  });
+
+  it("⚠️ a tag da lista diz o quadro E a coluna de origem", async () => {
+    // As DUAS informacoes: o quadro responde "onde mora", a coluna responde
+    // "por que este card esta agrupado em Em Andamento se a coluna dele chama
+    // outra coisa".
+    montarApi([tarefaAvulsa()]);
+
+    render(<MinhasTarefasPage />);
+    await screen.findByText("Tarefa do Campanhas");
+
+    expect(screen.getByText("Campanhas · Em Revisão")).toBeTruthy();
+  });
+
+  it("⚠️ o card de quadro avulso e DESENHADO no kanban, e nao so contado", async () => {
+    // Antes desta fatia o card caia no `foraDaColuna`: contado e invisivel.
+    // `Em Revisão` e `IN_PROGRESS` sem alvo, entao o degrau 2 da ADR 0042 a
+    // manda para `Em Andamento`, que E alvo no geral.
+    montarApi([tarefaAvulsa()]);
+
+    render(<MinhasTarefasPage />);
+    await screen.findByRole("button", { name: "Quadro" });
+    fireEvent.click(screen.getByRole("button", { name: "Quadro" }));
+
+    expect(await screen.findByText("Tarefa do Campanhas")).toBeTruthy();
+    expect(screen.queryByText(/coluna que não é deste quadro/i)).toBeNull();
+  });
+
+  it("⚠️ a tag do card so aparece para tarefa de OUTRO quadro", async () => {
+    // No kanban o cabecalho da coluna ja diz o nome. Repetir na tag e ruido --
+    // a tag so vale quando responde o que o cabecalho nao responde.
+    montarApi([
+      tarefaAvulsa(),
+      item({ id: "t-geral", title: "Tarefa do geral", column_id: "col-progress" }),
+    ]);
+
+    render(<MinhasTarefasPage />);
+    await screen.findByRole("button", { name: "Quadro" });
+    fireEvent.click(screen.getByRole("button", { name: "Quadro" }));
+    await screen.findByText("Tarefa do geral");
+
+    // A de outro quadro tem tag; o cabecalho "Em Andamento" continua UNICO.
+    expect(screen.getByText("Campanhas · Em Revisão")).toBeTruthy();
+    expect(screen.getAllByText("Em Andamento")).toHaveLength(1);
+  });
+
+  it("⚠️ o alerta de prazo sobrevive numa tarefa de outro quadro", async () => {
+    // ⚠️ O comentario do `dueTone` dizia que sem coluna resolvida "o lado
+    // seguro e nao alertar". Era verdade quando "sem coluna" significava dado
+    // faltando; virou o lado que MATA o aviso quando passou a significar
+    // "outro quadro". `Em Revisão` tem `notify_deadline: true`.
+    montarApi([tarefaAvulsa({ due_date: "2020-01-01" })]);
+
+    render(<MinhasTarefasPage />);
+    await screen.findByText("Tarefa do Campanhas");
+
+    expect(screen.getByText(/atrasad/i)).toBeTruthy();
+  });
+
+  it("⚠️ coluna com notify_deadline false NAO ganha alerta pela equivalente", async () => {
+    // ⚠️ O DEFEITO ESPELHO DO ANTERIOR, e o motivo de haver DUAS colunas por
+    // card. `Aguardando cliente` nao avisa prazo; a equivalente dela no geral
+    // (`Em Andamento`) avisa. Ler a coluna errada daria um alerta que a pessoa
+    // que criou a coluna desligou de proposito.
+    montarApi([
+      tarefaAvulsa({ column_id: "av-espera", due_date: "2020-01-01" }),
+    ]);
+
+    render(<MinhasTarefasPage />);
+    await screen.findByText("Tarefa do Campanhas");
+
+    expect(screen.queryByText(/atrasad/i)).toBeNull();
   });
 });

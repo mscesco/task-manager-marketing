@@ -30,15 +30,18 @@ import {
   DEADLINE_COLOR,
 } from "@/lib/status";
 import {
+  colunaEquivalente,
   colunasPadraoMinhasTarefas,
   deadlineTonePorColuna,
+  rotuloDeColuna,
   terminal,
   type Coluna,
+  type OrigemDaColuna,
 } from "@/lib/coluna";
 import { normalizarBusca } from "@/lib/filtrosQuadro";
 import {
   listAllMyAssignments,
-  colunasDoQuadroGeral,
+  quadroGeralComIndice,
   getTask,
   listTasks,
   listMembers,
@@ -132,6 +135,10 @@ function Minhas() {
   // quando as colunas chegam. **A tela nao renderiza ate la** (decisao de
   // 10/08), e o portao ja existia: ver `if (!items || !colunas)` mais abaixo.
   const [colunasOn, setColunasOn] = useState<Set<string> | null>(null);
+  // ⚠️ `column_id -> de onde ela vem`, sobre TODOS os quadros alcancaveis
+  // (fatia 5b-5b). Separado de `colunas` de proposito: `colunas` e o que a
+  // tela DESENHA (o quadro geral); o indice e o que ela SABE.
+  const [indice, setIndice] = useState<Map<string, OrigemDaColuna> | null>(null);
   // Arquivadas escondidas por padrao (paridade com o quadro). Sessao-only.
   const [mostrarArquivadas, setMostrarArquivadas] = useState(false);
   // Spec 031 (C3, D4-ter): esta tela nao tinha busca. Uma linha de pastilhas
@@ -213,11 +220,18 @@ function Minhas() {
         setTruncadoTotal(r.truncated ? r.total : null);
       })
       .catch((e: ApiError) => setErro(e.message));
-    // Colunas do quadro geral. O filtro padrao da tela sai daqui: liga todas
-    // menos as de semantica DONE (ADR 0040 -- Cancelado CONTINUA aparecendo).
-    colunasDoQuadroGeral()
-      .then((cs) => {
+    // Colunas do quadro geral E o indice de todas as colunas alcancaveis. O
+    // filtro padrao da tela sai das colunas: liga todas menos as de semantica
+    // DONE (ADR 0040 -- Cancelado CONTINUA aparecendo).
+    //
+    // ⚠️ O INDICE E O QUE FAZ TAREFA DE OUTRO QUADRO APARECER (fatia 5b-5b).
+    // Antes daqui a tela so conhecia as colunas do geral, e tarefa de quadro
+    // avulso sumia da LISTA em silencio e caia no contador `foraDaColuna` no
+    // kanban. Uma requisicao so, a mesma de antes.
+    quadroGeralComIndice()
+      .then(({ colunas: cs, indice: ix }) => {
         setColunas(cs);
+        setIndice(ix);
         setColunasOn(new Set(colunasPadraoMinhasTarefas(cs)));
       })
       .catch((e: ApiError) => setErro(e.message));
@@ -459,6 +473,15 @@ function Minhas() {
     // ⚠️ `destino` E UM `column_id` (fatia 4c-2), nao mais uma chave de status.
     if (!atual || atual.column_id === destino) return;
 
+    // ⚠️ RECUSA CARD QUE MORA EM OUTRO QUADRO (fatia 5b-5b). O card ja nasce
+    // com `useDraggable({ disabled })`, entao no navegador ele nem levanta --
+    // esta guarda existe porque `disabled` e do dnd-kit e nao e testavel em
+    // jsdom, e porque uma so das duas seria uma trava com um guardiao so.
+    // Soltar aqui trocaria o QUADRO da tarefa, que e a fatia 5c e hoje volta
+    // 422 do backend, depois de o card pular na frente da pessoa e voltar.
+    const origemAtual = indice?.get(atual.column_id);
+    if (!origemAtual || origemAtual.nomeDoQuadro !== null) return;
+
     // A coluna tem de estar na lista desta tela. ⚠️ AQUI ISSO NAO E FORMALIDADE
     // como no `Board.tsx`: `/minhas-tarefas` junta tarefas de QUALQUER quadro e
     // desenha as colunas do quadro GERAL (`colunasDoQuadroGeral`, fatia 4b).
@@ -488,7 +511,9 @@ function Minhas() {
     const anteriores = new Map<string, { coluna: string; status: string }>();
     if (concluindo) {
       for (const t of items ?? []) {
-        const colunaDela = colunaPorId.get(t.column_id);
+        // ⚠️ A coluna REAL da subtarefa, pelo indice: ela pode viver em outro
+        // quadro que o desta tela, e `terminal()` tem de ler a semantica dela.
+        const colunaDela = indice?.get(t.column_id)?.coluna;
         if (
           t.path.startsWith(prefixo) &&
           colunaDela &&
@@ -572,21 +597,75 @@ function Minhas() {
   // filtro de view nao pode quebrar abrir uma task fora do filtro.
   const buscaNorm = normalizarBusca(busca);
 
+  // ---------------------------------------------------------------------
+  // ⚠️ AS DUAS PERGUNTAS DE CADA CARD (fatia 5b-5b), resolvidas UMA vez.
+  //
+  //   `origem`       -- a coluna REAL da tarefa, no quadro onde ela mora.
+  //                     E ela que decide ALERTA DE PRAZO (`notify_deadline` e
+  //                     semantica sao propriedades da coluna de verdade) e o
+  //                     texto da tag.
+  //   `colunaDaTela` -- em qual das colunas do quadro GERAL este card e
+  //                     desenhado e filtrado. Sai de `colunaEquivalente`, que
+  //                     e a ADR 0042 escrita no front: exata primeiro, alvo da
+  //                     semantica depois.
+  //
+  // ⚠️ CONFUNDIR AS DUAS E O DEFEITO CLASSICO AQUI. Usar `colunaDaTela` para o
+  // prazo faria uma tarefa em "Aguardando cliente" (`notify_deadline: false`)
+  // de um quadro avulso ganhar alerta so porque a equivalente dela no geral e
+  // "Em Andamento". Usar `origem` para agrupar poria o card numa coluna que
+  // esta tela nao desenha, e ele sumiria.
+  //
+  // ⚠️ UM MAPA SO, e nao duas funcoes chamadas por card. `colunaEquivalente`
+  // varre o array de colunas; chama-la dentro do filtro, do agrupamento e do
+  // render seria tres varreduras por card a cada tecla digitada na busca.
+  // ---------------------------------------------------------------------
+  const posicaoDaTarefa = useMemo(() => {
+    const m = new Map<
+      string,
+      { origem: OrigemDaColuna; colunaDaTela: Coluna | undefined }
+    >();
+    if (!indice || !colunas) return m;
+    for (const t of items ?? []) {
+      const origem = indice.get(t.column_id);
+      // Sem origem = a coluna nao veio em quadro nenhum que a pessoa alcanca.
+      // Caso normal quando o quadro foi apagado ou ficou fora do alcance.
+      if (!origem) continue;
+      m.set(t.id, {
+        origem,
+        colunaDaTela: colunaEquivalente(origem.coluna, colunas),
+      });
+    }
+    return m;
+  }, [items, indice, colunas]);
+
   const itemsBase = useMemo(
     () => (items ?? []).filter((t) => mostrarArquivadas || !t.is_archived),
     [items, mostrarArquivadas]
   );
 
-  // Aplica relacao + status sobre a lista carregada.
+  // Aplica relacao + coluna sobre a lista carregada.
   const filtrados = useMemo(() => {
     return itemsBase.filter((t) => {
-      const okStatus = colunasOn === null || colunasOn.has(t.column_id);
+      // ⚠️ FILTRA PELA COLUNA DA TELA, e nao pelo `column_id` cru (fatia
+      // 5b-5b). Os chips desta tela sao as colunas do quadro GERAL; o
+      // `column_id` de uma tarefa de quadro avulso nunca esta neles, entao a
+      // versao anterior (`colunasOn.has(t.column_id)`) escondia essa tarefa da
+      // LISTA em silencio -- sem contador, sem aviso, ao contrario do kanban.
+      //
+      // ⚠️ SEM COLUNA DA TELA, PASSA. Tarefa cuja coluna nao mapeia em nada
+      // (quadro fora de alcance, ou semantica sem alvo no geral) nao pode ser
+      // excluida por um chip que ela nao tem. Esconder seria repetir o defeito
+      // que esta linha existe para consertar; o principio desta tela e "card
+      // que some da tela tem de sumir com aviso".
+      const daTela = posicaoDaTarefa.get(t.id)?.colunaDaTela;
+      const okStatus =
+        colunasOn === null || daTela === undefined || colunasOn.has(daTela.id);
       const okRel = relFiltro === "todas" || t.relations.includes(relFiltro);
       const okBusca =
         buscaNorm === "" || normalizarBusca(t.title).includes(buscaNorm);
       return okStatus && okRel && okBusca;
     });
-  }, [itemsBase, colunasOn, relFiltro, buscaNorm]);
+  }, [itemsBase, colunasOn, relFiltro, buscaNorm, posicaoDaTarefa]);
 
   // Agrupa por data de entrega (D, estilo Runrunit): so aparece o dia que tem
   // tarefa; grupos em ordem cronologica; sem-prazo por ultimo. Agrupa sobre a
@@ -644,12 +723,18 @@ function Minhas() {
     // passada resolve todas as colunas (mesmo caminho do Board).
     let fora = 0;
     for (const t of ordenar(porRelacao, ordenacao)) {
-      const lista = map[t.column_id];
+      // ⚠️ AGRUPA PELA COLUNA DA TELA (fatia 5b-5b). A versao anterior usava
+      // `map[t.column_id]`, e tarefa de quadro avulso caia SEMPRE no `fora`:
+      // contada e nao desenhada. Agora `colunaEquivalente` a leva para a
+      // coluna do geral com a mesma semantica, e a TAG do card diz de onde ela
+      // veio -- sem a tag, o agrupamento pareceria defeito.
+      const daTela = posicaoDaTarefa.get(t.id)?.colunaDaTela;
+      const lista = daTela ? map[daTela.id] : undefined;
       if (lista) lista.push(t);
       else fora++;
     }
     return { porColuna: map, foraDaColuna: fora };
-  }, [porRelacao, ordenacao, colunas]);
+  }, [porRelacao, ordenacao, colunas, posicaoDaTarefa]);
 
   if (erro) return <div className="error-box" style={{ maxWidth: 480 }}>{erro}</div>;
   // ⚠️ O PORTAO ESPERA OS DOIS (Spec 036, fatia 4b). Ele ja existia para
@@ -676,9 +761,39 @@ function Minhas() {
   // devolver na resposta. `undefined` nao deveria acontecer -- significaria
   // tarefa apontando para coluna de outro quadro, o que a FK composta impede
   // no banco (`invariantes.sql`, consulta 2).
+  // A coluna REAL de uma tarefa -- a do quadro onde ela mora, vinda do indice
+  // (fatia 5b-5b). ⚠️ NAO E `colunaPorId.get(t.column_id)`: aquele mapa so tem
+  // as colunas do quadro GERAL, entao tarefa de quadro avulso devolvia
+  // `undefined` e PERDIA o alerta de prazo -- o comentario de `dueTone` dizia
+  // que sem coluna "o lado seguro e nao alertar", o que era verdade quando
+  // "sem coluna" significava dado faltando, e deixou de ser quando passou a
+  // significar "outro quadro".
   const colunaPorId = new Map(colunas.map((c) => [c.id, c]));
   const colunaDe = (t: MyTaskItem): Coluna | undefined =>
-    colunaPorId.get(t.column_id);
+    posicaoDaTarefa.get(t.id)?.origem.coluna ?? colunaPorId.get(t.column_id);
+  // A tag `Quadro · Coluna` da LISTA. `null` = nao ha o que dizer, e a tela cai
+  // na reserva por status (ver `rotuloDeColuna`).
+  const rotuloDe = (t: MyTaskItem): string | null =>
+    rotuloDeColuna(posicaoDaTarefa.get(t.id)?.origem);
+  // A tag do CARD, no kanban. ⚠️ SO PARA TAREFA DE OUTRO QUADRO, e a diferenca
+  // para a lista e deliberada: no kanban o card ja esta DENTRO de uma coluna
+  // com o nome no cabecalho acima dele, entao repetir "Em Andamento" na tag e
+  // ruido, e pior -- some no meio das outras pastilhas do card. A tag so ganha
+  // sentido quando responde uma pergunta que o cabecalho NAO responde: "este
+  // card esta em Em Andamento, mas a coluna dele chama Em Revisão, e ela e do
+  // quadro Campanhas". Na lista nao ha cabecalho, entao la ela e sempre.
+  const rotuloForaDoQuadro = (t: MyTaskItem): string | undefined => {
+    const origem = posicaoDaTarefa.get(t.id)?.origem;
+    if (!origem || origem.nomeDoQuadro === null) return undefined;
+    return rotuloDeColuna(origem) ?? undefined;
+  };
+  // ⚠️ SO ARRASTA CARD QUE MORA NO QUADRO DESTA TELA. `nomeDoQuadro === null`
+  // e exatamente isso. Enquanto mover tarefa entre quadros nao existir (fatia
+  // 5c), soltar uma tarefa de quadro avulso numa coluna do geral trocaria o
+  // quadro dela -- o backend recusa com 422, mas so depois de o card ja ter
+  // pulado na frente da pessoa e voltado.
+  const arrastavel = (t: MyTaskItem): boolean =>
+    posicaoDaTarefa.get(t.id)?.origem.nomeDoQuadro === null;
   const contagem =
     visiveis === items.length ? `${items.length} tarefas` : `${visiveis} de ${items.length}`;
 
@@ -714,7 +829,7 @@ function Minhas() {
         }}
       >
         <span
-          title={col?.name ?? t.status}
+          title={rotuloDe(t) ?? t.status}
           style={{
             width: 9, height: 9, borderRadius: 999, flexShrink: 0,
             background: col?.color ?? "#999",
@@ -739,8 +854,13 @@ function Minhas() {
               `min-width: auto` = "nao encolho abaixo do meu conteudo", e a
               pastilha longa empurra o resto da faixa pra fora. */}
           <div style={{ display: "flex", gap: 8, marginTop: 3, flexWrap: "wrap", alignItems: "center", minWidth: 0 }}>
+            {/* ⚠️ A TAG CARREGA AS DUAS INFORMACOES (fatia 5b-5b): o quadro
+                responde "onde mora", a coluna responde "por que este card esta
+                agrupado em Em Andamento se a coluna dele chama outra coisa".
+                `rotuloDeColuna` devolve `null` quando nao sabe, e a reserva
+                por status e decisao DESTA tela. */}
             <span className="muted" style={{ fontSize: 12, flexShrink: 0 }}>
-              {col?.name ?? t.status}
+              {rotuloDe(t) ?? t.status}
             </span>
             {t.parent_task_id && (
               // Nomeia a mae quando o backend a resolveu. Cai no generico se
@@ -1077,12 +1197,17 @@ function Minhas() {
                       // ⚠️ `?? []` e nao `!`: a coluna vem de um mapa e pode
                       // faltar. Sem coluna o card nao desenha -- e o `!`
                       // esconderia o dia em que isso passar a acontecer.
-                      const col = colunaPorId.get(t.column_id);
+                      // ⚠️ A COLUNA REAL da tarefa, e nao a coluna em que ela
+                      // esta desenhada: e ela que decide prazo e "parada ha X
+                      // dias" dentro do card.
+                      const col = colunaDe(t);
                       return col ? (
                         <CardArrastavelMinhas
                           key={t.id}
                           task={t}
                           coluna={col}
+                          rotuloDaColuna={rotuloForaDoQuadro(t)}
+                          arrastavel={arrastavel(t)}
                           onAbrir={abrirDetalhe}
                           members={members}
                           projectName={t.project_id ? projectNames.get(t.project_id) : undefined}
@@ -1106,7 +1231,7 @@ function Minhas() {
                 {activeId
                   ? (() => {
                       const at = (items ?? []).find((t) => t.id === activeId);
-                      const colAt = at ? colunaPorId.get(at.column_id) : undefined;
+                      const colAt = at ? colunaDe(at) : undefined;
                       return at && colAt ? (
                         <div style={{ width: 256, cursor: "grabbing" }}>
                           <TaskCard
@@ -1274,11 +1399,20 @@ function ColunaMinhas({
 function CardArrastavelMinhas({
   task,
   coluna,
+  rotuloDaColuna,
+  arrastavel,
   onAbrir,
   members,
   projectName,
 }: {
   task: MyTaskItem;
+  // Fatia 5b-5b: `Quadro · Coluna` quando a tarefa mora em OUTRO quadro.
+  // ⚠️ `undefined` quando ela mora no quadro desta tela -- o cabecalho da
+  // coluna ja diz o nome, e repetir e ruido. Ver `rotuloForaDoQuadro`.
+  rotuloDaColuna: string | undefined;
+  // ⚠️ `false` para tarefa de outro quadro: nao ha para onde arrastar enquanto
+  // mover entre quadros nao existir (fatia 5c).
+  arrastavel: boolean;
   // Fatia 4c: o card decide prazo e "parada ha X dias" pela COLUNA. Esta tela
   // ja carrega as colunas da API desde a 4b -- so o repasse era o que faltava.
   // ⚠️ O KANBAN desta tela continua agrupando por STATUS: a migracao dele e a
@@ -1288,7 +1422,10 @@ function CardArrastavelMinhas({
   members: Map<string, { name: string }>;
   projectName?: string;
 }) {
-  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: task.id });
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: task.id,
+    disabled: !arrastavel,
+  });
   return (
     <div
       ref={setNodeRef}
@@ -1312,6 +1449,7 @@ function CardArrastavelMinhas({
       <TaskCard
         task={task}
         coluna={coluna}
+        rotuloDaColuna={rotuloDaColuna}
         members={members}
         projectName={projectName}
         parentTitle={(task as MyTaskItem).parent_title}

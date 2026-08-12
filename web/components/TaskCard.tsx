@@ -1,5 +1,5 @@
 "use client";
-import { FolderKanban, CornerDownRight, Calendar, CheckSquare } from "lucide-react";
+import { FolderKanban, CornerDownRight, Calendar, CheckSquare, Columns3 } from "lucide-react";
 import {
   PRIORITY_LABEL,
   PRIORITY_COLOR,
@@ -38,6 +38,7 @@ export default function TaskCard({
   subtaskCount = 0,
   subtaskDone = 0,
   projectName,
+  rotuloDaColuna,
   parentTitle,
   escopo,
   coluna,
@@ -47,6 +48,18 @@ export default function TaskCard({
   subtaskCount?: number; // filhos DIRETOS
   subtaskDone?: number; // filhos diretos concluidos
   projectName?: string; // nome do projeto p/ a tag (so no quadro geral)
+  /**
+   * Fatia 5b-5b: `Quadro · Coluna` quando a tarefa mora em outro quadro que o
+   * desenhado pela tela; so o nome da coluna quando mora neste.
+   *
+   * ⚠️ SO AS TELAS TRANSVERSAIS PASSAM (`/minhas-tarefas`). No quadro o card
+   * ja esta DENTRO da coluna dele e repetir o nome seria ruido -- por isso e
+   * opcional, e nao um campo derivado de `coluna.name` aqui dentro.
+   *
+   * ⚠️ `undefined` (nao passou) e diferente de `null` (passou e nao sabe): o
+   * primeiro nao desenha nada, o segundo cai na reserva de quem chama.
+   */
+  rotuloDaColuna?: string | null;
   /**
    * Titulo da tarefa-mae. So "Minhas tarefas" passa: e a unica tela que
    * mostra subtarefa como card SOLTO -- no quadro geral ela vive dentro do
@@ -123,6 +136,24 @@ export default function TaskCard({
           <CornerDownRight {...ICONE} style={{ flexShrink: 0 }} />
           <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
             {parentTitle}
+          </span>
+        </span>
+      )}
+      {rotuloDaColuna && (
+        <span
+          title={`Coluna: ${rotuloDaColuna}`}
+          style={{
+            alignSelf: "flex-start", maxWidth: "100%",
+            fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 6,
+            background: "var(--surface-2)", color: "var(--text-soft)",
+            border: "1px solid var(--border)",
+            display: "inline-flex", alignItems: "center", gap: 4, minWidth: 0,
+            overflow: "hidden", whiteSpace: "nowrap",
+          }}
+        >
+          <Columns3 {...ICONE} style={{ flexShrink: 0 }} />
+          <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
+            {rotuloDaColuna}
           </span>
         </span>
       )}
