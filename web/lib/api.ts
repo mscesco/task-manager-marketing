@@ -664,6 +664,15 @@ export async function listTeamsAll(): Promise<Team[]> {
  * o backend nao os expoe de proposito (o primeiro seria uma trava de servidor
  * refeita no cliente; o segundo so poderia valer `null`).
  */
+/**
+ * Uma coluna com a contagem de tarefas (`GET /boards/{id}/columns/{id}`).
+ *
+ * ⚠️ SO O ENDPOINT DE DETALHE DEVOLVE `task_count`. O `GET /boards` nao o
+ * carrega de proposito: poria um `COUNT` por coluna em toda abertura de tela,
+ * para um numero que so a confirmacao de apagar le.
+ */
+export type ColunaComContagem = Coluna & { task_count: number };
+
 export type Quadro = {
   id: string;
   name: string;
@@ -748,6 +757,134 @@ export async function quadroGeralComIndice(): Promise<{
     ? [...geral.colunas].sort((a, b) => a.position - b.position)
     : [];
   return { colunas, indice: indiceDeColunas(quadros, geral?.id ?? null) };
+}
+
+
+// ---------------------------------------------------------------
+// ESCRITA DE QUADRO E DE COLUNA (Spec 036, fatias 5b-3 e 5b-4)
+//
+// ⚠️ NENHUMA DELAS TINHA LEITOR ATE A 5b-6. O backend entregou os endpoints
+// nas fatias 5b-3 e 5b-4; estas funcoes existem para a tela que os consome, e
+// sao entregues JUNTO com ela de proposito -- o projeto ja tem duas cicatrizes
+// de codigo sem leitor nesta mesma spec (`is_default_target` ate a 4c,
+// `corEhHex` ate hoje).
+//
+// ⚠️ AS ROTAS DE COLUNA SAO ANINHADAS, e isso e trava e nao estetica. A
+// autorizacao no backend acontece sobre o TIME DO QUADRO, e o servico confere
+// que a coluna pertence AQUELE quadro. Montar a URL sem o `board_id` -- ou com
+// o errado -- devolve 404, e nao edita a coluna alheia.
+// ---------------------------------------------------------------
+
+/** Cria um quadro avulso para um time. Nasce com as quatro colunas base. */
+export async function createBoard(input: {
+  name: string;
+  team_id: string;
+}): Promise<Quadro> {
+  return api<Quadro>("/api/v1/boards", { method: "POST", body: input });
+}
+
+/**
+ * Renomeia um quadro.
+ *
+ * ⚠️ SO O NOME VAI NO CORPO. `team_id` decide QUEM ENXERGA o quadro (ADR 0035
+ * D3); manda-lo aqui seria operacao de visibilidade disfarcada de edicao -- e
+ * o Pydantic do backend IGNORA chave desconhecida em silencio, entao o campo a
+ * mais nao daria erro nenhum, so nao faria nada.
+ */
+export async function renameBoard(
+  boardId: string,
+  name: string
+): Promise<Quadro> {
+  return api<Quadro>(`/api/v1/boards/${boardId}`, {
+    method: "PATCH",
+    body: { name },
+  });
+}
+
+/**
+ * Acrescenta uma coluna ao FIM de um quadro avulso.
+ *
+ * ⚠️ SO NOME E SEMANTICA. Cor, posicao, `is_default_target` e `legacy_status`
+ * nao sao parametro no backend, e cada um por um motivo diferente -- ver
+ * `BoardService.criar_coluna`. Mandar qualquer um deles nao daria erro (o
+ * Pydantic descarta chave desconhecida), e a tela ficaria com a impressao de
+ * ter escolhido algo que ninguem leu.
+ */
+export async function criarColuna(
+  boardId: string,
+  input: { name: string; semantic: Coluna["semantic"] }
+): Promise<Coluna> {
+  return api<Coluna>(`/api/v1/boards/${boardId}/columns`, {
+    method: "POST",
+    body: input,
+  });
+}
+
+/**
+ * Renomeia uma coluna.
+ *
+ * ⚠️ SEMANTICA NAO SE EDITA. Ela decide cascata de conclusao, varredura de
+ * arquivamento, proporcao da checklist e aviso de prazo -- os quatro em
+ * silencio. Trocar a semantica de uma coluna com tarefas dentro mudaria o
+ * significado das tarefas sem tocar em nenhuma delas.
+ */
+export async function renomearColuna(
+  boardId: string,
+  columnId: string,
+  name: string
+): Promise<Coluna> {
+  return api<Coluna>(`/api/v1/boards/${boardId}/columns/${columnId}`, {
+    method: "PATCH",
+    body: { name },
+  });
+}
+
+/**
+ * Uma coluna com quantas tarefas VIVAS ela tem. E o numero do aviso de apagar.
+ *
+ * ⚠️ ELE ENVELHECE, e a tela tem de aceitar isso. Alguem pode mover uma tarefa
+ * para ca entre esta chamada e o `DELETE`. O que o `DELETE` devolve e quantas
+ * REALMENTE moveram -- se os dois numeros divergirem, quem mente e o aviso.
+ *
+ * ⚠️ NAO CONTA APAGADAS e CONTA ARQUIVADAS. E o numero que a PESSOA ve; tarefa
+ * apagada nao existe para ela. O movimento leva as apagadas junto por causa da
+ * FK `RESTRICT`, entao os dois numeros divergem por desenho.
+ */
+export async function colunaComContagem(
+  boardId: string,
+  columnId: string
+): Promise<ColunaComContagem> {
+  return api<ColunaComContagem>(
+    `/api/v1/boards/${boardId}/columns/${columnId}`
+  );
+}
+
+/**
+ * Apaga uma coluna, mandando as tarefas dela para `destinoId`.
+ *
+ * Devolve quantas tarefas VIVAS foram movidas.
+ *
+ * ⚠️ `destino_id` VAI NA QUERY STRING, e nao no corpo. `DELETE` com corpo e
+ * descartado por parte da infraestrutura de rede -- e quando o corpo se perde,
+ * o backend para de mover tarefa e passa a recusar por falta de destino, que e
+ * um 422 sem causa aparente.
+ *
+ * ⚠️ DUAS RECUSAS DIFERENTES CHEGAM COMO 422, e a tela precisa distingui-las
+ * pela mensagem: "para onde vao estas tarefas?" (falta destino) e "o quadro
+ * continua funcionando depois?" (ultima coluna OPEN ou DONE). A segunda vale
+ * MESMO com destino escolhido -- passar um destino nao a contorna.
+ */
+export async function apagarColuna(
+  boardId: string,
+  columnId: string,
+  destinoId?: string
+): Promise<number> {
+  const query = destinoId ? `?destino_id=${encodeURIComponent(destinoId)}` : "";
+  const res = await api<{ movidas: number }>(
+    `/api/v1/boards/${boardId}/columns/${columnId}${query}`,
+    { method: "DELETE" }
+  );
+  return res.movidas;
 }
 
 

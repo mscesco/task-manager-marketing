@@ -79,6 +79,10 @@ from app.core.deps import SessionDep, UoWDep
 from app.db.models.boards import Board, BoardColumn
 from app.modules.auth.api.dependencies import TenantContextDep
 from app.modules.tasks.api.schemas import (
+    BoardColumnCreateRequest,
+    BoardColumnDeleteResponse,
+    BoardColumnDetailResponse,
+    BoardColumnRenameRequest,
     BoardColumnResponse,
     BoardCreateRequest,
     BoardRenameRequest,
@@ -214,3 +218,150 @@ async def rename_board(
     resposta = await _resposta(uow.session, quadro)
     await uow.commit()
     return resposta
+
+
+# =====================================================================
+# COLUNAS (Spec 036, fatia 5b-4a)
+#
+# ⚠️ AS ROTAS SAO ANINHADAS (`/boards/{board_id}/columns/...`) E ISSO E TRAVA,
+# NAO ESTETICA. A autorizacao de coluna depende do TIME DO QUADRO; uma rota
+# `/columns/{id}` teria de descobrir o quadro a partir da coluna, e quem
+# esquecesse de conferir que a coluna pertence AQUELE quadro abriria edicao de
+# coluna alheia com a permissao do quadro proprio. Com o `board_id` na URL, o
+# servico confere os dois (`_coluna_do_quadro`).
+#
+# ⚠️ AS DUAS SEGUEM SEM `require_permission` E COM `TenantContextDep`, pelo
+# mesmo motivo das rotas de quadro -- leia o cabecalho deste modulo antes de
+# "consertar". `_: TenantContextDep` parece nao usado e NAO E.
+# =====================================================================
+
+
+@router.post(
+    "/{board_id}/columns",
+    response_model=BoardColumnResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_column(
+    board_id: uuid.UUID,
+    payload: BoardColumnCreateRequest,
+    _: TenantContextDep,
+    uow: UoWDep,
+) -> BoardColumnResponse:
+    """Acrescenta uma coluna ao fim de um quadro avulso.
+
+    ⚠️ RECUSA 422 NO QUADRO PADRAO. As colunas do quadro geral nao se mexem
+    enquanto a 5c nao existir: sao 176 tarefas vivas e nao ha tela que desfaca.
+    Renomear o QUADRO geral continua permitido -- aquilo nao toca em coluna.
+
+    ⚠️ 404 antes de 403, igual ao `PATCH /boards`: a permissao depende do
+    `team_id` do quadro, entao ele e buscado primeiro. Um 403 confirmaria que o
+    quadro existe.
+
+    ⚠️ A coluna nasce com `legacy_status` NULL e `is_default_target` False, e
+    nenhum dos dois e parametro. Ver `BoardService.criar_coluna`.
+    """
+    coluna = await BoardService(uow.session).criar_coluna(
+        board_id=board_id, nome=payload.name, semantica=payload.semantic
+    )
+    resposta = BoardColumnResponse.model_validate(coluna)
+    await uow.commit()
+    return resposta
+
+
+@router.patch(
+    "/{board_id}/columns/{column_id}",
+    response_model=BoardColumnResponse,
+)
+async def rename_column(
+    board_id: uuid.UUID,
+    column_id: uuid.UUID,
+    payload: BoardColumnRenameRequest,
+    _: TenantContextDep,
+    uow: UoWDep,
+) -> BoardColumnResponse:
+    """Renomeia uma coluna. NAO mexe em semantica, cor, posicao nem alvo.
+
+    ⚠️ COLUNA DE OUTRO QUADRO DEVOLVE 404, e nao 403. O servico busca a coluna
+    com o `board_id` no WHERE; ela simplesmente nao existe naquele quadro. Um
+    403 diria que ela existe em algum lugar.
+    """
+    coluna = await BoardService(uow.session).renomear_coluna(
+        board_id=board_id, column_id=column_id, nome=payload.name
+    )
+    resposta = BoardColumnResponse.model_validate(coluna)
+    await uow.commit()
+    return resposta
+
+
+@router.get(
+    "/{board_id}/columns/{column_id}",
+    response_model=BoardColumnDetailResponse,
+)
+async def get_column(
+    board_id: uuid.UUID,
+    column_id: uuid.UUID,
+    _: TenantContextDep,
+    session: SessionDep,
+) -> BoardColumnDetailResponse:
+    """A coluna, com quantas tarefas vivas ela tem.
+
+    ⚠️ EXISTE PARA O AVISO DE APAGAR. A tela precisa do numero ANTES da
+    confirmacao; o `GET /boards` nao o carrega de proposito, para nao pagar um
+    `COUNT` por coluna em toda abertura de tela.
+
+    ⚠️ SEM TRAVA DE ESCRITA, e e o certo: quem alcanca o quadro pela lente
+    alcanca as colunas dele -- o `GET /boards` ja devolve todas. Exigir
+    `board.manage.*` aqui seria proteger um numero que a mesma pessoa obtem
+    contando os cards na tela.
+    """
+    contagem = await BoardService(session).contar_tarefas_da_coluna(
+        board_id=board_id, column_id=column_id
+    )
+    coluna = (
+        await session.execute(
+            select(BoardColumn).where(
+                BoardColumn.id == column_id, BoardColumn.board_id == board_id
+            )
+        )
+    ).scalar_one()
+    return BoardColumnDetailResponse(
+        **BoardColumnResponse.model_validate(coluna).model_dump(),
+        task_count=contagem,
+    )
+
+
+@router.delete(
+    "/{board_id}/columns/{column_id}",
+    response_model=BoardColumnDeleteResponse,
+)
+async def delete_column(
+    board_id: uuid.UUID,
+    column_id: uuid.UUID,
+    _: TenantContextDep,
+    uow: UoWDep,
+    destino_id: uuid.UUID | None = None,
+) -> BoardColumnDeleteResponse:
+    """Apaga uma coluna, mandando as tarefas dela para `destino_id`.
+
+    ⚠️ `destino_id` VAI NA QUERY STRING, e nao no corpo. `DELETE` com corpo e
+    aceito pelo FastAPI e ignorado por parte da infraestrutura de rede -- e
+    quando o corpo se perde, este endpoint deixa de mover tarefa e passa a
+    recusar por falta de destino, que e um 422 sem causa aparente.
+
+    ⚠️ DUAS RECUSAS DIFERENTES, as duas 422 (ADR 0042):
+      - sem `destino_id` numa coluna com tarefas -- "para onde vao estas?";
+      - ultima `OPEN` ou ultima `DONE` -- "o quadro continua funcionando?".
+    A segunda vale MESMO com destino escolhido: nada impede apagar a ultima
+    `DONE` mandando tudo para `Backlog`, e a quebra so apareceria na semana
+    seguinte, numa cascata de conclusao.
+
+    ⚠️ DESTINO TERMINAL NAO E MOVER -- e concluir ou cancelar o lote, com
+    cascata de subtarefas, `terminal_since` ligando e avisos de prazo morrendo.
+    O aviso da tela tem de dizer isso com outro texto (fatia 5b-6); o backend
+    faz a coisa certa nos dois casos porque delega ao `TaskService`.
+    """
+    movidas = await BoardService(uow.session).apagar_coluna(
+        board_id=board_id, column_id=column_id, destino_id=destino_id
+    )
+    await uow.commit()
+    return BoardColumnDeleteResponse(movidas=movidas)

@@ -32,10 +32,12 @@ import uuid
 
 import structlog
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.core.tenant import require_tenant
 from app.db.models.boards import Board, BoardColumn
+from app.db.models.enums import ColumnSemantic
+from app.db.models.operational import Task
 from app.db.models.organization import Team
 from app.modules.auth.domain import team_scope
 from app.modules.tasks.domain.board_defaults import (
@@ -53,8 +55,60 @@ from app.shared.exceptions.base import (
 logger = structlog.get_logger(__name__)
 
 
+#: Os tokens de cor que uma coluna criada por gente pode receber, em rotacao.
+#:
+#: ⚠️ SAO OS OITO DO QUADRO GERAL, e a lista e literal de proposito. Derivar de
+#: `COLUNAS_PADRAO` amarraria a paleta ao LAYOUT daquele quadro: mexer na ordem
+#: das oito colunas do geral -- coisa de tela -- mudaria a cor da proxima
+#: coluna criada em qualquer subtime. Mesmo motivo pelo qual
+#: `STATUS_POR_SEMANTICA` e fixo e nao derivado.
+#:
+#: ⚠️ TOKEN, NUNCA HEX (corte de 11/08). Token inverte no tema escuro; hex nao,
+#: e foi por isso que a Spec 031 (C1a) os tirou do produto. O seletor de cor e
+#: fatia propria.
+CORES_DE_COLUNA: tuple[str, ...] = (
+    "var(--status-backlog-dot)",
+    "var(--status-planned-dot)",
+    "var(--status-progress-dot)",
+    "var(--status-review-dot)",
+    "var(--status-external-dot)",
+    "var(--status-done-dot)",
+    "var(--status-cancel-dot)",
+    "var(--status-blocked-dot)",
+)
+
+
+#: As semanticas que o SISTEMA escreve sem ninguem pedir, e por isso as unicas
+#: cuja ultima coluna nao pode ser apagada (ADR 0042 D4).
+#:
+#: ⚠️ NAO E "UMA POR SEMANTICA". `OPEN` porque toda tarefa nasce em `BACKLOG`;
+#: `DONE` porque `complete_descendants` a procura. `IN_PROGRESS` e `CANCELLED`
+#: so recebem tarefa quando uma PESSOA pede, e ela leva 422 no ato -- erro
+#: visivel, para quem clicou. As outras duas quebrariam em silencio, semanas
+#: depois, para outra pessoa.
+SEMANTICAS_QUE_O_SISTEMA_ESCREVE: frozenset[ColumnSemantic] = frozenset(
+    {ColumnSemantic.OPEN, ColumnSemantic.DONE}
+)
+
+
+def _cor_por_rotacao(indice: int) -> str:
+    """A cor da n-esima coluna, girando na lista.
+
+    ⚠️ NAO E ALEATORIA, e nao deve virar. Criar duas colunas seguidas tem de
+    dar cores diferentes de forma reproduzivel -- teste com cor sorteada e
+    teste que passa por acaso.
+    """
+    return CORES_DE_COLUNA[indice % len(CORES_DE_COLUNA)]
+
+
 class BoardService:
-    """Cria quadros. CRUD de COLUNA e a fatia seguinte (5b-4)."""
+    """Cria e renomeia quadros, e faz o CRUD de COLUNA de quadro avulso.
+
+    ⚠️ REORDENAR COLUNA NAO ESTA AQUI, e a ausencia tem data: ela nasce na
+    fatia 5b-6, junto com a tela que arrasta. O projeto ja tem cicatriz de
+    campo sem leitor duas vezes nesta spec (`is_default_target` ate a 4c,
+    `corEhHex` ate hoje).
+    """
 
     def __init__(self, session) -> None:
         self._session = session
@@ -185,8 +239,431 @@ class BoardService:
         return quadro
 
     # ------------------------------------------------------------------
+    # Colunas (fatia 5b-4a)
+    # ------------------------------------------------------------------
+    async def criar_coluna(
+        self, *, board_id: uuid.UUID, nome: str, semantica: ColumnSemantic
+    ) -> BoardColumn:
+        """Acrescenta uma coluna ao fim de um quadro avulso.
+
+        ⚠️ `legacy_status` FICA NULL, e isso e o ponto (ADR 0033/0041). Coluna
+        criada por gente nao corresponde a status nenhum; inventar um casaria
+        com a ponte e o `board_column_um_status_por_quadro` recusaria a
+        segunda coluna nova do mesmo quadro -- 500 de constraint no lugar de
+        regra. E NULL e o que faz a 0041 valer para ela: o status dela sai da
+        SEMANTICA.
+
+        ⚠️ `is_default_target` FICA FALSE, e nao ha parametro. O indice parcial
+        `board_column_um_destino_por_semantica` recusa o segundo alvo da mesma
+        semantica NO BANCO; aceitar o campo aqui deixaria a API pedir um estado
+        que o schema nega, com o erro chegando como 500. Trocar o alvo de uma
+        semantica e operacao propria, e ela ainda nao existe -- mesma ausencia
+        deliberada de `is_default` em `BoardCreateRequest`.
+
+        ⚠️ A COR SAI DE ROTACAO SOBRE OS TOKENS (corte de 11/08), e nao de
+        entrada. Sem hex, sem `<input type=color>`, sem luminancia, sem
+        validacao. Token inverte no tema escuro e hex nao -- foi por isso que a
+        Spec 031 tirou os hex do produto. O seletor de cor e fatia propria, e e
+        la que `lib/coluna.ts::corEhHex` ganha leitor.
+
+        ⚠️ POSICAO NO FIM, sempre. Reordenar e da 5b-6, junto com a tela que a
+        usa -- e nao antes, para nao repetir a cicatriz de campo sem leitor que
+        esta spec ja tem duas vezes.
+
+        ⚠️ NAO FAZ COMMIT -- mesma unidade de trabalho do chamador.
+        """
+        tenant = require_tenant()
+        quadro = await self._quadro_do_workspace(board_id)
+        time = await self._time_do_workspace(quadro.team_id)
+        # ⚠️ AUTORIZA ANTES DE RECUSAR, e a ordem e deliberada. Ao contrario do
+        # 404-antes-de-403 do `PATCH /boards` -- onde a permissao DEPENDE do
+        # quadro --, aqui a recusa do quadro padrao nao depende de nada. Posta
+        # antes, ela responderia 422 a um OPERATOR, contando que aquele quadro
+        # e o padrao para quem nao podia nem tentar.
+        self._assert_pode_gerir(time)
+        self._assert_quadro_editavel(quadro)
+
+        nome_limpo = self._nome_de_coluna_valido(nome)
+        existentes = await self._colunas_do_quadro(quadro.id)
+
+        coluna = BoardColumn(
+            workspace_id=tenant.workspace_id,
+            board_id=quadro.id,
+            name=nome_limpo,
+            color=_cor_por_rotacao(len(existentes)),
+            position=len(existentes),
+            semantic=semantica,
+            notify_deadline=True,
+            is_default_target=False,
+            legacy_status=None,
+        )
+        self._session.add(coluna)
+        await self._session.flush()
+
+        logger.info(
+            "board.coluna_criada",
+            board_id=str(quadro.id),
+            column_id=str(coluna.id),
+            semantic=semantica.value,
+            position=coluna.position,
+            por=str(tenant.user_id),
+        )
+        return coluna
+
+    async def renomear_coluna(
+        self, *, board_id: uuid.UUID, column_id: uuid.UUID, nome: str
+    ) -> BoardColumn:
+        """Troca o nome de uma coluna. NAO mexe em mais nada.
+
+        ⚠️ SEMANTICA NAO SE EDITA POR AQUI, e a ausencia e decisao. Ela decide
+        cascata de conclusao, varredura de arquivamento, proporcao da checklist
+        e aviso de prazo -- os quatro em silencio. Trocar a semantica de uma
+        coluna com tarefas dentro muda o significado das tarefas sem tocar em
+        nenhuma delas, e sem uma linha de historico. Se um dia precisar, e
+        entrega propria, com o aviso de quantas tarefas mudam de estado.
+
+        ⚠️ O `board_id` VEM NA ASSINATURA e nao e decorativo: ele e conferido
+        contra a coluna. Sem isso, `PATCH /boards/{A}/columns/{id-de-B}`
+        renomearia coluna do quadro B pela autorizacao do quadro A -- e a
+        autorizacao DEPENDE do time do quadro.
+        """
+        tenant = require_tenant()
+        quadro = await self._quadro_do_workspace(board_id)
+        time = await self._time_do_workspace(quadro.team_id)
+        # Mesma ordem de `criar_coluna`: autoriza, depois recusa.
+        self._assert_pode_gerir(time)
+        self._assert_quadro_editavel(quadro)
+
+        coluna = await self._coluna_do_quadro(quadro.id, column_id)
+        anterior = coluna.name
+        coluna.name = self._nome_de_coluna_valido(nome)
+        await self._session.flush()
+
+        logger.info(
+            "board.coluna_renomeada",
+            board_id=str(quadro.id),
+            column_id=str(coluna.id),
+            de=anterior,
+            para=coluna.name,
+            por=str(tenant.user_id),
+        )
+        return coluna
+
+    # ------------------------------------------------------------------
     # Travas
     # ------------------------------------------------------------------
+    async def contar_tarefas_da_coluna(
+        self, *, board_id: uuid.UUID, column_id: uuid.UUID
+    ) -> int:
+        """Quantas tarefas VIVAS a coluna tem. E o numero do aviso da tela.
+
+        ⚠️ NAO CONTA APAGADAS, e a divergencia com `apagar_coluna` e
+        deliberada. Este numero e o que a pessoa le antes de confirmar, e
+        tarefa apagada nao existe para ela. Ja o MOVIMENTO tem de levar as
+        apagadas junto, porque a FK `task_board_column` e `RESTRICT` e a linha
+        continua no banco. Sao dois numeros diferentes de proposito -- ver
+        `apagar_coluna`.
+
+        ⚠️ CONTA AS ARQUIVADAS. Elas aparecem em `/arquivadas`, tem coluna
+        desenhada no badge e voltam com um clique. Some-las no aviso e mais
+        honesto que a pessoa descobrir depois que 30 arquivadas mudaram de
+        coluna sem ela saber.
+
+        ⚠️ ELE ENVELHECE, e isso e aceito. Alguem pode mover uma tarefa para ca
+        entre o aviso e o `DELETE`. O que o `DELETE` faz e mover o que estiver
+        la NAQUELE instante -- a divergencia possivel e entre o aviso e o
+        resultado, nunca entre o resultado e o banco.
+        """
+        quadro = await self._quadro_do_workspace(board_id)
+        coluna = await self._coluna_do_quadro(quadro.id, column_id)
+        return (
+            await self._session.execute(
+                select(func.count())
+                .select_from(Task)
+                .where(
+                    Task.column_id == coluna.id,
+                    Task.deleted_at.is_(None),
+                )
+            )
+        ).scalar_one()
+
+    async def apagar_coluna(
+        self,
+        *,
+        board_id: uuid.UUID,
+        column_id: uuid.UUID,
+        destino_id: uuid.UUID | None,
+    ) -> int:
+        """Apaga uma coluna, mandando as tarefas dela para `destino_id`.
+
+        Devolve quantas tarefas VIVAS foram movidas.
+
+        ⚠️ DUAS TRAVAS, E ELAS RESPONDEM PERGUNTAS DIFERENTES (ADR 0042):
+
+          - **"para onde vao estas tarefas?"** (D5) -- coluna com tarefa exige
+            `destino_id`. Coluna vazia some sem perguntar.
+          - **"o quadro continua funcionando depois?"** (D4) -- recusa apagar a
+            ultima `OPEN` ou a ultima `DONE`.
+
+        ⚠️ O SELECTOR NAO SUBSTITUI A RECUSA, e confundi-los e o defeito
+        classico aqui. Nada impede alguem de apagar a ultima `DONE` escolhendo
+        `Backlog` como destino: a pergunta "para onde vao ESTAS tarefas" foi
+        respondida, e o quadro fica sem coluna de conclusao. A quebra aparece
+        na semana seguinte, quando outra pessoa concluir uma tarefa-mae cuja
+        subtarefa mora aqui -- `complete_descendants` nao acha coluna `DONE`,
+        `column_id` e NOT NULL desde a `0011`, e estoura para quem clicou, num
+        quadro que essa pessoa talvez nem conheca.
+
+        ⚠️ `OPEN` E `DONE` E NAO "UMA POR SEMANTICA". O criterio e **quem
+        escreve status sozinho**: toda tarefa nasce em `BACKLOG` (`OPEN`) e a
+        cascata de conclusao procura `DONE`. `IN_PROGRESS` e `CANCELLED` nao
+        tem escrita automatica e PODEM ser apagadas -- quadro de tres colunas e
+        valido, e de duas tambem.
+
+        ⚠️ MOVE PELO `TaskService.update`, UMA TAREFA POR VEZ, e a lentidao e
+        aceita. Ele ja carrega a reescrita do status pela coluna de destino
+        (0041/0042 D2), `completed_at`, `terminal_since`, a cascata de
+        subtarefas quando o destino e terminal, e uma linha de `task_history`
+        por tarefa. Um `UPDATE` em massa seria a QUARTA copia dessa regra --
+        e a fatia 5b-2 ja mediu o que acontece com a terceira: a cascata
+        divergiu e ninguem soube ate alguem medir. O volume e limitado por
+        desenho, porque coluna do quadro geral nao se apaga.
+
+        ⚠️ AS APAGADAS VAO JUNTO, POR OUTRO CAMINHO, E ISTO NAO E DETALHE. A FK
+        `task_board_column` e `ondelete="RESTRICT"` e tarefa soft-deleted
+        continua apontando para a coluna. `TaskService.update` nao as alcanca
+        (`get_by_id_or_raise` filtra `deleted_at IS NULL`), entao sem o
+        `UPDATE` direto abaixo, apagar uma coluna que UM DIA teve uma tarefa
+        apagada estoura `IntegrityError` -- 500, e so nesse quadro, e so para
+        quem tiver esse historico. Elas nao ganham history nem reescrita de
+        status: a linha nao existe para o produto.
+
+        ⚠️ SE UMA TAREFA NAO FOR EDITAVEL PELO ATOR, A OPERACAO INTEIRA FALHA.
+        `TaskService.update` confere `_assert_editable` por tarefa, e a edicao
+        depende do TIME da tarefa (ADR 0013), nao do quadro. Um supervisor com
+        uma tarefa da raiz dentro do quadro dele leva 403 e nada e apagado.
+        Falha fechada e atomica, de proposito: a alternativa e mover tarefa que
+        o ator nao poderia tocar.
+
+        ⚠️ NAO FAZ COMMIT -- mesma unidade de trabalho do chamador.
+        """
+        tenant = require_tenant()
+        quadro = await self._quadro_do_workspace(board_id)
+        time = await self._time_do_workspace(quadro.team_id)
+        self._assert_pode_gerir(time)
+        self._assert_quadro_editavel(quadro)
+
+        coluna = await self._coluna_do_quadro(quadro.id, column_id)
+        colunas = await self._colunas_do_quadro(quadro.id)
+        self._assert_semantica_sobrevive(coluna, colunas)
+
+        vivas = await self._tarefas_da_coluna(coluna.id, apagadas=False)
+        apagadas = await self._tarefas_da_coluna(coluna.id, apagadas=True)
+
+        destino: BoardColumn | None = None
+        if vivas or apagadas:
+            if destino_id is None:
+                raise ValidationError(
+                    "Escolha para qual coluna as tarefas devem ir.",
+                    details={
+                        "field": "destino_id",
+                        "tarefas": len(vivas),
+                    },
+                )
+            if destino_id == coluna.id:
+                raise ValidationError(
+                    "A coluna de destino tem de ser outra.",
+                    details={"field": "destino_id"},
+                )
+            destino = await self._coluna_do_quadro(quadro.id, destino_id)
+
+        if destino is not None:
+            # ⚠️ IMPORT LOCAL, e nao no topo. `TaskService` importa
+            # `BoardRepository`, que vive no mesmo modulo de infraestrutura que
+            # este servico ja usa -- subir este import para o topo fecha ciclo
+            # no import de `app.main`. Precedente do mesmo remedio esta em
+            # `factories.make_team`.
+            from app.modules.tasks.application.task_service import (
+                TaskService,
+                UpdateTaskCommand,
+            )
+
+            servico = TaskService(self._session)
+            for tarefa in vivas:
+                await servico.update(
+                    task_id=tarefa.id,
+                    command=UpdateTaskCommand(
+                        column_id=destino.id,
+                        fields_set=frozenset({"column_id"}),
+                    ),
+                )
+            for tarefa in apagadas:
+                tarefa.column_id = destino.id
+            await self._session.flush()
+
+        await self._session.delete(coluna)
+        await self._session.flush()
+        await self._renumerar(quadro.id)
+
+        logger.info(
+            "board.coluna_apagada",
+            board_id=str(quadro.id),
+            column_id=str(coluna.id),
+            destino_id=str(destino.id) if destino else None,
+            movidas=len(vivas),
+            movidas_apagadas=len(apagadas),
+            por=str(tenant.user_id),
+        )
+        return len(vivas)
+
+    @staticmethod
+    def _assert_semantica_sobrevive(
+        coluna: BoardColumn, colunas: list[BoardColumn]
+    ) -> None:
+        """Recusa apagar a ultima coluna de uma semantica que o SISTEMA escreve.
+
+        ⚠️ O CRITERIO E "QUEM ESCREVE SOZINHO", e nao "uma por semantica".
+        `OPEN` porque toda tarefa nasce em `BACKLOG`; `DONE` porque a cascata
+        de conclusao a procura. `IN_PROGRESS` e `CANCELLED` so recebem tarefa
+        quando uma PESSOA pede, e a pessoa recebe 422 na hora -- erro visivel,
+        no ato, para quem clicou. As outras duas quebram sem ninguem pedir
+        nada.
+        """
+        if coluna.semantic not in SEMANTICAS_QUE_O_SISTEMA_ESCREVE:
+            return
+        sobrou = any(
+            c.semantic is coluna.semantic and c.id != coluna.id
+            for c in colunas
+        )
+        if not sobrou:
+            raise ValidationError(
+                "O quadro precisa de pelo menos uma coluna desta semantica.",
+                details={
+                    "column_id": str(coluna.id),
+                    "semantic": coluna.semantic.value,
+                },
+            )
+
+    async def _tarefas_da_coluna(
+        self, column_id: uuid.UUID, *, apagadas: bool
+    ) -> list[Task]:
+        """As tarefas de uma coluna, vivas ou apagadas -- nunca as duas juntas.
+
+        ⚠️ SAO DOIS LOTES PORQUE SAO DOIS CAMINHOS. As vivas passam pelo
+        `TaskService`; as apagadas levam `UPDATE` direto. Uma consulta so
+        devolvendo tudo convidaria a tratar os dois iguais, e o `TaskService`
+        recusaria as apagadas com `EntityNotFoundError` no meio do lote.
+        """
+        condicao = (
+            Task.deleted_at.is_not(None) if apagadas else Task.deleted_at.is_(None)
+        )
+        return list(
+            (
+                await self._session.execute(
+                    select(Task).where(Task.column_id == column_id, condicao)
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+    async def _renumerar(self, board_id: uuid.UUID) -> None:
+        """Fecha o buraco de `position` deixado pela coluna apagada.
+
+        ⚠️ SEM ISTO AS POSICOES FICAM COM BURACO (0, 1, 3), e nada quebra --
+        que e o problema. `ORDER BY position` continua dando a ordem certa, e o
+        defeito so aparece na 5b-6, quando arrastar coluna gravar posicoes
+        novas em cima de uma sequencia que ninguem esperava ter buraco.
+        """
+        for indice, coluna in enumerate(await self._colunas_do_quadro(board_id)):
+            if coluna.position != indice:
+                coluna.position = indice
+        await self._session.flush()
+
+    def _assert_quadro_editavel(self, quadro: Board) -> None:
+        """Recusa mexer nas COLUNAS do quadro padrao.
+
+        ⚠️ ESTA TRAVA E SOBRE COLUNA, E NAO SOBRE QUADRO. Renomear o quadro
+        geral e permitido (`renomear_quadro`) porque nao toca em coluna
+        nenhuma; acrescentar, renomear ou apagar coluna dele mexe na tela de
+        176 tarefas vivas de todo mundo, e nao ha tela que desfaca.
+
+        ⚠️ E ELA QUE SEGURA `default_board_and_column_for_status`, que ficou de
+        FORA da ADR 0042 de proposito: aquela funcao descobre a coluna de um
+        status no quadro padrao, e o degrau dela e a PONTE. Enquanto as oito
+        colunas do geral existirem com `legacy_status`, ela nao tem como
+        errar. Apagar uma delas a quebraria em silencio.
+
+        ⚠️ VALE ENQUANTO A 5c NAO EXISTIR. Quando o quadro extra da raiz for
+        entregue, a pergunta "quem edita as colunas do geral" volta -- e a
+        resposta provavel e `board.manage.root`, nao esta recusa.
+        """
+        if quadro.is_default:
+            raise ValidationError(
+                "As colunas do quadro geral nao podem ser alteradas.",
+                details={"board_id": str(quadro.id)},
+            )
+
+    @staticmethod
+    def _nome_de_coluna_valido(nome: str) -> str:
+        """Nome nao-vazio e dentro do `String(120)` da coluna.
+
+        ⚠️ 120 E NAO 255. E o teto da coluna `board_column.name`, e o do quadro
+        e outro -- reaproveitar `_nome_valido` deixaria passar um nome de 200
+        caracteres que o Postgres recusa com `StringDataRightTruncation`, que
+        sai como 500. Duas funcoes porque sao dois tetos, e nao por descuido.
+        """
+        limpo = nome.strip()
+        if not limpo:
+            raise ValidationError(
+                "Nome da coluna nao pode ser vazio.",
+                details={"field": "name"},
+            )
+        if len(limpo) > 120:
+            raise ValidationError(
+                "Nome da coluna tem no maximo 120 caracteres.",
+                details={"field": "name", "len": len(limpo)},
+            )
+        return limpo
+
+    async def _colunas_do_quadro(
+        self, board_id: uuid.UUID
+    ) -> list[BoardColumn]:
+        """As colunas de um quadro, em ordem de posicao."""
+        return list(
+            (
+                await self._session.execute(
+                    select(BoardColumn)
+                    .where(BoardColumn.board_id == board_id)
+                    .order_by(BoardColumn.position)
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+    async def _coluna_do_quadro(
+        self, board_id: uuid.UUID, column_id: uuid.UUID
+    ) -> BoardColumn:
+        """A coluna, exigindo que pertenca AQUELE quadro.
+
+        ⚠️ O `board_id` ENTRA NO WHERE, fora de qualquer `if`. Buscar so por
+        `column_id` funcionaria e seria a versao que deixa alguem editar coluna
+        de um quadro que nao autorizou -- a autorizacao acontece sobre o time
+        do quadro da URL, e nada depois disso confere se a coluna e dele.
+        """
+        coluna = (
+            await self._session.execute(
+                select(BoardColumn).where(
+                    BoardColumn.id == column_id,
+                    BoardColumn.board_id == board_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if coluna is None:
+            raise EntityNotFoundError("Coluna", identifier=column_id)
+        return coluna
+
     def _assert_pode_gerir(self, time: Team) -> None:
         """Quem pode criar/renomear quadro DESTE time.
 

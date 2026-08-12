@@ -511,6 +511,84 @@ class BoardRenameRequest(BaseModel):
     name: str
 
 
+class BoardColumnCreateRequest(BaseModel):
+    """Corpo de `POST /boards/{id}/columns` (Spec 036, fatia 5b-4a).
+
+    ⚠️ SEM `@model_validator` e sem `Field(min_length=...)`, pelo mesmo motivo
+    do `BoardCreateRequest`: o `_validation_error_handler` deste projeto
+    devolve **500** para validador do Pydantic. Nome vazio e nome longo demais
+    sao recusados no `BoardService._nome_de_coluna_valido`.
+
+    ⚠️ `color` NAO ENTRA (corte de 11/08). Coluna nova nasce com token, por
+    rotacao fixa. Aceitar hex aqui abriria `style` a entrada de usuario num
+    campo `String(60)`, exigiria validar `^#[0-9a-fA-F]{6}$` no backend e
+    derivar o texto por luminancia no front -- e a Spec 031 (C1a) ja tinha
+    tirado os hex do produto porque nao invertem no tema escuro.
+
+    ⚠️ `is_default_target` NAO ENTRA, e a ausencia e a trava. O indice parcial
+    `board_column_um_destino_por_semantica` recusa o segundo alvo da mesma
+    semantica NO BANCO -- aceitar o campo deixaria a API pedir um estado que o
+    schema nega, e o erro chegaria como 500. Mesma ausencia de `is_default` em
+    `BoardCreateRequest`.
+
+    ⚠️ `legacy_status` NAO ENTRA, NUNCA. Coluna criada por gente nao
+    corresponde a status nenhum, e e justamente esse NULL que faz a ADR 0041
+    valer para ela.
+
+    ⚠️ `position` NAO ENTRA. Coluna nova vai para o fim; reordenar e da fatia
+    5b-6, junto com a tela que arrasta.
+    """
+
+    name: str
+    semantic: ColumnSemantic
+
+
+class BoardColumnRenameRequest(BaseModel):
+    """Corpo de `PATCH /boards/{id}/columns/{id}` (Spec 036, fatia 5b-4a).
+
+    ⚠️ SO O NOME. `semantic` fora de proposito: ela decide cascata de
+    conclusao, varredura de arquivamento, proporcao da checklist e aviso de
+    prazo -- os quatro em silencio. Trocar a semantica de uma coluna com
+    tarefas dentro muda o significado das tarefas sem tocar em nenhuma delas e
+    sem uma linha de historico. Ver `BoardService.renomear_coluna`.
+    """
+
+    name: str
+
+
+class BoardColumnDetailResponse(BoardColumnResponse):
+    """Uma coluna com a contagem de tarefas (Spec 036, fatia 5b-4b).
+
+    ⚠️ EXISTE PARA O AVISO DE APAGAR, e so. A tela precisa dizer "12 tarefas
+    vao para..." ANTES de a pessoa confirmar, e a listagem de quadros nao
+    carrega contagem -- poria um `COUNT` por coluna em toda abertura de tela
+    para um numero que quase ninguem le.
+
+    ⚠️ `task_count` NAO CONTA APAGADAS e CONTA ARQUIVADAS. Ver
+    `BoardService.contar_tarefas_da_coluna`: e o numero que a PESSOA ve, e
+    tarefa apagada nao existe para ela. O movimento do `DELETE` leva as
+    apagadas junto por causa da FK `RESTRICT`, entao os dois numeros divergem
+    de proposito.
+
+    ⚠️ ELE ENVELHECE. Alguem pode mover uma tarefa para ca entre este `GET` e o
+    `DELETE`. A divergencia possivel e entre o AVISO e o resultado, nunca entre
+    o resultado e o banco.
+    """
+
+    task_count: int
+
+
+class BoardColumnDeleteResponse(BaseModel):
+    """Resultado de apagar coluna (Spec 036, fatia 5b-4b).
+
+    ⚠️ DEVOLVE O NUMERO QUE REALMENTE MOVEU, e nao ecoa o do aviso. Se ele vier
+    diferente do que a tela mostrou, alguem mexeu no meio -- e a tela pode
+    dizer isso em vez de fingir que sabia.
+    """
+
+    movidas: int
+
+
 class BoardResponse(BaseModel):
     """Um quadro alcancavel, com as colunas na ordem visual.
 

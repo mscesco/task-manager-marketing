@@ -50,8 +50,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   clearTokens,
+  apagarColuna,
+  colunaComContagem,
   colunasDoQuadroGeral,
+  createBoard,
+  criarColuna,
   quadroGeralComIndice,
+  renameBoard,
+  renomearColuna,
   listBoards,
   setTokens,
   type Quadro,
@@ -310,5 +316,123 @@ describe("quadroGeralComIndice", () => {
 
     expect(colunas).toEqual([]);
     expect(indice.get("c-rev")?.nomeDoQuadro).toBe("Campanhas");
+  });
+});
+
+// =====================================================================
+// FATIA 5b-6 -- as funcoes de ESCRITA de quadro e de coluna.
+//
+// ⚠️ O QUE ESTES TESTES PRENDEM E A URL E O CORPO, e nao a regra -- a regra
+// mora no backend e ja tem 751 testes contra Postgres de verdade. Aqui o modo
+// de falha e outro: URL errada devolve 404 e a tela mostra "algo deu errado";
+// campo a mais no corpo NAO da erro nenhum, porque o Pydantic do backend
+// descarta chave desconhecida em silencio. Os dois passam despercebidos.
+//
+// ⚠️ A ROTA DE COLUNA E ANINHADA, E ISSO E TRAVA. A autorizacao no backend
+// acontece sobre o TIME DO QUADRO, e o servico confere que a coluna pertence
+// AQUELE quadro (`_coluna_do_quadro`, com o `board_id` no WHERE). Uma URL
+// montada sem o `board_id` nao editaria coluna alheia -- devolveria 404 --,
+// mas a tela nunca funcionaria e ninguem saberia por que.
+//
+// SABOTAGENS (medidas):
+//   J. Em `apagarColuna`, mandar `destino_id` no CORPO em vez da query.
+//   K. Em `criarColuna`, tirar o `boardId` da URL (`/api/v1/columns`).
+//   L. Em `renameBoard`, mandar `{ name, team_id }` no corpo.
+// =====================================================================
+describe("escrita de quadro e de coluna (fatia 5b-6)", () => {
+  /** A URL e o init da unica chamada feita. */
+  function chamada(spy: ReturnType<typeof mockFetch>) {
+    const [url, init] = spy.mock.calls[0];
+    return { url: String(url), init: init as RequestInit };
+  }
+
+  it("createBoard: POST em /boards com nome e time", async () => {
+    const spy = mockFetch(quadro({ id: "b1", name: "Campanhas" }));
+
+    await createBoard({ name: "Campanhas", team_id: "team-crm" });
+
+    const { url, init } = chamada(spy);
+    expect(url).toContain("/api/v1/boards");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(String(init.body))).toEqual({
+      name: "Campanhas",
+      team_id: "team-crm",
+    });
+  });
+
+  it("⚠️ renameBoard manda SO o nome -- team_id nao vai junto", async () => {
+    // ⚠️ O Pydantic do backend IGNORA chave desconhecida em silencio. Mandar
+    // `team_id` aqui nao daria erro nenhum: seria descartado, a tela acharia
+    // que mudou o time do quadro, e a visibilidade continuaria a mesma. Este
+    // teste e o unico lugar onde isso fica vermelho.
+    const spy = mockFetch(quadro({ id: "b1", name: "Outro nome" }));
+
+    await renameBoard("b1", "Outro nome");
+
+    const { url, init } = chamada(spy);
+    expect(url).toContain("/api/v1/boards/b1");
+    expect(init.method).toBe("PATCH");
+    expect(JSON.parse(String(init.body))).toEqual({ name: "Outro nome" });
+  });
+
+  it("⚠️ criarColuna usa a rota ANINHADA, com o board na URL", async () => {
+    const spy = mockFetch(col("c-nova", "Em Revisão", 4));
+
+    await criarColuna("b1", { name: "Em Revisão", semantic: "IN_PROGRESS" });
+
+    const { url, init } = chamada(spy);
+    expect(url).toContain("/api/v1/boards/b1/columns");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(String(init.body))).toEqual({
+      name: "Em Revisão",
+      semantic: "IN_PROGRESS",
+    });
+  });
+
+  it("renomearColuna leva board E coluna na URL, e so o nome no corpo", async () => {
+    const spy = mockFetch(col("c1", "Fazendo", 1));
+
+    await renomearColuna("b1", "c1", "Fazendo");
+
+    const { url, init } = chamada(spy);
+    expect(url).toContain("/api/v1/boards/b1/columns/c1");
+    expect(init.method).toBe("PATCH");
+    expect(JSON.parse(String(init.body))).toEqual({ name: "Fazendo" });
+  });
+
+  it("colunaComContagem devolve a coluna com task_count", async () => {
+    mockFetch({ ...col("c1", "Em Andamento", 2), task_count: 12 });
+
+    const detalhe = await colunaComContagem("b1", "c1");
+
+    expect(detalhe.task_count).toBe(12);
+    expect(detalhe.name).toBe("Em Andamento");
+  });
+
+  it("⚠️ apagarColuna manda o destino na QUERY STRING, nao no corpo", async () => {
+    // ⚠️ `DELETE` com corpo e aceito pelo FastAPI e DESCARTADO por parte da
+    // infraestrutura de rede. Quando o corpo se perde, o backend para de mover
+    // tarefa e passa a recusar por falta de destino -- um 422 sem causa
+    // aparente, que so aparece em producao e nunca em desenvolvimento.
+    const spy = mockFetch({ movidas: 12 });
+
+    const movidas = await apagarColuna("b1", "c1", "c2");
+
+    const { url, init } = chamada(spy);
+    expect(url).toContain("/api/v1/boards/b1/columns/c1");
+    expect(url).toContain("destino_id=c2");
+    expect(init.method).toBe("DELETE");
+    expect(init.body).toBeUndefined();
+    expect(movidas).toBe(12);
+  });
+
+  it("apagarColuna sem destino nao poe query string nenhuma", async () => {
+    // Coluna vazia some sem perguntar (ADR 0042 D5). Mandar `destino_id=`
+    // vazio faria o backend procurar uma coluna de id "" e devolver 404.
+    const spy = mockFetch({ movidas: 0 });
+
+    await apagarColuna("b1", "c1");
+
+    expect(chamada(spy).url).not.toContain("destino_id");
   });
 });
