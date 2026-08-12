@@ -218,6 +218,68 @@ export function corDaColuna(coluna: Coluna): string {
  * ha `--*-text` pareado; com hex nao ha par, e a cor do texto tem de sair da
  * luminancia. Essa derivacao e da fatia 5 -- aqui so se responde a pergunta.
  */
+/**
+ * A coluna de `destino` equivalente a `coluna`, que pode ser de OUTRO quadro.
+ *
+ * ⚠️ E A ADR 0042 DO BACKEND, ESCRITA NO FRONT, e os degraus sao os MESMOS:
+ *
+ *   1. mesma coluna (`id` igual) -> e ela. Cobre 100% das tarefas de hoje, que
+ *      vivem todas no Quadro geral;
+ *   2. nao achando: a coluna `is_default_target` da MESMA semantica em
+ *      `destino`;
+ *   3. nao achando nenhuma das duas: `undefined`. Quem chama decide, e a
+ *      resposta certa NAO e "a primeira coluna" -- e avisar.
+ *
+ * ⚠️ A ORDEM E A DECISAO INTEIRA. Invertida, uma tarefa em `Aprovação Externa`
+ * do Quadro geral seria desenhada em `Em Andamento`, porque as duas tem
+ * semantica `IN_PROGRESS` e so a segunda e alvo. Coluna valida, quadro certo,
+ * card no lugar errado -- e `tsc`, `vitest` e `next build` passam.
+ *
+ * ⚠️ NAO E A MESMA PERGUNTA QUE `colunasDoQuadro`. Aquela responde "quais sao
+ * as colunas do quadro X"; esta responde "onde desenho, no quadro X, uma
+ * tarefa que vive no quadro Y". A segunda so passou a existir porque
+ * `/minhas-tarefas` e `/arquivadas` atravessam quadros por decisao (ADR 0034,
+ * item 6) enquanto desenham UM conjunto de colunas.
+ *
+ * ⚠️ DUAS IMPLEMENTACOES DA MESMA REGRA, e a duplicacao e o preco de o backend
+ * nao poder responder por linha numa tela que ja tem a lista em memoria. O que
+ * a mantem honesta e `lib/__tests__/colunaEquivalente.test.ts`.
+ */
+export function colunaEquivalente(
+  coluna: Coluna,
+  destino: readonly Coluna[],
+): Coluna | undefined {
+  const exata = destino.find((c) => c.id === coluna.id);
+  if (exata) return exata;
+  return destino.find(
+    (c) => c.is_default_target && c.semantic === coluna.semantic,
+  );
+}
+
+/**
+ * O rotulo de uma tarefa nas telas que atravessam quadros.
+ *
+ * `Em Andamento` quando a tarefa vive no quadro que a tela desenha;
+ * `Campanhas · Em Revisão` quando vive em outro.
+ *
+ * ⚠️ AS DUAS INFORMACOES, E NAO SO O QUADRO. O nome do quadro responde "onde
+ * mora"; o da coluna responde "por que este card esta agrupado em Em Andamento
+ * se a coluna dele chama outra coisa". Sem a segunda metade, tarefa numa
+ * coluna criada por gente parece defeito de agrupamento.
+ *
+ * ⚠️ `nomeDoQuadro = null` SIGNIFICA "e o quadro desta tela", e nao "nao sei".
+ * Quem nao sabe passa a string, e a tela mostra. Confundir os dois esconderia
+ * exatamente o caso que esta fatia existe para revelar.
+ */
+export function rotuloDeColuna(
+  nomeDaColuna: string,
+  nomeDoQuadro: string | null,
+): string {
+  return nomeDoQuadro === null
+    ? nomeDaColuna
+    : `${nomeDoQuadro} · ${nomeDaColuna}`;
+}
+
 export function corEhHex(coluna: Coluna): boolean {
   return coluna.color.startsWith("#");
 }
