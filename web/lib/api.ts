@@ -920,6 +920,20 @@ export type TaskCreateInput = {
   // (ADR 0001, comportamento de hoje). Presente => usa este time
   // (ex.: quadro de subtime cria task INTERNA daquele subtime).
   team_id?: string | null;
+  /**
+   * Spec 036, fatia 5b-6: em QUAL quadro a tarefa de topo nasce.
+   *
+   * ⚠️ AUSENTE ou `null` = Quadro geral, que e o comportamento de sempre e o
+   * de 100% das tarefas ate 12/08. So a tela de um quadro AVULSO preenche.
+   *
+   * ⚠️ IGNORADO EM SUBTAREFA -- filha herda o quadro do pai (ADR 0024). O
+   * backend descarta; nao ha erro a esperar.
+   *
+   * ⚠️ O BACKEND CONFERE O ALCANCE (`_assert_board_in_reach`) e devolve 422
+   * com `board_fora_de_alcance` se o quadro nao estiver na lente de quem
+   * escreve. Este campo nao e confiavel so por estar tipado aqui.
+   */
+  board_id?: string | null;
 };
 
 /**

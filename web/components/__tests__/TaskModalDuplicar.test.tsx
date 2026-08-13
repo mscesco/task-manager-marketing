@@ -781,3 +781,71 @@ describe("TaskModal -- responsável DESATIVADO depois (o 422 de 04/08)", () => {
     expect(payload.assignee_ids).toEqual([ANA]);
   });
 });
+
+// =====================================================================
+// FATIA 5b-6 -- `board_id` no payload de CRIACAO.
+//
+// ⚠️ ESTE BLOCO NASCEU DE UMA SABOTAGEM VERDE. Tirar `board_id: defaultBoardId`
+// do `createTask` deixava os 32 testes do `Board.test.tsx` passando: eles
+// conferem o que a tela DESENHA -- as colunas certas, o filtro por quadro, o
+// nome no cabecalho do modal -- e nenhum conferia o que ela MANDA.
+//
+// ⚠️ E O CAMPO E OPCIONAL NO BACKEND, entao perde-lo NAO da erro: a tarefa
+// nasce no Quadro geral, e quem a criou dentro do quadro avulso simplesmente
+// nao a encontra. Enquanto mover tarefa entre quadros nao existir (fatia 5c),
+// consertar isso significa APAGAR e recriar -- perdendo comentarios,
+// historico, subtarefas e designacoes.
+//
+// ⚠️ MESMA ARMADILHA QUE O `tasks_router.py` JA TEVE COM `assignee_ids`
+// (Spec 021). O backend ganhou `test_o_board_id_do_PAYLOAD_chega_no_comando`
+// pelo mesmo motivo, na mesma semana.
+//
+// MORA AQUI, e nao no `Board.test.tsx`, porque o botao de salvar exige titulo
+// E responsavel (ADR 0031) -- e a lista de membros ja esta montada neste
+// arquivo.
+//
+// SABOTAGENS (medidas):
+//   Y. Tirar `board_id: defaultBoardId` do `createTask` em `TaskModal.tsx`.
+//   Z. Tirar `defaultBoardId={boardId ?? null}` do `<TaskModal>` no `Board`
+//      -- ⚠️ NAO cai aqui, e nao tem como cair: este arquivo monta o modal
+//      direto. Guardiao dela e a lacuna que sobra, e esta registrada no
+//      `Board.test.tsx`.
+// =====================================================================
+describe("TaskModal -- board_id na criacao (fatia 5b-6)", () => {
+  const AVULSO = "board-campanhas";
+
+  async function criarCom(defaultBoardId: string | null) {
+    montar();
+    vi.mocked(api.createTask).mockResolvedValue(task({ id: "nova", title: "X" }));
+    render(
+      <TaskModal
+        open
+        defaultBoardId={defaultBoardId}
+        onClose={() => {}}
+        onSaved={() => {}}
+      />
+    );
+    fireEvent.change(await screen.findByLabelText("Título"), {
+      target: { value: "Tarefa nova" },
+    });
+    // ⚠️ Responsavel e OBRIGATORIO na criacao (ADR 0031) -- sem ele o botao
+    // fica travado e o teste mediria a trava, e nao o payload. E a escolha
+    // mora dentro de um popover: sem abrir, a caixa nem existe no DOM.
+    fireEvent.click(await screen.findByLabelText("Designar responsável"));
+    const caixas = await screen.findAllByRole("checkbox");
+    fireEvent.click(caixas[0]);
+    fireEvent.click(screen.getByText("Criar tarefa"));
+    await waitFor(() => expect(vi.mocked(api.createTask)).toHaveBeenCalled());
+    return vi.mocked(api.createTask).mock.calls[0][0];
+  }
+
+  it("⚠️ com quadro avulso, o board_id VAI no payload", async () => {
+    expect((await criarCom(AVULSO)).board_id).toBe(AVULSO);
+  });
+
+  it("sem quadro avulso, vai null -- e o backend usa o Quadro geral", async () => {
+    // ⚠️ `null` E O COMPORTAMENTO DE SEMPRE, e o de 100% das tarefas ate
+    // 12/08. Um default trocado aqui mandaria as 176 vivas para outro lugar.
+    expect((await criarCom(null)).board_id).toBeNull();
+  });
+});

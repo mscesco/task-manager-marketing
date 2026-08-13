@@ -1213,3 +1213,181 @@ describe("Board -- a lente so mostra o Quadro geral (fatia 5b-5b, D1)", () => {
     expect(screen.queryByText(/coluna que não é deste quadro/i)).toBeNull();
   });
 });
+
+// =====================================================================
+// FATIA 5b-6 -- `boardId`: o Board desenha um quadro AVULSO.
+//
+// ⚠️ QUADRO AVULSO NAO E LENTE, e o arquivo inteiro depende dessa distincao. A
+// lente e o espelho do Quadro geral filtrado por pessoa (ADR 0034) -- nao tem
+// registro, e o quadro sai do LOTE de tarefas. O avulso e um registro proprio,
+// e o quadro vem PEDIDO.
+//
+// ⚠️ O CASO QUE MAIS IMPORTA E O QUADRO VAZIO, e e o mais provavel dos tres:
+// todo quadro comeca sem tarefa nenhuma. Com o lote vazio, a regra antiga cai
+// no quadro PADRAO -- a tela desenharia as 8 colunas do Quadro geral sob o
+// titulo do quadro avulso, e a primeira tarefa criada ali sumiria da vista.
+//
+// SABOTAGENS (medidas):
+//   U. Em `Board.tsx`, tirar `quadroPedido ??` da escolha do quadro.
+//   V. Tirar `if (boardId) return t.board_id === boardId;` do filtro.
+//   W. Nao passar `nomeDoQuadro` para o TaskModal.
+// =====================================================================
+describe("Board -- quadro avulso (fatia 5b-6)", () => {
+  const AVULSO = "board-campanhas";
+
+  /** As colunas do avulso tem nomes que NAO existem no geral. */
+  const COLUNAS_AVULSO = [
+    {
+      id: "av-backlog",
+      name: "Backlog",
+      color: "var(--status-backlog-dot)",
+      position: 0,
+      semantic: "OPEN" as const,
+      notify_deadline: true,
+      is_default_target: true,
+    },
+    {
+      id: "av-revisao",
+      name: "Em Revisão",
+      color: "var(--status-progress-dot)",
+      position: 1,
+      semantic: "IN_PROGRESS" as const,
+      notify_deadline: true,
+      is_default_target: true,
+    },
+  ];
+
+  function comAvulso(tasks: Task[]) {
+    montarApi(tasks, []);
+    vi.mocked(api.listBoards).mockResolvedValue([
+      QUADRO,
+      {
+        id: AVULSO,
+        name: "Campanhas",
+        team_id: CRM,
+        is_default: false,
+        colunas: COLUNAS_AVULSO,
+      },
+    ]);
+  }
+
+  it("⚠️ quadro VAZIO desenha as colunas DELE, e nao as do geral", async () => {
+    // ⚠️ O caso que a regra do lote responde errado -- e o primeiro que
+    // qualquer pessoa encontra, porque todo quadro nasce vazio.
+    comAvulso([]);
+
+    render(<Board boardId={AVULSO} title="Quadro · Campanhas" />);
+
+    expect(await screen.findByText("Em Revisão")).toBeTruthy();
+    // "Bloqueado" so existe no Quadro geral.
+    expect(screen.queryByText("Bloqueado")).toBeNull();
+  });
+
+  it("⚠️ mostra SO as tarefas daquele quadro", async () => {
+    comAvulso([
+      task({
+        id: "t-avulsa",
+        title: "Do Campanhas",
+        team_id: CRM,
+        board_id: AVULSO,
+        column_id: "av-revisao",
+      }),
+      task({ id: "t-geral", title: "Do geral", team_id: RAIZ }),
+    ]);
+
+    render(<Board boardId={AVULSO} title="Quadro · Campanhas" />);
+
+    expect(await screen.findByText("Do Campanhas")).toBeTruthy();
+    // ⚠️ Sem o filtro por `board_id`, a do geral entraria e cairia em
+    // `foraDaColuna`: contada e invisivel, com o aviso cobrando a pessoa por
+    // um card que nunca deveria ter chegado ali.
+    expect(screen.queryByText("Do geral")).toBeNull();
+    expect(screen.queryByText(/coluna que não é deste quadro/i)).toBeNull();
+  });
+
+  it("⚠️ o modal de nova tarefa diz em qual quadro ela vai nascer", async () => {
+    // ⚠️ ADR 0034 pede por escrito. Enquanto mover tarefa entre quadros nao
+    // existir (fatia 5c), tarefa criada no quadro errado so se conserta
+    // apagando e recriando -- perdendo comentarios, historico, subtarefas e
+    // designacoes.
+    comAvulso([]);
+
+    render(<Board boardId={AVULSO} title="Quadro · Campanhas" />);
+    fireEvent.click(await screen.findByText("+ Nova tarefa"));
+
+    // ⚠️ UM NO DE TEXTO SO -- ver o comentario no `TaskModal`. Se alguem
+    // partir a frase em varios elementos, esta linha fica vermelha.
+    expect(await screen.findByText("no quadro Campanhas")).toBeTruthy();
+  });
+});
+
+// =====================================================================
+// ⚠️ UMA LINHA AINDA SEM GUARDIAO (12/08), e a outra ja tem.
+//
+// Medido: tirar `board_id: defaultBoardId` do `createTask` em `TaskModal.tsx`
+// deixava os 32 testes deste arquivo VERDES -- eles conferem o que a tela
+// DESENHA, e nenhum conferia o que ela MANDA. Aquela linha ganhou guardiao em
+// `TaskModalDuplicar.test.tsx` (describe "TaskModal -- board_id na criacao"),
+// que e onde a lista de membros ja esta montada: o botao de salvar exige
+// titulo E responsavel (ADR 0031).
+//
+// ⚠️ O QUE SOBRA SEM GUARDIAO E `defaultBoardId={boardId ?? null}` no
+// `<TaskModal>` dentro deste arquivo. Apaga-la nao derruba nada: os testes do
+// quadro avulso aqui nao chegam a criar tarefa, e o teste do modal la monta o
+// modal DIRETO, sem passar pelo Board. Fecha-la exige montar a lista de
+// membros neste arquivo tambem.
+//
+// ⚠️ O ESTRAGO E O MESMO NOS DOIS CASOS: o campo e opcional no backend, entao
+// perde-lo nao da erro -- a tarefa nasce no Quadro geral e quem a criou dentro
+// do avulso nao a encontra. Enquanto mover tarefa entre quadros nao existir
+// (fatia 5c), consertar significa APAGAR e recriar.
+// =====================================================================
+
+// =====================================================================
+// ⚠️ DEFEITO ENCONTRADO NA TELA EM 12/08, e nenhum portao o pegou.
+//
+// Sintoma: um quadro avulso RECEM-CRIADO mostrava as OITO colunas do Quadro
+// geral (Backlog, Planejado, Aprovação Interna, Aprovação Externa, Bloqueado)
+// sob o titulo do quadro novo -- que deveria nascer com QUATRO
+// (`COLUNAS_BASE`). O backend estava certo o tempo todo.
+//
+// Causa: `quadroPedido ?? quadroDoLote ?? padrao`. Num quadro novo os tres se
+// alinham para mentir -- o lote esta VAZIO (quadro novo nao tem tarefa) e a
+// lista de quadros deste componente foi buscada ANTES de o quadro existir,
+// entao a busca por `boardId` falha e a tela cai no PADRAO.
+//
+// ⚠️ O ESTRAGO IA ALEM DO VISUAL: o modo de edicao passava a oferecer renomear
+// e apagar as colunas do Quadro geral -- 176 tarefas vivas -- e o backend
+// recusava com 422 depois do clique.
+//
+// ⚠️ POR QUE OS TESTES NAO PEGARAM: os tres do quadro avulso montam o `Board`
+// com a lista de quadros JA contendo o avulso. O caso real e o inverso -- a
+// lista chega depois.
+//
+// SABOTAGEM: devolver `quadroPedido ?? quadroDoLote ?? padrao` no lugar de
+// `boardId ? quadroPedido : ...` -> tem de cair o teste abaixo.
+// =====================================================================
+describe("Board -- quadro pedido que ainda nao esta na lista (fatia 5b-6)", () => {
+  it("⚠️ NAO cai nas colunas do Quadro geral -- espera", async () => {
+    montarApi([], []);
+    // A lista NAO tem o quadro pedido: e o estado logo depois de criar.
+    vi.mocked(api.listBoards).mockResolvedValue([QUADRO]);
+
+    render(<Board boardId="board-que-acabou-de-nascer" title="Quadro · Novo" />);
+
+    await waitFor(() =>
+      expect(vi.mocked(api.listBoards)).toHaveBeenCalled()
+    );
+    // ⚠️ AS COLUNAS DO QUADRO GERAL NAO PODEM APARECER. Se aparecerem, a tela
+    // caiu no padrao e esta mentindo sobre qual quadro desenha.
+    //
+    // ⚠️ A PRIMEIRA VERSAO DESTA ASSERCAO NAO DISCRIMINAVA: eu procurava
+    // "Bloqueado", coluna que a fixture do Quadro geral deste arquivo NAO tem
+    // -- ela some nos dois mundos, e a sabotagem passou verde. Medido.
+    for (const nome of QUADRO.colunas.map((c) => c.name)) {
+      expect(screen.queryByText(nome)).toBeNull();
+    }
+    // ...e a tela diz que esta esperando, em vez de desenhar um kanban vazio.
+    expect(screen.getByText(/Carregando/i)).toBeTruthy();
+  });
+});

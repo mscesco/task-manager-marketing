@@ -78,6 +78,8 @@ export default function TaskModal({
   onSaved,
   defaultProjectId = null,
   defaultTeamId = null,
+  defaultBoardId = null,
+  nomeDoQuadro = null,
   duplicarDe = null,
   filhosDaOrigem = [],
 }: {
@@ -89,6 +91,28 @@ export default function TaskModal({
   // Fatia 5: time da task de topo. So o quadro de SUBTIME passa (o id do
   // subtime) -> task nasce interna. Null nos demais -> pin na raiz.
   defaultTeamId?: string | null;
+  /**
+   * Em QUAL quadro a tarefa de topo nasce (Spec 036, fatia 5b-6).
+   *
+   * ⚠️ `null` = Quadro geral, que e o comportamento de sempre. So a tela de um
+   * quadro AVULSO preenche.
+   */
+  defaultBoardId?: string | null;
+  /**
+   * O nome do quadro, para o cabecalho. `null` = nao mostra nada.
+   *
+   * ⚠️ ISTO NAO E ENFEITE, E A ADR 0034 PEDE POR ESCRITO. Enquanto mover
+   * tarefa entre quadros nao existir (fatia 5c), tarefa criada no quadro
+   * errado so se conserta APAGANDO e recriando -- perdendo comentarios,
+   * historico, subtarefas e designacoes. Uma pessoa com dois quadros no mesmo
+   * time nao tem como saber em qual esta criando se a tela nao disser.
+   *
+   * ⚠️ EXPLICITO, E NAO INFERIDO. O modal NAO deriva o nome de
+   * `defaultBoardId` por conta propria: ele nao tem a lista de quadros, e
+   * buscar uma para escrever uma linha de cabecalho poria uma requisicao no
+   * caminho de abrir modal.
+   */
+  nomeDoQuadro?: string | null;
   // Spec 033: presente => modo DUPLICAR. Mutuamente exclusivo com `task`
   // (nao se duplica editando). O modal abre pre-preenchido a partir daqui.
   duplicarDe?: Task | null;
@@ -603,6 +627,12 @@ export default function TaskModal({
           project_id: defaultProjectId ?? (projetoSel || null),
           assignee_ids: assigneeIds,
           team_id: defaultTeamId,
+          // ⚠️ Spec 036, fatia 5b-6. `null` = Quadro geral (comportamento de
+          // sempre). Sem esta linha o campo e descartado em silencio e a
+          // tarefa nasce no geral -- quem a criou dentro do quadro avulso nao
+          // a encontra, e nao ha erro nenhum. Mesma armadilha que o
+          // `tasks_router.py` ja teve com `assignee_ids`.
+          board_id: defaultBoardId,
         });
       }
       setSaving(false);
@@ -673,6 +703,21 @@ export default function TaskModal({
               : duplicando
                 ? "Duplicar tarefa"
                 : "Nova tarefa"}
+            {/* ⚠️ SO NA CRIACAO. Editar nao move a tarefa de quadro (isso e a
+                fatia 5c), entao dizer "no quadro X" ao editar prometeria uma
+                escolha que nao existe. */}
+            {!editando && !duplicando && nomeDoQuadro && (
+              <span
+                className="muted"
+                style={{ fontSize: 13, fontWeight: 600, marginLeft: 8 }}
+              >
+                {/* ⚠️ UM NO DE TEXTO SO, sem `<strong>` dentro. Quebrar a
+                    frase em varios elementos faz `getByText` nao a achar --
+                    armadilha ja registrada neste projeto -- e um leitor de
+                    tela a anuncia em pedacos. A enfase fica no `style`. */}
+                {`no quadro ${nomeDoQuadro}`}
+              </span>
+            )}
           </h2>
           <button
             type="button" className="btn btn-ghost" onClick={fechar}

@@ -389,6 +389,46 @@ async def test_IN_PROGRESS_e_CANCELLED_PODEM_ser_apagadas(db) -> None:
     assert [c.position for c in restantes] == [0, 1]
 
 
+async def test_coluna_NOVA_da_mesma_semantica_NAO_libera_apagar_o_alvo(db) -> None:
+    """⚠️ O BURACO QUE A ESCOLHA DE SEMANTICA NA CRIACAO ABRIU (12/08).
+
+    A trava conferia so a SEMANTICA. Bastava criar uma segunda coluna `OPEN`
+    para `Backlog` -- o unico ALVO de `OPEN` -- passar a ser apagavel. E o
+    degrau 2 da ADR 0042 procura `is_default_target`, nao "qualquer coluna
+    daquela semantica": o quadro ficaria com coluna `OPEN` e sem alvo `OPEN`, e
+    TODA criacao de tarefa nele passaria a devolver 422 -- dias depois, para
+    outra pessoa.
+
+    ⚠️ COLUNA CRIADA POR GENTE NASCE COM `is_default_target=False`, sempre. E
+    isso que faz a conta nao fechar, e e o que este teste tranca.
+    """
+    ws, raiz, sub_a, sub_b, user, arvore = await _mundo(db)
+    quadro = await _quadro_avulso(db, ws, user, arvore, sub_a)
+    backlog = _por_nome(await _colunas(db, quadro.id), "Backlog")
+
+    with acting_as(**_ctx(ws, user, arvore, mship(sub_a, "SUPERVISOR"))):
+        servico = BoardService(db)
+        ideias = await servico.criar_coluna(
+            board_id=quadro.id, nome="Ideias", semantica=ColumnSemantic.OPEN
+        )
+        await db.flush()
+        # ⚠️ A COLUNA NOVA NAO E ALVO -- e por isso o `Backlog` continua preso.
+        assert ideias.is_default_target is False
+        with pytest.raises(ValidationError) as erro:
+            await servico.apagar_coluna(
+                board_id=quadro.id, column_id=backlog.id, destino_id=None
+            )
+    assert erro.value.code == CODIGO_SEMANTICA_OBRIGATORIA
+
+    # ...e a coluna NOVA pode ser apagada a vontade: ela nao e alvo de nada.
+    with acting_as(**_ctx(ws, user, arvore, mship(sub_a, "SUPERVISOR"))):
+        await BoardService(db).apagar_coluna(
+            board_id=quadro.id, column_id=ideias.id, destino_id=None
+        )
+    await db.flush()
+    assert "Ideias" not in {c.name for c in await _colunas(db, quadro.id)}
+
+
 async def test_penultima_DONE_pode_ser_apagada(db) -> None:
     """⚠️ A trava e sobre a ULTIMA, e nao sobre a semantica ser intocavel.
 

@@ -35,6 +35,7 @@ import {
 } from "@/lib/filtrosQuadro";
 import TaskModal from "@/components/TaskModal";
 import TaskDetail from "@/components/TaskDetail";
+import EditorDeColunas from "@/components/EditorDeColunas";
 import EmptyStateBox from "@/components/EmptyState";
 import { terminal, type Coluna } from "@/lib/coluna";
 import { listAllTasks, listAllProjects, updateTask, listMembers, listSubteams, getRootTeamId, listBoards, ApiError, type Task, type Team, type Quadro } from "@/lib/api";
@@ -60,13 +61,42 @@ type FiltroPrazo = "todos" | "atrasadas" | "em-dia";
 export default function Board({
   projectId,
   subteamId,
+  boardId,
+  podeEditarColunas = false,
   title,
 }: {
   projectId?: string; // presente => quadro de PROJETO
   subteamId?: string; // presente => quadro de SUBTIME (modo hibrido, Fatia 4)
+  /**
+   * Presente => quadro AVULSO (Spec 036, fatia 5b-6). A tela desenha as
+   * colunas DESTE quadro e mostra so as tarefas dele.
+   *
+   * ⚠️ MANDA MAIS QUE `subteamId`, e a ordem importa. Quadro avulso NAO e
+   * lente: a lente e o espelho do Quadro geral filtrado por pessoa (ADR 0034),
+   * e o avulso e um registro proprio. Deixar o filtro hibrido rodar aqui
+   * traria tarefas da raiz para dentro de um quadro que nao as contem, e elas
+   * cairiam em `foraDaColuna` -- contadas e invisiveis.
+   *
+   * ⚠️ NAO E SEGURANCA. `listAllTasks` ja devolve so o que a pessoa alcanca;
+   * este filtro escolhe o que DESENHAR dentro disso.
+   */
+  boardId?: string;
+  /**
+   * Se a pessoa pode editar as COLUNAS deste quadro (fatia 5b-6).
+   *
+   * ⚠️ VEM DECIDIDO DE FORA. Quem calcula e `podeGerirQuadrosDe`, na tela do
+   * time, que ja tem o alcance do ator. Recalcular aqui seria uma segunda
+   * definicao da mesma regra -- e as duas divergiriam sem nada ficar vermelho.
+   *
+   * ⚠️ NAO E SEGURANCA. O backend recusa com 403; isto so evita oferecer o
+   * botao.
+   */
+  podeEditarColunas?: boolean;
   title: string;
 }) {
   const [tasks, setTasks] = useState<Task[] | null>(null);
+  // Fatia 5b-6: o modo de EDICAO DE COLUNAS. So existe em quadro avulso.
+  const [editandoColunas, setEditandoColunas] = useState(false);
   // Fatia 4c: os quadros que quem olha alcanca. `null` = ainda carregando --
   // a tela NAO desenha coluna nenhuma ate chegarem (mesma decisao de 10/08
   // tomada em `/minhas-tarefas`), porque pintar um kanban com a lista velha e
@@ -249,11 +279,23 @@ export default function Board({
   // Quadros: uma requisicao por montagem, sem cache -- ver o aviso em
   // `listBoards`. Em erro fica `[]` e nao `null`, senao a tela trava no
   // "Carregando" para sempre quando a API de quadros cai mas a de tarefas nao.
-  useEffect(() => {
+  // ⚠️ EXTRAIDO PARA `useCallback` NA FATIA 5b-6: o modo de edicao de colunas
+  // precisa recarregar a lista depois de criar, renomear ou apagar. Duas
+  // copias da mesma consulta divergiriam no primeiro erro de rede.
+  const carregarQuadros = useCallback(() => {
     listBoards()
       .then(setQuadros)
       .catch(() => setQuadros([]));
   }, []);
+
+  // ⚠️ `boardId` NAS DEPENDENCIAS (12/08). Sem ele, trocar de quadro no
+  // seletor NAO recarrega a lista -- e um quadro recem-criado nao esta nela,
+  // porque ela foi buscada antes de ele existir. Ver o bloco de escolha do
+  // quadro, abaixo: o sintoma era a tela mostrar as OITO colunas do Quadro
+  // geral sob o titulo do quadro avulso.
+  useEffect(() => {
+    carregarQuadros();
+  }, [carregarQuadros, boardId]);
 
   useEffect(() => {
     listSubteams().then(setSubtimes).catch(() => {});
@@ -573,12 +615,44 @@ export default function Board({
   //     nao desenha duas listas de coluna ao mesmo tempo. Cai no padrao e o
   //     contador de `foraDaColuna` abaixo denuncia o resto. **Se isso um dia
   //     acontecer, a decisao e da fatia 5, nao deste arquivo.**
+  //   - ⚠️ `boardId` PEDIDO (fatia 5b-6): quando a tela do time seleciona um
+  //     quadro avulso, ele MANDA -- e nao o lote. Um quadro recem-criado tem
+  //     ZERO tarefas, entao o lote e vazio e a regra acima cairia no padrao:
+  //     a tela desenharia as 8 colunas do Quadro geral com o titulo do quadro
+  //     avulso, e a primeira tarefa criada ali sumiria da vista. E o caso mais
+  //     provavel dos tres, porque todo quadro comeca vazio.
   const quadrosDoLote = new Set(tasks.map((t) => t.board_id));
   const quadroDoLote =
     quadrosDoLote.size === 1
       ? quadros.find((q) => q.id === [...quadrosDoLote][0])
       : undefined;
-  const quadro = quadroDoLote ?? quadros.find((q) => q.is_default);
+  const quadroPedido = boardId
+    ? quadros.find((q) => q.id === boardId)
+    : undefined;
+  // ⚠️ COM `boardId`, NAO HA QUEDA PARA O PADRAO -- E ESSE ERA O DEFEITO.
+  //
+  // A versao anterior fazia `quadroPedido ?? quadroDoLote ?? padrao`. Num
+  // quadro avulso recem-criado os tres se alinham para mentir: o lote esta
+  // vazio (quadro novo nao tem tarefa), e a lista de quadros ainda nao tem o
+  // quadro novo -- entao a tela caia no PADRAO e desenhava as OITO colunas do
+  // Quadro geral sob o titulo do quadro avulso. O modo de edicao entao
+  // oferecia renomear e apagar as colunas do quadro de 176 tarefas, e o
+  // backend recusava com 422 depois do clique.
+  //
+  // ⚠️ E UMA QUEDA SILENCIOSA E PIOR QUE UMA ESPERA. `undefined` aqui vira
+  // "Carregando…" abaixo, e o `useEffect` acima ja rebusca a lista quando o
+  // `boardId` muda -- entao a espera dura uma requisicao, e nao para sempre.
+  const quadro = boardId
+    ? quadroPedido
+    : (quadroDoLote ?? quadros.find((q) => q.is_default));
+  // ⚠️ QUADRO PEDIDO E NAO ENCONTRADO = ESPERA, e nao um kanban vazio. Sem
+  // esta saida a tela desenharia ZERO colunas com o titulo do quadro avulso, e
+  // o modo de edicao mostraria uma lista de colunas vazia -- o que parece um
+  // quadro corrompido. A lista chega na requisicao que o `useEffect` acima
+  // acabou de disparar.
+  if (boardId && !quadro) {
+    return <div className="muted">Carregando tarefas…</div>;
+  }
   const colunas: Coluna[] = quadro
     ? [...quadro.colunas].sort((a, b) => a.position - b.position)
     : [];
@@ -718,6 +792,11 @@ export default function Board({
   const visiveis = tasks.filter((t) => {
     if (t.depth !== 0) return false;
     if (!(mostrarArquivadas || !t.is_archived)) return false;
+    // ⚠️ QUADRO AVULSO: SO O QUE MORA NELE, e nada mais (fatia 5b-6). Vem
+    // ANTES do modo subtime de proposito -- as duas condicoes seriam
+    // verdadeiras ao mesmo tempo na tela do time, e o filtro hibrido traria
+    // tarefas da raiz para um quadro que nao as contem.
+    if (boardId) return t.board_id === boardId;
     if (modoSubtime) {
       if (!noQuadroGeral(t)) return false;
       // (B) interna do subtime OU (A) da raiz com responsavel do subtime.
@@ -1107,7 +1186,53 @@ export default function Board({
         </div>
       )}
 
-      {raizes.length === 0 ? (
+      {/* ⚠️ QUADRO AVULSO VAZIO DESENHA AS COLUNAS, e nao o estado vazio
+          (fatia 5b-6). Todo quadro nasce sem tarefa nenhuma, entao o estado
+          vazio seria a PRIMEIRA coisa que a pessoa ve depois de criar -- sem
+          uma coluna na tela, sem saber se nasceu certo, e sem lugar para onde
+          arrastar. O item 1 da conferencia visual do `plan-fatia-5.md` pede
+          exatamente conferir "ele nasce com as 4 colunas, nomes e cores
+          certos, na ordem certa", e nao ha o que conferir se elas nao
+          aparecem.
+
+          ⚠️ SO NO MODO `boardId`, e a limitacao e deliberada. O Quadro geral
+          tem 176 tarefas vivas e nunca cai aqui; o quadro de PROJETO cai, e
+          mudar o que ele mostra e decisao de produto que esta fatia nao tomou.
+          Se um dia o kanban vazio for o certo para todos, esta condicao some
+          -- e o comentario com ela. */}
+      {/* ⚠️ O MODO DE EDICAO SO EXISTE EM QUADRO AVULSO (`boardId`). As
+          colunas do Quadro geral nao se mexem enquanto a 5c nao existir --
+          `BoardService._assert_quadro_editavel` recusa com 422, e sao 176
+          tarefas vivas sem tela que desfaca. Oferecer o botao la seria uma
+          afordancia que o servidor recusa.
+
+          ⚠️ E SO PARA QUEM PODE. `podeEditarColunas` vem da tela, que ja
+          calculou o alcance (`podeGerirQuadrosDe`). Este componente nao
+          recalcula permissao. */}
+      {boardId && podeEditarColunas && (
+        <div style={{ marginBottom: 12 }}>
+          {editandoColunas ? (
+            <EditorDeColunas
+              boardId={boardId}
+              colunas={colunas}
+              onMudou={() => {
+                // ⚠️ RECARREGA OS DOIS. Apagar coluna MOVE tarefa (status
+                // reescrito pela coluna de destino, ADR 0042 D2), entao a
+                // lista de tarefas fica velha junto com a de colunas.
+                carregarQuadros();
+                recarregarTasks();
+              }}
+              onFechar={() => setEditandoColunas(false)}
+            />
+          ) : (
+            <button className="btn btn-ghost" onClick={() => setEditandoColunas(true)}>
+              Editar colunas
+            </button>
+          )}
+        </div>
+      )}
+
+      {raizes.length === 0 && !boardId ? (
         temFiltro ? (
           <SemResultado
             onLimpar={() => {
@@ -1184,6 +1309,8 @@ export default function Board({
         }
         defaultProjectId={projectId ?? null}
         defaultTeamId={subteamId ?? null}
+        defaultBoardId={boardId ?? null}
+        nomeDoQuadro={boardId ? (quadro?.name ?? null) : null}
         onClose={() => {
           setCriando(false);
           setEditando(null);

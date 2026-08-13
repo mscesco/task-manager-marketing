@@ -545,11 +545,33 @@ class BoardService:
         quando uma PESSOA pede, e a pessoa recebe 422 na hora -- erro visivel,
         no ato, para quem clicou. As outras duas quebram sem ninguem pedir
         nada.
+
+        ⚠️ O QUE TEM DE SOBRAR E UM **ALVO** (`is_default_target`), E NAO UMA
+        COLUNA QUALQUER DAQUELA SEMANTICA. A versao anterior conferia so a
+        semantica, e o buraco so apareceu quando a tela passou a deixar
+        ESCOLHER a semantica da coluna nova (12/08):
+
+          1. a pessoa cria "Ideias" com semantica `OPEN` -- coluna nova nasce
+             com `is_default_target=False`, sempre;
+          2. agora existem DUAS colunas `OPEN`, entao a trava antiga liberava
+             apagar `Backlog`;
+          3. `Backlog` era o unico ALVO de `OPEN` -- e o degrau 2 da ADR 0042
+             procura exatamente `is_default_target`.
+
+        Resultado: quadro com coluna `OPEN` e sem alvo `OPEN`. Toda criacao de
+        tarefa naquele quadro passa a devolver 422, dias depois, para outra
+        pessoa -- que e a classe de defeito que esta trava existe para impedir.
+
+        ⚠️ CONSEQUENCIA ACEITA: com duas colunas `OPEN`, a que e ALVO continua
+        sem poder ser apagada, mesmo havendo outra. Trocar qual coluna e o alvo
+        de uma semantica e operacao propria, e ela nao existe.
         """
         if coluna.semantic not in SEMANTICAS_QUE_O_SISTEMA_ESCREVE:
             return
         sobrou = any(
-            c.semantic is coluna.semantic and c.id != coluna.id
+            c.semantic is coluna.semantic
+            and c.id != coluna.id
+            and c.is_default_target
             for c in colunas
         )
         if not sobrou:

@@ -124,12 +124,25 @@ export default function QuadroSubtimePage() {
               onMudou={carregarQuadros}
             />
           </div>
-          {/* ⚠️ O RENDER DO QUADRO AVULSO E A PROXIMA ENTREGA. Ate la o
-              seletor troca a selecao e o `Board` continua desenhando a LENTE
-              -- o que e honesto enquanto nao existir quadro avulso nenhum, e
-              vira mentira no minuto em que existir. Nao suba esta tela para
-              producao antes daquela entrega. */}
-          <Board subteamId={team.id} title={`Quadro · ${team.name}`} />
+          {/* ⚠️ `subteamId` E `boardId` SAO EXCLUDENTES, e a escolha e o que
+              esta tela faz. Com um quadro avulso selecionado, o `Board` deixa
+              de ser LENTE (espelho do Quadro geral filtrado por pessoa, ADR
+              0034) e passa a desenhar um registro proprio -- passar os dois
+              faria o filtro hibrido trazer tarefas da raiz para um quadro que
+              nao as contem, e elas cairiam em `foraDaColuna`: contadas e
+              invisiveis. */}
+          {quadroSelecionado ? (
+            <Board
+              boardId={quadroSelecionado}
+              podeEditarColunas={podeGerir}
+              title={`Quadro · ${
+                (quadros ?? []).find((q) => q.id === quadroSelecionado)?.name ??
+                team.name
+              }`}
+            />
+          ) : (
+            <Board subteamId={team.id} title={`Quadro · ${team.name}`} />
+          )}
         </>
       )}
     </AppShell>
