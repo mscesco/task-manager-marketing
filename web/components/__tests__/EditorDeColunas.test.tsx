@@ -198,6 +198,53 @@ describe("EditorDeColunas -- apagar", () => {
     );
   });
 
+  it("⚠️ coluna VAZIA que o backend recusa por destino OFERECE o seletor", async () => {
+    // ⚠️ ERA UM BECO SEM SAIDA ATE 13/08, e nenhum portao o pegava.
+    //
+    // A contagem conta so as tarefas VIVAS; `apagar_coluna` exige destino se
+    // houver vivas OU APAGADAS, porque a FK `task_board_column` e `RESTRICT` e
+    // a linha soft-deleted continua apontando para a coluna. Resultado: a tela
+    // dizia "Ela esta vazia", a pessoa confirmava, vinha 422 pedindo destino
+    // -- e o seletor nao existia no DOM, porque so aparecia com `quantas > 0`.
+    // Aquela coluna nao podia mais ser apagada pelo produto.
+    //
+    // ⚠️ BASTA UMA TAREFA APAGADA, UMA VEZ. Criar e apagar tarefa e uso normal.
+    vi.mocked(api.apagarColuna).mockRejectedValueOnce({
+      code: CODIGO_SEM_DESTINO,
+      message: "Escolha para qual coluna as tarefas devem ir.",
+    });
+    await abrirApagar(0);
+
+    // Antes do clique a tela nao tem por que perguntar nada: para quem olha, a
+    // coluna esta vazia mesmo.
+    expect(screen.queryByLabelText("Coluna de destino")).toBeNull();
+    fireEvent.click(screen.getByText("Apagar coluna"));
+
+    // Depois da recusa, o seletor APARECE -- e o texto para de dizer so
+    // "esta vazia", que era a metade que mentia.
+    const seletor = await screen.findByLabelText("Coluna de destino");
+    expect(seletor).toBeTruthy();
+    expect(screen.getByText(/guarda tarefas apagadas/i)).toBeTruthy();
+
+    // ...e o botao volta a travar ate a pessoa escolher, em vez de repetir o
+    // mesmo 422 a cada clique.
+    expect((screen.getByText("Apagar coluna") as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+
+    vi.mocked(api.apagarColuna).mockResolvedValueOnce(0);
+    fireEvent.change(seletor, { target: { value: "c-back" } });
+    fireEvent.click(screen.getByText("Apagar coluna"));
+
+    await waitFor(() =>
+      expect(vi.mocked(api.apagarColuna)).toHaveBeenLastCalledWith(
+        BOARD,
+        "c-and",
+        "c-back",
+      ),
+    );
+  });
+
   it("⚠️ com tarefas, o botao fica TRAVADO ate escolher o destino", async () => {
     // A trava D5 da ADR 0042, do lado da tela: o backend recusaria com 422 e
     // `coluna_sem_destino`, e a pessoa levaria erro depois de confirmar.

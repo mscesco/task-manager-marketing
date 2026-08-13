@@ -11,6 +11,7 @@ import {
 import type { Coluna } from "@/lib/coluna";
 import {
   avisoDeExclusao,
+  CODIGO_SEM_DESTINO,
   destinosPara,
   ROTULO_DA_SEMANTICA,
   explicaRecusa,
@@ -64,6 +65,13 @@ export default function EditorDeColunas({
   // O fluxo de apagar, em dois passos: contar e depois confirmar.
   const [apagando, setApagando] = useState<Coluna | null>(null);
   const [quantas, setQuantas] = useState<number | null>(null);
+  // ⚠️ O BACKEND RECUSOU POR FALTA DE DESTINO NUMA COLUNA QUE A CONTAGEM DIZ
+  // ESTAR VAZIA. Acontece quando a coluna guarda tarefas APAGADAS: a contagem
+  // conta so as vivas (de proposito -- tarefa apagada nao existe para quem
+  // olha), mas o `DELETE` precisa mover as apagadas junto por causa da FK
+  // `RESTRICT`. Sem este estado, a tela mostrava o erro e NAO desenhava o
+  // seletor, e a coluna nao podia mais ser apagada pelo produto.
+  const [exigeDestino, setExigeDestino] = useState(false);
   const [destinoId, setDestinoId] = useState<string>("");
   const [erro, setErro] = useState<string | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
@@ -127,6 +135,7 @@ export default function EditorDeColunas({
     setApagando(coluna);
     setQuantas(null);
     setDestinoId("");
+    setExigeDestino(false);
     try {
       const detalhe = await colunaComContagem(boardId, coluna.id);
       setQuantas(detalhe.task_count);
@@ -152,6 +161,10 @@ export default function EditorDeColunas({
       setQuantas(null);
       onMudou();
     } catch (e) {
+      // ⚠️ SO ESTE CAMINHO LIGA `exigeDestino`, e so com o CODIGO. A outra
+      // recusa de apagar coluna tambem e 422; distinguir pela mensagem
+      // acoplaria a tela ao portugues do backend.
+      if ((e as ApiError).code === CODIGO_SEM_DESTINO) setExigeDestino(true);
       mostrarErro(e);
     } finally {
       setOcupado(false);
@@ -166,13 +179,16 @@ export default function EditorDeColunas({
         coluna: apagando,
         destino: destinoEscolhido,
         quantas: quantas ?? 0,
+        exigeDestino,
       })
     : null;
-  // Coluna vazia nao tem aviso: some direto.
+  // ⚠️ Coluna vazia some direto -- MENOS quando o backend ja recusou por falta
+  // de destino. Sem o `&& !exigeDestino`, o botao continuaria liberado e cada
+  // clique repetiria o mesmo 422.
   const podeConfirmar =
     apagando !== null &&
     quantas !== null &&
-    (quantas === 0 || destinoEscolhido !== null);
+    ((quantas === 0 && !exigeDestino) || destinoEscolhido !== null);
 
   return (
     <div
@@ -356,7 +372,7 @@ export default function EditorDeColunas({
                 </strong>
               )}
 
-              {quantas > 0 && (
+              {(quantas > 0 || exigeDestino) && (
                 <label style={{ fontSize: 13, display: "flex", gap: 8, alignItems: "center" }}>
                   Mover para:
                   <select

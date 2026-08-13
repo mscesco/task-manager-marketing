@@ -658,6 +658,29 @@ export default function Board({
     : [];
   const colunaPorId = new Map(colunas.map((c) => [c.id, c]));
 
+  // ⚠️ EM QUADRO AVULSO O TIME DA TAREFA NOVA SAI DO QUADRO, E NAO DE QUEM
+  // CLICA. `subteamId` e `boardId` sao EXCLUDENTES (a escolha e da tela do
+  // time -- ver `app/quadro/[teamId]/page.tsx`), entao no modo `boardId` o
+  // `subteamId` e sempre `undefined`. A versao anterior mandava
+  // `subteamId ?? null` aqui e, com `null`, o backend caia em
+  // `team_scope.default_team_id()`: a tarefa nascia com o time de QUEM CRIOU.
+  //
+  // ⚠️ O ESTRAGO E DIFERIDO E NAO TEM SINTOMA NA HORA -- e por isso ele passou.
+  // Um ADMIN (time raiz) criando dentro do quadro de um subtime gerava tarefa
+  // com `team_id` da RAIZ morando num quadro do subtime. Ela aparece no lugar
+  // certo e ninguem nota. Mas a edicao decide pelo TIME da tarefa (ADR 0013,
+  // `_assert_editable`), nao pelo quadro: o supervisor daquele subtime leva
+  // 403 ao arrastar aquele card e -- pior -- `apagar_coluna` e ATOMICA, entao
+  // aquela coluna passa a falhar inteira, para sempre, com uma mensagem que
+  // fala de permissao sobre uma tarefa e nao sobre a coluna que ele clicou.
+  //
+  // ⚠️ O TIME EXPLICITO PASSA PELO `_assert_team_in_reach` (Spec 037, ADR
+  // 0038): o quadro so esta nesta tela porque `list_visible` o devolveu, e
+  // aquela lente e a MESMA -- logo o time dele esta no alcance de quem olha.
+  const timeDaTarefaNova = boardId
+    ? (quadro?.team_id ?? null)
+    : (subteamId ?? null);
+
   const subCount: Record<string, number> = {};
   const subDone: Record<string, number> = {};
   for (const t of tasks) {
@@ -1308,7 +1331,7 @@ export default function Board({
           duplicando ? tasks.filter((t) => t.parent_task_id === duplicando.id) : []
         }
         defaultProjectId={projectId ?? null}
-        defaultTeamId={subteamId ?? null}
+        defaultTeamId={timeDaTarefaNova}
         defaultBoardId={boardId ?? null}
         nomeDoQuadro={boardId ? (quadro?.name ?? null) : null}
         onClose={() => {

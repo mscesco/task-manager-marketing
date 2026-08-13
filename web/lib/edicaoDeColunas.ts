@@ -175,9 +175,45 @@ export function avisoDeExclusao(params: {
   coluna: Coluna;
   destino: Coluna | null;
   quantas: number;
+  /**
+   * O backend recusou por falta de destino MESMO com `quantas === 0`.
+   *
+   * ⚠️ ISTO NAO E ESTADO IMPOSSIVEL, e era um beco sem saida ate 13/08. A
+   * contagem que a tela le (`GET .../columns/{id}`) conta so as tarefas
+   * VIVAS, de proposito -- tarefa apagada nao existe para quem olha. Mas
+   * `BoardService.apagar_coluna` exige destino se houver vivas **ou
+   * apagadas**, porque a FK `task_board_column` e `RESTRICT` e a linha
+   * soft-deleted continua apontando para a coluna.
+   *
+   * ⚠️ O RESULTADO ERA A TELA SE CONTRADIZENDO: ela dizia "Ela esta vazia",
+   * a pessoa confirmava, e vinha "Escolha para qual coluna as tarefas devem
+   * ir" -- sem seletor nenhum na tela, porque ele so aparecia com
+   * `quantas > 0`. Aquela coluna nao podia mais ser apagada pelo produto.
+   *
+   * ⚠️ E BASTA UMA TAREFA APAGADA, UMA VEZ, EM QUALQUER MOMENTO DA VIDA DA
+   * COLUNA. Criar tarefa e apagar depois e o uso normal do produto.
+   */
+  exigeDestino?: boolean;
 }): AvisoDeExclusao | null {
-  const { coluna, destino, quantas } = params;
-  if (quantas === 0) return null;
+  const { coluna, destino, quantas, exigeDestino = false } = params;
+  if (quantas === 0 && !exigeDestino) return null;
+  // ⚠️ O CASO DAS APAGADAS TEM TEXTO PROPRIO, E NAO REAPROVEITA OS DE BAIXO.
+  // Aqueles falam de "as N tarefas", e aqui N e ZERO para quem olha. Pior:
+  // o ramo de destino TERMINAL diria "isto vai marcar 0 tarefas como
+  // concluidas", que e falso duas vezes -- nao sao 0 linhas, e elas NAO sao
+  // concluidas. As apagadas vao por `UPDATE` direto, sem reescrita de status,
+  // sem cascata e sem `task_history`: a linha nao existe para o produto.
+  if (quantas === 0) {
+    return {
+      titulo: `"${coluna.name}" está vazia, mas ainda guarda tarefas apagadas.`,
+      linhas: [
+        "Elas não aparecem no quadro e continuam apagadas — mas ficam presas a esta coluna.",
+        "Escolha para onde elas vão. Nada volta a aparecer e nenhuma tarefa muda de estado.",
+      ],
+      terminal: false,
+      rotuloDoBotao: "Apagar coluna",
+    };
+  }
   if (destino === null) {
     return {
       titulo: `Para onde vão as ${quantas} tarefas de "${coluna.name}"?`,

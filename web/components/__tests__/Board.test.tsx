@@ -52,6 +52,10 @@ vi.mock("@/lib/api", async (importOriginal) => {
     // com "nao achou o texto", nenhum falando de coluna.
     listBoards: vi.fn(),
     updateTask: vi.fn(),
+    // ⚠️ Fatia 5b-6: este arquivo passou a CRIAR tarefa pelo Board, e nao so a
+    // desenhar. Sem este mock o `createTask` real dispara `fetch` no jsdom e o
+    // teste falha longe da causa.
+    createTask: vi.fn(),
     duplicateTask: vi.fn(),
     // ⚠️ O botao "Duplicar" do TaskDetail exige `task.create`. Sem mockar o
     // usuario, `me` fica null, o botao nao renderiza, e o teste falha por
@@ -1319,6 +1323,71 @@ describe("Board -- quadro avulso (fatia 5b-6)", () => {
     // partir a frase em varios elementos, esta linha fica vermelha.
     expect(await screen.findByText("no quadro Campanhas")).toBeTruthy();
   });
+
+  /**
+   * O payload que o Board MANDA ao criar tarefa dentro de um quadro avulso.
+   *
+   * ⚠️ ESTE E O TESTE QUE FALTAVA, e a lacuna estava registrada logo abaixo
+   * deste `describe` desde 12/08: os outros testes daqui conferem o que a tela
+   * DESENHA, e nenhum conferia o que ela MANDA. Ele custa montar a criacao
+   * inteira (titulo + responsavel, ADR 0031) -- e por isso fecha DUAS linhas
+   * de uma vez, `defaultBoardId` e `defaultTeamId`.
+   *
+   * ⚠️ AS DUAS FALHAM EM SILENCIO NO BACKEND, e e isso que as torna caras: os
+   * dois campos sao OPCIONAIS em `CreateTaskCommand`, entao perde-los nao
+   * levanta erro nenhum -- so produz a tarefa errada, no lugar errado ou com o
+   * dono errado, e ninguem descobre no dia.
+   */
+  async function criarTarefaPeloQuadro() {
+    vi.mocked(api.createTask).mockResolvedValue(
+      task({
+        id: "t-nova",
+        title: "Tarefa nova",
+        team_id: CRM,
+        board_id: AVULSO,
+        column_id: "av-backlog",
+      })
+    );
+
+    render(<Board boardId={AVULSO} title="Quadro · Campanhas" />);
+    fireEvent.click(await screen.findByText("+ Nova tarefa"));
+    fireEvent.change(await screen.findByLabelText("Título"), {
+      target: { value: "Tarefa nova" },
+    });
+    // ⚠️ Responsavel e OBRIGATORIO na criacao (ADR 0031), e a escolha mora
+    // dentro de um popover: sem abrir, a caixa nem existe no DOM. Sem isto o
+    // botao fica travado e o teste mediria a trava, nao o payload.
+    fireEvent.click(await screen.findByLabelText("Designar responsável"));
+    // ⚠️ PELA BUSCA, E NAO POR `findAllByRole("checkbox")[0]`. Medido: o Board
+    // desenha os proprios checkboxes em volta do modal, entao o indice 0 e de
+    // OUTRO controle -- o clique passava, o botao continuava travado em
+    // "Escolha quem vai fazer." e o teste falhava sem dizer por que. Buscar e
+    // apertar Enter e o caminho da pessoa real, e nao depende da ordem do DOM.
+    const busca = await screen.findByPlaceholderText("Buscar pessoa…");
+    fireEvent.change(busca, { target: { value: "Ana" } });
+    fireEvent.keyDown(busca, { key: "Enter" });
+    fireEvent.click(screen.getByText("Criar tarefa"));
+    await waitFor(() => expect(vi.mocked(api.createTask)).toHaveBeenCalled());
+    return vi.mocked(api.createTask).mock.calls[0][0];
+  }
+
+  it("⚠️ manda o board_id do quadro em que a pessoa esta", async () => {
+    // SABOTAGEM: `defaultBoardId={boardId ?? null}` -> `null`.
+    // Sem ela a tarefa nasce no Quadro geral e quem a criou aqui nao a acha.
+    comAvulso([]);
+    expect((await criarTarefaPeloQuadro()).board_id).toBe(AVULSO);
+  });
+
+  it("⚠️ manda o team_id DO QUADRO, e nao o de quem clica", async () => {
+    // SABOTAGEM: `timeDaTarefaNova` -> `subteamId ?? null`.
+    //
+    // ⚠️ A FIXTURE E O PONTO: quem opera aqui e a Ana, e o quadro e do CRM.
+    // Com `null`, o backend resolveria o time por `default_team_id()` -- o de
+    // QUEM CRIA. A tarefa apareceria no quadro certo com o dono errado, e o
+    // supervisor do CRM levaria 403 ao mexer nela e ao apagar a coluna dela.
+    comAvulso([]);
+    expect((await criarTarefaPeloQuadro()).team_id).toBe(CRM);
+  });
 });
 
 // =====================================================================
@@ -1331,11 +1400,20 @@ describe("Board -- quadro avulso (fatia 5b-6)", () => {
 // que e onde a lista de membros ja esta montada: o botao de salvar exige
 // titulo E responsavel (ADR 0031).
 //
-// ⚠️ O QUE SOBRA SEM GUARDIAO E `defaultBoardId={boardId ?? null}` no
-// `<TaskModal>` dentro deste arquivo. Apaga-la nao derruba nada: os testes do
-// quadro avulso aqui nao chegam a criar tarefa, e o teste do modal la monta o
-// modal DIRETO, sem passar pelo Board. Fecha-la exige montar a lista de
-// membros neste arquivo tambem.
+// ⚠️ FECHADA EM 13/08. O que faltava era um teste que CRIASSE tarefa pelo
+// Board, e nao so desenhasse -- e ele esta no `describe` acima
+// (`criarTarefaPeloQuadro`). Custou montar a criacao inteira (titulo +
+// responsavel, ADR 0031), e por isso fechou DUAS linhas de uma vez:
+// `defaultBoardId` e o `defaultTeamId` novo.
+//
+// SABOTAGENS MEDIDAS (13/08), UM teste cada -- e nenhuma outra:
+//   `defaultBoardId={boardId ?? null}` -> `null`
+//       cai `⚠️ manda o board_id do quadro em que a pessoa esta`
+//   `timeDaTarefaNova` -> `subteamId ?? null`
+//       cai `⚠️ manda o team_id DO QUADRO, e nao o de quem clica`
+//
+// ⚠️ SE UM DIA SOBRAR SO UM DESTES DOIS, a trava afinou -- os dois campos sao
+// opcionais no backend e perder qualquer um deles NAO levanta erro.
 //
 // ⚠️ O ESTRAGO E O MESMO NOS DOIS CASOS: o campo e opcional no backend, entao
 // perde-lo nao da erro -- a tarefa nasce no Quadro geral e quem a criou dentro
