@@ -1422,6 +1422,58 @@ describe("Board -- quadro avulso (fatia 5b-6)", () => {
 // =====================================================================
 
 // =====================================================================
+// ⚠️ `/boards` QUE FALHA (13/08). Ate aqui o `catch` gravava `[]` e seguia --
+// e `[]` mente duas vezes:
+//
+//   - com `boardId`, a busca do quadro pedido falha e a tela fica em
+//     "Carregando tarefas…" PARA SEMPRE. Sem erro, sem botao, sem timeout: um
+//     blip de rede de dois segundos deixava a tela morta ate um F5 que a
+//     pessoa nao tinha como adivinhar;
+//   - no Quadro geral, `[]` nao tem quadro padrao, entao a lista de colunas
+//     sai vazia, TODA tarefa cai em `foraDaColuna` e a tela acusa o dado:
+//     "N tarefas estao em uma coluna que nao e deste quadro".
+//
+// ⚠️ O SEGUNDO E O QUE MORDE HOJE -- e a tela das 26 pessoas, e o quadro
+// avulso ainda nao existe em producao.
+//
+// SABOTAGENS (medidas): tirar `setErroQuadros(true)` do `catch`, ou tirar o
+// bloco `if (erroQuadros)` do render.
+// =====================================================================
+describe("Board -- a API de quadros falhou (fatia 5b-6)", () => {
+  it("⚠️ com boardId, mostra erro com botao em vez de carregar para sempre", async () => {
+    montarApi([], []);
+    vi.mocked(api.listBoards).mockRejectedValue(new Error("rede"));
+
+    render(<Board boardId="board-campanhas" title="Quadro · Campanhas" />);
+
+    expect(
+      await screen.findByText(/não consegui carregar os quadros/i)
+    ).toBeTruthy();
+    expect(screen.queryByText(/Carregando tarefas/i)).toBeNull();
+
+    // ⚠️ O BOTAO E O PONTO. Sem ele, a unica saida continua sendo F5.
+    vi.mocked(api.listBoards).mockResolvedValue([QUADRO]);
+    fireEvent.click(screen.getByText("Tentar de novo"));
+    await waitFor(() =>
+      expect(screen.queryByText(/não consegui carregar os quadros/i)).toBeNull()
+    );
+  });
+
+  it("⚠️ no Quadro geral, nao acusa o dado por uma requisicao que falhou", async () => {
+    // Com `[]`, a tela desenhava kanban SEM COLUNA e culpava as tarefas.
+    montarApi([task({ id: "t1", title: "Campanha de maio", team_id: RAIZ })], []);
+    vi.mocked(api.listBoards).mockRejectedValue(new Error("rede"));
+
+    render(<Board title="Quadro geral" />);
+
+    expect(
+      await screen.findByText(/não consegui carregar os quadros/i)
+    ).toBeTruthy();
+    expect(screen.queryByText(/coluna que não é deste quadro/i)).toBeNull();
+  });
+});
+
+// =====================================================================
 // ⚠️ DEFEITO ENCONTRADO NA TELA EM 12/08, e nenhum portao o pegou.
 //
 // Sintoma: um quadro avulso RECEM-CRIADO mostrava as OITO colunas do Quadro

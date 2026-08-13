@@ -68,8 +68,23 @@ function montar(over: Partial<Parameters<typeof SeletorDeQuadro>[0]> = {}) {
 describe("SeletorDeQuadro -- o que ele desenha", () => {
   it("mostra a lente e os quadros DAQUELE time", () => {
     montar();
-    expect(screen.getByRole("tab", { name: /Lente do time/ })).toBeTruthy();
-    expect(screen.getByRole("tab", { name: /Pauta editorial/ })).toBeTruthy();
+    // ⚠️ `button`, E NAO `tab` (13/08). O grupo usava `role="tablist"`/`tab`,
+    // que promete navegacao por setas e um `tabpanel` do outro lado -- nada
+    // disso existia. Virou `role="group"` com `aria-pressed`, que e o que a
+    // interacao realmente faz.
+    expect(screen.getByRole("button", { name: /^Lente do time/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /^Pauta editorial/ })).toBeTruthy();
+
+    // ⚠️ QUAL ESTA ESCOLHIDO PRECISA CHEGAR A QUEM NAO ENXERGA. Ate aqui o
+    // unico sinal era a COR do botao (`btn-primary` contra `btn-ghost`), e cor
+    // nao chega a leitor de tela nenhum. Sem esta linha, trocar `aria-pressed`
+    // por nada nao derruba teste algum.
+    expect(
+      screen.getByRole("button", { name: /^Lente do time/ }).getAttribute("aria-pressed")
+    ).toBe("true");
+    expect(
+      screen.getByRole("button", { name: /^Pauta editorial/ }).getAttribute("aria-pressed")
+    ).toBe("false");
     // ⚠️ Do CRM e o padrao da raiz nao entram -- a regra e do modulo puro, e
     // esta linha prova que o componente NAO monta a lista por conta propria.
     expect(screen.queryByRole("tab", { name: /Automações/ })).toBeNull();
@@ -89,12 +104,12 @@ describe("SeletorDeQuadro -- o que ele desenha", () => {
     expect(screen.queryByText("+ Novo quadro")).toBeNull();
     // ...mas os quadros continuam VISIVEIS: some a afordancia de editar, e
     // nao o conteudo.
-    expect(screen.getByRole("tab", { name: /Pauta editorial/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /^Pauta editorial/ })).toBeTruthy();
   });
 
   it("clicar num quadro avisa o pai com o id", () => {
     const props = montar();
-    fireEvent.click(screen.getByRole("tab", { name: /Pauta editorial/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Pauta editorial/ }));
     expect(props.onSelecionar).toHaveBeenCalledWith("b-pauta");
   });
 
@@ -102,7 +117,7 @@ describe("SeletorDeQuadro -- o que ele desenha", () => {
     // A lente nao existe como registro. Um id falso a faria parecer um quadro
     // para qualquer codigo que compare ids.
     const props = montar({ selecionado: "b-pauta" });
-    fireEvent.click(screen.getByRole("tab", { name: /Lente do time/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Lente do time/ }));
     expect(props.onSelecionar).toHaveBeenCalledWith(null);
   });
 });

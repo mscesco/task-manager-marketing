@@ -20,7 +20,7 @@
  *   AI. O aviso de divergencia nao sendo mostrado.
  */
 
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import EditorDeColunas from "@/components/EditorDeColunas";
@@ -196,6 +196,70 @@ describe("EditorDeColunas -- apagar", () => {
         undefined,
       ),
     );
+  });
+
+  it("⚠️ o botao que apaga nao usa o azul de acao normal", async () => {
+    // ⚠️ TESTE FRACO, E DE PROPOSITO. Ele prende o NOME DA CLASSE, nao a
+    // pintura: o `vitest.config.ts` so le `lib/**` e `components/**`, entao
+    // se alguem apagar `.btn-danger` do `globals.css` este teste continua
+    // VERDE e o botao volta a sair sem estilo. A conferencia da cor e visual,
+    // sempre foi, e continua sendo.
+    //
+    // Ainda assim vale: sem ele, trocar `btn-danger` por `btn-primary` numa
+    // limpeza de codigo nao derruba nada -- e o botao que MARCA AS TAREFAS
+    // COMO CONCLUIDAS volta a ter a cor, a posicao e o gesto do "Salvar" do
+    // renomear, tres linhas acima, sem confirmacao digitada entre os dois.
+    await abrirApagar(0);
+    const botao = within(screen.getByRole("dialog")).getByRole("button", {
+      name: /^Apagar coluna/,
+    });
+    expect(botao.className).toContain("btn-danger");
+    expect(botao.className).not.toContain("btn-primary");
+  });
+
+  it("⚠️ o dialogo recebe o foco ao abrir, e Esc fecha", async () => {
+    // ⚠️ O DIALOGO NAO E MODAL -- e um bloco no FIM do painel. Sem levar o
+    // foco, quem usa leitor de tela nao e avisado de que ele apareceu
+    // (`role="dialog"` sozinho nao anuncia), e quem enxerga pode nem ve-lo se
+    // a lista de colunas for longa. E ate 13/08 a unica saida era achar o
+    // botao "Cancelar" la embaixo: Esc nao fazia nada.
+    await abrirApagar(0);
+    const dialogo = screen.getByRole("dialog");
+    expect(document.activeElement).toBe(dialogo);
+
+    fireEvent.keyDown(dialogo, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  it("⚠️ com o dialogo aberto, a lista de colunas trava", async () => {
+    // ⚠️ ERA POSSIVEL TROCAR DE COLUNA SEM PERCEBER. A lista fica ACIMA do
+    // dialogo e continuava clicavel: clicar em "Apagar" de outra coluna fazia
+    // o dialogo trocar de assunto no mesmo lugar, com o mesmo formato e o
+    // mesmo botao na mesma posicao. Quem tivesse acabado de ler "isto vai
+    // marcar 40 tarefas como concluidas" confirmaria sobre outra coluna.
+    //
+    // ⚠️ RENOMEAR E CRIAR TAMBEM TRAVAM: as duas mudam a lista de destinos que
+    // o dialogo esta oferecendo naquele instante.
+    await abrirApagar(0);
+    // ⚠️ ESCOPADO NA LISTA. `/^Apagar /` solto casa tambem com o "Apagar
+    // coluna" DE DENTRO do dialogo, que naturalmente nao trava -- e um teste
+    // que mede o botao errado nao mede nada.
+    const lista = within(screen.getByRole("list"));
+    for (const rotulo of [/^Apagar /, /^Renomear /]) {
+      const botoes = lista.queryAllByRole("button", { name: rotulo });
+      expect(botoes.length).toBeGreaterThan(0);
+      for (const b of botoes) {
+        expect((b as HTMLButtonElement).disabled).toBe(true);
+      }
+    }
+    expect(
+      (screen.getByRole("button", { name: /Nova coluna/ }) as HTMLButtonElement).disabled
+    ).toBe(true);
+    // ⚠️ MENOS A SAIDA: prender quem quer sair do modo de edicao e armadilha,
+    // e fechar o painel tem o mesmo efeito de cancelar.
+    expect(
+      (screen.getByRole("button", { name: /Concluir edição/ }) as HTMLButtonElement).disabled
+    ).toBe(false);
   });
 
   it("⚠️ coluna VAZIA que o backend recusa por destino OFERECE o seletor", async () => {

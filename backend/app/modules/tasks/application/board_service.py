@@ -46,6 +46,7 @@ from app.modules.tasks.domain.board_defaults import (
     ColunaPadrao,
     NOME_QUADRO_GERAL,
 )
+from app.modules.tasks.infrastructure.board_repository import BoardRepository
 from app.shared.exceptions.base import (
     AuthorizationError,
     EntityNotFoundError,
@@ -391,6 +392,7 @@ class BoardService:
         resultado, nunca entre o resultado e o banco.
         """
         quadro = await self._quadro_do_workspace(board_id)
+        await self._assert_quadro_alcancavel(quadro)
         coluna = await self._coluna_do_quadro(quadro.id, column_id)
         return (
             await self._session.execute(
@@ -583,6 +585,37 @@ class BoardService:
                     "semantic": coluna.semantic.value,
                 },
             )
+
+    async def _assert_quadro_alcancavel(self, quadro: Board) -> None:
+        """Recusa LER um quadro que a pessoa nao alcanca pela lente.
+
+        ⚠️ `_quadro_do_workspace` FILTRA WORKSPACE, E NAO LENTE, e a diferenca
+        so aparece na LEITURA. Os caminhos de escrita daqui nao precisam disto
+        porque `_assert_pode_gerir` e mais estrito -- ele exige permissao SOBRE
+        O TIME do quadro. Mas `contar_tarefas_da_coluna` nao passa por ele, e
+        ate 13/08 qualquer pessoa do workspace obtinha nome, cor, semantica e
+        contagem de tarefas de uma coluna de um quadro de OUTRO subtime,
+        bastando o id.
+
+        ⚠️ O DOCSTRING DA ROTA JA AFIRMAVA ESTA TRAVA -- "quem alcanca o quadro
+        pela lente alcanca as colunas dele" -- e o codigo nao a tinha. Comentario
+        que promete trava inexistente e pior que ausencia de comentario: a
+        proxima pessoa le, acredita, e constroi em cima.
+
+        ⚠️ USA `list_visible`, E NAO UMA CONSULTA PROPRIA. E a MESMA lente do
+        `GET /boards`, e o precedente e `TaskService._assert_board_in_reach`
+        (Spec 036, fatia 5b-6). Duas definicoes de "quadro que eu alcanco"
+        divergiriam, e a divergencia nao apareceria ate alguem ler um quadro
+        que a tela dele nao lista.
+
+        ⚠️ 404 E NAO 403, igual ao resto deste modulo: um 403 confirmaria que
+        o quadro existe.
+        """
+        alcancaveis = {
+            q.id for q, _ in await BoardRepository(self._session).list_visible()
+        }
+        if quadro.id not in alcancaveis:
+            raise EntityNotFoundError("Quadro", identifier=quadro.id)
 
     async def _tarefas_da_coluna(
         self, column_id: uuid.UUID, *, apagadas: bool

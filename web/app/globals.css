@@ -240,6 +240,22 @@ button { font-family: inherit; cursor: pointer; }
 .btn-primary:hover { background: #1d4fd0; }
 .btn-ghost { border-color: transparent; background: transparent; color: var(--text-soft); }
 .btn-ghost:hover { background: var(--surface-2); }
+/* ⚠️ ACAO DESTRUTIVA. O produto ja tinha este padrao -- o `TaskDetail` pinta o
+   botao de excluir tarefa com `background: var(--danger)` desde a Spec 019 --
+   mas so em estilo inline, entao a tela seguinte nao o herdou: o botao que
+   apaga uma coluna e MARCA AS TAREFAS DELA COMO CONCLUIDAS nasceu `btn-primary`,
+   o mesmo azul de "Criar", "Salvar" e "+ Nova tarefa".
+
+   ⚠️ A COR E A UNICA DEFESA AQUI. Apagar coluna nao pede confirmacao digitada
+   -- decisao consciente e certa, porque nada se perde. Mas o gesto e identico
+   ao de renomear: par de botoes, primario azul na esquerda. Um renomeia; o
+   outro conclui 40 tarefas, cascateia nas subtarefas e joga tudo na fila de
+   arquivamento.
+
+   `--on-danger` e nao `#fff`: no tema escuro o fundo clareia e branco por cima
+   reprova AA. Ver o comentario do token. */
+.btn-danger { background: var(--danger); border-color: var(--danger); color: var(--on-danger); }
+.btn-danger:hover { filter: brightness(0.92); }
 
 /* inputs */
 .field { display: flex; flex-direction: column; gap: 6px; }
@@ -256,6 +272,17 @@ button { font-family: inherit; cursor: pointer; }
   background: #fef2f2; border: 1px solid #fecaca; color: #991b1b;
   padding: 10px 12px; border-radius: var(--radius); font-size: 13px;
 }
+/* ⚠️ ERA USADA EM DOIS LUGARES E NAO EXISTIA (13/08). `EditorDeColunas` e
+   `SeletorDeQuadro` marcavam o erro com `className="error-text"` desde a fatia
+   5b -- e como a classe nunca foi definida, a mensagem saia na cor do texto
+   comum, tamanho 13, no meio de um painel com outros textos de tamanho 13. Ela
+   nao parecia erro; parecia uma frase a mais. O `role="alert"` estava certo e
+   o leitor de tela anunciava: quem enxerga e que nao tinha sinal.
+
+   Irma do `.error-box`, e nao a mesma coisa: a caixa e para erro que ocupa a
+   tela (falhou a carga, nao da para seguir); esta e para erro ao lado do
+   campo, dentro de um painel que continua utilizavel. */
+.error-text { color: var(--danger); font-weight: 600; }
 .muted { color: var(--text-faint); }
 
 /* utilitarios de layout */

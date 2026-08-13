@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   ApiError,
@@ -72,6 +72,7 @@ export default function EditorDeColunas({
   // `RESTRICT`. Sem este estado, a tela mostrava o erro e NAO desenhava o
   // seletor, e a coluna nao podia mais ser apagada pelo produto.
   const [exigeDestino, setExigeDestino] = useState(false);
+  const dialogoRef = useRef<HTMLDivElement | null>(null);
   const [destinoId, setDestinoId] = useState<string>("");
   const [erro, setErro] = useState<string | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
@@ -171,6 +172,38 @@ export default function EditorDeColunas({
     }
   }
 
+  // ⚠️ O DIALOGO NAO E MODAL -- ele e um bloco no fim deste painel, e a lista
+  // de colunas continua acima e clicavel. Sem esta trava dava para abrir
+  // "Apagar" de OUTRA coluna com o dialogo aberto: ele trocava de assunto no
+  // mesmo lugar, com o mesmo formato e o mesmo botao na mesma posicao. Quem
+  // tivesse acabado de ler "isto vai marcar 40 tarefas como concluidas"
+  // confirmaria sobre outra coluna sem perceber a troca.
+  //
+  // ⚠️ VALE PARA O PAINEL INTEIRO, e nao so para o botao de apagar: renomear e
+  // criar coluna tambem mudam a lista de destinos que o dialogo esta
+  // oferecendo naquele instante.
+  // ⚠️ UMA SO SAIDA DO DIALOGO, usada pelo botao E pelo Esc. Estava inline no
+  // "Cancelar" e esquecia `exigeDestino` e `erro`: reabrir a mesma coluna
+  // depois de uma recusa trazia o seletor de destino ja aberto e o erro
+  // antigo na tela, sobre uma contagem que ainda nem chegou.
+  function cancelarExclusao() {
+    setApagando(null);
+    setQuantas(null);
+    setDestinoId("");
+    setExigeDestino(false);
+    setErro(null);
+  }
+
+  const travado = ocupado || apagando !== null;
+
+  // ⚠️ O FOCO PRECISA IR PARA O DIALOGO, senao quem usa leitor de tela nao e
+  // avisado de que ele apareceu: `role="dialog"` num bloco que so aparece na
+  // arvore nao anuncia nada sozinho. E o dialogo nasce no FIM do painel, entao
+  // mesmo quem enxerga pode nao ve-lo se a lista de colunas for longa -- levar
+  // o foco rola a pagina ate ele de graca.
+  useEffect(() => {
+    if (apagando) dialogoRef.current?.focus();
+  }, [apagando]);
   const destinos = apagando ? destinosPara(apagando, colunas) : [];
   const destinoEscolhido =
     destinos.find((c) => c.id === destinoId) ?? null;
@@ -205,6 +238,9 @@ export default function EditorDeColunas({
     >
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <strong style={{ fontSize: 14 }}>Editando as colunas</strong>
+        {/* ⚠️ `ocupado`, E NAO `travado`: sair nao e destrutivo, e prender a
+            saida com o dialogo aberto e uma armadilha. Fechar o painel some
+            com o dialogo, que e o mesmo efeito de cancelar. */}
         <button className="btn btn-ghost" onClick={onFechar} disabled={ocupado}>
           Concluir edição
         </button>
@@ -234,10 +270,10 @@ export default function EditorDeColunas({
                     aria-label={`Novo nome de ${c.name}`}
                     style={{ minWidth: 180 }}
                   />
-                  <button className="btn btn-primary" onClick={() => renomear(c)} disabled={ocupado}>
+                  <button className="btn btn-primary" onClick={() => renomear(c)} disabled={travado}>
                     Salvar
                   </button>
-                  <button className="btn btn-ghost" onClick={() => setRenomeando(null)} disabled={ocupado}>
+                  <button className="btn btn-ghost" onClick={() => setRenomeando(null)} disabled={travado}>
                     Cancelar
                   </button>
                 </>
@@ -263,7 +299,7 @@ export default function EditorDeColunas({
                       setRenomeando(c.id);
                       setNomeNovo(c.name);
                     }}
-                    disabled={ocupado}
+                    disabled={travado}
                   >
                     Renomear
                   </button>
@@ -280,7 +316,7 @@ export default function EditorDeColunas({
                       className="btn btn-ghost"
                       aria-label={`Apagar ${c.name}`}
                       onClick={() => abrirExclusao(c)}
-                      disabled={ocupado}
+                      disabled={travado}
                     >
                       Apagar
                     </button>
@@ -325,16 +361,16 @@ export default function EditorDeColunas({
             O tipo decide o que o sistema faz sozinho com as tarefas desta
             coluna, e não muda depois.
           </span>
-          <button className="btn btn-primary" onClick={criar} disabled={ocupado}>
+          <button className="btn btn-primary" onClick={criar} disabled={travado}>
             Criar
           </button>
-          <button className="btn btn-ghost" onClick={() => setCriandoAgora(false)} disabled={ocupado}>
+          <button className="btn btn-ghost" onClick={() => setCriandoAgora(false)} disabled={travado}>
             Cancelar
           </button>
         </div>
       ) : (
         <div>
-          <button className="btn btn-ghost" onClick={() => setCriandoAgora(true)} disabled={ocupado}>
+          <button className="btn btn-ghost" onClick={() => setCriandoAgora(true)} disabled={travado}>
             + Nova coluna
           </button>
         </div>
@@ -343,7 +379,21 @@ export default function EditorDeColunas({
       {apagando && (
         <div
           role="dialog"
+          aria-modal="true"
           aria-label={`Apagar a coluna ${apagando.name}`}
+          ref={dialogoRef}
+          // ⚠️ `-1` E NAO `0`: o dialogo tem de RECEBER foco por script, mas
+          // nao pode entrar na ordem do Tab -- senao a pessoa tabula para um
+          // contentor que nao faz nada.
+          tabIndex={-1}
+          // ⚠️ ESC FECHA, e ate 13/08 nao fechava. O unico jeito de sair era
+          // achar o botao "Cancelar" no fim do bloco.
+          onKeyDown={(e) => {
+            if (e.key === "Escape" && !ocupado) {
+              e.stopPropagation();
+              cancelarExclusao();
+            }
+          }}
           style={{
             border: `1px solid ${avisoAtual?.terminal ? "var(--danger)" : "var(--border)"}`,
             borderRadius: 10,
@@ -391,8 +441,15 @@ export default function EditorDeColunas({
               )}
 
               <div style={{ display: "flex", gap: 8 }}>
+                {/* ⚠️ VERMELHO, E NAO O AZUL PRIMARIO. Este botao apaga a
+                    coluna e, quando o destino e terminal, MARCA AS TAREFAS
+                    COMO CONCLUIDAS, cascateia nas subtarefas e joga tudo na
+                    fila de arquivamento. Ele nascera `btn-primary`: mesma cor,
+                    mesma posicao e mesmo gesto do "Salvar" do renomear, tres
+                    linhas acima. Sem confirmacao digitada (decisao consciente
+                    -- nada se perde), a cor e a unica defesa. */}
                 <button
-                  className="btn btn-primary"
+                  className="btn btn-danger"
                   onClick={confirmarExclusao}
                   disabled={ocupado || !podeConfirmar}
                 >
@@ -400,10 +457,7 @@ export default function EditorDeColunas({
                 </button>
                 <button
                   className="btn btn-ghost"
-                  onClick={() => {
-                    setApagando(null);
-                    setQuantas(null);
-                  }}
+                  onClick={cancelarExclusao}
                   disabled={ocupado}
                 >
                   Cancelar

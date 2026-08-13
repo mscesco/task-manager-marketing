@@ -524,6 +524,57 @@ async def test_a_contagem_ignora_apagadas(db) -> None:
     assert total == 1
 
 
+async def test_a_contagem_NAO_alcanca_quadro_de_subtime_alheio(db) -> None:
+    """⚠️ A LEITURA TAMBEM TEM LENTE, e ela nao existia ate 13/08.
+
+    `contar_tarefas_da_coluna` nao passa por `_assert_pode_gerir` -- e nem
+    deve, senao proteger um numero que a pessoa obtem contando os cards na
+    tela. Mas `_quadro_do_workspace` filtra WORKSPACE, e nao a lente: com o id
+    na mao, um OPERATOR do subtime B lia nome, cor, semantica e contagem de
+    tarefas de uma coluna do quadro do subtime A.
+
+    ⚠️ O DOCSTRING DA ROTA JA AFIRMAVA A TRAVA ("quem alcanca o quadro pela
+    lente alcanca as colunas dele") e o codigo nao a tinha. Este teste e o que
+    faz as duas coisas concordarem.
+
+    ⚠️ 404 E NAO 403: um 403 confirmaria que o quadro existe.
+    """
+    ws, raiz, sub_a, sub_b, user, arvore = await _mundo(db)
+    quadro = await _quadro_avulso(db, ws, user, arvore, sub_a)
+    andamento = _por_nome(await _colunas(db, quadro.id), "Em Andamento")
+
+    # ⚠️ O MESMO usuario, com membership em B. A lente sai do `TenantContext`
+    # (`memberships` + `team_tree`), entao trocar o cracha basta -- e nao ha
+    # `add_member` aqui de proposito: esta leitura nao toca em `user_team`.
+    with acting_as(**_ctx(ws, user, arvore, mship(sub_b, "OPERATOR"))):
+        with pytest.raises(EntityNotFoundError):
+            await BoardService(db).contar_tarefas_da_coluna(
+                board_id=quadro.id, column_id=andamento.id
+            )
+
+
+async def test_a_contagem_alcanca_o_quadro_do_PROPRIO_subtime(db) -> None:
+    """O par do teste acima -- sem ele, a lente poderia recusar TUDO e passar.
+
+    ⚠️ E UM OPERATOR, e nao um supervisor: a leitura nao pede permissao de
+    gestao, so alcance. Trocar isto por `_assert_pode_gerir` faria a tela
+    perder o aviso de quantas tarefas a coluna tem para quem nao administra.
+    """
+    ws, raiz, sub_a, sub_b, user, arvore = await _mundo(db)
+    quadro = await _quadro_avulso(db, ws, user, arvore, sub_a)
+    andamento = _por_nome(await _colunas(db, quadro.id), "Em Andamento")
+    await _tarefa_na_coluna(
+        db, ws=ws, time=sub_a, user=user, coluna=andamento, titulo="Viva"
+    )
+
+    with acting_as(**_ctx(ws, user, arvore, mship(sub_a, "OPERATOR"))):
+        total = await BoardService(db).contar_tarefas_da_coluna(
+            board_id=quadro.id, column_id=andamento.id
+        )
+
+    assert total == 1
+
+
 # ------------------------------------------------------------ autorizacao
 
 

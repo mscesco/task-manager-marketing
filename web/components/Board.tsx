@@ -102,6 +102,11 @@ export default function Board({
   // tomada em `/minhas-tarefas`), porque pintar um kanban com a lista velha e
   // trocar depois e pior do que esperar meio segundo.
   const [quadros, setQuadros] = useState<Quadro[] | null>(null);
+  // ⚠️ TERCEIRO ESTADO, E ELE FALTAVA. `quadros` sozinho so distingue
+  // "carregando" (`null`) de "carregou" -- e o `catch` gravava `[]`, que e
+  // "carregou e nao ha quadro nenhum". As duas situacoes sao diferentes e a
+  // tela precisa dizer coisas diferentes. Ver o bloco de render la embaixo.
+  const [erroQuadros, setErroQuadros] = useState(false);
   const [members, setMembers] = useState<Map<string, { name: string }>>(
     new Map()
   );
@@ -283,9 +288,19 @@ export default function Board({
   // precisa recarregar a lista depois de criar, renomear ou apagar. Duas
   // copias da mesma consulta divergiriam no primeiro erro de rede.
   const carregarQuadros = useCallback(() => {
+    setErroQuadros(false);
     listBoards()
-      .then(setQuadros)
-      .catch(() => setQuadros([]));
+      .then((lista) => {
+        setQuadros(lista);
+        setErroQuadros(false);
+      })
+      .catch(() => {
+        // ⚠️ `[]` CONTINUA, e o erro vai SEPARADO. A lista vazia impede que
+        // qualquer leitor abaixo estoure; quem decide o que a tela mostra e
+        // `erroQuadros`.
+        setQuadros([]);
+        setErroQuadros(true);
+      });
   }, []);
 
   // ⚠️ `boardId` NAS DEPENDENCIAS (12/08). Sem ele, trocar de quadro no
@@ -596,6 +611,32 @@ export default function Board({
   // "indefinido" (sem pill) e se corrige sozinho na tela um instante depois.
   if (!projectId && subteamId && !projetosCarregados)
     return <div className="muted">Carregando tarefas…</div>;
+  // ⚠️ O ERRO DE `/boards` VEM ANTES DA ESPERA, e ate 13/08 ele nao existia.
+  //
+  // O `catch` gravava `[]` e seguia. Com `boardId`, `[]` fazia a busca do
+  // quadro pedido falhar e a tela ficava em "Carregando tarefas…" PARA SEMPRE
+  // -- sem erro, sem botao, sem timeout. Um blip de rede de dois segundos no
+  // momento errado deixava a pessoa olhando para uma tela morta, e o unico
+  // remedio era um F5 que ela nao tinha como adivinhar.
+  //
+  // ⚠️ E NO QUADRO GERAL O `[]` ERA PIOR QUE A ESPERA, e nao melhor: sem
+  // quadro padrao a lista de colunas sai vazia, TODA tarefa cai em
+  // `foraDaColuna` e a tela desenha um kanban sem colunas com o aviso
+  // "176 tarefas estao em uma coluna que nao e deste quadro". Ou seja, ela
+  // culpava o dado por uma requisicao que falhou.
+  //
+  // ⚠️ O BOTAO E O PONTO, e nao a mensagem. Sem ele isto continua exigindo F5.
+  if (erroQuadros)
+    return (
+      <div className="error-box" style={{ maxWidth: 480 }}>
+        Não consegui carregar os quadros, e as colunas dependem deles.
+        <div style={{ marginTop: 10 }}>
+          <button className="btn btn-ghost" onClick={carregarQuadros}>
+            Tentar de novo
+          </button>
+        </div>
+      </div>
+    );
   // Fatia 4c: sem as colunas nao ha kanban. Espera igual aos outros.
   if (!quadros) return <div className="muted">Carregando tarefas…</div>;
 
@@ -650,6 +691,18 @@ export default function Board({
   // o modo de edicao mostraria uma lista de colunas vazia -- o que parece um
   // quadro corrompido. A lista chega na requisicao que o `useEffect` acima
   // acabou de disparar.
+  //
+  // ⚠️ A ESPERA E LIMITADA HOJE, E A RAZAO TEM DATA DE VALIDADE. Chegar aqui
+  // com a lista JA carregada (e sem erro -- o erro sai acima desde 13/08)
+  // significa "este quadro nao esta entre os que voce alcanca". Hoje o unico
+  // jeito de isso acontecer e a corrida de quem acabou de criar o quadro, que
+  // se resolve na proxima resposta.
+  //
+  // ⚠️ NO DIA DE `APAGAR QUADRO` (fatia propria) ISTO VIRA ESPERA ETERNA:
+  // alguem apaga o quadro que outra pessoa esta olhando, a lista volta sem
+  // ele, e a tela dela fica em "Carregando…" para sempre. Quem entregar
+  // aquela fatia tem de trocar esta saida por um "este quadro nao existe
+  // mais", e o teste que prende isto e o `describe` do quadro recem-criado.
   if (boardId && !quadro) {
     return <div className="muted">Carregando tarefas…</div>;
   }

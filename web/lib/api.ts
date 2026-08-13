@@ -1040,6 +1040,25 @@ export async function createTask(input: TaskCreateInput): Promise<Task> {
       ...(input.project_id ? { project_id: input.project_id } : {}),
       // Spec 021: responsaveis na criacao (so manda se houver).
       ...(input.assignee_ids?.length ? { assignee_ids: input.assignee_ids } : {}),
+      // ⚠️ FALTAVA, DESDE A FATIA 5b-6 (achado em 13/08, na tela). O tipo
+      // `TaskCreateInput` declara `board_id` com quinze linhas de comentario,
+      // o `TaskModal` o preenche, o `Board` o passa e o backend inteiro o
+      // consome (schema -> router -> `TaskService.create`) -- e ESTA linha,
+      // que poe o campo no CORPO, nunca existiu. A tarefa criada dentro de um
+      // quadro avulso nascia no Quadro geral.
+      //
+      // ⚠️ E NAO DAVA ERRO EM LUGAR NENHUM: `board_id` e opcional no backend,
+      // entao a ausencia cai em `default_board_and_column_for_status`, que
+      // devolve o Quadro geral. Verde nos tres portoes, verde no CI, e o
+      // sintoma so aparece na tela -- a tarefa some do quadro em que a pessoa
+      // estava e reaparece na lente do time.
+      //
+      // ⚠️ OS TESTES DE COMPONENTE NAO PEGAM ISTO, e chegaram a dar falsa
+      // confianca: eles mockam `createTask` e afirmam o ARGUMENTO, nao o
+      // corpo. O guardiao certo e `lib/__tests__/createTaskCorpo.test.ts`,
+      // irmao do `duplicateTaskCorpo.test.ts` -- que existe porque a MESMA
+      // falha aconteceu em 05/08 com `subtask_assignees` e `skip_subtasks`.
+      ...(input.board_id ? { board_id: input.board_id } : {}),
     },
   });
 }

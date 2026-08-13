@@ -309,10 +309,17 @@ async def get_column(
     confirmacao; o `GET /boards` nao o carrega de proposito, para nao pagar um
     `COUNT` por coluna em toda abertura de tela.
 
-    ⚠️ SEM TRAVA DE ESCRITA, e e o certo: quem alcanca o quadro pela lente
-    alcanca as colunas dele -- o `GET /boards` ja devolve todas. Exigir
+    ⚠️ SEM TRAVA DE ESCRITA, E ISSO E O CERTO: quem alcanca o quadro pela
+    lente alcanca as colunas dele -- o `GET /boards` ja devolve todas. Exigir
     `board.manage.*` aqui seria proteger um numero que a mesma pessoa obtem
     contando os cards na tela.
+
+    ⚠️ MAS A LENTE E CONFERIDA, e ate 13/08 nao era. `_quadro_do_workspace`
+    filtra WORKSPACE; a frase acima descrevia uma trava que o codigo nao tinha,
+    e com o id na mao um OPERATOR do subtime B lia nome, cor, semantica e
+    contagem de uma coluna do quadro do subtime A. Quem faz a conferencia agora
+    e `BoardService._assert_quadro_alcancavel`, com a MESMA lente do
+    `GET /boards` (`list_visible`).
     """
     contagem = await BoardService(session).contar_tarefas_da_coluna(
         board_id=board_id, column_id=column_id

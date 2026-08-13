@@ -125,7 +125,14 @@ export default function SeletorDeQuadro({
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
       <div
-        role="tablist"
+        /* ⚠️ `group`, E NAO `tablist`. `tablist`/`tab` e um CONTRATO: quem
+           usa leitor de tela ouve "aba 1 de 3" e espera navegar com as setas,
+           com o Tab pulando o grupo inteiro e um `tabpanel` do outro lado do
+           `aria-controls`. Nada disso existe aqui -- sao botoes comuns. Papel
+           errado e pior que papel nenhum: sem ele a pessoa usa como botao;
+           com ele, ela tenta o modelo anunciado e ele nao responde.
+           `aria-pressed` nos botoes diz o que importa: qual esta escolhido. */
+        role="group"
         aria-label="Quadros deste time"
         style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}
       >
@@ -134,16 +141,27 @@ export default function SeletorDeQuadro({
           return (
             <span key={o.id ?? "lente"} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
               <button
-                role="tab"
-                aria-selected={ativa}
+                type="button"
+                aria-pressed={ativa}
                 onClick={() => onSelecionar(o.id)}
                 title={o.descricao}
                 className={ativa ? "btn btn-primary" : "btn btn-ghost"}
                 style={{ fontSize: 13 }}
               >
                 {o.nome}
+                {/* ⚠️ NA ABA ESCOLHIDA A DESCRICAO NAO PODE SER `muted`.
+                    Medido: cinza `--text-faint` sobre o azul do `btn-primary`
+                    da 1.68 no tema claro e 1.32 no escuro -- AA pede 4.5. Nao
+                    era "dificil de ler", era invisivel. E logo AQUI: esta
+                    frase e o que explica a diferenca entre a lente do time e
+                    um quadro proprio, e ela sumia exatamente quando a pessoa
+                    acabava de escolher e estava tentando entender o que
+                    escolheu. Escolhida, herda a cor do botao com opacidade. */}
                 {o.descricao && (
-                  <span className="muted" style={{ fontSize: 11, marginLeft: 6 }}>
+                  <span
+                    className={ativa ? undefined : "muted"}
+                    style={{ fontSize: 11, marginLeft: 6, opacity: ativa ? 0.85 : undefined }}
+                  >
                     {o.descricao}
                   </span>
                 )}
