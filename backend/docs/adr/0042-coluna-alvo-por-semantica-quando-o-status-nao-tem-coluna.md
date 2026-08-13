@@ -28,7 +28,7 @@ do quadro, a coluna com `legacy_status = :status`. Não achando, levanta
 Enquanto todo quadro nasce com as 8 colunas padrão — uma por status, ponte em
 todas — essa função nunca falha. **A fatia 5b acaba com essa garantia:** quadro
 criado por pessoa nasce com **4 colunas** (decisão de 11/08, ver o
-`plan-fatia-5.md`), uma por semântica.
+§Fatia 5 do `plan.md` da Spec 036), uma por semântica.
 
 ⚠️ **O `board_defaults.py` já previu isto, e adiou pela dependência que agora
 foi cumprida:**

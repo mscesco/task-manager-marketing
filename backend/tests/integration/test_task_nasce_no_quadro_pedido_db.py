@@ -1,6 +1,7 @@
 """Spec 036, fatia 5b-6 -- tarefa de topo nasce no quadro PEDIDO.
 
-⚠️ ISTO NAO EXISTIA, E O `plan-fatia-5.md` DIZIA QUE SIM. A §1b daquele arquivo
+⚠️ ISTO NAO EXISTIA, E O PLANO DIZIA QUE SIM. A §1b da fatia 5 (hoje em
+`specs/036-quadro-interno/plan.md`; era o `plan-fatia-5.md`, absorvido em 13/08)
 afirma que "quadro avulso recebe tarefa por `board_id` explicito no comando de
 criacao, que e parametro, nao descoberta". Era descricao do MODELO, e nao do
 codigo: ate 12/08, `TaskService.create` resolvia o quadro de tarefa de topo com

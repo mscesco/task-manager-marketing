@@ -169,6 +169,60 @@ export function opcaoSelecionada(
 }
 
 /**
+ * Valida o `?quadro=` da URL contra os quadros carregados.
+ *
+ * Devolve o id que a tela deve desenhar, ou `null` para a lente.
+ *
+ * ⚠️ POR QUE A URL, E NAO ESTADO DE COMPONENTE (13/08). Ate aqui a escolha do
+ * quadro vivia num `useState` da pagina: F5 voltava para a lente, o link
+ * mandado para um colega abria a lente, e o botao Voltar do navegador saia da
+ * pagina do time em vez de desfazer a troca. E havia um efeito pior que os
+ * tres: depois de criar uma tarefa no quadro avulso, um F5 devolvia a pessoa
+ * para a lente -- onde a tarefa NAO aparece, porque a lente e espelho do
+ * Quadro geral. O sintoma ficava identico ao do `board_id` que faltava no
+ * corpo do `POST /tasks`, com causa completamente diferente.
+ *
+ * ⚠️ `quadros === null` DEVOLVE O PEDIDO SEM CONFERIR, e isso e o ponto. `null`
+ * e "a lista ainda nao chegou", nao "nao ha quadros" -- conferir agora
+ * derrubaria toda selecao para a lente por um instante a cada carga, e a tela
+ * piscaria a lente antes de mostrar o quadro pedido.
+ *
+ * ⚠️ CONFERE O **TIME** TAMBEM, e nao so a existencia. `listBoards` devolve
+ * tudo que a pessoa alcanca, inclusive quadros de outros times. Sem esta
+ * parte, `/quadro/{timeA}?quadro={quadroDoTimeB}` desenharia o quadro de B sob
+ * a pagina de A -- e o seletor, que filtra por time, nao teria aba marcada:
+ * corpo mostrando um quadro, cabecalho dizendo "Lente do time".
+ *
+ * ⚠️ ID INVALIDO CAI NA LENTE EM SILENCIO, igual ao `opcaoSelecionada` acima e
+ * pelo mesmo motivo: link velho, quadro apagado por outra pessoa, ou id
+ * digitado na mao. Erro na cara de quem so abriu a tela seria pior que o lugar
+ * padrao dela.
+ */
+export function quadroPedidoNaUrl(
+  parametro: string | null | undefined,
+  quadros: readonly Quadro[] | null,
+  teamId: string,
+): string | null {
+  if (!parametro) return null;
+  if (quadros === null) return parametro;
+  const achado = quadros.find((q) => q.id === parametro);
+  if (!achado || achado.team_id !== teamId || achado.is_default) return null;
+  return parametro;
+}
+
+/**
+ * O endereco de uma escolha do seletor. `null` = lente.
+ *
+ * ⚠️ MORA AQUI, e nao na pagina, para o teste alcancar. O `include` do
+ * `vitest.config.ts` e so `lib/**` e `components/**`: qualquer regra escrita
+ * dentro de `app/` nasce sem guardiao nenhum.
+ */
+export function urlDoQuadro(teamId: string, boardId: string | null): string {
+  const base = `/quadro/${teamId}`;
+  return boardId ? `${base}?quadro=${encodeURIComponent(boardId)}` : base;
+}
+
+/**
  * Valida o nome de um quadro ANTES de mandar para a API.
  *
  * Devolve o nome limpo, ou `null` quando nao serve.

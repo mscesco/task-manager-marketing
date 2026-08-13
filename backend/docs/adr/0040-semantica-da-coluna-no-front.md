@@ -153,7 +153,8 @@ uma decisão de produto que ninguém tomou. Se quiser mudar, é outra ADR.
   portão já existe: `minhas-tarefas/page.tsx:582`,
   `if (!items) return <div>Carregando…</div>`. A 4b acrescenta uma condição a
   esse `if` — **não é tela nova**, ao contrário do que a §5 da
-  `sondagem-fatia-4.md` afirma.
+  a §Fatia 4 do `plan.md` da Spec 036 afirma (era o `sondagem-fatia-4.md`,
+  absorvido em 13/08).
 
 ## Como medir
 

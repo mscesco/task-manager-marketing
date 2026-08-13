@@ -29,6 +29,8 @@ import {
   opcaoSelecionada,
   opcoesDoSeletor,
   podeGerirQuadrosDe,
+  quadroPedidoNaUrl,
+  urlDoQuadro,
 } from "@/lib/seletorDeQuadro";
 
 const RAIZ = "team-marketing";
@@ -191,7 +193,63 @@ describe("opcaoSelecionada", () => {
   });
 });
 
+describe("quadroPedidoNaUrl", () => {
+  const CRM = "team-crm";
+  const OUTRO = "team-design";
+  const avulso = (id: string, team: string): Quadro =>
+    ({ id, name: `Quadro ${id}`, team_id: team, is_default: false, colunas: [] } as unknown as Quadro);
+  const geral = (id: string, team: string): Quadro =>
+    ({ id, name: "Quadro geral", team_id: team, is_default: true, colunas: [] } as unknown as Quadro);
+
+  it("sem parametro, e a lente", () => {
+    expect(quadroPedidoNaUrl(null, [avulso("b1", CRM)], CRM)).toBeNull();
+    expect(quadroPedidoNaUrl("", [avulso("b1", CRM)], CRM)).toBeNull();
+  });
+
+  it("parametro que existe naquele time passa", () => {
+    expect(quadroPedidoNaUrl("b1", [avulso("b1", CRM)], CRM)).toBe("b1");
+  });
+
+  it("⚠️ com a lista AINDA NAO CARREGADA, confia no parametro", () => {
+    // ⚠️ `null` e "nao chegou", nao "nao ha quadros". Conferindo aqui, toda
+    // carga de pagina derrubaria a selecao para a lente por um instante e a
+    // tela piscaria a lente antes de mostrar o quadro pedido.
+    expect(quadroPedidoNaUrl("b1", null, CRM)).toBe("b1");
+  });
+
+  it("⚠️ quadro de OUTRO time cai na lente", () => {
+    // `listBoards` devolve tudo que a pessoa alcanca. Sem esta trava,
+    // `/quadro/{timeA}?quadro={quadroDoTimeB}` desenharia o quadro de B sob a
+    // pagina de A -- e o seletor, que filtra por time, ficaria sem aba
+    // marcada: corpo mostrando um quadro, cabecalho dizendo "Lente do time".
+    expect(quadroPedidoNaUrl("b2", [avulso("b2", OUTRO)], CRM)).toBeNull();
+  });
+
+  it("id inexistente cai na lente, sem erro", () => {
+    // Link velho, ou quadro apagado por outra pessoa.
+    expect(quadroPedidoNaUrl("sumiu", [avulso("b1", CRM)], CRM)).toBeNull();
+  });
+
+  it("⚠️ o Quadro geral nao e uma opcao desta tela", () => {
+    // Ele tem tela propria (`/quadro`) e nao aparece no seletor -- aceitar o
+    // id dele aqui daria um corpo sem aba correspondente, igual ao caso do
+    // time alheio.
+    expect(quadroPedidoNaUrl("g1", [geral("g1", CRM)], CRM)).toBeNull();
+  });
+});
+
+describe("urlDoQuadro", () => {
+  it("lente e a URL sem parametro", () => {
+    expect(urlDoQuadro("t1", null)).toBe("/quadro/t1");
+  });
+
+  it("quadro vira parametro", () => {
+    expect(urlDoQuadro("t1", "b1")).toBe("/quadro/t1?quadro=b1");
+  });
+});
+
 describe("nomeDeQuadroValido", () => {
+
   it("apara os espacos", () => {
     expect(nomeDeQuadroValido("  Pauta  ")).toBe("Pauta");
   });

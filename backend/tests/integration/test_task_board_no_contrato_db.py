@@ -28,7 +28,8 @@ seria escrever um teste que nao pode falhar, e teste que nao pode falhar nao
 afirma nada. O que o substitui sao os testes 3 e 4, que afirmam POR QUE nao ha
 vazamento -- e portanto podem falhar no dia em que o porque deixar de valer.
 
-⚠️ E O QUE MUDOU DESDE A SONDAGEM: a §4 de `sondagem-fatia-4.md` concluiu que
+⚠️ E O QUE MUDOU DESDE A SONDAGEM: a §Fatia 4 do `plan.md` da Spec 036 (que
+absorveu o `sondagem-fatia-4.md` em 13/08) concluiu que
 a fatia 3 estava subespecificada por faltar `semantic` e `notify_deadline` da
 coluna. **A fatia 2 resolveu isso e a sondagem e anterior a ela.**
 `BoardColumnResponse` ja carrega os dois, e o front cruza por `column_id` o

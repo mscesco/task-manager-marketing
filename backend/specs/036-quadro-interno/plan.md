@@ -1,40 +1,81 @@
 # Plano — Spec 036 (Quadro interno de subtime)
 
-Cinco fatias. As três primeiras são backend e **nada muda na tela**; a quarta
-é o front; a quinta é a feature.
+> ⚠️ **ESTE É O ÚNICO PLANO DESTA SPEC.** A pasta tem `spec.md` e `plan.md`, e
+> mais nada — igual a todas as outras specs do repositório.
+>
+> **Consolidado em 13/08/2026.** Até esta data a 036 era a única spec com
+> quatro arquivos: `plan-fatia-5.md` e `sondagem-fatia-4.md` nasceram ao lado
+> do `plan.md` em vez de dentro dele, e a sessão seguinte, para não se
+> contradizer, **rebaixou o `plan.md` a histórico** apontando para o arquivo
+> novo. O arquivo canônico foi demovido para acomodar a exceção. Os dois foram
+> absorvidos aqui e apagados; nada do conteúdo deles se perdeu.
+>
+> ⚠️ **SE VOCÊ FOR ESCREVER UMA FATIA NOVA, ESCREVA NESTE ARQUIVO.** Criar um
+> `plan-fatia-N.md` ao lado é o que produziu a bagunça que este cabeçalho está
+> desfazendo. Seção nova vai no fim da lista de fatias; texto superado vira
+> subseção marcada como histórica, como as três que já existem aqui.
 
-> ⚠️ **A SEÇÃO "Fatia 5" DESTE ARQUIVO É HISTÓRICA (12/08/2026).** O plano
-> vigente da fatia 5 é `plan-fatia-5.md`, neste mesmo diretório. A seção daqui
-> foi escrita em 10/08 sobre um modelo de produto que a decisão de 11/08
-> substituiu, e **afirma quatro coisas erradas** — lista no cabeçalho dela.
-> Não a apague: o portão do vazamento e o adendo de mover entre quadros
-> continuam válidos e estão recitados no arquivo novo.
->
-> **Estado em 12/08/2026 — fatias 1, 2, 3, 4a, 4b, 4c e 5b-1/5b-2/5b-3/5b-5a
-> EM PRODUÇÃO.** Backend **714**, front **541**, migrations `0012`, ADRs
-> backend **42**. Pendentes da fatia 5: **5b-4**, **5b-5b** e **5b-6**.
->
-> *(Estado anterior, 10/08 fim do dia: backend 642, front 503, com a 4c ainda
-> bloqueada por contrato. O bloqueio acabou no mesmo dia — ver a seção da 4c.)*
->
-> ⚠️ **A fatia 4 são TRÊS sessões, não uma** (`sondagem-fatia-4.md`, §6), e a
-> sondagem sugere renumerar em 4a/4b/4c. **Este arquivo continua numerando de
-> 1 a 5** — quem for executar a 4 lê a sondagem antes e trata a numeração dela
-> como detalhamento, não como concorrente. As duas numerações não coincidem
-> com o roteiro antigo (F1a/F1b/F2/F3), que está morto.
+## Estado (conferido no `main` em 13/08/2026)
 
-⚠️ **Ordem de deploy no fim do arquivo.** A fatia 1 foi commitada JUNTO com o
-código que lê `deleted_at` — a migration NÃO pode ficar para trás; a 4 e a 5
-são as que mudam o que as pessoas veem.
+Portões verdes: **backend 776 passed**, **front 669 passed**, `tsc` 0,
+`next build` compilando. Migrations `0012`. ADRs backend: 42.
+
+⚠️ **NADA DA FATIA 5b ESTÁ EM PRODUÇÃO.** Tudo commitado em `main`, nada
+deployado. O deploy espera a fatia 6 — decisão de 13/08, ver §Ordem de deploy.
+
+| fatia | estado | testes |
+|---|---|---|
+| **1** — `board.deleted_at` (migration `0012`) | ✅ em produção | — |
+| **2** — `GET /api/v1/boards` | ✅ em produção | — |
+| **3** — quadro e coluna na resposta de tarefa | ✅ em produção | — |
+| **4a** — semântica da coluna no front | ✅ em produção | — |
+| **4b** — `/minhas-tarefas` pela API | ✅ em produção | — |
+| **4c** — os quatro caminhos de escrita | ✅ em produção | 503→529 |
+| **ADR 0042** — coluna alvo por semântica | ✅ escrita | — |
+| **5b-1** — os dois degraus em `column_for_status_in_board` | ✅ em `main` | 657→681 |
+| **5b-2** — caminhos de escrita por status | ✅ em `main` | 681→685 |
+| **5b-3** — permissões + `BoardService` + `POST`/`PATCH` | ✅ em `main` | 685→714 |
+| **5b-4a** — criar e renomear coluna | ✅ em `main` | 717→733 |
+| **5b-4b** — apagar coluna, duas travas, códigos de erro | ✅ em `main` | 733→765 |
+| **5b-5a** — `colunaEquivalente` e `rotuloDeColuna` (lib pura) | ✅ em `main` | 529→541 |
+| **5b-5b** — índice de colunas, `/minhas-tarefas`, `/arquivadas`, lente D1 | ✅ em `main` | 541→565 |
+| **5b-6** — `board_id` na criação + a tela do quadro avulso | ✅ em `main` | 765→774 / 565→650 |
+| **5b-7** — correções de 13/08 (§Fatia 5b-7) | ✅ em `main` | 774→776 / 650→669 |
+| **6** — modo de edição e reordenar coluna | ⬜ não começou | — |
+
+⚠️ **`_recipients` filtra `is_active`** (dano medido: 29 avisos) — em `main`,
+não em produção. ⚠️ **Medido em 13/08: a notificação é IN-APP e só** (o modelo
+`Notification` é "notificacao in-app entregue a um recipient"; não há SMTP nem
+e-mail no módulo). Os 29 avisos são linhas numa tabela endereçadas a contas
+**desativadas**, que não entram para vê-las. **Medido não é o mesmo que
+danoso** — este item foi usado por várias sessões como custo de adiar o deploy,
+e não sustenta esse papel.
+
+⚠️ **A fatia 1 foi commitada JUNTO com o código que lê `deleted_at`** — a
+migration NÃO podia ficar para trás, e a `0012` está em produção desde 10/08. A
+4 e a 5 são as que mudam o que as pessoas veem.
+
+## Como ler este arquivo
+
+Sete fatias, e três delas viraram várias. As três primeiras são backend e
+**nada muda na tela**; a quarta é o front; a quinta é a feature; a sexta é o
+modo de edição.
+
+⚠️ **Três seções são HISTÓRICAS e estão marcadas como tal** — "Fatia 4c: o
+bloqueio original", "Fatia 4 (texto original)" e "Fatia 5 (texto de 10/08)".
+Elas ficam porque registram por que o roteiro mudou. **Não as execute.**
 
 ⚠️ **Duas fatias por sessão, no máximo** — a sessão de 05/08 emendou três
-"pequenas" e custou 58 testes vermelhos. A 2 e a 4 pedem sessão própria pelos
-motivos escritos abaixo.
+"pequenas" e custou 58 testes vermelhos.
 
 ⚠️ **Cada fatia tem sabotagem própria, com string única, dizendo qual teste
 deve cair** — e a sabotagem tem de **reverter a correção inteira**, não
 mutilar. Mutilar um `WHERE` de forma que a consulta devolva duas linhas e o
 `.first()` escolha uma pode passar verde por sorte.
+
+⚠️ **Sabotagem VERDE é descoberta, não alívio.** Em 13/08 duas sabotagens
+verdes revelaram, uma, um campo que nunca saía no corpo da requisição
+(§Fatia 5b-7) e, outra, uma linha acrescentada sem caso, que foi removida.
 
 ---
 
@@ -127,7 +168,7 @@ desatualiza no dia em que a fatia 5 permitir renomear quadro. **O selo sai de
 graça; o campo custaria manutenção.**
 
 **2. `semantic` e `notify_deadline` NÃO entraram, e a §4 da
-`sondagem-fatia-4.md` está SUPERADA nesse ponto.** A sondagem (06/08) concluiu
+a §Fatia 4 — por que ela virou TRÊS está SUPERADA nesse ponto.** A sondagem (06/08) concluiu
 que a fatia 3 estava subespecificada por faltar os dois. **A fatia 2 resolveu
 isso depois de a sondagem ser escrita:** `BoardColumnResponse` já os carrega, e
 o docstring dela diz explicitamente que os pôs ali por causa dessa sondagem.
@@ -451,10 +492,565 @@ mostrar estado de erro, não um quadro sem colunas.
 
 ---
 
-## Fatia 5 — O quadro interno (HISTÓRICO — superseded em 11/08 por `plan-fatia-5.md`)
+## Fatia 4 — por que ela virou TRÊS (absorvido da sondagem de 09/08)
 
-> ⚠️ **NÃO EXECUTE ESTA SEÇÃO.** O plano vigente é
-> `backend/specs/036-quadro-interno/plan-fatia-5.md`. Este texto é de 10/08 e
+> Esta seção substitui o `sondagem-fatia-4.md`, apagado na consolidação de
+> 13/08. ⚠️ **Nada naquele documento foi executado** — era leitura de arquivo e
+> contagem, sem `tsc`, sem `npm test`, sem navegador. O que sobreviveu ao fato
+> de a fatia 4 estar em produção desde 10/08 está aqui, com a medição original.
+
+**Veredito: três sessões, não uma. E a primeira não é front.**
+
+| sessão | o quê | por que separada |
+|---|---|---|
+| **4a** | ADR da semântica no front + `semantic`/`notify_deadline` na resposta da fatia 3 + partir `lib/status.ts` | é decisão + contrato de API. Não é a mesma coisa que mexer em tela. |
+| **4b** | teste de componente de `minhas-tarefas` + converter o arquivo | 1195 linhas, zero teste, 7 usos, e o `useState` do ponto duro |
+| **4c** | `Board.tsx`, `TaskDetail.tsx`, `arquivadas`, `TaskModal` | os quatro dependem da 4a estar pronta |
+
+Efeito no roteiro: a spec passou de 5 fatias para 7, e a fatia 5 ficou a cinco
+sessões de distância, não a duas.
+
+### O que a sondagem mediu (06/08, no `main` de então)
+
+⚠️ **Os 8 arquivos que importavam `@/lib/status` não eram 8.** Três não tinham
+nada a ver com quadro: `lib/exclusao.ts` (só `plural`),
+`app/projetos/[id]/page.tsx` (só `PRIORITY_LABEL`) e `components/TaskCard.tsx`
+(custo zero direto). **`lib/exclusao.ts` importando `plural` de `@/lib/status`
+é a evidência de que aquele módulo já tinha virado gaveta:** uma função de
+pluralização morava no arquivo de status porque foi ali que nasceu.
+
+Os **cinco** que usavam `STATUSES`, e onde a fatia realmente morava:
+
+| arquivo | linhas | usos | teste de componente |
+|---|---|---|---|
+| `app/minhas-tarefas/page.tsx` | 1195 | 7 | **nenhum** |
+| `components/TaskDetail.tsx` | 2186 | 2 | **nenhum** |
+| `components/Board.tsx` | 1218 | 3 | sim |
+| `components/TaskModal.tsx` | 1045 | 1 | parcial |
+| `app/arquivadas/page.tsx` | 404 | 2 | parcial |
+
+⚠️ **O trabalho não era "trocar import": era tirar código do escopo de
+módulo.** Cinco constantes eram derivadas **no topo do arquivo**, calculadas no
+`import`, antes do primeiro render — `STATUS_LABEL`, `STATUS_COLOR` e
+`TODOS_STATUS` em `minhas-tarefas`, `STATUS_LABEL` em `TaskDetail` e em
+`arquivadas`. Cada uma virou `useMemo` **dentro** do componente, e todo
+call-site passou a exigir estar dentro da função. Em arquivos de 1195 e 2186
+linhas sem teste, **é aí que estava o custo**.
+
+⚠️ **`STATUSES` também era usado como TIPO** (`(typeof STATUSES)[number]`, em
+`Board.tsx` e `minhas-tarefas`). Virando dado de runtime, a derivação morre.
+
+### ⚠️ O achado que mudou o roteiro, e que ainda explica o produto de hoje
+
+`lib/status.ts` tinha **três taxonomias de status escritas à mão**, e as três
+eram **semântica de coluna**, não rótulo:
+
+| conjunto | valor | função |
+|---|---|---|
+| `STATUS_OCULTOS_POR_PADRAO` | `{COMPLETED}` | `statusPadraoMinhasTarefas()` |
+| `STATUS_QUE_PARAM` | `{IN_PROGRESS, IN_REVIEW, EXTERNAL_APPROVAL}` | `diasParado()` |
+| corpo de `deadlineTone()` | `COMPLETED \|\| CANCELLED \|\| BLOCKED` | `deadlineTone()` |
+
+**Isso é exatamente `column.semantic` e `column.notify_deadline`** — os campos
+que a Spec 035 criou no backend e que o handoff de então listava como "continuam
+sem leitor". O leitor deles era o front.
+
+O que quebraria no dia do primeiro quadro interno: coluna criada por gente tem
+`legacy_status` **NULL**, e as três funções receberiam um status fora de todos
+os conjuntos. Uma tarefa em *"Aguardando cliente"* alertaria prazo, porque
+`deadlineTone` só silenciava `COMPLETED/CANCELLED/BLOCKED` — e `notify_deadline`
+existe no backend justamente para desligar isso.
+
+⚠️ **E as três passavam nos testes.** 296 linhas em `status.test.ts`, todas
+contra a lista fixa de 8. **Teste correto para o mundo de hoje e cego para o de
+amanhã** — a frase vale para muita coisa desta spec.
+
+⚠️ **O `plan.md` da época punha as três do lado errado da divisão.** Ele mandava
+partir `@/lib/status` em "puro e síncrono" e "vindo da API"; `deadlineTone` e
+`diasParado` **parecem** puras — recebem string, devolvem valor, sem I/O — e
+dependem da taxonomia. Iriam para o lado "puro" por inércia, levando o defeito
+junto.
+
+### O ponto mais duro, em uma linha
+
+`app/minhas-tarefas/page.tsx:117`, inicializador de `useState`:
+`() => new Set(statusPadraoMinhasTarefas())`. Roda no **primeiro render**, antes
+de qualquer `fetch`. O filtro padrão da tela dependia da lista de colunas, que
+passou a chegar depois. **Não havia solução barata:** ou a tela nasce sem filtro
+e aplica quando o dado chega (e a lista pisca), ou não renderiza até chegar (e a
+tela mais usada do produto ganha um "carregando" que não tinha). Decisão de
+produto, não de código.
+
+### O que ainda vale, e não foi resolvido
+
+⚠️ **Os tokens `--status-*-dot` / `--status-*-text` são declarados em
+`app/globals.css` por NOME de status.** Coluna criada por gente não tem token. A
+sondagem contou isso como "um quarto problema", e é o que a fatia 5b respondeu
+escolhendo **cor por rotação sobre os 8 tokens existentes**, em vez de hex livre
+(§Fatia 5, corte 2).
+
+⚠️ **Não medido, e continua não medido:** o custo da carona dos tokens de cor do
+status de PROJETO (`projetos/page.tsx` e `projetos/[id]/page.tsx`).
+
+---
+
+## Fatia 5 — o quadro avulso (vigente; escrita em 11/08, emendada até 13/08)
+
+> Esta seção era o arquivo `plan-fatia-5.md`, absorvido aqui na consolidação de
+> 13/08. Ela **substitui** a §"Fatia 5 (texto de 10/08)", que segue logo
+> abaixo como registro histórico.
+>
+> ⚠️ **Duas subseções que viviam no texto de 10/08 continuam VIGENTES e foram
+> promovidas para seções próprias**, porque estavam presas dentro de um bloco
+> marcado "não execute": o **§Portão do vazamento de quadro** e o
+> **§Adendo — mover tarefa entre quadros**. Elas eram o motivo pelo qual a
+> seção histórica não podia ser apagada; agora podem ser lidas sem que ninguém
+> precise garimpar dentro de texto morto.
+
+### ⚠️ O que mudou de entendimento em 11/08 (leia antes de tudo)
+
+Três coisas que o texto de 10/08 (§Fatia 5 histórica) afirmava e que **estão erradas** sob o modelo de
+produto confirmado:
+
+**a) "O quadro do subtime nasce vazio" — não existe esse quadro.**
+`/quadro/[teamId]` é **lente**, não registro (ADR 0034 §Contexto). O modelo
+híbrido está implementado e **em produção** desde a fatia 4:
+`Board.tsx:687-704` mostra a união de (A) tarefas da raiz com algum responsável
+do subtime e (B) internas do subtime (`team_id === subteamId`). A lente nasce
+cheia por construção. **A questão "migrar as tarefas existentes" não existe.**
+
+**b) "Mexer em `default_board_and_column_for_status` é escopo OBRIGATÓRIO da
+fatia 5" — é o contrário: mexer nela é DEFEITO.**
+Tarefa interna de subtime nasce hoje com `board_id` do Quadro geral e `team_id`
+do subtime, e é exatamente isso que a faz aparecer na lente. Mudá-la para
+"o quadro do time da tarefa" tira a tarefa interna da lente.
+⚠️ **`test_tarefa_de_subtime_nasce_no_quadro_da_raiz` continua CERTO e continua
+VERDE.** O texto de 10/08 mandava reescrevê-lo; não reescreva.
+Quadro avulso recebe tarefa por **`board_id` explícito no comando de criação**,
+que é parâmetro, não descoberta.
+
+**c) "ADR 0036: derivação do status pela semântica" está listada como entrega
+da fatia 5 — ela já existe**, e as 0034 e 0035 também. O que falta é código,
+não decisão. A decisão que faltava é a **0042**, escrita em 11/08.
+
+**d) ⚠️ ACRESCENTADO EM 12/08 — "a cor da coluna roda RGB livre (hex)"
+também está superado.** O texto de 10/08 afirma isso na §Ordem revisada,
+parágrafo da cor, citando a ADR 0040 item 4, e manda o backend validar
+`^#[0-9a-fA-F]{6}$`. **O corte de 11/08 decidiu o contrário para esta fatia:**
+coluna nova nasce com cor de **token**, por rotação fixa. Ver §2, corte 2.
+
+---
+
+### O modelo, em três linhas
+
+| | `board.team_id` | quem edita o quadro | quem vê |
+|---|---|---|---|
+| **Quadro geral** (existe) | raiz | ADMIN, MANAGER | todos |
+| **Avulso de subtime** (5b) | subtime | supervisor do subtime, ADMIN, MANAGER | membros do subtime + ADMIN/MANAGER |
+| **Extra da raiz** (5c) | raiz | ADMIN, MANAGER | todos |
+
+Visibilidade sai de graça do `team_scope` (ADR 0035 D3). **Nenhuma permissão
+por quadro, nenhum eixo novo.**
+
+⚠️ **O Quadro geral do Marketing NÃO SE MEXE.** 176 tarefas vivas, 8 colunas,
+0 sem ponte. Nada nesta fatia toca nele. `COLUNAS_PADRAO` (8) continua sendo o
+padrão do quadro **de workspace**, congelada junto com a cópia da migration
+`0008` e o `test_quadro_novo_nasce_igual_ao_migrado`. `COLUNAS_BASE` (4) é
+conjunto **novo**, usado só por quadro criado por pessoa. **Dois conjuntos,
+ambos vivos, ambos testados** — quem editar um tem de justificar por que não
+editou o outro. Os dois vivem em
+`app/modules/tasks/domain/board_defaults.py`.
+
+### As 4 colunas base (decisão de 11/08, entregue na 5b-3)
+
+| `legacy_status` | nome | `semantic` | `notify_deadline` | `is_default_target` |
+|---|---|---|---|---|
+| `BACKLOG` | Backlog | `OPEN` | `True` | `True` |
+| `IN_PROGRESS` | Em Andamento | `IN_PROGRESS` | `True` | `True` |
+| `COMPLETED` | Concluído | `DONE` | `True` | `True` |
+| `CANCELLED` | Cancelado | `CANCELLED` | `True` | `True` |
+
+⚠️ **Gênero masculino em "Concluído" e "Cancelado"**, igual às 8 padrão
+(confirmado em 11/08). Divergir aqui é duas telas do mesmo produto escrevendo a
+mesma coluna de dois jeitos.
+⚠️ **Uma por semântica, e as quatro marcadas como alvo** — é o que faz o
+degrau 2 da ADR 0042 responder desde o primeiro dia do quadro.
+⚠️ **Nascer com 4 não é o mesmo que ser obrigado a manter 4.** A pessoa pode
+apagar *Em Andamento* e *Cancelado* depois (0042 D4); não pode apagar a última
+`OPEN` nem a última `DONE`. Nascer com as quatro poupa quem quer cancelar de
+criar coluna na primeira semana.
+⚠️ **As quatro nascem COM `legacy_status`.** Coluna acrescentada por gente
+nasce **sem**, e aí vale a 0041. Os dois casos convivem no mesmo quadro.
+
+### O que fica de FORA da 5b (corte de 11/08, decidido com o custo na mesa)
+
+1. **Apagar quadro.** Cria e renomeia; a lixeira vem depois. Custo aceito:
+   quadro criado por engano fica lá, feio e inofensivo. ⚠️ A ADR 0034 item 4 e
+   a confirmação digitada com contagem de **subárvore** continuam valendo — só
+   não são desta fatia. **Escreva o `UPDATE` de restauração em
+   `backend/scripts/` junto com a fatia que entregar a lixeira**, no mesmo
+   commit: não há tela de restaurar, e quem desfaz é uma pessoa na VPS.
+2. **Seletor de cor.** Coluna nova nasce com cor de **token**, por rotação fixa
+   sobre os 8 existentes. Sem hex, sem `<input type="color">`, sem luminância,
+   sem validação `^#[0-9a-fA-F]{6}$`. ⚠️ Isto **contradiz de propósito** o
+   parágrafo da cor no `plan.md` (§1d). ⚠️ `lib/coluna.ts::corEhHex` **continua
+   sem leitor** — e agora com data: ele ganha leitor na fatia do seletor de
+   cor, ou o campo tem de justificar sua existência de novo.
+3. **Mover tarefa entre quadros.** Fatia **5c**, curta, logo depois. A ADR 0042
+   entrega o mapa que a encarecia. ⚠️ Só a versão **dentro do mesmo
+   `team_id`**; atravessar time muda quem vê e continua proibido pela ADR 0034
+   item 3.
+
+---
+
+### As sub-fatias 5b, em ordem de execução
+
+⚠️ **A ordem é por raio de explosão, não por tamanho.** A 5b-1 é um no-op em
+produção; a 5b-5b é a primeira que um usuário enxerga.
+
+### 5b-1 — a regra da ADR 0042 (backend, domínio puro) — ✅ ENTREGUE
+
+**Subiu:** `semantica_do_status()` em `board_semantics.py`; o degrau 2 em
+`BoardRepository.column_for_status_in_board`; a reescrita do status pela coluna
+de destino (D2).
+
+**Por que primeiro:** o Quadro geral tem ponte nas 8 colunas, então o degrau 2
+**nunca é alcançado em produção**. Esta fatia subiu sem mudar uma linha de
+comportamento para ninguém, e é a única do conjunto com essa propriedade.
+
+**Portões:** `pytest`. Sem front, sem migration, sem API. 657 → 681.
+
+⚠️ **Armadilha encontrada na execução:** `text()` devolve **STRING, não enum**.
+`column_for_status_in_board` devolvia `'IN_PROGRESS'` em vez de
+`TaskStatus.IN_PROGRESS` — **8 vermelhos**. Como `TaskStatus` e
+`ColumnSemantic` são `StrEnum`, `==` responde certo em todo lugar do produto e
+o defeito só aparece sob `is`. Todo `select` textual que traz coluna de enum
+precisa de `TaskStatus(x)` / `ColumnSemantic(x)`.
+
+**Sabotagens rodadas** (§Como medir da 0042):
+
+| sabotagem | derruba |
+|---|---|
+| Inverter os degraus em `column_for_status_in_board` | **5** testes, 2 deles anteriores à ADR |
+| Tirar só o `DESC NULLS LAST` do repositório | **1** — `test_coluna_sem_ponte_nao_ganha_do_casamento_exato` |
+| `task.status = command.status` no update | **1** — `test_o_status_gravado_na_tarefa_e_o_da_coluna_que_recebeu` |
+
+⚠️ **A fixture tem de separar posição de alvo.** Se a coluna
+`is_default_target` for também a primeira por posição, a regra certa e a errada
+dão a mesma resposta — foi assim que três sabotagens passaram verde na 4c, e
+foi assim de novo na 5b-5a.
+
+### 5b-2 — o levantamento dos caminhos que escrevem `status` — ✅ ENTREGUE
+
+**Não é código. É uma lista, e ela é entregável.** 681 → 685.
+
+Todo caminho que escreve `status` (e não `column_id`) passa a poder cair no
+degrau 2. Levantados e cobertos, cada um com teste em quadro de 4 colunas:
+
+- `TaskService.create` (status inicial) — seguro;
+- `TaskService.update` pelo caminho `status` — seguro;
+- `TaskRepository.complete_descendants` (cascata de conclusão) — ⚠️ **NÃO era
+  seguro**, ver abaixo;
+- duplicação de tarefa (uma vez por nó da árvore) — seguro;
+- varredura de arquivamento — confirmado que **LÊ e não escreve** status;
+- o que sobrou de `PATCH status` no front após a 4c — seguro.
+
+⚠️ **EMENDA DE 11/08, ESCRITA DEPOIS DE MEDIR.** O texto original desta seção
+dizia: *"a leitura de 11/08 diz que todos são seguros (`DONE`, `CANCELLED`,
+`OPEN` e `IN_PROGRESS` sempre têm coluna nas 4 base)"*. **Era falso para a
+cascata.** A subconsulta de `complete_descendants` é SQL puro e resolvia `DONE`
+por ponte apenas — num quadro sem ponte para `COMPLETED` ela não achava coluna
+nenhuma. A fatia existiu exatamente para transformar leitura em medição, e a
+medição desmentiu a leitura. **Não repita a frase "é seguro por construção"
+sem um teste ao lado dela.**
+
+⚠️ **A cascata é um `UPDATE` em massa por `ltree` e não pode chamar o
+repositório uma vez por linha.** É por isso que a regra da 0042 tem duas
+implementações no backend, e a duplicação é deliberada. Ver §6.
+
+### 5b-3 — `BoardService` cria e renomeia (backend) — ✅ ENTREGUE
+
+**Subiu:** `COLUNAS_BASE`; `BoardService.criar_quadro(team_id, name)` e
+`renomear_quadro`; as permissões; `POST /api/v1/boards` e `PATCH /boards/{id}`.
+685 → 714.
+
+⚠️ **DUAS permissões, não uma:** `board.manage.subteam` e `board.manage.root`.
+Uma só significa ou supervisor editando o Quadro geral, ou ADMIN sem editar
+nada.
+⚠️ **Cada uma entra nos conjuntos de TODOS os papéis que a exercem** — não há
+hierarquia em `permissions.py`, são listas literais. `board.manage.subteam` vai
+em `SUPERVISOR`, `MANAGER` e `ADMIN`.
+⚠️ **A trava de ESCOPO mora no serviço** (`BoardService._assert_pode_gerir`),
+com o `team_id` do alvo — precedente literal de `member.manage.subteam`
+(Spec 028). O mapa diz *o quê*; o serviço diz *sobre quem*.
+⚠️ **Nenhuma migration.** O índice parcial `board_um_padrao_por_time` protege
+"um PADRÃO por time"; quadro avulso é não-padrão e o schema já o comporta
+(ADR 0034 item 5). Conferido antes de escrever migration por reflexo.
+
+⚠️ **A armadilha que custou 11 vermelhos:** as duas rotas de escrita **não**
+têm `require_permission` — decisão certa, a autorização depende do alvo — mas
+`require_permission` fazia DUAS coisas, e a segunda era
+`Depends(get_tenant_context)`. **`_: TenantContextDep` parece não usado e não
+é.** `set_tenant` roda num lugar só do produto e não há middleware; sem a
+dependência a rota quebra em **100% das requisições em produção**, com os 17
+testes de serviço verdes o tempo todo. Está escrito no cabeçalho do
+`boards_router.py`.
+
+⚠️ **404 antes de 403 no `PATCH /boards`, e é o certo.** A permissão depende do
+`team_id` do quadro, então ele é buscado primeiro; um 403 confirmaria que o
+quadro existe.
+
+**Sabotagens rodadas:**
+
+| sabotagem | derruba |
+|---|---|
+| Tirar a trava de escopo do supervisor | **2** |
+| Tirar a saída por `board.manage.root` | **3** (ADMIN, MANAGER, e um pelo setup) |
+| Tirar `_: TenantContextDep` do `POST` | **7**, e zero do `PATCH` |
+| Router grava direto (com `workspace_id` certo) | **6** — os quatro 403 viram 201 |
+
+⚠️ **Três travas têm UM guardião só.** Apagar aquele teste devolve o defeito ao
+silêncio completo.
+⚠️ **`test_admin_cria_na_raiz_e_no_subtime` é o teste fraco do conjunto** —
+continuou verde com o router gravando direto, porque só confere 201. Vale
+porque está pareado com os recusados.
+
+### 5b-4 — CRUD de coluna (backend) — ⬜ NÃO COMEÇOU
+
+**Sobe:** criar, renomear, reordenar e apagar coluna dentro de um quadro
+avulso.
+
+⚠️ **Duas travas diferentes, e confundi-las é o defeito clássico aqui:**
+
+- **"para onde vão estas tarefas?" (0042 D5).** Apagar coluna com tarefas abre
+  aviso com o número e um selector: *para qual coluna?*. Coluna vazia some sem
+  perguntar. O selector oferece **todas** as outras colunas do quadro. Destino
+  terminal (`Concluído`/`Cancelado`) muda o texto do aviso, porque não é mover
+  — é concluir ou cancelar o lote, com cascata de subtarefas, `terminal_since`
+  ligando e avisos de prazo morrendo. O status de cada tarefa é reescrito pela
+  coluna escolhida (D2) e cada uma gera linha em `task_history`.
+- **"o quadro continua funcionando depois?" (0042 D4).** Recusa `422` ao apagar
+  a **última coluna `OPEN`** ou a **última `DONE`** — as duas semânticas que o
+  sistema escreve sozinho (criação e cascata de conclusão). *Em Andamento* e
+  *Cancelado* **podem** ser apagadas: quadro de 3 colunas é válido.
+
+⚠️ **O selector não substitui a recusa.** Nada impede alguém de apagar a última
+`DONE` escolhendo *Backlog* como destino — e a quebra só aparece na semana
+seguinte, quando outra pessoa concluir uma tarefa-mãe cuja subtarefa mora aqui.
+⚠️ **Coluna criada por gente nasce sem `legacy_status`.** Não invente um: é o
+que faz a 0041 valer para ela.
+⚠️ **Não deixar apagar coluna do Quadro geral por este caminho** enquanto a
+5c não existir. A 8ª coluna sumir do quadro de 176 tarefas não é o risco desta
+fatia. ⚠️ É essa recusa que segura `default_board_and_column_for_status`, que
+ficou de FORA da ADR 0042 de propósito.
+
+### 5b-5a — o módulo puro (front) — ✅ ENTREGUE
+
+**Subiu:** `lib/coluna.ts::colunaEquivalente` e `rotuloDeColuna`, com
+`lib/__tests__/colunaEquivalente.test.ts`. 529 → 541.
+
+⚠️ **A fixture original não discriminava.** No `GERAL`, `Em Andamento` é a
+primeira `IN_PROGRESS` por posição **e** é o alvo — regra certa e regra errada
+respondiam igual. Corrigido, e o cabeçalho do arquivo agora diz
+`⚠️ a resposta NAO depende da ordem do array`. **É literalmente a armadilha que
+o próprio cabeçalho já avisava.**
+
+### 5b-5b — ligar as duas telas transversais (front) — ⬜ NÃO COMEÇOU
+
+⚠️ **Esta fatia vem ANTES da tela do quadro, e é a ordem que importa.** No
+instante em que existir uma tarefa fora do Quadro geral, ela aparece em
+`/minhas-tarefas` e em `/arquivadas`. **É PRÉ-REQUISITO da 5b-6, não
+sequência.**
+
+⚠️ **É a fatia mais arriscada que sobrou.** Mexe em `app/minhas-tarefas/page.tsx`
+(**1321 linhas**) e `app/arquivadas/page.tsx` (**438**).
+
+#### As QUATRO regressões, medidas no `main` em 12/08
+
+O texto de 11/08 dizia que "a mudança não é a tag, é o agrupamento do kanban".
+**Incompleto.** São quatro caminhos, e o kanban é o **único que avisa**:
+
+1. ⚠️ **Vista de LISTA, silenciosa e sem contador.**
+   `app/minhas-tarefas/page.tsx:583` —
+   `const okStatus = colunasOn === null || colunasOn.has(t.column_id);`
+   `colunasOn` é populado na linha 221 com `colunasPadraoMinhasTarefas(cs)`,
+   ou seja **ids das colunas do Quadro geral**. Tarefa de outro quadro nunca
+   está nesse `Set` e é filtrada fora da lista. Não há `foraDaColuna` aqui.
+2. **Vista de KANBAN, com contador.** `page.tsx:640-651` monta `porColuna` só
+   com as colunas do geral e joga o resto em `foraDaColuna`. **Tarefa de quadro
+   avulso é contada e não desenhada.** Esta é a que o texto original descrevia,
+   e é a menos grave das quatro justamente porque avisa.
+3. ⚠️ **O alerta de prazo morre.** `page.tsx` na linha de `dueTone`:
+   `col ? deadlineTonePorColuna(col, ...) : null`. Sem coluna resolvida, sem
+   alerta. O comentário justifica: *"sem coluna resolvida não há como decidir →
+   sem alerta, que é o lado seguro"*. Era o lado seguro quando "sem coluna"
+   significava **dado faltando**. Depois da 5b-6 significa **quadro
+   diferente**, e o lado seguro passa a ser o lado que mata o aviso de prazo de
+   todo quadro avulso.
+4. **`todosLigados`** (`page.tsx:674`) compara `colunasOn.size` contra
+   `colunas.length` do geral. Menor, mesmo pacote.
+
+#### ⚠️ `rotuloDeColuna` não modela o caso normal da tela que vai servir
+
+Assinatura entregue na 5b-5a:
+`rotuloDeColuna(nomeDaColuna: string, nomeDoQuadro: string | null)`, onde
+`null` significa **"é o quadro desta tela"**. Não existe representação para
+"não sei qual quadro" nem para "não sei qual coluna".
+
+E `/arquivadas` passa `nomeDaColuna={colunaPorId.get(t.column_id)?.name}`
+(`app/arquivadas/page.tsx:225`) — **`string | undefined`**, porque a tela lista
+o workspace inteiro e a coluna pode não ter vindo na página carregada. Este
+arquivo chama esse caso de **normal**.
+
+⚠️ **Decida a assinatura ANTES de abrir o `page.tsx` de 1321 linhas**, não
+dentro dele. O teste atual crava `rotuloDeColuna("Backlog", "")` → `" · Backlog"`;
+o backend recusa nome vazio (`BoardService._nome_valido`), então isso nunca vem
+da API — mas é o valor que um front sem dado tende a passar.
+
+**Sobe:**
+- tag `Quadro · Coluna` nas **duas** vistas de `/minhas-tarefas` (lista e
+  kanban) e em `/arquivadas`;
+- as quatro correções acima;
+- **sem seletor de quadro.** Decisão de 11/08, confirmando a ADR 0034 item 6: o
+  kanban de `/minhas-tarefas` agrupa por **status**, que é o denominador comum
+  entre quadros; coluna não é. Um seletor é exclusivo e esconderia carga de
+  trabalho sem erro nenhum. Se um dia for preciso focar, é **filtro** — aditivo
+  e visível, no padrão dos filtros de pessoa e escopo que já existem;
+- **o filtro da lente passa a exigir `board_id` do Quadro geral**
+  (`Board.tsx`, decisão D1 de 11/08). ⚠️ **Ainda NÃO implementado** — medido em
+  12/08, `Board.tsx:693-704` filtra só por `team_id`. Uma linha, com teste.
+  ⚠️ **Entra aqui e não na 5c**: sem ela, tarefa de quadro extra da raiz passa
+  no filtro da lente (`team_id === rootId` + responsável do subtime), a tela
+  desenha as colunas do geral, `porColuna[t.column_id]` não acha nada e **o
+  card some sem erro**.
+
+**Testes que têm de ser escritos e falhar ANTES da correção:**
+- tarefa com `column_id` de outro quadro aparecendo na **lista** de
+  `/minhas-tarefas`;
+- a mesma tarefa **mantendo o alerta de prazo**;
+- tarefa de quadro extra da raiz **não** aparecendo na lente do subtime.
+
+⚠️ Se algum deles passar verde contra o código atual, a fixture não discrimina.
+
+⚠️ **Por que a tag carrega as DUAS informações:** o quadro responde "onde
+mora"; a coluna responde "por que este card está agrupado em Em Andamento se a
+coluna dele chama outra coisa". Coluna sem ponte deriva status pela semântica
+(0041) — sem o segundo pedaço, o agrupamento parece defeito.
+
+⚠️ **`STATUSES` só morre quando esta fatia estiver no ar**, e mesmo assim
+continua sendo a reserva para tarefa cuja coluna não veio na lista carregada —
+caso **normal** em `/arquivadas`, que lista o workspace inteiro. O
+`paridadeColuna.test.ts` (61 testes) segue válido.
+
+⚠️ **`include` do `vitest.config.ts` é só `lib/**` e `components/**`.** Teste
+de página mora em `components/__tests__/` e importa de `@/app/...`. Os que
+existem hoje: `minhasTarefas.test.tsx` (10) e `ArquivadasPai.test.tsx` (4).
+
+### 5b-6 — a tela (front) — ⬜ NÃO COMEÇOU
+
+**Sobe:** criar e renomear quadro dentro da **tela do time** (ADR 0034 item 5 —
+não no menu lateral); seletor entre os quadros daquele time; CRUD de coluna na
+tela; render de quadro avulso.
+
+⚠️ **Quadro de lente NÃO mostra afordância de editar nem apagar — ausente, não
+desabilitada** (ADR 0034 item 2). Lente e quadro avulso vão conviver no mesmo
+seletor: a descrição fixa da lente é *"espelho do quadro geral"*.
+⚠️ **O nome do quadro tem de aparecer no modal de criar tarefa**, explícito e
+não inferido pela tela. Enquanto mover entre quadros não existir, tarefa criada
+no quadro errado só se conserta apagando e recriando — perdendo comentários,
+histórico, subtarefas e designações. Essa linha de UI é o que separa uma dívida
+de um chamado por semana.
+⚠️ **A tela não pode oferecer status que o quadro não tem** (ADR 0042,
+§Consequências). Se algum `<select>` ainda listar os 8 fixos, ele mente de dois
+jeitos diferentes: marcar "Bloqueado" num quadro de 4 colunas tem **êxito** e
+devolve `IN_PROGRESS`; cancelar num quadro sem *Cancelado* devolve **422**, que
+é um erro sem explicação para quem clicou.
+
+---
+
+### 5b-7 — as sete correções de 13/08 — ✅ ENTREGUE (backend 774→776, front 650→669)
+
+Não estava no roteiro. Saiu de uma revisão de QA e de uma revisão de UI/UX
+pedidas depois de a 5b-6 fechar, e **três dos sete eram defeitos que nenhum
+portão pegava**.
+
+| # | o quê | onde |
+|---|---|---|
+| 1 | tarefa nascia com o time de QUEM CRIA, e não com o do quadro | `Board.tsx` |
+| 2 | coluna com tarefa APAGADA virava beco sem saída | `EditorDeColunas.tsx`, `lib/edicaoDeColunas.ts` |
+| 3 | `/boards` falhando travava a tela em "Carregando" para sempre | `Board.tsx` |
+| 4 | leitura de coluna não conferia a lente | `board_service.py` |
+| 5 | `board_id` **nunca saía no corpo** do `POST /tasks` | `lib/api.ts` |
+| 6 | `.error-text` usada em dois lugares e definida em nenhum | `globals.css` |
+| 7 | quadro escolhido não vivia na URL | `app/quadro/[teamId]/page.tsx` |
+
+⚠️ **O #5 é o mais importante desta lista, e o mais instrutivo.** O tipo
+`TaskCreateInput` declarava `board_id` com quinze linhas de comentário, o
+`TaskModal` preenchia, o `Board` passava e o backend inteiro consumia
+(schema → router → `TaskService.create`). **A linha que põe o campo no CORPO
+nunca existiu.** Toda tarefa criada dentro de um quadro avulso nasceu no
+Quadro geral, com os três portões verdes.
+
+⚠️ **E o sintoma não apontava para lá:** a tarefa não dava erro, não sumia e
+não ficava sem dono — ela aparecia na LENTE do time, marcada como "Interna",
+porque `team_id` ia no corpo e `board_id` não. **Meio certo é mais difícil de
+ler que tudo errado.**
+
+⚠️ **O teste de componente deu FALSA CONFIANÇA.** Havia um teste afirmando que
+o `Board` "manda o `board_id`" — ele mocka `api.createTask` e confere o
+ARGUMENTO, não o corpo HTTP. Medido: com o defeito presente, os 37 testes do
+`Board.test.tsx` ficam **todos verdes**.
+
+⚠️ **A MESMA FALHA JÁ TINHA ACONTECIDO EM 05/08**, na função vizinha, com
+`subtask_assignees` e `skip_subtasks` — e a lição estava escrita no topo de
+`lib/__tests__/duplicateTaskCorpo.test.ts`: *mock do cliente HTTP esconde campo
+que o cliente não repassa*. Aconteceu de novo uma semana depois.
+
+**A regra que fica, e ela é a versão-cliente da armadilha das três linhas:**
+
+> No `lib/api.ts`, **`body: input` é seguro** (passa o objeto inteiro, campo
+> novo chega sozinho); **`body: { … }` campo a campo NÃO é**. Campo novo numa
+> função do segundo tipo ganha uma linha no `*Corpo.test.ts` correspondente, no
+> mesmo commit. **Teste de componente que mocka a função da API não conta como
+> guardião.**
+
+Auditoria feita em 13/08: as funções que montam corpo campo a campo e ganharam
+campo novo recentemente são exatamente **duas** — `duplicateTask` e
+`createTask`. As duas já falharam do mesmo jeito, e as duas têm guardião de
+corpo agora. `criarColuna`, `createBoard`, `updateTask`, `renomearColuna` e
+`renomearQuadro` usam `body: input` e são imunes por construção.
+
+**Sabotagens rodadas:**
+
+| sabotagem | derruba |
+|---|---|
+| `timeDaTarefaNova` → `subteamId ?? null` | **1** |
+| `defaultBoardId` → `null` | **1** |
+| `board_id` fora do corpo em `createTask` | **1** — e **zero** no `Board.test.tsx` |
+| seletor de destino volta a depender só de `quantas > 0` | **1** |
+| `catch` de `listBoards` volta a só gravar `[]` | **2** |
+| lente fora de `contar_tarefas_da_coluna` | **1** (estimado 2, veio 1 — o par do teste cobria) |
+| `?quadro=` sem conferir o time do quadro | **2** |
+
+⚠️ **Duas sabotagens vieram VERDES, e as duas ensinaram algo:**
+
+1. **`setQuadros(null)` ao trocar de quadro** — linha acrescentada na própria
+   sessão, com comentário justificando. Nenhum teste caiu porque **ela não faz
+   nada**: se a lista antiga não tem o `boardId` novo, a tela já espera pelo
+   guardião de baixo; se tem, mostrar direto é o certo. O que ela acrescentava
+   era um piscar de "Carregando…" a cada troca. **Removida.**
+2. **Cor do botão destrutivo** — não é testável em jsdom, mas o **nome da
+   classe** é, e a decisão é de segurança. Teste acrescentado. ⚠️ Ele prende o
+   nome da classe, **não a pintura**: o `include` do vitest é só `lib/**` e
+   `components/**`, então apagar `.btn-danger` do `globals.css` mantém tudo
+   verde e o botão sai sem estilo. **As classes CSS não têm guardião nenhum.**
+
+---
+
+## Fatia 5 (texto de 10/08 — HISTÓRICO, superseded em 11/08)
+
+> ⚠️ **NÃO EXECUTE ESTA SEÇÃO.** O plano vigente é a §Fatia 5 acima, neste
+> mesmo arquivo. Este texto é de 10/08 e
 > está mantido como registro, no mesmo padrão da §"Fatia 4c — o bloqueio
 > original" e da §"Fatia 4 (texto original)".
 >
@@ -499,7 +1095,204 @@ mostrar estado de erro, não um quadro sem colunas.
   (quadro padrão não se apaga);
 - rota e tela, com a troca de quadro **dentro da tela do time**.
 
-### ⚠️ O PORTÃO DO VAZAMENTO DE QUADRO MORA AQUI (acrescentado em 10/08)
+### ⚠️ DECISÃO DE 10/08: O QUADRO DO SUBTIME NASCE VAZIO
+
+Decisão de produto, tomada com quem pediu a funcionalidade. **O quadro novo
+não recebe nenhuma tarefa existente.** As tarefas de hoje (832, todas no
+`Quadro geral`) continuam onde estão.
+
+**Por que isso é decisão e não preguiça — medido em 10/08:** *não existe
+caminho no código para mover uma tarefa de quadro.* `task.board_id` é escrito
+no `create` e em mais um lugar só (`task_service.py:423`, subtarefa herdando o
+quadro do pai). Nenhuma rota, nenhum serviço, nenhum script. Fazer o quadro
+novo nascer cheio exigiria escrever essa operação primeiro.
+
+⚠️ **NASCER vazio é a decisão. CONTINUAR vazio é DEFEITO — e é o padrão do
+código hoje.** `BoardRepository.default_board_and_column_for_status` procura
+explicitamente o time SEM PAI (`JOIN team ... AND t.parent_team_id IS NULL`,
+ADR 0032). Enquanto ela não mudar, **tarefa NOVA de subtime também é gravada
+no quadro da raiz**, e o quadro interno fica vazio para sempre. Mexer nela é
+escopo OBRIGATÓRIO desta fatia, não item opcional.
+
+O alarme já está montado: `test_tarefa_de_subtime_nasce_no_quadro_da_raiz`
+fica vermelho no momento em que essa função mudar. **Esse vermelho é o sinal
+de que a fatia funcionou** — reescreva o teste junto com a decisão nova, não
+o apague (ver o portão do vazamento, acima).
+
+
+> ⚠️ **AS DUAS SUBSEÇÕES QUE ESTAVAM AQUI E CONTINUAM VIGENTES FORAM PROMOVIDAS**
+> na consolidação de 13/08: o **§Portão do vazamento de quadro** e o
+> **§Adendo — mover tarefa entre quadros** agora são seções próprias, mais
+> abaixo. Elas eram o motivo pelo qual esta seção não podia ser apagada.
+>
+> ⚠️ **A subseção "O QUADRO DO SUBTIME NASCE VAZIO", logo acima, é HISTÓRICA
+> junto com o resto**: ela descreve um quadro que não existe. `/quadro/[teamId]`
+> é lente, não registro (ADR 0034), e a lente nasce cheia por construção.
+
+---
+
+## Fatia 6 — modo de edição de colunas, e reordenar arrastando
+
+> Escrita em 13/08/2026. Decisões tomadas com a Camila nesta data.
+> ⬜ **NÃO COMEÇOU.**
+
+⚠️ **ESTA FATIA VEM ANTES DO DEPLOY DA 5b.** Decisão de 13/08, e o motivo é
+concreto: `BoardService.criar_coluna` grava `position=len(existentes)` —
+**sempre o fim**, sem alternativa. Sem reordenar, a ordem das colunas de um
+quadro fica congelada para sempre em "as 4 base + ordem de criação", e **não há
+conserto**: apagar e recriar devolve a coluna ao fim de novo. Quem criar
+"Aguardando cliente" vai vê-la depois de *Cancelado*, para sempre.
+
+⚠️ **O argumento contrário caiu quando foi medido.** Várias sessões trataram as
+29 notificações indevidas como custo de adiar o deploy. Elas são **in-app**,
+endereçadas a contas desativadas que não entram para vê-las. O custo real de
+adiar é próximo de zero, e o custo de lançar sem reordenar não é.
+
+### O que muda de desenho
+
+O painel de edição da 5b-6 (`EditorDeColunas.tsx`, uma lista vertical **abaixo**
+do quadro) é **substituído** por um modo de edição sobre o próprio quadro:
+
+- ícone de lápis ao lado do seletor de quadro liga o modo;
+- ligado, a tela diz **"Modo edição"**;
+- clicar no **título da coluna** renomeia, no lugar;
+- arrastar o **cabeçalho** reordena;
+- **"×"** no cabeçalho apaga, abrindo o diálogo atual **como modal de verdade**;
+- **"+ Adicionar coluna"** no fim, à la Trello: nome + tipo, e cria;
+- o botão de sair diz **"Concluir edição"**.
+
+⚠️ **O MODO EXPLÍCITO É O QUE LIBERA O ARRASTE DE CABEÇALHO.** A decisão de
+12/08 escolheu painel em vez de menu por coluna justamente porque arrastar o
+cabeçalho colidiria com o arraste de card. Com o modo, **os cards deixam de ser
+arrastáveis enquanto ele estiver ligado** — os dois arrastes nunca coexistem, e
+o argumento de 12/08 deixa de valer. Esse desligamento não é detalhe de
+polimento: é a premissa da fatia.
+
+### Decisões (13/08)
+
+| | decisão | por quê |
+|---|---|---|
+| D1 | **Salva a cada solto**, otimista, com reversão em erro | É o padrão que o arraste de card já usa. "Salvar ordem" criaria estado de "não salvo" num lugar que nunca teve, e sair descartaria em silêncio |
+| D2 | **Setas ← / →** ao lado do arraste | Dão o guardião (ver D6) e dão teclado e leitor de tela, que o arraste nunca vai dar |
+| D3 | Coluna nova **continua nascendo no fim** | Com reordenar existindo, cria-e-arrasta basta. "Inserir antes de…" seria uma segunda mecânica e um segundo lugar para errar posição |
+| D4 | **Selo de alvo** no cabeçalho, em modo de edição | Ver ⚠️ abaixo |
+| D5 | Payload = **a lista inteira de ids na ordem final** | Idempotente. `{id, nova_posicao}` fica ambíguo se outra pessoa mexeu no meio |
+| D6 | A regra de reordenar mora em **`lib/`**, pura e testada; os handlers só chamam | `onDragEnd` não é testável em jsdom, e já são dois no produto sem guardião |
+| D7 | **Quadro geral fica de fora** (`_assert_quadro_editavel`) | Consistente: as colunas dele não se editam enquanto a 5c não existir |
+| D8 | **Sem migration** | `position` já existe; ver ⚠️ do índice, abaixo |
+| D9 | Reordenar **quadros** não entra | Outro assunto, outra fatia |
+
+⚠️ **D4, e é a decisão menos óbvia da lista.** A ADR 0030 decidiu que o destino
+da cascata é `is_default_target`, e **não** "a primeira pela ordem" — de
+propósito, para que arrastar não mude comportamento em silêncio. A decisão está
+certa e continua. Mas **reordenar torna a confusão provável**: é natural pôr
+uma segunda coluna de conclusão ("Entregue") antes de *Concluído* e esperar que
+as tarefas passem a cair lá. Não vão — coluna criada por gente nasce com
+`is_default_target=False`, e **não existe operação para trocar o alvo** (item 6
+do §O que falta). O selo é o que evita que alguém descubra isso por dedução, na
+semana seguinte, com uma tarefa no lugar errado.
+
+### As armadilhas, medidas em 13/08
+
+⚠️ **`criar_coluna` DEPENDE DE AS POSIÇÕES SEREM DENSAS (`0..n-1`).** Ela grava
+`position=len(existentes)`. Se o endpoint de reordenar gravar posições com
+buraco, a próxima coluna criada nasce com uma `position` **duplicada**.
+
+⚠️ **E NÃO EXISTE ÍNDICE ÚNICO EM `(board_id, position)`** — conferido em
+`app/db/models/boards.py`: há `UniqueConstraint(id, board_id)`,
+`CheckConstraint(position >= 0)` e dois índices parciais (um alvo por
+semântica, um status por quadro). Posição duplicada **não estoura nada**. A
+consulta ordena por `position`, e com empate a ordem fica **indefinida**: as
+colunas trocam de lugar entre um F5 e outro, sem erro em lugar nenhum.
+
+⚠️ **`_renumerar` JÁ EXISTE e o comentário dele previu esta fatia:** *"o
+defeito só aparece na 5b-6, quando arrastar coluna gravar posições novas em
+cima de uma sequência que ninguém esperava ter buraco"*. **Reuse-o.** Escrever
+a segunda versão da renumeração é como a regra da 0042 divergiu em três
+lugares.
+
+⚠️ **A LISTA VELHA TEM DE SER RECUSADA, NÃO APLICADA.** Com payload de lista
+inteira, se outra pessoa criou ou apagou uma coluna enquanto esta arrastava, a
+lista que chega não bate com o quadro. Aplicar significa **apagar em silêncio a
+coluna que a outra pessoa acabou de criar**, ou ressuscitar a que ela apagou. O
+backend confere se o conjunto de ids bate **exatamente** com as colunas atuais
+e recusa com `code` próprio. Recusa é erro visível para quem clicou; o silêncio
+é corrupção.
+
+⚠️ **O front lê o `code`, nunca a mensagem** — igual às outras recusas desta
+spec. Ao receber a divergência: recarrega as colunas e avisa que alguém mexeu,
+no espírito da `mensagemDeDivergencia` que já existe.
+
+### ⚠️ O QUE O REDESENHO TEM DE PRESERVAR
+
+O painel que some é onde mora o diálogo de apagar — **a peça mais perigosa da
+funcionalidade inteira**, e a que foi endurecida na 5b-7. Isto é requisito, não
+"seria bom":
+
+1. o beco sem saída da coluna com tarefa **apagada** (soft-deleted) — a
+   contagem conta só as vivas, mas o `DELETE` exige destino se houver
+   apagadas, por causa da FK `RESTRICT`;
+2. o botão destrutivo em **vermelho** (`.btn-danger`), separado do azul de ação;
+3. **foco** no diálogo ao abrir e **`Esc`** para fechar;
+4. o resto da tela **travado** enquanto o diálogo está aberto;
+5. as sabotagens que provam cada um dos quatro.
+
+⚠️ **A REGRA SOBREVIVE, O DESENHO NÃO.** Tudo o que decide está em
+`lib/edicaoDeColunas.ts` — `avisoDeExclusao`, `destinosPara`,
+`impedimentoDeExclusao`, `explicaRecusa`, `mensagemDeDivergencia` — com 22
+testes que não dependem de tela. O que o redesenho joga fora é o
+`EditorDeColunas.tsx` e os testes de componente dele. **É a fronteira da Spec
+027 pagando exatamente o que prometia**, e é o motivo de a fatia caber em três
+dias em vez de recomeçar do zero.
+
+### Sub-fatias, em ordem
+
+**6a — o endpoint (backend).** `PATCH /api/v1/boards/{id}/columns/order`, corpo
+`{ column_ids: [...] }`. Mesmas travas de `_assert_pode_gerir` e
+`_assert_quadro_editavel`. Recusa por conjunto divergente. Reusa `_renumerar`.
+
+**6b — a regra (front, `lib/`).** Função pura que recebe
+`(colunas, idMovida, indiceDestino)` e devolve a lista na ordem final. É o que
+as setas E o arraste chamam.
+
+**6c — a tela.** Modo de edição, renomear no lugar, criar à la Trello, apagar
+pelo "×" com o diálogo como modal, arraste de cabeçalho, setas, selo de alvo, e
+**os cards deixando de ser arrastáveis no modo**.
+
+⚠️ **`@dnd-kit/sortable` é dependência NOVA** — só o `@dnd-kit/core` está
+instalado. Mesmo autor, mesma linha de versão. Instalar, não improvisar com o
+core: improviso vira código de posicionamento que ninguém mais entende. O
+`package-lock.json` entra no commit.
+
+### Sabotagens previstas
+
+| sabotagem | esperado |
+|---|---|
+| endpoint aplica a lista sem conferir o conjunto | testes de concorrência |
+| endpoint grava posições sem `_renumerar` | teste de densidade + o de criar coluna depois |
+| a função pura de `lib/` devolve a lista sem mover | os testes das setas |
+| cards continuam arrastáveis no modo de edição | conferência visual — **não é testável em jsdom** |
+| selo de alvo removido | teste de componente |
+
+⚠️ **A do arraste de cabeçalho não terá guardião**, como os outros dois
+`onDragEnd`. É por isso que a D6 existe: o que dá para prender, prende-se pelas
+setas.
+
+### Tamanho
+
+**Estimativa, não medida** (backend não roda sem Postgres): **2 a 3 dias**.
+Deixou de ser "reordenar coluna" e virou "redesenhar o modo de edição inteiro,
+e reordenar dentro dele". O `EditorDeColunas.tsx` (402 linhas) e boa parte dos
+20 testes dele são reescritos, e o `Board.tsx` — já com ~1500 linhas e dois
+`onDragEnd` sem guardião — ganha um terceiro caminho de arraste.
+
+---
+
+## ⚠️ O portão do vazamento de quadro
+
+> Escrito em 10/08 dentro da fatia 5, emendado em 11/08. **Promovido a seção
+> própria na consolidação de 13/08** — ele estava preso dentro de um bloco
+> marcado "não execute", e é o item mais vivo do arquivo.
 
 A fatia 3 passou a devolver `board_id` na resposta de tarefa. Ele só é seguro
 de devolver porque `board.team_id` é **sempre a raiz** hoje, e a raiz todo
@@ -527,31 +1320,31 @@ vez de continuar valendo por acidente.
 **Sabotagem:** reverter a herança de `team_id` (voltar ao `default_team_id`)
 → cai o teste de ADMIN criando tarefa no quadro interno.
 
-### ⚠️ DECISÃO DE 10/08: O QUADRO DO SUBTIME NASCE VAZIO
+### ⚠️ Emenda de 11/08 — o item 1 acima está ERRADO
 
-Decisão de produto, tomada com quem pediu a funcionalidade. **O quadro novo
-não recebe nenhuma tarefa existente.** As tarefas de hoje (832, todas no
-`Quadro geral`) continuam onde estão.
+⚠️ **`test_tarefa_de_subtime_nasce_no_quadro_da_raiz` continua CERTO e continua
+VERDE.** O texto de 10/08 (item 1) manda reescrevê-lo quando a fatia 5 subir;
+**não reescreva.** Tarefa interna de subtime nasce com `board_id` do Quadro
+geral e `team_id` do subtime, e é exatamente isso que a faz aparecer na lente.
+Se ele ficar vermelho, alguém mexeu em
+`default_board_and_column_for_status` — e isso é **defeito**, não progresso
+(§Fatia 5, §1b).
 
-**Por que isso é decisão e não preguiça — medido em 10/08:** *não existe
-caminho no código para mover uma tarefa de quadro.* `task.board_id` é escrito
-no `create` e em mais um lugar só (`task_service.py:423`, subtarefa herdando o
-quadro do pai). Nenhuma rota, nenhum serviço, nenhum script. Fazer o quadro
-novo nascer cheio exigiria escrever essa operação primeiro.
+Os itens 2 e 3 continuam valendo sem emenda:
+`test_o_board_id_devolvido_esta_na_lista_de_quadros_de_quem_pergunta` é o teste
+que importa, e a consulta 7 do `invariantes.sql` deixa de ser `0` por ausência
+de caso.
 
-⚠️ **NASCER vazio é a decisão. CONTINUAR vazio é DEFEITO — e é o padrão do
-código hoje.** `BoardRepository.default_board_and_column_for_status` procura
-explicitamente o time SEM PAI (`JOIN team ... AND t.parent_team_id IS NULL`,
-ADR 0032). Enquanto ela não mudar, **tarefa NOVA de subtime também é gravada
-no quadro da raiz**, e o quadro interno fica vazio para sempre. Mexer nela é
-escopo OBRIGATÓRIO desta fatia, não item opcional.
+Os três furos do "só o subtime vê" continuam abertos **por desenho** (ADR 0035
+§Consequências): criador sempre vê; relações furam a lente; designação alcança
+quem foi designado. **A resposta continua sendo não** — fechar qualquer um
+exige permissão por quadro, que colide com a lente inteira.
 
-O alarme já está montado: `test_tarefa_de_subtime_nasce_no_quadro_da_raiz`
-fica vermelho no momento em que essa função mudar. **Esse vermelho é o sinal
-de que a fatia funcionou** — reescreva o teste junto com a decisão nova, não
-o apague (ver o portão do vazamento, acima).
+---
 
-### Adendo — mover tarefa entre quadros (NÃO priorizado em 10/08)
+## Adendo — mover tarefa entre quadros (vigente)
+
+> Escrito em 10/08, promovido a seção própria em 13/08. **É a fatia 5c.**
 
 Pedido reconhecido, adiado por escolha: há coisas antes. Registrado aqui para
 não ser redescoberto como surpresa no dia em que alguém abrir o quadro novo e
@@ -571,7 +1364,157 @@ não fica mais barato por esperar.
 
 ---
 
-## Ordem de deploy
+
+---
+
+## ⚠️ A ADR 0042 vive em TRÊS lugares, e isso é deliberado
+
+**Regra:** status sem coluna no quadro cai na coluna `is_default_target` da sua
+**semântica**, e **o status é reescrito pela coluna que recebeu** (D2). Ponte
+primeiro, semântica depois, `ValidationError` no terceiro degrau.
+
+1. `BoardRepository.column_for_status_in_board` — Python + SQL, uma query,
+   `ORDER BY ... DESC NULLS LAST`;
+2. a subconsulta de `TaskRepository.complete_descendants` — SQL puro. ⚠️ **A
+   cascata é um `UPDATE` em massa por `ltree` e não pode chamar o repositório
+   uma vez por linha.** Era o furo da 5b-2;
+3. `lib/coluna.ts::colunaEquivalente` — front, para as telas que atravessam
+   quadros com um conjunto só de colunas.
+
+⚠️ **Se alguém "unificar", quebra a cascata.** O que mantém as três honestas
+são `test_coluna_para_status_db.py`,
+`test_cascata_em_quadro_de_quatro_colunas_db.py` e `colunaEquivalente.test.ts`.
+
+| sabotagem | derruba |
+|---|---|
+| Tirar só o `DESC NULLS LAST` da cascata | **1** — `test_a_cascata_nao_come_a_ponte_quando_as_duas_existem` |
+
+---
+
+
+---
+
+## Ordem de deploy (vigente — revisada em 13/08)
+
+⚠️ **DECISÃO DE 13/08: NADA SOBE ANTES DA FATIA 6.** Lançar o quadro avulso
+sem reordenar coluna entrega uma funcionalidade cuja ordem de colunas fica
+congelada para sempre — e o seletor de quadro aparece para **todo mundo** que
+abre a página de um time, não só para quem administra. Seriam 26 pessoas vendo
+"Lente do time · + Novo quadro" com a resposta sendo "não use ainda".
+
+⚠️ **A ORDEM DE 11/08 (abaixo) PERDEU O SENTIDO, e isso é escolha.** Ela
+existia para dar raio de explosão pequeno por passo. O build sobe backend e
+front na **mesma imagem**: não há como subir a 5b-1 sem subir a 5b-7 junto.
+Subindo em bloco, vira uma janela só. **Sabendo disso**, a escolha é subir em
+bloco depois da fatia 6 — dois deploys no total, não oito.
+
+1. **Fatia 6 pronta e conferida.**
+2. **Rodar o `invariantes.sql` ANTES**, e anotar a consulta 5. Série:
+   696 (06/08) → 802 → 832 (10/08). ⚠️ **Sem leitura nova desde 10/08.** É o
+   único contador de produção escrito em algum lugar.
+3. **Deploy em bloco** (5b-1 a 5b-7 + fatia 6). Sem migration: a `0012` está em
+   produção desde 10/08.
+4. **Rodar o `invariantes.sql` DEPOIS.** A consulta 7 sai de "ausência de caso"
+   e a 5 passa a listar mais de um quadro.
+5. **Um dia de uso só seu, antes de anunciar ao time.** É a janela em que o
+   rollback ainda é `up -d` com a imagem anterior.
+6. **Anunciar.**
+
+⚠️ **A JANELA DE ROLLBACK BARATO FECHA NO PRIMEIRO QUADRO CRIADO.** Não há
+migration nova, então voltar a imagem não perde dado — mas quadros criados
+continuam no banco e o código antigo não os desenha, e tarefas com `board_id`
+de quadro avulso **somem da vista** (continuam em `/minhas-tarefas` para quem é
+responsável). Para quem olha, é indistinguível de "perdemos tarefas". Depois do
+anúncio, voltar atrás deixa de ser operação de imagem e vira operação de dados.
+
+⚠️ **CI verde antes de tocar na VPS** — e "verde" quer dizer que o job
+`backend` chegou a executar o passo `pytest`. Um X vindo do `Set up job` é o
+GitHub caindo, não o seu código, e na lista de runs os dois são
+indistinguíveis.
+
+⚠️ **Migration já em PRODUÇÃO deixa de ser editável.** Vale da `0008` à `0012`.
+
+---
+
+## Conferência visual (obrigatória)
+
+Nenhum portão cobre nada desta lista. A conferência manual achou **cinco**
+defeitos na 4c e **dois** na 5b-6 que `pytest`, `tsc`, `vitest` e `next build`
+não acharam.
+
+### Regressão — o teste é que NADA muda
+
+1. O Quadro geral continua com as oito colunas, nomes e ordem iguais, e
+   **idêntico ao print de 11/08** (176 tarefas).
+2. Arrastar tarefa entre colunas continua funcionando e persiste.
+3. Concluir um pai com subtarefas continua concluindo a checklist inteira.
+4. `/minhas-tarefas` e `/arquivadas` continuam listando o mesmo.
+
+### Fatia 5b — ✅ CONFERIDA EM 13/08
+
+5. Quadro avulso nasce com as 4 colunas, nomes e cores certos, na ordem certa.
+6. Criar tarefa dentro dele → **o modal diz em qual quadro ela vai nascer**, e
+   ela nasce **naquele quadro** e **no time do quadro**.
+7. Arrastar entre as colunas → status muda, e **o caminho de ERRO** (modo
+   offline do devtools) devolve o card ao lugar.
+8. `/boards` offline com um quadro aberto → **erro com botão "Tentar de novo"**,
+   e não "Carregando" eterno.
+9. Acrescentar uma 5ª coluna sem ponte → arrastar para ela → conferir o status
+   derivado pela semântica, e a tag em `/minhas-tarefas`.
+10. Apagar coluna com tarefa dentro → o aviso mostra o número certo, o seletor
+    oferece as outras, e as tarefas vão para **a escolhida**. O número na tela
+    bate com o banco.
+11. Repetir escolhendo *Concluído* → **o aviso muda de texto inteiro**.
+12. ⚠️ **Criar tarefa, apagar a tarefa, e então apagar a coluna dela** → o
+    seletor de destino **aparece** e o texto diz que a coluna guarda tarefas
+    apagadas. Era beco sem saída até 13/08.
+13. Erro em vermelho: nome de coluna repetido, e nome de quadro repetido.
+14. Apagar *Cancelado* e *Em Andamento* → passa, e sobra um quadro de duas
+    colunas funcional.
+15. Tentar apagar *Concluído* (última `DONE`) → **recusa com mensagem que
+    explica**.
+16. Num quadro sem *Cancelado*, a tela **não oferece cancelar**.
+17. A mesma tarefa em `/minhas-tarefas`, `/arquivadas` e no quadro → **os três
+    lugares concordam**. ⚠️ Dois números discordando é pior que um número velho.
+18. A tarefa de quadro avulso aparece na **LISTA** de `/minhas-tarefas`, e não
+    só no kanban — e **com o alerta de prazo**.
+19. Abrir a lente de um subtime → compartilhadas e internas continuam lá, e
+    **nada do quadro avulso aparece**.
+20. `?quadro=` na URL: F5 mantém o quadro; Voltar volta para a lente; link
+    aberto noutra aba abre no quadro; id inventado cai na lente sem erro.
+
+### Regras de produto que valem em qualquer fatia
+
+- ⚠️ **O quadro de LENTE não mostra afordância de editar nem de apagar** (ADR
+  0034 item 2) — ausente, não desabilitada. *Lixeira que não funciona é lixeira
+  em que alguém clica.*
+- Os dois objetos chamados "quadro" têm **nomes distinguíveis** no seletor.
+- O aviso de apagar quadro **diz o número de tarefas** (quando a fatia da
+  lixeira existir).
+
+### Fatia 6 — ⬜ a conferir
+
+21. Ligar o modo de edição → a tela diz "Modo edição", e **os cards deixam de
+    ser arrastáveis**.
+22. Arrastar um cabeçalho → a ordem muda, e **persiste depois do F5**.
+23. As setas ← / → fazem o mesmo que o arraste, e funcionam **só pelo teclado**.
+24. Criar coluna pelo "+ Adicionar coluna" → nasce no fim, com o tipo escolhido.
+25. Arrastar a coluna nova para o meio → fica lá.
+26. O "×" abre o diálogo **como modal**: foco nele, `Esc` fecha, botão vermelho,
+    resto da tela travado.
+27. O **selo de alvo** aparece na coluna que recebe as novas e na que recebe as
+    concluídas — e **não** numa segunda coluna do mesmo tipo.
+28. Duas abas no mesmo quadro: reordenar numa, reordenar na outra → a segunda
+    **recusa com mensagem**, e não aplica em silêncio.
+
+---
+
+## Ordem de deploy — versões anteriores (histórico)
+
+> Mantidas porque registram por que a ordem mudou três vezes. **A vigente é
+> a §Ordem de deploy, acima.**
+
+### Ordem de deploy — versão de 06/08 (histórico)
 
 ⚠️ **ESTA ORDEM ESTÁ SUPERADA — ver a §Ordem revisada logo abaixo.**
 
@@ -611,7 +1554,7 @@ indistinguíveis.
 
 ---
 
-## ⚠️ Ordem revisada (10/08/2026, depois de medir o `Board.tsx`)
+### Ordem revisada de 10/08 (histórico)
 
 1–3, 4a, 4b: ✅ **em produção.**
 
@@ -663,7 +1606,7 @@ indistinguíveis.
    caminhos de escrita** listados na seção da 4c, não contra dois arquivos.
 6. **O resto da fatia 5** (criar/renomear/apagar quadro, CRUD de coluna,
    seletor de cor).
-   ⚠️ **SUPERSEDED em 11/08 — ver `plan-fatia-5.md`, §3.** O "resto" virou seis
+   ⚠️ **SUPERSEDED em 11/08 — ver §Fatia 5, sub-fatias 5b.** O "resto" virou seis
    fatias (5b-1 a 5b-6), quatro delas já em produção, e **apagar quadro** e
    **seletor de cor** foram CORTADOS da 5b com o custo na mesa.
 
@@ -674,7 +1617,7 @@ cria quadro e o ADMIN não consegue. A trava de escopo mora no serviço
 (precedente literal: `member.manage.subteam`, Spec 028).
 
 ⚠️ **SUPERSEDED EM 11/08 — não implemente hex nesta fatia.** O corte de 11/08
-(`plan-fatia-5.md`, §2) decidiu que coluna nova nasce com cor de **token**, por
+(§Fatia 5, corte 2) decidiu que coluna nova nasce com cor de **token**, por
 rotação fixa sobre os 8 existentes: sem hex, sem `<input type="color">`, sem
 luminância e **sem** a validação `^#[0-9a-fA-F]{6}$` no backend. O parágrafo
 abaixo continua sendo a descrição correta do custo **da fatia do seletor de
@@ -691,42 +1634,157 @@ cima precisa sair da luminância; e **o backend TEM de validar
 
 ---
 
-## Conferência visual (obrigatória)
+### Ordem de 11/08 (histórico)
 
-Nenhum portão cobre isto. Nas fatias 1 a 3, o teste é que **nada muda**:
-
-1. O quadro geral continua com as oito colunas, nomes e ordem iguais.
-2. Arrastar tarefa entre colunas continua funcionando e persiste.
-3. Concluir um pai com subtarefas continua concluindo a checklist inteira.
-4. `/minhas-tarefas` e `/arquivadas` continuam listando o mesmo.
-
-Nas fatias 4 e 5:
-
-5. O quadro de **lente** não mostra afordância de editar nem de apagar (ADR
-   0034, item 2). Lixeira que não funciona é lixeira em que alguém clica.
-6. Os dois objetos "quadro" têm nomes distinguíveis no seletor.
-7. O aviso de apagar quadro **diz o número de tarefas**.
+1. **5b-1** — ✅ subiu sozinha, no-op em produção.
+2. **5b-2** — ✅ testes, sem deploy próprio.
+3. **5b-3** e **5b-4** — backend com API, sem front que as alcance. ⚠️ **Não
+   crie nenhum quadro em produção ainda.** A 5b-3 já subiu; a 5b-4 não.
+4. **5b-5b** — a tag e as quatro correções, antes de existir qualquer tarefa
+   fora do Quadro geral.
+5. **5b-6** — a tela. **O primeiro quadro de produção nasce aqui.** Rode o
+   `invariantes.sql` no mesmo dia: a consulta 7 sai de "ausência de caso" e a 5
+   passa a listar mais de um quadro.
+6. ⚠️ **Anote o contador de tarefas da consulta 5.** É o único contador de
+   produção escrito em algum lugar. Série: 696 (06/08) → 802 → 832 (10/08).
 
 ---
 
-## O que esta entrega NÃO valida
+---
 
-- **Desempenho com workspace grande.** Herdado: 2 queries por membro, parede
-  por volta de 150–200 contas. Nada aqui foi medido e nada tem índice
-  dedicado.
-- **Responsivo.** Um `@media` no produto todo.
+## O que esta spec NÃO valida
+
+> Fundido em 13/08 das duas listas que existiam (`plan.md` e
+> `plan-fatia-5.md`), com as duplicatas removidas.
+
+- **Desempenho.** Nada medido. 26 contas, parede estimada em 150–200. Herdado:
+  2 queries por membro, sem índice dedicado. O `Board.tsx` filtra client-side
+  sobre a lista inteira e passou de 1372 para ~1500 linhas. `listBoards` sem
+  memoização, uma requisição por tela. ⚠️ **Não há índice em `task.column_id`
+  nem em `task.board_id`** (conferido em 13/08) — irrelevante com 832 tarefas,
+  e a FK `RESTRICT` faz todo `DELETE` de coluna varrer a tabela.
+- **Responsivo.** Um `@media` no produto todo (`prefers-reduced-motion`), e
+  três utilitários de padding no `AppShell`. A tela de quadro ganhou seletor,
+  modo de edição e um kanban de 8 colunas × 240px. ⚠️ **Se celular não é caso
+  de uso, escreva isso em algum lugar** — hoje a ausência parece esquecimento.
+- **Acessibilidade.** Medido em 13/08: `--text-faint` (`.muted`, **129 usos**)
+  reprova AA no tema **claro** (3.07 sobre `--surface`, 2.86 sobre `--bg`, 2.76
+  sobre `--surface-2`); o tema escuro passa e foi medido, o claro nunca foi. E
+  **não há `KeyboardSensor`** no `Board.tsx`: mover card por teclado é
+  impossível, enquanto o `dnd-kit` anuncia ao leitor de tela que basta apertar
+  espaço — e espaço abre a tarefa.
 - **E2E.** Não existe.
-- **Que apagar quadro apaga as tarefas junto** — isso é a fatia 5. Os testes
-  da fatia 1 provam só que a coluna existe e que a descoberta respeita o
+- **Os `onDragEnd`** — nunca serão testáveis em jsdom. Conferência manual,
+  sempre. Com a fatia 6 passam a ser três.
+- **Apagar quadro** — fatia própria, com a lixeira e o script de restauração.
+- **Mover tarefa entre quadros** — fatia 5c.
+- **Cor livre e contraste AA** — fatia do seletor de cor.
+- **As classes CSS novas** (`.error-text`, `.btn-danger`) — o `include` do
+  vitest é só `lib/**` e `components/**`; `globals.css` não é lido por teste
+  nenhum.
+- **Que apagar quadro apaga as tarefas junto** — é a fatia da lixeira. Os
+  testes da fatia 1 provam só que a coluna existe e que a descoberta respeita o
   filtro.
-- ⚠️ **`semantic` JÁ TEM LEITOR desde a Spec 037** — a correção é de 10/08.
+- ⚠️ **`semantic` JÁ TEM LEITOR desde a Spec 037** (correção de 10/08):
   `TaskRepository.bloqueios_por_perda_de_alcance` deriva o que é terminal de
-  `TERMINAL_SEMANTICS`, e não de uma lista de status escrita à mão. Ele também
+  `TERMINAL_SEMANTICS`, e não de uma lista de status escrita à mão; ele também
   viaja no `GET /boards` desde a fatia 2. ⚠️ **`is_default_target` GANHOU LEITOR
-  na fatia 5b-1 (11/08)** — o degrau 2 da ADR 0042 (`column_for_status_in_board`
-  e a subconsulta da cascata) lê o campo. O texto original desta linha dizia
-  "continua sem leitor até a fatia 5"; deixou de valer. **O campo sem leitor
-  que sobrou é `lib/coluna.ts::corEhHex`**, e é esse o que citar quando o
-  assunto voltar.
+  na 5b-1** (o degrau 2 da ADR 0042). **O campo sem leitor que sobrou é
+  `lib/coluna.ts::corEhHex`** — é esse o que citar quando o assunto voltar.
 - **A migração contra o volume de produção.** `board` tem uma linha; se isso
-  mudar antes da fatia 5, medir de novo.
+  mudar, medir de novo.
+- ⚠️ **Nenhum quadro não-padrão jamais existiu em produção.** Tudo o que a 5b
+  entregou é regra para um mundo que ainda não aconteceu — e que nasce no
+  primeiro deploy.
+
+---
+
+## Números de produção
+
+- **176 tarefas vivas no Quadro geral** (11/08): Backlog 20, Planejado 18, Em
+  Andamento 42, Aprovação Interna 4, Aprovação Externa 1, Concluído 87,
+  Cancelado 0, Bloqueado não medido. ⚠️ **Não remedido desde então.**
+- ⚠️ **87 de 176 são Concluído.** Metade do quadro é trabalho terminado
+  esperando a varredura. Não é defeito — é a janela do `terminal_since`. Mas
+  vira "o sistema tá pesado" na boca do usuário. **Vale rever o prazo da
+  varredura em horário calmo.**
+- **71% das tarefas vivas estão na RAIZ** (155 de 219, 10/08).
+- **Série de tarefas (consulta 5):** 696 (06/08) → 802 → 832 (10/08).
+  ⚠️ **Sem leitura nova.** É o único contador de produção escrito em algum
+  lugar, e o `invariantes.sql` não roda desde 10/08.
+- Medição que sustenta as 4 colunas base: `Aprovação Interna` **4**,
+  `Aprovação Externa` **1**, `Cancelado` **0** — cinco cards em 176, contra 42
+  em `Em Andamento` e 87 em `Concluído`.
+
+---
+
+## O que falta da Spec 036, depois da fatia 6
+
+Em ordem de valor. Cada um é fatia própria, e **escreve-se neste arquivo**.
+
+1. **Apagar quadro** (ADR 0034 item 4). Confirmação **digitando o nome**, com
+   contagem de **subárvore**. ⚠️ **Escreva o `UPDATE` de restauração em
+   `backend/scripts/` no MESMO commit** — não há tela de restaurar.
+   ⚠️ **E troque a espera de "quadro pedido e não encontrado" por "este quadro
+   não existe mais"**: está anotado no `Board.tsx`, e sem isso quem estiver
+   olhando um quadro apagado por outra pessoa fica em "Carregando…" para
+   sempre.
+2. **5c — mover tarefa entre quadros.** A ADR 0042 barateou (o mapa existe).
+   ⚠️ **Só dentro do MESMO `team_id`.** Hoje, tarefa criada no quadro errado só
+   se conserta apagando e recriando.
+3. **5c — quadro extra da raiz**, e com ele "quem edita as colunas do Quadro
+   geral". Hoje: ninguém (`_assert_quadro_editavel`, 422).
+   ⚠️ **A URL já está pronta para isto** (13/08): o quadro escolhido vive em
+   `?quadro=`, e não em segmento de rota, **exatamente porque**
+   `/quadro/{boardId}` colidiria com `/quadro/{teamId}` — os dois são UUID na
+   mesma posição. Segmento de rota obrigaria a inventar um formato diferente só
+   para os quadros da raiz.
+4. **Seletor de cor.** ⚠️ `lib/coluna.ts::corEhHex` **continua sem leitor**.
+5. **Trocar qual coluna é o alvo de uma semântica.** Não existe, e a trava da
+   5b-4b faz a ausência doer: coluna-alvo nunca pode ser apagada. A fatia 6
+   torna a ausência **visível** (o selo), o que aumenta a chance de alguém
+   pedir.
+6. **`notify_deadline` na criação de coluna.** ⚠️ **Campo sem escritor:**
+   `criar_coluna` crava `True`, o schema não aceita e o rename não edita — mas
+   **três lugares no código prometem por escrito que dá para desligar**,
+   inclusive o `DeadlineNotifyService` ("é como a ADR 0030 prometeu que um time
+   criaria 'Aguardando cliente' sem código novo"). Decisão de 13/08: **não
+   fazer agora** — "Aprovação Externa" já cobra prazo hoje, no Quadro geral,
+   para as 26 pessoas, então coluna nova cobrando prazo não é regressão nem
+   barulho novo. ⚠️ **Mas acrescente `notify_deadline` à lista de "não entra, e
+   por quê" do `BoardColumnCreateRequest`**, com data: hoje quem lê acredita
+   numa capacidade que não existe.
+
+---
+
+## Commits
+
+```
+docs(adr): coluna alvo por semantica quando o status nao tem coluna (BE-0042, Spec 036)
+feat(boards): column_for_status_in_board cai no is_default_target da semantica (Spec 036, fatia 5b-1)
+test(boards): caminhos de escrita por status em quadro de 4 colunas (Spec 036, fatia 5b-2)
+feat(perms): board.manage.subteam e board.manage.root (Spec 036, fatia 5b-3)
+feat(boards): BoardService cria e renomeia quadro avulso com as 4 colunas base (Spec 036, fatia 5b-3)
+feat(front): colunaEquivalente e rotuloDeColuna em lib/coluna (Spec 036, fatia 5b-5a)
+feat(boards): CRUD de coluna com trava de coluna alvo de semantica (Spec 036, fatia 5b-4)
+feat(front): tag de quadro e coluna nas telas transversais (Spec 036, fatia 5b-5b)
+feat(front): lente de subtime filtra pelo quadro geral (Spec 036, fatia 5b-5b)
+feat(front): tela de quadro avulso dentro do time (Spec 036, fatia 5b-6)
+fix(front): tarefa nasce no time do quadro avulso (Spec 036, fatia 5b-7)
+fix(front): coluna com tarefa apagada deixa de ser beco sem saida (Spec 036, fatia 5b-7)
+fix(front): erro de /boards deixa de travar a tela (Spec 036, fatia 5b-7)
+fix(back): leitura de coluna respeita a lente (Spec 036, fatia 5b-7)
+fix(front): board_id volta a sair no corpo do POST /tasks (Spec 036, fatia 5b-7)
+fix(front): erro das telas de quadro deixa de sair sem estilo (Spec 036, fatia 5b-7)
+fix(front): botao que apaga coluna usa o padrao destrutivo (Spec 036, fatia 5b-7)
+fix(front): dialogo de apagar coluna com foco, Esc e lista travada (Spec 036, fatia 5b-7)
+fix(front): seletor de quadro com papel ARIA e contraste corretos (Spec 036, fatia 5b-7)
+feat(front): quadro selecionado vive na URL (Spec 036, fatia 5b-7)
+```
+
+Para a consolidação e a fatia 6:
+
+```
+docs(spec): consolida plan-fatia-5 e sondagem no plan.md unico (Spec 036)
+docs(spec): fatia 6 -- modo de edicao e reordenar coluna (Spec 036)
+```
