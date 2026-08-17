@@ -828,6 +828,70 @@ export async function criarColuna(
  * silencio. Trocar a semantica de uma coluna com tarefas dentro mudaria o
  * significado das tarefas sem tocar em nenhuma delas.
  */
+/** Uma coluna a nascer no lote. `tmp` e apelido do cliente, nao id. */
+export type LoteCriar = {
+  tmp: string;
+  name: string;
+  semantic: Coluna["semantic"];
+};
+
+export type LoteRenomear = { id: string; name: string };
+
+/** `destino` aceita `tmp:apelido` alem de UUID. `null` = a coluna esta vazia. */
+export type LoteApagar = { id: string; destino: string | null };
+
+export type LoteDeColunas = {
+  criar?: LoteCriar[];
+  renomear?: LoteRenomear[];
+  apagar?: LoteApagar[];
+  /** UUID em texto, ou `tmp:apelido`. ⚠️ VAZIA = nao mexer na ordem. */
+  ordem?: string[];
+};
+
+/**
+ * Aplica a edicao inteira de colunas de um quadro, num pedido so.
+ *
+ * ⚠️ SUBSTITUI A `reordenarColunas`, QUE FOI APAGADA junto com a rota
+ * `PATCH /columns/order`. Aquilo nasceu na fatia 6a, antes de o modelo de tela
+ * assentar, e ficou sem chamador quando a edicao virou lote.
+ *
+ * ⚠️ O `tmp:` E A RAZAO DE SER DISTO. A coluna nova ainda nao tem id quando a
+ * pessoa escolhe que as tarefas de outra vao para ela -- e trocar uma coluna
+ * por outra e o gesto que o lote existe para permitir. O backend monta o mapa
+ * `tmp -> id` na etapa de criacao.
+ *
+ * ⚠️ UMA TRANSACAO SO: recusa em qualquer etapa desfaz o lote inteiro. A tela
+ * refaz a edicao; nao existe estado meio aplicado para reconciliar.
+ *
+ * ⚠️ LE O `code`, NUNCA A MENSAGEM. As recusas possiveis:
+ * `coluna_sem_destino`, `coluna_semantica_obrigatoria`,
+ * `coluna_ponte_obrigatoria`, `colunas_divergentes`,
+ * `referencia_tmp_desconhecida`, `referencia_tmp_repetida`.
+ *
+ * ⚠️ DEVOLVE AS COLUNAS INTEIRAS, inclusive os ids das que acabaram de nascer
+ * -- que ate agora a tela so conhecia pelo apelido.
+ */
+export async function aplicarLoteDeColunas(
+  boardId: string,
+  lote: LoteDeColunas
+): Promise<{ colunas: Coluna[]; movidas: number }> {
+  return api<{ colunas: Coluna[]; movidas: number }>(
+    `/api/v1/boards/${boardId}/columns`,
+    {
+      method: "PUT",
+      // ⚠️ CORPO MONTADO CAMPO A CAMPO -> PRECISA DE `*Corpo.test.ts`. Regra da
+      // fatia 5b-7: `body: input` e imune porque campo novo chega sozinho;
+      // isto aqui nao e. O guardiao e `lib/__tests__/loteDeColunasCorpo.test.ts`.
+      body: {
+        criar: lote.criar ?? [],
+        renomear: lote.renomear ?? [],
+        apagar: lote.apagar ?? [],
+        ordem: lote.ordem ?? [],
+      },
+    }
+  );
+}
+
 export async function renomearColuna(
   boardId: string,
   columnId: string,

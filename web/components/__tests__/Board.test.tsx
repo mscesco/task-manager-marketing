@@ -1371,6 +1371,118 @@ describe("Board -- quadro avulso (fatia 5b-6)", () => {
     return vi.mocked(api.createTask).mock.calls[0][0];
   }
 
+  // =====================================================================
+  // ⚠️ MODO DE EDICAO DE COLUNAS (fatia 6c-2c). O que da para prender aqui e a
+  // FIACAO: o lapis abre, a barra troca, os cards travam. O ARRASTE de
+  // cabecalho nao -- `onDragEnd` nao roda em jsdom, e e por isso que as SETAS
+  // existem: elas chamam `comOrdem`, testada em `rascunhoDeColunas.test.ts`.
+  // =====================================================================
+
+  it("⚠️ o lapis so aparece para quem pode editar colunas", async () => {
+    // ⚠️ Sem esta trava, um OPERATOR abriria um modo onde toda acao da 403 --
+    // e ele so descobriria depois de reorganizar o quadro inteiro.
+    comAvulso([]);
+    render(<Board boardId={AVULSO} title="Campanhas" />);
+    expect(await screen.findByText("Campanhas")).toBeTruthy();
+    expect(screen.queryByLabelText("Editar colunas")).toBeNull();
+
+    cleanup();
+    comAvulso([]);
+    render(<Board boardId={AVULSO} title="Campanhas" podeEditarColunas />);
+    expect(await screen.findByLabelText("Editar colunas")).toBeTruthy();
+  });
+
+  it("⚠️ o modo de edicao TROCA a barra, e nao acrescenta itens", async () => {
+    // Buscar, filtrar e criar tarefa nao fazem sentido enquanto a pessoa
+    // reorganiza colunas -- e a largura desta linha ja e o gargalo da tela.
+    comAvulso([]);
+    render(<Board boardId={AVULSO} title="Campanhas" podeEditarColunas />);
+    fireEvent.click(await screen.findByLabelText("Editar colunas"));
+
+    expect(screen.getByText("Modo edição")).toBeTruthy();
+    expect(screen.getByText("Adicionar coluna")).toBeTruthy();
+    expect(screen.getByText("Concluir edição")).toBeTruthy();
+    expect(screen.queryByText("+ Nova tarefa")).toBeNull();
+    expect(screen.queryByPlaceholderText("Buscar por título…")).toBeNull();
+  });
+
+  it("⚠️ no modo de edicao os cabecalhos ganham os controles", async () => {
+    comAvulso([]);
+    render(<Board boardId={AVULSO} title="Campanhas" podeEditarColunas />);
+    fireEvent.click(await screen.findByLabelText("Editar colunas"));
+
+    // ⚠️ `Em Revisão` PODE SER APAGADA e `Backlog` NAO, e a diferenca e a
+    // trava chegando na tela: `Backlog` e o unico ALVO `OPEN` do quadro, e sem
+    // ele tarefa nova nao tem onde nascer. `IN_PROGRESS` nao esta entre as
+    // semanticas obrigatorias, entao `Em Revisão` sai numa boa.
+    //
+    // ⚠️ ESTE TESTE NASCEU PEDINDO "Apagar Backlog" E CAIU (13/08) -- por
+    // motivo CERTO. O botao nao existe onde ha impedimento, de proposito:
+    // desabilitado seria pior, porque a pessoa clica, nada acontece, e ela nao
+    // sabe se o produto travou ou se ela nao pode.
+    expect(screen.getByLabelText("Apagar Em Revisão")).toBeTruthy();
+    expect(screen.queryByLabelText("Apagar Backlog")).toBeNull();
+    expect(screen.getAllByText("não pode ser apagada").length).toBe(1);
+    expect(screen.getByLabelText("Mover Backlog para a direita")).toBeTruthy();
+    // ⚠️ NA PONTA A SETA TRAVA -- e o par do `null` de `comOrdem`.
+    expect(
+      (screen.getByLabelText("Mover Backlog para a esquerda") as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+  });
+
+  it("⚠️ no modo de edicao os CARDS param de arrastar", async () => {
+    // ⚠️ E A PREMISSA DA FATIA INTEIRA. A decisao de 12/08 tinha rejeitado
+    // arrastar cabecalho justamente porque colidiria com o arraste de card; o
+    // modo explicito so resolve isso se os cards realmente pararem.
+    //
+    // ⚠️ MEDIDO EM 13/08: sabotar `disabled: travado` para `false` deixava os
+    // 42 testes VERDES -- `onDragEnd` nao roda em jsdom. O que sobra
+    // observavel e o `aria-disabled` que o `useDraggable` escreve no no, e ele
+    // e exatamente o que um leitor de tela anuncia. Fraco, mas real: sem isto,
+    // a linha que segura a premissa nao tem dono nenhum.
+    comAvulso([task({ id: "t1", title: "Uma tarefa", team_id: CRM, column_id: "av-backlog", board_id: AVULSO })]);
+    render(<Board boardId={AVULSO} title="Campanhas" podeEditarColunas />);
+
+    const card = () =>
+      screen.getByText("Uma tarefa").closest('[aria-roledescription="draggable"]');
+    expect(await screen.findByText("Uma tarefa")).toBeTruthy();
+    expect(card()?.getAttribute("aria-disabled")).toBe("false");
+
+    fireEvent.click(screen.getByLabelText("Editar colunas"));
+    expect(card()?.getAttribute("aria-disabled")).toBe("true");
+  });
+
+  it("⚠️ sair do modo com pendencias AVISA antes de descartar", async () => {
+    // ⚠️ No lote, sair E o cancelar -- e a coluna criada some sem explicacao,
+    // porque nunca chegou a existir no servidor.
+    const confirmar = vi
+      .spyOn(window, "confirm")
+      .mockReturnValue(false);
+    comAvulso([]);
+    render(<Board boardId={AVULSO} title="Campanhas" podeEditarColunas />);
+    fireEvent.click(await screen.findByLabelText("Editar colunas"));
+    fireEvent.click(screen.getByLabelText("Apagar Em Revisão"));
+    fireEvent.click(screen.getByText("Sair"));
+
+    expect(confirmar).toHaveBeenCalled();
+    // Recusou o descarte -> continua no modo.
+    expect(screen.getByText("Modo edição")).toBeTruthy();
+    confirmar.mockRestore();
+  });
+
+  it("sair SEM pendencias nao pergunta nada", async () => {
+    const confirmar = vi.spyOn(window, "confirm").mockReturnValue(true);
+    comAvulso([]);
+    render(<Board boardId={AVULSO} title="Campanhas" podeEditarColunas />);
+    fireEvent.click(await screen.findByLabelText("Editar colunas"));
+    fireEvent.click(screen.getByText("Sair"));
+
+    expect(confirmar).not.toHaveBeenCalled();
+    expect(screen.queryByText("Modo edição")).toBeNull();
+    confirmar.mockRestore();
+  });
+
   it("⚠️ manda o board_id do quadro em que a pessoa esta", async () => {
     // SABOTAGEM: `defaultBoardId={boardId ?? null}` -> `null`.
     // Sem ela a tarefa nasce no Quadro geral e quem a criou aqui nao a acha.

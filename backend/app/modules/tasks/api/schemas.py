@@ -570,6 +570,82 @@ class BoardColumnRenameRequest(BaseModel):
     name: str
 
 
+class ColunaParaCriar(BaseModel):
+    """Uma coluna a nascer dentro do lote (Spec 036, fatia 6a-ter)."""
+
+    #: ⚠️ APELIDO DO CLIENTE, e nao id. A coluna ainda nao existe quando a
+    #: pessoa escolhe que as tarefas de outra vao para ela -- e esse caso e a
+    #: RAZAO DE SER do lote (trocar uma coluna por outra num gesto so). O
+    #: servico monta o mapa `tmp -> id real` na etapa de criacao e o usa nas
+    #: etapas seguintes.
+    tmp: str
+    name: str
+    semantic: ColumnSemantic
+
+
+class ColunaParaRenomear(BaseModel):
+    """⚠️ SO COLUNA QUE JA EXISTE. Coluna criada no mesmo lote ja nasce com o
+    nome final -- renomea-la aqui seria dizer duas coisas sobre a mesma linha,
+    e a ordem entre as duas viraria regra invisivel."""
+
+    id: uuid.UUID
+    name: str
+
+
+class ColunaParaApagar(BaseModel):
+    """Uma coluna a sumir, e para onde vao as tarefas dela."""
+
+    id: uuid.UUID
+    #: ⚠️ ACEITA `tmp:apelido` ALEM DE UUID, e e por isso que e `str`. Sem isso
+    #: nao da para apagar "Aprovacao" mandando as tarefas para a "Entregue" que
+    #: voce acabou de criar -- que e o caso de uso que trouxe o lote.
+    #:
+    #: ⚠️ `None` E "A COLUNA ESTA VAZIA", e nao "tanto faz". O servico recusa
+    #: com `coluna_sem_destino` se houver tarefa viva OU APAGADA.
+    destino: str | None = None
+
+
+class BoardColumnsBatchRequest(BaseModel):
+    """Corpo de `PUT /boards/{id}/columns` (Spec 036, fatia 6a-ter).
+
+    O estado DESEJADO das colunas, num pedido so, numa transacao so.
+
+    ⚠️ `PUT` E NAO `PATCH`: o corpo descreve o conjunto final, e nao um remendo.
+
+    ⚠️ A ORDEM DAS ETAPAS E DO SERVICO, E NAO DESTE SCHEMA: criar, renomear,
+    apagar, reordenar. Criar antes porque a coluna nova pode ser destino de uma
+    apagada; reordenar por ultimo porque a conferencia de conjunto dele compara
+    com as colunas que existem DEPOIS de criar e apagar.
+
+    ⚠️ `ordem` VAZIA E "NAO MEXER NA ORDEM", e nao "deixar sem ordem". A pessoa
+    que so renomeou uma coluna nao deveria ser obrigada a mandar a lista
+    inteira -- e mandar lista vazia seria um conjunto diferente do quadro, que
+    o reordenar recusaria com `colunas_divergentes`. Um pedido legitimo viraria
+    erro.
+    """
+
+    criar: list[ColunaParaCriar] = Field(default_factory=list)
+    renomear: list[ColunaParaRenomear] = Field(default_factory=list)
+    apagar: list[ColunaParaApagar] = Field(default_factory=list)
+    #: UUID em texto, ou `tmp:apelido`.
+    ordem: list[str] = Field(default_factory=list)
+
+
+class BoardColumnsBatchResponse(BaseModel):
+    """O quadro depois do lote.
+
+    ⚠️ DEVOLVE AS COLUNAS INTEIRAS, e nao 204. A tela passou a edicao toda sem
+    falar com o servidor; ela precisa do estado real de volta -- inclusive dos
+    ids das colunas que acabaram de nascer, que ate agora ela so conhecia pelo
+    apelido `tmp`.
+    """
+
+    colunas: list[BoardColumnResponse]
+    #: ⚠️ SOMA DE TODAS AS EXCLUSOES do lote. Se vier diferente do que a tela
+    #: mostrou na revisao, alguem mexeu no meio -- e a tela pode dizer isso.
+    movidas: int
+
+
 class BoardColumnDetailResponse(BoardColumnResponse):
     """Uma coluna com a contagem de tarefas (Spec 036, fatia 5b-4b).
 

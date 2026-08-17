@@ -219,15 +219,31 @@ async def test_operator_recebe_403(db) -> None:
     assert r.status_code == 403, r.text
 
 
-async def test_coluna_no_quadro_geral_devolve_422(db) -> None:
+async def test_coluna_no_quadro_geral_devolve_201_para_ADMIN(db) -> None:
+    """⚠️ INVERTIDO EM 13/08 -- antes era `..._devolve_422`.
+
+    A trava por QUADRO saiu; a que ficou e a de PERMISSAO, que ja existia. Ver
+    `BoardService._assert_ponte_sobrevive`.
+    """
     c = await _setup(db)
-    # ADMIN: a recusa e sobre o QUADRO, e nao sobre quem pede.
     async with _client(db, c["ctx_adm"]) as cli:
         r = await cli.post(
             f"/api/v1/boards/{c['geral'].id}/columns",
             json={"name": "Em Revisão", "semantic": "IN_PROGRESS"},
         )
-    assert r.status_code == 422, r.text
+    assert r.status_code == 201, r.text
+    assert r.json()["name"] == "Em Revisão"
+
+
+async def test_coluna_no_quadro_geral_devolve_403_para_SUPERVISOR(db) -> None:
+    """O par -- sem ele, a abertura de 13/08 teria virado abertura para todos."""
+    c = await _setup(db)
+    async with _client(db, c["ctx_sup"]) as cli:
+        r = await cli.post(
+            f"/api/v1/boards/{c['geral'].id}/columns",
+            json={"name": "Em Revisão", "semantic": "IN_PROGRESS"},
+        )
+    assert r.status_code == 403, r.text
 
 
 async def test_nome_vazio_devolve_422_e_nao_500(db) -> None:
@@ -446,7 +462,13 @@ async def test_ultima_OPEN_devolve_422_MESMO_com_destino_escolhido(db) -> None:
     assert CODIGO_SEM_DESTINO != CODIGO_SEMANTICA_OBRIGATORIA
 
 
-async def test_delete_no_quadro_geral_devolve_422(db) -> None:
+async def test_delete_de_coluna_COM_PONTE_no_geral_devolve_422(db) -> None:
+    """⚠️ ESTREITADO EM 13/08 -- antes valia para qualquer coluna do geral.
+
+    ⚠️ O `code` E O QUE A TELA LE, e nao a mensagem. Ele existe para o front
+    esconder o "x" ANTES do clique, junto dos outros dois impedimentos que
+    `impedimentoDeExclusao` ja trata.
+    """
     c = await _setup(db)
     alguma = _por_nome(await _colunas(db, c["geral"].id), "Bloqueado")
     async with _client(db, c["ctx_adm"]) as cli:
@@ -454,6 +476,7 @@ async def test_delete_no_quadro_geral_devolve_422(db) -> None:
             f"/api/v1/boards/{c['geral'].id}/columns/{alguma.id}"
         )
     assert r.status_code == 422, r.text
+    assert r.json()["error"]["code"] == "coluna_ponte_obrigatoria"
 
 
 async def test_delete_por_supervisor_de_subtime_alheio_devolve_403(db) -> None:

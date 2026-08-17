@@ -596,12 +596,18 @@ async def test_supervisor_NAO_apaga_coluna_de_subtime_alheio(db) -> None:
     assert len(await _colunas(db, quadro_b.id)) == 4
 
 
-async def test_NAO_apaga_coluna_do_quadro_geral(db) -> None:
-    """⚠️ A 8a coluna sumir do quadro de 176 tarefas nao e risco desta fatia.
+async def test_NAO_apaga_coluna_COM_PONTE_do_quadro_geral(db) -> None:
+    """⚠️ ESTREITADO EM 13/08. Antes recusava QUALQUER coluna do geral.
 
-    E e esta recusa que segura `default_board_and_column_for_status`, que ficou
-    de FORA da ADR 0042 de proposito: ela descobre a coluna de um status no
-    quadro padrao pela PONTE, e so nao erra enquanto as oito existirem.
+    O que se recusa agora e apagar coluna que ainda e a PONTE de um status --
+    e o motivo e medido. `default_board_and_column_for_status` resolve onde
+    nasce toda tarefa de topo e casa so por `legacy_status`, sem degrau de
+    semantica (a ADR 0042 deixou aquela funcao de fora de proposito).
+
+    ⚠️ E `_assert_semantica_sobrevive` NAO PEGARIA ESTE CASO. "Bloqueado" e
+    `IN_PROGRESS` e nao e alvo de nada; apagando, `Em Andamento` continua
+    cobrindo a semantica. A quebra apareceria so depois, em quem criasse tarefa
+    de topo com status `BLOCKED`: 422 dias depois, para outra pessoa.
     """
     ws, raiz, sub_a, sub_b, user, arvore = await _mundo(db)
     geral = (
@@ -622,6 +628,40 @@ async def test_NAO_apaga_coluna_do_quadro_geral(db) -> None:
 
     # ⚠️ AS OITO CONTINUAM LA, e esta afirmacao so cabe no teste de SERVICO: no
     # HTTP o rollback ao SAVEPOINT levaria a fixture junto.
+    assert len(await _colunas(db, geral.id)) == 8
+
+
+async def test_APAGA_coluna_SEM_ponte_do_quadro_geral(db) -> None:
+    """O par do teste acima, e o que torna a trava estreita util.
+
+    ⚠️ COM A CRIACAO ABERTA (13/08), o Quadro geral passa a poder ter coluna
+    criada por gente -- `legacy_status` NULL. Essa nao segura funcao nenhuma, e
+    recusar apaga-la seria prender a pessoa numa coluna que ela mesma criou por
+    engano, sem saida: recriar nao ajuda, porque a nova tambem nasceria no fim.
+    """
+    ws, raiz, sub_a, sub_b, user, arvore = await _mundo(db)
+    geral = (
+        await db.execute(
+            select(Board).where(
+                Board.team_id == raiz, Board.is_default.is_(True)
+            )
+        )
+    ).scalar_one()
+
+    with acting_as(**_ctx(ws, user, arvore, mship(raiz, "ADMIN"))):
+        svc = BoardService(db)
+        nova = await svc.criar_coluna(
+            board_id=geral.id,
+            nome="Aguardando cliente",
+            semantica=ColumnSemantic.IN_PROGRESS,
+        )
+        assert nova.legacy_status is None
+        movidas = await svc.apagar_coluna(
+            board_id=geral.id, column_id=nova.id, destino_id=None
+        )
+
+    assert movidas == 0
+    # ⚠️ VOLTA A OITO, e as oito originais continuam sendo as originais.
     assert len(await _colunas(db, geral.id)) == 8
 
 

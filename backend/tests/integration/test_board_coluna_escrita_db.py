@@ -275,21 +275,49 @@ async def test_nome_de_coluna_longo_e_recusado_ANTES_do_banco(db) -> None:
 # ------------------------------------------------ o quadro geral nao se mexe
 
 
-async def test_NAO_cria_coluna_no_quadro_geral(db) -> None:
-    """⚠️ A trava que segura `default_board_and_column_for_status`.
+async def test_ADMIN_cria_coluna_no_quadro_geral(db) -> None:
+    """⚠️ INVERTIDO EM 13/08. Antes era `test_NAO_cria_coluna_no_quadro_geral`.
 
-    Aquela funcao descobre a coluna de um status no quadro padrao pela PONTE, e
-    ficou de fora da ADR 0042 de proposito. Enquanto as oito colunas do geral
-    existirem com `legacy_status`, ela nao tem como errar.
+    A trava `_assert_quadro_editavel` recusava as QUATRO operacoes no quadro
+    padrao. Ela nasceu como guarda tecnica e virou regra de produto sem nunca
+    ter sido decidida -- o docstring dela dizia "vale enquanto a 5c nao
+    existir". A decisao de produto de 13/08 e que o Quadro geral e tao
+    personalizavel quanto os outros, e so por ADMIN e MANAGER da raiz.
+
+    ⚠️ CRIAR NAO TEM RISCO TECNICO: a coluna nasce vazia, com `legacy_status`
+    NULL e `is_default_target` False. Nada em `default_board_and_column_for_status`
+    depende dela.
     """
     ws, raiz, sub_a, sub_b, user, arvore = await _mundo(db)
     geral = await _quadro_geral(db, raiz)
 
-    # ⚠️ ADMIN, e nao um papel fraco: a recusa e sobre o QUADRO e nao sobre
-    # quem pede. Testar com OPERATOR daria verde pela permissao, e a trava
-    # continuaria ausente.
     with acting_as(**_ctx(ws, user, arvore, mship(raiz, "ADMIN"))):
-        with pytest.raises(ValidationError):
+        nova = await BoardService(db).criar_coluna(
+            board_id=geral.id,
+            nome="Em Revisão",
+            semantica=ColumnSemantic.IN_PROGRESS,
+        )
+
+    assert nova.legacy_status is None
+    assert nova.is_default_target is False
+    # ⚠️ NASCE NO FIM, como em qualquer quadro: eram 8, agora sao 9.
+    assert nova.position == 8
+    assert len(await _colunas(db, geral.id)) == 9
+
+
+async def test_SUPERVISOR_nao_cria_coluna_no_quadro_geral(db) -> None:
+    """O par do teste acima -- sem ele, a abertura poderia ter sido geral.
+
+    ⚠️ A TRAVA QUE SOBROU E A DE PERMISSAO, e ela ja existia: `board.manage.root`
+    esta em ADMIN e MANAGER e NAO no SUPERVISOR (Spec 036, fatia 5b-3). Era o
+    modelo certo desde sempre; o que estava errado era a trava por QUADRO
+    empilhada em cima.
+    """
+    ws, raiz, sub_a, sub_b, user, arvore = await _mundo(db)
+    geral = await _quadro_geral(db, raiz)
+
+    with acting_as(**_ctx(ws, user, arvore, mship(sub_a, "SUPERVISOR"))):
+        with pytest.raises(AuthorizationError):
             await BoardService(db).criar_coluna(
                 board_id=geral.id,
                 nome="Em Revisão",
@@ -297,16 +325,25 @@ async def test_NAO_cria_coluna_no_quadro_geral(db) -> None:
             )
 
 
-async def test_NAO_renomeia_coluna_do_quadro_geral(db) -> None:
+async def test_ADMIN_renomeia_coluna_do_quadro_geral(db) -> None:
+    """⚠️ INVERTIDO EM 13/08. Antes era `test_NAO_renomeia_coluna_do_quadro_geral`.
+
+    ⚠️ RENOMEAR NAO TEM RISCO: quem decide comportamento e `legacy_status`, e
+    `renomear_coluna` nao o toca. O teste confere isso explicitamente, porque e
+    a unica coisa que tornaria a operacao perigosa.
+    """
     ws, raiz, sub_a, sub_b, user, arvore = await _mundo(db)
     geral = await _quadro_geral(db, raiz)
     alguma = (await _colunas(db, geral.id))[0]
+    ponte_antes = alguma.legacy_status
 
     with acting_as(**_ctx(ws, user, arvore, mship(raiz, "ADMIN"))):
-        with pytest.raises(ValidationError):
-            await BoardService(db).renomear_coluna(
-                board_id=geral.id, column_id=alguma.id, nome="Outro nome"
-            )
+        renomeada = await BoardService(db).renomear_coluna(
+            board_id=geral.id, column_id=alguma.id, nome="Outro nome"
+        )
+
+    assert renomeada.name == "Outro nome"
+    assert renomeada.legacy_status == ponte_antes
 
 
 # ---------------------------------------------------------------- renomear

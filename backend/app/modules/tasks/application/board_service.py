@@ -29,6 +29,8 @@ colunas por um default esquecido.
 from __future__ import annotations
 
 import uuid
+from collections.abc import Sequence
+from dataclasses import dataclass
 
 import structlog
 
@@ -106,6 +108,75 @@ SEMANTICAS_QUE_O_SISTEMA_ESCREVE: frozenset[ColumnSemantic] = frozenset(
 #: duas coisas com o mesmo nome no mesmo corpo.
 CODIGO_SEM_DESTINO = "coluna_sem_destino"
 CODIGO_SEMANTICA_OBRIGATORIA = "coluna_semantica_obrigatoria"
+
+#: Reordenar recebeu uma lista de colunas que NAO e a do quadro (fatia 6a).
+#:
+#: ⚠️ E RECUSA, E NAO CONSERTO. O corpo manda a ordem INTEIRA -- e uma lista
+#: montada ha dez segundos, antes de outra pessoa criar ou apagar uma coluna,
+#: descreve um quadro que nao existe mais. Aplicar o que da e "conserto":
+#: apagaria em silencio a coluna que a outra pessoa acabou de criar, ou
+#: ressuscitaria a que ela apagou -- e ninguem descobre no dia.
+#:
+#: ⚠️ O CONJUNTO E COMPARADO, E NAO O TAMANHO. Listas de mesmo comprimento com
+#: um id trocado (coluna apagada + coluna criada entre as duas leituras) tem o
+#: mesmo `len` e sao quadros diferentes.
+CODIGO_ORDEM_DIVERGENTE = "colunas_divergentes"
+
+#: Apagar coluna do quadro PADRAO que ainda e a ponte de um status (6a-bis).
+#:
+#: ⚠️ O CODIGO EXISTE PARA A TELA NAO OFERECER O BOTAO, e nao so para explicar
+#: depois do erro. O front ja esconde o "x" onde ha impedimento
+#: (`impedimentoDeExclusao`); este e o terceiro motivo de impedimento, e sem um
+#: code proprio a tela teria de ler a mensagem para distingui-lo dos outros
+#: dois -- que e a regra que esta spec proibe em todo lugar.
+CODIGO_PONTE_OBRIGATORIA = "coluna_ponte_obrigatoria"
+
+#: O lote citou um `tmp:apelido` que nao esta na lista `criar` (6a-ter).
+#:
+#: ⚠️ E RECUSA, E NAO `None`. Cair para "sem destino" produziria
+#: `coluna_sem_destino` num pedido que TINHA destino -- a tela mostraria "para
+#: onde vao as tarefas?" sobre uma pergunta que a pessoa acabou de responder, e
+#: nao haveria como ela sair disso.
+CODIGO_TMP_DESCONHECIDO = "referencia_tmp_desconhecida"
+
+#: Dois itens da lista `criar` com o mesmo apelido (6a-ter).
+#:
+#: ⚠️ SEM ESTA RECUSA O MAPA SILENCIA UM DOS DOIS: `{tmp: id}` guarda a ultima
+#: gravacao, entao um `destino` apontando para o apelido repetido mandaria as
+#: tarefas para a coluna errada -- a que a pessoa NAO viu na tela.
+CODIGO_TMP_REPETIDO = "referencia_tmp_repetida"
+
+#: Prefixo que distingue apelido de cliente de UUID de verdade.
+_PREFIXO_TMP = "tmp:"
+
+
+# ⚠️ TIPOS DO LOTE MORAM AQUI, E NAO EM `api/schemas.py`. A camada de aplicacao
+# deste projeto NAO importa schema da API -- conferido em 13/08: nenhum arquivo
+# de `application/` importa de `api/`. Inverter isso para poupar tres
+# dataclasses amarraria a regra de negocio ao formato do JSON, e o proximo
+# endpoint que precisasse da mesma operacao teria de falar HTTP para chama-la.
+# O router traduz do Pydantic para estes.
+@dataclass(frozen=True, slots=True)
+class LoteCriar:
+    """Coluna a nascer no lote. `tmp` e apelido do cliente, nao id."""
+
+    tmp: str
+    name: str
+    semantic: ColumnSemantic
+
+
+@dataclass(frozen=True, slots=True)
+class LoteRenomear:
+    id: uuid.UUID
+    name: str
+
+
+@dataclass(frozen=True, slots=True)
+class LoteApagar:
+    """`destino` aceita UUID em texto ou `tmp:apelido`. `None` = coluna vazia."""
+
+    id: uuid.UUID
+    destino: str | None = None
 
 
 def _cor_por_rotacao(indice: int) -> str:
@@ -292,13 +363,16 @@ class BoardService:
         tenant = require_tenant()
         quadro = await self._quadro_do_workspace(board_id)
         time = await self._time_do_workspace(quadro.team_id)
-        # ⚠️ AUTORIZA ANTES DE RECUSAR, e a ordem e deliberada. Ao contrario do
-        # 404-antes-de-403 do `PATCH /boards` -- onde a permissao DEPENDE do
-        # quadro --, aqui a recusa do quadro padrao nao depende de nada. Posta
-        # antes, ela responderia 422 a um OPERATOR, contando que aquele quadro
-        # e o padrao para quem nao podia nem tentar.
+        # ⚠️ ESTE COMENTARIO FALAVA DE UMA RECUSA QUE NAO EXISTE MAIS (13/08).
+        # Ate a 6a-bis havia aqui um `_assert_quadro_editavel(quadro)` depois
+        # desta linha, e o texto explicava por que a permissao vinha primeiro.
+        # A recusa por quadro saiu: o Quadro geral aceita coluna nova, e quem
+        # filtra e `board.manage.root` -- ADMIN e MANAGER, e nao SUPERVISOR.
+        #
+        # ⚠️ A UNICA TRAVA DE QUADRO QUE SOBROU E NO APAGAR
+        # (`_assert_ponte_sobrevive`), e criar nao tem equivalente porque
+        # coluna nova nasce sem ponte e sem alvo: nao segura funcao nenhuma.
         self._assert_pode_gerir(time)
-        self._assert_quadro_editavel(quadro)
 
         nome_limpo = self._nome_de_coluna_valido(nome)
         existentes = await self._colunas_do_quadro(quadro.id)
@@ -327,6 +401,213 @@ class BoardService:
         )
         return coluna
 
+    async def aplicar_lote(
+        self,
+        *,
+        board_id: uuid.UUID,
+        criar: Sequence[LoteCriar] = (),
+        renomear: Sequence[LoteRenomear] = (),
+        apagar: Sequence[LoteApagar] = (),
+        ordem: Sequence[str] = (),
+    ) -> tuple[list[BoardColumn], int]:
+        """Aplica a edicao inteira de colunas num pedido so.
+
+        Devolve `(colunas finais, tarefas movidas)`.
+
+        ⚠️ POR QUE EXISTE, EM UMA FRASE: sem lote e impossivel trocar uma
+        coluna por outra. Seria criar "Entregue", salvar, e so entao apagar
+        "Aprovacao" mandando as tarefas para la -- duas idas, em duas telas.
+        Em lote e um gesto, e e assim que a pessoa pensa a operacao.
+
+        ⚠️ A ORDEM DAS ETAPAS E OBRIGATORIA: criar -> renomear -> apagar ->
+        reordenar.
+          - CRIAR primeiro porque a coluna nova pode ser destino de uma
+            apagada. Invertendo, `destino=tmp:...` nao resolve;
+          - REORDENAR por ultimo porque a conferencia de conjunto dele compara
+            com as colunas que EXISTEM. Rodando antes, ela compararia contra um
+            quadro que esta prestes a mudar, e recusaria um pedido correto.
+
+        ⚠️ DELEGA AOS QUATRO METODOS QUE JA EXISTEM, e nao reimplementa nenhum.
+        Cada um deles refaz `_quadro_do_workspace` e `_assert_pode_gerir` --
+        redundante dentro do lote, e barato: o volume e de colunas, nao de
+        tarefas. Reimplementar aqui criaria a segunda copia de cada regra, que e
+        exatamente como a ADR 0042 divergiu em tres lugares.
+
+        ⚠️ UMA TRANSACAO SO, e ela e do CHAMADOR. Este metodo nao faz commit;
+        qualquer excecao sobe e o UoW desfaz as etapas anteriores. E o que
+        torna aceitavel o preco do lote: nao existe lote meio aplicado.
+
+        ⚠️ RECUSA PERDE TUDO, e isso foi aceito em 13/08. Se outra pessoa mexer
+        nas colunas enquanto esta edita, o lote inteiro cai e ela refaz. No
+        modelo por acao perderia so a etapa que falhou. Aceito porque quem edita
+        coluna sao ADMIN e MANAGER, e raramente.
+        """
+        # ⚠️ AUTORIZA UMA VEZ AQUI TAMBEM, antes de qualquer escrita. Sem isto,
+        # um lote so de `ordem` vazia e listas vazias nao passaria por nenhum
+        # dos quatro metodos -- e responderia 200 a quem nao pode editar nada.
+        quadro = await self._quadro_do_workspace(board_id)
+        self._assert_pode_gerir(await self._time_do_workspace(quadro.team_id))
+
+        # ---- etapa 1: criar, montando o mapa de apelidos -------------------
+        mapa: dict[str, uuid.UUID] = {}
+        for pedido in criar:
+            if pedido.tmp in mapa:
+                raise ValidationError(
+                    "Duas colunas novas usam o mesmo apelido.",
+                    code=CODIGO_TMP_REPETIDO,
+                    details={"tmp": pedido.tmp},
+                )
+            nova = await self.criar_coluna(
+                board_id=board_id, nome=pedido.name, semantica=pedido.semantic
+            )
+            mapa[pedido.tmp] = nova.id
+
+        # ---- etapa 2: renomear --------------------------------------------
+        for pedido in renomear:
+            await self.renomear_coluna(
+                board_id=board_id, column_id=pedido.id, nome=pedido.name
+            )
+
+        # ---- etapa 3: apagar, resolvendo destinos --------------------------
+        movidas = 0
+        for pedido in apagar:
+            destino = (
+                self._resolver_referencia(pedido.destino, mapa)
+                if pedido.destino is not None
+                else None
+            )
+            movidas += await self.apagar_coluna(
+                board_id=board_id, column_id=pedido.id, destino_id=destino
+            )
+
+        # ---- etapa 4: reordenar -------------------------------------------
+        if ordem:
+            await self.reordenar_colunas(
+                board_id=board_id,
+                column_ids=[self._resolver_referencia(r, mapa) for r in ordem],
+            )
+
+        logger.info(
+            "board.colunas_em_lote",
+            board_id=str(quadro.id),
+            criadas=len(criar),
+            renomeadas=len(renomear),
+            apagadas=len(apagar),
+            reordenou=bool(ordem),
+            movidas=movidas,
+            por=str(require_tenant().user_id),
+        )
+        return await self._colunas_do_quadro(quadro.id), movidas
+
+    @staticmethod
+    def _resolver_referencia(
+        referencia: str, mapa: dict[str, uuid.UUID]
+    ) -> uuid.UUID:
+        """`tmp:apelido` -> id da coluna criada no lote. UUID em texto -> ele.
+
+        ⚠️ O PREFIXO E OBRIGATORIO para a coluna nova, e nao opcional: sem ele
+        nao ha como distinguir "apelido que o cliente inventou" de "UUID que eu
+        digitei errado". Com o prefixo, os dois erros tem mensagens diferentes.
+
+        ⚠️ UUID MALFORMADO VIRA 422 COM CODIGO, e nao `ValueError` cru. O
+        `_status_for` mapeia pelo TIPO da excecao; um `ValueError` escapando
+        daqui sairia como 500 num pedido que e so mal formado.
+        """
+        if referencia.startswith(_PREFIXO_TMP):
+            apelido = referencia[len(_PREFIXO_TMP) :]
+            if apelido not in mapa:
+                raise ValidationError(
+                    "Este lote aponta para uma coluna nova que ele nao cria.",
+                    code=CODIGO_TMP_DESCONHECIDO,
+                    details={"tmp": apelido},
+                )
+            return mapa[apelido]
+        try:
+            return uuid.UUID(referencia)
+        except ValueError:
+            raise ValidationError(
+                "Identificador de coluna invalido.",
+                code=CODIGO_TMP_DESCONHECIDO,
+                details={"referencia": referencia},
+            ) from None
+
+    async def reordenar_colunas(
+        self, *, board_id: uuid.UUID, column_ids: Sequence[uuid.UUID]
+    ) -> list[BoardColumn]:
+        """Grava a ordem das colunas de um quadro avulso.
+
+        Recebe a ordem FINAL inteira e devolve as colunas ja reordenadas.
+
+        ⚠️ A LISTA INTEIRA, E NAO `{id, nova_posicao}`. O par e menor e e
+        ambiguo: se outra pessoa mexeu no quadro entre a leitura e o arraste,
+        "poe esta na posicao 3" descreve um lugar que mudou de significado. A
+        lista inteira diz o resultado desejado, nao o movimento -- e por isso
+        pode ser conferida contra a realidade antes de gravar.
+
+        ⚠️ CONJUNTO DIFERENTE = RECUSA (`CODIGO_ORDEM_DIVERGENTE`), e nunca
+        aplicacao parcial. Ver o comentario daquele codigo.
+
+        ⚠️ REORDENAR NAO MUDA COMPORTAMENTO NENHUM, e isso e decisao (ADR
+        0030): o destino da cascata e a coluna `is_default_target` da
+        semantica, e NAO a primeira pela ordem. Arrastar coluna e visual. Se um
+        dia a ordem passar a decidir alguma coisa, arrastar vira operacao
+        perigosa sem que ninguem tenha pedido -- e a tela nao teria como
+        avisar. ⚠️ A tela de edicao MOSTRA qual e o alvo justamente porque
+        reordenar torna essa confusao provavel (fatia 6c).
+
+        ⚠️ GRAVA `0..n-1`, DENSO, sempre -- e a densidade sai do LACO, nao de
+        uma renumeracao depois. Nao ha indice unico em `(board_id, position)`:
+        posicao repetida NAO estoura, e `ORDER BY position` com empate devolve
+        ordem indefinida, que se manifesta como colunas trocando de lugar entre
+        um F5 e outro, sem erro em lugar nenhum. Pior: `criar_coluna` grava
+        `position=len(existentes)`, entao um buraco deixado aqui faz a PROXIMA
+        coluna criada nascer com posicao duplicada.
+        """
+        tenant = require_tenant()
+        quadro = await self._quadro_do_workspace(board_id)
+        time = await self._time_do_workspace(quadro.team_id)
+        # Mesma ordem de `criar_coluna` e `renomear_coluna`: autoriza, recusa.
+        self._assert_pode_gerir(time)
+
+        atuais = await self._colunas_do_quadro(quadro.id)
+        pedidos = list(column_ids)
+        # ⚠️ TRES CONFERENCIAS, E AS TRES SAO NECESSARIAS. Duplicata passa pela
+        # comparacao de conjunto (`{a, a, b} == {a, b}`) e produziria uma
+        # coluna sem posicao. Por isso o `len` tambem entra.
+        if len(pedidos) != len(atuais) or set(pedidos) != {c.id for c in atuais}:
+            raise ValidationError(
+                "A lista de colunas mudou enquanto voce reordenava.",
+                code=CODIGO_ORDEM_DIVERGENTE,
+                details={"esperadas": len(atuais), "recebidas": len(pedidos)},
+            )
+
+        por_id = {c.id: c for c in atuais}
+        for indice, column_id in enumerate(pedidos):
+            por_id[column_id].position = indice
+        # ⚠️ SEM `_renumerar` AQUI, E ISSO FOI MEDIDO (13/08). A chamada estava
+        # neste ponto "por seguranca" e a sabotagem de remove-la deu VERDE: o
+        # laco acima ja grava `0..n-1` denso, porque a conferencia de conjunto
+        # tres linhas antes garante que `pedidos` e exatamente o conjunto das
+        # colunas. `_renumerar` reatribui as posicoes na ordem atual -- que
+        # acabou de virar a ordem certa. Era no-op.
+        #
+        # ⚠️ A DENSIDADE CONTINUA SENDO INVARIANTE, e quem a segura agora e a
+        # conferencia de conjunto, nao uma chamada extra. Se um dia alguem
+        # afrouxar aquela conferencia, o laco passa a deixar buraco e
+        # `criar_coluna` (que grava `position=len(existentes)`) passa a nascer
+        # com posicao duplicada -- sem indice unico para estourar. Os
+        # guardioes disso sao `test_as_posicoes_ficam_densas_de_zero_a_n_menos_um`
+        # e `test_a_coluna_criada_DEPOIS_de_reordenar_vai_para_o_fim`.
+        await self._session.flush()
+
+        logger.info(
+            "board.colunas_reordenadas",
+            board_id=str(quadro.id),
+            colunas=len(pedidos),
+            por=str(tenant.user_id),
+        )
+        return await self._colunas_do_quadro(quadro.id)
+
     async def renomear_coluna(
         self, *, board_id: uuid.UUID, column_id: uuid.UUID, nome: str
     ) -> BoardColumn:
@@ -349,7 +630,6 @@ class BoardService:
         time = await self._time_do_workspace(quadro.team_id)
         # Mesma ordem de `criar_coluna`: autoriza, depois recusa.
         self._assert_pode_gerir(time)
-        self._assert_quadro_editavel(quadro)
 
         coluna = await self._coluna_do_quadro(quadro.id, column_id)
         anterior = coluna.name
@@ -469,10 +749,12 @@ class BoardService:
         quadro = await self._quadro_do_workspace(board_id)
         time = await self._time_do_workspace(quadro.team_id)
         self._assert_pode_gerir(time)
-        self._assert_quadro_editavel(quadro)
 
         coluna = await self._coluna_do_quadro(quadro.id, column_id)
         colunas = await self._colunas_do_quadro(quadro.id)
+        # ⚠️ DEPOIS DE BUSCAR A COLUNA, e nao antes: a trava decide pelo
+        # `legacy_status` DELA, que so existe aqui.
+        self._assert_ponte_sobrevive(quadro, coluna)
         self._assert_semantica_sobrevive(coluna, colunas)
 
         vivas = await self._tarefas_da_coluna(coluna.id, apagadas=False)
@@ -653,8 +935,90 @@ class BoardService:
                 coluna.position = indice
         await self._session.flush()
 
+    @staticmethod
+    def _assert_ponte_sobrevive(quadro: Board, coluna: BoardColumn) -> None:
+        """Recusa apagar coluna COM PONTE do quadro padrao.
+
+        ⚠️ ESTA TRAVA SUBSTITUI A `_assert_quadro_editavel` (13/08), QUE ERA
+        LARGA DEMAIS. A antiga recusava criar, renomear, apagar E reordenar
+        coluna do quadro padrao -- as quatro. Ela nasceu como guarda tecnica e
+        virou regra de produto sem nunca ter passado por decisao: o docstring
+        dela dizia "vale enquanto a 5c nao existir", que e a assinatura de algo
+        provisorio que ficou.
+
+        ⚠️ A DECISAO DE PRODUTO E: o Quadro geral e tao personalizavel quanto
+        os outros, e so por ADMIN e MANAGER da raiz. **A permissao ja
+        implementava exatamente isso** -- `board.manage.root` esta nos dois
+        papeis e nao no SUPERVISOR, e MANAGER so existe na raiz (Spec 024). O
+        unico obstaculo era esta trava.
+
+        ⚠️ E DAS QUATRO OPERACOES, SO APAGAR TEM RISCO REAL, e ele foi medido:
+
+          - reordenar: NENHUM. `position` so aparece em `ORDER BY` de leitura
+            visual; nenhuma decisao do backend depende da ordem das colunas;
+          - renomear: NENHUM. Mexe em `name`; quem decide e `legacy_status`;
+          - criar: nenhum tecnico. Nasce vazia, `legacy_status` NULL,
+            `is_default_target` False;
+          - apagar: **real e diferido** -- e e o que esta trava guarda.
+
+        ⚠️ O RISCO, CONCRETAMENTE. `default_board_and_column_for_status`
+        resolve onde nasce toda tarefa de TOPO, e casa so pela PONTE::
+
+            JOIN board_column c ON c.board_id = b.id
+             AND c.legacy_status = CAST(:status AS task_status)
+
+        Sem degrau de semantica -- a ADR 0042 deixou aquela funcao de fora de
+        proposito. As oito colunas do geral tem oito `legacy_status` distintos.
+        Apagar "Planejado" NAO e barrado por `_assert_semantica_sobrevive`
+        (Backlog continua cobrindo `OPEN`), e a partir dali criar tarefa de topo
+        com status `PLANNED` devolve "Este workspace nao tem quadro para o
+        status..." -- **422 para outra pessoa, dias depois**, sem relacao
+        aparente com o que foi feito.
+
+        ⚠️ COLUNA SEM PONTE NO GERAL PODE SER APAGADA, e e isso que torna a
+        trava estreita util em vez de simbolica: com a criacao aberta, o geral
+        passa a poder ter coluna criada por gente (`legacy_status` NULL), e
+        essa nao segura funcao nenhuma.
+
+        ⚠️ O PRECO ACEITO JUNTO: com coluna criada por gente no geral, a ADR
+        0041 passa a valer para ele -- o status daquela coluna sai da
+        SEMANTICA, e nao da ponte. Ate 13/08 o geral era o unico quadro onde
+        isso nunca acontecia, e era por isso que ele era o quadro previsivel.
+
+        ⚠️ ESTA TRAVA SAI QUANDO A 5c DER DEGRAU DE SEMANTICA A
+        `default_board_and_column_for_status`. Ai apagar coluna com ponte deixa
+        de quebrar nada, e a recusa vira ruido.
+        """
+        if quadro.is_default and coluna.legacy_status is not None:
+            raise ValidationError(
+                "Esta coluna e a origem de um status do sistema e nao pode ser "
+                "apagada do quadro geral.",
+                code=CODIGO_PONTE_OBRIGATORIA,
+                details={
+                    "board_id": str(quadro.id),
+                    "column_id": str(coluna.id),
+                    # ⚠️ SEM `.value` DIRETO. Medido em 13/08: sabotando a
+                    # condicao acima para `if quadro.is_default:`, este ramo
+                    # roda com `legacy_status` None e o teste falhou com
+                    # `AttributeError` -- 500 dentro do caminho de ERRO, e uma
+                    # mensagem que nao tem nada a ver com a causa. A condicao
+                    # garante que nao e None hoje; o acoplamento entre as duas
+                    # linhas nao se ve de longe.
+                    "legacy_status": (
+                        coluna.legacy_status.value
+                        if coluna.legacy_status is not None
+                        else None
+                    ),
+                },
+            )
+
     def _assert_quadro_editavel(self, quadro: Board) -> None:
-        """Recusa mexer nas COLUNAS do quadro padrao.
+        """⚠️ SEM CHAMADOR DESDE 13/08 -- ver `_assert_ponte_sobrevive`.
+
+        Mantida por um turno para quem for ler o `git log` e procurar por ela.
+        **Se voce esta lendo isto depois do deploy da fatia 6, apague.**
+
+        Recusa mexer nas COLUNAS do quadro padrao.
 
         ⚠️ ESTA TRAVA E SOBRE COLUNA, E NAO SOBRE QUADRO. Renomear o quadro
         geral e permitido (`renomear_quadro`) porque nao toca em coluna

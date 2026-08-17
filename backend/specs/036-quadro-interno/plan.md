@@ -17,7 +17,7 @@
 
 ## Estado (conferido no `main` em 13/08/2026)
 
-Portões verdes: **backend 776 passed**, **front 669 passed**, `tsc` 0,
+Portões verdes: **backend 807 passed**, **front 691 passed**, `tsc` 0,
 `next build` compilando. Migrations `0012`. ADRs backend: 42.
 
 ⚠️ **NADA DA FATIA 5b ESTÁ EM PRODUÇÃO.** Tudo commitado em `main`, nada
@@ -41,7 +41,11 @@ deployado. O deploy espera a fatia 6 — decisão de 13/08, ver §Ordem de deplo
 | **5b-5b** — índice de colunas, `/minhas-tarefas`, `/arquivadas`, lente D1 | ✅ em `main` | 541→565 |
 | **5b-6** — `board_id` na criação + a tela do quadro avulso | ✅ em `main` | 765→774 / 565→650 |
 | **5b-7** — correções de 13/08 (§Fatia 5b-7) | ✅ em `main` | 774→776 / 650→669 |
-| **6** — modo de edição e reordenar coluna | ⬜ não começou | — |
+| **6a** — `reordenar_colunas` (vira etapa do lote) | ✅ em `main` | 776→790 |
+| **6b** — `lib/ordemDeColunas` + guardião de corpo | ✅ em `main` | 669→689 |
+| **6a-bis** — Quadro geral editável | ✅ em `main` | 790→794 |
+| **6a-ter** — `PUT /columns` em lote | ✅ em `main` | 794→807 / 689→691 |
+| **6c** — a tela do modo de edição | ⬜ não começou | — |
 
 ⚠️ **`_recipients` filtra `is_active`** (dano medido: 29 avisos) — em `main`,
 não em produção. ⚠️ **Medido em 13/08: a notificação é IN-APP e só** (o modelo
@@ -1131,162 +1135,230 @@ o apague (ver o portão do vazamento, acima).
 
 ---
 
-## Fatia 6 — modo de edição de colunas, e reordenar arrastando
+## Fatia 6 — modo de edição de colunas, em LOTE
 
-> Escrita em 13/08/2026. Decisões tomadas com a Camila nesta data.
-> ⬜ **NÃO COMEÇOU.**
+> Escrita em 13/08/2026, **revisada no mesmo dia** depois do LoFi da Camila.
+> ⚠️ **A primeira versão desta seção descrevia o modelo "cada ação vai ao
+> servidor na hora". Ele foi trocado** — ver §O modelo, e a nota sobre o que
+> isso custou da 6a.
+> 🟡 **6a, 6a-bis, 6a-ter e 6b entregues. Falta a 6c — a tela.**
 
 ⚠️ **ESTA FATIA VEM ANTES DO DEPLOY DA 5b.** Decisão de 13/08, e o motivo é
 concreto: `BoardService.criar_coluna` grava `position=len(existentes)` —
 **sempre o fim**, sem alternativa. Sem reordenar, a ordem das colunas de um
 quadro fica congelada para sempre em "as 4 base + ordem de criação", e **não há
-conserto**: apagar e recriar devolve a coluna ao fim de novo. Quem criar
-"Aguardando cliente" vai vê-la depois de *Cancelado*, para sempre.
+conserto**: apagar e recriar devolve a coluna ao fim de novo.
 
 ⚠️ **O argumento contrário caiu quando foi medido.** Várias sessões trataram as
 29 notificações indevidas como custo de adiar o deploy. Elas são **in-app**,
 endereçadas a contas desativadas que não entram para vê-las. O custo real de
-adiar é próximo de zero, e o custo de lançar sem reordenar não é.
+adiar é próximo de zero.
 
-### O que muda de desenho
+### O modelo: nada vai ao servidor até "Concluir edição"
 
-O painel de edição da 5b-6 (`EditorDeColunas.tsx`, uma lista vertical **abaixo**
-do quadro) é **substituído** por um modo de edição sobre o próprio quadro:
+Modo de edição sobre o próprio quadro, ligado por um lápis no cabeçalho. Dentro
+dele a pessoa mexe à vontade — renomeia no lugar, arrasta cabeçalhos, marca
+colunas para sumir, cria colunas — e **nada é gravado**. Ao concluir, uma
+revisão resolve as pendências (para onde vão as tarefas de cada coluna marcada)
+e **um pedido só** grava tudo.
 
-- ícone de lápis ao lado do seletor de quadro liga o modo;
-- ligado, a tela diz **"Modo edição"**;
-- clicar no **título da coluna** renomeia, no lugar;
-- arrastar o **cabeçalho** reordena;
-- **"×"** no cabeçalho apaga, abrindo o diálogo atual **como modal de verdade**;
-- **"+ Adicionar coluna"** no fim, à la Trello: nome + tipo, e cria;
-- o botão de sair diz **"Concluir edição"**.
+⚠️ **O QUE ESTE MODELO PERMITE E O ANTERIOR NÃO:** trocar uma coluna por outra.
+Hoje é impossível — seria criar "Entregue", salvar, depois apagar "Aprovação"
+mandando as tarefas para lá: duas idas, em duas telas. Em lote é um gesto só, e
+é assim que a pessoa pensa a operação. **É por isso que o modelo mudou**, e não
+por preferência de interação.
 
-⚠️ **O MODO EXPLÍCITO É O QUE LIBERA O ARRASTE DE CABEÇALHO.** A decisão de
-12/08 escolheu painel em vez de menu por coluna justamente porque arrastar o
-cabeçalho colidiria com o arraste de card. Com o modo, **os cards deixam de ser
-arrastáveis enquanto ele estiver ligado** — os dois arrastes nunca coexistem, e
-o argumento de 12/08 deixa de valer. Esse desligamento não é detalhe de
-polimento: é a premissa da fatia.
+⚠️ **A COLUNA CRIADA PRECISA PODER SER DESTINO DE UMA APAGADA, e ela ainda não
+tem id.** Daí o `tmp:` no corpo — ver o desenho do endpoint. Sem isso, o caso de
+uso acima não fecha, e ele é a razão de ser do lote.
 
-### Decisões (13/08)
+### Decisões (13/08, com a Camila)
 
 | | decisão | por quê |
 |---|---|---|
-| D1 | **Salva a cada solto**, otimista, com reversão em erro | É o padrão que o arraste de card já usa. "Salvar ordem" criaria estado de "não salvo" num lugar que nunca teve, e sair descartaria em silêncio |
-| D2 | **Setas ← / →** ao lado do arraste | Dão o guardião (ver D6) e dão teclado e leitor de tela, que o arraste nunca vai dar |
-| D3 | Coluna nova **continua nascendo no fim** | Com reordenar existindo, cria-e-arrasta basta. "Inserir antes de…" seria uma segunda mecânica e um segundo lugar para errar posição |
-| D4 | **Selo de alvo** no cabeçalho, em modo de edição | Ver ⚠️ abaixo |
-| D5 | Payload = **a lista inteira de ids na ordem final** | Idempotente. `{id, nova_posicao}` fica ambíguo se outra pessoa mexeu no meio |
-| D6 | A regra de reordenar mora em **`lib/`**, pura e testada; os handlers só chamam | `onDragEnd` não é testável em jsdom, e já são dois no produto sem guardião |
-| D7 | **Quadro geral fica de fora** (`_assert_quadro_editavel`) | Consistente: as colunas dele não se editam enquanto a 5c não existir |
-| D8 | **Sem migration** | `position` já existe; ver ⚠️ do índice, abaixo |
-| D9 | Reordenar **quadros** não entra | Outro assunto, outra fatia |
+| D1 | **Lote.** Nada vai ao servidor até concluir | Trocar coluna por outra vira um gesto |
+| D2 | Um botão só: **"Concluir edição"** | Sem "Salvar" + "Cancelar": no lote, sair sem concluir JÁ é o cancelar |
+| D3 | Sair sem concluir **descarta tudo**, inclusive coluna criada | ⚠️ **Com aviso**, senão a coluna some sem explicação |
+| D4 | O "×" **marca** a coluna, e ela fica riscada até concluir | É o que torna o lote legível: você vê o que vai acontecer antes de confirmar |
+| D5 | **Setas ← / →** ao lado do arraste | Dão o guardião (ver D9) e dão teclado e leitor de tela |
+| D6 | **Selo de alvo** no cabeçalho | Ver ⚠️ abaixo |
+| D7 | Coluna nova **continua nascendo no fim** | Com reordenar existindo, cria-e-arrasta basta |
+| D8 | **Cards travam, e continuam visíveis** | Sumir esconderia que o "×" está sobre uma coluna com 40 tarefas |
+| D9 | A regra de ordem mora em **`lib/`**, pura e testada | `onDragEnd` não é testável em jsdom |
+| D10 | **Cor fica de fora** — fatia própria | Hoje a cor sai de `_cor_por_rotacao`; aceitar cor exige schema, validação e a decisão paleta × hex livre. `corEhHex` continua sem leitor |
+| D11 | O lápis só existe com **`podeEditarColunas`** | Senão é um botão que abre um modo onde tudo dá 403 |
+| D12 | **Quadro geral é editável** (ADMIN e MANAGER da raiz) | Ver §Fatia 6a-bis |
+| D13 | **Sem migration** | `position` já existe |
 
-⚠️ **D4, e é a decisão menos óbvia da lista.** A ADR 0030 decidiu que o destino
-da cascata é `is_default_target`, e **não** "a primeira pela ordem" — de
-propósito, para que arrastar não mude comportamento em silêncio. A decisão está
-certa e continua. Mas **reordenar torna a confusão provável**: é natural pôr
-uma segunda coluna de conclusão ("Entregue") antes de *Concluído* e esperar que
-as tarefas passem a cair lá. Não vão — coluna criada por gente nasce com
-`is_default_target=False`, e **não existe operação para trocar o alvo** (item 6
-do §O que falta). O selo é o que evita que alguém descubra isso por dedução, na
-semana seguinte, com uma tarefa no lugar errado.
+⚠️ **D6, e é a decisão menos óbvia.** A ADR 0030 decidiu que o destino da
+cascata é `is_default_target`, e **não** "a primeira pela ordem" — de propósito,
+para que arrastar não mude comportamento em silêncio. Mas **reordenar torna a
+confusão provável**: é natural pôr uma segunda coluna de conclusão ("Entregue")
+antes de *Concluído* e esperar que as tarefas passem a cair lá. Não vão — coluna
+criada por gente nasce com `is_default_target=False`, e **não existe operação
+para trocar o alvo** (item 5 do §O que falta). O selo evita que alguém descubra
+isso por dedução, na semana seguinte, com uma tarefa no lugar errado.
 
-### As armadilhas, medidas em 13/08
+### ⚠️ Os três preços do lote, aceitos em 13/08
 
-⚠️ **`criar_coluna` DEPENDE DE AS POSIÇÕES SEREM DENSAS (`0..n-1`).** Ela grava
-`position=len(existentes)`. Se o endpoint de reordenar gravar posições com
-buraco, a próxima coluna criada nasce com uma `position` **duplicada**.
+1. **Recusa perde tudo.** Se outra pessoa mexer nas colunas enquanto esta edita,
+   o servidor recusa o lote inteiro e ela refaz todas as alterações. No modelo
+   por ação, perderia só a que falhou. Aceito porque quem edita coluna são
+   ADMIN e MANAGER, e raramente.
+2. **A revisão fica pesada com várias exclusões.** Cada coluna marcada precisa
+   da sua própria pergunta de destino, com o aviso mudando de texto inteiro
+   quando o destino é terminal. Três exclusões = três blocos numa tela só.
+3. **A contagem de tarefas é buscada NA HORA DE CONCLUIR**, e não quando a
+   pessoa clica no "×". Entre um e outro alguém pode ter criado tarefa naquela
+   coluna, e o número da revisão tem de ser o do momento da decisão.
 
-⚠️ **E NÃO EXISTE ÍNDICE ÚNICO EM `(board_id, position)`** — conferido em
-`app/db/models/boards.py`: há `UniqueConstraint(id, board_id)`,
-`CheckConstraint(position >= 0)` e dois índices parciais (um alvo por
-semântica, um status por quadro). Posição duplicada **não estoura nada**. A
-consulta ordena por `position`, e com empate a ordem fica **indefinida**: as
-colunas trocam de lugar entre um F5 e outro, sem erro em lugar nenhum.
+⚠️ **E o que o lote NÃO protege:** apagar continua sendo o único irreversível.
+Depois de confirmar, as tarefas foram movidas — ou concluídas, com cascata nas
+subtarefas, `terminal_since` ligado e fila de arquivamento. **Nenhum "descartar"
+desfaz isso.** A revisão é a última chance, e é por isso que ela mostra
+contagem, destino e o aviso que muda de texto.
 
-⚠️ **`_renumerar` JÁ EXISTE e o comentário dele previu esta fatia:** *"o
-defeito só aparece na 5b-6, quando arrastar coluna gravar posições novas em
-cima de uma sequência que ninguém esperava ter buraco"*. **Reuse-o.** Escrever
-a segunda versão da renumeração é como a regra da 0042 divergiu em três
-lugares.
+### O endpoint de lote (6a-ter)
 
-⚠️ **A LISTA VELHA TEM DE SER RECUSADA, NÃO APLICADA.** Com payload de lista
-inteira, se outra pessoa criou ou apagou uma coluna enquanto esta arrastava, a
-lista que chega não bate com o quadro. Aplicar significa **apagar em silêncio a
-coluna que a outra pessoa acabou de criar**, ou ressuscitar a que ela apagou. O
-backend confere se o conjunto de ids bate **exatamente** com as colunas atuais
-e recusa com `code` próprio. Recusa é erro visível para quem clicou; o silêncio
-é corrupção.
+`PUT /api/v1/boards/{board_id}/columns`, corpo com o estado desejado:
 
-⚠️ **O front lê o `code`, nunca a mensagem** — igual às outras recusas desta
-spec. Ao receber a divergência: recarrega as colunas e avisa que alguém mexeu,
-no espírito da `mensagemDeDivergencia` que já existe.
+```
+{
+  "criar":    [{"tmp": "nova-1", "name": "Entregue", "semantic": "DONE"}],
+  "renomear": [{"id": "...", "name": "Em revisão"}],
+  "apagar":   [{"id": "...", "destino": "tmp:nova-1"}],
+  "ordem":    ["...", "tmp:nova-1", "..."]
+}
+```
+
+⚠️ **`PUT` E NÃO `PATCH`**: o corpo descreve o estado final do conjunto de
+colunas, não um remendo.
+
+⚠️ **A ORDEM DAS ETAPAS É OBRIGATÓRIA: criar → renomear → apagar → reordenar.**
+Criar antes porque a coluna nova pode ser destino de uma apagada. Reordenar por
+último porque a conferência de conjunto dele compara com as colunas que
+**existem depois** de criar e apagar — rodá-lo antes compararia contra um quadro
+que está prestes a mudar.
+
+⚠️ **`tmp:` RESOLVE ANTES DE CHEGAR AO `TaskService`.** O mapa `tmp → id real`
+é montado na etapa de criação e usado na de apagar. Um `destino` com `tmp:` que
+não esteja em `criar` é recusa, não `None` — cair para "sem destino" produziria
+`coluna_sem_destino` num pedido que **tinha** destino, e a tela não teria como
+explicar.
+
+⚠️ **TUDO NUMA TRANSAÇÃO SÓ.** Falha em qualquer etapa desfaz as anteriores. É o
+que torna o preço nº 1 aceitável: não existe lote meio aplicado.
+
+**As travas continuam, avaliadas contra o ESTADO FINAL** — o que é mais correto
+e mais permissivo que hoje: não sobrar coluna de início, ou não sobrar alvo de
+início, é recusa; apagar a última de conclusão é recusa **mesmo que a pessoa
+tenha criado outra**, porque coluna criada por gente nunca nasce como alvo. ⚠️ É
+aqui que a ausência do item 5 do §O que falta (trocar o alvo) vai doer pela
+primeira vez de forma visível.
+
+### ⚠️ O QUE A MUDANÇA DE MODELO CUSTOU DA 6a
+
+A 6a foi construída antes de o modelo assentar. O que ela deixou:
+
+| peça | destino |
+|---|---|
+| `BoardService.reordenar_colunas` | **sobrevive** — vira a última etapa do lote |
+| os 14 testes de integração dela | **sobrevivem** — testam o serviço direto |
+| `lib/ordemDeColunas.ts` + 17 testes (6b) | **sobrevivem** — a tela reordena localmente |
+| rota `PATCH /{board_id}/columns/order` | ⚠️ **morre** — ninguém mais a chama |
+| `BoardColumnReorderRequest` | ⚠️ **morre** junto |
+| `api.reordenarColunas` + `reordenarColunasCorpo.test.ts` | ⚠️ **morrem** junto |
+
+⚠️ **APAGUE A ROTA MORTA NO MESMO COMMIT DO ENDPOINT DE LOTE.** Endpoint sem
+chamador é a mesma doença de `corEhHex`, e esta ainda vem com schema e teste
+próprios dando aparência de coisa viva.
+
+### Sub-fatias, em ordem
+
+| | o quê | estado |
+|---|---|---|
+| **6a** | `reordenar_colunas` + rota + 14 testes | ✅ **entregue** (776→790) |
+| **6b** | `lib/ordemDeColunas.ts` + 17 testes + `api.reordenarColunas` + guardião de corpo | ✅ **entregue** (669→689) |
+| **6a-bis** | Quadro geral editável — ver seção própria | ⬜ |
+| **6a-ter** | `PUT /columns` em lote, `tmp:`, transação, e apagar a rota morta | ⬜ |
+| **6c** | A tela: modo de edição, riscado, revisão, arraste, setas, selo de alvo | ⬜ |
+
+⚠️ **`@dnd-kit/sortable` é dependência NOVA** — só o `@dnd-kit/core` está
+instalado. Mesmo autor, mesma linha de versão. Instalar, não improvisar com o
+core. O `package-lock.json` entra no commit.
 
 ### ⚠️ O QUE O REDESENHO TEM DE PRESERVAR
 
-O painel que some é onde mora o diálogo de apagar — **a peça mais perigosa da
-funcionalidade inteira**, e a que foi endurecida na 5b-7. Isto é requisito, não
-"seria bom":
+O painel que some (`EditorDeColunas.tsx`) é onde mora o diálogo de apagar — **a
+peça mais perigosa da funcionalidade inteira**, endurecida na 5b-7. Requisito,
+não "seria bom":
 
-1. o beco sem saída da coluna com tarefa **apagada** (soft-deleted) — a
-   contagem conta só as vivas, mas o `DELETE` exige destino se houver
-   apagadas, por causa da FK `RESTRICT`;
+1. o beco sem saída da coluna com tarefa **apagada** (soft-deleted) — a contagem
+   conta só as vivas, mas o `DELETE` exige destino se houver apagadas, por causa
+   da FK `RESTRICT`;
 2. o botão destrutivo em **vermelho** (`.btn-danger`), separado do azul de ação;
 3. **foco** no diálogo ao abrir e **`Esc`** para fechar;
 4. o resto da tela **travado** enquanto o diálogo está aberto;
 5. as sabotagens que provam cada um dos quatro.
 
+⚠️ **NO LOTE, O ITEM 1 MUDA DE LUGAR, NÃO DESAPARECE.** A revisão pergunta o
+destino de toda coluna marcada — inclusive das que parecem vazias. É o que já
+conserta o beco por construção: o seletor está sempre lá.
+
 ⚠️ **A REGRA SOBREVIVE, O DESENHO NÃO.** Tudo o que decide está em
 `lib/edicaoDeColunas.ts` — `avisoDeExclusao`, `destinosPara`,
-`impedimentoDeExclusao`, `explicaRecusa`, `mensagemDeDivergencia` — com 22
-testes que não dependem de tela. O que o redesenho joga fora é o
-`EditorDeColunas.tsx` e os testes de componente dele. **É a fronteira da Spec
-027 pagando exatamente o que prometia**, e é o motivo de a fatia caber em três
-dias em vez de recomeçar do zero.
+`impedimentoDeExclusao`, `explicaRecusa`, `mensagemDeDivergencia` — com 22 testes
+que não dependem de tela. **É a fronteira da Spec 027 pagando o que prometia.**
 
-### Sub-fatias, em ordem
+⚠️ **`destinosPara` PRECISA PASSAR A ACEITAR AS COLUNAS `tmp:`**, senão a coluna
+recém-criada não aparece no seletor de destino — que é a razão de ser do lote.
 
-**6a — o endpoint (backend).** `PATCH /api/v1/boards/{id}/columns/order`, corpo
-`{ column_ids: [...] }`. Mesmas travas de `_assert_pode_gerir` e
-`_assert_quadro_editavel`. Recusa por conjunto divergente. Reusa `_renumerar`.
+### Armadilhas medidas em 13/08
 
-**6b — a regra (front, `lib/`).** Função pura que recebe
-`(colunas, idMovida, indiceDestino)` e devolve a lista na ordem final. É o que
-as setas E o arraste chamam.
+⚠️ **`criar_coluna` DEPENDE DE AS POSIÇÕES SEREM DENSAS (`0..n-1`).** Ela grava
+`position=len(existentes)`. Buraco deixado pelo reordenar faz a próxima coluna
+nascer com posição **duplicada**.
 
-**6c — a tela.** Modo de edição, renomear no lugar, criar à la Trello, apagar
-pelo "×" com o diálogo como modal, arraste de cabeçalho, setas, selo de alvo, e
-**os cards deixando de ser arrastáveis no modo**.
+⚠️ **NÃO EXISTE ÍNDICE ÚNICO EM `(board_id, position)`** — conferido em
+`app/db/models/boards.py`. Posição duplicada **não estoura nada**, e `ORDER BY
+position` com empate devolve ordem indefinida: as colunas trocam de lugar entre
+um F5 e outro, sem erro em lugar nenhum.
 
-⚠️ **`@dnd-kit/sortable` é dependência NOVA** — só o `@dnd-kit/core` está
-instalado. Mesmo autor, mesma linha de versão. Instalar, não improvisar com o
-core: improviso vira código de posicionamento que ninguém mais entende. O
-`package-lock.json` entra no commit.
+⚠️ **`_renumerar` NÃO É CHAMADO por `reordenar_colunas`, e isso foi MEDIDO.** A
+chamada estava lá "por segurança" e a sabotagem de removê-la veio VERDE: o laço
+já grava `0..n-1` denso, porque a conferência de conjunto garante que a lista é
+completa. Quem segura a densidade é aquela conferência.
 
-### Sabotagens previstas
+⚠️ **A CONFERÊNCIA DE CONJUNTO É TRIPLA, e as três são necessárias.** `len`,
+`set`, e — a que quase escapou — id repetido: `{a,a,b,c} == {a,b,c}` é
+verdadeiro em Python. Sem o `set`, um id de outro quadro passa e estoura em
+`KeyError`, que numa requisição real é **500** e não 422.
+
+⚠️ **A ROTA DE SEGMENTO FIXO TEM DE SER DECLARADA ANTES DA DE PARÂMETRO.** O
+FastAPI casa na ordem de declaração; `columns/order` declarada depois de
+`columns/{column_id}` é capturada como `column_id="order"` e morre em "id
+inválido". Medido em 13/08, depois de eu cometer o erro. **Vale para o `PUT
+/columns` também**, que colide com `POST /columns` só no método — confira.
+
+### Sabotagens previstas (6a-ter e 6c)
 
 | sabotagem | esperado |
 |---|---|
-| endpoint aplica a lista sem conferir o conjunto | testes de concorrência |
-| endpoint grava posições sem `_renumerar` | teste de densidade + o de criar coluna depois |
-| a função pura de `lib/` devolve a lista sem mover | os testes das setas |
-| cards continuam arrastáveis no modo de edição | conferência visual — **não é testável em jsdom** |
+| lote aplica sem conferir o conjunto final | testes de concorrência |
+| ordem das etapas trocada (apagar antes de criar) | o teste de "coluna nova como destino" |
+| `tmp:` desconhecido vira `None` em vez de recusa | teste próprio |
+| falha na etapa 3 não desfaz as etapas 1 e 2 | teste de transação |
+| cards continuam arrastáveis no modo de edição | ⚠️ conferência visual — **não testável em jsdom** |
 | selo de alvo removido | teste de componente |
-
-⚠️ **A do arraste de cabeçalho não terá guardião**, como os outros dois
-`onDragEnd`. É por isso que a D6 existe: o que dá para prender, prende-se pelas
-setas.
+| sair do modo com pendências não avisa | teste de componente |
 
 ### Tamanho
 
-**Estimativa, não medida** (backend não roda sem Postgres): **2 a 3 dias**.
-Deixou de ser "reordenar coluna" e virou "redesenhar o modo de edição inteiro,
-e reordenar dentro dele". O `EditorDeColunas.tsx` (402 linhas) e boa parte dos
-20 testes dele são reescritos, e o `Board.tsx` — já com ~1500 linhas e dois
-`onDragEnd` sem guardião — ganha um terceiro caminho de arraste.
+**Estimativa, não medida** (backend não roda sem Postgres): **6a-bis** meio dia;
+**6a-ter** um dia; **6c** dois dias. Total restante: **3 a 4 dias**.
 
 ---
+
 
 ## ⚠️ O portão do vazamento de quadro
 
@@ -1496,7 +1568,9 @@ não acharam.
 
 21. Ligar o modo de edição → a tela diz "Modo edição", e **os cards deixam de
     ser arrastáveis**.
-22. Arrastar um cabeçalho → a ordem muda, e **persiste depois do F5**.
+22. Arrastar um cabeçalho → a ordem muda na tela. ⚠️ **NÃO persiste até
+    concluir a edição** — é o modelo de lote. F5 antes de concluir descarta.
+    ⚠️ E sair do modo com pendências tem de AVISAR.
 23. As setas ← / → fazem o mesmo que o arraste, e funcionam **só pelo teclado**.
 24. Criar coluna pelo "+ Adicionar coluna" → nasce no fim, com o tipo escolhido.
 25. Arrastar a coluna nova para o meio → fica lá.
@@ -1673,6 +1747,14 @@ cima precisa sair da luminância; e **o backend TEM de validar
   **não há `KeyboardSensor`** no `Board.tsx`: mover card por teclado é
   impossível, enquanto o `dnd-kit` anuncia ao leitor de tela que basta apertar
   espaço — e espaço abre a tarefa.
+- ⚠️ **O DESFAZER DO LOTE (6a-ter).** A transação única é o que torna aceitável
+  o preço "recusa perde tudo" — e **não é testável nesta bancada**. A fixture
+  usa `join_transaction_mode="create_savepoint"`: um `db.rollback()` no teste
+  volta ao SAVEPOINT externo e leva a fixture junto, e afirmar o banco depois de
+  um caminho recusado por HTTP cai pelo mesmo mecanismo. O que fica preso é a
+  **ausência de `commit`** dentro de `aplicar_lote`
+  (`test_aplicar_lote_NAO_comita`), que é a linha da qual o desfazer depende.
+  ⚠️ **O resto é revisão de código:** o `commit` mora num lugar só, o router.
 - **E2E.** Não existe.
 - **Os `onDragEnd`** — nunca serão testáveis em jsdom. Conferência manual,
   sempre. Com a fatia 6 passam a ser três.

@@ -8,6 +8,11 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { SlidersHorizontal } from "lucide-react";
 import {
+  SortableContext,
+  horizontalListSortingStrategy,
+  useSortable,
+} from "@dnd-kit/sortable";
+import {
   DndContext,
   DragOverlay,
   PointerSensor,
@@ -35,10 +40,30 @@ import {
 } from "@/lib/filtrosQuadro";
 import TaskModal from "@/components/TaskModal";
 import TaskDetail from "@/components/TaskDetail";
-import EditorDeColunas from "@/components/EditorDeColunas";
+import { explicaRecusa, mensagemDeDivergencia } from "@/lib/edicaoDeColunas";
+import { Pencil } from "lucide-react";
+import CabecalhoDeColunaEditavel from "@/components/CabecalhoDeColunaEditavel";
+import FormNovaColuna from "@/components/FormNovaColuna";
+import RevisaoDaEdicao from "@/components/RevisaoDaEdicao";
+import type { LinhaDeEdicao } from "@/lib/rascunhoDeColunas";
+import type { DestinoPossivel } from "@/lib/rascunhoDeColunas";
+import {
+  destinosDoRascunho,
+  totalPrevisto,
+  comColunaNova,
+  comMarcacao,
+  comOrdem,
+  comRenome,
+  linhasDeEdicao,
+  marcadasParaApagar,
+  paraLote,
+  rascunhoInicial,
+  temPendencias,
+  type Rascunho,
+} from "@/lib/rascunhoDeColunas";
 import EmptyStateBox from "@/components/EmptyState";
 import { terminal, type Coluna } from "@/lib/coluna";
-import { listAllTasks, listAllProjects, updateTask, listMembers, listSubteams, getRootTeamId, listBoards, ApiError, type Task, type Team, type Quadro } from "@/lib/api";
+import { listAllTasks, listAllProjects, updateTask, listMembers, listSubteams, getRootTeamId, listBoards, colunaComContagem, aplicarLoteDeColunas, ApiError, type Task, type Team, type Quadro } from "@/lib/api";
 import { sincronizarTaskNaUrl, lerTaskDaUrl } from "@/lib/urlTarefa";
 import { ORDENACOES, ordenar, type Ordenacao } from "@/lib/ordenacao";
 
@@ -107,6 +132,23 @@ export default function Board({
   // "carregou e nao ha quadro nenhum". As duas situacoes sao diferentes e a
   // tela precisa dizer coisas diferentes. Ver o bloco de render la embaixo.
   const [erroQuadros, setErroQuadros] = useState(false);
+
+  // ---- MODO DE EDIÇÃO DE COLUNAS (Spec 036, fatia 6c) --------------------
+  //
+  // ⚠️ NADA AQUI VAI AO SERVIDOR ENQUANTO O MODO ESTIVER LIGADO. A pessoa
+  // renomeia, arrasta, marca colunas para sumir e cria colunas -- tudo no
+  // `rascunho` --, e ao concluir sai UM `PUT`. É o que permite trocar uma
+  // coluna por outra num gesto só: a coluna nova pode ser destino de uma
+  // apagada antes de existir id nenhum.
+  //
+  // ⚠️ TODA A REGRA MORA EM `lib/rascunhoDeColunas`, TESTADA. Aqui só há
+  // fiação: `onDragEnd` não roda em jsdom, e este arquivo já tem dois assim.
+  const [rascunho, setRascunho] = useState<Rascunho | null>(null);
+  const [criandoColuna, setCriandoColuna] = useState(false);
+  const [revisando, setRevisando] = useState(false);
+  const [contagens, setContagens] = useState<Record<string, number> | null>(null);
+  const [erroLote, setErroLote] = useState<string | null>(null);
+  const [aplicando, setAplicando] = useState(false);
   const [members, setMembers] = useState<Map<string, { name: string }>>(
     new Map()
   );
@@ -730,6 +772,164 @@ export default function Board({
   // ⚠️ O TIME EXPLICITO PASSA PELO `_assert_team_in_reach` (Spec 037, ADR
   // 0038): o quadro so esta nesta tela porque `list_visible` o devolveu, e
   // aquela lente e a MESMA -- logo o time dele esta no alcance de quem olha.
+  // ---- as ações do modo de edição ---------------------------------------
+  //
+  // ⚠️ SÓ FIAÇÃO. Cada uma delega a uma função pura de `lib/rascunhoDeColunas`
+  // e guarda o resultado; nenhuma decide nada.
+  // ⚠️ LÊ O `code`, NUNCA A MENSAGEM -- mesmo padrão do `EditorDeColunas`. O
+  // backend do lote recusa com `colunas_divergentes`,
+  // `referencia_tmp_desconhecida`, `coluna_ponte_obrigatoria` e as duas velhas;
+  // amarrar a tela ao português do servidor quebraria na primeira revisão de
+  // texto.
+  function mensagemDeErro(e: unknown): string {
+    const err = e as { code?: string; message?: string };
+    return (
+      explicaRecusa(err.code) ??
+      err.message ??
+      "Não consegui aplicar as alterações."
+    );
+  }
+
+  const modoEdicao = rascunho !== null;
+  const linhasEdicao = rascunho ? linhasDeEdicao(rascunho, colunas) : [];
+
+  function abrirEdicao() {
+    setRascunho(rascunhoInicial(colunas));
+    setErroLote(null);
+  }
+
+  function fecharEdicao() {
+    // ⚠️ AVISA ANTES DE DESCARTAR. No modelo de lote, sair É o cancelar -- e a
+    // coluna criada some sem explicação, porque nunca chegou a existir no
+    // servidor.
+    if (
+      rascunho &&
+      temPendencias(rascunho, colunas) &&
+      !window.confirm(
+        "Você tem alterações que ainda não foram aplicadas. Descartar?",
+      )
+    ) {
+      return;
+    }
+    setRascunho(null);
+    setCriandoColuna(false);
+    setRevisando(false);
+    setErroLote(null);
+  }
+
+  function moverColunaNoRascunho(ref: string, direcao: "esquerda" | "direita") {
+    if (!rascunho) return;
+    const origem = rascunho.ordem.indexOf(ref);
+    const novo = comOrdem(
+      rascunho,
+      ref,
+      direcao === "esquerda" ? origem - 1 : origem + 1,
+    );
+    // ⚠️ `null` = nada muda. Sem esta saída, a seta na ponta viraria pendência
+    // e a pessoa receberia "há alterações não aplicadas" sobre nada.
+    if (novo) setRascunho(novo);
+  }
+
+  async function concluirEdicao() {
+    if (!rascunho) return;
+    if (!temPendencias(rascunho, colunas)) {
+      setRascunho(null);
+      return;
+    }
+    const marcadas = marcadasParaApagar(rascunho, colunas);
+    if (marcadas.length === 0) {
+      await aplicarLote({});
+      return;
+    }
+    // ⚠️ AS CONTAGENS SÃO BUSCADAS AGORA, e não quando a pessoa clicou no "×".
+    // Entre um e outro alguém pode ter criado tarefa naquela coluna, e o número
+    // da revisão tem de ser o do momento da decisão.
+    setContagens(null);
+    setErroLote(null);
+    setRevisando(true);
+    try {
+      const pares = await Promise.all(
+        marcadas.map(async (c) => {
+          const det = await colunaComContagem(boardId!, c.id);
+          return [c.id, det.task_count] as const;
+        }),
+      );
+      setContagens(Object.fromEntries(pares));
+    } catch (e) {
+      setContagens({});
+      setErroLote(mensagemDeErro(e));
+    }
+  }
+
+  async function aplicarLote(destinos: Record<string, string>) {
+    if (!rascunho || !boardId) return;
+    setAplicando(true);
+    setErroLote(null);
+    try {
+      const resposta = await aplicarLoteDeColunas(
+        boardId,
+        paraLote(rascunho, colunas, destinos),
+      );
+      // ⚠️ AVISO DE DIVERGENCIA, e ele EXISTIA no painel antigo e se perdeu no
+      // redesenho (reposto em 13/08). Se o servidor moveu um numero diferente
+      // do que a revisao mostrou, alguem mexeu no quadro entre uma coisa e
+      // outra -- e a tela tem dois numeros sobre a mesma coisa, que e pior que
+      // um numero velho.
+      const divergencia = mensagemDeDivergencia(
+        totalPrevisto(rascunho, contagens ?? {}),
+        resposta.movidas,
+      );
+      if (divergencia) setToast(divergencia);
+      setRascunho(null);
+      setRevisando(false);
+      setCriandoColuna(false);
+      // ⚠️ RECARREGA OS DOIS. O lote pode ter movido tarefas entre colunas e
+      // mudado a lista de colunas -- pintar só um deixaria cards apontando
+      // para coluna que não existe mais, contados e invisíveis.
+      carregarQuadros();
+      recarregarTasks();
+    } catch (e) {
+      // ⚠️ RECUSA PERDE O LOTE INTEIRO, e o rascunho FICA. É o preço aceito do
+      // modelo, e manter o rascunho é o que permite à pessoa corrigir em vez
+      // de refazer do zero.
+      setErroLote(mensagemDeErro(e));
+    } finally {
+      setAplicando(false);
+    }
+  }
+
+  // ⚠️ NO MODO DE EDICAO O KANBAN SEGUE A ORDEM DO RASCUNHO, e nao a do
+  // servidor. E o que faz o arraste ter efeito imediato sem nada ir para a
+  // rede. Fora do modo, e a lista de sempre.
+  //
+  // ⚠️ A COLUNA CRIADA NO RASCUNHO NAO APARECE NO KANBAN, e isso e deliberado:
+  // ela nao tem id real, entao nao tem tarefa, nao e alvo de arraste de card e
+  // nao pode ser consultada. Ela existe na REVISAO como destino possivel.
+  // Desenha-la vazia aqui prometeria uma coluna que ainda nao existe.
+  const colunasVisiveis: Coluna[] = rascunho
+    ? (rascunho.ordem
+        .map((ref) => colunas.find((c) => c.id === ref))
+        .filter(Boolean) as Coluna[])
+    : colunas;
+  const ordemVisivel = colunasVisiveis.map((c) => c.id);
+
+  // ⚠️ VEIO PARA `lib/rascunhoDeColunas` EM 13/08. Este bloco nasceu aqui como
+  // segunda versao do `destinosPara` -- num arquivo de 2000 linhas, sem
+  // guardiao proprio. Agora e `destinosDoRascunho`, com teste.
+  const destinosDaRevisao: DestinoPossivel[] = rascunho
+    ? destinosDoRascunho(rascunho, colunas)
+    : [];
+
+  function onDragEndColuna(e: DragEndEvent) {
+    const { active, over } = e;
+    if (!over || active.id === over.id || !rascunho) return;
+    const destino = rascunho.ordem.indexOf(String(over.id));
+    if (destino === -1) return;
+    const novo = comOrdem(rascunho, String(active.id), destino);
+    // ⚠️ `null` = nada muda. Mesmo contrato das setas -- ver `comOrdem`.
+    if (novo) setRascunho(novo);
+  }
+
   const timeDaTarefaNova = boardId
     ? (quadro?.team_id ?? null)
     : (subteamId ?? null);
@@ -991,6 +1191,38 @@ export default function Board({
 
   return (
     <div>
+      {/* ⚠️ A BARRA TROCA DE CONTEUDO NO MODO DE EDICAO, e nao ganha itens.
+          Buscar, filtrar e criar tarefa nao fazem sentido enquanto a pessoa
+          reorganiza colunas -- e a largura desta linha ja e o gargalo da tela
+          (ver §"O que NAO valida": zero responsivo). */}
+      {modoEdicao ? (
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 18, flexWrap: "wrap" }}>
+          <h1 style={{ margin: 0, fontSize: 19, letterSpacing: "-0.02em" }}>{title}</h1>
+          <span
+            style={{
+              fontSize: 12, fontWeight: 700, padding: "2px 8px", borderRadius: 999,
+              background: "var(--accent-soft)", color: "var(--accent)",
+            }}
+          >
+            Modo edição
+          </span>
+          <button
+            className="btn btn-ghost"
+            onClick={() => setCriandoColuna(true)}
+            style={{ marginLeft: "auto" }}
+          >
+            Adicionar coluna
+          </button>
+          <button className="btn btn-primary" onClick={concluirEdicao}>
+            Concluir edição
+          </button>
+          {/* ⚠️ SAIR E O CANCELAR deste modelo -- e ele avisa antes de
+              descartar. Ver `fecharEdicao`. */}
+          <button className="btn btn-ghost" onClick={fecharEdicao}>
+            Sair
+          </button>
+        </div>
+      ) : (
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 18, flexWrap: "wrap" }}>
         <h1 style={{ margin: 0, fontSize: 19, letterSpacing: "-0.02em" }}>{title}</h1>
         <span className="muted" style={{ fontSize: 13 }}>
@@ -1200,6 +1432,7 @@ export default function Board({
           + Nova tarefa
         </button>
       </div>
+      )}
 
       {/* --- Pastilhas de filtro ativo (Spec 031, C3) ---------------------
           Substituem o badge numerico do botao. O numero dizia QUANTOS; a
@@ -1276,36 +1509,68 @@ export default function Board({
           mudar o que ele mostra e decisao de produto que esta fatia nao tomou.
           Se um dia o kanban vazio for o certo para todos, esta condicao some
           -- e o comentario com ela. */}
-      {/* ⚠️ O MODO DE EDICAO SO EXISTE EM QUADRO AVULSO (`boardId`). As
-          colunas do Quadro geral nao se mexem enquanto a 5c nao existir --
-          `BoardService._assert_quadro_editavel` recusa com 422, e sao 176
-          tarefas vivas sem tela que desfaca. Oferecer o botao la seria uma
-          afordancia que o servidor recusa.
+      {/* ⚠️ O PAINEL `EditorDeColunas` SAIU AQUI (fatia 6c). Ele era uma lista
+          vertical ABAIXO do quadro -- uma tradução mental do quadro em vez do
+          quadro. O modo de edição agora acontece sobre as próprias colunas, e
+          o painel virou arquivo morto e foi APAGADO em 13/08, junto com o
+          teste dele (-20 testes).
 
-          ⚠️ E SO PARA QUEM PODE. `podeEditarColunas` vem da tela, que ja
-          calculou o alcance (`podeGerirQuadrosDe`). Este componente nao
-          recalcula permissao. */}
-      {boardId && podeEditarColunas && (
+          ⚠️ `lib/edicaoDeColunas.ts` FICOU: `avisoDeExclusao`,
+          `impedimentoDeExclusao`, `explicaRecusa`, `destinoEhTerminal` e
+          `mensagemDeDivergencia` seguem em uso pela revisao e pelo rascunho.
+          Morreu o DESENHO, nao a regra -- e e a fronteira da Spec 027 pagando
+          o que prometia.
+
+          ⚠️ O COMENTARIO ANTIGO DIZIA QUE O QUADRO GERAL NAO SE MEXE. Deixou
+          de valer na 6a-bis (13/08): o geral é tão personalizável quanto os
+          outros, e quem filtra é `board.manage.root` -- ADMIN e MANAGER, e não
+          SUPERVISOR. A única trava que sobrou é apagar coluna COM PONTE.
+
+          ⚠️ E SO PARA QUEM PODE. `podeEditarColunas` vem da tela, que já
+          calculou o alcance (`podeGerirQuadrosDe`). Este componente não
+          recalcula permissão -- sem isso, o lápis abriria para um operador um
+          modo onde toda ação dá 403. */}
+      {boardId && podeEditarColunas && !modoEdicao && (
         <div style={{ marginBottom: 12 }}>
-          {editandoColunas ? (
-            <EditorDeColunas
-              boardId={boardId}
-              colunas={colunas}
-              onMudou={() => {
-                // ⚠️ RECARREGA OS DOIS. Apagar coluna MOVE tarefa (status
-                // reescrito pela coluna de destino, ADR 0042 D2), entao a
-                // lista de tarefas fica velha junto com a de colunas.
-                carregarQuadros();
-                recarregarTasks();
-              }}
-              onFechar={() => setEditandoColunas(false)}
-            />
-          ) : (
-            <button className="btn btn-ghost" onClick={() => setEditandoColunas(true)}>
-              Editar colunas
-            </button>
-          )}
+          <button
+            className="btn btn-ghost"
+            onClick={abrirEdicao}
+            aria-label="Editar colunas"
+            title="Editar colunas"
+          >
+            <Pencil size={15} />
+          </button>
         </div>
+      )}
+
+      {criandoColuna && rascunho && (
+        <FormNovaColuna
+          onCriar={(nome, semantica) => {
+            setRascunho((r) => (r ? comColunaNova(r, nome, semantica) : r));
+            setCriandoColuna(false);
+          }}
+          onCancelar={() => setCriandoColuna(false)}
+        />
+      )}
+
+      {revisando && rascunho && (
+        <RevisaoDaEdicao
+          marcadas={marcadasParaApagar(rascunho, colunas)}
+          // ⚠️ OS DESTINOS INCLUEM AS COLUNAS `tmp:`, e e a razao de ser do
+          // lote: apagar "Aprovacao" mandando as tarefas para a "Entregue" que
+          // voce acabou de criar, num gesto so.
+          destinos={destinosDaRevisao}
+          contagens={contagens}
+          resumo={{
+            criadas: rascunho.novas.length,
+            renomeadas: Object.keys(rascunho.nomes).length,
+            ordemMudou: (paraLote(rascunho, colunas).ordem ?? []).length > 0,
+          }}
+          erro={erroLote}
+          ocupado={aplicando}
+          onConfirmar={aplicarLote}
+          onVoltar={() => setRevisando(false)}
+        />
       )}
 
       {raizes.length === 0 && !boardId ? (
@@ -1321,7 +1586,15 @@ export default function Board({
           <EmptyState onNova={() => setCriando(true)} />
         )
       ) : (
-        <DndContext sensors={sensors} onDragStart={onDragStart} onDragEnd={onDragEnd}>
+        <DndContext
+          sensors={sensors}
+          onDragStart={modoEdicao ? undefined : onDragStart}
+          // ⚠️ UM `DndContext` SO, E O HANDLER TROCA. Dois contextos aninhados
+          // brigariam pelo mesmo ponteiro, e o de dentro venceria -- que e
+          // exatamente o motivo pelo qual a decisao de 12/08 tinha rejeitado
+          // arrastar cabecalho no quadro normal.
+          onDragEnd={modoEdicao ? onDragEndColuna : onDragEnd}
+        >
           <div
             ref={colunasRef}
             style={{
@@ -1329,10 +1602,43 @@ export default function Board({
               paddingBottom: 8, height: alturaColunas ?? undefined,
             }}
           >
-            {colunas.map((c) => (
-              <ColunaKanban key={c.id} coluna={c} count={(porColuna[c.id] || []).length}>
+            <SortableContext
+              items={ordemVisivel}
+              strategy={horizontalListSortingStrategy}
+              // ⚠️ `disabled` FORA DO MODO: sem isto o `useSortable` de cada
+              // cabecalho continuaria registrado e o arraste de CARD passaria a
+              // disputar o mesmo gesto no quadro normal.
+              disabled={!modoEdicao}
+            >
+              {colunasVisiveis.map((c) => (
+              <ColunaKanban
+                key={c.id}
+                coluna={c}
+                count={(porColuna[c.id] || []).length}
+                cabecalho={
+                  modoEdicao ? (
+                    <CabecalhoSortavel
+                      linha={linhasEdicao.find((l) => l.ref === c.id)!}
+                      cor={c.color}
+                      indice={ordemVisivel.indexOf(c.id)}
+                      total={ordemVisivel.length}
+                      onRenomear={(nome) =>
+                        setRascunho((r) => (r ? comRenome(r, c.id, nome) : r))
+                      }
+                      onMarcar={() =>
+                        setRascunho((r) => (r ? comMarcacao(r, c.id) : r))
+                      }
+                      onMover={(d) => moverColunaNoRascunho(c.id, d)}
+                    />
+                  ) : undefined
+                }
+              >
                 {(porColuna[c.id] || []).map((t) => (
                   <CardArrastavel
+                    // ⚠️ TRAVADO NO MODO DE EDICAO, e nao escondido. Sumir
+                    // esconderia que o "x" esta sobre uma coluna com 40 tarefas
+                    // dentro; travado, a pessoa ve o que esta reorganizando.
+                    travado={modoEdicao}
                     key={t.id}
                     task={t}
                     coluna={c}
@@ -1345,7 +1651,8 @@ export default function Board({
                   />
                 ))}
               </ColunaKanban>
-            ))}
+              ))}
+            </SortableContext>
           </div>
 
           {foraDaColuna > 0 && (
@@ -1473,14 +1780,76 @@ export default function Board({
  * troca inteira desta fatia: o que o `onDragEnd` recebe em `e.over.id` passa a
  * ser a COLUNA de destino, que e o que o `PATCH` agora aceita (ADR 0041).
  */
+/**
+ * O cabecalho editavel, ligado ao `useSortable` (Spec 036, fatia 6c-2c).
+ *
+ * ⚠️ COMPONENTE PROPRIO SO POR CAUSA DO HOOK. `useSortable` e um hook, entao
+ * nao pode ser chamado dentro do `.map()` do pai. Toda a aparencia mora em
+ * `CabecalhoDeColunaEditavel`, que e testavel sem dnd nenhum.
+ *
+ * ⚠️ ESTE ARQUIVO E O UNICO PEDACO DA FATIA 6 SEM GUARDIAO, e nao ha como ser
+ * diferente: `onDragEnd` nao roda em jsdom. E por isso que as SETAS existem --
+ * elas chamam `comOrdem`, a mesma funcao que o arraste usa, e essa esta
+ * testada em `lib/__tests__/rascunhoDeColunas.test.ts`.
+ */
+function CabecalhoSortavel({
+  linha,
+  cor,
+  indice,
+  total,
+  onRenomear,
+  onMarcar,
+  onMover,
+}: {
+  linha: LinhaDeEdicao;
+  cor: string;
+  indice: number;
+  total: number;
+  onRenomear: (nome: string) => void;
+  onMarcar: () => void;
+  onMover: (direcao: "esquerda" | "direita") => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id: linha.ref });
+  return (
+    <div
+      style={{
+        transform: transform
+          ? `translate3d(${transform.x}px, 0, 0)`
+          : undefined,
+        transition,
+        // ⚠️ A COLUNA ARRASTADA FICA TRANSLUCIDA, e nao invisivel: some-la
+        // faria as vizinhas pularem para o lugar dela e a pessoa perderia a
+        // referencia de onde estava.
+        opacity: isDragging ? 0.4 : 1,
+      }}
+    >
+      <CabecalhoDeColunaEditavel
+        linha={linha}
+        cor={cor}
+        podeIrEsquerda={indice > 0}
+        podeIrDireita={indice < total - 1}
+        onRenomear={onRenomear}
+        onMarcar={onMarcar}
+        onMover={onMover}
+        arrasteRef={setNodeRef}
+        arrasteProps={{ ...attributes, ...listeners }}
+      />
+    </div>
+  );
+}
+
 function ColunaKanban({
   coluna,
   count,
   children,
+  cabecalho,
 }: {
   coluna: Coluna;
   count: number;
   children: React.ReactNode;
+  /** Trocado no modo de edicao. Ausente = o cabecalho normal. */
+  cabecalho?: React.ReactNode;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: coluna.id });
   return (
@@ -1499,17 +1868,19 @@ function ColunaKanban({
         transition: "background .12s",
       }}
     >
-      <div
-        style={{
-          display: "flex", alignItems: "center", gap: 8, marginBottom: 10,
-          paddingBottom: 8, borderBottom: `2px solid ${coluna.color}`,
-          flexShrink: 0,
-        }}
-      >
-        <span style={{ width: 8, height: 8, borderRadius: 999, background: coluna.color }} />
-        <span style={{ fontWeight: 700, fontSize: 13 }}>{coluna.name}</span>
-        <span className="muted" style={{ fontSize: 12, marginLeft: "auto" }}>{count}</span>
-      </div>
+      {cabecalho ?? (
+        <div
+          style={{
+            display: "flex", alignItems: "center", gap: 8, marginBottom: 10,
+            paddingBottom: 8, borderBottom: `2px solid ${coluna.color}`,
+            flexShrink: 0,
+          }}
+        >
+          <span style={{ width: 8, height: 8, borderRadius: 999, background: coluna.color }} />
+          <span style={{ fontWeight: 700, fontSize: 13 }}>{coluna.name}</span>
+          <span className="muted" style={{ fontSize: 12, marginLeft: "auto" }}>{count}</span>
+        </div>
+      )}
       <div
         style={{
           display: "flex", flexDirection: "column", gap: 8,
@@ -1534,6 +1905,7 @@ function CardArrastavel({
   subtaskDone,
   projectName,
   escopo,
+  travado = false,
 }: {
   task: Task;
   coluna: Coluna;
@@ -1543,12 +1915,25 @@ function CardArrastavel({
   subtaskDone: number;
   projectName?: string;
   escopo?: "compartilhada" | "interna";
+  /** Modo de edicao de colunas: o card nao arrasta. */
+  travado?: boolean;
 }) {
-  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: task.id });
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: task.id,
+    // ⚠️ `disabled` NO HOOK, e nao so deixar de espalhar os `listeners`. O
+    // `useDraggable` registra o no no contexto ao montar; sem isto o card
+    // continuaria sendo alvo de arraste pelo dnd-kit mesmo sem os handlers, e
+    // o gesto competiria com o arraste de CABECALHO -- que e o unico motivo
+    // pelo qual o modo de edicao existe como estado explicito.
+    disabled: travado,
+  });
   return (
     <div
       ref={setNodeRef}
-      {...listeners}
+      // ⚠️ TRAVADO NAO E ESCONDIDO. O card continua clicavel para abrir a
+      // tarefa: quem esta reorganizando colunas pode precisar conferir o que
+      // tem dentro antes de apagar uma.
+      {...(travado ? {} : listeners)}
       {...attributes}
       onClick={() => onAbrir(task)}
       onKeyDown={(e) => {
@@ -1561,7 +1946,11 @@ function CardArrastavel({
       className="card-elev"
       style={{
         opacity: isDragging ? 0.4 : task.is_archived ? 0.55 : 1,
-        touchAction: "none",
+        // ⚠️ `touchAction` VOLTA AO PADRAO QUANDO TRAVADO. `none` existe para o
+        // arraste por toque funcionar; mantido no modo de edicao, ele impediria
+        // rolar a coluna com o dedo sem dar arraste nenhum em troca.
+        touchAction: travado ? undefined : "none",
+        cursor: travado ? "pointer" : undefined,
         // Enquanto arrasta, sem elevacao: o card ja esta com o ghost do
         // dnd-kit e a sombra dupla ficava suja por cima dele.
         ...(isDragging ? { transform: "none", boxShadow: "none" } : null),

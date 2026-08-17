@@ -84,11 +84,18 @@ from app.modules.tasks.api.schemas import (
     BoardColumnDetailResponse,
     BoardColumnRenameRequest,
     BoardColumnResponse,
+    BoardColumnsBatchRequest,
+    BoardColumnsBatchResponse,
     BoardCreateRequest,
     BoardRenameRequest,
     BoardResponse,
 )
-from app.modules.tasks.application.board_service import BoardService
+from app.modules.tasks.application.board_service import (
+    BoardService,
+    LoteApagar,
+    LoteCriar,
+    LoteRenomear,
+)
 from app.modules.tasks.infrastructure.board_repository import BoardRepository
 
 router = APIRouter(prefix="/boards", tags=["boards"])
@@ -236,6 +243,64 @@ async def rename_board(
 # =====================================================================
 
 
+@router.put(
+    "/{board_id}/columns",
+    response_model=BoardColumnsBatchResponse,
+)
+async def apply_columns_batch(
+    board_id: uuid.UUID,
+    payload: BoardColumnsBatchRequest,
+    _: TenantContextDep,
+    uow: UoWDep,
+) -> BoardColumnsBatchResponse:
+    """Aplica a edicao inteira de colunas de um quadro, num pedido so.
+
+    ⚠️ SUBSTITUI `PATCH /{board_id}/columns/order`, QUE FOI APAGADA. Aquela
+    rota nasceu na 6a, antes de o modelo de tela assentar, e ficou sem chamador
+    quando a edicao virou lote -- endpoint sem chamador e a mesma doenca de
+    `corEhHex`, e aquele ainda vinha com schema e teste proprios dando
+    aparencia de coisa viva. `BoardService.reordenar_colunas` sobreviveu: virou
+    a ultima etapa do lote.
+
+    ⚠️ `PUT` NA MESMA URL DO `POST`, e isso NAO e colisao: o FastAPI casa por
+    metodo alem do caminho. O que colide e SEGMENTO FIXO contra PARAMETRO --
+    `columns/order` contra `columns/{column_id}` --, e foi assim que a rota
+    apagada quebrou em 13/08 antes de ser movida.
+
+    ⚠️ UMA TRANSACAO SO. O `commit` daqui e o unico; qualquer recusa no meio do
+    lote sobe e o UoW desfaz as etapas anteriores. E o que torna aceitavel o
+    preco do modelo: **nao existe lote meio aplicado**.
+
+    ⚠️ AS RECUSAS SAO AS DE SEMPRE, E TODAS 422 COM `code`: `coluna_sem_destino`,
+    `coluna_semantica_obrigatoria`, `coluna_ponte_obrigatoria`,
+    `colunas_divergentes`, e as duas do lote --
+    `referencia_tmp_desconhecida` e `referencia_tmp_repetida`. O front le o
+    `code`, NUNCA a mensagem.
+    """
+    colunas, movidas = await BoardService(uow.session).aplicar_lote(
+        board_id=board_id,
+        # ⚠️ A TRADUCAO MORA AQUI, no router, porque `application/` nao importa
+        # de `api/` neste projeto -- conferido em 13/08.
+        criar=[
+            LoteCriar(tmp=c.tmp, name=c.name, semantic=c.semantic)
+            for c in payload.criar
+        ],
+        renomear=[
+            LoteRenomear(id=r.id, name=r.name) for r in payload.renomear
+        ],
+        apagar=[
+            LoteApagar(id=a.id, destino=a.destino) for a in payload.apagar
+        ],
+        ordem=payload.ordem,
+    )
+    resposta = BoardColumnsBatchResponse(
+        colunas=[BoardColumnResponse.model_validate(c) for c in colunas],
+        movidas=movidas,
+    )
+    await uow.commit()
+    return resposta
+
+
 @router.post(
     "/{board_id}/columns",
     response_model=BoardColumnResponse,
@@ -249,9 +314,11 @@ async def create_column(
 ) -> BoardColumnResponse:
     """Acrescenta uma coluna ao fim de um quadro avulso.
 
-    ⚠️ RECUSA 422 NO QUADRO PADRAO. As colunas do quadro geral nao se mexem
-    enquanto a 5c nao existir: sao 176 tarefas vivas e nao ha tela que desfaca.
-    Renomear o QUADRO geral continua permitido -- aquilo nao toca em coluna.
+    ⚠️ O QUADRO PADRAO ACEITA, DESDE 13/08. A recusa por quadro
+    (`_assert_quadro_editavel`) saiu: o Quadro geral e tao personalizavel
+    quanto os outros, e quem filtra e a PERMISSAO -- `board.manage.root`, que
+    esta em ADMIN e MANAGER e nao no SUPERVISOR. Criar coluna la nao tem risco
+    tecnico: nasce vazia, `legacy_status` NULL, `is_default_target` False.
 
     ⚠️ 404 antes de 403, igual ao `PATCH /boards`: a permissao depende do
     `team_id` do quadro, entao ele e buscado primeiro. Um 403 confirmaria que o
@@ -355,12 +422,19 @@ async def delete_column(
     quando o corpo se perde, este endpoint deixa de mover tarefa e passa a
     recusar por falta de destino, que e um 422 sem causa aparente.
 
-    ⚠️ DUAS RECUSAS DIFERENTES, as duas 422 (ADR 0042):
+    ⚠️ TRES RECUSAS DIFERENTES, as tres 422:
       - sem `destino_id` numa coluna com tarefas -- "para onde vao estas?";
       - ultima `OPEN` ou ultima `DONE` -- "o quadro continua funcionando?".
     A segunda vale MESMO com destino escolhido: nada impede apagar a ultima
     `DONE` mandando tudo para `Backlog`, e a quebra so apareceria na semana
     seguinte, numa cascata de conclusao.
+
+    ⚠️ A TERCEIRA E DE 13/08 (`coluna_ponte_obrigatoria`): coluna do quadro
+    PADRAO que ainda tem `legacy_status`. `default_board_and_column_for_status`
+    casa so pela ponte, sem degrau de semantica -- apagar "Planejado" faria
+    toda tarefa de topo com status `PLANNED` devolver 422 dias depois, para
+    outra pessoa. Coluna SEM ponte no geral (criada por gente) pode ser
+    apagada normalmente.
 
     ⚠️ DESTINO TERMINAL NAO E MOVER -- e concluir ou cancelar o lote, com
     cascata de subtarefas, `terminal_since` ligando e avisos de prazo morrendo.

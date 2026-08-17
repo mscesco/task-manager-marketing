@@ -19,6 +19,12 @@
 import type { Coluna } from "./coluna";
 
 /** Falta escolher para onde vao as tarefas (ADR 0042 D5). */
+// ⚠️ CONTINUA EXPORTADA de proposito, mesmo sem leitor de produção depois que
+// o `EditorDeColunas` sumiu (13/08). Ela e METADE DE UM CONTRATO com o
+// backend: `explicaRecusa` a usa aqui dentro, e o teste dela e o unico lugar
+// que amarra este texto ao `code` que o servidor manda. Sem o export, aquele
+// teste deixaria de existir e a traducao poderia divergir do backend em
+// silencio.
 export const CODIGO_SEM_DESTINO = "coluna_sem_destino";
 /** O quadro ficaria sem coluna de uma semantica que o sistema escreve (D4). */
 export const CODIGO_SEMANTICA_OBRIGATORIA = "coluna_semantica_obrigatoria";
@@ -38,7 +44,7 @@ export const CODIGO_SEMANTICA_OBRIGATORIA = "coluna_semantica_obrigatoria";
  * nao mexeu na outra -- o preco de a tela nao oferecer um botao que o servidor
  * recusa.
  */
-export const SEMANTICAS_OBRIGATORIAS = ["OPEN", "DONE"] as const;
+const SEMANTICAS_OBRIGATORIAS = ["OPEN", "DONE"] as const;
 
 /**
  * O rotulo da semantica, para a pessoa VER que tipo de coluna e cada uma.
@@ -113,27 +119,6 @@ export function impedimentoDeExclusao(
       `Este quadro precisa de pelo menos uma coluna ${NOME_DA_SEMANTICA[coluna.semantic]}. ` +
       `Crie outra antes de apagar esta.`,
   };
-}
-
-/**
- * As colunas oferecidas como destino ao apagar `coluna`.
- *
- * ⚠️ TODAS AS OUTRAS, e sem filtrar por semantica. Mandar um lote de tarefas
- * em andamento para `Cancelado` e uma escolha legitima -- e frequente, quando
- * a coluna apagada era um estagio que deixou de existir. Filtrar aqui seria a
- * tela decidindo por quem apaga.
- *
- * ⚠️ ELA MESMA NAO ENTRA. Oferece-la daria 422 do backend com uma escolha que
- * a pessoa fez de boa fe.
- */
-export function destinosPara(
-  coluna: Coluna,
-  todas: readonly Coluna[],
-): Coluna[] {
-  return todas
-    .filter((c) => c.id !== coluna.id)
-    .slice()
-    .sort((a, b) => a.position - b.position);
 }
 
 /** Se a coluna de destino ENCERRA as tarefas em vez de so move-las. */

@@ -27,11 +27,10 @@ import { describe, expect, it } from "vitest";
 
 import type { Coluna } from "@/lib/coluna";
 import {
-  CODIGO_SEMANTICA_OBRIGATORIA,
   CODIGO_SEM_DESTINO,
+  CODIGO_SEMANTICA_OBRIGATORIA,
   avisoDeExclusao,
   destinoEhTerminal,
-  destinosPara,
   explicaRecusa,
   impedimentoDeExclusao,
   mensagemDeDivergencia,
@@ -117,31 +116,13 @@ describe("impedimentoDeExclusao", () => {
   });
 });
 
-describe("destinosPara", () => {
-  it("oferece TODAS as outras, ordenadas por posicao", () => {
-    expect(destinosPara(ANDAMENTO, BASE).map((c) => c.id)).toEqual([
-      "c-back",
-      "c-done",
-      "c-canc",
-    ]);
-  });
-
-  it("⚠️ NAO filtra por semantica", () => {
-    // Mandar um lote em andamento para `Cancelado` e escolha legitima, e
-    // frequente quando a coluna apagada era um estagio que deixou de existir.
-    // Filtrar seria a tela decidindo por quem apaga.
-    expect(destinosPara(ANDAMENTO, BASE).map((c) => c.semantic)).toContain(
-      "CANCELLED",
-    );
-  });
-
-  it("⚠️ ela mesma nao entra na lista", () => {
-    // Oferece-la daria 422 do backend para uma escolha feita de boa fe.
-    expect(destinosPara(ANDAMENTO, BASE).map((c) => c.id)).not.toContain(
-      "c-and",
-    );
-  });
-});
+// ⚠️ `destinosPara` FOI APAGADA EM 13/08, e com ela os testes que estavam
+// aqui. Ela devolvia "todas as outras colunas, por posicao" -- e a fatia 6
+// precisou de algo que ela nao fazia: incluir as colunas `tmp:`, que so
+// existem no rascunho. Manter as duas seria a segunda versao da mesma ideia,
+// que e como a regra da ADR 0042 divergiu em tres lugares.
+//
+// A sucessora e `destinosDoRascunho`, em `lib/rascunhoDeColunas.ts`.
 
 describe("destinoEhTerminal", () => {
   it("DONE e CANCELLED sao terminais", () => {
