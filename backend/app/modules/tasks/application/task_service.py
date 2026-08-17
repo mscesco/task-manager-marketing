@@ -75,6 +75,34 @@ logger = get_logger(__name__)
 #: teste dos dois que deveriam cair.
 CODIGO_QUADRO_FORA_DE_ALCANCE = "board_fora_de_alcance"
 
+#: Pai e filha ficariam em quadros DIFERENTES (Spec 036, fatia 8, 18/08).
+#:
+#: ⚠️ SEM ELE A RECUSA NAO E DISTINGUIVEL. `move` ja levanta `ValidationError`
+#: para "pai em projeto diferente", e as duas sao 422 no mesmo campo
+#: (`parent_task_id`). So o codigo separa "arrume o projeto" de "mova o pai
+#: inteiro" -- e sao instrucoes opostas. Comparar a mensagem acoplaria quem
+#: chama ao portugues daqui, que e a regra que esta spec proibe em todo lugar.
+#:
+#: ⚠️ QUEM LE ISTO HOJE E O n8n, e nao a tela: o `TaskDetail` so oferece trocar
+#: de PROJETO. Codigo estavel importa mais quando o consumidor e um script.
+CODIGO_PAI_EM_OUTRO_QUADRO = "pai_em_outro_quadro"
+
+#: A tarefa ficaria num quadro AVULSO de um time, pertencendo a OUTRO time
+#: (Spec 036, fatia 8, 18/08).
+#:
+#: ⚠️ SO VALE EM QUADRO AVULSO. No Quadro geral o time e livre, e isso NAO e
+#: frouxidao: e o que sustenta a tarefa INTERNA de subtime -- ela vive no
+#: geral com `team_id` do subtime, aparece SO na lente dele, e sao 216 em
+#: producao (medidas em 18/08). Travar o geral apagaria essa funcionalidade.
+#:
+#: ⚠️ POR QUE A COMBINACAO E PERIGOSA: quadro decide QUEM VE (ADR 0035 D3).
+#: Tarefa no quadro avulso do SEO pertencendo ao time de Design continuaria
+#: desenhada na tela do SEO enquanto pertence a outro time -- e `PATCH
+#: /tasks/{id}` produzia exatamente isso, porque escreve `team_id` e nao toca
+#: em `board_id`. Cada tarefa aparece em UM lugar so, e essa era a unica
+#: combinacao sem dono definido.
+CODIGO_TIME_FORA_DO_QUADRO = "time_fora_do_quadro"
+
 
 # --------------------------------------------------------
 # Commands / DTOs
@@ -274,6 +302,64 @@ class TaskService:
     # ----------------------------------------------------
     # CRUD (publico)
     # ----------------------------------------------------
+    async def _assert_time_do_quadro(
+        self, *, board_id: uuid.UUID, team_id: uuid.UUID
+    ) -> None:
+        """Em quadro AVULSO, o time da tarefa e o time do quadro.
+
+        ⚠️ NO QUADRO GERAL O TIME E LIVRE, E ESSA METADE E TAO DELIBERADA
+        QUANTO A OUTRA. A tarefa INTERNA de subtime vive no geral com `team_id`
+        do subtime e aparece SO na lente dele -- o Quadro geral filtra por
+        `team_id === rootId` no front. **Sao 216 em producao**, medidas em
+        18/08. Uma trava que valesse para o geral apagaria a funcionalidade e
+        mandaria as 216 para uma tela onde todo mundo as ve.
+
+        ⚠️ CADA TAREFA APARECE EM UM LUGAR SO, e quem decide e a dupla
+        `board_id` + `team_id`:
+
+            geral   + raiz            -> Quadro geral
+            geral   + subtime         -> lente daquele subtime
+            avulso  + time do quadro  -> o quadro avulso
+            avulso  + OUTRO time      -> **sem dono, e e o que esta funcao mata**
+
+        ⚠️ O CAMINHO QUE PRODUZIA A QUARTA LINHA: `PATCH /tasks/{id}` aceita
+        `team_id`, valida o alcance dele e escreve `task.team_id` -- **sem
+        tocar em `board_id`**. Medido em 17/08. Quadro decide quem ve, entao a
+        tarefa continuaria desenhada no quadro do time antigo pertencendo ao
+        novo.
+
+        ⚠️ E `_assert_board_in_reach` NAO COBRIA ISSO. Ela pergunta "voce
+        alcanca este quadro?", e um MANAGER da raiz alcanca todos -- inclusive
+        para criar tarefa no quadro do SEO com `team_id` de Design. Alcance e
+        propriedade sao perguntas diferentes.
+
+        ⚠️ PELA TELA NAO DA: o modal fixa o time do quadro
+        (`timeDaTarefaNova`), e `TaskUpdateInput` nem expoe `team_id`. Quem
+        chega aqui e n8n, Swagger ou chamada direta -- o mesmo modelo de ameaca
+        de `_assert_team_in_reach`.
+        """
+        dono = await BoardRepository(self._session).dono_do_quadro(board_id)
+        # ⚠️ `None` = quadro inexistente. Nao e assunto desta trava: no `create`
+        # o `_assert_board_in_reach` ja recusou antes, e no `update` a FK
+        # garante que o quadro da tarefa existe. Estourar aqui trocaria um
+        # defeito de dado por um 500 num caminho que nao e sobre quadro.
+        if dono is None:
+            return
+        time_do_quadro, eh_padrao = dono
+        if eh_padrao:
+            return
+        if team_id != time_do_quadro:
+            raise ValidationError(
+                "Esta tarefa esta num quadro de outro time. Uma tarefa em "
+                "quadro proprio pertence ao time daquele quadro.",
+                code=CODIGO_TIME_FORA_DO_QUADRO,
+                details={
+                    "field": "team_id",
+                    "team_id": str(team_id),
+                    "board_team_id": str(time_do_quadro),
+                },
+            )
+
     async def _assert_board_in_reach(self, board_id: uuid.UUID) -> None:
         """`board_id` escrito a mao tem de estar na lente de quem escreve.
 
@@ -507,6 +593,15 @@ class TaskService:
             # de quem criou. Mesmo furo que a Spec 037 fechou para `team_id`, e
             # pela mesma porta -- a tela nao oferece, o resto dos clientes sim.
             await self._assert_board_in_reach(command.board_id)
+            # ⚠️ ALCANCE NAO E PROPRIEDADE (fatia 8, 18/08). A linha acima
+            # responde "voce alcanca este quadro?"; esta responde "a tarefa
+            # pertence ao time dele?". Um MANAGER da raiz alcanca TODOS os
+            # quadros -- sem esta, ele cria tarefa no quadro do SEO com
+            # `team_id` de Design, e ela fica desenhada na tela do SEO
+            # pertencendo a outro time.
+            await self._assert_time_do_quadro(
+                board_id=command.board_id, team_id=team_id
+            )
             task.board_id = command.board_id
             # ⚠️ MESMA REGRA DA SUBTAREFA (ADR 0042 D2): o status VOLTA da
             # coluna. Quadro avulso tem quatro colunas e nao conhece `PLANNED`,
@@ -922,6 +1017,19 @@ class TaskService:
             # ⚠️ Spec 037 fatia 1: a MESMA regra do `create`. `_assert_editable`
             # acima guarda o time ATUAL da tarefa; nada guardava o time NOVO.
             self._assert_team_in_reach(command.team_id)
+            # ⚠️ E NADA GUARDAVA O QUADRO (fatia 8, 18/08). Este PATCH escrevia
+            # `team_id` e **nao tocava em `board_id`** -- medido em 17/08 --,
+            # entao dava para deixar a tarefa dentro do quadro avulso do SEO
+            # pertencendo ao time de Design. Quadro decide QUEM VE (ADR 0035
+            # D3): ela continuaria na tela do SEO.
+            #
+            # ⚠️ RECUSA, e nao move a tarefa de quadro sozinha. Mudar o quadro
+            # por baixo de um PATCH de time seria mexer em QUEM VE sem que
+            # ninguem tenha pedido -- e sem linha de historico. Mover entre
+            # quadros e operacao propria.
+            await self._assert_time_do_quadro(
+                board_id=task.board_id, team_id=command.team_id
+            )
             task.team_id = command.team_id
 
         # Status com ajuste de completed_at.
@@ -1108,6 +1216,51 @@ class TaskService:
                 raise ValidationError(
                     "Task pai esta em projeto diferente do informado.",
                     details={"field": "parent_task_id"},
+                )
+            # ⚠️ PAI E FILHA VIVEM NO MESMO QUADRO, SEMPRE (Spec 036, fatia 8 --
+            # invariante declarada em 18/08/2026).
+            #
+            # ⚠️ ESTA LINHA NAO EXISTIA, E A AUSENCIA ERA MEDIDA: ate 18/08 este
+            # metodo inteiro nao mencionava `board_id` nenhuma vez. Mover B para
+            # debaixo de A, com A em outro quadro, deixava B no quadro velho --
+            # e a FK composta `(column_id, board_id)` ACEITA, porque o par
+            # continua internamente consistente. O cabecalho do
+            # `board_repository.py` ja descrevia esse estado e o chamava de
+            # **"o silencioso"**: fechado no `create` (subtarefa herda o quadro
+            # do pai) e nunca aqui.
+            #
+            # ⚠️ POR QUE ERA INOFENSIVO ATE AGORA, E POR QUE DEIXA DE SER:
+            # producao tem UM quadro (`invariantes.sql`, consulta 5), entao nao
+            # ha segundo quadro para divergir. **No dia do deploy do quadro
+            # avulso passa a haver.** A consulta 10 mede o estado; esta linha e
+            # o que impede de produzi-lo.
+            #
+            # ⚠️ PELA TELA NAO DA, PELA API DA. O `TaskDetail` so oferece trocar
+            # de PROJETO -- trocar de pai nao tem controle. Mas esta rota aceita
+            # `parent_task_id`, e este workspace usa n8n contra esta API. E o
+            # mesmo modelo de ameaca de `_assert_team_in_reach` e
+            # `_assert_board_in_reach`, e a mesma resposta: 422 com `code`.
+            #
+            # ⚠️ RECUSA, E NAO MOVE JUNTO (decisao de 18/08). Mover a subarvore
+            # inteira entre quadros mexeria em coluna, permissao e historico ao
+            # mesmo tempo -- entrega propria. Recusar ja fecha a invariante, e
+            # **a mensagem tem de dizer o que fazer**, senao quem chama fica
+            # sem saida: mover o PAI leva a subarvore junto.
+            #
+            # ⚠️ O ESTRAGO DE NAO TER ISTO E DIFERIDO E MUDO: a checklist do pai
+            # passa a contar uma subtarefa que nao aparece no quadro dele, e
+            # apagar o quadro da filha (fatia 7) deixaria a proporcao errada sem
+            # nada explicando -- dias depois, para outra pessoa.
+            if new_parent.board_id != task.board_id:
+                raise ValidationError(
+                    "A tarefa pai esta em outro quadro. Uma subtarefa vive no "
+                    "mesmo quadro do pai -- mova a tarefa de topo inteira.",
+                    code=CODIGO_PAI_EM_OUTRO_QUADRO,
+                    details={
+                        "field": "parent_task_id",
+                        "board_id": str(task.board_id),
+                        "parent_board_id": str(new_parent.board_id),
+                    },
                 )
             # Ciclo: novo pai eh descendente da task?
             if await self._repo.detect_cycle(

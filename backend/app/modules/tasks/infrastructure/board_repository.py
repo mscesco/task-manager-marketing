@@ -342,6 +342,40 @@ class BoardRepository:
             ColumnSemantic(semantica),
         )
 
+    async def dono_do_quadro(
+        self, board_id: uuid.UUID
+    ) -> tuple[uuid.UUID, bool] | None:
+        """`(team_id, is_default)` do quadro -- ou `None` se ele nao existe.
+
+        ⚠️ EXISTE PARA A TRAVA DE TIME DA TAREFA (Spec 036, fatia 8): dentro de
+        quadro AVULSO, o time da tarefa tem de ser o time do quadro. No Quadro
+        geral o time continua livre, e e isso que sustenta as tarefas INTERNAS
+        de subtime -- 216 delas em producao, medidas em 18/08. Por isso a
+        resposta traz `is_default` junto: sem ele quem chama teria de fazer a
+        segunda consulta, ou pior, adivinhar.
+
+        ⚠️ NAO FILTRA `deleted_at`, e e a regra do topo deste arquivo: esta
+        consulta RECEBE o `board_id` de quem ja resolveu o quadro, e nao
+        DESCOBRE quadro nenhum. Filtrar aqui faria a trava sumir em silencio
+        para um quadro apagado -- e a tarefa dentro dele passaria livre, que e
+        o oposto do que a trava existe para fazer.
+
+        ⚠️ `None` E "NAO EXISTE", e nao "sem permissao". Quem chama decide o que
+        fazer: no `create` o `_assert_board_in_reach` ja recusou antes; no
+        `update` a tarefa carrega um `board_id` que o banco garante existir
+        (FK), entao `None` ali seria dado corrompido, e deixar passar e melhor
+        que estourar num caminho de PATCH que nao e sobre quadro.
+        """
+        linha = (
+            await self.session.execute(
+                select(Board.team_id, Board.is_default).where(
+                    Board.id == board_id,
+                    Board.workspace_id == require_tenant().workspace_id,
+                )
+            )
+        ).first()
+        return (linha.team_id, linha.is_default) if linha else None
+
     async def list_visible(self) -> list[tuple[Board, list[BoardColumn]]]:
         """Quadros que o usuario do contexto ALCANCA, com as colunas de cada.
 

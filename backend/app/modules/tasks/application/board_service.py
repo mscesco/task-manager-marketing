@@ -34,7 +34,7 @@ from dataclasses import dataclass
 
 import structlog
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 
 from app.core.tenant import require_tenant
 from app.db.models.boards import Board, BoardColumn
@@ -167,6 +167,18 @@ CODIGO_NOME_DE_QUADRO_REPETIDO = "quadro_nome_repetido"
 #: A regra confere o resultado FINAL, aqui; quem vigia o dado e a consulta 9 do
 #: `invariantes.sql`.
 CODIGO_NOME_DE_COLUNA_REPETIDO = "coluna_nome_repetido"
+
+#: Tentativa de apagar o quadro PADRAO do time (Spec 036, fatia 7, 18/08).
+#:
+#: ⚠️ O CODIGO EXISTE PARA A TELA NAO OFERECER O BOTAO, e nao so para explicar
+#: depois do erro -- mesma razao de `CODIGO_PONTE_OBRIGATORIA`. Afordancia que
+#: nao funciona e afordancia em que alguem clica.
+#:
+#: ⚠️ E O QUE ESTA EM JOGO E O PRODUTO INTEIRO PARAR: o quadro padrao e onde
+#: nasce toda tarefa de topo (`default_board_and_column_for_status`). Sem ele,
+#: criar tarefa devolve "este workspace nao tem quadro para o status..." para
+#: as 26 pessoas de uma vez.
+CODIGO_QUADRO_PADRAO = "quadro_padrao_nao_apagavel"
 
 #: Prefixo que distingue apelido de cliente de UUID de verdade.
 _PREFIXO_TMP = "tmp:"
@@ -1472,6 +1484,140 @@ class BoardService:
         if time is None:
             raise EntityNotFoundError("Time", identifier=team_id)
         return time
+
+    async def apagar_quadro(self, *, board_id: uuid.UUID) -> int:
+        """Apaga um quadro E as tarefas dentro dele (ADR 0034, fatia 7).
+
+        Devolve quantas tarefas VIVAS foram apagadas junto.
+
+        ⚠️⚠️ **E A OPERACAO MAIS DESTRUTIVA DO PRODUTO, e a UNICA que nao
+        pergunta o destino.** Apagar COLUNA sempre oferece para onde as tarefas
+        vao; aqui elas somem com o quadro. A tela ensinou o contrario, entao a
+        confirmacao exige DIGITAR O NOME e mostrar a contagem -- e mesmo assim
+        a diferenca entre as duas operacoes vai surpreender alguem.
+
+        ⚠️ SOFT DELETE, e o resgate esta em `backend/scripts/`. Nao ha tela de
+        restaurar, e nao vai haver nesta fatia: o script e a unica saida de
+        quem apagar errado. **Ele foi escrito no mesmo commit que esta funcao.**
+
+        ⚠️ O QUADRO PADRAO NAO SE APAGA (decisao de 18/08). Ele e onde nasce
+        toda tarefa de topo -- `default_board_and_column_for_status` casa por
+        `is_default` + time RAIZ. Sem ele, criar tarefa passa a devolver "este
+        workspace nao tem quadro para o status..." para TODO MUNDO, de uma vez.
+        A recusa mora aqui e a tela nao oferece o botao: ausente, e nao
+        desabilitada (ADR 0034 item 2).
+
+        ⚠️ `NOW()` E O QUE LIGA O QUADRO AS TAREFAS DELE, e isso e o coracao do
+        resgate. No Postgres `NOW()` e o instante da TRANSACAO, constante entre
+        os comandos dela -- entao o `deleted_at` do quadro e o das tarefas
+        apagadas junto sao **exatamente iguais**. O script de restauracao usa
+        essa igualdade para devolver so o que ESTE clique apagou, sem
+        ressuscitar tarefa que ja estava apagada antes. Trocar por
+        `datetime.now()` em Python quebraria isso em silencio: seriam dois
+        instantes diferentes, e o resgate voltaria demais ou de menos.
+
+        ⚠️ SEM HISTORY POR TAREFA, e e escolha. `TaskService.soft_delete`
+        escreve uma linha na tarefa raiz com o `cascade_count`; aqui seriam
+        centenas de linhas para um unico clique (173 tarefas de topo no Quadro
+        geral em 18/08). O rastro e o log `board.apagado` com a contagem, mais
+        a igualdade de `deleted_at` acima, que e mais precisa que o history
+        para o unico uso que importa: desfazer.
+
+        ⚠️ AS ARQUIVADAS VAO JUNTO. Elas continuam sendo tarefas do quadro;
+        deixa-las vivas apontando para um quadro apagado poe a consulta 4 do
+        `invariantes.sql` fora de zero -- e aquela consulta e a UNICA coisa que
+        segura a aposta de `coluna_para_status` nao fazer JOIN em `board`.
+
+        ⚠️ NAO FAZ COMMIT -- mesma unidade de trabalho do chamador.
+        """
+        tenant = require_tenant()
+        quadro = await self._quadro_do_workspace(board_id)
+        time = await self._time_do_workspace(quadro.team_id)
+        self._assert_pode_gerir(time)
+
+        if quadro.is_default:
+            raise ValidationError(
+                "O quadro geral do time nao pode ser apagado.",
+                code=CODIGO_QUADRO_PADRAO,
+                details={"board_id": str(quadro.id)},
+            )
+
+        # ⚠️ OS COMENTARIOS PRIMEIRO, e a ordem importa: o `UPDATE` deles casa
+        # pelas tarefas VIVAS do quadro. Rodando depois, as tarefas ja estariam
+        # marcadas e o `deleted_at IS NULL` delas nao casaria mais -- os
+        # comentarios ficariam vivos, pendurados em tarefas apagadas.
+        await self._session.execute(
+            text(
+                """
+                UPDATE comment
+                SET deleted_at = NOW()
+                WHERE workspace_id = :ws
+                  AND deleted_at IS NULL
+                  AND task_id IN (
+                    SELECT id FROM task
+                    WHERE board_id = :board AND workspace_id = :ws
+                      AND deleted_at IS NULL
+                  )
+                """
+            ),
+            {"board": quadro.id, "ws": tenant.workspace_id},
+        )
+
+        # ⚠️ POR `board_id`, E NAO POR `path`. A cascata de tarefa usa `path` e
+        # pega uma subarvore; aqui o recorte e o QUADRO inteiro, e depois da
+        # fatia 8 os dois coincidem -- pai e filha vivem no mesmo quadro. Se
+        # aquela invariante cair, esta linha continua certa e a de la e que
+        # estaria errada.
+        resultado = await self._session.execute(
+            text(
+                """
+                UPDATE task
+                SET deleted_at = NOW()
+                WHERE board_id = :board
+                  AND workspace_id = :ws
+                  AND deleted_at IS NULL
+                """
+            ),
+            {"board": quadro.id, "ws": tenant.workspace_id},
+        )
+        apagadas = resultado.rowcount or 0
+
+        quadro.deleted_at = func.now()  # type: ignore[assignment]
+        await self._session.flush()
+
+        logger.info(
+            "board.apagado",
+            board_id=str(quadro.id),
+            board_name=quadro.name,
+            team_id=str(quadro.team_id),
+            tarefas_apagadas=apagadas,
+            por=str(tenant.user_id),
+        )
+        return apagadas
+
+    async def contar_tarefas_do_quadro(self, board_id: uuid.UUID) -> int:
+        """Quantas tarefas VIVAS o quadro tem -- para a confirmacao mostrar.
+
+        ⚠️ CONTA AS ARQUIVADAS JUNTO, e a tela precisa saber disso. Elas somem
+        no `apagar_quadro`, entao um numero que as ignorasse mentiria para
+        menos exatamente na confirmacao de uma operacao irreversivel.
+
+        ⚠️ A CONTAGEM E DE UM INSTANTE, e nao uma garantia. Entre ler e apagar,
+        alguem pode criar tarefa ali. O `apagar_quadro` devolve quantas
+        APAGOU, e a tela compara -- mesmo desenho do `movidas` do lote de
+        colunas e da `mensagemDeDivergencia`.
+        """
+        return (
+            await self._session.execute(
+                select(func.count())
+                .select_from(Task)
+                .where(
+                    Task.board_id == board_id,
+                    Task.workspace_id == require_tenant().workspace_id,
+                    Task.deleted_at.is_(None),
+                )
+            )
+        ).scalar_one()
 
     async def _quadro_do_workspace(self, board_id: uuid.UUID) -> Board:
         """O quadro, deste workspace e nao apagado.

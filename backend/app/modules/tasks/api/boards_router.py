@@ -84,6 +84,8 @@ from app.modules.tasks.api.schemas import (
     BoardColumnDetailResponse,
     BoardColumnRenameRequest,
     BoardColumnResponse,
+    BoardDeleteResponse,
+    BoardDetailResponse,
     BoardColumnsBatchRequest,
     BoardColumnsBatchResponse,
     BoardCreateRequest,
@@ -225,6 +227,54 @@ async def rename_board(
     resposta = await _resposta(uow.session, quadro)
     await uow.commit()
     return resposta
+
+
+@router.get("/{board_id}", response_model=BoardDetailResponse)
+async def get_board(
+    board_id: uuid.UUID, _: TenantContextDep, session: SessionDep
+) -> BoardDetailResponse:
+    """Um quadro, com as colunas e a CONTAGEM de tarefas vivas.
+
+    ⚠️ EXISTE PARA A CONFIRMACAO DE APAGAR (fatia 7). A tela precisa dizer
+    "isto vai apagar N tarefas" ANTES do clique, e `GET /boards` nao traz
+    contagem -- somar as colunas custaria uma requisicao por coluna.
+
+    ⚠️ A CONTAGEM E DE UM INSTANTE, e a tela nao pode trata-la como promessa.
+    O `DELETE` devolve quantas APAGOU; se os dois numeros discordarem, alguem
+    criou tarefa ali no meio -- mesmo desenho do `movidas` do lote de colunas.
+    """
+    quadro = await BoardService(session)._quadro_do_workspace(board_id)
+    base = await _resposta(session, quadro)
+    return BoardDetailResponse(
+        **base.model_dump(),
+        task_count=await BoardService(session).contar_tarefas_do_quadro(
+            quadro.id
+        ),
+    )
+
+
+@router.delete("/{board_id}", response_model=BoardDeleteResponse)
+async def delete_board(
+    board_id: uuid.UUID, _: TenantContextDep, uow: UoWDep
+) -> BoardDeleteResponse:
+    """Apaga o quadro E as tarefas dentro dele (ADR 0034, fatia 7).
+
+    ⚠️⚠️ **NAO PERGUNTA O DESTINO DAS TAREFAS, e e a unica operacao do produto
+    assim.** Apagar COLUNA sempre oferece para onde elas vao. Quem confirma
+    aqui precisa ter digitado o nome do quadro -- a trava e da TELA, e este
+    endpoint nao a repete: `DELETE` com um id ja e a declaracao de intencao, e
+    exigir o nome no corpo criaria uma segunda regra para manter em dia.
+
+    ⚠️ O RESGATE NAO E UMA TELA, e um SCRIPT: `backend/scripts/restaurar_quadro.sql`,
+    escrito no mesmo commit. Quem apagar errado abre o banco; nao ha desfazer
+    no produto, e essa ausencia foi aceita com a fatia.
+
+    ⚠️ O QUADRO PADRAO RECUSA com `quadro_padrao_nao_apagavel` -- ver
+    `BoardService.apagar_quadro`. A tela nao oferece o botao nele.
+    """
+    apagadas = await BoardService(uow.session).apagar_quadro(board_id=board_id)
+    await uow.commit()
+    return BoardDeleteResponse(tarefas_apagadas=apagadas)
 
 
 # =====================================================================

@@ -727,3 +727,34 @@ class BoardResponse(BaseModel):
     team_id: uuid.UUID
     is_default: bool
     colunas: list[BoardColumnResponse]
+
+
+class BoardDetailResponse(BoardResponse):
+    """`GET /boards/{id}` -- o quadro mais a contagem de tarefas VIVAS.
+
+    ⚠️ EXISTE PARA A CONFIRMACAO DE APAGAR (fatia 7). A tela precisa dizer
+    "isto vai apagar N tarefas" ANTES do clique. `GET /boards` nao traz
+    contagem de proposito -- ela custaria uma subconsulta por quadro num
+    endpoint que roda a cada abertura de tela.
+
+    ⚠️ MESMO DESENHO DE `BoardColumnDetailResponse`, que ja faz isto para a
+    coluna: herda a resposta e acrescenta `task_count`. Duas formas diferentes
+    para a mesma ideia obrigariam o front a lembrar qual e qual.
+
+    ⚠️ CONTA AS ARQUIVADAS JUNTO, porque elas somem no `DELETE`. Um numero que
+    as ignorasse mentiria para MENOS na confirmacao de algo irreversivel.
+    """
+
+    task_count: int
+
+
+class BoardDeleteResponse(BaseModel):
+    """`DELETE /boards/{id}` -- quantas tarefas foram apagadas junto.
+
+    ⚠️ O NUMERO E PARA COMPARAR COM O DA CONFIRMACAO, e nao enfeite. Entre ler
+    a contagem e clicar, alguem pode ter criado tarefa naquele quadro; se os
+    dois discordarem, a tela avisa. Mesmo desenho do `movidas` do lote de
+    colunas e da `mensagemDeDivergencia`.
+    """
+
+    tarefas_apagadas: int
