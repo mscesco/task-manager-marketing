@@ -192,8 +192,8 @@ export function diasParado(
  *
  * Ela nunca teve relacao com status: `lib/exclusao.ts` a importava daqui so
  * porque foi aqui que ela nasceu -- evidencia, medida na
- * `sondagem-fatia-4.md`, de que este modulo tinha virado gaveta. Importe de
- * `@/lib/plural`.
+ * sondagem da fatia 4 (absorvida no `plan.md` em 13/08), de que este modulo
+ * tinha virado gaveta. Importe de `@/lib/plural`.
  */
 
 /** Rotulo do selo. So chamar quando `diasParado` != null. */

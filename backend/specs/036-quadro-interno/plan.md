@@ -10,15 +10,22 @@
 > novo. O arquivo canônico foi demovido para acomodar a exceção. Os dois foram
 > absorvidos aqui e apagados; nada do conteúdo deles se perdeu.
 >
-> ⚠️ **SE VOCÊ FOR ESCREVER UMA FATIA NOVA, ESCREVA NESTE ARQUIVO.** Criar um
+> ⚠️ **A ABSORÇÃO RENUMEROU A CONFERÊNCIA VISUAL, e havia comentário de código
+> citando o número antigo.** Três citavam `plan-fatia-5.md` por item: o item 1
+> de lá é o **5** daqui, o 10 é o **17**, e o 12 é o **19**. Foram repontados
+> em 17/08. **Se você renumerar de novo, rode
+> `grep -rn "conferencia visual" web/ backend/` antes de fechar.**
+>
+> ⚠️ **SE VOCÊ FOR ESCREVER UMA FATIA NOVA, ESCREVA NESTE ARQUIVO.**",
+ Criar um
 > `plan-fatia-N.md` ao lado é o que produziu a bagunça que este cabeçalho está
 > desfazendo. Seção nova vai no fim da lista de fatias; texto superado vira
 > subseção marcada como histórica, como as três que já existem aqui.
 
 ## Estado (conferido no `main` em 13/08/2026)
 
-Portões verdes: **backend 807 passed**, **front 691 passed**, `tsc` 0,
-`next build` compilando. Migrations `0012`. ADRs backend: 42.
+Portões verdes: **backend 807 passed**, **front 737 passed**, `tsc` 0,
+`next build` compilando (CI #52, `3452e6e`). Migrations `0012`. ADRs backend: 42.
 
 ⚠️ **NADA DA FATIA 5b ESTÁ EM PRODUÇÃO.** Tudo commitado em `main`, nada
 deployado. O deploy espera a fatia 6 — decisão de 13/08, ver §Ordem de deploy.
@@ -45,7 +52,17 @@ deployado. O deploy espera a fatia 6 — decisão de 13/08, ver §Ordem de deplo
 | **6b** — `lib/ordemDeColunas` + guardião de corpo | ✅ em `main` | 669→689 |
 | **6a-bis** — Quadro geral editável | ✅ em `main` | 790→794 |
 | **6a-ter** — `PUT /columns` em lote | ✅ em `main` | 794→807 / 689→691 |
-| **6c** — a tela do modo de edição | ⬜ não começou | — |
+| **6c-1** — `lib/rascunhoDeColunas` | ✅ em `main` | 691→716 |
+| **6c-2a/b** — cabeçalho editável + form de criar coluna | ✅ em `main` | 716→736 |
+| **6c-3** — `RevisaoDaEdicao` | ✅ em `main` | 736→748 |
+| **6c-2c** — a fiação no `Board.tsx` | ✅ em `main` | 748→754 |
+| **dívida** — `destinosDoRascunho` + divergência reposta | ✅ em `main` | 754→737 (−20: `EditorDeColunas.test.tsx` apagado) |
+
+⚠️ **A FATIA 6 ESTÁ FECHADA EM CÓDIGO E NÃO ESTÁ CONFERIDA NA TELA.** "Em
+`main`" aqui quer dizer **portão verde**, e os itens 4 e 5 da §Conferência
+visual (arraste de cabeçalho, rolagem automática) **não têm guardião nenhum** —
+`onDragEnd` não roda em jsdom. Nada nesta tabela autoriza dizer que a fatia 6
+funciona.
 
 ⚠️ **`_recipients` filtra `is_active`** (dano medido: 29 avisos) — em `main`,
 não em produção. ⚠️ **Medido em 13/08: a notificação é IN-APP e só** (o modelo
@@ -819,7 +836,7 @@ silêncio completo.
 continuou verde com o router gravando direto, porque só confere 201. Vale
 porque está pareado com os recusados.
 
-### 5b-4 — CRUD de coluna (backend) — ⬜ NÃO COMEÇOU
+### 5b-4 — CRUD de coluna (backend) — ✅ ENTREGUE (5b-4a 717→733, 5b-4b 733→765)
 
 **Sobe:** criar, renomear, reordenar e apagar coluna dentro de um quadro
 avulso.
@@ -859,7 +876,7 @@ respondiam igual. Corrigido, e o cabeçalho do arquivo agora diz
 `⚠️ a resposta NAO depende da ordem do array`. **É literalmente a armadilha que
 o próprio cabeçalho já avisava.**
 
-### 5b-5b — ligar as duas telas transversais (front) — ⬜ NÃO COMEÇOU
+### 5b-5b — ligar as duas telas transversais (front) — ✅ ENTREGUE (541→565)
 
 ⚠️ **Esta fatia vem ANTES da tela do quadro, e é a ordem que importa.** No
 instante em que existir uma tarefa fora do Quadro geral, ela aparece em
@@ -950,7 +967,7 @@ caso **normal** em `/arquivadas`, que lista o workspace inteiro. O
 de página mora em `components/__tests__/` e importa de `@/app/...`. Os que
 existem hoje: `minhasTarefas.test.tsx` (10) e `ArquivadasPai.test.tsx` (4).
 
-### 5b-6 — a tela (front) — ⬜ NÃO COMEÇOU
+### 5b-6 — a tela (front) — ✅ ENTREGUE (765→774 / 565→650)
 
 **Sobe:** criar e renomear quadro dentro da **tela do time** (ADR 0034 item 5 —
 não no menu lateral); seletor entre os quadros daquele time; CRUD de coluna na
@@ -1141,7 +1158,10 @@ o apague (ver o portão do vazamento, acima).
 > ⚠️ **A primeira versão desta seção descrevia o modelo "cada ação vai ao
 > servidor na hora". Ele foi trocado** — ver §O modelo, e a nota sobre o que
 > isso custou da 6a.
-> 🟡 **6a, 6a-bis, 6a-ter e 6b entregues. Falta a 6c — a tela.**
+> ✅ **FECHADA EM CÓDIGO em 13/08** (6a, 6a-bis, 6a-ter, 6b, 6c-1, 6c-2a/b,
+> 6c-2c, 6c-3), CI #52 verde: backend 807, front 737.
+> ⬜ **NÃO CONFERIDA NA TELA.** Ver §Conferência visual — é o que falta, e é o
+> portão do deploy.
 
 ⚠️ **ESTA FATIA VEM ANTES DO DEPLOY DA 5b.** Decisão de 13/08, e o motivo é
 concreto: `BoardService.criar_coluna` grava `position=len(existentes)` —
@@ -1279,19 +1299,32 @@ próprios dando aparência de coisa viva.
 |---|---|---|
 | **6a** | `reordenar_colunas` + rota + 14 testes | ✅ **entregue** (776→790) |
 | **6b** | `lib/ordemDeColunas.ts` + 17 testes + `api.reordenarColunas` + guardião de corpo | ✅ **entregue** (669→689) |
-| **6a-bis** | Quadro geral editável — ver seção própria | ⬜ |
-| **6a-ter** | `PUT /columns` em lote, `tmp:`, transação, e apagar a rota morta | ⬜ |
-| **6c** | A tela: modo de edição, riscado, revisão, arraste, setas, selo de alvo | ⬜ |
+| **6a-bis** | Quadro geral editável — ver seção própria | ✅ **entregue** (790→794) |
+| **6a-ter** | `PUT /columns` em lote, `tmp:`, transação, e apagar a rota morta | ✅ **entregue** (794→807 / 689→691) |
+| **6c-1** | `lib/rascunhoDeColunas.ts` | ✅ **entregue** (691→716) |
+| **6c-2a/b** | `CabecalhoDeColunaEditavel.tsx` + `FormNovaColuna.tsx` | ✅ **entregue** (716→736) |
+| **6c-3** | `RevisaoDaEdicao.tsx` | ✅ **entregue** (736→748) |
+| **6c-2c** | a fiação no `Board.tsx` | ✅ **entregue** (748→754) |
+| **dívida** | `destinosDoRascunho` em `lib/` + `mensagemDeDivergencia` reposta | ✅ **entregue** (754→737) |
+
+⚠️ **A ROTA MORTA FOI APAGADA como o parágrafo acima mandava:**
+`PATCH /{board_id}/columns/order`, `BoardColumnReorderRequest`,
+`api.reordenarColunas` e `lib/__tests__/reordenarColunasCorpo.test.ts` **não
+existem mais**. `BoardService.reordenar_colunas` sobreviveu, como previsto.
 
 ⚠️ **`@dnd-kit/sortable` é dependência NOVA** — só o `@dnd-kit/core` está
 instalado. Mesmo autor, mesma linha de versão. Instalar, não improvisar com o
 core. O `package-lock.json` entra no commit.
 
-### ⚠️ O QUE O REDESENHO TEM DE PRESERVAR
+### ⚠️ O QUE O REDESENHO TINHA DE PRESERVAR — conferido em 17/08
 
-O painel que some (`EditorDeColunas.tsx`) é onde mora o diálogo de apagar — **a
-peça mais perigosa da funcionalidade inteira**, endurecida na 5b-7. Requisito,
-não "seria bom":
+⚠️ **`components/EditorDeColunas.tsx` E O TESTE DELE NÃO EXISTEM MAIS**
+(apagados na 6c-2c; é a queda de 20 no total do front). Esta seção deixa de ser
+requisito a cumprir e vira **registro de onde cada peça foi parar** — os cinco
+itens abaixo foram localizados no `main` de 17/08.
+
+O painel apagado era onde morava o diálogo de apagar — **a peça mais perigosa
+da funcionalidade inteira**, endurecida na 5b-7. Requisito, não "seria bom":
 
 1. o beco sem saída da coluna com tarefa **apagada** (soft-deleted) — a contagem
    conta só as vivas, mas o `DELETE` exige destino se houver apagadas, por causa
@@ -1301,7 +1334,22 @@ não "seria bom":
 4. o resto da tela **travado** enquanto o diálogo está aberto;
 5. as sabotagens que provam cada um dos quatro.
 
-⚠️ **NO LOTE, O ITEM 1 MUDA DE LUGAR, NÃO DESAPARECE.** A revisão pergunta o
+**Onde cada um está hoje** (`grep`, 17/08):
+
+| | onde foi parar |
+|---|---|
+| 1. beco da tarefa apagada | `RevisaoDaEdicao.tsx` — o seletor de destino aparece para **toda** coluna marcada; o comentário da contagem viva/apagada está na linha 75 |
+| 2. `.btn-danger` | `RevisaoDaEdicao.tsx:283`, e o teste que o prende é `RevisaoDaEdicao.test.tsx:195` |
+| 3. foco + `Esc` | `RevisaoDaEdicao.tsx:56` (`caixaRef.current?.focus()`) e `:120` (`Escape`, guardado por `!ocupado`) |
+| 4. resto da tela travado | `RevisaoDaEdicao.tsx:100` — `position:fixed; inset:0; zIndex:60` **inline**. ⚠️ **`.modal-card` carrega só animação**; o posicionamento não vem da classe |
+| 5. as sabotagens | `RevisaoDaEdicao.test.tsx` |
+
+⚠️ **O ITEM 4 NÃO TEM GUARDIÃO DE ESTILO.** O `include` do vitest é
+`lib/**` + `components/**`: apagar `.btn-danger` do `globals.css` mantém os 737
+verdes e o botão sai sem cor. O teste prende o **nome da classe**, não a
+existência da regra.
+
+⚠️ **NO LOTE, O ITEM 1 MUDOU DE LUGAR, E NÃO DESAPARECEU.** A revisão pergunta o
 destino de toda coluna marcada — inclusive das que parecem vazias. É o que já
 conserta o beco por construção: o seletor está sempre lá.
 
@@ -1564,22 +1612,42 @@ não acharam.
 - O aviso de apagar quadro **diz o número de tarefas** (quando a fatia da
   lixeira existir).
 
-### Fatia 6 — ⬜ a conferir
+### Fatia 6 — ⬜ A CONFERIR (é o portão do deploy)
 
-21. Ligar o modo de edição → a tela diz "Modo edição", e **os cards deixam de
-    ser arrastáveis**.
-22. Arrastar um cabeçalho → a ordem muda na tela. ⚠️ **NÃO persiste até
-    concluir a edição** — é o modelo de lote. F5 antes de concluir descarta.
-    ⚠️ E sair do modo com pendências tem de AVISAR.
-23. As setas ← / → fazem o mesmo que o arraste, e funcionam **só pelo teclado**.
-24. Criar coluna pelo "+ Adicionar coluna" → nasce no fim, com o tipo escolhido.
-25. Arrastar a coluna nova para o meio → fica lá.
-26. O "×" abre o diálogo **como modal**: foco nele, `Esc` fecha, botão vermelho,
-    resto da tela travado.
-27. O **selo de alvo** aparece na coluna que recebe as novas e na que recebe as
-    concluídas — e **não** numa segunda coluna do mesmo tipo.
-28. Duas abas no mesmo quadro: reordenar numa, reordenar na outra → a segunda
-    **recusa com mensagem**, e não aplica em silêncio.
+⚠️ **ESTA LISTA SUBSTITUI A DE 13/08, que tinha 8 itens e foi escrita antes de a
+tela existir.** São 18, e cobrem o que a 6c realmente construiu.
+
+21. O lápis **não aparece** para operador.
+22. Ligar o modo: a tela diz "Modo edição" e a barra **troca** de conteúdo —
+    somem busca/filtro/"+ Nova tarefa", entram "Adicionar coluna" /
+    "Concluir edição" / "Sair".
+23. **Os cards param de arrastar** — é a premissa da fatia. Em jsdom só o
+    `aria-disabled` do `useDraggable` é observável; o comportamento, não.
+24. ⚠️ **Arrastar um cabeçalho reordena** — e a ordem **não persiste** até
+    concluir. F5 antes de concluir descarta.
+25. ⚠️ **Arrastar uma coluna para fora da área visível** → rolagem automática.
+26. As setas ← → fazem o mesmo, **só pelo teclado**, e travam na ponta.
+27. Clicar no nome renomeia; `Esc` desfaz **sem** fechar o modo.
+28. O "×" risca a coluna e oferece desfazer.
+29. Em `Backlog` (único alvo `OPEN`) o "×" **não existe**, e o motivo aparece.
+30. O selo "padrão" aparece **só** em quem é alvo — e não numa segunda coluna
+    do mesmo tipo.
+31. "Adicionar coluna": nome + tipo, **sem cor** (cor é fatia própria).
+32. Sair com pendências **avisa**.
+33. Concluir com exclusão abre a revisão, com contagem e destino.
+34. ⚠️ **A coluna criada aparece como destino, marcada "(nova)"** — é o gesto
+    que justifica o lote inteiro. Se este falhar, o modelo de lote não se paga.
+35. Destino terminal **muda o texto inteiro** do aviso.
+36. Criar tarefa numa coluna e, noutra aba, concluir uma edição que a apaga →
+    **aviso de divergência** (`mensagemDeDivergencia`, reposta na dívida da 6c).
+37. Duas abas reordenando → a segunda **recusa com mensagem**, e não aplica em
+    silêncio.
+38. No Quadro geral (6a-bis): editar funciona para ADMIN, e apagar "Planejado"
+    **recusa** (`_assert_ponte_sobrevive`).
+
+⚠️ **OS ITENS 24 E 25 SÃO A ÚNICA PARTE DA SPEC SEM GUARDIÃO NENHUM.**
+`onDragEnd` não roda em jsdom, e não vai rodar. Se falharem, falham em produção
+— e a pessoa que descobre é a que estiver usando.
 
 ---
 
@@ -1814,18 +1882,26 @@ Em ordem de valor. Cada um é fatia própria, e **escreve-se neste arquivo**.
 2. **5c — mover tarefa entre quadros.** A ADR 0042 barateou (o mapa existe).
    ⚠️ **Só dentro do MESMO `team_id`.** Hoje, tarefa criada no quadro errado só
    se conserta apagando e recriando.
-3. **5c — quadro extra da raiz**, e com ele "quem edita as colunas do Quadro
-   geral". Hoje: ninguém (`_assert_quadro_editavel`, 422).
+3. **5c — quadro extra da raiz.** ⚠️ **A PERGUNTA "QUEM EDITA AS COLUNAS DO
+   QUADRO GERAL" JÁ FOI RESPONDIDA na 6a-bis (13/08), e este item não depende
+   mais dela:** `_assert_quadro_editavel` **saiu** de criar, renomear e
+   reordenar — era trava técnica escrita como regra de produto, e o próprio
+   docstring dela dizia "vale enquanto a 5c não existir". Hoje edita quem tem
+   `board.manage.root` (ADMIN e MANAGER; **não** SUPERVISOR). Sobrou
+   `_assert_ponte_sobrevive`, que recusa apagar coluna do quadro PADRÃO com
+   `legacy_status` vivo.
    ⚠️ **A URL já está pronta para isto** (13/08): o quadro escolhido vive em
    `?quadro=`, e não em segmento de rota, **exatamente porque**
    `/quadro/{boardId}` colidiria com `/quadro/{teamId}` — os dois são UUID na
    mesma posição. Segmento de rota obrigaria a inventar um formato diferente só
    para os quadros da raiz.
 4. **Seletor de cor.** ⚠️ `lib/coluna.ts::corEhHex` **continua sem leitor**.
-5. **Trocar qual coluna é o alvo de uma semântica.** Não existe, e a trava da
-   5b-4b faz a ausência doer: coluna-alvo nunca pode ser apagada. A fatia 6
-   torna a ausência **visível** (o selo), o que aumenta a chance de alguém
-   pedir.
+5. **Trocar qual coluna é o alvo de uma semântica.** ⚠️ **SUBIU DE URGÊNCIA
+   EM 13/08, POR CULPA NOSSA.** Não existe, e a trava da 5b-4b faz a ausência
+   doer: coluna-alvo nunca pode ser apagada. Até a fatia 6 isso era **ausência
+   silenciosa**; o selo "padrão" põe na tela um rótulo que anuncia que existe
+   uma coluna escolhida e que não dá para trocá-la. Rótulo visível convida à
+   pergunta — e a resposta hoje é "apague o quadro e recomece".
 6. **`notify_deadline` na criação de coluna.** ⚠️ **Campo sem escritor:**
    `criar_coluna` crava `True`, o schema não aceita e o rename não edita — mas
    **três lugares no código prometem por escrito que dá para desligar**,

@@ -1052,7 +1052,8 @@ export default function Board({
   // ⚠️ VALE PARA OS DOIS RAMOS, interna e compartilhada. Tarefa INTERNA de um
   // subtime que tenha quadro avulso proprio (fatia 5b-6) tambem nao entra: a
   // lente e o espelho do geral, e o quadro avulso tem tela propria. E o item
-  // 12 da conferencia visual do `plan-fatia-5.md`.
+  // 19 da conferencia visual do `plan.md` (era o item 12 do `plan-fatia-5.md`,
+  // absorvido e RENUMERADO em 13/08; o arquivo foi apagado em 17/08).
   //
   // ⚠️ GUARDA IGUAL A DO `rootId`: sem quadro geral conhecido (`listBoards`
   // falhou e ficou `[]`), NAO filtra. Esconder o quadro inteiro por falha de
@@ -1499,7 +1500,8 @@ export default function Board({
           (fatia 5b-6). Todo quadro nasce sem tarefa nenhuma, entao o estado
           vazio seria a PRIMEIRA coisa que a pessoa ve depois de criar -- sem
           uma coluna na tela, sem saber se nasceu certo, e sem lugar para onde
-          arrastar. O item 1 da conferencia visual do `plan-fatia-5.md` pede
+          arrastar. O item 5 da conferencia visual do `plan.md` (era o item 1
+          do `plan-fatia-5.md`, absorvido e RENUMERADO em 13/08) pede
           exatamente conferir "ele nasce com as 4 colunas, nomes e cores
           certos, na ordem certa", e nao ha o que conferir se elas nao
           aparecem.

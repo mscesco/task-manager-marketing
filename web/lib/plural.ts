@@ -5,9 +5,9 @@
 //
 // ⚠️ SAIU DE `lib/status.ts` NA FATIA 4a (Spec 036 / ADR 0040). Estava la
 // porque foi la que nasceu, e `lib/exclusao.ts` a importava de um modulo de
-// status para pluralizar "subtarefa". A `sondagem-fatia-4.md` mediu isso como
-// evidencia de que o `status.ts` tinha virado gaveta: tres dos oito arquivos
-// que o importam nao tem nada a ver com quadro.
+// status para pluralizar "subtarefa". A sondagem da fatia 4 (hoje no
+// `plan.md`) mediu isso como evidencia de que o `status.ts` tinha virado
+// gaveta: tres dos oito arquivos que o importam nao tem nada a ver com quadro.
 
 /**
  * "1 cancelada" / "2 canceladas" (Spec 031, C7).

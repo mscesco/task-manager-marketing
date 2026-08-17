@@ -246,7 +246,8 @@ function plural(n: number, um: string, muitos: string): string {
  * um aviso desnecessario e menor que o de silenciar o outro caso.
  *
  * ⚠️ "Dois numeros discordando sobre a mesma coisa e pior que um numero velho"
- * -- item 10 da conferencia visual do `plan-fatia-5.md`.
+ * -- item 17 da conferencia visual do `plan.md` (era o item 10 do
+ * `plan-fatia-5.md`, absorvido e RENUMERADO em 13/08; arquivo apagado em 17/08).
  */
 export function mensagemDeDivergencia(
   previsto: number,

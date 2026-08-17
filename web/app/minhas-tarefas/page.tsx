@@ -67,7 +67,8 @@ const RELATION_LABEL: Record<string, string> = {
 // Eram derivadas de `STATUSES` em escopo de MODULO -- calculadas no import,
 // antes do primeiro render. Com as colunas vindo da API isso deixa de ser
 // possivel, e as duas viraram `useMemo` dentro do componente (`rotuloDaColuna`
-// e `colunaDe`). Ver `sondagem-fatia-4.md` §2.
+// e `colunaDe`). Ver `plan.md` da Spec 036, §Fatia 4 -- por que ela virou
+// TRES (era a `sondagem-fatia-4.md` §2, absorvida em 13/08).
 
 // Opcoes do seletor de relacao. "todas" = sem filtro de relacao.
 const RELACOES = [
@@ -130,7 +131,8 @@ function Minhas() {
   const [relFiltro, setRelFiltro] = useState<string>("todas");
   // ⚠️ ANTES ISTO ERA UM INICIALIZADOR DE `useState` chamando
   // `statusPadraoMinhasTarefas()` -- rodava no PRIMEIRO RENDER, antes de
-  // qualquer fetch (`sondagem-fatia-4.md` §5). Com as colunas vindo da API o
+  // qualquer fetch (`plan.md` §Fatia 4 -- por que ela virou TRES, "o ponto
+  // mais duro"; era a `sondagem-fatia-4.md` §5). Com as colunas vindo da API o
   // dado nao existe nessa hora, entao o conjunto nasce `null` e e preenchido
   // quando as colunas chegam. **A tela nao renderiza ate la** (decisao de
   // 10/08), e o portao ja existia: ver `if (!items || !colunas)` mais abaixo.

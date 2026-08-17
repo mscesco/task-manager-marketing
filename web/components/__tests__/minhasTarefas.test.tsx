@@ -2,7 +2,8 @@
  * `/minhas-tarefas` -- teste de componente, escrito ANTES da fatia 4b.
  *
  * POR QUE ESTE ARQUIVO EXISTE. A fatia 4 da Spec 036 troca `STATUSES` (const
- * sincrona) por colunas vindas da API, e `sondagem-fatia-4.md` mediu que esta
+ * sincrona) por colunas vindas da API, e a sondagem da fatia 4 (absorvida no
+ * `plan.md`, §Fatia 4 -- por que ela virou TRES) mediu que esta
  * tela e onde a mudanca pesa: 1195 linhas, 7 usos de `STATUSES`, tres
  * constantes derivadas em escopo de MODULO (`STATUS_LABEL`, `STATUS_COLOR`,
  * `TODOS_STATUS`) e -- o ponto duro do §5 -- o filtro padrao rodando como
