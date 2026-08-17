@@ -95,6 +95,7 @@ const COLUNAS: Coluna[] = [
     semantic: "OPEN",
     notify_deadline: true,
     is_default_target: false,
+    is_status_bridge: false,
   },
   {
     id: "col-backlog",
@@ -104,6 +105,7 @@ const COLUNAS: Coluna[] = [
     semantic: "OPEN",
     notify_deadline: true,
     is_default_target: true,
+    is_status_bridge: false,
   },
   {
     id: "col-done",
@@ -113,6 +115,7 @@ const COLUNAS: Coluna[] = [
     semantic: "DONE",
     notify_deadline: true,
     is_default_target: true,
+    is_status_bridge: false,
   },
 ];
 

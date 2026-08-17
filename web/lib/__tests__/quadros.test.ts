@@ -91,6 +91,7 @@ function col(
     semantic: "OPEN",
     notify_deadline: true,
     is_default_target: false,
+    is_status_bridge: false,
     ...over,
   };
 }

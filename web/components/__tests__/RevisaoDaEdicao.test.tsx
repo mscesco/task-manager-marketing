@@ -25,6 +25,7 @@ function col(id: string, name: string, semantic: Coluna["semantic"]): Coluna {
     semantic,
     notify_deadline: true,
     is_default_target: false,
+    is_status_bridge: false,
   };
 }
 
@@ -100,12 +101,19 @@ describe("RevisaoDaEdicao -- o destino", () => {
     // ⚠️ E O TEXTO TEM DE EXPLICAR POR QUE ESTA PERGUNTANDO. Sem isto, a pessoa
     // le "Apagar Cancelado" e um seletor de destino sobre uma coluna que a
     // tela acabou de contar como vazia -- e nao tem como saber que a coluna
-    // guarda tarefas APAGADAS, presas a ela pela FK `RESTRICT`.
+    // PODE guardar tarefas APAGADAS, presas a ela pela FK `RESTRICT`.
     //
     // ⚠️ MEDIDO EM 13/08: sabotar `exigeDestino` para `false` deixava os 12
     // testes VERDES, porque o seletor e desenhado sempre nesta tela. O que se
     // perdia era so a explicacao -- e ninguem estava olhando para ela.
-    expect(screen.getByText(/guarda tarefas apagadas/i)).toBeTruthy();
+    //
+    // ⚠️ E O CONDICIONAL E OBRIGATORIO, DESDE 17/08. Este teste afirmava
+    // `/guarda tarefas apagadas/` e passava enquanto a tela ANUNCIAVA, num
+    // quadro criado cinco minutos antes, que ele guardava tarefas apagadas.
+    // O front nao tem como saber: a contagem conta so as vivas. Afirmar aqui
+    // e afirmar sem medir -- e o teste antigo cobrava exatamente isso.
+    expect(screen.getByText(/pode guardar tarefas apagadas/i)).toBeTruthy();
+    expect(screen.queryByText(/ainda guarda tarefas apagadas/i)).toBeNull();
 
     fireEvent.click(screen.getByText("Confirmar alterações"));
     expect(onConfirmar).toHaveBeenCalledWith({ c4: "c1" });

@@ -124,6 +124,7 @@ const COLUNAS_GERAL: Coluna[] = [
     semantic: "OPEN",
     notify_deadline: true,
     is_default_target: true,
+    is_status_bridge: false,
   },
   {
     id: "col-progress",
@@ -133,6 +134,7 @@ const COLUNAS_GERAL: Coluna[] = [
     semantic: "IN_PROGRESS",
     notify_deadline: true,
     is_default_target: true,
+    is_status_bridge: false,
   },
 ];
 
@@ -151,6 +153,7 @@ const QUADROS = [
         semantic: "IN_PROGRESS" as const,
         notify_deadline: true,
         is_default_target: false,
+        is_status_bridge: false,
       },
     ],
   },

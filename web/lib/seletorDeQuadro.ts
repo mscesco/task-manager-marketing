@@ -88,6 +88,28 @@ export function podeGerirQuadrosDe(
  * para qualquer codigo que compare ids, e o primeiro `find` do proximo mes
  * devolveria um objeto que nao existe.
  */
+/**
+ * Quem edita as colunas do QUADRO GERAL (`board.manage.root`).
+ *
+ * ⚠️ EXISTE PARA A REGRA TER UM LUGAR SO. A tela `/quadro` precisava dela em
+ * 17/08, quando o lapis do Quadro geral foi ligado, e a alternativa era
+ * `alcance.tipo === "amplo"` escrito la dentro -- uma segunda definicao da
+ * mesma coisa, que diverge da primeira sem nada ficar vermelho.
+ *
+ * ⚠️ NAO E `podeGerirQuadrosDe(alcance, idDaRaiz)`. Aquela responde "pode
+ * gerir os quadros DO TIME X" e exige o id da raiz, que a tela `/quadro` nao
+ * tem sem uma requisicao a mais. Esta responde a pergunta da raiz direto, e as
+ * duas concordam por construcao: `board.manage.root` esta em ADMIN e MANAGER
+ * (que e o `tipo: "amplo"` de `alcanceDeQuadro`) e nao no SUPERVISOR, e
+ * MANAGER so existe na raiz (Spec 024).
+ *
+ * ⚠️ NAO E SEGURANCA. O backend recusa com 403; isto so evita oferecer um
+ * botao que nao funcionaria.
+ */
+export function podeGerirQuadroDaRaiz(alcance: AlcanceDeQuadro): boolean {
+  return alcance.tipo === "amplo";
+}
+
 export type OpcaoDeQuadro = {
   readonly id: string | null;
   readonly nome: string;

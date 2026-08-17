@@ -337,3 +337,14 @@ async def test_a_resposta_traz_as_colunas_do_quadro(db) -> None:
             f"quadro {quadro['name']} veio com {len(quadro['colunas'])} "
             f"colunas; o arreio monta {len(COLUNAS_PADRAO)}"
         )
+
+    # ⚠️ `is_status_bridge` E A METADE DA TRAVA DA PONTE QUE MORA NA COLUNA
+    # (17/08). A outra metade e `is_default`, que ja esta na resposta do
+    # QUADRO -- e o front so pode esconder o "x" quando as DUAS forem
+    # verdadeiras. Se este campo sumir do contrato, a tela do Quadro geral
+    # volta a oferecer oito exclusoes que derrubam o lote inteiro.
+    for quadro in corpo:
+        for coluna in quadro["colunas"]:
+            assert isinstance(coluna["is_status_bridge"], bool)
+            # ⚠️ E O VALOR NUNCA VAZA. Booleano, e nao o status.
+            assert "legacy_status" not in coluna

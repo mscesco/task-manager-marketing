@@ -195,6 +195,11 @@ async def test_supervisor_cria_coluna_e_recebe_201(db) -> None:
     # ⚠️ `legacy_status` NAO viaja no contrato (ADR 0033). Se ele aparecer aqui,
     # alguem expos a ponte e o front vai se pendurar nela.
     assert "legacy_status" not in corpo
+    # ⚠️ `is_status_bridge` VIAJA, E E BOOLEANO -- nunca o valor (17/08). Ele
+    # diz SE a coluna e ponte, e nao DE QUAL status: com um booleano o front
+    # nao consegue mapear status -> coluna, que era o acoplamento que a ADR
+    # 0033 proibe. Coluna criada por gente nasce com `legacy_status` NULL.
+    assert corpo["is_status_bridge"] is False
     # ...e existe no banco.
     assert len(await _colunas(db, c["quadro"].id)) == 5
 

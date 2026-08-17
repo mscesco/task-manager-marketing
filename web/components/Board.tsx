@@ -57,6 +57,7 @@ import {
   linhasDeEdicao,
   marcadasParaApagar,
   paraLote,
+  colunasParaDesenhar,
   rascunhoInicial,
   temPendencias,
   type Rascunho,
@@ -353,6 +354,25 @@ export default function Board({
   useEffect(() => {
     carregarQuadros();
   }, [carregarQuadros, boardId]);
+
+  // ⚠️ TROCAR DE QUADRO DESCARTA O RASCUNHO, e isto é a correção do
+  // `TypeError` de 17/08 -- os `?? undefined` que ficaram nas funções puras
+  // são a rede, esta linha é a causa. Sem ela o modo de edição SOBREVIVE à
+  // troca: os refs são do quadro anterior, as colunas são do novo, e nenhum
+  // casa. A tela ficava desenhando uma edição de um quadro que a pessoa não
+  // está mais vendo.
+  //
+  // ⚠️ DESCARTA EM SILÊNCIO, E ISSO É ESCOLHA. O aviso de pendências existe
+  // para quem clica em "Sair"; aqui a pessoa trocou de quadro no seletor, que
+  // é uma navegação -- pedir confirmação no meio de uma navegação que já
+  // aconteceu (o `boardId` já mudou) avisaria tarde demais para servir de
+  // alguma coisa. **Se um dia isso incomodar, o conserto é confirmar ANTES da
+  // troca, no seletor, e não aqui.**
+  useEffect(() => {
+    setRascunho(null);
+    setRevisando(false);
+    setCriandoColuna(false);
+  }, [boardId]);
 
   useEffect(() => {
     listSubteams().then(setSubtimes).catch(() => {});
@@ -791,7 +811,26 @@ export default function Board({
   }
 
   const modoEdicao = rascunho !== null;
-  const linhasEdicao = rascunho ? linhasDeEdicao(rascunho, colunas) : [];
+  // ⚠️ QUAL QUADRO ESTA EDICAO ESCREVE. Ate 17/08 era so `boardId`, e por isso
+  // o lapis nunca aparecia no Quadro geral: ele e desenhado SEM `boardId`. A
+  // 6a-bis tirou `_assert_quadro_editavel` do backend em 13/08 e o front
+  // continuou barrando -- a fatia chegou pela metade e nenhum teste pegou,
+  // porque os seis do bloco passam `boardId={AVULSO}`.
+  //
+  // ⚠️ LENTE E PROJETO FICAM DE FORA, e nao por esquecimento. A lente e o
+  // espelho do Quadro geral filtrado por pessoa (ADR 0034 item 2: *nao mostra
+  // afordancia de editar nem de apagar*), e a tela de projeto e um recorte. As
+  // duas desenham colunas que pertencem a outro quadro; oferecer edicao ali
+  // seria editar o geral de dentro de uma vista que nao diz que e o geral.
+  const quadroEditavel =
+    boardId ?? (!subteamId && !projectId ? (quadro?.id ?? null) : null);
+  // ⚠️ A METADE QUE FALTAVA DA TRAVA DA PONTE. Ver `impedimentoDeExclusao`:
+  // sem isto, ou o Quadro geral ganha oito "x" condenados, ou o quadro avulso
+  // perde os dele -- as quatro colunas base dele tambem sao ponte.
+  const quadroPadrao = quadro?.is_default ?? false;
+  const linhasEdicao = rascunho
+    ? linhasDeEdicao(rascunho, colunas, quadroPadrao)
+    : [];
 
   function abrirEdicao() {
     setRascunho(rascunhoInicial(colunas));
@@ -850,7 +889,11 @@ export default function Board({
     try {
       const pares = await Promise.all(
         marcadas.map(async (c) => {
-          const det = await colunaComContagem(boardId!, c.id);
+          // ⚠️ `quadroEditavel`, E NAO `boardId`. No Quadro geral o `boardId`
+          // e `undefined` -- o `boardId!` que morava aqui teria montado
+          // `/boards/undefined/columns/...` e a revisao viria com contagem
+          // zero e um erro que nao explica nada.
+          const det = await colunaComContagem(quadroEditavel!, c.id);
           return [c.id, det.task_count] as const;
         }),
       );
@@ -862,12 +905,16 @@ export default function Board({
   }
 
   async function aplicarLote(destinos: Record<string, string>) {
-    if (!rascunho || !boardId) return;
+    // ⚠️ `quadroEditavel` GUARDA OS DOIS CAMINHOS: quadro avulso e Quadro
+    // geral. Com `boardId` aqui, o lapis do geral abriria o modo e o
+    // "Concluir edicao" nao faria NADA -- em silencio, que e a pior das
+    // falhas possiveis neste botao.
+    if (!rascunho || !quadroEditavel) return;
     setAplicando(true);
     setErroLote(null);
     try {
       const resposta = await aplicarLoteDeColunas(
-        boardId,
+        quadroEditavel,
         paraLote(rascunho, colunas, destinos),
       );
       // ⚠️ AVISO DE DIVERGENCIA, e ele EXISTIA no painel antigo e se perdeu no
@@ -902,14 +949,15 @@ export default function Board({
   // servidor. E o que faz o arraste ter efeito imediato sem nada ir para a
   // rede. Fora do modo, e a lista de sempre.
   //
-  // ⚠️ A COLUNA CRIADA NO RASCUNHO NAO APARECE NO KANBAN, e isso e deliberado:
-  // ela nao tem id real, entao nao tem tarefa, nao e alvo de arraste de card e
-  // nao pode ser consultada. Ela existe na REVISAO como destino possivel.
-  // Desenha-la vazia aqui prometeria uma coluna que ainda nao existe.
+  // ⚠️ A COLUNA CRIADA NO RASCUNHO APARECE NO KANBAN DESDE 17/08, vazia e com
+  // cor neutra. Ate entao ela ficava na `rascunho.ordem` e FORA desta lista, e
+  // o meio-termo nao se sustentava: as setas moviam uma coluna invisivel, o
+  // `SortableContext` nao a conhecia, e `indice`/`total` dos cabecalhos
+  // contavam listas diferentes. Na pratica **nao dava para posicionar a coluna
+  // criada antes de concluir** -- metade do gesto que o lote existe para
+  // permitir. A regra mora em `colunasParaDesenhar`, com teste.
   const colunasVisiveis: Coluna[] = rascunho
-    ? (rascunho.ordem
-        .map((ref) => colunas.find((c) => c.id === ref))
-        .filter(Boolean) as Coluna[])
+    ? colunasParaDesenhar(rascunho, colunas)
     : colunas;
   const ordemVisivel = colunasVisiveis.map((c) => c.id);
 
@@ -1506,8 +1554,20 @@ export default function Board({
           certos, na ordem certa", e nao ha o que conferir se elas nao
           aparecem.
 
+          ⚠️ E O MODO DE EDICAO NUNCA CAI NO ESTADO VAZIO, DESDE 17/08. Antes
+          a condicao era so `raizes.length === 0 && !boardId`, e a 6a-bis
+          transformou isso em beco: com o lapis ligado no Quadro geral, entrar
+          no modo de edicao de um quadro sem tarefa VISIVEL desenhava
+          "Nenhuma tarefa ainda" e ZERO colunas -- a pessoa entra para
+          reorganizar colunas e nao ve coluna nenhuma, so o botao de sair.
+          ⚠️ E NAO E CASO DE LABORATORIO: `raizes` e a lista JA FILTRADA. Um
+          filtro que nao casa nada, com as 176 tarefas no banco, produz o
+          mesmo zero -- e o filtro continua aplicado quando a barra troca,
+          porque o modo de edicao esconde os controles e nao os limpa.
+
           ⚠️ SO NO MODO `boardId`, e a limitacao e deliberada. O Quadro geral
-          tem 176 tarefas vivas e nunca cai aqui; o quadro de PROJETO cai, e
+          tem 176 tarefas vivas e nunca cai aqui FORA do modo de edicao; o
+          quadro de PROJETO cai, e
           mudar o que ele mostra e decisao de produto que esta fatia nao tomou.
           Se um dia o kanban vazio for o certo para todos, esta condicao some
           -- e o comentario com ela. */}
@@ -1532,7 +1592,7 @@ export default function Board({
           calculou o alcance (`podeGerirQuadrosDe`). Este componente não
           recalcula permissão -- sem isso, o lápis abriria para um operador um
           modo onde toda ação dá 403. */}
-      {boardId && podeEditarColunas && !modoEdicao && (
+      {quadroEditavel && podeEditarColunas && !modoEdicao && (
         <div style={{ marginBottom: 12 }}>
           <button
             className="btn btn-ghost"
@@ -1575,7 +1635,7 @@ export default function Board({
         />
       )}
 
-      {raizes.length === 0 && !boardId ? (
+      {raizes.length === 0 && !boardId && !modoEdicao ? (
         temFiltro ? (
           <SemResultado
             onLimpar={() => {
@@ -1620,7 +1680,14 @@ export default function Board({
                 cabecalho={
                   modoEdicao ? (
                     <CabecalhoSortavel
-                      linha={linhasEdicao.find((l) => l.ref === c.id)!}
+                      // ⚠️ SEM `!`. `colunasParaDesenhar` e `linhasDeEdicao`
+                      // percorrem a MESMA `rascunho.ordem`, entao o par
+                      // sempre existe -- mas foi um `!` como este que virou
+                      // `TypeError` em 17/08, e nada aqui obriga as duas a
+                      // continuarem lado a lado. Sem linha, sem cabecalho de
+                      // edicao; a coluna some da tela em vez de derrubar a
+                      // pagina.
+                      linha={linhasEdicao.find((l) => l.ref === c.id)}
                       cor={c.color}
                       indice={ordemVisivel.indexOf(c.id)}
                       total={ordemVisivel.length}
@@ -1803,7 +1870,8 @@ function CabecalhoSortavel({
   onMarcar,
   onMover,
 }: {
-  linha: LinhaDeEdicao;
+  /** ⚠️ Pode faltar por um render ao trocar de quadro -- ver o chamador. */
+  linha: LinhaDeEdicao | undefined;
   cor: string;
   indice: number;
   total: number;
@@ -1811,8 +1879,12 @@ function CabecalhoSortavel({
   onMarcar: () => void;
   onMover: (direcao: "esquerda" | "direita") => void;
 }) {
+  // ⚠️ O HOOK VEM ANTES DO `return null`, e a ordem NAO e negociavel: sair do
+  // componente antes de chamar `useSortable` mudaria a quantidade de hooks
+  // entre dois renders e o React derruba a arvore inteira.
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id: linha.ref });
+    useSortable({ id: linha?.ref ?? "" });
+  if (!linha) return null;
   return (
     <div
       style={{

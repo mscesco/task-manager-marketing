@@ -87,6 +87,36 @@ class Board(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
             unique=True,
             postgresql_where=text("is_default"),
         ),
+        # ⚠️ NOME UNICO POR TIME (fatia 9, migration `0013`). Ate 18/08 nada
+        # impedia tres quadros "Quadro CRM Teste" no mesmo subtime -- e havia
+        # tres, vistos na conferencia visual de 17/08.
+        #
+        # ⚠️ E PRE-REQUISITO DE APAGAR QUADRO. Aquela fatia confirma a exclusao
+        # pedindo para DIGITAR o nome; com nomes repetidos, digitar nao diz
+        # qual dos tres, e a confirmacao vira teatro numa operacao que apaga as
+        # tarefas de dentro.
+        #
+        # ⚠️ MAIUSCULA CONTA: "Backlog" e "backlog" sao nomes diferentes e os
+        # dois podem existir (decisao de 18/08). Indexar `lower(name)` foi
+        # recusado -- "sao diferentes visualmente".
+        #
+        # ⚠️ PARCIAL: quadro APAGADO nao ocupa o nome. Sem o `WHERE`, um quadro
+        # que ninguem consegue ver bloquearia o nome para sempre, e a tela
+        # diria "ja existe" apontando para o nada.
+        #
+        # ⚠️ NAO HA EQUIVALENTE EM `board_column`, E ISSO E MEDIDO, nao
+        # esquecido. Ver o comentario em `_assert_nomes_do_lote`: o lote aplica
+        # em quatro etapas com `flush` em cada uma, e um indice unico recusaria
+        # o estado INTERMEDIARIO de trocar duas colunas de nome ou de
+        # apagar-e-recriar com o mesmo nome -- com `IntegrityError`, que sai
+        # como 500.
+        Index(
+            "board_nome_unico_por_time",
+            "team_id",
+            "name",
+            unique=True,
+            postgresql_where=text("deleted_at IS NULL"),
+        ),
     )
 
     workspace_id: Mapped[uuid.UUID] = mapped_column(
@@ -219,3 +249,25 @@ class BoardColumn(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "Some quando o front passar a ler colunas do banco."
         ),
     )
+
+    @property
+    def is_status_bridge(self) -> bool:
+        """Esta coluna e ponte de ALGUM status -- sem dizer de qual.
+
+        ⚠️ EXISTE PARA `BoardColumnResponse`, e o formato e o ponto. O front
+        precisa saber ONDE o "x" vai falhar (`_assert_ponte_sobrevive` recusa
+        apagar coluna com ponte do quadro PADRAO), e nao precisa saber QUAL
+        status -- que e justamente o acoplamento que a ADR 0033 proibe. Um
+        booleano da a primeira coisa sem dar a segunda.
+
+        ⚠️ E UMA `@property`, E NAO UM VALIDADOR NO SCHEMA, de proposito:
+        `from_attributes` a le como se fosse coluna do banco, entao os seis
+        lugares que fazem `BoardColumnResponse.model_validate(coluna)`
+        continuam identicos e sem consulta nova.
+
+        ⚠️⚠️ **`True` AQUI NAO QUER DIZER "NAO PODE SER APAGADA".** As quatro
+        colunas base de um quadro AVULSO tambem nascem com `legacy_status`
+        (`board_defaults.py`), e elas podem ser apagadas. A trava e
+        `board.is_default AND legacy_status is not None` -- as duas metades.
+        """
+        return self.legacy_status is not None

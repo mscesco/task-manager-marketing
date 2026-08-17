@@ -101,6 +101,7 @@ const QUADRO: Quadro = {
       semantic: "OPEN",
       notify_deadline: true,
       is_default_target: true,
+      is_status_bridge: true,
     },
     {
       id: "col-progress",
@@ -110,6 +111,7 @@ const QUADRO: Quadro = {
       semantic: "IN_PROGRESS",
       notify_deadline: true,
       is_default_target: true,
+      is_status_bridge: true,
     },
     {
       id: "col-done",
@@ -119,6 +121,7 @@ const QUADRO: Quadro = {
       semantic: "DONE",
       notify_deadline: true,
       is_default_target: true,
+      is_status_bridge: true,
     },
   ],
 };
@@ -888,6 +891,7 @@ describe("Board -- o card decide pela coluna (fatia 4c)", () => {
       semantic: "IN_PROGRESS" as const,
       notify_deadline: false,
       is_default_target: false,
+      is_status_bridge: false,
     };
     montarApi(
       [
@@ -948,6 +952,7 @@ describe("Board -- o quadro sai das TAREFAS, nao da flag de padrão (fatia 4c)",
         semantic: "OPEN",
         notify_deadline: true,
         is_default_target: true,
+        is_status_bridge: false,
       },
       {
         id: "seo-revisar",
@@ -957,6 +962,7 @@ describe("Board -- o quadro sai das TAREFAS, nao da flag de padrão (fatia 4c)",
         semantic: "IN_PROGRESS",
         notify_deadline: true,
         is_default_target: false,
+        is_status_bridge: false,
       },
     ],
   };
@@ -1094,6 +1100,7 @@ describe("Board -- checklist e prazo leem a coluna (fatia 4c)", () => {
             semantic: "CANCELLED" as const,
             notify_deadline: true,
             is_default_target: true,
+            is_status_bridge: false,
           },
         ],
       },
@@ -1249,6 +1256,12 @@ describe("Board -- quadro avulso (fatia 5b-6)", () => {
       semantic: "OPEN" as const,
       notify_deadline: true,
       is_default_target: true,
+      // ⚠️ AS QUATRO COLUNAS BASE DE UM QUADRO AVULSO TEM PONTE
+      // (`board_defaults.py`), e essa e a fixture que impede o conserto obvio
+      // e errado da trava: ler `is_status_bridge` sem `is_default` sumiria com
+      // o "x" delas, e apagar "Cancelado" de um quadro avulso e o item 14 da
+      // conferencia visual.
+      is_status_bridge: true,
     },
     {
       id: "av-revisao",
@@ -1258,6 +1271,12 @@ describe("Board -- quadro avulso (fatia 5b-6)", () => {
       semantic: "IN_PROGRESS" as const,
       notify_deadline: true,
       is_default_target: true,
+      // ⚠️ AS QUATRO COLUNAS BASE DE UM QUADRO AVULSO TEM PONTE
+      // (`board_defaults.py`), e essa e a fixture que impede o conserto obvio
+      // e errado da trava: ler `is_status_bridge` sem `is_default` sumiria com
+      // o "x" delas, e apagar "Cancelado" de um quadro avulso e o item 14 da
+      // conferencia visual.
+      is_status_bridge: true,
     },
   ];
 
@@ -1390,6 +1409,68 @@ describe("Board -- quadro avulso (fatia 5b-6)", () => {
     comAvulso([]);
     render(<Board boardId={AVULSO} title="Campanhas" podeEditarColunas />);
     expect(await screen.findByLabelText("Editar colunas")).toBeTruthy();
+  });
+
+  it("⚠️ o lapis APARECE no Quadro geral (6a-bis), sem boardId", async () => {
+    // ⚠️ ESTE TESTE NAO EXISTIA E ERA POR ISSO QUE A 6a-bis CHEGOU PELA
+    // METADE. Ela tirou `_assert_quadro_editavel` do backend em 13/08 e o
+    // front continuou barrando com `boardId && ...` -- e o Quadro geral e
+    // desenhado SEM `boardId`. Os seis testes deste bloco passavam
+    // `boardId={AVULSO}`, entao a sabotagem vinha verde: eles testavam o
+    // ASSUNTO (o lapis) e nao a LINHA (a guarda).
+    comAvulso([]);
+    render(<Board title="Quadro geral" podeEditarColunas />);
+    expect(await screen.findByLabelText("Editar colunas")).toBeTruthy();
+  });
+
+  it("⚠️ a LENTE de subtime NAO ganha lapis, mesmo com permissao", async () => {
+    // ⚠️ ADR 0034 item 2: a lente e o espelho do Quadro geral filtrado por
+    // pessoa, e nao mostra afordancia de editar nem de apagar -- AUSENTE, e
+    // nao desabilitada. As colunas que ela desenha sao do geral; oferecer
+    // edicao aqui seria editar o geral de dentro de uma vista que nao diz
+    // que e o geral.
+    comAvulso([]);
+    render(<Board subteamId={CRM} title="Quadro · CRM" podeEditarColunas />);
+    expect(await screen.findByText("Quadro · CRM")).toBeTruthy();
+    expect(screen.queryByLabelText("Editar colunas")).toBeNull();
+  });
+
+  it("⚠️ no Quadro geral a coluna com PONTE nao oferece apagar", async () => {
+    // ⚠️ O MOTIVO DE `is_status_bridge` EXISTIR. Sem ele, as colunas do geral
+    // ganhariam um "x" cada, e os "x" derrubariam o lote inteiro no "Concluir
+    // edicao" -- lixeira que nao funciona e lixeira em que alguem clica.
+    comAvulso([]);
+    render(<Board title="Quadro geral" podeEditarColunas />);
+    fireEvent.click(await screen.findByLabelText("Editar colunas"));
+    expect(screen.queryByLabelText("Apagar Em Andamento")).toBeNull();
+    expect(screen.getAllByText("não pode ser apagada").length).toBeGreaterThan(0);
+  });
+
+  it("⚠️ o modo de edicao NAO cai no estado vazio -- desenha as colunas", async () => {
+    // ⚠️ ISTO FALHOU NA PRIMEIRA VERSAO DO COMMIT, e o defeito era real: com
+    // zero tarefa VISIVEL, `raizes.length === 0 && !boardId` trocava o kanban
+    // inteiro por "Nenhuma tarefa ainda" -- inclusive dentro do modo de
+    // edicao. A pessoa clicava no lapis para reorganizar colunas e via um
+    // estado vazio com nenhuma coluna e so o botao de sair.
+    //
+    // ⚠️ E `raizes` E A LISTA JA FILTRADA. Nao depende de o quadro estar
+    // vazio: basta um filtro que nao casa nada, com as 176 tarefas no banco.
+    // O modo de edicao ESCONDE os controles de filtro, e nao os limpa.
+    comAvulso([]);
+    render(<Board title="Quadro geral" podeEditarColunas />);
+    fireEvent.click(await screen.findByLabelText("Editar colunas"));
+    expect(screen.queryByText("Nenhuma tarefa ainda")).toBeNull();
+    expect(screen.getByText("Backlog")).toBeTruthy();
+  });
+
+  it("⚠️ no quadro AVULSO a coluna com ponte CONTINUA apagavel", async () => {
+    // ⚠️ O OUTRO LADO DA MESMA TRAVA, e o que impede o conserto obvio e
+    // errado. As colunas base do avulso tambem tem `is_status_bridge: true`;
+    // ler o campo sem `is_default` sumiria com o "x" delas.
+    comAvulso([]);
+    render(<Board boardId={AVULSO} title="Campanhas" podeEditarColunas />);
+    fireEvent.click(await screen.findByLabelText("Editar colunas"));
+    expect(screen.getByLabelText("Apagar Em Revisão")).toBeTruthy();
   });
 
   it("⚠️ o modo de edicao TROCA a barra, e nao acrescenta itens", async () => {

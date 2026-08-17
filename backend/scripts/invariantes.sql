@@ -15,7 +15,9 @@
 -- `root-postgres-1`, do stack do n8n, alcancado pela rede `root_default`.
 -- Rodar da raiz do repo, na VPS.
 --
--- Toda consulta abaixo deve devolver 0, exceto a 5 (contexto). Qualquer outro
+-- Toda consulta abaixo deve devolver 0, exceto a 5 (contexto). As 8 e 9
+-- entraram em 18/08 com a fatia 9 (nome unico) -- rode a 8 ANTES da migration
+-- `0013`, porque ela e que diz se a migration vai passar. Qualquer outro
 -- numero e defeito de dado, nao de tela -- nenhuma delas aparece para o
 -- usuario.
 --
@@ -183,3 +185,59 @@ JOIN board b ON b.id = t.board_id
 JOIN team tm ON tm.id = b.team_id AND tm.workspace_id = b.workspace_id
 WHERE t.deleted_at IS NULL
   AND tm.parent_team_id IS NOT NULL;
+
+\echo '=== 8. nenhum nome de quadro repetido no mesmo time (Spec 036 fatia 9) ==='
+-- Esta consulta e o ESPELHO do indice `board_nome_unico_por_time`, criado pela
+-- migration `0013`. Enquanto ela e o indice existirem juntos, ela devolve 0
+-- por construcao -- e o valor dela e OUTRO: ela roda ANTES da migration, e e
+-- o que diz se a migration vai passar.
+--
+-- ⚠️ RODE ESTA ANTES DE APLICAR A `0013`. Se der diferente de zero, a
+-- migration ABORTA (ela confere e levanta com a lista). O conserto e RENOMEAR
+-- pela tela; apagar quadro nao existe ate a fatia 7.
+--
+-- ⚠️ MEDIDO EM PRODUCAO ATE 10/08: a consulta 5 mostra UM quadro. Logo esta e
+-- 0 por ausencia de caso, e continua sendo controle -- leia as duas juntas.
+--
+-- ⚠️ MAIUSCULA CONTA (decisao de 18/08): "Backlog" e "backlog" sao nomes
+-- DIFERENTES e nao contam como repetidos aqui, igual ao indice. Se um dia a
+-- regra mudar para ignorar maiuscula, esta consulta muda junto -- e ela e que
+-- vai dizer quantas linhas a mudanca quebra.
+SELECT count(*) AS nome_de_quadro_repetido_no_time
+FROM (
+    SELECT team_id, name
+    FROM board
+    WHERE deleted_at IS NULL
+    GROUP BY team_id, name
+    HAVING count(*) > 1
+) AS repetidos;
+
+\echo '=== 9. nenhum nome de coluna repetido no mesmo quadro (Spec 036 fatia 9) ==='
+-- ⚠️⚠️ **ESTA E A UNICA COISA QUE VIGIA A REGRA DA COLUNA, E NAO HA INDICE
+-- ATRAS DELA.** Decisao medida em 18/08: um `UNIQUE (board_id, name)`
+-- recusaria o estado INTERMEDIARIO do modo de edicao em LOTE, que aplica em
+-- quatro etapas com `flush` em cada uma. Dois gestos legitimos quebrariam --
+-- trocar duas colunas de nome entre si, e apagar "Aprovacao" para criar outra
+-- "Aprovacao" no mesmo lote (que e a razao de ser do lote) -- e quebrariam com
+-- `IntegrityError`, ou seja **500**, e nao o 422 que a tela sabe ler.
+--
+-- A regra vive em `BoardService._assert_nomes_do_lote` (estado FINAL do lote) e
+-- em `_assert_nome_de_coluna_livre` (entradas de uma coluna so). **E o mesmo
+-- arranjo de `_assert_ponte_sobrevive` e da consulta 4: aplicacao decide,
+-- consulta vigia.**
+--
+-- ⚠️ SE ESTE NUMERO SAIR DE ZERO, o conserto e o DADO, e o rastro e uma
+-- escrita que nao passou pelo servico -- psql na mao, script, ou um caminho
+-- novo que esqueceu a checagem. **Renomeie uma das duas antes de qualquer
+-- outra coisa:** com duas colunas de mesmo nome no quadro, TODO lote daquele
+-- quadro passa a ser recusado, inclusive um que so reordena.
+--
+-- ⚠️ COMPARA COM `trim`, porque o servico grava com `strip()`. Sem o `trim`,
+-- 'Feito ' e 'Feito' contariam como distintos aqui e iguais no banco.
+SELECT count(*) AS nome_de_coluna_repetido_no_quadro
+FROM (
+    SELECT board_id, trim(name) AS nome
+    FROM board_column
+    GROUP BY board_id, trim(name)
+    HAVING count(*) > 1
+) AS repetidos;

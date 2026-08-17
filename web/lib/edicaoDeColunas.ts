@@ -91,7 +91,40 @@ const NOME_DA_SEMANTICA: Record<string, string> = {
 export function impedimentoDeExclusao(
   coluna: Coluna,
   todas: readonly Coluna[],
+  /**
+   * O quadro que contem esta coluna e o PADRAO do time (`board.is_default`).
+   *
+   * ⚠️ ESTA E A METADE QUE FALTAVA DA TRAVA DA PONTE, e ela nao mora na
+   * coluna: mora no quadro, e ja viaja em `BoardResponse`. Combinar as duas
+   * aqui e o que impede o erro obvio -- esconder o "x" das quatro colunas base
+   * de todo quadro avulso, que TAMBEM tem ponte e PODEM ser apagadas.
+   *
+   * ⚠️ `false` POR PADRAO, e o default e deliberado: quadro avulso e o caso
+   * comum, e esquecer o argumento nao pode virar "sumiu o botao de apagar".
+   * O caminho perigoso e o que exige ser escrito.
+   */
+  quadroPadrao = false,
 ): ImpedimentoDeExclusao | null {
+  // ⚠️ A PONTE VEM PRIMEIRO PORQUE ELA E ABSOLUTA. Os outros impedimentos
+  // somem quando o quadro ganha outra coluna da mesma semantica; este nao some
+  // com nada que a pessoa possa fazer na tela -- so a 5c, dando degrau de
+  // semantica a `default_board_and_column_for_status`, o remove.
+  //
+  // ⚠️ ESPELHA `BoardService._assert_ponte_sobrevive` (`quadro.is_default AND
+  // legacy_status is not None`). Quem mexer numa tem de mexer na outra.
+  //
+  // ⚠️ O CUSTO DE NAO TER ISTO FOI MEDIDO NA CONFERENCIA DE 17/08: com a
+  // 6a-bis abrindo a edicao do Quadro geral, as OITO colunas dele ganhariam um
+  // "x" -- e os oito derrubariam o lote inteiro no "Concluir edicao", porque
+  // as oito sao ponte. Lixeira que nao funciona e lixeira em que alguem clica.
+  if (quadroPadrao && coluna.is_status_bridge) {
+    return {
+      semantica: coluna.semantic,
+      motivo:
+        "Esta coluna é a origem de um status do sistema e não pode ser " +
+        "apagada do quadro geral.",
+    };
+  }
   if (!SEMANTICAS_OBRIGATORIAS.includes(coluna.semantic as "OPEN" | "DONE")) {
     return null;
   }
@@ -161,39 +194,51 @@ export function avisoDeExclusao(params: {
   destino: Coluna | null;
   quantas: number;
   /**
-   * O backend recusou por falta de destino MESMO com `quantas === 0`.
+   * Pedir destino mesmo com `quantas === 0`.
    *
-   * ⚠️ ISTO NAO E ESTADO IMPOSSIVEL, e era um beco sem saida ate 13/08. A
-   * contagem que a tela le (`GET .../columns/{id}`) conta so as tarefas
-   * VIVAS, de proposito -- tarefa apagada nao existe para quem olha. Mas
-   * `BoardService.apagar_coluna` exige destino se houver vivas **ou
-   * apagadas**, porque a FK `task_board_column` e `RESTRICT` e a linha
-   * soft-deleted continua apontando para a coluna.
+   * ⚠️ ATENCAO AO QUE ESTE PARAMETRO **NAO** DIZ: ele nao afirma que existem
+   * tarefas apagadas. Ele diz "pergunte o destino de qualquer forma". A
+   * diferenca deixou de ser academica em 17/08, quando a conferencia visual
+   * pegou a tela anunciando "guarda tarefas apagadas" num quadro criado cinco
+   * minutos antes, onde tarefa nenhuma jamais existiu.
    *
-   * ⚠️ O RESULTADO ERA A TELA SE CONTRADIZENDO: ela dizia "Ela esta vazia",
-   * a pessoa confirmava, e vinha "Escolha para qual coluna as tarefas devem
-   * ir" -- sem seletor nenhum na tela, porque ele so aparecia com
-   * `quantas > 0`. Aquela coluna nao podia mais ser apagada pelo produto.
+   * ⚠️ POR QUE A CONFUSAO ACONTECEU. No painel antigo (`EditorDeColunas`, que
+   * nao existe mais) este parametro so ficava `true` DEPOIS de o backend
+   * recusar por falta de destino -- era um fato MEDIDO, e o texto podia
+   * afirmar. Na revisao em lote ele e cravado `true` para toda coluna marcada,
+   * porque o modelo e perguntar sempre: e o que conserta o beco sem saida por
+   * construcao, em vez de descobri-lo no 422. **O parametro sobreviveu com o
+   * mesmo nome e o texto continuou afirmando um fato que ninguem mediu.**
    *
-   * ⚠️ E BASTA UMA TAREFA APAGADA, UMA VEZ, EM QUALQUER MOMENTO DA VIDA DA
-   * COLUNA. Criar tarefa e apagar depois e o uso normal do produto.
+   * ⚠️ E O FRONT NAO TEM COMO SABER. A contagem que ele le
+   * (`GET .../columns/{id}`) conta so as tarefas VIVAS, de proposito -- tarefa
+   * apagada nao existe para quem olha. Ja `BoardService` exige destino se
+   * houver vivas **ou** apagadas, porque a FK `task_board_column` e `RESTRICT`
+   * e a linha soft-deleted continua apontando para a coluna. Os dois estao
+   * certos; o que faltava era a tela falar no CONDICIONAL.
    */
   exigeDestino?: boolean;
 }): AvisoDeExclusao | null {
   const { coluna, destino, quantas, exigeDestino = false } = params;
   if (quantas === 0 && !exigeDestino) return null;
-  // ⚠️ O CASO DAS APAGADAS TEM TEXTO PROPRIO, E NAO REAPROVEITA OS DE BAIXO.
+  // ⚠️ O CASO DA COLUNA VAZIA TEM TEXTO PROPRIO, E NAO REAPROVEITA OS DE BAIXO.
   // Aqueles falam de "as N tarefas", e aqui N e ZERO para quem olha. Pior:
   // o ramo de destino TERMINAL diria "isto vai marcar 0 tarefas como
   // concluidas", que e falso duas vezes -- nao sao 0 linhas, e elas NAO sao
   // concluidas. As apagadas vao por `UPDATE` direto, sem reescrita de status,
   // sem cascata e sem `task_history`: a linha nao existe para o produto.
+  //
+  // ⚠️ TUDO AQUI E CONDICIONAL, e a escolha das palavras e a correcao de
+  // 17/08. "Guarda tarefas apagadas" era uma afirmacao; "pode guardar" e o que
+  // o codigo realmente sabe. O caso comum -- quadro novo, coluna que nunca
+  // teve tarefa -- precisa ler como "escolha e siga", e nao como "existe algo
+  // escondido aqui que voce nao esta vendo".
   if (quantas === 0) {
     return {
-      titulo: `"${coluna.name}" está vazia, mas ainda guarda tarefas apagadas.`,
+      titulo: `"${coluna.name}" está vazia — mas pode guardar tarefas apagadas.`,
       linhas: [
-        "Elas não aparecem no quadro e continuam apagadas — mas ficam presas a esta coluna.",
-        "Escolha para onde elas vão. Nada volta a aparecer e nenhuma tarefa muda de estado.",
+        "A tela conta só as tarefas que aparecem. Tarefa apagada continua presa à coluna, e não dá para saber daqui se existe alguma.",
+        "Escolha uma coluna mesmo assim. Se não houver nenhuma, nada acontece; se houver, elas mudam de coluna sem voltar a aparecer e sem mudar de estado.",
       ],
       terminal: false,
       rotuloDoBotao: "Apagar coluna",

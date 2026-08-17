@@ -40,6 +40,11 @@ function col(
     semantic,
     notify_deadline: true,
     is_default_target,
+    // ⚠️ IRRELEVANTE PARA ESTE ARQUIVO, e por isso e `true`: o Quadro geral
+    // abaixo tem as 8 colunas da PONTE, e fingir o contrario faria a fixture
+    // descrever um quadro que nao existe. `colunaEquivalente` nao le este
+    // campo -- quem le e `impedimentoDeExclusao`.
+    is_status_bridge: true,
   };
 }
 

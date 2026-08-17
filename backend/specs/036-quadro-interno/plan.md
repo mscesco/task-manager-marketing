@@ -24,8 +24,13 @@
 
 ## Estado (conferido no `main` em 13/08/2026)
 
-Portões verdes: **backend 807 passed**, **front 737 passed**, `tsc` 0,
-`next build` compilando (CI #52, `3452e6e`). Migrations `0012`. ADRs backend: 42.
+Portões verdes: **backend 808 passed**, **front 758 passed**, `tsc` 0,
+`next build` compilando. Migrations `0012`. ADRs backend: 42.
+
+⚠️ **A CONFERÊNCIA VISUAL DA FATIA 6 FOI FEITA EM 17/08, e achou SEIS coisas
+que os três portões não acharam** — o mesmo padrão da 4c (cinco) e da 5b-6
+(duas). Quatro eram defeito, e **duas eram erro da própria lista de
+conferência**. Todas fechadas; ver §Fatia 6 e §Conferência visual.
 
 ⚠️ **NADA DA FATIA 5b ESTÁ EM PRODUÇÃO.** Tudo commitado em `main`, nada
 deployado. O deploy espera a fatia 6 — decisão de 13/08, ver §Ordem de deploy.
@@ -57,12 +62,33 @@ deployado. O deploy espera a fatia 6 — decisão de 13/08, ver §Ordem de deplo
 | **6c-3** — `RevisaoDaEdicao` | ✅ em `main` | 736→748 |
 | **6c-2c** — a fiação no `Board.tsx` | ✅ em `main` | 748→754 |
 | **dívida** — `destinosDoRascunho` + divergência reposta | ✅ em `main` | 754→737 (−20: `EditorDeColunas.test.tsx` apagado) |
+| **6c-4** (17/08) — coluna nova desenhada e reordenável no rascunho | ✅ em `main` | 737→745 |
+| **6c-5** (17/08) — o texto da coluna vazia no condicional | ✅ em `main` | 745→747 |
+| **6a-bis-2** (17/08) — `is_status_bridge` + lápis no Quadro geral | ✅ em `main` | 747→757 / 807→808 |
+| **6c-6** (17/08) — o modo de edição não cai no estado vazio | ✅ em `main` | 757→758 |
 
 ⚠️ **A FATIA 6 ESTÁ FECHADA EM CÓDIGO E NÃO ESTÁ CONFERIDA NA TELA.** "Em
 `main`" aqui quer dizer **portão verde**, e os itens 4 e 5 da §Conferência
 visual (arraste de cabeçalho, rolagem automática) **não têm guardião nenhum** —
 `onDragEnd` não roda em jsdom. Nada nesta tabela autoriza dizer que a fatia 6
 funciona.
+
+### As seis da conferência de 17/08
+
+| o que a tela mostrou | o que era | onde |
+|---|---|---|
+| `TypeError` ao trocar de quadro no modo de edição | **defeito**: nenhum efeito zerava o rascunho na troca de `boardId`; o `!` em `destinosDoRascunho` mentia para o `tsc` | `Board.tsx`, `rascunhoDeColunas.ts` |
+| coluna criada não dava para posicionar antes de concluir | **defeito**: o ref `tmp:` entrava na `ordem` e era filtrado do que a tela desenha — as setas moviam uma coluna invisível e `indice`/`total` contavam listas diferentes | `colunasParaDesenhar` |
+| "guarda tarefas apagadas" num quadro criado 5 min antes | **defeito de texto**: `exigeDestino` significava "o backend recusou, logo existem" no painel antigo, e virou "pergunte sempre" no lote — o texto continuou AFIRMANDO um fato que ninguém mediu | `avisoDeExclusao` |
+| lápis não aparecia no Quadro geral | **defeito**: a 6a-bis saiu do backend em 13/08 e o front continuou com `boardId && …`; o geral é desenhado SEM `boardId` | `Board.tsx`, `/quadro/page.tsx` |
+| modo de edição com zero tarefa visível desenhava o estado vazio e nenhuma coluna | **defeito**, achado pelo teste da correção acima. ⚠️ `raizes` é a lista JÁ FILTRADA: basta um filtro que não casa nada | `Board.tsx` |
+| "Concluído" sem "×"; duas abas reordenando não recusam | **a lista estava errada**, não o código — ver §Conferência visual |
+
+⚠️ **CINCO DAS SEIS ESTAVAM EM RAMOS SEM TESTE NENHUM.** O `quantas === 0` de
+`avisoDeExclusao` não tinha guardião; os seis testes do lápis passavam
+`boardId={AVULSO}` e nenhum cobria o Quadro geral. **Sabotagem viria verde nos
+dois — eles testavam o ASSUNTO, e não a LINHA.** É o erro (b) do handoff de
+13/08, terceira repetição.
 
 ⚠️ **`_recipients` filtra `is_active`** (dano medido: 29 avisos) — em `main`,
 não em produção. ⚠️ **Medido em 13/08: a notificação é IN-APP e só** (o modelo
@@ -78,9 +104,12 @@ migration NÃO podia ficar para trás, e a `0012` está em produção desde 10/0
 
 ## Como ler este arquivo
 
-Sete fatias, e três delas viraram várias. As três primeiras são backend e
+Nove fatias, e três delas viraram várias. As três primeiras são backend e
 **nada muda na tela**; a quarta é o front; a quinta é a feature; a sexta é o
-modo de edição.
+modo de edição; a **sétima** (apagar quadro) e a **oitava** (mover tarefa entre
+quadros) foram criadas em 17/08, e a **nona** (nome único) em 18/08. As três
+são o que falta para o deploy — ver §Definição de pronto. ⚠️ **A ordem é 9 → 7
+→ 8**: a 9 destrava a confirmação da 7.
 
 ⚠️ **Três seções são HISTÓRICAS e estão marcadas como tal** — "Fatia 4c: o
 bloqueio original", "Fatia 4 (texto original)" e "Fatia 5 (texto de 10/08)".
@@ -1160,8 +1189,9 @@ o apague (ver o portão do vazamento, acima).
 > isso custou da 6a.
 > ✅ **FECHADA EM CÓDIGO em 13/08** (6a, 6a-bis, 6a-ter, 6b, 6c-1, 6c-2a/b,
 > 6c-2c, 6c-3), CI #52 verde: backend 807, front 737.
-> ⬜ **NÃO CONFERIDA NA TELA.** Ver §Conferência visual — é o que falta, e é o
-> portão do deploy.
+> ✅ **CONFERIDA NA TELA EM 17/08**, e a conferência achou seis coisas (§Estado).
+> ⬜ **FALTA RECONFERIR o que as correções mexeram** — a lista curta está na
+> §Conferência visual, e é o que resta do portão do deploy nesta fatia.
 
 ⚠️ **ESTA FATIA VEM ANTES DO DEPLOY DA 5b.** Decisão de 13/08, e o motivo é
 concreto: `BoardService.criar_coluna` grava `position=len(existentes)` —
@@ -1355,7 +1385,7 @@ conserta o beco por construção: o seletor está sempre lá.
 
 ⚠️ **A REGRA SOBREVIVE, O DESENHO NÃO.** Tudo o que decide está em
 `lib/edicaoDeColunas.ts` — `avisoDeExclusao`, `destinosPara`,
-`impedimentoDeExclusao`, `explicaRecusa`, `mensagemDeDivergencia` — com 22 testes
+`impedimentoDeExclusao`, `explicaRecusa`, `mensagemDeDivergencia` — com 19 testes
 que não dependem de tela. **É a fronteira da Spec 027 pagando o que prometia.**
 
 ⚠️ **`destinosPara` PRECISA PASSAR A ACEITAR AS COLUNAS `tmp:`**, senão a coluna
@@ -1404,9 +1434,203 @@ inválido". Medido em 13/08, depois de eu cometer o erro. **Vale para o `PUT
 
 **Estimativa, não medida** (backend não roda sem Postgres): **6a-bis** meio dia;
 **6a-ter** um dia; **6c** dois dias. Total restante: **3 a 4 dias**.
+⚠️ **Consumiu mais de uma sessão.** Use isso ao estimar a 7 e a 8.
 
 ---
 
+
+## Fatia 9 — nome único de quadro e de coluna (PRÉ-REQUISITO DA FATIA 7)
+
+> Escrita em 18/08/2026. **Decisão da Camila, com o custo na mesa.**
+
+⚠️ **HOJE NÃO EXISTE NADA IMPEDINDO, e isso foi CONFERIDO, não suposto:** não
+há `UniqueConstraint` em `board.name` nem em `board_column.name`
+(`app/db/models/boards.py`), e `BoardService` não valida nome repetido em
+lugar nenhum. A conferência de 17/08 mostrou **três** quadros "Quadro CRM
+Teste" no mesmo subtime e **duas** colunas "Em Andamento" no mesmo quadro.
+
+⚠️ **É PRÉ-REQUISITO DA FATIA 7, E ESSE É O MOTIVO DE ELA VIR ANTES.** A Fatia
+7 confirma a exclusão de quadro **digitando o nome**. Com três quadros de mesmo
+nome, digitar o nome não diz qual — a confirmação vira teatro, e teatro numa
+operação que apaga as tarefas dentro é pior que nenhuma confirmação.
+
+### A regra
+
+- **Quadro:** nome único por **time** (`team_id`, `name`).
+- **Coluna:** nome único por **quadro** (`board_id`, `name`).
+
+### ⚠️ As perguntas que decidem o tamanho — responda ANTES de escrever código
+
+1. **Compara com ou sem maiúscula?** "Backlog" e "backlog" são o mesmo nome?
+   ⚠️ Se forem, o índice precisa ser sobre `lower(name)`, e isso muda a
+   migration. Se não forem, a tela vai aceitar os dois e alguém vai reclamar.
+2. **Quadro APAGADO ocupa o nome?** A `0012` é soft delete: `deleted_at` não
+   nulo. ⚠️ Índice simples faria um quadro apagado bloquear o nome dele para
+   sempre, **sem nada na tela explicando por quê**. Índice PARCIAL
+   (`WHERE deleted_at IS NULL`) resolve, e o repositório já usa essa técnica em
+   `board_um_padrao_por_time`.
+3. **Espaço nas pontas conta?** `_nome_de_coluna_valido` já faz `strip`; o de
+   quadro precisa fazer o mesmo, senão `"CRM "` passa por ser diferente de
+   `"CRM"`.
+
+### ⚠️ O QUE VAI QUEBRAR NA SUA MÁQUINA, E NÃO EM PRODUÇÃO
+
+**A migration vai FALHAR no banco de desenvolvimento**, porque ele tem os três
+"Quadro CRM Teste" e as duas "Em Andamento" criados na conferência de 17/08.
+Índice único não é criado sobre dado que já viola.
+
+- **Em produção não falha:** um quadro só (`Quadro geral`) e oito colunas de
+  nomes distintos — `invariantes.sql` consulta 5, medida em 10/08.
+- **Antes de rodar, apague as duplicatas do banco de dev pela tela.** ⚠️ E
+  **escreva a consulta que ACHA duplicata em `invariantes.sql`, no mesmo
+  commit** — ela é o que prova que produção está limpa antes do deploy, e é o
+  que vai avisar se alguém criar duplicata entre agora e a migration.
+
+### Guardiões
+
+| sabotagem | esperado |
+|---|---|
+| tirar o índice do banco | teste de integração que tenta gravar a duplicata direto e espera `IntegrityError` |
+| tirar a validação do serviço | teste que espera **422 com `code`**, e não 500 do banco |
+| o índice sem `WHERE deleted_at IS NULL` | teste: apagar um quadro e recriar com o mesmo nome |
+| a tela não mostra o erro | teste de componente lendo o `code`, nunca a mensagem |
+
+⚠️ **DUAS CAMADAS, E AS DUAS SÃO NECESSÁRIAS.** O índice é a verdade; a
+validação no serviço é o que transforma a recusa em **422 com `code`** em vez
+do 500 que um `IntegrityError` cru produz. Este projeto já tem a cicatriz:
+`@model_validator` devolvendo 500 está catalogado nas armadilhas.
+
+---
+
+## Fatia 7 — apagar quadro (ENTRA NO PORTÃO DO DEPLOY)
+
+> Escrita em 17/08/2026. Era o item 1 da §"o que falta"; virou fatia própria
+> quando a §Definição de pronto fechou a lista do deploy.
+
+⚠️ **DEPENDE DA FATIA 9 (nome único).** A confirmação por digitação só
+desambigua se o nome for único no time — decisão de 18/08. **Não comece esta
+antes daquela.**
+
+⚠️ **É A OPERAÇÃO MAIS PERIGOSA DA SPEC INTEIRA, e não é a exclusão de coluna.**
+A ADR 0034 decidiu que **apagar quadro apaga as tarefas dentro**. Isso está
+escrito em dois lugares no código, e os dois DEPENDEM da decisão:
+
+1. o cabeçalho do `board_repository.py` (§"onde o filtro `deleted_at IS NULL`
+   vale"): `coluna_para_status` **não faz `JOIN` em `board` de propósito** —
+   custo no caminho mais quente do produto — *"apostando que tarefa viva em
+   quadro apagado não existe"*;
+2. a **consulta 4** do `invariantes.sql`, cujo comentário diz, com todas as
+   letras, que ela é **a única coisa que segura a invariante**, porque
+   **nenhuma constraint a sustenta**: é cascata de aplicação, não de banco.
+
+⚠️ **LOGO: "apagar quadro" NÃO É `UPDATE board SET deleted_at = NOW()`.** Se a
+cascata para as tarefas não entrar no MESMO commit, a consulta 4 sai de zero na
+primeira vez que alguém usar o botão, e o defeito aparece **em outra tela, dias
+depois**, quando `coluna_para_status` resolver uma coluna de um quadro que não
+existe mais.
+
+⚠️ **A consulta 4 é trivialmente 0 hoje** porque não há caminho de produto que
+apague quadro — o próprio arquivo diz isso. **Esta fatia é o que torna a
+consulta 4 uma medição de verdade.** Rode-a antes e depois.
+
+### O que sobe
+
+- `DELETE /api/v1/boards/{board_id}` — **não existe** (conferido em 17/08: o
+  `boards_router.py` tem `GET ""`, `POST`, `PATCH /{board_id}`,
+  `PUT /{board_id}/columns`, e o CRUD de coluna; **não há delete de quadro**).
+- `BoardService.apagar_quadro`, com a cascata.
+- A confirmação **digitando o nome**, com contagem de **subárvore**.
+- ⚠️ **O `UPDATE` de restauração em `backend/scripts/`, no MESMO commit.** Não
+  há tela de restaurar, e a pasta já é o lugar disso (`invariantes.sql`,
+  `set_member_role.py`, `provision_workspace.py` moram lá).
+- ⚠️ **A troca da espera de "quadro pedido e não encontrado" por "este quadro
+  não existe mais"** — está anotado no `Board.tsx`. Sem isso, quem estiver com
+  o quadro aberto quando outra pessoa o apagar fica em "Carregando…" para
+  sempre.
+
+### ⚠️ As perguntas que TÊM de ser respondidas antes de escrever código
+
+Nenhuma delas está decidida, e as três mudam o tamanho da fatia:
+
+1. **O quadro PADRÃO pode ser apagado?** Se sim, `default_board_and_column_for_status`
+   perde o alvo e toda tarefa de topo quebra. A resposta quase certamente é
+   não, e a trava é irmã da `_assert_ponte_sobrevive`.
+2. **Apagar quadro com tarefa dentro pede destino, como a coluna, ou apaga
+   junto?** A ADR 0034 diz apaga junto. **A tela da coluna ensinou o
+   contrário** — lá o "×" oferece destino. Duas operações vizinhas com
+   semânticas opostas, e a mais destrutiva é a que não pergunta.
+3. **O que acontece com subtarefa cujo pai está em OUTRO quadro?** O cabeçalho
+   do `board_repository.py` já registra o caso "pai num quadro e filha em
+   outro" como estado que a FK aceita.
+
+### Guardiões
+
+| sabotagem | esperado |
+|---|---|
+| `apagar_quadro` marca o `board` e **não** as tarefas | teste que roda a consulta 4 em SQL contra o banco de teste |
+| a trava do quadro padrão sai | teste de recusa 422 |
+| a confirmação aceita nome errado | teste de componente |
+| a contagem da subárvore não conta subtarefa | teste próprio |
+
+⚠️ **A CONTAGEM NA TELA TEM DE BATER COM O QUE O BACKEND APAGA.** É o item 10 da
+conferência da 5b, repetido: número na tela que não bate com o banco é pior que
+número velho.
+
+---
+
+## Fatia 8 — mover tarefa entre quadros (ENTRA NO PORTÃO DO DEPLOY)
+
+> Escrita em 17/08/2026. Era o item 2 da §"o que falta".
+> ⚠️ **É a "saída 3" do §Adendo — mover tarefa entre quadros**, que listou três
+> opções em 10/08 e não escolheu. **A escolha é esta seção**; o adendo virou
+> histórico e guarda o custo medido das outras duas. Se você reabrir a
+> discussão, reabra lá — não escreva uma terceira versão.
+
+⚠️ **NÃO É "ACRESCENTAR `board_id` AO `/move`". É FECHAR UMA DIVERGÊNCIA QUE JÁ
+EXISTE NO CÓDIGO E QUE ESTE DEPLOY TORNA ALCANÇÁVEL.** Medido em 17/08:
+
+- `POST /tasks` guarda o `board_id` com `_assert_board_in_reach`, e o docstring
+  dela diz por quê: *"quadro decide QUEM VÊ (ADR 0035 D3)"*.
+- `PATCH /tasks/{id}` aceita `team_id`, chama `_assert_team_in_reach`, escreve
+  `task.team_id = command.team_id` — e **não toca em `board_id`**
+  (`task_service.py`, `async def update`).
+- `POST /tasks/{id}/move` move **pai e projeto**, e só (`TaskMoveRequest`).
+  Não conhece quadro.
+
+⚠️ **RESULTADO: dá para deixar `team_id` e `board_id` apontando para times
+diferentes.** A tarefa continua desenhada no quadro do time ANTIGO enquanto
+pertence ao novo. Hoje é inofensivo porque **nenhum quadro não-padrão jamais
+existiu em produção** — todo `board_id` é o Quadro geral da raiz. **Deixa de
+ser inofensivo no dia do deploy.**
+
+⚠️ **E NÃO É ALCANÇÁVEL PELA TELA:** `TaskUpdateInput` (`lib/api.ts`) **não
+expõe `team_id`** — conferido em 17/08. O caminho é n8n, Swagger e chamada
+direta, que é exatamente o modelo de ameaça que `_assert_team_in_reach` e
+`_assert_board_in_reach` foram escritos para cobrir. **Não trate como teórico:
+este workspace usa n8n contra esta API.**
+
+### O que sobe
+
+- `board_id` (e a coluna de destino) no `POST /tasks/{id}/move`, ou rota
+  própria — **decidir, e escrever a decisão aqui.**
+- ⚠️ **Só dentro do MESMO `team_id`** (regra de 13/08).
+- ⚠️ **A regra que impede a divergência**, seja qual for a forma: `team_id` e
+  `board_id` de uma tarefa não podem sair de times diferentes por caminho
+  nenhum. A ADR 0042 barateou a parte da coluna (o mapa existe).
+
+### Guardiões
+
+| sabotagem | esperado |
+|---|---|
+| `PATCH` com `team_id` de outro time e `board_id` intacto | **teste novo** — é o furo descrito acima, e hoje NADA o pega |
+| move para quadro de outro `team_id` | teste de recusa 422 |
+| move sem recalcular a coluna | teste da ADR 0042 |
+
+⚠️ **ESCREVA O TESTE DO FURO ANTES DA FUNCIONALIDADE.** Ele falha hoje, no
+`main` verde de 807. É a evidência de que a fatia é necessária, e é a única
+coisa nesta fatia que não é opinião.
+
+---
 
 ## ⚠️ O portão do vazamento de quadro
 
@@ -1462,9 +1686,13 @@ exige permissão por quadro, que colide com a lente inteira.
 
 ---
 
-## Adendo — mover tarefa entre quadros (vigente)
+## Adendo — mover tarefa entre quadros (as três saídas de 10/08)
 
-> Escrito em 10/08, promovido a seção própria em 13/08. **É a fatia 5c.**
+> Escrito em 10/08, promovido a seção própria em 13/08.
+> ⚠️ **SUPERSEDED EM 17/08: a decisão está na §Fatia 8**, que escolheu a saída
+> 3 e a pôs na §Definição de pronto. Esta seção fica porque as três saídas e o
+> custo medido de cada uma continuam sendo o registro de POR QUE a 3 ganhou —
+> **não a execute, e não escreva a fatia aqui.**
 
 Pedido reconhecido, adiado por escolha: há coisas antes. Registrado aqui para
 não ser redescoberto como surpresa no dia em que alguém abrir o quadro novo e
@@ -1478,9 +1706,11 @@ perguntar "cadê minhas tarefas?". Três saídas, com o custo medido em 10/08:
 3. **Mover pela tela** — entrega própria, do tamanho desta fatia inteira
    (mexe em coluna, permissão e histórico ao mesmo tempo).
 
-⚠️ **Nenhuma das três está construída.** Se a opção 1 se mostrar insuficiente
-depois do lançamento, o custo de trocar para a 2 ou a 3 é o mesmo de hoje —
-não fica mais barato por esperar.
+⚠️ **Nenhuma das três está construída** (conferido em 17/08: `POST
+/tasks/{id}/move` move pai e projeto, e não conhece quadro). O argumento de que
+"não fica mais barato por esperar" é o que derrubou a opção 1 em 17/08: adiar
+não reduz o custo, e **cobra a diferença em tarefa recriada à mão** — apagar e
+recriar perde comentário, histórico e vínculo.
 
 ---
 
@@ -1514,7 +1744,59 @@ são `test_coluna_para_status_db.py`,
 
 ---
 
-## Ordem de deploy (vigente — revisada em 13/08)
+## ⚠️ Definição de pronto para o deploy (FECHADA em 17/08, emendada em 18/08)
+
+⚠️ **ESTA LISTA ESTÁ FECHADA. Item novo não entra nela — vai para a §"o que
+falta", e sobe no deploy seguinte.**
+
+Ela existe porque o deploy já foi adiado **quatro vezes, cada uma por um motivo
+diferente e razoável**: as 29 notificações (três sessões, e caiu quando foi
+medido), "espera a 5b fechar", "espera a fatia 6", e "espera a spec ficar
+redondinha". Somados, produziram duas fatias inteiras em `main` e zero em
+produção.
+
+⚠️ **"A SPEC INTEIRA" NÃO SERVE COMO CRITÉRIO, e há prova documentada:** o item
+"trocar qual coluna é o alvo de uma semântica" **subiu de urgência por causa da
+fatia 6** — o selo "padrão" criou a demanda. Construir gera itens novos. Portão
+que espera a lista acabar tem incentivo estrutural para nunca fechar.
+
+### O critério
+
+**Nada que a pessoa fizer na tela pode produzir um estado que ela não consiga
+desfazer.** Não é "a spec acabou"; é "não entregamos porta de mão única".
+
+Por esse critério, e só por ele:
+
+| | entra | por quê |
+|---|---|---|
+| **Conferência visual da fatia 6** (18 itens) | ✅ | os itens 24 e 25 não têm guardião nenhum; se falharem, falham em produção |
+| **Fatia 7 — apagar quadro** | ✅ | sem ela, "+ Novo quadro" é um botão sem saída. Quadro criado por engano é permanente, e o conserto vira operação de banco feita por você |
+| **Fatia 9 — nome único de quadro e coluna** | ✅ | pré-requisito da 7: sem ela, confirmar a exclusão digitando o nome não desambigua. ⚠️ **Entrou em 18/08, e é o único item acrescentado à lista fechada — porque destrava um item que já estava nela, e não porque apareceu vontade nova** |
+| **Fatia 8 — mover tarefa entre quadros** | ✅ | sem ela, tarefa no quadro errado só se conserta **apagando e recriando** — perda de dado por engano de seleção num modal. E fecha a divergência `team_id`/`board_id`, que este deploy torna alcançável |
+| quadro extra da raiz | ❌ | adição pura; ninguém sente falta do que nunca viu |
+| trocar coluna alvo de semântica | ❌ | dói, mas é **ausência**, não porta de mão única. Vai virar pedido — responda quando vier |
+| seletor de cor | ❌ | cosmético |
+| `notify_deadline` | ❌ | já decidido em 13/08 |
+
+⚠️ **SE A 7 E A 8 PASSAREM DE DUAS SEMANAS, A CONVERSA MUDA — mas muda contra
+um número, e não contra uma sensação.** A fatia 6 foi estimada em 3–4 dias e
+consumiu mais de uma sessão; conte com o mesmo desvio.
+
+### ⚠️ O que sobe junto, e não está em lista nenhuma
+
+A **6a-bis tornou o Quadro geral editável**, e isso deploya no mesmo bloco. A
+partir daí um ADMIN acrescenta, renomeia e reordena coluna no quadro que as
+**26 pessoas usam todo dia** — e a ADR 0041 passa a valer para ele, que até
+13/08 era o único quadro previsível do sistema. **O raio de explosão disso é
+maior que o do quadro avulso, que ninguém tem ainda.**
+
+⚠️ **Por isso o item 38 da conferência é o mais importante dos 18** — e vale
+medir `board.manage.root` **na base de produção**, não no código, antes de
+subir.
+
+---
+
+## Ordem de deploy (vigente — revisada em 17/08)
 
 ⚠️ **DECISÃO DE 13/08: NADA SOBE ANTES DA FATIA 6.** Lançar o quadro avulso
 sem reordenar coluna entrega uma funcionalidade cuja ordem de colunas fica
@@ -1528,7 +1810,9 @@ front na **mesma imagem**: não há como subir a 5b-1 sem subir a 5b-7 junto.
 Subindo em bloco, vira uma janela só. **Sabendo disso**, a escolha é subir em
 bloco depois da fatia 6 — dois deploys no total, não oito.
 
-1. **Fatia 6 pronta e conferida.**
+1. ⚠️ **A §Definição de pronto satisfeita por inteiro** — fatia 6 conferida
+   (feito em 17/08) **e RECONFERIDA** (a lista curta da §Conferência visual),
+   e as fatias 9, 7 e 8 entregues e conferidas, nessa ordem.
 2. **Rodar o `invariantes.sql` ANTES**, e anotar a consulta 5. Série:
    696 (06/08) → 802 → 832 (10/08). ⚠️ **Sem leitura nova desde 10/08.** É o
    único contador de produção escrito em algum lugar.
@@ -1588,7 +1872,13 @@ não acharam.
 12. ⚠️ **Criar tarefa, apagar a tarefa, e então apagar a coluna dela** → o
     seletor de destino **aparece** e o texto diz que a coluna guarda tarefas
     apagadas. Era beco sem saída até 13/08.
-13. Erro em vermelho: nome de coluna repetido, e nome de quadro repetido.
+13. ⚠️ ~~Erro em vermelho: nome de coluna repetido, e nome de quadro
+    repetido.~~ **ESTE ITEM PEDIA O QUE NUNCA EXISTIU, e foi marcado ✅ em
+    13/08 por engano.** Conferido em 17/08: não há unique em `board.name` nem
+    em `board_column.name`, e não há validação em `board_service`. A tela de
+    17/08 mostrava **três** quadros "Quadro CRM Teste" no mesmo subtime e
+    **duas** colunas "Em Andamento" no mesmo quadro. Vira a §Fatia 9; volta
+    para cá quando ela existir.
 14. Apagar *Cancelado* e *Em Andamento* → passa, e sobra um quadro de duas
     colunas funcional.
 15. Tentar apagar *Concluído* (última `DONE`) → **recusa com mensagem que
@@ -1629,7 +1919,12 @@ tela existir.** São 18, e cobrem o que a 6c realmente construiu.
 26. As setas ← → fazem o mesmo, **só pelo teclado**, e travam na ponta.
 27. Clicar no nome renomeia; `Esc` desfaz **sem** fechar o modo.
 28. O "×" risca a coluna e oferece desfazer.
-29. Em `Backlog` (único alvo `OPEN`) o "×" **não existe**, e o motivo aparece.
+29. Em `Backlog` (único alvo `OPEN`) **e em `Concluído`** (único alvo `DONE`) o
+    "×" **não existe**, e o motivo aparece. ⚠️ **A versão anterior deste item
+    citava só o `Backlog` e foi reportada como defeito em 17/08 — o defeito era
+    o item.** A regra é sobre o último ALVO de uma semântica obrigatória, e
+    vale para as duas pontas; o item 15 da 5b já dizia isso, e os dois não
+    estavam amarrados.
 30. O selo "padrão" aparece **só** em quem é alvo — e não numa segunda coluna
     do mesmo tipo.
 31. "Adicionar coluna": nome + tipo, **sem cor** (cor é fatia própria).
@@ -1640,10 +1935,53 @@ tela existir.** São 18, e cobrem o que a 6c realmente construiu.
 35. Destino terminal **muda o texto inteiro** do aviso.
 36. Criar tarefa numa coluna e, noutra aba, concluir uma edição que a apaga →
     **aviso de divergência** (`mensagemDeDivergencia`, reposta na dívida da 6c).
-37. Duas abas reordenando → a segunda **recusa com mensagem**, e não aplica em
-    silêncio.
+37. ⚠️ ~~Duas abas reordenando → a segunda recusa com mensagem.~~ **ESTE ITEM
+    PEDE O QUE O DESENHO NÃO SUPORTA, e foi medido em 17/08: a segunda aba
+    APLICA, em silêncio.** O guardião é a conferência de conjunto de
+    `reordenar_colunas`, e ela compara **quais** colunas existem, não em que
+    ordem: duas abas reordenando o mesmo conjunto produzem o mesmo `set` e o
+    mesmo `len`. **Última escrita vence.**
+
+    ⚠️ **O QUE O GUARDIÃO PEGA DE VERDADE** é o conjunto MUDAR entre a leitura
+    e o envio — outra pessoa criou ou apagou uma coluna. **Esse caso continua
+    valendo e vale conferir**: numa aba, apague uma coluna e conclua; na outra,
+    conclua uma edição montada antes → recusa com mensagem.
+
+    ⚠️ **PEGAR A ORDEM EXIGIRIA VERSÃO NO QUADRO** (etag/`updated_at` conferido
+    no `PUT`), ou seja migration e uma fatia própria. **Não entra no portão do
+    deploy**: reordenar não muda comportamento nenhum (ADR 0030), então a
+    perda de uma última escrita é visual e a pessoa desfaz arrastando de volta.
+    Se um dia a ordem passar a decidir alguma coisa, isto sobe de urgência
+    junto.
 38. No Quadro geral (6a-bis): editar funciona para ADMIN, e apagar "Planejado"
     **recusa** (`_assert_ponte_sobrevive`).
+
+### ⚠️ A RECONFERÊNCIA de 18/08 — o que as correções de 17/08 mexeram
+
+Não é a lista inteira de novo. **Só o que mudou de código depois de cada item
+ter passado.** Os itens 1–4 (regressão) e 5–8, 17–20 não foram tocados.
+
+| item | por que voltou |
+|---|---|
+| **12** | o texto da coluna vazia mudou — tem de ler no CONDICIONAL ("pode guardar"), e o caso comum tem de ler como "escolha e siga" |
+| **22, 23** | a barra e o travamento dos cards passaram a valer também no Quadro geral |
+| **24, 25, 26** | `colunasParaDesenhar` mudou a lista que o arraste e as setas percorrem — **e 24 e 25 continuam sem guardião nenhum** |
+| **28, 29** | o "×" ganhou um terceiro motivo de impedimento (a ponte) |
+| **31, 34** | a coluna criada agora **aparece no quadro**, cinza, com selo "nova": criar → arrastar para o meio → concluir → ela nasce lá |
+| **33, 35** | a revisão passou a montar o destino `tmp:` pela fonte única |
+| **36** | trocar de quadro no modo de edição **descarta o rascunho em silêncio** — comportamento novo, conferir que não assusta |
+| **38, 38b** | o lápis no Quadro geral, e o "×" ausente nas oito colunas dele |
+
+⚠️ **DOIS CAMINHOS NOVOS QUE NENHUM ITEM ANTIGO COBRE:**
+
+39. **Quadro geral, ADMIN, com um filtro que não casa nada** → clicar no lápis
+    → **as colunas aparecem**, e não "Nenhuma tarefa ainda". Foi o defeito de
+    17/08 que só o teste pegou.
+40. **Quadro geral, ADMIN** → criar coluna, arrastar para o meio, concluir →
+    ela nasce lá **e o quadro das 26 pessoas mudou**. ⚠️ É o único item desta
+    lista cujo raio de explosão é o time inteiro.
+
+---
 
 ⚠️ **OS ITENS 24 E 25 SÃO A ÚNICA PARTE DA SPEC SEM GUARDIÃO NENHUM.**
 `onDragEnd` não roda em jsdom, e não vai rodar. Se falharem, falham em produção
@@ -1868,21 +2206,15 @@ cima precisa sair da luminância; e **o backend TEM de validar
 
 ---
 
-## O que falta da Spec 036, depois da fatia 6
+## O que falta da Spec 036, DEPOIS do deploy
+
+⚠️ **OS DOIS PRIMEIROS ITENS SAÍRAM DAQUI EM 17/08** e viraram §Fatia 7 (apagar
+quadro) e §Fatia 8 (mover tarefa entre quadros), porque entraram na §Definição
+de pronto. **O que sobrou nesta lista NÃO segura o deploy.**
 
 Em ordem de valor. Cada um é fatia própria, e **escreve-se neste arquivo**.
 
-1. **Apagar quadro** (ADR 0034 item 4). Confirmação **digitando o nome**, com
-   contagem de **subárvore**. ⚠️ **Escreva o `UPDATE` de restauração em
-   `backend/scripts/` no MESMO commit** — não há tela de restaurar.
-   ⚠️ **E troque a espera de "quadro pedido e não encontrado" por "este quadro
-   não existe mais"**: está anotado no `Board.tsx`, e sem isso quem estiver
-   olhando um quadro apagado por outra pessoa fica em "Carregando…" para
-   sempre.
-2. **5c — mover tarefa entre quadros.** A ADR 0042 barateou (o mapa existe).
-   ⚠️ **Só dentro do MESMO `team_id`.** Hoje, tarefa criada no quadro errado só
-   se conserta apagando e recriando.
-3. **5c — quadro extra da raiz.** ⚠️ **A PERGUNTA "QUEM EDITA AS COLUNAS DO
+1. **5c — quadro extra da raiz.** ⚠️ **A PERGUNTA "QUEM EDITA AS COLUNAS DO
    QUADRO GERAL" JÁ FOI RESPONDIDA na 6a-bis (13/08), e este item não depende
    mais dela:** `_assert_quadro_editavel` **saiu** de criar, renomear e
    reordenar — era trava técnica escrita como regra de produto, e o próprio
@@ -1895,14 +2227,14 @@ Em ordem de valor. Cada um é fatia própria, e **escreve-se neste arquivo**.
    `/quadro/{boardId}` colidiria com `/quadro/{teamId}` — os dois são UUID na
    mesma posição. Segmento de rota obrigaria a inventar um formato diferente só
    para os quadros da raiz.
-4. **Seletor de cor.** ⚠️ `lib/coluna.ts::corEhHex` **continua sem leitor**.
-5. **Trocar qual coluna é o alvo de uma semântica.** ⚠️ **SUBIU DE URGÊNCIA
+3. **Seletor de cor.** ⚠️ `lib/coluna.ts::corEhHex` **continua sem leitor**.
+2. **Trocar qual coluna é o alvo de uma semântica.** ⚠️ **SUBIU DE URGÊNCIA
    EM 13/08, POR CULPA NOSSA.** Não existe, e a trava da 5b-4b faz a ausência
    doer: coluna-alvo nunca pode ser apagada. Até a fatia 6 isso era **ausência
    silenciosa**; o selo "padrão" põe na tela um rótulo que anuncia que existe
    uma coluna escolhida e que não dá para trocá-la. Rótulo visível convida à
    pergunta — e a resposta hoje é "apague o quadro e recomece".
-6. **`notify_deadline` na criação de coluna.** ⚠️ **Campo sem escritor:**
+4. **`notify_deadline` na criação de coluna.** ⚠️ **Campo sem escritor:**
    `criar_coluna` crava `True`, o schema não aceita e o rename não edita — mas
    **três lugares no código prometem por escrito que dá para desligar**,
    inclusive o `DeadlineNotifyService` ("é como a ADR 0030 prometeu que um time

@@ -146,6 +146,28 @@ CODIGO_TMP_DESCONHECIDO = "referencia_tmp_desconhecida"
 #: tarefas para a coluna errada -- a que a pessoa NAO viu na tela.
 CODIGO_TMP_REPETIDO = "referencia_tmp_repetida"
 
+#: Ja existe um quadro ATIVO com este nome neste time (fatia 9, 18/08).
+#:
+#: ⚠️ O CODIGO EXISTE PARA A TELA MOSTRAR O ERRO NO CAMPO CERTO, e nao para
+#: explicar depois. `details.field = "name"`, como as outras recusas de nome.
+#:
+#: ⚠️ E ELE E O 422 QUE EVITA O 500. O indice `board_nome_unico_por_time`
+#: (migration `0013`) e a garantia; sem esta checagem antes, a colisao sairia
+#: como `IntegrityError` -- 500 cru, sem `code`, sem campo, e com a transacao
+#: ja abortada.
+CODIGO_NOME_DE_QUADRO_REPETIDO = "quadro_nome_repetido"
+
+#: Duas colunas do MESMO quadro ficariam com o mesmo nome (fatia 9, 18/08).
+#:
+#: ⚠️ NAO HA INDICE UNICO PARA ISTO, E A AUSENCIA E DECISAO MEDIDA. Ver
+#: `_assert_nomes_do_lote`: o lote aplica em quatro etapas com `flush` em cada
+#: uma, e um indice recusaria o estado INTERMEDIARIO de duas operacoes
+#: legitimas -- trocar duas colunas de nome entre si, e apagar "Aprovacao" para
+#: criar outra "Aprovacao" no mesmo gesto (que e a razao de ser do lote).
+#: A regra confere o resultado FINAL, aqui; quem vigia o dado e a consulta 9 do
+#: `invariantes.sql`.
+CODIGO_NOME_DE_COLUNA_REPETIDO = "coluna_nome_repetido"
+
 #: Prefixo que distingue apelido de cliente de UUID de verdade.
 _PREFIXO_TMP = "tmp:"
 
@@ -246,6 +268,45 @@ class BoardService:
     # ------------------------------------------------------------------
     # Quadro criado por PESSOA (Spec 036, fatia 5b)
     # ------------------------------------------------------------------
+    async def _assert_nome_de_quadro_livre(
+        self,
+        *,
+        team_id: uuid.UUID,
+        nome: str,
+        ignorando: uuid.UUID | None = None,
+    ) -> None:
+        """Recusa nome de quadro ja usado por outro quadro ATIVO do time.
+
+        ⚠️ `ignorando` E O PROPRIO QUADRO, no renomear. Sem ele, salvar sem
+        mudar o nome (ou trocar so a maiuscula de um jeito que colida consigo
+        mesmo) recusaria a propria linha -- e a mensagem diria "ja existe um
+        quadro com esse nome" apontando para o quadro que a pessoa esta
+        editando.
+
+        ⚠️ `deleted_at IS NULL` PORQUE QUADRO APAGADO NAO OCUPA O NOME
+        (decisao de 18/08). A consulta tem de casar com o `WHERE` do indice
+        `board_nome_unico_por_time`: se as duas divergirem, o codigo aceita o
+        que o banco recusa e a recusa volta como 500.
+
+        ⚠️ COMPARACAO SENSIVEL A MAIUSCULA, igual ao indice. "Backlog" e
+        "backlog" convivem (decisao de 18/08). Usar `ilike` aqui deixaria o
+        codigo mais restritivo que o banco -- a tela recusaria um nome que o
+        indice aceita, e ninguem descobriria pelo teste.
+        """
+        consulta = select(Board.id).where(
+            Board.team_id == team_id,
+            Board.name == nome,
+            Board.deleted_at.is_(None),
+        )
+        if ignorando is not None:
+            consulta = consulta.where(Board.id != ignorando)
+        if (await self._session.execute(consulta.limit(1))).scalar_one_or_none():
+            raise ValidationError(
+                "Ja existe um quadro com esse nome neste time.",
+                code=CODIGO_NOME_DE_QUADRO_REPETIDO,
+                details={"field": "name", "name": nome},
+            )
+
     async def criar_quadro(
         self, *, team_id: uuid.UUID, nome: str
     ) -> Board:
@@ -267,6 +328,11 @@ class BoardService:
         self._assert_pode_gerir(time)
 
         nome_limpo = self._nome_valido(nome)
+        # ⚠️ ANTES DO `add`, e nao depois. Com a linha ja na sessao, o `flush`
+        # implicito da consulta abaixo tentaria grava-la e o indice recusaria
+        # com `IntegrityError` -- 500 em vez do 422 que esta linha existe para
+        # produzir.
+        await self._assert_nome_de_quadro_livre(team_id=team_id, nome=nome_limpo)
 
         quadro = Board(
             workspace_id=tenant.workspace_id,
@@ -314,7 +380,18 @@ class BoardService:
         self._assert_pode_gerir(time)
 
         anterior = quadro.name
-        quadro.name = self._nome_valido(nome)
+        nome_limpo = self._nome_valido(nome)
+        # ⚠️ CONFERE ANTES DE ESCREVER NO OBJETO. Atribuir e depois consultar
+        # dispararia o `flush` automatico da sessao com o nome novo ja no
+        # objeto -- o indice recusaria, e a recusa viria como 500.
+        #
+        # ⚠️ `ignorando=quadro.id` PORQUE SALVAR SEM MUDAR NADA TEM DE PASSAR.
+        # Sem isso, abrir o renomear e confirmar o mesmo nome acusaria colisao
+        # do quadro consigo mesmo.
+        await self._assert_nome_de_quadro_livre(
+            team_id=quadro.team_id, nome=nome_limpo, ignorando=quadro.id
+        )
+        quadro.name = nome_limpo
         await self._session.flush()
 
         logger.info(
@@ -330,9 +407,22 @@ class BoardService:
     # Colunas (fatia 5b-4a)
     # ------------------------------------------------------------------
     async def criar_coluna(
-        self, *, board_id: uuid.UUID, nome: str, semantica: ColumnSemantic
+        self,
+        *,
+        board_id: uuid.UUID,
+        nome: str,
+        semantica: ColumnSemantic,
+        conferir_nome: bool = True,
     ) -> BoardColumn:
         """Acrescenta uma coluna ao fim de um quadro avulso.
+
+        ⚠️ `conferir_nome=False` SO PARA O LOTE, E O NOME DO PARAMETRO E O
+        AVISO. Dentro de `aplicar_lote` quem confere e `_assert_nomes_do_lote`,
+        na etapa 0, sobre o estado FINAL. Conferir aqui tambem recusaria o
+        estado INTERMEDIARIO de dois gestos legitimos -- trocar duas colunas de
+        nome entre si, e apagar "Aprovacao" para criar outra "Aprovacao" no
+        mesmo lote. **Se voce for chamar este metodo de um lugar novo, o
+        default (`True`) e o certo.**
 
         ⚠️ `legacy_status` FICA NULL, e isso e o ponto (ADR 0033/0041). Coluna
         criada por gente nao corresponde a status nenhum; inventar um casaria
@@ -375,6 +465,10 @@ class BoardService:
         self._assert_pode_gerir(time)
 
         nome_limpo = self._nome_de_coluna_valido(nome)
+        if conferir_nome:
+            await self._assert_nome_de_coluna_livre(
+                board_id=quadro.id, nome=nome_limpo
+            )
         existentes = await self._colunas_do_quadro(quadro.id)
 
         coluna = BoardColumn(
@@ -400,6 +494,107 @@ class BoardService:
             por=str(tenant.user_id),
         )
         return coluna
+
+    async def _assert_nome_de_coluna_livre(
+        self,
+        *,
+        board_id: uuid.UUID,
+        nome: str,
+        ignorando: uuid.UUID | None = None,
+    ) -> None:
+        """Recusa nome de coluna ja usado por outra coluna DO MESMO quadro.
+
+        ⚠️ SO PARA AS ENTRADAS DE UMA COLUNA SO (`POST`/`PATCH .../columns`).
+        Dentro do lote quem confere e `_assert_nomes_do_lote`, sobre o estado
+        FINAL -- ver o `conferir_nome=False` la.
+
+        ⚠️ E ELA EXISTE PARA IMPEDIR UM ESTADO QUE TRAVA A TELA. Sem esta
+        checagem, um `POST /columns` direto (n8n, Swagger) grava a duplicata; a
+        partir dai TODO lote daquele quadro e recusado por
+        `_assert_nomes_do_lote` -- inclusive um lote que so reordena. A pessoa
+        abre o modo de edicao e nao consegue concluir nada sem antes descobrir
+        que precisa renomear uma coluna que ela nao mexeu.
+
+        ⚠️ NAO HA INDICE ATRAS DISTO. Diferente do quadro, a garantia aqui e
+        so de aplicacao (ver `_assert_nomes_do_lote`), e a vigilancia e a
+        consulta 9 do `invariantes.sql`.
+        """
+        limpo = nome.strip()
+        consulta = select(BoardColumn.id).where(
+            BoardColumn.board_id == board_id,
+            BoardColumn.name == limpo,
+        )
+        if ignorando is not None:
+            consulta = consulta.where(BoardColumn.id != ignorando)
+        if (await self._session.execute(consulta.limit(1))).scalar_one_or_none():
+            raise ValidationError(
+                "Ja existe uma coluna com esse nome neste quadro.",
+                code=CODIGO_NOME_DE_COLUNA_REPETIDO,
+                details={"field": "name", "name": limpo},
+            )
+
+    @staticmethod
+    def _assert_nomes_do_lote(
+        *,
+        atuais: Sequence[BoardColumn],
+        criar: Sequence[LoteCriar],
+        renomear: Sequence[LoteRenomear],
+        apagar: Sequence[LoteApagar],
+    ) -> None:
+        """Recusa se o lote deixaria DUAS colunas do quadro com o mesmo nome.
+
+        ⚠️⚠️ **CONFERE O RESULTADO FINAL, E NAO CADA ETAPA -- E ESSA E A RAZAO
+        DE ESTA FUNCAO EXISTIR EM VEZ DE UM INDICE UNICO.** O lote aplica em
+        quatro etapas sequenciais (criar -> renomear -> apagar -> reordenar),
+        cada uma com `flush`. Um `UNIQUE (board_id, name)` no banco recusaria o
+        estado INTERMEDIARIO de duas operacoes legitimas:
+
+          - **trocar duas colunas de nome entre si** -- ao renomear a primeira,
+            as duas se chamam igual por um instante;
+          - **apagar "Aprovacao" e criar outra "Aprovacao"** no mesmo gesto,
+            que e literalmente o caso de uso que o lote existe para permitir
+            (ver o docstring de `aplicar_lote`).
+
+        E recusaria com `IntegrityError`, que sai como **500** -- sem `code`,
+        sem campo, e com a transacao ja abortada. Conferindo o final, os dois
+        gestos passam e o nome repetido de verdade vira 422.
+
+        ⚠️ O PRECO ACEITO EM 18/08: a garantia e de APLICACAO, e nao do banco.
+        Escrita direta no banco (psql, script) fura. **E o mesmo arranjo de
+        `_assert_ponte_sobrevive` e da invariante "tarefa viva em quadro
+        apagado"**, as duas ja aplicacao-com-consulta-vigiando. Quem vigia esta
+        e a **consulta 9 do `invariantes.sql`**; se ela sair de zero, o conserto
+        e o dado.
+
+        ⚠️ A ORDEM DE MONTAGEM IMPORTA: apaga primeiro, renomeia depois,
+        acrescenta as novas por ultimo. Uma coluna marcada para apagar NAO
+        ocupa nome, e uma renomeada nao ocupa o nome VELHO -- que e exatamente
+        o que os dois gestos acima dependem.
+
+        ⚠️ `strip()` AQUI TAMBEM. `_nome_de_coluna_valido` limpa os espacos das
+        pontas antes de gravar (decisao de 18/08), entao comparar o texto cru
+        deixaria `"Feito "` passar por ser diferente de `"Feito"` -- e as duas
+        virariam a mesma linha no banco, com a colisao ja gravada.
+        """
+        apagados = {p.id for p in apagar}
+        novos_nomes = {p.id: p.name.strip() for p in renomear}
+
+        finais: list[str] = []
+        for coluna in atuais:
+            if coluna.id in apagados:
+                continue
+            finais.append(novos_nomes.get(coluna.id, coluna.name).strip())
+        finais.extend(p.name.strip() for p in criar)
+
+        vistos: set[str] = set()
+        for nome in finais:
+            if nome in vistos:
+                raise ValidationError(
+                    "Duas colunas deste quadro ficariam com o mesmo nome.",
+                    code=CODIGO_NOME_DE_COLUNA_REPETIDO,
+                    details={"field": "name", "name": nome},
+                )
+            vistos.add(nome)
 
     async def aplicar_lote(
         self,
@@ -448,6 +643,25 @@ class BoardService:
         quadro = await self._quadro_do_workspace(board_id)
         self._assert_pode_gerir(await self._time_do_workspace(quadro.team_id))
 
+        # ---- etapa 0: os nomes do RESULTADO FINAL (fatia 9) ----------------
+        #
+        # ⚠️ ANTES DE QUALQUER ESCRITA, e sobre o estado final -- ver
+        # `_assert_nomes_do_lote`. Conferir dentro de `criar_coluna` e
+        # `renomear_coluna` recusaria a troca de nomes entre duas colunas e o
+        # apagar-e-recriar, que sao gestos legitimos e um deles e a razao de
+        # ser do lote.
+        #
+        # ⚠️ E RECUSAR AQUI E O QUE MANTEM A PROMESSA DO LOTE. Descobrir a
+        # colisao na etapa 2 deixaria as colunas da etapa 1 ja criadas na
+        # transacao; o UoW desfaz, mas a pessoa perderia a edicao inteira por
+        # um erro que da para ver antes de comecar.
+        self._assert_nomes_do_lote(
+            atuais=await self._colunas_do_quadro(quadro.id),
+            criar=criar,
+            renomear=renomear,
+            apagar=apagar,
+        )
+
         # ---- etapa 1: criar, montando o mapa de apelidos -------------------
         mapa: dict[str, uuid.UUID] = {}
         for pedido in criar:
@@ -458,14 +672,24 @@ class BoardService:
                     details={"tmp": pedido.tmp},
                 )
             nova = await self.criar_coluna(
-                board_id=board_id, nome=pedido.name, semantica=pedido.semantic
+                board_id=board_id,
+                nome=pedido.name,
+                semantica=pedido.semantic,
+                # ⚠️ A ETAPA 0 JA CONFERIU, sobre o estado FINAL. Conferir de
+                # novo aqui recusaria o apagar-e-recriar com o mesmo nome.
+                conferir_nome=False,
             )
             mapa[pedido.tmp] = nova.id
 
         # ---- etapa 2: renomear --------------------------------------------
         for pedido in renomear:
             await self.renomear_coluna(
-                board_id=board_id, column_id=pedido.id, nome=pedido.name
+                board_id=board_id,
+                column_id=pedido.id,
+                nome=pedido.name,
+                # ⚠️ A ETAPA 0 JA CONFERIU. Conferir aqui recusaria a troca de
+                # nomes entre duas colunas, que colide no meio do caminho.
+                conferir_nome=False,
             )
 
         # ---- etapa 3: apagar, resolvendo destinos --------------------------
@@ -609,9 +833,22 @@ class BoardService:
         return await self._colunas_do_quadro(quadro.id)
 
     async def renomear_coluna(
-        self, *, board_id: uuid.UUID, column_id: uuid.UUID, nome: str
+        self,
+        *,
+        board_id: uuid.UUID,
+        column_id: uuid.UUID,
+        nome: str,
+        conferir_nome: bool = True,
     ) -> BoardColumn:
         """Troca o nome de uma coluna. NAO mexe em mais nada.
+
+        ⚠️ `conferir_nome=False` SO PARA O LOTE, E O NOME DO PARAMETRO E O
+        AVISO. Dentro de `aplicar_lote` quem confere e `_assert_nomes_do_lote`,
+        na etapa 0, sobre o estado FINAL. Conferir aqui tambem recusaria o
+        estado INTERMEDIARIO de dois gestos legitimos -- trocar duas colunas de
+        nome entre si, e apagar "Aprovacao" para criar outra "Aprovacao" no
+        mesmo lote. **Se voce for chamar este metodo de um lugar novo, o
+        default (`True`) e o certo.**
 
         ⚠️ SEMANTICA NAO SE EDITA POR AQUI, e a ausencia e decisao. Ela decide
         cascata de conclusao, varredura de arquivamento, proporcao da checklist
@@ -633,7 +870,14 @@ class BoardService:
 
         coluna = await self._coluna_do_quadro(quadro.id, column_id)
         anterior = coluna.name
-        coluna.name = self._nome_de_coluna_valido(nome)
+        nome_limpo = self._nome_de_coluna_valido(nome)
+        if conferir_nome:
+            # ⚠️ `ignorando=coluna.id` PORQUE SALVAR SEM MUDAR TEM DE PASSAR.
+            # Sem isso, confirmar o mesmo nome acusa a coluna contra ela mesma.
+            await self._assert_nome_de_coluna_livre(
+                board_id=quadro.id, nome=nome_limpo, ignorando=coluna.id
+            )
+        coluna.name = nome_limpo
         await self._session.flush()
 
         logger.info(

@@ -246,3 +246,37 @@ describe("FormNovaColuna", () => {
     expect(screen.getByText(/não muda depois/i)).toBeTruthy();
   });
 });
+
+describe("CabecalhoDeColunaEditavel -- o selo da coluna nova", () => {
+  it('⚠️ coluna do rascunho é marcada "nova"', () => {
+    // ⚠️ DESDE 17/08 A COLUNA CRIADA APARECE NO QUADRO, para poder ser
+    // posicionada no mesmo gesto em que nasce. Sem este selo ela fica
+    // indistinguível de uma coluna vazia de verdade -- e a diferença importa:
+    // sair sem concluir a descarta, e a cor dela ainda vai ser escolhida pelo
+    // servidor.
+    montar({ ref: "tmp:1", nome: "Entregue", semantic: "DONE", nova: true });
+    expect(screen.getByText("nova")).toBeTruthy();
+  });
+
+  it("coluna que já existe NÃO ganha o selo", () => {
+    montar();
+    expect(screen.queryByText("nova")).toBeNull();
+  });
+
+  it("⚠️ a coluna nova pode ser movida e apagada como qualquer outra", () => {
+    // ⚠️ APAGAR UMA `tmp:` É REMOVER DO RASCUNHO, e não marcar (`comMarcacao`
+    // trata os dois casos). O cabeçalho não precisa saber a diferença -- mas
+    // se o "×" ou as setas sumissem para ela, o pedido de 17/08 morreria pela
+    // metade: apareceria na tela e não daria para mexer.
+    const { onMover, onMarcar } = montar({
+      ref: "tmp:1",
+      nome: "Entregue",
+      semantic: "DONE",
+      nova: true,
+    });
+    fireEvent.click(screen.getByLabelText("Mover Entregue para a esquerda"));
+    expect(onMover).toHaveBeenCalledWith("esquerda");
+    fireEvent.click(screen.getByLabelText("Apagar Entregue"));
+    expect(onMarcar).toHaveBeenCalled();
+  });
+});

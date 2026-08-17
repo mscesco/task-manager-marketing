@@ -112,6 +112,7 @@ const COLUNAS: Coluna[] = [
     semantic: "IN_PROGRESS",
     notify_deadline: true,
     is_default_target: true,
+    is_status_bridge: false,
   },
   {
     id: "col-done",
@@ -121,6 +122,7 @@ const COLUNAS: Coluna[] = [
     semantic: "DONE",
     notify_deadline: true,
     is_default_target: true,
+    is_status_bridge: false,
   },
   {
     id: "col-cancel",
@@ -130,6 +132,7 @@ const COLUNAS: Coluna[] = [
     semantic: "CANCELLED",
     notify_deadline: true,
     is_default_target: true,
+    is_status_bridge: false,
   },
 ];
 
@@ -151,6 +154,7 @@ const COLUNAS_AVULSO: Coluna[] = [
     semantic: "IN_PROGRESS",
     notify_deadline: true,
     is_default_target: false,
+    is_status_bridge: false,
   },
   {
     id: "av-espera",
@@ -160,6 +164,7 @@ const COLUNAS_AVULSO: Coluna[] = [
     semantic: "IN_PROGRESS",
     notify_deadline: false,
     is_default_target: false,
+    is_status_bridge: false,
   },
 ];
 

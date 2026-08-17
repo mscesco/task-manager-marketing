@@ -113,6 +113,7 @@ function c(
     semantic,
     notify_deadline,
     is_default_target: true,
+    is_status_bridge: false,
   };
 }
 

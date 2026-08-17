@@ -15,6 +15,8 @@ import { describe, expect, it } from "vitest";
 
 import type { Coluna } from "@/lib/coluna";
 import {
+  COR_DA_COLUNA_NOVA,
+  colunasParaDesenhar,
   comColunaNova,
   comMarcacao,
   comOrdem,
@@ -42,6 +44,7 @@ function col(
     semantic,
     notify_deadline: true,
     is_default_target: alvo,
+    is_status_bridge: false,
   };
 }
 
@@ -342,5 +345,104 @@ describe("marcadasParaApagar", () => {
     let r = comColunaNova(rascunhoInicial(QUADRO), "Ideias", "OPEN");
     r = comMarcacao(r, "tmp:1");
     expect(marcadasParaApagar(r, QUADRO)).toEqual([]);
+  });
+});
+
+describe("colunasParaDesenhar", () => {
+  it("⚠️ a coluna nova É desenhada, na posição dela, e vazia", () => {
+    // ⚠️ ESTE É O GUARDIÃO DO PEDIDO DE 17/08: ordenar a coluna criada na
+    // MESMA edição em que ela nasce. Até esta data o ref entrava na `ordem` e
+    // era filtrado do que a tela desenhava -- as setas moviam uma coluna
+    // invisível e não havia como posicioná-la antes de concluir.
+    let r = comColunaNova(rascunhoInicial(QUADRO), "Entregue", "DONE");
+    expect(colunasParaDesenhar(r, QUADRO).map((c) => c.name)).toEqual([
+      "Backlog",
+      "Em Andamento",
+      "Concluído",
+      "Cancelado",
+      "Entregue",
+    ]);
+    // E movê-la para o meio muda o que a tela desenha, não só o lote.
+    r = comOrdem(r, "tmp:1", 1)!;
+    expect(colunasParaDesenhar(r, QUADRO).map((c) => c.name)).toEqual([
+      "Backlog",
+      "Entregue",
+      "Em Andamento",
+      "Concluído",
+      "Cancelado",
+    ]);
+  });
+
+  it("⚠️ o que a tela desenha e o que ela numera são a MESMA lista", () => {
+    // ⚠️ POR QUE ISTO É UM TESTE. `indice`/`total` das setas saem de
+    // `colunasParaDesenhar` e o cabeçalho sai de `linhasDeEdicao`. Enquanto as
+    // duas percorriam listas diferentes (uma com a `tmp:`, outra sem), a seta
+    // "direita" do último cabeçalho vinha habilitada e não movia nada.
+    let r = comColunaNova(rascunhoInicial(QUADRO), "Entregue", "DONE");
+    r = comMarcacao(r, "c4");
+    expect(colunasParaDesenhar(r, QUADRO).map((c) => c.id)).toEqual(
+      linhasDeEdicao(r, QUADRO).map((l) => l.ref),
+    );
+  });
+
+  it("a coluna marcada continua desenhada, para poder ser desmarcada", () => {
+    const r = comMarcacao(rascunhoInicial(QUADRO), "c2");
+    expect(colunasParaDesenhar(r, QUADRO).map((c) => c.id)).toContain("c2");
+  });
+
+  it("⚠️ ref sem coluna real some da lista, e NÃO estoura", () => {
+    // ⚠️ ESTE É O `TypeError` DE 17/08 (`rascunhoDeColunas.ts:312`, "Cannot
+    // read properties of undefined"). O caminho real é trocar de quadro com o
+    // modo ligado: o rascunho do quadro anterior encontra as colunas do novo.
+    // A causa foi consertada no `Board.tsx` (o rascunho é descartado na
+    // troca); isto aqui garante que a função não derruba a página se um
+    // caminho novo reintroduzir o descasamento.
+    const r = rascunhoInicial(QUADRO);
+    expect(colunasParaDesenhar(r, [col("z9", "Outro quadro", "OPEN")])).toEqual(
+      [],
+    );
+    expect(destinosDoRascunho(r, [])).toEqual([]);
+  });
+
+  it("a coluna nova não finge saber a cor, nem ser alvo", () => {
+    // ⚠️ A COR É DO SERVIDOR (`_cor_por_rotacao(len(existentes))`). Cravar um
+    // hex aqui faria a coluna mudar de cor sozinha depois de concluir.
+    // ⚠️ E `is_default_target: false` É O QUE FAZ A CONTA DO IMPEDIMENTO BATER
+    // com a do backend: criar uma segunda coluna DONE não libera apagar a
+    // atual.
+    const r = comColunaNova(rascunhoInicial(QUADRO), "Entregue", "DONE");
+    const nova = colunasParaDesenhar(r, QUADRO).find((c) => c.id === "tmp:1")!;
+    expect(nova.color).toBe(COR_DA_COLUNA_NOVA);
+    expect(nova.is_default_target).toBe(false);
+    expect(
+      linhasDeEdicao(r, QUADRO).find((l) => l.ref === "c3")!.impedimento,
+    ).not.toBeNull();
+  });
+});
+
+describe("linhasDeEdicao no QUADRO PADRAO", () => {
+  // ⚠️ O `quadroPadrao` ATRAVESSA `linhasDeEdicao` ATE `impedimentoDeExclusao`,
+  // e é esse repasse que decide se o "×" aparece. Sabotar o argumento (fixar
+  // `false` na chamada de dentro) deixa a tabela verdade de
+  // `edicaoDeColunas.test.ts` VERDE, porque lá a função é chamada direto.
+  const PONTE = { ...col("c5", "Planejado", "IN_PROGRESS"), is_status_bridge: true };
+  const COM_PONTE = [...QUADRO, PONTE];
+
+  it("⚠️ coluna com ponte fica sem × no geral, e COM × no avulso", () => {
+    const r = rascunhoInicial(COM_PONTE);
+    const noGeral = linhasDeEdicao(r, COM_PONTE, true).find((l) => l.ref === "c5");
+    const noAvulso = linhasDeEdicao(r, COM_PONTE, false).find((l) => l.ref === "c5");
+    expect(noGeral!.impedimento).toContain("origem de um status do sistema");
+    expect(noAvulso!.impedimento).toBeNull();
+  });
+
+  it("⚠️ a coluna CRIADA no rascunho continua apagável no geral", () => {
+    // Coluna nova nasce sem ponte (`criar_coluna` crava `legacy_status=None`),
+    // e é isso que torna a trava estreita útil em vez de simbólica: dá para
+    // criar e desistir dentro da mesma edição, no Quadro geral.
+    const r = comColunaNova(rascunhoInicial(COM_PONTE), "Ideias", "IN_PROGRESS");
+    const nova = linhasDeEdicao(r, COM_PONTE, true).find((l) => l.ref === "tmp:1");
+    expect(nova!.nova).toBe(true);
+    expect(nova!.impedimento).toBeNull();
   });
 });

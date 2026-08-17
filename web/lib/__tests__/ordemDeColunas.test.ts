@@ -27,6 +27,7 @@ function col(id: string, position: number): Coluna {
     semantic: "IN_PROGRESS",
     notify_deadline: true,
     is_default_target: false,
+    is_status_bridge: false,
   };
 }
 

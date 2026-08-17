@@ -50,6 +50,7 @@ function col(
     semantic,
     notify_deadline: true,
     is_default_target: true,
+    is_status_bridge: false,
   };
 }
 
@@ -92,6 +93,7 @@ describe("impedimentoDeExclusao", () => {
     const ideias: Coluna = {
       ...col("c-ideias", "Ideias", 4, "OPEN"),
       is_default_target: false,
+      is_status_bridge: false,
     };
     const comDuasOpen = [...BASE, ideias];
     expect(impedimentoDeExclusao(BACKLOG, comDuasOpen)?.semantica).toBe("OPEN");
@@ -136,6 +138,56 @@ describe("destinoEhTerminal", () => {
   it("OPEN e IN_PROGRESS nao sao", () => {
     expect(destinoEhTerminal(BACKLOG)).toBe(false);
     expect(destinoEhTerminal(ANDAMENTO)).toBe(false);
+  });
+});
+
+describe("impedimentoDeExclusao -- a trava da PONTE (quadro padrao)", () => {
+  // ⚠️ A TRAVA TEM DUAS METADES, E LER SO UMA QUEBRA UM DOS DOIS LADOS:
+  //   - so `is_status_bridge` -> some o "x" das 4 colunas base de TODO quadro
+  //     avulso, que tambem tem ponte e PODEM ser apagadas (item 14 da
+  //     conferencia visual);
+  //   - so `quadroPadrao` -> some o "x" da coluna criada por gente no Quadro
+  //     geral, que o backend apaga sem reclamar. Beco sem saida novo.
+  // Os quatro casos abaixo sao a tabela verdade inteira, de proposito.
+  const PONTE = { ...col("c-plan", "Planejado", 1, "IN_PROGRESS"), is_status_bridge: true };
+  const CRIADA = { ...col("c-nova", "Ideias", 9, "IN_PROGRESS"), is_status_bridge: false, is_default_target: false };
+  const TODAS = [...BASE, PONTE, CRIADA];
+
+  it("⚠️ quadro PADRAO + coluna com ponte -> RECUSA", () => {
+    // Espelha `BoardService._assert_ponte_sobrevive`. Sem isto, o Quadro geral
+    // desenha oito "x" que derrubam o lote inteiro no "Concluir edicao".
+    const imp = impedimentoDeExclusao(PONTE, TODAS, true);
+    expect(imp).not.toBeNull();
+    expect(imp!.motivo).toContain("origem de um status do sistema");
+  });
+
+  it("⚠️ quadro AVULSO + coluna com ponte -> LIBERA", () => {
+    // ⚠️ ESTE E O TESTE QUE IMPEDE O CONSERTO OBVIO E ERRADO. As quatro
+    // colunas base de um quadro avulso nascem com `legacy_status`
+    // (`board_defaults.py`), entao `is_status_bridge` e `true` nelas -- e
+    // apagar "Cancelado" de um quadro avulso tem de continuar funcionando.
+    expect(impedimentoDeExclusao(PONTE, TODAS, false)).toBeNull();
+    // E o default do parametro e `false`, para que esquecer de passa-lo nunca
+    // vire "sumiu o botao de apagar".
+    expect(impedimentoDeExclusao(PONTE, TODAS)).toBeNull();
+  });
+
+  it("⚠️ quadro PADRAO + coluna criada por gente -> LIBERA", () => {
+    // ⚠️ E O QUE TORNA A TRAVA ESTREITA UTIL EM VEZ DE SIMBOLICA. Com a
+    // criacao aberta no geral (6a-bis), coluna nova nasce sem ponte e nao
+    // segura funcao nenhuma -- barra-la seria inventar um beco sem saida.
+    expect(impedimentoDeExclusao(CRIADA, TODAS, true)).toBeNull();
+  });
+
+  it("⚠️ a ponte vence os outros impedimentos, e nao o contrario", () => {
+    // `Backlog` e o unico alvo OPEN: ja seria recusado pela semantica. No
+    // quadro padrao ele tambem e ponte, e a mensagem tem de ser a da PONTE --
+    // a outra diz "crie outra antes de apagar esta", que aqui e um conselho
+    // que nao resolve nada: criar outra coluna OPEN nao libera apagar esta.
+    const backlogPonte = { ...BACKLOG, is_status_bridge: true };
+    const imp = impedimentoDeExclusao(backlogPonte, [...TODAS], true);
+    expect(imp!.motivo).toContain("origem de um status do sistema");
+    expect(imp!.motivo).not.toContain("Crie outra");
   });
 });
 
@@ -198,6 +250,44 @@ describe("avisoDeExclusao", () => {
     expect(aviso?.terminal).toBe(true);
     expect(aviso?.titulo).toContain("canceladas");
     expect(aviso?.titulo).not.toContain("concluídas");
+  });
+
+  it("⚠️ com exigeDestino, coluna vazia PERGUNTA -- e nao AFIRMA que ha apagadas", () => {
+    // ⚠️ ESTE RAMO NAO TINHA TESTE NENHUM ATE 17/08, e foi assim que a tela
+    // passou a anunciar "guarda tarefas apagadas" num quadro criado cinco
+    // minutos antes. `exigeDestino` diz "pergunte de qualquer forma"; ele NAO
+    // diz que existe alguma apagada, e o front nao tem como saber -- a
+    // contagem conta so as vivas.
+    const aviso = avisoDeExclusao({
+      coluna: ANDAMENTO,
+      destino: null,
+      quantas: 0,
+      exigeDestino: true,
+    });
+    expect(aviso).not.toBeNull();
+    const tudo = `${aviso!.titulo} ${aviso!.linhas.join(" ")}`;
+    // O condicional e o conserto inteiro.
+    expect(tudo).toContain("pode guardar");
+    expect(tudo).toContain("Se não houver nenhuma, nada acontece");
+    // ⚠️ E a afirmacao antiga NAO pode voltar por descuido de copy.
+    expect(tudo).not.toContain("ainda guarda tarefas apagadas");
+    // ⚠️ NUNCA TERMINAL com zero: "marcar 0 tarefas como concluidas" e falso
+    // duas vezes -- nao sao 0 linhas, e elas nao sao concluidas.
+    expect(aviso!.terminal).toBe(false);
+  });
+
+  it("⚠️ o destino terminal NAO muda o texto da coluna vazia", () => {
+    // A pessoa escolhe "Concluído" como destino de uma coluna sem tarefa a
+    // vista. O aviso de conclusao em massa nao pode disparar: as apagadas vao
+    // por UPDATE direto, sem cascata, sem prazo e sem task_history.
+    const aviso = avisoDeExclusao({
+      coluna: ANDAMENTO,
+      destino: CONCLUIDO,
+      quantas: 0,
+      exigeDestino: true,
+    });
+    expect(aviso!.terminal).toBe(false);
+    expect(aviso!.titulo).not.toContain("concluídas");
   });
 
   it("uma tarefa so nao fica no plural", () => {

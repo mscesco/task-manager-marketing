@@ -57,6 +57,24 @@ export interface Coluna {
   semantic: ColumnSemantic;
   notify_deadline: boolean;
   is_default_target: boolean;
+  /**
+   * Esta coluna e ponte de ALGUM status -- sem dizer de qual (17/08).
+   *
+   * ⚠️ NAO E O `legacy_status` DISFARCADO, e a diferenca e o que mantem a ADR
+   * 0033 de pe: com um booleano nao da para mapear status -> coluna, que era o
+   * acoplamento a evitar. Ele responde UMA pergunta: o backend recusa apagar
+   * esta coluna por causa da ponte?
+   *
+   * ⚠️⚠️ **SOZINHO ELE NAO SIGNIFICA "NAO PODE SER APAGADA", E CONFUNDIR OS
+   * DOIS QUEBRA O QUADRO AVULSO.** As QUATRO colunas base de um quadro avulso
+   * tambem nascem com ponte, e elas PODEM ser apagadas -- a conferencia visual
+   * item 14 depende disso. A trava do backend
+   * (`_assert_ponte_sobrevive`) e `quadro.is_default && is_status_bridge`, com
+   * as DUAS metades. **Quem combina as duas e `impedimentoDeExclusao`, e so
+   * ela.** Se voce estiver lendo `is_status_bridge` em qualquer outro lugar
+   * para decidir se da para apagar, esta escrevendo a segunda copia da regra.
+   */
+  is_status_bridge: boolean;
 }
 
 // ---------------------------------------------------------------------------

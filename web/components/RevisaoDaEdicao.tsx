@@ -8,7 +8,11 @@ import { avisoDeExclusao, destinoEhTerminal } from "@/lib/edicaoDeColunas";
 // consome, e o dado e montado por `destinosDoRascunho` -- deixa-lo no
 // componente obrigava o `lib` a nao ter tipo proprio, ou o `Board` a importar
 // tipo de um componente para chamar uma funcao de `lib`.
-import { ehNova, type DestinoPossivel } from "@/lib/rascunhoDeColunas";
+import {
+  colunaDoRascunho,
+  ehNova,
+  type DestinoPossivel,
+} from "@/lib/rascunhoDeColunas";
 export type { DestinoPossivel };
 
 /**
@@ -173,15 +177,11 @@ export default function RevisaoDaEdicao({
             // texto endurecido do caso terminal -- em vez de escrever a segunda
             // versão daquelas frases.
             const destinoComoColuna: Coluna | null = escolhida
-              ? {
-                  id: escolhida.ref,
-                  name: escolhida.nome,
-                  color: "",
-                  position: 0,
-                  semantic: escolhida.semantic,
-                  notify_deadline: true,
-                  is_default_target: false,
-                }
+              ? colunaDoRascunho(
+                  escolhida.ref,
+                  escolhida.nome,
+                  escolhida.semantic,
+                )
               : null;
             const aviso = avisoDeExclusao({
               coluna,

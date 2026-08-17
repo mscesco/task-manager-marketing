@@ -327,3 +327,26 @@ async def test_terminal_since_so_nas_terminais(db) -> None:
         )
     ).scalar_one()
     assert linhas == 0
+
+
+async def test_is_status_bridge_e_derivado_do_legacy_status(db) -> None:
+    """A `@property` que alimenta `BoardColumnResponse.is_status_bridge`.
+
+    ⚠️ ELA E A METADE DA TRAVA DA PONTE QUE MORA NA COLUNA (17/08). A outra
+    metade e `board.is_default`, e o front so esconde o "x" quando as DUAS sao
+    verdadeiras -- ver `impedimentoDeExclusao` no `web/lib/edicaoDeColunas.ts`.
+
+    ⚠️⚠️ **O CASO QUE IMPEDE O CONSERTO OBVIO E ERRADO E O SEGUNDO.** As quatro
+    colunas base de um quadro AVULSO tambem nascem com `legacy_status`
+    (`board_defaults.py`), entao `is_status_bridge` e `True` nelas -- e elas
+    PODEM ser apagadas. Quem ler este campo sozinho como "nao pode ser apagada"
+    suma com o "x" de todo quadro avulso do produto.
+    """
+    from app.db.models.boards import BoardColumn
+    from app.db.models.enums import TaskStatus
+
+    com_ponte = BoardColumn(legacy_status=TaskStatus.PLANNED)
+    sem_ponte = BoardColumn(legacy_status=None)
+
+    assert com_ponte.is_status_bridge is True
+    assert sem_ponte.is_status_bridge is False

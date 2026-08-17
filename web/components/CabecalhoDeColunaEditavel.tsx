@@ -156,10 +156,29 @@ export default function CabecalhoDeColunaEditavel({
         </button>
       )}
 
+      {/* ⚠️ A COLUNA NOVA É DESENHADA NO QUADRO DESDE 17/08, para poder ser
+          posicionada no mesmo gesto em que nasce. Sem este selo ela fica
+          indistinguível de uma coluna vazia de verdade -- e a diferença
+          importa: esta ainda não existe no servidor, sair sem concluir a
+          descarta, e a cor dela vai mudar (quem escolhe é o backend). */}
+      {linha.nova && (
+        <span
+          className="muted"
+          style={{ fontSize: 10, whiteSpace: "nowrap" }}
+          title="Esta coluna ainda não existe. Ela é criada quando você concluir a edição."
+        >
+          nova
+        </span>
+      )}
+
       {/* ⚠️ O SELO DE ALVO EXISTE PORQUE REORDENAR TORNA A CONFUSÃO PROVÁVEL.
           O destino da cascata é `is_default_target` e NÃO a primeira pela ordem
           (ADR 0030). Sem o selo, alguém põe "Entregue" antes de "Concluído" e
-          espera que as tarefas passem a cair lá -- e não vão, sem nada avisar. */}
+          espera que as tarefas passem a cair lá -- e não vão, sem nada avisar.
+
+          ⚠️ E ELE NUNCA APARECE NUMA COLUNA NOVA: `is_default_target` nasce
+          `false` no backend. É aqui que a ausência de "trocar o alvo de uma
+          semântica" fica visível para quem usa. */}
       {linha.alvo && !linha.apagada && (
         <span
           className="muted"

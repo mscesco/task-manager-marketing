@@ -55,6 +55,100 @@ export function ehNova(ref: string): boolean {
   return ref.startsWith(PREFIXO_TMP);
 }
 
+/**
+ * A cor de uma coluna que ainda não existe.
+ *
+ * ⚠️ NEUTRA DE PROPÓSITO, E NÃO UM PALPITE. Quem escolhe a cor é o servidor
+ * (`_cor_por_rotacao(len(existentes))`, em `board_service.py`), e num lote com
+ * duas criações o índice de cada uma depende da ordem em que o backend as grava
+ * -- o front não tem como acertar. Mostrar uma cor que vai mudar sozinha depois
+ * de concluir seria a tela prometendo o que não entrega.
+ *
+ * ⚠️ E ELA COMUNICA. Cinza de borda no meio de colunas coloridas é o sinal de
+ * "esta ainda não existe" sem precisar de legenda.
+ */
+export const COR_DA_COLUNA_NOVA = "var(--border)";
+
+/**
+ * A `Coluna` de mentira que representa um `tmp:` para quem só sabe ler `Coluna`.
+ *
+ * ⚠️ FONTE ÚNICA, E ESSE É O PONTO. Esta forma já existia escrita à mão em
+ * TRÊS lugares -- `linhasDeEdicao` (sobrantes), o `Board.tsx` e a
+ * `RevisaoDaEdicao` --, e as três precisavam concordar em `is_default_target:
+ * false`, que é o que faz a conta do impedimento bater com a do servidor. Três
+ * cópias de uma regra é exatamente como a ADR 0042 divergiu.
+ *
+ * ⚠️ `is_default_target: false` PORQUE É ASSIM QUE O BACKEND CRIA
+ * (`criar_coluna` crava `False`). Criar uma segunda coluna de conclusão **não**
+ * libera apagar a atual, e é aqui que isso fica verdadeiro.
+ *
+ * ⚠️ `position: 0` É LIXO E NÃO É LIDO. A posição de verdade é o índice em
+ * `rascunho.ordem`; o campo existe só porque o tipo `Coluna` o exige.
+ */
+export function colunaDoRascunho(
+  ref: string,
+  nome: string,
+  semantic: ColumnSemantic,
+): Coluna {
+  return {
+    id: ref,
+    name: nome,
+    color: COR_DA_COLUNA_NOVA,
+    position: 0,
+    semantic,
+    notify_deadline: true,
+    // ⚠️ COLUNA CRIADA POR GENTE NUNCA E PONTE (`criar_coluna` crava
+    // `legacy_status=None`). Logo, ela e apagavel ate no Quadro geral -- e e
+    // isso que torna a trava da ponte estreita em vez de simbolica.
+    is_status_bridge: false,
+    is_default_target: false,
+  } satisfies Coluna;
+}
+
+/**
+ * As colunas que o kanban desenha com o modo de edição ligado, na ordem do
+ * rascunho e **incluindo as `tmp:`**.
+ *
+ * ⚠️ ATÉ 17/08 A COLUNA NOVA FICAVA NA `ordem` E FORA DA TELA, e isso era um
+ * meio-termo que não se sustentava. O ref entrava em `rascunho.ordem` (então
+ * `comOrdem` a movia) e era filtrado do que o `Board.tsx` desenhava -- logo:
+ * as setas ← → moviam uma coluna invisível, o `SortableContext` não a conhecia,
+ * e `indice`/`total` de TODOS os cabeçalhos ficavam errados a partir dela,
+ * porque um contava com a nova e o outro sem. **Não dava para posicionar a
+ * coluna criada antes de concluir** -- que é metade do gesto que o lote existe
+ * para permitir.
+ *
+ * ⚠️ ELA NASCE VAZIA E CONTINUA VAZIA. Não tem id real, então nenhuma tarefa
+ * aponta para ela e nenhum card cai ali. Isso é honesto: no modo de edição os
+ * cards estão travados de qualquer forma, e a coluna só passa a receber tarefa
+ * depois de existir no servidor.
+ *
+ * ⚠️ AS MARCADAS PARA APAGAR CONTINUAM AQUI, riscadas pelo cabeçalho. Mesma
+ * razão de `linhasDeEdicao`: sumir no clique quebraria o desfazer.
+ */
+export function colunasParaDesenhar(
+  rascunho: Rascunho,
+  colunas: readonly Coluna[],
+): Coluna[] {
+  const porId = new Map(colunas.map((c) => [c.id, c]));
+  const novasPorRef = new Map(rascunho.novas.map((n) => [n.ref, n]));
+  const saida: Coluna[] = [];
+  for (const ref of rascunho.ordem) {
+    const nova = novasPorRef.get(ref);
+    if (nova) {
+      saida.push(colunaDoRascunho(ref, nova.name, nova.semantic));
+      continue;
+    }
+    // ⚠️ SEM `!`. Um ref sem coluna real acontece de verdade: trocar de quadro
+    // com o modo ligado deixa o rascunho do quadro anterior em pé por um
+    // render. Aquele `!` foi o `TypeError` de 17/08; aqui a linha some da tela
+    // em vez de derrubar a página.
+    const real = porId.get(ref);
+    if (real) saida.push(real);
+  }
+  return saida;
+}
+
 /** O rascunho de quem abriu o modo e não mexeu em nada. */
 export function rascunhoInicial(colunas: readonly Coluna[]): Rascunho {
   return {
@@ -218,6 +312,13 @@ export interface LinhaDeEdicao {
 export function linhasDeEdicao(
   rascunho: Rascunho,
   colunas: readonly Coluna[],
+  /**
+   * O quadro editado e o PADRAO do time. ⚠️ Repassado a
+   * `impedimentoDeExclusao`, que precisa das DUAS metades da trava da ponte --
+   * ver o parametro homonimo la. `false` por padrao pelo mesmo motivo: o
+   * caminho perigoso e o que exige ser escrito.
+   */
+  quadroPadrao = false,
 ): LinhaDeEdicao[] {
   const porId = new Map(colunas.map((c) => [c.id, c]));
   const novasPorRef = new Map(rascunho.novas.map((n) => [n.ref, n]));
@@ -229,17 +330,7 @@ export function linhasDeEdicao(
     .filter((ref) => !rascunho.apagadas.includes(ref))
     .map((ref) => {
       const nova = novasPorRef.get(ref);
-      if (nova) {
-        return {
-          id: ref,
-          name: nova.name,
-          color: "",
-          position: 0,
-          semantic: nova.semantic,
-          notify_deadline: true,
-          is_default_target: false,
-        } satisfies Coluna;
-      }
+      if (nova) return colunaDoRascunho(ref, nova.name, nova.semantic);
       return porId.get(ref)!;
     })
     .filter(Boolean);
@@ -265,7 +356,8 @@ export function linhasDeEdicao(
       impedimento:
         apagada || base === undefined
           ? null
-          : (impedimentoDeExclusao(base, sobrantes)?.motivo ?? null),
+          : (impedimentoDeExclusao(base, sobrantes, quadroPadrao)?.motivo ??
+            null),
     };
   });
 }
@@ -303,16 +395,28 @@ export function destinosDoRascunho(
   rascunho: Rascunho,
   colunas: readonly Coluna[],
 ): DestinoPossivel[] {
-  return rascunho.ordem.map((ref) => {
+  const saida: DestinoPossivel[] = [];
+  for (const ref of rascunho.ordem) {
     const nova = rascunho.novas.find((n) => n.ref === ref);
-    if (nova) return { ref, nome: nova.name, semantic: nova.semantic };
-    const real = colunas.find((c) => c.id === ref)!;
-    return {
+    if (nova) {
+      saida.push({ ref, nome: nova.name, semantic: nova.semantic });
+      continue;
+    }
+    // ⚠️ AQUI MORAVA UM `!`, E ELE ESTOUROU EM PRODUÇÃO DE MENTIRA (17/08):
+    // `TypeError: Cannot read properties of undefined (reading 'name')`,
+    // linha 312. O caminho é trocar de quadro com o modo de edição ligado --
+    // o rascunho do quadro anterior sobrevive um render contra as colunas do
+    // novo, e nenhum ref casa. **O `!` não é uma afirmação sobre o mundo, é um
+    // pedido para o `tsc` calar.** Mesma correção de `colunasParaDesenhar`.
+    const real = colunas.find((c) => c.id === ref);
+    if (!real) continue;
+    saida.push({
       ref,
       nome: rascunho.nomes[ref] ?? real.name,
       semantic: real.semantic,
-    };
-  });
+    });
+  }
+  return saida;
 }
 
 /**

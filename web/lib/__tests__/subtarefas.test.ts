@@ -33,6 +33,7 @@ const COLUNAS = new Map<string, Coluna>([
       semantic: "OPEN",
       notify_deadline: true,
       is_default_target: true,
+      is_status_bridge: false,
     },
   ],
   [
@@ -45,6 +46,7 @@ const COLUNAS = new Map<string, Coluna>([
       semantic: "DONE",
       notify_deadline: true,
       is_default_target: true,
+      is_status_bridge: false,
     },
   ],
   [
@@ -57,6 +59,7 @@ const COLUNAS = new Map<string, Coluna>([
       semantic: "CANCELLED",
       notify_deadline: true,
       is_default_target: true,
+      is_status_bridge: false,
     },
   ],
 ]);

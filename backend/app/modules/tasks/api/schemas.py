@@ -474,6 +474,33 @@ class BoardColumnResponse(BaseModel):
     e some quando o front passar a ler colunas do banco -- que e exatamente o
     que este endpoint existe para permitir. Expo-lo convidaria o front a se
     amarrar na ponte em vez de na semantica.
+
+    ⚠️ `is_status_bridge` ENTROU EM 17/08, E NAO E O `legacy_status`
+    DISFARCADO. Ele diz APENAS "esta coluna e ponte de algum status"; nao diz
+    QUAL. O argumento da ADR 0033 continua de pe: com um booleano o front nao
+    consegue mapear status -> coluna, que era o acoplamento a evitar.
+
+    ⚠️ POR QUE ELE PRECISOU EXISTIR. A 6a-bis abriu a edicao do Quadro geral, e
+    `_assert_ponte_sobrevive` recusa apagar coluna COM PONTE do quadro PADRAO.
+    Sem este campo o front nao tem como saber onde o "x" vai falhar, e
+    desenharia oito botoes de apagar condenados a derrubar o lote inteiro no
+    "Concluir edicao" -- *lixeira que nao funciona e lixeira em que alguem
+    clica*.
+
+    ⚠️⚠️ **ELE SOZINHO NAO SIGNIFICA "NAO PODE SER APAGADA", E CONFUNDIR OS
+    DOIS QUEBRA O QUADRO AVULSO.** As QUATRO colunas base de um quadro avulso
+    tambem nascem com `legacy_status` (`board_defaults.py`), entao
+    `is_status_bridge` e `True` nelas -- e elas PODEM ser apagadas. A trava e
+    `quadro.is_default AND legacy_status is not None`, e a metade que falta
+    (`is_default`) ja viaja no `BoardResponse`. **Quem combina os dois e o
+    front, em UM lugar** (`impedimentoDeExclusao`).
+
+    ⚠️ SEM `@model_validator` AQUI. A derivacao mora numa `@property` do
+    `BoardColumn`, e `from_attributes` a le como se fosse coluna do banco --
+    entao os SEIS lugares que constroem esta resposta com
+    `model_validate(coluna)` continuam iguais, sem consulta nova em nenhum.
+    Validador custom neste projeto ja devolveu 500 uma vez (ver
+    `TaskUpdateRequest`); a `@property` nao tem esse caminho.
     """
 
     model_config = {"from_attributes": True}
@@ -485,6 +512,7 @@ class BoardColumnResponse(BaseModel):
     semantic: ColumnSemantic
     notify_deadline: bool
     is_default_target: bool
+    is_status_bridge: bool
 
 
 class BoardCreateRequest(BaseModel):
