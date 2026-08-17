@@ -30,6 +30,17 @@ export const CODIGO_SEM_DESTINO = "coluna_sem_destino";
 export const CODIGO_SEMANTICA_OBRIGATORIA = "coluna_semantica_obrigatoria";
 
 /**
+ * Duas colunas do mesmo quadro ficariam com o mesmo nome (fatia 9, 18/08).
+ *
+ * ⚠️ ESTE E O UNICO DOS TRES QUE A TELA CONSEGUE PREVER, e ela preve:
+ * `nomeRepetidoNoRascunho` barra antes de mandar. Chegar aqui significa que a
+ * previsao falhou -- outra pessoa renomeou uma coluna deste quadro enquanto
+ * esta edicao estava aberta -- e ai a mensagem tem de dizer isso, e nao
+ * repetir "escolha outro nome" como se fosse erro de digitacao.
+ */
+export const CODIGO_NOME_DE_COLUNA_REPETIDO = "coluna_nome_repetido";
+
+/**
  * As semanticas que o SISTEMA escreve sozinho, e cuja ultima coluna nao pode
  * ser apagada.
  *
@@ -325,6 +336,19 @@ export function explicaRecusa(codigo: string | undefined): string | null {
     return (
       "Este quadro ficaria sem uma coluna que o sistema precisa para " +
       "criar e concluir tarefas. Crie outra antes de apagar esta."
+    );
+  }
+  if (codigo === CODIGO_NOME_DE_COLUNA_REPETIDO) {
+    // ⚠️ O TEXTO DIZ "ALGUEM MEXEU", e nao "escolha outro nome". A tela ja
+    // barra o nome repetido antes de mandar (`nomeRepetidoNoRascunho`), entao
+    // este codigo so chega aqui quando a previsao ficou velha: outra pessoa
+    // renomeou uma coluna deste quadro depois de esta edicao ter comecado.
+    // Mandar a pessoa "escolher outro nome" a faria procurar erro na propria
+    // digitacao, que esta certa.
+    return (
+      "Alguém renomeou uma coluna deste quadro enquanto você editava, e " +
+      "dois nomes ficariam iguais. Saia e entre de novo no modo de edição " +
+      "para ver como o quadro está agora."
     );
   }
   return null;

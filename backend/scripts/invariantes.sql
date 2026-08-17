@@ -15,7 +15,7 @@
 -- `root-postgres-1`, do stack do n8n, alcancado pela rede `root_default`.
 -- Rodar da raiz do repo, na VPS.
 --
--- Toda consulta abaixo deve devolver 0, exceto a 5 (contexto). As 8 e 9
+-- Toda consulta abaixo deve devolver 0, exceto a 5 (contexto). As 8, 9 e 10
 -- entraram em 18/08 com a fatia 9 (nome unico) -- rode a 8 ANTES da migration
 -- `0013`, porque ela e que diz se a migration vai passar. Qualquer outro
 -- numero e defeito de dado, nao de tela -- nenhuma delas aparece para o
@@ -241,3 +241,37 @@ FROM (
     GROUP BY board_id, trim(name)
     HAVING count(*) > 1
 ) AS repetidos;
+
+\echo '=== 10. nenhuma subtarefa em quadro diferente do pai (Spec 036 fatia 8) ==='
+-- ⚠️ INVARIANTE DECLARADA EM 18/08 PELA CAMILA: "as tarefas e subtarefas que
+-- vivem dentro de um quadro devem ser so desse quadro". Ela NAO valia no
+-- codigo quando foi declarada -- ver abaixo.
+--
+-- ⚠️ ONDE ESTA O FURO, MEDIDO EM 18/08: `TaskService.move` troca o pai
+-- (`parent_task_id`) e **nao toca em `board_id` em linha nenhuma** -- zero
+-- mencoes no metodo inteiro. Mover a tarefa B para debaixo da tarefa A, com A
+-- em outro quadro, deixa B no quadro velho. A FK composta `(column_id,
+-- board_id)` ACEITA, porque o par continua internamente consistente. E o caso
+-- que o cabecalho do `board_repository.py` ja descrevia e chamava de "o
+-- silencioso".
+--
+-- ⚠️ HOJE DA ZERO POR AUSENCIA DE CASO, e nao por trava: producao tem UM
+-- quadro (consulta 5), entao nao ha segundo quadro para divergir. **Esta
+-- consulta so vira afirmacao depois do deploy da fatia 5b**, quando existir
+-- quadro avulso. Leia junto com a 5, igual a 7.
+--
+-- ⚠️ SE ELA SAIR DE ZERO: a tarefa filha esta desenhada num quadro e o pai em
+-- outro. A checklist do pai conta uma subtarefa que nao aparece no quadro
+-- dele, e apagar o quadro da filha (fatia 7) deixaria o pai com a proporcao
+-- errada e sem nada explicando. O conserto e o DADO -- alinhar o `board_id` da
+-- filha ao do pai --, e so depois procurar o caminho de escrita que produziu.
+--
+-- ⚠️ A TRAVA VEM NA FATIA 8 (`move` recusa pai em outro quadro, decisao de
+-- 18/08). Enquanto ela nao existir, esta consulta e a UNICA coisa que
+-- descobriria o estado.
+SELECT count(*) AS subtarefa_em_quadro_diferente_do_pai
+FROM task filha
+JOIN task pai ON pai.id = filha.parent_task_id
+WHERE filha.deleted_at IS NULL
+  AND pai.deleted_at IS NULL
+  AND filha.board_id IS DISTINCT FROM pai.board_id;

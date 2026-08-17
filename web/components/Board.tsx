@@ -56,6 +56,7 @@ import {
   comRenome,
   linhasDeEdicao,
   marcadasParaApagar,
+  nomeRepetidoNoRascunho,
   paraLote,
   colunasParaDesenhar,
   rascunhoInicial,
@@ -875,6 +876,23 @@ export default function Board({
       setRascunho(null);
       return;
     }
+    // ⚠️ O NOME REPETIDO E BARRADO AQUI, ANTES DE QUALQUER PEDIDO (fatia 9).
+    // O backend recusa com `coluna_nome_repetido`, e recusa o LOTE INTEIRO --
+    // a pessoa renomeia quatro colunas, cria uma, arrasta duas, e perde tudo
+    // por dois nomes iguais. A regra e pura e testada
+    // (`nomeRepetidoNoRascunho`), e espelha `_assert_nomes_do_lote`.
+    //
+    // ⚠️ AQUI, E NAO NA DIGITACAO. Trocar duas colunas de nome entre si passa
+    // pelo estado repetido no meio do caminho, e e um gesto legitimo --
+    // acusar durante a digitacao interromperia uma troca valida.
+    const repetido = nomeRepetidoNoRascunho(rascunho, colunas);
+    if (repetido !== null) {
+      setErroLote(
+        `Duas colunas ficariam com o nome "${repetido}". ` +
+          `Renomeie uma delas antes de concluir.`,
+      );
+      return;
+    }
     const marcadas = marcadasParaApagar(rascunho, colunas);
     if (marcadas.length === 0) {
       await aplicarLote({});
@@ -1270,6 +1288,28 @@ export default function Board({
           <button className="btn btn-ghost" onClick={fecharEdicao}>
             Sair
           </button>
+
+          {/* ⚠️ O ERRO DO LOTE PRECISA APARECER FORA DA REVISAO, e ate 18/08
+              nao aparecia em lugar nenhum: `erroLote` so era passado para a
+              `RevisaoDaEdicao`, que so existe quando ha coluna MARCADA PARA
+              APAGAR. Um lote de renomear e reordenar recusado pelo servidor
+              (403, 409, `colunas_divergentes`) chamava `setErroLote` e sumia
+              -- a pessoa clicava em "Concluir edicao" e **nao acontecia
+              nada**, sem erro e sem sair do modo. Achado ao ligar o barramento
+              de nome repetido, que cai no mesmo caminho.
+
+              ⚠️ `role="alert"` PORQUE ELE APARECE DEPOIS DO CLIQUE, longe do
+              foco. Sem isso, quem usa leitor de tela clica em concluir e nao
+              recebe nada. */}
+          {erroLote && !revisando && (
+            <div
+              role="alert"
+              className="error-text"
+              style={{ flexBasis: "100%", fontSize: 13 }}
+            >
+              {erroLote}
+            </div>
+          )}
         </div>
       ) : (
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 18, flexWrap: "wrap" }}>

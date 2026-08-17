@@ -362,6 +362,55 @@ export function linhasDeEdicao(
   });
 }
 
+/**
+ * O nome que ficaria repetido se este rascunho fosse aplicado -- ou `null`.
+ *
+ * ⚠️ ESPELHA `BoardService._assert_nomes_do_lote`, e a duplicacao e a mesma de
+ * `nomeDeQuadroValido`: existe para nao gastar um pedido que ja se sabe que
+ * volta 422. **Aqui ela vale muito mais que la.** No lote, a recusa perde a
+ * edicao INTEIRA -- a pessoa renomeia quatro colunas, cria uma, arrasta duas, e
+ * descobre no "Concluir edicao" que dois nomes bateram. O backend continua
+ * sendo a autoridade; isto e o que impede a pessoa de chegar ate ele.
+ *
+ * ⚠️ CONFERE O RESULTADO FINAL, e nao cada mexida. Trocar dois nomes entre si
+ * e apagar-e-recriar com o mesmo nome sao gestos LEGITIMOS que passam pelo
+ * estado repetido no meio do caminho -- ver o docstring do metodo do backend.
+ * Barrar durante a digitacao acusaria a pessoa no meio de uma troca valida.
+ *
+ * ⚠️ IGNORA AS MARCADAS PARA APAGAR: uma coluna que vai sumir nao ocupa nome.
+ * E usa o nome do RASCUNHO, nao o do servidor.
+ *
+ * ⚠️ `trim()` PORQUE O BACKEND GRAVA COM `strip()`. Sem isto `"Feito "` passa
+ * daqui como nome diferente e chega la como o mesmo -- 422 exatamente no caso
+ * que esta funcao existe para evitar.
+ *
+ * ⚠️ MAIUSCULA CONTA, igual ao backend (decisao de 18/08): "Feito" e "feito"
+ * convivem. Comparar em minusculas deixaria a tela mais restritiva que o
+ * servidor -- ela recusaria um nome que o backend aceita, e ninguem
+ * descobriria, porque o caminho feliz nunca e exercitado contra o servidor.
+ */
+export function nomeRepetidoNoRascunho(
+  rascunho: Rascunho,
+  colunas: readonly Coluna[],
+): string | null {
+  const porId = new Map(colunas.map((c) => [c.id, c]));
+  const novasPorRef = new Map(rascunho.novas.map((n) => [n.ref, n]));
+
+  const vistos = new Set<string>();
+  for (const ref of rascunho.ordem) {
+    if (rascunho.apagadas.includes(ref)) continue;
+    const nova = novasPorRef.get(ref);
+    const bruto = nova
+      ? nova.name
+      : (rascunho.nomes[ref] ?? porId.get(ref)?.name);
+    if (bruto === undefined) continue;
+    const nome = bruto.trim();
+    if (vistos.has(nome)) return nome;
+    vistos.add(nome);
+  }
+  return null;
+}
+
 /** Uma coluna que pode receber as tarefas: existente ou criada no rascunho. */
 export interface DestinoPossivel {
   readonly ref: string;

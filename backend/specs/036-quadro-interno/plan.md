@@ -24,8 +24,9 @@
 
 ## Estado (conferido no `main` em 13/08/2026)
 
-Portões verdes: **backend 808 passed**, **front 758 passed**, `tsc` 0,
-`next build` compilando. Migrations `0012`. ADRs backend: 42.
+Portões verdes: **backend 823 passed**, **front 769 passed**, `tsc` 0,
+`next build` compilando. Migrations `0013` (⚠️ **a `0013` NÃO está em
+produção** — ver §Fatia 9). ADRs backend: 42.
 
 ⚠️ **A CONFERÊNCIA VISUAL DA FATIA 6 FOI FEITA EM 17/08, e achou SEIS coisas
 que os três portões não acharam** — o mesmo padrão da 4c (cinco) e da 5b-6
@@ -66,6 +67,8 @@ deployado. O deploy espera a fatia 6 — decisão de 13/08, ver §Ordem de deplo
 | **6c-5** (17/08) — o texto da coluna vazia no condicional | ✅ em `main` | 745→747 |
 | **6a-bis-2** (17/08) — `is_status_bridge` + lápis no Quadro geral | ✅ em `main` | 747→757 / 807→808 |
 | **6c-6** (17/08) — o modo de edição não cai no estado vazio | ✅ em `main` | 757→758 |
+| **9** (18/08) — nome único de quadro e de coluna, backend | ✅ em `main` | 808→823 |
+| **9** (18/08) — barra o nome repetido antes de mandar, front | ✅ em `main` | 758→769 |
 
 ⚠️ **A FATIA 6 ESTÁ FECHADA EM CÓDIGO E NÃO ESTÁ CONFERIDA NA TELA.** "Em
 `main`" aqui quer dizer **portão verde**, e os itens 4 e 5 da §Conferência
@@ -107,9 +110,11 @@ migration NÃO podia ficar para trás, e a `0012` está em produção desde 10/0
 Nove fatias, e três delas viraram várias. As três primeiras são backend e
 **nada muda na tela**; a quarta é o front; a quinta é a feature; a sexta é o
 modo de edição; a **sétima** (apagar quadro) e a **oitava** (mover tarefa entre
-quadros) foram criadas em 17/08, e a **nona** (nome único) em 18/08. As três
-são o que falta para o deploy — ver §Definição de pronto. ⚠️ **A ordem é 9 → 7
-→ 8**: a 9 destrava a confirmação da 7.
+quadros) foram criadas em 17/08, e a **nona** (nome único) em 18/08.
+⚠️ **A ordem é 9 → 8 → 7, e ela mudou em 18/08:** a 9 (entregue) destrava a
+confirmação da 7, e a 8 estabelece a invariante de pai e filha sem a qual a 7
+teria de tratar um estado que a 8 vai proibir. **Neste arquivo elas aparecem
+nessa ordem**; o texto de 17/08 da fatia 8 ficou como histórico no fim.
 
 ⚠️ **Três seções são HISTÓRICAS e estão marcadas como tal** — "Fatia 4c: o
 bloqueio original", "Fatia 4 (texto original)" e "Fatia 5 (texto de 10/08)".
@@ -1439,9 +1444,55 @@ inválido". Medido em 13/08, depois de eu cometer o erro. **Vale para o `PUT
 ---
 
 
-## Fatia 9 — nome único de quadro e de coluna (PRÉ-REQUISITO DA FATIA 7)
+## Fatia 9 — nome único de quadro e de coluna — ✅ ENTREGUE (18/08)
 
-> Escrita em 18/08/2026. **Decisão da Camila, com o custo na mesa.**
+> Escrita e entregue em 18/08/2026. **Decisão da Camila, com o custo na mesa.**
+> Backend 808→823, front 758→769. **Migration `0013`, e ela NÃO subiu.**
+
+⚠️ **AS TRÊS PERGUNTAS FORAM RESPONDIDAS EM 18/08, e as respostas estão no
+código:** maiúscula CONTA ("Backlog" e "backlog" convivem); quadro APAGADO não
+ocupa o nome (índice parcial); espaço nas pontas é limpo (`strip`, que os dois
+validadores já faziam).
+
+⚠️ **O QUE FOI ENTREGUE, E COM QUE GARANTIA:**
+
+| | onde a regra mora | o que a sustenta |
+|---|---|---|
+| **quadro** | índice `board_nome_unico_por_time` (`0013`) **+** `_assert_nome_de_quadro_livre` | o índice é a verdade; a validação existe para a recusa sair 422 com `code` e não `IntegrityError`/500 |
+| **coluna** | `_assert_nomes_do_lote` (estado FINAL) + `_assert_nome_de_coluna_livre` (entradas de uma só) | **nenhum índice** — ver abaixo. Vigia: consulta 9 do `invariantes.sql` |
+| **tela** | `nomeRepetidoNoRascunho`, no "Concluir edição" | barra antes de mandar: no lote a recusa perde a edição INTEIRA |
+
+⚠️ **POR QUE COLUNA NÃO TEM ÍNDICE, e não é esquecimento.** O lote aplica em
+quatro etapas com `flush` em cada uma. Um `UNIQUE (board_id, name)` recusaria o
+estado INTERMEDIÁRIO de dois gestos legítimos — trocar duas colunas de nome
+entre si, e apagar "Aprovação" para criar outra "Aprovação" no mesmo lote (que
+é a razão de ser do lote). E recusaria com `IntegrityError`, ou seja **500**.
+Os dois gestos têm teste próprio (`test_o_lote_permite_TROCAR_dois_nomes` e
+`test_o_lote_permite_APAGAR_e_RECRIAR_com_o_mesmo_nome`); **se alguém
+"consertar" acrescentando o índice, os dois caem.**
+
+### ⚠️ ANTES DE APLICAR A `0013` EM PRODUÇÃO
+
+**Rode a consulta 8 do `invariantes.sql`.** A migration confere e ABORTA com a
+lista se houver duplicata — de propósito, para não devolver o erro cru do
+Postgres, que diz "não consegui criar o índice" sem dizer quais quadros nem o
+que fazer. Em produção não deve haver (um quadro só, consulta 5); em
+desenvolvimento havia, criados na conferência de 17/08. **O conserto é
+RENOMEAR pela tela** — apagar quadro não existe até a fatia 7.
+
+### Dois defeitos achados escrevendo esta fatia
+
+1. ⚠️ **O erro do lote não aparecia quando não havia coluna marcada para
+   apagar.** `erroLote` só era passado para a `RevisaoDaEdicao`, que só existe
+   com exclusão. Um lote de renomear e reordenar recusado (403,
+   `colunas_divergentes`, rede caída) chamava `setErroLote` e sumia: **a pessoa
+   clicava em "Concluir edição" e não acontecia nada.** Anterior à fatia 9.
+   Corrigido, com `role="alert"` — o erro nasce longe do foco.
+2. ⚠️ **`semantic` como STRING passa por tudo e quebra no `logger`.**
+   `ColumnSemantic` é `StrEnum`: a string compara igual, atravessa permissão,
+   nome, posição e o `INSERT` inteiro, e só estoura em `semantica.value`, a
+   última linha. **A falha aparece longe da causa.** Irmã da armadilha já
+   catalogada "`text()` devolve STRING, não enum".
 
 ⚠️ **HOJE NÃO EXISTE NADA IMPEDINDO, e isso foi CONFERIDO, não suposto:** não
 há `UniqueConstraint` em `board.name` nem em `board_column.name`
@@ -1502,14 +1553,101 @@ do 500 que um `IntegrityError` cru produz. Este projeto já tem a cicatriz:
 
 ---
 
+## Fatia 8 — mover tarefa entre quadros (ENTRA NO PORTÃO — **VEM ANTES DA 7**)
+
+> Escrita em 17/08/2026, **reescrita em 18/08**: a ordem inverteu (8 → 7) e o
+> escopo cresceu com a invariante declarada pela Camila.
+
+⚠️ **A ORDEM INVERTEU EM 18/08, e o motivo é concreto.** A fatia 7 apaga o
+quadro e as tarefas dentro; ela só é simples se a subárvore inteira estiver
+DENTRO. Enquanto pai e filha puderem viver em quadros diferentes, a 7 teria de
+tratar o caso disperso — e esse tratamento vira **código morto** no dia em que
+a 8 proibir o estado. É a doença que esta spec já catalogou três vezes
+(`corEhHex`, `is_default_target` até a 4c, a rota `PATCH /columns/order`).
+
+### ⚠️ A INVARIANTE, declarada em 18/08
+
+> *"As tarefas e subtarefas que vivem dentro de um quadro devem ser só desse
+> quadro. Se mover uma subtarefa, move-se a tarefa pai inteira junto ou não
+> move."*
+
+⚠️ **ELA NÃO VALE HOJE, E ISSO FOI MEDIDO, não suposto.** `TaskService.move`
+troca o `parent_task_id` e **não toca em `board_id` em linha nenhuma** — zero
+menções no método inteiro. Mover B para debaixo de A, com A em outro quadro,
+deixa B no quadro velho. A FK composta `(column_id, board_id)` **aceita**,
+porque o par continua internamente consistente.
+
+⚠️ **E O CÓDIGO JÁ SABIA.** O cabeçalho do `board_repository.py` descreve este
+exato estado e o chama de *"o silencioso"* — a FK aceita e ninguém percebe. Foi
+fechado no `create` (subtarefa herda o quadro do pai) e **nunca no `move`**.
+
+⚠️ **HOJE É INOFENSIVO E DEIXA DE SER NO DIA DO DEPLOY:** produção tem um
+quadro só, então não há segundo quadro para divergir. **Medida pela consulta 10
+do `invariantes.sql`**, que entrou em 18/08 — e ela é `0` por AUSÊNCIA DE CASO,
+não por trava. Leia junto com a 5, igual à 7.
+
+⚠️ **PELA TELA NÃO DÁ, PELA API DÁ.** O `TaskDetail` só oferece trocar de
+PROJETO; trocar de pai não tem controle. Mas `POST /tasks/{id}/move` aceita
+`parent_task_id`, e **este workspace usa n8n contra esta API** — mesmo modelo de
+ameaça de `_assert_team_in_reach` e `_assert_board_in_reach`.
+
+### Decisão de 18/08: **RECUSA**, e não move junto
+
+`move` para um pai de outro quadro devolve **422 com `code`**. Mover a subárvore
+inteira entre quadros ficou de fora — é a fatia grande (mexe em coluna,
+permissão e histórico ao mesmo tempo), e recusar já fecha a invariante.
+
+⚠️ **SEM MIGRATION.** Recusar é regra de serviço; a `0013` fica como está.
+
+### O que sobe
+
+- ⚠️ **A recusa no `move`**, com `code` próprio. **Escreva o teste ANTES** — ele
+  falha hoje, contra os 823 verdes, e é a única coisa desta fatia que não é
+  opinião.
+- **`board_id` no move de tarefa entre quadros**, ou rota própria — decidir, e
+  escrever a decisão aqui. ⚠️ **Só dentro do mesmo `team_id`** (regra de 13/08).
+- ⚠️ **A outra metade da divergência, medida em 17/08:** `PATCH /tasks/{id}`
+  aceita `team_id`, valida o alcance, escreve `task.team_id` e **não toca em
+  `board_id`** — dá para deixar os dois apontando para times diferentes, e
+  quadro decide QUEM VÊ (ADR 0035 D3).
+
+### Guardiões
+
+| sabotagem | esperado |
+|---|---|
+| `move` para pai de outro quadro | **teste novo** — falha hoje, no `main` verde |
+| `PATCH` com `team_id` de outro time e `board_id` intacto | **teste novo** — hoje NADA o pega |
+| move para quadro de outro `team_id` | teste de recusa 422 |
+| move sem recalcular a coluna | teste da ADR 0042 |
+
+---
+
 ## Fatia 7 — apagar quadro (ENTRA NO PORTÃO DO DEPLOY)
 
 > Escrita em 17/08/2026. Era o item 1 da §"o que falta"; virou fatia própria
 > quando a §Definição de pronto fechou a lista do deploy.
 
-⚠️ **DEPENDE DA FATIA 9 (nome único).** A confirmação por digitação só
-desambigua se o nome for único no time — decisão de 18/08. **Não comece esta
-antes daquela.**
+⚠️ **DEPENDE DA FATIA 9 (✅ entregue em 18/08) E DA FATIA 8 (⬜).** A
+confirmação por digitação só desambigua com nome único; e apagar a subárvore só
+é simples com a invariante de pai e filha valendo. **A ordem é 9 → 8 → 7.**
+
+### ⚠️ AS TRÊS PERGUNTAS FORAM RESPONDIDAS EM 18/08
+
+1. **O Quadro geral pode ser apagado?** **NÃO.** Ele é onde nasce toda tarefa
+   de topo (`default_board_and_column_for_status`); sem ele ninguém cria tarefa
+   nenhuma — as 26 pessoas, de uma vez. **O botão não aparece nele**, ausente e
+   não desabilitado (ADR 0034 item 2, mesma regra da lente).
+2. **Com tarefas dentro: pede destino ou apaga junto?** **APAGA JUNTO**, como a
+   ADR 0034 já dizia. ⚠️ **E é a única operação do produto que não pergunta o
+   destino** — a tela da coluna ensinou o contrário, onde o "×" sempre oferece
+   para onde as tarefas vão. Por isso a confirmação exige **digitar o nome** e
+   mostrar a **contagem da subárvore** na tela.
+   ⚠️ **O `UPDATE` de restauração em `backend/scripts/` no MESMO commit** — não
+   há tela de desfazer, e esse script é a única saída de quem apagar errado.
+3. **Subtarefa com pai em outro quadro?** **NÃO PODE EXISTIR** — invariante
+   declarada em 18/08. ⚠️ **Ela não valia no código**, e fechá-la é a §Fatia 8,
+   que por isso passou a vir antes desta. Quando a 8 estiver entregue, esta
+   fatia apaga a subárvore inteira sem tratar caso disperso nenhum.
 
 ⚠️ **É A OPERAÇÃO MAIS PERIGOSA DA SPEC INTEIRA, e não é a exclusão de coluna.**
 A ADR 0034 decidiu que **apagar quadro apaga as tarefas dentro**. Isso está
@@ -1548,21 +1686,6 @@ consulta 4 uma medição de verdade.** Rode-a antes e depois.
   o quadro aberto quando outra pessoa o apagar fica em "Carregando…" para
   sempre.
 
-### ⚠️ As perguntas que TÊM de ser respondidas antes de escrever código
-
-Nenhuma delas está decidida, e as três mudam o tamanho da fatia:
-
-1. **O quadro PADRÃO pode ser apagado?** Se sim, `default_board_and_column_for_status`
-   perde o alvo e toda tarefa de topo quebra. A resposta quase certamente é
-   não, e a trava é irmã da `_assert_ponte_sobrevive`.
-2. **Apagar quadro com tarefa dentro pede destino, como a coluna, ou apaga
-   junto?** A ADR 0034 diz apaga junto. **A tela da coluna ensinou o
-   contrário** — lá o "×" oferece destino. Duas operações vizinhas com
-   semânticas opostas, e a mais destrutiva é a que não pergunta.
-3. **O que acontece com subtarefa cujo pai está em OUTRO quadro?** O cabeçalho
-   do `board_repository.py` já registra o caso "pai num quadro e filha em
-   outro" como estado que a FK aceita.
-
 ### Guardiões
 
 | sabotagem | esperado |
@@ -1578,9 +1701,10 @@ número velho.
 
 ---
 
-## Fatia 8 — mover tarefa entre quadros (ENTRA NO PORTÃO DO DEPLOY)
+## Fatia 8 — texto de 17/08 (histórico, superseded)
 
-> Escrita em 17/08/2026. Era o item 2 da §"o que falta".
+> Mantido porque registra o escopo antes de a invariante de pai e filha
+> aparecer. **A vigente é a seção acima.**
 > ⚠️ **É a "saída 3" do §Adendo — mover tarefa entre quadros**, que listou três
 > opções em 10/08 e não escolheu. **A escolha é esta seção**; o adendo virou
 > histórico e guarda o custo medido das outras duas. Se você reabrir a
@@ -1771,7 +1895,7 @@ Por esse critério, e só por ele:
 |---|---|---|
 | **Conferência visual da fatia 6** (18 itens) | ✅ | os itens 24 e 25 não têm guardião nenhum; se falharem, falham em produção |
 | **Fatia 7 — apagar quadro** | ✅ | sem ela, "+ Novo quadro" é um botão sem saída. Quadro criado por engano é permanente, e o conserto vira operação de banco feita por você |
-| **Fatia 9 — nome único de quadro e coluna** | ✅ | pré-requisito da 7: sem ela, confirmar a exclusão digitando o nome não desambigua. ⚠️ **Entrou em 18/08, e é o único item acrescentado à lista fechada — porque destrava um item que já estava nela, e não porque apareceu vontade nova** |
+| **Fatia 9 — nome único de quadro e coluna** | ✅ **ENTREGUE 18/08** | pré-requisito da 7: sem ela, confirmar a exclusão digitando o nome não desambigua. ⚠️ **Foi o único item acrescentado à lista fechada — porque destrava um item que já estava nela, e não porque apareceu vontade nova** |
 | **Fatia 8 — mover tarefa entre quadros** | ✅ | sem ela, tarefa no quadro errado só se conserta **apagando e recriando** — perda de dado por engano de seleção num modal. E fecha a divergência `team_id`/`board_id`, que este deploy torna alcançável |
 | quadro extra da raiz | ❌ | adição pura; ninguém sente falta do que nunca viu |
 | trocar coluna alvo de semântica | ❌ | dói, mas é **ausência**, não porta de mão única. Vai virar pedido — responda quando vier |
@@ -1812,7 +1936,9 @@ bloco depois da fatia 6 — dois deploys no total, não oito.
 
 1. ⚠️ **A §Definição de pronto satisfeita por inteiro** — fatia 6 conferida
    (feito em 17/08) **e RECONFERIDA** (a lista curta da §Conferência visual),
-   e as fatias 9, 7 e 8 entregues e conferidas, nessa ordem.
+   e as fatias **9 → 8 → 7** entregues e conferidas, **nessa ordem** (a
+   inversão é de 18/08: a 8 estabelece a invariante de pai e filha que faz a 7
+   ser simples — ver §Fatia 8).
 2. **Rodar o `invariantes.sql` ANTES**, e anotar a consulta 5. Série:
    696 (06/08) → 802 → 832 (10/08). ⚠️ **Sem leitura nova desde 10/08.** É o
    único contador de produção escrito em algum lugar.
@@ -1980,6 +2106,22 @@ ter passado.** Os itens 1–4 (regressão) e 5–8, 17–20 não foram tocados.
 40. **Quadro geral, ADMIN** → criar coluna, arrastar para o meio, concluir →
     ela nasce lá **e o quadro das 26 pessoas mudou**. ⚠️ É o único item desta
     lista cujo raio de explosão é o time inteiro.
+
+⚠️ **MAIS TRÊS, da fatia 9 (18/08) — nenhum item antigo os cobre:**
+
+41. **Dois quadros de mesmo nome no mesmo subtime** → o segundo **recusa com
+    erro em vermelho**, e o campo não é limpo. Repita com **maiúscula
+    diferente** ("Campanhas" e "campanhas") → **passa**, e é decisão, não
+    defeito.
+42. **No modo de edição, renomear uma coluna para o nome de outra** → o
+    "Concluir edição" **recusa em vermelho**, o modo continua aberto **com o
+    trabalho dentro**, e nenhum pedido sai. ⚠️ Repita **trocando os nomes de
+    duas colunas entre si** → **passa**: é gesto legítimo, e barrá-lo seria o
+    defeito.
+43. ⚠️ **Devtools em modo offline, renomear uma coluna, "Concluir edição"** →
+    tem de aparecer **erro em vermelho** na barra. **Até 18/08 não aparecia
+    nada**: `erroLote` só era desenhado dentro da revisão, que só existe quando
+    há coluna marcada para apagar. A pessoa clicava e não acontecia nada.
 
 ---
 

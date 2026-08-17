@@ -51,6 +51,12 @@ vi.mock("@/lib/api", async (importOriginal) => {
     // "Carregando tarefas…" -- 16 testes deste arquivo caem de uma vez, todos
     // com "nao achou o texto", nenhum falando de coluna.
     listBoards: vi.fn(),
+    // ⚠️ Fatia 9 (18/08): mockado para o teste do nome repetido poder afirmar
+    // que NENHUM pedido saiu. Nenhum outro teste deste arquivo conclui uma
+    // edicao de colunas -- se um dia algum concluir, ele precisa do
+    // `mockResolvedValue`, senao recebe `undefined` de uma funcao que promete
+    // `{ colunas, movidas }`.
+    aplicarLoteDeColunas: vi.fn(),
     updateTask: vi.fn(),
     // ⚠️ Fatia 5b-6: este arquivo passou a CRIAR tarefa pelo Board, e nao so a
     // desenhar. Sem este mock o `createTask` real dispara `fetch` no jsdom e o
@@ -1444,6 +1450,32 @@ describe("Board -- quadro avulso (fatia 5b-6)", () => {
     fireEvent.click(await screen.findByLabelText("Editar colunas"));
     expect(screen.queryByLabelText("Apagar Em Andamento")).toBeNull();
     expect(screen.getAllByText("não pode ser apagada").length).toBeGreaterThan(0);
+  });
+
+  it("⚠️ nome repetido barra no CONCLUIR, sem gastar pedido nenhum", async () => {
+    // ⚠️ SEM ISTO A PESSOA PERDE A EDICAO INTEIRA. O backend recusa o LOTE
+    // com `coluna_nome_repetido`, e recusa TUDO -- os renomes, a coluna nova,
+    // a ordem. Barrar aqui e a diferenca entre corrigir um nome e refazer a
+    // edicao do zero.
+    comAvulso([]);
+    render(<Board boardId={AVULSO} title="Campanhas" podeEditarColunas />);
+    fireEvent.click(await screen.findByLabelText("Editar colunas"));
+
+    // "Em Revisão" vira "Backlog", que ja existe neste quadro.
+    fireEvent.click(screen.getByText("Em Revisão"));
+    const campo = screen.getByLabelText("Nome da coluna Em Revisão");
+    fireEvent.change(campo, { target: { value: "Backlog" } });
+    fireEvent.blur(campo);
+
+    fireEvent.click(screen.getByText("Concluir edição"));
+
+    expect(await screen.findByRole("alert")).toBeTruthy();
+    expect(screen.getByText(/Duas colunas ficariam com o nome/)).toBeTruthy();
+    // ⚠️ E NENHUM PEDIDO SAIU. O barramento existe para nao gastar uma ida que
+    // ja se sabe que volta 422 -- e para o modo de edicao continuar aberto com
+    // o trabalho dentro.
+    expect(api.aplicarLoteDeColunas).not.toHaveBeenCalled();
+    expect(screen.getByText("Modo edição")).toBeTruthy();
   });
 
   it("⚠️ o modo de edicao NAO cai no estado vazio -- desenha as colunas", async () => {

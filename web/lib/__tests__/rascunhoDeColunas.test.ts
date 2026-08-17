@@ -23,6 +23,7 @@ import {
   comRenome,
   linhasDeEdicao,
   marcadasParaApagar,
+  nomeRepetidoNoRascunho,
   paraLote,
   destinosDoRascunho,
   rascunhoInicial,
@@ -444,5 +445,62 @@ describe("linhasDeEdicao no QUADRO PADRAO", () => {
     const nova = linhasDeEdicao(r, COM_PONTE, true).find((l) => l.ref === "tmp:1");
     expect(nova!.nova).toBe(true);
     expect(nova!.impedimento).toBeNull();
+  });
+});
+
+describe("nomeRepetidoNoRascunho", () => {
+  // ⚠️ ESPELHA `BoardService._assert_nomes_do_lote`. Existe para a pessoa não
+  // perder a edição inteira num 422: no lote, a recusa derruba tudo.
+  it("rascunho sem mexida não repete nada", () => {
+    expect(nomeRepetidoNoRascunho(rascunhoInicial(QUADRO), QUADRO)).toBeNull();
+  });
+
+  it("⚠️ renomear para o nome de outra coluna é pego ANTES de mandar", () => {
+    const r = comRenome(rascunhoInicial(QUADRO), "c2", "Backlog");
+    expect(nomeRepetidoNoRascunho(r, QUADRO)).toBe("Backlog");
+  });
+
+  it("⚠️ criar com o nome de uma que FICA é pego", () => {
+    const r = comColunaNova(rascunhoInicial(QUADRO), "Backlog", "OPEN");
+    expect(nomeRepetidoNoRascunho(r, QUADRO)).toBe("Backlog");
+  });
+
+  it("⚠️ TROCAR dois nomes entre si PASSA -- é gesto legítimo", () => {
+    // ⚠️ O caso que proíbe barrar durante a digitação, e o mesmo que proíbe o
+    // índice único no banco: no meio da troca as duas se chamam igual, e o
+    // RESULTADO não repete nada.
+    let r = comRenome(rascunhoInicial(QUADRO), "c2", "Cancelado");
+    r = comRenome(r, "c4", "Em Andamento");
+    expect(nomeRepetidoNoRascunho(r, QUADRO)).toBeNull();
+  });
+
+  it("⚠️ APAGAR e RECRIAR com o mesmo nome PASSA", () => {
+    // A coluna marcada some do resultado, então não ocupa o nome. É a razão de
+    // ser do lote: trocar uma coluna por outra num gesto.
+    let r = comMarcacao(rascunhoInicial(QUADRO), "c4");
+    r = comColunaNova(r, "Cancelado", "CANCELLED");
+    expect(nomeRepetidoNoRascunho(r, QUADRO)).toBeNull();
+  });
+
+  it("⚠️ duas colunas NOVAS com o mesmo nome são pegas", () => {
+    // Nenhuma das duas existe no servidor, então consultar o quadro não
+    // pegaria isto -- quem pega é a lista final montada aqui.
+    let r = comColunaNova(rascunhoInicial(QUADRO), "Entregue", "DONE");
+    r = comColunaNova(r, "Entregue", "DONE");
+    expect(nomeRepetidoNoRascunho(r, QUADRO)).toBe("Entregue");
+  });
+
+  it("⚠️ espaço nas pontas NÃO faz nome diferente", () => {
+    // O backend grava com `strip()`. Sem o `trim` aqui, isto passaria daqui e
+    // levaria 422 lá -- exatamente o caso que a função existe para evitar.
+    const r = comRenome(rascunhoInicial(QUADRO), "c2", "  Backlog  ");
+    expect(nomeRepetidoNoRascunho(r, QUADRO)).toBe("Backlog");
+  });
+
+  it("⚠️ maiúscula faz nome diferente, igual ao backend", () => {
+    // Comparar em minúsculas deixaria a tela MAIS restritiva que o servidor:
+    // ela recusaria um nome que o backend aceita, e ninguém descobriria.
+    const r = comRenome(rascunhoInicial(QUADRO), "c2", "backlog");
+    expect(nomeRepetidoNoRascunho(r, QUADRO)).toBeNull();
   });
 });

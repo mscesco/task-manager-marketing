@@ -300,6 +300,27 @@ describe("avisoDeExclusao", () => {
   });
 });
 
+describe("explicaRecusa -- nome de coluna repetido", () => {
+  it("⚠️ o texto diz 'alguem mexeu', e NAO 'escolha outro nome'", () => {
+    // ⚠️ A TELA JA BARRA O NOME REPETIDO ANTES DE MANDAR
+    // (`nomeRepetidoNoRascunho`). Chegar neste codigo significa que a previsao
+    // ficou velha: outra pessoa renomeou uma coluna deste quadro depois de a
+    // edicao ter comecado. Mandar a pessoa "escolher outro nome" a faria
+    // procurar erro na propria digitacao, que esta certa.
+    const texto = explicaRecusa("coluna_nome_repetido");
+    expect(texto).not.toBeNull();
+    expect(texto).toContain("enquanto você editava");
+    expect(texto).not.toContain("Escolha outro nome");
+  });
+
+  it("codigo desconhecido continua devolvendo null", () => {
+    // A tela mostra a mensagem do backend nesse caso. Inventar texto proprio
+    // para erro que nao previmos esconderia a causa de quem esta olhando.
+    expect(explicaRecusa("coisa_que_nao_existe")).toBeNull();
+    expect(explicaRecusa(undefined)).toBeNull();
+  });
+});
+
 describe("mensagemDeDivergencia", () => {
   it("numeros iguais nao geram aviso", () => {
     expect(mensagemDeDivergencia(12, 12)).toBeNull();
