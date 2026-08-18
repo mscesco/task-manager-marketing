@@ -2184,6 +2184,37 @@ Os três furos do "só o subtime vê" continuam abertos **por desenho** (ADR 003
 quem foi designado. **A resposta continua sendo não** — fechar qualquer um
 exige permissão por quadro, que colide com a lente inteira.
 
+### ✅ A PERGUNTA FOI RESPONDIDA EM 18/08, COM O CASO EXISTINDO
+
+⚠️ **A consulta 7 saiu do zero em 18/08 e deu `1`**, no dia do deploy — a tarefa
+"Camilão", dentro do primeiro quadro avulso de subtime que já existiu em
+produção ("Quadro teste do GOATzinho", time CRM e Automação). **A seção acima
+manda parar e reperguntar "quem alcança a tarefa alcança o quadro?", e esta é a
+resposta, para não morrer em conversa.**
+
+**Não há vazamento, e a razão NÃO é o front.** `CollaborationService` chama
+`_assert_target_reaches_task` em **todos** os caminhos de designar (`assign`,
+`assign_many_or_fail` e o caminho de terceiro), e ele usa a **lente do ALVO**
+(`user_can_view_task`, `task_guards.py`). ⚠️ **É trava de servidor:** designar
+alguém que não alcança a tarefa devolve 422, não importa o que a tela ofereça.
+A Spec 034 existe justamente para o seletor não oferecer o que o salvar recusa.
+
+Logo, quem é designado **já alcançava a tarefa antes**, e o alcance de tarefa e
+o de quadro saem da mesma lente (`visible_team_ids`: próprio time + raiz, ADR
+0035 D3). Ninguém ganha acesso a um `board_id` que não alcança.
+
+⚠️ **E o furo "criador sempre vê" também não abre caminho aqui**, porque criar
+tarefa em quadro avulso exige **alcance E propriedade** — `_assert_board_in_reach`
+mais `_assert_time_do_quadro`. Alguém de fora do time do quadro não consegue pôr
+tarefa nele para depois enxergá-la como criador.
+
+⚠️ **O QUE CONTINUA SEM PROVA: a consulta 7 mede DADO, e o teste
+`test_o_board_id_devolvido_esta_na_lista_de_quadros_de_quem_pergunta` mede
+CÓDIGO.** Os dois estão verdes. O que nenhum dos dois cobre é escrita direta no
+banco — e isso é a mesma limitação de `_assert_nomes_do_lote` e da invariante
+"tarefa viva em quadro apagado". **Aplicação-com-consulta-vigiando, e não trava
+de schema.** Se a consulta 7 crescer sem quadro avulso novo, é ali que se olha.
+
 ---
 
 ## Adendo — mover tarefa entre quadros (as três saídas de 10/08)
