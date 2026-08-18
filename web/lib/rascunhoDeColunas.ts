@@ -51,6 +51,50 @@ export interface Rascunho {
   readonly proximoTmp: number;
 }
 
+/**
+ * Prefixo do id de arraste do CABEÇALHO, no `dnd-kit`.
+ *
+ * ⚠️⚠️ **ELE EXISTE PARA IMPEDIR UMA COLISÃO DE ID QUE APAGAVA O ARRASTE DE
+ * CARD (achado na conferência de 18/08).** Dentro do mesmo `DndContext`, cada
+ * coluna registrava DUAS coisas com o MESMO id:
+ *
+ *   - `ColunaKanban` -> `useDroppable({ id: coluna.id })`, o alvo do card;
+ *   - `CabecalhoSortavel` -> `useSortable({ id: ref })`, no modo de edição.
+ *
+ * O `dnd-kit` guarda os alvos por id. O segundo registro sobrescrevia o
+ * primeiro, e **ao sair do modo de edição o cabeçalho desmontava e removia a
+ * entrada — levando junto o alvo do card.** O sintoma era exato: depois de
+ * entrar e sair da edição, arrastar tarefa não fazia nada, o card voltava sem
+ * aviso, e **F5 consertava** (a árvore inteira era remontada).
+ *
+ * ⚠️ O SINTOMA NÃO ACUSA A CAUSA. "O card volta sem aviso" parece regra de
+ * negócio recusando o destino -- e o `onDragEnd` até tem três `return` mudos
+ * que produziriam o mesmo. O que acontecia é que `e.over` chegava `null`.
+ *
+ * ⚠️ NENHUM PORTÃO PEGA ISTO, e não vai pegar: `onDragEnd` não roda em jsdom.
+ * O que dá para prender é o par de funções abaixo, e é o que os testes fazem.
+ */
+export const PREFIXO_ARRASTE_DE_CABECALHO = "cab:";
+
+/** O id de arraste do cabeçalho de uma coluna. Ver o prefixo acima. */
+export function idDeArrasteDoCabecalho(ref: string): string {
+  return `${PREFIXO_ARRASTE_DE_CABECALHO}${ref}`;
+}
+
+/**
+ * A `ref` da coluna a partir do id de arraste -- ou `null` se não for um.
+ *
+ * ⚠️ `null` PARA QUALQUER OUTRA COISA, e não um `replace` cego. No mesmo
+ * contexto viajam ids de CARD (uuid de tarefa) e de COLUNA; um `replace`
+ * devolveria o id do card intacto e o `onDragEnd` de coluna trataria uma
+ * tarefa como coluna.
+ */
+export function refDoArrasteDeCabecalho(id: string): string | null {
+  return id.startsWith(PREFIXO_ARRASTE_DE_CABECALHO)
+    ? id.slice(PREFIXO_ARRASTE_DE_CABECALHO.length)
+    : null;
+}
+
 export function ehNova(ref: string): boolean {
   return ref.startsWith(PREFIXO_TMP);
 }

@@ -25,7 +25,13 @@ import type { Quadro } from "@/lib/api";
 
 vi.mock("@/lib/api", async (importOriginal) => {
   const real = await importOriginal<typeof import("@/lib/api")>();
-  return { ...real, createBoard: vi.fn(), renameBoard: vi.fn() };
+  return {
+    ...real,
+    createBoard: vi.fn(),
+    renameBoard: vi.fn(),
+    getBoard: vi.fn(),
+    deleteBoard: vi.fn(),
+  };
 });
 
 const api = await import("@/lib/api");
@@ -236,5 +242,148 @@ describe("SeletorDeQuadro -- renomear", () => {
     });
     expect(screen.queryByLabelText("Novo nome do quadro")).toBeNull();
     expect(vi.mocked(api.renameBoard)).not.toHaveBeenCalled();
+  });
+});
+
+
+describe("SeletorDeQuadro -- apagar quadro (fatia 7)", () => {
+  // ⚠️ É A OPERAÇÃO MAIS DESTRUTIVA DO PRODUTO, e a única que não pergunta o
+  // destino das tarefas. Estes testes são a única coisa que prende a
+  // confirmação — a conferência visual não roda a cada commit.
+
+  it("⚠️ a LENTE não tem botão de apagar", () => {
+    montar();
+    expect(screen.queryByLabelText("Apagar Lente do time")).toBeNull();
+  });
+
+  it("sem permissão, nenhum quadro tem botão de apagar", () => {
+    montar({ podeGerir: false });
+    expect(screen.queryByLabelText(/^Apagar /)).toBeNull();
+  });
+
+  it("⚠️ o botão de confirmar fica TRAVADO até o nome bater", async () => {
+    // ⚠️ E até a CONTAGEM chegar: confirmar sem saber quantas tarefas vão
+    // junto é o que este diálogo existe para impedir.
+    vi.mocked(api.getBoard).mockResolvedValue({
+      ...QUADROS[1],
+      task_count: 12,
+    });
+    montar();
+    fireEvent.click(screen.getByLabelText("Apagar Pauta editorial"));
+
+    const botao = await screen.findByText("Apagar quadro");
+    expect((botao as HTMLButtonElement).disabled).toBe(true);
+
+    const campo = screen.getByLabelText(/Digite/);
+    fireEvent.change(campo, { target: { value: "pauta editorial" } });
+    expect((screen.getByText("Apagar quadro") as HTMLButtonElement).disabled).toBe(
+      true
+    );
+
+    fireEvent.change(campo, { target: { value: "Pauta editorial" } });
+    expect((screen.getByText("Apagar quadro") as HTMLButtonElement).disabled).toBe(
+      false
+    );
+  });
+
+  it("⚠️ a contagem aparece ANTES do campo, e diz que arquivadas vão junto", async () => {
+    vi.mocked(api.getBoard).mockResolvedValue({
+      ...QUADROS[1],
+      task_count: 12,
+    });
+    montar();
+    fireEvent.click(screen.getByLabelText("Apagar Pauta editorial"));
+    expect(await screen.findByText("12")).toBeTruthy();
+    expect(screen.getByText(/arquivadas/)).toBeTruthy();
+  });
+
+  it("⚠️ enquanto a contagem não chega, não dá para confirmar", async () => {
+    // ⚠️ Um `?? 0` no lugar do travamento faria a tela dizer "nenhuma tarefa"
+    // sobre um quadro cheio -- e a pessoa confirmaria com base nisso.
+    vi.mocked(api.getBoard).mockReturnValue(new Promise(() => {}));
+    montar();
+    fireEvent.click(screen.getByLabelText("Apagar Pauta editorial"));
+    const campo = await screen.findByLabelText(/Digite/);
+    fireEvent.change(campo, { target: { value: "Pauta editorial" } });
+    expect((screen.getByText("Apagar quadro") as HTMLButtonElement).disabled).toBe(
+      true
+    );
+    expect(screen.getByText("Contando as tarefas…")).toBeTruthy();
+  });
+
+  it("confirma, sai do quadro apagado e manda recarregar", async () => {
+    vi.mocked(api.getBoard).mockResolvedValue({
+      ...QUADROS[1],
+      task_count: 3,
+    });
+    vi.mocked(api.deleteBoard).mockResolvedValue({ tarefas_apagadas: 3 });
+    const props = montar({ selecionado: "b-pauta" });
+
+    fireEvent.click(screen.getByLabelText("Apagar Pauta editorial"));
+    const campo = await screen.findByLabelText(/Digite/);
+    fireEvent.change(campo, { target: { value: "Pauta editorial" } });
+    fireEvent.click(screen.getByText("Apagar quadro"));
+
+    await waitFor(() => expect(api.deleteBoard).toHaveBeenCalledWith("b-pauta"));
+    // ⚠️ SAIR DO QUADRO APAGADO É OBRIGATÓRIO. Sem isto a tela continuaria
+    // pedindo um `boardId` que a lista não devolve mais -- o "Carregando…"
+    // eterno anotado no `Board.tsx`.
+    await waitFor(() => expect(props.onSelecionar).toHaveBeenCalledWith(null));
+    expect(props.onMudou).toHaveBeenCalled();
+  });
+
+  it("⚠️ apagar OUTRO quadro não tira a pessoa do que ela está vendo", async () => {
+    const links = quadro({ id: "b-links", name: "Construção de links" });
+    vi.mocked(api.getBoard).mockResolvedValue({ ...links, task_count: 0 });
+    vi.mocked(api.deleteBoard).mockResolvedValue({ tarefas_apagadas: 0 });
+    const props = montar({
+      selecionado: "b-pauta",
+      quadros: [...QUADROS, links],
+    });
+
+    fireEvent.click(screen.getByLabelText("Apagar Construção de links"));
+    const campo = await screen.findByLabelText(/Digite/);
+    fireEvent.change(campo, { target: { value: "Construção de links" } });
+    fireEvent.click(screen.getByText("Apagar quadro"));
+
+    await waitFor(() => expect(api.deleteBoard).toHaveBeenCalled());
+    expect(props.onSelecionar).not.toHaveBeenCalled();
+  });
+
+  it("⚠️ contagem diferente do apagado AVISA", async () => {
+    // Alguém criou tarefa entre a leitura e o clique. Dois números sobre a
+    // mesma coisa é pior que um número velho -- mesmo desenho do lote.
+    vi.mocked(api.getBoard).mockResolvedValue({
+      ...QUADROS[1],
+      task_count: 3,
+    });
+    vi.mocked(api.deleteBoard).mockResolvedValue({ tarefas_apagadas: 5 });
+    montar({ selecionado: "b-pauta" });
+
+    fireEvent.click(screen.getByLabelText("Apagar Pauta editorial"));
+    const campo = await screen.findByLabelText(/Digite/);
+    fireEvent.change(campo, { target: { value: "Pauta editorial" } });
+    fireEvent.click(screen.getByText("Apagar quadro"));
+
+    expect(await screen.findByText(/Alguém mexeu no quadro/)).toBeTruthy();
+  });
+
+  it("erro do servidor fica no diálogo, e o quadro não sai da tela", async () => {
+    vi.mocked(api.getBoard).mockResolvedValue({
+      ...QUADROS[1],
+      task_count: 1,
+    });
+    vi.mocked(api.deleteBoard).mockRejectedValue(
+      Object.assign(new Error("Sem permissão neste time."), { status: 403 })
+    );
+    const props = montar({ selecionado: "b-pauta" });
+
+    fireEvent.click(screen.getByLabelText("Apagar Pauta editorial"));
+    const campo = await screen.findByLabelText(/Digite/);
+    fireEvent.change(campo, { target: { value: "Pauta editorial" } });
+    fireEvent.click(screen.getByText("Apagar quadro"));
+
+    expect(await screen.findByText("Sem permissão neste time.")).toBeTruthy();
+    expect(props.onSelecionar).not.toHaveBeenCalled();
   });
 });

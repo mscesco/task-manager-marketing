@@ -24,7 +24,7 @@
 
 ## Estado (conferido no `main` em 13/08/2026)
 
-Portões verdes: **backend 823 passed**, **front 769 passed**, `tsc` 0,
+Portões verdes: **backend 846 passed**, **front 791 passed**, `tsc` 0,
 `next build` compilando. Migrations `0013` (⚠️ **a `0013` NÃO está em
 produção** — ver §Fatia 9). ADRs backend: 42.
 
@@ -69,6 +69,15 @@ deployado. O deploy espera a fatia 6 — decisão de 13/08, ver §Ordem de deplo
 | **6c-6** (17/08) — o modo de edição não cai no estado vazio | ✅ em `main` | 757→758 |
 | **9** (18/08) — nome único de quadro e de coluna, backend | ✅ em `main` | 808→823 |
 | **9** (18/08) — barra o nome repetido antes de mandar, front | ✅ em `main` | 758→769 |
+| **8** (18/08) — `move` recusa pai em outro quadro | ✅ em `main` | 823→829 |
+| **8** (18/08) — em quadro avulso, o time da tarefa é o do quadro | ✅ em `main` | 829→834 |
+| **7** (18/08) — apagar quadro + script de resgate, backend | ✅ em `main` | 834→842 |
+| **7** (18/08) — confirmação por digitação, front | ✅ em `main` | 769→788 |
+| **conferência 18/08** — rota de `GET`/`DELETE` de quadro (o teste que faltou) | ✅ em `main` | 842→846 |
+| **conferência 18/08** — id próprio para o arraste de cabeçalho | ✅ em `main` | 788→791 |
+
+⚠️ **AS TRÊS FATIAS DO PORTÃO ESTÃO FECHADAS EM CÓDIGO (9 → 8 → 7).** O que
+falta do portão é **a reconferência na tela**, e só ela.
 
 ⚠️ **A FATIA 6 ESTÁ FECHADA EM CÓDIGO E NÃO ESTÁ CONFERIDA NA TELA.** "Em
 `main`" aqui quer dizer **portão verde**, e os itens 4 e 5 da §Conferência
@@ -1553,7 +1562,39 @@ do 500 que um `IntegrityError` cru produz. Este projeto já tem a cicatriz:
 
 ---
 
-## Fatia 8 — mover tarefa entre quadros (ENTRA NO PORTÃO — **VEM ANTES DA 7**)
+## Fatia 8 — o LUGAR de uma tarefa — ✅ ENTREGUE (18/08)
+
+> Backend 823→834. **Sem migration.** Duas travas, o mesmo assunto: cada tarefa
+> aparece num lugar só, e quem decide é a dupla `board_id` + `team_id`.
+
+| | onde |
+|---|---|
+| **pai e filha no mesmo quadro** | `TaskService.move` recusa pai de outro quadro (`pai_em_outro_quadro`) |
+| **em quadro avulso, o time da tarefa é o do quadro** | `_assert_time_do_quadro`, no `create` E no `update` (`time_fora_do_quadro`) |
+
+⚠️ **A SEGUNDA VALE SÓ EM QUADRO AVULSO, e essa metade vale 216 tarefas.** No
+Quadro geral o time continua livre — é o que sustenta a tarefa INTERNA de
+subtime, que vive no geral com `team_id` do subtime e aparece **só na lente
+dele**. Medido em 18/08: 583 na raiz, 216 em subtimes (101 Mídias Sociais, 85
+SEO, 10 Audiovisual, 10 Desenvolvimento, 4 CRM, 3 Eventos, 3 Design). Uma
+trava que valesse para o geral apagaria a funcionalidade.
+
+⚠️ **ALCANCE NÃO É PROPRIEDADE, e só ficou claro escrevendo.**
+`_assert_board_in_reach` responde *"você alcança este quadro?"* — e um MANAGER
+da raiz alcança todos. Ele podia criar tarefa no quadro do SEO com time de
+Design, e a trava antiga deixava passar. São perguntas diferentes.
+
+⚠️ **DECISÃO DE 18/08: RECUSA, e não mover junto.** Mover a subárvore entre
+quadros mexeria em coluna, permissão e histórico ao mesmo tempo — entrega
+própria. **A mensagem diz o que fazer** ("mova a tarefa de topo inteira"), e
+tem teste para isso: recusar sem saída é um beco.
+
+⚠️ **A consulta 10 do `invariantes.sql` deu ZERO em 18/08, por AUSÊNCIA DE
+CASO** — produção tem um quadro só. Ela só vira afirmação depois do deploy.
+
+---
+
+## Fatia 8 — texto de escopo (histórico, antes da entrega)
 
 > Escrita em 17/08/2026, **reescrita em 18/08**: a ordem inverteu (8 → 7) e o
 > escopo cresceu com a invariante declarada pela Camila.
@@ -1622,7 +1663,76 @@ permissão e histórico ao mesmo tempo), e recusar já fecha a invariante.
 
 ---
 
-## Fatia 7 — apagar quadro (ENTRA NO PORTÃO DO DEPLOY)
+## Fatia 7 — apagar quadro — ✅ ENTREGUE (18/08)
+
+> Backend 834→842, front 769→788. **Sem migration** — a `0012` criou o
+> `deleted_at` do quadro em 06/08, justamente para este dia.
+
+⚠️⚠️ **É A OPERAÇÃO MAIS DESTRUTIVA DO PRODUTO, E A ÚNICA QUE NÃO PERGUNTA O
+DESTINO DAS TAREFAS.** Apagar coluna sempre oferece para onde elas vão; aqui
+elas somem junto. **A expectativa que o resto do produto ensinou está errada
+neste botão** — é por isso que a confirmação é por digitação do nome, e não um
+"tem certeza?".
+
+⚠️ **E ELA SÓ FUNCIONA PORQUE O NOME É ÚNICO NO TIME (fatia 9).** Com três
+quadros "Quadro CRM Teste", digitar o nome não diz qual. Foi por isso que a 9
+veio antes.
+
+### ⚠️ O QUE SEGURA O RESGATE, E COMO QUEBRÁ-LO SEM PERCEBER
+
+`restaurar_quadro.sql` devolve **só o que aquele clique apagou**, casando
+`task.deleted_at = board.deleted_at`. Isso funciona porque **`NOW()` no
+Postgres é o instante da TRANSAÇÃO**, igual em todos os comandos dela.
+
+⚠️ **Trocar aquele `NOW()` por um `datetime.now()` do Python quebra o resgate
+em silêncio:** dois instantes com microssegundos de diferença, a igualdade não
+casa nada, e o script devolve o quadro **vazio, sem erro** — com todos os
+outros testes verdes. O guardião é
+`test_o_deleted_at_do_quadro_e_das_tarefas_e_IGUAL`, e ele existe só para isso.
+
+A outra metade: o `UPDATE` filtra `deleted_at IS NULL`, então tarefa apagada de
+propósito semanas atrás **não é re-carimbada e não ressuscita**. O script
+mostra esse número em separado, para quem for restaurar conferir antes.
+
+### Três coisas que só apareceram escrevendo
+
+1. **Os comentários vão antes das tarefas.** O `UPDATE` deles casa pelas
+   tarefas VIVAS; rodando depois, elas já estariam marcadas e os comentários
+   ficariam vivos pendurados em tarefas apagadas.
+2. ⚠️ **O passo 2c do resgate pode falhar, e a falha é correta.** O índice de
+   nome único (`0013`) é parcial em `deleted_at IS NULL` — se alguém criou
+   outro quadro com o mesmo nome depois da exclusão, ressuscitar este produz
+   duas linhas iguais e o banco recusa. O `BEGIN` garante que nada fica pela
+   metade; o conserto é renomear um dos dois.
+3. ⚠️ **O aviso de divergência era escrito e nunca aparecia.** Estava pendurado
+   no estado `erro` do `SeletorDeQuadro`, que só é desenhado **dentro do
+   formulário de renomear** — fechado na hora em que alguém apaga. Pego por
+   teste, não por leitura.
+
+### ⚠️ A ESPERA ETERNA, e por que o primeiro conserto estava errado
+
+O `Board.tsx` avisava desde 13/08: *"no dia de apagar quadro isto vira espera
+eterna"*. A fatia 7 tornou isso alcançável.
+
+⚠️ **O primeiro conserto tentou separar "a lista ainda não foi buscada" de
+"foi, e o quadro não veio" — e os dois casos são INDISTINGUÍVEIS num único
+instante.** Na corrida de quem acabou de criar o quadro, a lista também já foi
+buscada e também voltou sem ele: o `listBoards` saiu antes de o `POST` gravar.
+**O teste da corrida foi quem mostrou.**
+
+O que separa é o TEMPO: a tela busca uma **segunda vez** antes de desistir.
+⚠️ **Uma só** — um laço transformaria o quadro apagado numa tela batendo no
+servidor para sempre, que é o defeito anterior com custo de rede.
+
+### Sem history por tarefa, e é escolha
+
+Seriam centenas de linhas por clique (173 tarefas de topo só no geral). O
+rastro é o log `board.apagado` com a contagem, mais a igualdade de carimbo —
+mais precisa que o history para o único uso que importa: desfazer.
+
+---
+
+## Fatia 7 — texto de escopo (histórico, antes da entrega)
 
 > Escrita em 17/08/2026. Era o item 1 da §"o que falta"; virou fatia própria
 > quando a §Definição de pronto fechou a lista do deploy.
@@ -1934,16 +2044,25 @@ front na **mesma imagem**: não há como subir a 5b-1 sem subir a 5b-7 junto.
 Subindo em bloco, vira uma janela só. **Sabendo disso**, a escolha é subir em
 bloco depois da fatia 6 — dois deploys no total, não oito.
 
-1. ⚠️ **A §Definição de pronto satisfeita por inteiro** — fatia 6 conferida
-   (feito em 17/08) **e RECONFERIDA** (a lista curta da §Conferência visual),
-   e as fatias **9 → 8 → 7** entregues e conferidas, **nessa ordem** (a
-   inversão é de 18/08: a 8 estabelece a invariante de pai e filha que faz a 7
-   ser simples — ver §Fatia 8).
+1. ✅ **A §Definição de pronto satisfeita por inteiro** — fatia 6 conferida
+   (17/08) **e RECONFERIDA** (18/08), e as fatias **9 → 8 → 7** entregues e
+   conferidas. **Fechado em 18/08.**
 2. **Rodar o `invariantes.sql` ANTES**, e anotar a consulta 5. Série:
-   696 (06/08) → 802 → 832 (10/08). ⚠️ **Sem leitura nova desde 10/08.** É o
-   único contador de produção escrito em algum lugar.
-3. **Deploy em bloco** (5b-1 a 5b-7 + fatia 6). Sem migration: a `0012` está em
-   produção desde 10/08.
+   696 (06/08) → 802 → 832 (10/08) → **1049 (18/08)**.
+   ⚠️ **A CONSULTA 5 CONTA TUDO, INCLUSIVE APAGADAS E ARQUIVADAS.** A leitura
+   útil, medida em 18/08, é outra: **799 é o que o quadro carrega**
+   (`deleted_at IS NULL AND is_archived = false`), contra um teto de 1000 no
+   front (`TASK_FETCH_CEILING`). Das 925 vivas, **565 estão em Concluído** e só
+   126 arquivadas — a alavanca é o job de arquivamento, não o teto.
+   ⚠️ **As consultas 8, 9 e 10 são novas e deram ZERO em 18/08.** A 8 é o que
+   diz se a `0013` passa.
+3. ⚠️ **Deploy em bloco, E ELE AGORA TEM MIGRATION.** Sobem as fatias 5b-1 a
+   5b-7, a 6, a 9, a 8 e a 7 de uma vez. **A `0013` (nome único de quadro) NÃO
+   está em produção** — ela é a primeira migration desta spec a subir junto com
+   código, e aborta com a lista se houver nome de quadro repetido. Rode a
+   consulta 8 antes.
+   ⚠️ **E o `restaurar_quadro.sql` sobe junto**, porque é a única forma de
+   desfazer um "apagar quadro" — conferido na tela em 18/08 (item 49).
 4. **Rodar o `invariantes.sql` DEPOIS.** A consulta 7 sai de "ausência de caso"
    e a 5 passa a listar mais de um quadro.
 5. **Um dia de uso só seu, antes de anunciar ao time.** É a janela em que o
@@ -2042,7 +2161,11 @@ tela existir.** São 18, e cobrem o que a 6c realmente construiu.
 24. ⚠️ **Arrastar um cabeçalho reordena** — e a ordem **não persiste** até
     concluir. F5 antes de concluir descarta.
 25. ⚠️ **Arrastar uma coluna para fora da área visível** → rolagem automática.
-26. As setas ← → fazem o mesmo, **só pelo teclado**, e travam na ponta.
+26. Os botões `‹ ›` no cabeçalho movem a coluna, e **travam na ponta**.
+    ⚠️ **A versão anterior deste item dizia "as setas ← → só pelo teclado", e
+    isso NUNCA existiu** — foi reportado como defeito em 18/08, e o defeito era
+    o item. São botões de clicar, alcançáveis por `Tab` + `Enter`. Não há
+    atalho ← →, e não vai haver: não existe `KeyboardSensor` no produto.
 27. Clicar no nome renomeia; `Esc` desfaz **sem** fechar o modo.
 28. O "×" risca a coluna e oferece desfazer.
 29. Em `Backlog` (único alvo `OPEN`) **e em `Concluído`** (único alvo `DONE`) o
@@ -2122,6 +2245,97 @@ ter passado.** Os itens 1–4 (regressão) e 5–8, 17–20 não foram tocados.
     tem de aparecer **erro em vermelho** na barra. **Até 18/08 não aparecia
     nada**: `erroLote` só era desenhado dentro da revisão, que só existe quando
     há coluna marcada para apagar. A pessoa clicava e não acontecia nada.
+
+⚠️ **MAIS SEIS, das fatias 8 e 7 (18/08). Os itens 47 a 49 são a operação mais
+destrutiva do produto — não pule nenhum, e faça num quadro de teste.**
+
+44. **Numa tarefa de quadro avulso, tentar movê-la para debaixo de uma tarefa
+    do Quadro geral** (pela API — a tela não oferece trocar de pai) → recusa
+    dizendo para **mover a tarefa de topo inteira**.
+45. **Criar tarefa dentro de um quadro avulso** → ela nasce com o time DAQUELE
+    quadro, e o modal diz qual.
+46. ⚠️ **Lente de um subtime → criar tarefa ali** → ela continua **interna** e
+    **não aparece no Quadro geral**, nem para ADMIN. É o comportamento das 216
+    tarefas de produção, e a fatia 8 não podia tê-lo mexido.
+47. ⚠️ **O botão "Apagar" NÃO existe na lente nem no Quadro geral** — ausente,
+    e não desabilitado. Só nos quadros avulsos, e só para quem gere.
+48. ⚠️ **Apagar um quadro COM tarefas dentro**, num quadro de teste:
+    a contagem aparece **antes** do campo e diz que as arquivadas vão junto; o
+    botão fica **travado** até o nome bater; **maiúscula errada não passa**;
+    `Enter` **não** confirma; `Esc` fecha. Depois: o quadro some do seletor, a
+    tela volta para a lente, e as tarefas somem de `/minhas-tarefas`.
+49. ⚠️ **O RESGATE, e ele é o item mais importante desta lista.** Rode
+    `backend/scripts/restaurar_quadro.sql` no quadro que você acabou de apagar
+    e confira que **o quadro e as tarefas voltam**. Se este falhar, apagar
+    quadro é irreversível de verdade — e aí a fatia não pode subir.
+    ⚠️ **Antes de restaurar, apague UMA tarefa daquele quadro à mão** e confira
+    que ela **NÃO** volta: o resgate devolve só o que aquele clique apagou.
+50. ⚠️ **Duas abas no mesmo quadro avulso: apague numa, e olhe a outra SEM
+    RECARREGAR** → ela diz **"Este quadro não existe mais"**, e não fica em
+    "Carregando…" para sempre.
+
+    ⚠️ **A versão anterior deste item mandava RECARREGAR, e estava errada** —
+    reportada em 18/08. Com F5, o `?quadro=` passa por `quadroPedidoNaUrl`, que
+    recusa id fora da lista e **cai na lente, em silêncio e de propósito**
+    (anterior à fatia 7: *"o id pode ter vindo de um link velho; mostrar erro
+    para quem só abriu a tela seria pior que mostrar o lugar padrão dela"*).
+    A mensagem cobre o outro caso — a aba que já estava aberta.
+
+    ⚠️ **SOBRA UMA PONTA, e ela NÃO entra no portão:** a queda para a lente é
+    muda. Com apagar quadro existindo, isso deixa de ser "link velho de alguém"
+    e passa a acontecer entre duas pessoas do time. Conserto barato depois do
+    deploy: um aviso passageiro na lente.
+
+---
+
+### ⚠️ O que a conferência de 18/08 achou, e o que ela ensinou
+
+**Cinco achados. Dois eram defeito de código, e TRÊS eram erro da própria
+lista** — os itens 26, 39 (em aberto) e 50 pediam comportamento que o código
+nunca teve.
+
+⚠️ **O PADRÃO DOS ITENS ERRADOS TEM NOME: foram escritos a partir da INTENÇÃO
+do plano, e não do código.** Com o 13, o 29 e o 37 (17/08), são SEIS. Item de
+conferência que descreve o que a gente queria, e não o que existe, gasta a
+rodada de quem confere e ainda produz um "defeito" que não é.
+**Antes de escrever item novo, abra o arquivo.**
+
+#### Os dois defeitos
+
+1. ⚠️⚠️ **O ARRASTE DE CARD MORRIA DEPOIS DE ENTRAR E SAIR DO MODO DE EDIÇÃO.**
+   Duas coisas registravam no MESMO `DndContext` com o MESMO id: o
+   `useDroppable({ id: coluna.id })` do `ColunaKanban` (o alvo do card) e o
+   `useSortable({ id: ref })` do cabeçalho, onde `ref` **é** o `coluna.id`. O
+   segundo sobrescrevia o primeiro, e ao SAIR da edição o cabeçalho desmontava
+   e **apagava a entrada compartilhada, levando junto o alvo do card**.
+   Conserto: prefixo `cab:` no id do cabeçalho.
+
+   ⚠️ **O SINTOMA NÃO ACUSAVA A CAUSA.** "O card volta sem aviso" parece regra
+   recusando o destino — e `onDragEnd` tem três `return` mudos que dariam o
+   mesmo. O que discriminou foi uma pergunta de UMA linha: *nenhuma coluna
+   acende ao passar o card por cima?* Sem `over`, não é regra: é registro.
+
+   ⚠️ **NENHUM PORTÃO PEGA, E NÃO VAI PEGAR** — `onDragEnd` não roda em jsdom.
+   O que ficou preso é o par `idDeArrasteDoCabecalho`/`refDoArrasteDeCabecalho`,
+   com a asserção de que o id do cabeçalho **nunca** é igual ao da coluna.
+
+2. ⚠️ **A ROTA DE APAGAR QUADRO VOLTAVA 405, e a suíte estava verde.** A fatia
+   7 subiu com 8 testes de SERVIÇO e ZERO de rota. Teste de serviço não sabe se
+   a rota existe: rota não registrada, verbo errado ou `response_model` trocado
+   passam verdes e aparecem como **405 na tela de quem clicou**.
+   ⚠️ **E o `test_boards_escrita_http_db.py` JÁ AVISAVA no cabeçalho** que a
+   primeira versão das rotas de escrita falhou em 100% das requisições com os
+   17 testes de serviço verdes. Mesma lacuna, mesmo arquivo, dois meses depois.
+
+#### Uma armadilha de ferramenta, medida na fonte
+
+⚠️ **`useDraggable({ disabled })` NÃO DESREGISTRA O NÓ no `@dnd-kit/core@6.3.1`.**
+Lido no `node_modules`: `disabled` entra só no `aria-disabled` e no `useMemo`
+dos atributos — **não** no efeito de registro (deps `[draggableNodes, id]`) nem
+nos `listeners`. Quem trava o card no modo de edição é o
+`{...(travado ? {} : listeners)}`, e não o hook. O comentário do
+`CardArrastavel` afirma o contrário e está **errado** — custou duas rodadas de
+procura num mecanismo que não existe.
 
 ---
 

@@ -25,6 +25,7 @@ import type { Quadro } from "@/lib/api";
 import {
   DESCRICAO_DA_LENTE,
   alcanceDeQuadro,
+  nomeConfere,
   nomeDeQuadroValido,
   opcaoSelecionada,
   opcoesDoSeletor,
@@ -270,5 +271,60 @@ describe("nomeDeQuadroValido", () => {
     // `StringDataRightTruncation`, que sai como 500.
     expect(nomeDeQuadroValido("x".repeat(255))).toHaveLength(255);
     expect(nomeDeQuadroValido("x".repeat(256))).toBeNull();
+  });
+});
+
+describe("nomeConfere -- a trava de apagar quadro", () => {
+  // ⚠️ É A ÚNICA COISA ENTRE UM CLIQUE E APAGAR AS TAREFAS DE OUTRAS PESSOAS.
+  // Apagar quadro não pergunta o destino delas, e não há desfazer na tela.
+  it("nome exato confere", () => {
+    expect(nomeConfere("Campanhas", "Campanhas")).toBe(true);
+  });
+
+  it("⚠️ vazio NUNCA confere", () => {
+    // Sem esta linha, abrir o diálogo e clicar em confirmar sem digitar nada
+    // apagaria o quadro.
+    expect(nomeConfere("", "Campanhas")).toBe(false);
+    expect(nomeConfere("   ", "Campanhas")).toBe(false);
+  });
+
+  it("⚠️ maiúscula IMPORTA", () => {
+    // A confirmação existe para obrigar a pessoa a LER o nome do quadro que
+    // está prestes a apagar. Aceitar "campanhas" afrouxa justamente o passo
+    // que faz ela olhar — e é a mesma regra do nome único da fatia 9.
+    expect(nomeConfere("campanhas", "Campanhas")).toBe(false);
+  });
+
+  it("espaço nas pontas não atrapalha", () => {
+    // O backend grava com `strip()`; um espaço colado não pode virar recusa
+    // que a pessoa não consegue ver na tela.
+    expect(nomeConfere("  Campanhas  ", "Campanhas")).toBe(true);
+  });
+
+  it("nome parecido não confere", () => {
+    expect(nomeConfere("Campanha", "Campanhas")).toBe(false);
+    expect(nomeConfere("Campanhas 2", "Campanhas")).toBe(false);
+  });
+});
+
+describe("opcoesDoSeletor -- afordância de apagar", () => {
+  it("⚠️ a LENTE nunca oferece apagar, nem para quem gere", () => {
+    // Não há registro para apagar, e botão que não funciona é botão em que
+    // alguém clica (ADR 0034 item 2).
+    const opcoes = opcoesDoSeletor(QUADROS, SEO, true);
+    expect(opcoes[0].id).toBeNull();
+    expect(opcoes[0].podeApagar).toBe(false);
+  });
+
+  it("⚠️ o QUADRO GERAL não aparece na lista, então não há o que apagar", () => {
+    // Ele é onde nasce toda tarefa de topo; o backend recusa com
+    // `quadro_padrao_nao_apagavel`, e a tela nem chega a oferecer.
+    const ids = opcoesDoSeletor(QUADROS, SEO, true).map((o) => o.id);
+    expect(ids).not.toContain("b-geral");
+  });
+
+  it("sem permissão, quadro avulso não oferece apagar", () => {
+    const opcoes = opcoesDoSeletor(QUADROS, SEO, false);
+    expect(opcoes.every((o) => !o.podeApagar)).toBe(true);
   });
 });

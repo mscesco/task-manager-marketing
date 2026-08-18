@@ -59,6 +59,8 @@ import {
   nomeRepetidoNoRascunho,
   paraLote,
   colunasParaDesenhar,
+  idDeArrasteDoCabecalho,
+  refDoArrasteDeCabecalho,
   rascunhoInicial,
   temPendencias,
   type Rascunho,
@@ -129,6 +131,11 @@ export default function Board({
   // tomada em `/minhas-tarefas`), porque pintar um kanban com a lista velha e
   // trocar depois e pior do que esperar meio segundo.
   const [quadros, setQuadros] = useState<Quadro[] | null>(null);
+  // ⚠️ Para qual `boardId` a lista de quadros foi buscada (fatia 7). `null` =
+  // ainda nenhuma, ou a ultima foi sem quadro escolhido.
+  const [quadrosPara, setQuadrosPara] = useState<string | null>(null);
+  // ⚠️ Quantas vezes a lista chegou SEM o quadro pedido. Ver a saida abaixo.
+  const [buscasSemOQuadro, setBuscasSemOQuadro] = useState(0);
   // ⚠️ TERCEIRO ESTADO, E ELE FALTAVA. `quadros` sozinho so distingue
   // "carregando" (`null`) de "carregou" -- e o `catch` gravava `[]`, que e
   // "carregou e nao ha quadro nenhum". As duas situacoes sao diferentes e a
@@ -336,6 +343,17 @@ export default function Board({
     listBoards()
       .then((lista) => {
         setQuadros(lista);
+        // ⚠️ REGISTRA PARA QUAL `boardId` ESTA LISTA CHEGOU (fatia 7). E o que
+        // separa "ainda nao carregou" de "carregou e o quadro nao esta nela".
+        // Sem isso os dois casos viram o mesmo "Carregando…" -- e o segundo
+        // nunca termina. Ver a saida logo abaixo do calculo do quadro.
+        setQuadrosPara(boardId ?? null);
+        // ⚠️ CONTA AS BUSCAS QUE VOLTARAM SEM O QUADRO PEDIDO. Zera assim que
+        // ele aparece -- e o que faz a segunda tentativa da corrida encerrar o
+        // assunto em vez de deixar o contador subindo.
+        setBuscasSemOQuadro((n) =>
+          boardId && !lista.some((q) => q.id === boardId) ? n + 1 : 0
+        );
         setErroQuadros(false);
       })
       .catch(() => {
@@ -345,7 +363,11 @@ export default function Board({
         setQuadros([]);
         setErroQuadros(true);
       });
-  }, []);
+    // ⚠️ `boardId` ENTROU NAS DEPENDENCIAS EM 18/08 porque o corpo passou a
+    // le-lo (`setQuadrosPara`). Sem ele, o closure guardaria o `boardId` do
+    // primeiro render e a tela concluiria "este quadro nao existe mais" sobre
+    // um quadro que existe -- trocando uma espera eterna por um erro falso.
+  }, [boardId]);
 
   // ⚠️ `boardId` NAS DEPENDENCIAS (12/08). Sem ele, trocar de quadro no
   // seletor NAO recarrega a lista -- e um quadro recem-criado nao esta nela,
@@ -355,6 +377,15 @@ export default function Board({
   useEffect(() => {
     carregarQuadros();
   }, [carregarQuadros, boardId]);
+
+  // ⚠️ A SEGUNDA TENTATIVA (fatia 7). A primeira busca pode ter saido antes de
+  // o `POST /boards` gravar -- a corrida de quem acabou de criar o quadro. Uma
+  // busca a mais resolve isso; se ela voltar igual, o quadro nao existe mesmo
+  // e a tela para de esperar. **Uma so**: um laco viraria a espera eterna
+  // anterior, com custo de rede.
+  useEffect(() => {
+    if (boardId && buscasSemOQuadro === 1) carregarQuadros();
+  }, [boardId, buscasSemOQuadro, carregarQuadros]);
 
   // ⚠️ TROCAR DE QUADRO DESCARTA O RASCUNHO, e isto é a correção do
   // `TypeError` de 17/08 -- os `?? undefined` que ficaram nas funções puras
@@ -767,7 +798,37 @@ export default function Board({
   // aquela fatia tem de trocar esta saida por um "este quadro nao existe
   // mais", e o teste que prende isto e o `describe` do quadro recem-criado.
   if (boardId && !quadro) {
-    return <div className="muted">Carregando tarefas…</div>;
+    // ⚠️ ESTE RAMO ERA "Carregando…" PARA SEMPRE, E A FATIA 7 O TORNOU
+    // ALCANCAVEL. O comentario acima previu: alguem apaga o quadro que outra
+    // pessoa esta olhando, a lista volta sem ele, e a tela dela nunca sai da
+    // espera. Com apagar quadro existindo, isso deixa de ser hipotese.
+    //
+    // ⚠️⚠️ **OS DOIS CASOS SAO INDISTINGUIVEIS NUM UNICO INSTANTE, e a
+    // primeira versao desta saida errou exatamente nisso.** Eu tentei separar
+    // "a lista ainda nao foi buscada para este quadro" de "foi, e ele nao
+    // veio" -- mas na CORRIDA DE CRIACAO a lista tambem ja foi buscada e
+    // tambem voltou sem ele: o `listBoards` saiu antes de o `POST /boards`
+    // gravar. O teste da corrida foi quem me mostrou.
+    //
+    // ⚠️ O QUE SEPARA E O TEMPO, entao a tela TENTA DE NOVO uma vez. Na
+    // corrida, a segunda busca traz o quadro. No quadro apagado, ela volta
+    // igual -- e ai a resposta e definitiva.
+    //
+    // ⚠️ UMA VEZ SO, e nao um laco. Duas buscas resolvem a corrida; insistir
+    // transformaria um quadro apagado numa tela que bate no servidor para
+    // sempre, que e o defeito ANTERIOR (a espera eterna) com custo de rede.
+    if (quadrosPara !== boardId || buscasSemOQuadro < 2) {
+      return <div className="muted">Carregando tarefas…</div>;
+    }
+    return (
+      <div className="error-box" role="alert" style={{ maxWidth: 480 }}>
+        Este quadro não existe mais.
+        <div className="muted" style={{ fontSize: 13, marginTop: 6 }}>
+          Ele pode ter sido apagado por outra pessoa enquanto você o tinha
+          aberto.
+        </div>
+      </div>
+    );
   }
   const colunas: Coluna[] = quadro
     ? [...quadro.colunas].sort((a, b) => a.position - b.position)
@@ -989,9 +1050,15 @@ export default function Board({
   function onDragEndColuna(e: DragEndEvent) {
     const { active, over } = e;
     if (!over || active.id === over.id || !rascunho) return;
-    const destino = rascunho.ordem.indexOf(String(over.id));
+    // ⚠️ TIRA O PREFIXO DOS DOIS LADOS. `null` = nao e arraste de cabecalho --
+    // no mesmo contexto viajam ids de CARD, e trata-los como coluna moveria a
+    // coluna errada. Ver `refDoArrasteDeCabecalho`.
+    const refArrastada = refDoArrasteDeCabecalho(String(active.id));
+    const refSobre = refDoArrasteDeCabecalho(String(over.id));
+    if (refArrastada === null || refSobre === null) return;
+    const destino = rascunho.ordem.indexOf(refSobre);
     if (destino === -1) return;
-    const novo = comOrdem(rascunho, String(active.id), destino);
+    const novo = comOrdem(rascunho, refArrastada, destino);
     // ⚠️ `null` = nada muda. Mesmo contrato das setas -- ver `comOrdem`.
     if (novo) setRascunho(novo);
   }
@@ -1705,7 +1772,11 @@ export default function Board({
             }}
           >
             <SortableContext
-              items={ordemVisivel}
+              // ⚠️ OS ITENS SAO OS IDS PREFIXADOS, e tem de casar com o
+              // `useSortable` do cabecalho -- lista e registro precisam falar
+              // a mesma linguagem, senao o `dnd-kit` nao acha o item arrastado
+              // dentro dela e o arraste de coluna para de funcionar.
+              items={ordemVisivel.map(idDeArrasteDoCabecalho)}
               strategy={horizontalListSortingStrategy}
               // ⚠️ `disabled` FORA DO MODO: sem isto o `useSortable` de cada
               // cabecalho continuaria registrado e o arraste de CARD passaria a
@@ -1923,7 +1994,14 @@ function CabecalhoSortavel({
   // componente antes de chamar `useSortable` mudaria a quantidade de hooks
   // entre dois renders e o React derruba a arvore inteira.
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id: linha?.ref ?? "" });
+    // ⚠️ ID PREFIXADO, E NAO `linha.ref` (18/08). O `ColunaKanban` registra um
+    // droppable com `coluna.id` no MESMO `DndContext`; registrar o sortable
+    // com o mesmo id fazia o segundo sobrescrever o primeiro, e ao SAIR do
+    // modo de edicao o cabecalho desmontava levando junto o alvo de arraste do
+    // card. Sintoma: depois de entrar e sair da edicao, arrastar tarefa nao
+    // fazia nada e o card voltava sem aviso -- so F5 consertava. Ver
+    // `PREFIXO_ARRASTE_DE_CABECALHO`.
+    useSortable({ id: idDeArrasteDoCabecalho(linha?.ref ?? "") });
   if (!linha) return null;
   return (
     <div

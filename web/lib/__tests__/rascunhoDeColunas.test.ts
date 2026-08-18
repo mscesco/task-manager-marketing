@@ -17,6 +17,8 @@ import type { Coluna } from "@/lib/coluna";
 import {
   COR_DA_COLUNA_NOVA,
   colunasParaDesenhar,
+  idDeArrasteDoCabecalho,
+  refDoArrasteDeCabecalho,
   comColunaNova,
   comMarcacao,
   comOrdem,
@@ -502,5 +504,34 @@ describe("nomeRepetidoNoRascunho", () => {
     // ela recusaria um nome que o backend aceita, e ninguém descobriria.
     const r = comRenome(rascunhoInicial(QUADRO), "c2", "backlog");
     expect(nomeRepetidoNoRascunho(r, QUADRO)).toBeNull();
+  });
+});
+
+describe("id de arraste do cabeçalho", () => {
+  // ⚠️⚠️ ESTE BLOCO EXISTE POR CAUSA DE UM DEFEITO QUE NENHUM PORTÃO PEGA.
+  // Até 18/08 o cabeçalho registrava o arraste com o MESMO id do droppable da
+  // coluna, no mesmo `DndContext`. O segundo registro sobrescrevia o primeiro,
+  // e ao SAIR do modo de edição o cabeçalho desmontava levando junto o alvo de
+  // arraste do card: arrastar tarefa parava de funcionar até dar F5.
+  //
+  // `onDragEnd` não roda em jsdom. O que dá para prender é o par de funções.
+  it("ida e volta", () => {
+    expect(refDoArrasteDeCabecalho(idDeArrasteDoCabecalho("c1"))).toBe("c1");
+    expect(refDoArrasteDeCabecalho(idDeArrasteDoCabecalho("tmp:1"))).toBe(
+      "tmp:1"
+    );
+  });
+
+  it("⚠️ o id do cabeçalho NUNCA é igual ao da coluna", () => {
+    // É a asserção que trava a regressão: se alguém "simplificar" devolvendo o
+    // ref cru, a colisão volta e o sintoma só aparece na tela.
+    expect(idDeArrasteDoCabecalho("c1")).not.toBe("c1");
+  });
+
+  it("⚠️ id de CARD não é confundido com cabeçalho", () => {
+    // No mesmo contexto viajam ids de tarefa (uuid). Um `replace` cego
+    // devolveria o uuid intacto, e o `onDragEndColuna` moveria a coluna errada.
+    expect(refDoArrasteDeCabecalho("2f8b1e10-0000-4000-8000-000000000000")).toBeNull();
+    expect(refDoArrasteDeCabecalho("c1")).toBeNull();
   });
 });

@@ -1723,6 +1723,18 @@ describe("Board -- a API de quadros falhou (fatia 5b-6)", () => {
 // `boardId ? quadroPedido : ...` -> tem de cair o teste abaixo.
 // =====================================================================
 describe("Board -- quadro pedido que ainda nao esta na lista (fatia 5b-6)", () => {
+  it("⚠️ quadro APAGADO por outra pessoa diz que nao existe mais", async () => {
+    // ⚠️ ATE 18/08 ESTE CAMINHO ERA "Carregando…" PARA SEMPRE, e o comentario
+    // no `Board.tsx` previu: alguem apaga o quadro que outra pessoa esta
+    // olhando, a lista volta sem ele, e a tela dela nunca sai da espera. A
+    // fatia 7 tornou isso alcancavel de verdade.
+    montarApi([], []);
+    // A lista NAO tem o quadro pedido -- e o que acontece depois de apagar.
+    vi.mocked(api.listBoards).mockResolvedValue([QUADRO]);
+    render(<Board boardId="board-apagado" title="Campanhas" />);
+    expect(await screen.findByText("Este quadro não existe mais.")).toBeTruthy();
+  });
+
   it("⚠️ NAO cai nas colunas do Quadro geral -- espera", async () => {
     montarApi([], []);
     // A lista NAO tem o quadro pedido: e o estado logo depois de criar.
@@ -1742,7 +1754,57 @@ describe("Board -- quadro pedido que ainda nao esta na lista (fatia 5b-6)", () =
     for (const nome of QUADRO.colunas.map((c) => c.name)) {
       expect(screen.queryByText(nome)).toBeNull();
     }
-    // ...e a tela diz que esta esperando, em vez de desenhar um kanban vazio.
-    expect(screen.getByText(/Carregando/i)).toBeTruthy();
+    // ...e a tela NAO desenha um kanban vazio: ou espera, ou diz que o quadro
+    // nao existe.
+    //
+    // ⚠️ ESTA ASSERCAO AFROUXOU EM 18/08, E O MOTIVO E UMA CORRECAO, nao uma
+    // concessao. Ate aqui ela exigia "Carregando" -- e "Carregando" para
+    // SEMPRE era o defeito, previsto em comentario no `Board.tsx` desde
+    // 13/08: com apagar quadro existindo (fatia 7), a lista volta sem ele e a
+    // tela nunca sairia da espera. Hoje a tela tenta uma segunda vez e entao
+    // responde. **O que este teste guarda e o que ele sempre guardou: as
+    // colunas do Quadro geral nao aparecem.** Os dois desfechos tem teste
+    // proprio, logo abaixo e acima.
+    expect(
+      screen.queryByText(/Carregando/i) ??
+        screen.queryByText("Este quadro não existe mais.")
+    ).toBeTruthy();
+  });
+
+  it("⚠️ a corrida de criacao se resolve na SEGUNDA busca", async () => {
+    // ⚠️ ESTE TESTE E O PAR DO DE CIMA E DO "nao existe mais", e os tres so
+    // fazem sentido juntos. Num instante, "acabei de criar" e "foi apagado"
+    // sao INDISTINGUIVEIS: nos dois a lista volta sem o quadro. O que separa e
+    // o tempo -- entao a tela busca uma segunda vez antes de desistir.
+    montarApi([], []);
+    const avulso = {
+      id: "board-que-acabou-de-nascer",
+      name: "Novo",
+      team_id: CRM,
+      is_default: false,
+      // ⚠️ COLUNA PROPRIA, e nao as do geral: e ela que prova que a tela
+      // passou a desenhar o quadro NOVO, e nao caiu no padrao.
+      colunas: [
+        {
+          id: "nasc-revisao",
+          name: "Em Revisão",
+          color: "var(--status-progress-dot)",
+          position: 0,
+          semantic: "IN_PROGRESS" as const,
+          notify_deadline: true,
+          is_default_target: true,
+          is_status_bridge: true,
+        },
+      ],
+    };
+    vi.mocked(api.listBoards)
+      .mockResolvedValueOnce([QUADRO])
+      .mockResolvedValue([QUADRO, avulso]);
+
+    render(<Board boardId="board-que-acabou-de-nascer" title="Quadro · Novo" />);
+
+    // A coluna do quadro NOVO aparece: a segunda busca o trouxe.
+    expect(await screen.findByText("Em Revisão")).toBeTruthy();
+    expect(screen.queryByText("Este quadro não existe mais.")).toBeNull();
   });
 });

@@ -1,7 +1,15 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 
-import { ApiError, createBoard, renameBoard, type Quadro } from "@/lib/api";
+import {
+  ApiError,
+  createBoard,
+  deleteBoard,
+  getBoard,
+  renameBoard,
+  type Quadro,
+} from "@/lib/api";
+import ConfirmarExclusaoDeQuadro from "@/components/ConfirmarExclusaoDeQuadro";
 import {
   nomeDeQuadroValido,
   opcaoSelecionada,
@@ -60,6 +68,77 @@ export default function SeletorDeQuadro({
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const campoRef = useRef<HTMLInputElement>(null);
+
+  // ---- apagar quadro (fatia 7) ----
+  //
+  // ⚠️ ESTADO SEPARADO DO DE RENOMEAR, e nao um `editando === "apagando"`. As
+  // duas operacoes tem confirmacoes de peso oposto: renomear salva no Enter;
+  // apagar exige digitar o nome e nem aceita Enter. Compartilhar a maquina de
+  // estado faria um caminho herdar as teclas do outro.
+  const [apagando, setApagando] = useState<OpcaoDeQuadro | null>(null);
+  const [contagem, setContagem] = useState<number | null>(null);
+  const [erroApagar, setErroApagar] = useState<string | null>(null);
+  const [excluindo, setExcluindo] = useState(false);
+  // ⚠️ ESTADO PROPRIO, E NAO O `erro`. O `erro` so e desenhado DENTRO do
+  // formulario de renomear -- pendurar o aviso de divergencia nele fazia a
+  // mensagem ser escrita e nunca aparecer, porque o formulario esta fechado
+  // quando alguem apaga. Pego pelo teste, nao pela leitura.
+  const [divergencia, setDivergencia] = useState<string | null>(null);
+
+  async function abrirApagar(opcao: OpcaoDeQuadro) {
+    if (opcao.id === null) return;
+    setApagando(opcao);
+    setContagem(null);
+    setErroApagar(null);
+    setDivergencia(null);
+    try {
+      // ⚠️ A CONTAGEM E BUSCADA AO ABRIR, e nao guardada da listagem: o
+      // `GET /boards` nao a traz. Enquanto ela nao chega, o botao de confirmar
+      // fica travado -- confirmar sem saber quantas tarefas vao junto e o que
+      // este dialogo existe para impedir.
+      const detalhe = await getBoard(opcao.id);
+      setContagem(detalhe.task_count);
+    } catch (e) {
+      setErroApagar(
+        (e as ApiError).message ||
+          "Não consegui contar as tarefas deste quadro."
+      );
+    }
+  }
+
+  async function confirmarExclusao() {
+    if (!apagando?.id) return;
+    setExcluindo(true);
+    setErroApagar(null);
+    try {
+      const { tarefas_apagadas } = await deleteBoard(apagando.id);
+      const eraOSelecionado = selecionado === apagando.id;
+      setApagando(null);
+      setContagem(null);
+      // ⚠️ SAI DO QUADRO APAGADO ANTES DE RECARREGAR, e so se era ele que
+      // estava aberto. Sem isto a tela ficaria pedindo um `boardId` que a
+      // lista nao devolve mais -- que e o "Carregando…" eterno anotado no
+      // `Board.tsx`.
+      if (eraOSelecionado) onSelecionar(null);
+      onMudou();
+      // ⚠️ A DIVERGENCIA E AVISADA, e nao engolida. A contagem foi lida ao
+      // abrir o dialogo; se alguem criou tarefa ali no meio, os dois numeros
+      // discordam -- mesmo desenho da `mensagemDeDivergencia` do lote.
+      if (contagem !== null && contagem !== tarefas_apagadas) {
+        setDivergencia(
+          `O aviso falava em ${contagem}, mas ${tarefas_apagadas} ` +
+            `${tarefas_apagadas === 1 ? "tarefa foi apagada" : "tarefas foram apagadas"}. ` +
+            `Alguém mexeu no quadro enquanto você confirmava.`
+        );
+      }
+    } catch (e) {
+      setErroApagar(
+        (e as ApiError).message || "Não consegui apagar. Tente de novo."
+      );
+    } finally {
+      setExcluindo(false);
+    }
+  }
 
   useEffect(() => {
     if (editando) campoRef.current?.focus();
@@ -177,6 +256,19 @@ export default function SeletorDeQuadro({
                   Renomear
                 </button>
               )}
+              {/* ⚠️ AUSENTE, e nao desabilitado -- e aqui pesa mais que no
+                  renomear: apagar quadro apaga as tarefas dentro. A lente e o
+                  Quadro geral nunca chegam aqui (`opcoesDoSeletor`). */}
+              {o.podeApagar && (
+                <button
+                  className="btn btn-ghost"
+                  style={{ fontSize: 12, color: "var(--danger)" }}
+                  onClick={() => abrirApagar(o)}
+                  aria-label={`Apagar ${o.nome}`}
+                >
+                  Apagar
+                </button>
+              )}
             </span>
           );
         })}
@@ -187,6 +279,30 @@ export default function SeletorDeQuadro({
           </button>
         )}
       </div>
+
+      {/* ⚠️ FORA DO FORMULARIO DE RENOMEAR, de proposito. Este aviso nasce
+          DEPOIS de o dialogo fechar, e o formulario esta fechado nessa hora --
+          desenha-lo la dentro escreveria a mensagem para ninguem. */}
+      {divergencia && (
+        <div role="alert" className="error-text" style={{ fontSize: 12 }}>
+          {divergencia}
+        </div>
+      )}
+
+      {apagando && (
+        <ConfirmarExclusaoDeQuadro
+          nome={apagando.nome}
+          contagem={contagem}
+          erro={erroApagar}
+          ocupado={excluindo}
+          onConfirmar={confirmarExclusao}
+          onCancelar={() => {
+            setApagando(null);
+            setContagem(null);
+            setErroApagar(null);
+          }}
+        />
+      )}
 
       {editando !== null && (
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>

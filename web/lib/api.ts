@@ -791,6 +791,46 @@ export async function createBoard(input: {
  * o Pydantic do backend IGNORA chave desconhecida em silencio, entao o campo a
  * mais nao daria erro nenhum, so nao faria nada.
  */
+/** `GET /boards/{id}` -- o quadro com a CONTAGEM de tarefas vivas. */
+export type QuadroComContagem = Quadro & { task_count: number };
+
+/**
+ * Busca um quadro com a contagem de tarefas -- para a confirmacao de apagar.
+ *
+ * ⚠️ `GET /boards` NAO TRAZ CONTAGEM, de proposito: seria uma subconsulta por
+ * quadro num endpoint que roda a cada abertura de tela. Somar as colunas pelo
+ * `colunaComContagem` custaria uma requisicao POR COLUNA.
+ *
+ * ⚠️ O NUMERO E DE UM INSTANTE. Entre ler e confirmar, alguem pode criar
+ * tarefa ali -- por isso o `DELETE` devolve quantas APAGOU e a tela compara.
+ */
+export async function getBoard(boardId: string): Promise<QuadroComContagem> {
+  return api<QuadroComContagem>(`/api/v1/boards/${boardId}`);
+}
+
+/**
+ * Apaga um quadro E as tarefas dentro dele. Devolve quantas foram apagadas.
+ *
+ * ⚠️⚠️ **NAO PERGUNTA O DESTINO DAS TAREFAS, e e a unica operacao do produto
+ * assim.** Apagar COLUNA sempre oferece para onde elas vao. Quem chama isto
+ * tem de ter passado pela confirmacao por DIGITACAO DO NOME -- a trava e da
+ * tela, e o endpoint nao a repete.
+ *
+ * ⚠️ NAO HA DESFAZER NO PRODUTO. O resgate e
+ * `backend/scripts/restaurar_quadro.sql`, rodado no banco.
+ *
+ * ⚠️ LE O `code`: `quadro_padrao_nao_apagavel` e a recusa do Quadro geral. A
+ * tela nem oferece o botao nele (o seletor so lista os avulsos), entao chegar
+ * neste erro significa chamada fora da tela.
+ */
+export async function deleteBoard(
+  boardId: string
+): Promise<{ tarefas_apagadas: number }> {
+  return api<{ tarefas_apagadas: number }>(`/api/v1/boards/${boardId}`, {
+    method: "DELETE",
+  });
+}
+
 export async function renameBoard(
   boardId: string,
   name: string

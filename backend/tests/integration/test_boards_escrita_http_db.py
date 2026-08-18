@@ -362,3 +362,93 @@ async def test_patch_nao_aceita_trocar_o_time(db) -> None:
     assert r.json()["team_id"] == str(c["seo"])
     await db.refresh(quadro)
     assert quadro.team_id == c["seo"]
+
+
+# =====================================================================
+# `GET /boards/{id}` e `DELETE /boards/{id}` (Spec 036, fatia 7)
+#
+# ⚠️⚠️ **ESTES TESTES FALTARAM NA ENTREGA DE 18/08, E A OMISSAO TEM NOME.** A
+# fatia 7 subiu com 8 testes de SERVICO e ZERO de rota -- e teste de servico
+# nao sabe se a rota existe. Uma rota nao registrada, um verbo errado ou um
+# `response_model` incompativel passam com a suite inteira verde, e a falha
+# aparece como **405 Method Not Allowed** na tela de quem clicou.
+#
+# ⚠️ E O ARQUIVO JA AVISAVA: o cabecalho conta que a primeira versao das rotas
+# de escrita falhou em 100% das requisicoes com os 17 testes de servico verdes.
+# Mesma lacuna, mesma fatia do arquivo, dois meses depois.
+# =====================================================================
+
+
+async def test_GET_de_um_quadro_traz_a_contagem(db) -> None:
+    """A rota existe, casa o verbo, e devolve `task_count`.
+
+    ⚠️ A CONTAGEM E O UNICO CAMPO NOVO desta resposta, e e ela que a
+    confirmacao de apagar mostra ANTES do clique. Sem este teste, trocar
+    `BoardDetailResponse` por `BoardResponse` no `response_model` faria o campo
+    sumir do JSON em silencio -- o Pydantic descarta o que o modelo nao declara.
+    """
+    c = await _setup(db)
+    async with _client(db, c["ctx_sup"]) as cli:
+        criado = await cli.post(
+            "/api/v1/boards", json={"name": "Pauta", "team_id": str(c["seo"])}
+        )
+        assert criado.status_code == 201, criado.text
+        board_id = criado.json()["id"]
+
+        r = await cli.get(f"/api/v1/boards/{board_id}")
+    assert r.status_code == 200, r.text
+    assert r.json()["task_count"] == 0
+    assert r.json()["colunas"], "o detalhe traz as colunas, como o BoardResponse"
+
+
+async def test_DELETE_de_um_quadro_responde_200_e_apaga(db) -> None:
+    """⚠️ O TESTE QUE FALTAVA. `DELETE` nao registrado devolve **405**.
+
+    405 e o que a tela mostrou em 18/08: o caminho `/boards/{id}` existe (o
+    `PATCH` esta la), entao o FastAPI casa a rota e recusa o VERBO. E um erro
+    que nenhum teste de servico pode ver.
+    """
+    c = await _setup(db)
+    async with _client(db, c["ctx_sup"]) as cli:
+        criado = await cli.post(
+            "/api/v1/boards", json={"name": "Descartavel", "team_id": str(c["seo"])}
+        )
+        board_id = criado.json()["id"]
+
+        r = await cli.delete(f"/api/v1/boards/{board_id}")
+        assert r.status_code == 200, r.text
+        assert r.json()["tarefas_apagadas"] == 0
+
+        # ...e ele some da listagem, pelo mesmo cliente.
+        lista = await cli.get("/api/v1/boards")
+    assert board_id not in [q["id"] for q in lista.json()]
+
+
+async def test_DELETE_do_quadro_PADRAO_devolve_422_com_code(db) -> None:
+    """A recusa do servico vira 422 com `code`, e nao 500.
+
+    ⚠️ O `code` E O CONTRATO: a tela nem oferece o botao no Quadro geral, entao
+    chegar aqui e chamada fora da tela -- e quem chama de fora precisa
+    distinguir isto de "sem permissao".
+    """
+    c = await _setup(db)
+    async with _client(db, c["ctx_adm"]) as cli:
+        lista = await cli.get("/api/v1/boards")
+        padrao = next(q for q in lista.json() if q["is_default"])
+        r = await cli.delete(f"/api/v1/boards/{padrao['id']}")
+    assert r.status_code == 422, r.text
+    assert r.json()["error"]["code"] == "quadro_padrao_nao_apagavel"
+
+
+async def test_DELETE_sem_permissao_devolve_403(db) -> None:
+    """⚠️ CASO FELIZ SOZINHO NAO PROVA AUTORIZACAO -- regra deste arquivo."""
+    c = await _setup(db)
+    async with _client(db, c["ctx_sup"]) as cli:
+        criado = await cli.post(
+            "/api/v1/boards", json={"name": "Do SEO", "team_id": str(c["seo"])}
+        )
+        board_id = criado.json()["id"]
+
+    async with _client(db, c["ctx_op"]) as cli:
+        r = await cli.delete(f"/api/v1/boards/{board_id}")
+    assert r.status_code == 403, r.text

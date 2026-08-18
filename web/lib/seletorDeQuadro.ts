@@ -106,6 +106,32 @@ export function podeGerirQuadrosDe(
  * ⚠️ NAO E SEGURANCA. O backend recusa com 403; isto so evita oferecer um
  * botao que nao funcionaria.
  */
+/**
+ * O texto digitado confere com o nome do quadro?
+ *
+ * ⚠️ E A UNICA TRAVA ENTRE UM CLIQUE E APAGAR AS TAREFAS DE OUTRAS PESSOAS.
+ * Apagar quadro nao pergunta o destino delas -- diferente de apagar coluna,
+ * que sempre pergunta --, e nao ha desfazer no produto: o resgate e um script
+ * rodado no banco.
+ *
+ * ⚠️ SENSIVEL A MAIUSCULA, de proposito. A confirmacao existe para obrigar a
+ * pessoa a LER o nome do quadro que ela esta prestes a apagar; aceitar
+ * "quadro crm" para "Quadro CRM" afrouxaria justamente o passo que faz ela
+ * olhar. E e a mesma regra do nome unico (fatia 9): "Backlog" e "backlog" sao
+ * nomes diferentes neste produto.
+ *
+ * ⚠️ `trim` NAS DUAS PONTAS porque o backend grava com `strip()` -- um espaco
+ * colado junto do nome nao pode virar recusa que a pessoa nao consegue ver.
+ *
+ * ⚠️ NOME VAZIO NUNCA CONFERE, mesmo que o quadro tivesse nome vazio (nao tem
+ * -- `_nome_valido` recusa). Sem esta linha, abrir o dialogo e clicar em
+ * confirmar sem digitar nada apagaria o quadro.
+ */
+export function nomeConfere(digitado: string, nomeDoQuadro: string): boolean {
+  const limpo = digitado.trim();
+  return limpo.length > 0 && limpo === nomeDoQuadro.trim();
+}
+
 export function podeGerirQuadroDaRaiz(alcance: AlcanceDeQuadro): boolean {
   return alcance.tipo === "amplo";
 }
@@ -122,6 +148,17 @@ export type OpcaoDeQuadro = {
    * que nao aconteceu nada.
    */
   readonly podeRenomear: boolean;
+  /**
+   * ⚠️ AUSENTE, E NAO DESABILITADA, pela mesma razao de `podeRenomear` -- e
+   * aqui a razao pesa mais: apagar quadro apaga as tarefas dentro, e e a
+   * unica operacao do produto que nao pergunta o destino delas.
+   *
+   * ⚠️ `false` NA LENTE SEMPRE (nao ha registro para apagar) e no QUADRO
+   * PADRAO -- que nem chega a esta lista, porque `opcoesDoSeletor` filtra
+   * `!q.is_default`. O backend recusa com `quadro_padrao_nao_apagavel`; isto
+   * so evita oferecer.
+   */
+  readonly podeApagar: boolean;
 };
 
 /** A descricao fixa da lente (decisao de 11/08). */
@@ -166,11 +203,15 @@ export function opcoesDoSeletor(
       // ⚠️ SEMPRE `false`, inclusive para ADMIN. Nao ha o que renomear: a
       // lente nao existe como registro.
       podeRenomear: false,
+      // ⚠️ E NEM APAGAR, pelo mesmo motivo -- e o Quadro geral tambem nao
+      // aparece aqui: o filtro acima e `!q.is_default`.
+      podeApagar: false,
     },
     ...avulsos.map((q) => ({
       id: q.id,
       nome: q.name,
       podeRenomear: podeGerir,
+      podeApagar: podeGerir,
     })),
   ];
 }
