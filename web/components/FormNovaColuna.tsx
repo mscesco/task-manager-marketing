@@ -7,8 +7,16 @@ import { ROTULO_DA_SEMANTICA } from "@/lib/edicaoDeColunas";
 
 const TIPOS: ColumnSemantic[] = ["OPEN", "IN_PROGRESS", "DONE", "CANCELLED"];
 
-/** Teto do backend para nome de coluna (`String(120)`). */
-const MAX_NOME = 120;
+/**
+ * Teto do nome de coluna.
+ *
+ * ⚠️ 60, E NAO OS 120 DO BANCO (18/08). O `String(120)` de `board_column.name`
+ * protege o Postgres; este numero protege o cabecalho de atropelar a coluna
+ * vizinha. Espelha `BoardService.NOME_DE_COLUNA_MAX` -- se mudar la, mude aqui.
+ * Ate 18/08 este valor era 120 e o comentario dizia "teto do backend", o que
+ * fazia parecer que os dois numeros TINHAM de ser o mesmo. Nao tem.
+ */
+const MAX_NOME = 60;
 
 /**
  * A sobreposição de criar coluna (Spec 036, fatia 6c-2).

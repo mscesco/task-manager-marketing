@@ -30,6 +30,7 @@ from app.db.models.boards import Board, BoardColumn
 from app.db.models.enums import ColumnSemantic
 from app.modules.tasks.application.board_service import (
     CORES_DE_COLUNA,
+    NOME_DE_COLUNA_MAX,
     BoardService,
 )
 from app.shared.exceptions.base import (
@@ -245,11 +246,23 @@ async def test_nome_de_coluna_vazio_e_recusado(db, nome) -> None:
 
 
 async def test_nome_de_coluna_longo_e_recusado_ANTES_do_banco(db) -> None:
-    """⚠️ 120 e o teto de `board_column.name`, e nao 255 como o do quadro.
+    """O teto do nome de coluna e `NOME_DE_COLUNA_MAX`, e nao o do banco.
 
-    Deixar passar 200 caracteres daria `StringDataRightTruncation` no Postgres,
-    que sai como 500. Reaproveitar `_nome_valido` (255) seria exatamente esse
-    defeito.
+    ⚠️ ESTE TESTE MUDOU DE NUMERO EM 18/08, E A VERSAO ANTERIOR ESTAVA
+    CERTA. Ela afirmava `120 passa` com o comentario "sem isto, uma trava de 60
+    tambem passaria no teste acima" -- escrito de proposito para impedir que
+    alguem apertasse o limite sem querer. **Ele funcionou:** a mudanca de 120
+    para 60 derrubou este teste, que e como ela devia ser notada.
+
+    ⚠️ O NUMERO NOVO NAO E O TETO DO BANCO. `board_column.name` continua
+    `String(120)`; 60 e o teto da APLICACAO, e ele existe porque o cabecalho da
+    coluna tem ~250px e 120 caracteres nunca couberam (medido na tela em
+    producao, 18/08). Os dois numeros conviverem e a decisao, e nao um deles
+    estar errado.
+
+    ⚠️ E POR ISSO ESTE TESTE AFIRMA OS DOIS LADOS: 61 recusado (senao o limite
+    nao existe) E 60 aceito (senao qualquer trava mais apertada -- 20, 5 --
+    passaria por aqui sem ninguem ver).
     """
     ws, raiz, sub_a, sub_b, user, arvore = await _mundo(db)
     quadro = await _quadro_avulso(db, ws, user, arvore, sub_a)
@@ -258,18 +271,23 @@ async def test_nome_de_coluna_longo_e_recusado_ANTES_do_banco(db) -> None:
         with pytest.raises(ValidationError):
             await BoardService(db).criar_coluna(
                 board_id=quadro.id,
-                nome="x" * 121,
+                nome="x" * (NOME_DE_COLUNA_MAX + 1),
                 semantica=ColumnSemantic.IN_PROGRESS,
             )
-    # E 120 passa -- sem isto, uma trava de 60 tambem passaria no teste acima.
+    # E o teto EXATO passa -- sem isto, uma trava mais apertada tambem passaria
+    # no bloco acima e ninguem perceberia.
     with acting_as(**_ctx(ws, user, arvore, mship(sub_a, "SUPERVISOR"))):
         coluna = await BoardService(db).criar_coluna(
             board_id=quadro.id,
-            nome="x" * 120,
+            nome="x" * NOME_DE_COLUNA_MAX,
             semantica=ColumnSemantic.IN_PROGRESS,
         )
     await db.flush()
-    assert len(coluna.name) == 120
+    assert len(coluna.name) == NOME_DE_COLUNA_MAX
+    # ⚠️ O TETO DA APLICACAO E MENOR QUE O DO BANCO, e esta linha e o que
+    # registra isso como escolha em vez de coincidencia. Se alguem "alinhar" os
+    # dois subindo o limite para 120, ela cai.
+    assert NOME_DE_COLUNA_MAX < 120
 
 
 # ------------------------------------------------ o quadro geral nao se mexe

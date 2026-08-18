@@ -119,6 +119,17 @@ export default function CabecalhoDeColunaEditavel({
           className="input"
           value={rascunhoNome}
           aria-label={`Nome da coluna ${linha.nome}`}
+          // ⚠️ FALTAVA ATE 18/08, e criar coluna sempre teve. Sem isto, um nome
+          // acima do teto viajava no LOTE e voltava 422 -- e no lote a recusa
+          // perde a edicao INTEIRA: renomear tres colunas, uma passar do teto,
+          // e perder as tres. Mesmo motivo do `nomeDeQuadroValido` existir no
+          // front: nao gastar requisicao que ja se sabe que volta recusada.
+          //
+          // ⚠️ NOME QUE JA ESTA LONGO NO BANCO NAO FICA PRESO. `maxLength` nao
+          // trunca valor que veio do servidor -- ele barra DIGITACAO nova. A
+          // pessoa apaga e escreve um menor; era o caso das 15 colunas acima de
+          // 60 que existiam em producao quando este limite entrou.
+          maxLength={60}
           onChange={(e) => setRascunhoNome(e.target.value)}
           onBlur={confirmarNome}
           onKeyDown={(e) => {
