@@ -1883,17 +1883,29 @@ subtimes, ele deixa de ser `opcoesDoSeletor` e passa a precisar do `computeLens`
 | **Quadro geral** (`is_default`) | tem, desde a 6a-bis | ✅ **sim** — `board_service.py:385` diz "O QUADRO GERAL PODE SER RENOMEADO", e só por `board.manage.root` | ❌ **AUSENTE** — `quadro_padrao_nao_apagavel`, e `opcoesDoSeletor` já filtra `!q.is_default` |
 | **Avulso** | tem | ✅ | ✅ |
 
-### ⚠️ A ARMADILHA DE SEQUÊNCIA, achada escrevendo este escopo
+### ⚠️ A "ARMADILHA DE SEQUÊNCIA" NÃO EXISTE — retratação de 18/08
 
-**Apagar o quadro de dentro do modo de edição aninha duas confirmações.** O modo
-de edição pergunta `"Você tem alterações que ainda não foram aplicadas.
-Descartar?"` ao sair (`Board.tsx`, `fecharEdicao`), e apagar quadro exige
-**digitar o nome** (fatia 7). Apagando com rascunho de coluna pendente, o
-"descartar?" aparece **depois** — sobre um quadro que não existe mais.
+**Este escopo nasceu afirmando que apagar o quadro de dentro do modo de edição
+aninharia duas confirmações**, e que o `"Você tem alterações que ainda não foram
+aplicadas. Descartar?"` do `fecharEdicao` apareceria depois, sobre um quadro
+morto. **Fui ler o código e é falso.**
 
-⚠️ **O conserto é apagar limpar o rascunho ANTES de chamar `deleteBoard`**, e
-tem de estar no desenho: descoberto na tela, vira defeito de sequência que
-nenhum portão pega.
+⚠️ **`Board.tsx:403` JÁ TEM UM `useEffect` EM `[boardId]`** que zera `rascunho`,
+`revisando` e `criandoColuna`. O comentário dele diz, com todas as letras, que
+**descarta em silêncio e isso é escolha**: trocar de quadro é navegação, e pedir
+confirmação depois que o `boardId` já mudou avisaria tarde. Apagar chama
+`onSelecionar(null)` (`SeletorDeQuadro`, `confirmarExclusao`), o `boardId` muda,
+e o rascunho morre ali.
+
+⚠️ **E O `Board` NEM SOBREVIVE À TROCA.** A página desenha
+`quadroSelecionado ? <Board boardId=…/> : <Board subteamId=…/>` em dois ramos de
+um ternário — sair de um quadro avulso para a lente **desmonta** um e monta o
+outro. O rascunho não tem como atravessar.
+
+⚠️ **FICA REGISTRADO COMO ERRO, e não apagado.** Foi escrito a partir da
+intenção ("dois diálogos, logo aninham") e não do arquivo, que é o padrão de
+erro que o handoff desta spec manda vigiar. **Nenhum conserto é necessário nesta
+fatia por esta razão.**
 
 ### O custo, medido
 
@@ -1910,11 +1922,25 @@ fronteira da Spec 027 pagando o que prometia.
 | o dropdown desenha "Apagar" no Quadro geral | teste de componente: ausente, e não desabilitado |
 | o dropdown desenha "Renomear" na lente | teste de componente: ausente |
 | o Quadro geral perde o "Renomear" | teste de componente: presente para `board.manage.root` |
-| apagar com rascunho pendente dispara o "descartar?" | teste de componente da sequência |
+| o dropdown não fecha ao clicar fora | teste de componente |
 | `Board` deixa de aceitar título string | as 4 chamadas existentes, sem mudança |
 
-⚠️ **O DROPDOWN ABRE E FECHA, E ISSO TEM `useCliqueFora`** (`lib/useCliqueFora.ts`,
-já usado pelo painel de filtros). Não escreva um segundo.
+### ⚠️ QUAL PADRÃO DE "FECHAR AO CLICAR FORA" USAR — corrigido em 18/08
+
+Este escopo dizia "use o `useCliqueFora`, já usado pelo painel de filtros".
+**As duas metades estavam erradas:**
+
+1. ⚠️ **O painel de filtros NÃO usa o `useCliqueFora`.** Ele tem um
+   `useEffect` próprio com `document.addEventListener("mousedown")` —
+   `Board.tsx:252-261`, e o comentário diz "mesmo padrão do picker de
+   responsável".
+2. ⚠️ **E o `useFecharAoClicarFora` resolve outro problema.** Ele existe para
+   MODAL: pareia `mousedown` com `mouseup` porque selecionar texto dentro do
+   card e soltar fora fechava o modal e apagava formulário (defeito de
+   31/07, com captura). Dropdown não tem texto para selecionar dentro.
+
+⚠️ **O precedente certo é o do painel de filtros** (`Board.tsx:252`), que é
+irmão visual do que esta fatia constrói. **Não copie o de modal.**
 
 ---
 
