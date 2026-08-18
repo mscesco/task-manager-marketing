@@ -223,6 +223,25 @@ def _cor_por_rotacao(indice: int) -> str:
     return CORES_DE_COLUNA[indice % len(CORES_DE_COLUNA)]
 
 
+# Teto do nome de coluna, decidido pela Camila em 18/08/2026.
+#
+# ⚠️ 60, E O BANCO ACEITA 120. Nao e inconsistencia: o `String(120)` de
+# `board_column.name` protege o Postgres de truncar; este numero protege o
+# CABECALHO de atropelar a coluna vizinha. A coluna tem ~250px e o cabecalho e
+# 13px em negrito -- 120 caracteres nunca couberam.
+#
+# ⚠️ E ELE NAO E O UNICO REMEDIO, nem o principal. O cabecalho tambem TRUNCA
+# com reticencias (`Board.tsx`, o `<span>` do `coluna.name`), e e o truncar que
+# protege o layout de verdade: um nome legitimo de 40 caracteres tambem nao
+# cabe. Limite sem truncar deixaria o vazamento; truncar sem limite deixaria
+# nome de 120 caracteres no banco por nada. **Os dois, e nao um.**
+#
+# ⚠️ O FRONT REPETE ESTE NUMERO (`FormNovaColuna.MAX_NOME` e o `maxLength` do
+# renomear). A duplicacao e o preco de nao gastar requisicao que ja se sabe que
+# volta 422 -- mesma decisao do `nomeDeQuadroValido`. Se mudar aqui, mude la.
+NOME_DE_COLUNA_MAX = 60
+
+
 class BoardService:
     """Cria e renomeia quadros, e faz o CRUD de COLUNA de quadro avulso.
 
@@ -1299,12 +1318,24 @@ class BoardService:
 
     @staticmethod
     def _nome_de_coluna_valido(nome: str) -> str:
-        """Nome nao-vazio e dentro do `String(120)` da coluna.
+        """Nome nao-vazio e dentro de `NOME_DE_COLUNA_MAX`.
 
-        ⚠️ 120 E NAO 255. E o teto da coluna `board_column.name`, e o do quadro
-        e outro -- reaproveitar `_nome_valido` deixaria passar um nome de 200
-        caracteres que o Postgres recusa com `StringDataRightTruncation`, que
-        sai como 500. Duas funcoes porque sao dois tetos, e nao por descuido.
+        ⚠️ NAO E O TETO DO BANCO, E A DIFERENCA E DELIBERADA (18/08). A coluna
+        `board_column.name` e `String(120)`; este limite e 60, METADE. O teto do
+        banco existe para o Postgres nao truncar; este existe para o CABECALHO
+        DA COLUNA CABER NA COLUNA.
+
+        ⚠️ E O TETO DO QUADRO E OUTRO (255) -- reaproveitar `_nome_valido`
+        deixaria passar um nome de 200 caracteres. Sao TRES numeros e cada um
+        responde a uma pergunta diferente: 255 = quadro, 120 = o que o Postgres
+        aceita numa coluna, 60 = o que a tela desenha sem atropelar a vizinha.
+
+        ⚠️ BAIXAR ISTO NAO TRAVA QUADRO QUE JA TEM NOME LONGO, e foi conferido
+        em 18/08 antes de mexer: o lote so manda no `renomear` as colunas
+        EFETIVAMENTE EDITADAS (`rascunhoInicial` nasce com `nomes: {}`), e nome
+        nao tocado nunca passa por aqui. Producao tinha 15 colunas acima de 60
+        quando este limite caiu, e elas continuam editaveis -- quem renomear uma
+        delas e que precisa encurtar, que e o comportamento desejado.
         """
         limpo = nome.strip()
         if not limpo:
@@ -1312,9 +1343,9 @@ class BoardService:
                 "Nome da coluna nao pode ser vazio.",
                 details={"field": "name"},
             )
-        if len(limpo) > 120:
+        if len(limpo) > NOME_DE_COLUNA_MAX:
             raise ValidationError(
-                "Nome da coluna tem no maximo 120 caracteres.",
+                f"Nome da coluna tem no maximo {NOME_DE_COLUNA_MAX} caracteres.",
                 details={"field": "name", "len": len(limpo)},
             )
         return limpo

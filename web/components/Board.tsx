@@ -2127,9 +2127,35 @@ function ColunaKanban({
             flexShrink: 0,
           }}
         >
-          <span style={{ width: 8, height: 8, borderRadius: 999, background: coluna.color }} />
-          <span style={{ fontWeight: 700, fontSize: 13 }}>{coluna.name}</span>
-          <span className="muted" style={{ fontSize: 12, marginLeft: "auto" }}>{count}</span>
+          <span style={{ width: 8, height: 8, borderRadius: 999, background: coluna.color, flexShrink: 0 }} />
+          {/* ⚠️ `minWidth: 0` E A LINHA QUE FAZ O TRUNCAR FUNCIONAR, e sem ela
+              as outras tres nao servem de nada. Em flexbox um filho de texto
+              NAO encolhe abaixo do conteudo sem `min-width: 0` -- entao o
+              `overflow: hidden` fica sem o que esconder, a caixa do cabecalho
+              cresce, e o nome vaza POR CIMA das colunas vizinhas. Foi o que a
+              Camila mostrou em producao em 18/08, com colunas de nome absurdo:
+              o contador (`marginLeft: auto`) aparecia empurrado para fora da
+              coluna, que e o sintoma da caixa inflada.
+
+              ⚠️ O `title` NAO E ENFEITE: com reticencias, o hover e o unico
+              lugar onde o nome inteiro continua alcancavel. Truncar sem ele
+              esconderia dado.
+
+              ⚠️ E O LIMITE DE 60 NAO SUBSTITUI ISTO. Nome legitimo de 40
+              caracteres ("Aguardando retorno do cliente externo") tambem nao
+              cabe em ~250px. O limite protege o banco e a sanidade; o truncar
+              protege o layout. Ver `NOME_DE_COLUNA_MAX` no `board_service.py`. */}
+          <span
+            title={coluna.name}
+            style={{
+              fontWeight: 700, fontSize: 13,
+              minWidth: 0, overflow: "hidden",
+              textOverflow: "ellipsis", whiteSpace: "nowrap",
+            }}
+          >
+            {coluna.name}
+          </span>
+          <span className="muted" style={{ fontSize: 12, marginLeft: "auto", flexShrink: 0 }}>{count}</span>
         </div>
       )}
       <div

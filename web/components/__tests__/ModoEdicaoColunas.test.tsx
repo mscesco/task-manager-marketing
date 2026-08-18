@@ -280,3 +280,16 @@ describe("CabecalhoDeColunaEditavel -- o selo da coluna nova", () => {
     expect(onMarcar).toHaveBeenCalled();
   });
 });
+
+describe("o teto do nome de coluna (18/08)", () => {
+  it("⚠️ o campo de RENOMEAR tem maxLength 60 -- faltava, e criar sempre teve", () => {
+    // ⚠️ POR QUE ISTO IMPORTA: renomear passa pelo LOTE, e no lote a recusa
+    // perde a edição INTEIRA. Sem este atributo, renomear três colunas com uma
+    // passando do teto perdia as três -- e o 422 do servidor era a primeira
+    // notícia. Mesmo motivo de `nomeDeQuadroValido` existir no front.
+    montar({ ref: "c1", nome: "Backlog", semantic: "OPEN" });
+    fireEvent.click(screen.getByText("Backlog"));
+    const campo = screen.getByLabelText("Nome da coluna Backlog");
+    expect(campo.getAttribute("maxLength")).toBe("60");
+  });
+});
