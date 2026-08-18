@@ -158,6 +158,7 @@ function task(over: Partial<Task> & { id: string; title: string }): Task {
     // 10/08, no `minhasTarefas.test.tsx`.
     board_id: QUADRO_ID,
     column_id: "col-backlog",
+    start_date: null,
     due_date: null,
     completed_at: null,
     created_by: ANA,

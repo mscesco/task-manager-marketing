@@ -129,6 +129,7 @@ function task(over: Partial<Task> = {}): Task {
     description: "",
     status: "BACKLOG",
     priority: "MEDIUM",
+    start_date: null,
     due_date: null,
     project_id: null,
     parent_task_id: null,
