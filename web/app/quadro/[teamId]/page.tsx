@@ -4,6 +4,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import AppShell from "@/components/AppShell";
 import Board from "@/components/Board";
 import SeletorDeQuadro from "@/components/SeletorDeQuadro";
+import AcoesDoQuadro from "@/components/AcoesDoQuadro";
 import {
   listBoards,
   listTeamsAll,
@@ -117,6 +118,25 @@ export default function QuadroSubtimePage() {
     carregarQuadros();
   }, [carregarQuadros]);
 
+  // ⚠️ UM SO SELETOR PARA OS DOIS RAMOS DO `Board` (fatia 10). Os dois desenham
+  // o MESMO dropdown -- ele e o titulo nos dois casos, e e ele quem sabe se o
+  // escolhido e a lente ou um avulso (`opcaoSelecionada`). Duplicar o JSX nos
+  // dois ramos faria duas copias que divergiriam no primeiro ajuste.
+  //
+  // ⚠️ `team` PODE SER NULL AQUI. Os ramos que usam este valor ja estao atras
+  // das guardas de `carregando`/`team`/`temAcesso`, mas o `const` e avaliado
+  // antes delas -- por isso o ternario, e nao um `team!.id`.
+  const seletor = team ? (
+    <SeletorDeQuadro
+      teamId={team.id}
+      quadros={quadros ?? []}
+      selecionado={quadroSelecionado}
+      podeGerir={podeGerir}
+      onSelecionar={selecionarQuadro}
+      onMudou={carregarQuadros}
+    />
+  ) : null;
+
   return (
     <AppShell>
       {carregando ? (
@@ -149,16 +169,19 @@ export default function QuadroSubtimePage() {
         </div>
       ) : (
         <>
-          <div style={{ marginBottom: 14 }}>
-            <SeletorDeQuadro
-              teamId={team.id}
-              quadros={quadros ?? []}
-              selecionado={quadroSelecionado}
-              podeGerir={podeGerir}
-              onSelecionar={selecionarQuadro}
-              onMudou={carregarQuadros}
-            />
-          </div>
+          {/* ⚠️ A LINHA SEPARADA DO SELETOR SAIU NA FATIA 10 (18/08). Ela era
+              um `<div style={{ marginBottom: 14 }}>` acima do quadro, e o
+              `Board` desenhava o titulo logo abaixo -- duas dobras dizendo a
+              mesma coisa. Agora o seletor E o titulo: ele vai na prop
+              `title` (que virou `ReactNode`), e o `Board` o desenha dentro do
+              proprio `<h1>`.
+
+              ⚠️ O TITULO NAO E MAIS TEXTO, E ISSO APAGOU UMA REGRA QUE ERA
+              DAQUI: o `?? \`Quadro · ${team.name}\`` que resolvia o nome do
+              quadro avulso saiu, porque quem sabe o nome do quadro escolhido e
+              o `opcaoSelecionada` dentro do seletor -- e ele ja o desenhava.
+              Manter a resolucao aqui seria uma segunda definicao do mesmo nome,
+              e as duas divergiriam no primeiro rename. */}
           {/* ⚠️ `subteamId` E `boardId` SAO EXCLUDENTES, e a escolha e o que
               esta tela faz. Com um quadro avulso selecionado, o `Board` deixa
               de ser LENTE (espelho do Quadro geral filtrado por pessoa, ADR
@@ -170,19 +193,25 @@ export default function QuadroSubtimePage() {
             <Board
               boardId={quadroSelecionado}
               podeEditarColunas={podeGerir}
-              // ⚠️ SEM O PREFIXO "Quadro · " AQUI. Ele e um rotulo que diz "o
-              // quadro DE alguem" e serve a lente, cujo assunto e o time. Um
-              // quadro avulso tem nome proprio, e o prefixo produzia coisas
-              // como "Quadro · Quadro CRM Teste" -- visto na tela em 13/08.
-              // Qual time e continua na aba selecionada logo acima e no menu
-              // lateral, os dois na mesma dobra.
-              title={
-                (quadros ?? []).find((q) => q.id === quadroSelecionado)?.name ??
-                `Quadro · ${team.name}`
+              title={seletor}
+              // ⚠️ RENOMEAR E APAGAR SO NO RAMO DO QUADRO AVULSO. No ramo da
+              // lente nao ha registro para nenhum dos dois, e o proprio
+              // `AcoesDoQuadro` devolve `null` ali -- mas nao passa-lo deixa a
+              // ausencia explicita em vez de depender de um `if` dentro do
+              // componente.
+              acoesDoQuadro={
+                <AcoesDoQuadro
+                  teamId={team.id}
+                  quadros={quadros ?? []}
+                  selecionado={quadroSelecionado}
+                  podeGerir={podeGerir}
+                  onSelecionar={selecionarQuadro}
+                  onMudou={carregarQuadros}
+                />
               }
             />
           ) : (
-            <Board subteamId={team.id} title={`Quadro · ${team.name}`} />
+            <Board subteamId={team.id} title={seletor} />
           )}
         </>
       )}
