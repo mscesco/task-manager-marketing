@@ -1,10 +1,18 @@
 /**
- * Spec 036, fatia 5b-6 -- o SeletorDeQuadro, montado.
+ * Spec 036 -- o SeletorDeQuadro, montado.
+ * ⚠️ REESCRITO NA FATIA 10 (18/08): ele virou DROPDOWN, e RENOMEAR/APAGAR
+ * saíram daqui para o `AcoesDoQuadro` (barra do modo de edição).
+ *
+ * ⚠️ OS TESTES DE RENOMEAR E APAGAR NÃO FORAM APAGADOS -- foram MOVIDOS para
+ * `AcoesDoQuadro.test.tsx`, com as mesmas sabotagens. Apagar guardião ao mover
+ * código é como a fatia 5b-5a entregou `colunaEquivalente` sem leitor: verde e
+ * sem prova de nada.
  *
  * ⚠️ A REGRA NAO SE TESTA AQUI. Quem lista, ordena, filtra e diz o que tem
- * afordancia e `lib/seletorDeQuadro.ts`, com 22 testes proprios. Este arquivo
- * pergunta outra coisa: **o componente LE aquelas respostas, e o que ele manda
- * para a API bate com o que a pessoa digitou?**
+ * afordancia e `lib/seletorDeQuadro.ts`, com testes proprios que esta fatia
+ * NAO tocou -- ele nao sabe como a tela desenha. Este arquivo pergunta outra
+ * coisa: **o componente LE aquelas respostas, e o que ele manda para a API bate
+ * com o que a pessoa digitou?**
  *
  * ⚠️ E ISSO NAO E FORMALIDADE NESTE PROJETO. A fatia 5b-5a entregou
  * `colunaEquivalente` e `rotuloDeColuna` verdes e sem leitor nenhum, e quando
@@ -12,9 +20,10 @@
  * Modulo puro verde nao prova que alguem o usa direito.
  *
  * SABOTAGENS (medidas):
- *   R. Desenhar "Renomear" para toda opcao, ignorando `podeRenomear`.
  *   S. `createBoard` mandando o nome CRU, sem `nomeDeQuadroValido`.
  *   T. Nao chamar `onSelecionar` depois de criar.
+ *   U. O dropdown nao fechar ao clicar fora (regressao do painel de filtros).
+ *   V. O dropdown listar quadro de OUTRO time, ou o padrao da raiz.
  */
 
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -28,9 +37,6 @@ vi.mock("@/lib/api", async (importOriginal) => {
   return {
     ...real,
     createBoard: vi.fn(),
-    renameBoard: vi.fn(),
-    getBoard: vi.fn(),
-    deleteBoard: vi.fn(),
   };
 });
 
@@ -71,71 +77,143 @@ function montar(over: Partial<Parameters<typeof SeletorDeQuadro>[0]> = {}) {
   return props;
 }
 
-describe("SeletorDeQuadro -- o que ele desenha", () => {
+/** Abre o dropdown. O gatilho é o TÍTULO -- ver `aria-label` do botão. */
+function abrir() {
+  fireEvent.click(screen.getByRole("button", { name: /Trocar de quadro/ }));
+}
+
+describe("SeletorDeQuadro -- o gatilho é o título", () => {
+  it("⚠️ FECHADO, mostra só o nome do escolhido -- e nenhuma opção", () => {
+    // ⚠️ ESTE E O GANHO DA FATIA 10, e o teste que o prende. A versao anterior
+    // desenhava um botao por quadro MAIS "Renomear" e "Apagar" ao lado de cada
+    // um: `1 + 2N + 1` elementos sempre visiveis. Se alguem "consertar"
+    // voltando a lista para a linha, esta linha cai.
+    montar();
+    expect(screen.getByRole("button", { name: /Trocar de quadro/ })).toBeTruthy();
+    expect(screen.queryByRole("listbox")).toBeNull();
+    expect(screen.queryByRole("option")).toBeNull();
+  });
+
+  it("o nome no gatilho é o do quadro ESCOLHIDO, e não o da lente", () => {
+    montar({ selecionado: "b-pauta" });
+    expect(
+      screen.getByRole("button", { name: /Trocar de quadro/ }).textContent
+    ).toContain("Pauta editorial");
+  });
+
+  it("⚠️ id desconhecido cai na LENTE, e o gatilho diz isso", () => {
+    // Mesma regra do `opcaoSelecionada`: o quadro pode ter sido apagado por
+    // outra pessoa. O gatilho nao pode ficar mostrando um nome que nao existe.
+    montar({ selecionado: "b-que-nao-existe" });
+    expect(
+      screen.getByRole("button", { name: /Trocar de quadro/ }).textContent
+    ).toContain("Lente do time");
+  });
+});
+
+describe("SeletorDeQuadro -- aberto", () => {
   it("mostra a lente e os quadros DAQUELE time", () => {
     montar();
-    // ⚠️ `button`, E NAO `tab` (13/08). O grupo usava `role="tablist"`/`tab`,
-    // que promete navegacao por setas e um `tabpanel` do outro lado -- nada
-    // disso existia. Virou `role="group"` com `aria-pressed`, que e o que a
-    // interacao realmente faz.
-    expect(screen.getByRole("button", { name: /^Lente do time/ })).toBeTruthy();
-    expect(screen.getByRole("button", { name: /^Pauta editorial/ })).toBeTruthy();
+    abrir();
+    expect(screen.getByRole("option", { name: /Lente do time/ })).toBeTruthy();
+    expect(screen.getByRole("option", { name: /Pauta editorial/ })).toBeTruthy();
 
-    // ⚠️ QUAL ESTA ESCOLHIDO PRECISA CHEGAR A QUEM NAO ENXERGA. Ate aqui o
-    // unico sinal era a COR do botao (`btn-primary` contra `btn-ghost`), e cor
-    // nao chega a leitor de tela nenhum. Sem esta linha, trocar `aria-pressed`
-    // por nada nao derruba teste algum.
+    // ⚠️ QUAL ESTA ESCOLHIDO PRECISA CHEGAR A QUEM NAO ENXERGA. O unico outro
+    // sinal e a COR do item, e cor nao chega a leitor de tela nenhum. Sem esta
+    // linha, trocar `aria-selected` por nada nao derruba teste algum.
     expect(
-      screen.getByRole("button", { name: /^Lente do time/ }).getAttribute("aria-pressed")
+      screen.getByRole("option", { name: /Lente do time/ }).getAttribute("aria-selected")
     ).toBe("true");
     expect(
-      screen.getByRole("button", { name: /^Pauta editorial/ }).getAttribute("aria-pressed")
+      screen.getByRole("option", { name: /Pauta editorial/ }).getAttribute("aria-selected")
     ).toBe("false");
-    // ⚠️ Do CRM e o padrao da raiz nao entram -- a regra e do modulo puro, e
-    // esta linha prova que o componente NAO monta a lista por conta propria.
-    expect(screen.queryByRole("tab", { name: /Automações/ })).toBeNull();
-    expect(screen.queryByRole("tab", { name: /Quadro geral/ })).toBeNull();
+
+    // ⚠️ Do CRM e o padrao da raiz NAO entram -- a regra e do modulo puro, e
+    // estas duas linhas provam que o componente NAO monta a lista por conta
+    // propria. Sabotagem V.
+    expect(screen.queryByRole("option", { name: /Automações/ })).toBeNull();
+    expect(screen.queryByRole("option", { name: /Quadro geral/ })).toBeNull();
   });
 
-  it("⚠️ a LENTE nao tem botao de renomear -- nem com podeGerir", () => {
-    // ADR 0034 item 2: ausente, e nao desabilitada.
-    montar({ podeGerir: true });
-    expect(screen.queryByLabelText("Renomear Lente do time")).toBeNull();
-    expect(screen.getByLabelText("Renomear Pauta editorial")).toBeTruthy();
+  it("a lente vem com a descrição que a diferencia de um quadro próprio", () => {
+    // ⚠️ E a frase que explica a diferenca entre "espelho do quadro geral" e um
+    // registro proprio. Ela ja sumiu uma vez por contraste (medido: 1.68 no
+    // tema claro sobre o fundo do item escolhido, contra os 4.5 do AA).
+    montar();
+    abrir();
+    expect(screen.getByText("espelho do quadro geral")).toBeTruthy();
   });
 
-  it("sem podeGerir, nem renomear nem novo quadro aparecem", () => {
-    montar({ podeGerir: false });
-    expect(screen.queryByLabelText("Renomear Pauta editorial")).toBeNull();
-    expect(screen.queryByText("+ Novo quadro")).toBeNull();
-    // ...mas os quadros continuam VISIVEIS: some a afordancia de editar, e
-    // nao o conteudo.
-    expect(screen.getByRole("button", { name: /^Pauta editorial/ })).toBeTruthy();
-  });
-
-  it("clicar num quadro avisa o pai com o id", () => {
+  it("escolher um quadro avisa o pai com o id, e FECHA", () => {
     const props = montar();
-    fireEvent.click(screen.getByRole("button", { name: /^Pauta editorial/ }));
+    abrir();
+    fireEvent.click(screen.getByRole("option", { name: /Pauta editorial/ }));
     expect(props.onSelecionar).toHaveBeenCalledWith("b-pauta");
+    expect(screen.queryByRole("listbox")).toBeNull();
   });
 
-  it("⚠️ clicar na lente avisa com null, e nao com um id falso", () => {
+  it("⚠️ escolher a lente avisa com null, e não com um id falso", () => {
     // A lente nao existe como registro. Um id falso a faria parecer um quadro
     // para qualquer codigo que compare ids.
     const props = montar({ selecionado: "b-pauta" });
-    fireEvent.click(screen.getByRole("button", { name: /^Lente do time/ }));
+    abrir();
+    fireEvent.click(screen.getByRole("option", { name: /Lente do time/ }));
     expect(props.onSelecionar).toHaveBeenCalledWith(null);
+  });
+
+  it("⚠️ clicar FORA fecha -- sabotagem U", () => {
+    // ⚠️ Mesmo padrao do painel de filtros (`Board.tsx:252`). Sem isto o menu
+    // fica aberto por cima das colunas e a pessoa perde o quadro de vista.
+    montar();
+    abrir();
+    expect(screen.getByRole("listbox")).toBeTruthy();
+    fireEvent.mouseDown(document.body);
+    expect(screen.queryByRole("listbox")).toBeNull();
+  });
+
+  it("sem podeGerir, o dropdown abre mas NÃO oferece criar", () => {
+    montar({ podeGerir: false });
+    abrir();
+    // ...os quadros continuam VISIVEIS: some a afordancia de criar, e nao o
+    // conteudo.
+    expect(screen.getByRole("option", { name: /Pauta editorial/ })).toBeTruthy();
+    expect(screen.queryByText("+ Novo quadro")).toBeNull();
+  });
+
+  it("⚠️ '+ Novo quadro' NÃO é uma opção da lista", () => {
+    // ⚠️ Ele nao e escolha de quadro: com `role="option"` um leitor de tela
+    // anunciaria "opcao 3 de 3" e a pessoa esperaria trocar de quadro ao
+    // clicar. Fica fora da lista, depois do separador.
+    montar();
+    abrir();
+    const opcoes = screen.getAllByRole("option").map((o) => o.textContent);
+    expect(opcoes.some((t) => t?.includes("Novo quadro"))).toBe(false);
+    expect(screen.getByText("+ Novo quadro")).toBeTruthy();
   });
 });
 
 describe("SeletorDeQuadro -- criar", () => {
-  it("manda o nome APARADO para a API", async () => {
+  function abrirNovo() {
+    abrir();
+    fireEvent.click(screen.getByText("+ Novo quadro"));
+  }
+
+  it("⚠️ abrir o campo FECHA o dropdown", () => {
+    // O campo nasce abaixo do gatilho, no lugar do painel. Os dois abertos
+    // poriam um input dentro de um menu que fecha ao clicar fora.
+    montar();
+    abrirNovo();
+    expect(screen.queryByRole("listbox")).toBeNull();
+    expect(screen.getByLabelText("Nome do novo quadro")).toBeTruthy();
+  });
+
+  it("manda o nome APARADO para a API -- sabotagem S", async () => {
     vi.mocked(api.createBoard).mockResolvedValue(
       quadro({ id: "b-novo", name: "Campanhas" })
     );
     montar();
+    abrirNovo();
 
-    fireEvent.click(screen.getByText("+ Novo quadro"));
     fireEvent.change(screen.getByLabelText("Nome do novo quadro"), {
       target: { value: "  Campanhas  " },
     });
@@ -149,12 +227,12 @@ describe("SeletorDeQuadro -- criar", () => {
     );
   });
 
-  it("⚠️ nome so com espaco NAO chega na API", async () => {
+  it("⚠️ nome só com espaço NÃO chega na API", async () => {
     // ⚠️ O backend tambem recusa, com 422. Mas gastar a requisicao para uma
     // regra que a tela ja conhece transforma um aviso imediato num erro
     // depois de digitar.
     montar();
-    fireEvent.click(screen.getByText("+ Novo quadro"));
+    abrirNovo();
     fireEvent.change(screen.getByLabelText("Nome do novo quadro"), {
       target: { value: "   " },
     });
@@ -164,15 +242,15 @@ describe("SeletorDeQuadro -- criar", () => {
     expect(vi.mocked(api.createBoard)).not.toHaveBeenCalled();
   });
 
-  it("⚠️ depois de criar, o quadro NOVO passa a ser o selecionado", async () => {
+  it("⚠️ depois de criar, o quadro NOVO passa a ser o selecionado -- sabotagem T", async () => {
     // Criar e continuar na lente deixaria a pessoa sem sinal de que algo
     // aconteceu -- o quadro novo ficaria atras de mais um clique.
     vi.mocked(api.createBoard).mockResolvedValue(
       quadro({ id: "b-novo", name: "Campanhas" })
     );
     const props = montar();
+    abrirNovo();
 
-    fireEvent.click(screen.getByText("+ Novo quadro"));
     fireEvent.change(screen.getByLabelText("Nome do novo quadro"), {
       target: { value: "Campanhas" },
     });
@@ -184,13 +262,23 @@ describe("SeletorDeQuadro -- criar", () => {
     expect(props.onMudou).toHaveBeenCalled();
   });
 
+  it("Escape fecha o campo sem mandar nada", () => {
+    montar();
+    abrirNovo();
+    fireEvent.keyDown(screen.getByLabelText("Nome do novo quadro"), {
+      key: "Escape",
+    });
+    expect(screen.queryByLabelText("Nome do novo quadro")).toBeNull();
+    expect(vi.mocked(api.createBoard)).not.toHaveBeenCalled();
+  });
+
   it("erro da API aparece na tela, com a mensagem do backend", async () => {
     vi.mocked(api.createBoard).mockRejectedValue(
       Object.assign(new Error(), { message: "Sem permissão neste time." })
     );
     montar();
+    abrirNovo();
 
-    fireEvent.click(screen.getByText("+ Novo quadro"));
     fireEvent.change(screen.getByLabelText("Nome do novo quadro"), {
       target: { value: "Campanhas" },
     });
@@ -199,191 +287,5 @@ describe("SeletorDeQuadro -- criar", () => {
     expect((await screen.findByRole("alert")).textContent).toContain(
       "Sem permissão neste time."
     );
-  });
-});
-
-describe("SeletorDeQuadro -- renomear", () => {
-  it("abre com o nome ATUAL preenchido", () => {
-    montar();
-    fireEvent.click(screen.getByLabelText("Renomear Pauta editorial"));
-    expect(
-      (screen.getByLabelText("Novo nome do quadro") as HTMLInputElement).value
-    ).toBe("Pauta editorial");
-  });
-
-  it("manda o id do quadro e o nome novo", async () => {
-    vi.mocked(api.renameBoard).mockResolvedValue(
-      quadro({ id: "b-pauta", name: "Pauta 2026" })
-    );
-    const props = montar();
-
-    fireEvent.click(screen.getByLabelText("Renomear Pauta editorial"));
-    fireEvent.change(screen.getByLabelText("Novo nome do quadro"), {
-      target: { value: "Pauta 2026" },
-    });
-    fireEvent.click(screen.getByText("Salvar"));
-
-    await waitFor(() =>
-      expect(vi.mocked(api.renameBoard)).toHaveBeenCalledWith(
-        "b-pauta",
-        "Pauta 2026"
-      )
-    );
-    expect(props.onMudou).toHaveBeenCalled();
-    // ⚠️ Renomear NAO troca a selecao -- a pessoa continua onde estava.
-    expect(props.onSelecionar).not.toHaveBeenCalled();
-  });
-
-  it("Escape fecha sem mandar nada", () => {
-    montar();
-    fireEvent.click(screen.getByLabelText("Renomear Pauta editorial"));
-    fireEvent.keyDown(screen.getByLabelText("Novo nome do quadro"), {
-      key: "Escape",
-    });
-    expect(screen.queryByLabelText("Novo nome do quadro")).toBeNull();
-    expect(vi.mocked(api.renameBoard)).not.toHaveBeenCalled();
-  });
-});
-
-
-describe("SeletorDeQuadro -- apagar quadro (fatia 7)", () => {
-  // ⚠️ É A OPERAÇÃO MAIS DESTRUTIVA DO PRODUTO, e a única que não pergunta o
-  // destino das tarefas. Estes testes são a única coisa que prende a
-  // confirmação — a conferência visual não roda a cada commit.
-
-  it("⚠️ a LENTE não tem botão de apagar", () => {
-    montar();
-    expect(screen.queryByLabelText("Apagar Lente do time")).toBeNull();
-  });
-
-  it("sem permissão, nenhum quadro tem botão de apagar", () => {
-    montar({ podeGerir: false });
-    expect(screen.queryByLabelText(/^Apagar /)).toBeNull();
-  });
-
-  it("⚠️ o botão de confirmar fica TRAVADO até o nome bater", async () => {
-    // ⚠️ E até a CONTAGEM chegar: confirmar sem saber quantas tarefas vão
-    // junto é o que este diálogo existe para impedir.
-    vi.mocked(api.getBoard).mockResolvedValue({
-      ...QUADROS[1],
-      task_count: 12,
-    });
-    montar();
-    fireEvent.click(screen.getByLabelText("Apagar Pauta editorial"));
-
-    const botao = await screen.findByText("Apagar quadro");
-    expect((botao as HTMLButtonElement).disabled).toBe(true);
-
-    const campo = screen.getByLabelText(/Digite/);
-    fireEvent.change(campo, { target: { value: "pauta editorial" } });
-    expect((screen.getByText("Apagar quadro") as HTMLButtonElement).disabled).toBe(
-      true
-    );
-
-    fireEvent.change(campo, { target: { value: "Pauta editorial" } });
-    expect((screen.getByText("Apagar quadro") as HTMLButtonElement).disabled).toBe(
-      false
-    );
-  });
-
-  it("⚠️ a contagem aparece ANTES do campo, e diz que arquivadas vão junto", async () => {
-    vi.mocked(api.getBoard).mockResolvedValue({
-      ...QUADROS[1],
-      task_count: 12,
-    });
-    montar();
-    fireEvent.click(screen.getByLabelText("Apagar Pauta editorial"));
-    expect(await screen.findByText("12")).toBeTruthy();
-    expect(screen.getByText(/arquivadas/)).toBeTruthy();
-  });
-
-  it("⚠️ enquanto a contagem não chega, não dá para confirmar", async () => {
-    // ⚠️ Um `?? 0` no lugar do travamento faria a tela dizer "nenhuma tarefa"
-    // sobre um quadro cheio -- e a pessoa confirmaria com base nisso.
-    vi.mocked(api.getBoard).mockReturnValue(new Promise(() => {}));
-    montar();
-    fireEvent.click(screen.getByLabelText("Apagar Pauta editorial"));
-    const campo = await screen.findByLabelText(/Digite/);
-    fireEvent.change(campo, { target: { value: "Pauta editorial" } });
-    expect((screen.getByText("Apagar quadro") as HTMLButtonElement).disabled).toBe(
-      true
-    );
-    expect(screen.getByText("Contando as tarefas…")).toBeTruthy();
-  });
-
-  it("confirma, sai do quadro apagado e manda recarregar", async () => {
-    vi.mocked(api.getBoard).mockResolvedValue({
-      ...QUADROS[1],
-      task_count: 3,
-    });
-    vi.mocked(api.deleteBoard).mockResolvedValue({ tarefas_apagadas: 3 });
-    const props = montar({ selecionado: "b-pauta" });
-
-    fireEvent.click(screen.getByLabelText("Apagar Pauta editorial"));
-    const campo = await screen.findByLabelText(/Digite/);
-    fireEvent.change(campo, { target: { value: "Pauta editorial" } });
-    fireEvent.click(screen.getByText("Apagar quadro"));
-
-    await waitFor(() => expect(api.deleteBoard).toHaveBeenCalledWith("b-pauta"));
-    // ⚠️ SAIR DO QUADRO APAGADO É OBRIGATÓRIO. Sem isto a tela continuaria
-    // pedindo um `boardId` que a lista não devolve mais -- o "Carregando…"
-    // eterno anotado no `Board.tsx`.
-    await waitFor(() => expect(props.onSelecionar).toHaveBeenCalledWith(null));
-    expect(props.onMudou).toHaveBeenCalled();
-  });
-
-  it("⚠️ apagar OUTRO quadro não tira a pessoa do que ela está vendo", async () => {
-    const links = quadro({ id: "b-links", name: "Construção de links" });
-    vi.mocked(api.getBoard).mockResolvedValue({ ...links, task_count: 0 });
-    vi.mocked(api.deleteBoard).mockResolvedValue({ tarefas_apagadas: 0 });
-    const props = montar({
-      selecionado: "b-pauta",
-      quadros: [...QUADROS, links],
-    });
-
-    fireEvent.click(screen.getByLabelText("Apagar Construção de links"));
-    const campo = await screen.findByLabelText(/Digite/);
-    fireEvent.change(campo, { target: { value: "Construção de links" } });
-    fireEvent.click(screen.getByText("Apagar quadro"));
-
-    await waitFor(() => expect(api.deleteBoard).toHaveBeenCalled());
-    expect(props.onSelecionar).not.toHaveBeenCalled();
-  });
-
-  it("⚠️ contagem diferente do apagado AVISA", async () => {
-    // Alguém criou tarefa entre a leitura e o clique. Dois números sobre a
-    // mesma coisa é pior que um número velho -- mesmo desenho do lote.
-    vi.mocked(api.getBoard).mockResolvedValue({
-      ...QUADROS[1],
-      task_count: 3,
-    });
-    vi.mocked(api.deleteBoard).mockResolvedValue({ tarefas_apagadas: 5 });
-    montar({ selecionado: "b-pauta" });
-
-    fireEvent.click(screen.getByLabelText("Apagar Pauta editorial"));
-    const campo = await screen.findByLabelText(/Digite/);
-    fireEvent.change(campo, { target: { value: "Pauta editorial" } });
-    fireEvent.click(screen.getByText("Apagar quadro"));
-
-    expect(await screen.findByText(/Alguém mexeu no quadro/)).toBeTruthy();
-  });
-
-  it("erro do servidor fica no diálogo, e o quadro não sai da tela", async () => {
-    vi.mocked(api.getBoard).mockResolvedValue({
-      ...QUADROS[1],
-      task_count: 1,
-    });
-    vi.mocked(api.deleteBoard).mockRejectedValue(
-      Object.assign(new Error("Sem permissão neste time."), { status: 403 })
-    );
-    const props = montar({ selecionado: "b-pauta" });
-
-    fireEvent.click(screen.getByLabelText("Apagar Pauta editorial"));
-    const campo = await screen.findByLabelText(/Digite/);
-    fireEvent.change(campo, { target: { value: "Pauta editorial" } });
-    fireEvent.click(screen.getByText("Apagar quadro"));
-
-    expect(await screen.findByText("Sem permissão neste time.")).toBeTruthy();
-    expect(props.onSelecionar).not.toHaveBeenCalled();
   });
 });

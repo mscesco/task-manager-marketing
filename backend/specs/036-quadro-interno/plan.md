@@ -1811,6 +1811,272 @@ número velho.
 
 ---
 
+## Fatia 10 — o seletor de quadro vira dropdown no título — ✅ ENTREGUE (18/08)
+
+> Escopo escrito em 18/08/2026 **antes de código**, conferido pela Camila, e
+> entregue no mesmo dia. **Front 791 → 801. Sem backend, sem migration.**
+> ⚠️ **Primeira fatia desta spec entregue em BRANCH com PR**
+> (`spec-036/escopo-fatias-10-e-11`), e não direto em `main`.
+
+⚠️ **O QUE ENTROU, E ONDE:**
+
+| | arquivo |
+|---|---|
+| dropdown (escolher + criar) | `components/SeletorDeQuadro.tsx`, **reescrito** |
+| renomear + apagar | `components/AcoesDoQuadro.tsx`, **novo** |
+| `title: ReactNode` + slot `acoesDoQuadro` | `components/Board.tsx` |
+| a ligação, e a linha separada que saiu | `app/quadro/[teamId]/page.tsx` |
+| guardiões | `__tests__/SeletorDeQuadro.test.tsx` (16, reescrito) e `__tests__/AcoesDoQuadro.test.tsx` (15, novo) |
+
+⚠️ **OS 38 TESTES DE `lib/__tests__/seletorDeQuadro.test.ts` NÃO FORAM TOCADOS**,
+e era a previsão do escopo. `opcoesDoSeletor`, `opcaoSelecionada`,
+`nomeConfere`, `quadroPedidoNaUrl` e `nomeDeQuadroValido` são decisão pura e não
+sabem como a tela desenha. **A conta do 801:** `791 − 21 + 16 + 15`.
+
+### ⚠️ COLISÃO DE NOME, achada pelo teste e não pela leitura
+
+O gatilho de apagar e o botão de **confirmar** do `ConfirmarExclusaoDeQuadro` se
+chamavam os dois **"Apagar quadro"**. O `getByText` quebrou com *"found multiple
+elements"* — e o defeito não era do teste: eram **dois botões de mesmo nome na
+árvore, com pesos opostos** (um abre diálogo, o outro apaga as tarefas de outras
+pessoas). ⚠️ **O conserto é os gatilhos SAÍREM da árvore enquanto o diálogo está
+aberto**, e tem teste próprio. Quem "consertar" trazendo-os de volta o derruba.
+
+### A resolução do nome do quadro saiu da página
+
+A página tinha um `?? \`Quadro · ${team.name}\`` que resolvia o nome do quadro
+avulso. Saiu: quem sabe o nome do escolhido é o `opcaoSelecionada` dentro do
+seletor, e ele já o desenhava. ⚠️ **Manter as duas seria uma segunda definição do
+mesmo nome, e elas divergiriam no primeiro rename.**
+
+### Conferência visual — ✅ FEITA EM 18/08
+
+Conferido pela Camila, na tela, e **nada disto tem guardião**: o dropdown
+abrindo, escolhendo e fechando ao clicar fora; o título com o chevron ao lado da
+contagem; e a barra do modo de edição com as **duas famílias de botão** separadas
+(quadro à esquerda, junto do selo *Modo edição*; coluna à direita).
+
+### ⚠️ ELA ENTRA NESTE DEPLOY, E ISSO CONTRARIA A REGRA ESCRITA
+
+A §Definição de pronto diz que **item novo não entra na lista fechada** — vai
+para a §"o que falta" e sobe no deploy seguinte. **Esta fatia é exceção
+declarada, decidida pela Camila em 18/08**, e o motivo é de tempo real e não de
+gosto:
+
+⚠️ **NINGUÉM EM PRODUÇÃO JAMAIS VIU O SELETOR.** Trocá-lo **antes** do deploy
+custa zero de reaprendizado; **depois** custa uma pessoa reaprendendo por cada
+uma das 26. É a mesma forma de argumento que colocou a fatia 9 na lista — ela
+destrava algo que já estava lá, e não abre vontade nova.
+
+⚠️ **E A FATIA 7 PIOROU A LINHA ATUAL.** Cada quadro ganhou "Apagar" ao lado do
+"Renomear" que já tinha: a linha passou a ter **1 + 2N + 1 botões** para N
+quadros. Com um quadro só em produção isso é invisível hoje — e passa a doer no
+primeiro quadro que alguém criar, que é justamente o que este deploy libera.
+
+### ⚠️ O QUE EU ACHEI LENDO O CÓDIGO, E QUE MUDA O ESCOPO
+
+**Conferido em 18/08, arquivo por arquivo:**
+
+1. ⚠️ **O `SeletorDeQuadro` existe em UM lugar só:**
+   `app/quadro/[teamId]/page.tsx:153`. **Ele NÃO existe em `/quadro`** — a
+   página do Quadro geral chama `<Board title="Quadro geral" />` direto
+   (`app/quadro/page.tsx:33`) e não tem seletor nenhum.
+2. ⚠️ **A BARRA LATERAL JÁ FAZ A NAVEGAÇÃO DE PRIMEIRO NÍVEL.** O accordion
+   "Quadros" do `AppShell.tsx:231-238` lista `/quadro` (Quadro geral) **mais uma
+   sub-aba por subtime da lente** (`computeLens`). Ou seja o seletor da página é
+   o **segundo** nível: dentro de um subtime, ele escolhe entre a **lente** e os
+   **quadros avulsos daquele subtime**.
+3. ⚠️ **HOJE SÃO DUAS LINHAS, e o desenho do Figma funde as duas.** A linha do
+   seletor (`marginBottom: 14`, na página) e a barra do `Board` com o `<h1>`.
+   Fundir é o ganho real da fatia — uma dobra inteira de volta.
+4. ⚠️ **O `<h1>` É DO `Board`, E O SELETOR É DA PÁGINA.** O título é
+   `title: string` e aparece **duas vezes** no `Board.tsx` (linha 1334, barra do
+   modo de edição; linha 1383, barra normal). Para o título virar gatilho do
+   dropdown, o `Board` precisa aceitar um **nó** no lugar da string.
+
+### ⚠️ A DECISÃO DE PRODUTO QUE ESTA FATIA NÃO TOMA
+
+**O dropdown convive com o accordion da barra lateral, ou substitui?**
+
+Hoje há **duas** formas de trocar de contexto (barra lateral e seletor da
+página). Depois desta fatia haveria duas ainda, mas com a segunda mais visível
+— e as duas mostram conjuntos **diferentes**: a barra mostra Quadro geral +
+subtimes; o dropdown mostra lente + avulsos de UM subtime.
+
+⚠️ **NÃO ESCREVA CÓDIGO ANTES DE RESPONDER ISTO.** É o tipo de pergunta que,
+respondida depois, joga a fatia fora: se o dropdown tiver de listar também os
+subtimes, ele deixa de ser `opcoesDoSeletor` e passa a precisar do `computeLens`
+— outra fatia, outro tamanho.
+
+### O que sobe
+
+- **O título vira gatilho.** `Board` passa a aceitar o título como nó
+  (`ReactNode`), e as **4 chamadas** continuam funcionando com string:
+  `/projetos/[id]:159`, `/quadro:33`, `/quadro/[teamId]:170` e `:185`.
+- **`+ Novo quadro` vira item DENTRO do dropdown** (decisão da Camila, 18/08).
+- ⚠️ **`Renomear` e `Apagar` SAEM da linha e vão para o MODO DE EDIÇÃO**
+  (decisão da Camila, 18/08). São **três casos**, e a regra "ausente, e não
+  desabilitada" (ADR 0034 item 2) vale para os três:
+
+| | modo de edição | Renomear | Apagar |
+|---|---|---|---|
+| **Lente** | não tem (`Board.tsx:888`: `quadroEditavel` é `null` na lente e no projeto) | — | — |
+| **Quadro geral** (`is_default`) | tem, desde a 6a-bis | ⚠️ **no BACKEND sim, na TELA não existe** — ver abaixo | ❌ **AUSENTE** — `quadro_padrao_nao_apagavel`, e `opcoesDoSeletor` já filtra `!q.is_default` |
+| **Avulso** | tem | ✅ | ✅ |
+
+⚠️ **A LINHA DO QUADRO GERAL ESTAVA IMPRECISA NA PRIMEIRA VERSÃO DESTE ESCOPO, e
+a correção é de 18/08.** Ela dizia "Renomear ✅ sim", citando o
+`board_service.py:385` ("O QUADRO GERAL PODE SER RENOMEADO", só por
+`board.manage.root`). **Isso é verdade no backend e falso na tela:**
+
+- o Quadro geral vive em **`/quadro`**, e essa página chama
+  `<Board title="Quadro geral" />` direto (`app/quadro/page.tsx:33`): **não tem
+  seletor, e agora não tem `AcoesDoQuadro`**;
+- e ela nunca teve — `opcoesDoSeletor` filtra `!q.is_default`, então o Quadro
+  geral **nunca apareceu** no seletor, nem na versão de abas.
+
+⚠️ **LOGO: renomear o Quadro geral continua sem caminho de tela, exatamente
+como antes desta fatia. NÃO é regressão** — é uma capacidade de backend sem
+leitor, a mesma família do `corEhHex` e do `notify_deadline`. **Dar tela a ela é
+a "saída 3" da §decisão de produto** (o dropdown também aparecer em `/quadro`),
+adiada pela Camila em 18/08 junto com a decisão de os dois níveis conviverem.
+
+### ⚠️ A "ARMADILHA DE SEQUÊNCIA" NÃO EXISTE — retratação de 18/08
+
+**Este escopo nasceu afirmando que apagar o quadro de dentro do modo de edição
+aninharia duas confirmações**, e que o `"Você tem alterações que ainda não foram
+aplicadas. Descartar?"` do `fecharEdicao` apareceria depois, sobre um quadro
+morto. **Fui ler o código e é falso.**
+
+⚠️ **`Board.tsx:403` JÁ TEM UM `useEffect` EM `[boardId]`** que zera `rascunho`,
+`revisando` e `criandoColuna`. O comentário dele diz, com todas as letras, que
+**descarta em silêncio e isso é escolha**: trocar de quadro é navegação, e pedir
+confirmação depois que o `boardId` já mudou avisaria tarde. Apagar chama
+`onSelecionar(null)` (`SeletorDeQuadro`, `confirmarExclusao`), o `boardId` muda,
+e o rascunho morre ali.
+
+⚠️ **E O `Board` NEM SOBREVIVE À TROCA.** A página desenha
+`quadroSelecionado ? <Board boardId=…/> : <Board subteamId=…/>` em dois ramos de
+um ternário — sair de um quadro avulso para a lente **desmonta** um e monta o
+outro. O rascunho não tem como atravessar.
+
+⚠️ **FICA REGISTRADO COMO ERRO, e não apagado.** Foi escrito a partir da
+intenção ("dois diálogos, logo aninham") e não do arquivo, que é o padrão de
+erro que o handoff desta spec manda vigiar. **Nenhum conserto é necessário nesta
+fatia por esta razão.**
+
+### O custo, medido
+
+⚠️ **Os 21 testes de `components/__tests__/SeletorDeQuadro.test.tsx` são
+reescritos. Os 38 de `lib/__tests__/seletorDeQuadro.test.ts` ficam INTACTOS** —
+`opcoesDoSeletor`, `podeRenomear`, `podeApagar`, `nomeConfere` e
+`quadroPedidoNaUrl` são decisão pura e não sabem como a tela desenha. É a
+fronteira da Spec 027 pagando o que prometia.
+
+### Guardiões
+
+| sabotagem | esperado |
+|---|---|
+| o dropdown desenha "Apagar" no Quadro geral | teste de componente: ausente, e não desabilitado |
+| o dropdown desenha "Renomear" na lente | teste de componente: ausente |
+| o Quadro geral perde o "Renomear" | teste de componente: presente para `board.manage.root` |
+| o dropdown não fecha ao clicar fora | teste de componente |
+| `Board` deixa de aceitar título string | as 4 chamadas existentes, sem mudança |
+
+### ⚠️ QUAL PADRÃO DE "FECHAR AO CLICAR FORA" USAR — corrigido em 18/08
+
+Este escopo dizia "use o `useCliqueFora`, já usado pelo painel de filtros".
+**As duas metades estavam erradas:**
+
+1. ⚠️ **O painel de filtros NÃO usa o `useCliqueFora`.** Ele tem um
+   `useEffect` próprio com `document.addEventListener("mousedown")` —
+   `Board.tsx:252-261`, e o comentário diz "mesmo padrão do picker de
+   responsável".
+2. ⚠️ **E o `useFecharAoClicarFora` resolve outro problema.** Ele existe para
+   MODAL: pareia `mousedown` com `mouseup` porque selecionar texto dentro do
+   card e soltar fora fechava o modal e apagava formulário (defeito de
+   31/07, com captura). Dropdown não tem texto para selecionar dentro.
+
+⚠️ **O precedente certo é o do painel de filtros** (`Board.tsx:252`), que é
+irmão visual do que esta fatia constrói. **Não copie o de modal.**
+
+---
+
+## Fatia 11 — o aviso na queda para a lente — ⬜ ADIADA, foi para a §"o que falta" (18/08)
+
+> Escrita em 18/08/2026 junto com a fatia 10, e **tirada do caminho do deploy no
+> mesmo dia**, pela Camila, depois de o problema ser lido no código em vez de
+> descrito de memória.
+
+### ⚠️ POR QUE ELA SAIU: SÃO DOIS CAMINHOS, E SÓ UM É MUDO
+
+Este escopo nasceu dizendo "a queda é muda", no singular. **São dois caminhos, e
+o mais importante dos dois já avisa:**
+
+1. ⚠️ **A ABA QUE JÁ ESTAVA ABERTA — JÁ AVISA, e bem.** O `Board` recebe o
+   `boardId`, busca a lista, não acha, **tenta de novo uma vez** (para não
+   confundir quadro apagado com a corrida de criação) e desenha a caixa
+   vermelha de `Board.tsx:856`: *"Este quadro não existe mais. Ele pode ter sido
+   apagado por outra pessoa enquanto você o tinha aberto."* **Este é o caso real
+   de "alguém apagou enquanto eu olhava".**
+2. **F5, OU ABRIR O LINK DO ZERO — este é o mudo.** Aqui a ordem é outra: o
+   `quadroPedidoNaUrl` roda ANTES, na página, devolve `null`, e a página troca
+   `<Board boardId=…/>` por `<Board subteamId=…/>`. **O `Board` nunca fica
+   sabendo que um quadro foi pedido**, então a caixa vermelha não tem chance.
+
+### ⚠️ E A FATIA 10 JÁ MELHOROU O CAMINHO 2, SEM QUERER
+
+Antes o título era o texto `Quadro · {time}`. Com o dropdown, ele passou a
+mostrar **"Lente do time"** e a descrição *"espelho do quadro geral"*. **A tela
+já diz onde a pessoa ESTÁ** — falta dizer que o que ela pediu acabou. Isso
+rebaixa a fatia de "buraco" para "ausência".
+
+### ⚠️ E O CASO NÃO EXISTE EM PRODUÇÃO ANTES DESTE DEPLOY
+
+Há **um quadro só**, e ele é o PADRÃO, que `quadro_padrao_nao_apagavel` recusa
+apagar. Para o caminho 2 acontecer alguém precisa **criar** um quadro avulso,
+**compartilhar o link** e **apagar** — as três coisas só passam a ser possíveis
+depois desta janela. **Segurar o deploy por um caso que o deploy é quem cria
+inverte a ordem.**
+
+⚠️ **O TEXTO DE ESCOPO ABAIXO CONTINUA VALENDO** para quando ela vier — é a
+§"o que falta", item 2.
+
+---
+
+### Escopo (mantido para quando ela vier)
+
+⚠️ **`quadroPedidoNaUrl` DERRUBA `?quadro=` DESCONHECIDO E CAI NA LENTE, EM
+SILÊNCIO** — `lib/seletorDeQuadro.ts`, e o docstring diz que é **de propósito**:
+link velho, id digitado na mão, ou quadro apagado por outra pessoa. "Erro na
+cara de quem só abriu a tela seria pior que o lugar padrão dela."
+
+⚠️ **ERA CERTO ATÉ A FATIA 7, E A FATIA 7 CRIOU UM CASO NOVO.** Antes dela,
+quadro não desaparecia — só o link podia estar velho. Agora **uma pessoa apaga o
+quadro que outra tem aberto**, e a tela da segunda troca de lugar sozinha, sem
+dizer nada.
+
+⚠️ **E O `plan.md` JÁ REGISTRA QUE "Este quadro não existe mais" NUNCA APARECE
+DEPOIS DE UM F5** — só na aba que já estava aberta, porque o `quadroPedidoNaUrl`
+resolve antes. São **dois** caminhos e um só tem mensagem.
+
+### O que sobe
+
+- Um aviso na queda, **dispensável em um clique**, e **não** um erro de página.
+- ⚠️ **Só quando o `?quadro=` existia e sumiu** — não quando ele nunca foi
+  válido. `quadroPedidoNaUrl` devolve `null` nos dois casos hoje; separá-los
+  pede um terceiro estado, e é o tamanho real desta fatia.
+
+### Guardiões
+
+| sabotagem | esperado |
+|---|---|
+| a queda volta a ser muda | teste de `lib`: o terceiro estado |
+| o aviso aparece com `?quadro=` nunca válido | teste de `lib`: não aparece |
+| `quadros === null` (lista não chegou) vira queda | teste de `lib`: já existe, não pode cair |
+
+---
+
 ## Fatia 8 — texto de 17/08 (histórico, superseded)
 
 > Mantido porque registra o escopo antes de a invariante de pai e filha
@@ -2047,6 +2313,22 @@ bloco depois da fatia 6 — dois deploys no total, não oito.
 1. ✅ **A §Definição de pronto satisfeita por inteiro** — fatia 6 conferida
    (17/08) **e RECONFERIDA** (18/08), e as fatias **9 → 8 → 7** entregues e
    conferidas. **Fechado em 18/08.**
+   ⚠️ **E AS FATIAS 10 E 11 ENTRARAM DEPOIS DISSO, por decisão da Camila em
+   18/08 — passo 1-bis, e não item novo na lista fechada.** O motivo está na
+   §Fatia 10 e é de tempo real: ninguém em produção jamais viu o seletor, então
+   trocá-lo antes custa zero de reaprendizado e depois custa 26 pessoas
+   reaprendendo. ⚠️ **A ordem é 10 → 11 → deploy**, e **nenhuma das duas tem
+   migration** — a `0013` continua sendo a única desta spec a subir.
+   ⚠️ **A FATIA 10 FECHOU EM 18/08** (front 791 → 801, conferida na tela), e a
+   **11 SAIU do caminho do deploy no mesmo dia** — ver a §Fatia 11: o caminho
+   que importa (a aba já aberta) **já avisa** em `Board.tsx:856`, o dropdown da
+   10 melhorou o outro sem querer, e o caso só passa a existir depois desta
+   janela. **Logo a ordem é 10 → deploy**, e não 10 → 11 → deploy.
+   ⚠️ **E O DEPLOY SOBE UMA COISA QUE NÃO ESTAVA NA LISTA DE 17/08: o
+   dropdown.** Ele substitui a linha de abas que ninguém em produção viu, então
+   não há o que reaprender — mas o item 38 da conferência (medir
+   `board.manage.root` na base de produção) passa a valer **também** para quem
+   vai ver "Renomear quadro" e "Apagar quadro" dentro do modo de edição.
 2. **Rodar o `invariantes.sql` ANTES**, e anotar a consulta 5. Série:
    696 (06/08) → 802 → 832 (10/08) → **1049 (18/08)**.
    ⚠️ **A CONSULTA 5 CONTA TUDO, INCLUSIVE APAGADAS E ARQUIVADAS.** A leitura
@@ -2569,6 +2851,16 @@ quadro) e §Fatia 8 (mover tarefa entre quadros), porque entraram na §Definiç�
 de pronto. **O que sobrou nesta lista NÃO segura o deploy.**
 
 Em ordem de valor. Cada um é fatia própria, e **escreve-se neste arquivo**.
+
+⚠️ **A FATIA 11 ENTROU NESTA LISTA EM 18/08, VINDA DO CAMINHO DO DEPLOY** —
+sentido contrário ao da fatia 9, que entrou na §Definição de pronto. **O escopo
+dela já está escrito** (§Fatia 11): o aviso quando o `?quadro=` não existe mais
+e a tela cai na lente. Saiu porque o caminho que importa — a aba que já estava
+aberta — **já avisa** (`Board.tsx:856`), porque o dropdown da fatia 10 melhorou
+o outro caminho sem querer, e porque o caso **só passa a ser possível depois
+deste deploy**: hoje há um quadro só, e ele é o padrão, que não se apaga.
+⚠️ **Ela vem antes do 5c quando vier** — é conserto de sinal, e os outros são
+adição.
 
 1. **5c — quadro extra da raiz.** ⚠️ **A PERGUNTA "QUEM EDITA AS COLUNAS DO
    QUADRO GERAL" JÁ FOI RESPONDIDA na 6a-bis (13/08), e este item não depende

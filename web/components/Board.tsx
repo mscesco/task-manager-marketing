@@ -6,6 +6,7 @@
 // do pai, entao a subarvore inteira vem junta). Extraido do antigo
 // quadro/page.tsx na Entrega 11 sem mudar comportamento do geral.
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import { SlidersHorizontal } from "lucide-react";
 import {
   SortableContext,
@@ -93,6 +94,7 @@ export default function Board({
   boardId,
   podeEditarColunas = false,
   title,
+  acoesDoQuadro,
 }: {
   projectId?: string; // presente => quadro de PROJETO
   subteamId?: string; // presente => quadro de SUBTIME (modo hibrido, Fatia 4)
@@ -121,7 +123,36 @@ export default function Board({
    * botao.
    */
   podeEditarColunas?: boolean;
-  title: string;
+  /**
+   * O título do quadro, na barra.
+   *
+   * ⚠️ E `ReactNode`, E NAO `string`, DESDE A FATIA 10. A tela do time passa o
+   * SELETOR DE QUADRO aqui: o nome do quadro virou o gatilho do dropdown, e
+   * com isso a linha separada de abas (que crescia `1 + 2N + 1` botoes para N
+   * quadros) sumiu -- uma dobra inteira de volta.
+   *
+   * ⚠️ AS 4 CHAMADAS COM STRING CONTINUAM VALENDO (`/quadro`,
+   * `/projetos/[id]` e os dois ramos de `/quadro/[teamId]`): `string` E um
+   * `ReactNode`. Esta troca nao pede mudanca em quem so passa texto.
+   */
+  title: ReactNode;
+  /**
+   * Ações sobre o QUADRO (renomear, apagar) -- desenhadas na barra do MODO DE
+   * EDIÇÃO (fatia 10).
+   *
+   * ⚠️ E UM SLOT, E O `Board` NAO SABE O QUE VEM DENTRO. Renomear e apagar
+   * quadro sao vaivem com a API de BOARD, que e assunto da tela do time e nao
+   * deste componente -- ele desenha colunas e cartoes. Aceitar um no aqui
+   * mantem a fronteira da Spec 027 de pe: se `Board` importasse
+   * `renameBoard`/`deleteBoard`, as 4 chamadas dele passariam a carregar a
+   * gestao de quadros, inclusive a de PROJETO, que nao tem quadro para apagar.
+   *
+   * ⚠️ SO NO MODO DE EDICAO, e por decisao de produto (Camila, 18/08): fora
+   * dele a linha do seletor voltaria a ter "Renomear" e "Apagar" ao lado de
+   * cada quadro, que e exatamente o que a fatia 7 piorou e esta fatia
+   * desfaz.
+   */
+  acoesDoQuadro?: ReactNode;
 }) {
   const [tasks, setTasks] = useState<Task[] | null>(null);
   // Fatia 5b-6: o modo de EDICAO DE COLUNAS. So existe em quadro avulso.
@@ -1340,6 +1371,13 @@ export default function Board({
           >
             Modo edição
           </span>
+          {/* ⚠️ AS ACOES DO QUADRO ENTRAM AQUI, e antes do `marginLeft: "auto"`
+              do "Adicionar coluna" -- e o `auto` que empurra os botoes de
+              coluna para a direita, entao renomear/apagar ficam encostados no
+              selo "Modo edição", do lado do assunto deles (o QUADRO), e nao
+              misturados com os botoes de COLUNA. Trocar a ordem destes dois
+              embaralha as duas familias sem quebrar teste nenhum. */}
+          {acoesDoQuadro}
           <button
             className="btn btn-ghost"
             onClick={() => setCriandoColuna(true)}
