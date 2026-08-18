@@ -56,44 +56,76 @@ herança da Spec 036: o corpo se prende em teste de `lib/`.
 
 ---
 
-## Fatia B — horário no prazo — ⬜ ESCOPO, BLOQUEADA
+## Fatia B — horário no prazo — ⬜ ESCOPO, falta UMA decisão
 
-⚠️ **NÃO COMECE ESTA FATIA ANTES DAS TRÊS RESPOSTAS** da §Decisões que faltam
-(`spec.md`): fuso, hora do backfill, e se horário é obrigatório. A terceira é a
-que mais muda o tamanho, e não foi feita em 18/08.
+⚠️ **REDESENHADA EM 18/08, DEPOIS DA RESPOSTA DA CAMILA.** A versão anterior
+convertia seis colunas para `timestamptz`, com backfill em 1085 linhas. Ao
+responder que **horário não é obrigatório**, o desenho virou **`date` + `time`
+NULO** e a migration encolheu para *uma coluna nova e nula*. O porquê está na
+§Decisões do `spec.md`, com a tabela de comparação.
+
+⚠️ **FALTA SÓ A DECISÃO DE FUSO** (recomendado: fixo, `America/Sao_Paulo`).
+As outras duas foram respondidas, e uma delas deixou de existir.
 
 ### A migration
 
-`ALTER TABLE ... TYPE timestamptz` em **seis** colunas, e as seis juntas:
+**Uma coluna nova, nula, e nada mais:**
 
-| coluna | por quê |
+```
+task.due_time  TIME NULL
+```
+
+⚠️ **`start_date` NÃO GANHA HORA NESTA FATIA.** O pedido foi *o horário definir
+se a tarefa está atrasada*, e atraso se mede contra a entrega. Dar hora ao
+início dobraria a superfície sem nada consumindo o valor — a doença do
+`corEhHex`. Se um dia precisar, é `start_time`, aditiva igual.
+
+⚠️ **`project` NÃO ENTRA.** Projeto não tem "atrasado" na tela hoje.
+
+⚠️ **`due_soon_notified_for` E `overdue_notified_for` NÃO MUDAM, e é o maior
+ganho do desenho novo.** Eles guardam *o `due_date` para o qual o aviso já saiu*,
+e o job só notifica quando difere. Se tivessem mudado de tipo junto com um
+`due_date` convertido, a comparação viraria "sempre diferente" e **o job passaria
+a notificar todo dia, todas as tarefas com prazo, para as 26 pessoas.** Com
+`date` intacto, isso não pode acontecer.
+⚠️ **MAS SOBRA UMA VERRUGA, e ela é conhecida:** mudar **só a hora** não muda o
+`due_date`, então o dedup não rearma e o aviso não sai de novo. Ou o job passa a
+comparar os dois campos, ou isso fica escrito como limitação aceita. **Decida na
+fatia, não depois.**
+
+⚠️ **ORDEM DE DEPLOY: a PADRÃO do `DEPLOY.md` (código antes, migration depois).**
+Coluna nova e nula é o caso que o próprio arquivo chama de seguro: *"coluna
+nullable e tabela nova que ninguém referencia não afetam o código velho, que
+nunca pergunta por elas"*. **Não é** a segunda exceção — aquela é para
+`mapped_column` novo em model existente, e aqui o model novo é que carrega o
+campo. Escreva a ordem no cabeçalho da migration mesmo assim.
+
+### O que sobe no front
+
+- ⚠️ **A comparação de atraso ganha um SEGUNDO caminho, e o primeiro fica
+  intacto.** Hoje é `t.due_date < hoje`, string contra string
+  (`Board.tsx:82,1315`), e o comentário do `hojeISO` **proíbe**
+  `new Date(due_date)` por escorregar um dia. **Sem hora, isso continua valendo
+  e não se toca** — é 100% do dado existente. **Com hora**, compara instante.
+  ⚠️ **A regra mora em `lib/`, pura e testada**, e não dentro do `Board.tsx`.
+- O seletor de hora na cápsula "Datas" da fatia A, **opcional e limpável**:
+  tirar a hora tem de devolver a tarefa ao comportamento de "vence no dia".
+- `lib/status.ts` — a decisão 4 do `spec.md` ("Atrasada 2 dias" vira "há 5
+  horas"?). ⚠️ **Só afeta tarefa com hora.**
+
+### Guardiões
+
+| sabotagem | esperado |
 |---|---|
-| `task.due_date` | o pedido |
-| `task.start_date` | par do de cima; deixar um `date` e outro `timestamptz` põe dois tipos no mesmo formulário |
-| `project.due_date`, `project.start_date` | existem (`operational.py:115-116`) e o Figma do modal de projeto os desenha |
-| `task.due_soon_notified_for` | ⚠️ **dedup da Spec 023** — ver abaixo |
-| `task.overdue_notified_for` | ⚠️ idem |
+| a regra some para tarefa SEM hora | teste de `lib/`: prazo ontem, sem hora ⇒ atrasada (o caminho antigo, intacto) |
+| `new Date(due_date)` no lugar da comparação certa | teste com fuso negativo: prazo 19/08 23:00 não pode virar 20/08 |
+| tarefa COM hora usa a comparação de string | ⚠️ **o teste central:** prazo hoje 09:00, agora 18:00 ⇒ **atrasada**. Com `string < string` isto passa despercebido |
+| limpar a hora não volta ao comportamento de dia | teste: `due_time = null` ⇒ só atrasa depois que o dia acaba |
+| `due_time` vira `NOT NULL` ou ganha default | teste de migration: coluna nova nasce nula nas 1085 linhas |
+| tarefa sem prazo entra no filtro | continua aparecendo em todos (decisão da Camila, já valendo) |
 
-⚠️⚠️ **SE OS DOIS ÚLTIMOS FICAREM `date`, O JOB VOLTA A NOTIFICAR TODO DIA,
-PARA TODAS AS TAREFAS COM PRAZO.** Eles guardam *o `due_date` para o qual o
-aviso já saiu*, e o job só notifica quando difere do atual. Tipos diferentes ⇒
-sempre diferente ⇒ aviso sempre. **As 26 pessoas recebem.** Isto é o defeito
-mais caro previsível desta fatia, e ele não aparece em teste que não rode o job.
-
-⚠️ **O PADRÃO JÁ EXISTE NO MODELO:** `task.completed_at` é
-`DateTime(timezone=True)`. A migration copia a forma dele, não inventa.
-
-⚠️ **O BACKFILL É `23:59`, E NÃO `00:00`.** Ver o achado 3 do `spec.md`: com
-meia-noite, toda tarefa com prazo hoje fica atrasada de manhã e todo prazo
-passado ganha um dia. São **1085 linhas** em produção.
-
-⚠️ **ORDEM DE DEPLOY: esta migration CAI NA SEGUNDA EXCEÇÃO do `DEPLOY.md`?**
-Ela não acrescenta coluna a model existente — ela **troca o tipo** de colunas
-que o código já lê. Isso é pior que os dois casos documentados: o código velho
-lendo `timestamptz` num campo que ele trata como `date` compara string errado
-(ver achado 1). **Logo: código e migration na MESMA janela, e a janela é curta.**
-Escreva a ordem no cabeçalho da migration, porque o `DEPLOY.md` diz que o
-cabeçalho ganha do padrão.
+⚠️ **ORDENAR POR PRAZO PRECISA DE `NULLS LAST`.** Duas colunas lidas juntas:
+`ORDER BY due_date, due_time NULLS LAST`. É o preço do desenho, e é barato.
 
 ### O que sobe no front
 

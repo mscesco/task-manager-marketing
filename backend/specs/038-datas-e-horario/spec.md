@@ -70,38 +70,84 @@ dois como `date`, a comparação passa a ser sempre "diferente", e **o job volta
 notificar todo dia, para todas as tarefas com prazo**. As 26 pessoas recebem.
 ⚠️ **Os três campos mudam juntos ou nenhum muda.**
 
-**3. ⚠️ CONVERTER `date` PARA `timestamptz` ESCOLHE UMA HORA PARA 1085 LINHAS, E
-`00:00` ESTÁ ERRADO.** Hoje uma tarefa com prazo "19/08" só é atrasada **depois
-que o dia 19 acaba** (`due_date < hoje`, com `hoje` sendo a data de hoje). Se o
-backfill puser `00:00`, toda tarefa cujo prazo é hoje passa a estar atrasada **de
-manhã**, e todo prazo passado ganha um dia de atraso que não tinha. **O backfill
-tem de ser o FIM do dia**, e qual é o fim do dia depende da decisão de fuso
-abaixo.
+**3. ⚠️ CONVERTER `date` PARA `timestamptz` ESCOLHERIA UMA HORA PARA 1085 LINHAS,
+E `00:00` ESTARIA ERRADO.** Hoje uma tarefa com prazo "19/08" só é atrasada
+**depois que o dia 19 acaba** (`due_date < hoje`). Um backfill com meia-noite
+poria toda tarefa com prazo hoje em atraso **de manhã**, e daria um dia de atraso
+a todo prazo passado.
+
+⚠️ **ESTE ACHADO MATOU O PRÓPRIO DESENHO QUE O ORIGINOU, e o registro fica.** Ele
+foi escrito para dizer "cuidado com o backfill"; ao responder que **horário não é
+obrigatório** (Camila, 18/08), o desenho mudou para `date` + `time` NULO e
+**deixou de haver backfill**. Os três achados desta seção continuam valendo como
+descrição do que a alternativa `timestamptz` custaria — e é por isso que ela foi
+recusada, e não por gosto. Ver §Decisões.
 
 ---
 
-## ⚠️ Decisões que faltam — responder ANTES de escrever a fatia B
+## ⚠️ Decisões — a 3 foi respondida, e ela redesenhou a fatia B
 
-**1. O horário é de qual fuso?** O servidor roda em UTC; o time está no Brasil.
-Uma tarefa marcada para "18:00" é 18:00 de onde?
+### 3. Horário é obrigatório? — ✅ **NÃO** (Camila, 18/08)
 
-- **(a) Fuso fixo do workspace (`America/Sao_Paulo`).** Um time, um país.
-  Simples, e o horário significa a mesma coisa para todo mundo que olha.
-  **Recomendado.**
-- (b) Fuso de quem olha (do navegador). Correto para time distribuído, e
-  transforma "atrasada" em coisa que depende de quem pergunta — duas pessoas
-  vendo a mesma tarefa em estados diferentes.
+Uma tarefa pode ter data **sem** hora. E essa resposta **derruba o desenho de
+`timestamptz`**, que este documento propunha uma hora antes:
 
-**2. Qual hora o backfill escreve nas 1085 linhas existentes?** `23:59` do fuso
-escolhido é o que preserva o comportamento atual (ver achado 3). Alternativa:
-`18:00`, tratando o prazo como "fim do expediente" — mas isso **muda o estado de
-tarefas que hoje não estão atrasadas**, e não é migração, é decisão de produto.
+⚠️ **UM `timestamptz` NÃO CONSEGUE DISTINGUIR "19/08 SEM HORA" DE "19/08
+00:00".** São dois estados de produto — "vence no dia 19" e "vence à meia-noite
+do dia 19" — e um único valor os representa igual. Guardar assim exigiria uma
+coluna-bandeira ao lado (`due_tem_hora`), que é a mesma informação partida em
+duas colunas que precisam concordar sempre.
 
-**3. Horário é obrigatório?** Uma tarefa pode ter data sem hora? Se sim, a
-coluna guarda `timestamptz` e a tela precisa distinguir "sem hora" de
-"meia-noite" — e são estados diferentes que o mesmo valor representa.
-⚠️ **Esta é a pergunta que mais muda o tamanho da fatia B**, e ela não foi
-feita em 18/08.
+### ⚠️ O desenho que a resposta 3 destrava: `date` + `time` NULO
+
+**`due_date` continua `date`. Entra `due_time`, `time` NULO.** "Sem hora" é
+`due_time IS NULL` — um estado, não um valor especial.
+
+| | `timestamptz` (recusado) | `date` + `time` NULO (recomendado) |
+|---|---|---|
+| backfill nas 1085 linhas | **obrigatório**, e `00:00` erra por um dia | **nenhum** — `NULL` já significa o comportamento de hoje |
+| `due_soon_notified_for` / `overdue_notified_for` | mudam junto **ou o job notifica todo dia** | **não mudam** |
+| `t.due_date < hoje` no front | quebra em silêncio (achado 1) | **continua valendo** para tarefa sem hora, que é 100% do dado existente |
+| tipo de coluna alterado em produção | 6 | **0** — só uma coluna nova, nula |
+| distinguir "sem hora" | precisa de bandeira | é o próprio `NULL` |
+
+⚠️ **A ADIÇÃO É SEGURA E A TROCA DE TIPO NÃO É.** O `DEPLOY.md` diz, na
+§Atualização: *"coluna nullable e tabela nova que ninguém referencia não afetam
+o código velho, que nunca pergunta por elas"*. `due_time` nulo cai exatamente
+nisso. Trocar o TIPO de coluna que o código já lê é pior que os dois casos
+documentados lá.
+
+⚠️ **E `time` SEM FUSO É O QUE VOCÊ QUER**, não um defeito: "18:00" é hora de
+relógio de parede, e é isso que a pessoa digita. O fuso entra uma vez só, na
+comparação, e não em cada linha.
+
+**O preço, honesto:** duas colunas que **têm de ser lidas juntas sempre**, e
+ordenar por prazo vira `ORDER BY due_date, due_time NULLS LAST`. É menos elegante
+e muito mais barato.
+
+### 1. O horário é de qual fuso? — ⬜ **ainda aberta**
+
+O servidor roda em UTC; o time está no Brasil. Com `date` + `time`, o fuso não
+entra no dado — entra só em **uma** comparação ("já passou?").
+
+- **(a) Fuso fixo do workspace (`America/Sao_Paulo`).** Um time, um país. O
+  horário significa a mesma coisa para todo mundo que olha. **Recomendado.**
+- (b) Fuso de quem olha (do navegador). Transforma "atrasada" em coisa que
+  depende de quem pergunta — duas pessoas vendo a mesma tarefa em estados
+  diferentes.
+
+### 2. Hora do backfill — ✅ **não existe mais**
+
+A pergunta só existia no desenho de `timestamptz`. Com `due_time` nulo, **não há
+backfill**: as 1085 linhas continuam significando exatamente o que significam
+hoje.
+
+### 4. Nova, e ela nasceu do desenho novo: "atrasada há quanto?"
+
+`lib/status.ts` conta em **dias inteiros** e zera a hora de propósito
+(`:183-185`, `:215-217`). Com hora, "Atrasada 2 dias" continua em dias, ou vira
+"atrasada há 5 horas" quando for menos de um dia? ⚠️ **Só afeta tarefa COM
+hora** — sem hora, nada muda.
 
 ---
 
