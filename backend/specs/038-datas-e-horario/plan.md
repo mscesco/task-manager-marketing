@@ -36,11 +36,16 @@ custo de aprendizado.
 - A cápsula "Datas" no `TaskDetail`, com os dois campos.
 - `start_date` no `TaskModal` (criação), ao lado do prazo — o Figma do modal
   "Nova tarefa" já desenha "Início" e "Término".
-- ⚠️ **A regra "início não pode ser depois da entrega"**, e ela é DECISÃO:
-  recusa, ou aceita e avisa? Hoje não existe nem regra nem par de campos para
-  quebrá-la. **Recomendo AVISAR e aceitar** — prazo que antecede o início é
-  comum em replanejamento, e recusar obriga a apagar um para mexer no outro.
-  Se for recusar, mora no serviço (o backend é quem tem os dois valores).
+- ⚠️ **A regra "início não pode ser depois da entrega" JÁ EXISTE, E RECUSA.**
+  Esta linha dizia o contrário — que a regra não existia e que era decisão
+  pendente, com recomendação de "avisar e aceitar". **Falso, e achado só ao
+  abrir o arquivo:** `TaskService._validate_dates` (`task_service.py:1613`)
+  levanta 422 com *"Data de inicio nao pode ser posterior a data limite"*, e é
+  chamada na criação (`:442`) **e** na edição (`:1118`), sobre o estado FINAL
+  da tarefa.
+  ⚠️ **Consequência para a tela, e ela é concreta:** mexer em UM campo pode ser
+  recusado por causa do OUTRO, que a pessoa não tocou. Por isso o painel manda
+  os dois sempre, e a mensagem exibida é a do backend — só ela nomeia a causa.
 
 ### Guardiões
 
