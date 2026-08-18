@@ -1811,6 +1811,148 @@ número velho.
 
 ---
 
+## Fatia 10 — o seletor de quadro vira dropdown no título — ⬜ ESCOPO
+
+> Escrita em 18/08/2026, **antes de código**, para a Camila conferir.
+
+### ⚠️ ELA ENTRA NESTE DEPLOY, E ISSO CONTRARIA A REGRA ESCRITA
+
+A §Definição de pronto diz que **item novo não entra na lista fechada** — vai
+para a §"o que falta" e sobe no deploy seguinte. **Esta fatia é exceção
+declarada, decidida pela Camila em 18/08**, e o motivo é de tempo real e não de
+gosto:
+
+⚠️ **NINGUÉM EM PRODUÇÃO JAMAIS VIU O SELETOR.** Trocá-lo **antes** do deploy
+custa zero de reaprendizado; **depois** custa uma pessoa reaprendendo por cada
+uma das 26. É a mesma forma de argumento que colocou a fatia 9 na lista — ela
+destrava algo que já estava lá, e não abre vontade nova.
+
+⚠️ **E A FATIA 7 PIOROU A LINHA ATUAL.** Cada quadro ganhou "Apagar" ao lado do
+"Renomear" que já tinha: a linha passou a ter **1 + 2N + 1 botões** para N
+quadros. Com um quadro só em produção isso é invisível hoje — e passa a doer no
+primeiro quadro que alguém criar, que é justamente o que este deploy libera.
+
+### ⚠️ O QUE EU ACHEI LENDO O CÓDIGO, E QUE MUDA O ESCOPO
+
+**Conferido em 18/08, arquivo por arquivo:**
+
+1. ⚠️ **O `SeletorDeQuadro` existe em UM lugar só:**
+   `app/quadro/[teamId]/page.tsx:153`. **Ele NÃO existe em `/quadro`** — a
+   página do Quadro geral chama `<Board title="Quadro geral" />` direto
+   (`app/quadro/page.tsx:33`) e não tem seletor nenhum.
+2. ⚠️ **A BARRA LATERAL JÁ FAZ A NAVEGAÇÃO DE PRIMEIRO NÍVEL.** O accordion
+   "Quadros" do `AppShell.tsx:231-238` lista `/quadro` (Quadro geral) **mais uma
+   sub-aba por subtime da lente** (`computeLens`). Ou seja o seletor da página é
+   o **segundo** nível: dentro de um subtime, ele escolhe entre a **lente** e os
+   **quadros avulsos daquele subtime**.
+3. ⚠️ **HOJE SÃO DUAS LINHAS, e o desenho do Figma funde as duas.** A linha do
+   seletor (`marginBottom: 14`, na página) e a barra do `Board` com o `<h1>`.
+   Fundir é o ganho real da fatia — uma dobra inteira de volta.
+4. ⚠️ **O `<h1>` É DO `Board`, E O SELETOR É DA PÁGINA.** O título é
+   `title: string` e aparece **duas vezes** no `Board.tsx` (linha 1334, barra do
+   modo de edição; linha 1383, barra normal). Para o título virar gatilho do
+   dropdown, o `Board` precisa aceitar um **nó** no lugar da string.
+
+### ⚠️ A DECISÃO DE PRODUTO QUE ESTA FATIA NÃO TOMA
+
+**O dropdown convive com o accordion da barra lateral, ou substitui?**
+
+Hoje há **duas** formas de trocar de contexto (barra lateral e seletor da
+página). Depois desta fatia haveria duas ainda, mas com a segunda mais visível
+— e as duas mostram conjuntos **diferentes**: a barra mostra Quadro geral +
+subtimes; o dropdown mostra lente + avulsos de UM subtime.
+
+⚠️ **NÃO ESCREVA CÓDIGO ANTES DE RESPONDER ISTO.** É o tipo de pergunta que,
+respondida depois, joga a fatia fora: se o dropdown tiver de listar também os
+subtimes, ele deixa de ser `opcoesDoSeletor` e passa a precisar do `computeLens`
+— outra fatia, outro tamanho.
+
+### O que sobe
+
+- **O título vira gatilho.** `Board` passa a aceitar o título como nó
+  (`ReactNode`), e as **4 chamadas** continuam funcionando com string:
+  `/projetos/[id]:159`, `/quadro:33`, `/quadro/[teamId]:170` e `:185`.
+- **`+ Novo quadro` vira item DENTRO do dropdown** (decisão da Camila, 18/08).
+- ⚠️ **`Renomear` e `Apagar` SAEM da linha e vão para o MODO DE EDIÇÃO**
+  (decisão da Camila, 18/08). São **três casos**, e a regra "ausente, e não
+  desabilitada" (ADR 0034 item 2) vale para os três:
+
+| | modo de edição | Renomear | Apagar |
+|---|---|---|---|
+| **Lente** | não tem (`Board.tsx:888`: `quadroEditavel` é `null` na lente e no projeto) | — | — |
+| **Quadro geral** (`is_default`) | tem, desde a 6a-bis | ✅ **sim** — `board_service.py:385` diz "O QUADRO GERAL PODE SER RENOMEADO", e só por `board.manage.root` | ❌ **AUSENTE** — `quadro_padrao_nao_apagavel`, e `opcoesDoSeletor` já filtra `!q.is_default` |
+| **Avulso** | tem | ✅ | ✅ |
+
+### ⚠️ A ARMADILHA DE SEQUÊNCIA, achada escrevendo este escopo
+
+**Apagar o quadro de dentro do modo de edição aninha duas confirmações.** O modo
+de edição pergunta `"Você tem alterações que ainda não foram aplicadas.
+Descartar?"` ao sair (`Board.tsx`, `fecharEdicao`), e apagar quadro exige
+**digitar o nome** (fatia 7). Apagando com rascunho de coluna pendente, o
+"descartar?" aparece **depois** — sobre um quadro que não existe mais.
+
+⚠️ **O conserto é apagar limpar o rascunho ANTES de chamar `deleteBoard`**, e
+tem de estar no desenho: descoberto na tela, vira defeito de sequência que
+nenhum portão pega.
+
+### O custo, medido
+
+⚠️ **Os 21 testes de `components/__tests__/SeletorDeQuadro.test.tsx` são
+reescritos. Os 38 de `lib/__tests__/seletorDeQuadro.test.ts` ficam INTACTOS** —
+`opcoesDoSeletor`, `podeRenomear`, `podeApagar`, `nomeConfere` e
+`quadroPedidoNaUrl` são decisão pura e não sabem como a tela desenha. É a
+fronteira da Spec 027 pagando o que prometia.
+
+### Guardiões
+
+| sabotagem | esperado |
+|---|---|
+| o dropdown desenha "Apagar" no Quadro geral | teste de componente: ausente, e não desabilitado |
+| o dropdown desenha "Renomear" na lente | teste de componente: ausente |
+| o Quadro geral perde o "Renomear" | teste de componente: presente para `board.manage.root` |
+| apagar com rascunho pendente dispara o "descartar?" | teste de componente da sequência |
+| `Board` deixa de aceitar título string | as 4 chamadas existentes, sem mudança |
+
+⚠️ **O DROPDOWN ABRE E FECHA, E ISSO TEM `useCliqueFora`** (`lib/useCliqueFora.ts`,
+já usado pelo painel de filtros). Não escreva um segundo.
+
+---
+
+## Fatia 11 — o aviso na queda para a lente — ⬜ ESCOPO
+
+> Escrita em 18/08/2026, junto com a fatia 10. **Curta.**
+
+⚠️ **`quadroPedidoNaUrl` DERRUBA `?quadro=` DESCONHECIDO E CAI NA LENTE, EM
+SILÊNCIO** — `lib/seletorDeQuadro.ts`, e o docstring diz que é **de propósito**:
+link velho, id digitado na mão, ou quadro apagado por outra pessoa. "Erro na
+cara de quem só abriu a tela seria pior que o lugar padrão dela."
+
+⚠️ **ERA CERTO ATÉ A FATIA 7, E A FATIA 7 CRIOU UM CASO NOVO.** Antes dela,
+quadro não desaparecia — só o link podia estar velho. Agora **uma pessoa apaga o
+quadro que outra tem aberto**, e a tela da segunda troca de lugar sozinha, sem
+dizer nada.
+
+⚠️ **E O `plan.md` JÁ REGISTRA QUE "Este quadro não existe mais" NUNCA APARECE
+DEPOIS DE UM F5** — só na aba que já estava aberta, porque o `quadroPedidoNaUrl`
+resolve antes. São **dois** caminhos e um só tem mensagem.
+
+### O que sobe
+
+- Um aviso na queda, **dispensável em um clique**, e **não** um erro de página.
+- ⚠️ **Só quando o `?quadro=` existia e sumiu** — não quando ele nunca foi
+  válido. `quadroPedidoNaUrl` devolve `null` nos dois casos hoje; separá-los
+  pede um terceiro estado, e é o tamanho real desta fatia.
+
+### Guardiões
+
+| sabotagem | esperado |
+|---|---|
+| a queda volta a ser muda | teste de `lib`: o terceiro estado |
+| o aviso aparece com `?quadro=` nunca válido | teste de `lib`: não aparece |
+| `quadros === null` (lista não chegou) vira queda | teste de `lib`: já existe, não pode cair |
+
+---
+
 ## Fatia 8 — texto de 17/08 (histórico, superseded)
 
 > Mantido porque registra o escopo antes de a invariante de pai e filha
@@ -2047,6 +2189,12 @@ bloco depois da fatia 6 — dois deploys no total, não oito.
 1. ✅ **A §Definição de pronto satisfeita por inteiro** — fatia 6 conferida
    (17/08) **e RECONFERIDA** (18/08), e as fatias **9 → 8 → 7** entregues e
    conferidas. **Fechado em 18/08.**
+   ⚠️ **E AS FATIAS 10 E 11 ENTRARAM DEPOIS DISSO, por decisão da Camila em
+   18/08 — passo 1-bis, e não item novo na lista fechada.** O motivo está na
+   §Fatia 10 e é de tempo real: ninguém em produção jamais viu o seletor, então
+   trocá-lo antes custa zero de reaprendizado e depois custa 26 pessoas
+   reaprendendo. ⚠️ **A ordem é 10 → 11 → deploy**, e **nenhuma das duas tem
+   migration** — a `0013` continua sendo a única desta spec a subir.
 2. **Rodar o `invariantes.sql` ANTES**, e anotar a consulta 5. Série:
    696 (06/08) → 802 → 832 (10/08) → **1049 (18/08)**.
    ⚠️ **A CONSULTA 5 CONTA TUDO, INCLUSIVE APAGADAS E ARQUIVADAS.** A leitura
