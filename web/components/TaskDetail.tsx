@@ -1176,62 +1176,75 @@ export default function TaskDetail({
             ref={datasWrapRef}
             style={{ position: "relative", display: "inline-flex", alignItems: "center", gap: 4, flexShrink: 0 }}
           >
-            <span
-              className={dueTone ? undefined : "muted"}
+            {/* ⚠️ A PILULA E O PROPRIO GATILHO (decisao da Camila, 18/08).
+                A primeira versao punha um botao redondo AO LADO do texto, como
+                o de projeto -- e o desenho dela e outro: a data e uma PILULA
+                irma de "Coluna" e "Prioridade", e clicar nela abre a edicao.
+                Um alvo, e nao dois.
+
+                ⚠️ E POR ISSO O TEXTO VAZIO E "Sem datas", no PLURAL. Antes era
+                "sem prazo", que nomeia so metade do que a capsula edita -- a
+                pessoa clicaria esperando mexer no prazo e encontraria dois
+                campos. Mesma forma de "Sem Projeto".
+
+                ⚠️ inline-flex + flexShrink 0 + nowrap, NAO verticalAlign. Este
+                elemento e filho de um flex com flexWrap: sem flexShrink 0 ele
+                encolhe ate o minimo e QUEBRA entre o icone e a data -- foi o
+                que aconteceu na entrega da C10.
+
+                ⚠️ A COR DE ATRASO SOBREVIVEU a virada para botao, e nao e
+                enfeite: e o unico sinal de que a tarefa venceu nesta linha. */}
+            <button
+              type="button"
+              onClick={() => (abertoDatas ? setAbertoDatas(false) : abrirDatas())}
+              disabled={salvandoDatas}
+              aria-label={
+                prazoAtual || inicioAtual ? "Mudar datas" : "Definir datas"
+              }
+              aria-expanded={abertoDatas}
+              title={prazoAtual || inicioAtual ? "Mudar datas" : "Definir datas"}
               style={{
-                // ⚠️ inline-flex + flexShrink 0 + nowrap, NAO verticalAlign.
-                // Este span e filho de um flex com flexWrap: sem flexShrink 0
-                // ele encolhe ate o minimo e QUEBRA entre o icone e a data --
-                // foi o que aconteceu na entrega da C10. O mesmo tratamento ja
-                // estava certo no TaskCard; aqui ficou de fora.
-                display: "inline-flex", alignItems: "center", gap: 4,
+                display: "inline-flex", alignItems: "center", gap: 5,
                 flexShrink: 0, whiteSpace: "nowrap",
-                fontSize: 12.5,
-                color: dueTone ? DEADLINE_COLOR[dueTone] : undefined,
-                fontWeight: dueTone ? 600 : undefined,
+                height: 24, borderRadius: 999, padding: "0 10px",
+                fontSize: 12.5, cursor: "pointer",
+                font: "inherit", fontWeight: dueTone ? 600 : 400,
+                // Cheia e vazia usam a MESMA caixa -- o vazio se distingue por
+                // borda tracejada e tom, igual ao "nenhum" do projeto.
+                background: prazoAtual || inicioAtual ? "var(--surface-2)" : "transparent",
+                border:
+                  prazoAtual || inicioAtual
+                    ? "1px solid transparent"
+                    : "1px dashed var(--border)",
+                color: dueTone
+                  ? DEADLINE_COLOR[dueTone]
+                  : prazoAtual || inicioAtual
+                  ? "var(--text)"
+                  : "var(--text-faint)",
+                opacity: salvandoDatas ? 0.5 : 1,
               }}
             >
               <Calendar size={13} strokeWidth={2} aria-hidden />
               {prazoAtual
                 ? new Date(prazoAtual + "T00:00:00").toLocaleDateString("pt-BR")
-                : "sem prazo"}
-              {/* ⚠️ O INÍCIO SÓ APARECE QUANDO EXISTE. Desenhar "sem início"
-                  ao lado de "sem prazo" poria duas ausências na linha de
-                  cabeçalho, que é a mais disputada da tela. */}
+                : "Sem datas"}
+              {/* ⚠️ O INICIO SO APARECE QUANDO EXISTE. Desenhar "sem inicio" ao
+                  lado poria duas ausencias na linha mais disputada da tela. */}
               {inicioAtual && (
                 <span className="muted" style={{ fontSize: 11.5, fontWeight: 400 }}>
-                  (início {new Date(inicioAtual + "T00:00:00").toLocaleDateString("pt-BR")})
+                  · início {new Date(inicioAtual + "T00:00:00").toLocaleDateString("pt-BR")}
                 </span>
               )}
-            </span>
-
-            {/* ⚠️ SEM `ehTopo` AQUI, E A DIFERENÇA PARA O PROJETO É REAL
-                (decisão da Camila, 18/08). O controle de projeto é travado em
-                tarefa de topo porque subtarefa **herda** o projeto do pai
-                (Spec 022) -- não há o que editar. Data não é herdada: a
-                subtarefa tem prazo PRÓPRIO, e este mesmo arquivo já o desenha
-                na checklist e já o pede na criação rápida de subtarefa.
-                Copiar a trava do projeto foi engano meu, corrigido no mesmo
-                dia. */}
-            {(
-              <button
-                type="button"
-                onClick={() => (abertoDatas ? setAbertoDatas(false) : abrirDatas())}
-                disabled={salvandoDatas}
-                aria-label={prazoAtual || inicioAtual ? "Mudar datas" : "Definir datas"}
-                aria-expanded={abertoDatas}
-                title={prazoAtual || inicioAtual ? "Mudar datas" : "Definir datas"}
-                style={{ ...GATILHO_STYLE, width: 22, height: 22, opacity: salvandoDatas ? 0.5 : 1 }}
-              >
-                {abertoDatas ? (
-                  <X size={12} strokeWidth={2.2} aria-hidden />
-                ) : prazoAtual || inicioAtual ? (
-                  <Pencil size={11} strokeWidth={2.2} aria-hidden />
-                ) : (
-                  <Plus size={12} strokeWidth={2.2} aria-hidden />
-                )}
-              </button>
-            )}
+              {/* ⚠️ SEM `ehTopo`, E A DIFERENCA PARA O PROJETO E REAL (Camila,
+                  18/08): subtarefa HERDA projeto do pai (Spec 022) e por isso
+                  nao o edita, mas tem prazo PROPRIO -- este mesmo arquivo ja o
+                  desenha na checklist. Copiar a trava foi engano meu. */}
+              {abertoDatas ? (
+                <X size={11} strokeWidth={2.2} aria-hidden />
+              ) : (
+                <Pencil size={11} strokeWidth={2.2} aria-hidden style={{ opacity: 0.65 }} />
+              )}
+            </button>
 
             {abertoDatas && (
               <div

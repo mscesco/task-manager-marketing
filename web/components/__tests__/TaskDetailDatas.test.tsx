@@ -162,7 +162,7 @@ describe("TaskDetail -- a cápsula de datas (Spec 038, fatia A)", () => {
     // pílula não haveria onde clicar para PÔR um. O vazio é um estado da
     // mesma caixa, e não a ausência dela -- mesma lição do "nenhum" do projeto.
     montar();
-    expect(await screen.findByText("sem prazo")).toBeTruthy();
+    expect(await screen.findByText(/Sem datas/)).toBeTruthy();
     expect(screen.getByLabelText("Definir datas")).toBeTruthy();
   });
 
