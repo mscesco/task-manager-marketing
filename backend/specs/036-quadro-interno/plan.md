@@ -2002,9 +2002,49 @@ irmão visual do que esta fatia constrói. **Não copie o de modal.**
 
 ---
 
-## Fatia 11 — o aviso na queda para a lente — ⬜ ESCOPO
+## Fatia 11 — o aviso na queda para a lente — ⬜ ADIADA, foi para a §"o que falta" (18/08)
 
-> Escrita em 18/08/2026, junto com a fatia 10. **Curta.**
+> Escrita em 18/08/2026 junto com a fatia 10, e **tirada do caminho do deploy no
+> mesmo dia**, pela Camila, depois de o problema ser lido no código em vez de
+> descrito de memória.
+
+### ⚠️ POR QUE ELA SAIU: SÃO DOIS CAMINHOS, E SÓ UM É MUDO
+
+Este escopo nasceu dizendo "a queda é muda", no singular. **São dois caminhos, e
+o mais importante dos dois já avisa:**
+
+1. ⚠️ **A ABA QUE JÁ ESTAVA ABERTA — JÁ AVISA, e bem.** O `Board` recebe o
+   `boardId`, busca a lista, não acha, **tenta de novo uma vez** (para não
+   confundir quadro apagado com a corrida de criação) e desenha a caixa
+   vermelha de `Board.tsx:856`: *"Este quadro não existe mais. Ele pode ter sido
+   apagado por outra pessoa enquanto você o tinha aberto."* **Este é o caso real
+   de "alguém apagou enquanto eu olhava".**
+2. **F5, OU ABRIR O LINK DO ZERO — este é o mudo.** Aqui a ordem é outra: o
+   `quadroPedidoNaUrl` roda ANTES, na página, devolve `null`, e a página troca
+   `<Board boardId=…/>` por `<Board subteamId=…/>`. **O `Board` nunca fica
+   sabendo que um quadro foi pedido**, então a caixa vermelha não tem chance.
+
+### ⚠️ E A FATIA 10 JÁ MELHOROU O CAMINHO 2, SEM QUERER
+
+Antes o título era o texto `Quadro · {time}`. Com o dropdown, ele passou a
+mostrar **"Lente do time"** e a descrição *"espelho do quadro geral"*. **A tela
+já diz onde a pessoa ESTÁ** — falta dizer que o que ela pediu acabou. Isso
+rebaixa a fatia de "buraco" para "ausência".
+
+### ⚠️ E O CASO NÃO EXISTE EM PRODUÇÃO ANTES DESTE DEPLOY
+
+Há **um quadro só**, e ele é o PADRÃO, que `quadro_padrao_nao_apagavel` recusa
+apagar. Para o caminho 2 acontecer alguém precisa **criar** um quadro avulso,
+**compartilhar o link** e **apagar** — as três coisas só passam a ser possíveis
+depois desta janela. **Segurar o deploy por um caso que o deploy é quem cria
+inverte a ordem.**
+
+⚠️ **O TEXTO DE ESCOPO ABAIXO CONTINUA VALENDO** para quando ela vier — é a
+§"o que falta", item 2.
+
+---
+
+### Escopo (mantido para quando ela vier)
 
 ⚠️ **`quadroPedidoNaUrl` DERRUBA `?quadro=` DESCONHECIDO E CAI NA LENTE, EM
 SILÊNCIO** — `lib/seletorDeQuadro.ts`, e o docstring diz que é **de propósito**:
@@ -2279,12 +2319,16 @@ bloco depois da fatia 6 — dois deploys no total, não oito.
    trocá-lo antes custa zero de reaprendizado e depois custa 26 pessoas
    reaprendendo. ⚠️ **A ordem é 10 → 11 → deploy**, e **nenhuma das duas tem
    migration** — a `0013` continua sendo a única desta spec a subir.
-   ⚠️ **A FATIA 10 FECHOU EM 18/08** (front 791 → 801, conferida na tela).
-   **Falta a 11**, que é curta. ⚠️ **E O DEPLOY SOBE UMA COISA QUE NÃO ESTAVA NA
-   LISTA DE 17/08: o dropdown.** Ele substitui a linha de abas que ninguém em
-   produção viu, então não há o que reaprender — mas o item 38 da conferência
-   (medir `board.manage.root` na base de produção) passa a valer **também** para
-   quem vai ver "Renomear quadro" e "Apagar quadro" dentro do modo de edição.
+   ⚠️ **A FATIA 10 FECHOU EM 18/08** (front 791 → 801, conferida na tela), e a
+   **11 SAIU do caminho do deploy no mesmo dia** — ver a §Fatia 11: o caminho
+   que importa (a aba já aberta) **já avisa** em `Board.tsx:856`, o dropdown da
+   10 melhorou o outro sem querer, e o caso só passa a existir depois desta
+   janela. **Logo a ordem é 10 → deploy**, e não 10 → 11 → deploy.
+   ⚠️ **E O DEPLOY SOBE UMA COISA QUE NÃO ESTAVA NA LISTA DE 17/08: o
+   dropdown.** Ele substitui a linha de abas que ninguém em produção viu, então
+   não há o que reaprender — mas o item 38 da conferência (medir
+   `board.manage.root` na base de produção) passa a valer **também** para quem
+   vai ver "Renomear quadro" e "Apagar quadro" dentro do modo de edição.
 2. **Rodar o `invariantes.sql` ANTES**, e anotar a consulta 5. Série:
    696 (06/08) → 802 → 832 (10/08) → **1049 (18/08)**.
    ⚠️ **A CONSULTA 5 CONTA TUDO, INCLUSIVE APAGADAS E ARQUIVADAS.** A leitura
@@ -2807,6 +2851,16 @@ quadro) e §Fatia 8 (mover tarefa entre quadros), porque entraram na §Definiç�
 de pronto. **O que sobrou nesta lista NÃO segura o deploy.**
 
 Em ordem de valor. Cada um é fatia própria, e **escreve-se neste arquivo**.
+
+⚠️ **A FATIA 11 ENTROU NESTA LISTA EM 18/08, VINDA DO CAMINHO DO DEPLOY** —
+sentido contrário ao da fatia 9, que entrou na §Definição de pronto. **O escopo
+dela já está escrito** (§Fatia 11): o aviso quando o `?quadro=` não existe mais
+e a tela cai na lente. Saiu porque o caminho que importa — a aba que já estava
+aberta — **já avisa** (`Board.tsx:856`), porque o dropdown da fatia 10 melhorou
+o outro caminho sem querer, e porque o caso **só passa a ser possível depois
+deste deploy**: hoje há um quadro só, e ele é o padrão, que não se apaga.
+⚠️ **Ela vem antes do 5c quando vier** — é conserto de sinal, e os outros são
+adição.
 
 1. **5c — quadro extra da raiz.** ⚠️ **A PERGUNTA "QUEM EDITA AS COLUNAS DO
    QUADRO GERAL" JÁ FOI RESPONDIDA na 6a-bis (13/08), e este item não depende
