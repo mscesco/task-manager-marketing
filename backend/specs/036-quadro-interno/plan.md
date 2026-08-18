@@ -1811,9 +1811,50 @@ número velho.
 
 ---
 
-## Fatia 10 — o seletor de quadro vira dropdown no título — ⬜ ESCOPO
+## Fatia 10 — o seletor de quadro vira dropdown no título — ✅ ENTREGUE (18/08)
 
-> Escrita em 18/08/2026, **antes de código**, para a Camila conferir.
+> Escopo escrito em 18/08/2026 **antes de código**, conferido pela Camila, e
+> entregue no mesmo dia. **Front 791 → 801. Sem backend, sem migration.**
+> ⚠️ **Primeira fatia desta spec entregue em BRANCH com PR**
+> (`spec-036/escopo-fatias-10-e-11`), e não direto em `main`.
+
+⚠️ **O QUE ENTROU, E ONDE:**
+
+| | arquivo |
+|---|---|
+| dropdown (escolher + criar) | `components/SeletorDeQuadro.tsx`, **reescrito** |
+| renomear + apagar | `components/AcoesDoQuadro.tsx`, **novo** |
+| `title: ReactNode` + slot `acoesDoQuadro` | `components/Board.tsx` |
+| a ligação, e a linha separada que saiu | `app/quadro/[teamId]/page.tsx` |
+| guardiões | `__tests__/SeletorDeQuadro.test.tsx` (16, reescrito) e `__tests__/AcoesDoQuadro.test.tsx` (15, novo) |
+
+⚠️ **OS 38 TESTES DE `lib/__tests__/seletorDeQuadro.test.ts` NÃO FORAM TOCADOS**,
+e era a previsão do escopo. `opcoesDoSeletor`, `opcaoSelecionada`,
+`nomeConfere`, `quadroPedidoNaUrl` e `nomeDeQuadroValido` são decisão pura e não
+sabem como a tela desenha. **A conta do 801:** `791 − 21 + 16 + 15`.
+
+### ⚠️ COLISÃO DE NOME, achada pelo teste e não pela leitura
+
+O gatilho de apagar e o botão de **confirmar** do `ConfirmarExclusaoDeQuadro` se
+chamavam os dois **"Apagar quadro"**. O `getByText` quebrou com *"found multiple
+elements"* — e o defeito não era do teste: eram **dois botões de mesmo nome na
+árvore, com pesos opostos** (um abre diálogo, o outro apaga as tarefas de outras
+pessoas). ⚠️ **O conserto é os gatilhos SAÍREM da árvore enquanto o diálogo está
+aberto**, e tem teste próprio. Quem "consertar" trazendo-os de volta o derruba.
+
+### A resolução do nome do quadro saiu da página
+
+A página tinha um `?? \`Quadro · ${team.name}\`` que resolvia o nome do quadro
+avulso. Saiu: quem sabe o nome do escolhido é o `opcaoSelecionada` dentro do
+seletor, e ele já o desenhava. ⚠️ **Manter as duas seria uma segunda definição do
+mesmo nome, e elas divergiriam no primeiro rename.**
+
+### Conferência visual — ✅ FEITA EM 18/08
+
+Conferido pela Camila, na tela, e **nada disto tem guardião**: o dropdown
+abrindo, escolhendo e fechando ao clicar fora; o título com o chevron ao lado da
+contagem; e a barra do modo de edição com as **duas famílias de botão** separadas
+(quadro à esquerda, junto do selo *Modo edição*; coluna à direita).
 
 ### ⚠️ ELA ENTRA NESTE DEPLOY, E ISSO CONTRARIA A REGRA ESCRITA
 
@@ -1880,8 +1921,25 @@ subtimes, ele deixa de ser `opcoesDoSeletor` e passa a precisar do `computeLens`
 | | modo de edição | Renomear | Apagar |
 |---|---|---|---|
 | **Lente** | não tem (`Board.tsx:888`: `quadroEditavel` é `null` na lente e no projeto) | — | — |
-| **Quadro geral** (`is_default`) | tem, desde a 6a-bis | ✅ **sim** — `board_service.py:385` diz "O QUADRO GERAL PODE SER RENOMEADO", e só por `board.manage.root` | ❌ **AUSENTE** — `quadro_padrao_nao_apagavel`, e `opcoesDoSeletor` já filtra `!q.is_default` |
+| **Quadro geral** (`is_default`) | tem, desde a 6a-bis | ⚠️ **no BACKEND sim, na TELA não existe** — ver abaixo | ❌ **AUSENTE** — `quadro_padrao_nao_apagavel`, e `opcoesDoSeletor` já filtra `!q.is_default` |
 | **Avulso** | tem | ✅ | ✅ |
+
+⚠️ **A LINHA DO QUADRO GERAL ESTAVA IMPRECISA NA PRIMEIRA VERSÃO DESTE ESCOPO, e
+a correção é de 18/08.** Ela dizia "Renomear ✅ sim", citando o
+`board_service.py:385` ("O QUADRO GERAL PODE SER RENOMEADO", só por
+`board.manage.root`). **Isso é verdade no backend e falso na tela:**
+
+- o Quadro geral vive em **`/quadro`**, e essa página chama
+  `<Board title="Quadro geral" />` direto (`app/quadro/page.tsx:33`): **não tem
+  seletor, e agora não tem `AcoesDoQuadro`**;
+- e ela nunca teve — `opcoesDoSeletor` filtra `!q.is_default`, então o Quadro
+  geral **nunca apareceu** no seletor, nem na versão de abas.
+
+⚠️ **LOGO: renomear o Quadro geral continua sem caminho de tela, exatamente
+como antes desta fatia. NÃO é regressão** — é uma capacidade de backend sem
+leitor, a mesma família do `corEhHex` e do `notify_deadline`. **Dar tela a ela é
+a "saída 3" da §decisão de produto** (o dropdown também aparecer em `/quadro`),
+adiada pela Camila em 18/08 junto com a decisão de os dois níveis conviverem.
 
 ### ⚠️ A "ARMADILHA DE SEQUÊNCIA" NÃO EXISTE — retratação de 18/08
 
@@ -2221,6 +2279,12 @@ bloco depois da fatia 6 — dois deploys no total, não oito.
    trocá-lo antes custa zero de reaprendizado e depois custa 26 pessoas
    reaprendendo. ⚠️ **A ordem é 10 → 11 → deploy**, e **nenhuma das duas tem
    migration** — a `0013` continua sendo a única desta spec a subir.
+   ⚠️ **A FATIA 10 FECHOU EM 18/08** (front 791 → 801, conferida na tela).
+   **Falta a 11**, que é curta. ⚠️ **E O DEPLOY SOBE UMA COISA QUE NÃO ESTAVA NA
+   LISTA DE 17/08: o dropdown.** Ele substitui a linha de abas que ninguém em
+   produção viu, então não há o que reaprender — mas o item 38 da conferência
+   (medir `board.manage.root` na base de produção) passa a valer **também** para
+   quem vai ver "Renomear quadro" e "Apagar quadro" dentro do modo de edição.
 2. **Rodar o `invariantes.sql` ANTES**, e anotar a consulta 5. Série:
    696 (06/08) → 802 → 832 (10/08) → **1049 (18/08)**.
    ⚠️ **A CONSULTA 5 CONTA TUDO, INCLUSIVE APAGADAS E ARQUIVADAS.** A leitura
