@@ -1567,6 +1567,42 @@ export default function Board({
           )}
         </div>
 
+        {/* ⚠️ O LAPIS MORA NA BARRA, ao lado de Filtros (18/08). Ate aqui ele
+            era uma linha PROPRIA abaixo do cabecalho -- um botao solto, sem
+            rotulo e sem vizinho, a 12px de distancia de tudo. Na barra ele fica
+            junto dos outros controles do quadro, que e onde a pessoa ja olha.
+
+            ⚠️ ANTES DO `marginLeft: "auto"` DO "Mostrar arquivadas", e por isso
+            ele encosta em Filtros em vez de flutuar no meio: e o `auto` que
+            empurra o resto para a direita. Trocar a ordem destes dois quebra o
+            alinhamento sem quebrar teste nenhum.
+
+            ⚠️ O `!modoEdicao` SAIU DA CONDICAO, e nao por descuido: este ramo
+            inteiro e o `else` de `{modoEdicao ? (` (linha 1332), entao ele so
+            existe fora do modo de edicao. Manter a checagem aqui seria uma
+            segunda definicao da mesma coisa.
+
+            ⚠️ O COMENTARIO ANTIGO DIZIA QUE O QUADRO GERAL NAO SE MEXE. Deixou
+            de valer na 6a-bis (13/08): o geral é tão personalizável quanto os
+            outros, e quem filtra é `board.manage.root` -- ADMIN e MANAGER, e
+            não SUPERVISOR. A única trava que sobrou é apagar coluna COM PONTE.
+
+            ⚠️ E SO PARA QUEM PODE. `podeEditarColunas` vem da tela, que já
+            calculou o alcance (`podeGerirQuadrosDe`). Este componente não
+            recalcula permissão -- sem isso, o lápis abriria para um operador um
+            modo onde toda ação dá 403. */}
+        {quadroEditavel && podeEditarColunas && (
+          <button
+            className="btn btn-ghost"
+            onClick={abrirEdicao}
+            aria-label="Editar colunas"
+            title="Editar colunas"
+            style={{ display: "inline-flex", alignItems: "center", padding: "6px 10px" }}
+          >
+            <Pencil size={15} />
+          </button>
+        )}
+
         <label
           style={{
             marginLeft: "auto", display: "flex", alignItems: "center", gap: 6,
@@ -1690,27 +1726,12 @@ export default function Board({
           Morreu o DESENHO, nao a regra -- e e a fronteira da Spec 027 pagando
           o que prometia.
 
-          ⚠️ O COMENTARIO ANTIGO DIZIA QUE O QUADRO GERAL NAO SE MEXE. Deixou
-          de valer na 6a-bis (13/08): o geral é tão personalizável quanto os
-          outros, e quem filtra é `board.manage.root` -- ADMIN e MANAGER, e não
-          SUPERVISOR. A única trava que sobrou é apagar coluna COM PONTE.
-
-          ⚠️ E SO PARA QUEM PODE. `podeEditarColunas` vem da tela, que já
-          calculou o alcance (`podeGerirQuadrosDe`). Este componente não
-          recalcula permissão -- sem isso, o lápis abriria para um operador um
-          modo onde toda ação dá 403. */}
-      {quadroEditavel && podeEditarColunas && !modoEdicao && (
-        <div style={{ marginBottom: 12 }}>
-          <button
-            className="btn btn-ghost"
-            onClick={abrirEdicao}
-            aria-label="Editar colunas"
-            title="Editar colunas"
-          >
-            <Pencil size={15} />
-          </button>
-        </div>
-      )}
+          ⚠️ O LAPIS SAIU DAQUI EM 18/08 e foi para a BARRA, ao lado de
+          Filtros -- ver o bloco dele lá. Aqui ele era uma linha própria abaixo
+          do cabeçalho, e o `marginBottom: 12` do `div` que o embrulhava era a
+          única coisa que o separava das colunas. As regras de quando ele
+          aparece (`quadroEditavel && podeEditarColunas`) viajaram junto e não
+          mudaram. */}
 
       {criandoColuna && rascunho && (
         <FormNovaColuna
