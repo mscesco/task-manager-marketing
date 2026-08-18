@@ -1205,7 +1205,15 @@ export default function TaskDetail({
               )}
             </span>
 
-            {ehTopo && (
+            {/* ⚠️ SEM `ehTopo` AQUI, E A DIFERENÇA PARA O PROJETO É REAL
+                (decisão da Camila, 18/08). O controle de projeto é travado em
+                tarefa de topo porque subtarefa **herda** o projeto do pai
+                (Spec 022) -- não há o que editar. Data não é herdada: a
+                subtarefa tem prazo PRÓPRIO, e este mesmo arquivo já o desenha
+                na checklist e já o pede na criação rápida de subtarefa.
+                Copiar a trava do projeto foi engano meu, corrigido no mesmo
+                dia. */}
+            {(
               <button
                 type="button"
                 onClick={() => (abertoDatas ? setAbertoDatas(false) : abrirDatas())}
@@ -1238,6 +1246,12 @@ export default function TaskDetail({
                   display: "flex", flexDirection: "column", gap: 8,
                 }}
               >
+                {/* ⚠️ O RÓTULO "Datas" ESTAVA NO DESENHO E EU O OMITI. A
+                    cápsula da Camila é um cartão TITULADO, e sem o título o
+                    painel não diz do que ele é -- só mostra dois campos soltos
+                    ancorados num "+". Não é enfeite: é o que faz a cápsula
+                    ser uma cápsula. */}
+                <strong style={{ fontSize: 13 }}>Datas</strong>
                 <label style={{ fontSize: 12, color: "var(--text-soft)" }}>
                   Data de início
                   <input

@@ -166,6 +166,27 @@ describe("TaskDetail -- a cápsula de datas (Spec 038, fatia A)", () => {
     expect(screen.getByLabelText("Definir datas")).toBeTruthy();
   });
 
+  it("⚠️ SUBTAREFA também tem datas -- e é diferente do projeto", async () => {
+    // ⚠️ O CONTROLE DE PROJETO É TRAVADO EM TAREFA DE TOPO porque subtarefa
+    // HERDA o projeto do pai (Spec 022): não há o que editar. Data não é
+    // herdada -- a subtarefa tem prazo próprio, e o `TaskDetail` já o desenha
+    // na checklist e já o pede na criação rápida de subtarefa.
+    //
+    // A primeira versão desta fatia copiou o `ehTopo` do projeto sem pensar, e
+    // a Camila pegou na tela no mesmo dia. Este teste é o que impede a trava
+    // de voltar de carona numa refatoração do bloco vizinho.
+    montar({ parent_task_id: "pai", path: "pai.t1", depth: 1 });
+    expect(await screen.findByLabelText("Definir datas")).toBeTruthy();
+  });
+
+  it("⚠️ o painel se anuncia como \"Datas\"", async () => {
+    // ⚠️ ESTAVA NO DESENHO E FOI OMITIDO na primeira entrega. Sem o título, o
+    // painel é dois campos soltos ancorados num "+": nada diz do que ele é.
+    montar();
+    await abrirPainel();
+    expect(screen.getByText("Datas")).toBeTruthy();
+  });
+
   it("com prazo, mostra a data; com início, mostra os dois", async () => {
     montar({ due_date: "2026-08-19", start_date: "2026-08-01" });
     expect(await screen.findByText(/19\/08\/2026/)).toBeTruthy();
