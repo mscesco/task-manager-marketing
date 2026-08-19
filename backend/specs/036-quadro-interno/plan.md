@@ -2002,7 +2002,53 @@ irmão visual do que esta fatia constrói. **Não copie o de modal.**
 
 ---
 
-## Fatia 11 — o aviso na queda para a lente — ⬜ ADIADA, foi para a §"o que falta" (18/08)
+## Fatia 11 — o aviso na queda para a lente — ✅ ENTREGUE (18/08)
+
+> Adiada de manhã, feita à tarde — e o que mudou foi o mundo, não a opinião.
+> **Front 838 → 846.** Sem migration, sem backend.
+
+⚠️ **O QUE A DESTRAVOU: o caso deixou de ser hipotético.** O argumento para
+adiar era "só existe um quadro em produção, e ele é o padrão, que não se apaga".
+Em 18/08 isso deixou de valer: existe quadro avulso em produção e **um já foi
+apagado** ("Cobertura e captações", visível na consulta 5).
+
+### ⚠️ SÃO TRÊS MOTIVOS, E NÃO UM — o escopo previa um
+
+Escrevendo, apareceu que a queda tem causas distinguíveis, e juntar todas numa
+mensagem só seria mentir por baixo:
+
+| motivo | quando | por que merece texto próprio |
+|---|---|---|
+| `fora-de-alcance` | o id não está na lista | ⚠️ **três causas indistinguíveis daqui** — apagado, nunca existiu, ou fora do alcance. A lista não sabe diferenciar, e a ação de quem olha é a mesma nas três. **Inventar três mensagens seria fingir precisão que o dado não tem** |
+| `outro-time` | o quadro existe, mas é de outro time | tem conserto: a pessoa está na página errada, e não diante de algo que sumiu |
+| `e-o-quadro-geral` | o id é o quadro padrão | **não é erro** — é pedir pelo lugar onde a pessoa já está, porque a lente é o espelho dele |
+
+### ⚠️ A LINHA QUE MAIS IMPORTA
+
+`quadros === null` **não produz motivo**. `null` é "a lista ainda não chegou" —
+avisar ali poria "este quadro não está aqui" na tela de **todo carregamento**,
+por um instante, antes de o quadro aparecer normalmente. **O aviso piscaria em
+quem não tem problema nenhum.** Tem teste próprio.
+
+### Decisões de desenho
+
+- **Aviso, e não erro de página.** A tela continua útil: a lente é um lugar
+  legítimo, e o assunto de quem abriu está logo abaixo. Um `error-box` trocaria
+  um problema pequeno por uma parede.
+- **`role="status"`, e não `alert`.** `alert` interrompe o leitor de tela, e
+  isto é contexto — nada aconteceu de errado com o que a pessoa está vendo.
+- ⚠️ **Dispensar é por ID pedido, e não um booleano.** Com booleano, dispensar
+  uma vez calaria o aviso para qualquer quadro seguinte na mesma sessão — a
+  pessoa colaria outro link morto e não veria nada.
+- **`quadroPedidoNaUrl` virou casca** e delega. Os testes dele não mudaram, e
+  há um teste novo afirmando que os dois concordam — reimplementar o corpo em
+  vez de delegar traria de volta as duas fontes de verdade.
+
+---
+
+## Fatia 11 — texto de escopo (histórico)
+
+⬜ ADIADA em 18/08 de manhã, feita à tarde
 
 > Escrita em 18/08/2026 junto com a fatia 10, e **tirada do caminho do deploy no
 > mesmo dia**, pela Camila, depois de o problema ser lido no código em vez de

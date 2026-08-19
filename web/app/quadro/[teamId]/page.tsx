@@ -16,7 +16,8 @@ import { computeLens } from "@/lib/lens";
 import {
   alcanceDeQuadro,
   podeGerirQuadrosDe,
-  quadroPedidoNaUrl,
+  resolverQuadroPedido,
+  TEXTO_DA_QUEDA,
   urlDoQuadro,
 } from "@/lib/seletorDeQuadro";
 
@@ -67,15 +68,21 @@ export default function QuadroSubtimePage() {
   // ⚠️ A VALIDACAO MORA EM `lib/seletorDeQuadro`, TESTADA. O `include` do
   // vitest e so `lib/**` e `components/**` -- regra escrita dentro de `app/`
   // nasce sem guardiao.
-  const quadroSelecionado = quadroPedidoNaUrl(
+  const pedido = resolverQuadroPedido(
     searchParams.get("quadro"),
     quadros,
     teamId,
   );
+  const quadroSelecionado = pedido.id;
 
   // ⚠️ `push`, E NAO `replace`. Trocar de quadro e navegar: a pessoa espera
   // que Voltar desfaca. O preco e uma entrada de historico por troca, e ele e
   // menor que o do Voltar sair da pagina do time inteira sem desfazer nada.
+  // ⚠️ DISPENSAR E POR ID PEDIDO, e nao um booleano. Com um booleano, dispensar
+  // uma vez calaria o aviso para QUALQUER quadro seguinte na mesma sessao --
+  // a pessoa colaria outro link morto e nao veria nada.
+  const [quedaDispensada, setQuedaDispensada] = useState<string | null>(null);
+
   const selecionarQuadro = useCallback(
     (id: string | null) => router.push(urlDoQuadro(teamId, id)),
     [router, teamId],
@@ -169,6 +176,44 @@ export default function QuadroSubtimePage() {
         </div>
       ) : (
         <>
+          {/* ---- Aviso da queda para a lente (Spec 036, fatia 11) ----------
+              ⚠️ ATE AQUI A QUEDA ERA MUDA, E ERA CERTO ASSIM: link velho ou id
+              digitado na mao nao mereciam erro na cara de quem so abriu a tela.
+              **A fatia 7 mudou o mundo** -- agora uma pessoa APAGA o quadro que
+              a outra tem aberto, e a tela da segunda troca de lugar sozinha.
+              Silencio, ali, e indistinguivel de defeito.
+
+              ⚠️ AVISO, E NAO ERRO DE PAGINA. A tela continua util: a lente e um
+              lugar legitimo, e o assunto de quem abriu (as tarefas do time)
+              esta logo abaixo. Um `error-box` ocupando a tela trocaria um
+              problema pequeno por uma parede.
+
+              ⚠️ DISPENSAVEL, e o `role="status"` e nao `alert`: `alert`
+              interrompe o leitor de tela, e isto e informacao de contexto --
+              nada aconteceu de errado com o que a pessoa esta vendo agora. */}
+          {pedido.motivo && quedaDispensada !== searchParams.get("quadro") && (
+            <div
+              role="status"
+              style={{
+                display: "flex", alignItems: "center", gap: 10,
+                marginBottom: 12, padding: "9px 12px", borderRadius: 8,
+                border: "1px solid var(--border)",
+                background: "var(--surface-2)",
+                fontSize: 13, color: "var(--text)",
+              }}
+            >
+              <span style={{ flex: 1 }}>{TEXTO_DA_QUEDA[pedido.motivo]}</span>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                style={{ fontSize: 12, flexShrink: 0 }}
+                onClick={() => setQuedaDispensada(searchParams.get("quadro"))}
+              >
+                Dispensar
+              </button>
+            </div>
+          )}
+
           {/* ⚠️ A LINHA SEPARADA DO SELETOR SAIU NA FATIA 10 (18/08). Ela era
               um `<div style={{ marginBottom: 14 }}>` acima do quadro, e o
               `Board` desenhava o titulo logo abaixo -- duas dobras dizendo a

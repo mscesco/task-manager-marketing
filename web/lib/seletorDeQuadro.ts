@@ -266,12 +266,101 @@ export function quadroPedidoNaUrl(
   quadros: readonly Quadro[] | null,
   teamId: string,
 ): string | null {
-  if (!parametro) return null;
-  if (quadros === null) return parametro;
-  const achado = quadros.find((q) => q.id === parametro);
-  if (!achado || achado.team_id !== teamId || achado.is_default) return null;
-  return parametro;
+  return resolverQuadroPedido(parametro, quadros, teamId).id;
 }
+
+/**
+ * Por que o `?quadro=` da URL nao virou o quadro desenhado (Spec 036, fatia 11).
+ *
+ * ⚠️ `null` = NAO HA O QUE AVISAR. Cobre os dois casos silenciosos legitimos:
+ * nao havia `?quadro=` nenhum, e o pedido foi ACEITO.
+ */
+export type MotivoDaQueda =
+  /**
+   * O id nao esta na lista que a pessoa alcanca.
+   *
+   * ⚠️ TRES CAUSAS INDISTINGUIVEIS DAQUI, e juntar as tres e a decisao: o
+   * quadro foi APAGADO por outra pessoa, o id nunca existiu (link velho, texto
+   * digitado na mao), ou ele existe e esta fora do alcance de quem pergunta.
+   * A lista de quadros nao sabe diferenciar -- e, para quem esta olhando, a
+   * acao e a mesma nos tres. Inventar tres mensagens seria fingir uma precisao
+   * que o dado nao tem.
+   */
+  | "fora-de-alcance"
+  /**
+   * O quadro existe e a pessoa alcanca, mas ele e de OUTRO time.
+   *
+   * ⚠️ ESTE MERECE MENSAGEM PROPRIA porque tem conserto: a pessoa esta na
+   * pagina errada, e nao diante de algo que sumiu. Acontece com link colado
+   * entre paginas de times diferentes.
+   */
+  | "outro-time"
+  /**
+   * O id aponta para o quadro PADRAO (o Quadro geral).
+   *
+   * ⚠️ Ele nunca entra no seletor (`opcoesDoSeletor` filtra `!q.is_default`),
+   * porque quem o representa nesta tela e a LENTE. Pedir por ele nao e erro --
+   * e pedir pelo lugar onde a pessoa ja esta.
+   */
+  | "e-o-quadro-geral";
+
+export type QuadroPedido = {
+  /** O id a desenhar, ou `null` para a lente. */
+  readonly id: string | null;
+  /** `null` = nada a dizer. Ver `MotivoDaQueda`. */
+  readonly motivo: MotivoDaQueda | null;
+};
+
+/**
+ * A versao que DIZ POR QUE, e a razao de ela existir (fatia 11).
+ *
+ * ⚠️ ATE AQUI A QUEDA ERA MUDA, E ERA CERTO ASSIM. O docstring do
+ * `quadroPedidoNaUrl` explicava: link velho ou id digitado na mao nao merecem
+ * erro na cara de quem so abriu a tela. **A fatia 7 mudou o mundo**: agora uma
+ * pessoa APAGA o quadro que a outra tem aberto, e a tela da segunda troca de
+ * lugar sozinha. Silencio, ali, e indistinguivel de defeito.
+ *
+ * ⚠️ E O CASO DEIXOU DE SER HIPOTETICO EM 18/08: existe quadro avulso em
+ * producao, e um ja foi apagado ("Cobertura e captacoes", consulta 5).
+ *
+ * ⚠️ `quadros === null` NAO PRODUZ MOTIVO, e essa e a linha mais importante
+ * desta funcao. `null` e "a lista ainda nao chegou" -- avisar ali poria "este
+ * quadro nao esta aqui" na tela de TODO carregamento, por um instante, antes
+ * de o quadro aparecer normalmente. O aviso piscaria em quem nao tem problema
+ * nenhum.
+ */
+export function resolverQuadroPedido(
+  parametro: string | null | undefined,
+  quadros: readonly Quadro[] | null,
+  teamId: string,
+): QuadroPedido {
+  if (!parametro) return { id: null, motivo: null };
+  // ⚠️ Ainda carregando: devolve o pedido SEM conferir e SEM motivo. Ver acima.
+  if (quadros === null) return { id: parametro, motivo: null };
+
+  const achado = quadros.find((q) => q.id === parametro);
+  if (!achado) return { id: null, motivo: "fora-de-alcance" };
+  if (achado.is_default) return { id: null, motivo: "e-o-quadro-geral" };
+  if (achado.team_id !== teamId) return { id: null, motivo: "outro-time" };
+  return { id: parametro, motivo: null };
+}
+
+/**
+ * O texto que a tela mostra para cada motivo.
+ *
+ * ⚠️ MORA EM `lib/`, e nao no componente, pelo mesmo motivo do resto deste
+ * arquivo: e decisao de produto (o que a pessoa le), e o `include` do vitest
+ * so alcanca `lib/**` e `components/**`.
+ */
+export const TEXTO_DA_QUEDA: Record<MotivoDaQueda, string> = {
+  "fora-de-alcance":
+    "O quadro que você pediu não está mais aqui — ele pode ter sido apagado, " +
+    "ou o link pode estar velho. Mostrando a lente do time.",
+  "outro-time":
+    "Esse quadro é de outro time. Mostrando a lente deste time.",
+  "e-o-quadro-geral":
+    "Esse é o Quadro geral, e a lente do time já é o espelho dele.",
+};
 
 /**
  * O endereco de uma escolha do seletor. `null` = lente.
