@@ -2973,7 +2973,10 @@ colunas que NÃO são alvo, aparece um "tornar padrão" apagado; clicar troca.
 É a mesma lição da fatia 10 (a pílula de datas virou o gatilho, em vez de ganhar
 um botão ao lado).
 
-**B. ⚠️ ENTRA NO LOTE, OU É AÇÃO IMEDIATA?** Esta é a que decide o tamanho.
+**A. Onde na tela? — ✅ o selo vira o controle** (Camila, 18/08).
+
+**B. ⚠️ ENTRA NO LOTE, OU É AÇÃO IMEDIATA? — ✅ NO LOTE** (Camila, 18/08), com a
+trava de que coluna `tmp:` não pode ser alvo no mesmo lote em que nasce.
 
 - **(1) No lote**, junto com criar/renomear/apagar/reordenar. Coerente com o
   modelo — nada vai ao servidor até "Concluir edição". ⚠️ **Mas abre casos que
@@ -2991,13 +2994,38 @@ roda depois, e amarrar as duas coisas faria a ordem das etapas virar regra
 invisível. A pessoa cria, conclui, e marca depois. **Se você preferir a (2), o
 escopo encolhe pela metade.**
 
-**C. O Quadro geral pode trocar alvo?** ⚠️ Ele tem `legacy_status` vivo nas
-colunas-ponte, e é onde nascem as tarefas das 26 pessoas. Trocar o alvo de
-`OPEN` ali muda **onde toda tarefa nova aparece**, para todo mundo, sem tocar em
-nenhuma tarefa existente. **Recomendo: PODE, e só por `board.manage.root`** — é
-a mesma permissão que já edita as colunas dele desde a 6a-bis, e proibir seria
-trava técnica escrita como regra de produto (o erro que a 5c já corrigiu uma
-vez). Mas com **confirmação nomeando o efeito**, e não um clique seco.
+**C. O Quadro geral pode trocar alvo? — ✅ PODE, e o risco é MUITO menor do que
+a primeira versão desta linha dizia.**
+
+⚠️ **A PRIMEIRA VERSÃO ESTAVA ERRADA, e o erro era de modelo mental:** ela dizia
+que trocar o alvo de `OPEN` no Quadro geral mudaria "onde toda tarefa nova
+aparece, para as 26 pessoas". **Não muda.**
+
+⚠️ **A BUSCA TEM DOIS DEGRAUS, E O PRIMEIRO GANHA SEMPRE NO QUADRO GERAL**
+(`board_repository.py:161`, ADR 0042 D1):
+
+  1. coluna com `legacy_status = :status` → **é ela**, exato;
+  2. não achando → a coluna `is_default_target` daquela semântica.
+
+As 8 colunas do Quadro geral **têm ponte** — a consulta 5 do `invariantes.sql`
+mede `colunas_sem_ponte = 0` em produção. Logo o degrau 1 sempre acerta, e o
+alvo **não é consultado** para decidir onde a tarefa nasce.
+
+⚠️ **ONDE O ALVO REALMENTE MANDA:**
+
+  - **nos quadros avulsos**, que nascem com as 4 `COLUNAS_BASE` sem
+    `legacy_status` (o "Quadro teste do GOATzinho" tem 19 colunas e **15 sem
+    ponte**). Ali o degrau 1 não acha nada;
+  - **na cascata de conclusão**, nos dois tipos de quadro — concluir a mãe manda
+    as subtarefas para o alvo de `DONE`;
+  - **no agrupamento do front** (`colunaEquivalente`), que é o que põe o card na
+    coluna certa em `/minhas-tarefas` e no kanban de projeto.
+
+**Decisão: PODE, por `board.manage.root`** — mesma permissão que já edita as
+colunas do geral desde a 6a-bis. ⚠️ **E sem diálogo de confirmação**: a primeira
+versão pedia um, para nomear um efeito que não acontece. **Um aviso curto
+dizendo o que muda basta** — e ele deve falar da cascata e do agrupamento, que
+é o que muda de verdade.
 
 ### O que sobe
 
