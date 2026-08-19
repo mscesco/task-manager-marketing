@@ -457,6 +457,52 @@ antes ou em paralelo à 039**. Quando o teto estourar, `listAllTasks` devolve
 `truncated=true` e a tela avisa (não perde em silêncio) — mas o quadro deixa de
 estar completo.
 
+#### 6.11.0.1. ⚠️ NÃO é vazamento do arquivamento — hipótese testada e descartada
+
+A hipótese da Camila em 19/08 foi: *"o job do n8n arquiva a tarefa mas não as
+subtarefas dela"*. **Ela descrevia um defeito que existiu de verdade** — o
+comentário do `archive_stale` (`task_service.py:1466`) registra que até 06/08 as
+duas portas divergiam: o "Arquivar" manual cascateava e a varredura da madrugada
+não, *"deixando a filha ATIVA debaixo de um pai arquivado"*. **Consertado em
+06/08.**
+
+Restavam duas frestas que a cascata não fecha, e **as duas foram medidas no
+Adminer em 19/08 e estão fechadas**:
+
+| fresta | hipótese | medido |
+|---|---|---|
+| filha ativa sob pai arquivado | órfãs do bug pré-06/08 | **8 linhas** (4 COMPLETED, 2 BACKLOG, 2 PLANNED) |
+| terminal com `terminal_since` NULL — invisível ao job | tarefas anteriores ao campo | **zero** |
+
+**O que as 670 subtarefas realmente são:**
+
+| status | total | destino |
+|---|---|---|
+| COMPLETED | **413** | dentro da janela de 20 dias (`stale_archive_days`); o job vai pegá-las |
+| BACKLOG | 198 | ⚠️ **nunca arquiva** |
+| IN_PROGRESS | 37 | ⚠️ **nunca arquiva** |
+| PLANNED | 12 | ⚠️ **nunca arquiva** |
+| IN_REVIEW | 8 | ⚠️ **nunca arquiva** |
+| BLOCKED | 2 | ⚠️ **nunca arquiva** |
+
+⚠️⚠️ **257 subtarefas são não-terminais, e isso é o desenho funcionando.** Item
+de checklist aberto é trabalho vivo — o arquivamento não pode tocá-las, hoje nem
+nunca. **Elas crescem com o uso do produto.**
+
+**A conclusão que fecha o argumento:** mesmo com o job perfeito e a janela
+zerada, as 257 permanecem e continuam subindo. **Nenhum ajuste de arquivamento
+resolve o teto.** Só parar de carregá-las resolve — e isso é a agregação no
+backend (§6.11.1), que passa a ser a única saída, não a preferida.
+
+**Válvula de emergência, se o teto estourar antes:** encurtar
+`stale_archive_days` (hoje **20**) drena parte das 413. É paliativo com custo —
+tarefa concluída some do quadro mais cedo — e não toca nas 257.
+
+**Resíduo:** as 8 órfãs da tabela acima. As 4 COMPLETED se resolvem sozinhas
+pelo próprio relógio; as 4 não-terminais estão presas para sempre. São 4 linhas
+— não vale spec, vale uma consulta no `invariantes.sql` para não voltarem a
+crescer sem ninguém ver.
+
 #### 6.11.1. ⚠️ Subtarefa consome o teto — confirmado no código, não suposto
 
 `api.ts::listAllTasks` (linhas 391–419) pagina de 100 em 100 até
@@ -642,8 +688,10 @@ fatia.
 ## 12. Pendências
 
 1. ⚠️⚠️ **Ordem entre a agregação de subtarefa e esta spec.** Medido em 19/08:
-   **917 de 1000, folga de 83**, e 73% da carga é subtarefa. A F10 não move
-   esse número — só a agregação move. Decisão da Camila: a agregação corre
-   antes, em paralelo, ou depois? Ver §6.11.0.
+   **917 de 1000, folga de 83**, e 73% da carga é subtarefa. **Não é vazamento
+   do arquivamento — hipótese testada e descartada** (§6.11.0.1): 257 das 670
+   subtarefas são não-terminais e nunca serão arquivadas, por desenho. A F10
+   não move o teto e nenhum ajuste do job move. **Só a agregação move.**
+   Decisão da Camila: ela corre antes, em paralelo, ou depois?
 2. **Reestruturação de organização/times/membros** — §6.1.1 tem o custo
    medido; a decisão é da Camila, e não bloqueia nenhuma fatia desta spec.
