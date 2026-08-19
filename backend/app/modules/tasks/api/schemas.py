@@ -701,6 +701,16 @@ class BoardColumnsBatchRequest(BaseModel):
 
     criar: list[ColunaParaCriar] = Field(default_factory=list)
     renomear: list[ColunaParaRenomear] = Field(default_factory=list)
+    #: Colunas que passam a ser o ALVO da semantica delas (Spec 036, fatia 12).
+    #:
+    #: ⚠️ SO UUID -- `tmp:` NAO E ACEITO AQUI, e a ausencia e a regra. Coluna
+    #: nova nao tem id no momento em que a pessoa monta o lote, e amarrar o
+    #: alvo a uma coluna que nasce no mesmo pedido faria a ORDEM DAS ETAPAS
+    #: virar regra invisivel. A pessoa cria, conclui, e marca depois.
+    #:
+    #: ⚠️ A ETAPA RODA ANTES DE APAGAR, e isso e o que permite "trocar o alvo e
+    #: apagar a coluna antiga" num gesto so -- ver `BoardService.aplicar_lote`.
+    alvos: list[uuid.UUID] = Field(default_factory=list)
     apagar: list[ColunaParaApagar] = Field(default_factory=list)
     #: UUID em texto, ou `tmp:apelido`.
     ordem: list[str] = Field(default_factory=list)
