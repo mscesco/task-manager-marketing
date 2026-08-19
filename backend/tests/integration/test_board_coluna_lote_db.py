@@ -29,7 +29,11 @@ from app.modules.tasks.application.board_service import (
     LoteCriar,
     LoteRenomear,
 )
-from app.shared.exceptions.base import AuthorizationError, ValidationError
+from app.shared.exceptions.base import (
+    AuthorizationError,
+    EntityNotFoundError,
+    ValidationError,
+)
 from tests.integration import factories as f
 from tests.integration.conftest import acting_as, mship, node
 
@@ -403,3 +407,167 @@ async def test_quadro_inexistente_devolve_404(db) -> None:
     with acting_as(**_ctx(ws, user, arvore, mship(sub_a, "SUPERVISOR"))):
         with pytest.raises(EntityNotFoundError):
             await BoardService(db).aplicar_lote(board_id=uuid.uuid4())
+
+
+# ------------------------------------------------- o alvo da semantica (12)
+
+
+async def _alvo(db, board_id, semantica):
+    """A coluna que hoje e o alvo daquela semantica, ou None."""
+    return next(
+        (
+            c
+            for c in await _colunas(db, board_id)
+            if c.semantic is semantica and c.is_default_target
+        ),
+        None,
+    )
+
+
+async def test_trocar_alvo_TIRA_do_antigo_e_poe_no_novo(db) -> None:
+    """⚠️ A ORDEM DAS DUAS ESCRITAS E A FATIA INTEIRA.
+
+    `board_column_um_destino_por_semantica` e
+    `UNIQUE (board_id, semantic) WHERE is_default_target`, e NAO e DEFERRABLE:
+    marcar o novo antes de desmarcar o antigo faz o Postgres recusar com
+    `IntegrityError` -- que neste projeto sai como **500**, e nao como o 422 que
+    a tela sabe ler.
+
+    ⚠️ ESTE TESTE FALHARIA COM ERRO DE BANCO, e nao com assercao, se a ordem
+    fosse invertida -- e e assim que ele denuncia.
+    """
+    ws, raiz, sub_a, sub_b, user, arvore = await _mundo(db)
+    quadro = await _quadro_avulso(db, ws, user, arvore, sub_a)
+
+    with acting_as(**_ctx(ws, user, arvore, mship(sub_a, "SUPERVISOR"))):
+        nova = await BoardService(db).criar_coluna(
+            board_id=quadro.id, nome="Ideias", semantica=ColumnSemantic.OPEN
+        )
+        await db.flush()
+        antigo = await _alvo(db, quadro.id, ColumnSemantic.OPEN)
+        assert antigo is not None and antigo.id != nova.id
+
+        await BoardService(db).trocar_alvo(board_id=quadro.id, column_id=nova.id)
+    await db.flush()
+
+    # ⚠️ EXATAMENTE UM ALVO, e ele e o novo. Conferir so o novo deixaria passar
+    # a implementacao que marca os dois -- que e o estado que o indice recusa.
+    abertas = [
+        c for c in await _colunas(db, quadro.id) if c.semantic is ColumnSemantic.OPEN
+    ]
+    alvos = [c for c in abertas if c.is_default_target]
+    assert len(alvos) == 1
+    assert alvos[0].id == nova.id
+
+
+async def test_trocar_alvo_na_coluna_que_JA_E_alvo_e_no_op(db) -> None:
+    """⚠️ NO-OP, E NAO ERRO -- e nunca "desmarcar".
+
+    Sem alvo, `_assert_ponte_sobrevive` passa a recusar toda criacao de tarefa
+    naquele quadro, dias depois, para outra pessoa. Nao pode existir caminho que
+    deixe a semantica sem alvo, e o clique repetido no mesmo selo e o caminho
+    mais obvio para isso acontecer por engano.
+    """
+    ws, raiz, sub_a, sub_b, user, arvore = await _mundo(db)
+    quadro = await _quadro_avulso(db, ws, user, arvore, sub_a)
+    antigo = await _alvo(db, quadro.id, ColumnSemantic.OPEN)
+    assert antigo is not None
+
+    with acting_as(**_ctx(ws, user, arvore, mship(sub_a, "SUPERVISOR"))):
+        devolvida = await BoardService(db).trocar_alvo(
+            board_id=quadro.id, column_id=antigo.id
+        )
+    await db.flush()
+
+    assert devolvida.id == antigo.id
+    depois = await _alvo(db, quadro.id, ColumnSemantic.OPEN)
+    assert depois is not None and depois.id == antigo.id
+
+
+async def test_trocar_alvo_de_coluna_de_OUTRO_quadro_e_404(db) -> None:
+    ws, raiz, sub_a, sub_b, user, arvore = await _mundo(db)
+    a = await _quadro_avulso(db, ws, user, arvore, sub_a)
+    with acting_as(**_ctx(ws, user, arvore, mship(sub_a, "SUPERVISOR"))):
+        outro = await BoardService(db).criar_quadro(team_id=sub_a, nome="Outro")
+        await db.flush()
+        alheia = (await _colunas(db, outro.id))[0]
+        with pytest.raises(EntityNotFoundError):
+            await BoardService(db).trocar_alvo(
+                board_id=a.id, column_id=alheia.id
+            )
+
+
+async def test_OPERATOR_nao_troca_alvo(db) -> None:
+    ws, raiz, sub_a, sub_b, user, arvore = await _mundo(db)
+    quadro = await _quadro_avulso(db, ws, user, arvore, sub_a)
+    alvo = await _alvo(db, quadro.id, ColumnSemantic.DONE)
+    assert alvo is not None
+
+    with acting_as(**_ctx(ws, user, arvore, mship(sub_a, "OPERATOR"))):
+        with pytest.raises(AuthorizationError):
+            await BoardService(db).trocar_alvo(
+                board_id=quadro.id, column_id=alvo.id
+            )
+
+
+async def test_LOTE_troca_o_alvo_E_APAGA_a_antiga_num_gesto_so(db) -> None:
+    """⚠️⚠️ ESTE E O TESTE QUE JUSTIFICA A FATIA 12 INTEIRA.
+
+    Ate aqui, quem criava "Ideias" (`OPEN`) e queria ficar so com ela NAO
+    conseguia apagar o `Backlog`: ele era o alvo, e `_assert_ponte_sobrevive`
+    (degrau 2 da ADR 0042) o protege. O proprio `board_service` registrava isso
+    como consequencia aceita, dizendo que trocar o alvo "e operacao propria, e
+    ela nao existe". A saida era apagar o quadro e recomecar.
+
+    ⚠️ E O QUE FAZ FUNCIONAR E A ORDEM DAS ETAPAS: o alvo roda ANTES de apagar.
+    Invertendo, a trava ainda veria o `Backlog` como alvo e recusaria o lote
+    inteiro -- e este teste falha com `ValidationError`, apontando a etapa
+    errada.
+    """
+    ws, raiz, sub_a, sub_b, user, arvore = await _mundo(db)
+    quadro = await _quadro_avulso(db, ws, user, arvore, sub_a)
+    backlog = _por_nome(await _colunas(db, quadro.id), "Backlog")
+
+    with acting_as(**_ctx(ws, user, arvore, mship(sub_a, "SUPERVISOR"))):
+        ideias = await BoardService(db).criar_coluna(
+            board_id=quadro.id, nome="Ideias", semantica=ColumnSemantic.OPEN
+        )
+        await db.flush()
+
+        colunas, _ = await BoardService(db).aplicar_lote(
+            board_id=quadro.id,
+            alvos=[ideias.id],
+            apagar=[LoteApagar(id=backlog.id, destino=str(ideias.id))],
+        )
+    await db.flush()
+
+    nomes = _nomes(colunas)
+    assert "Backlog" not in nomes
+    assert "Ideias" in nomes
+    # ⚠️ E A SEMANTICA CONTINUA COM ALVO -- sem isto, a criacao de tarefa neste
+    # quadro passaria a devolver 422 dias depois.
+    alvo = await _alvo(db, quadro.id, ColumnSemantic.OPEN)
+    assert alvo is not None and alvo.id == ideias.id
+
+
+async def test_LOTE_sem_alvos_nao_mexe_em_alvo_nenhum(db) -> None:
+    """A lista vazia e o caso de 100% dos lotes ate a fatia 12."""
+    ws, raiz, sub_a, sub_b, user, arvore = await _mundo(db)
+    quadro = await _quadro_avulso(db, ws, user, arvore, sub_a)
+    antes = await _alvo(db, quadro.id, ColumnSemantic.OPEN)
+
+    with acting_as(**_ctx(ws, user, arvore, mship(sub_a, "SUPERVISOR"))):
+        await BoardService(db).aplicar_lote(
+            board_id=quadro.id,
+            renomear=[
+                LoteRenomear(
+                    id=_por_nome(await _colunas(db, quadro.id), "Backlog").id,
+                    name="Entrada",
+                )
+            ],
+        )
+    await db.flush()
+
+    depois = await _alvo(db, quadro.id, ColumnSemantic.OPEN)
+    assert antes is not None and depois is not None
+    assert depois.id == antes.id

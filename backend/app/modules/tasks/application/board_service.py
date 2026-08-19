@@ -627,12 +627,89 @@ class BoardService:
                 )
             vistos.add(nome)
 
+    async def trocar_alvo(
+        self, *, board_id: uuid.UUID, column_id: uuid.UUID
+    ) -> BoardColumn:
+        """Faz desta coluna o ALVO da semantica dela, tirando de quem era.
+
+        Spec 036, fatia 12. Devolve a coluna que passou a ser alvo.
+
+        ⚠️ O QUE E O "ALVO", EM UMA FRASE: e a coluna que o SISTEMA escolhe
+        quando precisa decidir sozinho. Ele NAO e consultado quando a coluna
+        tem `legacy_status` -- ali o degrau 1 do `column_for_status_in_board`
+        ganha, e por isso trocar o alvo no Quadro geral quase nao muda nada.
+        Quem depende dele de verdade e o quadro AVULSO (nasce com as quatro
+        `COLUNAS_BASE` sem ponte), a cascata de conclusao, e o
+        `colunaEquivalente` do front.
+
+        ⚠️⚠️ A ORDEM E OBRIGATORIA: TIRAR do antigo -> `flush()` -> POR no novo.
+        O indice parcial `board_column_um_destino_por_semantica` e
+        `UNIQUE (board_id, semantic) WHERE is_default_target`, e ele nao e
+        DEFERRABLE: com os dois marcados por um instante, o Postgres recusa
+        com `IntegrityError` -- que neste projeto sai como **500**, e nao como
+        o 422 que a tela sabe ler. **Nao junte as duas escritas.**
+
+        ⚠️ TROCAR E TROCAR, NUNCA DESMARCAR. Nao existe caminho aqui que deixe
+        uma semantica sem alvo: se a coluna JA e o alvo, isto e no-op. Sem
+        alvo, `_assert_ponte_sobrevive` (degrau 2 da ADR 0042) passa a recusar
+        toda criacao de tarefa naquele quadro -- **dias depois, para outra
+        pessoa**.
+
+        ⚠️ E ISTO E O QUE DESTRAVA APAGAR COLUNA. O `board_service` ja
+        registrava como consequencia aceita: "com duas colunas OPEN, a que e
+        ALVO continua sem poder ser apagada, mesmo havendo outra". Com a troca,
+        a pessoa move o alvo e ENTAO apaga -- e por isso a etapa do lote roda
+        ANTES de apagar.
+        """
+        quadro = await self._quadro_do_workspace(board_id)
+        self._assert_pode_gerir(await self._time_do_workspace(quadro.team_id))
+
+        colunas = await self._colunas_do_quadro(quadro.id)
+        nova = next((c for c in colunas if c.id == column_id), None)
+        if nova is None:
+            # ⚠️ 404 E NAO 422: a coluna pode existir em OUTRO quadro, e dizer
+            # "invalido" mandaria quem chama procurar erro no proprio pedido.
+            raise EntityNotFoundError(
+                "Coluna nao encontrada neste quadro.",
+                details={"field": "column_id"},
+            )
+        if nova.is_default_target:
+            return nova  # ja e o alvo -- no-op, e nao erro.
+
+        anterior = next(
+            (
+                c
+                for c in colunas
+                if c.semantic is nova.semantic and c.is_default_target
+            ),
+            None,
+        )
+
+        # ⚠️ AS DUAS ESCRITAS, NA ORDEM, COM `flush` NO MEIO. Ver o aviso do
+        # docstring: sem o `flush`, o indice ve dois alvos e devolve 500.
+        if anterior is not None:
+            anterior.is_default_target = False
+            await self._session.flush()
+        nova.is_default_target = True
+        await self._session.flush()
+
+        logger.info(
+            "board.alvo_trocado",
+            board_id=str(quadro.id),
+            semantica=nova.semantic.value,
+            de=str(anterior.id) if anterior else None,
+            para=str(nova.id),
+            por=str(require_tenant().user_id),
+        )
+        return nova
+
     async def aplicar_lote(
         self,
         *,
         board_id: uuid.UUID,
         criar: Sequence[LoteCriar] = (),
         renomear: Sequence[LoteRenomear] = (),
+        alvos: Sequence[uuid.UUID] = (),
         apagar: Sequence[LoteApagar] = (),
         ordem: Sequence[str] = (),
     ) -> tuple[list[BoardColumn], int]:
@@ -723,7 +800,22 @@ class BoardService:
                 conferir_nome=False,
             )
 
-        # ---- etapa 3: apagar, resolvendo destinos --------------------------
+        # ---- etapa 3: alvo da semantica (fatia 12) -------------------------
+        #
+        # ⚠️⚠️ ANTES DE APAGAR, E ESSA ORDEM E A FATIA INTEIRA. O gesto que
+        # justifica esta entrega e "quero ficar so com Ideias": mover o alvo
+        # de `Backlog` para `Ideias` e APAGAR o `Backlog`, num lote so.
+        # Rodando depois de apagar, `_assert_ponte_sobrevive` ainda veria o
+        # `Backlog` como alvo e recusaria -- e a pessoa continuaria sem saida,
+        # que e exatamente o estado que esta fatia existe para acabar.
+        #
+        # ⚠️ DEPOIS DE CRIAR, e nao antes: deixa a porta aberta para um dia
+        # aceitar `tmp:` como alvo sem reordenar as etapas. Hoje o rascunho do
+        # front recusa isso antes de mandar (coluna nova nao tem id).
+        for alvo_id in alvos:
+            await self.trocar_alvo(board_id=board_id, column_id=alvo_id)
+
+        # ---- etapa 4: apagar, resolvendo destinos --------------------------
         movidas = 0
         for pedido in apagar:
             destino = (
@@ -735,7 +827,7 @@ class BoardService:
                 board_id=board_id, column_id=pedido.id, destino_id=destino
             )
 
-        # ---- etapa 4: reordenar -------------------------------------------
+        # ---- etapa 5: reordenar -------------------------------------------
         if ordem:
             await self.reordenar_colunas(
                 board_id=board_id,
@@ -748,6 +840,7 @@ class BoardService:
             criadas=len(criar),
             renomeadas=len(renomear),
             apagadas=len(apagar),
+            alvos=len(alvos),
             reordenou=bool(ordem),
             movidas=movidas,
             por=str(require_tenant().user_id),
