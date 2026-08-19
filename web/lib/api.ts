@@ -328,6 +328,14 @@ export type Task = {
    */
   start_date: string | null;
   due_date: string | null;
+  /**
+   * Spec 038, fatia B: a HORA do prazo. `null` = "vence no dia".
+   *
+   * ⚠️ VEM COM SEGUNDOS (`"18:00:00"`) -- e o `TIME` do Postgres. Quem compara
+   * NAO pode usar este valor cru contra `"HH:MM"`: a string mais longa vence.
+   * `lib/prazo.ts::estaAtrasada` normaliza antes, e e por la que a regra passa.
+   */
+  due_time: string | null;
   completed_at: string | null;
   created_by: string;
   is_archived: boolean;
@@ -1036,6 +1044,8 @@ export type TaskCreateInput = {
    */
   start_date?: string | null;
   due_date?: string | null;
+  /** Spec 038, fatia B. ⚠️ Hora SEM data volta 422 (`_validate_hora`). */
+  due_time?: string | null;
   project_id?: string | null; // criar dentro de um projeto (Entrega 11)
   assignee_ids?: string[]; // Spec 021: responsaveis ja na criacao
   // Fatia 5: time EXPLICITO da task de topo. Ausente => pin na raiz
@@ -1160,6 +1170,8 @@ export async function createTask(input: TaskCreateInput): Promise<Task> {
       // criada num quadro avulso nascer no Quadro geral por uma fatia inteira.
       start_date: input.start_date ?? null,
       due_date: input.due_date ?? null,
+      // ⚠️ A LINHA QUE O `board_id` NAO TEVE, pela terceira vez nesta spec.
+      due_time: input.due_time ?? null,
       // pin: so manda team_id se a raiz foi resolvida.
       ...(teamId ? { team_id: teamId } : {}),
       // project_id explicito (task de projeto) ou ausente (avulsa no raiz).
@@ -1222,6 +1234,16 @@ export type TaskUpdateInput = {
    */
   start_date?: string | null;
   due_date?: string | null;
+  /**
+   * Spec 038, fatia B.
+   *
+   * ⚠️ `null` LIMPA, `undefined` NAO MEXE -- mesmo `fields_set` do vizinho.
+   *
+   * ⚠️ E O BACKEND VALIDA O PAR RESULTANTE: apagar so o `due_date` de uma
+   * tarefa que TEM hora volta 422, mesmo sem `due_time` no corpo. Quem limpa a
+   * data tem de limpar a hora junto.
+   */
+  due_time?: string | null;
   /**
    * Fatia 5a do backend (ADR 0041): mover a tarefa de COLUNA, com o status
    * derivado dela pelo servidor.

@@ -649,6 +649,11 @@ export default function TaskModal({
           // dentro do `createTask` e que poe o campo no POST. Foi assim que o
           // `board_id` logo abaixo ficou de fora por uma fatia inteira.
           start_date: startDate || null,
+          // ⚠️ SEM CAMPO DE HORA NA CRIACAO, DE PROPOSITO (Spec 038, fatia B).
+          // A criacao ja pede titulo, responsavel, prazo, prioridade, coluna e
+          // projeto; hora e refinamento de planejamento, e o lugar dela e a
+          // capsula do detalhe. Se um dia entrar, esta linha ja existe.
+          due_time: null,
           project_id: defaultProjectId ?? (projetoSel || null),
           assignee_ids: assigneeIds,
           team_id: defaultTeamId,

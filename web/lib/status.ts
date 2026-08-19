@@ -29,6 +29,11 @@
 // produzia `var(--x)1a`, declaracao invalida que o browser descarta -- era o
 // que ja acontecia no Badge e deixava 5 badges sem fundo. Ver Badge.tsx.
 
+// ⚠️ Spec 038, fatia B: a regra de "atrasou?" mora em `lib/prazo.ts`, e este
+// arquivo a CONSOME. Ela saiu daqui de proposito -- atraso com hora e uma
+// pergunta sobre um INSTANTE, e tudo neste modulo raciocina em DIAS.
+import { agoraNoWorkspace, estaAtrasada } from "@/lib/prazo";
+
 export const STATUSES = [
   { key: "BACKLOG", label: "Backlog", color: "var(--status-backlog-dot)" },
   { key: "PLANNED", label: "Planejado", color: "var(--status-planned-dot)" },
@@ -220,15 +225,20 @@ export function deadlineDays(dueDate: string): number {
 export function deadlineTone(
   dueDate: string | null | undefined,
   status: string,
-  isArchived: boolean
+  isArchived: boolean,
+  /** Spec 038, fatia B. Ausente = sem hora -- ver `deadlineTonePorColuna`. */
+  dueTime?: string | null
 ): DeadlineTone {
   if (!dueDate || isArchived) return null;
   // Concluida/cancelada/bloqueada -> sem alerta (nao ha o que agir no prazo).
   if (status === "COMPLETED" || status === "CANCELLED" || status === "BLOCKED") {
     return null;
   }
+  // ⚠️ MESMA regra do `deadlineTonePorColuna` -- as duas chamam `estaAtrasada`
+  // em vez de cada uma fazer a propria conta. Duas fontes de verdade para
+  // "atrasou?" divergiriam no primeiro ajuste de fuso.
+  if (estaAtrasada(dueDate, dueTime, agoraNoWorkspace())) return "overdue";
   const dias = deadlineDays(dueDate);
-  if (dias < 0) return "overdue";
   if (dias <= 2) return "soon";
   return null;
 }

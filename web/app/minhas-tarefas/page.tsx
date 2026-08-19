@@ -808,7 +808,7 @@ function Minhas() {
     // (`notify_deadline` + semantica), nao mais uma lista de status cravada.
     // Sem coluna resolvida nao ha como decidir -> sem alerta, que e o lado
     // seguro (o contrario pintaria de vermelho por falta de dado).
-    const dueTone = col ? deadlineTonePorColuna(col, t.due_date, t.is_archived) : null;
+    const dueTone = col ? deadlineTonePorColuna(col, t.due_date, t.is_archived, t.due_time) : null;
     return (
       <div
         key={t.id}

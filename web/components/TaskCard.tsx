@@ -88,7 +88,7 @@ export default function TaskCard({
   const ids = task.assignee_ids ?? [];
   const mostra = ids.slice(0, MAX_BOLINHAS);
   const resto = ids.length - mostra.length;
-  const dueTone = deadlineTonePorColuna(coluna, task.due_date, task.is_archived);
+  const dueTone = deadlineTonePorColuna(coluna, task.due_date, task.is_archived, task.due_time);
   // Spec 031 / C2. `updated_at` ja vem no payload da listagem -- custo zero de
   // rede. Ver o aviso sobre o que ele NAO mede em lib/status.ts.
   const parada = diasParadoPorColuna(coluna, task.updated_at, task.is_archived);

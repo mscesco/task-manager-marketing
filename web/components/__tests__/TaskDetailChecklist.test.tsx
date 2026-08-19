@@ -131,6 +131,7 @@ function task(over: Partial<Task> = {}): Task {
     priority: "MEDIUM",
     start_date: null,
     due_date: null,
+    due_time: null,
     project_id: null,
     parent_task_id: null,
     team_id: "team-marketing",
