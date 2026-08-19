@@ -15,7 +15,11 @@
 -- `root-postgres-1`, do stack do n8n, alcancado pela rede `root_default`.
 -- Rodar da raiz do repo, na VPS.
 --
--- Toda consulta abaixo deve devolver 0, exceto a 5 (contexto). As 8, 9 e 10
+-- Toda consulta abaixo deve devolver 0, exceto a 5 e a 7 (contexto).
+-- ⚠️ A 7 SAIU DA LISTA DE INVARIANTES EM 18/08. Ela era invariante enquanto
+-- toda tarefa vivia no quadro da RAIZ; a fatia 5 tornou "tarefa em quadro de
+-- subtime" um estado NORMAL e desenhado. Ela virou CONTEXTO, e o alarme dela
+-- ja disparou e ja foi respondido -- ver a propria consulta. As 8, 9 e 10
 -- entraram em 18/08 com a fatia 9 (nome unico) -- rode a 8 ANTES da migration
 -- `0013`, porque ela e que diz se a migration vai passar. Qualquer outro
 -- numero e defeito de dado, nao de tela -- nenhuma delas aparece para o
@@ -114,6 +118,18 @@ WHERE b.deleted_at IS NOT NULL
 -- e ele da raiz, a 7 devolve 0 por ausencia de caso, nao por acerto.
 SELECT b.id,
        b.name,
+       -- ⚠️ ESTA COLUNA FALTAVA, E CUSTOU UMA INVESTIGACAO INTEIRA (18/08).
+       -- A consulta NAO filtra `deleted_at`, e nao filtrava sem dizer: um
+       -- quadro APAGADO aparecia aqui identico a um vivo. Foi assim que
+       -- "Cobertura e captacoes" -- apagado as 20:09 -- passou por quadro
+       -- existente, e a ausencia dele no seletor virou suspeita de defeito.
+       -- O seletor estava certo o tempo todo (`list_visible` filtra
+       -- `deleted_at IS NULL`); quem mentia era este relatorio.
+       --
+       -- ⚠️ NAO FILTRE AQUI. Quadro apagado PRECISA aparecer nesta consulta:
+       -- ela e "contexto", e e ela que mostra o que o `restaurar_quadro.sql`
+       -- teria para resgatar. O conserto e DIZER, e nao esconder.
+       b.deleted_at IS NOT NULL AS apagado,
        b.is_default,
        t.name AS time,
        t.parent_team_id IS NULL AS eh_raiz,
@@ -123,7 +139,7 @@ SELECT b.id,
        (SELECT count(*) FROM task k WHERE k.board_id = b.id) AS tarefas
 FROM board b
 JOIN team t ON t.id = b.team_id AND t.workspace_id = b.workspace_id
-ORDER BY eh_raiz DESC, b.name;
+ORDER BY apagado, eh_raiz DESC, b.name;
 
 \echo '=== 6. nenhum projeto comum fora do time raiz (alarme da Spec 037) ==='
 -- ⚠️ ESTA NAO E UMA INVARIANTE DE MODELO -- E UM ALARME.
@@ -151,7 +167,7 @@ WHERE p.is_personal = false
   AND p.deleted_at IS NULL
   AND tm.parent_team_id IS NOT NULL;
 
-\echo '=== 7. nenhuma tarefa viva em quadro de SUBTIME (Spec 036, fatia 3) ==='
+\echo '=== 7. CONTEXTO: tarefas vivas em quadro de SUBTIME (esperado > 0 desde a fatia 5) ==='
 -- ⚠️ ESTA CONSULTA E O PAR EM PRODUCAO DO
 -- `test_tarefa_de_subtime_nasce_no_quadro_da_raiz`
 -- (`tests/integration/test_task_board_no_contrato_db.py`). O teste prende a
@@ -173,6 +189,24 @@ WHERE p.is_personal = false
 -- AUSENCIA DE CASO. Leia as duas juntas: 7 = 0 so vira afirmacao quando a 5
 -- mostrar pelo menos um quadro de subtime.
 --
+-- ⚠️⚠️ ELE DEIXOU DE SER 0 EM 18/08, COMO PREVISTO -- E ISSO NAO E DEFEITO.
+-- O primeiro quadro avulso de subtime entrou em producao com o deploy da Spec
+-- 036, e uma tarefa viva dentro dele e exatamente o que a fatia 5 existe para
+-- permitir. **Esta consulta virou CONTEXTO**, e o texto abaixo e o que ela
+-- MANDOU fazer quando isso acontecesse. Foi feito:
+--
+--   A pergunta "quem alcanca a tarefa alcanca o quadro?" foi respondida em
+--   18/08 e esta escrita na secao §"O portao do vazamento de quadro" do
+--   `backend/specs/036-quadro-interno/plan.md`. Resumo: NAO ha vazamento, e a
+--   razao e trava de SERVIDOR -- `CollaborationService._assert_target_reaches_task`
+--   usa a lente do ALVO em todos os caminhos de designar, entao quem e
+--   designado ja alcancava a tarefa antes.
+--
+-- ⚠️ O QUE VIGIAR DAQUI PRA FRENTE nao e o numero ser zero, e sim ele crescer
+-- SEM quadro avulso novo na consulta 5. Isso apontaria para escrita direta no
+-- banco, que e a unica coisa que nem esta consulta nem o teste cobrem.
+--
+-- Texto original de 10/08, mantido porque e ele que explica o desenho:
 -- ⚠️ SE ESTE NUMERO DEIXAR DE SER 0 (o que a FATIA 5 vai causar por desenho):
 -- pare e responda de novo "quem alcanca a tarefa alcanca o quadro?". A
 -- resposta hoje vale por construcao, nao por trava. Nao ha constraint, nao ha
