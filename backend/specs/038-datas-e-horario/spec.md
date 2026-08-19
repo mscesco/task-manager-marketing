@@ -36,8 +36,10 @@ reaproveitável fora do detalhe da tarefa.
 | `project.start_date` e `project.due_date` são `Date` também — e o Figma do modal de projeto pede Início/Término | `db/models/operational.py:115-116` |
 | `task.completed_at` **já é** `DateTime(timezone=True)` → `timestamptz`. **O padrão que a fatia B segue já existe no modelo** | `db/models/operational.py:281` |
 | `due_soon_notified_for` e `overdue_notified_for` são `Date`, e existem para **dedup do aviso** (Spec 023): o job só notifica se diferem do `due_date` atual | `db/models/operational.py:287,296` |
-| `start_date` **já viaja na API**: está no tipo de resposta, no `create` e no `update` | `web/lib/api.ts:1609,1705,1716` |
-| O `TaskModal` mexe **só** em `due_date`. `start_date` não tem input em lugar nenhum do front | `web/components/TaskModal.tsx:205,556,626` |
+| ⚠️ **CORRIGIDO EM 18/08:** `start_date` **não** viajava na API do front. A primeira versão desta linha citava `api.ts:1609,1705,1716` — os três são de **`Project`**, não de `Task`. O tipo `Task` do front não tinha o campo | `web/lib/api.ts` |
+| No **backend** ele está completo: no `TaskResponse`, no create, no update, no router e no `TaskService` | `api/schemas.py:142,69,83,193,216`; `tasks_router.py:176,290`; `task_service.py:442,539,1112` |
+| ⚠️ **E a validação cruzada JÁ EXISTE e RECUSA com 422** — `_validate_dates`, chamada na criação e na edição, sobre o estado FINAL da tarefa | `task_service.py:1613` |
+| O `TaskModal` mexia **só** em `due_date`. `start_date` não tinha input em lugar nenhum do front | `web/components/TaskModal.tsx:205,556,626` |
 | "Atrasada" é **comparação de STRING**: `t.due_date < hoje`, com `hoje` em `YYYY-MM-DD` | `web/components/Board.tsx:1315`, `hojeISO()` em `:82` |
 | O filtro de prazo tem três estados (`todos`/`atrasadas`/`em-dia`) e **tarefa sem data aparece em todos** (decisão da Camila) | `web/lib/filtrosQuadro.ts:261`, `Board.tsx:1308` |
 | `lib/status.ts` **zera a hora de propósito** para contar dias: `new Date(ano, mês, dia)` e divisão por `86400000` | `web/lib/status.ts:183-185,215-217` |
