@@ -2921,7 +2921,81 @@ cima precisa sair da luminância; e **o backend TEM de validar
 
 ---
 
-## Fatia 12 — trocar o alvo de uma semântica — ⬜ ESCOPO
+## Fatia 12 — trocar o alvo de uma semântica — ✅ ENTREGUE (18/08)
+
+> Em duas partes, pela mesma limitação de sempre: **eu não rodo o `pytest`**.
+> **12a — backend:** 851 → **860**, medido pela Camila. **12b — front:**
+> 846 → **858**. Sem migration.
+
+### ⚠️ O QUE ELA DESTRAVOU, e estava escrito no código como consequência aceita
+
+O `board_service.py` dizia: *"com duas colunas OPEN, a que é ALVO continua sem
+poder ser apagada, mesmo havendo outra. Trocar qual coluna é o alvo de uma
+semântica é operação própria, e ela não existe."* **Agora existe** — e o teste
+`test_LOTE_troca_o_alvo_E_APAGA_a_antiga_num_gesto_so` é o que prende isso.
+
+### As três decisões, e o que cada uma virou
+
+| | decisão | como ficou |
+|---|---|---|
+| **A** | o selo vira o controle | na coluna que é alvo, `padrão` é texto; nas outras, um `tornar padrão` tracejado |
+| **B** | no lote | etapa nova, **antes de apagar** |
+| **C** | o Quadro geral pode | e **sem diálogo** — ver a correção abaixo |
+
+### ⚠️ A CORREÇÃO DO C, e ela mudou a fatia
+
+A primeira versão do escopo dizia que trocar o alvo no Quadro geral mudaria
+"onde toda tarefa nova aparece, para as 26 pessoas". **Falso, e achado ao ler o
+`board_repository`:** a busca tem dois degraus, e o degrau 1 (`legacy_status`)
+**ganha sempre no Quadro geral** — a consulta 5 mede `colunas_sem_ponte = 0`.
+O alvo só manda nos quadros **avulsos**, na cascata de conclusão e no
+`colunaEquivalente`. **Eu ia pedir um diálogo para nomear um efeito que não
+acontece.**
+
+### As armadilhas, e as duas eram reais
+
+⚠️ **A ordem das duas escritas.** `tirar do antigo → flush() → pôr no novo`. O
+índice parcial não é `DEFERRABLE`: dois alvos por um instante ⇒ `IntegrityError`
+⇒ **500**.
+
+⚠️ **O selo duplicado na tela.** `linhasDeEdicao` passou a deixar o rascunho
+ganhar do servidor — senão o selo antigo não sairia até "Concluir edição". Mas a
+primeira versão disso desenhava **dois** selos `padrão` na mesma semântica, que
+é o estado que o índice do banco proíbe. Consertado com `semanticasReclamadas`.
+
+### As regras de interação com apagar
+
+- **marcar para apagar TIRA o alvo pedido** — senão o lote mandaria "põe o alvo
+  em X" e "apague X" no mesmo pedido, e a ordem das etapas decidiria em silêncio;
+- **marcar como alvo DESFAZ a exclusão** — pedir que a coluna seja o alvo é
+  dizer que ela fica;
+- ⚠️ **desmarcar a exclusão NÃO devolve o alvo.** Marcar e desmarcar não é
+  operação reversível — é a pessoa reconsiderando duas vezes.
+
+### ⚠️ DOIS TESTES DE CORPO CAÍRAM, e os dois estavam certos
+
+`loteDeColunasCorpo.test.ts` e o `paraLote` do `rascunhoDeColunas.test.ts` usam
+`toEqual` sobre o objeto INTEIRO. Campo novo sem a linha correspondente reprova
+ali — em vez de ser descartado em silêncio e o lote responder 200 sem ter feito
+nada. **É a defesa que o `board_id` da fatia 5b-6 não teve.**
+
+### ⚠️ DOIS ERROS MEUS NESTA FATIA
+
+1. **`EntityNotFoundError` não aceita `details=`** — a assinatura é
+   `(entity, *, identifier, message)`. Reimplementei a busca da coluna à mão e
+   errei a exceção; o `TypeError` virava **500**. Pego pelo `pytest` da Camila.
+   O conserto foi **delegar ao `_coluna_do_quadro`, que já existia**.
+2. ⚠️⚠️ **A BRANCH 12b SAIU DE `main` E NÃO DA 12a** — exatamente o erro que a
+   Spec 038 registrou uma fatia antes, com a regra escrita: *"fatia que depende
+   de outra não-mergeada sai da branch dela"*. Os testes do front passaram
+   porque mockam a API. **Escrever a regra não bastou; ela precisa ser
+   verificada antes do primeiro commit da branch.**
+
+---
+
+## Fatia 12 — texto de escopo (histórico)
+
+⬜ ESCOPO
 
 > Escrita em 18/08/2026, **antes de código**. Três decisões de produto abertas,
 > na §Decisões — a **B** é a que joga a fatia fora se for adivinhada.

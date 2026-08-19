@@ -25,6 +25,7 @@ export default function CabecalhoDeColunaEditavel({
   podeIrDireita,
   onRenomear,
   onMarcar,
+  onTornarAlvo,
   onMover,
   arrasteRef,
   arrasteProps,
@@ -35,6 +36,14 @@ export default function CabecalhoDeColunaEditavel({
   podeIrDireita: boolean;
   onRenomear: (nome: string) => void;
   onMarcar: () => void;
+  /**
+   * Torna esta coluna o ALVO da semântica dela (Spec 036, fatia 12).
+   *
+   * ⚠️ NÃO EXISTE "DESMARCAR", e a ausência é a trava: sem alvo, `OPEN` e
+   * `DONE` fazem toda criação de tarefa naquele quadro devolver 422 -- dias
+   * depois, para outra pessoa. Trocar é trocar.
+   */
+  onTornarAlvo: () => void;
   onMover: (direcao: "esquerda" | "direita") => void;
   /** Vem do `useSortable`. Ausente nos testes -- ver o comentário da alça. */
   arrasteRef?: (no: HTMLElement | null) => void;
@@ -190,6 +199,18 @@ export default function CabecalhoDeColunaEditavel({
           ⚠️ E ELE NUNCA APARECE NUMA COLUNA NOVA: `is_default_target` nasce
           `false` no backend. É aqui que a ausência de "trocar o alvo de uma
           semântica" fica visível para quem usa. */}
+      {/* ⚠️ O SELO VIROU O CONTROLE NA FATIA 12 (decisão da Camila, 18/08), e
+          não ganhou um botão ao lado. É a mesma lição da fatia 10, onde a
+          pílula de datas virou o gatilho: o rótulo que anuncia a escolha é o
+          lugar natural de trocá-la.
+
+          ⚠️ ATÉ AQUI ELE ERA SÓ TEXTO, e isso tinha um custo escrito no
+          `plan.md`: o selo "anuncia que existe uma coluna escolhida e não
+          oferece como trocá-la". Rótulo visível convida à pergunta, e a
+          resposta era "apague o quadro e recomece".
+
+          ⚠️ NA COLUNA QUE JÁ É O ALVO ELE NÃO É BOTÃO. Não existe desmarcar --
+          um clique que não faz nada é pior que um texto que não clica. */}
       {linha.alvo && !linha.apagada && (
         <span
           className="muted"
@@ -198,6 +219,31 @@ export default function CabecalhoDeColunaEditavel({
         >
           padrão
         </span>
+      )}
+
+      {/* ⚠️ E NA QUE NÃO É, O CONVITE -- apagado, e só fora da lista de
+          apagar. Oferecer "tornar padrão" numa coluna riscada pediria dois
+          gestos contraditórios no mesmo lote; o `comAlvo` até desfaz a
+          exclusão, mas oferecer isso na tela seria confuso.
+
+          ⚠️ E NUNCA NA COLUNA NOVA: ela não tem id, e o backend aplica o alvo
+          numa etapa que roda antes de criar. A pessoa cria, conclui, e marca
+          depois -- `comAlvo` recusa `tmp:`. */}
+      {!linha.alvo && !linha.apagada && !linha.nova && (
+        <button
+          type="button"
+          onClick={onTornarAlvo}
+          aria-label={`Tornar ${linha.nome} a coluna padrão de ${ROTULO_DA_SEMANTICA[linha.semantic] ?? "sua semântica"}`}
+          title={`Fazer o sistema usar esta coluna quando precisar escolher sozinho uma coluna ${ROTULO_DA_SEMANTICA[linha.semantic] ?? ""}.`}
+          style={{
+            fontSize: 10, whiteSpace: "nowrap",
+            background: "none", border: "1px dashed var(--border)",
+            borderRadius: 999, padding: "0 6px", cursor: "pointer",
+            color: "var(--text-faint)", lineHeight: "16px",
+          }}
+        >
+          tornar padrão
+        </button>
       )}
 
       <span style={{ marginLeft: "auto", display: "flex", gap: 2 }}>

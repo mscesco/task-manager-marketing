@@ -20,6 +20,7 @@ import {
   idDeArrasteDoCabecalho,
   refDoArrasteDeCabecalho,
   comColunaNova,
+  comAlvo,
   comMarcacao,
   comOrdem,
   comRenome,
@@ -270,12 +271,21 @@ describe("paraLote", () => {
   });
 
   it("lote de quem não mexeu em nada é inteiramente vazio", () => {
+    // ⚠️ `alvos` ENTROU AQUI NA FATIA 12, e este teste caiu quando entrou --
+    // que é o trabalho dele. O `toEqual` compara o objeto INTEIRO: campo novo
+    // no payload sem linha correspondente reprova aqui em vez de sumir.
     expect(paraLote(rascunhoInicial(QUADRO), QUADRO)).toEqual({
       criar: [],
       renomear: [],
+      alvos: [],
       apagar: [],
       ordem: [],
     });
+  });
+
+  it("⚠️ o alvo pedido chega no lote", () => {
+    const r = comAlvo(rascunhoInicial(QUADRO), "c2");
+    expect(paraLote(r, QUADRO).alvos).toEqual(["c2"]);
   });
 });
 
@@ -533,5 +543,62 @@ describe("id de arraste do cabeçalho", () => {
     // devolveria o uuid intacto, e o `onDragEndColuna` moveria a coluna errada.
     expect(refDoArrasteDeCabecalho("2f8b1e10-0000-4000-8000-000000000000")).toBeNull();
     expect(refDoArrasteDeCabecalho("c1")).toBeNull();
+  });
+});
+
+describe("comAlvo -- trocar o alvo da semântica (fatia 12)", () => {
+  it("marca a coluna como alvo", () => {
+    const r = comAlvo(rascunhoInicial(QUADRO), "c1");
+    expect(r.alvos).toEqual(["c1"]);
+  });
+
+  it("⚠️ clicar de novo na mesma é no-op, e NUNCA desmarca", () => {
+    // ⚠️ NÃO EXISTE DESMARCAR, e a ausência é a trava. `OPEN` e `DONE` são as
+    // semânticas em que o SISTEMA escreve sozinho: sem alvo,
+    // `_assert_ponte_sobrevive` passa a recusar toda criação de tarefa naquele
+    // quadro -- dias depois, para outra pessoa. Trocar é trocar.
+    const r = comAlvo(comAlvo(rascunhoInicial(QUADRO), "c1"), "c1");
+    expect(r.alvos).toEqual(["c1"]);
+  });
+
+  it("⚠️ coluna NOVA (`tmp:`) é recusada", () => {
+    // Ela não tem id, e a etapa de criar roda depois no backend. Amarrar as
+    // duas coisas faria a ordem das etapas virar regra invisível.
+    const base = comColunaNova(rascunhoInicial(QUADRO), "Ideias", "OPEN");
+    const ref = base.novas[0].ref;
+    expect(comAlvo(base, ref).alvos).toEqual([]);
+  });
+
+  it("⚠️ marcar como alvo DESFAZ a exclusão da mesma coluna", () => {
+    // Pedir que uma coluna seja o alvo é dizer que ela fica. O par simétrico
+    // está em `comMarcacao`.
+    const marcada = comMarcacao(rascunhoInicial(QUADRO), "c1");
+    expect(marcada.apagadas).toContain("c1");
+    const r = comAlvo(marcada, "c1");
+    expect(r.apagadas).not.toContain("c1");
+    expect(r.alvos).toEqual(["c1"]);
+  });
+
+  it("⚠️ marcar para APAGAR tira o alvo pedido -- e o lote nunca manda o par proibido", () => {
+    // ⚠️ Sem isto, o lote mandaria "põe o alvo em X" e "apague X" no mesmo
+    // pedido, e a ORDEM DAS ETAPAS do backend decidiria em silêncio.
+    const r = comMarcacao(comAlvo(rascunhoInicial(QUADRO), "c1"), "c1");
+    expect(r.alvos).toEqual([]);
+    expect(r.apagadas).toContain("c1");
+  });
+
+  it("⚠️ DESMARCAR a exclusão não devolve o alvo", () => {
+    // Marcar e desmarcar não é uma operação reversível de estado -- é a pessoa
+    // reconsiderando duas vezes. Devolver um alvo que ela pediu antes de mudar
+    // de ideia seria adivinhar.
+    const ida = comMarcacao(comAlvo(rascunhoInicial(QUADRO), "c1"), "c1");
+    const volta = comMarcacao(ida, "c1");
+    expect(volta.apagadas).not.toContain("c1");
+    expect(volta.alvos).toEqual([]);
+  });
+
+  it("dois alvos de semânticas diferentes convivem", () => {
+    const r = comAlvo(comAlvo(rascunhoInicial(QUADRO), "c1"), "c3");
+    expect(r.alvos).toEqual(["c1", "c3"]);
   });
 });
