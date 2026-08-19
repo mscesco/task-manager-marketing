@@ -15,7 +15,7 @@ NOTAS de design:
 from __future__ import annotations
 
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, time
 from enum import Enum
 
 from pydantic import BaseModel, Field
@@ -141,6 +141,10 @@ class TaskResponse(BaseModel):
     path: str
     start_date: date | None
     due_date: date | None
+    # Spec 038, fatia B: a HORA do prazo. `None` = "vence no dia" -- o
+    # comportamento de sempre. ⚠️ Hora SEM data e recusada pelo service (422):
+    # hora sozinha nao situa nada, e o `due_time` viraria dado orfao.
+    due_time: time | None
     completed_at: datetime | None
     is_archived: bool
     created_by: uuid.UUID
@@ -192,6 +196,10 @@ class TaskCreateRequest(BaseModel):
     priority: PriorityLevel = PriorityLevel.MEDIUM
     start_date: date | None = None
     due_date: date | None = None
+    # Spec 038, fatia B: a HORA do prazo. `None` = "vence no dia" -- o
+    # comportamento de sempre. ⚠️ Hora SEM data e recusada pelo service (422):
+    # hora sozinha nao situa nada, e o `due_time` viraria dado orfao.
+    due_time: time | None = None
     # Spec 021: 0+ responsaveis ja na criacao. Vazio = sem responsavel
     # (comportamento anterior). Validacao (alcance/ativo/monouser) e atomica
     # no service: qualquer invalido -> 422 listando todos, nada criado.
@@ -215,6 +223,10 @@ class TaskUpdateRequest(BaseModel):
     team_id: uuid.UUID | None = None
     start_date: date | None = None
     due_date: date | None = None
+    # Spec 038, fatia B: a HORA do prazo. `None` = "vence no dia" -- o
+    # comportamento de sempre. ⚠️ Hora SEM data e recusada pelo service (422):
+    # hora sozinha nao situa nada, e o `due_time` viraria dado orfao.
+    due_time: time | None = None
     # ⚠️ ADR 0041. A coluna tem de ser do quadro DA TAREFA -- quem confere e o
     # service (`BoardRepository.coluna_no_quadro`), porque o schema nao tem
     # sessao de banco. O status resultante e DERIVADO dela.
