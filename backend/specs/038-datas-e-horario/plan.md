@@ -11,7 +11,62 @@
 
 ---
 
-## Fatia A — `start_date` na tela — ⬜ ESCOPO
+## Fatia A — `start_date` na tela — ✅ ENTREGUE (18/08)
+
+> Escopo escrito antes de código, entregue e **conferida na tela** no mesmo dia.
+> **Front 801 → 813. Sem migration, sem uma linha de backend.**
+
+⚠️ **O ESCOPO ABAIXO ESTAVA ERRADO EM DOIS PONTOS, e os dois só apareceram ao
+abrir o arquivo — não ao pensar sobre ele:**
+
+1. ⚠️ **`start_date` NÃO viajava na API do front.** Este documento afirmava
+   "existe ponta a ponta menos o input", citando três linhas do `api.ts` que
+   eram de **`Project`**, não de `Task`. O tipo `Task` do front não declarava o
+   campo. **Era o mesmo buraco do `board_id`**, e o aviso contra ele já estava
+   escrito duas linhas acima, no próprio `api.ts`.
+2. ⚠️ **A validação cruzada JÁ EXISTIA e RECUSA** (`_validate_dates`, 422) —
+   ver a linha corrigida em "O que sobe".
+
+### O que entrou
+
+| | arquivo |
+|---|---|
+| `start_date` no tipo `Task`, nos dois inputs **e na linha do corpo do `createTask`** | `lib/api.ts` |
+| a cápsula "Datas" | `components/TaskDetail.tsx` |
+| campo "Início" na criação e na edição | `components/TaskModal.tsx` |
+| guardiões | `__tests__/TaskDetailDatas.test.tsx` (10, novo) e `+2` em `lib/__tests__/createTaskCorpo.test.ts` |
+
+⚠️ **O `tsc` DERRUBOU 4 FIXTURES, e isso é o portão funcionando.** Elas são
+literais completos sem `as` — e o comentário de cada uma diz por quê: foi um
+`as` que escondeu o buraco do `board_id` por horas em 10/08.
+
+### ⚠️ DUAS CORREÇÕES DA CAMILA, na tela, no mesmo dia
+
+1. **Subtarefa TAMBÉM edita datas.** A primeira versão copiou o `ehTopo` do
+   controle de **projeto** — e as duas coisas não são iguais: subtarefa **herda**
+   o projeto do pai (Spec 022), por isso não o edita; **prazo é próprio**, e este
+   mesmo arquivo já o desenha na checklist e já o pede na criação rápida de
+   subtarefa. **Copiar a trava foi engano.** Tem teste.
+2. **A pílula É o gatilho, e não texto + botão ao lado.** O desenho dela é uma
+   pílula irmã de "Coluna" e "Prioridade"; clicar nela abre a edição. A primeira
+   versão pôs um botão redondo ao lado, no padrão do projeto. ⚠️ **E o vazio
+   virou "Sem datas", no plural** — "sem prazo" nomeia metade do que a cápsula
+   edita, e a pessoa clicaria esperando um campo e acharia dois.
+
+⚠️ **UM ERRO DE PROCESSO, e ele custou uma rodada dela:** a árvore de trabalho
+ficou numa branch de DOCUMENTO depois de eu corrigir a spec, e o servidor de
+desenvolvimento passou a servir código sem a cápsula. **"Não achei a cápsula"
+não era defeito de código.** Ao trocar de branch para mexer em documento,
+voltar para a de código antes de devolver a palavra.
+
+### Conferência visual — ✅ FEITA EM 18/08
+
+A cápsula, o título "Datas", o 422 mantendo o painel aberto, e a data de
+subtarefa aparecendo na checklist do pai sem recarregar.
+
+---
+
+## Fatia A — texto de escopo (histórico, antes da entrega)
 
 **Sem migration. Sem mudança de backend. Sem decisão pendente.**
 
