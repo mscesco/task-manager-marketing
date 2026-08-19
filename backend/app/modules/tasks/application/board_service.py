@@ -664,15 +664,16 @@ class BoardService:
         quadro = await self._quadro_do_workspace(board_id)
         self._assert_pode_gerir(await self._time_do_workspace(quadro.team_id))
 
+        # ⚠️ REUSA `_coluna_do_quadro`, e nao refaz a busca. Ele confere que a
+        # coluna e DESTE quadro (nao so que existe) e levanta o 404 no formato
+        # da casa -- `EntityNotFoundError("Coluna", identifier=...)`.
+        #
+        # ⚠️ A PRIMEIRA VERSAO REIMPLEMENTOU A BUSCA E ERROU A ASSINATURA DA
+        # EXCECAO (`details=` nao existe em `EntityNotFoundError`), e o pytest
+        # da Camila pegou: `TypeError` virando 500 em vez do 404 que o teste
+        # afirmava. Duas linhas duplicadas, dois testes vermelhos.
+        nova = await self._coluna_do_quadro(quadro.id, column_id)
         colunas = await self._colunas_do_quadro(quadro.id)
-        nova = next((c for c in colunas if c.id == column_id), None)
-        if nova is None:
-            # ⚠️ 404 E NAO 422: a coluna pode existir em OUTRO quadro, e dizer
-            # "invalido" mandaria quem chama procurar erro no proprio pedido.
-            raise EntityNotFoundError(
-                "Coluna nao encontrada neste quadro.",
-                details={"field": "column_id"},
-            )
         if nova.is_default_target:
             return nova  # ja e o alvo -- no-op, e nao erro.
 
