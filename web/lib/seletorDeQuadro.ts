@@ -217,6 +217,59 @@ export function opcoesDoSeletor(
 }
 
 /**
+ * As opcoes do seletor DA RAIZ (Spec 036, fatia 5c).
+ *
+ * ⚠️ NAO E O `opcoesDoSeletor` COM OUTRO `teamId`, E A DIFERENCA E DE MODELO.
+ * Na tela de um subtime, o primeiro item e a LENTE -- que nao existe no banco,
+ * e por isso o `opcoesDoSeletor` filtra `!q.is_default`: o Quadro geral ja esta
+ * representado por ela. **Na raiz nao ha lente.** O que a lente espelha E o
+ * Quadro geral, e na tela dele a coisa e ela mesma.
+ *
+ * ⚠️ LOGO O PRIMEIRO ITEM E O QUADRO GERAL, PELO NOME DELE, e com `id`
+ * de verdade -- nao `null`. Reaproveitar o `id: null` da lente aqui faria a
+ * tela do Quadro geral se comportar como espelho de si mesma, e o
+ * `quadroPedidoNaUrl` o recusaria como `is_default`.
+ *
+ * ⚠️ E ELE NUNCA PODE SER APAGADO (`quadro_padrao_nao_apagavel`), nem quando
+ * quem olha e ADMIN. Renomear PODE -- `board_service.py` diz "O QUADRO GERAL
+ * PODE SER RENOMEADO", e ate a fatia 5c isso nao tinha caminho de tela.
+ */
+export function opcoesDoSeletorDaRaiz(
+  quadros: readonly Quadro[],
+  rootTeamId: string,
+  podeGerir: boolean,
+): OpcaoDeQuadro[] {
+  const daRaiz = quadros.filter((q) => q.team_id === rootTeamId);
+  const geral = daRaiz.find((q) => q.is_default);
+  const avulsos = daRaiz
+    .filter((q) => !q.is_default)
+    .slice()
+    .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+
+  return [
+    ...(geral
+      ? [
+          {
+            id: geral.id,
+            nome: geral.name,
+            podeRenomear: podeGerir,
+            // ⚠️ FALSO SEMPRE. O backend recusa com `quadro_padrao_nao_apagavel`,
+            // e a ADR 0034 item 2 manda a afordancia ser AUSENTE, nao
+            // desabilitada.
+            podeApagar: false,
+          },
+        ]
+      : []),
+    ...avulsos.map((q) => ({
+      id: q.id,
+      nome: q.name,
+      podeRenomear: podeGerir,
+      podeApagar: podeGerir,
+    })),
+  ];
+}
+
+/**
  * A opcao que a tela desenha, dado o id selecionado.
  *
  * ⚠️ CAI NA LENTE QUANDO O ID NAO EXISTE MAIS, e em silencio de proposito. O

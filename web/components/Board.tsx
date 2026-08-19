@@ -810,9 +810,26 @@ export default function Board({
   // ⚠️ E UMA QUEDA SILENCIOSA E PIOR QUE UMA ESPERA. `undefined` aqui vira
   // "Carregando…" abaixo, e o `useEffect` acima ja rebusca a lista quando o
   // `boardId` muda -- entao a espera dura uma requisicao, e nao para sempre.
+  // ⚠️ A HEURISTICA DO LOTE DEIXOU DE VALER NO QUADRO GERAL (fatia 5c). Ate
+  // aqui era `quadroPedido ?? quadroDoLote ?? padrao` para todo mundo, e isso
+  // bastava enquanto a RAIZ tinha um quadro so: qualquer lote de tarefas da
+  // raiz vinha do Quadro geral, e adivinhar pelo lote dava a mesma resposta.
+  //
+  // ⚠️ COM UM QUADRO EXTRA DA RAIZ A ADIVINHACAO ERRA: se por acaso todas as
+  // tarefas carregadas estiverem no quadro extra, `quadrosDoLote.size === 1` e
+  // a tela do GERAL desenharia as colunas do OUTRO quadro. O titulo diria
+  // "Quadro geral" e as colunas seriam de outro lugar.
+  //
+  // ⚠️ ONDE A HEURISTICA CONTINUA SENDO A UNICA SAIDA: o modo PROJETO. Um
+  // projeto atravessa quadros por desenho, nao tem quadro proprio, e o lote e
+  // a unica pista de quais colunas desenhar. Na LENTE ela e inofensiva (a D1
+  // de 11/08 ja filtra por `board_id` do geral), mas usar o padrao direto diz
+  // a mesma coisa com menos indireção.
   const quadro = boardId
     ? quadroPedido
-    : (quadroDoLote ?? quadros.find((q) => q.is_default));
+    : projectId
+      ? (quadroDoLote ?? quadros.find((q) => q.is_default))
+      : quadros.find((q) => q.is_default);
   // ⚠️ QUADRO PEDIDO E NAO ENCONTRADO = ESPERA, e nao um kanban vazio. Sem
   // esta saida a tela desenharia ZERO colunas com o titulo do quadro avulso, e
   // o modo de edicao mostraria uma lista de colunas vazia -- o que parece um
@@ -1253,7 +1270,22 @@ export default function Board({
         (rootId === null || t.team_id === rootId) && pertenceAoSubtime(t);
       return interna || compartilhada;
     }
-    return !soRaiz || t.team_id === rootId;
+    // ⚠️ E O QUADRO GERAL SO MOSTRA O QUE MORA NELE (fatia 5c). Ate aqui era
+    // so `t.team_id === rootId`, e isso bastava enquanto a raiz tinha UM
+    // quadro. Com um quadro EXTRA da raiz, a tarefa dele passa neste filtro
+    // (o `team_id` e o mesmo!), a tela desenha as colunas do GERAL,
+    // `porColuna[t.column_id]` nao acha nada e **o card some sem erro** --
+    // contado em `foraDaColuna` e invisivel.
+    //
+    // ⚠️ E O MESMO DEFEITO QUE A LENTE JA PREVINE, e o comentario dela
+    // ("D1, decisao de 11/08") descreve exatamente este cenario, prevendo a
+    // fatia 5c. A tela do geral precisava da mesma guarda, e nao tinha.
+    // ⚠️ PROJETO ATRAVESSA QUADROS POR DESENHO -- e a guarda do geral NAO vale
+    // aqui. A primeira versao desta fatia esqueceu isto e filtrou o projeto
+    // pelo quadro geral: as tarefas de um projeto que morassem em qualquer
+    // outro quadro sumiam da tela dele. Pego pelo teste do modo projeto.
+    if (projectId) return true;
+    return (!soRaiz || t.team_id === rootId) && noQuadroGeral(t);
   });
   // Fatia 4b: no modo subtime, classifica cada task pra tag do card.
   //   interna     -> team_id === subteamId (nasceu aqui)
