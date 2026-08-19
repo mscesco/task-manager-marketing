@@ -2921,6 +2921,134 @@ cima precisa sair da luminância; e **o backend TEM de validar
 
 ---
 
+## Fatia 12 — trocar o alvo de uma semântica — ⬜ ESCOPO
+
+> Escrita em 18/08/2026, **antes de código**. Três decisões de produto abertas,
+> na §Decisões — a **B** é a que joga a fatia fora se for adivinhada.
+
+### Por que ela vale mais que as outras que sobraram
+
+⚠️ **ELA DESTRAVA APAGAR COLUNA, e isso está escrito no código como consequência
+aceita.** O `board_service.py:1123` diz, com todas as letras:
+
+> ⚠️ CONSEQUENCIA ACEITA: com duas colunas `OPEN`, a que e ALVO continua sem
+> poder ser apagada, mesmo havendo outra. **Trocar qual coluna e o alvo de uma
+> semantica e operacao propria, e ela nao existe.**
+
+Ou seja: hoje, quem cria "Ideias" (`OPEN`) e prefere ficar só com ela **não
+consegue apagar o `Backlog`** — ele é o alvo, e a trava do degrau 2 da ADR 0042
+o protege. A saída atual é apagar o quadro e recomeçar.
+
+⚠️ **E o selo "padrão" tornou isso visível.** Antes da fatia 6 era ausência
+silenciosa; agora a tela **anuncia** que existe uma coluna escolhida e não
+oferece como trocá-la. Rótulo visível convida à pergunta.
+
+### ⚠️ A ARMADILHA TÉCNICA: o índice parcial
+
+`board_column_um_destino_por_semantica` é `UNIQUE (board_id, semantic) WHERE
+is_default_target` (`db/models/boards.py:162`). **Trocar o alvo passa por um
+estado intermediário com DOIS alvos**, e o índice recusa — com `IntegrityError`,
+que neste projeto sai como **500**, não como 422.
+
+⚠️ **A ordem é obrigatória: TIRAR do antigo → `flush()` → PÔR no novo.** É a
+mesma família do que a fatia 9 documentou sobre nome de coluna, e a mesma razão
+pela qual o lote aplica em quatro etapas com `flush` em cada uma.
+
+### ⚠️ E a invariante que não pode quebrar
+
+`_assert_ponte_sobrevive` (o degrau 2 da ADR 0042) exige que `OPEN` e `DONE`
+sempre tenham **um alvo** naquele quadro — são as duas semânticas em que **o
+sistema escreve sozinho** (`SEMANTICAS_QUE_O_SISTEMA_ESCREVE`). Sem alvo, toda
+criação de tarefa naquele quadro passa a devolver 422 **dias depois, para outra
+pessoa**.
+
+⚠️ **Logo: trocar é TROCAR, nunca "desmarcar".** Não pode existir gesto que
+deixe uma semântica sem alvo. Se a tela oferecer um "desmarcar", ele é um buraco.
+
+### Decisões — responder ANTES do código
+
+**A. Onde na tela?** O selo "padrão" já está no cabeçalho da coluna, no modo de
+edição (`CabecalhoDeColunaEditavel`). **Recomendo: o selo vira o controle** — nas
+colunas que NÃO são alvo, aparece um "tornar padrão" apagado; clicar troca.
+É a mesma lição da fatia 10 (a pílula de datas virou o gatilho, em vez de ganhar
+um botão ao lado).
+
+**A. Onde na tela? — ✅ o selo vira o controle** (Camila, 18/08).
+
+**B. ⚠️ ENTRA NO LOTE, OU É AÇÃO IMEDIATA? — ✅ NO LOTE** (Camila, 18/08), com a
+trava de que coluna `tmp:` não pode ser alvo no mesmo lote em que nasce.
+
+- **(1) No lote**, junto com criar/renomear/apagar/reordenar. Coerente com o
+  modelo — nada vai ao servidor até "Concluir edição". ⚠️ **Mas abre casos que
+  não existem hoje:** marcar como alvo uma coluna `tmp:` (que ainda não existe no
+  servidor), e marcar como alvo uma coluna que o mesmo lote vai apagar. Os dois
+  precisam de regra, e a regra precisa de teste.
+- **(2) Ação imediata**, fora do lote, com confirmação. Menor e mais segura — o
+  gesto é atômico e não interage com nada. ⚠️ **Mas quebra o modelo de lote no
+  meio da tela que a fatia 6 construiu**, e a pessoa veria uma ação que salva
+  sozinha ao lado de quatro que não salvam.
+
+**Recomendo a (1)**, mas com uma trava: **coluna `tmp:` não pode ser alvo no
+mesmo lote em que nasce.** O motivo é honesto — ela não tem id, a etapa de criar
+roda depois, e amarrar as duas coisas faria a ordem das etapas virar regra
+invisível. A pessoa cria, conclui, e marca depois. **Se você preferir a (2), o
+escopo encolhe pela metade.**
+
+**C. O Quadro geral pode trocar alvo? — ✅ PODE, e o risco é MUITO menor do que
+a primeira versão desta linha dizia.**
+
+⚠️ **A PRIMEIRA VERSÃO ESTAVA ERRADA, e o erro era de modelo mental:** ela dizia
+que trocar o alvo de `OPEN` no Quadro geral mudaria "onde toda tarefa nova
+aparece, para as 26 pessoas". **Não muda.**
+
+⚠️ **A BUSCA TEM DOIS DEGRAUS, E O PRIMEIRO GANHA SEMPRE NO QUADRO GERAL**
+(`board_repository.py:161`, ADR 0042 D1):
+
+  1. coluna com `legacy_status = :status` → **é ela**, exato;
+  2. não achando → a coluna `is_default_target` daquela semântica.
+
+As 8 colunas do Quadro geral **têm ponte** — a consulta 5 do `invariantes.sql`
+mede `colunas_sem_ponte = 0` em produção. Logo o degrau 1 sempre acerta, e o
+alvo **não é consultado** para decidir onde a tarefa nasce.
+
+⚠️ **ONDE O ALVO REALMENTE MANDA:**
+
+  - **nos quadros avulsos**, que nascem com as 4 `COLUNAS_BASE` sem
+    `legacy_status` (o "Quadro teste do GOATzinho" tem 19 colunas e **15 sem
+    ponte**). Ali o degrau 1 não acha nada;
+  - **na cascata de conclusão**, nos dois tipos de quadro — concluir a mãe manda
+    as subtarefas para o alvo de `DONE`;
+  - **no agrupamento do front** (`colunaEquivalente`), que é o que põe o card na
+    coluna certa em `/minhas-tarefas` e no kanban de projeto.
+
+**Decisão: PODE, por `board.manage.root`** — mesma permissão que já edita as
+colunas do geral desde a 6a-bis. ⚠️ **E sem diálogo de confirmação**: a primeira
+versão pedia um, para nomear um efeito que não acontece. **Um aviso curto
+dizendo o que muda basta** — e ele deve falar da cascata e do agrupamento, que
+é o que muda de verdade.
+
+### O que sobe
+
+- `BoardService.trocar_alvo(board_id, coluna_id)` — tira do antigo, `flush`, põe
+  no novo, **na mesma transação**.
+- A rota (⚠️ **com teste HTTP**: teste de serviço não sabe se a rota existe, e
+  isso já custou um 405 nesta spec).
+- O campo no lote **ou** a rota imediata, conforme a decisão B.
+- O selo virando controle no `CabecalhoDeColunaEditavel`.
+
+### Guardiões
+
+| sabotagem | esperado |
+|---|---|
+| trocar sem tirar do antigo primeiro | teste: `IntegrityError` não pode vazar — a troca é atômica |
+| trocar deixando a semântica sem alvo | teste: recusa 422 |
+| trocar o alvo de uma coluna de OUTRO quadro | teste: 422/404 |
+| marcar `tmp:` como alvo (se for a decisão 1) | teste de `lib/`: o rascunho recusa |
+| a rota não existir | ⚠️ **teste HTTP**, não de serviço |
+| apagar a coluna que era alvo, depois de trocar | teste: **passa a ser permitido** — é o destravamento que justifica a fatia |
+
+---
+
 ## O que falta da Spec 036, DEPOIS do deploy
 
 ⚠️ **OS DOIS PRIMEIROS ITENS SAÍRAM DAQUI EM 17/08** e viraram §Fatia 7 (apagar
@@ -2953,7 +3081,8 @@ adição.
    mesma posição. Segmento de rota obrigaria a inventar um formato diferente só
    para os quadros da raiz.
 3. **Seletor de cor.** ⚠️ `lib/coluna.ts::corEhHex` **continua sem leitor**.
-2. **Trocar qual coluna é o alvo de uma semântica.** ⚠️ **SUBIU DE URGÊNCIA
+2. **Trocar qual coluna é o alvo de uma semântica — ⬜ ESCOPO ESCRITO EM 18/08,
+   ver §Fatia 12 abaixo.** ⚠️ **SUBIU DE URGÊNCIA
    EM 13/08, POR CULPA NOSSA.** Não existe, e a trava da 5b-4b faz a ausência
    doer: coluna-alvo nunca pode ser apagada. Até a fatia 6 isso era **ausência
    silenciosa**; o selo "padrão" põe na tela um rótulo que anuncia que existe
