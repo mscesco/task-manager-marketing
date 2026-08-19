@@ -14,7 +14,7 @@
  *   D. Trocar `Intl` por aritmética de offset (`-3h`) -- cai no horário de verão.
  */
 
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { agoraNoWorkspace, estaAtrasada, type Agora } from "../prazo";
 import { deadlineLabel } from "../status";
@@ -170,5 +170,41 @@ describe("deadlineLabel -- o rótulo NÃO pode discordar da cor", () => {
 
   it("⚠️ corta os segundos que o Postgres devolve", () => {
     expect(deadlineLabel(hojeEmSP(), "23:59:00")).toBe("Vence hoje às 23:59");
+  });
+});
+
+describe("⚠️ o FUSO do ambiente não pode decidir a regra", () => {
+  // ⚠️ ESTE BLOCO NASCEU DO CI REPROVANDO (18/08), e o defeito era REAL e não
+  // do teste: eu pus `estaAtrasada` em `America/Sao_Paulo` e deixei
+  // `deadlineDays` na meia-noite LOCAL. Duas fontes de verdade para "que dia é
+  // hoje" -- exatamente o que o comentário antigo do `deadlineDays` dizia que
+  // não podia acontecer.
+  //
+  // ⚠️ ERA INVISÍVEL NA MÁQUINA DA EQUIPE. Todo mundo em BRT, então as duas
+  // concordavam sempre. Só o runner do CI, que roda em UTC, viu -- e só na
+  // janela entre 00:00 e 03:00 UTC, quando São Paulo ainda está no dia
+  // anterior. **Defeito que só aparece em três horas do dia, num fuso que
+  // ninguém da equipe usa, é o tipo que sobrevive por meses.**
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("01:00 UTC (= 22:00 de ONTEM em SP): o rótulo de hoje continua sendo de hoje", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-19T01:00:00Z"));
+
+    const hojeSP = agoraNoWorkspace().data;
+    expect(hojeSP).toBe("2026-08-18"); // em SP ainda é dia 18
+
+    // ⚠️ COM `deadlineDays` NO FUSO LOCAL isto dava "Atrasada 1 dia", porque a
+    // data local do runner já era 19 e a de SP ainda era 18.
+    expect(deadlineLabel(hojeSP, "23:59")).toBe("Vence hoje às 23:59");
+    expect(deadlineLabel(hojeSP)).toBe("Vence hoje");
+  });
+
+  it("e o dia SEGUINTE em SP continua sendo amanhã", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-19T01:00:00Z"));
+    expect(deadlineLabel("2026-08-19")).toBe("Vence amanhã");
   });
 });

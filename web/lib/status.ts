@@ -206,9 +206,10 @@ export function paradaLabel(dias: number): string {
   return `Parada há ${dias} d`;
 }
 
-// Compara em DATA local (meia-noite), nao em instante -- o prazo e um dia, nao
-// uma hora. Assume o fuso do browser (equipe no Brasil -> BRT, casa com o
-// backend que usa America/Sao_Paulo). Concluida/cancelada/arquivada -> null.
+// Compara em DATA, nao em instante -- o prazo e um dia, nao uma hora.
+// ⚠️ O FUSO E O DO WORKSPACE, EXPLICITO. Este comentario dizia "assume o fuso do
+// browser (equipe no Brasil, casa com o backend)" -- e "casa por acidente
+// geografico" deixou de bastar quando o atraso com hora entrou. Ver o corpo.
 //
 // ⚠️ EXPORTADA NA FATIA 4a (ADR 0040) para que `lib/coluna.ts` reuse a MESMA
 // aritmetica de data. Duplicar o calculo la seria criar duas fontes de verdade
@@ -216,10 +217,24 @@ export function paradaLabel(dias: number): string {
 // fuso. Quando a fatia 4c apagar as funcoes por status deste arquivo, esta
 // funcao MUDA DE CASA para `lib/coluna.ts`; ela nao morre junto.
 export function deadlineDays(dueDate: string): number {
-  const due = new Date(dueDate + "T00:00:00"); // meia-noite local
-  const agora = new Date();
-  const hoje = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate());
-  return Math.round((due.getTime() - hoje.getTime()) / 86400000);
+  // ⚠️ NO FUSO DO WORKSPACE, E NAO NO DA MAQUINA (corrigido em 18/08, depois de
+  // o CI reprovar). A versao anterior usava a meia-noite LOCAL, e quando
+  // `estaAtrasada` passou a decidir em `America/Sao_Paulo` isto virou DUAS
+  // FONTES DE VERDADE para "que dia e hoje" -- exatamente o que o comentario
+  // antigo desta funcao dizia que nao podia acontecer.
+  //
+  // ⚠️ NA MAQUINA DA EQUIPE AS DUAS CONCORDAVAM (todo mundo em BRT), entao o
+  // defeito era invisivel aqui e so apareceu no runner do CI, que roda em UTC:
+  // entre 00:00 e 03:00 UTC, Sao Paulo ainda esta no dia ANTERIOR, e o rotulo
+  // dizia "Atrasada 1 dia" sobre uma tarefa que vence hoje. **Fuso do ambiente
+  // nao pode decidir regra de produto.**
+  //
+  // ⚠️ OS DOIS LADOS EM `T00:00:00Z`: sao datas puras, e ancorar as duas no
+  // MESMO meridiano faz a subtracao dar dias inteiros exatos. UTC nao tem
+  // horario de verao, entao nao ha dia de 23 ou 25 horas para arredondar.
+  const due = Date.parse(dueDate + "T00:00:00Z");
+  const hoje = Date.parse(agoraNoWorkspace().data + "T00:00:00Z");
+  return Math.round((due - hoje) / 86400000);
 }
 
 export function deadlineTone(
