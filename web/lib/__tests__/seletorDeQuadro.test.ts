@@ -31,6 +31,8 @@ import {
   opcoesDoSeletor,
   podeGerirQuadrosDe,
   quadroPedidoNaUrl,
+  resolverQuadroPedido,
+  TEXTO_DA_QUEDA,
   urlDoQuadro,
 } from "@/lib/seletorDeQuadro";
 
@@ -326,5 +328,92 @@ describe("opcoesDoSeletor -- afordância de apagar", () => {
   it("sem permissão, quadro avulso não oferece apagar", () => {
     const opcoes = opcoesDoSeletor(QUADROS, SEO, false);
     expect(opcoes.every((o) => !o.podeApagar)).toBe(true);
+  });
+});
+
+describe("resolverQuadroPedido -- a queda deixou de ser muda (fatia 11)", () => {
+  // ⚠️ ATE A FATIA 7 A QUEDA MUDA ERA A DECISAO CERTA, e o docstring do
+  // `quadroPedidoNaUrl` explicava: link velho ou id na mao nao merecem erro na
+  // cara de quem só abriu a tela. A fatia 7 criou um caso novo -- uma pessoa
+  // apaga o quadro que a outra tem aberto -- e em 18/08 ele deixou de ser
+  // hipotético: existe quadro avulso em produção, e um já foi apagado.
+  const QUADROS = [
+    { id: "b-geral", name: "Quadro geral", team_id: "raiz", is_default: true, colunas: [] },
+    { id: "b-pauta", name: "Pauta", team_id: SEO, is_default: false, colunas: [] },
+    { id: "b-crm", name: "Automações", team_id: CRM, is_default: false, colunas: [] },
+  ];
+
+  it("pedido válido: devolve o id e NÃO avisa", () => {
+    expect(resolverQuadroPedido("b-pauta", QUADROS, SEO)).toEqual({
+      id: "b-pauta",
+      motivo: null,
+    });
+  });
+
+  it("sem `?quadro=`: lente, sem aviso", () => {
+    expect(resolverQuadroPedido(null, QUADROS, SEO)).toEqual({
+      id: null,
+      motivo: null,
+    });
+  });
+
+  it("⚠️ lista AINDA NÃO CHEGOU: devolve o pedido e NÃO avisa", () => {
+    // ⚠️ É A LINHA MAIS IMPORTANTE DA FUNÇÃO. `null` é "carregando", e avisar
+    // aqui poria "este quadro não está aqui" na tela de TODO carregamento, por
+    // um instante, antes de o quadro aparecer normalmente. O aviso piscaria
+    // para quem não tem problema nenhum.
+    expect(resolverQuadroPedido("b-pauta", null, SEO)).toEqual({
+      id: "b-pauta",
+      motivo: null,
+    });
+  });
+
+  it("⚠️ id que não está na lista: cai na lente E avisa", () => {
+    // Apagado, nunca existiu, ou fora de alcance -- as três indistinguíveis
+    // daqui, e a ação de quem olha é a mesma nas três.
+    expect(resolverQuadroPedido("b-morto", QUADROS, SEO)).toEqual({
+      id: null,
+      motivo: "fora-de-alcance",
+    });
+  });
+
+  it("⚠️ quadro de OUTRO time tem mensagem própria", () => {
+    // Tem conserto: a pessoa está na página errada, e não diante de algo que
+    // sumiu. Acontece com link colado entre páginas de times diferentes.
+    expect(resolverQuadroPedido("b-crm", QUADROS, SEO)).toEqual({
+      id: null,
+      motivo: "outro-time",
+    });
+  });
+
+  it("⚠️ pedir o Quadro geral não é erro -- é pedir onde a pessoa já está", () => {
+    // Ele nunca entra no seletor (`opcoesDoSeletor` filtra `!q.is_default`)
+    // porque quem o representa nesta tela é a LENTE.
+    expect(resolverQuadroPedido("b-geral", QUADROS, SEO)).toEqual({
+      id: null,
+      motivo: "e-o-quadro-geral",
+    });
+  });
+
+  it("⚠️ o `quadroPedidoNaUrl` continua valendo, e delega", () => {
+    // Os testes antigos dele não mudaram nesta fatia -- ele virou uma casca.
+    // Se alguém reimplementar o corpo dele em vez de delegar, as duas versões
+    // divergem no primeiro ajuste, que é o defeito que esta fatia não pode
+    // introduzir.
+    for (const id of ["b-pauta", "b-morto", "b-crm", "b-geral", null]) {
+      expect(quadroPedidoNaUrl(id, QUADROS, SEO)).toBe(
+        resolverQuadroPedido(id, QUADROS, SEO).id
+      );
+    }
+  });
+
+  it("todo motivo tem texto, e nenhum texto sobra", () => {
+    // ⚠️ Motivo sem texto seria `undefined` na tela -- a caixa apareceria
+    // vazia, que é pior que não aparecer.
+    const motivos = ["fora-de-alcance", "outro-time", "e-o-quadro-geral"];
+    expect(Object.keys(TEXTO_DA_QUEDA).sort()).toEqual([...motivos].sort());
+    for (const m of motivos) {
+      expect(TEXTO_DA_QUEDA[m as keyof typeof TEXTO_DA_QUEDA].length).toBeGreaterThan(10);
+    }
   });
 });
