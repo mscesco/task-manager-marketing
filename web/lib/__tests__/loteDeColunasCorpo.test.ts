@@ -7,7 +7,8 @@
  * `duplicateTaskCorpo` (05/08) e `createTaskCorpo` (13/08) nasceram DEPOIS do
  * estrago -- este e o segundo escrito antes.
  *
- * ⚠️ E AQUI HA MAIS SUPERFICIE QUE NOS OUTROS TRES. Sao quatro listas e um
+ * ⚠️ E AQUI HA MAIS SUPERFICIE QUE NOS OUTROS TRES. Sao CINCO listas (a
+ * quinta, `alvos`, entrou na fatia 12) e um
  * prefixo de texto (`tmp:`) que so existe em dois lugares: este arquivo e o
  * `_PREFIXO_TMP` do backend. Nada os amarra alem deste teste.
  */
@@ -43,16 +44,23 @@ afterEach(() => {
 });
 
 describe("aplicarLoteDeColunas -- o corpo que realmente sai", () => {
-  it("⚠️ manda as quatro listas, com esses nomes", async () => {
+  it("⚠️ manda as CINCO listas, com esses nomes", async () => {
+    // ⚠️ ESTE TESTE CAIU QUANDO `alvos` ENTROU (fatia 12), E FOI ELE FAZENDO O
+    // TRABALHO DELE. O `toEqual` compara o corpo INTEIRO: campo novo no
+    // `LoteDeColunas` que nao ganhe a linha correspondente dentro do
+    // `aplicarLoteDeColunas` reprova aqui, em vez de ser descartado em
+    // silencio e o lote responder 200 sem ter feito nada.
     await aplicarLoteDeColunas("b1", {
       criar: [{ tmp: "t1", name: "Entregue", semantic: "DONE" }],
       renomear: [{ id: "c1", name: "A fazer" }],
+      alvos: ["c3"],
       apagar: [{ id: "c2", destino: "tmp:t1" }],
       ordem: ["c1", "tmp:t1"],
     });
     expect(requisicao().corpo).toEqual({
       criar: [{ tmp: "t1", name: "Entregue", semantic: "DONE" }],
       renomear: [{ id: "c1", name: "A fazer" }],
+      alvos: ["c3"],
       apagar: [{ id: "c2", destino: "tmp:t1" }],
       ordem: ["c1", "tmp:t1"],
     });
@@ -80,6 +88,7 @@ describe("aplicarLoteDeColunas -- o corpo que realmente sai", () => {
     expect(requisicao().corpo).toEqual({
       criar: [],
       renomear: [],
+      alvos: [],
       apagar: [],
       ordem: [],
     });

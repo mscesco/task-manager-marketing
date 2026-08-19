@@ -33,6 +33,7 @@ function linha(over: Partial<LinhaDeEdicao> = {}): LinhaDeEdicao {
 function montar(over: Partial<LinhaDeEdicao> = {}, props: Partial<Record<string, unknown>> = {}) {
   const onRenomear = vi.fn();
   const onMarcar = vi.fn();
+  const onTornarAlvo = vi.fn();
   const onMover = vi.fn();
   render(
     <CabecalhoDeColunaEditavel
@@ -42,11 +43,12 @@ function montar(over: Partial<LinhaDeEdicao> = {}, props: Partial<Record<string,
       podeIrDireita
       onRenomear={onRenomear}
       onMarcar={onMarcar}
+      onTornarAlvo={onTornarAlvo}
       onMover={onMover}
       {...props}
     />,
   );
-  return { onRenomear, onMarcar, onMover };
+  return { onRenomear, onMarcar, onTornarAlvo, onMover };
 }
 
 describe("CabecalhoDeColunaEditavel -- renomear no lugar", () => {
@@ -112,6 +114,7 @@ describe("CabecalhoDeColunaEditavel -- renomear no lugar", () => {
           podeIrDireita
           onRenomear={vi.fn()}
           onMarcar={vi.fn()}
+          onTornarAlvo={vi.fn()}
           onMover={vi.fn()}
         />
       </div>,
@@ -291,5 +294,44 @@ describe("o teto do nome de coluna (18/08)", () => {
     fireEvent.click(screen.getByText("Backlog"));
     const campo = screen.getByLabelText("Nome da coluna Backlog");
     expect(campo.getAttribute("maxLength")).toBe("60");
+  });
+});
+
+describe("o selo padrão virou o controle (Spec 036, fatia 12)", () => {
+  it("⚠️ na coluna que JÁ é o alvo, o selo NÃO é botão", () => {
+    // ⚠️ Não existe desmarcar -- um clique que não faz nada é pior que um
+    // texto que não clica. Sem alvo, `OPEN` e `DONE` fazem toda criação de
+    // tarefa naquele quadro devolver 422, dias depois, para outra pessoa.
+    montar({ ref: "c1", nome: "Backlog", semantic: "OPEN", alvo: true });
+    expect(screen.getByText("padrão")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Tornar Backlog/ })).toBeNull();
+  });
+
+  it("⚠️ na que NÃO é, aparece o convite -- e ele chama `onTornarAlvo`", () => {
+    // ⚠️ Até a fatia 12 o selo era só texto, e isso tinha custo escrito no
+    // `plan.md`: ele "anuncia que existe uma coluna escolhida e não oferece
+    // como trocá-la". A resposta era "apague o quadro e recomece".
+    const { onTornarAlvo } = montar({
+      ref: "c2",
+      nome: "Ideias",
+      semantic: "OPEN",
+      alvo: false,
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Tornar Ideias/ }));
+    expect(onTornarAlvo).toHaveBeenCalled();
+  });
+
+  it("⚠️ coluna NOVA não pode virar alvo", () => {
+    // Ela não tem id, e o backend aplica o alvo numa etapa que roda antes de
+    // criar. `comAlvo` recusa `tmp:`; aqui a tela nem oferece.
+    montar({ ref: "tmp:1", nome: "Ideias", semantic: "OPEN", nova: true });
+    expect(screen.queryByRole("button", { name: /Tornar Ideias/ })).toBeNull();
+  });
+
+  it("⚠️ coluna marcada para APAGAR não oferece virar alvo", () => {
+    // Dois gestos contraditórios no mesmo lote. O `comAlvo` até desfaz a
+    // exclusão, mas oferecer isso na tela seria confuso.
+    montar({ ref: "c2", nome: "Ideias", semantic: "OPEN", apagada: true });
+    expect(screen.queryByRole("button", { name: /Tornar Ideias/ })).toBeNull();
   });
 });

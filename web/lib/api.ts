@@ -902,6 +902,13 @@ export type LoteApagar = { id: string; destino: string | null };
 export type LoteDeColunas = {
   criar?: LoteCriar[];
   renomear?: LoteRenomear[];
+  /**
+   * Ids que passam a ser o ALVO da semantica deles (Spec 036, fatia 12).
+   *
+   * ⚠️ SO UUID -- `tmp:` NAO ENTRA. A etapa do backend roda ANTES de apagar,
+   * e e isso que permite "trocar o alvo e apagar a coluna antiga" num gesto.
+   */
+  alvos?: string[];
   apagar?: LoteApagar[];
   /** UUID em texto, ou `tmp:apelido`. ⚠️ VAZIA = nao mexer na ordem. */
   ordem?: string[];
@@ -944,6 +951,11 @@ export async function aplicarLoteDeColunas(
       body: {
         criar: lote.criar ?? [],
         renomear: lote.renomear ?? [],
+        // ⚠️ A LINHA QUE O `board_id` NAO TEVE. Declarar no tipo NAO poe no
+        // corpo -- e este corpo e montado campo a campo, que e por que o
+        // `loteDeColunasCorpo.test.ts` existe. Sem esta linha o alvo seria
+        // descartado em silencio e o lote responderia 200.
+        alvos: lote.alvos ?? [],
         apagar: lote.apagar ?? [],
         ordem: lote.ordem ?? [],
       },

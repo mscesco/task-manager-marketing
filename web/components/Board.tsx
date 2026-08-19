@@ -53,6 +53,7 @@ import {
   destinosDoRascunho,
   totalPrevisto,
   comColunaNova,
+  comAlvo,
   comMarcacao,
   comOrdem,
   comRenome,
@@ -1879,6 +1880,9 @@ export default function Board({
                       onMarcar={() =>
                         setRascunho((r) => (r ? comMarcacao(r, c.id) : r))
                       }
+                      onTornarAlvo={() =>
+                        setRascunho((r) => (r ? comAlvo(r, c.id) : r))
+                      }
                       onMover={(d) => moverColunaNoRascunho(c.id, d)}
                     />
                   ) : undefined
@@ -2050,6 +2054,7 @@ function CabecalhoSortavel({
   total,
   onRenomear,
   onMarcar,
+  onTornarAlvo,
   onMover,
 }: {
   /** ⚠️ Pode faltar por um render ao trocar de quadro -- ver o chamador. */
@@ -2059,6 +2064,7 @@ function CabecalhoSortavel({
   total: number;
   onRenomear: (nome: string) => void;
   onMarcar: () => void;
+  onTornarAlvo: () => void;
   onMover: (direcao: "esquerda" | "direita") => void;
 }) {
   // ⚠️ O HOOK VEM ANTES DO `return null`, e a ordem NAO e negociavel: sair do
@@ -2094,6 +2100,7 @@ function CabecalhoSortavel({
         podeIrDireita={indice < total - 1}
         onRenomear={onRenomear}
         onMarcar={onMarcar}
+        onTornarAlvo={onTornarAlvo}
         onMover={onMover}
         arrasteRef={setNodeRef}
         arrasteProps={{ ...attributes, ...listeners }}

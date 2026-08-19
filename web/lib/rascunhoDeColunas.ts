@@ -47,6 +47,19 @@ export interface Rascunho {
   /** Ids reais marcados para sumir. ⚠️ Coluna nova apagada some do rascunho. */
   readonly apagadas: readonly string[];
   readonly novas: readonly ColunaNova[];
+  /**
+   * Ids reais que passam a ser o ALVO da semântica deles (Spec 036, fatia 12).
+   *
+   * ⚠️ SÓ ID REAL — `tmp:` NUNCA ENTRA AQUI. Coluna nova não tem id no momento
+   * em que a pessoa monta o lote, e amarrar o alvo a uma coluna que nasce no
+   * mesmo pedido faria a ORDEM DAS ETAPAS do backend virar regra invisível.
+   * `comAlvo` recusa, e há teste.
+   *
+   * ⚠️ É UMA LISTA, e não um id só: a pessoa pode trocar o alvo de `OPEN` e o
+   * de `DONE` no mesmo gesto. O backend aplica um por um, cada um tirando de
+   * quem era o alvo DAQUELA semântica.
+   */
+  readonly alvos: readonly string[];
   /** Contador do apelido. ⚠️ Não reaproveita número: ver `comColunaNova`. */
   readonly proximoTmp: number;
 }
@@ -200,6 +213,7 @@ export function rascunhoInicial(colunas: readonly Coluna[]): Rascunho {
     nomes: {},
     apagadas: [],
     novas: [],
+    alvos: [],
     proximoTmp: 1,
   };
 }
@@ -271,6 +285,43 @@ export function comMarcacao(rascunho: Rascunho, ref: string): Rascunho {
     apagadas: marcada
       ? rascunho.apagadas.filter((r) => r !== ref)
       : [...rascunho.apagadas, ref],
+    // ⚠️ MARCAR PARA APAGAR TIRA O ALVO PEDIDO (Spec 036, fatia 12). Sem isto,
+    // o lote mandaria "põe o alvo em X" e "apague X" no mesmo pedido, e a
+    // ORDEM DAS ETAPAS do backend decidiria o resultado em silêncio. O gesto
+    // se desfaz sozinho porque é o que a pessoa quis dizer: ela mudou de
+    // ideia sobre aquela coluna.
+    //
+    // ⚠️ DESMARCAR NÃO DEVOLVE O ALVO. Marcar e desmarcar não é uma operação
+    // reversível de estado -- é a pessoa reconsiderando duas vezes. Devolver
+    // um alvo que ela pediu antes de mudar de ideia seria adivinhar.
+    alvos: marcada
+      ? rascunho.alvos
+      : rascunho.alvos.filter((r) => r !== ref),
+  };
+}
+
+/**
+ * Marca uma coluna como o ALVO da semântica dela (Spec 036, fatia 12).
+ *
+ * ⚠️ NÃO EXISTE "DESMARCAR", e a ausência é a trava. `OPEN` e `DONE` são as
+ * semânticas em que o SISTEMA escreve sozinho: sem alvo, `_assert_ponte_sobrevive`
+ * passa a recusar toda criação de tarefa naquele quadro -- **dias depois, para
+ * outra pessoa**. Trocar é trocar. Clicar de novo no selo da coluna que já é o
+ * alvo é no-op.
+ *
+ * ⚠️ COLUNA NOVA (`tmp:`) É RECUSADA. Ela não tem id, e a etapa de criar roda
+ * depois no backend. A pessoa cria, conclui, e marca depois.
+ *
+ * ⚠️ MARCAR DESFAZ A EXCLUSÃO, se houver. É o par simétrico do `comMarcacao`:
+ * pedir que uma coluna seja o alvo é dizer que ela fica.
+ */
+export function comAlvo(rascunho: Rascunho, ref: string): Rascunho {
+  if (ehNova(ref)) return rascunho;
+  if (rascunho.alvos.includes(ref)) return rascunho;
+  return {
+    ...rascunho,
+    alvos: [...rascunho.alvos, ref],
+    apagadas: rascunho.apagadas.filter((r) => r !== ref),
   };
 }
 
@@ -379,6 +430,17 @@ export function linhasDeEdicao(
     })
     .filter(Boolean);
 
+  // ⚠️ AS SEMÂNTICAS QUE O RASCUNHO JÁ RECLAMOU (Spec 036, fatia 12). Sem
+  // isto, marcar "Ideias" como alvo desenharia DOIS selos "padrão" em `OPEN`:
+  // o novo, vindo do rascunho, e o antigo, ainda vindo do servidor. Dois selos
+  // é o estado que o índice parcial do banco proíbe -- a tela mostraria algo
+  // que não pode existir, e a pessoa não saberia qual vale.
+  const semanticasReclamadas = new Set(
+    rascunho.alvos
+      .map((r) => porId.get(r)?.semantic)
+      .filter((sem): sem is ColumnSemantic => sem !== undefined),
+  );
+
   return rascunho.ordem.map((ref) => {
     const nova = novasPorRef.get(ref);
     const real = porId.get(ref);
@@ -393,7 +455,18 @@ export function linhasDeEdicao(
       semantic: (base?.semantic ?? "IN_PROGRESS") as ColumnSemantic,
       apagada,
       nova: nova !== undefined,
-      alvo: real?.is_default_target ?? false,
+      // ⚠️ O RASCUNHO GANHA DO SERVIDOR (Spec 036, fatia 12). Uma coluna que a
+      // pessoa acabou de marcar como alvo tem de mostrar o selo NA HORA -- o
+      // modelo é de lote, e nada foi salvo ainda. Ler só o `real` deixaria o
+      // selo no lugar antigo até "Concluir edição", e a pessoa clicaria de
+      // novo achando que não funcionou.
+      alvo:
+        rascunho.alvos.includes(ref) ||
+        ((real?.is_default_target ?? false) &&
+          // ⚠️ ...E NINGUÉM MAIS RECLAMOU ESTA SEMÂNTICA. Ver
+          // `semanticasReclamadas`: o selo antigo apaga no instante em que a
+          // pessoa marca outro, porque é o que vai acontecer ao concluir.
+          !(real && semanticasReclamadas.has(real.semantic))),
       // ⚠️ SÓ PARA QUEM AINDA NÃO ESTÁ MARCADA: o impedimento de quem já está
       // riscada não interessa, e calculá-lo contra uma lista que já a exclui
       // daria sempre `null`.
@@ -577,6 +650,9 @@ export function paraLote(
     renomear: Object.entries(rascunho.nomes)
       .filter(([ref]) => !rascunho.apagadas.includes(ref) && !ehNova(ref))
       .map(([id, name]) => ({ id, name })),
+    // ⚠️ Spec 036, fatia 12. Só ids reais -- `comAlvo` já recusa `tmp:`, e o
+    // schema do backend também não aceita.
+    alvos: [...rascunho.alvos],
     apagar: rascunho.apagadas.map((id) => ({
       id,
       destino: destinos[id] ?? null,
