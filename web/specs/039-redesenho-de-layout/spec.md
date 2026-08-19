@@ -192,8 +192,19 @@ Projetos · Minhas tarefas · Subtimes · Solicitações · Arquivadas. Rodapé:
   tela existe (806 linhas) mas o lugar dela depende da reestruturação de
   organização/times/membros, que a Camila está pensando (§6.1.1). Pôr um item
   de menu agora é escolher a arquitetura por acidente de navegação.
-- **"Time Principal ›" fica desenhado e inerte.** É da reestruturação, não
-  desta spec.
+- **"Time Principal ›" NÃO é inerte — o estado de hoje é o estado dele.**
+  Esclarecido pela Camila em 19/08: o controle navega **entre times principais
+  (raiz)**, e nada mais. Subtime continua sendo coisa de dentro do time.
+
+  | quantos times raiz a pessoa tem | o controle |
+  |---|---|
+  | **um** | texto simples com o nome do time, **sem chevron** |
+  | **dois ou mais** | seletor, para alternar |
+
+  ⚠️ **Hoje toda pessoa cai no primeiro caso**, porque só existe um time raiz.
+  Então a **F3 entrega o estado de um time** — que é o estado real, não um
+  placeholder — e a spec de múltiplos times raiz acrescenta o seletor depois.
+  Isso tira o controle da fila da reestruturação e o põe nesta spec.
 
 ### 6.1.1. ⚠️ A reestruturação de organização/times/membros — o que o modelo JÁ faz
 
@@ -402,13 +413,30 @@ lidas" · lista · "Ver todas". Sem colisão.
 Linhas cinzas sem conteúdo definido. **Não desenhado ainda** — fora do escopo
 desta spec até haver desenho.
 
-### 6.11. Paginação — proposta (sem desenho)
+### 6.11. Paginação — "carregar mais" por coluna
 
-Não há wireframe. Proposta minha, para a Camila reagir.
+**Aprovado pela Camila, 19/08.**
 
-**O problema medido:** o quadro carrega **817 de 1000** de teto. Desses, **578
-são subtarefa**, que gasta teto sem desenhar card. Sobram **239 cards**, e
-**125 estão em "Concluído"**.
+⚠️ **Os números de referência são de 18/08 e ENVELHECERAM.** Naquele dia: 817
+carregadas de 1000 de teto, 578 subtarefa, 239 cards, 125 em "Concluído". Na
+tela de 19/08 o Quadro geral mostra **170 tarefas**, com "Concluído" em **87** —
+o arquivamento rodou no meio. **Remedir antes de dimensionar a fatia** (§6.11.2).
+
+#### 6.11.1. ⚠️ Subtarefa consome o teto — confirmado no código, não suposto
+
+`api.ts::listAllTasks` (linhas 391–419) pagina de 100 em 100 até
+`TASK_FETCH_CEILING = 1000`, **sem nenhum filtro de `depth` ou
+`parent_task_id`**. Traz raiz e subtarefa no mesmo saco. O card só é desenhado
+para `depth === 0` (`Board.tsx:1258`).
+
+⚠️⚠️ **MAS elas não são carona, e isto muda o conserto.** O contador `☑ 5/15`
+do card é calculado a partir delas, no cliente: `Board.tsx:1123-1139` varre a
+lista carregada somando `subCount[parent_task_id]` e `subDone`. **Parar de
+carregar subtarefa apaga o contador de todos os cards.**
+
+Por isso o conserto é **agregar a contagem no backend** (modelo do
+`assignee_ids_for_tasks`, ADR 0025) — o card recebe `5/15` pronto e a subtarefa
+deixa de precisar viajar. Não é "carregar menos"; é "carregar outra coisa".
 
 ⚠️ **Rodapé de paginação global não serve para kanban.** "Página 2 de 4" num
 quadro de 5 colunas não responde a pergunta que alguém faz — a pessoa quer mais
@@ -424,10 +452,26 @@ horizontal (§6.2) o rodapé some da vista.
 - O contador do cabeçalho continua sendo o total real, não o carregado — senão
   o número mente.
 
-⚠️ **Isto sozinho não resolve o teto.** As 578 subtarefas continuam consumindo
-o limite de 1000 antes de qualquer paginação de tela. **A outra metade é
-backend** — agregar a contagem de subtarefa no modelo do `assignee_ids_for_tasks`
-(ADR 0025) para que elas parem de vir como linha. Isso é spec própria (§9).
+⚠️ **Isto sozinho não resolve o teto.** As subtarefas continuam consumindo o
+limite de 1000 antes de qualquer paginação de tela. A outra metade é a agregação
+no backend descrita em §6.11.1, e é **spec própria** (§9).
+
+#### 6.11.2. Remedir antes de dimensionar
+
+Query para o Adminer. Colunas conferidas em `app/db/mixins/__init__.py` e
+`app/db/models/operational.py`: `deleted_at` (NULL = ativo), `is_archived`,
+`depth`.
+
+```sql
+SELECT
+  CASE WHEN t.depth = 0 THEN 'card (raiz)' ELSE 'subtarefa' END AS tipo,
+  COUNT(*) AS total
+FROM task t
+WHERE t.deleted_at IS NULL
+  AND t.is_archived = false
+GROUP BY 1
+ORDER BY 1;
+```
 
 ---
 
@@ -557,11 +601,12 @@ fatia.
 | 8 | Colunas: **rolagem horizontal** | §6.2 |
 | 9 | Filtro de escopo: **entra no painel, só na lente** | §6.7 |
 | 10 | Chevron da subtarefa: **navega, com botão de voltar** | §6.3 |
-| 11 | `/membros` e "Time Principal": **fora desta spec** | §6.1.1 |
+| 11 | `/membros` fora desta spec; **"Time Principal" entra na F3** | §6.1, §6.1.1 |
+| 12 | Paginação: **"carregar mais" por coluna** | §6.11 |
 
 ## 12. Pendências
 
-1. **Paginação** — a proposta de "carregar mais por coluna" (§6.11) precisa do
-   aval da Camila. Sem desenho.
+1. **Remedir o teto** antes de dimensionar a F10 — os números de 18/08
+   envelheceram. Query em §6.11.2.
 2. **Reestruturação de organização/times/membros** — §6.1.1 tem o custo
-   medido; a decisão é dela, e não bloqueia nenhuma fatia desta spec.
+   medido; a decisão é da Camila, e não bloqueia nenhuma fatia desta spec.
