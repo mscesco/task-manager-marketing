@@ -3141,7 +3141,40 @@ deste deploy**: hoje há um quadro só, e ele é o padrão, que não se apaga.
 ⚠️ **Ela vem antes do 5c quando vier** — é conserto de sinal, e os outros são
 adição.
 
-1. **5c — quadro extra da raiz.** ⚠️ **A PERGUNTA "QUEM EDITA AS COLUNAS DO
+1. **5c — quadro extra da raiz — ✅ ENTREGUE (18/08).** Front 859 → **865**,
+   sem backend e sem migration: `POST /boards` já aceitava `team_id` da raiz, e
+   a URL já estava pronta desde 13/08. O que faltava era a TELA.
+
+   ⚠️ **E ELA REVELOU UM DEFEITO LATENTE, que é o que justifica a fatia ter
+   sido mais que um seletor:** `/quadro` sem `boardId` mostrava **toda** tarefa
+   da raiz. Com um quadro extra dela, as tarefas dele passariam no filtro (o
+   `team_id` é o mesmo!), a tela desenharia as colunas do GERAL, e os cards
+   cairiam em `foraDaColuna` — **contados e invisíveis**. É o mesmo defeito que
+   a lente já prevenia desde 11/08, e cujo comentário previa esta fatia.
+
+   ⚠️ **E A HEURÍSTICA DO LOTE DEIXOU DE VALER NO GERAL.** `quadro` era
+   `quadroPedido ?? quadroDoLote ?? padrão`; com um quadro extra, se por acaso
+   todas as tarefas carregadas estivessem nele, a tela do geral desenharia as
+   colunas do OUTRO quadro sob o título "Quadro geral". Agora o geral usa o
+   padrão direto, e **a heurística sobrou só no modo PROJETO** — que atravessa
+   quadros por desenho e não tem quadro próprio.
+
+   ⚠️ **DOIS ERROS MEUS, PEGOS PELOS PORTÕES:**
+   1. a guarda nova filtrou também o modo **projeto**, sumindo com as tarefas
+      de um projeto que morassem em outro quadro. **Pego pelo teste** que eu
+      tinha acabado de mover para lá;
+   2. `useSearchParams` numa rota **estática** derruba o `next build` com
+      *"missing suspense boundary"*. ⚠️ **O `npm run dev` não reclama** — e
+      isso estava anotado no `/quadro/[teamId]` desde 13/08, na situação
+      inversa. Consertado com `Suspense`.
+
+   ⚠️ **UM TESTE FOI REESCRITO, E NÃO APAGADO.** "desenha as colunas do quadro
+   em que as tarefas VIVEM" mudou de cenário pela segunda vez — da lente
+   (5b-5b) para o projeto (5c). A regra que ele guarda não mudou; o lugar onde
+   ela ainda pode ser exercitada é que encolheu.
+
+   Texto original:
+   ⚠️ **A PERGUNTA "QUEM EDITA AS COLUNAS DO
    QUADRO GERAL" JÁ FOI RESPONDIDA na 6a-bis (13/08), e este item não depende
    mais dela:** `_assert_quadro_editavel` **saiu** de criar, renomear e
    reordenar — era trava técnica escrita como regra de produto, e o próprio

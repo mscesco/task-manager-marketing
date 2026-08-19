@@ -1005,7 +1005,22 @@ describe("Board -- o quadro sai das TAREFAS, nao da flag de padrão (fatia 4c)",
     // faz a tela do quadro avulso (fatia 5b-6) desenhar as colunas certas. O
     // que mudou foi so ONDE ela e exercitada -- fora da lente, que e o unico
     // lugar onde o caso ainda pode acontecer.
-    render(<Board title="Quadro geral" />);
+    // ⚠️ ESTE RENDER MUDOU DE NOVO NA FATIA 5c, e pela segunda vez a mudança é
+    // a decisão e não um ajuste para passar. Ele era `<Board title="Quadro
+    // geral" />`, e o QUADRO GERAL deixou de adivinhar pelo lote: com a raiz
+    // podendo ter quadro EXTRA, se por acaso todas as tarefas carregadas
+    // estiverem no extra, a tela do geral desenharia as colunas do OUTRO
+    // quadro sob o título "Quadro geral".
+    //
+    // ⚠️ O MODO PROJETO É O ÚNICO ONDE A HEURÍSTICA CONTINUA SENDO A ÚNICA
+    // SAÍDA, e por isso a regra se mudou para cá: um projeto atravessa quadros
+    // POR DESENHO, não tem quadro próprio, e o lote é a única pista de quais
+    // colunas desenhar.
+    //
+    // ⚠️ A REGRA QUE ELE GUARDA NÃO MUDOU: o quadro sai do `board_id` DAS
+    // TAREFAS, e não da flag `is_default`. Só o lugar onde ela ainda pode ser
+    // exercitada é que encolheu -- da lente (5b-5b) para o projeto (5c).
+    render(<Board projectId="proj-1" title="Nome do Projeto" />);
     await screen.findByText("Pauta de agosto");
 
     expect(screen.getByText("A escrever")).toBeTruthy();
@@ -1014,6 +1029,39 @@ describe("Board -- o quadro sai das TAREFAS, nao da flag de padrão (fatia 4c)",
     // teria voltado a ser `is_default`.
     expect(screen.queryByText("Backlog")).toBeNull();
     expect(screen.queryByText("Em Andamento")).toBeNull();
+  });
+
+  it("⚠️ o QUADRO GERAL não adivinha pelo lote -- fatia 5c", async () => {
+    // ⚠️ O CASO QUE A FATIA 5c CRIOU. A raiz passou a poder ter quadro extra;
+    // se todas as tarefas carregadas estiverem nele, a versão anterior
+    // desenharia as colunas DELE sob o título "Quadro geral".
+    //
+    // ⚠️ E as tarefas do quadro extra também não aparecem: elas têm
+    // `column_id` de outro quadro, cairiam em `foraDaColuna` -- contadas e
+    // invisíveis. É o mesmo defeito que a lente já prevenia desde 11/08.
+    montarApi(
+      [
+        task({
+          id: "s1",
+          title: "Pauta de agosto",
+          board_id: INTERNO.id,
+          column_id: "seo-fazer",
+        }),
+      ],
+      []
+    );
+    vi.mocked(api.listBoards).mockResolvedValue([QUADRO, INTERNO]);
+
+    render(<Board title="Quadro geral" />);
+
+    // ⚠️ SEM TAREFA VISÍVEL, O GERAL CAI NO ESTADO VAZIO -- e é isso que prova
+    // que a tarefa do quadro extra NÃO entrou. Ela existe na resposta da API
+    // (`montarApi` a devolve), e some no filtro. Antes desta fatia ela passaria
+    // e cairia em `foraDaColuna`: contada e invisível.
+    expect(await screen.findByText("Nenhuma tarefa ainda")).toBeTruthy();
+    // E as colunas do quadro EXTRA não aparecem em lugar nenhum.
+    expect(screen.queryByText("A escrever")).toBeNull();
+    expect(screen.queryByText("Pauta de agosto")).toBeNull();
   });
 
   /**

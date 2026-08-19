@@ -29,6 +29,7 @@ import {
   nomeDeQuadroValido,
   opcaoSelecionada,
   opcoesDoSeletor,
+  opcoesDoSeletorDaRaiz,
   podeGerirQuadrosDe,
   quadroPedidoNaUrl,
   resolverQuadroPedido,
@@ -415,5 +416,58 @@ describe("resolverQuadroPedido -- a queda deixou de ser muda (fatia 11)", () => 
     for (const m of motivos) {
       expect(TEXTO_DA_QUEDA[m as keyof typeof TEXTO_DA_QUEDA].length).toBeGreaterThan(10);
     }
+  });
+});
+
+describe("opcoesDoSeletorDaRaiz -- a tela do Quadro geral (fatia 5c)", () => {
+  const RAIZ = "raiz";
+  const QUADROS = [
+    { id: "b-geral", name: "Quadro geral", team_id: RAIZ, is_default: true, colunas: [] },
+    { id: "b-camp", name: "Campanhas 2027", team_id: RAIZ, is_default: false, colunas: [] },
+    { id: "b-pauta", name: "Pauta", team_id: SEO, is_default: false, colunas: [] },
+  ];
+
+  it("⚠️ o QUADRO GERAL É A PRIMEIRA OPÇÃO, pelo nome dele", () => {
+    // ⚠️ NÃO É O `opcoesDoSeletor` COM OUTRO `teamId`. Lá o primeiro item é a
+    // LENTE, e o geral fica FORA (`!q.is_default`) porque ela já o representa.
+    // Na raiz não há lente: o que a lente espelha É o geral, e na tela dele a
+    // coisa é ela mesma.
+    const o = opcoesDoSeletorDaRaiz(QUADROS, RAIZ, true);
+    expect(o[0].nome).toBe("Quadro geral");
+    // ⚠️ E com id de VERDADE -- `null` é a lente, e reaproveitá-lo aqui faria
+    // a tela do geral se comportar como espelho de si mesma.
+    expect(o[0].id).toBe("b-geral");
+  });
+
+  it("⚠️ o Quadro geral NUNCA pode ser apagado, nem para quem gere", () => {
+    // `quadro_padrao_nao_apagavel` no backend; ADR 0034 item 2 na tela --
+    // ausente, e não desabilitado.
+    expect(opcoesDoSeletorDaRaiz(QUADROS, RAIZ, true)[0].podeApagar).toBe(false);
+  });
+
+  it("mas PODE ser renomeado -- e até a 5c isso não tinha tela", () => {
+    // `board_service.py` diz "O QUADRO GERAL PODE SER RENOMEADO", e o seletor
+    // do subtime nunca o listou.
+    expect(opcoesDoSeletorDaRaiz(QUADROS, RAIZ, true)[0].podeRenomear).toBe(true);
+    expect(opcoesDoSeletorDaRaiz(QUADROS, RAIZ, false)[0].podeRenomear).toBe(false);
+  });
+
+  it("os avulsos DA RAIZ entram depois, em ordem de nome", () => {
+    const o = opcoesDoSeletorDaRaiz(QUADROS, RAIZ, true);
+    expect(o.map((x) => x.nome)).toEqual(["Quadro geral", "Campanhas 2027"]);
+  });
+
+  it("⚠️ quadro de OUTRO time não entra", () => {
+    // Sem este filtro, a tela do geral listaria o quadro de um subtime, e
+    // criar tarefa ali a mandaria para um lugar que ninguém da raiz vê.
+    const nomes = opcoesDoSeletorDaRaiz(QUADROS, RAIZ, true).map((x) => x.nome);
+    expect(nomes).not.toContain("Pauta");
+  });
+
+  it("sem o geral na lista, não inventa uma opção", () => {
+    // ⚠️ Acontece se o `listBoards` falhar e cair em `[]`. Melhor uma lista
+    // curta que uma opção que não existe.
+    const o = opcoesDoSeletorDaRaiz([QUADROS[1]], RAIZ, true);
+    expect(o.map((x) => x.nome)).toEqual(["Campanhas 2027"]);
   });
 });

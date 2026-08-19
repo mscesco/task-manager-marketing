@@ -7,6 +7,7 @@ import {
   nomeDeQuadroValido,
   opcaoSelecionada,
   opcoesDoSeletor,
+  opcoesDoSeletorDaRaiz,
 } from "@/lib/seletorDeQuadro";
 
 /**
@@ -50,6 +51,7 @@ export default function SeletorDeQuadro({
   podeGerir,
   onSelecionar,
   onMudou,
+  daRaiz = false,
 }: {
   teamId: string;
   quadros: readonly Quadro[];
@@ -65,8 +67,19 @@ export default function SeletorDeQuadro({
    * copias da lista divergiriam no primeiro erro de rede.
    */
   onMudou: (quadroNovo?: Quadro) => void;
+  /**
+   * Esta e a tela da RAIZ (Spec 036, fatia 5c).
+   *
+   * ⚠️ MUDA QUEM E A PRIMEIRA OPCAO, e nao e cosmetico. Na tela de um subtime
+   * o primeiro item e a LENTE, e o Quadro geral fica FORA da lista porque ela
+   * ja o representa. Na raiz nao ha lente: o Quadro geral e a coisa em si, e
+   * entra pelo nome dele. Ver `opcoesDoSeletorDaRaiz`.
+   */
+  daRaiz?: boolean;
 }) {
-  const opcoes = opcoesDoSeletor(quadros, teamId, podeGerir);
+  const opcoes = daRaiz
+    ? opcoesDoSeletorDaRaiz(quadros, teamId, podeGerir)
+    : opcoesDoSeletor(quadros, teamId, podeGerir);
   const atual = opcaoSelecionada(opcoes, selecionado);
 
   const [aberto, setAberto] = useState(false);
