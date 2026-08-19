@@ -9,7 +9,9 @@ e um teste comparando as duas
 
 ⚠️ A FLAG SOZINHA NAO REPRODUZ O COMPORTAMENTO DE HOJE. Nos defaults
 (`board_defaults.COLUNAS_PADRAO`), `Concluido` e `Cancelado` nascem com
-`notify_deadline=True` -- so `Bloqueado` nasce com `False`. Trocar o
+`notify_deadline=True` -- so `Bloqueado` nasce com `False`.
+⚠️ E "nasce" e literal: NAO ha caminho de produto que troque essa flag depois
+(ver `BoardColumnCreateRequest`). Trocar o
 `_STATUS_SEM_AVISO` cravado pela flag crua faria a varredura cobrar prazo de
 tarefa concluida: medido em producao em 06/08, eram **136 tarefas em
 `Concluido` com prazo vencido**, e todas receberiam aviso na primeira
