@@ -2913,7 +2913,22 @@ adição.
    silenciosa**; o selo "padrão" põe na tela um rótulo que anuncia que existe
    uma coluna escolhida e que não dá para trocá-la. Rótulo visível convida à
    pergunta — e a resposta hoje é "apague o quadro e recomece".
-4. **`notify_deadline` na criação de coluna.** ⚠️ **Campo sem escritor:**
+4. **`notify_deadline` na criação de coluna — ✅ RESOLVIDO EM 18/08, e o
+   conserto foi de HONESTIDADE e não de código.** A decisão de 13/08 (não
+   fazer) continua valendo; o que estava pendente era a documentação, e ela
+   saiu: `BoardColumnCreateRequest` agora explica que o campo é **lido e
+   exposto, mas não tem escritor**, por que ficou assim, e o que decidiria o
+   tamanho de um dia fazê-lo (o `PATCH` é a parte cara — editar a flag de uma
+   coluna que já tem tarefas com prazo muda em silêncio quais avisos saem
+   amanhã). ⚠️ **E os três lugares que prometiam o contrário foram
+   corrigidos**, cada um apontando para a nota:
+   `deadline_notify_service.py`, `BoardColumnResponse` e `board_semantics.py`.
+   ⚠️ **Nada mudou para quem usa** — coluna nova continua cobrando prazo, que
+   é o que "Aprovação Externa" já faz hoje para as 26 pessoas. Mudou só o que
+   quem LÊ o código acredita.
+
+   Texto original, mantido porque descreve o estado:
+   ⚠️ **Campo sem escritor:**
    `criar_coluna` crava `True`, o schema não aceita e o rename não edita — mas
    **três lugares no código prometem por escrito que dá para desligar**,
    inclusive o `DeadlineNotifyService` ("é como a ADR 0030 prometeu que um time

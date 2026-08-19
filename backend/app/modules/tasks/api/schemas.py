@@ -479,7 +479,8 @@ class BoardColumnResponse(BaseModel):
 
     ⚠️ `notify_deadline` pelo mesmo motivo: o backend ja o respeita
     (`DeadlineNotifyService`), e hoje o front cobra prazo de coluna que o
-    backend sabe que nao deve cobrar. Expor agora custa uma linha; expor depois
+    backend sabe que nao deve cobrar. ⚠️ **RESPEITAR NAO E PODER ESCREVER:**
+    nenhum caminho de produto muda esta flag -- ver `BoardColumnCreateRequest`. Expor agora custa uma linha; expor depois
     custa uma versao de endpoint.
 
     ⚠️ `legacy_status` NAO entra. Ele e ponte com data de demolicao (ADR 0033)
@@ -591,6 +592,40 @@ class BoardColumnCreateRequest(BaseModel):
 
     ⚠️ `position` NAO ENTRA. Coluna nova vai para o fim; reordenar e da fatia
     5b-6, junto com a tela que arrasta.
+
+    ⚠️⚠️ `notify_deadline` NAO ENTRA -- E ESTA E A AUSENCIA QUE MAIS ENGANA
+    QUEM LE O CODIGO (registrado em 18/08, decisao de 13/08 de NAO fazer).
+
+    O campo e **lido** (`DeadlineNotifyService` filtra por ele), e **exposto**
+    (`BoardColumnResponse.notify_deadline`) -- mas **nao tem escritor**:
+    `BoardService.criar_coluna` crava `True`, o `BoardColumnRenameRequest` nao
+    o edita, e o lote de colunas tambem nao. Ou seja: **na pratica ele so e
+    `False` nas colunas base que o `board_defaults` cria assim** (o
+    `Bloqueado`), e nao ha caminho de produto que o mude.
+
+    ⚠️ TRES LUGARES DO CODIGO PROMETEM O CONTRARIO POR ESCRITO, e por isso
+    esta nota existe:
+
+      1. `deadline_notify_service.py` -- "a flag `notify_deadline`, que e como
+         a ADR 0030 prometeu que um time criaria 'Aguardando cliente' sem
+         codigo novo". **Sem codigo novo nao da: a coluna nasce cobrando
+         prazo.**
+      2. `schemas.py`, no `BoardColumnResponse` -- "o backend ja o respeita".
+         Respeita mesmo, mas ninguem consegue escrever nele.
+      3. `board_semantics.py` -- "so `Bloqueado` nasce com `False`", que
+         descreve o default e soa como se houvesse outro caminho.
+
+    ⚠️ POR QUE NAO FOI FEITO (decisao da Camila, 13/08): "Aprovacao Externa" ja
+    cobra prazo hoje, no Quadro geral, para as 26 pessoas. Coluna nova cobrando
+    prazo **nao e regressao nem barulho novo** -- e o mesmo comportamento que
+    todo mundo ja vive. O custo de deixar assim e ZERO para quem usa, e este
+    paragrafo e o que impede que ele volte a ser zero para quem LE.
+
+    ⚠️ SE UM DIA ENTRAR: o campo aqui e a parte facil. O que decide o tamanho e
+    o `PATCH` -- editar `notify_deadline` de uma coluna que JA TEM tarefas com
+    prazo muda, em silencio, quais avisos vao sair amanha, e sem uma linha de
+    historico. E o mesmo argumento que mantem `semantic` fora do
+    `BoardColumnRenameRequest`.
     """
 
     name: str

@@ -56,8 +56,13 @@ _TZ_SP = ZoneInfo("America/Sao_Paulo")
 #
 # ⚠️ O que estava aqui antes era `_STATUS_SEM_AVISO`, com COMPLETED, CANCELLED
 # e BLOCKED cravados. Os dois primeiros saem pela SEMANTICA da coluna; o
-# terceiro sai pela flag `notify_deadline`, que e como a ADR 0030 prometeu que
-# um time criaria "Aguardando cliente" sem codigo novo.
+# terceiro sai pela flag `notify_deadline`.
+#
+# ⚠️ A ADR 0030 PROMETEU QUE UM TIME CRIARIA "Aguardando cliente" SEM CODIGO
+# NOVO, E ISSO AINDA NAO E VERDADE (18/08). Esta consulta RESPEITA a flag, mas
+# nao ha caminho de produto que a ESCREVA: `criar_coluna` crava `True`. Coluna
+# nova nasce cobrando prazo. O porque de estar assim -- decisao de 13/08 -- e a
+# lista do que custaria mudar estao em `BoardColumnCreateRequest`.
 _SEMANTICAS_TERMINAIS_SQL: Final = tuple(
     sorted(TERMINAL_SEMANTICS, key=lambda s: s.value)
 )
