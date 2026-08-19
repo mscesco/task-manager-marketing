@@ -114,6 +114,18 @@ WHERE b.deleted_at IS NOT NULL
 -- e ele da raiz, a 7 devolve 0 por ausencia de caso, nao por acerto.
 SELECT b.id,
        b.name,
+       -- ⚠️ ESTA COLUNA FALTAVA, E CUSTOU UMA INVESTIGACAO INTEIRA (18/08).
+       -- A consulta NAO filtra `deleted_at`, e nao filtrava sem dizer: um
+       -- quadro APAGADO aparecia aqui identico a um vivo. Foi assim que
+       -- "Cobertura e captacoes" -- apagado as 20:09 -- passou por quadro
+       -- existente, e a ausencia dele no seletor virou suspeita de defeito.
+       -- O seletor estava certo o tempo todo (`list_visible` filtra
+       -- `deleted_at IS NULL`); quem mentia era este relatorio.
+       --
+       -- ⚠️ NAO FILTRE AQUI. Quadro apagado PRECISA aparecer nesta consulta:
+       -- ela e "contexto", e e ela que mostra o que o `restaurar_quadro.sql`
+       -- teria para resgatar. O conserto e DIZER, e nao esconder.
+       b.deleted_at IS NOT NULL AS apagado,
        b.is_default,
        t.name AS time,
        t.parent_team_id IS NULL AS eh_raiz,
@@ -123,7 +135,7 @@ SELECT b.id,
        (SELECT count(*) FROM task k WHERE k.board_id = b.id) AS tarefas
 FROM board b
 JOIN team t ON t.id = b.team_id AND t.workspace_id = b.workspace_id
-ORDER BY eh_raiz DESC, b.name;
+ORDER BY apagado, eh_raiz DESC, b.name;
 
 \echo '=== 6. nenhum projeto comum fora do time raiz (alarme da Spec 037) ==='
 -- ⚠️ ESTA NAO E UMA INVARIANTE DE MODELO -- E UM ALARME.
