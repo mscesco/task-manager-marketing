@@ -338,6 +338,11 @@ async def apply_columns_batch(
         renomear=[
             LoteRenomear(id=r.id, name=r.name) for r in payload.renomear
         ],
+        # ⚠️ Spec 036, fatia 12. Sem esta linha o campo chega no payload e e
+        # descartado em SILENCIO -- o lote responderia 200 e o alvo nao teria
+        # mudado. E a mesma armadilha do `board_id` da fatia 5b-6 e do
+        # `assignee_ids` do `tasks_router`, pela terceira vez nesta spec.
+        alvos=list(payload.alvos),
         apagar=[
             LoteApagar(id=a.id, destino=a.destino) for a in payload.apagar
         ],

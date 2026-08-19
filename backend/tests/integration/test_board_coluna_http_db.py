@@ -504,3 +504,81 @@ async def test_delete_por_supervisor_de_subtime_alheio_devolve_403(db) -> None:
             f"/api/v1/boards/{quadro_crm.id}/columns/{cancelado.id}"
         )
     assert r.status_code == 403, r.text
+
+
+# ---------------------------------------------- PUT /columns -- alvo (12)
+#
+# ⚠️ POR QUE ESTES DOIS SAO HTTP E NAO DE SERVICO. Teste de servico NAO sabe se
+# a rota existe: rota nao registrada, verbo errado ou `response_model` trocado
+# passam com a suite verde e aparecem como **405 na tela**. Aconteceu nesta
+# mesma spec, na fatia 7, e a licao esta no `plan.md`.
+#
+# ⚠️ E AQUI HA UM SEGUNDO MOTIVO, MAIS ESPECIFICO: o campo `alvos` precisa
+# ATRAVESSAR o schema Pydantic e o router. Um campo declarado no schema e nao
+# repassado no router e descartado em SILENCIO -- o lote responderia 200 e o
+# alvo nao teria mudado. E a armadilha do `board_id` da fatia 5b-6, e ela ja
+# custou um mes de tarefas nascendo no quadro errado.
+
+
+async def test_PUT_columns_troca_o_alvo_e_devolve_200(db) -> None:
+    c = await _setup(db)
+    quadro = c["quadro"]
+    async with _client(db, c["ctx_sup"]) as cli:
+        nova = await cli.post(
+            f"/api/v1/boards/{quadro.id}/columns",
+            json={"name": "Ideias", "semantic": "OPEN"},
+        )
+        assert nova.status_code == 201, nova.text
+        nova_id = nova.json()["id"]
+
+        r = await cli.put(
+            f"/api/v1/boards/{quadro.id}/columns",
+            json={"alvos": [nova_id]},
+        )
+
+    assert r.status_code == 200, r.text
+    # ⚠️ A ASSERCAO E SOBRE A RESPOSTA, e nao so sobre o banco: e ela que prova
+    # que o campo atravessou schema -> router -> servico -> resposta.
+    colunas = r.json()["colunas"]
+    alvo = [x for x in colunas if x["semantic"] == "OPEN" and x["is_default_target"]]
+    assert len(alvo) == 1
+    assert alvo[0]["id"] == nova_id
+
+
+async def test_PUT_columns_troca_alvo_E_apaga_a_antiga(db) -> None:
+    """⚠️ O gesto que justifica a fatia, pelo fio inteiro."""
+    c = await _setup(db)
+    quadro = c["quadro"]
+    backlog = _por_nome(await _colunas(db, quadro.id), "Backlog")
+
+    async with _client(db, c["ctx_sup"]) as cli:
+        nova = await cli.post(
+            f"/api/v1/boards/{quadro.id}/columns",
+            json={"name": "Ideias", "semantic": "OPEN"},
+        )
+        nova_id = nova.json()["id"]
+
+        r = await cli.put(
+            f"/api/v1/boards/{quadro.id}/columns",
+            json={
+                "alvos": [nova_id],
+                "apagar": [{"id": str(backlog.id), "destino": nova_id}],
+            },
+        )
+
+    assert r.status_code == 200, r.text
+    nomes = [x["name"] for x in r.json()["colunas"]]
+    assert "Backlog" not in nomes
+    assert "Ideias" in nomes
+
+
+async def test_PUT_columns_alvo_de_coluna_inexistente_devolve_404(db) -> None:
+    c = await _setup(db)
+    async with _client(db, c["ctx_sup"]) as cli:
+        r = await cli.put(
+            f"/api/v1/boards/{c['quadro'].id}/columns",
+            json={"alvos": [str(uuid.uuid4())]},
+        )
+    # ⚠️ 404 E NAO 500: coluna de outro quadro e um pedido errado, e nao um
+    # defeito do servidor.
+    assert r.status_code == 404, r.text
