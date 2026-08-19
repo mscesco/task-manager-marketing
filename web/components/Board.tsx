@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { SlidersHorizontal } from "lucide-react";
+import { agoraNoWorkspace, estaAtrasada } from "@/lib/prazo";
 import {
   SortableContext,
   horizontalListSortingStrategy,
@@ -1159,6 +1160,11 @@ export default function Board({
   // porStatus saem de `raizes` pra nao mentir quando ha filtro ativo.
   const buscaNorm = normalizarBusca(busca);
   const hoje = hojeISO();
+  // ⚠️ UMA LEITURA DO RELOGIO POR RENDER, e nao uma por tarefa. Com 799 cartoes,
+  // chamar `agoraNoWorkspace()` dentro do filtro criaria 799 `Intl.DateTimeFormat`
+  // por render -- e, pior, duas tarefas poderiam ser avaliadas contra minutos
+  // DIFERENTES se o render cruzasse a virada do minuto.
+  const agoraWs = agoraNoWorkspace();
   // Estado agregado dos filtros recolhidos -> alimenta o badge e o "Limpar".
   const estadoFiltros = {
     prazo,
@@ -1312,8 +1318,14 @@ export default function Board({
       // `!== "DONE"` e nao `!terminal()`: hoje CANCELADA com prazo vencido
       // CONTA como atrasada, e mudar isso e decisao de produto, nao
       // refatoracao.
+      // ⚠️ ERA `t.due_date < hoje`, COMPARACAO DE STRING ENTRE DATAS ISO --
+      // certa enquanto prazo era so dia, e SILENCIOSAMENTE ERRADA com hora:
+      // `"2026-08-19" < "2026-08-19 18:00"` da true porque prefixo e MENOR, e a
+      // tarefa vencida hoje sumiria do filtro sem erro nenhum. A regra mora em
+      // `lib/prazo.ts`, com os dois lados normalizados. Spec 038, fatia B.
       const atrasada =
-        colunaPorId.get(t.column_id)?.semantic !== "DONE" && t.due_date < hoje;
+        colunaPorId.get(t.column_id)?.semantic !== "DONE" &&
+        estaAtrasada(t.due_date, t.due_time, agoraWs);
       if (prazo === "atrasadas" && !atrasada) return false;
       if (prazo === "em-dia" && atrasada) return false;
     }

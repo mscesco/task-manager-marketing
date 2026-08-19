@@ -116,7 +116,96 @@ herança da Spec 036: o corpo se prende em teste de `lib/`.
 
 ---
 
-## Fatia B — horário no prazo — ⬜ ESCOPO, falta UMA decisão
+## Fatia B — horário no prazo — ✅ ENTREGUE (18/08)
+
+> Entregue em duas partes, e a divisão foi por uma limitação minha e não por
+> desenho: **eu não consigo rodar o `pytest`**. B1 = backend inteiro, medido
+> pela Camila (**846 → 851**, migration `0014` aplicada). B2 = front
+> (**813 → 836**), com os três portões rodados aqui.
+
+### ⚠️ FUSO: `America/Sao_Paulo`, FIXO — e a pergunta foi devolvida antes
+
+A Camila pediu primeiro **"fuso de quem olha"**. A resposta foi devolver o
+custo, e ela mudou de ideia com o argumento na mão:
+
+⚠️ **O JOB DE PRAZO NÃO TEM "QUEM OLHA".** Ele roda no servidor, num horário,
+e manda para várias pessoas — precisa de UM fuso para decidir "venceu". Com
+atraso por espectador, a tela de cada pessoa e a notificação diriam coisas
+diferentes sobre a mesma tarefa.
+
+⚠️ **E a decisão não fecha porta:** `date` + `time` + um fuso conhecido já é um
+instante sem ambiguidade. Renderizar no fuso de quem olha, um dia, é mexer em
+exibição — **sem migration**.
+
+⚠️ **O BACKEND JÁ FAZIA ISSO DESDE A SPEC 023 (D7).** O
+`DeadlineNotifyService` sempre usou `America/Sao_Paulo`; era o FRONT que usava o
+fuso do navegador e **coincidia** por todo mundo estar no Brasil. Agora concordam
+por construção.
+
+### O que entrou
+
+| | arquivo |
+|---|---|
+| a coluna `due_time TIME NULL` | `alembic/versions/0014_task_due_time.py` |
+| modelo, schemas, router, serviço e `_validate_hora` | `tasks/` |
+| **a regra de atraso**, pura e testada | `web/lib/prazo.ts` (novo) + 17 testes |
+| tom e rótulo cientes da hora | `web/lib/status.ts`, `web/lib/coluna.ts` |
+| campo de hora, "Limpar hora", hora na pílula | `web/components/TaskDetail.tsx` |
+| o filtro "Atrasadas" | `web/components/Board.tsx` |
+
+### ⚠️ A ARMADILHA CENTRAL, e ela é silenciosa
+
+    "2026-08-19" < "2026-08-19 18:00"   →  true   (prefixo é MENOR)
+
+O filtro fazia `t.due_date < hoje`. Com hora, a tarefa vencida **hoje às 09:00**
+sumiria do filtro às 18:00 — sem erro, sem log, sem nada na tela. **E há um
+segundo corte:** o Postgres devolve `TIME` como `"18:00:00"`, e comparado com
+`"18:00"` a string mais longa vence. Os dois têm teste próprio, e o mesmo
+`slice(0, 5)` é o que faz o `<input type="time">` não nascer vazio.
+
+### ⚠️ TRÊS ERROS MEUS, e os três a Camila achou na tela
+
+1. ⚠️⚠️ **A BRANCH B2 SAIU DE `main` E NÃO DA B1.** Ela **depende** da B1, que
+   não estava mergeada — então a máquina dela rodava front que MANDA `due_time`
+   contra backend que não sabe o que é. **O Pydantic descarta campo desconhecido
+   em silêncio:** `PATCH` volta 200, sem o campo, e a hora "não salvava" sem
+   erro nenhum. **Regra: fatia que depende de outra não-mergeada sai da branch
+   dela, não de `main`.**
+2. **O rótulo não acompanhou o tom.** `deadlineTone` ficou ciente da hora e
+   `deadlineLabel` não: a tarefa ficava VERMELHA dizendo "Vence hoje". ⚠️ **Cor
+   e texto discordando é o defeito que fez o `TaskDetailChecklist.test.tsx`
+   existir** (o card dizia "2/2" e o detalhe "(0/2)"). Hoje os dois chamam a
+   MESMA `estaAtrasada`.
+3. **Não havia como limpar a hora.** O `<input type="time">` tem "x" nativo em
+   alguns navegadores e nenhum em outros — "tirar a hora" dependia do navegador.
+   Ganhou botão explícito.
+
+### ⚠️ O QUE OS PORTÕES NÃO PEGARAM, e por quê
+
+Os três erros passaram por `tsc`, `vitest` e `next build`. **Os testes de
+componente mockam o `@/lib/api`** — eles afirmam o que a tela CHAMA, nunca o que
+viaja no fio. É a lição do topo do `createTaskCorpo.test.ts` um nível acima:
+*mock do cliente HTTP esconde campo que o cliente repassa e o servidor não
+conhece.*
+
+### ⚠️ A DIVERGÊNCIA QUE FICA, e é escolha
+
+**A tela diz "atrasada" às 18:01; a notificação sai na execução diária
+seguinte.** O job roda DIÁRIO (n8n) e compara datas — hora só muda o que a TELA
+chama de atrasado. Fazer a notificação acompanhar a hora exige mudar o
+agendamento, e ninguém pediu. **Se um dia incomodar, é fatia própria.**
+
+### Conferência visual — ✅ FEITA EM 18/08
+
+Hora passada → vermelho e no filtro "Atrasadas". Hora futura → não atrasada. Sem
+hora → o comportamento de sempre. Limpar a data de uma tarefa com hora → salva.
+Reabrir o painel → hora preenchida.
+
+---
+
+## Fatia B — texto de escopo (histórico, antes da entrega)
+
+⬜ ESCOPO, falta UMA decisão
 
 ⚠️ **REDESENHADA EM 18/08, DEPOIS DA RESPOSTA DA CAMILA.** A versão anterior
 convertia seis colunas para `timestamptz`, com backfill em 1085 linhas. Ao

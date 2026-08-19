@@ -233,6 +233,9 @@ export default function TaskDetail({
   // antiga por um instante -- que é indistinguível de "não salvou".
   const [inicioAtual, setInicioAtual] = useState<string | null>(null);
   const [prazoAtual, setPrazoAtual] = useState<string | null>(null);
+  // ⚠️ Spec 038, fatia B. `null` = "vence no dia". Guardado separado do prazo
+  // porque sao dois estados de produto: apagar a hora NAO apaga a data.
+  const [horaAtual, setHoraAtual] = useState<string | null>(null);
   const [abertoDatas, setAbertoDatas] = useState(false);
   const [salvandoDatas, setSalvandoDatas] = useState(false);
   const [erroDatas, setErroDatas] = useState<string | null>(null);
@@ -242,6 +245,7 @@ export default function TaskDetail({
   // recusa `start_date > due_date` com 422). O rascunho só vira eco no sucesso.
   const [rascunhoInicio, setRascunhoInicio] = useState("");
   const [rascunhoPrazo, setRascunhoPrazo] = useState("");
+  const [rascunhoHora, setRascunhoHora] = useState("");
 
   const [criandoSub, setCriandoSub] = useState(false);
   const [novoTitulo, setNovoTitulo] = useState("");
@@ -344,6 +348,7 @@ export default function TaskDetail({
     // ANTERIOR na tela. O `projetoAtual` já ensinou isso três linhas acima.
     setInicioAtual(task?.start_date ?? null);
     setPrazoAtual(task?.due_date ?? null);
+    setHoraAtual(task?.due_time ?? null);
     setAbertoDatas(false);
     setSalvandoDatas(false);
     setErroDatas(null);
@@ -592,7 +597,7 @@ export default function TaskDetail({
   // ⚠️ SOBRE O ECO, e nao sobre `task.due_date` (Spec 038, fatia A). Depois de
   // salvar uma data nova, o `task` do pai ainda e o antigo por um instante --
   // ler dele deixaria a cor de atraso discordando da data ao lado dela.
-  const dueTone = deadlineTone(prazoAtual, task.status, task.is_archived);
+  const dueTone = deadlineTone(prazoAtual, task.status, task.is_archived, horaAtual);
   // ⚠️ ARQUIVADA SAI DA CHECKLIST (Spec 031, C11). O quadro entrega `filhos`
   // sem filtrar -- a lista dele nao sabe que esta alimentando um checklist.
   // Filtrar AQUI conserta os tres chamadores de uma vez (quadro, minhas
@@ -674,6 +679,10 @@ export default function TaskDetail({
     // painel mostraria a data velha por cima da nova.
     setRascunhoInicio(inicioAtual ?? "");
     setRascunhoPrazo(prazoAtual ?? "");
+    // ⚠️ `HH:MM` NO INPUT, e o backend devolve `HH:MM:SS`. Um `<input
+    // type="time">` com valor de 8 caracteres fica VAZIO no navegador -- e a
+    // hora sumiria ao reabrir o painel, parecendo que nao salvou.
+    setRascunhoHora((horaAtual ?? "").slice(0, 5));
     setErroDatas(null);
     setAbertoDatas(true);
   }
@@ -684,9 +693,17 @@ export default function TaskDetail({
     // `fields_set`: `null` apaga a data, `""` nao e data e volta 422.
     const inicio = rascunhoInicio || null;
     const prazo = rascunhoPrazo || null;
+    // ⚠️ HORA SEM DATA E RECUSADA PELO BACKEND (422). Limpar a data e deixar a
+    // hora produziria esse par, e o erro falaria de um campo que a pessoa nao
+    // tocou -- entao a tela DESFAZ a combinacao antes de mandar.
+    const hora = prazo ? rascunhoHora || null : null;
     // No-op: nada mudou. Sem isto, abrir e salvar sem tocar gravaria uma
     // entrada de historico que nao aconteceu do ponto de vista de quem usa.
-    if (inicio === (inicioAtual ?? null) && prazo === (prazoAtual ?? null)) {
+    if (
+      inicio === (inicioAtual ?? null) &&
+      prazo === (prazoAtual ?? null) &&
+      hora === ((horaAtual ?? null) && (horaAtual as string).slice(0, 5))
+    ) {
       setAbertoDatas(false);
       return;
     }
@@ -698,9 +715,14 @@ export default function TaskDetail({
       // (`_validate_dates`), entao mandar so um campo pode montar um par
       // invalido com o valor que ficou no banco -- e a recusa apareceria
       // falando de um campo que a pessoa nao tocou.
-      const t = await updateTask(tid, { start_date: inicio, due_date: prazo });
+      const t = await updateTask(tid, {
+        start_date: inicio,
+        due_date: prazo,
+        due_time: hora,
+      });
       setInicioAtual(t.start_date ?? null);
       setPrazoAtual(t.due_date ?? null);
+      setHoraAtual(t.due_time ?? null);
       setAbertoDatas(false);
       // ⚠️ O PAI PRECISA SABER. Prazo muda a COR do card e o filtro
       // "Atrasadas" do quadro -- sem avisar, a tarefa fica com data nova no
@@ -1228,6 +1250,9 @@ export default function TaskDetail({
               {prazoAtual
                 ? new Date(prazoAtual + "T00:00:00").toLocaleDateString("pt-BR")
                 : "Sem datas"}
+              {/* ⚠️ `slice(0, 5)` PORQUE O BACKEND DEVOLVE `HH:MM:SS`. Sem
+                  cortar, a pilula diria "19/08/2026 18:00:00". */}
+              {prazoAtual && horaAtual && <>{" "}{horaAtual.slice(0, 5)}</>}
               {/* ⚠️ O INICIO SO APARECE QUANDO EXISTE. Desenhar "sem inicio" ao
                   lado poria duas ausencias na linha mais disputada da tela. */}
               {inicioAtual && (
@@ -1288,6 +1313,60 @@ export default function TaskDetail({
                     onChange={(e) => setRascunhoPrazo(e.target.value)}
                   />
                 </label>
+                {/* ⚠️ A HORA SO APARECE COM DATA, e nao e enfeite: hora sem
+                    data e recusada com 422 pelo backend (`_validate_hora`).
+                    Esconder o campo e mais forte que aceitar e recusar depois
+                    -- a pessoa nao chega a digitar algo que nao pode existir.
+
+                    ⚠️ E LIMPAR A DATA LIMPA A HORA (ver `salvarDatas`). Sem
+                    isso, apagar so a data mandaria o par proibido e o erro
+                    falaria de um campo que ela nao tocou. */}
+                {rascunhoPrazo && (
+                  <label style={{ fontSize: 12, color: "var(--text-soft)" }}>
+                    Hora{" "}
+                    <span className="muted" style={{ fontWeight: 400 }}>
+                      (opcional)
+                    </span>
+                    <input
+                      type="time"
+                      className="input"
+                      style={{ width: "100%", marginTop: 3 }}
+                      value={rascunhoHora}
+                      disabled={salvandoDatas}
+                      onChange={(e) => setRascunhoHora(e.target.value)}
+                    />
+                    <span
+                      style={{
+                        display: "flex", alignItems: "center",
+                        justifyContent: "space-between", gap: 6, marginTop: 3,
+                      }}
+                    >
+                      <span className="muted" style={{ fontSize: 11 }}>
+                        Sem hora, vence no fim do dia.
+                      </span>
+                      {/* ⚠️ LIMPAR PRECISA DE BOTAO PROPRIO (pedido da Camila,
+                          18/08, na tela). O `<input type="time">` tem um "x"
+                          nativo em alguns navegadores e nenhum em outros, e
+                          apagar com o teclado exige selecionar o campo inteiro
+                          -- ou seja, "tirar a hora" dependia do navegador. Um
+                          botao explicito nao depende.
+
+                          ⚠️ E ELE SO APARECE COM HORA PREENCHIDA: um "limpar"
+                          sobre campo vazio e afordancia que nao faz nada. */}
+                      {rascunhoHora && (
+                        <button
+                          type="button"
+                          className="btn btn-ghost"
+                          onClick={() => setRascunhoHora("")}
+                          disabled={salvandoDatas}
+                          style={{ fontSize: 11, padding: "1px 6px" }}
+                        >
+                          Limpar hora
+                        </button>
+                      )}
+                    </span>
+                  </label>
+                )}
                 {erroDatas && (
                   <span role="alert" className="error-text" style={{ fontSize: 12 }}>
                     {erroDatas}
@@ -1675,7 +1754,7 @@ export default function TaskDetail({
                 // para "sem alerta", e e o que o render logo abaixo testa.
                 // Coluna desconhecida = sem alerta, e nao alerta cinza.
                 const tone = colunaDela
-                  ? deadlineTonePorColuna(colunaDela, f.due_date, f.is_archived)
+                  ? deadlineTonePorColuna(colunaDela, f.due_date, f.is_archived, f.due_time)
                   : null;
                 // Rotulo da prioridade; mesmo fallback do card do quadro.
                 const rotuloPrio = PRIORITY_LABEL[f.priority] || f.priority;

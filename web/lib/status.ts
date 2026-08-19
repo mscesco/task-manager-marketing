@@ -29,6 +29,11 @@
 // produzia `var(--x)1a`, declaracao invalida que o browser descarta -- era o
 // que ja acontecia no Badge e deixava 5 badges sem fundo. Ver Badge.tsx.
 
+// ⚠️ Spec 038, fatia B: a regra de "atrasou?" mora em `lib/prazo.ts`, e este
+// arquivo a CONSOME. Ela saiu daqui de proposito -- atraso com hora e uma
+// pergunta sobre um INSTANTE, e tudo neste modulo raciocina em DIAS.
+import { agoraNoWorkspace, estaAtrasada } from "@/lib/prazo";
+
 export const STATUSES = [
   { key: "BACKLOG", label: "Backlog", color: "var(--status-backlog-dot)" },
   { key: "PLANNED", label: "Planejado", color: "var(--status-planned-dot)" },
@@ -201,9 +206,10 @@ export function paradaLabel(dias: number): string {
   return `Parada há ${dias} d`;
 }
 
-// Compara em DATA local (meia-noite), nao em instante -- o prazo e um dia, nao
-// uma hora. Assume o fuso do browser (equipe no Brasil -> BRT, casa com o
-// backend que usa America/Sao_Paulo). Concluida/cancelada/arquivada -> null.
+// Compara em DATA, nao em instante -- o prazo e um dia, nao uma hora.
+// ⚠️ O FUSO E O DO WORKSPACE, EXPLICITO. Este comentario dizia "assume o fuso do
+// browser (equipe no Brasil, casa com o backend)" -- e "casa por acidente
+// geografico" deixou de bastar quando o atraso com hora entrou. Ver o corpo.
 //
 // ⚠️ EXPORTADA NA FATIA 4a (ADR 0040) para que `lib/coluna.ts` reuse a MESMA
 // aritmetica de data. Duplicar o calculo la seria criar duas fontes de verdade
@@ -211,34 +217,75 @@ export function paradaLabel(dias: number): string {
 // fuso. Quando a fatia 4c apagar as funcoes por status deste arquivo, esta
 // funcao MUDA DE CASA para `lib/coluna.ts`; ela nao morre junto.
 export function deadlineDays(dueDate: string): number {
-  const due = new Date(dueDate + "T00:00:00"); // meia-noite local
-  const agora = new Date();
-  const hoje = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate());
-  return Math.round((due.getTime() - hoje.getTime()) / 86400000);
+  // ⚠️ NO FUSO DO WORKSPACE, E NAO NO DA MAQUINA (corrigido em 18/08, depois de
+  // o CI reprovar). A versao anterior usava a meia-noite LOCAL, e quando
+  // `estaAtrasada` passou a decidir em `America/Sao_Paulo` isto virou DUAS
+  // FONTES DE VERDADE para "que dia e hoje" -- exatamente o que o comentario
+  // antigo desta funcao dizia que nao podia acontecer.
+  //
+  // ⚠️ NA MAQUINA DA EQUIPE AS DUAS CONCORDAVAM (todo mundo em BRT), entao o
+  // defeito era invisivel aqui e so apareceu no runner do CI, que roda em UTC:
+  // entre 00:00 e 03:00 UTC, Sao Paulo ainda esta no dia ANTERIOR, e o rotulo
+  // dizia "Atrasada 1 dia" sobre uma tarefa que vence hoje. **Fuso do ambiente
+  // nao pode decidir regra de produto.**
+  //
+  // ⚠️ OS DOIS LADOS EM `T00:00:00Z`: sao datas puras, e ancorar as duas no
+  // MESMO meridiano faz a subtracao dar dias inteiros exatos. UTC nao tem
+  // horario de verao, entao nao ha dia de 23 ou 25 horas para arredondar.
+  const due = Date.parse(dueDate + "T00:00:00Z");
+  const hoje = Date.parse(agoraNoWorkspace().data + "T00:00:00Z");
+  return Math.round((due - hoje) / 86400000);
 }
 
 export function deadlineTone(
   dueDate: string | null | undefined,
   status: string,
-  isArchived: boolean
+  isArchived: boolean,
+  /** Spec 038, fatia B. Ausente = sem hora -- ver `deadlineTonePorColuna`. */
+  dueTime?: string | null
 ): DeadlineTone {
   if (!dueDate || isArchived) return null;
   // Concluida/cancelada/bloqueada -> sem alerta (nao ha o que agir no prazo).
   if (status === "COMPLETED" || status === "CANCELLED" || status === "BLOCKED") {
     return null;
   }
+  // ⚠️ MESMA regra do `deadlineTonePorColuna` -- as duas chamam `estaAtrasada`
+  // em vez de cada uma fazer a propria conta. Duas fontes de verdade para
+  // "atrasou?" divergiriam no primeiro ajuste de fuso.
+  if (estaAtrasada(dueDate, dueTime, agoraNoWorkspace())) return "overdue";
   const dias = deadlineDays(dueDate);
-  if (dias < 0) return "overdue";
   if (dias <= 2) return "soon";
   return null;
 }
 
 // Rotulo relativo do prazo (ex.: "Atrasada 2 dias", "Vence hoje", "Vence em 2
 // dias"). So chamar quando deadlineTone != null.
-export function deadlineLabel(dueDate: string): string {
+//
+// ⚠️ ELE PRECISA DA HORA PELO MESMO MOTIVO QUE O `deadlineTone`, e ESQUECER
+// ISSO FOI UM DEFEITO REAL (achado pela Camila na tela, 18/08): a tarefa ficava
+// VERMELHA e o rotulo dizia "Vence hoje". Cor e texto discordando sobre a mesma
+// tarefa e pior que os dois errados -- e o `TaskDetailChecklist.test.tsx` existe
+// por causa de um defeito identico ("o card dizia 2/2 e o detalhe 0/2").
+//
+// ⚠️ O TOM E O ROTULO TEM DE SAIR DA MESMA REGRA. Os dois chamam
+// `estaAtrasada`; um deles calculando por conta propria e como as duas fontes
+// de verdade voltam.
+export function deadlineLabel(
+  dueDate: string,
+  /** Spec 038, fatia B. Ausente = sem hora. */
+  dueTime?: string | null
+): string {
   const dias = deadlineDays(dueDate);
   if (dias < 0) return dias === -1 ? "Atrasada 1 dia" : `Atrasada ${-dias} dias`;
-  if (dias === 0) return "Vence hoje";
-  if (dias === 1) return "Vence amanhã";
+  const hhmm = dueTime ? dueTime.slice(0, 5) : null;
+  if (dias === 0) {
+    // ⚠️ O CASO QUE O ROTULO ANTIGO NAO SABIA DIZER. Com hora, "hoje" tem dois
+    // estados -- ja passou e ainda nao --, e os dois caiam em "Vence hoje".
+    if (hhmm && estaAtrasada(dueDate, dueTime, agoraNoWorkspace())) {
+      return `Venceu às ${hhmm}`;
+    }
+    return hhmm ? `Vence hoje às ${hhmm}` : "Vence hoje";
+  }
+  if (dias === 1) return hhmm ? `Vence amanhã às ${hhmm}` : "Vence amanhã";
   return `Vence em ${dias} dias`;
 }

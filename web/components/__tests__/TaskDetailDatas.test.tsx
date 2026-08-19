@@ -79,6 +79,7 @@ function task(over: Partial<Task> = {}): Task {
     priority: "MEDIUM",
     start_date: null,
     due_date: null,
+    due_time: null,
     project_id: null,
     parent_task_id: null,
     team_id: "team-marketing",
@@ -217,6 +218,7 @@ describe("TaskDetail -- a cápsula de datas (Spec 038, fatia A)", () => {
       expect(vi.mocked(api.updateTask)).toHaveBeenCalledWith("t1", {
         start_date: "2026-08-01",
         due_date: "2026-08-19",
+        due_time: null,
       })
     );
   });
@@ -234,6 +236,7 @@ describe("TaskDetail -- a cápsula de datas (Spec 038, fatia A)", () => {
       expect(vi.mocked(api.updateTask)).toHaveBeenCalledWith("t1", {
         start_date: null,
         due_date: null,
+        due_time: null,
       })
     );
   });
@@ -284,5 +287,79 @@ describe("TaskDetail -- a cápsula de datas (Spec 038, fatia A)", () => {
     fireEvent.click(screen.getByText("Salvar"));
 
     await waitFor(() => expect(onTaskMoved).toHaveBeenCalledWith(salva));
+  });
+});
+
+describe("TaskDetail -- a hora do prazo (Spec 038, fatia B)", () => {
+  it("⚠️ o campo de hora SÓ aparece quando há data", async () => {
+    // ⚠️ Hora sem data é recusada com 422 pelo backend (`_validate_hora`).
+    // Esconder é mais forte que aceitar e recusar depois: a pessoa não chega a
+    // digitar algo que não pode existir.
+    montar();
+    await abrirPainel();
+    expect(screen.queryByLabelText(/Hora/)).toBeNull();
+
+    fireEvent.change(screen.getByLabelText("Data de entrega"), {
+      target: { value: "2026-08-19" },
+    });
+    expect(screen.getByLabelText(/Hora/)).toBeTruthy();
+  });
+
+  it("manda a hora junto com a data", async () => {
+    vi.mocked(api.updateTask).mockResolvedValue(
+      task({ due_date: "2026-08-19", due_time: "18:00:00" })
+    );
+    montar({ due_date: "2026-08-19" });
+    await abrirPainel();
+    fireEvent.change(screen.getByLabelText(/Hora/), {
+      target: { value: "18:00" },
+    });
+    fireEvent.click(screen.getByText("Salvar"));
+
+    await waitFor(() =>
+      expect(vi.mocked(api.updateTask)).toHaveBeenCalledWith("t1", {
+        start_date: null,
+        due_date: "2026-08-19",
+        due_time: "18:00",
+      })
+    );
+  });
+
+  it("⚠️ limpar a DATA limpa a HORA junto, e não manda o par proibido", async () => {
+    // ⚠️ O backend recusa hora sem data com 422 -- e a mensagem falaria de um
+    // campo que a pessoa não tocou. A tela desfaz a combinação antes de mandar.
+    vi.mocked(api.updateTask).mockResolvedValue(task());
+    montar({ due_date: "2026-08-19", due_time: "18:00:00" });
+    await abrirPainel();
+    fireEvent.change(screen.getByLabelText("Data de entrega"), {
+      target: { value: "" },
+    });
+    fireEvent.click(screen.getByText("Salvar"));
+
+    await waitFor(() =>
+      expect(vi.mocked(api.updateTask)).toHaveBeenCalledWith("t1", {
+        start_date: null,
+        due_date: null,
+        due_time: null,
+      })
+    );
+  });
+
+  it("⚠️ o campo abre em HH:MM, e o backend devolve HH:MM:SS", async () => {
+    // ⚠️ Um `<input type="time">` com valor de 8 caracteres fica VAZIO no
+    // navegador -- a hora sumiria ao reabrir o painel, parecendo que não salvou.
+    montar({ due_date: "2026-08-19", due_time: "18:30:00" });
+    await abrirPainel();
+    expect((screen.getByLabelText(/Hora/) as HTMLInputElement).value).toBe(
+      "18:30"
+    );
+  });
+
+  it("a pílula mostra a hora ao lado da data, sem os segundos", async () => {
+    montar({ due_date: "2026-08-19", due_time: "18:30:00" });
+    const gatilho = await screen.findByLabelText(/Mudar datas/);
+    expect(gatilho.textContent).toContain("19/08/2026");
+    expect(gatilho.textContent).toContain("18:30");
+    expect(gatilho.textContent).not.toContain("18:30:00");
   });
 });

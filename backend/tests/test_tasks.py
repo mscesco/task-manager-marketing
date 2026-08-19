@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, time
 
 import pytest
 
@@ -174,6 +174,55 @@ def test_validate_dates_rejects_start_after_due() -> None:
     with pytest.raises(ValidationError) as exc:
         TaskService._validate_dates(date(2026, 6, 1), date(2026, 1, 1))
     assert exc.value.details["field"] == "due_date"
+
+
+# --------------------------------------------------------
+# _validate_hora  (Spec 038, fatia B)
+#
+# ⚠️ POR QUE ESTA REGRA E DO SERVICO, E NAO DO SCHEMA. Um `@model_validator` no
+# Pydantic devolveria **500 e nao 422** neste projeto -- medido, e anotado no
+# `TaskUpdateRequest` para a exclusao mutua entre `status` e `column_id`.
+# --------------------------------------------------------
+def test_validate_hora_sem_hora_sempre_passa() -> None:
+    """`None` em `due_time` e o estado de 100% das tarefas ate 18/08."""
+    TaskService._validate_hora(None, None)
+    TaskService._validate_hora(date(2026, 8, 19), None)
+
+
+def test_validate_hora_com_data_e_hora_passa() -> None:
+    TaskService._validate_hora(date(2026, 8, 19), time(18, 0))
+
+
+def test_validate_hora_recusa_hora_sem_data() -> None:
+    """⚠️ HORA SOZINHA NAO SITUA NADA, e guardada vira dado orfao.
+
+    Ela ficaria invisivel na tela (que so desenha hora ao lado de data), viva no
+    banco, e pronta para reaparecer com o dia errado no primeiro PATCH que
+    preenchesse `due_date`.
+    """
+    with pytest.raises(ValidationError) as exc:
+        TaskService._validate_hora(None, time(18, 0))
+    assert exc.value.details["field"] == "due_time"
+
+
+def test_validate_hora_meia_noite_NAO_e_ausencia() -> None:
+    """⚠️ `time(0, 0)` E UMA HORA, e o teste existe por causa do desenho.
+
+    Este e o caso que fez o `timestamptz` ser recusado: com um timestamp unico,
+    "vence dia 19" e "vence dia 19 a meia-noite" sao o mesmo valor. Aqui sao
+    estados distintos -- `None` contra `time(0, 0)` -- e uma implementacao que
+    tratasse meia-noite como "sem hora" (um `if not due_time:` no lugar de
+    `is not None`) faria os dois voltarem a colidir.
+    """
+    TaskService._validate_hora(date(2026, 8, 19), time(0, 0))
+    with pytest.raises(ValidationError):
+        TaskService._validate_hora(None, time(0, 0))
+
+
+def test_update_command_aceita_due_time() -> None:
+    """O campo existe no comando, com default `None`."""
+    cmd = UpdateTaskCommand()
+    assert cmd.due_time is None
 
 
 # --------------------------------------------------------

@@ -103,6 +103,7 @@ function task(over: Partial<Task> & { id: string; title: string }): Task {
     column_id: "col-backlog",
     start_date: null,
     due_date: "2026-03-10",
+    due_time: null,
     completed_at: null,
     created_by: ANA,
     is_archived: false,

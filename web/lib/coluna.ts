@@ -28,6 +28,7 @@
 // a coluna que o `GET /boards` devolveu e responde perguntas sobre ela.
 
 import { deadlineDays, DIAS_PARA_PARADA, type DeadlineTone } from "@/lib/status";
+import { agoraNoWorkspace, estaAtrasada } from "@/lib/prazo";
 
 // ---------------------------------------------------------------------------
 // O CONTRATO
@@ -148,12 +149,26 @@ export function pararEhNoticia(coluna: Coluna): boolean {
 export function deadlineTonePorColuna(
   coluna: Coluna,
   dueDate: string | null | undefined,
-  isArchived: boolean
+  isArchived: boolean,
+  /**
+   * Spec 038, fatia B. Ausente = tarefa sem hora, que e o comportamento de
+   * sempre.
+   *
+   * ⚠️ OPCIONAL DE PROPOSITO, e nao por preguica de atualizar chamador: sem
+   * hora esta funcao tem de responder EXATAMENTE o que respondia antes desta
+   * fatia. Um parametro obrigatorio forcaria todo chamador a decidir algo, e
+   * quem passasse `""` mudaria o comportamento sem querer.
+   */
+  dueTime?: string | null
 ): DeadlineTone {
   if (!dueDate || isArchived) return null;
   if (!avisaPrazo(coluna)) return null;
+  // ⚠️ O ATRASO SAI DE `estaAtrasada`, E O RESTO CONTINUA EM DIAS. Atraso com
+  // hora e pergunta sobre um INSTANTE ("venceu as 18:00 e agora sao 18:01"), e
+  // dia nao expressa isso -- continua sendo dia zero. Ja a janela de "vence em
+  // 2 dias" e os rotulos sao em DIAS de proposito.
+  if (estaAtrasada(dueDate, dueTime, agoraNoWorkspace())) return "overdue";
   const dias = deadlineDays(dueDate);
-  if (dias < 0) return "overdue";
   if (dias <= 2) return "soon";
   return null;
 }
