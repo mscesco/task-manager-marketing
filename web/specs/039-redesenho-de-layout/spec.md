@@ -188,12 +188,59 @@ Projetos · Minhas tarefas · Subtimes · Solicitações · Arquivadas. Rodapé:
 - ⚠️ **Colapsada, os 7 ícones não têm texto.** `web/AGENTS.md` exige
   `aria-label` descritivo em botão só-de-ícone, e rótulo visível ou tooltip.
   Tooltip com atraso no primeiro e instantâneo nos vizinhos.
-- ⚠️ **`/membros` não tem entrada na sidebar.** A tela existe (806 linhas).
-  Fica fora da navegação ou some do produto? **Pendente.**
-- **"Time Principal ›" é da Spec 040**, não desta. Confirmado com a Camila em
-  19/08: é para navegar entre times raiz quando houver mais de um. Fica
-  desenhado e **inerte** nesta spec. ⚠️ A 040 é maior do que parece — o front
-  trata a raiz como singleton em `lens.ts` e no `getRootTeamId()` memoizado.
+- ⚠️ **`/membros` fica sem entrada na sidebar NESTA spec, e de propósito.** A
+  tela existe (806 linhas) mas o lugar dela depende da reestruturação de
+  organização/times/membros, que a Camila está pensando (§6.1.1). Pôr um item
+  de menu agora é escolher a arquitetura por acidente de navegação.
+- **"Time Principal ›" fica desenhado e inerte.** É da reestruturação, não
+  desta spec.
+
+### 6.1.1. ⚠️ A reestruturação de organização/times/membros — o que o modelo JÁ faz
+
+Registro do que foi medido em 19/08, para a spec futura não começar do zero. A
+Camila descreveu a intenção; abrir o modelo mostrou que **a maior parte já
+existe** e que **um item bate de frente com uma ADR — que já previu este dia.**
+
+| intenção descrita | o modelo hoje |
+|---|---|
+| workspace = a organização (UniFECAF) | ✅ **já é isso.** `workspace_id` está em toda tabela e é a fronteira de isolamento — por isso tabela nova precisa de FK composta carregando `workspace_id` |
+| CEO enxerga tudo sem estar em time | ✅ **já funciona.** ADR 0009: `ADMIN` = visível **tudo no workspace**, editável tudo. Papel não exige vínculo de time |
+| membro em vários **times** | ✅ **o vínculo `user_team` já é N:N** (ADR 0008, Contexto) |
+| membro em vários **subtimes** | ⚠️ **PROIBIDO por regra de negócio** (ADR 0008) |
+| "Time Principal" para alternar | ⚠️ é a alternativa **rejeitada** na ADR 0008 |
+| tela de subtimes para administrar membros | ✅ modelo pronto, implementação adiada (ADR 0009, §Administração de membros) |
+
+⚠️⚠️ **A ADR 0008 previu exatamente este momento.** Ela decidiu "uma pessoa
+pertence a no máximo um subtime" **porque o default de time da tarefa é o
+subtime do criador** — com dois subtimes, "qual deles?" vira ambiguidade que
+exige regra de desempate inventada.
+
+E ela registrou o custo na §Consequências negativas: *"não cobre o caso (raro
+neste cliente) de alguém atuar em dois subtimes — teria que ser modelado
+depois, se surgir"*. **Surgiu.**
+
+⚠️ **E o "Time Principal" da Camila É a alternativa rejeitada.** A ADR 0008
+rejeitou *"permitir N subtimes + flag de 'subtime principal' no `user_team`"*
+com a justificativa **"coluna nova e cerimônia pra um caso que não existe hoje.
+Overengineering."** O caso passou a existir; a justificativa da rejeição
+expirou. Reabrir a ADR é o caminho certo — e o desenho da Camila é a resposta
+que a própria ADR já tinha considerado.
+
+**Tamanho real do trabalho, se for por esse caminho:**
+
+1. **Reabrir a ADR 0008** (supersede), decidindo N subtimes + subtime principal.
+2. **Coluna nova no `user_team`** + migration.
+3. ⚠️ O enforcement de hoje **não é constraint de banco** — é validação no
+   serviço mais trigger de apoio, porque "é subtime" depende do
+   `parent_team_id` do time referenciado, que não está na linha do `user_team`.
+   Afrouxar a regra é mexer nos dois.
+4. **O front trata a raiz como singleton** em `lens.ts` e no `getRootTeamId()`
+   **memoizado**. E o `api.ts` faz `team_id ?? await getRootTeamId()` ao criar
+   tarefa: com duas raízes, **a tarefa vai para a organização errada em
+   silêncio**. O `soRaiz` do quadro também depende do singleton.
+
+**Nada disso entra na 039.** Está aqui para que a decisão seja tomada com o
+custo na mão, e não descoberta no meio da implementação.
 
 ### 6.2. Quadro (`Quadros.png`, `Quadro Projeto.png`)
 
@@ -204,10 +251,20 @@ sino. No quadro de projeto o lápis sobe para junto do título.
   19/08. O `SeletorDeQuadro` (fatia 10) e o quadro extra da raiz (fatia 5c) não
   mudam de lugar nesta spec.
 - ⚠️ **O desenho tem 5 colunas; produção tem 8** no Quadro geral e **19** no
-  "Quadro teste do GOATzinho". Na largura desenhada cabem 5 — ou entra rolagem
-  horizontal, ou as colunas ficam bem mais estreitas que o desenho.
-  **Pendente**, e amarrado ao limite de 60 caracteres do cabeçalho, que não
-  cabe nessa largura.
+  "Quadro teste do GOATzinho". **Decisão da Camila, 19/08: rolagem
+  horizontal.** A coluna tem largura fixa e o quadro rola.
+
+  Três consequências que vêm junto:
+
+  1. **O limite de 60 caracteres do cabeçalho não cabe** na largura da coluna
+     desenhada. A truncagem já existe; o que muda é que ela passa a agir quase
+     sempre, então o nome inteiro precisa estar no `title`/tooltip.
+  2. ⚠️ **Arrastar para coluna fora da tela exige auto-scroll durante o
+     arraste.** Com 19 colunas e largura fixa, o destino frequentemente não
+     está visível. **E `onDragEnd` não tem guardião e não roda em jsdom** —
+     isso é smoke humano obrigatório, em quadro de 19 colunas.
+  3. **O container que rola precisa de `overscroll-behavior`** para não
+     arrastar a página junto.
 - ⚠️ **Não há paginação no rodapé em desenho nenhum.** Ela é a peça que ataca o
   teto de carregamento (817 de 1000, sendo **578 subtarefa** que gasta teto sem
   desenhar card). Ver §9.
@@ -221,8 +278,18 @@ Duplicar, compartilhar).
 
 - ✅ **As pílulas são o gatilho** — o dropdown abre ancorado abaixo da pílula.
   É o desenho que o handoff registra como o pedido original da cápsula de datas.
-- ⚠️ **O chevron `›` da subtarefa abre o quê?** Empilha painel, substitui o de
-  cima, ou navega? **Pendente.**
+- **O chevron `›` da subtarefa navega.** Decisão da Camila, 19/08: vai para uma
+  tela igual à de detalhe, com um botão **"voltar para «título da anterior»"**
+  — a tarefa-mãe, ou a anterior na cadeia.
+
+  ✅ **A rota já existe:** `app/tarefa/[id]/page.tsx`. Não é tela nova, é a que
+  está lá ganhando o botão de volta e o painel redesenhado.
+
+  ⚠️ **O rótulo do botão precisa do título da anterior, e ele pode não estar
+  carregado.** Subtarefa alcançada por link direto não tem a mãe em memória.
+  Duas saídas: buscar a mãe pelo `parent_task_id`, ou guardar a origem na URL.
+  A segunda é mais barata e sobrevive ao F5 — e a URL como fonte de estado é
+  regra do `web/AGENTS.md`.
 
 ### 6.4. ⚠️ Datas (`Datas.png`) — falta a hora
 
@@ -300,9 +367,16 @@ Contra o `EstadoFiltros` de hoje (`lib/filtrosQuadro.ts`):
 | — | `arquivadas` virou tela na sidebar |
 | Buscar | ✅ subiu para o cabeçalho (`raizesQueCasamBusca`) |
 
-⚠️ **O filtro de escopo tem história:** o rótulo dele estava errado e foi
-corrigido em 03/08 (tarefa de time do CRM em projeto do Marketing aparecia
-"Interna"). Sumir de propósito ou passou batido? **Pendente.**
+⚠️ **O filtro de escopo não sai.** Decisão da Camila, 19/08: **mesma estrutura
+de campo, acrescentada ao painel, e só quando a lente estiver ativa.**
+
+Isso bate com o código: `escopoDaTask` devolve `undefined` fora do modo subtime
+— o quadro geral e o de projeto não têm escopo a classificar. Então o campo é
+condicional pela mesma razão pela qual o dado é condicional.
+
+⚠️ **E ele tem história:** o rótulo estava errado e foi corrigido em 03/08 —
+tarefa de time do CRM em projeto do Marketing aparecia "Interna". A combinação
+é legítima; **o defeito era o rótulo, nunca a combinação.**
 
 ⚠️ **"Arquivadas" virou tela** — hoje é toggle dentro do quadro. É mudança de
 comportamento, não de pintura.
@@ -326,7 +400,34 @@ lidas" · lista · "Ver todas". Sem colisão.
 ### 6.10. Projetos (`Projetos.png`)
 
 Linhas cinzas sem conteúdo definido. **Não desenhado ainda** — fora do escopo
-desta spec até haver wireframe.
+desta spec até haver desenho.
+
+### 6.11. Paginação — proposta (sem desenho)
+
+Não há wireframe. Proposta minha, para a Camila reagir.
+
+**O problema medido:** o quadro carrega **817 de 1000** de teto. Desses, **578
+são subtarefa**, que gasta teto sem desenhar card. Sobram **239 cards**, e
+**125 estão em "Concluído"**.
+
+⚠️ **Rodapé de paginação global não serve para kanban.** "Página 2 de 4" num
+quadro de 5 colunas não responde a pergunta que alguém faz — a pessoa quer mais
+cards *de uma coluna*, não a próxima fatia do quadro inteiro. E com rolagem
+horizontal (§6.2) o rodapé some da vista.
+
+**Proposta: "carregar mais" por coluna.**
+
+- Cada coluna carrega N cards; o rodapé **da coluna** mostra
+  `mostrando 50 de 125` e um botão "Carregar mais".
+- A coluna que mais precisa é justamente "Concluído" (125 de 239 cards), e ela
+  é a que menos precisa estar inteira na tela.
+- O contador do cabeçalho continua sendo o total real, não o carregado — senão
+  o número mente.
+
+⚠️ **Isto sozinho não resolve o teto.** As 578 subtarefas continuam consumindo
+o limite de 1000 antes de qualquer paginação de tela. **A outra metade é
+backend** — agregar a contagem de subtarefa no modelo do `assignee_ids_for_tasks`
+(ADR 0025) para que elas parem de vir como linha. Isso é spec própria (§9).
 
 ---
 
@@ -442,12 +543,25 @@ fatia.
 
 ---
 
-## 11. Pendências para a Camila
+## 11. Decisões tomadas em 19/08
 
-1. **Largura de coluna** — 5 no desenho, 8 em produção, 19 no quadro de teste.
-   Rolagem horizontal ou coluna mais estreita? Amarrado ao limite de 60
-   caracteres do cabeçalho.
-2. **Filtro de escopo** (todos/interna/compartilhada) sai de propósito?
-3. **`/membros`** fica fora da sidebar?
-4. **O chevron `›` da subtarefa** empilha, substitui ou navega?
-5. **Paginação** — não há wireframe; desenhar ou eu proponho?
+| # | decisão | onde |
+|---|---|---|
+| 1 | Escala tipográfica **híbrida** | §4 |
+| 2 | **Inter** via `next/font/local` | §5 |
+| 3 | Modo de edição: **repor** renomear + tornar padrão + cor | §6.5 |
+| 4 | Hora do prazo: **campo E pílula** | §6.4 |
+| 5 | Cor do LoFi **não é decisão** — o acento continua um só | §1 |
+| 6 | Seletor de quadro **fica como está** | §6.2 |
+| 7 | `notify_deadline`: **caixa em dois lugares, com trava no terminal** | §7 |
+| 8 | Colunas: **rolagem horizontal** | §6.2 |
+| 9 | Filtro de escopo: **entra no painel, só na lente** | §6.7 |
+| 10 | Chevron da subtarefa: **navega, com botão de voltar** | §6.3 |
+| 11 | `/membros` e "Time Principal": **fora desta spec** | §6.1.1 |
+
+## 12. Pendências
+
+1. **Paginação** — a proposta de "carregar mais por coluna" (§6.11) precisa do
+   aval da Camila. Sem desenho.
+2. **Reestruturação de organização/times/membros** — §6.1.1 tem o custo
+   medido; a decisão é dela, e não bloqueia nenhuma fatia desta spec.
