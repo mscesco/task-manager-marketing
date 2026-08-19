@@ -17,6 +17,7 @@
 import { describe, expect, it } from "vitest";
 
 import { agoraNoWorkspace, estaAtrasada, type Agora } from "../prazo";
+import { deadlineLabel } from "../status";
 
 const agora = (data: string, hora: string): Agora => ({ data, hora });
 
@@ -133,5 +134,41 @@ describe("agoraNoWorkspace", () => {
     // devolvem `24` para meia-noite -- e `"24:00"` ordenaria depois de tudo.
     const a = agoraNoWorkspace(new Date("2026-08-19T03:30:00Z"));
     expect(a.hora).toBe("00:30");
+  });
+});
+
+describe("deadlineLabel -- o rótulo NÃO pode discordar da cor", () => {
+  // ⚠️ ESTE BLOCO NASCEU DE UM DEFEITO REAL, achado pela Camila na tela em
+  // 18/08: a tarefa ficava VERMELHA e o rótulo dizia "Vence hoje". Eu tinha
+  // deixado o `deadlineTone` ciente da hora e esquecido o `deadlineLabel`.
+  //
+  // ⚠️ COR E TEXTO DISCORDANDO É PIOR QUE OS DOIS ERRADOS, e este projeto já
+  // pagou por isso uma vez: o `TaskDetailChecklist.test.tsx` existe porque o
+  // card dizia "2/2" e o detalhe da MESMA tarefa dizia "(0/2)".
+  //
+  // ⚠️ ESTES TESTES USAM O RELÓGIO DE VERDADE, e por isso comparam com datas
+  // relativas a hoje -- não com uma data fixa, que passaria a mentir amanhã.
+  function hojeEmSP(): string {
+    return agoraNoWorkspace().data;
+  }
+
+  it("⚠️ hora JÁ PASSADA hoje não diz 'Vence hoje'", () => {
+    const rotulo = deadlineLabel(hojeEmSP(), "00:01");
+    expect(rotulo).not.toContain("Vence hoje");
+    expect(rotulo).toContain("Venceu");
+  });
+
+  it("hora AINDA POR VIR hoje diz que vence hoje, com a hora", () => {
+    expect(deadlineLabel(hojeEmSP(), "23:59")).toBe("Vence hoje às 23:59");
+  });
+
+  it("sem hora, o rótulo de hoje é o de sempre", () => {
+    // ⚠️ É o comportamento das 1085 tarefas de produção. Não pode mudar.
+    expect(deadlineLabel(hojeEmSP(), null)).toBe("Vence hoje");
+    expect(deadlineLabel(hojeEmSP())).toBe("Vence hoje");
+  });
+
+  it("⚠️ corta os segundos que o Postgres devolve", () => {
+    expect(deadlineLabel(hojeEmSP(), "23:59:00")).toBe("Vence hoje às 23:59");
   });
 });

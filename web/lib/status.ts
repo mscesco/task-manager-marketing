@@ -245,10 +245,32 @@ export function deadlineTone(
 
 // Rotulo relativo do prazo (ex.: "Atrasada 2 dias", "Vence hoje", "Vence em 2
 // dias"). So chamar quando deadlineTone != null.
-export function deadlineLabel(dueDate: string): string {
+//
+// ⚠️ ELE PRECISA DA HORA PELO MESMO MOTIVO QUE O `deadlineTone`, e ESQUECER
+// ISSO FOI UM DEFEITO REAL (achado pela Camila na tela, 18/08): a tarefa ficava
+// VERMELHA e o rotulo dizia "Vence hoje". Cor e texto discordando sobre a mesma
+// tarefa e pior que os dois errados -- e o `TaskDetailChecklist.test.tsx` existe
+// por causa de um defeito identico ("o card dizia 2/2 e o detalhe 0/2").
+//
+// ⚠️ O TOM E O ROTULO TEM DE SAIR DA MESMA REGRA. Os dois chamam
+// `estaAtrasada`; um deles calculando por conta propria e como as duas fontes
+// de verdade voltam.
+export function deadlineLabel(
+  dueDate: string,
+  /** Spec 038, fatia B. Ausente = sem hora. */
+  dueTime?: string | null
+): string {
   const dias = deadlineDays(dueDate);
   if (dias < 0) return dias === -1 ? "Atrasada 1 dia" : `Atrasada ${-dias} dias`;
-  if (dias === 0) return "Vence hoje";
-  if (dias === 1) return "Vence amanhã";
+  const hhmm = dueTime ? dueTime.slice(0, 5) : null;
+  if (dias === 0) {
+    // ⚠️ O CASO QUE O ROTULO ANTIGO NAO SABIA DIZER. Com hora, "hoje" tem dois
+    // estados -- ja passou e ainda nao --, e os dois caiam em "Vence hoje".
+    if (hhmm && estaAtrasada(dueDate, dueTime, agoraNoWorkspace())) {
+      return `Venceu às ${hhmm}`;
+    }
+    return hhmm ? `Vence hoje às ${hhmm}` : "Vence hoje";
+  }
+  if (dias === 1) return hhmm ? `Vence amanhã às ${hhmm}` : "Vence amanhã";
   return `Vence em ${dias} dias`;
 }

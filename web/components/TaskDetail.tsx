@@ -1336,10 +1336,34 @@ export default function TaskDetail({
                       onChange={(e) => setRascunhoHora(e.target.value)}
                     />
                     <span
-                      className="muted"
-                      style={{ fontSize: 11, display: "block", marginTop: 3 }}
+                      style={{
+                        display: "flex", alignItems: "center",
+                        justifyContent: "space-between", gap: 6, marginTop: 3,
+                      }}
                     >
-                      Sem hora, vence no fim do dia.
+                      <span className="muted" style={{ fontSize: 11 }}>
+                        Sem hora, vence no fim do dia.
+                      </span>
+                      {/* ⚠️ LIMPAR PRECISA DE BOTAO PROPRIO (pedido da Camila,
+                          18/08, na tela). O `<input type="time">` tem um "x"
+                          nativo em alguns navegadores e nenhum em outros, e
+                          apagar com o teclado exige selecionar o campo inteiro
+                          -- ou seja, "tirar a hora" dependia do navegador. Um
+                          botao explicito nao depende.
+
+                          ⚠️ E ELE SO APARECE COM HORA PREENCHIDA: um "limpar"
+                          sobre campo vazio e afordancia que nao faz nada. */}
+                      {rascunhoHora && (
+                        <button
+                          type="button"
+                          className="btn btn-ghost"
+                          onClick={() => setRascunhoHora("")}
+                          disabled={salvandoDatas}
+                          style={{ fontSize: 11, padding: "1px 6px" }}
+                        >
+                          Limpar hora
+                        </button>
+                      )}
                     </span>
                   </label>
                 )}

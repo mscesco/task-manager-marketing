@@ -899,7 +899,7 @@ function Minhas() {
                   flexShrink: 0,
                 }}
               >
-                {deadlineLabel(t.due_date)}
+                {deadlineLabel(t.due_date, t.due_time)}
               </span>
             )}
           </div>
