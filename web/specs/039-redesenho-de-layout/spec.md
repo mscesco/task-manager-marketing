@@ -417,10 +417,45 @@ desta spec até haver desenho.
 
 **Aprovado pela Camila, 19/08.**
 
-⚠️ **Os números de referência são de 18/08 e ENVELHECERAM.** Naquele dia: 817
-carregadas de 1000 de teto, 578 subtarefa, 239 cards, 125 em "Concluído". Na
-tela de 19/08 o Quadro geral mostra **170 tarefas**, com "Concluído" em **87** —
-o arquivamento rodou no meio. **Remedir antes de dimensionar a fatia** (§6.11.2).
+#### 6.11.0. ⚠️⚠️ MEDIDO EM 19/08 — o teto está a 83 tarefas
+
+Query do §6.11.2 rodada no Adminer em 19/08:
+
+| tipo | total |
+|---|---|
+| card (raiz) | **247** |
+| subtarefa | **670** |
+| **carregado** | **917** de teto **1000** |
+
+| | 18/08 | 19/08 |
+|---|---|---|
+| carregado | 817 | **917** |
+| subtarefa | 578 | **670** |
+| card | 239 | **247** |
+| folga até o teto | 183 | **83** |
+
+⚠️ **73% do que o quadro carrega é subtarefa**, e nenhuma delas desenha card.
+
+⚠️ **Correção de um erro meu:** eu havia escrito que "o arquivamento rodou no
+meio" porque o Quadro geral mostra 170 e em 18/08 eram 239 cards. **Não foi
+isso.** Os cards subiram (239 → 247). A diferença é a **guarda de `board_id` da
+fatia 5c**: o `/quadro` só mostra tarefa cujo `board_id` é o do geral, e agora
+existem 8 quadros. Os **77 cards restantes estão nos outros 7 quadros** — a
+guarda funcionando, não tarefa sumindo.
+
+**Consequência de prioridade, e ela é maior que esta spec:**
+
+⚠️ **A paginação por coluna (F10) NÃO move o teto.** Ela é exibição no cliente;
+`listAllTasks` continua buscando as 917. Com F10 pronta, a folga continua 83.
+
+**Só a agregação no backend move.** Com a contagem de subtarefa agregada, o
+quadro carregaria **247** em vez de 917 — folga de **753** em vez de 83. Não é
+otimização; é a diferença entre 8% e 75% de margem.
+
+**Recomendação:** a agregação deixa de ser "spec futura" e passa a **correr
+antes ou em paralelo à 039**. Quando o teto estourar, `listAllTasks` devolve
+`truncated=true` e a tela avisa (não perde em silêncio) — mas o quadro deixa de
+estar completo.
 
 #### 6.11.1. ⚠️ Subtarefa consome o teto — confirmado no código, não suposto
 
@@ -550,9 +585,9 @@ a coluna antiga num gesto só".
 
 ## 9. Fora de escopo, e por quê
 
-- **A contagem agregada de subtarefa no backend.** A paginação (F10) ataca o
-  teto de carregamento pela tela; a outra metade é agregar a contagem no modelo
-  do `assignee_ids_for_tasks` (ADR 0025). **É backend e vira spec própria.**
+- ⚠️ **A contagem agregada de subtarefa no backend.** É backend e vira spec
+  própria — **mas ela não é "depois", é possivelmente ANTES.** Medição de 19/08:
+  917 de 1000, folga de 83, e a F10 não move esse número. Ver §6.11.0.
 - **Spec 040 — múltiplos times raiz.** O "Time Principal ›" fica desenhado e
   inerte.
 - **Spec 041 — reações em comentário.**
@@ -606,7 +641,9 @@ fatia.
 
 ## 12. Pendências
 
-1. **Remedir o teto** antes de dimensionar a F10 — os números de 18/08
-   envelheceram. Query em §6.11.2.
+1. ⚠️⚠️ **Ordem entre a agregação de subtarefa e esta spec.** Medido em 19/08:
+   **917 de 1000, folga de 83**, e 73% da carga é subtarefa. A F10 não move
+   esse número — só a agregação move. Decisão da Camila: a agregação corre
+   antes, em paralelo, ou depois? Ver §6.11.0.
 2. **Reestruturação de organização/times/membros** — §6.1.1 tem o custo
    medido; a decisão é da Camila, e não bloqueia nenhuma fatia desta spec.
