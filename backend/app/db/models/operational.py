@@ -12,7 +12,7 @@ task e o agregado central do sistema. Pontos de atencao:
 from __future__ import annotations
 
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, time
 
 from sqlalchemy import (
     Boolean,
@@ -25,6 +25,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    Time,
     UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
@@ -278,6 +279,28 @@ class Task(
     )
     start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # Spec 038, fatia B: a HORA do prazo. `None` = "vence no dia", que e o
+    # comportamento de sempre e o de 100% das 1085 tarefas de 18/08.
+    #
+    # ⚠️ COLUNA SEPARADA, E NAO `due_date` VIRANDO `timestamptz`. Horario e
+    # OPCIONAL (decisao da Camila, 18/08), e um timestamp unico nao distingue
+    # "vence dia 19" de "vence dia 19 a meia-noite" -- sao dois estados de
+    # produto e um valor so. Aqui "sem hora" E o `NULL`, e nao um valor
+    # especial.
+    #
+    # ⚠️ E FOI ISSO QUE EVITOU MEXER EM 1085 LINHAS. Trocar o tipo de `due_date`
+    # exigiria backfill (e `00:00` poria toda tarefa com prazo hoje em atraso de
+    # manha), mais a troca de tipo dos DOIS campos de dedup abaixo -- e se eles
+    # divergissem de `due_date`, o job passaria a notificar todo dia, todas as
+    # tarefas com prazo, para as 26 pessoas. Coluna nova e nula nao faz nada
+    # disso: o codigo velho nunca pergunta por ela.
+    #
+    # ⚠️ `Time` SEM FUSO, E ISSO E DELIBERADO. E relogio de parede -- "18:00" e
+    # o que a pessoa digita. O fuso entra UMA vez, na hora de comparar, e e
+    # `America/Sao_Paulo` (decisao da Camila, 18/08) -- o MESMO que o
+    # `DeadlineNotifyService` ja usa desde a Spec 023 (D7). A tela e o job
+    # passam a concordar por construcao.
+    due_time: Mapped[time | None] = mapped_column(Time, nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )

@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field, replace
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, time
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -129,6 +129,8 @@ class CreateTaskCommand:
     priority: PriorityLevel = PriorityLevel.MEDIUM
     start_date: date | None = None
     due_date: date | None = None
+    # Spec 038, fatia B: hora do prazo. `None` = "vence no dia".
+    due_time: time | None = None
     # Spec 021: responsaveis aplicados APOS a task nascer, reusando os gates
     # de atribuicao. Atomico: invalido(s) -> 422 e a criacao inteira reverte.
     assignee_ids: list[uuid.UUID] = field(default_factory=list)
@@ -224,6 +226,8 @@ class UpdateTaskCommand:
     team_id: uuid.UUID | None = None
     start_date: date | None = None
     due_date: date | None = None
+    # Spec 038, fatia B: hora do prazo. `None` = "vence no dia".
+    due_time: time | None = None
     # ⚠️ ADR 0041. Mutuamente exclusivo com `status` -- o schema recusa os dois
     # juntos com 422, antes de chegar aqui. Quando ele vem, o STATUS e derivado
     # dele, e nao o contrario.
@@ -440,6 +444,7 @@ class TaskService:
                 details={"field": "title"},
             )
         self._validate_dates(command.start_date, command.due_date)
+        self._validate_hora(command.due_date, command.due_time)
 
         tenant = require_tenant()
 
@@ -538,6 +543,7 @@ class TaskService:
             priority=command.priority,
             start_date=command.start_date,
             due_date=command.due_date,
+            due_time=command.due_time,
             created_by=tenant.user_id,
             path=path,
             depth=depth,
@@ -1113,9 +1119,15 @@ class TaskService:
             task.start_date = command.start_date
         if "due_date" in command.fields_set:
             task.due_date = command.due_date
+        if "due_time" in command.fields_set:
+            task.due_time = command.due_time
 
         # Valida estado resultante.
         self._validate_dates(task.start_date, task.due_date)
+        # ⚠️ TAMBEM SOBRE O ESTADO RESULTANTE, e nao sobre o que veio no corpo.
+        # Apagar so o `due_date` de uma tarefa que tem hora deixaria hora orfa,
+        # e o corpo desse PATCH nem menciona `due_time`.
+        self._validate_hora(task.due_date, task.due_time)
 
         if entries:
             tenant = require_tenant()
@@ -1608,6 +1620,30 @@ class TaskService:
         if parent is None:
             return (new_label, 0)
         return (f"{parent.path}.{new_label}", parent.depth + 1)
+
+    @staticmethod
+    def _validate_hora(due_date: date | None, due_time: time | None) -> None:
+        """Hora de prazo exige DATA de prazo (Spec 038, fatia B).
+
+        ⚠️ HORA SOZINHA NAO SITUA NADA. "vence as 18:00" sem dia nao e um prazo,
+        e guardar isso deixaria `due_time` orfa -- invisivel na tela (que so
+        desenha hora ao lado de data), viva no banco, e pronta para reaparecer
+        com o dia errado no primeiro `PATCH` que preenchesse `due_date`.
+
+        ⚠️ E A RECUSA E DO SERVICO, e nao do schema. Um `@model_validator` no
+        Pydantic devolveria **500 e nao 422** neste projeto -- esta medido e
+        anotado no `TaskUpdateRequest`, para a exclusao mutua entre `status` e
+        `column_id`. Mesma armadilha, mesma saida.
+
+        ⚠️ CONFERE O ESTADO RESULTANTE, e nao o corpo. Quem chama passa o par
+        FINAL da tarefa: apagar so o `due_date` de uma tarefa que tem hora cai
+        aqui, mesmo que o `PATCH` nao mencione `due_time`.
+        """
+        if due_time is not None and due_date is None:
+            raise ValidationError(
+                "Hora do prazo exige uma data de prazo.",
+                details={"field": "due_time"},
+            )
 
     @staticmethod
     def _validate_dates(

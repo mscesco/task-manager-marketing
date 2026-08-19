@@ -175,6 +175,12 @@ async def create_task(
             priority=payload.priority,
             start_date=payload.start_date,
             due_date=payload.due_date,
+            # ⚠️ Spec 038, fatia B. Esta linha e a que o `board_id` da fatia
+            # 5b-6 NAO teve, e por isso toda tarefa criada num quadro avulso
+            # nasceu no Quadro geral por um mes: o campo chega no payload,
+            # o command tem default `None`, e o valor e descartado em SILENCIO.
+            # Sem erro, sem 422, e com os tres portoes verdes.
+            due_time=payload.due_time,
             # Spec 021: responsaveis ja na criacao. Sem esta linha o campo
             # chega no payload e e descartado -- a task nasce sem responsavel,
             # sem erro (o CreateTaskCommand tem default []). Coberto por
@@ -289,6 +295,7 @@ async def update_task(
             team_id=payload.team_id,
             start_date=payload.start_date,
             due_date=payload.due_date,
+            due_time=payload.due_time,
             # ADR 0041: quando vem, ele manda e o status e derivado dele. O
             # schema ja garantiu que nao veio junto com `status`.
             column_id=payload.column_id,
