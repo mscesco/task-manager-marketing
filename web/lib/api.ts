@@ -316,6 +316,17 @@ export type Task = {
   // lados no mesmo passo.
   board_id: string;
   column_id: string;
+  /**
+   * Spec 038, fatia A.
+   *
+   * ⚠️ ERA O MESMO BURACO DO `board_id`/`column_id` DESCRITO LOGO ACIMA, e o
+   * aviso daquele bloco ("acrescente NOS DOIS lados no mesmo passo") descrevia
+   * este campo antes de ele existir aqui. O backend serve `start_date` desde
+   * sempre -- esta no `TaskResponse` (`schemas.py:142`), no create, no update e
+   * no `TaskService` -- e o front nunca o declarou. Nada ficava vermelho:
+   * campo a mais na resposta e ignorado em silencio pelo tipo.
+   */
+  start_date: string | null;
   due_date: string | null;
   completed_at: string | null;
   created_by: string;
@@ -1017,6 +1028,13 @@ export type TaskCreateInput = {
   title: string;
   description?: string;
   priority?: string;
+  /**
+   * Spec 038, fatia A. ⚠️ DECLARAR AQUI NAO BASTA -- `createTask` monta o
+   * corpo CAMPO A CAMPO, e foi exatamente assim que o `board_id` ficou de fora
+   * por uma fatia inteira (ver o comentario dentro do corpo). O guardiao e
+   * `lib/__tests__/createTaskCorpo.test.ts`, e nao teste de componente.
+   */
+  start_date?: string | null;
   due_date?: string | null;
   project_id?: string | null; // criar dentro de um projeto (Entrega 11)
   assignee_ids?: string[]; // Spec 021: responsaveis ja na criacao
@@ -1137,6 +1155,10 @@ export async function createTask(input: TaskCreateInput): Promise<Task> {
       title: input.title,
       description: input.description ?? "",
       priority: input.priority, // ausente => backend usa MEDIUM
+      // ⚠️ A LINHA QUE O `board_id` NAO TEVE. Declarar no tipo nao poe no
+      // corpo -- ver o bloco de aviso mais abaixo, escrito depois de a tarefa
+      // criada num quadro avulso nascer no Quadro geral por uma fatia inteira.
+      start_date: input.start_date ?? null,
       due_date: input.due_date ?? null,
       // pin: so manda team_id se a raiz foi resolvida.
       ...(teamId ? { team_id: teamId } : {}),
@@ -1180,6 +1202,25 @@ export type TaskUpdateInput = {
   description?: string;
   priority?: string;
   status?: string;
+  /**
+   * Spec 038, fatia A.
+   *
+   * ⚠️ AQUI DECLARAR BASTA, e a diferenca para o `createTask` e o motivo de
+   * este comentario existir: `updateTask` manda `body: input` inteiro, entao o
+   * campo viaja sozinho. O `createTask` monta campo a campo e precisou de uma
+   * linha no corpo. **Dois caminhos, duas regras** -- e e por isso que o teste
+   * de corpo existe para um e nao para o outro.
+   *
+   * ⚠️ `null` LIMPA, `undefined` NAO MEXE. O backend usa `fields_set`
+   * (`task_service.py:1112`), entao mandar `start_date: null` apaga a data e
+   * omitir o campo a preserva. A tela precisa mandar `null` explicito quando a
+   * pessoa limpa o campo -- `""` viraria 422.
+   *
+   * ⚠️ E O BACKEND RECUSA `start_date > due_date` com 422 (`_validate_dates`,
+   * `task_service.py:1613`), conferindo o estado FINAL da tarefa e nao so o
+   * que veio no corpo. Quem chama tem de saber ler esse erro.
+   */
+  start_date?: string | null;
   due_date?: string | null;
   /**
    * Fatia 5a do backend (ADR 0041): mover a tarefa de COLUNA, com o status

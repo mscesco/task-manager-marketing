@@ -94,6 +94,29 @@ describe("createTask -- o corpo que realmente sai", () => {
     expect("board_id" in corpoEnviado()).toBe(false);
   });
 
+  it("⚠️ leva start_date no corpo -- Spec 038, fatia A", async () => {
+    // ⚠️ E EXATAMENTE A FALHA QUE O TOPO DESTE ARQUIVO DESCREVE, evitada uma
+    // terceira vez. `start_date` existe no backend desde sempre (schema, router
+    // e `TaskService`), o tipo `TaskCreateInput` passou a declara-lo, e o
+    // `TaskModal` a preenche-lo. Sem a linha dentro do corpo de `createTask`,
+    // a data digitada na criacao sumiria em silencio -- sem erro, sem 422, e
+    // com os tres portoes verdes.
+    await createTask({ ...BASE, start_date: "2026-08-01" });
+    expect(corpoEnviado().start_date).toBe("2026-08-01");
+  });
+
+  it("⚠️ sem inicio manda null, e nao omite", async () => {
+    // ⚠️ DIFERENTE DO `board_id` LOGO ACIMA, e a diferenca e de contrato.
+    // Ausencia de `board_id` significa "escolha o padrao"; ausencia de
+    // `start_date` nao significa nada -- `null` E o valor, e o `due_date` ao
+    // lado ja se comporta assim. Omitir faria os dois campos de data seguirem
+    // regras diferentes no mesmo corpo.
+    await createTask(BASE);
+    const corpo = corpoEnviado();
+    expect("start_date" in corpo).toBe(true);
+    expect(corpo.start_date).toBe(null);
+  });
+
   it("continua mandando o que ja mandava antes da fatia 5b-6", async () => {
     await createTask({
       ...BASE,

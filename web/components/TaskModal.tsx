@@ -127,6 +127,15 @@ export default function TaskModal({
   const [description, setDescription] = useState("");
   const [priority, setPriority] = useState<string>("MEDIUM");
   const [dueDate, setDueDate] = useState("");
+  /**
+   * Spec 038, fatia A.
+   *
+   * ⚠️ NAO ENTRA EM `motivoNaoCria`. A trava de criacao exige titulo,
+   * responsavel e PRAZO (decisao da equipe) -- data de inicio e informacao
+   * de planejamento, e exigi-la mudaria a regra de quem pode criar tarefa,
+   * que nao e o que esta fatia faz.
+   */
+  const [startDate, setStartDate] = useState("");
   // ⚠️ Fatia 4c-2: o seletor deixou de escolher STATUS e passou a escolher
   // COLUNA. O estado guarda um `column_id`; `""` = nenhuma (colunas ainda
   // chegando, ou tarefa em coluna que nao e deste quadro).
@@ -203,6 +212,7 @@ export default function TaskModal({
     setDescription(task?.description ?? "");
     setPriority(task?.priority ?? "MEDIUM");
     setDueDate(task?.due_date ?? "");
+    setStartDate(task?.start_date ?? "");
     setColunaId(task?.column_id ?? "");
     setProjetoSel("");
     setAssigneeIds([]);
@@ -554,6 +564,16 @@ export default function TaskModal({
         if (colunaId && colunaId !== task.column_id) diff.column_id = colunaId;
         const due = dueDate || null;
         if (due !== (task.due_date ?? null)) diff.due_date = due;
+        // ⚠️ SÓ SE MUDOU, como os vizinhos -- `fields_set` no backend
+        // distingue "não mexeu" de "apagou", e mandar sempre gravaria
+        // entrada de histórico para campo intocado.
+        //
+        // ⚠️ MAS SE UM DOS DOIS MUDOU, O BACKEND VALIDA O PAR FINAL
+        // (`_validate_dates`): mexer só no início pode ser recusado por causa
+        // de um prazo que a pessoa não tocou. O 422 traz a mensagem certa, e
+        // é ela que aparece -- ver o `catch` deste arquivo.
+        const inicio = startDate || null;
+        if (inicio !== (task.start_date ?? null)) diff.start_date = inicio;
 
         if (Object.keys(diff).length === 0) {
           // Nada mudou: nao chama a API, so fecha.
@@ -624,6 +644,11 @@ export default function TaskModal({
           description: description.trim(),
           priority,
           due_date: dueDate || null,
+          // ⚠️ Spec 038, fatia A. O `createTask` monta o corpo CAMPO A CAMPO,
+          // e por isso passar aqui NAO basta sozinho: a linha correspondente
+          // dentro do `createTask` e que poe o campo no POST. Foi assim que o
+          // `board_id` logo abaixo ficou de fora por uma fatia inteira.
+          start_date: startDate || null,
           project_id: defaultProjectId ?? (projetoSel || null),
           assignee_ids: assigneeIds,
           team_id: defaultTeamId,
@@ -768,6 +793,24 @@ export default function TaskModal({
               vencida: o job de prazo dispara TASK_OVERDUE para todas na
               primeira execução (51 numa única execução em 01/08). A pessoa
               define o prazo depois, na tarefa criada. */}
+          {/* ⚠️ INICIO SEGUE A MESMA REGRA DO PRAZO NA CÓPIA: escondido.
+              O comentário acima explica por quê para o prazo -- cópia com data
+              velha nasce vencida e o job dispara TASK_OVERDUE para todas (51
+              numa execução, em 01/08). Data de início velha não dispara nada,
+              mas mentir sobre quando o trabalho começou é o mesmo tipo de
+              herança silenciosa, e manter os dois juntos evita a pergunta
+              "por que um aparece e o outro não?". */}
+          {!duplicando && (
+            <div className="field" style={{ flex: 1 }}>
+              <label className="label" htmlFor="t-start">
+                Início <span className="muted" style={{ fontWeight: 400 }}>(opcional)</span>
+              </label>
+              <input
+                id="t-start" className="input" type="date" value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+              />
+            </div>
+          )}
           {!duplicando && (
             <div className="field" style={{ flex: 1 }}>
               <label className="label" htmlFor="t-due">

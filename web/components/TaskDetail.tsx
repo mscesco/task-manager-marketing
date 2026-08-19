@@ -225,6 +225,24 @@ export default function TaskDetail({
   const [movendoProj, setMovendoProj] = useState(false);
   const [erroProj, setErroProj] = useState<string | null>(null);
 
+  // Datas (Spec 038, fatia A): a cápsula com início e entrega.
+  //
+  // ⚠️ ECO LOCAL DOS DOIS, pelo mesmo motivo do `projetoAtual`: o painel fecha
+  // no sucesso e a linha precisa mostrar o valor novo sem esperar o pai
+  // refetchar. Sem isto a pessoa salva, o painel fecha, e a data continua a
+  // antiga por um instante -- que é indistinguível de "não salvou".
+  const [inicioAtual, setInicioAtual] = useState<string | null>(null);
+  const [prazoAtual, setPrazoAtual] = useState<string | null>(null);
+  const [abertoDatas, setAbertoDatas] = useState(false);
+  const [salvandoDatas, setSalvandoDatas] = useState(false);
+  const [erroDatas, setErroDatas] = useState<string | null>(null);
+  // ⚠️ RASCUNHO SEPARADO DO ECO. O painel tem DOIS campos e um botão de
+  // salvar: editar direto o eco mandaria uma requisição por tecla, e pior,
+  // deixaria a tela mostrando um estado que o servidor recusou (o backend
+  // recusa `start_date > due_date` com 422). O rascunho só vira eco no sucesso.
+  const [rascunhoInicio, setRascunhoInicio] = useState("");
+  const [rascunhoPrazo, setRascunhoPrazo] = useState("");
+
   const [criandoSub, setCriandoSub] = useState(false);
   const [novoTitulo, setNovoTitulo] = useState("");
   // Criacao rapida de subtarefa (29/07): responsavel OBRIGATORIO, prazo
@@ -283,6 +301,7 @@ export default function TaskDetail({
   // mesma ancora + fechar-ao-clicar-fora. Antes era um <select> inline: nao
   // precisava fechar sozinho porque nao flutuava sobre nada.
   const projWrapRef = useRef<HTMLDivElement>(null);
+  const datasWrapRef = useRef<HTMLDivElement>(null);
 
   // Insere um trecho (emoji) na posicao do cursor do textarea e mantem foco.
   function inserirNoCursor(
@@ -320,6 +339,14 @@ export default function TaskDetail({
     setAbertoProj(false);
     setMovendoProj(false);
     setErroProj(null);
+    // ⚠️ AS DATAS ENTRAM NO MESMO RESET, e esquecer isto seria o defeito mais
+    // provável desta fatia: navegar de uma tarefa para outra deixaria o eco da
+    // ANTERIOR na tela. O `projetoAtual` já ensinou isso três linhas acima.
+    setInicioAtual(task?.start_date ?? null);
+    setPrazoAtual(task?.due_date ?? null);
+    setAbertoDatas(false);
+    setSalvandoDatas(false);
+    setErroDatas(null);
     setCriandoSub(false);
     setNovoTitulo("");
     setErroSub(null);
@@ -392,6 +419,26 @@ export default function TaskDetail({
     document.addEventListener("mousedown", onDown);
     return () => document.removeEventListener("mousedown", onDown);
   }, [abertoProj]);
+
+  // Fecha o painel de datas ao clicar fora -- MESMO padrao dos dois acima.
+  //
+  // ⚠️ E NAO O `useFecharAoClicarFora`, que resolve outro problema: aquele
+  // pareia `mousedown` com `mouseup` porque em MODAL, selecionar texto dentro
+  // e soltar fora fechava e apagava formulario. Painel suspenso usa este.
+  //
+  // ⚠️ FECHAR DESCARTA O RASCUNHO, e isso e deliberado: o painel tem botao de
+  // salvar, entao clicar fora e o cancelar. Salvar no fechamento mandaria
+  // requisicao por engano toda vez que a pessoa clicasse ao lado.
+  useEffect(() => {
+    if (!abertoDatas) return;
+    function onDown(e: MouseEvent) {
+      if (datasWrapRef.current && !datasWrapRef.current.contains(e.target as Node)) {
+        setAbertoDatas(false);
+      }
+    }
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [abertoDatas]);
 
   // Usuario logado: uma vez (memoizado). Falha silenciosa -> sem acoes
   // inline, mas o thread ainda renderiza.
@@ -542,7 +589,10 @@ export default function TaskDetail({
   // (read-only). Nome do projeto atual resolve do Map (null/ausente => avulsa).
   const ehTopo = !task.parent_task_id;
   const nomeProjetoAtual = projetoAtual ? projects.get(projetoAtual) ?? null : null;
-  const dueTone = deadlineTone(task.due_date, task.status, task.is_archived);
+  // ⚠️ SOBRE O ECO, e nao sobre `task.due_date` (Spec 038, fatia A). Depois de
+  // salvar uma data nova, o `task` do pai ainda e o antigo por um instante --
+  // ler dele deixaria a cor de atraso discordando da data ao lado dela.
+  const dueTone = deadlineTone(prazoAtual, task.status, task.is_archived);
   // ⚠️ ARQUIVADA SAI DA CHECKLIST (Spec 031, C11). O quadro entrega `filhos`
   // sem filtrar -- a lista dele nao sabe que esta alimentando um checklist.
   // Filtrar AQUI conserta os tres chamadores de uma vez (quadro, minhas
@@ -618,6 +668,62 @@ export default function TaskDetail({
   // (destino === null -> detach). NAO otimista: o move reparenta a subtree e
   // pode ser recusado (visibilidade, 422), entao so aplica no sucesso. So faz
   // sentido em task de topo -- a UI abaixo esconde o controle em subtarefa.
+  function abrirDatas() {
+    // ⚠️ O RASCUNHO NASCE DO ECO, e nao do `task`. Depois de um salvamento o
+    // `task` do pai pode ainda ser o antigo (ele refetcha depois), e reabrir o
+    // painel mostraria a data velha por cima da nova.
+    setRascunhoInicio(inicioAtual ?? "");
+    setRascunhoPrazo(prazoAtual ?? "");
+    setErroDatas(null);
+    setAbertoDatas(true);
+  }
+
+  async function salvarDatas() {
+    if (salvandoDatas) return;
+    // ⚠️ `""` VIRA `null`, E NAO VIAJA COMO STRING VAZIA. O backend usa
+    // `fields_set`: `null` apaga a data, `""` nao e data e volta 422.
+    const inicio = rascunhoInicio || null;
+    const prazo = rascunhoPrazo || null;
+    // No-op: nada mudou. Sem isto, abrir e salvar sem tocar gravaria uma
+    // entrada de historico que nao aconteceu do ponto de vista de quem usa.
+    if (inicio === (inicioAtual ?? null) && prazo === (prazoAtual ?? null)) {
+      setAbertoDatas(false);
+      return;
+    }
+    setErroDatas(null);
+    setSalvandoDatas(true);
+    try {
+      // ⚠️ MANDA OS DOIS SEMPRE, e nao so o que mudou. O backend valida
+      // `start_date <= due_date` sobre o estado FINAL da tarefa
+      // (`_validate_dates`), entao mandar so um campo pode montar um par
+      // invalido com o valor que ficou no banco -- e a recusa apareceria
+      // falando de um campo que a pessoa nao tocou.
+      const t = await updateTask(tid, { start_date: inicio, due_date: prazo });
+      setInicioAtual(t.start_date ?? null);
+      setPrazoAtual(t.due_date ?? null);
+      setAbertoDatas(false);
+      // ⚠️ O PAI PRECISA SABER. Prazo muda a COR do card e o filtro
+      // "Atrasadas" do quadro -- sem avisar, a tarefa fica com data nova no
+      // detalhe e cor velha atras dele. `onTaskMoved` e o canal que ja
+      // significa "mexeu em mais do que esta tarefa, reaja".
+      onTaskMoved(t);
+    } catch (e) {
+      const err = e as ApiError;
+      // ⚠️ A MENSAGEM DO BACKEND VEM PRIMEIRO no 422: e ela que diz "Data de
+      // inicio nao pode ser posterior a data limite", que e a unica recusa
+      // que a pessoa consegue consertar sozinha.
+      setErroDatas(
+        err.status === 422
+          ? err.message || "Datas inválidas."
+          : err.status === 403
+          ? "Você não pode editar esta tarefa."
+          : "Não consegui salvar as datas. Tente de novo."
+      );
+    } finally {
+      setSalvandoDatas(false);
+    }
+  }
+
   async function mudarProjeto(destino: string | null) {
     if (movendoProj) return;
     // No-op: ja esta no destino.
@@ -1051,26 +1157,165 @@ export default function TaskDetail({
               o controle de projeto ficava 200px abaixo, dizendo a mesma coisa --
               duas representacoes do mesmo dado na mesma tela. Agora ha UMA, na
               faixa de metadados logo abaixo, e ela e o proprio controle. */}
-          {task.due_date && (
-            <span
-              className={dueTone ? undefined : "muted"}
+          {/* ---- Datas (Spec 038, fatia A) --------------------------------
+              ⚠️ ESTA PILULA VIROU O CONTROLE, e nao ganhou um controle ao lado.
+              É a lição da C8 escrita três linhas acima, aplicada: a de projeto
+              era read-only aqui e o controle ficava 200px abaixo, dizendo a
+              mesma coisa. Repetir isso com data daria o mesmo defeito.
+
+              ⚠️ E POR ISSO ELA APARECE MESMO SEM DATA. Antes era
+              `{task.due_date && …}`: sem prazo não havia pílula, e sem pílula
+              não haveria onde clicar para PÔR um. O vazio se distingue por
+              borda tracejada e tom, igual ao "nenhum" do projeto -- mesma
+              caixa, mesma altura.
+
+              ⚠️ `T00:00:00` NA LEITURA, SEMPRE. `new Date("2026-08-19")` é
+              interpretado como UTC e escorrega um dia em fuso negativo -- é o
+              mesmo aviso que o `hojeISO()` do `Board.tsx` carrega. */}
+          <div
+            ref={datasWrapRef}
+            style={{ position: "relative", display: "inline-flex", alignItems: "center", gap: 4, flexShrink: 0 }}
+          >
+            {/* ⚠️ A PILULA E O PROPRIO GATILHO (decisao da Camila, 18/08).
+                A primeira versao punha um botao redondo AO LADO do texto, como
+                o de projeto -- e o desenho dela e outro: a data e uma PILULA
+                irma de "Coluna" e "Prioridade", e clicar nela abre a edicao.
+                Um alvo, e nao dois.
+
+                ⚠️ E POR ISSO O TEXTO VAZIO E "Sem datas", no PLURAL. Antes era
+                "sem prazo", que nomeia so metade do que a capsula edita -- a
+                pessoa clicaria esperando mexer no prazo e encontraria dois
+                campos. Mesma forma de "Sem Projeto".
+
+                ⚠️ inline-flex + flexShrink 0 + nowrap, NAO verticalAlign. Este
+                elemento e filho de um flex com flexWrap: sem flexShrink 0 ele
+                encolhe ate o minimo e QUEBRA entre o icone e a data -- foi o
+                que aconteceu na entrega da C10.
+
+                ⚠️ A COR DE ATRASO SOBREVIVEU a virada para botao, e nao e
+                enfeite: e o unico sinal de que a tarefa venceu nesta linha. */}
+            <button
+              type="button"
+              onClick={() => (abertoDatas ? setAbertoDatas(false) : abrirDatas())}
+              disabled={salvandoDatas}
+              aria-label={
+                prazoAtual || inicioAtual ? "Mudar datas" : "Definir datas"
+              }
+              aria-expanded={abertoDatas}
+              title={prazoAtual || inicioAtual ? "Mudar datas" : "Definir datas"}
               style={{
-                // ⚠️ inline-flex + flexShrink 0 + nowrap, NAO verticalAlign.
-                // Este span e filho de um flex com flexWrap: sem flexShrink 0
-                // ele encolhe ate o minimo e QUEBRA entre o icone e a data --
-                // foi o que aconteceu na entrega da C10. O mesmo tratamento ja
-                // estava certo no TaskCard; aqui ficou de fora.
-                display: "inline-flex", alignItems: "center", gap: 4,
+                display: "inline-flex", alignItems: "center", gap: 5,
                 flexShrink: 0, whiteSpace: "nowrap",
-                fontSize: 12.5,
-                color: dueTone ? DEADLINE_COLOR[dueTone] : undefined,
-                fontWeight: dueTone ? 600 : undefined,
+                height: 24, borderRadius: 999, padding: "0 10px",
+                fontSize: 12.5, cursor: "pointer",
+                font: "inherit", fontWeight: dueTone ? 600 : 400,
+                // Cheia e vazia usam a MESMA caixa -- o vazio se distingue por
+                // borda tracejada e tom, igual ao "nenhum" do projeto.
+                background: prazoAtual || inicioAtual ? "var(--surface-2)" : "transparent",
+                border:
+                  prazoAtual || inicioAtual
+                    ? "1px solid transparent"
+                    : "1px dashed var(--border)",
+                color: dueTone
+                  ? DEADLINE_COLOR[dueTone]
+                  : prazoAtual || inicioAtual
+                  ? "var(--text)"
+                  : "var(--text-faint)",
+                opacity: salvandoDatas ? 0.5 : 1,
               }}
             >
               <Calendar size={13} strokeWidth={2} aria-hidden />
-              {new Date(task.due_date + "T00:00:00").toLocaleDateString("pt-BR")}
-            </span>
-          )}
+              {prazoAtual
+                ? new Date(prazoAtual + "T00:00:00").toLocaleDateString("pt-BR")
+                : "Sem datas"}
+              {/* ⚠️ O INICIO SO APARECE QUANDO EXISTE. Desenhar "sem inicio" ao
+                  lado poria duas ausencias na linha mais disputada da tela. */}
+              {inicioAtual && (
+                <span className="muted" style={{ fontSize: 11.5, fontWeight: 400 }}>
+                  · início {new Date(inicioAtual + "T00:00:00").toLocaleDateString("pt-BR")}
+                </span>
+              )}
+              {/* ⚠️ SEM `ehTopo`, E A DIFERENCA PARA O PROJETO E REAL (Camila,
+                  18/08): subtarefa HERDA projeto do pai (Spec 022) e por isso
+                  nao o edita, mas tem prazo PROPRIO -- este mesmo arquivo ja o
+                  desenha na checklist. Copiar a trava foi engano meu. */}
+              {abertoDatas ? (
+                <X size={11} strokeWidth={2.2} aria-hidden />
+              ) : (
+                <Pencil size={11} strokeWidth={2.2} aria-hidden style={{ opacity: 0.65 }} />
+              )}
+            </button>
+
+            {abertoDatas && (
+              <div
+                style={{
+                  // ⚠️ NAO usar maxWidth: "100%" -- o ancora e um flex item do
+                  // tamanho do conteudo, e 100% dele espremeria o painel. Erro
+                  // ja cometido na entrega da C8, anotado no painel de projeto.
+                  position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 40,
+                  width: 240, maxWidth: "80vw",
+                  background: "var(--surface)", border: "1px solid var(--border)",
+                  borderRadius: 10, boxShadow: "var(--shadow)", padding: 10,
+                  display: "flex", flexDirection: "column", gap: 8,
+                }}
+              >
+                {/* ⚠️ O RÓTULO "Datas" ESTAVA NO DESENHO E EU O OMITI. A
+                    cápsula da Camila é um cartão TITULADO, e sem o título o
+                    painel não diz do que ele é -- só mostra dois campos soltos
+                    ancorados num "+". Não é enfeite: é o que faz a cápsula
+                    ser uma cápsula. */}
+                <strong style={{ fontSize: 13 }}>Datas</strong>
+                <label style={{ fontSize: 12, color: "var(--text-soft)" }}>
+                  Data de início
+                  <input
+                    type="date"
+                    className="input"
+                    style={{ width: "100%", marginTop: 3 }}
+                    value={rascunhoInicio}
+                    autoFocus
+                    disabled={salvandoDatas}
+                    onChange={(e) => setRascunhoInicio(e.target.value)}
+                  />
+                </label>
+                <label style={{ fontSize: 12, color: "var(--text-soft)" }}>
+                  Data de entrega
+                  <input
+                    type="date"
+                    className="input"
+                    style={{ width: "100%", marginTop: 3 }}
+                    value={rascunhoPrazo}
+                    disabled={salvandoDatas}
+                    onChange={(e) => setRascunhoPrazo(e.target.value)}
+                  />
+                </label>
+                {erroDatas && (
+                  <span role="alert" className="error-text" style={{ fontSize: 12 }}>
+                    {erroDatas}
+                  </span>
+                )}
+                <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    onClick={() => setAbertoDatas(false)}
+                    disabled={salvandoDatas}
+                    style={{ fontSize: 12 }}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    onClick={salvarDatas}
+                    disabled={salvandoDatas}
+                    style={{ fontSize: 12 }}
+                  >
+                    {salvandoDatas ? "Salvando…" : "Salvar"}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
           {task.is_archived && (
             <span className="muted" style={{ fontSize: 12.5 }}>arquivada</span>
           )}
