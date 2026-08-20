@@ -761,17 +761,46 @@ não é de graça:
 - ⚠️ e depende de o `listTasks` do backend aceitar filtro de time. **Não
   verificado.**
 
-Medir antes de decidir:
+### 13.2. Medido por time, 19/08 — e fecha exato
 
-```sql
-SELECT COALESCE(tm.name, '(sem time)') AS time,
-       (tm.parent_team_id IS NULL) AS eh_raiz,
-       COUNT(*) FILTER (WHERE t.depth = 0) AS cards,
-       COUNT(*) FILTER (WHERE t.depth > 0) AS subtarefas,
-       COUNT(*) AS total
-FROM task t
-LEFT JOIN team tm ON tm.id = t.team_id
-WHERE t.deleted_at IS NULL AND t.is_archived = false
-GROUP BY 1, 2
-ORDER BY total DESC;
-```
+| time | raiz? | cards | subtarefas | total |
+|---|---|---|---|---|
+| **Marketing** | **sim** | **170** | 463 | **633** |
+| Mídias Sociais | não | 32 | 94 | 126 |
+| SEO | não | 10 | **110** | 120 |
+| Desenvolvimento | não | 12 | 0 | 12 |
+| Audiovisual | não | 10 | 0 | 10 |
+| CRM e Automação | não | 5 | 3 | 8 |
+| Design | não | 5 | 0 | 5 |
+| Eventos | não | 3 | 0 | 3 |
+| **total** | | **247** | **670** | **917** |
+
+✅ **Marketing tem exatamente 170 cards** — o número do cabeçalho. A hipótese do
+`soRaiz` está confirmada sem margem.
+
+⚠️ **SEO é um fora-da-curva: 10 cards e 110 subtarefas — 11 por card.** Marketing
+tem 2,7 e Mídias Sociais 3. Não é problema: é alguém usando checklist longa, que
+é para isso que ela serve. **É um aviso sobre o teto:** o hábito de UM time pode
+mover o número sozinho, e nenhum ajuste de arquivamento alcança isso.
+
+### 13.3. ⚠️ As três alavancas, e por que a ordem importa
+
+| alavanca | custo | carrega depois | folga |
+|---|---|---|---|
+| hoje | — | 917 | **83** |
+| **1. `STALE_ARCHIVE_DAYS` 20 → 15** | env, sem código | ~830 | ~170 |
+| **2. filtrar o fetch pela lente** | front + talvez param no backend | **633** | **367** |
+| **3. agregar contagem de subtarefa** | backend, spec própria | **247** | **753** |
+| 2 + 3 | | 170 | 830 |
+
+⚠️⚠️ **A alavanca 2 vale 284 hoje, mas só 77 depois da 3.** Com a agregação
+pronta, o quadro carrega 247 cards; filtrar pela lente tira 77 disso. **As duas
+são largamente redundantes.**
+
+**Consequência para a ordem:**
+
+- **A 1 é grátis e imediata** — fazer, independente de tudo.
+- **Se a 3 for entrar logo, PULAR a 2.** Ela é trabalho de front num arquivo que
+  a 039 vai reescrever, com três efeitos colaterais a resolver (modo subtime,
+  busca, `respPorRaiz`), para um ganho que a 3 come.
+- **A 2 só se justifica** se a 3 ficar para muito depois.
