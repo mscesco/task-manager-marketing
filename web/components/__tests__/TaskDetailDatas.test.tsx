@@ -104,7 +104,6 @@ function montar(over: Partial<Task> = {}, onTaskMoved = vi.fn()) {
       task={task(over)}
       members={new Map()}
       projects={new Map()}
-      filhos={[]}
       temVoltar={false}
       onVoltar={vi.fn()}
       onClose={vi.fn()}

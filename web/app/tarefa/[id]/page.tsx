@@ -243,7 +243,6 @@ function Tarefa() {
         task={task}
         members={members}
         projects={projectNames}
-        filhos={filhos}
         pai={pai}
         // ⚠️ Esta rota NAO pede `include_archived` no `listTasks` que carrega
         // `filhos`, entao nao ha arquivada ali pra esconder ou mostrar.

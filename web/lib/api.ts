@@ -375,6 +375,51 @@ export async function listTasks(params: {
 }
 
 // ---------------------------------------------------------------
+// FILHAS DIRETAS DE UMA TAREFA (Spec 042, B1)
+// ---------------------------------------------------------------
+// O `TaskDetail` deixou de receber `filhos` como prop e passou a buscar as
+// proprias. Isso e o que permite ao QUADRO parar de carregar a subarvore
+// inteira (B2): medido em 19/08, ele baixava 917 tarefas -- 670 delas
+// subtarefa -- para desenhar 170 cards.
+//
+// ⚠️ `include_archived: true` SEMPRE, e nao acompanhando o toggle da tela.
+// Sao dois consumidores com necessidades opostas dentro do mesmo painel:
+//   - a CHECKLIST esconde arquivada (`paraChecklist` decide isso la, e a
+//     regra tem de continuar sendo dela);
+//   - o AVISO DE EXCLUSAO conta TODAS, porque a cascata do soft-delete
+//     (ADR 0005) leva a subarvore inteira, arquivada ou nao.
+// Buscar sem arquivada faria o aviso destrutivo contar a menos -- e ele ja
+// conta a menos hoje, justamente porque herda a lista do quadro, que so traz
+// arquivada quando a pessoa liga o toggle. Esta linha CONSERTA isso.
+//
+// ⚠️ Pagina ate o fim: `size=100` e o teto do backend, e checklist com mais de
+// 100 filhas e improvavel mas nao impossivel. Parar em 100 em silencio seria a
+// mesma classe de defeito que o `listAllTasks` existe para evitar.
+export async function listarFilhas(parentTaskId: string): Promise<Task[]> {
+  const pageSize = 100;
+  const primeira = await listTasks({
+    parent_task_id: parentTaskId,
+    include_archived: true,
+    page: 1,
+    size: pageSize,
+  });
+  const itens = [...primeira.items];
+  let page = 2;
+  while (itens.length < primeira.total) {
+    const proxima = await listTasks({
+      parent_task_id: parentTaskId,
+      include_archived: true,
+      page,
+      size: pageSize,
+    });
+    if (proxima.items.length === 0) break; // defensivo
+    itens.push(...proxima.items);
+    page++;
+  }
+  return itens;
+}
+
+// ---------------------------------------------------------------
 // BUSCA COMPLETA (anti-teto silencioso)  -- P0.2
 // ---------------------------------------------------------------
 // O quadro filtra/busca no cliente, entao precisa do conjunto COMPLETO, nao

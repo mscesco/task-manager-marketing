@@ -19,6 +19,7 @@ import {
   addAssignee,
   removeAssignee,
   createSubtask,
+  listarFilhas,
   updateTask,
   moveTask,
   archiveTask,
@@ -114,7 +115,6 @@ export default function TaskDetail({
   task,
   members,
   projects,
-  filhos,
   pai,
   temVoltar,
   onVoltar,
@@ -136,7 +136,14 @@ export default function TaskDetail({
   task: Task | null; // tarefa focada; null => fechado
   members: Map<string, { name: string }>;
   projects: Map<string, string>; // id do projeto -> titulo (Spec 022)
-  filhos: Task[]; // filhos DIRETOS da tarefa focada (do quadro)
+  // ⚠️ `filhos` DEIXOU DE SER PROP na Spec 042 (B1). O painel busca as
+  // proprias filhas -- ver o `useEffect` no corpo. A remocao e o que permite
+  // ao QUADRO parar de carregar a subarvore: 917 tarefas baixadas para
+  // desenhar 170 cards (medido em 19/08).
+  //
+  // ⚠️ A PROP FOI REMOVIDA, E NAO TORNADA OPCIONAL, de proposito. Este arquivo
+  // ja registra (nas tres props abaixo) que prop opcional e onde "esqueci um
+  // chamador" vira silencio. Removendo, o `tsc` aponta os QUATRO chamadores.
   pai?: Task | null; // pai DIRETO (topo da pilha), pra rotular "Subtarefa de X"
   temVoltar: boolean;
   onVoltar: () => void;
@@ -211,6 +218,82 @@ export default function TaskDetail({
   //                        "fechando" (= navegar pra outra rota) surpreende.
   modo?: "modal" | "pagina";
 }) {
+  // ⚠️ SPEC 042 (B1) -- AS FILHAS SAO BUSCADAS AQUI, e nao mais recebidas.
+  // Ate aqui os quatro chamadores derivavam `filhos` da lista que ja tinham
+  // em memoria, e era exatamente isso que obrigava o quadro a baixar a
+  // subarvore inteira.
+  //
+  // ⚠️ LIMPA ANTES DE BUSCAR. Sem o `setFilhos([])`, navegar para uma
+  // subtarefa mostra por um instante a checklist da tarefa ANTERIOR -- e
+  // navegar entre tarefas e o gesto comum desta tela.
+  //
+  // ⚠️ `cancelado` guarda contra resposta fora de ordem: abrir A, ir para B, e
+  // a resposta de A chegar depois pintaria a checklist de B com as filhas de A.
+  //
+  // ⚠️ ERRO NAO VIRA LISTA VAZIA EM SILENCIO. Checklist vazia se le como "esta
+  // tarefa nao tem subtarefa" -- foi essa leitura falsa que a duplicacao
+  // produziu em 05/08 ("duplicou sem as subtarefas", e elas estavam no banco).
+  // Por isso `erroFilhos` existe e a tela o mostra.
+  const [filhos, setFilhos] = useState<Task[]>([]);
+  const [carregandoFilhos, setCarregandoFilhos] = useState(false);
+  const [erroFilhos, setErroFilhos] = useState(false);
+  const idFocado = task?.id ?? null;
+
+  async function recarregarFilhos() {
+    if (!idFocado) return;
+    try {
+      setErroFilhos(false);
+      setFilhos(await listarFilhas(idFocado));
+    } catch {
+      setErroFilhos(true);
+    }
+  }
+
+  // ⚠️ O UPSERT PRECISA BATER NOS DOIS ESTADOS, e este e o ponto mais facil de
+  // errar na B1. Antes dela quem guardava `filhos` era o chamador, e o
+  // `onSubtaskUpsert` sozinho ja atualizava a checklist -- o teste
+  // `TaskDetailChecklist` provava isso com um `Pai` que mexia no proprio
+  // estado. Agora a lista mora AQUI: sem esta funcao, marcar a caixinha manda
+  // o PATCH, avisa o quadro, e NAO muda nada na tela em que a pessoa clicou.
+  //
+  // ⚠️ NAO SERVE PARA A PROPRIA TAREFA FOCADA. Em `alternarArquivo` o
+  // `onSubtaskUpsert` recebe a tarefa aberta (nao uma filha) -- chamar isto
+  // la a inseriria na lista de filhas dela mesma.
+  function upsertFilhaLocal(sub: Task) {
+    setFilhos((atual) => {
+      const i = atual.findIndex((f) => f.id === sub.id);
+      if (i === -1) return [...atual, sub];
+      const copia = [...atual];
+      copia[i] = sub;
+      return copia;
+    });
+  }
+
+  useEffect(() => {
+    if (!idFocado) {
+      setFilhos([]);
+      setErroFilhos(false);
+      return;
+    }
+    let cancelado = false;
+    setFilhos([]);
+    setErroFilhos(false);
+    setCarregandoFilhos(true);
+    listarFilhas(idFocado)
+      .then((f) => {
+        if (!cancelado) setFilhos(f);
+      })
+      .catch(() => {
+        if (!cancelado) setErroFilhos(true);
+      })
+      .finally(() => {
+        if (!cancelado) setCarregandoFilhos(false);
+      });
+    return () => {
+      cancelado = true;
+    };
+  }, [idFocado]);
+
   const [assignees, setAssignees] = useState<string[]>([]);
   const [abertoResp, setAbertoResp] = useState(false);
   const [busca, setBusca] = useState("");
@@ -805,6 +888,7 @@ export default function TaskDetail({
         assigneeIds: subAssignees,
         dueDate: subPrazo || null,
       });
+      upsertFilhaLocal(nova);
       onSubtaskUpsert(nova);
       // Fica ABERTO para a proxima: decompor trabalho vem em rajada, e fechar
       // a cada criacao custava uma ida ao "+" por subtarefa. Responsavel e
@@ -894,15 +978,19 @@ export default function TaskDetail({
     // ponte (a coluna `Backlog` padrao tem `legacy_status = BACKLOG`) e pela
     // semantica (o mapa manda `OPEN -> BACKLOG`). Fora deste caso o front
     // continua NAO adivinhando status: le da resposta.
-    onSubtaskUpsert({
+    const otimista = {
       ...f,
       column_id: destino,
-      status: concluida ? "BACKLOG" : "COMPLETED",
-    });
+      status: concluida ? ("BACKLOG" as const) : ("COMPLETED" as const),
+    };
+    upsertFilhaLocal(otimista);
+    onSubtaskUpsert(otimista);
     try {
       const atualizada = await updateTask(f.id, { column_id: destino });
+      upsertFilhaLocal(atualizada);
       onSubtaskUpsert(atualizada);
     } catch (e) {
+      upsertFilhaLocal(f); // revert
       onSubtaskUpsert(f); // revert
       setErroSub("Não consegui atualizar a subtarefa.");
     } finally {
@@ -974,6 +1062,11 @@ export default function TaskDetail({
       // duplicacao tinha.
       if (r.cascade_count > 0) {
         onTaskMoved(r);
+        // ⚠️ B1: a cascata mudou as filhas no banco e NENHUMA veio na
+        // resposta. Antes bastava `onTaskMoved` (o quadro recarregava e
+        // `filhos` era derivado dele); agora a lista e daqui e precisa ser
+        // relida, senao a checklist segue mostrando ativa o que ja arquivou.
+        void recarregarFilhos();
         // Avisar nao e opcional: a operacao mexeu em tarefas que a pessoa nao
         // citou. Em silencio, ela so descobriria pela ausencia delas.
         const n = r.cascade_count;
@@ -1680,6 +1773,32 @@ export default function TaskDetail({
               Subtarefas
               {colunas && totalSub > 0 ? ` (${concluidas}/${totalSub})` : ""}
             </span>
+            {/* ⚠️ B1: checklist vazia NAO pode significar duas coisas. Desde
+                que o painel busca as proprias filhas, "ainda carregando" e
+                "falhou" precisam se distinguir de "nao tem subtarefa" -- foi a
+                leitura falsa "duplicou sem as subtarefas" (05/08) que provou
+                que o vazio silencioso engana. */}
+            {carregandoFilhos && (
+              <span className="muted" style={{ fontSize: 12 }}>
+                carregando…
+              </span>
+            )}
+            {erroFilhos && (
+              <button
+                type="button"
+                className="error-text"
+                style={{
+                  fontSize: 12,
+                  background: "none",
+                  border: "none",
+                  padding: 0,
+                  textDecoration: "underline",
+                }}
+                onClick={() => void recarregarFilhos()}
+              >
+                Não consegui carregar as subtarefas. Tentar de novo
+              </button>
+            )}
             {!criandoSub && (
               <button
                 type="button"

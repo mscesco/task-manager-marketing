@@ -240,7 +240,6 @@ function Arquivadas() {
         task={detalhe}
         members={members}
         projects={projectNames}
-        filhos={filhos ?? []}
         temVoltar={paiDoDetalhe !== null}
         pai={paiDoDetalhe}
         // Fica NESTA tela de proposito: o pai tambem esta arquivado, e e aqui

@@ -2016,7 +2016,6 @@ export default function Board({
         task={focado}
         members={members}
         projects={projectNames}
-        filhos={filhosFocado}
         temVoltar={pilha.length > 0}
         pai={pilha[pilha.length - 1] ?? null}
         onVoltar={voltarDetalhe}
