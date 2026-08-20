@@ -68,6 +68,12 @@ vi.mock("@/lib/api", async (importOriginal) => {
   return {
     ...real,
     colunasDoQuadro: vi.fn(),
+    // ⚠️ SPEC 042 (B1): o painel busca as proprias filhas. Ate aqui elas
+    // vinham por prop e o `Pai` deste arquivo guardava o estado -- era ele que
+    // fazia a caixinha refletir na tela. Agora quem faz isso e o
+    // `upsertFilhaLocal` do proprio componente, e e esse comportamento que os
+    // testes de marcar/desmarcar passam a exercitar.
+    listarFilhas: vi.fn(),
     updateTask: vi.fn(),
     listComments: vi.fn(),
     currentUser: vi.fn(),
@@ -167,13 +173,16 @@ function Pai({
   // com coluna especifica.
   tarefa?: Task;
 }) {
-  const [filhos, setFilhos] = useState<Task[]>(inicial);
+  // ⚠️ B1: `inicial` agora chega pelo MOCK de `listarFilhas` (ver `montar`),
+  // e nao mais por prop. O estado local sumiu junto -- quem reflete a
+  // caixinha na tela passou a ser o `upsertFilhaLocal` do `TaskDetail`, e e
+  // isso que estes testes verificam agora.
+  void inicial;
   return (
     <TaskDetail
       task={tarefa ?? task({ id: "pai", title: "Tarefa mãe", path: "pai" })}
       members={new Map()}
       projects={new Map()}
-      filhos={filhos}
       temVoltar={false}
       onVoltar={vi.fn()}
       onClose={vi.fn()}
@@ -182,7 +191,6 @@ function Pai({
       onAssigneesChange={vi.fn()}
       onAbrirSubtarefa={vi.fn()}
       onSubtaskUpsert={(sub) => {
-        setFilhos((p) => p.map((f) => (f.id === sub.id ? sub : f)));
         onSubtaskUpsert?.(sub);
       }}
       onTaskMoved={vi.fn()}
@@ -197,6 +205,8 @@ function Pai({
 }
 
 function montar(filhos: Task[], onSubtaskUpsert?: (sub: Task) => void) {
+  // ⚠️ B1: as filhas entram pelo mock da busca, e nao por prop.
+  vi.mocked(api.listarFilhas).mockResolvedValue(filhos);
   render(<Pai inicial={filhos} onSubtaskUpsert={onSubtaskUpsert} />);
 }
 

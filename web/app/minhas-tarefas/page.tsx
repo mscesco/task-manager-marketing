@@ -1288,7 +1288,6 @@ function Minhas() {
         task={focado}
         members={members}
         projects={projectNames}
-        filhos={filhosParaDetalhe}
         temVoltar={pilha.length > 0}
         pai={pilha[pilha.length - 1] ?? null}
         onVoltar={voltarDetalhe}

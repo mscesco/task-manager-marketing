@@ -42,6 +42,11 @@ vi.mock("@/lib/api", async (importOriginal) => {
   return {
     ...real,
     listAllTasks: vi.fn(),
+    // ⚠️ SPEC 042 (B1): o `TaskDetail` busca as proprias filhas. Sem este mock
+    // ele cairia na funcao real, que faz `listTasks` -> `fetch` -- e em jsdom
+    // isso nao resolve, entao a checklist ficaria vazia por motivo de
+    // infraestrutura e nao de produto.
+    listarFilhas: vi.fn(),
     listAllProjects: vi.fn(),
     listMembers: vi.fn(),
     listSubteams: vi.fn(),
@@ -212,6 +217,11 @@ function montarApi(tasks: Task[], projetos: Project[]) {
     total: tasks.length,
     truncated: false,
   });
+  // B1: a checklist do painel sai daqui. Filtra do MESMO conjunto que o quadro
+  // recebe, para o teste nao poder afirmar uma filha que o quadro nao conhece.
+  vi.mocked(api.listarFilhas).mockImplementation(async (parentId) =>
+    tasks.filter((t) => t.parent_task_id === parentId)
+  );
   vi.mocked(api.listAllProjects).mockResolvedValue({
     items: projetos,
     total: projetos.length,
@@ -643,6 +653,14 @@ describe("Board -- depois de duplicar, a CÓPIA aparece com as subtarefas", () =
         total: 4,
         truncated: false,
       });
+    // B1: depois de duplicar, a checklist da COPIA vem desta busca -- nao mais
+    // da lista do quadro. O `montarApi` acima filtrou de `[ORIGEM, FILHA]`, que
+    // ainda nao conhece a copia; aqui o universo passa a inclui-la.
+    vi.mocked(api.listarFilhas).mockImplementation(async (parentId) =>
+      [ORIGEM, FILHA, COPIA, FILHA_DA_COPIA].filter(
+        (t) => t.parent_task_id === parentId
+      )
+    );
     vi.mocked(api.duplicateTask).mockResolvedValue({
       ...COPIA,
       skipped_assignees: [],
