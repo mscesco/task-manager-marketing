@@ -711,41 +711,67 @@ fatia.
    subtarefas são não-terminais e nunca serão arquivadas, por desenho. A F10
    não move o teto e nenhum ajuste do job move. **Só a agregação move.**
    Decisão da Camila: ela corre antes, em paralelo, ou depois?
-2. ⚠️⚠️ **INVESTIGAÇÃO ABERTA — 77 cards que existem e não aparecem.** O banco
-   tem **247 cards** no Quadro geral; a tela mostra **170**. E o desvio é
-   **proporcional em TODAS as colunas** (Concluído 130→87, Em Andamento 51→38,
-   Backlog 29→21, Planejado 19→13, Aprovação Interna 11→5), o que descarta
-   "um pedaço escondido num lugar só".
-
-   **Não é projeto pessoal** — a coluna `projeto_pessoal` veio falsa em todas
-   as linhas.
-
-   **Hipótese principal: `foraDaColuna`.** A fatia 5c criou 7 quadros novos, e
-   quadro novo nasce com as 8 colunas padrão — então existem colunas com
-   **nomes repetidos** em quadros diferentes. Uma tarefa com
-   `board_id` = geral mas `column_id` apontando para a coluna homônima de outro
-   quadro **não casa com nenhuma coluna do quadro geral e não é desenhada**. É
-   exatamente o estado "contadas e invisíveis" que a guarda da 5c foi criada
-   para evitar — a guarda filtra por `task.board_id`, e este caso passa por ela.
-
-   ⚠️ E o agrupamento por `c.name` da consulta **mascara isso**, porque soma
-   colunas homônimas de quadros diferentes na mesma linha.
-
-   Query que confirma ou descarta:
-
-   ```sql
-   SELECT COALESCE(cb.name, '(coluna sem quadro)') AS quadro_da_coluna,
-          c.name AS coluna,
-          COUNT(*) AS cards
-   FROM task t
-   LEFT JOIN board_column c ON c.id = t.column_id
-   LEFT JOIN board cb ON cb.id = c.board_id
-   WHERE t.deleted_at IS NULL AND t.is_archived = false AND t.depth = 0
-   GROUP BY 1, 2
-   ORDER BY 1, cards DESC;
-   ```
-
-   Se aparecer linha sob quadro que não seja o "Quadro geral", está confirmado.
-
-3. **Reestruturação de organização/times/membros** — §6.1.1 tem o custo
+2. **Reestruturação de organização/times/membros** — §6.1.1 tem o custo
    medido; a decisão é da Camila, e não bloqueia nenhuma fatia desta spec.
+
+## 13. ⚠️ 247 cards no banco, 170 na tela — investigado e ENCERRADO
+
+Registrado porque o caminho até a resposta derrubou duas hipóteses minhas, e a
+terceira estava no código o tempo todo.
+
+**O desvio era proporcional em todas as colunas** (Concluído 130→87, Em
+Andamento 51→38, Backlog 29→21, Planejado 19→13, Aprovação Interna 11→5), o que
+já descartava "um pedaço escondido num lugar só".
+
+| hipótese | resultado |
+|---|---|
+| tarefa de projeto pessoal (ADR 0009: soberano, 404 alheio) | ❌ `is_personal` falso em tudo |
+| `foraDaColuna` — `column_id` apontando para coluna homônima de outro quadro | ❌ as 6 colunas com card são todas do Quadro geral |
+| ✅ **`soRaiz` — a lente do quadro geral** | **é isto** |
+
+**`Board.tsx:1226` e `:1288`:**
+
+```
+const soRaiz = !projectId && !subteamId && rootId !== null;
+…
+return (!soRaiz || t.team_id === rootId) && noQuadroGeral(t);
+```
+
+No `/quadro` não há projeto nem subtime, então `soRaiz` é **true** e a tela
+mostra só `team_id === rootId`. **Os 77 cards restantes pertencem a SUBTIMES.**
+O Quadro geral é o quadro do time raiz — não é defeito, é a lente.
+
+### 13.1. ⚠️ Mas isso é uma segunda fonte de carga jogada fora
+
+O `listAllTasks` busca **workspace-wide**; o `soRaiz` descarta no cliente. Então
+o quadro geral baixa **77 cards de subtimes mais as subtarefas deles** para
+jogar tudo fora.
+
+Somado ao que já se sabia — 670 subtarefas das quais nenhuma desenha card —
+**o quadro carrega 917 para desenhar 170.**
+
+**Filtrar o fetch pela lente é prêmio maior que encurtar a janela** (87). Mas
+não é de graça:
+
+- ⚠️ o **modo subtime** precisa das tarefas da raiz (`compartilhada` = da raiz
+  com responsável do subtime), então o estreitamento não vale para todos os
+  modos;
+- ⚠️ **busca, filtro por pessoa e `respPorRaiz` varrem o conjunto carregado** —
+  estreitar o fetch estreita os três junto;
+- ⚠️ e depende de o `listTasks` do backend aceitar filtro de time. **Não
+  verificado.**
+
+Medir antes de decidir:
+
+```sql
+SELECT COALESCE(tm.name, '(sem time)') AS time,
+       (tm.parent_team_id IS NULL) AS eh_raiz,
+       COUNT(*) FILTER (WHERE t.depth = 0) AS cards,
+       COUNT(*) FILTER (WHERE t.depth > 0) AS subtarefas,
+       COUNT(*) AS total
+FROM task t
+LEFT JOIN team tm ON tm.id = t.team_id
+WHERE t.deleted_at IS NULL AND t.is_archived = false
+GROUP BY 1, 2
+ORDER BY total DESC;
+```
