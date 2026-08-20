@@ -145,32 +145,81 @@ a da Notion inteira.
 documento de uma coluna. O quadro aqui é uma grade densa. A database view da
 Notion, que o arquivo **não** analisou, também é bem mais densa que a home.
 
-⚠️ **Tracking negativo só se a fonte for Inter.** A tabela de letter-spacing do
-arquivo (−0.25px em 22px, −0.625px em 26px) foi medida para Inter. Aplicar isso
-em Segoe UI aperta e piora. **Ou vai Inter e a tabela junto, ou a tabela sai
-inteira.** Ver §5.
+⚠️ **A tabela de tracking negativo da Notion NÃO entra.** Os valores (−0.25px em
+22px, −0.625px em 26px) foram medidos para Inter, e a fonte escolhida é outra
+(§5). Aplicar tracking de uma fonte em outra aperta e piora. **A tabela sai
+inteira**; se um dia alguém quiser apertar títulos, mede na Raleway.
+
+⚠️ **E a hierarquia passa a ser feita por PESO**, porque não há segunda
+família. Ver a tabela de pesos em §5.2.
 
 ---
 
-## 5. Fonte: Inter via `next/font/local`
+## 5. Fonte: Raleway, uma família só, via `next/font/local`
+
+**Decisão da Camila, 19/08**, depois de comparar as peças reais do produto nos
+tamanhos desta spec (arquivo de comparação com as fontes embutidas).
 
 Hoje o app **não tem fonte** — usa a do sistema (`--font: ui-sans-serif,
 system-ui, -apple-system, "Segoe UI", Roboto`). No Windows sai Segoe UI, no Mac
 SF Pro. Três aparências, nenhuma escolhida.
 
+**Raleway** — `Raleway-VariableFont_wght.ttf`, eixo `wght` 100–900, **SIL Open
+Font License 1.1**. Um arquivo cobre todos os pesos.
+
+### 5.1. O que foi comparado e descartado
+
+| candidata | por quê não |
+|---|---|
+| **Block Berthold** | ⚠️ **proprietária.** O `COPYRIGHT.txt` diz *"Adobe Systems… registered trademark of H. Berthold AG"*. Auto-hospedar é distribuir, e isso exige licença de webfont que a de desktop não cobre |
+| **Playfair Display** | é serifa de **display**: contraste altíssimo e filetes que somem em 12–13px, a densidade da grade |
+| **Bowlby One** | display legítima, mas **um estilo só** (sem pesos) e pesada demais — título real longo do quadro vira parede em 22px |
+| **Nunito Sans** | boa candidata de corpo, perdeu para manter **uma família só** |
+| **Inter** | proposta minha, substituída pela escolha da Camila |
+
+### 5.2. ⚠️ Hierarquia por peso — e o corpo pequeno precisa de peso extra
+
+Sem segunda família, o peso faz todo o trabalho:
+
+| papel | tamanho | peso |
+|---|---|---|
+| cabeçalho de tela | 26px | 800 |
+| título do painel de tarefa | 22px | 700 |
+| corpo de leitura | 15px | 400 |
+| título de card | 13px | 600 |
+| cabeçalho de coluna | 13px | 600 |
+| selo, meta, contador | 12px | **500** |
+
+⚠️ **O 500 nos 12px não é capricho.** A Raleway é uma sans geométrica de origem
+display: altura-de-x menor e aberturas mais fechadas que uma fonte de texto. Em
+400 no corpo pequeno ela afina. **Subir meio peso na grade é o preço de usar uma
+família só**, e é decisão consciente, não descuido.
+
+### 5.3. Instalação
+
 **`local` e não `google`:** as duas portas do Next 14 hospedam a fonte no
-próprio domínio, mas `next/font/google` baixa durante o `next build` — e o
-build roda na VPS, dentro do roteiro de deploy. Isso **põe uma dependência de
-rede externa dentro do deploy**, um modo de falha novo num roteiro que hoje não
-tem nenhum. Com `local`, o `.woff2` fica versionado.
+próprio domínio, mas `next/font/google` baixa durante o `next build` — e o build
+roda na VPS, dentro do roteiro de deploy. Isso **põe dependência de rede externa
+dentro do deploy**, um modo de falha novo num roteiro que hoje não tem nenhum.
+Com `local`, o arquivo fica versionado.
 
-O Next gera a variável CSS; o encaixe é `--font: var(--font-inter)` e o
-`--font-sans` do `@theme`. Dois lugares.
+- Converter o `.ttf` para **woff2** antes de subir (corta 30–50%).
+- Declarar `weight: "100 900"` — o Next gera a variável CSS e as métricas de
+  fallback que evitam CLS.
+- Encaixe em dois lugares: `--font` no `:root` e `--font-sans` no `@theme`.
+- **O itálico fica de fora por ora.** Existe (`Raleway-Italic-VariableFont_wght`)
+  mas dobraria o carregamento; o produto quase não usa itálico. Entra se faltar.
 
-⚠️ **O custo não é o download, é a remedição.** Trocar a fonte muda a largura
-de todo texto. O corte em 60 caracteres do cabeçalho de coluna, a largura dos
-`Badge` e a altura dos cards foram ajustados no olho, em Segoe UI. **Nenhum dos
-quatro portões pega largura de texto** — isso é item obrigatório de smoke.
+### 5.4. ⚠️ O que os portões não pegam nesta fatia
+
+- **Largura de texto.** Trocar a fonte muda todo corte e truncagem. O limite de
+  60 caracteres do cabeçalho de coluna, a largura dos `Badge` e a altura dos
+  cards foram ajustados no olho, em Segoe UI. **Smoke obrigatório.**
+- ⚠️ **Números tabulares.** O `web/AGENTS.md` pede
+  `font-variant-numeric: tabular-nums` onde números se comparam — prazo, hora,
+  contador, checklist. **Não verifiquei se a Raleway traz a feature `tnum`.** Se
+  não trouxer, data e contador dançam entre linhas. **Conferir na tela antes de
+  fechar a F0.**
 
 ---
 
@@ -629,8 +678,8 @@ Ordem por alavancagem × risco. Cada uma entregável sozinha.
 
 | # | fatia | o que entrega | risco |
 |---|---|---|---|
-| **F0** | Inter + tokens claros | `next/font/local`, os 11 tokens do §3, os 3 derivados | baixo, mas remede largura |
-| **F1** | Escala híbrida | os papéis do §4, tracking só se F0 entrou | baixo |
+| **F0** | Raleway + tokens claros | `next/font/local`, os 11 tokens do §3, os 3 derivados | baixo, mas remede largura |
+| **F1** | Escala híbrida | os papéis do §4 com os pesos do §5.2 | baixo |
 | **F2** | ⚠️ Metade escura | os 11 + 3 no bloco `[data-theme="escuro"]`, **os dois conjuntos** | médio |
 | **F3** | Casca | sidebar colapsável, tooltip + `aria-label` nos ícones | médio |
 | **F4** | Cabeçalho do quadro | busca, funil, lápis, + Nova Tarefa, sino | baixo |
@@ -691,7 +740,7 @@ fatia.
 | # | decisão | onde |
 |---|---|---|
 | 1 | Escala tipográfica **híbrida** | §4 |
-| 2 | **Inter** via `next/font/local` | §5 |
+| 2 | **Raleway**, família única, via `next/font/local` — hierarquia por peso | §5 |
 | 3 | Modo de edição: **repor** renomear + tornar padrão + cor | §6.5 |
 | 4 | Hora do prazo: **campo E pílula** | §6.4 |
 | 5 | Cor do LoFi **não é decisão** — o acento continua um só | §1 |
