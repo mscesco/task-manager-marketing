@@ -37,21 +37,31 @@ fazer isso sem quebrar as cinco coisas que dependem delas.
 
 ---
 
-## 2. ⚠️⚠️ As CINCO consumidoras da subarvore carregada
+## 2. As CINCO coisas que a subárvore sustenta — e que esta spec PRESERVA
 
-Este é o achado que dimensiona a spec. Quem implementar só "um contador no
-backend" quebra quatro funcionalidades em silêncio.
+> ⚠️⚠️ **NENHUMA DAS CINCO SAI DO PRODUTO. Esta seção existe justamente para
+> que nenhuma saia.** Ela é a lista do que tem de continuar funcionando, com o
+> mecanismo de cada uma ao lado — não uma lista de perdas.
+>
+> *(A primeira versão desta seção listava só "o que quebra" e assustou, com
+> razão. O conteúdo era o mesmo; o enquadramento estava invertido.)*
 
-| # | consumidora | onde | o que quebra sem subtarefa carregada |
+**A única coisa que muda é o quadro parar de BAIXAR 670 subtarefas que ele não
+desenha.** Elas continuam existindo, continuam sendo editadas, continuam
+aparecendo no detalhe e continuam alimentando tudo abaixo.
+
+| # | funcionalidade | onde vive hoje | como ela sobrevive |
 |---|---|---|---|
-| 1 | **contador do card** `☑ 5/15` | `Board.tsx:1120-1140` | some de todos os cards |
-| 2 | **filtro por pessoa** | `filtrosQuadro.ts::responsaveisPorRaiz` | a raiz some ao filtrar por quem só é responsável **na subtarefa** — que é *"o caso comum: a raiz é a campanha; a pessoa toca uma peça dela"* |
-| 3 | **filtro por subtime** | `Board.tsx::subtimesPorRaiz` | mesma coisa, com subtime no lugar de pessoa |
-| 4 | **busca por título** | `filtrosQuadro.ts::raizesQueCasamBusca` | procurar por uma subtarefa volta a devolver vazio (regressão de 05/08) |
-| 5 | **checklist e duplicação no detalhe** | `TaskDetail`, `duplicacaoSubtarefas.ts`, `Board.tsx:1978` | o painel não tem o que desenhar; duplicar não leva as filhas |
+| 1 | **contador do card** `☑ 5/15` | `Board.tsx:1120-1140` | **igual na tela.** O número passa a vir pronto em `subtask_total`/`subtask_done`, com as mesmas 4 regras do §4 e teste de paridade provando que dá o mesmo valor |
+| 2 | **filtro por pessoa** | `filtrosQuadro.ts::responsaveisPorRaiz` | **igual.** `subtree_assignee_ids` traz os responsáveis da subárvore inteira — o mesmo conjunto que o front calcula hoje. Continua achando a raiz quando a designação está só na subtarefa, que é *"o caso comum: a raiz é a campanha; a pessoa toca uma peça dela"* |
+| 3 | **filtro por subtime** | `Board.tsx::subtimesPorRaiz` | **não muda nada.** O front continua derivando o subtime do responsável com o mapa `memberTeam` que já carrega (§3.1.1) |
+| 4 | **busca por título de subtarefa** | `filtrosQuadro.ts::raizesQueCasamBusca` | **melhora.** Vai para o servidor (§3.2). Hoje ela só enxerga o que foi carregado — o próprio arquivo avisa que subtarefa fora do lote não é encontrada; no servidor, acha todas |
+| 5 | **checklist e duplicação no detalhe** | `TaskDetail`, `duplicacaoSubtarefas.ts`, `Board.tsx:1978` | **continuam com as subtarefas de verdade.** O painel passa a buscá-las ao abrir, por `parent_task_id` — filtro que já existe (§6) |
 
-⚠️ **As 2, 3 e 4 não se resolvem com contador nenhum** — elas precisam de
-*conteúdo* da subtarefa (responsável, time, título), não de quantidade.
+⚠️ **É por isso que esta spec é maior que "um contador".** As 2, 3 e 4 precisam
+de *conteúdo* da subtarefa (responsável, título), não de quantidade — quem
+implementar só o contador quebra três funcionalidades em silêncio. O tamanho da
+spec é a medida do que ela está protegendo.
 
 ---
 
