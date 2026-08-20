@@ -63,17 +63,40 @@ Mesmo desenho do `assignee_ids_for_tasks` (ADR 0025): **uma query em lote para
 a página inteira**, anexada no router depois da listagem, e não uma consulta
 por card.
 
-| campo | tipo | serve a |
-|---|---|---|
-| `subtask_total` | `int` | denominador do `☑ x/y` |
-| `subtask_done` | `int` | numerador |
-| `subtree_assignee_ids` | `list[UUID]` | consumidora 2 |
-| `subtree_team_ids` | `list[UUID]` | consumidora 3 |
+| campo | tipo | escopo | serve a |
+|---|---|---|---|
+| `subtask_total` | `int` | **filhas DIRETAS** | denominador do `☑ x/y` |
+| `subtask_done` | `int` | **filhas DIRETAS** | numerador |
+| `subtree_assignee_ids` | `list[UUID]` | **subárvore inteira, raiz junto** | consumidoras 2 **e** 3 |
+
+⚠️⚠️ **DIRETA e SUBÁRVORE não são a mesma coisa, e a diferença é real.** O
+`task_service.py:770` diz com todas as letras que *"profundidade não é limitada
+em task"*. O contador do card indexa por `parent_task_id` (um nível); o filtro
+por pessoa sobe até a raiz com `raizDe()`. Trocar um pelo outro dá número errado
+em card com neta.
 
 ⚠️ **`subtree_assignee_ids` inclui os da própria raiz**, porque é isso que o
-`responsaveisPorRaiz` faz hoje (ele varre `tasks` inteiro, raiz incluída). Se o
-backend devolver só os das filhas, o filtro por pessoa perde as raízes com
-responsável próprio.
+`responsaveisPorRaiz` faz hoje (varre `tasks` inteiro, raiz incluída). Devolver
+só os das filhas faria a raiz com responsável próprio sumir do filtro. No SQL
+isso sai de graça: o `<@` do LTREE é descendente-**ou-igual**.
+
+### 3.1.1. ⚠️ Não existe campo de subtime — corrigido ao ler o código
+
+A primeira versão desta spec previa um `subtree_team_ids`. **Não serve.** O
+`subtimesPorRaiz` (`Board.tsx:1160-1174`) não usa `task.team_id`: ele pega o
+**subtime da PESSOA responsável**, via o mapa `memberTeam` que o front já
+carrega.
+
+Então a consumidora 3 se resolve sozinha a partir de `subtree_assignee_ids` —
+o front faz o mesmo `memberTeam.get(id)` que faz hoje. **Um campo a menos, e
+nenhuma regra nova no backend.**
+
+### 3.1.2. `/me/assignments` fica fora
+
+O `me_router` devolve `MyAssignmentsResponse`, forma própria — não é
+`TaskListItem`. A tela "Minhas tarefas" mostra subtarefa como card solto (ADR
+0004), então o contador de checklist não é a peça dela. **Fora da A1**, e sem
+risco de campo nascer zerado em silêncio.
 
 ### 3.2. A busca (consumidora 4) NÃO vira campo
 
@@ -189,7 +212,7 @@ funcionou: os erros que sobraram foram de assinatura, não de lógica.
 
 | # | fatia | lado | entrega |
 |---|---|---|---|
-| **A1** | agregação em lote + os 4 campos no `TaskListItem` | backend | query única espelhando as regras do §4, com teste de paridade contra o cálculo do front |
+| **A1** | agregação em lote + os 3 campos no `TaskListItem` | backend | duas queries em lote espelhando as regras do §4, mais o teste de paridade |
 | **A2** | `q` na listagem, casando descendente e devolvendo raiz | backend | §3.2 |
 | **B1** | detalhe busca as filhas por `parent_task_id`; ADR front 0003 emendada | front | §6 — **vem ANTES da B2**, senão o painel fica vazio |
 | **B2** | quadro passa a pedir `root_only`; contador, filtros e busca leem os campos novos | front | §2, e a janela otimista do §5 |

@@ -67,6 +67,11 @@ Estão aqui para não virarem promessa falsa. Cada uma tem motivo.
   dono.** Reabrir custa um `KeyboardSensor` + smoke humano.
 - ⚠️ **Zero responsivo.** O produto é ferramenta interna de desktop.
 - **Sem índice em `task.column_id`.**
+- **O desfazer do lote de colunas nunca foi validado** — a bancada de teste não
+  alcança o rollback.
+- ⚠️ **O rollback de imagem do `DEPLOY.md` nunca foi executado de verdade**, e o
+  próprio arquivo (linha 280) diz que procedimento de emergência não testado é
+  ficção. Rodar uma vez em horário calmo continua pendente.
 
 ---
 
