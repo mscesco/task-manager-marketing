@@ -698,9 +698,12 @@ a coluna antiga num gesto só".
 
 ## 9. Fora de escopo, e por quê
 
-- ⚠️ **A contagem agregada de subtarefa no backend.** É backend e vira spec
-  própria — **mas ela não é "depois", é possivelmente ANTES.** Medição de 19/08:
-  917 de 1000, folga de 83, e a F10 não move esse número. Ver §6.11.0.
+- ⚠️ **A contagem agregada de subtarefa** — virou a
+  **[Spec 042](../../../backend/specs/042-contagem-agregada-de-subtarefa/spec.md)**,
+  escrita em 19/08 e **decidida para correr antes ou em paralelo a esta**.
+  Medição: 917 de 1000, folga de 83, e a F10 não move esse número (§6.11.0).
+  ⚠️ Ela é maior do que "um contador": a subárvore carregada alimenta **cinco**
+  coisas no front, e três delas precisam de conteúdo, não de quantidade.
 - **Spec 040 — múltiplos times raiz.** O "Time Principal ›" fica desenhado e
   inerte.
 - **Spec 041 — reações em comentário.**
@@ -807,8 +810,9 @@ não é de graça:
   modos;
 - ⚠️ **busca, filtro por pessoa e `respPorRaiz` varrem o conjunto carregado** —
   estreitar o fetch estreita os três junto;
-- ⚠️ e depende de o `listTasks` do backend aceitar filtro de time. **Não
-  verificado.**
+- ✅ o `listTasks` **aceita** filtro de time (`TaskFilters.team_id`, conferido em
+  `tasks_router.py:87`). A alavanca continua desnecessária, mas por
+  redundância com a agregação — não por falta do filtro.
 
 ### 13.2. Medido por time, 19/08 — e fecha exato
 
