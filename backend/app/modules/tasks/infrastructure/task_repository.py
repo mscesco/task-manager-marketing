@@ -20,6 +20,7 @@ import uuid
 from datetime import datetime, timedelta
 
 from sqlalchemy import and_, delete, exists, func, or_, select, text
+from sqlalchemy.orm import aliased
 from sqlalchemy.sql.elements import ColumnElement
 
 from app.core.tenant import require_tenant
@@ -46,6 +47,56 @@ from app.modules.tasks.domain.subtask_progress import (
     Progresso,
 )
 from app.shared.pagination import Page, PageParams
+
+
+def _casa_busca_na_subarvore(
+    termo: str, *, include_archived: bool
+) -> ColumnElement[bool]:
+    """A busca do quadro, em SQL: casa o titulo DELA ou de qualquer descendente.
+
+    ⚠️ DEVOLVE A RAIZ, e nao a tarefa que casou. O card do quadro e sempre a
+    raiz (ADR 0004) -- subtarefa nao tem card para aparecer, entao a unica
+    forma de "achar" uma subtarefa pela busca e trazer a mae dela. Como o `<@`
+    do LTREE e descendente-OU-IGUAL, um EXISTS so cobre os dois casos: a
+    propria linha entra na subarvore dela mesma.
+
+    ⚠️ SO TITULO, NAO DESCRICAO. Decisao de 05/08/2026 mantida: casando por
+    descricao o card aparece com o termo buscado em lugar nenhum da tela, e a
+    leitura honesta de quem olha e "o filtro bugou". Descricao so entra junto
+    com um "por que este card apareceu" no card.
+
+    ⚠️ A DOBRA DE ACENTO E DO POSTGRES, E DE UM LUGAR SO. O `unaccent(lower())`
+    e aplicado nos DOIS lados -- coluna e termo --, entao o Python NAO replica
+    a regra do `normalizarBusca` do front. Tres copias da mesma normalizacao
+    (JS, Python, SQL) seria a terceira chance de divergirem.
+
+    ⚠️ `include_archived` ACOMPANHA O DA LISTAGEM. Hoje a busca do cliente
+    enxerga exatamente o que foi carregado, e o quadro so carrega arquivada
+    quando a pessoa pede. Passar o flag mantem o resultado igual ao de hoje.
+
+    ⚠️ O `%` NAO E ESCAPADO, e isso e conhecido. Termo com `%` ou `_` vira
+    curinga em vez de literal -- comportamento diferente do `includes()` do
+    front. Nao ha caso real (sao titulos de tarefa), e escapar exigiria
+    `ESCAPE` no LIKE; fica registrado para quando alguem buscar "50%".
+    """
+    descendente = aliased(Task)
+    padrao = f"%{termo.strip()}%"
+    sub = (
+        select(1)
+        .select_from(descendente)
+        .where(
+            # `<@` = descendente OU IGUAL. E o que faz um EXISTS so bastar.
+            descendente.path.op("<@")(Task.path),
+            descendente.workspace_id == Task.workspace_id,
+            descendente.deleted_at.is_(None),
+            func.unaccent(func.lower(descendente.title)).like(
+                func.unaccent(func.lower(padrao))
+            ),
+        )
+    )
+    if not include_archived:
+        sub = sub.where(descendente.is_archived.is_(False))
+    return sub.exists()
 
 
 def _lente_de_time(
@@ -149,11 +200,16 @@ class TaskRepository(BaseRepository[Task]):
         created_by: uuid.UUID | None = None,
         include_archived: bool = False,
         archived_only: bool = False,
+        q: str | None = None,
     ) -> Page[Task]:
         """Lista tasks com filtros + privacidade do pessoal.
 
         PRIVACIDADE: JOIN com project filtrando
         `project.is_personal=false OR project.created_by=me`.
+
+        `q` (Spec 042, A2): busca por TITULO, casando tambem o titulo de
+        qualquer DESCENDENTE e devolvendo a raiz. Ver
+        `_casa_busca_na_subarvore`.
         """
         tenant = require_tenant()
         base = self._base_select()
@@ -200,6 +256,10 @@ class TaskRepository(BaseRepository[Task]):
             base = base.where(Task.team_id == team_id)
         if created_by is not None:
             base = base.where(Task.created_by == created_by)
+        if q is not None and q.strip() != "":
+            base = base.where(
+                _casa_busca_na_subarvore(q, include_archived=include_archived)
+            )
         # archived_only tem precedencia: so arquivadas (tela de arquivadas,
         # Spec 013 fatia 3). Senao, include_archived controla: default so
         # ativas; True traz ambas.

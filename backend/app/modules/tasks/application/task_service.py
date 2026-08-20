@@ -267,6 +267,10 @@ class TaskFilters:
     include_archived: bool = False
     archived_only: bool = False
     created_by: uuid.UUID | None = None
+    #: Spec 042 (A2). Busca por TITULO, casando tambem o de qualquer
+    #: DESCENDENTE e devolvendo a RAIZ -- subtarefa nao tem card no quadro.
+    #: `None` ou vazio = sem busca. Ver `_casa_busca_na_subarvore`.
+    q: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -950,6 +954,7 @@ class TaskService:
             created_by=filters.created_by,
             include_archived=filters.include_archived,
             archived_only=filters.archived_only,
+            q=filters.q,
         )
 
     async def update(
