@@ -72,10 +72,25 @@ async def list_tasks(
     created_by: uuid.UUID | None = None,
     include_archived: bool = False,
     archived_only: bool = False,
+    q: str | None = Query(None, max_length=255),
 ) -> TaskListResponse:
     """Lista tasks do workspace, paginado, com filtros.
 
     PRIVACIDADE: tasks em pessoal alheio nao aparecem.
+
+    ⚠️ `q` (Spec 042, A2) BUSCA POR TITULO E DEVOLVE A RAIZ, casando tambem o
+    titulo de qualquer descendente -- subtarefa nao tem card no quadro, entao a
+    unica forma de acha-la e trazer a mae. Sem acento e sem caixa (`unaccent`).
+    So titulo: descricao ficou de fora de proposito (decisao de 05/08). Vazio
+    ou ausente = sem busca. Ver `_casa_busca_na_subarvore`.
+
+    `max_length` espelha o `title` da task (255): termo maior que qualquer
+    titulo possivel nao teria como casar, e a trava evita LIKE gigante.
+
+    ⚠️ `q` NAO IMPLICA `root_only`. Sozinho, ele devolve tambem a subtarefa que
+    casou (ela e a raiz da subarvore dela mesma). O quadro combina os dois --
+    e `root_only=true` que faz "devolve a mae" virar o comportamento efetivo.
+    Deixar implicito quebraria a listagem de filhas (`parent_task_id` + `q`).
     """
     page_result = await TaskService(session).list_page(
         params=PageParams(page=page, size=size),
@@ -89,6 +104,7 @@ async def list_tasks(
             created_by=created_by,
             include_archived=include_archived,
             archived_only=archived_only,
+            q=q,
         ),
     )
     # Selo de responsaveis: assignees da pagina inteira em UMA query (lote),
