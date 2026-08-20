@@ -494,9 +494,27 @@ zerada, as 257 permanecem e continuam subindo. **Nenhum ajuste de arquivamento
 resolve o teto.** Só parar de carregá-las resolve — e isso é a agregação no
 backend (§6.11.1), que passa a ser a única saída, não a preferida.
 
-**Válvula de emergência, se o teto estourar antes:** encurtar
-`stale_archive_days` (hoje **20**) drena parte das 413. É paliativo com custo —
-tarefa concluída some do quadro mais cedo — e não toca nas 257.
+**Válvula de emergência, medida em 19/08:** encurtar `stale_archive_days` (hoje
+**20**, vive no `.env.prod` — sem código, sem migration).
+
+| faixa de `terminal_since` | cards | subtarefas | total |
+|---|---|---|---|
+| já elegível (>20 d) | — | — | **zero** |
+| entre 15 e 20 dias | 24 | 63 | **87** |
+| entre 10 e 15 dias | 15 | 60 | 75 |
+| menos de 10 dias | 91 | 282 | 373 |
+
+✅ **A faixa ">20 d" veio vazia: o job está em dia**, nada preso.
+
+Baixar para **15 dias** drena **87** → 917 vira 830 e a folga vai de **83 para
+170**. Para 10 dias, drena 162 → folga 245. Custo: tarefa concluída some do
+quadro mais cedo. **Paliativo bom** — mas 373 tarefas têm menos de 10 dias, ou
+seja, o fluxo repõe rápido, e as 257 não-terminais não são tocadas.
+
+⚠️ **Filtrar o fetch por `board_id` renderia ZERO — hipótese medida e
+descartada.** Todas as 906 estão no "Quadro geral"; **os outros 7 quadros estão
+vazios**. A ideia de baratear a carga filtrando por quadro morreu antes de virar
+código.
 
 **Resíduo:** as 8 órfãs da tabela acima. As 4 COMPLETED se resolvem sozinhas
 pelo próprio relógio; as 4 não-terminais estão presas para sempre. São 4 linhas
@@ -693,5 +711,41 @@ fatia.
    subtarefas são não-terminais e nunca serão arquivadas, por desenho. A F10
    não move o teto e nenhum ajuste do job move. **Só a agregação move.**
    Decisão da Camila: ela corre antes, em paralelo, ou depois?
-2. **Reestruturação de organização/times/membros** — §6.1.1 tem o custo
+2. ⚠️⚠️ **INVESTIGAÇÃO ABERTA — 77 cards que existem e não aparecem.** O banco
+   tem **247 cards** no Quadro geral; a tela mostra **170**. E o desvio é
+   **proporcional em TODAS as colunas** (Concluído 130→87, Em Andamento 51→38,
+   Backlog 29→21, Planejado 19→13, Aprovação Interna 11→5), o que descarta
+   "um pedaço escondido num lugar só".
+
+   **Não é projeto pessoal** — a coluna `projeto_pessoal` veio falsa em todas
+   as linhas.
+
+   **Hipótese principal: `foraDaColuna`.** A fatia 5c criou 7 quadros novos, e
+   quadro novo nasce com as 8 colunas padrão — então existem colunas com
+   **nomes repetidos** em quadros diferentes. Uma tarefa com
+   `board_id` = geral mas `column_id` apontando para a coluna homônima de outro
+   quadro **não casa com nenhuma coluna do quadro geral e não é desenhada**. É
+   exatamente o estado "contadas e invisíveis" que a guarda da 5c foi criada
+   para evitar — a guarda filtra por `task.board_id`, e este caso passa por ela.
+
+   ⚠️ E o agrupamento por `c.name` da consulta **mascara isso**, porque soma
+   colunas homônimas de quadros diferentes na mesma linha.
+
+   Query que confirma ou descarta:
+
+   ```sql
+   SELECT COALESCE(cb.name, '(coluna sem quadro)') AS quadro_da_coluna,
+          c.name AS coluna,
+          COUNT(*) AS cards
+   FROM task t
+   LEFT JOIN board_column c ON c.id = t.column_id
+   LEFT JOIN board cb ON cb.id = c.board_id
+   WHERE t.deleted_at IS NULL AND t.is_archived = false AND t.depth = 0
+   GROUP BY 1, 2
+   ORDER BY 1, cards DESC;
+   ```
+
+   Se aparecer linha sob quadro que não seja o "Quadro geral", está confirmado.
+
+3. **Reestruturação de organização/times/membros** — §6.1.1 tem o custo
    medido; a decisão é da Camila, e não bloqueia nenhuma fatia desta spec.
