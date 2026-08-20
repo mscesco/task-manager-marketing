@@ -263,9 +263,38 @@ class TaskListItem(TaskResponse):
     do card sem N+1. Supera a "decisao 9" original (lista enxuta) porque o
     quadro precisa mostrar quem e responsavel de relance (Entrega 10 / ADR
     0025). watcher_ids segue FORA da lista (so no detalhe).
+
+    ⚠️ SPEC 042 -- OS TRES CAMPOS ABAIXO EXISTEM PARA O QUADRO PARAR DE
+    CARREGAR SUBTAREFA. Medido em 19/08/2026: 917 tarefas carregadas contra o
+    teto de 1000, **670 delas subtarefa**, para desenhar 170 cards. Subtarefa
+    nao desenha card (`depth === 0`), mas era carregada porque o front precisa
+    dela para tres coisas. Estes campos entregam duas; a terceira (busca por
+    titulo de descendente) virou parametro na listagem.
+
+    Mesmo desenho do `assignee_ids`: uma query em LOTE para a pagina inteira,
+    anexada no router depois da listagem. Nunca uma consulta por card.
     """
 
     assignee_ids: list[uuid.UUID] = []
+
+    #: Filhas DIRETAS vivas. ⚠️ Arquivada fica de fora do numerador E do
+    #: denominador -- a checklist responde "quanto falta do trabalho vivo", e
+    #: contar o que saiu do fluxo faria a barra CAIR quando alguem arquiva.
+    #: Filha so arquivada da 0, e a tela nao desenha contador nem barra.
+    subtask_total: int = 0
+
+    #: Filhas diretas vivas em coluna de semantica `DONE`.
+    #: ⚠️ Conta pela COLUNA e nao por `status`, e `DONE` e nao terminal
+    #: (cancelada NAO e entregue). As duas regras vieram de defeito na tela --
+    #: ver `domain/subtask_progress.py`, que e a fonte da verdade.
+    subtask_done: int = 0
+
+    #: Responsaveis da SUBARVORE INTEIRA, raiz incluida. Alimenta o filtro por
+    #: pessoa, que precisa achar a raiz quando a designacao esta na subtarefa
+    #: -- o caso comum: a raiz e a campanha, a pessoa toca uma peca dela.
+    #: ⚠️ Nao ha campo de subtime: o front deriva o subtime a partir DESTES ids
+    #: com o mapa de membros que ele ja carrega, que e o que ele faz hoje.
+    subtree_assignee_ids: list[uuid.UUID] = []
 
 
 class TaskDuplicateRequest(BaseModel):

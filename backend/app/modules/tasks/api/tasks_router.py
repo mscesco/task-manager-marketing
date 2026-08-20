@@ -47,6 +47,7 @@ from app.modules.tasks.application.task_service import (
     TaskService,
     UpdateTaskCommand,
 )
+from app.modules.tasks.infrastructure.task_repository import TaskRepository
 from app.shared.exceptions.base import ValidationError
 from app.shared.pagination import PageParams
 
@@ -95,10 +96,24 @@ async def list_tasks(
     amap = await CollaborationService(session).assignee_ids_for_tasks(
         page_result.items
     )
+    # Spec 042: checklist e responsaveis da subarvore, tambem em LOTE -- e o
+    # que permite o quadro parar de carregar subtarefa. Duas queries a mais
+    # por pagina, contra 670 linhas a menos no lote.
+    ids_da_pagina = [t.id for t in page_result.items]
+    repo = TaskRepository(session)
+    progressos = await repo.subtask_progress_for_tasks(ids_da_pagina)
+    subresp = await repo.subtree_assignee_ids_for_tasks(
+        ids_da_pagina, include_archived=include_archived
+    )
     return TaskListResponse(
         items=[
             TaskListItem.model_validate(t).model_copy(
-                update={"assignee_ids": amap.get(t.id, [])}
+                update={
+                    "assignee_ids": amap.get(t.id, []),
+                    "subtask_total": progressos[t.id].total,
+                    "subtask_done": progressos[t.id].concluidas,
+                    "subtree_assignee_ids": subresp.get(t.id, []),
+                }
             )
             for t in page_result.items
         ],

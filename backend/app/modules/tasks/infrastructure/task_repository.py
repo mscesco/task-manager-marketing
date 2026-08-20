@@ -41,6 +41,10 @@ from app.modules.tasks.domain.perda_de_alcance import (
     TarefaBloqueio,
 )
 from app.modules.tasks.domain.history import HistoryEntry
+from app.modules.tasks.domain.subtask_progress import (
+    SEMANTICA_CONCLUIDA,
+    Progresso,
+)
 from app.shared.pagination import Page, PageParams
 
 
@@ -1024,3 +1028,130 @@ class TaskRepository(BaseRepository[Task]):
             )
         )
         return (resp.rowcount or 0, obs.rowcount or 0)
+
+    # ----------------------------------------------------
+    # Agregacao de subtarefa para a listagem (Spec 042)
+    # ----------------------------------------------------
+    # ⚠️ EXCECAO AUTORIZADA ao `_base_select` (ADR 0003), pelo mesmo motivo de
+    # `detect_cycle` e `soft_delete_subtree`: LTREE e agregacao com FILTER nao
+    # se expressam no select generico. O filtro de tenant vem EXPLICITO nas
+    # duas queries, e em toda tabela que elas tocam.
+    #
+    # ⚠️ AS DUAS EXISTEM PARA O QUADRO PARAR DE CARREGAR SUBTAREFA. Medido em
+    # 19/08/2026: 917 tarefas carregadas de teto 1000, sendo 670 subtarefa que
+    # nao desenha card. Ver a Spec 042.
+
+    async def subtask_progress_for_tasks(
+        self, parent_ids: list[uuid.UUID]
+    ) -> dict[uuid.UUID, Progresso]:
+        """Checklist de VARIAS tasks em UMA query -- pro contador do card.
+
+        Devolve `{parent_id: Progresso}` com todo id pedido presente
+        (`Progresso(0, 0)` quando nao ha filha viva).
+
+        ⚠️ FILHA DIRETA, nao subarvore: o contador do card conta um nivel.
+        Profundidade nao e limitada em task, entao os dois conjuntos divergem
+        de verdade.
+
+        ⚠️ ARQUIVADA SEMPRE FORA, independente do toggle da tela -- e a regra
+        (c) do `subtask_progress`, e ela nao depende de o quadro estar
+        mostrando arquivadas. O `progresso()` do front tambem chama `ativas()`
+        sempre.
+
+        ⚠️ LEFT JOIN de proposito: coluna nao resolvida NAO conta como
+        concluida mas ENTRA no total (regra (d)). Na pratica `column_id` e NOT
+        NULL desde a `0011`, entao o LEFT e cinto, nao suspensorio.
+        """
+        if not parent_ids:
+            return {}
+        tenant = require_tenant()
+        result = await self.session.execute(
+            text(
+                """
+                SELECT f.parent_task_id AS parent_id,
+                       COUNT(*) AS total,
+                       COUNT(*) FILTER (
+                           WHERE c.semantic::text = :semantica_concluida
+                       ) AS concluidas
+                FROM task f
+                LEFT JOIN board_column c
+                       ON c.id = f.column_id
+                      AND c.workspace_id = f.workspace_id
+                WHERE f.workspace_id = :tenant_id
+                  AND f.deleted_at IS NULL
+                  AND f.is_archived = false
+                  AND f.parent_task_id = ANY(CAST(:parent_ids AS uuid[]))
+                GROUP BY f.parent_task_id
+                """
+            ),
+            {
+                "tenant_id": tenant.workspace_id,
+                "semantica_concluida": SEMANTICA_CONCLUIDA.value,
+                "parent_ids": [str(pid) for pid in parent_ids],
+            },
+        )
+        out: dict[uuid.UUID, Progresso] = {
+            pid: Progresso(concluidas=0, total=0) for pid in parent_ids
+        }
+        for parent_id, total, concluidas in result.all():
+            out[parent_id] = Progresso(
+                concluidas=int(concluidas), total=int(total)
+            )
+        return out
+
+    async def subtree_assignee_ids_for_tasks(
+        self, root_ids: list[uuid.UUID], *, include_archived: bool
+    ) -> dict[uuid.UUID, list[uuid.UUID]]:
+        """Responsaveis da SUBARVORE de varias tasks, em UMA query.
+
+        Alimenta o filtro por pessoa do quadro, que hoje o front monta varrendo
+        a subarvore carregada (`filtrosQuadro.ts::responsaveisPorRaiz`). Motivo
+        de existir, nas palavras do proprio arquivo: *"a gestao filtra pela
+        pessoa e espera ver a demanda em que ela trabalha, mesmo que a
+        designacao esteja numa subtarefa -- que e o caso comum"*.
+
+        ⚠️ INCLUI OS RESPONSAVEIS DA PROPRIA RAIZ. O `<@` do LTREE e
+        descendente-OU-IGUAL, e e isso que o front faz (ele varre `tasks`
+        inteiro, raiz junto). Devolver so os das filhas faria a raiz com
+        responsavel proprio sumir do filtro.
+
+        ⚠️ `include_archived` ACOMPANHA O DA LISTAGEM, e nao a regra (c) da
+        checklist. Sao coisas diferentes: a checklist responde "quanto falta do
+        trabalho vivo" e ignora arquivada sempre; o filtro por pessoa responde
+        "esta raiz interessa a fulano?", e hoje enxerga exatamente o que foi
+        carregado. Passar o flag da requisicao mantem o comportamento igual.
+
+        Ordem nao e garantida -- o consumidor e um `Set` no front.
+        """
+        if not root_ids:
+            return {}
+        tenant = require_tenant()
+        filtro_arquivada = "" if include_archived else "AND d.is_archived = false"
+        result = await self.session.execute(
+            text(
+                f"""
+                SELECT r.id AS raiz_id, a.user_id AS user_id
+                FROM task r
+                JOIN task d
+                  ON d.path <@ r.path
+                 AND d.workspace_id = r.workspace_id
+                 AND d.deleted_at IS NULL
+                 {filtro_arquivada}
+                JOIN task_assignment a
+                  ON a.task_id = d.id
+                 AND a.workspace_id = d.workspace_id
+                WHERE r.workspace_id = :tenant_id
+                  AND r.deleted_at IS NULL
+                  AND r.id = ANY(CAST(:root_ids AS uuid[]))
+                GROUP BY r.id, a.user_id
+                """  # noqa: S608 -- `filtro_arquivada` e literal fixo, nao entrada
+            ),
+            {
+                "tenant_id": tenant.workspace_id,
+                "root_ids": [str(rid) for rid in root_ids],
+            },
+        )
+        out: dict[uuid.UUID, list[uuid.UUID]] = {rid: [] for rid in root_ids}
+        for raiz_id, user_id in result.all():
+            out.setdefault(raiz_id, []).append(user_id)
+        return out
