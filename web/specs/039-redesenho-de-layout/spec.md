@@ -192,14 +192,18 @@ Sem segunda família, o peso faz todo o trabalho:
 | ⚠️ selo, meta, contador **DENTRO do card** | **11px** | **500** |
 
 ⚠️ **A linha do card é emenda de 21/08, e veio da tela.** A F1 subiu os selos do
-card de 11 para 12 seguindo a tabela original; na coluna estreita eles passaram
-a **quebrar linha e empurrar os responsáveis para baixo**. A Camila viu e pediu
-para diminuir.
+card de 11 para 12 seguindo a tabela original; a Camila viu e pediu para
+diminuir: *"as vezes os responsáveis ficam pra baixo, não gostei dessa
+quebra"*.
 
 É o mesmo princípio híbrido da §4, um nível mais fundo: o card é o contexto
 **mais denso** do produto, e o que serve a um selo num painel largo não serve a
-sete selos dentro de 190px. O peso 500 fica — ele resolvia hierarquia, não
+até sete selos dentro de 240px. O peso 500 fica — ele resolvia hierarquia, não
 largura.
+
+⚠️ **Este pedido é independente da largura da coluna**, e vale registrar porque
+os dois vieram na mesma frase: a coluna continua em 240 (§6.2), e os selos
+continuam em 11 porque **ela pediu**, não porque a coluna tenha encolhido.
 
 ⚠️ **O 500 nos 12px não é capricho.** A Raleway é uma sans geométrica de origem
 display: altura-de-x menor e aberturas mais fechadas que uma fonte de texto. Em
@@ -345,31 +349,27 @@ sino. No quadro de projeto o lápis sobe para junto do título.
 - **O seletor de quadro fica como está hoje.** Confirmado com a Camila em
   19/08. O `SeletorDeQuadro` (fatia 10) e o quadro extra da raiz (fatia 5c) não
   mudam de lugar nesta spec.
-- ⚠️⚠️ **A DECISÃO DA ROLAGEM HORIZONTAL FOI REVERTIDA EM 21/08, ao ver na
-  tela.** Em 19/08 a decisão foi "rolagem horizontal"; com ela rodando, a
-  Camila foi direta: *"a rolagem horizontal eu odiei, é bem feio. Prefiro um
-  card enorme pra baixo, cabendo menos na visualização"*.
+- ✅ **A DECISÃO DA ROLAGEM HORIZONTAL ESTÁ MANTIDA, e foi reconfirmada em
+  21/08:** *"o scroll do quadro com muitas colunas estava ótimo, exatamente
+  como eu queria mesmo"*. Coluna com `minWidth` de 240 e o quadro rola.
 
-  **Feito agora:** `minWidth` da coluna de 240 → **190**. Com 8 colunas numa
-  tela de 1920 a conta fecha (8×190 + 7×14 = 1618 nos ~1680 úteis) e a barra
-  some.
+  ⚠️⚠️ **REGISTRO DE UM ERRO MEU, porque ele quase virou decisão.** Em 21/08 a
+  Camila reclamou de *"rolagem horizontal no card"*; **eu li como sendo a do
+  QUADRO**, baixei o `minWidth` para 190 e cheguei a escrever aqui que a
+  decisão da rolagem tinha sido revertida. Não tinha. A rolagem dela era
+  **dentro do card**, causada por título com palavra sem espaço (§6.2.1), e
+  espremer a coluna não tinha relação nenhuma com o problema — só piorava a
+  leitura. Revertido.
 
-  ⚠️⚠️ **MAS ISSO NÃO RESOLVE, SÓ ADIA — e a conta diz por quê:**
+  **A lição não é "leia com atenção".** É que eu tinha o dado para não errar:
+  o console mostrou **cinco** elementos com overflow horizontal, sendo um o
+  container de colunas e **quatro dentro de cards**. Eu já estava com a
+  resposta na tela quando escolhi a hipótese errada.
 
-  | tela | 8 colunas a 190px | 19 colunas |
-  |---|---|---|
-  | 1920 | ✅ cabe (1618) | rola (3700) |
-  | 1680 | rola | rola |
-  | 1440 | rola | rola |
-
-  **Largura mínima fixa não elimina rolagem** — ela só escolhe em que tela a
-  rolagem começa. Para 19 colunas não existe largura que caiba.
-
-  ⚠️ **O conserto de verdade é ENCOLHER COLUNA VAZIA.** Cinco das oito colunas
-  do quadro dela estão vazias; se elas virassem faixas finas, as três com card
-  ficariam largas e não sobraria rolagem. A Spec 031 cortou isso (D5,
-  "recolher colunas") — precisa ser retomado, **com desenho**, como fatia
-  própria. Sem isso a reversão fica pela metade em qualquer tela menor.
+  ⚠️ **E fica registrado que ENCOLHER COLUNA VAZIA foi PROPOSTO E RECUSADO**
+  (21/08). Não é pendência nem "boa ideia para depois": não é o que ela quer.
+  A Spec 031 já tinha cortado o mesmo (D5, "recolher colunas") — duas
+  recusas, mesma ideia. Não ressuscite sem alguém pedir.
 
   Três consequências que vêm junto:
 
@@ -385,6 +385,32 @@ sino. No quadro de projeto o lápis sobe para junto do título.
 - ⚠️ **Não há paginação no rodapé em desenho nenhum.** Ela é a peça que ataca o
   teto de carregamento (817 de 1000, sendo **578 subtarefa** que gasta teto sem
   desenhar card). Ver §9.
+
+### 6.2.1. ⚠️ O card estourava com título de palavra longa
+
+Achado na tela em 21/08, e é o que a Camila realmente queria dizer com "rolagem
+horizontal": **o card tinha barra própria**, não o quadro.
+
+Medido no console: card com **182px visíveis e 387px de conteúdo — 205px de
+excesso**, em quatro cards ao mesmo tempo.
+
+**Causa:** título é texto de usuário, e texto de usuário não tem contrato. Uma
+palavra sem espaço nem hífen (`JDHWEIGUAWKLVIUWEIUJQJWFKQEFJLJWEFLQJNEVOMEV`,
+numa tarefa de teste) não oferece ponto de quebra, então empurra a largura do
+container.
+
+**Conserto:** `overflowWrap: "anywhere"` no título do card e no do painel. O
+`TaskDetail` já fazia isso na **descrição**, com o motivo escrito no
+comentário — os títulos ficaram de fora.
+
+Os demais textos de usuário do card (projeto, tarefa-mãe, coluna) já truncam
+com reticências e não estouram.
+
+⚠️ **Isto é a regra "resiliente a conteúdo de usuário (curto, médio, muito
+longo)" do `web/AGENTS.md`, e ela é ⚪ sem verificação:** nenhum teste mede
+largura. Foi achada com a tela aberta e o console — as mesmas duas ferramentas
+que acharam o `font: inherit` no mesmo dia. **Toda caixa que recebe texto de
+usuário precisa desta decisão explícita: quebra, trunca, ou estoura.**
 
 ### 6.3. Detalhe da tarefa (`Tarefa Detalhes.png`, `Prioridade.png`, `Projetos-1.png`, `Seletores Pessoas.png`)
 

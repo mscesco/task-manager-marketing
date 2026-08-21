@@ -2337,18 +2337,18 @@ function ColunaKanban({
     <div
       ref={setNodeRef}
       style={{
-        // ⚠️ 190 E NAO 240 (Camila, 21/08): ela odiou a rolagem horizontal e
-        // prefere card mais alto a barra de rolagem. Com 8 colunas numa tela
-        // de 1920 a conta e 8x190 + 7x14 = 1618, e cabe nos ~1680 uteis; com
-        // 240 dava 2018 e rolava sempre.
+        // ⚠️ 240 E DELIBERADO, E A ROLAGEM HORIZONTAL DO QUADRO TAMBEM.
+        // Confirmado pela Camila em 21/08: "o scroll do quadro com muitas
+        // colunas estava otimo, exatamente como eu queria".
         //
-        // ⚠️ ISTO NAO MATA A ROLAGEM, SO PARA DE DISPARA-LA NO CASO DELA. Em
-        // tela de 1440 oito colunas voltam a rolar, e o quadro de 19 colunas
-        // rola de qualquer jeito -- 19x190 e 3700px. O conserto de verdade e
-        // encolher COLUNA VAZIA (cinco das oito dela estao vazias), e isso e
-        // fatia propria: a Spec 031 cortou "recolher colunas" (D5) e a decisao
-        // precisa ser retomada com o desenho na mao.
-        flex: 1, minWidth: 190, minHeight: 0, borderRadius: 10, padding: 4,
+        // ⚠️ ISTO JA FOI BAIXADO PARA 190 POR ENGANO MEU, no mesmo dia. Ela
+        // reclamou de "rolagem horizontal no card" e eu li como sendo a do
+        // QUADRO; a dela era a de dentro do card, causada por titulo com
+        // palavra sem espaco (ver `overflowWrap` no `TaskCard`). Espremer a
+        // coluna nao tinha nada a ver com o problema, e so piorava a leitura.
+        // Nao baixe este numero sem alguem PEDIR: coluna estreita e o que faz
+        // o card quebrar em muitas linhas.
+        flex: 1, minWidth: 240, minHeight: 0, borderRadius: 10, padding: 4,
         display: "flex", flexDirection: "column",
         background: isOver ? "var(--surface-2)" : "transparent",
         // O fundo sozinho e quase invisivel (surface-2 x canvas = ~2% de
