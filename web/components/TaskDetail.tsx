@@ -13,6 +13,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { UserPlus, X, Pencil, Plus, Calendar, ChevronLeft } from "lucide-react";
 
+import { mesclaTarefa } from "@/lib/mesclaTarefa";
 import { useSaidaAnimada } from "@/lib/useSaidaAnimada";
 import { useFecharAoClicarFora } from "@/lib/useCliqueFora";
 import {
@@ -263,29 +264,13 @@ export default function TaskDetail({
     setFilhos((atual) => {
       const i = atual.findIndex((f) => f.id === sub.id);
       if (i === -1) return [...atual, sub];
-      const anterior = atual[i];
       const copia = [...atual];
-      // ⚠️⚠️ PRESERVAR O QUE A MUTACAO NAO DEVOLVE -- ADR 0025, e este `??` e
-      // a correcao de um defeito REAL relatado na tela em 21/08/2026: marcar a
-      // caixinha fazia a bolinha do responsavel SUMIR da linha, e um F5 a
-      // trazia de volta.
-      //
-      // `PATCH /tasks/{id}` responde `TaskResponse`, que NAO tem
-      // `assignee_ids`. Substituir a filha pela resposta crua apagava o campo
-      // da memoria ate o proximo `listarFilhas`.
-      //
-      // ⚠️ O `aoUpsert` do quadro tem esta mesma guarda desde sempre, pelo
-      // mesmo motivo. A B1 mudou a lista de lugar e deixou a guarda para tras
-      // -- e o teste nao pegou porque os mocks de `updateTask` devolviam
-      // `assignee_ids`, sendo mais generosos que o servidor.
-      copia[i] = {
-        ...sub,
-        assignee_ids: sub.assignee_ids ?? anterior.assignee_ids,
-        subtask_total: sub.subtask_total ?? anterior.subtask_total,
-        subtask_done: sub.subtask_done ?? anterior.subtask_done,
-        subtree_assignee_ids:
-          sub.subtree_assignee_ids ?? anterior.subtree_assignee_ids,
-      };
+      // ⚠️ PRESERVAR O QUE A MUTACAO NAO DEVOLVE (ADR 0025). Foi a ausencia
+      // disto que fez a bolinha do responsavel SUMIR ao marcar a caixinha,
+      // relatado na tela em 21/08/2026. A guarda mora num lugar so desde o
+      // review da Spec 042 -- ver `lib/mesclaTarefa.ts`, que lista as quatro
+      // vezes em que o mesmo defeito apareceu.
+      copia[i] = mesclaTarefa(sub, atual[i]);
       return copia;
     });
   }

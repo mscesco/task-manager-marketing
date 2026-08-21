@@ -50,7 +50,7 @@ from app.shared.pagination import Page, PageParams
 
 
 def _casa_busca_na_subarvore(
-    termo: str, *, include_archived: bool
+    termo: str, *, pode_ver_arquivada: bool
 ) -> ColumnElement[bool]:
     """A busca do quadro, em SQL: casa o titulo DELA ou de qualquer descendente.
 
@@ -70,9 +70,19 @@ def _casa_busca_na_subarvore(
     a regra do `normalizarBusca` do front. Tres copias da mesma normalizacao
     (JS, Python, SQL) seria a terceira chance de divergirem.
 
-    ⚠️ `include_archived` ACOMPANHA O DA LISTAGEM. Hoje a busca do cliente
+    ⚠️ `pode_ver_arquivada` ACOMPANHA A LISTAGEM. Hoje a busca do cliente
     enxerga exatamente o que foi carregado, e o quadro so carrega arquivada
     quando a pessoa pede. Passar o flag mantem o resultado igual ao de hoje.
+
+    ⚠️⚠️ E ELE E `include_archived OR archived_only`, NAO SO O PRIMEIRO --
+    achado no review da Spec 042. O `<@` inclui a PROPRIA linha, entao numa
+    listagem `archived_only` (a tela de Arquivadas) a raiz arquivada nao
+    satisfazia o proprio criterio: a subconsulta exigia um
+    descendente-ou-igual NAO arquivado, e arquivar cascateia a subarvore
+    inteira. Resultado: `?archived_only=true&q=campanha` devolvia SEMPRE
+    vazio, mesmo havendo uma tarefa arquivada chamada "Campanha". Nenhum
+    chamador combinava os dois ainda -- era armadilha esperando a busca chegar
+    na tela de Arquivadas.
 
     ⚠️ O `%` NAO E ESCAPADO, e isso e conhecido. Termo com `%` ou `_` vira
     curinga em vez de literal -- comportamento diferente do `includes()` do
@@ -94,7 +104,7 @@ def _casa_busca_na_subarvore(
             ),
         )
     )
-    if not include_archived:
+    if not pode_ver_arquivada:
         sub = sub.where(descendente.is_archived.is_(False))
     return sub.exists()
 
@@ -258,7 +268,12 @@ class TaskRepository(BaseRepository[Task]):
             base = base.where(Task.created_by == created_by)
         if q is not None and q.strip() != "":
             base = base.where(
-                _casa_busca_na_subarvore(q, include_archived=include_archived)
+                _casa_busca_na_subarvore(
+                    q,
+                    # ⚠️ `or archived_only`: sem ele, buscar na tela de
+                    # Arquivadas devolve SEMPRE vazio. Ver o docstring.
+                    pode_ver_arquivada=include_archived or archived_only,
+                )
             )
         # archived_only tem precedencia: so arquivadas (tela de arquivadas,
         # Spec 013 fatia 3). Senao, include_archived controla: default so

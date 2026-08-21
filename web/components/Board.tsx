@@ -70,7 +70,8 @@ import {
 } from "@/lib/rascunhoDeColunas";
 import EmptyStateBox from "@/components/EmptyState";
 import { terminal, type Coluna } from "@/lib/coluna";
-import { listAllTasks, listAllProjects, listarFilhas, updateTask, listMembers, listSubteams, getRootTeamId, listBoards, colunaComContagem, aplicarLoteDeColunas, ApiError, type Task, type Team, type Quadro } from "@/lib/api";
+import { listAllTasks, listAllProjects, listarFilhas, getTask, updateTask, listMembers, listSubteams, getRootTeamId, listBoards, colunaComContagem, aplicarLoteDeColunas, ApiError, type Task, type Team, type Quadro } from "@/lib/api";
+import { mesclaTarefa } from "@/lib/mesclaTarefa";
 import { sincronizarTaskNaUrl, lerTaskDaUrl } from "@/lib/urlTarefa";
 import { ORDENACOES, ordenar, type Ordenacao } from "@/lib/ordenacao";
 
@@ -542,20 +543,58 @@ export default function Board({
     setDeepLinkFeito(true);
     const alvo = lerTaskDaUrl();
     if (!alvo) return;
-    const t = tasks.find((x) => x.id === alvo);
-    if (!t) return;
-    const pilhaPais: Task[] = [];
-    const vistos = new Set<string>([t.id]); // guarda anti-ciclo
-    let paiId = t.parent_task_id;
-    while (paiId && !vistos.has(paiId)) {
-      vistos.add(paiId);
-      const pai = tasks.find((x) => x.id === paiId);
-      if (!pai) break; // pai fora do lote -> para onde deu
-      pilhaPais.unshift(pai);
-      paiId = pai.parent_task_id;
+    const noLote = tasks.find((x) => x.id === alvo);
+    if (noLote) {
+      const pilhaPais: Task[] = [];
+      const vistos = new Set<string>([noLote.id]); // guarda anti-ciclo
+      let paiId = noLote.parent_task_id;
+      while (paiId && !vistos.has(paiId)) {
+        vistos.add(paiId);
+        const pai = tasks.find((x) => x.id === paiId);
+        if (!pai) break; // pai fora do lote -> para onde deu
+        pilhaPais.unshift(pai);
+        paiId = pai.parent_task_id;
+      }
+      setPilha(pilhaPais);
+      setDetalhe(noLote);
+      return;
     }
-    setPilha(pilhaPais);
-    setDetalhe(t);
+    // ⚠️ ACHADO NO REVIEW DA SPEC 042. Com `root_only` NENHUMA subtarefa esta
+    // mais no lote, e ate aqui este caminho caia num `return` silencioso:
+    // abrir uma subtarefa no quadro escreve `?task=<id-dela>` na URL, e dar F5
+    // simplesmente nao reabria nada. O silencio era pensado para "tarefa de
+    // outro quadro"; o conjunto de ausentes passou a incluir TODA subtarefa.
+    //
+    // ⚠️ Busca so no caminho de EXCECAO: quando a tarefa esta no lote (todo
+    // card do quadro), continua sem nenhuma requisicao -- o ganho que a ADR
+    // front 0003 defende segue valendo para o caso comum.
+    let cancelado = false;
+    void (async () => {
+      try {
+        const t = await getTask(alvo);
+        const pilhaPais: Task[] = [];
+        const vistos = new Set<string>([t.id]);
+        let paiId = t.parent_task_id;
+        // Teto de 20: profundidade nao e limitada em task, e uma cadeia
+        // patologica viraria 20 requisicoes em serie no F5.
+        while (paiId && !vistos.has(paiId) && pilhaPais.length < 20) {
+          vistos.add(paiId);
+          const pai = tasks.find((x) => x.id === paiId) ?? (await getTask(paiId));
+          pilhaPais.unshift(pai);
+          paiId = pai.parent_task_id;
+        }
+        if (cancelado) return;
+        setPilha(pilhaPais);
+        setDetalhe(t);
+      } catch {
+        // 404/403 -- link velho, ou tarefa fora do alcance de quem abriu.
+        // Segue em silencio, que e a decisao ja registrada: a URL nao vale um
+        // aviso de erro na cara.
+      }
+    })();
+    return () => {
+      cancelado = true;
+    };
   }, [tasks, deepLinkFeito]);
 
   // Escrita: espelha a tarefa aberta na URL. Cobre abrir, fechar, entrar numa
@@ -580,10 +619,11 @@ export default function Board({
     setTasks((prev) => {
       const lista = prev ?? [];
       const existente = lista.find((t) => t.id === saved.id);
-      const m = {
-        ...saved,
-        assignee_ids: saved.assignee_ids ?? existente?.assignee_ids ?? [],
-      };
+      // ⚠️ ACHADO NO REVIEW DA SPEC 042: aqui so `assignee_ids` era preservado.
+      // Editar SO o titulo de um card zerava o `☑ x/y` dele ate o reload,
+      // porque o `PATCH` responde `TaskResponse` e nao traz os agregados.
+      // A guarda agora e uma so, com teste proprio -- ver `lib/mesclaTarefa.ts`.
+      const m = { ...mesclaTarefa(saved, existente), assignee_ids: saved.assignee_ids ?? existente?.assignee_ids ?? [] };
       return existente
         ? lista.map((t) => (t.id === saved.id ? m : t))
         : [m, ...lista];
@@ -647,26 +687,19 @@ export default function Board({
       // `/archive` herdam `TaskResponse` e NAO os devolvem -- sem o `??`,
       // editar o titulo de um card zeraria o `☑ x/y` dele ate o proximo
       // reload. E o defeito que o ADR 0025 registra, na sua terceira encarnacao.
-      const merged = {
-        ...t,
-        assignee_ids: t.assignee_ids ?? existente.assignee_ids,
-        subtask_total: t.subtask_total ?? existente.subtask_total,
-        // ⚠️ A JANELA OTIMISTA DO CONTADOR (B2). Ate aqui o numero era somado
-        // das filhas carregadas, e a cascata logo abaixo ja o movia sozinha.
-        // Sem as filhas no lote ele viria pronto do backend e ficaria PARADO
-        // ate o reload -- o mesmo "so mudava depois do F5" que a fatia 4c
-        // consertou em 10/08. Concluir o pai conclui a subarvore inteira no
-        // backend, entao `done = total` e derivavel sem ter as filhas.
-        //
-        // ⚠️ O INVERSO NAO VALE: sair de concluido NAO descascateia no
-        // backend. Por isso so ha o ramo de subida -- assumir simetria
-        // inventaria um estado que o banco nao tem.
-        subtask_done: virouConcluido
-          ? (t.subtask_total ?? existente.subtask_total)
-          : (t.subtask_done ?? existente.subtask_done),
-        subtree_assignee_ids:
-          t.subtree_assignee_ids ?? existente.subtree_assignee_ids,
-      };
+      const base = mesclaTarefa(t, existente);
+      // ⚠️ A JANELA OTIMISTA DO CONTADOR (B2). Sem as filhas no lote, o numero
+      // vem pronto do backend e ficaria PARADO ate o reload -- o mesmo "so
+      // mudava depois do F5" que a fatia 4c consertou em 10/08. Concluir o pai
+      // conclui a subarvore inteira no backend, entao `done = total` e
+      // derivavel sem ter as filhas.
+      //
+      // ⚠️ O INVERSO NAO VALE: sair de concluido NAO descascateia no backend.
+      // Por isso so ha o ramo de subida -- assumir simetria inventaria um
+      // estado que o banco nao tem.
+      const merged = virouConcluido
+        ? { ...base, subtask_done: base.subtask_total }
+        : base;
       const prefixo = existente.path + ".";
       return prev.map((x) => {
         if (x.id === t.id) return merged;
@@ -788,9 +821,23 @@ export default function Board({
       }
     }
 
+    // ⚠️ ACHADO NO REVIEW DA SPEC 042 -- O CONTADOR NO ARRASTO. Ate a B2 o
+    // numero era somado das filhas carregadas, e o laco de `anteriores` logo
+    // acima ja o movia sozinho ao mudar a coluna delas. Com `root_only` nao ha
+    // filhas no lote: sem a linha abaixo, arrastar para "Concluído" deixa o
+    // `☑ x/y` parado ate um F5 -- que e literalmente o defeito de 10/08
+    // voltando, e pelo gesto MAIS usado do quadro.
+    //
+    // ⚠️ Guardado para a reversao pelo mesmo motivo que a coluna.
+    const doneAnterior = atual.subtask_done;
     setTasks((prev) =>
       prev!.map((t) => {
-        if (t.id === taskId) return { ...t, column_id: destino };
+        if (t.id === taskId)
+          return {
+            ...t,
+            column_id: destino,
+            subtask_done: concluindo ? t.subtask_total : t.subtask_done,
+          };
         if (anteriores.has(t.id))
           return { ...t, column_id: destino, status: "COMPLETED" };
         return t;
@@ -804,13 +851,20 @@ export default function Board({
       const atualizada = await updateTask(taskId, { column_id: destino });
       setTasks((prev) =>
         prev!.map((t) =>
-          t.id === taskId ? { ...atualizada, assignee_ids: t.assignee_ids } : t
+          // ⚠️ `mesclaTarefa` e nao spread cru: a resposta do PATCH nao traz os
+          // agregados, e substituir por ela desfaria a linha otimista acima.
+          t.id === taskId ? mesclaTarefa(atualizada, t) : t
         )
       );
     } catch (err) {
       setTasks((prev) =>
         prev!.map((t) => {
-          if (t.id === taskId) return { ...t, column_id: colunaAnterior };
+          if (t.id === taskId)
+            return {
+              ...t,
+              column_id: colunaAnterior,
+              subtask_done: doneAnterior,
+            };
           const ant = anteriores.get(t.id);
           return ant !== undefined
             ? { ...t, column_id: ant.coluna, status: ant.status }
@@ -1428,7 +1482,15 @@ export default function Board({
   // Quem tem ALGUMA tarefa neste quadro (raiz ou subtarefa). Usado so pra
   // decidir se um desativado ainda merece aparecer no filtro.
   const comTrabalhoAqui = new Set<string>();
-  for (const t of tasks) for (const id of t.assignee_ids ?? []) comTrabalhoAqui.add(id);
+  // ⚠️ SUBARVORE, e nao so a raiz (achado no review da Spec 042). Com
+  // `root_only` os responsaveis que so existem em SUBTAREFA sumiriam daqui --
+  // e a regra logo abaixo existe justamente para manter no seletor quem saiu
+  // do time mas ainda tem trabalho no quadro. Sem isto, quem so tem subtarefa
+  // atribuida desaparece do filtro e nao ha como achar as tarefas dele para
+  // redistribuir.
+  for (const t of tasks)
+    for (const id of t.subtree_assignee_ids ?? t.assignee_ids ?? [])
+      comTrabalhoAqui.add(id);
 
   // Pessoas do seletor. No quadro de SUBTIME, so quem e daquela equipe
   // (pedido da Camila: "filtrar por pessoa que faz parte daquela equipe").
