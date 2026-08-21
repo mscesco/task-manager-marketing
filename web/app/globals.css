@@ -111,41 +111,53 @@
    o hex, entao trocar a variavel em runtime realmente vira a utility.
    Esquecer um dos conjuntos = metade da tela vira e a outra metade nao.
 
-   A paleta nao e o claro invertido: fundo levemente azulado (nao preto
-   puro, que cansa e achata a hierarquia), azul de acao mais claro pra
-   segurar contraste, e --accent-soft deixa de ser um azul palido pra ser
-   um azul ESCURO -- senao fundos de badge e anel de foco viram um borrao
-   claro no meio do escuro.
-   Contraste conferido (WCAG, sobre --surface): texto 13.9, texto-suave
-   7.4, texto-fraco 4.6, accent 6.0, danger 6.1.
+   A paleta nao e o claro invertido: fundo que nao e preto puro (preto puro
+   cansa e achata a hierarquia), azul de acao mais claro pra segurar
+   contraste, e --accent-soft deixa de ser um azul palido pra ser um azul
+   ESCURO -- senao fundos de badge e anel de foco viram um borrao claro no
+   meio do escuro.
+
+   ⚠️ SPEC 039 (F2) -- O TOM VIROU QUENTE, acompanhando o claro. Ate aqui o
+   fundo era azulado (#0f1520); com a paleta clara indo para o off-white
+   quente da Notion, um escuro azulado deixaria os dois temas parecendo
+   produtos diferentes. A decisao "nao e preto puro" continua valendo -- o que
+   mudou foi a DIRECAO do desvio, de azul para terra.
+
+   ⚠️ A NOTION NAO TEM TEMA ESCURO NA ANALISE, entao NADA aqui e mapeado: e
+   tudo derivado, e por isso cada par foi MEDIDO em vez de escolhido no olho.
+   Contraste conferido (WCAG, sobre --surface): texto 14.73, texto-suave 9.1,
+   texto-fraco 5.47, accent 6.76, danger 6.01, on-danger sobre danger 6.47,
+   on-accent sobre accent 7.7, borda vs surface 1.37.
+   ⚠️ O texto-fraco saiu de 4.6 para 5.47 -- ele passava raspando e agora tem
+   margem, que e o mesmo ganho que o tema claro teve na F0.
    --------------------------------------------------------------- */
 [data-theme="escuro"] {
   color-scheme: dark;
 
-  --color-canvas: #0f1520;
-  --color-surface: #161d2b;
-  --color-surface-2: #1e2637;
-  --color-border: #2b3547;
-  --color-ink: #e6eaf0;
-  --color-ink-soft: #a3adbd;
-  --color-ink-faint: #7b8698;
-  --color-accent: #5b9aff;
-  --color-accent-soft: #1d3054;
+  --color-canvas: #17150f;
+  --color-surface: #211e18;
+  --color-surface-2: #2b2721;
+  --color-border: #3a352d;
+  --color-ink: #f4f1ea;
+  --color-ink-soft: #c6bfb2;
+  --color-ink-faint: #9b9385;
+  --color-accent: #5aabf2;
+  --color-accent-soft: #14304a;
   --color-danger: #f87171;
 
-  --bg: #0f1520;
-  --surface: #161d2b;
-  --surface-2: #1e2637;
-  --border: #2b3547;
-  --text: #e6eaf0;
-  --text-soft: #a3adbd;
-  --text-faint: #7b8698;
-  --accent: #5b9aff;
-  --accent-soft: #1d3054;
+  --bg: #17150f;
+  --surface: #211e18;
+  --surface-2: #2b2721;
+  --border: #3a352d;
+  --text: #f4f1ea;
+  --text-soft: #c6bfb2;
+  --text-faint: #9b9385;
+  --accent: #5aabf2;
+  --accent-soft: #14304a;
   --danger: #f87171;
   /* Texto sobre fundo --danger: branco daria 2.77 de contraste sobre este
-     vermelho claro (reprova AA). Este marrom quase preto da 6.9. */
-  --on-danger: #1f0a0a;
+     vermelho claro (reprova AA). Este marrom quase preto da 6.47. */
+  --on-danger: #2a0f0f;
 
   /* Sombra no escuro precisa de mais opacidade: a de baixo relevo do tema
      claro simplesmente some e os cards perdem a separacao do fundo. */
@@ -155,8 +167,12 @@
 
 /* Hover do botao primario: no claro escurece o azul, no escuro precisa
    CLAREAR -- escurecer sobre fundo escuro le como "desabilitado". */
-[data-theme="escuro"] .btn-primary:hover { background: #7db0ff; }
-[data-theme="escuro"] .btn-primary { color: #0f1520; }
+[data-theme="escuro"] .btn-primary:hover { background: #8cc4f7; }
+/* ⚠️ Texto sobre o azul do escuro. NAO e `--bg`: e um quase-preto proprio,
+   medido contra o accent (7.7). Amarrar ao `--bg` faria a legibilidade do
+   botao depender de uma decisao de FUNDO -- e a F0 acabou de mostrar que
+   fundo muda. */
+[data-theme="escuro"] .btn-primary { color: #0d1117; }
 
 /* .error-box tinha as tres cores cravadas (rosa claro) -- sumia no escuro. */
 [data-theme="escuro"] .error-box {
@@ -223,29 +239,44 @@
    Conferir com grep que cada nome aparece nos DOIS blocos.
 
    O `dot` clareia junto com o resto da paleta escura; o `text` vira o stop
-   CLARO da familia -- sobre --surface (#161d2b) o stop escuro sumiria.
-   Contraste conferido, texto sobre --surface do tema escuro: */
+   CLARO da familia -- sobre a --surface escura o stop escuro sumiria.
+
+   ⚠️ OS NUMEROS ABAIXO FORAM REMEDIDOS NA F2 (21/08/2026), contra a surface
+   NOVA (`#211e18`). Eles tinham sido tirados contra a antiga (`#161d2b`) e
+   passariam a mentir em silencio -- trocar a surface muda TODOS eles de uma
+   vez, e ninguem olha 15 comentarios.
+   A surface nova e um pouco mais escura, entao cada um subiu ~0.15; o pior
+   caso e 8.34, contra um minimo de 4.5. Nenhum chegou perto de reprovar.
+
+   ⚠️ MEXEU NA `--surface` DO ESCURO? REMEDE ESTES 15. E o mesmo aviso que a
+   Spec 031 deixou para o tema claro, pelo mesmo motivo: cor de selo se mede
+   CONTRA a superficie onde ela pousa. */
 [data-theme="escuro"] {
-  --status-backlog-dot:  #94a3b8;  --status-backlog-text:  #cbd5e1; /* 11.36 */
-  --status-planned-dot:  #818cf8;  --status-planned-text:  #a5b4fc; /*  8.46 */
-  --status-progress-dot: #38bdf8;  --status-progress-text: #7dd3fc; /* 10.12 */
-  --status-review-dot:   #fbbf24;  --status-review-text:   #fcd34d; /* 11.70 */
-  --status-external-dot: #a78bfa;  --status-external-text: #c4b5fd; /*  9.14 */
-  --status-done-dot:     #4ade80;  --status-done-text:     #86efac; /* 12.02 */
-  --status-cancel-dot:   #cbd5e1;  --status-cancel-text:   #cbd5e1; /* 11.36 */
-  --status-blocked-dot:  #f87171;  --status-blocked-text:  #fca5a5; /*  8.89 */
+  --status-backlog-dot:  #94a3b8;  --status-backlog-text:  #cbd5e1; /* 11.19 */
+  --status-planned-dot:  #818cf8;  --status-planned-text:  #a5b4fc; /*  8.34 */
+  --status-progress-dot: #38bdf8;  --status-progress-text: #7dd3fc; /* 9.97 */
+  --status-review-dot:   #fbbf24;  --status-review-text:   #fcd34d; /* 11.53 */
+  --status-external-dot: #a78bfa;  --status-external-text: #c4b5fd; /*  9.00 */
+  --status-done-dot:     #4ade80;  --status-done-text:     #86efac; /* 11.84 */
+  --status-cancel-dot:   #cbd5e1;  --status-cancel-text:   #cbd5e1; /* 11.19 */
+  --status-blocked-dot:  #f87171;  --status-blocked-text:  #fca5a5; /*  8.76 */
 
-  --prio-low-dot:    #94a3b8;  --prio-low-text:    #cbd5e1; /* 11.36 */
-  --prio-medium-dot: #38bdf8;  --prio-medium-text: #7dd3fc; /* 10.12 */
-  --prio-high-dot:   #fbbf24;  --prio-high-text:   #fcd34d; /* 11.70 */
-  --prio-urgent-dot: #f87171;  --prio-urgent-text: #fca5a5; /*  8.89 */
+  --prio-low-dot:    #94a3b8;  --prio-low-text:    #cbd5e1; /* 11.19 */
+  --prio-medium-dot: #38bdf8;  --prio-medium-text: #7dd3fc; /* 9.97 */
+  --prio-high-dot:   #fbbf24;  --prio-high-text:   #fcd34d; /* 11.53 */
+  --prio-urgent-dot: #f87171;  --prio-urgent-text: #fca5a5; /*  8.76 */
 
-  --due-overdue-dot:  #f87171;  --due-overdue-text:  #fca5a5; /*  8.89 */
-  --due-soon-dot:     #fbbf24;  --due-soon-text:     #fcd34d; /* 11.70 */
+  --due-overdue-dot:  #f87171;  --due-overdue-text:  #fca5a5; /*  8.76 */
+  --due-soon-dot:     #fbbf24;  --due-soon-text:     #fcd34d; /* 11.53 */
 
-  --stale-dot: #fbbf24;  --stale-text: #fcd34d; /* 11.70 */
+  --stale-dot: #fbbf24;  --stale-text: #fcd34d; /* 11.53 */
 
-  --on-chroma: #161d2b;
+  /* ⚠️ ERA A `--surface` ANTIGA CRAVADA (`#161d2b`), e a F2 trocou a surface.
+     Sem esta linha o texto de dentro do `Badge tone="solid"` continuaria
+     azulado no meio de um tema terra -- o tipo de sobra que nao quebra teste
+     nenhum e so aparece no olho. Acompanha a `--surface` de propósito: e a
+     cor de "buraco" no selo cheio. */
+  --on-chroma: #211e18;
 }
 
 * { box-sizing: border-box; }
