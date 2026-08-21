@@ -26,7 +26,13 @@ export default function PageHeader({
 }) {
   return (
     <div className={`mb-[18px] flex items-center gap-3 ${className}`.trim()}>
-      <h1 className="text-[19px] tracking-[-0.02em]">{title}</h1>
+      {/* ⚠️ Spec 039 (F1): cabeçalho de tela = 26px / 800. Sem segunda família,
+          o PESO é que faz a hierarquia -- ver a tabela em §5.2 da spec.
+          O `tracking` foi mantido: apertar título é medição própria na Raleway,
+          e a tabela de tracking da Notion ficou de fora (era para Inter). */}
+      <h1 className="text-[26px] font-extrabold leading-[1.23] tracking-[-0.02em]">
+        {title}
+      </h1>
       {count != null && count !== false && (
         <span className="text-base text-ink-faint">{count}</span>
       )}

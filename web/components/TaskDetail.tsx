@@ -1241,7 +1241,8 @@ export default function TaskDetail({
         )}
 
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
-          <h2 style={{ margin: 0, fontSize: 18, letterSpacing: "-0.02em", lineHeight: 1.3 }}>
+          {/* Spec 039 (F1): título do painel = 22px / 700. */}
+          <h2 style={{ margin: 0, fontSize: 22, fontWeight: 700, letterSpacing: "-0.02em", lineHeight: 1.27 }}>
             {task.title}
           </h2>
           <button
