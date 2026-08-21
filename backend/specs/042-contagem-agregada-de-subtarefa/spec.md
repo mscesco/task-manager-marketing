@@ -1,8 +1,9 @@
 # Spec 042 — Contagem agregada de subtarefa
 
-**Status:** ✅ **IMPLEMENTADA E EM PRODUÇÃO — deploy em 21/08/2026.**
+**Status:** ✅ **FECHADA — em produção desde 21/08/2026.**
 Fatias A1, A2, B1 e B2 entregues; migration `0015` aplicada.
-⚠️ **Falta remedir o teto em produção** e escrever o número aqui — ver §14.
+✅ **Resultado medido: o quadro carrega 254 no lugar de 917. Folga de 83 → 746.**
+Ver §14.
 **Escopo:** backend (`app/`) **e** frontend (`web/`) — o contrato muda dos dois lados
 **Não toca:** arquivamento, semântica de coluna, autenticação
 **Placar na abertura:** Backend **860**, Front **865**, migrations `0014`
@@ -294,15 +295,30 @@ WHERE t.deleted_at IS NULL AND t.is_archived = false
 GROUP BY 1 ORDER BY 1;
 ```
 
-| | carregado pelo quadro | folga até o teto de 1000 |
-|---|---|---|
-| 19/08, antes | **917** (247 cards + 670 subtarefas) | **83** |
-| esperado depois | **~247** (só as raízes) | **~753** |
-| medido em produção | *a preencher* | *a preencher* |
+### ✅ Medido em produção, 21/08/2026 — depois do deploy
 
-**O que o número prova, se bater:** que o quadro parou de baixar subtarefa.
-**O que ele NÃO prova:** que as cinco funcionalidades continuam de pé — isso é
-o smoke, e as cinco estão listadas no §2.
+| | no banco (ativas) | o quadro CARREGA | folga até 1000 |
+|---|---|---|---|
+| 19/08, antes | 917 (247 + 670) | **917** | **83** |
+| **21/08, depois** | **939** (254 cards + 685 subtarefas) | **254** | **746** |
+
+⚠️ **Repare no que a tabela diz de verdade: o banco CRESCEU e a carga CAIU.**
+Em dois dias entraram 7 cards e **15 subtarefas**; o total ativo subiu de 917
+para 939. Sob o comportamento antigo essas 15 subtarefas teriam comido **18% de
+toda a folga restante** — de 83 para 68, em dois dias. Agora custam **zero**:
+subtarefa deixou de ocupar linha do teto.
+
+Era exatamente essa a tese do §1 ("elas crescem com o uso, e nenhum ajuste de
+arquivamento alcança isso"), e ela se confirmou sozinha em 48 horas.
+
+**O que este número prova:** que o quadro passou a carregar só as raízes.
+**O que ele NÃO prova:** que as cinco funcionalidades do §2 continuam de pé —
+isso é o smoke, e é olho humano.
+
+⚠️ **E ele é medido no BANCO, não no fio.** A prova definitiva de que o *fetch*
+encolheu está na aba de Rede: as chamadas a `/api/v1/tasks` devem sair com
+`root_only=true` e caber em **3 páginas** (254 ÷ 100), contra as 10 de antes.
+Vale conferir uma vez, para o número desta tabela não virar fé.
 
 ### 14.1. A janela de arquivamento NÃO precisa mais ser encurtada
 
