@@ -55,6 +55,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 
 import TaskDetail from "@/components/TaskDetail";
@@ -507,5 +508,74 @@ describe("TaskDetail -- o badge sai da coluna (fatia 4c-2)", () => {
     );
 
     expect(await screen.findByText("Em Andamento")).toBeTruthy();
+  });
+});
+
+// =====================================================================
+// Spec 039 (F6) -- a pílula de PRIORIDADE virou o controle.
+//
+// ⚠️ Até aqui ela era rótulo morto: trocar um enum de quatro valores exigia
+// abrir o modal inteiro pelo "Editar". É a mesma lição da C8 que a pílula de
+// datas já aplicava ("a pílula VIROU o controle, e não ganhou um controle ao
+// lado") -- a de prioridade tinha ficado para trás.
+// =====================================================================
+describe("TaskDetail -- a pílula de prioridade abre e grava (F6)", () => {
+  it("clicar na pílula abre a lista com as quatro, na ordem do enum", async () => {
+    montar([]);
+    await screen.findByText(/Subtarefas/);
+
+    fireEvent.click(screen.getByTitle("Mudar prioridade"));
+
+    const lista = await screen.findByRole("listbox", { name: "Prioridade" });
+    const opcoes = within(lista).getAllByRole("option");
+    // ⚠️ SABOTAGEM MEDIDA (21/08): trocar a constante `PRIORIDADES` por
+    // `Object.keys(PRIORITY_LABEL)` **NÃO derruba este teste** -- o objeto em
+    // `lib/status.ts` está declarado justamente nessa ordem, então a regra
+    // certa e a errada dão a mesma resposta hoje. É o mesmo tipo de acidente
+    // que o caso C do cabeçalho deste arquivo registra.
+    //
+    // O que esta asserção prende, então, é MENOS do que parece: ela pega uma
+    // reordenação da lista RENDERIZADA, não a origem dela. A constante
+    // explícita continua sendo o certo (não depende da ordem de chaves de um
+    // objeto distante), mas quem garante isso é o comentário lá, não este
+    // teste. Ele viraria portão de verdade no dia em que `PRIORITY_LABEL`
+    // fosse declarado fora de ordem -- e aí pegaria.
+    expect(opcoes.map((o) => o.textContent)).toEqual([
+      "Baixa",
+      "Media",
+      "Alta",
+      "Urgente",
+    ]);
+  });
+
+  it("escolher grava com `priority` e SÓ com ele", async () => {
+    const salva = task({ id: "pai", title: "Tarefa mãe", path: "pai" });
+    vi.mocked(api.updateTask).mockResolvedValue({ ...salva, priority: "URGENT" });
+    montar([]);
+    await screen.findByText(/Subtarefas/);
+
+    fireEvent.click(screen.getByTitle("Mudar prioridade"));
+    fireEvent.click(await screen.findByRole("option", { name: "Urgente" }));
+
+    await waitFor(() => {
+      expect(api.updateTask).toHaveBeenCalledWith("pai", { priority: "URGENT" });
+    });
+    // ⚠️ UMA CHAVE SÓ. O `updateTask` manda `body: input` inteiro, então
+    // qualquer campo a mais viaja -- e mandar `status` junto seria a regra
+    // velha que a ADR 0041 aposentou.
+    const payload = vi.mocked(api.updateTask).mock.calls[0][1];
+    expect(Object.keys(payload)).toEqual(["priority"]);
+  });
+
+  it("⚠️ escolher a MESMA prioridade não manda requisição", async () => {
+    // Sem esta guarda, abrir a lista e clicar no que já está marcado gasta um
+    // PATCH e uma linha de histórico para não mudar nada.
+    montar([]);
+    await screen.findByText(/Subtarefas/);
+
+    fireEvent.click(screen.getByTitle("Mudar prioridade"));
+    fireEvent.click(await screen.findByRole("option", { name: "Media" }));
+
+    expect(api.updateTask).not.toHaveBeenCalled();
   });
 });

@@ -70,6 +70,12 @@ import { linkify } from "@/lib/linkify";
 // de `coluna.name`; este mapa responde pelo caso em que a coluna da tarefa nao
 // esta na lista carregada -- quadro sem alcance, coluna apagada na fatia 5, ou
 // as colunas ainda a caminho. Sem ele o badge ficaria vazio nesses casos.
+// ⚠️ ORDEM DO ENUM, e nao `Object.keys(PRIORITY_LABEL)`. Prioridade tem ordem
+// natural (menor -> maior); a ordem de insercao do objeto e um acidente que
+// alguem pode reordenar sem perceber que mexeu na interface. Lista explicita
+// falha alto se um valor novo entrar no enum e ninguem vier aqui.
+const PRIORIDADES = ["LOW", "MEDIUM", "HIGH", "URGENT"] as const;
+
 const STATUS_LABEL: Record<string, string> = Object.fromEntries(
   STATUSES.map((s) => [s.key, s.label])
 );
@@ -326,6 +332,9 @@ export default function TaskDetail({
   // porque sao dois estados de produto: apagar a hora NAO apaga a data.
   const [horaAtual, setHoraAtual] = useState<string | null>(null);
   const [abertoDatas, setAbertoDatas] = useState(false);
+  // Spec 039 (F6): a pilula de PRIORIDADE vira gatilho, como a de datas.
+  const [abertoPrio, setAbertoPrio] = useState(false);
+  const [salvandoPrio, setSalvandoPrio] = useState(false);
   const [salvandoDatas, setSalvandoDatas] = useState(false);
   const [erroDatas, setErroDatas] = useState<string | null>(null);
   // ⚠️ RASCUNHO SEPARADO DO ECO. O painel tem DOIS campos e um botão de
@@ -395,6 +404,7 @@ export default function TaskDetail({
   // precisava fechar sozinho porque nao flutuava sobre nada.
   const projWrapRef = useRef<HTMLDivElement>(null);
   const datasWrapRef = useRef<HTMLDivElement>(null);
+  const prioWrapRef = useRef<HTMLDivElement>(null);
 
   // Insere um trecho (emoji) na posicao do cursor do textarea e mantem foco.
   function inserirNoCursor(
@@ -533,6 +543,24 @@ export default function TaskDetail({
     document.addEventListener("mousedown", onDown);
     return () => document.removeEventListener("mousedown", onDown);
   }, [abertoDatas]);
+
+  // ⚠️ MESMO PADRAO DO PAINEL DE DATAS, e nao o `useFecharAoClicarFora`: aquele
+  // e do SCRIM do modal (compara `e.target === e.currentTarget`). Painel
+  // suspenso precisa de `contains`, senao clicar DENTRO da lista fecharia.
+  //
+  // ⚠️ DIFERENCA PARA O DE DATAS: aqui fechar NAO descarta nada. O de datas
+  // tem rascunho e botao de salvar, entao clicar fora e o cancelar; este grava
+  // no clique da opcao, entao nao ha o que perder.
+  useEffect(() => {
+    if (!abertoPrio) return;
+    function onDown(e: MouseEvent) {
+      if (prioWrapRef.current && !prioWrapRef.current.contains(e.target as Node)) {
+        setAbertoPrio(false);
+      }
+    }
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [abertoPrio]);
 
   // Usuario logado: uma vez (memoizado). Falha silenciosa -> sem acoes
   // inline, mas o thread ainda renderiza.
@@ -832,6 +860,49 @@ export default function TaskDetail({
       );
     } finally {
       setSalvandoDatas(false);
+    }
+  }
+
+  /**
+   * Troca a prioridade direto pela pilula (Spec 039, F6).
+   *
+   * ⚠️ A PILULA E O CONTROLE, e nao ganhou um controle ao lado -- e a licao da
+   * C8 escrita na propria linha da pilula de coluna, e a mesma que a de datas
+   * ja aplica. Ate aqui, mudar prioridade exigia abrir o modal INTEIRO pelo
+   * "Editar", para trocar um enum de quatro valores.
+   *
+   * ⚠️ SEM OTIMISMO, de proposito. O PATCH de prioridade e um campo so e a
+   * lista fecha na hora; pintar antes e reverter no erro daria pisca-pisca num
+   * gesto que ja e instantaneo. A checkbox da subtarefa e otimista porque ela
+   * mexe em COLUNA e o contador do card depende disso.
+   *
+   * ⚠️ `onSubtaskUpsert` E NAO `onTaskMoved`: prioridade nao muda onde a tarefa
+   * MORA, so o que ela mostra. `onTaskMoved` faz o quadro recarregar (ver o
+   * `mudarProjeto` abaixo) -- seria uma varredura inteira para trocar um selo.
+   */
+  async function mudarPrioridade(destino: string) {
+    // `task` e `Task | null` (null = painel fechado). As outras acoes deste
+    // arquivo usam `task!`; aqui a guarda explicita evita o `!`.
+    if (!task || salvandoPrio) return;
+    if (task.priority === destino) {
+      setAbertoPrio(false);
+      return;
+    }
+    setErro(null);
+    setSalvandoPrio(true);
+    try {
+      const t = await updateTask(tid, { priority: destino });
+      setAbertoPrio(false);
+      onSubtaskUpsert(t);
+    } catch (e) {
+      const err = e as ApiError;
+      setErro(
+        err.status === 403
+          ? "Você não pode editar esta tarefa."
+          : "Não consegui mudar a prioridade."
+      );
+    } finally {
+      setSalvandoPrio(false);
     }
   }
 
@@ -1275,9 +1346,75 @@ export default function TaskDetail({
               STATUS_LABEL[task.status] ??
               task.status}
           </Badge>
-          <Badge tone="soft" size="md" color={PRIORITY_COLOR[task.priority]}>
-            {PRIORITY_LABEL[task.priority] || task.priority}
-          </Badge>
+          {/* ---- Prioridade (Spec 039, F6) --------------------------------
+              ⚠️ A PILULA VIROU O CONTROLE. Ate aqui ela era rotulo morto: para
+              trocar um enum de QUATRO valores a pessoa abria o modal inteiro
+              pelo "Editar". E a mesma licao da C8, escrita na linha da pilula
+              de coluna logo acima e ja aplicada na de datas.
+
+              ⚠️ ORDEM DA LISTA = ordem do enum (Baixa -> Urgente), e nao a
+              alfabetica que o `Object.keys` daria. Prioridade tem ordem
+              natural; embaralhar obriga a LER cada linha em vez de mirar. */}
+          <div ref={prioWrapRef} style={{ position: "relative", display: "inline-flex" }}>
+            <button
+              type="button"
+              onClick={() => setAbertoPrio((v) => !v)}
+              disabled={salvandoPrio}
+              aria-haspopup="listbox"
+              aria-expanded={abertoPrio}
+              title="Mudar prioridade"
+              style={{
+                border: "none", background: "none", padding: 0,
+                cursor: salvandoPrio ? "default" : "pointer",
+                opacity: salvandoPrio ? 0.5 : 1,
+              }}
+            >
+              <Badge tone="soft" size="md" color={PRIORITY_COLOR[task.priority]}>
+                {PRIORITY_LABEL[task.priority] || task.priority}
+              </Badge>
+            </button>
+            {abertoPrio && (
+              <div
+                role="listbox"
+                aria-label="Prioridade"
+                style={{
+                  position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 30,
+                  minWidth: 150, padding: 4, borderRadius: 10,
+                  background: "var(--surface)", border: "1px solid var(--border)",
+                  boxShadow: "var(--shadow)",
+                  display: "flex", flexDirection: "column", gap: 2,
+                }}
+              >
+                {PRIORIDADES.map((p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    role="option"
+                    aria-selected={task.priority === p}
+                    onClick={() => void mudarPrioridade(p)}
+                    className={task.priority === p ? "" : "btn-ghost"}
+                    style={{
+                      display: "flex", alignItems: "center", gap: 8,
+                      border: "none", borderRadius: 8, padding: "6px 10px",
+                      fontSize: 13, textAlign: "left", cursor: "pointer",
+                      background: task.priority === p ? "var(--accent-soft)" : "transparent",
+                      color: task.priority === p ? "var(--accent)" : "var(--text)",
+                      fontWeight: task.priority === p ? 600 : 400,
+                    }}
+                  >
+                    <span
+                      aria-hidden
+                      style={{
+                        width: 8, height: 8, borderRadius: 999, flexShrink: 0,
+                        background: PRIORITY_COLOR[p],
+                      }}
+                    />
+                    {PRIORITY_LABEL[p]}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
           {/* Spec 031 (C8): a pilula de projeto SAIU daqui. Ela era read-only e
               o controle de projeto ficava 200px abaixo, dizendo a mesma coisa --
               duas representacoes do mesmo dado na mesma tela. Agora ha UMA, na
