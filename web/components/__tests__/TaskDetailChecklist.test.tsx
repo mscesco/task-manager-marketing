@@ -166,9 +166,12 @@ function Pai({
   inicial,
   onSubtaskUpsert,
   tarefa,
+  members,
 }: {
   inicial: Task[];
   onSubtaskUpsert?: (sub: Task) => void;
+  // Só os testes de responsável precisam; os demais seguem com o mapa vazio.
+  members?: Map<string, { name: string }>;
   // A tarefa FOCADA. Default = a mae generica; os testes do badge passam uma
   // com coluna especifica.
   tarefa?: Task;
@@ -181,7 +184,7 @@ function Pai({
   return (
     <TaskDetail
       task={tarefa ?? task({ id: "pai", title: "Tarefa mãe", path: "pai" })}
-      members={new Map()}
+      members={members ?? new Map()}
       projects={new Map()}
       temVoltar={false}
       onVoltar={vi.fn()}
@@ -204,10 +207,20 @@ function Pai({
   );
 }
 
-function montar(filhos: Task[], onSubtaskUpsert?: (sub: Task) => void) {
+function montar(
+  filhos: Task[],
+  onSubtaskUpsert?: (sub: Task) => void,
+  members?: Map<string, { name: string }>
+) {
   // ⚠️ B1: as filhas entram pelo mock da busca, e nao por prop.
   vi.mocked(api.listarFilhas).mockResolvedValue(filhos);
-  render(<Pai inicial={filhos} onSubtaskUpsert={onSubtaskUpsert} />);
+  render(
+    <Pai
+      inicial={filhos}
+      onSubtaskUpsert={onSubtaskUpsert}
+      members={members}
+    />
+  );
 }
 
 beforeEach(() => {
@@ -276,6 +289,49 @@ describe("TaskDetail -- a checklist conta pela coluna (fatia 4c-2)", () => {
     expect(
       (screen.getByTitle("Reabrir") as HTMLInputElement).checked
     ).toBe(true);
+  });
+
+  it("⚠️ concluir a subtarefa NAO pode apagar o responsavel dela", async () => {
+    // ⚠️ DEFEITO REAL, RELATADO NA TELA EM 21/08/2026: marcar a caixinha fazia
+    // a bolinha do responsavel SUMIR da linha, e um F5 a trazia de volta.
+    //
+    // Causa: `upsertFilhaLocal` (nascido na B1) substituia a filha pela
+    // resposta crua do `PATCH`. E `PATCH /tasks/{id}` responde `TaskResponse`,
+    // que NAO tem `assignee_ids` (ADR 0025) -- o campo era apagado da memoria
+    // e voltava so no proximo `listarFilhas`.
+    //
+    // ⚠️ E A QUARTA ENCARNACAO DO MESMO DEFEITO. O `aoUpsert` do quadro tem o
+    // `?? existente.assignee_ids` exatamente por isso; a B1 mudou a lista de
+    // lugar e deixou a guarda para tras.
+    //
+    // ⚠️ POR QUE NENHUM TESTE PEGOU: os outros mocks de `updateTask` neste
+    // arquivo fazem `{...f, ...}` e por isso devolvem `assignee_ids` -- eles
+    // sao MAIS GENEROSOS QUE O SERVIDOR. Este mock imita o backend de verdade,
+    // e e essa diferenca que transforma o teste em portao.
+    const f = task({
+      id: "f1",
+      title: "Filha com responsável",
+      parent_task_id: "pai",
+      path: "pai.f1",
+      depth: 1,
+      column_id: "col-planejado",
+      assignee_ids: ["u1"],
+    });
+    const { assignee_ids: _semEsteCampo, ...comoOBackendResponde } = f;
+    vi.mocked(api.updateTask).mockResolvedValue({
+      ...comoOBackendResponde,
+      column_id: "col-done",
+      status: "COMPLETED",
+    } as Task);
+
+    montar([f], undefined, new Map([["u1", { name: "Ana" }]]));
+    await screen.findByTitle("Ana");
+
+    fireEvent.click(screen.getByTitle("Concluir"));
+    await waitFor(() => expect(api.updateTask).toHaveBeenCalled());
+
+    // A bolinha tem de continuar la DEPOIS que a resposta do PATCH chega.
+    expect(screen.getByTitle("Ana")).toBeTruthy();
   });
 
   it("marcar manda `column_id`, e NUNCA `status`", async () => {
