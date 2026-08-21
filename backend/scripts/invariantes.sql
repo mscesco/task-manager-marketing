@@ -309,3 +309,34 @@ JOIN task pai ON pai.id = filha.parent_task_id
 WHERE filha.deleted_at IS NULL
   AND pai.deleted_at IS NULL
   AND filha.board_id IS DISTINCT FROM pai.board_id;
+
+-- =====================================================================
+-- 10. FILHA VIVA DEBAIXO DE ANCESTRAL ARQUIVADO  (Spec 042, 21/08/2026)
+-- =====================================================================
+-- Esperado: 0. Medido em 19/08/2026: **8** -- residuo do defeito anterior a
+-- 06/08, quando o `archive` manual cascateava e a varredura da madrugada NAO.
+--
+-- ⚠️ POR QUE E CONSULTA E NAO SO UM CONSERTO PONTUAL. As 4 filhas TERMINAIS do
+-- residuo se resolvem sozinhas pelo relogio do arquivamento; as NAO-terminais
+-- ficam presas para sempre -- nao ha caminho de produto que as alcance, porque
+-- o quadro so desenha `depth = 0` e a checklist onde elas moram e a de uma
+-- tarefa arquivada, que ninguem abre. Sem esta consulta, 4 viram 40 sem que
+-- ninguem veja.
+--
+-- ⚠️ `path <@` E NAO `parent_task_id`: a versao por pai direto NAO enxerga
+-- neta debaixo de avo arquivado, e foi por isso que a primeira medicao desta
+-- sessao (que usou pai direto) precisou ser refeita.
+--
+-- ⚠️ SE ELA CRESCER: o conserto de produto e abrir o ancestral arquivado e
+-- clicar em Arquivar DE NOVO -- a cascata roda mesmo em pai ja arquivado,
+-- exatamente para recolher estas orfas (ver `TaskService.archive`). Se crescer
+-- SEM ninguem ter arquivado nada, ai ha caminho de escrita novo produzindo o
+-- estado, e o conserto e no codigo.
+SELECT count(*) AS filha_viva_sob_ancestral_arquivado
+FROM task d
+JOIN task a
+  ON d.path <@ a.path
+ AND d.id <> a.id
+ AND a.workspace_id = d.workspace_id
+WHERE d.deleted_at IS NULL AND d.is_archived = false
+  AND a.deleted_at IS NULL AND a.is_archived = true;

@@ -1,6 +1,9 @@
 # Spec 042 — Contagem agregada de subtarefa
 
-**Status:** proposta (aguardando aprovação)
+**Status:** ✅ **FECHADA — em produção desde 21/08/2026.**
+Fatias A1, A2, B1 e B2 entregues; migration `0015` aplicada.
+✅ **Resultado medido: o quadro carrega 254 no lugar de 917. Folga de 83 → 746.**
+Ver §14.
 **Escopo:** backend (`app/`) **e** frontend (`web/`) — o contrato muda dos dois lados
 **Não toca:** arquivamento, semântica de coluna, autenticação
 **Placar na abertura:** Backend **860**, Front **865**, migrations `0014`
@@ -273,3 +276,58 @@ se a rota existe.
 E, diferente das outras alavancas, **este número para de crescer com o uso**:
 subtarefa deixa de ocupar linha do teto, então o hábito do SEO (11 por card)
 passa a não custar nada ao carregamento.
+
+---
+
+## 14. Fechamento — o que ainda falta MEDIR
+
+⚠️ **Esta spec inteira se justificou por um número, e o número do "depois"
+ainda não foi tirado.** Sem ele, o que existe é a intenção, não o resultado.
+
+Rodar no Adminer **depois do deploy**, e escrever o resultado aqui:
+
+```sql
+SELECT
+  CASE WHEN t.depth = 0 THEN 'card (raiz)' ELSE 'subtarefa' END AS tipo,
+  COUNT(*) AS total
+FROM task t
+WHERE t.deleted_at IS NULL AND t.is_archived = false
+GROUP BY 1 ORDER BY 1;
+```
+
+### ✅ Medido em produção, 21/08/2026 — depois do deploy
+
+| | no banco (ativas) | o quadro CARREGA | folga até 1000 |
+|---|---|---|---|
+| 19/08, antes | 917 (247 + 670) | **917** | **83** |
+| **21/08, depois** | **939** (254 cards + 685 subtarefas) | **254** | **746** |
+
+⚠️ **Repare no que a tabela diz de verdade: o banco CRESCEU e a carga CAIU.**
+Em dois dias entraram 7 cards e **15 subtarefas**; o total ativo subiu de 917
+para 939. Sob o comportamento antigo essas 15 subtarefas teriam comido **18% de
+toda a folga restante** — de 83 para 68, em dois dias. Agora custam **zero**:
+subtarefa deixou de ocupar linha do teto.
+
+Era exatamente essa a tese do §1 ("elas crescem com o uso, e nenhum ajuste de
+arquivamento alcança isso"), e ela se confirmou sozinha em 48 horas.
+
+**O que este número prova:** que o quadro passou a carregar só as raízes.
+**O que ele NÃO prova:** que as cinco funcionalidades do §2 continuam de pé —
+isso é o smoke, e é olho humano.
+
+⚠️ **E ele é medido no BANCO, não no fio.** A prova definitiva de que o *fetch*
+encolheu está na aba de Rede: as chamadas a `/api/v1/tasks` devem sair com
+`root_only=true` e caber em **3 páginas** (254 ÷ 100), contra as 10 de antes.
+Vale conferir uma vez, para o número desta tabela não virar fé.
+
+### 14.1. A janela de arquivamento NÃO precisa mais ser encurtada
+
+Durante a investigação ficou decidido baixar `STALE_ARCHIVE_DAYS` de 20 para
+15, como válvula: drenava 87 tarefas e dobrava a folga de 83 para 170.
+
+⚠️ **A justificativa expirou.** Com o quadro carregando ~247, a folga passa de
+750 sem tocar em nada. Encurtar a janela agora só faria tarefa concluída sumir
+do quadro cinco dias mais cedo — **custo sem contrapartida.**
+
+**Recomendação: não fazer.** Fica registrado para não ser executado por
+inércia mais adiante, achando que ainda é a válvula que era.
