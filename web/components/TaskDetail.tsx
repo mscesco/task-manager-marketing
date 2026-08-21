@@ -1242,7 +1242,10 @@ export default function TaskDetail({
 
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
           {/* Spec 039 (F1): título do painel = 22px / 700. */}
-          <h2 style={{ margin: 0, fontSize: 22, fontWeight: 700, letterSpacing: "-0.02em", lineHeight: 1.27 }}>
+          {/* `overflowWrap` pelo mesmo motivo do título do card: título é texto
+              de usuário e pode vir sem espaço nenhum. Aqui o painel é largo e
+              disfarça, mas o buraco é o mesmo. */}
+          <h2 style={{ margin: 0, fontSize: 22, fontWeight: 700, letterSpacing: "-0.02em", lineHeight: 1.27, overflowWrap: "anywhere" }}>
             {task.title}
           </h2>
           <button

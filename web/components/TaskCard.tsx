@@ -104,7 +104,25 @@ export default function TaskCard({
     >
       {/* Spec 039 (F1): título de card = 13px / 600. O `13.5` era meio-pixel,
           que a Spec 018 §4 tinha matado e voltou por inércia. */}
-      <div style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.35 }}>{task.title}</div>
+      {/* ⚠️ `overflowWrap: "anywhere"` -- SEM ELE UMA PALAVRA LONGA ESTOURA O
+          CARD. Título é texto de usuário, e texto de usuário não tem contrato:
+          "JDHWEIGUAWKLVIUWEIUJQJWFKQEFJLJWEFLQJNEVOMEV" não tem espaço nem
+          hífen, então não existe ponto de quebra natural e a palavra empurra a
+          largura. Medido na tela em 21/08: card de 182px com 387px de conteúdo
+          -- 205px de excesso, e barra de rolagem DENTRO do card.
+          O `TaskDetail` já fazia isso na descrição, pelo mesmo motivo; o card
+          ficou de fora. É a regra "resiliente a conteúdo de usuário" do
+          `web/AGENTS.md`, e ela não tem portão: nenhum teste mede largura. */}
+      <div
+        style={{
+          fontSize: 13,
+          fontWeight: 600,
+          lineHeight: 1.35,
+          overflowWrap: "anywhere",
+        }}
+      >
+        {task.title}
+      </div>
       {projectName && (
         <span
           title={`Projeto: ${projectName}`}
