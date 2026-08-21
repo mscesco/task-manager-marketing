@@ -1923,3 +1923,53 @@ describe("Board -- quadro pedido que ainda nao esta na lista (fatia 5b-6)", () =
     expect(screen.queryByText("Este quadro não existe mais.")).toBeNull();
   });
 });
+
+// =====================================================================
+// Spec 039 (F4/F5) -- "Ordenar" e "Mostrar arquivadas" moraram no CABEÇALHO
+// até 21/08 e passaram para dentro do painel de Filtros, por decisão da
+// Camila (o cabeçalho tinha seis controles competindo).
+//
+// ⚠️ ESTE BLOCO EXISTE PORQUE A MUDANÇA PASSOU VERDE SEM ELE. Ao mover os
+// dois, os 874 testes continuaram passando -- e não porque estavam certos:
+// **nenhum teste tocava nesses controles**. Mover um controle para dentro de
+// um painel é justamente o tipo de mudança que pode torná-lo INALCANÇÁVEL, e
+// era o único caso em que o verde não significava nada.
+//
+// O que ele prende: que os dois saíram do cabeçalho E que continuam
+// alcançáveis abrindo o painel.
+// =====================================================================
+describe("Board -- Ordenar e Mostrar arquivadas vivem no painel (F4/F5)", () => {
+  it("não aparecem no cabeçalho, e aparecem ao abrir Filtros", async () => {
+    montarApi([task({ id: "t1", title: "Tarefa qualquer" })], []);
+    render(<Board subteamId={CRM} title="CRM e Automação" />);
+    await screen.findByText("Tarefa qualquer");
+
+    // Com o painel FECHADO, nenhum dos dois está na tela.
+    expect(screen.queryByLabelText("Mostrar arquivadas")).toBeNull();
+    expect(screen.queryByText("Mostrar arquivadas")).toBeNull();
+    expect(screen.queryByLabelText("Ordenar")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Filtros" }));
+
+    // ⚠️ `findBy*`: o painel é condicional, então a árvore muda depois do
+    // clique. `getBy*` aqui daria falso-negativo intermitente.
+    expect(await screen.findByLabelText("Ordenar")).toBeTruthy();
+    expect(screen.getByText("Mostrar arquivadas")).toBeTruthy();
+  });
+
+  it("⚠️ o selo do funil NÃO conta os dois -- eles não estreitam o quadro", async () => {
+    // `contaFiltrosAtivos` exclui `arquivadas` de propósito ("alarga o quadro,
+    // não estreita") e nunca contou ordenação. Mudar de LUGAR não podia mudar
+    // a CONTA -- era a objeção registrada no código quando o Ordenar ficava
+    // fora do painel, e é o que este caso prende.
+    montarApi([task({ id: "t1", title: "Tarefa qualquer" })], []);
+    render(<Board subteamId={CRM} title="CRM e Automação" />);
+    await screen.findByText("Tarefa qualquer");
+
+    fireEvent.click(screen.getByRole("button", { name: "Filtros" }));
+    fireEvent.click(await screen.findByLabelText("Mostrar arquivadas"));
+
+    // O botão continua se chamando só "Filtros": sem sufixo de contagem.
+    expect(screen.getByRole("button", { name: "Filtros" })).toBeTruthy();
+  });
+});
