@@ -188,7 +188,22 @@ Sem segunda família, o peso faz todo o trabalho:
 | corpo de leitura | 15px | 400 |
 | título de card | 13px | 600 |
 | cabeçalho de coluna | 13px | 600 |
-| selo, meta, contador | 12px | **500** |
+| selo, meta, contador **fora do card** | 12px | **500** |
+| ⚠️ selo, meta, contador **DENTRO do card** | **11px** | **500** |
+
+⚠️ **A linha do card é emenda de 21/08, e veio da tela.** A F1 subiu os selos do
+card de 11 para 12 seguindo a tabela original; a Camila viu e pediu para
+diminuir: *"as vezes os responsáveis ficam pra baixo, não gostei dessa
+quebra"*.
+
+É o mesmo princípio híbrido da §4, um nível mais fundo: o card é o contexto
+**mais denso** do produto, e o que serve a um selo num painel largo não serve a
+até sete selos dentro de 240px. O peso 500 fica — ele resolvia hierarquia, não
+largura.
+
+⚠️ **Este pedido é independente da largura da coluna**, e vale registrar porque
+os dois vieram na mesma frase: a coluna continua em 240 (§6.2), e os selos
+continuam em 11 porque **ela pediu**, não porque a coluna tenha encolhido.
 
 ⚠️ **O 500 nos 12px não é capricho.** A Raleway é uma sans geométrica de origem
 display: altura-de-x menor e aberturas mais fechadas que uma fonte de texto. Em
@@ -334,9 +349,27 @@ sino. No quadro de projeto o lápis sobe para junto do título.
 - **O seletor de quadro fica como está hoje.** Confirmado com a Camila em
   19/08. O `SeletorDeQuadro` (fatia 10) e o quadro extra da raiz (fatia 5c) não
   mudam de lugar nesta spec.
-- ⚠️ **O desenho tem 5 colunas; produção tem 8** no Quadro geral e **19** no
-  "Quadro teste do GOATzinho". **Decisão da Camila, 19/08: rolagem
-  horizontal.** A coluna tem largura fixa e o quadro rola.
+- ✅ **A DECISÃO DA ROLAGEM HORIZONTAL ESTÁ MANTIDA, e foi reconfirmada em
+  21/08:** *"o scroll do quadro com muitas colunas estava ótimo, exatamente
+  como eu queria mesmo"*. Coluna com `minWidth` de 240 e o quadro rola.
+
+  ⚠️⚠️ **REGISTRO DE UM ERRO MEU, porque ele quase virou decisão.** Em 21/08 a
+  Camila reclamou de *"rolagem horizontal no card"*; **eu li como sendo a do
+  QUADRO**, baixei o `minWidth` para 190 e cheguei a escrever aqui que a
+  decisão da rolagem tinha sido revertida. Não tinha. A rolagem dela era
+  **dentro do card**, causada por título com palavra sem espaço (§6.2.1), e
+  espremer a coluna não tinha relação nenhuma com o problema — só piorava a
+  leitura. Revertido.
+
+  **A lição não é "leia com atenção".** É que eu tinha o dado para não errar:
+  o console mostrou **cinco** elementos com overflow horizontal, sendo um o
+  container de colunas e **quatro dentro de cards**. Eu já estava com a
+  resposta na tela quando escolhi a hipótese errada.
+
+  ⚠️ **E fica registrado que ENCOLHER COLUNA VAZIA foi PROPOSTO E RECUSADO**
+  (21/08). Não é pendência nem "boa ideia para depois": não é o que ela quer.
+  A Spec 031 já tinha cortado o mesmo (D5, "recolher colunas") — duas
+  recusas, mesma ideia. Não ressuscite sem alguém pedir.
 
   Três consequências que vêm junto:
 
@@ -352,6 +385,32 @@ sino. No quadro de projeto o lápis sobe para junto do título.
 - ⚠️ **Não há paginação no rodapé em desenho nenhum.** Ela é a peça que ataca o
   teto de carregamento (817 de 1000, sendo **578 subtarefa** que gasta teto sem
   desenhar card). Ver §9.
+
+### 6.2.1. ⚠️ O card estourava com título de palavra longa
+
+Achado na tela em 21/08, e é o que a Camila realmente queria dizer com "rolagem
+horizontal": **o card tinha barra própria**, não o quadro.
+
+Medido no console: card com **182px visíveis e 387px de conteúdo — 205px de
+excesso**, em quatro cards ao mesmo tempo.
+
+**Causa:** título é texto de usuário, e texto de usuário não tem contrato. Uma
+palavra sem espaço nem hífen (`JDHWEIGUAWKLVIUWEIUJQJWFKQEFJLJWEFLQJNEVOMEV`,
+numa tarefa de teste) não oferece ponto de quebra, então empurra a largura do
+container.
+
+**Conserto:** `overflowWrap: "anywhere"` no título do card e no do painel. O
+`TaskDetail` já fazia isso na **descrição**, com o motivo escrito no
+comentário — os títulos ficaram de fora.
+
+Os demais textos de usuário do card (projeto, tarefa-mãe, coluna) já truncam
+com reticências e não estouram.
+
+⚠️ **Isto é a regra "resiliente a conteúdo de usuário (curto, médio, muito
+longo)" do `web/AGENTS.md`, e ela é ⚪ sem verificação:** nenhum teste mede
+largura. Foi achada com a tela aberta e o console — as mesmas duas ferramentas
+que acharam o `font: inherit` no mesmo dia. **Toda caixa que recebe texto de
+usuário precisa desta decisão explícita: quebra, trunca, ou estoura.**
 
 ### 6.3. Detalhe da tarefa (`Tarefa Detalhes.png`, `Prioridade.png`, `Projetos-1.png`, `Seletores Pessoas.png`)
 

@@ -104,13 +104,31 @@ export default function TaskCard({
     >
       {/* Spec 039 (F1): título de card = 13px / 600. O `13.5` era meio-pixel,
           que a Spec 018 §4 tinha matado e voltou por inércia. */}
-      <div style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.35 }}>{task.title}</div>
+      {/* ⚠️ `overflowWrap: "anywhere"` -- SEM ELE UMA PALAVRA LONGA ESTOURA O
+          CARD. Título é texto de usuário, e texto de usuário não tem contrato:
+          "JDHWEIGUAWKLVIUWEIUJQJWFKQEFJLJWEFLQJNEVOMEV" não tem espaço nem
+          hífen, então não existe ponto de quebra natural e a palavra empurra a
+          largura. Medido na tela em 21/08: card de 182px com 387px de conteúdo
+          -- 205px de excesso, e barra de rolagem DENTRO do card.
+          O `TaskDetail` já fazia isso na descrição, pelo mesmo motivo; o card
+          ficou de fora. É a regra "resiliente a conteúdo de usuário" do
+          `web/AGENTS.md`, e ela não tem portão: nenhum teste mede largura. */}
+      <div
+        style={{
+          fontSize: 13,
+          fontWeight: 600,
+          lineHeight: 1.35,
+          overflowWrap: "anywhere",
+        }}
+      >
+        {task.title}
+      </div>
       {projectName && (
         <span
           title={`Projeto: ${projectName}`}
           style={{
             alignSelf: "flex-start", maxWidth: "100%",
-            fontSize: 12, fontWeight: 500, padding: "2px 8px", borderRadius: 6,
+            fontSize: 11, fontWeight: 500, padding: "2px 8px", borderRadius: 6,
             background: "var(--surface-2)", color: "var(--text-soft)",
             border: "1px solid var(--border)",
             display: "inline-flex", alignItems: "center", gap: 4, minWidth: 0,
@@ -128,7 +146,7 @@ export default function TaskCard({
           title={`Subtarefa de: ${parentTitle}`}
           style={{
             alignSelf: "flex-start", maxWidth: "100%",
-            fontSize: 12, fontWeight: 500, padding: "2px 8px", borderRadius: 6,
+            fontSize: 11, fontWeight: 500, padding: "2px 8px", borderRadius: 6,
             background: "var(--surface-2)", color: "var(--text-soft)",
             border: "1px solid var(--border)",
             display: "inline-flex", alignItems: "center", gap: 4, minWidth: 0,
@@ -146,7 +164,7 @@ export default function TaskCard({
           title={`Coluna: ${rotuloDaColuna}`}
           style={{
             alignSelf: "flex-start", maxWidth: "100%",
-            fontSize: 12, fontWeight: 500, padding: "2px 8px", borderRadius: 6,
+            fontSize: 11, fontWeight: 500, padding: "2px 8px", borderRadius: 6,
             background: "var(--surface-2)", color: "var(--text-soft)",
             border: "1px solid var(--border)",
             display: "inline-flex", alignItems: "center", gap: 4, minWidth: 0,
@@ -168,7 +186,7 @@ export default function TaskCard({
           }
           style={{
             alignSelf: "flex-start",
-            fontSize: 12, fontWeight: 500, padding: "2px 8px", borderRadius: 6,
+            fontSize: 11, fontWeight: 500, padding: "2px 8px", borderRadius: 6,
             background:
               escopo === "compartilhada" ? "var(--accent-soft)" : "var(--surface-2)",
             color:
@@ -185,7 +203,7 @@ export default function TaskCard({
           style={{
             alignSelf: "flex-start",
             display: "inline-flex", alignItems: "center", gap: 5,
-            fontSize: 12, fontWeight: 500, padding: "2px 8px", borderRadius: 6,
+            fontSize: 11, fontWeight: 500, padding: "2px 8px", borderRadius: 6,
             color: "var(--stale-text)",
             background: "color-mix(in srgb, var(--stale-text) 12%, transparent)",
           }}
@@ -209,7 +227,7 @@ export default function TaskCard({
             className={dueTone ? undefined : "muted"}
             style={{
               display: "inline-flex", alignItems: "center", gap: 4,
-              fontSize: 12,
+              fontSize: 11,
               color: dueTone ? DEADLINE_COLOR[dueTone] : undefined,
               fontWeight: dueTone ? 600 : undefined,
             }}
@@ -222,14 +240,14 @@ export default function TaskCard({
           <span
             className="muted"
             title={`${subtaskDone} de ${subtaskCount} subtarefas concluídas`}
-            style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12 }}
+            style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11 }}
           >
             <CheckSquare {...ICONE} />
             {subtaskDone}/{subtaskCount}
           </span>
         )}
         {task.is_archived && (
-          <span className="muted" style={{ fontSize: 12 }}>arquivada</span>
+          <span className="muted" style={{ fontSize: 11 }}>arquivada</span>
         )}
 
         {/* Spec 031 / C2: ausencia de responsavel precisa ser DITA. Um card
@@ -237,7 +255,7 @@ export default function TaskCard({
             e sao 44 tarefas nesse estado hoje. Tom neutro de proposito: e
             pendencia de preenchimento, nao erro. */}
         {semResponsavel && (
-          <span className="muted" style={{ fontSize: 12, marginLeft: "auto" }}>
+          <span className="muted" style={{ fontSize: 11, marginLeft: "auto" }}>
             sem responsável
           </span>
         )}
