@@ -243,7 +243,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               )}
             </>
           ) : (
-            <a href="/quadro" title="Quadros" className={itemCls(algumQuadroAtivo)}>
+            <a href="/quadro" title="Quadros" aria-label="Quadros" className={itemCls(algumQuadroAtivo)}>
               <Columns3 size={18} className="shrink-0" />
             </a>
           )}
@@ -257,6 +257,14 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 key={n.href}
                 href={n.href}
                 title={!open ? n.label : undefined}
+                // ⚠️ SPEC 039 (F3): COLAPSADO O LINK SO TEM ICONE, e o `title`
+                // sozinho nao e nome acessivel confiavel -- ele depende de o
+                // leitor de tela usar a reserva. O `web/AGENTS.md` exige
+                // `aria-label` em controle so-de-icone, e aqui sao SETE de
+                // uma vez. Expandido fica `undefined`: o texto ao lado ja
+                // nomeia, e um label duplicado faria o leitor anunciar duas
+                // vezes.
+                aria-label={!open ? n.label : undefined}
                 className={itemCls(active)}
               >
                 <Icon size={18} className="shrink-0" />
@@ -270,9 +278,41 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             espaco quando falta altura e a lista de navegacao (que rola),
             nunca o rodape (que nao tem como ser alcancado de outro jeito). */}
         <div className="flex shrink-0 flex-col gap-1 border-t border-border pt-2">
+          {/* ⚠️ SPEC 039 (F3) -- "TIME PRINCIPAL", e ele NAO e placeholder.
+              O controle navega entre times RAIZ, e a regra combinada com a
+              Camila em 19/08 e:
+                um time raiz    -> nome, texto simples, SEM chevron
+                dois ou mais    -> seletor
+              Hoje toda pessoa cai no primeiro caso porque so existe um time
+              raiz -- entao isto e o ESTADO REAL, e nao uma casca esperando a
+              spec de multiplos times raiz. O seletor entra quando o segundo
+              existir.
+
+              ⚠️ Nao e link: com um time so nao ha para onde ir, e um item
+              clicavel que nao leva a lugar nenhum e pior que um rotulo. A
+              regra "se parece clicavel, tem de ser clicavel" vale ao
+              contrario tambem. */}
+          {(() => {
+            const raizes = teams.filter((t) => t.parent_team_id === null);
+            if (raizes.length !== 1) return null;
+            const raiz = raizes[0];
+            return (
+              <div
+                title={`Você está no time ${raiz.name}`}
+                aria-label={`Time atual: ${raiz.name}`}
+                className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-semibold text-ink-faint ${
+                  open ? "" : "justify-center"
+                }`}
+              >
+                <Network size={18} className="shrink-0" />
+                {open && <span className="truncate">{raiz.name}</span>}
+              </div>
+            );
+          })()}
           <a
             href="/perfil"
             title={!open ? "Meu perfil" : undefined}
+            aria-label={!open ? "Meu perfil" : undefined}
             className={itemCls(pathname === "/perfil")}
           >
             <User size={18} className="shrink-0" />
@@ -298,7 +338,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             )}
             {open && <span className="truncate">{ROTULO_TEMA[tema]}</span>}
           </button>
-          <button type="button" onClick={sair} title={!open ? "Sair" : undefined} className={itemCls(false)}>
+          <button type="button" onClick={sair} title={!open ? "Sair" : undefined}
+            aria-label={!open ? "Sair" : undefined} className={itemCls(false)}>
             <LogOut size={18} className="shrink-0" />
             {open && <span className="truncate">Sair</span>}
           </button>
