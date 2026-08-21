@@ -4,15 +4,20 @@
    border-*, rounded-*, text-<escala>). Espelham os valores legados do
    :root abaixo -- duplicacao proposital e temporaria, zero-break. */
 @theme {
-  --color-canvas: #f6f7f9;
+  /* ⚠️ ESPELHA O `:root` ABAIXO, VALOR POR VALOR (Spec 039, F0). A duplicacao
+     e a mesma de sempre e continua proposital: `--color-*` alimenta as
+     utilitarias do Tailwind v4, `--*` alimenta o inline e as classes .btn/
+     .input. Mexeu num, mexa no outro -- metade da tela mudando de cor e o
+     sintoma de ter esquecido. */
+  --color-canvas: #f6f5f4;
   --color-surface: #ffffff;
-  --color-surface-2: #f1f3f5;
-  --color-border: #e2e6ea;
-  --color-ink: #1a2230;
-  --color-ink-soft: #5b6675;
-  --color-ink-faint: #8a94a3;
-  --color-accent: #2563eb;
-  --color-accent-soft: #dbe7ff;
+  --color-surface-2: #f6f5f4;
+  --color-border: #e6e6e6;
+  --color-ink: #000000;
+  --color-ink-soft: #31302e;
+  --color-ink-faint: #615d59;
+  --color-accent: #0075de;
+  --color-accent-soft: #d6e8fb;
   --color-danger: #dc2626;
 
   --radius-sm: 8px;
@@ -26,7 +31,8 @@
   --text-lg: 15px;
   --text-xl: 19px;
 
-  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-sans: var(--fonte-raleway), ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", Roboto, sans-serif;
 }
 
 /* Tokens de design. Tom: ferramenta interna calma e legivel -- o oposto
@@ -44,24 +50,52 @@
 :root {
   color-scheme: light;
 
-  --bg: #f6f7f9;
-  --surface: #ffffff;
-  --surface-2: #f1f3f5;
-  --border: #e2e6ea;
-  --text: #1a2230;
-  --text-soft: #5b6675;
-  --text-faint: #8a94a3;
-  --accent: #2563eb;
-  --accent-soft: #dbe7ff;
+  /* ⚠️ SPEC 039 (F0) -- A PALETA CLARA VEM DA ANALISE DA NOTION, mapeada 1:1
+     na §3 da spec. Onze tokens saem de la sem interpretacao; os tres de baixo
+     (`--accent-soft`, `--danger`, `--on-danger`) NAO existem la e sao
+     derivados, com o motivo escrito em cada um.
+
+     ⚠️ TROCA DE TOM, e nao so de valor: o cinza-azulado saiu e entrou o
+     off-white QUENTE (`#f6f5f4`). E o nucleo do "paper-calm" -- a mesma
+     mudanca que faz a tela parecer documento em vez de painel.
+
+     ⚠️ E O TEMA ESCURO NAO MUDOU NESTA FATIA. Ele e paleta desenhada, nao o
+     claro invertido, e refaze-lo e a F2. Ate la os dois convivem: quem estiver
+     no escuro ve exatamente o que via ontem. */
+  --bg: #f6f5f4;         /* Notion `canvas-soft` -- o off-white quente */
+  --surface: #ffffff;    /* Notion `surface` */
+  --surface-2: #f6f5f4;  /* Notion `canvas-soft` */
+  --border: #e6e6e6;     /* Notion `hairline` */
+  --text: #000000;       /* Notion `ink` */
+  --text-soft: #31302e;  /* Notion `ink-secondary` */
+  /* ⚠️ ISTO CONSERTA UMA LACUNA CONHECIDA. O `#8a94a3` anterior REPROVAVA AA
+     no tema claro, e estava registrado como decisao de design por falta de
+     alternativa. O `ink-muted` da Notion aprova, e a troca sai de graca junto
+     com a paleta. */
+  --text-faint: #615d59; /* Notion `ink-muted` */
+  --accent: #0075de;     /* Notion `primary` -- o UNICO acento estrutural */
+  /* Derivado: a Notion nao tem azul suave. Mesmo papel de sempre -- fundo de
+     selo e anel de foco --, agora tirado do `primary` novo em vez do velho. */
+  --accent-soft: #d6e8fb;
+  /* Derivado: a analise da Notion nao expoe rampa de erro nenhuma (ela mesma
+     diz isso). Vermelho mantido, porque ele nao e "cor de marca" -- e sinal, e
+     a Spec 031 mediu o contraste dele. */
   --danger: #dc2626;
   /* Cor do TEXTO quando o fundo e --danger. Token proprio porque --danger
      serve a dois papeis (texto sobre superficie E fundo de selo); no tema
      escuro ele clareia, e branco por cima deixaria de ser legivel. */
   --on-danger: #ffffff;
-  --radius: 10px;
-  --shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 1px 3px rgba(16, 24, 40, 0.06);
-  --shadow-card: 0 1px 2px rgba(16, 24, 40, 0.06);
-  --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --radius: 8px;  /* Notion `rounded.md` -- era 10 */
+  /* Elevacao da Notion: camadas quase transparentes em vez de uma sombra
+     dura. O nivel 0 dela e SO o hairline; estas duas sao o nivel 1. */
+  --shadow: 0 0.8px 2.9px rgba(0, 0, 0, 0.02), 0 2px 7.8px rgba(0, 0, 0, 0.027),
+    0 4px 18px rgba(0, 0, 0, 0.04);
+  --shadow-card: 0 0.8px 2.9px rgba(0, 0, 0, 0.02), 0 2px 7.8px rgba(0, 0, 0, 0.027);
+  /* ⚠️ A VARIAVEL VEM DO `next/font/local` (ver `app/layout.tsx`). O fallback
+     depois da virgula NAO e decoracao: se a fonte falhar, o texto cai na pilha
+     do sistema em vez de na serifada padrao do navegador. */
+  --font: var(--fonte-raleway), ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", Roboto, sans-serif;
 }
 
 /* ---------------------------------------------------------------
@@ -237,7 +271,9 @@ button { font-family: inherit; cursor: pointer; }
 .btn:hover { background: var(--surface-2); }
 .btn:disabled { opacity: .55; cursor: not-allowed; }
 .btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-.btn-primary:hover { background: #1d4fd0; }
+/* Notion `primary-active` (#005bab) -- o estado pressionado do azul dela.
+   Era o escurecido do azul VELHO; sem trocar, o hover puxaria para outro tom. */
+.btn-primary:hover { background: #005bab; }
 .btn-ghost { border-color: transparent; background: transparent; color: var(--text-soft); }
 .btn-ghost:hover { background: var(--surface-2); }
 /* ⚠️ ACAO DESTRUTIVA. O produto ja tinha este padrao -- o `TaskDetail` pinta o

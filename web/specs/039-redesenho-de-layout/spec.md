@@ -215,11 +215,35 @@ Com `local`, o arquivo fica versionado.
 - **Largura de texto.** Trocar a fonte muda todo corte e truncagem. O limite de
   60 caracteres do cabeçalho de coluna, a largura dos `Badge` e a altura dos
   cards foram ajustados no olho, em Segoe UI. **Smoke obrigatório.**
-- ⚠️ **Números tabulares.** O `web/AGENTS.md` pede
-  `font-variant-numeric: tabular-nums` onde números se comparam — prazo, hora,
-  contador, checklist. **Não verifiquei se a Raleway traz a feature `tnum`.** Se
-  não trouxer, data e contador dançam entre linhas. **Conferir na tela antes de
-  fechar a F0.**
+- ⚠️⚠️ **NÚMEROS TABULARES: A RALEWAY NÃO TEM. Medido em 21/08 na F0**, com
+  `fontTools`, e não mais "não verifiquei":
+
+  ```
+  GSUB -> aalt, c2sc, ccmp, dlig, dnom, frac, liga, lnum, locl, numr,
+          ordn, salt, sinf, smcp, ss01..ss11, subs, sups
+  ```
+
+  **Não há `tnum`.** Então o `font-variant-numeric: tabular-nums` que o
+  `web/AGENTS.md` pede é **inerte** nesta fonte — não falha, simplesmente não
+  faz nada.
+
+  E os dígitos são bem desiguais: `1` mede **375** unidades e `0` mede **608**
+  — **62% de diferença**.
+
+  | onde | impacto real |
+  |---|---|
+  | contador de coluna (`21`, `87`), alinhado à direita | ✅ nenhum — direita alinha sozinha |
+  | data no card (uma por card) | ✅ desprezível — não formam coluna |
+  | ⚠️ contador que MUDA no lugar (`☑ 9/15` → `☑ 10/15`) | o bloco pula de largura |
+
+  **Decisão da F0: aceitar, e olhar na tela.** O produto quase não empilha
+  número em coluna, que é onde tabular importa de verdade. **Se incomodar**, a
+  saída conhecida é um `@font-face` com `unicode-range: U+0030-0039` mandando
+  só os dígitos para uma fonte com largura fixa — resolve de vez, ao custo de
+  os números não serem Raleway.
+
+  ⚠️ **Consequência para o `web/AGENTS.md`:** a regra ⚪ de `tabular-nums` passa
+  a ser inalcançável enquanto a fonte for esta. Está anotado lá.
 
 ---
 

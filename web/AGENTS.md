@@ -145,7 +145,12 @@ Estão aqui para não virarem promessa falsa. Cada uma tem motivo.
 - 👁 Aguentar conteúdo de usuário curto, médio e muito longo.
 - 👁 `min-w-0` em filho de flex para permitir truncagem.
 - 👁 Desenhar os estados vazio, esparso, denso e de erro.
-- ⚪ `font-variant-numeric: tabular-nums` onde números se comparam.
+- ⚠️ ⚪ **`tabular-nums` é INALCANÇÁVEL com a fonte atual.** A Raleway não traz
+  a feature `tnum` (medido em 21/08/2026), então a declaração não falha — ela
+  simplesmente não faz nada. E os dígitos variam 62% de largura (`1` = 375,
+  `0` = 608). Onde números **mudam no lugar** o bloco pula. A saída, se
+  incomodar, é `unicode-range: U+0030-0039` mandando só os dígitos para outra
+  fonte. Ver Spec 039 §5.4.
 - ⚪ Caractere `…`, não três pontos.
 
 ## 9. Tema
