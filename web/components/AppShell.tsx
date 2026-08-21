@@ -21,6 +21,12 @@ import {
   ROTULO_TEMA,
   type Tema,
 } from "@/lib/tema";
+import {
+  lerBarraAberta,
+  gravarBarraAberta,
+  lerQuadrosAberto,
+  gravarQuadrosAberto,
+} from "@/lib/sidebar";
 import NotificationBell from "@/components/NotificationBell";
 import {
   LayoutGrid,
@@ -54,9 +60,15 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [user, setUser] = useState<CurrentUser | null>(null);
   const [loading, setLoading] = useState(true);
-  const [open, setOpen] = useState(true);
+  // ⚠️ LIDOS DO localStorage NO INICIALIZADOR, e nao num efeito. A navegacao
+  // do app e por `<a href>` (recarga total), entao sem persistir a barra
+  // voltaria ao padrao a CADA troca de tela -- foi o que a Camila relatou em
+  // 21/08. Ler no inicializador e seguro pelo mesmo motivo ja escrito abaixo
+  // para o tema: com `loading` comecando true, a barra so desenha depois do
+  // check de auth, ja no cliente.
+  const [open, setOpen] = useState(lerBarraAberta);
   const [teams, setTeams] = useState<Team[]>([]);
-  const [quadrosOpen, setQuadrosOpen] = useState(true); // accordion "Quadros"
+  const [quadrosOpen, setQuadrosOpen] = useState(lerQuadrosAberto); // accordion
   // Preferencia de tema. Ler localStorage no inicializador e seguro aqui: com
   // `loading` comecando true, a barra so renderiza depois do check de auth, ja
   // no cliente -- entao nao ha divergencia de hidratacao com o SSR.
@@ -197,7 +209,18 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         {/* Botao de retrair */}
         <button
           type="button"
-          onClick={() => setOpen((v) => !v)}
+          // ⚠️ GRAVA NO CLIQUE, e nao num efeito sobre `open`. Efeito
+          // gravaria tambem na MONTAGEM, reescrevendo a preferencia com o
+          // valor que acabou de ser lido -- inofensivo hoje, e a porta para
+          // sobrescrever a escolha da pessoa no dia em que a leitura falhar e
+          // cair no padrao. Mesma disciplina do `gravarTema`, que so grava
+          // "quando a pessoa AGE".
+          onClick={() => {
+            setOpen((v) => {
+              gravarBarraAberta(!v);
+              return !v;
+            });
+          }}
           title={open ? "Retrair menu" : "Expandir menu"}
           aria-label={open ? "Retrair menu" : "Expandir menu"}
           className={`${itemCls(false)} shrink-0`}
@@ -215,7 +238,12 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             <>
               <button
                 type="button"
-                onClick={() => setQuadrosOpen((v) => !v)}
+                onClick={() => {
+                  setQuadrosOpen((v) => {
+                    gravarQuadrosAberto(!v);
+                    return !v;
+                  });
+                }}
                 className={itemCls(algumQuadroAtivo && !quadrosOpen)}
                 aria-expanded={quadrosOpen}
               >
