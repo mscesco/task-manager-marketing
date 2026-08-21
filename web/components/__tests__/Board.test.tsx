@@ -1115,13 +1115,51 @@ describe("Board -- o quadro sai das TAREFAS, nao da flag de padrão (fatia 4c)",
 // prendem o LEITOR: se ele voltar a olhar `status`, cai aqui.
 // =====================================================================
 describe("Board -- checklist e prazo leem a coluna (fatia 4c)", () => {
-  it("a checklist conta a subtarefa pela COLUNA, nao pelo status", async () => {
+  // ⚠️ SPEC 042 (B2) -- ESTES DOIS MUDARAM DE ALVO, e a mudanca e de fronteira,
+  // nao de comportamento. As quatro regras da contagem (conta pela COLUNA e
+  // nao por status; `DONE` e nao terminal; arquivada fora dos dois lados;
+  // coluna desconhecida no denominador) SAIRAM do front: elas moram agora em
+  // `backend/app/modules/tasks/domain/subtask_progress.py`, com um teste puro
+  // por regra e um teste de PARIDADE contra a query.
+  //
+  // O que sobra para o front provar e outra coisa, menor e igualmente
+  // necessaria: **o card mostra o numero que o backend mandou, e nao um que
+  // ele mesmo inventou.**
+  it("o card mostra o contador agregado que veio do backend", async () => {
     montarApi(
       [
-        task({ id: "p1", title: "Campanha com filhas" }),
-        // ⚠️ O PAR TORTO DE PROPOSITO: `status` ainda diz BACKLOG (e o que a
-        // atualizacao otimista deixa para tras), a COLUNA ja e a de conclusao.
-        // Contando por status daria 0/1; contando por coluna, 1/1.
+        task({
+          id: "p1",
+          title: "Campanha com filhas",
+          subtask_total: 1,
+          subtask_done: 1,
+        }),
+      ],
+      []
+    );
+    render(<Board subteamId={CRM} title="CRM e Automação" />);
+    await screen.findByText("Campanha com filhas");
+
+    expect(screen.getByTitle("1 de 1 subtarefas concluídas")).toBeTruthy();
+  });
+
+  it("o agregado GANHA de qualquer filha que ainda venha na lista", async () => {
+    // ⚠️ SABOTAGEM QUE ESTE TESTE PRENDE: alguem restaurar o laco que somava as
+    // filhas carregadas. O par abaixo e torto de proposito -- o agregado diz
+    // 0/1 e ha uma filha na lista com a COLUNA de conclusao. Se o front voltar
+    // a derivar, ele contaria 1/1 (ou 1/2, somando os dois) e este teste cai.
+    //
+    // Nao e cenario hipotetico: com `root_only` a filha nao deveria vir, mas
+    // um cliente velho, um teste, ou o modo projeto podem trazer -- e nesse dia
+    // a fonte tem de continuar sendo UMA.
+    montarApi(
+      [
+        task({
+          id: "p1",
+          title: "Campanha com filhas",
+          subtask_total: 1,
+          subtask_done: 0,
+        }),
         task({
           id: "f1",
           title: "Filha concluída",
@@ -1137,7 +1175,7 @@ describe("Board -- checklist e prazo leem a coluna (fatia 4c)", () => {
     render(<Board subteamId={CRM} title="CRM e Automação" />);
     await screen.findByText("Campanha com filhas");
 
-    expect(screen.getByTitle("1 de 1 subtarefas concluídas")).toBeTruthy();
+    expect(screen.getByTitle("0 de 1 subtarefas concluídas")).toBeTruthy();
   });
 
   /**
@@ -1147,9 +1185,18 @@ describe("Board -- checklist e prazo leem a coluna (fatia 4c)", () => {
    * aparecer como entregue.
    */
   it("subtarefa em coluna CANCELADA não conta como concluída", async () => {
+    // ⚠️ B2: a REGRA "cancelada nao conta" agora e provada no backend
+    // (`test_subtask_progress.py::test_cancelada_NAO_conta_como_concluida`).
+    // Aqui o agregado ja chega refletindo-a -- 1 filha, 0 concluidas -- e o
+    // que se prende e o card exibir isso sem reinterpretar.
     montarApi(
       [
-        task({ id: "p2", title: "Campanha com cancelada" }),
+        task({
+          id: "p2",
+          title: "Campanha com cancelada",
+          subtask_total: 1,
+          subtask_done: 0,
+        }),
         task({
           id: "f2",
           title: "Filha cancelada",

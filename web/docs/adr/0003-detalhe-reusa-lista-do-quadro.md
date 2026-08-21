@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted
+**Accepted, EMENDADA em 20/08/2026 (Spec 042, B1).** A metade sobre os
+**filhos** caiu; o resto continua valendo. Ver §Emenda no fim.
 
 ## Contexto
 
@@ -67,3 +68,53 @@ realmente muda algo.
 - Estende o **0002** (edição reusa o objeto da lista) para o detalhe e a
   navegação de subtarefa.
 - Depende do backend **0025** (listagem traz `assignee_ids` em lote).
+
+---
+
+## Emenda — 20/08/2026 (Spec 042, B1)
+
+⚠️ **O painel PASSOU a buscar os filhos.** `TaskDetail` chama
+`listarFilhas(task.id)` (que é `GET /tasks?parent_task_id=X`) num `useEffect`
+por tarefa focada. A frase "o painel de detalhe não busca nada por conta
+própria" **deixou de valer para os filhos**.
+
+### O que expirou, e não foi o raciocínio — foi a premissa
+
+A decisão original se apoiava numa frase do §Contexto: *"o quadro já carrega
+**todas** as tasks planas"*. **É exatamente essa premissa que a Spec 042
+remove.** Medido em 19/08/2026: o quadro baixava **917 tarefas — 670 delas
+subtarefa — para desenhar 170 cards**, contra um teto de 1000. Enquanto o
+painel dependesse da lista do quadro, o quadro não podia parar de carregar a
+subárvore.
+
+⚠️ E a decisão original **já não descrevia o código** quando foi emendada:
+três dos quatro chamadores (`/tarefa/[id]`, `/arquivadas`, `/minhas-tarefas`)
+buscavam os próprios filhos desde 05/08, cada um do seu jeito, porque a lista
+que tinham em memória não bastava. Só o quadro seguia a ADR. A B1 não inventou
+o padrão; ela o unificou dentro do componente.
+
+### O que CONTINUA valendo
+
+- **A tarefa focada** ainda sai da lista de quem chama (prop `task`), e a
+  **pilha de navegação** ("voltar") continua morando fora do `TaskDetail`.
+- **O upsert in-place** das mutações continua sendo o mecanismo, com a ressalva
+  de sempre: preservar `assignee_ids`, que o `PATCH` não devolve (ADR 0025).
+  A B1 acrescentou que o upsert tem de bater **também** na lista interna de
+  filhos (`upsertFilhaLocal`) — senão marcar a caixinha não muda a tela.
+- ⚠️ **A defesa contra o bug E6 continua de pé**, e por sorte de desenho: o que
+  o painel chama é a **listagem** (`GET /tasks?parent_task_id=`), e não o
+  `GET /tasks/{id}` que dá 404 em tarefa `out_of_scope`. A alternativa
+  rejeitada em 2026 ("buscar detalhe + filhos") continua rejeitada na metade do
+  *detalhe*.
+
+### O "como medir" está desatualizado
+
+A frase *"navegar pai → filho → neto não deve gerar nenhum GET"* **inverteu**:
+agora gera **um `GET` por nível**, e é isso que se espera ver. O que continua
+valendo como medida é a ausência de `GET /tasks/{id}`.
+
+### Consequência nova, aceita
+
+Cascata de chamadas na navegação profunda — exatamente o custo que a decisão de
+2026 evitava. Aceito porque o outro lado da balança mudou de tamanho: era
+"algumas chamadas a mais" contra "917 tarefas em toda carga do quadro".

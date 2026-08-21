@@ -70,7 +70,7 @@ import {
 } from "@/lib/rascunhoDeColunas";
 import EmptyStateBox from "@/components/EmptyState";
 import { terminal, type Coluna } from "@/lib/coluna";
-import { listAllTasks, listAllProjects, updateTask, listMembers, listSubteams, getRootTeamId, listBoards, colunaComContagem, aplicarLoteDeColunas, ApiError, type Task, type Team, type Quadro } from "@/lib/api";
+import { listAllTasks, listAllProjects, listarFilhas, updateTask, listMembers, listSubteams, getRootTeamId, listBoards, colunaComContagem, aplicarLoteDeColunas, ApiError, type Task, type Team, type Quadro } from "@/lib/api";
 import { sincronizarTaskNaUrl, lerTaskDaUrl } from "@/lib/urlTarefa";
 import { ORDENACOES, ordenar, type Ordenacao } from "@/lib/ordenacao";
 
@@ -216,6 +216,33 @@ export default function Board({
   // proposito -- os dois abrem o mesmo modal em modos diferentes, e um estado
   // so faria "duplicar" e "editar" se sobrescreverem em silencio.
   const [duplicando, setDuplicando] = useState<Task | null>(null);
+  // ⚠️ SPEC 042 (B2). O modal de duplicacao precisa das filhas DE VERDADE --
+  // ele lista uma a uma, com responsavel por linha (ADR 0031) --, entao
+  // contador agregado nao serve aqui. Com `root_only` elas nao estao mais em
+  // `tasks`, e derivar de la daria SEMPRE vazio: o modal pararia de oferecer
+  // "levar as subtarefas", sem erro e sem aviso.
+  //
+  // ⚠️ Falha vira lista vazia, e isso e uma lacuna conhecida: o modal
+  // simplesmente nao oferece as subtarefas. Aceito por ora porque duplicar e
+  // gesto deliberado e raro; o conserto e um estado de erro no proprio modal.
+  const [filhasDaOrigem, setFilhasDaOrigem] = useState<Task[]>([]);
+  useEffect(() => {
+    if (!duplicando) {
+      setFilhasDaOrigem([]);
+      return;
+    }
+    let cancelado = false;
+    listarFilhas(duplicando.id)
+      .then((f) => {
+        if (!cancelado) setFilhasDaOrigem(f);
+      })
+      .catch(() => {
+        if (!cancelado) setFilhasDaOrigem([]);
+      });
+    return () => {
+      cancelado = true;
+    };
+  }, [duplicando]);
   const [detalhe, setDetalhe] = useState<Task | null>(null);
   const [pilha, setPilha] = useState<Task[]>([]);
   // Trava do deep-link: garante leitura unica do ?task= e libera a escrita
@@ -327,13 +354,67 @@ export default function Board({
   );
 
   const recarregarTasks = useCallback(() => {
-    listAllTasks({ project_id: projectId, include_archived: mostrarArquivadas })
+    // ⚠️ SPEC 042 (B2) -- `root_only`. O quadro NUNCA desenhou subtarefa
+    // (`depth === 0`), mas carregava a subarvore inteira porque tres coisas
+    // dependiam dela. Medido em 19/08: 917 tarefas baixadas, 670 delas
+    // subtarefa, para desenhar 170 cards, contra um teto de 1000.
+    // Com esta linha o lote cai para as 247 raizes -- folga de 83 vira ~753.
+    listAllTasks({
+      project_id: projectId,
+      include_archived: mostrarArquivadas,
+      root_only: true,
+    })
       .then((r) => {
         setTasks(r.items);
         setTruncadoTotal(r.truncated ? r.total : null);
       })
       .catch((e: ApiError) => setErro(e.message));
   }, [projectId, mostrarArquivadas]);
+
+  // ⚠️ A BUSCA POR TITULO DE SUBTAREFA VIROU CONSULTA (Spec 042, A2 + B2).
+  // Sem a subarvore carregada, `raizesQueCasamBusca` so alcanca titulo de
+  // RAIZ. As raizes cuja FILHA casa vem daqui.
+  //
+  // ⚠️ HIBRIDO DE PROPOSITO, e nao "manda tudo pro servidor". Digitar continua
+  // filtrando raiz na hora, sem ida e volta; a resposta do servidor SOMA. Pôr
+  // toda a busca atras de uma consulta debounced trocaria o filtro instantaneo
+  // por espera na tela mais usada, e titulo de raiz e o caso comum.
+  //
+  // ⚠️ E o resultado ja e melhor que o de hoje: a busca do cliente enxerga so
+  // o lote, e o proprio `raizesQueCasamBusca` registra que subtarefa fora do
+  // teto ou arquivada com o toggle desligado nunca era encontrada.
+  const [raizesDoServidor, setRaizesDoServidor] = useState<Set<string>>(
+    new Set()
+  );
+  useEffect(() => {
+    const termo = busca.trim();
+    if (termo === "") {
+      setRaizesDoServidor(new Set());
+      return;
+    }
+    let cancelado = false;
+    const timer = setTimeout(() => {
+      listAllTasks({
+        project_id: projectId,
+        include_archived: mostrarArquivadas,
+        root_only: true,
+        q: termo,
+      })
+        .then((r) => {
+          if (!cancelado) setRaizesDoServidor(new Set(r.items.map((t) => t.id)));
+        })
+        .catch(() => {
+          // Silencioso de proposito: a busca de RAIZ continua valendo, e um
+          // erro aqui significa apenas "sem os casamentos de subtarefa desta
+          // vez". Derrubar a tela por causa disso seria pior que o resultado
+          // parcial.
+        });
+    }, 300);
+    return () => {
+      cancelado = true;
+      clearTimeout(timer);
+    };
+  }, [busca, projectId, mostrarArquivadas]);
 
   useEffect(() => {
     recarregarTasks();
@@ -554,7 +635,6 @@ export default function Board({
       if (!prev) return [t];
       const existente = prev.find((x) => x.id === t.id);
       if (!existente) return [t, ...prev];
-      const merged = { ...t, assignee_ids: t.assignee_ids ?? existente.assignee_ids };
       // Transicao PARA concluido -> cascata otimista pros descendentes (espelha
       // o backend: pula ja concluidas, canceladas e arquivadas). Sem transicao
       // (ex.: so editou titulo de uma ja concluida), nao mexe nas subtarefas.
@@ -562,6 +642,31 @@ export default function Board({
       // subarvore fora do limite de exibicao so aparece concluida no reload.
       const virouConcluido =
         t.status === "COMPLETED" && existente.status !== "COMPLETED";
+      // ⚠️ SPEC 042: OS TRES AGREGADOS PRECISAM SER PRESERVADOS, pelo mesmo
+      // motivo e da mesma forma que o `assignee_ids`. `PATCH`, `/move` e
+      // `/archive` herdam `TaskResponse` e NAO os devolvem -- sem o `??`,
+      // editar o titulo de um card zeraria o `☑ x/y` dele ate o proximo
+      // reload. E o defeito que o ADR 0025 registra, na sua terceira encarnacao.
+      const merged = {
+        ...t,
+        assignee_ids: t.assignee_ids ?? existente.assignee_ids,
+        subtask_total: t.subtask_total ?? existente.subtask_total,
+        // ⚠️ A JANELA OTIMISTA DO CONTADOR (B2). Ate aqui o numero era somado
+        // das filhas carregadas, e a cascata logo abaixo ja o movia sozinha.
+        // Sem as filhas no lote ele viria pronto do backend e ficaria PARADO
+        // ate o reload -- o mesmo "so mudava depois do F5" que a fatia 4c
+        // consertou em 10/08. Concluir o pai conclui a subarvore inteira no
+        // backend, entao `done = total` e derivavel sem ter as filhas.
+        //
+        // ⚠️ O INVERSO NAO VALE: sair de concluido NAO descascateia no
+        // backend. Por isso so ha o ramo de subida -- assumir simetria
+        // inventaria um estado que o banco nao tem.
+        subtask_done: virouConcluido
+          ? (t.subtask_total ?? existente.subtask_total)
+          : (t.subtask_done ?? existente.subtask_done),
+        subtree_assignee_ids:
+          t.subtree_assignee_ids ?? existente.subtree_assignee_ids,
+      };
       const prefixo = existente.path + ".";
       return prev.map((x) => {
         if (x.id === t.id) return merged;
@@ -1117,26 +1222,26 @@ export default function Board({
     ? (quadro?.team_id ?? null)
     : (subteamId ?? null);
 
+  // ⚠️ SPEC 042 (B2) -- O CONTADOR VEM PRONTO DO BACKEND. Ate aqui ele era
+  // somado varrendo as filhas carregadas, e era esse laco que obrigava o
+  // quadro a baixar 670 subtarefas para desenhar 170 cards.
+  //
+  // ⚠️ AS QUATRO REGRAS NAO SUMIRAM, MUDARAM DE LADO: conta pela COLUNA e nao
+  // por status, `DONE` e nao terminal, arquivada fora do numerador E do
+  // denominador, coluna desconhecida no denominador. Elas agora moram em
+  // `backend/app/modules/tasks/domain/subtask_progress.py`, com o defeito que
+  // originou cada uma e um teste de paridade contra a query.
+  //
+  // ⚠️ `?? 0` E NECESSARIO: os campos sao opcionais no tipo porque resposta de
+  // mutacao nao os traz (ver `aoUpsert`). Card cujo agregado ainda nao chegou
+  // conta zero -- e nao quebra.
+  // ⚠️ FONTE UNICA, e nao "agregado com o laco velho por cima": com os dois,
+  // uma lista que ainda trouxesse subtarefa contaria em DOBRO.
   const subCount: Record<string, number> = {};
   const subDone: Record<string, number> = {};
   for (const t of tasks) {
-    if (!t.parent_task_id) continue;
-    subCount[t.parent_task_id] = (subCount[t.parent_task_id] ?? 0) + 1;
-    // ⚠️ A CHECKLIST CONTA PELA COLUNA, e nao por `t.status` (fatia 4c).
-    //
-    // Era o ULTIMO leitor de `status` que a pessoa via na tela, e ele
-    // apareceu na conferencia manual de 10/08, nao em teste nenhum:
-    // arrastar um pai para "Concluído" concluia a subarvore no banco, mas o
-    // contador do card so mudava depois de um F5. A atualizacao otimista mexe
-    // na COLUNA das subtarefas -- que e a unica coisa que o front sabe
-    // derivar -- e quem lia `status` nao via nada acontecer.
-    //
-    // ⚠️ `DONE` E NAO `terminal()`: cancelada NAO conta como concluida na
-    // proporcao. E a mesma distincao que o enum do backend registra
-    // ("DONE e CANCELLED nao sao intercambiaveis"), e trocar por `terminal()`
-    // faria uma subtarefa cancelada contar como entregue.
-    if (colunaPorId.get(t.column_id)?.semantic === "DONE")
-      subDone[t.parent_task_id] = (subDone[t.parent_task_id] ?? 0) + 1;
+    subCount[t.id] = t.subtask_total ?? 0;
+    subDone[t.id] = t.subtask_done ?? 0;
   }
 
   // Herança de subtimes pro filtro do dropdown. Uma tarefa-RAIZ "pertence" a um
@@ -1159,9 +1264,14 @@ export default function Board({
   };
   const subtimesPorRaiz = new Map<string, Set<string>>();
   for (const t of tasks) {
-    const ids = t.assignee_ids ?? [];
+    // ⚠️ SPEC 042 (B2), e aqui esta o motivo de NAO existir um campo
+    // `subtree_team_ids`: o subtime sai da PESSOA, pelo mapa `memberTeam` que
+    // esta tela ja carrega -- nunca saiu de `task.team_id`. Com os
+    // responsaveis da subarvore prontos, este filtro se resolve sem nenhuma
+    // regra nova no backend.
+    const ids = t.subtree_assignee_ids ?? t.assignee_ids ?? [];
     if (ids.length === 0) continue;
-    const raizId = raizDe(t);
+    const raizId = t.subtree_assignee_ids !== undefined ? t.id : raizDe(t);
     let set = subtimesPorRaiz.get(raizId);
     if (!set) {
       set = new Set<string>();
@@ -1307,7 +1417,13 @@ export default function Board({
   // RAIZES: subtarefa nao tem card (o quadro so desenha `depth === 0`), entao
   // achar uma subtarefa significa trazer a raiz dela. Regra e testes em
   // lib/filtrosQuadro:raizesQueCasamBusca -- aqui so se pergunta.
-  const raizesDaBusca = raizesQueCasamBusca(tasks, buscaNorm);
+  // ⚠️ A UNIAO E O CONTRATO (Spec 042, B2): titulo de RAIZ casa na hora, pelo
+  // lote carregado; titulo de SUBTAREFA chega pelo servidor, com o atraso do
+  // debounce. Ver o efeito que alimenta `raizesDoServidor`.
+  const raizesDaBusca = new Set([
+    ...raizesQueCasamBusca(tasks, buscaNorm),
+    ...raizesDoServidor,
+  ]);
 
   // Quem tem ALGUMA tarefa neste quadro (raiz ou subtarefa). Usado so pra
   // decidir se um desativado ainda merece aparecer no filtro.
@@ -1397,7 +1513,6 @@ export default function Board({
   }
 
   const focado = detalhe ? tasks.find((t) => t.id === detalhe.id) ?? detalhe : null;
-  const filhosFocado = focado ? tasks.filter((t) => t.parent_task_id === focado.id) : [];
 
   return (
     <div>
@@ -1974,9 +2089,12 @@ export default function Board({
         open={criando || editando !== null || duplicando !== null}
         task={editando}
         duplicarDe={duplicando}
-        filhosDaOrigem={
-          duplicando ? tasks.filter((t) => t.parent_task_id === duplicando.id) : []
-        }
+        // ⚠️ SPEC 042 (B2): vem de BUSCA, e nao mais de `tasks`. Com
+        // `root_only` o filtro por `parent_task_id` daria SEMPRE lista vazia --
+        // e o modal simplesmente pararia de oferecer "levar as subtarefas",
+        // sem erro e sem aviso. As outras tres telas que montam este modal ja
+        // buscavam por conta propria; o quadro era o unico que derivava.
+        filhosDaOrigem={filhasDaOrigem}
         defaultProjectId={projectId ?? null}
         defaultTeamId={timeDaTarefaNova}
         defaultBoardId={boardId ?? null}
