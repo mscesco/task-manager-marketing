@@ -23,6 +23,10 @@ export type TaskMin = {
   parent_task_id: string | null;
   team_id: string | null;
   assignee_ids?: string[];
+  // Spec 042 (B2): responsaveis da subarvore inteira, agregados pelo backend.
+  // `undefined` = a resposta nao trouxe (mutacao, ou cliente velho) -> cai no
+  // caminhamento pela lista carregada.
+  subtree_assignee_ids?: string[];
 };
 
 // ====================================================================
@@ -149,6 +153,26 @@ export function responsaveisPorRaiz(
   const byId = new Map(tasks.map((t) => [t.id, t]));
   const out = new Map<string, Set<string>>();
   for (const t of tasks) {
+    // ⚠️ SPEC 042 (B2): quando o backend manda `subtree_assignee_ids`, ele JA
+    // agregou a subarvore inteira -- a raiz junto, porque o `<@` do LTREE e
+    // descendente-OU-IGUAL. Nao ha o que caminhar, e nao HAVERIA: com
+    // `root_only` a subarvore nem esta carregada.
+    //
+    // ⚠️ O ramo antigo continua vivo, e nao e gordura: `/minhas-tarefas` monta
+    // esta mesma agregacao sobre uma lista que AINDA traz subtarefa (la a
+    // subtarefa e card solto, por desenho). Apagar o caminhamento quebraria o
+    // filtro por pessoa daquela tela sem nenhum portao reclamar.
+    const daSubarvore = t.subtree_assignee_ids;
+    if (daSubarvore !== undefined) {
+      if (daSubarvore.length === 0) continue;
+      let set = out.get(t.id);
+      if (!set) {
+        set = new Set<string>();
+        out.set(t.id, set);
+      }
+      for (const id of daSubarvore) set.add(id);
+      continue;
+    }
     const ids = t.assignee_ids ?? [];
     if (ids.length === 0) continue;
     const raizId = raizDe(t, byId);

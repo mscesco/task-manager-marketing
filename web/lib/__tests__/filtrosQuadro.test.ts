@@ -180,6 +180,33 @@ describe("passaEscopo", () => {
 });
 
 describe("responsaveisPorRaiz", () => {
+  // ⚠️ SPEC 042 (B2) -- OS TRES CASOS ABAIXO PRENDEM O CAMINHO NOVO. Com
+  // `root_only` a subarvore nao esta mais carregada, entao caminhar por
+  // `parent_task_id` acharia NADA; quem responde e `subtree_assignee_ids`,
+  // agregado pelo backend. Os testes de HERANCA logo abaixo continuam
+  // exercitando o caminhamento, que segue vivo para `/minhas-tarefas` -- la a
+  // lista AINDA traz subtarefa, por desenho.
+  it("B2: usa `subtree_assignee_ids` quando o backend manda", () => {
+    // ⚠️ O par e torto de proposito: `assignee_ids` (so a raiz) NAO tem a Ana,
+    // e nao ha subtarefa carregada. Se a funcao ignorar o campo novo, o filtro
+    // por Ana perde este card -- que e exatamente o caso comum que o filtro
+    // existe para cobrir ("a raiz e a campanha; a pessoa toca uma peca dela").
+    const tasks = [
+      t("r1", { assignee_ids: [BRUNO], subtree_assignee_ids: [BRUNO, ANA] }),
+    ];
+    expect(responsaveisPorRaiz(tasks).get("r1")).toEqual(
+      new Set([BRUNO, ANA])
+    );
+  });
+
+  it("B2: campo novo VAZIO significa 'ninguem', e nao 'caia no antigo'", () => {
+    // Lista vazia e resposta, nao ausencia. Cair no ramo velho aqui faria a
+    // raiz aparecer sob o responsavel dela mesma quando o backend ja disse que
+    // a subarvore nao tem ninguem.
+    const tasks = [t("r1", { assignee_ids: [ANA], subtree_assignee_ids: [] })];
+    expect(responsaveisPorRaiz(tasks).get("r1")).toBeUndefined();
+  });
+
   it("agrega o responsavel da propria raiz", () => {
     const tasks = [t("r1", { assignee_ids: [ANA] })];
     expect(responsaveisPorRaiz(tasks).get("r1")).toEqual(new Set([ANA]));

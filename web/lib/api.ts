@@ -317,6 +317,27 @@ export type Task = {
   board_id: string;
   column_id: string;
   /**
+   * ⚠️ SPEC 042 (A1 + B2). Os tres campos abaixo chegam SO na LISTAGEM
+   * (`TaskListItem`), calculados em lote pelo backend. Eles sao o que permite
+   * o quadro parar de carregar a subarvore: medido em 19/08, ele baixava 917
+   * tarefas -- 670 delas subtarefa -- para desenhar 170 cards.
+   *
+   * ⚠️ OPCIONAIS DE PROPOSITO, e nao por preguica: `TaskDetailResponse` e as
+   * respostas de mutacao (`PATCH`, `/move`, `/archive`) herdam de
+   * `TaskResponse` e NAO os trazem. Tipar como obrigatorio faria toda resposta
+   * de mutacao parecer que zerou o contador -- que e exatamente o defeito que
+   * o ADR 0025 registra para o `assignee_ids`.
+   *
+   * ⚠️ POR ISSO O UPSERT TEM DE PRESERVA-LOS ao substituir uma task no estado,
+   * pelo mesmo motivo e da mesma forma que ja preserva `assignee_ids`.
+   */
+  /** Filhas DIRETAS vivas (arquivada fora). Denominador do `☑ x/y`. */
+  subtask_total?: number;
+  /** Filhas diretas vivas em coluna `DONE`. Numerador. */
+  subtask_done?: number;
+  /** Responsaveis da SUBARVORE inteira, raiz junto. Filtro por pessoa/subtime. */
+  subtree_assignee_ids?: string[];
+  /**
    * Spec 038, fatia A.
    *
    * ⚠️ ERA O MESMO BURACO DO `board_id`/`column_id` DESCRITO LOGO ACIMA, e o
@@ -362,6 +383,10 @@ export async function listTasks(params: {
   parent_task_id?: string;
   include_archived?: boolean;
   archived_only?: boolean;
+  // Spec 042 (B2): so tarefas de topo -- o quadro nunca desenhou subtarefa.
+  root_only?: boolean;
+  // Spec 042 (A2): busca por titulo, casando tambem o de descendente.
+  q?: string;
 } = {}): Promise<TaskListResponse> {
   const q = new URLSearchParams();
   q.set("page", String(params.page ?? 1));
@@ -369,6 +394,8 @@ export async function listTasks(params: {
   if (params.status) q.set("status", params.status);
   if (params.project_id) q.set("project_id", params.project_id);
   if (params.parent_task_id) q.set("parent_task_id", params.parent_task_id);
+  if (params.root_only) q.set("root_only", "true");
+  if (params.q && params.q.trim() !== "") q.set("q", params.q.trim());
   if (params.include_archived) q.set("include_archived", "true");
   if (params.archived_only) q.set("archived_only", "true");
   return api<TaskListResponse>(`/api/v1/tasks?${q.toString()}`);
@@ -434,7 +461,18 @@ const TASK_FETCH_CEILING = 1000;
 export type AllTasksResult = { items: Task[]; total: number; truncated: boolean };
 
 export async function listAllTasks(
-  params: { project_id?: string; include_archived?: boolean; status?: string } = {}
+  params: {
+    project_id?: string;
+    include_archived?: boolean;
+    status?: string;
+    // ⚠️ Spec 042 (B2). Com `root_only` o lote cai de 917 para 247 (medido em
+    // 19/08): subtarefa deixa de viajar, porque o quadro nunca desenhou uma
+    // (`depth === 0`). O que ela alimentava -- contador, filtro por pessoa,
+    // filtro por subtime -- passa a vir pronto em `subtask_*` e
+    // `subtree_assignee_ids`, e a busca por titulo de subtarefa virou `q`.
+    root_only?: boolean;
+    q?: string;
+  } = {}
 ): Promise<AllTasksResult> {
   const pageSize = 100; // teto do backend (size <= 100)
   const first = await listTasks({ ...params, page: 1, size: pageSize });
