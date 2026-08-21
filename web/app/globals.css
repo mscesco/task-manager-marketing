@@ -4,29 +4,41 @@
    border-*, rounded-*, text-<escala>). Espelham os valores legados do
    :root abaixo -- duplicacao proposital e temporaria, zero-break. */
 @theme {
-  --color-canvas: #f6f7f9;
+  /* ⚠️ ESPELHA O `:root` ABAIXO, VALOR POR VALOR (Spec 039, F0). A duplicacao
+     e a mesma de sempre e continua proposital: `--color-*` alimenta as
+     utilitarias do Tailwind v4, `--*` alimenta o inline e as classes .btn/
+     .input. Mexeu num, mexa no outro -- metade da tela mudando de cor e o
+     sintoma de ter esquecido. */
+  --color-canvas: #f6f5f4;
   --color-surface: #ffffff;
-  --color-surface-2: #f1f3f5;
-  --color-border: #e2e6ea;
-  --color-ink: #1a2230;
-  --color-ink-soft: #5b6675;
-  --color-ink-faint: #8a94a3;
-  --color-accent: #2563eb;
-  --color-accent-soft: #dbe7ff;
+  --color-surface-2: #f6f5f4;
+  --color-border: #e6e6e6;
+  --color-ink: #000000;
+  --color-ink-soft: #31302e;
+  --color-ink-faint: #615d59;
+  --color-accent: #0075de;
+  --color-accent-soft: #d6e8fb;
   --color-danger: #dc2626;
 
   --radius-sm: 8px;
   --radius-md: 10px;
   --radius-lg: 12px;
 
+  /* ⚠️ SPEC 039 (F1) -- a escala HIBRIDA. Os papeis e os pesos estao na §5.2
+     da spec; aqui ficam so os tamanhos que o Tailwind expoe.
+     `--text-lg` (15) e o corpo de LEITURA; `--text-sm`/`--text-base` (12/13)
+     seguem sendo a GRADE. O `--text-2xl` e novo: e o cabecalho de tela. */
   --text-xs: 11px;
   --text-sm: 12px;
   --text-base: 13px;
   --text-md: 14px;
   --text-lg: 15px;
   --text-xl: 19px;
+  --text-2xl: 22px;  /* titulo do painel de tarefa */
+  --text-3xl: 26px;  /* cabecalho de tela */
 
-  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-sans: var(--fonte-raleway), ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", Roboto, sans-serif;
 }
 
 /* Tokens de design. Tom: ferramenta interna calma e legivel -- o oposto
@@ -44,24 +56,52 @@
 :root {
   color-scheme: light;
 
-  --bg: #f6f7f9;
-  --surface: #ffffff;
-  --surface-2: #f1f3f5;
-  --border: #e2e6ea;
-  --text: #1a2230;
-  --text-soft: #5b6675;
-  --text-faint: #8a94a3;
-  --accent: #2563eb;
-  --accent-soft: #dbe7ff;
+  /* ⚠️ SPEC 039 (F0) -- A PALETA CLARA VEM DA ANALISE DA NOTION, mapeada 1:1
+     na §3 da spec. Onze tokens saem de la sem interpretacao; os tres de baixo
+     (`--accent-soft`, `--danger`, `--on-danger`) NAO existem la e sao
+     derivados, com o motivo escrito em cada um.
+
+     ⚠️ TROCA DE TOM, e nao so de valor: o cinza-azulado saiu e entrou o
+     off-white QUENTE (`#f6f5f4`). E o nucleo do "paper-calm" -- a mesma
+     mudanca que faz a tela parecer documento em vez de painel.
+
+     ⚠️ E O TEMA ESCURO NAO MUDOU NESTA FATIA. Ele e paleta desenhada, nao o
+     claro invertido, e refaze-lo e a F2. Ate la os dois convivem: quem estiver
+     no escuro ve exatamente o que via ontem. */
+  --bg: #f6f5f4;         /* Notion `canvas-soft` -- o off-white quente */
+  --surface: #ffffff;    /* Notion `surface` */
+  --surface-2: #f6f5f4;  /* Notion `canvas-soft` */
+  --border: #e6e6e6;     /* Notion `hairline` */
+  --text: #000000;       /* Notion `ink` */
+  --text-soft: #31302e;  /* Notion `ink-secondary` */
+  /* ⚠️ ISTO CONSERTA UMA LACUNA CONHECIDA. O `#8a94a3` anterior REPROVAVA AA
+     no tema claro, e estava registrado como decisao de design por falta de
+     alternativa. O `ink-muted` da Notion aprova, e a troca sai de graca junto
+     com a paleta. */
+  --text-faint: #615d59; /* Notion `ink-muted` */
+  --accent: #0075de;     /* Notion `primary` -- o UNICO acento estrutural */
+  /* Derivado: a Notion nao tem azul suave. Mesmo papel de sempre -- fundo de
+     selo e anel de foco --, agora tirado do `primary` novo em vez do velho. */
+  --accent-soft: #d6e8fb;
+  /* Derivado: a analise da Notion nao expoe rampa de erro nenhuma (ela mesma
+     diz isso). Vermelho mantido, porque ele nao e "cor de marca" -- e sinal, e
+     a Spec 031 mediu o contraste dele. */
   --danger: #dc2626;
   /* Cor do TEXTO quando o fundo e --danger. Token proprio porque --danger
      serve a dois papeis (texto sobre superficie E fundo de selo); no tema
      escuro ele clareia, e branco por cima deixaria de ser legivel. */
   --on-danger: #ffffff;
-  --radius: 10px;
-  --shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 1px 3px rgba(16, 24, 40, 0.06);
-  --shadow-card: 0 1px 2px rgba(16, 24, 40, 0.06);
-  --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --radius: 8px;  /* Notion `rounded.md` -- era 10 */
+  /* Elevacao da Notion: camadas quase transparentes em vez de uma sombra
+     dura. O nivel 0 dela e SO o hairline; estas duas sao o nivel 1. */
+  --shadow: 0 0.8px 2.9px rgba(0, 0, 0, 0.02), 0 2px 7.8px rgba(0, 0, 0, 0.027),
+    0 4px 18px rgba(0, 0, 0, 0.04);
+  --shadow-card: 0 0.8px 2.9px rgba(0, 0, 0, 0.02), 0 2px 7.8px rgba(0, 0, 0, 0.027);
+  /* ⚠️ A VARIAVEL VEM DO `next/font/local` (ver `app/layout.tsx`). O fallback
+     depois da virgula NAO e decoracao: se a fonte falhar, o texto cai na pilha
+     do sistema em vez de na serifada padrao do navegador. */
+  --font: var(--fonte-raleway), ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", Roboto, sans-serif;
 }
 
 /* ---------------------------------------------------------------
@@ -77,41 +117,53 @@
    o hex, entao trocar a variavel em runtime realmente vira a utility.
    Esquecer um dos conjuntos = metade da tela vira e a outra metade nao.
 
-   A paleta nao e o claro invertido: fundo levemente azulado (nao preto
-   puro, que cansa e achata a hierarquia), azul de acao mais claro pra
-   segurar contraste, e --accent-soft deixa de ser um azul palido pra ser
-   um azul ESCURO -- senao fundos de badge e anel de foco viram um borrao
-   claro no meio do escuro.
-   Contraste conferido (WCAG, sobre --surface): texto 13.9, texto-suave
-   7.4, texto-fraco 4.6, accent 6.0, danger 6.1.
+   A paleta nao e o claro invertido: fundo que nao e preto puro (preto puro
+   cansa e achata a hierarquia), azul de acao mais claro pra segurar
+   contraste, e --accent-soft deixa de ser um azul palido pra ser um azul
+   ESCURO -- senao fundos de badge e anel de foco viram um borrao claro no
+   meio do escuro.
+
+   ⚠️ SPEC 039 (F2) -- O TOM VIROU QUENTE, acompanhando o claro. Ate aqui o
+   fundo era azulado (#0f1520); com a paleta clara indo para o off-white
+   quente da Notion, um escuro azulado deixaria os dois temas parecendo
+   produtos diferentes. A decisao "nao e preto puro" continua valendo -- o que
+   mudou foi a DIRECAO do desvio, de azul para terra.
+
+   ⚠️ A NOTION NAO TEM TEMA ESCURO NA ANALISE, entao NADA aqui e mapeado: e
+   tudo derivado, e por isso cada par foi MEDIDO em vez de escolhido no olho.
+   Contraste conferido (WCAG, sobre --surface): texto 14.76, texto-suave 8.54,
+   texto-fraco 5.05, accent 6.78, danger 6.02, on-danger sobre danger 6.47,
+   on-accent sobre accent 7.7, borda vs surface 1.34.
+   ⚠️ O texto-fraco saiu de 4.6 para 5.05 -- ele passava raspando e agora tem
+   margem, que e o mesmo ganho que o tema claro teve na F0.
    --------------------------------------------------------------- */
 [data-theme="escuro"] {
   color-scheme: dark;
 
-  --color-canvas: #0f1520;
-  --color-surface: #161d2b;
-  --color-surface-2: #1e2637;
-  --color-border: #2b3547;
-  --color-ink: #e6eaf0;
-  --color-ink-soft: #a3adbd;
-  --color-ink-faint: #7b8698;
-  --color-accent: #5b9aff;
-  --color-accent-soft: #1d3054;
+  --color-canvas: #161514;
+  --color-surface: #1f1e1c;
+  --color-surface-2: #292826;
+  --color-border: #37342f;
+  --color-ink: #f2f1ef;
+  --color-ink-soft: #bdb9b4;
+  --color-ink-faint: #918d88;
+  --color-accent: #5aabf2;
+  --color-accent-soft: #14304a;
   --color-danger: #f87171;
 
-  --bg: #0f1520;
-  --surface: #161d2b;
-  --surface-2: #1e2637;
-  --border: #2b3547;
-  --text: #e6eaf0;
-  --text-soft: #a3adbd;
-  --text-faint: #7b8698;
-  --accent: #5b9aff;
-  --accent-soft: #1d3054;
+  --bg: #161514;
+  --surface: #1f1e1c;
+  --surface-2: #292826;
+  --border: #37342f;
+  --text: #f2f1ef;
+  --text-soft: #bdb9b4;
+  --text-faint: #918d88;
+  --accent: #5aabf2;
+  --accent-soft: #14304a;
   --danger: #f87171;
   /* Texto sobre fundo --danger: branco daria 2.77 de contraste sobre este
-     vermelho claro (reprova AA). Este marrom quase preto da 6.9. */
-  --on-danger: #1f0a0a;
+     vermelho claro (reprova AA). Este marrom quase preto da 6.47. */
+  --on-danger: #2a0f0f;
 
   /* Sombra no escuro precisa de mais opacidade: a de baixo relevo do tema
      claro simplesmente some e os cards perdem a separacao do fundo. */
@@ -121,8 +173,12 @@
 
 /* Hover do botao primario: no claro escurece o azul, no escuro precisa
    CLAREAR -- escurecer sobre fundo escuro le como "desabilitado". */
-[data-theme="escuro"] .btn-primary:hover { background: #7db0ff; }
-[data-theme="escuro"] .btn-primary { color: #0f1520; }
+[data-theme="escuro"] .btn-primary:hover { background: #8cc4f7; }
+/* ⚠️ Texto sobre o azul do escuro. NAO e `--bg`: e um quase-preto proprio,
+   medido contra o accent (7.7). Amarrar ao `--bg` faria a legibilidade do
+   botao depender de uma decisao de FUNDO -- e a F0 acabou de mostrar que
+   fundo muda. */
+[data-theme="escuro"] .btn-primary { color: #0d1117; }
 
 /* .error-box tinha as tres cores cravadas (rosa claro) -- sumia no escuro. */
 [data-theme="escuro"] .error-box {
@@ -189,29 +245,44 @@
    Conferir com grep que cada nome aparece nos DOIS blocos.
 
    O `dot` clareia junto com o resto da paleta escura; o `text` vira o stop
-   CLARO da familia -- sobre --surface (#161d2b) o stop escuro sumiria.
-   Contraste conferido, texto sobre --surface do tema escuro: */
+   CLARO da familia -- sobre a --surface escura o stop escuro sumiria.
+
+   ⚠️ OS NUMEROS ABAIXO FORAM REMEDIDOS NA F2 (21/08/2026), contra a surface
+   NOVA (`#1f1e1c`). Eles tinham sido tirados contra a antiga (`#161d2b`) e
+   passariam a mentir em silencio -- trocar a surface muda TODOS eles de uma
+   vez, e ninguem olha 15 comentarios.
+   A surface nova e um pouco mais escura, entao cada um subiu ~0.15; o pior
+   caso e 8.36, contra um minimo de 4.5. Nenhum chegou perto de reprovar.
+
+   ⚠️ MEXEU NA `--surface` DO ESCURO? REMEDE ESTES 15. E o mesmo aviso que a
+   Spec 031 deixou para o tema claro, pelo mesmo motivo: cor de selo se mede
+   CONTRA a superficie onde ela pousa. */
 [data-theme="escuro"] {
-  --status-backlog-dot:  #94a3b8;  --status-backlog-text:  #cbd5e1; /* 11.36 */
-  --status-planned-dot:  #818cf8;  --status-planned-text:  #a5b4fc; /*  8.46 */
-  --status-progress-dot: #38bdf8;  --status-progress-text: #7dd3fc; /* 10.12 */
-  --status-review-dot:   #fbbf24;  --status-review-text:   #fcd34d; /* 11.70 */
-  --status-external-dot: #a78bfa;  --status-external-text: #c4b5fd; /*  9.14 */
-  --status-done-dot:     #4ade80;  --status-done-text:     #86efac; /* 12.02 */
-  --status-cancel-dot:   #cbd5e1;  --status-cancel-text:   #cbd5e1; /* 11.36 */
-  --status-blocked-dot:  #f87171;  --status-blocked-text:  #fca5a5; /*  8.89 */
+  --status-backlog-dot:  #94a3b8;  --status-backlog-text:  #cbd5e1; /* 11.22 */
+  --status-planned-dot:  #818cf8;  --status-planned-text:  #a5b4fc; /*  8.36 */
+  --status-progress-dot: #38bdf8;  --status-progress-text: #7dd3fc; /* 9.99 */
+  --status-review-dot:   #fbbf24;  --status-review-text:   #fcd34d; /* 11.55 */
+  --status-external-dot: #a78bfa;  --status-external-text: #c4b5fd; /*  9.02 */
+  --status-done-dot:     #4ade80;  --status-done-text:     #86efac; /* 11.86 */
+  --status-cancel-dot:   #cbd5e1;  --status-cancel-text:   #cbd5e1; /* 11.22 */
+  --status-blocked-dot:  #f87171;  --status-blocked-text:  #fca5a5; /*  8.78 */
 
-  --prio-low-dot:    #94a3b8;  --prio-low-text:    #cbd5e1; /* 11.36 */
-  --prio-medium-dot: #38bdf8;  --prio-medium-text: #7dd3fc; /* 10.12 */
-  --prio-high-dot:   #fbbf24;  --prio-high-text:   #fcd34d; /* 11.70 */
-  --prio-urgent-dot: #f87171;  --prio-urgent-text: #fca5a5; /*  8.89 */
+  --prio-low-dot:    #94a3b8;  --prio-low-text:    #cbd5e1; /* 11.22 */
+  --prio-medium-dot: #38bdf8;  --prio-medium-text: #7dd3fc; /* 9.99 */
+  --prio-high-dot:   #fbbf24;  --prio-high-text:   #fcd34d; /* 11.55 */
+  --prio-urgent-dot: #f87171;  --prio-urgent-text: #fca5a5; /*  8.78 */
 
-  --due-overdue-dot:  #f87171;  --due-overdue-text:  #fca5a5; /*  8.89 */
-  --due-soon-dot:     #fbbf24;  --due-soon-text:     #fcd34d; /* 11.70 */
+  --due-overdue-dot:  #f87171;  --due-overdue-text:  #fca5a5; /*  8.78 */
+  --due-soon-dot:     #fbbf24;  --due-soon-text:     #fcd34d; /* 11.55 */
 
-  --stale-dot: #fbbf24;  --stale-text: #fcd34d; /* 11.70 */
+  --stale-dot: #fbbf24;  --stale-text: #fcd34d; /* 11.55 */
 
-  --on-chroma: #161d2b;
+  /* ⚠️ ERA A `--surface` ANTIGA CRAVADA (`#161d2b`), e a F2 trocou a surface.
+     Sem esta linha o texto de dentro do `Badge tone="solid"` continuaria
+     azulado no meio de um tema terra -- o tipo de sobra que nao quebra teste
+     nenhum e so aparece no olho. Acompanha a `--surface` de propósito: e a
+     cor de "buraco" no selo cheio. */
+  --on-chroma: #1f1e1c;
 }
 
 * { box-sizing: border-box; }
@@ -220,7 +291,12 @@ body {
   background: var(--bg);
   color: var(--text);
   font-family: var(--font);
-  font-size: 14px;
+  /* ⚠️ SPEC 039 (F1) -- 15px E O CORPO DE LEITURA, e este e o default que a
+     escala híbrida move. A grade continua em 12-13px porque ela declara o
+     tamanho dela explicitamente; o que sobe aqui é o texto que NÃO declara --
+     descrição, comentário, formulário. É exatamente a divisão da §4 da spec:
+     leitura confortável onde se lê, densidade onde se compara. */
+  font-size: 15px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
 }
@@ -237,7 +313,9 @@ button { font-family: inherit; cursor: pointer; }
 .btn:hover { background: var(--surface-2); }
 .btn:disabled { opacity: .55; cursor: not-allowed; }
 .btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-.btn-primary:hover { background: #1d4fd0; }
+/* Notion `primary-active` (#005bab) -- o estado pressionado do azul dela.
+   Era o escurecido do azul VELHO; sem trocar, o hover puxaria para outro tom. */
+.btn-primary:hover { background: #005bab; }
 .btn-ghost { border-color: transparent; background: transparent; color: var(--text-soft); }
 .btn-ghost:hover { background: var(--surface-2); }
 /* ⚠️ ACAO DESTRUTIVA. O produto ja tinha este padrao -- o `TaskDetail` pinta o

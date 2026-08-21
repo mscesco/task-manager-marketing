@@ -1584,7 +1584,7 @@ export default function Board({
           (ver §"O que NAO valida": zero responsivo). */}
       {modoEdicao ? (
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 18, flexWrap: "wrap" }}>
-          <h1 style={{ margin: 0, fontSize: 19, letterSpacing: "-0.02em" }}>{title}</h1>
+          <h1 style={{ margin: 0, fontSize: 26, fontWeight: 800, lineHeight: 1.23, letterSpacing: "-0.02em" }}>{title}</h1>
           <span
             style={{
               fontSize: 12, fontWeight: 700, padding: "2px 8px", borderRadius: 999,
@@ -1640,7 +1640,7 @@ export default function Board({
         </div>
       ) : (
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 18, flexWrap: "wrap" }}>
-        <h1 style={{ margin: 0, fontSize: 19, letterSpacing: "-0.02em" }}>{title}</h1>
+        <h1 style={{ margin: 0, fontSize: 26, fontWeight: 800, lineHeight: 1.23, letterSpacing: "-0.02em" }}>{title}</h1>
         <span className="muted" style={{ fontSize: 13 }}>
           {temFiltro ? `${raizes.length} de ${visiveis.length}` : raizes.length} tarefas
         </span>
@@ -2378,7 +2378,11 @@ function ColunaKanban({
           <span
             title={coluna.name}
             style={{
-              fontWeight: 700, fontSize: 13,
+              // Spec 039 (F1): cabeçalho de coluna = 13px / 600. Era 700 --
+              // o peso desceu porque o 800 do título de tela passou a ser o
+              // topo da hierarquia, e dois pesos altos competindo achatam a
+              // diferença entre "nome da tela" e "nome da coluna".
+              fontWeight: 600, fontSize: 13,
               minWidth: 0, overflow: "hidden",
               textOverflow: "ellipsis", whiteSpace: "nowrap",
             }}

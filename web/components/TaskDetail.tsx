@@ -1241,7 +1241,8 @@ export default function TaskDetail({
         )}
 
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
-          <h2 style={{ margin: 0, fontSize: 18, letterSpacing: "-0.02em", lineHeight: 1.3 }}>
+          {/* Spec 039 (F1): título do painel = 22px / 700. */}
+          <h2 style={{ margin: 0, fontSize: 22, fontWeight: 700, letterSpacing: "-0.02em", lineHeight: 1.27 }}>
             {task.title}
           </h2>
           <button
@@ -1328,8 +1329,22 @@ export default function TaskDetail({
                 display: "inline-flex", alignItems: "center", gap: 5,
                 flexShrink: 0, whiteSpace: "nowrap",
                 height: 24, borderRadius: 999, padding: "0 10px",
-                fontSize: 12.5, cursor: "pointer",
-                font: "inherit", fontWeight: dueTone ? 600 : 400,
+                // ⚠️ AQUI HAVIA UM `font: "inherit"` DEPOIS DO `fontSize`, E
+                // ELE MATAVA O TAMANHO. `font` e ATALHO: ele redefine
+                // font-size junto com a familia, e como vinha por ultimo, o
+                // `fontSize: 12.5` era codigo morto -- a pilula herdava o
+                // tamanho do `body`.
+                //
+                // Ficou invisivel enquanto o body era 14px (a pilula so
+                // parecia um pouco maior que os selos de 12). A F1 subiu o
+                // body para 15 e a diferenca virou 3px: a Camila viu na tela
+                // que "Sem datas" estava maior que o resto, e era isto.
+                //
+                // ⚠️ O atalho era redundante de qualquer forma: o
+                // `globals.css` ja tem `button { font-family: inherit }`.
+                // Por isso ele SAIU, em vez de so mudar de lugar.
+                fontSize: 12, cursor: "pointer",
+                fontWeight: dueTone ? 600 : 400,
                 // Cheia e vazia usam a MESMA caixa -- o vazio se distingue por
                 // borda tracejada e tom, igual ao "nenhum" do projeto.
                 background: prazoAtual || inicioAtual ? "var(--surface-2)" : "transparent",
@@ -1355,7 +1370,7 @@ export default function TaskDetail({
               {/* ⚠️ O INICIO SO APARECE QUANDO EXISTE. Desenhar "sem inicio" ao
                   lado poria duas ausencias na linha mais disputada da tela. */}
               {inicioAtual && (
-                <span className="muted" style={{ fontSize: 11.5, fontWeight: 400 }}>
+                <span className="muted" style={{ fontSize: 11, fontWeight: 400 }}>
                   · início {new Date(inicioAtual + "T00:00:00").toLocaleDateString("pt-BR")}
                 </span>
               )}

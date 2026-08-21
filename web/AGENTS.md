@@ -145,7 +145,12 @@ Estão aqui para não virarem promessa falsa. Cada uma tem motivo.
 - 👁 Aguentar conteúdo de usuário curto, médio e muito longo.
 - 👁 `min-w-0` em filho de flex para permitir truncagem.
 - 👁 Desenhar os estados vazio, esparso, denso e de erro.
-- ⚪ `font-variant-numeric: tabular-nums` onde números se comparam.
+- ⚠️ ⚪ **`tabular-nums` é INALCANÇÁVEL com a fonte atual.** A Raleway não traz
+  a feature `tnum` (medido em 21/08/2026), então a declaração não falha — ela
+  simplesmente não faz nada. E os dígitos variam 62% de largura (`1` = 375,
+  `0` = 608). Onde números **mudam no lugar** o bloco pula. A saída, se
+  incomodar, é `unicode-range: U+0030-0039` mandando só os dígitos para outra
+  fonte. Ver Spec 039 §5.4.
 - ⚪ Caractere `…`, não três pontos.
 
 ## 9. Tema
@@ -170,6 +175,16 @@ Estão aqui para não virarem promessa falsa. Cada uma tem motivo.
 
 ## 11. Estilo do código
 
+- ⚠️⚠️ **`font: "inherit"` DEPOIS de `fontSize` APAGA O TAMANHO, em silêncio.**
+  `font` é atalho: ele redefine `font-size` junto com a família. Num objeto de
+  estilo inline a última propriedade ganha, então
+  `{ fontSize: 12, font: "inherit" }` **não tem tamanho 12** — herda o do
+  `body`. Aconteceu na pílula de datas do `TaskDetail` e ficou invisível por
+  meses, até a Spec 039 subir o `body` de 14 para 15 e a diferença virar
+  visível na tela.
+  **E o atalho é redundante:** o `globals.css` já tem
+  `button { font-family: inherit }`. Se ele aparecer num estilo novo, apague —
+  não reordene.
 - ⚠️ **Estilo novo não nasce inline.** São **625** `style={{}}` em 33 arquivos
   (eram 477 em 30/07 — cresce ~7 por dia). Token no `@theme`, classe utilitária
   ou primitivo. Exceção documentada: cor dinâmica de runtime (`corAvatar`, cor
