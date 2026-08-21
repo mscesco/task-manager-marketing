@@ -1654,23 +1654,16 @@ export default function Board({
             color: "var(--text)", minWidth: 170,
           }}
         />
-        {/* Ordenacao fica FORA do painel: ela nao esconde tarefa, so muda a
-            ordem. Recolher junto com os filtros faria o badge sugerir que ha
-            coisa omitida quando so a ordem mudou. */}
-        <select
-          value={ordenacao}
-          onChange={(e) => setOrdenacao(e.target.value as Ordenacao)}
-          style={{
-            fontSize: 13, padding: "6px 10px", borderRadius: 8,
-            border: "1px solid var(--border)", background: "var(--surface)",
-            color: "var(--text)", cursor: "pointer",
-          }}
-        >
-          {ORDENACOES.map((o) => (
-            <option key={o.key} value={o.key}>{o.label}</option>
-          ))}
-        </select>
+        {/* ⚠️ ORDENAR E "MOSTRAR ARQUIVADAS" MUDARAM PARA DENTRO DO PAINEL
+            (Spec 039, F4/F5 -- decisao da Camila em 21/08). O cabecalho tinha
+            SEIS controles competindo; ficaram quatro.
 
+            ⚠️ E O SELO DO FUNIL NAO MUDOU, que era a objecao registrada aqui
+            antes: ele conta so o que ESTREITA o quadro. Ordenar nao esconde
+            tarefa, e "mostrar arquivadas" ALARGA -- as duas ja estavam fora da
+            conta (`contaFiltrosAtivos` exclui `arquivadas` explicitamente, com
+            o motivo escrito no `filtrosQuadro.ts`). Morar no painel e contar no
+            selo sao coisas diferentes, e so a primeira mudou. */}
         {/* ---- Painel de filtros ---- */}
         <div ref={painelRef} style={{ position: "relative" }}>
           <button
@@ -1823,6 +1816,52 @@ export default function Board({
                   )}
                 </div>
               )}
+
+              {/* ⚠️ SECAO PROPRIA, e nao mais um campo na lista de filtros
+                  (Spec 039, F4/F5). As duas coisas abaixo moram no painel mas
+                  NAO sao filtro: ordenar nao esconde tarefa, e "mostrar
+                  arquivadas" ALARGA o quadro. Por isso ficam depois de um
+                  divisor e sob outro titulo -- e por isso o selo do funil
+                  continua sem conta-las. O wireframe da Camila desenha
+                  exatamente assim. */}
+              <div
+                style={{
+                  borderTop: "1px solid var(--border)",
+                  marginTop: 4,
+                  paddingTop: 12,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 10,
+                }}
+              >
+                <div className="field">
+                  <label className="label" htmlFor="f-ordenar">Ordenar</label>
+                  <select
+                    id="f-ordenar"
+                    className="input"
+                    value={ordenacao}
+                    onChange={(e) => setOrdenacao(e.target.value as Ordenacao)}
+                  >
+                    {ORDENACOES.map((o) => (
+                      <option key={o.key} value={o.key}>{o.label}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <label
+                  style={{
+                    display: "flex", alignItems: "center", gap: 6,
+                    fontSize: 13, color: "var(--text-soft)", cursor: "pointer",
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={mostrarArquivadas}
+                    onChange={(e) => setMostrarArquivadas(e.target.checked)}
+                  />
+                  Mostrar arquivadas
+                </label>
+              </div>
             </div>
           )}
         </div>
@@ -1832,10 +1871,13 @@ export default function Board({
             rotulo e sem vizinho, a 12px de distancia de tudo. Na barra ele fica
             junto dos outros controles do quadro, que e onde a pessoa ja olha.
 
-            ⚠️ ANTES DO `marginLeft: "auto"` DO "Mostrar arquivadas", e por isso
-            ele encosta em Filtros em vez de flutuar no meio: e o `auto` que
-            empurra o resto para a direita. Trocar a ordem destes dois quebra o
-            alinhamento sem quebrar teste nenhum.
+            ⚠️ ANTES DO `marginLeft: "auto"`, e por isso ele encosta em Filtros
+            em vez de flutuar no meio: e o `auto` que empurra o resto para a
+            direita. Trocar a ordem quebra o alinhamento sem quebrar teste
+            nenhum.
+            (Ate 21/08 o `auto` morava no "Mostrar arquivadas", que era o
+            vizinho seguinte; com ele indo para o painel — Spec 039, F4/F5 —,
+            o `auto` passou para o "+ Nova tarefa".)
 
             ⚠️ O `!modoEdicao` SAIU DA CONDICAO, e nao por descuido: este ramo
             inteiro e o `else` de `{modoEdicao ? (` (linha 1332), entao ele so
@@ -1863,23 +1905,14 @@ export default function Board({
           </button>
         )}
 
-        <label
-          style={{
-            marginLeft: "auto", display: "flex", alignItems: "center", gap: 6,
-            fontSize: 13, color: "var(--text-soft)", cursor: "pointer",
-          }}
-        >
-          <input
-            type="checkbox"
-            checked={mostrarArquivadas}
-            onChange={(e) => setMostrarArquivadas(e.target.checked)}
-          />
-          Mostrar arquivadas
-        </label>
+        {/* ⚠️ O `marginLeft: "auto"` MUDOU DE DONO. Ele morava no "Mostrar
+            arquivadas", que foi para o painel; sem passar para o botao aqui, o
+            "+ Nova tarefa" colaria no lapis em vez de ir para a direita. O
+            comentario do lapis acima avisa exatamente disto. */}
         <button
           className="btn btn-primary"
           onClick={() => setCriando(true)}
-          style={{ padding: "8px 14px" }}
+          style={{ marginLeft: "auto", padding: "8px 14px" }}
         >
           + Nova tarefa
         </button>
