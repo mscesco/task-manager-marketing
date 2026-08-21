@@ -143,6 +143,50 @@ async def test_termo_vazio_nao_filtra_nada(db):
         assert {raiz.id, outra.id, so_descricao.id} <= achados
 
 
+async def test_busca_na_tela_de_ARQUIVADAS_encontra(db):
+    """⚠️ ACHADO NO REVIEW DA SPEC 042 -- devolvia SEMPRE vazio.
+
+    O `<@` do LTREE inclui a PROPRIA linha. Numa listagem `archived_only` a
+    raiz e, por definicao, arquivada -- e a subconsulta exigia um
+    descendente-ou-igual NAO arquivado. Como arquivar cascateia a subarvore
+    inteira, nenhuma linha qualificava: buscar em Arquivadas nao achava nada,
+    nunca, nem pelo titulo exato.
+
+    A guarda passou a ser `include_archived OR archived_only`. Este teste e o
+    que impede o `or` de ser "simplificado" de volta.
+    """
+    ws = await f.make_workspace(db)
+    team = await f.make_team(db, workspace_id=ws)
+    user = await f.make_user(db, workspace_id=ws)
+    await f.add_member(
+        db, workspace_id=ws, user_id=user, team_id=team, role="ADMIN"
+    )
+    arquivada = await f.make_task(
+        db,
+        workspace_id=ws,
+        created_by=user,
+        team_id=team,
+        title="Campanha encerrada",
+        status=TaskStatus.COMPLETED,
+    )
+    arquivada.is_archived = True
+    await db.flush()
+
+    with acting_as(
+        workspace_id=ws,
+        user_id=user,
+        memberships=(mship(team, "ADMIN"),),
+        team_tree=(node(team),),
+    ):
+        pagina = await TaskRepository(db).list_page_with_filters(
+            PageParams(page=1, size=100),
+            archived_only=True,
+            q="campanha",
+        )
+
+    assert arquivada.id in {t.id for t in pagina.items}
+
+
 async def test_nao_acha_em_outro_workspace(db):
     """A busca passa pelo `_base_select`, mas o EXISTS da subarvore e escrito a
     mao -- este teste e o que garante que ele nao esqueceu o tenant."""

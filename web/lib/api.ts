@@ -430,7 +430,22 @@ export async function listarFilhas(parentTaskId: string): Promise<Task[]> {
     page: 1,
     size: pageSize,
   });
-  const itens = [...primeira.items];
+  // ⚠️ DEDUPE POR ID, pelo mesmo motivo que o `listAllTasks` (achado no review
+  // da Spec 042). Paginacao por offset pode REPETIR um item na borda se alguem
+  // criar uma subtarefa durante a carga -- e como a parada e por
+  // `itens.length`, o repetido inflaria o comprimento e o laco pararia cedo,
+  // perdendo uma filha DE VERDADE. Eu copiei a paginacao de la sem copiar esta
+  // guarda.
+  const vistos = new Set<string>();
+  const itens: Task[] = [];
+  const acrescentar = (arr: Task[]) => {
+    for (const t of arr) {
+      if (vistos.has(t.id)) continue;
+      vistos.add(t.id);
+      itens.push(t);
+    }
+  };
+  acrescentar(primeira.items);
   let page = 2;
   while (itens.length < primeira.total) {
     const proxima = await listTasks({
@@ -440,7 +455,7 @@ export async function listarFilhas(parentTaskId: string): Promise<Task[]> {
       size: pageSize,
     });
     if (proxima.items.length === 0) break; // defensivo
-    itens.push(...proxima.items);
+    acrescentar(proxima.items);
     page++;
   }
   return itens;
