@@ -28,6 +28,7 @@ import {
   ListChecks,
   Users,
   Network,
+  Building2,
   Archive,
   User,
   LogOut,
@@ -304,7 +305,12 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                   open ? "" : "justify-center"
                 }`}
               >
-                <Network size={18} className="shrink-0" />
+                {/* ⚠️ `Building2` E NAO `Network`: "Times" (gestao da arvore)
+                    ja usa o Network, e retraida a barra mostra so o icone --
+                    os dois viravam o MESMO simbolo em lugares diferentes.
+                    Achado pela Camila na tela. Aqui o sentido e "a organizacao
+                    em que voce esta", nao "a arvore de times". */}
+                <Building2 size={18} className="shrink-0" />
                 {open && <span className="truncate">{raiz.name}</span>}
               </div>
             );
