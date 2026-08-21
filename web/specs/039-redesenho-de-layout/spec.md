@@ -276,10 +276,18 @@ Projetos · Minhas tarefas · Subtimes · Solicitações · Arquivadas. Rodapé:
 - ⚠️ **Colapsada, os 7 ícones não têm texto.** `web/AGENTS.md` exige
   `aria-label` descritivo em botão só-de-ícone, e rótulo visível ou tooltip.
   Tooltip com atraso no primeiro e instantâneo nos vizinhos.
-- ⚠️ **`/membros` fica sem entrada na sidebar NESTA spec, e de propósito.** A
-  tela existe (806 linhas) mas o lugar dela depende da reestruturação de
-  organização/times/membros, que a Camila está pensando (§6.1.1). Pôr um item
-  de menu agora é escolher a arquitetura por acidente de navegação.
+- ⚠️⚠️ **`/membros` FICA ONDE ESTÁ — correção de 21/08.** Esta seção dizia que
+  ele "fica sem entrada na sidebar", escrito quando eu **supus** que não havia
+  entrada. **Há:** a sidebar já lista Membros hoje, e "ficar sem entrada"
+  significaria **remover** — tornando uma tela de 806 linhas inalcançável
+  porque um wireframe a omitiu.
+
+  Omissão em rascunho não é decisão de remover. O lugar definitivo dele depende
+  da reestruturação (§6.1.1); até lá **não se mexe**.
+
+  ⚠️ O wireframe também troca "Times" por "Subtimes" e reordena. Nada disso foi
+  pedido em voz alta, e renomear item de navegação muda o vocabulário do
+  produto — fica fora da F3 até alguém decidir de propósito.
 - **"Time Principal ›" NÃO é inerte — o estado de hoje é o estado dele.**
   Esclarecido pela Camila em 19/08: o controle navega **entre times principais
   (raiz)**, e nada mais. Subtime continua sendo coisa de dentro do time.
