@@ -2337,7 +2337,18 @@ function ColunaKanban({
     <div
       ref={setNodeRef}
       style={{
-        flex: 1, minWidth: 240, minHeight: 0, borderRadius: 10, padding: 4,
+        // ⚠️ 190 E NAO 240 (Camila, 21/08): ela odiou a rolagem horizontal e
+        // prefere card mais alto a barra de rolagem. Com 8 colunas numa tela
+        // de 1920 a conta e 8x190 + 7x14 = 1618, e cabe nos ~1680 uteis; com
+        // 240 dava 2018 e rolava sempre.
+        //
+        // ⚠️ ISTO NAO MATA A ROLAGEM, SO PARA DE DISPARA-LA NO CASO DELA. Em
+        // tela de 1440 oito colunas voltam a rolar, e o quadro de 19 colunas
+        // rola de qualquer jeito -- 19x190 e 3700px. O conserto de verdade e
+        // encolher COLUNA VAZIA (cinco das oito dela estao vazias), e isso e
+        // fatia propria: a Spec 031 cortou "recolher colunas" (D5) e a decisao
+        // precisa ser retomada com o desenho na mao.
+        flex: 1, minWidth: 190, minHeight: 0, borderRadius: 10, padding: 4,
         display: "flex", flexDirection: "column",
         background: isOver ? "var(--surface-2)" : "transparent",
         // O fundo sozinho e quase invisivel (surface-2 x canvas = ~2% de

@@ -188,7 +188,18 @@ Sem segunda família, o peso faz todo o trabalho:
 | corpo de leitura | 15px | 400 |
 | título de card | 13px | 600 |
 | cabeçalho de coluna | 13px | 600 |
-| selo, meta, contador | 12px | **500** |
+| selo, meta, contador **fora do card** | 12px | **500** |
+| ⚠️ selo, meta, contador **DENTRO do card** | **11px** | **500** |
+
+⚠️ **A linha do card é emenda de 21/08, e veio da tela.** A F1 subiu os selos do
+card de 11 para 12 seguindo a tabela original; na coluna estreita eles passaram
+a **quebrar linha e empurrar os responsáveis para baixo**. A Camila viu e pediu
+para diminuir.
+
+É o mesmo princípio híbrido da §4, um nível mais fundo: o card é o contexto
+**mais denso** do produto, e o que serve a um selo num painel largo não serve a
+sete selos dentro de 190px. O peso 500 fica — ele resolvia hierarquia, não
+largura.
 
 ⚠️ **O 500 nos 12px não é capricho.** A Raleway é uma sans geométrica de origem
 display: altura-de-x menor e aberturas mais fechadas que uma fonte de texto. Em
@@ -334,9 +345,31 @@ sino. No quadro de projeto o lápis sobe para junto do título.
 - **O seletor de quadro fica como está hoje.** Confirmado com a Camila em
   19/08. O `SeletorDeQuadro` (fatia 10) e o quadro extra da raiz (fatia 5c) não
   mudam de lugar nesta spec.
-- ⚠️ **O desenho tem 5 colunas; produção tem 8** no Quadro geral e **19** no
-  "Quadro teste do GOATzinho". **Decisão da Camila, 19/08: rolagem
-  horizontal.** A coluna tem largura fixa e o quadro rola.
+- ⚠️⚠️ **A DECISÃO DA ROLAGEM HORIZONTAL FOI REVERTIDA EM 21/08, ao ver na
+  tela.** Em 19/08 a decisão foi "rolagem horizontal"; com ela rodando, a
+  Camila foi direta: *"a rolagem horizontal eu odiei, é bem feio. Prefiro um
+  card enorme pra baixo, cabendo menos na visualização"*.
+
+  **Feito agora:** `minWidth` da coluna de 240 → **190**. Com 8 colunas numa
+  tela de 1920 a conta fecha (8×190 + 7×14 = 1618 nos ~1680 úteis) e a barra
+  some.
+
+  ⚠️⚠️ **MAS ISSO NÃO RESOLVE, SÓ ADIA — e a conta diz por quê:**
+
+  | tela | 8 colunas a 190px | 19 colunas |
+  |---|---|---|
+  | 1920 | ✅ cabe (1618) | rola (3700) |
+  | 1680 | rola | rola |
+  | 1440 | rola | rola |
+
+  **Largura mínima fixa não elimina rolagem** — ela só escolhe em que tela a
+  rolagem começa. Para 19 colunas não existe largura que caiba.
+
+  ⚠️ **O conserto de verdade é ENCOLHER COLUNA VAZIA.** Cinco das oito colunas
+  do quadro dela estão vazias; se elas virassem faixas finas, as três com card
+  ficariam largas e não sobraria rolagem. A Spec 031 cortou isso (D5,
+  "recolher colunas") — precisa ser retomado, **com desenho**, como fatia
+  própria. Sem isso a reversão fica pela metade em qualquer tela menor.
 
   Três consequências que vêm junto:
 

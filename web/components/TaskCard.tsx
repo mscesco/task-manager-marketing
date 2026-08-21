@@ -110,7 +110,7 @@ export default function TaskCard({
           title={`Projeto: ${projectName}`}
           style={{
             alignSelf: "flex-start", maxWidth: "100%",
-            fontSize: 12, fontWeight: 500, padding: "2px 8px", borderRadius: 6,
+            fontSize: 11, fontWeight: 500, padding: "2px 8px", borderRadius: 6,
             background: "var(--surface-2)", color: "var(--text-soft)",
             border: "1px solid var(--border)",
             display: "inline-flex", alignItems: "center", gap: 4, minWidth: 0,
@@ -128,7 +128,7 @@ export default function TaskCard({
           title={`Subtarefa de: ${parentTitle}`}
           style={{
             alignSelf: "flex-start", maxWidth: "100%",
-            fontSize: 12, fontWeight: 500, padding: "2px 8px", borderRadius: 6,
+            fontSize: 11, fontWeight: 500, padding: "2px 8px", borderRadius: 6,
             background: "var(--surface-2)", color: "var(--text-soft)",
             border: "1px solid var(--border)",
             display: "inline-flex", alignItems: "center", gap: 4, minWidth: 0,
@@ -146,7 +146,7 @@ export default function TaskCard({
           title={`Coluna: ${rotuloDaColuna}`}
           style={{
             alignSelf: "flex-start", maxWidth: "100%",
-            fontSize: 12, fontWeight: 500, padding: "2px 8px", borderRadius: 6,
+            fontSize: 11, fontWeight: 500, padding: "2px 8px", borderRadius: 6,
             background: "var(--surface-2)", color: "var(--text-soft)",
             border: "1px solid var(--border)",
             display: "inline-flex", alignItems: "center", gap: 4, minWidth: 0,
@@ -168,7 +168,7 @@ export default function TaskCard({
           }
           style={{
             alignSelf: "flex-start",
-            fontSize: 12, fontWeight: 500, padding: "2px 8px", borderRadius: 6,
+            fontSize: 11, fontWeight: 500, padding: "2px 8px", borderRadius: 6,
             background:
               escopo === "compartilhada" ? "var(--accent-soft)" : "var(--surface-2)",
             color:
@@ -185,7 +185,7 @@ export default function TaskCard({
           style={{
             alignSelf: "flex-start",
             display: "inline-flex", alignItems: "center", gap: 5,
-            fontSize: 12, fontWeight: 500, padding: "2px 8px", borderRadius: 6,
+            fontSize: 11, fontWeight: 500, padding: "2px 8px", borderRadius: 6,
             color: "var(--stale-text)",
             background: "color-mix(in srgb, var(--stale-text) 12%, transparent)",
           }}
@@ -209,7 +209,7 @@ export default function TaskCard({
             className={dueTone ? undefined : "muted"}
             style={{
               display: "inline-flex", alignItems: "center", gap: 4,
-              fontSize: 12,
+              fontSize: 11,
               color: dueTone ? DEADLINE_COLOR[dueTone] : undefined,
               fontWeight: dueTone ? 600 : undefined,
             }}
@@ -222,14 +222,14 @@ export default function TaskCard({
           <span
             className="muted"
             title={`${subtaskDone} de ${subtaskCount} subtarefas concluídas`}
-            style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12 }}
+            style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11 }}
           >
             <CheckSquare {...ICONE} />
             {subtaskDone}/{subtaskCount}
           </span>
         )}
         {task.is_archived && (
-          <span className="muted" style={{ fontSize: 12 }}>arquivada</span>
+          <span className="muted" style={{ fontSize: 11 }}>arquivada</span>
         )}
 
         {/* Spec 031 / C2: ausencia de responsavel precisa ser DITA. Um card
@@ -237,7 +237,7 @@ export default function TaskCard({
             e sao 44 tarefas nesse estado hoje. Tom neutro de proposito: e
             pendencia de preenchimento, nao erro. */}
         {semResponsavel && (
-          <span className="muted" style={{ fontSize: 12, marginLeft: "auto" }}>
+          <span className="muted" style={{ fontSize: 11, marginLeft: "auto" }}>
             sem responsável
           </span>
         )}
