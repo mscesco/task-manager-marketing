@@ -1,6 +1,8 @@
 # Spec 042 — Contagem agregada de subtarefa
 
-**Status:** proposta (aguardando aprovação)
+**Status:** ✅ **IMPLEMENTADA E EM PRODUÇÃO — deploy em 21/08/2026.**
+Fatias A1, A2, B1 e B2 entregues; migration `0015` aplicada.
+⚠️ **Falta remedir o teto em produção** e escrever o número aqui — ver §14.
 **Escopo:** backend (`app/`) **e** frontend (`web/`) — o contrato muda dos dois lados
 **Não toca:** arquivamento, semântica de coluna, autenticação
 **Placar na abertura:** Backend **860**, Front **865**, migrations `0014`
@@ -273,3 +275,43 @@ se a rota existe.
 E, diferente das outras alavancas, **este número para de crescer com o uso**:
 subtarefa deixa de ocupar linha do teto, então o hábito do SEO (11 por card)
 passa a não custar nada ao carregamento.
+
+---
+
+## 14. Fechamento — o que ainda falta MEDIR
+
+⚠️ **Esta spec inteira se justificou por um número, e o número do "depois"
+ainda não foi tirado.** Sem ele, o que existe é a intenção, não o resultado.
+
+Rodar no Adminer **depois do deploy**, e escrever o resultado aqui:
+
+```sql
+SELECT
+  CASE WHEN t.depth = 0 THEN 'card (raiz)' ELSE 'subtarefa' END AS tipo,
+  COUNT(*) AS total
+FROM task t
+WHERE t.deleted_at IS NULL AND t.is_archived = false
+GROUP BY 1 ORDER BY 1;
+```
+
+| | carregado pelo quadro | folga até o teto de 1000 |
+|---|---|---|
+| 19/08, antes | **917** (247 cards + 670 subtarefas) | **83** |
+| esperado depois | **~247** (só as raízes) | **~753** |
+| medido em produção | *a preencher* | *a preencher* |
+
+**O que o número prova, se bater:** que o quadro parou de baixar subtarefa.
+**O que ele NÃO prova:** que as cinco funcionalidades continuam de pé — isso é
+o smoke, e as cinco estão listadas no §2.
+
+### 14.1. A janela de arquivamento NÃO precisa mais ser encurtada
+
+Durante a investigação ficou decidido baixar `STALE_ARCHIVE_DAYS` de 20 para
+15, como válvula: drenava 87 tarefas e dobrava a folga de 83 para 170.
+
+⚠️ **A justificativa expirou.** Com o quadro carregando ~247, a folga passa de
+750 sem tocar em nada. Encurtar a janela agora só faria tarefa concluída sumir
+do quadro cinco dias mais cedo — **custo sem contrapartida.**
+
+**Recomendação: não fazer.** Fica registrado para não ser executado por
+inércia mais adiante, achando que ainda é a válvula que era.

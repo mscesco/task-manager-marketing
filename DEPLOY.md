@@ -93,6 +93,20 @@ contrário. Enquanto durou, este arquivo anunciava que **não havia caminho de
 hotfix** num dia em que havia. Quando a próxima migration cair nesta segunda
 exceção, escreva a data de aplicação aqui **no mesmo commit** que a aplica.
 
+⚠️ **A `0015` (`unaccent`) TAMBÉM inverte a ordem — por um terceiro motivo, e
+✅ ELA ESTÁ EM PRODUÇÃO DESDE 21/08/2026.** Ela não acrescenta coluna a model
+nenhum (a checagem do `git diff -- backend/app/db/models/` sai vazia), então
+não é a segunda exceção. O que inverte é o sentido oposto: **o código novo
+depende do schema novo.** `_casa_busca_na_subarvore` chama `unaccent()`, e com
+o código no ar antes da extensão existir, a primeira pessoa que digitar na
+busca do quadro toma erro de função inexistente — silencioso até alguém
+buscar, e portanto invisível no smoke.
+
+**A regra geral que as duas exceções compartilham:** a ordem padrão só vale
+quando o código novo tolera o schema velho. Sempre que ele **depender** do
+schema novo — coluna nova em model existente, extensão, função — é
+`build` → `migration` → `up`.
+
 Para a PRÓXIMA migration que cair nesta exceção, a ordem é `build` →
 `migration` → `up`, e o `build` vem antes porque a migration mora dentro da
 imagem:
