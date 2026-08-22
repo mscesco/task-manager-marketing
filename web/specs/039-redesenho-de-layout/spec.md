@@ -1,9 +1,14 @@
 # Spec 039 — Redesenho de layout
 
-**Status:** proposta (aguardando aprovação)
+**Status:** em andamento — **F0 a F6 entregues** (21/08); faltam F7 a F10
 **Escopo:** frontend (`web/`). **Não toca:** backend, contrato de API, autenticação.
 **Depende de:** Spec 018 (primitivos + Tailwind v4) e Spec 031 (fatia C, cor)
 **Placar de testes na abertura:** Front **865**, Backend **860**, migrations `0014`
+**Placar em 21/08, com F6-b:** Front **889**, Backend **883**, migrations `0015`
+
+⚠️ **Antes de pegar F7, F9 ou F10, leia o §8.1.** Quatro escopos desta spec
+foram escritos a partir do wireframe sem abrir o componente, e os quatro
+erraram o alvo. Os três que faltam vêm da mesma fonte e não foram conferidos.
 
 ---
 
@@ -269,6 +274,9 @@ o desenho pede e onde ele colide com o que já está entregue.
 
 ### 6.1. Casca (`Menu.png`, `MiniMenu.png`)
 
+✅ **Entregue na F3 + F3-bis.** ⚠️ O escopo escrito aqui supunha construir a
+sidebar colapsável, que **já existia** — ver a correção no §8.1.
+
 Sidebar de ícones, colapsável. Expandida: Task Manager · Retrair · Quadros ·
 Projetos · Minhas tarefas · Subtimes · Solicitações · Arquivadas. Rodapé:
 "Time Principal ›" e "Perfil / UniFECAF". Colapsada: 7 ícones sem rótulo.
@@ -429,6 +437,15 @@ Duplicar, compartilhar).
 
 - ✅ **As pílulas são o gatilho** — o dropdown abre ancorado abaixo da pílula.
   É o desenho que o handoff registra como o pedido original da cápsula de datas.
+
+  **Entregue em 21/08: Prioridade (F6-a) e Coluna (F6-b).** Faltam `📅 data`
+  (F7) e `Projeto`. ⚠️ A de Coluna carrega uma regra que nenhuma outra pílula
+  tem: mover para coluna `DONE` **cascateia nas subtarefas no backend**, e
+  nenhuma delas volta na resposta do PATCH — o painel relê as filhas. Sem isso
+  a checklist mostraria aberta uma subtarefa já concluída.
+
+  ⚠️ **O escopo desta tela estava marcado como "a maior, risco alto"** — o
+  painel já era painel. Ver §8.1.
 - **O chevron `›` da subtarefa navega.** Decisão da Camila, 19/08: vai para uma
   tela igual à de detalhe, com um botão **"voltar para «título da anterior»"**
   — a tarefa-mãe, ou a anterior na cadeia.
@@ -502,6 +519,9 @@ Campos: "Nome da coluna", "Tipo (imutável)", "Cor", botão Criar.
 - **`notify_deadline` entra como caixa.** Ver §7.
 
 ### 6.7. Filtros (`Ordenar - sobrep.png`)
+
+✅ **Entregue na F4+F5, num commit só.** ⚠️ O painel **já existia**; o trabalho
+real foi mudar dois controles de lugar — ver §8.1.
 
 Painel ancorado abaixo do funil, alinhado à direita. "Filtros" + "Limpar";
 campos Prazo, Equipe, Responsável; depois "Ordenar" com seu campo.
@@ -784,6 +804,36 @@ Ordem por alavancagem × risco. Cada uma entregável sozinha.
 ⚠️ **F8 é a de maior risco de regressão do lote**, porque ela reescreve a tela
 onde a fatia 12 acabou de entrar. Smoke obrigatório de "trocar o alvo e apagar
 a coluna antiga num gesto só".
+
+### 8.1. ⚠️⚠️ Correção de 21/08 — quatro escopos escritos sem abrir o componente
+
+A tabela acima foi montada lendo os wireframes. **Quatro linhas dela — F3, F4,
+F5 e F6 — descreviam como trabalho a fazer coisas que já estavam entregues.**
+Não é imprecisão de estimativa: é o modo de falha que o `AGENTS.md` §3 nomeia
+("não afirmar sobre código que não abri"), aplicado quatro vezes no mesmo
+documento. Fica corrigido aqui em vez de reescrito lá em cima, porque o valor
+está na diferença entre as duas colunas.
+
+| # | o que a tabela dizia | o que era, aberto o arquivo | o que a fatia entregou de fato |
+|---|---|---|---|
+| **F3** | "sidebar colapsável, tooltip + `aria-label` nos ícones" | o `AppShell` **já era colapsável e já tinha tooltip**; só o `aria-label` do estado colapsado faltava | `aria-label`, a linha "Time Principal" no rodapé (`Building2`), e — na F3-bis, que **não estava na tabela** — a barra lembrar como foi deixada |
+| **F4** | "busca, funil, lápis, + Nova Tarefa, sino" | os cinco **já existiam** no cabeçalho | o problema real era o oposto: havia **seis** controles competindo. A fatia **tirou dois** (Ordenar e Mostrar arquivadas), não pôs cinco |
+| **F5** | "o painel do §6.7" | o painel **já existia**, com Prazo, Equipe e Responsável | virou a outra metade da F4 — o destino dos dois controles removidos. Saiu no **mesmo commit**, porque separá-las era ficção |
+| **F6** | "`TaskDetail.tsx` (2532 linhas) — a maior", risco **alto** | o detalhe **já era painel sobre o quadro**, com a linha de pílulas montada | duas pílulas viraram gatilho: Prioridade (F6-a) e Coluna (F6-b). Risco médio, e o que restou é o §6.4/§6.5 — que já eram F7 e F8 |
+
+**O que isso muda para as fatias que faltam.** F7, F9 e F10 têm escopo escrito
+pela mesma fonte e nunca conferido contra o código. **Antes de cada uma, abrir
+o componente e corrigir a linha da tabela** — o §6.4 já avisa que a hora existe
+desde a Spec 038, e o §6.11.0 já registra que a justificativa da F10 evaporou
+com a Spec 042 (folga de 83 → 746). Duas das três já têm sinal de que a
+descrição envelheceu.
+
+⚠️ **A leitura errada não foi "o wireframe mente".** O wireframe desenha o
+estado desejado, e é isso que se pede dele; ele não tem como marcar o que já
+existe. Quem tinha que fazer a subtração era eu, e o custo de não fazer é
+concreto: escopo inflado esconde o trabalho real (a F4 tirava controles, e a
+tabela dizia que ela punha) e infla risco no lugar errado (F6 marcada como a
+mais alta do lote quando a F8 é que reescreve tela recém-entregue).
 
 ---
 
