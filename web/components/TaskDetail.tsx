@@ -335,6 +335,9 @@ export default function TaskDetail({
   // Spec 039 (F6): a pilula de PRIORIDADE vira gatilho, como a de datas.
   const [abertoPrio, setAbertoPrio] = useState(false);
   const [salvandoPrio, setSalvandoPrio] = useState(false);
+  // Spec 039 (F6-b): a pilula de COLUNA vira gatilho.
+  const [abertoCol, setAbertoCol] = useState(false);
+  const [salvandoCol, setSalvandoCol] = useState(false);
   const [salvandoDatas, setSalvandoDatas] = useState(false);
   const [erroDatas, setErroDatas] = useState<string | null>(null);
   // ⚠️ RASCUNHO SEPARADO DO ECO. O painel tem DOIS campos e um botão de
@@ -405,6 +408,7 @@ export default function TaskDetail({
   const projWrapRef = useRef<HTMLDivElement>(null);
   const datasWrapRef = useRef<HTMLDivElement>(null);
   const prioWrapRef = useRef<HTMLDivElement>(null);
+  const colWrapRef = useRef<HTMLDivElement>(null);
 
   // Insere um trecho (emoji) na posicao do cursor do textarea e mantem foco.
   function inserirNoCursor(
@@ -561,6 +565,17 @@ export default function TaskDetail({
     document.addEventListener("mousedown", onDown);
     return () => document.removeEventListener("mousedown", onDown);
   }, [abertoPrio]);
+
+  useEffect(() => {
+    if (!abertoCol) return;
+    function onDown(e: MouseEvent) {
+      if (colWrapRef.current && !colWrapRef.current.contains(e.target as Node)) {
+        setAbertoCol(false);
+      }
+    }
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [abertoCol]);
 
   // Usuario logado: uma vez (memoizado). Falha silenciosa -> sem acoes
   // inline, mas o thread ainda renderiza.
@@ -903,6 +918,60 @@ export default function TaskDetail({
       );
     } finally {
       setSalvandoPrio(false);
+    }
+  }
+
+  /**
+   * Troca a COLUNA direto pela pilula (Spec 039, F6-b).
+   *
+   * ⚠️ MANDA SO `column_id`, e NUNCA `status`. Mandar os dois e 422 (ADR 0041,
+   * D3) e mandar `status` no lugar e a regra velha. O status certo vem NA
+   * RESPOSTA -- por isso o upsert usa `t`, e nao um objeto remendado aqui.
+   *
+   * ⚠️ MOVER PARA COLUNA `DONE` CASCATEIA NO BACKEND: o
+   * `complete_descendants` conclui a subarvore inteira. Duas consequencias que
+   * esta funcao TEM de tratar, e que a de prioridade nao tinha:
+   *
+   *   1. o contador do card (`subtask_done`) muda -- quem cuida disso e o
+   *      `aoUpsert` do quadro, que ja deriva `done = total` quando a tarefa
+   *      VIRA concluida. Por isso o canal e `onSubtaskUpsert`: ele passa por
+   *      la. `onTaskMoved` recarregaria o quadro inteiro, o que tambem
+   *      funcionaria -- e seria uma varredura de 254 linhas para mover um card.
+   *
+   *   2. as filhas na checklist DESTE painel ficam velhas: elas mudaram no
+   *      banco e nenhuma veio na resposta. Mesma situacao da cascata de
+   *      arquivamento, e mesmo conserto -- `recarregarFilhos()`.
+   *
+   * ⚠️ RECARREGA SO QUANDO HA FILHA. Sem isso, mover uma tarefa sem subtarefa
+   * gastaria uma requisicao para receber lista vazia.
+   */
+  async function mudarColuna(destino: string) {
+    if (!task || salvandoCol) return;
+    if (task.column_id === destino) {
+      setAbertoCol(false);
+      return;
+    }
+    setErro(null);
+    setSalvandoCol(true);
+    const viraConcluida =
+      colunaPorId.get(destino)?.semantic === "DONE" &&
+      colunaPorId.get(task.column_id)?.semantic !== "DONE";
+    try {
+      const t = await updateTask(tid, { column_id: destino });
+      setAbertoCol(false);
+      onSubtaskUpsert(t);
+      if (viraConcluida && filhos.length > 0) void recarregarFilhos();
+    } catch (e) {
+      const err = e as ApiError;
+      setErro(
+        err.status === 403
+          ? "Você não pode editar esta tarefa."
+          : err.status === 422
+          ? "Não foi possível mover pra essa coluna."
+          : "Não consegui mudar a coluna."
+      );
+    } finally {
+      setSalvandoCol(false);
     }
   }
 
@@ -1341,11 +1410,88 @@ export default function TaskDetail({
               arbitraria tem de sair da luminancia, e `lib/coluna.ts::corEhHex`
               ja registra que essa derivacao e da FATIA 5. Ate la, cor por
               status e rotulo por coluna. */}
-          <Badge tone="solid" size="md" color={STATUS_COLOR[task.status]}>
-            {colunaPorId.get(task.column_id)?.name ??
-              STATUS_LABEL[task.status] ??
-              task.status}
-          </Badge>
+          {/* ⚠️ A PILULA VIROU O CONTROLE (Spec 039, F6-b). Ela era rotulo
+              morto, e o comentario acima ja anunciava "que a fatia 5 vai
+              deixar editar" -- ficou pendente desde la. Mudar de coluna exigia
+              abrir o modal inteiro pelo "Editar", ou arrastar o card no quadro.
+
+              ⚠️ DESABILITADA ENQUANTO AS COLUNAS NAO CHEGAM. Sem `colunas` o
+              rotulo cai na reserva por `status`, e abrir uma lista vazia
+              deixaria a pessoa clicando no nada. */}
+          <div ref={colWrapRef} style={{ position: "relative", display: "inline-flex" }}>
+            <button
+              type="button"
+              onClick={() => setAbertoCol((v) => !v)}
+              disabled={salvandoCol || !colunas}
+              aria-haspopup="listbox"
+              aria-expanded={abertoCol}
+              title={colunas ? "Mudar de coluna" : "Carregando colunas…"}
+              style={{
+                border: "none", background: "none", padding: 0,
+                cursor: salvandoCol || !colunas ? "default" : "pointer",
+                opacity: salvandoCol ? 0.5 : 1,
+              }}
+            >
+              <Badge tone="solid" size="md" color={STATUS_COLOR[task.status]}>
+                {colunaPorId.get(task.column_id)?.name ??
+                  STATUS_LABEL[task.status] ??
+                  task.status}
+              </Badge>
+            </button>
+            {abertoCol && colunas && (
+              <div
+                role="listbox"
+                aria-label="Coluna"
+                style={{
+                  position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 30,
+                  minWidth: 190, maxHeight: 280, overflowY: "auto",
+                  padding: 4, borderRadius: 10,
+                  background: "var(--surface)", border: "1px solid var(--border)",
+                  boxShadow: "var(--shadow)",
+                  display: "flex", flexDirection: "column", gap: 2,
+                }}
+              >
+                {/* ⚠️ ORDEM POR `position`, que e a MESMA do quadro. Listar na
+                    ordem de chegada da API poria "Concluído" antes de
+                    "Backlog" e obrigaria a ler cada linha. */}
+                {[...colunas]
+                  .sort((a, b) => a.position - b.position)
+                  .map((c) => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      role="option"
+                      aria-selected={task.column_id === c.id}
+                      onClick={() => void mudarColuna(c.id)}
+                      style={{
+                        display: "flex", alignItems: "center", gap: 8,
+                        border: "none", borderRadius: 8, padding: "6px 10px",
+                        fontSize: 13, textAlign: "left", cursor: "pointer",
+                        background:
+                          task.column_id === c.id ? "var(--accent-soft)" : "transparent",
+                        color: task.column_id === c.id ? "var(--accent)" : "var(--text)",
+                        fontWeight: task.column_id === c.id ? 600 : 400,
+                      }}
+                    >
+                      {/* A bolinha usa `c.color`, que e token de TRACO -- este
+                          e o uso legitimo dele. Como FUNDO sob texto ele
+                          reprova AA (Spec 031 §2.2b), e por isso o selo acima
+                          segue colorido por `status`. */}
+                      <span
+                        aria-hidden
+                        style={{
+                          width: 8, height: 8, borderRadius: 999, flexShrink: 0,
+                          background: c.color,
+                        }}
+                      />
+                      <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {c.name}
+                      </span>
+                    </button>
+                  ))}
+              </div>
+            )}
+          </div>
           {/* ---- Prioridade (Spec 039, F6) --------------------------------
               ⚠️ A PILULA VIROU O CONTROLE. Ate aqui ela era rotulo morto: para
               trocar um enum de QUATRO valores a pessoa abria o modal inteiro
