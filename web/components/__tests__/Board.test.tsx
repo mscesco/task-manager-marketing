@@ -1274,6 +1274,47 @@ describe("Board -- checklist e prazo leem a coluna (fatia 4c)", () => {
 });
 
 // =====================================================================
+// SPEC 039, F7 -- a hora do prazo aparece no card.
+//
+// ⚠️ ESTE TESTE NASCEU DE UM DEFEITO QUE OS PORTOES NAO PEGAVAM. O
+// `deadlineTonePorColuna` le `due_time` desde a Spec 038, e o texto ao lado
+// dele nao lia: card VERMELHO com "21/08/2026" e nada explicando o vermelho.
+// E o mesmo defeito que o `deadlineLabel` levou em 18/08 -- cor e texto
+// discordando sobre a mesma tarefa --, so que na outra metade da tela: la o
+// rotulo e relativo ("Vence hoje as 18:00") e aqui a data e absoluta, entao o
+// conserto de la nao alcancava o card.
+//
+// SABOTAGEM: em `TaskCard.tsx`, voltar a `toLocaleDateString` cru.
+// **Cai 1** -- o de baixo. ✅ MEDIDA EM 21/08/2026.
+// =====================================================================
+describe("Board -- o card diz a hora do prazo (Spec 039, F7)", () => {
+  it("com hora, o card mostra data E hora; sem hora, so a data", async () => {
+    montarApi(
+      [
+        task({
+          id: "h1",
+          title: "Com hora marcada",
+          due_date: "2026-12-31",
+          // ⚠️ `HH:MM:SS`, que e o que o backend devolve. Escrever `18:00`
+          // aqui esconderia a falta do `slice` -- o `dataHoraBR` existe por
+          // causa desses segundos.
+          due_time: "18:00:00",
+        }),
+        task({ id: "h2", title: "Sem hora", due_date: "2026-12-31" }),
+      ],
+      []
+    );
+    render(<Board subteamId={CRM} title="CRM e Automação" />);
+    await screen.findByText("Com hora marcada");
+
+    expect(within(card("Com hora marcada")).getByText("31/12/2026 18:00")).toBeTruthy();
+    // E o card sem hora continua com a data limpa, sem "undefined" nem 00:00
+    // pendurado.
+    expect(within(card("Sem hora")).getByText("31/12/2026")).toBeTruthy();
+  });
+});
+
+// =====================================================================
 // FATIA 5b-5b -- D1: a lente so mostra o Quadro geral.
 //
 // ⚠️ O CASO NAO EXISTE EM PRODUCAO AINDA. Producao tem UM quadro

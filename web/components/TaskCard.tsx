@@ -5,6 +5,7 @@ import {
   PRIORITY_COLOR,
   DEADLINE_COLOR,
   paradaLabel,
+  dataHoraBR,
 } from "@/lib/status";
 import {
   deadlineTonePorColuna,
@@ -293,7 +294,19 @@ export default function TaskCard({
             }}
           >
             <Calendar {...ICONE} />
-            {new Date(task.due_date + "T00:00:00").toLocaleDateString("pt-BR")}
+            {/* ⚠️ A HORA ENTRA AQUI PORQUE O TOM JA A USAVA (Spec 039, F7). O
+                `deadlineTonePorColuna` acima le `task.due_time` desde a Spec
+                038; este texto nao lia. O card ficava VERMELHO com a data de
+                hoje e nada na tela explicava o vermelho -- e a unica outra
+                tela que mostra prazo (`/minhas-tarefas`) ja dizia a hora, pelo
+                `deadlineLabel`. Duas telas discordando sobre a mesma tarefa.
+
+                ⚠️ CUSTO DE LARGURA, MEDIDO: ~32px a mais na linha de meta, que
+                hoje gasta ~177 de ~216 uteis numa coluna de 240. Cabe -- e so
+                em card COM hora. Foi esta linha que quebrou quando os
+                avatares moravam nela; eles saíram para a linha do titulo
+                justamente para abrir esta folga. */}
+            {dataHoraBR(task.due_date, task.due_time)}
           </span>
         )}
         {subtaskCount > 0 && (
