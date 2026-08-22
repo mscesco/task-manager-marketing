@@ -45,6 +45,7 @@ import {
   STATUS_TEXT,
   deadlineTone,
   DEADLINE_COLOR,
+  dataHoraBR,
 } from "@/lib/status";
 import Badge from "@/components/Badge";
 import Avatar from "@/components/Avatar";
@@ -1647,12 +1648,9 @@ export default function TaskDetail({
               }}
             >
               <Calendar size={13} strokeWidth={2} aria-hidden />
-              {prazoAtual
-                ? new Date(prazoAtual + "T00:00:00").toLocaleDateString("pt-BR")
-                : "Sem datas"}
-              {/* ⚠️ `slice(0, 5)` PORQUE O BACKEND DEVOLVE `HH:MM:SS`. Sem
-                  cortar, a pilula diria "19/08/2026 18:00:00". */}
-              {prazoAtual && horaAtual && <>{" "}{horaAtual.slice(0, 5)}</>}
+              {/* O `slice(0, 5)` que morava aqui virou `dataHoraBR` (F7):
+                  ele ia ser copiado no card e na linha de subtarefa. */}
+              {prazoAtual ? dataHoraBR(prazoAtual, horaAtual) : "Sem datas"}
               {/* ⚠️ O INICIO SO APARECE QUANDO EXISTE. Desenhar "sem inicio" ao
                   lado poria duas ausencias na linha mais disputada da tela. */}
               {inicioAtual && (
@@ -2259,9 +2257,15 @@ export default function TaskDetail({
                             {f.due_date && (
                               <span
                                 className={tone ? undefined : "muted"}
-                                title={new Date(
-                                  f.due_date + "T00:00:00"
-                                ).toLocaleDateString("pt-BR")}
+                                /* ⚠️ A HORA VAI NO `title`, E NAO NO TEXTO
+                                   (F7). O visivel aqui e dd/mm de proposito --
+                                   a linha e estreita e ja carrega selo de
+                                   prioridade, avatares e chevron. Mas o tom
+                                   dela le `f.due_time`, entao sem a hora em
+                                   lugar NENHUM a linha ficava vermelha sem
+                                   explicacao. O `title` ja existia; so nao
+                                   dizia a hora. */
+                                title={dataHoraBR(f.due_date, f.due_time)}
                                 style={{
                                   display: "inline-flex", alignItems: "center",
                                   gap: 3, flexShrink: 0, whiteSpace: "nowrap",

@@ -692,3 +692,47 @@ describe("TaskDetail -- a pílula de coluna abre e grava (F6-b)", () => {
     });
   });
 });
+
+// =====================================================================
+// Spec 039 (F7) -- a linha da subtarefa diz a hora, no `title`.
+//
+// ⚠️ MESMO DEFEITO DO CARD, terceira ocorrencia da mesma familia: o tom desta
+// linha le `f.due_time` (`deadlineTonePorColuna`, logo acima do render) e o
+// texto nao lia. A diferenca e onde a hora cabe -- aqui o visivel e dd/mm de
+// proposito, porque a linha ja carrega selo de prioridade, avatares e chevron.
+// Entao a hora vai no `title`, que ja existia e so nao a dizia.
+//
+// SABOTAGEM: voltar o `title` para `toLocaleDateString` cru. **Cai 1.**
+// ✅ MEDIDA EM 21/08/2026.
+// =====================================================================
+describe("TaskDetail -- a hora da subtarefa vive no title (F7)", () => {
+  it("subtarefa com hora leva data e hora no title; sem hora, só a data", async () => {
+    montar([
+      task({
+        id: "f1",
+        title: "Com hora",
+        parent_task_id: "pai",
+        path: "pai.f1",
+        depth: 1,
+        due_date: "2026-12-31",
+        // `HH:MM:SS` como o backend manda -- ver o `dataHoraBR`.
+        due_time: "18:00:00",
+      }),
+      task({
+        id: "f2",
+        title: "Sem hora",
+        parent_task_id: "pai",
+        path: "pai.f2",
+        depth: 1,
+        due_date: "2026-12-31",
+      }),
+    ]);
+    await screen.findByText("Com hora");
+
+    // O VISIVEL continua dd/mm nas duas -- a linha e estreita, e isso e
+    // decisao, nao esquecimento.
+    expect(screen.getAllByText("31/12").length).toBe(2);
+    expect(screen.getByTitle("31/12/2026 18:00")).toBeTruthy();
+    expect(screen.getByTitle("31/12/2026")).toBeTruthy();
+  });
+});

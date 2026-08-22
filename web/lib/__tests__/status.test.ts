@@ -16,6 +16,7 @@ import {
   STATUSES,
   STATUS_TEXT,
   DIAS_PARA_PARADA,
+  dataHoraBR,
   deadlineLabel,
   diasParado,
   paradaLabel,
@@ -276,5 +277,49 @@ describe("paradaLabel", () => {
   it("usa o numero recebido", () => {
     expect(paradaLabel(7)).toBe("Parada há 7 d");
     expect(paradaLabel(31)).toBe("Parada há 31 d");
+  });
+});
+
+// =====================================================================
+// `dataHoraBR` -- Spec 039, F7.
+//
+// ⚠️ POR QUE ELE TEM TESTE PROPRIO. Ele existe porque o TOM do prazo lia a
+// hora e o TEXTO nao lia: card vermelho com "21/08/2026" e nada explicando o
+// vermelho. Mesmo defeito que o `deadlineLabel` levou em 18/08, na outra
+// metade da tela.
+//
+// SABOTAGENS -- ✅ MEDIDAS EM 21/08/2026:
+//   A. O `slice(0, 5)` sai. **Cai 1** ("corta os segundos").
+//   B. A hora e sempre concatenada (sem o ternario). **Cai 1** ("sem hora, so
+//      a data"): sai "19/08/2026 undefined".
+//   C. O `T00:00:00` sai. ⚠️ **PASSA VERDE EM BRT e CAI EM UTC** -- e por isso
+//      o portao `TZ=UTC npm test` existe. A oeste de Greenwich, `new Date`
+//      lendo `YYYY-MM-DD` como UTC volta um dia.
+// =====================================================================
+describe("dataHoraBR", () => {
+  it("sem hora, só a data", () => {
+    expect(dataHoraBR("2026-08-19")).toBe("19/08/2026");
+    // `null` e `undefined` sao a mesma coisa aqui: a API manda `null`, e quem
+    // nao tem o campo nao passa nada.
+    expect(dataHoraBR("2026-08-19", null)).toBe("19/08/2026");
+  });
+
+  it("⚠️ corta os segundos que o backend manda", () => {
+    // O `due_time` volta como `HH:MM:SS`. Sem cortar, a pílula do detalhe
+    // dizia "19/08/2026 18:00:00" -- e dizia mesmo, antes da Spec 038 fatia B
+    // ganhar o `slice` na mão.
+    expect(dataHoraBR("2026-08-19", "18:00:00")).toBe("19/08/2026 18:00");
+  });
+
+  it("aceita `HH:MM` já curto, sem estragar", () => {
+    // O rascunho do `<input type="time">` vem sem segundos. O mesmo helper
+    // atende os dois formatos porque `slice` de string curta é inofensivo.
+    expect(dataHoraBR("2026-08-19", "07:05")).toBe("19/08/2026 07:05");
+  });
+
+  it("⚠️ meia-noite não anda um dia para trás", () => {
+    // Este é o teste que o `TZ=UTC npm test` protege. Sem o `T00:00:00`, em
+    // fuso negativo isto vira 31/12/2025.
+    expect(dataHoraBR("2026-01-01")).toBe("01/01/2026");
   });
 });

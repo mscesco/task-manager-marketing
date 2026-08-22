@@ -1,14 +1,14 @@
 # Spec 039 — Redesenho de layout
 
-**Status:** em andamento — **F0 a F6 entregues** (21/08); faltam F7 a F10
+**Status:** em andamento — **F0 a F7 entregues** (21/08); faltam F8, F9 e F10
 **Escopo:** frontend (`web/`). **Não toca:** backend, contrato de API, autenticação.
 **Depende de:** Spec 018 (primitivos + Tailwind v4) e Spec 031 (fatia C, cor)
 **Placar de testes na abertura:** Front **865**, Backend **860**, migrations `0014`
-**Placar em 21/08, com F6-b:** Front **889**, Backend **883**, migrations `0015`
+**Placar em 21/08, com F7:** Front **895**, Backend **883**, migrations `0015`
 
-⚠️ **Antes de pegar F7, F9 ou F10, leia o §8.1.** Quatro escopos desta spec
+⚠️ **Antes de pegar F9 ou F10, leia o §8.1.** Quatro escopos desta spec
 foram escritos a partir do wireframe sem abrir o componente, e os quatro
-erraram o alvo. Os três que faltam vêm da mesma fonte e não foram conferidos.
+erraram o alvo — a F7 fez cinco. F9 e F10 vêm da mesma fonte.
 
 ---
 
@@ -439,7 +439,7 @@ Duplicar, compartilhar).
   É o desenho que o handoff registra como o pedido original da cápsula de datas.
 
   **Entregue em 21/08: Prioridade (F6-a) e Coluna (F6-b).** Faltam `📅 data`
-  (F7) e `Projeto`. ⚠️ A de Coluna carrega uma regra que nenhuma outra pílula
+  (✅ F7) e `Projeto`. ⚠️ A de Coluna carrega uma regra que nenhuma outra pílula
   tem: mover para coluna `DONE` **cascateia nas subtarefas no backend**, e
   nenhuma delas volta na resposta do PATCH — o painel relê as filhas. Sem isso
   a checklist mostraria aberta uma subtarefa já concluída.
@@ -466,6 +466,33 @@ O desenho tem "Data de início" e "Data de entrega". **Não tem hora.** A Spec
 opcional, fuso fixo de Brasília.
 
 **Decisão da Camila, 19/08 (opção 3):** as duas coisas.
+
+✅ **Entregue na F7 (21/08) — mas os dois itens abaixo já estavam prontos, e o
+trabalho real era outro.** Quarta confirmação do §8.1, desta vez procurada de
+propósito: abri o componente antes de escrever a fatia, e a cápsula do detalhe
+já tinha o campo "Hora (opcional)" com botão de limpar próprio (item 1) e a
+pílula já mostrava `31/12/2026 18:00` (item 2). Ambos saíram na Spec 038 fatia
+B, no mesmo dia em que esta seção foi escrita dizendo que faltavam.
+
+⚠️ **O que faltava era um defeito, e não uma tela.** Em dois lugares o **tom**
+do prazo lia `due_time` e o **texto** ao lado dele não lia:
+
+| onde | o que se via | agora |
+|---|---|---|
+| card do quadro (`TaskCard`) | card **vermelho** com "31/12/2026" — venceu às 18h e nada dizia isso | `31/12/2026 18:00` na própria linha |
+| linha de subtarefa (`TaskDetail`) | dd/mm vermelho, e o `title` só repetia a data | hora no `title`; o visível segue dd/mm, que é decisão de largura |
+
+⚠️ **É a mesma família de defeito que a Spec 038 já tinha consertado — na outra
+metade da tela.** O `deadlineLabel` foi corrigido em 18/08 porque "ficava
+vermelha e o rótulo dizia 'Vence hoje'". O conserto não alcançou o card porque
+o card usa data **absoluta** e o rótulo é **relativo**: dois formatos, duas
+funções, e só uma delas foi arrumada. O `slice(0, 5)` que a cápsula fazia na
+mão virou `dataHoraBR` em `lib/status.ts`, com teste próprio — ele estava a um
+passo de existir em três cópias.
+
+⚠️ **E `/minhas-tarefas` já dizia a hora**, pelo `deadlineLabel`. Ou seja: duas
+telas do mesmo produto discordavam sobre a mesma tarefa, e a que estava certa
+era a menos usada.
 
 1. Campo **"Hora (opcional)"** ao lado de "Data de entrega" no painel de datas,
    com jeito de limpar que não dependa do "x" nativo do `<input type="time">`
@@ -796,7 +823,7 @@ Ordem por alavancagem × risco. Cada uma entregável sozinha.
 | **F4** | Cabeçalho do quadro | busca, funil, lápis, + Nova Tarefa, sino | baixo |
 | **F5** | Painel de filtros | o painel do §6.7 | baixo |
 | **F6** | Detalhe como painel | `TaskDetail.tsx` (2532 linhas) — a maior | **alto** |
-| **F7** | Datas + hora | §6.4, campo e pílula | médio |
+| **F7** | ✅ Datas + hora | §6.4 — o campo e a pílula **já existiam**; o que faltava era a hora no card e no `title` da subtarefa | baixo |
 | **F8** | ⚠️ Modo de edição | repor renomear + tornar padrão + cor no cabeçalho | **alto** |
 | **F9** | Criar coluna | cor + caixa do §7 + rótulo do tipo | médio |
 | **F10** | Paginação no rodapé | ver §9 |  médio |
@@ -821,12 +848,17 @@ está na diferença entre as duas colunas.
 | **F5** | "o painel do §6.7" | o painel **já existia**, com Prazo, Equipe e Responsável | virou a outra metade da F4 — o destino dos dois controles removidos. Saiu no **mesmo commit**, porque separá-las era ficção |
 | **F6** | "`TaskDetail.tsx` (2532 linhas) — a maior", risco **alto** | o detalhe **já era painel sobre o quadro**, com a linha de pílulas montada | duas pílulas viraram gatilho: Prioridade (F6-a) e Coluna (F6-b). Risco médio, e o que restou é o §6.4/§6.5 — que já eram F7 e F8 |
 
-**O que isso muda para as fatias que faltam.** F7, F9 e F10 têm escopo escrito
+⚠️ **A F7 confirmou o padrão na hora seguinte.** Escrita como "campo e
+pílula", os dois já existiam desde a Spec 038 — mas desta vez o componente foi
+aberto **antes**, e o que apareceu foi um defeito que a fatia não descrevia: o
+tom do prazo lia a hora e o texto não (§6.4). **Abrir o arquivo não só corrige
+o escopo para menos; às vezes ele aponta trabalho que o wireframe não sabia
+pedir.** Sobram F9 e F10.
+
+**O que isso muda para as fatias que faltam.** F9 e F10 têm escopo escrito
 pela mesma fonte e nunca conferido contra o código. **Antes de cada uma, abrir
-o componente e corrigir a linha da tabela** — o §6.4 já avisa que a hora existe
-desde a Spec 038, e o §6.11.0 já registra que a justificativa da F10 evaporou
-com a Spec 042 (folga de 83 → 746). Duas das três já têm sinal de que a
-descrição envelheceu.
+o componente e corrigir a linha da tabela** — o §6.11.0 já registra que a justificativa da F10 evaporou
+com a Spec 042 (folga de 83 → 746).
 
 ⚠️ **A leitura errada não foi "o wireframe mente".** O wireframe desenha o
 estado desejado, e é isso que se pede dele; ele não tem como marcar o que já

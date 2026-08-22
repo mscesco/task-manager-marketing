@@ -258,6 +258,31 @@ export function deadlineTone(
   return null;
 }
 
+// Data ABSOLUTA do prazo, com a hora quando ela existe: "19/08/2026" ou
+// "19/08/2026 18:00".
+//
+// ⚠️ ESTE HELPER NASCEU DE UM DEFEITO, e nao de arrumacao. O tom do prazo
+// (`deadlineTonePorColuna`) le a hora desde a Spec 038; o TEXTO ao lado dele
+// nao lia. Resultado no quadro: card VERMELHO com "21/08/2026" -- vence hoje,
+// ja passou das 18h, e nada na tela dizia isso. E o MESMO defeito que o
+// `deadlineLabel` levou em 18/08 ("ficava vermelha e o rotulo dizia 'Vence
+// hoje'"), na outra metade da tela; o conserto de la nao alcancou o card
+// porque o card usa data absoluta, e nao rotulo relativo.
+//
+// ⚠️ `slice(0, 5)` PORQUE O BACKEND DEVOLVE `HH:MM:SS`. Sem cortar, sai
+// "19/08/2026 18:00:00". Esta linha estava copiada na capsula do detalhe e ia
+// ser copiada em mais dois lugares -- por isso virou funcao.
+export function dataHoraBR(
+  dueDate: string,
+  /** Spec 038, fatia B. Ausente = sem hora. */
+  dueTime?: string | null
+): string {
+  // `T00:00:00` sem sufixo de fuso = meia-noite LOCAL. Sem ele, `new Date`
+  // trata `YYYY-MM-DD` como UTC e o dia anda para tras a oeste de Greenwich.
+  const dia = new Date(dueDate + "T00:00:00").toLocaleDateString("pt-BR");
+  return dueTime ? `${dia} ${dueTime.slice(0, 5)}` : dia;
+}
+
 // Rotulo relativo do prazo (ex.: "Atrasada 2 dias", "Vence hoje", "Vence em 2
 // dias"). So chamar quando deadlineTone != null.
 //
