@@ -1360,6 +1360,13 @@ function ColunaMinhas({
   return (
     <div
       ref={setNodeRef}
+      // ⚠️ ANCORA ESTAVEL DA COLUNA. O teste de montagem achava a coluna com
+      // `closest("div[style*='min-width']")` -- seletor que casa com QUALQUER
+      // div cujo estilo inline mencione min-width. Em 21/08 o titulo do card
+      // ganhou `minWidth: 0` (obrigatorio para ele encolher em vez de empurrar
+      // os avatares), e o `closest` passou a achar o PROPRIO TITULO. O teste
+      // nao acusou seletor frouxo: acusou "coluna errada".
+      data-coluna={coluna.id}
       style={{
         flex: 1, minWidth: 240, minHeight: 0, borderRadius: 10, padding: 4,
         display: "flex", flexDirection: "column",

@@ -96,6 +96,15 @@ export default function TaskCard({
 
   return (
     <div
+      // ⚠️ ANCORA ESTAVEL DO CARD, e nao um `data-testid`. Os testes de
+      // montagem subiam do titulo com `parentElement` -- o comentario do helper
+      // dizia que isso "quebra alto se a estrutura mudar, que e o comportamento
+      // desejado". Quebrou: mover os responsaveis para a linha do titulo pos um
+      // `<div>` no meio e derrubou SEIS testes que nao tinham nada a ver com a
+      // mudanca. Quebrar alto e bom; quebrar por contagem de niveis so ensina a
+      // ajustar o numero. Com a ancora, o teste continua achando o card e passa
+      // a quebrar so quando o CARD sumir.
+      data-card={task.id}
       style={{
         background: "var(--surface)", border: "1px solid var(--border)",
         borderRadius: 8, padding: "10px 12px", boxShadow: "var(--shadow-card)",
@@ -113,15 +122,66 @@ export default function TaskCard({
           O `TaskDetail` já fazia isso na descrição, pelo mesmo motivo; o card
           ficou de fora. É a regra "resiliente a conteúdo de usuário" do
           `web/AGENTS.md`, e ela não tem portão: nenhum teste mede largura. */}
-      <div
-        style={{
-          fontSize: 13,
-          fontWeight: 600,
-          lineHeight: 1.35,
-          overflowWrap: "anywhere",
-        }}
-      >
-        {task.title}
+      {/* ⚠️ OS RESPONSAVEIS SOBEM PARA A LINHA DO TITULO (21/08). Eles moravam
+          na linha de meta, com `marginLeft: auto` dentro de um `flexWrap`:
+          quando prioridade + data + checklist + avatares nao cabiam nos ~216px
+          uteis do card -- e a conta dava ~238 --, eles quebravam para uma
+          SEGUNDA linha, sozinhos e colados a direita. Lia como defeito, e era
+          intermitente: dependia do tamanho da data e de haver checklist.
+
+          Aqui o lugar deles e FIXO em todo card, a altura nao cresce, e a
+          linha de meta perde ~55px e para de quebrar.
+
+          ⚠️ `min-w-0` no titulo e obrigatorio: sem ele um filho de flex NAO
+          encolhe abaixo do proprio conteudo, e o titulo empurraria os avatares
+          para fora em vez de quebrar. Mesma armadilha que o `web/AGENTS.md`
+          registra. */}
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+        <div
+          style={{
+            flex: 1,
+            minWidth: 0,
+            fontSize: 13,
+            fontWeight: 600,
+            lineHeight: 1.35,
+            overflowWrap: "anywhere",
+          }}
+        >
+          {task.title}
+        </div>
+        {ids.length > 0 && (
+          <span
+            style={{
+              display: "flex",
+              alignItems: "center",
+              flexShrink: 0,
+              marginTop: 1,
+            }}
+          >
+            {mostra.map((id, i) => {
+              const nome = members?.get(id)?.name ?? "";
+              return (
+                <Avatar
+                  key={id}
+                  id={id}
+                  name={nome}
+                  size="sm"
+                  title={nome ? nomeCurto(nome) : "Responsável"}
+                  className="border-[1.5px] border-surface"
+                  style={{ marginLeft: i === 0 ? 0 : -6 }}
+                />
+              );
+            })}
+            {resto > 0 && (
+              <span
+                className="muted"
+                style={{ fontSize: 11, fontWeight: 700, marginLeft: 4 }}
+              >
+                +{resto}
+              </span>
+            )}
+          </span>
+        )}
       </div>
       {projectName && (
         <span
@@ -260,32 +320,6 @@ export default function TaskCard({
           </span>
         )}
 
-        {ids.length > 0 && (
-          <span style={{ display: "flex", alignItems: "center", marginLeft: "auto" }}>
-            {mostra.map((id, i) => {
-              const nome = members?.get(id)?.name ?? "";
-              return (
-                <Avatar
-                  key={id}
-                  id={id}
-                  name={nome}
-                  size="sm"
-                  title={nome ? nomeCurto(nome) : "Responsável"}
-                  className="border-[1.5px] border-surface"
-                  style={{ marginLeft: i === 0 ? 0 : -6 }}
-                />
-              );
-            })}
-            {resto > 0 && (
-              <span
-                className="muted"
-                style={{ fontSize: 11, fontWeight: 700, marginLeft: 4 }}
-              >
-                +{resto}
-              </span>
-            )}
-          </span>
-        )}
       </div>
     </div>
   );

@@ -259,8 +259,14 @@ function montarApi(tasks: Task[], projetos: Project[]) {
  */
 function card(titulo: string): HTMLElement {
   const t = screen.getByText(titulo);
-  if (!t.parentElement) throw new Error(`card sem container: ${titulo}`);
-  return t.parentElement;
+  // ⚠️ `closest("[data-card]")` e nao `parentElement`. A versao antiga subia UM
+  // nivel, apoiada em o titulo ser filho direto da raiz do card -- e caiu em
+  // 21/08 quando os responsaveis subiram para a linha do titulo e um `<div>`
+  // entrou no meio: seis testes de ESCOPO quebraram por uma mudanca de layout
+  // que nao tinha nada a ver com eles.
+  const c = t.closest("[data-card]");
+  if (!c) throw new Error(`card sem container: ${titulo}`);
+  return c as HTMLElement;
 }
 
 function pillDe(titulo: string): string | null {

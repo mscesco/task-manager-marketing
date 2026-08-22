@@ -512,11 +512,12 @@ describe("minhas-tarefas -- o kanban le colunas da API (fatia 4c-2)", () => {
     await abrirQuadro();
 
     const card = await screen.findByText("Card teimoso");
-    // Sobe do card ate a coluna e confere de quem e o cabecalho. ⚠️ O
-    // `.parentElement` sobe DEMAIS -- chega no container das tres colunas, e
-    // ai "Concluído" aparece por ser o cabecalho da coluna vizinha. A coluna
-    // certa e o proprio `closest`.
-    const coluna = card.closest("div[style*='min-width']");
+    // Sobe do card ate a coluna. ⚠️ `[data-coluna]` e nao
+    // `div[style*='min-width']`: o seletor por estilo casava com qualquer div
+    // que mencionasse min-width, e em 21/08 o titulo do card ganhou
+    // `minWidth: 0` -- o `closest` passou a achar o proprio titulo, e o teste
+    // acusou "coluna errada" em vez de "seletor frouxo".
+    const coluna = card.closest("[data-coluna]");
     expect(coluna?.textContent).toContain("Em Andamento");
     expect(coluna?.textContent).not.toContain("Concluído");
   });
