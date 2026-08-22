@@ -42,6 +42,19 @@
 //      continuam verdes, e isso e informacao: leitura e escrita tem portoes
 //      separados, entao migrar uma e esquecer a outra nao passa despercebido.
 //
+// SABOTAGENS DA PILULA DE COLUNA (F6-b) -- ✅ MEDIDAS EM 21/08/2026:
+//
+//   D. O `.sort` por `position` sai e a lista sai na ordem da API. **Cai 1**.
+//      ⚠️ PASSOU VERDE NA PRIMEIRA TENTATIVA, pelo mesmo motivo do caso C e
+//      com o agravante de eu ter lido o aviso do C e mesmo assim errado: o que
+//      a fixture inverte e POSICAO contra ALVO PADRAO, nao a ordem do array.
+//      O teste passou a reverter a resposta da API por conta propria.
+//   E. A guarda de "mesma coluna" sai e clicar na coluna atual manda PATCH.
+//      **Cai 1**.
+//   F. A releitura das filhas na cascata sai. **Cai 1**. ⚠️ Este e o unico
+//      portao sobre a cascata: nada mais no front sabe que mover para uma
+//      coluna DONE muda linhas que o PATCH nao devolve.
+//
 // ⚠️ O QUE ELE NAO PROVA: as outras tres telas que montam o `TaskDetail`
 // (`/minhas-tarefas`, `/arquivadas`, `/tarefa/[id]`). Elas ganharam o
 // comportamento de graca, porque quem carrega as colunas e o proprio
@@ -577,5 +590,105 @@ describe("TaskDetail -- a pílula de prioridade abre e grava (F6)", () => {
     fireEvent.click(await screen.findByRole("option", { name: "Media" }));
 
     expect(api.updateTask).not.toHaveBeenCalled();
+  });
+});
+
+// =====================================================================
+// Spec 039 (F6-b) -- a pílula de COLUNA virou o controle.
+//
+// ⚠️ Ela era rótulo morto, e o comentário do próprio arquivo já anunciava
+// "que a fatia 5 vai deixar editar" -- ficou pendente desde lá. Mudar de
+// coluna exigia abrir o modal inteiro, ou arrastar o card no quadro (e o
+// arraste não roda em jsdom, então era o único caminho sem portão nenhum).
+// =====================================================================
+describe("TaskDetail -- a pílula de coluna abre e grava (F6-b)", () => {
+  it("lista as colunas na ordem de `position`, e não na da API", async () => {
+    // ⚠️ ESTE TESTE PASSOU VERDE COM A SABOTAGEM NA PRIMEIRA VERSÃO. Eu li o
+    // cabeçalho ("a ordem está invertida de propósito") e assumi que a fixture
+    // servia aqui também. Não servia: o que está invertido nela é POSIÇÃO
+    // contra ALVO PADRÃO -- a ordem do array e a ordem de `position` são a
+    // MESMA (0, 1, 5). Tirar o `.sort` não mudava nada.
+    //
+    // Por isso a API devolve a lista REVERTIDA só neste teste, e não na
+    // fixture compartilhada: mexer nela quebraria a discriminação do caso C.
+    // Duas regras diferentes, duas inversões diferentes.
+    vi.mocked(api.colunasDoQuadro).mockResolvedValue([...COLUNAS].reverse());
+    montar([]);
+    await screen.findByText(/Subtarefas/);
+
+    fireEvent.click(await screen.findByTitle("Mudar de coluna"));
+
+    const lista = await screen.findByRole("listbox", { name: "Coluna" });
+    expect(
+      within(lista)
+        .getAllByRole("option")
+        .map((o) => o.textContent)
+    ).toEqual(["Planejado", "Backlog", "Concluído"]);
+  });
+
+  it("⚠️ grava `column_id` e NUNCA `status` (ADR 0041)", async () => {
+    const salva = task({ id: "pai", title: "Tarefa mãe", path: "pai" });
+    vi.mocked(api.updateTask).mockResolvedValue({
+      ...salva,
+      column_id: "col-done",
+      status: "COMPLETED",
+    });
+    montar([]);
+    await screen.findByText(/Subtarefas/);
+
+    fireEvent.click(await screen.findByTitle("Mudar de coluna"));
+    fireEvent.click(await screen.findByRole("option", { name: "Concluído" }));
+
+    await waitFor(() => {
+      expect(api.updateTask).toHaveBeenCalledWith("pai", {
+        column_id: "col-done",
+      });
+    });
+    // Uma chave só: `updateTask` manda `body: input` inteiro, então mandar
+    // `status` junto seria 422 no backend.
+    expect(Object.keys(vi.mocked(api.updateTask).mock.calls[0][1])).toEqual([
+      "column_id",
+    ]);
+  });
+
+  it("escolher a MESMA coluna não manda requisição", async () => {
+    montar([]);
+    await screen.findByText(/Subtarefas/);
+
+    fireEvent.click(await screen.findByTitle("Mudar de coluna"));
+    fireEvent.click(await screen.findByRole("option", { name: "Backlog" }));
+
+    expect(api.updateTask).not.toHaveBeenCalled();
+  });
+
+  it("⚠️ mover para coluna DONE RELÊ as filhas — a cascata mudou o banco", async () => {
+    // O `complete_descendants` conclui a subárvore inteira no backend, e
+    // NENHUMA das filhas vem na resposta do PATCH. Sem o refetch, a checklist
+    // seguiria mostrando aberta uma subtarefa que já está concluída — a mesma
+    // stale que a cascata de arquivamento tinha.
+    const filha = task({
+      id: "f1",
+      title: "Filha",
+      parent_task_id: "pai",
+      path: "pai.f1",
+      depth: 1,
+      column_id: "col-backlog",
+    });
+    const salva = task({ id: "pai", title: "Tarefa mãe", path: "pai" });
+    vi.mocked(api.updateTask).mockResolvedValue({
+      ...salva,
+      column_id: "col-done",
+      status: "COMPLETED",
+    });
+    montar([filha]);
+    await screen.findByText("Filha");
+    vi.mocked(api.listarFilhas).mockClear();
+
+    fireEvent.click(await screen.findByTitle("Mudar de coluna"));
+    fireEvent.click(await screen.findByRole("option", { name: "Concluído" }));
+
+    await waitFor(() => {
+      expect(api.listarFilhas).toHaveBeenCalledWith("pai");
+    });
   });
 });
