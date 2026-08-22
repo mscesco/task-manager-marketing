@@ -1,10 +1,10 @@
 # Spec 039 — Redesenho de layout
 
-**Status:** em andamento — **F0 a F7 entregues** (21/08); faltam F8, F9 e F10
+**Status:** em andamento — **F0 a F7 entregues** (21–22/08); faltam F8, F9 e F10
 **Escopo:** frontend (`web/`). **Não toca:** backend, contrato de API, autenticação.
 **Depende de:** Spec 018 (primitivos + Tailwind v4) e Spec 031 (fatia C, cor)
 **Placar de testes na abertura:** Front **865**, Backend **860**, migrations `0014`
-**Placar em 21/08, com F7:** Front **895**, Backend **883**, migrations `0015`
+**Placar em 22/08, com F6-c:** Front **902**, Backend **883**, migrations `0015`
 
 ⚠️ **Antes de pegar F9 ou F10, leia o §8.1.** Quatro escopos desta spec
 foram escritos a partir do wireframe sem abrir o componente, e os quatro
@@ -438,8 +438,30 @@ Duplicar, compartilhar).
 - ✅ **As pílulas são o gatilho** — o dropdown abre ancorado abaixo da pílula.
   É o desenho que o handoff registra como o pedido original da cápsula de datas.
 
-  **Entregue em 21/08: Prioridade (F6-a) e Coluna (F6-b).** Faltam `📅 data`
-  (✅ F7) e `Projeto`. ⚠️ A de Coluna carrega uma regra que nenhuma outra pílula
+  **Entregue: Prioridade (F6-a) e Coluna (F6-b) em 21/08, Projeto (F6-c) em
+  22/08.** A de `📅 data` já era gatilho desde a Spec 038 (✅ F7).
+
+  ⚠️ **A pílula de Projeto NÃO ESTAVA NESTA LINHA — e o desenho sempre a pôs
+  aqui.** Achado pela Camila na tela, 22/08: *"acho que você esqueceu da
+  cápsula do projeto, que eu subi pra poder ser editado e ficar ao lado das
+  tags de data, prioridade e coluna"*. Ela morava na faixa de metadados
+  abaixo, com rótulo "Projeto" ao lado e um lápis separado da pílula. Duas
+  coisas mudaram junto com o lugar:
+
+  1. **O rótulo sumiu e o vazio virou "Sem Projeto".** Na faixa havia um
+     "Projeto" escrito ao lado, então "nenhum" bastava. Aqui não há rótulo: as
+     vizinhas se explicam sozinhas, e "nenhum" solto ao lado de uma data não
+     diz de que ele é nenhum. Mesma forma de "Sem datas".
+  2. **Pílula e lápis viraram um alvo só**, como nas outras três — o mesmo
+     defeito que a F6-a corrigiu na prioridade.
+
+  ⚠️⚠️ **E MOVER A CÁPSULA INTEIRA NÃO DERRUBOU NENHUM DOS 895 TESTES.** Trocar
+  o rótulo, fundir dois controles e mudar de seção passou pelos quatro portões
+  em silêncio: não havia **um** teste sobre a pílula de projeto. É um controle
+  que escreve no banco. O `TaskDetailProjeto.test.tsx` existe por isso, e
+  cobre comportamento, não posição — inclusive a regra que eu **errei ao
+  escrever o teste**: trocar de projeto é `moveTask`, e não `updateTask`, e
+  tirar manda `detach_project` em vez de `project_id: null`. ⚠️ A de Coluna carrega uma regra que nenhuma outra pílula
   tem: mover para coluna `DONE` **cascateia nas subtarefas no backend**, e
   nenhuma delas volta na resposta do PATCH — o painel relê as filhas. Sem isso
   a checklist mostraria aberta uma subtarefa já concluída.

@@ -11,7 +11,19 @@
 //   anterior, guardado na sessao); clicar no titulo NAVEGA pra dentro.
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { UserPlus, X, Pencil, Plus, Calendar, ChevronLeft } from "lucide-react";
+import {
+  UserPlus,
+  X,
+  Pencil,
+  Plus,
+  Calendar,
+  ChevronLeft,
+  // ⚠️ `FolderOpen`, e a barra lateral usa `FolderKanban` para "Projetos" --
+  // conferido, nao suposto. Dois icones parecidos para coisas diferentes ja
+  // aconteceu aqui (o mesmo `Network` em "Times" e "Time Principal", corrigido
+  // em 21/08); desta vez o par foi olhado antes.
+  FolderOpen,
+} from "lucide-react";
 
 import { mesclaTarefa } from "@/lib/mesclaTarefa";
 import { useSaidaAnimada } from "@/lib/useSaidaAnimada";
@@ -1793,6 +1805,171 @@ export default function TaskDetail({
               </div>
             )}
           </div>
+
+          {/* ---- Projeto (Spec 039, F6-c) ------------------------------
+              ⚠️ ELE MORAVA NA FAIXA DE METADADOS, com o rotulo "Projeto" ao
+              lado e um lapis separado da pilula. Subiu para ca a pedido da
+              Camila (22/08): o lugar dele sempre foi a linha de pilulas, junto
+              de Coluna, Prioridade e Datas -- quatro coisas do mesmo tipo,
+              editaveis do mesmo jeito, num lugar so.
+
+              Duas mudancas vieram junto, e nenhuma e enfeite:
+
+              1. O ROTULO "Projeto" SUMIU e o vazio virou "Sem Projeto". Aqui a
+                 pilula tem de se explicar sozinha -- as vizinhas se explicam
+                 ("Backlog", "Alta", a data). "nenhum" solto ao lado de uma
+                 data nao diz de que ele e nenhum. Mesma forma de "Sem datas".
+              2. A PILULA E O LAPIS VIRARAM UM ALVO SO, como nas outras tres.
+                 Dois alvos para a mesma coisa foi exatamente o que a F6-a
+                 corrigiu na prioridade.
+
+              ⚠️ `flexShrink: 0` e `whiteSpace: nowrap` pelo mesmo motivo
+              escrito na pilula de datas: esta linha e `flexWrap`, e sem eles o
+              item encolhe ate quebrar no meio do proprio texto.
+
+              ⚠️ SUBTAREFA HERDA O PROJETO DO PAI (Spec 022) e por isso NAO
+              edita -- vira selo morto, sem gatilho. E a mesma trava que eu ja
+              copiei errado para as datas uma vez: la a subtarefa TEM prazo
+              proprio, aqui ela nao tem projeto proprio. A diferenca e real e
+              nao deve ser "uniformizada". ---- */}
+          <div
+            ref={projWrapRef}
+            style={{ position: "relative", display: "inline-flex", flexShrink: 0 }}
+          >
+            {(() => {
+              const rotulo = projetoAtual
+                ? nomeProjetoAtual ?? "Projeto atual"
+                : "Sem Projeto";
+              const conteudo = (
+                <>
+                  <FolderOpen size={13} strokeWidth={2} aria-hidden />
+                  <span
+                    style={{
+                      maxWidth: 180, overflow: "hidden",
+                      textOverflow: "ellipsis", whiteSpace: "nowrap",
+                    }}
+                  >
+                    {rotulo}
+                  </span>
+                </>
+              );
+              // Cheia e vazia usam a MESMA caixa; o vazio se distingue por
+              // borda tracejada e tom, como nas outras pilulas desta linha.
+              const caixa = {
+                display: "inline-flex" as const,
+                alignItems: "center" as const,
+                gap: 5,
+                flexShrink: 0,
+                whiteSpace: "nowrap" as const,
+                height: 24,
+                borderRadius: 999,
+                padding: "0 10px",
+                fontSize: 12,
+                background: projetoAtual ? "var(--surface-2)" : "transparent",
+                border: projetoAtual
+                  ? "1px solid transparent"
+                  : "1px dashed var(--border)",
+                color: projetoAtual ? "var(--text)" : "var(--text-faint)",
+              };
+              if (!ehTopo) {
+                // Selo morto: sem cursor de clique e sem `title` de acao --
+                // prometer edicao que nao existe e pior que nao prometer.
+                return <span style={caixa}>{conteudo}</span>;
+              }
+              return (
+                <button
+                  type="button"
+                  onClick={() => setAbertoProj((v) => !v)}
+                  disabled={movendoProj}
+                  aria-label={
+                    projetoAtual ? "Mudar projeto" : "Adicionar a um projeto"
+                  }
+                  aria-expanded={abertoProj}
+                  title={projetoAtual ? "Mudar projeto" : "Adicionar a um projeto"}
+                  style={{
+                    ...caixa,
+                    cursor: "pointer",
+                    opacity: movendoProj ? 0.5 : 1,
+                  }}
+                >
+                  {conteudo}
+                  {abertoProj ? (
+                    <X size={11} strokeWidth={2.2} aria-hidden />
+                  ) : projetoAtual ? (
+                    <Pencil
+                      size={11}
+                      strokeWidth={2.2}
+                      aria-hidden
+                      style={{ opacity: 0.65 }}
+                    />
+                  ) : (
+                    <Plus
+                      size={11}
+                      strokeWidth={2.2}
+                      aria-hidden
+                      style={{ opacity: 0.65 }}
+                    />
+                  )}
+                </button>
+              );
+            })()}
+
+            {movendoProj && (
+              <span className="muted" style={{ fontSize: 12, marginLeft: 6 }}>
+                movendo…
+              </span>
+            )}
+
+            {/* O seletor e PAINEL FLUTUANTE: empurrar o layout deslocaria a
+                linha inteira a cada abertura. */}
+            {abertoProj && (
+              <div
+                style={{
+                  // ⚠️ NAO usar maxWidth: "100%". O ancora e um flex item do
+                  // tamanho do conteudo (~120px), entao 100% dele espremia o
+                  // painel de 280 para 120 e o <select> saia cortado
+                  // ("— Sem proj⌄"). Erro da entrega da C8.
+                  position: "absolute",
+                  top: "calc(100% + 6px)",
+                  left: 0,
+                  zIndex: 40,
+                  width: 280,
+                  maxWidth: "80vw",
+                  background: "var(--surface)",
+                  border: "1px solid var(--border)",
+                  borderRadius: 10,
+                  boxShadow: "var(--shadow)",
+                  padding: 8,
+                }}
+              >
+                <select
+                  className="input"
+                  style={{ width: "100%" }}
+                  value={projetoAtual ?? ""}
+                  disabled={movendoProj}
+                  autoFocus
+                  onChange={(e) => mudarProjeto(e.target.value || null)}
+                >
+                  <option value="">— Sem projeto (tirar) —</option>
+                  {Array.from(projects.entries())
+                    // Pessoal fora, MENOS o atual: se a tarefa ja esta num
+                    // pessoal e ele nao entrasse na lista, o <select> ficaria
+                    // com valor que nao existe entre as opcoes e o browser
+                    // mostraria a primeira -- dando a impressao de que o
+                    // projeto mudou sozinho.
+                    .filter(
+                      ([id]) => !projetosPessoais.has(id) || id === projetoAtual
+                    )
+                    .sort((a, b) => a[1].localeCompare(b[1], "pt-BR"))
+                    .map(([id, titulo]) => (
+                      <option key={id} value={id}>
+                        {titulo}
+                      </option>
+                    ))}
+                </select>
+              </div>
+            )}
+          </div>
           {task.is_archived && (
             <span className="muted" style={{ fontSize: 12.5 }}>arquivada</span>
           )}
@@ -1806,15 +1983,22 @@ export default function TaskDetail({
 
         {/* ---- Faixa de metadados (Spec 031, C8) -------------------------
              Responsaveis e Projeto eram DOIS blocos `field` empilhados, ~104px
-             para dizer "duas pessoas" e "nenhum projeto", e o de projeto ainda
-             repetia a pilula do cabecalho. Viraram uma linha so, ACIMA da
-             descricao: metadado primeiro, conteudo depois. Quem abre a tarefa
-             quer ler a descricao e os comentarios, nao confirmar que nao ha
-             projeto.
+             para dizer "duas pessoas" e "nenhum projeto". Viraram uma linha
+             so, ACIMA da descricao: metadado primeiro, conteudo depois.
 
-             Os dois popovers continuam iguais -- so mudaram de ancora. Cada um
-             tem seu wrapper `position: relative` proprio, senao abririam
-             relativos a faixa inteira e cairiam no lugar errado. ---- */}
+             ⚠️ E O PROJETO SAIU DAQUI EM 22/08 (Spec 039, F6-c): ele subiu
+             para a linha de pilulas, ao lado de Coluna, Prioridade e Datas --
+             que e onde o desenho da Camila sempre o pos. Sobrou o
+             Responsaveis, e a faixa continua de pe com um item so.
+
+             ⚠️ A JUSTIFICATIVA DA C8 CONTINUA VALENDO, e nao foi revertida.
+             Ela dizia que o bloco de projeto "repetia a pilula do cabecalho";
+             o conserto de la foi apagar a DUPLICATA, e a apagada foi a de
+             cima. Agora ha de novo UMA pilula so -- a de cima. Nao e a C8
+             desfeita, e a mesma regra com a copia sobrevivente trocada.
+
+             O popover do Responsaveis continua com wrapper `position:
+             relative` proprio, senao abriria relativo a faixa inteira. ---- */}
         <div
           style={{
             display: "flex", flexWrap: "wrap", alignItems: "center",
@@ -1946,100 +2130,6 @@ export default function TaskDetail({
             )}
           </div>
 
-          {/* -- Projeto. Subtarefa herda do pai (Spec 022): mostra, nao edita. -- */}
-          <div
-            ref={projWrapRef}
-            style={{
-              position: "relative", display: "flex", alignItems: "center",
-              gap: 6, minWidth: 0,
-            }}
-          >
-            <span style={{ fontSize: 12, color: "var(--text-soft)", flexShrink: 0 }}>
-              Projeto
-            </span>
-            {/* Os dois estados usam a MESMA caixa: mesma altura, mesmo raio,
-                mesmo padding. Antes "nenhum" era texto solto ao lado de uma
-                pilula e de um botao de 26px -- tres alturas diferentes na
-                mesma linha, e o olho lia como desalinhado. O vazio se
-                distingue por borda tracejada e tom, nao por forma. */}
-            <span
-              style={{
-                display: "inline-flex", alignItems: "center", height: 24,
-                borderRadius: 999, padding: "0 10px", fontSize: 12.5,
-                maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-                background: projetoAtual ? "var(--surface-2)" : "transparent",
-                border: projetoAtual ? "1px solid transparent" : "1px dashed var(--border)",
-                color: projetoAtual ? "var(--text)" : "var(--text-faint)",
-              }}
-            >
-              {projetoAtual ? nomeProjetoAtual ?? "Projeto atual" : "nenhum"}
-            </span>
-
-            {ehTopo && (
-              <button
-                type="button"
-                onClick={() => setAbertoProj((v) => !v)}
-                disabled={movendoProj}
-                aria-label={projetoAtual ? "Mudar projeto" : "Adicionar a um projeto"}
-                aria-expanded={abertoProj}
-                title={projetoAtual ? "Mudar projeto" : "Adicionar a um projeto"}
-                style={{ ...GATILHO_STYLE, opacity: movendoProj ? 0.5 : 1 }}
-              >
-                {abertoProj ? (
-                  <X size={13} strokeWidth={2.2} aria-hidden />
-                ) : projetoAtual ? (
-                  <Pencil size={12} strokeWidth={2.2} aria-hidden />
-                ) : (
-                  <Plus size={13} strokeWidth={2.2} aria-hidden />
-                )}
-              </button>
-            )}
-
-            {movendoProj && (
-              <span className="muted" style={{ fontSize: 12.5 }}>movendo…</span>
-            )}
-
-            {/* O seletor virou PAINEL FLUTUANTE. Antes empurrava o layout com
-                `marginTop: 6` -- numa linha compacta isso deslocaria a faixa
-                inteira a cada abertura. */}
-            {abertoProj && (
-              <div
-                style={{
-                  // ⚠️ NAO usar maxWidth: "100%". O ancora e um flex item do
-                  // tamanho do conteudo ("Projeto nenhum +", ~110px), entao 100%
-                  // dele espremia o painel de 280 para 110 e o <select> saia
-                  // cortado ("— Sem proj⌄"). Erro da entrega da C8.
-                  position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 40,
-                  width: 280, maxWidth: "80vw",
-                  background: "var(--surface)", border: "1px solid var(--border)",
-                  borderRadius: 10, boxShadow: "var(--shadow)", padding: 8,
-                }}
-              >
-                <select
-                  className="input"
-                  style={{ width: "100%" }}
-                  value={projetoAtual ?? ""}
-                  disabled={movendoProj}
-                  autoFocus
-                  onChange={(e) => mudarProjeto(e.target.value || null)}
-                >
-                  <option value="">— Sem projeto (tirar) —</option>
-                  {Array.from(projects.entries())
-                    // Pessoal fora, MENOS o atual: se a tarefa ja esta num
-                    // pessoal e ele nao entrasse na lista, o <select> ficaria
-                    // com valor que nao existe entre as opcoes e o browser
-                    // mostraria a primeira -- dando a impressao de que o
-                    // projeto mudou sozinho.
-                    .filter(([id]) => !projetosPessoais.has(id) || id === projetoAtual)
-                    .sort((a, b) => a[1].localeCompare(b[1], "pt-BR"))
-                    .map(([id, titulo]) => (
-                      <option key={id} value={id}>{titulo}</option>
-                    ))}
-                </select>
-              </div>
-            )}
-          </div>
         </div>
 
         {/* Erro do move fica FORA da faixa: dentro dela a caixa de erro
