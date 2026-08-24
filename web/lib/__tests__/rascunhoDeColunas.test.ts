@@ -14,6 +14,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { Coluna } from "@/lib/coluna";
+import { CORES_DE_COLUNA } from "@/lib/coluna";
 import {
   COR_DA_COLUNA_NOVA,
   colunasParaDesenhar,
@@ -21,6 +22,7 @@ import {
   refDoArrasteDeCabecalho,
   comColunaNova,
   comAlvo,
+  comAviso,
   comMarcacao,
   comOrdem,
   comRenome,
@@ -28,6 +30,7 @@ import {
   marcadasParaApagar,
   nomeRepetidoNoRascunho,
   paraLote,
+  refDeColunaDoDrop,
   destinosDoRascunho,
   rascunhoInicial,
   temPendencias,
@@ -271,12 +274,14 @@ describe("paraLote", () => {
   });
 
   it("lote de quem não mexeu em nada é inteiramente vazio", () => {
-    // ⚠️ `alvos` ENTROU AQUI NA FATIA 12, e este teste caiu quando entrou --
-    // que é o trabalho dele. O `toEqual` compara o objeto INTEIRO: campo novo
-    // no payload sem linha correspondente reprova aqui em vez de sumir.
+    // ⚠️ `alvos` ENTROU AQUI NA FATIA 12 e `avisos` na Spec 039 (F9); este
+    // teste caiu nas DUAS vezes -- que é o trabalho dele. O `toEqual` compara
+    // o objeto INTEIRO: campo novo no payload sem linha correspondente reprova
+    // aqui em vez de sumir.
     expect(paraLote(rascunhoInicial(QUADRO), QUADRO)).toEqual({
       criar: [],
       renomear: [],
+      avisos: [],
       alvos: [],
       apagar: [],
       ordem: [],
@@ -600,5 +605,143 @@ describe("comAlvo -- trocar o alvo da semântica (fatia 12)", () => {
   it("dois alvos de semânticas diferentes convivem", () => {
     const r = comAlvo(comAlvo(rascunhoInicial(QUADRO), "c1"), "c3");
     expect(r.alvos).toEqual(["c1", "c3"]);
+  });
+});
+
+
+// =====================================================================
+// Spec 039, F9 -- cobrar prazo no rascunho.
+// =====================================================================
+describe("comAviso", () => {
+  it("desligar entra no mapa e chega no lote", () => {
+    const r = comAviso(rascunhoInicial(QUADRO), QUADRO[0].id, false, true);
+    expect(paraLote(r, QUADRO).avisos).toEqual([
+      { id: QUADRO[0].id, notify_deadline: false },
+    ]);
+  });
+
+  it("⚠️ VOLTAR AO ORIGINAL LIMPA A ENTRADA -- e não grava de novo", () => {
+    // ⚠️ SEM ISSO O RASCUNHO FICA "SUJO" POR UM GESTO DESFEITO: o botão "Sair"
+    // passaria a perguntar se quer descartar, e o lote mandaria uma escrita
+    // que não muda nada -- gastando uma ida e uma linha de log.
+    const um = comAviso(rascunhoInicial(QUADRO), QUADRO[0].id, false, true);
+    const dois = comAviso(um, QUADRO[0].id, true, true);
+    expect(dois.avisos).toEqual({});
+    expect(temPendencias(dois, QUADRO)).toBe(false);
+  });
+
+  it("⚠️ mexer no aviso É pendência -- sair sem salvar tem de perguntar", () => {
+    const r = comAviso(rascunhoInicial(QUADRO), QUADRO[0].id, false, true);
+    expect(temPendencias(r, QUADRO)).toBe(true);
+  });
+
+  it("⚠️ coluna NOVA muda em `novas`, e não no mapa de avisos", () => {
+    // Ela não tem id ainda, e o schema de `avisos` do backend não aceita
+    // `tmp:`. O valor viaja dentro do `criar`.
+    const criado = comColunaNova(rascunhoInicial(QUADRO), "Ideias", "OPEN");
+    const ref = criado.novas[0].ref;
+    const r = comAviso(criado, ref, false, true);
+
+    expect(r.avisos).toEqual({});
+    const lote = paraLote(r, QUADRO);
+    expect(lote.avisos).toEqual([]);
+    expect(lote.criar?.[0]).toMatchObject({ notify_deadline: false });
+  });
+
+  it("⚠️ coluna APAGADA no mesmo lote não manda aviso", () => {
+    // Mexer numa linha que a etapa seguinte remove é trabalho e uma entrada de
+    // log que não aconteceu do ponto de vista de quem usa. Mesma regra do
+    // `renomear`.
+    const alvo = QUADRO[0].id;
+    const r = comMarcacao(
+      comAviso(rascunhoInicial(QUADRO), alvo, false, true),
+      alvo,
+    );
+    expect(paraLote(r, QUADRO).avisos).toEqual([]);
+  });
+
+  it("a cor escolhida viaja no `criar`; sem escolha, a chave não existe", () => {
+    const comCor = comColunaNova(
+      rascunhoInicial(QUADRO),
+      "Ideias",
+      "OPEN",
+      CORES_DE_COLUNA[2],
+    );
+    expect(paraLote(comCor, QUADRO).criar?.[0]).toMatchObject({
+      color: CORES_DE_COLUNA[2],
+    });
+
+    const semCor = comColunaNova(rascunhoInicial(QUADRO), "Ideias", "OPEN");
+    // ⚠️ `not.toHaveProperty`, e não `toBe(undefined)`: a diferença entre
+    // "chave ausente" e "chave com null" é real no backend -- ausente cai na
+    // rotação, `null` cairia na validação por lista como cor inválida.
+    expect(paraLote(semCor, QUADRO).criar?.[0]).not.toHaveProperty("color");
+  });
+});
+
+// =====================================================================
+// Spec 039, F9 -- os dois defeitos que a Camila achou na tela em 22/08.
+// =====================================================================
+describe("a coluna nova, depois do relato de 22/08", () => {
+  it("⚠️ a cor ESCOLHIDA já aparece antes de concluir", () => {
+    // *"a cor que escolhi fica transparente ao criar, só volta certa depois"*.
+    // A regra do cinza foi escrita quando o front NÃO PODIA saber a cor -- com
+    // a escolha, ele pode: é exatamente esse token que o backend vai gravar.
+    const r = comColunaNova(
+      rascunhoInicial(QUADRO),
+      "Teste",
+      "OPEN",
+      CORES_DE_COLUNA[3],
+    );
+    const desenhada = colunasParaDesenhar(r, QUADRO).find(
+      (c) => c.name === "Teste",
+    );
+    expect(desenhada?.color).toBe(CORES_DE_COLUNA[3]);
+  });
+
+  it("sem escolher, segue o cinza de “ainda não existe”", () => {
+    // A outra metade da regra, e ela continua valendo: sem escolha quem decide
+    // é a rotação do servidor, e o front não tem como acertar.
+    const r = comColunaNova(rascunhoInicial(QUADRO), "Teste", "OPEN");
+    const desenhada = colunasParaDesenhar(r, QUADRO).find(
+      (c) => c.name === "Teste",
+    );
+    expect(desenhada?.color).toBe(COR_DA_COLUNA_NOVA);
+  });
+});
+
+describe("refDeColunaDoDrop", () => {
+  // ⚠️ ESTA FUNÇÃO É O CONSERTO DE *"não consigo arrastar a coluna nova, só
+  // pelas setas funciona"*. Cada coluna tem DOIS alvos no mesmo `DndContext` --
+  // o corpo (`useDroppable`, para card) e o cabeçalho (`useSortable`, para
+  // coluna) --, e o cabeçalho fica dentro do corpo. O handler antigo exigia o
+  // id COM prefixo e desistia calado quando a colisão resolvia pelo corpo.
+  //
+  // ⚠️ E O TESTE MORA AQUI, e não no arraste: `onDragEnd` não roda em jsdom e
+  // sem layout não há colisão a simular. Por isso a decisão de qual id aceitar
+  // foi tirada do handler e posta numa função pura.
+  const base = () =>
+    comColunaNova(rascunhoInicial(QUADRO), "Teste", "OPEN");
+
+  it("aceita o id do CABEÇALHO (com prefixo)", () => {
+    const r = base();
+    const ref = r.novas[0].ref;
+    expect(refDeColunaDoDrop(idDeArrasteDoCabecalho(ref), r)).toBe(ref);
+  });
+
+  it("⚠️ aceita também o id do CORPO (sem prefixo) -- era o caso quebrado", () => {
+    const r = base();
+    const ref = r.novas[0].ref;
+    expect(refDeColunaDoDrop(ref, r)).toBe(ref);
+    // E vale igual para coluna que já existe: o alvo ambíguo é o mesmo.
+    expect(refDeColunaDoDrop(QUADRO[0].id, r)).toBe(QUADRO[0].id);
+  });
+
+  it("⚠️ recusa o que não é coluna DESTE rascunho", () => {
+    // No mesmo contexto viajam ids de card. Tratá-los como coluna moveria a
+    // coluna errada -- e em silêncio, que é pior que não mover.
+    const r = base();
+    expect(refDeColunaDoDrop("t-uma-tarefa-qualquer", r)).toBeNull();
+    expect(refDeColunaDoDrop(idDeArrasteDoCabecalho("c-de-outro-quadro"), r)).toBeNull();
   });
 });

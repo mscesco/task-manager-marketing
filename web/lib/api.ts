@@ -990,7 +990,22 @@ export type LoteCriar = {
   tmp: string;
   name: string;
   semantic: Coluna["semantic"];
+  /**
+   * Spec 039 (F9). ⚠️ OPCIONAL, e omitir NÃO é "sem cor": é "a rotação do
+   * backend decide", que é o comportamento de sempre. Só token da paleta
+   * (`lib/coluna.ts::CORES_DE_COLUNA`) — hex volta 422.
+   */
+  color?: string;
+  /** Spec 039 (F9). Omitir = `true`, o comportamento de sempre. */
+  notify_deadline?: boolean;
 };
+
+/**
+ * Uma coluna que muda de opinião sobre cobrar prazo (Spec 039, F9).
+ *
+ * ⚠️ SÓ ID REAL. Coluna nova já nasce com o valor certo pelo `LoteCriar`.
+ */
+export type LoteAviso = { id: string; notify_deadline: boolean };
 
 export type LoteRenomear = { id: string; name: string };
 
@@ -1007,6 +1022,13 @@ export type LoteDeColunas = {
    * e e isso que permite "trocar o alvo e apagar a coluna antiga" num gesto.
    */
   alvos?: string[];
+  /**
+   * Spec 039 (F9). Colunas que ligam ou desligam a cobrança de prazo.
+   *
+   * ⚠️ A etapa roda no backend ENTRE `renomear` e `alvos` — antes de apagar,
+   * porque coluna apagada no mesmo lote deixaria de existir.
+   */
+  avisos?: LoteAviso[];
   apagar?: LoteApagar[];
   /** UUID em texto, ou `tmp:apelido`. ⚠️ VAZIA = nao mexer na ordem. */
   ordem?: string[];
@@ -1049,6 +1071,12 @@ export async function aplicarLoteDeColunas(
       body: {
         criar: lote.criar ?? [],
         renomear: lote.renomear ?? [],
+        // ⚠️ A LINHA QUE A F9 QUASE NÃO TEVE, pelo mesmo motivo do `alvos`
+        // abaixo e do `board_id` da fatia 5b-6: este corpo é montado CAMPO A
+        // CAMPO. Declarar `avisos` no tipo não o põe no PUT -- sem esta linha,
+        // desmarcar "Cobrar prazo" responderia 200 e não teria mudado nada.
+        // O guardião é `lib/__tests__/loteDeColunasCorpo.test.ts`.
+        avisos: lote.avisos ?? [],
         // ⚠️ A LINHA QUE O `board_id` NAO TEVE. Declarar no tipo NAO poe no
         // corpo -- e este corpo e montado campo a campo, que e por que o
         // `loteDeColunasCorpo.test.ts` existe. Sem esta linha o alvo seria

@@ -1,14 +1,14 @@
 # Spec 039 — Redesenho de layout
 
-**Status:** em andamento — **F0 a F8 entregues** (21–22/08); faltam F9 e F10
+**Status:** **F0 a F9 entregues** (21–22/08). F10 parada por medição (§8.2) — a spec está fechada.
 **Escopo:** frontend (`web/`). **Não toca:** backend, contrato de API, autenticação.
 **Depende de:** Spec 018 (primitivos + Tailwind v4) e Spec 031 (fatia C, cor)
 **Placar de testes na abertura:** Front **865**, Backend **860**, migrations `0014`
-**Placar em 22/08, com F8:** Front **905**, Backend **883**, migrations `0015`
+**Placar em 22/08, com F9:** Front **921**, Backend **892**, Backend **883**, migrations `0015`
 
-⚠️ **Antes de pegar F9 ou F10, leia o §8.1.** Quatro escopos desta spec
+⚠️ **Leia o §8.1 antes de escrever escopo a partir de wireframe.** Quatro escopos desta spec
 foram escritos a partir do wireframe sem abrir o componente, e os quatro
-erraram o alvo — com a F7 e a F8, seis. F9 e F10 vêm da mesma fonte.
+erraram o alvo — com F7, F8 e F9, sete de dez fatias.
 
 ---
 
@@ -663,6 +663,30 @@ o backend; a tela só não pode assumir que dá para mandar os dois juntos.
 
 Campos: "Nome da coluna", "Tipo (imutável)", "Cor", botão Criar.
 
+⚠️ **Conferido em 22/08, antes de escrever a fatia: um dos três itens já está
+pronto.** Sétima vez que abrir o arquivo muda o escopo. O `FormNovaColuna.tsx`
+já entrega Nome e Tipo — e o "Tipo (imutável)" já **não** diz imutável: o
+rótulo é só "Tipo", com o texto de ajuda *"O tipo não muda depois. Ele decide o
+que acontece com as tarefas que entram aqui."* A meia-verdade apontada abaixo
+**já foi corrigida**, e a correção é melhor que a pedida — ela diz o motivo, e
+não só a regra.
+
+**Sobra da F9, portanto: `cor` e `notify_deadline` — e os dois batem no
+backend**, que hoje recusa ambos com motivo escrito no
+`BoardColumnCreateRequest`:
+
+| campo | o que o backend diz hoje | o que isso significa para a F9 |
+|---|---|---|
+| `color` | *"NÃO ENTRA (corte de 11/08). Aceitar hex abriria `style` a entrada de usuário… e a Spec 031 (C1a) já tinha tirado os hex do produto porque não invertem no tema escuro"* | ⚠️ **decisão pendente da Camila** — paleta de tokens ou hex livre (ver §12) |
+| `notify_deadline` | *"NÃO ENTRA — e esta é a ausência que mais engana quem lê o código"*; decisão de **13/08 de não fazer** | ✅ **já revertida pelo §7.3** (19/08). Falta implementar, e é entrega de backend |
+
+⚠️ **E o backend avisa qual é a parte difícil:** *"o campo aqui é a parte
+fácil. O que decide o tamanho é o `PATCH` — editar `notify_deadline` de uma
+coluna que JÁ TEM tarefas com prazo muda, em silêncio, quais avisos vão sair
+amanhã, e sem uma linha de histórico."* O §7.3 decidiu a caixa no modo de
+edição de olhos abertos; este parágrafo fica para quem implementar não
+descobrir sozinho.
+
 - ✅ **O seletor de cor sai do gelo.** O `corEhHex` está sem leitor desde
   sempre, adiado de propósito "para depois do redesenho". O redesenho é agora e
   o desenho pede a cor.
@@ -670,6 +694,38 @@ Campos: "Nome da coluna", "Tipo (imutável)", "Cor", botão Criar.
   imutável mesmo. Mas o **alvo** daquela semântica se move entre colunas desde
   a fatia 12. Trocar o rótulo para algo que não ensine o contrário do produto.
 - **`notify_deadline` entra como caixa.** Ver §7.
+
+✅ **Entregue em 22/08, em duas metades (F9-A backend, F9-B front).**
+
+| decisão | o que saiu |
+|---|---|
+| cor: **8 tokens agora, roda RGB depois** (Camila, 22/08) | oito tentos no formulário + **"Automática"**, que manda `undefined` e deixa a rotação do backend decidir — o comportamento de sempre continua alcançável |
+| `notify_deadline` (§7.3) | caixa no criar, com o texto das consequências; **sino** por coluna no modo de edição |
+
+⚠️ **O corte de 11/08 NÃO foi reaberto.** A recusa do backend é por **lista**,
+não por regex de hex: nenhum hex entra no `String(60)`, nada precisa de
+luminância, e a cor continua invertendo no tema escuro. O teste do backend
+manda `#7C3AED` — hex válido, o formato que a ADR 0040 item 4 previu para a
+roda — e **exige 422**. Quando a roda entrar, esse teste muda de lado de
+propósito, e junto com ele vem o primeiro leitor de `corEhHex`.
+
+⚠️ **E o "campo sem escritor" acabou.** O `notify_deadline` era lido pelo
+`DeadlineNotifyService`, exposto na resposta, e **nenhuma rota escrevia nele** —
+três lugares do código prometiam por escrito que dava para criar "Aguardando
+cliente" sem cobrar prazo, e a única saída era SQL no Adminer. As três
+promessas viraram verdade.
+
+⚠️ **O caminho de criação é o LOTE, e conferir isso antes evitou entregar no
+lugar errado.** O `POST /boards/{id}/columns` existe e é testado, mas
+`lib/api.ts::criarColuna` **não tem um único chamador** — coluna nova nasce
+dentro do modo de edição. Os campos entraram em `ColunaParaCriar`; o schema
+solto ficou como estava, com a data e o motivo escritos nele.
+
+⚠️ **E aqui um portão finalmente pegou.** O `loteDeColunasCorpo.test.ts` caiu
+com a sexta lista, e o `rascunhoDeColunas.test.ts` caiu junto — **pela segunda
+vez** o guardião de corpo fez o trabalho. Vale contrastar: F6-c, F7 e F8
+mudaram comportamento e aparência e **não derrubaram nada**. Onde existe
+guardião de corpo, campo novo não entra em silêncio; onde não existe, entra.
 
 ### 6.7. Filtros (`Ordenar - sobrep.png`)
 
@@ -951,14 +1007,35 @@ Ordem por alavancagem × risco. Cada uma entregável sozinha.
 | **F6** | Detalhe como painel | `TaskDetail.tsx` (2532 linhas) — a maior | **alto** |
 | **F7** | ✅ Datas + hora | §6.4 — o campo e a pílula **já existiam**; o que faltava era a hora no card e no `title` da subtarefa | baixo |
 | **F8** | ✅ Modo de edição | os cinco controles **já estavam lá** — nada a repor; o trabalho foi o fundo esmaecido do §6.5 | baixo |
-| **F9** | Criar coluna | cor + caixa do §7 + rótulo do tipo | médio |
-| **F10** | Paginação no rodapé | ver §9 |  médio |
+| **F9** | ✅ Criar coluna | o rótulo do tipo **já estava pronto**; entraram a paleta de 8 tokens e a cobrança de prazo — as duas com backend | médio |
+| **F10** | ⛔ Paginação no rodapé | **PARADA em 22/08** — a justificativa dela evaporou; ver §8.2 | — |
 
 ⚠️ ~~**F8 é a de maior risco de regressão do lote**~~ — **errado, e corrigido
 em 22/08.** Ela não reescreveu tela nenhuma: os cinco controles da fatia 12 já
 estavam no lugar e ninguém precisou repô-los (§6.5). O smoke de "trocar o alvo
 e apagar a coluna antiga num gesto só" continua valendo como conferência, mas
 não como rede de uma reescrita que não houve.
+
+### 8.2. ⛔ A F10 está PARADA, e não atrasada
+
+A paginação por coluna existia para atacar **um número**: 917 tarefas
+carregadas de um teto de 1000, folga de 83. A **Spec 042** atacou o mesmo
+número por outro lado (contagem agregada de subtarefa) e o levou a **254, com
+folga de 746** — medido em produção, e reconferido dois dias depois, quando o
+banco cresceu e a carga **caiu** mesmo assim.
+
+**Construir a F10 agora é resolver um problema que não existe mais.** Ela
+continua sendo uma boa peça no dia em que a folga voltar a apertar; até lá,
+paginação é complexidade paga sem contrapartida — e mais uma superfície entre
+a pessoa e as tarefas dela.
+
+⚠️ **O gatilho para desparar:** remedir a carga (a consulta está no §6.11.2).
+Se a folga cair abaixo de ~200, a F10 volta para a fila. **Não é para
+ressuscitar por "faltou terminar a spec".**
+
+⚠️ **Terceira decisão desta spec que morre por medição, e não por opinião** —
+as outras duas são encurtar o `STALE_ARCHIVE_DAYS` e encolher coluna vazia
+(esta, recusada duas vezes pela Camila).
 
 ### 8.1. ⚠️⚠️ Correção de 21/08 — quatro escopos escritos sem abrir o componente
 

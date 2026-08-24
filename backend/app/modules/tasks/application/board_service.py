@@ -168,6 +168,21 @@ CODIGO_NOME_DE_QUADRO_REPETIDO = "quadro_nome_repetido"
 #: `invariantes.sql`.
 CODIGO_NOME_DE_COLUNA_REPETIDO = "coluna_nome_repetido"
 
+
+#: A cor pedida nao esta na paleta (Spec 039, F9).
+#:
+#: ⚠️ RECUSA POR LISTA, E NAO POR REGEX DE HEX. A decisao da Camila em 22/08 foi
+#: "os 8 tokens agora, roda RGB depois": a pessoa ESCOLHE entre os tokens que a
+#: rotacao ja usava, em vez de receber o proximo da fila. Isso mantem o corte de
+#: 11/08 de pe -- nenhum hex entra no `String(60)`, nada precisa de luminancia,
+#: e a cor continua invertendo no tema escuro.
+#:
+#: ⚠️ SE UM DIA A RODA RGB ENTRAR, e AQUI que a regra muda -- e ai ela vira
+#: `^#[0-9a-fA-F]{6}$` MAIS a derivacao do texto por luminancia no front
+#: (`lib/coluna.ts::corEhHex`, sem leitor ate hoje). Sao duas coisas, e a
+#: segunda e a cara.
+CODIGO_COR_FORA_DA_PALETA = "coluna_cor_invalida"
+
 #: Tentativa de apagar o quadro PADRAO do time (Spec 036, fatia 7, 18/08).
 #:
 #: ⚠️ O CODIGO EXISTE PARA A TELA NAO OFERECER O BOTAO, e nao so para explicar
@@ -197,6 +212,28 @@ class LoteCriar:
     tmp: str
     name: str
     semantic: ColumnSemantic
+    #: Spec 039 (F9). `None` = a rotacao decide, que e o comportamento de
+    #: sempre. Valor tem de estar em `CORES_DE_COLUNA`.
+    color: str | None = None
+    #: Spec 039 (F9) e §7.3 da spec. ⚠️ O DEFAULT `True` E O COMPORTAMENTO DE
+    #: HOJE, e ele importa: ate esta fatia o campo NAO TINHA ESCRITOR nenhum
+    #: (`criar_coluna` cravava `True`), entao mudar o default aqui mudaria em
+    #: silencio o comportamento de todo quadro novo.
+    notify_deadline: bool = True
+
+
+@dataclass(frozen=True, slots=True)
+class LoteAviso:
+    """Coluna que muda de opiniao sobre cobrar prazo (Spec 039, F9).
+
+    ⚠️ SO COLUNA QUE JA EXISTE -- coluna nova ja nasce com o valor certo pelo
+    `LoteCriar`. Aceitar `tmp:` aqui seria dizer duas coisas sobre a mesma
+    linha, e a ordem entre elas viraria regra invisivel. E o mesmo motivo pelo
+    qual `LoteRenomear` nao aceita apelido.
+    """
+
+    id: uuid.UUID
+    notify_deadline: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -443,6 +480,8 @@ class BoardService:
         board_id: uuid.UUID,
         nome: str,
         semantica: ColumnSemantic,
+        cor: str | None = None,
+        avisa_prazo: bool = True,
         conferir_nome: bool = True,
     ) -> BoardColumn:
         """Acrescenta uma coluna ao fim de um quadro avulso.
@@ -469,11 +508,34 @@ class BoardService:
         semantica e operacao propria, e ela ainda nao existe -- mesma ausencia
         deliberada de `is_default` em `BoardCreateRequest`.
 
-        ⚠️ A COR SAI DE ROTACAO SOBRE OS TOKENS (corte de 11/08), e nao de
-        entrada. Sem hex, sem `<input type=color>`, sem luminancia, sem
-        validacao. Token inverte no tema escuro e hex nao -- foi por isso que a
-        Spec 031 tirou os hex do produto. O seletor de cor e fatia propria, e e
-        la que `lib/coluna.ts::corEhHex` ganha leitor.
+        ⚠️ A COR AGORA PODE VIR DE FORA -- MAS SO DA PALETA (Spec 039, F9).
+        Ate 22/08 ela saia so de rotacao. A decisao da Camila foi "os 8 tokens
+        agora, roda RGB depois": a pessoa escolhe entre os mesmos tokens que a
+        rotacao usava, e `cor=None` mantem a rotacao intacta para quem nao
+        escolhe.
+
+        ⚠️ O CORTE DE 11/08 CONTINUA DE PE, e esta fatia nao o reabre. Nenhum
+        hex entra: a recusa e por LISTA (`CORES_DE_COLUNA`), nao por regex.
+        Token inverte no tema escuro e hex nao -- foi por isso que a Spec 031
+        (C1a) tirou os hex do produto. O dia em que `lib/coluna.ts::corEhHex`
+        ganhar leitor continua sendo uma fatia propria, e ela e maior do que
+        parece: pede validacao de formato AQUI e derivacao do texto por
+        luminancia LA.
+
+        ⚠️ `avisa_prazo` PASSA A TER ESCRITOR (Spec 039, F9 e §7.3 da spec).
+        Ate aqui o campo era lido pelo `DeadlineNotifyService` e exposto na
+        resposta, mas NINGUEM conseguia escrever nele -- o schema de criacao
+        nao o aceitava e o lote tambem nao. Na pratica ele so era `False` nas
+        colunas base que o `board_defaults` cria assim. Tres lugares do codigo
+        prometiam o contrario por escrito; esta fatia e o que torna as tres
+        promessas verdadeiras.
+
+        ⚠️ E ELE NAO E RECUSADO EM COLUNA TERMINAL, de proposito. Em
+        `Concluido`/`Cancelado` o `avisa_prazo()` ignora a flag -- guardar
+        `True` la e inofensivo. Quem esconde a caixa e a TELA (§7.3, item 3:
+        "mostrar um controle inerte seria mentira de interface"); recusar aqui
+        transformaria uma regra de interface em 422 para um cliente que mandou
+        um valor sem efeito.
 
         ⚠️ POSICAO NO FIM, sempre. Reordenar e da 5b-6, junto com a tela que a
         usa -- e nao antes, para nao repetir a cicatriz de campo sem leitor que
@@ -496,6 +558,12 @@ class BoardService:
         self._assert_pode_gerir(time)
 
         nome_limpo = self._nome_de_coluna_valido(nome)
+        if cor is not None and cor not in CORES_DE_COLUNA:
+            raise ValidationError(
+                "Esta cor nao esta na paleta de colunas.",
+                code=CODIGO_COR_FORA_DA_PALETA,
+                details={"color": cor, "aceitas": list(CORES_DE_COLUNA)},
+            )
         if conferir_nome:
             await self._assert_nome_de_coluna_livre(
                 board_id=quadro.id, nome=nome_limpo
@@ -506,10 +574,10 @@ class BoardService:
             workspace_id=tenant.workspace_id,
             board_id=quadro.id,
             name=nome_limpo,
-            color=_cor_por_rotacao(len(existentes)),
+            color=cor if cor is not None else _cor_por_rotacao(len(existentes)),
             position=len(existentes),
             semantic=semantica,
-            notify_deadline=True,
+            notify_deadline=avisa_prazo,
             is_default_target=False,
             legacy_status=None,
         )
@@ -704,12 +772,59 @@ class BoardService:
         )
         return nova
 
+    async def definir_aviso_de_prazo(
+        self,
+        *,
+        board_id: uuid.UUID,
+        column_id: uuid.UUID,
+        avisa: bool,
+    ) -> BoardColumn:
+        """Liga ou desliga a cobranca de prazo de UMA coluna (Spec 039, F9).
+
+        ⚠️⚠️ ESTE METODO MUDA O QUE SAI DE NOTIFICACAO AMANHA, e sem deixar
+        rastro. O aviso ja estava escrito no `BoardColumnCreateRequest` desde
+        18/08 e vale repetir aqui, porque agora ele deixou de ser hipotetico:
+        desligar a flag numa coluna que JA TEM tarefas com prazo silencia, de
+        uma vez, todos os avisos daquelas tarefas -- e nao ha uma linha de
+        historico dizendo quem desligou. A decisao de aceitar isso e da Camila
+        (§7.3 da Spec 039), tomada de olhos abertos.
+
+        A mitigacao NAO e tecnica, e de interface: o rotulo na tela nao e
+        `notify_deadline`, e "Cobrar prazo nesta coluna", com o texto de ajuda
+        dizendo as consequencias -- senao alguem desmarca para tirar vermelho
+        da tela e silencia notificacao sem saber.
+
+        ⚠️ NAO RECUSA COLUNA TERMINAL. Ver a nota em `criar_coluna`: la a flag
+        e ignorada pelo `avisa_prazo()`, e a tela e quem esconde a caixa.
+
+        ⚠️ E NAO E NO-OP QUANDO O VALOR JA E O MESMO -- a atribuicao acontece e
+        o `updated_at` do ORM segue a regra dele. Comparar antes economizaria
+        um UPDATE e criaria um caminho a menos para testar; nao vale o galho.
+
+        ⚠️ NAO FAZ COMMIT -- mesma unidade de trabalho do chamador.
+        """
+        quadro = await self._quadro_do_workspace(board_id)
+        self._assert_pode_gerir(await self._time_do_workspace(quadro.team_id))
+        coluna = await self._coluna_do_quadro(quadro.id, column_id)
+        coluna.notify_deadline = avisa
+        await self._session.flush()
+
+        logger.info(
+            "board.coluna_aviso_de_prazo",
+            board_id=str(quadro.id),
+            column_id=str(coluna.id),
+            avisa=avisa,
+            por=str(require_tenant().user_id),
+        )
+        return coluna
+
     async def aplicar_lote(
         self,
         *,
         board_id: uuid.UUID,
         criar: Sequence[LoteCriar] = (),
         renomear: Sequence[LoteRenomear] = (),
+        avisos: Sequence[LoteAviso] = (),
         alvos: Sequence[uuid.UUID] = (),
         apagar: Sequence[LoteApagar] = (),
         ordem: Sequence[str] = (),
@@ -723,8 +838,8 @@ class BoardService:
         "Aprovacao" mandando as tarefas para la -- duas idas, em duas telas.
         Em lote e um gesto, e e assim que a pessoa pensa a operacao.
 
-        ⚠️ A ORDEM DAS ETAPAS E OBRIGATORIA: criar -> renomear -> apagar ->
-        reordenar.
+        ⚠️ A ORDEM DAS ETAPAS E OBRIGATORIA: criar -> renomear -> avisos ->
+        alvo -> apagar -> reordenar.
           - CRIAR primeiro porque a coluna nova pode ser destino de uma
             apagada. Invertendo, `destino=tmp:...` nao resolve;
           - REORDENAR por ultimo porque a conferencia de conjunto dele compara
@@ -784,6 +899,9 @@ class BoardService:
                 board_id=board_id,
                 nome=pedido.name,
                 semantica=pedido.semantic,
+                # Spec 039 (F9). `None` cai na rotacao, como sempre.
+                cor=pedido.color,
+                avisa_prazo=pedido.notify_deadline,
                 # ⚠️ A ETAPA 0 JA CONFERIU, sobre o estado FINAL. Conferir de
                 # novo aqui recusaria o apagar-e-recriar com o mesmo nome.
                 conferir_nome=False,
@@ -799,6 +917,24 @@ class BoardService:
                 # ⚠️ A ETAPA 0 JA CONFERIU. Conferir aqui recusaria a troca de
                 # nomes entre duas colunas, que colide no meio do caminho.
                 conferir_nome=False,
+            )
+
+        # ---- etapa 2-bis: cobrar prazo, ou nao (Spec 039, F9) --------------
+        #
+        # ⚠️ AQUI, E NAO NO FIM, e o motivo e a etapa 4. Uma coluna APAGADA no
+        # mesmo lote deixa de existir na etapa 4; mexer na flag dela depois
+        # levantaria 404 por uma coluna que a propria pessoa mandou apagar. Do
+        # jeito que esta, o pior caso e um UPDATE desperdicado numa linha que
+        # sai logo em seguida -- barato, e dentro da mesma transacao.
+        #
+        # ⚠️ E ELA E IRMA DE `renomear`, nao de `alvos`: as duas primeiras
+        # mudam uma PROPRIEDADE da coluna; `alvos` muda quem o SISTEMA escolhe.
+        # A vizinhanca no codigo e a mesma da cabeca de quem edita.
+        for pedido in avisos:
+            await self.definir_aviso_de_prazo(
+                board_id=board_id,
+                column_id=pedido.id,
+                avisa=pedido.notify_deadline,
             )
 
         # ---- etapa 3: alvo da semantica (fatia 12) -------------------------
@@ -840,6 +976,7 @@ class BoardService:
             board_id=str(quadro.id),
             criadas=len(criar),
             renomeadas=len(renomear),
+            avisos=len(avisos),
             apagadas=len(apagar),
             alvos=len(alvos),
             reordenou=bool(ordem),

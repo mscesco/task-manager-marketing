@@ -21,11 +21,14 @@ from sqlalchemy import select
 from app.db.models.boards import Board, BoardColumn
 from app.db.models.enums import ColumnSemantic
 from app.modules.tasks.application.board_service import (
+    CODIGO_COR_FORA_DA_PALETA,
     CODIGO_ORDEM_DIVERGENTE,
     CODIGO_TMP_DESCONHECIDO,
     CODIGO_TMP_REPETIDO,
+    CORES_DE_COLUNA,
     BoardService,
     LoteApagar,
+    LoteAviso,
     LoteCriar,
     LoteRenomear,
 )
@@ -571,3 +574,216 @@ async def test_LOTE_sem_alvos_nao_mexe_em_alvo_nenhum(db) -> None:
     depois = await _alvo(db, quadro.id, ColumnSemantic.OPEN)
     assert antes is not None and depois is not None
     assert depois.id == antes.id
+
+
+# ---------------------------------------------------------------------------
+# Spec 039, F9 -- a cor escolhida e a cobranca de prazo.
+#
+# ⚠️⚠️ O QUE ESTES TESTES REALMENTE FECHAM: o `notify_deadline` era um campo
+# LIDO pelo `DeadlineNotifyService`, EXPOSTO na resposta da API, e SEM NENHUM
+# ESCRITOR. Tres lugares do codigo prometiam por escrito que dava para criar
+# uma coluna "Aguardando cliente" que nao cobra prazo; nao dava -- a coluna
+# nascia cobrando, e so dava para consertar por SQL no Adminer. A partir daqui
+# as tres promessas viraram verdade.
+#
+# ⚠️ E A COR ENTRA SEM REABRIR O CORTE DE 11/08. A decisao da Camila em 22/08
+# foi "os 8 tokens agora, roda RGB depois": a pessoa escolhe entre os mesmos
+# tokens que a rotacao ja usava. Nenhum hex entra no `String(60)`, e a recusa e
+# por LISTA -- por isso `test_cor_fora_da_paleta_e_recusada` manda um hex
+# valido de propósito: e o formato que a proxima fatia vai aceitar, e ate la
+# tem de ser 422 e nao 200.
+# ---------------------------------------------------------------------------
+
+
+async def test_coluna_nova_aceita_cor_da_paleta(db) -> None:
+    ws, raiz, sub_a, sub_b, user, arvore = await _mundo(db)
+    quadro = await _quadro_avulso(db, ws, user, arvore, sub_a)
+    escolhida = CORES_DE_COLUNA[4]
+
+    with acting_as(**_ctx(ws, user, arvore, mship(sub_a, "SUPERVISOR"))):
+        colunas, _ = await BoardService(db).aplicar_lote(
+            board_id=quadro.id,
+            criar=[
+                LoteCriar(
+                    tmp="t1",
+                    name="Aguardando cliente",
+                    semantic=ColumnSemantic.OPEN,
+                    color=escolhida,
+                )
+            ],
+        )
+
+    assert _por_nome(colunas, "Aguardando cliente").color == escolhida
+
+
+async def test_sem_cor_a_rotacao_continua_decidindo(db) -> None:
+    """⚠️ O CLIENTE VELHO NAO PODE MUDAR DE COMPORTAMENTO.
+
+    `color=None` e "nao escolhi", e nao "sem cor". Se o default virasse uma cor
+    concreta, todo quadro criado por uma versao antiga do front passaria a
+    receber a MESMA cor em todas as colunas novas -- sem erro, sem aviso.
+    """
+    ws, raiz, sub_a, sub_b, user, arvore = await _mundo(db)
+    quadro = await _quadro_avulso(db, ws, user, arvore, sub_a)
+    quantas_antes = len(await _colunas(db, quadro.id))
+
+    with acting_as(**_ctx(ws, user, arvore, mship(sub_a, "SUPERVISOR"))):
+        colunas, _ = await BoardService(db).aplicar_lote(
+            board_id=quadro.id,
+            criar=[LoteCriar(tmp="t1", name="Ideias", semantic=ColumnSemantic.OPEN)],
+        )
+
+    assert (
+        _por_nome(colunas, "Ideias").color
+        == CORES_DE_COLUNA[quantas_antes % len(CORES_DE_COLUNA)]
+    )
+
+
+async def test_cor_fora_da_paleta_e_recusada(db) -> None:
+    """⚠️ HEX VALIDO, E MESMO ASSIM 422 -- e isso e a fatia, nao um detalhe.
+
+    `#7C3AED` e exatamente o formato que a ADR 0040 (item 4) previu para o dia
+    da roda RGB. Ele e recusado AGORA porque hex nao inverte no tema escuro, e
+    aceita-lo exigiria tambem derivar a cor do texto por luminancia no front
+    (`lib/coluna.ts::corEhHex`, sem leitor ate hoje). Duas coisas, e a segunda e
+    a cara. Quando a roda entrar, este teste muda de lado de propósito.
+    """
+    ws, raiz, sub_a, sub_b, user, arvore = await _mundo(db)
+    quadro = await _quadro_avulso(db, ws, user, arvore, sub_a)
+
+    with acting_as(**_ctx(ws, user, arvore, mship(sub_a, "SUPERVISOR"))):
+        with pytest.raises(ValidationError) as erro:
+            await BoardService(db).aplicar_lote(
+                board_id=quadro.id,
+                criar=[
+                    LoteCriar(
+                        tmp="t1",
+                        name="Ideias",
+                        semantic=ColumnSemantic.OPEN,
+                        color="#7C3AED",
+                    )
+                ],
+            )
+
+    assert erro.value.code == CODIGO_COR_FORA_DA_PALETA
+    # ⚠️ A recusa DIZ o que aceita. Sem isso, quem integra descobre a paleta por
+    # tentativa e erro.
+    assert CORES_DE_COLUNA[0] in erro.value.details["aceitas"]
+
+
+async def test_coluna_nova_pode_nascer_sem_cobrar_prazo(db) -> None:
+    """⚠️ ESTE E O "AGUARDANDO CLIENTE" QUE A ADR 0030 PROMETEU e o codigo nao
+    entregava. Ate 22/08 `criar_coluna` cravava `True` e nao havia parametro."""
+    ws, raiz, sub_a, sub_b, user, arvore = await _mundo(db)
+    quadro = await _quadro_avulso(db, ws, user, arvore, sub_a)
+
+    with acting_as(**_ctx(ws, user, arvore, mship(sub_a, "SUPERVISOR"))):
+        colunas, _ = await BoardService(db).aplicar_lote(
+            board_id=quadro.id,
+            criar=[
+                LoteCriar(
+                    tmp="t1",
+                    name="Aguardando cliente",
+                    semantic=ColumnSemantic.OPEN,
+                    notify_deadline=False,
+                )
+            ],
+        )
+
+    assert _por_nome(colunas, "Aguardando cliente").notify_deadline is False
+
+
+async def test_por_omissao_a_coluna_nova_cobra_prazo(db) -> None:
+    """O default `True` e o comportamento de sempre, e mudar isso em silencio
+    calaria aviso de prazo em todo quadro novo."""
+    ws, raiz, sub_a, sub_b, user, arvore = await _mundo(db)
+    quadro = await _quadro_avulso(db, ws, user, arvore, sub_a)
+
+    with acting_as(**_ctx(ws, user, arvore, mship(sub_a, "SUPERVISOR"))):
+        colunas, _ = await BoardService(db).aplicar_lote(
+            board_id=quadro.id,
+            criar=[LoteCriar(tmp="t1", name="Ideias", semantic=ColumnSemantic.OPEN)],
+        )
+
+    assert _por_nome(colunas, "Ideias").notify_deadline is True
+
+
+async def test_coluna_que_ja_existe_pode_parar_de_cobrar_prazo(db) -> None:
+    """⚠️ O CASO DAS 8 COLUNAS DE PRODUCAO. Elas nasceram sem escritor, e ate
+    aqui so davam para consertar por SQL no Adminer (§7.3, item 2)."""
+    ws, raiz, sub_a, sub_b, user, arvore = await _mundo(db)
+    quadro = await _quadro_avulso(db, ws, user, arvore, sub_a)
+    backlog = _por_nome(await _colunas(db, quadro.id), "Backlog")
+    assert backlog.notify_deadline is True
+
+    with acting_as(**_ctx(ws, user, arvore, mship(sub_a, "SUPERVISOR"))):
+        colunas, _ = await BoardService(db).aplicar_lote(
+            board_id=quadro.id,
+            avisos=[LoteAviso(id=backlog.id, notify_deadline=False)],
+        )
+
+    assert _por_nome(colunas, "Backlog").notify_deadline is False
+
+
+async def test_o_aviso_roda_ANTES_do_apagar(db) -> None:
+    """⚠️ A ORDEM DAS ETAPAS, e ela tem consequencia observavel.
+
+    Uma coluna apagada no mesmo lote some na etapa 4. Se a etapa de avisos
+    rodasse depois, mexer na flag dela levantaria 404 -- por uma coluna que a
+    propria pessoa mandou apagar, num lote que ela montou de uma vez so.
+
+    Aqui as duas coisas acontecem no MESMO lote sobre colunas diferentes, e o
+    que o teste prende e que o lote inteiro passa: a coluna avisada sobrevive
+    com o valor novo, e a apagada some.
+    """
+    ws, raiz, sub_a, sub_b, user, arvore = await _mundo(db)
+    quadro = await _quadro_avulso(db, ws, user, arvore, sub_a)
+    atuais = await _colunas(db, quadro.id)
+    backlog = _por_nome(atuais, "Backlog")
+    cancelado = _por_nome(atuais, "Cancelado")
+
+    with acting_as(**_ctx(ws, user, arvore, mship(sub_a, "SUPERVISOR"))):
+        colunas, _ = await BoardService(db).aplicar_lote(
+            board_id=quadro.id,
+            avisos=[LoteAviso(id=backlog.id, notify_deadline=False)],
+            apagar=[LoteApagar(id=cancelado.id, destino=None)],
+        )
+
+    assert _por_nome(colunas, "Backlog").notify_deadline is False
+    assert "Cancelado" not in _nomes(colunas)
+
+
+async def test_coluna_terminal_ACEITA_a_flag_sem_reclamar(db) -> None:
+    """⚠️ RECUSAR AQUI SERIA TRANSFORMAR REGRA DE TELA EM 422.
+
+    Em coluna terminal o `avisa_prazo()` ignora a flag -- guardar o valor e
+    inofensivo. Quem esconde a caixa e a TELA (§7.3, item 3: "mostrar um
+    controle inerte seria mentira de interface"). Este teste existe para que
+    ninguem "conserte" o backend adicionando uma recusa que faria um cliente
+    honesto tomar 422 por mandar um valor sem efeito.
+    """
+    ws, raiz, sub_a, sub_b, user, arvore = await _mundo(db)
+    quadro = await _quadro_avulso(db, ws, user, arvore, sub_a)
+    concluido = _por_nome(await _colunas(db, quadro.id), "Concluído")
+
+    with acting_as(**_ctx(ws, user, arvore, mship(sub_a, "SUPERVISOR"))):
+        colunas, _ = await BoardService(db).aplicar_lote(
+            board_id=quadro.id,
+            avisos=[LoteAviso(id=concluido.id, notify_deadline=False)],
+        )
+
+    assert _por_nome(colunas, "Concluído").notify_deadline is False
+
+
+async def test_operator_nao_muda_o_aviso_de_prazo(db) -> None:
+    """A etapa nova nao pode ser a porta dos fundos da autorizacao."""
+    ws, raiz, sub_a, sub_b, user, arvore = await _mundo(db)
+    quadro = await _quadro_avulso(db, ws, user, arvore, sub_a)
+    backlog = _por_nome(await _colunas(db, quadro.id), "Backlog")
+
+    with acting_as(**_ctx(ws, user, arvore, mship(sub_a, "OPERATOR"))):
+        with pytest.raises(AuthorizationError):
+            await BoardService(db).aplicar_lote(
+                board_id=quadro.id,
+                avisos=[LoteAviso(id=backlog.id, notify_deadline=False)],
+            )

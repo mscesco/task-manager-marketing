@@ -31,6 +31,17 @@ export interface ColunaNova {
   readonly ref: string;
   readonly name: string;
   readonly semantic: ColumnSemantic;
+  /**
+   * Spec 039 (F9). Token da paleta escolhido no formulário.
+   *
+   * ⚠️ `undefined` É "NÃO ESCOLHI", e vira ausência no corpo do lote — o
+   * backend cai na rotação dele. Não trocar por uma cor concreta aqui: isso
+   * faria a tela decidir uma coisa que é do servidor, e as duas discordariam
+   * na primeira vez que a rotação mudasse.
+   */
+  readonly color?: string;
+  /** Spec 039 (F9). `undefined` = `true`, o comportamento de sempre. */
+  readonly notifyDeadline?: boolean;
 }
 
 /**
@@ -47,6 +58,19 @@ export interface Rascunho {
   /** Ids reais marcados para sumir. ⚠️ Coluna nova apagada some do rascunho. */
   readonly apagadas: readonly string[];
   readonly novas: readonly ColunaNova[];
+  /**
+   * ref -> cobra prazo? Só entra quem a pessoa MEXEU (Spec 039, F9).
+   *
+   * ⚠️ SÓ ID REAL, e a ausência é a regra — igual a `alvos`. Coluna nova
+   * carrega o valor dela em `ColunaNova.notifyDeadline`; pôr as duas fontes
+   * aqui faria a ordem das etapas do backend virar regra invisível.
+   *
+   * ⚠️ E "SÓ QUEM MEXEU" NÃO É ECONOMIA DE BYTES. Mandar todas as colunas em
+   * todo lote faria cada edição de nome reescrever `notify_deadline` de 19
+   * colunas — e, se outra pessoa tivesse mudado uma delas nesse meio-tempo,
+   * esta edição a desfaria sem ninguém pedir.
+   */
+  readonly avisos: Readonly<Record<string, boolean>>;
   /**
    * Ids reais que passam a ser o ALVO da semântica deles (Spec 036, fatia 12).
    *
@@ -108,21 +132,68 @@ export function refDoArrasteDeCabecalho(id: string): string | null {
     : null;
 }
 
+/**
+ * A coluna sobre a qual o arraste terminou, a partir do id que o `dnd-kit`
+ * devolveu em `over`.
+ *
+ * ⚠️⚠️ EXISTE PORQUE O MESMO `DndContext` REGISTRA **DOIS** ALVOS POR COLUNA, e
+ * eu só descobri isso quando a Camila reportou (22/08): *"ao tentar arrastar
+ * uma coluna nova pra reordenar, não consigo, só pelas setas funciona"*.
+ *
+ *   - o CORPO da coluna, por `useDroppable({ id: coluna.id })` -- o retângulo
+ *     inteiro, que existe para receber CARD;
+ *   - o CABEÇALHO, por `useSortable({ id: PREFIXO + ref })` -- a tira do topo,
+ *     que existe para reordenar COLUNA.
+ *
+ * O cabeçalho fica DENTRO do corpo. Com a detecção padrão (`rectIntersection`),
+ * os dois intersectam o ponteiro e o desempate acaba caindo na ordem de
+ * registro -- que é justamente onde a coluna recém-criada é diferente: ela
+ * entra por último. O handler antigo exigia o id COM prefixo e desistia calado
+ * quando vinha o do corpo.
+ *
+ * ⚠️ E ELE DEVOLVE `null` PARA O QUE NÃO É COLUNA DESTE RASCUNHO. No mesmo
+ * contexto viajam ids de card; tratá-los como coluna moveria a coluna errada.
+ *
+ * ⚠️ NÃO TESTÁVEL PELO ARRASTE: `onDragEnd` não roda em jsdom, e sem layout não
+ * há colisão a simular. É por isso que a decisão de qual id aceitar mora aqui,
+ * numa função pura com teste, e não dentro do handler.
+ */
+export function refDeColunaDoDrop(
+  idDoDrop: string,
+  rascunho: Rascunho,
+): string | null {
+  const semPrefixo = refDoArrasteDeCabecalho(idDoDrop);
+  const candidato = semPrefixo ?? idDoDrop;
+  return rascunho.ordem.includes(candidato) ? candidato : null;
+}
+
 export function ehNova(ref: string): boolean {
   return ref.startsWith(PREFIXO_TMP);
 }
 
 /**
- * A cor de uma coluna que ainda não existe.
+ * A cor de uma coluna nova **de que ninguém escolheu a cor**.
  *
- * ⚠️ NEUTRA DE PROPÓSITO, E NÃO UM PALPITE. Quem escolhe a cor é o servidor
- * (`_cor_por_rotacao(len(existentes))`, em `board_service.py`), e num lote com
- * duas criações o índice de cada uma depende da ordem em que o backend as grava
- * -- o front não tem como acertar. Mostrar uma cor que vai mudar sozinha depois
- * de concluir seria a tela prometendo o que não entrega.
+ * ⚠️ NEUTRA DE PROPÓSITO, E NÃO UM PALPITE. Sem escolha, quem decide é o
+ * servidor (`_cor_por_rotacao(len(existentes))`, em `board_service.py`), e num
+ * lote com duas criações o índice de cada uma depende da ordem em que o backend
+ * as grava -- o front não tem como acertar. Mostrar uma cor que vai mudar
+ * sozinha depois de concluir seria a tela prometendo o que não entrega.
  *
- * ⚠️ E ELA COMUNICA. Cinza de borda no meio de colunas coloridas é o sinal de
- * "esta ainda não existe" sem precisar de legenda.
+ * ⚠️⚠️ E ISTO DEIXOU DE VALER PARA QUEM ESCOLHE (Spec 039, F9, corrigido em
+ * 22/08). A Camila viu na tela: *"a cor que escolhi fica transparente ao criar,
+ * só volta certa depois"*. Estava certa, e o defeito era meu -- eu dei a
+ * escolha à pessoa e continuei desenhando o cinza, porque a regra acima foi
+ * escrita quando o front NÃO PODIA saber a cor. Agora ele pode: escolheu, é
+ * exatamente esse token que o backend vai gravar.
+ *
+ * A regra virou duas, e cada metade tem o dono certo:
+ *   - **escolheu** -> desenha a escolhida, porque o front sabe;
+ *   - **automática** -> desenha este cinza, porque o servidor é que sabe.
+ *
+ * ⚠️ E O CINZA CONTINUA COMUNICANDO no segundo caso: no meio de colunas
+ * coloridas ele é o sinal de "esta ainda não existe" sem precisar de legenda.
+ * O que ele NÃO pode fazer é apagar uma decisão que a pessoa acabou de tomar.
  */
 export const COR_DA_COLUNA_NOVA = "var(--border)";
 
@@ -146,11 +217,13 @@ export function colunaDoRascunho(
   ref: string,
   nome: string,
   semantic: ColumnSemantic,
+  /** Spec 039 (F9). `undefined` = automática -> cai no cinza de "ainda não existe". */
+  cor?: string,
 ): Coluna {
   return {
     id: ref,
     name: nome,
-    color: COR_DA_COLUNA_NOVA,
+    color: cor ?? COR_DA_COLUNA_NOVA,
     position: 0,
     semantic,
     notify_deadline: true,
@@ -193,7 +266,7 @@ export function colunasParaDesenhar(
   for (const ref of rascunho.ordem) {
     const nova = novasPorRef.get(ref);
     if (nova) {
-      saida.push(colunaDoRascunho(ref, nova.name, nova.semantic));
+      saida.push(colunaDoRascunho(ref, nova.name, nova.semantic, nova.color));
       continue;
     }
     // ⚠️ SEM `!`. Um ref sem coluna real acontece de verdade: trocar de quadro
@@ -213,6 +286,7 @@ export function rascunhoInicial(colunas: readonly Coluna[]): Rascunho {
     nomes: {},
     apagadas: [],
     novas: [],
+    avisos: {},
     alvos: [],
     proximoTmp: 1,
   };
@@ -231,6 +305,9 @@ export function temPendencias(
 ): boolean {
   if (
     rascunho.novas.length > 0 ||
+    // ⚠️ SEM ESTA LINHA, desmarcar "Cobrar prazo" e clicar em "Sair" sairia
+    // SEM PERGUNTAR, e a pessoa perderia a mudança achando que salvou.
+    Object.keys(rascunho.avisos).length > 0 ||
     rascunho.apagadas.length > 0 ||
     Object.keys(rascunho.nomes).length > 0
   ) {
@@ -315,6 +392,39 @@ export function comMarcacao(rascunho: Rascunho, ref: string): Rascunho {
  * ⚠️ MARCAR DESFAZ A EXCLUSÃO, se houver. É o par simétrico do `comMarcacao`:
  * pedir que uma coluna seja o alvo é dizer que ela fica.
  */
+/**
+ * Liga ou desliga a cobrança de prazo de uma coluna (Spec 039, F9).
+ *
+ * ⚠️ VOLTAR AO VALOR ORIGINAL TIRA A ENTRADA DO MAPA, em vez de gravar o valor
+ * de novo. Sem isso, marcar e desmarcar deixaria o rascunho "sujo": o botão
+ * "Sair" perguntaria se quer descartar, e o lote mandaria uma escrita que não
+ * muda nada -- gastando uma ida e uma linha de log por um gesto que a pessoa
+ * desfez.
+ *
+ * ⚠️ COLUNA NOVA MEXE NO `novas`, e não neste mapa. Ela ainda não tem id, e o
+ * schema de `avisos` do backend não aceita `tmp:`.
+ */
+export function comAviso(
+  rascunho: Rascunho,
+  ref: string,
+  valor: boolean,
+  /** O valor que o servidor tem hoje. Usado para detectar a volta ao original. */
+  original: boolean,
+): Rascunho {
+  if (ehNova(ref)) {
+    return {
+      ...rascunho,
+      novas: rascunho.novas.map((n) =>
+        n.ref === ref ? { ...n, notifyDeadline: valor } : n,
+      ),
+    };
+  }
+  const avisos = { ...rascunho.avisos };
+  if (valor === original) delete avisos[ref];
+  else avisos[ref] = valor;
+  return { ...rascunho, avisos };
+}
+
 export function comAlvo(rascunho: Rascunho, ref: string): Rascunho {
   if (ehNova(ref)) return rascunho;
   if (rascunho.alvos.includes(ref)) return rascunho;
@@ -341,11 +451,21 @@ export function comColunaNova(
   rascunho: Rascunho,
   nome: string,
   semantica: ColumnSemantic,
+  /**
+   * Spec 039 (F9). ⚠️ OPCIONAIS, e não por preguiça de call-site: omitir é
+   * "deixa como sempre foi" -- a rotação escolhe a cor e a coluna cobra prazo.
+   * Um default concreto aqui faria a tela decidir o que é do servidor.
+   */
+  cor?: string,
+  avisaPrazo?: boolean,
 ): Rascunho {
   const ref = `${PREFIXO_TMP}${rascunho.proximoTmp}`;
   return {
     ...rascunho,
-    novas: [...rascunho.novas, { ref, name: nome, semantic: semantica }],
+    novas: [
+      ...rascunho.novas,
+      { ref, name: nome, semantic: semantica, color: cor, notifyDeadline: avisaPrazo },
+    ],
     ordem: [...rascunho.ordem, ref],
     proximoTmp: rascunho.proximoTmp + 1,
   };
@@ -389,6 +509,12 @@ export interface LinhaDeEdicao {
   readonly alvo: boolean;
   /** `null` se pode ser apagada; o motivo, se não. */
   readonly impedimento: string | null;
+  /**
+   * Cobra prazo? (Spec 039, F9.) ⚠️ É O VALOR EFETIVO -- rascunho primeiro,
+   * servidor depois. A tela é de lote: a caixa tem de refletir o clique na
+   * hora, e não só depois de "Concluir edição".
+   */
+  readonly avisaPrazo: boolean;
 }
 
 /**
@@ -425,7 +551,7 @@ export function linhasDeEdicao(
     .filter((ref) => !rascunho.apagadas.includes(ref))
     .map((ref) => {
       const nova = novasPorRef.get(ref);
-      if (nova) return colunaDoRascunho(ref, nova.name, nova.semantic);
+      if (nova) return colunaDoRascunho(ref, nova.name, nova.semantic, nova.color);
       return porId.get(ref)!;
     })
     .filter(Boolean);
@@ -467,6 +593,15 @@ export function linhasDeEdicao(
           // `semanticasReclamadas`: o selo antigo apaga no instante em que a
           // pessoa marca outro, porque é o que vai acontecer ao concluir.
           !(real && semanticasReclamadas.has(real.semantic))),
+      // ⚠️ A CADEIA TEM QUATRO DEGRAUS E CADA UM TEM DONO: o que a pessoa
+      // acabou de clicar, o que ela escolheu ao criar a coluna, o que o
+      // servidor diz, e o default do produto. Pular o primeiro deixaria a
+      // caixa desmarcando sozinha ao repintar.
+      avisaPrazo:
+        rascunho.avisos[ref] ??
+        nova?.notifyDeadline ??
+        real?.notify_deadline ??
+        true,
       // ⚠️ SÓ PARA QUEM AINDA NÃO ESTÁ MARCADA: o impedimento de quem já está
       // riscada não interessa, e calculá-lo contra uma lista que já a exclui
       // daria sempre `null`.
@@ -642,6 +777,16 @@ export function paraLote(
       tmp: n.ref.slice(PREFIXO_TMP.length),
       name: n.name,
       semantic: n.semantic,
+      // ⚠️ ESPALHADOS CONDICIONALMENTE, e não `color: n.color`. Mandar
+      // `color: undefined` num objeto que vira JSON some na serialização e dá
+      // no mesmo -- mas mandar `color: null` NÃO daria, e a diferença entre os
+      // dois é fácil de introduzir sem perceber. Assim a chave simplesmente
+      // não existe quando ninguém escolheu, que é o que o backend espera para
+      // cair na rotação dele.
+      ...(n.color !== undefined ? { color: n.color } : {}),
+      ...(n.notifyDeadline !== undefined
+        ? { notify_deadline: n.notifyDeadline }
+        : {}),
     })),
     // ⚠️ SÓ COLUNA QUE SOBREVIVE. Renomear e apagar a mesma coluna no mesmo
     // lote faria o backend renomear uma linha que a etapa seguinte remove --
@@ -653,6 +798,16 @@ export function paraLote(
     // ⚠️ Spec 036, fatia 12. Só ids reais -- `comAlvo` já recusa `tmp:`, e o
     // schema do backend também não aceita.
     alvos: [...rascunho.alvos],
+    // ⚠️ SÓ COLUNA QUE SOBREVIVE, mesma regra do `renomear` logo acima: mexer
+    // na flag de uma coluna que a etapa seguinte apaga é trabalho e uma linha
+    // de log que não aconteceu do ponto de vista de quem usa.
+    //
+    // ⚠️ E `ehNova` FORA: coluna nova leva o valor dela no `criar`. Mandar nos
+    // dois lugares seria dizer duas coisas sobre a mesma linha -- e o `tmp:`
+    // nem é aceito pelo schema de `avisos`.
+    avisos: Object.entries(rascunho.avisos)
+      .filter(([ref]) => !rascunho.apagadas.includes(ref) && !ehNova(ref))
+      .map(([id, notify_deadline]) => ({ id, notify_deadline })),
     apagar: rascunho.apagadas.map((id) => ({
       id,
       destino: destinos[id] ?? null,

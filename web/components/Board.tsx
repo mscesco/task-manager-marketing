@@ -17,6 +17,7 @@ import {
 import {
   DndContext,
   DragOverlay,
+  closestCenter,
   PointerSensor,
   useSensor,
   useSensors,
@@ -54,6 +55,8 @@ import {
   totalPrevisto,
   comColunaNova,
   comAlvo,
+  comAviso,
+  refDeColunaDoDrop,
   comMarcacao,
   comOrdem,
   comRenome,
@@ -1263,7 +1266,12 @@ export default function Board({
     // no mesmo contexto viajam ids de CARD, e trata-los como coluna moveria a
     // coluna errada. Ver `refDoArrasteDeCabecalho`.
     const refArrastada = refDoArrasteDeCabecalho(String(active.id));
-    const refSobre = refDoArrasteDeCabecalho(String(over.id));
+    // ⚠️ O LADO `over` ACEITA AS DUAS FORMAS DE ID (corrigido em 22/08). O
+    // corpo da coluna e o cabecalho dela sao alvos SEPARADOS no mesmo
+    // contexto, e o cabecalho fica dentro do corpo -- exigir o id prefixado
+    // fazia o arraste desistir calado quando a colisao resolvia pelo corpo.
+    // Ver `refDeColunaDoDrop`.
+    const refSobre = refDeColunaDoDrop(String(over.id), rascunho);
     if (refArrastada === null || refSobre === null) return;
     const destino = rascunho.ordem.indexOf(refSobre);
     if (destino === -1) return;
@@ -2028,8 +2036,14 @@ export default function Board({
 
       {criandoColuna && rascunho && (
         <FormNovaColuna
-          onCriar={(nome, semantica) => {
-            setRascunho((r) => (r ? comColunaNova(r, nome, semantica) : r));
+          onCriar={(nome, semantica, cor, avisaPrazo) => {
+            setRascunho((r) =>
+              // ⚠️ Spec 039 (F9): os dois campos novos PRECISAM ser repassados
+              // aqui. `comColunaNova` os tem como opcionais -- esquecer o
+              // argumento nao daria erro de tipo, e a escolha da pessoa sumiria
+              // em silencio entre o formulario e o lote.
+              r ? comColunaNova(r, nome, semantica, cor, avisaPrazo) : r,
+            );
             setCriandoColuna(false);
           }}
           onCancelar={() => setCriandoColuna(false)}
@@ -2077,6 +2091,19 @@ export default function Board({
           // exatamente o motivo pelo qual a decisao de 12/08 tinha rejeitado
           // arrastar cabecalho no quadro normal.
           onDragEnd={modoEdicao ? onDragEndColuna : onDragEnd}
+          // ⚠️ NO MODO DE EDICAO A COLISAO E POR CENTRO, e nao por
+          // interseccao. Motivo, o mesmo do `refDeColunaDoDrop`: cada coluna
+          // tem DOIS alvos, e o cabecalho fica dentro do corpo. Com
+          // `rectIntersection` os dois casam com o ponteiro e o desempate cai
+          // na ordem de registro. Por centro nao ha empate: arrastando um
+          // cabecalho na altura dos cabecalhos, o centro mais proximo e sempre
+          // outro cabecalho.
+          //
+          // ⚠️ SO NO MODO DE EDICAO. Para CARD o padrao esta certo e nao ha
+          // ambiguidade -- o alvo dele e o corpo da coluna, que e o unico
+          // retangulo grande por perto. Mudar os dois de uma vez seria mexer
+          // no arraste que funciona para consertar o que nao funciona.
+          collisionDetection={modoEdicao ? closestCenter : undefined}
         >
           {/* ---- O FUNDO ESMAECIDO DO MODO DE EDICAO (Spec 039, F8) -------
               Pedido da Camila, 22/08: "quero que ao entrar no modo de edicao,
@@ -2169,6 +2196,16 @@ export default function Board({
                       }
                       onTornarAlvo={() =>
                         setRascunho((r) => (r ? comAlvo(r, c.id) : r))
+                      }
+                      // ⚠️ O QUARTO ARGUMENTO E O VALOR DO SERVIDOR, e nao um
+                      // detalhe: e com ele que `comAviso` sabe que a pessoa
+                      // VOLTOU ao original e tira a entrada do rascunho. Sem
+                      // isso, marcar e desmarcar deixaria o lote sujo e mandaria
+                      // uma escrita que nao muda nada.
+                      onAvisar={(valor) =>
+                        setRascunho((r) =>
+                          r ? comAviso(r, c.id, valor, c.notify_deadline) : r,
+                        )
                       }
                       onMover={(d) => moverColunaNoRascunho(c.id, d)}
                     />
@@ -2345,6 +2382,7 @@ function CabecalhoSortavel({
   onRenomear,
   onMarcar,
   onTornarAlvo,
+  onAvisar,
   onMover,
 }: {
   /** ⚠️ Pode faltar por um render ao trocar de quadro -- ver o chamador. */
@@ -2355,6 +2393,7 @@ function CabecalhoSortavel({
   onRenomear: (nome: string) => void;
   onMarcar: () => void;
   onTornarAlvo: () => void;
+  onAvisar: (valor: boolean) => void;
   onMover: (direcao: "esquerda" | "direita") => void;
 }) {
   // ⚠️ O HOOK VEM ANTES DO `return null`, e a ordem NAO e negociavel: sair do
@@ -2391,6 +2430,7 @@ function CabecalhoSortavel({
         onRenomear={onRenomear}
         onMarcar={onMarcar}
         onTornarAlvo={onTornarAlvo}
+        onAvisar={onAvisar}
         onMover={onMover}
         arrasteRef={setNodeRef}
         arrasteProps={{ ...attributes, ...listeners }}
