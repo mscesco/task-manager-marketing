@@ -8,7 +8,7 @@
 // GET /tasks/{id} (contorna o bug E6, ver web/docs/adr/0002).
 // O time NAO aparece de proposito: o quadro define o time (ADR 0001).
 
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, useCallback } from "react";
 import { X } from "lucide-react";
 import {
   createTask,
@@ -32,7 +32,11 @@ import {
   ehAtalhoDeSalvar,
   primeiroSelecionavel,
 } from "@/lib/teclasFormulario";
-import { motivoNaoCria } from "@/lib/criacaoTarefa";
+import {
+  motivoNaoCria,
+  comTodosOsResponsaveis,
+  todosJaEscolhidos,
+} from "@/lib/criacaoTarefa";
 import {
   haPendencias,
   linhasDasSubtarefas,
@@ -184,8 +188,82 @@ export default function TaskModal({
   const [puladasSub, setPuladasSub] = useState<Set<string>>(new Set());
   const [aviso, setAviso] = useState<string | null>(null);
   const [abertoResp, setAbertoResp] = useState(false);
+  /**
+   * Onde desenhar o painel de responsáveis, em coordenadas de VIEWPORT.
+   *
+   * ⚠️ ELE PRECISA SER `position: fixed`, E O MOTIVO É O CARD DO MODAL. O card
+   * tem `maxHeight: 88vh` + `overflowY: auto`, e um filho `absolute` é
+   * RECORTADO por esse overflow. Com o campo de Responsáveis perto do rodapé,
+   * o painel abria cortado e a Camila tinha de rolar o modal para escolher
+   * alguém -- que foi o pedido dela em 22/08: "dá pra deixar o seletor
+   * sobreposto pra eu não ter que ficar descendo a tela?".
+   *
+   * ⚠️ `fixed` ESCAPA DO RECORTE porque o card não tem `transform`, `filter`
+   * nem `contain` -- qualquer um dos três faria dele o bloco de contenção e o
+   * recorte voltaria, em silêncio. Se alguém animar o modal com `transform`,
+   * é aqui que quebra.
+   *
+   * ⚠️ E O PAINEL CONTINUA FILHO DO WRAPPER no DOM, sem portal. É o que
+   * mantém o clique-fora (`respWrapRef.current.contains`) e o foco
+   * funcionando -- um portal exigiria refazer os dois.
+   */
+  const [posResp, setPosResp] = useState<{
+    top: number;
+    left: number;
+    largura: number;
+    maxAltura: number;
+  } | null>(null);
   const [buscaResp, setBuscaResp] = useState("");
   const respWrapRef = useRef<HTMLDivElement>(null);
+
+  /**
+   * Mede onde o painel de responsáveis cabe, e vira para CIMA quando não cabe
+   * embaixo.
+   *
+   * ⚠️ NÃO DÁ PARA TESTAR ISTO EM jsdom: sem layout, todo
+   * `getBoundingClientRect` volta zerado, e virar para cima nunca dispararia.
+   * O portão possível é "o painel é `fixed`"; o resto é olho humano, e está
+   * escrito aqui para quem for mexer saber o que conferir na tela: campo no
+   * rodapé do modal, janela baixa, e o painel com mais gente do que cabe.
+   */
+  const medirResp = useCallback(() => {
+    const el = respWrapRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const MARGEM = 12;
+    const LARGURA = 300;
+    const espacoAbaixo = window.innerHeight - r.bottom - MARGEM;
+    const espacoAcima = r.top - MARGEM;
+    // Vira para cima só quando embaixo é apertado E em cima é melhor. Sem a
+    // segunda metade, um campo no meio de uma janela baixa ficaria pulando de
+    // lado a cada pixel de rolagem.
+    const paraCima = espacoAbaixo < 220 && espacoAcima > espacoAbaixo;
+    const maxAltura = Math.max(160, Math.min(360, paraCima ? espacoAcima : espacoAbaixo));
+    setPosResp({
+      // Preso na janela: perto da borda direita o painel sairia da tela.
+      left: Math.max(
+        MARGEM,
+        Math.min(r.left, window.innerWidth - LARGURA - MARGEM),
+      ),
+      top: paraCima ? Math.max(MARGEM, r.top - maxAltura - 6) : r.bottom + 6,
+      largura: LARGURA,
+      maxAltura,
+    });
+  }, []);
+
+  // ⚠️ `scroll` COM CAPTURE, e não no `window`: quem rola é o CARD do modal, e
+  // evento de rolagem de elemento não sobe. Sem o capture, o painel ficaria
+  // parado enquanto o campo âncora sai de baixo dele.
+  useEffect(() => {
+    if (!abertoResp) return;
+    medirResp();
+    window.addEventListener("resize", medirResp);
+    window.addEventListener("scroll", medirResp, true);
+    return () => {
+      window.removeEventListener("resize", medirResp);
+      window.removeEventListener("scroll", medirResp, true);
+    };
+  }, [abertoResp, medirResp]);
 
   // Colunas do quadro da tarefa em edicao. Em erro fica `[]` e nao `null`,
   // senao o seletor some para sempre quando a API de quadros cai.
@@ -923,8 +1001,25 @@ export default function TaskModal({
                 {abertoResp && (
                   <div
                     style={{
-                      position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 40,
-                      width: 300, maxWidth: "100%",
+                      // ⚠️ `fixed`, e não `absolute` -- ver `posResp`. O card
+                      // do modal recorta filho absoluto, e o campo fica perto
+                      // do rodapé.
+                      position: "fixed",
+                      top: posResp?.top ?? 0,
+                      left: posResp?.left ?? 0,
+                      // ⚠️ 70 É FOLGA, E NÃO NECESSIDADE -- conferido, não
+                      // suposto: o card do modal não tem `position` nem
+                      // `z-index`, então não abre contexto de empilhamento, e
+                      // qualquer valor positivo já o venceria. O número existe
+                      // para sobreviver ao dia em que o card ganhar um
+                      // `z-index` próprio.
+                      zIndex: 70,
+                      width: posResp?.largura ?? 300,
+                      maxWidth: "calc(100vw - 24px)",
+                      // Enquanto não mediu, fica invisível: desenhar em 0,0 e
+                      // pular para o lugar certo no quadro seguinte é pior que
+                      // não desenhar.
+                      visibility: posResp ? "visible" : "hidden",
                       background: "var(--surface)", border: "1px solid var(--border)",
                       borderRadius: 10, boxShadow: "var(--shadow)", padding: 8,
                     }}
@@ -952,9 +1047,79 @@ export default function TaskModal({
                         setBuscaResp("");
                       }}
                     />
+                    {/* ---- "Selecionar todos" e "Limpar" -----------------
+                        Pedido da Camila em 22/08. ⚠️ SO NA CRIACAO, e ela foi
+                        explicita ("quero no criar so").
+
+                        ⚠️ E O MOTIVO DE NAO ESTAR NO DETALHE DA TAREFA E
+                        MEDIDO, nao estetico: la cada caixa marcada e UMA
+                        requisicao imediata (`addAssignee`), e cada designacao
+                        dispara uma notificacao "Designada". Num time de ~26
+                        pessoas, um clique viraria 26 requisicoes e 25 avisos.
+                        Aqui a selecao e LOCAL ate o "Criar" -- da para
+                        desmarcar antes de qualquer coisa sair.
+
+                        ⚠️ E FORA DA DUPLICACAO tambem, e isso e decisao e nao
+                        descuido: na copia a lista de responsaveis ja vem
+                        REVISADA da origem (ADR 0031), e o passo 2 decide
+                        subtarefa por subtarefa a partir dela. Um "selecionar
+                        todos" ali mexeria na entrada daquele fluxo.
+
+                        ⚠️ "TODOS" E OS VISIVEIS, e nao o time inteiro. Com
+                        busca ativa, agir sobre quem nao esta na tela seria
+                        escolher pelas costas -- por isso o rotulo carrega o
+                        numero, que muda junto com a busca. */}
+                    {!editando && !duplicando && (
+                      <div
+                        style={{
+                          display: "flex", alignItems: "center", gap: 6,
+                          marginTop: 6,
+                        }}
+                      >
+                        {!todosJaEscolhidos(
+                          assigneeIds,
+                          membrosFiltrados.map((m) => m.id),
+                        ) && (
+                          <button
+                            type="button"
+                            className="btn btn-ghost"
+                            style={{ fontSize: 12, padding: "3px 8px" }}
+                            onClick={() =>
+                              setAssigneeIds((prev) =>
+                                comTodosOsResponsaveis(
+                                  prev,
+                                  membrosFiltrados.map((m) => m.id),
+                                ),
+                              )
+                            }
+                          >
+                            Selecionar todos ({membrosFiltrados.length})
+                          </button>
+                        )}
+                        {/* ⚠️ SO COM ALGUEM ESCOLHIDO: "limpar" sobre selecao
+                            vazia e afordancia que nao faz nada. Mesma regra do
+                            "Limpar hora" da capsula de datas. */}
+                        {assigneeIds.length > 0 && (
+                          <button
+                            type="button"
+                            className="btn btn-ghost"
+                            style={{ fontSize: 12, padding: "3px 8px" }}
+                            onClick={() => setAssigneeIds([])}
+                          >
+                            Limpar
+                          </button>
+                        )}
+                      </div>
+                    )}
                     <div
                       style={{
-                        maxHeight: 240, overflowY: "auto", marginTop: 6,
+                        // ⚠️ A ALTURA SAI DA MEDIÇÃO, e não é fixa em 240: com
+                        // o painel flutuando, uma lista alta demais sairia da
+                        // janela em vez de rolar por dentro. Os ~96px
+                        // descontados são a busca, a barra de ações e as
+                        // bordas.
+                        maxHeight: Math.max(120, (posResp?.maxAltura ?? 336) - 96),
+                        overflowY: "auto", marginTop: 6,
                         border: "1px solid var(--border)", borderRadius: 8,
                       }}
                     >
