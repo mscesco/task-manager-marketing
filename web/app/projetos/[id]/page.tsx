@@ -174,6 +174,25 @@ function Projeto() {
 
   return (
     <div>
+      {/* ⚠️ EU APAGUEI ESTE LINK AO REFAZER O CABEÇALHO, e a Camila pegou na
+          tela no mesmo dia: "você tirou o 'voltar' da tela quando abre um
+          projeto né". Foi regressão, não decisão -- ele morava no bloco de
+          cabeçalho que a página deixou de desenhar, e saiu junto sem que eu
+          percebesse.
+
+          ⚠️ FICA ACIMA DO CABEÇALHO, e não dentro dele: "voltar" é sobre a
+          NAVEGAÇÃO (de onde vim), e o cabeçalho é sobre o CONTEÚDO (o que
+          estou vendo). Enfiá-lo entre o título e o contador misturaria as duas
+          coisas -- é a mesma separação que o `acoesDoTitulo` respeita do outro
+          lado. */}
+      <a
+        href="/projetos"
+        className="muted"
+        style={{ fontSize: 13, display: "inline-block", marginBottom: 10 }}
+      >
+        ‹ Projetos
+      </a>
+
       {/* ⚠️ O NOME DO PROJETO APARECIA DUAS VEZES, e foi isso que o print da
           Camila mostrou. Esta página desenhava o próprio cabeçalho (bolinha +
           h1 de 19px + meta + descrição) e logo abaixo passava

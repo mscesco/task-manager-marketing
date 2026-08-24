@@ -13,6 +13,11 @@
 //   - cancelar a confirmação não chama a API;
 //   - confirmar chama e sai da página com `replace`, não `push`.
 //
+// ⚠️ E ELE VIROU O ARQUIVO DA PÁGINA, e não só do excluir: o teste de
+// navegação abaixo entrou aqui porque esta página não tinha teste NENHUM até
+// o excluir chegar. Criar um segundo arquivo para uma asserção só seria pior
+// que a mistura.
+//
 // ⚠️ O BOTÃO MUDOU DE LUGAR EM 22/08 e estes testes CAÍRAM -- que é o trabalho
 // deles. Ele era um botão vermelho no cabeçalho, ao lado de "Editar"; passou a
 // morar DENTRO do painel de edição, por decisão da Camila ("só tem um lápis de
@@ -127,6 +132,22 @@ afterEach(() => {
   cleanup();
   vi.clearAllMocks();
   vi.restoreAllMocks();
+});
+
+describe("Projeto -- navegação", () => {
+  it("⚠️ o link de VOLTAR existe -- eu o apaguei sem querer em 22/08", async () => {
+    // ⚠️ ESTE TESTE EXISTE POR UMA REGRESSÃO MINHA, e ela passou pelos quatro
+    // portões. Ao refazer o cabeçalho do projeto (o nome aparecia duas vezes),
+    // apaguei o bloco que a página desenhava -- e o "‹ Projetos" morava dentro
+    // dele. Saiu junto, em silêncio: nenhum teste desta página falava de
+    // navegação, e `tsc`/`build` não têm opinião sobre link que sumiu.
+    //
+    // A Camila pegou na tela no mesmo dia: "você tirou o 'voltar' da tela
+    // quando abre um projeto né".
+    montar();
+    const voltar = await screen.findByText(/Projetos/);
+    expect(voltar.getAttribute("href")).toBe("/projetos");
+  });
 });
 
 describe("Projeto -- excluir", () => {

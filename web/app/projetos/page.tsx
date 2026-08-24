@@ -171,7 +171,12 @@ function Projetos() {
            projeto pelo nome. */
         <div
           style={{
-            display: "flex", flexDirection: "column", gap: 0, maxWidth: 860,
+            // ⚠️ 1100, e não 860 (22/08). A Camila viu na tela: "tá muito
+            // pequeno". Em 860 a lista ficava um bloco estreito perdido numa
+            // tela de 1440, e o desenho mostra a faixa ocupando quase toda a
+            // largura útil. Continua com teto: largura cheia num monitor
+            // grande jogaria o status a meio metro do nome.
+            display: "flex", flexDirection: "column", gap: 0, maxWidth: 1100,
             border: "1px solid var(--border)", borderRadius: 12,
             overflow: "hidden",
           }}
@@ -186,15 +191,19 @@ function Projetos() {
                 // A borda de cima faz a divisória entre linhas; a primeira não
                 // tem, senão dobraria com a borda do container.
                 borderTop: i === 0 ? "none" : "1px solid var(--border)",
-                padding: "12px 16px",
-                display: "flex", alignItems: "center", gap: 10,
+                // ⚠️ ALTURA MÍNIMA, e não só padding maior: sem ela a linha
+                // encolhe de volta quando não há descrição, e a lista fica com
+                // faixas de alturas diferentes -- que é justamente o que sair
+                // da grade veio consertar.
+                minHeight: 56, padding: "14px 20px",
+                display: "flex", alignItems: "center", gap: 12,
                 opacity: p.is_archived ? 0.6 : 1,
               }}
             >
               <span
                 aria-hidden
                 style={{
-                  width: 9, height: 9, borderRadius: 999, flexShrink: 0,
+                  width: 10, height: 10, borderRadius: 999, flexShrink: 0,
                   background: STATUS_COLOR[p.status] || "#999",
                 }}
               />
@@ -203,7 +212,7 @@ function Projetos() {
                   armadilha do título do card, registrada no `web/AGENTS.md`. */}
               <span
                 style={{
-                  fontSize: 14, fontWeight: 600, minWidth: 0,
+                  fontSize: 15, fontWeight: 600, minWidth: 0,
                   overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                 }}
               >
@@ -214,7 +223,7 @@ function Projetos() {
                   className="muted"
                   title={p.description}
                   style={{
-                    fontSize: 12.5, minWidth: 0, flex: 1,
+                    fontSize: 13, minWidth: 0, flex: 1,
                     overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                   }}
                 >
@@ -227,7 +236,7 @@ function Projetos() {
               <span
                 className="muted"
                 style={{
-                  fontSize: 12, flexShrink: 0,
+                  fontSize: 12.5, flexShrink: 0,
                   marginLeft: p.description?.trim() ? undefined : "auto",
                 }}
               >
