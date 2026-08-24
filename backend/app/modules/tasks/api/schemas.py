@@ -603,7 +603,20 @@ class BoardColumnCreateRequest(BaseModel):
     devolve **500** para validador do Pydantic. Nome vazio e nome longo demais
     sao recusados no `BoardService._nome_de_coluna_valido`.
 
-    ⚠️ `color` NAO ENTRA (corte de 11/08). Coluna nova nasce com token, por
+    ⚠️⚠️ ESTE SCHEMA FICOU PARA TRAS EM 22/08, E DE PROPOSITO. A Spec 039 (F9)
+    deu escritor a `color` e a `notify_deadline` -- mas no LOTE
+    (`ColunaParaCriar` / `ColunaParaAvisar`), que e por onde o produto cria
+    coluna. Este endpoint solto **nao tem um unico chamador no front**:
+    `lib/api.ts::criarColuna` so aparece nos testes dele mesmo. Acrescentar os
+    campos aqui seria entregar contrato que ninguem exercita -- a mesma
+    cicatriz de "campo sem leitor" que esta spec ja tem duas vezes, virada do
+    avesso.
+
+    **Se um dia alguem voltar a usar esta rota, os dois campos vem junto** --
+    e as notas abaixo, que descrevem o estado ANTERIOR a F9, precisam ser lidas
+    com essa data em mente.
+
+    ⚠️ `color` NAO ENTRA AQUI (corte de 11/08). Coluna nova nasce com token, por
     rotacao fixa. Aceitar hex aqui abriria `style` a entrada de usuario num
     campo `String(60)`, exigiria validar `^#[0-9a-fA-F]{6}$` no backend e
     derivar o texto por luminancia no front -- e a Spec 031 (C1a) ja tinha
@@ -622,8 +635,13 @@ class BoardColumnCreateRequest(BaseModel):
     ⚠️ `position` NAO ENTRA. Coluna nova vai para o fim; reordenar e da fatia
     5b-6, junto com a tela que arrasta.
 
-    ⚠️⚠️ `notify_deadline` NAO ENTRA -- E ESTA E A AUSENCIA QUE MAIS ENGANA
-    QUEM LE O CODIGO (registrado em 18/08, decisao de 13/08 de NAO fazer).
+    ⚠️⚠️ `notify_deadline` NAO ENTRA AQUI -- e ate 22/08 nao entrava em lugar
+    NENHUM, que era a ausencia que mais enganava quem lia o codigo (registrado
+    em 18/08, decisao de 13/08 de nao fazer; **revertida pelo §7.3 da Spec 039
+    em 19/08 e implementada no lote em 22/08**).
+
+    O paragrafo abaixo descreve o mundo de ANTES, e vale guardar porque ele
+    explica por que as 8 colunas de producao nasceram todas cobrando prazo.
 
     O campo e **lido** (`DeadlineNotifyService` filtra por ele), e **exposto**
     (`BoardColumnResponse.notify_deadline`) -- mas **nao tem escritor**:
@@ -632,8 +650,8 @@ class BoardColumnCreateRequest(BaseModel):
     `False` nas colunas base que o `board_defaults` cria assim** (o
     `Bloqueado`), e nao ha caminho de produto que o mude.
 
-    ⚠️ TRES LUGARES DO CODIGO PROMETEM O CONTRARIO POR ESCRITO, e por isso
-    esta nota existe:
+    ⚠️ TRES LUGARES DO CODIGO PROMETIAM O CONTRARIO POR ESCRITO -- e desde
+    22/08 as tres promessas sao verdade, pelo lote:
 
       1. `deadline_notify_service.py` -- "a flag `notify_deadline`, que e como
          a ADR 0030 prometeu que um time criaria 'Aguardando cliente' sem
@@ -650,11 +668,13 @@ class BoardColumnCreateRequest(BaseModel):
     todo mundo ja vive. O custo de deixar assim e ZERO para quem usa, e este
     paragrafo e o que impede que ele volte a ser zero para quem LE.
 
-    ⚠️ SE UM DIA ENTRAR: o campo aqui e a parte facil. O que decide o tamanho e
-    o `PATCH` -- editar `notify_deadline` de uma coluna que JA TEM tarefas com
-    prazo muda, em silencio, quais avisos vao sair amanha, e sem uma linha de
-    historico. E o mesmo argumento que mantem `semantic` fora do
-    `BoardColumnRenameRequest`.
+    ⚠️ E O AVISO QUE ESTAVA ESCRITO AQUI SE CONFIRMOU: "o campo e a parte
+    facil; o que decide o tamanho e o PATCH". Editar `notify_deadline` de uma
+    coluna que JA TEM tarefas com prazo muda, em silencio, quais avisos vao
+    sair amanha, e sem uma linha de historico. A Spec 039 (§7.3) aceitou isso
+    de olhos abertos, e a mitigacao e de INTERFACE: o rotulo na tela e "Cobrar
+    prazo nesta coluna", com as consequencias escritas ao lado. Ver
+    `BoardService.definir_aviso_de_prazo`.
     """
 
     name: str
@@ -685,6 +705,36 @@ class ColunaParaCriar(BaseModel):
     tmp: str
     name: str
     semantic: ColumnSemantic
+    #: Spec 039 (F9). ⚠️ `None` = a rotacao decide, que e o comportamento de
+    #: sempre -- e por isso o default nao pode virar uma cor concreta: cliente
+    #: velho que nao manda o campo tem de continuar recebendo a rotacao.
+    #:
+    #: ⚠️ SO TOKEN DA PALETA, e a recusa mora no `BoardService` (por LISTA, e
+    #: nao por regex de hex). Aqui nao ha `Field(pattern=...)` pelo mesmo motivo
+    #: de sempre neste projeto: validador do Pydantic devolve **500**, e nao
+    #: 422, por causa do `_validation_error_handler`.
+    color: str | None = None
+    #: Spec 039 (F9) e §7.3 da spec. Default `True` = o comportamento de hoje.
+    notify_deadline: bool = True
+
+
+class ColunaParaAvisar(BaseModel):
+    """Coluna que muda de opiniao sobre cobrar prazo (Spec 039, F9).
+
+    ⚠️ ESTE E O CAMPO QUE PASSOU MESES SEM ESCRITOR, e o `BoardColumnCreateRequest`
+    tem a nota longa contando a historia: ele era LIDO pelo `DeadlineNotifyService`
+    e EXPOSTO na resposta, mas nenhuma rota o escrevia. Tres lugares do codigo
+    prometiam por escrito que dava para criar "Aguardando cliente" sem cobrar
+    prazo; nao dava. A partir daqui da.
+
+    ⚠️ SO COLUNA QUE JA EXISTE -- coluna nova ja nasce com o valor certo pelo
+    `ColunaParaCriar`. Mesma ausencia de `tmp:` do `ColunaParaRenomear`, e pelo
+    mesmo motivo: duas fontes sobre a mesma linha fariam a ordem das etapas
+    virar regra invisivel.
+    """
+
+    id: uuid.UUID
+    notify_deadline: bool
 
 
 class ColunaParaRenomear(BaseModel):
@@ -730,6 +780,12 @@ class BoardColumnsBatchRequest(BaseModel):
 
     criar: list[ColunaParaCriar] = Field(default_factory=list)
     renomear: list[ColunaParaRenomear] = Field(default_factory=list)
+    #: Spec 039 (F9). Colunas que ligam ou desligam a cobranca de prazo.
+    #:
+    #: ⚠️ RODA ENTRE `renomear` E `alvos`, e a ordem tem motivo: uma coluna
+    #: apagada no mesmo lote some na etapa 4, e mexer na flag dela depois seria
+    #: 404 por uma coluna que a propria pessoa mandou apagar.
+    avisos: list[ColunaParaAvisar] = Field(default_factory=list)
     #: Colunas que passam a ser o ALVO da semantica delas (Spec 036, fatia 12).
     #:
     #: ⚠️ SO UUID -- `tmp:` NAO E ACEITO AQUI, e a ausencia e a regra. Coluna

@@ -95,6 +95,7 @@ from app.modules.tasks.api.schemas import (
 from app.modules.tasks.application.board_service import (
     BoardService,
     LoteApagar,
+    LoteAviso,
     LoteCriar,
     LoteRenomear,
 )
@@ -332,11 +333,26 @@ async def apply_columns_batch(
         # ⚠️ A TRADUCAO MORA AQUI, no router, porque `application/` nao importa
         # de `api/` neste projeto -- conferido em 13/08.
         criar=[
-            LoteCriar(tmp=c.tmp, name=c.name, semantic=c.semantic)
+            # ⚠️ CAMPO A CAMPO, e por isso `color` e `notify_deadline`
+            # PRECISAM ESTAR AQUI (Spec 039, F9). Declarar no schema NAO poe no
+            # dominio -- esta linha e que poe. E a mesma armadilha que deixou o
+            # `board_id` fora do corpo por um mes do lado do front, e ela existe
+            # dos dois lados da API.
+            LoteCriar(
+                tmp=c.tmp,
+                name=c.name,
+                semantic=c.semantic,
+                color=c.color,
+                notify_deadline=c.notify_deadline,
+            )
             for c in payload.criar
         ],
         renomear=[
             LoteRenomear(id=r.id, name=r.name) for r in payload.renomear
+        ],
+        avisos=[
+            LoteAviso(id=a.id, notify_deadline=a.notify_deadline)
+            for a in payload.avisos
         ],
         # ⚠️ Spec 036, fatia 12. Sem esta linha o campo chega no payload e e
         # descartado em SILENCIO -- o lote responderia 200 e o alvo nao teria
