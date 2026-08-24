@@ -101,6 +101,8 @@ export default function Board({
   podeEditarColunas = false,
   title,
   acoesDoQuadro,
+  acoesDoTitulo,
+  abaixoDoCabecalho,
 }: {
   projectId?: string; // presente => quadro de PROJETO
   subteamId?: string; // presente => quadro de SUBTIME (modo hibrido, Fatia 4)
@@ -159,6 +161,29 @@ export default function Board({
    * desfaz.
    */
   acoesDoQuadro?: ReactNode;
+  /**
+   * Controles que moram GRUDADOS no título, depois do contador.
+   *
+   * ⚠️ EXISTE PARA O QUADRO DE PROJETO (`Quadro Projeto.png`). No desenho da
+   * Camila o lápis fica ali, junto do nome -- e no quadro de projeto ele NÃO é
+   * o de editar colunas: é o de editar o PROJETO. Decisão dela, 22/08: "no
+   * quadro de projeto não é pra ser possível editar o quadro, por isso só tem
+   * um lápis de edição, que é pra editar o projeto".
+   *
+   * ⚠️ DIFERENTE do `acoesDoQuadro`, que só aparece no MODO DE EDIÇÃO e cujo
+   * assunto é o quadro. Este aparece no cabeçalho normal e o assunto é o dono
+   * da tela.
+   */
+  acoesDoTitulo?: ReactNode;
+  /**
+   * O que desenhar logo abaixo da linha do cabeçalho, antes das colunas.
+   *
+   * ⚠️ É O LUGAR DA META DO PROJETO (status, prioridade, datas). Ela morava
+   * num cabeçalho PRÓPRIO da página, acima do quadro -- e o resultado era o
+   * nome do projeto aparecendo DUAS VEZES na tela: uma na página, outra aqui,
+   * porque o `Board` desenha o `title` que recebe. O desenho tem uma linha só.
+   */
+  abaixoDoCabecalho?: ReactNode;
 }) {
   const [tasks, setTasks] = useState<Task[] | null>(null);
   // Fatia 5b-6: o modo de EDICAO DE COLUNAS. So existe em quadro avulso.
@@ -1652,6 +1677,10 @@ export default function Board({
         <span className="muted" style={{ fontSize: 13 }}>
           {temFiltro ? `${raizes.length} de ${visiveis.length}` : raizes.length} tarefas
         </span>
+        {/* Junto do contador, como no `Quadro Projeto.png` -- e antes da busca,
+            que é onde a linha muda de assunto (do QUE se olha para COMO se
+            procura). */}
+        {acoesDoTitulo}
         <input
           value={busca}
           onChange={(e) => setBusca(e.target.value)}
@@ -1926,6 +1955,12 @@ export default function Board({
         </button>
       </div>
       )}
+
+      {/* ⚠️ ANTES DAS PASTILHAS DE FILTRO, e a ordem é a leitura: a meta é do
+          PROJETO (o que é esta tela) e a pastilha é do FILTRO (o que estou
+          escondendo agora). Invertendo, o estado temporário empurraria o
+          permanente para baixo. */}
+      {abaixoDoCabecalho}
 
       {/* --- Pastilhas de filtro ativo (Spec 031, C3) ---------------------
           Substituem o badge numerico do botao. O numero dizia QUANTOS; a
