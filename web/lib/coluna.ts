@@ -87,10 +87,56 @@ const SEMANTICAS_TERMINAIS: ReadonlySet<ColumnSemantic> = new Set<ColumnSemantic
   "CANCELLED",
 ]);
 
+/**
+ * A SEMÂNTICA é terminal? (Spec 039, F9.)
+ *
+ * ⚠️ EXISTE PORQUE O FORMULÁRIO DE CRIAR NÃO TEM COLUNA. Ali a pessoa escolheu
+ * um tipo e nada mais existe ainda — não há `Coluna` para passar ao `terminal`
+ * abaixo. Segunda cópia do `Set` seria como as regras divergem; por isso o
+ * `terminal` passou a chamar esta.
+ */
+export function semanticaTerminal(semantic: ColumnSemantic): boolean {
+  return SEMANTICAS_TERMINAIS.has(semantic);
+}
+
 /** A tarefa acabou (concluida ou cancelada) por estar nesta coluna. */
 export function terminal(coluna: Coluna): boolean {
-  return SEMANTICAS_TERMINAIS.has(coluna.semantic);
+  return semanticaTerminal(coluna.semantic);
 }
+
+/**
+ * As cores que uma coluna criada por gente pode receber (Spec 039, F9).
+ *
+ * ⚠️⚠️ ESTA LISTA É CÓPIA DO BACKEND — `board_service.py::CORES_DE_COLUNA` —,
+ * na MESMA ORDEM, e nada no repositório verifica isso. Não é descuido: não há
+ * teste que cruze Python e TypeScript aqui, e inventar um custaria mais do que
+ * o problema vale.
+ *
+ * **O que protege a divergência é o backend recusar.** Ele valida por LISTA e
+ * devolve `coluna_cor_invalida` com as cores aceitas dentro — então uma cor que
+ * exista só aqui vira 422 na cara de quem clicou, e não uma coluna com cor
+ * errada no banco. Barulhento, e é o que se quer.
+ *
+ * ⚠️ E A ORDEM IMPORTA, mesmo sem afetar a validação: ela é a ordem da rotação,
+ * e a rotação é o que decide a cor de quem NÃO escolhe. Trocar a ordem aqui
+ * faria a paleta da tela discordar visualmente do que o backend entrega por
+ * omissão.
+ *
+ * ⚠️ TOKEN, NUNCA HEX (corte de 11/08, mantido em 22/08). Token inverte no tema
+ * escuro; hex não. A decisão da Camila foi "os 8 tokens agora, roda RGB
+ * depois" — e a roda é fatia própria, porque ela obriga a derivar a cor do
+ * texto por luminância (ver `corEhHex`, sem leitor até hoje).
+ */
+export const CORES_DE_COLUNA: readonly string[] = [
+  "var(--status-backlog-dot)",
+  "var(--status-planned-dot)",
+  "var(--status-progress-dot)",
+  "var(--status-review-dot)",
+  "var(--status-external-dot)",
+  "var(--status-done-dot)",
+  "var(--status-cancel-dot)",
+  "var(--status-blocked-dot)",
+];
 
 /**
  * Esta coluna cobra prazo?

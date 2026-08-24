@@ -7,10 +7,15 @@
  * `duplicateTaskCorpo` (05/08) e `createTaskCorpo` (13/08) nasceram DEPOIS do
  * estrago -- este e o segundo escrito antes.
  *
- * ⚠️ E AQUI HA MAIS SUPERFICIE QUE NOS OUTROS TRES. Sao CINCO listas (a
- * quinta, `alvos`, entrou na fatia 12) e um
+ * ⚠️ E AQUI HA MAIS SUPERFICIE QUE NOS OUTROS TRES. Sao SEIS listas (a
+ * quinta, `alvos`, entrou na fatia 12; a sexta, `avisos`, na Spec 039 F9) e um
  * prefixo de texto (`tmp:`) que so existe em dois lugares: este arquivo e o
  * `_PREFIXO_TMP` do backend. Nada os amarra alem deste teste.
+ *
+ * ⚠️ E ELE CAIU DE NOVO EM 22/08, com a F9 -- pela SEGUNDA vez fazendo o
+ * trabalho dele. Vale registrar porque as tres fatias anteriores (F6-c, F7, F8)
+ * passaram pelos quatro portoes sem derrubar nada: quando existe um guardiao
+ * de corpo, campo novo nao entra em silencio; quando nao existe, entra.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -44,25 +49,59 @@ afterEach(() => {
 });
 
 describe("aplicarLoteDeColunas -- o corpo que realmente sai", () => {
-  it("⚠️ manda as CINCO listas, com esses nomes", async () => {
+  it("⚠️ manda as SEIS listas, com esses nomes", async () => {
     // ⚠️ ESTE TESTE CAIU QUANDO `alvos` ENTROU (fatia 12), E FOI ELE FAZENDO O
     // TRABALHO DELE. O `toEqual` compara o corpo INTEIRO: campo novo no
     // `LoteDeColunas` que nao ganhe a linha correspondente dentro do
     // `aplicarLoteDeColunas` reprova aqui, em vez de ser descartado em
     // silencio e o lote responder 200 sem ter feito nada.
     await aplicarLoteDeColunas("b1", {
-      criar: [{ tmp: "t1", name: "Entregue", semantic: "DONE" }],
+      criar: [
+        {
+          tmp: "t1",
+          name: "Entregue",
+          semantic: "DONE",
+          // Spec 039 (F9): os dois campos novos do `criar` viajam junto.
+          color: "var(--status-done-dot)",
+          notify_deadline: false,
+        },
+      ],
       renomear: [{ id: "c1", name: "A fazer" }],
+      avisos: [{ id: "c4", notify_deadline: false }],
       alvos: ["c3"],
       apagar: [{ id: "c2", destino: "tmp:t1" }],
       ordem: ["c1", "tmp:t1"],
     });
     expect(requisicao().corpo).toEqual({
-      criar: [{ tmp: "t1", name: "Entregue", semantic: "DONE" }],
+      criar: [
+        {
+          tmp: "t1",
+          name: "Entregue",
+          semantic: "DONE",
+          color: "var(--status-done-dot)",
+          notify_deadline: false,
+        },
+      ],
       renomear: [{ id: "c1", name: "A fazer" }],
+      avisos: [{ id: "c4", notify_deadline: false }],
       alvos: ["c3"],
       apagar: [{ id: "c2", destino: "tmp:t1" }],
       ordem: ["c1", "tmp:t1"],
+    });
+  });
+
+  it("⚠️ coluna nova SEM cor nao manda a chave -- e nao manda null", async () => {
+    // ⚠️ A DIFERENCA E REAL NO BACKEND. Chave ausente = "a rotacao decide", que
+    // e o comportamento de sempre. `color: null` seria um valor, e cairia na
+    // validacao por lista como cor invalida. Um `?? null` bem-intencionado em
+    // qualquer ponto do caminho quebraria criar coluna sem escolher cor.
+    await aplicarLoteDeColunas("b1", {
+      criar: [{ tmp: "t1", name: "Ideias", semantic: "OPEN" }],
+    });
+    expect(requisicao().corpo.criar[0]).toEqual({
+      tmp: "t1",
+      name: "Ideias",
+      semantic: "OPEN",
     });
   });
 
@@ -88,6 +127,7 @@ describe("aplicarLoteDeColunas -- o corpo que realmente sai", () => {
     expect(requisicao().corpo).toEqual({
       criar: [],
       renomear: [],
+      avisos: [],
       alvos: [],
       apagar: [],
       ordem: [],

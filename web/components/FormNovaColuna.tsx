@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 
 import type { ColumnSemantic } from "@/lib/coluna";
 import { ROTULO_DA_SEMANTICA } from "@/lib/edicaoDeColunas";
+import { CORES_DE_COLUNA, semanticaTerminal } from "@/lib/coluna";
 
 const TIPOS: ColumnSemantic[] = ["OPEN", "IN_PROGRESS", "DONE", "CANCELLED"];
 
@@ -35,11 +36,22 @@ export default function FormNovaColuna({
   onCriar,
   onCancelar,
 }: {
-  onCriar: (nome: string, semantica: ColumnSemantic) => void;
+  onCriar: (
+    nome: string,
+    semantica: ColumnSemantic,
+    /** Spec 039 (F9). ⚠️ `undefined` = não escolheu; a rotação do backend decide. */
+    cor: string | undefined,
+    avisaPrazo: boolean,
+  ) => void;
   onCancelar: () => void;
 }) {
   const [nome, setNome] = useState("");
   const [semantica, setSemantica] = useState<ColumnSemantic>("IN_PROGRESS");
+  // Spec 039 (F9). ⚠️ `undefined` E UM ESTADO LEGÍTIMO, e não "ainda não
+  // carregou": é "deixa a rotação escolher", que é como toda coluna nasceu até
+  // hoje. Por isso o formulário abre com NENHUM tento marcado.
+  const [cor, setCor] = useState<string | undefined>(undefined);
+  const [avisaPrazo, setAvisaPrazo] = useState(true);
   const caixaRef = useRef<HTMLDivElement | null>(null);
   const nomeRef = useRef<HTMLInputElement | null>(null);
 
@@ -118,7 +130,7 @@ export default function FormNovaColuna({
               // pareceria que a coluna foi criada.
               if (e.key === "Enter" && podeCriar) {
                 e.preventDefault();
-                onCriar(limpo, semantica);
+                onCriar(limpo, semantica, cor, avisaPrazo);
               }
             }}
           />
@@ -151,6 +163,127 @@ export default function FormNovaColuna({
           </div>
         </div>
 
+        {/* ---- Cor (Spec 039, F9) --------------------------------------
+            ⚠️ OITO TENTOS, E NÃO UMA RODA RGB. Decisão da Camila em 22/08:
+            "os 8 tokens agora, roda depois". Os tokens são os MESMOS que o
+            backend já usava em rotação -- a mudança é a pessoa escolher em vez
+            de receber o próximo da fila.
+
+            ⚠️ E NÃO É LIMITAÇÃO DE PREGUIÇA: token inverte no tema escuro e
+            hex não. Um roxo escolhido no claro sumiria no fundo escuro, e foi
+            por isso que a Spec 031 (C1a) tirou os hex do produto. A roda RGB
+            é fatia própria porque ela obriga a derivar a cor do TEXTO por
+            luminância -- é o dia em que `lib/coluna.ts::corEhHex` ganha o
+            primeiro leitor.
+
+            ⚠️ "AUTOMÁTICA" É UMA OPÇÃO DE VERDADE, e vem primeiro: ela manda
+            `undefined` e deixa a rotação do backend decidir, que é o
+            comportamento de sempre. Sem ela, quem só quer uma coluna nova
+            seria obrigado a ter opinião sobre cor. */}
+        <div className="field" style={{ marginTop: 14 }}>
+          <span className="label" id="nova-coluna-cor">
+            Cor
+          </span>
+          <div
+            role="radiogroup"
+            aria-labelledby="nova-coluna-cor"
+            style={{
+              display: "flex", flexWrap: "wrap", alignItems: "center",
+              gap: 8, marginTop: 4,
+            }}
+          >
+            <button
+              type="button"
+              role="radio"
+              aria-checked={cor === undefined}
+              onClick={() => setCor(undefined)}
+              title="Deixar o sistema escolher"
+              style={{
+                height: 28, padding: "0 10px", borderRadius: 999,
+                fontSize: 12, fontWeight: cor === undefined ? 600 : 400,
+                cursor: "pointer",
+                border:
+                  cor === undefined
+                    ? "1px solid var(--accent)"
+                    : "1px dashed var(--border)",
+                background:
+                  cor === undefined ? "var(--accent-soft)" : "transparent",
+                color: cor === undefined ? "var(--accent)" : "var(--text-soft)",
+              }}
+            >
+              Automática
+            </button>
+            {CORES_DE_COLUNA.map((token, i) => (
+              <button
+                key={token}
+                type="button"
+                role="radio"
+                aria-checked={cor === token}
+                onClick={() => setCor(token)}
+                // ⚠️ O RÓTULO ACESSÍVEL É O NÚMERO, e não o nome do token.
+                // "var(--status-external-dot)" lido em voz alta não é cor
+                // nenhuma, e os nomes internos ("external", "blocked") são do
+                // status de onde o token veio, não da cor que ele pinta --
+                // chamar de "Aprovação externa" ensinaria errado.
+                aria-label={`Cor ${i + 1}`}
+                title={`Cor ${i + 1}`}
+                style={{
+                  width: 28, height: 28, borderRadius: 999, cursor: "pointer",
+                  background: token,
+                  // O anel de escolha fica FORA da bolinha (box-shadow, e não
+                  // border), senão a cor encolheria ao ser escolhida.
+                  border: "1px solid var(--border)",
+                  boxShadow:
+                    cor === token
+                      ? "0 0 0 2px var(--surface), 0 0 0 4px var(--accent)"
+                      : undefined,
+                }}
+              />
+            ))}
+          </div>
+        </div>
+
+        {/* ---- Cobrar prazo (Spec 039, §7.3) ---------------------------
+            ⚠️ O RÓTULO NÃO É `notify_deadline`, e isso é decisão escrita: é
+            "Cobrar prazo nesta coluna", com as consequências ao lado. Sem o
+            texto, alguém desmarca para tirar vermelho da tela e silencia
+            notificação sem saber -- e o backend não guarda histórico de quem
+            desligou.
+
+            ⚠️ ESCONDIDA EM COLUNA TERMINAL (§7.3, item 3). Em Concluído e
+            Cancelado a flag é ignorada pelo backend; mostrar um controle
+            inerte seria mentira de interface. Ela some junto com o estado --
+            se a pessoa desmarcar e depois trocar o tipo para Concluído, o
+            valor guardado deixa de ter efeito, e é isso mesmo. */}
+        {!semanticaTerminal(semantica) && (
+          <div className="field" style={{ marginTop: 14 }}>
+            <label
+              style={{
+                display: "flex", alignItems: "flex-start", gap: 8,
+                cursor: "pointer", fontSize: 13,
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={avisaPrazo}
+                onChange={(e) => setAvisaPrazo(e.target.checked)}
+                style={{ marginTop: 2, cursor: "pointer", flexShrink: 0 }}
+              />
+              <span>
+                Cobrar prazo nesta coluna
+                <span
+                  className="muted"
+                  style={{ display: "block", fontSize: 12, marginTop: 2 }}
+                >
+                  Desmarcado, as tarefas daqui não ficam vermelhas por atraso e
+                  não geram aviso de prazo. Serve para etapas de espera, como
+                  “Aguardando cliente”.
+                </span>
+              </span>
+            </label>
+          </div>
+        )}
+
         <div
           style={{
             display: "flex",
@@ -166,7 +299,7 @@ export default function FormNovaColuna({
             type="button"
             className="btn btn-primary"
             disabled={!podeCriar}
-            onClick={() => onCriar(limpo, semantica)}
+            onClick={() => onCriar(limpo, semantica, cor, avisaPrazo)}
           >
             Criar
           </button>

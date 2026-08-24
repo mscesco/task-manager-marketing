@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, GripVertical, X } from "lucide-react";
+import { Bell, BellOff, ChevronLeft, ChevronRight, GripVertical, X } from "lucide-react";
 
 import type { LinhaDeEdicao } from "@/lib/rascunhoDeColunas";
 import { ROTULO_DA_SEMANTICA } from "@/lib/edicaoDeColunas";
+import { semanticaTerminal } from "@/lib/coluna";
 
 /**
  * O cabeçalho de uma coluna com o modo de edição LIGADO (Spec 036, fatia 6c-2).
@@ -26,6 +27,7 @@ export default function CabecalhoDeColunaEditavel({
   onRenomear,
   onMarcar,
   onTornarAlvo,
+  onAvisar,
   onMover,
   arrasteRef,
   arrasteProps,
@@ -44,6 +46,14 @@ export default function CabecalhoDeColunaEditavel({
    * depois, para outra pessoa. Trocar é trocar.
    */
   onTornarAlvo: () => void;
+  /**
+   * Liga ou desliga a cobrança de prazo desta coluna (Spec 039, §7.3).
+   *
+   * ⚠️ RECEBE O VALOR NOVO, e não é um "alternar" sem argumento. Quem sabe o
+   * valor atual é a `linha`, e mandar o destino explícito evita o clássico de
+   * dois cliques rápidos lerem o mesmo estado velho.
+   */
+  onAvisar: (valor: boolean) => void;
   onMover: (direcao: "esquerda" | "direita") => void;
   /** Vem do `useSortable`. Ausente nos testes -- ver o comentário da alça. */
   arrasteRef?: (no: HTMLElement | null) => void;
@@ -243,6 +253,46 @@ export default function CabecalhoDeColunaEditavel({
           }}
         >
           tornar padrão
+        </button>
+      )}
+
+      {/* ---- Cobrar prazo (Spec 039, F9 e §7.3, item 2) ---------------
+          ⚠️ ESTE BOTÃO EXISTE PARA AS 8 COLUNAS DE PRODUÇÃO. Elas nasceram
+          antes de o campo ter escritor, e até 22/08 a única forma de mudar era
+          SQL no Adminer. O modo de edição já salva em lote com desfazer, então
+          a caixa pega isso de graça.
+
+          ⚠️ É ÍCONE, E NÃO CAIXA COM RÓTULO -- e a diferença é deliberada. O
+          §7.3 pede o texto "Cobrar prazo nesta coluna" com as consequências ao
+          lado, e ele está por extenso no FORMULÁRIO DE CRIAR, onde há espaço.
+          Aqui o cabeçalho tem ~250px e já carrega alça, nome, selo, duas setas
+          e o "x": a mesma frase empurraria tudo. O texto vive no `title` e no
+          `aria-label`, e o estado é dito pelo `aria-pressed` -- não pela cor
+          do sino, que sozinha não diz nada a quem não vê cor.
+
+          ⚠️ NUNCA EM COLUNA TERMINAL (§7.3, item 3): lá o backend ignora a
+          flag, e um controle inerte é mentira de interface. E nunca na
+          apagada: mexer numa coluna que sai no mesmo lote é gesto sem efeito
+          -- o `paraLote` inclusive filtra. */}
+      {!linha.apagada && !semanticaTerminal(linha.semantic) && (
+        <button
+          type="button"
+          onClick={() => onAvisar(!linha.avisaPrazo)}
+          aria-pressed={linha.avisaPrazo}
+          aria-label={`Cobrar prazo na coluna ${linha.nome}`}
+          title={
+            linha.avisaPrazo
+              ? "Cobra prazo: as tarefas daqui ficam vermelhas quando atrasam e geram aviso. Clique para desligar."
+              : "Não cobra prazo: as tarefas daqui não ficam vermelhas por atraso nem geram aviso. Clique para ligar."
+          }
+          style={{
+            display: "inline-flex", alignItems: "center",
+            background: "none", border: "none", padding: 2,
+            cursor: "pointer", lineHeight: 0,
+            color: linha.avisaPrazo ? "var(--text-faint)" : "var(--text-soft)",
+          }}
+        >
+          {linha.avisaPrazo ? <Bell size={13} /> : <BellOff size={13} />}
         </button>
       )}
 

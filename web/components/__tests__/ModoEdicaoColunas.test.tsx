@@ -14,6 +14,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import CabecalhoDeColunaEditavel from "@/components/CabecalhoDeColunaEditavel";
 import FormNovaColuna from "@/components/FormNovaColuna";
 import type { LinhaDeEdicao } from "@/lib/rascunhoDeColunas";
+import { CORES_DE_COLUNA } from "@/lib/coluna";
 
 afterEach(cleanup);
 
@@ -26,6 +27,8 @@ function linha(over: Partial<LinhaDeEdicao> = {}): LinhaDeEdicao {
     nova: false,
     alvo: false,
     impedimento: null,
+    // Spec 039 (F9). O default do produto: coluna cobra prazo.
+    avisaPrazo: true,
     ...over,
   };
 }
@@ -34,6 +37,7 @@ function montar(over: Partial<LinhaDeEdicao> = {}, props: Partial<Record<string,
   const onRenomear = vi.fn();
   const onMarcar = vi.fn();
   const onTornarAlvo = vi.fn();
+  const onAvisar = vi.fn();
   const onMover = vi.fn();
   render(
     <CabecalhoDeColunaEditavel
@@ -44,11 +48,12 @@ function montar(over: Partial<LinhaDeEdicao> = {}, props: Partial<Record<string,
       onRenomear={onRenomear}
       onMarcar={onMarcar}
       onTornarAlvo={onTornarAlvo}
+      onAvisar={onAvisar}
       onMover={onMover}
       {...props}
     />,
   );
-  return { onRenomear, onMarcar, onTornarAlvo, onMover };
+  return { onRenomear, onMarcar, onTornarAlvo, onAvisar, onMover };
 }
 
 describe("CabecalhoDeColunaEditavel -- renomear no lugar", () => {
@@ -115,6 +120,7 @@ describe("CabecalhoDeColunaEditavel -- renomear no lugar", () => {
           onRenomear={vi.fn()}
           onMarcar={vi.fn()}
           onTornarAlvo={vi.fn()}
+          onAvisar={vi.fn()}
           onMover={vi.fn()}
         />
       </div>,
@@ -208,7 +214,7 @@ describe("FormNovaColuna", () => {
     expect(document.activeElement).toBe(screen.getByLabelText("Nome da coluna"));
   });
 
-  it("cria com nome e tipo", () => {
+  it("cria com nome e tipo -- e, sem escolher, cor `undefined` e prazo cobrado", () => {
     const { onCriar } = montarForm();
     fireEvent.change(screen.getByLabelText("Nome da coluna"), {
       target: { value: "Aguardando cliente" },
@@ -217,7 +223,16 @@ describe("FormNovaColuna", () => {
       target: { value: "DONE" },
     });
     fireEvent.click(screen.getByText("Criar"));
-    expect(onCriar).toHaveBeenCalledWith("Aguardando cliente", "DONE");
+    // ⚠️ `undefined` E NAO uma cor concreta: e "a rotacao do backend decide",
+    // que e como toda coluna nasceu ate 22/08. Um default concreto aqui faria
+    // a tela decidir o que e do servidor -- e todas as colunas novas sairiam
+    // da mesma cor.
+    expect(onCriar).toHaveBeenCalledWith(
+      "Aguardando cliente",
+      "DONE",
+      undefined,
+      true,
+    );
   });
 
   it("⚠️ o botão fica travado sem nome", () => {
@@ -235,13 +250,94 @@ describe("FormNovaColuna", () => {
     expect(onCancelar).toHaveBeenCalled();
   });
 
-  it("⚠️ NÃO tem campo de cor", () => {
-    // ⚠️ Decisão de 13/08: cor virou fatia própria. Hoje ela sai de
-    // `_cor_por_rotacao` sobre os 8 tokens, com contraste conferido; hex livre
-    // exige schema, validação e a decisão paleta × livre. Se este teste ficar
-    // vermelho, alguém trouxe a fatia para dentro sem passar pelo plano.
+  // =====================================================================
+  // Spec 039, F9 -- a cor e a cobrança de prazo.
+  //
+  // ⚠️ AQUI MORAVA O TESTE "NÃO tem campo de cor", e ele caiu em 22/08 fazendo
+  // exatamente o que prometia. O comentário dele dizia: "se este teste ficar
+  // vermelho, alguém trouxe a fatia para dentro sem passar pelo plano". Desta
+  // vez a fatia PASSOU pelo plano -- a Camila decidiu "os 8 tokens agora, roda
+  // RGB depois" --, então ele foi substituído em vez de apagado, e o que ele
+  // guardava continua guardado: hex livre segue fora.
+  // =====================================================================
+
+  it("⚠️ a cor sai de uma PALETA de tokens -- não há campo de hex", () => {
+    // O que o teste antigo protegia continua valendo: `<input type="color">`
+    // devolveria hex, e hex não inverte no tema escuro (Spec 031, C1a). A roda
+    // RGB é fatia própria porque obriga a derivar a cor do texto por
+    // luminância.
     montarForm();
-    expect(screen.queryByLabelText(/cor/i)).toBeNull();
+    expect(document.querySelector('input[type="color"]')).toBeNull();
+    expect(
+      screen.getByRole("radiogroup", { name: "Cor" }),
+    ).toBeTruthy();
+    // Os oito tentos mais a opção "Automática".
+    expect(screen.getAllByRole("radio").length).toBe(9);
+  });
+
+  it('⚠️ "Automática" vem marcada, e é uma escolha de verdade', () => {
+    // Sem ela, quem só quer uma coluna nova seria obrigado a ter opinião sobre
+    // cor -- e o comportamento de sempre (rotação do backend) deixaria de ser
+    // alcançável pela tela.
+    montarForm();
+    expect(
+      screen.getByRole("radio", { name: "Automática" }).getAttribute("aria-checked"),
+    ).toBe("true");
+  });
+
+  it("escolher um tento manda o TOKEN, e não um hex", () => {
+    const { onCriar } = montarForm();
+    fireEvent.change(screen.getByLabelText("Nome da coluna"), {
+      target: { value: "Ideias" },
+    });
+    fireEvent.click(screen.getByRole("radio", { name: "Cor 3" }));
+    fireEvent.click(screen.getByText("Criar"));
+    expect(onCriar).toHaveBeenCalledWith(
+      "Ideias",
+      "IN_PROGRESS",
+      CORES_DE_COLUNA[2],
+      true,
+    );
+  });
+
+  it("⚠️ desmarcar “Cobrar prazo” chega no `onCriar`", () => {
+    // ⚠️ ESTE É O "AGUARDANDO CLIENTE" QUE A ADR 0030 PROMETEU e o produto não
+    // entregava: até 22/08 o campo não tinha escritor nenhum, e a coluna
+    // nascia cobrando prazo.
+    const { onCriar } = montarForm();
+    fireEvent.change(screen.getByLabelText("Nome da coluna"), {
+      target: { value: "Aguardando cliente" },
+    });
+    fireEvent.click(screen.getByLabelText(/Cobrar prazo nesta coluna/));
+    fireEvent.click(screen.getByText("Criar"));
+    expect(onCriar).toHaveBeenCalledWith(
+      "Aguardando cliente",
+      "IN_PROGRESS",
+      undefined,
+      false,
+    );
+  });
+
+  it("⚠️ em coluna TERMINAL a caixa some -- controle inerte é mentira", () => {
+    // §7.3, item 3. Em Concluído e Cancelado o backend IGNORA a flag; deixar a
+    // caixa na tela prometeria um efeito que não existe.
+    montarForm();
+    expect(screen.getByLabelText(/Cobrar prazo nesta coluna/)).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Tipo"), {
+      target: { value: "DONE" },
+    });
+    expect(screen.queryByLabelText(/Cobrar prazo nesta coluna/)).toBeNull();
+    fireEvent.change(screen.getByLabelText("Tipo"), {
+      target: { value: "CANCELLED" },
+    });
+    expect(screen.queryByLabelText(/Cobrar prazo nesta coluna/)).toBeNull();
+  });
+
+  it("⚠️ a caixa DIZ a consequência, e não só o nome do campo", () => {
+    // Sem o texto, alguém desmarca para tirar vermelho da tela e silencia
+    // notificação sem saber -- e o backend não guarda quem desligou.
+    montarForm();
+    expect(screen.getByText(/não geram aviso de prazo/i)).toBeTruthy();
   });
 
   it("⚠️ o aviso do tipo fala do FUTURO, e diz o motivo", () => {
@@ -333,5 +429,49 @@ describe("o selo padrão virou o controle (Spec 036, fatia 12)", () => {
     // exclusão, mas oferecer isso na tela seria confuso.
     montar({ ref: "c2", nome: "Ideias", semantic: "OPEN", apagada: true });
     expect(screen.queryByRole("button", { name: /Tornar Ideias/ })).toBeNull();
+  });
+});
+
+// =====================================================================
+// Spec 039, F9 (§7.3, item 2) -- cobrar prazo, no modo de edição.
+//
+// ⚠️ ESTE CONTROLE EXISTE PARA AS 8 COLUNAS DE PRODUÇÃO. Elas nasceram antes
+// de o campo ter escritor, e até 22/08 a única forma de mudar era SQL no
+// Adminer -- o `notify_deadline` era lido pelo serviço de notificação e
+// exposto na API, mas nenhuma rota escrevia nele.
+// =====================================================================
+describe("CabecalhoDeColunaEditavel -- cobrar prazo (F9)", () => {
+  it("o sino diz o estado por `aria-pressed`, e não pela cor", () => {
+    // ⚠️ COR SOZINHA NÃO É ESTADO. Um sino cinza-claro contra um cinza-médio
+    // não diz nada a quem não distingue os dois, e o `web/AGENTS.md` proíbe
+    // informação só por cor.
+    montar({ nome: "Backlog", avisaPrazo: true });
+    expect(
+      screen
+        .getByLabelText("Cobrar prazo na coluna Backlog")
+        .getAttribute("aria-pressed"),
+    ).toBe("true");
+  });
+
+  it("clicar manda o valor DESTINO, e não um alternar", () => {
+    // ⚠️ Mandar "inverte aí" faria dois cliques rápidos lerem o mesmo estado
+    // velho e acabarem no valor errado. Quem sabe o atual é a linha.
+    const { onAvisar } = montar({ avisaPrazo: true });
+    fireEvent.click(screen.getByLabelText(/Cobrar prazo na coluna/));
+    expect(onAvisar).toHaveBeenCalledWith(false);
+  });
+
+  it("⚠️ coluna TERMINAL não tem o controle -- lá a flag é ignorada", () => {
+    // §7.3, item 3. O backend ignora `notify_deadline` em DONE e CANCELLED;
+    // mostrar o sino prometeria um efeito que não existe.
+    montar({ semantic: "DONE" });
+    expect(screen.queryByLabelText(/Cobrar prazo na coluna/)).toBeNull();
+  });
+
+  it("coluna marcada para APAGAR não tem o controle", () => {
+    // Mexer na flag de uma coluna que sai no mesmo lote é gesto sem efeito --
+    // o `paraLote` inclusive filtra antes de mandar.
+    montar({ apagada: true });
+    expect(screen.queryByLabelText(/Cobrar prazo na coluna/)).toBeNull();
   });
 });

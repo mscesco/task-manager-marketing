@@ -31,6 +31,17 @@ export interface ColunaNova {
   readonly ref: string;
   readonly name: string;
   readonly semantic: ColumnSemantic;
+  /**
+   * Spec 039 (F9). Token da paleta escolhido no formulário.
+   *
+   * ⚠️ `undefined` É "NÃO ESCOLHI", e vira ausência no corpo do lote — o
+   * backend cai na rotação dele. Não trocar por uma cor concreta aqui: isso
+   * faria a tela decidir uma coisa que é do servidor, e as duas discordariam
+   * na primeira vez que a rotação mudasse.
+   */
+  readonly color?: string;
+  /** Spec 039 (F9). `undefined` = `true`, o comportamento de sempre. */
+  readonly notifyDeadline?: boolean;
 }
 
 /**
@@ -47,6 +58,19 @@ export interface Rascunho {
   /** Ids reais marcados para sumir. ⚠️ Coluna nova apagada some do rascunho. */
   readonly apagadas: readonly string[];
   readonly novas: readonly ColunaNova[];
+  /**
+   * ref -> cobra prazo? Só entra quem a pessoa MEXEU (Spec 039, F9).
+   *
+   * ⚠️ SÓ ID REAL, e a ausência é a regra — igual a `alvos`. Coluna nova
+   * carrega o valor dela em `ColunaNova.notifyDeadline`; pôr as duas fontes
+   * aqui faria a ordem das etapas do backend virar regra invisível.
+   *
+   * ⚠️ E "SÓ QUEM MEXEU" NÃO É ECONOMIA DE BYTES. Mandar todas as colunas em
+   * todo lote faria cada edição de nome reescrever `notify_deadline` de 19
+   * colunas — e, se outra pessoa tivesse mudado uma delas nesse meio-tempo,
+   * esta edição a desfaria sem ninguém pedir.
+   */
+  readonly avisos: Readonly<Record<string, boolean>>;
   /**
    * Ids reais que passam a ser o ALVO da semântica deles (Spec 036, fatia 12).
    *
@@ -213,6 +237,7 @@ export function rascunhoInicial(colunas: readonly Coluna[]): Rascunho {
     nomes: {},
     apagadas: [],
     novas: [],
+    avisos: {},
     alvos: [],
     proximoTmp: 1,
   };
@@ -231,6 +256,9 @@ export function temPendencias(
 ): boolean {
   if (
     rascunho.novas.length > 0 ||
+    // ⚠️ SEM ESTA LINHA, desmarcar "Cobrar prazo" e clicar em "Sair" sairia
+    // SEM PERGUNTAR, e a pessoa perderia a mudança achando que salvou.
+    Object.keys(rascunho.avisos).length > 0 ||
     rascunho.apagadas.length > 0 ||
     Object.keys(rascunho.nomes).length > 0
   ) {
@@ -315,6 +343,39 @@ export function comMarcacao(rascunho: Rascunho, ref: string): Rascunho {
  * ⚠️ MARCAR DESFAZ A EXCLUSÃO, se houver. É o par simétrico do `comMarcacao`:
  * pedir que uma coluna seja o alvo é dizer que ela fica.
  */
+/**
+ * Liga ou desliga a cobrança de prazo de uma coluna (Spec 039, F9).
+ *
+ * ⚠️ VOLTAR AO VALOR ORIGINAL TIRA A ENTRADA DO MAPA, em vez de gravar o valor
+ * de novo. Sem isso, marcar e desmarcar deixaria o rascunho "sujo": o botão
+ * "Sair" perguntaria se quer descartar, e o lote mandaria uma escrita que não
+ * muda nada -- gastando uma ida e uma linha de log por um gesto que a pessoa
+ * desfez.
+ *
+ * ⚠️ COLUNA NOVA MEXE NO `novas`, e não neste mapa. Ela ainda não tem id, e o
+ * schema de `avisos` do backend não aceita `tmp:`.
+ */
+export function comAviso(
+  rascunho: Rascunho,
+  ref: string,
+  valor: boolean,
+  /** O valor que o servidor tem hoje. Usado para detectar a volta ao original. */
+  original: boolean,
+): Rascunho {
+  if (ehNova(ref)) {
+    return {
+      ...rascunho,
+      novas: rascunho.novas.map((n) =>
+        n.ref === ref ? { ...n, notifyDeadline: valor } : n,
+      ),
+    };
+  }
+  const avisos = { ...rascunho.avisos };
+  if (valor === original) delete avisos[ref];
+  else avisos[ref] = valor;
+  return { ...rascunho, avisos };
+}
+
 export function comAlvo(rascunho: Rascunho, ref: string): Rascunho {
   if (ehNova(ref)) return rascunho;
   if (rascunho.alvos.includes(ref)) return rascunho;
@@ -341,11 +402,21 @@ export function comColunaNova(
   rascunho: Rascunho,
   nome: string,
   semantica: ColumnSemantic,
+  /**
+   * Spec 039 (F9). ⚠️ OPCIONAIS, e não por preguiça de call-site: omitir é
+   * "deixa como sempre foi" -- a rotação escolhe a cor e a coluna cobra prazo.
+   * Um default concreto aqui faria a tela decidir o que é do servidor.
+   */
+  cor?: string,
+  avisaPrazo?: boolean,
 ): Rascunho {
   const ref = `${PREFIXO_TMP}${rascunho.proximoTmp}`;
   return {
     ...rascunho,
-    novas: [...rascunho.novas, { ref, name: nome, semantic: semantica }],
+    novas: [
+      ...rascunho.novas,
+      { ref, name: nome, semantic: semantica, color: cor, notifyDeadline: avisaPrazo },
+    ],
     ordem: [...rascunho.ordem, ref],
     proximoTmp: rascunho.proximoTmp + 1,
   };
@@ -389,6 +460,12 @@ export interface LinhaDeEdicao {
   readonly alvo: boolean;
   /** `null` se pode ser apagada; o motivo, se não. */
   readonly impedimento: string | null;
+  /**
+   * Cobra prazo? (Spec 039, F9.) ⚠️ É O VALOR EFETIVO -- rascunho primeiro,
+   * servidor depois. A tela é de lote: a caixa tem de refletir o clique na
+   * hora, e não só depois de "Concluir edição".
+   */
+  readonly avisaPrazo: boolean;
 }
 
 /**
@@ -467,6 +544,15 @@ export function linhasDeEdicao(
           // `semanticasReclamadas`: o selo antigo apaga no instante em que a
           // pessoa marca outro, porque é o que vai acontecer ao concluir.
           !(real && semanticasReclamadas.has(real.semantic))),
+      // ⚠️ A CADEIA TEM QUATRO DEGRAUS E CADA UM TEM DONO: o que a pessoa
+      // acabou de clicar, o que ela escolheu ao criar a coluna, o que o
+      // servidor diz, e o default do produto. Pular o primeiro deixaria a
+      // caixa desmarcando sozinha ao repintar.
+      avisaPrazo:
+        rascunho.avisos[ref] ??
+        nova?.notifyDeadline ??
+        real?.notify_deadline ??
+        true,
       // ⚠️ SÓ PARA QUEM AINDA NÃO ESTÁ MARCADA: o impedimento de quem já está
       // riscada não interessa, e calculá-lo contra uma lista que já a exclui
       // daria sempre `null`.
@@ -642,6 +728,16 @@ export function paraLote(
       tmp: n.ref.slice(PREFIXO_TMP.length),
       name: n.name,
       semantic: n.semantic,
+      // ⚠️ ESPALHADOS CONDICIONALMENTE, e não `color: n.color`. Mandar
+      // `color: undefined` num objeto que vira JSON some na serialização e dá
+      // no mesmo -- mas mandar `color: null` NÃO daria, e a diferença entre os
+      // dois é fácil de introduzir sem perceber. Assim a chave simplesmente
+      // não existe quando ninguém escolheu, que é o que o backend espera para
+      // cair na rotação dele.
+      ...(n.color !== undefined ? { color: n.color } : {}),
+      ...(n.notifyDeadline !== undefined
+        ? { notify_deadline: n.notifyDeadline }
+        : {}),
     })),
     // ⚠️ SÓ COLUNA QUE SOBREVIVE. Renomear e apagar a mesma coluna no mesmo
     // lote faria o backend renomear uma linha que a etapa seguinte remove --
@@ -653,6 +749,16 @@ export function paraLote(
     // ⚠️ Spec 036, fatia 12. Só ids reais -- `comAlvo` já recusa `tmp:`, e o
     // schema do backend também não aceita.
     alvos: [...rascunho.alvos],
+    // ⚠️ SÓ COLUNA QUE SOBREVIVE, mesma regra do `renomear` logo acima: mexer
+    // na flag de uma coluna que a etapa seguinte apaga é trabalho e uma linha
+    // de log que não aconteceu do ponto de vista de quem usa.
+    //
+    // ⚠️ E `ehNova` FORA: coluna nova leva o valor dela no `criar`. Mandar nos
+    // dois lugares seria dizer duas coisas sobre a mesma linha -- e o `tmp:`
+    // nem é aceito pelo schema de `avisos`.
+    avisos: Object.entries(rascunho.avisos)
+      .filter(([ref]) => !rascunho.apagadas.includes(ref) && !ehNova(ref))
+      .map(([id, notify_deadline]) => ({ id, notify_deadline })),
     apagar: rascunho.apagadas.map((id) => ({
       id,
       destino: destinos[id] ?? null,

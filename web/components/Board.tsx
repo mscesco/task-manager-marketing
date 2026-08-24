@@ -54,6 +54,7 @@ import {
   totalPrevisto,
   comColunaNova,
   comAlvo,
+  comAviso,
   comMarcacao,
   comOrdem,
   comRenome,
@@ -2028,8 +2029,14 @@ export default function Board({
 
       {criandoColuna && rascunho && (
         <FormNovaColuna
-          onCriar={(nome, semantica) => {
-            setRascunho((r) => (r ? comColunaNova(r, nome, semantica) : r));
+          onCriar={(nome, semantica, cor, avisaPrazo) => {
+            setRascunho((r) =>
+              // ⚠️ Spec 039 (F9): os dois campos novos PRECISAM ser repassados
+              // aqui. `comColunaNova` os tem como opcionais -- esquecer o
+              // argumento nao daria erro de tipo, e a escolha da pessoa sumiria
+              // em silencio entre o formulario e o lote.
+              r ? comColunaNova(r, nome, semantica, cor, avisaPrazo) : r,
+            );
             setCriandoColuna(false);
           }}
           onCancelar={() => setCriandoColuna(false)}
@@ -2169,6 +2176,16 @@ export default function Board({
                       }
                       onTornarAlvo={() =>
                         setRascunho((r) => (r ? comAlvo(r, c.id) : r))
+                      }
+                      // ⚠️ O QUARTO ARGUMENTO E O VALOR DO SERVIDOR, e nao um
+                      // detalhe: e com ele que `comAviso` sabe que a pessoa
+                      // VOLTOU ao original e tira a entrada do rascunho. Sem
+                      // isso, marcar e desmarcar deixaria o lote sujo e mandaria
+                      // uma escrita que nao muda nada.
+                      onAvisar={(valor) =>
+                        setRascunho((r) =>
+                          r ? comAviso(r, c.id, valor, c.notify_deadline) : r,
+                        )
                       }
                       onMover={(d) => moverColunaNoRascunho(c.id, d)}
                     />
@@ -2345,6 +2362,7 @@ function CabecalhoSortavel({
   onRenomear,
   onMarcar,
   onTornarAlvo,
+  onAvisar,
   onMover,
 }: {
   /** ⚠️ Pode faltar por um render ao trocar de quadro -- ver o chamador. */
@@ -2355,6 +2373,7 @@ function CabecalhoSortavel({
   onRenomear: (nome: string) => void;
   onMarcar: () => void;
   onTornarAlvo: () => void;
+  onAvisar: (valor: boolean) => void;
   onMover: (direcao: "esquerda" | "direita") => void;
 }) {
   // ⚠️ O HOOK VEM ANTES DO `return null`, e a ordem NAO e negociavel: sair do
@@ -2391,6 +2410,7 @@ function CabecalhoSortavel({
         onRenomear={onRenomear}
         onMarcar={onMarcar}
         onTornarAlvo={onTornarAlvo}
+        onAvisar={onAvisar}
         onMover={onMover}
         arrasteRef={setNodeRef}
         arrasteProps={{ ...attributes, ...listeners }}
