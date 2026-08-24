@@ -1,14 +1,14 @@
 # Spec 039 — Redesenho de layout
 
-**Status:** em andamento — **F0 a F7 entregues** (21–22/08); faltam F8, F9 e F10
+**Status:** em andamento — **F0 a F8 entregues** (21–22/08); faltam F9 e F10
 **Escopo:** frontend (`web/`). **Não toca:** backend, contrato de API, autenticação.
 **Depende de:** Spec 018 (primitivos + Tailwind v4) e Spec 031 (fatia C, cor)
 **Placar de testes na abertura:** Front **865**, Backend **860**, migrations `0014`
-**Placar em 22/08, com F6-c:** Front **902**, Backend **883**, migrations `0015`
+**Placar em 22/08, com F8:** Front **905**, Backend **883**, migrations `0015`
 
 ⚠️ **Antes de pegar F9 ou F10, leia o §8.1.** Quatro escopos desta spec
 foram escritos a partir do wireframe sem abrir o componente, e os quatro
-erraram o alvo — a F7 fez cinco. F9 e F10 vêm da mesma fonte.
+erraram o alvo — com a F7 e a F8, seis. F9 e F10 vêm da mesma fonte.
 
 ---
 
@@ -528,6 +528,110 @@ CI em UTC. Ver `web/AGENTS.md`.
 
 ### 6.5. ⚠️⚠️ Modo de edição (`Modo Edição.png`) — o desenho apaga a fatia 12
 
+✅ **Entregue na F8 (22/08) — e a "reposição" não era reposição.** Sexta
+confirmação do §8.1: a tabela marcava F8 como **risco alto, "reescreve a tela
+onde a fatia 12 acabou de entrar"**. Abrindo os arquivos, os cinco controles
+por coluna já estão lá (arrastar, renomear, selo de alvo, tornar padrão, setas,
+apagar — `CabecalhoDeColunaEditavel.tsx`) e os dois botões do topo também
+(`Adicionar coluna`, `Concluir edição` — `Board.tsx`). **Não havia o que
+repor:** a decisão de 19/08 era *não deixar o wireframe apagá-los*, e ninguém
+os apagou.
+
+O trabalho real veio de um pedido novo da Camila, em 22/08: *"quero que ao
+entrar no modo de edição, a tela esmaeça um pouco, pra perceber que está em um
+modo diferente"*.
+
+⚠️⚠️ **E O JEITO ÓBVIO — `opacity` nos cards — FOI MEDIDO E REPROVA.**
+Opacidade compõe o elemento **inteiro** contra o que está atrás, então ela
+arrasta junto todo par de contraste de dentro do card:
+
+| tema | `--text-faint` no card | a 0.85 de opacidade |
+|---|---|---|
+| claro | 5.99 | **4.60** — passa raspando |
+| escuro | 5.06 | **4.02** — ⚠️ reprova AA |
+
+Para o escuro voltar a 4.5 seria preciso 0.93, que a olho nu não esmaece nada.
+E os **62 tokens cromáticos** (selo de prioridade, cor de prazo) entram na conta
+também: 15 famílias × 2 temas para remedir, que é exatamente o que o §3.2
+proíbe fazer de graça. **Foi assim que o `Badge tone="soft"` foi publicado
+reprovando** — medindo sem a tinta aplicada.
+
+**O que entrou no lugar, com o mesmo efeito e sem o custo:**
+
+1. **A área de colunas ganha fundo próprio** (`--edicao-fundo`, token novo nos
+   dois temas) **e um anel**: ela deixa de ser a página e vira uma folha à
+   parte. Fundo não toca em texto nenhum — medido sobre ele, `--text-faint` dá
+   **5.29** no claro e **5.33** no escuro. Os dois aprovam, e o escuro
+   **melhora** (o fundo é mais escuro que o card).
+2. **O card perde a sombra**, e só ela. Para de flutuar e vira ladrilho chato
+   sobre o fundo esmaecido. O **fundo do card continua `--surface`** de
+   propósito: é ele que serve de backdrop aos selos cromáticos, e trocá-lo
+   obrigaria à remedição das 15 famílias.
+3. **A elevação de hover sai.** Com o quadro esmaecido, passar o mouse acendia
+   **um** card e desmentia o "modo parado" que o fundo acabou de anunciar. O
+   card continua clicável — a decisão de 12/08 de mantê-lo à vista e acessível
+   no modo de edição não muda.
+
+#### 6.5.1. ⚠️ Os dois ajustes de 22/08, e o defeito que o primeiro revelou
+
+Camila, com a tela aberta: *"as coisas do cabeçalho estão meio tortas
+comparadas com o nome do quadro"* e *"o modo edição do tema escuro ficou muito
+escuro ainda"*.
+
+**1. O cabeçalho estava torto — e a causa era o `font: "inherit"` pela terceira
+vez.** O `SeletorDeQuadro` **é** o título (o `Board` desenha
+`<h1 style={{ fontSize: 26 }}>{title}</h1>` e passa o seletor como `title`), e
+o gatilho dele trazia `font: "inherit"` seguido de `fontSize: 19`. Medido no
+navegador em 22/08:
+
+| elemento | tamanho computado | centro óptico na linha |
+|---|---|---|
+| `<h1>` | 26px | — |
+| **gatilho (o título visível)** | **19px** | **43,70** |
+| selo "Modo edição", botões | 12–14px | 42,00 |
+
+Ou seja: **o título do quadro nunca chegou aos 26px da F1** — ficou no 19px de
+antes desta spec — e a diferença entre a caixa de 26 e o texto de 19 o jogava
+**1,7px abaixo** do eixo de todos os vizinhos. Com o conserto: 41,02 contra
+42,00, que é arredondamento e não desalinho.
+
+⚠️ **É a terceira vez do mesmo atalho neste projeto** (a segunda foi a pílula
+de datas, F7, e ele já está no `web/AGENTS.md`). E é a segunda vez que ele
+esconde uma decisão de tipografia desta spec por semanas.
+
+**2. O escuro estava escuro demais** — o primeiro valor (`#1a1918`) ficava a
+**1,04** de contraste da página, praticamente a mesma cor. O novo (`#262422`) é
+**o mais claro que ainda aprova AA**, e o teto foi medido:
+
+| candidato | `--text-faint` sobre ele | separação da página |
+|---|---|---|
+| `#1a1918` (antigo) | 5,32 | 1,04 |
+| `#22201e` | 4,92 | 1,12 |
+| **`#262422`** ← | **4,69** | **1,18** |
+| `#2a2825` | 4,46 ✗ | 1,24 |
+
+A separação quadruplicou e ainda sobra 0,19 de margem. ⚠️ **Efeito colateral
+aceito:** o fundo agora é mais claro que o card, então os cards **afundam** na
+bandeja em vez de flutuar — que é a leitura desejada, e casa com a sombra que
+eles perdem. No claro o efeito é o inverso, e isso é proposital (§3.3).
+
+⚠️ **Correção de número:** os comentários da F8 diziam que `--text-faint` vale
+5,99 no claro. O valor medido é **6,53** sobre branco; 5,99 vinha de outra
+medição. Os números que decidiram a fatia (4,02 no escuro a 0,85) estavam
+certos e foram reconferidos no navegador.
+
+⚠️ **E medir foi o método, não a exceção.** As duas correções saíram de uma
+página isolada servida em `localhost`, com a Raleway real, lendo
+`getComputedStyle` e retângulos de `Range`. A alternativa era teorizar sobre
+métricas de fonte — que é como o `minWidth` do card foi mexido pelo motivo
+errado em 21/08, com o dado já na tela.
+
+⚠️ **E de novo: a mudança não derrubou nenhum dos 902 testes.** É a terceira
+fatia seguida em que aparência muda e os quatro portões ficam verdes. Os dois
+testes novos olham o **estilo**, que costuma ser cheiro de teste frouxo — aqui
+é o comportamento inteiro, e o par entrar/sair existe porque despintar é o que
+costuma ficar para trás.
+
 O desenho traz, por coluna, **nome + X**. E no topo "Adicionar coluna" e
 "Salvar edições".
 
@@ -846,13 +950,15 @@ Ordem por alavancagem × risco. Cada uma entregável sozinha.
 | **F5** | Painel de filtros | o painel do §6.7 | baixo |
 | **F6** | Detalhe como painel | `TaskDetail.tsx` (2532 linhas) — a maior | **alto** |
 | **F7** | ✅ Datas + hora | §6.4 — o campo e a pílula **já existiam**; o que faltava era a hora no card e no `title` da subtarefa | baixo |
-| **F8** | ⚠️ Modo de edição | repor renomear + tornar padrão + cor no cabeçalho | **alto** |
+| **F8** | ✅ Modo de edição | os cinco controles **já estavam lá** — nada a repor; o trabalho foi o fundo esmaecido do §6.5 | baixo |
 | **F9** | Criar coluna | cor + caixa do §7 + rótulo do tipo | médio |
 | **F10** | Paginação no rodapé | ver §9 |  médio |
 
-⚠️ **F8 é a de maior risco de regressão do lote**, porque ela reescreve a tela
-onde a fatia 12 acabou de entrar. Smoke obrigatório de "trocar o alvo e apagar
-a coluna antiga num gesto só".
+⚠️ ~~**F8 é a de maior risco de regressão do lote**~~ — **errado, e corrigido
+em 22/08.** Ela não reescreveu tela nenhuma: os cinco controles da fatia 12 já
+estavam no lugar e ninguém precisou repô-los (§6.5). O smoke de "trocar o alvo
+e apagar a coluna antiga num gesto só" continua valendo como conferência, mas
+não como rede de uma reescrita que não houve.
 
 ### 8.1. ⚠️⚠️ Correção de 21/08 — quatro escopos escritos sem abrir o componente
 

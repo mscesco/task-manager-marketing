@@ -43,8 +43,16 @@ export default function TaskCard({
   parentTitle,
   escopo,
   coluna,
+  travado = false,
 }: {
   task: Task;
+  /**
+   * Spec 039 (F8). O quadro esta no MODO DE EDICAO de colunas: o card nao
+   * arrasta, e visualmente ele para de flutuar. Nao esconde nada -- a decisao
+   * de 12/08 de manter os cards a vista no modo de edicao continua valendo
+   * ("sumir esconderia que o x esta sobre uma coluna com 40 tarefas dentro").
+   */
+  travado?: boolean;
   members?: Map<string, CardMember>; // resolve id -> nome (mapa memoizado do quadro)
   subtaskCount?: number; // filhos DIRETOS
   subtaskDone?: number; // filhos diretos concluidos
@@ -108,7 +116,15 @@ export default function TaskCard({
       data-card={task.id}
       style={{
         background: "var(--surface)", border: "1px solid var(--border)",
-        borderRadius: 8, padding: "10px 12px", boxShadow: "var(--shadow-card)",
+        borderRadius: 8, padding: "10px 12px",
+        // ⚠️ NO MODO DE EDICAO O CARD PERDE A SOMBRA, e so ela (Spec 039, F8).
+        // Sem sombra ele para de flutuar e vira ladrilho chato sobre o fundo
+        // esmaecido -- o quadro inteiro le como "parado". O FUNDO do card
+        // continua `--surface` de proposito: e ele que serve de backdrop para
+        // os selos cromaticos, e trocar o backdrop obrigaria a remedir as 15
+        // familias nos dois temas (Spec 031 §2.2b, a licao que custou uma
+        // correcao publica).
+        boxShadow: travado ? "none" : "var(--shadow-card)",
         display: "flex", flexDirection: "column", gap: 8,
       }}
     >
