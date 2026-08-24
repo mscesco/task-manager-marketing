@@ -17,6 +17,7 @@ import {
 import {
   DndContext,
   DragOverlay,
+  closestCenter,
   PointerSensor,
   useSensor,
   useSensors,
@@ -55,6 +56,7 @@ import {
   comColunaNova,
   comAlvo,
   comAviso,
+  refDeColunaDoDrop,
   comMarcacao,
   comOrdem,
   comRenome,
@@ -1264,7 +1266,12 @@ export default function Board({
     // no mesmo contexto viajam ids de CARD, e trata-los como coluna moveria a
     // coluna errada. Ver `refDoArrasteDeCabecalho`.
     const refArrastada = refDoArrasteDeCabecalho(String(active.id));
-    const refSobre = refDoArrasteDeCabecalho(String(over.id));
+    // ⚠️ O LADO `over` ACEITA AS DUAS FORMAS DE ID (corrigido em 22/08). O
+    // corpo da coluna e o cabecalho dela sao alvos SEPARADOS no mesmo
+    // contexto, e o cabecalho fica dentro do corpo -- exigir o id prefixado
+    // fazia o arraste desistir calado quando a colisao resolvia pelo corpo.
+    // Ver `refDeColunaDoDrop`.
+    const refSobre = refDeColunaDoDrop(String(over.id), rascunho);
     if (refArrastada === null || refSobre === null) return;
     const destino = rascunho.ordem.indexOf(refSobre);
     if (destino === -1) return;
@@ -2084,6 +2091,19 @@ export default function Board({
           // exatamente o motivo pelo qual a decisao de 12/08 tinha rejeitado
           // arrastar cabecalho no quadro normal.
           onDragEnd={modoEdicao ? onDragEndColuna : onDragEnd}
+          // ⚠️ NO MODO DE EDICAO A COLISAO E POR CENTRO, e nao por
+          // interseccao. Motivo, o mesmo do `refDeColunaDoDrop`: cada coluna
+          // tem DOIS alvos, e o cabecalho fica dentro do corpo. Com
+          // `rectIntersection` os dois casam com o ponteiro e o desempate cai
+          // na ordem de registro. Por centro nao ha empate: arrastando um
+          // cabecalho na altura dos cabecalhos, o centro mais proximo e sempre
+          // outro cabecalho.
+          //
+          // ⚠️ SO NO MODO DE EDICAO. Para CARD o padrao esta certo e nao ha
+          // ambiguidade -- o alvo dele e o corpo da coluna, que e o unico
+          // retangulo grande por perto. Mudar os dois de uma vez seria mexer
+          // no arraste que funciona para consertar o que nao funciona.
+          collisionDetection={modoEdicao ? closestCenter : undefined}
         >
           {/* ---- O FUNDO ESMAECIDO DO MODO DE EDICAO (Spec 039, F8) -------
               Pedido da Camila, 22/08: "quero que ao entrar no modo de edicao,

@@ -132,21 +132,68 @@ export function refDoArrasteDeCabecalho(id: string): string | null {
     : null;
 }
 
+/**
+ * A coluna sobre a qual o arraste terminou, a partir do id que o `dnd-kit`
+ * devolveu em `over`.
+ *
+ * ⚠️⚠️ EXISTE PORQUE O MESMO `DndContext` REGISTRA **DOIS** ALVOS POR COLUNA, e
+ * eu só descobri isso quando a Camila reportou (22/08): *"ao tentar arrastar
+ * uma coluna nova pra reordenar, não consigo, só pelas setas funciona"*.
+ *
+ *   - o CORPO da coluna, por `useDroppable({ id: coluna.id })` -- o retângulo
+ *     inteiro, que existe para receber CARD;
+ *   - o CABEÇALHO, por `useSortable({ id: PREFIXO + ref })` -- a tira do topo,
+ *     que existe para reordenar COLUNA.
+ *
+ * O cabeçalho fica DENTRO do corpo. Com a detecção padrão (`rectIntersection`),
+ * os dois intersectam o ponteiro e o desempate acaba caindo na ordem de
+ * registro -- que é justamente onde a coluna recém-criada é diferente: ela
+ * entra por último. O handler antigo exigia o id COM prefixo e desistia calado
+ * quando vinha o do corpo.
+ *
+ * ⚠️ E ELE DEVOLVE `null` PARA O QUE NÃO É COLUNA DESTE RASCUNHO. No mesmo
+ * contexto viajam ids de card; tratá-los como coluna moveria a coluna errada.
+ *
+ * ⚠️ NÃO TESTÁVEL PELO ARRASTE: `onDragEnd` não roda em jsdom, e sem layout não
+ * há colisão a simular. É por isso que a decisão de qual id aceitar mora aqui,
+ * numa função pura com teste, e não dentro do handler.
+ */
+export function refDeColunaDoDrop(
+  idDoDrop: string,
+  rascunho: Rascunho,
+): string | null {
+  const semPrefixo = refDoArrasteDeCabecalho(idDoDrop);
+  const candidato = semPrefixo ?? idDoDrop;
+  return rascunho.ordem.includes(candidato) ? candidato : null;
+}
+
 export function ehNova(ref: string): boolean {
   return ref.startsWith(PREFIXO_TMP);
 }
 
 /**
- * A cor de uma coluna que ainda não existe.
+ * A cor de uma coluna nova **de que ninguém escolheu a cor**.
  *
- * ⚠️ NEUTRA DE PROPÓSITO, E NÃO UM PALPITE. Quem escolhe a cor é o servidor
- * (`_cor_por_rotacao(len(existentes))`, em `board_service.py`), e num lote com
- * duas criações o índice de cada uma depende da ordem em que o backend as grava
- * -- o front não tem como acertar. Mostrar uma cor que vai mudar sozinha depois
- * de concluir seria a tela prometendo o que não entrega.
+ * ⚠️ NEUTRA DE PROPÓSITO, E NÃO UM PALPITE. Sem escolha, quem decide é o
+ * servidor (`_cor_por_rotacao(len(existentes))`, em `board_service.py`), e num
+ * lote com duas criações o índice de cada uma depende da ordem em que o backend
+ * as grava -- o front não tem como acertar. Mostrar uma cor que vai mudar
+ * sozinha depois de concluir seria a tela prometendo o que não entrega.
  *
- * ⚠️ E ELA COMUNICA. Cinza de borda no meio de colunas coloridas é o sinal de
- * "esta ainda não existe" sem precisar de legenda.
+ * ⚠️⚠️ E ISTO DEIXOU DE VALER PARA QUEM ESCOLHE (Spec 039, F9, corrigido em
+ * 22/08). A Camila viu na tela: *"a cor que escolhi fica transparente ao criar,
+ * só volta certa depois"*. Estava certa, e o defeito era meu -- eu dei a
+ * escolha à pessoa e continuei desenhando o cinza, porque a regra acima foi
+ * escrita quando o front NÃO PODIA saber a cor. Agora ele pode: escolheu, é
+ * exatamente esse token que o backend vai gravar.
+ *
+ * A regra virou duas, e cada metade tem o dono certo:
+ *   - **escolheu** -> desenha a escolhida, porque o front sabe;
+ *   - **automática** -> desenha este cinza, porque o servidor é que sabe.
+ *
+ * ⚠️ E O CINZA CONTINUA COMUNICANDO no segundo caso: no meio de colunas
+ * coloridas ele é o sinal de "esta ainda não existe" sem precisar de legenda.
+ * O que ele NÃO pode fazer é apagar uma decisão que a pessoa acabou de tomar.
  */
 export const COR_DA_COLUNA_NOVA = "var(--border)";
 
@@ -170,11 +217,13 @@ export function colunaDoRascunho(
   ref: string,
   nome: string,
   semantic: ColumnSemantic,
+  /** Spec 039 (F9). `undefined` = automática -> cai no cinza de "ainda não existe". */
+  cor?: string,
 ): Coluna {
   return {
     id: ref,
     name: nome,
-    color: COR_DA_COLUNA_NOVA,
+    color: cor ?? COR_DA_COLUNA_NOVA,
     position: 0,
     semantic,
     notify_deadline: true,
@@ -217,7 +266,7 @@ export function colunasParaDesenhar(
   for (const ref of rascunho.ordem) {
     const nova = novasPorRef.get(ref);
     if (nova) {
-      saida.push(colunaDoRascunho(ref, nova.name, nova.semantic));
+      saida.push(colunaDoRascunho(ref, nova.name, nova.semantic, nova.color));
       continue;
     }
     // ⚠️ SEM `!`. Um ref sem coluna real acontece de verdade: trocar de quadro
@@ -502,7 +551,7 @@ export function linhasDeEdicao(
     .filter((ref) => !rascunho.apagadas.includes(ref))
     .map((ref) => {
       const nova = novasPorRef.get(ref);
-      if (nova) return colunaDoRascunho(ref, nova.name, nova.semantic);
+      if (nova) return colunaDoRascunho(ref, nova.name, nova.semantic, nova.color);
       return porId.get(ref)!;
     })
     .filter(Boolean);

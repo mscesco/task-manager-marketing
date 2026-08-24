@@ -30,6 +30,7 @@ import {
   marcadasParaApagar,
   nomeRepetidoNoRascunho,
   paraLote,
+  refDeColunaDoDrop,
   destinosDoRascunho,
   rascunhoInicial,
   temPendencias,
@@ -675,5 +676,72 @@ describe("comAviso", () => {
     // "chave ausente" e "chave com null" é real no backend -- ausente cai na
     // rotação, `null` cairia na validação por lista como cor inválida.
     expect(paraLote(semCor, QUADRO).criar?.[0]).not.toHaveProperty("color");
+  });
+});
+
+// =====================================================================
+// Spec 039, F9 -- os dois defeitos que a Camila achou na tela em 22/08.
+// =====================================================================
+describe("a coluna nova, depois do relato de 22/08", () => {
+  it("⚠️ a cor ESCOLHIDA já aparece antes de concluir", () => {
+    // *"a cor que escolhi fica transparente ao criar, só volta certa depois"*.
+    // A regra do cinza foi escrita quando o front NÃO PODIA saber a cor -- com
+    // a escolha, ele pode: é exatamente esse token que o backend vai gravar.
+    const r = comColunaNova(
+      rascunhoInicial(QUADRO),
+      "Teste",
+      "OPEN",
+      CORES_DE_COLUNA[3],
+    );
+    const desenhada = colunasParaDesenhar(r, QUADRO).find(
+      (c) => c.name === "Teste",
+    );
+    expect(desenhada?.color).toBe(CORES_DE_COLUNA[3]);
+  });
+
+  it("sem escolher, segue o cinza de “ainda não existe”", () => {
+    // A outra metade da regra, e ela continua valendo: sem escolha quem decide
+    // é a rotação do servidor, e o front não tem como acertar.
+    const r = comColunaNova(rascunhoInicial(QUADRO), "Teste", "OPEN");
+    const desenhada = colunasParaDesenhar(r, QUADRO).find(
+      (c) => c.name === "Teste",
+    );
+    expect(desenhada?.color).toBe(COR_DA_COLUNA_NOVA);
+  });
+});
+
+describe("refDeColunaDoDrop", () => {
+  // ⚠️ ESTA FUNÇÃO É O CONSERTO DE *"não consigo arrastar a coluna nova, só
+  // pelas setas funciona"*. Cada coluna tem DOIS alvos no mesmo `DndContext` --
+  // o corpo (`useDroppable`, para card) e o cabeçalho (`useSortable`, para
+  // coluna) --, e o cabeçalho fica dentro do corpo. O handler antigo exigia o
+  // id COM prefixo e desistia calado quando a colisão resolvia pelo corpo.
+  //
+  // ⚠️ E O TESTE MORA AQUI, e não no arraste: `onDragEnd` não roda em jsdom e
+  // sem layout não há colisão a simular. Por isso a decisão de qual id aceitar
+  // foi tirada do handler e posta numa função pura.
+  const base = () =>
+    comColunaNova(rascunhoInicial(QUADRO), "Teste", "OPEN");
+
+  it("aceita o id do CABEÇALHO (com prefixo)", () => {
+    const r = base();
+    const ref = r.novas[0].ref;
+    expect(refDeColunaDoDrop(idDeArrasteDoCabecalho(ref), r)).toBe(ref);
+  });
+
+  it("⚠️ aceita também o id do CORPO (sem prefixo) -- era o caso quebrado", () => {
+    const r = base();
+    const ref = r.novas[0].ref;
+    expect(refDeColunaDoDrop(ref, r)).toBe(ref);
+    // E vale igual para coluna que já existe: o alvo ambíguo é o mesmo.
+    expect(refDeColunaDoDrop(QUADRO[0].id, r)).toBe(QUADRO[0].id);
+  });
+
+  it("⚠️ recusa o que não é coluna DESTE rascunho", () => {
+    // No mesmo contexto viajam ids de card. Tratá-los como coluna moveria a
+    // coluna errada -- e em silêncio, que é pior que não mover.
+    const r = base();
+    expect(refDeColunaDoDrop("t-uma-tarefa-qualquer", r)).toBeNull();
+    expect(refDeColunaDoDrop(idDeArrasteDoCabecalho("c-de-outro-quadro"), r)).toBeNull();
   });
 });
