@@ -2078,6 +2078,49 @@ export default function Board({
           // arrastar cabecalho no quadro normal.
           onDragEnd={modoEdicao ? onDragEndColuna : onDragEnd}
         >
+          {/* ---- O FUNDO ESMAECIDO DO MODO DE EDICAO (Spec 039, F8) -------
+              Pedido da Camila, 22/08: "quero que ao entrar no modo de edicao,
+              a tela esmaeca um pouco, pra perceber que esta em um modo
+              diferente". A area de colunas ganha um fundo proprio e um anel:
+              ela deixa de ser a pagina e vira uma FOLHA a parte.
+
+              ⚠️⚠️ E POR QUE NAO E `opacity` NOS CARDS, QUE E O JEITO OBVIO:
+              porque eu medi, e ele reprova. Opacidade compoe o elemento
+              INTEIRO contra o que esta atras, entao ela arrasta junto todo par
+              de contraste de dentro do card:
+
+                - tema claro, cards a 0.85: `--text-faint` cai de 5.99 para
+                  4.60 -- passa raspando;
+                - tema ESCURO, mesmos 0.85: cai de 5.06 para **4.02**, e
+                  reprova AA. Para voltar a 4.5 seria preciso 0.93, que a olho
+                  nu nao esmaece nada;
+                - e os 62 tokens cromaticos (selo de prioridade, cor de prazo)
+                  entram na conta tambem -- 15 familias x 2 temas para remedir,
+                  que e exatamente o que a Spec 031 §3.2 proibe fazer de
+                  graca. Foi assim que o `Badge tone="soft"` foi publicado
+                  reprovando: medindo sem a tinta aplicada.
+
+              O fundo nao tem esse custo: ele nao toca em texto nenhum. Medido
+              sobre `--edicao-fundo`, `--text-faint` da 5.29 no claro e 5.33 no
+              escuro -- os dois APROVAM, e o escuro ate melhora.
+
+              ⚠️ O `padding` mora AQUI FORA, e nao no container medido. O
+              `medirAltura` le o topo real do `colunasRef` a cada commit, entao
+              empurra-lo para baixo se corrige sozinho na medicao seguinte --
+              mas so porque a medida e do proprio elemento. Padding POR DENTRO
+              do container com `height` fixa cortaria a ultima coluna. ---- */}
+          <div
+            style={
+              modoEdicao
+                ? {
+                    background: "var(--edicao-fundo)",
+                    border: "1px solid var(--border)",
+                    borderRadius: 12,
+                    padding: 10,
+                  }
+                : undefined
+            }
+          >
           <div
             ref={colunasRef}
             style={{
@@ -2150,6 +2193,7 @@ export default function Board({
               </ColunaKanban>
               ))}
             </SortableContext>
+          </div>
           </div>
 
           {foraDaColuna > 0 && (
@@ -2498,7 +2542,12 @@ function CardArrastavel({
         }
       }}
       tabIndex={0}
-      className="card-elev"
+      // ⚠️ A ELEVACAO DE HOVER SAI NO MODO DE EDICAO (Spec 039, F8). O
+      // `.card-elev:hover` levanta o card 1px e poe sombra dupla; com o quadro
+      // esmaecido, passar o mouse fazia UM card acender e desmentia o "modo
+      // parado" que o fundo acabou de anunciar. O card continua clicavel --
+      // so nao se anuncia como o assunto da tela.
+      className={travado ? undefined : "card-elev"}
       style={{
         opacity: isDragging ? 0.4 : task.is_archived ? 0.55 : 1,
         // ⚠️ `touchAction` VOLTA AO PADRAO QUANDO TRAVADO. `none` existe para o
@@ -2514,6 +2563,7 @@ function CardArrastavel({
       <TaskCard
         task={task}
         coluna={coluna}
+        travado={travado}
         members={members}
         subtaskCount={subtaskCount}
         subtaskDone={subtaskDone}

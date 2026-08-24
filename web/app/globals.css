@@ -79,6 +79,20 @@
      alternativa. O `ink-muted` da Notion aprova, e a troca sai de graca junto
      com a paleta. */
   --text-faint: #615d59; /* Notion `ink-muted` */
+  /* ⚠️ FUNDO DO MODO DE EDICAO (Spec 039, F8). Pedido da Camila em 22/08:
+     "quero que ao entrar no modo de edicao, a tela esmaeca um pouco, pra
+     perceber que esta em um modo diferente".
+
+     ⚠️ E ELE E FUNDO, E NAO `opacity`, POR MEDICAO -- ver a nota longa no
+     `Board.tsx`. Esmaecer os cards com opacidade arrasta TODO par medido de
+     dentro deles junto (os 62 tokens cromaticos do §3.2 inclusive), e isso e
+     exatamente o que a Spec 031 proibiu sem remedicao.
+
+     Contraste sobre este fundo, medido: `--text` 17.4, `--text-soft` 8.6,
+     `--text-faint` 5.29. Os tres aprovam AA -- e o faint aprova por MENOS
+     margem que sobre o branco (5.99), entao escurecer mais este tom exige
+     remedir. */
+  --edicao-fundo: #e9e7e4;
   --accent: #0075de;     /* Notion `primary` -- o UNICO acento estrutural */
   /* Derivado: a Notion nao tem azul suave. Mesmo papel de sempre -- fundo de
      selo e anel de foco --, agora tirado do `primary` novo em vez do velho. */
@@ -158,6 +172,12 @@
   --text: #f2f1ef;
   --text-soft: #bdb9b4;
   --text-faint: #918d88;
+  /* Par escuro do fundo de edicao. ⚠️ Ele CLAREIA em vez de escurecer: no
+     escuro o `--bg` ja e quase o fundo do monitor, e escurecer nao teria para
+     onde ir. Contraste medido sobre ele: `--text-faint` 5.33 -- melhor que os
+     5.06 que ele tem sobre `--surface`, porque o fundo e mais escuro que o
+     card. Esmaecer aqui NAO custa legibilidade; custaria se fosse opacidade. */
+  --edicao-fundo: #1a1918;
   --accent: #5aabf2;
   --accent-soft: #14304a;
   --danger: #f87171;

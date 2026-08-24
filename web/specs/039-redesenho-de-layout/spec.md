@@ -1,14 +1,14 @@
 # Spec 039 — Redesenho de layout
 
-**Status:** em andamento — **F0 a F7 entregues** (21–22/08); faltam F8, F9 e F10
+**Status:** em andamento — **F0 a F8 entregues** (21–22/08); faltam F9 e F10
 **Escopo:** frontend (`web/`). **Não toca:** backend, contrato de API, autenticação.
 **Depende de:** Spec 018 (primitivos + Tailwind v4) e Spec 031 (fatia C, cor)
 **Placar de testes na abertura:** Front **865**, Backend **860**, migrations `0014`
-**Placar em 22/08, com F6-c:** Front **902**, Backend **883**, migrations `0015`
+**Placar em 22/08, com F8:** Front **904**, Backend **883**, migrations `0015`
 
 ⚠️ **Antes de pegar F9 ou F10, leia o §8.1.** Quatro escopos desta spec
 foram escritos a partir do wireframe sem abrir o componente, e os quatro
-erraram o alvo — a F7 fez cinco. F9 e F10 vêm da mesma fonte.
+erraram o alvo — com a F7 e a F8, seis. F9 e F10 vêm da mesma fonte.
 
 ---
 
@@ -528,6 +528,56 @@ CI em UTC. Ver `web/AGENTS.md`.
 
 ### 6.5. ⚠️⚠️ Modo de edição (`Modo Edição.png`) — o desenho apaga a fatia 12
 
+✅ **Entregue na F8 (22/08) — e a "reposição" não era reposição.** Sexta
+confirmação do §8.1: a tabela marcava F8 como **risco alto, "reescreve a tela
+onde a fatia 12 acabou de entrar"**. Abrindo os arquivos, os cinco controles
+por coluna já estão lá (arrastar, renomear, selo de alvo, tornar padrão, setas,
+apagar — `CabecalhoDeColunaEditavel.tsx`) e os dois botões do topo também
+(`Adicionar coluna`, `Concluir edição` — `Board.tsx`). **Não havia o que
+repor:** a decisão de 19/08 era *não deixar o wireframe apagá-los*, e ninguém
+os apagou.
+
+O trabalho real veio de um pedido novo da Camila, em 22/08: *"quero que ao
+entrar no modo de edição, a tela esmaeça um pouco, pra perceber que está em um
+modo diferente"*.
+
+⚠️⚠️ **E O JEITO ÓBVIO — `opacity` nos cards — FOI MEDIDO E REPROVA.**
+Opacidade compõe o elemento **inteiro** contra o que está atrás, então ela
+arrasta junto todo par de contraste de dentro do card:
+
+| tema | `--text-faint` no card | a 0.85 de opacidade |
+|---|---|---|
+| claro | 5.99 | **4.60** — passa raspando |
+| escuro | 5.06 | **4.02** — ⚠️ reprova AA |
+
+Para o escuro voltar a 4.5 seria preciso 0.93, que a olho nu não esmaece nada.
+E os **62 tokens cromáticos** (selo de prioridade, cor de prazo) entram na conta
+também: 15 famílias × 2 temas para remedir, que é exatamente o que o §3.2
+proíbe fazer de graça. **Foi assim que o `Badge tone="soft"` foi publicado
+reprovando** — medindo sem a tinta aplicada.
+
+**O que entrou no lugar, com o mesmo efeito e sem o custo:**
+
+1. **A área de colunas ganha fundo próprio** (`--edicao-fundo`, token novo nos
+   dois temas) **e um anel**: ela deixa de ser a página e vira uma folha à
+   parte. Fundo não toca em texto nenhum — medido sobre ele, `--text-faint` dá
+   **5.29** no claro e **5.33** no escuro. Os dois aprovam, e o escuro
+   **melhora** (o fundo é mais escuro que o card).
+2. **O card perde a sombra**, e só ela. Para de flutuar e vira ladrilho chato
+   sobre o fundo esmaecido. O **fundo do card continua `--surface`** de
+   propósito: é ele que serve de backdrop aos selos cromáticos, e trocá-lo
+   obrigaria à remedição das 15 famílias.
+3. **A elevação de hover sai.** Com o quadro esmaecido, passar o mouse acendia
+   **um** card e desmentia o "modo parado" que o fundo acabou de anunciar. O
+   card continua clicável — a decisão de 12/08 de mantê-lo à vista e acessível
+   no modo de edição não muda.
+
+⚠️ **E de novo: a mudança não derrubou nenhum dos 902 testes.** É a terceira
+fatia seguida em que aparência muda e os quatro portões ficam verdes. Os dois
+testes novos olham o **estilo**, que costuma ser cheiro de teste frouxo — aqui
+é o comportamento inteiro, e o par entrar/sair existe porque despintar é o que
+costuma ficar para trás.
+
 O desenho traz, por coluna, **nome + X**. E no topo "Adicionar coluna" e
 "Salvar edições".
 
@@ -846,13 +896,15 @@ Ordem por alavancagem × risco. Cada uma entregável sozinha.
 | **F5** | Painel de filtros | o painel do §6.7 | baixo |
 | **F6** | Detalhe como painel | `TaskDetail.tsx` (2532 linhas) — a maior | **alto** |
 | **F7** | ✅ Datas + hora | §6.4 — o campo e a pílula **já existiam**; o que faltava era a hora no card e no `title` da subtarefa | baixo |
-| **F8** | ⚠️ Modo de edição | repor renomear + tornar padrão + cor no cabeçalho | **alto** |
+| **F8** | ✅ Modo de edição | os cinco controles **já estavam lá** — nada a repor; o trabalho foi o fundo esmaecido do §6.5 | baixo |
 | **F9** | Criar coluna | cor + caixa do §7 + rótulo do tipo | médio |
 | **F10** | Paginação no rodapé | ver §9 |  médio |
 
-⚠️ **F8 é a de maior risco de regressão do lote**, porque ela reescreve a tela
-onde a fatia 12 acabou de entrar. Smoke obrigatório de "trocar o alvo e apagar
-a coluna antiga num gesto só".
+⚠️ ~~**F8 é a de maior risco de regressão do lote**~~ — **errado, e corrigido
+em 22/08.** Ela não reescreveu tela nenhuma: os cinco controles da fatia 12 já
+estavam no lugar e ninguém precisou repô-los (§6.5). O smoke de "trocar o alvo
+e apagar a coluna antiga num gesto só" continua valendo como conferência, mas
+não como rede de uma reescrita que não houve.
 
 ### 8.1. ⚠️⚠️ Correção de 21/08 — quatro escopos escritos sem abrir o componente
 

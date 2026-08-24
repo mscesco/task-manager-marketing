@@ -1640,6 +1640,45 @@ describe("Board -- quadro avulso (fatia 5b-6)", () => {
     expect(screen.getByText("Modo edição")).toBeTruthy();
   });
 
+  it("⚠️ ao entrar no modo, a area de colunas ganha o fundo esmaecido (F8)", async () => {
+    // Pedido da Camila, 22/08: "quero que ao entrar no modo de edicao, a tela
+    // esmaeca um pouco, pra perceber que esta em um modo diferente".
+    //
+    // ⚠️ ESTE TESTE OLHA O ESTILO, que normalmente e o cheiro de um teste
+    // frouxo -- aqui e o comportamento inteiro. A fatia nao muda dado nenhum:
+    // ela muda a APARENCIA, e sem isto ela nao tem portao algum. Mesma
+    // situacao da capsula de projeto, que mudou de secao e passou pelos quatro
+    // portoes em silencio.
+    //
+    // ⚠️ E O FUNDO E TOKEN, nao valor. Se alguem trocar por um hex, isto cai
+    // -- e tem de cair: hex nao inverte no tema escuro (Spec 031, C1a).
+    comAvulso([]);
+    render(<Board boardId={AVULSO} title="Campanhas" podeEditarColunas />);
+    const lapis = await screen.findByLabelText("Editar colunas");
+
+    // Antes de entrar: ninguem pinta nada.
+    expect(document.querySelector('[style*="--edicao-fundo"]')).toBeNull();
+
+    fireEvent.click(lapis);
+    expect(screen.getByText("Modo edição")).toBeTruthy();
+    expect(document.querySelector('[style*="--edicao-fundo"]')).toBeTruthy();
+  });
+
+  it("⚠️ sair do modo devolve o quadro ao normal (F8)", async () => {
+    // O par do teste acima. Pintar e facil; DESpintar e o que costuma ficar
+    // para tras -- e um quadro que fica esmaecido para sempre depois de uma
+    // edicao e pior que um que nunca esmaeceu.
+    comAvulso([]);
+    render(<Board boardId={AVULSO} title="Campanhas" podeEditarColunas />);
+    fireEvent.click(await screen.findByLabelText("Editar colunas"));
+    expect(document.querySelector('[style*="--edicao-fundo"]')).toBeTruthy();
+
+    fireEvent.click(screen.getByText("Sair"));
+
+    expect(screen.queryByText("Modo edição")).toBeNull();
+    expect(document.querySelector('[style*="--edicao-fundo"]')).toBeNull();
+  });
+
   it("⚠️ o modo de edicao NAO cai no estado vazio -- desenha as colunas", async () => {
     // ⚠️ ISTO FALHOU NA PRIMEIRA VERSAO DO COMMIT, e o defeito era real: com
     // zero tarefa VISIVEL, `raizes.length === 0 && !boardId` trocava o kanban
