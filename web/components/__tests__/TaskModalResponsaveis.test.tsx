@@ -176,6 +176,23 @@ describe("TaskModal -- selecionar todos e limpar (criação)", () => {
     expect(screen.getByText("Selecionar todos (3)")).toBeTruthy();
   });
 
+  it("⚠️ o painel é `fixed` -- senão o card do modal o RECORTA", async () => {
+    // ⚠️ ESTE TESTE PRENDE POUCO, E DIZ ISSO. O card do modal tem
+    // `maxHeight: 88vh` + `overflowY: auto`, e um filho `absolute` é recortado
+    // por esse overflow: com o campo de Responsáveis perto do rodapé, o painel
+    // abria cortado e era preciso rolar o modal para escolher alguém (relato
+    // da Camila, 22/08, com print).
+    //
+    // jsdom não tem layout -- `getBoundingClientRect` volta zerado --, então
+    // NÃO dá para provar aqui que ele deixou de ser recortado, nem que ele
+    // vira para cima quando falta espaço. O que dá para prender é a escolha
+    // que faz a diferença: `fixed`, e não `absolute`. Se alguém "arrumar" o
+    // posicionamento voltando ao absoluto, isto cai.
+    const busca = await abrirSeletor();
+    const painel = busca.parentElement!;
+    expect(painel.style.position).toBe("fixed");
+  });
+
   it("⚠️ EDITAR não tem seletor NENHUM -- e isso é mais forte que não ter os botões", async () => {
     // ⚠️ EU IA ESCREVER ESTE TESTE ERRADO. Fui procurar os dois botões no modo
     // de edição e não achei nem o gatilho: a seção inteira de Responsáveis é
