@@ -1,6 +1,6 @@
 # Spec 043 — O formulário de solicitação vira produto
 
-**Status:** proposta (aguardando aprovação)
+**Status:** aprovada nas decisões (22/08) — fatia A liberada para escrever
 **Escopo:** backend (modelo, API, webhook) **e** frontend (formulário público, edição, fila)
 **Depende de:** Spec 034 (solicitações), ADR 0009 (papéis), ADR 0035 (visibilidade por time)
 **Placar na abertura:** Front **947**, Backend **896**, migrations `0015`
@@ -277,13 +277,55 @@ que esta fatia, e por isso está em §9.
 | 1 | Aviso por **e-mail de verdade**, disparado por **webhook para o n8n**, com conta Google dela — e é a **última** fatia |
 | 2 | Status ganham **"Em andamento"** e **"Concluída"** |
 | 3 | **Os dois** caminhos: página que lista os formulários **e** URL por formulário |
+| 4 | `solicitation_form.manage` em **ADMIN e MANAGER** |
+| 5 | O time do formulário de hoje é o **Marketing**, `b8387155-9688-4e58-b596-8d46906a68dd` |
+| 6 | **A fila segue o formulário**, e o time dele — e dá para filtrar por formulário dentro do próprio time |
 
-## 11. Pendências antes de começar
+## 11. As três decisões que destravaram a fatia A (22/08)
 
-1. ⚠️ **Quem edita formulário de um time — só ADMIN, ou o MANAGER daquele
-   time?** Muda `solicitation_form.manage` de global para escopado.
-2. ⚠️ **O formulário de hoje é do Marketing.** A migração precisa saber o
-   `team_id` dele — e hoje esse vínculo não existe em lugar nenhum.
-3. **A fila passa a ser por time?** Hoje é do workspace. Com formulários de
-   vários times, quem tria o quê é pergunta nova — e ela vale a pena responder
-   **antes** da fatia A, porque muda o filtro de `_base_select`.
+### 11.1. Quem edita: **ADMIN e MANAGER**
+
+⚠️ **E "MANAGER" AQUI É ESCOPADO, e não global** — é o que a ADR 0009 já faz
+com todo papel que não é `ADMIN`. Um MANAGER de Design não edita o formulário
+do Marketing. A alternativa (permissão global para MANAGER) daria a qualquer
+gestor o poder de mudar a porta de entrada de outro time, e isso não é o que
+"cada equipe cria o seu" quer dizer.
+
+### 11.2. O time do formulário atual
+
+`b8387155-9688-4e58-b596-8d46906a68dd` (Marketing). É o valor que a migração de
+dados da fatia A grava no `solicitation_form` que nasce do
+`solicitacaoForm.ts`.
+
+⚠️ **UUID CRAVADO EM MIGRATION É DÍVIDA, e vale saber disso na hora de
+escrever.** Ele só é válido **neste** banco: um workspace novo, ou um ambiente
+recriado do zero, não tem esse time. A migração precisa ser **tolerante** — se
+o time não existir, ela **não** cria o formulário e **não** falha; o ambiente
+começa sem formulário nenhum, que é o estado correto para um banco vazio.
+Migration que estoura em ambiente limpo é migration que ninguém consegue rodar
+duas vezes.
+
+### 11.3. A fila segue o FORMULÁRIO
+
+Palavras dela: *"a fila é de acordo com o formulário e o time que a pessoa criou
+a solicitação (pois também pode ser de formulários diferentes dentro do próprio
+time)"*.
+
+Traduzindo para o modelo — e são **duas** coisas, não uma:
+
+| pergunta | resposta |
+|---|---|
+| **quem VÊ** a solicitação na fila? | quem alcança o **time do formulário**. O `team_id` não vive na solicitação: ele vem por `solicitation.form_id → solicitation_form.team_id` |
+| **como eu separo** dentro do meu time? | filtro por **formulário** na tela da fila — porque um time pode ter vários |
+
+⚠️⚠️ **E ISSO MUDA O `_base_select`, que é a base de tudo.** Hoje a fila filtra
+só por `workspace_id`; passa a precisar de um `JOIN` com o formulário para
+saber o time, e do filtro de alcance da ADR 0035. **É a mudança mais perigosa
+da fatia A** — errar para o lado frouxo mostra a um time a solicitação de
+outro, e errar para o lado apertado esconde a fila de quem devia triar.
+
+⚠️ **E AS SOLICITAÇÕES ANTIGAS NÃO PODEM SUMIR NO CAMINHO.** Elas ganham
+`form_id` na migração (§3.1) — mas se alguma ficar sem, um `JOIN` interno a
+apaga da fila **em silêncio**. O `JOIN` precisa ser `LEFT`, e solicitação sem
+formulário continua visível a quem tem `solicitation.review` no workspace.
+Este parágrafo é o teste que a fatia A precisa ter.
