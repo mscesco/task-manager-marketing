@@ -17,11 +17,13 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import func, select
+from sqlalchemy import Select, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Solicitation, Workspace
+from app.core.tenant import require_tenant
+from app.db.models import Solicitation, SolicitationForm, Workspace
 from app.db.repository import BaseRepository
+from app.modules.auth.domain import team_scope
 from app.shared.pagination import PageParams
 
 
@@ -29,6 +31,57 @@ class SolicitationRepository(BaseRepository[Solicitation]):
     """Acesso autenticado (triagem), escopado ao tenant corrente."""
 
     model = Solicitation
+
+    def _base_select(
+        self, *, include_deleted: bool = False
+    ) -> Select[tuple[Solicitation]]:
+        """O de sempre, MAIS o recorte por time do FORMULARIO (Spec 043, A).
+
+        ⚠️⚠️ ESTA E A MUDANCA MAIS PERIGOSA DA FATIA, e ela nao tem meio-termo:
+        frouxo demais mostra a um time a solicitacao de outro; apertado demais
+        esconde a fila de quem devia triar. Por isso ela mora AQUI, no unico
+        lugar por onde toda leitura passa (`list_batches`, os dois contadores e
+        o `get_by_id` do BaseRepository), e nao repetida em cada consulta.
+
+        A regra, com as palavras da Camila (22/08): *"a fila e de acordo com o
+        formulario e o time que a pessoa criou a solicitacao"*. A solicitacao
+        NAO tem time -- ele vem por `solicitation.form_id ->
+        solicitation_form.team_id`.
+
+        ⚠️⚠️ O `JOIN` E `LEFT`, E ISSO NAO E ESTILO. Solicitacao sem
+        `form_id` e historico legitimo: tudo o que foi enviado antes desta
+        fatia, e qualquer uma cujo formulario tenha sido apagado depois. Um
+        `JOIN` interno as apagaria da fila **em silencio** -- sem erro, sem
+        aviso, sem ninguem notar que a fila encolheu. Ha teste so para isso.
+
+        ⚠️ E ORFA CONTINUA VISIVEL A QUEM TEM `solicitation.review` NO
+        WORKSPACE. Nao ha time para comparar, entao a alternativa seria
+        esconde-la de todo mundo -- que e perder trabalho pendente por causa de
+        um vinculo que o produto nem exigia quando ela chegou.
+
+        ⚠️ ADMIN NAO GANHA CLAUSULA NENHUMA. `visible_team_ids` devolve `None`
+        para ADMIN, e `None` aqui significa "sem filtro de time" -- o mesmo
+        contrato que o `board_repository` ja usa. Trata-lo como conjunto vazio
+        esconderia a fila inteira do unico papel que enxerga tudo.
+        """
+        stmt = super()._base_select(include_deleted=include_deleted)
+        tenant = require_tenant()
+        visiveis = team_scope.visible_team_ids(
+            tenant.memberships, tenant.team_tree
+        )
+        if visiveis is None:  # ADMIN
+            return stmt
+        return stmt.outerjoin(
+            SolicitationForm,
+            (SolicitationForm.id == Solicitation.form_id)
+            & (SolicitationForm.workspace_id == Solicitation.workspace_id),
+        ).where(
+            or_(
+                # historico sem formulario -- ver o aviso acima
+                Solicitation.form_id.is_(None),
+                SolicitationForm.team_id.in_(visiveis),
+            )
+        )
 
     async def list_batches(
         self, *, params: PageParams, filtro: str | None = None

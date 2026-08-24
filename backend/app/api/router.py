@@ -17,6 +17,9 @@ from app.api.health import router as health_router
 from app.api.client_errors import router as client_errors_router
 from app.modules.auth.api.router import router as auth_router
 from app.modules.notifications.api.router import router as notifications_router
+from app.modules.solicitations.api.form_router import (
+    router as solicitation_forms_router,
+)
 from app.modules.solicitations.api.router import router as solicitations_router
 from app.modules.tasks.api.boards_router import router as boards_router
 from app.modules.tasks.api.collaboration_router import (
@@ -47,5 +50,11 @@ api_v1_router.include_router(collaboration_router)
 api_v1_router.include_router(comment_router)
 api_v1_router.include_router(notifications_router)
 api_v1_router.include_router(solicitations_router)
+# ⚠️ MESMO PREFIXO (`/solicitacoes`), ROUTER SEPARADO. O de cima tem a rota
+# PUBLICA sem credencial; este exige `solicitation_form.manage` no router
+# inteiro. Misturar os dois faria a dependencia de permissao valer para a rota
+# publica -- ou, pior, alguem a tiraria dali para "consertar" e abriria o CRUD
+# do formulario para o mundo.
+api_v1_router.include_router(solicitation_forms_router)
 api_v1_router.include_router(system_router)
 api_v1_router.include_router(client_errors_router)
