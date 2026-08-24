@@ -313,6 +313,13 @@ class TaskDuplicateRequest(BaseModel):
     description: str = Field(default="", max_length=_DESCRIPTION_MAX)
     parent_task_id: uuid.UUID | None = None
     team_id: uuid.UUID | None = None
+    #: ⚠️ AUSENTE = HERDA O QUADRO DA ORIGEM, e nao "Quadro geral" -- diferente
+    #: do `TaskCreateRequest`, onde `None` significa mesmo o geral.
+    #:
+    #: A diferenca e proposital: criar do zero nao tem de quem herdar,
+    #: duplicar tem. E foi a ausencia deste campo que jogava a copia de um
+    #: quadro avulso na lente do subtime (defeito de producao, 22/08).
+    board_id: uuid.UUID | None = None
     priority: PriorityLevel = PriorityLevel.MEDIUM
     assignee_ids: list[uuid.UUID] = Field(default_factory=list)
     include_subtasks: bool = False

@@ -159,6 +159,21 @@ class DuplicateTaskCommand:
     project_id: uuid.UUID | None = None
     parent_task_id: uuid.UUID | None = None
     team_id: uuid.UUID | None = None
+    #: ⚠️⚠️ O QUADRO DA COPIA. `None` = "o chamador nao disse", e nao "Quadro
+    #: geral" -- ver o tratamento no `duplicate`, que nesse caso HERDA o quadro
+    #: da origem.
+    #:
+    #: ⚠️ ELE FALTAVA, E ISSO ERA UM DEFEITO EM PRODUCAO (relatado pela Camila
+    #: em 22/08): duplicar uma tarefa de um quadro avulso de subtime jogava a
+    #: copia na LENTE do subtime. O `duplicate` chamava `create()` sem
+    #: `board_id`, entao a copia caia na resolucao padrao -- o quadro padrao do
+    #: time -- e sumia da tela onde a pessoa acabara de clicar.
+    #:
+    #: ⚠️ TERCEIRA VEZ DO MESMO CAMPO. O `board_id` ja tinha ficado fora do
+    #: corpo do `createTask` por um mes (fatia 5b-6) e fora do lote de colunas.
+    #: E um campo que quase todo caminho de escrita precisa e que nenhum
+    #: default acerta.
+    board_id: uuid.UUID | None = None
     priority: PriorityLevel = PriorityLevel.MEDIUM
     assignee_ids: list[uuid.UUID] = field(default_factory=list)
     include_subtasks: bool = False
@@ -713,6 +728,24 @@ class TaskService:
                 pai_alvo = None
                 promovida = True
 
+        # ⚠️ O QUADRO DA COPIA E O DA ORIGEM, salvo pedido explicito (22/08).
+        #
+        # Antes desta linha `create()` era chamado SEM `board_id`, e a copia
+        # caia no quadro padrao do time -- a lente. Duplicar dentro de um
+        # quadro avulso fazia a copia sumir da tela onde a pessoa clicou.
+        #
+        # ⚠️ HERDAR E O DEFAULT CERTO, e nao "mandar o quadro atual da tela".
+        # Duplicar e "outra igual a esta"; a que esta na frente e a origem, nao
+        # a tela. E herdando, o caminho funciona ate para um cliente que nao
+        # saiba mandar o campo -- o que importa porque o defeito ficou vivo
+        # justamente por um cliente que nao mandava.
+        #
+        # ⚠️ SUBTAREFA IGNORA OS DOIS: `create()` faz a filha herdar o quadro do
+        # PAI (ADR 0024). Passar aqui nao muda isso, e nao deve.
+        quadro_alvo = (
+            command.board_id if command.board_id is not None else source.board_id
+        )
+
         novo = await self.create(
             CreateTaskCommand(
                 title=command.title,
@@ -720,6 +753,7 @@ class TaskService:
                 project_id=command.project_id,
                 parent_task_id=pai_alvo,
                 team_id=command.team_id,
+                board_id=quadro_alvo,
                 priority=command.priority,
                 assignee_ids=command.assignee_ids,
             )

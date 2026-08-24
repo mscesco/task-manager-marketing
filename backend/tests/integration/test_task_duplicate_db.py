@@ -1012,3 +1012,124 @@ def test_duplicacao_nao_commita_por_dentro() -> None:
 # ou aceitar ordem indefinida, ou dar `position`/`created_at` distintos as
 # copias, o que arrasta a ordenacao da listagem inteira -- raizes do quadro
 # incluidas. Fora do escopo desta spec ate alguem decidir.
+
+
+# ----------------------------------------------------------
+# ⚠️ O QUADRO DA COPIA (defeito de producao, relatado em 22/08)
+#
+# Camila: "ao duplicar uma tarefa no quadro criado do subtime, ela vai para a
+# lente do subtime, nao para o quadro em que a tarefa original estava".
+#
+# Causa: `duplicate()` chamava `create()` SEM `board_id`, e a copia caia na
+# resolucao padrao -- o quadro padrao do time. Ela nascia certa no banco e
+# SUMIA da tela onde a pessoa acabara de clicar, sem erro nenhum.
+#
+# ⚠️ TERCEIRA VEZ DO MESMO CAMPO neste projeto: ele ja ficou fora do corpo do
+# `createTask` por um mes e fora do lote de colunas. Nenhum default acerta
+# `board_id`, e por isso todo caminho de escrita precisa dele explicito.
+# ----------------------------------------------------------
+async def test_a_copia_fica_no_quadro_da_ORIGEM(db) -> None:
+    """⚠️ O TESTE QUE FALTAVA. Sem ele, o defeito passou pelos portoes."""
+    ws, team, user, proj, ctx = await _mundo(db)
+    avulso = await f.make_board(db, workspace_id=ws, team_id=team, name="Campanhas")
+    await db.flush()
+
+    with acting_as(**ctx):
+        svc = TaskService(db)
+        origem = await svc.create(
+            CreateTaskCommand(
+                title="Campanha",
+                team_id=team,
+                board_id=avulso.id,
+                assignee_ids=[user],
+            )
+        )
+        r = await svc.duplicate(_cmd(origem.id, user, team_id=team))
+
+    assert origem.board_id == avulso.id
+    # ⚠️ E NAO o quadro padrao do time, que era para onde ela ia.
+    assert r.task.board_id == avulso.id
+
+
+async def test_pedido_explicito_ganha_da_heranca(db) -> None:
+    """Herdar e o DEFAULT, e nao uma trava: quem disser o quadro, manda.
+
+    ⚠️ A ordem importa para um caso real: mover a copia para outro quadro no
+    mesmo gesto de duplicar. Se a heranca ganhasse, o campo do corpo seria
+    decorativo -- e campo decorativo e como o `board_id` se perdeu das outras
+    duas vezes.
+    """
+    ws, team, user, proj, ctx = await _mundo(db)
+    avulso = await f.make_board(db, workspace_id=ws, team_id=team, name="Campanhas")
+    outro = await f.make_board(db, workspace_id=ws, team_id=team, name="Eventos")
+    await db.flush()
+
+    with acting_as(**ctx):
+        svc = TaskService(db)
+        origem = await svc.create(
+            CreateTaskCommand(
+                title="Campanha",
+                team_id=team,
+                board_id=avulso.id,
+                assignee_ids=[user],
+            )
+        )
+        r = await svc.duplicate(
+            _cmd(origem.id, user, team_id=team, board_id=outro.id)
+        )
+
+    assert r.task.board_id == outro.id
+
+
+async def test_copia_de_tarefa_do_quadro_geral_continua_no_geral(db) -> None:
+    """⚠️ O CASO QUE NAO PODE REGREDIR -- e o de 100% das tarefas de producao.
+
+    A origem no quadro padrao tem `board_id` proprio; herdar tem de dar no
+    mesmo lugar de antes, e nao mudar nada para quem nunca criou quadro avulso.
+    """
+    ws, team, user, proj, ctx = await _mundo(db)
+    with acting_as(**ctx):
+        svc = TaskService(db)
+        origem = await svc.create(
+            CreateTaskCommand(title="Campanha", team_id=team, assignee_ids=[user])
+        )
+        r = await svc.duplicate(_cmd(origem.id, user, team_id=team))
+
+    assert r.task.board_id == origem.board_id
+
+
+async def test_subtarefa_copiada_herda_o_quadro_do_PAI(db) -> None:
+    """⚠️ ADR 0024: filha nao tem quadro proprio. Passar `board_id` na
+    duplicacao NAO pode abrir pai num quadro e filha em outro -- que e o estado
+    invisivel que a fatia 2 da Spec 036 fechou."""
+    ws, team, user, proj, ctx = await _mundo(db)
+    avulso = await f.make_board(db, workspace_id=ws, team_id=team, name="Campanhas")
+    await db.flush()
+
+    with acting_as(**ctx):
+        svc = TaskService(db)
+        mae = await svc.create(
+            CreateTaskCommand(
+                title="Mãe", team_id=team, board_id=avulso.id, assignee_ids=[user]
+            )
+        )
+        await svc.create(
+            CreateTaskCommand(
+                title="Filha",
+                team_id=team,
+                parent_task_id=mae.id,
+                assignee_ids=[user],
+            )
+        )
+        r = await svc.duplicate(
+            _cmd(mae.id, user, team_id=team, include_subtasks=True)
+        )
+
+    filhas = await _filhos(db, r.task.id)
+    assert len(filhas) == 1
+    linha = (
+        await db.execute(
+            text("SELECT board_id FROM task WHERE id=:i"), {"i": filhas[0][0]}
+        )
+    ).one()
+    assert linha[0] == avulso.id

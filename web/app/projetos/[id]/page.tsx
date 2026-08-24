@@ -1,12 +1,13 @@
 "use client";
 import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import AppShell from "@/components/AppShell";
 import Board from "@/components/Board";
 import Card from "@/components/Card";
 import {
   getProject,
   updateProject,
+  deleteProject,
   currentUser,
   ApiError,
   type Project,
@@ -54,7 +55,14 @@ function Projeto() {
   const id = String(params.id);
   const [project, setProject] = useState<Project | null>(null);
   const [erro, setErro] = useState<string | null>(null);
+  const router = useRouter();
   const [podeEditar, setPodeEditar] = useState(false);
+  // Bug relatado em 22/08: "não dá pra excluir projeto". A rota existia; a
+  // tela não. ⚠️ PERMISSÃO PRÓPRIA -- `project.delete` não vem junto com
+  // `project.update`, e quem pode editar não necessariamente pode apagar.
+  const [podeExcluir, setPodeExcluir] = useState(false);
+  const [excluindo, setExcluindo] = useState(false);
+  const [erroExcluir, setErroExcluir] = useState<string | null>(null);
   const [editando, setEditando] = useState(false);
 
   useEffect(() => {
@@ -67,8 +75,14 @@ function Projeto() {
 
   useEffect(() => {
     currentUser()
-      .then((me) => setPodeEditar(me.permissions.includes("project.update")))
-      .catch(() => setPodeEditar(false));
+      .then((me) => {
+        setPodeEditar(me.permissions.includes("project.update"));
+        setPodeExcluir(me.permissions.includes("project.delete"));
+      })
+      .catch(() => {
+        setPodeEditar(false);
+        setPodeExcluir(false);
+      });
   }, []);
 
   if (erro) return <div className="error-box" style={{ maxWidth: 480 }}>{erro}</div>;
@@ -77,6 +91,40 @@ function Projeto() {
   // Pessoal nunca edita por aqui (backend devolve 409). A lista ja filtra
   // pessoal; guardamos defensivamente tambem na detalhe.
   const editavel = podeEditar && !project.is_personal;
+  // ⚠️ PESSOAL NUNCA, e o backend também recusa (409). A trava dupla é de
+  // propósito: sem ela a tela ofereceria um botão que sempre falha.
+  const excluivel = podeExcluir && !project.is_personal;
+
+  async function excluir() {
+    // ⚠️ O AVISO DIZ O QUE ACONTECE COM AS TAREFAS, e isso não é zelo: o
+    // soft delete marca `deleted_at` no PROJETO e não toca nelas. Elas
+    // continuam existindo e apenas perdem a tag na tela -- quem lê "excluir
+    // projeto" costuma imaginar o contrário, e a diferença é grande.
+    const ok = window.confirm(
+      `Excluir o projeto “${project!.title}”?\n\n` +
+        "As tarefas dele NÃO são apagadas: elas continuam no quadro e passam " +
+        "a ficar sem projeto.",
+    );
+    if (!ok) return;
+    setErroExcluir(null);
+    setExcluindo(true);
+    try {
+      await deleteProject(project!.id);
+      // ⚠️ `replace`, e não `push`: a página do projeto apagado não pode
+      // sobrar no histórico -- o "voltar" cairia num 404.
+      router.replace("/projetos");
+    } catch (e) {
+      const err = e as ApiError;
+      setErroExcluir(
+        err.status === 403
+          ? "Você não pode excluir este projeto."
+          : err.status === 409
+            ? "Projeto pessoal não pode ser excluído."
+            : err.message || "Não consegui excluir o projeto.",
+      );
+      setExcluindo(false);
+    }
+  }
 
   return (
     <div>
@@ -131,17 +179,41 @@ function Projeto() {
               </p>
             )}
           </div>
-          {editavel && !editando && (
-            <button
-              type="button"
-              className="btn btn-ghost"
-              onClick={() => setEditando(true)}
-              style={{ flexShrink: 0 }}
-            >
-              Editar
-            </button>
+          {!editando && (editavel || excluivel) && (
+            <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+              {editavel && (
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  onClick={() => setEditando(true)}
+                >
+                  Editar
+                </button>
+              )}
+              {/* ⚠️ AÇÃO DESTRUTIVA PINTADA COMO TAL. O produto já tem esse
+                  padrão (`--danger` no excluir tarefa, e no "Apagar quadro"
+                  do cabeçalho); nascer `btn-ghost` neutro poria "apagar" com
+                  o mesmo peso de "editar". */}
+              {excluivel && (
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  onClick={excluir}
+                  disabled={excluindo}
+                  style={{ color: "var(--danger)" }}
+                >
+                  {excluindo ? "Excluindo…" : "Excluir projeto"}
+                </button>
+              )}
+            </div>
           )}
         </div>
+
+        {erroExcluir && (
+          <div className="error-box" style={{ marginTop: 12 }} role="alert">
+            {erroExcluir}
+          </div>
+        )}
 
         {editavel && editando && (
           <EditPanel

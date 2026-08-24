@@ -1925,6 +1925,25 @@ export async function updateProject(
   return api<Project>(`/api/v1/projects/${id}`, { method: "PATCH", body: patch });
 }
 
+/**
+ * Apaga um projeto (soft delete no backend).
+ *
+ * ⚠️ A ROTA EXISTE DESDE SEMPRE E O FRONT NUNCA A CHAMOU. A Camila reportou em
+ * 22/08: "não dá pra excluir projeto". Não havia defeito no backend --
+ * `DELETE /projects/{id}` está lá, com permissão `project.delete` e a recusa
+ * do projeto pessoal. **Faltava a metade da tela**, e nenhum teste podia pegar
+ * isso: não há portão para "função de API sem chamador".
+ *
+ * ⚠️ E O SOFT DELETE NÃO TOCA NAS TAREFAS. Ele marca `deleted_at` no projeto e
+ * mais nada -- as tarefas continuam com `project_id` apontando para ele. Na
+ * tela elas simplesmente deixam de mostrar a tag do projeto, porque o mapa de
+ * nomes vem do `listProjects`, que não devolve apagados. Quem chamar isto
+ * precisa dizer isso a quem clicou.
+ */
+export async function deleteProject(id: string): Promise<Project> {
+  return api<Project>(`/api/v1/projects/${id}`, { method: "DELETE" });
+}
+
 export async function archiveProject(id: string): Promise<Project> {
   return api<Project>(`/api/v1/projects/${id}/archive`, { method: "POST" });
 }
