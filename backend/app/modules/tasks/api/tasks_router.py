@@ -261,6 +261,11 @@ async def duplicate_task(
             project_id=payload.project_id,
             parent_task_id=payload.parent_task_id,
             team_id=payload.team_id,
+            # ⚠️ CAMPO A CAMPO -- declarar no schema NAO chega ao dominio.
+            # Sem esta linha o `board_id` do corpo seria descartado em silencio
+            # e a copia continuaria caindo na lente do subtime, que e o defeito
+            # que esta entrega conserta.
+            board_id=payload.board_id,
             priority=payload.priority,
             assignee_ids=payload.assignee_ids,
             include_subtasks=payload.include_subtasks,
