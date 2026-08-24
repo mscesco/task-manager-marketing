@@ -88,10 +88,10 @@
      dentro deles junto (os 62 tokens cromaticos do §3.2 inclusive), e isso e
      exatamente o que a Spec 031 proibiu sem remedicao.
 
-     Contraste sobre este fundo, medido: `--text` 17.4, `--text-soft` 8.6,
-     `--text-faint` 5.29. Os tres aprovam AA -- e o faint aprova por MENOS
-     margem que sobre o branco (5.99), entao escurecer mais este tom exige
-     remedir. */
+     Contraste sobre este fundo, MEDIDO NO NAVEGADOR em 22/08: `--text` 17.02,
+     `--text-soft` 10.68, `--text-faint` 5.29. Os tres aprovam AA -- e o faint
+     aprova por menos margem que sobre o branco (6.53), entao escurecer mais
+     este tom exige remedir. */
   --edicao-fundo: #e9e7e4;
   --accent: #0075de;     /* Notion `primary` -- o UNICO acento estrutural */
   /* Derivado: a Notion nao tem azul suave. Mesmo papel de sempre -- fundo de
@@ -174,10 +174,32 @@
   --text-faint: #918d88;
   /* Par escuro do fundo de edicao. ⚠️ Ele CLAREIA em vez de escurecer: no
      escuro o `--bg` ja e quase o fundo do monitor, e escurecer nao teria para
-     onde ir. Contraste medido sobre ele: `--text-faint` 5.33 -- melhor que os
-     5.06 que ele tem sobre `--surface`, porque o fundo e mais escuro que o
-     card. Esmaecer aqui NAO custa legibilidade; custaria se fosse opacidade. */
-  --edicao-fundo: #1a1918;
+     onde ir.
+
+     ⚠️ A PRIMEIRA VERSAO (#1a1918) FICOU INVISIVEL, e a Camila viu na tela:
+     "o modo edicao do tema escuro ficou muito escuro ainda". Ela estava a
+     1.04 de contraste da pagina -- ou seja, praticamente a mesma cor.
+
+     Este valor e O MAIS CLARO QUE AINDA APROVA AA, e o teto foi medido, nao
+     chutado (navegador, 22/08). `--text-faint` sobre cada candidato:
+
+       #1a1918 -> 5.32  (o antigo; separacao da pagina: 1.04)
+       #22201e -> 4.92                          (1.12)
+       #262422 -> 4.69  ← ESTE                  (1.18)
+       #2a2825 -> 4.46  ✗ reprova por 0.04      (1.24)
+
+     Ou seja: a separacao da pagina quadruplicou (1.04 -> 1.18) e ainda sobra
+     margem de 0.19 sobre o minimo. Clarear mais exige trocar o `--text-faint`
+     junto, e ai nao e mais um token, sao dois.
+
+     ⚠️ EFEITO COLATERAL ACEITO: o fundo agora e MAIS CLARO que o card
+     (`--surface`, #1f1e1c). Os cards passam a afundar na bandeja em vez de
+     flutuar sobre ela -- que e exatamente a leitura desejada no modo de
+     edicao, e casa com a sombra que eles perdem. Eles seguem delimitados pela
+     propria borda. No tema claro o efeito e o inverso (fundo mais escuro que o
+     card branco), e isso e proposital: a §3.3 desta spec ja diz que o escuro
+     NAO e o claro invertido. */
+  --edicao-fundo: #262422;
   --accent: #5aabf2;
   --accent-soft: #14304a;
   --danger: #f87171;

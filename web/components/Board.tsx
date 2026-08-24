@@ -2089,11 +2089,13 @@ export default function Board({
               INTEIRO contra o que esta atras, entao ela arrasta junto todo par
               de contraste de dentro do card:
 
-                - tema claro, cards a 0.85: `--text-faint` cai de 5.99 para
-                  4.60 -- passa raspando;
-                - tema ESCURO, mesmos 0.85: cai de 5.06 para **4.02**, e
+                - tema claro, cards a 0.85: `--text-faint` cai de 6.53 para
+                  4.59 -- passa raspando;
+                - tema ESCURO, mesmos 0.85: cai de 5.05 para **4.02**, e
                   reprova AA. Para voltar a 4.5 seria preciso 0.93, que a olho
                   nu nao esmaece nada;
+                  (os quatro numeros foram MEDIDOS no navegador em 22/08,
+                  compondo texto e card contra a pagina -- nao estimados)
                 - e os 62 tokens cromaticos (selo de prioridade, cor de prazo)
                   entram na conta tambem -- 15 familias x 2 temas para remedir,
                   que e exatamente o que a Spec 031 §3.2 proibe fazer de

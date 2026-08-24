@@ -185,12 +185,37 @@ export default function SeletorDeQuadro({
           style={{
             display: "inline-flex", alignItems: "center", gap: 6,
             background: "none", border: "none", padding: 0, cursor: "pointer",
-            font: "inherit", fontSize: 19, letterSpacing: "-0.02em",
+            // ⚠️⚠️ AQUI HAVIA `font: "inherit", fontSize: 19` -- E ISSO PRENDIA
+            // O TITULO DO QUADRO NO TAMANHO DE ANTES DA SPEC 039.
+            //
+            // O `Board` desenha `<h1 style={{ fontSize: 26 }}>{title}</h1>` e
+            // este botao E o `title`. O `fontSize: 19` vinha DEPOIS do atalho
+            // `font`, entao ganhava dele -- e o titulo continuou 19px enquanto
+            // a F1 acreditava te-lo levado a 26. Medido no navegador em 22/08:
+            // `getComputedStyle` do gatilho devolvia **19px** dentro de um h1
+            // de 26.
+            //
+            // ⚠️ E ELE SAIA TORTO NA LINHA, que foi como a Camila achou. O h1
+            // reserva a caixa de 26px, o texto desenha 19: o centro optico do
+            // titulo caia em 43,70 enquanto TODOS os vizinhos (selo, botoes)
+            // caiam em 42,00 -- 1,7px abaixo, o suficiente para a linha
+            // parecer desalinhada. Com o conserto: 41,02 contra 42,00, que e
+            // arredondamento e nao desalinho.
+            //
+            // ⚠️ TERCEIRA VEZ DESTE MESMO ATALHO no projeto: ele ja tinha
+            // matado o `fontSize` da pilula de datas (F7) e esta registrado no
+            // `web/AGENTS.md`. `font` e ATALHO -- ele redefine tamanho, peso e
+            // altura de linha junto com a familia, e qualquer coisa antes dele
+            // some. Aqui nem era preciso: o `globals.css` ja tem
+            // `button { font-family: inherit }`.
+            fontSize: "inherit", fontWeight: "inherit", lineHeight: "inherit",
+            letterSpacing: "-0.02em",
             color: "var(--text)",
           }}
         >
           {atual.nome}
-          <ChevronDown size={16} style={{ opacity: 0.6, flexShrink: 0 }} />
+          {/* Cresceu junto com o titulo: 16 ao lado de 26px ficava miudo. */}
+          <ChevronDown size={20} style={{ opacity: 0.6, flexShrink: 0 }} />
         </button>
 
         {aberto && (

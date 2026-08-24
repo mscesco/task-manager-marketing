@@ -101,6 +101,37 @@ describe("SeletorDeQuadro -- o gatilho é o título", () => {
     ).toContain("Pauta editorial");
   });
 
+  it("⚠️ o gatilho NÃO fixa tamanho de fonte -- ele herda do `<h1>`", () => {
+    // ⚠️ ESTE TESTE EXISTE POR UM DEFEITO DE OITO DIAS, achado na tela pela
+    // Camila em 22/08 ("as coisas do cabeçalho estão meio tortas comparadas
+    // com o nome do quadro").
+    //
+    // O `Board` desenha `<h1 style={{ fontSize: 26 }}>{title}</h1>` e este
+    // botão É o `title`. Ele trazia `font: "inherit"` seguido de
+    // `fontSize: 19` -- então o título do quadro continuou 19px enquanto a F1
+    // acreditava tê-lo levado a 26, e saía 1,7px fora do eixo dos vizinhos na
+    // linha do cabeçalho. Medido no navegador: `getComputedStyle` devolvia
+    // 19px dentro de um h1 de 26.
+    //
+    // ⚠️ TERCEIRA VEZ DO MESMO ATALHO no projeto -- ele já tinha matado o
+    // `fontSize` da pílula de datas (F7). `font` redefine tamanho, peso e
+    // altura de linha junto com a família.
+    //
+    // ⚠️ O QUE ESTE TESTE PRENDE É POUCO, e é honesto dizer: jsdom não tem
+    // layout, então ele não mede posição nenhuma. Ele prende só que o estilo
+    // inline não CRAVA um tamanho -- que é exatamente o erro que aconteceu
+    // duas vezes. O alinhamento em si continua ⚪ sem verificação.
+    montar();
+    const gatilho = screen.getByRole("button", { name: /Trocar de quadro/ });
+    expect(gatilho.style.fontSize).toBe("inherit");
+    expect(gatilho.style.fontWeight).toBe("inherit");
+    // ⚠️ NADA de tamanho absoluto: era o `19px` que prendia o título. Não dá
+    // para checar o atalho `font` diretamente -- o CSSOM o remonta a partir
+    // dos longhands e devolve "inherit" nos dois casos, então essa asserção
+    // não discrimina. O que discrimina é o tamanho não ser px.
+    expect(gatilho.style.fontSize).not.toMatch(/px$/);
+  });
+
   it("⚠️ id desconhecido cai na LENTE, e o gatilho diz isso", () => {
     // Mesma regra do `opcaoSelecionada`: o quadro pode ter sido apagado por
     // outra pessoa. O gatilho nao pode ficar mostrando um nome que nao existe.
