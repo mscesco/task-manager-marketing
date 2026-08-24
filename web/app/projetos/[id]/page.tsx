@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { Pencil } from "lucide-react";
 import AppShell from "@/components/AppShell";
 import Board from "@/components/Board";
 import Card from "@/components/Card";
@@ -126,119 +127,152 @@ function Projeto() {
     }
   }
 
-  return (
-    <div>
-      <div style={{ maxWidth: 860 }}>
-        <a
-          href="/projetos"
-          className="muted"
-          style={{ fontSize: 13, display: "inline-block", marginBottom: 10 }}
-        >
-          ‹ Projetos
-        </a>
-
-        <div
+  // ⚠️ A META VIRA UMA LINHA DISCRETA (decisão da Camila, 22/08). Ela morava
+  // num bloco próprio com bolinha grande, título e descrição em parágrafo --
+  // e o `Quadro Projeto.png` tem UMA linha. A escolha foi "vira uma linha
+  // discreta abaixo": o desenho é respeitado e nenhum dado some da tela.
+  //
+  // ⚠️ A DESCRIÇÃO FICA, TRUNCADA EM UMA LINHA. "Linha discreta" não cabe um
+  // parágrafo, mas apagar a descrição da tela seria decidir mais do que foi
+  // pedido -- ela vira uma linha com reticências, e o texto inteiro segue no
+  // painel de edição.
+  const metaDoProjeto = (
+    <div
+      className="muted"
+      style={{
+        display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap",
+        fontSize: 12.5, marginTop: -8, marginBottom: 16,
+      }}
+    >
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+        <span
+          aria-hidden
           style={{
-            display: "flex", alignItems: "flex-start",
-            justifyContent: "space-between", gap: 12, marginBottom: 16,
+            width: 8, height: 8, borderRadius: 999, flexShrink: 0,
+            background: STATUS_COLOR[project.status] || "#999",
+          }}
+        />
+        {STATUS_LABEL[project.status] || project.status}
+      </span>
+      <span>Prioridade: {PRIORITY_LABEL[project.priority] || project.priority}</span>
+      {project.start_date && <span>Início: {dataBR(project.start_date)}</span>}
+      {project.due_date && <span>Prazo: {dataBR(project.due_date)}</span>}
+      {project.is_archived && <span>· arquivado</span>}
+      {project.description && project.description.trim().length > 0 && (
+        <span
+          title={project.description}
+          style={{
+            maxWidth: 420, overflow: "hidden", textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
           }}
         >
-          <div style={{ minWidth: 0 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-              <span
-                style={{
-                  width: 10, height: 10, borderRadius: 999, flexShrink: 0,
-                  background: STATUS_COLOR[project.status] || "#999",
+          · {project.description}
+        </span>
+      )}
+    </div>
+  );
+
+  return (
+    <div>
+      {/* ⚠️ EU APAGUEI ESTE LINK AO REFAZER O CABEÇALHO, e a Camila pegou na
+          tela no mesmo dia: "você tirou o 'voltar' da tela quando abre um
+          projeto né". Foi regressão, não decisão -- ele morava no bloco de
+          cabeçalho que a página deixou de desenhar, e saiu junto sem que eu
+          percebesse.
+
+          ⚠️ FICA ACIMA DO CABEÇALHO, e não dentro dele: "voltar" é sobre a
+          NAVEGAÇÃO (de onde vim), e o cabeçalho é sobre o CONTEÚDO (o que
+          estou vendo). Enfiá-lo entre o título e o contador misturaria as duas
+          coisas -- é a mesma separação que o `acoesDoTitulo` respeita do outro
+          lado. */}
+      <a
+        href="/projetos"
+        className="muted"
+        style={{ fontSize: 13, display: "inline-block", marginBottom: 10 }}
+      >
+        ‹ Projetos
+      </a>
+
+      {/* ⚠️ O NOME DO PROJETO APARECIA DUAS VEZES, e foi isso que o print da
+          Camila mostrou. Esta página desenhava o próprio cabeçalho (bolinha +
+          h1 de 19px + meta + descrição) e logo abaixo passava
+          `title={project.title}` para o `Board`, que desenha o título DE NOVO,
+          agora em 26px. O desenho tem uma linha só.
+
+          Agora o cabeçalho é o do `Board`, e a página entrega a ele as duas
+          peças que são do projeto: o lápis, junto do título, e a meta, abaixo.
+
+          ⚠️ E NÃO HÁ LÁPIS DE COLUNAS AQUI -- nem antes havia. `podeEditarColunas`
+          é `false` por omissão e esta página nunca o passou, o que já era a
+          regra que a Camila confirmou em 22/08: "no quadro de projeto não é pra
+          ser possível editar o quadro". Fica escrito para ninguém "corrigir" a
+          ausência achando que é esquecimento. */}
+      <Board
+        projectId={id}
+        title={project.title}
+        acoesDoTitulo={
+          editavel && !editando ? (
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={() => setEditando(true)}
+              aria-label="Editar projeto"
+              title="Editar projeto"
+              style={{ padding: 4, height: 28, lineHeight: 0 }}
+            >
+              <Pencil size={15} strokeWidth={2} aria-hidden />
+            </button>
+          ) : undefined
+        }
+        abaixoDoCabecalho={
+          <div style={{ maxWidth: 860 }}>
+            {erroExcluir && (
+              <div className="error-box" style={{ marginBottom: 12 }} role="alert">
+                {erroExcluir}
+              </div>
+            )}
+            {editavel && editando ? (
+              <EditPanel
+                project={project}
+                excluivel={excluivel}
+                excluindo={excluindo}
+                onExcluir={excluir}
+                onCancel={() => setEditando(false)}
+                onSaved={(p) => {
+                  setProject(p);
+                  setEditando(false);
                 }}
               />
-              <h1 style={{ margin: 0, fontSize: 19, letterSpacing: "-0.02em" }}>
-                {project.title}
-              </h1>
-            </div>
-            <div
-              className="muted"
-              style={{
-                fontSize: 13, marginTop: 6, display: "flex",
-                gap: 12, flexWrap: "wrap",
-              }}
-            >
-              <span>{STATUS_LABEL[project.status] || project.status}</span>
-              <span>
-                Prioridade: {PRIORITY_LABEL[project.priority] || project.priority}
-              </span>
-              {project.start_date && <span>Início: {dataBR(project.start_date)}</span>}
-              {project.due_date && <span>Prazo: {dataBR(project.due_date)}</span>}
-              {project.is_archived && <span>· arquivado</span>}
-            </div>
-            {project.description && project.description.trim().length > 0 && (
-              <p
-                className="muted"
-                style={{ fontSize: 13, marginTop: 8, lineHeight: 1.45, maxWidth: 680 }}
-              >
-                {project.description}
-              </p>
+            ) : (
+              metaDoProjeto
             )}
           </div>
-          {!editando && (editavel || excluivel) && (
-            <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
-              {editavel && (
-                <button
-                  type="button"
-                  className="btn btn-ghost"
-                  onClick={() => setEditando(true)}
-                >
-                  Editar
-                </button>
-              )}
-              {/* ⚠️ AÇÃO DESTRUTIVA PINTADA COMO TAL. O produto já tem esse
-                  padrão (`--danger` no excluir tarefa, e no "Apagar quadro"
-                  do cabeçalho); nascer `btn-ghost` neutro poria "apagar" com
-                  o mesmo peso de "editar". */}
-              {excluivel && (
-                <button
-                  type="button"
-                  className="btn btn-ghost"
-                  onClick={excluir}
-                  disabled={excluindo}
-                  style={{ color: "var(--danger)" }}
-                >
-                  {excluindo ? "Excluindo…" : "Excluir projeto"}
-                </button>
-              )}
-            </div>
-          )}
-        </div>
-
-        {erroExcluir && (
-          <div className="error-box" style={{ marginTop: 12 }} role="alert">
-            {erroExcluir}
-          </div>
-        )}
-
-        {editavel && editando && (
-          <EditPanel
-            project={project}
-            onCancel={() => setEditando(false)}
-            onSaved={(p) => {
-              setProject(p);
-              setEditando(false);
-            }}
-          />
-        )}
-      </div>
-
-      {/* Board fica FORA do maxWidth -- preserva a largura original do quadro. */}
-      <Board projectId={id} title={project.title} />
+        }
+      />
     </div>
   );
 }
 
 function EditPanel({
   project,
+  excluivel,
+  excluindo,
+  onExcluir,
   onCancel,
   onSaved,
 }: {
   project: Project;
+  /**
+   * ⚠️ O EXCLUIR MORA AQUI DENTRO desde 22/08, por decisão da Camila: "só tem
+   * um lápis de edição, que é pra editar o projeto e ali dentro já deixa o
+   * excluir". Antes era um botão vermelho no cabeçalho, ao lado de "Editar" --
+   * uma ação irreversível a um clique de distância, no meio da navegação.
+   * Dentro do painel ela exige abrir a edição primeiro, e fica ao lado das
+   * outras decisões sobre o projeto.
+   */
+  excluivel: boolean;
+  excluindo: boolean;
+  onExcluir: () => void;
   onCancel: () => void;
   onSaved: (p: Project) => void;
 }) {
@@ -358,7 +392,22 @@ function EditPanel({
         Datas só podem ser alteradas, não removidas (limitação atual do backend).
       </span>
       {erroForm && <div className="error-box">{erroForm}</div>}
-      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        {/* ⚠️ NA PONTA ESQUERDA, LONGE DO "Salvar". Destrutivo encostado no
+            botão que a pessoa vai clicar é como se erra por milímetro -- o
+            `marginRight: auto` empurra o par Cancelar/Salvar para a direita e
+            deixa um vão entre eles. */}
+        {excluivel && (
+          <button
+            type="button"
+            className="btn btn-ghost"
+            onClick={onExcluir}
+            disabled={salvando || excluindo}
+            style={{ color: "var(--danger)", marginRight: "auto" }}
+          >
+            {excluindo ? "Excluindo…" : "Excluir projeto"}
+          </button>
+        )}
         <button
           type="button"
           className="btn btn-ghost"

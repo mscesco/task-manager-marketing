@@ -159,46 +159,90 @@ function Projetos() {
           }
         />
       ) : (
+        /* ⚠️ LINHAS DE LARGURA CHEIA, e não grade de cartões (22/08). O
+           `Projetos.png` desenha faixas empilhadas, e a Camila confirmou o que
+           elas carregam: "essas faixas é pra ter o nome do projeto e o status".
+           O conteúdo já era esse -- o que mudou foi a forma.
+
+           ⚠️ E A FORMA IMPORTA AQUI: em grade, o nome de um projeto longo
+           quebrava em duas linhas dentro de 260px, e o olho comparava cartões
+           de alturas diferentes. Em linha, os nomes ficam alinhados na mesma
+           coluna e a lista se lê de cima para baixo, que é como se procura um
+           projeto pelo nome. */
         <div
           style={{
-            display: "grid", gap: 12, maxWidth: 860,
-            gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))",
+            // ⚠️ 1100, e não 860 (22/08). A Camila viu na tela: "tá muito
+            // pequeno". Em 860 a lista ficava um bloco estreito perdido numa
+            // tela de 1440, e o desenho mostra a faixa ocupando quase toda a
+            // largura útil. Continua com teto: largura cheia num monitor
+            // grande jogaria o status a meio metro do nome.
+            display: "flex", flexDirection: "column", gap: 0, maxWidth: 1100,
+            border: "1px solid var(--border)", borderRadius: 12,
+            overflow: "hidden",
           }}
         >
-          {items.map((p) => (
+          {items.map((p, i) => (
             <a
               key={p.id}
               href={`/projetos/${p.id}`}
               className="tappable"
               style={{
-                background: "var(--surface)", border: "1px solid var(--border)",
-                borderRadius: 12, padding: 16, textDecoration: "none", color: "inherit",
-                display: "flex", flexDirection: "column", gap: 8,
+                background: "var(--surface)", textDecoration: "none", color: "inherit",
+                // A borda de cima faz a divisória entre linhas; a primeira não
+                // tem, senão dobraria com a borda do container.
+                borderTop: i === 0 ? "none" : "1px solid var(--border)",
+                // ⚠️ ALTURA MÍNIMA, e não só padding maior: sem ela a linha
+                // encolhe de volta quando não há descrição, e a lista fica com
+                // faixas de alturas diferentes -- que é justamente o que sair
+                // da grade veio consertar.
+                minHeight: 56, padding: "14px 20px",
+                display: "flex", alignItems: "center", gap: 12,
                 opacity: p.is_archived ? 0.6 : 1,
               }}
             >
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span
-                  style={{
-                    width: 9, height: 9, borderRadius: 999, flexShrink: 0,
-                    background: STATUS_COLOR[p.status] || "#999",
-                  }}
-                />
-                <span style={{ fontSize: 15, fontWeight: 700, lineHeight: 1.3 }}>{p.title}</span>
-              </div>
-              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                <span className="muted" style={{ fontSize: 12 }}>
-                  {STATUS_LABEL[p.status] || p.status}
-                </span>
-                {p.is_archived && (
-                  <span className="muted" style={{ fontSize: 12 }}>· arquivado</span>
-                )}
-              </div>
+              <span
+                aria-hidden
+                style={{
+                  width: 10, height: 10, borderRadius: 999, flexShrink: 0,
+                  background: STATUS_COLOR[p.status] || "#999",
+                }}
+              />
+              {/* ⚠️ `minWidth: 0` no que encolhe: sem ele, um nome longo
+                  empurra o status para fora da linha em vez de truncar. Mesma
+                  armadilha do título do card, registrada no `web/AGENTS.md`. */}
+              <span
+                style={{
+                  fontSize: 15, fontWeight: 600, minWidth: 0,
+                  overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                }}
+              >
+                {p.title}
+              </span>
               {p.description && p.description.trim().length > 0 && (
-                <div className="muted" style={{ fontSize: 12.5, lineHeight: 1.4 }}>
+                <span
+                  className="muted"
+                  title={p.description}
+                  style={{
+                    fontSize: 13, minWidth: 0, flex: 1,
+                    overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                  }}
+                >
                   {p.description}
-                </div>
+                </span>
               )}
+              {/* O status vai para a DIREITA e é o que a Camila nomeou junto do
+                  título como o conteúdo da faixa. `marginLeft: auto` só quando
+                  não há descrição ocupando o meio. */}
+              <span
+                className="muted"
+                style={{
+                  fontSize: 12.5, flexShrink: 0,
+                  marginLeft: p.description?.trim() ? undefined : "auto",
+                }}
+              >
+                {STATUS_LABEL[p.status] || p.status}
+                {p.is_archived && " · arquivado"}
+              </span>
             </a>
           ))}
         </div>

@@ -4,7 +4,7 @@
 **Escopo:** frontend (`web/`). **Não toca:** backend, contrato de API, autenticação.
 **Depende de:** Spec 018 (primitivos + Tailwind v4) e Spec 031 (fatia C, cor)
 **Placar de testes na abertura:** Front **865**, Backend **860**, migrations `0014`
-**Placar em 22/08, com F9:** Front **921**, Backend **892**, Backend **883**, migrations `0015`
+**Placar em 22/08:** Front **946**, Backend **896**, Backend **883**, migrations `0015`
 
 ⚠️ **Leia o §8.1 antes de escrever escopo a partir de wireframe.** Quatro escopos desta spec
 foram escritos a partir do wireframe sem abrir o componente, e os quatro
@@ -777,10 +777,45 @@ corpo usam `toEqual` sobre o objeto inteiro de propósito.
 Popover ancorado no sino, alinhado à direita. "Notificações" · "Marcar como
 lidas" · lista · "Ver todas". Sem colisão.
 
-### 6.10. Projetos (`Projetos.png`)
+### 6.10. Projetos (`Projetos.png`) e o quadro de projeto (`Quadro Projeto.png`)
 
-Linhas cinzas sem conteúdo definido. **Não desenhado ainda** — fora do escopo
-desta spec até haver desenho.
+~~Linhas cinzas sem conteúdo definido. **Não desenhado ainda**.~~
+**Esclarecido pela Camila em 22/08, e entregue.** As faixas cinzas são **nome
+do projeto + status** — o conteúdo que a lista já mostrava. O que mudou foi a
+**forma**: grade de cartões de 260px virou **linhas de largura cheia**.
+
+⚠️ **E a forma importa aqui.** Em grade, um nome longo quebrava em duas linhas
+dentro do cartão e o olho comparava alturas diferentes. Em linha, os nomes
+ficam na mesma coluna e a lista se lê de cima para baixo — que é como se
+procura um projeto pelo nome.
+
+**O quadro de projeto (`Quadro Projeto.png`) era "levemente diferente", e a
+diferença era um defeito:**
+
+⚠️⚠️ **O NOME DO PROJETO APARECIA DUAS VEZES.** A página desenhava o próprio
+cabeçalho (bolinha + `h1` de 19px + meta + descrição em parágrafo) e logo
+abaixo passava `title={project.title}` para o `Board`, que desenha o título **de
+novo**, em 26px. O desenho tem uma linha só. Achado comparando o print com a
+tela, não com a memória.
+
+Agora **o cabeçalho é o do `Board`**, e a página entrega a ele duas peças, por
+encaixes novos (`acoesDoTitulo` e `abaixoDoCabecalho`):
+
+| decisão da Camila (22/08) | o que saiu |
+|---|---|
+| *"no quadro de projeto não é pra ser possível editar o quadro"* | ✅ **já era assim** — `podeEditarColunas` é `false` por omissão e esta página nunca o passou. Ficou escrito no código para ninguém "corrigir" a ausência |
+| *"só tem um lápis de edição, que é pra editar o projeto"* | o lápis vive junto do contador, como no desenho |
+| *"e ali dentro já deixa o excluir"* | **"Excluir projeto" saiu do cabeçalho e foi para dentro do painel de edição** — na ponta esquerda do rodapé, longe do "Salvar" |
+| a meta *"vira uma linha discreta abaixo"* | status · prioridade · início · prazo, em 12,5px, abaixo do cabeçalho |
+
+⚠️ **A descrição ficou, truncada em uma linha.** "Linha discreta" não cabe um
+parágrafo, mas apagá-la da tela seria decidir mais do que foi pedido — ela vira
+uma linha com reticências e `title`, e o texto inteiro segue no painel.
+
+⚠️ **E mover o excluir derrubou cinco testes** — que é o trabalho deles. O
+dublê do `Board` no teste ignorava os encaixes novos, então metade da tela
+sumia; ele passou a desenhá-los. Uma ação irreversível que estava a um clique
+da navegação passou a exigir abrir a edição primeiro.
 
 ### 6.11. Paginação — "carregar mais" por coluna
 

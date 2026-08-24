@@ -12,6 +12,18 @@
 //   - projeto PESSOAL nunca oferece o botão -- o backend recusa com 409;
 //   - cancelar a confirmação não chama a API;
 //   - confirmar chama e sai da página com `replace`, não `push`.
+//
+// ⚠️ E ELE VIROU O ARQUIVO DA PÁGINA, e não só do excluir: o teste de
+// navegação abaixo entrou aqui porque esta página não tinha teste NENHUM até
+// o excluir chegar. Criar um segundo arquivo para uma asserção só seria pior
+// que a mistura.
+//
+// ⚠️ O BOTÃO MUDOU DE LUGAR EM 22/08 e estes testes CAÍRAM -- que é o trabalho
+// deles. Ele era um botão vermelho no cabeçalho, ao lado de "Editar"; passou a
+// morar DENTRO do painel de edição, por decisão da Camila ("só tem um lápis de
+// edição, que é pra editar o projeto e ali dentro já deixa o excluir"). Uma
+// ação irreversível a um clique da navegação virou uma ação que exige abrir a
+// edição primeiro.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -28,7 +40,27 @@ vi.mock("next/navigation", () => ({
 // ⚠️ O `Board` É MOCKADO, e não é preguiça: ele busca colunas, quadros,
 // membros e tarefas, e nada disso é o assunto aqui. Montá-lo de verdade faria
 // este arquivo falhar por motivos que não têm relação com excluir projeto.
-vi.mock("@/components/Board", () => ({ default: () => <div>quadro</div> }));
+//
+// ⚠️ MAS ELE PRECISA DESENHAR OS DOIS ENCAIXES (22/08). Desde que o cabeçalho
+// do projeto virou o cabeçalho do próprio quadro, o lápis e o painel de edição
+// chegam ao `Board` como `acoesDoTitulo` e `abaixoDoCabecalho` -- um dublê que
+// os ignore esconde metade da tela e faz o arquivo inteiro falhar por motivo
+// errado. Foi o que aconteceu quando a mudança entrou.
+vi.mock("@/components/Board", () => ({
+  default: ({
+    acoesDoTitulo,
+    abaixoDoCabecalho,
+  }: {
+    acoesDoTitulo?: React.ReactNode;
+    abaixoDoCabecalho?: React.ReactNode;
+  }) => (
+    <div>
+      quadro
+      {acoesDoTitulo}
+      {abaixoDoCabecalho}
+    </div>
+  ),
+}));
 vi.mock("@/components/AppShell", () => ({
   default: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
@@ -70,12 +102,26 @@ function projeto(over: Partial<Project> = {}): Project {
   };
 }
 
-function montar(over: Partial<Project> = {}, permissoes: string[] = ["project.delete"]) {
+function montar(
+  over: Partial<Project> = {},
+  permissoes: string[] = ["project.delete", "project.update"],
+) {
   vi.mocked(api.getProject).mockResolvedValue(projeto(over));
   vi.mocked(api.currentUser).mockResolvedValue({
     permissions: permissoes,
   } as never);
   render(<PaginaDoProjeto />);
+}
+
+/**
+ * Abre o painel de edição, que é onde o excluir mora agora.
+ *
+ * ⚠️ SEM `project.update` NÃO HÁ LÁPIS, e portanto não há como chegar ao
+ * excluir pela tela -- é uma consequência real da mudança de lugar, e o teste
+ * de permissão abaixo a registra em vez de contorná-la.
+ */
+async function abrirEdicao() {
+  fireEvent.click(await screen.findByLabelText("Editar projeto"));
 }
 
 beforeEach(() => {
@@ -88,27 +134,54 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+describe("Projeto -- navegação", () => {
+  it("⚠️ o link de VOLTAR existe -- eu o apaguei sem querer em 22/08", async () => {
+    // ⚠️ ESTE TESTE EXISTE POR UMA REGRESSÃO MINHA, e ela passou pelos quatro
+    // portões. Ao refazer o cabeçalho do projeto (o nome aparecia duas vezes),
+    // apaguei o bloco que a página desenhava -- e o "‹ Projetos" morava dentro
+    // dele. Saiu junto, em silêncio: nenhum teste desta página falava de
+    // navegação, e `tsc`/`build` não têm opinião sobre link que sumiu.
+    //
+    // A Camila pegou na tela no mesmo dia: "você tirou o 'voltar' da tela
+    // quando abre um projeto né".
+    montar();
+    const voltar = await screen.findByText(/Projetos/);
+    expect(voltar.getAttribute("href")).toBe("/projetos");
+  });
+});
+
 describe("Projeto -- excluir", () => {
   it("⚠️ sem `project.delete` não há botão -- e ela não vem junto de `.update`", async () => {
     montar({}, ["project.update"]);
-    expect(await screen.findByText("Vestibular 2027")).toBeTruthy();
-    // Editar aparece; excluir não.
-    expect(screen.getByText("Editar")).toBeTruthy();
+    // Quem só pode EDITAR chega ao painel e não encontra o excluir lá dentro.
+    await abrirEdicao();
     expect(screen.queryByText("Excluir projeto")).toBeNull();
   });
 
-  it("⚠️ projeto PESSOAL não oferece o botão -- o backend recusa com 409", async () => {
+  it("⚠️ o excluir NÃO fica solto no cabeçalho -- só dentro da edição", async () => {
+    // O que este teste prende é o LUGAR, e ele é a decisão: fora do painel, a
+    // ação irreversível ficava a um clique de distância no meio da navegação.
+    montar();
+    await screen.findByLabelText("Editar projeto");
+    expect(screen.queryByText("Excluir projeto")).toBeNull();
+    await abrirEdicao();
+    expect(screen.getByText("Excluir projeto")).toBeTruthy();
+  });
+
+  it("⚠️ projeto PESSOAL não oferece nem o lápis -- o backend recusa com 409", async () => {
     // A trava dupla é de propósito: sem ela a tela ofereceria uma ação que
     // sempre falha, e a pessoa descobriria pelo erro.
     montar({ is_personal: true });
-    expect(await screen.findByText("Vestibular 2027")).toBeTruthy();
+    await waitFor(() => expect(api.getProject).toHaveBeenCalled());
+    expect(screen.queryByLabelText("Editar projeto")).toBeNull();
     expect(screen.queryByText("Excluir projeto")).toBeNull();
   });
 
   it("cancelar a confirmação não chama a API", async () => {
     vi.spyOn(window, "confirm").mockReturnValue(false);
     montar();
-    fireEvent.click(await screen.findByText("Excluir projeto"));
+    await abrirEdicao();
+    fireEvent.click(screen.getByText("Excluir projeto"));
     expect(api.deleteProject).not.toHaveBeenCalled();
   });
 
@@ -117,7 +190,8 @@ describe("Projeto -- excluir", () => {
     // continuam no quadro e só perdem a tag. Quem lê "excluir projeto" imagina
     // o contrário, e a diferença é grande demais para ficar implícita.
     montar();
-    fireEvent.click(await screen.findByText("Excluir projeto"));
+    await abrirEdicao();
+    fireEvent.click(screen.getByText("Excluir projeto"));
     const texto = vi.mocked(window.confirm).mock.calls[0][0] as string;
     expect(texto).toMatch(/tarefas dele NÃO são apagadas/i);
   });
@@ -127,7 +201,8 @@ describe("Projeto -- excluir", () => {
     // histórico -- o "voltar" cairia num 404.
     vi.mocked(api.deleteProject).mockResolvedValue(projeto());
     montar();
-    fireEvent.click(await screen.findByText("Excluir projeto"));
+    await abrirEdicao();
+    fireEvent.click(screen.getByText("Excluir projeto"));
 
     await waitFor(() => expect(api.deleteProject).toHaveBeenCalledWith("p1"));
     expect(replace).toHaveBeenCalledWith("/projetos");
@@ -137,7 +212,8 @@ describe("Projeto -- excluir", () => {
     const err = Object.assign(new Error("nao pode"), { status: 403 });
     vi.mocked(api.deleteProject).mockRejectedValue(err);
     montar();
-    fireEvent.click(await screen.findByText("Excluir projeto"));
+    await abrirEdicao();
+    fireEvent.click(screen.getByText("Excluir projeto"));
 
     expect(await screen.findByRole("alert")).toBeTruthy();
     expect(screen.getByText(/não pode excluir este projeto/i)).toBeTruthy();
