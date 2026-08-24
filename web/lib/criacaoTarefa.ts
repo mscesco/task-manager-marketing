@@ -113,6 +113,40 @@ export function alternaResponsavel(ids: readonly string[], id: string): string[]
   return ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id];
 }
 
+/**
+ * Acrescenta TODOS os `disponiveis` a selecao, sem perder quem ja estava.
+ *
+ * ⚠️ ELE SOMA, E NAO SUBSTITUI, e a diferenca aparece com a busca ativa: a
+ * lista de `disponiveis` que a tela passa e a FILTRADA. Substituindo, digitar
+ * "ana" e clicar em "selecionar todos" APAGARIA quem ja estava escolhido e nao
+ * casa com "ana" -- destruir selecao num botao chamado "selecionar" seria o
+ * oposto do que ele promete.
+ *
+ * ⚠️ DEDUP na volta: `disponiveis` pode conter quem ja esta em `ids`.
+ */
+export function comTodosOsResponsaveis(
+  ids: readonly string[],
+  disponiveis: readonly string[],
+): string[] {
+  return Array.from(new Set([...ids, ...disponiveis]));
+}
+
+/**
+ * Todos os `disponiveis` ja estao escolhidos?
+ *
+ * ⚠️ LISTA VAZIA DEVOLVE `false`, de proposito. "Todos de zero pessoas estao
+ * escolhidos" e verdade logica e mentira de interface: com a busca sem
+ * resultado, `true` esconderia o botao por um motivo que a pessoa nao tem como
+ * deduzir. A tela ja trata o vazio com "Ninguem encontrado".
+ */
+export function todosJaEscolhidos(
+  ids: readonly string[],
+  disponiveis: readonly string[],
+): boolean {
+  if (disponiveis.length === 0) return false;
+  return disponiveis.every((id) => ids.includes(id));
+}
+
 /** Rotulo do botao/resumo da selecao. */
 export function resumoResponsaveis(
   ids: readonly string[],

@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   acaoDoEnterNoTitulo,
   alternaResponsavel,
+  comTodosOsResponsaveis,
+  todosJaEscolhidos,
   motivoNaoCria,
   podeCriar,
   RASCUNHO_VAZIO,
@@ -134,5 +136,52 @@ describe("proximoDaSequencia -- isolamento de referencia", () => {
     expect(a.assigneeIds).not.toBe(b.assigneeIds);
     a.assigneeIds.push("u9");
     expect(b.assigneeIds).toEqual([]);
+  });
+});
+
+// =====================================================================
+// "Selecionar todos" -- as duas funções puras (22/08).
+// =====================================================================
+describe("comTodosOsResponsaveis", () => {
+  it("⚠️ SOMA à seleção, e não substitui", () => {
+    // ⚠️ ESTE É O DEFEITO QUE A FUNÇÃO EXISTE PARA IMPEDIR. A tela passa a
+    // lista FILTRADA pela busca; substituindo, digitar "an" e clicar em
+    // "selecionar todos" apagaria quem já estava escolhido e não casa com
+    // "an" -- destruir seleção num botão chamado "selecionar" é o oposto do
+    // que ele promete.
+    expect(comTodosOsResponsaveis(["carla"], ["ana"])).toEqual(["carla", "ana"]);
+  });
+
+  it("não duplica quem já estava", () => {
+    expect(comTodosOsResponsaveis(["ana"], ["ana", "bruno"])).toEqual([
+      "ana",
+      "bruno",
+    ]);
+  });
+
+  it("lista vazia de disponíveis não muda nada", () => {
+    expect(comTodosOsResponsaveis(["ana"], [])).toEqual(["ana"]);
+  });
+});
+
+describe("todosJaEscolhidos", () => {
+  it("verdadeiro só quando todos os visíveis já estão", () => {
+    expect(todosJaEscolhidos(["ana", "bruno"], ["ana", "bruno"])).toBe(true);
+    expect(todosJaEscolhidos(["ana"], ["ana", "bruno"])).toBe(false);
+  });
+
+  it("⚠️ NENHUM disponível devolve `false`, e não `true`", () => {
+    // "Todos de zero pessoas estão escolhidos" é verdade lógica e mentira de
+    // interface: com a busca sem resultado, `true` esconderia o botão por um
+    // motivo que a pessoa não tem como deduzir. A tela já trata o vazio com
+    // "Ninguem encontrado".
+    expect(todosJaEscolhidos([], [])).toBe(false);
+    expect(todosJaEscolhidos(["ana"], [])).toBe(false);
+  });
+
+  it("selecionado que não está visível não conta como pendência", () => {
+    // Com busca ativa, quem está escolhido fora do filtro não deve manter o
+    // botão na tela: o que importa é o que a pessoa VÊ.
+    expect(todosJaEscolhidos(["ana", "carla"], ["ana"])).toBe(true);
   });
 });

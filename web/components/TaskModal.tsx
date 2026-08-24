@@ -32,7 +32,11 @@ import {
   ehAtalhoDeSalvar,
   primeiroSelecionavel,
 } from "@/lib/teclasFormulario";
-import { motivoNaoCria } from "@/lib/criacaoTarefa";
+import {
+  motivoNaoCria,
+  comTodosOsResponsaveis,
+  todosJaEscolhidos,
+} from "@/lib/criacaoTarefa";
 import {
   haPendencias,
   linhasDasSubtarefas,
@@ -952,6 +956,70 @@ export default function TaskModal({
                         setBuscaResp("");
                       }}
                     />
+                    {/* ---- "Selecionar todos" e "Limpar" -----------------
+                        Pedido da Camila em 22/08. ⚠️ SO NA CRIACAO, e ela foi
+                        explicita ("quero no criar so").
+
+                        ⚠️ E O MOTIVO DE NAO ESTAR NO DETALHE DA TAREFA E
+                        MEDIDO, nao estetico: la cada caixa marcada e UMA
+                        requisicao imediata (`addAssignee`), e cada designacao
+                        dispara uma notificacao "Designada". Num time de ~26
+                        pessoas, um clique viraria 26 requisicoes e 25 avisos.
+                        Aqui a selecao e LOCAL ate o "Criar" -- da para
+                        desmarcar antes de qualquer coisa sair.
+
+                        ⚠️ E FORA DA DUPLICACAO tambem, e isso e decisao e nao
+                        descuido: na copia a lista de responsaveis ja vem
+                        REVISADA da origem (ADR 0031), e o passo 2 decide
+                        subtarefa por subtarefa a partir dela. Um "selecionar
+                        todos" ali mexeria na entrada daquele fluxo.
+
+                        ⚠️ "TODOS" E OS VISIVEIS, e nao o time inteiro. Com
+                        busca ativa, agir sobre quem nao esta na tela seria
+                        escolher pelas costas -- por isso o rotulo carrega o
+                        numero, que muda junto com a busca. */}
+                    {!editando && !duplicando && (
+                      <div
+                        style={{
+                          display: "flex", alignItems: "center", gap: 6,
+                          marginTop: 6,
+                        }}
+                      >
+                        {!todosJaEscolhidos(
+                          assigneeIds,
+                          membrosFiltrados.map((m) => m.id),
+                        ) && (
+                          <button
+                            type="button"
+                            className="btn btn-ghost"
+                            style={{ fontSize: 12, padding: "3px 8px" }}
+                            onClick={() =>
+                              setAssigneeIds((prev) =>
+                                comTodosOsResponsaveis(
+                                  prev,
+                                  membrosFiltrados.map((m) => m.id),
+                                ),
+                              )
+                            }
+                          >
+                            Selecionar todos ({membrosFiltrados.length})
+                          </button>
+                        )}
+                        {/* ⚠️ SO COM ALGUEM ESCOLHIDO: "limpar" sobre selecao
+                            vazia e afordancia que nao faz nada. Mesma regra do
+                            "Limpar hora" da capsula de datas. */}
+                        {assigneeIds.length > 0 && (
+                          <button
+                            type="button"
+                            className="btn btn-ghost"
+                            style={{ fontSize: 12, padding: "3px 8px" }}
+                            onClick={() => setAssigneeIds([])}
+                          >
+                            Limpar
+                          </button>
+                        )}
+                      </div>
+                    )}
                     <div
                       style={{
                         maxHeight: 240, overflowY: "auto", marginTop: 6,
