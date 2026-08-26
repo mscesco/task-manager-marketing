@@ -13,10 +13,13 @@ deliberada: schema e reversivel de olhos fechados, dado nao. Rodar a estrutura
 sem o dado deixa o produto exatamente como esta hoje (o formulario publico
 continua lendo do TypeScript ate a fatia B).
 
-⚠️ NENHUMA DAS TABELAS TEM `NOT NULL` SEM `server_default`. O padrao deste
-schema, e o motivo e sempre o mesmo: uma coluna obrigatoria sem default trava a
-migration numa tabela que ja tem linhas -- e trava DEPOIS, em producao, nao no
-teste com banco vazio.
+⚠️ NOTA CORRIGIDA EM 26/08: eu tinha escrito aqui que "nenhuma das tabelas tem
+NOT NULL sem server_default". A premissa esta certa e a conclusao estava
+generalizada demais -- o perigo e acrescentar coluna obrigatoria a tabela que
+JA TEM LINHAS, e estas nascem vazias. O `position` perdeu o `server_default`
+justamente por isso: `board_column.position`, o vizinho mais proximo, e
+`Integer, nullable=False` e mais nada, e declarar default no servidor sem
+declarar no modelo e DRIFT.
 
 ⚠️ `form_id` EM `solicitation` NASCE NULLABLE E CONTINUA ASSIM. Ver o
 comentario no modelo: solicitacao orfa e historico valido, e o `JOIN` da fila e
@@ -67,10 +70,26 @@ def upgrade() -> None:
             sa.DateTime(timezone=True),
             nullable=False,
             server_default=sa.func.now(),
+            # ⚠️ O COMMENT VEM DO `TimestampMixin`, e faltar aqui e DRIFT. Ele
+            # nao e documentacao decorativa: o mixin o declara justamente para
+            # o autogenerate nao propor apagar o que esta no banco. Sem ele na
+            # migration, o autogenerate propoe ACRESCENTAR -- que foi o que o
+            # CI acusou.
+            comment=(
+                "Nao atualiza sozinho. Setado pelo backend via "
+                "SQLAlchemy onupdate."
+            ),
         ),
         sa.Column("deleted_at", sa.DateTime(timezone=True), nullable=True),
+        # ⚠️ O NOME SAI DA CONVENCAO (`fk_%(table)s_%(coluna)s`) E O
+        # `ondelete` E RESTRICT -- os dois vem do `WorkspaceScopedMixin`, que
+        # declara a FK inline. Eu tinha escrito nome proprio e sem ondelete;
+        # o autogenerate viu uma FK a menos e outra a mais.
         sa.ForeignKeyConstraint(
-            ["workspace_id"], ["workspace.id"], name="solicitation_form_workspace"
+            ["workspace_id"],
+            ["workspace.id"],
+            ondelete="RESTRICT",
+            name=op.f("fk_solicitation_form_workspace_id"),
         ),
         # ⚠️⚠️ A UNIQUE QUE FALTOU NA PRIMEIRA VERSAO, e sem ela a migration
         # NAO RODA: o Postgres exige unicidade nas colunas referenciadas por
@@ -95,6 +114,15 @@ def upgrade() -> None:
     # (`/solicitar/<slug>`), e dois times do mesmo workspace nao podem disputar
     # `/solicitar/arte`. Parcial em `deleted_at IS NULL` -- senao um formulario
     # na lixeira reservaria o nome para sempre.
+    # ⚠️ O `WorkspaceScopedMixin` DECLARA `index=True` no `workspace_id`, entao
+    # o modelo espera este indice em TODA tabela que usa o mixin. Ele nao
+    # aparece no `__table_args__` de ninguem -- vem de graca com a coluna --, e
+    # foi por isso que passou batido nas tres tabelas de uma vez.
+    op.create_index(
+        op.f("ix_solicitation_form_workspace_id"),
+        "solicitation_form",
+        ["workspace_id"],
+    )
     op.create_index(
         "solicitation_form_slug_unico",
         "solicitation_form",
@@ -125,7 +153,11 @@ def upgrade() -> None:
         sa.Column(
             "summary_question_id", postgresql.UUID(as_uuid=True), nullable=True
         ),
-        sa.Column("position", sa.Integer(), nullable=False, server_default="0"),
+        # ⚠️ SEM `server_default`, e o vizinho manda: `board_column.position`
+        # e `Integer, nullable=False` e mais nada. O default do modelo e do
+        # lado PYTHON (`default=0`), e declarar um no servidor sem declarar no
+        # modelo e drift -- foi o que o CI acusou.
+        sa.Column("position", sa.Integer(), nullable=False),
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
@@ -137,10 +169,26 @@ def upgrade() -> None:
             sa.DateTime(timezone=True),
             nullable=False,
             server_default=sa.func.now(),
+            # ⚠️ O COMMENT VEM DO `TimestampMixin`, e faltar aqui e DRIFT. Ele
+            # nao e documentacao decorativa: o mixin o declara justamente para
+            # o autogenerate nao propor apagar o que esta no banco. Sem ele na
+            # migration, o autogenerate propoe ACRESCENTAR -- que foi o que o
+            # CI acusou.
+            comment=(
+                "Nao atualiza sozinho. Setado pelo backend via "
+                "SQLAlchemy onupdate."
+            ),
         ),
         sa.Column("deleted_at", sa.DateTime(timezone=True), nullable=True),
+        # ⚠️ O NOME SAI DA CONVENCAO (`fk_%(table)s_%(coluna)s`) E O
+        # `ondelete` E RESTRICT -- os dois vem do `WorkspaceScopedMixin`, que
+        # declara a FK inline. Eu tinha escrito nome proprio e sem ondelete;
+        # o autogenerate viu uma FK a menos e outra a mais.
         sa.ForeignKeyConstraint(
-            ["workspace_id"], ["workspace.id"], name="solicitation_section_workspace"
+            ["workspace_id"],
+            ["workspace.id"],
+            ondelete="RESTRICT",
+            name=op.f("fk_solicitation_section_workspace_id"),
         ),
         # A pergunta aponta para ca por `(section_id, workspace_id)`.
         sa.UniqueConstraint(
@@ -154,6 +202,15 @@ def upgrade() -> None:
             ondelete="CASCADE",
             name="solicitation_section_form",
         ),
+    )
+    # ⚠️ O `WorkspaceScopedMixin` DECLARA `index=True` no `workspace_id`, entao
+    # o modelo espera este indice em TODA tabela que usa o mixin. Ele nao
+    # aparece no `__table_args__` de ninguem -- vem de graca com a coluna --, e
+    # foi por isso que passou batido nas tres tabelas de uma vez.
+    op.create_index(
+        op.f("ix_solicitation_section_workspace_id"),
+        "solicitation_section",
+        ["workspace_id"],
     )
     op.create_index(
         "solicitation_section_por_form",
@@ -188,7 +245,11 @@ def upgrade() -> None:
             "show_if_question_id", postgresql.UUID(as_uuid=True), nullable=True
         ),
         sa.Column("show_if_value", sa.String(200), nullable=True),
-        sa.Column("position", sa.Integer(), nullable=False, server_default="0"),
+        # ⚠️ SEM `server_default`, e o vizinho manda: `board_column.position`
+        # e `Integer, nullable=False` e mais nada. O default do modelo e do
+        # lado PYTHON (`default=0`), e declarar um no servidor sem declarar no
+        # modelo e drift -- foi o que o CI acusou.
+        sa.Column("position", sa.Integer(), nullable=False),
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
@@ -200,12 +261,26 @@ def upgrade() -> None:
             sa.DateTime(timezone=True),
             nullable=False,
             server_default=sa.func.now(),
+            # ⚠️ O COMMENT VEM DO `TimestampMixin`, e faltar aqui e DRIFT. Ele
+            # nao e documentacao decorativa: o mixin o declara justamente para
+            # o autogenerate nao propor apagar o que esta no banco. Sem ele na
+            # migration, o autogenerate propoe ACRESCENTAR -- que foi o que o
+            # CI acusou.
+            comment=(
+                "Nao atualiza sozinho. Setado pelo backend via "
+                "SQLAlchemy onupdate."
+            ),
         ),
         sa.Column("deleted_at", sa.DateTime(timezone=True), nullable=True),
+        # ⚠️ O NOME SAI DA CONVENCAO (`fk_%(table)s_%(coluna)s`) E O
+        # `ondelete` E RESTRICT -- os dois vem do `WorkspaceScopedMixin`, que
+        # declara a FK inline. Eu tinha escrito nome proprio e sem ondelete;
+        # o autogenerate viu uma FK a menos e outra a mais.
         sa.ForeignKeyConstraint(
             ["workspace_id"],
             ["workspace.id"],
-            name="solicitation_question_workspace",
+            ondelete="RESTRICT",
+            name=op.f("fk_solicitation_question_workspace_id"),
         ),
         sa.ForeignKeyConstraint(
             ["section_id", "workspace_id"],
@@ -216,6 +291,15 @@ def upgrade() -> None:
         sa.CheckConstraint(
             "position >= 0", name="solicitation_question_position_nao_negativa"
         ),
+    )
+    # ⚠️ O `WorkspaceScopedMixin` DECLARA `index=True` no `workspace_id`, entao
+    # o modelo espera este indice em TODA tabela que usa o mixin. Ele nao
+    # aparece no `__table_args__` de ninguem -- vem de graca com a coluna --, e
+    # foi por isso que passou batido nas tres tabelas de uma vez.
+    op.create_index(
+        op.f("ix_solicitation_question_workspace_id"),
+        "solicitation_question",
+        ["workspace_id"],
     )
     op.create_index(
         "solicitation_question_por_secao",
@@ -238,6 +322,9 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # ⚠️ Os `ix_..._workspace_id` somem junto com as tabelas (`drop_table` leva
+    # os indices dela), entao nao ha `drop_index` para eles aqui -- so para o
+    # que foi criado numa tabela que SOBREVIVE ao downgrade.
     op.drop_index("solicitation_por_form", table_name="solicitation")
     op.drop_column("solicitation", "form_id")
     op.drop_index(
