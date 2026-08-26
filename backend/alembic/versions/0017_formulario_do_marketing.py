@@ -8,9 +8,16 @@ A 0016 criou a estrutura; esta poe DADO nela: o formulario que hoje mora em
 `web/lib/solicitacaoForm.ts` vira 1 formulario + 11 secoes + 108 perguntas, no
 time de Marketing.
 
-⚠️⚠️ ELA E NO-OP QUANDO O TIME NAO EXISTE, e isso nao e defesa exagerada: o
-BANCO DE TESTE roda `alembic upgrade head` num banco VAZIO, sem workspace e sem
-time nenhum. Uma migration de dados que assuma a existencia de uma linha
+⚠️ DUAS REGRAS PARA ACHAR O TIME (ajustado em 24/08, depois de olhar os dois
+bancos): primeiro o id de producao; se ele nao existir ali, o time RAIZ de cada
+workspace. A segunda nasceu de um achado -- em DEV o id de producao nao existe,
+a migration saiu em silencio, e a fatia B ficaria sem formulario nenhum para
+testar. Em dev o Marketing E a raiz (`parent_team_id IS NULL`), com sete
+subtimes pendurados; a raiz e estrutural, o nome nao.
+
+⚠️⚠️ E ELA CONTINUA NO-OP QUANDO NAO HA TIME NENHUM, que e a protecao que
+importa: o BANCO DE TESTE roda `alembic upgrade head` num banco VAZIO, sem
+workspace e sem time. Uma migration de dados que assuma a existencia de uma linha
 especifica quebra toda a suite -- e quebraria DEPOIS de eu ter entregue, que e
 como as duas falhas anteriores desta fatia chegaram na Camila.
 
@@ -44,11 +51,10 @@ down_revision: str | None = "0016_formulario_de_solicitacao"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
-#: O time de Marketing, informado pela Camila em 22/08.
+#: O time de Marketing em PRODUCAO, informado pela Camila em 22/08.
 #:
-#: ⚠️ CRAVADO DE PROPOSITO, e nao resolvido por nome. "Marketing" e texto que
-#: alguem pode renomear; o id nao muda. E se ele nao existir neste banco, a
-#: migration sai sem fazer nada -- ver o topo.
+#: ⚠️ CRAVADO, e nao resolvido por nome: "Marketing" e texto que alguem
+#: renomeia, o id nao muda.
 TEAM_MARKETING = "b8387155-9688-4e58-b596-8d46906a68dd"
 
 SLUG_DO_FORMULARIO = "marketing"
@@ -1287,23 +1293,46 @@ SECOES = [{'slug': 'arte',
 def upgrade() -> None:
     conn = op.get_bind()
 
-    time = conn.execute(
-        sa.text(
-            # ⚠️ `CAST(... AS uuid)` porque `TEAM_MARKETING` e uma STRING Python
-            # indo para uma coluna `uuid`. Sem o cast, o asyncpg recusa o
-            # bind -- e recusaria na SUA maquina, nao na minha, que e como as
-            # duas falhas anteriores desta fatia chegaram ate voce.
-            "SELECT id, workspace_id FROM team WHERE id = CAST(:t AS uuid)"
-        ),
+    # ⚠️⚠️ DUAS REGRAS PARA ACHAR O TIME, E A SEGUNDA NASCEU DE UM ACHADO NO
+    # BANCO (24/08). A primeira versao so tinha o id cravado, e em DEV ela saiu
+    # em silencio -- o id de producao nao existe la. Consequencia que so
+    # apareceu quando a Camila rodou a consulta: **a fatia B ficaria sem
+    # formulario nenhum para testar em dev**, e o defeito seria descoberto em
+    # producao.
+    #
+    # A regra 2 e "o time RAIZ de cada workspace", e ela e ESTRUTURAL. Foi
+    # escolhida depois de olhar os dois bancos: em dev o Marketing E a raiz
+    # (`d03c9ede-...`, `parent_team_id IS NULL`), com sete subtimes pendurados.
+    # Cair no nome ("Marketing") seria depender de texto que alguem renomeia;
+    # cair na raiz depende da forma da arvore, que ninguem muda sem querer.
+    #
+    # ⚠️ E O BANCO DE TESTE CONTINUA NO-OP: vazio, ele nao tem workspace nem
+    # time raiz, entao as duas regras devolvem nada. Era essa a protecao da
+    # primeira versao, e ela nao se perdeu.
+    alvos = conn.execute(
+        # ⚠️ `CAST(... AS uuid)` porque `TEAM_MARKETING` e uma STRING Python
+        # indo para uma coluna `uuid`. Sem o cast, o asyncpg recusa o bind -- e
+        # recusaria na SUA maquina, nao na minha, que e como as duas falhas
+        # anteriores desta fatia chegaram ate voce.
+        sa.text("SELECT id, workspace_id FROM team WHERE id = CAST(:t AS uuid)"),
         {"t": TEAM_MARKETING},
-    ).first()
-    if time is None:
-        # ⚠️ Banco sem este time (teste, ambiente novo, outro cliente). Sair em
-        # silencio e o certo: nao ha o que migrar, e estourar aqui derrubaria
-        # a suite inteira.
-        return
-    workspace_id = time.workspace_id
+    ).all()
+    if not alvos:
+        alvos = conn.execute(
+            sa.text(
+                "SELECT id, workspace_id FROM team WHERE parent_team_id IS NULL"
+            )
+        ).all()
+    for alvo in alvos:
+        _semear(conn, team_id=alvo.id, workspace_id=alvo.workspace_id)
 
+
+def _semear(conn, *, team_id, workspace_id) -> None:
+    """Cria o formulario num time, se ele ainda nao existir ali.
+
+    ⚠️ IDEMPOTENTE POR SLUG. Migration de dados rodando duas vezes em
+    homologacao e situacao normal, nao acidente.
+    """
     ja_existe = conn.execute(
         sa.text(
             "SELECT 1 FROM solicitation_form "
@@ -1318,11 +1347,11 @@ def upgrade() -> None:
         sa.text(
             "INSERT INTO solicitation_form "
             "(workspace_id, team_id, slug, title, description, is_published) "
-            "VALUES (:w, CAST(:t AS uuid), :s, :ti, '', true) RETURNING id"
+            "VALUES (:w, :t, :s, :ti, '', true) RETURNING id"
         ),
         {
             "w": workspace_id,
-            "t": TEAM_MARKETING,
+            "t": team_id,
             "s": SLUG_DO_FORMULARIO,
             "ti": TITULO_DO_FORMULARIO,
         },
@@ -1418,26 +1447,28 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Desfaz a semeadura em QUALQUER workspace, e nao so no time cravado.
+
+    ⚠️ ELE PRECISA ESPELHAR AS DUAS REGRAS DO `upgrade`. A primeira versao
+    procurava so o time de producao -- entao, num banco que caiu no fallback da
+    raiz, o downgrade sairia em silencio deixando o formulario para tras, e o
+    upgrade seguinte o encontraria "ja existente" e nao o recriaria. Migration
+    que nao desfaz o que fez e pior que migration sem downgrade.
+
+    ⚠️ O VINCULO DAS SOLICITACOES E DESFEITO ANTES do DELETE. As secoes e
+    perguntas somem por CASCADE, mas `solicitation.form_id` NAO tem FK (ver a
+    0016) -- sem este UPDATE, elas ficariam apontando para um id que nao existe
+    mais, e nada no banco reclamaria.
+    """
     conn = op.get_bind()
-    time = conn.execute(
-        sa.text("SELECT workspace_id FROM team WHERE id = CAST(:t AS uuid)"),
-        {"t": TEAM_MARKETING},
-    ).first()
-    if time is None:
-        return
-    # As secoes e perguntas somem por CASCADE; o vinculo das solicitacoes
-    # precisa ser desfeito ANTES, senao elas ficam apontando para nada.
     conn.execute(
         sa.text(
             "UPDATE solicitation SET form_id = NULL WHERE form_id IN "
-            "(SELECT id FROM solicitation_form "
-            " WHERE workspace_id = :w AND slug = :s)"
+            "(SELECT id FROM solicitation_form WHERE slug = :s)"
         ),
-        {"w": time.workspace_id, "s": SLUG_DO_FORMULARIO},
+        {"s": SLUG_DO_FORMULARIO},
     )
     conn.execute(
-        sa.text(
-            "DELETE FROM solicitation_form WHERE workspace_id = :w AND slug = :s"
-        ),
-        {"w": time.workspace_id, "s": SLUG_DO_FORMULARIO},
+        sa.text("DELETE FROM solicitation_form WHERE slug = :s"),
+        {"s": SLUG_DO_FORMULARIO},
     )
