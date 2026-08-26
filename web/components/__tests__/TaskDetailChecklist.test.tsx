@@ -805,6 +805,42 @@ describe("TaskDetail -- a coluna aparece na checklist", () => {
     expect(screen.getByTitle("Coluna: Backlog")).toBeTruthy();
   });
 
+  it("⚠️ a cápsula é `Badge soft` -- a mesma forma da prioridade", async () => {
+    // Pedido da Camila em 24/08: "dá pra deixar a capsulazinha igual a
+    // prioridade está?". Antes era bolinha + texto apagado.
+    //
+    // ⚠️ E A COR MUDOU JUNTO, POR OBRIGAÇÃO: `Badge soft` pinta FUNDO com 12%
+    // da cor, e `coluna.color` é token de TRAÇO -- como fundo sob texto ele
+    // reprova AA (Spec 031 §2.2b). A cor passou a sair de `STATUS_COLOR`, que
+    // são as famílias com par `-dot`/`-text` medido, e é a mesma que a pílula
+    // de Coluna do painel já usava.
+    //
+    // O que este teste prende é a FORMA (as duas cápsulas na mesma linha),
+    // porque foi o que ela pediu. ⚠️ A cor em si continua ⚪ sem verificação:
+    // nenhum teste mede contraste, e a garantia é a família ser uma das
+    // medidas -- não um número aferido aqui.
+    montar([
+      task({
+        id: "f1", title: "Filha", parent_task_id: "pai",
+        path: "pai.f1", depth: 1, column_id: "col-planejado",
+      }),
+    ]);
+    await screen.findByText("Filha");
+
+    // ⚠️ ESCOPADO NA LINHA DA SUBTAREFA, e não na tela: a tarefa-MÃE tem a
+    // própria pílula de prioridade no cabeçalho, então `getByText("Media")`
+    // solto acha dois e falha. O teste achou isso sozinho.
+    const capsulaDaColuna = screen.getByTitle("Coluna: Planejado")
+      .firstElementChild!;
+    const linhaDeMeta = capsulaDaColuna.parentElement!.parentElement!;
+    // ⚠️ "Media" SEM ACENTO -- é o rótulo real em `PRIORITY_LABEL`, e eu
+    // escrevi "Média" de cabeça. O teste achou isso também.
+    const capsulaDaPrioridade = within(linhaDeMeta).getByText("Media");
+    // Mesmo elemento, mesmas classes -> mesma forma na tela.
+    expect(capsulaDaColuna.tagName).toBe(capsulaDaPrioridade.tagName);
+    expect(capsulaDaColuna.className).toBe(capsulaDaPrioridade.className);
+  });
+
   it("coluna desconhecida não desenha rótulo nenhum", async () => {
     // Subtarefa de outro quadro não está no mapa de colunas. Mesma regra do
     // `tone`: sem coluna, sem sinal -- e não um rótulo vazio ao lado da
