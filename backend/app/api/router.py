@@ -17,6 +17,9 @@ from app.api.health import router as health_router
 from app.api.client_errors import router as client_errors_router
 from app.modules.auth.api.router import router as auth_router
 from app.modules.notifications.api.router import router as notifications_router
+from app.modules.solicitations.api.form_public_router import (
+    router as solicitation_forms_public_router,
+)
 from app.modules.solicitations.api.form_router import (
     router as solicitation_forms_router,
 )
@@ -56,5 +59,10 @@ api_v1_router.include_router(solicitations_router)
 # publica -- ou, pior, alguem a tiraria dali para "consertar" e abriria o CRUD
 # do formulario para o mundo.
 api_v1_router.include_router(solicitation_forms_router)
+# ⚠️ TERCEIRO ROUTER NO MESMO PREFIXO, e o unico SEM CREDENCIAL alem do
+# `POST /publico`. Ele fica separado justamente por isso: a dependencia de
+# permissao do router acima nao pode alcanca-lo, e a de rate limit deste nao
+# pode faltar.
+api_v1_router.include_router(solicitation_forms_public_router)
 api_v1_router.include_router(system_router)
 api_v1_router.include_router(client_errors_router)
