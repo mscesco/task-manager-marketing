@@ -27,6 +27,7 @@ from app.modules.solicitations.application.form_service import (
     CODIGO_TIPO_INVALIDO,
     SolicitationFormService,
 )
+from app.modules.solicitations.application.service import SolicitationService
 from app.modules.solicitations.infrastructure.repository import (
     SolicitationRepository,
 )
@@ -320,3 +321,104 @@ async def test_contadores_respeitam_o_mesmo_recorte(db) -> None:
 
     with acting_as(**_ctx(ws, user, arvore, mship(mkt, "SUPERVISOR"))):
         assert await SolicitationRepository(db).count_pending() == 1
+
+
+# ----------------------------------------------------------
+# ⚠️ O ROTULO DA CATEGORIA na fila (Spec 043, fatia C2-c)
+# ----------------------------------------------------------
+#
+# ⚠️⚠️ ATE 26/08 A FILA LIA ISTO DE UM ARQUIVO ESTATICO NO FRONT
+# (`CATEGORIA_POR_SLUG`, em `web/lib/solicitacaoForm.ts`). A fatia B trocou a
+# fonte do formulario PUBLICO e nao a da fila -- e funcionava, porque a
+# migration 0017 copiou os mesmos slugs. A primeira secao criada pelo editor da
+# fatia C2 apareceria la como slug cru e "❓": nada quebra, nada avisa, so fica
+# feio para UMA categoria e certo para as outras.
+async def test_rotulo_vem_da_SECAO_e_nao_de_lista_fixa(db) -> None:
+    ws, raiz, mkt, design, user, arvore = await _mundo(db)
+    with acting_as(**_ctx(ws, user, arvore, mship(mkt, "MANAGER"))):
+        svc = SolicitationFormService(db)
+        form = await svc.criar_formulario(team_id=mkt, slug="arte", title="Arte")
+        await svc.criar_secao(
+            form_id=form.id,
+            slug="podcast",
+            title="Podcast",
+            emoji="🎙️",
+            sla_text="10 dias úteis",
+        )
+        # ⚠️ `podcast` NAO EXISTE no arquivo estatico -- e uma secao que so o
+        # editor sabe criar. E exatamente o caso que aparecia quebrado.
+        pedido = await _solicitacao(db, ws, form_id=form.id, category="podcast")
+
+        rotulos = await SolicitationService(db).rotulos_de_categoria([pedido])
+
+    rotulo = rotulos[(form.id, "podcast")]
+    assert rotulo.title == "Podcast"
+    assert rotulo.emoji == "🎙️"
+    assert rotulo.sla_text == "10 dias úteis"
+
+
+async def test_renomear_a_secao_arruma_tambem_os_pedidos_ANTIGOS(db) -> None:
+    """⚠️⚠️ E ESTE E O MOTIVO DE O ROTULO SER RESOLVIDO E NAO GRAVADO.
+
+    E o oposto da regra das RESPOSTAS, que sao retrato do dia
+    (`{label, value}`), e a diferenca e proposital: renomear "Foto" para
+    "Fotografia" deve arrumar a fila inteira, inclusive o que chegou antes.
+
+    E por isso que o `slug` da secao nao pode mudar e o titulo pode -- um e a
+    chave gravada no pedido, o outro e a etiqueta.
+    """
+    ws, raiz, mkt, design, user, arvore = await _mundo(db)
+    with acting_as(**_ctx(ws, user, arvore, mship(mkt, "MANAGER"))):
+        svc = SolicitationFormService(db)
+        form = await svc.criar_formulario(team_id=mkt, slug="arte", title="Arte")
+        secao = await svc.criar_secao(form_id=form.id, slug="foto", title="Foto")
+        antigo = await _solicitacao(db, ws, form_id=form.id, category="foto")
+
+        await svc.editar_secao(section_id=secao.id, title="Fotografia")
+        rotulos = await SolicitationService(db).rotulos_de_categoria([antigo])
+
+    assert rotulos[(form.id, "foto")].title == "Fotografia"
+    # ⚠️ E O SLUG GRAVADO NO PEDIDO NAO SE MEXEU -- e ele que liga os dois.
+    assert antigo.category == "foto"
+
+
+async def test_pedido_ORFAO_tambem_ganha_rotulo(db) -> None:
+    """⚠️ SEM ISTO SERIA UMA REGRESSAO VISIVEL, e nao uma lacuna nova.
+
+    Os pedidos anteriores a esta spec tem `form_id` nulo; eles chegaram pelo
+    formulario estatico, cujas categorias sao exatamente as secoes que a 0017
+    criou. Resolver so por `form_id` faria os dois pedidos de julho perderem o
+    titulo que HOJE eles tem na tela.
+    """
+    ws, raiz, mkt, design, user, arvore = await _mundo(db)
+    with acting_as(**_ctx(ws, user, arvore, mship(mkt, "MANAGER"))):
+        svc = SolicitationFormService(db)
+        form = await svc.criar_formulario(team_id=mkt, slug="arte", title="Arte")
+        await svc.criar_secao(
+            form_id=form.id, slug="foto", title="Foto", emoji="📷"
+        )
+        orfao = await _solicitacao(db, ws, form_id=None, category="foto")
+
+        rotulos = await SolicitationService(db).rotulos_de_categoria([orfao])
+
+    assert rotulos[(None, "foto")].title == "Foto"
+
+
+async def test_secao_APAGADA_nao_tem_rotulo_e_a_fila_cai_no_slug(db) -> None:
+    """⚠️ AUSENCIA E RESPOSTA VALIDA, e o front cai no slug cru.
+
+    Feio e honesto. Esconder o item apagaria da tela um pedido que alguem fez
+    de verdade -- e ele continua na fila, porque apagar a secao nao apaga quem
+    entrou por ela.
+    """
+    ws, raiz, mkt, design, user, arvore = await _mundo(db)
+    with acting_as(**_ctx(ws, user, arvore, mship(mkt, "MANAGER"))):
+        svc = SolicitationFormService(db)
+        form = await svc.criar_formulario(team_id=mkt, slug="arte", title="Arte")
+        secao = await svc.criar_secao(form_id=form.id, slug="foto", title="Foto")
+        pedido = await _solicitacao(db, ws, form_id=form.id, category="foto")
+
+        await svc.apagar_secao(section_id=secao.id)
+        rotulos = await SolicitationService(db).rotulos_de_categoria([pedido])
+
+    assert rotulos == {}

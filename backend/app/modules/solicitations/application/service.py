@@ -94,6 +94,20 @@ class CreatePublicCommand:
 
 
 @dataclass(frozen=True, slots=True)
+class RotuloDeCategoria:
+    """Como uma categoria se APRESENTA na fila -- e nao o que ela e.
+
+    ⚠️ A CHAVE E O `slug`, QUE FICA GRAVADO NO PEDIDO; isto aqui e a etiqueta,
+    resolvida na hora de mostrar. Por isso o slug da secao nao pode mudar e o
+    titulo pode: renomear arruma a fila inteira, inclusive o passado.
+    """
+
+    title: str
+    emoji: str
+    sla_text: str | None
+
+
+@dataclass(frozen=True, slots=True)
 class Batch:
     """Um envio agrupado: dados do solicitante + as demandas dele."""
 
@@ -266,6 +280,73 @@ class SolicitationService:
     # ------------------------------------------------------------
     # Autenticado (triagem)
     # ------------------------------------------------------------
+    async def rotulos_de_categoria(
+        self, itens: list[Solicitation]
+    ) -> dict[tuple[uuid.UUID | None, str], RotuloDeCategoria]:
+        """Titulo, emoji e prazo de cada categoria que aparece nestes pedidos.
+
+        ⚠️⚠️ ATE 26/08 A FILA LIA ISTO DE UM ARQUIVO ESTATICO NO FRONT
+        (`CATEGORIA_POR_SLUG`, em `web/lib/solicitacaoForm.ts`). A fatia B
+        trocou a fonte do formulario PUBLICO e nao a da fila -- e funcionava,
+        porque a migration 0017 copiou os mesmos slugs. **A primeira secao
+        criada pelo editor da fatia C2 apareceria la como slug cru e "❓".**
+        Divergencia silenciosa: nada quebra, nada avisa, so fica feio para uma
+        categoria e certo para as outras.
+
+        ⚠️ E O ROTULO E RESOLVIDO AGORA, e nao gravado no pedido. E o oposto da
+        regra das RESPOSTAS, que sao retrato do dia (`{label, value}`), e a
+        diferenca e proposital: renomear "Foto" para "Fotografia" deve arrumar
+        a fila inteira, inclusive o passado. Por isso o `slug` da secao nao
+        pode mudar e o titulo pode -- um e a chave, o outro e a etiqueta.
+
+        ⚠️ O PEDIDO ORFAO (sem `form_id`) TAMBEM GANHA ROTULO. Sao os
+        anteriores a esta spec; eles chegaram pelo formulario estatico, cujas
+        categorias sao exatamente as secoes que a 0017 criou. Procurar o slug
+        entre todas as secoes do workspace devolve o titulo certo para eles --
+        e resolver so por `form_id` seria uma regressao visivel: dois pedidos
+        de julho perderiam o titulo que hoje tem.
+        """
+        tenant = require_tenant()
+        slugs = {i.category for i in itens if i.category}
+        if not slugs:
+            return {}
+
+        linhas = (
+            await self.session.execute(
+                select(
+                    SolicitationSection.form_id,
+                    SolicitationSection.slug,
+                    SolicitationSection.title,
+                    SolicitationSection.emoji,
+                    SolicitationSection.sla_text,
+                )
+                .join(
+                    SolicitationForm,
+                    SolicitationForm.id == SolicitationSection.form_id,
+                )
+                .where(
+                    SolicitationSection.workspace_id == tenant.workspace_id,
+                    SolicitationSection.slug.in_(slugs),
+                    SolicitationSection.deleted_at.is_(None),
+                    SolicitationForm.deleted_at.is_(None),
+                )
+                # ⚠️ ORDEM PARA O DESEMPATE DO ORFAO: dois formularios podem
+                # ter uma secao de mesmo slug. Sem `form_id` para escolher, o
+                # mais ANTIGO vence -- e o mais antigo e justamente aquele de
+                # onde os pedidos orfaos vieram.
+                .order_by(SolicitationForm.created_at.desc())
+            )
+        ).all()
+
+        rotulos: dict[tuple[uuid.UUID | None, str], RotuloDeCategoria] = {}
+        for form_id, slug, title, emoji, sla in linhas:
+            rotulo = RotuloDeCategoria(title=title, emoji=emoji, sla_text=sla)
+            rotulos[(form_id, slug)] = rotulo
+            # `desc()` acima faz o mais antigo ser escrito por ULTIMO, entao
+            # ele e quem fica na chave sem form.
+            rotulos[(None, slug)] = rotulo
+        return rotulos
+
     async def list_batches(
         self, *, params: PageParams, filtro: str | None
     ) -> tuple[list[Batch], int]:

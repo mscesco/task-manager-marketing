@@ -144,6 +144,25 @@ async def list_solicitations(
     lotes, total = await service.list_batches(
         params=PageParams(page=page, size=size), filtro=filtro
     )
+    # ⚠️ UMA CONSULTA SO PARA A PAGINA INTEIRA, e nao uma por item: dez envios
+    # de quatro categorias seriam 40 idas ao banco para buscar um titulo.
+    rotulos = await service.rotulos_de_categoria(
+        [item for lote in lotes for item in lote.items]
+    )
+
+    def _com_rotulo(item) -> BatchItemResponse:
+        resposta = BatchItemResponse.model_validate(item)
+        rotulo = rotulos.get((item.form_id, item.category))
+        if rotulo is None:
+            return resposta
+        return resposta.model_copy(
+            update={
+                "category_title": rotulo.title,
+                "category_emoji": rotulo.emoji,
+                "category_sla": rotulo.sla_text,
+            }
+        )
+
     return BatchListResponse(
         items=[
             BatchResponse(
@@ -156,9 +175,7 @@ async def list_solicitations(
                 requester_department=lote.requester_department,
                 requester_polo=lote.requester_polo,
                 created_at=lote.created_at,
-                items=[
-                    BatchItemResponse.model_validate(item) for item in lote.items
-                ],
+                items=[_com_rotulo(item) for item in lote.items],
             )
             for lote in lotes
         ],

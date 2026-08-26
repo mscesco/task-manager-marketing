@@ -30,7 +30,7 @@ import {
   type SolicitacaoFiltro,
   type SolicitacaoStatus,
 } from "@/lib/api";
-import { CATEGORIA_POR_SLUG } from "@/lib/solicitacaoForm";
+import { rotuloDaCategoria } from "@/lib/rotuloDaCategoria";
 
 const STATUS_LABEL: Record<SolicitacaoStatus, string> = {
   PENDING: "Pendente",
@@ -321,11 +321,11 @@ function CardEnvio({
             }}
           >
             {envio.items.map((item) => {
-              const cat = CATEGORIA_POR_SLUG[item.category];
+              const cat = rotuloDaCategoria(item);
               return (
                 <li key={item.id} style={{ fontSize: 13 }}>
-                  <span style={{ marginRight: 6 }}>{cat?.emoji ?? "❓"}</span>
-                  <strong>{cat?.titulo ?? item.category}</strong>
+                  <span style={{ marginRight: 6 }}>{cat.emoji}</span>
+                  <strong>{cat.titulo}</strong>
                   {": "}
                   <span className="muted">{item.summary}</span>{" "}
                   <Badge tone="soft" size="sm" color={STATUS_COLOR[item.status]}>
@@ -395,7 +395,7 @@ function SecaoDemanda({
   item: BatchItem;
   onMudou: () => void;
 }) {
-  const cat = CATEGORIA_POR_SLUG[item.category];
+  const cat = rotuloDaCategoria(item);
   const [erro, setErro] = useState<string | null>(null);
   const [agindo, setAgindo] = useState(false);
   const [rejeitando, setRejeitando] = useState(false);
@@ -419,7 +419,7 @@ function SecaoDemanda({
 
   function copiarBriefing() {
     const linhas = [
-      `[${cat?.titulo ?? item.category}] ${item.summary}`,
+      `[${cat.titulo}] ${item.summary}`,
       `Solicitante: ${envio.requester_name} · ${envio.requester_email} · ${envio.requester_phone}`,
       `Área: ${envio.requester_department} · Polo: ${envio.requester_polo}`,
       `Protocolo: ${envio.protocol}${envio.items.length > 1 ? ` (${item.batch_seq}/${envio.items.length})` : ""} · Recebida em ${new Date(envio.created_at).toLocaleDateString("pt-BR")}`,
@@ -436,9 +436,9 @@ function SecaoDemanda({
     <div style={{ border: "1px solid var(--border)", borderRadius: 10, padding: 14 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
         <strong style={{ fontSize: 14 }}>
-          {cat?.emoji ?? "❓"} {cat?.titulo ?? item.category}
+          {cat.emoji} {cat.titulo}
         </strong>
-        {cat?.prazo && (
+        {cat.prazo && (
           <span className="muted" style={{ fontSize: 11 }}>⏱ {cat.prazo}</span>
         )}
         <Badge tone="soft" size="sm" color={STATUS_COLOR[item.status]} className="ml-auto">

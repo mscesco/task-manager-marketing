@@ -108,6 +108,16 @@ class BatchItemResponse(BaseModel):
     id: uuid.UUID
     batch_seq: int
     category: str
+    # ⚠️ O ROTULO VEM DO BANCO, E ANTES VINHA DE UM ARQUIVO NO FRONT.
+    # `web/lib/solicitacaoForm.ts` mapeava slug -> titulo/emoji, e funcionava
+    # so porque a migration 0017 copiou os mesmos slugs. A primeira secao
+    # criada pelo editor apareceria na fila como slug cru e "❓".
+    #
+    # ⚠️ `None` E LEGITIMO: secao apagada, ou pedido de uma categoria que nao
+    # existe mais. O front cai no `category` cru -- que e o que ele ja fazia.
+    category_title: str | None = None
+    category_emoji: str | None = None
+    category_sla: str | None = None
     summary: str
     status: str
     answers: list[AnswerItem]

@@ -2506,7 +2506,21 @@ export type SolicitacaoFiltro =
 export type BatchItem = {
   id: string;
   batch_seq: number;
+  /** ⚠️ O SLUG GRAVADO NO PEDIDO. É a chave, não a etiqueta. */
   category: string;
+  /**
+   * ⚠️ COMO A CATEGORIA SE APRESENTA, resolvido pelo backend NA HORA e não
+   * gravado no pedido -- renomear uma seção arruma a fila inteira, inclusive
+   * o passado.
+   *
+   * ⚠️ `null` É LEGÍTIMO (seção apagada, categoria que não existe mais), e
+   * quem desenha cai no `category` cru. Antes disso tudo vinha de
+   * `CATEGORIA_POR_SLUG`, um arquivo estático no front -- e a primeira seção
+   * criada pelo editor apareceria como slug cru e "❓".
+   */
+  category_title: string | null;
+  category_emoji: string | null;
+  category_sla: string | null;
   summary: string;
   status: SolicitacaoStatus;
   answers: SolicitacaoAnswer[];
