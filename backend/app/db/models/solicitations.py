@@ -53,6 +53,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
     func,
     text,
 )
@@ -272,6 +273,18 @@ class SolicitationForm(
 
     __tablename__ = "solicitation_form"
     __table_args__ = (
+        # ⚠️⚠️ SEM ESTA UNIQUE, A FK COMPOSTA DA SECAO NAO EXISTE. O Postgres
+        # exige que as colunas referenciadas tenham unicidade -- e `(id,
+        # workspace_id)` nao a tem so por `id` ser PK. O erro sai na
+        # MIGRATION, com "there is no unique constraint matching given keys",
+        # e foi assim que a 0016 quebrou na primeira tentativa.
+        #
+        # ⚠️ O NOME SEGUE `uq_team_id_workspace` e `uq_board_id_workspace`, que
+        # ja existem no schema -- e nao a convencao automatica, que daria
+        # `uq_solicitation_form_id` e esconderia a segunda coluna do nome.
+        UniqueConstraint(
+            "id", "workspace_id", name="uq_solicitation_form_id_workspace"
+        ),
         ForeignKeyConstraint(
             ["team_id", "workspace_id"],
             ["team.id", "team.workspace_id"],
@@ -326,6 +339,11 @@ class SolicitationSection(
 
     __tablename__ = "solicitation_section"
     __table_args__ = (
+        # Mesma razao da tabela acima: e a pergunta que aponta para ca por
+        # `(section_id, workspace_id)`.
+        UniqueConstraint(
+            "id", "workspace_id", name="uq_solicitation_section_id_workspace"
+        ),
         ForeignKeyConstraint(
             ["form_id", "workspace_id"],
             ["solicitation_form.id", "solicitation_form.workspace_id"],

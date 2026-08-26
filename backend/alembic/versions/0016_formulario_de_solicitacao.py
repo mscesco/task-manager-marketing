@@ -72,6 +72,16 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(
             ["workspace_id"], ["workspace.id"], name="solicitation_form_workspace"
         ),
+        # ⚠️⚠️ A UNIQUE QUE FALTOU NA PRIMEIRA VERSAO, e sem ela a migration
+        # NAO RODA: o Postgres exige unicidade nas colunas referenciadas por
+        # uma FK composta, e ser PK so em `id` nao basta. Erro literal:
+        # "there is no unique constraint matching given keys for referenced
+        # table". O schema ja tinha o padrao em `uq_team_id_workspace` e
+        # `uq_board_id_workspace` -- eu copiei a FK do vizinho e deixei a
+        # metade que a sustenta para tras.
+        sa.UniqueConstraint(
+            "id", "workspace_id", name="uq_solicitation_form_id_workspace"
+        ),
         # ⚠️ RESTRICT: apagar um time nao pode levar junto o formulario que
         # ainda responde por solicitacoes historicas.
         sa.ForeignKeyConstraint(
@@ -131,6 +141,10 @@ def upgrade() -> None:
         sa.Column("deleted_at", sa.DateTime(timezone=True), nullable=True),
         sa.ForeignKeyConstraint(
             ["workspace_id"], ["workspace.id"], name="solicitation_section_workspace"
+        ),
+        # A pergunta aponta para ca por `(section_id, workspace_id)`.
+        sa.UniqueConstraint(
+            "id", "workspace_id", name="uq_solicitation_section_id_workspace"
         ),
         # CASCADE aqui, e nao RESTRICT: secao sem formulario nao e historico,
         # e lixo. O historico das RESPOSTAS vive em `solicitation.answers`.
