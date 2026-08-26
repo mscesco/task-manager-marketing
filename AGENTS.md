@@ -97,6 +97,23 @@ docker compose run --rm -e TEST_DATABASE_URL=... api-dev pytest
 obriga a dividir fatia de backend em duas entregas (12a/12b, B1/B2). Funcionou
 bem: os erros que sobraram foram de assinatura, não de lógica.
 
+### ⚠️ E há um QUINTO portão, que só o CI roda: DRIFT de migration
+
+```bash
+docker compose run --rm api-dev sh -c   "alembic upgrade head && alembic revision --autogenerate -m drift &&    cat alembic/versions/*drift*.py; rm -f alembic/versions/*drift*.py"
+```
+
+O `autogenerate` tem de sair **sem nenhuma linha `op.`**. Ele compara o que os
+MODELOS declaram com o que as MIGRATIONS criaram — e as duas coisas divergem
+por detalhe que nenhum teste vê: nome de constraint gerado pela convenção,
+`index=True` num mixin, `ondelete` que ficou de fora, índice que existe só de um
+lado.
+
+⚠️ **ESTE PORTÃO FALTAVA AQUI, e a ausência custou um CI vermelho** (Spec 043,
+fatia A). Ele estava só no checklist do PR; quem lê esta seção para saber o que
+rodar não o encontrava. Toda entrega que cria ou altera TABELA precisa dele —
+`pytest` verde não diz nada sobre drift.
+
 ### Sempre informar o número esperado
 
 Quais portões rodaram de fato, e o número que a suíte deve mostrar.
