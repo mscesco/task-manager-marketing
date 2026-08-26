@@ -2157,6 +2157,76 @@ export type SolicitacaoItemEnvio = {
 // limit é por IP (5/10min), então N requests bloqueariam o solicitante no
 // meio do próprio pedido. A ORDEM de `items` é a ordem de seleção dele.
 // O campo `website` é o honeypot anti-bot: SEMPRE enviar vazio da UI.
+// ---- GESTAO DOS FORMULARIOS (Spec 043, fatia C) ----
+//
+// ⚠️ AUTENTICADAS, e com permissao PROPRIA no backend
+// (`solicitation_form.manage`). Ela e distinta de `solicitation.review`: triar
+// o que chegou e definir o que se pergunta sao trabalhos diferentes, e
+// frequentemente de pessoas diferentes.
+
+export type Formulario = {
+  id: string;
+  team_id: string;
+  slug: string;
+  title: string;
+  description: string;
+  is_published: boolean;
+};
+
+export async function listarFormularios(): Promise<Formulario[]> {
+  return api<Formulario[]>("/api/v1/solicitacoes/formularios");
+}
+
+/**
+ * ⚠️ NASCE DESPUBLICADO, e `is_published` nem e parametro -- a decisao e do
+ * backend. Formulario nasce vazio; publicado na criacao, ele apareceria na
+ * lista publica como uma porta que nao pergunta nada.
+ */
+export async function criarFormulario(input: {
+  team_id: string;
+  slug: string;
+  title: string;
+  description?: string;
+}): Promise<Formulario> {
+  return api<Formulario>("/api/v1/solicitacoes/formularios", {
+    method: "POST",
+    body: {
+      team_id: input.team_id,
+      slug: input.slug,
+      title: input.title,
+      description: input.description ?? "",
+    },
+  });
+}
+
+/** ⚠️ `team_id` NAO ENTRA: mudar o time e mudar QUEM TRIA, inclusive do que ja
+ * chegou. O backend recusa o campo. */
+export async function renomearFormulario(
+  id: string,
+  patch: { title?: string; description?: string; slug?: string }
+): Promise<Formulario> {
+  return api<Formulario>(`/api/v1/solicitacoes/formularios/${id}`, {
+    method: "PATCH",
+    body: patch,
+  });
+}
+
+export async function publicarFormulario(
+  id: string,
+  publicado: boolean
+): Promise<Formulario> {
+  return api<Formulario>(`/api/v1/solicitacoes/formularios/${id}/publicar`, {
+    method: "POST",
+    body: { publicado },
+  });
+}
+
+export async function apagarFormulario(id: string): Promise<void> {
+  await api<void>(`/api/v1/solicitacoes/formularios/${id}`, {
+    method: "DELETE",
+  });
+}
+
 // ---- O FORMULARIO PUBLICO, LIDO DO BANCO (Spec 043, fatia B) ----
 //
 // ⚠️ `auth: false` NAS DUAS, e nao e detalhe: quem preenche o formulario nao
