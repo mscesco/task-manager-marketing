@@ -29,10 +29,11 @@ export default function SolicitarPorSlugPage() {
     >
       <div style={{ maxWidth: 720, margin: "0 auto" }}>
         <CarregaFormularioPublico slug={slug}>
-          {({ categorias, categoriaPorSlug }) => (
+          {({ categorias, categoriaPorSlug, form }) => (
             <FormularioSolicitacao
               categorias={categorias}
               categoriaPorSlug={categoriaPorSlug}
+              formId={form.id}
             />
           )}
         </CarregaFormularioPublico>

@@ -2232,6 +2232,15 @@ export async function obterFormularioPublico(
 }
 
 export async function enviarSolicitacaoPublica(payload: {
+  /**
+   * De qual formulário veio (Spec 043, fatia B).
+   *
+   * ⚠️ OPCIONAL NO TIPO porque o backend o aceita ausente -- é a
+   * compatibilidade para a aba que ficou aberta durante o deploy. Mas a tela
+   * SEMPRE manda: sem ele a solicitação nasce órfã e cai na fila do workspace
+   * inteiro, em vez da do time dono do formulário.
+   */
+  form_id?: string;
   requester_name: string;
   requester_email: string;
   requester_phone: string;

@@ -79,10 +79,11 @@ export default function SolicitarPage() {
   if (formularios.length === 1) {
     return (
       <CarregaFormularioPublico slug={formularios[0].slug}>
-        {({ categorias, categoriaPorSlug }) => (
+        {({ categorias, categoriaPorSlug, form }) => (
           <FormularioSolicitacao
             categorias={categorias}
             categoriaPorSlug={categoriaPorSlug}
+            formId={form.id}
           />
         )}
       </CarregaFormularioPublico>

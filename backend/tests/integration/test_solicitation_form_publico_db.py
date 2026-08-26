@@ -21,13 +21,19 @@ from __future__ import annotations
 
 import pytest
 
+from app.db.unit_of_work import UnitOfWork
 from app.modules.solicitations.application.form_public_service import (
     SolicitationPublicFormService,
 )
 from app.modules.solicitations.application.form_service import (
     SolicitationFormService,
 )
-from app.shared.exceptions.base import EntityNotFoundError
+from app.modules.solicitations.application.service import (
+    CreatePublicCommand,
+    SolicitationItem,
+    SolicitationService,
+)
+from app.shared.exceptions.base import EntityNotFoundError, ValidationError
 from tests.integration import factories as f
 from tests.integration.conftest import acting_as, mship, node
 
@@ -260,3 +266,129 @@ async def test_pergunta_apagada_some_do_publico(db) -> None:
         workspace_slug=slug_ws, form_slug="arte"
     )
     assert [q.label for q in detalhe.sections[0].questions] == ["Qual o link?"]
+
+
+# ----------------------------------------------------------
+# A ESCRITA com `form_id` (Spec 043, fatia B)
+#
+# ⚠️ ESTE GRUPO GUARDA A UNICA ROTA DE ESCRITA SEM CREDENCIAL DA API. Ate a
+# fatia B ela validava a categoria contra uma lista fixa no dominio; agora, com
+# `form_id`, ela valida contra as SECOES daquele formulario -- lidas do banco,
+# sem usuario nenhum para culpar se algo passar.
+# ----------------------------------------------------------
+def _envio(slug_ws: str, *, categoria: str, form_id=None) -> CreatePublicCommand:
+    return CreatePublicCommand(
+        workspace_slug=slug_ws,
+        requester_name="Maria do Polo",
+        requester_email="maria@polo.ex",
+        requester_phone="11 99999-0000",
+        requester_department="Coordenacao",
+        requester_polo="Taboao",
+        items=[
+            SolicitationItem(
+                category=categoria,
+                summary="Preciso de uma arte",
+                answers=[{"label": "O que precisa?", "value": "um banner"}],
+            )
+        ],
+        form_id=form_id,
+    )
+
+
+async def test_envio_COM_form_id_grava_o_vinculo(db) -> None:
+    """Sem o vinculo a solicitacao nasce orfa -- continua na fila (o JOIN e
+    LEFT), mas visivel ao workspace inteiro em vez do time dono."""
+    ws, raiz, user, ctx = await _mundo(db)
+    form, secao, _ = await _form_publicado(db, ctx, raiz)
+    slug_ws = await _slug_do_ws(db, ws)
+
+    async with UnitOfWork(db) as uow:
+        criadas = await SolicitationService(db).create_public(
+            uow, _envio(slug_ws, categoria=secao.slug, form_id=form.id)
+        )
+
+    assert criadas is not None
+    assert criadas[0].form_id == form.id
+
+
+async def test_categoria_fora_das_SECOES_do_formulario_e_recusada(db) -> None:
+    """⚠️ A validacao passou a ser contra o BANCO, e nao contra a lista fixa.
+
+    `arte` existe na `CATEGORIES` do dominio -- e ainda assim tem de ser
+    recusada aqui, porque a secao deste formulario se chama `briefing`. Se este
+    teste passar com `arte`, a validacao velha continua mandando.
+    """
+    ws, raiz, user, ctx = await _mundo(db)
+    form, _, _ = await _form_publicado(db, ctx, raiz)
+    slug_ws = await _slug_do_ws(db, ws)
+
+    async with UnitOfWork(db) as uow:
+        with pytest.raises(ValidationError):
+            await SolicitationService(db).create_public(
+                uow, _envio(slug_ws, categoria="arte", form_id=form.id)
+            )
+
+
+async def test_form_id_de_OUTRO_workspace_e_recusado(db) -> None:
+    """⚠️⚠️ A TRAVA QUE IMPORTA MAIS DESTE ARQUIVO.
+
+    Rota sem credencial: um `form_id` copiado de outro lugar penduraria a
+    solicitacao no formulario de OUTRO cliente, e nao ha usuario para
+    responsabilizar depois. A recusa e a MESMA de categoria invalida, de
+    proposito -- um erro especifico confirmaria a existencia do formulario para
+    quem esta sondando.
+    """
+    ws_a, raiz_a, _, ctx_a = await _mundo(db)
+    ws_b, _, _, _ = await _mundo(db)
+    form_a, secao_a, _ = await _form_publicado(db, ctx_a, raiz_a)
+    slug_b = await _slug_do_ws(db, ws_b)
+
+    async with UnitOfWork(db) as uow:
+        with pytest.raises(ValidationError):
+            await SolicitationService(db).create_public(
+                uow, _envio(slug_b, categoria=secao_a.slug, form_id=form_a.id)
+            )
+
+
+async def test_form_id_de_RASCUNHO_e_recusado(db) -> None:
+    """Aceitar rascunho deixaria entrar pedido por uma porta que ninguem abriu."""
+    ws, raiz, user, ctx = await _mundo(db)
+    with acting_as(**ctx):
+        svc = SolicitationFormService(db)
+        form = await svc.criar_formulario(
+            team_id=raiz, slug="rascunho", title="Em construção"
+        )
+        secao = await svc.criar_secao(form_id=form.id, slug="s", title="S")
+        await svc.criar_pergunta(section_id=secao.id, label="X", kind="texto")
+        # NAO publica.
+    slug_ws = await _slug_do_ws(db, ws)
+
+    async with UnitOfWork(db) as uow:
+        with pytest.raises(ValidationError):
+            await SolicitationService(db).create_public(
+                uow, _envio(slug_ws, categoria="s", form_id=form.id)
+            )
+
+
+async def test_SEM_form_id_o_caminho_antigo_continua_valendo(db) -> None:
+    """⚠️ COMPATIBILIDADE, e nao a regra.
+
+    A aba que ficou aberta durante o deploy nao pode receber 422 numa rota sem
+    login. Ela envia sem `form_id`, cai na lista fixa `CATEGORIES`, e a
+    solicitacao nasce sem vinculo -- que e exatamente o estado que o `LEFT
+    JOIN` da fila existe para acolher.
+
+    ⚠️ QUANDO O FRONT ANTIGO SUMIR, este teste e o ramo que ele guarda saem
+    juntos. Ele esta aqui para a remocao ser deliberada, e nao um efeito
+    colateral de alguem "limpando" o `frozenset`.
+    """
+    ws, raiz, user, ctx = await _mundo(db)
+    slug_ws = await _slug_do_ws(db, ws)
+
+    async with UnitOfWork(db) as uow:
+        criadas = await SolicitationService(db).create_public(
+            uow, _envio(slug_ws, categoria="arte", form_id=None)
+        )
+
+    assert criadas is not None
+    assert criadas[0].form_id is None

@@ -68,9 +68,17 @@ const IDENT_VAZIO: Record<string, string> = {
 export default function FormularioSolicitacao({
   categorias,
   categoriaPorSlug,
+  formId,
 }: {
   categorias: Categoria[];
   categoriaPorSlug: Record<string, Categoria>;
+  /**
+   * ⚠️ ELE VAI NO ENVIO, e é o que faz a solicitação cair na fila do TIME dono
+   * do formulário. Sem ele ela nasce órfã: continua na fila (o `JOIN` é
+   * `LEFT`), mas visível a quem tem `solicitation.review` no workspace
+   * inteiro.
+   */
+  formId: string;
 }) {
   // passo 0 = identificação+seleção; 1..N = seções; N+1 = revisão
   const [passo, setPasso] = useState(0);
@@ -250,6 +258,10 @@ export default function FormularioSolicitacao({
     setEnviando(true);
     try {
       const r = await enviarSolicitacaoPublica({
+        // ⚠️ SEMPRE MANDADO. O backend o aceita ausente por compatibilidade,
+        // mas quem envia daqui sabe de qual formulário veio -- e é isso que põe
+        // a solicitação na fila do time certo.
+        form_id: formId,
         requester_name: ident.nome.trim(),
         requester_email: ident.email.trim(),
         requester_phone: ident.telefone.trim(),

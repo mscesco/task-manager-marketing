@@ -37,6 +37,18 @@ class PublicSolicitationCreateRequest(BaseModel):
     """
 
     workspace_slug: str = Field(min_length=1, max_length=120)
+    #: De qual formulario veio o envio (Spec 043, fatia B).
+    #:
+    #: ⚠️ OPCIONAL, E A AUSENCIA E COMPATIBILIDADE, nao descuido. Um cliente
+    #: que ainda nao conheca o campo continua enviando -- e cai na validacao
+    #: antiga, contra a lista fixa de categorias do dominio. Torna-lo
+    #: obrigatorio de uma vez quebraria qualquer aba aberta no momento do
+    #: deploy, numa rota que nao tem login para avisar ninguem.
+    #:
+    #: ⚠️ E ELE E CONFERIDO CONTRA O WORKSPACE DO SLUG. Aceitar um `form_id`
+    #: qualquer deixaria alguem pendurar solicitacao no formulario de outro
+    #: cliente -- ver `SolicitationService.create_public`.
+    form_id: uuid.UUID | None = None
 
     requester_name: str = Field(min_length=2, max_length=255)
     requester_email: EmailStr

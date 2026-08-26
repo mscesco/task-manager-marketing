@@ -78,6 +78,11 @@ async def create_public_solicitation(
         uow,
         CreatePublicCommand(
             workspace_slug=payload.workspace_slug,
+            # ⚠️ CAMPO A CAMPO -- declarar no schema NAO chega ao dominio.
+            # Sem esta linha o `form_id` seria descartado em silencio e toda
+            # solicitacao nasceria orfa, caindo na fila do workspace inteiro em
+            # vez da do time dono do formulario.
+            form_id=payload.form_id,
             requester_name=payload.requester_name,
             requester_email=str(payload.requester_email),
             requester_phone=payload.requester_phone,

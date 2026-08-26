@@ -37,8 +37,16 @@ vi.mock("@/lib/api", async (importOriginal) => {
 // motivos que não têm nada a ver com carregar o formulário -- e o que se está
 // medindo é justamente o CARREGAMENTO.
 vi.mock("@/components/FormularioSolicitacao", () => ({
-  default: ({ categorias }: { categorias: { slug: string }[] }) => (
-    <div data-formulario>{categorias.map((c) => c.slug).join(",")}</div>
+  default: ({
+    categorias,
+    formId,
+  }: {
+    categorias: { slug: string }[];
+    formId: string;
+  }) => (
+    <div data-formulario data-form-id={formId}>
+      {categorias.map((c) => c.slug).join(",")}
+    </div>
   ),
 }));
 
@@ -86,6 +94,14 @@ function resumo(
 
 function erroDeApi(status: number) {
   return Object.assign(new Error("falhou"), { status });
+}
+
+/** A porta com UM formulário só -- o caminho que abre direto. */
+function SolicitarPageComUmSo() {
+  vi.mocked(api.listarFormulariosPublicos).mockResolvedValue([
+    resumo("marketing", "Marketing"),
+  ]);
+  return <SolicitarPage />;
 }
 
 afterEach(() => {
@@ -149,6 +165,21 @@ describe("CarregaFormularioPublico -- os dois erros são diferentes", () => {
       </CarregaFormularioPublico>
     );
     expect(await screen.findByText(/ainda não tem perguntas/i)).toBeTruthy();
+  });
+
+  it("⚠️ o `formId` chega ao formulário -- é ele que escolhe a FILA", async () => {
+    // ⚠️ SEM ELE A SOLICITAÇÃO NASCE ÓRFÃ: continua na fila (o `JOIN` é
+    // `LEFT`), mas visível a quem tem `solicitation.review` no workspace
+    // inteiro, em vez do time dono do formulário. É um defeito que não dá erro
+    // nenhum -- só aparece como "por que a solicitação do TI apareceu na minha
+    // fila?" semanas depois.
+    vi.mocked(api.obterFormularioPublico).mockResolvedValue(form());
+    render(<SolicitarPageComUmSo />);
+    await waitFor(() =>
+      expect(
+        document.querySelector("[data-formulario]")?.getAttribute("data-form-id")
+      ).toBe("f1")
+    );
   });
 
   it("com formulário, entrega as categorias a quem desenha", async () => {

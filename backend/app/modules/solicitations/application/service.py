@@ -23,10 +23,15 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.tenant import require_tenant
-from app.db.models import Solicitation
+from app.db.models import (
+    Solicitation,
+    SolicitationForm,
+    SolicitationSection,
+)
 from app.db.unit_of_work import UnitOfWork
 from app.modules.solicitations.domain.solicitation import (
     CATEGORIES,
@@ -76,6 +81,16 @@ class CreatePublicCommand:
     requester_polo: str
     items: list[SolicitationItem]
     honeypot: str = ""
+    #: Spec 043 (fatia B). De qual formulario veio o envio.
+    #:
+    #: ⚠️ NO FIM DA CLASSE E COM DEFAULT, e nao por estetica: `dataclass` recusa
+    #: campo sem default depois de um com default, e eu o tinha posto no meio
+    #: -- `CreatePublicCommand(**base)` dos testes existentes quebraria antes de
+    #: qualquer regra ser exercitada.
+    #:
+    #: ⚠️ E O `None` E COMPATIBILIDADE: cliente que ainda nao conhece o campo
+    #: continua enviando, e cai na validacao antiga contra `CATEGORIES`.
+    form_id: uuid.UUID | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -142,10 +157,24 @@ class SolicitationService:
                 f"{MAX_ITENS_POR_LOTE} tipos de solicitacao por envio."
             )
 
+        # ⚠️ A VALIDACAO DA CATEGORIA TEM DOIS CAMINHOS (Spec 043, fatia B),
+        # e o segundo esta morrendo:
+        #
+        #   - COM `form_id`: as categorias validas sao as SECOES daquele
+        #     formulario, lidas do banco. E o caminho novo, e o unico que sabe
+        #     de formulario criado por gente.
+        #   - SEM `form_id`: cai na lista fixa `CATEGORIES` do dominio, que e o
+        #     comportamento de sempre. ⚠️ ISSO E COMPATIBILIDADE, e nao a
+        #     regra: existe para a aba que ficou aberta durante o deploy nao
+        #     receber 422 numa rota sem login. Quando o front antigo sumir de
+        #     circulacao, este ramo e a `CATEGORIES` saem juntos -- e e por
+        #     isso que o `frozenset` continua ali por enquanto.
+        #
         # Valida TODAS antes de gravar QUALQUER uma.
-        for item in command.items:
-            if item.category not in CATEGORIES:
-                raise ValidationError("Categoria de solicitacao invalida.")
+        if command.form_id is None:
+            for item in command.items:
+                if item.category not in CATEGORIES:
+                    raise ValidationError("Categoria de solicitacao invalida.")
 
         # Categoria repetida no mesmo envio e erro de UI, nao pedido real:
         # viraria duas linhas identicas na fila da triagem.
@@ -161,6 +190,42 @@ class SolicitationService:
         if workspace is None:
             # 404 generico de proposito (nao enumera slugs).
             raise EntityNotFoundError("Workspace", identifier=command.workspace_slug)
+
+        # ⚠️⚠️ O FORMULARIO E CONFERIDO CONTRA O WORKSPACE DO SLUG, E TEM DE
+        # ESTAR PUBLICADO. Sem as duas condicoes, um `form_id` copiado de outro
+        # lugar penduraria a solicitacao no formulario de OUTRO cliente -- numa
+        # rota sem credencial, onde nao ha usuario para culpar depois. E
+        # aceitar rascunho deixaria entrar pedido por uma porta que ninguem
+        # abriu ainda.
+        #
+        # ⚠️ E A RECUSA E A MESMA DE CATEGORIA INVALIDA, de proposito: um erro
+        # especifico ("este formulario e de outro workspace") confirmaria a
+        # existencia dele para quem esta sondando.
+        if command.form_id is not None:
+            secoes = (
+                await self.session.execute(
+                    select(SolicitationSection.slug)
+                    .join(
+                        SolicitationForm,
+                        (SolicitationForm.id == SolicitationSection.form_id)
+                        & (
+                            SolicitationForm.workspace_id
+                            == SolicitationSection.workspace_id
+                        ),
+                    )
+                    .where(
+                        SolicitationForm.id == command.form_id,
+                        SolicitationForm.workspace_id == workspace.id,
+                        SolicitationForm.deleted_at.is_(None),
+                        SolicitationForm.is_published.is_(True),
+                        SolicitationSection.deleted_at.is_(None),
+                    )
+                )
+            ).scalars().all()
+            validas = set(secoes)
+            for item in command.items:
+                if item.category not in validas:
+                    raise ValidationError("Categoria de solicitacao invalida.")
 
         batch_id = uuid.uuid4()
         total = len(command.items)
@@ -181,6 +246,11 @@ class SolicitationService:
                 category=item.category,
                 summary=item.summary.strip()[:500],
                 answers=item.answers,
+                # ⚠️ E ELE QUE FAZ A FILA SABER DE QUEM E A SOLICITACAO. Sem
+                # este campo ela nasce orfa: continua na fila (o JOIN e LEFT),
+                # mas visivel a quem tem `solicitation.review` no workspace
+                # inteiro, em vez do time dono do formulario.
+                form_id=command.form_id,
                 status=SolicitationStatus.PENDING,
             )
             insert_public(
