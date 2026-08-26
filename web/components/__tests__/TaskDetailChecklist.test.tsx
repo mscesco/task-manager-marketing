@@ -736,3 +736,86 @@ describe("TaskDetail -- a hora da subtarefa vive no title (F7)", () => {
     expect(screen.getByTitle("31/12/2026")).toBeTruthy();
   });
 });
+
+// =====================================================================
+// A COLUNA DA SUBTAREFA NA CHECKLIST (pedido da Camila, 24/08).
+//
+// ⚠️ ELA EXISTE PARA DESFAZER UMA AMBIGUIDADE, e o segundo teste é o assunto:
+// a caixinha marca por semântica `DONE`, então uma subtarefa CANCELADA e uma
+// em BACKLOG apareciam as duas DESMARCADAS, sem nada que as distinguisse.
+// Quem olhava a checklist lia "falta fazer" nas duas.
+//
+// SABOTAGEM: tirar o bloco da coluna da linha de meta. **Caem 2.**
+// ✅ MEDIDA EM 24/08/2026.
+// =====================================================================
+describe("TaskDetail -- a coluna aparece na checklist", () => {
+  it("a subtarefa mostra o nome da coluna em que está", async () => {
+    montar([
+      task({
+        id: "f1",
+        title: "Filha",
+        parent_task_id: "pai",
+        path: "pai.f1",
+        depth: 1,
+        column_id: "col-planejado",
+      }),
+    ]);
+    await screen.findByText("Filha");
+    expect(screen.getByTitle("Coluna: Planejado")).toBeTruthy();
+  });
+
+  it("⚠️ CANCELADA e BACKLOG são as duas desmarcadas -- e agora se distinguem", async () => {
+    // ⚠️ ESTE É O CASO QUE JUSTIFICA A MUDANÇA. `concluida` sai de
+    // `semantic === "DONE"`; `CANCELLED` é terminal mas NÃO é DONE, então a
+    // caixa fica vazia igual à de uma tarefa que nem começou.
+    const CANCELADO: Coluna = {
+      id: "col-cancelado",
+      name: "Cancelado",
+      color: "var(--status-cancel-dot)",
+      position: 6,
+      semantic: "CANCELLED",
+      notify_deadline: false,
+      is_default_target: true,
+      is_status_bridge: false,
+    };
+    // ⚠️ A coluna entra só NESTE teste, e não na fixture compartilhada: uma
+    // quarta coluna lá derrubaria o teste de ordenação do F6-b, que afirma
+    // exatamente três. Mesmo cuidado registrado no caso D.
+    vi.mocked(api.colunasDoQuadro).mockResolvedValue([...COLUNAS, CANCELADO]);
+
+    montar([
+      task({
+        id: "f1", title: "Cancelada", parent_task_id: "pai",
+        path: "pai.f1", depth: 1, column_id: "col-cancelado",
+      }),
+      task({
+        id: "f2", title: "No backlog", parent_task_id: "pai",
+        path: "pai.f2", depth: 1, column_id: "col-backlog",
+      }),
+    ]);
+    await screen.findByText("Cancelada");
+
+    // As duas caixas seguem desmarcadas -- isso NÃO mudou.
+    const caixas = screen
+      .getAllByRole("checkbox")
+      .filter((c) => (c as HTMLInputElement).type === "checkbox");
+    expect(caixas.every((c) => !(c as HTMLInputElement).checked)).toBe(true);
+    // O que mudou: dá para saber qual é qual.
+    expect(screen.getByTitle("Coluna: Cancelado")).toBeTruthy();
+    expect(screen.getByTitle("Coluna: Backlog")).toBeTruthy();
+  });
+
+  it("coluna desconhecida não desenha rótulo nenhum", async () => {
+    // Subtarefa de outro quadro não está no mapa de colunas. Mesma regra do
+    // `tone`: sem coluna, sem sinal -- e não um rótulo vazio ao lado da
+    // prioridade.
+    montar([
+      task({
+        id: "f1", title: "De outro quadro", parent_task_id: "pai",
+        path: "pai.f1", depth: 1, column_id: "col-de-outro-quadro",
+      }),
+    ]);
+    await screen.findByText("De outro quadro");
+    expect(screen.queryByTitle(/^Coluna: /)).toBeNull();
+  });
+});

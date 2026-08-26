@@ -2344,6 +2344,56 @@ export default function TaskDetail({
                                 {rotuloPrio}
                               </Badge>
                             )}
+                            {/* ---- A COLUNA DA SUBTAREFA (pedido da Camila, 24/08)
+                                ⚠️ ELA RESOLVE UMA AMBIGUIDADE REAL, e nao e so
+                                informacao a mais: a caixinha marca por
+                                semantica `DONE`, entao uma subtarefa
+                                CANCELADA e uma em BACKLOG apareciam as duas
+                                DESMARCADAS, sem nada que as distinguisse. Quem
+                                olhava a checklist via "falta fazer" nas duas.
+
+                                ⚠️ BOLINHA COM `coluna.color`, E TEXTO EM
+                                `--text-faint` -- e este e o uso LEGITIMO
+                                daquele token: ele e de TRACO. Como FUNDO sob
+                                texto ele reprova AA (Spec 031 §2.2b), e foi
+                                por isso que a pilula de Coluna do painel usa
+                                `STATUS_COLOR`. Aqui a cor nao carrega texto
+                                nenhum, entao pode ser a da coluna -- que e a
+                                MESMA que o quadro desenha, e e o que liga as
+                                duas telas na cabeca de quem olha.
+
+                                ⚠️ COLUNA DESCONHECIDA NAO DESENHA NADA, pela
+                                mesma razao do `tone` logo acima: subtarefa de
+                                outro quadro nao tem coluna neste mapa, e um
+                                rotulo vazio ao lado da prioridade seria pior
+                                que a ausencia. */}
+                            {colunaDela && (
+                              <span
+                                className="muted"
+                                title={`Coluna: ${colunaDela.name}`}
+                                style={{
+                                  display: "inline-flex", alignItems: "center",
+                                  gap: 4, flexShrink: 0, maxWidth: 130,
+                                  overflow: "hidden", whiteSpace: "nowrap",
+                                }}
+                              >
+                                <span
+                                  aria-hidden
+                                  style={{
+                                    width: 7, height: 7, borderRadius: 999,
+                                    flexShrink: 0, background: colunaDela.color,
+                                  }}
+                                />
+                                <span
+                                  style={{
+                                    overflow: "hidden",
+                                    textOverflow: "ellipsis",
+                                  }}
+                                >
+                                  {colunaDela.name}
+                                </span>
+                              </span>
+                            )}
                             {f.due_date && (
                               <span
                                 className={tone ? undefined : "muted"}
