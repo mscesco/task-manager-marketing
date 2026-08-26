@@ -56,7 +56,24 @@ const IDENT_VAZIO: Record<string, string> = {
   polo: "",
 };
 
-export default function SolicitarPage() {
+/**
+ * A porta pública, hoje alimentada pelo `solicitacaoForm.ts` (Spec 043, B).
+ *
+ * ⚠️ ESTA EXTRAÇÃO NÃO MUDA COMPORTAMENTO NENHUM, e é deliberadamente burra: o
+ * corpo continua idêntico, e a única diferença é que as categorias chegam por
+ * PROP em vez de virem do módulo. É o passo que separa "mover 580 linhas" de
+ * "trocar a fonte do formulário" -- duas mudanças que, juntas, deixariam
+ * qualquer defeito sem dono numa página que **não tem teste nenhum**.
+ *
+ * O próximo commit troca quem passa a prop.
+ */
+function FormularioSolicitacao({
+  categorias,
+  categoriaPorSlug,
+}: {
+  categorias: Categoria[];
+  categoriaPorSlug: Record<string, Categoria>;
+}) {
   // passo 0 = identificação+seleção; 1..N = seções; N+1 = revisão
   const [passo, setPasso] = useState(0);
   const [ident, setIdent] = useState<Record<string, string>>(IDENT_VAZIO);
@@ -99,7 +116,7 @@ export default function SolicitarPage() {
   const categoriasSelecionadas: Categoria[] = useMemo(
     () =>
       selecionadas
-        .map((slug) => CATEGORIA_POR_SLUG[slug])
+        .map((slug) => categoriaPorSlug[slug])
         .filter((c): c is Categoria => Boolean(c)),
     [selecionadas]
   );
@@ -410,7 +427,7 @@ export default function SolicitarPage() {
               gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
             }}
           >
-            {CATEGORIAS.map((cat) => {
+            {categorias.map((cat) => {
               const posicao = selecionadas.indexOf(cat.slug);
               const marcada = posicao >= 0;
               return (
@@ -634,6 +651,15 @@ export default function SolicitarPage() {
         </p>
       </footer>
     </Casca>
+  );
+}
+
+export default function SolicitarPage() {
+  return (
+    <FormularioSolicitacao
+      categorias={CATEGORIAS}
+      categoriaPorSlug={CATEGORIA_POR_SLUG}
+    />
   );
 }
 
