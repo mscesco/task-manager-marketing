@@ -4,6 +4,7 @@
 **Escopo:** backend (modelo, API, webhook) **e** frontend (formulário público, edição, fila)
 **Depende de:** Spec 034 (solicitações), ADR 0009 (papéis), ADR 0035 (visibilidade por time)
 **Placar na abertura:** Front **947**, Backend **896**, migrations `0015`
+**Fatia A entregue (24/08):** Backend **910**, migrations `0017`
 
 ---
 
@@ -219,7 +220,7 @@ que se pergunta. Entra `solicitation_form.manage`, em ADMIN e MANAGER (ADR
 
 | # | fatia | entrega | risco |
 |---|---|---|---|
-| **A** | modelo + CRUD do formulário | as três tabelas, migração de dados com o formulário de hoje, API de leitura/escrita. **Nada muda na tela** | médio |
+| **A** | ✅ modelo + CRUD do formulário | as três tabelas, migração de dados com o formulário de hoje, API de leitura/escrita. **Nada muda na tela** | médio |
 | **B** | o público lê do banco | `/solicitar/<slug>` e a lista; `POST /publico` passa a receber `form_id`. ⚠️ **mata o `frozenset` do §1.1** | **alto** |
 | **C** | tela de edição | seções, perguntas, tipos, condicional, publicar/despublicar | médio |
 | **D** | os status novos | §4, mais os filtros da fila | baixo |
