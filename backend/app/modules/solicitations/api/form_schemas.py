@@ -63,6 +63,71 @@ class QuestionCreateRequest(BaseModel):
     help: str | None = Field(default=None, max_length=300)
 
 
+class SectionUpdateRequest(BaseModel):
+    """Corpo de `PATCH /solicitacoes/secoes/{id}`.
+
+    ⚠️ **NAO TEM `slug`, E A AUSENCIA E A REGRA.** O slug da secao viaja
+    gravado em cada pedido (`solicitation_item.category`) e e por ele que a
+    fila descobre a categoria. Troca-lo deixaria todo pedido antigo aparecendo
+    como texto cru, sem titulo e sem emoji -- sem erro nenhum. Titulo e emoji
+    podem mudar justamente porque NAO sao gravados. O motivo inteiro esta em
+    `SolicitationFormService.editar_secao`.
+    """
+
+    title: str | None = Field(default=None, max_length=120)
+    emoji: str | None = Field(default=None, max_length=16)
+    sla_text: str | None = Field(default=None, max_length=200)
+
+
+class ResumoRequest(BaseModel):
+    """Corpo de `POST /solicitacoes/secoes/{id}/resumo`.
+
+    ⚠️ ROTA PROPRIA E NAO CAMPO DO `PATCH`: limpar o resumo e mandar `null`, e
+    num PATCH `null` se confunde com "nao mexe neste campo".
+    """
+
+    question_id: uuid.UUID | None = None
+
+
+class QuestionUpdateRequest(BaseModel):
+    """Corpo de `PATCH /solicitacoes/perguntas/{id}`.
+
+    ⚠️ `options=None` E "NAO MEXE", e nao "esvazia". Quem so quis corrigir uma
+    vírgula no titulo nao pode perder a lista de alternativas por omissao.
+    """
+
+    label: str | None = Field(default=None, max_length=300)
+    kind: str | None = Field(default=None, max_length=20)
+    required: bool | None = None
+    options: list[str] | None = None
+    placeholder: str | None = Field(default=None, max_length=200)
+    help: str | None = Field(default=None, max_length=300)
+
+
+class CondicionalRequest(BaseModel):
+    """Corpo de `POST /solicitacoes/perguntas/{id}/condicional`.
+
+    ⚠️ OS DOIS CAMPOS ANDAM JUNTOS: `alvo_id=None` desliga a condicional, e
+    qualquer alvo exige o `valor` que o dispara. Deixa-los num `PATCH` faria
+    "desligar" e "nao mexer" virarem o mesmo corpo.
+    """
+
+    alvo_id: uuid.UUID | None = None
+    valor: str | None = Field(default=None, max_length=200)
+
+
+class OrdemRequest(BaseModel):
+    """Corpo das duas rotas de reordenacao.
+
+    ⚠️ A LISTA E O CONJUNTO INTEIRO, e o servico recusa se faltar ou sobrar
+    um id. Aceitar lista parcial deixaria uma aba velha, aberta desde antes de
+    alguem criar uma secao, sobrescrever a ordem com um mundo que nao existe
+    mais.
+    """
+
+    ids: list[uuid.UUID]
+
+
 class QuestionResponse(BaseModel):
     model_config = {"from_attributes": True}
 

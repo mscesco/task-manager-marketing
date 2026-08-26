@@ -7,7 +7,14 @@
     POST   /solicitacoes/formularios/{id}/publicar
     DELETE /solicitacoes/formularios/{id}         -- soft delete
     POST   /solicitacoes/formularios/{id}/secoes
+    POST   /solicitacoes/formularios/{id}/secoes/ordem
+    PATCH  /solicitacoes/secoes/{id}          -- titulo, emoji, prazo
+    DELETE /solicitacoes/secoes/{id}          -- leva as perguntas junto
+    POST   /solicitacoes/secoes/{id}/resumo   -- qual pergunta titula o pedido
     POST   /solicitacoes/secoes/{id}/perguntas
+    POST   /solicitacoes/secoes/{id}/perguntas/ordem
+    PATCH  /solicitacoes/perguntas/{id}
+    POST   /solicitacoes/perguntas/{id}/condicional
     DELETE /solicitacoes/perguntas/{id}
 
 ⚠️ TODAS AUTENTICADAS, E COM PERMISSAO PROPRIA. `solicitation_form.manage` e
@@ -30,15 +37,20 @@ from fastapi import APIRouter, Depends, Response, status
 from app.core.deps import UoWDep
 from app.modules.auth.api.dependencies import require_permission
 from app.modules.solicitations.api.form_schemas import (
+    CondicionalRequest,
     FormCreateRequest,
     FormDetailResponse,
     FormResponse,
     FormUpdateRequest,
+    OrdemRequest,
     PublicarRequest,
     QuestionCreateRequest,
     QuestionResponse,
+    QuestionUpdateRequest,
+    ResumoRequest,
     SectionCreateRequest,
     SectionResponse,
+    SectionUpdateRequest,
 )
 from app.modules.solicitations.application.form_service import (
     SolicitationFormService,
@@ -76,6 +88,26 @@ async def criar_formulario(
     return resposta
 
 
+def _secao_para_resposta(secao, perguntas) -> SectionResponse:
+    """⚠️ UM SO LUGAR MONTA `SectionResponse`, e isso e o ponto.
+
+    Sao cinco rotas que devolvem uma secao. Montar o dicionario em cada uma
+    faria o dia em que um campo novo nascer virar "quatro rotas passaram a
+    devolver, uma nao" -- e a que nao devolve seria descoberta pela tela
+    piscando um valor velho.
+    """
+    return SectionResponse(
+        id=secao.id,
+        slug=secao.slug,
+        title=secao.title,
+        emoji=secao.emoji,
+        sla_text=secao.sla_text,
+        summary_question_id=secao.summary_question_id,
+        position=secao.position,
+        questions=[QuestionResponse.model_validate(q) for q in perguntas],
+    )
+
+
 @router.get("/formularios/{form_id}", response_model=FormDetailResponse)
 async def obter_formulario(form_id: uuid.UUID, uow: UoWDep) -> FormDetailResponse:
     """O formulario com as secoes e perguntas VIVAS, em ordem.
@@ -89,27 +121,13 @@ async def obter_formulario(form_id: uuid.UUID, uow: UoWDep) -> FormDetailRespons
     form = await servico.obter_formulario(form_id)
     secoes, perguntas = await servico.perguntas_do_form(form_id)
 
-    por_secao: dict[uuid.UUID, list[QuestionResponse]] = {s.id: [] for s in secoes}
+    por_secao: dict[uuid.UUID, list] = {s.id: [] for s in secoes}
     for q in perguntas:
-        por_secao[q.section_id].append(QuestionResponse.model_validate(q))
+        por_secao[q.section_id].append(q)
 
     return FormDetailResponse(
         **FormResponse.model_validate(form).model_dump(),
-        sections=[
-            SectionResponse(
-                **{
-                    "id": s.id,
-                    "slug": s.slug,
-                    "title": s.title,
-                    "emoji": s.emoji,
-                    "sla_text": s.sla_text,
-                    "summary_question_id": s.summary_question_id,
-                    "position": s.position,
-                },
-                questions=por_secao[s.id],
-            )
-            for s in secoes
-        ],
+        sections=[_secao_para_resposta(s, por_secao[s.id]) for s in secoes],
     )
 
 
@@ -173,18 +191,74 @@ async def criar_secao(
         emoji=payload.emoji,
         sla_text=payload.sla_text,
     )
-    resposta = SectionResponse(
-        id=secao.id,
-        slug=secao.slug,
-        title=secao.title,
-        emoji=secao.emoji,
-        sla_text=secao.sla_text,
-        summary_question_id=secao.summary_question_id,
-        position=secao.position,
-        questions=[],
+    resposta = _secao_para_resposta(secao, [])
+    await uow.commit()
+    return resposta
+
+
+# ⚠️ `/secoes/ordem` VEM ANTES DE NADA PARAMETRIZADO NESTE BLOCO? Nao precisa:
+# ela tem tres segmentos (`formularios/{id}/secoes/ordem`) e a irma tem dois,
+# entao nao ha como uma engolir a outra. A conferencia foi feita -- e o motivo
+# de estar escrita e o 422 de 26/08, que nasceu de nao fazer esta conta.
+@router.post("/formularios/{form_id}/secoes/ordem", response_model=list[SectionResponse])
+async def reordenar_secoes(
+    form_id: uuid.UUID, payload: OrdemRequest, uow: UoWDep
+) -> list[SectionResponse]:
+    servico = SolicitationFormService(uow.session)
+    secoes = await servico.reordenar_secoes(form_id=form_id, ids=payload.ids)
+    _, perguntas = await servico.perguntas_do_form(form_id)
+    por_secao: dict[uuid.UUID, list] = {s.id: [] for s in secoes}
+    for q in perguntas:
+        if q.section_id in por_secao:
+            por_secao[q.section_id].append(q)
+    resposta = [_secao_para_resposta(s, por_secao[s.id]) for s in secoes]
+    await uow.commit()
+    return resposta
+
+
+@router.patch("/secoes/{section_id}", response_model=SectionResponse)
+async def editar_secao(
+    section_id: uuid.UUID, payload: SectionUpdateRequest, uow: UoWDep
+) -> SectionResponse:
+    """⚠️ SEM `slug` NO CORPO -- veja `SectionUpdateRequest`."""
+    servico = SolicitationFormService(uow.session)
+    secao = await servico.editar_secao(
+        section_id=section_id,
+        title=payload.title,
+        emoji=payload.emoji,
+        sla_text=payload.sla_text,
+    )
+    resposta = _secao_para_resposta(
+        secao, await servico.perguntas_da_secao(section_id)
     )
     await uow.commit()
     return resposta
+
+
+@router.post("/secoes/{section_id}/resumo", response_model=SectionResponse)
+async def definir_resumo(
+    section_id: uuid.UUID, payload: ResumoRequest, uow: UoWDep
+) -> SectionResponse:
+    servico = SolicitationFormService(uow.session)
+    secao = await servico.definir_resumo(
+        section_id=section_id, question_id=payload.question_id
+    )
+    resposta = _secao_para_resposta(
+        secao, await servico.perguntas_da_secao(section_id)
+    )
+    await uow.commit()
+    return resposta
+
+
+@router.delete(
+    "/secoes/{section_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+)
+async def apagar_secao(section_id: uuid.UUID, uow: UoWDep) -> Response:
+    await SolicitationFormService(uow.session).apagar_secao(section_id=section_id)
+    await uow.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post(
@@ -203,6 +277,55 @@ async def criar_pergunta(
         options=payload.options,
         placeholder=payload.placeholder,
         help_text=payload.help,
+    )
+    resposta = QuestionResponse.model_validate(pergunta)
+    await uow.commit()
+    return resposta
+
+
+@router.post(
+    "/secoes/{section_id}/perguntas/ordem", response_model=list[QuestionResponse]
+)
+async def reordenar_perguntas(
+    section_id: uuid.UUID, payload: OrdemRequest, uow: UoWDep
+) -> list[QuestionResponse]:
+    """⚠️ PODE RECUSAR POR CAUSA DE CONDICIONAL -- arrastar a dependente para
+    cima do alvo faz dela uma pergunta que se revela por algo ainda nao
+    perguntado. A mensagem nomeia qual pergunta travou.
+    """
+    perguntas = await SolicitationFormService(uow.session).reordenar_perguntas(
+        section_id=section_id, ids=payload.ids
+    )
+    resposta = [QuestionResponse.model_validate(q) for q in perguntas]
+    await uow.commit()
+    return resposta
+
+
+@router.patch("/perguntas/{question_id}", response_model=QuestionResponse)
+async def editar_pergunta(
+    question_id: uuid.UUID, payload: QuestionUpdateRequest, uow: UoWDep
+) -> QuestionResponse:
+    pergunta = await SolicitationFormService(uow.session).editar_pergunta(
+        question_id=question_id,
+        label=payload.label,
+        kind=payload.kind,
+        required=payload.required,
+        options=payload.options,
+        placeholder=payload.placeholder,
+        help_text=payload.help,
+    )
+    resposta = QuestionResponse.model_validate(pergunta)
+    await uow.commit()
+    return resposta
+
+
+@router.post("/perguntas/{question_id}/condicional", response_model=QuestionResponse)
+async def definir_condicional(
+    question_id: uuid.UUID, payload: CondicionalRequest, uow: UoWDep
+) -> QuestionResponse:
+    """`alvo_id: null` desliga. Qualquer alvo exige o `valor` que o dispara."""
+    pergunta = await SolicitationFormService(uow.session).definir_condicional(
+        question_id=question_id, alvo_id=payload.alvo_id, valor=payload.valor
     )
     resposta = QuestionResponse.model_validate(pergunta)
     await uow.commit()

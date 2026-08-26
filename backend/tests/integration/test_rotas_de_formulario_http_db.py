@@ -128,6 +128,25 @@ async def test_a_rota_de_UMA_solicitacao_continua_funcionando(db) -> None:
     assert r.status_code == 404, r.text
 
 
+async def test_as_rotas_de_DOIS_segmentos_da_solicitacao_tambem_chegam(db) -> None:
+    """⚠️ O OUTRO RISCO DA REORDENACAO, e ele nao e sobre 422 e sim sobre 403.
+
+    O router de formularios inteiro exige `solicitation_form.manage`; o de
+    solicitacoes exige `solicitation.review`. Se uma rota de formulario
+    engolisse `/{id}/aprovar`, quem tria a fila levaria 403 numa acao que tem
+    direito de fazer -- e o log diria "sem permissao", que e a pista errada.
+
+    Nao engole (as rotas de formulario comecam todas por um literal), e este
+    teste e o que garante que continua assim.
+    """
+    ws, raiz, ctx = await _mundo(db)
+    async with _client(db, ctx) as cli:
+        r = await cli.post(f"/api/v1/solicitacoes/{uuid.uuid4()}/aprovar", json={})
+
+    assert r.status_code != 403, "uma rota de formulario engoliu /{id}/aprovar"
+    assert r.status_code == 404, r.text
+
+
 async def test_a_fila_continua_respondendo_na_raiz(db) -> None:
     """O outro lado: `GET /solicitacoes` (sem nada depois) e a fila."""
     ws, raiz, ctx = await _mundo(db)
