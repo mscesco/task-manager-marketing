@@ -2227,6 +2227,174 @@ export async function apagarFormulario(id: string): Promise<void> {
   });
 }
 
+// ---- O EDITOR: secoes e perguntas (Spec 043, fatia C2) ----
+
+export type PerguntaDoEditor = {
+  id: string;
+  section_id: string;
+  label: string;
+  kind: string;
+  required: boolean;
+  options: string[];
+  placeholder: string | null;
+  help: string | null;
+  show_if_question_id: string | null;
+  show_if_value: string | null;
+  position: number;
+};
+
+export type SecaoDoEditor = {
+  id: string;
+  slug: string;
+  title: string;
+  emoji: string;
+  sla_text: string | null;
+  summary_question_id: string | null;
+  position: number;
+  questions: PerguntaDoEditor[];
+};
+
+export type FormularioDetalhado = Formulario & {
+  sections: SecaoDoEditor[];
+};
+
+export async function obterFormulario(
+  id: string
+): Promise<FormularioDetalhado> {
+  return api<FormularioDetalhado>(`/api/v1/solicitacoes/formularios/${id}`);
+}
+
+export async function criarSecao(
+  formId: string,
+  input: { slug: string; title: string; emoji?: string; sla_text?: string | null }
+): Promise<SecaoDoEditor> {
+  return api<SecaoDoEditor>(
+    `/api/v1/solicitacoes/formularios/${formId}/secoes`,
+    { method: "POST", body: input }
+  );
+}
+
+/**
+ * ⚠️ **NAO ACEITA `slug`, e a ausencia e a regra.** O slug da secao viaja
+ * gravado em cada pedido (`solicitation_item.category`) e e por ele que a fila
+ * descobre a categoria. Troca-lo deixaria todo pedido antigo aparecendo como
+ * texto cru, sem titulo e sem emoji -- para sempre e sem erro nenhum.
+ *
+ * Titulo e emoji podem mudar a vontade justamente porque NAO sao gravados: a
+ * fila os resolve pelo slug, entao renomear conserta o passado junto com o
+ * presente. Essa e a diferenca entre os campos, e o backend recusa o slug.
+ */
+export async function editarSecao(
+  sectionId: string,
+  patch: { title?: string; emoji?: string; sla_text?: string | null }
+): Promise<SecaoDoEditor> {
+  return api<SecaoDoEditor>(`/api/v1/solicitacoes/secoes/${sectionId}`, {
+    method: "PATCH",
+    body: patch,
+  });
+}
+
+export async function apagarSecao(sectionId: string): Promise<void> {
+  await api<void>(`/api/v1/solicitacoes/secoes/${sectionId}`, {
+    method: "DELETE",
+  });
+}
+
+/** `question_id: null` volta ao padrao (o front usa o primeiro campo). */
+export async function definirResumo(
+  sectionId: string,
+  questionId: string | null
+): Promise<SecaoDoEditor> {
+  return api<SecaoDoEditor>(
+    `/api/v1/solicitacoes/secoes/${sectionId}/resumo`,
+    { method: "POST", body: { question_id: questionId } }
+  );
+}
+
+export async function criarPergunta(
+  sectionId: string,
+  input: {
+    label: string;
+    kind: string;
+    required?: boolean;
+    options?: string[];
+    placeholder?: string | null;
+    help?: string | null;
+  }
+): Promise<PerguntaDoEditor> {
+  return api<PerguntaDoEditor>(
+    `/api/v1/solicitacoes/secoes/${sectionId}/perguntas`,
+    { method: "POST", body: input }
+  );
+}
+
+/**
+ * ⚠️ `options` OMITIDO E "NAO MEXE", e nao "esvazia" -- quem so corrigiu uma
+ * vírgula no título não pode perder a lista de alternativas por omissão.
+ */
+export async function editarPergunta(
+  questionId: string,
+  patch: {
+    label?: string;
+    kind?: string;
+    required?: boolean;
+    options?: string[];
+    placeholder?: string | null;
+    help?: string | null;
+  }
+): Promise<PerguntaDoEditor> {
+  return api<PerguntaDoEditor>(`/api/v1/solicitacoes/perguntas/${questionId}`, {
+    method: "PATCH",
+    body: patch,
+  });
+}
+
+/**
+ * ⚠️ ROTA PROPRIA, e nao um campo do PATCH: DESLIGAR e mandar `null`, e num
+ * PATCH `null` se confunde com "nao mexe neste campo".
+ */
+export async function definirCondicional(
+  questionId: string,
+  alvoId: string | null,
+  valor: string | null
+): Promise<PerguntaDoEditor> {
+  return api<PerguntaDoEditor>(
+    `/api/v1/solicitacoes/perguntas/${questionId}/condicional`,
+    { method: "POST", body: { alvo_id: alvoId, valor } }
+  );
+}
+
+export async function apagarPergunta(questionId: string): Promise<void> {
+  await api<void>(`/api/v1/solicitacoes/perguntas/${questionId}`, {
+    method: "DELETE",
+  });
+}
+
+/**
+ * ⚠️ AS DUAS MANDAM O CONJUNTO INTEIRO, e o backend recusa lista parcial.
+ * Aceita-la deixaria uma aba aberta desde antes de alguem criar uma secao
+ * sobrescrever a ordem com um mundo que nao existe mais.
+ */
+export async function reordenarSecoes(
+  formId: string,
+  ids: string[]
+): Promise<SecaoDoEditor[]> {
+  return api<SecaoDoEditor[]>(
+    `/api/v1/solicitacoes/formularios/${formId}/secoes/ordem`,
+    { method: "POST", body: { ids } }
+  );
+}
+
+export async function reordenarPerguntas(
+  sectionId: string,
+  ids: string[]
+): Promise<PerguntaDoEditor[]> {
+  return api<PerguntaDoEditor[]>(
+    `/api/v1/solicitacoes/secoes/${sectionId}/perguntas/ordem`,
+    { method: "POST", body: { ids } }
+  );
+}
+
 // ---- O FORMULARIO PUBLICO, LIDO DO BANCO (Spec 043, fatia B) ----
 //
 // ⚠️ `auth: false` NAS DUAS, e nao e detalhe: quem preenche o formulario nao

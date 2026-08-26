@@ -12,6 +12,7 @@
 // bastante para merecer entrega própria.
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 
 import AppShell from "@/components/AppShell";
 import PageHeader from "@/components/PageHeader";
@@ -289,9 +290,17 @@ function Formularios() {
                     : "var(--border)",
                 }}
               />
-              <span style={{ fontSize: 15, fontWeight: 600, minWidth: 0 }}>
+              {/* ⚠️ O TÍTULO É O LINK PARA O EDITOR, e é a razão de a Camila
+                  ter perguntado "consigo criar mas onde eu edito?" (26/08): a
+                  fatia C1 criava formulários que não tinham para onde ir, e o
+                  primeiro deles bateu em "um formulário sem perguntas não pode
+                  ser publicado" sem nenhum lugar onde pôr perguntas. */}
+              <Link
+                href={`/formularios/${f.id}`}
+                style={{ fontSize: 15, fontWeight: 600, minWidth: 0 }}
+              >
                 {f.title}
-              </span>
+              </Link>
               <code className="muted" style={{ fontSize: 12.5 }}>
                 /solicitar/{f.slug}
               </code>
