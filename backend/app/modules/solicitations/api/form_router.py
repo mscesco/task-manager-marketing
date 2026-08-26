@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Response, status
 
 from app.core.deps import UoWDep
 from app.modules.auth.api.dependencies import require_permission
@@ -140,12 +140,22 @@ async def publicar_formulario(
     return resposta
 
 
+# ⚠️ `response_class=Response` E O RETORNO `-> Response` NAO SAO ENFEITE, e eu
+# aprendi isso derrubando a COLETA INTEIRA da suite (24 arquivos, 22/08). Com
+# `-> None` e `from __future__ import annotations`, o FastAPI infere um modelo
+# de resposta a partir da anotacao e cai em
+# `AssertionError: Status code 204 must not have a response body` -- no IMPORT,
+# nao numa chamada. O padrao correto ja existia em `notifications/api/router.py`
+# e em `comment_router.py`; eu escrevi do zero em vez de copiar o vizinho.
 @router.delete(
-    "/formularios/{form_id}", status_code=status.HTTP_204_NO_CONTENT
+    "/formularios/{form_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
 )
-async def apagar_formulario(form_id: uuid.UUID, uow: UoWDep) -> None:
+async def apagar_formulario(form_id: uuid.UUID, uow: UoWDep) -> Response:
     await SolicitationFormService(uow.session).apagar_formulario(form_id=form_id)
     await uow.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post(
@@ -200,10 +210,13 @@ async def criar_pergunta(
 
 
 @router.delete(
-    "/perguntas/{question_id}", status_code=status.HTTP_204_NO_CONTENT
+    "/perguntas/{question_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
 )
-async def apagar_pergunta(question_id: uuid.UUID, uow: UoWDep) -> None:
+async def apagar_pergunta(question_id: uuid.UUID, uow: UoWDep) -> Response:
     await SolicitationFormService(uow.session).apagar_pergunta(
         question_id=question_id
     )
     await uow.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

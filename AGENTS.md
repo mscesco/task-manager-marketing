@@ -45,6 +45,29 @@ Três escopos foram desmentidos pelo próprio código na sessão de 19/08, e um
 (`EntityNotFoundError` **não aceita `details=`** — é
 `(entity, *, identifier, message)`).
 
+### 3.1. ⚠️ Rota nova: COPIE O VIZINHO, não escreva do zero
+
+Um `@router.delete(..., status_code=204)` com retorno `-> None` **derrubou a
+coleta inteira da suíte** em 22/08 — 24 arquivos, 681 testes, nenhum executado.
+O FastAPI infere modelo de resposta da anotação e recusa corpo em 204, e a
+falha acontece **no import**, não numa chamada.
+
+O padrão certo já existia em dois routers (`notifications`, `comment_router`):
+
+```python
+@router.delete("/x/{id}", status_code=status.HTTP_204_NO_CONTENT,
+               response_class=Response)
+async def apagar(...) -> Response:
+    ...
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+```
+
+**A regra é maior que o 204:** antes de escrever rota, schema ou repositório
+novo, abra o irmão mais parecido que já existe e siga a forma dele. Este
+projeto tem convenções que só aparecem em quem já as sofreu — validador do
+Pydantic devolvendo 500, FK composta com `workspace_id`, corpo montado campo a
+campo.
+
 ## 4. Dizer quais arquivos foram mexidos
 
 O caminho de **todo** arquivo criado ou alterado, em cada entrega.
