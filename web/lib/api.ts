@@ -2157,6 +2157,80 @@ export type SolicitacaoItemEnvio = {
 // limit é por IP (5/10min), então N requests bloqueariam o solicitante no
 // meio do próprio pedido. A ORDEM de `items` é a ordem de seleção dele.
 // O campo `website` é o honeypot anti-bot: SEMPRE enviar vazio da UI.
+// ---- O FORMULARIO PUBLICO, LIDO DO BANCO (Spec 043, fatia B) ----
+//
+// ⚠️ `auth: false` NAS DUAS, e nao e detalhe: quem preenche o formulario nao
+// tem login. Mandar credencial aqui faria a chamada falhar para justamente
+// quem ela existe para atender.
+
+export type PerguntaPublica = {
+  id: string;
+  label: string;
+  kind: string;
+  required: boolean;
+  options: string[];
+  placeholder: string | null;
+  help: string | null;
+  /** ⚠️ O ID da outra pergunta -- ver `lib/formularioDoBanco.ts`. */
+  show_if_question_id: string | null;
+  show_if_value: string | null;
+};
+
+export type SecaoPublica = {
+  slug: string;
+  title: string;
+  emoji: string;
+  sla_text: string | null;
+  summary_question_id: string | null;
+  questions: PerguntaPublica[];
+};
+
+export type FormularioPublico = {
+  id: string;
+  slug: string;
+  title: string;
+  description: string;
+  sections: SecaoPublica[];
+};
+
+export type FormularioPublicoResumo = {
+  slug: string;
+  title: string;
+  description: string;
+  team_name: string;
+};
+
+/** Os formularios publicados do workspace. Lista vazia = nao ha nenhum. */
+export async function listarFormulariosPublicos(): Promise<
+  FormularioPublicoResumo[]
+> {
+  return api<FormularioPublicoResumo[]>(
+    `/api/v1/solicitacoes/publico/formularios?workspace=${encodeURIComponent(
+      WORKSPACE_SLUG
+    )}`,
+    { auth: false }
+  );
+}
+
+/**
+ * Um formulario publicado, pelo slug.
+ *
+ * ⚠️ 404 AQUI SIGNIFICA QUATRO COISAS (nao existe, despublicado, apagado, de
+ * outro workspace) -- o backend responde igual para as quatro de proposito,
+ * para nao virar um enumerador de slugs. Quem chama trata todas como "este
+ * endereco nao serve", que e o que a pessoa precisa saber.
+ */
+export async function obterFormularioPublico(
+  slug: string
+): Promise<FormularioPublico> {
+  return api<FormularioPublico>(
+    `/api/v1/solicitacoes/publico/formularios/${encodeURIComponent(
+      slug
+    )}?workspace=${encodeURIComponent(WORKSPACE_SLUG)}`,
+    { auth: false }
+  );
+}
+
 export async function enviarSolicitacaoPublica(payload: {
   requester_name: string;
   requester_email: string;
