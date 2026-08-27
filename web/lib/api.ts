@@ -2113,7 +2113,27 @@ export async function markAllNotificationsRead(): Promise<number> {
 // SOLICITAÇÕES (formulário público FazAê + fila de triagem)
 // ---------------------------------------------------------------
 
-export type SolicitacaoStatus = "PENDING" | "APPROVED" | "REJECTED";
+/**
+ * ⚠️ IN_PROGRESS e DONE entraram na fatia D (Spec 043).
+ *
+ * ⚠️ E ELES NAO SAO UMA SEGUNDA TRIAGEM: a decisao (aprovar/rejeitar) continua
+ * sendo uma porta so, e passar por "em andamento" ou "concluída" nao reescreve
+ * quem aprovou nem quando. Sao rotas diferentes no backend justamente por
+ * isso.
+ */
+export type SolicitacaoStatus =
+  | "PENDING"
+  | "APPROVED"
+  | "IN_PROGRESS"
+  | "DONE"
+  | "REJECTED";
+
+/** Os estados de um pedido ACEITO -- e entre eles se anda nos dois sentidos. */
+export const STATUS_ACEITOS: SolicitacaoStatus[] = [
+  "APPROVED",
+  "IN_PROGRESS",
+  "DONE",
+];
 
 export type SolicitacaoAnswer = { label: string; value: string };
 
@@ -2571,6 +2591,24 @@ export async function marcarTarefaCriada(
   return api<Solicitacao>(`/api/v1/solicitacoes/${id}/tarefa`, {
     method: "POST",
     body: { created, task_ref: taskRef ?? null },
+  });
+}
+
+/**
+ * Move um pedido ACEITO entre aprovada, em andamento e concluída.
+ *
+ * ⚠️ ROTA SEPARADA DE `/aprovar`, e não um campo dela: triar e acompanhar são
+ * trabalhos diferentes. Aprovar grava QUEM decidiu e QUANDO; andar não toca
+ * nesses campos, e reaproveitar a rota de triagem os reescreveria a cada
+ * mudança de andamento — apagando a decisão original.
+ */
+export async function andarSolicitacao(
+  id: string,
+  status: SolicitacaoStatus
+): Promise<Solicitacao> {
+  return api<Solicitacao>(`/api/v1/solicitacoes/${id}/andamento`, {
+    method: "POST",
+    body: { status },
   });
 }
 

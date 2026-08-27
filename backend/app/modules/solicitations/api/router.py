@@ -6,6 +6,7 @@ Rotas:
     GET  /solicitacoes/{id}             -- detalhe (autenticado)
     POST /solicitacoes/{id}/aprovar     -- solicitation.review
     POST /solicitacoes/{id}/rejeitar    -- solicitation.review
+    POST /solicitacoes/{id}/andamento   -- solicitation.review (Spec 043, D)
 
 ACESSO (Spec 025/D11): todas as rotas autenticadas exigem
 `solicitation.review` -- LEITURA inclusive. Pela invariante da Spec 024,
@@ -34,6 +35,7 @@ from app.modules.auth.api.dependencies import (
     require_permission,
 )
 from app.modules.solicitations.api.schemas import (
+    AndarRequest,
     BatchItemResponse,
     BatchListResponse,
     BatchResponse,
@@ -44,6 +46,7 @@ from app.modules.solicitations.api.schemas import (
     SolicitationResponse,
 )
 from app.modules.solicitations.application.service import (
+    AndarCommand,
     CreatePublicCommand,
     MarkTaskCommand,
     ReviewCommand,
@@ -130,8 +133,9 @@ async def list_solicitations(
         None,
         alias="status",
         description=(
-            "PENDING | APPROVED | REJECTED | SEM_TAREFA. Semantica de LOTE: "
-            "o envio aparece se QUALQUER demanda dele casar."
+            "PENDING | APPROVED | IN_PROGRESS | DONE | REJECTED | "
+            "SEM_TAREFA. Semantica de LOTE: o envio aparece se QUALQUER "
+            "demanda dele casar."
         ),
     ),
 ) -> BatchListResponse:
@@ -220,6 +224,34 @@ async def mark_task_created(
             solicitation_id=solicitation_id,
             created=payload.created,
             task_ref=payload.task_ref,
+        ),
+    )
+    return SolicitationResponse.model_validate(solicitation)
+
+
+@router.post(
+    "/{solicitation_id}/andamento",
+    response_model=SolicitationResponse,
+    dependencies=[Depends(require_permission("solicitation.review"))],
+)
+async def andar_solicitacao(
+    solicitation_id: uuid.UUID,
+    payload: AndarRequest,
+    _: TenantContextDep,
+    session: SessionDep,
+    uow: UoWDep,
+) -> SolicitationResponse:
+    """Move um pedido ACEITO entre aprovada, em andamento e concluida.
+
+    ⚠️ ROTA SEPARADA DE `/aprovar`, e nao um campo dela: triar e acompanhar
+    sao trabalhos diferentes. Aprovar grava QUEM decidiu e QUANDO; andar nao
+    toca nesses campos, e reaproveitar a rota de triagem os reescreveria a
+    cada mudanca de andamento.
+    """
+    solicitation = await SolicitationService(session).andar(
+        uow,
+        AndarCommand(
+            solicitation_id=solicitation_id, novo_status=payload.status
         ),
     )
     return SolicitationResponse.model_validate(solicitation)

@@ -24,6 +24,7 @@ from app.core.tenant import require_tenant
 from app.db.models import Solicitation, SolicitationForm, Workspace
 from app.db.repository import BaseRepository
 from app.modules.auth.domain import team_scope
+from app.modules.solicitations.domain.solicitation import ACEITOS
 from app.shared.pagination import PageParams
 
 
@@ -110,7 +111,12 @@ class SolicitationRepository(BaseRepository[Solicitation]):
 
         cond = None
         if filtro == "SEM_TAREFA":
-            cond = (alvo.c.status == "APPROVED") & (
+            # ⚠️ OS TRES ACEITOS, e nao so APPROVED (Spec 043, fatia D). Com a
+            # comparacao antiga, mover um pedido para "em andamento" o tirava
+            # deste filtro -- e o filtro existe justamente para achar o que foi
+            # aceito e nunca virou tarefa. Sumir dali por ter comecado e o
+            # oposto do que ele promete.
+            cond = alvo.c.status.in_(sorted(ACEITOS)) & (
                 alvo.c.task_created_at.is_(None)
             )
         elif filtro is not None:
@@ -163,7 +169,10 @@ class SolicitationRepository(BaseRepository[Solicitation]):
         stmt = select(func.count()).select_from(
             self._base_select()
             .where(
-                Solicitation.status == "APPROVED",
+                # ⚠️ MESMO CONJUNTO DO FILTRO, obrigatoriamente: o badge conta
+                # o que a lista mostra. Um contador que diverge da lista e pior
+                # que nao ter contador.
+                Solicitation.status.in_(sorted(ACEITOS)),
                 Solicitation.task_created_at.is_(None),
             )
             .subquery()

@@ -34,9 +34,11 @@ from app.db.models import (
 )
 from app.db.unit_of_work import UnitOfWork
 from app.modules.solicitations.domain.solicitation import (
+    ACEITOS,
     CATEGORIES,
     SolicitationStatus,
     can_review,
+    pode_andar,
 )
 from app.modules.solicitations.infrastructure.repository import (
     SolicitationRepository,
@@ -126,6 +128,14 @@ class MarkTaskCommand:
     solicitation_id: uuid.UUID
     created: bool
     task_ref: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class AndarCommand:
+    """Mover um pedido ACEITO entre aprovada / em andamento / concluida."""
+
+    solicitation_id: uuid.UUID
+    novo_status: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -398,7 +408,11 @@ class SolicitationService:
             command.solicitation_id
         )
 
-        if solicitation.status != SolicitationStatus.APPROVED:
+        # ⚠️ OS TRES ACEITOS (Spec 043, fatia D), e nao so APPROVED. Um pedido
+        # EM ANDAMENTO e justamente aquele em que a tarefa foi criada -- exigir
+        # APPROVED aqui tornaria impossivel marcar a tarefa depois de comecar o
+        # trabalho, que e quando isso normalmente acontece.
+        if solicitation.status not in ACEITOS:
             raise BusinessRuleError(
                 "So solicitacao aprovada pode ser marcada como tarefa criada."
             )
@@ -419,6 +433,47 @@ class SolicitationService:
 
     async def get(self, solicitation_id: uuid.UUID) -> Solicitation:
         return await self.repo.get_by_id_or_raise(solicitation_id)
+
+    async def andar(
+        self, uow: UnitOfWork, command: AndarCommand
+    ) -> Solicitation:
+        """Move um pedido ACEITO entre aprovada, em andamento e concluida.
+
+        ⚠️ ISTO NAO E TRIAGEM, e a separacao e o ponto da fatia D. `review`
+        decide se o pedido vale; `andar` conta em que pe ele esta. Por isso
+        este metodo **nao toca** em `reviewed_by_user_id` nem em `reviewed_at`:
+        eles registram quem decidiu e quando, e sao o que sobra para responder
+        quando alguem cobrar meses depois.
+
+        ⚠️ E POR ISSO A PERMISSAO E A MESMA (`solicitation.review`) mas a
+        GUARDA E OUTRA: `can_review` continua exigindo PENDING, e este caminho
+        exige o contrario -- ja ter saido de PENDING.
+        """
+        solicitation = await self.repo.get_by_id_or_raise(command.solicitation_id)
+
+        if command.novo_status not in ACEITOS:
+            raise ValidationError(
+                "Situação inválida: use aprovada, em andamento ou concluída."
+            )
+        if not pode_andar(solicitation.status, command.novo_status):
+            # ⚠️ A MENSAGEM SEPARA OS DOIS MOTIVOS, porque as saidas sao
+            # diferentes: de PENDING falta triar, de REJECTED nao ha saida.
+            if solicitation.status == SolicitationStatus.PENDING:
+                raise BusinessRuleError(
+                    "Esta solicitação ainda não foi triada — aprove antes de "
+                    "marcar o andamento."
+                )
+            if solicitation.status == SolicitationStatus.REJECTED:
+                raise BusinessRuleError(
+                    "Solicitação rejeitada não volta ao fluxo. Quem foi "
+                    "recusado pode enviar um novo pedido."
+                )
+            raise BusinessRuleError("A solicitação já está nesta situação.")
+
+        solicitation.status = command.novo_status
+        await uow.commit()
+        await self.session.refresh(solicitation)
+        return solicitation
 
     async def review(
         self, uow: UnitOfWork, command: ReviewCommand

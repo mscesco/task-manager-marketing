@@ -73,8 +73,13 @@ class Solicitation(
     __tablename__ = "solicitation"
     __table_args__ = (
         # ---------------- integridade de estado ----------------
+        # ⚠️ IN_PROGRESS e DONE entraram na fatia D (Spec 043). A lista aqui e
+        # a COPIA da `SolicitationStatus` do dominio, e a migration `0018` e
+        # onde as duas se encontram -- estado novo mexe nos dois lugares, e
+        # tambem no indice parcial la embaixo.
         CheckConstraint(
-            "status IN ('PENDING', 'APPROVED', 'REJECTED')",
+            "status IN ('PENDING', 'APPROVED', 'REJECTED', "
+            "'IN_PROGRESS', 'DONE')",
             name="solicitation_status_valid",
         ),
         # D8 -- defesa em profundidade: o service tambem valida, mas uma
@@ -88,10 +93,17 @@ class Solicitation(
             "batch_seq >= 1 AND batch_seq <= batch_total",
             name="solicitation_batch_seq_valid",
         ),
-        # D9 -- tarefa so existe para demanda APROVADA. Marcar tarefa de
+        # D9 -- tarefa so existe para demanda ACEITA. Marcar tarefa de
         # pendente ou rejeitada e sempre erro de fluxo.
+        #
+        # ⚠️⚠️ ESTE CHECK ERA A ARMADILHA DA FATIA D. Escrito
+        # `status = 'APPROVED'`, ele PROIBIA mover para "em andamento" qualquer
+        # pedido que ja tivesse tarefa marcada -- ou seja, exatamente aqueles
+        # em que o trabalho comecou. O erro viria do banco, no meio de um
+        # clique inocente, e nenhum teste de servico o veria.
         CheckConstraint(
-            "task_created_at IS NULL OR status = 'APPROVED'",
+            "task_created_at IS NULL OR status IN "
+            "('APPROVED', 'IN_PROGRESS', 'DONE')",
             name="solicitation_task_requires_approved",
         ),
         # ---------------- integridade referencial ----------------
@@ -126,8 +138,13 @@ class Solicitation(
             "solicitation_aprovadas_sem_tarefa",
             "workspace_id",
             "created_at",
+            # ⚠️ O `IN` PRECISA ACOMPANHAR O FILTRO da fila. Se o indice
+            # cobrisse so APPROVED e a consulta procurasse os tres, o Postgres
+            # deixaria de usa-lo em silencio -- e "aprovadas sem tarefa" viraria
+            # varredura de tabela sem ninguem notar.
             postgresql_where=text(
-                "status = 'APPROVED' AND task_created_at IS NULL"
+                "status IN ('APPROVED', 'IN_PROGRESS', 'DONE') "
+                "AND task_created_at IS NULL"
             ),
         ),
         # COMMENT da TABELA no schema v5 (dict de opcoes vai por ULTIMO).

@@ -154,6 +154,19 @@ class BatchListResponse(BaseModel):
     approved_without_task_total: int
 
 
+class AndarRequest(BaseModel):
+    """Corpo de `POST /solicitacoes/{id}/andamento` (Spec 043, fatia D).
+
+    ⚠️ SEM `Literal` E SEM VALIDADOR: valor fora do conjunto e recusado no
+    servico, com `ValidationError` de dominio. Validador custom neste projeto
+    devolve **500 no lugar de 422** -- o `_validation_error_handler` poe
+    `exc.errors()` cru no envelope, e o `ctx` carrega o `ValueError`, que o
+    `json.dumps` do Starlette recusa (medido em 10/08).
+    """
+
+    status: str = Field(max_length=20)
+
+
 class MarkTaskRequest(BaseModel):
     created: bool = True
     # Link ou identificador da tarefa criada no quadro. Texto livre porque

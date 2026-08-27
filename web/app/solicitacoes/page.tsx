@@ -20,6 +20,7 @@ import Card from "@/components/Card";
 import EmptyState from "@/components/EmptyState";
 import PageHeader from "@/components/PageHeader";
 import {
+  andarSolicitacao,
   aprovarSolicitacao,
   listarEnvios,
   marcarTarefaCriada,
@@ -29,17 +30,27 @@ import {
   type BatchItem,
   type SolicitacaoFiltro,
   type SolicitacaoStatus,
+  STATUS_ACEITOS,
 } from "@/lib/api";
 import { rotuloDaCategoria } from "@/lib/rotuloDaCategoria";
 
 const STATUS_LABEL: Record<SolicitacaoStatus, string> = {
   PENDING: "Pendente",
   APPROVED: "Aprovada",
+  IN_PROGRESS: "Em andamento",
+  DONE: "Concluída",
   REJECTED: "Rejeitada",
 };
+// ⚠️ AZUL PARA "EM ANDAMENTO" E VERDE-ESCURO PARA "CONCLUÍDA", e não dois
+// verdes: "aprovada" e "concluída" são estados distantes no fluxo e precisam
+// se distinguir de relance numa lista. O `Badge tone="soft"` aplica a tinta,
+// e estas cores são as mesmas famílias já medidas para AA no tema claro e
+// escuro (Spec 031 §2.2b).
 const STATUS_COLOR: Record<SolicitacaoStatus, string> = {
   PENDING: "#d97706",
   APPROVED: "#16a34a",
+  IN_PROGRESS: "#2563eb",
+  DONE: "#15803d",
   REJECTED: "#dc2626",
 };
 
@@ -118,6 +129,8 @@ function Solicitacoes() {
     { valor: "PENDING", label: "Pendentes", contador: pendentes },
     { valor: "SEM_TAREFA", label: "Aprovadas sem tarefa", contador: semTarefa },
     { valor: "APPROVED", label: "Aprovadas" },
+    { valor: "IN_PROGRESS", label: "Em andamento" },
+    { valor: "DONE", label: "Concluídas" },
     { valor: "REJECTED", label: "Rejeitadas" },
     { valor: "ALL", label: "Todas" },
   ];
@@ -396,6 +409,7 @@ function SecaoDemanda({
   onMudou: () => void;
 }) {
   const cat = rotuloDaCategoria(item);
+  const aceito = STATUS_ACEITOS.includes(item.status);
   const [erro, setErro] = useState<string | null>(null);
   const [agindo, setAgindo] = useState(false);
   const [rejeitando, setRejeitando] = useState(false);
@@ -484,6 +498,43 @@ function SecaoDemanda({
           {copiado ? "Copiado ✓" : "Copiar briefing"}
         </button>
 
+        {/* ⚠️ O ANDAMENTO É UM SELETOR, e não um botão "avançar": volta-se de
+            "concluída" para "em andamento" de propósito. Marcar concluída por
+            engano é comum, e sem a volta a saída seria pedir para alguém mexer
+            no banco. O backend permite os dois sentidos; a tela também. */}
+        {aceito && (
+          <label
+            style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+          >
+            <span className="muted" style={{ fontSize: 12 }}>
+              Situação
+            </span>
+            <select
+              className="input"
+              style={{ fontSize: 12, padding: "4px 8px", width: "auto" }}
+              aria-label={`Situação de ${cat.titulo}`}
+              value={item.status}
+              disabled={agindo}
+              onChange={(e) =>
+                acao(
+                  () =>
+                    andarSolicitacao(
+                      item.id,
+                      e.target.value as SolicitacaoStatus
+                    ),
+                  "Não foi possível mudar a situação."
+                )
+              }
+            >
+              {STATUS_ACEITOS.map((st) => (
+                <option key={st} value={st}>
+                  {STATUS_LABEL[st]}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+
         {item.status === "PENDING" && !rejeitando && (
           <>
             <button
@@ -506,12 +557,16 @@ function SecaoDemanda({
           </>
         )}
 
-        {item.status === "APPROVED" && !item.task_created_at && !marcandoTarefa && (
+        {/* ⚠️ OS TRÊS ACEITOS, e não só APPROVED (Spec 043, fatia D). A tarefa
+            costuma ser criada quando o trabalho COMEÇA -- ou seja, com o
+            pedido já em andamento. Exigir "aprovada" aqui esconderia o botão
+            exatamente no momento em que ele é usado. */}
+        {aceito && !item.task_created_at && !marcandoTarefa && (
           <button className="btn" onClick={() => setMarcandoTarefa(true)}>
             Marcar tarefa criada
           </button>
         )}
-        {item.status === "APPROVED" && item.task_created_at && (
+        {aceito && item.task_created_at && (
           <button
             className="btn btn-ghost"
             disabled={agindo}

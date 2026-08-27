@@ -31,6 +31,7 @@ vi.mock("@/lib/api", async (importOriginal) => {
     aprovarSolicitacao: vi.fn(),
     rejeitarSolicitacao: vi.fn(),
     marcarTarefaCriada: vi.fn(),
+    andarSolicitacao: vi.fn(),
   };
 });
 
@@ -141,6 +142,73 @@ describe("a categoria vem do BANCO, e não de um arquivo do front", () => {
     await abrirOCard();
     await screen.findAllByText(/Fotografia/);
     expect(screen.queryByText(/dias úteis/)).toBeNull();
+  });
+});
+
+// =====================================================================
+// ⚠️ Em andamento e Concluída (Spec 043, fatia D)
+// =====================================================================
+describe("o andamento de um pedido ACEITO", () => {
+  it("⚠️ o seletor oferece os TRÊS aceitos, e não um botão 'avançar'", async () => {
+    // Volta-se de "concluída" para "em andamento" de propósito: marcar
+    // concluída por engano é comum, e sem a volta a saída seria pedir para
+    // alguém mexer no banco.
+    montar([item({ status: "DONE" })]);
+    await abrirOCard();
+    const select = (await screen.findByLabelText(
+      "Situação de Fotografia"
+    )) as HTMLSelectElement;
+    expect([...select.options].map((o) => o.textContent)).toEqual([
+      "Aprovada",
+      "Em andamento",
+      "Concluída",
+    ]);
+    expect(select.value).toBe("DONE");
+  });
+
+  it("mudar a situação chama a rota de ANDAMENTO, e não a de aprovar", async () => {
+    // ⚠️ SÃO ROTAS DIFERENTES porque são trabalhos diferentes: aprovar grava
+    // QUEM decidiu e QUANDO; andar não toca nesses campos. Reaproveitar
+    // `/aprovar` reescreveria a decisão a cada mudança de andamento.
+    vi.mocked(api.andarSolicitacao).mockResolvedValue({} as never);
+    montar([item({ status: "APPROVED" })]);
+    await abrirOCard();
+    fireEvent.change(await screen.findByLabelText("Situação de Fotografia"), {
+      target: { value: "IN_PROGRESS" },
+    });
+
+    await waitFor(() =>
+      expect(api.andarSolicitacao).toHaveBeenCalledWith("i1", "IN_PROGRESS")
+    );
+    expect(api.aprovarSolicitacao).not.toHaveBeenCalled();
+  });
+
+  it("⚠️ pedido PENDENTE não tem seletor -- falta triar antes", async () => {
+    montar([item({ status: "PENDING" })]);
+    await abrirOCard();
+    await screen.findByText("Aprovar");
+    expect(screen.queryByLabelText("Situação de Fotografia")).toBeNull();
+  });
+
+  it("⚠️ pedido REJEITADO também não -- não há reabertura neste produto", async () => {
+    montar([item({ status: "REJECTED", review_note: "fora do escopo" })]);
+    await abrirOCard();
+    expect(screen.queryByLabelText("Situação de Fotografia")).toBeNull();
+  });
+
+  it("⚠️ 'Marcar tarefa criada' aparece com o pedido EM ANDAMENTO", async () => {
+    // A tarefa costuma ser criada quando o trabalho COMEÇA. A condição antiga
+    // era `status === "APPROVED"` e escondia o botão exatamente no momento em
+    // que ele é usado.
+    montar([item({ status: "IN_PROGRESS" })]);
+    await abrirOCard();
+    expect(await screen.findByText("Marcar tarefa criada")).toBeTruthy();
+  });
+
+  it("os dois status novos têm rótulo em português", async () => {
+    montar([item({ status: "IN_PROGRESS" })]);
+    await abrirOCard();
+    expect(await screen.findAllByText("Em andamento")).not.toHaveLength(0);
   });
 });
 
