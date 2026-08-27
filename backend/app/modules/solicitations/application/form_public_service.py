@@ -169,6 +169,12 @@ class SolicitationPublicFormService:
             slug=form.slug,
             title=form.title,
             description=form.description,
+            # ⚠️ OS ROTULOS DA IDENTIFICACAO (Spec 043, fatia G). Sem eles a
+            # porta publica desenharia os cinco campos fixos de sempre -- que
+            # era exatamente o defeito: "Polo" aparecia num formulario de TI.
+            phone_label=form.phone_label,
+            department_label=form.department_label,
+            polo_label=form.polo_label,
             sections=[
                 PublicSection(
                     slug=s.slug,

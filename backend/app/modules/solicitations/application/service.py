@@ -87,9 +87,11 @@ class CreatePublicCommand:
     workspace_slug: str
     requester_name: str
     requester_email: str
-    requester_phone: str
-    requester_department: str
-    requester_polo: str
+    #: ⚠️ OPCIONAIS DESDE A FATIA G: quem decide se sao exigidos e o
+    #: FORMULARIO, e nao o schema. `None` = "este formulario nao perguntou".
+    requester_phone: str | None
+    requester_department: str | None
+    requester_polo: str | None
     items: list[SolicitationItem]
     honeypot: str = ""
     #: Spec 043 (fatia B). De qual formulario veio o envio.
@@ -289,6 +291,11 @@ class SolicitationService:
                 if item.category not in validas:
                     raise ValidationError("Categoria de solicitacao invalida.")
 
+        # ⚠️⚠️ A IDENTIFICACAO E CONFERIDA CONTRA O CABECALHO DO FORMULARIO
+        # (Spec 043, fatia G), e nao contra uma lista fixa. Ver
+        # `_identificacao_conferida`.
+        contato = await self._identificacao_conferida(command, workspace.id)
+
         batch_id = uuid.uuid4()
         total = len(command.items)
         criadas: list[Solicitation] = []
@@ -299,9 +306,9 @@ class SolicitationService:
             solicitation = Solicitation(
                 requester_name=command.requester_name.strip(),
                 requester_email=command.requester_email.strip().lower(),
-                requester_phone=command.requester_phone.strip(),
-                requester_department=command.requester_department.strip(),
-                requester_polo=command.requester_polo.strip(),
+                requester_phone=contato["phone"],
+                requester_department=contato["department"],
+                requester_polo=contato["polo"],
                 batch_id=batch_id,
                 batch_seq=posicao,
                 batch_total=total,
@@ -328,6 +335,77 @@ class SolicitationService:
     # ------------------------------------------------------------
     # Autenticado (triagem)
     # ------------------------------------------------------------
+    async def _identificacao_conferida(
+        self, command: CreatePublicCommand, workspace_id: uuid.UUID
+    ) -> dict[str, str | None]:
+        """Telefone, area e polo: o formulario pede? entao tem de vir.
+
+        ⚠️⚠️ A OBRIGATORIEDADE MUDOU DE LUGAR NA FATIA G. Ela era do schema
+        (`min_length`), o que recusava o pedido antes de o servidor saber por
+        qual porta ele entrou -- e o formulario de TI, que nao pergunta polo,
+        levaria 422 em toda submissao. Agora quem decide e o CABECALHO do
+        formulario: rotulo preenchido = pergunta e exige; `NULL` = nao
+        pergunta.
+
+        ⚠️ E O QUE NAO E PEDIDO E DESCARTADO, e nao apenas ignorado. Um cliente
+        antigo (ou uma aba aberta desde antes do deploy) continua mandando os
+        cinco campos; gravar um "Polo: Taboão" que o formulario nao perguntou
+        poria na fila um dado que ninguem pediu e que a tela nao sabe rotular.
+
+        ⚠️ SEM `form_id` NADA MUDA: cai no comportamento antigo, com os tres
+        exigidos. E o mesmo ramo de compatibilidade da validacao de categoria,
+        e ele morre junto com ela.
+        """
+        vindos = {
+            "phone": (command.requester_phone or "").strip(),
+            "department": (command.requester_department or "").strip(),
+            "polo": (command.requester_polo or "").strip(),
+        }
+        rotulos = {"phone": "Telefone", "department": "Área", "polo": "Polo"}
+
+        if command.form_id is None:
+            for chave, valor in vindos.items():
+                if not valor:
+                    raise ValidationError(
+                        f"{rotulos[chave]} é obrigatório.",
+                        details={"field": f"requester_{chave}"},
+                    )
+            return dict(vindos)
+
+        cabecalho = (
+            await self.session.execute(
+                select(
+                    SolicitationForm.phone_label,
+                    SolicitationForm.department_label,
+                    SolicitationForm.polo_label,
+                ).where(
+                    SolicitationForm.id == command.form_id,
+                    SolicitationForm.workspace_id == workspace_id,
+                    SolicitationForm.deleted_at.is_(None),
+                )
+            )
+        ).one_or_none()
+        if cabecalho is None:
+            # O formulario ja foi conferido antes deste ponto; chegar aqui sem
+            # linha e defeito nosso, nao pedido invalido.
+            raise EntityNotFoundError("Formulário não encontrado.")
+
+        pedidos = dict(
+            zip(("phone", "department", "polo"), cabecalho, strict=True)
+        )
+        resultado: dict[str, str | None] = {}
+        for chave, rotulo in pedidos.items():
+            if rotulo is None:
+                resultado[chave] = None  # nao perguntou -> descarta
+                continue
+            if not vindos[chave]:
+                raise ValidationError(
+                    f"{rotulo} é obrigatório.",
+                    details={"field": f"requester_{chave}"},
+                )
+            resultado[chave] = vindos[chave]
+        return resultado
+
     async def rotulos_de_categoria(
         self, itens: list[Solicitation]
     ) -> dict[tuple[uuid.UUID | None, str], RotuloDeCategoria]:

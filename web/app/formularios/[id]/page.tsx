@@ -30,6 +30,7 @@ import {
   editarSecao,
   obterFormulario,
   publicarFormulario,
+  renomearFormulario,
   reordenarPerguntas,
   reordenarSecoes,
   type FormularioDetalhado,
@@ -173,6 +174,8 @@ function Editor() {
         </div>
       )}
 
+      <Cabecalho form={form} ocupado={ocupado} agir={agir} />
+
       {secoes.length === 0 && (
         <p className="muted" style={{ fontSize: 14 }}>
           Um formulário é feito de seções — cada uma é um tipo de pedido, e vira
@@ -203,6 +206,191 @@ function Editor() {
         ocupado={ocupado}
         aoCriar={(entrada) => agir(() => criarSecao(form.id, entrada))}
       />
+    </div>
+  );
+}
+
+// =====================================================================
+// ⚠️ O cabeçalho -- o que a porta pública mostra ANTES das perguntas
+// =====================================================================
+/**
+ * ⚠️ ESTE PAINEL NASCEU DE "não é todo formulário que chama fazae também e
+ * tals, muitas variáveis aí" (Camila, 27/08).
+ *
+ * Duas coisas estavam presas: o TÍTULO, escrito na mão no componente público
+ * mesmo já existindo no banco desde a fatia A -- todo formulário novo abria
+ * com o nome do Marketing --, e os CINCO CAMPOS de identificação, fixos e
+ * obrigatórios, três deles vocabulário da FECAF.
+ */
+function Cabecalho({
+  form,
+  ocupado,
+  agir,
+}: {
+  form: FormularioDetalhado;
+  ocupado: boolean;
+  agir: (o_que: () => Promise<unknown>) => Promise<void>;
+}) {
+  const [aberto, setAberto] = useState(false);
+  const [titulo, setTitulo] = useState(form.title);
+  const [descricao, setDescricao] = useState(form.description);
+  const [rotulos, setRotulos] = useState({
+    phone_label: form.phone_label,
+    department_label: form.department_label,
+    polo_label: form.polo_label,
+  });
+
+  const CAMPOS = [
+    { chave: "phone_label" as const, padrao: "Telefone" },
+    { chave: "department_label" as const, padrao: "Área / Departamento" },
+    { chave: "polo_label" as const, padrao: "Polo" },
+  ];
+
+  if (!aberto) {
+    return (
+      <div
+        style={{
+          display: "flex", alignItems: "center", gap: 10, marginBottom: 14,
+          padding: "10px 16px", borderRadius: 12,
+          border: "1px solid var(--border)", background: "var(--surface)",
+        }}
+      >
+        <strong style={{ fontSize: 14 }}>Cabeçalho</strong>
+        <span className="muted" style={{ fontSize: 12.5, minWidth: 0 }}>
+          {form.title}
+          {" · pede "}
+          {["Nome", "E-mail", ...CAMPOS.map((c) => rotulos[c.chave]).filter(Boolean)]
+            .join(", ")}
+        </span>
+        <button
+          type="button"
+          className="btn btn-ghost"
+          style={{ fontSize: 12, marginLeft: "auto" }}
+          disabled={ocupado}
+          onClick={() => setAberto(true)}
+        >
+          Editar
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      style={{
+        marginBottom: 16, padding: 16, borderRadius: 12,
+        border: "1px solid var(--border)", background: "var(--edicao-fundo)",
+        display: "flex", flexDirection: "column", gap: 12,
+      }}
+    >
+      <div className="field">
+        <label className="label" htmlFor="cab-titulo">
+          Título — é o que aparece no topo da página pública
+        </label>
+        <input
+          id="cab-titulo"
+          className="input"
+          value={titulo}
+          maxLength={120}
+          onChange={(e) => setTitulo(e.target.value)}
+        />
+      </div>
+      <div className="field">
+        <label className="label" htmlFor="cab-desc">
+          Texto de abertura
+        </label>
+        <input
+          id="cab-desc"
+          className="input"
+          placeholder="Identifique-se e selecione o que você precisa."
+          value={descricao}
+          maxLength={4000}
+          onChange={(e) => setDescricao(e.target.value)}
+        />
+      </div>
+
+      <div className="field">
+        <span className="label">O que perguntar a quem solicita</span>
+        {/* ⚠️ NOME E E-MAIL APARECEM DESLIGADOS E EXPLICADOS, em vez de
+            simplesmente não aparecerem: sem isso, quem procura "por que não
+            consigo tirar o e-mail?" não acha resposta em lugar nenhum. */}
+        <p className="muted" style={{ fontSize: 12, margin: "2px 0 8px" }}>
+          <strong>Nome</strong> e <strong>e-mail</strong> são sempre pedidos: a
+          fila é organizada por quem pediu, e é pelo e-mail que a pessoa recebe
+          resposta. Os três abaixo você escolhe.
+        </p>
+        {CAMPOS.map(({ chave, padrao }) => {
+          const ligado = rotulos[chave] !== null;
+          return (
+            <div
+              key={chave}
+              style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}
+            >
+              <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
+                <input
+                  type="checkbox"
+                  checked={ligado}
+                  onChange={(e) =>
+                    setRotulos((r) => ({
+                      ...r,
+                      [chave]: e.target.checked ? padrao : null,
+                    }))
+                  }
+                />
+                Pedir
+              </label>
+              <input
+                className="input"
+                style={{ maxWidth: 260 }}
+                aria-label={`Nome do campo ${padrao}`}
+                value={rotulos[chave] ?? ""}
+                placeholder={padrao}
+                maxLength={60}
+                disabled={!ligado}
+                onChange={(e) =>
+                  setRotulos((r) => ({ ...r, [chave]: e.target.value }))
+                }
+              />
+              {!ligado && (
+                <span className="muted" style={{ fontSize: 12 }}>
+                  não aparece no formulário
+                </span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+        <button
+          type="button"
+          className="btn btn-ghost"
+          onClick={() => setAberto(false)}
+        >
+          Cancelar
+        </button>
+        <button
+          type="button"
+          className="btn btn-primary"
+          disabled={ocupado || !titulo.trim()}
+          onClick={async () => {
+            await agir(() =>
+              // ⚠️ OS TRÊS RÓTULOS VÃO SEMPRE, e é o único jeito: para eles
+              // `null` significa DESLIGUE, e o backend distingue "não veio" de
+              // "veio null". Como este painel é exatamente onde se decide isso,
+              // mandar os três é a intenção.
+              renomearFormulario(form.id, {
+                title: titulo,
+                description: descricao,
+                ...rotulos,
+              })
+            );
+            setAberto(false);
+          }}
+        >
+          Salvar cabeçalho
+        </button>
+      </div>
     </div>
   );
 }

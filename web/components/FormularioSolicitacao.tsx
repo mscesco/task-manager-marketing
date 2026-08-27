@@ -38,13 +38,34 @@ import {
 
 type ValoresPorCategoria = Record<string, Record<string, string | string[]>>;
 
-const IDENT_CAMPOS = [
-  { id: "nome", label: "Nome", tipo: "text" },
-  { id: "email", label: "E-mail", tipo: "email" },
-  { id: "telefone", label: "Telefone", tipo: "tel" },
-  { id: "area", label: "Área / Departamento", tipo: "text" },
-  { id: "polo", label: "Polo", tipo: "text" },
-] as const;
+export type CamposDeIdentificacao = {
+  telefone: string | null;
+  area: string | null;
+  polo: string | null;
+};
+
+/**
+ * Os campos da etapa de identificação, montados a partir do formulário.
+ *
+ * ⚠️ NOME E E-MAIL SÃO FIXOS e vêm primeiro -- eles não são configuráveis
+ * porque a fila é organizada por quem pediu e a resposta automática precisa do
+ * endereço. Os três seguintes só aparecem se o formulário os pedir.
+ */
+export function camposDeIdentificacao(cfg: CamposDeIdentificacao) {
+  const fixos = [
+    { id: "nome", label: "Nome", tipo: "text" },
+    { id: "email", label: "E-mail", tipo: "email" },
+  ];
+  const opcionais = [
+    { id: "telefone", label: cfg.telefone, tipo: "tel" },
+    { id: "area", label: cfg.area, tipo: "text" },
+    { id: "polo", label: cfg.polo, tipo: "text" },
+  ];
+  return [
+    ...fixos,
+    ...opcionais.filter((c) => c.label).map((c) => ({ ...c, label: c.label! })),
+  ];
+}
 
 const IDENT_VAZIO: Record<string, string> = {
   nome: "",
@@ -69,9 +90,30 @@ export default function FormularioSolicitacao({
   categorias,
   categoriaPorSlug,
   formId,
+  titulo,
+  descricao,
+  identificacao,
 }: {
   categorias: Categoria[];
   categoriaPorSlug: Record<string, Categoria>;
+  /**
+   * ⚠️ O TÍTULO ESTAVA ESCRITO NA MÃO ("FazAê · Solicitações de Marketing"),
+   * mesmo com o formulário já tendo `title` no banco desde a fatia A. A fatia
+   * B trocou a fonte das PERGUNTAS e esqueceu do cabeçalho -- qualquer
+   * formulário novo abria com o nome do Marketing.
+   */
+  titulo: string;
+  descricao: string;
+  /**
+   * Quais campos de identificação este formulário pede, e com que nome
+   * (Spec 043, fatia G).
+   *
+   * ⚠️ NOME E E-MAIL NÃO ESTÃO AQUI, de propósito: a fila é organizada por
+   * quem pediu, e a resposta automática de mudança de status precisa do
+   * endereço. Os outros três são vocabulário institucional -- "Polo" não
+   * significa nada num formulário de TI.
+   */
+  identificacao: CamposDeIdentificacao;
   /**
    * ⚠️ ELE VAI NO ENVIO, e é o que faz a solicitação cair na fila do TIME dono
    * do formulário. Sem ele ela nasce órfã: continua na fila (o `JOIN` é
@@ -149,14 +191,23 @@ export default function FormularioSolicitacao({
     );
   }
 
+  // ⚠️ MEMOIZADO porque a lista entra num `map` de render e num `useEffect`
+  // indireto: recriá-la a cada tecla digitada faria os campos perderem o foco.
+  const campos = useMemo(
+    () => camposDeIdentificacao(identificacao),
+    [identificacao]
+  );
+
   function identOk(): boolean {
-    return (
-      ident.nome.trim().length >= 2 &&
-      /.+@.+\..+/.test(ident.email.trim()) &&
-      ident.telefone.trim().length >= 8 &&
-      ident.area.trim().length > 0 &&
-      ident.polo.trim().length > 0
-    );
+    // ⚠️ NOME E E-MAIL SEMPRE. Os outros três só quando o formulário os pede
+    // -- exigir "Polo" num formulário de TI travaria o envio num campo que a
+    // tela nem desenha, e quem preenche não teria como descobrir por quê.
+    if (ident.nome.trim().length < 2) return false;
+    if (!/.+@.+\..+/.test(ident.email.trim())) return false;
+    if (identificacao.telefone && ident.telefone.trim().length < 8) return false;
+    if (identificacao.area && ident.area.trim().length === 0) return false;
+    if (identificacao.polo && ident.polo.trim().length === 0) return false;
+    return true;
   }
 
   function setValor(slug: string, campoId: string, v: string | string[]) {
@@ -264,9 +315,12 @@ export default function FormularioSolicitacao({
         form_id: formId,
         requester_name: ident.nome.trim(),
         requester_email: ident.email.trim(),
-        requester_phone: ident.telefone.trim(),
-        requester_department: ident.area.trim(),
-        requester_polo: ident.polo.trim(),
+        // ⚠️ `null` NO QUE O FORMULÁRIO NÃO PERGUNTA, e não "". O backend
+        // trata `null` como "este formulário não perguntou" e "" como
+        // "perguntou e ficou em branco" -- a fila mostra só o que existe.
+        requester_phone: identificacao.telefone ? ident.telefone.trim() : null,
+        requester_department: identificacao.area ? ident.area.trim() : null,
+        requester_polo: identificacao.polo ? ident.polo.trim() : null,
         items,
         website: honeypot,
       });
@@ -338,11 +392,12 @@ export default function FormularioSolicitacao({
     <Casca>
       <header style={{ marginBottom: 20 }}>
         <h1 style={{ margin: 0, fontSize: 22, letterSpacing: "-0.02em" }}>
-          FazAê · Solicitações de Marketing
+          {titulo}
         </h1>
         <p className="muted" style={{ margin: "6px 0 0", fontSize: 14 }}>
           {passo === 0
-            ? "Identifique-se e selecione TODOS os tipos de demanda que você precisa. Você preenche um de cada vez."
+            ? descricao ||
+              "Identifique-se e selecione TODOS os tipos de demanda que você precisa. Você preenche um de cada vez."
             : naRevisao
               ? "Confira tudo antes de enviar."
               : `Preencha os detalhes desta demanda.`}
@@ -404,7 +459,7 @@ export default function FormularioSolicitacao({
       {passo === 0 && (
         <>
           <section style={caixa({ gap: 14, marginBottom: 24 })}>
-            {IDENT_CAMPOS.map((c) => (
+            {campos.map((c) => (
               <div className="field" key={c.id}>
                 <label className="label" htmlFor={`id-${c.id}`}>
                   {c.label} <Obrigatorio />
@@ -563,7 +618,14 @@ export default function FormularioSolicitacao({
             <strong>{ident.nome}</strong> · {ident.email} · {ident.telefone}
             <br />
             <span className="muted">
-              {ident.area} / {ident.polo}
+              {/* ⚠️ SÓ O QUE O FORMULÁRIO PERGUNTOU. Com "Polo" desligado,
+                  isto virava " / " sozinho no meio da revisão. */}
+              {[
+                identificacao.area ? ident.area : "",
+                identificacao.polo ? ident.polo : "",
+              ]
+                .filter(Boolean)
+                .join(" / ")}
             </span>{" "}
             <button
               className="btn btn-ghost"

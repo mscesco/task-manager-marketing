@@ -66,4 +66,13 @@ class PublicFormDetail(BaseModel):
     slug: str
     title: str
     description: str
+    # ⚠️ OS TRES ROTULOS DA IDENTIFICACAO (Spec 043, fatia G). `None` = o
+    # formulario NAO pergunta este campo; texto = pergunta com este nome.
+    #
+    # ⚠️ E ELES SAO PUBLICOS SEM CREDENCIAL, o que esta certo: sao literalmente
+    # o texto que quem preenche vai LER na tela. Nao ha nada a esconder num
+    # rotulo de campo.
+    phone_label: str | None = None
+    department_label: str | None = None
+    polo_label: str | None = None
     sections: list[PublicSection] = Field(default_factory=list)

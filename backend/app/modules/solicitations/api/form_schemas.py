@@ -38,6 +38,21 @@ class FormUpdateRequest(BaseModel):
     title: str | None = Field(default=None, max_length=120)
     description: str | None = Field(default=None, max_length=4000)
     slug: str | None = Field(default=None, max_length=60)
+    #: Rotulos da identificacao: `null` DESLIGA o campo, texto liga e renomeia.
+    #:
+    #: ⚠⚠ AQUI `null` SIGNIFICA "DESLIGUE", e nao "nao mexa" -- o oposto
+    #: dos campos acima. Quem distingue os dois e o `model_fields_set` do
+    #: Pydantic, que sabe quais chaves vieram no corpo; o router so aplica o
+    #: que foi enviado.
+    #:
+    #: Tentei antes com uma SENTINELA (um valor "impossivel" como default) e
+    #: foi um erro em dois niveis: o valor escolhido gravou um caractere de
+    #: controle literal no arquivo-fonte, e mesmo corrigido ele seria um texto
+    #: que alguem um dia conseguiria digitar. `model_fields_set` e a resposta
+    #: que o Pydantic ja dava.
+    phone_label: str | None = Field(default=None, max_length=60)
+    department_label: str | None = Field(default=None, max_length=60)
+    polo_label: str | None = Field(default=None, max_length=60)
 
 
 class PublicarRequest(BaseModel):
@@ -166,6 +181,10 @@ class FormResponse(BaseModel):
     title: str
     description: str
     is_published: bool
+    #: `None` = o formulario nao pergunta este campo (Spec 043, fatia G).
+    phone_label: str | None = None
+    department_label: str | None = None
+    polo_label: str | None = None
 
 
 class FormDetailResponse(FormResponse):

@@ -52,9 +52,18 @@ class PublicSolicitationCreateRequest(BaseModel):
 
     requester_name: str = Field(min_length=2, max_length=255)
     requester_email: EmailStr
-    requester_phone: str = Field(min_length=8, max_length=50)
-    requester_department: str = Field(min_length=1, max_length=255)
-    requester_polo: str = Field(min_length=1, max_length=255)
+    # ⚠️ OS TRES VIRARAM OPCIONAIS NO SCHEMA (Spec 043, fatia G), e a
+    # obrigatoriedade mudou de lugar: quem decide se sao exigidos e o
+    # FORMULARIO, no servico. Um `min_length` aqui recusaria antes de o
+    # servidor sequer saber por qual porta o pedido entrou -- e o formulario de
+    # TI, que nao pergunta polo, levaria 422 em toda submissao.
+    #
+    # ⚠️ E `requester_name`/`requester_email` CONTINUAM COM `min_length` acima:
+    # eles nao sao configuraveis, porque a fila e organizada por quem pediu e a
+    # resposta automatica precisa do endereco.
+    requester_phone: str | None = Field(default=None, max_length=50)
+    requester_department: str | None = Field(default=None, max_length=255)
+    requester_polo: str | None = Field(default=None, max_length=255)
 
     # Teto = tamanho do menu (11). Nao ha o que selecionar alem disso.
     items: list[SolicitationItemRequest] = Field(min_length=1, max_length=11)
@@ -84,9 +93,9 @@ class SolicitationResponse(BaseModel):
     batch_total: int
     requester_name: str
     requester_email: str
-    requester_phone: str
-    requester_department: str
-    requester_polo: str
+    requester_phone: str | None
+    requester_department: str | None
+    requester_polo: str | None
     category: str
     summary: str
     answers: list[AnswerItem]
@@ -148,9 +157,9 @@ class BatchResponse(BaseModel):
     protocol: str
     requester_name: str
     requester_email: str
-    requester_phone: str
-    requester_department: str
-    requester_polo: str
+    requester_phone: str | None
+    requester_department: str | None
+    requester_polo: str | None
     created_at: datetime
     items: list[BatchItemResponse]
 

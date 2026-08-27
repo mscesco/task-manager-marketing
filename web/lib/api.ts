@@ -2151,9 +2151,14 @@ export type Solicitacao = {
   batch_total: number;
   requester_name: string;
   requester_email: string;
-  requester_phone: string;
-  requester_department: string;
-  requester_polo: string;
+  /**
+   * ⚠️ OS TRÊS SÃO OPCIONAIS DESDE A FATIA G (Spec 043): `null` significa
+   * "este formulário não perguntou", que é diferente de "" ("perguntou e
+   * ficou em branco"). Nome e e-mail continuam obrigatórios.
+   */
+  requester_phone: string | null;
+  requester_department: string | null;
+  requester_polo: string | null;
   category: string;
   summary: string;
   answers: SolicitacaoAnswer[];
@@ -2191,6 +2196,10 @@ export type Formulario = {
   title: string;
   description: string;
   is_published: boolean;
+  /** `null` = o formulário não pergunta este campo (Spec 043, fatia G). */
+  phone_label: string | null;
+  department_label: string | null;
+  polo_label: string | null;
 };
 
 export async function listarFormularios(): Promise<Formulario[]> {
@@ -2221,9 +2230,23 @@ export async function criarFormulario(input: {
 
 /** ⚠️ `team_id` NAO ENTRA: mudar o time e mudar QUEM TRIA, inclusive do que ja
  * chegou. O backend recusa o campo. */
+/**
+ * ⚠️ NOS TRÊS RÓTULOS, `null` SIGNIFICA "DESLIGUE O CAMPO" -- o oposto dos
+ * outros campos deste PATCH, em que omitir é "não mexa". Por isso eles só
+ * podem ser enviados quando a intenção é mesmo mudá-los: o backend distingue
+ * "não veio" de "veio null" pelo corpo, e aplicar um `null` por descuido
+ * apagaria a identificação do formulário.
+ */
 export async function renomearFormulario(
   id: string,
-  patch: { title?: string; description?: string; slug?: string }
+  patch: {
+    title?: string;
+    description?: string;
+    slug?: string;
+    phone_label?: string | null;
+    department_label?: string | null;
+    polo_label?: string | null;
+  }
 ): Promise<Formulario> {
   return api<Formulario>(`/api/v1/solicitacoes/formularios/${id}`, {
     method: "PATCH",
@@ -2448,6 +2471,17 @@ export type FormularioPublico = {
   slug: string;
   title: string;
   description: string;
+  /**
+   * Os rótulos da identificação (Spec 043, fatia G). `null` = o formulário
+   * NÃO pergunta este campo.
+   *
+   * ⚠️ NOME E E-MAIL NÃO ESTÃO AQUI porque não são configuráveis: a fila é
+   * organizada por quem pediu, e a resposta automática de mudança de status
+   * precisa do endereço.
+   */
+  phone_label: string | null;
+  department_label: string | null;
+  polo_label: string | null;
   sections: SecaoPublica[];
 };
 
@@ -2501,9 +2535,14 @@ export async function enviarSolicitacaoPublica(payload: {
   form_id?: string;
   requester_name: string;
   requester_email: string;
-  requester_phone: string;
-  requester_department: string;
-  requester_polo: string;
+  /**
+   * ⚠️ OS TRÊS SÃO OPCIONAIS DESDE A FATIA G (Spec 043): `null` significa
+   * "este formulário não perguntou", que é diferente de "" ("perguntou e
+   * ficou em branco"). Nome e e-mail continuam obrigatórios.
+   */
+  requester_phone: string | null;
+  requester_department: string | null;
+  requester_polo: string | null;
   items: SolicitacaoItemEnvio[];
   website?: string;
 }): Promise<{ protocol: string; created: number }> {
@@ -2569,9 +2608,14 @@ export type Batch = {
   protocol: string;
   requester_name: string;
   requester_email: string;
-  requester_phone: string;
-  requester_department: string;
-  requester_polo: string;
+  /**
+   * ⚠️ OS TRÊS SÃO OPCIONAIS DESDE A FATIA G (Spec 043): `null` significa
+   * "este formulário não perguntou", que é diferente de "" ("perguntou e
+   * ficou em branco"). Nome e e-mail continuam obrigatórios.
+   */
+  requester_phone: string | null;
+  requester_department: string | null;
+  requester_polo: string | null;
   created_at: string;
   items: BatchItem[];
 };

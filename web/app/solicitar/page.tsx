@@ -84,6 +84,13 @@ export default function SolicitarPage() {
             categorias={categorias}
             categoriaPorSlug={categoriaPorSlug}
             formId={form.id}
+            titulo={form.title}
+            descricao={form.description}
+            identificacao={{
+              telefone: form.phone_label,
+              area: form.department_label,
+              polo: form.polo_label,
+            }}
           />
         )}
       </CarregaFormularioPublico>

@@ -173,9 +173,19 @@ class Solicitation(
     # Sem conta no sistema: quem pede e coordenador de polo, professor, RH.
     requester_name: Mapped[str] = mapped_column(String(255), nullable=False)
     requester_email: Mapped[str] = mapped_column(String(320), nullable=False)
-    requester_phone: Mapped[str] = mapped_column(String(50), nullable=False)
-    requester_department: Mapped[str] = mapped_column(String(255), nullable=False)
-    requester_polo: Mapped[str] = mapped_column(String(255), nullable=False)
+    # ⚠️ OS TRES VIRARAM OPCIONAIS NA FATIA G (Spec 043): nem todo formulario
+    # pergunta telefone, area ou polo -- "Polo" e vocabulario da FECAF e nao
+    # significa nada num formulario de TI. `NULL` aqui significa "este
+    # formulario nao perguntou", que e diferente de "" ("perguntou e ficou em
+    # branco") -- e a fila mostra so o que existe.
+    #
+    # ⚠️ `requester_name` E `requester_email` CONTINUAM OBRIGATORIOS: a fila e
+    # organizada por quem pediu, e a resposta automatica precisa do endereco.
+    requester_phone: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    requester_department: Mapped[str | None] = mapped_column(
+        String(255), nullable=True
+    )
+    requester_polo: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     # ---------------- lote (D4) ----------------
     batch_id: Mapped[uuid.UUID] = mapped_column(
@@ -363,6 +373,37 @@ class SolicitationForm(
     )
     is_published: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default=text("false"), default=False
+    )
+
+    # ---------------- o CABECALHO (Spec 043, fatia G) ----------------
+    #
+    # ⚠️⚠️ TRES COLUNAS, E CADA UMA GUARDA O ROTULO -- e nao um booleano "pede"
+    # ao lado de um texto "como chama". `NULL` significa **nao pergunta**, e
+    # texto significa "pergunta com este nome". Duas colunas por campo
+    # deixariam existir o estado sem sentido `pede=False, label='Polo'`, e
+    # alguem teria de decidir o que fazer com ele.
+    #
+    # ⚠️ E POR QUE SO ESTES TRES. `requester_name` e `requester_email` NAO sao
+    # configuraveis, de proposito: a fila e organizada por quem pediu, e a
+    # resposta automatica de mudanca de status (fatia F) so existe se houver
+    # endereco. Torna-los opcionais quebraria a funcionalidade seguinte -- os
+    # outros tres sao vocabulario institucional ("Polo" nao significa nada num
+    # formulario de TI).
+    #
+    # ⚠️ O `server_default` MANTEM O QUE JA EXISTE. Todo formulario ja criado
+    # continua pedindo os cinco campos com os nomes de sempre; quem quiser
+    # menos, tira.
+    phone_label: Mapped[str | None] = mapped_column(
+        String(60), nullable=True, server_default="Telefone", default="Telefone"
+    )
+    department_label: Mapped[str | None] = mapped_column(
+        String(60),
+        nullable=True,
+        server_default="Área / Departamento",
+        default="Área / Departamento",
+    )
+    polo_label: Mapped[str | None] = mapped_column(
+        String(60), nullable=True, server_default="Polo", default="Polo"
     )
     created_by: Mapped[uuid.UUID | None] = mapped_column(
         PG_UUID(as_uuid=True), nullable=True

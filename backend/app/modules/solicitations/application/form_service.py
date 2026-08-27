@@ -219,6 +219,7 @@ class SolicitationFormService:
         title: str | None = None,
         description: str | None = None,
         slug: str | None = None,
+        rotulos: dict[str, str | None] | None = None,
     ) -> SolicitationForm:
         """⚠️ `team_id` NAO ENTRA, e a ausencia e a trava.
 
@@ -238,6 +239,20 @@ class SolicitationFormService:
             form.title = title.strip()
         if description is not None:
             form.description = description.strip()
+
+        # ⚠️⚠️ OS ROTULOS DA IDENTIFICACAO (Spec 043, fatia G) usam `None` para
+        # DESLIGAR o campo, e nao para "nao mexa" -- o oposto dos tres acima.
+        # Por isso eles chegam num dicionario do que FOI ENVIADO
+        # (`model_fields_set` do Pydantic, montado no router), e nao como
+        # parametros com default: aqui nao ha como distinguir os dois sentidos
+        # de `None` numa assinatura comum.
+        for campo, rotulo in (rotulos or {}).items():
+            limpo = rotulo.strip() if isinstance(rotulo, str) else None
+            # ⚠️ ROTULO SO DE ESPACO E O MESMO QUE DESLIGAR: um campo com nome
+            # em branco apareceria no formulario publico como uma caixa sem
+            # pergunta, e quem preenche nao teria como saber o que escrever.
+            setattr(form, campo, limpo or None)
+
         await self._session.flush()
         return form
 

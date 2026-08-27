@@ -40,11 +40,20 @@ vi.mock("@/components/FormularioSolicitacao", () => ({
   default: ({
     categorias,
     formId,
+    titulo,
+    identificacao,
   }: {
     categorias: { slug: string }[];
     formId: string;
+    titulo: string;
+    identificacao: Record<string, string | null>;
   }) => (
-    <div data-formulario data-form-id={formId}>
+    <div
+      data-formulario
+      data-form-id={formId}
+      data-titulo={titulo}
+      data-ident={JSON.stringify(identificacao)}
+    >
       {categorias.map((c) => c.slug).join(",")}
     </div>
   ),
@@ -58,6 +67,9 @@ function form(over: Partial<FormularioPublico> = {}): FormularioPublico {
     slug: "marketing",
     title: "Solicitação ao Marketing",
     description: "",
+    phone_label: "Telefone",
+    department_label: "Área / Departamento",
+    polo_label: "Polo",
     sections: [
       {
         slug: "arte",
@@ -180,6 +192,42 @@ describe("CarregaFormularioPublico -- os dois erros são diferentes", () => {
         document.querySelector("[data-formulario]")?.getAttribute("data-form-id")
       ).toBe("f1")
     );
+  });
+
+  it("⚠️ o TÍTULO do banco chega ao formulário -- ele estava escrito na mão", async () => {
+    // ⚠️ `"FazAê · Solicitações de Marketing"` estava fixo no componente,
+    // mesmo com o formulário tendo `title` no banco desde a fatia A. A fatia B
+    // trocou a fonte das PERGUNTAS e esqueceu do cabeçalho: qualquer
+    // formulário novo abria com o nome do Marketing.
+    vi.mocked(api.obterFormularioPublico).mockResolvedValue(
+      form({ title: "Pedido de acesso — TI" })
+    );
+    render(<SolicitarPageComUmSo />);
+    await waitFor(() =>
+      expect(
+        document.querySelector("[data-formulario]")?.getAttribute("data-titulo")
+      ).toBe("Pedido de acesso — TI")
+    );
+  });
+
+  it("⚠️ os rótulos da identificação chegam, inclusive os DESLIGADOS", async () => {
+    // ⚠️ `null` = o formulário NÃO pergunta este campo. "Polo" não significa
+    // nada num formulário de TI, e era um dos cinco campos fixos e
+    // obrigatórios até a fatia G.
+    vi.mocked(api.obterFormularioPublico).mockResolvedValue(
+      form({ polo_label: null, phone_label: "WhatsApp" })
+    );
+    render(<SolicitarPageComUmSo />);
+    await waitFor(() => {
+      const bruto = document
+        .querySelector("[data-formulario]")
+        ?.getAttribute("data-ident");
+      expect(JSON.parse(bruto ?? "{}")).toEqual({
+        telefone: "WhatsApp",
+        area: "Área / Departamento",
+        polo: null,
+      });
+    });
   });
 
   it("com formulário, entrega as categorias a quem desenha", async () => {

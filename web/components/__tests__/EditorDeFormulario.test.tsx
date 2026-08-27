@@ -42,6 +42,7 @@ vi.mock("@/lib/api", async (importOriginal) => {
     reordenarSecoes: vi.fn(),
     reordenarPerguntas: vi.fn(),
     publicarFormulario: vi.fn(),
+    renomearFormulario: vi.fn(),
   };
 });
 
@@ -95,6 +96,9 @@ function formulario(over: Partial<FormularioDetalhado> = {}): FormularioDetalhad
     title: "Solicitação ao Marketing",
     description: "",
     is_published: false,
+    phone_label: "Telefone",
+    department_label: "Área / Departamento",
+    polo_label: "Polo",
     sections: [
       {
         id: "s1",
@@ -140,6 +144,22 @@ function formularioApertado(): FormularioDetalhado {
   });
 }
 
+/**
+ * ⚠️ `getAllByText("Editar")[0]` ERA FRÁGIL E QUEBROU. O painel do cabeçalho
+ * (fatia G) nasceu acima das seções e roubou o índice 0 -- o teste da seção
+ * passou a clicar no cabeçalho. Cada um passa a ser aberto pelo seu próprio
+ * ancoradouro, e não por posição.
+ */
+async function abrirCabecalho() {
+  const linha = (await screen.findByText("Cabeçalho")).closest("div")!;
+  fireEvent.click(within_(linha, "Editar"));
+}
+
+async function abrirSecao(titulo = "Foto") {
+  const linha = (await screen.findByText(titulo)).closest("header")!;
+  fireEvent.click(within_(linha, "Editar"));
+}
+
 function montar(form: FormularioDetalhado = formulario()) {
   vi.mocked(api.obterFormulario).mockResolvedValue(form);
   render(<EditorPage />);
@@ -154,6 +174,73 @@ afterEach(() => {
   cleanup();
   vi.clearAllMocks();
   vi.restoreAllMocks();
+});
+
+// =====================================================================
+// ⚠️ O cabeçalho (Spec 043, fatia G)
+// =====================================================================
+describe("o cabeçalho do formulário", () => {
+  it("⚠️ NOME e E-MAIL aparecem como sempre pedidos, e explicados", async () => {
+    // ⚠️ SEM ISSO, quem procura "por que não consigo tirar o e-mail?" não acha
+    // resposta em lugar nenhum. Eles não são configuráveis porque a fila é
+    // organizada por quem pediu e a resposta automática precisa do endereço.
+    montar();
+    await abrirCabecalho();
+    expect(screen.getByText(/são sempre pedidos/i)).toBeTruthy();
+  });
+
+  it("desmarcar um campo apaga o rótulo e avisa que ele some", async () => {
+    montar();
+    await abrirCabecalho();
+    const caixas = screen.getAllByRole("checkbox");
+    fireEvent.click(caixas[2]); // Polo
+    expect(await screen.findByText("não aparece no formulário")).toBeTruthy();
+  });
+
+  it("⚠️ salvar manda os TRÊS rótulos, com `null` no que foi desligado", async () => {
+    // ⚠️ AQUI `null` SIGNIFICA "DESLIGUE", e não "não mexa" -- o oposto dos
+    // outros campos do PATCH. O backend distingue "não veio" de "veio null"
+    // pelo corpo, e este painel é exatamente onde a intenção é decidida, então
+    // os três vão sempre.
+    vi.mocked(api.renomearFormulario).mockResolvedValue({} as never);
+    montar();
+    await abrirCabecalho();
+    fireEvent.click(screen.getAllByRole("checkbox")[2]); // desliga Polo
+    fireEvent.change(screen.getByLabelText("Nome do campo Telefone"), {
+      target: { value: "WhatsApp" },
+    });
+    fireEvent.click(screen.getByText("Salvar cabeçalho"));
+
+    await waitFor(() => expect(api.renomearFormulario).toHaveBeenCalled());
+    const corpo = vi.mocked(api.renomearFormulario).mock.calls[0][1];
+    expect(corpo.phone_label).toBe("WhatsApp");
+    expect(corpo.department_label).toBe("Área / Departamento");
+    expect(corpo.polo_label).toBeNull();
+  });
+
+  it("o título vai junto -- é ele que aparece no topo da página pública", async () => {
+    vi.mocked(api.renomearFormulario).mockResolvedValue({} as never);
+    montar();
+    await abrirCabecalho();
+    fireEvent.change(
+      screen.getByLabelText(/Título — é o que aparece no topo/),
+      { target: { value: "Pedido de acesso — TI" } }
+    );
+    fireEvent.click(screen.getByText("Salvar cabeçalho"));
+
+    await waitFor(() =>
+      expect(
+        vi.mocked(api.renomearFormulario).mock.calls[0][1].title
+      ).toBe("Pedido de acesso — TI")
+    );
+  });
+
+  it("fechado, o resumo diz o que o formulário pede hoje", async () => {
+    montar();
+    expect(
+      await screen.findByText(/pede Nome, E-mail, Telefone/)
+    ).toBeTruthy();
+  });
 });
 
 // =====================================================================
@@ -336,7 +423,7 @@ describe("a seção", () => {
     // É o único campo da tela que não dá para mudar, e o motivo é invisível:
     // ele viaja gravado em cada pedido e é o que mantém a fila legível.
     montar();
-    fireEvent.click((await screen.findAllByText("Editar"))[0]);
+    await abrirSecao();
     expect(screen.getByText(/não muda/i)).toBeTruthy();
     expect(screen.queryByLabelText("Endereço interno")).toBeNull();
   });
@@ -344,7 +431,8 @@ describe("a seção", () => {
   it("excluir avisa que os pedidos que já chegaram NÃO são apagados", async () => {
     vi.mocked(api.apagarSecao).mockResolvedValue(undefined);
     montar();
-    fireEvent.click((await screen.findAllByText("Excluir"))[0]);
+    const linha = (await screen.findByText("Foto")).closest("header")!;
+    fireEvent.click(within_(linha, "Excluir"));
     const texto = vi.mocked(window.confirm).mock.calls[0][0] as string;
     expect(texto).toMatch(/NÃO são apagados/i);
     expect(texto).toContain("3 perguntas");

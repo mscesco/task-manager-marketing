@@ -59,6 +59,9 @@ function formulario(over: Partial<Formulario> = {}): Formulario {
     title: "Solicitação ao Marketing",
     description: "",
     is_published: true,
+    phone_label: "Telefone",
+    department_label: "Área / Departamento",
+    polo_label: "Polo",
     ...over,
   };
 }

@@ -135,11 +135,20 @@ async def obter_formulario(form_id: uuid.UUID, uow: UoWDep) -> FormDetailRespons
 async def renomear_formulario(
     form_id: uuid.UUID, payload: FormUpdateRequest, uow: UoWDep
 ) -> FormResponse:
+    # ⚠️ SO O QUE VEIO NO CORPO. Para os rotulos, `null` significa DESLIGUE o
+    # campo -- entao "nao mandou" e "mandou null" precisam ser coisas
+    # diferentes, e `model_fields_set` e quem sabe isso.
+    rotulos = {
+        campo: getattr(payload, campo)
+        for campo in ("phone_label", "department_label", "polo_label")
+        if campo in payload.model_fields_set
+    }
     form = await SolicitationFormService(uow.session).renomear_formulario(
         form_id=form_id,
         title=payload.title,
         description=payload.description,
         slug=payload.slug,
+        rotulos=rotulos,
     )
     resposta = FormResponse.model_validate(form)
     await uow.commit()

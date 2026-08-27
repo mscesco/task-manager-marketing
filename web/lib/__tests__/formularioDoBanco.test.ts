@@ -41,6 +41,9 @@ function form(over: Partial<FormularioPublico> = {}): FormularioPublico {
     slug: "marketing",
     title: "Solicitação ao Marketing",
     description: "",
+    phone_label: "Telefone",
+    department_label: "Área / Departamento",
+    polo_label: "Polo",
     sections: [],
     ...over,
   };
