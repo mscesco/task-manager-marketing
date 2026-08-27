@@ -19,9 +19,11 @@ import Badge from "@/components/Badge";
 import Card from "@/components/Card";
 import EmptyState from "@/components/EmptyState";
 import PageHeader from "@/components/PageHeader";
+import Link from "next/link";
 import {
   andarSolicitacao,
   aprovarSolicitacao,
+  criarTarefaDaSolicitacao,
   listarEnvios,
   marcarTarefaCriada,
   rejeitarSolicitacao,
@@ -415,6 +417,10 @@ function SecaoDemanda({
   const [rejeitando, setRejeitando] = useState(false);
   const [justificativa, setJustificativa] = useState("");
   const [marcandoTarefa, setMarcandoTarefa] = useState(false);
+  // ⚠️ GUARDA O ID DA TAREFA RECÉM-CRIADA para oferecer "abrir a tarefa" sem
+  // um segundo request -- é o passo seguinte natural de quem acabou de criar
+  // uma, e sem isso a pessoa teria de procurá-la no quadro.
+  const [tarefaNova, setTarefaNova] = useState<string | null>(null);
   const [refTarefa, setRefTarefa] = useState("");
   const [copiado, setCopiado] = useState(false);
 
@@ -561,9 +567,27 @@ function SecaoDemanda({
             costuma ser criada quando o trabalho COMEÇA -- ou seja, com o
             pedido já em andamento. Exigir "aprovada" aqui esconderia o botão
             exatamente no momento em que ele é usado. */}
+        {/* ⚠️ CRIAR A TAREFA É O CAMINHO PRINCIPAL agora, e "marcar" virou o
+            secundário: quem já criou a tarefa à mão continua podendo registrar,
+            mas o fluxo de seis passos (copiar, sair, criar, colar, voltar,
+            marcar) deixou de ser o único. */}
+        {aceito && !item.task_created_at && (
+          <button
+            className="btn btn-primary"
+            disabled={agindo}
+            onClick={() =>
+              acao(async () => {
+                const nova = await criarTarefaDaSolicitacao(item.id);
+                setTarefaNova(nova.task_id);
+              }, "Não foi possível criar a tarefa.")
+            }
+          >
+            {agindo ? "…" : "Criar tarefa"}
+          </button>
+        )}
         {aceito && !item.task_created_at && !marcandoTarefa && (
           <button className="btn" onClick={() => setMarcandoTarefa(true)}>
-            Marcar tarefa criada
+            Já criei — só marcar
           </button>
         )}
         {aceito && item.task_created_at && (
@@ -582,11 +606,28 @@ function SecaoDemanda({
         )}
       </div>
 
-      {item.status === "APPROVED" && item.task_created_at && (
+      {aceito && item.task_created_at && (
         <p className="muted" style={{ fontSize: 12, marginTop: 8 }}>
           ✓ Tarefa criada em{" "}
           {new Date(item.task_created_at).toLocaleDateString("pt-BR")}
-          {item.task_ref ? ` · ${item.task_ref}` : ""}
+          {/* ⚠️ TRÊS ESTADOS, e cada um diz a verdade sobre o que existe:
+              vinculada e viva (link), vinculada e apagada (sem nome, sem
+              link), ou só o `task_ref` de texto das marcações antigas. */}
+          {item.task_id && item.task_title && (
+            <>
+              {" · "}
+              <Link href={`/tarefa/${item.task_id}`}>{item.task_title}</Link>
+            </>
+          )}
+          {item.task_id && !item.task_title && " · tarefa vinculada"}
+          {!item.task_id && item.task_ref ? ` · ${item.task_ref}` : ""}
+        </p>
+      )}
+
+      {tarefaNova && (
+        <p style={{ fontSize: 12, marginTop: 8 }}>
+          Tarefa criada.{" "}
+          <Link href={`/tarefa/${tarefaNova}`}>Abrir a tarefa</Link>
         </p>
       )}
 

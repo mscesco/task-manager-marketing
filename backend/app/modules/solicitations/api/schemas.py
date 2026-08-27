@@ -96,6 +96,9 @@ class SolicitationResponse(BaseModel):
     reviewed_at: datetime | None
     task_created_at: datetime | None
     task_ref: str | None
+    #: A tarefa vinculada (Spec 043, fatia E). `None` em tudo que foi marcado
+    #: antes desta fatia -- essas guardam so o `task_ref` de texto livre.
+    task_id: uuid.UUID | None = None
     created_at: datetime
 
 
@@ -125,6 +128,13 @@ class BatchItemResponse(BaseModel):
     reviewed_at: datetime | None
     task_created_at: datetime | None
     task_ref: str | None
+    #: A tarefa vinculada (Spec 043, fatia E), e o titulo dela para a tela
+    #: mostrar um link legivel em vez de um uuid.
+    #:
+    #: ⚠️ `task_title` E RESOLVIDO NA HORA, e nao gravado: renomear a tarefa
+    #: no quadro arruma o link na fila. Mesma regra do rotulo da categoria.
+    task_id: uuid.UUID | None = None
+    task_title: str | None = None
 
 
 class BatchResponse(BaseModel):
@@ -171,4 +181,45 @@ class MarkTaskRequest(BaseModel):
     created: bool = True
     # Link ou identificador da tarefa criada no quadro. Texto livre porque
     # a criacao e manual -- nao ha id garantido pra validar.
+    #
+    # ⚠️ LEGADO A PARTIR DA FATIA E: use `task_id`. Este campo fica porque as
+    # marcacoes antigas moram nele como texto, e nao ha como converte-las.
     task_ref: str | None = Field(default=None, max_length=500)
+    #: A tarefa DE VERDADE (Spec 043, fatia E).
+    #:
+    #: ⚠️ CONFERIDA CONTRA O WORKSPACE no servico: a FK composta ja impediria
+    #: apontar para outro cliente, mas o erro viria do banco como violacao de
+    #: integridade -- feio e sem explicacao.
+    task_id: uuid.UUID | None = None
+
+
+class CriarTarefaRequest(BaseModel):
+    """Corpo de `POST /solicitacoes/{id}/criar-tarefa`.
+
+    ⚠️ SO O QUADRO E ESCOLHA. O time vem do FORMULARIO por onde o pedido
+    entrou -- deixar quem tria escolher faria a tarefa nascer longe de quem vai
+    faze-la sempre que um ADMIN triasse a fila de outra equipe.
+
+    ⚠️ E `None` E O QUADRO GERAL, o mesmo contrato do `CreateTaskCommand`.
+    """
+
+    board_id: uuid.UUID | None = None
+    #: Quem fica responsável. Vazio = quem está triando.
+    #:
+    #: ⚠️ TODA TAREFA PRECISA DE AO MENOS UM RESPONSÁVEL neste produto, e o
+    #: padrão ser quem tria é a única opção honesta: é a pessoa que acabou de
+    #: aceitar o pedido, e portanto quem responde por ele até repassar.
+    assignee_ids: list[uuid.UUID] = Field(default_factory=list)
+
+
+class TarefaCriadaResponse(BaseModel):
+    """A solicitacao ja vinculada, MAIS o id da tarefa que nasceu.
+
+    ⚠️ OS DOIS NA MESMA RESPOSTA para a tela poder oferecer "abrir a tarefa"
+    sem um segundo request -- e o passo seguinte natural de quem acabou de
+    criar uma.
+    """
+
+    solicitacao: SolicitationResponse
+    task_id: uuid.UUID
+    task_title: str

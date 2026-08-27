@@ -33,6 +33,8 @@ function item(over: Partial<BatchItem> = {}): BatchItem {
     reviewed_at: null,
     task_created_at: null,
     task_ref: null,
+    task_id: null,
+    task_title: null,
     ...over,
   };
 }

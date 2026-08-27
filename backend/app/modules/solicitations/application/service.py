@@ -20,7 +20,7 @@ SEGURANCA DA ROTA PUBLICA (alem do rate limit por IP na rota):
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 from sqlalchemy import select
@@ -31,6 +31,7 @@ from app.db.models import (
     Solicitation,
     SolicitationForm,
     SolicitationSection,
+    Task,
 )
 from app.db.unit_of_work import UnitOfWork
 from app.modules.solicitations.domain.solicitation import (
@@ -49,6 +50,14 @@ from app.shared.exceptions.base import (
     BusinessRuleError,
     EntityNotFoundError,
     ValidationError,
+)
+from app.modules.solicitations.domain.briefing import (
+    briefing,
+    titulo_da_tarefa,
+)
+from app.modules.tasks.application.task_service import (
+    CreateTaskCommand,
+    TaskService,
 )
 from app.shared.pagination import PageParams
 
@@ -128,6 +137,35 @@ class MarkTaskCommand:
     solicitation_id: uuid.UUID
     created: bool
     task_ref: str | None = None
+    #: A tarefa DE VERDADE (Spec 043, fatia E).
+    #:
+    #: ⚠️ NO FIM E COM DEFAULT -- `dataclass` recusa campo sem default depois
+    #: de um com default, e todo `MarkTaskCommand(...)` que ja existe continua
+    #: valendo.
+    task_id: uuid.UUID | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class CriarTarefaCommand:
+    """Criar a tarefa A PARTIR do pedido, ja vinculada (Spec 043, fatia E).
+
+    ⚠️ O `board_id` E OPCIONAL e `None` significa o Quadro geral -- o mesmo
+    contrato do `CreateTaskCommand`. O time NAO e parametro: ele vem do
+    FORMULARIO por onde o pedido entrou, e deixar quem tria escolher abriria a
+    porta para a tarefa nascer no time errado, longe de quem vai fazer.
+    """
+
+    solicitation_id: uuid.UUID
+    board_id: uuid.UUID | None = None
+    #: Quem fica responsavel. VAZIO = quem esta triando.
+    #:
+    #: ⚠️⚠️ TODA TAREFA PRECISA DE AO MENOS UM RESPONSAVEL neste produto
+    #: (regra de 05/08, em `TaskService.create`) -- descobri isto com a criacao
+    #: explodindo em `ValidationError`. O padrao ser quem tria e a unica opcao
+    #: honesta: e a pessoa que acabou de aceitar o pedido, e portanto quem
+    #: responde por ele ate repassar. Deixar sem dono faria a tarefa nascer
+    #: invisivel em "Minhas tarefas" de todo mundo.
+    assignee_ids: list[uuid.UUID] = field(default_factory=list)
 
 
 @dataclass(frozen=True, slots=True)
@@ -357,6 +395,37 @@ class SolicitationService:
             rotulos[(None, slug)] = rotulo
         return rotulos
 
+    async def titulos_das_tarefas(
+        self, itens: list[Solicitation]
+    ) -> dict[uuid.UUID, str]:
+        """O titulo de cada tarefa vinculada nesta pagina da fila.
+
+        ⚠️ RESOLVIDO NA HORA, e nao gravado no pedido: renomear a tarefa no
+        quadro arruma o link na fila. Mesma regra do rotulo da categoria -- o
+        `task_id` e a chave, o titulo e a etiqueta.
+
+        ⚠️ E TAREFA APAGADA NAO ENTRA. Ela sai do dicionario, a tela cai no
+        "tarefa vinculada" sem nome, e o pedido volta a aparecer como algo a
+        resolver -- que e a verdade.
+
+        ⚠️ UMA CONSULTA PARA A PAGINA INTEIRA: dez envios de quatro categorias
+        seriam 40 idas ao banco para buscar um titulo.
+        """
+        ids = {i.task_id for i in itens if i.task_id is not None}
+        if not ids:
+            return {}
+        tenant = require_tenant()
+        linhas = (
+            await self.session.execute(
+                select(Task.id, Task.title).where(
+                    Task.id.in_(ids),
+                    Task.workspace_id == tenant.workspace_id,
+                    Task.deleted_at.is_(None),
+                )
+            )
+        ).all()
+        return {tid: titulo for tid, titulo in linhas}
+
     async def list_batches(
         self, *, params: PageParams, filtro: str | None
     ) -> tuple[list[Batch], int]:
@@ -395,6 +464,113 @@ class SolicitationService:
     async def count_approved_without_task(self) -> int:
         return await self.repo.count_approved_without_task()
 
+    async def _assert_tarefa_do_workspace(self, task_id: uuid.UUID) -> Task:
+        """A tarefa existe, e VIVA e e deste workspace?
+
+        ⚠️ A FK COMPOSTA JA IMPEDIRIA apontar para outro cliente -- mas o erro
+        viria do banco como violacao de integridade, feio e sem explicacao.
+        Aqui vira 404 com texto.
+
+        ⚠️ E O `deleted_at` IMPORTA: tarefa arquivada some das telas, e
+        vincular o pedido a uma delas seria criar um botao que leva a lugar
+        nenhum. A FK nao sabe de soft delete.
+        """
+        tenant = require_tenant()
+        tarefa = (
+            await self.session.execute(
+                select(Task).where(
+                    Task.id == task_id,
+                    Task.workspace_id == tenant.workspace_id,
+                    Task.deleted_at.is_(None),
+                )
+            )
+        ).scalar_one_or_none()
+        if tarefa is None:
+            raise EntityNotFoundError("Tarefa não encontrada.")
+        return tarefa
+
+    async def criar_tarefa(
+        self, uow: UnitOfWork, command: CriarTarefaCommand
+    ) -> tuple[Solicitation, Task]:
+        """Cria a tarefa A PARTIR do pedido e ja a vincula.
+
+        ⚠️⚠️ ISTO SUBSTITUI UM COPIA-E-COLA, e o rastro dele estava na tela: o
+        botao "Copiar briefing" existe desde a Spec 025 porque o fluxo real era
+        copiar, sair da fila, abrir o quadro, criar a tarefa, colar, voltar e
+        marcar "tarefa criada". Seis passos, e o ultimo era o que mais se
+        esquecia -- dai o filtro "aprovadas sem tarefa" ter valor.
+
+        ⚠️ O TIME VEM DO FORMULARIO, e nao de quem clica. O pedido entrou por
+        uma porta que pertence a um time; a tarefa nasce nesse mesmo time. Usar
+        o time de quem tria faria a tarefa nascer longe de quem vai faze-la
+        sempre que um ADMIN triasse a fila de outra equipe.
+
+        ⚠️ E O PEDIDO PRECISA ESTAR ACEITO. Criar tarefa de pedido pendente
+        pularia a triagem por um caminho lateral -- a mesma razao de `andar`
+        recusar PENDING.
+        """
+        solicitation = await self.repo.get_by_id_or_raise(
+            command.solicitation_id
+        )
+        if solicitation.status not in ACEITOS:
+            raise BusinessRuleError(
+                "Aprove a solicitação antes de criar a tarefa."
+            )
+        if solicitation.task_id is not None:
+            # ⚠️ RECUSA EM VEZ DE CRIAR A SEGUNDA: dois cliques no mesmo botao,
+            # ou duas abas, dariam duas tarefas identicas no quadro -- e a
+            # segunda ficaria orfa, porque o vinculo e um so.
+            raise BusinessRuleError(
+                "Esta solicitação já tem uma tarefa vinculada."
+            )
+
+        time = await self._time_do_pedido(solicitation)
+        # ⚠️ O ROTULO BONITO DA CATEGORIA, e nao o slug: a tarefa se chama
+        # "[Fotografia] ..." e nao "[foto] ...". Se a secao nao existir mais, o
+        # slug e a reserva -- a mesma regra da fila.
+        rotulos = await self.rotulos_de_categoria([solicitation])
+        rotulo = rotulos.get((solicitation.form_id, solicitation.category))
+        nome = rotulo.title if rotulo else None
+
+        tenant = require_tenant()
+        tarefa = await TaskService(self.session).create(
+            CreateTaskCommand(
+                title=titulo_da_tarefa(solicitation, nome),
+                description=briefing(solicitation, nome),
+                team_id=time,
+                board_id=command.board_id,
+                # ⚠️ QUEM TRIA VIRA RESPONSAVEL quando ninguem e indicado --
+                # ver `CriarTarefaCommand.assignee_ids`.
+                assignee_ids=command.assignee_ids or [tenant.user_id],
+            )
+        )
+
+        solicitation.task_id = tarefa.id
+        solicitation.task_created_at = datetime.now(UTC)
+        solicitation.task_marked_by_user_id = tenant.user_id
+        await uow.commit()
+        await self.session.refresh(solicitation)
+        return solicitation, tarefa
+
+    async def _time_do_pedido(self, solicitation: Solicitation):
+        """O time dono do FORMULARIO por onde o pedido entrou.
+
+        ⚠️ `None` PARA PEDIDO ORFAO (anterior a esta spec, ou de formulario
+        apagado), e `None` no `CreateTaskCommand` significa "o subtime de quem
+        cria" -- que e o comportamento de sempre. E a unica saida honesta: nao
+        ha time para herdar.
+        """
+        if solicitation.form_id is None:
+            return None
+        return (
+            await self.session.execute(
+                select(SolicitationForm.team_id).where(
+                    SolicitationForm.id == solicitation.form_id,
+                    SolicitationForm.deleted_at.is_(None),
+                )
+            )
+        ).scalar_one_or_none()
+
     async def mark_task(
         self, uow: UnitOfWork, command: MarkTaskCommand
     ) -> Solicitation:
@@ -422,10 +598,21 @@ class SolicitationService:
             solicitation.task_created_at = datetime.now(UTC)
             solicitation.task_marked_by_user_id = tenant.user_id
             solicitation.task_ref = (command.task_ref or "").strip()[:500] or None
+            if command.task_id is not None:
+                # ⚠️ CONFERIDA CONTRA O WORKSPACE, e nao aceita crua. A FK
+                # composta ja impediria apontar para outro cliente, mas o erro
+                # viria do banco como violacao de integridade -- feio e sem
+                # explicacao. Aqui vira 404 com texto.
+                await self._assert_tarefa_do_workspace(command.task_id)
+            solicitation.task_id = command.task_id
         else:
             solicitation.task_created_at = None
             solicitation.task_marked_by_user_id = None
             solicitation.task_ref = None
+            # ⚠️ DESMARCAR SOLTA O VINCULO TAMBEM. Deixar `task_id` apontando
+            # para uma tarefa depois de "esta solicitacao nao tem tarefa" seria
+            # a tela dizendo duas coisas opostas ao mesmo tempo.
+            solicitation.task_id = None
 
         await uow.commit()
         await self.session.refresh(solicitation)

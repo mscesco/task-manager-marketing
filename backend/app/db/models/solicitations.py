@@ -121,6 +121,18 @@ class Solicitation(
             ondelete="SET NULL",
             name="solicitation_task_marked_by",
         ),
+        # Spec 043, fatia E -- a tarefa DE VERDADE, no lugar do texto livre.
+        #
+        # ⚠️ `SET NULL` E NAO `CASCADE`: apagar a tarefa nao pode apagar o
+        # pedido. O pedido e o registro de que alguem pediu, e ele sobrevive a
+        # tarefa que dele nasceu -- volta a ser "aceito sem tarefa", que e
+        # exatamente o que o filtro da fila existe para achar.
+        ForeignKeyConstraint(
+            ["task_id", "workspace_id"],
+            ["task.id", "task.workspace_id"],
+            ondelete="SET NULL",
+            name="solicitation_task",
+        ),
         # ---------------- indices (um por leitura real) ----------------
         # 1. A fila: "deste workspace, por status, mais novas primeiro".
         Index(
@@ -251,7 +263,28 @@ class Solicitation(
     )
     #: link ou identificador da tarefa criada. Texto livre: a criacao e
     #: manual, entao nao ha id garantido pra validar contra a tabela task.
+    #:
+    #: ⚠️ LEGADO A PARTIR DA FATIA E (Spec 043), e mantido de proposito. As
+    #: marcacoes antigas moram aqui como texto -- "quadro do Design", uma URL,
+    #: as vezes so "feito" -- e nao ha como converte-las em id. Apagar a coluna
+    #: perderia o unico rastro que aquelas solicitacoes tem.
     task_ref: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+    #: A tarefa DE VERDADE (Spec 043, fatia E).
+    #:
+    #: ⚠️⚠️ O `task_ref` ERA TEXTO LIVRE, e por isso nao dava para clicar,
+    #: nao seguia a tarefa quando ela era renomeada e nao sabia dizer se ela
+    #: ainda existia. Este campo e o vinculo real -- e os dois convivem: o novo
+    #: para o que nasce daqui em diante, o velho como registro do que ja foi
+    #: marcado.
+    #:
+    #: ⚠️ FK COMPOSTA COM `workspace_id`, como o resto do schema: sem ela,
+    #: alguem poderia pendurar uma solicitacao numa tarefa de outro cliente.
+    #: `ON DELETE SET NULL` porque apagar a tarefa nao pode apagar o pedido --
+    #: o pedido e o registro de que alguem pediu, e ele sobrevive a tarefa.
+    task_id: Mapped[uuid.UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True), nullable=True
+    )
 
 
 # =====================================================================

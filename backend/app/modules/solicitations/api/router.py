@@ -7,6 +7,7 @@ Rotas:
     POST /solicitacoes/{id}/aprovar     -- solicitation.review
     POST /solicitacoes/{id}/rejeitar    -- solicitation.review
     POST /solicitacoes/{id}/andamento   -- solicitation.review (Spec 043, D)
+    POST /solicitacoes/{id}/criar-tarefa -- solicitation.review (Spec 043, E)
 
 ACESSO (Spec 025/D11): todas as rotas autenticadas exigem
 `solicitation.review` -- LEITURA inclusive. Pela invariante da Spec 024,
@@ -36,6 +37,7 @@ from app.modules.auth.api.dependencies import (
 )
 from app.modules.solicitations.api.schemas import (
     AndarRequest,
+    CriarTarefaRequest,
     BatchItemResponse,
     BatchListResponse,
     BatchResponse,
@@ -44,9 +46,11 @@ from app.modules.solicitations.api.schemas import (
     PublicSolicitationCreateResponse,
     ReviewRequest,
     SolicitationResponse,
+    TarefaCriadaResponse,
 )
 from app.modules.solicitations.application.service import (
     AndarCommand,
+    CriarTarefaCommand,
     CreatePublicCommand,
     MarkTaskCommand,
     ReviewCommand,
@@ -150,22 +154,24 @@ async def list_solicitations(
     )
     # ⚠️ UMA CONSULTA SO PARA A PAGINA INTEIRA, e nao uma por item: dez envios
     # de quatro categorias seriam 40 idas ao banco para buscar um titulo.
-    rotulos = await service.rotulos_de_categoria(
-        [item for lote in lotes for item in lote.items]
-    )
+    todos = [item for lote in lotes for item in lote.items]
+    rotulos = await service.rotulos_de_categoria(todos)
+    titulos = await service.titulos_das_tarefas(todos)
 
     def _com_rotulo(item) -> BatchItemResponse:
         resposta = BatchItemResponse.model_validate(item)
+        mudanca: dict = {}
         rotulo = rotulos.get((item.form_id, item.category))
-        if rotulo is None:
-            return resposta
-        return resposta.model_copy(
-            update={
-                "category_title": rotulo.title,
-                "category_emoji": rotulo.emoji,
-                "category_sla": rotulo.sla_text,
-            }
-        )
+        if rotulo is not None:
+            mudanca["category_title"] = rotulo.title
+            mudanca["category_emoji"] = rotulo.emoji
+            mudanca["category_sla"] = rotulo.sla_text
+        # ⚠️ TAREFA APAGADA NAO ENTRA em `titulos`, e o `task_title` fica
+        # `None` -- a tela mostra "tarefa vinculada" sem nome em vez de um link
+        # que leva a lugar nenhum.
+        if item.task_id is not None:
+            mudanca["task_title"] = titulos.get(item.task_id)
+        return resposta.model_copy(update=mudanca) if mudanca else resposta
 
     return BatchListResponse(
         items=[
@@ -224,9 +230,51 @@ async def mark_task_created(
             solicitation_id=solicitation_id,
             created=payload.created,
             task_ref=payload.task_ref,
+            # ⚠️ CAMPO A CAMPO -- declarar no schema NAO chega ao dominio.
+            # Foi exatamente esta linha que faltou no `form_id` da fatia B, e a
+            # sabotagem de teste passou verde porque nada olhava o CORPO.
+            task_id=payload.task_id,
         ),
     )
     return SolicitationResponse.model_validate(solicitation)
+
+
+@router.post(
+    "/{solicitation_id}/criar-tarefa",
+    response_model=TarefaCriadaResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_permission("solicitation.review"))],
+)
+async def criar_tarefa_da_solicitacao(
+    solicitation_id: uuid.UUID,
+    payload: CriarTarefaRequest,
+    _: TenantContextDep,
+    session: SessionDep,
+    uow: UoWDep,
+) -> TarefaCriadaResponse:
+    """Cria a tarefa a partir do pedido e ja a vincula (Spec 043, fatia E).
+
+    ⚠️ SUBSTITUI UM COPIA-E-COLA DE SEIS PASSOS: copiar o briefing, sair da
+    fila, abrir o quadro, criar a tarefa, colar, voltar e marcar. O ultimo era
+    o que mais se esquecia -- e e a razao de o filtro "aprovadas sem tarefa"
+    existir.
+
+    ⚠️ DEVOLVE OS DOIS: a solicitacao (com o vinculo) e o id da tarefa, para a
+    tela poder oferecer "abrir a tarefa" sem um segundo request.
+    """
+    solicitation, tarefa = await SolicitationService(session).criar_tarefa(
+        uow,
+        CriarTarefaCommand(
+            solicitation_id=solicitation_id,
+            board_id=payload.board_id,
+            assignee_ids=payload.assignee_ids,
+        ),
+    )
+    return TarefaCriadaResponse(
+        solicitacao=SolicitationResponse.model_validate(solicitation),
+        task_id=tarefa.id,
+        task_title=tarefa.title,
+    )
 
 
 @router.post(

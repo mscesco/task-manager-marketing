@@ -2547,7 +2547,21 @@ export type BatchItem = {
   review_note: string | null;
   reviewed_at: string | null;
   task_created_at: string | null;
+  /** ⚠️ LEGADO: texto livre das marcações antigas. Ver `task_id`. */
   task_ref: string | null;
+  /**
+   * A tarefa DE VERDADE (Spec 043, fatia E).
+   *
+   * ⚠️ `task_ref` ERA TEXTO LIVRE -- não dava para clicar, não seguia a
+   * tarefa quando ela era renomeada e não sabia dizer se ela ainda existia.
+   * Os dois convivem: o novo para o que nasce daqui em diante, o velho como
+   * registro do que já foi marcado.
+   *
+   * ⚠️ `task_title` VEM `null` QUANDO A TAREFA FOI APAGADA -- a tela mostra
+   * "tarefa vinculada" sem nome, e não um link que leva a lugar nenhum.
+   */
+  task_id: string | null;
+  task_title: string | null;
 };
 
 export type Batch = {
@@ -2583,6 +2597,28 @@ export async function listarEnvios(
 }
 
 /** Marca/desmarca "tarefa criada" numa solicitação APROVADA. */
+/**
+ * Cria a tarefa A PARTIR do pedido e já a vincula (Spec 043, fatia E).
+ *
+ * ⚠️ SUBSTITUI UM COPIA-E-COLA DE SEIS PASSOS: copiar o briefing, sair da
+ * fila, abrir o quadro, criar a tarefa, colar, voltar e marcar. O último era o
+ * que mais se esquecia -- e é a razão de o filtro "aprovadas sem tarefa"
+ * existir.
+ *
+ * ⚠️ SEM `assignee_ids`, QUEM CLICA VIRA RESPONSÁVEL: toda tarefa precisa de
+ * ao menos um, e a pessoa que acabou de aceitar o pedido é quem responde por
+ * ele até repassar.
+ */
+export async function criarTarefaDaSolicitacao(
+  id: string,
+  board_id?: string | null
+): Promise<{ task_id: string; task_title: string }> {
+  return api<{ task_id: string; task_title: string }>(
+    `/api/v1/solicitacoes/${id}/criar-tarefa`,
+    { method: "POST", body: { board_id: board_id ?? null } }
+  );
+}
+
 export async function marcarTarefaCriada(
   id: string,
   created: boolean,

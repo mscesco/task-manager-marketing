@@ -32,6 +32,7 @@ vi.mock("@/lib/api", async (importOriginal) => {
     rejeitarSolicitacao: vi.fn(),
     marcarTarefaCriada: vi.fn(),
     andarSolicitacao: vi.fn(),
+    criarTarefaDaSolicitacao: vi.fn(),
   };
 });
 
@@ -52,6 +53,8 @@ function item(over: Partial<BatchItem> = {}): BatchItem {
     reviewed_at: null,
     task_created_at: null,
     task_ref: null,
+    task_id: null,
+    task_title: null,
     ...over,
   };
 }
@@ -196,19 +199,114 @@ describe("o andamento de um pedido ACEITO", () => {
     expect(screen.queryByLabelText("Situação de Fotografia")).toBeNull();
   });
 
-  it("⚠️ 'Marcar tarefa criada' aparece com o pedido EM ANDAMENTO", async () => {
+  it("⚠️ as ações de tarefa aparecem com o pedido EM ANDAMENTO", async () => {
     // A tarefa costuma ser criada quando o trabalho COMEÇA. A condição antiga
-    // era `status === "APPROVED"` e escondia o botão exatamente no momento em
-    // que ele é usado.
+    // era `status === "APPROVED"` e escondia os botões exatamente no momento
+    // em que eles são usados.
+    //
+    // ⚠️ O RÓTULO MUDOU NA FATIA E ("Marcar tarefa criada" -> "Já criei — só
+    // marcar", com "Criar tarefa" assumindo o lugar principal), e foi este
+    // teste que avisou. Deixei-o apontando para os DOIS botões: o que importa
+    // aqui é que o pedido em andamento tenha o que fazer, e não como o botão
+    // secundário se chama hoje.
     montar([item({ status: "IN_PROGRESS" })]);
     await abrirOCard();
-    expect(await screen.findByText("Marcar tarefa criada")).toBeTruthy();
+    expect(await screen.findByText("Criar tarefa")).toBeTruthy();
+    expect(screen.getByText("Já criei — só marcar")).toBeTruthy();
   });
 
   it("os dois status novos têm rótulo em português", async () => {
     montar([item({ status: "IN_PROGRESS" })]);
     await abrirOCard();
     expect(await screen.findAllByText("Em andamento")).not.toHaveLength(0);
+  });
+});
+
+// =====================================================================
+// ⚠️ A tarefa DE VERDADE (Spec 043, fatia E)
+// =====================================================================
+describe("criar a tarefa a partir do pedido", () => {
+  it("⚠️ 'Criar tarefa' é o caminho PRINCIPAL, e 'já criei' o secundário", async () => {
+    // ⚠️ O FLUXO ANTIGO ERA DE SEIS PASSOS: copiar o briefing, sair da fila,
+    // abrir o quadro, criar a tarefa, colar, voltar e marcar. O último era o
+    // que mais se esquecia -- é a razão de o filtro "aprovadas sem tarefa"
+    // existir. Ele continua disponível, mas deixou de ser o único.
+    montar([item({ status: "APPROVED" })]);
+    await abrirOCard();
+    expect(await screen.findByText("Criar tarefa")).toBeTruthy();
+    expect(screen.getByText("Já criei — só marcar")).toBeTruthy();
+  });
+
+  it("cria e oferece ABRIR A TAREFA, sem um segundo request", async () => {
+    vi.mocked(api.criarTarefaDaSolicitacao).mockResolvedValue({
+      task_id: "t-9",
+      task_title: "[Fotografia] Preciso de fotos do evento",
+    });
+    montar([item({ status: "APPROVED" })]);
+    await abrirOCard();
+    fireEvent.click(await screen.findByText("Criar tarefa"));
+
+    await waitFor(() =>
+      expect(api.criarTarefaDaSolicitacao).toHaveBeenCalledWith("i1")
+    );
+    const abrir = await screen.findByText("Abrir a tarefa");
+    expect(abrir.getAttribute("href")).toBe("/tarefa/t-9");
+  });
+
+  it("⚠️ pedido PENDENTE não oferece criar -- falta triar antes", async () => {
+    montar([item({ status: "PENDING" })]);
+    await abrirOCard();
+    await screen.findByText("Aprovar");
+    expect(screen.queryByText("Criar tarefa")).toBeNull();
+  });
+
+  it("⚠️ a tarefa vinculada VIRA LINK, e não texto", async () => {
+    // O `task_ref` era texto livre: não dava para clicar, não seguia a tarefa
+    // quando ela era renomeada e não sabia dizer se ela ainda existia.
+    montar([
+      item({
+        status: "IN_PROGRESS",
+        task_created_at: "2026-08-27T10:00:00Z",
+        task_id: "t-1",
+        task_title: "[Fotografia] Fotos do evento",
+      }),
+    ]);
+    await abrirOCard();
+    const link = await screen.findByText("[Fotografia] Fotos do evento");
+    expect(link.getAttribute("href")).toBe("/tarefa/t-1");
+  });
+
+  it("⚠️ tarefa APAGADA não vira link que leva a lugar nenhum", async () => {
+    // `task_title` vem `null` quando a tarefa foi apagada. Um link para ela
+    // seria uma promessa falsa; o texto sem link diz a verdade.
+    montar([
+      item({
+        status: "APPROVED",
+        task_created_at: "2026-08-27T10:00:00Z",
+        task_id: "t-1",
+        task_title: null,
+      }),
+    ]);
+    await abrirOCard();
+    expect(await screen.findByText(/tarefa vinculada/)).toBeTruthy();
+    expect(document.querySelector('a[href="/tarefa/t-1"]')).toBeNull();
+  });
+
+  it("⚠️ marcação ANTIGA, só com `task_ref` de texto, continua aparecendo", async () => {
+    // LEGADO VIVO: as marcações anteriores a esta fatia moram no `task_ref` e
+    // não há como convertê-las em id. Apagar a coluna perderia o único rastro
+    // que aquelas solicitações têm.
+    montar([
+      item({
+        status: "APPROVED",
+        task_created_at: "2026-07-22T10:00:00Z",
+        task_id: null,
+        task_title: null,
+        task_ref: "quadro do Design",
+      }),
+    ]);
+    await abrirOCard();
+    expect(await screen.findByText(/quadro do Design/)).toBeTruthy();
   });
 });
 
