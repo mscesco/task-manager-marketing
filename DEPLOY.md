@@ -93,6 +93,44 @@ contrário. Enquanto durou, este arquivo anunciava que **não havia caminho de
 hotfix** num dia em que havia. Quando a próxima migration cair nesta segunda
 exceção, escreva a data de aplicação aqui **no mesmo commit** que a aplica.
 
+⚠️⚠️ **A SPEC 043 INTEIRA (`0016` a `0021`) CAI NA SEGUNDA EXCEÇÃO — E O
+CABEÇALHO DE NENHUMA DAS SEIS AVISA.** ❌ **NÃO ESTÁ EM PRODUÇÃO** (situação em
+31/08/2026; escreva a data aqui no mesmo commit que aplicar).
+
+A `0016` põe **`form_id`** e a `0019` põe **`task_id`** em `solicitation` — uma
+tabela que **já existe em produção desde a `0005`**. O SQLAlchemy emite lista
+explícita de colunas em todo `SELECT` da entidade, então o código novo pede
+colunas que ainda não existem e devolve **500 em toda leitura de solicitação**:
+a fila de triagem, o envio do formulário público, tudo. Até a migration rodar.
+
+**Portanto, para esta entrega a ordem é MIGRATION ANTES DO CÓDIGO:**
+
+```bash
+docker compose -f docker-compose.prod.yml run --rm --entrypoint "" api alembic upgrade head
+# só depois: build + up do código novo
+```
+
+⚠️ **E rodar as seis com o código VELHO no ar é seguro** — conferido uma a uma:
+`0016`/`0017` criam tabelas que o código velho nunca consulta; `0018` só ALARGA
+os CHECKs (o velho continua gravando PENDING/APPROVED/REJECTED); `0019` e `0020`
+acrescentam colunas nullable; `0020` afrouxa `NOT NULL` (o velho sempre manda
+valor); `0021` cria índice único de seção, e o código velho não cria seção.
+
+⚠️ **A `0021` PODE PARAR O DEPLOY, de propósito.** Ela recusa subir se houver
+duas seções com o mesmo endereço no mesmo formulário, e a mensagem **nomeia**
+qual formulário e qual endereço. Se isso acontecer, renomeie ou apague a
+duplicada e rode de novo — não force.
+
+⚠️ **A `0017` SEMEIA O FORMULÁRIO DO MARKETING JÁ PUBLICADO.** Ela procura o
+time pelo id de produção (`b8387155-…`) e, se não achar, cai no time RAIZ de
+cada workspace. Depois dela, `/solicitar` passa a servir do banco — confira
+`/solicitar/marketing` antes de anunciar.
+
+⚠️ **A `0018` PERDE INFORMAÇÃO NO `downgrade`**: ela devolve a PENDING os
+pedidos em "Em andamento" e "Concluída", porque esses valores não cabem no
+CHECK antigo. Está escrito no cabeçalho dela. Não há caminho de volta limpo
+depois que alguém usar os status novos.
+
 ⚠️ **A `0015` (`unaccent`) TAMBÉM inverte a ordem — por um terceiro motivo, e
 ✅ ELA ESTÁ EM PRODUÇÃO DESDE 21/08/2026.** Ela não acrescenta coluna a model
 nenhum (a checagem do `git diff -- backend/app/db/models/` sai vazia), então
