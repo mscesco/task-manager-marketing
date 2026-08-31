@@ -25,6 +25,19 @@ dependencies = [
     "bcrypt==4.0.1",
     # --- Logging estruturado ---
     "structlog==24.4.0",
+    # --- Chamada de saida (Spec 043, fatia F) ---
+    # ⚠️⚠️ RUNTIME, E NAO `dev`. O `aviso_de_status` importa `httpx` no topo do
+    # modulo, e o `service.py` o importa em cascata -- entao um `httpx`
+    # ausente derruba o IMPORT do app inteiro, nao so a chamada ao n8n.
+    # Aconteceu em producao no deploy de 31/08: `ModuleNotFoundError: No
+    # module named 'httpx'`, API fora do ar.
+    #
+    # ⚠️ E PASSOU POR TODOS OS PORTOES porque o `api-dev` instala `.[dev]`, e
+    # ali o `httpx` ja existia (o cliente de teste HTTP usa ele). A imagem de
+    # producao roda `pip install .`, sem o extra. Nenhum teste podia pegar
+    # isso: o defeito nao esta no codigo, esta na diferenca entre as duas
+    # instalacoes.
+    "httpx==0.28.1",
     # --- Timezone (Spec 023) ---
     # ZoneInfo("America/Sao_Paulo") precisa da base de fusos; imagens slim
     # frequentemente nao trazem /usr/share/zoneinfo. tzdata (pure-data)
@@ -36,7 +49,9 @@ dependencies = [
 dev = [
     "pytest==8.3.4",
     "pytest-asyncio==0.25.0",
-    "httpx==0.28.1",
+    # ⚠️ `httpx` SAIU DAQUI e foi para as dependencias de RUNTIME (topo do
+    # arquivo): o codigo de producao passou a usa-lo na fatia F, e mante-lo
+    # aqui derrubou a API no deploy de 31/08.
     "ruff==0.8.6",
     "mypy==1.14.1",
 ]
