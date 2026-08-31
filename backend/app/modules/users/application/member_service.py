@@ -92,15 +92,22 @@ class ProvisionedMember:
 
 
 @dataclass(frozen=True, slots=True)
-class MemberWithSubteam:
-    """Membro + id do subtime ao qual pertence (ou None).
+class MemberWithSubteams:
+    """Membro + os subtimes aos quais pertence (pode ser nenhum).
 
     Subtime = time NAO-raiz. O time principal nao rotula (Fatia 2 da
-    Entrega 13). Pelo ADR 0008, subteam_id e 0 ou 1 -- nunca ambiguo.
+    Entrega 13).
+
+    ⚠️ ERA `MemberWithSubteam`, SINGULAR, e o singular vinha da ADR 0008
+    ("um subtime por usuario"). A Spec 044 remove aquela trava; o plural
+    entra ANTES dela, de proposito -- ver a docstring de
+    `UserRepository.list_all_with_subteams`.
+
+    Lista VAZIA e a unica forma de "sem subtime". Nao existe `None` aqui.
     """
 
     user: User
-    subteam_id: uuid.UUID | None
+    subteam_ids: list[uuid.UUID]
 
 
 def _temp_password_expiry() -> datetime:
@@ -389,12 +396,12 @@ class MemberService:
         *,
         reaches_task_id: uuid.UUID | None = None,
         reaches_team_id: uuid.UUID | None = None,
-    ) -> list[MemberWithSubteam]:
-        """Lista os membros ativos do workspace, cada um com seu SUBTIME.
+    ) -> list[MemberWithSubteams]:
+        """Lista os membros ativos do workspace, cada um com seus SUBTIMES.
 
         Subtime = time nao-raiz; o principal nao rotula (ver
-        UserRepository.list_all_with_subteam). Pelo ADR 0008, cada membro
-        tem no maximo um subtime -- subteam_id e None quando nao ha.
+        UserRepository.list_all_with_subteams). Quem nao esta em subtime
+        nenhum vem com lista VAZIA.
 
         `reaches_team_id` (Spec 034, Fatia 5): mesma pergunta para uma tarefa
         que AINDA NAO EXISTE -- o modal de CRIAR. Sem tarefa nao ha id, entao
@@ -437,10 +444,10 @@ class MemberService:
                 "Informe reaches_task OU reaches_team, nao os dois.",
                 details={"field": "reaches_team"},
             )
-        rows = await self._users.list_all_with_subteam()
+        rows = await self._users.list_all_with_subteams()
         todos = [
-            MemberWithSubteam(user=user, subteam_id=subteam_id)
-            for user, subteam_id in rows
+            MemberWithSubteams(user=user, subteam_ids=subteam_ids)
+            for user, subteam_ids in rows
         ]
         if reaches_task_id is None and reaches_team_id is None:
             return todos

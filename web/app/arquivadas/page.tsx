@@ -12,7 +12,6 @@ import {
   listArchivedTasks,
   reactivateTask,
   listMembers,
-  getRootTeamId,
   listAllProjects,
   listAllTasks,
   quadroGeralComIndice,
@@ -82,13 +81,6 @@ function Arquivadas() {
   // Spec 031 (C14): so tira do seletor e marca a pilula. `members` fica
   // completo -- tarefa arquivada costuma ter justamente quem ja saiu do time.
   const [membrosInativos, setMembrosInativos] = useState<Set<string>>(new Set());
-  // Spec 031 + escopo de time: quem alcanca a tarefa depende do subtime da
-  // pessoa e do time DA TAREFA -- por isso vai o dado cru pro TaskDetail, que
-  // e quem sabe qual tarefa esta focada. Ver `lib/escopoTarefa.ts`.
-  const [subtimePorMembro, setSubtimePorMembro] = useState<Map<string, string | null>>(
-    new Map()
-  );
-  const [rootTeamId, setRootTeamId] = useState<string | null>(null);
   const router = useRouter();
   const [detalhe, setDetalhe] = useState<Task | null>(null);
   // ⚠️ `colunas` E O QUE A TELA CONHECE DO QUADRO GERAL; `indice` e o que ela
@@ -134,13 +126,7 @@ function Arquivadas() {
       .then((ms) => {
         setMembers(new Map(ms.map((m) => [m.id, { name: m.name }])));
         setMembrosInativos(new Set(ms.filter((m) => !m.is_active).map((m) => m.id)));
-        setSubtimePorMembro(new Map(ms.map((m) => [m.id, m.team_id ?? null])));
       })
-      .catch(() => {});
-    // Memoizado no api.ts (uma chamada por navegacao). Falha => segue null, e
-    // `foraDoEscopo` devolve conjunto vazio: nao esconde ninguem.
-    getRootTeamId()
-      .then(setRootTeamId)
       .catch(() => {});
     listAllProjects()
       .then((r) => {
@@ -258,8 +244,6 @@ function Arquivadas() {
         mostrarArquivadas
         projetosPessoais={projetosPessoais}
         membrosInativos={membrosInativos}
-        subtimePorMembro={subtimePorMembro}
-        rootTeamId={rootTeamId}
         onSubtaskUpsert={() => carregar(page)}
         onTaskMoved={() => carregar(page)}
         onExcluir={(t, cascade) => {

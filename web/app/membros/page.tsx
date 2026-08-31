@@ -94,6 +94,14 @@ function Membros() {
   // "Pai › Filho" (ex.: "Marketing › CRM e Automacao"), deixando claro
   // que o subtime pertence ao time-pai. Time raiz mostra so o nome.
   // O parent_team_id ja vem do backend em cada Team; aqui so montamos o texto.
+  // ⚠️ Recebe LISTA desde a Spec 044 (fatia 1): a pessoa pode estar em mais
+  // de um subtime. Vazia => "—". Varios => separados por vírgula, na ordem que
+  // o backend mandou (alfabetica por nome do time, cravada no `array_agg`).
+  function nomeSubtimes(ids: string[]): string {
+    const nomes = ids.map(nomeSubtime).filter((n) => n !== "—");
+    return nomes.length > 0 ? nomes.join(", ") : "—";
+  }
+
   function nomeSubtime(id: string | null): string {
     if (!id) return "—";
     const t = times.find((x) => x.id === id);
@@ -268,7 +276,7 @@ function Membros() {
             <LinhaMembro
               key={m.id}
               m={m}
-              subtime={nomeSubtime(m.team_id)}
+              subtime={nomeSubtimes(m.team_ids)}
               times={times}
               souAdmin={souAdmin}
               primeira={i === 0}
@@ -337,7 +345,7 @@ function LinhaMembro({
     podeGerenciar &&
     !isSelf &&
     m.is_active &&
-    temAcaoPossivel(alcance, m.team_id);
+    temAcaoPossivel(alcance, m.team_ids);
 
   // Papeis atribuiveis pelo ator. Spec 028: sai do modulo puro -- supervisor
   // so oferece OPERATOR. Espelha a matriz C2 + a trava D2 do backend (que

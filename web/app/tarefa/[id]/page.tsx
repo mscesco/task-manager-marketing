@@ -8,7 +8,6 @@ import {
   getTask,
   listTasks,
   listMembers,
-  getRootTeamId,
   listAllProjects,
   ApiError,
   type Task,
@@ -67,12 +66,6 @@ function Tarefa() {
   // dos outros, e membro desativado nao deve receber tarefa nova.
   const [projetosPessoais, setProjetosPessoais] = useState<Set<string>>(new Set());
   const [membrosInativos, setMembrosInativos] = useState<Set<string>>(new Set());
-  // Escopo de time: quem alcanca a tarefa focada. Dado cru porque a tarefa
-  // focada muda dentro do TaskDetail. Ver `lib/escopoTarefa.ts`.
-  const [subtimePorMembro, setSubtimePorMembro] = useState<Map<string, string | null>>(
-    new Map()
-  );
-  const [rootTeamId, setRootTeamId] = useState<string | null>(null);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
   const [editando, setEditando] = useState<Task | null>(null);
@@ -91,12 +84,6 @@ function Tarefa() {
         if (!vivo) return;
         setMembers(new Map(ms.map((m) => [m.id, { name: m.name }])));
         setMembrosInativos(new Set(ms.filter((m) => !m.is_active).map((m) => m.id)));
-        setSubtimePorMembro(new Map(ms.map((m) => [m.id, m.team_id ?? null])));
-      })
-      .catch(() => {});
-    getRootTeamId()
-      .then((r) => {
-        if (vivo) setRootTeamId(r);
       })
       .catch(() => {});
     listAllProjects()
@@ -251,8 +238,6 @@ function Tarefa() {
         mostrarArquivadas={false}
         projetosPessoais={projetosPessoais}
         membrosInativos={membrosInativos}
-        subtimePorMembro={subtimePorMembro}
-        rootTeamId={rootTeamId}
         // "Voltar" so aparece quando o pai foi carregado de fato -- e leva pra
         // rota do pai (cada nivel tem endereco proprio, entao nao ha pilha).
         temVoltar={pai !== null}

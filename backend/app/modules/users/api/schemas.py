@@ -24,11 +24,21 @@ class MemberResponse(BaseModel):
     email: EmailStr
     is_active: bool
     created_at: datetime
-    #: Entrega 13 (Fatia 2): id do SUBTIME do membro (time nao-raiz), ou
-    #: None. Pelo ADR 0008 e no maximo um. NAO e o time principal. Usado
-    #: pelo filtro de subtime no quadro. Em respostas de mutacao
-    #: (criar/desativar) sai None -- so a listagem resolve o subtime.
-    team_id: uuid.UUID | None = None
+    #: Entrega 13 (Fatia 2): ids dos SUBTIMES do membro (times nao-raiz).
+    #: NAO inclui o time principal. Usado pelo filtro de subtime no quadro.
+    #: Em respostas de mutacao (criar/desativar) sai VAZIO -- so a listagem
+    #: resolve os subtimes.
+    #:
+    #: ⚠️⚠️ ERA `team_id: uuid.UUID | None`, SINGULAR, ate 31/08 (Spec 044,
+    #: fatia 1). A TROCA DE NOME E O PONTO, e nao um efeito colateral de
+    #: pluralizar: acrescentar `team_ids` ao lado de `team_id` deixaria os
+    #: cinco consumidores do front COMPILANDO E ERRADOS -- que e exatamente
+    #: o roteiro do defeito que esta spec existe para nao repetir ("a regra
+    #: mudou e um consumidor ficou para tras", quinze vezes na Spec 043).
+    #: Trocando o nome, o `tsc` fica vermelho nos cinco e a conversa
+    #: acontece antes do deploy. O `tsc` e o unico portao que pega isto, e
+    #: ele so pega se o campo mudar de nome.
+    team_ids: list[uuid.UUID] = Field(default_factory=list)
 
 
 class MemberCreateRequest(BaseModel):

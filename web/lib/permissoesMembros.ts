@@ -159,19 +159,33 @@ export function timesParaAdicionar(a: Alcance, times: Team[]): Team[] {
  * corpo e passa a impressao de que a ferramenta perdeu registros.
  *
  * Para o supervisor ha acao quando o membro esta:
- *   - num subtime dele          -> pode remover (D1);
+ *   - em ALGUM subtime dele     -> pode remover (D1);
  *   - sem subtime, so na raiz   -> pode puxar para o subtime dele.
- * Em OUTRO subtime nao ha acao: a trava D1 recusa mexer la, e a regra
- * 1-subtime (ADR 0008) recusaria traze-lo para ca de qualquer jeito.
+ * So em subtime ALHEIO nao ha acao: a trava D1 recusa mexer la.
  *
- * `subtimeDoMembro` e o `team_id` do Member -- o backend so devolve subtime
- * ali, nunca a raiz; `null` significa "so na raiz".
+ * ⚠️ `subtimesDoMembro` e o `team_ids` do Member -- o backend so devolve
+ * subtime ali, nunca a raiz; lista VAZIA significa "so na raiz".
+ *
+ * ⚠️⚠️ ERA `subtimeDoMembro: string | null`, UM subtime, e a pergunta era "o
+ * subtime dele e um dos meus?". Com a Spec 044 vira "ALGUM subtime dele e um
+ * dos meus?" -- e isso MUDA QUEM UM SUPERVISOR PODE ADMINISTRAR, e nao e
+ * refactor. Quem esta em SEO e em Midias Sociais passa a ter linha com botao
+ * para o supervisor de SEO, que e o comportamento certo: ele administra a
+ * pessoa NAQUELE subtime, e o backend (`_assert_escopo_supervisor`) confere o
+ * time alvo de cada operacao, um a um.
+ *
+ * ⚠️ A trava real continua no backend. Esta funcao decide DESENHO -- se a
+ * linha mostra botao. Errar aqui oferece um botao que dara 403; nunca abre
+ * uma porta.
  */
 export function temAcaoPossivel(
   a: Alcance,
-  subtimeDoMembro: string | null,
+  subtimesDoMembro: string[],
 ): boolean {
   if (a.tipo === "amplo") return true;
   if (a.tipo === "nenhum") return false;
-  return subtimeDoMembro === null || a.subtimes.includes(subtimeDoMembro);
+  return (
+    subtimesDoMembro.length === 0 ||
+    subtimesDoMembro.some((t) => a.subtimes.includes(t))
+  );
 }

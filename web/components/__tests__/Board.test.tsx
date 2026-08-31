@@ -202,7 +202,7 @@ const MEMBROS: Member[] = [
     name: "Ana",
     email: "ana@x.com",
     is_active: true,
-    team_id: CRM,
+    team_ids: [CRM],
   },
 ];
 
@@ -375,6 +375,66 @@ describe("Board -- quadro de subtime, pill de escopo (§8)", () => {
     await screen.findByText("Tarefa em projeto sem time");
     expect(pillDe("Tarefa em projeto sem time")).toBeNull();
   });
+
+  // ===================================================================
+  // ⚠️ Spec 044 (fatia 1): a pessoa em MAIS DE UM subtime
+  // ===================================================================
+  //
+  // ⚠️ OS QUATRO TESTES ACIMA NUNCA TOCARAM `pertenceAoSubtime`: todos entram
+  // pelo ramo B da lente (`task.team_id === subteamId`, a tarefa INTERNA) ou
+  // pelo time do projeto. O ramo A -- tarefa da RAIZ que aparece na lente
+  // porque o RESPONSAVEL e do subtime -- nao tinha guardiao nenhum, e e
+  // exatamente a funcao que esta fatia mudou de `===` para `includes`.
+
+  const SEO = "team-seo";
+
+  it("⚠️ tarefa da raiz aparece na lente porque a responsavel esta em DOIS subtimes", async () => {
+    // O caso da ADR 0039: a redatora em SEO e em CRM. Com o `===` antigo a
+    // resposta dependia de QUAL subtime o backend tivesse devolvido no campo
+    // singular -- ou seja, metade das vezes a tarefa dela sumia desta tela.
+    montarApi(
+      [
+        task({
+          id: "t6",
+          title: "Texto do lançamento",
+          team_id: RAIZ,
+          assignee_ids: [ANA],
+        }),
+      ],
+      []
+    );
+    vi.mocked(api.listMembers).mockResolvedValue([
+      { ...MEMBROS[0], team_ids: [SEO, CRM] },
+    ]);
+
+    render(<Board subteamId={CRM} title="CRM e Automação" />);
+    expect(await screen.findByText("Texto do lançamento")).toBeTruthy();
+  });
+
+  it("⚠️ e a lente NAO vaza: responsavel so de subtime alheio nao entra", async () => {
+    // O outro lado, e o que impede o `includes` de virar "aparece pra todo
+    // mundo". Sem esta asserção, trocar `includes` por `length > 0` passaria.
+    montarApi(
+      [
+        task({
+          id: "t7",
+          title: "Coisa do SEO",
+          team_id: RAIZ,
+          assignee_ids: [ANA],
+        }),
+      ],
+      []
+    );
+    vi.mocked(api.listMembers).mockResolvedValue([
+      { ...MEMBROS[0], team_ids: [SEO] },
+    ]);
+
+    render(<Board subteamId={CRM} title="CRM e Automação" />);
+    // Espera o quadro terminar de montar antes de afirmar a AUSENCIA -- senao
+    // o teste passaria so por chegar antes dos dados.
+    await screen.findByRole("button", { name: /Filtros/ });
+    expect(screen.queryByText("Coisa do SEO")).toBeNull();
+  });
 });
 
 describe("Board -- guardas de carregamento", () => {
@@ -443,8 +503,8 @@ describe("Board -- filtro de responsável (multi-seleção, UNIÃO)", () => {
   const CLARA = "user-clara";
 
   const EQUIPE: Member[] = [
-    { id: BEATRIZ, workspace_id: "ws", name: "Beatriz", email: "b@x.com", is_active: true, team_id: CRM },
-    { id: CLARA, workspace_id: "ws", name: "Clara", email: "c@x.com", is_active: true, team_id: CRM },
+    { id: BEATRIZ, workspace_id: "ws", name: "Beatriz", email: "b@x.com", is_active: true, team_ids: [CRM] },
+    { id: CLARA, workspace_id: "ws", name: "Clara", email: "c@x.com", is_active: true, team_ids: [CRM] },
   ];
 
   /** Três tarefas: só Beatriz, só Clara, e uma sem ninguém. */

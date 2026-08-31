@@ -91,7 +91,7 @@ async def list_members(
                 email=m.user.email,
                 is_active=m.user.is_active,
                 created_at=m.user.created_at,
-                team_id=m.subteam_id,
+                team_ids=m.subteam_ids,
             )
             for m in members
         ],

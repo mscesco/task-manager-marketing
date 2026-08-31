@@ -188,25 +188,49 @@ describe("temAcaoPossivel", () => {
   // fazia o contador do cabecalho divergir do corpo. O que varia e o botao.
 
   it("supervisor age sobre quem esta no proprio subtime", () => {
-    expect(temAcaoPossivel(SUP, SEO)).toBe(true);
+    expect(temAcaoPossivel(SUP, [SEO])).toBe(true);
   });
 
   it("supervisor age sobre quem esta so na raiz (candidato a entrar)", () => {
-    expect(temAcaoPossivel(SUP, null)).toBe(true);
+    // ⚠️ LISTA VAZIA e o "so na raiz" -- era `null` ate a Spec 044. O backend
+    // passou a ter UMA representacao para "sem subtime", e o teste segue.
+    expect(temAcaoPossivel(SUP, [])).toBe(true);
   });
 
   it("A TRAVA D1: sem acao sobre quem esta em OUTRO subtime", () => {
-    expect(temAcaoPossivel(SUP, CRM)).toBe(false);
+    expect(temAcaoPossivel(SUP, [CRM])).toBe(false);
   });
 
   it("alcance amplo age sobre qualquer um", () => {
-    expect(temAcaoPossivel(AMPLO, CRM)).toBe(true);
-    expect(temAcaoPossivel(AMPLO, null)).toBe(true);
+    expect(temAcaoPossivel(AMPLO, [CRM])).toBe(true);
+    expect(temAcaoPossivel(AMPLO, [])).toBe(true);
   });
 
   it("sem alcance, nenhuma acao", () => {
-    expect(temAcaoPossivel(NADA, SEO)).toBe(false);
-    expect(temAcaoPossivel(NADA, null)).toBe(false);
+    expect(temAcaoPossivel(NADA, [SEO])).toBe(false);
+    expect(temAcaoPossivel(NADA, [])).toBe(false);
+  });
+
+  // =====================================================================
+  // ⚠️ Spec 044: a pessoa em MAIS DE UM subtime
+  // =====================================================================
+
+  it("⚠️ ALGUM subtime basta: age sobre quem esta no dele E em outro", () => {
+    // O caso concreto da ADR 0039: a redatora em SEO e em Midias Sociais. O
+    // supervisor de SEO administra a pessoa NAQUELE subtime.
+    //
+    // ⚠️ ESTE E O TESTE QUE MUDA COMPORTAMENTO, e nao so tipo: com a versao
+    // singular a resposta dependia de qual dos dois subtimes o backend tivesse
+    // escolhido devolver -- ou seja, era sorteio. Agora e determinado.
+    expect(temAcaoPossivel(SUP, [SEO, CRM])).toBe(true);
+    // E a ordem nao importa: `some` nao e "o primeiro".
+    expect(temAcaoPossivel(SUP, [CRM, SEO])).toBe(true);
+  });
+
+  it("⚠️ e a TRAVA D1 sobrevive ao plural: dois subtimes ALHEIOS = sem acao", () => {
+    // Se isto virar `true`, o supervisor de SEO ganhou botao sobre gente que
+    // nao e dele -- o backend recusaria com 403, mas a tela teria oferecido.
+    expect(temAcaoPossivel(SUP, [CRM, "outro-qualquer"])).toBe(false);
   });
 });
 

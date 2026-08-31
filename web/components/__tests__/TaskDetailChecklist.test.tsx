@@ -215,8 +215,6 @@ function Pai({
       mostrarArquivadas={false}
       projetosPessoais={new Set()}
       membrosInativos={new Set()}
-      subtimePorMembro={new Map()}
-      rootTeamId={"team-marketing"}
     />
   );
 }

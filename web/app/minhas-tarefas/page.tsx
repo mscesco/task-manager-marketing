@@ -45,7 +45,6 @@ import {
   getTask,
   listTasks,
   listMembers,
-  getRootTeamId,
   listAllProjects,
   updateTask,
   ApiError,
@@ -110,13 +109,6 @@ function Minhas() {
   // COMPLETO (resolve o nome de quem ja esta designado) e este conjunto so
   // tira do seletor e marca a pilula como desativado.
   const [membrosInativos, setMembrosInativos] = useState<Set<string>>(new Set());
-  // Spec 031 + escopo de time: quem alcanca a tarefa depende do subtime da
-  // pessoa e do time DA TAREFA -- por isso vai o dado cru pro TaskDetail, que
-  // e quem sabe qual tarefa esta focada. Ver `lib/escopoTarefa.ts`.
-  const [subtimePorMembro, setSubtimePorMembro] = useState<Map<string, string | null>>(
-    new Map()
-  );
-  const [rootTeamId, setRootTeamId] = useState<string | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   // null = nao truncou. Se a lista passar do teto de busca, vira aviso honesto
   // no lugar de perda silenciosa (mesmo padrao do quadro).
@@ -241,13 +233,7 @@ function Minhas() {
       .then((ms) => {
         setMembers(new Map(ms.map((m) => [m.id, { name: m.name }])));
         setMembrosInativos(new Set(ms.filter((m) => !m.is_active).map((m) => m.id)));
-        setSubtimePorMembro(new Map(ms.map((m) => [m.id, m.team_id ?? null])));
       })
-      .catch(() => {});
-    // Memoizado no api.ts (uma chamada por navegacao). Falha => segue null, e
-    // `foraDoEscopo` devolve conjunto vazio: nao esconde ninguem.
-    getRootTeamId()
-      .then(setRootTeamId)
       .catch(() => {});
     // Spec 022: alimenta o chip de projeto e o seletor de "mudar projeto" no detalhe.
     listAllProjects()
@@ -1300,8 +1286,6 @@ function Minhas() {
         mostrarArquivadas={mostrarArquivadas}
         projetosPessoais={projetosPessoais}
         membrosInativos={membrosInativos}
-        subtimePorMembro={subtimePorMembro}
-        rootTeamId={rootTeamId}
         onAbrirSubtarefa={abrirSubtarefa}
         onSubtaskUpsert={aoUpsertComFilhos}
         onTaskMoved={aoUpsertComFilhos}
