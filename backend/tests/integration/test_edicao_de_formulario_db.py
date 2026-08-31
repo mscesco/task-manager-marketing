@@ -28,8 +28,11 @@ vontade, e mudam tambem o passado. A diferenca esta testada aqui embaixo.
 from __future__ import annotations
 
 import inspect
+import uuid
 
 import pytest
+
+from sqlalchemy import text
 
 from app.modules.solicitations.application.form_service import (
     CODIGO_CONDICIONAL_INVALIDA,
@@ -37,9 +40,14 @@ from app.modules.solicitations.application.form_service import (
     CODIGO_PERGUNTA_TEM_DEPENDENTE,
     CODIGO_RESUMO_FORA,
     CODIGO_SEM_OPCOES,
+    CODIGO_SLUG_DE_SECAO_REPETIDO,
     SolicitationFormService,
 )
-from app.shared.exceptions.base import AuthorizationError, ValidationError
+from app.shared.exceptions.base import (
+    AuthorizationError,
+    EntityNotFoundError,
+    ValidationError,
+)
 from tests.integration import factories as f
 from tests.integration.conftest import acting_as, mship, node
 
@@ -378,6 +386,250 @@ async def test_apagar_a_pergunta_RESUMO_limpa_o_ponteiro(db) -> None:
         secoes, _ = await svc.perguntas_do_form(form.id)
 
     assert secoes[0].summary_question_id is None
+
+
+# ==========================================================
+# ⚠️ O slug da seção é chave de dado (achado do review da fatia A)
+# ==========================================================
+async def test_duas_secoes_do_MESMO_formulario_nao_dividem_endereco(db) -> None:
+    """⚠️⚠️ O SLUG DA SEÇÃO VIAJA GRAVADO EM CADA PEDIDO.
+
+    Duas seções com o mesmo slug tornam o pedido AMBÍGUO: a fila monta o
+    dicionário de rótulos por `(form_id, slug)` e a segunda linha SOBRESCREVE
+    a primeira, então o pedido aparece com o título e o emoji da seção ERRADA.
+    Nada dá erro em lugar nenhum.
+
+    ⚠️ E A FATIA C2 PROTEGEU O LADO ERRADO: lá está escrito que o slug não
+    pode MUDAR porque fica gravado no pedido -- e nunca se impediu que dois
+    nascessem iguais. Os dois quebram a mesma coisa.
+    """
+    ws, raiz, mkt, design, user, arvore = await _mundo(db)
+    with acting_as(**_ctx(ws, user, arvore, mship(mkt, "MANAGER"))):
+        svc = SolicitationFormService(db)
+        form = await svc.criar_formulario(team_id=mkt, slug="arte", title="Arte")
+        await svc.criar_secao(form_id=form.id, slug="foto", title="Foto")
+
+        with pytest.raises(ValidationError) as erro:
+            await svc.criar_secao(
+                form_id=form.id, slug="foto", title="Fotografia digital"
+            )
+
+    assert erro.value.code == CODIGO_SLUG_DE_SECAO_REPETIDO
+
+
+async def test_o_MESMO_endereco_em_formularios_DIFERENTES_e_permitido(db) -> None:
+    """⚠️ A UNICIDADE É POR FORMULÁRIO, e não global. "arte" no formulário do
+    Marketing e "arte" no do Design são coisas distintas -- e a fila resolve o
+    rótulo por `(form_id, slug)`, então não há ambiguidade."""
+    ws, raiz, mkt, design, user, arvore = await _mundo(db)
+    with acting_as(**_ctx(ws, user, arvore, mship(raiz, "ADMIN"))):
+        svc = SolicitationFormService(db)
+        um = await svc.criar_formulario(team_id=mkt, slug="mkt", title="Mkt")
+        outro = await svc.criar_formulario(team_id=design, slug="dsg", title="Dsg")
+        a = await svc.criar_secao(form_id=um.id, slug="arte", title="Arte")
+        b = await svc.criar_secao(form_id=outro.id, slug="arte", title="Arte")
+
+    assert a.slug == b.slug == "arte"
+
+
+async def test_endereco_de_secao_APAGADA_pode_ser_reaproveitado(db) -> None:
+    """⚠️ O ÍNDICE É PARCIAL (`WHERE deleted_at IS NULL`), como o do
+    formulário: quem apagou "foto" por engano pode criar "foto" de novo."""
+    ws, raiz, mkt, design, user, arvore = await _mundo(db)
+    with acting_as(**_ctx(ws, user, arvore, mship(mkt, "MANAGER"))):
+        svc = SolicitationFormService(db)
+        form = await svc.criar_formulario(team_id=mkt, slug="arte", title="Arte")
+        velha = await svc.criar_secao(form_id=form.id, slug="foto", title="Foto")
+        await svc.apagar_secao(section_id=velha.id)
+
+        nova = await svc.criar_secao(form_id=form.id, slug="foto", title="Foto")
+
+    assert nova.id != velha.id
+
+
+# ==========================================================
+# ⚠️ O time tem de existir (achado do review da fatia A)
+# ==========================================================
+async def test_ADMIN_com_time_inexistente_leva_404_e_nao_500(db) -> None:
+    """⚠️ `_assert_pode_gerir` RETORNA CEDO PARA ADMIN (`editable_team_ids`
+    devolve `None` = sem filtro), então nenhum caminho conferia se o id existe.
+
+    Sem esta guarda o INSERT ia com um `team_id` inválido, a FK composta
+    `(team_id, workspace_id)` recusava, e saía **500** em vez de 404 -- mesmo
+    padrão que o `_assert_tarefa_do_workspace` da fatia E já tratava.
+    """
+    ws, raiz, mkt, design, user, arvore = await _mundo(db)
+    with acting_as(**_ctx(ws, user, arvore, mship(raiz, "ADMIN"))):
+        with pytest.raises(EntityNotFoundError):
+            await SolicitationFormService(db).criar_formulario(
+                team_id=uuid.uuid4(), slug="fantasma", title="Fantasma"
+            )
+
+
+async def test_time_de_OUTRO_workspace_tambem_e_recusado(db) -> None:
+    """A FK composta impediria; aqui a recusa vira 404 com texto."""
+    ws, raiz, mkt, design, user, arvore = await _mundo(db)
+    outro_ws = await f.make_workspace(db)
+    intruso = await f.make_team(db, workspace_id=outro_ws)
+    await db.flush()
+
+    with acting_as(**_ctx(ws, user, arvore, mship(raiz, "ADMIN"))):
+        with pytest.raises(EntityNotFoundError):
+            await SolicitationFormService(db).criar_formulario(
+                team_id=intruso, slug="invasor", title="Invasor"
+            )
+
+
+# ==========================================================
+# ⚠️ Apagar o formulário leva as seções (achado do review da fatia A)
+# ==========================================================
+async def test_apagar_FORMULARIO_leva_secoes_e_perguntas_junto(db) -> None:
+    """ADR-0005. Era inerte -- todo caminho passa pelo `_form_do_workspace`,
+    que dá 404 --, mas deixava estado inconsistente com o próprio
+    `apagar_secao`, que cascateia para as perguntas."""
+    ws, raiz, mkt, design, user, arvore = await _mundo(db)
+    with acting_as(**_ctx(ws, user, arvore, mship(mkt, "MANAGER"))):
+        svc = SolicitationFormService(db)
+        form, secao, alvo, dep = await _com_condicional(db, svc, mkt)
+
+        await svc.apagar_formulario(form_id=form.id)
+
+    vivas = (
+        await db.execute(
+            text(
+                "SELECT count(*) FROM solicitation_section "
+                "WHERE form_id = :f AND deleted_at IS NULL"
+            ),
+            {"f": form.id},
+        )
+    ).scalar_one()
+    perguntas_vivas = (
+        await db.execute(
+            text(
+                "SELECT count(*) FROM solicitation_question "
+                "WHERE section_id = :s AND deleted_at IS NULL"
+            ),
+            {"s": secao.id},
+        )
+    ).scalar_one()
+    assert vivas == 0
+    assert perguntas_vivas == 0
+
+
+# ==========================================================
+# ⚠️ A posição depois de apagar (achado da revisão de 31/08)
+# ==========================================================
+async def test_criar_depois_de_APAGAR_nao_colide_de_posicao(db) -> None:
+    """⚠️⚠️ `len(vivos)` COLIDE, e o soft delete não compacta.
+
+    Criar P1, P2, P3 (posições 0, 1, 2), apagar P2, criar P4: contando os
+    vivos dá 2, e P4 nascia **em cima de P3**. O índice não é único, então a
+    colisão passava em silêncio.
+    """
+    ws, raiz, mkt, design, user, arvore = await _mundo(db)
+    with acting_as(**_ctx(ws, user, arvore, mship(mkt, "MANAGER"))):
+        svc = SolicitationFormService(db)
+        form = await svc.criar_formulario(team_id=mkt, slug="arte", title="Arte")
+        secao = await svc.criar_secao(form_id=form.id, slug="foto", title="Foto")
+        p1 = await svc.criar_pergunta(section_id=secao.id, label="P1", kind="texto")
+        p2 = await svc.criar_pergunta(section_id=secao.id, label="P2", kind="texto")
+        p3 = await svc.criar_pergunta(section_id=secao.id, label="P3", kind="texto")
+        assert [p1.position, p2.position, p3.position] == [0, 1, 2]
+
+        await svc.apagar_pergunta(question_id=p2.id)
+        p4 = await svc.criar_pergunta(section_id=secao.id, label="P4", kind="texto")
+
+    assert p4.position == 3
+    assert p4.position != p3.position
+
+
+async def test_a_CONDICIONAL_funciona_depois_de_apagar_e_criar(db) -> None:
+    """⚠️⚠️ O SINTOMA VISÍVEL DA COLISÃO, e o que a torna cara.
+
+    A regra ordinal (`alvo.position >= pergunta.position`) recusava uma
+    configuração legítima quando duas perguntas dividiam a posição: a pessoa
+    via *"a condição precisa usar uma pergunta que vem ANTES desta"* apontando
+    para uma pergunta que aparece ANTES na tela. E o único jeito de destravar
+    era arrastar qualquer coisa na seção -- porque `reordenar_perguntas`
+    compacta --, o que ninguém descobre sozinho.
+    """
+    ws, raiz, mkt, design, user, arvore = await _mundo(db)
+    with acting_as(**_ctx(ws, user, arvore, mship(mkt, "MANAGER"))):
+        svc = SolicitationFormService(db)
+        form = await svc.criar_formulario(team_id=mkt, slug="arte", title="Arte")
+        secao = await svc.criar_secao(form_id=form.id, slug="foto", title="Foto")
+        descartada = await svc.criar_pergunta(
+            section_id=secao.id, label="Errei", kind="texto"
+        )
+        gatilho = await svc.criar_pergunta(
+            section_id=secao.id,
+            label="Precisa de quê?",
+            kind="escolha",
+            options=["Sessão", "Edição"],
+        )
+        await svc.apagar_pergunta(question_id=descartada.id)
+        dependente = await svc.criar_pergunta(
+            section_id=secao.id, label="Data", kind="data"
+        )
+
+        # ⚠️ Antes do conserto, `dependente` nascia na mesma posição do
+        # `gatilho` e esta chamada levantava ValidationError.
+        ligada = await svc.definir_condicional(
+            question_id=dependente.id, alvo_id=gatilho.id, valor="Sessão"
+        )
+
+    assert ligada.show_if_question_id == gatilho.id
+
+
+async def test_secao_criada_depois_de_apagar_tambem_nao_colide(db) -> None:
+    ws, raiz, mkt, design, user, arvore = await _mundo(db)
+    with acting_as(**_ctx(ws, user, arvore, mship(mkt, "MANAGER"))):
+        svc = SolicitationFormService(db)
+        form = await svc.criar_formulario(team_id=mkt, slug="arte", title="Arte")
+        a = await svc.criar_secao(form_id=form.id, slug="a", title="A")
+        b = await svc.criar_secao(form_id=form.id, slug="b", title="B")
+        await svc.apagar_secao(section_id=a.id)
+        c = await svc.criar_secao(form_id=form.id, slug="c", title="C")
+
+    assert c.position == 2
+    assert c.position != b.position
+
+
+# ==========================================================
+# ⚠️ Limpar um campo opcional (achado da revisão de 31/08)
+# ==========================================================
+async def test_prazo_e_ajuda_podem_ser_LIMPOS(db) -> None:
+    """⚠️ O PATCH TRATA `None` COMO "não mexe", então o front tem de mandar
+    string VAZIA para limpar -- e o serviço converte para `None`.
+
+    Sem isto não havia como esvaziar "Prazo mostrado" nem "Ajuda" pela tela:
+    apagar o campo devolvia 200, nada mudava, e o valor antigo voltava ao
+    recarregar.
+    """
+    ws, raiz, mkt, design, user, arvore = await _mundo(db)
+    with acting_as(**_ctx(ws, user, arvore, mship(mkt, "MANAGER"))):
+        svc = SolicitationFormService(db)
+        form = await svc.criar_formulario(team_id=mkt, slug="arte", title="Arte")
+        secao = await svc.criar_secao(
+            form_id=form.id, slug="foto", title="Foto", sla_text="5 dias úteis"
+        )
+        p = await svc.criar_pergunta(
+            section_id=secao.id,
+            label="Quando?",
+            kind="data",
+            help_text="Formato DD/MM",
+        )
+
+        limpa = await svc.editar_secao(section_id=secao.id, sla_text="")
+        assert limpa.sla_text is None
+
+        sem_ajuda = await svc.editar_pergunta(question_id=p.id, help_text="")
+        assert sem_ajuda.help is None
+
+        # ⚠️ E `None` CONTINUA SIGNIFICANDO "não mexe" -- é a convenção do
+        # PATCH neste projeto, e mudá-la quebraria `options`.
+        intacta = await svc.editar_secao(section_id=secao.id, title="Fotografia")
+        assert intacta.title == "Fotografia"
 
 
 # ==========================================================

@@ -395,6 +395,50 @@ def test_titulo_e_cortado_em_255() -> None:
     assert len(titulo_da_tarefa(Longo())) == 255
 
 
+def test_briefing_NAO_escreve_None_quando_o_formulario_nao_pergunta() -> None:
+    """⚠️⚠️ ACHADO PELA REVISÃO DE 31/08, e é o pior dos quatro que ela trouxe.
+
+    `f"{None}"` produz o literal **"None"**, e este briefing vira a DESCRIÇÃO
+    de uma tarefa no quadro. Quem pegasse a tarefa leria "Solicitante: Maria ·
+    maria@x · None" e "Área: None · Polo: None" enquanto tentava fazer o
+    trabalho.
+
+    ⚠️ E PASSOU POR DOIS MOTIVOS SOMADOS: o `Protocol` declarava os três campos
+    como `str` (o mypy calou), e **todas** as fixtures preenchiam os cinco
+    campos -- o caso `None` nunca era exercitado. É o mesmo padrão que a fatia
+    G repetiu em quatro lugares: escritor migrado, leitor esquecido.
+    """
+
+    class SemLugar(_Falso):
+        requester_phone = None
+        requester_department = None
+        requester_polo = None
+
+    texto = briefing(SemLugar(), "Criar uma arte")
+    assert "None" not in texto
+    # ⚠️ E A LINHA INTEIRA SOME, em vez de virar "Área:  · Polo: " vazio --
+    # campo em branco parece dado perdido.
+    #
+    # ⚠️ A ASSERÇÃO É SOBRE O RÓTULO (`"Polo:"`, com dois-pontos) e não sobre a
+    # palavra: "Polo" aparece em "Maria do Polo" e dentro de "Protocolo". A
+    # primeira versão deste teste reprovou por isso.
+    assert "Área:" not in texto
+    assert "Polo:" not in texto
+    # O que o formulário PERGUNTOU continua lá.
+    assert _Falso.requester_email in texto
+
+
+def test_briefing_com_UM_dos_dois_mostra_so_ele() -> None:
+    """Meio-termo: pergunta área e não polo."""
+
+    class SoArea(_Falso):
+        requester_polo = None
+
+    texto = briefing(SoArea())
+    assert "Área: Coordenação" in texto
+    assert "Polo:" not in texto
+
+
 def test_briefing_traz_protocolo_posicao_e_respostas() -> None:
     texto = briefing(_Falso(), "Criar uma arte")
     assert texto.startswith("[Criar uma arte] Banner do processo seletivo")

@@ -97,6 +97,96 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
+// =====================================================================
+// ⚠️ O rascunho não pode vazar entre formulários
+// =====================================================================
+describe("o rascunho local", () => {
+  // ⚠️⚠️ ACHADO PELA REVISÃO DE 31/08. A chave do rascunho era GLOBAL --
+  // segura quando havia UM formulário público, e errada desde que a Spec 043
+  // trouxe N. `selecionadas` guarda SLUG DE SEÇÃO: restaurar o rascunho do
+  // formulário A dentro do B deixava a tela **em branco**, porque as três
+  // seções do formulário são condicionais e nenhuma satisfaz a condição com
+  // slugs desconhecidos. Na única rota pública do produto.
+  const CHAVE_ANTIGA = "fazae:rascunho-solicitacao:v1";
+
+  function gravar(chave: string, dados: object) {
+    window.localStorage.setItem(
+      chave,
+      JSON.stringify({ salvoEm: Date.now(), ...dados })
+    );
+  }
+
+  it("⚠️ rascunho de OUTRO formulário não é oferecido", () => {
+    gravar("fazae:rascunho-solicitacao:v2:f-OUTRO", {
+      ident: { nome: "Maria" },
+      selecionadas: ["arte"],
+      valores: {},
+      passo: 2,
+    });
+    montar();
+    // O banner de "continuar" não aparece: a gaveta é por formulário.
+    expect(screen.queryByText(/Continuar de onde parei/i)).toBeNull();
+  });
+
+  it("⚠️ a chave ANTIGA é APAGADA, e não só ignorada", () => {
+    // ⚠️ ACHADO NA REVISÃO DO PRÓPRIO CONSERTO. Trocar o prefixo aposentou os
+    // `v1`, mas nada os removia: ficavam no navegador para sempre, inclusive
+    // depois do TTL, porque a expiração só é avaliada na leitura e ninguém
+    // lia. É o que alguém digitou num formulário, guardado sem prazo.
+    gravar(CHAVE_ANTIGA, {
+      ident: { nome: "Maria" },
+      selecionadas: ["arte"],
+      valores: {},
+      passo: 2,
+    });
+    montar();
+    expect(window.localStorage.getItem(CHAVE_ANTIGA)).toBeNull();
+  });
+
+  it("⚠️ e o rascunho da chave ANTIGA e global é ignorado", () => {
+    // O `v2` aposenta os globais de propósito: eles não sabem de qual
+    // formulário vieram, então não dá para migrá-los com honestidade.
+    gravar(CHAVE_ANTIGA, {
+      ident: { nome: "Maria" },
+      selecionadas: ["arte"],
+      valores: {},
+      passo: 2,
+    });
+    montar();
+    expect(screen.queryByText(/Continuar de onde parei/i)).toBeNull();
+  });
+
+  it("o rascunho DESTE formulário continua sendo oferecido", async () => {
+    gravar("fazae:rascunho-solicitacao:v2:f1", {
+      ident: { nome: "Maria" },
+      selecionadas: ["acesso"],
+      valores: {},
+      passo: 1,
+    });
+    montar();
+    expect(await screen.findByText(/Continuar de onde parei/i)).toBeTruthy();
+  });
+
+  it("⚠️ seção APAGADA no editor não deixa a tela em branco", async () => {
+    // ⚠️ A CHAVE POR FORMULÁRIO NÃO COBRE ISTO: a seção pode ter sido apagada
+    // no editor entre a visita e o retorno, e o editor da fatia C2 tornou isso
+    // possível. O `passo` volta a zero e a pessoa é avisada, em vez de cair
+    // numa página sem nada.
+    gravar("fazae:rascunho-solicitacao:v2:f1", {
+      ident: { nome: "Maria" },
+      selecionadas: ["acesso", "secao-apagada"],
+      valores: {},
+      passo: 2,
+    });
+    montar();
+    fireEvent.click(await screen.findByText(/Continuar de onde parei/i));
+
+    // A etapa 0 volta a existir -- a tela NÃO fica em branco.
+    expect(await screen.findByLabelText(/^Nome/)).toBeTruthy();
+    expect(screen.getByRole("alert").textContent).toMatch(/não existe mais/i);
+  });
+});
+
 describe("camposDeIdentificacao", () => {
   it("⚠️ NOME e E-MAIL vêm sempre, e vêm primeiro", () => {
     // Eles não são configuráveis: a fila é organizada por quem pediu, e a
@@ -173,6 +263,48 @@ describe("a etapa de identificação, montada de verdade", () => {
     expect(corpo.requester_phone).toBe("11999990000");
     expect(corpo.requester_department).toBeNull();
     expect(corpo.requester_polo).toBeNull();
+  });
+
+  it("⚠️ a mensagem de erro NÃO cobra campo que a tela não desenha", async () => {
+    // ⚠️ ACHADO PELA REVISÃO DE 31/08. A mensagem era fixa -- "Preencha nome,
+    // e-mail válido, telefone, área e polo" -- e num formulário de TI ela
+    // acusava a pessoa de pular "área e polo", campos que a tela nem desenha.
+    // É exatamente o defeito que o comentário do `identOk()` diz que não pode
+    // acontecer, escrito uma função acima.
+    montar({ telefone: "WhatsApp", area: null, polo: null });
+    fireEvent.change(await screen.findByLabelText(/^Nome/), {
+      target: { value: "Maria" },
+    });
+    fireEvent.change(screen.getByLabelText(/^E-mail/), {
+      target: { value: "maria@polo.ex" },
+    });
+    fireEvent.click(screen.getByText("Pedido de acesso"));
+    fireEvent.click(screen.getByText(/Continuar|Avançar|Próximo/i));
+
+    const erro = await screen.findByRole("alert");
+    expect(erro.textContent).toContain("whatsapp");
+    expect(erro.textContent).not.toMatch(/polo/i);
+    expect(erro.textContent).not.toMatch(/área/i);
+  });
+
+  it("⚠️ a revisão não deixa separador pendurado sem telefone", async () => {
+    // A última tela antes de enviar é o pior lugar para uma dúvida: com o
+    // telefone desligado, ela mostrava "Maria · maria@x ·" com um · solto.
+    vi.mocked(api.enviarSolicitacaoPublica).mockResolvedValue({
+      protocol: "ABC123",
+      created: 1,
+    });
+    montar({ telefone: null, area: null, polo: null });
+    preencher([]);
+    fireEvent.click(screen.getByText(/Continuar|Avançar|Próximo/i));
+    fireEvent.change(await screen.findByLabelText(/Qual sistema/), {
+      target: { value: "o CRM" },
+    });
+    fireEvent.click(screen.getByText(/Continuar|Avançar|Próximo|Revisar/i));
+
+    await screen.findByText("Enviar solicitação");
+    expect(document.body.textContent).not.toMatch(/maria@polo\.ex\s*·\s*$/m);
+    expect(document.body.textContent).not.toContain("· ·");
   });
 
   it("⚠️ o TÍTULO vem do banco -- ele estava escrito na mão", async () => {

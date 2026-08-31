@@ -145,7 +145,7 @@ export default function FormularioSolicitacao({
   const jaSalvou = useRef(false);
 
   useEffect(() => {
-    const r = lerRascunho();
+    const r = lerRascunho(formId);
     if (r) setRascunhoAchado(r);
     else setHidratado(true);
   }, []);
@@ -158,7 +158,7 @@ export default function FormularioSolicitacao({
       Object.values(ident).some((v) => v.trim().length > 0);
     if (!temConteudo && !jaSalvou.current) return;
     jaSalvou.current = true;
-    salvarRascunho({ ident, selecionadas, valores, passo });
+    salvarRascunho(formId, { ident, selecionadas, valores, passo });
   }, [ident, selecionadas, valores, passo, hidratado, resultado]);
 
   const categoriasSelecionadas: Categoria[] = useMemo(
@@ -234,7 +234,14 @@ export default function FormularioSolicitacao({
     if (passo === 0) {
       if (!identOk()) {
         setErro(
-          "Preencha nome, e-mail válido, telefone, área e polo antes de continuar."
+          // ⚠️ A MENSAGEM É MONTADA DA LISTA DE CAMPOS, e não escrita à mão.
+          // Fixa, ela acusava a pessoa de não preencher "área e polo" num
+          // formulário que nem desenha esses campos -- exatamente o defeito
+          // que o comentário do `identOk()` acima diz que não pode acontecer.
+          // Achado pela revisão de 31/08.
+          `Preencha ${campos
+            .map((c) => c.label.toLowerCase())
+            .join(", ")} antes de continuar.`
         );
         return;
       }
@@ -324,7 +331,7 @@ export default function FormularioSolicitacao({
         items,
         website: honeypot,
       });
-      limparRascunho();
+      limparRascunho(formId);
       setResultado(r);
     } catch (err) {
       const e = err as ApiError;
@@ -339,7 +346,7 @@ export default function FormularioSolicitacao({
   }
 
   function recomecar() {
-    limparRascunho();
+    limparRascunho(formId);
     setResultado(null);
     setIdent(IDENT_VAZIO);
     setSelecionadas([]);
@@ -408,15 +415,37 @@ export default function FormularioSolicitacao({
         <BannerRascunho
           rascunho={rascunhoAchado}
           onContinuar={() => {
+            // ⚠️⚠️ SO RESTAURA SECAO QUE AINDA EXISTE. A chave do rascunho já
+            // é por formulário, mas isso não cobre a seção APAGADA no editor
+            // entre a visita e o retorno -- e o editor da fatia C2 tornou isso
+            // possível. Restaurar um slug morto deixa a tela EM BRANCO: as três
+            // seções do formulário são condicionais e nenhuma satisfaz a
+            // condição com `selecionadas` desconhecidas.
+            //
+            // ⚠️ E O `passo` VOLTA PARA ZERO quando alguma some, em vez de ser
+            // restaurado: ele é um índice dentro da lista de selecionadas, e
+            // uma lista menor faz dele um número que aponta para lugar nenhum.
+            const vivas = (rascunhoAchado.selecionadas ?? []).filter(
+              (slug) => categoriaPorSlug[slug]
+            );
+            const perdeuAlguma =
+              vivas.length !== (rascunhoAchado.selecionadas ?? []).length;
+
             setIdent({ ...IDENT_VAZIO, ...rascunhoAchado.ident });
-            setSelecionadas(rascunhoAchado.selecionadas ?? []);
+            setSelecionadas(vivas);
             setValores(rascunhoAchado.valores ?? {});
-            setPasso(rascunhoAchado.passo ?? 0);
+            setPasso(perdeuAlguma ? 0 : rascunhoAchado.passo ?? 0);
             setRascunhoAchado(null);
             setHidratado(true);
+            if (perdeuAlguma) {
+              setErro(
+                "Alguma coisa que você tinha escolhido não existe mais neste " +
+                  "formulário. Confira a seleção antes de continuar."
+              );
+            }
           }}
           onDescartar={() => {
-            limparRascunho();
+            limparRascunho(formId);
             setRascunhoAchado(null);
             setHidratado(true);
           }}
@@ -432,8 +461,12 @@ export default function FormularioSolicitacao({
         />
       )}
 
+      {/* ⚠️ `role="alert"` FALTAVA AQUI, e esta é a única rota pública do
+          produto -- quem usa leitor de tela não era avisado de que o envio
+          falhou. As outras telas já têm; esta ficou para trás. Notado ao
+          escrever o teste da mensagem de erro (revisão de 31/08). */}
       {erro && (
-        <div className="error-box" style={{ marginBottom: 16 }}>
+        <div className="error-box" style={{ marginBottom: 16 }} role="alert">
           {erro}
         </div>
       )}
@@ -615,7 +648,12 @@ export default function FormularioSolicitacao({
           </div>
 
           <div style={{ fontSize: 13 }}>
-            <strong>{ident.nome}</strong> · {ident.email} · {ident.telefone}
+            {/* ⚠️ O TELEFONE SÓ ENTRA SE FOI PERGUNTADO. Fixo, ele deixava um
+                "·" pendurado no fim da revisão -- a última tela antes de
+                enviar, o pior lugar para uma dúvida. O bloco logo abaixo já
+                tratava área e polo assim; esta linha ficou para trás. */}
+            <strong>{ident.nome}</strong> · {ident.email}
+            {identificacao.telefone ? ` · ${ident.telefone}` : ""}
             <br />
             <span className="muted">
               {/* ⚠️ SÓ O QUE O FORMULÁRIO PERGUNTOU. Com "Polo" desligado,

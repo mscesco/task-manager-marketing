@@ -315,9 +315,25 @@ function CardEnvio({
           <div style={{ fontWeight: 600, fontSize: 14 }}>
             {envio.requester_name}
           </div>
+          {/* ⚠️ `filter(Boolean)` E NAO SEPARADOR FIXO. Desde a fatia G,
+              `requester_department` e `requester_polo` podem ser `null` -- em
+              JSX o `null` some, mas o `·` e o `/` FICAM, e o card mostrava
+              "maria@x.ex ·  / ". Achado pela revisão de 31/08.
+
+              ⚠️ E OS DOIS SEPARADORES SÃO DIFERENTES DE PROPÓSITO: `·` separa
+              o e-mail do lugar, `/` separa área de polo. Na primeira correção
+              eu juntei tudo com `·` e mudei o desenho sem ninguém pedir -- a
+              Camila mandou voltar. O defeito era o separador ÓRFÃO, não a
+              escolha dele. */}
           <div className="muted" style={{ fontSize: 12 }}>
-            {envio.requester_email} · {envio.requester_department} /{" "}
-            {envio.requester_polo}
+            {[
+              envio.requester_email,
+              [envio.requester_department, envio.requester_polo]
+                .filter(Boolean)
+                .join(" / "),
+            ]
+              .filter(Boolean)
+              .join(" · ")}
           </div>
           <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>
             Protocolo <strong>{envio.protocol}</strong> ·{" "}
@@ -384,7 +400,10 @@ function CardEnvio({
       {aberto && (
         <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 12 }}>
           <div className="muted" style={{ fontSize: 12 }}>
-            Contato: {envio.requester_email} · {envio.requester_phone}
+            Contato:{" "}
+            {[envio.requester_email, envio.requester_phone]
+              .filter(Boolean)
+              .join(" · ")}
           </div>
           {envio.items.map((item) => (
             <SecaoDemanda
@@ -440,8 +459,29 @@ function SecaoDemanda({
   function copiarBriefing() {
     const linhas = [
       `[${cat.titulo}] ${item.summary}`,
-      `Solicitante: ${envio.requester_name} · ${envio.requester_email} · ${envio.requester_phone}`,
-      `Área: ${envio.requester_department} · Polo: ${envio.requester_polo}`,
+      // ⚠️⚠️ TEMPLATE LITERAL COM CAMPO OPCIONAL ESCREVE A STRING "null".
+      // Este texto vai para a área de transferência e daí para o WhatsApp, o
+      // e-mail, a descrição de uma tarefa -- ou seja, o "null" VAZA PARA FORA
+      // do sistema, até o solicitante. Achado pela revisão de 31/08.
+      `Solicitante: ${[
+        envio.requester_name,
+        envio.requester_email,
+        envio.requester_phone,
+      ]
+        .filter(Boolean)
+        .join(" · ")}`,
+      // ⚠️ A LINHA INTEIRA SOME quando o formulário não pergunta nenhum dos
+      // dois -- "Área:  · Polo: " vazio parece dado perdido.
+      ...(envio.requester_department || envio.requester_polo
+        ? [
+            [
+              envio.requester_department ? `Área: ${envio.requester_department}` : "",
+              envio.requester_polo ? `Polo: ${envio.requester_polo}` : "",
+            ]
+              .filter(Boolean)
+              .join(" · "),
+          ]
+        : []),
       `Protocolo: ${envio.protocol}${envio.items.length > 1 ? ` (${item.batch_seq}/${envio.items.length})` : ""} · Recebida em ${new Date(envio.created_at).toLocaleDateString("pt-BR")}`,
       "",
       ...item.answers.map((a) => `${a.label}\n${a.value}\n`),
