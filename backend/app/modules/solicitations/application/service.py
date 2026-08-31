@@ -32,6 +32,7 @@ from app.db.models import (
     SolicitationForm,
     SolicitationSection,
     Task,
+    Team,
 )
 from app.db.unit_of_work import UnitOfWork
 from app.modules.solicitations.domain.solicitation import (
@@ -40,6 +41,10 @@ from app.modules.solicitations.domain.solicitation import (
     SolicitationStatus,
     can_review,
     pode_andar,
+)
+from app.modules.solicitations.infrastructure import aviso_de_status
+from app.modules.solicitations.infrastructure.aviso_de_status import (
+    AvisoDeStatus,
 )
 from app.modules.solicitations.infrastructure.repository import (
     SolicitationRepository,
@@ -699,6 +704,74 @@ class SolicitationService:
     async def get(self, solicitation_id: uuid.UUID) -> Solicitation:
         return await self.repo.get_by_id_or_raise(solicitation_id)
 
+    async def _monta_aviso(
+        self, solicitation: Solicitation, anterior: str
+    ) -> AvisoDeStatus | None:
+        """O retrato do pedido para o n8n, montado AINDA COM A SESSAO VIVA.
+
+        ⚠️⚠️ MONTAR ANTES E ENVIAR DEPOIS DO COMMIT e o coracao da regra 1 do
+        §8. Se o envio acontecesse dentro da transacao, um n8n lento seguraria
+        a linha no banco e um n8n fora do ar **desfaria a aprovacao**. Mas
+        depois do commit a sessao pode nao servir mais para ler relacionamento
+        -- entao os VALORES sao lidos aqui, e o que atravessa e um dataclass
+        congelado, sem nenhum caminho de volta ao banco.
+
+        ⚠️ E ELE SO CONSULTA SE O RECURSO ESTIVER LIGADO. Sem `N8N_WEBHOOK_URL`
+        nao ha razao para duas consultas a cada aprovacao.
+        """
+        if not aviso_de_status.esta_ligado():
+            return None
+
+        rotulos = await self.rotulos_de_categoria([solicitation])
+        rotulo = rotulos.get((solicitation.form_id, solicitation.category))
+
+        form_slug = form_titulo = form_time = None
+        if solicitation.form_id is not None:
+            linha = (
+                await self.session.execute(
+                    select(
+                        SolicitationForm.slug,
+                        SolicitationForm.title,
+                        Team.name,
+                    )
+                    .join(
+                        Team,
+                        (Team.id == SolicitationForm.team_id)
+                        & (Team.workspace_id == SolicitationForm.workspace_id),
+                    )
+                    .where(SolicitationForm.id == solicitation.form_id)
+                )
+            ).one_or_none()
+            if linha is not None:
+                form_slug, form_titulo, form_time = linha
+
+        return AvisoDeStatus(
+            solicitation_id=solicitation.id,
+            protocolo=str(solicitation.batch_id).split("-")[0].upper(),
+            status_anterior=anterior,
+            status_novo=solicitation.status,
+            resumo=solicitation.summary,
+            categoria=solicitation.category,
+            categoria_titulo=rotulo.title if rotulo else solicitation.category,
+            categoria_prazo=rotulo.sla_text if rotulo else None,
+            motivo_recusa=solicitation.review_note,
+            criada_em=solicitation.created_at,
+            requester_name=solicitation.requester_name,
+            requester_email=solicitation.requester_email,
+            requester_phone=solicitation.requester_phone,
+            requester_department=solicitation.requester_department,
+            requester_polo=solicitation.requester_polo,
+            form_slug=form_slug,
+            form_titulo=form_titulo,
+            form_time=form_time,
+        )
+
+    async def _avisar_status(self, aviso: AvisoDeStatus | None) -> None:
+        """Dispara o aviso. **Nunca levanta** -- ver `aviso_de_status`."""
+        if aviso is None:
+            return
+        await aviso_de_status.avisar(aviso)
+
     async def andar(
         self, uow: UnitOfWork, command: AndarCommand
     ) -> Solicitation:
@@ -735,9 +808,13 @@ class SolicitationService:
                 )
             raise BusinessRuleError("A solicitação já está nesta situação.")
 
+        anterior = solicitation.status
         solicitation.status = command.novo_status
+
+        aviso = await self._monta_aviso(solicitation, anterior)
         await uow.commit()
         await self.session.refresh(solicitation)
+        await self._avisar_status(aviso)
         return solicitation
 
     async def review(
@@ -764,6 +841,7 @@ class SolicitationService:
             )
 
         tenant = require_tenant()
+        anterior = solicitation.status
         solicitation.status = (
             SolicitationStatus.APPROVED
             if command.approve
@@ -773,6 +851,9 @@ class SolicitationService:
         solicitation.reviewed_by_user_id = tenant.user_id
         solicitation.reviewed_at = datetime.now(UTC)
 
+        # ⚠️ MONTADO ANTES DO COMMIT, ENVIADO DEPOIS -- ver `_avisar_status`.
+        aviso = await self._monta_aviso(solicitation, anterior)
         await uow.commit()
         await self.session.refresh(solicitation)
+        await self._avisar_status(aviso)
         return solicitation

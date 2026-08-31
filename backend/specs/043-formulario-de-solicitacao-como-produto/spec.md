@@ -225,7 +225,14 @@ que se pergunta. Entra `solicitation_form.manage`, em ADMIN e MANAGER (ADR
 | **C** | tela de edição | seções, perguntas, tipos, condicional, publicar/despublicar | médio |
 | **D** | os status novos | §4, mais os filtros da fila | baixo |
 | **E** | vincular tarefa | §5, com o `task_ref` sobrevivendo | baixo |
-| **F** | webhook para o n8n | §8. **Última**, por decisão da Camila | médio |
+| **F** | ✅ webhook para o n8n | §8 e §8.1. **Última**, por decisão da Camila | médio |
+
+⚠️ **DUAS FATIAS NASCERAM DA CONVERSA E NÃO ESTAVAM NESTA TABELA:**
+
+| # | fatia | entrega |
+|---|---|---|
+| **C2-c** | ✅ a fila lê o rótulo do banco | a fila ainda lia `CATEGORIA_POR_SLUG`, estático. Funcionava só porque a 0017 copiou os mesmos slugs — a primeira seção criada pelo editor apareceria como slug cru e "❓" |
+| **G** | ✅ cabeçalho editável | título e descrição (que já existiam no banco e a tela ignorava) e os três campos de identificação, que eram fixos e obrigatórios. *"não é todo formulário que chama fazae"* |
 
 ⚠️ **A FATIA B É A DE MAIOR RISCO DO LOTE**, e não a C. Ela troca a fonte do
 formulário público — a única rota de escrita sem credencial da API — enquanto
@@ -254,6 +261,50 @@ O backend faz `POST` para uma URL de `.env` a cada mudança de status, com
 estiver fora do ar naquele minuto, aquele e-mail **não sai e ninguém saberá**.
 Se isso for inaceitável, a alternativa é uma fila de reenvio — que é bem maior
 que esta fatia, e por isso está em §9.
+
+### 8.1. O contrato, como ficou (27/08)
+
+⚠️⚠️ **A CAMILA MONTOU O FLUXO DO N8N CONTRA ESTES NOMES**, antes de o backend
+existir. Os `{{ $json.… }}` dos templates de e-mail apontam para eles — mudar
+um campo aqui quebra a mensagem que chega na caixa de alguém, **sem erro
+nenhum no meio do caminho**. Há teste (`test_aviso_de_status_db.py`) preso a
+este formato exatamente por isso.
+
+`POST` na `N8N_WEBHOOK_URL`, com `X-Webhook-Token`:
+
+```json
+{
+  "evento": "solicitacao.status_mudou",
+  "enviado_em": "<ISO-8601 UTC>",
+  "solicitacao": {
+    "id": "<uuid>", "protocolo": "ABC12345",
+    "status_anterior": "APPROVED", "status_novo": "IN_PROGRESS",
+    "status_novo_label": "Em andamento",
+    "resumo": "…", "categoria": "foto", "categoria_titulo": "Fotografia",
+    "categoria_prazo": "5 dias úteis", "motivo_recusa": null,
+    "criada_em": "<ISO-8601>"
+  },
+  "solicitante": {
+    "nome": "…", "email": "…",
+    "telefone": null, "area": null, "polo": null
+  },
+  "formulario": { "slug": "marketing", "titulo": "…", "time": "Marketing" }
+}
+```
+
+Três garantias que os templates podem assumir, e uma que não:
+
+- **`nome` e `email` nunca são nulos** — é a razão de eles ficarem fora do
+  cabeçalho configurável da fatia G.
+- **`categoria_titulo` nunca é nulo** — cai no slug cru se a seção sumir.
+- **`status_novo_label` vem pronto**, e não é o n8n que traduz: o rótulo é
+  decisão do produto, e uma segunda tabela divergiria da tela.
+- ⚠️ **`telefone`, `area`, `polo` e `formulario` inteiro PODEM ser nulos** —
+  os três primeiros pela fatia G, o último nas solicitações órfãs.
+
+⚠️ **`categoria_prazo` NÃO ESTAVA NO §8 ORIGINAL.** Ele entrou porque a
+mensagem de aprovação precisava dizer o prazo que a própria seção promete —
+sem ele, ou o e-mail não fala de prazo, ou alguém inventa um.
 
 ---
 

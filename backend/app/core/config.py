@@ -115,6 +115,21 @@ class Settings(BaseSettings):
     # endpoint DESLIGADO (fail closed). Em prod, gere: openssl rand -hex 32.
     system_api_token: str = ""
 
+    # --- Aviso de mudanca de status ao solicitante (Spec 043, fatia F) ---
+    #
+    # ⚠️ URL VAZIA = RECURSO DESLIGADO, e nao erro. E a regra 4 do §8 da spec:
+    # ambiente sem n8n configurado (o de teste, o de quem clona o repo) nao
+    # pode falhar por causa disto. Diferente do `system_api_token`, que e fail
+    # CLOSED porque protege uma porta de entrada -- aqui e uma saida opcional.
+    n8n_webhook_url: str = ""
+    # ⚠️ VAI NO HEADER `X-Webhook-Token`, mesma familia do `system_api_token`.
+    # Quem conhece a URL do n8n consegue disparar e-mail em nome do sistema;
+    # o segredo e o que separa o backend de qualquer um na internet.
+    n8n_webhook_token: str = ""
+    # ⚠️ TIMEOUT CURTO E OBRIGATORIO (regra 2 do §8): sem ele, quem clicou
+    # "Aprovar" fica esperando o tempo de resposta de um servico externo.
+    n8n_webhook_timeout_seconds: float = 5.0
+
     # --- Logging ---
     log_level: str = "INFO"
     log_format: LogFormat = LogFormat.CONSOLE
