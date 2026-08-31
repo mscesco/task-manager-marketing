@@ -149,6 +149,35 @@ describe("a categoria vem do BANCO, e não de um arquivo do front", () => {
 });
 
 // =====================================================================
+// ⚠️ O botão do cabeçalho
+// =====================================================================
+describe("o atalho do cabeçalho", () => {
+  it("⚠️ leva a `/formularios`, e NÃO a um `/solicitar` fixo", async () => {
+    // ⚠️ ELE APONTAVA PARA `/solicitar`, e isso era verdade enquanto existia
+    // UM formulário público. A Spec 043 trouxe N, um por time -- e um link
+    // fixo passa a mostrar sempre o mesmo e a esconder todos os outros, sem
+    // errar em lugar nenhum que dê para ver.
+    //
+    // ⚠️ E A SEGUNDA ASSERÇÃO É O PONTO DESTE TESTE, não o `href`: ela cai se
+    // alguém trouxer o atalho antigo de volta "só para facilitar". A pergunta
+    // que este arquivo guarda é *qual tela é a porta*, e a resposta é a que
+    // lista os formulários -- de lá se chega a todos.
+    //
+    // Consulta por LINK, e não por texto: a frase "formulário público" aparece
+    // legitimamente no estado vazio da fila, e um `queryByText` cru prenderia
+    // a redação daquele texto junto, sem querer.
+    montar();
+    const atalho = await screen.findByRole("link", {
+      name: "Gerenciar formulários",
+    });
+    expect(atalho.getAttribute("href")).toBe("/formularios");
+    expect(
+      screen.queryAllByRole("link", { name: /formulário público/i })
+    ).toHaveLength(0);
+  });
+});
+
+// =====================================================================
 // ⚠️ Em andamento e Concluída (Spec 043, fatia D)
 // =====================================================================
 describe("o andamento de um pedido ACEITO", () => {

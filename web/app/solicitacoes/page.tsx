@@ -147,15 +147,19 @@ function Solicitacoes() {
             : undefined
         }
         actions={
-          <a
-            className="btn btn-ghost ml-auto"
-            href="/solicitar"
-            target="_blank"
-            rel="noreferrer"
-            title="Abrir o formulário público em nova aba"
-          >
-            Ver formulário público ↗
-          </a>
+          // ⚠️ ESTE BOTÃO APONTAVA PARA `/solicitar` FIXO, e a Spec 043 tornou
+          // isso mentira: havia UM formulário público quando ele foi escrito,
+          // e agora há N, um por time. Mandar para o primeiro que a rota
+          // resolver esconde os outros e diz "o formulário público" como se
+          // só existisse um.
+          //
+          // Vai para a tela que LISTA os formulários -- de onde se chega a
+          // qualquer um deles, ao editor e ao link público de cada um. Sem
+          // `target="_blank"`: é navegação interna do app, não é mais "abrir
+          // o que o solicitante vê".
+          <Link className="btn btn-ghost ml-auto" href="/formularios">
+            Gerenciar formulários
+          </Link>
         }
       />
 
