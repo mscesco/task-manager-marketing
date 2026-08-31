@@ -14,8 +14,37 @@
 // TTL de 7 dias: rascunho velho confunde mais do que ajuda ("por que esse
 // formulário já veio preenchido?"). Depois disso é descartado sozinho.
 
-const CHAVE = "fazae:rascunho-solicitacao:v1";
+// ⚠️⚠️ A CHAVE E POR FORMULARIO, e ate a revisao de 31/08 ela era GLOBAL.
+//
+// Isso era seguro quando havia UM formulario publico. A Spec 043 trouxe N por
+// workspace, cada um com as suas secoes -- e `selecionadas` guarda SLUG DE
+// SECAO. Com a chave global, o rascunho de um formulario vazava para outro:
+// clicar em "Continuar de onde parei" restaurava secoes que o formulario atual
+// nao tem, e a tela ficava **em branco**.
+//
+// ⚠️ E EM BRANCO DE VERDADE, nao com erro: as tres secoes do formulario
+// (`passo === 0`, `categoriaAtual`, `naRevisao`) sao condicionais, e com
+// `selecionadas` desconhecidas NENHUMA satisfaz a condicao. Na unica rota
+// publica do produto, onde quem esta do outro lado nao tem conta, nem suporte,
+// nem botao de sair.
+//
+// ⚠️ A CHAVE E O `formId`, E NAO O SLUG: o slug pode ser RENOMEADO no editor
+// (`renomear_formulario` aceita o campo), e a chave mudaria junto -- o rascunho
+// de quem estava preenchendo sumiria porque alguem do outro lado arrumou o
+// endereco. O id nao muda nunca.
+//
+// ⚠️ O `v2` NO PREFIXO APOSENTA OS RASCUNHOS ANTIGOS de proposito: os
+// gravados sob a chave global nao sabem de qual formulario vieram, entao nao
+// da para migra-los com honestidade. Quem tiver um rascunho aberto perde o
+// banner de "continuar" uma vez -- e o preco de nao restaurar num formulario
+// errado.
+const PREFIXO = "fazae:rascunho-solicitacao:v2";
 const TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** A chave deste formulario. Sem id, cai numa gaveta propria. */
+function chave(formId: string): string {
+  return `${PREFIXO}:${formId || "_"}`;
+}
 
 export type RascunhoSolicitacao = {
   salvoEm: number;
@@ -26,14 +55,14 @@ export type RascunhoSolicitacao = {
 };
 
 /** Lê o rascunho. Devolve null se não existe, expirou ou está corrompido. */
-export function lerRascunho(): RascunhoSolicitacao | null {
+export function lerRascunho(formId: string): RascunhoSolicitacao | null {
   if (typeof window === "undefined") return null; // SSR
   try {
-    const bruto = window.localStorage.getItem(CHAVE);
+    const bruto = window.localStorage.getItem(chave(formId));
     if (!bruto) return null;
     const dados = JSON.parse(bruto) as RascunhoSolicitacao;
     if (!dados?.salvoEm || Date.now() - dados.salvoEm > TTL_MS) {
-      window.localStorage.removeItem(CHAVE);
+      window.localStorage.removeItem(chave(formId));
       return null;
     }
     // Rascunho sem nada de útil não vale o banner de "continuar".
@@ -49,12 +78,13 @@ export function lerRascunho(): RascunhoSolicitacao | null {
 }
 
 export function salvarRascunho(
+  formId: string,
   dados: Omit<RascunhoSolicitacao, "salvoEm">
 ): void {
   if (typeof window === "undefined") return;
   try {
     window.localStorage.setItem(
-      CHAVE,
+      chave(formId),
       JSON.stringify({ ...dados, salvoEm: Date.now() })
     );
   } catch {
@@ -62,10 +92,10 @@ export function salvarRascunho(
   }
 }
 
-export function limparRascunho(): void {
+export function limparRascunho(formId: string): void {
   if (typeof window === "undefined") return;
   try {
-    window.localStorage.removeItem(CHAVE);
+    window.localStorage.removeItem(chave(formId));
   } catch {
     /* idem */
   }

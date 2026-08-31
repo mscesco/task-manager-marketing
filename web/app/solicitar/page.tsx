@@ -78,22 +78,29 @@ export default function SolicitarPage() {
 
   if (formularios.length === 1) {
     return (
-      <CarregaFormularioPublico slug={formularios[0].slug}>
-        {({ categorias, categoriaPorSlug, form }) => (
-          <FormularioSolicitacao
-            categorias={categorias}
-            categoriaPorSlug={categoriaPorSlug}
-            formId={form.id}
-            titulo={form.title}
-            descricao={form.description}
-            identificacao={{
-              telefone: form.phone_label,
-              area: form.department_label,
-              polo: form.polo_label,
-            }}
-          />
-        )}
-      </CarregaFormularioPublico>
+      // ⚠️ `<Casca>` AQUI TAMBEM. Os outros quatro ramos deste arquivo já
+      // envolvem, e este não envolvia: enquanto o formulário carrega -- ou se
+      // ele der 404/500 --, o texto e a caixa de aviso ficavam soltos no fundo
+      // padrão do navegador, sem o fundo e o respiro do produto. A rota irmã
+      // `/solicitar/[slug]` já fazia certo.
+      <Casca>
+        <CarregaFormularioPublico slug={formularios[0].slug}>
+          {({ categorias, categoriaPorSlug, form }) => (
+            <FormularioSolicitacao
+              categorias={categorias}
+              categoriaPorSlug={categoriaPorSlug}
+              formId={form.id}
+              titulo={form.title}
+              descricao={form.description}
+              identificacao={{
+                telefone: form.phone_label,
+                area: form.department_label,
+                polo: form.polo_label,
+              }}
+            />
+          )}
+        </CarregaFormularioPublico>
+      </Casca>
     );
   }
 
