@@ -249,8 +249,26 @@ existia, é ordem invertida. Executado assim em 06/08/2026 (`0008`).
    > interface quebrada. Mudança visual continua exigindo teste manual no dev,
    > nos DOIS temas.
 
+   **b.0) ⚠️⚠️ O BACKUP DE ONTEM EXISTE?** Rodar NO SERVIDOR:
+   ```bash
+   cat /root/backups/taskmanager/ULTIMO_BACKUP_OK   # esperado: data de hoje ou ontem
+   ls -lh /root/backups/taskmanager/
+   ```
+   ⚠️ **Data velha, ou arquivo inexistente = PARE.** Em 31/08/2026 o backup
+   estava falhando **desde 02/07** -- sessenta execuções seguidas -- e ninguém
+   soube, porque o script gritava num log que roda por cron às 2h e que
+   ninguém lê. O último bom era de 30/06. Só apareceu porque alguém foi
+   deployar e olhou.
+   O defeito era um falso negativo do próprio script (`grep -q` + `pipefail` =
+   SIGPIPE no `gunzip`); os dumps estavam certos o tempo todo. Está consertado,
+   e o sentinela acima existe para o silêncio não se repetir.
+
    **b) Conferir `DATABASE_URL`** (dev e prod moram na MESMA instância),
-   **`pg_dump` do banco**, e taguear as imagens atuais para ter rollback:
+   **rodar o backup**, e taguear as imagens atuais para ter rollback:
+   ```bash
+   ~/task-manager-marketing/backend/scripts/backup_taskmanager.sh
+   cat /root/backups/taskmanager/ULTIMO_BACKUP_OK
+   ```
    ```bash
    docker tag task-manager-api:latest task-manager-api:pre-deploy-$(date +%Y%m%d)
    docker tag task-manager-web:latest task-manager-web:pre-deploy-$(date +%Y%m%d)
