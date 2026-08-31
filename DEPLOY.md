@@ -206,15 +206,18 @@ existia, é ordem invertida. Executado assim em 06/08/2026 (`0008`).
    > ⚠️ O `ci.yml` tem `concurrency: cancel-in-progress: true`. Empurrar
    > commit novo durante um re-run cancela o re-run.
    ```bash
-   # backend (precisa do TEST_DATABASE_URL apontando pro Postgres de teste)
-   cd backend && python -m pytest -q          # esperado: 0 failed
-   # front — os TRÊS, nesta ordem
-   cd web && npm test && npx tsc --noEmit && npx next build   # 0 failed, 0 erros
+   # backend -- o db-test do compose, e a URL por extenso de proposito
+   docker compose up -d db-test
+   docker compose run --rm      -e TEST_DATABASE_URL="postgresql+asyncpg://test:test@db-test:5432/taskmanager_test"      api-dev pytest -q                        # esperado: 0 failed
+   # front -- os TRES, nesta ordem
+   cd web && TZ=UTC npm test && npx tsc --noEmit && npx next build
    ```
    > ⚠️ **O critério é `0 failed`, não um número.** Este arquivo já ficou
    > meses dizendo `379 passed` quando o real era 493 — e roteiro que mente
    > treina quem faz o deploy a ignorar o portão. Se quiser conferir a ordem
-   > de grandeza: em 10/08/2026 eram **657** (backend) e **529** (front).
+   > de grandeza: em 31/08/2026 eram **1012** (backend) e **1078** (front),
+   > depois da Spec 043 inteira e de cinco rodadas de review.
+   > (Em 10/08/2026 eram 657 e 529.)
    > (Backend saiu de 642 para 657 com a peca de backend da fatia 5:
    > 8 testes puros de derivacao + 7 de integracao do `PATCH column_id`.)
    > (Em 06/08 eram 601 e 398; em 03/08, 493 e 293 — este arquivo já ficou
@@ -229,9 +232,14 @@ existia, é ordem invertida. Executado assim em 06/08/2026 (`0008`).
 
    **a.2) Drift de schema.** Contra um banco em `head`:
    ```bash
-   cd backend && alembic revision --autogenerate -m drift_check
-   # esperado: upgrade() e downgrade() so com `pass` -> APAGUE o arquivo
+   docker compose run --rm api-dev sh -c      "alembic upgrade head && alembic revision --autogenerate -m drift_check &&       cat alembic/versions/*drift*.py; rm -f alembic/versions/*drift*.py"
+   # esperado: NENHUMA linha `op.`
    ```
+   ⚠️ **Ele precisa de banco alcançável.** Se o túnel SSH para o Postgres da
+   VPS estiver fora, o `alembic upgrade` não conecta e o portão NÃO RODA --
+   sem erro claro. Rodar contra o `db-test` (com `DATABASE_URL` apontando
+   para ele) responde a mesma pergunta, porque ele nasce do baseline e aplica
+   todas as migrations.
    Diff sujo = model divergiu do banco. **Não aplique**: conserte o model.
    Até 03/08/2026 esse comando gerava 86 operações, incluindo `drop_column` e
    33 `drop_index` — aplicar teria custado índices de produção.
