@@ -286,11 +286,15 @@ export default function Board({
   const [prazo, setPrazo] = useState<FiltroPrazo>("todos");
   // Ordenacao do quadro -- so na sessao (nao persiste; reseta no reload).
   const [ordenacao, setOrdenacao] = useState<Ordenacao>("criacao");
-  // Fatia 3: filtro por subtime. memberTeam resolve id->subtime (vem do
-  // /members, agora com team_id pela Fatia 2). subtimes alimenta o dropdown
+  // Fatia 3: filtro por subtime. memberTeam resolve id->subtimes (vem do
+  // /members, agora com team_ids pela Fatia 2). subtimes alimenta o dropdown
   // (so times nao-raiz). "" em `subtime` = sem filtro.
+  //
+  // ⚠️ ERA `Map<string, string | null>`, UM subtime por pessoa (Spec 044,
+  // fatia 1). Virou lista porque a pessoa passa a poder estar em varios --
+  // as tres leituras abaixo trocaram de `=== subteamId` para `.includes`.
   const [membrosInativos, setMembrosInativos] = useState<Set<string>>(new Set());
-  const [memberTeam, setMemberTeam] = useState<Map<string, string | null>>(
+  const [memberTeam, setMemberTeam] = useState<Map<string, string[]>>(
     new Map()
   );
   // Distingue "membros ainda nao carregaram" de "carregaram". No modo
@@ -454,7 +458,7 @@ export default function Board({
         // o mapa de nomes precisa de TODOS (pra resolver quem ja esta
         // designado), o seletor e que nao deve OFERECER desativado.
         setMembrosInativos(new Set(ms.filter((m) => !m.is_active).map((m) => m.id)));
-        setMemberTeam(new Map(ms.map((m) => [m.id, m.team_id])));
+        setMemberTeam(new Map(ms.map((m) => [m.id, m.team_ids])));
       })
       .catch(() => {})
       .finally(() => setMembrosCarregados(true));
@@ -1365,8 +1369,10 @@ export default function Board({
       subtimesPorRaiz.set(raizId, set);
     }
     for (const id of ids) {
-      const st = memberTeam.get(id);
-      if (st) set.add(st);
+      // ⚠️ TODOS os subtimes da pessoa entram, e nao "o" subtime dela: quem
+      // esta em SEO e Midias Sociais faz a tarefa aparecer nos dois recortes
+      // do dropdown, que e o que "filtrar por subtime" quer dizer.
+      for (const st of memberTeam.get(id) ?? []) set.add(st);
     }
   }
 
@@ -1423,7 +1429,15 @@ export default function Board({
   const soRaiz = !projectId && !subteamId && rootId !== null;
   const pertenceAoSubtime = (t: Task) => {
     const ids = t.assignee_ids ?? [];
-    return ids.some((id) => memberTeam.get(id) === subteamId);
+    // ⚠️ `includes` e nao `===`: basta que a pessoa esteja NESTE subtime,
+    // ainda que esteja em outros. A pergunta da lente e "esta tarefa e de
+    // alguem daqui?", nunca "esta pessoa e SO daqui?".
+    //
+    // ⚠️ E O GUARDA DE `subteamId` E NOVO, nao cosmetico: com o `===` antigo,
+    // `subteamId` indefinido casava com quem nao tinha subtime (undefined ===
+    // undefined). So nao aparecia porque a funcao so roda em `modoSubtime`.
+    if (!subteamId) return false;
+    return ids.some((id) => (memberTeam.get(id) ?? []).includes(subteamId));
   };
   // ⚠️ D1 (decisao de 11/08): A LENTE SO MOSTRA O QUADRO GERAL.
   //
@@ -1538,7 +1552,11 @@ export default function Board({
   // pergunta que se faz DEPOIS que ela sai. Tirar da lista quem tem tarefa
   // aqui esconderia esse trabalho em vez de limpar a lista.
   const pessoasDoFiltro = Array.from(members.entries())
-    .filter(([id]) => !modoSubtime || memberTeam.get(id) === subteamId)
+    .filter(
+      ([id]) =>
+        !modoSubtime ||
+        (!!subteamId && (memberTeam.get(id) ?? []).includes(subteamId))
+    )
     .filter(([id]) => !membrosInativos.has(id) || comTrabalhoAqui.has(id))
     .map(([id, m]) => ({
       id,
@@ -2363,8 +2381,6 @@ export default function Board({
         mostrarArquivadas={mostrarArquivadas}
         projetosPessoais={projetosPessoais}
         membrosInativos={membrosInativos}
-        subtimePorMembro={memberTeam}
-        rootTeamId={rootId}
       />
 
       {toast && (

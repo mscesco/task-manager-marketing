@@ -117,8 +117,6 @@ function montar(over: Partial<Task> = {}, onTaskMoved = vi.fn()) {
       mostrarArquivadas={false}
       projetosPessoais={new Set()}
       membrosInativos={new Set()}
-      subtimePorMembro={new Map()}
-      rootTeamId={"team-marketing"}
     />
   );
   return { onTaskMoved };

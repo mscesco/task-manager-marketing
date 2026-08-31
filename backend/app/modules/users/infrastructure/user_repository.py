@@ -14,7 +14,8 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import aggregate_order_by
 
 from app.core.tenant import require_tenant
 from app.db.models import Team, User, UserTeam
@@ -50,30 +51,55 @@ class UserRepository(BaseRepository[User]):
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
-    async def list_all_with_subteam(
+    async def list_all_with_subteams(
         self,
-    ) -> list[tuple[User, uuid.UUID | None]]:
-        """Lista os membros (mesmos de list_all) + o id do SUBTIME de cada um.
+    ) -> list[tuple[User, list[uuid.UUID]]]:
+        """Lista os membros (mesmos de list_all) + os SUBTIMES de cada um.
 
         Subtime = time com parent_team_id != NULL. O time PRINCIPAL (raiz)
         e ignorado DE PROPOSITO: quem esta na raiz (ex.: managers do seed)
         nao deve ser rotulado com o id do Marketing geral, senao o filtro
         de subtime no quadro (Fatia 3) perde o sentido.
 
-        Pelo invariante "um subtime por usuario" (ADR 0008), o LEFT JOIN
-        com a subconsulta de subtimes devolve no MAXIMO uma linha por
-        membro -- entao nao ha duplicacao mesmo para quem esta em raiz +
-        subtime. Membro sem subtime vem com None.
+        ⚠️⚠️ ESTA CONSULTA JA FOI UM DEFEITO LATENTE, e a ADR 0039 o anotou
+        tres semanas antes de ele poder disparar (Spec 044, §3). Ate 31/08 ela
+        se chamava `list_all_with_subteam`, devolvia UM id por membro, e a
+        docstring justificava assim:
+
+            "Pelo invariante 'um subtime por usuario' (ADR 0008), o LEFT JOIN
+            com a subconsulta de subtimes devolve no MAXIMO uma linha por
+            membro."
+
+        Verdadeiro enquanto a trava da ADR 0008 estava de pe. No dia em que
+        ela cair (fatia 3 desta spec), o LEFT JOIN passa a devolver UMA LINHA
+        POR SUBTIME, o consumidor monta um objeto por linha sem deduplicar, e
+        **a pessoa aparece DUPLICADA nas seis telas** que consomem
+        `GET /users` -- seletor de responsavel e de `@` incluidos. Sem erro,
+        sem teste vermelho, sem `tsc`.
+
+        ⚠️ POR ISSO O `array_agg` E NAO UMA AGREGACAO EM PYTHON: a consulta
+        devolve estruturalmente UMA linha por membro. Um consumidor futuro que
+        esqueca de deduplicar nao tem como reintroduzir o defeito -- nao ha
+        linha repetida para ele ignorar.
+
+        ⚠️ E A ORDEM E POR NOME DO TIME, cravada no SQL: sem `ORDER BY` dentro
+        do agregado o Postgres nao promete ordem nenhuma, e um teste que
+        compare listas passaria a falhar por sorteio.
+
+        Membro sem subtime vem com lista VAZIA (nunca `None`): quem desenha
+        checa `len`, e "sem subtime" deixa de ter duas representacoes.
 
         Tenant: a subconsulta filtra UserTeam.workspace_id explicitamente;
         o _base_select() ja escopa o User. Sem cruzamento entre tenants.
         """
         workspace_id = require_tenant().workspace_id
-        # (user_id -> subteam_id) apenas para vinculos com time NAO-raiz.
-        subteam = (
+        # (user_id -> [subteam_id, ...]) apenas para vinculos com time NAO-raiz.
+        subteams = (
             select(
                 UserTeam.user_id.label("user_id"),
-                UserTeam.team_id.label("subteam_id"),
+                func.array_agg(
+                    aggregate_order_by(UserTeam.team_id, Team.name)
+                ).label("subteam_ids"),
             )
             .join(
                 Team,
@@ -84,16 +110,19 @@ class UserRepository(BaseRepository[User]):
                 UserTeam.workspace_id == workspace_id,
                 Team.parent_team_id.isnot(None),
             )
+            .group_by(UserTeam.user_id)
             .subquery()
         )
         stmt = (
             self._base_select()
-            .add_columns(subteam.c.subteam_id)
-            .outerjoin(subteam, subteam.c.user_id == User.id)
+            .add_columns(subteams.c.subteam_ids)
+            .outerjoin(subteams, subteams.c.user_id == User.id)
             .order_by(User.name)
         )
         result = await self.session.execute(stmt)
-        return [(row[0], row[1]) for row in result.all()]
+        # `row[1]` e None para quem nao tem subtime nenhum (lado vazio do
+        # LEFT JOIN) -- vira lista vazia aqui, e nao no chamador.
+        return [(row[0], list(row[1] or ())) for row in result.all()]
 
     # ----------------------------------------------------
     # Vinculo user <-> team (papeis)

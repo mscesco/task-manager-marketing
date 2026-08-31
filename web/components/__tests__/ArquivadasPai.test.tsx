@@ -168,7 +168,7 @@ const MEMBROS: Member[] = [
     name: "Ana",
     email: "ana@x.com",
     is_active: true,
-    team_id: RAIZ,
+    team_ids: [RAIZ],
   },
 ];
 

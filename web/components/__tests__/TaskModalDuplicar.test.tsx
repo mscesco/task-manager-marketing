@@ -79,7 +79,7 @@ function membro(id: string, name: string, is_active = true): Member {
     name,
     email: `${id}@x.com`,
     is_active,
-    team_id: RAIZ,
+    team_ids: [RAIZ],
   };
 }
 

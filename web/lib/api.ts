@@ -1445,10 +1445,16 @@ export type Member = {
   name: string;
   email: string;
   is_active: boolean;
-  // Entrega 13 (Fatia 2): id do SUBTIME do membro (time nao-raiz) ou null.
-  // Pelo ADR 0008 e no maximo um. O backend nunca devolve aqui o time raiz.
-  // Usado pelo filtro de subtime no quadro (Fatia 3).
-  team_id: string | null;
+  // Entrega 13 (Fatia 2): ids dos SUBTIMES do membro (times nao-raiz). O
+  // backend nunca devolve aqui o time raiz. Usado pelo filtro de subtime no
+  // quadro (Fatia 3). Lista VAZIA = sem subtime; nao existe `null`.
+  //
+  // ⚠️⚠️ ERA `team_id: string | null` ate 31/08 (Spec 044, fatia 1), e a troca
+  // de NOME foi deliberada. Somar `team_ids` ao lado do singular deixaria os
+  // consumidores compilando e errados -- o roteiro exato do defeito que a
+  // spec existe para nao repetir. Assim o `tsc` para em cada um deles, e e o
+  // unico portao que pega esta classe de mudanca.
+  team_ids: string[];
 };
 
 type MemberListResponse = { items: Member[]; total: number };

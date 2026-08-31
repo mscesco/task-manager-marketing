@@ -149,8 +149,6 @@ export default function TaskDetail({
   mostrarArquivadas,
   projetosPessoais,
   membrosInativos,
-  subtimePorMembro,
-  rootTeamId,
   modo = "modal",
 }: {
   task: Task | null; // tarefa focada; null => fechado
@@ -218,16 +216,18 @@ export default function TaskDetail({
   // pessoa e desmarcando a caixa dela. `TaskModal` ja filtrava assim desde
   // sempre (linha 131); o detalhe e que ficou de fora.
   membrosInativos: Set<string>;
-  // Subtime de cada membro (id -> subtime, ou null pra quem so esta na raiz)
-  // e o id do time raiz. Juntos com `task.team_id` respondem quem ALCANCA
-  // esta tarefa -- ver `lib/escopoTarefa.ts` para a regra e para a ressalva
-  // sobre gestor/admin.
+  // ⚠️ AQUI MORAVAM `subtimePorMembro` e `rootTeamId`, e as duas eram PROP
+  // MORTA -- desestruturadas, tipadas e nunca lidas. A Spec 034 (03/08)
+  // removeu o `foraDoEscopo` que as consumia e passou a perguntar quem
+  // alcanca ao BACKEND (`listMembers(taskId)`, ver `alcancamAqui` abaixo);
+  // as props ficaram para tras, e com elas o mapa que TRES telas montavam
+  // so para preencher o argumento.
   //
-  // ⚠️ Por que o dado CRU e nao um `Set` pronto: a resposta depende da tarefa
-  // FOCADA, e a tarefa focada muda aqui dentro (navegar pra subtarefa). Um
-  // conjunto calculado la fora congelaria no escopo da tarefa de entrada.
-  subtimePorMembro: Map<string, string | null>;
-  rootTeamId: string | null;
+  // Removidas na Spec 044 (fatia 1), quando `Member.team_id` virou
+  // `team_ids` e o `tsc` apontou para ca. ⚠️ NAO REINTRODUZIR: reconstruir
+  // escopo no front a partir de `team_id` foi exatamente o erro que a 034
+  // desfez -- `GET /members` nunca devolveu PAPEL, e gestor e admin sumiam
+  // do seletor em tarefa interna de subtime.
   // Como renderizar o container externo:
   //   "modal"  (padrao) -> overlay fixo com scrim, clique fora e Esc fecham.
   //                        Comportamento historico; quadro e minhas-tarefas
