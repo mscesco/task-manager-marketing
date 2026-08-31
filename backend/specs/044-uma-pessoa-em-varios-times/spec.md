@@ -271,20 +271,43 @@ caminho.
 
 Ordem não negociável nas duas primeiras — ver §3.
 
-**Fatia 1 — a listagem para de assumir um subtime só (backend).**
-`list_all_with_subteam` agrega em vez de duplicar. `MemberWithSubteam` vira
-plural. `MemberResponse.team_id` → `team_ids: list[UUID]`.
+**Fatias 1 + 2 — a listagem para de assumir um subtime só. ✅ ENTREGUE (31/08).**
+
+⚠️⚠️ **AS DUAS VIRARAM UMA, e esta spec estava errada em separá-las.** No
+instante em que `MemberResponse.team_id` vira `team_ids`, o front não compila:
+uma PR só de backend deixaria a `main` com `tsc` vermelho, contra o §1 do
+`AGENTS.md`. Só dá para saber isso *depois* de trocar o campo e ver o `tsc`
+falar — o que é, ele mesmo, o argumento a favor de trocar o nome.
+
+`list_all_with_subteams` usa `array_agg(ORDER BY team.name)` e devolve
+estruturalmente **uma linha por membro**. Não é agregação em Python de
+propósito: um consumidor futuro que esqueça de deduplicar não tem linha
+repetida para ignorar. `MemberWithSubteams.subteam_ids` e
+`MemberResponse.team_ids`; lista vazia é a única forma de "sem subtime".
 
 ⚠️ **Substituir o campo, não acrescentar um ao lado.** Manter `team_id` e somar
-`team_ids` deixaria os cinco consumidores compilando e errados — exatamente o
-roteiro do defeito que esta spec existe para não repetir. Trocando o nome, o
-`tsc` fica vermelho nos cinco e a conversa acontece antes do deploy. **O portão
-que pega isto é o `tsc`, e ele só pega se o campo mudar de nome.**
+`team_ids` deixaria os consumidores compilando e errados — exatamente o roteiro
+do defeito que esta spec existe para não repetir. **O portão que pega isto é o
+`tsc`, e ele só pega se o campo mudar de nome.** Ele apontou **cinco
+consumidores de produção** — e um deles, `components/Board.tsx:457`, **não
+estava no mapeamento da §2.2**, que foi feito por grep.
 
-**Fatia 2 — os cinco consumidores do front.**
-`temAcaoPossivel` passa a receber lista e responder "algum". `subtimePorMembro`
-vira `Map<string, string[]>`. `foraDoEscopo` recalculado. Teste de componente
-para o caso de dois subtimes em cada tela que decide alguma coisa.
+⚠️ **Achado: `subtimePorMembro` e `rootTeamId` do `TaskDetail` eram PROP
+MORTA** — desestruturadas, tipadas, nunca lidas. A Spec 034 (03/08) removeu o
+`foraDoEscopo` que as consumia e deixou as props para trás; **três telas
+montavam um mapa só para preencher o argumento.** Removidas: portá-las para o
+plural seria manter código morto atualizado. O que sobrou de trabalho real foi
+`Board` (que usa mesmo) e a tela de membros.
+
+⚠️ **O que NÃO entrou:** a regra de 1-subtime no `timesParaAdicionar` da tela de
+membros continua de pé — ela espelha a trava do backend, que só sai na fatia 3.
+Soltá-la agora ofereceria um destino que daria 422.
+
+**Sabotagens rodadas** (os quatro guardiões novos falham sem o conserto): LEFT
+JOIN de volta → `assert 2 == 1`; `array_agg` sem `ORDER BY` → ordem por
+sorteio; só o primeiro subtime conta → a tarefa da redatora some da lente.
+
+**Placar:** Backend **1014** (era 1012), Front **1082** (era 1078).
 
 **Fatia 3 — a trava sai (backend).**
 Remove `_assert_one_subteam` e as três chamadas. **Escreve o teste que nunca
