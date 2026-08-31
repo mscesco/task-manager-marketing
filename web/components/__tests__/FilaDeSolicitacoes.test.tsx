@@ -349,6 +349,16 @@ describe("um envio SEM telefone, área e polo", () => {
     render(<SolicitacoesPage />);
   }
 
+  it("⚠️ com os dois campos, o separador entre eles é `/`", async () => {
+    // ⚠️ ESTE TESTE EXISTE PORQUE EU MUDEI O DESENHO SEM PEDIR. Ao consertar
+    // o separador órfão, juntei tudo com `·` -- e a Camila mandou voltar. Os
+    // dois separadores são diferentes de propósito: `·` separa o e-mail do
+    // lugar, `/` separa área de polo.
+    montar();
+    await screen.findByText("Maria do Polo");
+    expect(document.body.textContent).toContain("Coordenação / Taboão");
+  });
+
   it("⚠️ o card não mostra separador pendurado", async () => {
     // Em JSX o `null` some, mas o `·` e o `/` FICAM: o card mostrava
     // "maria@polo.ex ·  / ".

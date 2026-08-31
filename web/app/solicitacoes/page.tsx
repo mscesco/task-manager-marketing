@@ -318,12 +318,19 @@ function CardEnvio({
           {/* ⚠️ `filter(Boolean)` E NAO SEPARADOR FIXO. Desde a fatia G,
               `requester_department` e `requester_polo` podem ser `null` -- em
               JSX o `null` some, mas o `·` e o `/` FICAM, e o card mostrava
-              "maria@x.ex ·  / ". Achado pela revisão de 31/08. */}
+              "maria@x.ex ·  / ". Achado pela revisão de 31/08.
+
+              ⚠️ E OS DOIS SEPARADORES SÃO DIFERENTES DE PROPÓSITO: `·` separa
+              o e-mail do lugar, `/` separa área de polo. Na primeira correção
+              eu juntei tudo com `·` e mudei o desenho sem ninguém pedir -- a
+              Camila mandou voltar. O defeito era o separador ÓRFÃO, não a
+              escolha dele. */}
           <div className="muted" style={{ fontSize: 12 }}>
             {[
               envio.requester_email,
-              envio.requester_department,
-              envio.requester_polo,
+              [envio.requester_department, envio.requester_polo]
+                .filter(Boolean)
+                .join(" / "),
             ]
               .filter(Boolean)
               .join(" · ")}
