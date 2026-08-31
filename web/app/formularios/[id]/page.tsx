@@ -96,17 +96,29 @@ function Editor() {
    * segunda cópia das regras do backend — e a primeira que divergisse mostraria
    * um formulário que não existe.
    */
-  async function agir(o_que: () => Promise<unknown>) {
+  async function agir(o_que: () => Promise<unknown>): Promise<boolean> {
     setOcupado(true);
     setErro(null);
     try {
       await o_que();
       await recarregar();
+      return true;
     } catch (e) {
       // ⚠️ A MENSAGEM DO BACKEND APARECE INTEIRA. É ela que nomeia a pergunta
       // que travou ("Data da sessão") -- trocá-la por "não consegui" mandaria
       // procurar sozinha entre 108 perguntas qual delas foi.
       setErro((e as ApiError).message || "Não consegui salvar.");
+      // ⚠️⚠️ E DEVOLVE `false`, EM VEZ DE SÓ ENGOLIR. Sem isto, `await agir(…)`
+      // sempre resolvia com sucesso, e os quatro botões de Salvar limpavam os
+      // campos e fechavam o painel **mesmo com o backend recusando**. A pessoa
+      // via a mensagem no topo -- aquela que NOMEIA o que travou -- e o texto
+      // que ela precisava corrigir já tinha sumido.
+      //
+      // ⚠️ E ISSO ERA COMUM, não raro: o editor tem oito códigos de recusa
+      // (slug repetido, escolha sem alternativa, condicional inválida,
+      // dependente…). Cada um atropelava o que a pessoa tinha digitado.
+      // Achado pela revisão de 31/08.
+      return false;
     } finally {
       setOcupado(false);
     }
@@ -229,7 +241,7 @@ function Cabecalho({
 }: {
   form: FormularioDetalhado;
   ocupado: boolean;
-  agir: (o_que: () => Promise<unknown>) => Promise<void>;
+  agir: (o_que: () => Promise<unknown>) => Promise<boolean>;
 }) {
   const [aberto, setAberto] = useState(false);
   const [titulo, setTitulo] = useState(form.title);
@@ -429,7 +441,7 @@ function Secao({
   indice: number;
   total: number;
   ocupado: boolean;
-  agir: (o_que: () => Promise<unknown>) => Promise<void>;
+  agir: (o_que: () => Promise<unknown>) => Promise<boolean>;
   aoMover: (passo: number) => void;
 }) {
   const [editando, setEditando] = useState(false);
@@ -583,14 +595,22 @@ function Secao({
               className="btn btn-primary"
               disabled={ocupado || !titulo.trim()}
               onClick={async () => {
-                await agir(() =>
+                // ⚠️ `sla_text` VAI COMO STRING VAZIA, e não como `null`. No
+                // PATCH deste projeto `null` significa "não mexe" -- então
+                // apagar o prazo era silenciosamente ignorado: 200 OK, nada
+                // mudava, e o valor antigo voltava ao recarregar. Não havia
+                // como limpar o campo pela tela. O backend já converte `""`
+                // para `None` (`.strip() or None`).
+                const ok = await agir(() =>
                   editarSecao(secao.id, {
                     title: titulo,
                     emoji,
-                    sla_text: prazo.trim() || null,
+                    sla_text: prazo.trim(),
                   })
                 );
-                setEditando(false);
+                // ⚠️ SÓ FECHA SE DEU CERTO -- senão o painel some levando o
+                // que a pessoa digitou, e a mensagem de erro fica órfã.
+                if (ok) setEditando(false);
               }}
             >
               Salvar seção
@@ -656,7 +676,7 @@ function Pergunta({
   ehResumo: boolean;
   ehPadraoDeResumo: boolean;
   ocupado: boolean;
-  agir: (o_que: () => Promise<unknown>) => Promise<void>;
+  agir: (o_que: () => Promise<unknown>) => Promise<boolean>;
   aoMover: (passo: number) => void;
 }) {
   const [aberta, setAberta] = useState(false);
@@ -789,7 +809,7 @@ function FormPergunta({
   pergunta: PerguntaDoEditor;
   ehResumo: boolean;
   ocupado: boolean;
-  agir: (o_que: () => Promise<unknown>) => Promise<void>;
+  agir: (o_que: () => Promise<unknown>) => Promise<boolean>;
   aoFechar: () => void;
 }) {
   const [label, setLabel] = useState(pergunta.label);
@@ -804,7 +824,7 @@ function FormPergunta({
   const opcoesDoAlvo = alvos.find((a) => a.id === alvo)?.options ?? [];
 
   async function salvar() {
-    await agir(async () => {
+    const ok = await agir(async () => {
       await editarPergunta(pergunta.id, {
         label,
         kind,
@@ -816,7 +836,10 @@ function FormPergunta({
         ...(exigeOpcoes(kind)
           ? { options: opcoes.split("\n").map((o) => o.trim()).filter(Boolean) }
           : {}),
-        help: ajuda.trim() || null,
+        // ⚠️ STRING VAZIA, e não `null`: `null` no PATCH é "não mexe", e
+        // apagar a ajuda era ignorado em silêncio. Mesmo caso do `sla_text`
+        // da seção. O backend converte `""` para `None`.
+        help: ajuda.trim(),
       });
       // ⚠️ A CONDICIONAL É UMA SEGUNDA CHAMADA porque é uma rota própria: nela
       // `null` significa DESLIGAR, e num PATCH significaria "não mexa".
@@ -826,7 +849,9 @@ function FormPergunta({
         await definirCondicional(pergunta.id, alvo || null, alvo ? valor : null);
       }
     });
-    aoFechar();
+    // ⚠️ SÓ FECHA SE DEU CERTO. O editor tem oito códigos de recusa, e cada
+    // um fechava o painel levando o que a pessoa tinha digitado.
+    if (ok) aoFechar();
   }
 
   return (
@@ -1004,7 +1029,7 @@ function NovaSecao({
   aoCriar,
 }: {
   ocupado: boolean;
-  aoCriar: (entrada: { slug: string; title: string; emoji: string }) => Promise<void>;
+  aoCriar: (entrada: { slug: string; title: string; emoji: string }) => Promise<boolean>;
 }) {
   const [abrindo, setAbrindo] = useState(false);
   const [titulo, setTitulo] = useState("");
@@ -1099,7 +1124,15 @@ function NovaSecao({
           className="btn btn-primary"
           disabled={ocupado || !titulo.trim() || !slug.trim()}
           onClick={async () => {
-            await aoCriar({ slug: slug.trim(), title: titulo.trim(), emoji });
+            const ok = await aoCriar({
+              slug: slug.trim(),
+              title: titulo.trim(),
+              emoji,
+            });
+            // ⚠️ SÓ LIMPA SE DEU CERTO. Slug repetido é a recusa mais comum
+            // aqui, e ela apagava o título inteiro que a pessoa acabara de
+            // escrever -- junto com o slug que ela precisava trocar.
+            if (!ok) return;
             setTitulo("");
             setSlug("");
             setEmoji("");
@@ -1124,7 +1157,7 @@ function NovaPergunta({
     kind: string;
     required: boolean;
     options: string[];
-  }) => Promise<void>;
+  }) => Promise<boolean>;
 }) {
   const [abrindo, setAbrindo] = useState(false);
   const [label, setLabel] = useState("");
@@ -1233,12 +1266,15 @@ function NovaPergunta({
             ocupado || !label.trim() || (exigeOpcoes(kind) && lista.length === 0)
           }
           onClick={async () => {
-            await aoCriar({
+            const ok = await aoCriar({
               label: label.trim(),
               kind,
               required: obrigatoria,
               options: lista,
             });
+            // ⚠️ IDEM. Uma pergunta de escolha com seis alternativas digitadas
+            // à mão sumia inteira num 422.
+            if (!ok) return;
             setLabel("");
             setOpcoes("");
             setObrigatoria(false);

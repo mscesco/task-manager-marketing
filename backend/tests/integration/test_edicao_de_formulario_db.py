@@ -381,6 +381,122 @@ async def test_apagar_a_pergunta_RESUMO_limpa_o_ponteiro(db) -> None:
 
 
 # ==========================================================
+# ⚠️ A posição depois de apagar (achado da revisão de 31/08)
+# ==========================================================
+async def test_criar_depois_de_APAGAR_nao_colide_de_posicao(db) -> None:
+    """⚠️⚠️ `len(vivos)` COLIDE, e o soft delete não compacta.
+
+    Criar P1, P2, P3 (posições 0, 1, 2), apagar P2, criar P4: contando os
+    vivos dá 2, e P4 nascia **em cima de P3**. O índice não é único, então a
+    colisão passava em silêncio.
+    """
+    ws, raiz, mkt, design, user, arvore = await _mundo(db)
+    with acting_as(**_ctx(ws, user, arvore, mship(mkt, "MANAGER"))):
+        svc = SolicitationFormService(db)
+        form = await svc.criar_formulario(team_id=mkt, slug="arte", title="Arte")
+        secao = await svc.criar_secao(form_id=form.id, slug="foto", title="Foto")
+        p1 = await svc.criar_pergunta(section_id=secao.id, label="P1", kind="texto")
+        p2 = await svc.criar_pergunta(section_id=secao.id, label="P2", kind="texto")
+        p3 = await svc.criar_pergunta(section_id=secao.id, label="P3", kind="texto")
+        assert [p1.position, p2.position, p3.position] == [0, 1, 2]
+
+        await svc.apagar_pergunta(question_id=p2.id)
+        p4 = await svc.criar_pergunta(section_id=secao.id, label="P4", kind="texto")
+
+    assert p4.position == 3
+    assert p4.position != p3.position
+
+
+async def test_a_CONDICIONAL_funciona_depois_de_apagar_e_criar(db) -> None:
+    """⚠️⚠️ O SINTOMA VISÍVEL DA COLISÃO, e o que a torna cara.
+
+    A regra ordinal (`alvo.position >= pergunta.position`) recusava uma
+    configuração legítima quando duas perguntas dividiam a posição: a pessoa
+    via *"a condição precisa usar uma pergunta que vem ANTES desta"* apontando
+    para uma pergunta que aparece ANTES na tela. E o único jeito de destravar
+    era arrastar qualquer coisa na seção -- porque `reordenar_perguntas`
+    compacta --, o que ninguém descobre sozinho.
+    """
+    ws, raiz, mkt, design, user, arvore = await _mundo(db)
+    with acting_as(**_ctx(ws, user, arvore, mship(mkt, "MANAGER"))):
+        svc = SolicitationFormService(db)
+        form = await svc.criar_formulario(team_id=mkt, slug="arte", title="Arte")
+        secao = await svc.criar_secao(form_id=form.id, slug="foto", title="Foto")
+        descartada = await svc.criar_pergunta(
+            section_id=secao.id, label="Errei", kind="texto"
+        )
+        gatilho = await svc.criar_pergunta(
+            section_id=secao.id,
+            label="Precisa de quê?",
+            kind="escolha",
+            options=["Sessão", "Edição"],
+        )
+        await svc.apagar_pergunta(question_id=descartada.id)
+        dependente = await svc.criar_pergunta(
+            section_id=secao.id, label="Data", kind="data"
+        )
+
+        # ⚠️ Antes do conserto, `dependente` nascia na mesma posição do
+        # `gatilho` e esta chamada levantava ValidationError.
+        ligada = await svc.definir_condicional(
+            question_id=dependente.id, alvo_id=gatilho.id, valor="Sessão"
+        )
+
+    assert ligada.show_if_question_id == gatilho.id
+
+
+async def test_secao_criada_depois_de_apagar_tambem_nao_colide(db) -> None:
+    ws, raiz, mkt, design, user, arvore = await _mundo(db)
+    with acting_as(**_ctx(ws, user, arvore, mship(mkt, "MANAGER"))):
+        svc = SolicitationFormService(db)
+        form = await svc.criar_formulario(team_id=mkt, slug="arte", title="Arte")
+        a = await svc.criar_secao(form_id=form.id, slug="a", title="A")
+        b = await svc.criar_secao(form_id=form.id, slug="b", title="B")
+        await svc.apagar_secao(section_id=a.id)
+        c = await svc.criar_secao(form_id=form.id, slug="c", title="C")
+
+    assert c.position == 2
+    assert c.position != b.position
+
+
+# ==========================================================
+# ⚠️ Limpar um campo opcional (achado da revisão de 31/08)
+# ==========================================================
+async def test_prazo_e_ajuda_podem_ser_LIMPOS(db) -> None:
+    """⚠️ O PATCH TRATA `None` COMO "não mexe", então o front tem de mandar
+    string VAZIA para limpar -- e o serviço converte para `None`.
+
+    Sem isto não havia como esvaziar "Prazo mostrado" nem "Ajuda" pela tela:
+    apagar o campo devolvia 200, nada mudava, e o valor antigo voltava ao
+    recarregar.
+    """
+    ws, raiz, mkt, design, user, arvore = await _mundo(db)
+    with acting_as(**_ctx(ws, user, arvore, mship(mkt, "MANAGER"))):
+        svc = SolicitationFormService(db)
+        form = await svc.criar_formulario(team_id=mkt, slug="arte", title="Arte")
+        secao = await svc.criar_secao(
+            form_id=form.id, slug="foto", title="Foto", sla_text="5 dias úteis"
+        )
+        p = await svc.criar_pergunta(
+            section_id=secao.id,
+            label="Quando?",
+            kind="data",
+            help_text="Formato DD/MM",
+        )
+
+        limpa = await svc.editar_secao(section_id=secao.id, sla_text="")
+        assert limpa.sla_text is None
+
+        sem_ajuda = await svc.editar_pergunta(question_id=p.id, help_text="")
+        assert sem_ajuda.help is None
+
+        # ⚠️ E `None` CONTINUA SIGNIFICANDO "não mexe" -- é a convenção do
+        # PATCH neste projeto, e mudá-la quebraria `options`.
+        intacta = await svc.editar_secao(section_id=secao.id, title="Fotografia")
+        assert intacta.title == "Fotografia"
+
+
+# ==========================================================
 # A ordem
 # ==========================================================
 async def test_reordenar_secoes_e_perguntas(db) -> None:

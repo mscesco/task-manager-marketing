@@ -88,6 +88,25 @@ class SolicitationFormService:
                 "Você não gerencia formulários deste time."
             )
 
+    async def _proxima_posicao(self, modelo, condicao) -> int:
+        """A posicao seguinte a maior JA USADA -- incluindo as apagadas.
+
+        ⚠️ CONTA A MAIOR, E NAO QUANTOS EXISTEM. `len(vivos)` colide depois de
+        um soft delete, porque apagar nao compacta as posicoes dos irmaos.
+
+        ⚠️ E O FILTRO **NAO** EXCLUI `deleted_at`, de proposito: a posicao de
+        uma linha morta continua ocupada para efeito de numeracao. Ignora-la
+        traria de volta exatamente a colisao.
+        """
+        maior = (
+            await self._session.execute(
+                select(func.coalesce(func.max(modelo.position), -1)).where(
+                    condicao
+                )
+            )
+        ).scalar_one()
+        return int(maior) + 1
+
     def _assert_slug_valido(self, slug: str) -> str:
         """Minusculas, numeros e hifen. Nada mais.
 
@@ -328,14 +347,16 @@ class SolicitationFormService:
         tenant = require_tenant()
 
         # Posicao no FIM, sempre. Reordenar e gesto proprio (fatia C).
-        atuais = (
-            await self._session.execute(
-                select(SolicitationSection.id).where(
-                    SolicitationSection.form_id == form.id,
-                    SolicitationSection.deleted_at.is_(None),
-                )
-            )
-        ).all()
+        #
+        # ⚠️⚠️ `MAX(position) + 1`, E NAO `len(vivos)`. Contar os vivos COLIDE
+        # depois de um soft delete: criar A, B, C (0, 1, 2), apagar B, criar D
+        # -> `len(vivos)` e 2, e D nasce em cima de C. O soft delete NAO
+        # compacta as posicoes, e o indice nao e unico, entao a colisao passa
+        # em silencio. Achado pela revisao de 31/08.
+        proxima = await self._proxima_posicao(
+            SolicitationSection,
+            SolicitationSection.form_id == form.id,
+        )
 
         secao = SolicitationSection(
             workspace_id=tenant.workspace_id,
@@ -344,7 +365,7 @@ class SolicitationFormService:
             title=title.strip(),
             emoji=emoji.strip(),
             sla_text=sla_text,
-            position=len(atuais),
+            position=proxima,
         )
         self._session.add(secao)
         await self._session.flush()
@@ -553,14 +574,15 @@ class SolicitationFormService:
             )
 
         tenant = require_tenant()
-        atuais = (
-            await self._session.execute(
-                select(SolicitationQuestion.id).where(
-                    SolicitationQuestion.section_id == secao.id,
-                    SolicitationQuestion.deleted_at.is_(None),
-                )
-            )
-        ).all()
+        # ⚠️ MESMA ARMADILHA DA SECAO, e aqui ela DOI MAIS: a regra ordinal da
+        # condicional (`alvo.position >= pergunta.position`) recusa uma
+        # configuracao legitima quando duas perguntas dividem a posicao. A
+        # pessoa ve "a condicao precisa usar uma pergunta que vem ANTES desta"
+        # apontando para uma pergunta que aparece ANTES na tela.
+        proxima = await self._proxima_posicao(
+            SolicitationQuestion,
+            SolicitationQuestion.section_id == secao.id,
+        )
 
         pergunta = SolicitationQuestion(
             workspace_id=tenant.workspace_id,
@@ -571,7 +593,7 @@ class SolicitationFormService:
             options=opcoes,
             placeholder=placeholder,
             help=help_text,
-            position=len(atuais),
+            position=proxima,
         )
         self._session.add(pergunta)
         await self._session.flush()

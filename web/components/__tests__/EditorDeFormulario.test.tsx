@@ -521,6 +521,74 @@ describe("erros", () => {
     expect(screen.getByText(/comanda outras/)).toBeTruthy();
   });
 
+  it("⚠️ um erro NÃO apaga o que a pessoa digitou (criar seção)", async () => {
+    // ⚠️⚠️ ACHADO PELA REVISÃO DE 31/08. O helper `agir` engolia a exceção,
+    // então `await agir(…)` sempre resolvia com sucesso -- e os quatro botões
+    // de Salvar limpavam os campos e fechavam o painel MESMO com o backend
+    // recusando. A pessoa via a mensagem que NOMEIA o problema e o texto que
+    // ela precisava corrigir já tinha sumido.
+    //
+    // ⚠️ E slug repetido é a recusa mais comum aqui.
+    vi.mocked(api.criarSecao).mockRejectedValue(
+      Object.assign(new Error("Já existe uma seção com este endereço."), {
+        status: 422,
+      })
+    );
+    montar(formulario({ sections: [] }));
+    fireEvent.click(await screen.findByText("+ Nova seção"));
+    fireEvent.change(screen.getByLabelText("Título da seção"), {
+      target: { value: "Solicitação de arte para a campanha" },
+    });
+    fireEvent.click(screen.getByText("Criar seção"));
+
+    expect(await screen.findByText(/Já existe uma seção/)).toBeTruthy();
+    // ⚠️ O PAINEL CONTINUA ABERTO E O TEXTO CONTINUA LÁ.
+    expect(
+      (screen.getByLabelText("Título da seção") as HTMLInputElement).value
+    ).toBe("Solicitação de arte para a campanha");
+  });
+
+  it("⚠️ nem as alternativas digitadas à mão (criar pergunta)", async () => {
+    vi.mocked(api.criarPergunta).mockRejectedValue(
+      Object.assign(new Error("Este tipo de pergunta não existe."), {
+        status: 422,
+      })
+    );
+    montar();
+    fireEvent.click(await screen.findByText("+ Nova pergunta"));
+    fireEvent.change(screen.getByLabelText("Pergunta"), {
+      target: { value: "Qual formato?" },
+    });
+    fireEvent.change(screen.getByLabelText("Tipo"), {
+      target: { value: "escolha" },
+    });
+    fireEvent.change(screen.getByLabelText("Alternativas — uma por linha"), {
+      target: { value: "A4\nA3\nA2\nA1\nCartaz\nBanner" },
+    });
+    fireEvent.click(screen.getByText("Criar pergunta"));
+
+    expect(await screen.findByText(/tipo de pergunta não existe/)).toBeTruthy();
+    expect(
+      (screen.getByLabelText("Alternativas — uma por linha") as HTMLTextAreaElement)
+        .value
+    ).toContain("Banner");
+  });
+
+  it("⚠️ e o painel da pergunta não fecha quando o backend recusa", async () => {
+    // Aqui a mensagem é a que NOMEIA a dependente ("Data da sessão") -- fechar
+    // o painel deixaria a instrução sem onde ser aplicada.
+    vi.mocked(api.editarPergunta).mockRejectedValue(
+      Object.assign(new Error("Esta pergunta comanda outras."), { status: 422 })
+    );
+    montar();
+    const linha = (await screen.findByText("O que você precisa?")).closest("div")!;
+    fireEvent.click(within_(linha, "Editar"));
+    fireEvent.click(screen.getByText("Salvar pergunta"));
+
+    expect(await screen.findByText(/comanda outras/)).toBeTruthy();
+    expect(screen.getByText("Salvar pergunta")).toBeTruthy();
+  });
+
   it("formulário que não existe mais tem texto próprio, e não 'não consegui'", async () => {
     vi.mocked(api.obterFormulario).mockRejectedValue(
       Object.assign(new Error("x"), { status: 404 })
