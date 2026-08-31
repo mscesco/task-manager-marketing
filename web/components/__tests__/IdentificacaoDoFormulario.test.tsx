@@ -128,6 +128,21 @@ describe("o rascunho local", () => {
     expect(screen.queryByText(/Continuar de onde parei/i)).toBeNull();
   });
 
+  it("⚠️ a chave ANTIGA é APAGADA, e não só ignorada", () => {
+    // ⚠️ ACHADO NA REVISÃO DO PRÓPRIO CONSERTO. Trocar o prefixo aposentou os
+    // `v1`, mas nada os removia: ficavam no navegador para sempre, inclusive
+    // depois do TTL, porque a expiração só é avaliada na leitura e ninguém
+    // lia. É o que alguém digitou num formulário, guardado sem prazo.
+    gravar(CHAVE_ANTIGA, {
+      ident: { nome: "Maria" },
+      selecionadas: ["arte"],
+      valores: {},
+      passo: 2,
+    });
+    montar();
+    expect(window.localStorage.getItem(CHAVE_ANTIGA)).toBeNull();
+  });
+
   it("⚠️ e o rascunho da chave ANTIGA e global é ignorado", () => {
     // O `v2` aposenta os globais de propósito: eles não sabem de qual
     // formulário vieram, então não dá para migrá-los com honestidade.

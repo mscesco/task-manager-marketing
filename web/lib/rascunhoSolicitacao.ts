@@ -46,6 +46,29 @@ function chave(formId: string): string {
   return `${PREFIXO}:${formId || "_"}`;
 }
 
+/** A chave global antiga, que ninguém lê mais. */
+const CHAVE_V1 = "fazae:rascunho-solicitacao:v1";
+
+/**
+ * Apaga o rascunho da chave global antiga.
+ *
+ * ⚠️ TROCAR O PREFIXO APOSENTOU OS `v1`, MAS NÃO OS APAGOU: nenhuma função
+ * passou a lê-los, e nenhuma os removia -- então eles ficavam no navegador
+ * **para sempre**, inclusive depois do TTL de 7 dias, porque a expiração só é
+ * avaliada na leitura e ninguém lia. É pouco espaço, mas é o que alguém
+ * digitou num formulário, guardado sem prazo de validade.
+ *
+ * ⚠️ E É CHAMADA NA LEITURA, não num efeito próprio: é o único ponto por onde
+ * todo formulário público passa, e assim a limpeza acontece uma vez e some.
+ */
+function aposentaOAntigo(): void {
+  try {
+    window.localStorage.removeItem(CHAVE_V1);
+  } catch {
+    /* storage bloqueado: rascunho é conveniência, nunca derruba a tela */
+  }
+}
+
 export type RascunhoSolicitacao = {
   salvoEm: number;
   ident: Record<string, string>;
@@ -57,6 +80,7 @@ export type RascunhoSolicitacao = {
 /** Lê o rascunho. Devolve null se não existe, expirou ou está corrompido. */
 export function lerRascunho(formId: string): RascunhoSolicitacao | null {
   if (typeof window === "undefined") return null; // SSR
+  aposentaOAntigo();
   try {
     const bruto = window.localStorage.getItem(chave(formId));
     if (!bruto) return null;
