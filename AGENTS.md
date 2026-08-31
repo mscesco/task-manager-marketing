@@ -143,9 +143,18 @@ Não é lista de desculpa — é o que exige olho:
 
 ## 7. Ferramentas e limites
 
-- ⚠️ **`gh` não está instalado.** Dá para empurrar branch; **o PR é da Camila**.
-  Não dizer "o PR está lá" — dizer "empurrei, o PR é seu" e mandar o link de
-  compare.
+- ✅ **`gh` está instalado e autenticado** (conferido em 31/08/2026: v2.98,
+  conta `mscesco`, no PATH do Bash). Esta linha dizia o contrário por semanas.
+  Dá para abrir PR, ler review, comentar e conferir CI daqui.
+
+  ⚠️ **Mas abrir PR continua sendo gesto DELA por padrão.** A ferramenta ter
+  passado a existir não transfere a decisão — PR é ação para fora, e vale a
+  regra de confirmar antes. Peça, não presuma.
+
+  ⚠️ E **`main` local fica para trás**: em 31/08 estava 56 commits atrás do
+  `origin/main`, e isso inflou um cálculo de diff em 33 arquivos. Antes de
+  medir qualquer coisa contra `main`, `git fetch` e compare com
+  **`origin/main`**.
 - ⚠️ **Query de banco em SQL puro.** Ela roda no **Adminer**, não no
   `docker exec`. A exceção é o `invariantes.sql`, que é arquivo do repo.
 - **Deploy:** roteiro no `DEPLOY.md`. `git status --porcelain` na VPS (esperado
