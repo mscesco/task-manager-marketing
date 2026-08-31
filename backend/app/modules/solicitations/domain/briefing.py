@@ -33,9 +33,13 @@ class _Pedido(Protocol):
     summary: str
     requester_name: str
     requester_email: str
-    requester_phone: str
-    requester_department: str
-    requester_polo: str
+    #: ⚠️ OS TRES SAO `str | None` DESDE A FATIA G, e este Protocol MENTIA:
+    #: declarava `str`, o que fez o mypy calar sobre exatamente o defeito que a
+    #: revisao de 31/08 achou -- o f-string abaixo escrevia o literal "None" na
+    #: descricao de uma tarefa que alguem ia ler.
+    requester_phone: str | None
+    requester_department: str | None
+    requester_polo: str | None
     batch_id: object
     batch_seq: int
     batch_total: int
@@ -65,11 +69,39 @@ def briefing(pedido: _Pedido, rotulo: str | None = None) -> str:
     )
     recebida = getattr(pedido.created_at, "strftime", lambda _: "")("%d/%m/%Y")
 
+    # ⚠️⚠️ NADA DE f-STRING COM CAMPO OPCIONAL AQUI. `f"{None}"` produz o
+    # literal **"None"**, e este briefing vira a DESCRICAO de uma tarefa no
+    # quadro -- alguem le "Solicitante: Maria · maria@x · None" e "Área: None ·
+    # Polo: None" enquanto tenta fazer o trabalho.
+    #
+    # Achado pela revisao de 31/08. Ele passou por dois motivos somados: o
+    # `Protocol` acima declarava os tres como `str` (o mypy calou), e TODAS as
+    # fixtures de teste preenchiam os cinco campos -- o caso `None` nunca era
+    # exercitado. Os dois foram corrigidos junto com isto.
+    contato = " · ".join(
+        p
+        for p in (
+            pedido.requester_name,
+            pedido.requester_email,
+            pedido.requester_phone,
+        )
+        if p
+    )
+    # ⚠️ A LINHA INTEIRA SOME quando o formulario nao pergunta nenhum dos dois.
+    # "Área:  · Polo: " vazio e pior que a ausencia: parece campo perdido.
+    lugar = " · ".join(
+        f"{rotulo_do_campo}: {valor}"
+        for rotulo_do_campo, valor in (
+            ("Área", pedido.requester_department),
+            ("Polo", pedido.requester_polo),
+        )
+        if valor
+    )
+
     linhas = [
         f"{titulo_da_tarefa(pedido, rotulo)}",
-        f"Solicitante: {pedido.requester_name} · {pedido.requester_email} "
-        f"· {pedido.requester_phone}",
-        f"Área: {pedido.requester_department} · Polo: {pedido.requester_polo}",
+        f"Solicitante: {contato}",
+        *([lugar] if lugar else []),
         f"Protocolo: {protocolo}{de_varias} · Recebida em {recebida}",
         "",
     ]

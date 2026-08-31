@@ -175,6 +175,48 @@ describe("a etapa de identificação, montada de verdade", () => {
     expect(corpo.requester_polo).toBeNull();
   });
 
+  it("⚠️ a mensagem de erro NÃO cobra campo que a tela não desenha", async () => {
+    // ⚠️ ACHADO PELA REVISÃO DE 31/08. A mensagem era fixa -- "Preencha nome,
+    // e-mail válido, telefone, área e polo" -- e num formulário de TI ela
+    // acusava a pessoa de pular "área e polo", campos que a tela nem desenha.
+    // É exatamente o defeito que o comentário do `identOk()` diz que não pode
+    // acontecer, escrito uma função acima.
+    montar({ telefone: "WhatsApp", area: null, polo: null });
+    fireEvent.change(await screen.findByLabelText(/^Nome/), {
+      target: { value: "Maria" },
+    });
+    fireEvent.change(screen.getByLabelText(/^E-mail/), {
+      target: { value: "maria@polo.ex" },
+    });
+    fireEvent.click(screen.getByText("Pedido de acesso"));
+    fireEvent.click(screen.getByText(/Continuar|Avançar|Próximo/i));
+
+    const erro = await screen.findByRole("alert");
+    expect(erro.textContent).toContain("whatsapp");
+    expect(erro.textContent).not.toMatch(/polo/i);
+    expect(erro.textContent).not.toMatch(/área/i);
+  });
+
+  it("⚠️ a revisão não deixa separador pendurado sem telefone", async () => {
+    // A última tela antes de enviar é o pior lugar para uma dúvida: com o
+    // telefone desligado, ela mostrava "Maria · maria@x ·" com um · solto.
+    vi.mocked(api.enviarSolicitacaoPublica).mockResolvedValue({
+      protocol: "ABC123",
+      created: 1,
+    });
+    montar({ telefone: null, area: null, polo: null });
+    preencher([]);
+    fireEvent.click(screen.getByText(/Continuar|Avançar|Próximo/i));
+    fireEvent.change(await screen.findByLabelText(/Qual sistema/), {
+      target: { value: "o CRM" },
+    });
+    fireEvent.click(screen.getByText(/Continuar|Avançar|Próximo|Revisar/i));
+
+    await screen.findByText("Enviar solicitação");
+    expect(document.body.textContent).not.toMatch(/maria@polo\.ex\s*·\s*$/m);
+    expect(document.body.textContent).not.toContain("· ·");
+  });
+
   it("⚠️ o TÍTULO vem do banco -- ele estava escrito na mão", async () => {
     // `"FazAê · Solicitações de Marketing"` estava fixo aqui, mesmo com o
     // formulário tendo `title` no banco desde a fatia A.

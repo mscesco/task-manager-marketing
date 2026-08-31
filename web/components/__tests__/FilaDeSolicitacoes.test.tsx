@@ -310,6 +310,81 @@ describe("criar a tarefa a partir do pedido", () => {
   });
 });
 
+// =====================================================================
+// ⚠️ Os campos que a fatia G tornou opcionais
+// =====================================================================
+describe("um envio SEM telefone, área e polo", () => {
+  // ⚠️⚠️ ESTE BLOCO NASCEU DA REVISÃO DE 31/08, e o motivo de ela ter achado
+  // e eu não é direto: **todas as fixtures deste arquivo preenchiam os cinco
+  // campos**. A tipagem mudou na fatia G, os escritores foram migrados, e
+  // nenhuma asserção exercitava o `null` -- o mesmo hop que esta spec já
+  // registrou três vezes, agora na direção "o tipo mudou e o leitor não".
+  function envioMagro() {
+    return {
+      items: [
+        {
+          ...envio().items[0],
+        },
+      ],
+      batch_id: "b1",
+      protocol: "ABC123",
+      requester_name: "Maria",
+      requester_email: "maria@polo.ex",
+      requester_phone: null,
+      requester_department: null,
+      requester_polo: null,
+      created_at: "2026-08-26T12:00:00Z",
+    } as unknown as Batch;
+  }
+
+  function montarMagro() {
+    vi.mocked(api.listarEnvios).mockResolvedValue({
+      items: [envioMagro()],
+      total: 1,
+      page: 1,
+      size: 10,
+      pending_total: 1,
+      approved_without_task_total: 0,
+    });
+    render(<SolicitacoesPage />);
+  }
+
+  it("⚠️ o card não mostra separador pendurado", async () => {
+    // Em JSX o `null` some, mas o `·` e o `/` FICAM: o card mostrava
+    // "maria@polo.ex ·  / ".
+    montarMagro();
+    await screen.findByText("Maria");
+    expect(document.body.textContent).not.toMatch(/·\s*\/\s*$/m);
+    expect(document.body.textContent).not.toContain("· /");
+  });
+
+  it("⚠️ o briefing copiado NÃO contém a string \"null\"", async () => {
+    // ⚠️ TEMPLATE LITERAL COM `null` ESCREVE "null". Este texto vai para a área
+    // de transferência e daí para o WhatsApp -- ou seja, vaza para FORA do
+    // sistema, até o solicitante.
+    const escrito: string[] = [];
+    Object.assign(navigator, {
+      clipboard: {
+        writeText: (t: string) => {
+          escrito.push(t);
+          return Promise.resolve();
+        },
+      },
+    });
+
+    montarMagro();
+    fireEvent.click(await screen.findByText("Maria"));
+    fireEvent.click(await screen.findByText("Copiar briefing"));
+
+    await waitFor(() => expect(escrito).toHaveLength(1));
+    expect(escrito[0]).not.toContain("null");
+    // ⚠️ E A LINHA DE ÁREA/POLO SOME INTEIRA -- "Área:  · Polo: " vazio parece
+    // dado perdido.
+    expect(escrito[0]).not.toContain("Área:");
+    expect(escrito[0]).toContain("maria@polo.ex");
+  });
+});
+
 describe("as duas ações que a fila existe para fazer", () => {
   it("aprovar chama a API e recarrega", async () => {
     vi.mocked(api.aprovarSolicitacao).mockResolvedValue({} as never);

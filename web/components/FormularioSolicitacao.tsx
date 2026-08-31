@@ -234,7 +234,14 @@ export default function FormularioSolicitacao({
     if (passo === 0) {
       if (!identOk()) {
         setErro(
-          "Preencha nome, e-mail válido, telefone, área e polo antes de continuar."
+          // ⚠️ A MENSAGEM É MONTADA DA LISTA DE CAMPOS, e não escrita à mão.
+          // Fixa, ela acusava a pessoa de não preencher "área e polo" num
+          // formulário que nem desenha esses campos -- exatamente o defeito
+          // que o comentário do `identOk()` acima diz que não pode acontecer.
+          // Achado pela revisão de 31/08.
+          `Preencha ${campos
+            .map((c) => c.label.toLowerCase())
+            .join(", ")} antes de continuar.`
         );
         return;
       }
@@ -432,8 +439,12 @@ export default function FormularioSolicitacao({
         />
       )}
 
+      {/* ⚠️ `role="alert"` FALTAVA AQUI, e esta é a única rota pública do
+          produto -- quem usa leitor de tela não era avisado de que o envio
+          falhou. As outras telas já têm; esta ficou para trás. Notado ao
+          escrever o teste da mensagem de erro (revisão de 31/08). */}
       {erro && (
-        <div className="error-box" style={{ marginBottom: 16 }}>
+        <div className="error-box" style={{ marginBottom: 16 }} role="alert">
           {erro}
         </div>
       )}
@@ -615,7 +626,12 @@ export default function FormularioSolicitacao({
           </div>
 
           <div style={{ fontSize: 13 }}>
-            <strong>{ident.nome}</strong> · {ident.email} · {ident.telefone}
+            {/* ⚠️ O TELEFONE SÓ ENTRA SE FOI PERGUNTADO. Fixo, ele deixava um
+                "·" pendurado no fim da revisão -- a última tela antes de
+                enviar, o pior lugar para uma dúvida. O bloco logo abaixo já
+                tratava área e polo assim; esta linha ficou para trás. */}
+            <strong>{ident.nome}</strong> · {ident.email}
+            {identificacao.telefone ? ` · ${ident.telefone}` : ""}
             <br />
             <span className="muted">
               {/* ⚠️ SÓ O QUE O FORMULÁRIO PERGUNTOU. Com "Polo" desligado,

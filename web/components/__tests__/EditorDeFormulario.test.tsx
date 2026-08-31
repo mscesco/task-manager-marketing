@@ -235,6 +235,46 @@ describe("o cabeçalho do formulário", () => {
     );
   });
 
+  it("⚠️ CANCELAR desfaz -- o resumo não pode mentir sobre o banco", async () => {
+    // ⚠️⚠️ ACHADO PELA REVISÃO DE 31/08, e é o de consequência mais silenciosa
+    // dos quatro. `Cancelar` só fechava o painel; o estado local guardava a
+    // mudança descartada, e o resumo fechado lia esse estado. Resultado:
+    // a tela dizia "não pede mais Polo" com o banco pedindo -- e a porta
+    // pública continuava perguntando.
+    montar();
+    await abrirCabecalho();
+    fireEvent.click(screen.getAllByRole("checkbox")[2]); // desliga Polo
+    fireEvent.click(screen.getByText("Cancelar"));
+
+    expect(await screen.findByText(/pede Nome, E-mail, Telefone/)).toBeTruthy();
+    expect(screen.getByText(/Polo/)).toBeTruthy();
+  });
+
+  it("⚠️ e reabrir depois do Cancelar não reenvia o que foi descartado", async () => {
+    // ⚠️ O SEGUNDO ESTRAGO DO MESMO DEFEITO, e o pior: semanas depois alguém
+    // reabre para corrigir uma vírgula no título e clica Salvar. O painel
+    // manda os três rótulos sempre (é onde a intenção é decidida), então o
+    // `polo_label: null` esquecido ia junto -- e o backend, por contrato,
+    // trata `null` como DESLIGUE. O rótulo sumia sem ninguém pedir.
+    vi.mocked(api.renomearFormulario).mockResolvedValue({} as never);
+    montar();
+    await abrirCabecalho();
+    fireEvent.click(screen.getAllByRole("checkbox")[2]);
+    fireEvent.click(screen.getByText("Cancelar"));
+
+    await abrirCabecalho();
+    fireEvent.change(
+      screen.getByLabelText(/Título — é o que aparece no topo/),
+      { target: { value: "Só corrigindo o título" } }
+    );
+    fireEvent.click(screen.getByText("Salvar cabeçalho"));
+
+    await waitFor(() => expect(api.renomearFormulario).toHaveBeenCalled());
+    const corpo = vi.mocked(api.renomearFormulario).mock.calls[0][1];
+    expect(corpo.title).toBe("Só corrigindo o título");
+    expect(corpo.polo_label).toBe("Polo");
+  });
+
   it("fechado, o resumo diz o que o formulário pede hoje", async () => {
     montar();
     expect(

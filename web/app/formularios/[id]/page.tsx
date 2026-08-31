@@ -256,10 +256,14 @@ function Cabecalho({
         }}
       >
         <strong style={{ fontSize: 14 }}>Cabeçalho</strong>
+        {/* ⚠️ O RESUMO LÊ O `form`, E NÃO O ESTADO LOCAL. Lendo o estado, ele
+            mostrava a intenção descartada como se fosse o que está no banco --
+            e essa é a única linha da tela que diz o que o formulário pede
+            hoje. */}
         <span className="muted" style={{ fontSize: 12.5, minWidth: 0 }}>
           {form.title}
           {" · pede "}
-          {["Nome", "E-mail", ...CAMPOS.map((c) => rotulos[c.chave]).filter(Boolean)]
+          {["Nome", "E-mail", ...CAMPOS.map((c) => form[c.chave]).filter(Boolean)]
             .join(", ")}
         </span>
         <button
@@ -365,7 +369,22 @@ function Cabecalho({
         <button
           type="button"
           className="btn btn-ghost"
-          onClick={() => setAberto(false)}
+          // ⚠️⚠️ CANCELAR TEM DE DESFAZER, e não só fechar. Sem o reset, o
+          // estado local guardava a mudança descartada e causava DOIS
+          // estragos: o resumo fechado passava a mentir ("não pede mais
+          // Polo", com o banco pedindo), e reabrir depois para corrigir uma
+          // vírgula no título reenviava `polo_label: null` -- que o backend,
+          // por contrato, trata como DESLIGUE. Achado pela revisão de 31/08.
+          onClick={() => {
+            setTitulo(form.title);
+            setDescricao(form.description);
+            setRotulos({
+              phone_label: form.phone_label,
+              department_label: form.department_label,
+              polo_label: form.polo_label,
+            });
+            setAberto(false);
+          }}
         >
           Cancelar
         </button>
