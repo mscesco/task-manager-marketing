@@ -230,6 +230,24 @@ existia, é ordem invertida. Executado assim em 06/08/2026 (`0008`).
    > ainda assim imprime `0 failed`. Os pulados incluem TODA a regra de
    > visibilidade. Confira a linha de `skipped` antes de aceitar o portão.
 
+   **a.1) ⚠️⚠️ A IMAGEM DE PRODUÇÃO IMPORTA O APP?** Este passo existe porque
+   em 31/08/2026 a API **não subiu** depois de um deploy com os cinco portões
+   verdes:
+   ```bash
+   cd backend && docker build --target runtime -t task-manager-api:preflight .
+   docker run --rm      -e DATABASE_URL="postgresql+asyncpg://x:x@localhost:5432/x"      -e JWT_SECRET_KEY="preflight-sem-valor-nenhum-0123456789012"      -e APP_ENV=development      --entrypoint python task-manager-api:preflight      -c "from app.main import create_app; create_app(); print('OK')"
+   ```
+   ⚠️ **Os testes NÃO conseguem pegar esta classe de defeito.** O `api-dev` e o
+   job `backend` do CI instalam `.[dev]`; a imagem de produção roda
+   `pip install .`. Uma dependência declarada só em `dev` e usada em código de
+   runtime passa por tudo e derruba o app no `import` — foi o `httpx` da fatia
+   F. O defeito não está no código: está na **diferença entre as duas
+   instalações**, e só construir a imagem de verdade revela.
+
+   ⚠️ O CI já roda isto no job `imagem` desde 31/08. Rodar aqui também porque
+   **o CI julga o que foi EMPURRADO e o deploy sobe o que está na sua
+   máquina.**
+
    **a.2) Drift de schema.** Contra um banco em `head`:
    ```bash
    docker compose run --rm api-dev sh -c      "alembic upgrade head && alembic revision --autogenerate -m drift_check &&       cat alembic/versions/*drift*.py; rm -f alembic/versions/*drift*.py"

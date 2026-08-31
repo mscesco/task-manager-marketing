@@ -129,6 +129,26 @@ rodar não o encontrava. Toda entrega que cria ou altera TABELA precisa dele —
 
 Quais portões rodaram de fato, e o número que a suíte deve mostrar.
 
+### ⚠️ E há um SEXTO portão, que só o CI roda: a IMAGEM DE PRODUÇÃO importa?
+
+```bash
+cd backend && docker build --target runtime -t api:pre . && docker run --rm   -e DATABASE_URL="postgresql+asyncpg://x:x@localhost:5432/x"   -e JWT_SECRET_KEY="sem-valor-nenhum-0123456789012345" -e APP_ENV=development   --entrypoint python api:pre -c "from app.main import create_app; create_app()"
+```
+
+⚠️ **NENHUM TESTE PEGA ESTA CLASSE DE DEFEITO, e não é falha dos testes.** O
+`api-dev` instala `.[dev]`; a imagem de produção roda `pip install .`. Uma
+dependência declarada só em `dev` e usada em código de runtime passa por
+**todos** os cinco portões e derruba o app no `import`.
+
+Aconteceu em 31/08/2026: o `httpx` da fatia F estava em `dev`, a API de
+produção não subiu (`ModuleNotFoundError`), e os cinco portões estavam verdes —
+tinham de estar. **O defeito não está no código: está na diferença entre as
+duas instalações.**
+
+⚠️ Toda entrega que acrescenta `import` de biblioteca em código de `app/`
+precisa deste portão. Pergunta de bolso: *a biblioteca que acabei de importar
+está em `dependencies` ou em `optional-dependencies.dev`?*
+
 ## 6. O que os portões NÃO pegam
 
 Não é lista de desculpa — é o que exige olho:

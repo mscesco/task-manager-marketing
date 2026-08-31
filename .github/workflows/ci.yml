@@ -188,3 +188,52 @@ jobs:
       # saida do ruff continua no log e nao ha anotacao.
       - name: ruff (informativo, nao bloqueia)
         run: ruff check app/ || true
+
+  # -------------------------------------------------------------------
+  # IMAGEM DE PRODUCAO -- ela IMPORTA o app?
+  # -------------------------------------------------------------------
+  # ⚠️⚠️ ESTE JOB NASCEU DE UMA API FORA DO AR EM PRODUCAO (31/08/2026).
+  #
+  # A fatia F passou a usar `httpx` em `aviso_de_status.py`, e o `httpx`
+  # estava declarado so em `[project.optional-dependencies].dev`. O deploy
+  # subiu e a API nao importou:
+  #
+  #     ModuleNotFoundError: No module named 'httpx'
+  #
+  # ⚠️ E OS CINCO PORTOES ESTAVAM VERDES. Tinham de estar: o `api-dev` e o
+  # job `backend` acima instalam `.[dev]`, e ali o `httpx` sempre existiu --
+  # o cliente de teste HTTP usa ele. A imagem de producao roda
+  # `pip install .`, sem o extra.
+  #
+  # ⚠️ O DEFEITO NAO ESTAVA NO CODIGO. Estava na DIFERENCA ENTRE AS DUAS
+  # INSTALACOES -- e nenhum teste pode ver isso, porque todo teste roda na
+  # instalacao que tem a dependencia. So construindo a imagem de verdade.
+  #
+  # ⚠️ E IMPORTAR E O SUFICIENTE: o `pip install` nao falha (o pacote
+  # simplesmente nao esta la), e o `import httpx` no topo do modulo derruba
+  # o app inteiro na primeira linha. Dois segundos de job.
+  imagem:
+    name: imagem de producao (importa o app?)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Construir o stage `runtime` (o mesmo que vai para a VPS)
+        run: docker build --target runtime -t task-manager-api:ci backend/
+
+      # ⚠️ AS VARIAVEIS SAO OBRIGATORIAS PARA O IMPORT, e nao para conectar:
+      # `app/core/config.py` instancia `Settings()` no import do modulo, e o
+      # pydantic-settings recusa sem `DATABASE_URL` e sem `JWT_SECRET_KEY`
+      # de 32+ chars. Nada aqui abre conexao -- o banco nem precisa existir.
+      - name: Importar o app DENTRO da imagem
+        run: |
+          docker run --rm             -e DATABASE_URL="postgresql+asyncpg://x:x@localhost:5432/x"             -e JWT_SECRET_KEY="ci-secret-de-teste-sem-valor-nenhum-0123456789"             -e APP_ENV=development             --entrypoint python             task-manager-api:ci             -c "from app.main import create_app; create_app(); print('OK: a imagem de producao importa o app.')"
+
+      # ⚠️ E O `alembic` TAMBEM, porque o deploy o roda DENTRO desta imagem
+      # (`run --rm --entrypoint "" api alembic upgrade head`). Se um import
+      # de migration quebrar aqui, o deploy trava no passo mais caro de
+      # desfazer -- com o banco no meio do caminho.
+      - name: O alembic responde dentro da imagem
+        run: |
+          docker run --rm             -e DATABASE_URL="postgresql+asyncpg://x:x@localhost:5432/x"             -e JWT_SECRET_KEY="ci-secret-de-teste-sem-valor-nenhum-0123456789"             -e APP_ENV=development             --entrypoint alembic             task-manager-api:ci heads
