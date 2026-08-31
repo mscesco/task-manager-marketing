@@ -28,8 +28,11 @@ vontade, e mudam tambem o passado. A diferenca esta testada aqui embaixo.
 from __future__ import annotations
 
 import inspect
+import uuid
 
 import pytest
+
+from sqlalchemy import text
 
 from app.modules.solicitations.application.form_service import (
     CODIGO_CONDICIONAL_INVALIDA,
@@ -37,9 +40,14 @@ from app.modules.solicitations.application.form_service import (
     CODIGO_PERGUNTA_TEM_DEPENDENTE,
     CODIGO_RESUMO_FORA,
     CODIGO_SEM_OPCOES,
+    CODIGO_SLUG_DE_SECAO_REPETIDO,
     SolicitationFormService,
 )
-from app.shared.exceptions.base import AuthorizationError, ValidationError
+from app.shared.exceptions.base import (
+    AuthorizationError,
+    EntityNotFoundError,
+    ValidationError,
+)
 from tests.integration import factories as f
 from tests.integration.conftest import acting_as, mship, node
 
@@ -378,6 +386,134 @@ async def test_apagar_a_pergunta_RESUMO_limpa_o_ponteiro(db) -> None:
         secoes, _ = await svc.perguntas_do_form(form.id)
 
     assert secoes[0].summary_question_id is None
+
+
+# ==========================================================
+# ⚠️ O slug da seção é chave de dado (achado do review da fatia A)
+# ==========================================================
+async def test_duas_secoes_do_MESMO_formulario_nao_dividem_endereco(db) -> None:
+    """⚠️⚠️ O SLUG DA SEÇÃO VIAJA GRAVADO EM CADA PEDIDO.
+
+    Duas seções com o mesmo slug tornam o pedido AMBÍGUO: a fila monta o
+    dicionário de rótulos por `(form_id, slug)` e a segunda linha SOBRESCREVE
+    a primeira, então o pedido aparece com o título e o emoji da seção ERRADA.
+    Nada dá erro em lugar nenhum.
+
+    ⚠️ E A FATIA C2 PROTEGEU O LADO ERRADO: lá está escrito que o slug não
+    pode MUDAR porque fica gravado no pedido -- e nunca se impediu que dois
+    nascessem iguais. Os dois quebram a mesma coisa.
+    """
+    ws, raiz, mkt, design, user, arvore = await _mundo(db)
+    with acting_as(**_ctx(ws, user, arvore, mship(mkt, "MANAGER"))):
+        svc = SolicitationFormService(db)
+        form = await svc.criar_formulario(team_id=mkt, slug="arte", title="Arte")
+        await svc.criar_secao(form_id=form.id, slug="foto", title="Foto")
+
+        with pytest.raises(ValidationError) as erro:
+            await svc.criar_secao(
+                form_id=form.id, slug="foto", title="Fotografia digital"
+            )
+
+    assert erro.value.code == CODIGO_SLUG_DE_SECAO_REPETIDO
+
+
+async def test_o_MESMO_endereco_em_formularios_DIFERENTES_e_permitido(db) -> None:
+    """⚠️ A UNICIDADE É POR FORMULÁRIO, e não global. "arte" no formulário do
+    Marketing e "arte" no do Design são coisas distintas -- e a fila resolve o
+    rótulo por `(form_id, slug)`, então não há ambiguidade."""
+    ws, raiz, mkt, design, user, arvore = await _mundo(db)
+    with acting_as(**_ctx(ws, user, arvore, mship(raiz, "ADMIN"))):
+        svc = SolicitationFormService(db)
+        um = await svc.criar_formulario(team_id=mkt, slug="mkt", title="Mkt")
+        outro = await svc.criar_formulario(team_id=design, slug="dsg", title="Dsg")
+        a = await svc.criar_secao(form_id=um.id, slug="arte", title="Arte")
+        b = await svc.criar_secao(form_id=outro.id, slug="arte", title="Arte")
+
+    assert a.slug == b.slug == "arte"
+
+
+async def test_endereco_de_secao_APAGADA_pode_ser_reaproveitado(db) -> None:
+    """⚠️ O ÍNDICE É PARCIAL (`WHERE deleted_at IS NULL`), como o do
+    formulário: quem apagou "foto" por engano pode criar "foto" de novo."""
+    ws, raiz, mkt, design, user, arvore = await _mundo(db)
+    with acting_as(**_ctx(ws, user, arvore, mship(mkt, "MANAGER"))):
+        svc = SolicitationFormService(db)
+        form = await svc.criar_formulario(team_id=mkt, slug="arte", title="Arte")
+        velha = await svc.criar_secao(form_id=form.id, slug="foto", title="Foto")
+        await svc.apagar_secao(section_id=velha.id)
+
+        nova = await svc.criar_secao(form_id=form.id, slug="foto", title="Foto")
+
+    assert nova.id != velha.id
+
+
+# ==========================================================
+# ⚠️ O time tem de existir (achado do review da fatia A)
+# ==========================================================
+async def test_ADMIN_com_time_inexistente_leva_404_e_nao_500(db) -> None:
+    """⚠️ `_assert_pode_gerir` RETORNA CEDO PARA ADMIN (`editable_team_ids`
+    devolve `None` = sem filtro), então nenhum caminho conferia se o id existe.
+
+    Sem esta guarda o INSERT ia com um `team_id` inválido, a FK composta
+    `(team_id, workspace_id)` recusava, e saía **500** em vez de 404 -- mesmo
+    padrão que o `_assert_tarefa_do_workspace` da fatia E já tratava.
+    """
+    ws, raiz, mkt, design, user, arvore = await _mundo(db)
+    with acting_as(**_ctx(ws, user, arvore, mship(raiz, "ADMIN"))):
+        with pytest.raises(EntityNotFoundError):
+            await SolicitationFormService(db).criar_formulario(
+                team_id=uuid.uuid4(), slug="fantasma", title="Fantasma"
+            )
+
+
+async def test_time_de_OUTRO_workspace_tambem_e_recusado(db) -> None:
+    """A FK composta impediria; aqui a recusa vira 404 com texto."""
+    ws, raiz, mkt, design, user, arvore = await _mundo(db)
+    outro_ws = await f.make_workspace(db)
+    intruso = await f.make_team(db, workspace_id=outro_ws)
+    await db.flush()
+
+    with acting_as(**_ctx(ws, user, arvore, mship(raiz, "ADMIN"))):
+        with pytest.raises(EntityNotFoundError):
+            await SolicitationFormService(db).criar_formulario(
+                team_id=intruso, slug="invasor", title="Invasor"
+            )
+
+
+# ==========================================================
+# ⚠️ Apagar o formulário leva as seções (achado do review da fatia A)
+# ==========================================================
+async def test_apagar_FORMULARIO_leva_secoes_e_perguntas_junto(db) -> None:
+    """ADR-0005. Era inerte -- todo caminho passa pelo `_form_do_workspace`,
+    que dá 404 --, mas deixava estado inconsistente com o próprio
+    `apagar_secao`, que cascateia para as perguntas."""
+    ws, raiz, mkt, design, user, arvore = await _mundo(db)
+    with acting_as(**_ctx(ws, user, arvore, mship(mkt, "MANAGER"))):
+        svc = SolicitationFormService(db)
+        form, secao, alvo, dep = await _com_condicional(db, svc, mkt)
+
+        await svc.apagar_formulario(form_id=form.id)
+
+    vivas = (
+        await db.execute(
+            text(
+                "SELECT count(*) FROM solicitation_section "
+                "WHERE form_id = :f AND deleted_at IS NULL"
+            ),
+            {"f": form.id},
+        )
+    ).scalar_one()
+    perguntas_vivas = (
+        await db.execute(
+            text(
+                "SELECT count(*) FROM solicitation_question "
+                "WHERE section_id = :s AND deleted_at IS NULL"
+            ),
+            {"s": secao.id},
+        )
+    ).scalar_one()
+    assert vivas == 0
+    assert perguntas_vivas == 0
 
 
 # ==========================================================

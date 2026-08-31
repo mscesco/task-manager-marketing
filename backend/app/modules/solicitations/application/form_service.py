@@ -15,7 +15,7 @@ from __future__ import annotations
 import uuid
 
 import structlog
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.tenant import require_tenant
@@ -23,6 +23,7 @@ from app.db.models import (
     SolicitationForm,
     SolicitationQuestion,
     SolicitationSection,
+    Team,
 )
 from app.modules.auth.domain import team_scope
 from app.modules.solicitations.domain.form import exige_opcoes, kind_valido
@@ -42,6 +43,8 @@ CODIGO_SLUG_REPETIDO = "formulario_slug_repetido"
 CODIGO_TIPO_INVALIDO = "pergunta_tipo_invalido"
 #: `escolha`/`multi` sem alternativa nenhuma.
 CODIGO_SEM_OPCOES = "pergunta_sem_opcoes"
+#: Duas secoes do MESMO formulario com o mesmo endereco.
+CODIGO_SLUG_DE_SECAO_REPETIDO = "secao_slug_repetido"
 #: Pergunta-resumo apontada para fora da propria secao.
 CODIGO_RESUMO_FORA = "secao_resumo_fora"
 #: Condicional que aponta para fora da secao, para a frente, ou para um tipo
@@ -142,6 +145,68 @@ class SolicitationFormService:
                 details={"slug": slug},
             )
 
+    async def _assert_slug_de_secao_livre(
+        self, *, form_id: uuid.UUID, slug: str
+    ) -> None:
+        """Este formulario ja tem uma secao com este endereco?
+
+        ⚠️⚠️ ELE FALTAVA, E O SLUG DA SECAO E CHAVE DE DADO. Ele viaja gravado
+        em cada pedido (`solicitation_item.category`), e duas secoes com o
+        mesmo slug tornam o pedido AMBIGUO: a fila monta o dicionario de
+        rotulos por `(form_id, slug)` e a segunda linha SOBRESCREVE a primeira,
+        entao o pedido aparece com o titulo e o emoji da secao ERRADA. No
+        front, `porSlug()` faz o mesmo -- uma das duas some do mapa.
+
+        ⚠️ E EU PROTEGI O LADO ERRADO NA FATIA C2: escrevi, com todas as
+        letras, que o slug da secao NAO PODE MUDAR porque fica gravado no
+        pedido -- e nunca impedi que dois nascessem iguais. Os dois quebram a
+        mesma coisa. Achado pela revisao de 31/08.
+
+        ⚠️ SO CONTA AS VIVAS: reaproveitar o slug de uma secao apagada e
+        legitimo, e o indice unico da 0021 tambem e parcial.
+        """
+        existe = (
+            await self._session.execute(
+                select(SolicitationSection.id).where(
+                    SolicitationSection.form_id == form_id,
+                    SolicitationSection.slug == slug,
+                    SolicitationSection.deleted_at.is_(None),
+                )
+            )
+        ).first()
+        if existe is not None:
+            raise ValidationError(
+                "Este formulário já tem uma seção com este endereço.",
+                code=CODIGO_SLUG_DE_SECAO_REPETIDO,
+                details={"slug": slug},
+            )
+
+    async def _assert_time_existe(self, team_id: uuid.UUID) -> None:
+        """O time existe NESTE workspace?
+
+        ⚠️ SO IMPORTA PARA ADMIN. Para os outros papeis, `_assert_pode_gerir`
+        ja recusa qualquer time fora de `editable_team_ids` -- e um time de
+        outro workspace nunca esta na arvore do tenant. Mas para ADMIN aquela
+        funcao RETORNA CEDO (`editaveis is None` = sem filtro), e nenhum
+        caminho conferia se o id existe.
+
+        ⚠️ SEM ISTO O ERRO VEM DO BANCO: a FK composta
+        `(team_id, workspace_id)` recusa, e sai **500** em vez de 404. Mesmo
+        motivo do `_assert_tarefa_do_workspace` na fatia E -- violacao de
+        integridade e feia e nao explica nada a quem chamou.
+        """
+        tenant = require_tenant()
+        existe = (
+            await self._session.execute(
+                select(Team.id).where(
+                    Team.id == team_id,
+                    Team.workspace_id == tenant.workspace_id,
+                )
+            )
+        ).first()
+        if existe is None:
+            raise EntityNotFoundError("Time não encontrado.")
+
     async def _form_do_workspace(self, form_id: uuid.UUID) -> SolicitationForm:
         tenant = require_tenant()
         form = (
@@ -185,6 +250,7 @@ class SolicitationFormService:
         pergunta nada. Publicar e um gesto proprio, depois de montar.
         """
         self._assert_pode_gerir(team_id)
+        await self._assert_time_existe(team_id)
         limpo = self._assert_slug_valido(slug)
         await self._assert_slug_livre(limpo)
         tenant = require_tenant()
@@ -325,9 +391,49 @@ class SolicitationFormService:
         """
         form = await self._form_do_workspace(form_id)
         self._assert_pode_gerir(form.team_id)
-        form.deleted_at = func.now()
+
+        # ⚠️ AS SECOES E PERGUNTAS VAO JUNTO (ADR-0005), e ate a revisao de
+        # 31/08 nao iam. Era inerte -- todo caminho que as alcancaria passa
+        # pelo `_form_do_workspace`, que devolve 404 para formulario apagado --,
+        # mas deixava estado inconsistente com o proprio `apagar_secao`, que
+        # cascateia para as perguntas com a justificativa escrita. Qualquer
+        # consulta futura que parta de `solicitation_section` sem passar pelo
+        # formulario enxergaria secoes que o produto considera apagadas.
+        secoes = list(
+            (
+                await self._session.execute(
+                    select(SolicitationSection.id).where(
+                        SolicitationSection.form_id == form.id,
+                        SolicitationSection.deleted_at.is_(None),
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        agora = func.now()
+        if secoes:
+            await self._session.execute(
+                update(SolicitationQuestion)
+                .where(
+                    SolicitationQuestion.section_id.in_(secoes),
+                    SolicitationQuestion.deleted_at.is_(None),
+                )
+                .values(deleted_at=agora)
+            )
+            await self._session.execute(
+                update(SolicitationSection)
+                .where(SolicitationSection.id.in_(secoes))
+                .values(deleted_at=agora)
+            )
+
+        form.deleted_at = agora
         await self._session.flush()
-        logger.info("solicitation_form.apagado", form_id=str(form.id))
+        logger.info(
+            "solicitation_form.apagado",
+            form_id=str(form.id),
+            secoes=len(secoes),
+        )
 
     # ------------------------------------------------------------------
     # Secao
@@ -344,6 +450,7 @@ class SolicitationFormService:
         form = await self._form_do_workspace(form_id)
         self._assert_pode_gerir(form.team_id)
         limpo = self._assert_slug_valido(slug)
+        await self._assert_slug_de_secao_livre(form_id=form.id, slug=limpo)
         tenant = require_tenant()
 
         # Posicao no FIM, sempre. Reordenar e gesto proprio (fatia C).

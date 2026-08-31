@@ -441,6 +441,22 @@ class SolicitationSection(
             ondelete="CASCADE",
             name="solicitation_section_form",
         ),
+        # ⚠️⚠️ O SLUG DA SECAO E UNICO DENTRO DO FORMULARIO, e ate 31/08 nao
+        # era. Ele viaja gravado em cada pedido
+        # (`solicitation_item.category`), e duas secoes com o mesmo slug
+        # tornam o pedido AMBIGUO -- a fila resolve o rotulo por
+        # `(form_id, slug)` e mostra o titulo da secao ERRADA. Achado por
+        # revisao de codigo; a migration e a `0021`.
+        #
+        # ⚠️ PARCIAL, como o do formulario: reaproveitar o endereco de uma
+        # secao apagada e legitimo.
+        Index(
+            "solicitation_section_slug_unico",
+            "form_id",
+            "slug",
+            unique=True,
+            postgresql_where=text("deleted_at IS NULL"),
+        ),
         Index("solicitation_section_por_form", "workspace_id", "form_id", "position"),
     )
 
