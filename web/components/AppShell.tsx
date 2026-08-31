@@ -44,6 +44,7 @@ import {
   ChevronRight,
   Columns3,
   Inbox,
+  ClipboardList,
   Sun,
   Moon,
   Monitor,
@@ -135,12 +136,22 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   const podeGerirTimes = user?.permissions.includes("team.manage") ?? false;
 
+  // Spec 043 (fatia C). ⚠️ PERMISSÃO PRÓPRIA, e não a de triagem: definir o
+  // que se pergunta e responder a fila são trabalhos diferentes, e o backend
+  // já os separa. Mesmo espírito dos dois gates acima -- quem não tem a
+  // permissão não veria botão útil nenhum lá dentro.
+  const podeGerirFormularios =
+    user?.permissions.includes("solicitation_form.manage") ?? false;
+
   // Itens simples (fora do grupo Quadros).
   const nav: { href: string; label: string; icon: LucideIcon }[] = [
     { href: "/projetos", label: "Projetos", icon: FolderKanban },
     { href: "/minhas-tarefas", label: "Minhas tarefas", icon: ListChecks },
     ...(podeVerSolicitacoes
       ? [{ href: "/solicitacoes", label: "Solicitações", icon: Inbox }]
+      : []),
+    ...(podeGerirFormularios
+      ? [{ href: "/formularios", label: "Formulários", icon: ClipboardList }]
       : []),
     { href: "/membros", label: "Membros", icon: Users },
     // Spec 029: gestao da arvore de times. Gate no mesmo espirito de

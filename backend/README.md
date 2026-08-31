@@ -3,9 +3,15 @@
 Backend do sistema de gestão de demandas/tarefas multi-tenant.
 Modular Monolith com FastAPI, SQLAlchemy 2.0 async e PostgreSQL.
 
-Este repositório é a **foundation**: a base estrutural sobre a
-qual as features de negócio serão construídas. Ainda não há
-features de negócio implementadas — apenas a fundação.
+⚠️ **ESTE ARQUIVO DESCREVE A ESTRUTURA E AS REGRAS QUE ATRAVESSAM TODOS OS
+MÓDULOS.** Ele não conta o que cada feature faz — isso mora nas `specs/`, e o
+porquê das escolhas amplas mora nos `docs/adr/`. O processo de trabalho
+(portões, branches, armadilhas) mora no [`AGENTS.md`](../AGENTS.md) da raiz.
+
+⚠️ Ele dizia, até 27/08/2026, *"ainda não há features de negócio implementadas
+— apenas a fundação"*. Isso ficou errado por uns 40 specs e ninguém corrigiu,
+porque nada quebra quando um README mente. Se você encontrar outra afirmação
+velha aqui, **corrija na hora** em vez de contorná-la.
 
 ---
 
@@ -52,24 +58,25 @@ app/
   shared/          # exceptions, pagination — utilitários transversais
   api/             # router agregador, health, exception handlers
   modules/         # todos os bounded contexts, com estrutura uniforme:
-    auth/          #   autenticação, JWT, permissions, guards
+    auth/          #   autenticação, JWT, permissions, guards, escopo de time
     users/         #   usuários e WorkspaceMembership
-    workspaces/    #   (estrutura pronta, sem features ainda)
-    tasks/         #   (estrutura pronta, sem features ainda)
+    workspaces/    #   workspace, provisionamento
+    tasks/         #   tarefas, projetos, quadros, colunas, comentários
+    notifications/ #   notificações e menções
+    solicitations/ #   formulário público, fila de triagem, formulários
 alembic/           # migrations
-tests/             # testes (test_foundation.py é o modelo)
+tests/             # unitários na raiz; `tests/integration/` exige Postgres
 docker/  scripts/
 ```
 
 Cada módulo em `app/modules/<contexto>/` repete as quatro
 camadas: `domain/`, `application/`, `infrastructure/`, `api/`.
-`auth` e `users` já têm conteúdo; `workspaces` e `tasks` têm
-só a estrutura, prontos para receber features.
 
 ## 3. Decisões arquiteturais
 
-Estas decisões foram tomadas na foundation e moldam tudo que
-vier depois.
+Estas decisões foram tomadas na fundação do projeto, **continuam valendo** e
+moldam todo módulo novo. Elas não estão nos ADRs por serem anteriores a eles —
+se alguma for revista, o ADR nasce e este trecho passa a apontar para ele.
 
 **Isolamento multi-tenant — ContextVar + asserção explícita.**
 O `TenantContext` vive num `ContextVar` (`app/core/tenant.py`),
@@ -160,9 +167,19 @@ ssh -L 15432:localhost:5432 <usuario>@<host-da-vps>
 NUNCA versione host/usuario/IP reais aqui -- eles vivem na sua maquina,
 fora do repo.
 
-Para rodar testes e lint localmente (sem Docker), use um
-virtualenv com `pip install -e ".[dev]"`, depois `pytest`,
-`ruff check .` e `mypy app`.
+### Testes
+
+⚠️ **A suíte de integração precisa do `db-test`, um Postgres efêmero do
+próprio compose** — e **sem `TEST_DATABASE_URL` ela não falha: ela PULA**, com
+saída zero e um "N skipped" discreto. Verde de mentira.
+
+```
+docker compose up -d db-test
+docker compose run --rm -e TEST_DATABASE_URL="postgresql+asyncpg://test:test@db-test:5432/taskmanager_test" api-dev pytest
+```
+
+Lint e tipos: `ruff check .` e `mypy app`. Os cinco portões e o número
+esperado da suíte estão no [`AGENTS.md`](../AGENTS.md) §5.
 
 ## 5. Migrations (Alembic)
 
@@ -277,7 +294,9 @@ Exemplo: módulo `projects`.
    `api/`. O router só valida e delega ao service.
 5. Inclua o router em `app/api/router.py`
    (`api_v1_router.include_router(...)`).
-6. Escreva testes espelhando `tests/test_foundation.py`.
+6. Escreva testes. Para regra de negócio, espelhe um vizinho em
+   `tests/`; para qualquer coisa que dependa do banco (constraint, índice,
+   filtro de tenant), o lugar é `tests/integration/` — ver §4.
 
 O model ORM, se for uma tabela nova, vai em `app/db/models/` e
 deve ser exportado em `app/db/models/__init__.py` — senão o

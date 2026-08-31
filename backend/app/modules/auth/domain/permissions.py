@@ -55,6 +55,11 @@ _ROLE_PERMISSIONS: dict[UserTeamRole, frozenset[str]] = {
         {
             "workspace.manage",
             "solicitation.review",
+            # Spec 043 (fatia A). ⚠️ DISTINTA de `solicitation.review`, e a
+            # diferenca e de assunto: `review` e TRIAR o que chegou;
+            # `form.manage` e definir O QUE SE PERGUNTA. Quem responde a fila
+            # nao e necessariamente quem desenha a porta de entrada.
+            "solicitation_form.manage",
             "team.manage",
             "project.create",
             "project.update",
@@ -76,6 +81,11 @@ _ROLE_PERMISSIONS: dict[UserTeamRole, frozenset[str]] = {
         {
             "team.manage",
             "solicitation.review",
+            # Spec 043 (fatia A), decisao da Camila: ADMIN e MANAGER.
+            # ⚠️ O ESCOPO E O DO PAPEL, e nao global -- o servico confere se o
+            # time do formulario esta em `editable_team_ids`. Um MANAGER de
+            # Design nao edita a porta de entrada do Marketing.
+            "solicitation_form.manage",
             "project.create",
             "project.update",
             "project.delete",  # Adicionado na Entrega 1 (decisao 25 da spec).

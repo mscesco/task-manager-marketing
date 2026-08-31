@@ -28,7 +28,12 @@ from app.db.models.enums import (
 from app.db.models.notifications import Notification
 from app.db.models.operational import Project, Task
 from app.db.models.organization import Team, User, UserTeam, Workspace
-from app.db.models.solicitations import Solicitation
+from app.db.models.solicitations import (
+    Solicitation,
+    SolicitationForm,
+    SolicitationQuestion,
+    SolicitationSection,
+)
 
 __all__ = [
     # Organizacao
@@ -53,6 +58,9 @@ __all__ = [
     "Notification",
     # Solicitacoes (formulario publico)
     "Solicitation",
+    "SolicitationForm",
+    "SolicitationQuestion",
+    "SolicitationSection",
     # Enums
     "UserTeamRole",
     "ProjectStatus",

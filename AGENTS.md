@@ -45,6 +45,29 @@ Três escopos foram desmentidos pelo próprio código na sessão de 19/08, e um
 (`EntityNotFoundError` **não aceita `details=`** — é
 `(entity, *, identifier, message)`).
 
+### 3.1. ⚠️ Rota nova: COPIE O VIZINHO, não escreva do zero
+
+Um `@router.delete(..., status_code=204)` com retorno `-> None` **derrubou a
+coleta inteira da suíte** em 22/08 — 24 arquivos, 681 testes, nenhum executado.
+O FastAPI infere modelo de resposta da anotação e recusa corpo em 204, e a
+falha acontece **no import**, não numa chamada.
+
+O padrão certo já existia em dois routers (`notifications`, `comment_router`):
+
+```python
+@router.delete("/x/{id}", status_code=status.HTTP_204_NO_CONTENT,
+               response_class=Response)
+async def apagar(...) -> Response:
+    ...
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+```
+
+**A regra é maior que o 204:** antes de escrever rota, schema ou repositório
+novo, abra o irmão mais parecido que já existe e siga a forma dele. Este
+projeto tem convenções que só aparecem em quem já as sofreu — validador do
+Pydantic devolvendo 500, FK composta com `workspace_id`, corpo montado campo a
+campo.
+
 ## 4. Dizer quais arquivos foram mexidos
 
 O caminho de **todo** arquivo criado ou alterado, em cada entrega.
@@ -64,15 +87,43 @@ e 03:00.
 ### Backend — ~1,5 min
 
 ```bash
-docker compose run --rm -e TEST_DATABASE_URL=... api-dev pytest
+docker compose up -d db-test
+docker compose run --rm -e TEST_DATABASE_URL="postgresql+asyncpg://test:test@db-test:5432/taskmanager_test" api-dev pytest
 ```
+
+⚠️ **Sem `TEST_DATABASE_URL` a suíte não falha — ela PULA.** Todos os testes de
+integração viram `s` e o resumo diz "24 skipped" em letra pequena, ao lado de
+um código de saída **zero**. Quem só olha "deu verde" acha que rodou. A URL
+acima é a do `db-test` do compose e está escrita por extenso de propósito.
 
 ⚠️ **Depois de mexer no backend: `docker compose up -d --build api-dev`.** O
 `api-dev` **não recarrega sozinho**.
 
-⚠️ **O backend não roda na máquina de quem assiste** — não há Postgres. Isso
-obriga a dividir fatia de backend em duas entregas (12a/12b, B1/B2). Funcionou
-bem: os erros que sobraram foram de assinatura, não de lógica.
+⚠️⚠️ **CORRIGIDO EM 26/08: o backend RODA na máquina de quem assiste.** Esta
+seção dizia o contrário ("não há Postgres") e a frase custou caro — ela era o
+motivo declarado de dividir toda fatia de backend em duas entregas e de mandar
+a Camila rodar `pytest` por mim. O `db-test` é um Postgres efêmero do próprio
+compose; sobe em segundos e não encosta no banco de desenvolvimento.
+
+Os cinco portões, inclusive o de drift, rodam aqui. **Rode-os antes de
+entregar**; o número esperado deixa de ser previsão e passa a ser medida.
+
+### ⚠️ E há um QUINTO portão, que só o CI roda: DRIFT de migration
+
+```bash
+docker compose run --rm api-dev sh -c   "alembic upgrade head && alembic revision --autogenerate -m drift &&    cat alembic/versions/*drift*.py; rm -f alembic/versions/*drift*.py"
+```
+
+O `autogenerate` tem de sair **sem nenhuma linha `op.`**. Ele compara o que os
+MODELOS declaram com o que as MIGRATIONS criaram — e as duas coisas divergem
+por detalhe que nenhum teste vê: nome de constraint gerado pela convenção,
+`index=True` num mixin, `ondelete` que ficou de fora, índice que existe só de um
+lado.
+
+⚠️ **ESTE PORTÃO FALTAVA AQUI, e a ausência custou um CI vermelho** (Spec 043,
+fatia A). Ele estava só no checklist do PR; quem lê esta seção para saber o que
+rodar não o encontrava. Toda entrega que cria ou altera TABELA precisa dele —
+`pytest` verde não diz nada sobre drift.
 
 ### Sempre informar o número esperado
 

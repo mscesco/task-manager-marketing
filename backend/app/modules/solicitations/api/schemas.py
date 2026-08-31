@@ -37,12 +37,33 @@ class PublicSolicitationCreateRequest(BaseModel):
     """
 
     workspace_slug: str = Field(min_length=1, max_length=120)
+    #: De qual formulario veio o envio (Spec 043, fatia B).
+    #:
+    #: ⚠️ OPCIONAL, E A AUSENCIA E COMPATIBILIDADE, nao descuido. Um cliente
+    #: que ainda nao conheca o campo continua enviando -- e cai na validacao
+    #: antiga, contra a lista fixa de categorias do dominio. Torna-lo
+    #: obrigatorio de uma vez quebraria qualquer aba aberta no momento do
+    #: deploy, numa rota que nao tem login para avisar ninguem.
+    #:
+    #: ⚠️ E ELE E CONFERIDO CONTRA O WORKSPACE DO SLUG. Aceitar um `form_id`
+    #: qualquer deixaria alguem pendurar solicitacao no formulario de outro
+    #: cliente -- ver `SolicitationService.create_public`.
+    form_id: uuid.UUID | None = None
 
     requester_name: str = Field(min_length=2, max_length=255)
     requester_email: EmailStr
-    requester_phone: str = Field(min_length=8, max_length=50)
-    requester_department: str = Field(min_length=1, max_length=255)
-    requester_polo: str = Field(min_length=1, max_length=255)
+    # ⚠️ OS TRES VIRARAM OPCIONAIS NO SCHEMA (Spec 043, fatia G), e a
+    # obrigatoriedade mudou de lugar: quem decide se sao exigidos e o
+    # FORMULARIO, no servico. Um `min_length` aqui recusaria antes de o
+    # servidor sequer saber por qual porta o pedido entrou -- e o formulario de
+    # TI, que nao pergunta polo, levaria 422 em toda submissao.
+    #
+    # ⚠️ E `requester_name`/`requester_email` CONTINUAM COM `min_length` acima:
+    # eles nao sao configuraveis, porque a fila e organizada por quem pediu e a
+    # resposta automatica precisa do endereco.
+    requester_phone: str | None = Field(default=None, max_length=50)
+    requester_department: str | None = Field(default=None, max_length=255)
+    requester_polo: str | None = Field(default=None, max_length=255)
 
     # Teto = tamanho do menu (11). Nao ha o que selecionar alem disso.
     items: list[SolicitationItemRequest] = Field(min_length=1, max_length=11)
@@ -72,9 +93,9 @@ class SolicitationResponse(BaseModel):
     batch_total: int
     requester_name: str
     requester_email: str
-    requester_phone: str
-    requester_department: str
-    requester_polo: str
+    requester_phone: str | None
+    requester_department: str | None
+    requester_polo: str | None
     category: str
     summary: str
     answers: list[AnswerItem]
@@ -84,6 +105,9 @@ class SolicitationResponse(BaseModel):
     reviewed_at: datetime | None
     task_created_at: datetime | None
     task_ref: str | None
+    #: A tarefa vinculada (Spec 043, fatia E). `None` em tudo que foi marcado
+    #: antes desta fatia -- essas guardam so o `task_ref` de texto livre.
+    task_id: uuid.UUID | None = None
     created_at: datetime
 
 
@@ -96,6 +120,16 @@ class BatchItemResponse(BaseModel):
     id: uuid.UUID
     batch_seq: int
     category: str
+    # ⚠️ O ROTULO VEM DO BANCO, E ANTES VINHA DE UM ARQUIVO NO FRONT.
+    # `web/lib/solicitacaoForm.ts` mapeava slug -> titulo/emoji, e funcionava
+    # so porque a migration 0017 copiou os mesmos slugs. A primeira secao
+    # criada pelo editor apareceria na fila como slug cru e "❓".
+    #
+    # ⚠️ `None` E LEGITIMO: secao apagada, ou pedido de uma categoria que nao
+    # existe mais. O front cai no `category` cru -- que e o que ele ja fazia.
+    category_title: str | None = None
+    category_emoji: str | None = None
+    category_sla: str | None = None
     summary: str
     status: str
     answers: list[AnswerItem]
@@ -103,6 +137,13 @@ class BatchItemResponse(BaseModel):
     reviewed_at: datetime | None
     task_created_at: datetime | None
     task_ref: str | None
+    #: A tarefa vinculada (Spec 043, fatia E), e o titulo dela para a tela
+    #: mostrar um link legivel em vez de um uuid.
+    #:
+    #: ⚠️ `task_title` E RESOLVIDO NA HORA, e nao gravado: renomear a tarefa
+    #: no quadro arruma o link na fila. Mesma regra do rotulo da categoria.
+    task_id: uuid.UUID | None = None
+    task_title: str | None = None
 
 
 class BatchResponse(BaseModel):
@@ -116,9 +157,9 @@ class BatchResponse(BaseModel):
     protocol: str
     requester_name: str
     requester_email: str
-    requester_phone: str
-    requester_department: str
-    requester_polo: str
+    requester_phone: str | None
+    requester_department: str | None
+    requester_polo: str | None
     created_at: datetime
     items: list[BatchItemResponse]
 
@@ -132,8 +173,62 @@ class BatchListResponse(BaseModel):
     approved_without_task_total: int
 
 
+class AndarRequest(BaseModel):
+    """Corpo de `POST /solicitacoes/{id}/andamento` (Spec 043, fatia D).
+
+    ⚠️ SEM `Literal` E SEM VALIDADOR: valor fora do conjunto e recusado no
+    servico, com `ValidationError` de dominio. Validador custom neste projeto
+    devolve **500 no lugar de 422** -- o `_validation_error_handler` poe
+    `exc.errors()` cru no envelope, e o `ctx` carrega o `ValueError`, que o
+    `json.dumps` do Starlette recusa (medido em 10/08).
+    """
+
+    status: str = Field(max_length=20)
+
+
 class MarkTaskRequest(BaseModel):
     created: bool = True
     # Link ou identificador da tarefa criada no quadro. Texto livre porque
     # a criacao e manual -- nao ha id garantido pra validar.
+    #
+    # ⚠️ LEGADO A PARTIR DA FATIA E: use `task_id`. Este campo fica porque as
+    # marcacoes antigas moram nele como texto, e nao ha como converte-las.
     task_ref: str | None = Field(default=None, max_length=500)
+    #: A tarefa DE VERDADE (Spec 043, fatia E).
+    #:
+    #: ⚠️ CONFERIDA CONTRA O WORKSPACE no servico: a FK composta ja impediria
+    #: apontar para outro cliente, mas o erro viria do banco como violacao de
+    #: integridade -- feio e sem explicacao.
+    task_id: uuid.UUID | None = None
+
+
+class CriarTarefaRequest(BaseModel):
+    """Corpo de `POST /solicitacoes/{id}/criar-tarefa`.
+
+    ⚠️ SO O QUADRO E ESCOLHA. O time vem do FORMULARIO por onde o pedido
+    entrou -- deixar quem tria escolher faria a tarefa nascer longe de quem vai
+    faze-la sempre que um ADMIN triasse a fila de outra equipe.
+
+    ⚠️ E `None` E O QUADRO GERAL, o mesmo contrato do `CreateTaskCommand`.
+    """
+
+    board_id: uuid.UUID | None = None
+    #: Quem fica responsável. Vazio = quem está triando.
+    #:
+    #: ⚠️ TODA TAREFA PRECISA DE AO MENOS UM RESPONSÁVEL neste produto, e o
+    #: padrão ser quem tria é a única opção honesta: é a pessoa que acabou de
+    #: aceitar o pedido, e portanto quem responde por ele até repassar.
+    assignee_ids: list[uuid.UUID] = Field(default_factory=list)
+
+
+class TarefaCriadaResponse(BaseModel):
+    """A solicitacao ja vinculada, MAIS o id da tarefa que nasceu.
+
+    ⚠️ OS DOIS NA MESMA RESPOSTA para a tela poder oferecer "abrir a tarefa"
+    sem um segundo request -- e o passo seguinte natural de quem acabou de
+    criar uma.
+    """
+
+    solicitacao: SolicitationResponse
+    task_id: uuid.UUID
+    task_title: str

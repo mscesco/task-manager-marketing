@@ -2113,7 +2113,27 @@ export async function markAllNotificationsRead(): Promise<number> {
 // SOLICITAÇÕES (formulário público FazAê + fila de triagem)
 // ---------------------------------------------------------------
 
-export type SolicitacaoStatus = "PENDING" | "APPROVED" | "REJECTED";
+/**
+ * ⚠️ IN_PROGRESS e DONE entraram na fatia D (Spec 043).
+ *
+ * ⚠️ E ELES NAO SAO UMA SEGUNDA TRIAGEM: a decisao (aprovar/rejeitar) continua
+ * sendo uma porta so, e passar por "em andamento" ou "concluída" nao reescreve
+ * quem aprovou nem quando. Sao rotas diferentes no backend justamente por
+ * isso.
+ */
+export type SolicitacaoStatus =
+  | "PENDING"
+  | "APPROVED"
+  | "IN_PROGRESS"
+  | "DONE"
+  | "REJECTED";
+
+/** Os estados de um pedido ACEITO -- e entre eles se anda nos dois sentidos. */
+export const STATUS_ACEITOS: SolicitacaoStatus[] = [
+  "APPROVED",
+  "IN_PROGRESS",
+  "DONE",
+];
 
 export type SolicitacaoAnswer = { label: string; value: string };
 
@@ -2131,9 +2151,14 @@ export type Solicitacao = {
   batch_total: number;
   requester_name: string;
   requester_email: string;
-  requester_phone: string;
-  requester_department: string;
-  requester_polo: string;
+  /**
+   * ⚠️ OS TRÊS SÃO OPCIONAIS DESDE A FATIA G (Spec 043): `null` significa
+   * "este formulário não perguntou", que é diferente de "" ("perguntou e
+   * ficou em branco"). Nome e e-mail continuam obrigatórios.
+   */
+  requester_phone: string | null;
+  requester_department: string | null;
+  requester_polo: string | null;
   category: string;
   summary: string;
   answers: SolicitacaoAnswer[];
@@ -2157,12 +2182,367 @@ export type SolicitacaoItemEnvio = {
 // limit é por IP (5/10min), então N requests bloqueariam o solicitante no
 // meio do próprio pedido. A ORDEM de `items` é a ordem de seleção dele.
 // O campo `website` é o honeypot anti-bot: SEMPRE enviar vazio da UI.
+// ---- GESTAO DOS FORMULARIOS (Spec 043, fatia C) ----
+//
+// ⚠️ AUTENTICADAS, e com permissao PROPRIA no backend
+// (`solicitation_form.manage`). Ela e distinta de `solicitation.review`: triar
+// o que chegou e definir o que se pergunta sao trabalhos diferentes, e
+// frequentemente de pessoas diferentes.
+
+export type Formulario = {
+  id: string;
+  team_id: string;
+  slug: string;
+  title: string;
+  description: string;
+  is_published: boolean;
+  /** `null` = o formulário não pergunta este campo (Spec 043, fatia G). */
+  phone_label: string | null;
+  department_label: string | null;
+  polo_label: string | null;
+};
+
+export async function listarFormularios(): Promise<Formulario[]> {
+  return api<Formulario[]>("/api/v1/solicitacoes/formularios");
+}
+
+/**
+ * ⚠️ NASCE DESPUBLICADO, e `is_published` nem e parametro -- a decisao e do
+ * backend. Formulario nasce vazio; publicado na criacao, ele apareceria na
+ * lista publica como uma porta que nao pergunta nada.
+ */
+export async function criarFormulario(input: {
+  team_id: string;
+  slug: string;
+  title: string;
+  description?: string;
+}): Promise<Formulario> {
+  return api<Formulario>("/api/v1/solicitacoes/formularios", {
+    method: "POST",
+    body: {
+      team_id: input.team_id,
+      slug: input.slug,
+      title: input.title,
+      description: input.description ?? "",
+    },
+  });
+}
+
+/** ⚠️ `team_id` NAO ENTRA: mudar o time e mudar QUEM TRIA, inclusive do que ja
+ * chegou. O backend recusa o campo. */
+/**
+ * ⚠️ NOS TRÊS RÓTULOS, `null` SIGNIFICA "DESLIGUE O CAMPO" -- o oposto dos
+ * outros campos deste PATCH, em que omitir é "não mexa". Por isso eles só
+ * podem ser enviados quando a intenção é mesmo mudá-los: o backend distingue
+ * "não veio" de "veio null" pelo corpo, e aplicar um `null` por descuido
+ * apagaria a identificação do formulário.
+ */
+export async function renomearFormulario(
+  id: string,
+  patch: {
+    title?: string;
+    description?: string;
+    slug?: string;
+    phone_label?: string | null;
+    department_label?: string | null;
+    polo_label?: string | null;
+  }
+): Promise<Formulario> {
+  return api<Formulario>(`/api/v1/solicitacoes/formularios/${id}`, {
+    method: "PATCH",
+    body: patch,
+  });
+}
+
+export async function publicarFormulario(
+  id: string,
+  publicado: boolean
+): Promise<Formulario> {
+  return api<Formulario>(`/api/v1/solicitacoes/formularios/${id}/publicar`, {
+    method: "POST",
+    body: { publicado },
+  });
+}
+
+export async function apagarFormulario(id: string): Promise<void> {
+  await api<void>(`/api/v1/solicitacoes/formularios/${id}`, {
+    method: "DELETE",
+  });
+}
+
+// ---- O EDITOR: secoes e perguntas (Spec 043, fatia C2) ----
+
+export type PerguntaDoEditor = {
+  id: string;
+  section_id: string;
+  label: string;
+  kind: string;
+  required: boolean;
+  options: string[];
+  placeholder: string | null;
+  help: string | null;
+  show_if_question_id: string | null;
+  show_if_value: string | null;
+  position: number;
+};
+
+export type SecaoDoEditor = {
+  id: string;
+  slug: string;
+  title: string;
+  emoji: string;
+  sla_text: string | null;
+  summary_question_id: string | null;
+  position: number;
+  questions: PerguntaDoEditor[];
+};
+
+export type FormularioDetalhado = Formulario & {
+  sections: SecaoDoEditor[];
+};
+
+export async function obterFormulario(
+  id: string
+): Promise<FormularioDetalhado> {
+  return api<FormularioDetalhado>(`/api/v1/solicitacoes/formularios/${id}`);
+}
+
+export async function criarSecao(
+  formId: string,
+  input: { slug: string; title: string; emoji?: string; sla_text?: string | null }
+): Promise<SecaoDoEditor> {
+  return api<SecaoDoEditor>(
+    `/api/v1/solicitacoes/formularios/${formId}/secoes`,
+    { method: "POST", body: input }
+  );
+}
+
+/**
+ * ⚠️ **NAO ACEITA `slug`, e a ausencia e a regra.** O slug da secao viaja
+ * gravado em cada pedido (`solicitation_item.category`) e e por ele que a fila
+ * descobre a categoria. Troca-lo deixaria todo pedido antigo aparecendo como
+ * texto cru, sem titulo e sem emoji -- para sempre e sem erro nenhum.
+ *
+ * Titulo e emoji podem mudar a vontade justamente porque NAO sao gravados: a
+ * fila os resolve pelo slug, entao renomear conserta o passado junto com o
+ * presente. Essa e a diferenca entre os campos, e o backend recusa o slug.
+ */
+export async function editarSecao(
+  sectionId: string,
+  patch: { title?: string; emoji?: string; sla_text?: string | null }
+): Promise<SecaoDoEditor> {
+  return api<SecaoDoEditor>(`/api/v1/solicitacoes/secoes/${sectionId}`, {
+    method: "PATCH",
+    body: patch,
+  });
+}
+
+export async function apagarSecao(sectionId: string): Promise<void> {
+  await api<void>(`/api/v1/solicitacoes/secoes/${sectionId}`, {
+    method: "DELETE",
+  });
+}
+
+/** `question_id: null` volta ao padrao (o front usa o primeiro campo). */
+export async function definirResumo(
+  sectionId: string,
+  questionId: string | null
+): Promise<SecaoDoEditor> {
+  return api<SecaoDoEditor>(
+    `/api/v1/solicitacoes/secoes/${sectionId}/resumo`,
+    { method: "POST", body: { question_id: questionId } }
+  );
+}
+
+export async function criarPergunta(
+  sectionId: string,
+  input: {
+    label: string;
+    kind: string;
+    required?: boolean;
+    options?: string[];
+    placeholder?: string | null;
+    help?: string | null;
+  }
+): Promise<PerguntaDoEditor> {
+  return api<PerguntaDoEditor>(
+    `/api/v1/solicitacoes/secoes/${sectionId}/perguntas`,
+    { method: "POST", body: input }
+  );
+}
+
+/**
+ * ⚠️ `options` OMITIDO E "NAO MEXE", e nao "esvazia" -- quem so corrigiu uma
+ * vírgula no título não pode perder a lista de alternativas por omissão.
+ */
+export async function editarPergunta(
+  questionId: string,
+  patch: {
+    label?: string;
+    kind?: string;
+    required?: boolean;
+    options?: string[];
+    placeholder?: string | null;
+    help?: string | null;
+  }
+): Promise<PerguntaDoEditor> {
+  return api<PerguntaDoEditor>(`/api/v1/solicitacoes/perguntas/${questionId}`, {
+    method: "PATCH",
+    body: patch,
+  });
+}
+
+/**
+ * ⚠️ ROTA PROPRIA, e nao um campo do PATCH: DESLIGAR e mandar `null`, e num
+ * PATCH `null` se confunde com "nao mexe neste campo".
+ */
+export async function definirCondicional(
+  questionId: string,
+  alvoId: string | null,
+  valor: string | null
+): Promise<PerguntaDoEditor> {
+  return api<PerguntaDoEditor>(
+    `/api/v1/solicitacoes/perguntas/${questionId}/condicional`,
+    { method: "POST", body: { alvo_id: alvoId, valor } }
+  );
+}
+
+export async function apagarPergunta(questionId: string): Promise<void> {
+  await api<void>(`/api/v1/solicitacoes/perguntas/${questionId}`, {
+    method: "DELETE",
+  });
+}
+
+/**
+ * ⚠️ AS DUAS MANDAM O CONJUNTO INTEIRO, e o backend recusa lista parcial.
+ * Aceita-la deixaria uma aba aberta desde antes de alguem criar uma secao
+ * sobrescrever a ordem com um mundo que nao existe mais.
+ */
+export async function reordenarSecoes(
+  formId: string,
+  ids: string[]
+): Promise<SecaoDoEditor[]> {
+  return api<SecaoDoEditor[]>(
+    `/api/v1/solicitacoes/formularios/${formId}/secoes/ordem`,
+    { method: "POST", body: { ids } }
+  );
+}
+
+export async function reordenarPerguntas(
+  sectionId: string,
+  ids: string[]
+): Promise<PerguntaDoEditor[]> {
+  return api<PerguntaDoEditor[]>(
+    `/api/v1/solicitacoes/secoes/${sectionId}/perguntas/ordem`,
+    { method: "POST", body: { ids } }
+  );
+}
+
+// ---- O FORMULARIO PUBLICO, LIDO DO BANCO (Spec 043, fatia B) ----
+//
+// ⚠️ `auth: false` NAS DUAS, e nao e detalhe: quem preenche o formulario nao
+// tem login. Mandar credencial aqui faria a chamada falhar para justamente
+// quem ela existe para atender.
+
+export type PerguntaPublica = {
+  id: string;
+  label: string;
+  kind: string;
+  required: boolean;
+  options: string[];
+  placeholder: string | null;
+  help: string | null;
+  /** ⚠️ O ID da outra pergunta -- ver `lib/formularioDoBanco.ts`. */
+  show_if_question_id: string | null;
+  show_if_value: string | null;
+};
+
+export type SecaoPublica = {
+  slug: string;
+  title: string;
+  emoji: string;
+  sla_text: string | null;
+  summary_question_id: string | null;
+  questions: PerguntaPublica[];
+};
+
+export type FormularioPublico = {
+  id: string;
+  slug: string;
+  title: string;
+  description: string;
+  /**
+   * Os rótulos da identificação (Spec 043, fatia G). `null` = o formulário
+   * NÃO pergunta este campo.
+   *
+   * ⚠️ NOME E E-MAIL NÃO ESTÃO AQUI porque não são configuráveis: a fila é
+   * organizada por quem pediu, e a resposta automática de mudança de status
+   * precisa do endereço.
+   */
+  phone_label: string | null;
+  department_label: string | null;
+  polo_label: string | null;
+  sections: SecaoPublica[];
+};
+
+export type FormularioPublicoResumo = {
+  slug: string;
+  title: string;
+  description: string;
+  team_name: string;
+};
+
+/** Os formularios publicados do workspace. Lista vazia = nao ha nenhum. */
+export async function listarFormulariosPublicos(): Promise<
+  FormularioPublicoResumo[]
+> {
+  return api<FormularioPublicoResumo[]>(
+    `/api/v1/solicitacoes/publico/formularios?workspace=${encodeURIComponent(
+      WORKSPACE_SLUG
+    )}`,
+    { auth: false }
+  );
+}
+
+/**
+ * Um formulario publicado, pelo slug.
+ *
+ * ⚠️ 404 AQUI SIGNIFICA QUATRO COISAS (nao existe, despublicado, apagado, de
+ * outro workspace) -- o backend responde igual para as quatro de proposito,
+ * para nao virar um enumerador de slugs. Quem chama trata todas como "este
+ * endereco nao serve", que e o que a pessoa precisa saber.
+ */
+export async function obterFormularioPublico(
+  slug: string
+): Promise<FormularioPublico> {
+  return api<FormularioPublico>(
+    `/api/v1/solicitacoes/publico/formularios/${encodeURIComponent(
+      slug
+    )}?workspace=${encodeURIComponent(WORKSPACE_SLUG)}`,
+    { auth: false }
+  );
+}
+
 export async function enviarSolicitacaoPublica(payload: {
+  /**
+   * De qual formulário veio (Spec 043, fatia B).
+   *
+   * ⚠️ OPCIONAL NO TIPO porque o backend o aceita ausente -- é a
+   * compatibilidade para a aba que ficou aberta durante o deploy. Mas a tela
+   * SEMPRE manda: sem ele a solicitação nasce órfã e cai na fila do workspace
+   * inteiro, em vez da do time dono do formulário.
+   */
+  form_id?: string;
   requester_name: string;
   requester_email: string;
-  requester_phone: string;
-  requester_department: string;
-  requester_polo: string;
+  /**
+   * ⚠️ OS TRÊS SÃO OPCIONAIS DESDE A FATIA G (Spec 043): `null` significa
+   * "este formulário não perguntou", que é diferente de "" ("perguntou e
+   * ficou em branco"). Nome e e-mail continuam obrigatórios.
+   */
+  requester_phone: string | null;
+  requester_department: string | null;
+  requester_polo: string | null;
   items: SolicitacaoItemEnvio[];
   website?: string;
 }): Promise<{ protocol: string; created: number }> {
@@ -2185,14 +2565,42 @@ export type SolicitacaoFiltro =
 export type BatchItem = {
   id: string;
   batch_seq: number;
+  /** ⚠️ O SLUG GRAVADO NO PEDIDO. É a chave, não a etiqueta. */
   category: string;
+  /**
+   * ⚠️ COMO A CATEGORIA SE APRESENTA, resolvido pelo backend NA HORA e não
+   * gravado no pedido -- renomear uma seção arruma a fila inteira, inclusive
+   * o passado.
+   *
+   * ⚠️ `null` É LEGÍTIMO (seção apagada, categoria que não existe mais), e
+   * quem desenha cai no `category` cru. Antes disso tudo vinha de
+   * `CATEGORIA_POR_SLUG`, um arquivo estático no front -- e a primeira seção
+   * criada pelo editor apareceria como slug cru e "❓".
+   */
+  category_title: string | null;
+  category_emoji: string | null;
+  category_sla: string | null;
   summary: string;
   status: SolicitacaoStatus;
   answers: SolicitacaoAnswer[];
   review_note: string | null;
   reviewed_at: string | null;
   task_created_at: string | null;
+  /** ⚠️ LEGADO: texto livre das marcações antigas. Ver `task_id`. */
   task_ref: string | null;
+  /**
+   * A tarefa DE VERDADE (Spec 043, fatia E).
+   *
+   * ⚠️ `task_ref` ERA TEXTO LIVRE -- não dava para clicar, não seguia a
+   * tarefa quando ela era renomeada e não sabia dizer se ela ainda existia.
+   * Os dois convivem: o novo para o que nasce daqui em diante, o velho como
+   * registro do que já foi marcado.
+   *
+   * ⚠️ `task_title` VEM `null` QUANDO A TAREFA FOI APAGADA -- a tela mostra
+   * "tarefa vinculada" sem nome, e não um link que leva a lugar nenhum.
+   */
+  task_id: string | null;
+  task_title: string | null;
 };
 
 export type Batch = {
@@ -2200,9 +2608,14 @@ export type Batch = {
   protocol: string;
   requester_name: string;
   requester_email: string;
-  requester_phone: string;
-  requester_department: string;
-  requester_polo: string;
+  /**
+   * ⚠️ OS TRÊS SÃO OPCIONAIS DESDE A FATIA G (Spec 043): `null` significa
+   * "este formulário não perguntou", que é diferente de "" ("perguntou e
+   * ficou em branco"). Nome e e-mail continuam obrigatórios.
+   */
+  requester_phone: string | null;
+  requester_department: string | null;
+  requester_polo: string | null;
   created_at: string;
   items: BatchItem[];
 };
@@ -2228,6 +2641,28 @@ export async function listarEnvios(
 }
 
 /** Marca/desmarca "tarefa criada" numa solicitação APROVADA. */
+/**
+ * Cria a tarefa A PARTIR do pedido e já a vincula (Spec 043, fatia E).
+ *
+ * ⚠️ SUBSTITUI UM COPIA-E-COLA DE SEIS PASSOS: copiar o briefing, sair da
+ * fila, abrir o quadro, criar a tarefa, colar, voltar e marcar. O último era o
+ * que mais se esquecia -- e é a razão de o filtro "aprovadas sem tarefa"
+ * existir.
+ *
+ * ⚠️ SEM `assignee_ids`, QUEM CLICA VIRA RESPONSÁVEL: toda tarefa precisa de
+ * ao menos um, e a pessoa que acabou de aceitar o pedido é quem responde por
+ * ele até repassar.
+ */
+export async function criarTarefaDaSolicitacao(
+  id: string,
+  board_id?: string | null
+): Promise<{ task_id: string; task_title: string }> {
+  return api<{ task_id: string; task_title: string }>(
+    `/api/v1/solicitacoes/${id}/criar-tarefa`,
+    { method: "POST", body: { board_id: board_id ?? null } }
+  );
+}
+
 export async function marcarTarefaCriada(
   id: string,
   created: boolean,
@@ -2236,6 +2671,24 @@ export async function marcarTarefaCriada(
   return api<Solicitacao>(`/api/v1/solicitacoes/${id}/tarefa`, {
     method: "POST",
     body: { created, task_ref: taskRef ?? null },
+  });
+}
+
+/**
+ * Move um pedido ACEITO entre aprovada, em andamento e concluída.
+ *
+ * ⚠️ ROTA SEPARADA DE `/aprovar`, e não um campo dela: triar e acompanhar são
+ * trabalhos diferentes. Aprovar grava QUEM decidiu e QUANDO; andar não toca
+ * nesses campos, e reaproveitar a rota de triagem os reescreveria a cada
+ * mudança de andamento — apagando a decisão original.
+ */
+export async function andarSolicitacao(
+  id: string,
+  status: SolicitacaoStatus
+): Promise<Solicitacao> {
+  return api<Solicitacao>(`/api/v1/solicitacoes/${id}/andamento`, {
+    method: "POST",
+    body: { status },
   });
 }
 

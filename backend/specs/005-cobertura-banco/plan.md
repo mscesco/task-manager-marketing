@@ -56,7 +56,7 @@ specs/005-cobertura-banco/{spec,plan}.md
 docs/adr/0014..0016-*.md
 ```
 
-### Editados (descritos em `edits.md`)
+### Editados
 ```
 docker-compose.yml      # + servico db-test
 pyproject.toml          # + marker `integration`
@@ -67,8 +67,7 @@ pyproject.toml          # + marker `integration`
 
 1. **`schema/schema_v5.sql`** — passo 0 (você).
 2. **Migration `0005`** — consolida a trigger (já escrita no esqueleto).
-3. **Compose `db-test`** + **`pyproject` marker** + **`.env.example`** —
-   ver `edits.md`.
+3. **Compose `db-test`** + **`pyproject` marker** + **`.env.example`**.
 4. **`conftest.py`** — harness: bootstrap 1x/sessão (`alembic stamp 0004`
    + `upgrade head` com `DATABASE_URL=TEST_DATABASE_URL`), conexão com
    transação externa, sessão com `create_savepoint`, helper `acting_as`.

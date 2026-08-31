@@ -19,8 +19,11 @@ import Badge from "@/components/Badge";
 import Card from "@/components/Card";
 import EmptyState from "@/components/EmptyState";
 import PageHeader from "@/components/PageHeader";
+import Link from "next/link";
 import {
+  andarSolicitacao,
   aprovarSolicitacao,
+  criarTarefaDaSolicitacao,
   listarEnvios,
   marcarTarefaCriada,
   rejeitarSolicitacao,
@@ -29,17 +32,27 @@ import {
   type BatchItem,
   type SolicitacaoFiltro,
   type SolicitacaoStatus,
+  STATUS_ACEITOS,
 } from "@/lib/api";
-import { CATEGORIA_POR_SLUG } from "@/lib/solicitacaoForm";
+import { rotuloDaCategoria } from "@/lib/rotuloDaCategoria";
 
 const STATUS_LABEL: Record<SolicitacaoStatus, string> = {
   PENDING: "Pendente",
   APPROVED: "Aprovada",
+  IN_PROGRESS: "Em andamento",
+  DONE: "Concluída",
   REJECTED: "Rejeitada",
 };
+// ⚠️ AZUL PARA "EM ANDAMENTO" E VERDE-ESCURO PARA "CONCLUÍDA", e não dois
+// verdes: "aprovada" e "concluída" são estados distantes no fluxo e precisam
+// se distinguir de relance numa lista. O `Badge tone="soft"` aplica a tinta,
+// e estas cores são as mesmas famílias já medidas para AA no tema claro e
+// escuro (Spec 031 §2.2b).
 const STATUS_COLOR: Record<SolicitacaoStatus, string> = {
   PENDING: "#d97706",
   APPROVED: "#16a34a",
+  IN_PROGRESS: "#2563eb",
+  DONE: "#15803d",
   REJECTED: "#dc2626",
 };
 
@@ -118,6 +131,8 @@ function Solicitacoes() {
     { valor: "PENDING", label: "Pendentes", contador: pendentes },
     { valor: "SEM_TAREFA", label: "Aprovadas sem tarefa", contador: semTarefa },
     { valor: "APPROVED", label: "Aprovadas" },
+    { valor: "IN_PROGRESS", label: "Em andamento" },
+    { valor: "DONE", label: "Concluídas" },
     { valor: "REJECTED", label: "Rejeitadas" },
     { valor: "ALL", label: "Todas" },
   ];
@@ -321,11 +336,11 @@ function CardEnvio({
             }}
           >
             {envio.items.map((item) => {
-              const cat = CATEGORIA_POR_SLUG[item.category];
+              const cat = rotuloDaCategoria(item);
               return (
                 <li key={item.id} style={{ fontSize: 13 }}>
-                  <span style={{ marginRight: 6 }}>{cat?.emoji ?? "❓"}</span>
-                  <strong>{cat?.titulo ?? item.category}</strong>
+                  <span style={{ marginRight: 6 }}>{cat.emoji}</span>
+                  <strong>{cat.titulo}</strong>
                   {": "}
                   <span className="muted">{item.summary}</span>{" "}
                   <Badge tone="soft" size="sm" color={STATUS_COLOR[item.status]}>
@@ -395,12 +410,17 @@ function SecaoDemanda({
   item: BatchItem;
   onMudou: () => void;
 }) {
-  const cat = CATEGORIA_POR_SLUG[item.category];
+  const cat = rotuloDaCategoria(item);
+  const aceito = STATUS_ACEITOS.includes(item.status);
   const [erro, setErro] = useState<string | null>(null);
   const [agindo, setAgindo] = useState(false);
   const [rejeitando, setRejeitando] = useState(false);
   const [justificativa, setJustificativa] = useState("");
   const [marcandoTarefa, setMarcandoTarefa] = useState(false);
+  // ⚠️ GUARDA O ID DA TAREFA RECÉM-CRIADA para oferecer "abrir a tarefa" sem
+  // um segundo request -- é o passo seguinte natural de quem acabou de criar
+  // uma, e sem isso a pessoa teria de procurá-la no quadro.
+  const [tarefaNova, setTarefaNova] = useState<string | null>(null);
   const [refTarefa, setRefTarefa] = useState("");
   const [copiado, setCopiado] = useState(false);
 
@@ -419,7 +439,7 @@ function SecaoDemanda({
 
   function copiarBriefing() {
     const linhas = [
-      `[${cat?.titulo ?? item.category}] ${item.summary}`,
+      `[${cat.titulo}] ${item.summary}`,
       `Solicitante: ${envio.requester_name} · ${envio.requester_email} · ${envio.requester_phone}`,
       `Área: ${envio.requester_department} · Polo: ${envio.requester_polo}`,
       `Protocolo: ${envio.protocol}${envio.items.length > 1 ? ` (${item.batch_seq}/${envio.items.length})` : ""} · Recebida em ${new Date(envio.created_at).toLocaleDateString("pt-BR")}`,
@@ -436,9 +456,9 @@ function SecaoDemanda({
     <div style={{ border: "1px solid var(--border)", borderRadius: 10, padding: 14 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
         <strong style={{ fontSize: 14 }}>
-          {cat?.emoji ?? "❓"} {cat?.titulo ?? item.category}
+          {cat.emoji} {cat.titulo}
         </strong>
-        {cat?.prazo && (
+        {cat.prazo && (
           <span className="muted" style={{ fontSize: 11 }}>⏱ {cat.prazo}</span>
         )}
         <Badge tone="soft" size="sm" color={STATUS_COLOR[item.status]} className="ml-auto">
@@ -484,6 +504,43 @@ function SecaoDemanda({
           {copiado ? "Copiado ✓" : "Copiar briefing"}
         </button>
 
+        {/* ⚠️ O ANDAMENTO É UM SELETOR, e não um botão "avançar": volta-se de
+            "concluída" para "em andamento" de propósito. Marcar concluída por
+            engano é comum, e sem a volta a saída seria pedir para alguém mexer
+            no banco. O backend permite os dois sentidos; a tela também. */}
+        {aceito && (
+          <label
+            style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+          >
+            <span className="muted" style={{ fontSize: 12 }}>
+              Situação
+            </span>
+            <select
+              className="input"
+              style={{ fontSize: 12, padding: "4px 8px", width: "auto" }}
+              aria-label={`Situação de ${cat.titulo}`}
+              value={item.status}
+              disabled={agindo}
+              onChange={(e) =>
+                acao(
+                  () =>
+                    andarSolicitacao(
+                      item.id,
+                      e.target.value as SolicitacaoStatus
+                    ),
+                  "Não foi possível mudar a situação."
+                )
+              }
+            >
+              {STATUS_ACEITOS.map((st) => (
+                <option key={st} value={st}>
+                  {STATUS_LABEL[st]}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+
         {item.status === "PENDING" && !rejeitando && (
           <>
             <button
@@ -506,12 +563,34 @@ function SecaoDemanda({
           </>
         )}
 
-        {item.status === "APPROVED" && !item.task_created_at && !marcandoTarefa && (
-          <button className="btn" onClick={() => setMarcandoTarefa(true)}>
-            Marcar tarefa criada
+        {/* ⚠️ OS TRÊS ACEITOS, e não só APPROVED (Spec 043, fatia D). A tarefa
+            costuma ser criada quando o trabalho COMEÇA -- ou seja, com o
+            pedido já em andamento. Exigir "aprovada" aqui esconderia o botão
+            exatamente no momento em que ele é usado. */}
+        {/* ⚠️ CRIAR A TAREFA É O CAMINHO PRINCIPAL agora, e "marcar" virou o
+            secundário: quem já criou a tarefa à mão continua podendo registrar,
+            mas o fluxo de seis passos (copiar, sair, criar, colar, voltar,
+            marcar) deixou de ser o único. */}
+        {aceito && !item.task_created_at && (
+          <button
+            className="btn btn-primary"
+            disabled={agindo}
+            onClick={() =>
+              acao(async () => {
+                const nova = await criarTarefaDaSolicitacao(item.id);
+                setTarefaNova(nova.task_id);
+              }, "Não foi possível criar a tarefa.")
+            }
+          >
+            {agindo ? "…" : "Criar tarefa"}
           </button>
         )}
-        {item.status === "APPROVED" && item.task_created_at && (
+        {aceito && !item.task_created_at && !marcandoTarefa && (
+          <button className="btn" onClick={() => setMarcandoTarefa(true)}>
+            Já criei — só marcar
+          </button>
+        )}
+        {aceito && item.task_created_at && (
           <button
             className="btn btn-ghost"
             disabled={agindo}
@@ -527,11 +606,28 @@ function SecaoDemanda({
         )}
       </div>
 
-      {item.status === "APPROVED" && item.task_created_at && (
+      {aceito && item.task_created_at && (
         <p className="muted" style={{ fontSize: 12, marginTop: 8 }}>
           ✓ Tarefa criada em{" "}
           {new Date(item.task_created_at).toLocaleDateString("pt-BR")}
-          {item.task_ref ? ` · ${item.task_ref}` : ""}
+          {/* ⚠️ TRÊS ESTADOS, e cada um diz a verdade sobre o que existe:
+              vinculada e viva (link), vinculada e apagada (sem nome, sem
+              link), ou só o `task_ref` de texto das marcações antigas. */}
+          {item.task_id && item.task_title && (
+            <>
+              {" · "}
+              <Link href={`/tarefa/${item.task_id}`}>{item.task_title}</Link>
+            </>
+          )}
+          {item.task_id && !item.task_title && " · tarefa vinculada"}
+          {!item.task_id && item.task_ref ? ` · ${item.task_ref}` : ""}
+        </p>
+      )}
+
+      {tarefaNova && (
+        <p style={{ fontSize: 12, marginTop: 8 }}>
+          Tarefa criada.{" "}
+          <Link href={`/tarefa/${tarefaNova}`}>Abrir a tarefa</Link>
         </p>
       )}
 

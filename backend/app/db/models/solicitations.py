@@ -45,6 +45,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKeyConstraint,
@@ -52,6 +53,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
     func,
     text,
 )
@@ -71,8 +73,13 @@ class Solicitation(
     __tablename__ = "solicitation"
     __table_args__ = (
         # ---------------- integridade de estado ----------------
+        # ⚠️ IN_PROGRESS e DONE entraram na fatia D (Spec 043). A lista aqui e
+        # a COPIA da `SolicitationStatus` do dominio, e a migration `0018` e
+        # onde as duas se encontram -- estado novo mexe nos dois lugares, e
+        # tambem no indice parcial la embaixo.
         CheckConstraint(
-            "status IN ('PENDING', 'APPROVED', 'REJECTED')",
+            "status IN ('PENDING', 'APPROVED', 'REJECTED', "
+            "'IN_PROGRESS', 'DONE')",
             name="solicitation_status_valid",
         ),
         # D8 -- defesa em profundidade: o service tambem valida, mas uma
@@ -86,10 +93,17 @@ class Solicitation(
             "batch_seq >= 1 AND batch_seq <= batch_total",
             name="solicitation_batch_seq_valid",
         ),
-        # D9 -- tarefa so existe para demanda APROVADA. Marcar tarefa de
+        # D9 -- tarefa so existe para demanda ACEITA. Marcar tarefa de
         # pendente ou rejeitada e sempre erro de fluxo.
+        #
+        # ⚠️⚠️ ESTE CHECK ERA A ARMADILHA DA FATIA D. Escrito
+        # `status = 'APPROVED'`, ele PROIBIA mover para "em andamento" qualquer
+        # pedido que ja tivesse tarefa marcada -- ou seja, exatamente aqueles
+        # em que o trabalho comecou. O erro viria do banco, no meio de um
+        # clique inocente, e nenhum teste de servico o veria.
         CheckConstraint(
-            "task_created_at IS NULL OR status = 'APPROVED'",
+            "task_created_at IS NULL OR status IN "
+            "('APPROVED', 'IN_PROGRESS', 'DONE')",
             name="solicitation_task_requires_approved",
         ),
         # ---------------- integridade referencial ----------------
@@ -106,6 +120,18 @@ class Solicitation(
             ["users.id", "users.workspace_id"],
             ondelete="SET NULL",
             name="solicitation_task_marked_by",
+        ),
+        # Spec 043, fatia E -- a tarefa DE VERDADE, no lugar do texto livre.
+        #
+        # ⚠️ `SET NULL` E NAO `CASCADE`: apagar a tarefa nao pode apagar o
+        # pedido. O pedido e o registro de que alguem pediu, e ele sobrevive a
+        # tarefa que dele nasceu -- volta a ser "aceito sem tarefa", que e
+        # exatamente o que o filtro da fila existe para achar.
+        ForeignKeyConstraint(
+            ["task_id", "workspace_id"],
+            ["task.id", "task.workspace_id"],
+            ondelete="SET NULL",
+            name="solicitation_task",
         ),
         # ---------------- indices (um por leitura real) ----------------
         # 1. A fila: "deste workspace, por status, mais novas primeiro".
@@ -124,8 +150,13 @@ class Solicitation(
             "solicitation_aprovadas_sem_tarefa",
             "workspace_id",
             "created_at",
+            # ⚠️ O `IN` PRECISA ACOMPANHAR O FILTRO da fila. Se o indice
+            # cobrisse so APPROVED e a consulta procurasse os tres, o Postgres
+            # deixaria de usa-lo em silencio -- e "aprovadas sem tarefa" viraria
+            # varredura de tabela sem ninguem notar.
             postgresql_where=text(
-                "status = 'APPROVED' AND task_created_at IS NULL"
+                "status IN ('APPROVED', 'IN_PROGRESS', 'DONE') "
+                "AND task_created_at IS NULL"
             ),
         ),
         # COMMENT da TABELA no schema v5 (dict de opcoes vai por ULTIMO).
@@ -142,9 +173,19 @@ class Solicitation(
     # Sem conta no sistema: quem pede e coordenador de polo, professor, RH.
     requester_name: Mapped[str] = mapped_column(String(255), nullable=False)
     requester_email: Mapped[str] = mapped_column(String(320), nullable=False)
-    requester_phone: Mapped[str] = mapped_column(String(50), nullable=False)
-    requester_department: Mapped[str] = mapped_column(String(255), nullable=False)
-    requester_polo: Mapped[str] = mapped_column(String(255), nullable=False)
+    # ⚠️ OS TRES VIRARAM OPCIONAIS NA FATIA G (Spec 043): nem todo formulario
+    # pergunta telefone, area ou polo -- "Polo" e vocabulario da FECAF e nao
+    # significa nada num formulario de TI. `NULL` aqui significa "este
+    # formulario nao perguntou", que e diferente de "" ("perguntou e ficou em
+    # branco") -- e a fila mostra so o que existe.
+    #
+    # ⚠️ `requester_name` E `requester_email` CONTINUAM OBRIGATORIOS: a fila e
+    # organizada por quem pediu, e a resposta automatica precisa do endereco.
+    requester_phone: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    requester_department: Mapped[str | None] = mapped_column(
+        String(255), nullable=True
+    )
+    requester_polo: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     # ---------------- lote (D4) ----------------
     batch_id: Mapped[uuid.UUID] = mapped_column(
@@ -166,6 +207,24 @@ class Solicitation(
     )
 
     # ---------------- conteudo ----------------
+    #: De qual FORMULARIO veio (Spec 043, fatia A).
+    #:
+    #: ⚠️ NASCE NULLABLE E CONTINUA NULLABLE. As solicitacoes anteriores a esta
+    #: fatia ganham o valor na migracao de dados, pelo slug da categoria -- mas
+    #: uma que fique sem (formulario apagado depois, banco de outro ambiente)
+    #: NAO pode virar linha invalida. Ela e historico, e o `answers` dela ja se
+    #: explica sozinho.
+    #:
+    #: ⚠️⚠️ E POR ISSO O JOIN DA FILA E `LEFT`. Um `JOIN` interno apagaria a
+    #: solicitacao orfa da fila EM SILENCIO -- ninguem receberia erro, ela
+    #: simplesmente deixaria de existir para quem tria. Ver
+    #: `SolicitationRepository._base_select`.
+    form_id: Mapped[uuid.UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True), nullable=True
+    )
+    #: ⚠️ CONTINUA SENDO O SLUG DA SECAO, e continua texto. Ele e o vinculo
+    #: historico: solicitacao respondida ha meses guarda a categoria que
+    #: existia entao, mesmo que a secao tenha sido renomeada ou apagada.
     category: Mapped[str] = mapped_column(String(60), nullable=False)
     summary: Mapped[str] = mapped_column(String(500), nullable=False)
     answers: Mapped[list] = mapped_column(
@@ -214,4 +273,253 @@ class Solicitation(
     )
     #: link ou identificador da tarefa criada. Texto livre: a criacao e
     #: manual, entao nao ha id garantido pra validar contra a tabela task.
+    #:
+    #: ⚠️ LEGADO A PARTIR DA FATIA E (Spec 043), e mantido de proposito. As
+    #: marcacoes antigas moram aqui como texto -- "quadro do Design", uma URL,
+    #: as vezes so "feito" -- e nao ha como converte-las em id. Apagar a coluna
+    #: perderia o unico rastro que aquelas solicitacoes tem.
     task_ref: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+    #: A tarefa DE VERDADE (Spec 043, fatia E).
+    #:
+    #: ⚠️⚠️ O `task_ref` ERA TEXTO LIVRE, e por isso nao dava para clicar,
+    #: nao seguia a tarefa quando ela era renomeada e nao sabia dizer se ela
+    #: ainda existia. Este campo e o vinculo real -- e os dois convivem: o novo
+    #: para o que nasce daqui em diante, o velho como registro do que ja foi
+    #: marcado.
+    #:
+    #: ⚠️ FK COMPOSTA COM `workspace_id`, como o resto do schema: sem ela,
+    #: alguem poderia pendurar uma solicitacao numa tarefa de outro cliente.
+    #: `ON DELETE SET NULL` porque apagar a tarefa nao pode apagar o pedido --
+    #: o pedido e o registro de que alguem pediu, e ele sobrevive a tarefa.
+    task_id: Mapped[uuid.UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True), nullable=True
+    )
+
+
+# =====================================================================
+# O FORMULARIO COMO DADO (Spec 043, fatia A)
+#
+# ⚠️ TRES TABELAS PARA UMA COISA QUE JA EXISTIA EM CODIGO. O formulario ja era
+# declarativo (`web/lib/solicitacaoForm.ts`, 926 linhas): categorias, campos,
+# seis tipos, pergunta condicional, SLA. O que ele nao era e EDITAVEL por
+# quem nao mexe em codigo -- e, pior, a lista de categorias estava DUPLICADA
+# no dominio do backend, entao categoria nova exigia deploy dos dois lados.
+#
+# ⚠️ E O `solicitation.answers` NAO MUDA. Ele guarda `{label, value}` -- o
+# TEXTO da pergunta -- e e isso que torna o formulario editavel seguro: cada
+# solicitacao carrega o retrato do que foi perguntado no dia. Ver
+# `app/modules/solicitations/domain/form.py`.
+# =====================================================================
+
+
+class SolicitationForm(
+    UUIDPrimaryKeyMixin, WorkspaceScopedMixin, TimestampMixin, Base
+):
+    """Um formulario publico, de um time.
+
+    ⚠️ `team_id` E O QUE DECIDE QUEM TRIA. A `solicitation` nao tem time --
+    ela chega por aqui (`solicitation.form_id -> form.team_id`). Decisao da
+    Camila (22/08): "a fila e de acordo com o formulario e o time".
+
+    ⚠️ `slug` E A URL PUBLICA (`/solicitar/<slug>`), e por isso ele e unico
+    POR WORKSPACE e nao por time: dois times do mesmo workspace nao podem
+    disputar `/solicitar/arte`. O indice parcial ignora os apagados -- senao
+    um formulario na lixeira reservaria o nome para sempre.
+
+    ⚠️ `is_published` E A TRAVA DO PUBLICO. Rascunho nao aparece na lista nem
+    responde pela URL. Sem isso, montar um formulario seria montar EM PUBLICO.
+    """
+
+    __tablename__ = "solicitation_form"
+    __table_args__ = (
+        # ⚠️⚠️ SEM ESTA UNIQUE, A FK COMPOSTA DA SECAO NAO EXISTE. O Postgres
+        # exige que as colunas referenciadas tenham unicidade -- e `(id,
+        # workspace_id)` nao a tem so por `id` ser PK. O erro sai na
+        # MIGRATION, com "there is no unique constraint matching given keys",
+        # e foi assim que a 0016 quebrou na primeira tentativa.
+        #
+        # ⚠️ O NOME SEGUE `uq_team_id_workspace` e `uq_board_id_workspace`, que
+        # ja existem no schema -- e nao a convencao automatica, que daria
+        # `uq_solicitation_form_id` e esconderia a segunda coluna do nome.
+        UniqueConstraint(
+            "id", "workspace_id", name="uq_solicitation_form_id_workspace"
+        ),
+        ForeignKeyConstraint(
+            ["team_id", "workspace_id"],
+            ["team.id", "team.workspace_id"],
+            ondelete="RESTRICT",
+            name="solicitation_form_team",
+        ),
+        # ⚠️ RESTRICT, e nao CASCADE: apagar um time nao pode levar junto o
+        # formulario que ainda responde por solicitacoes historicas.
+        Index(
+            "solicitation_form_slug_unico",
+            "workspace_id",
+            "slug",
+            unique=True,
+            postgresql_where=text("deleted_at IS NULL"),
+        ),
+        Index("solicitation_form_por_time", "workspace_id", "team_id"),
+    )
+
+    team_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True), nullable=False
+    )
+    slug: Mapped[str] = mapped_column(String(60), nullable=False)
+    title: Mapped[str] = mapped_column(String(120), nullable=False)
+    description: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default="", default=""
+    )
+    is_published: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false"), default=False
+    )
+
+    # ---------------- o CABECALHO (Spec 043, fatia G) ----------------
+    #
+    # ⚠️⚠️ TRES COLUNAS, E CADA UMA GUARDA O ROTULO -- e nao um booleano "pede"
+    # ao lado de um texto "como chama". `NULL` significa **nao pergunta**, e
+    # texto significa "pergunta com este nome". Duas colunas por campo
+    # deixariam existir o estado sem sentido `pede=False, label='Polo'`, e
+    # alguem teria de decidir o que fazer com ele.
+    #
+    # ⚠️ E POR QUE SO ESTES TRES. `requester_name` e `requester_email` NAO sao
+    # configuraveis, de proposito: a fila e organizada por quem pediu, e a
+    # resposta automatica de mudanca de status (fatia F) so existe se houver
+    # endereco. Torna-los opcionais quebraria a funcionalidade seguinte -- os
+    # outros tres sao vocabulario institucional ("Polo" nao significa nada num
+    # formulario de TI).
+    #
+    # ⚠️ O `server_default` MANTEM O QUE JA EXISTE. Todo formulario ja criado
+    # continua pedindo os cinco campos com os nomes de sempre; quem quiser
+    # menos, tira.
+    phone_label: Mapped[str | None] = mapped_column(
+        String(60), nullable=True, server_default="Telefone", default="Telefone"
+    )
+    department_label: Mapped[str | None] = mapped_column(
+        String(60),
+        nullable=True,
+        server_default="Área / Departamento",
+        default="Área / Departamento",
+    )
+    polo_label: Mapped[str | None] = mapped_column(
+        String(60), nullable=True, server_default="Polo", default="Polo"
+    )
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True), nullable=True
+    )
+    deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+
+class SolicitationSection(
+    UUIDPrimaryKeyMixin, WorkspaceScopedMixin, TimestampMixin, Base
+):
+    """Uma secao do formulario -- o que hoje se chama "categoria".
+
+    ⚠️ O NOME MUDOU DE PROPOSITO. "Categoria" descrevia um menu de assuntos
+    num formulario so; com varios formularios por time, o que existe e uma
+    SECAO dentro de um deles. O slug antigo continua vivo em
+    `solicitation.category`, que e historico e nao muda.
+
+    ⚠️ `summary_question_id` E O `resumoDe` DO FRONT: qual resposta vira o
+    titulo do card na fila de triagem. Sem ele a fila mostra o assunto e mais
+    nada, e quem tria precisa abrir cada uma para saber do que se trata.
+    """
+
+    __tablename__ = "solicitation_section"
+    __table_args__ = (
+        # Mesma razao da tabela acima: e a pergunta que aponta para ca por
+        # `(section_id, workspace_id)`.
+        UniqueConstraint(
+            "id", "workspace_id", name="uq_solicitation_section_id_workspace"
+        ),
+        ForeignKeyConstraint(
+            ["form_id", "workspace_id"],
+            ["solicitation_form.id", "solicitation_form.workspace_id"],
+            ondelete="CASCADE",
+            name="solicitation_section_form",
+        ),
+        Index("solicitation_section_por_form", "workspace_id", "form_id", "position"),
+    )
+
+    form_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True), nullable=False
+    )
+    #: Slug estavel da secao. ⚠️ E ele que vai para `solicitation.category`, e
+    #: e por ele que a migracao de dados liga as solicitacoes antigas.
+    slug: Mapped[str] = mapped_column(String(60), nullable=False)
+    title: Mapped[str] = mapped_column(String(120), nullable=False)
+    emoji: Mapped[str] = mapped_column(
+        String(16), nullable=False, server_default="", default=""
+    )
+    #: SLA mostrado ao solicitante. ⚠️ TEXTO LIVRE, e nao um numero de dias: o
+    #: formulario de hoje diz coisas como "5 dias uteis apos aprovacao" e
+    #: "prazo em definicao". Numero obrigaria a inventar semantica que ninguem
+    #: pediu, e a traduzir de volta para uma frase na tela.
+    sla_text: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    summary_question_id: Mapped[uuid.UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True), nullable=True
+    )
+    position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+
+class SolicitationQuestion(
+    UUIDPrimaryKeyMixin, WorkspaceScopedMixin, TimestampMixin, Base
+):
+    """Uma pergunta de uma secao.
+
+    ⚠️ `show_if_question_id` + `show_if_value` E O `mostrarSe` DO FRONT, e ele
+    ja existe la ("Se sim / Se nao"). Guardar como par (pergunta, valor) e o
+    minimo que cobre o que o formulario de hoje faz -- condicao composta (E/OU)
+    nao esta em lugar nenhum do desenho atual, e inventa-la agora seria
+    construir editor para regra que ninguem escreveu.
+    """
+
+    __tablename__ = "solicitation_question"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["section_id", "workspace_id"],
+            ["solicitation_section.id", "solicitation_section.workspace_id"],
+            ondelete="CASCADE",
+            name="solicitation_question_section",
+        ),
+        CheckConstraint(
+            "position >= 0", name="solicitation_question_position_nao_negativa"
+        ),
+        Index(
+            "solicitation_question_por_secao",
+            "workspace_id",
+            "section_id",
+            "position",
+        ),
+    )
+
+    section_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True), nullable=False
+    )
+    label: Mapped[str] = mapped_column(String(300), nullable=False)
+    #: ⚠️ `String(20)` COM LISTA NO DOMINIO, e nao ENUM nativo -- ver
+    #: `domain/form.py::QuestionKind`. Tipo novo nao pode exigir migration.
+    kind: Mapped[str] = mapped_column(String(20), nullable=False)
+    required: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false"), default=False
+    )
+    #: Alternativas de `escolha`/`multi`. Lista JSONB de textos.
+    options: Mapped[list] = mapped_column(
+        JSONB, nullable=False, server_default=text("'[]'::jsonb"), default=list
+    )
+    placeholder: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    help: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    show_if_question_id: Mapped[uuid.UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True), nullable=True
+    )
+    show_if_value: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )

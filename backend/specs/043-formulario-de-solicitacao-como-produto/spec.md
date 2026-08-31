@@ -1,9 +1,10 @@
 # Spec 043 — O formulário de solicitação vira produto
 
-**Status:** proposta (aguardando aprovação)
+**Status:** aprovada nas decisões (22/08) — fatia A liberada para escrever
 **Escopo:** backend (modelo, API, webhook) **e** frontend (formulário público, edição, fila)
 **Depende de:** Spec 034 (solicitações), ADR 0009 (papéis), ADR 0035 (visibilidade por time)
 **Placar na abertura:** Front **947**, Backend **896**, migrations `0015`
+**Fatia A entregue (24/08):** Backend **910**, migrations `0017`
 
 ---
 
@@ -219,12 +220,19 @@ que se pergunta. Entra `solicitation_form.manage`, em ADMIN e MANAGER (ADR
 
 | # | fatia | entrega | risco |
 |---|---|---|---|
-| **A** | modelo + CRUD do formulário | as três tabelas, migração de dados com o formulário de hoje, API de leitura/escrita. **Nada muda na tela** | médio |
+| **A** | ✅ modelo + CRUD do formulário | as três tabelas, migração de dados com o formulário de hoje, API de leitura/escrita. **Nada muda na tela** | médio |
 | **B** | o público lê do banco | `/solicitar/<slug>` e a lista; `POST /publico` passa a receber `form_id`. ⚠️ **mata o `frozenset` do §1.1** | **alto** |
 | **C** | tela de edição | seções, perguntas, tipos, condicional, publicar/despublicar | médio |
 | **D** | os status novos | §4, mais os filtros da fila | baixo |
 | **E** | vincular tarefa | §5, com o `task_ref` sobrevivendo | baixo |
-| **F** | webhook para o n8n | §8. **Última**, por decisão da Camila | médio |
+| **F** | ✅ webhook para o n8n | §8 e §8.1. **Última**, por decisão da Camila | médio |
+
+⚠️ **DUAS FATIAS NASCERAM DA CONVERSA E NÃO ESTAVAM NESTA TABELA:**
+
+| # | fatia | entrega |
+|---|---|---|
+| **C2-c** | ✅ a fila lê o rótulo do banco | a fila ainda lia `CATEGORIA_POR_SLUG`, estático. Funcionava só porque a 0017 copiou os mesmos slugs — a primeira seção criada pelo editor apareceria como slug cru e "❓" |
+| **G** | ✅ cabeçalho editável | título e descrição (que já existiam no banco e a tela ignorava) e os três campos de identificação, que eram fixos e obrigatórios. *"não é todo formulário que chama fazae"* |
 
 ⚠️ **A FATIA B É A DE MAIOR RISCO DO LOTE**, e não a C. Ela troca a fonte do
 formulário público — a única rota de escrita sem credencial da API — enquanto
@@ -254,6 +262,50 @@ estiver fora do ar naquele minuto, aquele e-mail **não sai e ninguém saberá**
 Se isso for inaceitável, a alternativa é uma fila de reenvio — que é bem maior
 que esta fatia, e por isso está em §9.
 
+### 8.1. O contrato, como ficou (27/08)
+
+⚠️⚠️ **A CAMILA MONTOU O FLUXO DO N8N CONTRA ESTES NOMES**, antes de o backend
+existir. Os `{{ $json.… }}` dos templates de e-mail apontam para eles — mudar
+um campo aqui quebra a mensagem que chega na caixa de alguém, **sem erro
+nenhum no meio do caminho**. Há teste (`test_aviso_de_status_db.py`) preso a
+este formato exatamente por isso.
+
+`POST` na `N8N_WEBHOOK_URL`, com `X-Webhook-Token`:
+
+```json
+{
+  "evento": "solicitacao.status_mudou",
+  "enviado_em": "<ISO-8601 UTC>",
+  "solicitacao": {
+    "id": "<uuid>", "protocolo": "ABC12345",
+    "status_anterior": "APPROVED", "status_novo": "IN_PROGRESS",
+    "status_novo_label": "Em andamento",
+    "resumo": "…", "categoria": "foto", "categoria_titulo": "Fotografia",
+    "categoria_prazo": "5 dias úteis", "motivo_recusa": null,
+    "criada_em": "<ISO-8601>"
+  },
+  "solicitante": {
+    "nome": "…", "email": "…",
+    "telefone": null, "area": null, "polo": null
+  },
+  "formulario": { "slug": "marketing", "titulo": "…", "time": "Marketing" }
+}
+```
+
+Três garantias que os templates podem assumir, e uma que não:
+
+- **`nome` e `email` nunca são nulos** — é a razão de eles ficarem fora do
+  cabeçalho configurável da fatia G.
+- **`categoria_titulo` nunca é nulo** — cai no slug cru se a seção sumir.
+- **`status_novo_label` vem pronto**, e não é o n8n que traduz: o rótulo é
+  decisão do produto, e uma segunda tabela divergiria da tela.
+- ⚠️ **`telefone`, `area`, `polo` e `formulario` inteiro PODEM ser nulos** —
+  os três primeiros pela fatia G, o último nas solicitações órfãs.
+
+⚠️ **`categoria_prazo` NÃO ESTAVA NO §8 ORIGINAL.** Ele entrou porque a
+mensagem de aprovação precisava dizer o prazo que a própria seção promete —
+sem ele, ou o e-mail não fala de prazo, ou alguém inventa um.
+
 ---
 
 ## 9. Fora de escopo, e por quê
@@ -277,13 +329,55 @@ que esta fatia, e por isso está em §9.
 | 1 | Aviso por **e-mail de verdade**, disparado por **webhook para o n8n**, com conta Google dela — e é a **última** fatia |
 | 2 | Status ganham **"Em andamento"** e **"Concluída"** |
 | 3 | **Os dois** caminhos: página que lista os formulários **e** URL por formulário |
+| 4 | `solicitation_form.manage` em **ADMIN e MANAGER** |
+| 5 | O time do formulário de hoje é o **Marketing**, `b8387155-9688-4e58-b596-8d46906a68dd` |
+| 6 | **A fila segue o formulário**, e o time dele — e dá para filtrar por formulário dentro do próprio time |
 
-## 11. Pendências antes de começar
+## 11. As três decisões que destravaram a fatia A (22/08)
 
-1. ⚠️ **Quem edita formulário de um time — só ADMIN, ou o MANAGER daquele
-   time?** Muda `solicitation_form.manage` de global para escopado.
-2. ⚠️ **O formulário de hoje é do Marketing.** A migração precisa saber o
-   `team_id` dele — e hoje esse vínculo não existe em lugar nenhum.
-3. **A fila passa a ser por time?** Hoje é do workspace. Com formulários de
-   vários times, quem tria o quê é pergunta nova — e ela vale a pena responder
-   **antes** da fatia A, porque muda o filtro de `_base_select`.
+### 11.1. Quem edita: **ADMIN e MANAGER**
+
+⚠️ **E "MANAGER" AQUI É ESCOPADO, e não global** — é o que a ADR 0009 já faz
+com todo papel que não é `ADMIN`. Um MANAGER de Design não edita o formulário
+do Marketing. A alternativa (permissão global para MANAGER) daria a qualquer
+gestor o poder de mudar a porta de entrada de outro time, e isso não é o que
+"cada equipe cria o seu" quer dizer.
+
+### 11.2. O time do formulário atual
+
+`b8387155-9688-4e58-b596-8d46906a68dd` (Marketing). É o valor que a migração de
+dados da fatia A grava no `solicitation_form` que nasce do
+`solicitacaoForm.ts`.
+
+⚠️ **UUID CRAVADO EM MIGRATION É DÍVIDA, e vale saber disso na hora de
+escrever.** Ele só é válido **neste** banco: um workspace novo, ou um ambiente
+recriado do zero, não tem esse time. A migração precisa ser **tolerante** — se
+o time não existir, ela **não** cria o formulário e **não** falha; o ambiente
+começa sem formulário nenhum, que é o estado correto para um banco vazio.
+Migration que estoura em ambiente limpo é migration que ninguém consegue rodar
+duas vezes.
+
+### 11.3. A fila segue o FORMULÁRIO
+
+Palavras dela: *"a fila é de acordo com o formulário e o time que a pessoa criou
+a solicitação (pois também pode ser de formulários diferentes dentro do próprio
+time)"*.
+
+Traduzindo para o modelo — e são **duas** coisas, não uma:
+
+| pergunta | resposta |
+|---|---|
+| **quem VÊ** a solicitação na fila? | quem alcança o **time do formulário**. O `team_id` não vive na solicitação: ele vem por `solicitation.form_id → solicitation_form.team_id` |
+| **como eu separo** dentro do meu time? | filtro por **formulário** na tela da fila — porque um time pode ter vários |
+
+⚠️⚠️ **E ISSO MUDA O `_base_select`, que é a base de tudo.** Hoje a fila filtra
+só por `workspace_id`; passa a precisar de um `JOIN` com o formulário para
+saber o time, e do filtro de alcance da ADR 0035. **É a mudança mais perigosa
+da fatia A** — errar para o lado frouxo mostra a um time a solicitação de
+outro, e errar para o lado apertado esconde a fila de quem devia triar.
+
+⚠️ **E AS SOLICITAÇÕES ANTIGAS NÃO PODEM SUMIR NO CAMINHO.** Elas ganham
+`form_id` na migração (§3.1) — mas se alguma ficar sem, um `JOIN` interno a
+apaga da fila **em silêncio**. O `JOIN` precisa ser `LEFT`, e solicitação sem
+formulário continua visível a quem tem `solicitation.review` no workspace.
+Este parágrafo é o teste que a fatia A precisa ter.

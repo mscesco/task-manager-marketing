@@ -2344,6 +2344,62 @@ export default function TaskDetail({
                                 {rotuloPrio}
                               </Badge>
                             )}
+                            {/* ---- A COLUNA DA SUBTAREFA (pedido da Camila, 24/08)
+                                ⚠️ ELA DESFAZ UMA AMBIGUIDADE REAL, e nao e so
+                                informacao a mais: a caixinha marca por
+                                semantica `DONE`, entao uma subtarefa CANCELADA
+                                e uma em BACKLOG apareciam as duas DESMARCADAS,
+                                sem nada que as distinguisse. Quem olhava a
+                                checklist lia "falta fazer" nas duas.
+
+                                ⚠️⚠️ A COR E A DO STATUS, E NAO A DA COLUNA --
+                                e a troca importa. A Camila pediu a capsula
+                                "igual a prioridade", e a de prioridade e um
+                                `Badge tone="soft"`: fundo com 12% da cor e
+                                texto por cima. `coluna.color` e token de
+                                TRACO, e como FUNDO SOB TEXTO ele reprova AA
+                                (Spec 031 §2.2b -- o `Badge soft` ja foi
+                                publicado reprovando por medir sobre
+                                `--surface` puro em vez de com a tinta
+                                aplicada).
+
+                                `STATUS_COLOR` sao as 15 familias cromaticas
+                                que TEM par `-dot`/`-text` medido, e e por isso
+                                que a pilula de Coluna do painel ja usa ela.
+                                Esta linha passa a usar a mesma, e as duas
+                                capsulas do detalhe ficam coerentes entre si.
+
+                                ⚠️ O PRECO, DITO POR EXTENSO: numa coluna
+                                criada por gente, o quadro desenha a cor
+                                ESCOLHIDA e esta capsula desenha a da familia
+                                do status. Sao tons diferentes para a mesma
+                                coluna. A alternativa era manter a cor certa e
+                                reprovar contraste -- e o painel ja tinha
+                                escolhido este mesmo lado.
+
+                                ⚠️ COLUNA DESCONHECIDA NAO DESENHA NADA, pela
+                                mesma razao do `tone` acima: subtarefa de outro
+                                quadro nao esta neste mapa. */}
+                            {/* ⚠️ O `title` VAI NO WRAPPER, e nao no `Badge`:
+                                o primitivo nao aceita `title`, e acrescentar a
+                                prop nele para um chamador so seria mexer em
+                                componente compartilhado por causa de um
+                                tooltip. O `<span>` custa nada e mantem o
+                                Badge como ele e. */}
+                            {colunaDela && (
+                              <span
+                                title={`Coluna: ${colunaDela.name}`}
+                                style={{ display: "inline-flex", flexShrink: 0 }}
+                              >
+                                <Badge
+                                  tone="soft"
+                                  size="sm"
+                                  color={STATUS_COLOR[f.status]}
+                                >
+                                  {colunaDela.name}
+                                </Badge>
+                              </span>
+                            )}
                             {f.due_date && (
                               <span
                                 className={tone ? undefined : "muted"}
