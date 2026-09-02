@@ -72,21 +72,12 @@ def test_editable_igual_visible():
 
 
 # ---- default de time da task ----
-def test_default_subtime_do_usuario():
-    assert team_scope.default_team_id(_m(AUTO, "OPERATOR"), TREE) == AUTO
-
-
-def test_default_principal_quando_sem_subtime():
-    assert team_scope.default_team_id(_m(MKT, "MANAGER"), TREE) == MKT
-
-
-def test_default_none_sem_time():
-    assert team_scope.default_team_id((), TREE) is None
-
-
-def test_default_prefere_subtime():
-    membros = (
-        Membership(team_id=MKT, role="MANAGER"),
-        Membership(team_id=AUTO, role="OPERATOR"),
-    )
-    assert team_scope.default_team_id(membros, TREE) == AUTO
+# ⚠️ OS QUATRO TESTES DE `default_team_id` SAIRAM na Spec 044, fatia 4, junto
+# com a funcao. Eles afirmavam "o time da tarefa nova e o subtime de quem
+# cria" -- regra que a fatia 4 substituiu por "o time do quadro". Mante-los
+# exigiria manter a funcao viva sem chamador, guardando uma regra que o
+# produto nao segue mais.
+#
+# O que os substitui vive em `tests/integration/test_task_time_vem_do_quadro_db.py`,
+# e nao aqui: a regra nova precisa do QUADRO, e quadro nao cabe numa funcao
+# pura sem banco.

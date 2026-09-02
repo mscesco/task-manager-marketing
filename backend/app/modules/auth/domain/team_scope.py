@@ -5,8 +5,11 @@ vínculos (time, papel) do usuário e a árvore de times do workspace,
 calcula:
     - visible_team_ids  -- times cujas tasks o usuário enxerga
     - editable_team_ids -- times cujas tasks o usuário edita (Fase B)
-    - default_team_id   -- time herdado por uma task nova
     - is_admin
+
+⚠️ `default_team_id` ("time herdado por uma task nova") saiu na Spec 044,
+fatia 4 -- o time da tarefa passou a vir do QUADRO. O motivo está escrito no
+lugar onde ela morava, mais abaixo.
 
 Convenção: um set vazio = "nenhum time"; ``None`` = "todos" (admin).
 
@@ -108,31 +111,22 @@ def editable_team_ids(
     return visible_team_ids(memberships, tree)
 
 
-def default_team_id(
-    memberships: tuple[Membership, ...], tree: tuple[TeamNode, ...]
-) -> uuid.UUID | None:
-    """Time herdado por uma task nova.
-
-    Subtime do usuário. Se não tem subtime, o time principal em que está.
-    Se não está em time, ``None``.
-
-    ⚠️ ESTA FUNÇÃO FICOU AMBÍGUA na Spec 044, fatia 3. Ela devolve
-    ``subteams[0]`` e a trava de UM subtime por pessoa — que era o que
-    tornava esse índice a única resposta possível — não existe mais. Com
-    dois subtimes, o escolhido depende da ordem dos vínculos.
-
-    Não é defeito em produção porque o caminho de criação de tarefa não
-    chega aqui pela tela: o `createTask` fixa o `team_id` do quadro e o
-    serviço só cai neste fallback quando ninguém manda time (n8n, Swagger,
-    chamada direta). **A fatia 4 tira esta função do caminho de criação**,
-    e é lá que a ambiguidade morre. Até então, ela é conhecida e está escrita.
-    """
-    subteams = [m.team_id for m in memberships if is_subteam(m.team_id, tree)]
-    if subteams:
-        return subteams[0]
-    if memberships:
-        return memberships[0].team_id
-    return None
+# ---------------------------------------------------------------------
+# ⚠️ `default_team_id` MORAVA AQUI e foi REMOVIDA na Spec 044, fatia 4.
+#
+# Ela devolvia "o subtime de quem cria" e era o terceiro item da precedência
+# de time no `TaskService.create`. Duas coisas a mataram, nesta ordem:
+#
+#   fatia 3 -- caiu a trava de UM subtime por pessoa, e `subteams[0]` deixou
+#              de ter resposta única: com dois subtimes, o escolhido dependia
+#              da ordem dos vínculos.
+#   fatia 4 -- o time da tarefa passou a vir do QUADRO
+#              (`TaskService._time_do_quadro_alvo`), que é onde a regra já
+#              morava no front. A função ficou sem chamador.
+#
+# ⚠️ Não recrie. "Qual o time desta pessoa?" não tem resposta única desde a
+# fatia 3, e a pergunta certa na criação é "de quem é o quadro?".
+# ---------------------------------------------------------------------
 
 
 # ---------------------------------------------------------------------

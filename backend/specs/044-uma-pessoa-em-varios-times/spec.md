@@ -337,16 +337,28 @@ novos falham (`2 failed, 17 passed`).
 
 **Placar:** Backend **1016** (era 1014), Front **1085** (era 1082).
 
-**Fatia 4 — o time vem do quadro (backend).**
-Aplica a §4.2: o pin que hoje mora no `createTask` do front passa a valer no
-serviço, para todo cliente. Move a resolução de time para **depois** da resolução
-de quadro — hoje ela vem antes (`:488` vs `:609`), e é essa ordem que impede o
-quadro de ser a fonte. `default_team_id` sai do caminho de criação.
+**Fatia 4 — o time vem do quadro. ✅ ENTREGUE (02/09).**
+Aplica a §4.2: o pin que morava no `createTask` do front passa a valer no
+serviço, para todo cliente. `default_team_id` **saiu do caminho de criação — e
+saiu do código**, junto com os quatro testes dela: sem chamador, ela guardaria
+uma regra que o produto não segue mais.
 
-⚠️ O teste que falta é o do **cliente que não é a tela**: `POST /tasks` sem
-`team_id`, feito por quem tem subtime, tem de nascer na **raiz** — não no
-subtime de quem chamou. Nenhum teste afirma isso hoje, porque a tela nunca
-produziu esse corpo.
+⚠️ **NÃO foi feito movendo a resolução de time para depois da do quadro**, como
+esta spec previa. Aquele caminho arrastaria junto a checagem de subárvore do
+projeto e a construção do `Task`, que leem `team_id` no meio. O que mudou foi só
+o **terceiro item da precedência**: `TaskService._time_do_quadro_alvo` responde
+"de quem é o quadro que vai receber esta tarefa?" — o dono do quadro pedido, ou
+a raiz quando não há quadro pedido, que é onde
+`default_board_and_column_for_status` põe a tarefa de qualquer jeito (ADR 0032).
+Mesma tabela da §4.2, um décimo do risco.
+
+A precedência continua **explícito > pai > quadro**: as 216 tarefas internas de
+subtime e a herança da ADR 0024 têm teste próprio nesta fatia.
+
+Testes novos em `test_task_time_vem_do_quadro_db.py`, entre eles o que faltava —
+o **cliente que não é a tela**: `POST /tasks` sem `team_id`, por quem só tem
+subtime, nasce na **raiz**. Antes devolvia `subteams[0]`, ou seja, SEO ou Mídias
+conforme a ordem dos vínculos.
 
 **Fatia 5 — o papel na raiz não pode ser menor (backend).**
 Aplica a §4.1-bis. ✅ **Varredura rodada em 31/08 no Adminer: nenhum registro.**
