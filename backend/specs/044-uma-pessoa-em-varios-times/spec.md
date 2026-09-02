@@ -386,6 +386,26 @@ A porta 1 (`create_member`) recebeu a chamada e é **estruturalmente um no-op**:
 o usuário é novo, nasce com um vínculo só e o guard sai pelo curto-circuito sem
 tocar o banco. Fica pelo mesmo motivo que `_assert_gestao_ampla` existe.
 
+### ⚠️ BARRAR foi escolha, e a Camila a confirmou em 02/09
+
+A regra de 31/08 descreve um **estado proibido** — ela não diz o que o sistema
+faz quando alguém tenta chegar lá. Havia duas leituras:
+
+- **barrar** — a operação é recusada e quem promove faz dois passos (mudar o
+  papel na raiz **e** dar o supervisor no subtime);
+- **arrastar junto** — promover no subtime **sobe** o papel na raiz na mesma
+  operação: um passo só, nenhum 409, mas um clique mexendo em dois vínculos, e
+  "subir papel sozinho" é a classe de coisa que ninguém percebe até auditar.
+
+**Decisão: barrar** — porque a **Spec 045** resolve o atrito por construção. Lá
+a Camila decidiu que `SUPERVISOR` não existe na raiz; quando isso entrar,
+supervisor de subtime simplesmente não tem papel no time geral e a escolha
+acima deixa de importar.
+
+⚠️ **Consequência enquanto a 045 não entra:** promover um operador do time geral
+a supervisor de subtime devolve 409, e o caminho é tirar o vínculo dele da raiz
+(ou subir o papel lá). Não recrie "arrastar junto" sem reabrir esta decisão.
+
 **~~Fatia 6 — a tela de membros mostra o plural.~~ ✅ JÁ FEITA nas fatias 1+2.**
 
 ⚠️ **Esta fatia estava numerada como "5", duplicando a de cima** — erro de
