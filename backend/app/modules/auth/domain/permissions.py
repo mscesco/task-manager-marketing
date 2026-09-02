@@ -61,6 +61,26 @@ _ROLE_PERMISSIONS: dict[UserTeamRole, frozenset[str]] = {
             # nao e necessariamente quem desenha a porta de entrada.
             "solicitation_form.manage",
             "team.manage",
+            # ⭐ Spec 045, fatia A. Decisao da Camila (02/09): "manager e admin
+            # administram absolutamente tudo do time e sua arvore inteira".
+            #
+            # ⚠️⚠️ ESTE MAPA MENTIA. `member.manage.subteam` existia SO no
+            # SUPERVISOR, e o mapa -- o documento que diz quem pode o que --
+            # afirmava que ADMIN e MANAGER nao administram membro de subtime.
+            # Eles sempre administraram: `MemberService._assert_escopo_supervisor`
+            # faz *early return* para quem tem `team.manage`. Uma linha de codigo
+            # contradizia o mapa, e nada acusava.
+            #
+            # ⚠️ A NAO-MONOTONICIDADE ERA REAL, e nao teorica: a Spec 044
+            # §4.1-bis registrou que `MANAGER@raiz + SUPERVISOR@sub` ganhava uma
+            # permissao vinda de BAIXO. Com esta linha, some.
+            #
+            # ⚠️ O ESCOPO NAO MUDA COM ISTO. Continua sendo o servico quem diz
+            # "onde", e para ADMIN/MANAGER o "onde" e a arvore deles
+            # (`visible/editable_team_ids`), nao os subtimes que supervisionam.
+            # O *early return* FICA -- ele nao e gambiarra, e a camada de
+            # escopo funcionando (briefing, armadilha 3).
+            "member.manage.subteam",
             "project.create",
             "project.update",
             "project.delete",
@@ -86,6 +106,11 @@ _ROLE_PERMISSIONS: dict[UserTeamRole, frozenset[str]] = {
             # time do formulario esta em `editable_team_ids`. Um MANAGER de
             # Design nao edita a porta de entrada do Marketing.
             "solicitation_form.manage",
+            # ⭐ Spec 045, fatia A -- mesma da ADMIN, e o motivo esta escrito
+            # la em cima. Aqui a mentira era mais visivel: o mapa dizia que o
+            # MANAGER nao administra membro de subtime, e ele administra desde
+            # a Spec 028, pelo *early return* do `_assert_escopo_supervisor`.
+            "member.manage.subteam",
             "project.create",
             "project.update",
             "project.delete",  # Adicionado na Entrega 1 (decisao 25 da spec).
@@ -105,12 +130,16 @@ _ROLE_PERMISSIONS: dict[UserTeamRole, frozenset[str]] = {
             "task.create",
             "task.update",
             "task.assign",
-            # Spec 028: alocar braco operacional no PROPRIO subtime.
-            # Deliberadamente DISTINTA de "team.manage" (ADMIN/MANAGER):
-            # esta so abre adicionar/remover OPERATOR, e so no subtime onde
-            # o ator e SUPERVISOR. A trava de escopo NAO mora aqui -- mora
-            # em MemberService._assert_escopo_supervisor, que e quem tem o
-            # team_id do alvo. Este mapa diz "o que", nao "onde".
+            # Spec 028: alocar braco operacional no PROPRIO subtime. A trava de
+            # escopo NAO mora aqui -- mora em
+            # MemberService._assert_escopo_supervisor, que e quem tem o team_id
+            # do alvo. Este mapa diz "o que", nao "onde".
+            #
+            # ⚠️ ATE A SPEC 045 (fatia A) ESTA PERMISSAO EXISTIA SO AQUI, e o
+            # comentario dizia que ela era "deliberadamente distinta de
+            # team.manage". Nao era: ADMIN e MANAGER sempre administraram
+            # membro de subtime -- so que por um `if` no servico, e nao pelo
+            # mapa. Ver o bloco do ADMIN.
             "member.manage.subteam",
             # Spec 036 fatia 5b: quadro proprio do subtime, e SO dele.
             # ⚠️ NAO ganha `board.manage.root`. E a diferenca inteira entre os
