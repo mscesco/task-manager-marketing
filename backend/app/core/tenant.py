@@ -86,10 +86,20 @@ class TenantContext:
     permissions: frozenset[str] = field(default_factory=frozenset)
     memberships: tuple[Membership, ...] = ()
     team_tree: tuple[TeamNode, ...] = ()
+    #: Papel na ORGANIZACAO -- sem time (Spec 045, fatia B). `None` = nenhum.
+    #: Quem tem papel aqui NAO precisa de vinculo de time nenhum.
+    org_role: str | None = None
 
     def has_role(self, role: str) -> bool:
-        """True se o usuario tem o papel informado no workspace."""
-        return role in self.roles
+        """True se o usuario tem o papel informado no workspace.
+
+        ⚠️ RESPONDE PELOS DOIS NIVEIS (Spec 045, fatia B). `has_role("ADMIN")`
+        e usado pela matriz C2 do `MemberService` para decidir quem administra
+        quem; se ele olhasse so os papeis de TIME, o ADMIN de organizacao --
+        que por desenho nao tem time nenhum -- deixaria de administrar qualquer
+        pessoa no instante em que o vinculo dele saisse de `user_team`.
+        """
+        return role in self.roles or role == self.org_role
 
     def has_permission(self, permission: str) -> bool:
         """True se o usuario tem a permissao informada.

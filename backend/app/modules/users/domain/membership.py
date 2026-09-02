@@ -54,6 +54,14 @@ class WorkspaceMembership:
     #: `roles` continua sendo a projecao "so os papeis"; este campo
     #: preserva de qual time veio cada papel, para o escopo por time.
     team_roles: tuple[tuple[uuid.UUID, str], ...] = ()
+    #: Papel na ORGANIZACAO -- sem time (Spec 045, fatia B). Espelha
+    #: `users.org_role`. `None` = nenhum, que e a maioria.
+    #:
+    #: ⚠️ NAO ENTRA EM `roles` NEM EM `team_roles`. Aqueles dois sao papeis de
+    #: TIME e alimentam o escopo por time; misturar um papel sem time ali faria
+    #: `team_roles` mentir sobre de onde o papel veio -- e e exatamente esse
+    #: tipo de mistura que a fatia B existe para desfazer.
+    org_role: str | None = None
 
     @property
     def has_any_role(self) -> bool:

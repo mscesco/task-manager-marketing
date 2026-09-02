@@ -34,7 +34,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
 from app.db.mixins import TimestampMixin, UUIDPrimaryKeyMixin
-from app.db.models.enums import UserTeamRole
+from app.db.models.enums import OrgRole, UserTeamRole
 
 # Regex de slug, identica ao CHECK do schema v5.
 _SLUG_REGEX = r"^[a-z0-9-]+$"
@@ -139,6 +139,27 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # definitiva (nao expira). password_hash continua NOT NULL.
     password_expires_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
+    )
+    # Spec 045 (fatia B): PAPEL NA ORGANIZACAO -- sem time.
+    #
+    # ⚠️ MORA EM `users`, e nao numa tabela nova, porque a pertenca ja esta
+    # aqui: `users.workspace_id` e FK propria, e-mail e unico POR workspace, e
+    # nao existe usuario em dois workspaces. Uma tabela `workspace_member`
+    # repetiria essa chave sem acrescentar nada.
+    #
+    # NULL = sem papel de organizacao (a maioria). O papel de TIME continua
+    # em `user_team`, e as duas pertencas sao independentes: quem tem papel
+    # aqui NAO precisa de vinculo de time nenhum -- e esse e o ponto.
+    # ⚠️ O `comment` PRECISA BATER COM O DA MIGRATION, palavra por palavra. O
+    # portao de drift compara os dois e reprovou aqui na primeira tentativa:
+    # a migration tinha `COMMENT ON COLUMN` e o modelo nao, entao o
+    # autogenerate propunha remover o comentario. Nenhum teste ve isso.
+    org_role: Mapped[OrgRole | None] = mapped_column(
+        Enum(OrgRole, name="org_role", create_type=False),
+        nullable=True,
+        comment=(
+            "Papel na ORGANIZACAO (sem time). NULL = nenhum. Spec 045, fatia B."
+        ),
     )
     # Spec 030: contador de revogacao de sessao. Todo token carrega o valor
     # do momento em que foi emitido (claim `tv`); incrementar aqui invalida

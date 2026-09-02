@@ -43,7 +43,7 @@ CONVENCAO de nome de permissao: "<recurso>.<acao>", ex.
 
 from __future__ import annotations
 
-from app.db.models.enums import UserTeamRole
+from app.db.models.enums import OrgRole, UserTeamRole
 
 # Permissoes concedidas por papel. Um usuario com varios
 # papeis acumula a UNIAO das permissoes.
@@ -160,6 +160,48 @@ _ROLE_PERMISSIONS: dict[UserTeamRole, frozenset[str]] = {
         }
     ),
 }
+
+
+# ---------------------------------------------------------------------
+# Spec 045, fatia B -- permissoes do papel de ORGANIZACAO.
+#
+# ⚠️ MAPA SEPARADO, E NAO MAIS ENTRADAS NO DE CIMA. Os dois niveis respondem
+# perguntas diferentes: o de cima recebe papeis de TIME e o escopo deles e a
+# arvore; este recebe o papel de ORGANIZACAO, que nao tem time nenhum. Junta-los
+# faria `permissions_for_roles` receber uma string que nao existe em
+# `UserTeamRole` e ser ignorada em silencio (ela ignora papel desconhecido de
+# proposito) -- o GESTOR nasceria sem permissao alguma e nada acusaria.
+#
+# ⚠️ O ADMIN DE ORGANIZACAO RECEBE EXATAMENTE O QUE O ADMIN DE TIME JA TINHA.
+# Nao e preguica: durante a transicao as duas fontes convivem, e um conjunto
+# menor aqui faria a Camila PERDER poderes no instante em que o vinculo dela
+# saisse de `user_team`. Afinar a diferenca entre "definir" e "operar" a
+# organizacao e trabalho das telas (Spec 047), com o cadastro ja limpo.
+# ---------------------------------------------------------------------
+_ORG_ROLE_PERMISSIONS: dict[OrgRole, frozenset[str]] = {
+    OrgRole.ADMIN: _ROLE_PERMISSIONS[UserTeamRole.ADMIN],
+    # GESTOR opera a organizacao, mas nao a desfaz: tudo do ADMIN MENOS
+    # `workspace.manage`, que e o que renomeia o workspace e apaga area.
+    # ⚠️ Ninguem e GESTOR hoje -- o papel nasce para a tela da Spec 047 poder
+    # atribui-lo.
+    OrgRole.GESTOR: _ROLE_PERMISSIONS[UserTeamRole.ADMIN] - {"workspace.manage"},
+}
+
+
+def permissions_for_org_role(org_role: str | None) -> frozenset[str]:
+    """Permissoes do papel de ORGANIZACAO. `None` = nenhum papel, nenhuma.
+
+    Papel desconhecido devolve vazio -- mesmo desenho defensivo de
+    `permissions_for_roles`: o banco pode evoluir o enum antes deste mapa, e
+    conceder por engano e pior que conceder de menos.
+    """
+    if org_role is None:
+        return frozenset()
+    try:
+        papel = OrgRole(org_role)
+    except ValueError:
+        return frozenset()
+    return _ORG_ROLE_PERMISSIONS.get(papel, frozenset())
 
 
 def permissions_for_roles(roles: frozenset[str]) -> frozenset[str]:

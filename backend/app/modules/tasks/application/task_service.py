@@ -483,7 +483,9 @@ class TaskService:
         `team_id` de outro workspace nao esta nela e cai no 422.
         """
         tenant = require_tenant()
-        visible = team_scope.visible_team_ids(tenant.memberships, tenant.team_tree)
+        visible = team_scope.visible_team_ids(tenant.memberships,
+            tenant.team_tree,
+            org_role=tenant.org_role,)
         if visible is not None and team_id not in visible:
             raise ValidationError(
                 "Time informado esta fora do seu alcance.",
@@ -531,6 +533,11 @@ class TaskService:
         team_id = (
             command.team_id
             or (parent.team_id if parent is not None else None)
+            # ⚠️ NAO LEVA `org_role`, e a razao vale para as duas versoes
+            # desta linha: resolver o time de uma tarefa nova NAO e lente. A
+            # pergunta e "de quem e o quadro que vai receber isto"; papel de
+            # organizacao nao tem time, entao passa-lo aqui seria dizer que um
+            # admin "nasce" em algum lugar -- e ele nao nasce em nenhum.
             or await self._time_do_quadro_alvo(command.board_id)
         )
         if team_id is None:

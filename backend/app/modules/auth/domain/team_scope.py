@@ -74,19 +74,42 @@ def is_subteam(team_id: uuid.UUID, tree: tuple[TeamNode, ...]) -> bool:
     return _parent_map(tree).get(team_id) is not None
 
 
-def is_admin(memberships: tuple[Membership, ...]) -> bool:
+def is_admin(
+    memberships: tuple[Membership, ...], *, org_role: str | None = None
+) -> bool:
+    """Quem enxerga tudo.
+
+    ⚠️ DUAS FONTES, DE PROPOSITO (Spec 045, fatia B). Até esta spec havia uma:
+    um vínculo ADMIN em ``user_team``. Agora ADMIN é papel de ORGANIZAÇÃO, e
+    durante a transição o cadastro tem os dois -- a migration ``0022`` preenche
+    o novo sem remover o velho, para que nenhuma janela de deploy deixe o
+    workspace sem quem administre.
+
+    A fonte velha sai numa fatia posterior, quando o cadastro estiver limpo.
+    Enquanto isso, qualquer uma das duas basta.
+    """
+    if org_role == "ADMIN":
+        return True
     return any(m.role == "ADMIN" for m in memberships)
 
 
 def visible_team_ids(
-    memberships: tuple[Membership, ...], tree: tuple[TeamNode, ...]
+    memberships: tuple[Membership, ...],
+    tree: tuple[TeamNode, ...],
+    *,
+    org_role: str | None = None,
 ) -> frozenset[uuid.UUID] | None:
     """Times cujas tasks o usuário ENXERGA. ``None`` = todos (admin).
 
     MANAGER/ADMIN de T: T + descendentes.
     SUPERVISOR/OPERATOR de X: X + raiz (time geral).
+
+    ⚠️ ``org_role`` é opcional e o default é ``None`` -- ou seja, quem esquecer
+    de passá-lo faz o admin de organização enxergar **menos**, nunca mais.
+    Falha fechada de propósito: um esquecimento aqui vira "a tela ficou vazia",
+    que alguém reporta no mesmo dia, e não "vazou time alheio", que ninguém vê.
     """
-    if is_admin(memberships):
+    if is_admin(memberships, org_role=org_role):
         return None
     out: set[uuid.UUID] = set()
     for m in memberships:
@@ -100,7 +123,10 @@ def visible_team_ids(
 
 
 def editable_team_ids(
-    memberships: tuple[Membership, ...], tree: tuple[TeamNode, ...]
+    memberships: tuple[Membership, ...],
+    tree: tuple[TeamNode, ...],
+    *,
+    org_role: str | None = None,
 ) -> frozenset[uuid.UUID] | None:
     """Times cujas tasks o usuário EDITA. ``None`` = todos (admin).
 
@@ -108,7 +134,7 @@ def editable_team_ids(
     tudo, edita só o seu' é resolvida na query do repositório, não aqui
     (Fase B usa este conjunto para a trava de mutação).
     """
-    return visible_team_ids(memberships, tree)
+    return visible_team_ids(memberships, tree, org_role=org_role)
 
 
 # ---------------------------------------------------------------------

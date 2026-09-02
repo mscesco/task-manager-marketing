@@ -227,7 +227,9 @@ class TaskRepository(BaseRepository[Task]):
         # Privacidade do pessoal + lente de time (Entrega 3).
         # LEFT JOIN: tarefa avulsa (project_id NULL) nao some.
         visible = team_scope.visible_team_ids(
-            tenant.memberships, tenant.team_tree
+            tenant.memberships,
+            tenant.team_tree,
+            org_role=tenant.org_role,
         )  # None = admin (sem filtro de time)
 
         base = base.outerjoin(
@@ -419,7 +421,9 @@ class TaskRepository(BaseRepository[Task]):
 
         # (B) lente de time -- pulada para admin (visible is None), igual ao
         # `list_page`. MESMO predicado, uma copia so: `_lente_de_time`.
-        visible = team_scope.visible_team_ids(tenant.memberships, tenant.team_tree)
+        visible = team_scope.visible_team_ids(tenant.memberships,
+            tenant.team_tree,
+            org_role=tenant.org_role,)
         if visible is not None:
             base = base.where(_lente_de_time(visible, me=me))
 
