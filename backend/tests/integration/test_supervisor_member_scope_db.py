@@ -271,16 +271,39 @@ async def test_manager_mantem_alcance_amplo(db) -> None:
         assert user.is_active is False
 
 
-async def test_permissao_nova_so_do_supervisor(db) -> None:
-    """O mapa de permissoes: OPERATOR nao ganhou nada nesta spec."""
+async def test_quem_administra_membro_de_subtime_no_mapa(db) -> None:
+    """⭐ Spec 045, fatia A: o mapa passa a dizer a verdade.
+
+    ⚠️⚠️ ESTE TESTE SE CHAMAVA `test_permissao_nova_so_do_supervisor` E O "SO"
+    ERA FALSO. `member.manage.subteam` existia apenas no SUPERVISOR, e o mapa
+    -- o documento que diz quem pode o que -- afirmava que ADMIN e MANAGER nao
+    administram membro de subtime. Eles administram desde a Spec 028, por um
+    *early return* em `_assert_escopo_supervisor`. A versao antiga deste teste
+    ate encostava nisso: dizia, num comentario, que "ADMIN/MANAGER nao precisam
+    dela", e checava `team.manage` no lugar.
+
+    Decisao da Camila (02/09): *"manager e admin administram absolutamente tudo
+    do time e sua arvore inteira"*. A permissao foi para o mapa.
+
+    ⚠️ O QUE ISTO NAO MUDA: o ESCOPO. Continua sendo o servico quem diz "onde",
+    e para ADMIN/MANAGER o "onde" e a arvore deles -- nao os subtimes que
+    supervisionam. Os testes de escopo deste arquivo sao a contraprova disso.
+    """
     from app.modules.auth.domain.permissions import permissions_for_roles
 
-    assert "member.manage.subteam" in permissions_for_roles(
-        frozenset({"SUPERVISOR"})
-    )
+    # Os tres papeis de comando e supervisao a tem; o OPERATOR nao.
+    for papel in ("ADMIN", "MANAGER", "SUPERVISOR"):
+        assert "member.manage.subteam" in permissions_for_roles(
+            frozenset({papel})
+        ), f"{papel} deveria administrar membro de subtime pelo MAPA"
     assert "member.manage.subteam" not in permissions_for_roles(
         frozenset({"OPERATOR"})
     )
-    # ADMIN/MANAGER nao precisam dela -- ja tem team.manage, mais amplo.
-    for papel in ("ADMIN", "MANAGER"):
-        assert "team.manage" in permissions_for_roles(frozenset({papel}))
+
+    # ⚠️ E A NAO-MONOTONICIDADE MORREU AQUI. Enquanto `member.manage.subteam`
+    # existia so no SUPERVISOR, `MANAGER@raiz + SUPERVISOR@sub` ganhava uma
+    # permissao vinda de BAIXO (Spec 044, §4.1-bis). Agora a uniao dos dois
+    # papeis nao acrescenta nada ao que o MANAGER ja tinha sozinho.
+    so_manager = permissions_for_roles(frozenset({"MANAGER"}))
+    com_supervisor = permissions_for_roles(frozenset({"MANAGER", "SUPERVISOR"}))
+    assert com_supervisor - so_manager == frozenset()

@@ -901,6 +901,15 @@ class MemberService:
 
         Checa PERMISSAO, nao papel: se um papel novo ganhar `team.manage`
         no mapa, este gate acompanha sozinho.
+
+        ⚠️ NAO E GAMBIARRA, e ate a Spec 045 (fatia A) parecia ser. Ate la o
+        mapa dizia que ADMIN e MANAGER **nao** tinham `member.manage.subteam`,
+        e o *early return* que este metodo alimenta era a unica coisa que os
+        deixava passar -- uma linha de codigo contradizendo o mapa. Agora o mapa
+        concede a permissao a eles, e este gate volta a ser o que sempre
+        deveria ter sido: a camada de ESCOPO, dizendo que a autoridade deles
+        vem da ARVORE (`visible/editable_team_ids`) e nao dos subtimes que
+        supervisionam. O mapa diz "o que"; isto participa do "onde".
         """
         return require_tenant().has_permission("team.manage")
 
