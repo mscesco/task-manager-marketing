@@ -113,8 +113,19 @@ def default_team_id(
 ) -> uuid.UUID | None:
     """Time herdado por uma task nova.
 
-    Subtime do usuário (regra 1-subtime: no máx um). Se não tem subtime,
-    o time principal em que está. Se não está em time, ``None``.
+    Subtime do usuário. Se não tem subtime, o time principal em que está.
+    Se não está em time, ``None``.
+
+    ⚠️ ESTA FUNÇÃO FICOU AMBÍGUA na Spec 044, fatia 3. Ela devolve
+    ``subteams[0]`` e a trava de UM subtime por pessoa — que era o que
+    tornava esse índice a única resposta possível — não existe mais. Com
+    dois subtimes, o escolhido depende da ordem dos vínculos.
+
+    Não é defeito em produção porque o caminho de criação de tarefa não
+    chega aqui pela tela: o `createTask` fixa o `team_id` do quadro e o
+    serviço só cai neste fallback quando ninguém manda time (n8n, Swagger,
+    chamada direta). **A fatia 4 tira esta função do caminho de criação**,
+    e é lá que a ambiguidade morre. Até então, ela é conhecida e está escrita.
     """
     subteams = [m.team_id for m in memberships if is_subteam(m.team_id, tree)]
     if subteams:

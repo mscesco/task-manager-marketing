@@ -24,7 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.core.tenant import Membership, require_tenant
-from app.db.models import Team, User, UserTeam
+from app.db.models import User, UserTeam
 from app.db.models.enums import UserTeamRole
 from app.modules.auth.domain.team_scope import (
     assert_role_permitido_no_nivel,
@@ -336,8 +336,6 @@ class MemberService:
         await self._session.flush()  # garante user.id
 
         # --- vinculo com a equipe (sempre: nao ha mais membro orfao) ---
-        # _assert_one_subteam e no-op no principal (parent_team_id is None).
-        await self._assert_one_subteam(user_id=user.id, team=team)
         self._users.add_team_membership(
             user_id=user.id,
             team_id=team.id,
@@ -520,7 +518,11 @@ class MemberService:
             EntityNotFoundError -- usuario ou equipe inexistente.
             AuthorizationError  -- ator nao pode atribuir esse papel (matriz).
             ConflictError       -- usuario ja esta nessa equipe.
-            ValidationError     -- ja pertence a outro subtime (1-subtime).
+
+        ⚠️ NAO ha mais limite de UM subtime por pessoa (Spec 044, fatia 3).
+        Estar em SEO e em Midias Sociais ao mesmo tempo e estado valido -- o
+        unico limite e o `UNIQUE (user_id, team_id)`, que impede o vinculo
+        REPETIDO no mesmo time, e vira o 409 acima.
         """
         # usuario deve existir no workspace
         user = await self._users.get_by_id(user_id)
@@ -552,7 +554,6 @@ class MemberService:
                 details={"user_id": str(user_id), "team_id": str(team_id)},
             )
 
-        await self._assert_one_subteam(user_id=user_id, team=team)
         membership = self._users.add_team_membership(
             user_id=user_id, team_id=team_id, role=role
         )
@@ -731,9 +732,14 @@ class MemberService:
     ) -> UserTeam:
         """Move um membro de um time para outro, preservando o papel. F4 (B2).
 
-        Atomico: remove o vinculo de origem ANTES de adicionar o de destino,
-        para nunca violar a invariante "1 subtime por pessoa" (ADR 0008). Se
-        algo abaixo falhar, o UoW nao commita e tudo rola back.
+        Atomico: remove o vinculo de origem ANTES de adicionar o de destino.
+        Se algo abaixo falhar, o UoW nao commita e tudo rola back.
+
+        ⚠️ A ORDEM ERA OBRIGATORIA pela invariante "1 subtime por pessoa"
+        (ADR 0008), que saiu na Spec 044, fatia 3. Ela FICA por outro motivo:
+        e o que faz esta operacao significar MOVER. Invertida, existiria um
+        instante com os dois vinculos -- hoje um estado valido, e por isso
+        mesmo indistinguivel de "adicionar", que ja tem rota propria.
 
         Regra C1: a pessoa perde o acesso ao time de origem (tarefas ficam).
         Matriz C2 (sobre o papel atual, preservado) + anti-lockout C3 aplicam.
@@ -807,8 +813,8 @@ class MemberService:
             + [(to_team_id, role)],
         )
 
-        # Remove a origem PRIMEIRO -> ao adicionar, _assert_one_subteam ve
-        # apenas o destino como (eventual) subtime.
+        # Remove a origem PRIMEIRO -- ver a docstring: a ordem deixou de ser
+        # exigida pela trava e passou a ser o que define "mover".
         await self._users.remove_team_membership(origem)
         await self._session.flush()
 
@@ -820,7 +826,6 @@ class MemberService:
                 "Membro ja faz parte do time de destino.",
                 details={"user_id": str(user_id), "team_id": str(to_team_id)},
             )
-        await self._assert_one_subteam(user_id=user_id, team=destino)
         nova = self._users.add_team_membership(
             user_id=user_id, team_id=to_team_id, role=role
         )
@@ -861,26 +866,6 @@ class MemberService:
         user.is_active = False
         logger.info("member.deactivated", user_id=str(user_id))
         return user
-
-    async def _assert_one_subteam(self, *, user_id: uuid.UUID, team: Team) -> None:
-        """Invariante (ADR 0008): no maximo um subtime por usuario.
-
-        Time principal (sem pai) nao conta -- so subtime. Levanta
-        ValidationError (422) se o usuario ja esta em outro subtime.
-        """
-        if team.parent_team_id is None:
-            return  # principal: sem limite
-        existing = await self._users.list_team_memberships(user_id=user_id)
-        for ut in existing:
-            if ut.team_id == team.id:
-                continue
-            other = await self._teams.get_by_id(ut.team_id)
-            if other is not None and other.parent_team_id is not None:
-                raise ValidationError(
-                    "Usuario ja pertence a um subtime "
-                    "(regra: um subtime por usuario).",
-                    details={"field": "team_id"},
-                )
 
     # ----------------------------------------------------
     # Escopo do SUPERVISOR (Spec 028) -- camada NOVA, ortogonal a matriz C2

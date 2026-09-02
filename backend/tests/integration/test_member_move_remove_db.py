@@ -5,7 +5,13 @@ Regras:
           aqui, pois e dormente: tudo roda na raiz).
     C2 -- matriz: ADMIN qualquer; MANAGER so SUPERVISOR/OPERATOR.
     C3 -- ninguem remove/move a si mesmo.
-    1-subtime -- mover nunca deixa a pessoa em 2 subtimes.
+    mover e MOVER -- termina com um vinculo de subtime, nao dois.
+
+⚠️ A ultima regra tinha outro nome ("1-subtime") e outro dono: era a trava da
+ADR 0008, que saiu na Spec 044, fatia 3. O comportamento e o mesmo -- `move`
+remove a origem antes de adicionar o destino --, mas agora ele e uma escolha
+de semantica, e nao consequencia de uma invariante. Estar em dois subtimes
+passou a ser estado valido; quem quer isso usa `assign_to_team`, nao `move`.
 
 Roda so com db-test de pe + TEST_DATABASE_URL (senao e PULADO).
 """
@@ -157,7 +163,7 @@ async def test_move_subtime_preserva_papel_e_um_subtime(db) -> None:
         destino = await _membership(db, user_id=alvo, team_id=b)
         assert destino is not None
         assert destino.role == UserTeamRole.SUPERVISOR  # papel preservado
-        # 1-subtime: apenas um vinculo de subtime
+        # mover e MOVER: termina com um vinculo so (ver docstring do modulo)
         todos = await MemberService(db)._users.list_team_memberships(user_id=alvo)
         assert len(todos) == 1
 

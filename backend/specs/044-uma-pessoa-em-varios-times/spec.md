@@ -309,12 +309,33 @@ sorteio; só o primeiro subtime conta → a tarefa da redatora some da lente.
 
 **Placar:** Backend **1014** (era 1012), Front **1082** (era 1078).
 
-**Fatia 3 — a trava sai (backend).**
-Remove `_assert_one_subteam` e as três chamadas. **Escreve o teste que nunca
-existiu**: pôr alguém em dois subtimes agora funciona, e a lente devolve os
-dois — e um teste que fixa o escopo do supervisor com papéis divergentes
-(SUPERVISOR em SEO + OPERATOR em Mídias → administra só SEO). Esse
-comportamento já é o de hoje (§4.1); o teste existe para que continue sendo.
+**Fatia 3 — a trava sai. ✅ ENTREGUE (02/09).**
+Remove `_assert_one_subteam` e as três chamadas. Testes novos: pôr alguém em
+dois subtimes **pelo serviço** (a fatia 1 só conseguia pela factory), a lente
+devolve os dois, o vínculo repetido no mesmo time segue 409, e o escopo do
+supervisor com papéis divergentes (SUPERVISOR em SEO + OPERATOR em CRM →
+administra só SEO) — caso que era **impossível de cadastrar** até esta fatia.
+
+⚠️⚠️ **A §3.1 DESTA SPEC ESTAVA ERRADA: o 422 TINHA teste.** Era
+`test_adicionar_segundo_subtime_422` (`test_member_assign_db.py`), com
+`pytest.raises(ValidationError)`. O grep de 31/08 procurou a **frase** *"um
+subtime por usuario"* dentro de `tests/` e não achou a **asserção** — o
+arquivo nunca escreveu aquela prosa. Remover a trava acendeu vermelho na hora,
+ao contrário do que a spec previa. A lição é sobre o grep: procurar por prosa
+não encontra comportamento.
+
+⚠️ **E O FRONT VEIO JUNTO, pelo mesmo motivo das fatias 1+2.** `app/membros/
+page.tsx` filtrava o segundo subtime para não oferecer um destino que daria 422
+— com a trava fora e o filtro de pé, **a redatora continuaria bloqueada na
+tela**, e a fatia entregaria nada visível. A regra saiu de `app/` e virou
+`candidatosParaAdicionar` em `lib/permissoesMembros.ts`: `app/` está fora do
+`include` do vitest, então ali a ausência da trava **não teria guardião** — e
+ela é permissão, não desenho (§2.2).
+
+**Sabotagem rodada:** com `_assert_one_subteam` restaurada, os dois testes
+novos falham (`2 failed, 17 passed`).
+
+**Placar:** Backend **1016** (era 1014), Front **1085** (era 1082).
 
 **Fatia 4 — o time vem do quadro (backend).**
 Aplica a §4.2: o pin que hoje mora no `createTask` do front passa a valer no
@@ -332,10 +353,13 @@ Aplica a §4.1-bis. ✅ **Varredura rodada em 31/08 no Adminer: nenhum registro.
 Não há cadastro em estado inválido; a regra liga limpa. Fatia independente das
 quatro acima — pode ir antes, depois ou nunca, sem quebrar as outras.
 
-**Fatia 5 — a tela de membros mostra o plural.**
-Hoje a linha mostra *um* subtime. Passa a mostrar os vínculos, e o painel de
-vínculos (que já existe e já é plural — `membros/page.tsx:648`) deixa de ser o
-único lugar onde a verdade aparece.
+**~~Fatia 6 — a tela de membros mostra o plural.~~ ✅ JÁ FEITA nas fatias 1+2.**
+
+⚠️ **Esta fatia estava numerada como "5", duplicando a de cima** — erro de
+numeração encontrado em 02/09. E ela já não tinha conteúdo: as fatias 1+2
+portaram o front inteiro para `team_ids`, e a linha da tela já mostra os
+vínculos por `nomeSubtimes(m.team_ids)`. Fica riscada, e não removida, para
+quem procurar a "fatia 5 da tela" saber que ela não sumiu — ela foi absorvida.
 
 ---
 

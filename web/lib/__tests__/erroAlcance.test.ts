@@ -74,7 +74,7 @@ describe("bloqueioDeAlcance()", () => {
     expect(b!.tarefas.map((t) => t.id)).toEqual(["a", "b", "c"]);
   });
 
-  it("devolve null para 422 SEM lista (ex.: a regra de 1 subtime, ADR 0008)", () => {
+  it("devolve null para 422 SEM lista (validacao comum, sem `tarefas`)", () => {
     expect(bloqueioDeAlcance(erro({ field: "team_id" }))).toBeNull();
   });
 
