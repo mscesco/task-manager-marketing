@@ -68,7 +68,9 @@ class SolicitationRepository(BaseRepository[Solicitation]):
         stmt = super()._base_select(include_deleted=include_deleted)
         tenant = require_tenant()
         visiveis = team_scope.visible_team_ids(
-            tenant.memberships, tenant.team_tree
+            tenant.memberships,
+            tenant.team_tree,
+            org_role=tenant.org_role,
         )
         if visiveis is None:  # ADMIN
             return stmt

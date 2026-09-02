@@ -21,7 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.logging import get_logger
 from app.core.tenant import tenant_scope
 from app.db.models import User, UserTeam, Workspace
-from app.db.models.enums import UserTeamRole
+from app.db.models.enums import OrgRole, UserTeamRole
 from app.modules.tasks.application.task_service import TaskService
 
 logger = get_logger(__name__)
@@ -85,7 +85,35 @@ class StaleArchivalService:
 
         Ordena por (created_at, id) -> estavel quando ha mais de um admin.
         None se o workspace nao tem admin ativo (sera pulado).
+
+        ⚠️⚠️ DUAS FONTES, E ESTE E O CONSUMIDOR MAIS PERIGOSO DA FATIA B.
+        Ate a Spec 045 este metodo procurava o admin SO em `user_team`. Com o
+        papel de ADMIN virando papel de ORGANIZACAO -- e a Camila ficando sem
+        vinculo de time nenhum --, `user_team` fica com ZERO linhas ADMIN, e
+        esta consulta voltaria vazia. O job entao PULA o workspace inteiro:
+        sem erro, sem log de falha, sem tela. O arquivamento automatico
+        simplesmente pararia de acontecer, e ninguem descobriria.
+
+        `users.org_role` vem PRIMEIRO porque e a fonte nova e definitiva; o
+        `user_team` fica como fallback enquanto o cadastro nao esta limpo
+        (passo 2, manual). Quando estiver, o fallback sai numa fatia propria.
         """
+        # Fonte NOVA: papel de organizacao, sem time.
+        org_stmt = (
+            select(User.id)
+            .where(
+                User.workspace_id == workspace_id,
+                User.org_role == OrgRole.ADMIN,
+                User.is_active.is_(True),
+            )
+            .order_by(User.created_at.asc(), User.id.asc())
+            .limit(1)
+        )
+        org_admin = (await self._session.execute(org_stmt)).scalars().first()
+        if org_admin is not None:
+            return org_admin
+
+        # Fonte VELHA (transicao): vinculo ADMIN em `user_team`.
         stmt = (
             select(UserTeam.user_id)
             .join(

@@ -126,6 +126,23 @@ class MemberService:
         self._projects = ProjectService(session)
         self._session = session
 
+    async def _org_role_de(self, user_id: uuid.UUID) -> str | None:
+        """Papel de ORGANIZACAO do usuario informado (Spec 045, fatia B).
+
+        ⚠️ DO ALVO, e nao do ator. As duas lentes montadas neste arquivo
+        (`_assert_nao_deixa_orfa` e `_remover_relacoes_perdidas`) respondem "o
+        que ESTA PESSOA enxergaria depois" -- e um ADMIN de organizacao nunca
+        perde alcance de nada, porque a lente dele e `None` (todos).
+
+        Sem isto, no dia em que o vinculo de time do admin sair de `user_team`
+        (o passo 2, manual), mexer no cadastro dele passaria a ser barrado por
+        um gatilho que acha que ele esta perdendo tarefas.
+        """
+        user = await self._users.get_by_id(user_id)
+        if user is None or user.org_role is None:
+            return None
+        return user.org_role.value
+
     # ----------------------------------------------------
     # Spec 037, fatia 3 -- E4 + E8. O gatilho, chamado em TRES lugares.
     # ----------------------------------------------------
@@ -171,7 +188,16 @@ class MemberService:
             self._session
         ).bloqueios_por_perda_de_alcance(
             user_id=user_id,
-            times_depois=visible_team_ids(memberships_depois, tenant.team_tree),
+            times_depois=visible_team_ids(
+                memberships_depois,
+                tenant.team_tree,
+                # ⚠️ O papel de organizacao E O DO ALVO (Spec 045, fatia B):
+                # esta lente e a que ELE teria depois, e nao a de quem esta
+                # mexendo. Um ADMIN de organizacao nunca perde alcance de
+                # nada -- sem esta linha, o gatilho barraria por engano a
+                # mudanca no vinculo de time dele.
+                org_role=await self._org_role_de(user_id),
+            ),
         )
         if not bloqueios:
             return
@@ -231,7 +257,16 @@ class MemberService:
         )
         perdidas = await TaskRepository(self._session).relacoes_perdidas(
             user_id=user_id,
-            times_depois=visible_team_ids(memberships_depois, tenant.team_tree),
+            times_depois=visible_team_ids(
+                memberships_depois,
+                tenant.team_tree,
+                # ⚠️ O papel de organizacao E O DO ALVO (Spec 045, fatia B):
+                # esta lente e a que ELE teria depois, e nao a de quem esta
+                # mexendo. Um ADMIN de organizacao nunca perde alcance de
+                # nada -- sem esta linha, o gatilho barraria por engano a
+                # mudanca no vinculo de time dele.
+                org_role=await self._org_role_de(user_id),
+            ),
         )
         if not perdidas:
             return 0

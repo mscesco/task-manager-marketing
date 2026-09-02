@@ -7,6 +7,7 @@ estes enums Python para os tipos nativos do banco.
 Schema v5::
 
     user_team_role : ADMIN, MANAGER, SUPERVISOR, OPERATOR
+    org_role       : ADMIN, GESTOR   (Spec 045 -- migration 0022)
     project_status : PLANNING, ACTIVE, BLOCKED, COMPLETED, CANCELLED
     task_status    : BACKLOG, PLANNED, IN_PROGRESS, IN_REVIEW,
                      BLOCKED, COMPLETED, CANCELLED
@@ -23,6 +24,32 @@ class UserTeamRole(StrEnum):
     MANAGER = "MANAGER"
     SUPERVISOR = "SUPERVISOR"
     OPERATOR = "OPERATOR"
+
+
+class OrgRole(StrEnum):
+    """Papel na ORGANIZACAO -- sem time (Spec 045, fatia B).
+
+    ⚠️ A SEGUNDA PERTENCA. Ate esta spec, o unico lugar onde um papel podia
+    existir era `user_team`, ou seja: TODO papel exigia um time. Um gestor da
+    organizacao -- quem administra todas as areas sem pertencer a nenhuma --
+    nao tinha onde morar. Com uma raiz so dava para fingir que a raiz ERA a
+    organizacao; com N raizes (Spec 046) a ficcao nao fecha: admin de qual?
+
+    `users.workspace_id` ja existe, entao a pessoa ja pertencia a organizacao
+    sem depender de time. O que faltava era o PAPEL nesse nivel.
+
+    ADMIN  -- define a organizacao: renomeia, apaga area, promove gestor.
+    GESTOR -- opera a organizacao: cria area, cadastra e desativa pessoas,
+              distribui papeis de time. Nao desfaz a organizacao.
+
+    ⚠️ NAO TEM ORDEM, como todo StrEnum daqui -- a ordem em que os dois estao
+    escritos e coincidencia de leitura. Se algum dia for preciso comparar posto
+    entre eles, escreva um mapa explicito; comparar as strings mente sem erro
+    nenhum (AGENTS.md §9).
+    """
+
+    ADMIN = "ADMIN"
+    GESTOR = "GESTOR"
 
 
 class ProjectStatus(StrEnum):

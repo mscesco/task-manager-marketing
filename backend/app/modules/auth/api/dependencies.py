@@ -35,7 +35,10 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from app.core.deps import SessionDep
 from app.core.tenant import Membership, TeamNode, TenantContext, set_tenant
 from app.db.models import User
-from app.modules.auth.domain.permissions import permissions_for_roles
+from app.modules.auth.domain.permissions import (
+    permissions_for_org_role,
+    permissions_for_roles,
+)
 from app.modules.auth.infrastructure.security import (
     TokenType,
     decode_token,
@@ -104,7 +107,15 @@ async def get_tenant_context(
         raise PasswordChangeRequiredError()
 
     # Deriva permissoes dos papeis (mapa estatico, sem RBAC em tabela).
-    permissions = permissions_for_roles(membership.roles)
+    #
+    # ⚠️ DUAS PERGUNTAS, E NAO UMA (Spec 045, fatia B): os papeis de TIME
+    # respondem uma; o papel de ORGANIZACAO, que nao tem time, responde outra.
+    # A uniao e o que a pessoa pode. Sem a segunda parcela, um ADMIN de
+    # organizacao sem vinculo de time nenhum entraria no sistema com PERMISSAO
+    # VAZIA -- e e exatamente esse o estado que esta fatia torna normal.
+    permissions = permissions_for_roles(membership.roles) | permissions_for_org_role(
+        membership.org_role
+    )
 
     # Entrega 3: pares (time, papel) + arvore de times, para o escopo
     # por time. roles/permissions seguem como camada de "quais acoes".
@@ -124,6 +135,7 @@ async def get_tenant_context(
         permissions=permissions,
         memberships=memberships,
         team_tree=team_tree,
+        org_role=membership.org_role,
     )
 
     # Popula o ContextVar. Escopo da task asyncio da requisicao;

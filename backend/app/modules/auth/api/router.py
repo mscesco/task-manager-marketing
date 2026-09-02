@@ -27,7 +27,10 @@ from app.modules.auth.api.schemas import (
     TokenPair,
 )
 from app.modules.auth.application.service import AuthService
-from app.modules.auth.domain.permissions import permissions_for_roles
+from app.modules.auth.domain.permissions import (
+    permissions_for_org_role,
+    permissions_for_roles,
+)
 from app.modules.users.infrastructure.membership_repository import (
     MembershipRepository,
 )
@@ -78,7 +81,23 @@ async def me(user: PendingUserDep, session: SessionDep) -> CurrentUserResponse:
     )
     if membership is None:
         raise AuthenticationError("Usuario do token nao encontrado.")
-    permissions = permissions_for_roles(membership.roles)
+    # ⚠️ AS DUAS PARCELAS (Spec 045, fatia B) -- e aqui e ainda mais critico que
+    # no `get_tenant_context`: esta rota alimenta o `currentUser` do front, e o
+    # front deriva o ALCANCE inteiro dela (`lib/permissoesMembros.alcanceDe`).
+    # Sem a segunda parcela, um ADMIN de organizacao sem vinculo de time
+    # nenhum abriria a tela sem papel e sem permissao -- e a tela nao mostraria
+    # botao algum, o que parece "perdi o acesso" e nao "faltou uma linha".
+    permissions = permissions_for_roles(membership.roles) | permissions_for_org_role(
+        membership.org_role
+    )
+    # ⚠️ O PAPEL DE ORGANIZACAO ENTRA EM `roles` NA RESPOSTA, e so aqui -- no
+    # dominio ele fica separado de proposito (ver `WorkspaceMembership`). Este
+    # campo e o contrato com o front, que pergunta "quais papeis esta pessoa
+    # tem", sem distinguir nivel. Assim a fatia B nao exige mudanca nenhuma no
+    # front, e a Spec 047 e que vai separar os dois na tela.
+    roles = membership.roles | (
+        frozenset({membership.org_role}) if membership.org_role else frozenset()
+    )
     return CurrentUserResponse(
         id=user.id,
         workspace_id=user.workspace_id,
@@ -86,7 +105,7 @@ async def me(user: PendingUserDep, session: SessionDep) -> CurrentUserResponse:
         email=user.email,
         is_active=user.is_active,
         must_change_password=user.must_change_password,
-        roles=sorted(membership.roles),
+        roles=sorted(roles),
         permissions=sorted(permissions),
         teams=[
             TeamMembershipOut(team_id=team_id, role=role)

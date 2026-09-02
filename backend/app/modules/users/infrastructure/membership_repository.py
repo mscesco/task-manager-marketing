@@ -66,6 +66,10 @@ class MembershipRepository:
             # session.get() acima, que existe desde sempre para is_active.
             token_version=user.token_version,
             team_roles=team_roles,
+            # Spec 045 (fatia B): NENHUMA query nova -- a linha do usuario ja
+            # veio no `session.get()` acima, que existe desde sempre para
+            # `is_active`. Mesmo argumento do `token_version` da Spec 030.
+            org_role=user.org_role.value if user.org_role is not None else None,
         )
 
     async def load_team_tree(

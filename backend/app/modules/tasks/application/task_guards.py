@@ -142,7 +142,13 @@ async def _lente_do_usuario(
     target_memberships = tuple(
         Membership(team_id=tid, role=role) for tid, role in membership.team_roles
     )
-    return team_scope.visible_team_ids(target_memberships, tenant.team_tree)
+    # ⚠️ O `org_role` E O DO ALVO, e nao o do ator (Spec 045, fatia B). Esta
+    # funcao responde "o que ELE enxerga"; passar o papel de quem pergunta
+    # faria um admin enxergar por todo mundo. O `get_membership` acima ja
+    # trouxe o campo, entao nao ha query nova.
+    return team_scope.visible_team_ids(
+        target_memberships, tenant.team_tree, org_role=membership.org_role
+    )
 
 
 async def user_can_view_task(
@@ -217,7 +223,9 @@ class TaskScopeGuards:
         lente de time. ⚠️ `created_by` NAO entra mais (Spec 037, E1).
         """
         tenant = require_tenant()
-        visible = team_scope.visible_team_ids(tenant.memberships, tenant.team_tree)
+        visible = team_scope.visible_team_ids(tenant.memberships,
+            tenant.team_tree,
+            org_role=tenant.org_role,)
         project = await self._load_project(task)
         if not task_visible(
             task=task,
@@ -234,7 +242,9 @@ class TaskScopeGuards:
         """
         tenant = require_tenant()
         editable = team_scope.editable_team_ids(
-            tenant.memberships, tenant.team_tree
+            tenant.memberships,
+            tenant.team_tree,
+            org_role=tenant.org_role,
         )
         project = await self._load_project(task)
         if not task_editable(

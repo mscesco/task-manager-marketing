@@ -414,7 +414,9 @@ class BoardRepository:
         """
         tenant = require_tenant()
         visiveis = team_scope.visible_team_ids(
-            tenant.memberships, tenant.team_tree
+            tenant.memberships,
+            tenant.team_tree,
+            org_role=tenant.org_role,
         )  # None = ADMIN (sem filtro de TIME -- ver o aviso acima)
 
         consulta = (

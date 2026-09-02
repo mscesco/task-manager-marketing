@@ -82,7 +82,9 @@ class SolicitationFormService:
         """
         tenant = require_tenant()
         editaveis = team_scope.editable_team_ids(
-            tenant.memberships, tenant.team_tree
+            tenant.memberships,
+            tenant.team_tree,
+            org_role=tenant.org_role,
         )
         if editaveis is None:
             return
@@ -291,7 +293,9 @@ class SolicitationFormService:
             .order_by(SolicitationForm.title)
         )
         visiveis = team_scope.visible_team_ids(
-            tenant.memberships, tenant.team_tree
+            tenant.memberships,
+            tenant.team_tree,
+            org_role=tenant.org_role,
         )
         if visiveis is not None:
             stmt = stmt.where(SolicitationForm.team_id.in_(visiveis))
