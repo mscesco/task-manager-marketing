@@ -23,6 +23,7 @@ import {
   podeRemoverDoTime,
   papeisAtribuiveis,
   timesParaAdicionar,
+  candidatosParaAdicionar,
   temAcaoPossivel,
   type Alcance,
 } from "../permissoesMembros";
@@ -168,6 +169,31 @@ describe("papeisAtribuiveis", () => {
 
   it("sem alcance, lista vazia", () => {
     expect(papeisAtribuiveis(NADA, true)).toEqual([]);
+  });
+});
+
+describe("candidatosParaAdicionar", () => {
+  const times = [time(RAIZ, null), time(SEO), time(CRM)];
+
+  it("⭐ Spec 044 fatia 3: quem ja tem um subtime pode receber outro", () => {
+    // O caso da redatora: ja esta em SEO, e CRM tem de continuar na lista.
+    // ⚠️ ATE A FATIA 3 ISTO ERA `[RAIZ]` -- o segundo subtime era filtrado
+    // aqui porque o backend devolvia 422. Este teste e o guardiao da
+    // ausencia daquele filtro; se alguem o reintroduzir, ele cai.
+    const oferecidos = candidatosParaAdicionar(times, [{ team_id: SEO }]);
+    expect(oferecidos.map((t) => t.id)).toEqual([RAIZ, CRM]);
+  });
+
+  it("nao oferece time onde a pessoa ja esta (seria 409)", () => {
+    const oferecidos = candidatosParaAdicionar(times, [
+      { team_id: SEO },
+      { team_id: CRM },
+    ]);
+    expect(oferecidos.map((t) => t.id)).toEqual([RAIZ]);
+  });
+
+  it("sem vinculo nenhum, oferece tudo", () => {
+    expect(candidatosParaAdicionar(times, [])).toHaveLength(3);
   });
 });
 

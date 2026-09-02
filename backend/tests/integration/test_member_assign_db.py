@@ -2,7 +2,11 @@
 
 assign_to_team passa a chamar _assert_actor_can_assign (Spec 015): ADMIN
 atribui qualquer papel; MANAGER so SUPERVISOR/OPERATOR. Adicionar e aditivo
-(sem self-guard). Mantem 409 (ja no time) e 422 (2o subtime).
+(sem self-guard). Mantem o 409 (ja no time).
+
+⚠️ O 422 DO SEGUNDO SUBTIME SAIU NA SPEC 044, FATIA 3. O teste que o afirmava
+virou o teste do contrario, no fim deste arquivo -- e a nota la explica por
+que a spec achava que ele nao existia.
 
 Roda so com db-test de pe + TEST_DATABASE_URL (senao e PULADO).
 """
@@ -18,7 +22,6 @@ from app.shared.exceptions.base import (
     AuthorizationError,
     BusinessRuleError,
     ConflictError,
-    ValidationError,
 )
 from tests.integration import factories as f
 from tests.integration.conftest import acting_as
@@ -39,8 +42,11 @@ async def test_admin_adiciona_qualquer_papel(db) -> None:
     seo = await f.make_team(db, workspace_id=ws, parent_team_id=raiz, slug="seo")
     admin = await f.make_user(db, workspace_id=ws, email="admin@t.dev")
     await f.add_member(db, workspace_id=ws, user_id=admin, team_id=raiz, role="ADMIN")
+    # ⚠️ SEM VINCULO NA RAIZ, e a ausencia e o ponto. Ate a Spec 044 fatia 5
+    # este alvo era OPERATOR na raiz -- e virou o cadastro que a regra da
+    # Camila proibe: papel na raiz MENOR que no subtime. "Ausencia nao e
+    # menos" (decisao dela, 31/08), entao quem so vai existir no subtime passa.
     alvo = await f.make_user(db, workspace_id=ws, email="alvo@t.dev")
-    await f.add_member(db, workspace_id=ws, user_id=alvo, team_id=raiz, role="OPERATOR")
     outro = await f.make_user(db, workspace_id=ws, email="outro@t.dev")
 
     with acting_as(
@@ -69,8 +75,8 @@ async def test_manager_adiciona_supervisor(db) -> None:
     seo = await f.make_team(db, workspace_id=ws, parent_team_id=raiz, slug="seo")
     mgr = await f.make_user(db, workspace_id=ws, email="mgr@t.dev")
     await f.add_member(db, workspace_id=ws, user_id=mgr, team_id=raiz, role="MANAGER")
+    # ⚠️ Sem vinculo na raiz -- ver a nota do teste acima (Spec 044, fatia 5).
     alvo = await f.make_user(db, workspace_id=ws, email="alvo@t.dev")
-    await f.add_member(db, workspace_id=ws, user_id=alvo, team_id=raiz, role="OPERATOR")
 
     with acting_as(
         workspace_id=ws, user_id=mgr,
@@ -123,21 +129,75 @@ async def test_adicionar_no_time_que_ja_esta_409(db) -> None:
             )
 
 
-async def test_adicionar_segundo_subtime_422(db) -> None:
+async def test_segundo_subtime_agora_e_aceito_pelo_servico(db) -> None:
+    """⭐ Spec 044, fatia 3: a trava saiu. Este teste ERA o 422 dela.
+
+    ⚠️⚠️ A SPEC 044 §3.1 AFIRMA QUE NENHUM TESTE COBRIA O 422 -- e afirma
+    errado. O grep de 31/08 procurou a FRASE "um subtime por usuario" dentro
+    de `tests/`, e este arquivo nunca a escreveu: ele afirmava o
+    COMPORTAMENTO, com `pytest.raises(ValidationError)`. Removida a trava,
+    ele acendeu vermelho na hora -- que e exatamente o que uma rede faz.
+    A licao e sobre o grep, nao sobre a cobertura: procurar por prosa nao
+    encontra assercao.
+
+    O caso e a redatora que o negocio precisa em SEO E em Midias Sociais,
+    bloqueada desde a ADR 0039 (10/08).
+
+    ⚠️ E a diferenca para os testes da fatia 1: la os dois vinculos eram
+    escritos pela FACTORY, porque o servico ainda recusava. Aqui o segundo
+    nasce PELO SERVICO -- que e o que esta fatia mudou.
+    """
     ws = await f.make_workspace(db)
     raiz = await f.make_team(db, workspace_id=ws, slug="marketing")
-    a = await f.make_team(db, workspace_id=ws, parent_team_id=raiz, slug="design")
-    b = await f.make_team(db, workspace_id=ws, parent_team_id=raiz, slug="seo")
+    midias = await f.make_team(
+        db, workspace_id=ws, parent_team_id=raiz, slug="midias-sociais"
+    )
+    seo = await f.make_team(db, workspace_id=ws, parent_team_id=raiz, slug="seo")
     admin = await f.make_user(db, workspace_id=ws, email="admin@t.dev")
     await f.add_member(db, workspace_id=ws, user_id=admin, team_id=raiz, role="ADMIN")
-    alvo = await f.make_user(db, workspace_id=ws, email="alvo@t.dev")
-    await f.add_member(db, workspace_id=ws, user_id=alvo, team_id=a, role="OPERATOR")
+    redatora = await f.make_user(db, workspace_id=ws, email="redatora@t.dev")
+    await f.add_member(
+        db, workspace_id=ws, user_id=redatora, team_id=midias, role="OPERATOR"
+    )
 
     with acting_as(
         workspace_id=ws, user_id=admin,
         memberships=(Membership(team_id=raiz, role="ADMIN"),),
     ):
-        with pytest.raises(ValidationError):
+        svc = MemberService(db)
+        ut = await svc.assign_to_team(
+            user_id=redatora, team_id=seo, role=UserTeamRole.OPERATOR
+        )
+        assert ut.team_id == seo
+
+        # A lente devolve os DOIS, e o membro nao duplica -- a fatia 1 ja
+        # garantia isso com vinculos de factory; aqui o segundo veio do
+        # servico, entao as duas fatias se encontram neste assert.
+        membros = await svc.list_members()
+
+    (linha,) = [m for m in membros if m.user.id == redatora]
+    assert linha.subteam_ids == [midias, seo]
+
+
+async def test_vinculo_repetido_no_mesmo_time_continua_409(db) -> None:
+    """A trava que FICA: `UNIQUE (user_id, team_id)`.
+
+    Contraprova do teste acima -- sem ela, "a trava saiu" poderia ser lido
+    como "nao ha mais limite nenhum". Ha: o mesmo time duas vezes segue 409.
+    """
+    ws = await f.make_workspace(db)
+    raiz = await f.make_team(db, workspace_id=ws, slug="marketing")
+    seo = await f.make_team(db, workspace_id=ws, parent_team_id=raiz, slug="seo")
+    admin = await f.make_user(db, workspace_id=ws, email="admin@t.dev")
+    await f.add_member(db, workspace_id=ws, user_id=admin, team_id=raiz, role="ADMIN")
+    alvo = await f.make_user(db, workspace_id=ws, email="alvo@t.dev")
+    await f.add_member(db, workspace_id=ws, user_id=alvo, team_id=seo, role="OPERATOR")
+
+    with acting_as(
+        workspace_id=ws, user_id=admin,
+        memberships=(Membership(team_id=raiz, role="ADMIN"),),
+    ):
+        with pytest.raises(ConflictError):
             await MemberService(db).assign_to_team(
-                user_id=alvo, team_id=b, role=UserTeamRole.OPERATOR
+                user_id=alvo, team_id=seo, role=UserTeamRole.OPERATOR
             )
