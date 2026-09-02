@@ -1,7 +1,8 @@
 # Spec 046 — Várias raízes de verdade
 
-**Status:** escrita em 02/09/2026. ⚠️ **Uma decisão de produto em aberto** (§4.3)
-— não escrever código antes dela.
+**Status:** escrita em 02/09/2026; a §4.3 foi respondida no mesmo dia.
+⚠️ **Uma decisão de produto em aberto** (§4.4, a rota) — ela bloqueia **só a
+fatia 4**; as fatias 1, 2 e 3 estão liberadas para escrever.
 **Escopo:** backend (o índice, a checagem de domínio, o ciclo de vida de time) **e**
 frontend (o pin da raiz, que hoje assume que existe uma).
 **Depende de:** **Spec 045 inteira** — sem a permissão carregando o time, criar a
@@ -121,30 +122,58 @@ pode empurrar tarefa para o TI.
 A rota já recusa esvaziar a própria raiz (409) e já recusa se houver subtime filho.
 Com N raízes essas duas recusas continuam valendo sem mudança.
 
-### 4.3. ⚠️⚠️ EM ABERTO — o que é "o quadro geral" quando há N raízes
+### 4.3. ✅ O que é "o quadro geral" quando há N raízes
 
-**Não escrever código desta spec antes de responder isto.**
+**Respondido pela Camila em 02/09:**
 
-Hoje `/quadro` é rota estática e mostra o quadro da raiz. Com três raízes existem
-**três quadros gerais**, e a rota não tem como saber qual. O mesmo vale para
-`default_board_and_column_for_status`, que filtra a raiz no SQL
-(`task_service.py:612`, medido pela Spec 044 §4.2).
+> *"O quadro geral é o quadro principal que abre junto com o time raiz. É o
+> primeiro quadro do time raiz."*
 
-As saídas, em ordem crescente de custo:
+Ou seja: **"o quadro geral" deixa de ser um objeto único do workspace e passa a
+ser uma propriedade da área.** Cada raiz tem o seu, criado junto com ela.
 
-1. **`/quadro` ganha área ativa** — a pessoa escolhe (ou herda dos próprios
-   vínculos) qual área está olhando, e o quadro geral é o daquela área. Barato,
-   mas cria um estado novo ("área ativa") que precisa morar em algum lugar e
-   aparecer na tela.
-2. **`/quadro` vira `/quadro/[areaId]`** e a rota estática some. Mais honesto e
-   mais caro: ⚠️ `useSearchParams` em rota estática derruba o `next build`
+⭐ **E isso já é representável, sem nada novo no modelo:** o quadro geral de uma
+área é o `Board` com `is_default` daquele time raiz, e o índice parcial
+`board_um_padrao_por_time` ([boards.py:84](../../app/db/models/boards.py)) já
+garante que existe **um só** por time. O conceito que a Camila descreveu é
+exatamente o que a tabela já diz — não há migração nesta decisão.
+
+**O que muda por consequência:**
+
+- `default_board_and_column_for_status`
+  ([board_repository.py:76](../../app/modules/tasks/infrastructure/board_repository.py))
+  filtra `parent_team_id IS NULL` no SQL para achar "o quadro da raiz". Com N
+  raízes isso passa a devolver **N candidatos** — ela precisa receber a **área**.
+  ⚠️ É a mesma consulta que a **Spec 044 fatia 4** deixou como fonte do time da
+  tarefa (`TaskService._time_do_quadro_alvo` devolve a raiz justamente porque é
+  onde esta consulta põe a tarefa). Se uma passar a exigir área e a outra não, a
+  tarefa nasce num quadro pertencendo a outro time — que é a linha que
+  `_assert_time_do_quadro` existe para matar.
+- `getRootTeamId` no front (§3) deixa de fazer sentido como "a raiz" e vira "a
+  raiz da área que estou olhando".
+
+### 4.4. ⚠️ EM ABERTO — por qual porta se chega nesse quadro
+
+O que a resposta da 4.3 **não** decide é a rota. Hoje `/quadro` é estática e
+mostra o quadro da raiz; com três áreas há três quadros principais, e *"abre
+junto com o time raiz"* diz que se chega a ele **pela área** — mas não diz como
+a tela escolhe qual área está aberta.
+
+1. **`/quadro` ganha área ativa** ⭐ *recomendada* — a pessoa escolhe, ou herda
+   dos próprios vínculos, e o quadro geral é o daquela área. ⚠️ Para **quem tem
+   vínculo em uma árvore só — que é quase todo mundo hoje — não existe escolha
+   nenhuma**: a tela abre igual à de hoje. O seletor só aparece para quem tem
+   mais de uma área, e é o que torna esta a opção mais barata em mudança
+   percebida.
+2. **`/quadro` vira `/quadro/[areaId]`** e a rota estática some. Mais explícito e
+   mais caro. ⚠️ `useSearchParams` em rota estática derruba o `next build`
    (`AGENTS.md` §6), e mexer nessa rota é exatamente onde isso morde.
-3. **Quem tem uma área só nunca escolhe** — a maioria das pessoas tem vínculo em
-   uma árvore, e a escolha só aparece para quem tem mais de uma. Mais gentil, e
-   duas telas para testar em vez de uma.
+3. **A `/organizacao` é a porta** — não se abre "o quadro", abre-se a área, e o
+   quadro principal dela vem junto. É a leitura mais literal da frase acima, e
+   custa um clique a mais para quem só tem uma área.
 
-⚠️ Isto **não** é detalhe de implementação: decide como todo mundo abre o produto
-de manhã. É decisão da Camila.
+⚠️ **A fatia 4 continua bloqueada até isto.** Mas as fatias 1, 2 e 3 **não**
+dependem dela — elas podem andar.
 
 ---
 
@@ -172,7 +201,11 @@ Aplica a 4.2: o conteúdo vai para `root_of(team_id)`, não para "o principal". 
 prévia (`previa-remocao`) passa a **nomear a área de destino**, porque hoje ela diz
 quantos vão e não diz para onde — e com N áreas isso deixa de ser óbvio.
 
-**Fatia 4 — o quadro geral com N áreas.** ⚠️ **Bloqueada pela 4.3.**
+**Fatia 4 — o quadro geral com N áreas.**
+Aplica a 4.3: `default_board_and_column_for_status` passa a receber a **área** em
+vez de descobrir "a raiz" no SQL, e o front deixa de perguntar por "a raiz".
+⚠️ **A rota está bloqueada pela 4.4** — mas a parte de backend (a consulta
+receber a área) não depende de qual porta a tela usa, e pode ir antes.
 
 ---
 
