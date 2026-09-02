@@ -1,6 +1,6 @@
 # Spec 044 — Uma pessoa em vários times
 
-**Status:** escrita em 31/08/2026, **§4 revisada no mesmo dia** — decisões tomadas, fatia 1 liberada para escrever
+**Status:** ✅ **CONCLUÍDA em 02/09/2026.** Todas as fatias entregues. Escrita em 31/08, §4 revisada no mesmo dia; as fatias 3, 4 e 5 saíram em 02/09 e cada uma registra, na própria entrada da §5, o que desmentiu esta spec.
 **Escopo:** backend (trava, listagem, herança de time) **e** frontend (tela de membros e os cinco consumidores da lista)
 **Depende de:** ADR 0008 (a trava), ADR 0039 (a análise e a condição de saída), Spec 036 fatia 5 (quadro por time — **já entregue**, PR #14 / `e181c1d`)
 **Placar na abertura, medido em 31/08:** Backend **1012**, Front **1079**, migrations `0021`
@@ -360,10 +360,31 @@ o **cliente que não é a tela**: `POST /tasks` sem `team_id`, por quem só tem
 subtime, nasce na **raiz**. Antes devolvia `subteams[0]`, ou seja, SEO ou Mídias
 conforme a ordem dos vínculos.
 
-**Fatia 5 — o papel na raiz não pode ser menor (backend).**
+**Fatia 5 — o papel na raiz não pode ser menor. ✅ ENTREGUE (02/09).**
 Aplica a §4.1-bis. ✅ **Varredura rodada em 31/08 no Adminer: nenhum registro.**
-Não há cadastro em estado inválido; a regra liga limpa. Fatia independente das
-quatro acima — pode ir antes, depois ou nunca, sem quebrar as outras.
+A regra ligou sem remediação de cadastro.
+
+O **mapa de posto** nasceu aqui, explícito, e é o que a §4.1-bis avisava que
+faltava: `team_scope._POSTO` mais `posto_do_papel`, `raiz_menor_que_subtime` e
+`assert_raiz_nao_menor_que_subtime`. Papel sem posto **recusa** em vez de
+responder 0 — mesma falha fechada da R5 da Spec 024.
+
+⚠️ **A regra vale nos DOIS sentidos, e o segundo é o que importa na prática.**
+Barrar só "promover no subtime" deixaria a inversão entrar por **rebaixar a
+raiz** de quem já supervisiona — que é o caminho provável, e é o formato exato
+do defeito que a ADR 0031 corrigiu. As duas portas têm teste.
+
+⚠️ **A comparação é dentro da MESMA árvore**, via `root_of`, e não contra "a
+raiz". Com as N raízes da Spec 046, um OPERATOR no topo do TI não invalida um
+SUPERVISOR num subtime do Marketing. Já nasce sobrevivendo a isso.
+
+⚠️ **O nível vem do banco, não do `team_tree` do `TenantContext`.** A árvore do
+contexto chega **vazia** em teste que não a passa — e regra que vira no-op
+silencioso em metade dos testes não é regra.
+
+A porta 1 (`create_member`) recebeu a chamada e é **estruturalmente um no-op**:
+o usuário é novo, nasce com um vínculo só e o guard sai pelo curto-circuito sem
+tocar o banco. Fica pelo mesmo motivo que `_assert_gestao_ampla` existe.
 
 **~~Fatia 6 — a tela de membros mostra o plural.~~ ✅ JÁ FEITA nas fatias 1+2.**
 

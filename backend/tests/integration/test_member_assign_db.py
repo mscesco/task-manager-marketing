@@ -42,8 +42,11 @@ async def test_admin_adiciona_qualquer_papel(db) -> None:
     seo = await f.make_team(db, workspace_id=ws, parent_team_id=raiz, slug="seo")
     admin = await f.make_user(db, workspace_id=ws, email="admin@t.dev")
     await f.add_member(db, workspace_id=ws, user_id=admin, team_id=raiz, role="ADMIN")
+    # ⚠️ SEM VINCULO NA RAIZ, e a ausencia e o ponto. Ate a Spec 044 fatia 5
+    # este alvo era OPERATOR na raiz -- e virou o cadastro que a regra da
+    # Camila proibe: papel na raiz MENOR que no subtime. "Ausencia nao e
+    # menos" (decisao dela, 31/08), entao quem so vai existir no subtime passa.
     alvo = await f.make_user(db, workspace_id=ws, email="alvo@t.dev")
-    await f.add_member(db, workspace_id=ws, user_id=alvo, team_id=raiz, role="OPERATOR")
     outro = await f.make_user(db, workspace_id=ws, email="outro@t.dev")
 
     with acting_as(
@@ -72,8 +75,8 @@ async def test_manager_adiciona_supervisor(db) -> None:
     seo = await f.make_team(db, workspace_id=ws, parent_team_id=raiz, slug="seo")
     mgr = await f.make_user(db, workspace_id=ws, email="mgr@t.dev")
     await f.add_member(db, workspace_id=ws, user_id=mgr, team_id=raiz, role="MANAGER")
+    # ⚠️ Sem vinculo na raiz -- ver a nota do teste acima (Spec 044, fatia 5).
     alvo = await f.make_user(db, workspace_id=ws, email="alvo@t.dev")
-    await f.add_member(db, workspace_id=ws, user_id=alvo, team_id=raiz, role="OPERATOR")
 
     with acting_as(
         workspace_id=ws, user_id=mgr,

@@ -210,3 +210,87 @@ def assert_role_permitido_no_nivel(role: object, *, is_root: bool) -> None:
         motivo,
         details={"role": str(valor), "nivel": "raiz" if is_root else "subtime"},
     )
+
+
+# ---------------------------------------------------------------------
+# Spec 044, fatia 5 (§4.1-bis) -- o papel na RAIZ nao pode ser MENOR que o
+# papel num subtime dela. Regra da Camila, 31/08:
+#
+#     "Ele nao pode ter menos permissao no raiz do que tem no subtime."
+#
+#     OPERATOR@raiz  + SUPERVISOR@sub -> ❌ e a inversao que esta regra mata
+#     MANAGER@raiz   + SUPERVISOR@sub -> ✅ ("mesmo nao fazendo sentido")
+#     SUPERVISOR@raiz+ OPERATOR@sub   -> ✅
+#     NENHUM@raiz    + SUPERVISOR@sub -> ✅ ausencia NAO e "menos" (decisao dela)
+#
+# ⚠️ SEJA HONESTO SOBRE O QUE ELA FAZ: nao tapa furo de seguranca -- os gates
+# de escopo (`_assert_escopo_supervisor`) ja seguram o caso. Ela impede
+# ORGANOGRAMA INCOERENTE: quem supervisiona um subtime constando como mero
+# operador do time acima.
+#
+# ⚠️ ORTOGONAL a invariante de nivel acima. Aquela restringe o CONJUNTO de
+# papeis por nivel; esta compara DOIS niveis entre si.
+# ---------------------------------------------------------------------
+
+#: Posto de cada papel. ⚠️⚠️ EXPLICITO DE PROPOSITO: `UserTeamRole` e
+#: `StrEnum` e **nao tem ordem**. Os quatro estao declarados em ordem
+#: decrescente no enum por coincidencia de leitura, e depender disso seria a
+#: mesma armadilha do `ColumnSemantic` (AGENTS.md §9) -- a string compara igual
+#: e a comparacao mente sem erro nenhum.
+_POSTO: dict[str, int] = {
+    "OPERATOR": 1,
+    "SUPERVISOR": 2,
+    "MANAGER": 3,
+    "ADMIN": 4,
+}
+
+
+def posto_do_papel(role: object) -> int:
+    """Posto numerico do papel, para comparar niveis.
+
+    Aceita `UserTeamRole` ou string. Papel DESCONHECIDO levanta -- falha
+    fechada, mesmo desenho da R5 em `role_permitido_no_nivel`: se um papel novo
+    entrar no enum, a comparacao recusa ate alguem lhe dar posto aqui, em vez
+    de responder 0 e deixar passar calado.
+    """
+    valor = getattr(role, "value", role)
+    posto = _POSTO.get(str(valor))
+    if posto is None:
+        raise BusinessRuleError(
+            "Papel desconhecido: nao e possivel comparar o posto dele.",
+            details={"role": str(valor)},
+        )
+    return posto
+
+
+def raiz_menor_que_subtime(*, papel_raiz: object, papel_subtime: object) -> bool:
+    """True quando o papel na raiz e MENOR que o do subtime (a inversao)."""
+    return posto_do_papel(papel_raiz) < posto_do_papel(papel_subtime)
+
+
+def assert_raiz_nao_menor_que_subtime(
+    *, papel_raiz: object, papel_subtime: object, nome_da_raiz: str | None = None
+) -> None:
+    """Guard da regra. Levanta BusinessRuleError (409) na inversao.
+
+    Quem chama passa apenas os dois papeis JA resolvidos -- esta funcao e pura,
+    como o resto do modulo, e nao sabe quem esta em qual time.
+
+    ⚠️ `papel_raiz` nunca deve chegar `None` aqui: ausencia nao e "menos", e
+    quem chama e que decide isso (pulando a chamada). Deixar o `None` entrar
+    aqui faria a regra depender de uma convencao invisivel.
+    """
+    if not raiz_menor_que_subtime(
+        papel_raiz=papel_raiz, papel_subtime=papel_subtime
+    ):
+        return
+
+    onde = f" ({nome_da_raiz})" if nome_da_raiz else ""
+    raise BusinessRuleError(
+        "O papel no time principal"
+        f"{onde} nao pode ser menor que o papel no subtime.",
+        details={
+            "papel_raiz": str(getattr(papel_raiz, "value", papel_raiz)),
+            "papel_subtime": str(getattr(papel_subtime, "value", papel_subtime)),
+        },
+    )

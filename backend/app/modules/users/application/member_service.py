@@ -23,11 +23,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.logging import get_logger
-from app.core.tenant import Membership, require_tenant
+from app.core.tenant import Membership, TeamNode, require_tenant
 from app.db.models import User, UserTeam
 from app.db.models.enums import UserTeamRole
 from app.modules.auth.domain.team_scope import (
+    assert_raiz_nao_menor_que_subtime,
     assert_role_permitido_no_nivel,
+    is_subteam,
+    root_of,
     visible_team_ids,
 )
 from app.modules.auth.infrastructure.security import (
@@ -199,6 +202,57 @@ class MemberService:
             },
         )
 
+    async def _assert_posto_coerente(
+        self, *, vinculos_depois: list[tuple[uuid.UUID, UserTeamRole]]
+    ) -> None:
+        """Spec 044, fatia 5: o papel na RAIZ nao pode ser menor que no subtime.
+
+        Recebe o estado DEPOIS -- a mesma forma que `_assert_nao_deixa_orfa` ja
+        usa, de proposito: as tres portas que a chamam ja montam essa lista.
+
+        ⚠️ COMPARA DENTRO DA MESMA ARVORE, e nao "a raiz". `root_of` sobe pelos
+        pais e devolve a raiz DAQUELA subarvore -- entao no dia das varias
+        raizes (Spec 046) um OPERATOR no topo do TI nao invalida um SUPERVISOR
+        num subtime do Marketing. A regra ja nasce sobrevivendo a isso.
+
+        ⚠️ AUSENCIA NAO E "MENOS" (decisao da Camila, 31/08). Quem nao tem
+        vinculo na raiz passa: `papel_raiz is None` e um `continue`, e nao um
+        zero -- tratar ausencia como posto 0 barraria todo supervisor de
+        subtime que nunca foi cadastrado na raiz.
+
+        ⚠️ O NIVEL VEM DO BANCO, e nao do `team_tree` do TenantContext. A
+        arvore do contexto e populada por requisicao e chega VAZIA em teste que
+        nao a passa -- e uma regra que vira no-op silencioso em metade dos
+        testes nao e regra. As outras tres portas ja carregam o time do banco
+        pelo mesmo motivo.
+
+        Levanta BusinessRuleError (409), como a invariante de nivel irma.
+        """
+        # Com um vinculo so nao ha dois niveis para comparar -- e este e o
+        # caso do `create_member`, que nasce com exatamente um.
+        if len(vinculos_depois) < 2:
+            return
+
+        times = await self._teams.list_all()
+        arvore = tuple(
+            TeamNode(team_id=t.id, parent_team_id=t.parent_team_id) for t in times
+        )
+        nome_por_time = {t.id: t.name for t in times}
+        papel_por_time = {tid: papel for tid, papel in vinculos_depois}
+
+        for team_id, papel in vinculos_depois:
+            if not is_subteam(team_id, arvore):
+                continue
+            raiz = root_of(team_id, arvore)
+            papel_raiz = papel_por_time.get(raiz)
+            if papel_raiz is None:
+                continue  # ausencia nao e "menos"
+            assert_raiz_nao_menor_que_subtime(
+                papel_raiz=papel_raiz,
+                papel_subtime=papel,
+                nome_da_raiz=nome_por_time.get(raiz),
+            )
+
     async def _remover_relacoes_perdidas(
         self,
         *,
@@ -320,6 +374,18 @@ class MemberService:
         # Spec 024/D3 -- porta 1 de 4 da invariante de papel por nivel.
         assert_role_permitido_no_nivel(
             command.role, is_root=team.parent_team_id is None
+        )
+
+        # Spec 044, fatia 5 -- porta 1 de 4.
+        #
+        # ⚠️ HOJE E ESTRUTURALMENTE UM NO-OP, e esta aqui de proposito: o
+        # usuario e NOVO (e-mail unico por workspace), entao nasce com UM
+        # vinculo so e nao ha dois niveis para comparar -- o guard sai pelo
+        # curto-circuito, sem tocar o banco. Fica pelo mesmo motivo que
+        # `_assert_gestao_ampla` existe: o dia em que alguem fizer este caso de
+        # uso aceitar mais de um vinculo, a regra ja esta na porta.
+        await self._assert_posto_coerente(
+            vinculos_depois=[(command.team_id, command.role)]
         )
 
         # --- cria o usuario com senha provisoria (Entrega 7) ---
@@ -554,6 +620,14 @@ class MemberService:
                 details={"user_id": str(user_id), "team_id": str(team_id)},
             )
 
+        # Spec 044, fatia 5 -- porta 2 de 4. Adicionar e aditivo, entao o
+        # estado DEPOIS e o que ja existe mais este vinculo.
+        vinculos = await self._users.list_team_memberships(user_id=user_id)
+        await self._assert_posto_coerente(
+            vinculos_depois=[(v.team_id, v.role) for v in vinculos]
+            + [(team_id, role)]
+        )
+
         membership = self._users.add_team_membership(
             user_id=user_id, team_id=team_id, role=role
         )
@@ -627,12 +701,16 @@ class MemberService:
         # `move_member_subteam`. Isto NAO torna esta chamada opcional: o dia do
         # quadro interno (fatia 5 da Spec 036) e o dia em que ela passa a doer.
         vinculos = await self._users.list_team_memberships(user_id=user_id)
+        depois = [
+            (v.team_id, new_role if v.team_id == team_id else v.role)
+            for v in vinculos
+        ]
+        # Spec 044, fatia 5 -- porta 3 de 4. Vale nos DOIS sentidos: rebaixar o
+        # papel da raiz pode inverter contra um subtime que nao foi tocado.
+        await self._assert_posto_coerente(vinculos_depois=depois)
         await self._assert_nao_deixa_orfa(
             user_id=user_id,
-            vinculos_depois=[
-                (v.team_id, new_role if v.team_id == team_id else v.role)
-                for v in vinculos
-            ],
+            vinculos_depois=depois,
             acao="change_member_role",
         )
         await self._remover_relacoes_perdidas(
@@ -797,12 +875,15 @@ class MemberService:
         # subtime com um responsavel so (30 delas em duas pessoas) sao
         # exatamente movimentacao de time.
         vinculos = await self._users.list_team_memberships(user_id=user_id)
+        depois = [
+            (v.team_id, v.role) for v in vinculos if v.team_id != from_team_id
+        ] + [(to_team_id, role)]
+        # Spec 044, fatia 5 -- porta 4 de 4. O papel VIAJA junto, entao mover
+        # para um subtime de outra arvore pode inverter contra a raiz de la.
+        await self._assert_posto_coerente(vinculos_depois=depois)
         await self._assert_nao_deixa_orfa(
             user_id=user_id,
-            vinculos_depois=[
-                (v.team_id, v.role) for v in vinculos if v.team_id != from_team_id
-            ]
-            + [(to_team_id, role)],
+            vinculos_depois=depois,
             acao="move_member_subteam",
         )
         await self._remover_relacoes_perdidas(

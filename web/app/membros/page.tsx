@@ -410,6 +410,18 @@ function LinhaMembro({
       setErroLinha(
         a.status === 403
           ? "Sem permissão para esse papel (a matriz do servidor recusou)."
+          : // ⚠️ DOIS 409 DIFERENTES CHEGAM AQUI, e a Spec 044 fatia 5 criou o
+          // segundo. `ConflictError` = já está no time; `BusinessRuleError` da
+          // regra de posto = o papel na raiz é menor que o do subtime. Dizer
+          // "já faz parte desse time" para o segundo manda a pessoa procurar
+          // um vínculo que não existe. O `papel_raiz` no details separa os
+          // dois -- o status sozinho não separa.
+          a.status === 409 && a.details?.papel_raiz
+          ? `No time principal a pessoa é ${String(
+              a.details.papel_raiz
+            ).toLowerCase()}, e isso não pode ser menor que ${String(
+              a.details.papel_subtime
+            ).toLowerCase()} no subtime. Ajuste o papel no time principal primeiro.`
           : a.status === 409
           ? "A pessoa já faz parte desse time."
           : a.status === 422

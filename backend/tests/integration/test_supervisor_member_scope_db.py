@@ -262,8 +262,15 @@ async def test_manager_mantem_alcance_amplo(db) -> None:
     ):
         svc = MemberService(db)
         # subtime onde o MANAGER nao e supervisor de nada: passa.
+        #
+        # ⚠️ O ALVO NAO E MAIS O `op` DO CENARIO, e a troca e da Spec 044 fatia
+        # 5: `op` e OPERATOR na RAIZ, e promove-lo a SUPERVISOR de subtime cria
+        # a inversao que a regra da Camila proibe (papel na raiz menor que no
+        # subtime). O que este teste prova -- que o MANAGER alcanca subtime
+        # onde nao supervisiona -- nao depende do papel do alvo na raiz.
+        novo = await f.make_user(db, workspace_id=c["ws"], email="novo@t.dev")
         ut = await svc.assign_to_team(
-            user_id=c["op"], team_id=c["crm"], role=UserTeamRole.SUPERVISOR
+            user_id=novo, team_id=c["crm"], role=UserTeamRole.SUPERVISOR
         )
         assert ut.role == UserTeamRole.SUPERVISOR
         # e continua desativando conta (D4 nao mexeu com ele).
