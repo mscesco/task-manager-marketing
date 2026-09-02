@@ -140,9 +140,34 @@ export function papeisAtribuiveis(
 }
 
 /**
+ * Times onde a pessoa AINDA NAO esta -- os candidatos de "adicionar".
+ *
+ * ⚠️⚠️ ESTA FUNCAO EXISTE POR CAUSA DO QUE SAIU DELA. Ate a Spec 044 fatia 3
+ * havia um segundo filtro: se a pessoa ja tinha um subtime, nenhum outro era
+ * oferecido, porque o backend devolvia 422 (`_assert_one_subteam`). A trava
+ * saiu, e a redatora que o negocio precisa em SEO E em Midias Sociais so
+ * aparece na tela por causa dessa remocao.
+ *
+ * ⚠️ Ela morava DENTRO de `app/membros/page.tsx`, e `app/` esta fora do
+ * `include` do vitest -- ou seja, a regra de permissao mais delicada da tela
+ * nao tinha guardiao nenhum. Mora aqui para ter um: se alguem reintroduzir o
+ * filtro de um-subtime, o teste cai.
+ *
+ * O unico limite que sobra espelha o `UNIQUE (user_id, team_id)` do banco, e
+ * serve para nao oferecer um destino que daria 409.
+ */
+export function candidatosParaAdicionar(
+  times: Team[],
+  vinculos: { team_id: string }[]
+): Team[] {
+  const jaEsta = new Set(vinculos.map((v) => v.team_id));
+  return times.filter((t) => !jaEsta.has(t.id));
+}
+
+/**
  * Times que a tela deve oferecer no "adicionar a um time".
  *
- * Amplo: os que a tela ja calculou (a regra 1-subtime do chamador vale).
+ * Amplo: os que a tela ja calculou (ver `candidatosParaAdicionar`).
  * Supervisor: SO os proprios subtimes -- nunca a raiz, nunca outro subtime.
  */
 export function timesParaAdicionar(a: Alcance, times: Team[]): Team[] {

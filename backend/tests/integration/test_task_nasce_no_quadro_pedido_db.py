@@ -68,8 +68,9 @@ async def _mundo(db):
 
     ⚠️ O VINCULO E NA RAIZ, e nao no subtime, de proposito. Quem esta na raiz
     alcanca a arvore inteira, entao a mesma pessoa serve de responsavel para
-    tarefa da raiz E de subtime -- e a ADR 0008 (um subtime por usuario) fica
-    fora do caminho deste arquivo, que nao e sobre ela.
+    tarefa da raiz E de subtime -- e a escolha de subtime fica fora do caminho
+    deste arquivo, que nao e sobre ela. (A trava da ADR 0008, citada aqui ate
+    a Spec 044 fatia 3, nao existe mais; a razao acima nunca dependeu dela.)
     """
     ws = await f.make_workspace(db)
     raiz = await f.make_team(db, workspace_id=ws)

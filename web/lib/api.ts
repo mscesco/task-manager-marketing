@@ -1293,6 +1293,14 @@ export async function duplicateTask(
 export async function createTask(input: TaskCreateInput): Promise<Task> {
   // Fatia 5: se o chamador deu um team_id explicito (quadro de subtime),
   // usa ele; senao mantem o pin na raiz (ADR 0001, comportamento atual).
+  //
+  // ⚠️ DESDE A SPEC 044 FATIA 4 ESTE PIN NAO E MAIS A UNICA LINHA DE DEFESA:
+  // o backend passou a derivar o time do QUADRO quando ninguem manda `team_id`
+  // (`TaskService._time_do_quadro_alvo`), e o resultado e o mesmo -- sem
+  // quadro pedido, a raiz. O pin FICA de proposito: tira-lo trocaria uma
+  // chamada de rede a menos por nada, e duas defesas concordando e o desenho
+  // de `_assert_team_in_reach` e `_assert_board_in_reach`, que tambem existem
+  // apesar de a tela nao oferecer o caminho.
   const teamId =
     input.team_id !== undefined && input.team_id !== null
       ? input.team_id
