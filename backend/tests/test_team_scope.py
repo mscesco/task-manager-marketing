@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import uuid
 
+import pytest
+
 from app.core.tenant import Membership, TeamNode
 from app.modules.auth.domain import team_scope
+from app.shared.exceptions.base import BusinessRuleError
 
 # Arvore: Marketing (raiz) -> {Automacao, CRM}.
 MKT = uuid.uuid4()
@@ -71,22 +74,61 @@ def test_editable_igual_visible():
     )
 
 
-# ---- default de time da task ----
-def test_default_subtime_do_usuario():
-    assert team_scope.default_team_id(_m(AUTO, "OPERATOR"), TREE) == AUTO
+# ---- posto de papel (Spec 044, fatia 5) ----
+def test_posto_tem_ordem_explicita():
+    """⚠️⚠️ O TESTE QUE PROTEGE CONTRA A ARMADILHA DO `StrEnum`.
+
+    `UserTeamRole` NAO tem ordem -- os quatro estao declarados em ordem
+    decrescente por coincidencia de leitura. Qualquer comparacao que dependa
+    disso mente sem erro nenhum (mesma classe do `ColumnSemantic`,
+    AGENTS.md §9). Este teste afirma a ordem que a regra usa.
+    """
+    postos = [
+        team_scope.posto_do_papel(p)
+        for p in ("OPERATOR", "SUPERVISOR", "MANAGER", "ADMIN")
+    ]
+    assert postos == sorted(postos)
+    assert len(set(postos)) == 4
 
 
-def test_default_principal_quando_sem_subtime():
-    assert team_scope.default_team_id(_m(MKT, "MANAGER"), TREE) == MKT
+def test_posto_de_papel_desconhecido_falha_fechado():
+    """R5: papel sem posto RECUSA, em vez de responder 0 e passar calado."""
+    with pytest.raises(BusinessRuleError):
+        team_scope.posto_do_papel("DONO_DA_EMPRESA")
 
 
-def test_default_none_sem_time():
-    assert team_scope.default_team_id((), TREE) is None
-
-
-def test_default_prefere_subtime():
-    membros = (
-        Membership(team_id=MKT, role="MANAGER"),
-        Membership(team_id=AUTO, role="OPERATOR"),
+def test_raiz_menor_que_subtime_e_a_inversao():
+    assert team_scope.raiz_menor_que_subtime(
+        papel_raiz="OPERATOR", papel_subtime="SUPERVISOR"
     )
-    assert team_scope.default_team_id(membros, TREE) == AUTO
+    # MANAGER na raiz com SUPERVISOR no subtime: permitido pela Camila,
+    # "mesmo nao fazendo sentido".
+    assert not team_scope.raiz_menor_que_subtime(
+        papel_raiz="MANAGER", papel_subtime="SUPERVISOR"
+    )
+    # Papeis iguais nao sao inversao.
+    assert not team_scope.raiz_menor_que_subtime(
+        papel_raiz="OPERATOR", papel_subtime="OPERATOR"
+    )
+
+
+def test_assert_raiz_nao_menor_levanta_com_os_dois_papeis_no_detalhe():
+    """A mensagem nomeia a REGRA; os papeis vao nos `details`, para a tela."""
+    with pytest.raises(BusinessRuleError) as exc:
+        team_scope.assert_raiz_nao_menor_que_subtime(
+            papel_raiz="OPERATOR", papel_subtime="SUPERVISOR"
+        )
+    assert exc.value.details["papel_raiz"] == "OPERATOR"
+    assert exc.value.details["papel_subtime"] == "SUPERVISOR"
+
+
+# ---- default de time da task ----
+# ⚠️ OS QUATRO TESTES DE `default_team_id` SAIRAM na Spec 044, fatia 4, junto
+# com a funcao. Eles afirmavam "o time da tarefa nova e o subtime de quem
+# cria" -- regra que a fatia 4 substituiu por "o time do quadro". Mante-los
+# exigiria manter a funcao viva sem chamador, guardando uma regra que o
+# produto nao segue mais.
+#
+# O que os substitui vive em `tests/integration/test_task_time_vem_do_quadro_db.py`,
+# e nao aqui: a regra nova precisa do QUADRO, e quadro nao cabe numa funcao
+# pura sem banco.

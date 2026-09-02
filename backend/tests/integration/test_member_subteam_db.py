@@ -87,11 +87,17 @@ async def test_dois_subtimes_vem_juntos_e_o_membro_nao_duplica(db) -> None:
     O caso e a redatora que o negocio precisa em SEO E em Midias Sociais --
     o caso concreto que abriu a ADR 0039 em 10/08 e que segue bloqueado.
 
-    ⚠️ OS VINCULOS SAO ESCRITOS PELA FACTORY, DE PROPOSITO. `MemberService`
-    ainda tem `_assert_one_subteam` (sai na fatia 3) e recusaria o segundo com
-    422. Este teste precisa existir ANTES daquela remocao, senao a fatia 3
-    entra sem rede -- e o grep de 31/08 confirma que nenhum teste afirma o 422
-    da trava, entao remove-la nao acende nada sozinha.
+    ⚠️ OS VINCULOS SAO ESCRITOS PELA FACTORY, DE PROPOSITO -- e assim ficam.
+    Quando este teste nasceu, `MemberService._assert_one_subteam` recusaria o
+    segundo vinculo com 422, entao a factory era a UNICA porta. A trava saiu
+    na fatia 3 e a porta do servico abriu; a versao pelo servico mora em
+    `test_member_assign_db.py`. Este arquivo continua entrando pela factory
+    porque o assunto dele e a CONSULTA, e nao o caminho de escrita.
+
+    ⚠️ E a fatia 3 desmentiu a premissa desta nota: a spec dizia que nenhum
+    teste afirmava o 422 da trava. Afirmava -- em `test_member_assign_db.py`,
+    por comportamento. O grep de 31/08 procurou a prosa "um subtime por
+    usuario" e nao achou a assercao.
 
     O que ele prende, e que a versao antiga da consulta REPROVARIA:
       1. os dois subtimes vem, nao um deles;

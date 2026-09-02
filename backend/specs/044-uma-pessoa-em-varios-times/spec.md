@@ -1,6 +1,6 @@
 # Spec 044 — Uma pessoa em vários times
 
-**Status:** escrita em 31/08/2026, **§4 revisada no mesmo dia** — decisões tomadas, fatia 1 liberada para escrever
+**Status:** ✅ **CONCLUÍDA em 02/09/2026.** Todas as fatias entregues. Escrita em 31/08, §4 revisada no mesmo dia; as fatias 3, 4 e 5 saíram em 02/09 e cada uma registra, na própria entrada da §5, o que desmentiu esta spec.
 **Escopo:** backend (trava, listagem, herança de time) **e** frontend (tela de membros e os cinco consumidores da lista)
 **Depende de:** ADR 0008 (a trava), ADR 0039 (a análise e a condição de saída), Spec 036 fatia 5 (quadro por time — **já entregue**, PR #14 / `e181c1d`)
 **Placar na abertura, medido em 31/08:** Backend **1012**, Front **1079**, migrations `0021`
@@ -309,33 +309,110 @@ sorteio; só o primeiro subtime conta → a tarefa da redatora some da lente.
 
 **Placar:** Backend **1014** (era 1012), Front **1082** (era 1078).
 
-**Fatia 3 — a trava sai (backend).**
-Remove `_assert_one_subteam` e as três chamadas. **Escreve o teste que nunca
-existiu**: pôr alguém em dois subtimes agora funciona, e a lente devolve os
-dois — e um teste que fixa o escopo do supervisor com papéis divergentes
-(SUPERVISOR em SEO + OPERATOR em Mídias → administra só SEO). Esse
-comportamento já é o de hoje (§4.1); o teste existe para que continue sendo.
+**Fatia 3 — a trava sai. ✅ ENTREGUE (02/09).**
+Remove `_assert_one_subteam` e as três chamadas. Testes novos: pôr alguém em
+dois subtimes **pelo serviço** (a fatia 1 só conseguia pela factory), a lente
+devolve os dois, o vínculo repetido no mesmo time segue 409, e o escopo do
+supervisor com papéis divergentes (SUPERVISOR em SEO + OPERATOR em CRM →
+administra só SEO) — caso que era **impossível de cadastrar** até esta fatia.
 
-**Fatia 4 — o time vem do quadro (backend).**
-Aplica a §4.2: o pin que hoje mora no `createTask` do front passa a valer no
-serviço, para todo cliente. Move a resolução de time para **depois** da resolução
-de quadro — hoje ela vem antes (`:488` vs `:609`), e é essa ordem que impede o
-quadro de ser a fonte. `default_team_id` sai do caminho de criação.
+⚠️⚠️ **A §3.1 DESTA SPEC ESTAVA ERRADA: o 422 TINHA teste.** Era
+`test_adicionar_segundo_subtime_422` (`test_member_assign_db.py`), com
+`pytest.raises(ValidationError)`. O grep de 31/08 procurou a **frase** *"um
+subtime por usuario"* dentro de `tests/` e não achou a **asserção** — o
+arquivo nunca escreveu aquela prosa. Remover a trava acendeu vermelho na hora,
+ao contrário do que a spec previa. A lição é sobre o grep: procurar por prosa
+não encontra comportamento.
 
-⚠️ O teste que falta é o do **cliente que não é a tela**: `POST /tasks` sem
-`team_id`, feito por quem tem subtime, tem de nascer na **raiz** — não no
-subtime de quem chamou. Nenhum teste afirma isso hoje, porque a tela nunca
-produziu esse corpo.
+⚠️ **E O FRONT VEIO JUNTO, pelo mesmo motivo das fatias 1+2.** `app/membros/
+page.tsx` filtrava o segundo subtime para não oferecer um destino que daria 422
+— com a trava fora e o filtro de pé, **a redatora continuaria bloqueada na
+tela**, e a fatia entregaria nada visível. A regra saiu de `app/` e virou
+`candidatosParaAdicionar` em `lib/permissoesMembros.ts`: `app/` está fora do
+`include` do vitest, então ali a ausência da trava **não teria guardião** — e
+ela é permissão, não desenho (§2.2).
 
-**Fatia 5 — o papel na raiz não pode ser menor (backend).**
+**Sabotagem rodada:** com `_assert_one_subteam` restaurada, os dois testes
+novos falham (`2 failed, 17 passed`).
+
+**Placar:** Backend **1016** (era 1014), Front **1085** (era 1082).
+
+**Fatia 4 — o time vem do quadro. ✅ ENTREGUE (02/09).**
+Aplica a §4.2: o pin que morava no `createTask` do front passa a valer no
+serviço, para todo cliente. `default_team_id` **saiu do caminho de criação — e
+saiu do código**, junto com os quatro testes dela: sem chamador, ela guardaria
+uma regra que o produto não segue mais.
+
+⚠️ **NÃO foi feito movendo a resolução de time para depois da do quadro**, como
+esta spec previa. Aquele caminho arrastaria junto a checagem de subárvore do
+projeto e a construção do `Task`, que leem `team_id` no meio. O que mudou foi só
+o **terceiro item da precedência**: `TaskService._time_do_quadro_alvo` responde
+"de quem é o quadro que vai receber esta tarefa?" — o dono do quadro pedido, ou
+a raiz quando não há quadro pedido, que é onde
+`default_board_and_column_for_status` põe a tarefa de qualquer jeito (ADR 0032).
+Mesma tabela da §4.2, um décimo do risco.
+
+A precedência continua **explícito > pai > quadro**: as 216 tarefas internas de
+subtime e a herança da ADR 0024 têm teste próprio nesta fatia.
+
+Testes novos em `test_task_time_vem_do_quadro_db.py`, entre eles o que faltava —
+o **cliente que não é a tela**: `POST /tasks` sem `team_id`, por quem só tem
+subtime, nasce na **raiz**. Antes devolvia `subteams[0]`, ou seja, SEO ou Mídias
+conforme a ordem dos vínculos.
+
+**Fatia 5 — o papel na raiz não pode ser menor. ✅ ENTREGUE (02/09).**
 Aplica a §4.1-bis. ✅ **Varredura rodada em 31/08 no Adminer: nenhum registro.**
-Não há cadastro em estado inválido; a regra liga limpa. Fatia independente das
-quatro acima — pode ir antes, depois ou nunca, sem quebrar as outras.
+A regra ligou sem remediação de cadastro.
 
-**Fatia 5 — a tela de membros mostra o plural.**
-Hoje a linha mostra *um* subtime. Passa a mostrar os vínculos, e o painel de
-vínculos (que já existe e já é plural — `membros/page.tsx:648`) deixa de ser o
-único lugar onde a verdade aparece.
+O **mapa de posto** nasceu aqui, explícito, e é o que a §4.1-bis avisava que
+faltava: `team_scope._POSTO` mais `posto_do_papel`, `raiz_menor_que_subtime` e
+`assert_raiz_nao_menor_que_subtime`. Papel sem posto **recusa** em vez de
+responder 0 — mesma falha fechada da R5 da Spec 024.
+
+⚠️ **A regra vale nos DOIS sentidos, e o segundo é o que importa na prática.**
+Barrar só "promover no subtime" deixaria a inversão entrar por **rebaixar a
+raiz** de quem já supervisiona — que é o caminho provável, e é o formato exato
+do defeito que a ADR 0031 corrigiu. As duas portas têm teste.
+
+⚠️ **A comparação é dentro da MESMA árvore**, via `root_of`, e não contra "a
+raiz". Com as N raízes da Spec 046, um OPERATOR no topo do TI não invalida um
+SUPERVISOR num subtime do Marketing. Já nasce sobrevivendo a isso.
+
+⚠️ **O nível vem do banco, não do `team_tree` do `TenantContext`.** A árvore do
+contexto chega **vazia** em teste que não a passa — e regra que vira no-op
+silencioso em metade dos testes não é regra.
+
+A porta 1 (`create_member`) recebeu a chamada e é **estruturalmente um no-op**:
+o usuário é novo, nasce com um vínculo só e o guard sai pelo curto-circuito sem
+tocar o banco. Fica pelo mesmo motivo que `_assert_gestao_ampla` existe.
+
+### ⚠️ BARRAR foi escolha, e a Camila a confirmou em 02/09
+
+A regra de 31/08 descreve um **estado proibido** — ela não diz o que o sistema
+faz quando alguém tenta chegar lá. Havia duas leituras:
+
+- **barrar** — a operação é recusada e quem promove faz dois passos (mudar o
+  papel na raiz **e** dar o supervisor no subtime);
+- **arrastar junto** — promover no subtime **sobe** o papel na raiz na mesma
+  operação: um passo só, nenhum 409, mas um clique mexendo em dois vínculos, e
+  "subir papel sozinho" é a classe de coisa que ninguém percebe até auditar.
+
+**Decisão: barrar** — porque a **Spec 045** resolve o atrito por construção. Lá
+a Camila decidiu que `SUPERVISOR` não existe na raiz; quando isso entrar,
+supervisor de subtime simplesmente não tem papel no time geral e a escolha
+acima deixa de importar.
+
+⚠️ **Consequência enquanto a 045 não entra:** promover um operador do time geral
+a supervisor de subtime devolve 409, e o caminho é tirar o vínculo dele da raiz
+(ou subir o papel lá). Não recrie "arrastar junto" sem reabrir esta decisão.
+
+**~~Fatia 6 — a tela de membros mostra o plural.~~ ✅ JÁ FEITA nas fatias 1+2.**
+
+⚠️ **Esta fatia estava numerada como "5", duplicando a de cima** — erro de
+numeração encontrado em 02/09. E ela já não tinha conteúdo: as fatias 1+2
+portaram o front inteiro para `team_ids`, e a linha da tela já mostra os
+vínculos por `nomeSubtimes(m.team_ids)`. Fica riscada, e não removida, para
+quem procurar a "fatia 5 da tela" saber que ela não sumiu — ela foi absorvida.
 
 ---
 

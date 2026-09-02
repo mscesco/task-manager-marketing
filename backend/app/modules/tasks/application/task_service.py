@@ -57,6 +57,7 @@ from app.modules.tasks.infrastructure.board_repository import BoardRepository
 from app.modules.tasks.infrastructure.comment_repository import CommentRepository
 from app.modules.tasks.infrastructure.project_repository import ProjectRepository
 from app.modules.tasks.infrastructure.task_repository import TaskRepository
+from app.modules.workspaces.infrastructure.team_repository import TeamRepository
 from app.shared.exceptions.base import (
     BusinessRuleError,
     ValidationError,
@@ -325,6 +326,41 @@ class TaskService:
     # ----------------------------------------------------
     # CRUD (publico)
     # ----------------------------------------------------
+    async def _time_do_quadro_alvo(
+        self, board_id: uuid.UUID | None
+    ) -> uuid.UUID | None:
+        """O time que a tarefa herda quando NINGUEM informou um.
+
+        Spec 044, fatia 4. A fonte e o QUADRO, e nao o vinculo de quem cria:
+
+            quadro pedido      -> o time DELE (`dono_do_quadro`)
+            nenhum quadro      -> a RAIZ
+
+        ⚠️ A segunda linha nao e escolha arbitraria: sem `board_id`, o quadro
+        sai de `default_board_and_column_for_status`, que filtra
+        `parent_team_id IS NULL` no SQL (ADR 0032). Dizer "a raiz" aqui e
+        dizer a mesma coisa que aquela consulta ja decide -- se as duas
+        discordarem, a tarefa nasce num quadro pertencendo a outro time, que e
+        exatamente a linha que `_assert_time_do_quadro` existe para matar.
+
+        ⚠️ SO E CHAMADA quando nao ha `team_id` explicito NEM pai -- o `or`
+        curto-circuita antes. Por isso o `board_id` daqui e mesmo o quadro que
+        vai ser usado: o ramo do pai, que ignora `command.board_id`, nunca
+        chega aqui.
+
+        ⚠️ O alcance e conferido ANTES de ler o dono. Sem isso, um `board_id`
+        fora da lente viraria o time da tarefa e a recusa chegaria mais tarde,
+        pela trava errada e com a mensagem errada.
+
+        Devolve `None` quando o quadro nao existe ou o workspace nao tem raiz
+        -- quem chama transforma em 422.
+        """
+        if board_id is not None:
+            await self._assert_board_in_reach(board_id)
+            dono = await BoardRepository(self._session).dono_do_quadro(board_id)
+            return dono[0] if dono is not None else None
+        return await TeamRepository(self._session).root_id()
+
     async def _assert_time_do_quadro(
         self, *, board_id: uuid.UUID, team_id: uuid.UUID
     ) -> None:
@@ -485,21 +521,29 @@ class TaskService:
         # Resolve o time da task, em ordem de precedencia:
         #   1. team_id explicito (quem manda, manda);
         #   2. team_id do pai (heranca de subtarefa -- Entrega 10);
-        #   3. subtime default do criador (avulsa -- Entrega 3, regra 5-7).
+        #   3. o time do QUADRO onde ela vai nascer (Spec 044, fatia 4).
         # Sem nada resolvido -> 422.
+        #
+        # ⚠️⚠️ O TERCEIRO ERA `default_team_id`, O SUBTIME DE QUEM CRIA. A regra
+        # "o time vem do quadro" ja existia -- mas morava no FRONT, no pin do
+        # `createTask` (`web/lib/api.ts`). Pela tela funcionava; para n8n,
+        # Swagger e chamada direta a tarefa nascia no subtime de quem chamou.
+        # Mesmo formato exato da ADR 0031 (`assignee_ids`), corrigido do mesmo
+        # jeito: a regra desce para o servico e passa a valer para todo cliente.
         team_id = (
             command.team_id
             or (parent.team_id if parent is not None else None)
-            # ⚠️ NAO LEVA `org_role` (Spec 045, fatia B): esta funcao nao e
-            # lente. Ela responde "de qual time nasce a tarefa", e papel de
-            # organizacao nao tem time -- passar o parametro aqui seria dizer
-            # que um admin "nasce" em algum lugar, e ele nao nasce em nenhum.
-            or team_scope.default_team_id(tenant.memberships, tenant.team_tree)
+            # ⚠️ NAO LEVA `org_role`, e a razao vale para as duas versoes
+            # desta linha: resolver o time de uma tarefa nova NAO e lente. A
+            # pergunta e "de quem e o quadro que vai receber isto"; papel de
+            # organizacao nao tem time, entao passa-lo aqui seria dizer que um
+            # admin "nasce" em algum lugar -- e ele nao nasce em nenhum.
+            or await self._time_do_quadro_alvo(command.board_id)
         )
         if team_id is None:
             raise ValidationError(
-                "Task precisa de um time (voce nao esta em nenhum subtime; "
-                "informe team_id).",
+                "Task precisa de um time: informe `team_id` ou um `board_id` "
+                "que exista.",
                 details={"field": "team_id"},
             )
 

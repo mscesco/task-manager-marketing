@@ -5,8 +5,11 @@ vínculos (time, papel) do usuário e a árvore de times do workspace,
 calcula:
     - visible_team_ids  -- times cujas tasks o usuário enxerga
     - editable_team_ids -- times cujas tasks o usuário edita (Fase B)
-    - default_team_id   -- time herdado por uma task nova
     - is_admin
+
+⚠️ `default_team_id` ("time herdado por uma task nova") saiu na Spec 044,
+fatia 4 -- o time da tarefa passou a vir do QUADRO. O motivo está escrito no
+lugar onde ela morava, mais abaixo.
 
 Convenção: um set vazio = "nenhum time"; ``None`` = "todos" (admin).
 
@@ -134,20 +137,22 @@ def editable_team_ids(
     return visible_team_ids(memberships, tree, org_role=org_role)
 
 
-def default_team_id(
-    memberships: tuple[Membership, ...], tree: tuple[TeamNode, ...]
-) -> uuid.UUID | None:
-    """Time herdado por uma task nova.
-
-    Subtime do usuário (regra 1-subtime: no máx um). Se não tem subtime,
-    o time principal em que está. Se não está em time, ``None``.
-    """
-    subteams = [m.team_id for m in memberships if is_subteam(m.team_id, tree)]
-    if subteams:
-        return subteams[0]
-    if memberships:
-        return memberships[0].team_id
-    return None
+# ---------------------------------------------------------------------
+# ⚠️ `default_team_id` MORAVA AQUI e foi REMOVIDA na Spec 044, fatia 4.
+#
+# Ela devolvia "o subtime de quem cria" e era o terceiro item da precedência
+# de time no `TaskService.create`. Duas coisas a mataram, nesta ordem:
+#
+#   fatia 3 -- caiu a trava de UM subtime por pessoa, e `subteams[0]` deixou
+#              de ter resposta única: com dois subtimes, o escolhido dependia
+#              da ordem dos vínculos.
+#   fatia 4 -- o time da tarefa passou a vir do QUADRO
+#              (`TaskService._time_do_quadro_alvo`), que é onde a regra já
+#              morava no front. A função ficou sem chamador.
+#
+# ⚠️ Não recrie. "Qual o time desta pessoa?" não tem resposta única desde a
+# fatia 3, e a pergunta certa na criação é "de quem é o quadro?".
+# ---------------------------------------------------------------------
 
 
 # ---------------------------------------------------------------------
@@ -230,4 +235,88 @@ def assert_role_permitido_no_nivel(role: object, *, is_root: bool) -> None:
     raise BusinessRuleError(
         motivo,
         details={"role": str(valor), "nivel": "raiz" if is_root else "subtime"},
+    )
+
+
+# ---------------------------------------------------------------------
+# Spec 044, fatia 5 (§4.1-bis) -- o papel na RAIZ nao pode ser MENOR que o
+# papel num subtime dela. Regra da Camila, 31/08:
+#
+#     "Ele nao pode ter menos permissao no raiz do que tem no subtime."
+#
+#     OPERATOR@raiz  + SUPERVISOR@sub -> ❌ e a inversao que esta regra mata
+#     MANAGER@raiz   + SUPERVISOR@sub -> ✅ ("mesmo nao fazendo sentido")
+#     SUPERVISOR@raiz+ OPERATOR@sub   -> ✅
+#     NENHUM@raiz    + SUPERVISOR@sub -> ✅ ausencia NAO e "menos" (decisao dela)
+#
+# ⚠️ SEJA HONESTO SOBRE O QUE ELA FAZ: nao tapa furo de seguranca -- os gates
+# de escopo (`_assert_escopo_supervisor`) ja seguram o caso. Ela impede
+# ORGANOGRAMA INCOERENTE: quem supervisiona um subtime constando como mero
+# operador do time acima.
+#
+# ⚠️ ORTOGONAL a invariante de nivel acima. Aquela restringe o CONJUNTO de
+# papeis por nivel; esta compara DOIS niveis entre si.
+# ---------------------------------------------------------------------
+
+#: Posto de cada papel. ⚠️⚠️ EXPLICITO DE PROPOSITO: `UserTeamRole` e
+#: `StrEnum` e **nao tem ordem**. Os quatro estao declarados em ordem
+#: decrescente no enum por coincidencia de leitura, e depender disso seria a
+#: mesma armadilha do `ColumnSemantic` (AGENTS.md §9) -- a string compara igual
+#: e a comparacao mente sem erro nenhum.
+_POSTO: dict[str, int] = {
+    "OPERATOR": 1,
+    "SUPERVISOR": 2,
+    "MANAGER": 3,
+    "ADMIN": 4,
+}
+
+
+def posto_do_papel(role: object) -> int:
+    """Posto numerico do papel, para comparar niveis.
+
+    Aceita `UserTeamRole` ou string. Papel DESCONHECIDO levanta -- falha
+    fechada, mesmo desenho da R5 em `role_permitido_no_nivel`: se um papel novo
+    entrar no enum, a comparacao recusa ate alguem lhe dar posto aqui, em vez
+    de responder 0 e deixar passar calado.
+    """
+    valor = getattr(role, "value", role)
+    posto = _POSTO.get(str(valor))
+    if posto is None:
+        raise BusinessRuleError(
+            "Papel desconhecido: nao e possivel comparar o posto dele.",
+            details={"role": str(valor)},
+        )
+    return posto
+
+
+def raiz_menor_que_subtime(*, papel_raiz: object, papel_subtime: object) -> bool:
+    """True quando o papel na raiz e MENOR que o do subtime (a inversao)."""
+    return posto_do_papel(papel_raiz) < posto_do_papel(papel_subtime)
+
+
+def assert_raiz_nao_menor_que_subtime(
+    *, papel_raiz: object, papel_subtime: object, nome_da_raiz: str | None = None
+) -> None:
+    """Guard da regra. Levanta BusinessRuleError (409) na inversao.
+
+    Quem chama passa apenas os dois papeis JA resolvidos -- esta funcao e pura,
+    como o resto do modulo, e nao sabe quem esta em qual time.
+
+    ⚠️ `papel_raiz` nunca deve chegar `None` aqui: ausencia nao e "menos", e
+    quem chama e que decide isso (pulando a chamada). Deixar o `None` entrar
+    aqui faria a regra depender de uma convencao invisivel.
+    """
+    if not raiz_menor_que_subtime(
+        papel_raiz=papel_raiz, papel_subtime=papel_subtime
+    ):
+        return
+
+    onde = f" ({nome_da_raiz})" if nome_da_raiz else ""
+    raise BusinessRuleError(
+        "O papel no time principal"
+        f"{onde} nao pode ser menor que o papel no subtime.",
+        details={
+            "papel_raiz": str(getattr(papel_raiz, "value", papel_raiz)),
+            "papel_subtime": str(getattr(papel_subtime, "value", papel_subtime)),
+        },
     )

@@ -13,6 +13,7 @@ import {
   podeRemoverDoTime,
   papeisAtribuiveis,
   timesParaAdicionar as timesPermitidos,
+  candidatosParaAdicionar,
   type Alcance,
 } from "@/lib/permissoesMembros";
 import AppShell from "@/components/AppShell";
@@ -168,7 +169,7 @@ function Membros() {
         a.status === 409
           ? "Já existe um membro com esse e-mail."
           : a.status === 422
-          ? "Dados inválidos (e-mail, ou a pessoa já está em outro subtime)."
+          ? "Dados inválidos — confira o e-mail."
           : a.status === 403
           ? "Sem permissão: criar membro ADMIN exige que você seja ADMIN."
           : a.message || "Não consegui cadastrar."
@@ -381,17 +382,13 @@ function LinhaMembro({
     return times.filter((t) => t.id !== exceto && !jaEsta.has(t.id));
   }
 
-  // Times para ADICIONAR (Spec 016): onde a pessoa ainda nao esta. Se ela ja
-  // tem um subtime, nao oferece outro (regra 1-subtime -> seria 422); a raiz
-  // continua valida.
+  // Times para ADICIONAR (Spec 016): onde a pessoa ainda nao esta.
+  //
+  // ⚠️ A regra mora em `lib/permissoesMembros.ts` de proposito -- ela e
+  // permissao, nao desenho, e `app/` nao tem guardiao. A nota sobre a trava
+  // de um-subtime que saiu na Spec 044 fatia 3 esta la.
   function timesParaAdicionar(): Team[] {
-    const jaEsta = new Set((vinculos ?? []).map((x) => x.team_id));
-    const temSubtime = (vinculos ?? []).some((x) => ehSubtime(x.team_id));
-    const candidatos = times.filter((t) => {
-      if (jaEsta.has(t.id)) return false;
-      if (temSubtime && t.parent_team_id !== null) return false;
-      return true;
-    });
+    const candidatos = candidatosParaAdicionar(times, vinculos ?? []);
     // Spec 028: o supervisor so enxerga aqui os subtimes onde ele e
     // supervisor -- nunca a raiz, nunca subtime alheio.
     return timesPermitidos(alcance, candidatos);
@@ -413,10 +410,22 @@ function LinhaMembro({
       setErroLinha(
         a.status === 403
           ? "Sem permissão para esse papel (a matriz do servidor recusou)."
+          : // ⚠️ DOIS 409 DIFERENTES CHEGAM AQUI, e a Spec 044 fatia 5 criou o
+          // segundo. `ConflictError` = já está no time; `BusinessRuleError` da
+          // regra de posto = o papel na raiz é menor que o do subtime. Dizer
+          // "já faz parte desse time" para o segundo manda a pessoa procurar
+          // um vínculo que não existe. O `papel_raiz` no details separa os
+          // dois -- o status sozinho não separa.
+          a.status === 409 && a.details?.papel_raiz
+          ? `No time principal a pessoa é ${String(
+              a.details.papel_raiz
+            ).toLowerCase()}, e isso não pode ser menor que ${String(
+              a.details.papel_subtime
+            ).toLowerCase()} no subtime. Ajuste o papel no time principal primeiro.`
           : a.status === 409
           ? "A pessoa já faz parte desse time."
           : a.status === 422
-          ? "Inválido: a pessoa já está em outro subtime (regra: 1 subtime)."
+          ? "Dados inválidos para esse vínculo."
           : a.message || "Não consegui adicionar."
       );
     } finally {
@@ -507,8 +516,9 @@ function LinhaMembro({
     } catch (e) {
       const a = e as ApiError;
       // Spec 037, E8: o 422 COM lista vira o aviso estruturado. O 422 sem
-      // lista (ex.: a regra de 1 subtime da ADR 0008) continua sendo texto --
-      // quem separa os dois e `bloqueioDeAlcance`, nao o status.
+      // lista continua sendo texto -- quem separa os dois e
+      // `bloqueioDeAlcance`, nao o status. (O exemplo canonico do segundo
+      // caso era a regra de 1 subtime da ADR 0008, que saiu na Spec 044.)
       const bloqueio = bloqueioDeAlcance(a);
       setErroLinha(
         bloqueio ??
