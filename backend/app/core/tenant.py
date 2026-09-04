@@ -36,7 +36,7 @@ import uuid
 from contextlib import contextmanager
 from contextvars import ContextVar, Token
 from dataclasses import dataclass, field
-from typing import Iterator
+from typing import Any, Iterator
 
 from app.shared.exceptions.base import MissingTenantContextError
 
@@ -83,7 +83,14 @@ class TenantContext:
     workspace_id: uuid.UUID
     user_id: uuid.UUID
     roles: frozenset[str] = field(default_factory=frozenset)
-    permissions: frozenset[str] = field(default_factory=frozenset)
+    #: ⚠️ DOIS FORMATOS ACEITOS, e o `str` no tipo e o legado (Spec 045,
+    #: fatia C). Todo caminho de requisicao real monta `PermissoesDoAtor`, que
+    #: carrega o TIME de cada permissao; um `frozenset` plano ainda entra por
+    #: `tenant_scope` em job de fundo e em teste antigo. As duas formas
+    #: respondem `in` com a mesma semantica ("em algum lugar"), entao
+    #: `has_permission` funciona para as duas -- so `has_permission_in` sabe a
+    #: diferenca.
+    permissions: frozenset[str] | Any = field(default_factory=frozenset)
     memberships: tuple[Membership, ...] = ()
     team_tree: tuple[TeamNode, ...] = ()
     #: Papel na ORGANIZACAO -- sem time (Spec 045, fatia B). `None` = nenhum.
@@ -100,6 +107,28 @@ class TenantContext:
         pessoa no instante em que o vinculo dele saisse de `user_team`.
         """
         return role in self.roles or role == self.org_role
+
+    def has_permission_in(
+        self, permission: str, team_id: uuid.UUID | None
+    ) -> bool:
+        """Tem esta permissao NAQUELE time? (Spec 045, fatia C)
+
+        ⚠️ A PERGUNTA DO SERVICO, e nao a do portao de rota. `has_permission`
+        responde "em algum lugar" -- e o suficiente para a rota, que ainda nao
+        conhece o alvo. Quem ja tem o `team_id` em maos deve perguntar aqui:
+        com N raizes (Spec 046), "tem `team.manage`" e "tem `team.manage`
+        NAQUELA arvore" deixam de ser a mesma coisa.
+
+        ⚠️ CAI PARA A PERGUNTA AMPLA quando o contexto foi montado SEM escopo
+        -- job de fundo que entra por `tenant_scope` sem permissoes, e testes
+        antigos que passam um `frozenset`. E fail-OPEN, e esta escrito aqui de
+        proposito: enquanto houver uma raiz so, as duas respostas coincidem em
+        todo caso real. A fatia D estreita isto quando o cadastro permitir.
+        """
+        pode_em = getattr(self.permissions, "pode_em", None)
+        if pode_em is None:
+            return self.has_permission(permission)
+        return bool(pode_em(permission, team_id))
 
     def has_permission(self, permission: str) -> bool:
         """True se o usuario tem a permissao informada.
@@ -162,7 +191,7 @@ def tenant_scope(
     user_id: uuid.UUID,
     *,
     roles: frozenset[str] | None = None,
-    permissions: frozenset[str] | None = None,
+    permissions: frozenset[str] | Any | None = None,
     memberships: tuple[Membership, ...] = (),
     team_tree: tuple[TeamNode, ...] = (),
 ) -> Iterator[TenantContext]:

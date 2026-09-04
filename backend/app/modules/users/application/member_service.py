@@ -997,11 +997,17 @@ class MemberService:
     # Por isso os dois gates abaixo. Eles NAO substituem a matriz C2:
     # rodam junto com ela.
 
-    def _tem_gestao_ampla(self) -> bool:
+    def _tem_gestao_ampla(self, team_id: uuid.UUID | None = None) -> bool:
         """True para quem tem `team.manage` -- hoje ADMIN e MANAGER.
 
         Checa PERMISSAO, nao papel: se um papel novo ganhar `team.manage`
         no mapa, este gate acompanha sozinho.
+
+        ⭐ Spec 045, fatia C: quando o `team_id` do alvo e conhecido, a pergunta
+        passa a ser "tem `team.manage` NAQUELE time?". Com uma raiz so as duas
+        respostas coincidem; com N raizes (Spec 046) elas divergem, e a
+        diferenca e um MANAGER de Marketing administrando gente do TI.
+        ⚠️ `team_id=None` mantem a pergunta ampla -- ha chamador sem alvo.
 
         ⚠️ NAO E GAMBIARRA, e ate a Spec 045 (fatia A) parecia ser. Ate la o
         mapa dizia que ADMIN e MANAGER **nao** tinham `member.manage.subteam`,
@@ -1012,7 +1018,7 @@ class MemberService:
         vem da ARVORE (`visible/editable_team_ids`) e nao dos subtimes que
         supervisionam. O mapa diz "o que"; isto participa do "onde".
         """
-        return require_tenant().has_permission("team.manage")
+        return require_tenant().has_permission_in("team.manage", team_id)
 
     def _subtimes_supervisionados(self) -> frozenset[uuid.UUID]:
         """team_ids onde o ator e SUPERVISOR.
@@ -1043,7 +1049,7 @@ class MemberService:
 
         Levanta AuthorizationError (403) na violacao.
         """
-        if self._tem_gestao_ampla():
+        if self._tem_gestao_ampla(team_id):
             return
 
         # Daqui pra baixo o ator so pode ter chegado por

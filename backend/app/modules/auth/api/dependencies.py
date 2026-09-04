@@ -35,10 +35,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from app.core.deps import SessionDep
 from app.core.tenant import Membership, TeamNode, TenantContext, set_tenant
 from app.db.models import User
-from app.modules.auth.domain.permissions import (
-    permissions_for_org_role,
-    permissions_for_roles,
-)
+from app.modules.auth.domain.permissions import permissoes_do_ator
 from app.modules.auth.infrastructure.security import (
     TokenType,
     decode_token,
@@ -113,9 +110,13 @@ async def get_tenant_context(
     # A uniao e o que a pessoa pode. Sem a segunda parcela, um ADMIN de
     # organizacao sem vinculo de time nenhum entraria no sistema com PERMISSAO
     # VAZIA -- e e exatamente esse o estado que esta fatia torna normal.
-    permissions = permissions_for_roles(membership.roles) | permissions_for_org_role(
-        membership.org_role
-    )
+    # ⭐ Spec 045, fatia C: a permissao passa a CARREGAR O TIME. O objeto
+    # responde `pode` ("em algum lugar", para o portao de rota) e `pode_em`
+    # ("naquele time", para o servico). O `in` continua funcionando com a
+    # semantica ampla, entao `has_permission` e `/auth/me` nao mudam.
+    #
+    # ⚠️ Montado DEPOIS de `memberships` e `team_tree`, porque precisa dos dois:
+    # o vinculo diz o time, a arvore diz a subarvore de um papel de comando.
 
     # Entrega 3: pares (time, papel) + arvore de times, para o escopo
     # por time. roles/permissions seguem como camada de "quais acoes".
@@ -126,6 +127,9 @@ async def get_tenant_context(
     tree_rows = await membership_repo.load_team_tree(workspace_id=workspace_id)
     team_tree = tuple(
         TeamNode(team_id=tid, parent_team_id=pid) for tid, pid in tree_rows
+    )
+    permissions = permissoes_do_ator(
+        memberships=memberships, tree=team_tree, org_role=membership.org_role
     )
 
     context = TenantContext(
