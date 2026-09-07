@@ -219,7 +219,7 @@ def permissions_for_roles(roles: frozenset[str]) -> frozenset[str]:
     ⚠️ ESTA FUNCAO NAO SABE DE QUE TIME VEIO CADA PAPEL, e continua assim de
     proposito: ela responde "que TIPO de acao" e e usada pelos portoes de ROTA,
     que ainda nao conhecem o alvo. Quem responde "ONDE" e
-    `permissoes_do_ator` (Spec 045, fatia C), logo abaixo.
+    `permissions_for_actor` (Spec 045, fatia C), logo abaixo.
     """
     result: set[str] = set()
     for role_str in roles:
@@ -260,31 +260,31 @@ def permissions_for_roles(roles: frozenset[str]) -> frozenset[str]:
 #: ⚠️ E NAO VALE PARA COMANDO. Para ADMIN/MANAGER estas duas alcancam a arvore
 #: inteira -- decisao da Camila na fatia A ("administram absolutamente tudo do
 #: time e sua arvore inteira").
-_SO_NO_PROPRIO_TIME: frozenset[str] = frozenset(
+_OWN_TEAM_ONLY: frozenset[str] = frozenset(
     {"member.manage.subteam", "board.manage.subteam"}
 )
 
 #: Papeis cuja autoridade desce a arvore.
-_PAPEIS_DE_COMANDO: frozenset[str] = frozenset({"ADMIN", "MANAGER"})
+_COMMAND_ROLES: frozenset[str] = frozenset({"ADMIN", "MANAGER"})
 
 
 @dataclass(frozen=True, slots=True)
-class PermissoesDoAtor:
+class ActorPermissions:
     """O que a pessoa pode -- e ONDE (Spec 045, fatia C).
 
     Duas parcelas, porque as duas pertencas sao independentes:
 
-        `globais`  -- do papel de ORGANIZACAO. Valem em todo lugar, e valem
+        `unscoped`  -- do papel de ORGANIZACAO. Valem em todo lugar, e valem
                       mesmo para quem nao tem vinculo de time nenhum -- que e
                       exatamente o estado que a fatia B tornou normal.
-        `por_time` -- de cada vinculo. Permissao -> times onde ela vale.
+        `by_team` -- de cada vinculo. Permissao -> times onde ela vale.
 
-    ⚠️ `pode` E `pode_em` RESPONDEM PERGUNTAS DIFERENTES, e trocar uma pela
+    ⚠️ `can` E `can_in` RESPONDEM PERGUNTAS DIFERENTES, e trocar uma pela
     outra e o defeito que esta fatia existe para tornar impossivel:
 
-        `pode(p)`        -- "em ALGUM lugar?" Serve ao portao de ROTA, que
+        `can(p)`         -- "em ALGUM lugar?" Serve ao portao de ROTA, que
                             ainda nao conhece o alvo (ele vem no corpo).
-        `pode_em(p, t)`  -- "NAQUELE time?" Serve ao SERVICO, que ja tem o
+        `can_in(p, t)`   -- "NAQUELE time?" Serve ao SERVICO, que ja tem o
                             `team_id` do alvo em maos.
 
     Com UMA raiz as duas dao a mesma resposta em todo caso real -- e e por isso
@@ -292,55 +292,55 @@ class PermissoesDoAtor:
     que a prova monta DUAS raizes em memoria.
     """
 
-    globais: frozenset[str]
-    por_time: dict[str, frozenset[uuid.UUID]]
+    unscoped: frozenset[str]
+    by_team: dict[str, frozenset[uuid.UUID]]
 
-    def pode(self, permission: str) -> bool:
+    def can(self, permission: str) -> bool:
         """Tem esta permissao em ALGUM lugar? (portao de rota)"""
-        return permission in self.globais or bool(self.por_time.get(permission))
+        return permission in self.unscoped or bool(self.by_team.get(permission))
 
-    def pode_em(self, permission: str, team_id: uuid.UUID | None) -> bool:
+    def can_in(self, permission: str, team_id: uuid.UUID | None) -> bool:
         """Tem esta permissao NAQUELE time? (gate de servico)
 
         ⚠️ `team_id=None` significa "sem time" -- so a parcela global responde.
         Nao e um curinga: devolver True para qualquer time aqui transformaria
         um alvo mal resolvido em permissao total.
         """
-        if permission in self.globais:
+        if permission in self.unscoped:
             return True
         if team_id is None:
             return False
-        return team_id in self.por_time.get(permission, frozenset())
+        return team_id in self.by_team.get(permission, frozenset())
 
-    def todas(self) -> frozenset[str]:
+    def all_permissions(self) -> frozenset[str]:
         """Achatado, para o contrato de `/auth/me` e para telas.
 
         ⚠️ E UMA PROJECAO COM PERDA, de proposito: quem consome isto sabe "o
         que", nunca "onde". O front usa para decidir se DESENHA um botao; o
         servidor continua sendo quem decide se a acao acontece.
         """
-        return self.globais | frozenset(
-            p for p, times in self.por_time.items() if times
+        return self.unscoped | frozenset(
+            p for p, times in self.by_team.items() if times
         )
 
     def __contains__(self, permission: object) -> bool:
         """Compatibilidade com `"x" in permissions` -- semantica de `pode`."""
-        return isinstance(permission, str) and self.pode(permission)
+        return isinstance(permission, str) and self.can(permission)
 
 
-def permissoes_do_ator(
+def permissions_for_actor(
     *,
     memberships: tuple[Membership, ...],
     tree: tuple[TeamNode, ...],
     org_role: str | None = None,
-) -> PermissoesDoAtor:
+) -> ActorPermissions:
     """Monta as permissoes COM ESCOPO a partir dos vinculos e do papel de org.
 
     A regra de escopo, por papel:
 
         comando (ADMIN/MANAGER)     -> o time do vinculo + TODOS os descendentes
         execucao (SUPERVISOR/OPER.) -> o time do vinculo + a RAIZ daquela arvore
-                                       ... exceto `_SO_NO_PROPRIO_TIME`, que
+                                       ... exceto `_OWN_TEAM_ONLY`, que
                                        fica so no time do vinculo
 
     ⚠️ A LINHA DA RAIZ NAO E FROUXIDAO: e o que sustenta o Quadro geral. Um
@@ -353,7 +353,7 @@ def permissoes_do_ator(
     administrar operador do time principal -- que e a incoerencia que a tabela
     de permissoes da conversa de 02/09 achou no gate de hoje.
     """
-    por_time: dict[str, set[uuid.UUID]] = {}
+    by_team: dict[str, set[uuid.UUID]] = {}
 
     for m in memberships:
         try:
@@ -364,7 +364,7 @@ def permissoes_do_ator(
         if not concedidas:
             continue
 
-        if m.role in _PAPEIS_DE_COMANDO:
+        if m.role in _COMMAND_ROLES:
             alcance = {m.team_id} | descendants(m.team_id, tree)
             restrito = alcance
         else:
@@ -372,10 +372,10 @@ def permissoes_do_ator(
             restrito = {m.team_id}
 
         for p in concedidas:
-            destino = restrito if p in _SO_NO_PROPRIO_TIME else alcance
-            por_time.setdefault(p, set()).update(destino)
+            destino = restrito if p in _OWN_TEAM_ONLY else alcance
+            by_team.setdefault(p, set()).update(destino)
 
-    return PermissoesDoAtor(
-        globais=permissions_for_org_role(org_role),
-        por_time={p: frozenset(times) for p, times in por_time.items()},
+    return ActorPermissions(
+        unscoped=permissions_for_org_role(org_role),
+        by_team={p: frozenset(times) for p, times in by_team.items()},
     )

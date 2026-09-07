@@ -84,7 +84,7 @@ class TenantContext:
     user_id: uuid.UUID
     roles: frozenset[str] = field(default_factory=frozenset)
     #: ⚠️ DOIS FORMATOS ACEITOS, e o `str` no tipo e o legado (Spec 045,
-    #: fatia C). Todo caminho de requisicao real monta `PermissoesDoAtor`, que
+    #: fatia C). Todo caminho de requisicao real monta `ActorPermissions`, que
     #: carrega o TIME de cada permissao; um `frozenset` plano ainda entra por
     #: `tenant_scope` em job de fundo e em teste antigo. As duas formas
     #: respondem `in` com a mesma semantica ("em algum lugar"), entao
@@ -125,10 +125,10 @@ class TenantContext:
         proposito: enquanto houver uma raiz so, as duas respostas coincidem em
         todo caso real. A fatia D estreita isto quando o cadastro permitir.
         """
-        pode_em = getattr(self.permissions, "pode_em", None)
-        if pode_em is None:
+        can_in = getattr(self.permissions, "can_in", None)
+        if can_in is None:
             return self.has_permission(permission)
-        return bool(pode_em(permission, team_id))
+        return bool(can_in(permission, team_id))
 
     def has_permission(self, permission: str) -> bool:
         """True se o usuario tem a permissao informada.
