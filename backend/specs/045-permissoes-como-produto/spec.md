@@ -189,9 +189,12 @@ têm** no mapa, e passam pelo *early return*. O mapa diz uma coisa e uma linha d
 código diz outra.
 
 **Decisão da Camila (02/09): "manager e admin administram absolutamente tudo do
-time e sua árvore inteira."** A permissão vai para o mapa. O *early return*
-continua existindo como defesa em profundidade, mas deixa de ser **o que sustenta
-a regra**.
+time e sua árvore inteira."** A permissão vai para o mapa.
+
+⚠️ **O *early return* FICA, e é load-bearing** — ele não era o remendo que
+sustentava a permissão, era a camada de **escopo**. Depois desta fatia o mapa
+concede *o quê* e ele participa do *onde*; removê-lo recusa o MANAGER, e isso foi
+medido, não deduzido (§5, fatia A).
 
 ### 4.6. "Vê" e "edita" se separam — e o primeiro caso é este
 
@@ -208,14 +211,34 @@ de cair de graça de uma coincidência e passa a ser uma linha que alguém escre
 
 ## 5. As fatias
 
-**Fatia A — o mapa ganha a intenção.**
+**Fatia A — o mapa ganha a intenção. ✅ ENTREGUE (02/09).**
 `member.manage.subteam` entra em `ADMIN` e `MANAGER`
-([permissions.py:53](../../app/modules/auth/domain/permissions.py)). Escreve o
-teste que fixa o comportamento **pelo mapa**, não pelo *early return*: um MANAGER
-administra membro de subtime da própria árvore, e o teste continua verde se o
-`_tem_gestao_ampla` for removido.
-Sem migração, sem mudança de assinatura. **É a menor e vai primeiro** — ela conserta
-uma contradição que já existe hoje, independente de todo o resto.
+([permissions.py:53](../../app/modules/auth/domain/permissions.py)). Sem
+migração, sem mudança de assinatura, e **sem mudança de comportamento** — as duas
+rotas da Spec 028 já usam
+`require_any_permission("team.manage", "member.manage.subteam")`, então ADMIN e
+MANAGER já entravam por `team.manage`. Placar idêntico ao baseline (1014).
+
+O guardião é o teste do **mapa**: os três papéis de comando e supervisão a têm, o
+OPERATOR não, e — o que mais importa —
+`permissions_for_roles({MANAGER, SUPERVISOR}) - permissions_for_roles({MANAGER})`
+é **vazio**. É a não-monotonicidade da Spec 044 §4.1-bis morrendo com asserção.
+
+⚠️⚠️ **ESTA SPEC ESTAVA ERRADA SOBRE ESTA FATIA, e a sabotagem provou.** O texto
+anterior dizia que o teste *"continua verde se o `_tem_gestao_ampla` for
+removido"*. **Não continua.** Sem o *early return*,
+`_assert_escopo_supervisor` passa a escopar o MANAGER por
+`_subtimes_supervisionados()` — que para ele é **vazio** — e ele é recusado;
+medido, `test_manager_mantem_alcance_amplo` cai.
+
+Aquela linha **não é gambiarra**: é a camada de **escopo** funcionando, e é a
+armadilha 3 do briefing dita em código — *o mapa diz "o quê", o serviço diz
+"onde"*. Para ADMIN e MANAGER o "onde" é a **árvore** deles
+(`visible/editable_team_ids`), e não os subtimes que supervisionam. Ela fica, com
+comentário explicando por quê.
+
+**Sabotagens rodadas:** mapa revertido → o teste novo cai; *early return*
+removido → `test_manager_mantem_alcance_amplo` cai.
 
 **Fatia B — o papel de organização nasce.**
 Papel sem `team_id`. `ADMIN` migra de `user_team` para lá; `GESTOR` nasce.

@@ -1,8 +1,8 @@
 # Spec 046 — Várias raízes de verdade
 
-**Status:** escrita em 02/09/2026; a §4.3 foi respondida no mesmo dia.
-⚠️ **Uma decisão de produto em aberto** (§4.4, a rota) — ela bloqueia **só a
-fatia 4**; as fatias 1, 2 e 3 estão liberadas para escrever.
+**Status:** escrita em 02/09/2026, com as §§4.3 e 4.4 respondidas no mesmo dia.
+✅ **Nenhuma decisão de produto em aberto** — as quatro fatias estão liberadas
+para escrever, **depois da Spec 045** (ver "Depende de").
 **Escopo:** backend (o índice, a checagem de domínio, o ciclo de vida de time) **e**
 frontend (o pin da raiz, que hoje assume que existe uma).
 **Depende de:** **Spec 045 inteira** — sem a permissão carregando o time, criar a
@@ -152,28 +152,44 @@ exatamente o que a tabela já diz — não há migração nesta decisão.
 - `getRootTeamId` no front (§3) deixa de fazer sentido como "a raiz" e vira "a
   raiz da área que estou olhando".
 
-### 4.4. ⚠️ EM ABERTO — por qual porta se chega nesse quadro
+### 4.4. ✅ A área vai para a URL — `/quadro/[teamId]`
 
-O que a resposta da 4.3 **não** decide é a rota. Hoje `/quadro` é estática e
-mostra o quadro da raiz; com três áreas há três quadros principais, e *"abre
-junto com o time raiz"* diz que se chega a ele **pela área** — mas não diz como
-a tela escolhe qual área está aberta.
+**Decidido pela Camila em 02/09.** O quadro geral de uma área é alcançado pela
+rota que já existe, com o id daquela área.
 
-1. **`/quadro` ganha área ativa** ⭐ *recomendada* — a pessoa escolhe, ou herda
-   dos próprios vínculos, e o quadro geral é o daquela área. ⚠️ Para **quem tem
-   vínculo em uma árvore só — que é quase todo mundo hoje — não existe escolha
-   nenhuma**: a tela abre igual à de hoje. O seletor só aparece para quem tem
-   mais de uma área, e é o que torna esta a opção mais barata em mudança
-   percebida.
-2. **`/quadro` vira `/quadro/[areaId]`** e a rota estática some. Mais explícito e
-   mais caro. ⚠️ `useSearchParams` em rota estática derruba o `next build`
-   (`AGENTS.md` §6), e mexer nessa rota é exatamente onde isso morde.
-3. **A `/organizacao` é a porta** — não se abre "o quadro", abre-se a área, e o
-   quadro principal dela vem junto. É a leitura mais literal da frase acima, e
-   custa um clique a mais para quem só tem uma área.
+⭐ **A rota já está lá, e já faz o trabalho.** `web/app/quadro/[teamId]/page.tsx`
+lê o time da URL, confere a lente (`computeLens`, a mesma que monta o menu),
+mostra o nome do time e trata as guardas de rota. Esta decisão **não cria rota
+nova**.
 
-⚠️ **A fatia 4 continua bloqueada até isto.** Mas as fatias 1, 2 e 3 **não**
-dependem dela — elas podem andar.
+⭐ **E em boa parte ela REMOVE uma trava, em vez de acrescentar.** Hoje essa rota
+recusa o id da raiz de propósito — o comentário diz *"id da RAIZ → avisa que o
+lugar dela é o quadro geral"*. Essa guarda existe **só porque há uma raiz**; com
+N áreas ela deixa de fazer sentido.
+
+**Por que esta e não "área ativa":**
+
+- **A URL diz a verdade.** Com estado de "área ativa", duas pessoas abrem o mesmo
+  link e veem quadros diferentes, e a mesma pessoa vê coisas diferentes em dois
+  navegadores. Não é gosto: é o mesmo endereço significando coisas diferentes.
+  Aqui o link é compartilhável e o botão de voltar funciona.
+- **O produto já roteia quadro por time.** O `/quadro` estático é a exceção — e é
+  exceção porque só há uma raiz. Esta decisão **tira um caso especial**, não
+  acrescenta um conceito.
+- **"Área ativa" seria estado novo e invisível**: precisa morar em algum lugar,
+  envelhece, e não aparece quando está errado.
+
+⚠️ **E a armadilha do `next build` está do outro lado.** O `useSearchParams` sem
+fronteira de `Suspense` derruba o build em rota **estática** — o comentário em
+`quadro/[teamId]/page.tsx` registra que isso foi **medido em 13/08**, e que
+aquela rota é segura por ser dinâmica. Ou seja: o risco mora no `/quadro`
+estático, que é justamente o que a alternativa recusada preservaria.
+
+**O que sobra decidir é pequeno: o que `/quadro` puro faz.** Ele redireciona para
+a área da pessoa. Para quem tem mais de uma, escolhe um padrão de entrada (a
+última visitada, ou a primeira por nome). ⚠️ A diferença para "área ativa" é que
+isto é só um **default de entrada** — a URL onde a pessoa chega continua dizendo
+qual área é.
 
 ---
 
@@ -201,11 +217,20 @@ Aplica a 4.2: o conteúdo vai para `root_of(team_id)`, não para "o principal". 
 prévia (`previa-remocao`) passa a **nomear a área de destino**, porque hoje ela diz
 quantos vão e não diz para onde — e com N áreas isso deixa de ser óbvio.
 
-**Fatia 4 — o quadro geral com N áreas.**
-Aplica a 4.3: `default_board_and_column_for_status` passa a receber a **área** em
-vez de descobrir "a raiz" no SQL, e o front deixa de perguntar por "a raiz".
-⚠️ **A rota está bloqueada pela 4.4** — mas a parte de backend (a consulta
-receber a área) não depende de qual porta a tela usa, e pode ir antes.
+**Fatia 4 — o quadro geral com N áreas.** ✅ **Liberada.**
+
+*Backend:* `default_board_and_column_for_status` passa a **receber a área** em vez
+de descobrir "a raiz" filtrando `parent_team_id IS NULL` no SQL.
+⚠️ **Anda junto com o `TaskService._time_do_quadro_alvo`** (Spec 044, fatia 4):
+ele devolve a raiz **porque** é onde esta consulta põe a tarefa. Se uma passar a
+exigir a área e a outra não, a tarefa nasce num quadro pertencendo a outro time —
+a linha que `_assert_time_do_quadro` existe para matar. **As duas mudam na mesma
+fatia**, ou nenhuma.
+
+*Front:* `/quadro/[teamId]` deixa de recusar o id da raiz, e `/quadro` puro passa
+a redirecionar para a área da pessoa (4.4).
+⚠️ A guarda que sai é uma linha, mas ela é a que hoje impede o quadro de área de
+existir — o teste que a cobre precisa virar o teste do caso oposto, e não sumir.
 
 ---
 
