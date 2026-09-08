@@ -41,7 +41,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.logging import get_logger
 from app.core.tenant import tenant_scope
 from app.db.models import Team, User, UserTeam, Workspace
-from app.db.models.enums import UserTeamRole
+from app.db.models.enums import OrgRole, UserTeamRole
 from app.modules.auth.infrastructure.security import hash_password
 from app.modules.tasks.application.board_service import BoardService
 from app.modules.tasks.application.project_service import ProjectService
@@ -138,17 +138,30 @@ class WorkspaceProvisioningService:
         self._session.add(admin)
         await self._session.flush()  # ids de team e admin
 
-        # 4. Vinculo admin <-> equipe, com papel ADMIN.
-        # Spec 024/D6: o time criado no passo 1 e a RAIZ
-        # (parent_team_id=None), e ADMIN so existe na raiz -- entao este
-        # vinculo ja nasce conforme a invariante de nivel. E tambem o que
-        # garante que todo workspace novo tem alguem apto a triar
-        # solicitacoes (anti-lockout).
+        # 4. O admin do bootstrap: papel de ORGANIZACAO + vinculo de trabalho.
+        #
+        # ⚠️⚠️ ATE A SPEC 045 ISTO ERA UMA LINHA SO -- um `UserTeam` com
+        # `role=ADMIN` --, e o comentario dizia "ADMIN so existe na raiz, entao
+        # este vinculo ja nasce conforme a invariante de nivel". A fatia D
+        # revoga exatamente essa frase: ADMIN saiu do nivel de time e virou
+        # papel de ORGANIZACAO (fatia B), sem time.
+        #
+        # ⚠️ SE ESTA LINHA NAO ACOMPANHASSE A INVARIANTE, workspace novo
+        # nasceria SEM DONO: o vinculo seria recusado, e ninguem teria
+        # `workspace.manage` -- que e o portao da unica rota capaz de promover
+        # alguem de volta. Trava irreversivel pela tela, e o caminho que menos
+        # tem teste (nenhum teste cria workspace pelo caminho de producao).
+        admin.org_role = OrgRole.ADMIN
+
+        # E ele TAMBEM entra na raiz como MANAGER, e nao como mero membro: o
+        # bootstrap precisa de alguem apto a triar solicitacoes e a administrar
+        # a arvore desde o primeiro minuto (anti-lockout). A autoridade sobre a
+        # organizacao vem do `org_role` acima; este vinculo e o de TRABALHO.
         membership = UserTeam(
             workspace_id=workspace.id,
             user_id=admin.id,
             team_id=team.id,
-            role=UserTeamRole.ADMIN,
+            role=UserTeamRole.MANAGER,
         )
         self._session.add(membership)
         await self._session.flush()

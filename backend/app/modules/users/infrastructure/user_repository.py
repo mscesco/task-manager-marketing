@@ -19,7 +19,7 @@ from sqlalchemy.dialects.postgresql import aggregate_order_by
 
 from app.core.tenant import require_tenant
 from app.db.models import Team, User, UserTeam
-from app.db.models.enums import UserTeamRole
+from app.db.models.enums import OrgRole, UserTeamRole
 from app.db.repository import BaseRepository
 
 
@@ -44,6 +44,33 @@ class UserRepository(BaseRepository[User]):
         )
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none() is not None
+
+    async def count_org_admins(self, *, excluindo: uuid.UUID | None = None) -> int:
+        """Quantos ADMIN de organizacao ATIVOS o workspace tem. Spec 045, D.
+
+        Alimenta a trava do ultimo admin (`_assert_nao_e_o_ultimo_admin`).
+
+        ⚠️⚠️ O FILTRO DE `is_active` E EXPLICITO AQUI, e a primeira versao
+        deste metodo NAO o tinha. Eu afirmei na docstring que `_base_select` ja
+        filtrava -- ele filtra TENANT e SOFT DELETE (`deleted_at`), nao
+        `is_active`. O teste do admin inativo pegou: o rebaixamento do ultimo
+        admin ATIVO passou porque um desativado estava sendo contado.
+
+        Um admin desativado nao administra nada; conta-lo trancaria a
+        organizacao com a cara de "estava tudo certo, havia dois".
+
+        ⚠️ CONTA `users.org_role`, e nao vinculo em `user_team`. A fonte velha
+        ainda existe durante a transicao da fatia B, mas quem administra a
+        organizacao daqui pra frente e quem tem o papel de organizacao.
+        """
+        stmt = (
+            self._base_select()
+            .with_only_columns(func.count())
+            .where(User.org_role == OrgRole.ADMIN, User.is_active.is_(True))
+        )
+        if excluindo is not None:
+            stmt = stmt.where(User.id != excluindo)
+        return int((await self.session.execute(stmt)).scalar_one())
 
     async def list_all(self) -> list[User]:
         """Lista todos os usuarios ativos do workspace, por nome."""
