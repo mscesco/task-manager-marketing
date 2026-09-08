@@ -123,20 +123,45 @@ export function podeRemoverDoTime(
 }
 
 /**
- * Papeis que o ator pode atribuir.
+ * Papeis que o ator pode atribuir NAQUELE TIME.
  *
- * ADMIN so aparece para ADMIN (gate D2 da Spec 014, ja existente).
- * Supervisor: so OPERATOR (D2 desta spec).
+ * Duas perguntas, e as duas filtram:
+ *   quem e o ator   -- supervisor so atribui OPERATOR (D2 da Spec 028);
+ *   qual e o nivel  -- invariante de nivel (Spec 045, fatia D).
+ *
+ * ⚠️⚠️ O PARAMETRO `ehRaiz` NASCEU NA SPEC 045, e sem ele esta funcao MENTIA
+ * em tres opcoes de uma vez. Ela devolvia `["ADMIN","MANAGER","SUPERVISOR",
+ * "OPERATOR"]` para qualquer time, e depois da fatia D o backend recusa:
+ *
+ *   ADMIN       -- em nivel de time NENHUM (virou papel de organizacao)
+ *   MANAGER     -- em subtime
+ *   SUPERVISOR  -- na raiz
+ *
+ * ⚠️ `ADMIN` SUMIU DOS DOIS RAMOS, inclusive para quem e admin. Nao e questao
+ * de permissao -- e que o papel nao mora mais em `user_team`. Quem promove um
+ * administrador usa a tela da organizacao (Spec 047).
+ *
+ * ⚠️ E ISTO NAO E COSMETICO. A tela que oferece o que o servidor recusa
+ * transforma uma regra em erro de formulario: a pessoa escolhe "Supervisor"
+ * no time geral, salva, e leva 409. A Spec 044 ja deixou um caso desses em
+ * pe, e este arquivo nao vai deixar o segundo.
  */
 export function papeisAtribuiveis(
   a: Alcance,
   souAdmin: boolean,
+  ehRaiz: boolean,
 ): MemberRole[] {
   if (a.tipo === "nenhum") return [];
+  // Supervisor so alcanca OPERATOR, e OPERATOR cabe nos dois niveis --
+  // entao este ramo nao depende do nivel.
   if (a.tipo === "subtime") return ["OPERATOR"];
-  return souAdmin
-    ? ["ADMIN", "MANAGER", "SUPERVISOR", "OPERATOR"]
-    : ["MANAGER", "SUPERVISOR", "OPERATOR"];
+  // `souAdmin` deixou de escolher a LISTA e passou a nao escolher nada aqui:
+  // o unico papel que ele tinha a mais era ADMIN, que saiu do nivel de time.
+  // O parametro fica porque o dia em que a tela da organizacao existir ele
+  // volta a decidir algo -- e tirar da assinatura agora obrigaria a mexer nos
+  // chamadores duas vezes.
+  void souAdmin;
+  return ehRaiz ? ["MANAGER", "OPERATOR"] : ["SUPERVISOR", "OPERATOR"];
 }
 
 /**
@@ -214,3 +239,49 @@ export function temAcaoPossivel(
     subtimesDoMembro.some((t) => a.subtimes.includes(t))
   );
 }
+
+/**
+ * O aviso de REBAIXAMENTO ao mover alguem para o time principal.
+ *
+ * ⚠️⚠️ ELE EXISTE PORQUE O BACKEND MUDA O PAPEL SEM PERGUNTAR. Desde a Spec
+ * 045 (fatia D), `move_member_subteam` rebaixa um SUPERVISOR a OPERATOR ao
+ * levar a pessoa para a raiz -- `SUPERVISOR` deixou de existir la, e a
+ * decisao (Camila, 08/09) foi rebaixar em vez de recusar.
+ *
+ * Sem esta frase, a operacao termina com "movido" e a pessoa perde o posto de
+ * supervisora sem que ninguem na tela seja informado. O backend deixa rastro
+ * em log (`member.role_demoted_on_move`); quem clicou, nao ve log.
+ *
+ * ⚠️ COMPARA O QUE VOLTOU COM O QUE HAVIA, e nao "se o destino e a raiz". A
+ * resposta do endpoint ja carrega o papel gravado, entao a tela nao precisa
+ * -- nem deve -- reimplementar a regra de qual papel vira qual: no dia em que
+ * o mapa do backend mudar, esta funcao continua certa sozinha.
+ *
+ * Devolve `null` quando nada mudou, que e o caso normal.
+ */
+export function avisoDeRebaixamento(
+  papelAntes: MemberRole,
+  papelDepois: MemberRole,
+  nomeDoTime: string,
+): string | null {
+  if (papelAntes === papelDepois) return null;
+  return (
+    `Movido para ${nomeDoTime}, e o papel mudou de ` +
+    `${ROTULO_DE_PAPEL[papelAntes]} para ${ROTULO_DE_PAPEL[papelDepois]}: ` +
+    `supervisor existe apenas em subtimes.`
+  );
+}
+
+/**
+ * Rotulos dos papeis, em portugues.
+ *
+ * ⚠️ MORA AQUI, e nao so em `app/membros/page.tsx`, porque
+ * `avisoDeRebaixamento` precisa deles e `app/` esta fora do `include` do
+ * vitest -- a mesma razao pela qual `candidatosParaAdicionar` mudou de casa.
+ */
+export const ROTULO_DE_PAPEL: Record<MemberRole, string> = {
+  ADMIN: "Administrador",
+  MANAGER: "Gerente",
+  SUPERVISOR: "Supervisor",
+  OPERATOR: "Operador",
+};

@@ -51,10 +51,21 @@ class UserRepository(BaseRepository[User]):
         Alimenta a trava do ultimo admin (`_assert_nao_e_o_ultimo_admin`).
 
         ⚠️⚠️ O FILTRO DE `is_active` E EXPLICITO AQUI, e a primeira versao
-        deste metodo NAO o tinha. Eu afirmei na docstring que `_base_select` ja
-        filtrava -- ele filtra TENANT e SOFT DELETE (`deleted_at`), nao
-        `is_active`. O teste do admin inativo pegou: o rebaixamento do ultimo
+        deste metodo NAO o tinha -- a docstring afirmava que `_base_select` ja
+        filtrava. O teste do admin inativo pegou: o rebaixamento do ultimo
         admin ATIVO passou porque um desativado estava sendo contado.
+
+        ⚠️ E A CORRECAO DAQUELA DOCSTRING TAMBEM ESTAVA ERRADA. Ela passou a
+        dizer que `_base_select` filtra "TENANT e SOFT DELETE (`deleted_at`)".
+        Para `users`, nao: **a tabela nao tem `deleted_at`**. Usuario nao e
+        soft-deletado, e DESATIVADO (`is_active`) -- e `_base_select` so aplica
+        a clausula de soft delete quando o model tem a coluna
+        (`hasattr(self.model, "deleted_at")`). Aqui ele filtra APENAS tenant.
+
+        A consequencia pratica de acreditar na frase errada e uma consulta que
+        nao roda: `... AND deleted_at IS NULL` em `users` da
+        `column "deleted_at" does not exist`. Aconteceu em 08/09, num SELECT
+        de conferencia escrito a partir desta docstring.
 
         Um admin desativado nao administra nada; conta-lo trancaria a
         organizacao com a cara de "estava tudo certo, havia dois".

@@ -40,7 +40,7 @@ async def _papel_atual(db, *, user_id, team_id) -> UserTeamRole:
     return ut.role
 
 
-async def test_admin_troca_para_qualquer_papel(db) -> None:
+async def test_admin_troca_para_qualquer_papel_de_time(db) -> None:
     ws = await f.make_workspace(db)
     raiz = await f.make_team(db, workspace_id=ws, slug="marketing")
     admin = await f.make_user(db, workspace_id=ws, email="admin@t.dev")
@@ -53,20 +53,40 @@ async def test_admin_troca_para_qualquer_papel(db) -> None:
         user_id=admin,
         memberships=(Membership(team_id=raiz, role="ADMIN"),),
     ):
-        # ADMIN pode ate promover a ADMIN.
+        # ⭐ Spec 045, fatia D: ADMIN saiu do nivel de TIME. Ate aqui esta
+        # linha dizia "ADMIN pode ate promover a ADMIN" e o teste se chamava
+        # `..._para_qualquer_papel` -- hoje "qualquer papel" nao inclui ADMIN
+        # em lugar nenhum, porque nao ha time que o aceite.
+        # Quem promove um administrador usa `change_organization_role`.
+        with pytest.raises(BusinessRuleError):
+            await MemberService(db).change_member_role(
+                user_id=alvo, team_id=raiz, new_role=UserTeamRole.ADMIN
+            )
+        # E o papel de raiz que ele PODE dar continua funcionando.
         await MemberService(db).change_member_role(
-            user_id=alvo, team_id=raiz, new_role=UserTeamRole.ADMIN
+            user_id=alvo, team_id=raiz, new_role=UserTeamRole.MANAGER
         )
-        assert await _papel_atual(db, user_id=alvo, team_id=raiz) == UserTeamRole.ADMIN
+        assert (
+            await _papel_atual(db, user_id=alvo, team_id=raiz)
+            == UserTeamRole.MANAGER
+        )
 
 
 async def test_manager_troca_operator_para_supervisor(db) -> None:
+    """⚠️ A PROMOCAO ACONTECE NO SUBTIME, e nao na raiz como ate a Spec 045.
+
+    O teste media a matriz de quem-promove-quem (Spec 016): um MANAGER pode
+    elevar um operador a supervisor. Isso continua valendo -- so que o unico
+    lugar onde SUPERVISOR existe passou a ser o subtime (fatia D), entao o
+    cenario mudou de lugar sem mudar de assunto.
+    """
     ws = await f.make_workspace(db)
     raiz = await f.make_team(db, workspace_id=ws, slug="marketing")
+    seo = await f.make_team(db, workspace_id=ws, parent_team_id=raiz, slug="seo")
     mgr = await f.make_user(db, workspace_id=ws, email="mgr@t.dev")
     await f.add_member(db, workspace_id=ws, user_id=mgr, team_id=raiz, role="MANAGER")
     alvo = await f.make_user(db, workspace_id=ws, email="op@t.dev")
-    await f.add_member(db, workspace_id=ws, user_id=alvo, team_id=raiz, role="OPERATOR")
+    await f.add_member(db, workspace_id=ws, user_id=alvo, team_id=seo, role="OPERATOR")
 
     with acting_as(
         workspace_id=ws,
@@ -74,9 +94,9 @@ async def test_manager_troca_operator_para_supervisor(db) -> None:
         memberships=(Membership(team_id=raiz, role="MANAGER"),),
     ):
         await MemberService(db).change_member_role(
-            user_id=alvo, team_id=raiz, new_role=UserTeamRole.SUPERVISOR
+            user_id=alvo, team_id=seo, new_role=UserTeamRole.SUPERVISOR
         )
-        assert await _papel_atual(db, user_id=alvo, team_id=raiz) == UserTeamRole.SUPERVISOR
+        assert await _papel_atual(db, user_id=alvo, team_id=seo) == UserTeamRole.SUPERVISOR
 
 
 async def test_manager_nao_promove_para_manager(db) -> None:

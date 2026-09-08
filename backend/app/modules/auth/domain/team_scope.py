@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import uuid
 from collections import defaultdict
+from collections.abc import Sequence
 
 from app.core.tenant import Membership, TeamNode
 from app.shared.exceptions.base import BusinessRuleError
@@ -158,45 +159,88 @@ def editable_team_ids(
 # ---------------------------------------------------------------------
 # Spec 024 -- invariante de papel por NIVEL de time.
 #
-# A regra e UMA SO e e ASSIMETRICA:
+# ⚠️⚠️ REESCRITA PELA SPEC 045, FATIA D. A regra ANTIGA era assimetrica:
 #
-#     ADMIN e MANAGER so existem no time RAIZ.
+#     ADMIN e MANAGER so existem na raiz; a raiz aceita os QUATRO papeis.
 #
-# O time raiz aceita os QUATRO papeis; subtime aceita apenas SUPERVISOR e
-# OPERATOR.
+# A nova e estreita nos dois lados. Cada papel tem UM lugar -- menos
+# OPERATOR, que e justamente o unico sem autoridade nenhuma:
 #
-# Por que assimetrica: estar SO no time geral (raiz), sem subtime, e um
-# estado de produto projetado -- Spec 003, decisoes 7 e 17. E assim que se
-# "tira alguem do subtime" sem remover a pessoa (move_member_subteam pra
-# raiz, preservando o papel). Proibir SUPERVISOR/OPERATOR na raiz mataria
-# esse fluxo.
+#     organizacao (sem time) -> ADMIN, GESTOR    (`users.org_role`, fatia B)
+#     raiz (area)            -> MANAGER, OPERATOR
+#     subtime                -> SUPERVISOR, OPERATOR
 #
-# E o objetivo continua atendido: se ADMIN/MANAGER so existem na raiz,
-# quem carrega esses papeis e membro da raiz, e a "uniao dos papeis"
-# (permissions_for_roles) coincide com a "autoridade sobre a arvore"
-# (visible_team_ids, acima) por construcao. SUPERVISOR/OPERATOR na raiz
-# nao ganham permissao elevada -- enxergam a raiz e so.
+# Duas mudancas, e elas doem em lugares diferentes:
 #
-# Funcoes puras, como o resto deste modulo: recebem `is_root` ja
-# resolvido pelo chamador (que quase sempre tem o objeto Team em maos)
-# em vez da arvore inteira.
+#   1. ADMIN SAI DO NIVEL DE TIME. Ele virou papel de ORGANIZACAO na fatia B;
+#      `user_team` deixou de ser lugar valido para ele.
+#      ⚠️ E ELE NAO PODE CAIR NO RAMO DE "papel desconhecido": quem tenta
+#      cadastrar um admin leria "nao e possivel definir em que nivel ele pode
+#      existir" e concluiria que o sistema perdeu o papel. A mensagem tem de
+#      dizer PARA ONDE ele foi.
+#
+#   2. SUPERVISOR SAI DA RAIZ. Supervisor e dono de UM braco operacional; na
+#      raiz ele nao supervisiona nada. Pior: `_subtimes_supervisionados`
+#      devolvia a PROPRIA RAIZ nesse caso, deixando um supervisor da raiz
+#      governar operadores da raiz por um gate chamado "subtimes
+#      supervisionados".
+#
+# ⚠️ O QUE **NAO** MUDA, e o motivo importa: OPERATOR continua nos DOIS
+# niveis. Estar so no time geral e estado de produto projetado (Spec 003,
+# decisoes 7 e 17) -- e assim que se tira alguem de um subtime sem remover a
+# pessoa (`move_member_subteam` pra raiz, preservando o papel). Proibir
+# OPERATOR na raiz mataria esse fluxo.
+#
+# ⚠️ CONSEQUENCIA QUE NAO E EFEITO COLATERAL, E SIM A REGRA: mover um
+# SUPERVISOR de subtime para a raiz passa a ser RECUSADO (porta 4). O
+# comentario daquela porta ja afirmava que isso "viola a invariante" -- e era
+# FALSO ate esta fatia, porque a raiz aceitava os quatro. A partir daqui o
+# comentario vira verdade. Quem precisa mover um supervisor para a raiz troca
+# o papel para OPERATOR antes; a pessoa deixou de ser dona de um braco.
+#
+# ⚠️ E o objetivo original da Spec 024 continua atendido, por um caminho mais
+# curto: com ADMIN fora e SUPERVISOR fora, o unico papel de COMANDO em nivel
+# de time e MANAGER, e ele so existe na raiz.
+#
+# Funcoes puras, como o resto do modulo: recebem `is_root` ja resolvido pelo
+# chamador (que quase sempre tem o objeto Team em maos), nao a arvore inteira.
 # ---------------------------------------------------------------------
 
-#: Papeis de comando -- existem EXCLUSIVAMENTE no time raiz.
-_ROLES_SO_NA_RAIZ = frozenset({"ADMIN", "MANAGER"})
-#: Papeis de execucao -- existem em qualquer nivel.
-_ROLES_EM_QUALQUER_NIVEL = frozenset({"SUPERVISOR", "OPERATOR"})
+#: Papeis validos no time RAIZ (a area).
+_ROOT_ROLES = frozenset({"MANAGER", "OPERATOR"})
+#: Papeis validos num SUBTIME.
+_SUBTEAM_ROLES = frozenset({"SUPERVISOR", "OPERATOR"})
+#: Papel que existe em `UserTeamRole` mas nao cabe em nivel de time NENHUM --
+#: desde a fatia B ele mora em `users.org_role`.
+#:
+#: ⚠️⚠️ CONTINUA NO ENUM DE PROPOSITO, e nao por esquecimento. Producao teve
+#: vinculos `user_team.role = 'ADMIN'` ate 08/09/2026, e o valor de um tipo
+#: ENUM do Postgres nao se remove -- `ALTER TYPE ... DROP VALUE` nao existe.
+#: Tirar o membro do enum Python faria toda leitura daquelas linhas explodir
+#: no mapeamento, em vez de recusar na escrita, que e onde a regra mora.
+_ORG_LEVEL_ROLES = frozenset({"ADMIN"})
+
+#: Papeis que MANDAM na arvore, e nao apenas nela trabalham.
+#:
+#: ⚠️ ADMIN esta aqui por causa do cadastro LEGADO. Ele nao pode mais ser
+#: gravado em `user_team` (`_ORG_LEVEL_ROLES`), mas linhas antigas ainda
+#: podem existir em bases que nao passaram pela limpeza manual da `0022`, e
+#: uma trava de comando que nao as reconhecesse trataria um admin legado como
+#: se fosse operador.
+COMMAND_ROLES: frozenset[str] = frozenset({"ADMIN", "MANAGER"})
 
 
 def roles_permitidos_no_nivel(is_root: bool) -> frozenset[str]:
     """Papeis que podem existir num time, dado o nivel dele.
 
-    Raiz    -> ADMIN, MANAGER, SUPERVISOR, OPERATOR
+    Raiz    -> MANAGER, OPERATOR
     Subtime -> SUPERVISOR, OPERATOR
+
+    ⚠️ A UNIAO DOS DOIS NAO E O ENUM INTEIRO: `ADMIN` nao cabe em nivel de
+    time nenhum (ver `_ORG_LEVEL_ROLES`). Quem escrever um teste de cobertura
+    do enum a partir daqui precisa descontar isso de propósito.
     """
-    if is_root:
-        return _ROLES_SO_NA_RAIZ | _ROLES_EM_QUALQUER_NIVEL
-    return _ROLES_EM_QUALQUER_NIVEL
+    return _ROOT_ROLES if is_root else _SUBTEAM_ROLES
 
 
 def role_permitido_no_nivel(role: object, *, is_root: bool) -> bool:
@@ -220,21 +264,38 @@ def assert_role_permitido_no_nivel(role: object, *, is_root: bool) -> None:
     if role_permitido_no_nivel(role, is_root=is_root):
         return
 
-    valor = getattr(role, "value", role)
-    if not is_root and valor in _ROLES_SO_NA_RAIZ:
+    valor = str(getattr(role, "value", role))
+    if valor in _ORG_LEVEL_ROLES:
+        # ⚠️ RAMO PROPRIO, e nao o de "desconhecido". ADMIN nao sumiu -- ele
+        # MUDOU DE NIVEL na fatia B. Quem esta cadastrando gente precisa sair
+        # daqui sabendo onde promover um admin, senao conclui que o sistema
+        # perdeu o papel e vai procurar no lugar errado.
         motivo = (
-            "ADMIN e MANAGER so existem no time principal. "
+            "ADMIN e papel de organizacao, nao de time. "
+            "Promova pela tela da organizacao, sem escolher time."
+        )
+    elif valor in _ROOT_ROLES:
+        # Sobra so MANAGER: OPERATOR esta nos dois niveis e nunca cai aqui.
+        motivo = (
+            "MANAGER so existe no time principal. "
             "Em subtimes, use SUPERVISOR ou OPERADOR."
         )
+    elif valor in _SUBTEAM_ROLES:
+        # Sobra so SUPERVISOR, e este ramo NASCE nesta fatia -- ate aqui a
+        # raiz aceitava supervisor.
+        motivo = (
+            "SUPERVISOR e dono de um subtime. "
+            "No time principal, use GERENTE ou OPERADOR."
+        )
     else:
-        # So chega aqui com papel fora dos quatro conhecidos (R5).
+        # So chega aqui com papel fora dos conhecidos (R5).
         motivo = (
             "Papel desconhecido: nao e possivel definir em que nivel de "
             "time ele pode existir."
         )
     raise BusinessRuleError(
         motivo,
-        details={"role": str(valor), "nivel": "raiz" if is_root else "subtime"},
+        details={"role": valor, "nivel": "raiz" if is_root else "subtime"},
     )
 
 
@@ -318,5 +379,118 @@ def assert_raiz_nao_menor_que_subtime(
         details={
             "papel_raiz": str(getattr(papel_raiz, "value", papel_raiz)),
             "papel_subtime": str(getattr(papel_subtime, "value", papel_subtime)),
+        },
+    )
+
+
+# ---------------------------------------------------------------------
+# Spec 045, fatia D (§4.4) -- quem tem COMANDO na raiz nao tem vinculo de
+# subtime. Levantada pela Camila em 02/09, sobre o proprio cadastro:
+#
+#     "estou no projeto como operadora do crm que e subtime de marketing e
+#      manager do marketing (...) isso nao pode acontecer, e meio que para
+#      herdar a mesma permissao"
+#
+# MANAGER na raiz JA significa gerente de todos os subtimes dela. O vinculo
+# de subtime nao acrescenta alcance nenhum -- e afirma no organograma algo
+# falso: que a pessoa "esta em" um braco especifico.
+#
+# ⚠️ E ELE NAO PRECISA EXISTIR PARA A PESSOA APARECER LA. A Spec 034 existe
+# exatamente para isso: gestor e admin entram nos seletores de subtime sem
+# vinculo nenhum no subtime. Sem ela, esta regra tiraria gente dos seletores
+# e seria recusada em uma semana.
+#
+# ⚠️ TRES REGRAS IRMAS, E ELAS NAO SE SOBREPOEM -- confira antes de "unificar":
+#     invariante de NIVEL  -> que papeis cabem em UM time (conjunto por nivel)
+#     Spec 044, fatia 5    -> raiz nao pode ser MENOR que subtime (inversao)
+#     esta                 -> raiz de COMANDO nao acumula vinculo embaixo
+# A da 044 e esta cuidam de direcoes OPOSTAS: aquela mata "fraco em cima,
+# forte embaixo"; esta mata "forte em cima, qualquer coisa embaixo".
+#
+# ⚠️ TRAVA DE ESCRITA, E SO. Ela nao conserta cadastro que ja existe -- mesma
+# limitacao da Spec 044 §4.1-bis. Linha velha continua la ate alguem apaga-la
+# a mao, e nenhum teste olha para producao.
+# ---------------------------------------------------------------------
+
+
+def is_command_role(role: object) -> bool:
+    """True se o papel MANDA na arvore, em vez de so trabalhar nela.
+
+    Aceita `UserTeamRole` ou string. Papel desconhecido responde `False` --
+    e aqui isso e o certo, ao contrario da R5: um papel novo nao ganha
+    comando por omissao. Falhar fechado aqui seria travar cadastro por causa
+    de um papel que ninguem classificou; falhar aberto seria conceder
+    comando. `False` nao faz nem um nem outro.
+    """
+    return str(getattr(role, "value", role)) in COMMAND_ROLES
+
+
+def find_command_with_subteam(
+    vinculos: Sequence[tuple[uuid.UUID, object]],
+    tree: Sequence[TeamNode],
+) -> tuple[uuid.UUID, uuid.UUID, object] | None:
+    """Acha o primeiro acumulo proibido. `None` quando o cadastro esta bom.
+
+    Devolve `(raiz, subtime, papel_na_raiz)` -- ids, nao nomes: quem chama e
+    que tem o mapa de nomes para montar a mensagem.
+
+    ⚠️⚠️ A CAMINHADA DA ARVORE MORA AQUI, E NAO NO SERVICE, POR CAUSA DA §3
+    DA SPEC. A regra e "comando NESTA arvore", e com uma raiz so ela e
+    indistinguivel de "comando em qualquer lugar" -- os dois passam em todo
+    teste. Provar a diferenca exige DUAS raizes, e duas raizes nao cabem no
+    banco enquanto o indice parcial da migration `0004` estiver de pe (so a
+    Spec 046 o derruba). Logo o guardiao tem de ser puro, com a arvore
+    montada em memoria, e por isso esta funcao existe separada do service.
+
+    ⚠️ `root_of` SOBE PELOS PAIS -- e nao devolve "a raiz do workspace".
+    Trocar isto por "a primeira raiz" faz a funcao responder `None` para tudo
+    o que estiver na segunda arvore, e quem denuncia e
+    `test_comando_no_TI_com_subtime_do_TI_e_achado` (medido). O teste de nome
+    parecido, `..._em_OUTRA_arvore_nao_conta`, fica VERDE com o defeito: ele
+    espera `None` e recebe `None`.
+    """
+    papel_por_time = {tid: papel for tid, papel in vinculos}
+    tree = tuple(tree)
+
+    for team_id, _papel in vinculos:
+        if not is_subteam(team_id, tree):
+            continue
+        raiz = root_of(team_id, tree)
+        papel_raiz = papel_por_time.get(raiz)
+        # Sem vinculo na raiz nao ha comando acumulado -- e o cadastro normal
+        # de supervisor e operador de subtime.
+        if papel_raiz is None:
+            continue
+        if is_command_role(papel_raiz):
+            return (raiz, team_id, papel_raiz)
+    return None
+
+
+def assert_command_role_has_no_subteam(
+    *,
+    papel_raiz: object,
+    nome_da_raiz: str | None = None,
+    nome_do_subtime: str | None = None,
+) -> None:
+    """Guard da §4.4. Levanta BusinessRuleError (409) se a raiz for comando.
+
+    Quem chama ja sabe que existe um vinculo em subtime DESTA arvore -- esta
+    funcao e pura, como o resto do modulo, e nao consulta cadastro nenhum.
+
+    ⚠️ A MENSAGEM EXPLICA EM VEZ DE SO BARRAR, e isso e requisito da spec, nao
+    capricho: quem tenta adicionar a gerente ao subtime esta tentando resolver
+    um problema real ("ela precisa ver isso"), e a resposta util e que ela ja
+    ve, nao que a operacao falhou.
+    """
+    if not is_command_role(papel_raiz):
+        return
+
+    area = f" ({nome_da_raiz})" if nome_da_raiz else ""
+    raise BusinessRuleError(
+        f"Gestores ja alcancam todos os subtimes desta area{area}. "
+        "Nao e preciso -- nem possivel -- vincula-los a um subtime.",
+        details={
+            "papel_raiz": str(getattr(papel_raiz, "value", papel_raiz)),
+            "subtime": nome_do_subtime or "",
         },
     )

@@ -260,7 +260,47 @@ papel de comando, **sobre a subárvore**.
 Aqui entra o teste da §3, em `team_scope` puro, com duas raízes montadas em
 memória.
 
-**Fatia D — a invariante de nível nova.**
+**Fatia D — a invariante de nível nova. ✅ ENTREGUE (08/09).**
+
+⚠️ **Três coisas que só apareceram ao implementar, e nenhuma estava aqui:**
+
+1. **A regra estreita um caso que a Spec 044 tinha aprovado.** Esta spec dizia
+   que a 4.4 e a regra da 044 "não conflitam" — verdade para as *regras*, falso
+   para os *testes*: `test_manager_na_raiz_com_supervisor_no_subtime_e_permitido`
+   afirmava, citando a Camila (*"mesmo não fazendo sentido"*), que aquele estado
+   era permitido. A 4.4 o proíbe. Não é contradição — a regra da 044 continua
+   dizendo que não há inversão de posto; outra regra passou a barrar por outro
+   motivo. O teste foi partido em dois, um para cada regra.
+2. **Mover um SUPERVISOR para a raiz REBAIXA para `OPERATOR`.** ✅ **Decisão da
+   Camila, 08/09.** Consequência de `SUPERVISOR` sair da raiz, atingindo um fluxo
+   documentado da Spec 003 ("tirar do subtime" preserva o papel). Implementei
+   primeiro como **recusa** — operação de duas etapas — e levantei a alternativa;
+   ela escolheu o rebaixamento automático: levar alguém para o time geral **é**
+   deixar de supervisionar um braço, então o rebaixamento diz a mesma coisa que a
+   operação já dizia.
+
+   ⚠️ **É o único rebaixamento automático do sistema, e o escopo é um mapa de uma
+   entrada** (`_DEMOTION_INTO_ROOT`) — não "o maior papel que cabe no destino".
+   A versão calculada rebaixaria `MANAGER` → `SUPERVISOR` ao entrar num subtime,
+   calado, o que ninguém decidiu.
+
+   ⚠️ **E ele é visível de propósito**: o papel anterior vai em
+   `member.moved_subteam` (`role_before`, `demoted`), um evento próprio
+   `member.role_demoted_on_move` sobe separado, e o objeto devolvido já carrega o
+   papel novo. Mudança de autoridade dentro de uma operação chamada "mover"
+   precisa deixar rastro.
+3. **O guardião de duas raízes não podia ser de integração.** O índice parcial da
+   `0004` só deixa existir uma raiz por workspace até a Spec 046. Por isso a
+   caminhada da árvore virou `team_scope.find_command_with_subteam`, pura, com a
+   segunda árvore montada em memória — a §3 desta spec exigia o guardião, e o
+   banco não o comportava.
+
+⚠️ **E a sabotagem desmentiu o comentário que eu tinha escrito**: quem pega
+`root_of` trocado por "a primeira raiz" é o teste que espera **achar** algo na
+segunda árvore, não o que espera `None` — esse fica verde pelo motivo errado.
+Está registrado nos dois arquivos.
+
+**O desenho original da fatia:**
 `roles_permitidos_no_nivel` passa a devolver `{MANAGER, OPERATOR}` na raiz e
 `{SUPERVISOR, OPERATOR}` em subtime, e nasce a trava da 4.4. Aplicada nas **mesmas
 quatro portas** do `MemberService` (`:314`, `:536`, `:610`, `:773`) — a Spec 044

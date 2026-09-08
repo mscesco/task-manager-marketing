@@ -276,10 +276,16 @@ async def remove_member_from_team(
 async def move_member_subteam(
     user_id: uuid.UUID, payload: MoveSubteamRequest, uow: UoWDep
 ) -> MemberTeamResponse:
-    """Move um membro de um time para outro, preservando o papel. F4 (B2).
+    """Move um membro de um time para outro. F4 (B2).
 
     Atomico (remove origem antes de adicionar destino). Matriz C2 + C3.
     400/404/409 conforme a regra; 403 na matriz.
+
+    ⚠️ "PRESERVANDO O PAPEL" SAIU DESTA FRASE na Spec 045 (fatia D), e nao por
+    estilo: mover um SUPERVISOR para a RAIZ o REBAIXA a OPERATOR, porque o
+    papel deixou de existir la. Quem le a resposta precisa olhar o `role` que
+    volta, e nao assumir o de origem -- e e por isso que o `MemberTeamResponse`
+    devolve o papel GRAVADO.
     """
     membership = await MemberService(uow.session).move_member_subteam(
         user_id=user_id,
