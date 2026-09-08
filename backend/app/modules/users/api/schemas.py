@@ -7,7 +7,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, EmailStr, Field
 
-from app.db.models.enums import UserTeamRole
+from app.db.models.enums import OrgRole, UserTeamRole
 
 
 # --------------------------------------------------------
@@ -105,6 +105,22 @@ class ChangeMemberRoleRequest(BaseModel):
     """Troca o papel de um vinculo (user, team) existente. Spec 015, F2."""
 
     role: UserTeamRole
+
+
+class ChangeOrganizationRoleRequest(BaseModel):
+    """Troca o papel de ORGANIZACAO de uma pessoa. Spec 045, fatia D.
+
+    ⚠️ IRMA de `ChangeMemberRoleRequest`, e o campo se chama `role` nas duas de
+    proposito: a diferenca esta no CAMINHO, nao no corpo.
+
+        PATCH /members/{id}/teams/{team_id}   -> papel NAQUELE time
+        PATCH /members/{id}/organization-role -> papel na ORGANIZACAO
+
+    `None` remove o papel -- a pessoa deixa de administrar a organizacao e
+    continua com os vinculos de time que tiver.
+    """
+
+    role: OrgRole | None = None
 
 
 class MoveSubteamRequest(BaseModel):

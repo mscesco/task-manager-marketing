@@ -24,7 +24,7 @@ from app.modules.users.application.member_service import (
     MemberService,
 )
 from app.shared.exceptions.base import (
-    AuthorizationError,
+    BusinessRuleError,
     EntityNotFoundError,
 )
 from tests.integration import factories as f
@@ -97,33 +97,24 @@ async def test_cadastro_em_subtime_vincula_no_subtime(db) -> None:
         assert vinculos[0].role == UserTeamRole.OPERATOR
 
 
-async def test_manager_nao_cria_admin(db) -> None:
-    """Gate D2: ator MANAGER tentando criar role=ADMIN -> 403."""
-    ws = await f.make_workspace(db)
-    raiz = await f.make_team(db, workspace_id=ws, slug="marketing")
-    manager = await f.make_user(db, workspace_id=ws, email="mgr@t.dev")
-    await f.add_member(
-        db, workspace_id=ws, user_id=manager, team_id=raiz, role="MANAGER"
-    )
+async def test_criar_membro_com_role_ADMIN_e_recusado(db) -> None:
+    """⭐ Spec 045, fatia D: ADMIN deixou de ser papel de TIME.
 
-    with acting_as(
-        workspace_id=ws,
-        user_id=manager,
-        memberships=(Membership(team_id=raiz, role="MANAGER"),),
-    ):
-        with pytest.raises(AuthorizationError):
-            await MemberService(db).create_member(
-                CreateMemberCommand(
-                    name="Tentativa Admin",
-                    email="novoadmin@t.dev",
-                    team_id=raiz,
-                    role=UserTeamRole.ADMIN,
-                )
-            )
+    ⚠️⚠️ ESTE TESTE SUBSTITUI DOIS -- `test_manager_nao_cria_admin` e
+    `test_admin_cria_admin` --, e os dois afirmavam o gate D2 da Spec 015: "so
+    um ADMIN cria outro ADMIN". Aquele gate guardava um CAMINHO QUE DEIXOU DE
+    EXISTIR: `create_member` cria VINCULO DE TIME, e ADMIN virou papel de
+    ORGANIZACAO (fatia B), sem time.
 
+    Aceitar ADMIN aqui exigiria um `team_id` que a rota recebe e ignora -- e
+    `team_id` e OBRIGATORIO neste comando desde a Spec 014 ("nao ha mais membro
+    orfao"). Um endpoint com dois significados conforme o valor de um campo e o
+    que ninguem lembra seis meses depois.
 
-async def test_admin_cria_admin(db) -> None:
-    """Gate D2: ator ADMIN pode criar role=ADMIN."""
+    ⚠️ AGORA E RECUSADO PARA TODO MUNDO, inclusive para quem E admin -- nao e
+    mais questao de autorizacao (403), e sim de o papel nao caber ali (409).
+    Quem promove alguem usa `PATCH /members/{id}/organization-role`.
+    """
     ws = await f.make_workspace(db)
     raiz = await f.make_team(db, workspace_id=ws, slug="marketing")
     admin = await f.make_user(db, workspace_id=ws, email="admin@t.dev")
@@ -136,18 +127,15 @@ async def test_admin_cria_admin(db) -> None:
         user_id=admin,
         memberships=(Membership(team_id=raiz, role="ADMIN"),),
     ):
-        prov = await MemberService(db).create_member(
-            CreateMemberCommand(
-                name="Outro Admin",
-                email="outroadmin@t.dev",
-                team_id=raiz,
-                role=UserTeamRole.ADMIN,
+        with pytest.raises(BusinessRuleError):
+            await MemberService(db).create_member(
+                CreateMemberCommand(
+                    name="Outro Admin",
+                    email="outroadmin@t.dev",
+                    team_id=raiz,
+                    role=UserTeamRole.ADMIN,
+                )
             )
-        )
-        vinculos = await MemberService(db)._users.list_team_memberships(
-            user_id=prov.user.id
-        )
-        assert vinculos[0].role == UserTeamRole.ADMIN
 
 
 async def test_team_inexistente_404(db) -> None:

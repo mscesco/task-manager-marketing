@@ -35,6 +35,7 @@ from app.modules.auth.api.dependencies import (
 )
 from app.modules.users.api.schemas import (
     ChangeMemberRoleRequest,
+    ChangeOrganizationRoleRequest,
     MemberCreatedResponse,
     MemberCreateRequest,
     MemberListResponse,
@@ -287,6 +288,36 @@ async def move_member_subteam(
     )
     await uow.commit()
     return MemberTeamResponse(team_id=membership.team_id, role=membership.role)
+
+
+@router.patch(
+    "/{user_id}/organization-role",
+    response_model=MemberResponse,
+    dependencies=[Depends(require_permission("workspace.manage"))],
+)
+async def change_organization_role(
+    user_id: uuid.UUID,
+    payload: ChangeOrganizationRoleRequest,
+    uow: UoWDep,
+) -> MemberResponse:
+    """Troca o papel de ORGANIZACAO de uma pessoa. Spec 045, fatia D.
+
+    Irma de `PATCH /{user_id}/teams/{team_id}`: aquela mexe no papel NAQUELE
+    time, esta no papel na organizacao -- que nao tem time. O corpo tem o mesmo
+    campo `role` nas duas; a diferenca esta no CAMINHO.
+
+    ⚠️ `workspace.manage`, e nao `team.manage`: so o ADMIN de organizacao o tem.
+    Quem OPERA a organizacao (GESTOR) nao decide quem a opera -- e a tabela
+    decidida em 02/09.
+
+    ⚠️ `role: null` remove o papel. Devolve 409 se isso deixaria a organizacao
+    sem nenhum ADMIN ativo.
+    """
+    user = await MemberService(uow.session).change_organization_role(
+        user_id=user_id, new_role=payload.role
+    )
+    await uow.commit()
+    return MemberResponse.model_validate(user)
 
 
 @router.post(

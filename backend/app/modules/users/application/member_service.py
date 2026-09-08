@@ -25,7 +25,7 @@ from app.core.config import settings
 from app.core.logging import get_logger
 from app.core.tenant import Membership, TeamNode, require_tenant
 from app.db.models import User, UserTeam
-from app.db.models.enums import UserTeamRole
+from app.db.models.enums import OrgRole, UserTeamRole
 from app.modules.auth.domain.team_scope import (
     assert_raiz_nao_menor_que_subtime,
     assert_role_permitido_no_nivel,
@@ -385,13 +385,24 @@ class MemberService:
             raise ValidationError(
                 "E-mail invalido.", details={"field": "email"}
             )
-        # --- gate D2: so um ADMIN pode criar outro ADMIN ---
-        if command.role is UserTeamRole.ADMIN and not require_tenant().has_role(
-            "ADMIN"
-        ):
-            raise AuthorizationError(
-                "Apenas um ADMIN pode criar um membro ADMIN.",
-                details={"field": "role"},
+        # --- Spec 045, fatia D: ADMIN nao e papel de TIME ---
+        #
+        # ⚠️⚠️ ESTE CASO DE USO E O DO VINCULO DE TIME, e `ADMIN` deixou de ser
+        # isso: virou papel de ORGANIZACAO (fatia B), sem time. Aceitar aqui
+        # exigiria um `team_id` que a rota recebe e ignora -- e `team_id` e
+        # OBRIGATORIO neste comando desde a Spec 014 ("nao ha mais membro
+        # orfao"). Um endpoint com dois significados conforme o valor de um
+        # campo e o que ninguem lembra seis meses depois.
+        #
+        # ⚠️ O GATE ANTERIOR ERA "so um ADMIN cria outro ADMIN" (D2), e some
+        # junto -- ele guardava um caminho que deixou de existir. Quem promove
+        # alguem a ADMIN usa `PATCH /members/{id}/organization-role`, cujo
+        # portao e `workspace.manage` (so o ADMIN de organizacao o tem).
+        if command.role is UserTeamRole.ADMIN:
+            raise BusinessRuleError(
+                "ADMIN é papel da organização, não de time. Cadastre a pessoa "
+                "com um papel de time e depois defina o papel de organização.",
+                details={"field": "role", "rota": "PATCH /members/{id}/organization-role"},
             )
 
         # --- unicidade de e-mail ---
@@ -955,6 +966,66 @@ class MemberService:
         )
         return nova
 
+    async def change_organization_role(
+        self, *, user_id: uuid.UUID, new_role: OrgRole | None
+    ) -> User:
+        """Troca o papel de ORGANIZACAO de uma pessoa. Spec 045, fatia D.
+
+        Irma de `change_member_role`: aquela mexe no papel NAQUELE time, esta no
+        papel na ORGANIZACAO, que nao tem time.
+
+        ⚠️ O PORTAO E `workspace.manage`, aplicado na rota -- e so o ADMIN de
+        organizacao o tem. Bate com a tabela decidida em 02/09: promover ou
+        rebaixar gestor e ✅ para ADMIN e — para GESTOR. Quem opera a
+        organizacao nao decide quem a opera.
+
+        ⚠️⚠️ E AQUI NASCE A TRAVA DO ULTIMO ADMIN, que a Spec 045 §4.3 pediu na
+        fatia B. Ela NAO foi implementada la, e estava certo por acidente: sem
+        rota de escrita, nao havia como rebaixar ninguem, entao nao havia o que
+        guardar. Assim que a rota existe, a invariante passa a ser necessaria
+        **e** possivel -- as duas nascem juntas, que e como deveria ter sido.
+
+        Erros:
+            EntityNotFoundError -- usuario inexistente no workspace.
+            BusinessRuleError   -- deixaria a organizacao sem ADMIN (409).
+        """
+        user = await self._users.get_by_id(user_id)
+        if user is None:
+            raise EntityNotFoundError("User", identifier=user_id)
+
+        atual = user.org_role
+        if atual is OrgRole.ADMIN and new_role is not OrgRole.ADMIN:
+            await self._assert_nao_e_o_ultimo_admin(user_id=user_id)
+
+        user.org_role = new_role
+        logger.info(
+            "member.organization_role_changed",
+            user_id=str(user_id),
+            de=atual.value if atual else None,
+            para=new_role.value if new_role else None,
+        )
+        return user
+
+    async def _assert_nao_e_o_ultimo_admin(self, *, user_id: uuid.UUID) -> None:
+        """A organizacao nunca fica sem ADMIN (Spec 045, §4.3).
+
+        ⚠️ CONTA SO OS ATIVOS. Um admin desativado nao administra nada, entao
+        deixar o ultimo ATIVO ser rebaixado porque existe um inativo no cadastro
+        trancaria a organizacao com a mesma cara de "estava tudo certo".
+
+        ⚠️ E NAO OLHA `user_team`. A fonte velha ainda existe durante a
+        transicao (fatia B, passo 2), mas quem administra a organizacao daqui
+        pra frente e quem tem `org_role` -- contar vinculo de time aqui faria a
+        trava liberar o rebaixamento por causa de um cadastro que esta de saida.
+        """
+        outros = await self._users.count_org_admins(excluindo=user_id)
+        if outros == 0:
+            raise BusinessRuleError(
+                "A organização precisa de pelo menos um administrador. "
+                "Promova outra pessoa antes de rebaixar esta.",
+                details={"user_id": str(user_id)},
+            )
+
     async def deactivate_member(self, *, user_id: uuid.UUID) -> User:
         """Desativa um membro (is_active = False).
 
@@ -997,11 +1068,17 @@ class MemberService:
     # Por isso os dois gates abaixo. Eles NAO substituem a matriz C2:
     # rodam junto com ela.
 
-    def _tem_gestao_ampla(self) -> bool:
+    def _tem_gestao_ampla(self, team_id: uuid.UUID | None = None) -> bool:
         """True para quem tem `team.manage` -- hoje ADMIN e MANAGER.
 
         Checa PERMISSAO, nao papel: se um papel novo ganhar `team.manage`
         no mapa, este gate acompanha sozinho.
+
+        ⭐ Spec 045, fatia C: quando o `team_id` do alvo e conhecido, a pergunta
+        passa a ser "tem `team.manage` NAQUELE time?". Com uma raiz so as duas
+        respostas coincidem; com N raizes (Spec 046) elas divergem, e a
+        diferenca e um MANAGER de Marketing administrando gente do TI.
+        ⚠️ `team_id=None` mantem a pergunta ampla -- ha chamador sem alvo.
 
         ⚠️ NAO E GAMBIARRA, e ate a Spec 045 (fatia A) parecia ser. Ate la o
         mapa dizia que ADMIN e MANAGER **nao** tinham `member.manage.subteam`,
@@ -1012,7 +1089,7 @@ class MemberService:
         vem da ARVORE (`visible/editable_team_ids`) e nao dos subtimes que
         supervisionam. O mapa diz "o que"; isto participa do "onde".
         """
-        return require_tenant().has_permission("team.manage")
+        return require_tenant().has_permission_in("team.manage", team_id)
 
     def _subtimes_supervisionados(self) -> frozenset[uuid.UUID]:
         """team_ids onde o ator e SUPERVISOR.
@@ -1043,7 +1120,7 @@ class MemberService:
 
         Levanta AuthorizationError (403) na violacao.
         """
-        if self._tem_gestao_ampla():
+        if self._tem_gestao_ampla(team_id):
             return
 
         # Daqui pra baixo o ator so pode ter chegado por
