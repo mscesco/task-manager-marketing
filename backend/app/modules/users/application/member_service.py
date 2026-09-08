@@ -122,6 +122,36 @@ def _temp_password_expiry() -> datetime:
     )
 
 
+#: O unico rebaixamento automatico do sistema, e ele tem UMA entrada.
+#:
+#: ⚠️ MAPA EXPLICITO, e nao "o maior papel que cabe no destino". A versao
+#: calculada tambem rebaixaria MANAGER -> SUPERVISOR ao mover para subtime, o
+#: que ninguem decidiu e que ninguem veria acontecer. Aqui, acrescentar um caso
+#: exige escrever a linha -- e a linha e o lugar de justificar.
+_DEMOTION_INTO_ROOT: dict[UserTeamRole, UserTeamRole] = {
+    UserTeamRole.SUPERVISOR: UserTeamRole.OPERATOR,
+}
+
+
+def _role_at_destination(
+    role: UserTeamRole, *, to_root: bool
+) -> UserTeamRole:
+    """Papel que sera GRAVADO no destino de um `move_member_subteam`.
+
+    Igual ao de origem, exceto no unico caso decidido pela Camila em 08/09:
+    mover um SUPERVISOR para a RAIZ o rebaixa a OPERATOR.
+
+    ⚠️⚠️ ISTO E UMA MUDANCA DE AUTORIDADE ACONTECENDO DENTRO DE UMA OPERACAO
+    CHAMADA "MOVER", e por isso ela e estreita e visivel: uma entrada de mapa,
+    um log proprio no chamador, e o papel novo no objeto devolvido. Quem
+    ampliar este mapa esta decidindo que mais alguem pode perder posto sem ter
+    pedido -- pense duas vezes e escreva o motivo.
+    """
+    if not to_root:
+        return role
+    return _DEMOTION_INTO_ROOT.get(role, role)
+
+
 class MemberService:
     """Casos de uso de gestao de membros."""
 
@@ -974,14 +1004,38 @@ class MemberService:
         # operacao toca o subtime de ORIGEM, que nao e dele (viola D1).
         self._assert_gestao_ampla(acao="move_member_subteam")
 
-        # Matriz: o papel e preservado, entao checa alvo E atribuicao do mesmo.
-        role = origem.role
-        self._assert_actor_can_target(role)
+        # ⚠️⚠️ O PAPEL NEM SEMPRE VIAJA INTEIRO -- Spec 045, fatia D, decisao da
+        # Camila em 08/09. Mover um SUPERVISOR para a RAIZ o rebaixa a
+        # OPERATOR, em vez de recusar a operacao.
+        #
+        # Por que existe: `SUPERVISOR` saiu da raiz (invariante de nivel), e
+        # sem isto o fluxo "tirar do subtime" da Spec 003 -- que e mover para a
+        # raiz preservando o papel -- morreria para supervisor. A alternativa
+        # era recusar e exigir duas etapas (rebaixar, depois mover).
+        #
+        # ⚠️ E SO ESTE CASO, de proposito. A regra NAO e "rebaixe qualquer papel
+        # que nao couber no destino": mover um MANAGER para subtime continua
+        # RECUSADO, e nao virando SUPERVISOR calado. A diferenca e o
+        # significado -- levar alguem para o time geral E deixar de supervisionar
+        # um braco, entao o rebaixamento diz a mesma coisa que a operacao; mandar
+        # um dono de arvore para dentro de um braco nao tem leitura obvia
+        # nenhuma, e adivinhar ali seria inventar intencao.
+        origem_role = origem.role
+        role = _role_at_destination(
+            origem_role, to_root=destino.parent_team_id is None
+        )
+        demoted = role is not origem_role
+
+        # Matriz: `target` sobre o papel ATUAL (e preciso poder mexer num
+        # supervisor) e `assign` sobre o papel que sera GRAVADO -- que nem
+        # sempre e o mesmo desde o rebaixamento acima.
+        self._assert_actor_can_target(origem_role)
         self._assert_actor_can_assign(role)
 
-        # Spec 024/D3 -- porta 4 de 4. O papel VIAJA junto, entao o que
-        # importa e se ele cabe no nivel do DESTINO: mover um MANAGER pra
-        # subtime, ou um SUPERVISOR pra raiz, viola a invariante.
+        # Spec 024/D3 -- porta 4 de 4. Continua valendo, e agora sobre o papel
+        # ja resolvido: mover um MANAGER pra subtime segue violando a
+        # invariante. O unico caso que deixou de chegar aqui e o do supervisor
+        # indo para a raiz, tratado acima.
         assert_role_permitido_no_nivel(
             role, is_root=destino.parent_team_id is None
         )
@@ -1042,7 +1096,24 @@ class MemberService:
             from_team_id=str(from_team_id),
             to_team_id=str(to_team_id),
             role=role.value,
+            # ⚠️ O PAPEL ANTERIOR VAI JUNTO SEMPRE, e nao so quando muda: um
+            # log que so aparece na excecao obriga quem investiga a saber que
+            # a excecao existe. Com os dois campos, "perdi o posto de
+            # supervisora e nao lembro quando" e uma busca, nao uma arqueologia.
+            role_before=origem_role.value,
+            demoted=demoted,
         )
+        if demoted:
+            # Evento PROPRIO, alem do campo acima: mudanca de autoridade nao
+            # deve ficar escondida dentro de um log chamado "moved".
+            logger.info(
+                "member.role_demoted_on_move",
+                user_id=str(user_id),
+                to_team_id=str(to_team_id),
+                de=origem_role.value,
+                para=role.value,
+                motivo="SUPERVISOR nao existe no time principal (Spec 045, D)",
+            )
         return nova
 
     async def change_organization_role(

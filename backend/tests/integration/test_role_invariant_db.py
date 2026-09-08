@@ -200,7 +200,17 @@ async def test_change_member_role_permite_troca_dentro_do_mesmo_nivel(db) -> Non
 # 5. move_member_subteam
 # ------------------------------------------------------------------
 async def test_move_member_recusa_levar_manager_para_subtime(db) -> None:
-    """O papel VIAJA junto: mover MANAGER da raiz pro subtime violaria."""
+    """O papel VIAJA junto: mover MANAGER da raiz pro subtime violaria.
+
+    ⚠️⚠️ E ESTE TESTE PASSOU A GUARDAR O **ESCOPO DO REBAIXAMENTO AUTOMATICO**
+    (Spec 045, fatia D). Desde 08/09, mover um SUPERVISOR para a raiz nao e
+    recusado: ele e REBAIXADO a OPERATOR. A regra que faz isso e um mapa de
+    UMA entrada (`_DEMOTION_INTO_ROOT`), e nao "o maior papel que cabe no
+    destino" -- porque a versao calculada tambem rebaixaria MANAGER a
+    SUPERVISOR aqui, calado, o que ninguem decidiu.
+
+    Sabotagem rodada: mapa trocado pela versao calculada -> este teste cai.
+    """
     ws, raiz, sub, admin = await _mundo(db)
     gerente = await f.make_user(db, workspace_id=ws)
     await f.add_member(
@@ -238,20 +248,22 @@ async def test_mover_OPERATOR_para_raiz_e_o_fluxo_tirar_do_subtime(db) -> None:
     assert vinculo.role == UserTeamRole.OPERATOR  # papel preservado
 
 
-async def test_mover_SUPERVISOR_para_raiz_passa_a_ser_recusado(db) -> None:
-    """⭐⭐ A consequencia de produto da fatia D, e a mais fácil de descobrir
-    tarde: ela aparece com CLIENTE REAL, nao em teste sintetico.
+async def test_mover_SUPERVISOR_para_raiz_REBAIXA_para_operator(db) -> None:
+    """⭐⭐ O unico rebaixamento automatico do sistema. Decisao da Camila, 08/09.
 
-    ⚠️ ESTE ARQUIVO JA AVISOU UMA VEZ que a invariante "NAO pode barrar isso
-    -- foi exatamente o que a versao simetrica da regra quebrou". A diferenca
-    e que aquela versao barrava OPERATOR **tambem**, e ai o fluxo inteiro
-    morria; esta barra so o SUPERVISOR, e o caso normal (o teste acima) segue
-    de pe.
+    ⚠️⚠️ ESTE TESTE JA AFIRMOU O CONTRARIO -- que a operacao era RECUSADA e a
+    saida era de duas etapas (rebaixar, depois mover). Eu implementei assim e
+    levantei a alternativa; ela escolheu o rebaixamento automatico. O que segue
+    e a decisao dela, e nao um efeito colateral que ninguem viu.
 
-    ⚠️ E A SAIDA E DE DUAS ETAPAS: rebaixar para OPERATOR e depois mover.
-    Isso e deliberado -- mover alguem para a raiz e dizer que ela deixou de
-    ser dona de um braco operacional, e essa perda de autoridade nao deve
-    acontecer por efeito colateral de uma operacao chamada "mover".
+    A leitura que a sustenta: levar alguem para o time geral **e** deixar de
+    supervisionar um braco. O rebaixamento nao acrescenta significado a
+    operacao -- ele diz a mesma coisa que ela ja dizia.
+
+    ⚠️ E POR ISSO O PAPEL ANTERIOR VAI PARA O LOG, em dois eventos: o
+    `member.moved_subteam` ganha `role_before`/`demoted`, e um
+    `member.role_demoted_on_move` sobe separado. Mudanca de autoridade dentro
+    de uma operacao chamada "mover" precisa deixar rastro proprio.
     """
     ws, raiz, sub, admin = await _mundo(db)
     supervisor = await f.make_user(db, workspace_id=ws)
@@ -260,10 +272,23 @@ async def test_mover_SUPERVISOR_para_raiz_passa_a_ser_recusado(db) -> None:
     )
 
     with _como_admin(ws, raiz, sub, admin):
-        with pytest.raises(BusinessRuleError):
-            await MemberService(db).move_member_subteam(
-                user_id=supervisor, from_team_id=sub, to_team_id=raiz
-            )
+        vinculo = await MemberService(db).move_member_subteam(
+            user_id=supervisor, from_team_id=sub, to_team_id=raiz
+        )
+
+    assert vinculo.team_id == raiz
+    # ⚠️ O RETORNO CARREGA O PAPEL NOVO, e nao o antigo: e por ele que a tela
+    # tem como contar o que aconteceu. Se um dia isto voltar SUPERVISOR, o
+    # front mostraria um papel que nao existe no banco.
+    assert vinculo.role == UserTeamRole.OPERATOR
+
+
+# ⚠️ AQUI MORAVA `test_mover_MANAGER_para_subtime_continua_RECUSADO`, escrito
+# na fatia D para guardar o escopo do rebaixamento. Ele era DUPLICATA exata de
+# `test_move_member_recusa_levar_manager_para_subtime`, acima -- mesmo cenario,
+# mesma assercao, nome diferente. Descoberto pela sabotagem, que derrubou DOIS
+# testes quando eu tinha afirmado que derrubaria um. O raciocinio foi para a
+# docstring do teste original, que e onde ele pertencia desde o comeco.
 
 
 async def test_move_member_entre_subtimes_continua_funcionando(db) -> None:

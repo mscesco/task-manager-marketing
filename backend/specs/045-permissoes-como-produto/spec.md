@@ -271,14 +271,24 @@ memória.
    era permitido. A 4.4 o proíbe. Não é contradição — a regra da 044 continua
    dizendo que não há inversão de posto; outra regra passou a barrar por outro
    motivo. O teste foi partido em dois, um para cada regra.
-2. **Mover um SUPERVISOR para a raiz passou a ser recusado.** Consequência de
-   `SUPERVISOR` sair da raiz, e ela atinge um fluxo documentado da Spec 003
-   ("tirar do subtime" preserva o papel). O fluxo sobrevive para `OPERATOR`, que
-   é o caso normal; para supervisor virou operação de duas etapas. **⚠️ Decisão
-   pendente da Camila** — a alternativa é rebaixar automaticamente para
-   `OPERATOR` ao mover, e eu não fiz isso: perda de autoridade por efeito
-   colateral de uma operação chamada "mover" é o tipo de coisa que ninguém
-   percebe.
+2. **Mover um SUPERVISOR para a raiz REBAIXA para `OPERATOR`.** ✅ **Decisão da
+   Camila, 08/09.** Consequência de `SUPERVISOR` sair da raiz, atingindo um fluxo
+   documentado da Spec 003 ("tirar do subtime" preserva o papel). Implementei
+   primeiro como **recusa** — operação de duas etapas — e levantei a alternativa;
+   ela escolheu o rebaixamento automático: levar alguém para o time geral **é**
+   deixar de supervisionar um braço, então o rebaixamento diz a mesma coisa que a
+   operação já dizia.
+
+   ⚠️ **É o único rebaixamento automático do sistema, e o escopo é um mapa de uma
+   entrada** (`_DEMOTION_INTO_ROOT`) — não "o maior papel que cabe no destino".
+   A versão calculada rebaixaria `MANAGER` → `SUPERVISOR` ao entrar num subtime,
+   calado, o que ninguém decidiu.
+
+   ⚠️ **E ele é visível de propósito**: o papel anterior vai em
+   `member.moved_subteam` (`role_before`, `demoted`), um evento próprio
+   `member.role_demoted_on_move` sobe separado, e o objeto devolvido já carrega o
+   papel novo. Mudança de autoridade dentro de uma operação chamada "mover"
+   precisa deixar rastro.
 3. **O guardião de duas raízes não podia ser de integração.** O índice parcial da
    `0004` só deixa existir uma raiz por workspace até a Spec 046. Por isso a
    caminhada da árvore virou `team_scope.find_command_with_subteam`, pura, com a
