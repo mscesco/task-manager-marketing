@@ -21,6 +21,7 @@ import {
   podeMoverSubtime,
   podeAdicionarAoTime,
   podeRemoverDoTime,
+  avisoDeRebaixamento,
   papeisAtribuiveis,
   timesParaAdicionar,
   candidatosParaAdicionar,
@@ -157,18 +158,75 @@ describe("podeRemoverDoTime", () => {
   });
 });
 
+const NA_RAIZ = true;
+const EM_SUBTIME = false;
+
 describe("papeisAtribuiveis", () => {
   it("supervisor so oferece OPERATOR", () => {
-    expect(papeisAtribuiveis(SUP, false)).toEqual(["OPERATOR"]);
+    expect(papeisAtribuiveis(SUP, false, EM_SUBTIME)).toEqual(["OPERATOR"]);
   });
 
-  it("ADMIN ve o papel ADMIN; MANAGER nao", () => {
-    expect(papeisAtribuiveis(AMPLO, true)).toContain("ADMIN");
-    expect(papeisAtribuiveis(AMPLO, false)).not.toContain("ADMIN");
+  it("na raiz: GERENTE e OPERADOR", () => {
+    expect(papeisAtribuiveis(AMPLO, true, NA_RAIZ)).toEqual([
+      "MANAGER",
+      "OPERATOR",
+    ]);
+  });
+
+  it("em subtime: SUPERVISOR e OPERADOR", () => {
+    expect(papeisAtribuiveis(AMPLO, true, EM_SUBTIME)).toEqual([
+      "SUPERVISOR",
+      "OPERATOR",
+    ]);
+  });
+
+  // ⚠️⚠️ ESTE TESTE AFIRMAVA O CONTRARIO -- "ADMIN ve o papel ADMIN" --, e a
+  // Spec 045 (fatia D) o inverteu: ADMIN saiu do nivel de time e virou papel
+  // de ORGANIZACAO. Nao e questao de permissao: nao ha time que o aceite,
+  // nem para quem e admin. Oferecer levaria a 409 na hora de salvar.
+  it("ADMIN nao aparece em nivel de time NENHUM, nem para admin", () => {
+    for (const nivel of [NA_RAIZ, EM_SUBTIME]) {
+      expect(papeisAtribuiveis(AMPLO, true, nivel)).not.toContain("ADMIN");
+      expect(papeisAtribuiveis(AMPLO, false, nivel)).not.toContain("ADMIN");
+    }
+  });
+
+  // A outra metade da invariante, e a que a tela erraria calada: MANAGER num
+  // subtime e SUPERVISOR na raiz sao os dois 409 que sobravam.
+  it("MANAGER nao aparece em subtime; SUPERVISOR nao aparece na raiz", () => {
+    expect(papeisAtribuiveis(AMPLO, true, EM_SUBTIME)).not.toContain("MANAGER");
+    expect(papeisAtribuiveis(AMPLO, true, NA_RAIZ)).not.toContain("SUPERVISOR");
+  });
+
+  it("OPERADOR aparece nos dois niveis -- e o unico", () => {
+    expect(papeisAtribuiveis(AMPLO, true, NA_RAIZ)).toContain("OPERATOR");
+    expect(papeisAtribuiveis(AMPLO, true, EM_SUBTIME)).toContain("OPERATOR");
   });
 
   it("sem alcance, lista vazia", () => {
-    expect(papeisAtribuiveis(NADA, true)).toEqual([]);
+    expect(papeisAtribuiveis(NADA, true, NA_RAIZ)).toEqual([]);
+  });
+});
+
+describe("avisoDeRebaixamento", () => {
+  it("papel igual -> sem aviso (o caso normal)", () => {
+    expect(avisoDeRebaixamento("OPERATOR", "OPERATOR", "Marketing")).toBeNull();
+  });
+
+  it("supervisor que virou operador -> avisa, com os dois papeis e o time", () => {
+    const aviso = avisoDeRebaixamento("SUPERVISOR", "OPERATOR", "Marketing");
+    expect(aviso).toContain("Supervisor");
+    expect(aviso).toContain("Operador");
+    expect(aviso).toContain("Marketing");
+  });
+
+  // ⚠️ A FUNCAO COMPARA, e nao reimplementa a regra do backend. Se o mapa de
+  // rebaixamento mudar la, a tela continua contando a verdade sem ser tocada
+  // -- e este teste e o que registra essa escolha.
+  it("avisa qualquer troca, e nao so a que existe hoje", () => {
+    expect(
+      avisoDeRebaixamento("MANAGER", "OPERATOR", "Marketing"),
+    ).not.toBeNull();
   });
 });
 

@@ -1638,8 +1638,14 @@ export async function removeMemberFromTeam(
   invalidateMembers(); // o subtime exibido na lista pode mudar
 }
 
-// Spec 015, Fatia 4: move um membro de um time para outro (B2), preservando o
-// papel. Atomico no backend; matriz (403); 409 = mesmo time ou ja no destino.
+// Spec 015, Fatia 4: move um membro de um time para outro (B2).
+// Atomico no backend; matriz (403); 409 = mesmo time ou ja no destino.
+//
+// ⚠️ NAO PRESERVA SEMPRE O PAPEL -- esta linha dizia que sim ate a Spec 045
+// (fatia D). Mover um SUPERVISOR para a RAIZ o REBAIXA a OPERATOR, porque o
+// papel nao existe la. USE O `role` QUE VOLTA: quem assumir o de origem vai
+// desenhar um papel que nao esta no banco. `avisoDeRebaixamento` compara os
+// dois e devolve a frase para a tela.
 export async function moveMemberSubteam(
   userId: string,
   fromTeamId: string,

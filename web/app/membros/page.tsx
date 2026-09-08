@@ -11,6 +11,7 @@ import {
   podeMoverSubtime,
   podeAdicionarAoTime,
   podeRemoverDoTime,
+  avisoDeRebaixamento,
   papeisAtribuiveis,
   timesParaAdicionar as timesPermitidos,
   candidatosParaAdicionar,
@@ -52,7 +53,12 @@ const PAPEL_LABEL: Record<MemberRole, string> = {
   SUPERVISOR: "Supervisor",
   OPERATOR: "Operador",
 };
-const PAPEIS: MemberRole[] = ["OPERATOR", "SUPERVISOR", "MANAGER", "ADMIN"];
+// ⚠️ AQUI MORAVA `PAPEIS = ["OPERATOR","SUPERVISOR","MANAGER","ADMIN"]`, a
+// lista dos quatro papeis de time. Ela ficou sem uso na Spec 045 (fatia D):
+// nao existe mais lugar que aceite os quatro, entao "todos os papeis" deixou
+// de ser uma pergunta com resposta. Quem quer a lista pergunta
+// `papeisAtribuiveis(alcance, souAdmin, ehRaiz)` -- que responde POR NIVEL.
+// Nao recrie: uma lista fixa aqui e exatamente o que oferecia ADMIN.
 
 type Revelado = { titulo: string; email: string; senha: string };
 
@@ -86,10 +92,25 @@ function Membros() {
   // A regra mora em lib/permissoesMembros (pura, testada); aqui so lemos.
   const alcance = alcanceDe(me);
   const podeGerenciar = podeGerenciarAlgo(alcance);
-  // Spec 014 (gate D2): so um ADMIN ve a opcao ADMIN no dropdown. O backend
-  // trava de qualquer jeito -- isto e so conveniencia de UI.
   const souAdmin = me?.roles.includes("ADMIN") ?? false;
-  const papeisDisponiveis = souAdmin ? PAPEIS : PAPEIS.filter((p) => p !== "ADMIN");
+  // ⚠️⚠️ AQUI HAVIA `PAPEIS` INTEIRO, filtrado so por "sou admin?" (gate D2 da
+  // Spec 014). A Spec 045 (fatia D) tornou isso errado em tres opcoes: ADMIN
+  // saiu do nivel de time, MANAGER nao cabe em subtime e SUPERVISOR nao cabe
+  // na raiz -- e o `create_member` do backend recusa os tres com 409.
+  //
+  // ⚠️ E ESTE FORMULARIO ERA O PIOR LUGAR PARA ISSO SOBRAR: ele cadastra
+  // gente. Escolher "Administrador", preencher nome e e-mail e so entao levar
+  // um 409 e a versao mais cara possivel de descobrir a regra.
+  //
+  // Sem time escolhido nao ha nivel -- e o proprio `<select>` ja comeca em
+  // "— selecione o time —", entao a lista vazia e o estado honesto.
+  const papeisDisponiveis: MemberRole[] = timeId
+    ? papeisAtribuiveis(
+        alcance,
+        souAdmin,
+        times.find((t) => t.id === timeId)?.parent_team_id == null,
+      )
+    : [];
 
 // Rotulo do time COM a hierarquia: se o time tem pai, mostra
   // "Pai › Filho" (ex.: "Marketing › CRM e Automacao"), deixando claro
@@ -327,6 +348,10 @@ function LinhaMembro({
   // tarefas no 422; guardar so texto aqui era o que fazia a lista morrer no
   // ultimo passo, depois de atravessar backend, HTTP e `lib/api.ts`.
   const [erroLinha, setErroLinha] = useState<ErroDeLinha | null>(null);
+  // ⚠️ SEPARADO DO ERRO, de proposito: o rebaixamento da Spec 045 acontece
+  // num SUCESSO. Reaproveitar `erroLinha` pintaria de vermelho uma operacao
+  // que deu certo, e ensinaria a tratar o aviso como falha.
+  const [avisoLinha, setAvisoLinha] = useState<string | null>(null);
 
   // painel de papel (Spec 015, F3) -- carregado sob demanda.
   const [editandoPapel, setEditandoPapel] = useState(false);
@@ -348,10 +373,18 @@ function LinhaMembro({
     m.is_active &&
     temAcaoPossivel(alcance, m.team_ids);
 
-  // Papeis atribuiveis pelo ator. Spec 028: sai do modulo puro -- supervisor
-  // so oferece OPERATOR. Espelha a matriz C2 + a trava D2 do backend (que
-  // travam de qualquer jeito; aqui e so para nao oferecer o que dara 403).
-  const papeisDoAtor: MemberRole[] = papeisAtribuiveis(alcance, souAdmin);
+  // Papeis atribuiveis pelo ator NAQUELE TIME. Spec 028: sai do modulo puro
+  // -- supervisor so oferece OPERATOR. Espelha a matriz C2 + a trava D2 do
+  // backend (que travam de qualquer jeito; aqui e so para nao oferecer o que
+  // dara 403).
+  //
+  // ⚠️ DEPENDE DO NIVEL DESDE A SPEC 045 (fatia D), entao deixou de ser UMA
+  // lista da tela e virou uma pergunta POR TIME: MANAGER so cabe na raiz,
+  // SUPERVISOR so em subtime, ADMIN em nenhum dos dois.
+  function papeisPara(teamId: string): MemberRole[] {
+    const t = times.find((x) => x.id === teamId);
+    return papeisAtribuiveis(alcance, souAdmin, t?.parent_team_id == null);
+  }
 
   function nomeTime(id: string): string {
     return times.find((t) => t.id === id)?.name ?? "—";
@@ -509,10 +542,24 @@ function LinhaMembro({
   async function moverPara(fromTeamId: string, toTeamId: string) {
     setPapelBusy(fromTeamId);
     setErroLinha(null);
+    setAvisoLinha(null);
+    // ⚠️ LIDO ANTES DA CHAMADA: `recarregarVinculos` abaixo troca o estado, e
+    // depois disso nao ha mais de onde tirar o papel anterior.
+    const papelAntes = (vinculos ?? []).find(
+      (v) => v.team_id === fromTeamId
+    )?.role;
     try {
-      await moveMemberSubteam(m.id, fromTeamId, toTeamId);
+      const novo = await moveMemberSubteam(m.id, fromTeamId, toTeamId);
       await recarregarVinculos();
       onMudou(); // o subtime na lista mudou
+      // ⚠️ Spec 045, fatia D: o backend REBAIXA um supervisor ao leva-lo para
+      // o time principal. A operacao termina em sucesso e a pessoa perde o
+      // posto -- sem esta frase, quem clicou nao fica sabendo.
+      if (papelAntes) {
+        setAvisoLinha(
+          avisoDeRebaixamento(papelAntes, novo.role, nomeTime(toTeamId))
+        );
+      }
     } catch (e) {
       const a = e as ApiError;
       // Spec 037, E8: o 422 COM lista vira o aviso estruturado. O 422 sem
@@ -687,7 +734,7 @@ function LinhaMembro({
                         onChange={(ev) => salvarPapel(v.team_id, ev.target.value as MemberRole)}
                         style={{ padding: "4px 8px", fontSize: 12, width: "auto" }}
                       >
-                        {papeisDoAtor.map((p) => (
+                        {papeisPara(v.team_id).map((p) => (
                           <option key={p} value={p}>{PAPEL_LABEL[p]}</option>
                         ))}
                       </select>
@@ -761,7 +808,10 @@ function LinhaMembro({
                   onChange={(ev) => setNovoPapel(ev.target.value as MemberRole | "")}
                   style={{ padding: "4px 8px", fontSize: 12, width: "auto" }}>
                   <option value="">— papel —</option>
-                  {papeisDoAtor.map((p) => (
+                  {/* ⚠️ Depende do TIME ESCOLHIDO, e nao do ator: trocar o
+                      destino troca a lista. Sem `novoTimeId` ainda nao ha
+                      nivel, e a lista fica vazia -- o botao ja exige os dois. */}
+                  {(novoTimeId ? papeisPara(novoTimeId) : []).map((p) => (
                     <option key={p} value={p}>{PAPEL_LABEL[p]}</option>
                   ))}
                 </select>
@@ -810,6 +860,34 @@ function LinhaMembro({
             <BloqueioAlcance bloqueio={erroLinha} />
           </div>
         ))}
+
+      {/* Aviso de operacao BEM-SUCEDIDA que mudou algo alem do pedido.
+          `role="status"` e nao `alert`: o leitor de tela anuncia sem
+          interromper, porque nao ha nada a corrigir. */}
+      {avisoLinha !== null && (
+        <div
+          role="status"
+          className="muted"
+          style={{
+            marginLeft: 44,
+            marginTop: 6,
+            fontSize: 12.5,
+            display: "flex",
+            gap: 8,
+            alignItems: "flex-start",
+          }}
+        >
+          <span aria-hidden="true">⚠️</span>
+          <span>{avisoLinha}</span>
+          <button
+            className="btn btn-ghost"
+            style={{ padding: "0 6px", fontSize: 12 }}
+            onClick={() => setAvisoLinha(null)}
+          >
+            Entendi
+          </button>
+        </div>
+      )}
     </div>
   );
 }
