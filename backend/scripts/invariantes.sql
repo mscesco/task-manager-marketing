@@ -311,10 +311,28 @@ WHERE filha.deleted_at IS NULL
   AND filha.board_id IS DISTINCT FROM pai.board_id;
 
 -- =====================================================================
--- 10. FILHA VIVA DEBAIXO DE ANCESTRAL ARQUIVADO  (Spec 042, 21/08/2026)
+-- 11. FILHA VIVA DEBAIXO DE ANCESTRAL ARQUIVADO  (Spec 042, 21/08/2026)
 -- =====================================================================
--- Esperado: 0. Medido em 19/08/2026: **8** -- residuo do defeito anterior a
--- 06/08, quando o `archive` manual cascateava e a varredura da madrugada NAO.
+-- ⚠️⚠️ ESTA CONSULTA RODOU SEM TITULO ATE 08/09/2026 -- era a unica sem
+-- `\echo`, e o comentario dizia "10" quando o `\echo` anterior ja tinha usado
+-- esse numero. Na saida ela aparecia como uma tabela solta, sem cabecalho, no
+-- fim de tudo.
+--
+-- ⚠️ E ELA E JUSTAMENTE A UNICA QUE NAO E ZERO. Todas as outras respondem 0 e
+-- se leem sozinhas; esta responde 4 e depende do texto acima para dizer se
+-- isso e normal. Sem titulo, o unico numero que exige leitura era o unico que
+-- nao dizia de onde vinha -- e quem roda o script no dia do deploy le a saida,
+-- nao o arquivo.
+-- Esperado: 0. Medido em 19/08/2026: **8**; em 08/09/2026: **4** -- residuo do
+-- defeito anterior a 06/08, quando o `archive` manual cascateava e a varredura
+-- da madrugada NAO.
+--
+-- ⚠️ A QUEDA DE 8 PARA 4 E A PREVISAO DESTE COMENTARIO SE CUMPRINDO, e nao um
+-- conserto: o paragrafo abaixo ja dizia que as 4 filhas TERMINAIS se resolvem
+-- sozinhas pelo relogio do arquivamento e que as NAO-terminais ficam presas.
+-- Sobraram exatamente as 4 presas. Como o numero CAIU, nenhum caminho de
+-- escrita novo esta produzindo o estado -- a regra de escalada la embaixo
+-- ("se crescer SEM ninguem ter arquivado nada") nao disparou.
 --
 -- ⚠️ POR QUE E CONSULTA E NAO SO UM CONSERTO PONTUAL. As 4 filhas TERMINAIS do
 -- residuo se resolvem sozinhas pelo relogio do arquivamento; as NAO-terminais
@@ -332,6 +350,7 @@ WHERE filha.deleted_at IS NULL
 -- exatamente para recolher estas orfas (ver `TaskService.archive`). Se crescer
 -- SEM ninguem ter arquivado nada, ai ha caminho de escrita novo produzindo o
 -- estado, e o conserto e no codigo.
+\echo '=== 11. filha viva sob ancestral ARQUIVADO (Spec 042 -- 8 em 19/08, 4 em 08/09) ==='
 SELECT count(*) AS filha_viva_sob_ancestral_arquivado
 FROM task d
 JOIN task a
