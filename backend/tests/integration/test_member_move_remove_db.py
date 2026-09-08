@@ -173,6 +173,12 @@ async def test_move_subtime_para_raiz_vira_geral(db) -> None:
 
     A pessoa estava so no subtime; apos mover, fica so na raiz (geral) e
     deixa de ter subtime.
+
+    ⚠️ O PAPEL DO ALVO ERA SUPERVISOR ate a Spec 045 (fatia D), e virou
+    OPERATOR: supervisor deixou de caber na raiz, entao ele nao viaja mais
+    para ca. O fluxo em si -- que e o que este teste mede -- nao mudou.
+    Quem cobre a recusa do supervisor e
+    `test_mover_SUPERVISOR_para_raiz_passa_a_ser_recusado`.
     """
     ws = await f.make_workspace(db)
     raiz = await f.make_team(db, workspace_id=ws, slug="marketing")
@@ -180,7 +186,7 @@ async def test_move_subtime_para_raiz_vira_geral(db) -> None:
     admin = await f.make_user(db, workspace_id=ws, email="admin@t.dev")
     await f.add_member(db, workspace_id=ws, user_id=admin, team_id=raiz, role="ADMIN")
     alvo = await f.make_user(db, workspace_id=ws, email="jaque@t.dev")
-    await f.add_member(db, workspace_id=ws, user_id=alvo, team_id=dev, role="SUPERVISOR")
+    await f.add_member(db, workspace_id=ws, user_id=alvo, team_id=dev, role="OPERATOR")
 
     with acting_as(
         workspace_id=ws, user_id=admin,
@@ -192,7 +198,7 @@ async def test_move_subtime_para_raiz_vira_geral(db) -> None:
         assert await _membership(db, user_id=alvo, team_id=dev) is None
         na_raiz = await _membership(db, user_id=alvo, team_id=raiz)
         assert na_raiz is not None
-        assert na_raiz.role == UserTeamRole.SUPERVISOR  # papel preservado
+        assert na_raiz.role == UserTeamRole.OPERATOR  # papel preservado
         todos = await MemberService(db)._users.list_team_memberships(user_id=alvo)
         assert len(todos) == 1
 

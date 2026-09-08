@@ -1,18 +1,31 @@
-"""Invariante de papel por NIVEL de time -- logica pura (Spec 024).
+"""Invariante de papel por NIVEL de time -- logica pura (Spec 024 -> 045 D).
 
-Trava a regra sem banco. Ela e UMA SO e ASSIMETRICA:
+Trava a regra sem banco:
 
-    ADMIN e MANAGER so existem no time RAIZ.
-
-    - raiz    -> os QUATRO papeis
-    - subtime -> so SUPERVISOR e OPERATOR
+    - raiz    -> MANAGER, OPERATOR
+    - subtime -> SUPERVISOR, OPERATOR
+    - ADMIN   -> nivel NENHUM: e papel de ORGANIZACAO (`users.org_role`)
     - papel desconhecido -> recusado em QUALQUER nivel (falha fechada, R5)
 
-A assimetria e deliberada: estar so no time geral, sem subtime, e estado
-de produto projetado (Spec 003, decisoes 7 e 17).
+⚠️⚠️ SETE TESTES DESTE ARQUIVO AFIRMAVAM A REGRA ANTERIOR e foram
+REESCRITOS na fatia D, nao apagados -- vale saber o que eles diziam, porque
+o que mudou foi a REGRA, e nao um detalhe de implementacao:
 
-Estes testes sao a primeira linha de defesa: se alguem afrouxar a regra
-no `team_scope`, quebra aqui, sem depender de Postgres nem da suite de
+    test_raiz_aceita_os_quatro_papeis           -> a raiz aceitava os quatro
+    test_apenas_admin_e_manager_..._da_raiz     -> exclusivos eram DOIS
+    test_supervisor_e_operator_aceitos_na_raiz  -> supervisor cabia na raiz
+    test_admin_e_manager_aceitos_na_raiz        -> admin era papel de time
+
+⚠️ CADA UM DELES TEM SUCESSOR AQUI, afirmando o contrario. Se algum dia a
+regra voltar atras, sao estes que denunciam -- e nao a ausencia deles.
+
+O que NAO mudou, e o motivo importa: OPERATOR continua nos dois niveis.
+Estar so no time geral, sem subtime, e estado de produto projetado (Spec
+003, decisoes 7 e 17) -- e assim que se tira alguem de um subtime sem
+remover a pessoa.
+
+Estes testes sao a primeira linha de defesa: se alguem afrouxar a regra no
+`team_scope`, quebra aqui, sem depender de Postgres nem da suite de
 integracao.
 """
 
@@ -22,6 +35,7 @@ import pytest
 
 from app.db.models.enums import UserTeamRole
 from app.modules.auth.domain.team_scope import (
+    _ORG_LEVEL_ROLES,
     assert_role_permitido_no_nivel,
     role_permitido_no_nivel,
     roles_permitidos_no_nivel,
@@ -32,28 +46,46 @@ RAIZ = True
 SUBTIME = False
 
 
-def test_raiz_aceita_os_quatro_papeis() -> None:
-    """A raiz e o time geral: cabe comando E execucao."""
-    assert roles_permitidos_no_nivel(RAIZ) == {
-        "ADMIN",
-        "MANAGER",
-        "SUPERVISOR",
-        "OPERATOR",
-    }
+def test_raiz_aceita_manager_e_operator() -> None:
+    """⭐ Sucessor de `test_raiz_aceita_os_quatro_papeis` (fatia D).
+
+    A raiz e a AREA: cabe quem manda nela (MANAGER) e quem executa nela
+    (OPERATOR). Nao cabe mais nem ADMIN (foi para a organizacao) nem
+    SUPERVISOR (e dono de um braco, e a raiz nao e braco de ninguem).
+    """
+    assert roles_permitidos_no_nivel(RAIZ) == {"MANAGER", "OPERATOR"}
 
 
 def test_subtime_aceita_apenas_supervisor_e_operator() -> None:
     assert roles_permitidos_no_nivel(SUBTIME) == {"SUPERVISOR", "OPERATOR"}
 
 
-def test_apenas_admin_e_manager_sao_exclusivos_da_raiz() -> None:
-    """O QUE a invariante garante: ver ADMIN/MANAGER implica estar na raiz.
+def test_cada_papel_de_comando_tem_um_nivel_so() -> None:
+    """⭐ Sucessor de `test_apenas_admin_e_manager_sao_exclusivos_da_raiz`.
 
-    SUPERVISOR e OPERATOR existem nos dois niveis de proposito -- e a
-    diferenca entre os conjuntos que carrega a regra.
+    O QUE a invariante garante agora, nos DOIS sentidos:
+        ver MANAGER    implica estar na raiz;
+        ver SUPERVISOR implica estar num subtime.
+
+    Antes so o primeiro valia. OPERATOR continua nos dois niveis de
+    proposito -- e a diferenca entre os conjuntos que carrega a regra.
     """
-    exclusivos = roles_permitidos_no_nivel(RAIZ) - roles_permitidos_no_nivel(SUBTIME)
-    assert exclusivos == {"ADMIN", "MANAGER"}
+    so_na_raiz = roles_permitidos_no_nivel(RAIZ) - roles_permitidos_no_nivel(SUBTIME)
+    so_em_subtime = roles_permitidos_no_nivel(SUBTIME) - roles_permitidos_no_nivel(
+        RAIZ
+    )
+    assert so_na_raiz == {"MANAGER"}
+    assert so_em_subtime == {"SUPERVISOR"}
+
+
+def test_operator_e_o_unico_papel_dos_dois_niveis() -> None:
+    """E o unico sem autoridade nenhuma -- e nao e coincidencia.
+
+    Sabotagem: por SUPERVISOR de volta na raiz e este teste cai junto com
+    `test_cada_papel_de_comando_tem_um_nivel_so`.
+    """
+    nos_dois = roles_permitidos_no_nivel(RAIZ) & roles_permitidos_no_nivel(SUBTIME)
+    assert nos_dois == {"OPERATOR"}
 
 
 @pytest.mark.parametrize("role", ["ADMIN", "MANAGER"])
@@ -63,17 +95,76 @@ def test_admin_e_manager_recusados_em_subtime(role: str) -> None:
         assert_role_permitido_no_nivel(role, is_root=SUBTIME)
 
 
-@pytest.mark.parametrize("role", ["SUPERVISOR", "OPERATOR"])
-def test_supervisor_e_operator_aceitos_na_raiz(role: str) -> None:
-    """Estar so no time geral e estado valido (Spec 003, decisoes 7 e 17):
-    e assim que se tira alguem de um subtime sem remover a pessoa."""
-    assert role_permitido_no_nivel(role, is_root=RAIZ)
-    assert_role_permitido_no_nivel(role, is_root=RAIZ)  # nao levanta
+def test_operator_aceito_na_raiz() -> None:
+    """⭐ Sucessor parcial de `test_supervisor_e_operator_aceitos_na_raiz`.
+
+    ⚠️ O SUPERVISOR SAIU DESTE TESTE E VIROU O DE BAIXO. O OPERATOR fica, e
+    e ele que sustenta o fluxo original: estar so no time geral e estado
+    valido (Spec 003, decisoes 7 e 17) -- e assim que se tira alguem de um
+    subtime sem remover a pessoa.
+    """
+    assert role_permitido_no_nivel("OPERATOR", is_root=RAIZ)
+    assert_role_permitido_no_nivel("OPERATOR", is_root=RAIZ)  # nao levanta
 
 
-@pytest.mark.parametrize("role", ["ADMIN", "MANAGER"])
-def test_admin_e_manager_aceitos_na_raiz(role: str) -> None:
-    assert_role_permitido_no_nivel(role, is_root=RAIZ)  # nao levanta
+def test_supervisor_recusado_na_raiz() -> None:
+    """⭐ Nasce na fatia D, invertendo o que este arquivo afirmava.
+
+    ⚠️ E A METADE DA REGRA QUE TEM CONSEQUENCIA DE PRODUTO: mover um
+    supervisor de subtime para a raiz passa a ser recusado (porta 4 do
+    MemberService). Quem precisa fazer isso troca o papel para OPERATOR
+    antes -- a pessoa deixou de ser dona de um braco operacional.
+
+    ⚠️ E o motivo nao e estetico. `_subtimes_supervisionados` devolvia a
+    PROPRIA RAIZ quando o vinculo SUPERVISOR estava la, deixando um
+    supervisor da raiz governar operadores da raiz por um gate chamado
+    "subtimes supervisionados".
+    """
+    assert not role_permitido_no_nivel("SUPERVISOR", is_root=RAIZ)
+    with pytest.raises(BusinessRuleError):
+        assert_role_permitido_no_nivel("SUPERVISOR", is_root=RAIZ)
+
+
+def test_manager_aceito_na_raiz() -> None:
+    assert_role_permitido_no_nivel("MANAGER", is_root=RAIZ)  # nao levanta
+
+
+@pytest.mark.parametrize("nivel", [RAIZ, SUBTIME])
+def test_admin_recusado_em_TODO_nivel_de_time(nivel: bool) -> None:
+    """⭐ Sucessor de `test_admin_e_manager_aceitos_na_raiz` (fatia D).
+
+    ADMIN deixou de ser papel de time: ele mora em `users.org_role` desde a
+    fatia B. Nao ha mais nivel de time que o aceite.
+
+    Sabotagem: devolver ADMIN a `_ROOT_ROLES` faz este teste cair no caso
+    RAIZ, e so nele -- o caso SUBTIME ja era recusado antes.
+    """
+    assert not role_permitido_no_nivel("ADMIN", is_root=nivel)
+    with pytest.raises(BusinessRuleError):
+        assert_role_permitido_no_nivel("ADMIN", is_root=nivel)
+
+
+def test_mensagem_do_admin_diz_para_onde_ele_foi() -> None:
+    """⚠️ ADMIN NAO PODE CAIR NO RAMO DE "papel desconhecido".
+
+    Quem tenta cadastrar um admin leria "nao e possivel definir em que nivel
+    ele pode existir" e concluiria que o sistema perdeu o papel -- e iria
+    procura-lo no lugar errado. A mensagem tem de dizer que ele existe, em
+    outro nivel.
+    """
+    with pytest.raises(BusinessRuleError) as exc:
+        assert_role_permitido_no_nivel("ADMIN", is_root=RAIZ)
+    texto = str(exc.value).lower()
+    assert "organizacao" in texto
+    assert "desconhecido" not in texto
+
+
+def test_mensagem_do_supervisor_na_raiz_orienta_a_saida() -> None:
+    with pytest.raises(BusinessRuleError) as exc:
+        assert_role_permitido_no_nivel("SUPERVISOR", is_root=RAIZ)
+    texto = str(exc.value).lower()
+    assert "subtime" in texto      # onde o papel PERTENCE
+    assert "operador" in texto     # e o que usar no lugar
 
 
 @pytest.mark.parametrize("role", ["SUPERVISOR", "OPERATOR"])
@@ -83,11 +174,13 @@ def test_supervisor_e_operator_aceitos_em_subtime(role: str) -> None:
 
 def test_aceita_o_enum_alem_da_string() -> None:
     """Os call-sites passam UserTeamRole, nao string."""
-    assert_role_permitido_no_nivel(UserTeamRole.ADMIN, is_root=RAIZ)
+    assert_role_permitido_no_nivel(UserTeamRole.MANAGER, is_root=RAIZ)
     assert_role_permitido_no_nivel(UserTeamRole.OPERATOR, is_root=SUBTIME)
-    assert_role_permitido_no_nivel(UserTeamRole.SUPERVISOR, is_root=RAIZ)
+    assert_role_permitido_no_nivel(UserTeamRole.SUPERVISOR, is_root=SUBTIME)
     with pytest.raises(BusinessRuleError):
         assert_role_permitido_no_nivel(UserTeamRole.MANAGER, is_root=SUBTIME)
+    with pytest.raises(BusinessRuleError):
+        assert_role_permitido_no_nivel(UserTeamRole.ADMIN, is_root=RAIZ)
 
 
 def test_papel_desconhecido_falha_fechada_nos_dois_niveis() -> None:
@@ -100,14 +193,27 @@ def test_papel_desconhecido_falha_fechada_nos_dois_niveis() -> None:
 
 
 def test_todo_papel_do_enum_esta_classificado() -> None:
-    """Guarda contra o enum crescer sem alguem atualizar a regra: todo
-    papel real precisa caber em EXATAMENTE um dos dois niveis."""
+    """Guarda contra o enum crescer sem alguem atualizar a regra.
+
+    ⚠️⚠️ ESTE TESTE AFIRMAVA `do_enum == cobertos`, e a fatia D o quebrou de
+    verdade: ADMIN passou a nao caber em nivel de time nenhum. A correcao
+    NAO foi afrouxar para `>=` -- isso mataria o guardiao, porque qualquer
+    papel novo tambem passaria calado.
+
+    A forma nova continua exata: o que sobra do enum, depois de descontar os
+    dois niveis, tem de ser EXATAMENTE o conjunto declarado como de
+    organizacao. Papel novo aparece nessa diferenca e reprova aqui.
+    """
     cobertos = roles_permitidos_no_nivel(RAIZ) | roles_permitidos_no_nivel(SUBTIME)
     do_enum = {r.value for r in UserTeamRole}
-    assert do_enum == cobertos, (
+    sem_nivel_de_time = do_enum - cobertos
+    assert sem_nivel_de_time == set(_ORG_LEVEL_ROLES), (
         "Papel do enum sem nivel definido (ou vice-versa): "
-        f"{do_enum ^ cobertos}"
+        f"{sem_nivel_de_time ^ set(_ORG_LEVEL_ROLES)}"
     )
+    # E nada foi inventado do lado dos niveis: tudo que eles aceitam existe
+    # no enum de verdade.
+    assert cobertos <= do_enum
 
 
 def test_mensagem_de_erro_orienta_o_usuario() -> None:

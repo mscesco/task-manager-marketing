@@ -260,7 +260,37 @@ papel de comando, **sobre a subárvore**.
 Aqui entra o teste da §3, em `team_scope` puro, com duas raízes montadas em
 memória.
 
-**Fatia D — a invariante de nível nova.**
+**Fatia D — a invariante de nível nova. ✅ ENTREGUE (08/09).**
+
+⚠️ **Três coisas que só apareceram ao implementar, e nenhuma estava aqui:**
+
+1. **A regra estreita um caso que a Spec 044 tinha aprovado.** Esta spec dizia
+   que a 4.4 e a regra da 044 "não conflitam" — verdade para as *regras*, falso
+   para os *testes*: `test_manager_na_raiz_com_supervisor_no_subtime_e_permitido`
+   afirmava, citando a Camila (*"mesmo não fazendo sentido"*), que aquele estado
+   era permitido. A 4.4 o proíbe. Não é contradição — a regra da 044 continua
+   dizendo que não há inversão de posto; outra regra passou a barrar por outro
+   motivo. O teste foi partido em dois, um para cada regra.
+2. **Mover um SUPERVISOR para a raiz passou a ser recusado.** Consequência de
+   `SUPERVISOR` sair da raiz, e ela atinge um fluxo documentado da Spec 003
+   ("tirar do subtime" preserva o papel). O fluxo sobrevive para `OPERATOR`, que
+   é o caso normal; para supervisor virou operação de duas etapas. **⚠️ Decisão
+   pendente da Camila** — a alternativa é rebaixar automaticamente para
+   `OPERATOR` ao mover, e eu não fiz isso: perda de autoridade por efeito
+   colateral de uma operação chamada "mover" é o tipo de coisa que ninguém
+   percebe.
+3. **O guardião de duas raízes não podia ser de integração.** O índice parcial da
+   `0004` só deixa existir uma raiz por workspace até a Spec 046. Por isso a
+   caminhada da árvore virou `team_scope.find_command_with_subteam`, pura, com a
+   segunda árvore montada em memória — a §3 desta spec exigia o guardião, e o
+   banco não o comportava.
+
+⚠️ **E a sabotagem desmentiu o comentário que eu tinha escrito**: quem pega
+`root_of` trocado por "a primeira raiz" é o teste que espera **achar** algo na
+segunda árvore, não o que espera `None` — esse fica verde pelo motivo errado.
+Está registrado nos dois arquivos.
+
+**O desenho original da fatia:**
 `roles_permitidos_no_nivel` passa a devolver `{MANAGER, OPERATOR}` na raiz e
 `{SUPERVISOR, OPERATOR}` em subtime, e nasce a trava da 4.4. Aplicada nas **mesmas
 quatro portas** do `MemberService` (`:314`, `:536`, `:610`, `:773`) — a Spec 044

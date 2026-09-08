@@ -27,8 +27,10 @@ from app.core.tenant import Membership, TeamNode, require_tenant
 from app.db.models import User, UserTeam
 from app.db.models.enums import OrgRole, UserTeamRole
 from app.modules.auth.domain.team_scope import (
+    assert_command_role_has_no_subteam,
     assert_raiz_nao_menor_que_subtime,
     assert_role_permitido_no_nivel,
+    find_command_with_subteam,
     is_subteam,
     root_of,
     visible_team_ids,
@@ -279,6 +281,59 @@ class MemberService:
                 nome_da_raiz=nome_por_time.get(raiz),
             )
 
+    async def _assert_command_has_no_subteam(
+        self, *, vinculos_depois: list[tuple[uuid.UUID, UserTeamRole]]
+    ) -> None:
+        """Spec 045, fatia D (§4.4): comando na raiz nao acumula subtime.
+
+        Mesma forma das irmas -- recebe o estado DEPOIS, porque as quatro
+        portas ja montam essa lista e porque a regra e sobre o CONJUNTO de
+        vinculos, nao sobre o que esta sendo escrito agora.
+
+        ⚠️ SEPARADA DE `_assert_posto_coerente` DE PROPOSITO, mesmo pagando um
+        `list_all` a mais por porta. As duas regras cuidam de direcoes opostas
+        (uma mata "fraco em cima, forte embaixo"; esta mata "forte em cima com
+        vinculo embaixo") e vao mudar por motivos diferentes. Fundi-las
+        economizaria uma consulta numa tabela de dezenas de linhas e criaria o
+        acoplamento que o comentario de `team_scope` manda evitar.
+
+        ⚠️⚠️ A CAMINHADA DA ARVORE **NAO** MORA AQUI, e sim em
+        `team_scope.find_command_with_subteam`. O motivo e a §3 da spec: a
+        regra e "comando NESTA arvore", e provar que ela nao virou "comando em
+        qualquer lugar" exige DUAS raizes -- que nao cabem no banco enquanto o
+        indice parcial da `0004` estiver de pe. O guardiao daquela diferenca
+        e um teste PURO, com a arvore em memoria, e por isso a logica precisa
+        ser alcancavel sem banco. Aqui fica so o que exige banco: carregar os
+        times e traduzir ids em nomes.
+
+        ⚠️ O NIVEL VEM DO BANCO, e nao do `team_tree` do TenantContext, pelo
+        mesmo motivo ja registrado na irma: a arvore do contexto chega VAZIA
+        em teste que nao a passa, e regra que vira no-op silencioso em metade
+        dos testes nao e regra.
+
+        Levanta BusinessRuleError (409).
+        """
+        # Com um vinculo so nao ha "em cima e embaixo" -- caso do
+        # `create_member`, que nasce com exatamente um.
+        if len(vinculos_depois) < 2:
+            return
+
+        times = await self._teams.list_all()
+        arvore = tuple(
+            TeamNode(team_id=t.id, parent_team_id=t.parent_team_id) for t in times
+        )
+        achado = find_command_with_subteam(vinculos_depois, arvore)
+        if achado is None:
+            return
+
+        raiz, subtime, papel_raiz = achado
+        nome_por_time = {t.id: t.name for t in times}
+        assert_command_role_has_no_subteam(
+            papel_raiz=papel_raiz,
+            nome_da_raiz=nome_por_time.get(raiz),
+            nome_do_subtime=nome_por_time.get(subtime),
+        )
+
     async def _remover_relacoes_perdidas(
         self,
         *,
@@ -431,6 +486,13 @@ class MemberService:
         # `_assert_gestao_ampla` existe: o dia em que alguem fizer este caso de
         # uso aceitar mais de um vinculo, a regra ja esta na porta.
         await self._assert_posto_coerente(
+            vinculos_depois=[(command.team_id, command.role)]
+        )
+        # ⚠️ Spec 045, §4.4 -- porta 1 de 4. Aqui ela e NO-OP por construcao
+        # (membro nasce com um vinculo so), e a chamada fica assim mesmo: no
+        # dia em que o cadastro criar dois vinculos de uma vez, a regra ja
+        # esta ligada. A irma da 044 esta aqui pelo mesmo motivo.
+        await self._assert_command_has_no_subteam(
             vinculos_depois=[(command.team_id, command.role)]
         )
 
@@ -673,6 +735,13 @@ class MemberService:
             vinculos_depois=[(v.team_id, v.role) for v in vinculos]
             + [(team_id, role)]
         )
+        # ⚠️ Spec 045, §4.4 -- porta 2 de 4, e A PORTA PRINCIPAL DESTA REGRA:
+        # adicionar a gerente da area a um subtime dela e exatamente o caso
+        # que a Camila descreveu em 02/09.
+        await self._assert_command_has_no_subteam(
+            vinculos_depois=[(v.team_id, v.role) for v in vinculos]
+            + [(team_id, role)]
+        )
 
         membership = self._users.add_team_membership(
             user_id=user_id, team_id=team_id, role=role
@@ -754,6 +823,12 @@ class MemberService:
         # Spec 044, fatia 5 -- porta 3 de 4. Vale nos DOIS sentidos: rebaixar o
         # papel da raiz pode inverter contra um subtime que nao foi tocado.
         await self._assert_posto_coerente(vinculos_depois=depois)
+        # ⚠️ Spec 045, §4.4 -- porta 3 de 4, e o caminho MENOS obvio para o
+        # estado proibido: ninguem adiciona ninguem a subtime nenhum aqui. O
+        # vinculo de subtime ja existe, e e a PROMOCAO na raiz (a OPERATOR que
+        # vira MANAGER) que cria o acumulo, sem que a operacao mencione
+        # subtime em lugar nenhum.
+        await self._assert_command_has_no_subteam(vinculos_depois=depois)
         await self._assert_nao_deixa_orfa(
             user_id=user_id,
             vinculos_depois=depois,
@@ -927,6 +1002,10 @@ class MemberService:
         # Spec 044, fatia 5 -- porta 4 de 4. O papel VIAJA junto, entao mover
         # para um subtime de outra arvore pode inverter contra a raiz de la.
         await self._assert_posto_coerente(vinculos_depois=depois)
+        # ⚠️ Spec 045, §4.4 -- porta 4 de 4. Mover para um subtime de uma
+        # arvore onde a pessoa MANDA e o mesmo estado proibido, chegando por
+        # outra porta.
+        await self._assert_command_has_no_subteam(vinculos_depois=depois)
         await self._assert_nao_deixa_orfa(
             user_id=user_id,
             vinculos_depois=depois,

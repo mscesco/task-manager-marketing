@@ -88,15 +88,29 @@ async def test_create_member_recusa_admin_manager_em_subtime(db, role) -> None:
     assert total == 0
 
 
-@pytest.mark.parametrize(
-    "role", [UserTeamRole.SUPERVISOR, UserTeamRole.OPERATOR]
-)
-async def test_create_member_aceita_supervisor_operator_na_raiz(db, role) -> None:
-    """Membro "do geral", sem subtime: estado projetado (Spec 003, dec. 7)."""
+async def test_create_member_aceita_operator_na_raiz(db) -> None:
+    """Membro "do geral", sem subtime: estado projetado (Spec 003, dec. 7).
+
+    ⚠️ ERA PARAMETRIZADO COM SUPERVISOR TAMBEM, e a Spec 045 fatia D tirou:
+    supervisor deixou de caber na raiz. O caso do OPERATOR e o que sustenta o
+    estado projetado, e ele fica intacto.
+    """
     ws, raiz, sub, admin = await _mundo(db)
     with _como_admin(ws, raiz, sub, admin):
-        criado = await MemberService(db).create_member(_cmd(raiz, role))
+        criado = await MemberService(db).create_member(
+            _cmd(raiz, UserTeamRole.OPERATOR)
+        )
     assert criado.user.id is not None
+
+
+async def test_create_member_recusa_supervisor_na_raiz(db) -> None:
+    """⭐ Spec 045, fatia D -- a metade nova da invariante, na porta 1."""
+    ws, raiz, sub, admin = await _mundo(db)
+    with _como_admin(ws, raiz, sub, admin):
+        with pytest.raises(BusinessRuleError):
+            await MemberService(db).create_member(
+                _cmd(raiz, UserTeamRole.SUPERVISOR)
+            )
 
 
 async def test_create_member_aceita_papel_correto_em_cada_nivel(db) -> None:
@@ -124,11 +138,18 @@ async def test_assign_to_team_recusa_papel_fora_do_nivel(db) -> None:
             await svc.assign_to_team(
                 user_id=outro, team_id=sub, role=UserTeamRole.MANAGER
             )
-        # SUPERVISOR na raiz -> SIM (membro do geral)
+        # ⭐ SUPERVISOR na raiz -> NAO. Ate a Spec 045 fatia D esta linha
+        # afirmava o contrario ("SIM -- membro do geral"); quem faz papel de
+        # membro do geral agora e o OPERATOR, logo abaixo.
+        with pytest.raises(BusinessRuleError):
+            await svc.assign_to_team(
+                user_id=outro, team_id=raiz, role=UserTeamRole.SUPERVISOR
+            )
+        # OPERATOR na raiz -> sim (o membro do geral)
         no_geral = await svc.assign_to_team(
-            user_id=outro, team_id=raiz, role=UserTeamRole.SUPERVISOR
+            user_id=outro, team_id=raiz, role=UserTeamRole.OPERATOR
         )
-        assert no_geral.role == UserTeamRole.SUPERVISOR
+        assert no_geral.role == UserTeamRole.OPERATOR
         # OPERATOR no subtime -> sim
         vinculo = await svc.assign_to_team(
             user_id=outro, team_id=sub, role=UserTeamRole.OPERATOR
@@ -193,11 +214,44 @@ async def test_move_member_recusa_levar_manager_para_subtime(db) -> None:
             )
 
 
-async def test_move_supervisor_para_raiz_e_o_fluxo_tirar_do_subtime(db) -> None:
+async def test_mover_OPERATOR_para_raiz_e_o_fluxo_tirar_do_subtime(db) -> None:
     """"Tirar do subtime" = mover pra raiz preservando o papel.
 
-    Fluxo documentado na Spec 003. A invariante NAO pode barrar isso --
-    foi exatamente o que a versao simetrica da regra quebrou.
+    ⚠️⚠️ ESTE TESTE ERA COM SUPERVISOR, e a Spec 045 fatia D o inverteu --
+    leia o de baixo antes de "consertar" qualquer um dos dois.
+
+    O fluxo da Spec 003 continua vivo, e e por isso que OPERATOR ficou nos
+    dois niveis: e ele que carrega o caso normal. O que mudou e que o papel
+    de SUPERVISOR nao viaja mais junto para a raiz.
+    """
+    ws, raiz, sub, admin = await _mundo(db)
+    operador = await f.make_user(db, workspace_id=ws)
+    await f.add_member(
+        db, workspace_id=ws, user_id=operador, team_id=sub, role="OPERATOR"
+    )
+
+    with _como_admin(ws, raiz, sub, admin):
+        vinculo = await MemberService(db).move_member_subteam(
+            user_id=operador, from_team_id=sub, to_team_id=raiz
+        )
+    assert vinculo.team_id == raiz
+    assert vinculo.role == UserTeamRole.OPERATOR  # papel preservado
+
+
+async def test_mover_SUPERVISOR_para_raiz_passa_a_ser_recusado(db) -> None:
+    """⭐⭐ A consequencia de produto da fatia D, e a mais fácil de descobrir
+    tarde: ela aparece com CLIENTE REAL, nao em teste sintetico.
+
+    ⚠️ ESTE ARQUIVO JA AVISOU UMA VEZ que a invariante "NAO pode barrar isso
+    -- foi exatamente o que a versao simetrica da regra quebrou". A diferenca
+    e que aquela versao barrava OPERATOR **tambem**, e ai o fluxo inteiro
+    morria; esta barra so o SUPERVISOR, e o caso normal (o teste acima) segue
+    de pe.
+
+    ⚠️ E A SAIDA E DE DUAS ETAPAS: rebaixar para OPERATOR e depois mover.
+    Isso e deliberado -- mover alguem para a raiz e dizer que ela deixou de
+    ser dona de um braco operacional, e essa perda de autoridade nao deve
+    acontecer por efeito colateral de uma operacao chamada "mover".
     """
     ws, raiz, sub, admin = await _mundo(db)
     supervisor = await f.make_user(db, workspace_id=ws)
@@ -206,11 +260,10 @@ async def test_move_supervisor_para_raiz_e_o_fluxo_tirar_do_subtime(db) -> None:
     )
 
     with _como_admin(ws, raiz, sub, admin):
-        vinculo = await MemberService(db).move_member_subteam(
-            user_id=supervisor, from_team_id=sub, to_team_id=raiz
-        )
-    assert vinculo.team_id == raiz
-    assert vinculo.role == UserTeamRole.SUPERVISOR  # papel preservado
+        with pytest.raises(BusinessRuleError):
+            await MemberService(db).move_member_subteam(
+                user_id=supervisor, from_team_id=sub, to_team_id=raiz
+            )
 
 
 async def test_move_member_entre_subtimes_continua_funcionando(db) -> None:

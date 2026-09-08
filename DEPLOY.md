@@ -150,6 +150,18 @@ para ver o estrago.
 `users.org_role`. A limpeza é um **passo 2 manual**, depois do deploy confirmado
 — e enquanto ele não roda, as duas fontes coexistem dizendo a mesma coisa.
 
+✅ **O passo 2 RODOU em 08/09/2026**, no Adminer: a conta de administração saiu
+de `user_team` (fica sem time nenhum), a chefe virou `MANAGER` da raiz e perdeu
+o `org_role`. Restou **um** ADMIN de organização ativo, que é o desenho.
+
+⚠️⚠️ **E ISSO MUDOU O CAMINHO DE ROLLBACK — leia antes de descer qualquer
+migration.** Enquanto as duas fontes coexistiam, `alembic downgrade` da `0022`
+era seguro: a coluna sumia e o vínculo `ADMIN` antigo continuava lá servindo de
+rede. Esse vínculo não existe mais. **Descer da `0022` agora deixa o workspace
+sem NENHUM admin**, e `workspace.manage` é justamente o portão da única rota que
+promoveria alguém de volta — a saída seria SQL na mão. Daqui pra frente,
+problema com a `0022` se resolve para frente.
+
 ⚠️ **A `0015` (`unaccent`) TAMBÉM inverte a ordem — por um terceiro motivo, e
 ✅ ELA ESTÁ EM PRODUÇÃO DESDE 21/08/2026.** Ela não acrescenta coluna a model
 nenhum (a checagem do `git diff -- backend/app/db/models/` sai vazia), então

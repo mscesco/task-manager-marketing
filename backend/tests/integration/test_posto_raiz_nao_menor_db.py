@@ -34,6 +34,10 @@ import pytest
 
 from app.core.tenant import Membership
 from app.db.models.enums import UserTeamRole
+from app.modules.auth.domain.team_scope import (
+    assert_raiz_nao_menor_que_subtime,
+    raiz_menor_que_subtime,
+)
 from app.modules.users.application.member_service import MemberService
 from app.shared.exceptions.base import BusinessRuleError
 from tests.integration import factories as f
@@ -100,11 +104,42 @@ async def test_rebaixar_a_raiz_de_quem_supervisiona_subtime_e_recusado(db) -> No
             )
 
 
-async def test_manager_na_raiz_com_supervisor_no_subtime_e_permitido(db) -> None:
-    """Decisao da Camila: vale, *"mesmo nao fazendo sentido"*.
+async def test_manager_na_raiz_com_supervisor_no_subtime_passa_NESTA_regra(
+    db,
+) -> None:
+    """⚠️⚠️ ESTE TESTE AFIRMAVA QUE A OPERACAO ERA PERMITIDA, e a Spec 045
+    (fatia D, §4.4) passou a RECUSA-LA. Leia antes de achar que uma das duas
+    regras esta errada -- nenhuma esta.
 
-    A regra compara POSTO, e nao coerencia de organograma. MANAGER (3) nao e
-    menor que SUPERVISOR (2), entao passa.
+    A decisao da Camila em 31/08 foi sobre ESTA regra: *"mesmo nao fazendo
+    sentido"*, MANAGER (posto 3) nao e menor que SUPERVISOR (2), entao a
+    comparacao de posto passa. Isso continua verdade, e e o que este teste
+    verifica.
+
+    O que mudou e que outra regra passou a barrar o mesmo estado, por um
+    motivo diferente: em 02/09 a propria Camila levantou o caso ("manager do
+    marketing e operadora do crm (...) isso nao pode acontecer"), e a §4.4
+    proibiu comando na raiz com vinculo embaixo.
+
+    ⚠️ POR ISSO O TESTE VERIFICA A REGRA DIRETO, E NAO PELO SERVICE. Passar
+    pelo `assign_to_team` mediria as duas travas somadas e nao diria qual
+    recusou -- e no dia em que alguem revisar a §4.4, este arquivo precisa
+    continuar dizendo o que a regra da 044 pensa, sozinha.
+    """
+    # A comparacao de posto, isolada: nao ha inversao aqui.
+    assert not raiz_menor_que_subtime(
+        papel_raiz=UserTeamRole.MANAGER, papel_subtime=UserTeamRole.SUPERVISOR
+    )
+    assert_raiz_nao_menor_que_subtime(
+        papel_raiz=UserTeamRole.MANAGER, papel_subtime=UserTeamRole.SUPERVISOR
+    )  # nao levanta
+
+
+async def test_o_service_recusa_esse_mesmo_caso_pela_regra_da_045(db) -> None:
+    """⭐ E o outro lado do teste acima: pela porta real, agora barra.
+
+    Quem le so um dos dois conclui coisa errada. Este diz que o caminho de
+    produto esta fechado; o de cima diz QUAL regra o fechou.
     """
     ws, raiz, seo, admin, alvo = await _mundo(db)
     await f.add_member(
@@ -112,11 +147,13 @@ async def test_manager_na_raiz_com_supervisor_no_subtime_e_permitido(db) -> None
     )
 
     with _como_admin(ws, raiz, admin):
-        ut = await MemberService(db).assign_to_team(
-            user_id=alvo, team_id=seo, role=UserTeamRole.SUPERVISOR
-        )
-
-    assert ut.role == UserTeamRole.SUPERVISOR
+        with pytest.raises(BusinessRuleError) as exc:
+            await MemberService(db).assign_to_team(
+                user_id=alvo, team_id=seo, role=UserTeamRole.SUPERVISOR
+            )
+    # A mensagem tem de ser a da §4.4, e nao a de posto -- senao a pessoa
+    # tenta "consertar" subindo o papel, que e o oposto do que resolve.
+    assert "alcancam todos os subtimes" in str(exc.value)
 
 
 async def test_sem_vinculo_na_raiz_o_supervisor_de_subtime_passa(db) -> None:
