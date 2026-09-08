@@ -94,8 +94,15 @@ hotfix** num dia em que havia. Quando a próxima migration cair nesta segunda
 exceção, escreva a data de aplicação aqui **no mesmo commit** que a aplica.
 
 ⚠️⚠️ **A SPEC 043 INTEIRA (`0016` a `0021`) CAI NA SEGUNDA EXCEÇÃO — E O
-CABEÇALHO DE NENHUMA DAS SEIS AVISA.** ❌ **NÃO ESTÁ EM PRODUÇÃO** (situação em
-31/08/2026; escreva a data aqui no mesmo commit que aplicar).
+CABEÇALHO DE NENHUMA DAS SEIS AVISA.** ✅ **ESTÁ EM PRODUÇÃO DESDE 08/09/2026.**
+
+Como se sabe, sem ter estado lá no dia: o `alembic` é linear, e a `0022` declara
+`down_revision = "0021_slug_de_secao_unico"`. Em 08/09/2026 a coluna
+`users.org_role` — criada pela `0022` — respondia em produção com os dois
+admins preenchidos pelo backfill. Se a `0022` rodou, as seis anteriores rodaram.
+
+O texto abaixo fica como está: ele descreve o que **foi** feito, e é o mesmo
+raciocínio que a próxima migration desta família vai precisar.
 
 A `0016` põe **`form_id`** e a `0019` põe **`task_id`** em `solicitation` — uma
 tabela que **já existe em produção desde a `0005`**. O SQLAlchemy emite lista
@@ -130,6 +137,18 @@ cada workspace. Depois dela, `/solicitar` passa a servir do banco — confira
 pedidos em "Em andamento" e "Concluída", porque esses valores não cabem no
 CHECK antigo. Está escrito no cabeçalho dela. Não há caminho de volta limpo
 depois que alguém usar os status novos.
+
+⚠️ **A `0022` (`users.org_role`, Spec 045) CAI NA SEGUNDA EXCEÇÃO. ✅ ELA ESTÁ
+EM PRODUÇÃO DESDE 08/09/2026.** Ela põe `org_role` no `User`, que já existia —
+a checagem `git diff <sha-da-vps>..origin/main -- backend/app/db/models/` acusou
+o `mapped_column` novo. O modo de falhar era o pior possível: `get_membership`
+faz `session.get(User, ...)`, então o 500 pegaria **o login** e ninguém entraria
+para ver o estrago.
+
+⚠️ **Ela é ADITIVA de propósito: não remove nada.** O vínculo `ADMIN` em
+`user_team` continua onde estava, e o backfill só COPIA quem o tinha para
+`users.org_role`. A limpeza é um **passo 2 manual**, depois do deploy confirmado
+— e enquanto ele não roda, as duas fontes coexistem dizendo a mesma coisa.
 
 ⚠️ **A `0015` (`unaccent`) TAMBÉM inverte a ordem — por um terceiro motivo, e
 ✅ ELA ESTÁ EM PRODUÇÃO DESDE 21/08/2026.** Ela não acrescenta coluna a model
@@ -215,8 +234,10 @@ existia, é ordem invertida. Executado assim em 06/08/2026 (`0008`).
    > ⚠️ **O critério é `0 failed`, não um número.** Este arquivo já ficou
    > meses dizendo `379 passed` quando o real era 493 — e roteiro que mente
    > treina quem faz o deploy a ignorar o portão. Se quiser conferir a ordem
-   > de grandeza: em 31/08/2026 eram **1012** (backend) e **1078** (front),
-   > depois da Spec 043 inteira e de cinco rodadas de review.
+   > de grandeza: em 08/09/2026 eram **1047** (backend) e **1085** (front),
+   > depois da Spec 044 inteira e das fatias A–D da Spec 045 (números lidos do
+   > log do CI no merge do PR #46, não da memória de quem escreveu).
+   > (Em 31/08/2026 eram 1012 e 1078, depois da Spec 043 inteira.)
    > (Em 10/08/2026 eram 657 e 529.)
    > (Backend saiu de 642 para 657 com a peca de backend da fatia 5:
    > 8 testes puros de derivacao + 7 de integracao do `PATCH column_id`.)
