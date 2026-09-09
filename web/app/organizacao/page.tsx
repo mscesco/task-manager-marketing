@@ -51,9 +51,22 @@ import {
   pessoasSemArea,
 } from "@/lib/organizacao";
 
+/**
+ * Os papéis de ORGANIZAÇÃO, escritos como se lê.
+ *
+ * ⚠️ MAIÚSCULA INICIAL porque eles são substantivos que NOMEIAM um papel, e
+ * não adjetivos soltos no meio da frase. Em pílula e em título de opção,
+ * minúscula lê como rascunho.
+ *
+ * ⚠️ FEMININO, e é a voz do produto: a spec escreve `SEO · supervisora`, e a
+ * equipe é toda de mulheres. ⚠️ Diverge do `PAPEL_LABEL` da tela de membros,
+ * que usa masculino ("Administrador", "Gerente") -- divergência que já
+ * existia e que NÃO cabe a esta fatia resolver sozinha: unificar as duas
+ * telas é decisão de produto, não detalhe de implementação.
+ */
 const ROTULO_ORG: Record<string, string> = {
-  ADMIN: "administradora",
-  GESTOR: "gestora",
+  ADMIN: "Administradora",
+  GESTOR: "Gestora",
 };
 
 export default function OrganizacaoPage() {
@@ -141,9 +154,9 @@ export default function OrganizacaoPage() {
           própria: é gente pouca, e o papel deles é sobre a organização
           inteira — não sobre um time. */}
       <div className="mb-5 flex flex-wrap items-center gap-2">
-        <span className="muted text-xs">Administram a organização:</span>
+        <span className="muted text-xs">Administram a organização</span>
         {gestores.length === 0 ? (
-          <span className="muted text-xs">ninguém</span>
+          <span className="muted text-xs">Ninguém</span>
         ) : (
           gestores.map((g) => (
             <PapelDeOrganizacao
@@ -215,7 +228,7 @@ export default function OrganizacaoPage() {
               <input
                 className="input mt-1.5 w-full"
                 value={busca}
-                placeholder="nome ou e-mail"
+                placeholder="Nome ou e-mail"
                 onChange={(e) => setBusca(e.target.value)}
               />
             </label>
@@ -229,12 +242,25 @@ export default function OrganizacaoPage() {
                 ) : (
                   <ul className="m-0 list-none p-0">
                     {achadas.map(({ membro, areas }) => (
+                      // ⚠️ DUAS COLUNAS, e não uma linha que embrulha. Na
+                      // primeira versão tudo era `flex-wrap`: com nome longo
+                      // ("Jaqueline Cristina Lopes dos Santos") o botão da
+                      // direita caía sozinho numa segunda linha, e a linha da
+                      // pessoa virava duas de altura irregular.
+                      //
+                      // Agora a esquerda ENCOLHE (`min-w-0`) e a ação é
+                      // `shrink-0`: o que cede é o texto, não o layout.
                       <li
                         key={membro.id}
-                        className="flex flex-wrap items-baseline gap-2 border-b border-border px-3 py-2 last:border-b-0"
+                        className="flex items-center gap-3 border-b border-border px-3 py-2 last:border-b-0"
                       >
-                        <strong className="text-sm">{membro.name}</strong>
-                        <span className="muted text-xs">{membro.email}</span>
+                        <span className="flex min-w-0 flex-wrap items-baseline gap-2">
+                          <strong className="truncate text-sm">
+                            {membro.name}
+                          </strong>
+                          <span className="muted truncate text-xs">
+                            {membro.email}
+                          </span>
                         {membro.org_role && (
                           <Badge tone="soft" size="sm" color="var(--accent)">
                             {ROTULO_ORG[membro.org_role]}
@@ -242,7 +268,7 @@ export default function OrganizacaoPage() {
                         )}
                         {areas.length === 0 ? (
                           <Badge tone="outline" size="sm">
-                            sem área
+                            Sem área
                           </Badge>
                         ) : (
                           areas.map((a) => (
@@ -257,12 +283,14 @@ export default function OrganizacaoPage() {
                             </Link>
                           ))
                         )}
-                        {/* ⚠️ A AÇÃO VAI PARA A DIREITA (`ml-auto`), separada
-                            do que a linha INFORMA. Misturada às cápsulas, ela
-                            lia como mais um rótulo — e "tornar gestora" não é
-                            um fato sobre a pessoa, é um botão. */}
+                        </span>
+                        {/* ⚠️ A AÇÃO FICA À DIREITA, separada do que a linha
+                            INFORMA. Misturada às cápsulas ela lia como mais um
+                            rótulo — e "Tornar gestora" não é um fato sobre a
+                            pessoa, é um botão.
+                            ⚠️ `shrink-0`: quem cede espaço é o texto. */}
                         {podeRenomear && !membro.org_role && (
-                          <span className="ml-auto">
+                          <span className="ml-auto shrink-0">
                             <PromoverNaOrganizacao
                               membro={membro}
                               onMudou={carregar}
@@ -601,7 +629,10 @@ function PapelDeOrganizacao({
       onAviso(
         novo === null
           ? `${membro.name} deixou de administrar a organização. A conta e os times dela continuam como estavam.`
-          : `${membro.name} agora é ${ROTULO_ORG[novo]}.`,
+          // ⚠️ MINÚSCULA AQUI, ao contrário da pílula: no meio da frase o
+          // papel é substantivo comum ("agora é gestora"), e não o rótulo que
+          // nomeia uma opção. Reusar `ROTULO_ORG` cru daria "agora é Gestora".
+          : `${membro.name} agora é ${ROTULO_ORG[novo].toLowerCase()}.`,
       );
       await onMudou();
     } catch (e) {
@@ -677,7 +708,7 @@ function PapelDeOrganizacao({
               disabled={salvando || souEu}
               onClick={() => setConfirmandoSaida(true)}
             >
-              Tirar da administração da organização
+              Tirar da administração
             </button>
           ) : (
             <div className="mt-2 rounded border border-border p-2">
@@ -798,7 +829,7 @@ function PromoverNaOrganizacao({
         onClick={() => void promover()}
         disabled={salvando}
       >
-        tornar gestora
+        Tornar gestora
       </button>
       {erro && <span className="error-text text-xs">{erro}</span>}
     </>
