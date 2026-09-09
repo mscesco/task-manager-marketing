@@ -7,8 +7,7 @@
 // o começo do próximo defeito de contador."* Compartilhar o componente é o que
 // torna esse defeito impossível — não há duas regras para divergirem.
 //
-//     /times/[id]   -> as pessoas daquela árvore, coluna do meio "Cargo aqui"
-//     /membros      -> a organização inteira, coluna do meio "Áreas"
+//     /times/[id]   -> as pessoas daquela árvore, com o cargo de cada uma
 //
 // ⚠️⚠️ UMA AÇÃO SÓ NA LINHA, e essa é a mudança de 09/09. Antes havia DUAS
 // portas para o mesmo assunto: o lápis abria um seletor de checkboxes ("em

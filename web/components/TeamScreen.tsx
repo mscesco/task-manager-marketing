@@ -2,24 +2,22 @@
 // components/TeamScreen.tsx
 // A tela de pessoas e estrutura — Spec 047; unificada em 09/09.
 //
-// ⚠️⚠️ UMA TELA SÓ, PARA OS TRÊS NÍVEIS. Ela serve a ORGANIZAÇÃO inteira, uma
-// ÁREA e um SUBTIME, e a decisão é da Camila, olhando as duas telas lado a
-// lado: *"elas não são a mesma tela. eu quero que seja literalmente a mesma
-// tela, com o toggle de subtimes e tudo"*.
-//
-// E ela está certa sobre o modelo: os três níveis fazem as MESMAS duas
-// perguntas — *quem está aqui* e *o que tem dentro daqui*. O que muda é só o
-// recorte:
-//
-//     team = null   -> a organização: todo mundo, e as ÁREAS lá dentro
-//     área          -> quem está na árvore dela, e os SUBTIMES lá dentro
-//     subtime       -> quem está nele e abaixo, e os subtimes dele
+// ⚠️⚠️ ESTA É A ÚNICA TELA DE PESSOAS DO PRODUTO. Havia uma segunda,
+// `/membros`, com estrutura própria — sem alternador, sem a visão de subtimes
+// — e a Camila resolveu em 09/09: *"adorei a tela que tava com o título
+// 'marketing área' (…) aquela tela é a que eu quero que mostre quando eu
+// abrisse o membros"*. A rota `/membros` deixou de existir; a entrada de menu
+// virou "Time" e leva à área da pessoa.
 //
 // ⚠️ E ISSO NÃO É ECONOMIA DE CÓDIGO, é a §5 da spec: *"duas telas listando
 // pessoas, com regras diferentes, é o começo do próximo defeito de contador"*.
-// Antes desta unificação a `/membros` já dividia a TABELA com a tela de time,
-// mas tinha estrutura própria — sem alternador, sem a visão de subtimes — e as
-// duas iam divergir de novo na próxima mudança.
+// As duas já dividiam a TABELA; o que divergia era tudo em volta, e ia
+// divergir de novo na próxima mudança.
+//
+// ⚠️ EU JÁ ERREI ISTO UMA VEZ, e vale ficar escrito: em vez de mandar
+// `/membros` para a tela do time, inventei aqui um terceiro nível
+// ("organização", com `teamId = null`) que ninguém pediu — e que duplicava a
+// `/organizacao`. Ela desfez: a tela é do TIME, e o menu é um atalho.
 //
 // A divisão de dentro:
 //
@@ -60,7 +58,7 @@ import {
   type MemberRole,
   type Team,
 } from "@/lib/api";
-import { organizationRows, subteamCards, teamRows } from "@/lib/teamScreen";
+import { subteamCards, teamRows } from "@/lib/teamScreen";
 import { matchesSearch } from "@/lib/organization";
 import { countByState, memberState, type MemberState } from "@/lib/memberState";
 import { sugereSlug } from "@/lib/gestaoTimes";
@@ -75,7 +73,7 @@ import {
 type View = "people" | "structure";
 type RevealedPassword = { title: string; email: string; password: string };
 
-export default function TeamScreen({ teamId }: { teamId: string | null }) {
+export default function TeamScreen({ teamId }: { teamId: string }) {
   const [teams, setTeams] = useState<Team[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
   const [me, setMe] = useState<CurrentUser | null>(null);
@@ -113,22 +111,13 @@ export default function TeamScreen({ teamId }: { teamId: string | null }) {
     void carregar();
   }, [carregar]);
 
-  const team = teamId ? teams.find((t) => t.id === teamId) ?? null : null;
+  const team = teams.find((t) => t.id === teamId) ?? null;
 
-  // ⚠️ AS DUAS FUNÇÕES DEVOLVEM O MESMO FORMATO (`TeamRow`), e é isso que
-  // permite a tela ser uma só. Elas diferem no UNIVERSO, não na forma.
   const rows = useMemo(
-    () =>
-      teamId
-        ? teamRows(teamId, teams, members)
-        : organizationRows(teams, members),
+    () => teamRows(teamId, teams, members),
     [teamId, teams, members],
   );
 
-  // ⚠️⚠️ `subteamCards(null, …)` DEVOLVE AS ÁREAS, e não é truque: a função
-  // filtra `parent_team_id === teamId`, e área é justamente o time cujo pai é
-  // `null`. A organização é o nível de cima da MESMA árvore — foi por isso que
-  // a unificação coube sem uma segunda regra de contagem.
   const cards = useMemo(
     () => subteamCards(teamId, teams, members),
     [teamId, teams, members],
@@ -153,18 +142,14 @@ export default function TeamScreen({ teamId }: { teamId: string | null }) {
 
   const scope = alcanceDe(me);
   const isAdmin = me?.roles.includes("ADMIN") ?? false;
-  // ⚠️ CRIAR ÁREA É OUTRA PERMISSÃO, e não a mesma de criar subtime: `area.create`
-  // existe SÓ nos papéis de organização (Spec 046, §4.1), enquanto `team.manage`
-  // um gerente também tem. Era o gate da entrada de menu "Organização".
-  const podeCriarArea = me?.permissions.includes("area.create") ?? false;
-  const podeMexerEmTimes = teamId ? podeMoverSubtime(scope) : podeCriarArea;
+  const podeMexerEmTimes = podeMoverSubtime(scope);
 
-  if (!loading && teamId && !team) {
+  if (!loading && !team) {
     return (
       <div className="muted">
-        Time não encontrado. Volte para as{" "}
-        <Link href="/membros" className="text-accent underline">
-          pessoas da organização
+        Time não encontrado. Volte para a{" "}
+        <Link href="/organizacao" className="text-accent underline">
+          organização
         </Link>
         .
       </div>
@@ -172,12 +157,6 @@ export default function TeamScreen({ teamId }: { teamId: string | null }) {
   }
 
   const ehArea = team?.parent_team_id === null;
-  const naOrganizacao = teamId === null;
-
-  // ⚠️ O NÍVEL DE BAIXO TEM NOME DIFERENTE em cada nível, e usar "subtime" na
-  // organização seria errado: o que está dentro da organização são ÁREAS.
-  const nomeDoNivelDeBaixo = naOrganizacao ? "área" : "subtime";
-  const nomeDoNivelDeBaixoPlural = naOrganizacao ? "Áreas" : "Subtimes";
 
   const podeAgir =
     view === "people" ? podeCadastrarMembro(scope) : podeMexerEmTimes;
@@ -187,13 +166,15 @@ export default function TeamScreen({ teamId }: { teamId: string | null }) {
       <PageHeader
         title={
           <span className="inline-flex items-center gap-2">
-            {naOrganizacao ? "Pessoas" : team ? team.name : "Time"}
-            {/* ⚠️ Diz o NÍVEL, porque a tela é a mesma para os três e o
-                conteúdo muda: na organização aparece todo mundo; numa área,
-                a árvore dela; num subtime, ele e o que está abaixo. */}
-            <Badge tone="outline" size="sm">
-              {naOrganizacao ? "Organização" : ehArea ? "Área" : "Subtime"}
-            </Badge>
+            {team ? team.name : "Time"}
+            {/* ⚠️ Diz o NÍVEL, porque a tela é a mesma para os dois e o
+                conteúdo muda: numa área aparece a árvore inteira; num
+                subtime, só ele e o que está abaixo. */}
+            {team && (
+              <Badge tone="outline" size="sm">
+                {ehArea ? "Área" : "Subtime"}
+              </Badge>
+            )}
           </span>
         }
         // ⚠️ "N de M", nunca só N. A §3.2: o defeito de 27/07 foi o cabeçalho
@@ -212,9 +193,7 @@ export default function TeamScreen({ teamId }: { teamId: string | null }) {
               style={{ padding: "8px 14px" }}
               onClick={() => setCriando(true)}
             >
-              {view === "people"
-                ? "+ Novo membro"
-                : `+ Nova ${nomeDoNivelDeBaixo}`}
+              {view === "people" ? "+ Novo membro" : "+ Novo subtime"}
             </button>
           )
         }
@@ -261,11 +240,7 @@ export default function TeamScreen({ teamId }: { teamId: string | null }) {
           }}
           sides={[
             { id: "people", label: "Membros", count: rows.length },
-            {
-              id: "structure",
-              label: nomeDoNivelDeBaixoPlural,
-              count: cards.length,
-            },
+            { id: "structure", label: "Subtimes", count: cards.length },
           ]}
         />
       </div>
@@ -288,10 +263,9 @@ export default function TeamScreen({ teamId }: { teamId: string | null }) {
           >
             {view === "people" ? (
               <>
-                {criando && (
+                {criando && team && (
                   <NewMember
                     team={team}
-                    teams={teams}
                     scope={scope}
                     isAdmin={isAdmin}
                     onCancel={() => setCriando(false)}
@@ -371,7 +345,7 @@ export default function TeamScreen({ teamId }: { teamId: string | null }) {
                             rows={visiveis}
                             teams={teams}
                             me={me}
-                            middleColumn={middleColumn(naOrganizacao, teams)}
+                            middleColumn={middleColumn}
                             count={`${visiveis.length} de ${rows.length} pessoas`}
                             onChanged={async (texto) => {
                               setAviso(texto);
@@ -386,10 +360,9 @@ export default function TeamScreen({ teamId }: { teamId: string | null }) {
               </>
             ) : (
               <>
-                {criando && (
-                  <NewTeam
+                {criando && team && (
+                  <NewSubteam
                     parent={team}
-                    nivel={nomeDoNivelDeBaixo}
                     onCancel={() => setCriando(false)}
                     onCreated={async (texto) => {
                       setCriando(false);
@@ -401,7 +374,7 @@ export default function TeamScreen({ teamId }: { teamId: string | null }) {
 
                 {cards.length === 0 ? (
                   <div className="muted">
-                    Nenhuma {nomeDoNivelDeBaixo} aqui ainda.
+                    Nenhum subtime dentro de {team?.name}.
                   </div>
                 ) : (
                   <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -468,47 +441,24 @@ export default function TeamScreen({ teamId }: { teamId: string | null }) {
 }
 
 /**
- * A coluna do meio: o que ela mostra depende do NÍVEL.
+ * A coluna do meio da tabela.
  *
- * ⚠️ Na organização não existe "cargo aqui" — não há um "aqui". O que
- * responde a mesma pergunta ("de onde essa pessoa é?") são as ÁREAS dela.
+ * ⚠️ É uma CONSTANTE, e não uma função de nível: a tabela é compartilhada com
+ * outra tela (`MembersTable` recebe `middleColumn` como parâmetro justamente
+ * por isso), mas aqui o recorte é sempre um time — então o que ela responde é
+ * sempre a mesma pergunta: *que cargo esta pessoa tem NESTE time?*
  */
-function middleColumn(naOrganizacao: boolean, teams: Team[]) {
-  if (!naOrganizacao) {
-    return {
-      title: "Cargo aqui",
-      render: (r: { cargoAqui: MemberRole | null }) =>
-        r.cargoAqui ? (
-          <Badge tone="neutral" size="sm" className="border">
-            {ROLE_LABEL[r.cargoAqui]}
-          </Badge>
-        ) : (
-          <span className="muted text-xs">—</span>
-        ),
-    };
-  }
-  return {
-    title: "Áreas",
-    render: (r: { member: Member }) => {
-      const areas = (r.member.area_ids ?? [])
-        .map((id) => teams.find((t) => t.id === id))
-        .filter((t): t is Team => t !== undefined);
-      return areas.length === 0 ? (
-        <Badge tone="outline" size="sm">
-          Sem área
-        </Badge>
-      ) : (
-        <span className="flex flex-wrap gap-1.5">
-          {areas.map((a) => (
-            <Badge key={a.id} tone="neutral" size="sm" className="border">
-              {a.name}
-            </Badge>
-          ))}
-        </span>
-      );
-    },
-  };
-}
+const middleColumn = {
+  title: "Cargo aqui",
+  render: (r: { cargoAqui: MemberRole | null }) =>
+    r.cargoAqui ? (
+      <Badge tone="neutral" size="sm" className="border">
+        {ROLE_LABEL[r.cargoAqui]}
+      </Badge>
+    ) : (
+      <span className="muted text-xs">—</span>
+    ),
+};
 
 /**
  * O vazio de cada aba diz POR QUE está vazio.
@@ -529,22 +479,21 @@ function emptyStateText(tab: MemberState): string {
 }
 
 /**
- * Cadastrar pessoa nova.
+ * Cadastrar pessoa nova, já NESTE time.
  *
- * ⚠️ COM `team`, o time já está decidido — é a tela em que se está. SEM ele
- * (na organização), a pessoa escolhe: não existe um "aqui" para entrar, e o
- * backend exige um time no cadastro.
+ * ⚠️ NÃO HÁ SELETOR DE TIME AQUI, e a ausência é a tela toda: o time é aquele
+ * em que se está. Um `<select>` de time neste formulário significaria que a
+ * tela não sabe do que fala — foi o que a versão com nível de "organização"
+ * precisava, e ela não existe mais.
  */
 function NewMember({
   team,
-  teams,
   scope,
   isAdmin,
   onCancel,
   onCreated,
 }: {
-  team: Team | null;
-  teams: Team[];
+  team: Team;
   scope: Alcance;
   isAdmin: boolean;
   onCancel: () => void;
@@ -552,18 +501,16 @@ function NewMember({
 }) {
   const [nome, setNome] = useState("");
   const [email, setEmail] = useState("");
-  const [timeEscolhido, setTimeEscolhido] = useState(team?.id ?? "");
-  const alvo = teams.find((t) => t.id === timeEscolhido) ?? null;
 
-  // ⚠️⚠️ AS OPÇÕES VÊM DE `papeisAtribuiveis`, COM O NÍVEL DO TIME ALVO. É o
+  // ⚠️⚠️ AS OPÇÕES VÊM DE `papeisAtribuiveis`, COM O NÍVEL DESTE TIME. É o
   // formulário que mais custa errar: escolher um papel impossível, preencher
   // nome e e-mail e só então levar 409 é a forma mais cara de descobrir a
   // regra. Numa área não cabe SUPERVISOR; num subtime não cabe MANAGER.
-  //
-  // ⚠️ Sem time escolhido não há nível — e a lista vazia é o estado honesto.
-  const opcoes = alvo
-    ? papeisAtribuiveis(scope, isAdmin, alvo.parent_team_id === null)
-    : [];
+  const opcoes = papeisAtribuiveis(
+    scope,
+    isAdmin,
+    team.parent_team_id === null,
+  );
   const [papel, setPapel] = useState<MemberRole | "">("");
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
@@ -595,39 +542,12 @@ function NewMember({
       </div>
 
       <div className="flex flex-wrap gap-3">
-        {team === null && (
-          <div className="field min-w-[200px] flex-1">
-            <span className="label">Time</span>
-            <select
-              className="input"
-              value={timeEscolhido}
-              disabled={salvando}
-              onChange={(e) => {
-                setTimeEscolhido(e.target.value);
-                // ⚠️ LIMPA O PAPEL ao trocar de time: o que cabe muda com o
-                // nível, e um papel escolhido para uma área pode não existir
-                // no subtime seguinte. Guardá-lo mandaria ao servidor uma
-                // combinação que ele recusa com 409.
-                setPapel("");
-              }}
-            >
-              <option value="">— selecione o time —</option>
-              {teams.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.parent_team_id === null ? `${t.name} (área)` : t.name}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
         <div className="field min-w-[180px] flex-1">
-          <span className="label">
-            {alvo ? `Cargo em ${alvo.name}` : "Cargo"}
-          </span>
+          <span className="label">Cargo em {team.name}</span>
           <select
             className="input"
             value={papel}
-            disabled={salvando || opcoes.length === 0}
+            disabled={salvando}
             onChange={(e) => setPapel(e.target.value as MemberRole | "")}
           >
             <option value="">—</option>
@@ -653,14 +573,14 @@ function NewMember({
           style={{ padding: "8px 14px" }}
           disabled={salvando || !nome.trim() || !email.trim() || !papelValido}
           onClick={async () => {
-            if (!alvo || papel === "") return;
+            if (papel === "") return;
             setSalvando(true);
             setErro(null);
             try {
               const novo = await createMember({
                 name: nome.trim(),
                 email: email.trim(),
-                teamId: alvo.id,
+                teamId: team.id,
                 role: papel,
               });
               await onCreated(
@@ -669,7 +589,7 @@ function NewMember({
                   email: novo.email,
                   password: novo.temporary_password,
                 },
-                `${novo.name} entrou em ${alvo.name} como ${ROLE_LABEL[
+                `${novo.name} entrou em ${team.name} como ${ROLE_LABEL[
                   papel
                 ].toLowerCase()}.`,
               );
@@ -705,22 +625,18 @@ function NewMember({
 }
 
 /**
- * Criar o nível de baixo: um SUBTIME dentro do time aberto, ou uma ÁREA quando
- * o recorte é a organização.
+ * Criar um SUBTIME dentro do time aberto.
  *
- * ⚠️ `parent` NULO CRIA ÁREA, e é o backend que define isso: `parent_team_id`
- * ausente (ou `null`) = raiz. E `""` NÃO SERVE como "sem pai" — a rota tipa
- * `uuid | None`, então string vazia é 422. A primeira versão da tela de
- * organização mandava `""` e o `tsc` não acusou, porque `""` É uma `string`.
+ * ⚠️ CRIAR ÁREA NÃO MORA AQUI: área é raiz, e criar raiz é ato de organização
+ * (`area.create`, que só os papéis de organização têm — Spec 046 §4.1). O
+ * lugar dela é a `/organizacao`.
  */
-function NewTeam({
+function NewSubteam({
   parent,
-  nivel,
   onCancel,
   onCreated,
 }: {
-  parent: Team | null;
-  nivel: string;
+  parent: Team;
   onCancel: () => void;
   onCreated: (aviso: string) => Promise<void>;
 }) {
@@ -762,13 +678,7 @@ function NewTeam({
       </div>
 
       <div className="muted text-xs">
-        {parent ? (
-          <>
-            Vai ficar dentro de <strong>{parent.name}</strong>.
-          </>
-        ) : (
-          "Área nova, no topo da organização."
-        )}
+        Vai ficar dentro de <strong>{parent.name}</strong>.
       </div>
 
       {erro && <div className="error-box">{erro}</div>}
@@ -785,12 +695,10 @@ function NewTeam({
               await createTeam({
                 name: nome.trim(),
                 slug: slug.trim(),
-                parent_team_id: parent ? parent.id : null,
+                parent_team_id: parent.id,
               });
               await onCreated(
-                parent
-                  ? `${nome.trim()} criado dentro de ${parent.name}.`
-                  : `Área ${nome.trim()} criada.`,
+                `${nome.trim()} criado dentro de ${parent.name}.`,
               );
             } catch (e) {
               const a = e as ApiError;
@@ -808,7 +716,7 @@ function NewTeam({
             }
           }}
         >
-          {salvando ? "Criando…" : `Criar ${nivel}`}
+          {salvando ? "Criando…" : "Criar subtime"}
         </button>
         <button
           className="btn btn-ghost"

@@ -1,33 +1,25 @@
-// Spec 047, revisão de 09/09 -- o seletor de contexto da barra lateral.
+// Spec 047, revisão de 09/09 -- o seletor de contexto no rodapé da barra.
 //
-// ⚠️ POR QUE ESTE ARQUIVO EXISTE: o seletor virou a ÚNICA porta para a tela
-// de organização e para a árvore de times, depois que as duas entradas saíram
-// do menu. Um erro aqui não dá tela vermelha -- ele some com um caminho, e
-// quem não sabia que ele existia não vai reclamar da falta.
+// ⚠️ POR QUE ESTE ARQUIVO EXISTE: o seletor virou a ÚNICA porta para a tela de
+// organização, depois que a entrada saiu do menu. Um erro aqui não dá tela
+// vermelha -- ele some com um caminho, e quem não sabia que ele existia não
+// vai reclamar da falta.
 //
-// O que ELE prende:
-//   - a lista mostra ÁREAS com os subtimes delas, e para nesses dois níveis;
-//   - "Gerenciar a organização" respeita `area.create`, o MESMO gate que a
-//     entrada de menu tinha (cortar do menu não pode abrir porta nova);
-//   - o rótulo do gatilho diz onde a pessoa está, e não inventa um time
-//     quando ela não está em nenhum;
-//   - `aria-expanded` acompanha abrir e fechar.
+// ⚠️ A REGRA (rótulo x seletor, quais raízes) mora em `lib/contextSwitcher.ts`
+// e é testada lá, sem React. Aqui prende-se só o DESENHO: que o rótulo não é
+// clicável, que a lista traz o que deve, e que o gate de organização vale.
 //
 // ⚠️ O QUE ELE **NÃO** COBRE: a animação, nem a saída do painel do DOM. Com
 // `AnimatePresence` o nó fica montado enquanto o `exit` roda, e no jsdom esse
-// `exit` não termina — não há layout nem quadro. Afirmar "sumiu" aqui seria
-// afirmar sobre o motion.
+// `exit` não termina — não há layout nem quadro.
 //
 // SABOTAGENS medidas -- ver o fim do arquivo.
 
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 
-import ContextSwitcher, {
-  switcherTrees,
-  contextLabel,
-} from "@/components/ContextSwitcher";
-import type { Team } from "@/lib/api";
+import ContextSwitcher from "@/components/ContextSwitcher";
+import type { CurrentUser, Team } from "@/lib/api";
 
 afterEach(cleanup);
 
@@ -36,140 +28,135 @@ const SEO = "t-seo";
 const JR = "t-jr";
 const TI = "t-ti";
 
-function team(id: string, nome: string, parent: string | null): Team {
+function time(id: string, nome: string, parent: string | null): Team {
   return { id, workspace_id: "ws", parent_team_id: parent, name: nome, slug: id };
 }
 
 const TIMES: Team[] = [
-  team(TI, "TI", null),
-  team(MKT, "Marketing", null),
-  team(SEO, "SEO", MKT),
-  team(JR, "SEO Junior", SEO),
+  time(TI, "TI", null),
+  time(MKT, "Marketing", null),
+  time(SEO, "SEO", MKT),
+  time(JR, "SEO Junior", SEO),
 ];
 
-describe("switcherTrees", () => {
-  it("agrupa por área, ordenado por nome", () => {
-    const arvores = switcherTrees(TIMES);
-    expect(arvores.map((a) => a.area.name)).toEqual(["Marketing", "TI"]);
-  });
+function pessoa(vinculos: string[]): CurrentUser {
+  return {
+    id: "u-1",
+    name: "Fulano",
+    email: "fulano@t.dev",
+    must_change_password: false,
+    roles: [],
+    permissions: [],
+    teams: vinculos.map((team_id) => ({ team_id, role: "OPERATOR" as const })),
+  } as unknown as CurrentUser;
+}
 
-  it("⭐ para em DOIS níveis — o neto não entra no menu", () => {
-    // ⚠️ Um menu com indentação de neto vira mapa, e mapa não se lê com o
-    // mouse parado. O neto se alcança entrando no pai — a mesma escolha da
-    // visão "Subtimes" da tela de time.
-    const marketing = switcherTrees(TIMES)[0];
-    expect(marketing.subteams.map((t) => t.name)).toEqual(["SEO"]);
-  });
-
-  it("área sem subtime não some da lista", () => {
-    const ti = switcherTrees(TIMES)[1];
-    expect(ti.subteams).toEqual([]);
-  });
-});
-
-describe("contextLabel", () => {
-  it("numa tela de time, diz o nome do time", () => {
-    expect(contextLabel(`/times/${SEO}`, TIMES)).toBe("SEO");
-  });
-
-  it("na organização, diz Organização", () => {
-    expect(contextLabel("/organizacao", TIMES)).toBe("Organização");
-  });
-
-  it("⭐ fora dessas telas NÃO inventa um time", () => {
-    // ⚠️ Escolher um nome qualquer (o primeiro time, o time da pessoa)
-    // sugeriria um contexto ativo que a tela não tem — e o seletor passaria a
-    // mentir sobre onde a pessoa está.
-    expect(contextLabel("/minhas-tarefas", TIMES)).toBe(
-      "Times e organização",
-    );
-  });
-
-  it("time desconhecido cai no rótulo neutro, e não em vazio", () => {
-    expect(contextLabel("/times/sumiu", TIMES)).toBe("Times e organização");
-  });
-});
+function desenhar(opts: {
+  vinculos: string[];
+  canManageOrg?: boolean;
+  pathname?: string;
+  teams?: Team[];
+}) {
+  render(
+    <ContextSwitcher
+      teams={opts.teams ?? TIMES}
+      me={pessoa(opts.vinculos)}
+      pathname={opts.pathname ?? "/minhas-tarefas"}
+      canManageOrg={opts.canManageOrg ?? false}
+      expanded
+    />,
+  );
+}
 
 describe("ContextSwitcher", () => {
-  function abrir(canManageOrg = true, pathname = "/minhas-tarefas") {
-    render(
-      <ContextSwitcher
-        teams={TIMES}
-        pathname={pathname}
-        canManageOrg={canManageOrg}
-        expanded
-      />,
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Times e organização" }));
-  }
-
-  it("fechado, não há painel nenhum", () => {
-    render(
-      <ContextSwitcher
-        teams={TIMES}
-        pathname="/minhas-tarefas"
-        canManageOrg
-        expanded
-      />,
-    );
-    expect(screen.queryByRole("menu")).toBeNull();
+  it("⭐⭐ uma área e sem poder na organização: RÓTULO, sem botão", () => {
+    // ⚠️ A regra de 19/08, repetida em 09/09. Um item clicável que não leva a
+    // lugar nenhum é pior que um rótulo -- e quem só tem uma área não tem
+    // para onde ir.
+    desenhar({ vinculos: [SEO] });
+    expect(screen.queryByRole("button")).toBeNull();
+    expect(screen.getByLabelText("Time atual: Marketing")).toBeTruthy();
   });
 
-  it("aberto, lista as áreas e os subtimes com o link certo", () => {
-    abrir();
-    const seo = screen.getByRole("menuitem", { name: /SEO/ });
-    expect(seo.getAttribute("href")).toBe(`/times/${SEO}`);
-    expect(screen.getByRole("menuitem", { name: /Marketing/ })).toBeTruthy();
+  it("duas áreas: vira botão que abre o menu", () => {
+    desenhar({ vinculos: [SEO, TI] });
+    const gatilho = screen.getByRole("button", { name: "Trocar de área" });
+    expect(gatilho.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(gatilho);
+    expect(gatilho.getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByRole("menu")).toBeTruthy();
   });
 
-  it("⭐⭐ 'Gerenciar a organização' respeita `area.create`", () => {
-    // ⚠️⚠️ ESTE É O TESTE QUE IMPORTA. Ao tirar a entrada do menu, o gate
-    // `area.create` veio junto — e um gate que se perde numa mudança de
-    // NAVEGAÇÃO é invisível: a tela abre, e só o 403 lá dentro acusa. Pior,
-    // no sentido contrário ninguém acusa nada: a porta simplesmente some.
-    abrir(true);
+  it("⭐⭐ a lista NÃO traz subtime — só time raiz", () => {
+    // ⚠️ Pedido literal da Camila: *"subtimes não são para aparecer ali, só
+    // times raiz e a opção de gerenciar a organização"*. O seletor responde
+    // "em qual ÁREA estou"; subtime é navegação DENTRO da área.
+    desenhar({ vinculos: [], canManageOrg: true });
+    fireEvent.click(screen.getByRole("button", { name: "Trocar de área" }));
+    const itens = screen
+      .getAllByRole("menuitem")
+      .map((el) => el.getAttribute("href"));
+    expect(itens).toContain(`/times/${MKT}`);
+    expect(itens).toContain(`/times/${TI}`);
+    expect(itens).not.toContain(`/times/${SEO}`);
+    expect(itens).not.toContain(`/times/${JR}`);
+  });
+
+  it("⭐⭐ 'Gerenciar a organização' respeita o gate", () => {
+    // ⚠️⚠️ Ao tirar a entrada do menu, o gate `area.create` veio junto — e um
+    // gate perdido numa mudança de NAVEGAÇÃO é invisível: no sentido frouxo só
+    // o 403 acusa; no apertado, a porta simplesmente some.
+    desenhar({ vinculos: [], canManageOrg: true });
+    fireEvent.click(screen.getByRole("button", { name: "Trocar de área" }));
     expect(
       screen.getByRole("menuitem", { name: "Gerenciar a organização" }),
     ).toBeTruthy();
 
     cleanup();
-    abrir(false);
+    // Sem o poder, e com duas áreas para que ainda haja seletor.
+    desenhar({ vinculos: [SEO, TI] });
+    fireEvent.click(screen.getByRole("button", { name: "Trocar de área" }));
     expect(
       screen.queryByRole("menuitem", { name: "Gerenciar a organização" }),
     ).toBeNull();
-    // E os times continuam lá: quem não administra a organização ainda navega.
-    expect(screen.getByRole("menuitem", { name: /Marketing/ })).toBeTruthy();
+    // E as áreas continuam lá: quem não administra a organização ainda navega.
+    expect(screen.getAllByRole("menuitem")).toHaveLength(2);
   });
 
-  it("marca onde a pessoa está", () => {
-    abrir(true, `/times/${MKT}`);
+  it("⭐ quem administra a organização vê o seletor mesmo com uma área só", () => {
+    // ⚠️ Porque "Gerenciar a organização" mora dentro dele, e é a ÚNICA porta
+    // para aquela tela. Virar rótulo aqui a esconderia de quem precisa dela.
+    desenhar({
+      vinculos: [SEO],
+      canManageOrg: true,
+      teams: [TIMES[1], TIMES[2]],
+    });
+    expect(screen.getByRole("button", { name: "Trocar de área" })).toBeTruthy();
+  });
+
+  it("marca a área em que a pessoa está", () => {
+    desenhar({ vinculos: [SEO, TI], pathname: `/times/${MKT}` });
+    fireEvent.click(screen.getByRole("button", { name: "Trocar de área" }));
     const marketing = screen.getByRole("menuitem", { name: /Marketing/ });
     expect(marketing.className).toContain("text-accent");
   });
 
-  it("`aria-expanded` acompanha o estado nos dois sentidos", () => {
-    // ⚠️ NÃO AFIRMO "o painel sumiu do DOM": com `AnimatePresence` ele
-    // continua montado durante a animação de SAÍDA, e no jsdom essa animação
-    // não termina (não há layout, nem quadro). Esperar a remoção aqui seria
-    // esperar o motion, não o componente.
-    //
-    // ⚠️ E `aria-expanded` não é o consolo: é a propriedade que de fato
-    // importa. Quem usa leitor de tela ouve "recolhido"/"expandido" por ela,
-    // e ela é síncrona.
-    abrir();
-    const gatilho = screen.getByRole("button", { name: "Times e organização" });
-    expect(gatilho.getAttribute("aria-expanded")).toBe("true");
-    fireEvent.click(gatilho);
-    expect(gatilho.getAttribute("aria-expanded")).toBe("false");
+  it("sem área e sem poder na organização, não desenha nada", () => {
+    const { container } = render(
+      <ContextSwitcher
+        teams={TIMES}
+        me={pessoa([])}
+        pathname="/minhas-tarefas"
+        canManageOrg={false}
+        expanded
+      />,
+    );
+    expect(container.textContent).toBe("");
   });
 });
 
 // SABOTAGENS medidas:
-//   A. Ignorar `canManageOrg` e mostrar sempre "Gerenciar a
-//      organização". **Cai 1** -- o teste ⭐⭐.
-//   B. Incluir os netos na lista (trocar o filtro por `parent_team_id !==
-//      null` dentro da área). **Cai 3**.
-//   C. Devolver o primeiro time quando a rota não é de time. **Cai 2**: os
-//      dois testes de rótulo neutro.
-//
-// (As três foram executadas, não estimadas.)
+//   A. Ignorar `canManageOrg` e mostrar sempre "Gerenciar a organização".
+//      **Cai 1** -- o teste ⭐⭐ do gate.
+//   B. Listar todos os times em vez de só as raízes. **Cai 2**.
+//   C. Transformar o rótulo em botão. **Cai 1**: o teste ⭐⭐ do rótulo.

@@ -29,6 +29,7 @@ import {
 } from "@/lib/sidebar";
 import NotificationBell from "@/components/NotificationBell";
 import ContextSwitcher from "@/components/ContextSwitcher";
+import { peopleEntry, rootsForPerson } from "@/lib/contextSwitcher";
 import {
   LayoutGrid,
   FolderKanban,
@@ -152,6 +153,18 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const podeGerirFormularios =
     user?.permissions.includes("solicitation_form.manage") ?? false;
 
+  // ⚠️⚠️ "TIME" NAO E UMA TELA PROPRIA: ele aponta para `/times/<area>`, a
+  // MESMA tela que se abre clicando numa area. A rota `/membros` existia e
+  // sumiu em 09/09 -- a Camila viu as duas e resolveu: *"tirar o /membros e
+  // deixar 'time', e quando abrir ser o /times/id"*.
+  //
+  // ⚠️ E O DESTINO E CALCULADO, nao fixo. Com varias areas (Spec 046) nao ha
+  // um "/membros" que sirva para todo mundo: a entrada cai na area DA PESSOA,
+  // e quem administra a organizacao cai na primeira por nome. A regra mora em
+  // `lib/contextSwitcher.ts`, testada -- aqui so se le.
+  const minhasAreas = rootsForPerson(teams, user, podeVerOrganizacao);
+  const entradaDoTime = peopleEntry(minhasAreas);
+
   // Itens simples (fora do grupo Quadros).
   const nav: { href: string; label: string; icon: LucideIcon }[] = [
     { href: "/projetos", label: "Projetos", icon: FolderKanban },
@@ -162,7 +175,20 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     ...(podeGerirFormularios
       ? [{ href: "/formularios", label: "Formulários", icon: ClipboardList }]
       : []),
-    { href: "/membros", label: "Membros", icon: Users },
+    // ⚠️ SEM AREA, SEM ENTRADA: nao ha destino, e um item que leva a lugar
+    // nenhum e pior que um item ausente. Acontece com quem foi cadastrado e
+    // nunca alocado -- e a conta de administracao cai no ramo de cima, porque
+    // `rootsForPerson` devolve todas as areas para quem administra a
+    // organizacao.
+    ...(entradaDoTime.kind === "team"
+      ? [
+          {
+            href: `/times/${entradaDoTime.teamId}`,
+            label: "Time",
+            icon: Users,
+          },
+        ]
+      : []),
     // ⚠️⚠️ AQUI ESTAVAM "Organização" e "Times", e as duas SAIRAM em 09/09,
     // por decisão da Camila: *"ela não é para estar no menu junto com
     // projetos, minhas tarefas e afins, é outra seção"*.
@@ -232,23 +258,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             </strong>
           )}
         </div>
-
-        {/* ---- O SELETOR DE CONTEXTO --------------------------------------
-            ⚠️ NO TOPO, e nao na lista: ele diz ONDE VOCE ESTA, e a lista
-            abaixo diz O QUE FAZER. Foi a separacao que a Camila pediu em
-            09/09 ao tirar "Organizacao" e "Times" do menu.
-            ⚠️ O gate de LISTAR times e `team.manage`, o mesmo que a entrada
-            "Times" tinha; "Gerenciar a organizacao" segue com `area.create`,
-            o mesmo da entrada "Organizacao". Cortar do menu nao pode virar
-            cortar o acesso -- nem abrir porta nova para quem nao tinha. */}
-        {podeGerirTimes && (
-          <ContextSwitcher
-            teams={teams}
-            pathname={pathname}
-            canManageOrg={podeVerOrganizacao}
-            expanded={open}
-          />
-        )}
 
         {/* Botao de retrair */}
         <button
@@ -351,14 +360,32 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             espaco quando falta altura e a lista de navegacao (que rola),
             nunca o rodape (que nao tem como ser alcancado de outro jeito). */}
         <div className="flex shrink-0 flex-col gap-1 border-t border-border pt-2">
-          {/* ⚠️⚠️ AQUI FICAVA O "TIME PRINCIPAL" (Spec 039, F3): o nome do
-              time raiz em texto simples, com a regra combinada com a Camila em
-              19/08 -- *"um time raiz: nome sem chevron; dois ou mais: seletor"*.
-              O segundo caso finalmente existe (Spec 046), e o seletor e o
-              `ContextSwitcher` no TOPO da barra: ele diz onde voce esta e
-              leva para os outros times.
-              ⚠️ Manter os dois seria dizer a mesma coisa em duas alturas da
-              mesma barra -- e so um deles navega. */}
+          {/* ---- ONDE VOCE ESTA ----------------------------------------
+              ⚠️⚠️ ESTE E O "TIME PRINCIPAL" DA SPEC 039 (F3), com a outra
+              metade finalmente feita. A regra combinada com a Camila em 19/08
+              e repetida em 09/09:
+
+                  um time raiz, sem poder na organizacao  -> nome, sem chevron
+                  dois ou mais, ou administra a org       -> seletor
+
+              A primeira metade ja existia aqui como texto simples; a Spec 046
+              (varias areas) criou o caso que exige a segunda.
+
+              ⚠️ E ELE FICA AQUI, acima do nome da pessoa, e nao no topo da
+              barra. Eu ja o pus la em cima uma vez e a Camila corrigiu: o
+              rodape e o bloco do "quem sou eu e onde estou"; o topo e a
+              identidade do produto.
+
+              ⚠️ SO TIMES RAIZ entram na lista -- subtime e navegacao DENTRO
+              da area, e o lugar dela e a tela do time. A regra inteira mora em
+              `lib/contextSwitcher.ts`, testada. */}
+          <ContextSwitcher
+            teams={teams}
+            me={user}
+            pathname={pathname}
+            canManageOrg={podeVerOrganizacao}
+            expanded={open}
+          />
           <a
             href="/perfil"
             title={!open ? "Meu perfil" : undefined}

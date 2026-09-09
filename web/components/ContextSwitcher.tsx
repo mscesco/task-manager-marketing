@@ -1,112 +1,73 @@
 "use client";
 // components/ContextSwitcher.tsx
-// O seletor de contexto da barra lateral — Spec 047, revisão de 09/09.
+// Onde você está, no rodapé da barra — Spec 047, revisão de 09/09.
 //
-// ⚠️⚠️ ELE EXISTE PARA TIRAR "ORGANIZAÇÃO" E "TIMES" DA LISTA DO MENU, e a
-// razão é da Camila: *"ela não é para estar no menu junto com projetos, minhas
-// tarefas e afins, é outra seção"*. E ela está certa — "Projetos" e "Minhas
-// tarefas" são LUGARES DE TRABALHO; a organização e a árvore de times são
-// ONDE VOCÊ ESTÁ. Misturar os dois faz a lista crescer sem que nenhum item
-// fique mais fácil de achar.
+// ⚠️⚠️ ELE FICA ACIMA DO NOME DA PESSOA, e não no topo: pedido da Camila, e o
+// lugar tem sentido. O rodapé é o bloco do "quem sou eu e onde estou" — nome,
+// tema, sair. O topo é a identidade do produto. Eu já pus este componente lá
+// em cima uma vez, e ela corrigiu: *"o que eu quis dizer com ele era para
+// manter ele ali em cima do nome da pessoa"*.
 //
-// ⚠️ O PAINEL É `fixed`, E NÃO `absolute`, e isso não é preferência: o
-// `<aside>` da barra tem `overflow-y-auto` (posto lá em 05/08, para o menu não
-// sumir com zoom). Um painel `absolute` dentro dele seria RECORTADO pela
-// barra — apareceria pela metade, ou não apareceria. Por isso ele mede o
-// gatilho na abertura e se posiciona na viewport.
+// ⚠️⚠️ ELE SUBSTITUI O "TIME PRINCIPAL" (Spec 039, F3) sendo a outra metade
+// dele. A regra combinada em 19/08 e repetida em 09/09:
 //
-// ⚠️ E POR MEDIR NA ABERTURA, ele FECHA ao rolar ou redimensionar: a medida
-// envelhece no primeiro pixel de rolagem, e um painel flutuando longe do
-// gatilho é pior que um painel fechado.
+//     uma raiz, sem poder na organização  -> RÓTULO, sem chevron
+//     mais de uma raiz, ou administra     -> SELETOR
 //
-// ⚠️ FECHA AO CLICAR FORA com `contains`, e não comparando `e.target ===
-// e.currentTarget`: aquele é o padrão do SCRIM de modal, e aqui fecharia ao
-// clicar DENTRO da lista. Mesma distinção registrada em `TaskDetail` e em
-// `PillSelect`.
+// A primeira metade já existia; o seletor era o pedaço que faltava, e a Spec
+// 046 (várias áreas) criou o caso que o exige.
 //
-// ⚠️ MORA EM `components/`, então tem guardião — `app/` fica fora do
-// `include` do vitest.
+// ⚠️⚠️ SÓ TIMES RAIZ, com todas as letras: *"subtimes não são para aparecer
+// ali, só times raiz e a opção de gerenciar a organização"*. Ele responde "em
+// qual ÁREA eu estou"; subtime é navegação DENTRO da área, e o lugar dela é a
+// tela do time.
+//
+// ⚠️ A DECISÃO MORA EM `lib/contextSwitcher.ts`, testada — aqui só se desenha.
+//
+// ⚠️ O PAINEL É `fixed`, E NÃO `absolute`: o `<aside>` da barra tem
+// `overflow-y-auto` (posto em 05/08, para o menu não sumir com zoom). Um
+// painel `absolute` dentro dele seria RECORTADO. Por isso ele mede o gatilho
+// na abertura — e, por medir na abertura, FECHA ao rolar ou redimensionar.
+//
+// ⚠️ E ABRE PARA CIMA, porque está no rodapé: um menu que desce daqui sai da
+// tela. A origem da escala acompanha (`bottom left`).
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { Building2, Check, ChevronDown } from "lucide-react";
-import type { Team } from "@/lib/api";
-
-/** Uma área com os subtimes dela, já na ordem em que o painel desenha. */
-export type SwitcherTree = {
-  readonly area: Team;
-  readonly subteams: Team[];
-};
-
-/**
- * Agrupa a lista plana de times em áreas + subtimes.
- *
- * ⚠️ SÓ DOIS NÍVEIS NO PAINEL, mesmo que a árvore tenha três: um menu com
- * indentação de neto vira um mapa, e mapa não é o que se lê com o mouse
- * parado. O neto se alcança entrando no pai — que é a mesma escolha da visão
- * "Subtimes" da tela de time (`subteamCards`).
- */
-export function switcherTrees(teams: readonly Team[]): SwitcherTree[] {
-  return teams
-    .filter((t) => t.parent_team_id === null)
-    .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"))
-    .map((area) => ({
-      area,
-      subteams: teams
-        .filter((t) => t.parent_team_id === area.id)
-        .sort((a, b) => a.name.localeCompare(b.name, "pt-BR")),
-    }));
-}
-
-/** O que o gatilho mostra: onde a pessoa está agora. */
-export function contextLabel(
-  pathname: string,
-  teams: readonly Team[],
-): string {
-  if (pathname === "/organizacao") return "Organização";
-  // ⚠️⚠️ `/times/` É ROTA, e não nome — o rename de 09/09 passou por cima
-  // dela e virou `/teams/`, que não casa com rota nenhuma. O seletor parou de
-  // reconhecer a tela de time e passou a dizer "Times e organização" em todo
-  // lugar, calado. Quem pegou foi o teste; o `tsc` não tem como.
-  const m = /^\/times\/([^/]+)/.exec(pathname);
-  if (m) {
-    const team = teams.find((t) => t.id === m[1]);
-    if (team) return team.name;
-  }
-  // ⚠️ Fora dessas telas o seletor não MENTE dizendo um time: ele diz o que
-  // faz. Escolher um nome qualquer aqui (o primeiro time, o time da pessoa)
-  // sugeriria um contexto ativo que a tela não tem.
-  return "Times e organização";
-}
+import type { CurrentUser, Team } from "@/lib/api";
+import { contextChoice } from "@/lib/contextSwitcher";
 
 export default function ContextSwitcher({
   teams,
+  me,
   pathname,
+  /** `area.create` — existe só nos papéis de organização (Spec 046, §4.1). */
   canManageOrg,
+  /** A barra está expandida? Retraída, sobra só o ícone. */
   expanded,
 }: {
   teams: Team[];
+  me: CurrentUser | null;
   pathname: string;
-  /** `area.create` — o mesmo gate que a entrada de menu tinha. */
   canManageOrg: boolean;
-  /** A barra está expanded? Retraída, sobra só o ícone. */
   expanded: boolean;
 }) {
-  const [isOpen, setAberto] = useState(false);
-  const [caixa, setCaixa] = useState<{ top: number; left: number } | null>(null);
+  const [isOpen, setIsOpen] = useState(false);
+  const [caixa, setCaixa] = useState<{ bottom: number; left: number } | null>(
+    null,
+  );
   const gatilhoRef = useRef<HTMLButtonElement>(null);
   const painelRef = useRef<HTMLDivElement>(null);
 
-  const arvores = switcherTrees(teams);
-  const label = contextLabel(pathname, teams);
+  const escolha = contextChoice(teams, me, canManageOrg);
 
   // ⚠️ `useLayoutEffect` e não `useEffect`: medir depois da PINTURA faria o
-  // painel aparecer um quadro no canto (0,0) e saltar para o lugar. Aqui ele
-  // já nasce posicionado.
+  // painel aparecer um quadro no canto (0,0) e saltar para o lugar.
   useLayoutEffect(() => {
     if (!isOpen) return;
     const r = gatilhoRef.current?.getBoundingClientRect();
-    if (r) setCaixa({ top: r.bottom + 6, left: r.left });
+    if (r) setCaixa({ bottom: window.innerHeight - r.top + 6, left: r.left });
   }, [isOpen]);
 
   useEffect(() => {
@@ -117,14 +78,13 @@ export default function ContextSwitcher({
         !gatilhoRef.current?.contains(alvo) &&
         !painelRef.current?.contains(alvo)
       ) {
-        setAberto(false);
+        setIsOpen(false);
       }
     }
     function onEsc(e: KeyboardEvent) {
-      if (e.key === "Escape") setAberto(false);
+      if (e.key === "Escape") setIsOpen(false);
     }
-    // Ver o bloco no topo: a medida envelhece com a rolagem.
-    const fechar = () => setAberto(false);
+    const fechar = () => setIsOpen(false);
     document.addEventListener("mousedown", onDown);
     document.addEventListener("keydown", onEsc);
     window.addEventListener("resize", fechar);
@@ -137,6 +97,43 @@ export default function ContextSwitcher({
     };
   }, [isOpen]);
 
+  if (escolha.kind === "none") return null;
+
+  const base = `flex shrink-0 items-center gap-3 rounded-lg px-3 py-2 text-sm font-semibold ${
+    expanded ? "" : "justify-center px-0"
+  }`;
+
+  // ---- RÓTULO -----------------------------------------------------------
+  // ⚠️ NÃO É LINK, e não é botão: com uma área só não há para onde ir, e um
+  // item clicável que não leva a lugar nenhum é pior que um rótulo. A regra
+  // "se parece clicável, tem de ser clicável" vale ao contrário também.
+  if (escolha.kind === "label") {
+    return (
+      <div
+        title={`Você está no time ${escolha.team.name}`}
+        aria-label={`Time atual: ${escolha.team.name}`}
+        className={`${base} text-ink-faint`}
+      >
+        {/* ⚠️ `Building2` E NÃO `Network`: retraída, a barra mostra só o
+            ícone, e os dois viravam o MESMO símbolo em lugares diferentes.
+            Achado pela Camila na tela. */}
+        <Building2 size={18} aria-hidden="true" className="shrink-0" />
+        {expanded && <span className="truncate">{escolha.team.name}</span>}
+      </div>
+    );
+  }
+
+  // ---- SELETOR ----------------------------------------------------------
+  const atual = escolha.roots.find((t) => pathname === `/times/${t.id}`);
+  const rotulo = atual
+    ? atual.name
+    : pathname === "/organizacao"
+    ? "Organização"
+    : // ⚠️ Fora dessas telas ele NÃO MENTE dizendo um time. Escolher um nome
+      // qualquer (o primeiro, o da pessoa) sugeriria um contexto ativo que a
+      // tela não tem.
+      "Trocar de área";
+
   return (
     <>
       <button
@@ -144,19 +141,16 @@ export default function ContextSwitcher({
         type="button"
         aria-haspopup="menu"
         aria-expanded={isOpen}
-        aria-label="Times e organização"
-        title="Times e organização"
-        onClick={() => setAberto((v) => !v)}
-        className={`flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold text-ink-soft hover:bg-surface-2 ${
-          expanded ? "" : "justify-center px-0"
-        }`}
+        aria-label="Trocar de área"
+        title="Trocar de área"
+        onClick={() => setIsOpen((v) => !v)}
+        className={`${base} text-ink-soft hover:bg-surface-2`}
       >
         <Building2 size={18} aria-hidden="true" className="shrink-0" />
         {expanded && (
           <>
-            <span className="min-w-0 flex-1 truncate text-left">{label}</span>
-            {/* A seta gira junto — o mesmo movimento que a pessoa acabou de
-                fazer com o clique, devolvido na tela. */}
+            <span className="min-w-0 flex-1 truncate text-left">{rotulo}</span>
+            {/* A seta gira junto — o mesmo movimento do clique, devolvido. */}
             <motion.span
               className="inline-flex shrink-0"
               animate={{ rotate: isOpen ? 180 : 0 }}
@@ -169,27 +163,26 @@ export default function ContextSwitcher({
       </button>
 
       {/* ⚠️ `AnimatePresence` é o que permite a SAÍDA animada: sem ele o React
-          desmonta o nó na hora e o `exit` nunca roda. Abrir suave e sumir seco
-          é pior do que não animar. */}
+          desmonta o nó na hora e o `exit` nunca roda. */}
       <AnimatePresence>
         {isOpen && caixa && (
           <motion.div
             ref={painelRef}
             role="menu"
-            aria-label="Times e organização"
-            initial={{ opacity: 0, y: -6, scale: 0.97 }}
+            aria-label="Áreas"
+            initial={{ opacity: 0, y: 6, scale: 0.97 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -6, scale: 0.97 }}
+            exit={{ opacity: 0, y: 6, scale: 0.97 }}
             transition={{ type: "spring", duration: 0.26, bounce: 0.16 }}
-            // ⚠️ A origem da escala é o CANTO DE CIMA À ESQUERDA, que é onde
-            // o gatilho está: escalando a partir do centro, o painel cresce
-            // também para cima e parece brotar do nada.
             style={{
               position: "fixed",
-              top: caixa.top,
+              bottom: caixa.bottom,
               left: caixa.left,
               zIndex: 60,
-              transformOrigin: "top left",
+              // ⚠️ A escala nasce no canto de BAIXO à esquerda, que é onde o
+              // gatilho está. Do centro, o painel cresceria para os dois lados
+              // e pareceria brotar do nada.
+              transformOrigin: "bottom left",
               width: 248,
               maxHeight: "min(70vh, 520px)",
               overflowY: "auto",
@@ -200,51 +193,38 @@ export default function ContextSwitcher({
               boxShadow: "var(--shadow)",
             }}
           >
-            {/* ⚠️ AS LINHAS ENTRAM EM CASCATA (`staggerChildren`), e é o que a
-                Camila pediu ao mandar a página de animação. O atraso é de 18ms
-                e a lista é curta de propósito: cascata longa vira espera, e o
-                menu é justamente o lugar onde ninguém quer esperar. */}
+            {/* ⚠️ AS LINHAS ENTRAM EM CASCATA (`staggerChildren`), com 18ms de
+                atraso. Curto de propósito: menu é onde ninguém quer esperar. */}
             <motion.div
               initial="fechado"
               animate="aberto"
               variants={{
-                isOpen: { transition: { staggerChildren: 0.018 } },
+                aberto: { transition: { staggerChildren: 0.018 } },
                 fechado: {},
               }}
             >
-              {arvores.length === 0 && (
+              {escolha.roots.length === 0 && (
                 <div className="muted px-2 py-2 text-xs">
                   Nenhuma área ainda.
                 </div>
               )}
 
-              {arvores.map(({ area, subteams }) => (
-                <div key={area.id}>
-                  <SwitcherItem
-                    href={`/times/${area.id}`}
-                    label={area.name}
-                    active={pathname === `/times/${area.id}`}
-                    bold
-                  />
-                  {subteams.map((s) => (
-                    <SwitcherItem
-                      key={s.id}
-                      href={`/times/${s.id}`}
-                      label={s.name}
-                      active={pathname === `/times/${s.id}`}
-                      indented
-                    />
-                  ))}
-                </div>
+              {escolha.roots.map((t) => (
+                <SwitcherItem
+                  key={t.id}
+                  href={`/times/${t.id}`}
+                  label={t.name}
+                  active={pathname === `/times/${t.id}`}
+                />
               ))}
 
-              {canManageOrg && (
+              {escolha.canManageOrg && (
                 <>
-                  {/* ⚠️ A LINHA SEPARA DUAS COISAS DIFERENTES: acima, PARA ONDE
-                      IR; abaixo, ADMINISTRAR o conjunto. Sem ela, "Gerenciar a
-                      organização" lê-se como só mais um time da lista. */}
+                  {/* ⚠️ A LINHA SEPARA DUAS COISAS DIFERENTES: acima, PARA
+                      ONDE IR; abaixo, ADMINISTRAR o conjunto. Sem ela,
+                      "Gerenciar a organização" lê-se como mais uma área. */}
                   <motion.div
-                    variants={ITEM}
+                    variants={ITEM_VARIANTS}
                     className="my-1.5 border-t border-border"
                   />
                   <SwitcherItem
@@ -264,36 +244,30 @@ export default function ContextSwitcher({
 
 // Cada linha sobe 4px enquanto aparece. Curto: é confirmação de que o menu
 // abriu, não um número de dança.
-const ITEM = {
-  fechado: { opacity: 0, y: -4 },
-  isOpen: { opacity: 1, y: 0 },
+const ITEM_VARIANTS = {
+  fechado: { opacity: 0, y: 4 },
+  aberto: { opacity: 1, y: 0 },
 };
 
 function SwitcherItem({
   href,
   label,
   active,
-  bold = false,
-  indented = false,
 }: {
   href: string;
   label: string;
   active: boolean;
-  bold?: boolean;
-  indented?: boolean;
 }) {
   return (
-    <motion.div variants={ITEM}>
+    <motion.div variants={ITEM_VARIANTS}>
       {/* ⚠️ `<a href>` E NÃO `<Link>`: a navegação deste app é recarga total
-          (está registrado no topo do `AppShell`, junto do motivo de a barra
-          persistir o próprio estado). Misturar os dois faria metade das
-          telas recarregar e a outra metade não. */}
+          (registrado no topo do `AppShell`, junto do motivo de a barra
+          persistir o próprio estado). Misturar os dois faria metade das telas
+          recarregar e a outra metade não. */}
       <a
         href={href}
         role="menuitem"
-        className={`flex items-center gap-2 rounded-lg px-2 py-1.5 text-[13px] ${
-          indented ? "pl-6" : ""
-        } ${bold ? "font-semibold" : "font-medium"} ${
+        className={`flex items-center gap-2 rounded-lg px-2 py-1.5 text-[13px] font-medium ${
           active ? "bg-accent-soft text-accent" : "text-ink-soft hover:bg-surface-2"
         }`}
       >

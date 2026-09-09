@@ -7,10 +7,10 @@
 // (§7 da spec), então tudo o que ficasse aqui perderia o guardião. É a mesma
 // razão pela qual as decisões moram em `lib/`.
 //
-// ⚠️⚠️ E É A MESMA TELA DA `/membros`, por decisão da Camila em 09/09: *"eu
-// quero que seja literalmente a mesma tela, com o toggle de subtimes e tudo"*.
-// Lá o recorte é a organização (`teamId = null`); aqui, um time. Os dois
-// níveis fazem as mesmas duas perguntas -- quem está aqui, e o que tem dentro.
+// ⚠️⚠️ E ELA É O DESTINO DO ITEM "TIME" DO MENU, desde 09/09: a rota
+// `/membros` foi removida, e a entrada passou a apontar para `/times/<área>`.
+// Decisão da Camila: *"tirar o /membros e deixar 'time', e quando abrir ser o
+// /times/id"*. Quem calcula qual área é `lib/contextSwitcher.ts`.
 //
 // ⚠️ SEM `useSearchParams` — a rota é dinâmica (`ƒ /times/[id]`, por causa do
 // `[id]`), então o `next build` passaria de qualquer forma; mas não há estado

@@ -147,7 +147,7 @@ export function searchPeople(
  * código: é a §5 da spec sendo cumprida. Ela avisa que *"duas telas listando
  * pessoas, com regras diferentes, é o começo do próximo defeito de contador"*.
  *
- * E a divergência EXISTIU: a busca de `/membros` nasceu com `toLowerCase()`
+ * E a divergência EXISTIU: a busca da tela de pessoas nasceu com `toLowerCase()`
  * puro enquanto a da `/organizacao` já normalizava acento. Digitar "jose"
  * achava "José" numa tela e ninguém na outra — mesma pessoa, mesmo term,
  * duas respostas. Achado no code review de 09/09.

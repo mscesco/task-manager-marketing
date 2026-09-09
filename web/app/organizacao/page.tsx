@@ -64,7 +64,7 @@ import {
  *
  * A primeira versão desta tela usava feminino ("Administradora"), porque a
  * prosa das specs escreve `SEO · supervisora` e o time é de mulheres. Isso
- * criava DUAS vozes no produto: a `/membros` sempre usou masculino
+ * criava DUAS vozes no produto: a tabela de pessoas sempre usou masculino
  * (`ROLE_LABEL`: "Administrador", "Gerente", "Supervisor", "Operador").
  *
  * ⚠️ A prosa das specs e os comentários FICAM como estão -- a decisão é
@@ -241,7 +241,7 @@ export default function OrganizacaoPage() {
 
             {/* ⚠️ A BUSCA AQUI É O ATALHO, e não a lista completa: esta tela é
                 a grade de ÁREAS. Quem quer a tabela inteira vai para
-                `/membros`, que a fatia E transformou na tabela de pessoas da
+                a tela da ÁREA, que é a mesma tabela de pessoas da
                 organização -- e é a MESMA tabela da tela de time. */}
             {busca.trim() !== "" && (
               <div className="border-t border-border">
@@ -312,14 +312,10 @@ export default function OrganizacaoPage() {
                     ))}
                   </ul>
                 )}
-                <div className="border-t border-border px-3 py-2">
-                  <Link
-                    href="/membros"
-                    className="text-accent text-xs underline"
-                  >
-                    Ver todas as pessoas da organização
-                  </Link>
-                </div>
+                {/* ⚠️ AQUI HAVIA "Ver todas as pessoas da organização",
+                    apontando para `/membros`. A rota deixou de existir em
+                    09/09: não há uma tela de "todas as pessoas" -- há a tela
+                    de cada ÁREA, e é para ela que as cápsulas acima levam. */}
               </div>
             )}
           </div>

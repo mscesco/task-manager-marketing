@@ -360,39 +360,3 @@ describe("subteamCandidates", () => {
     expect(candidatos.map((m) => m.name)).toEqual(["Ana", "Zara"]);
   });
 });
-
-describe("subteamCards com teamId = null (a organização)", () => {
-  it("⭐⭐ devolve as ÁREAS — é o que unificou as duas telas", () => {
-    // ⚠️⚠️ Não há `if` para este caso em `subteamCards`: o filtro é
-    // `parent_team_id === teamId`, e área é o time cujo pai é `null`. A
-    // organização é o NÍVEL DE CIMA da mesma árvore.
-    //
-    // ⚠️ Este teste existe porque a `TeamScreen` DEPENDE dessa coincidência.
-    // Se alguém "consertar" a assinatura de volta para `string`, ou escrever
-    // um ramo próprio para as áreas, a `/membros` ganha uma segunda regra de
-    // contagem -- e é assim que o defeito de contador nasce.
-    const cards = subteamCards(null, TIMES, []);
-    expect(cards.map((c) => c.team.name)).toEqual(["Marketing", "TI"]);
-  });
-
-  it("conta a árvore inteira de cada área, sem duplicar", () => {
-    const cards = subteamCards(null, TIMES, [
-      pessoa("Ana", [
-        [MKT, "MANAGER"],
-        [SEO, "OPERATOR"],
-      ]),
-      pessoa("Bia", [[JR, "OPERATOR"]]),
-    ]);
-    const marketing = cards.find((c) => c.team.id === MKT);
-    // Ana tem DOIS vínculos na árvore e conta uma vez; Bia está só no neto.
-    expect(marketing?.pessoas).toBe(2);
-    // CRM + SEO + SEO Junior
-    expect(marketing?.subteams).toBe(3);
-  });
-
-  it("área sem ninguém mostra zero, e não some da grade", () => {
-    const cards = subteamCards(null, TIMES, []);
-    expect(cards).toHaveLength(2);
-    expect(cards.every((c) => c.pessoas === 0)).toBe(true);
-  });
-});

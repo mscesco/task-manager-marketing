@@ -7,7 +7,7 @@
 // concluir é explícito -- fechar não pode ser acidental.
 //
 // ⚠️ MORA EM `components/` porque agora tem DOIS gatilhos em telas
-// diferentes: o cadastro (em `/membros`) e o reset (na gaveta do membro, de
+// diferentes: o cadastro (na tela do time) e o reset (na gaveta do membro, de
 // qualquer tela que use a tabela). Duas cópias divergiriam no aviso -- e o
 // aviso é a parte que evita a perda do segredo.
 
