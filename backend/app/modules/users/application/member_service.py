@@ -705,6 +705,54 @@ class MemberService:
             raise EntityNotFoundError("User", identifier=user_id)
         return await self._users.list_team_memberships(user_id=user_id)
 
+    def pode_trocar_papel_do_vinculo(
+        self, *, user_id: uuid.UUID, papel_atual: UserTeamRole
+    ) -> bool:
+        """O ator conseguiria trocar o papel DESTE vinculo? Spec 047, fatia A.
+
+        ⚠️⚠️ ELA EXISTE PARA O FRONT NAO REFAZER A CONTA, e essa e a §3.1 da
+        spec inteira. O painel do membro mostra TODOS os vinculos da pessoa e
+        deixa editaveis so os do escopo de quem olha -- e a tentacao e a tela
+        olhar o `team_id` e decidir sozinha.
+
+        ⚠️ A SPEC 034 DESFEZ EXATAMENTE ISSO UMA VEZ. A regra espelhada no
+        front fazia gestor e admin sumirem dos seletores em tarefa interna de
+        subtime -- **reportado duas vezes, com captura**. A prescricao do
+        briefing e literal: *"se aparecer necessidade de filtrar escopo no
+        front, falta parametro na rota"*. Este e o parametro.
+
+        ⚠️⚠️ ELA CHAMA AS MESMAS FUNCOES QUE `change_member_role`, e NAO uma
+        versao "equivalente". Duas listas de regras que precisam concordar
+        divergem no primeiro `if` novo -- e a divergencia aqui e silenciosa
+        dos dois lados: cadeado aberto que da 403 ao salvar, ou cadeado
+        fechado escondendo uma acao permitida. Se alguem acrescentar um gate
+        ao PATCH, tem de acrescentar aqui; o teste
+        `test_o_cadeado_concorda_com_o_patch` e quem cobra.
+
+        As tres perguntas, na ordem em que o PATCH as faz:
+
+            C3  -- ninguem troca o proprio papel (anti-lockout)
+            028 -- trocar papel exige gestao ampla (supervisor nao promove)
+            C2  -- a matriz: ADMIN mexe em qualquer papel; MANAGER so em
+                   SUPERVISOR/OPERATOR
+
+        ⚠️ A MATRIZ DE **ATRIBUIR** (`_assert_actor_can_assign`) FICA DE FORA,
+        de proposito: ela depende do papel NOVO, que ainda nao foi escolhido.
+        O cadeado responde "esta linha e sua para mexer?"; qual papel cabe e
+        `papeisAtribuiveis` no front, que ja filtra por nivel desde a Spec
+        045. Incluir aqui exigiria um palpite sobre a escolha da pessoa.
+        """
+        tenant = require_tenant()
+        if user_id == tenant.user_id:
+            return False
+        if not self._tem_gestao_ampla():
+            return False
+        # A matriz C2, sem levantar -- mesma condicao de
+        # `_assert_actor_can_target`, lida como pergunta.
+        if tenant.has_role("ADMIN"):
+            return True
+        return papel_atual in (UserTeamRole.SUPERVISOR, UserTeamRole.OPERATOR)
+
     async def assign_to_team(
         self,
         *,

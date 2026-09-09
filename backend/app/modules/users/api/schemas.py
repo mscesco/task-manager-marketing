@@ -154,3 +154,28 @@ class MemberTeamResponse(BaseModel):
 
     team_id: uuid.UUID
     role: UserTeamRole
+
+
+class MemberTeamListItemResponse(MemberTeamResponse):
+    """Um vinculo NA LISTAGEM, com o cadeado resolvido. Spec 047, fatia A.
+
+    ⚠️⚠️ SUBCLASSE, E NAO UM CAMPO NOVO NA MAE, e o motivo e concreto:
+    `MemberTeamResponse` tambem e a resposta de `POST /move-subteam`, que
+    devolve UM vinculo recem-escrito. Ali "voce pode editar o papel deste
+    vinculo?" nao e pergunta que alguem fez, e um `can_edit_role` opcional
+    viraria um `None` significando "nao perguntei" -- o tipo de tri-estado
+    que o front trata errado uma vez e ninguem descobre.
+
+    ⚠️ O CADEADO VEM DO BACKEND porque a §3.1 da spec exige: o painel mostra
+    TODOS os vinculos e edita so os do escopo de quem olha, e deduzir isso na
+    tela e exatamente o que a Spec 034 desfez -- gestor e admin sumindo dos
+    seletores, reportado duas vezes com captura.
+    """
+
+    #: O ator conseguiria trocar o papel deste vinculo?
+    #:
+    #: ⚠️ RESPONDE SO PELO PAPEL, e nao por "mexer na linha": remover do time
+    #: e outra rota, com outro gate (`remove_member_from_team`, aberto ao
+    #: SUPERVISOR pela Spec 028). Uma tela que use este campo para esconder o
+    #: botao de remover vai esconder uma acao permitida.
+    can_edit_role: bool

@@ -40,6 +40,7 @@ from app.modules.users.api.schemas import (
     MemberCreateRequest,
     MemberListResponse,
     MemberResponse,
+    MemberTeamListItemResponse,
     MemberTeamResponse,
     MoveSubteamRequest,
     ResetPasswordResponse,
@@ -102,22 +103,45 @@ async def list_members(
 
 @router.get(
     "/{user_id}/teams",
-    response_model=list[MemberTeamResponse],
+    response_model=list[MemberTeamListItemResponse],
 )
 async def list_member_teams(
     user_id: uuid.UUID, _: TenantContextDep, session: SessionDep
-) -> list[MemberTeamResponse]:
-    """Lista os vinculos (time, papel) de um membro. Spec 015, Fatia 1.
+) -> list[MemberTeamListItemResponse]:
+    """Lista os vinculos (time, papel, cadeado) de um membro. Spec 015, F1.
 
     Leitura -- exige apenas estar autenticado (mesmo nivel de list_members).
     Alimenta a UI de administracao de papel, que precisa do papel atual
     antes de oferecer alteracao.
+
+    ⚠️⚠️ `can_edit_role` NASCEU NA SPEC 047 (fatia A), e ele e a fatia inteira.
+    O painel do membro mostra TODOS os vinculos da pessoa -- inclusive os de
+    areas que quem olha nao administra -- e deixa editaveis so os do proprio
+    escopo. Sem este campo, a tela teria de deduzir "quem alcanca" olhando o
+    `team_id`, que e **exatamente o que a Spec 034 desfez**: a regra espelhada
+    no front fazia gestor e admin sumirem dos seletores, e foi reportado duas
+    vezes com captura.
+
+    ⚠️ A LEITURA CONTINUA ABERTA A QUALQUER AUTENTICADO, de proposito: "ver
+    onde a Fulana esta" e a pergunta que o painel existe para responder, e
+    esconder vinculo obrigaria a abrir area por area. O que o cadeado muda e
+    quem pode MEXER, e essa recusa mora no PATCH -- este campo so evita
+    oferecer o que sera recusado.
     """
-    memberships = await MemberService(session).list_member_teams(
-        user_id=user_id
-    )
+    svc = MemberService(session)
+    memberships = await svc.list_member_teams(user_id=user_id)
     return [
-        MemberTeamResponse(team_id=m.team_id, role=m.role)
+        MemberTeamListItemResponse(
+            team_id=m.team_id,
+            role=m.role,
+            # ⚠️ A MESMA FUNCAO QUE O PATCH USA, e nao uma copia da regra --
+            # duas listas que precisam concordar divergem no primeiro `if`
+            # novo, e aqui a divergencia e silenciosa: cadeado aberto que da
+            # 403 ao salvar, ou cadeado fechado escondendo acao permitida.
+            can_edit_role=svc.pode_trocar_papel_do_vinculo(
+                user_id=user_id, papel_atual=m.role
+            ),
+        )
         for m in memberships
     ]
 
