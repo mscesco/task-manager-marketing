@@ -196,73 +196,87 @@ export default function OrganizacaoPage() {
               ⚠️ Não é enfeite: a grade é por ÁREA, então ela mostra o
               agregado e some com o indivíduo. "Onde está a Fulana?" não tem
               outra resposta nesta tela. */}
-          <label
-            className="field"
-            style={{ maxWidth: 420, marginBottom: 20, display: "block" }}
-          >
-            <span className="label" style={{ display: "flex", gap: 6 }}>
-              <Search size={14} aria-hidden="true" /> Encontrar pessoa
-            </span>
-            <input
-              className="input"
-              value={busca}
-              placeholder="nome ou e-mail"
-              onChange={(e) => setBusca(e.target.value)}
-            />
-          </label>
+          {/* ⚠️⚠️ O RESULTADO MORA DENTRO DO MESMO BLOCO DA BUSCA, e nao solto
+              embaixo dela. Reação da Camila à primeira versão: *"ficou meio
+              estranho que ela só aparece assim solta na tela"* — e estava
+              certa: o resultado flutuava entre o campo e a grade, sem
+              container, então nada dizia a que ele pertencia nem onde ele
+              acabava. Uma linha de texto no meio de uma página não se lê como
+              "resultado de busca"; lê-se como conteúdo da página.
 
-          {busca.trim() !== "" && (
-            <div style={{ marginBottom: 24 }}>
-              {achadas.length === 0 ? (
-                <div className="muted">Ninguém com esse nome ou e-mail.</div>
-              ) : (
-                <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
-                  {achadas.map(({ membro, areas }) => (
-                    <li
-                      key={membro.id}
-                      style={{
-                        display: "flex",
-                        gap: 10,
-                        alignItems: "baseline",
-                        padding: "6px 0",
-                        flexWrap: "wrap",
-                      }}
-                    >
-                      <strong>{membro.name}</strong>
-                      <span className="muted" style={{ fontSize: 12.5 }}>
-                        {membro.email}
-                      </span>
-                      {membro.org_role && (
-                        <Badge tone="soft" size="sm" color="var(--accent)">
-                          {ROTULO_ORG[membro.org_role]}
-                        </Badge>
-                      )}
-                      {podeRenomear && !membro.org_role && (
-                        <PromoverNaOrganizacao
-                          membro={membro}
-                          onMudou={carregar}
-                          onAviso={setAviso}
-                        />
-                      )}
-                      {areas.length === 0 ? (
-                        <Badge tone="outline" size="sm">
-                          sem área
-                        </Badge>
-                      ) : (
-                        areas.map((a) => (
-                          <Link key={a.id} href={`/times/${a.id}`} className="tappable">
-                            <Badge tone="soft" size="sm" color="var(--accent)">
-                              {a.name}
-                            </Badge>
-                          </Link>
-                        ))
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          )}
+              A caixa resolve as três coisas de uma vez: agrupa o campo com o
+              que ele produziu, delimita onde o resultado termina, e o separa
+              da grade — que é OUTRA coisa (áreas, não pessoas). */}
+          <div className="mb-6 max-w-[560px] overflow-hidden rounded-lg border border-border bg-surface">
+            <label className="block p-3">
+              <span className="label flex items-center gap-1.5">
+                <Search size={14} aria-hidden="true" /> Encontrar pessoa
+              </span>
+              <input
+                className="input mt-1.5 w-full"
+                value={busca}
+                placeholder="nome ou e-mail"
+                onChange={(e) => setBusca(e.target.value)}
+              />
+            </label>
+
+            {busca.trim() !== "" && (
+              <div className="border-t border-border">
+                {achadas.length === 0 ? (
+                  <div className="muted p-3 text-xs">
+                    Ninguém com esse nome ou e-mail.
+                  </div>
+                ) : (
+                  <ul className="m-0 list-none p-0">
+                    {achadas.map(({ membro, areas }) => (
+                      <li
+                        key={membro.id}
+                        className="flex flex-wrap items-baseline gap-2 border-b border-border px-3 py-2 last:border-b-0"
+                      >
+                        <strong className="text-sm">{membro.name}</strong>
+                        <span className="muted text-xs">{membro.email}</span>
+                        {membro.org_role && (
+                          <Badge tone="soft" size="sm" color="var(--accent)">
+                            {ROTULO_ORG[membro.org_role]}
+                          </Badge>
+                        )}
+                        {areas.length === 0 ? (
+                          <Badge tone="outline" size="sm">
+                            sem área
+                          </Badge>
+                        ) : (
+                          areas.map((a) => (
+                            <Link
+                              key={a.id}
+                              href={`/times/${a.id}`}
+                              className="tappable"
+                            >
+                              <Badge tone="soft" size="sm" color="var(--accent)">
+                                {a.name}
+                              </Badge>
+                            </Link>
+                          ))
+                        )}
+                        {/* ⚠️ A AÇÃO VAI PARA A DIREITA (`ml-auto`), separada
+                            do que a linha INFORMA. Misturada às cápsulas, ela
+                            lia como mais um rótulo — e "tornar gestora" não é
+                            um fato sobre a pessoa, é um botão. */}
+                        {podeRenomear && !membro.org_role && (
+                          <span className="ml-auto">
+                            <PromoverNaOrganizacao
+                              membro={membro}
+                              onMudou={carregar}
+                              onAviso={setAviso}
+                            />
+                          </span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+          </div>
 
           {/* ---- a grade de áreas ---------------------------------------- */}
           <div
@@ -605,7 +619,11 @@ function PapelDeOrganizacao({
   }
 
   return (
-    <span className="relative inline-flex">
+    // ⚠️ O `ref` AQUI E O QUE FAZ O CLICAR-FORA FUNCIONAR. A primeira versao
+    // declarava `wrapRef` e nunca o pendurava: `wrapRef.current` ficava
+    // `null`, a condicao `wrapRef.current && ...` curto-circuitava e o painel
+    // nunca fechava. O `tsc` NAO acusa -- ref declarada e nao usada e valida.
+    <span className="relative inline-flex" ref={wrapRef}>
       <button
         className="tappable"
         onClick={() => {
