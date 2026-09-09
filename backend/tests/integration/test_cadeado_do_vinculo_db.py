@@ -72,7 +72,7 @@ async def test_admin_edita_qualquer_vinculo(db) -> None:
     with _como(ws, admin, raiz, seo, "ADMIN"):
         svc = MemberService(db)
         assert svc.pode_trocar_papel_do_vinculo(
-            user_id=alvo, papel_atual=UserTeamRole.SUPERVISOR
+            user_id=alvo, team_id=seo, papel_atual=UserTeamRole.SUPERVISOR
         )
 
 
@@ -87,7 +87,7 @@ async def test_ninguem_edita_o_PROPRIO_papel(db) -> None:
 
     with _como(ws, admin, raiz, seo, "ADMIN"):
         assert not MemberService(db).pode_trocar_papel_do_vinculo(
-            user_id=admin, papel_atual=UserTeamRole.ADMIN
+            user_id=admin, team_id=raiz, papel_atual=UserTeamRole.ADMIN
         )
 
 
@@ -106,12 +106,12 @@ async def test_manager_NAO_edita_vinculo_de_manager(db) -> None:
     with _como(ws, gerente, raiz, seo, "MANAGER"):
         svc = MemberService(db)
         assert not svc.pode_trocar_papel_do_vinculo(
-            user_id=par, papel_atual=UserTeamRole.MANAGER
+            user_id=par, team_id=raiz, papel_atual=UserTeamRole.MANAGER
         )
         # E o de baixo continua editavel -- sem esta metade, "MANAGER nao
         # edita nada" passaria pelo teste acima.
         assert svc.pode_trocar_papel_do_vinculo(
-            user_id=par, papel_atual=UserTeamRole.OPERATOR
+            user_id=par, team_id=raiz, papel_atual=UserTeamRole.OPERATOR
         )
 
 
@@ -134,7 +134,7 @@ async def test_supervisor_NAO_troca_papel_de_ninguem(db) -> None:
 
     with _como(ws, sup, raiz, seo, "SUPERVISOR"):
         assert not MemberService(db).pode_trocar_papel_do_vinculo(
-            user_id=operador, papel_atual=UserTeamRole.OPERATOR
+            user_id=operador, team_id=seo, papel_atual=UserTeamRole.OPERATOR
         )
 
 
@@ -200,7 +200,9 @@ async def test_o_cadeado_concorda_com_o_patch(db) -> None:
         with _como(ws, ator, raiz, seo, papel_do_ator):
             svc = MemberService(db)
             cadeado = svc.pode_trocar_papel_do_vinculo(
-                user_id=alvo, papel_atual=UserTeamRole[papel_do_alvo]
+                user_id=alvo,
+                team_id=time_do_alvo,
+                papel_atual=UserTeamRole[papel_do_alvo],
             )
             try:
                 await svc.change_member_role(

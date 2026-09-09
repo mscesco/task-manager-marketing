@@ -149,7 +149,7 @@ async def list_member_teams(
             # novo, e aqui a divergencia e silenciosa: cadeado aberto que da
             # 403 ao salvar, ou cadeado fechado escondendo acao permitida.
             can_edit_role=svc.pode_trocar_papel_do_vinculo(
-                user_id=user_id, papel_atual=m.role
+                user_id=user_id, team_id=m.team_id, papel_atual=m.role
             ),
         )
         for m in memberships

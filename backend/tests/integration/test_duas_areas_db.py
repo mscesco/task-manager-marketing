@@ -24,12 +24,13 @@ from __future__ import annotations
 
 import pytest
 
-from app.db.models.enums import TaskStatus
+from app.db.models.enums import TaskStatus, UserTeamRole
 from app.modules.tasks.application.task_service import CreateTaskCommand, TaskService
 from app.modules.tasks.infrastructure.board_repository import BoardRepository
 from app.modules.workspaces.application.workspace_service import TeamService
+from app.modules.users.application.member_service import MemberService
 from app.modules.workspaces.infrastructure.team_repository import TeamRepository
-from app.shared.exceptions.base import ValidationError
+from app.shared.exceptions.base import AuthorizationError, ValidationError
 from tests.integration import factories as f
 from tests.integration.conftest import acting_as, mship, node
 
@@ -266,3 +267,92 @@ async def test_sem_time_e_sem_quadro_com_DUAS_areas_e_recusado(db) -> None:
             )
 
     assert "mais de uma area" in str(exc.value)
+
+
+# ------------------------------------------------------------------
+# ⭐⭐ Gerente so mexe na PROPRIA arvore (decisao da Camila, 09/09)
+# ------------------------------------------------------------------
+async def test_gerente_NAO_administra_gente_de_outra_area(db) -> None:
+    """⭐⭐ O achado do code review de 09/09, virando regra.
+
+    Ate aqui `change_member_role` perguntava "voce tem `team.manage` EM ALGUM
+    LUGAR?" -- e com uma area so isso coincidia com a verdade, porque nao
+    havia outro lugar. Com duas areas a pergunta larga vira um buraco: a
+    gerente do Marketing troca o cargo de alguem no TI.
+
+    ⚠️ E O CADEADO DO PAINEL FOI ESTREITADO NO MESMO COMMIT. Se so um dos dois
+    mudasse, tela e servidor passariam a discordar -- cadeado aberto que da
+    403 ao salvar, ou cadeado fechado escondendo acao permitida. E o teste da
+    concordancia (`test_o_cadeado_concorda_com_o_patch`) nao pegaria: ele roda
+    com UMA area, onde as duas perguntas continuam iguais.
+
+    ⚠️ E ESTE TESTE SO ENXERGA A DIFERENCA PORQUE PASSA `team_tree`. Sem a
+    arvore, `acting_as` monta as permissoes como `frozenset`, e
+    `has_permission_in` cai fail-open na pergunta ampla -- o teste ficaria
+    verde com a regra errada. Esta escrito no `conftest`.
+    """
+    ctx, ws, marketing, seo, ti, infra, q_mkt, q_ti, admin = await _duas_areas(db)
+
+    gerente = await f.make_user(db, workspace_id=ws, email="mgr@t.dev")
+    await f.add_member(
+        db, workspace_id=ws, user_id=gerente, team_id=marketing, role="MANAGER"
+    )
+    alheio = await f.make_user(db, workspace_id=ws, email="ti@t.dev")
+    await f.add_member(
+        db, workspace_id=ws, user_id=alheio, team_id=infra, role="OPERATOR"
+    )
+    await db.flush()
+
+    como_gerente = dict(ctx)
+    como_gerente["user_id"] = gerente
+    como_gerente["memberships"] = (mship(marketing, "MANAGER"),)
+
+    with acting_as(**como_gerente):
+        svc = MemberService(db)
+
+        # ⚠️ O cadeado FECHA para a area alheia...
+        assert not svc.pode_trocar_papel_do_vinculo(
+            user_id=alheio, team_id=infra, papel_atual=UserTeamRole.OPERATOR
+        )
+        # ...e o PATCH recusa, pelo mesmo motivo.
+        with pytest.raises(AuthorizationError):
+            await svc.change_member_role(
+                user_id=alheio,
+                team_id=infra,
+                new_role=UserTeamRole.SUPERVISOR,
+            )
+
+
+async def test_gerente_CONTINUA_administrando_a_propria_arvore(db) -> None:
+    """⚠️ A metade que impede o conserto de virar bloqueio geral.
+
+    Sem este caso, "gerente nao administra ninguem" passaria pelo teste acima
+    -- e o estreitamento teria tirado do MANAGER o trabalho que e dele.
+    """
+    ctx, ws, marketing, seo, ti, infra, q_mkt, q_ti, admin = await _duas_areas(db)
+
+    gerente = await f.make_user(db, workspace_id=ws, email="mgr@t.dev")
+    await f.add_member(
+        db, workspace_id=ws, user_id=gerente, team_id=marketing, role="MANAGER"
+    )
+    dele = await f.make_user(db, workspace_id=ws, email="seo@t.dev")
+    await f.add_member(
+        db, workspace_id=ws, user_id=dele, team_id=seo, role="OPERATOR"
+    )
+    await db.flush()
+
+    como_gerente = dict(ctx)
+    como_gerente["user_id"] = gerente
+    como_gerente["memberships"] = (mship(marketing, "MANAGER"),)
+
+    with acting_as(**como_gerente):
+        svc = MemberService(db)
+        assert svc.pode_trocar_papel_do_vinculo(
+            user_id=dele, team_id=seo, papel_atual=UserTeamRole.OPERATOR
+        )
+        # ⚠️ O SUBTIME conta como "propria arvore": `permissions_for_actor`
+        # concede ao comando o time do vinculo MAIS os descendentes.
+        vinculo = await svc.change_member_role(
+            user_id=dele, team_id=seo, new_role=UserTeamRole.SUPERVISOR
+        )
+    assert vinculo.role is UserTeamRole.SUPERVISOR

@@ -727,7 +727,7 @@ class MemberService:
         return await self._users.list_team_memberships(user_id=user_id)
 
     def pode_trocar_papel_do_vinculo(
-        self, *, user_id: uuid.UUID, papel_atual: UserTeamRole
+        self, *, user_id: uuid.UUID, team_id: uuid.UUID, papel_atual: UserTeamRole
     ) -> bool:
         """O ator conseguiria trocar o papel DESTE vinculo? Spec 047, fatia A.
 
@@ -766,7 +766,11 @@ class MemberService:
         tenant = require_tenant()
         if user_id == tenant.user_id:
             return False
-        if not self._tem_gestao_ampla():
+        # ⚠️ NAQUELE TIME, e nao "em algum lugar" (decisao da Camila, 09/09).
+        # A pergunta ampla dizia que um MANAGER de Marketing pode editar um
+        # vinculo do TI -- e o PATCH concordava, porque os dois perguntavam a
+        # mesma coisa errada. Os dois foram estreitados juntos.
+        if not self._tem_gestao_ampla(team_id):
             return False
         # A matriz C2, sem levantar -- mesma condicao de
         # `_assert_actor_can_target`, lida como pergunta.
@@ -891,7 +895,18 @@ class MemberService:
 
         # Spec 028: trocar papel NAO foi aberto ao supervisor (D2 -- ele nao
         # promove; criar outro SUPERVISOR e trabalho do MANAGER).
-        self._assert_gestao_ampla(acao="change_member_role")
+        #
+        # ⚠️⚠️ E A PERGUNTA E "NAQUELE TIME", desde 09/09 -- decisao da Camila:
+        # *"gerente so mexe na propria arvore"*. Ate aqui era a pergunta ampla
+        # ("tem `team.manage` em algum lugar?"), e com uma area so as duas
+        # coincidiam sempre. Com N areas (Spec 046) elas divergem, e a
+        # diferenca e um MANAGER de Marketing trocando o cargo de alguem no TI.
+        #
+        # ⚠️ O achado veio do code review de 09/09, e o cadeado do painel
+        # (`pode_trocar_papel_do_vinculo`) foi estreitado NO MESMO COMMIT: se
+        # so um dos dois mudar, tela e servidor passam a discordar -- cadeado
+        # aberto que da 403, ou cadeado fechado escondendo acao permitida.
+        self._assert_gestao_ampla_em(team_id, acao="change_member_role")
 
         # C2 -- matriz de autorizacao (alvo atual + papel a atribuir).
         self._assert_actor_can_target(membership.role)
@@ -1308,7 +1323,21 @@ class MemberService:
         vem da ARVORE (`visible/editable_team_ids`) e nao dos subtimes que
         supervisionam. O mapa diz "o que"; isto participa do "onde".
         """
-        return require_tenant().has_permission_in("team.manage", team_id)
+        tenant = require_tenant()
+        # ⚠️⚠️ SEM ALVO, A PERGUNTA E "EM ALGUM LUGAR" -- e ate 09/09 esta
+        # linha era `has_permission_in("team.manage", team_id)` para os dois
+        # casos, o que estava ERRADO com `team_id=None`: `can_in(perm, None)`
+        # responde "so a parcela GLOBAL", e nao "em algum lugar". Um MANAGER
+        # tem `team.manage` por VINCULO, entao a resposta virava False e ele
+        # era recusado em operacoes que sempre pode fazer.
+        #
+        # ⚠️ O defeito ficou LATENTE desde a fatia C porque os testes montavam
+        # `permissions` como `frozenset`, e `has_permission_in` cai fail-open
+        # nesse caso. Ele so apareceu quando o `acting_as` passou a montar
+        # permissoes COM ESCOPO -- oito testes caindo de uma vez.
+        if team_id is None:
+            return tenant.has_permission("team.manage")
+        return tenant.has_permission_in("team.manage", team_id)
 
     def _subtimes_supervisionados(self) -> frozenset[uuid.UUID]:
         """team_ids onde o ator e SUPERVISOR.
@@ -1354,6 +1383,27 @@ class MemberService:
                 "Supervisor so administra membros do proprio subtime.",
                 details={"team_id": str(team_id)},
             )
+
+    def _assert_gestao_ampla_em(
+        self, team_id: uuid.UUID, *, acao: str
+    ) -> None:
+        """Gestao de membros NAQUELE time. Spec 047 (revisao de 09/09).
+
+        ⚠️ IRMA de `_assert_gestao_ampla`, e a diferenca e o endereco: aquela
+        pergunta "voce administra times?" (sem alvo, para quem ainda nao o
+        conhece); esta pergunta "voce administra ESTE?".
+
+        ⚠️ A MENSAGEM NOMEIA O MOTIVO, e nao repete "exige gestao ampla": quem
+        leva este 403 TEM gestao de membros -- so nao naquela arvore. Dizer a
+        mesma frase dos dois casos faria a pessoa procurar a permissao que ela
+        ja tem.
+        """
+        if self._tem_gestao_ampla(team_id):
+            return
+        raise AuthorizationError(
+            "Voce administra membros, mas nao nesta area.",
+            details={"acao": acao, "team_id": str(team_id)},
+        )
 
     def _assert_gestao_ampla(self, *, acao: str) -> None:
         """Barra o ator supervisor-only em operacoes que a 028 NAO abriu.
