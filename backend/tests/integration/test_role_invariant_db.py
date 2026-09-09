@@ -32,7 +32,11 @@ from app.modules.users.application.member_service import (
     MemberService,
 )
 from app.modules.workspaces.application.workspace_service import TeamService
-from app.shared.exceptions.base import BusinessRuleError, ConflictError
+from app.shared.exceptions.base import (
+    AuthorizationError,
+    BusinessRuleError,
+    ConflictError,
+)
 from tests.integration import factories as f
 from tests.integration.conftest import acting_as, mship, node
 
@@ -315,17 +319,80 @@ async def test_move_member_entre_subtimes_continua_funcionando(db) -> None:
 # ------------------------------------------------------------------
 # 6-7. TeamService: 409 de dominio, NUNCA IntegrityError
 # ------------------------------------------------------------------
-async def test_create_segunda_raiz_da_conflict_e_nao_integrity_error(db) -> None:
+async def test_criar_SEGUNDA_area_agora_funciona(db) -> None:
+    """⭐⭐ Spec 046, fatia 2 -- a decisao da Camila de 31/08 virando codigo.
+
+    ⚠️⚠️ ESTE TESTE AFIRMAVA O CONTRARIO. Ele se chamava
+    `test_create_segunda_raiz_da_conflict_e_nao_integrity_error` e existia
+    para provar que a segunda raiz dava 409 e nao 500 -- ou seja, que a
+    checagem de dominio corria ANTES do indice unico.
+
+    As duas sairam juntas (a checagem em `TeamService.create`, o indice na
+    migration `0023`), e tinham de sair juntas: so o indice deixaria a
+    mensagem barrando com o banco liberado; so a checagem faria o
+    `IntegrityError` cru virar HTTP 500.
+    """
     ws, raiz, sub, admin = await _mundo(db)
     with _como_admin(ws, raiz, sub, admin):
-        with pytest.raises(ConflictError):
-            await TeamService(db).create(name="Outra Raiz", slug="outra-raiz")
+        nova = await TeamService(db).create(name="TI", slug="ti")
+
+    assert nova.parent_team_id is None
+    assert nova.id != raiz
 
 
-async def test_promover_subtime_a_raiz_da_conflict_e_nao_integrity_error(db) -> None:
+async def test_criar_area_exige_papel_de_ORGANIZACAO(db) -> None:
+    """⭐ §4.1: quem cria area e ADMIN/GESTOR de organizacao, nao MANAGER.
+
+    ⚠️ E A TRAVA MORA NO SERVICO, e nao na rota, porque `POST /teams` cria
+    area E subtime -- o que separa os dois e o `parent_team_id` do corpo, que
+    o `require_permission` da rota nao enxerga.
+
+    Sabotagem: tirar a checagem de `area.create` faz este teste passar a
+    permitir que um MANAGER de Marketing crie a area "TI" -- que e a
+    definicao de extrapolar a arvore dele.
+    """
+    ws, raiz, sub, admin = await _mundo(db)
+    gerente = await f.make_user(db, workspace_id=ws, email="mgr@t.dev")
+    await f.add_member(
+        db, workspace_id=ws, user_id=gerente, team_id=raiz, role="MANAGER"
+    )
+
+    with acting_as(
+        workspace_id=ws,
+        user_id=gerente,
+        memberships=(mship(raiz, "MANAGER"),),
+        team_tree=(node(raiz), node(sub, raiz)),
+    ):
+        svc = TeamService(db)
+        with pytest.raises(AuthorizationError):
+            await svc.create(name="TI", slug="ti")
+        # ⚠️ E o subtime continua liberado para ele -- a trava e sobre AREA,
+        # e nao sobre criar time. Sem esta metade, "MANAGER nao cria nada"
+        # passaria pelo teste acima e ninguem veria.
+        dele = await svc.create(name="Design", slug="design", parent_team_id=raiz)
+    assert dele.parent_team_id == raiz
+
+
+async def test_promover_subtime_a_area_continua_recusado(db) -> None:
+    """⚠️ A RECUSA FICA, E A RAZAO MUDOU -- leia antes de "limpar" a linha.
+
+    Ate a Spec 046 isto era estrutural: so cabia uma raiz, e a checagem
+    existia para o indice unico nao virar HTTP 500. O indice caiu; o banco
+    aceitaria.
+
+    Continua recusado porque a operacao NAO ESTA DESENHADA (§6 da spec): um
+    subtime promovido leva a arvore inteira junto e vira area nova -- com
+    quadro geral proprio? com quais membros? o MANAGER de origem perde
+    alcance sobre gente que continua trabalhando com ele? Nenhuma dessas tem
+    resposta, e escolher calado seria pior que recusar.
+
+    ⚠️ O TIPO DO ERRO MUDOU DE `ConflictError` PARA `BusinessRuleError`, e
+    isso e proposital: nao ha mais conflito com nada -- ha uma operacao que
+    ninguem projetou.
+    """
     ws, raiz, sub, admin = await _mundo(db)
     with _como_admin(ws, raiz, sub, admin):
-        with pytest.raises(ConflictError):
+        with pytest.raises(BusinessRuleError):
             await TeamService(db).move(team_id=sub, new_parent_id=None)
 
 
@@ -379,16 +446,65 @@ async def test_mover_a_raiz_para_baixo_de_descendente_continua_barrado(db) -> No
 # ------------------------------------------------------------------
 # 10-11. indice unico e isolamento de tenant
 # ------------------------------------------------------------------
-async def test_indice_recusa_segunda_raiz_direto_no_banco(db) -> None:
-    """Defesa em profundidade: mesmo contornando o service, o banco recusa."""
-    ws, _raiz, _sub, _admin = await _mundo(db)
+async def test_o_banco_ACEITA_duas_areas_no_mesmo_workspace(db) -> None:
+    """⭐⭐ O guardiao da migration `0023`, e ele afirma o OPOSTO do anterior.
+
+    ⚠️⚠️ ESTE TESTE SE CHAMAVA `test_indice_recusa_segunda_raiz_direto_no_banco`
+    e dizia: *"Defesa em profundidade: mesmo contornando o service, o banco
+    recusa."* Ele era o guardiao do indice `team_unica_raiz_por_workspace`.
+
+    O indice saiu na fatia 2, entao o teste nao podia sobreviver como estava
+    -- e apaga-lo tambem estaria errado: ninguem saberia se o `DROP INDEX`
+    realmente rodou. Invertido, ele passa a guardar a migration.
+
+    ⚠️ ELE VAI DIRETO NO SQL DE PROPOSITO, sem passar pelo service, porque a
+    pergunta e sobre o SCHEMA. Se a `0023` for revertida sem que o modelo
+    acompanhe, o portao de drift acusa a divergencia -- mas so este teste
+    acusa que o banco de teste voltou a recusar.
+
+    ⚠️ E ELE E O QUE DESTRAVA A FATIA 4: os testes de duas areas de verdade
+    (nao mais em memoria, como `web/lib/areas.ts` precisou) so podem existir
+    depois desta linha passar.
+    """
+    ws, raiz, _sub, _admin = await _mundo(db)
+    await db.execute(
+        text(
+            "INSERT INTO team (id, workspace_id, parent_team_id, name, slug) "
+            "VALUES (gen_random_uuid(), :w, NULL, 'Area Dois', 'area-dois')"
+        ),
+        {"w": ws},
+    )
+    await db.flush()
+
+    quantas = (
+        await db.execute(
+            text(
+                "SELECT count(*) FROM team "
+                "WHERE parent_team_id IS NULL AND workspace_id = :w"
+            ),
+            {"w": ws},
+        )
+    ).scalar_one()
+    assert quantas == 2
+
+
+async def test_o_slug_continua_unico_por_workspace(db) -> None:
+    """⚠️ O QUE O INDICE REMOVIDO **NAO** GUARDAVA, e que segue guardado.
+
+    Cair a raiz unica nao abriu a porta para duas areas com o mesmo endereco:
+    quem impede isso e `uq_team_workspace_slug`, que vale em qualquer nivel.
+    O indice que saiu falava de QUANTIDADE, nao de nome -- e sem este teste,
+    "removi o indice errado" passaria despercebido.
+    """
+    ws, raiz, _sub, _admin = await _mundo(db)
     with pytest.raises(IntegrityError):
         await db.execute(
             text(
                 "INSERT INTO team (id, workspace_id, parent_team_id, name, slug) "
-                "VALUES (gen_random_uuid(), :w, NULL, 'Raiz Dois', 'raiz-dois')"
+                "SELECT gen_random_uuid(), :w, NULL, 'Clone', slug "
+                "FROM team WHERE id = :r"
             ),
-            {"w": ws},
+            {"w": ws, "r": raiz},
         )
         await db.flush()
 

@@ -97,6 +97,7 @@ type FiltroPrazo = "todos" | "atrasadas" | "em-dia";
 export default function Board({
   projectId,
   subteamId,
+  areaId,
   boardId,
   podeEditarColunas = false,
   title,
@@ -106,6 +107,21 @@ export default function Board({
 }: {
   projectId?: string; // presente => quadro de PROJETO
   subteamId?: string; // presente => quadro de SUBTIME (modo hibrido, Fatia 4)
+  /**
+   * A AREA cujo quadro geral esta sendo desenhado (Spec 046, fatia 4).
+   *
+   * ⚠️⚠️ QUANDO AUSENTE, O `Board` PERGUNTA "qual e a raiz?" -- e essa
+   * pergunta so tem resposta com UMA area. `getRootTeamId` levanta com mais
+   * de uma (fatia 1), e a tela cai para "nao filtra".
+   *
+   * ⚠️ ENTAO QUEM SABE A AREA DEVE PASSA-LA. Quem sabe e a rota
+   * `/quadro/[teamId]`: a area esta na URL, que e a decisao da §4.4 -- o
+   * link e compartilhavel e o botao Voltar funciona, coisas que "area ativa"
+   * guardada em estado nao dá.
+   *
+   * Ela substitui o `rootId` no filtro do quadro geral; nao muda mais nada.
+   */
+  areaId?: string;
   /**
    * Presente => quadro AVULSO (Spec 036, fatia 5b-6). A tela desenha as
    * colunas DESTE quadro e mostra so as tarefas dele.
@@ -555,6 +571,14 @@ export default function Board({
 
   useEffect(() => {
     listSubteams().then(setSubtimes).catch(() => {});
+    // ⚠️ Spec 046, fatia 4: com a area vinda de fora, nao ha o que perguntar.
+    // A chamada abaixo so acontece no caminho legado (`/quadro` sem area), e
+    // e ela que levanta quando existe mais de uma.
+    if (areaId) {
+      setRootId(areaId);
+      setRootCarregado(true);
+      return;
+    }
     getRootTeamId()
       .then((id) => setRootId(id))
       // ⚠️ Spec 046, fatia 1: isto era `.catch(() => {})` -- silêncio puro.
@@ -569,7 +593,7 @@ export default function Board({
       // perguntar "qual é a raiz?".
       .catch((e) => console.error("Board: área indefinida", e))
       .finally(() => setRootCarregado(true));
-  }, []);
+  }, [areaId]);
 
   // ---- URL viva (?task=<id>) ----
   //

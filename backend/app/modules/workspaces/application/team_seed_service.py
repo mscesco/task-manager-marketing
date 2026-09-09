@@ -91,17 +91,32 @@ class TeamSeedService:
         if ws is None:
             raise EntityNotFoundError("Workspace", identifier=workspace_slug)
 
-        # 2. Time principal (raiz: parent NULL).
-        # Spec 024/D2: existe no MAXIMO um time raiz por workspace
-        # (indice unico parcial `team_unica_raiz_por_workspace`). Por isso
-        # este lookup por slug + parent NULL identifica O time principal,
-        # e nao "um dos" times de topo.
+        # 2. A AREA onde os subtimes vao nascer, achada pelo SLUG.
+        #
+        # ⚠️⚠️ O FILTRO `parent_team_id IS NULL` SAIU AQUI (Spec 046, fatia 2),
+        # e o comentario que o justificava dizia:
+        #
+        #     "Spec 024/D2: existe no MAXIMO um time raiz por workspace
+        #      (indice unico parcial). Por isso este lookup por slug + parent
+        #      NULL identifica O time principal, e nao 'um dos' times de topo."
+        #
+        # A premissa caiu com o indice: agora existem N areas, e "o time
+        # principal" deixou de ser uma coisa que se identifica sem dizer qual.
+        #
+        # ⚠️ E O FILTRO NAO SO FICOU INUTIL -- ELE FICOU ERRADO. Mantido, este
+        # seed passaria a recusar (`EntityNotFoundError`) semear dentro de um
+        # time que existe e cujo slug foi passado, so por ele nao ser raiz.
+        # O parametro se chama `principal_team_slug` e sempre foi um SLUG: e
+        # por ele que se diz qual.
+        #
+        # ⚠️ SEM AMBIGUIDADE, e nao por sorte: `uq_team_workspace_slug`
+        # garante slug unico POR WORKSPACE, em qualquer nivel. O filtro de
+        # nivel nunca desempatou nada -- ele so afirmava a premissa.
         principal = (
             await self._session.execute(
                 select(Team).where(
                     Team.workspace_id == ws.id,
                     Team.slug == principal_team_slug,
-                    Team.parent_team_id.is_(None),
                 )
             )
         ).scalar_one_or_none()

@@ -197,14 +197,14 @@ qual área é.
 
 Ordem não negociável nas duas primeiras — ver §3.
 
-**Fatia 1 — o front para de assumir que existe uma raiz (front).**
+**Fatia 1 — o front para de assumir que existe uma raiz (front). ✅ ENTREGUE (09/09).**
 `getRootTeamId` deixa de ser `find` e passa a exigir um alvo explícito, ou a falhar
 alto quando houver ambiguidade — cumprindo a dívida da ADR 0001 do front
 (`web/docs/adr/0001-pin-time-raiz-criacao.md`), que mandava trocar o `null` por
 erro duro. Teste novo: `listTeams` com duas raízes.
 **Vai antes de qualquer coisa no backend.**
 
-**Fatia 2 — a segunda raiz passa a ser criável (backend).**
+**Fatia 2 — a segunda raiz passa a ser criável (backend). ✅ ENTREGUE (09/09).**
 Cai o índice `team_unica_raiz_por_workspace` **e** a checagem de
 `workspace_service.py:213` — as duas juntas (§2). `root_exists()` sai ou vira
 `roots_of_workspace()`. O seed do `team_seed_service` para de identificar "O time
@@ -212,12 +212,33 @@ principal" por parent NULL.
 ⚠️ **Remove índice → precisa do portão de DRIFT** (`AGENTS.md` §5).
 ⚠️ O gate de criar muda para permissão de organização (4.1).
 
-**Fatia 3 — `esvaziar-e-remover` aprende o destino (backend).**
+**Fatia 3 — `esvaziar-e-remover` aprende o destino (backend). ✅ ENTREGUE (09/09).**
 Aplica a 4.2: o conteúdo vai para `root_of(team_id)`, não para "o principal". A
 prévia (`previa-remocao`) passa a **nomear a área de destino**, porque hoje ela diz
 quantos vão e não diz para onde — e com N áreas isso deixa de ser óbvio.
 
-**Fatia 4 — o quadro geral com N áreas.** ✅ **Liberada.**
+**Fatia 4 — o quadro geral com N áreas.** ✅ **ENTREGUE (09/09).**
+
+⚠️ **As fatias 2, 3 e 4 foram num PR só, a pedido da Camila** — e o motivo é a
+janela que a §3 descreve ao contrário. Separadas, entre a 2 (que permite criar a
+segunda área) e a 4 (que ensina o front a lidar com ela) existiria um intervalo
+em que criar uma área quebraria o quadro. A spec as separa por **assunto**, não
+por deploy.
+
+⚠️ **O que a implementação descobriu, e a spec não previa:**
+
+- **`root_id()` não virou `roots_of_workspace()`** — virou `area_de(team_id)`.
+  Trocar o nome junto com o argumento foi deliberado: `root_id(team_id)`
+  continuaria lendo como "a raiz", que é a ideia errada.
+- **Promover subtime a área precisou de uma recusa NOVA.** A antiga era
+  estrutural (o índice); removê-la sem pôr nada no lugar faria a operação da §6
+  — "registrada, não feita" — passar a existir sem desenho.
+- **O gate de `area.create` não cabia na rota.** `POST /teams` cria área e
+  subtime; o que separa é o `parent_team_id` do corpo, que o `require_permission`
+  não enxerga. A checagem foi para o serviço.
+- **`default_board_and_column_for_status` recebeu `area_id` SEM default**, de
+  propósito: com `= None` todo chamador continuaria compilando e errado em
+  silêncio. Sem default, o `pytest` apontou os quatro.
 
 *Backend:* `default_board_and_column_for_status` passa a **receber a área** em vez
 de descobrir "a raiz" filtrando `parent_team_id IS NULL` no SQL.

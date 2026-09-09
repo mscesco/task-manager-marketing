@@ -19,8 +19,10 @@
 import { describe, it, expect } from "vitest";
 import {
   AreaIndefinidaError,
+  entradaDoQuadro,
   rootTeams,
   soleRootTeam,
+  urlDoQuadroDeArea,
 } from "../areas";
 import type { Team } from "../api";
 
@@ -127,5 +129,44 @@ describe("soleRootTeam", () => {
     } catch (e) {
       expect((e as Error).message).toContain("mais de uma área");
     }
+  });
+});
+
+describe("urlDoQuadroDeArea", () => {
+  it("é o endereço que JÁ existia -- a fatia 4 removeu uma trava, não criou rota", () => {
+    expect(urlDoQuadroDeArea("t-ti")).toBe("/quadro/t-ti");
+  });
+});
+
+describe("entradaDoQuadro", () => {
+  it("uma área só: desenha, como sempre", () => {
+    expect(entradaDoQuadro([MARKETING, SEO])).toEqual({
+      tipo: "desenhar",
+      areaId: "t-mkt",
+    });
+  });
+
+  it("⭐ várias áreas: redireciona em vez de escolher calada", () => {
+    // ⚠️ É a diferença entre um DEFAULT DE ENTRADA e "área ativa": depois do
+    // redirecionamento a URL diz qual área é, então o link é compartilhável e
+    // duas pessoas veem a mesma coisa. Com estado invisível, não veriam.
+    expect(entradaDoQuadro([TI, MARKETING])).toEqual({
+      tipo: "redirecionar",
+      para: "/quadro/t-mkt",
+    });
+  });
+
+  it("o destino é ESTÁVEL: a primeira por nome, não a que a API mandou antes", () => {
+    // ⚠️ O guardião do defeito que a Spec 046 §3 descreve. Com a ordem da API,
+    // duas visitas seguidas cairiam em áreas diferentes sem ninguém ter
+    // mudado nada -- e nada acusaria.
+    const numaOrdem = entradaDoQuadro([TI, MARKETING]);
+    const noutraOrdem = entradaDoQuadro([MARKETING, TI]);
+    expect(numaOrdem).toEqual(noutraOrdem);
+  });
+
+  it("sem área nenhuma: não inventa destino", () => {
+    // Redirecionar para lugar nenhum seria pior que mostrar o vazio.
+    expect(entradaDoQuadro([SEO])).toEqual({ tipo: "sem-area" });
   });
 });

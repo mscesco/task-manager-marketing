@@ -20,7 +20,11 @@ from app.modules.workspaces.application.provisioning_service import (
     ProvisionWorkspaceCommand,
     WorkspaceProvisioningService,
 )
-from app.shared.exceptions.base import ConflictError, ValidationError
+from app.shared.exceptions.base import (
+    BusinessRuleError,
+    ConflictError,
+    ValidationError,
+)
 
 
 def _provisioning_service() -> WorkspaceProvisioningService:
@@ -139,13 +143,11 @@ class _FakeTeamRepo:
 
         return _T(team_id, self._tree[team_id])
 
-    async def root_exists(self):
-        """Spec 024/D2: ja existe raiz nesta arvore?
-
-        No repo real e um COUNT com filtro de tenant; aqui e derivado do
-        dict {team_id: parent_id}.
-        """
-        return any(parent is None for parent in self._tree.values())
+    # ⚠️ AQUI HAVIA `root_exists()`, espelhando o metodo real do repositorio
+    # (Spec 024/D2: "ja existe raiz nesta arvore?"). Os dois sairam na Spec
+    # 046, fatia 2 -- o de verdade e este falso. Um falso que sobrevive ao
+    # original vira uma promessa que ninguem cumpre: o teste continuaria
+    # verde exercitando um caminho que o codigo nao tem mais.
 
     async def collect_ancestor_ids(self, team_id, *, max_depth=50):
         ancestors = []
@@ -175,36 +177,42 @@ def _build_team_service_with_tree(tree: dict):
     return svc
 
 
-async def test_team_move_to_root_conflita_quando_ja_existe_raiz() -> None:
-    """Spec 024/D4: promover subtime a raiz com raiz existente e RECUSADO.
+async def test_promover_a_area_e_recusado_INDEPENDENTE_de_quantas_existem() -> None:
+    """⚠️⚠️ DOIS TESTES VIRARAM ESTE, e a mudanca e de REGRA, nao de detalhe.
 
-    Este teste AFIRMAVA o contrario ate a Spec 024 ("mover para a raiz e
-    valido"). A regra mudou de proposito: um workspace tem UMA raiz, e ela
-    e o time principal. O importante e que a recusa venha como erro de
-    DOMINIO (ConflictError -> 409), e nao como IntegrityError do indice
-    unico (-> 500).
+    Ate a Spec 046 este arquivo tinha um par:
+
+        test_team_move_to_root_conflita_quando_ja_existe_raiz
+            -> ConflictError, porque so cabia UMA raiz (Spec 024/D4)
+        test_team_move_to_root_works_quando_nao_ha_raiz
+            -> PASSAVA, porque a trava era "no maximo uma", nao
+               "sempre exatamente uma"
+
+    O par existia porque a regra contava raizes. Ela nao conta mais: o indice
+    `team_unica_raiz_por_workspace` caiu na migration `0023`, e o banco
+    aceita N areas.
+
+    A recusa ficou, por outro motivo -- promover um subtime a area **nao esta
+    desenhado** (§6 da Spec 046). E como o motivo nao depende de quantas
+    areas existem, os dois cenarios passaram a ter a MESMA resposta, e o par
+    virou um teste parametrizado.
+
+    ⚠️ `BusinessRuleError` e nao `ConflictError`: nao ha mais conflito com
+    nada: ha uma operacao que ninguem projetou.
     """
+    # Cenario A: ja existe uma area (o caso normal).
     marketing = uuid.uuid4()
     crm = uuid.uuid4()
-    svc = _build_team_service_with_tree({marketing: None, crm: marketing})
+    com_area = _build_team_service_with_tree({marketing: None, crm: marketing})
+    with pytest.raises(BusinessRuleError):
+        await com_area.move(team_id=crm, new_parent_id=None)
 
-    with pytest.raises(ConflictError):
-        await svc.move(team_id=crm, new_parent_id=None)
-
-
-async def test_team_move_to_root_works_quando_nao_ha_raiz() -> None:
-    """Sem raiz na arvore, promover a raiz continua valido.
-
-    Cenario de borda (o indice parcial permite ZERO raizes): a trava e
-    "no maximo uma", nao "sempre exatamente uma".
-    """
+    # Cenario B: arvore SEM area nenhuma -- e que antes PASSAVA.
     orfao = uuid.uuid4()
     filho = uuid.uuid4()
-    # nenhum time com parent None -> arvore sem raiz
-    svc = _build_team_service_with_tree({orfao: filho, filho: orfao})
-
-    result = await svc.move(team_id=filho, new_parent_id=None)
-    assert result.parent_team_id is None
+    sem_area = _build_team_service_with_tree({orfao: filho, filho: orfao})
+    with pytest.raises(BusinessRuleError):
+        await sem_area.move(team_id=filho, new_parent_id=None)
 
 
 async def test_team_move_under_another_parent_works() -> None:

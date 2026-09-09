@@ -101,3 +101,59 @@ export function soleRootTeam(teams: readonly Team[]): Team {
   }
   return raizes[0];
 }
+
+/**
+ * O endereço do quadro geral de uma área.
+ *
+ * ⚠️⚠️ UMA FUNÇÃO, E NÃO UM TEMPLATE ESPALHADO. A §4.4 decidiu que a área
+ * mora na URL -- é o que faz o link ser compartilhável e o botão Voltar
+ * funcionar, coisas que "área ativa" guardada em estado não dá. Uma decisão
+ * dessas vira mentira no dia em que dois lugares montarem a string de jeitos
+ * diferentes.
+ *
+ * ⚠️ E NÃO HÁ ROTA NOVA AQUI: `/quadro/[teamId]` já existia, e até a Spec 046
+ * ela RECUSAVA o id de uma área ("Este é o time principal, use o quadro
+ * geral"). A fatia 4 tirou essa trava. O endereço é o mesmo de sempre; o que
+ * mudou foi ele passar a aceitar quem antes era barrado.
+ */
+export function urlDoQuadroDeArea(areaId: string): string {
+  return `/quadro/${areaId}`;
+}
+
+/**
+ * O que a rota `/quadro` (SEM área na URL) deve fazer.
+ *
+ * ⚠️⚠️ ESTA DECISÃO MORA AQUI, E NÃO DENTRO DA PÁGINA, pelo motivo que este
+ * projeto já pagou uma vez: `app/` está FORA do `include` do vitest, então
+ * regra escrita lá não tem guardião nenhum. Foi por isso que
+ * `candidatosParaAdicionar` mudou de casa na Spec 044, e a lição vale igual
+ * aqui -- com uma área só, "redirecionar" e "desenhar" dão o mesmo resultado
+ * visível, e um erro nesta escolha não apareceria em teste nenhum.
+ *
+ * As três saídas, e por que cada uma:
+ *
+ *   `desenhar`      -- uma área só: é o comportamento de sempre, e `/quadro`
+ *                      continua sendo um endereço que funciona.
+ *   `redirecionar`  -- várias: NÃO escolhe calada. Manda para
+ *                      `/quadro/<área>`, e daí em diante a URL diz qual é
+ *                      (§4.4). É a diferença entre um default de entrada e
+ *                      "área ativa" -- esta última faria duas pessoas verem
+ *                      coisas diferentes no mesmo link.
+ *   `sem-area`      -- workspace quebrado. Não há para onde mandar, e
+ *                      inventar um destino seria pior que mostrar o vazio.
+ *
+ * ⚠️ O DESTINO É A PRIMEIRA POR NOME, e a estabilidade é o ponto: `rootTeams`
+ * ordena, então duas visitas seguidas caem na mesma área. Com a ordem da API,
+ * a pessoa entraria em áreas diferentes sem ter mudado nada.
+ */
+export type EntradaDoQuadro =
+  | { readonly tipo: "desenhar"; readonly areaId: string }
+  | { readonly tipo: "redirecionar"; readonly para: string }
+  | { readonly tipo: "sem-area" };
+
+export function entradaDoQuadro(teams: readonly Team[]): EntradaDoQuadro {
+  const areas = rootTeams(teams);
+  if (areas.length === 0) return { tipo: "sem-area" };
+  if (areas.length === 1) return { tipo: "desenhar", areaId: areas[0].id };
+  return { tipo: "redirecionar", para: urlDoQuadroDeArea(areas[0].id) };
+}

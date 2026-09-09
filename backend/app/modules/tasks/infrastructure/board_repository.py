@@ -74,9 +74,27 @@ class BoardRepository:
         self.session = session
 
     async def default_board_and_column_for_status(
-        self, status: TaskStatus
+        self, status: TaskStatus, *, area_id: uuid.UUID
     ) -> tuple[uuid.UUID, uuid.UUID]:
-        """Devolve `(board_id, column_id)` do quadro GERAL para aquele status.
+        """Devolve `(board_id, column_id)` do quadro GERAL DAQUELA AREA.
+
+        ⚠️⚠️ O `area_id` NASCEU NA SPEC 046 (fatia 4), e antes dele esta
+        consulta descobria "o quadro da raiz" filtrando `t.parent_team_id IS
+        NULL` no SQL. Com N areas isso devolvia **N candidatos**, e o
+        Postgres entregava um deles sem `ORDER BY` -- a tarefa nasceria no
+        quadro geral de outro departamento.
+
+        ⚠️ E O PARAMETRO E OBRIGATORIO, sem default, DE PROPOSITO: um
+        `area_id: uuid.UUID | None = None` deixaria todo chamador existente
+        compilar e continuar errado em silencio. Sem default, o `pytest`
+        aponta cada um. Mesma escolha que `coluna_para_status` fez ao trocar
+        de nome em vez de so acrescentar um item na tupla.
+
+        ⚠️ ELA ANDA JUNTO COM `TaskService._time_do_quadro_alvo`, que resolve
+        o time da tarefa. As duas responderam "a raiz" pelo mesmo motivo, e
+        precisam continuar concordando: se uma exigir area e a outra nao, a
+        tarefa nasce num quadro pertencendo a outro time -- a linha que
+        `_assert_time_do_quadro` existe para matar.
 
         So para tarefa que nasce SEM PAI. Subtarefa herda o quadro do pai e usa
         `coluna_para_status` -- ver o cabecalho do modulo.
@@ -85,14 +103,20 @@ class BoardRepository:
         duplicacao (uma vez por no da arvore), e a Spec 021 ja mediu o custo de
         "duas queries por membro" como a parede de desempenho deste produto.
 
-        ⚠️ O quadro e o do time RAIZ (`parent_team_id IS NULL`), e nao o do time
-        da tarefa. E a decisao da ADR 0032, tomada com dado: 86% das tarefas
-        vivas estao na raiz, e a decisao B da 0030 (uma tarefa vive num quadro
-        so) obrigaria a escolher em qual quadro apareceriam as da raiz, que todo
-        mundo alcanca. O JOIN em `team` e o que torna isso explicito: filtrar
-        so por `is_default` daria a resposta certa hoje e a errada no dia em que
-        um subtime tiver quadro proprio -- e a resposta errada nao aparece na
-        tela, aparece na tarefa que foi parar no quadro de outro time.
+        ⚠️ O quadro e o da AREA, e nao o do subtime da tarefa. E a decisao da
+        ADR 0032, tomada com dado: 86% das tarefas vivas estao na raiz, e a
+        decisao B da 0030 (uma tarefa vive num quadro so) obrigaria a escolher
+        em qual quadro apareceriam as da raiz, que todo mundo alcanca. A
+        decisao continua valendo -- o que mudou e que "a raiz" virou "a raiz
+        DAQUELA arvore".
+
+        ⚠️ O FILTRO POR `b.team_id = :area` SUBSTITUI O JOIN EM `team`, e nao
+        so o estreita. O JOIN existia para tornar explicito que o quadro e de
+        um time RAIZ -- "filtrar so por `is_default` daria a resposta certa
+        hoje e a errada no dia em que um subtime tiver quadro proprio". Com o
+        `area_id` vindo de fora, o time ja esta nomeado, e `is_default` +
+        `team_id` identifica exatamente um quadro: o indice parcial
+        `board_um_padrao_por_time` garante um so padrao por time.
 
         Levanta `ValidationError` se nao houver quadro ou se o status nao tiver
         coluna. Nao ha fallback DE PROPOSITO: cair para "a primeira coluna que
@@ -110,28 +134,33 @@ class BoardRepository:
                     """
                     SELECT b.id, c.id
                     FROM board b
-                    JOIN team t
-                      ON t.id = b.team_id
-                     AND t.workspace_id = b.workspace_id
-                     AND t.parent_team_id IS NULL
                     JOIN board_column c
                       ON c.board_id = b.id
                      AND c.legacy_status = CAST(:status AS task_status)
                     WHERE b.workspace_id = :ws
+                      AND b.team_id = :area
                       AND b.is_default
                       AND b.deleted_at IS NULL
                     """
                 ),
-                {"ws": tenant.workspace_id, "status": status.value},
+                {
+                    "ws": tenant.workspace_id,
+                    "area": area_id,
+                    "status": status.value,
+                },
             )
         ).first()
 
         if linha is None:
             raise ValidationError(
-                "Este workspace nao tem quadro para o status "
+                "Esta area nao tem quadro geral para o status "
                 f"{status.value}. Workspace criado antes da Spec 035 fatia 3a "
                 "nasceu sem quadro -- rodar a migration 0011.",
-                details={"field": "status", "status": status.value},
+                details={
+                    "field": "status",
+                    "status": status.value,
+                    "area_id": str(area_id),
+                },
             )
         return linha[0], linha[1]
 

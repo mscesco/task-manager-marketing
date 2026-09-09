@@ -100,7 +100,7 @@ async def test_quadro_apagado_nao_e_descoberto_como_quadro_geral(db) -> None:
     with acting_as(**ctx):
         board_id, _coluna = await BoardRepository(
             db
-        ).default_board_and_column_for_status(TaskStatus.BACKLOG)
+        ).default_board_and_column_for_status(TaskStatus.BACKLOG, area_id=raiz)
     assert board_id == geral
 
     await _apagar(db, geral)
@@ -110,7 +110,7 @@ async def test_quadro_apagado_nao_e_descoberto_como_quadro_geral(db) -> None:
     with acting_as(**ctx):
         with pytest.raises(ValidationError):
             await BoardRepository(db).default_board_and_column_for_status(
-                TaskStatus.BACKLOG
+                TaskStatus.BACKLOG, area_id=raiz
             )
 
 
@@ -144,6 +144,6 @@ async def test_apagar_quadro_interno_nao_afeta_o_geral(db) -> None:
     with acting_as(**ctx):
         board_id, _coluna = await BoardRepository(
             db
-        ).default_board_and_column_for_status(TaskStatus.BACKLOG)
+        ).default_board_and_column_for_status(TaskStatus.BACKLOG, area_id=raiz)
 
     assert board_id == geral

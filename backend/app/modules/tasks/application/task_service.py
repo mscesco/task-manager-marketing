@@ -334,14 +334,26 @@ class TaskService:
         Spec 044, fatia 4. A fonte e o QUADRO, e nao o vinculo de quem cria:
 
             quadro pedido      -> o time DELE (`dono_do_quadro`)
-            nenhum quadro      -> a RAIZ
+            nenhum quadro      -> a UNICA area, se houver so uma
 
-        ⚠️ A segunda linha nao e escolha arbitraria: sem `board_id`, o quadro
-        sai de `default_board_and_column_for_status`, que filtra
-        `parent_team_id IS NULL` no SQL (ADR 0032). Dizer "a raiz" aqui e
-        dizer a mesma coisa que aquela consulta ja decide -- se as duas
-        discordarem, a tarefa nasce num quadro pertencendo a outro time, que e
-        exatamente a linha que `_assert_time_do_quadro` existe para matar.
+        ⚠️⚠️ A SEGUNDA LINHA DIZIA "a RAIZ", E ISSO DEIXOU DE TER RESPOSTA na
+        Spec 046. O comentario antigo explicava por que ela nao era arbitraria:
+
+            "sem `board_id`, o quadro sai de
+             `default_board_and_column_for_status`, que filtra
+             `parent_team_id IS NULL` no SQL (ADR 0032). Dizer 'a raiz' aqui e
+             dizer a mesma coisa que aquela consulta ja decide."
+
+        O raciocinio continua valendo -- e por isso as DUAS mudaram na mesma
+        fatia. Se uma passasse a exigir a area e a outra nao, a tarefa
+        nasceria num quadro pertencendo a outro time, que e exatamente a linha
+        que `_assert_time_do_quadro` existe para matar.
+
+        ⚠️ COM MAIS DE UMA AREA, RECUSA em vez de escolher. E a mesma decisao
+        que `web/lib/areas.ts` tomou no front, e pelo mesmo motivo: escolher
+        errado grava dado errado, e o dado errado sobrevive ao conserto do
+        codigo. Quem chama (n8n, Swagger, script) passa a precisar dizer
+        `team_id` ou `board_id` -- a tela ja diz, desde a fatia 1.
 
         ⚠️ SO E CHAMADA quando nao ha `team_id` explicito NEM pai -- o `or`
         curto-circuita antes. Por isso o `board_id` daqui e mesmo o quadro que
@@ -359,7 +371,22 @@ class TaskService:
             await self._assert_board_in_reach(board_id)
             dono = await BoardRepository(self._session).dono_do_quadro(board_id)
             return dono[0] if dono is not None else None
-        return await TeamRepository(self._session).root_id()
+
+        areas = await TeamRepository(self._session).areas_ids()
+        if len(areas) == 1:
+            return areas[0]
+        if not areas:
+            # Workspace sem area nenhuma -- vira o 422 generico de quem chama.
+            return None
+        # ⚠️ MENSAGEM PROPRIA, e nao o `None` que vira "informe team_id ou
+        # board_id". As duas recusas sao 422, mas so esta explica que o
+        # problema e AMBIGUIDADE -- e sem isso quem integra tenta de novo com
+        # o mesmo corpo, achando que errou o formato.
+        raise ValidationError(
+            "Este workspace tem mais de uma area: diga em qual a tarefa "
+            "nasce, informando `team_id` ou `board_id`.",
+            details={"field": "team_id", "areas": [str(a) for a in areas]},
+        )
 
     async def _assert_time_do_quadro(
         self, *, board_id: uuid.UUID, team_id: uuid.UUID
@@ -690,9 +717,27 @@ class TaskService:
                 board_id=command.board_id, status=command.status
             )
         else:
+            # ⚠️ A AREA VEM DO `team_id` JA RESOLVIDO, e nao de uma segunda
+            # consulta a "qual e a raiz?" (Spec 046, fatia 4). E o que faz as
+            # duas pontas concordarem POR CONSTRUCAO: o quadro geral escolhido
+            # e o da arvore do time da tarefa, sempre.
+            #
+            # ⚠️ `team_id` aqui pode ser um SUBTIME -- e a tarefa interna de
+            # subtime, que vive no quadro geral com o `team_id` dela (sao 216
+            # em producao, ver `_assert_time_do_quadro`). Por isso `area_de` e
+            # nao `team_id` direto: o quadro e o da AREA, e o `team_id` da
+            # tarefa continua sendo o do subtime.
+            area_id = await TeamRepository(self._session).area_de(team_id)
+            if area_id is None:
+                raise ValidationError(
+                    "Nao consegui identificar a area do time desta tarefa.",
+                    details={"field": "team_id", "team_id": str(team_id)},
+                )
             task.board_id, task.column_id = await BoardRepository(
                 self._session
-            ).default_board_and_column_for_status(command.status)
+            ).default_board_and_column_for_status(
+                command.status, area_id=area_id
+            )
 
         self._repo.add(task)
         await self._session.flush()

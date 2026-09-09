@@ -117,18 +117,19 @@ class TeamRepository(BaseRepository[Team]):
             "Possivel ciclo no banco."
         )
 
-    async def root_exists(self) -> bool:
-        """Ja existe um time RAIZ neste workspace? (Spec 024/D2)
-
-        Sustenta a checagem de dominio ANTES do flush em
-        TeamService.create/move -- sem ela, o indice unico parcial
-        `team_unica_raiz_por_workspace` devolveria IntegrityError cru
-        (HTTP 500) em vez de ConflictError (409).
-        """
-        stmt = select(func.count()).select_from(
-            self._base_select().where(Team.parent_team_id.is_(None)).subquery()
-        )
-        return bool((await self.session.execute(stmt)).scalar_one())
+    # ⚠️⚠️ AQUI MORAVA `root_exists()`, e ela nao virou `roots_of_workspace()`
+    # -- foi REMOVIDA, na Spec 046 fatia 2.
+    #
+    # Ela respondia "ja existe um time raiz?" e sustentava as duas checagens
+    # que barravam a segunda raiz (`TeamService.create` e `.move`). Com o
+    # indice `team_unica_raiz_por_workspace` fora (migration `0023`), nenhuma
+    # das duas pergunta mais isso: criar area virou questao de PERMISSAO, e
+    # promover subtime a area continua recusado por nao estar desenhado.
+    #
+    # ⚠️ NAO A RECRIE "por precaucao". Uma consulta que responde "existe
+    # alguma raiz?" so tem uma leitura util num mundo de raiz unica; num
+    # mundo de N areas a pergunta certa e sempre QUAL, e essa e `root_of()`,
+    # que sobe pelos pais e ja existe em `team_scope`.
 
     # ----------------------------------------------------
     # Dependencias (Spec 029) -- o que impede remover um time
@@ -238,12 +239,57 @@ class TeamRepository(BaseRepository[Team]):
     # ----------------------------------------------------
     # Esvaziamento (Spec 029 / Fatia 3)
     # ----------------------------------------------------
-    async def root_id(self) -> uuid.UUID | None:
-        """Id do time raiz do workspace. Destino fixo do esvaziamento (D5)."""
-        stmt = self._base_select().with_only_columns(Team.id).where(
-            Team.parent_team_id.is_(None)
+    async def areas_ids(self) -> list[uuid.UUID]:
+        """As AREAS do workspace (times sem pai), em ordem ESTAVEL por nome.
+
+        ⚠️ A ORDENACAO E O PONTO, e nao enfeite -- mesma decisao de
+        `web/lib/areas.ts`, e pelo mesmo motivo: sem `ORDER BY`, o Postgres
+        nao promete ordem nenhuma, e qualquer codigo que pegue "a primeira"
+        passa a olhar para outra area depois de um `VACUUM`.
+
+        ⚠️ QUEM PRECISAR DE **UMA** AREA A PARTIR DAQUI TEM DE TRATAR O CASO
+        DE N -- e a mesma regra que o front encapsulou em `soleRootTeam`. Se
+        voce esta prestes a escrever `(await areas_ids())[0]`, pare: e
+        exatamente o `teams.find(...)` que a fatia 1 tirou do front.
+        """
+        stmt = (
+            self._base_select()
+            .with_only_columns(Team.id)
+            .where(Team.parent_team_id.is_(None))
+            .order_by(Team.name)
         )
-        return (await self.session.execute(stmt)).scalar_one_or_none()
+        return list((await self.session.execute(stmt)).scalars().all())
+
+    async def area_de(self, team_id: uuid.UUID) -> uuid.UUID | None:
+        """A AREA (raiz) da arvore de `team_id`. `None` se o time nao existe.
+
+        ⚠️⚠️ ELA SE CHAMAVA `root_id()` E NAO RECEBIA NADA -- devolvia "a raiz
+        do workspace", com a docstring *"Destino fixo do esvaziamento (D5)"*.
+        Isso era verdade enquanto havia uma raiz. Com N areas (Spec 046) a
+        pergunta sem argumento nao tem resposta, e a versao velha escolheria
+        UMA delas: esvaziar um subtime do Marketing podia empurrar as tarefas
+        para o TI. Sem erro e sem teste vermelho.
+        Trocar o nome junto com o argumento e proposital -- `root_id(team_id)`
+        continuaria lendo como "a raiz", que e a ideia errada.
+
+        ⚠️ SOBE PELOS PAIS, e nao filtra `parent_team_id IS NULL`: e a mesma
+        semantica de `team_scope.root_of`, e a unica que sobrevive a arvores
+        irmas. Um time que JA e area devolve a si mesmo.
+
+        ⚠️ REUSA `collect_ancestor_ids`, que ja tem a trava de profundidade
+        (`max_depth`) contra ciclo no banco. Uma consulta recursiva nova aqui
+        duplicaria essa protecao ou -- pior -- a esqueceria.
+        """
+        team = await self.get_by_id(team_id)
+        if team is None:
+            return None
+        if team.parent_team_id is None:
+            return team.id
+        ancestrais = await self.collect_ancestor_ids(team_id)
+        # O ultimo da lista e a raiz daquela arvore. Lista vazia so aconteceria
+        # com `parent_team_id` apontando para fora do workspace, que a FK
+        # composta impede.
+        return ancestrais[-1] if ancestrais else team.id
 
     async def tarefas_do_time(self, team_id: uuid.UUID) -> list[Task]:
         """Tarefas do time, INCLUINDO as que estao na lixeira.

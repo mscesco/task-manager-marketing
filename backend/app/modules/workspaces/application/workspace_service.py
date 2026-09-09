@@ -38,6 +38,7 @@ from app.modules.workspaces.infrastructure.workspace_repository import (
     WorkspaceRepository,
 )
 from app.shared.exceptions.base import (
+    AuthorizationError,
     BusinessRuleError,
     ConflictError,
     EntityNotFoundError,
@@ -61,6 +62,17 @@ class PreviaRemocao:
     projetos: int
     membros: int
     filhos: int
+    # ⚠️⚠️ PARA ONDE O CONTEUDO VAI -- nasce na Spec 046, fatia 3 (§4.2).
+    #
+    # Ate aqui a previa dizia QUANTOS saem e nao dizia PARA ONDE, porque com
+    # uma raiz so o destino era obvio ate para quem nunca tinha pensado nele.
+    # Com N areas, "3 tarefas serao movidas" deixa a pergunta mais importante
+    # sem resposta -- e e a pergunta que faz alguem cancelar a operacao.
+    #
+    # `None` quando o time E a area (nao ha destino: a operacao ja e recusada)
+    # ou quando o destino nao pode ser resolvido.
+    destino_nome: str | None = None
+    destino_team_id: uuid.UUID | None = None
 
 
 def _descreve(c: TeamContagens) -> str:
@@ -209,15 +221,36 @@ class TeamService:
                 details={"field": "slug", "value": slug},
             )
 
-        # Spec 024/D4 -- mesma logica do comentario abaixo, agora para o
-        # indice unico `team_unica_raiz_por_workspace`: sem esta checagem,
-        # criar um segundo time raiz vira IntegrityError cru (HTTP 500).
-        if parent_team_id is None and await self._repo.root_exists():
-            raise ConflictError(
-                "Este workspace ja possui um time principal. Novos times "
-                "precisam ser criados como subtime de algum time existente.",
-                details={"field": "parent_team_id"},
-            )
+        # ⚠️⚠️ AQUI MORAVA A TRAVA DA RAIZ UNICA (Spec 024/D4):
+        #
+        #     if parent_team_id is None and await self._repo.root_exists():
+        #         raise ConflictError("Este workspace ja possui um time
+        #         principal. Novos times precisam ser criados como subtime...")
+        #
+        # Ela saiu na Spec 046, fatia 2, junto com o indice
+        # `team_unica_raiz_por_workspace` (migration `0023`). AS DUAS SAEM
+        # JUNTAS, e essa e a parte facil de errar: derrubar so o indice
+        # deixaria esta mensagem barrando com o banco ja liberado, e derrubar
+        # so esta checagem faria o `IntegrityError` cru virar HTTP 500.
+        #
+        # No lugar dela entra uma pergunta diferente -- nao "cabe mais uma?",
+        # e sim "quem esta pedindo?".
+        if parent_team_id is None:
+            # Criar AREA e do papel de ORGANIZACAO (§4.1). Um MANAGER continua
+            # criando subtime na propria arvore, e so isso.
+            #
+            # ⚠️ NAO DA PARA FAZER ISTO NA ROTA. `POST /teams` cria area E
+            # subtime; o que separa os dois e o `parent_team_id` do corpo, que
+            # o `require_permission` nao enxerga. Um segundo endpoint seria a
+            # alternativa, e ela troca uma checagem por uma rota duplicada com
+            # as mesmas cinco validacoes.
+            tenant = require_tenant()
+            if not tenant.has_permission("area.create"):
+                raise AuthorizationError(
+                    "Criar uma area exige papel de organizacao. "
+                    "Para criar um time dentro da sua area, escolha o time pai.",
+                    details={"required": "area.create"},
+                )
 
         # Se o pai foi informado, ele precisa existir no workspace.
         # A FK composta no banco ja garantiria, mas falhar aqui
@@ -376,13 +409,31 @@ class TeamService:
         if team.parent_team_id == new_parent_id:
             return team
 
-        # Spec 024/D4 -- promover subtime a raiz quando ja existe uma esbarra
-        # no indice unico. Falha aqui, com mensagem de dominio, em vez de
-        # IntegrityError (HTTP 500).
-        if new_parent_id is None and await self._repo.root_exists():
-            raise ConflictError(
-                "Este workspace ja possui um time principal. Para trocar qual "
-                "time e o principal, mova o atual para baixo de outro antes.",
+        # ⚠️⚠️ PROMOVER SUBTIME A AREA CONTINUA RECUSADO, e a razao MUDOU.
+        #
+        # Ate a Spec 046 a recusa era estrutural: so cabia uma raiz, e a
+        # checagem existia para o indice unico nao virar HTTP 500. O indice
+        # caiu (migration `0023`) -- ou seja, o banco aceitaria.
+        #
+        # A recusa fica porque a OPERACAO nao esta desenhada, e a §6 da spec
+        # registra isso com essas palavras: promover subtime a area e rebaixar
+        # area a subtime "ganham um caso novo que NAO esta desenhado. Fica
+        # registrado, nao feito."
+        #
+        # ⚠️ O QUE FALTA DECIDIR, para quem for fazer: um subtime promovido
+        # leva junto a arvore inteira dele e vira uma area nova -- com quadro
+        # geral proprio? Com quais membros? O `MANAGER` da area de origem
+        # perde alcance sobre gente que continua trabalhando com ele? Nenhuma
+        # dessas tem resposta hoje, e escolher uma calado seria pior do que
+        # recusar.
+        #
+        # ⚠️ TROCAR ISTO POR "deixa passar" NAO E REMOVER UMA LINHA MORTA. O
+        # dia em que alguem apagar esta checagem achando que e resto da raiz
+        # unica, a operacao passa a existir sem que ninguem a tenha desenhado.
+        if new_parent_id is None:
+            raise BusinessRuleError(
+                "Promover um time a area ainda nao e possivel. "
+                "Crie a area e mova o conteudo, ou fale com quem administra.",
                 details={"field": "new_parent_id"},
             )
 
@@ -439,6 +490,23 @@ class TeamService:
 
         tarefas = await self._repo.tarefas_do_time(team_id)
         c = await self._repo.contagens(team_id)
+
+        # ⚠️ Spec 046, fatia 3: a previa passa a NOMEAR a area de destino.
+        # Com uma raiz so o destino era obvio; com N areas, "3 tarefas serao
+        # movidas" esconde justamente a informacao que faria alguem cancelar.
+        #
+        # ⚠️ RESOLVIDO PELA MESMA FUNCAO QUE O `esvaziar_e_remover` usa
+        # (`area_de`), e nao por uma consulta parecida escrita aqui. A previa
+        # que promete um destino diferente do que a operacao faz e pior que
+        # previa nenhuma -- ela seria acreditada.
+        destino_id: uuid.UUID | None = None
+        destino_nome: str | None = None
+        if team.parent_team_id is not None:
+            destino_id = await self._repo.area_de(team_id)
+            if destino_id is not None:
+                destino = await self._repo.get_by_id(destino_id)
+                destino_nome = destino.name if destino is not None else None
+
         return PreviaRemocao(
             team_id=team_id,
             nome=team.name,
@@ -448,6 +516,8 @@ class TeamService:
             projetos=c.projetos,
             membros=c.membros,
             filhos=c.filhos,
+            destino_team_id=destino_id,
+            destino_nome=destino_nome,
         )
 
     async def esvaziar_e_remover(self, *, team_id: uuid.UUID) -> PreviaRemocao:
@@ -503,12 +573,24 @@ class TeamService:
                 details={"team_id": str(team_id), "filhos": contagens.filhos},
             )
 
-        raiz_id = await self._repo.root_id()
+        # ⚠️⚠️ O DESTINO E A AREA DESTA ARVORE, e nao "a raiz do workspace".
+        #
+        # Ate a Spec 046 isto era `await self._repo.root_id()`, sem argumento,
+        # e a docstring do metodo dizia "destino fixo do esvaziamento". Com N
+        # areas nao ha destino fixo: a versao velha escolheria uma delas, e
+        # esvaziar um subtime do Marketing podia despejar as tarefas no TI --
+        # sem erro, sem aviso, sem teste vermelho.
+        #
+        # §4.2: o conteudo vai para `root_of(team_id)`. NUNCA atravessa areas.
+        raiz_id = await self._repo.area_de(team_id)
         if raiz_id is None:
-            # Estado impossivel (indice unico garante uma raiz), mas se
-            # acontecer e melhor parar do que mover tarefas para lugar nenhum.
+            # ⚠️ Deixou de ser "estado impossivel". O comentario antigo dizia
+            # que o indice unico garantia uma raiz -- o indice caiu na fatia 2.
+            # Hoje isto so acontece se o time sumir entre o `get_by_id` acima e
+            # esta linha; parar continua sendo melhor que mover para lugar
+            # nenhum.
             raise BusinessRuleError(
-                "Workspace sem time principal: nao ha destino para o conteudo.",
+                "Nao consegui identificar a area de destino para o conteudo.",
                 details={"team_id": str(team_id)},
             )
 
@@ -578,6 +660,11 @@ class TeamService:
             projetos=len(projetos),
             membros=len(vinculos),
         )
+        # ⚠️ O DESTINO VAI NA RESPOSTA DA OPERACAO, e nao so na previa (Spec
+        # 046, fatia 3). A previa diz para onde VAI; esta diz para onde FOI --
+        # e com N areas a segunda deixou de ser dedutivel pela tela. Sem isto,
+        # quem confirmou nao tem como conferir se acertou o time.
+        destino = await self._repo.get_by_id(raiz_id)
         return PreviaRemocao(
             team_id=team_id,
             nome=nome,
@@ -587,4 +674,6 @@ class TeamService:
             projetos=len(projetos),
             membros=len(vinculos),
             filhos=0,
+            destino_team_id=raiz_id,
+            destino_nome=destino.name if destino is not None else None,
         )
