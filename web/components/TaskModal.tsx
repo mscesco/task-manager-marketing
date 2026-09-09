@@ -327,7 +327,12 @@ export default function TaskModal({
     // conjunto vazio (nao esconde ninguem), que e o comportamento antigo.
     getRootTeamId()
       .then(setRootTeamId)
-      .catch(() => {})
+      // ⚠️ Spec 046, fatia 1: era `.catch(() => {})`. Com mais de uma área
+      // `getRootTeamId` levanta, e o comportamento de queda continua sendo o
+      // antigo (segue `null`, `foraDoEscopo` devolve conjunto vazio, ninguém
+      // é escondido) -- mas agora ele aparece no console em vez de sumir.
+      // Fatia 4: a área vem de fora e esta chamada some.
+      .catch((e) => console.error("TaskModal: área indefinida", e))
       .finally(() => setRootResolvido(true));
   }, [open, editando]);
 

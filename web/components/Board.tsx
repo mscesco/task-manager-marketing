@@ -557,7 +557,17 @@ export default function Board({
     listSubteams().then(setSubtimes).catch(() => {});
     getRootTeamId()
       .then((id) => setRootId(id))
-      .catch(() => {})
+      // ⚠️ Spec 046, fatia 1: isto era `.catch(() => {})` -- silêncio puro.
+      // `getRootTeamId` agora LEVANTA quando há mais de uma área, e engolir
+      // essa exceção sem dizer nada devolveria exatamente o defeito que a
+      // fatia existe para matar: o quadro seguiria desenhando, sem filtro,
+      // como se a pergunta tivesse sido respondida.
+      //
+      // ⚠️ Aqui o efeito é de LEITURA (o filtro não liga, o quadro mostra
+      // tudo), e não de escrita -- por isso a tela não trava. A saída
+      // definitiva é a fatia 4: esta tela recebe a área pela URL e para de
+      // perguntar "qual é a raiz?".
+      .catch((e) => console.error("Board: área indefinida", e))
       .finally(() => setRootCarregado(true));
   }, []);
 
