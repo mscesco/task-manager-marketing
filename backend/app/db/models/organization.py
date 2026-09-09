@@ -22,12 +22,10 @@ from sqlalchemy import (
     Enum,
     ForeignKey,
     ForeignKeyConstraint,
-    Index,
     String,
     Text,
     UniqueConstraint,
     func,
-    text,
 )
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -77,17 +75,27 @@ class Team(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             name="team_no_self_parent",
         ),
         CheckConstraint(f"slug ~ '{_SLUG_REGEX}'", name="team_slug_format"),
-        # Spec 024/D2: UM unico time raiz por workspace.
-        # Parcial (so parent_team_id IS NULL) -- subtimes sao ilimitados.
-        # E o que torna "time principal" um fato estrutural em vez de
-        # convencao de slug, e o que sustenta a invariante de papeis
-        # (ADMIN/MANAGER so existem na raiz).
-        Index(
-            "team_unica_raiz_por_workspace",
-            "workspace_id",
-            unique=True,
-            postgresql_where=text("parent_team_id IS NULL"),
-        ),
+        # ⚠️⚠️ AQUI MORAVA `team_unica_raiz_por_workspace` -- indice unico
+        # parcial (`WHERE parent_team_id IS NULL`) que permitia UM time raiz
+        # por workspace. Ele saiu na Spec 046, fatia 2 (migration `0023`).
+        #
+        # O que ele sustentava, e o que aconteceu com cada coisa:
+        #
+        #   "time principal e fato estrutural, nao convencao de slug"
+        #       -> continua verdade, e agora ha N deles. `root_of()` sempre
+        #          subiu pelos pais e devolveu a raiz DAQUELA arvore, entao a
+        #          nocao nao dependia da unicidade.
+        #
+        #   "a invariante de papeis (ADMIN/MANAGER so existem na raiz)"
+        #       -> a Spec 045 (fatia D) reescreveu essa invariante e ela nao
+        #          depende mais de haver uma raiz: MANAGER continua so na
+        #          raiz, e a permissao dele carrega o `team_id` desde a fatia
+        #          C. Era esse acoplamento que fazia a 045 ser pre-requisito
+        #          desta spec.
+        #
+        # ⚠️ NAO RECRIE. O que impede duas AREAS com o mesmo nome e o
+        # `uq_team_workspace_slug` logo acima, que continua de pe e vale para
+        # qualquer nivel. Este indice falava de QUANTIDADE, nao de nome.
     )
 
     workspace_id: Mapped[uuid.UUID] = mapped_column(

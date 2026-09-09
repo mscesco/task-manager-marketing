@@ -117,18 +117,19 @@ class TeamRepository(BaseRepository[Team]):
             "Possivel ciclo no banco."
         )
 
-    async def root_exists(self) -> bool:
-        """Ja existe um time RAIZ neste workspace? (Spec 024/D2)
-
-        Sustenta a checagem de dominio ANTES do flush em
-        TeamService.create/move -- sem ela, o indice unico parcial
-        `team_unica_raiz_por_workspace` devolveria IntegrityError cru
-        (HTTP 500) em vez de ConflictError (409).
-        """
-        stmt = select(func.count()).select_from(
-            self._base_select().where(Team.parent_team_id.is_(None)).subquery()
-        )
-        return bool((await self.session.execute(stmt)).scalar_one())
+    # ⚠️⚠️ AQUI MORAVA `root_exists()`, e ela nao virou `roots_of_workspace()`
+    # -- foi REMOVIDA, na Spec 046 fatia 2.
+    #
+    # Ela respondia "ja existe um time raiz?" e sustentava as duas checagens
+    # que barravam a segunda raiz (`TeamService.create` e `.move`). Com o
+    # indice `team_unica_raiz_por_workspace` fora (migration `0023`), nenhuma
+    # das duas pergunta mais isso: criar area virou questao de PERMISSAO, e
+    # promover subtime a area continua recusado por nao estar desenhado.
+    #
+    # ⚠️ NAO A RECRIE "por precaucao". Uma consulta que responde "existe
+    # alguma raiz?" so tem uma leitura util num mundo de raiz unica; num
+    # mundo de N areas a pergunta certa e sempre QUAL, e essa e `root_of()`,
+    # que sobe pelos pais e ja existe em `team_scope`.
 
     # ----------------------------------------------------
     # Dependencias (Spec 029) -- o que impede remover um time

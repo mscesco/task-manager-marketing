@@ -66,6 +66,26 @@ _ROLE_PERMISSIONS: dict[UserTeamRole, frozenset[str]] = {
             # nao e necessariamente quem desenha a porta de entrada.
             "solicitation_form.manage",
             "team.manage",
+            # ⭐ Spec 046, fatia 2 (§4.1). CRIAR AREA -- time raiz, sem pai.
+            #
+            # ⚠️⚠️ ELA EXISTE PORQUE `team.manage` DEIXOU DE SERVIR PARA A
+            # PERGUNTA. Ate aqui "criar time" era uma coisa so; com N areas
+            # viram duas, com donos diferentes: quem cria SUBTIME e o MANAGER,
+            # na propria arvore; quem cria AREA e o papel de ORGANIZACAO. Um
+            # MANAGER de Marketing criando a area "TI" e a definicao de
+            # extrapolar a arvore dele.
+            #
+            # ⚠️ E O GATE NAO PODE MORAR NA ROTA, que e o lugar obvio: a MESMA
+            # rota (`POST /teams`) cria os dois, e o que distingue e o
+            # `parent_team_id` do corpo. Por isso a checagem e no servico
+            # (`TeamService.create`), e nao um `require_permission` a mais.
+            #
+            # ⚠️ SO PAPEL DE ORGANIZACAO A RECEBE, e isso e consequencia, nao
+            # coincidencia: este conjunto e a FONTE de `_ORG_ROLE_PERMISSIONS`
+            # (mais abaixo), e `ADMIN` deixou de ser papel de time na Spec 045.
+            # Escrever a linha aqui concede a ADMIN e GESTOR de organizacao --
+            # exatamente os dois que a §4.1 nomeia -- e a ninguem mais.
+            "area.create",
             # ⭐ Spec 045, fatia A. Decisao da Camila (02/09): "manager e admin
             # administram absolutamente tudo do time e sua arvore inteira".
             #

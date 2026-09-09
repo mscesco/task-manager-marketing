@@ -38,6 +38,7 @@ from app.modules.workspaces.infrastructure.workspace_repository import (
     WorkspaceRepository,
 )
 from app.shared.exceptions.base import (
+    AuthorizationError,
     BusinessRuleError,
     ConflictError,
     EntityNotFoundError,
@@ -209,15 +210,36 @@ class TeamService:
                 details={"field": "slug", "value": slug},
             )
 
-        # Spec 024/D4 -- mesma logica do comentario abaixo, agora para o
-        # indice unico `team_unica_raiz_por_workspace`: sem esta checagem,
-        # criar um segundo time raiz vira IntegrityError cru (HTTP 500).
-        if parent_team_id is None and await self._repo.root_exists():
-            raise ConflictError(
-                "Este workspace ja possui um time principal. Novos times "
-                "precisam ser criados como subtime de algum time existente.",
-                details={"field": "parent_team_id"},
-            )
+        # ⚠️⚠️ AQUI MORAVA A TRAVA DA RAIZ UNICA (Spec 024/D4):
+        #
+        #     if parent_team_id is None and await self._repo.root_exists():
+        #         raise ConflictError("Este workspace ja possui um time
+        #         principal. Novos times precisam ser criados como subtime...")
+        #
+        # Ela saiu na Spec 046, fatia 2, junto com o indice
+        # `team_unica_raiz_por_workspace` (migration `0023`). AS DUAS SAEM
+        # JUNTAS, e essa e a parte facil de errar: derrubar so o indice
+        # deixaria esta mensagem barrando com o banco ja liberado, e derrubar
+        # so esta checagem faria o `IntegrityError` cru virar HTTP 500.
+        #
+        # No lugar dela entra uma pergunta diferente -- nao "cabe mais uma?",
+        # e sim "quem esta pedindo?".
+        if parent_team_id is None:
+            # Criar AREA e do papel de ORGANIZACAO (§4.1). Um MANAGER continua
+            # criando subtime na propria arvore, e so isso.
+            #
+            # ⚠️ NAO DA PARA FAZER ISTO NA ROTA. `POST /teams` cria area E
+            # subtime; o que separa os dois e o `parent_team_id` do corpo, que
+            # o `require_permission` nao enxerga. Um segundo endpoint seria a
+            # alternativa, e ela troca uma checagem por uma rota duplicada com
+            # as mesmas cinco validacoes.
+            tenant = require_tenant()
+            if not tenant.has_permission("area.create"):
+                raise AuthorizationError(
+                    "Criar uma area exige papel de organizacao. "
+                    "Para criar um time dentro da sua area, escolha o time pai.",
+                    details={"required": "area.create"},
+                )
 
         # Se o pai foi informado, ele precisa existir no workspace.
         # A FK composta no banco ja garantiria, mas falhar aqui
@@ -376,13 +398,31 @@ class TeamService:
         if team.parent_team_id == new_parent_id:
             return team
 
-        # Spec 024/D4 -- promover subtime a raiz quando ja existe uma esbarra
-        # no indice unico. Falha aqui, com mensagem de dominio, em vez de
-        # IntegrityError (HTTP 500).
-        if new_parent_id is None and await self._repo.root_exists():
-            raise ConflictError(
-                "Este workspace ja possui um time principal. Para trocar qual "
-                "time e o principal, mova o atual para baixo de outro antes.",
+        # ⚠️⚠️ PROMOVER SUBTIME A AREA CONTINUA RECUSADO, e a razao MUDOU.
+        #
+        # Ate a Spec 046 a recusa era estrutural: so cabia uma raiz, e a
+        # checagem existia para o indice unico nao virar HTTP 500. O indice
+        # caiu (migration `0023`) -- ou seja, o banco aceitaria.
+        #
+        # A recusa fica porque a OPERACAO nao esta desenhada, e a §6 da spec
+        # registra isso com essas palavras: promover subtime a area e rebaixar
+        # area a subtime "ganham um caso novo que NAO esta desenhado. Fica
+        # registrado, nao feito."
+        #
+        # ⚠️ O QUE FALTA DECIDIR, para quem for fazer: um subtime promovido
+        # leva junto a arvore inteira dele e vira uma area nova -- com quadro
+        # geral proprio? Com quais membros? O `MANAGER` da area de origem
+        # perde alcance sobre gente que continua trabalhando com ele? Nenhuma
+        # dessas tem resposta hoje, e escolher uma calado seria pior do que
+        # recusar.
+        #
+        # ⚠️ TROCAR ISTO POR "deixa passar" NAO E REMOVER UMA LINHA MORTA. O
+        # dia em que alguem apagar esta checagem achando que e resto da raiz
+        # unica, a operacao passa a existir sem que ninguem a tenha desenhado.
+        if new_parent_id is None:
+            raise BusinessRuleError(
+                "Promover um time a area ainda nao e possivel. "
+                "Crie a area e mova o conteudo, ou fale com quem administra.",
                 details={"field": "new_parent_id"},
             )
 
