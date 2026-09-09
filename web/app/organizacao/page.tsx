@@ -58,15 +58,21 @@ import {
  * não adjetivos soltos no meio da frase. Em pílula e em título de opção,
  * minúscula lê como rascunho.
  *
- * ⚠️ FEMININO, e é a voz do produto: a spec escreve `SEO · supervisora`, e a
- * equipe é toda de mulheres. ⚠️ Diverge do `PAPEL_LABEL` da tela de membros,
- * que usa masculino ("Administrador", "Gerente") -- divergência que já
- * existia e que NÃO cabe a esta fatia resolver sozinha: unificar as duas
- * telas é decisão de produto, não detalhe de implementação.
+ * ⚠️⚠️ MASCULINO, POR DECISÃO DA CAMILA (09/09): *"quero tudo universal,
+ * então tudo no masculino"*. É a mesma regra que ela deu para os nomes de
+ * código -- o critério é UNIVERSALIDADE, não a composição da equipe de hoje.
+ *
+ * A primeira versão desta tela usava feminino ("Administradora"), porque a
+ * prosa das specs escreve `SEO · supervisora` e o time é de mulheres. Isso
+ * criava DUAS vozes no produto: a `/membros` sempre usou masculino
+ * (`PAPEL_LABEL`: "Administrador", "Gerente", "Supervisor", "Operador").
+ *
+ * ⚠️ A prosa das specs e os comentários FICAM como estão -- a decisão é
+ * sobre o texto que o produto mostra, não sobre como escrevemos entre nós.
  */
 const ROTULO_ORG: Record<string, string> = {
-  ADMIN: "Administradora",
-  GESTOR: "Gestora",
+  ADMIN: "Administrador",
+  GESTOR: "Gestor",
 };
 
 export default function OrganizacaoPage() {
@@ -286,7 +292,7 @@ export default function OrganizacaoPage() {
                         </span>
                         {/* ⚠️ A AÇÃO FICA À DIREITA, separada do que a linha
                             INFORMA. Misturada às cápsulas ela lia como mais um
-                            rótulo — e "Tornar gestora" não é um fato sobre a
+                            rótulo — e "Tornar gestor" não é um fato sobre a
                             pessoa, é um botão.
                             ⚠️ `shrink-0`: quem cede espaço é o texto. */}
                         {podeRenomear && !membro.org_role && (
@@ -630,7 +636,7 @@ function PapelDeOrganizacao({
         novo === null
           ? `${membro.name} deixou de administrar a organização. A conta e os times dela continuam como estavam.`
           // ⚠️ MINÚSCULA AQUI, ao contrário da pílula: no meio da frase o
-          // papel é substantivo comum ("agora é gestora"), e não o rótulo que
+          // papel é substantivo comum ("agora é gestor"), e não o rótulo que
           // nomeia uma opção. Reusar `ROTULO_ORG` cru daria "agora é Gestora".
           : `${membro.name} agora é ${ROTULO_ORG[novo].toLowerCase()}.`,
       );
@@ -639,7 +645,7 @@ function PapelDeOrganizacao({
       const a = e as ApiError;
       setErro(
         a.status === 409
-          ? "A organização precisa de pelo menos uma administradora. Promova outra pessoa antes."
+          ? "A organização precisa de pelo menos um administrador. Promova outra pessoa antes."
           : a.status === 403
           ? "Só quem administra a organização pode mudar isto."
           : a.message || "Não consegui mudar o papel.",
@@ -677,7 +683,7 @@ function PapelDeOrganizacao({
           <Opcao
             ativo={membro.org_role === "ADMIN"}
             titulo="Administradora"
-            consequencia="Define a organização: renomeia, apaga área e promove gestoras."
+            consequencia="Define a organização: renomeia, apaga área e promove gestores."
             onEscolher={() => void aplicar("ADMIN")}
             desabilitado={salvando}
           />
@@ -744,8 +750,8 @@ function PapelDeOrganizacao({
               {/* ⚠️ O backend barra o último admin com 409; barrar o PRÓPRIO
                   papel aqui é anti-lockout de tela, e a mensagem diz por quê
                   em vez de só desabilitar. */}
-              Você não pode tirar o próprio papel — peça a outra
-              administradora.
+              Você não pode tirar o próprio papel — peça a outro
+              administrador.
             </div>
           )}
 
@@ -805,13 +811,13 @@ function PromoverNaOrganizacao({
     setSalvando(true);
     try {
       // ⚠️ GESTOR, e não ADMIN: promover para o papel que OPERA é o passo
-      // reversível. Quem precisa de administradora sobe depois, pela pílula
+      // reversível. Quem precisa de administrador sobe depois, pela pílula
       // no cabeçalho — que mostra a consequência antes.
       await changeOrganizationRole(membro.id, "GESTOR");
       setErro(null);
       onAviso(
-        `${membro.name} agora é gestora e aparece no topo da organização. ` +
-          "Para torná-la administradora, clique no nome dela lá.",
+        `${membro.name} agora é gestor e aparece no topo da organização. ` +
+          "Para tornar administrador, clique no nome lá.",
       );
       await onMudou();
     } catch (e) {
@@ -829,7 +835,7 @@ function PromoverNaOrganizacao({
         onClick={() => void promover()}
         disabled={salvando}
       >
-        Tornar gestora
+        Tornar gestor
       </button>
       {erro && <span className="error-text text-xs">{erro}</span>}
     </>
