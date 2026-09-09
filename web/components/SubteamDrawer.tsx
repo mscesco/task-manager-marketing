@@ -54,6 +54,10 @@ export default function SubteamDrawer({
   onClose: () => void;
   onChanged: (aviso: string) => Promise<void>;
 }) {
+  // ⚠️ A GAVETA ATENDE OS DOIS NÍVEIS desde a unificação de 09/09: da tela
+  // da organização ela abre uma ÁREA; da tela de um time, um subtime. Chamar
+  // tudo de "subtime" mentiria para metade dos casos.
+  const ehArea = team.parent_team_id === null;
   const dentro = directMembers(team.id, members);
   const candidates = subteamCandidates(team.id, members);
 
@@ -83,7 +87,7 @@ export default function SubteamDrawer({
           <div className="min-w-0 flex-1">
             <h2 className="truncate text-lg font-semibold">{team.name}</h2>
             <div className="muted truncate text-xs">
-              Subtime · {dentro.length}{" "}
+              {ehArea ? "Área" : "Subtime"} · {dentro.length}{" "}
               {dentro.length === 1 ? "pessoa" : "pessoas"}
             </div>
           </div>
@@ -99,7 +103,7 @@ export default function SubteamDrawer({
             <h3 className="label mb-2">Quem está aqui</h3>
             {dentro.length === 0 ? (
               <div className="muted text-xs">
-                Ninguém neste subtime ainda.
+                Ninguém {ehArea ? "nesta área" : "neste subtime"} ainda.
               </div>
             ) : (
               <ul className="m-0 list-none space-y-1.5 p-0">
@@ -142,8 +146,22 @@ export default function SubteamDrawer({
 
           {/* ⚠️ SÓ ADMINISTRADOR, e a trava é da Spec 029 (D1): remover time
               exige `workspace.manage`. Mostrar o botão a um gerente daria
-              403 depois que ele já digitou o nome do time para confirmar. */}
-          {isAdmin && <DeleteTeam team={team} onChanged={onChanged} />}
+              403 depois que ele já digitou o nome do time para confirmar.
+
+              ⚠️⚠️ E **NUNCA PARA ÁREA**: o backend responde 409 *"se for a
+              raiz"* nas DUAS rotas (`delete_team` e `esvaziar-e-remover`).
+              Oferecer aqui seria pedir que a pessoa digitasse o nome da área
+              para confirmar e só então levar o erro -- o padrão "botão que a
+              tela oferece e o servidor recusa" que a Spec 044 registrou.
+              Quem quer apagar uma área move ou apaga os subtimes e fala com
+              quem administra o workspace. */}
+          {isAdmin && !ehArea && <DeleteTeam team={team} onChanged={onChanged} />}
+          {isAdmin && ehArea && (
+            <div className="muted mt-6 border-t border-border pt-3 text-xs">
+              Área não se exclui por aqui — ela é a raiz de uma árvore, e o
+              servidor recusa. Esvazie os subtimes primeiro.
+            </div>
+          )}
         </div>
       </motion.aside>
     </>

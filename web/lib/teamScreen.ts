@@ -154,9 +154,18 @@ export type SubteamCard = {
  *
  * ⚠️ E conta inativo também (§3.2) — esconder linha já fez o contador do
  * cabeçalho divergir do corpo, em 27/07.
+ *
+ * ⚠️⚠️ `teamId = null` DEVOLVE AS ÁREAS, e isso não é um caso especial
+ * enxertado: área é justamente o time cujo pai é `null`, e o filtro já é
+ * `parent_team_id === teamId`. A organização é o NÍVEL DE CIMA da mesma
+ * árvore -- e foi essa coincidência, e não um `if`, que permitiu à tela de
+ * time servir também a organização (`TeamScreen`, 09/09).
+ *
+ * Um caso especial escrito à mão aqui teria dado uma SEGUNDA regra de
+ * contagem para as áreas -- que é como o defeito de contador nasce.
  */
 export function subteamCards(
-  teamId: string,
+  teamId: string | null,
   teams: readonly Team[],
   members: readonly Member[],
 ): SubteamCard[] {
