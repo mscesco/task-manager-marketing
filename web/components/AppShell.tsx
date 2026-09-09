@@ -28,13 +28,12 @@ import {
   gravarQuadrosAberto,
 } from "@/lib/sidebar";
 import NotificationBell from "@/components/NotificationBell";
+import ContextSwitcher from "@/components/ContextSwitcher";
 import {
   LayoutGrid,
   FolderKanban,
   ListChecks,
   Users,
-  Network,
-  Building2,
   Archive,
   User,
   LogOut,
@@ -164,16 +163,20 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       ? [{ href: "/formularios", label: "Formulários", icon: ClipboardList }]
       : []),
     { href: "/membros", label: "Membros", icon: Users },
-    // Spec 029: gestao da arvore de times. Gate no mesmo espirito de
-    // Solicitacoes -- quem nao tem `team.manage` nao veria botao nenhum
-    // util la dentro, entao nem oferecemos a porta. O backend barra por 403
-    // de qualquer forma.
-    ...(podeVerOrganizacao
-      ? [{ href: "/organizacao", label: "Organização", icon: Building2 }]
-      : []),
-    ...(podeGerirTimes
-      ? [{ href: "/times", label: "Times", icon: Network }]
-      : []),
+    // ⚠️⚠️ AQUI ESTAVAM "Organização" e "Times", e as duas SAIRAM em 09/09,
+    // por decisão da Camila: *"ela não é para estar no menu junto com
+    // projetos, minhas tarefas e afins, é outra seção"*.
+    //
+    // E ela está certa sobre a natureza da lista: "Projetos", "Minhas
+    // tarefas" e "Solicitações" são LUGARES DE TRABALHO -- coisas que se
+    // abrem para fazer algo. A organização e a árvore de times são ONDE VOCÊ
+    // ESTÁ. Misturar as duas naturezas fazia a lista crescer sem que nenhum
+    // item ficasse mais fácil de achar.
+    //
+    // ⚠️ AS DUAS PORTAS CONTINUAM EXISTINDO, no `ContextSwitcher` acima -- e
+    // com os MESMOS gates de antes: a lista de times aparece para quem tem
+    // `team.manage`, e "Gerenciar a organização" só com `area.create`.
+    // Cortar do menu não pode virar cortar o acesso.
     { href: "/arquivadas", label: "Arquivadas", icon: Archive },
   ];
 
@@ -229,6 +232,23 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             </strong>
           )}
         </div>
+
+        {/* ---- O SELETOR DE CONTEXTO --------------------------------------
+            ⚠️ NO TOPO, e nao na lista: ele diz ONDE VOCE ESTA, e a lista
+            abaixo diz O QUE FAZER. Foi a separacao que a Camila pediu em
+            09/09 ao tirar "Organizacao" e "Times" do menu.
+            ⚠️ O gate de LISTAR times e `team.manage`, o mesmo que a entrada
+            "Times" tinha; "Gerenciar a organizacao" segue com `area.create`,
+            o mesmo da entrada "Organizacao". Cortar do menu nao pode virar
+            cortar o acesso -- nem abrir porta nova para quem nao tinha. */}
+        {podeGerirTimes && (
+          <ContextSwitcher
+            teams={teams}
+            pathname={pathname}
+            podeGerirOrganizacao={podeVerOrganizacao}
+            expandida={open}
+          />
+        )}
 
         {/* Botao de retrair */}
         <button
@@ -331,42 +351,14 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             espaco quando falta altura e a lista de navegacao (que rola),
             nunca o rodape (que nao tem como ser alcancado de outro jeito). */}
         <div className="flex shrink-0 flex-col gap-1 border-t border-border pt-2">
-          {/* ⚠️ SPEC 039 (F3) -- "TIME PRINCIPAL", e ele NAO e placeholder.
-              O controle navega entre times RAIZ, e a regra combinada com a
-              Camila em 19/08 e:
-                um time raiz    -> nome, texto simples, SEM chevron
-                dois ou mais    -> seletor
-              Hoje toda pessoa cai no primeiro caso porque so existe um time
-              raiz -- entao isto e o ESTADO REAL, e nao uma casca esperando a
-              spec de multiplos times raiz. O seletor entra quando o segundo
-              existir.
-
-              ⚠️ Nao e link: com um time so nao ha para onde ir, e um item
-              clicavel que nao leva a lugar nenhum e pior que um rotulo. A
-              regra "se parece clicavel, tem de ser clicavel" vale ao
-              contrario tambem. */}
-          {(() => {
-            const raizes = teams.filter((t) => t.parent_team_id === null);
-            if (raizes.length !== 1) return null;
-            const raiz = raizes[0];
-            return (
-              <div
-                title={`Você está no time ${raiz.name}`}
-                aria-label={`Time atual: ${raiz.name}`}
-                className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-semibold text-ink-faint ${
-                  open ? "" : "justify-center"
-                }`}
-              >
-                {/* ⚠️ `Building2` E NAO `Network`: "Times" (gestao da arvore)
-                    ja usa o Network, e retraida a barra mostra so o icone --
-                    os dois viravam o MESMO simbolo em lugares diferentes.
-                    Achado pela Camila na tela. Aqui o sentido e "a organizacao
-                    em que voce esta", nao "a arvore de times". */}
-                <Building2 size={18} className="shrink-0" />
-                {open && <span className="truncate">{raiz.name}</span>}
-              </div>
-            );
-          })()}
+          {/* ⚠️⚠️ AQUI FICAVA O "TIME PRINCIPAL" (Spec 039, F3): o nome do
+              time raiz em texto simples, com a regra combinada com a Camila em
+              19/08 -- *"um time raiz: nome sem chevron; dois ou mais: seletor"*.
+              O segundo caso finalmente existe (Spec 046), e o seletor e o
+              `ContextSwitcher` no TOPO da barra: ele diz onde voce esta e
+              leva para os outros times.
+              ⚠️ Manter os dois seria dizer a mesma coisa em duas alturas da
+              mesma barra -- e so um deles navega. */}
           <a
             href="/perfil"
             title={!open ? "Meu perfil" : undefined}
