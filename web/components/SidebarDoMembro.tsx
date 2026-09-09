@@ -140,7 +140,10 @@ export default function SidebarDoMembro({
           if (e.key === "Escape") onFechar();
         }}
       >
-        <div className="flex items-start gap-3 border-b border-border p-4">
+        {/* ⚠️ `items-center`, e não `items-start`: o nome e o e-mail são
+            duas linhas, e alinhando pelo topo o X encostava no primeiro pixel
+            do nome em vez de acompanhar o par. */}
+        <div className="flex items-center gap-3 border-b border-border p-4">
           <div className="min-w-0 flex-1">
             <h2 className="truncate text-lg font-semibold">{membro.name}</h2>
             <div className="muted truncate text-xs">{membro.email}</div>

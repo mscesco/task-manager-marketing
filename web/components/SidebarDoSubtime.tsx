@@ -78,7 +78,8 @@ export default function SidebarDoSubtime({
           if (e.key === "Escape") onFechar();
         }}
       >
-        <div className="flex items-start gap-3 border-b border-border p-4">
+        {/* Ver o comentário gêmeo em `SidebarDoMembro`. */}
+        <div className="flex items-center gap-3 border-b border-border p-4">
           <div className="min-w-0 flex-1">
             <h2 className="truncate text-lg font-semibold">{time.name}</h2>
             <div className="muted truncate text-xs">

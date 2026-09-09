@@ -33,6 +33,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { Pencil } from "lucide-react";
 import AppShell from "@/components/AppShell";
 import Abas from "@/components/Abas";
+import Alternador from "@/components/Alternador";
 import Badge from "@/components/Badge";
 import Card from "@/components/Card";
 import PageHeader from "@/components/PageHeader";
@@ -189,7 +190,7 @@ export default function TimePage() {
       {erro && <div className="error-box">{erro}</div>}
 
       {aviso && (
-        <div role="status" className="muted mb-4 flex items-start gap-2 text-xs">
+        <div role="status" className="muted mb-4 flex items-center gap-2 text-xs">
           <span>{aviso}</span>
           <button
             className="btn btn-ghost px-1.5 text-xs"
@@ -210,19 +211,14 @@ export default function TimePage() {
       )}
 
       {/* ---- O ALTERNADOR ------------------------------------------------
-          ⚠️ `Abas` outra vez, com `grupo` PRÓPRIO: o `layoutId` do motion é
-          global, e dois grupos com o mesmo id fariam o indicador voar de um
-          para o outro ao trocar de aba. */}
+          ⚠️ COMPONENTE DIFERENTE das abas de baixo, e não a mesma coisa com
+          outra cor: aqui a pastilha é UM `<motion.div layout />` que anda; lá
+          o indicador são duas instâncias que o `layoutId` interpola. A forma
+          distinta é o que separa "troquei de assunto" de "recortei a lista". */}
       <div className="mb-4">
-        <Abas
+        <Alternador
           aria-label="O que ver neste time"
-          grupo="visao"
-          // ⚠️ PÍLULA, e não sublinhado: este alternador troca o ASSUNTO da
-          // tela, e as abas logo abaixo dele só recortam uma lista. Sem a
-          // moldura eram duas fileiras de palavras soltas, sem pista de que
-          // fazem coisas diferentes — o apontamento da Camila em 09/09.
-          variante="pilula"
-          ativa={visao}
+          ativo={visao}
           onEscolher={(v) => {
             setVisao(v);
             // ⚠️ Fecha o formulário ao virar a chave: ele pertence ao assunto
@@ -230,16 +226,33 @@ export default function TimePage() {
             // formulário que a pessoa abriu para cadastrar gente.
             setCriando(false);
           }}
-          abas={[
+          lados={[
             { id: "membros", rotulo: "Membros", contagem: linhas.length },
             { id: "subtimes", rotulo: "Subtimes", contagem: cartoes.length },
           ]}
         />
       </div>
 
+      {/* ---- A TROCA DE ASSUNTO ------------------------------------------
+          ⚠️ A tela inteira ENTRA subindo e SAI subindo, e não é enfeite: virar
+          a chave troca todo o conteúdo abaixo do alternador — de uma tabela de
+          pessoas para uma grade de times. Sem transição, a troca lê-se como
+          "a página recarregou", e o olho perde onde estava.
+          ⚠️ `mode="wait"` é o que impede as duas telas empilhadas por um
+          instante. E `key={visao}` é o que faz o React trocar o nó: sem ele o
+          motion vê o mesmo elemento e não há entrada nenhuma. */}
       {carregando ? (
         <div className="muted">Carregando…</div>
-      ) : visao === "membros" ? (
+      ) : (
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={visao}
+            initial={{ y: 10, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: -10, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+          >
+            {visao === "membros" ? (
         <>
           {criando && time && (
             <NovoMembro
@@ -336,7 +349,7 @@ export default function TimePage() {
             </>
           )}
         </>
-      ) : (
+            ) : (
         <>
           {criando && time && (
             <NovoSubtime
@@ -361,7 +374,7 @@ export default function TimePage() {
                   key={c.team.id}
                   className="flex flex-col gap-2 rounded-lg border border-border bg-surface p-3"
                 >
-                  <div className="flex items-start gap-2">
+                  <div className="flex items-center gap-2">
                     {/* ⚠️ O NOME É LINK, e o lápis abre a gaveta: são duas
                         intenções diferentes -- "entrar no subtime" e "editar
                         este subtime" -- e o mesmo clique para as duas obrigaria
@@ -392,6 +405,9 @@ export default function TimePage() {
             </div>
           )}
         </>
+            )}
+          </motion.div>
+        </AnimatePresence>
       )}
 
       <AnimatePresence>
