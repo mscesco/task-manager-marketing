@@ -1540,7 +1540,7 @@ export type Member = {
   org_role?: OrgRole | null;
   // ⚠️ ALIMENTA A ABA "CONVIDADOS": quem recebeu a senha provisória e ainda
   // NÃO entrou. Não é estado novo no banco -- é `is_active` cruzado com este
-  // campo. Ver `estadoDoMembro` em `lib/estadoDoMembro.ts`.
+  // campo. Ver `memberState` em `lib/memberState.ts`.
   must_change_password?: boolean;
   // ⚠️⚠️ AS AREAS (raizes) da pessoa -- Spec 047, fatia B. DISTINTO de
   // `team_ids`, logo abaixo, que traz so os SUBTIMES. Quem esta vinculado

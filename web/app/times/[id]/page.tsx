@@ -21,9 +21,9 @@
 // e gerir um subtime são públicos diferentes, mas duas telas divergem com o
 // tempo — e separar depois é mais fácil do que reunificar.
 //
-// ⚠️ TODA DECISÃO MORA EM `lib/telaDoTime.ts` e `lib/estadoDoMembro.ts`,
+// ⚠️ TODA DECISÃO MORA EM `lib/teamScreen.ts` e `lib/memberState.ts`,
 // testadas. `app/` está fora do `include` do vitest, e nesta tela isso é
-// crítico: as regras mais delicadas (quem aparece, quem é "convidado") são
+// crítico: as regras mais delicadas (quem aparece, quem é "invited") são
 // justamente as que não dão erro quando saem erradas.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -32,14 +32,14 @@ import Link from "next/link";
 import { AnimatePresence, motion } from "motion/react";
 import { Pencil } from "lucide-react";
 import AppShell from "@/components/AppShell";
-import Abas from "@/components/Abas";
-import Alternador from "@/components/Alternador";
+import Tabs from "@/components/Tabs";
+import Toggle from "@/components/Toggle";
 import Badge from "@/components/Badge";
 import Card from "@/components/Card";
 import PageHeader from "@/components/PageHeader";
-import SenhaProvisoria from "@/components/SenhaProvisoria";
-import SidebarDoSubtime from "@/components/SidebarDoSubtime";
-import TabelaDeMembros, { PAPEL } from "@/components/TabelaDeMembros";
+import TemporaryPassword from "@/components/TemporaryPassword";
+import SubteamDrawer from "@/components/SubteamDrawer";
+import MembersTable, { ROLE_LABEL } from "@/components/MembersTable";
 import {
   ApiError,
   createMember,
@@ -52,12 +52,12 @@ import {
   type MemberRole,
   type Team,
 } from "@/lib/api";
-import { cartoesDeSubtime, linhasDoTime } from "@/lib/telaDoTime";
+import { subteamCards, teamRows } from "@/lib/teamScreen";
 import {
-  contagemPorEstado,
-  estadoDoMembro,
-  type EstadoDoMembro,
-} from "@/lib/estadoDoMembro";
+  countByState,
+  memberState,
+  type MemberState,
+} from "@/lib/memberState";
 import { sugereSlug } from "@/lib/gestaoTimes";
 import {
   alcanceDe,
@@ -66,24 +66,24 @@ import {
   podeMoverSubtime,
 } from "@/lib/permissoesMembros";
 
-type Visao = "membros" | "subtimes";
-type Revelado = { titulo: string; email: string; senha: string };
+type View = "membros" | "subtimes";
+type RevealedPassword = { title: string; email: string; password: string };
 
 export default function TimePage() {
   const params = useParams<{ id: string }>();
   const teamId = params.id;
 
-  const [times, setTimes] = useState<Team[]>([]);
-  const [membros, setMembros] = useState<Member[]>([]);
+  const [teams, setTimes] = useState<Team[]>([]);
+  const [members, setMembros] = useState<Member[]>([]);
   const [me, setMe] = useState<CurrentUser | null>(null);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
 
-  const [visao, setVisao] = useState<Visao>("membros");
-  const [aba, setAba] = useState<EstadoDoMembro>("ativo");
+  const [visao, setVisao] = useState<View>("membros");
+  const [aba, setAba] = useState<MemberState>("active");
   const [criando, setCriando] = useState(false);
-  const [revelado, setRevelado] = useState<Revelado | null>(null);
+  const [revelado, setRevelado] = useState<RevealedPassword | null>(null);
   const [subtimeAberto, setSubtimeAberto] = useState<Team | null>(null);
 
   const carregar = useCallback(async () => {
@@ -109,32 +109,32 @@ export default function TimePage() {
     void carregar();
   }, [carregar]);
 
-  const time = times.find((t) => t.id === teamId) ?? null;
-  const linhas = useMemo(
-    () => linhasDoTime(teamId, times, membros),
-    [teamId, times, membros],
+  const team = teams.find((t) => t.id === teamId) ?? null;
+  const rows = useMemo(
+    () => teamRows(teamId, teams, members),
+    [teamId, teams, members],
   );
   const cartoes = useMemo(
-    () => cartoesDeSubtime(teamId, times, membros),
-    [teamId, times, membros],
+    () => subteamCards(teamId, teams, members),
+    [teamId, teams, members],
   );
 
   // ⚠️ A CONTAGEM É SOBRE QUEM ESTÁ NESTA ÁRVORE, e não sobre a organização:
   // as abas recortam o que a tabela desta tela mostra.
-  const contagem = useMemo(
-    () => contagemPorEstado(linhas.map((l) => l.membro)),
-    [linhas],
+  const count = useMemo(
+    () => countByState(rows.map((l) => l.member)),
+    [rows],
   );
   const linhasVisiveis = useMemo(
-    () => linhas.filter((l) => estadoDoMembro(l.membro) === aba),
-    [linhas, aba],
+    () => rows.filter((l) => memberState(l.member) === aba),
+    [rows, aba],
   );
 
-  const alcance = alcanceDe(me);
-  const podeMexerEmTimes = podeMoverSubtime(alcance);
-  const souAdmin = me?.roles.includes("ADMIN") ?? false;
+  const scope = alcanceDe(me);
+  const podeMexerEmTimes = podeMoverSubtime(scope);
+  const isAdmin = me?.roles.includes("ADMIN") ?? false;
 
-  if (!carregando && !time) {
+  if (!carregando && !team) {
     return (
       <AppShell>
         <div className="muted">
@@ -148,22 +148,22 @@ export default function TimePage() {
     );
   }
 
-  const ehArea = time?.parent_team_id === null;
+  const ehArea = team?.parent_team_id === null;
 
   // ⚠️ O BOTÃO DE AÇÃO MUDA COM O ALTERNADOR (pedido da Camila em 09/09), e a
   // permissão de cada um é diferente: cadastrar pessoa dispara senha
   // provisória e é do gestor (D3 da Spec 028); criar subtime é gestão de
   // estrutura. Um botão só, com a pergunta certa para o assunto na tela.
   const podeAgir =
-    visao === "membros" ? podeCadastrarMembro(alcance) : podeMexerEmTimes;
+    visao === "membros" ? podeCadastrarMembro(scope) : podeMexerEmTimes;
 
   return (
     <AppShell>
       <PageHeader
         title={
           <span className="inline-flex items-center gap-2">
-            {time ? time.name : "Time"}
-            {time && (
+            {team ? team.name : "Time"}
+            {team && (
               // ⚠️ Diz o NÍVEL, porque a tela é a mesma para os dois e o
               // conteúdo muda: numa área aparece todo mundo da árvore; num
               // subtime, só quem está nele e abaixo.
@@ -202,11 +202,11 @@ export default function TimePage() {
       )}
 
       {revelado && (
-        <SenhaProvisoria
-          titulo={revelado.titulo}
+        <TemporaryPassword
+          title={revelado.title}
           email={revelado.email}
-          senha={revelado.senha}
-          onFechar={() => setRevelado(null)}
+          password={revelado.password}
+          onClose={() => setRevelado(null)}
         />
       )}
 
@@ -216,19 +216,19 @@ export default function TimePage() {
           o indicador são duas instâncias que o `layoutId` interpola. A forma
           distinta é o que separa "troquei de assunto" de "recortei a lista". */}
       <div className="mb-4">
-        <Alternador
+        <Toggle
           aria-label="O que ver neste time"
-          ativo={visao}
-          onEscolher={(v) => {
+          active={visao}
+          onSelect={(v) => {
             setVisao(v);
             // ⚠️ Fecha o formulário ao virar a chave: ele pertence ao assunto
             // anterior, e deixá-lo aberto criaria um subtime a partir de um
             // formulário que a pessoa abriu para cadastrar gente.
             setCriando(false);
           }}
-          lados={[
-            { id: "membros", rotulo: "Membros", contagem: linhas.length },
-            { id: "subtimes", rotulo: "Subtimes", contagem: cartoes.length },
+          sides={[
+            { id: "membros", label: "Membros", count: rows.length },
+            { id: "subtimes", label: "Subtimes", count: cartoes.length },
           ]}
         />
       </div>
@@ -254,13 +254,13 @@ export default function TimePage() {
           >
             {visao === "membros" ? (
         <>
-          {criando && time && (
-            <NovoMembro
-              time={time}
-              alcance={alcance}
-              souAdmin={souAdmin}
-              onCancelar={() => setCriando(false)}
-              onCriado={async (r, texto) => {
+          {criando && team && (
+            <NewMember
+              team={team}
+              scope={scope}
+              isAdmin={isAdmin}
+              onCancel={() => setCriando(false)}
+              onCreated={async (r, texto) => {
                 setRevelado(r);
                 setCriando(false);
                 setAviso(texto);
@@ -269,8 +269,8 @@ export default function TimePage() {
             />
           )}
 
-          {linhas.length === 0 ? (
-            <div className="muted">Ninguém neste time ainda.</div>
+          {rows.length === 0 ? (
+            <div className="muted">Ninguém neste team ainda.</div>
           ) : (
             <>
               {/* ---- AS ABAS DE ESTADO --------------------------------
@@ -279,22 +279,22 @@ export default function TimePage() {
                   ⚠️ E `0` aparece — `contagem: 0` mostra "0", ao contrário de
                   `undefined`. Uma aba sem número lê-se como "não sei". */}
               <div className="mb-3">
-                <Abas
+                <Tabs
                   aria-label="Estado das pessoas"
-                  grupo="estado"
-                  ativa={aba}
-                  onEscolher={setAba}
-                  abas={[
-                    { id: "ativo", rotulo: "Ativos", contagem: contagem.ativo },
+                  group="estado"
+                  active={aba}
+                  onSelect={setAba}
+                  tabs={[
+                    { id: "active", label: "Ativos", count: count.active },
                     {
-                      id: "convidado",
-                      rotulo: "Convidados",
-                      contagem: contagem.convidado,
+                      id: "invited",
+                      label: "Convidados",
+                      count: count.invited,
                     },
                     {
-                      id: "inativo",
-                      rotulo: "Inativos",
-                      contagem: contagem.inativo,
+                      id: "inactive",
+                      label: "Inativos",
+                      count: count.inactive,
                     },
                   ]}
                 />
@@ -316,19 +316,19 @@ export default function TimePage() {
                 >
                   {linhasVisiveis.length === 0 ? (
                     <div className="muted rounded-lg border border-border bg-surface p-4 text-sm">
-                      {vazioDaAba(aba)}
+                      {emptyStateText(aba)}
                     </div>
                   ) : (
-                    <TabelaDeMembros
-                      linhas={linhasVisiveis}
-                      times={times}
+                    <MembersTable
+                      rows={linhasVisiveis}
+                      teams={teams}
                       me={me}
-                      colunaDoMeio={{
-                        titulo: "Cargo aqui",
+                      middleColumn={{
+                        title: "Cargo aqui",
                         render: (l) =>
                           l.cargoAqui ? (
                             <Badge tone="neutral" size="sm" className="border">
-                              {PAPEL[l.cargoAqui]}
+                              {ROLE_LABEL[l.cargoAqui]}
                             </Badge>
                           ) : (
                             <span className="muted text-xs">—</span>
@@ -337,8 +337,8 @@ export default function TimePage() {
                       // ⚠️ "N de M", nunca só N. A §3.2: o defeito de 27/07 foi
                       // o cabeçalho divergindo do corpo, e mostrar só o
                       // filtrado apaga a informação de que existe mais.
-                      contagem={`${linhasVisiveis.length} de ${linhas.length} pessoas`}
-                      onMudou={async (texto) => {
+                      count={`${linhasVisiveis.length} de ${rows.length} pessoas`}
+                      onChanged={async (texto) => {
                         setAviso(texto);
                         await carregar();
                       }}
@@ -351,11 +351,11 @@ export default function TimePage() {
         </>
             ) : (
         <>
-          {criando && time && (
-            <NovoSubtime
-              pai={time}
-              onCancelar={() => setCriando(false)}
-              onCriado={async (texto) => {
+          {criando && team && (
+            <NewSubteam
+              pai={team}
+              onCancel={() => setCriando(false)}
+              onCreated={async (texto) => {
                 setCriando(false);
                 setAviso(texto);
                 await carregar();
@@ -365,7 +365,7 @@ export default function TimePage() {
 
           {cartoes.length === 0 ? (
             <div className="muted">
-              Nenhum subtime dentro de {time?.name}.
+              Nenhum subtime dentro de {team?.name}.
             </div>
           ) : (
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -395,9 +395,9 @@ export default function TimePage() {
                   </div>
                   <div className="muted text-xs">
                     {c.pessoas} {c.pessoas === 1 ? "pessoa" : "pessoas"}
-                    {c.subtimes > 0 &&
-                      ` · ${c.subtimes} ${
-                        c.subtimes === 1 ? "subtime" : "subtimes"
+                    {c.subteams > 0 &&
+                      ` · ${c.subteams} ${
+                        c.subteams === 1 ? "subtime" : "subteams"
                       }`}
                   </div>
                 </div>
@@ -412,14 +412,14 @@ export default function TimePage() {
 
       <AnimatePresence>
         {subtimeAberto && (
-          <SidebarDoSubtime
+          <SubteamDrawer
             key={subtimeAberto.id}
-            time={subtimeAberto}
-            membros={membros}
-            souAdmin={souAdmin}
-            podeMexer={podeMexerEmTimes}
-            onFechar={() => setSubtimeAberto(null)}
-            onMudou={async (texto) => {
+            team={subtimeAberto}
+            members={members}
+            isAdmin={isAdmin}
+            canManage={podeMexerEmTimes}
+            onClose={() => setSubtimeAberto(null)}
+            onChanged={async (texto) => {
               setSubtimeAberto(null);
               setAviso(texto);
               await carregar();
@@ -438,30 +438,30 @@ export default function TimePage() {
  * que perdeu registros — o mesmo mal-estar do defeito de contador de 27/07,
  * numa forma mais barata.
  */
-function vazioDaAba(aba: EstadoDoMembro): string {
+function emptyStateText(aba: MemberState): string {
   switch (aba) {
-    case "ativo":
+    case "active":
       return "Ninguém ativo aqui — veja as outras abas.";
-    case "convidado":
+    case "invited":
       return "Ninguém pendente: todo mundo já entrou pelo menos uma vez.";
-    case "inativo":
+    case "inactive":
       return "Ninguém desativado neste time.";
   }
 }
 
 /** Cadastrar pessoa nova, já neste time. */
-function NovoMembro({
-  time,
-  alcance,
-  souAdmin,
-  onCancelar,
-  onCriado,
+function NewMember({
+  team,
+  scope,
+  isAdmin,
+  onCancel,
+  onCreated,
 }: {
-  time: Team;
-  alcance: ReturnType<typeof alcanceDe>;
-  souAdmin: boolean;
-  onCancelar: () => void;
-  onCriado: (revelado: Revelado, aviso: string) => Promise<void>;
+  team: Team;
+  scope: ReturnType<typeof alcanceDe>;
+  isAdmin: boolean;
+  onCancel: () => void;
+  onCreated: (revelado: RevealedPassword, aviso: string) => Promise<void>;
 }) {
   const [nome, setNome] = useState("");
   const [email, setEmail] = useState("");
@@ -469,12 +469,12 @@ function NovoMembro({
   // formulário que mais custa errar: escolher um papel impossível, preencher
   // nome e e-mail e só então levar 409 é a forma mais cara de descobrir a
   // regra. Numa área não cabe SUPERVISOR; num subtime não cabe MANAGER.
-  const opcoes = papeisAtribuiveis(
-    alcance,
-    souAdmin,
-    time.parent_team_id === null,
+  const options = papeisAtribuiveis(
+    scope,
+    isAdmin,
+    team.parent_team_id === null,
   );
-  const [papel, setPapel] = useState<MemberRole>(opcoes[opcoes.length - 1]);
+  const [papel, setPapel] = useState<MemberRole>(options[options.length - 1]);
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
@@ -502,23 +502,23 @@ function NovoMembro({
         />
       </div>
       <div className="field max-w-[220px]">
-        <span className="label">Cargo em {time.name}</span>
+        <span className="label">Cargo em {team.name}</span>
         <select
           className="input"
           value={papel}
           disabled={salvando}
           onChange={(e) => setPapel(e.target.value as MemberRole)}
         >
-          {opcoes.map((p) => (
+          {options.map((p) => (
             <option key={p} value={p}>
-              {PAPEL[p]}
+              {ROLE_LABEL[p]}
             </option>
           ))}
         </select>
       </div>
 
       <div className="muted text-xs">
-        A pessoa recebe uma senha provisória, mostrada uma única vez aqui, e
+        A pessoa recebe uma password provisória, mostrada uma única vez aqui, e
         troca no primeiro acesso.
       </div>
 
@@ -536,16 +536,16 @@ function NovoMembro({
               const novo = await createMember({
                 name: nome.trim(),
                 email: email.trim(),
-                teamId: time.id,
+                teamId: team.id,
                 role: papel,
               });
-              await onCriado(
+              await onCreated(
                 {
-                  titulo: `Membro cadastrado: ${novo.name}`,
+                  title: `Membro cadastrado: ${novo.name}`,
                   email: novo.email,
-                  senha: novo.temporary_password,
+                  password: novo.temporary_password,
                 },
-                `${novo.name} entrou em ${time.name} como ${PAPEL[
+                `${novo.name} entrou em ${team.name} como ${ROLE_LABEL[
                   papel
                 ].toLowerCase()}.`,
               );
@@ -571,7 +571,7 @@ function NovoMembro({
           className="btn btn-ghost"
           style={{ padding: "8px 14px" }}
           disabled={salvando}
-          onClick={onCancelar}
+          onClick={onCancel}
         >
           Cancelar
         </button>
@@ -581,14 +581,14 @@ function NovoMembro({
 }
 
 /** Criar um subtime DENTRO do time aberto. */
-function NovoSubtime({
+function NewSubteam({
   pai,
-  onCancelar,
-  onCriado,
+  onCancel,
+  onCreated,
 }: {
   pai: Team;
-  onCancelar: () => void;
-  onCriado: (aviso: string) => Promise<void>;
+  onCancel: () => void;
+  onCreated: (aviso: string) => Promise<void>;
 }) {
   const [nome, setNome] = useState("");
   const [slug, setSlug] = useState("");
@@ -647,7 +647,7 @@ function NovoSubtime({
                 slug: slug.trim(),
                 parent_team_id: pai.id,
               });
-              await onCriado(`${nome.trim()} criado dentro de ${pai.name}.`);
+              await onCreated(`${nome.trim()} criado dentro de ${pai.name}.`);
             } catch (e) {
               const a = e as ApiError;
               setErro(
@@ -670,7 +670,7 @@ function NovoSubtime({
           className="btn btn-ghost"
           style={{ padding: "8px 14px" }}
           disabled={salvando}
-          onClick={onCancelar}
+          onClick={onCancel}
         >
           Cancelar
         </button>

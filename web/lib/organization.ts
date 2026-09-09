@@ -19,12 +19,12 @@
 import type { Member, Team } from "./api";
 
 /** Um card da grade de areas. */
-export type CardDeArea = {
+export type AreaCard = {
   readonly area: Team;
   /** Pessoas com vinculo na area OU em qualquer subtime dela. */
   readonly pessoas: number;
   /** Subtimes -- diretos e indiretos. */
-  readonly subtimes: number;
+  readonly subteams: number;
 };
 
 /**
@@ -40,10 +40,10 @@ export type CardDeArea = {
  * divergiu do corpo. Se um dia a tela filtrar inativos, o card tem de dizer
  * "12 de 15" -- nao mostrar 12 e calar sobre os 3.
  */
-export function cardsDeArea(
+export function areaCards(
   teams: readonly Team[],
   members: readonly Member[],
-): CardDeArea[] {
+): AreaCard[] {
   const areas = teams
     .filter((t) => t.parent_team_id === null)
     .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
@@ -51,7 +51,7 @@ export function cardsDeArea(
   return areas.map((area) => ({
     area,
     pessoas: members.filter((m) => (m.area_ids ?? []).includes(area.id)).length,
-    subtimes: descendentes(area.id, teams).size,
+    subteams: descendentes(area.id, teams).size,
   }));
 }
 
@@ -81,10 +81,10 @@ function descendentes(areaId: string, teams: readonly Team[]): Set<string> {
  * a conta de administracao da Camila esta exatamente assim desde 08/09, de
  * propósito (o passo 2 da Spec 045).
  *
- * ⚠️ USA `area_ids`, e nao `team_ids`. Com `team_ids` (que traz so subtimes),
+ * ⚠️ USA `area_ids`, e nao `team_ids`. Com `team_ids` (que traz so subteams),
  * todo mundo que esta apenas na area cairia aqui -- inclusive os gerentes.
  */
-export function pessoasSemArea(members: readonly Member[]): Member[] {
+export function peopleWithoutArea(members: readonly Member[]): Member[] {
   return members
     .filter((m) => (m.area_ids ?? []).length === 0)
     .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
@@ -96,7 +96,7 @@ export function pessoasSemArea(members: readonly Member[]): Member[] {
  * ⚠️ Gente pouca, e por isso cabe ao lado do nome em vez de virar secao: sao
  * os papeis de organizacao (ADMIN/GESTOR), que existem sem time.
  */
-export function gestoresDaOrganizacao(members: readonly Member[]): Member[] {
+export function organizationManagers(members: readonly Member[]): Member[] {
   return members
     .filter((m) => m.org_role != null)
     .sort((a, b) => {
@@ -107,8 +107,8 @@ export function gestoresDaOrganizacao(members: readonly Member[]): Member[] {
 }
 
 /** Uma pessoa achada pela busca, com as areas em que ela esta. */
-export type PessoaEncontrada = {
-  readonly membro: Member;
+export type FoundPerson = {
+  readonly member: Member;
   readonly areas: Team[];
 };
 
@@ -122,18 +122,18 @@ export type PessoaEncontrada = {
  * Casa por nome OU e-mail, sem acento e sem caixa: quem digita "jose" tem de
  * achar "José", e quem digita o comeco do e-mail tambem.
  */
-export function buscarPessoas(
-  termo: string,
+export function searchPeople(
+  term: string,
   members: readonly Member[],
   teams: readonly Team[],
-): PessoaEncontrada[] {
-  if (normalizar(termo) === "") return [];
+): FoundPerson[] {
+  if (normalizeText(term) === "") return [];
   return members
-    .filter((m) => casaComBusca(termo, m))
+    .filter((m) => matchesSearch(term, m))
     .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"))
-    .map((membro) => ({
-      membro,
-      areas: (membro.area_ids ?? [])
+    .map((member) => ({
+      member,
+      areas: (member.area_ids ?? [])
         .map((id) => teams.find((t) => t.id === id))
         .filter((t): t is Team => t !== undefined)
         .sort((a, b) => a.name.localeCompare(b.name, "pt-BR")),
@@ -141,7 +141,7 @@ export function buscarPessoas(
 }
 
 /**
- * A pessoa casa com o termo buscado?
+ * A pessoa casa com o term buscado?
  *
  * ⚠️⚠️ AS DUAS TELAS DE PESSOAS PERGUNTAM AQUI, e isso não é organização de
  * código: é a §5 da spec sendo cumprida. Ela avisa que *"duas telas listando
@@ -149,18 +149,18 @@ export function buscarPessoas(
  *
  * E a divergência EXISTIU: a busca de `/membros` nasceu com `toLowerCase()`
  * puro enquanto a da `/organizacao` já normalizava acento. Digitar "jose"
- * achava "José" numa tela e ninguém na outra — mesma pessoa, mesmo termo,
+ * achava "José" numa tela e ninguém na outra — mesma pessoa, mesmo term,
  * duas respostas. Achado no code review de 09/09.
  *
  * Casa por nome OU e-mail: quem digita o começo do e-mail também precisa
  * achar.
  */
-export function casaComBusca(termo: string, membro: Member): boolean {
-  const alvo = normalizar(termo);
+export function matchesSearch(term: string, member: Member): boolean {
+  const alvo = normalizeText(term);
   if (alvo === "") return true;
   return (
-    normalizar(membro.name).includes(alvo) ||
-    normalizar(membro.email).includes(alvo)
+    normalizeText(member.name).includes(alvo) ||
+    normalizeText(member.email).includes(alvo)
   );
 }
 
@@ -172,7 +172,7 @@ export function casaComBusca(termo: string, membro: Member): boolean {
  * pontas precisam concordar, senao a busca da tela acha o que a do servidor
  * nao acha.
  */
-function normalizar(s: string): string {
+function normalizeText(s: string): string {
   return s
     .normalize("NFD")
     .replace(/[̀-ͯ]/g, "")

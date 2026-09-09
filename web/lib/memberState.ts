@@ -20,29 +20,29 @@
 
 import type { Member } from "./api";
 
-export type EstadoDoMembro = "ativo" | "convidado" | "inativo";
+export type MemberState = "active" | "invited" | "inactive";
 
 /** A aba selecionada. `todos` existe para quem não quer filtrar. */
-export type AbaDeMembros = EstadoDoMembro | "todos";
+export type MemberStateTab = MemberState | "all";
 
-export function estadoDoMembro(membro: Member): EstadoDoMembro {
+export function memberState(member: Member): MemberState {
   // ⚠️ INATIVO GANHA DOS OUTROS DOIS. Alguém desativado antes de entrar é
-  // inativo, e não convidado: a conta não vale mais, e mostrá-la entre os
+  // inativo, e não invited: a conta não vale mais, e mostrá-la entre os
   // convidados convidaria a cobrar um acesso que não vai acontecer.
-  if (!membro.is_active) return "inativo";
-  return membro.must_change_password ? "convidado" : "ativo";
+  if (!member.is_active) return "inactive";
+  return member.must_change_password ? "invited" : "active";
 }
 
 /** Quantas pessoas em cada estado. Alimenta o número ao lado de cada aba. */
-export function contagemPorEstado(
-  membros: readonly Member[],
-): Record<EstadoDoMembro, number> {
-  const out: Record<EstadoDoMembro, number> = {
-    ativo: 0,
-    convidado: 0,
-    inativo: 0,
+export function countByState(
+  members: readonly Member[],
+): Record<MemberState, number> {
+  const out: Record<MemberState, number> = {
+    active: 0,
+    invited: 0,
+    inactive: 0,
   };
-  for (const m of membros) out[estadoDoMembro(m)] += 1;
+  for (const m of members) out[memberState(m)] += 1;
   return out;
 }
 
@@ -53,10 +53,10 @@ export function contagemPorEstado(
  * manda que esconder linha seja sempre visível como escolha. Quem abre a tela
  * numa aba vê o número dela E o total, nunca só o filtrado.
  */
-export function filtraPorAba(
-  membros: readonly Member[],
-  aba: AbaDeMembros,
+export function filterByState(
+  members: readonly Member[],
+  aba: MemberStateTab,
 ): Member[] {
-  if (aba === "todos") return [...membros];
-  return membros.filter((m) => estadoDoMembro(m) === aba);
+  if (aba === "all") return [...members];
+  return members.filter((m) => memberState(m) === aba);
 }

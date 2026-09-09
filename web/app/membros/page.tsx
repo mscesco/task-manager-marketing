@@ -7,19 +7,19 @@ import {
 } from "@/lib/permissoesMembros";
 import AppShell from "@/components/AppShell";
 import EmptyState from "@/components/EmptyState";
-import Abas from "@/components/Abas";
+import Tabs from "@/components/Tabs";
 import Badge from "@/components/Badge";
 import Card from "@/components/Card";
 import PageHeader from "@/components/PageHeader";
-import SenhaProvisoria from "@/components/SenhaProvisoria";
-import TabelaDeMembros from "@/components/TabelaDeMembros";
-import { linhasDaOrganizacao } from "@/lib/telaDoTime";
-import { casaComBusca } from "@/lib/organizacao";
+import TemporaryPassword from "@/components/TemporaryPassword";
+import MembersTable from "@/components/MembersTable";
+import { organizationRows } from "@/lib/teamScreen";
+import { matchesSearch } from "@/lib/organization";
 import {
-  contagemPorEstado,
-  estadoDoMembro,
-  type EstadoDoMembro,
-} from "@/lib/estadoDoMembro";
+  countByState,
+  memberState,
+  type MemberState,
+} from "@/lib/memberState";
 import { Search } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import {
@@ -36,7 +36,7 @@ import {
 
 // Membros: lista + cadastro (4a) + resetar senha / desativar (4b), gated por
 // team.manage. Reset e cadastro compartilham o reveal-once da senha (ADR 0008).
-const PAPEL_LABEL: Record<MemberRole, string> = {
+const ROLE_LABEL: Record<MemberRole, string> = {
   ADMIN: "Administrador",
   MANAGER: "Gerente",
   SUPERVISOR: "Supervisor",
@@ -49,7 +49,7 @@ const PAPEL_LABEL: Record<MemberRole, string> = {
 // `papeisAtribuiveis(alcance, souAdmin, ehRaiz)` -- que responde POR NIVEL.
 // Nao recrie: uma lista fixa aqui e exatamente o que oferecia ADMIN.
 
-type Revelado = { titulo: string; email: string; senha: string };
+type RevealedPassword = { title: string; email: string; password: string };
 
 export default function MembrosPage() {
   return (
@@ -60,13 +60,13 @@ export default function MembrosPage() {
 }
 
 function Membros() {
-  const [membros, setMembros] = useState<Member[] | null>(null);
-  const [times, setTimes] = useState<Team[]>([]);
+  const [members, setMembros] = useState<Member[] | null>(null);
+  const [teams, setTimes] = useState<Team[]>([]);
   const [erro, setErro] = useState<string | null>(null);
   const [me, setMe] = useState<CurrentUser | null>(null);
 
   // reveal-once compartilhado por cadastro e reset (ADR 0008).
-  const [revelado, setRevelado] = useState<Revelado | null>(null);
+  const [revelado, setRevelado] = useState<RevealedPassword | null>(null);
 
   // cadastro
   const [criando, setCriando] = useState(false);
@@ -82,12 +82,12 @@ function Membros() {
   // ⚠️ AS MESMAS TRÊS ABAS da tela de time, e pela mesma razão da tabela
   // compartilhada: são duas telas sobre pessoas, e recortes diferentes nas
   // duas fariam o mesmo cadastro contar histórias diferentes.
-  const [aba, setAba] = useState<EstadoDoMembro>("ativo");
+  const [aba, setAba] = useState<MemberState>("active");
 
   // Spec 028: o gate deixou de ser "tem team.manage?" e virou um ALCANCE.
   // A regra mora em lib/permissoesMembros (pura, testada); aqui so lemos.
-  const alcance = alcanceDe(me);
-  const souAdmin = me?.roles.includes("ADMIN") ?? false;
+  const scope = alcanceDe(me);
+  const isAdmin = me?.roles.includes("ADMIN") ?? false;
   // ⚠️⚠️ AQUI HAVIA `PAPEIS` INTEIRO, filtrado so por "sou admin?" (gate D2 da
   // Spec 014). A Spec 045 (fatia D) tornou isso errado em tres opcoes: ADMIN
   // saiu do nivel de time, MANAGER nao cabe em subtime e SUPERVISOR nao cabe
@@ -101,15 +101,15 @@ function Membros() {
   // "— selecione o time —", entao a lista vazia e o estado honesto.
   const papeisDisponiveis: MemberRole[] = timeId
     ? papeisAtribuiveis(
-        alcance,
-        souAdmin,
-        times.find((t) => t.id === timeId)?.parent_team_id == null,
+        scope,
+        isAdmin,
+        teams.find((t) => t.id === timeId)?.parent_team_id == null,
       )
     : [];
 
   // ⚠️ AQUI MORAVAM `nomeSubtime` e `nomeSubtimes`, que montavam o rótulo
   // "Pai › Filho" da coluna de subtimes. Ficaram sem uso quando `LinhaMembro`
-  // saiu (fatia E): a coluna de times é da `TabelaDeMembros` agora, e ela
+  // saiu (fatia E): a coluna de times é da `MembersTable` agora, e ela
   // mostra `Nome · Cargo` -- o cargo importa mais que o caminho na árvore
   // numa tela cujo assunto é permissão. O `tsc` não acusa função morta, e por
   // isso vale dizer que a remoção foi deliberada.
@@ -158,9 +158,9 @@ function Membros() {
         role: papel as MemberRole,
       });
       setRevelado({
-        titulo: `Membro cadastrado: ${novo.name}`,
+        title: `Membro cadastrado: ${novo.name}`,
         email: novo.email,
-        senha: novo.temporary_password,
+        password: novo.temporary_password,
       });
       setCriando(false);
       limparForm();
@@ -182,12 +182,12 @@ function Membros() {
   }
 
   if (erro) return <div className="error-box" style={{ maxWidth: 560 }}>{erro}</div>;
-  if (!membros) return <div className="muted">Carregando membros…</div>;
+  if (!members) return <div className="muted">Carregando members…</div>;
 
-  // ⚠️ AS LINHAS SAEM DE `linhasDaOrganizacao`, a MESMA função que alimenta a
+  // ⚠️ AS LINHAS SAEM DE `organizationRows`, a MESMA função que alimenta a
   // tela de time -- é o que garante que as duas telas contem a mesma história
   // sobre a mesma pessoa.
-  const todas = linhasDaOrganizacao(times, membros);
+  const todas = organizationRows(teams, members);
   // ⚠️ A MESMA FUNÇÃO que a busca da `/organizacao` usa. Ela nasceu aqui com
   // `toLowerCase()` puro, e "jose" achava "José" lá e ninguém aqui — mesma
   // pessoa, mesmo termo, duas respostas. Achado no code review de 09/09, e é
@@ -197,11 +197,11 @@ function Membros() {
   // "ana" mostraria "Convidados 7" com uma Ana só na tela.
   const filtrando = busca.trim() !== "";
   const buscadas = filtrando
-    ? todas.filter((l) => casaComBusca(busca, l.membro))
+    ? todas.filter((l) => matchesSearch(busca, l.member))
     : todas;
-  const contagem = contagemPorEstado(buscadas.map((l) => l.membro));
+  const count = countByState(buscadas.map((l) => l.member));
   const linhasVisiveis = buscadas.filter(
-    (l) => estadoDoMembro(l.membro) === aba,
+    (l) => memberState(l.member) === aba,
   );
 
   return (
@@ -217,29 +217,29 @@ function Membros() {
         // ⚠️ E "12 de 15" em vez de "12": a §3.2 é explícita em nunca mostrar
         // só o número do que sobrou, senão some a informação de que há mais.
         count={
-          linhasVisiveis.length === membros.length
-            ? membros.length
-            : `${linhasVisiveis.length} de ${membros.length}`
+          linhasVisiveis.length === members.length
+            ? members.length
+            : `${linhasVisiveis.length} de ${members.length}`
         }
         actions={
-          podeCadastrarMembro(alcance) && !criando && !revelado && (
+          podeCadastrarMembro(scope) && !criando && !revelado && (
             <button
               className="btn btn-primary ml-auto"
               onClick={() => setCriando(true)}
               style={{ padding: "8px 14px" }}
             >
-              + Cadastrar membro
+              + Cadastrar member
             </button>
           )
         }
       />
 
       {revelado && (
-        <SenhaProvisoria
-          titulo={revelado.titulo}
+        <TemporaryPassword
+          title={revelado.title}
           email={revelado.email}
-          senha={revelado.senha}
-          onFechar={() => setRevelado(null)}
+          password={revelado.password}
+          onClose={() => setRevelado(null)}
         />
       )}
 
@@ -260,8 +260,8 @@ function Membros() {
               <span className="label">Time</span>
               <select className="input" value={timeId} disabled={salvando}
                 onChange={(ev) => setTimeId(ev.target.value)}>
-                <option value="">— selecione o time —</option>
-                {times.map((t) => (
+                <option value="">— selecione o team —</option>
+                {teams.map((t) => (
                   <option key={t.id} value={t.id}>
                     {t.parent_team_id === null ? `${t.name} (geral)` : t.name}
                   </option>
@@ -274,15 +274,15 @@ function Membros() {
                 onChange={(ev) => setPapel(ev.target.value as MemberRole | "")}>
                 <option value="">—</option>
                 {papeisDisponiveis.map((p) => (
-                  <option key={p} value={p}>{PAPEL_LABEL[p]}</option>
+                  <option key={p} value={p}>{ROLE_LABEL[p]}</option>
                 ))}
               </select>
             </div>
           </div>
 
           <div className="muted" style={{ fontSize: 12, lineHeight: 1.45 }}>
-            Hoje todo membro do Marketing enxerga o quadro geral inteiro. O time
-            escolhido alimenta o filtro por time no quadro — não esconde tarefas.
+            Hoje todo member do Marketing enxerga o quadro geral inteiro. O team
+            escolhido alimenta o filtro por team no quadro — não esconde tarefas.
             O supervisor do subtime pode adicionar e remover operadores dele
             próprio (Spec 028).
           </div>
@@ -331,7 +331,7 @@ function Membros() {
         </div>
       )}
 
-      {membros.length === 0 ? (
+      {members.length === 0 ? (
         <EmptyState title="Nenhum membro" />
       ) : buscadas.length === 0 ? (
         <div className="muted">Ninguém com esse nome ou e-mail.</div>
@@ -341,22 +341,22 @@ function Membros() {
               comentário no cálculo. E `0` aparece: uma aba sem número
               lê-se como "não sei". */}
           <div className="mb-3">
-            <Abas
+            <Tabs
               aria-label="Estado das pessoas"
-              grupo="estado"
-              ativa={aba}
-              onEscolher={setAba}
-              abas={[
-                { id: "ativo", rotulo: "Ativos", contagem: contagem.ativo },
+              group="estado"
+              active={aba}
+              onSelect={setAba}
+              tabs={[
+                { id: "active", label: "Ativos", count: count.active },
                 {
-                  id: "convidado",
-                  rotulo: "Convidados",
-                  contagem: contagem.convidado,
+                  id: "invited",
+                  label: "Convidados",
+                  count: count.invited,
                 },
                 {
-                  id: "inativo",
-                  rotulo: "Inativos",
-                  contagem: contagem.inativo,
+                  id: "inactive",
+                  label: "Inativos",
+                  count: count.inactive,
                 },
               ]}
             />
@@ -372,21 +372,21 @@ function Membros() {
             >
               {linhasVisiveis.length === 0 ? (
                 <div className="muted rounded-lg border border-border bg-surface p-4 text-sm">
-                  {vazioDaAba(aba)}
+                  {emptyStateText(aba)}
                 </div>
               ) : (
         // ⚠️ A MESMA TABELA da tela de time. Uma tabela só, uma regra só -- a
         // §5 avisa que duas telas listando pessoas com regras diferentes é o
         // começo do próximo defeito de contador.
-        <TabelaDeMembros
-          linhas={linhasVisiveis}
-          times={times}
+        <MembersTable
+          rows={linhasVisiveis}
+          teams={teams}
           me={me}
-          colunaDoMeio={{
-            titulo: "Áreas",
+          middleColumn={{
+            title: "Áreas",
             render: (l) => {
-              const areas = (l.membro.area_ids ?? [])
-                .map((id) => times.find((t) => t.id === id))
+              const areas = (l.member.area_ids ?? [])
+                .map((id) => teams.find((t) => t.id === id))
                 .filter((t): t is Team => t !== undefined);
               return areas.length === 0 ? (
                 <Badge tone="outline" size="sm">
@@ -407,12 +407,12 @@ function Membros() {
           // aba, ou os dois. A §3.2: o defeito de 27/07 foi exatamente o
           // cabeçalho divergindo do corpo, e mostrar só o filtrado apaga a
           // informação de que existe mais.
-          contagem={
-            linhasVisiveis.length === membros.length
-              ? `${membros.length} ${membros.length === 1 ? "pessoa" : "pessoas"}`
-              : `${linhasVisiveis.length} de ${membros.length} pessoas`
+          count={
+            linhasVisiveis.length === members.length
+              ? `${members.length} ${members.length === 1 ? "pessoa" : "pessoas"}`
+              : `${linhasVisiveis.length} de ${members.length} pessoas`
           }
-          onMudou={async (texto) => {
+          onChanged={async (texto) => {
             setAviso(texto);
             await carregar();
           }}
@@ -433,13 +433,13 @@ function Membros() {
  * que perdeu registros — o mesmo mal-estar do defeito de contador de 27/07,
  * numa forma mais barata.
  */
-function vazioDaAba(aba: EstadoDoMembro): string {
+function emptyStateText(aba: MemberState): string {
   switch (aba) {
-    case "ativo":
+    case "active":
       return "Ninguém ativo neste recorte — veja as outras abas.";
-    case "convidado":
+    case "invited":
       return "Ninguém pendente: todo mundo já entrou pelo menos uma vez.";
-    case "inativo":
+    case "inactive":
       return "Ninguém desativado neste recorte.";
   }
 }
@@ -461,7 +461,7 @@ function vazioDaAba(aba: EstadoDoMembro): string {
 // mora só aqui -- este é o formulário que escolhe o TIME, e por isso serve
 // quem não veio de nenhuma tela de time.
 //
-// ⚠️ O bloco reveal-once da senha (ADR 0021) virou `components/SenhaProvisoria`
+// ⚠️ O bloco reveal-once da senha (ADR 0021) virou `components/TemporaryPassword`
 // em 09/09, quando a gaveta do membro ganhou "Resetar senha" e passou a
 // precisar dele também. Duas cópias divergiriam no AVISO -- e o aviso é a
 // parte que evita a perda do segredo.

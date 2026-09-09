@@ -24,8 +24,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 
 import ContextSwitcher, {
-  arvoresDoSeletor,
-  rotuloDoContexto,
+  switcherTrees,
+  contextLabel,
 } from "@/components/ContextSwitcher";
 import type { Team } from "@/lib/api";
 
@@ -36,20 +36,20 @@ const SEO = "t-seo";
 const JR = "t-jr";
 const TI = "t-ti";
 
-function time(id: string, nome: string, parent: string | null): Team {
+function team(id: string, nome: string, parent: string | null): Team {
   return { id, workspace_id: "ws", parent_team_id: parent, name: nome, slug: id };
 }
 
 const TIMES: Team[] = [
-  time(TI, "TI", null),
-  time(MKT, "Marketing", null),
-  time(SEO, "SEO", MKT),
-  time(JR, "SEO Junior", SEO),
+  team(TI, "TI", null),
+  team(MKT, "Marketing", null),
+  team(SEO, "SEO", MKT),
+  team(JR, "SEO Junior", SEO),
 ];
 
-describe("arvoresDoSeletor", () => {
+describe("switcherTrees", () => {
   it("agrupa por área, ordenado por nome", () => {
-    const arvores = arvoresDoSeletor(TIMES);
+    const arvores = switcherTrees(TIMES);
     expect(arvores.map((a) => a.area.name)).toEqual(["Marketing", "TI"]);
   });
 
@@ -57,47 +57,47 @@ describe("arvoresDoSeletor", () => {
     // ⚠️ Um menu com indentação de neto vira mapa, e mapa não se lê com o
     // mouse parado. O neto se alcança entrando no pai — a mesma escolha da
     // visão "Subtimes" da tela de time.
-    const marketing = arvoresDoSeletor(TIMES)[0];
-    expect(marketing.subtimes.map((t) => t.name)).toEqual(["SEO"]);
+    const marketing = switcherTrees(TIMES)[0];
+    expect(marketing.subteams.map((t) => t.name)).toEqual(["SEO"]);
   });
 
   it("área sem subtime não some da lista", () => {
-    const ti = arvoresDoSeletor(TIMES)[1];
-    expect(ti.subtimes).toEqual([]);
+    const ti = switcherTrees(TIMES)[1];
+    expect(ti.subteams).toEqual([]);
   });
 });
 
-describe("rotuloDoContexto", () => {
+describe("contextLabel", () => {
   it("numa tela de time, diz o nome do time", () => {
-    expect(rotuloDoContexto(`/times/${SEO}`, TIMES)).toBe("SEO");
+    expect(contextLabel(`/times/${SEO}`, TIMES)).toBe("SEO");
   });
 
   it("na organização, diz Organização", () => {
-    expect(rotuloDoContexto("/organizacao", TIMES)).toBe("Organização");
+    expect(contextLabel("/organizacao", TIMES)).toBe("Organização");
   });
 
   it("⭐ fora dessas telas NÃO inventa um time", () => {
     // ⚠️ Escolher um nome qualquer (o primeiro time, o time da pessoa)
     // sugeriria um contexto ativo que a tela não tem — e o seletor passaria a
     // mentir sobre onde a pessoa está.
-    expect(rotuloDoContexto("/minhas-tarefas", TIMES)).toBe(
+    expect(contextLabel("/minhas-tarefas", TIMES)).toBe(
       "Times e organização",
     );
   });
 
   it("time desconhecido cai no rótulo neutro, e não em vazio", () => {
-    expect(rotuloDoContexto("/times/sumiu", TIMES)).toBe("Times e organização");
+    expect(contextLabel("/times/sumiu", TIMES)).toBe("Times e organização");
   });
 });
 
 describe("ContextSwitcher", () => {
-  function abrir(podeGerirOrganizacao = true, pathname = "/minhas-tarefas") {
+  function abrir(canManageOrg = true, pathname = "/minhas-tarefas") {
     render(
       <ContextSwitcher
         teams={TIMES}
         pathname={pathname}
-        podeGerirOrganizacao={podeGerirOrganizacao}
-        expandida
+        canManageOrg={canManageOrg}
+        expanded
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: "Times e organização" }));
@@ -108,8 +108,8 @@ describe("ContextSwitcher", () => {
       <ContextSwitcher
         teams={TIMES}
         pathname="/minhas-tarefas"
-        podeGerirOrganizacao
-        expandida
+        canManageOrg
+        expanded
       />,
     );
     expect(screen.queryByRole("menu")).toBeNull();
@@ -165,7 +165,7 @@ describe("ContextSwitcher", () => {
 });
 
 // SABOTAGENS medidas:
-//   A. Ignorar `podeGerirOrganizacao` e mostrar sempre "Gerenciar a
+//   A. Ignorar `canManageOrg` e mostrar sempre "Gerenciar a
 //      organização". **Cai 1** -- o teste ⭐⭐.
 //   B. Incluir os netos na lista (trocar o filtro por `parent_team_id !==
 //      null` dentro da área). **Cai 3**.

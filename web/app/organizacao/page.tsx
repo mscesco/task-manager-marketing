@@ -10,7 +10,7 @@
 //     o time administra PESSOAS      (fatia C)
 //     o painel administra VINCULOS   (fatia D)
 //
-// ⚠️ TODA DECISAO MORA EM `lib/organizacao.ts`, testada -- aqui so desenha.
+// ⚠️ TODA DECISAO MORA EM `lib/organization.ts`, testada -- aqui so desenha.
 // `app/` esta FORA do `include` do vitest (§7 da spec), e o projeto ja pagou
 // por esquecer isso duas vezes: `candidatosParaAdicionar` (Spec 044) e
 // `computeLens`, que deixou passar a regressao de 09/09 ate alguem ver na
@@ -45,11 +45,11 @@ import {
   type Workspace,
 } from "@/lib/api";
 import {
-  buscarPessoas,
-  cardsDeArea,
-  gestoresDaOrganizacao,
-  pessoasSemArea,
-} from "@/lib/organizacao";
+  searchPeople,
+  areaCards,
+  organizationManagers,
+  peopleWithoutArea,
+} from "@/lib/organization";
 
 /**
  * Os papéis de ORGANIZAÇÃO, escritos como se lê.
@@ -65,20 +65,20 @@ import {
  * A primeira versão desta tela usava feminino ("Administradora"), porque a
  * prosa das specs escreve `SEO · supervisora` e o time é de mulheres. Isso
  * criava DUAS vozes no produto: a `/membros` sempre usou masculino
- * (`PAPEL_LABEL`: "Administrador", "Gerente", "Supervisor", "Operador").
+ * (`ROLE_LABEL`: "Administrador", "Gerente", "Supervisor", "Operador").
  *
  * ⚠️ A prosa das specs e os comentários FICAM como estão -- a decisão é
  * sobre o texto que o produto mostra, não sobre como escrevemos entre nós.
  */
-const ROTULO_ORG: Record<string, string> = {
+const ORG_ROLE_LABEL: Record<string, string> = {
   ADMIN: "Administrador",
   GESTOR: "Gestor",
 };
 
 export default function OrganizacaoPage() {
   const [ws, setWs] = useState<Workspace | null>(null);
-  const [times, setTimes] = useState<Team[]>([]);
-  const [membros, setMembros] = useState<Member[]>([]);
+  const [teams, setTimes] = useState<Team[]>([]);
+  const [members, setMembros] = useState<Member[]>([]);
   const [me, setMe] = useState<CurrentUser | null>(null);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
@@ -123,12 +123,12 @@ export default function OrganizacaoPage() {
   const podeRenomear = me?.permissions.includes("workspace.manage") ?? false;
   const podeCriarArea = me?.permissions.includes("area.create") ?? false;
 
-  const cards = useMemo(() => cardsDeArea(times, membros), [times, membros]);
-  const gestores = useMemo(() => gestoresDaOrganizacao(membros), [membros]);
-  const semArea = useMemo(() => pessoasSemArea(membros), [membros]);
+  const cards = useMemo(() => areaCards(teams, members), [teams, members]);
+  const gestores = useMemo(() => organizationManagers(members), [members]);
+  const semArea = useMemo(() => peopleWithoutArea(members), [members]);
   const achadas = useMemo(
-    () => buscarPessoas(busca, membros, times),
-    [busca, membros, times],
+    () => searchPeople(busca, members, teams),
+    [busca, members, teams],
   );
 
   return (
@@ -138,7 +138,7 @@ export default function OrganizacaoPage() {
           ws ? (
             <NomeDaOrganizacao
               nome={ws.name}
-              podeEditar={podeRenomear}
+              canEdit={podeRenomear}
               onRenomear={async (novo) => {
                 const atualizado = await renameWorkspace(novo);
                 setWs(atualizado);
@@ -165,23 +165,23 @@ export default function OrganizacaoPage() {
           <span className="muted text-xs">Ninguém</span>
         ) : (
           gestores.map((g) => (
-            <PapelDeOrganizacao
+            <OrgRoleField
               key={g.id}
-              membro={g}
-              podeEditar={podeRenomear}
-              souEu={g.id === me?.id}
+              member={g}
+              canEdit={podeRenomear}
+              isSelf={g.id === me?.id}
               // ⚠️ QUAL ESTA ABERTO E ESTADO DO PAI, e nao de cada pilula.
               // Com um `useState` por pilula, abrir a segunda nao fechava a
               // primeira e os dois paineis ficavam empilhados -- reportado
               // pela Camila em 09/09, com captura.
-              aberto={painelAberto === g.id}
-              onAbrir={() => setPainelAberto(painelAberto === g.id ? null : g.id)}
-              onFechar={() => setPainelAberto(null)}
-              onMudou={async () => {
+              isOpen={painelAberto === g.id}
+              onOpen={() => setPainelAberto(painelAberto === g.id ? null : g.id)}
+              onClose={() => setPainelAberto(null)}
+              onChanged={async () => {
                 setPainelAberto(null);
                 await carregar();
               }}
-              onAviso={setAviso}
+              onNotice={setAviso}
             />
           ))
         )}
@@ -251,7 +251,7 @@ export default function OrganizacaoPage() {
                   </div>
                 ) : (
                   <ul className="m-0 list-none p-0">
-                    {achadas.map(({ membro, areas }) => (
+                    {achadas.map(({ member, areas }) => (
                       // ⚠️ DUAS COLUNAS, e não uma linha que embrulha. Na
                       // primeira versão tudo era `flex-wrap`: com nome longo
                       // ("Jaqueline Cristina Lopes dos Santos") o botão da
@@ -261,19 +261,19 @@ export default function OrganizacaoPage() {
                       // Agora a esquerda ENCOLHE (`min-w-0`) e a ação é
                       // `shrink-0`: o que cede é o texto, não o layout.
                       <li
-                        key={membro.id}
+                        key={member.id}
                         className="flex items-center gap-3 border-b border-border px-3 py-2 last:border-b-0"
                       >
                         <span className="flex min-w-0 flex-wrap items-baseline gap-2">
                           <strong className="truncate text-sm">
-                            {membro.name}
+                            {member.name}
                           </strong>
                           <span className="muted truncate text-xs">
-                            {membro.email}
+                            {member.email}
                           </span>
-                        {membro.org_role && (
+                        {member.org_role && (
                           <Badge tone="soft" size="sm" color="var(--accent)">
-                            {ROTULO_ORG[membro.org_role]}
+                            {ORG_ROLE_LABEL[member.org_role]}
                           </Badge>
                         )}
                         {areas.length === 0 ? (
@@ -299,12 +299,12 @@ export default function OrganizacaoPage() {
                             rótulo — e "Tornar gestor" não é um fato sobre a
                             pessoa, é um botão.
                             ⚠️ `shrink-0`: quem cede espaço é o texto. */}
-                        {podeRenomear && !membro.org_role && (
+                        {podeRenomear && !member.org_role && (
                           <span className="ml-auto shrink-0">
                             <PromoverNaOrganizacao
-                              membro={membro}
-                              onMudou={carregar}
-                              onAviso={setAviso}
+                              member={member}
+                              onChanged={carregar}
+                              onNotice={setAviso}
                             />
                           </span>
                         )}
@@ -332,7 +332,7 @@ export default function OrganizacaoPage() {
               gap: 14,
             }}
           >
-            {cards.map(({ area, pessoas, subtimes }) => (
+            {cards.map(({ area, pessoas, subteams }) => (
               <Link
                 key={area.id}
                 href={`/times/${area.id}`}
@@ -341,7 +341,7 @@ export default function OrganizacaoPage() {
                 <strong className="text-[15px]">{area.name}</strong>
                 <div className="muted mt-1.5 text-xs">
                   {pessoas} {pessoas === 1 ? "pessoa" : "pessoas"} ·{" "}
-                  {subtimes} {subtimes === 1 ? "subtime" : "subtimes"}
+                  {subteams} {subteams === 1 ? "subtime" : "subtimes"}
                 </div>
               </Link>
             ))}
@@ -383,25 +383,25 @@ export default function OrganizacaoPage() {
 /** O nome da organização, editável no lugar. */
 function NomeDaOrganizacao({
   nome,
-  podeEditar,
+  canEdit,
   onRenomear,
 }: {
   nome: string;
-  podeEditar: boolean;
+  canEdit: boolean;
   onRenomear: (novo: string) => Promise<void>;
 }) {
   const [editando, setEditando] = useState(false);
-  const [valor, setValor] = useState(nome);
+  const [value, setValor] = useState(nome);
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
   useEffect(() => setValor(nome), [nome]);
 
-  if (!podeEditar || !editando) {
+  if (!canEdit || !editando) {
     return (
       <span style={{ display: "inline-flex", gap: 8, alignItems: "center" }}>
         {nome}
-        {podeEditar && (
+        {canEdit && (
           <button
             className="btn btn-ghost"
             aria-label="Renomear a organização"
@@ -418,7 +418,7 @@ function NomeDaOrganizacao({
   }
 
   async function salvar() {
-    const novo = valor.trim();
+    const novo = value.trim();
     // ⚠️ Vazio não é renomear -- e o backend recusaria com 422. Barrar aqui
     // evita a viagem; a recusa de verdade continua sendo dele.
     if (novo === "" || novo === nome) {
@@ -447,7 +447,7 @@ function NomeDaOrganizacao({
     <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
       <input
         className="input"
-        value={valor}
+        value={value}
         disabled={salvando}
         autoFocus
         maxLength={255}
@@ -485,7 +485,7 @@ function NomeDaOrganizacao({
 
 /** Criar uma ÁREA — time sem pai (Spec 046). */
 function CriarArea({ onCriada }: { onCriada: () => Promise<void> }) {
-  const [aberto, setAberto] = useState(false);
+  const [isOpen, setAberto] = useState(false);
   const [nome, setNome] = useState("");
   const [slug, setSlug] = useState("");
   const [salvando, setSalvando] = useState(false);
@@ -518,7 +518,7 @@ function CriarArea({ onCriada }: { onCriada: () => Promise<void> }) {
     }
   }
 
-  if (!aberto) {
+  if (!isOpen) {
     return (
       <button className="btn btn-primary" onClick={() => setAberto(true)}>
         <Plus size={14} aria-hidden="true" /> Nova área
@@ -578,24 +578,24 @@ function CriarArea({ onCriada }: { onCriada: () => Promise<void> }) {
  * MOSTRA é a consequência. Chave individual por permissão seria RBAC
  * editável entrando pela porta dos fundos, recusado em `decisoes.md` §10.1.
  */
-function PapelDeOrganizacao({
-  membro,
-  podeEditar,
-  souEu,
-  aberto,
-  onAbrir,
-  onFechar,
-  onMudou,
-  onAviso,
+function OrgRoleField({
+  member,
+  canEdit,
+  isSelf,
+  isOpen,
+  onOpen,
+  onClose,
+  onChanged,
+  onNotice,
 }: {
-  membro: Member;
-  podeEditar: boolean;
-  souEu: boolean;
-  aberto: boolean;
-  onAbrir: () => void;
-  onFechar: () => void;
-  onMudou: () => Promise<void>;
-  onAviso: (texto: string) => void;
+  member: Member;
+  canEdit: boolean;
+  isSelf: boolean;
+  isOpen: boolean;
+  onOpen: () => void;
+  onClose: () => void;
+  onChanged: () => Promise<void>;
+  onNotice: (texto: string) => void;
 }) {
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
@@ -611,27 +611,27 @@ function PapelDeOrganizacao({
   // ja registra essa distincao, e eu a ignorei na primeira versao -- o painel
   // simplesmente nao fechava.
   useEffect(() => {
-    if (!aberto) return;
+    if (!isOpen) return;
     function onDown(e: MouseEvent) {
       if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
-        onFechar();
+        onClose();
       }
     }
     document.addEventListener("mousedown", onDown);
     return () => document.removeEventListener("mousedown", onDown);
-  }, [aberto, onFechar]);
+  }, [isOpen, onClose]);
 
   // Fechar zera a confirmacao pendente -- reabrir nao pode cair no meio dela.
   useEffect(() => {
-    if (!aberto) setConfirmandoSaida(false);
-  }, [aberto]);
+    if (!isOpen) setConfirmandoSaida(false);
+  }, [isOpen]);
 
-  const rotulo = ROTULO_ORG[membro.org_role ?? ""] ?? "organização";
+  const label = ORG_ROLE_LABEL[member.org_role ?? ""] ?? "organização";
 
-  if (!podeEditar) {
+  if (!canEdit) {
     return (
       <Badge tone="soft" size="sm" color="var(--accent)">
-        {membro.name} · {rotulo}
+        {member.name} · {label}
       </Badge>
     );
   }
@@ -639,20 +639,20 @@ function PapelDeOrganizacao({
   async function aplicar(novo: OrgRole | null) {
     setSalvando(true);
     try {
-      await changeOrganizationRole(membro.id, novo);
+      await changeOrganizationRole(member.id, novo);
       setErro(null);
       // ⚠️ DIZ O QUE ACONTECEU, porque o efeito visivel e a pessoa SUMIR
       // desta lista -- ela deixou de administrar a organizacao, entao nao
       // pertence mais ao cabecalho. Sem esta frase parece que foi apagada.
-      onAviso(
+      onNotice(
         novo === null
-          ? `${membro.name} deixou de administrar a organização. A conta e os times dela continuam como estavam.`
+          ? `${member.name} deixou de administrar a organização. A conta e os times dela continuam como estavam.`
           // ⚠️ MINÚSCULA AQUI, ao contrário da pílula: no meio da frase o
           // papel é substantivo comum ("agora é gestor"), e não o rótulo que
-          // nomeia uma opção. Reusar `ROTULO_ORG` cru daria "agora é Gestora".
-          : `${membro.name} agora é ${ROTULO_ORG[novo].toLowerCase()}.`,
+          // nomeia uma opção. Reusar `ORG_ROLE_LABEL` cru daria "agora é Gestora".
+          : `${member.name} agora é ${ORG_ROLE_LABEL[novo].toLowerCase()}.`,
       );
-      await onMudou();
+      await onChanged();
     } catch (e) {
       const a = e as ApiError;
       setErro(
@@ -677,34 +677,34 @@ function PapelDeOrganizacao({
         className="tappable"
         onClick={() => {
           setErro(null);
-          onAbrir();
+          onOpen();
         }}
-        aria-expanded={aberto}
+        aria-expanded={isOpen}
       >
         <Badge tone="soft" size="sm" color="var(--accent)">
-          {membro.name} · {rotulo}
+          {member.name} · {label}
         </Badge>
       </button>
 
-      {aberto && (
+      {isOpen && (
         <div className="absolute left-0 top-full z-20 mt-1 w-[290px] rounded-lg border border-border bg-surface p-3 shadow-lg">
-          <div className="muted mb-2 text-xs">{membro.email}</div>
+          <div className="muted mb-2 text-xs">{member.email}</div>
 
           {/* ⚠️ A consequência de CADA papel, em texto. É o que a §4.3 pede no
               lugar de chaves por permissão. */}
           <Opcao
-            ativo={membro.org_role === "ADMIN"}
-            titulo="Administradora"
+            active={member.org_role === "ADMIN"}
+            title="Administradora"
             consequencia="Define a organização: renomeia, apaga área e promove gestores."
-            onEscolher={() => void aplicar("ADMIN")}
-            desabilitado={salvando}
+            onSelect={() => void aplicar("ADMIN")}
+            disabled={salvando}
           />
           <Opcao
-            ativo={membro.org_role === "GESTOR"}
-            titulo="Gestora"
+            active={member.org_role === "GESTOR"}
+            title="Gestora"
             consequencia="Opera a organização: cria área, cadastra pessoas e distribui papéis de time. Não desfaz a organização."
-            onEscolher={() => void aplicar("GESTOR")}
-            desabilitado={salvando}
+            onSelect={() => void aplicar("GESTOR")}
+            disabled={salvando}
           />
 
           {/* ---- deixar de administrar -------------------------------------
@@ -723,7 +723,7 @@ function PapelDeOrganizacao({
           {!confirmandoSaida ? (
             <button
               className="btn btn-ghost mt-2 w-full justify-start text-left"
-              disabled={salvando || souEu}
+              disabled={salvando || isSelf}
               onClick={() => setConfirmandoSaida(true)}
             >
               Tirar da administração
@@ -731,11 +731,11 @@ function PapelDeOrganizacao({
           ) : (
             <div className="mt-2 rounded border border-border p-2">
               <div className="text-xs">
-                <strong>{membro.name}</strong> deixa de administrar a
+                <strong>{member.name}</strong> deixa de administrar a
                 organização.
               </div>
               <div className="muted mt-1 text-xs">
-                A conta continua ativa e os times dela não mudam — ela só
+                A conta continua active e os teams dela não mudam — ela só
                 perde o papel de organização. Some deste cabeçalho porque ele
                 lista quem administra.
               </div>
@@ -757,7 +757,7 @@ function PapelDeOrganizacao({
               </div>
             </div>
           )}
-          {souEu && (
+          {isSelf && (
             <div className="muted mt-1 text-xs">
               {/* ⚠️ O backend barra o último admin com 409; barrar o PRÓPRIO
                   papel aqui é anti-lockout de tela, e a mensagem diz por quê
@@ -778,28 +778,28 @@ function PapelDeOrganizacao({
 
 /** Uma escolha de papel, com a consequência escrita embaixo. */
 function Opcao({
-  ativo,
-  titulo,
+  active,
+  title,
   consequencia,
-  onEscolher,
-  desabilitado,
+  onSelect,
+  disabled,
 }: {
-  ativo: boolean;
-  titulo: string;
+  active: boolean;
+  title: string;
   consequencia: string;
-  onEscolher: () => void;
-  desabilitado: boolean;
+  onSelect: () => void;
+  disabled: boolean;
 }) {
   return (
     <button
       className="tappable mb-1 block w-full rounded border border-border p-2 text-left"
-      onClick={onEscolher}
-      disabled={desabilitado || ativo}
-      aria-current={ativo}
+      onClick={onSelect}
+      disabled={disabled || active}
+      aria-current={active}
     >
       <span className="text-sm font-semibold">
-        {titulo}
-        {ativo && <span className="muted font-normal"> · atual</span>}
+        {title}
+        {active && <span className="muted font-normal"> · atual</span>}
       </span>
       <span className="muted mt-0.5 block text-xs">{consequencia}</span>
     </button>
@@ -808,13 +808,13 @@ function Opcao({
 
 /** Promove alguém que ainda não administra a organização. */
 function PromoverNaOrganizacao({
-  membro,
-  onMudou,
-  onAviso,
+  member,
+  onChanged,
+  onNotice,
 }: {
-  membro: Member;
-  onMudou: () => Promise<void>;
-  onAviso: (texto: string) => void;
+  member: Member;
+  onChanged: () => Promise<void>;
+  onNotice: (texto: string) => void;
 }) {
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
@@ -825,13 +825,13 @@ function PromoverNaOrganizacao({
       // ⚠️ GESTOR, e não ADMIN: promover para o papel que OPERA é o passo
       // reversível. Quem precisa de administrador sobe depois, pela pílula
       // no cabeçalho — que mostra a consequência antes.
-      await changeOrganizationRole(membro.id, "GESTOR");
+      await changeOrganizationRole(member.id, "GESTOR");
       setErro(null);
-      onAviso(
-        `${membro.name} agora é gestor e aparece no topo da organização. ` +
+      onNotice(
+        `${member.name} agora é gestor e aparece no topo da organização. ` +
           "Para tornar administrador, clique no nome lá.",
       );
-      await onMudou();
+      await onChanged();
     } catch (e) {
       const a = e as ApiError;
       setErro(a.message || "Não consegui promover.");

@@ -36,25 +36,25 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 
-import Abas from "@/components/Abas";
-import Alternador from "@/components/Alternador";
+import Tabs from "@/components/Tabs";
+import Toggle from "@/components/Toggle";
 
 afterEach(cleanup);
 
 const ABAS = [
-  { id: "ativo", rotulo: "Ativos", contagem: 5 },
-  { id: "convidado", rotulo: "Convidados", contagem: 0 },
-  { id: "inativo", rotulo: "Inativos" },
+  { id: "ativo", label: "Ativos", count: 5 },
+  { id: "convidado", label: "Convidados", count: 0 },
+  { id: "inativo", label: "Inativos" },
 ] as const;
 
-describe("Abas", () => {
+describe("Tabs", () => {
   it("marca `aria-selected` só na aba ativa", () => {
     render(
-      <Abas
+      <Tabs
         aria-label="Estado"
-        abas={ABAS}
-        ativa="convidado"
-        onEscolher={() => {}}
+        tabs={ABAS}
+        active="convidado"
+        onSelect={() => {}}
       />,
     );
     expect(screen.getByRole("tab", { selected: true }).textContent).toContain(
@@ -71,7 +71,7 @@ describe("Abas", () => {
     // ⚠️ O guarda tem de ser `!== undefined`. Qualquer teste de verdade
     // (`contagem ? …`, `contagem > 0 && …`) apaga o zero.
     render(
-      <Abas aria-label="Estado" abas={ABAS} ativa="ativo" onEscolher={() => {}} />,
+      <Tabs aria-label="Estado" tabs={ABAS} active="ativo" onSelect={() => {}} />,
     );
     expect(
       screen.getByRole("tab", { name: /Convidados/ }).textContent,
@@ -80,7 +80,7 @@ describe("Abas", () => {
 
   it("`contagem` ausente não inventa número", () => {
     render(
-      <Abas aria-label="Estado" abas={ABAS} ativa="ativo" onEscolher={() => {}} />,
+      <Tabs aria-label="Estado" tabs={ABAS} active="ativo" onSelect={() => {}} />,
     );
     expect(screen.getByRole("tab", { name: /Inativos/ }).textContent).toBe(
       "Inativos",
@@ -93,7 +93,7 @@ describe("Abas", () => {
     // devolver o índice, a aba errada, ou nada.
     const escolher = vi.fn();
     render(
-      <Abas aria-label="Estado" abas={ABAS} ativa="ativo" onEscolher={escolher} />,
+      <Tabs aria-label="Estado" tabs={ABAS} active="ativo" onSelect={escolher} />,
     );
     fireEvent.click(screen.getByRole("tab", { name: /Convidados/ }));
     expect(escolher).toHaveBeenCalledWith("convidado");
@@ -103,25 +103,25 @@ describe("Abas", () => {
     // ⚠️ Sem o `aria-label` no `tablist`, quem usa leitor de tela ouve "grupo
     // de abas" e não sabe DE QUE são as abas -- e esta tela tem duas fileiras.
     render(
-      <Abas aria-label="Estado" abas={ABAS} ativa="ativo" onEscolher={() => {}} />,
+      <Tabs aria-label="Estado" tabs={ABAS} active="ativo" onSelect={() => {}} />,
     );
     expect(screen.getByRole("tablist", { name: "Estado" })).toBeTruthy();
   });
 });
 
-describe("Alternador", () => {
+describe("Toggle", () => {
   const LADOS = [
-    { id: "membros", rotulo: "Membros", contagem: 8 },
-    { id: "subtimes", rotulo: "Subtimes", contagem: 7 },
+    { id: "membros", label: "Membros", count: 8 },
+    { id: "subtimes", label: "Subtimes", count: 7 },
   ] as const;
 
   it("marca `aria-selected` no lado ativo", () => {
     render(
-      <Alternador
+      <Toggle
         aria-label="O que ver"
-        lados={LADOS}
-        ativo="subtimes"
-        onEscolher={() => {}}
+        sides={LADOS}
+        active="subtimes"
+        onSelect={() => {}}
       />,
     );
     expect(screen.getByRole("tab", { selected: true }).textContent).toContain(
@@ -137,11 +137,11 @@ describe("Alternador", () => {
     // direta do contêiner (se virasse `absolute` dentro de um botão, o
     // `justify-content` deixaria de movê-la e a animação sumiria em silêncio).
     const { rerender } = render(
-      <Alternador
+      <Toggle
         aria-label="O que ver"
-        lados={LADOS}
-        ativo="membros"
-        onEscolher={() => {}}
+        sides={LADOS}
+        active="membros"
+        onSelect={() => {}}
       />,
     );
     const grupo = screen.getByRole("tablist");
@@ -152,11 +152,11 @@ describe("Alternador", () => {
     const pastilha = emFluxo()[0];
 
     rerender(
-      <Alternador
+      <Toggle
         aria-label="O que ver"
-        lados={LADOS}
-        ativo="subtimes"
-        onEscolher={() => {}}
+        sides={LADOS}
+        active="subtimes"
+        onSelect={() => {}}
       />,
     );
     // O MESMO nó do DOM, e não um substituto.
@@ -168,22 +168,22 @@ describe("Alternador", () => {
     // motion fica sem nada para observar e a pastilha para de deslizar. O
     // jsdom não mede posições, mas ESTA propriedade ele guarda.
     const { rerender } = render(
-      <Alternador
+      <Toggle
         aria-label="O que ver"
-        lados={LADOS}
-        ativo="membros"
-        onEscolher={() => {}}
+        sides={LADOS}
+        active="membros"
+        onSelect={() => {}}
       />,
     );
     const grupo = screen.getByRole("tablist") as HTMLElement;
     expect(grupo.style.justifyContent).toBe("flex-start");
 
     rerender(
-      <Alternador
+      <Toggle
         aria-label="O que ver"
-        lados={LADOS}
-        ativo="subtimes"
-        onEscolher={() => {}}
+        sides={LADOS}
+        active="subtimes"
+        onSelect={() => {}}
       />,
     );
     expect(grupo.style.justifyContent).toBe("flex-end");
@@ -192,11 +192,11 @@ describe("Alternador", () => {
   it("o clique devolve o id do lado", () => {
     const escolher = vi.fn();
     render(
-      <Alternador
+      <Toggle
         aria-label="O que ver"
-        lados={LADOS}
-        ativo="membros"
-        onEscolher={escolher}
+        sides={LADOS}
+        active="membros"
+        onSelect={escolher}
       />,
     );
     fireEvent.click(screen.getByRole("tab", { name: /Subtimes/ }));

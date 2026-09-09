@@ -1,5 +1,5 @@
 "use client";
-// components/SidebarDoSubtime.tsx
+// components/SubteamDrawer.tsx
 // A gaveta do subtime — Spec 047, redesenho de 09/09.
 //
 // ⚠️ MESMO FORMATO da gaveta do membro, e isso é intencional: o alternador
@@ -34,35 +34,35 @@ import {
   type Team,
 } from "@/lib/api";
 import { confirmacaoValida, descreveConteudo } from "@/lib/gestaoTimes";
-import { PAPEL } from "@/components/TabelaDeMembros";
-import { membrosDiretos, candidatosAoSubtime } from "@/lib/telaDoTime";
+import { ROLE_LABEL } from "@/components/MembersTable";
+import { directMembers, subteamCandidates } from "@/lib/teamScreen";
 
-export default function SidebarDoSubtime({
-  time,
-  membros,
-  souAdmin,
-  podeMexer,
-  onFechar,
-  onMudou,
+export default function SubteamDrawer({
+  team,
+  members,
+  isAdmin,
+  canManage,
+  onClose,
+  onChanged,
 }: {
-  time: Team;
+  team: Team;
   /** Todo mundo da árvore do time PAI — de onde saem os candidatos. */
-  membros: Member[];
+  members: Member[];
   /** Só administrador remove time (Spec 029, D1). */
-  souAdmin: boolean;
-  podeMexer: boolean;
-  onFechar: () => void;
-  onMudou: (aviso: string) => Promise<void>;
+  isAdmin: boolean;
+  canManage: boolean;
+  onClose: () => void;
+  onChanged: (aviso: string) => Promise<void>;
 }) {
-  const dentro = membrosDiretos(time.id, membros);
-  const candidatos = candidatosAoSubtime(time.id, membros);
+  const dentro = directMembers(team.id, members);
+  const candidates = subteamCandidates(team.id, members);
 
   return (
     <>
       <div
         className="fixed inset-0 z-40 bg-black/10"
         onMouseDown={(e) => {
-          if (e.target === e.currentTarget) onFechar();
+          if (e.target === e.currentTarget) onClose();
         }}
       />
       <motion.aside
@@ -73,27 +73,27 @@ export default function SidebarDoSubtime({
         className="fixed right-0 top-0 z-50 flex h-full w-full max-w-[420px] flex-col border-l border-border bg-surface"
         role="dialog"
         aria-modal="true"
-        aria-label={`Editar ${time.name}`}
+        aria-label={`Editar ${team.name}`}
         onKeyDown={(e) => {
-          if (e.key === "Escape") onFechar();
+          if (e.key === "Escape") onClose();
         }}
       >
-        {/* Ver o comentário gêmeo em `SidebarDoMembro`. */}
+        {/* Ver o comentário gêmeo em `MemberDrawer`. */}
         <div className="flex items-center gap-3 border-b border-border p-4">
           <div className="min-w-0 flex-1">
-            <h2 className="truncate text-lg font-semibold">{time.name}</h2>
+            <h2 className="truncate text-lg font-semibold">{team.name}</h2>
             <div className="muted truncate text-xs">
               Subtime · {dentro.length}{" "}
               {dentro.length === 1 ? "pessoa" : "pessoas"}
             </div>
           </div>
-          <button className="btn btn-ghost" aria-label="Fechar" onClick={onFechar}>
+          <button className="btn btn-ghost" aria-label="Fechar" onClick={onClose}>
             <X size={16} aria-hidden="true" />
           </button>
         </div>
 
         <div className="flex-1 overflow-y-auto p-4">
-          {podeMexer && <Identidade time={time} onMudou={onMudou} />}
+          {canManage && <Identity team={team} onChanged={onChanged} />}
 
           <section className="mt-5">
             <h3 className="label mb-2">Quem está aqui</h3>
@@ -103,12 +103,12 @@ export default function SidebarDoSubtime({
               </div>
             ) : (
               <ul className="m-0 list-none space-y-1.5 p-0">
-                {dentro.map(({ membro, role }) => (
+                {dentro.map(({ member, role }) => (
                   <li
-                    key={membro.id}
+                    key={member.id}
                     className="flex flex-wrap items-center gap-2 rounded border border-border p-2"
                   >
-                    <strong className="text-sm">{membro.name}</strong>
+                    <strong className="text-sm">{member.name}</strong>
                     {/* ⚠️ O CARGO APARECE, mas NÃO se edita aqui. Trocar
                         cargo é assunto da gaveta do MEMBRO, que mostra os
                         outros vínculos da pessoa -- e é olhando os outros
@@ -117,13 +117,13 @@ export default function SidebarDoSubtime({
                         mesma escrita seriam duas chances de decidir no
                         escuro. */}
                     <Badge tone="neutral" size="sm" className="border">
-                      {PAPEL[role]}
+                      {ROLE_LABEL[role]}
                     </Badge>
-                    {podeMexer && (
-                      <TirarDaqui
-                        membro={membro}
-                        time={time}
-                        onMudou={onMudou}
+                    {canManage && (
+                      <RemoveFromTeam
+                        member={member}
+                        team={team}
+                        onChanged={onChanged}
                       />
                     )}
                   </li>
@@ -132,18 +132,18 @@ export default function SidebarDoSubtime({
             )}
           </section>
 
-          {podeMexer && candidatos.length > 0 && (
-            <AdicionarMembro
-              time={time}
-              candidatos={candidatos}
-              onMudou={onMudou}
+          {canManage && candidates.length > 0 && (
+            <AddMember
+              team={team}
+              candidates={candidates}
+              onChanged={onChanged}
             />
           )}
 
           {/* ⚠️ SÓ ADMINISTRADOR, e a trava é da Spec 029 (D1): remover time
               exige `workspace.manage`. Mostrar o botão a um gerente daria
               403 depois que ele já digitou o nome do time para confirmar. */}
-          {souAdmin && <Excluir time={time} onMudou={onMudou} />}
+          {isAdmin && <DeleteTeam team={team} onChanged={onChanged} />}
         </div>
       </motion.aside>
     </>
@@ -151,21 +151,21 @@ export default function SidebarDoSubtime({
 }
 
 /** Nome e identificador. */
-function Identidade({
-  time,
-  onMudou,
+function Identity({
+  team,
+  onChanged,
 }: {
-  time: Team;
-  onMudou: (aviso: string) => Promise<void>;
+  team: Team;
+  onChanged: (aviso: string) => Promise<void>;
 }) {
-  const [nome, setNome] = useState(time.name);
+  const [nome, setNome] = useState(team.name);
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
-  const mudou = nome.trim() !== time.name && nome.trim() !== "";
+  const mudou = nome.trim() !== team.name && nome.trim() !== "";
 
   return (
     <section>
-      <h3 className="label mb-2">Identidade</h3>
+      <h3 className="label mb-2">Identity</h3>
       <label className="label block text-xs" htmlFor="nome-do-subtime">
         Nome
       </label>
@@ -183,7 +183,7 @@ function Identidade({
           o padrão "botão que a tela oferece e o servidor recusa" que a Spec
           044 registrou. */}
       <div className="muted mt-2 text-xs">
-        Identificador: <code>{time.slug}</code> — fixo desde a criação.
+        Identificador: <code>{team.slug}</code> — fixo desde a criação.
       </div>
 
       {erro && <div className="error-box mt-2 text-xs">{erro}</div>}
@@ -197,8 +197,8 @@ function Identidade({
               setSalvando(true);
               setErro(null);
               try {
-                await updateTeam(time.id, { name: nome.trim() });
-                await onMudou(`O time agora se chama ${nome.trim()}.`);
+                await updateTeam(team.id, { name: nome.trim() });
+                await onChanged(`O time agora se chama ${nome.trim()}.`);
               } catch (e) {
                 const a = e as ApiError;
                 setErro(
@@ -216,7 +216,7 @@ function Identidade({
           <button
             className="btn btn-ghost"
             disabled={salvando}
-            onClick={() => setNome(time.name)}
+            onClick={() => setNome(team.name)}
           >
             Cancelar
           </button>
@@ -226,14 +226,14 @@ function Identidade({
   );
 }
 
-function TirarDaqui({
-  membro,
-  time,
-  onMudou,
+function RemoveFromTeam({
+  member,
+  team,
+  onChanged,
 }: {
-  membro: Member;
-  time: Team;
-  onMudou: (aviso: string) => Promise<void>;
+  member: Member;
+  team: Team;
+  onChanged: (aviso: string) => Promise<void>;
 }) {
   const [confirmando, setConfirmando] = useState(false);
   const [salvando, setSalvando] = useState(false);
@@ -252,7 +252,7 @@ function TirarDaqui({
   return (
     <div className="w-full">
       <div className="text-xs">
-        {membro.name} sai de {time.name}. A conta continua ativa.
+        {member.name} sai de {team.name}. A conta continua active.
       </div>
       {erro && <div className="error-box mt-1 text-xs">{erro}</div>}
       <div className="mt-1.5 flex gap-2">
@@ -262,8 +262,8 @@ function TirarDaqui({
           onClick={async () => {
             setSalvando(true);
             try {
-              await removeMemberFromTeam(membro.id, time.id);
-              await onMudou(`${membro.name} saiu de ${time.name}.`);
+              await removeMemberFromTeam(member.id, team.id);
+              await onChanged(`${member.name} saiu de ${team.name}.`);
             } catch (e) {
               const a = e as ApiError;
               setErro(
@@ -289,14 +289,14 @@ function TirarDaqui({
   );
 }
 
-function AdicionarMembro({
-  time,
-  candidatos,
-  onMudou,
+function AddMember({
+  team,
+  candidates,
+  onChanged,
 }: {
-  time: Team;
-  candidatos: Member[];
-  onMudou: (aviso: string) => Promise<void>;
+  team: Team;
+  candidates: Member[];
+  onChanged: (aviso: string) => Promise<void>;
 }) {
   const [alvo, setAlvo] = useState("");
   const [salvando, setSalvando] = useState(false);
@@ -304,7 +304,7 @@ function AdicionarMembro({
 
   return (
     <section className="mt-4">
-      <h3 className="label mb-2">Adicionar membro</h3>
+      <h3 className="label mb-2">Adicionar member</h3>
       {/* ⚠️ SÓ QUEM JÁ ESTÁ NA ÁRVORE, e não a organização inteira: cadastrar
           pessoa nova dispara senha provisória e é outra ação (D3 da Spec 028).
           Misturar as duas num mesmo seletor faria o "adicionar" às vezes criar
@@ -317,7 +317,7 @@ function AdicionarMembro({
         onChange={(e) => setAlvo(e.target.value)}
       >
         <option value="">— escolha a pessoa —</option>
-        {candidatos.map((m) => (
+        {candidates.map((m) => (
           <option key={m.id} value={m.id}>
             {m.name}
           </option>
@@ -334,9 +334,9 @@ function AdicionarMembro({
           setSalvando(true);
           setErro(null);
           try {
-            await assignMemberToTeam(alvo, time.id, "OPERATOR");
-            const nome = candidatos.find((m) => m.id === alvo)?.name ?? "";
-            await onMudou(`${nome} entrou em ${time.name} como operador.`);
+            await assignMemberToTeam(alvo, team.id, "OPERATOR");
+            const nome = candidates.find((m) => m.id === alvo)?.name ?? "";
+            await onChanged(`${nome} entrou em ${team.name} como operador.`);
           } catch (e) {
             setErro((e as ApiError).message || "Não consegui adicionar.");
           } finally {
@@ -359,14 +359,14 @@ function AdicionarMembro({
  * produto — e seria a porta que fica mais perto do dedo de quem administra o
  * time todo dia.
  */
-function Excluir({
-  time,
-  onMudou,
+function DeleteTeam({
+  team,
+  onChanged,
 }: {
-  time: Team;
-  onMudou: (aviso: string) => Promise<void>;
+  team: Team;
+  onChanged: (aviso: string) => Promise<void>;
 }) {
-  const [aberto, setAberto] = useState(false);
+  const [isOpen, setAberto] = useState(false);
   const [previa, setPrevia] = useState<PreviaRemocao | null>(null);
   const [carregandoPrevia, setCarregandoPrevia] = useState(false);
   const [digitado, setDigitado] = useState("");
@@ -374,26 +374,26 @@ function Excluir({
   const [erro, setErro] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!aberto) return;
+    if (!isOpen) return;
     let vivo = true;
     setCarregandoPrevia(true);
-    previaRemocaoTeam(time.id)
+    previaRemocaoTeam(team.id)
       .then((p) => vivo && setPrevia(p))
       .catch(() => vivo && setPrevia(null))
       .finally(() => vivo && setCarregandoPrevia(false));
     return () => {
       vivo = false;
     };
-  }, [aberto, time.id]);
+  }, [isOpen, team.id]);
 
-  if (!aberto) {
+  if (!isOpen) {
     return (
       <div className="mt-6 border-t border-border pt-3">
         <button
           className="btn btn-ghost px-0 text-xs"
           onClick={() => setAberto(true)}
         >
-          Excluir {time.name}
+          DeleteTeam {team.name}
         </button>
       </div>
     );
@@ -411,7 +411,7 @@ function Excluir({
 
   return (
     <div className="mt-6 rounded border border-border p-3">
-      <div className="text-sm font-semibold">Excluir {time.name}</div>
+      <div className="text-sm font-semibold">DeleteTeam {team.name}</div>
 
       {carregandoPrevia ? (
         <div className="muted mt-1 text-xs">Conferindo o que há dentro…</div>
@@ -434,7 +434,7 @@ function Excluir({
       {!temFilhos && !carregandoPrevia && (
         <>
           <label className="label mt-3 block text-xs" htmlFor="confirma-excluir">
-            Digite <strong>{time.name}</strong> para confirmar
+            Digite <strong>{team.name}</strong> para confirmar
           </label>
           <input
             id="confirma-excluir"
@@ -455,7 +455,7 @@ function Excluir({
             salvando ||
             carregandoPrevia ||
             temFilhos ||
-            !confirmacaoValida(digitado, time.name)
+            !confirmacaoValida(digitado, team.name)
           }
           onClick={async () => {
             setSalvando(true);
@@ -469,11 +469,11 @@ function Excluir({
                 previa.projetos === 0 &&
                 previa.membros === 0;
               if (vazio) {
-                await deleteTeam(time.id);
+                await deleteTeam(team.id);
               } else {
-                await esvaziarERemoverTeam(time.id);
+                await esvaziarERemoverTeam(team.id);
               }
-              await onMudou(`${time.name} foi excluído.`);
+              await onChanged(`${team.name} foi excluído.`);
             } catch (e) {
               const a = e as ApiError;
               // O 409 do backend já vem com os números — e ele é a fonte da
@@ -489,7 +489,7 @@ function Excluir({
             }
           }}
         >
-          Excluir
+          DeleteTeam
         </button>
         <button
           className="btn btn-ghost"

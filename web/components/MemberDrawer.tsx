@@ -1,5 +1,5 @@
 "use client";
-// components/SidebarDoMembro.tsx
+// components/MemberDrawer.tsx
 // A gaveta do membro — Spec 047, redesenho de 09/09.
 //
 // ⚠️⚠️ ELA SUBSTITUI O `⋯` **E** O MODAL, e isso foi decisão da Camila
@@ -20,7 +20,7 @@ import { useEffect, useState } from "react";
 import { motion } from "motion/react";
 import { ChevronRight, X } from "lucide-react";
 import Badge from "@/components/Badge";
-import SeletorEmPilula from "@/components/SeletorEmPilula";
+import PillSelect from "@/components/PillSelect";
 import {
   ApiError,
   assignMemberToTeam,
@@ -36,7 +36,7 @@ import {
   type OrgRole,
   type Team,
 } from "@/lib/api";
-import { consequenciaDoCargo, vinculosDoPainel } from "@/lib/painelDoMembro";
+import { roleConsequence, drawerMemberships } from "@/lib/memberDrawer";
 import {
   papeisAtribuiveis,
   podeDesativarConta,
@@ -46,14 +46,14 @@ import {
   type Alcance,
 } from "@/lib/permissoesMembros";
 
-const PAPEL: Record<MemberRole, string> = {
+const ROLE_LABEL: Record<MemberRole, string> = {
   ADMIN: "Administrador",
   MANAGER: "Gerente",
   SUPERVISOR: "Supervisor",
   OPERATOR: "Operador",
 };
 
-const PAPEL_ORG: Record<OrgRole, string> = {
+const ORG_ROLE_LABEL: Record<OrgRole, string> = {
   ADMIN: "Administrador",
   GESTOR: "Gestor",
 };
@@ -62,30 +62,30 @@ const PAPEL_ORG: Record<OrgRole, string> = {
  * Papéis que mandam na ÁRVORE inteira, e não só no time onde estão.
  *
  * ⚠️ Espelha `COMMAND_ROLES` de `auth/domain/team_scope.py`. Vira a bolinha
- * cheia do seletor — ver `OpcaoDePilula.comanda`.
+ * cheia do seletor — ver `PillOption.comanda`.
  */
-const COMANDA: MemberRole[] = ["ADMIN", "MANAGER"];
+const COMMAND_ROLES: MemberRole[] = ["ADMIN", "MANAGER"];
 
-export default function SidebarDoMembro({
-  membro,
-  times,
-  alcance,
-  souAdmin,
-  podeMexerNaOrganizacao,
-  souEu,
-  onFechar,
-  onMudou,
-  onRevelarSenha,
+export default function MemberDrawer({
+  member,
+  teams,
+  scope,
+  isAdmin,
+  canManageOrg,
+  isSelf,
+  onClose,
+  onChanged,
+  onRevealPassword,
 }: {
-  membro: Member;
-  times: Team[];
-  alcance: Alcance;
-  souAdmin: boolean;
-  podeMexerNaOrganizacao: boolean;
-  souEu: boolean;
-  onFechar: () => void;
-  onMudou: (aviso: string) => Promise<void>;
-  onRevelarSenha: (r: { titulo: string; email: string; senha: string }) => void;
+  member: Member;
+  teams: Team[];
+  scope: Alcance;
+  isAdmin: boolean;
+  canManageOrg: boolean;
+  isSelf: boolean;
+  onClose: () => void;
+  onChanged: (aviso: string) => Promise<void>;
+  onRevealPassword: (r: { title: string; email: string; password: string }) => void;
 }) {
   const [vinculos, setVinculos] = useState<MemberTeamComCadeado[] | null>(null);
   const [erro, setErro] = useState<string | null>(null);
@@ -93,7 +93,7 @@ export default function SidebarDoMembro({
 
   useEffect(() => {
     let vivo = true;
-    listMemberTeams(membro.id)
+    listMemberTeams(member.id)
       .then((v) => vivo && setVinculos(v))
       .catch((e) =>
         vivo ? setErro((e as ApiError).message || "Não consegui carregar.") : null,
@@ -101,17 +101,17 @@ export default function SidebarDoMembro({
     return () => {
       vivo = false;
     };
-  }, [membro.id]);
+  }, [member.id]);
 
-  const linhas = vinculos ? vinculosDoPainel(vinculos, times) : [];
+  const rows = vinculos ? drawerMemberships(vinculos, teams) : [];
   // ⚠️ DOIS FILTROS, e nenhum é dispensável: `jaEsta` espelha o
   // `UNIQUE (user_id, team_id)` do banco (oferecer daria 409), e
   // `timesParaAdicionar` corta pelo ALCANCE — o supervisor só puxa gente para
   // os próprios subtimes (D1 da Spec 028).
-  const jaEsta = new Set(linhas.map((l) => l.team.id));
-  const disponiveis = timesParaAdicionar(
-    alcance,
-    times.filter((t) => !jaEsta.has(t.id)),
+  const jaEsta = new Set(rows.map((l) => l.team.id));
+  const availableTeams = timesParaAdicionar(
+    scope,
+    teams.filter((t) => !jaEsta.has(t.id)),
   ).sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
 
   return (
@@ -122,7 +122,7 @@ export default function SidebarDoMembro({
       <div
         className="fixed inset-0 z-40 bg-black/10"
         onMouseDown={(e) => {
-          if (e.target === e.currentTarget) onFechar();
+          if (e.target === e.currentTarget) onClose();
         }}
       />
       <motion.aside
@@ -135,9 +135,9 @@ export default function SidebarDoMembro({
         className="fixed right-0 top-0 z-50 flex h-full w-full max-w-[420px] flex-col border-l border-border bg-surface"
         role="dialog"
         aria-modal="true"
-        aria-label={`Editar ${membro.name}`}
+        aria-label={`Editar ${member.name}`}
         onKeyDown={(e) => {
-          if (e.key === "Escape") onFechar();
+          if (e.key === "Escape") onClose();
         }}
       >
         {/* ⚠️ `items-center`, e não `items-start`: o nome e o e-mail são
@@ -145,10 +145,10 @@ export default function SidebarDoMembro({
             do nome em vez de acompanhar o par. */}
         <div className="flex items-center gap-3 border-b border-border p-4">
           <div className="min-w-0 flex-1">
-            <h2 className="truncate text-lg font-semibold">{membro.name}</h2>
-            <div className="muted truncate text-xs">{membro.email}</div>
+            <h2 className="truncate text-lg font-semibold">{member.name}</h2>
+            <div className="muted truncate text-xs">{member.email}</div>
           </div>
-          <button className="btn btn-ghost" aria-label="Fechar" onClick={onFechar}>
+          <button className="btn btn-ghost" aria-label="Fechar" onClick={onClose}>
             <X size={16} aria-hidden="true" />
           </button>
         </div>
@@ -162,44 +162,44 @@ export default function SidebarDoMembro({
               um time acima, "Desativar" lido junto dos vínculos parece "tirar
               deste time" (§4.2). */}
           <div className="mb-5 flex flex-wrap gap-2">
-            {podeResetarSenha(alcance) && (
-              <ResetarSenha membro={membro} onRevelar={onRevelarSenha} />
+            {podeResetarSenha(scope) && (
+              <ResetPassword member={member} onReveal={onRevealPassword} />
             )}
-            {membro.is_active && podeDesativarConta(alcance) && !souEu && (
-              <Desativar membro={membro} onMudou={onMudou} />
+            {member.is_active && podeDesativarConta(scope) && !isSelf && (
+              <Deactivate member={member} onChanged={onChanged} />
             )}
           </div>
 
-          {podeMexerNaOrganizacao && (
+          {canManageOrg && (
             <section className="mb-5">
               <h3 className="label mb-2">Na organização</h3>
-              <PapelDeOrganizacao
-                membro={membro}
-                souEu={souEu}
-                onMudou={onMudou}
+              <OrgRoleField
+                member={member}
+                isSelf={isSelf}
+                onChanged={onChanged}
               />
             </section>
           )}
 
           <section>
-            <h3 className="label mb-2">Relação de times e subtimes</h3>
+            <h3 className="label mb-2">Relação de teams e subteams</h3>
             {vinculos === null ? (
               <div className="muted text-xs">Carregando…</div>
-            ) : linhas.length === 0 ? (
+            ) : rows.length === 0 ? (
               <div className="muted text-xs">
-                Sem vínculo de time. A pessoa existe na organização, mas não
-                está em nenhum time.
+                Sem vínculo de team. A pessoa existe na organização, mas não
+                está em nenhum team.
               </div>
             ) : (
               <ul className="m-0 list-none space-y-2 p-0">
-                {linhas.map((linha) => (
-                  <LinhaDeVinculo
-                    key={linha.team.id}
-                    linha={linha}
-                    membro={membro}
-                    alcance={alcance}
-                    souAdmin={souAdmin}
-                    onMudou={onMudou}
+                {rows.map((row) => (
+                  <MembershipRow
+                    key={row.team.id}
+                    row={row}
+                    member={member}
+                    scope={scope}
+                    isAdmin={isAdmin}
+                    onChanged={onChanged}
                   />
                 ))}
               </ul>
@@ -208,22 +208,22 @@ export default function SidebarDoMembro({
             {/* ⚠️ ADICIONAR A UM TIME MORA AQUI, e é o que antes era o lápis.
                 Uma porta só para "o vínculo": em quais times, e com que cargo
                 em cada um. */}
-            {disponiveis.length > 0 && (
+            {availableTeams.length > 0 && (
               <div className="mt-3">
                 {!adicionando ? (
                   <button
                     className="btn btn-ghost flex items-center gap-1 text-sm"
                     onClick={() => setAdicionando(true)}
                   >
-                    Adicionar a um time
+                    Adicionar a um team
                     <ChevronRight size={14} aria-hidden="true" />
                   </button>
                 ) : (
-                  <AdicionarATime
-                    membro={membro}
-                    disponiveis={disponiveis}
-                    onCancelar={() => setAdicionando(false)}
-                    onMudou={onMudou}
+                  <AddToTeam
+                    member={member}
+                    availableTeams={availableTeams}
+                    onCancel={() => setAdicionando(false)}
+                    onChanged={onChanged}
                   />
                 )}
               </div>
@@ -246,33 +246,33 @@ export default function SidebarDoMembro({
  * ⚠️ E a consequência NOMEIA O TIME — "Administra os operadores do SEO" diz
  * algo; "tem permissões de supervisor" não diz nada a quem está decidindo.
  */
-function LinhaDeVinculo({
-  linha,
-  membro,
-  alcance,
-  souAdmin,
-  onMudou,
+function MembershipRow({
+  row,
+  member,
+  scope,
+  isAdmin,
+  onChanged,
 }: {
-  linha: ReturnType<typeof vinculosDoPainel>[number];
-  membro: Member;
-  alcance: Alcance;
-  souAdmin: boolean;
-  onMudou: (aviso: string) => Promise<void>;
+  row: ReturnType<typeof drawerMemberships>[number];
+  member: Member;
+  scope: Alcance;
+  isAdmin: boolean;
+  onChanged: (aviso: string) => Promise<void>;
 }) {
-  const [escolhido, setEscolhido] = useState<MemberRole>(linha.role);
+  const [escolhido, setEscolhido] = useState<MemberRole>(row.role);
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [confirmandoSaida, setConfirmandoSaida] = useState(false);
 
-  const opcoes = papeisAtribuiveis(alcance, souAdmin, linha.ehArea);
-  const mudou = escolhido !== linha.role;
+  const options = papeisAtribuiveis(scope, isAdmin, row.ehArea);
+  const mudou = escolhido !== row.role;
 
   async function salvar() {
     setSalvando(true);
     try {
-      await changeMemberRole(membro.id, linha.team.id, escolhido);
-      await onMudou(
-        `${membro.name} agora é ${PAPEL[escolhido].toLowerCase()} em ${linha.team.name}.`,
+      await changeMemberRole(member.id, row.team.id, escolhido);
+      await onChanged(
+        `${member.name} agora é ${ROLE_LABEL[escolhido].toLowerCase()} em ${row.team.name}.`,
       );
     } catch (e) {
       const a = e as ApiError;
@@ -289,8 +289,8 @@ function LinhaDeVinculo({
   async function tirar() {
     setSalvando(true);
     try {
-      await removeMemberFromTeam(membro.id, linha.team.id);
-      await onMudou(`${membro.name} saiu de ${linha.team.name}.`);
+      await removeMemberFromTeam(member.id, row.team.id);
+      await onChanged(`${member.name} saiu de ${row.team.name}.`);
     } catch (e) {
       const a = e as ApiError;
       setErro(
@@ -307,34 +307,34 @@ function LinhaDeVinculo({
   return (
     <li className="rounded border border-border p-2">
       <div className="flex flex-wrap items-center gap-2">
-        <strong className="text-sm">{linha.team.name}</strong>
-        {linha.ehArea && (
+        <strong className="text-sm">{row.team.name}</strong>
+        {row.ehArea && (
           <Badge tone="outline" size="sm">
             Área
           </Badge>
         )}
 
-        {/* ⚠️⚠️ QUANDO O PAPEL VEM DE CIMA, SOME O SELETOR. Para quem tem
+        {/* ⚠️⚠️ QUANDO O ROLE_LABEL VEM DE CIMA, SOME O SELETOR. Para quem tem
             comando na área, a linha do subtime não é cargo — é ALOCAÇÃO, e
             pela invariante de nível ela nunca conseguirá repetir ali o papel
             da raiz. Foi este detalhe que fez a Camila querer apagar o próprio
             vínculo, olhando a tela antiga. */}
-        {linha.autoridadeVemDe ? (
+        {row.autoridadeVemDe ? (
           <span className="muted ml-auto text-xs">
-            Alocado · autoridade de {linha.autoridadeVemDe.name}
+            Alocado · autoridade de {row.autoridadeVemDe.name}
           </span>
-        ) : linha.podeEditarCargo ? (
+        ) : row.podeEditarCargo ? (
           <span className="ml-auto">
-            <SeletorEmPilula
-              valor={escolhido}
-              desabilitado={salvando}
-              rotulo={`Cargo em ${linha.team.name}`}
-              opcoes={opcoes.map((p) => ({
+            <PillSelect
+              value={escolhido}
+              disabled={salvando}
+              label={`Cargo em ${row.team.name}`}
+              options={options.map((p) => ({
                 id: p,
-                rotulo: PAPEL[p],
-                comanda: COMANDA.includes(p),
+                label: ROLE_LABEL[p],
+                commands: COMMAND_ROLES.includes(p),
               }))}
-              onEscolher={setEscolhido}
+              onSelect={setEscolhido}
             />
           </span>
         ) : (
@@ -342,7 +342,7 @@ function LinhaDeVinculo({
           // recalcula escopo — a Spec 034 já desfez essa tentativa uma vez.
           <span className="ml-auto" title="Você não administra este vínculo">
             <Badge tone="neutral" size="sm" className="border">
-              {PAPEL[linha.role]}
+              {ROLE_LABEL[row.role]}
             </Badge>
           </span>
         )}
@@ -351,7 +351,7 @@ function LinhaDeVinculo({
       {mudou && (
         <div className="mt-2 border-t border-border pt-2">
           <div className="muted text-xs">
-            {consequenciaDoCargo(escolhido, linha.team.name)}
+            {roleConsequence(escolhido, row.team.name)}
           </div>
           <div className="mt-2 flex gap-2">
             <button
@@ -364,7 +364,7 @@ function LinhaDeVinculo({
             <button
               className="btn btn-ghost"
               disabled={salvando}
-              onClick={() => setEscolhido(linha.role)}
+              onClick={() => setEscolhido(row.role)}
             >
               Cancelar
             </button>
@@ -379,27 +379,27 @@ function LinhaDeVinculo({
           permissões diferentes. O supervisor tira gente do próprio subtime
           (D1 da Spec 028) sem poder trocar cargo de ninguém (D2). Usar o
           cadeado de cargo aqui esconderia dele a única ação que tem. */}
-      {!mudou && podeRemoverDoTime(alcance, linha.team.id, linha.role) && (
+      {!mudou && podeRemoverDoTime(scope, row.team.id, row.role) && (
         <div className="mt-2">
           {!confirmandoSaida ? (
             <button
               className="btn btn-ghost px-0 text-xs"
               onClick={() => setConfirmandoSaida(true)}
             >
-              Tirar de {linha.team.name}
+              Tirar de {row.team.name}
             </button>
           ) : (
             <div className="rounded border border-border p-2">
               <div className="text-xs">
-                {membro.name} sai de <strong>{linha.team.name}</strong>. A
-                conta continua ativa e os outros times não mudam.
+                {member.name} sai de <strong>{row.team.name}</strong>. A
+                conta continua active e os outros teams não mudam.
               </div>
-              {linha.role !== "OPERATOR" && (
+              {row.role !== "OPERATOR" && (
                 // ⚠️ O CARGO SE PERDE, e remarcar depois traz a pessoa como
                 // Operador. É a mesma perda silenciosa que o seletor antigo
                 // avisava — a gaveta não pode ser mais frouxa que ele.
                 <div className="muted mt-1 text-xs">
-                  Ela deixa de ser {PAPEL[linha.role].toLowerCase()} ali. Se
+                  Ela deixa de ser {ROLE_LABEL[row.role].toLowerCase()} ali. Se
                   voltar depois, entra como Operador.
                 </div>
               )}
@@ -430,16 +430,16 @@ function LinhaDeVinculo({
 }
 
 /** Adicionar a pessoa a mais um time. Nasce como Operador. */
-function AdicionarATime({
-  membro,
-  disponiveis,
-  onCancelar,
-  onMudou,
+function AddToTeam({
+  member,
+  availableTeams,
+  onCancel,
+  onChanged,
 }: {
-  membro: Member;
-  disponiveis: Team[];
-  onCancelar: () => void;
-  onMudou: (aviso: string) => Promise<void>;
+  member: Member;
+  availableTeams: Team[];
+  onCancel: () => void;
+  onChanged: (aviso: string) => Promise<void>;
 }) {
   const [alvo, setAlvo] = useState("");
   const [salvando, setSalvando] = useState(false);
@@ -454,8 +454,8 @@ function AdicionarATime({
         aria-label="Time"
         onChange={(e) => setAlvo(e.target.value)}
       >
-        <option value="">— escolha o time —</option>
-        {disponiveis.map((t) => (
+        <option value="">— escolha o team —</option>
+        {availableTeams.map((t) => (
           <option key={t.id} value={t.id}>
             {t.parent_team_id === null ? `${t.name} (área)` : t.name}
           </option>
@@ -474,9 +474,9 @@ function AdicionarATime({
           onClick={async () => {
             setSalvando(true);
             try {
-              await assignMemberToTeam(membro.id, alvo, "OPERATOR");
-              const nome = disponiveis.find((t) => t.id === alvo)?.name ?? "";
-              await onMudou(`${membro.name} entrou em ${nome} como operador.`);
+              await assignMemberToTeam(member.id, alvo, "OPERATOR");
+              const nome = availableTeams.find((t) => t.id === alvo)?.name ?? "";
+              await onChanged(`${member.name} entrou em ${nome} como operador.`);
             } catch (e) {
               setErro((e as ApiError).message || "Não consegui adicionar.");
             } finally {
@@ -486,7 +486,7 @@ function AdicionarATime({
         >
           Adicionar
         </button>
-        <button className="btn btn-ghost" disabled={salvando} onClick={onCancelar}>
+        <button className="btn btn-ghost" disabled={salvando} onClick={onCancel}>
           Cancelar
         </button>
       </div>
@@ -494,21 +494,21 @@ function AdicionarATime({
   );
 }
 
-function PapelDeOrganizacao({
-  membro,
-  souEu,
-  onMudou,
+function OrgRoleField({
+  member,
+  isSelf,
+  onChanged,
 }: {
-  membro: Member;
-  souEu: boolean;
-  onMudou: (aviso: string) => Promise<void>;
+  member: Member;
+  isSelf: boolean;
+  onChanged: (aviso: string) => Promise<void>;
 }) {
   const [escolhido, setEscolhido] = useState<OrgRole | "">(
-    membro.org_role ?? "",
+    member.org_role ?? "",
   );
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
-  const mudou = escolhido !== (membro.org_role ?? "");
+  const mudou = escolhido !== (member.org_role ?? "");
 
   return (
     <div>
@@ -516,16 +516,16 @@ function PapelDeOrganizacao({
           permissões da mesma pessoa, lado a lado na mesma gaveta. Dois
           desenhos diferentes seriam duas coisas para aprender onde há uma só.
           ⚠️ A ordem vai do maior para o menor, como a de prioridade. */}
-      <SeletorEmPilula
-        valor={escolhido}
-        desabilitado={salvando || souEu}
-        rotulo="Papel na organização"
-        opcoes={[
-          { id: "ADMIN", rotulo: PAPEL_ORG.ADMIN, comanda: true },
-          { id: "GESTOR", rotulo: PAPEL_ORG.GESTOR, comanda: true },
-          { id: "", rotulo: "Não administra a organização" },
+      <PillSelect
+        value={escolhido}
+        disabled={salvando || isSelf}
+        label="Papel na organização"
+        options={[
+          { id: "ADMIN", label: ORG_ROLE_LABEL.ADMIN, commands: true },
+          { id: "GESTOR", label: ORG_ROLE_LABEL.GESTOR, commands: true },
+          { id: "", label: "Não administra a organização" },
         ]}
-        onEscolher={setEscolhido}
+        onSelect={setEscolhido}
       />
       <div className="muted mt-1 text-xs">
         {escolhido === "ADMIN"
@@ -534,13 +534,13 @@ function PapelDeOrganizacao({
           ? "Opera a organização: cria área, cadastra pessoas e distribui papéis de time."
           : "Só os times em que está."}
       </div>
-      {souEu && (
+      {isSelf && (
         <div className="muted mt-1 text-xs">
           Você não muda o próprio papel — peça a outro administrador.
         </div>
       )}
       {erro && <div className="error-box mt-2 text-xs">{erro}</div>}
-      {mudou && !souEu && (
+      {mudou && !isSelf && (
         <div className="mt-2 flex gap-2">
           <button
             className="btn btn-primary"
@@ -549,13 +549,13 @@ function PapelDeOrganizacao({
               setSalvando(true);
               try {
                 await changeOrganizationRole(
-                  membro.id,
+                  member.id,
                   escolhido === "" ? null : escolhido,
                 );
-                await onMudou(
+                await onChanged(
                   escolhido === ""
-                    ? `${membro.name} deixou de administrar a organização.`
-                    : `${membro.name} agora é ${PAPEL_ORG[escolhido].toLowerCase()} da organização.`,
+                    ? `${member.name} deixou de administrar a organização.`
+                    : `${member.name} agora é ${ORG_ROLE_LABEL[escolhido].toLowerCase()} da organização.`,
                 );
               } catch (e) {
                 const a = e as ApiError;
@@ -574,7 +574,7 @@ function PapelDeOrganizacao({
           <button
             className="btn btn-ghost"
             disabled={salvando}
-            onClick={() => setEscolhido(membro.org_role ?? "")}
+            onClick={() => setEscolhido(member.org_role ?? "")}
           >
             Cancelar
           </button>
@@ -584,12 +584,12 @@ function PapelDeOrganizacao({
   );
 }
 
-function ResetarSenha({
-  membro,
-  onRevelar,
+function ResetPassword({
+  member,
+  onReveal,
 }: {
-  membro: Member;
-  onRevelar: (r: { titulo: string; email: string; senha: string }) => void;
+  member: Member;
+  onReveal: (r: { title: string; email: string; password: string }) => void;
 }) {
   const [salvando, setSalvando] = useState(false);
   return (
@@ -599,31 +599,31 @@ function ResetarSenha({
       onClick={async () => {
         setSalvando(true);
         try {
-          const r = await resetMemberPassword(membro.id);
+          const r = await resetMemberPassword(member.id);
           // ⚠️ O segredo volta UMA vez (ADR 0021) e sobe para a página, que é
           // quem desenha o bloco reveal-once. Guardá-lo aqui o perderia ao
           // fechar a gaveta.
-          onRevelar({
-            titulo: `Senha nova de ${membro.name}`,
-            email: membro.email,
-            senha: r.temporary_password,
+          onReveal({
+            title: `Senha nova de ${member.name}`,
+            email: member.email,
+            password: r.temporary_password,
           });
         } finally {
           setSalvando(false);
         }
       }}
     >
-      Resetar senha
+      Resetar password
     </button>
   );
 }
 
-function Desativar({
-  membro,
-  onMudou,
+function Deactivate({
+  member,
+  onChanged,
 }: {
-  membro: Member;
-  onMudou: (aviso: string) => Promise<void>;
+  member: Member;
+  onChanged: (aviso: string) => Promise<void>;
 }) {
   const [confirmando, setConfirmando] = useState(false);
   const [salvando, setSalvando] = useState(false);
@@ -634,15 +634,15 @@ function Desativar({
         className="btn btn-ghost text-xs"
         onClick={() => setConfirmando(true)}
       >
-        Desativar
+        Deactivate
       </button>
     );
   }
   return (
     <div className="w-full rounded border border-border p-2">
       <div className="text-xs">
-        <strong>{membro.name}</strong> deixa de acessar o sistema — em TODOS os
-        times, não só neste. As tarefas dela ficam.
+        <strong>{member.name}</strong> deixa de acessar o sistema — em TODOS os
+        teams, não só neste. As tarefas dela ficam.
       </div>
       <div className="mt-2 flex gap-2">
         <button
@@ -651,14 +651,14 @@ function Desativar({
           onClick={async () => {
             setSalvando(true);
             try {
-              await deactivateMember(membro.id);
-              await onMudou(`${membro.name} foi desativado na organização.`);
+              await deactivateMember(member.id);
+              await onChanged(`${member.name} foi desativado na organização.`);
             } finally {
               setSalvando(false);
             }
           }}
         >
-          Desativar
+          Deactivate
         </button>
         <button
           className="btn btn-ghost"

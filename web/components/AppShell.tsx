@@ -245,8 +245,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           <ContextSwitcher
             teams={teams}
             pathname={pathname}
-            podeGerirOrganizacao={podeVerOrganizacao}
-            expandida={open}
+            canManageOrg={podeVerOrganizacao}
+            expanded={open}
           />
         )}
 

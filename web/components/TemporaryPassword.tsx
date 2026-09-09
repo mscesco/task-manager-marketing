@@ -1,5 +1,5 @@
 "use client";
-// components/SenhaProvisoria.tsx
+// components/TemporaryPassword.tsx
 // O bloco reveal-once da senha provisória (ADR 0008 / ADR 0021).
 //
 // ⚠️⚠️ O SEGREDO VOLTA UMA VEZ SÓ. Não há rota para relê-lo: quem fecha sem
@@ -13,22 +13,22 @@
 
 import { useState } from "react";
 
-export default function SenhaProvisoria({
-  titulo,
+export default function TemporaryPassword({
+  title,
   email,
-  senha,
-  onFechar,
+  password,
+  onClose,
 }: {
-  titulo: string;
+  title: string;
   email: string;
-  senha: string;
-  onFechar: () => void;
+  password: string;
+  onClose: () => void;
 }) {
   const [copiado, setCopiado] = useState(false);
 
   async function copiar() {
     try {
-      await navigator.clipboard.writeText(senha);
+      await navigator.clipboard.writeText(password);
       setCopiado(true);
       setTimeout(() => setCopiado(false), 2000);
     } catch {
@@ -49,7 +49,7 @@ export default function SenhaProvisoria({
         gap: 10,
       }}
     >
-      <strong style={{ fontSize: 14 }}>{titulo}</strong>
+      <strong style={{ fontSize: 14 }}>{title}</strong>
       <span className="muted" style={{ fontSize: 13 }}>
         {email}
       </span>
@@ -70,7 +70,7 @@ export default function SenhaProvisoria({
             userSelect: "all",
           }}
         >
-          {senha}
+          {password}
         </code>
         <button
           className="btn btn-ghost"
@@ -92,7 +92,7 @@ export default function SenhaProvisoria({
       </div>
       <button
         className="btn btn-primary"
-        onClick={onFechar}
+        onClick={onClose}
         style={{ alignSelf: "flex-start", padding: "6px 14px" }}
       >
         Concluir

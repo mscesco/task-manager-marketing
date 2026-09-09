@@ -1,5 +1,5 @@
 "use client";
-// components/Alternador.tsx
+// components/Toggle.tsx
 // O alternador de DOIS lados — Spec 047, revisão de 09/09.
 //
 // ⚠️⚠️ É UM `<motion.div layout />`, E NÃO `layoutId`, e a diferença é o
@@ -25,7 +25,7 @@
 // um interruptor com lados de tamanhos diferentes vira uma barra que muda de
 // proporção a cada clique. Com N abas de larguras próprias, o certo é o
 // `layoutId` -- e é por isso que este componente é SÓ para dois, e as abas
-// continuam em `Abas.tsx`.
+// continuam em `Tabs.tsx`.
 //
 // ⚠️ ALTURA FIXA, pelo mesmo motivo: os rótulos ficam numa camada sobreposta
 // (para não empurrar a pastilha), então não há conteúdo em fluxo para dar
@@ -36,26 +36,26 @@
 
 import { motion } from "motion/react";
 
-export type LadoDoAlternador<T extends string> = {
+export type ToggleSide<T extends string> = {
   readonly id: T;
-  readonly rotulo: string;
+  readonly label: string;
   /** Número ao lado. ⚠️ `undefined` esconde; `0` MOSTRA "0". */
-  readonly contagem?: number;
+  readonly count?: number;
 };
 
-export default function Alternador<T extends string>({
-  lados,
-  ativo,
-  onEscolher,
+export default function Toggle<T extends string>({
+  sides,
+  active,
+  onSelect,
   "aria-label": ariaLabel,
 }: {
   /** Exatamente dois — ver o bloco no topo. */
-  lados: readonly [LadoDoAlternador<T>, LadoDoAlternador<T>];
-  ativo: T;
-  onEscolher: (id: T) => void;
+  sides: readonly [ToggleSide<T>, ToggleSide<T>];
+  active: T;
+  onSelect: (id: T) => void;
   "aria-label": string;
 }) {
-  const noPrimeiro = ativo === lados[0].id;
+  const noPrimeiro = active === sides[0].id;
 
   return (
     <div
@@ -83,21 +83,21 @@ export default function Alternador<T extends string>({
           ⚠️ `inset-1` casa com o `p-1` do contêiner, senão os botões cobrem a
           borda e o clique na moldura não faz nada. */}
       <div className="absolute inset-1 flex">
-        {lados.map((lado) => {
-          const selecionado = lado.id === ativo;
+        {sides.map((lado) => {
+          const selecionado = lado.id === active;
           return (
             <button
               key={lado.id}
               role="tab"
               aria-selected={selecionado}
               className="tappable flex-1 rounded-md text-sm"
-              onClick={() => onEscolher(lado.id)}
+              onClick={() => onSelect(lado.id)}
             >
               <span className={selecionado ? "font-semibold" : "muted"}>
-                {lado.rotulo}
+                {lado.label}
               </span>
-              {lado.contagem !== undefined && (
-                <span className="muted ml-1.5 text-xs">{lado.contagem}</span>
+              {lado.count !== undefined && (
+                <span className="muted ml-1.5 text-xs">{lado.count}</span>
               )}
             </button>
           );

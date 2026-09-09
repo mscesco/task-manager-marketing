@@ -13,7 +13,7 @@
 import type { MemberRole, MemberTeamComCadeado, Team } from "./api";
 
 /** Uma linha do painel: um vínculo, e o que dá para fazer com ele. */
-export type VinculoDoPainel = {
+export type DrawerMembership = {
   readonly team: Team;
   readonly role: MemberRole;
   /** Veio do backend (fatia A) — a tela NÃO recalcula. */
@@ -53,14 +53,14 @@ const COMANDO: MemberRole[] = ["ADMIN", "MANAGER"];
  * isso, saber onde alguém está exigiria abrir área por área, que é exatamente
  * a pergunta que o painel existe para responder.
  */
-export function vinculosDoPainel(
-  vinculos: readonly MemberTeamComCadeado[],
+export function drawerMemberships(
+  memberships: readonly MemberTeamComCadeado[],
   teams: readonly Team[],
-): VinculoDoPainel[] {
+): DrawerMembership[] {
   const porId = new Map(teams.map((t) => [t.id, t]));
 
-  return vinculos
-    .map((v): VinculoDoPainel | null => {
+  return memberships
+    .map((v): DrawerMembership | null => {
       const team = porId.get(v.team_id);
       if (!team) return null;
 
@@ -69,7 +69,7 @@ export function vinculosDoPainel(
       // Comando na raiz DAQUELA árvore, vindo de outro vínculo da pessoa.
       const comandoNaRaiz =
         !ehArea && raiz
-          ? vinculos.find(
+          ? memberships.find(
               (o) => o.team_id === raiz.id && COMANDO.includes(o.role),
             )
           : undefined;
@@ -82,7 +82,7 @@ export function vinculosDoPainel(
         ehArea,
       };
     })
-    .filter((l): l is VinculoDoPainel => l !== null)
+    .filter((l): l is DrawerMembership => l !== null)
     .sort((a, b) => {
       // Área primeiro, depois subtimes por nome — a leitura é de cima
       // para baixo na hierarquia.
@@ -117,7 +117,7 @@ function raizDe(team: Team, teams: readonly Team[]): Team | null {
  * operadores do SEO" diz algo; "tem permissões de supervisor" não diz nada a
  * quem está decidindo.
  */
-export function consequenciaDoCargo(
+export function roleConsequence(
   role: MemberRole,
   nomeDoTime: string,
 ): string {

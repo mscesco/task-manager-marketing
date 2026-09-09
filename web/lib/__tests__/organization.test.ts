@@ -3,18 +3,18 @@
  *
  * ⚠️ Estes testes existem porque `app/` esta FORA do `include` do vitest, e a
  * §7 da spec avisa: *"`temAcaoPossivel` mora em `lib/`, entao tem guardiao. O
- * resto da tela nao."* Toda decisao desta tela mora em `lib/organizacao.ts`
+ * resto da tela nao."* Toda decisao desta tela mora em `lib/organization.ts`
  * por causa disso.
  */
 
 import { describe, it, expect } from "vitest";
 import {
-  buscarPessoas,
-  cardsDeArea,
-  casaComBusca,
-  gestoresDaOrganizacao,
-  pessoasSemArea,
-} from "../organizacao";
+  searchPeople,
+  areaCards,
+  matchesSearch,
+  organizationManagers,
+  peopleWithoutArea,
+} from "../organization";
 import type { Member, Team, OrgRole } from "../api";
 
 const MKT = "t-mkt";
@@ -50,14 +50,14 @@ function pessoa(
   };
 }
 
-describe("cardsDeArea", () => {
+describe("areaCards", () => {
   it("conta pessoas por area e subtimes por arvore", () => {
-    const cards = cardsDeArea(TIMES, [
+    const cards = areaCards(TIMES, [
       pessoa("Ana", [MKT]),
       pessoa("Bia", [MKT]),
       pessoa("Caio", [TI]),
     ]);
-    expect(cards.map((c) => [c.area.name, c.pessoas, c.subtimes])).toEqual([
+    expect(cards.map((c) => [c.area.name, c.pessoas, c.subteams])).toEqual([
       ["Marketing", 2, 2], // SEO + SEO Junior
       ["TI", 1, 0],
     ]);
@@ -68,35 +68,35 @@ describe("cardsDeArea", () => {
     // da arvore -- a implementacao obvia -- contaria esta pessoa duas vezes,
     // e o card diria uma a mais. O backend ja deduplica com `DISTINCT`; este
     // teste garante que a tela nao reintroduza a soma.
-    const cards = cardsDeArea(TIMES, [pessoa("Ana", [MKT])]);
+    const cards = areaCards(TIMES, [pessoa("Ana", [MKT])]);
     expect(cards[0].pessoas).toBe(1);
   });
 
   it("conta neto como subtime -- a arvore tem tres niveis", () => {
-    expect(cardsDeArea(TIMES, [])[0].subtimes).toBe(2);
+    expect(areaCards(TIMES, [])[0].subteams).toBe(2);
   });
 
   it("area vazia mostra zero, e nao some da grade", () => {
-    const cards = cardsDeArea(TIMES, []);
+    const cards = areaCards(TIMES, []);
     expect(cards).toHaveLength(2);
     expect(cards.every((c) => c.pessoas === 0)).toBe(true);
   });
 
   it("as areas vem ordenadas por nome", () => {
     const invertido = [TIMES[3], TIMES[0], TIMES[1], TIMES[2]];
-    expect(cardsDeArea(invertido, []).map((c) => c.area.name)).toEqual([
+    expect(areaCards(invertido, []).map((c) => c.area.name)).toEqual([
       "Marketing",
       "TI",
     ]);
   });
 });
 
-describe("pessoasSemArea", () => {
+describe("peopleWithoutArea", () => {
   it("⭐ acha quem nao esta em area nenhuma", () => {
     // ⚠️ Sem este card a pessoa NAO APARECE em lugar nenhum do produto -- a
     // grade e feita de areas. E nao e hipotetico: a conta de administracao da
     // Camila esta assim desde 08/09, de proposito.
-    const soltas = pessoasSemArea([
+    const soltas = peopleWithoutArea([
       pessoa("Ana", [MKT]),
       pessoa("Admin", []),
     ]);
@@ -107,20 +107,20 @@ describe("pessoasSemArea", () => {
     // O erro que `team_ids` produziria: quem esta apenas na raiz tem
     // `team_ids` vazio -- e cairia aqui junto com os gerentes.
     const gerente: Member = { ...pessoa("Gerente", [MKT]), team_ids: [] };
-    expect(pessoasSemArea([gerente])).toEqual([]);
+    expect(peopleWithoutArea([gerente])).toEqual([]);
   });
 
   it("trata a ausencia do campo como 'sem area'", () => {
     // Respostas de MUTACAO nao resolvem `area_ids`; a tela nunca deve quebrar
     // por causa disso.
     const semCampo = { ...pessoa("X", []), area_ids: undefined } as Member;
-    expect(pessoasSemArea([semCampo]).map((m) => m.name)).toEqual(["X"]);
+    expect(peopleWithoutArea([semCampo]).map((m) => m.name)).toEqual(["X"]);
   });
 });
 
-describe("gestoresDaOrganizacao", () => {
+describe("organizationManagers", () => {
   it("traz so quem tem papel de organizacao, ADMIN primeiro", () => {
-    const gestores = gestoresDaOrganizacao([
+    const gestores = organizationManagers([
       pessoa("Zeca", [], { org_role: "GESTOR" }),
       pessoa("Ana", [MKT]),
       pessoa("Camila", [], { org_role: "ADMIN" }),
@@ -129,64 +129,64 @@ describe("gestoresDaOrganizacao", () => {
   });
 
   it("sem gestor nenhum, lista vazia", () => {
-    expect(gestoresDaOrganizacao([pessoa("Ana", [MKT])])).toEqual([]);
+    expect(organizationManagers([pessoa("Ana", [MKT])])).toEqual([]);
   });
 });
 
-describe("buscarPessoas", () => {
+describe("searchPeople", () => {
   it("⭐ diz em QUAIS areas a pessoa esta -- a pergunta que a grade esconde", () => {
-    const achadas = buscarPessoas("ana", [pessoa("Ana", [MKT, TI])], TIMES);
+    const achadas = searchPeople("ana", [pessoa("Ana", [MKT, TI])], TIMES);
     expect(achadas[0].areas.map((t) => t.name)).toEqual(["Marketing", "TI"]);
   });
 
   it("ignora acento e caixa", () => {
     const jose = pessoa("José", [MKT]);
-    expect(buscarPessoas("jose", [jose], TIMES)).toHaveLength(1);
-    expect(buscarPessoas("JOSÉ", [jose], TIMES)).toHaveLength(1);
+    expect(searchPeople("jose", [jose], TIMES)).toHaveLength(1);
+    expect(searchPeople("JOSÉ", [jose], TIMES)).toHaveLength(1);
   });
 
   it("casa tambem por e-mail", () => {
     const ana = pessoa("Ana", [MKT], { email: "ana.silva@fecaf.com.br" });
-    expect(buscarPessoas("silva", [ana], TIMES)).toHaveLength(1);
+    expect(searchPeople("silva", [ana], TIMES)).toHaveLength(1);
   });
 
-  it("termo vazio nao lista o workspace inteiro", () => {
+  it("term vazio nao lista o workspace inteiro", () => {
     // ⚠️ Sem isto, abrir a tela despejaria todo mundo embaixo da grade.
-    expect(buscarPessoas("", [pessoa("Ana", [MKT])], TIMES)).toEqual([]);
-    expect(buscarPessoas("   ", [pessoa("Ana", [MKT])], TIMES)).toEqual([]);
+    expect(searchPeople("", [pessoa("Ana", [MKT])], TIMES)).toEqual([]);
+    expect(searchPeople("   ", [pessoa("Ana", [MKT])], TIMES)).toEqual([]);
   });
 
   it("quem nao tem area aparece na busca, com lista de areas vazia", () => {
     // ⚠️ Ela precisa ser ACHAVEL: e justamente quem a grade nao mostra.
-    const achadas = buscarPessoas("admin", [pessoa("Admin", [])], TIMES);
+    const achadas = searchPeople("admin", [pessoa("Admin", [])], TIMES);
     expect(achadas).toHaveLength(1);
     expect(achadas[0].areas).toEqual([]);
   });
 });
 
-describe("casaComBusca", () => {
+describe("matchesSearch", () => {
   it("⭐ ignora acento — a divergência que o code review achou", () => {
     // ⚠️ `/membros` nascera com `toLowerCase()` puro: "jose" achava "José" na
-    // `/organizacao` e ninguém na outra tela. Mesma pessoa, mesmo termo, duas
+    // `/organizacao` e ninguém na outra tela. Mesma pessoa, mesmo term, duas
     // respostas. Agora as duas perguntam AQUI.
-    expect(casaComBusca("jose", pessoa("José", [MKT]))).toBe(true);
-    expect(casaComBusca("JOSÉ", pessoa("Jose", [MKT]))).toBe(true);
+    expect(matchesSearch("jose", pessoa("José", [MKT]))).toBe(true);
+    expect(matchesSearch("JOSÉ", pessoa("Jose", [MKT]))).toBe(true);
   });
 
   it("casa por e-mail também", () => {
     const ana = pessoa("Ana", [MKT], { email: "ana.silva@fecaf.com.br" });
-    expect(casaComBusca("silva", ana)).toBe(true);
+    expect(matchesSearch("silva", ana)).toBe(true);
   });
 
-  it("termo vazio casa com todo mundo — quem decide filtrar é a tela", () => {
-    // ⚠️ Ao contrário de `buscarPessoas`, que devolve vazio: lá o termo vazio
+  it("term vazio casa com todo mundo — quem decide filtrar é a tela", () => {
+    // ⚠️ Ao contrário de `searchPeople`, que devolve vazio: lá o term vazio
     // significa "não busquei nada"; aqui é um predicado por pessoa, e a tela
     // é que decide se está filtrando.
-    expect(casaComBusca("", pessoa("Ana", [MKT]))).toBe(true);
-    expect(casaComBusca("   ", pessoa("Ana", [MKT]))).toBe(true);
+    expect(matchesSearch("", pessoa("Ana", [MKT]))).toBe(true);
+    expect(matchesSearch("   ", pessoa("Ana", [MKT]))).toBe(true);
   });
 
-  it("não casa quem não tem o termo", () => {
-    expect(casaComBusca("zeca", pessoa("Ana", [MKT]))).toBe(false);
+  it("não casa quem não tem o term", () => {
+    expect(matchesSearch("zeca", pessoa("Ana", [MKT]))).toBe(false);
   });
 });

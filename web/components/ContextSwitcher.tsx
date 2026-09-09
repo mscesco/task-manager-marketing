@@ -22,7 +22,7 @@
 // ⚠️ FECHA AO CLICAR FORA com `contains`, e não comparando `e.target ===
 // e.currentTarget`: aquele é o padrão do SCRIM de modal, e aqui fecharia ao
 // clicar DENTRO da lista. Mesma distinção registrada em `TaskDetail` e em
-// `SeletorEmPilula`.
+// `PillSelect`.
 //
 // ⚠️ MORA EM `components/`, então tem guardião — `app/` fica fora do
 // `include` do vitest.
@@ -33,9 +33,9 @@ import { Building2, Check, ChevronDown } from "lucide-react";
 import type { Team } from "@/lib/api";
 
 /** Uma área com os subtimes dela, já na ordem em que o painel desenha. */
-export type ArvoreDoSeletor = {
+export type SwitcherTree = {
   readonly area: Team;
-  readonly subtimes: Team[];
+  readonly subteams: Team[];
 };
 
 /**
@@ -44,30 +44,34 @@ export type ArvoreDoSeletor = {
  * ⚠️ SÓ DOIS NÍVEIS NO PAINEL, mesmo que a árvore tenha três: um menu com
  * indentação de neto vira um mapa, e mapa não é o que se lê com o mouse
  * parado. O neto se alcança entrando no pai — que é a mesma escolha da visão
- * "Subtimes" da tela de time (`cartoesDeSubtime`).
+ * "Subtimes" da tela de time (`subteamCards`).
  */
-export function arvoresDoSeletor(teams: readonly Team[]): ArvoreDoSeletor[] {
+export function switcherTrees(teams: readonly Team[]): SwitcherTree[] {
   return teams
     .filter((t) => t.parent_team_id === null)
     .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"))
     .map((area) => ({
       area,
-      subtimes: teams
+      subteams: teams
         .filter((t) => t.parent_team_id === area.id)
         .sort((a, b) => a.name.localeCompare(b.name, "pt-BR")),
     }));
 }
 
 /** O que o gatilho mostra: onde a pessoa está agora. */
-export function rotuloDoContexto(
+export function contextLabel(
   pathname: string,
   teams: readonly Team[],
 ): string {
   if (pathname === "/organizacao") return "Organização";
+  // ⚠️⚠️ `/times/` É ROTA, e não nome — o rename de 09/09 passou por cima
+  // dela e virou `/teams/`, que não casa com rota nenhuma. O seletor parou de
+  // reconhecer a tela de time e passou a dizer "Times e organização" em todo
+  // lugar, calado. Quem pegou foi o teste; o `tsc` não tem como.
   const m = /^\/times\/([^/]+)/.exec(pathname);
   if (m) {
-    const time = teams.find((t) => t.id === m[1]);
-    if (time) return time.name;
+    const team = teams.find((t) => t.id === m[1]);
+    if (team) return team.name;
   }
   // ⚠️ Fora dessas telas o seletor não MENTE dizendo um time: ele diz o que
   // faz. Escolher um nome qualquer aqui (o primeiro time, o time da pessoa)
@@ -78,35 +82,35 @@ export function rotuloDoContexto(
 export default function ContextSwitcher({
   teams,
   pathname,
-  podeGerirOrganizacao,
-  expandida,
+  canManageOrg,
+  expanded,
 }: {
   teams: Team[];
   pathname: string;
   /** `area.create` — o mesmo gate que a entrada de menu tinha. */
-  podeGerirOrganizacao: boolean;
-  /** A barra está expandida? Retraída, sobra só o ícone. */
-  expandida: boolean;
+  canManageOrg: boolean;
+  /** A barra está expanded? Retraída, sobra só o ícone. */
+  expanded: boolean;
 }) {
-  const [aberto, setAberto] = useState(false);
+  const [isOpen, setAberto] = useState(false);
   const [caixa, setCaixa] = useState<{ top: number; left: number } | null>(null);
   const gatilhoRef = useRef<HTMLButtonElement>(null);
   const painelRef = useRef<HTMLDivElement>(null);
 
-  const arvores = arvoresDoSeletor(teams);
-  const rotulo = rotuloDoContexto(pathname, teams);
+  const arvores = switcherTrees(teams);
+  const label = contextLabel(pathname, teams);
 
   // ⚠️ `useLayoutEffect` e não `useEffect`: medir depois da PINTURA faria o
   // painel aparecer um quadro no canto (0,0) e saltar para o lugar. Aqui ele
   // já nasce posicionado.
   useLayoutEffect(() => {
-    if (!aberto) return;
+    if (!isOpen) return;
     const r = gatilhoRef.current?.getBoundingClientRect();
     if (r) setCaixa({ top: r.bottom + 6, left: r.left });
-  }, [aberto]);
+  }, [isOpen]);
 
   useEffect(() => {
-    if (!aberto) return;
+    if (!isOpen) return;
     function onDown(e: MouseEvent) {
       const alvo = e.target as Node;
       if (
@@ -131,7 +135,7 @@ export default function ContextSwitcher({
       window.removeEventListener("resize", fechar);
       window.removeEventListener("scroll", fechar, true);
     };
-  }, [aberto]);
+  }, [isOpen]);
 
   return (
     <>
@@ -139,23 +143,23 @@ export default function ContextSwitcher({
         ref={gatilhoRef}
         type="button"
         aria-haspopup="menu"
-        aria-expanded={aberto}
+        aria-expanded={isOpen}
         aria-label="Times e organização"
         title="Times e organização"
         onClick={() => setAberto((v) => !v)}
         className={`flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold text-ink-soft hover:bg-surface-2 ${
-          expandida ? "" : "justify-center px-0"
+          expanded ? "" : "justify-center px-0"
         }`}
       >
         <Building2 size={18} aria-hidden="true" className="shrink-0" />
-        {expandida && (
+        {expanded && (
           <>
-            <span className="min-w-0 flex-1 truncate text-left">{rotulo}</span>
+            <span className="min-w-0 flex-1 truncate text-left">{label}</span>
             {/* A seta gira junto — o mesmo movimento que a pessoa acabou de
                 fazer com o clique, devolvido na tela. */}
             <motion.span
               className="inline-flex shrink-0"
-              animate={{ rotate: aberto ? 180 : 0 }}
+              animate={{ rotate: isOpen ? 180 : 0 }}
               transition={{ type: "spring", duration: 0.3, bounce: 0.2 }}
             >
               <ChevronDown size={15} aria-hidden="true" />
@@ -168,7 +172,7 @@ export default function ContextSwitcher({
           desmonta o nó na hora e o `exit` nunca roda. Abrir suave e sumir seco
           é pior do que não animar. */}
       <AnimatePresence>
-        {aberto && caixa && (
+        {isOpen && caixa && (
           <motion.div
             ref={painelRef}
             role="menu"
@@ -204,7 +208,7 @@ export default function ContextSwitcher({
               initial="fechado"
               animate="aberto"
               variants={{
-                aberto: { transition: { staggerChildren: 0.018 } },
+                isOpen: { transition: { staggerChildren: 0.018 } },
                 fechado: {},
               }}
             >
@@ -214,27 +218,27 @@ export default function ContextSwitcher({
                 </div>
               )}
 
-              {arvores.map(({ area, subtimes }) => (
+              {arvores.map(({ area, subteams }) => (
                 <div key={area.id}>
-                  <ItemDoSeletor
+                  <SwitcherItem
                     href={`/times/${area.id}`}
-                    rotulo={area.name}
-                    ativo={pathname === `/times/${area.id}`}
-                    forte
+                    label={area.name}
+                    active={pathname === `/times/${area.id}`}
+                    bold
                   />
-                  {subtimes.map((s) => (
-                    <ItemDoSeletor
+                  {subteams.map((s) => (
+                    <SwitcherItem
                       key={s.id}
                       href={`/times/${s.id}`}
-                      rotulo={s.name}
-                      ativo={pathname === `/times/${s.id}`}
-                      recuado
+                      label={s.name}
+                      active={pathname === `/times/${s.id}`}
+                      indented
                     />
                   ))}
                 </div>
               ))}
 
-              {podeGerirOrganizacao && (
+              {canManageOrg && (
                 <>
                   {/* ⚠️ A LINHA SEPARA DUAS COISAS DIFERENTES: acima, PARA ONDE
                       IR; abaixo, ADMINISTRAR o conjunto. Sem ela, "Gerenciar a
@@ -243,10 +247,10 @@ export default function ContextSwitcher({
                     variants={ITEM}
                     className="my-1.5 border-t border-border"
                   />
-                  <ItemDoSeletor
+                  <SwitcherItem
                     href="/organizacao"
-                    rotulo="Gerenciar a organização"
-                    ativo={pathname === "/organizacao"}
+                    label="Gerenciar a organização"
+                    active={pathname === "/organizacao"}
                   />
                 </>
               )}
@@ -262,21 +266,21 @@ export default function ContextSwitcher({
 // abriu, não um número de dança.
 const ITEM = {
   fechado: { opacity: 0, y: -4 },
-  aberto: { opacity: 1, y: 0 },
+  isOpen: { opacity: 1, y: 0 },
 };
 
-function ItemDoSeletor({
+function SwitcherItem({
   href,
-  rotulo,
-  ativo,
-  forte = false,
-  recuado = false,
+  label,
+  active,
+  bold = false,
+  indented = false,
 }: {
   href: string;
-  rotulo: string;
-  ativo: boolean;
-  forte?: boolean;
-  recuado?: boolean;
+  label: string;
+  active: boolean;
+  bold?: boolean;
+  indented?: boolean;
 }) {
   return (
     <motion.div variants={ITEM}>
@@ -288,13 +292,13 @@ function ItemDoSeletor({
         href={href}
         role="menuitem"
         className={`flex items-center gap-2 rounded-lg px-2 py-1.5 text-[13px] ${
-          recuado ? "pl-6" : ""
-        } ${forte ? "font-semibold" : "font-medium"} ${
-          ativo ? "bg-accent-soft text-accent" : "text-ink-soft hover:bg-surface-2"
+          indented ? "pl-6" : ""
+        } ${bold ? "font-semibold" : "font-medium"} ${
+          active ? "bg-accent-soft text-accent" : "text-ink-soft hover:bg-surface-2"
         }`}
       >
-        <span className="min-w-0 flex-1 truncate">{rotulo}</span>
-        {ativo && <Check size={14} aria-hidden="true" className="shrink-0" />}
+        <span className="min-w-0 flex-1 truncate">{label}</span>
+        {active && <Check size={14} aria-hidden="true" className="shrink-0" />}
       </a>
     </motion.div>
   );

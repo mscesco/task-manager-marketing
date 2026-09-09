@@ -1,6 +1,6 @@
 "use client";
-// components/Abas.tsx
-// Abas com indicador que DESLIZA entre elas — Spec 047, revisão de 09/09.
+// components/Tabs.tsx
+// Tabs com indicador que DESLIZA entre elas — Spec 047, revisão de 09/09.
 //
 // ⚠️⚠️ O `layoutId` DO MOTION É O TRUQUE INTEIRO, e é por ele que a
 // dependência entrou. Com CSS puro dá para animar um sublinhado, mas ele
@@ -11,7 +11,7 @@
 //
 // ⚠️⚠️ ESTAS SÃO AS ABAS: recortes de uma mesma lista, onde a lista continua
 // sendo o assunto e a aba é só o filtro. O ALTERNADOR -- escolher entre dois
-// assuntos -- mora em `Alternador.tsx`, com mecânica diferente
+// assuntos -- mora em `Toggle.tsx`, com mecânica diferente
 // (`<motion.div layout />`, um elemento que anda, em vez de duas instâncias
 // interpoladas).
 //
@@ -35,30 +35,30 @@
 
 import { motion } from "motion/react";
 
-export type Aba<T extends string> = {
+export type Tab<T extends string> = {
   readonly id: T;
-  readonly rotulo: string;
+  readonly label: string;
   /** Número ao lado. ⚠️ `undefined` esconde; `0` MOSTRA "0". */
-  readonly contagem?: number;
+  readonly count?: number;
 };
 
 // Curtas de propósito, no mesmo espírito dos 150ms do modal: o suficiente
 // para tirar o corte seco, curto o bastante para não atrasar quem usa o app o
 // dia inteiro.
-const MOLA = { type: "spring", duration: 0.3, bounce: 0.18 } as const;
+const SPRING = { type: "spring", duration: 0.3, bounce: 0.18 } as const;
 
-export default function Abas<T extends string>({
-  abas,
-  ativa,
-  onEscolher,
+export default function Tabs<T extends string>({
+  tabs,
+  active,
+  onSelect,
   /** Distingue os indicadores quando há dois grupos de abas na mesma tela. */
-  grupo = "abas",
+  group = "abas",
   "aria-label": ariaLabel,
 }: {
-  abas: readonly Aba<T>[];
-  ativa: T;
-  onEscolher: (id: T) => void;
-  grupo?: string;
+  tabs: readonly Tab<T>[];
+  active: T;
+  onSelect: (id: T) => void;
+  group?: string;
   "aria-label": string;
 }) {
   return (
@@ -71,15 +71,15 @@ export default function Abas<T extends string>({
       // As abas se apoiam numa régua; o indicador nasce sobre ela.
       className="flex gap-1 border-b border-border"
     >
-      {abas.map((aba) => {
-        const selecionada = aba.id === ativa;
+      {tabs.map((aba) => {
+        const selecionada = aba.id === active;
         return (
           <button
             key={aba.id}
             role="tab"
             aria-selected={selecionada}
             className="tappable relative rounded-t px-3 pb-2 pt-1.5 text-sm"
-            onClick={() => onEscolher(aba.id)}
+            onClick={() => onSelect(aba.id)}
           >
             {/* ⚠️ O INDICADOR É IRMÃO DO TEXTO, e não pai: envolvendo o
                 rótulo, cada troca o remontaria e o motion animaria a caixa
@@ -89,18 +89,18 @@ export default function Abas<T extends string>({
                 solto, e a régua continuaria visível por baixo. */}
             {selecionada && (
               <motion.span
-                layoutId={`${grupo}-indicador`}
+                layoutId={`${group}-indicador`}
                 className="absolute inset-x-1.5 -bottom-px h-0.5 rounded-full bg-accent"
-                transition={MOLA}
+                transition={SPRING}
               />
             )}
             <span
               className={selecionada ? "font-semibold text-accent" : "muted"}
             >
-              {aba.rotulo}
+              {aba.label}
             </span>
-            {aba.contagem !== undefined && (
-              <span className="muted ml-1.5 text-xs">{aba.contagem}</span>
+            {aba.count !== undefined && (
+              <span className="muted ml-1.5 text-xs">{aba.count}</span>
             )}
           </button>
         );

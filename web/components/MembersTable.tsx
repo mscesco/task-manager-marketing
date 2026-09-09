@@ -1,5 +1,5 @@
 "use client";
-// components/TabelaDeMembros.tsx
+// components/MembersTable.tsx
 // A tabela de pessoas — Spec 047, fatias C e E; redesenhada em 09/09.
 //
 // ⚠️⚠️ UMA TABELA SÓ, USADA PELAS DUAS TELAS. A §5 deixou a fatia E aberta com
@@ -34,57 +34,57 @@ import { useState, type ReactNode } from "react";
 import { AnimatePresence } from "motion/react";
 import { Pencil } from "lucide-react";
 import Badge from "@/components/Badge";
-import SenhaProvisoria from "@/components/SenhaProvisoria";
-import SidebarDoMembro from "@/components/SidebarDoMembro";
+import TemporaryPassword from "@/components/TemporaryPassword";
+import MemberDrawer from "@/components/MemberDrawer";
 import {
   type CurrentUser,
   type Member,
   type MemberRole,
   type Team,
 } from "@/lib/api";
-import { type LinhaDoTime } from "@/lib/telaDoTime";
+import { type TeamRow } from "@/lib/teamScreen";
 import { alcanceDe } from "@/lib/permissoesMembros";
 
-export const PAPEL: Record<MemberRole, string> = {
+export const ROLE_LABEL: Record<MemberRole, string> = {
   ADMIN: "Administrador",
   MANAGER: "Gerente",
   SUPERVISOR: "Supervisor",
   OPERATOR: "Operador",
 };
 
-type Revelado = { titulo: string; email: string; senha: string };
+type RevealedPassword = { title: string; email: string; password: string };
 
-export default function TabelaDeMembros({
-  linhas,
-  times,
+export default function MembersTable({
+  rows,
+  teams,
   me,
-  colunaDoMeio,
-  contagem,
-  onMudou,
+  middleColumn,
+  count,
+  onChanged,
 }: {
-  linhas: LinhaDoTime[];
-  times: Team[];
+  rows: TeamRow[];
+  teams: Team[];
   me: CurrentUser | null;
   /** O título e o conteúdo da coluna do meio — o que muda entre as telas. */
-  colunaDoMeio: { titulo: string; render: (linha: LinhaDoTime) => ReactNode };
+  middleColumn: { title: string; render: (row: TeamRow) => ReactNode };
   /** Texto do contador. ⚠️ Diz o TOTAL — ver o comentário no `<caption>`. */
-  contagem?: string;
-  onMudou: (aviso: string) => Promise<void>;
+  count?: string;
+  onChanged: (aviso: string) => Promise<void>;
 }) {
   const [gavetaDe, setGavetaDe] = useState<Member | null>(null);
-  const [revelado, setRevelado] = useState<Revelado | null>(null);
-  const alcance = alcanceDe(me);
+  const [revelado, setRevelado] = useState<RevealedPassword | null>(null);
+  const scope = alcanceDe(me);
 
   return (
     <>
       {/* ⚠️ O reveal-once fica AQUI e não dentro da gaveta: fechar a gaveta
           levaria o segredo junto, e não há rota para relê-lo (ADR 0021). */}
       {revelado && (
-        <SenhaProvisoria
-          titulo={revelado.titulo}
+        <TemporaryPassword
+          title={revelado.title}
           email={revelado.email}
-          senha={revelado.senha}
-          onFechar={() => setRevelado(null)}
+          password={revelado.password}
+          onClose={() => setRevelado(null)}
         />
       )}
 
@@ -100,8 +100,8 @@ export default function TabelaDeMembros({
                 causou o defeito de 27/07, com o cabeçalho divergindo do corpo.
                 Quem FILTRA passa um texto do tipo "12 de 15" — nunca só o
                 número do que sobrou. */}
-            {contagem ??
-              `${linhas.length} ${linhas.length === 1 ? "pessoa" : "pessoas"}`}
+            {count ??
+              `${rows.length} ${rows.length === 1 ? "pessoa" : "pessoas"}`}
           </caption>
           <thead>
             <tr className="border-b border-border">
@@ -112,7 +112,7 @@ export default function TabelaDeMembros({
                 E-mail
               </th>
               <th scope="col" className="label px-3 py-2 text-left">
-                {colunaDoMeio.titulo}
+                {middleColumn.title}
               </th>
               <th scope="col" className="label px-3 py-2 text-left">
                 Times
@@ -123,12 +123,12 @@ export default function TabelaDeMembros({
             </tr>
           </thead>
           <tbody>
-            {linhas.map((linha) => (
+            {rows.map((row) => (
               <Linha
-                key={linha.membro.id}
-                linha={linha}
-                colunaDoMeio={colunaDoMeio}
-                onAbrir={() => setGavetaDe(linha.membro)}
+                key={row.member.id}
+                row={row}
+                middleColumn={middleColumn}
+                onOpen={() => setGavetaDe(row.member)}
               />
             ))}
           </tbody>
@@ -141,21 +141,21 @@ export default function TabelaDeMembros({
           pessoa precisa perceber que a tabela voltou a ser o assunto. */}
       <AnimatePresence>
         {gavetaDe && (
-          <SidebarDoMembro
+          <MemberDrawer
             key={gavetaDe.id}
-            membro={gavetaDe}
-            times={times}
-            alcance={alcance}
-            souAdmin={me?.roles.includes("ADMIN") ?? false}
-            podeMexerNaOrganizacao={
+            member={gavetaDe}
+            teams={teams}
+            scope={scope}
+            isAdmin={me?.roles.includes("ADMIN") ?? false}
+            canManageOrg={
               me?.permissions.includes("workspace.manage") ?? false
             }
-            souEu={gavetaDe.id === me?.id}
-            onFechar={() => setGavetaDe(null)}
-            onRevelarSenha={setRevelado}
-            onMudou={async (texto) => {
+            isSelf={gavetaDe.id === me?.id}
+            onClose={() => setGavetaDe(null)}
+            onRevealPassword={setRevelado}
+            onChanged={async (texto) => {
               setGavetaDe(null);
-              await onMudou(texto);
+              await onChanged(texto);
             }}
           />
         )}
@@ -165,37 +165,37 @@ export default function TabelaDeMembros({
 }
 
 function Linha({
-  linha,
-  colunaDoMeio,
-  onAbrir,
+  row,
+  middleColumn,
+  onOpen,
 }: {
-  linha: LinhaDoTime;
-  colunaDoMeio: { titulo: string; render: (linha: LinhaDoTime) => ReactNode };
-  onAbrir: () => void;
+  row: TeamRow;
+  middleColumn: { title: string; render: (row: TeamRow) => ReactNode };
+  onOpen: () => void;
 }) {
-  const { membro, subtimes, outrasAreas } = linha;
+  const { member, subteams, outrasAreas } = row;
 
   return (
     <tr className="border-b border-border last:border-b-0">
       <td className="px-3 py-2 align-middle">
-        <strong className="font-semibold">{membro.name}</strong>
+        <strong className="font-semibold">{member.name}</strong>
       </td>
 
-      <td className="muted px-3 py-2 align-middle text-xs">{membro.email}</td>
+      <td className="muted px-3 py-2 align-middle text-xs">{member.email}</td>
 
-      <td className="px-3 py-2 align-middle">{colunaDoMeio.render(linha)}</td>
+      <td className="px-3 py-2 align-middle">{middleColumn.render(row)}</td>
 
       {/* ⚠️ CÁPSULA COM O CARGO JUNTO (`SEO · Supervisor`). Sem o cargo, a
           coluna mostra ONDE e esconde O QUÊ, numa tela cujo assunto é
           permissão. */}
       <td className="px-3 py-2 align-middle">
         <span className="flex flex-wrap gap-1.5">
-          {subtimes.length === 0 && outrasAreas === 0 && (
+          {subteams.length === 0 && outrasAreas === 0 && (
             <span className="muted text-xs">—</span>
           )}
-          {subtimes.map((c) => (
+          {subteams.map((c) => (
             <Badge key={c.team.id} tone="soft" size="sm" color="var(--accent)">
-              {c.team.name} · {PAPEL[c.role]}
+              {c.team.name} · {ROLE_LABEL[c.role]}
             </Badge>
           ))}
           {outrasAreas > 0 && (
@@ -214,8 +214,8 @@ function Linha({
       <td className="whitespace-nowrap px-3 py-2 text-right align-middle">
         <button
           className="btn btn-ghost"
-          aria-label={`Editar ${membro.name}`}
-          onClick={onAbrir}
+          aria-label={`Editar ${member.name}`}
+          onClick={onOpen}
         >
           <Pencil size={14} aria-hidden="true" />
         </button>
@@ -237,8 +237,8 @@ function Linha({
 //
 // ⚠️⚠️ E AQUI MORAVA `SeletorDeSubtimes`, o painel de checkboxes do lápis.
 // Ele saiu com o redesenho de 09/09. Se for reintroduzido algum dia, o que
-// ele PRECISA carregar junto está registrado em `lib/telaDoTime.ts`:
-// `cargosQueSePerdem` (desmarcar apaga o cargo, e remarcar traz a pessoa como
-// operadora), `opcoesDoSeletor` (quem já está marcado nunca some da lista) e
-// `planoDeVinculos` (adicionar ANTES de remover, senão trocar o único time de
+// ele PRECISA carregar junto está registrado em `lib/teamScreen.ts`:
+// `rolesLostOnUnpick` (desmarcar apaga o cargo, e remarcar traz a pessoa como
+// operadora), `pickerOptions` (quem já está marcado nunca some da lista) e
+// `membershipPlan` (adicionar ANTES de remover, senão trocar o único time de
 // alguém é impossível). As três continuam testadas.
