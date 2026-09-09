@@ -41,6 +41,22 @@ class MemberResponse(BaseModel):
     email: EmailStr
     is_active: bool
     created_at: datetime
+    #: ⚠️ ALIMENTA A ABA "CONVIDADOS" (Spec 047, revisao de 09/09), e nao e
+    #: um estado novo: e quem foi cadastrado, recebeu a senha provisoria e
+    #: AINDA NAO ENTROU. A pessoa existe e ainda nao aceitou -- que e o que
+    #: "convidado" quer dizer.
+    #:
+    #: ⚠️ NAO HA FLUXO DE CONVITE POR E-MAIL neste produto, e a aba nao o
+    #: inventa: os tres estados sao uma particao de `is_active` +
+    #: `must_change_password`, sem nada novo no banco.
+    #:
+    #:     inativo    -> is_active = false
+    #:     convidado  -> ativo E must_change_password = true
+    #:     ativo      -> ativo E ja trocou a senha
+    #:
+    #: O campo ja existia em `MemberCreatedResponse`; aqui ele sobe para a
+    #: listagem, que e quem desenha as abas.
+    must_change_password: bool = False
     #: Papel na ORGANIZACAO (Spec 045, fatia B). `None` = nenhum, que e a
     #: maioria. Spec 047, fatia B: a `/organizacao` mostra os gestores no
     #: cabecalho, junto do nome que eles administram, e sem este campo a tela
@@ -108,6 +124,9 @@ class MemberCreatedResponse(MemberResponse):
     claro nem retornado em nenhuma outra rota.
     """
 
+    # ⚠️ `must_change_password` agora vem da mae (Spec 047), mas fica
+    # DECLARADO aqui de proposito: nesta resposta ele e OBRIGATORIO e sem
+    # default -- quem acabou de ser cadastrado sempre tem senha para trocar.
     must_change_password: bool
     password_expires_at: datetime | None
     temporary_password: str
@@ -120,6 +139,9 @@ class ResetPasswordResponse(BaseModel):
     """
 
     user_id: uuid.UUID
+    # ⚠️ `must_change_password` agora vem da mae (Spec 047), mas fica
+    # DECLARADO aqui de proposito: nesta resposta ele e OBRIGATORIO e sem
+    # default -- quem acabou de ser cadastrado sempre tem senha para trocar.
     must_change_password: bool
     password_expires_at: datetime | None
     temporary_password: str

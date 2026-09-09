@@ -93,6 +93,7 @@ async def list_members(
                 email=m.user.email,
                 is_active=m.user.is_active,
                 created_at=m.user.created_at,
+                must_change_password=m.user.must_change_password,
                 org_role=m.user.org_role,
                 # ⚠️ DOIS CAMPOS DISTINTOS, e a diferenca importa: `team_ids`
                 # sao os SUBTIMES (o filtro do quadro depende de a raiz NAO
