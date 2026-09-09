@@ -182,7 +182,7 @@ function Membros() {
   }
 
   if (erro) return <div className="error-box" style={{ maxWidth: 560 }}>{erro}</div>;
-  if (!members) return <div className="muted">Carregando members…</div>;
+  if (!members) return <div className="muted">Carregando pessoas…</div>;
 
   // ⚠️ AS LINHAS SAEM DE `organizationRows`, a MESMA função que alimenta a
   // tela de time -- é o que garante que as duas telas contem a mesma história
@@ -260,7 +260,7 @@ function Membros() {
               <span className="label">Time</span>
               <select className="input" value={timeId} disabled={salvando}
                 onChange={(ev) => setTimeId(ev.target.value)}>
-                <option value="">— selecione o team —</option>
+                <option value="">— selecione o time —</option>
                 {teams.map((t) => (
                   <option key={t.id} value={t.id}>
                     {t.parent_team_id === null ? `${t.name} (geral)` : t.name}
@@ -281,8 +281,8 @@ function Membros() {
           </div>
 
           <div className="muted" style={{ fontSize: 12, lineHeight: 1.45 }}>
-            Hoje todo member do Marketing enxerga o quadro geral inteiro. O team
-            escolhido alimenta o filtro por team no quadro — não esconde tarefas.
+            Hoje todo membro do Marketing enxerga o quadro geral inteiro. O time
+            escolhido alimenta o filtro por time no quadro — não esconde tarefas.
             O supervisor do subtime pode adicionar e remover operadores dele
             próprio (Spec 028).
           </div>

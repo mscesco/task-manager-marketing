@@ -735,7 +735,7 @@ function OrgRoleField({
                 organização.
               </div>
               <div className="muted mt-1 text-xs">
-                A conta continua active e os teams dela não mudam — ela só
+                A conta continua ativa e os times dela não mudam — ela só
                 perde o papel de organização. Some deste cabeçalho porque ele
                 lista quem administra.
               </div>

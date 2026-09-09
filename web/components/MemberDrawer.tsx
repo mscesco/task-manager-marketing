@@ -182,13 +182,13 @@ export default function MemberDrawer({
           )}
 
           <section>
-            <h3 className="label mb-2">Relação de teams e subteams</h3>
+            <h3 className="label mb-2">Relação de times e subtimes</h3>
             {vinculos === null ? (
               <div className="muted text-xs">Carregando…</div>
             ) : rows.length === 0 ? (
               <div className="muted text-xs">
-                Sem vínculo de team. A pessoa existe na organização, mas não
-                está em nenhum team.
+                Sem vínculo de time. A pessoa existe na organização, mas não
+                está em nenhum time.
               </div>
             ) : (
               <ul className="m-0 list-none space-y-2 p-0">
@@ -215,7 +215,7 @@ export default function MemberDrawer({
                     className="btn btn-ghost flex items-center gap-1 text-sm"
                     onClick={() => setAdicionando(true)}
                   >
-                    Adicionar a um team
+                    Adicionar a um time
                     <ChevronRight size={14} aria-hidden="true" />
                   </button>
                 ) : (
@@ -392,7 +392,7 @@ function MembershipRow({
             <div className="rounded border border-border p-2">
               <div className="text-xs">
                 {member.name} sai de <strong>{row.team.name}</strong>. A
-                conta continua active e os outros teams não mudam.
+                conta continua ativa e os outros times não mudam.
               </div>
               {row.role !== "OPERATOR" && (
                 // ⚠️ O CARGO SE PERDE, e remarcar depois traz a pessoa como
@@ -454,7 +454,7 @@ function AddToTeam({
         aria-label="Time"
         onChange={(e) => setAlvo(e.target.value)}
       >
-        <option value="">— escolha o team —</option>
+        <option value="">— escolha o time —</option>
         {availableTeams.map((t) => (
           <option key={t.id} value={t.id}>
             {t.parent_team_id === null ? `${t.name} (área)` : t.name}

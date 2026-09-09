@@ -270,7 +270,7 @@ export default function TimePage() {
           )}
 
           {rows.length === 0 ? (
-            <div className="muted">Ninguém neste team ainda.</div>
+            <div className="muted">Ninguém neste time ainda.</div>
           ) : (
             <>
               {/* ---- AS ABAS DE ESTADO --------------------------------
@@ -397,7 +397,7 @@ export default function TimePage() {
                     {c.pessoas} {c.pessoas === 1 ? "pessoa" : "pessoas"}
                     {c.subteams > 0 &&
                       ` · ${c.subteams} ${
-                        c.subteams === 1 ? "subtime" : "subteams"
+                        c.subteams === 1 ? "subtime" : "subtimes"
                       }`}
                   </div>
                 </div>
@@ -518,7 +518,7 @@ function NewMember({
       </div>
 
       <div className="muted text-xs">
-        A pessoa recebe uma password provisória, mostrada uma única vez aqui, e
+        A pessoa recebe uma senha provisória, mostrada uma única vez aqui, e
         troca no primeiro acesso.
       </div>
 

@@ -304,7 +304,7 @@ function AddMember({
 
   return (
     <section className="mt-4">
-      <h3 className="label mb-2">Adicionar member</h3>
+      <h3 className="label mb-2">Adicionar membro</h3>
       {/* ⚠️ SÓ QUEM JÁ ESTÁ NA ÁRVORE, e não a organização inteira: cadastrar
           pessoa nova dispara senha provisória e é outra ação (D3 da Spec 028).
           Misturar as duas num mesmo seletor faria o "adicionar" às vezes criar
