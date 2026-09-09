@@ -181,3 +181,45 @@ export function opcoesDoSeletor(
     a.name.localeCompare(b.name, "pt-BR"),
   );
 }
+
+/**
+ * As linhas da tabela da ORGANIZAÇÃO INTEIRA — Spec 047, fatia E.
+ *
+ * ⚠️⚠️ ELA EXISTE PARA NÃO HAVER DUAS TABELAS DE PESSOAS COM REGRAS
+ * DIFERENTES. A §5 da spec deixou a fatia E aberta com esse aviso literal:
+ * *"duas telas listando pessoas, com regras diferentes, é o começo do próximo
+ * defeito de contador."* A Camila decidiu em 09/09: `/membros` vira a busca
+ * da organização — a mesma tabela, sobre todo mundo.
+ *
+ * ⚠️ MESMO FORMATO DE LINHA da tela de time (`LinhaDoTime`), de propósito: é
+ * o que permite as duas telas dividirem o componente da tabela. O que muda é
+ * só a coluna do meio — lá é "Cargo aqui", aqui são as ÁREAS.
+ *
+ * `cargoAqui` é sempre `null`: não há "aqui" quando o recorte é a organização
+ * inteira. As cápsulas trazem TODOS os vínculos, com o cargo.
+ */
+export function linhasDaOrganizacao(
+  teams: readonly Team[],
+  members: readonly Member[],
+): LinhaDoTime[] {
+  return members
+    .map((membro): LinhaDoTime => {
+      const capsulas = (membro.memberships ?? [])
+        .map((v) => ({
+          team: teams.find((t) => t.id === v.team_id),
+          role: v.role,
+        }))
+        .filter((c): c is CapsulaDeSubtime => c.team !== undefined)
+        .sort((a, b) => a.team.name.localeCompare(b.team.name, "pt-BR"));
+
+      return {
+        membro,
+        cargoAqui: null,
+        subtimes: capsulas,
+        // ⚠️ Zero: o aviso "+N área" existe para dizer que há vínculo FORA
+        // desta tela. Aqui não há fora — a tela é a organização inteira.
+        outrasAreas: 0,
+      };
+    })
+    .sort((a, b) => a.membro.name.localeCompare(b.membro.name, "pt-BR"));
+}

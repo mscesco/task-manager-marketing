@@ -200,11 +200,36 @@ os dois na mesma fatia**, ou a tela oferece um destino que o backend recusa.
 Consome a fatia A. As cápsulas de cargo, o cadeado, a consequência em texto e o
 `alocada · autoridade de X`.
 
-**Fatia E — a tela de membros de hoje.**
-Decidir se `/membros` continua existindo ou se vira a busca da `/organizacao`.
-⚠️ Não decidido em 02/09 — **fatia deliberadamente vazia até alguém decidir**, e
-está aqui para não ser esquecida: duas telas listando pessoas, com regras
-diferentes, é o começo do próximo defeito de contador.
+**Fatia E — a tela de membros de hoje.** ✅ **DECIDIDA em 09/09.**
+
+> *"Membros vira a busca da organização, aquela tela da tabela de membros que
+> abre da tela da org."* — Camila
+
+`/membros` deixa de ser uma lista própria e passa a ser **a tabela de pessoas da
+organização**, no mesmo formato de `/times/[id]`, alcançada a partir da
+`/organizacao`. Uma tabela só, uma regra só.
+
+⚠️ **O aviso que a fatia carregava se cumpre por construção:** *"duas telas
+listando pessoas, com regras diferentes, é o começo do próximo defeito de
+contador"*. Com as duas dividindo o componente da tabela e as funções de
+`lib/telaDoTime.ts`, não há duas regras para divergirem.
+
+**O que já está feito (09/09):** `linhasDaOrganizacao` em `lib/telaDoTime.ts` —
+as linhas no MESMO formato (`LinhaDoTime`) da tela de time, que é o que permite
+o componente compartilhado. `cargoAqui` é sempre `null` (não há "aqui" quando o
+recorte é a organização) e as cápsulas trazem todos os vínculos.
+
+**O que falta:**
+
+1. Extrair a tabela de `/times/[id]` para `components/TabelaDeMembros.tsx` — a
+   coluna do meio vira parâmetro ("Cargo aqui" na tela de time, "Áreas" na de
+   pessoas).
+2. Reescrever `/membros` sobre ela.
+   ⚠️⚠️ **E o cuidado está aqui:** a tela de hoje tem 948 linhas e carrega
+   capacidades que NÃO podem se perder — cadastrar membro, resetar senha e o
+   bloco de senha provisória revelada uma vez (ADR 0021). Os controles de
+   vínculo por linha, esses SIM saem: viraram o lápis e o painel.
+3. A busca da `/organizacao` aponta para lá.
 
 ---
 
