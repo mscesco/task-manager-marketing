@@ -20,6 +20,7 @@ import { useEffect, useState } from "react";
 import { motion } from "motion/react";
 import { ChevronRight, X } from "lucide-react";
 import Badge from "@/components/Badge";
+import SeletorEmPilula from "@/components/SeletorEmPilula";
 import {
   ApiError,
   assignMemberToTeam,
@@ -56,6 +57,14 @@ const PAPEL_ORG: Record<OrgRole, string> = {
   ADMIN: "Administrador",
   GESTOR: "Gestor",
 };
+
+/**
+ * Papéis que mandam na ÁRVORE inteira, e não só no time onde estão.
+ *
+ * ⚠️ Espelha `COMMAND_ROLES` de `auth/domain/team_scope.py`. Vira a bolinha
+ * cheia do seletor — ver `OpcaoDePilula.comanda`.
+ */
+const COMANDA: MemberRole[] = ["ADMIN", "MANAGER"];
 
 export default function SidebarDoMembro({
   membro,
@@ -312,19 +321,19 @@ function LinhaDeVinculo({
             Alocado · autoridade de {linha.autoridadeVemDe.name}
           </span>
         ) : linha.podeEditarCargo ? (
-          <select
-            className="input ml-auto w-auto py-1 text-sm"
-            value={escolhido}
-            disabled={salvando}
-            aria-label={`Cargo em ${linha.team.name}`}
-            onChange={(e) => setEscolhido(e.target.value as MemberRole)}
-          >
-            {opcoes.map((p) => (
-              <option key={p} value={p}>
-                {PAPEL[p]}
-              </option>
-            ))}
-          </select>
+          <span className="ml-auto">
+            <SeletorEmPilula
+              valor={escolhido}
+              desabilitado={salvando}
+              rotulo={`Cargo em ${linha.team.name}`}
+              opcoes={opcoes.map((p) => ({
+                id: p,
+                rotulo: PAPEL[p],
+                comanda: COMANDA.includes(p),
+              }))}
+              onEscolher={setEscolhido}
+            />
+          </span>
         ) : (
           // ⚠️ O CADEADO VEM DO BACKEND (`can_edit_role`). A tela NÃO
           // recalcula escopo — a Spec 034 já desfez essa tentativa uma vez.
@@ -500,17 +509,21 @@ function PapelDeOrganizacao({
 
   return (
     <div>
-      <select
-        className="input w-full text-sm"
-        value={escolhido}
-        disabled={salvando || souEu}
-        aria-label="Papel na organização"
-        onChange={(e) => setEscolhido(e.target.value as OrgRole | "")}
-      >
-        <option value="">Não administra a organização</option>
-        <option value="GESTOR">{PAPEL_ORG.GESTOR}</option>
-        <option value="ADMIN">{PAPEL_ORG.ADMIN}</option>
-      </select>
+      {/* ⚠️ O MESMO SELETOR do cargo de time, e não um `<select>`: são as duas
+          permissões da mesma pessoa, lado a lado na mesma gaveta. Dois
+          desenhos diferentes seriam duas coisas para aprender onde há uma só.
+          ⚠️ A ordem vai do maior para o menor, como a de prioridade. */}
+      <SeletorEmPilula
+        valor={escolhido}
+        desabilitado={salvando || souEu}
+        rotulo="Papel na organização"
+        opcoes={[
+          { id: "ADMIN", rotulo: PAPEL_ORG.ADMIN, comanda: true },
+          { id: "GESTOR", rotulo: PAPEL_ORG.GESTOR, comanda: true },
+          { id: "", rotulo: "Não administra a organização" },
+        ]}
+        onEscolher={setEscolhido}
+      />
       <div className="muted mt-1 text-xs">
         {escolhido === "ADMIN"
           ? "Define a organização: renomeia, apaga área e promove gestores."

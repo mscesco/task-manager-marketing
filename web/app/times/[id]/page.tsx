@@ -217,6 +217,11 @@ export default function TimePage() {
         <Abas
           aria-label="O que ver neste time"
           grupo="visao"
+          // ⚠️ PÍLULA, e não sublinhado: este alternador troca o ASSUNTO da
+          // tela, e as abas logo abaixo dele só recortam uma lista. Sem a
+          // moldura eram duas fileiras de palavras soltas, sem pista de que
+          // fazem coisas diferentes — o apontamento da Camila em 09/09.
+          variante="pilula"
           ativa={visao}
           onEscolher={(v) => {
             setVisao(v);
