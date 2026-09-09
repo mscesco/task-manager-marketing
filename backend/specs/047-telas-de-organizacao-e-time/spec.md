@@ -214,22 +214,21 @@ listando pessoas, com regras diferentes, é o começo do próximo defeito de
 contador"*. Com as duas dividindo o componente da tabela e as funções de
 `lib/telaDoTime.ts`, não há duas regras para divergirem.
 
-**O que já está feito (09/09):** `linhasDaOrganizacao` em `lib/telaDoTime.ts` —
-as linhas no MESMO formato (`LinhaDoTime`) da tela de time, que é o que permite
-o componente compartilhado. `cargoAqui` é sempre `null` (não há "aqui" quando o
-recorte é a organização) e as cápsulas trazem todos os vínculos.
+✅ **ENTREGUE em 09/09.** `components/TabelaDeMembros.tsx` é usada pelas duas
+telas; a coluna do meio é parâmetro ("Cargo aqui" na tela de time, "Áreas" na de
+pessoas). `/membros` ganhou a busca e virou a tabela da organização, e a busca da
+`/organizacao` aponta para lá.
 
-**O que falta:**
+⚠️ **Eu tinha dimensionado isto como "reescrever uma tela de 948 linhas", e a
+Camila corrigiu: *"não é refazer a tela, só tornar o /membros nessa tela da
+org"*.** Ela estava certa, e o número engana — 580 daquelas linhas eram
+`LinhaMembro`, com os controles de vínculo INLINE que a fatia C e a D já tinham
+substituído. Era **deleção de duplicação**, não cirurgia: a tela caiu para 386
+linhas e a de time, de 529 para 190.
 
-1. Extrair a tabela de `/times/[id]` para `components/TabelaDeMembros.tsx` — a
-   coluna do meio vira parâmetro ("Cargo aqui" na tela de time, "Áreas" na de
-   pessoas).
-2. Reescrever `/membros` sobre ela.
-   ⚠️⚠️ **E o cuidado está aqui:** a tela de hoje tem 948 linhas e carrega
-   capacidades que NÃO podem se perder — cadastrar membro, resetar senha e o
-   bloco de senha provisória revelada uma vez (ADR 0021). Os controles de
-   vínculo por linha, esses SIM saem: viraram o lápis e o painel.
-3. A busca da `/organizacao` aponta para lá.
+⚠️ **O que NÃO saiu, e é o que importa preservar:** cadastrar membro, resetar
+senha e o bloco de senha provisória revelada uma vez (ADR 0021). São capacidades
+que só existem nesta tela.
 
 ---
 

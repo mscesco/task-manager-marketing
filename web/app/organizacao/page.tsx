@@ -239,6 +239,10 @@ export default function OrganizacaoPage() {
               />
             </label>
 
+            {/* ⚠️ A BUSCA AQUI É O ATALHO, e não a lista completa: esta tela é
+                a grade de ÁREAS. Quem quer a tabela inteira vai para
+                `/membros`, que a fatia E transformou na tabela de pessoas da
+                organização -- e é a MESMA tabela da tela de time. */}
             {busca.trim() !== "" && (
               <div className="border-t border-border">
                 {achadas.length === 0 ? (
@@ -308,6 +312,14 @@ export default function OrganizacaoPage() {
                     ))}
                   </ul>
                 )}
+                <div className="border-t border-border px-3 py-2">
+                  <Link
+                    href="/membros"
+                    className="text-accent text-xs underline"
+                  >
+                    Ver todas as pessoas da organização
+                  </Link>
+                </div>
               </div>
             )}
           </div>

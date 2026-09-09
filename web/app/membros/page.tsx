@@ -24,6 +24,9 @@ import Badge from "@/components/Badge";
 import Avatar from "@/components/Avatar";
 import Card from "@/components/Card";
 import PageHeader from "@/components/PageHeader";
+import TabelaDeMembros from "@/components/TabelaDeMembros";
+import { linhasDaOrganizacao } from "@/lib/telaDoTime";
+import { Search } from "lucide-react";
 import {
   listMembers,
   listTeamsAll,
@@ -87,6 +90,9 @@ function Membros() {
   const [papel, setPapel] = useState<MemberRole | "">("");
   const [salvando, setSalvando] = useState(false);
   const [erroForm, setErroForm] = useState<string | null>(null);
+  // A busca da organização (fatia E) e o aviso do que acabou de mudar.
+  const [busca, setBusca] = useState("");
+  const [aviso, setAviso] = useState<string | null>(null);
 
   // Spec 028: o gate deixou de ser "tem team.manage?" e virou um ALCANCE.
   // A regra mora em lib/permissoesMembros (pura, testada); aqui so lemos.
@@ -203,10 +209,24 @@ function Membros() {
   if (erro) return <div className="error-box" style={{ maxWidth: 560 }}>{erro}</div>;
   if (!membros) return <div className="muted">Carregando membros…</div>;
 
+  // ⚠️ AS LINHAS SAEM DE `linhasDaOrganizacao`, a MESMA função que alimenta a
+  // tela de time -- é o que garante que as duas telas contem a mesma história
+  // sobre a mesma pessoa.
+  const todas = linhasDaOrganizacao(times, membros);
+  const alvo = busca.trim().toLowerCase();
+  const linhasVisiveis =
+    alvo === ""
+      ? todas
+      : todas.filter(
+          (l) =>
+            l.membro.name.toLowerCase().includes(alvo) ||
+            l.membro.email.toLowerCase().includes(alvo),
+        );
+
   return (
-    <div style={{ maxWidth: 720 }}>
+    <div>
       <PageHeader
-        title="Membros"
+        title="Pessoas"
         count={membros.length}
         actions={
           podeCadastrarMembro(alcance) && !criando && !revelado && (
@@ -290,610 +310,105 @@ function Membros() {
         </Card>
       )}
 
-      {membros.length === 0 ? (
-        <EmptyState title="Nenhum membro" />
-      ) : (
-        <div style={{ border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden" }}>
-          {membros.map((m, i) => (
-            <LinhaMembro
-              key={m.id}
-              m={m}
-              subtime={nomeSubtimes(m.team_ids)}
-              times={times}
-              souAdmin={souAdmin}
-              primeira={i === 0}
-              alcance={alcance}
-              podeGerenciar={podeGerenciar}
-              isSelf={me?.id === m.id}
-              onRevelar={setRevelado}
-              onMudou={carregar}
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
+      {/* ---- A BUSCA DA ORGANIZAÇÃO -------------------------------------
+          ⚠️ É o que a fatia E decidiu que esta tela É: *"Membros vira a busca
+          da organização"*. Antes o filtro não existia aqui, e achar alguém
+          num workspace com dezenas de pessoas era rolar a lista. */}
+      <label className="field mb-4 block max-w-[420px]">
+        <span className="label flex items-center gap-1.5">
+          <Search size={14} aria-hidden="true" /> Encontrar pessoa
+        </span>
+        <input
+          className="input mt-1.5 w-full"
+          value={busca}
+          placeholder="Nome ou e-mail"
+          onChange={(e) => setBusca(e.target.value)}
+        />
+      </label>
 
-// Linha da lista + acoes de gestao (4b). Resetar/desativar so aparecem pra
-// quem tem team.manage, em membro ATIVO que nao e voce mesmo. Confirmacao
-// inline (sem dialog do browser). Reset alimenta o reveal-once do pai.
-function LinhaMembro({
-  m,
-  subtime,
-  times,
-  souAdmin,
-  primeira,
-  alcance,
-  podeGerenciar,
-  isSelf,
-  onRevelar,
-  onMudou,
-}: {
-  m: Member;
-  subtime: string;
-  times: Team[];
-  souAdmin: boolean;
-  primeira: boolean;
-  alcance: Alcance;
-  podeGerenciar: boolean;
-  isSelf: boolean;
-  onRevelar: (r: Revelado) => void;
-  onMudou: () => void;
-}) {
-  const [confirmReset, setConfirmReset] = useState(false);
-  const [confirmDesativar, setConfirmDesativar] = useState(false);
-  const [busy, setBusy] = useState(false);
-  // ⚠️ `ErroDeLinha`, e nao `string`. A E8 da Spec 037 devolve uma LISTA de
-  // tarefas no 422; guardar so texto aqui era o que fazia a lista morrer no
-  // ultimo passo, depois de atravessar backend, HTTP e `lib/api.ts`.
-  const [erroLinha, setErroLinha] = useState<ErroDeLinha | null>(null);
-  // ⚠️ SEPARADO DO ERRO, de proposito: o rebaixamento da Spec 045 acontece
-  // num SUCESSO. Reaproveitar `erroLinha` pintaria de vermelho uma operacao
-  // que deu certo, e ensinaria a tratar o aviso como falha.
-  const [avisoLinha, setAvisoLinha] = useState<string | null>(null);
-
-  // painel de papel (Spec 015, F3) -- carregado sob demanda.
-  const [editandoPapel, setEditandoPapel] = useState(false);
-  const [vinculos, setVinculos] = useState<MemberTeam[] | null>(null);
-  const [papelBusy, setPapelBusy] = useState<string | null>(null); // team_id salvando
-  const [confirmRemover, setConfirmRemover] = useState<string | null>(null); // team_id
-  // adicionar a um time (Spec 016)
-  const [adicionando, setAdicionando] = useState(false);
-  const [novoTimeId, setNovoTimeId] = useState("");
-  const [novoPapel, setNovoPapel] = useState<MemberRole | "">("");
-  const [addBusy, setAddBusy] = useState(false);
-
-  // Spec 028: a linha aparece SEMPRE (lista completa do time). O que o
-  // alcance decide e se ela tem botao -- para o supervisor, so em membro do
-  // proprio subtime ou sem subtime. Para ADMIN/MANAGER nada muda.
-  const mostraAcoes =
-    podeGerenciar &&
-    !isSelf &&
-    m.is_active &&
-    temAcaoPossivel(alcance, m.team_ids);
-
-  // Papeis atribuiveis pelo ator NAQUELE TIME. Spec 028: sai do modulo puro
-  // -- supervisor so oferece OPERATOR. Espelha a matriz C2 + a trava D2 do
-  // backend (que travam de qualquer jeito; aqui e so para nao oferecer o que
-  // dara 403).
-  //
-  // ⚠️ DEPENDE DO NIVEL DESDE A SPEC 045 (fatia D), entao deixou de ser UMA
-  // lista da tela e virou uma pergunta POR TIME: MANAGER so cabe na raiz,
-  // SUPERVISOR so em subtime, ADMIN em nenhum dos dois.
-  function papeisPara(teamId: string): MemberRole[] {
-    const t = times.find((x) => x.id === teamId);
-    return papeisAtribuiveis(alcance, souAdmin, t?.parent_team_id == null);
-  }
-
-  function nomeTime(id: string): string {
-    return times.find((t) => t.id === id)?.name ?? "—";
-  }
-
-  // C2 (front): o ator so edita vinculo cujo papel atual ele alcanca.
-  // Spec 028: trocar papel exige alcance amplo -- supervisor nao promove.
-  function podeEditarVinculo(papelAtual: MemberRole): boolean {
-    if (!podeTrocarPapel(alcance)) return false;
-    return souAdmin || papelAtual === "SUPERVISOR" || papelAtual === "OPERATOR";
-  }
-
-  // Spec 028: remover vinculo -- amplo remove qualquer um; supervisor so
-  // OPERATOR do proprio subtime.
-  function podeRemoverVinculo(teamId: string, papelAtual: MemberRole): boolean {
-    return podeRemoverDoTime(alcance, teamId, papelAtual);
-  }
-
-  function ehSubtime(teamId: string): boolean {
-    return (times.find((t) => t.id === teamId)?.parent_team_id ?? null) !== null;
-  }
-
-  // Destinos de "mover": qualquer time onde a pessoa AINDA nao esta (exclui o
-  // atual e os que ela ja tem). Inclui a raiz (Marketing geral) -> "tirar do
-  // subtime" = mover pra raiz. Evita oferecer destino que daria 409.
-  function destinosDeMover(exceto: string): Team[] {
-    const jaEsta = new Set((vinculos ?? []).map((x) => x.team_id));
-    return times.filter((t) => t.id !== exceto && !jaEsta.has(t.id));
-  }
-
-  // Times para ADICIONAR (Spec 016): onde a pessoa ainda nao esta.
-  //
-  // ⚠️ A regra mora em `lib/permissoesMembros.ts` de proposito -- ela e
-  // permissao, nao desenho, e `app/` nao tem guardiao. A nota sobre a trava
-  // de um-subtime que saiu na Spec 044 fatia 3 esta la.
-  function timesParaAdicionar(): Team[] {
-    const candidatos = candidatosParaAdicionar(times, vinculos ?? []);
-    // Spec 028: o supervisor so enxerga aqui os subtimes onde ele e
-    // supervisor -- nunca a raiz, nunca subtime alheio.
-    return timesPermitidos(alcance, candidatos);
-  }
-
-  async function adicionarVinculo() {
-    if (!novoTimeId || !novoPapel) return;
-    setAddBusy(true);
-    setErroLinha(null);
-    try {
-      await assignMemberToTeam(m.id, novoTimeId, novoPapel as MemberRole);
-      setAdicionando(false);
-      setNovoTimeId("");
-      setNovoPapel("");
-      await recarregarVinculos();
-      onMudou();
-    } catch (e) {
-      const a = e as ApiError;
-      setErroLinha(
-        a.status === 403
-          ? "Sem permissão para esse papel (a matriz do servidor recusou)."
-          : // ⚠️ DOIS 409 DIFERENTES CHEGAM AQUI, e a Spec 044 fatia 5 criou o
-          // segundo. `ConflictError` = já está no time; `BusinessRuleError` da
-          // regra de posto = o papel na raiz é menor que o do subtime. Dizer
-          // "já faz parte desse time" para o segundo manda a pessoa procurar
-          // um vínculo que não existe. O `papel_raiz` no details separa os
-          // dois -- o status sozinho não separa.
-          a.status === 409 && a.details?.papel_raiz
-          ? `No time principal a pessoa é ${String(
-              a.details.papel_raiz
-            ).toLowerCase()}, e isso não pode ser menor que ${String(
-              a.details.papel_subtime
-            ).toLowerCase()} no subtime. Ajuste o papel no time principal primeiro.`
-          : a.status === 409
-          ? "A pessoa já faz parte desse time."
-          : a.status === 422
-          ? "Dados inválidos para esse vínculo."
-          : a.message || "Não consegui adicionar."
-      );
-    } finally {
-      setAddBusy(false);
-    }
-  }
-
-  async function abrirPapel() {
-    setErroLinha(null);
-    setEditandoPapel(true);
-    setVinculos(null);
-    try {
-      setVinculos(await listMemberTeams(m.id));
-    } catch (e) {
-      setErroLinha((e as ApiError).message || "Não consegui carregar os papéis.");
-      setEditandoPapel(false);
-    }
-  }
-
-  async function recarregarVinculos() {
-    try {
-      setVinculos(await listMemberTeams(m.id));
-    } catch (e) {
-      setErroLinha((e as ApiError).message || "Não consegui recarregar os papéis.");
-    }
-  }
-
-  async function salvarPapel(teamId: string, novo: MemberRole) {
-    setPapelBusy(teamId);
-    setErroLinha(null);
-    try {
-      const r = await changeMemberRole(m.id, teamId, novo);
-      setVinculos((vs) =>
-        (vs ?? []).map((v) => (v.team_id === teamId ? { ...v, role: r.role } : v))
-      );
-    } catch (e) {
-      const a = e as ApiError;
-      // ⚠️ O REBAIXAMENTO E O GATILHO MAIS LARGO DOS TRES: MANAGER da raiz
-      // virando OPERATOR perde os oito subtimes de uma vez. Se algum handler
-      // tinha de ganhar a lista, era este.
-      const bloqueio = bloqueioDeAlcance(a);
-      setErroLinha(
-        bloqueio ??
-          (a.status === 403
-            ? "Sem permissão para esse papel (a matriz do servidor recusou)."
-            : a.status === 404
-            ? "Vínculo não encontrado (a pessoa pode ter saído do time)."
-            : a.message || "Não consegui alterar o papel.")
-      );
-    } finally {
-      setPapelBusy(null);
-    }
-  }
-
-  async function removerVinculo(teamId: string) {
-    setPapelBusy(teamId);
-    setErroLinha(null);
-    try {
-      await removeMemberFromTeam(m.id, teamId);
-      setConfirmRemover(null);
-      await recarregarVinculos();
-      onMudou(); // o subtime na lista pode ter mudado
-    } catch (e) {
-      const a = e as ApiError;
-      const bloqueio = bloqueioDeAlcance(a);
-      setErroLinha(
-        bloqueio ??
-          (a.status === 403
-            ? "Sem permissão para remover esse vínculo."
-            : a.status === 409
-            ? "Não dá pra remover: é o único time da pessoa (ela ficaria sem time)."
-            : a.status === 404
-            ? "Vínculo não encontrado (pode ter mudado)."
-            : a.message || "Não consegui remover.")
-      );
-    } finally {
-      setPapelBusy(null);
-    }
-  }
-
-  async function moverPara(fromTeamId: string, toTeamId: string) {
-    setPapelBusy(fromTeamId);
-    setErroLinha(null);
-    setAvisoLinha(null);
-    // ⚠️ LIDO ANTES DA CHAMADA: `recarregarVinculos` abaixo troca o estado, e
-    // depois disso nao ha mais de onde tirar o papel anterior.
-    const papelAntes = (vinculos ?? []).find(
-      (v) => v.team_id === fromTeamId
-    )?.role;
-    try {
-      const novo = await moveMemberSubteam(m.id, fromTeamId, toTeamId);
-      await recarregarVinculos();
-      onMudou(); // o subtime na lista mudou
-      // ⚠️ Spec 045, fatia D: o backend REBAIXA um supervisor ao leva-lo para
-      // o time principal. A operacao termina em sucesso e a pessoa perde o
-      // posto -- sem esta frase, quem clicou nao fica sabendo.
-      if (papelAntes) {
-        setAvisoLinha(
-          avisoDeRebaixamento(papelAntes, novo.role, nomeTime(toTeamId))
-        );
-      }
-    } catch (e) {
-      const a = e as ApiError;
-      // Spec 037, E8: o 422 COM lista vira o aviso estruturado. O 422 sem
-      // lista continua sendo texto -- quem separa os dois e
-      // `bloqueioDeAlcance`, nao o status. (O exemplo canonico do segundo
-      // caso era a regra de 1 subtime da ADR 0008, que saiu na Spec 044.)
-      const bloqueio = bloqueioDeAlcance(a);
-      setErroLinha(
-        bloqueio ??
-          (a.status === 403
-            ? "Sem permissão para mover esse membro."
-            : a.status === 409
-            ? "Movimento inválido (mesmo time ou já faz parte do destino)."
-            : a.status === 404
-            ? "Time de origem ou destino não encontrado."
-            : a.message || "Não consegui mover.")
-      );
-    } finally {
-      setPapelBusy(null);
-    }
-  }
-
-  async function resetar() {
-    setBusy(true);
-    setErroLinha(null);
-    try {
-      const r = await resetMemberPassword(m.id);
-      setConfirmReset(false);
-      onRevelar({
-        titulo: `Senha resetada: ${m.name}`,
-        email: m.email,
-        senha: r.temporary_password,
-      });
-    } catch (e) {
-      const a = e as ApiError;
-      setErroLinha(a.status === 403 ? "Sem permissão." : a.message || "Não consegui resetar.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function desativar() {
-    setBusy(true);
-    setErroLinha(null);
-    try {
-      await deactivateMember(m.id);
-      setConfirmDesativar(false);
-      onMudou(); // recarrega a lista (cache ja invalidado)
-    } catch (e) {
-      const a = e as ApiError;
-      setErroLinha(a.status === 403 ? "Sem permissão." : a.message || "Não consegui desativar.");
-      setBusy(false);
-    }
-  }
-
-  return (
-    <div
-      style={{
-        display: "flex", flexDirection: "column", gap: 8, padding: "12px 16px",
-        borderTop: primeira ? "none" : "1px solid var(--border)",
-        background: "var(--surface)", opacity: m.is_active ? 1 : 0.6,
-      }}
-    >
-      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        <Avatar id={m.id} name={m.name} size="lg" />
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 14, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {m.name}{isSelf && <span className="muted" style={{ fontWeight: 400 }}> (você)</span>}
-          </div>
-          <div className="muted" style={{ fontSize: 12.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {m.email}
-          </div>
-        </div>
-        <Badge tone="neutral" size="md" weight="normal" className="shrink-0 bg-surface-2 border border-border text-ink-faint">
-          {subtime}
-        </Badge>
-        {!m.is_active && (
-          <Badge tone="neutral" size="md" weight="bold" className="shrink-0 border border-border text-ink-faint">
-            inativo
-          </Badge>
-        )}
-
-        {mostraAcoes && !confirmReset && !confirmDesativar && !editandoPapel && (
-          <span style={{ display: "flex", gap: 6, flexShrink: 0 }}>
-            <button className="btn btn-ghost" onClick={abrirPapel}
-              style={{ padding: "4px 10px", fontSize: 12 }}>
-              {podeTrocarPapel(alcance) ? "Alterar papel" : "Times"}
-            </button>
-            {podeResetarSenha(alcance) && (
-              <button className="btn btn-ghost" onClick={() => { setErroLinha(null); setConfirmReset(true); }}
-                style={{ padding: "4px 10px", fontSize: 12 }}>
-                Resetar senha
-              </button>
-            )}
-            {podeDesativarConta(alcance) && (
-              <button className="btn btn-ghost" onClick={() => { setErroLinha(null); setConfirmDesativar(true); }}
-                style={{ padding: "4px 10px", fontSize: 12, color: "var(--danger, #b42318)" }}>
-                Desativar
-              </button>
-            )}
-          </span>
-        )}
-      </div>
-
-      {/* confirmacao: resetar senha */}
-      {confirmReset && (
-        <div style={{ display: "flex", alignItems: "center", gap: 10, paddingLeft: 44 }}>
-          <span className="muted" style={{ fontSize: 12.5 }}>
-            Gerar nova senha provisoria para {m.name}? A senha atual dele deixa de valer.
-          </span>
-          <button className="btn btn-primary" onClick={resetar} disabled={busy}
-            style={{ padding: "4px 12px", fontSize: 12 }}>
-            {busy ? "…" : "Resetar"}
-          </button>
-          <button className="btn btn-ghost" onClick={() => setConfirmReset(false)} disabled={busy}
-            style={{ padding: "4px 12px", fontSize: 12 }}>
-            Cancelar
-          </button>
-        </div>
-      )}
-
-      {/* confirmacao: desativar */}
-      {confirmDesativar && (
-        <div style={{ display: "flex", alignItems: "center", gap: 10, paddingLeft: 44, flexWrap: "wrap" }}>
-          <span className="muted" style={{ fontSize: 12.5 }}>
-            Desativar {m.name}? Hoje <strong>não tem como reativar pela tela</strong>.
-          </span>
-          <button className="btn btn-primary" onClick={desativar} disabled={busy}
-            style={{ padding: "4px 12px", fontSize: 12, background: "var(--danger, #b42318)", borderColor: "transparent" }}>
-            {busy ? "…" : "Desativar"}
-          </button>
-          <button className="btn btn-ghost" onClick={() => setConfirmDesativar(false)} disabled={busy}
-            style={{ padding: "4px 12px", fontSize: 12 }}>
-            Cancelar
-          </button>
-        </div>
-      )}
-
-      {/* painel: alterar papel (Spec 015, F3) */}
-      {editandoPapel && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 8, paddingLeft: 44 }}>
-          {vinculos === null ? (
-            <span className="muted" style={{ fontSize: 12.5 }}>Carregando papéis…</span>
-          ) : vinculos.length === 0 ? (
-            <span className="muted" style={{ fontSize: 12.5 }}>
-              Este membro não tem vínculo de time.
-            </span>
-          ) : (
-            vinculos.map((v) => {
-              const editavel = podeEditarVinculo(v.role);
-              const destinos = destinosDeMover(v.team_id);
-              const podeMover =
-                podeMoverSubtime(alcance) &&
-                editavel &&
-                ehSubtime(v.team_id) &&
-                destinos.length > 0;
-              // Spec 028: remover tem gate PROPRIO. Nao pode sair de
-              // `editavel` -- o supervisor nao edita papel (D2) mas remove
-              // OPERATOR do proprio subtime (D1), que e o objetivo da spec.
-              const podeRemover =
-                podeRemoverVinculo(v.team_id, v.role) && vinculos.length > 1;
-              const ocupada = papelBusy === v.team_id;
-              return (
-                <div key={v.team_id} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                    <span style={{ fontSize: 12.5, minWidth: 120 }}>{nomeTime(v.team_id)}</span>
-                    {editavel ? (
-                      <select
-                        className="input"
-                        value={v.role}
-                        disabled={ocupada}
-                        onChange={(ev) => salvarPapel(v.team_id, ev.target.value as MemberRole)}
-                        style={{ padding: "4px 8px", fontSize: 12, width: "auto" }}
-                      >
-                        {papeisPara(v.team_id).map((p) => (
-                          <option key={p} value={p}>{PAPEL_LABEL[p]}</option>
-                        ))}
-                      </select>
-                    ) : (
-                      <span className="muted" style={{ fontSize: 12.5 }}>
-                        {PAPEL_LABEL[v.role]} <span style={{ fontStyle: "italic" }}>(so um ADMIN altera)</span>
-                      </span>
-                    )}
-                    {podeMover && (
-                      <select
-                        className="input"
-                        value=""
-                        disabled={ocupada}
-                        onChange={(ev) => { if (ev.target.value) moverPara(v.team_id, ev.target.value); }}
-                        style={{ padding: "4px 8px", fontSize: 12, width: "auto" }}
-                      >
-                        <option value="">Mover para…</option>
-                        {destinos.map((t) => (
-                          <option key={t.id} value={t.id}>
-                            {t.parent_team_id === null ? `${t.name} (geral)` : t.name}
-                          </option>
-                        ))}
-                      </select>
-                    )}
-                    {podeRemover && confirmRemover !== v.team_id && (
-                      <button className="btn btn-ghost" disabled={ocupada}
-                        onClick={() => { setErroLinha(null); setConfirmRemover(v.team_id); }}
-                        style={{ padding: "4px 10px", fontSize: 12, color: "var(--danger, #b42318)" }}>
-                        Remover
-                      </button>
-                    )}
-                    {ocupada && <span className="muted" style={{ fontSize: 12 }}>salvando…</span>}
-                  </div>
-
-                  {confirmRemover === v.team_id && (
-                    <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                      <span className="muted" style={{ fontSize: 12 }}>
-                        Tirar {m.name} de <strong>{nomeTime(v.team_id)}</strong>? Perde o acesso a esse time; as tarefas dele ficam.
-                      </span>
-                      <button className="btn btn-primary" disabled={ocupada}
-                        onClick={() => removerVinculo(v.team_id)}
-                        style={{ padding: "4px 12px", fontSize: 12, background: "var(--danger, #b42318)", borderColor: "transparent" }}>
-                        {ocupada ? "…" : "Remover"}
-                      </button>
-                      <button className="btn btn-ghost" disabled={ocupada}
-                        onClick={() => setConfirmRemover(null)}
-                        style={{ padding: "4px 12px", fontSize: 12 }}>
-                        Cancelar
-                      </button>
-                    </div>
-                  )}
-                </div>
-              );
-            })
-          )}
-          {/* adicionar a um time (Spec 016) */}
-          {vinculos !== null && mostraAcoes && timesParaAdicionar().length > 0 && (
-            adicionando ? (
-              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                <select className="input" value={novoTimeId} disabled={addBusy}
-                  onChange={(ev) => setNovoTimeId(ev.target.value)}
-                  style={{ padding: "4px 8px", fontSize: 12, width: "auto" }}>
-                  <option value="">— time —</option>
-                  {timesParaAdicionar().map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.parent_team_id === null ? `${t.name} (geral)` : t.name}
-                    </option>
-                  ))}
-                </select>
-                <select className="input" value={novoPapel} disabled={addBusy}
-                  onChange={(ev) => setNovoPapel(ev.target.value as MemberRole | "")}
-                  style={{ padding: "4px 8px", fontSize: 12, width: "auto" }}>
-                  <option value="">— papel —</option>
-                  {/* ⚠️ Depende do TIME ESCOLHIDO, e nao do ator: trocar o
-                      destino troca a lista. Sem `novoTimeId` ainda nao ha
-                      nivel, e a lista fica vazia -- o botao ja exige os dois. */}
-                  {(novoTimeId ? papeisPara(novoTimeId) : []).map((p) => (
-                    <option key={p} value={p}>{PAPEL_LABEL[p]}</option>
-                  ))}
-                </select>
-                <button className="btn btn-primary" onClick={adicionarVinculo}
-                  disabled={
-                    addBusy ||
-                    !novoTimeId ||
-                    !novoPapel ||
-                    // Spec 028: ultima checagem antes de disparar. Os selects
-                    // ja sao filtrados, mas a combinacao (time, papel) so e
-                    // valida junta -- e o backend recusa com 403 se passar.
-                    !podeAdicionarAoTime(
-                      alcance, novoTimeId, novoPapel as MemberRole,
-                    )
-                  }
-                  style={{ padding: "4px 12px", fontSize: 12 }}>
-                  {addBusy ? "…" : "Adicionar"}
-                </button>
-                <button className="btn btn-ghost" disabled={addBusy}
-                  onClick={() => { setAdicionando(false); setNovoTimeId(""); setNovoPapel(""); }}
-                  style={{ padding: "4px 12px", fontSize: 12 }}>
-                  Cancelar
-                </button>
-              </div>
-            ) : (
-              <button className="btn btn-ghost" onClick={() => { setErroLinha(null); setAdicionando(true); }}
-                style={{ padding: "4px 10px", fontSize: 12, alignSelf: "flex-start" }}>
-                + Adicionar a um time
-              </button>
-            )
-          )}
-          <div>
-            <button className="btn btn-ghost" onClick={() => { setEditandoPapel(false); setVinculos(null); setConfirmRemover(null); setAdicionando(false); }}
-              disabled={papelBusy !== null || addBusy} style={{ padding: "4px 12px", fontSize: 12 }}>
-              Fechar
-            </button>
-          </div>
-        </div>
-      )}
-
-      {erroLinha !== null &&
-        (typeof erroLinha === "string" ? (
-          <div className="error-box" style={{ marginLeft: 44 }}>{erroLinha}</div>
-        ) : (
-          <div style={{ marginLeft: 44 }}>
-            <BloqueioAlcance bloqueio={erroLinha} />
-          </div>
-        ))}
-
-      {/* Aviso de operacao BEM-SUCEDIDA que mudou algo alem do pedido.
-          `role="status"` e nao `alert`: o leitor de tela anuncia sem
-          interromper, porque nao ha nada a corrigir. */}
-      {avisoLinha !== null && (
-        <div
-          role="status"
-          className="muted"
-          style={{
-            marginLeft: 44,
-            marginTop: 6,
-            fontSize: 12.5,
-            display: "flex",
-            gap: 8,
-            alignItems: "flex-start",
-          }}
-        >
-          <span aria-hidden="true">⚠️</span>
-          <span>{avisoLinha}</span>
+      {aviso && (
+        <div role="status" className="muted mb-4 flex items-start gap-2 text-xs">
+          <span>{aviso}</span>
           <button
-            className="btn btn-ghost"
-            style={{ padding: "0 6px", fontSize: 12 }}
-            onClick={() => setAvisoLinha(null)}
+            className="btn btn-ghost px-1.5 text-xs"
+            onClick={() => setAviso(null)}
           >
             Entendi
           </button>
         </div>
       )}
+
+      {membros.length === 0 ? (
+        <EmptyState title="Nenhum membro" />
+      ) : linhasVisiveis.length === 0 ? (
+        <div className="muted">Ninguém com esse nome ou e-mail.</div>
+      ) : (
+        // ⚠️ A MESMA TABELA da tela de time. Uma tabela só, uma regra só -- a
+        // §5 avisa que duas telas listando pessoas com regras diferentes é o
+        // começo do próximo defeito de contador.
+        <TabelaDeMembros
+          linhas={linhasVisiveis}
+          times={times}
+          me={me}
+          // ⚠️ O lápis oferece TODOS os subtimes: aqui o recorte é a
+          // organização, não uma árvore.
+          oferecidos={times.filter((t) => t.parent_team_id !== null)}
+          podeMexer={podeGerenciar}
+          colunaDoMeio={{
+            titulo: "Áreas",
+            render: (l) => {
+              const areas = (l.membro.area_ids ?? [])
+                .map((id) => times.find((t) => t.id === id))
+                .filter((t): t is Team => t !== undefined);
+              return areas.length === 0 ? (
+                <Badge tone="outline" size="sm">
+                  Sem área
+                </Badge>
+              ) : (
+                <span className="flex flex-wrap gap-1.5">
+                  {areas.map((a) => (
+                    <Badge key={a.id} tone="neutral" size="sm" className="border">
+                      {a.name}
+                    </Badge>
+                  ))}
+                </span>
+              );
+            },
+          }}
+          // ⚠️ O CONTADOR DIZ OS DOIS NÚMEROS quando há filtro. A §3.2: o
+          // defeito de 27/07 foi exatamente o cabeçalho divergindo do corpo.
+          contagem={
+            busca.trim() === ""
+              ? `${membros.length} ${membros.length === 1 ? "pessoa" : "pessoas"}`
+              : `${linhasVisiveis.length} de ${membros.length} pessoas`
+          }
+          onMudou={async (texto) => {
+            setAviso(texto);
+            await carregar();
+          }}
+        />
+      )}
     </div>
   );
 }
+// ⚠️⚠️ AQUI MORAVA `LinhaMembro`, ~575 linhas com TODOS os controles de
+// vínculo inline: adicionar time, remover, trocar papel, mover de subtime.
+// Ela saiu na Spec 047 (fatia E), e não por gosto de refatorar.
+//
+// A decisão da Camila (09/09): *"Membros vira a busca da organização,
+// aquela tela da tabela de membros que abre da tela da org."*
+//
+// ⚠️ E o que ela remove é DUPLICAÇÃO, não capacidade: cada um daqueles
+// controles existe agora em lugar melhor -- o lápis define em QUAIS times, e
+// o painel define COM QUE CARGO em cada um. Manter os dois seria manter duas
+// portas para a mesma escrita, e a §5 avisa onde isso termina: *"duas telas
+// listando pessoas, com regras diferentes, é o começo do próximo defeito de
+// contador"*.
+//
+// ⚠️ O QUE **NÃO** SAIU, de propósito: cadastrar membro, resetar senha e o
+// bloco de senha provisória revelada uma vez (ADR 0021). São capacidades
+// desta tela, e nenhuma delas existe em outro lugar.
 
-// Bloco reveal-once: a senha provisoria so existe aqui (nao volta). Mostra
-// com aviso, botao copiar, e some ao fechar.
 function SenhaProvisoria({
   titulo,
   email,
