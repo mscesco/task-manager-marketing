@@ -795,6 +795,28 @@ export type Workspace = {
   slug: string;
 };
 
+// Promove/rebaixa o papel de ORGANIZACAO. `null` remove.
+//
+// ⚠️ A rota existe desde a Spec 045 (fatia D) e NUNCA teve tela -- ate aqui o
+// unico jeito de promover alguem era SQL na mao. E a razao de ela existir e a
+// invariante de nivel: `POST /members` recusa `role=ADMIN`, porque ADMIN
+// deixou de ser papel de time.
+//
+// 409 = seria o ULTIMO administrador ativo. Sem nenhum, ninguem tem
+// `workspace.manage`, que e o portao desta propria rota -- a organizacao se
+// trancaria e a saida seria SQL.
+export async function changeOrganizationRole(
+  userId: string,
+  role: OrgRole | null,
+): Promise<Member> {
+  const m = await api<Member>(
+    `/api/v1/members/${userId}/organization-role`,
+    { method: "PATCH", body: { role } },
+  );
+  invalidateMembers();
+  return m;
+}
+
 export async function getWorkspace(): Promise<Workspace> {
   return api<Workspace>("/api/v1/workspaces/current");
 }

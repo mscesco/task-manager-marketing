@@ -27,9 +27,11 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Check, Pencil, Plus, Search, X } from "lucide-react";
 import AppShell from "@/components/AppShell";
+import Badge from "@/components/Badge";
 import PageHeader from "@/components/PageHeader";
 import {
   ApiError,
+  changeOrganizationRole,
   createTeam,
   currentUser,
   getWorkspace,
@@ -38,6 +40,7 @@ import {
   renameWorkspace,
   type CurrentUser,
   type Member,
+  type OrgRole,
   type Team,
   type Workspace,
 } from "@/lib/api";
@@ -126,18 +129,26 @@ export default function OrganizacaoPage() {
         }
       />
 
-      {gestores.length > 0 && (
-        <div
-          className="muted"
-          style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 18 }}
-        >
-          {gestores.map((g) => (
-            <span key={g.id} className="badge badge-neutral">
-              {g.name} · {ROTULO_ORG[g.org_role ?? ""] ?? "organização"}
-            </span>
-          ))}
-        </div>
-      )}
+      {/* ---- quem administra a ORGANIZAÇÃO -----------------------------
+          ⚠️ Fica junto do NOME que eles administram, e não numa seção
+          própria: é gente pouca, e o papel deles é sobre a organização
+          inteira — não sobre um time. */}
+      <div className="mb-5 flex flex-wrap items-center gap-2">
+        <span className="muted text-xs">Administram a organização:</span>
+        {gestores.length === 0 ? (
+          <span className="muted text-xs">ninguém</span>
+        ) : (
+          gestores.map((g) => (
+            <PapelDeOrganizacao
+              key={g.id}
+              membro={g}
+              podeEditar={podeRenomear}
+              souEu={g.id === me?.id}
+              onMudou={carregar}
+            />
+          ))
+        )}
+      </div>
 
       {erro && <div className="error-box">{erro}</div>}
 
@@ -185,16 +196,24 @@ export default function OrganizacaoPage() {
                       <span className="muted" style={{ fontSize: 12.5 }}>
                         {membro.email}
                       </span>
+                      {membro.org_role && (
+                        <Badge tone="soft" size="sm" color="var(--accent)">
+                          {ROTULO_ORG[membro.org_role]}
+                        </Badge>
+                      )}
+                      {podeRenomear && !membro.org_role && (
+                        <PromoverNaOrganizacao membro={membro} onMudou={carregar} />
+                      )}
                       {areas.length === 0 ? (
-                        <span className="badge badge-outline">sem área</span>
+                        <Badge tone="outline" size="sm">
+                          sem área
+                        </Badge>
                       ) : (
                         areas.map((a) => (
-                          <Link
-                            key={a.id}
-                            href={`/times/${a.id}`}
-                            className="badge badge-soft"
-                          >
-                            {a.name}
+                          <Link key={a.id} href={`/times/${a.id}`} className="tappable">
+                            <Badge tone="soft" size="sm" color="var(--accent)">
+                              {a.name}
+                            </Badge>
                           </Link>
                         ))
                       )}
@@ -217,11 +236,10 @@ export default function OrganizacaoPage() {
               <Link
                 key={area.id}
                 href={`/times/${area.id}`}
-                className="card"
-                style={{ display: "block", padding: 16 }}
+                className="tappable block rounded-lg border border-border bg-surface p-4"
               >
-                <strong style={{ fontSize: 15 }}>{area.name}</strong>
-                <div className="muted" style={{ fontSize: 12.5, marginTop: 6 }}>
+                <strong className="text-[15px]">{area.name}</strong>
+                <div className="muted mt-1.5 text-xs">
                   {pessoas} {pessoas === 1 ? "pessoa" : "pessoas"} ·{" "}
                   {subtimes} {subtimes === 1 ? "subtime" : "subtimes"}
                 </div>
@@ -233,9 +251,9 @@ export default function OrganizacaoPage() {
                 produto — a grade é feita de áreas. Some sozinho quando a
                 lista está vazia. */}
             {semArea.length > 0 && (
-              <div className="card" style={{ padding: 16 }}>
-                <strong style={{ fontSize: 15 }}>Pessoas sem área</strong>
-                <div className="muted" style={{ fontSize: 12.5, marginTop: 6 }}>
+              <div className="rounded-lg border border-dashed border-border p-4">
+                <strong className="text-[15px]">Pessoas sem área</strong>
+                <div className="muted mt-1.5 text-xs">
                   {semArea.length}{" "}
                   {semArea.length === 1 ? "pessoa" : "pessoas"} sem vínculo
                 </div>
@@ -440,5 +458,209 @@ function CriarArea({ onCriada }: { onCriada: () => Promise<void> }) {
       </button>
       {erro && <div className="error-box">{erro}</div>}
     </div>
+  );
+}
+
+/**
+ * O papel de ORGANIZAÇÃO de uma pessoa — clicável, com confirmação.
+ *
+ * ⚠️⚠️ NÃO APLICA NO CLIQUE, ao contrário da pílula de prioridade que a
+ * Camila usou como referência. A spec é explícita sobre a diferença
+ * (§4.3): *"prioridade erra e você desfaz; cargo erra e a pessoa ganha
+ * alcance no sistema inteiro, em silêncio, sem notificar ninguém."* Aqui é
+ * ainda mais forte — é o papel que administra a organização toda.
+ *
+ * ⚠️ E o passo intermediário NOMEIA A CONSEQUÊNCIA, em vez de perguntar
+ * "tem certeza?". Uma confirmação que não diz o que muda treina a pessoa a
+ * clicar em "sim" sem ler.
+ *
+ * ⚠️ Nada de toggle por permissão: o que se ESCOLHE é o papel, o que se
+ * MOSTRA é a consequência. Chave individual por permissão seria RBAC
+ * editável entrando pela porta dos fundos, recusado em `decisoes.md` §10.1.
+ */
+function PapelDeOrganizacao({
+  membro,
+  podeEditar,
+  souEu,
+  onMudou,
+}: {
+  membro: Member;
+  podeEditar: boolean;
+  souEu: boolean;
+  onMudou: () => Promise<void>;
+}) {
+  const [aberto, setAberto] = useState(false);
+  const [salvando, setSalvando] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+
+  const rotulo = ROTULO_ORG[membro.org_role ?? ""] ?? "organização";
+
+  if (!podeEditar) {
+    return (
+      <Badge tone="soft" size="sm" color="var(--accent)">
+        {membro.name} · {rotulo}
+      </Badge>
+    );
+  }
+
+  async function aplicar(novo: OrgRole | null) {
+    setSalvando(true);
+    try {
+      await changeOrganizationRole(membro.id, novo);
+      setAberto(false);
+      setErro(null);
+      await onMudou();
+    } catch (e) {
+      const a = e as ApiError;
+      setErro(
+        a.status === 409
+          ? "A organização precisa de pelo menos uma administradora. Promova outra pessoa antes."
+          : a.status === 403
+          ? "Só quem administra a organização pode mudar isto."
+          : a.message || "Não consegui mudar o papel.",
+      );
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  return (
+    <span className="relative inline-flex">
+      <button
+        className="tappable"
+        onClick={() => {
+          setErro(null);
+          setAberto((v) => !v);
+        }}
+        aria-expanded={aberto}
+      >
+        <Badge tone="soft" size="sm" color="var(--accent)">
+          {membro.name} · {rotulo}
+        </Badge>
+      </button>
+
+      {aberto && (
+        <div className="absolute left-0 top-full z-20 mt-1 w-[290px] rounded-lg border border-border bg-surface p-3 shadow-lg">
+          <div className="muted mb-2 text-xs">{membro.email}</div>
+
+          {/* ⚠️ A consequência de CADA papel, em texto. É o que a §4.3 pede no
+              lugar de chaves por permissão. */}
+          <Opcao
+            ativo={membro.org_role === "ADMIN"}
+            titulo="Administradora"
+            consequencia="Define a organização: renomeia, apaga área e promove gestoras."
+            onEscolher={() => void aplicar("ADMIN")}
+            desabilitado={salvando}
+          />
+          <Opcao
+            ativo={membro.org_role === "GESTOR"}
+            titulo="Gestora"
+            consequencia="Opera a organização: cria área, cadastra pessoas e distribui papéis de time. Não desfaz a organização."
+            onEscolher={() => void aplicar("GESTOR")}
+            desabilitado={salvando}
+          />
+
+          {/* ⚠️ Sair da organização é DIFERENTE de sair de um time: a pessoa
+              continua com os vínculos que tiver, só deixa de administrar. */}
+          <button
+            className="btn btn-ghost mt-2 w-full justify-start text-left"
+            disabled={salvando || souEu}
+            title={
+              souEu
+                ? "Você não pode remover o próprio papel de organização."
+                : undefined
+            }
+            onClick={() => void aplicar(null)}
+          >
+            Não administra a organização
+          </button>
+          {souEu && (
+            <div className="muted mt-1 text-xs">
+              {/* ⚠️ O backend barra o último admin com 409; barrar o PRÓPRIO
+                  papel aqui é anti-lockout de tela, e a mensagem diz por quê
+                  em vez de só desabilitar. */}
+              Você não pode tirar o próprio papel — peça a outra
+              administradora.
+            </div>
+          )}
+
+          {erro && (
+            <div className="error-box mt-2 text-xs">{erro}</div>
+          )}
+        </div>
+      )}
+    </span>
+  );
+}
+
+/** Uma escolha de papel, com a consequência escrita embaixo. */
+function Opcao({
+  ativo,
+  titulo,
+  consequencia,
+  onEscolher,
+  desabilitado,
+}: {
+  ativo: boolean;
+  titulo: string;
+  consequencia: string;
+  onEscolher: () => void;
+  desabilitado: boolean;
+}) {
+  return (
+    <button
+      className="tappable mb-1 block w-full rounded border border-border p-2 text-left"
+      onClick={onEscolher}
+      disabled={desabilitado || ativo}
+      aria-current={ativo}
+    >
+      <span className="text-sm font-semibold">
+        {titulo}
+        {ativo && <span className="muted font-normal"> · atual</span>}
+      </span>
+      <span className="muted mt-0.5 block text-xs">{consequencia}</span>
+    </button>
+  );
+}
+
+/** Promove alguém que ainda não administra a organização. */
+function PromoverNaOrganizacao({
+  membro,
+  onMudou,
+}: {
+  membro: Member;
+  onMudou: () => Promise<void>;
+}) {
+  const [salvando, setSalvando] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+
+  async function promover() {
+    setSalvando(true);
+    try {
+      // ⚠️ GESTOR, e não ADMIN: promover para o papel que OPERA é o passo
+      // reversível. Quem precisa de administradora sobe depois, pela pílula
+      // no cabeçalho — que mostra a consequência antes.
+      await changeOrganizationRole(membro.id, "GESTOR");
+      setErro(null);
+      await onMudou();
+    } catch (e) {
+      const a = e as ApiError;
+      setErro(a.message || "Não consegui promover.");
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  return (
+    <>
+      <button
+        className="btn btn-ghost text-xs"
+        onClick={() => void promover()}
+        disabled={salvando}
+      >
+        tornar gestora
+      </button>
+      {erro && <span className="error-text text-xs">{erro}</span>}
+    </>
   );
 }
