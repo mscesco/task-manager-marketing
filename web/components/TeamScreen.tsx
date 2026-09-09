@@ -46,6 +46,7 @@ import PageHeader from "@/components/PageHeader";
 import TemporaryPassword from "@/components/TemporaryPassword";
 import SubteamDrawer from "@/components/SubteamDrawer";
 import MembersTable, { ROLE_LABEL } from "@/components/MembersTable";
+import MemberDrawer from "@/components/MemberDrawer";
 import {
   ApiError,
   createMember,
@@ -87,6 +88,12 @@ export default function TeamScreen({ teamId }: { teamId: string }) {
   const [criando, setCriando] = useState(false);
   const [revelado, setRevelado] = useState<RevealedPassword | null>(null);
   const [gavetaDeTime, setGavetaDeTime] = useState<Team | null>(null);
+  // ⚠️⚠️ A GAVETA DA PESSOA MORA AQUI, e não na tabela. Ela era da tabela,
+  // e por isso só existia para quem vinha da tabela: da gaveta do SUBTIME,
+  // que lista as mesmas pessoas com o cargo, não havia caminho nenhum -- a
+  // Camila tentou trocar a permissão ali e não conseguiu (09/09). Com a tela
+  // como dona, as duas portas entregam a MESMA gaveta.
+  const [gavetaDePessoa, setGavetaDePessoa] = useState<Member | null>(null);
 
   const carregar = useCallback(async () => {
     setLoading(true);
@@ -343,14 +350,9 @@ export default function TeamScreen({ teamId }: { teamId: string }) {
                         ) : (
                           <MembersTable
                             rows={visiveis}
-                            teams={teams}
-                            me={me}
                             middleColumn={middleColumn}
                             count={`${visiveis.length} de ${rows.length} pessoas`}
-                            onChanged={async (texto) => {
-                              setAviso(texto);
-                              await carregar();
-                            }}
+                            onOpenMember={setGavetaDePessoa}
                           />
                         )}
                       </motion.div>
@@ -430,6 +432,38 @@ export default function TeamScreen({ teamId }: { teamId: string }) {
             onClose={() => setGavetaDeTime(null)}
             onChanged={async (texto) => {
               setGavetaDeTime(null);
+              setAviso(texto);
+              await carregar();
+            }}
+            // ⚠️ FECHA A DO TIME AO ABRIR A DA PESSOA: duas gavetas empilhadas
+            // na mesma borda dariam o defeito que a Camila já relatou em 09/09
+            // -- *"fica um sobre o outro e se clicar pra fora não fecha"*.
+            onOpenMember={(m) => {
+              setGavetaDeTime(null);
+              setGavetaDePessoa(m);
+            }}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* ⚠️ O reveal-once fica FORA da gaveta: fechar a gaveta levaria o
+          segredo junto, e não há rota para relê-lo (ADR 0021). */}
+      <AnimatePresence>
+        {gavetaDePessoa && (
+          <MemberDrawer
+            key={gavetaDePessoa.id}
+            member={gavetaDePessoa}
+            teams={teams}
+            scope={scope}
+            isAdmin={isAdmin}
+            canManageOrg={
+              me?.permissions.includes("workspace.manage") ?? false
+            }
+            isSelf={gavetaDePessoa.id === me?.id}
+            onClose={() => setGavetaDePessoa(null)}
+            onRevealPassword={setRevelado}
+            onChanged={async (texto) => {
+              setGavetaDePessoa(null);
               setAviso(texto);
               await carregar();
             }}

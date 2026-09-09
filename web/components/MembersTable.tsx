@@ -25,24 +25,24 @@
 // vínculos sem transação, e mentir na tela quando uma das escritas falhava no
 // meio -- deixou de existir, porque a gaveta escreve um vínculo por vez.
 //
+// ⚠️⚠️ A TABELA NÃO É DONA DA GAVETA, e a mudança é de 09/09. Ela era —
+// e por isso a gaveta do membro só existia PARA QUEM VINHA DA TABELA. Da
+// gaveta do SUBTIME, que lista as mesmas pessoas com o cargo delas, não havia
+// caminho nenhum: a Camila tentou trocar a permissão ali e não conseguiu.
+//
+// Agora a tela é a dona, e as duas portas entregam a MESMA gaveta. Uma porta
+// só para o vínculo continua valendo — o que mudou é que ela virou alcançável
+// dos dois lados.
+//
 // ⚠️ MORA EM `components/`, e não em `app/`: o `include` do vitest cobre
 // `components/**`, então este arquivo PODE ganhar teste. A §7 da spec pede
 // isso — `app/` fica de fora, e é lá que a tela some do alcance dos portões.
 
-import { useState, type ReactNode } from "react";
-import { AnimatePresence } from "motion/react";
+import { type ReactNode } from "react";
 import { Pencil } from "lucide-react";
 import Badge from "@/components/Badge";
-import TemporaryPassword from "@/components/TemporaryPassword";
-import MemberDrawer from "@/components/MemberDrawer";
-import {
-  type CurrentUser,
-  type Member,
-  type MemberRole,
-  type Team,
-} from "@/lib/api";
+import { type Member, type MemberRole } from "@/lib/api";
 import { type TeamRow } from "@/lib/teamScreen";
-import { alcanceDe } from "@/lib/permissoesMembros";
 
 export const ROLE_LABEL: Record<MemberRole, string> = {
   ADMIN: "Administrador",
@@ -51,42 +51,22 @@ export const ROLE_LABEL: Record<MemberRole, string> = {
   OPERATOR: "Operador",
 };
 
-type RevealedPassword = { title: string; email: string; password: string };
-
 export default function MembersTable({
   rows,
-  teams,
-  me,
   middleColumn,
   count,
-  onChanged,
+  onOpenMember,
 }: {
   rows: TeamRow[];
-  teams: Team[];
-  me: CurrentUser | null;
   /** O título e o conteúdo da coluna do meio — o que muda entre as telas. */
   middleColumn: { title: string; render: (row: TeamRow) => ReactNode };
   /** Texto do contador. ⚠️ Diz o TOTAL — ver o comentário no `<caption>`. */
   count?: string;
-  onChanged: (aviso: string) => Promise<void>;
+  /** ⚠️ A TABELA NÃO ABRE A GAVETA -- ver o bloco no topo. */
+  onOpenMember: (member: Member) => void;
 }) {
-  const [gavetaDe, setGavetaDe] = useState<Member | null>(null);
-  const [revelado, setRevelado] = useState<RevealedPassword | null>(null);
-  const scope = alcanceDe(me);
-
   return (
     <>
-      {/* ⚠️ O reveal-once fica AQUI e não dentro da gaveta: fechar a gaveta
-          levaria o segredo junto, e não há rota para relê-lo (ADR 0021). */}
-      {revelado && (
-        <TemporaryPassword
-          title={revelado.title}
-          email={revelado.email}
-          password={revelado.password}
-          onClose={() => setRevelado(null)}
-        />
-      )}
-
       {/* ⚠️ `<table>` semântica, e não `div`s com `grid`: são dados tabulares,
           e leitor de tela só anuncia coluna e linha com `<th scope="col">`.
           ⚠️ `overflow-x-auto` no wrapper: a coluna de cápsulas cresce com o
@@ -127,38 +107,13 @@ export default function MembersTable({
                 key={row.member.id}
                 row={row}
                 middleColumn={middleColumn}
-                onOpen={() => setGavetaDe(row.member)}
+                onOpen={() => onOpenMember(row.member)}
               />
             ))}
           </tbody>
         </table>
       </div>
 
-      {/* ⚠️ `AnimatePresence` é o que permite a gaveta SAIR animada: sem ele o
-          React desmonta o nó na hora e o `exit` nunca roda. Entrar suave e
-          sumir seco é pior que não animar -- a saída é justamente quando a
-          pessoa precisa perceber que a tabela voltou a ser o assunto. */}
-      <AnimatePresence>
-        {gavetaDe && (
-          <MemberDrawer
-            key={gavetaDe.id}
-            member={gavetaDe}
-            teams={teams}
-            scope={scope}
-            isAdmin={me?.roles.includes("ADMIN") ?? false}
-            canManageOrg={
-              me?.permissions.includes("workspace.manage") ?? false
-            }
-            isSelf={gavetaDe.id === me?.id}
-            onClose={() => setGavetaDe(null)}
-            onRevealPassword={setRevelado}
-            onChanged={async (texto) => {
-              setGavetaDe(null);
-              await onChanged(texto);
-            }}
-          />
-        )}
-      </AnimatePresence>
     </>
   );
 }

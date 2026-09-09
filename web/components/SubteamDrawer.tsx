@@ -21,6 +21,7 @@ import { useEffect, useState } from "react";
 import { motion } from "motion/react";
 import { X } from "lucide-react";
 import Badge from "@/components/Badge";
+import MenuSelect from "@/components/MenuSelect";
 import {
   ApiError,
   assignMemberToTeam,
@@ -44,6 +45,7 @@ export default function SubteamDrawer({
   canManage,
   onClose,
   onChanged,
+  onOpenMember,
 }: {
   team: Team;
   /** Todo mundo da árvore do time PAI — de onde saem os candidatos. */
@@ -53,6 +55,8 @@ export default function SubteamDrawer({
   canManage: boolean;
   onClose: () => void;
   onChanged: (aviso: string) => Promise<void>;
+  /** Abre a gaveta DA PESSOA — é lá que o cargo se troca. */
+  onOpenMember: (member: Member) => void;
 }) {
   // ⚠️ A GAVETA ATENDE OS DOIS NÍVEIS desde a unificação de 09/09: da tela
   // da organização ela abre uma ÁREA; da tela de um time, um subtime. Chamar
@@ -112,17 +116,32 @@ export default function SubteamDrawer({
                     key={member.id}
                     className="flex flex-wrap items-center gap-2 rounded border border-border p-2"
                   >
-                    <strong className="text-sm">{member.name}</strong>
-                    {/* ⚠️ O CARGO APARECE, mas NÃO se edita aqui. Trocar
-                        cargo é assunto da gaveta do MEMBRO, que mostra os
-                        outros vínculos da pessoa -- e é olhando os outros
-                        vínculos que se decide o cargo, por causa da
-                        invariante de nível (Spec 045). Duas portas para a
-                        mesma escrita seriam duas chances de decidir no
-                        escuro. */}
-                    <Badge tone="neutral" size="sm" className="border">
-                      {ROLE_LABEL[role]}
-                    </Badge>
+                    {/* ⚠️⚠️ O NOME ABRE A GAVETA DA PESSOA, e esta linha é
+                        o conserto de 09/09: *"não estou conseguindo mudar as
+                        permissões da galera"*. O cargo continua sem se editar
+                        AQUI -- decidi-lo exige ver os OUTROS vínculos da
+                        pessoa, por causa da invariante de nível (Spec 045) --
+                        mas antes não havia caminho nenhum daqui para lá, e a
+                        lista de cargos ficava sendo um beco.
+                        ⚠️ Não é uma segunda porta de ESCRITA: é a mesma
+                        gaveta, alcançada de outro lugar. */}
+                    <button
+                      type="button"
+                      className="tappable text-left text-sm font-semibold hover:underline"
+                      onClick={() => onOpenMember(member)}
+                    >
+                      {member.name}
+                    </button>
+                    <button
+                      type="button"
+                      className="tappable"
+                      title={`Mudar o cargo de ${member.name}`}
+                      onClick={() => onOpenMember(member)}
+                    >
+                      <Badge tone="neutral" size="sm" className="border">
+                        {ROLE_LABEL[role]}
+                      </Badge>
+                    </button>
                     {canManage && (
                       <RemoveFromTeam
                         member={member}
@@ -183,7 +202,7 @@ function Identity({
 
   return (
     <section>
-      <h3 className="label mb-2">Identity</h3>
+      <h3 className="label mb-2">Identidade</h3>
       <label className="label block text-xs" htmlFor="nome-do-subtime">
         Nome
       </label>
@@ -270,7 +289,7 @@ function RemoveFromTeam({
   return (
     <div className="w-full">
       <div className="text-xs">
-        {member.name} sai de {team.name}. A conta continua active.
+        {member.name} sai de {team.name}. A conta continua ativa.
       </div>
       {erro && <div className="error-box mt-1 text-xs">{erro}</div>}
       <div className="mt-1.5 flex gap-2">
@@ -327,22 +346,16 @@ function AddMember({
           pessoa nova dispara senha provisória e é outra ação (D3 da Spec 028).
           Misturar as duas num mesmo seletor faria o "adicionar" às vezes criar
           uma conta sem avisar. */}
-      <select
-        className="input w-full text-sm"
-        value={alvo}
-        disabled={salvando}
+      <MenuSelect
         aria-label="Pessoa"
-        onChange={(e) => setAlvo(e.target.value)}
-      >
-        <option value="">— escolha a pessoa —</option>
-        {candidates.map((m) => (
-          <option key={m.id} value={m.id}>
-            {m.name}
-          </option>
-        ))}
-      </select>
+        placeholder="— escolha a pessoa —"
+        value={alvo === "" ? null : alvo}
+        disabled={salvando}
+        onSelect={setAlvo}
+        options={candidates.map((m) => ({ id: m.id, label: m.name }))}
+      />
       <div className="muted mt-1 text-xs">
-        Entra como Operador. O cargo muda na gaveta da pessoa.
+        Entra como Operador. Para mudar o cargo, clique no nome da pessoa.
       </div>
       {erro && <div className="error-box mt-2 text-xs">{erro}</div>}
       <button
@@ -411,7 +424,7 @@ function DeleteTeam({
           className="btn btn-ghost px-0 text-xs"
           onClick={() => setAberto(true)}
         >
-          DeleteTeam {team.name}
+          Excluir {team.name}
         </button>
       </div>
     );
@@ -429,7 +442,7 @@ function DeleteTeam({
 
   return (
     <div className="mt-6 rounded border border-border p-3">
-      <div className="text-sm font-semibold">DeleteTeam {team.name}</div>
+      <div className="text-sm font-semibold">Excluir {team.name}</div>
 
       {carregandoPrevia ? (
         <div className="muted mt-1 text-xs">Conferindo o que há dentro…</div>
@@ -507,7 +520,7 @@ function DeleteTeam({
             }
           }}
         >
-          DeleteTeam
+          Excluir
         </button>
         <button
           className="btn btn-ghost"

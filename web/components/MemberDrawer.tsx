@@ -20,6 +20,7 @@ import { useEffect, useState } from "react";
 import { motion } from "motion/react";
 import { ChevronRight, X } from "lucide-react";
 import Badge from "@/components/Badge";
+import MenuSelect from "@/components/MenuSelect";
 import PillSelect from "@/components/PillSelect";
 import {
   ApiError,
@@ -447,20 +448,20 @@ function AddToTeam({
 
   return (
     <div className="rounded border border-border p-2">
-      <select
-        className="input w-full text-sm"
-        value={alvo}
-        disabled={salvando}
+      {/* ⚠️ MENU PRÓPRIO, e não `<select>` nativo: o nativo desenha a lista
+          pelo sistema operacional, e a dica "(área)" só cabe aqui. */}
+      <MenuSelect
         aria-label="Time"
-        onChange={(e) => setAlvo(e.target.value)}
-      >
-        <option value="">— escolha o time —</option>
-        {availableTeams.map((t) => (
-          <option key={t.id} value={t.id}>
-            {t.parent_team_id === null ? `${t.name} (área)` : t.name}
-          </option>
-        ))}
-      </select>
+        placeholder="— escolha o time —"
+        value={alvo === "" ? null : alvo}
+        disabled={salvando}
+        onSelect={setAlvo}
+        options={availableTeams.map((t) => ({
+          id: t.id,
+          label: t.name,
+          hint: t.parent_team_id === null ? "área" : undefined,
+        }))}
+      />
       {/* ⚠️ OPERADOR É O PADRÃO, por um motivo estrutural: operador é o piso
           do modelo, então adicionar alguém NUNCA viola a regra da Spec 044
           §4.1-bis ("o papel na raiz não pode ser menor"). O cargo se ajusta
@@ -613,7 +614,7 @@ function ResetPassword({
         }
       }}
     >
-      Resetar password
+      Resetar senha
     </button>
   );
 }
@@ -634,7 +635,7 @@ function Deactivate({
         className="btn btn-ghost text-xs"
         onClick={() => setConfirmando(true)}
       >
-        Deactivate
+        Desativar
       </button>
     );
   }
@@ -642,7 +643,7 @@ function Deactivate({
     <div className="w-full rounded border border-border p-2">
       <div className="text-xs">
         <strong>{member.name}</strong> deixa de acessar o sistema — em TODOS os
-        teams, não só neste. As tarefas dela ficam.
+        times, não só neste. As tarefas dela ficam.
       </div>
       <div className="mt-2 flex gap-2">
         <button
@@ -658,7 +659,7 @@ function Deactivate({
             }
           }}
         >
-          Deactivate
+          Desativar
         </button>
         <button
           className="btn btn-ghost"
