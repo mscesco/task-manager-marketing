@@ -23,7 +23,7 @@
 // tela precisar de estado na URL, ou envolve em `Suspense`, ou aceita virar
 // dinamica.
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { Check, Pencil, Plus, Search, X } from "lucide-react";
 import AppShell from "@/components/AppShell";
@@ -64,6 +64,13 @@ export default function OrganizacaoPage() {
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
   const [busca, setBusca] = useState("");
+  // ⚠️ UM PAINEL POR VEZ. Ver o comentario no `PapelDeOrganizacao`.
+  const [painelAberto, setPainelAberto] = useState<string | null>(null);
+  // ⚠️ O AVISO DO QUE ACABOU DE ACONTECER. Sem ele, tirar o papel de alguem
+  // faz a pessoa SUMIR da lista -- correto, ela nao administra mais --, e a
+  // tela nao diz que foi isso. A Camila clicou, viu sumir e perguntou se
+  // tinha apagado a pessoa.
+  const [aviso, setAviso] = useState<string | null>(null);
 
   async function carregar() {
     setCarregando(true);
@@ -144,13 +151,42 @@ export default function OrganizacaoPage() {
               membro={g}
               podeEditar={podeRenomear}
               souEu={g.id === me?.id}
-              onMudou={carregar}
+              // ⚠️ QUAL ESTA ABERTO E ESTADO DO PAI, e nao de cada pilula.
+              // Com um `useState` por pilula, abrir a segunda nao fechava a
+              // primeira e os dois paineis ficavam empilhados -- reportado
+              // pela Camila em 09/09, com captura.
+              aberto={painelAberto === g.id}
+              onAbrir={() => setPainelAberto(painelAberto === g.id ? null : g.id)}
+              onFechar={() => setPainelAberto(null)}
+              onMudou={async () => {
+                setPainelAberto(null);
+                await carregar();
+              }}
+              onAviso={setAviso}
             />
           ))
         )}
       </div>
 
       {erro && <div className="error-box">{erro}</div>}
+
+      {/* ⚠️ Operação BEM-SUCEDIDA que muda o que a tela mostra. `role="status"`
+          e não `alert`: não há nada a corrigir, então anuncia sem interromper.
+          Mesma decisão do aviso de rebaixamento na tela de membros. */}
+      {aviso && (
+        <div
+          role="status"
+          className="muted mb-4 flex items-start gap-2 text-xs"
+        >
+          <span>{aviso}</span>
+          <button
+            className="btn btn-ghost px-1.5 text-xs"
+            onClick={() => setAviso(null)}
+          >
+            Entendi
+          </button>
+        </div>
+      )}
 
       {carregando ? (
         <div className="muted">Carregando…</div>
@@ -202,7 +238,11 @@ export default function OrganizacaoPage() {
                         </Badge>
                       )}
                       {podeRenomear && !membro.org_role && (
-                        <PromoverNaOrganizacao membro={membro} onMudou={carregar} />
+                        <PromoverNaOrganizacao
+                          membro={membro}
+                          onMudou={carregar}
+                          onAviso={setAviso}
+                        />
                       )}
                       {areas.length === 0 ? (
                         <Badge tone="outline" size="sm">
@@ -482,16 +522,49 @@ function PapelDeOrganizacao({
   membro,
   podeEditar,
   souEu,
+  aberto,
+  onAbrir,
+  onFechar,
   onMudou,
+  onAviso,
 }: {
   membro: Member;
   podeEditar: boolean;
   souEu: boolean;
+  aberto: boolean;
+  onAbrir: () => void;
+  onFechar: () => void;
   onMudou: () => Promise<void>;
+  onAviso: (texto: string) => void;
 }) {
-  const [aberto, setAberto] = useState(false);
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  const [confirmandoSaida, setConfirmandoSaida] = useState(false);
+  const wrapRef = useRef<HTMLSpanElement>(null);
+
+  // ⚠️ FECHAR AO CLICAR FORA -- e este e o padrao de PAINEL SUSPENSO, com
+  // `mousedown` no documento (o mesmo dos tres paineis do `TaskDetail`).
+  //
+  // ⚠️ E NAO o `useFecharAoClicarFora`, que resolve outro problema: aquele
+  // pareia `mousedown` com `mouseup` porque em MODAL, selecionar texto dentro
+  // e soltar fora fechava e apagava formulario. O comentario do `TaskDetail`
+  // ja registra essa distincao, e eu a ignorei na primeira versao -- o painel
+  // simplesmente nao fechava.
+  useEffect(() => {
+    if (!aberto) return;
+    function onDown(e: MouseEvent) {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
+        onFechar();
+      }
+    }
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [aberto, onFechar]);
+
+  // Fechar zera a confirmacao pendente -- reabrir nao pode cair no meio dela.
+  useEffect(() => {
+    if (!aberto) setConfirmandoSaida(false);
+  }, [aberto]);
 
   const rotulo = ROTULO_ORG[membro.org_role ?? ""] ?? "organização";
 
@@ -507,8 +580,15 @@ function PapelDeOrganizacao({
     setSalvando(true);
     try {
       await changeOrganizationRole(membro.id, novo);
-      setAberto(false);
       setErro(null);
+      // ⚠️ DIZ O QUE ACONTECEU, porque o efeito visivel e a pessoa SUMIR
+      // desta lista -- ela deixou de administrar a organizacao, entao nao
+      // pertence mais ao cabecalho. Sem esta frase parece que foi apagada.
+      onAviso(
+        novo === null
+          ? `${membro.name} deixou de administrar a organização. A conta e os times dela continuam como estavam.`
+          : `${membro.name} agora é ${ROTULO_ORG[novo]}.`,
+      );
       await onMudou();
     } catch (e) {
       const a = e as ApiError;
@@ -530,7 +610,7 @@ function PapelDeOrganizacao({
         className="tappable"
         onClick={() => {
           setErro(null);
-          setAberto((v) => !v);
+          onAbrir();
         }}
         aria-expanded={aberto}
       >
@@ -560,20 +640,56 @@ function PapelDeOrganizacao({
             desabilitado={salvando}
           />
 
-          {/* ⚠️ Sair da organização é DIFERENTE de sair de um time: a pessoa
-              continua com os vínculos que tiver, só deixa de administrar. */}
-          <button
-            className="btn btn-ghost mt-2 w-full justify-start text-left"
-            disabled={salvando || souEu}
-            title={
-              souEu
-                ? "Você não pode remover o próprio papel de organização."
-                : undefined
-            }
-            onClick={() => void aplicar(null)}
-          >
-            Não administra a organização
-          </button>
+          {/* ---- deixar de administrar -------------------------------------
+              ⚠️⚠️ ISTO ERA UM BOTAO SOLTO CHAMADO "Não administra a
+              organização", e a Camila clicou nele sem saber o que fazia --
+              a pessoa sumiu da lista e ela perguntou se tinha apagado.
+
+              Dois defeitos ali, e nenhum era o comportamento (que estava
+              certo): o rotulo descrevia um ESTADO ("não administra") em vez
+              de uma AÇÃO, e nada dizia o que PERMANECE. Some da lista porque
+              a lista é de quem administra -- mas isso só é óbvio para quem
+              escreveu.
+
+              ⚠️ Confirmação em dois passos porque é perda de autoridade, a
+              mesma razão da §4.3 -- e o segundo passo nomeia o que fica. */}
+          {!confirmandoSaida ? (
+            <button
+              className="btn btn-ghost mt-2 w-full justify-start text-left"
+              disabled={salvando || souEu}
+              onClick={() => setConfirmandoSaida(true)}
+            >
+              Tirar da administração da organização
+            </button>
+          ) : (
+            <div className="mt-2 rounded border border-border p-2">
+              <div className="text-xs">
+                <strong>{membro.name}</strong> deixa de administrar a
+                organização.
+              </div>
+              <div className="muted mt-1 text-xs">
+                A conta continua ativa e os times dela não mudam — ela só
+                perde o papel de organização. Some deste cabeçalho porque ele
+                lista quem administra.
+              </div>
+              <div className="mt-2 flex gap-2">
+                <button
+                  className="btn btn-danger"
+                  disabled={salvando}
+                  onClick={() => void aplicar(null)}
+                >
+                  Tirar
+                </button>
+                <button
+                  className="btn btn-ghost"
+                  disabled={salvando}
+                  onClick={() => setConfirmandoSaida(false)}
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          )}
           {souEu && (
             <div className="muted mt-1 text-xs">
               {/* ⚠️ O backend barra o último admin com 409; barrar o PRÓPRIO
@@ -627,9 +743,11 @@ function Opcao({
 function PromoverNaOrganizacao({
   membro,
   onMudou,
+  onAviso,
 }: {
   membro: Member;
   onMudou: () => Promise<void>;
+  onAviso: (texto: string) => void;
 }) {
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
@@ -642,6 +760,10 @@ function PromoverNaOrganizacao({
       // no cabeçalho — que mostra a consequência antes.
       await changeOrganizationRole(membro.id, "GESTOR");
       setErro(null);
+      onAviso(
+        `${membro.name} agora é gestora e aparece no topo da organização. ` +
+          "Para torná-la administradora, clique no nome dela lá.",
+      );
       await onMudou();
     } catch (e) {
       const a = e as ApiError;
