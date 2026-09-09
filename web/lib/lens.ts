@@ -69,15 +69,53 @@ function rootOf(teamId: string, teams: Team[]): string | null {
 }
 
 /**
- * Deriva a lente a partir dos vinculos do usuario (/me.teams) e da arvore
- * de times (listTeams). Pura: nao bate na API.
+ * Deriva a lente a partir dos vinculos do usuario (/me.teams), da arvore de
+ * times (listTeams) e dos PAPEIS dele (/me.roles). Pura: nao bate na API.
+ *
+ * ⚠️⚠️ O `roles` NASCEU DE UM DEFEITO EM PRODUCAO, em 09/09/2026, e vale
+ * saber qual: a conta de administracao da Camila ficou SEM VINCULO DE TIME
+ * NENHUM (passo 2 da Spec 045, fatia B) e o menu parou de mostrar os quadros
+ * dos subtimes. Ela abriu, viu so o "Quadro geral" e estranhou.
+ *
+ * A causa: esta funcao derivava tudo de `myTeams`. Sem vinculos, o laco
+ * abaixo nao roda nenhuma vez, `visible` fica vazio e `boardSubteams` tambem.
+ *
+ * ⚠️ E O `/auth/me` DIZIA QUE ISSO NAO IA ACONTECER. O comentario da rota
+ * afirmava: *"Assim a fatia B nao exige mudanca nenhuma no front."* Era
+ * verdade para `permissoesMembros.alcanceDe`, que le `permissions` -- e falso
+ * para esta funcao, que ninguem conferiu. O papel de organizacao SEMPRE
+ * esteve em `me.roles`; o que faltava era alguem olhar.
+ *
+ * ⚠️ NAO DA PARA DERIVAR ISTO DE `permissions`. Um MANAGER tambem tem
+ * `team.manage`, e tratar isso como "ve tudo" quebraria o escopo dele com N
+ * areas -- ele passaria a ver os subtimes do TI. O papel e a pergunta certa.
+ *
+ * ⚠️ SO `ADMIN`, E NAO `GESTOR`: e o espelho exato de `team_scope.is_admin`,
+ * que devolve `True` apenas para `org_role == "ADMIN"`. Um GESTOR sem vinculo
+ * de time enxergaria vazio -- **no backend tambem**, e por isso nao invento a
+ * diferenca aqui: seria a tela mostrando o que o servidor nao entrega.
+ * Ninguem e GESTOR hoje ("o papel nasce para a tela da Spec 047 poder
+ * atribui-lo"), entao a decisao cabe a ela, com o caso na frente.
  */
 export function computeLens(
   myTeams: TeamMembership[],
-  allTeams: Team[]
+  allTeams: Team[],
+  roles: readonly string[] = []
 ): TeamLens {
   const root = allTeams.find((t) => t.parent_team_id === null) ?? null;
   const rootId = root ? root.id : null;
+
+  // Admin (de time, legado, OU de organizacao) enxerga a arvore inteira --
+  // espelha `visible_team_ids` devolvendo `None` no backend.
+  if (roles.includes("ADMIN")) {
+    return {
+      rootId,
+      visibleTeamIds: new Set(allTeams.map((t) => t.id)),
+      boardSubteams: allTeams
+        .filter((t) => t.parent_team_id !== null)
+        .sort((a, b) => a.name.localeCompare(b.name, "pt-BR")),
+    };
+  }
 
   const visible = new Set<string>();
   for (const m of myTeams) {

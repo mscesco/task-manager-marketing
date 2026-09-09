@@ -93,8 +93,21 @@ async def me(user: PendingUserDep, session: SessionDep) -> CurrentUserResponse:
     # ⚠️ O PAPEL DE ORGANIZACAO ENTRA EM `roles` NA RESPOSTA, e so aqui -- no
     # dominio ele fica separado de proposito (ver `WorkspaceMembership`). Este
     # campo e o contrato com o front, que pergunta "quais papeis esta pessoa
-    # tem", sem distinguir nivel. Assim a fatia B nao exige mudanca nenhuma no
-    # front, e a Spec 047 e que vai separar os dois na tela.
+    # tem", sem distinguir nivel. A Spec 047 e que vai separar os dois na tela.
+    #
+    # ⚠️⚠️ ESTE COMENTARIO DIZIA "Assim a fatia B nao exige mudanca nenhuma no
+    # front", E ERA FALSO -- descoberto em PRODUCAO, em 09/09/2026.
+    #
+    # Era verdade para `permissoesMembros.alcanceDe`, que le `permissions`. E
+    # falso para `lib/lens.computeLens`, que montava o MENU a partir de
+    # `me.teams` e ignorava `roles`. Com a conta de administracao sem vinculo
+    # de time nenhum (passo 2 da fatia B), a lente saiu vazia e os quadros dos
+    # subtimes sumiram do menu.
+    #
+    # ⚠️ O dado sempre esteve aqui -- `roles` ja trazia o papel de organizacao
+    # desde a fatia B. O que faltou foi conferir os DOIS consumidores do
+    # `/auth/me` no front, e nao um. Se voce mexer neste payload, a lista e:
+    # `permissoesMembros.alcanceDe` e `lens.computeLens`.
     roles = membership.roles | (
         frozenset({membership.org_role}) if membership.org_role else frozenset()
     )
