@@ -162,6 +162,17 @@ sem NENHUM admin**, e `workspace.manage` é justamente o portão da única rota 
 promoveria alguém de volta — a saída seria SQL na mão. Daqui pra frente,
 problema com a `0022` se resolve para frente.
 
+⚠️ **A `0023` (várias áreas, Spec 046) NÃO cai em exceção nenhuma — ordem
+PADRÃO** (`build` → `up` → migration). Ela só faz `DROP INDEX
+team_unica_raiz_por_workspace`: não muda nenhuma linha, não altera nenhuma
+leitura, e o código velho continua criando uma área só porque a checagem de
+domínio também barrava — e essa sai no mesmo deploy, no código.
+
+⚠️ **MAS O `downgrade` DELA PODE FALHAR, e isso é de propósito.** Recriar um
+índice único num workspace que já tem duas áreas é impossível; o Postgres recusa
+e nomeia o índice. Se acontecer: **não force.** Decida qual área continua sendo a
+única e mova as outras para baixo dela, ou apague-as, antes de descer.
+
 ⚠️ **A `0015` (`unaccent`) TAMBÉM inverte a ordem — por um terceiro motivo, e
 ✅ ELA ESTÁ EM PRODUÇÃO DESDE 21/08/2026.** Ela não acrescenta coluna a model
 nenhum (a checagem do `git diff -- backend/app/db/models/` sai vazia), então
@@ -246,9 +257,9 @@ existia, é ordem invertida. Executado assim em 06/08/2026 (`0008`).
    > ⚠️ **O critério é `0 failed`, não um número.** Este arquivo já ficou
    > meses dizendo `379 passed` quando o real era 493 — e roteiro que mente
    > treina quem faz o deploy a ignorar o portão. Se quiser conferir a ordem
-   > de grandeza: em 08/09/2026 eram **1047** (backend) e **1085** (front),
-   > depois da Spec 044 inteira e das fatias A–D da Spec 045 (números lidos do
-   > log do CI no merge do PR #46, não da memória de quem escreveu).
+   > de grandeza: em 09/09/2026 eram **1082** (backend) e **1108** (front),
+   > depois da Spec 046 inteira.
+   > (Em 08/09/2026 eram 1047 e 1085, depois das fatias A–D da Spec 045.)
    > (Em 31/08/2026 eram 1012 e 1078, depois da Spec 043 inteira.)
    > (Em 10/08/2026 eram 657 e 529.)
    > (Backend saiu de 642 para 657 com a peca de backend da fatia 5:

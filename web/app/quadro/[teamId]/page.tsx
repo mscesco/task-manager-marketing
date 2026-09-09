@@ -27,7 +27,13 @@ import {
 //
 // Guardas de rota:
 //   - id inexistente -> avisa "time nao encontrado".
-//   - id da RAIZ      -> avisa que o lugar dela e o quadro geral.
+//   - id de uma AREA  -> desenha o QUADRO GERAL dela (Spec 046, fatia 4).
+//     ⚠️⚠️ ATE A SPEC 046 ISTO ERA UMA RECUSA: "Este e o time principal. Use
+//     o quadro geral." A guarda existia so porque havia UMA area -- com uma
+//     so, `/quadro` ja era o lugar dela, e abrir por aqui era um jeito
+//     torto de chegar no mesmo lugar. Com N areas ela passou a barrar o
+//     caminho normal: o quadro geral do TI SO tem este endereco.
+//     ⭐ A fatia 4 nao acrescentou rota nenhuma -- ela REMOVEU uma trava.
 //   - id FORA da lente do usuario -> avisa "sem acesso" em vez de renderizar
 //     um quadro (que, por um subtime alheio, viria quase vazio e ainda
 //     convidaria a "criar a primeira tarefa" numa area que nao e sua). O dado
@@ -156,15 +162,6 @@ export default function QuadroSubtimePage() {
           </a>
           .
         </div>
-      ) : team.parent_team_id === null ? (
-        // e a raiz -> nao e subtime; o quadro geral e o lugar dela.
-        <div className="muted">
-          Este é o time principal. Use o{" "}
-          <a href="/quadro" className="text-accent underline">
-            quadro geral
-          </a>
-          .
-        </div>
       ) : !temAcesso ? (
         // fora da lente -> nao e um quadro que este usuario deveria abrir.
         <div className="muted">
@@ -255,6 +252,18 @@ export default function QuadroSubtimePage() {
                 />
               }
             />
+          ) : team.parent_team_id === null ? (
+            // ⭐ AREA -> o QUADRO GERAL dela (Spec 046, fatia 4).
+            //
+            // ⚠️ `areaId` E NAO `subteamId`, e a diferenca e o desenho
+            // inteiro: `subteamId` liga o modo HIBRIDO (compartilhadas da
+            // area + internas do subtime), e uma area nao e subtime de
+            // ninguem. Passar `subteamId={team.id}` aqui faria o Board
+            // procurar a area DA area e filtrar contra ela mesma.
+            //
+            // ⚠️ E `areaId` e o que impede o `Board` de perguntar "qual e a
+            // raiz?" -- pergunta que, com N areas, nao tem resposta.
+            <Board areaId={team.id} title={seletor} />
           ) : (
             <Board subteamId={team.id} title={seletor} />
           )}

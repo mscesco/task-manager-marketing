@@ -62,6 +62,17 @@ class PreviaRemocao:
     projetos: int
     membros: int
     filhos: int
+    # ⚠️⚠️ PARA ONDE O CONTEUDO VAI -- nasce na Spec 046, fatia 3 (§4.2).
+    #
+    # Ate aqui a previa dizia QUANTOS saem e nao dizia PARA ONDE, porque com
+    # uma raiz so o destino era obvio ate para quem nunca tinha pensado nele.
+    # Com N areas, "3 tarefas serao movidas" deixa a pergunta mais importante
+    # sem resposta -- e e a pergunta que faz alguem cancelar a operacao.
+    #
+    # `None` quando o time E a area (nao ha destino: a operacao ja e recusada)
+    # ou quando o destino nao pode ser resolvido.
+    destino_nome: str | None = None
+    destino_team_id: uuid.UUID | None = None
 
 
 def _descreve(c: TeamContagens) -> str:
@@ -479,6 +490,23 @@ class TeamService:
 
         tarefas = await self._repo.tarefas_do_time(team_id)
         c = await self._repo.contagens(team_id)
+
+        # ⚠️ Spec 046, fatia 3: a previa passa a NOMEAR a area de destino.
+        # Com uma raiz so o destino era obvio; com N areas, "3 tarefas serao
+        # movidas" esconde justamente a informacao que faria alguem cancelar.
+        #
+        # ⚠️ RESOLVIDO PELA MESMA FUNCAO QUE O `esvaziar_e_remover` usa
+        # (`area_de`), e nao por uma consulta parecida escrita aqui. A previa
+        # que promete um destino diferente do que a operacao faz e pior que
+        # previa nenhuma -- ela seria acreditada.
+        destino_id: uuid.UUID | None = None
+        destino_nome: str | None = None
+        if team.parent_team_id is not None:
+            destino_id = await self._repo.area_de(team_id)
+            if destino_id is not None:
+                destino = await self._repo.get_by_id(destino_id)
+                destino_nome = destino.name if destino is not None else None
+
         return PreviaRemocao(
             team_id=team_id,
             nome=team.name,
@@ -488,6 +516,8 @@ class TeamService:
             projetos=c.projetos,
             membros=c.membros,
             filhos=c.filhos,
+            destino_team_id=destino_id,
+            destino_nome=destino_nome,
         )
 
     async def esvaziar_e_remover(self, *, team_id: uuid.UUID) -> PreviaRemocao:
@@ -543,12 +573,24 @@ class TeamService:
                 details={"team_id": str(team_id), "filhos": contagens.filhos},
             )
 
-        raiz_id = await self._repo.root_id()
+        # ⚠️⚠️ O DESTINO E A AREA DESTA ARVORE, e nao "a raiz do workspace".
+        #
+        # Ate a Spec 046 isto era `await self._repo.root_id()`, sem argumento,
+        # e a docstring do metodo dizia "destino fixo do esvaziamento". Com N
+        # areas nao ha destino fixo: a versao velha escolheria uma delas, e
+        # esvaziar um subtime do Marketing podia despejar as tarefas no TI --
+        # sem erro, sem aviso, sem teste vermelho.
+        #
+        # §4.2: o conteudo vai para `root_of(team_id)`. NUNCA atravessa areas.
+        raiz_id = await self._repo.area_de(team_id)
         if raiz_id is None:
-            # Estado impossivel (indice unico garante uma raiz), mas se
-            # acontecer e melhor parar do que mover tarefas para lugar nenhum.
+            # ⚠️ Deixou de ser "estado impossivel". O comentario antigo dizia
+            # que o indice unico garantia uma raiz -- o indice caiu na fatia 2.
+            # Hoje isto so acontece se o time sumir entre o `get_by_id` acima e
+            # esta linha; parar continua sendo melhor que mover para lugar
+            # nenhum.
             raise BusinessRuleError(
-                "Workspace sem time principal: nao ha destino para o conteudo.",
+                "Nao consegui identificar a area de destino para o conteudo.",
                 details={"team_id": str(team_id)},
             )
 
@@ -618,6 +660,11 @@ class TeamService:
             projetos=len(projetos),
             membros=len(vinculos),
         )
+        # ⚠️ O DESTINO VAI NA RESPOSTA DA OPERACAO, e nao so na previa (Spec
+        # 046, fatia 3). A previa diz para onde VAI; esta diz para onde FOI --
+        # e com N areas a segunda deixou de ser dedutivel pela tela. Sem isto,
+        # quem confirmou nao tem como conferir se acertou o time.
+        destino = await self._repo.get_by_id(raiz_id)
         return PreviaRemocao(
             team_id=team_id,
             nome=nome,
@@ -627,4 +674,6 @@ class TeamService:
             projetos=len(projetos),
             membros=len(vinculos),
             filhos=0,
+            destino_team_id=raiz_id,
+            destino_nome=destino.name if destino is not None else None,
         )

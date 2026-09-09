@@ -106,10 +106,15 @@ class TeamMoveRequest(BaseModel):
 class PreviaRemocaoResponse(BaseModel):
     """O que sai junto se o time for esvaziado e removido (Spec 029/D3-B).
 
-    `tarefas_vivas` sao arquivadas e movidas para o time principal;
+    `tarefas_vivas` sao arquivadas e movidas para a AREA da propria arvore;
     `tarefas_na_lixeira` so trocam de time (ja estao fora de tudo, mas
     seguram a foreign key). Numeros do MOMENTO DA CHAMADA -- os da listagem
     podem ter envelhecido.
+
+    ⚠️ ESTA DOCSTRING DIZIA "movidas para o time principal", e a Spec 046
+    tornou a frase ambigua: com N areas, QUAL principal? O destino sempre foi
+    -- e agora precisa dizer que e -- a raiz da MESMA arvore. Esvaziar um
+    subtime do Marketing nunca empurra nada para o TI.
     """
 
     model_config = {"from_attributes": True}
@@ -122,6 +127,11 @@ class PreviaRemocaoResponse(BaseModel):
     projetos: int
     membros: int
     filhos: int
+    # Spec 046, fatia 3 (§4.2): a tela precisa NOMEAR o destino antes de
+    # confirmar. `None` quando o time e a propria area -- ai nao ha destino, e
+    # a operacao ja e recusada.
+    destino_team_id: uuid.UUID | None = None
+    destino_nome: str | None = None
 
 
 class TeamListResponse(BaseModel):

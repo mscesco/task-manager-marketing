@@ -85,7 +85,7 @@ async def test_o_degrau_exato_vem_antes_do_alvo_da_semantica(db) -> None:
     teste e o unico lugar onde essa inversao aparece.
     """
     ctx, ws, raiz, user, _ = await _mundo(db)
-    geral, _ = await _quadro_geral_e_coluna(db, ctx)
+    geral, _ = await _quadro_geral_e_coluna(db, ctx, raiz)
 
     with acting_as(**ctx):
         col, status = await BoardRepository(db).coluna_para_status(
@@ -106,7 +106,7 @@ async def test_as_oito_colunas_padrao_nunca_alcancam_o_degrau_dois(db) -> None:
     quadro que ela nao deveria tocar.
     """
     ctx, ws, raiz, user, _ = await _mundo(db)
-    geral, _ = await _quadro_geral_e_coluna(db, ctx)
+    geral, _ = await _quadro_geral_e_coluna(db, ctx, raiz)
 
     for status in TaskStatus:
         with acting_as(**ctx):
@@ -337,9 +337,13 @@ async def test_coluna_sem_ponte_nao_ganha_do_casamento_exato(db) -> None:
     assert efetivo2 is TaskStatus.IN_PROGRESS
 
 
-async def _quadro_geral_e_coluna(db, ctx):
-    """`board_id` do quadro geral do workspace do contexto."""
+async def _quadro_geral_e_coluna(db, ctx, area_id):
+    """`board_id` do quadro geral DAQUELA AREA.
+
+    ⚠️ O `area_id` virou obrigatorio na Spec 046 (fatia 4): com N areas,
+    "o quadro geral do workspace" deixou de ser uma coisa so.
+    """
     with acting_as(**ctx):
         return await BoardRepository(db).default_board_and_column_for_status(
-            TaskStatus.BACKLOG
+            TaskStatus.BACKLOG, area_id=area_id
         )

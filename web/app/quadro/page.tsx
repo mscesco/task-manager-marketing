@@ -6,7 +6,8 @@ import AppShell from "@/components/AppShell";
 import Board from "@/components/Board";
 import SeletorDeQuadro from "@/components/SeletorDeQuadro";
 import AcoesDoQuadro from "@/components/AcoesDoQuadro";
-import { currentUser, getRootTeamId, listBoards, type Quadro } from "@/lib/api";
+import { currentUser, listBoards, listTeamsAll, type Quadro } from "@/lib/api";
+import { entradaDoQuadro } from "@/lib/areas";
 import {
   alcanceDeQuadro,
   podeGerirQuadroDaRaiz,
@@ -50,6 +51,10 @@ function QuadroGeral() {
   // aviso de queda nao piscar em todo carregamento.
   const [quadros, setQuadros] = useState<Quadro[] | null>(null);
   const [rootId, setRootId] = useState<string | null>(null);
+  // ⚠️ DECLARADO ANTES DO EFEITO QUE O USA -- o redirecionamento da fatia 4
+  // depende dele, e um `const` abaixo do `useEffect` deixaria a dependencia
+  // impossivel de declarar sem TDZ.
+  const router = useRouter();
 
   const carregarQuadros = useCallback(() => {
     // ⚠️ FALHA EM SILENCIO, com `[]` -- mesma decisao da tela do time. Sem os
@@ -62,20 +67,42 @@ function QuadroGeral() {
 
   useEffect(() => {
     carregarQuadros();
-    getRootTeamId()
-      .then(setRootId)
-      // ⚠️ Spec 046, fatia 1: `getRootTeamId` levanta quando há mais de uma
-      // área. Esta é a rota `/quadro` SEM área na URL -- exatamente a que a
-      // fatia 4 vai transformar num redirecionamento para a área da pessoa.
-      // Até lá, cair para `null` mantém o comportamento de hoje e o erro fica
-      // no console, e não invisível.
+    // ⚠️⚠️ `/quadro` E A ROTA SEM AREA NA URL, e a Spec 046 (fatia 4) a
+    // transformou num DEFAULT DE ENTRADA em vez de um endereço próprio.
+    //
+    // Com UMA área ela desenha o quadro geral, como sempre. Com várias, ela
+    // não escolhe calada: redireciona para `/quadro/<área>`, e a partir daí a
+    // URL diz qual é (§4.4). É a diferença entre "área ativa" -- estado
+    // invisível que faz duas pessoas verem coisas diferentes no mesmo link --
+    // e um default que se resolve no endereço.
+    //
+    // ⚠️ `replace` E NAO `push`: quem chegou em `/quadro` não escolheu essa
+    // URL, então ela não merece uma entrada no histórico. Com `push`, o botão
+    // Voltar traria a pessoa para cá e o redirecionamento a levaria de novo
+    // para a frente -- um laço que ela não consegue sair.
+    listTeamsAll()
+      .then((times) => {
+        // ⚠️ A ESCOLHA E DE `lib/areas`, e esta pagina so a EXECUTA -- `app/`
+        // esta fora do `include` do vitest, e regra escrita aqui nao teria
+        // guardiao (mesma licao de `candidatosParaAdicionar`, Spec 044).
+        const entrada = entradaDoQuadro(times);
+        if (entrada.tipo === "desenhar") {
+          setRootId(entrada.areaId);
+          return;
+        }
+        if (entrada.tipo === "redirecionar") {
+          router.replace(entrada.para);
+          return;
+        }
+        console.error("/quadro: workspace sem nenhuma área");
+        setRootId(null);
+      })
       .catch((e) => {
-        console.error("/quadro: área indefinida", e);
+        console.error("/quadro: não consegui listar as áreas", e);
         setRootId(null);
       });
-  }, [carregarQuadros]);
+  }, [carregarQuadros, router]);
 
-  const router = useRouter();
   const searchParams = useSearchParams();
 
   // ⚠️ A ESCOLHA VIVE NA URL, e nao em `useState` -- mesma decisao de 13/08
