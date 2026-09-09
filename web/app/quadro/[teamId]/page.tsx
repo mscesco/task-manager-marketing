@@ -101,7 +101,7 @@ export default function QuadroSubtimePage() {
         if (!vivo) return;
         const alvo = teams.find((t) => t.id === teamId) ?? null;
         setTeam(alvo);
-        const lens = computeLens(me.teams, teams);
+        const lens = computeLens(me.teams, teams, me.roles);
         setTemAcesso(alvo ? lens.visibleTeamIds.has(alvo.id) : false);
         // ⚠️ A DECISAO MORA EM `lib/seletorDeQuadro`, e nao aqui. A tela so
         // guarda a resposta.

@@ -124,7 +124,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   if (loading) return <div className="center-screen muted">Carregando…</div>;
 
   // Fatia 2/7b: sub-abas de quadro = subtimes visiveis na lente do usuario.
-  const lens = user ? computeLens(user.teams, teams) : null;
+  const lens = user ? computeLens(user.teams, teams, user.roles) : null;
   const subteams = lens ? lens.boardSubteams : [];
 
   // Spec 025/D11: a fila de solicitações é do time principal. Só quem
