@@ -64,7 +64,15 @@ function QuadroGeral() {
     carregarQuadros();
     getRootTeamId()
       .then(setRootId)
-      .catch(() => setRootId(null));
+      // ⚠️ Spec 046, fatia 1: `getRootTeamId` levanta quando há mais de uma
+      // área. Esta é a rota `/quadro` SEM área na URL -- exatamente a que a
+      // fatia 4 vai transformar num redirecionamento para a área da pessoa.
+      // Até lá, cair para `null` mantém o comportamento de hoje e o erro fica
+      // no console, e não invisível.
+      .catch((e) => {
+        console.error("/quadro: área indefinida", e);
+        setRootId(null);
+      });
   }, [carregarQuadros]);
 
   const router = useRouter();

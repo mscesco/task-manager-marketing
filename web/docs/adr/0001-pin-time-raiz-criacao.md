@@ -59,14 +59,29 @@ dados: existir exatamente um time com `parent_team_id == null`.
 **Como medir:** na aba de Rede, todo `POST /tasks` do quadro sai com
 `team_id` = id da raiz.
 
-### Fallback (dívida documentada)
+### Fallback (dívida documentada) — ✅ **PAGA em 09/09/2026**
 
-Se a raiz **não** for encontrada, o front omite `team_id` e o backend
-deriva pela membership. **Hoje isso é idêntico ao pin** (sem subtimes,
-todos derivam Marketing). **Quando subtimes existirem, este fallback vira
-perigoso** (reabre a herança silenciosa). Ação nesse momento: trocar o
-fallback por um **erro duro** ("não consegui identificar o time raiz"),
-em vez de criar a task no time errado em silêncio.
+> Texto original, mantido porque a previsão dele se cumpriu:
+>
+> *Se a raiz **não** for encontrada, o front omite `team_id` e o backend
+> deriva pela membership. **Hoje isso é idêntico ao pin** (sem subtimes,
+> todos derivam Marketing). **Quando subtimes existirem, este fallback vira
+> perigoso** (reabre a herança silenciosa). Ação nesse momento: trocar o
+> fallback por um **erro duro** ("não consegui identificar o time raiz"),
+> em vez de criar a task no time errado em silêncio.*
+
+⚠️ **Subtimes existiram a partir da Entrega 13, e a troca não aconteteu ali
+— ela levou cerca de um mês.** A dívida foi quitada pela **Spec 046, fatia 1**:
+`getRootTeamId` devolve `string` (não mais `string | null`) e levanta
+`AreaIndefinidaError`. A regra mora em `web/lib/areas.ts`, pura e testada.
+
+⚠️ **E o motivo de ela ter sido paga agora não é o desta ADR.** O que forçou
+foi a segunda ÁREA (time raiz irmão) passar a ser possível: aí `teams.find(...)`
+deixa de ser "a raiz" e vira "a primeira que a API respondeu", numa ordem que
+nenhum `ORDER BY` promete. O erro previsto aqui era *não achar*; o que chegou
+foi *achar demais*. **A premissa de dados desta ADR — "existir exatamente um
+time com `parent_team_id == null`" — deixa de valer**, e é a fatia 4 da Spec
+046 que substitui o pin por "a área que está na URL".
 
 ## Alternativas consideradas
 

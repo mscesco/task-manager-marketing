@@ -1,13 +1,24 @@
 // lib/api.ts
 //
-// ⚠️ UNICO IMPORT DESTE ARQUIVO (fatia 4a/4b da Spec 036): o tipo `Coluna`
-// vem de `lib/coluna.ts`, e nao o contrario. Ver o bloco QUADROS mais
-// abaixo para o motivo (fronteira de pureza da Spec 027).
+// ⚠️ OS DOIS IMPORTS DESTE ARQUIVO, e a direcao e sempre a mesma: o `api.ts`
+// depende de `lib/`, nunca o contrario (fronteira de pureza da Spec 027).
+//
+//   `lib/coluna`  -- fatia 4a/4b da Spec 036: o tipo `Coluna` mora la.
+//   `lib/areas`   -- Spec 046 fatia 1: "qual e a area?" e DECISAO, e decisao
+//                    nao mora no cliente HTTP. Ele so faz a chamada.
+//
+// ⚠️ ATE A SPEC 046 ESTA FRASE DIZIA "UNICO IMPORT". Nao era regra, era
+// descricao -- e virou mentira no dia em que a segunda decisao pura saiu
+// daqui. A regra e a DIRECAO, e ela continua de pe.
+//
+// ⚠️ `lib/areas` importa `Team` de volta, e isso NAO e ciclo: e `import
+// type`, apagado na compilacao. Em tempo de execucao a seta e uma so.
 import {
   indiceDeColunas,
   type Coluna,
   type OrigemDaColuna,
 } from "@/lib/coluna";
+import { soleRootTeam } from "@/lib/areas";
 
 // Cliente unico de acesso ao backend FastAPI. Centraliza:
 //  - a URL base (RELATIVA por padrao -- topologia A, ADR 0001 da raiz)
@@ -645,14 +656,28 @@ async function listTeams(): Promise<Team[]> {
   return _teams;
 }
 
-export async function getRootTeamId(): Promise<string | null> {
-  const teams = await listTeams();
-  const root = teams.find((t) => t.parent_team_id === null);
-  // DIVIDA DOCUMENTADA (ADR 0001 do front): se a raiz nao for achada,
-  // cai-se no null e o backend deriva o time pela membership -- hoje
-  // identico ao pin (sem subtimes). QUANDO subtimes existirem, trocar
-  // este null por erro duro, senao a heranca silenciosa volta.
-  return root ? root.id : null;
+/**
+ * O id da ÚNICA área do workspace. LEVANTA se não houver exatamente uma.
+ *
+ * ⚠️⚠️ ELE DEVOLVIA `string | null` E FAZIA `teams.find(...)`, com esta
+ * dívida escrita ao lado (ADR 0001 do front):
+ *
+ *     "se a raiz nao for achada, cai-se no null e o backend deriva o time
+ *      pela membership -- hoje identico ao pin (sem subtimes). QUANDO
+ *      subtimes existirem, trocar este null por erro duro, senao a heranca
+ *      silenciosa volta."
+ *
+ * Subtimes existem desde a Entrega 13. A troca é esta (Spec 046, fatia 1).
+ *
+ * ⚠️ O TIPO MUDOU DE PROPÓSITO, de `string | null` para `string`: era o
+ * `null` que deixava cada chamador inventar um fallback silencioso. Sem ele,
+ * o `tsc` aponta quem precisa decidir.
+ *
+ * A regra mora em `lib/areas.ts`, pura e testada -- inclusive com duas áreas,
+ * que é o caso que o banco ainda não deixa existir.
+ */
+export async function getRootTeamId(): Promise<string> {
+  return soleRootTeam(await listTeams()).id;
 }
 
 // Subtimes = times NAO-raiz (parent_team_id != null). Alimenta o dropdown
@@ -1913,8 +1938,13 @@ export type ProjectCreateInput = {
 // Cria projeto COMUM. Se team_id nao vier, usa o time raiz (Marketing geral)
 // -> a pasta fica visivel pra todos, coerente com o pin do quadro.
 export async function createProject(input: ProjectCreateInput): Promise<Project> {
+  // ⚠️ AQUI HAVIA `if (!team_id) throw new Error("Time raiz não encontrado")`,
+  // e ele virou inalcançável na Spec 046 (fatia 1): `getRootTeamId` deixou de
+  // devolver `null` e passou a levantar `AreaIndefinidaError` -- com uma
+  // mensagem melhor, que distingue "nenhuma área" de "mais de uma".
+  // O `tsc` NÃO acusa isto (`string` cabe em `string | null`), então a linha
+  // ficaria de guarda a um caso que não existe mais.
   const team_id = input.team_id ?? (await getRootTeamId());
-  if (!team_id) throw new Error("Time raiz não encontrado para criar o projeto.");
   return api<Project>("/api/v1/projects", {
     method: "POST",
     body: {
