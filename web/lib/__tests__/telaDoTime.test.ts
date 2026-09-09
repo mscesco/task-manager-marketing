@@ -18,6 +18,7 @@ import {
   cargosQueSePerdem,
   linhasDoTime,
   opcoesDoSeletor,
+  planoDeVinculos,
   subtimesOferecidos,
 } from "../telaDoTime";
 import type { Member, MemberRole, Team } from "../api";
@@ -196,5 +197,34 @@ describe("subtimesOferecidos", () => {
 
   it("não oferece time de outra área", () => {
     expect(subtimesOferecidos(MKT, TIMES).map((t) => t.id)).not.toContain(TI);
+  });
+});
+
+describe("planoDeVinculos", () => {
+  const marketing = { team: TIMES[0], role: "MANAGER" as MemberRole };
+  const seo = { team: TIMES[2], role: "SUPERVISOR" as MemberRole };
+
+  it("⭐⭐ ADICIONAR vem antes de REMOVER — trocar o único time precisa disso", () => {
+    // ⚠️ O defeito que isto mata: o backend recusa remover o ÚLTIMO vínculo
+    // ("ele ficaria sem time"). Removendo primeiro, trocar Marketing por SEO
+    // — estado final perfeitamente válido — batia em 409 antes de o SEO
+    // existir. A pessoa simplesmente não conseguia trocar de time pela tela.
+    const plano = planoDeVinculos([marketing], [SEO]);
+    expect(plano.adicionar).toEqual([SEO]);
+    expect(plano.remover).toEqual([MKT]);
+  });
+
+  it("só adiciona o que ainda não existe", () => {
+    expect(planoDeVinculos([seo], [SEO, MKT]).adicionar).toEqual([MKT]);
+  });
+
+  it("só remove o que saiu da marcação", () => {
+    expect(planoDeVinculos([marketing, seo], [MKT]).remover).toEqual([SEO]);
+  });
+
+  it("sem mudança, nada a escrever", () => {
+    const plano = planoDeVinculos([marketing], [MKT]);
+    expect(plano.adicionar).toEqual([]);
+    expect(plano.remover).toEqual([]);
   });
 });

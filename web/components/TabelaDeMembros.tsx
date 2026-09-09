@@ -33,6 +33,7 @@ import {
 import {
   cargosQueSePerdem,
   opcoesDoSeletor,
+  planoDeVinculos,
   type CapsulaDeSubtime,
   type LinhaDoTime,
 } from "@/lib/telaDoTime";
@@ -311,21 +312,24 @@ function SeletorDeSubtimes({
       return;
     }
     setSalvando(true);
+    // ⚠️⚠️ A ORDEM VEM DE `planoDeVinculos`: ADICIONAR ANTES DE REMOVER.
+    // Removendo primeiro, trocar o ÚNICO time de alguém era impossível -- o
+    // backend recusa remover o último vínculo, então desmarcar Marketing e
+    // marcar SEO batia em 409 antes de o SEO existir, mesmo com o estado
+    // final perfeitamente válido. A regra tem teste próprio.
+    const plano = planoDeVinculos(atuais, marcados);
+    let escreveu = false;
     try {
-      const antes = new Set(atuais.map((c) => c.team.id));
-      const depois = new Set(marcados);
-      for (const c of atuais) {
-        if (!depois.has(c.team.id)) {
-          await removeMemberFromTeam(membro.id, c.team.id);
-        }
+      for (const id of plano.adicionar) {
+        // ⚠️ OPERADOR É O PADRÃO, por um motivo estrutural: operador é o
+        // piso do modelo, então adicionar alguém NUNCA viola a regra da
+        // Spec 044 §4.1-bis ("o papel na raiz não pode ser menor").
+        await assignMemberToTeam(membro.id, id, "OPERATOR");
+        escreveu = true;
       }
-      for (const id of marcados) {
-        if (!antes.has(id)) {
-          // ⚠️ OPERADOR É O PADRÃO, por um motivo estrutural: operador é o
-          // piso do modelo, então adicionar alguém NUNCA viola a regra da
-          // Spec 044 §4.1-bis ("o papel na raiz não pode ser menor").
-          await assignMemberToTeam(membro.id, id, "OPERATOR");
-        }
+      for (const id of plano.remover) {
+        await removeMemberFromTeam(membro.id, id);
+        escreveu = true;
       }
       await onMudou(
         perdidos.length > 0
@@ -336,7 +340,25 @@ function SeletorDeSubtimes({
       );
     } catch (e) {
       const a = e as ApiError;
-      setErro(a.message || "Não consegui salvar.");
+      const motivo = a.message || "Não consegui salvar.";
+
+      // ⚠️⚠️ NÃO HÁ TRANSAÇÃO: cada time é uma requisição. Se alguma já
+      // passou antes da falha, o banco mudou e a tabela na tela está
+      // MENTINDO -- mostrando times que a pessoa não tem mais, ou escondendo
+      // os que ganhou. A primeira versão só chamava `setErro` e deixava a
+      // tela como estava.
+      //
+      // Recarregar no erro é o que devolve a verdade. E a mensagem diz que a
+      // mudança foi PARCIAL, porque "não consegui salvar" faria a pessoa
+      // supor que nada aconteceu.
+      if (escreveu) {
+        await onMudou(
+          `${membro.name}: a mudança foi aplicada só em parte — ${motivo} ` +
+            "A lista abaixo já mostra como ficou.",
+        );
+        return;
+      }
+      setErro(motivo);
       setConfirmando(false);
     } finally {
       setSalvando(false);

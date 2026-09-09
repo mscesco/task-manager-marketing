@@ -35,7 +35,11 @@ import {
   vinculosDoPainel,
   type VinculoDoPainel,
 } from "@/lib/painelDoMembro";
-import { alcanceDe, papeisAtribuiveis, type Alcance } from "@/lib/permissoesMembros";
+import {
+  papeisAtribuiveis,
+  podeDesativarConta,
+  type Alcance,
+} from "@/lib/permissoesMembros";
 
 const PAPEL: Record<MemberRole, string> = {
   ADMIN: "Administrador",
@@ -185,7 +189,15 @@ export default function PainelDoMembro({
               desliga a pessoa da organização inteira. Numa tela com o nome de
               UM time no topo, isso lê como "tirar deste time" se estiver
               misturado com o resto (§4.2). */}
-          {membro.is_active && (
+          {/* ⚠️⚠️ `podeDesativarConta` FALTAVA AQUI, e a ausência oferecia a
+              ação a quem o servidor recusa: a Spec 028 (D4) não abriu
+              desativar ao supervisor, então ele via o botão, confirmava e
+              levava 403. É o padrão "botão que a tela oferece e o servidor
+              recusa" que a Spec 044 registrou -- e que o resto deste painel
+              já evitava usando o `can_edit_role` do backend.
+              ⚠️ A pergunta vem de `lib/permissoesMembros`, que é testada, e
+              NÃO de um `roles.includes(...)` escrito aqui. */}
+          {membro.is_active && podeDesativarConta(alcance) && (
             <Desativar membro={membro} souEu={souEu} onMudou={onMudou} />
           )}
         </div>

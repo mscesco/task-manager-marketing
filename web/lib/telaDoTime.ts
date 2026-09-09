@@ -223,3 +223,38 @@ export function linhasDaOrganizacao(
     })
     .sort((a, b) => a.membro.name.localeCompare(b.membro.name, "pt-BR"));
 }
+
+/** O que o seletor precisa escrever, e em que ORDEM. */
+export type PlanoDeVinculos = {
+  readonly adicionar: string[];
+  readonly remover: string[];
+};
+
+/**
+ * Traduz a marcação do seletor em escritas, com a ORDEM que importa.
+ *
+ * ⚠️⚠️ ADICIONAR VEM ANTES DE REMOVER, e isso é a regra inteira desta função.
+ * A primeira versão do seletor removia primeiro, e isso tornava IMPOSSÍVEL
+ * trocar o único time de alguém: o backend recusa remover o último vínculo
+ * ("ele ficaria sem time"), então desmarcar Marketing e marcar SEO — cujo
+ * estado final é perfeitamente válido — batia em 409 antes de o SEO existir.
+ *
+ * Invertendo, a pessoa passa por um instante com DOIS vínculos em vez de
+ * ZERO. Os dois estados são intermediários; a diferença é que um é aceito
+ * pelo servidor e o outro não.
+ *
+ * ⚠️ Não há transação: cada item vira uma requisição. Quem chama tem de
+ * assumir que uma falha no meio deixa estado PARCIAL, e recarregar a tela
+ * mesmo no erro — senão a tabela passa a mentir sobre o que está no banco.
+ */
+export function planoDeVinculos(
+  atuais: readonly CapsulaDeSubtime[],
+  marcados: readonly string[],
+): PlanoDeVinculos {
+  const antes = new Set(atuais.map((c) => c.team.id));
+  const depois = new Set(marcados);
+  return {
+    adicionar: marcados.filter((id) => !antes.has(id)),
+    remover: atuais.filter((c) => !depois.has(c.team.id)).map((c) => c.team.id),
+  };
+}
