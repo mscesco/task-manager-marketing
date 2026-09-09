@@ -1545,6 +1545,14 @@ export type Member = {
   // Lista vazia AQUI = sem vinculo nenhum.
   // ⚠️ Opcional porque respostas de MUTACAO nao a resolvem; so a listagem.
   area_ids?: string[];
+  // ⚠️ TODOS os vinculos, COM o papel (Spec 047, fatia C). A tabela da tela
+  // de time mostra `SEO · supervisor` -- sem o papel, a coluna diz ONDE a
+  // pessoa esta e esconde O QUE ela e, numa tela cujo assunto e permissao.
+  //
+  // ⚠️ NAO SUBSTITUI `team_ids`: aquele e a projecao SO-SUBTIMES de que o
+  // filtro do quadro depende. Os dois saem da MESMA consulta no backend,
+  // entao nao ha como discordarem. Opcional pelo mesmo motivo de `area_ids`.
+  memberships?: MemberTeam[];
   // Entrega 13 (Fatia 2): ids dos SUBTIMES do membro (times nao-raiz). O
   // backend nunca devolve aqui o time raiz. Usado pelo filtro de subtime no
   // quadro (Fatia 3). Lista VAZIA = sem subtime; nao existe `null`.

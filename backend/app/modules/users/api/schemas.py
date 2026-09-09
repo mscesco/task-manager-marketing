@@ -11,6 +11,23 @@ from app.db.models.enums import OrgRole, UserTeamRole
 
 
 # --------------------------------------------------------
+# Vinculo enxuto -- declarado ANTES de `MemberResponse` porque ela o usa.
+# --------------------------------------------------------
+class MemberTeamResponse(BaseModel):
+    """Vinculo enxuto (time, papel) de um membro (Spec 015, Fatia 1).
+
+    Usado por GET /members/{id}/teams para a UI mostrar o papel atual por
+    time antes de oferecer alteracao, e por `MemberResponse.memberships`
+    desde a Spec 047 (fatia C).
+    """
+
+    model_config = {"from_attributes": True}
+
+    team_id: uuid.UUID
+    role: UserTeamRole
+
+
+# --------------------------------------------------------
 # Membro (User)
 # --------------------------------------------------------
 class MemberResponse(BaseModel):
@@ -38,6 +55,16 @@ class MemberResponse(BaseModel):
     #: compartilhado e a armadilha classica, e a consistencia entre os dois
     #: campos vizinhos vale mais que a economia de caracteres.
     area_ids: list[uuid.UUID] = Field(default_factory=list)
+    #: ⚠️ TODOS os vinculos da pessoa, COM o papel -- Spec 047, fatia C.
+    #: A tabela da tela de time mostra `SEO · supervisor`, e sem o papel a
+    #: coluna diria ONDE a pessoa esta escondendo O QUE ela e, numa tela cujo
+    #: assunto e permissao.
+    #:
+    #: ⚠️ NAO SUBSTITUI `team_ids`, e nao e duplicacao acidental: aquele e a
+    #: projecao SO-SUBTIMES de que o filtro do quadro depende, e mexer nele
+    #: quebraria seis telas. Os dois saem da MESMA consulta por membro, entao
+    #: nao ha como discordarem. Em respostas de MUTACAO sai vazio.
+    memberships: list[MemberTeamResponse] = Field(default_factory=list)
     #: Entrega 13 (Fatia 2): ids dos SUBTIMES do membro (times nao-raiz).
     #: NAO inclui o time principal. Usado pelo filtro de subtime no quadro.
     #: Em respostas de mutacao (criar/desativar) sai VAZIO -- so a listagem
@@ -154,20 +181,6 @@ class TeamMembershipResponse(BaseModel):
     team_id: uuid.UUID
     role: UserTeamRole
     joined_at: datetime
-
-
-class MemberTeamResponse(BaseModel):
-    """Vinculo enxuto (time, papel) de um membro (Spec 015, Fatia 1).
-
-    Usado por GET /members/{id}/teams para a UI mostrar o papel atual por
-    time antes de oferecer alteracao. Mais leve que TeamMembershipResponse
-    (so o que a tela precisa).
-    """
-
-    model_config = {"from_attributes": True}
-
-    team_id: uuid.UUID
-    role: UserTeamRole
 
 
 class MemberTeamListItemResponse(MemberTeamResponse):

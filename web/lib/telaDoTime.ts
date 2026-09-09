@@ -1,0 +1,183 @@
+/**
+ * A tela `/times/[id]` -- Spec 047, fatia C. LOGICA PURA.
+ *
+ * FRONTEIRA (Spec 027): decisao mora em `lib/`, porque `app/` esta fora do
+ * `include` do vitest. Nesta fatia isso e critico -- as duas regras mais
+ * delicadas da tela (quem aparece, e o que se perde ao desmarcar) sao
+ * exatamente as que nao dao erro quando saem erradas.
+ *
+ * A divisao de trabalho da §4.4, e vale ter em mente ao mexer aqui:
+ *
+ *     a tabela  mostra
+ *     o lapis   define em QUAIS subtimes
+ *     o painel  define COM QUE CARGO em cada um   (fatia D)
+ */
+
+import type { Member, MemberRole, Team } from "./api";
+
+/** Uma cápsula da coluna de subtimes: onde a pessoa está, e como. */
+export type CapsulaDeSubtime = {
+  readonly team: Team;
+  readonly role: MemberRole;
+};
+
+/** Uma linha da tabela. */
+export type LinhaDoTime = {
+  readonly membro: Member;
+  /** Cargo na PRÓPRIA área/subtime desta tela, se houver vínculo direto. */
+  readonly cargoAqui: MemberRole | null;
+  /** Subtimes desta árvore em que a pessoa está, com o cargo. */
+  readonly subtimes: CapsulaDeSubtime[];
+  /** Está em área(s) além desta? Vira o aviso `+1 área`. */
+  readonly outrasAreas: number;
+};
+
+/** O time + todos os descendentes dele. */
+export function arvoreDoTime(teamId: string, teams: readonly Team[]): Set<string> {
+  const out = new Set<string>([teamId]);
+  const fila = [teamId];
+  let guarda = 0;
+  while (fila.length && guarda < 1000) {
+    guarda += 1;
+    const atual = fila.shift() as string;
+    for (const t of teams) {
+      if (t.parent_team_id === atual && !out.has(t.id)) {
+        out.add(t.id);
+        fila.push(t.id);
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * As linhas da tabela: quem tem vínculo NESTE time **ou em qualquer subtime
+ * dele**.
+ *
+ * ⚠️⚠️ O "OU EM QUALQUER SUBTIME" É A REGRA, e não um detalhe: alguém pode
+ * estar só no SEO, sem vínculo na área, e **precisa aparecer** — senão vira
+ * gente invisível na tela que existe para administrar gente. A spec diz isso
+ * com essas palavras na §4.2.
+ *
+ * ⚠️ E ELA VALE NOS DOIS NÍVEIS. Abrindo um SUBTIME, a árvore é ele + os
+ * netos dele; abrindo a ÁREA, é tudo. É a mesma função, e é por isso que a
+ * decisão foi "uma tela só que se adapta ao nível" — duas telas divergiriam
+ * com o tempo, e separar depois é mais fácil que reunificar.
+ *
+ * ⚠️ MOSTRA INATIVO TAMBÉM. A §3.2 é explícita: esconder linha já causou o
+ * defeito de 27/07, quando o contador do cabeçalho divergiu do corpo. O que
+ * varia é o BOTÃO, nunca a presença — e se a tela filtrar, o cabeçalho tem
+ * de dizer "12 de 15".
+ */
+export function linhasDoTime(
+  teamId: string,
+  teams: readonly Team[],
+  members: readonly Member[],
+): LinhaDoTime[] {
+  const arvore = arvoreDoTime(teamId, teams);
+  const esteTime = teams.find((t) => t.id === teamId);
+  const areaDesteTime = esteTime ? raizDe(esteTime, teams) : null;
+
+  return members
+    .map((membro): LinhaDoTime | null => {
+      const vinculos = membro.memberships ?? [];
+      const naArvore = vinculos.filter((v) => arvore.has(v.team_id));
+      if (naArvore.length === 0) return null;
+
+      const aqui = naArvore.find((v) => v.team_id === teamId) ?? null;
+      const subtimes = naArvore
+        .filter((v) => v.team_id !== teamId)
+        .map((v) => ({
+          team: teams.find((t) => t.id === v.team_id),
+          role: v.role,
+        }))
+        .filter((c): c is CapsulaDeSubtime => c.team !== undefined)
+        .sort((a, b) => a.team.name.localeCompare(b.team.name, "pt-BR"));
+
+      // ⚠️ `+N área` avisa que a pessoa tem vínculo em OUTRA área, sem
+      // poluir a coluna com times que não são desta tela. O detalhe fica no
+      // painel (fatia D) -- aqui é só o aviso de que existe mais.
+      const outrasAreas = (membro.area_ids ?? []).filter(
+        (a) => a !== areaDesteTime,
+      ).length;
+
+      return { membro, cargoAqui: aqui ? aqui.role : null, subtimes, outrasAreas };
+    })
+    .filter((l): l is LinhaDoTime => l !== null)
+    .sort((a, b) => a.membro.name.localeCompare(b.membro.name, "pt-BR"));
+}
+
+function raizDe(team: Team, teams: readonly Team[]): string {
+  let atual = team;
+  let guarda = 0;
+  while (atual.parent_team_id !== null && guarda < 100) {
+    guarda += 1;
+    const pai = teams.find((t) => t.id === atual.parent_team_id);
+    if (!pai) break;
+    atual = pai;
+  }
+  return atual.id;
+}
+
+/** Os subtimes que o seletor do lápis oferece. */
+export function subtimesOferecidos(
+  teamId: string,
+  teams: readonly Team[],
+): Team[] {
+  const arvore = arvoreDoTime(teamId, teams);
+  return teams
+    .filter((t) => t.id !== teamId && arvore.has(t.id))
+    .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+}
+
+/**
+ * O que se PERDE ao desmarcar subtimes no seletor.
+ *
+ * ⚠️⚠️ ESTA É A REGRA QUE NENHUM PORTÃO PEGA, e a §7 da spec diz por quê: o
+ * seletor devolve uma lista de ids, e **o cargo que se perde não está nela**.
+ * Nenhum teste de corpo nota a ausência de algo que nunca esteve no payload.
+ *
+ * O caso: a pessoa é supervisora no SEO. Você desmarca SEO sem querer,
+ * salva, percebe e remarca — e ela volta como OPERADOR, porque foi assim que
+ * a §4.2 definiu o vínculo novo. O cargo sumiu sem ninguém dizer nada.
+ *
+ * ⚠️ POR ISSO A CONFIRMAÇÃO É SELETIVA, e não "confirma sempre": desmarcar
+ * quem já é operador não perde nada, e confirmar ali treina a pessoa a clicar
+ * em "sim" sem ler — que é como a confirmação do caso grave também passa
+ * despercebida.
+ *
+ * Devolve as cápsulas cujo cargo se perde. Vazio = pode salvar direto.
+ */
+export function cargosQueSePerdem(
+  antes: readonly CapsulaDeSubtime[],
+  depoisIds: readonly string[],
+): CapsulaDeSubtime[] {
+  const fica = new Set(depoisIds);
+  return antes.filter(
+    (c) => !fica.has(c.team.id) && c.role !== "OPERATOR",
+  );
+}
+
+/**
+ * A lista que o seletor mostra.
+ *
+ * ⭐ COPIA A REGRA DE `TaskDetail.tsx:726-730`, e a spec manda copiar com
+ * todas as letras: **quem já está marcado nunca some da lista**, mesmo que
+ * saia do escopo de quem edita.
+ *
+ * ⚠️ Sem isso, salvar o seletor removeria em silêncio um vínculo que você não
+ * via — e o defeito só apareceria dias depois, quando alguém notasse que
+ * perdeu acesso.
+ */
+export function opcoesDoSeletor(
+  oferecidos: readonly Team[],
+  jaMarcados: readonly CapsulaDeSubtime[],
+): Team[] {
+  const vistos = new Set(oferecidos.map((t) => t.id));
+  const faltando = jaMarcados
+    .filter((c) => !vistos.has(c.team.id))
+    .map((c) => c.team);
+  return [...oferecidos, ...faltando].sort((a, b) =>
+    a.name.localeCompare(b.name, "pt-BR"),
+  );
+}

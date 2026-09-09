@@ -208,6 +208,43 @@ class UserRepository(BaseRepository[User]):
         """
         await self.session.delete(membership)
 
+    async def vinculos_por_membro(
+        self,
+    ) -> dict[uuid.UUID, list[tuple[uuid.UUID, UserTeamRole]]]:
+        """user_id -> [(team_id, papel), ...]. Spec 047, fatia C.
+
+        ⚠️⚠️ O CARGO E O PONTO. A listagem ja devolvia `team_ids`, mas SEM o
+        papel -- e a tabela da §4.2 mostra `SEO · supervisor`, com o cargo
+        junto. Sem ele a coluna diz ONDE a pessoa esta e esconde O QUE ela e,
+        numa tela cujo assunto e permissao.
+
+        ⚠️ TODOS OS VINCULOS, inclusive o da area. Diferente de
+        `list_all_with_subteams`, que exclui a raiz de proposito (o filtro de
+        subtime do quadro depende disso): aqui a tela precisa saber que a
+        pessoa e MANAGER do Marketing, e nao so que ela esta em SEO.
+
+        ⚠️ EM LOTE. Uma consulta por pessoa seria a parede de desempenho que a
+        Spec 021 ja mediu -- e esta tela lista o time inteiro de uma vez.
+
+        Ordenado por NOME do time, para a coluna de capsulas nao trocar de
+        ordem entre dois carregamentos.
+        """
+        workspace_id = require_tenant().workspace_id
+        stmt = (
+            select(UserTeam.user_id, UserTeam.team_id, UserTeam.role)
+            .join(
+                Team,
+                (Team.id == UserTeam.team_id)
+                & (Team.workspace_id == UserTeam.workspace_id),
+            )
+            .where(UserTeam.workspace_id == workspace_id)
+            .order_by(Team.name)
+        )
+        out: dict[uuid.UUID, list[tuple[uuid.UUID, UserTeamRole]]] = {}
+        for user_id, team_id, role in (await self.session.execute(stmt)).all():
+            out.setdefault(user_id, []).append((team_id, role))
+        return out
+
     async def areas_por_membro(self) -> dict[uuid.UUID, list[uuid.UUID]]:
         """user_id -> AREAS (raizes) onde a pessoa tem vinculo. Spec 047, B.
 

@@ -99,6 +99,10 @@ async def list_members(
                 # entrar), `area_ids` sao as raizes. Quem esta so na area tem
                 # o primeiro vazio e o segundo cheio.
                 area_ids=m.area_ids,
+                memberships=[
+                    MemberTeamResponse(team_id=tid, role=papel)
+                    for tid, papel in m.vinculos
+                ],
                 team_ids=m.subteam_ids,
             )
             for m in members

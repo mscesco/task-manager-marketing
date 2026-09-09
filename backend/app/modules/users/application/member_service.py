@@ -119,6 +119,11 @@ class MemberWithSubteams:
     #: e a tela de organizacao o classificaria como "sem area", errado.
     #: Lista VAZIA = pessoa sem vinculo nenhum (o card "Pessoas sem area").
     area_ids: list[uuid.UUID] = field(default_factory=list)
+    #: ⚠️ TODOS os vinculos, COM o papel -- Spec 047, fatia C. `subteam_ids`
+    #: acima e a projecao so-subtimes que o filtro do quadro usa; esta lista
+    #: e a verdade completa, e as duas saem da MESMA consulta por membro,
+    #: entao nao tem como discordarem.
+    vinculos: list[tuple[uuid.UUID, UserTeamRole]] = field(default_factory=list)
 
 
 def _temp_password_expiry() -> datetime:
@@ -657,11 +662,13 @@ class MemberService:
         # `contagens_de_todos` (Spec 029). Uma por pessoa seria a parede de
         # desempenho que a Spec 021 ja mediu neste produto.
         areas = await self._users.areas_por_membro()
+        vinculos = await self._users.vinculos_por_membro()
         todos = [
             MemberWithSubteams(
                 user=user,
                 subteam_ids=subteam_ids,
                 area_ids=areas.get(user.id, []),
+                vinculos=vinculos.get(user.id, []),
             )
             for user, subteam_ids in rows
         ]
