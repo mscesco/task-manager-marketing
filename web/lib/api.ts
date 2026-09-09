@@ -1639,6 +1639,21 @@ export type MemberRole = "ADMIN" | "MANAGER" | "SUPERVISOR" | "OPERATOR";
 // administracao de papel (mostrar o papel atual antes de oferecer alterar).
 export type MemberTeam = { team_id: string; role: MemberRole };
 
+/**
+ * Um vínculo NA LISTAGEM de `/members/{id}/teams`, com o cadeado resolvido.
+ *
+ * ⚠️⚠️ `can_edit_role` VEM DO BACKEND, e o painel NÃO pode recalculá-lo. A
+ * Spec 034 já desfez uma regra de escopo espelhada no front -- ela fazia
+ * gestor e admin sumirem dos seletores, e foi reportado duas vezes com
+ * captura. A prescrição é literal: "se aparecer necessidade de filtrar escopo
+ * no front, falta parâmetro na rota". Este é o parâmetro (Spec 047, fatia A).
+ *
+ * ⚠️ Ele responde SÓ pelo papel. Remover do time é outra rota, com outro gate
+ * (aberto ao SUPERVISOR pela Spec 028) -- usar este campo para esconder o
+ * botão de remover esconderia uma ação permitida.
+ */
+export type MemberTeamComCadeado = MemberTeam & { can_edit_role: boolean };
+
 // POST /members devolve a senha provisoria UMA vez (ADR 0021 backend /
 // 0008 front). So existe nesta resposta; nao e re-buscavel.
 export type MemberCreated = Member & {
@@ -1692,8 +1707,10 @@ export async function createMember(input: {
 
 // Spec 015, Fatia 1: papeis de um membro por time. Leitura -- so exige estar
 // autenticado. Nao usa o cache de membros (e detalhe sob demanda).
-export async function listMemberTeams(userId: string): Promise<MemberTeam[]> {
-  return api<MemberTeam[]>(`/api/v1/members/${userId}/teams`);
+export async function listMemberTeams(
+  userId: string,
+): Promise<MemberTeamComCadeado[]> {
+  return api<MemberTeamComCadeado[]>(`/api/v1/members/${userId}/teams`);
 }
 
 // Spec 015, Fatia 2: troca o papel de um membro num time. Exige team.manage;

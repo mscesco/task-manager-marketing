@@ -28,6 +28,7 @@ import { MoreHorizontal, Pencil } from "lucide-react";
 import AppShell from "@/components/AppShell";
 import Badge from "@/components/Badge";
 import PageHeader from "@/components/PageHeader";
+import PainelDoMembro from "@/components/PainelDoMembro";
 import {
   ApiError,
   assignMemberToTeam,
@@ -49,7 +50,7 @@ import {
   type CapsulaDeSubtime,
   type LinhaDoTime,
 } from "@/lib/telaDoTime";
-import { alcanceDe, podeDesativarConta, podeMoverSubtime } from "@/lib/permissoesMembros";
+import { alcanceDe, podeMoverSubtime } from "@/lib/permissoesMembros";
 
 // ⚠️ MASCULINO, por decisão da Camila (09/09): *"quero tudo universal, então
 // tudo no masculino"*. Espelha o `PAPEL_LABEL` da tela de membros.
@@ -71,7 +72,12 @@ export default function TimePage() {
   const [erro, setErro] = useState<string | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
   const [editando, setEditando] = useState<string | null>(null);
-  const [menuAberto, setMenuAberto] = useState<string | null>(null);
+  // ⚠️ O `⋯` abre o PAINEL DO MEMBRO (fatia D), e nao uma fileira de botoes.
+  // A primeira versao punha "Tirar deste time / Desativar / Fechar" soltos
+  // numa linha, e a Camila perguntou: *"como que eu administro dessa forma?"*
+  // -- a intencao dela era o `member detail` da referencia, com os times e os
+  // papeis.
+  const [painelDe, setPainelDe] = useState<Member | null>(null);
 
   const carregar = useCallback(async () => {
     setCarregando(true);
@@ -108,7 +114,6 @@ export default function TimePage() {
 
   const alcance = alcanceDe(me);
   const podeMexer = podeMoverSubtime(alcance);
-  const podeDesativar = podeDesativarConta(alcance);
 
   if (!carregando && !time) {
     return (
@@ -217,27 +222,16 @@ export default function TimePage() {
                   teamId={teamId}
                   oferecidos={oferecidos}
                   podeMexer={podeMexer}
-                  podeDesativar={podeDesativar}
-                  souEu={linha.membro.id === me?.id}
                   editando={editando === linha.membro.id}
-                  menuAberto={menuAberto === linha.membro.id}
+                  onAbrirPainel={() => setPainelDe(linha.membro)}
                   onEditar={() =>
                     setEditando(
                       editando === linha.membro.id ? null : linha.membro.id,
                     )
                   }
-                  onMenu={() =>
-                    setMenuAberto(
-                      menuAberto === linha.membro.id ? null : linha.membro.id,
-                    )
-                  }
-                  onFechar={() => {
-                    setEditando(null);
-                    setMenuAberto(null);
-                  }}
+                  onFechar={() => setEditando(null)}
                   onMudou={async (texto) => {
                     setEditando(null);
-                    setMenuAberto(null);
                     setAviso(texto);
                     await carregar();
                   }}
@@ -246,6 +240,30 @@ export default function TimePage() {
             </tbody>
           </table>
         </div>
+      )}
+
+      {/* ⚠️ O PAINEL DO MEMBRO (fatia D). Ele mostra TODOS os vínculos da
+          pessoa -- inclusive os de áreas que quem olha não administra -- e
+          deixa editáveis só os do escopo, usando o `can_edit_role` que a
+          fatia A pôs na rota. A tela NÃO recalcula escopo: a Spec 034 já
+          desfez essa tentativa uma vez. */}
+      {painelDe && (
+        <PainelDoMembro
+          membro={painelDe}
+          times={times}
+          alcance={alcance}
+          souAdmin={me?.roles.includes("ADMIN") ?? false}
+          podeMexerNaOrganizacao={
+            me?.permissions.includes("workspace.manage") ?? false
+          }
+          souEu={painelDe.id === me?.id}
+          onFechar={() => setPainelDe(null)}
+          onMudou={async (texto) => {
+            setPainelDe(null);
+            setAviso(texto);
+            await carregar();
+          }}
+        />
       )}
     </AppShell>
   );
@@ -257,12 +275,9 @@ function LinhaDeMembro({
   teamId,
   oferecidos,
   podeMexer,
-  podeDesativar,
-  souEu,
   editando,
-  menuAberto,
   onEditar,
-  onMenu,
+  onAbrirPainel,
   onFechar,
   onMudou,
 }: {
@@ -270,12 +285,9 @@ function LinhaDeMembro({
   teamId: string;
   oferecidos: Team[];
   podeMexer: boolean;
-  podeDesativar: boolean;
-  souEu: boolean;
   editando: boolean;
-  menuAberto: boolean;
   onEditar: () => void;
-  onMenu: () => void;
+  onAbrirPainel: () => void;
   onFechar: () => void;
   onMudou: (aviso: string) => Promise<void>;
 }) {
@@ -353,8 +365,8 @@ function LinhaDeMembro({
           )}
           <button
             className="btn btn-ghost"
-            aria-label={`Mais ações para ${membro.name}`}
-            onClick={onMenu}
+            aria-label={`Ver detalhes de ${membro.name}`}
+            onClick={onAbrirPainel}
           >
             <MoreHorizontal size={16} aria-hidden="true" />
           </button>
@@ -378,21 +390,6 @@ function LinhaDeMembro({
         </tr>
       )}
 
-      {menuAberto && (
-        <tr className="border-b border-border">
-          <td colSpan={6} className="bg-surface-2 p-0">
-            <MenuDaLinha
-              membro={membro}
-              teamId={teamId}
-              cargoAqui={cargoAqui}
-              podeDesativar={podeDesativar}
-              souEu={souEu}
-              onCancelar={onFechar}
-              onMudou={onMudou}
-            />
-          </td>
-        </tr>
-      )}
     </>
   );
 }
@@ -530,126 +527,3 @@ function SeletorDeSubtimes({
   );
 }
 
-/**
- * O menu `⋯` da linha.
- *
- * ⚠️⚠️ REMOVER DO TIME ≠ DESATIVAR PESSOA, e as duas moram aqui justamente
- * por isso: numa tela com o nome de UM time no topo, "desativar" lê como
- * "tirar deste time" — e desliga a pessoa da organização inteira. São duas
- * rotas diferentes no backend, e a spec (§4.2) manda separá-las do que se
- * mexe toda semana.
- */
-function MenuDaLinha({
-  membro,
-  teamId,
-  cargoAqui,
-  podeDesativar,
-  souEu,
-  onCancelar,
-  onMudou,
-}: {
-  membro: Member;
-  teamId: string;
-  cargoAqui: MemberRole | null;
-  podeDesativar: boolean;
-  souEu: boolean;
-  onCancelar: () => void;
-  onMudou: (aviso: string) => Promise<void>;
-}) {
-  const [salvando, setSalvando] = useState(false);
-  const [erro, setErro] = useState<string | null>(null);
-  const [confirmando, setConfirmando] = useState<"remover" | "desativar" | null>(
-    null,
-  );
-
-  async function executar() {
-    setSalvando(true);
-    try {
-      if (confirmando === "remover") {
-        // ⚠️ O TIME É O DESTA TELA, e a primeira versão passava
-        // `membro.id` nos dois argumentos -- o id da pessoa como id do time.
-        // O `tsc` NÃO acusa: os dois são `string`. Daria 404 no clique.
-        await removeMemberFromTeam(membro.id, teamId);
-      } else {
-        await deactivateMember(membro.id);
-      }
-      await onMudou(
-        confirmando === "remover"
-          ? `${membro.name} saiu deste time. A conta continua ativa.`
-          : `${membro.name} foi desativado na organização inteira.`,
-      );
-    } catch (e) {
-      const a = e as ApiError;
-      setErro(a.message || "Não consegui concluir.");
-    } finally {
-      setSalvando(false);
-    }
-  }
-
-  return (
-    <div className="px-3 py-3">
-      {confirmando === null ? (
-        <div className="flex flex-wrap gap-2">
-          {cargoAqui && (
-            <button
-              className="btn btn-ghost"
-              onClick={() => setConfirmando("remover")}
-            >
-              Tirar deste time
-            </button>
-          )}
-          {podeDesativar && (
-            <button
-              className="btn btn-ghost"
-              disabled={souEu}
-              onClick={() => setConfirmando("desativar")}
-            >
-              Desativar na organização
-            </button>
-          )}
-          <button className="btn btn-ghost" onClick={onCancelar}>
-            Fechar
-          </button>
-          {souEu && (
-            <span className="muted self-center text-xs">
-              Você não pode desativar a própria conta.
-            </span>
-          )}
-        </div>
-      ) : (
-        <div>
-          <div className="text-xs">
-            {confirmando === "remover" ? (
-              <>
-                <strong>{membro.name}</strong> sai deste time. A conta continua
-                ativa e os outros times dela não mudam.
-              </>
-            ) : (
-              <>
-                <strong>{membro.name}</strong> deixa de acessar o sistema — em
-                TODOS os times, não só neste. As tarefas dela ficam.
-              </>
-            )}
-          </div>
-          {erro && <div className="error-box mt-2 text-xs">{erro}</div>}
-          <div className="mt-2 flex gap-2">
-            <button
-              className="btn btn-danger"
-              disabled={salvando}
-              onClick={() => void executar()}
-            >
-              {confirmando === "remover" ? "Tirar do time" : "Desativar"}
-            </button>
-            <button
-              className="btn btn-ghost"
-              disabled={salvando}
-              onClick={() => setConfirmando(null)}
-            >
-              Cancelar
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
