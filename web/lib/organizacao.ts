@@ -127,14 +127,9 @@ export function buscarPessoas(
   members: readonly Member[],
   teams: readonly Team[],
 ): PessoaEncontrada[] {
-  const alvo = normalizar(termo);
-  if (alvo === "") return [];
+  if (normalizar(termo) === "") return [];
   return members
-    .filter(
-      (m) =>
-        normalizar(m.name).includes(alvo) ||
-        normalizar(m.email).includes(alvo),
-    )
+    .filter((m) => casaComBusca(termo, m))
     .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"))
     .map((membro) => ({
       membro,
@@ -143,6 +138,30 @@ export function buscarPessoas(
         .filter((t): t is Team => t !== undefined)
         .sort((a, b) => a.name.localeCompare(b.name, "pt-BR")),
     }));
+}
+
+/**
+ * A pessoa casa com o termo buscado?
+ *
+ * ⚠️⚠️ AS DUAS TELAS DE PESSOAS PERGUNTAM AQUI, e isso não é organização de
+ * código: é a §5 da spec sendo cumprida. Ela avisa que *"duas telas listando
+ * pessoas, com regras diferentes, é o começo do próximo defeito de contador"*.
+ *
+ * E a divergência EXISTIU: a busca de `/membros` nasceu com `toLowerCase()`
+ * puro enquanto a da `/organizacao` já normalizava acento. Digitar "jose"
+ * achava "José" numa tela e ninguém na outra — mesma pessoa, mesmo termo,
+ * duas respostas. Achado no code review de 09/09.
+ *
+ * Casa por nome OU e-mail: quem digita o começo do e-mail também precisa
+ * achar.
+ */
+export function casaComBusca(termo: string, membro: Member): boolean {
+  const alvo = normalizar(termo);
+  if (alvo === "") return true;
+  return (
+    normalizar(membro.name).includes(alvo) ||
+    normalizar(membro.email).includes(alvo)
+  );
 }
 
 /**

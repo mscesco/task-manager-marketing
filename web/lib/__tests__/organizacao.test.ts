@@ -11,6 +11,7 @@ import { describe, it, expect } from "vitest";
 import {
   buscarPessoas,
   cardsDeArea,
+  casaComBusca,
   gestoresDaOrganizacao,
   pessoasSemArea,
 } from "../organizacao";
@@ -160,5 +161,32 @@ describe("buscarPessoas", () => {
     const achadas = buscarPessoas("admin", [pessoa("Admin", [])], TIMES);
     expect(achadas).toHaveLength(1);
     expect(achadas[0].areas).toEqual([]);
+  });
+});
+
+describe("casaComBusca", () => {
+  it("⭐ ignora acento — a divergência que o code review achou", () => {
+    // ⚠️ `/membros` nascera com `toLowerCase()` puro: "jose" achava "José" na
+    // `/organizacao` e ninguém na outra tela. Mesma pessoa, mesmo termo, duas
+    // respostas. Agora as duas perguntam AQUI.
+    expect(casaComBusca("jose", pessoa("José", [MKT]))).toBe(true);
+    expect(casaComBusca("JOSÉ", pessoa("Jose", [MKT]))).toBe(true);
+  });
+
+  it("casa por e-mail também", () => {
+    const ana = pessoa("Ana", [MKT], { email: "ana.silva@fecaf.com.br" });
+    expect(casaComBusca("silva", ana)).toBe(true);
+  });
+
+  it("termo vazio casa com todo mundo — quem decide filtrar é a tela", () => {
+    // ⚠️ Ao contrário de `buscarPessoas`, que devolve vazio: lá o termo vazio
+    // significa "não busquei nada"; aqui é um predicado por pessoa, e a tela
+    // é que decide se está filtrando.
+    expect(casaComBusca("", pessoa("Ana", [MKT]))).toBe(true);
+    expect(casaComBusca("   ", pessoa("Ana", [MKT]))).toBe(true);
+  });
+
+  it("não casa quem não tem o termo", () => {
+    expect(casaComBusca("zeca", pessoa("Ana", [MKT]))).toBe(false);
   });
 });

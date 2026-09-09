@@ -26,6 +26,7 @@ import Card from "@/components/Card";
 import PageHeader from "@/components/PageHeader";
 import TabelaDeMembros from "@/components/TabelaDeMembros";
 import { linhasDaOrganizacao } from "@/lib/telaDoTime";
+import { casaComBusca } from "@/lib/organizacao";
 import { Search } from "lucide-react";
 import {
   listMembers,
@@ -213,21 +214,32 @@ function Membros() {
   // tela de time -- é o que garante que as duas telas contem a mesma história
   // sobre a mesma pessoa.
   const todas = linhasDaOrganizacao(times, membros);
-  const alvo = busca.trim().toLowerCase();
-  const linhasVisiveis =
-    alvo === ""
-      ? todas
-      : todas.filter(
-          (l) =>
-            l.membro.name.toLowerCase().includes(alvo) ||
-            l.membro.email.toLowerCase().includes(alvo),
-        );
+  // ⚠️ A MESMA FUNÇÃO que a busca da `/organizacao` usa. Ela nasceu aqui com
+  // `toLowerCase()` puro, e "jose" achava "José" lá e ninguém aqui — mesma
+  // pessoa, mesmo termo, duas respostas. Achado no code review de 09/09, e é
+  // exatamente a divergência de regra que a §5 previu para a fatia E.
+  const filtrando = busca.trim() !== "";
+  const linhasVisiveis = filtrando
+    ? todas.filter((l) => casaComBusca(busca, l.membro))
+    : todas;
 
   return (
     <div>
       <PageHeader
         title="Pessoas"
-        count={membros.length}
+        // ⚠️⚠️ O CONTADOR DO CABEÇALHO SEGUE O QUE ESTÁ NA TELA. Ele mostrava
+        // `membros.length` (o total) enquanto a tabela mostrava "12 de 15" —
+        // dois números diferentes para a mesma lista, na mesma página. É a
+        // forma exata do defeito de 27/07 que a §3.2 registra: cabeçalho
+        // divergindo do corpo.
+        //
+        // ⚠️ E "12 de 15" em vez de "12": a §3.2 é explícita em nunca mostrar
+        // só o número do que sobrou, senão some a informação de que há mais.
+        count={
+          filtrando
+            ? `${linhasVisiveis.length} de ${membros.length}`
+            : membros.length
+        }
         actions={
           podeCadastrarMembro(alcance) && !criando && !revelado && (
             <button
@@ -378,9 +390,9 @@ function Membros() {
           // ⚠️ O CONTADOR DIZ OS DOIS NÚMEROS quando há filtro. A §3.2: o
           // defeito de 27/07 foi exatamente o cabeçalho divergindo do corpo.
           contagem={
-            busca.trim() === ""
-              ? `${membros.length} ${membros.length === 1 ? "pessoa" : "pessoas"}`
-              : `${linhasVisiveis.length} de ${membros.length} pessoas`
+            filtrando
+              ? `${linhasVisiveis.length} de ${membros.length} pessoas`
+              : `${membros.length} ${membros.length === 1 ? "pessoa" : "pessoas"}`
           }
           onMudou={async (texto) => {
             setAviso(texto);
