@@ -163,49 +163,88 @@ export default function TimePage() {
       ) : linhas.length === 0 ? (
         <div className="muted">Ninguém neste time ainda.</div>
       ) : (
-        <div className="overflow-hidden rounded-lg border border-border bg-surface">
-          {/* ⚠️ O CONTADOR DIZ O TOTAL, sempre. A §3.2: esconder linha já
-              causou o defeito de 27/07, com o cabeçalho divergindo do corpo.
-              Se um dia esta tela filtrar, aqui tem de virar "12 de 15". */}
-          <div className="muted border-b border-border px-3 py-2 text-xs">
-            {linhas.length} {linhas.length === 1 ? "pessoa" : "pessoas"}
-          </div>
-
-          <ul className="m-0 list-none p-0">
-            {linhas.map((linha) => (
-              <LinhaDeMembro
-                key={linha.membro.id}
-                linha={linha}
-                teamId={teamId}
-                oferecidos={oferecidos}
-                podeMexer={podeMexer}
-                podeDesativar={podeDesativar}
-                souEu={linha.membro.id === me?.id}
-                editando={editando === linha.membro.id}
-                menuAberto={menuAberto === linha.membro.id}
-                onEditar={() =>
-                  setEditando(
-                    editando === linha.membro.id ? null : linha.membro.id,
-                  )
-                }
-                onMenu={() =>
-                  setMenuAberto(
-                    menuAberto === linha.membro.id ? null : linha.membro.id,
-                  )
-                }
-                onFechar={() => {
-                  setEditando(null);
-                  setMenuAberto(null);
-                }}
-                onMudou={async (texto) => {
-                  setEditando(null);
-                  setMenuAberto(null);
-                  setAviso(texto);
-                  await carregar();
-                }}
-              />
-            ))}
-          </ul>
+        // ⚠️⚠️ TABELA DE VERDADE, com `<thead>` e colunas alinhadas -- e não
+        // uma lista onde tudo flui na mesma linha. A primeira versão era uma
+        // lista, e a Camila comparou com a referência que ela mesma tinha
+        // mandado: *"tá vendo a diferença? quero que seja separado igual está
+        // no modelo"*. Estava certa -- sem colunas, nada alinha
+        // verticalmente, e a tela deixa de ser consultável: você não consegue
+        // correr o olho por "quem está inativo" ou "quem é supervisor".
+        //
+        // ⚠️ `<table>` semântica, e não `div`s com `grid`: são dados
+        // tabulares, e leitor de tela anuncia coluna e linha só com a marcação
+        // certa (`<th scope="col">`).
+        //
+        // ⚠️ `overflow-x-auto` no wrapper: a coluna de cápsulas cresce com o
+        // número de subtimes, e sem isso a página inteira ganha barra
+        // horizontal (a §7 avisa que largura de texto não tem guardião).
+        <div className="overflow-x-auto rounded-lg border border-border bg-surface">
+          <table className="w-full border-collapse text-sm">
+            <caption className="muted border-b border-border px-3 py-2 text-left text-xs">
+              {/* ⚠️ O CONTADOR DIZ O TOTAL, sempre. A §3.2: esconder linha já
+                  causou o defeito de 27/07, com o cabeçalho divergindo do
+                  corpo. Se um dia filtrar, aqui vira "12 de 15". */}
+              {linhas.length} {linhas.length === 1 ? "pessoa" : "pessoas"}
+            </caption>
+            <thead>
+              <tr className="border-b border-border">
+                <th scope="col" className="label px-3 py-2 text-left">
+                  Membro
+                </th>
+                <th scope="col" className="label px-3 py-2 text-left">
+                  Status
+                </th>
+                <th scope="col" className="label px-3 py-2 text-left">
+                  E-mail
+                </th>
+                <th scope="col" className="label px-3 py-2 text-left">
+                  Cargo aqui
+                </th>
+                <th scope="col" className="label px-3 py-2 text-left">
+                  Subtimes
+                </th>
+                {/* Coluna de ações: sem rótulo visível, mas anunciada. */}
+                <th scope="col" className="px-3 py-2">
+                  <span className="sr-only">Ações</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {linhas.map((linha) => (
+                <LinhaDeMembro
+                  key={linha.membro.id}
+                  linha={linha}
+                  teamId={teamId}
+                  oferecidos={oferecidos}
+                  podeMexer={podeMexer}
+                  podeDesativar={podeDesativar}
+                  souEu={linha.membro.id === me?.id}
+                  editando={editando === linha.membro.id}
+                  menuAberto={menuAberto === linha.membro.id}
+                  onEditar={() =>
+                    setEditando(
+                      editando === linha.membro.id ? null : linha.membro.id,
+                    )
+                  }
+                  onMenu={() =>
+                    setMenuAberto(
+                      menuAberto === linha.membro.id ? null : linha.membro.id,
+                    )
+                  }
+                  onFechar={() => {
+                    setEditando(null);
+                    setMenuAberto(null);
+                  }}
+                  onMudou={async (texto) => {
+                    setEditando(null);
+                    setMenuAberto(null);
+                    setAviso(texto);
+                    await carregar();
+                  }}
+                />
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
     </AppShell>
@@ -243,87 +282,118 @@ function LinhaDeMembro({
   const { membro, cargoAqui, subtimes, outrasAreas } = linha;
 
   return (
-    <li className="border-b border-border last:border-b-0">
-      <div className="flex items-center gap-3 px-3 py-2">
-        <span className="flex min-w-0 flex-1 flex-wrap items-baseline gap-2">
-          <strong className="truncate text-sm">{membro.name}</strong>
-          <span className="muted truncate text-xs">{membro.email}</span>
+    <>
+      <tr className="border-b border-border last:border-b-0">
+        {/* MEMBRO */}
+        <td className="px-3 py-2 align-middle">
+          <strong className="font-semibold">{membro.name}</strong>
+        </td>
 
-          {/* ⚠️ O status é NA ORGANIZAÇÃO, e não neste time -- desativar
-              desliga a conta inteira. Ver o menu `⋯`. */}
-          {!membro.is_active && (
-            <Badge tone="outline" size="sm">
-              Inativo
-            </Badge>
-          )}
+        {/* STATUS -- ⚠️ NA ORGANIZAÇÃO, e não neste time. Desativar desliga a
+            conta inteira; ver o menu `⋯`. Mostra os DOIS estados, e não só o
+            inativo: uma coluna que às vezes está vazia não se lê como coluna. */}
+        <td className="px-3 py-2 align-middle">
+          <Badge
+            tone={membro.is_active ? "soft" : "outline"}
+            size="sm"
+            color={membro.is_active ? "var(--accent)" : undefined}
+          >
+            {membro.is_active ? "Ativo" : "Inativo"}
+          </Badge>
+        </td>
 
-          {/* O cargo NESTE time, quando há vínculo direto. */}
-          {cargoAqui && (
+        {/* E-MAIL */}
+        <td className="muted px-3 py-2 align-middle text-xs">{membro.email}</td>
+
+        {/* CARGO NESTE TIME -- vazio quando a pessoa só está num subtime. */}
+        <td className="px-3 py-2 align-middle">
+          {cargoAqui ? (
             <Badge tone="neutral" size="sm" className="border">
               {PAPEL[cargoAqui]}
             </Badge>
+          ) : (
+            <span className="muted text-xs">—</span>
           )}
+        </td>
 
-          {/* ⚠️ CÁPSULA COM O CARGO JUNTO (`SEO · Supervisor`). Sem o cargo, a
-              coluna mostra ONDE e esconde O QUÊ, numa tela cujo assunto é
-              permissão. */}
-          {subtimes.map((c) => (
-            <Badge key={c.team.id} tone="soft" size="sm" color="var(--accent)">
-              {c.team.name} · {PAPEL[c.role]}
-            </Badge>
-          ))}
+        {/* SUBTIMES -- ⚠️ CÁPSULA COM O CARGO JUNTO (`SEO · Supervisor`).
+            Sem o cargo, a coluna mostra ONDE e esconde O QUÊ, numa tela cujo
+            assunto é permissão. */}
+        <td className="px-3 py-2 align-middle">
+          <span className="flex flex-wrap gap-1.5">
+            {subtimes.length === 0 && outrasAreas === 0 && (
+              <span className="muted text-xs">—</span>
+            )}
+            {subtimes.map((c) => (
+              <Badge key={c.team.id} tone="soft" size="sm" color="var(--accent)">
+                {c.team.name} · {PAPEL[c.role]}
+              </Badge>
+            ))}
+            {/* ⚠️ Avisa que há vínculo em OUTRA área sem poluir a coluna com
+                times que não são desta tela. O detalhe fica no painel. */}
+            {outrasAreas > 0 && (
+              <Badge tone="outline" size="sm">
+                +{outrasAreas} {outrasAreas === 1 ? "área" : "áreas"}
+              </Badge>
+            )}
+          </span>
+        </td>
 
-          {/* ⚠️ Avisa que há vínculo em OUTRA área sem poluir a coluna com
-              times que não são desta tela. O detalhe fica no painel. */}
-          {outrasAreas > 0 && (
-            <Badge tone="outline" size="sm">
-              +{outrasAreas} {outrasAreas === 1 ? "área" : "áreas"}
-            </Badge>
+        {/* AÇÕES -- ⚠️ na linha ficam só cargo e subtime, que é o que se mexe
+            toda semana. Remover e desativar vão para o `⋯`. */}
+        <td className="whitespace-nowrap px-3 py-2 text-right align-middle">
+          {podeMexer && (
+            <button
+              className="btn btn-ghost"
+              aria-label={`Editar subtimes de ${membro.name}`}
+              onClick={onEditar}
+            >
+              <Pencil size={14} aria-hidden="true" />
+            </button>
           )}
-        </span>
-
-        {/* ⚠️ NA LINHA FICAM SÓ CARGO E SUBTIME — o que se mexe toda semana.
-            Remover e desativar vão para o `⋯`, e o motivo está no menu. */}
-        {podeMexer && (
           <button
-            className="btn btn-ghost shrink-0"
-            aria-label={`Editar subtimes de ${membro.name}`}
-            onClick={onEditar}
+            className="btn btn-ghost"
+            aria-label={`Mais ações para ${membro.name}`}
+            onClick={onMenu}
           >
-            <Pencil size={14} aria-hidden="true" />
+            <MoreHorizontal size={16} aria-hidden="true" />
           </button>
-        )}
-        <button
-          className="btn btn-ghost shrink-0"
-          aria-label={`Mais ações para ${membro.name}`}
-          onClick={onMenu}
-        >
-          <MoreHorizontal size={16} aria-hidden="true" />
-        </button>
-      </div>
+        </td>
+      </tr>
 
+      {/* ⚠️ O painel expandido é uma LINHA PRÓPRIA que atravessa as colunas
+          (`colSpan`), e não algo dentro de uma célula: dentro, ele herdaria a
+          largura da coluna e espremeria os checkboxes. */}
       {editando && (
-        <SeletorDeSubtimes
-          membro={membro}
-          atuais={subtimes}
-          oferecidos={oferecidos}
-          onCancelar={onFechar}
-          onMudou={onMudou}
-        />
+        <tr className="border-b border-border">
+          <td colSpan={6} className="bg-surface-2 p-0">
+            <SeletorDeSubtimes
+              membro={membro}
+              atuais={subtimes}
+              oferecidos={oferecidos}
+              onCancelar={onFechar}
+              onMudou={onMudou}
+            />
+          </td>
+        </tr>
       )}
 
       {menuAberto && (
-        <MenuDaLinha
-          membro={membro}
-          teamId={teamId}
-          cargoAqui={cargoAqui}
-          podeDesativar={podeDesativar}
-          souEu={souEu}
-          onCancelar={onFechar}
-          onMudou={onMudou}
-        />
+        <tr className="border-b border-border">
+          <td colSpan={6} className="bg-surface-2 p-0">
+            <MenuDaLinha
+              membro={membro}
+              teamId={teamId}
+              cargoAqui={cargoAqui}
+              podeDesativar={podeDesativar}
+              souEu={souEu}
+              onCancelar={onFechar}
+              onMudou={onMudou}
+            />
+          </td>
+        </tr>
       )}
-    </li>
+    </>
   );
 }
 
@@ -401,7 +471,7 @@ function SeletorDeSubtimes({
   }
 
   return (
-    <div className="border-t border-border bg-surface-2 px-3 py-3">
+    <div className="px-3 py-3">
       <div className="label mb-2">Subtimes de {membro.name}</div>
 
       {opcoes.length === 0 ? (
@@ -517,7 +587,7 @@ function MenuDaLinha({
   }
 
   return (
-    <div className="border-t border-border bg-surface-2 px-3 py-3">
+    <div className="px-3 py-3">
       {confirmando === null ? (
         <div className="flex flex-wrap gap-2">
           {cargoAqui && (
