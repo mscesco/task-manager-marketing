@@ -706,7 +706,15 @@ export function invalidateTeams() {
 export async function createTeam(input: {
   name: string;
   slug: string;
-  parent_team_id: string;
+  // ⚠️⚠️ AUSENTE (ou `null`) = cria uma AREA; preenchido = cria um SUBTIME.
+  // Ate a Spec 046 este campo era OBRIGATORIO no tipo, porque so havia uma
+  // area e ninguem podia criar outra -- a tela de times so criava subtime.
+  //
+  // ⚠️ E `""` NAO SERVE COMO "sem pai": o backend tipa
+  // `parent_team_id: uuid.UUID | None`, entao string vazia e 422. A primeira
+  // versao da tela de organizacao mandava `""` e o `tsc` nao acusou, porque
+  // `""` E uma `string` -- foi a leitura do schema que pegou.
+  parent_team_id?: string | null;
 }): Promise<Team> {
   const t = await api<Team>("/api/v1/workspaces/current/teams", {
     method: "POST",
@@ -773,6 +781,30 @@ export async function esvaziarERemoverTeam(
   );
   invalidateTeams();
   return r;
+}
+
+// ===========================================================================
+// WORKSPACE (a ORGANIZACAO) -- Spec 047, fatia B
+// ===========================================================================
+// ⚠️ A rota de renomear existe desde sempre e NUNCA teve tela: a Spec 047 e a
+// primeira que a expoe. Por isso este bloco nasce agora, e nao porque faltava
+// backend.
+export type Workspace = {
+  id: string;
+  name: string;
+  slug: string;
+};
+
+export async function getWorkspace(): Promise<Workspace> {
+  return api<Workspace>("/api/v1/workspaces/current");
+}
+
+// Renomear exige `workspace.manage` -> so ADMIN de organizacao. 403 se nao.
+export async function renameWorkspace(name: string): Promise<Workspace> {
+  return api<Workspace>("/api/v1/workspaces/current", {
+    method: "PATCH",
+    body: { name },
+  });
 }
 
 export async function listTeamsAll(): Promise<Team[]> {
@@ -1472,12 +1504,25 @@ export async function moveTask(
 // Lista por-workspace, estavel na sessao -> buscada uma vez e memoizada
 // (mesmo padrao do time raiz). Limpa no clearTokens.
 
+/** Papel na ORGANIZACAO -- sem time (Spec 045, fatia B). */
+export type OrgRole = "ADMIN" | "GESTOR";
+
 export type Member = {
   id: string;
   workspace_id: string;
   name: string;
   email: string;
   is_active: boolean;
+  // Papel na ORGANIZACAO (Spec 045, fatia B). `null` = nenhum, a maioria.
+  // A `/organizacao` mostra os gestores no cabecalho a partir daqui.
+  org_role?: OrgRole | null;
+  // ⚠️⚠️ AS AREAS (raizes) da pessoa -- Spec 047, fatia B. DISTINTO de
+  // `team_ids`, logo abaixo, que traz so os SUBTIMES. Quem esta vinculado
+  // apenas na area tem `team_ids` VAZIO e `area_ids` cheio -- usar o campo
+  // errado no card "Pessoas sem area" classificaria essa pessoa como solta.
+  // Lista vazia AQUI = sem vinculo nenhum.
+  // ⚠️ Opcional porque respostas de MUTACAO nao a resolvem; so a listagem.
+  area_ids?: string[];
   // Entrega 13 (Fatia 2): ids dos SUBTIMES do membro (times nao-raiz). O
   // backend nunca devolve aqui o time raiz. Usado pelo filtro de subtime no
   // quadro (Fatia 3). Lista VAZIA = sem subtime; nao existe `null`.

@@ -1,0 +1,162 @@
+/**
+ * A tela `/organizacao` -- Spec 047, fatia B. LOGICA PURA.
+ *
+ * FRONTEIRA (Spec 027): decisao mora em `lib/`, sem React e sem `fetch`. E
+ * aqui isso nao e formalidade: `app/` esta FORA do `include` do vitest, e a
+ * Spec 047 §7 diz exatamente isso -- *"`temAcaoPossivel` mora em `lib/`,
+ * entao tem guardiao. O resto da tela nao."*
+ *
+ * ⚠️ E o projeto ja pagou por ignorar isso duas vezes: `candidatosParaAdicionar`
+ * (Spec 044) e `computeLens`, que decidia o menu inteiro sem um teste sequer
+ * e deixou passar a regressao de 09/09 ate a Camila ver na tela.
+ *
+ * O que esta tela responde:
+ *   - quantas pessoas em cada AREA, e quem a gere
+ *   - quem nao esta em area nenhuma (o card que evita gente invisivel)
+ *   - onde esta a Fulana (a busca que atravessa as areas)
+ */
+
+import type { Member, Team } from "./api";
+
+/** Um card da grade de areas. */
+export type CardDeArea = {
+  readonly area: Team;
+  /** Pessoas com vinculo na area OU em qualquer subtime dela. */
+  readonly pessoas: number;
+  /** Subtimes -- diretos e indiretos. */
+  readonly subtimes: number;
+};
+
+/**
+ * A grade de areas, com as contagens que o card mostra.
+ *
+ * ⚠️⚠️ A CONTAGEM DE PESSOAS VEM DE `member.area_ids`, e NAO de somar o
+ * `membros` de cada time da arvore. Somar DUPLICA quem tem vinculo na area e
+ * tambem num subtime dela -- e esse e o cadastro normal de quem coordena.
+ * O backend ja deduplica (`areas_por_membro`, com `DISTINCT`).
+ *
+ * ⚠️ E ela conta TODO MUNDO, inclusive inativo. A §3.2 e explicita: esconder
+ * linha ja causou defeito aqui, em 27/07, quando o contador do cabecalho
+ * divergiu do corpo. Se um dia a tela filtrar inativos, o card tem de dizer
+ * "12 de 15" -- nao mostrar 12 e calar sobre os 3.
+ */
+export function cardsDeArea(
+  teams: readonly Team[],
+  members: readonly Member[],
+): CardDeArea[] {
+  const areas = teams
+    .filter((t) => t.parent_team_id === null)
+    .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+
+  return areas.map((area) => ({
+    area,
+    pessoas: members.filter((m) => (m.area_ids ?? []).includes(area.id)).length,
+    subtimes: descendentes(area.id, teams).size,
+  }));
+}
+
+/** Subtimes de uma area -- diretos E indiretos (a arvore tem tres niveis). */
+function descendentes(areaId: string, teams: readonly Team[]): Set<string> {
+  const out = new Set<string>();
+  const fila = [areaId];
+  let guarda = 0;
+  while (fila.length && guarda < 1000) {
+    guarda += 1;
+    const atual = fila.shift() as string;
+    for (const t of teams) {
+      if (t.parent_team_id === atual && !out.has(t.id)) {
+        out.add(t.id);
+        fila.push(t.id);
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Quem nao esta em area nenhuma -- o card que impede gente invisivel.
+ *
+ * ⚠️⚠️ SEM ESTE CARD, quem e cadastrado e nunca alocado NAO APARECE EM LUGAR
+ * NENHUM DO PRODUTO, porque a grade e feita de areas. E ele nao e hipotetico:
+ * a conta de administracao da Camila esta exatamente assim desde 08/09, de
+ * propósito (o passo 2 da Spec 045).
+ *
+ * ⚠️ USA `area_ids`, e nao `team_ids`. Com `team_ids` (que traz so subtimes),
+ * todo mundo que esta apenas na area cairia aqui -- inclusive os gerentes.
+ */
+export function pessoasSemArea(members: readonly Member[]): Member[] {
+  return members
+    .filter((m) => (m.area_ids ?? []).length === 0)
+    .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+}
+
+/**
+ * Quem administra a ORGANIZACAO -- vai no cabecalho, junto do nome.
+ *
+ * ⚠️ Gente pouca, e por isso cabe ao lado do nome em vez de virar secao: sao
+ * os papeis de organizacao (ADMIN/GESTOR), que existem sem time.
+ */
+export function gestoresDaOrganizacao(members: readonly Member[]): Member[] {
+  return members
+    .filter((m) => m.org_role != null)
+    .sort((a, b) => {
+      // ADMIN primeiro -- quem define a organizacao antes de quem a opera.
+      if (a.org_role !== b.org_role) return a.org_role === "ADMIN" ? -1 : 1;
+      return a.name.localeCompare(b.name, "pt-BR");
+    });
+}
+
+/** Uma pessoa achada pela busca, com as areas em que ela esta. */
+export type PessoaEncontrada = {
+  readonly membro: Member;
+  readonly areas: Team[];
+};
+
+/**
+ * A busca por pessoa, ATRAVESSANDO as areas.
+ *
+ * ⚠️⚠️ NAO E ENFEITE, e a spec diz por que: com N areas e uma pessoa podendo
+ * estar em varias, *"onde esta a Fulana?"* nao tem outra resposta nesta tela
+ * -- a grade e por AREA, entao ela mostra o agregado e some com o individuo.
+ *
+ * Casa por nome OU e-mail, sem acento e sem caixa: quem digita "jose" tem de
+ * achar "José", e quem digita o comeco do e-mail tambem.
+ */
+export function buscarPessoas(
+  termo: string,
+  members: readonly Member[],
+  teams: readonly Team[],
+): PessoaEncontrada[] {
+  const alvo = normalizar(termo);
+  if (alvo === "") return [];
+  return members
+    .filter(
+      (m) =>
+        normalizar(m.name).includes(alvo) ||
+        normalizar(m.email).includes(alvo),
+    )
+    .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"))
+    .map((membro) => ({
+      membro,
+      areas: (membro.area_ids ?? [])
+        .map((id) => teams.find((t) => t.id === id))
+        .filter((t): t is Team => t !== undefined)
+        .sort((a, b) => a.name.localeCompare(b.name, "pt-BR")),
+    }));
+}
+
+/**
+ * Minuscula e sem acento.
+ *
+ * ⚠️ `normalize("NFD")` + remocao de diacriticos e a mesma tecnica que o
+ * backend usa com `unaccent` na busca do quadro (migration `0015`). As duas
+ * pontas precisam concordar, senao a busca da tela acha o que a do servidor
+ * nao acha.
+ */
+function normalizar(s: string): string {
+  return s
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .trim();
+}

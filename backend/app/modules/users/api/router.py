@@ -93,6 +93,12 @@ async def list_members(
                 email=m.user.email,
                 is_active=m.user.is_active,
                 created_at=m.user.created_at,
+                org_role=m.user.org_role,
+                # ⚠️ DOIS CAMPOS DISTINTOS, e a diferenca importa: `team_ids`
+                # sao os SUBTIMES (o filtro do quadro depende de a raiz NAO
+                # entrar), `area_ids` sao as raizes. Quem esta so na area tem
+                # o primeiro vazio e o segundo cheio.
+                area_ids=m.area_ids,
                 team_ids=m.subteam_ids,
             )
             for m in members

@@ -24,6 +24,20 @@ class MemberResponse(BaseModel):
     email: EmailStr
     is_active: bool
     created_at: datetime
+    #: Papel na ORGANIZACAO (Spec 045, fatia B). `None` = nenhum, que e a
+    #: maioria. Spec 047, fatia B: a `/organizacao` mostra os gestores no
+    #: cabecalho, junto do nome que eles administram, e sem este campo a tela
+    #: teria de perguntar pessoa por pessoa.
+    org_role: OrgRole | None = None
+    #: ⚠️ AS AREAS (raizes) da pessoa -- Spec 047, fatia B. DISTINTO de
+    #: `team_ids`, que traz so os SUBTIMES: quem esta vinculado apenas na
+    #: area tem `team_ids` vazio, e a tela o classificaria como "sem area".
+    #: Lista VAZIA aqui = pessoa sem vinculo nenhum, o card "Pessoas sem
+    #: area". Em respostas de MUTACAO sai vazia -- so a listagem resolve.
+    #: `default_factory` como o `team_ids` logo abaixo -- default mutavel
+    #: compartilhado e a armadilha classica, e a consistencia entre os dois
+    #: campos vizinhos vale mais que a economia de caracteres.
+    area_ids: list[uuid.UUID] = Field(default_factory=list)
     #: Entrega 13 (Fatia 2): ids dos SUBTIMES do membro (times nao-raiz).
     #: NAO inclui o time principal. Usado pelo filtro de subtime no quadro.
     #: Em respostas de mutacao (criar/desativar) sai VAZIO -- so a listagem

@@ -16,7 +16,7 @@ Work, acionado no router.
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -113,6 +113,12 @@ class MemberWithSubteams:
 
     user: User
     subteam_ids: list[uuid.UUID]
+    #: ⚠️ AS AREAS (raizes) da pessoa -- Spec 047, fatia B. NAO da para
+    #: derivar de `subteam_ids`: aquele campo exclui a raiz de proposito, e
+    #: quem esta vinculado SO na area apareceria com lista vazia nos dois --
+    #: e a tela de organizacao o classificaria como "sem area", errado.
+    #: Lista VAZIA = pessoa sem vinculo nenhum (o card "Pessoas sem area").
+    area_ids: list[uuid.UUID] = field(default_factory=list)
 
 
 def _temp_password_expiry() -> datetime:
@@ -647,8 +653,16 @@ class MemberService:
                 details={"field": "reaches_team"},
             )
         rows = await self._users.list_all_with_subteams()
+        # ⚠️ EM LOTE, uma consulta para a lista inteira -- mesmo desenho de
+        # `contagens_de_todos` (Spec 029). Uma por pessoa seria a parede de
+        # desempenho que a Spec 021 ja mediu neste produto.
+        areas = await self._users.areas_por_membro()
         todos = [
-            MemberWithSubteams(user=user, subteam_ids=subteam_ids)
+            MemberWithSubteams(
+                user=user,
+                subteam_ids=subteam_ids,
+                area_ids=areas.get(user.id, []),
+            )
             for user, subteam_ids in rows
         ]
         if reaches_task_id is None and reaches_team_id is None:

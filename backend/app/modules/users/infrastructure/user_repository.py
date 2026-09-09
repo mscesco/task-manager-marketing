@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.dialects.postgresql import aggregate_order_by
 
 from app.core.tenant import require_tenant
@@ -207,6 +207,65 @@ class UserRepository(BaseRepository[User]):
         do Unit of Work. Spec 015, Fatia 4.
         """
         await self.session.delete(membership)
+
+    async def areas_por_membro(self) -> dict[uuid.UUID, list[uuid.UUID]]:
+        """user_id -> AREAS (raizes) onde a pessoa tem vinculo. Spec 047, B.
+
+        Uma pessoa pertence a uma area se tem vinculo NA area **ou em qualquer
+        subtime dela** -- a mesma regra da tabela da §4.2, e por isso a mesma
+        consulta serve as duas telas.
+
+        ⚠️⚠️ POR QUE NAO DA PARA DERIVAR ISTO DE `list_all_with_subteams`:
+        aquela devolve so os SUBTIMES (times com pai), de proposito -- quem
+        esta na raiz nao pode ser rotulado com o id do Marketing, senao o
+        filtro de subtime do quadro perde o sentido. Consequencia: alguem
+        vinculado SO na area aparece la com lista vazia, e a tela de
+        organizacao o classificaria como "sem area" -- exatamente errado.
+
+        ⚠️ EM LOTE, uma consulta para a lista inteira. E o mesmo desenho de
+        `TeamService.contagens_de_todos` (Spec 029), e pelo mesmo motivo: a
+        `/organizacao` mostra a grade e o card "Pessoas sem area" de uma vez,
+        e uma consulta por pessoa seria a parede de desempenho que a Spec 021
+        ja mediu neste produto.
+
+        ⚠️ A SUBIDA E RECURSIVA porque a arvore tem tres niveis desde a Spec
+        036 (raiz -> subtime -> neto). Parar no pai direto classificaria um
+        neto como "sem area".
+
+        Quem nao tem vinculo nenhum simplesmente NAO aparece no dicionario --
+        quem chama usa `.get(id, [])`.
+        """
+        workspace_id = require_tenant().workspace_id
+        linhas = (
+            await self.session.execute(
+                text(
+                    """
+                    WITH RECURSIVE sobe AS (
+                        SELECT ut.user_id, t.id AS team_id, t.parent_team_id
+                        FROM user_team ut
+                        JOIN team t
+                          ON t.id = ut.team_id
+                         AND t.workspace_id = ut.workspace_id
+                        WHERE ut.workspace_id = :ws
+                        UNION ALL
+                        SELECT s.user_id, p.id, p.parent_team_id
+                        FROM sobe s
+                        JOIN team p
+                          ON p.id = s.parent_team_id
+                         AND p.workspace_id = :ws
+                    )
+                    SELECT DISTINCT user_id, team_id
+                    FROM sobe
+                    WHERE parent_team_id IS NULL
+                    """
+                ),
+                {"ws": workspace_id},
+            )
+        ).all()
+        out: dict[uuid.UUID, list[uuid.UUID]] = {}
+        for user_id, team_id in linhas:
+            out.setdefault(user_id, []).append(team_id)
+        return out
 
     async def list_team_memberships(
         self, *, user_id: uuid.UUID

@@ -136,6 +136,16 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   const podeGerirTimes = user?.permissions.includes("team.manage") ?? false;
 
+  // ⚠️ Spec 047, fatia B: a `/organizacao` e para quem ADMINISTRA A
+  // ORGANIZACAO, e nao para quem gere um time. `area.create` e a permissao
+  // que separa os dois -- ela existe SO nos papeis de organizacao (Spec 046,
+  // §4.1), enquanto `team.manage` um MANAGER tambem tem.
+  //
+  // ⚠️ Usar `team.manage` aqui poria a porta na frente de todo gerente, e a
+  // tela inteira dele seria leitura: ele nao renomeia a organizacao nem cria
+  // area. Porta que nao abre e o que este arquivo ja evita em Solicitacoes.
+  const podeVerOrganizacao = user?.permissions.includes("area.create") ?? false;
+
   // Spec 043 (fatia C). ⚠️ PERMISSÃO PRÓPRIA, e não a de triagem: definir o
   // que se pergunta e responder a fila são trabalhos diferentes, e o backend
   // já os separa. Mesmo espírito dos dois gates acima -- quem não tem a
@@ -158,6 +168,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     // Solicitacoes -- quem nao tem `team.manage` nao veria botao nenhum
     // util la dentro, entao nem oferecemos a porta. O backend barra por 403
     // de qualquer forma.
+    ...(podeVerOrganizacao
+      ? [{ href: "/organizacao", label: "Organização", icon: Building2 }]
+      : []),
     ...(podeGerirTimes
       ? [{ href: "/times", label: "Times", icon: Network }]
       : []),
