@@ -2,52 +2,37 @@
 import { useEffect, useState } from "react";
 import {
   alcanceDe,
-  podeGerenciarAlgo,
   podeCadastrarMembro,
-  temAcaoPossivel,
-  podeResetarSenha,
-  podeDesativarConta,
-  podeTrocarPapel,
-  podeMoverSubtime,
-  podeAdicionarAoTime,
-  podeRemoverDoTime,
-  avisoDeRebaixamento,
   papeisAtribuiveis,
-  timesParaAdicionar as timesPermitidos,
-  candidatosParaAdicionar,
-  type Alcance,
 } from "@/lib/permissoesMembros";
 import AppShell from "@/components/AppShell";
-import BloqueioAlcance from "@/components/BloqueioAlcance";
 import EmptyState from "@/components/EmptyState";
+import Abas from "@/components/Abas";
 import Badge from "@/components/Badge";
-import Avatar from "@/components/Avatar";
 import Card from "@/components/Card";
 import PageHeader from "@/components/PageHeader";
+import SenhaProvisoria from "@/components/SenhaProvisoria";
 import TabelaDeMembros from "@/components/TabelaDeMembros";
 import { linhasDaOrganizacao } from "@/lib/telaDoTime";
 import { casaComBusca } from "@/lib/organizacao";
+import {
+  contagemPorEstado,
+  estadoDoMembro,
+  type EstadoDoMembro,
+} from "@/lib/estadoDoMembro";
 import { Search } from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
 import {
   listMembers,
   listTeamsAll,
   createMember,
-  resetMemberPassword,
-  deactivateMember,
-  listMemberTeams,
-  changeMemberRole,
-  removeMemberFromTeam,
-  moveMemberSubteam,
-  assignMemberToTeam,
   currentUser,
   ApiError,
   type Member,
   type Team,
   type MemberRole,
-  type MemberTeam,
   type CurrentUser,
 } from "@/lib/api";
-import { bloqueioDeAlcance, type ErroDeLinha } from "@/lib/erroAlcance";
 
 // Membros: lista + cadastro (4a) + resetar senha / desativar (4b), gated por
 // team.manage. Reset e cadastro compartilham o reveal-once da senha (ADR 0008).
@@ -94,11 +79,14 @@ function Membros() {
   // A busca da organização (fatia E) e o aviso do que acabou de mudar.
   const [busca, setBusca] = useState("");
   const [aviso, setAviso] = useState<string | null>(null);
+  // ⚠️ AS MESMAS TRÊS ABAS da tela de time, e pela mesma razão da tabela
+  // compartilhada: são duas telas sobre pessoas, e recortes diferentes nas
+  // duas fariam o mesmo cadastro contar histórias diferentes.
+  const [aba, setAba] = useState<EstadoDoMembro>("ativo");
 
   // Spec 028: o gate deixou de ser "tem team.manage?" e virou um ALCANCE.
   // A regra mora em lib/permissoesMembros (pura, testada); aqui so lemos.
   const alcance = alcanceDe(me);
-  const podeGerenciar = podeGerenciarAlgo(alcance);
   const souAdmin = me?.roles.includes("ADMIN") ?? false;
   // ⚠️⚠️ AQUI HAVIA `PAPEIS` INTEIRO, filtrado so por "sou admin?" (gate D2 da
   // Spec 014). A Spec 045 (fatia D) tornou isso errado em tres opcoes: ADMIN
@@ -119,26 +107,12 @@ function Membros() {
       )
     : [];
 
-// Rotulo do time COM a hierarquia: se o time tem pai, mostra
-  // "Pai › Filho" (ex.: "Marketing › CRM e Automacao"), deixando claro
-  // que o subtime pertence ao time-pai. Time raiz mostra so o nome.
-  // O parent_team_id ja vem do backend em cada Team; aqui so montamos o texto.
-  // ⚠️ Recebe LISTA desde a Spec 044 (fatia 1): a pessoa pode estar em mais
-  // de um subtime. Vazia => "—". Varios => separados por vírgula, na ordem que
-  // o backend mandou (alfabetica por nome do time, cravada no `array_agg`).
-  function nomeSubtimes(ids: string[]): string {
-    const nomes = ids.map(nomeSubtime).filter((n) => n !== "—");
-    return nomes.length > 0 ? nomes.join(", ") : "—";
-  }
-
-  function nomeSubtime(id: string | null): string {
-    if (!id) return "—";
-    const t = times.find((x) => x.id === id);
-    if (!t) return "—";
-    if (t.parent_team_id === null) return t.name;
-    const pai = times.find((x) => x.id === t.parent_team_id);
-    return pai ? `${pai.name} › ${t.name}` : t.name;
-  }
+  // ⚠️ AQUI MORAVAM `nomeSubtime` e `nomeSubtimes`, que montavam o rótulo
+  // "Pai › Filho" da coluna de subtimes. Ficaram sem uso quando `LinhaMembro`
+  // saiu (fatia E): a coluna de times é da `TabelaDeMembros` agora, e ela
+  // mostra `Nome · Cargo` -- o cargo importa mais que o caminho na árvore
+  // numa tela cujo assunto é permissão. O `tsc` não acusa função morta, e por
+  // isso vale dizer que a remoção foi deliberada.
 
   async function carregar() {
     try {
@@ -218,10 +192,17 @@ function Membros() {
   // `toLowerCase()` puro, e "jose" achava "José" lá e ninguém aqui — mesma
   // pessoa, mesmo termo, duas respostas. Achado no code review de 09/09, e é
   // exatamente a divergência de regra que a §5 previu para a fatia E.
+  // ⚠️ DOIS RECORTES, e a ordem importa para os números: a BUSCA define o
+  // universo em que as abas contam. Contando as abas sobre todo mundo, buscar
+  // "ana" mostraria "Convidados 7" com uma Ana só na tela.
   const filtrando = busca.trim() !== "";
-  const linhasVisiveis = filtrando
+  const buscadas = filtrando
     ? todas.filter((l) => casaComBusca(busca, l.membro))
     : todas;
+  const contagem = contagemPorEstado(buscadas.map((l) => l.membro));
+  const linhasVisiveis = buscadas.filter(
+    (l) => estadoDoMembro(l.membro) === aba,
+  );
 
   return (
     <div>
@@ -236,9 +217,9 @@ function Membros() {
         // ⚠️ E "12 de 15" em vez de "12": a §3.2 é explícita em nunca mostrar
         // só o número do que sobrou, senão some a informação de que há mais.
         count={
-          filtrando
-            ? `${linhasVisiveis.length} de ${membros.length}`
-            : membros.length
+          linhasVisiveis.length === membros.length
+            ? membros.length
+            : `${linhasVisiveis.length} de ${membros.length}`
         }
         actions={
           podeCadastrarMembro(alcance) && !criando && !revelado && (
@@ -352,9 +333,48 @@ function Membros() {
 
       {membros.length === 0 ? (
         <EmptyState title="Nenhum membro" />
-      ) : linhasVisiveis.length === 0 ? (
+      ) : buscadas.length === 0 ? (
         <div className="muted">Ninguém com esse nome ou e-mail.</div>
       ) : (
+        <>
+          {/* ⚠️ As contagens são do que a BUSCA deixou passar — ver o
+              comentário no cálculo. E `0` aparece: uma aba sem número
+              lê-se como "não sei". */}
+          <div className="mb-3">
+            <Abas
+              aria-label="Estado das pessoas"
+              grupo="estado"
+              ativa={aba}
+              onEscolher={setAba}
+              abas={[
+                { id: "ativo", rotulo: "Ativos", contagem: contagem.ativo },
+                {
+                  id: "convidado",
+                  rotulo: "Convidados",
+                  contagem: contagem.convidado,
+                },
+                {
+                  id: "inativo",
+                  rotulo: "Inativos",
+                  contagem: contagem.inativo,
+                },
+              ]}
+            />
+          </div>
+
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={aba}
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={{ duration: 0.18 }}
+            >
+              {linhasVisiveis.length === 0 ? (
+                <div className="muted rounded-lg border border-border bg-surface p-4 text-sm">
+                  {vazioDaAba(aba)}
+                </div>
+              ) : (
         // ⚠️ A MESMA TABELA da tela de time. Uma tabela só, uma regra só -- a
         // §5 avisa que duas telas listando pessoas com regras diferentes é o
         // começo do próximo defeito de contador.
@@ -362,10 +382,6 @@ function Membros() {
           linhas={linhasVisiveis}
           times={times}
           me={me}
-          // ⚠️ O lápis oferece TODOS os subtimes: aqui o recorte é a
-          // organização, não uma árvore.
-          oferecidos={times.filter((t) => t.parent_team_id !== null)}
-          podeMexer={podeGerenciar}
           colunaDoMeio={{
             titulo: "Áreas",
             render: (l) => {
@@ -387,21 +403,45 @@ function Membros() {
               );
             },
           }}
-          // ⚠️ O CONTADOR DIZ OS DOIS NÚMEROS quando há filtro. A §3.2: o
-          // defeito de 27/07 foi exatamente o cabeçalho divergindo do corpo.
+          // ⚠️ O CONTADOR DIZ OS DOIS NÚMEROS sempre que há recorte — busca,
+          // aba, ou os dois. A §3.2: o defeito de 27/07 foi exatamente o
+          // cabeçalho divergindo do corpo, e mostrar só o filtrado apaga a
+          // informação de que existe mais.
           contagem={
-            filtrando
-              ? `${linhasVisiveis.length} de ${membros.length} pessoas`
-              : `${membros.length} ${membros.length === 1 ? "pessoa" : "pessoas"}`
+            linhasVisiveis.length === membros.length
+              ? `${membros.length} ${membros.length === 1 ? "pessoa" : "pessoas"}`
+              : `${linhasVisiveis.length} de ${membros.length} pessoas`
           }
           onMudou={async (texto) => {
             setAviso(texto);
             await carregar();
           }}
         />
+              )}
+            </motion.div>
+          </AnimatePresence>
+        </>
       )}
     </div>
   );
+}
+
+/**
+ * O vazio de cada aba diz POR QUE está vazio.
+ *
+ * ⚠️ "Nenhum resultado" numa aba filtrada é a mensagem que faz a pessoa achar
+ * que perdeu registros — o mesmo mal-estar do defeito de contador de 27/07,
+ * numa forma mais barata.
+ */
+function vazioDaAba(aba: EstadoDoMembro): string {
+  switch (aba) {
+    case "ativo":
+      return "Ninguém ativo neste recorte — veja as outras abas.";
+    case "convidado":
+      return "Ninguém pendente: todo mundo já entrou pelo menos uma vez.";
+    case "inativo":
+      return "Ninguém desativado neste recorte.";
+  }
 }
 // ⚠️⚠️ AQUI MORAVA `LinhaMembro`, ~575 linhas com TODOS os controles de
 // vínculo inline: adicionar time, remover, trocar papel, mover de subtime.
@@ -417,59 +457,11 @@ function Membros() {
 // listando pessoas, com regras diferentes, é o começo do próximo defeito de
 // contador"*.
 //
-// ⚠️ O QUE **NÃO** SAIU, de propósito: cadastrar membro, resetar senha e o
-// bloco de senha provisória revelada uma vez (ADR 0021). São capacidades
-// desta tela, e nenhuma delas existe em outro lugar.
-
-function SenhaProvisoria({
-  titulo,
-  email,
-  senha,
-  onFechar,
-}: {
-  titulo: string;
-  email: string;
-  senha: string;
-  onFechar: () => void;
-}) {
-  const [copiado, setCopiado] = useState(false);
-  async function copiar() {
-    try {
-      await navigator.clipboard.writeText(senha);
-      setCopiado(true);
-      setTimeout(() => setCopiado(false), 2000);
-    } catch {
-      setCopiado(false);
-    }
-  }
-  return (
-    <div
-      style={{
-        border: "1px solid var(--accent)", borderRadius: 12, padding: 20,
-        marginBottom: 16, background: "var(--accent-soft)",
-        display: "flex", flexDirection: "column", gap: 10,
-      }}
-    >
-      <strong style={{ fontSize: 14 }}>{titulo}</strong>
-      <span className="muted" style={{ fontSize: 13 }}>{email}</span>
-      <div style={{ fontSize: 13 }}>Senha provisória (o membro troca no 1º acesso):</div>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-        <code style={{
-          fontSize: 15, fontWeight: 700, padding: "6px 12px", borderRadius: 8,
-          background: "var(--surface)", border: "1px solid var(--border)", userSelect: "all",
-        }}>
-          {senha}
-        </code>
-        <button className="btn btn-ghost" onClick={copiar} style={{ padding: "6px 12px" }}>
-          {copiado ? "Copiado!" : "Copiar"}
-        </button>
-      </div>
-      <div style={{ fontSize: 12.5, color: "var(--danger, #b42318)", fontWeight: 600 }}>
-        Copie agora — esta senha não aparece de novo. Repasse ao membro pelo canal combinado.
-      </div>
-      <button className="btn btn-primary" onClick={onFechar} style={{ alignSelf: "flex-start", padding: "6px 14px" }}>
-        Concluir
-      </button>
-    </div>
-  );
-}
+// ⚠️ O QUE **NÃO** SAIU: cadastrar membro. É a única capacidade que ainda
+// mora só aqui -- este é o formulário que escolhe o TIME, e por isso serve
+// quem não veio de nenhuma tela de time.
+//
+// ⚠️ O bloco reveal-once da senha (ADR 0021) virou `components/SenhaProvisoria`
+// em 09/09, quando a gaveta do membro ganhou "Resetar senha" e passou a
+// precisar dele também. Duas cópias divergiriam no AVISO -- e o aviso é a
+// parte que evita a perda do segredo.

@@ -130,6 +130,100 @@ export function subtimesOferecidos(
     .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
 }
 
+/** Um cartão da visão "Subtimes" — Spec 047, redesenho de 09/09. */
+export type CartaoDeSubtime = {
+  readonly team: Team;
+  /** Pessoas na árvore DELE (ele + os netos). */
+  readonly pessoas: number;
+  /** Subtimes dentro dele — a árvore tem três níveis. */
+  readonly subtimes: number;
+};
+
+/**
+ * Os cartões da visão "Subtimes" do alternador.
+ *
+ * ⚠️⚠️ SÓ OS FILHOS DIRETOS, e a escolha é do desenho: o alternador diz
+ * *"o que tem DENTRO deste time"*. Listar netos junto misturaria dois níveis
+ * numa grade plana, e a pessoa perderia quem é filho de quem — que é
+ * exatamente o que ela abriu a tela para ver. O neto aparece ao entrar no
+ * filho, e o número no cartão diz que ele existe.
+ *
+ * ⚠️ A CONTAGEM DEDUPLICA, pelo mesmo motivo de `cardsDeArea`: quem coordena
+ * costuma ter vínculo no subtime E num neto dele, e somar o `membros` de cada
+ * time da árvore contaria essa pessoa duas vezes. Conta PESSOAS, não vínculos.
+ *
+ * ⚠️ E conta inativo também (§3.2) — esconder linha já fez o contador do
+ * cabeçalho divergir do corpo, em 27/07.
+ */
+export function cartoesDeSubtime(
+  teamId: string,
+  teams: readonly Team[],
+  members: readonly Member[],
+): CartaoDeSubtime[] {
+  return teams
+    .filter((t) => t.parent_team_id === teamId)
+    .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"))
+    .map((team) => {
+      const arvore = arvoreDoTime(team.id, teams);
+      return {
+        team,
+        pessoas: members.filter((m) =>
+          (m.memberships ?? []).some((v) => arvore.has(v.team_id)),
+        ).length,
+        // `arvore` inclui o próprio time; os subtimes são o resto.
+        subtimes: arvore.size - 1,
+      };
+    });
+}
+
+/** Uma pessoa com vínculo DIRETO num time, e o cargo dela ali. */
+export type MembroDireto = {
+  readonly membro: Member;
+  readonly role: MemberRole;
+};
+
+/**
+ * Quem tem vínculo DIRETO neste time — a lista da gaveta do subtime.
+ *
+ * ⚠️⚠️ DIRETO, e não "na árvore", ao contrário de `linhasDoTime`. A diferença
+ * é a pergunta: a TABELA responde *"quem eu administro a partir daqui"* (e aí
+ * o neto conta); a GAVETA responde *"quem está neste time"*, e é a lista de
+ * onde se tira alguém. Oferecer "Tirar" para quem está só no neto removeria
+ * um vínculo que não existe — 404 — ou, pior, o vínculo errado.
+ */
+export function membrosDiretos(
+  teamId: string,
+  members: readonly Member[],
+): MembroDireto[] {
+  return members
+    .map((membro): MembroDireto | null => {
+      const v = (membro.memberships ?? []).find((x) => x.team_id === teamId);
+      return v ? { membro, role: v.role } : null;
+    })
+    .filter((m): m is MembroDireto => m !== null)
+    .sort((a, b) => a.membro.name.localeCompare(b.membro.name, "pt-BR"));
+}
+
+/**
+ * Quem a gaveta do subtime oferece em "adicionar membro".
+ *
+ * ⚠️ SÓ QUEM AINDA NÃO ESTÁ, espelhando o `UNIQUE (user_id, team_id)` do
+ * banco: oferecer alguém que já está daria 409.
+ *
+ * ⚠️ E o universo é a lista que a TELA já carregou — as pessoas da árvore
+ * daquele time. Cadastrar gente nova dispara senha provisória e é outra ação
+ * (D3 da Spec 028); misturar as duas num seletor só faria o "adicionar" às
+ * vezes criar uma conta sem avisar.
+ */
+export function candidatosAoSubtime(
+  teamId: string,
+  members: readonly Member[],
+): Member[] {
+  return members
+    .filter((m) => !(m.memberships ?? []).some((v) => v.team_id === teamId))
+    .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+}
+
 /**
  * O que se PERDE ao desmarcar subtimes no seletor.
  *

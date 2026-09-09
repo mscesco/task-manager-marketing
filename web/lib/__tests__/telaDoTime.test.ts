@@ -16,7 +16,10 @@ import { describe, it, expect } from "vitest";
 import {
   arvoreDoTime,
   cargosQueSePerdem,
+  cartoesDeSubtime,
+  candidatosAoSubtime,
   linhasDoTime,
+  membrosDiretos,
   opcoesDoSeletor,
   planoDeVinculos,
   subtimesOferecidos,
@@ -226,5 +229,134 @@ describe("planoDeVinculos", () => {
     const plano = planoDeVinculos([marketing], [MKT]);
     expect(plano.adicionar).toEqual([]);
     expect(plano.remover).toEqual([]);
+  });
+});
+
+describe("cartoesDeSubtime", () => {
+  it("traz só os filhos DIRETOS, ordenados por nome", () => {
+    // ⚠️ `SEO Junior` é neto do Marketing e NÃO entra na grade dele — ele
+    // aparece ao abrir o SEO. Misturar os dois níveis numa grade plana
+    // esconderia quem é filho de quem, que é o que a visão existe para
+    // mostrar.
+    expect(cartoesDeSubtime(MKT, TIMES, []).map((c) => c.team.name)).toEqual([
+      "CRM",
+      "SEO",
+    ]);
+  });
+
+  it("conta o neto no número de subtimes do cartão", () => {
+    // O neto some da grade, mas o cartão diz que ele existe.
+    const cards = cartoesDeSubtime(MKT, TIMES, []);
+    expect(cards.find((c) => c.team.id === SEO)?.subtimes).toBe(1);
+    expect(cards.find((c) => c.team.id === CRM)?.subtimes).toBe(0);
+  });
+
+  it("⭐ conta quem está só no NETO como pessoa do subtime", () => {
+    // ⚠️ Mesma regra da tabela (§4.2): quem está no SEO Junior pertence à
+    // árvore do SEO. Contar só o vínculo direto diria "0 pessoas" num
+    // subtime cheio de gente.
+    const cards = cartoesDeSubtime(MKT, TIMES, [
+      pessoa("Ana", [[JR, "OPERATOR"]]),
+    ]);
+    expect(cards.find((c) => c.team.id === SEO)?.pessoas).toBe(1);
+  });
+
+  it("⚠️ NÃO conta duas vezes quem está no subtime E no neto", () => {
+    // O cadastro normal de quem coordena. Somar os membros de cada time da
+    // árvore -- a implementação óbvia -- diria 2.
+    const cards = cartoesDeSubtime(MKT, TIMES, [
+      pessoa("Ana", [
+        [SEO, "SUPERVISOR"],
+        [JR, "OPERATOR"],
+      ]),
+    ]);
+    expect(cards.find((c) => c.team.id === SEO)?.pessoas).toBe(1);
+  });
+
+  it("conta inativo também — o cartão diz o total", () => {
+    // §3.2: esconder linha já fez o contador do cabeçalho divergir do corpo.
+    const inativa = { ...pessoa("Bia", [[CRM, "OPERATOR"]]), is_active: false };
+    expect(cartoesDeSubtime(MKT, TIMES, [inativa])[0].pessoas).toBe(1);
+  });
+
+  it("subtime vazio mostra zero, e não some da grade", () => {
+    const cards = cartoesDeSubtime(MKT, TIMES, []);
+    expect(cards).toHaveLength(2);
+    expect(cards.every((c) => c.pessoas === 0)).toBe(true);
+  });
+
+  it("time folha não tem cartão nenhum", () => {
+    expect(cartoesDeSubtime(JR, TIMES, [])).toEqual([]);
+  });
+});
+
+describe("membrosDiretos", () => {
+  it("⭐ traz só quem tem vínculo NESTE time — o neto não conta", () => {
+    // ⚠️ A diferença para `linhasDoTime`: a tabela responde "quem eu
+    // administro a partir daqui" (e o neto conta); a gaveta responde "quem
+    // está neste time", e é a lista de onde se TIRA alguém. Oferecer "Tirar"
+    // a quem está só no neto removeria um vínculo que não existe.
+    const diretos = membrosDiretos(SEO, [
+      pessoa("Ana", [[SEO, "SUPERVISOR"]]),
+      pessoa("Bia", [[JR, "OPERATOR"]]),
+    ]);
+    expect(diretos.map((d) => d.membro.name)).toEqual(["Ana"]);
+  });
+
+  it("traz o cargo DAQUELE vínculo, e não um cargo geral", () => {
+    // A mesma pessoa é supervisora no SEO e operadora no neto.
+    const diretos = membrosDiretos(JR, [
+      pessoa("Ana", [
+        [SEO, "SUPERVISOR"],
+        [JR, "OPERATOR"],
+      ]),
+    ]);
+    expect(diretos[0].role).toBe("OPERATOR");
+  });
+
+  it("ordena por nome", () => {
+    const diretos = membrosDiretos(SEO, [
+      pessoa("Zara", [[SEO, "OPERATOR"]]),
+      pessoa("Ana", [[SEO, "OPERATOR"]]),
+    ]);
+    expect(diretos.map((d) => d.membro.name)).toEqual(["Ana", "Zara"]);
+  });
+
+  it("sem `memberships` resolvido, ninguém é direto", () => {
+    // Respostas de MUTAÇÃO não resolvem o campo; a gaveta não pode quebrar.
+    const semCampo = { ...pessoa("X", []), memberships: undefined } as Member;
+    expect(membrosDiretos(SEO, [semCampo])).toEqual([]);
+  });
+});
+
+describe("candidatosAoSubtime", () => {
+  it("⚠️ NÃO oferece quem já está — seria 409 pelo UNIQUE do banco", () => {
+    const candidatos = candidatosAoSubtime(SEO, [
+      pessoa("Ana", [[SEO, "OPERATOR"]]),
+      pessoa("Bia", [[MKT, "OPERATOR"]]),
+    ]);
+    expect(candidatos.map((m) => m.name)).toEqual(["Bia"]);
+  });
+
+  it("⭐ oferece quem está só na ÁREA — é o caso normal", () => {
+    // Puxar alguém do time geral para o subtime é a operação de toda semana.
+    const candidatos = candidatosAoSubtime(SEO, [
+      pessoa("Ana", [[MKT, "OPERATOR"]]),
+    ]);
+    expect(candidatos).toHaveLength(1);
+  });
+
+  it("estar no NETO não impede entrar no pai", () => {
+    // ⚠️ São vínculos distintos: `UNIQUE (user_id, team_id)` só barra o mesmo
+    // par. Quem está no SEO Junior pode ganhar vínculo no SEO.
+    expect(candidatosAoSubtime(SEO, [pessoa("Ana", [[JR, "OPERATOR"]])])).toHaveLength(1);
+  });
+
+  it("ordena por nome", () => {
+    const candidatos = candidatosAoSubtime(SEO, [
+      pessoa("Zara", [[MKT, "OPERATOR"]]),
+      pessoa("Ana", [[MKT, "OPERATOR"]]),
+    ]);
+    expect(candidatos.map((m) => m.name)).toEqual(["Ana", "Zara"]);
   });
 });
