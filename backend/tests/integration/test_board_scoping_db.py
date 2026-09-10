@@ -24,6 +24,7 @@ from sqlalchemy import select
 from app.db.models.boards import Board, BoardColumn
 from app.db.models.enums import TaskStatus
 from app.modules.tasks.application.board_service import BoardService
+from app.modules.tasks.domain.board_defaults import COLUNAS_PADRAO
 from app.modules.tasks.application.task_service import (
     CreateTaskCommand,
     TaskService,
@@ -51,7 +52,8 @@ async def _mundo(db):
         db, workspace_id=ws, user_id=user, team_id=raiz, role="ADMIN"
     )
     quadro2 = await BoardService(db).create_default_board(
-        workspace_id=ws, team_id=subtime
+        workspace_id=ws, team_id=subtime,
+        colunas=COLUNAS_PADRAO,
     )
     await db.flush()
     ctx = dict(

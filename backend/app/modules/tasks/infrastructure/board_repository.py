@@ -76,7 +76,35 @@ class BoardRepository:
     async def default_board_and_column_for_status(
         self, status: TaskStatus, *, area_id: uuid.UUID
     ) -> tuple[uuid.UUID, uuid.UUID]:
-        """Devolve `(board_id, column_id)` do quadro GERAL DAQUELA AREA.
+        """Devolve `(board_id, column_id)` do quadro GERAL DAQUELE TIME RAIZ.
+
+        ⚠️⚠️ ELA GANHOU O SEGUNDO DEGRAU EM 10/09, e ate aqui casava SO PELA
+        PONTE (`legacy_status`) -- a ADR 0042 tinha deixado esta funcao de fora
+        de proposito, porque as oito colunas do quadro geral cobrem os oito
+        status e o degrau nunca faria falta.
+
+        O que mudou foi o quadro de um time raiz NOVO passar a nascer com
+        QUATRO colunas (`COLUNAS_BASE`), decisao da Camila: *"o quadro nao e
+        pra nascer igual o do marketing, e pra nascer como um quadro comum, com
+        backlog, em andamento, concluido e cancelado"*. Sem o degrau, uma
+        tarefa de TOPO com `PLANNED`, `IN_REVIEW`, `EXTERNAL_APPROVAL` ou
+        `BLOCKED` nao acharia coluna naquele time -- 422, e nao pela tela (o
+        `createTask` do front nem manda `status`, e o padrao e `BACKLOG`), mas
+        por n8n, Swagger ou script, que e justamente quem manda status
+        explicito.
+
+        ⚠️ A ORDEM E A MESMA de `coluna_para_status`, e ela e a decisao inteira
+        (ADR 0042 D1): ponte primeiro, alvo da semantica depois. O
+        `DESC NULLS LAST` e o que sustenta isso -- `legacy_status = :status` e
+        NULL (nao FALSE) em coluna sem ponte, e o Postgres poe NULL PRIMEIRO num
+        `ORDER BY ... DESC`. Sem ele, coluna sem ponte ganharia do casamento
+        exato e o degrau 2 comeria o degrau 1.
+
+        ⚠️ E ELE TAMBEM E O QUE TORNA `_assert_ponte_sobrevive` DISPENSAVEL --
+        a trava que hoje recusa apagar coluna com ponte do quadro padrao. O
+        comentario dela ja anunciava: *"esta trava sai quando a 5c der degrau de
+        semantica a `default_board_and_column_for_status`"*. O degrau esta aqui;
+        derrubar a trava e decisao separada, e nao foi feita neste commit.
 
         ⚠️⚠️ O `area_id` NASCEU NA SPEC 046 (fatia 4), e antes dele esta
         consulta descobria "o quadro da raiz" filtrando `t.parent_team_id IS
@@ -136,26 +164,36 @@ class BoardRepository:
                     FROM board b
                     JOIN board_column c
                       ON c.board_id = b.id
-                     AND c.legacy_status = CAST(:status AS task_status)
+                     AND (
+                       c.legacy_status = CAST(:status AS task_status)
+                       OR (
+                         c.is_default_target
+                         AND c.semantic = CAST(:semantica AS column_semantic)
+                       )
+                     )
                     WHERE b.workspace_id = :ws
                       AND b.team_id = :area
                       AND b.is_default
                       AND b.deleted_at IS NULL
+                    ORDER BY (c.legacy_status = CAST(:status AS task_status))
+                             DESC NULLS LAST
+                    LIMIT 1
                     """
                 ),
                 {
                     "ws": tenant.workspace_id,
                     "area": area_id,
                     "status": status.value,
+                    "semantica": semantica_do_status(status).value,
                 },
             )
         ).first()
 
         if linha is None:
             raise ValidationError(
-                "Esta area nao tem quadro geral para o status "
-                f"{status.value}. Workspace criado antes da Spec 035 fatia 3a "
-                "nasceu sem quadro -- rodar a migration 0011.",
+                "Este time nao tem quadro geral com coluna para o status "
+                f"{status.value}, nem coluna de destino para a semantica "
+                f"{semantica_do_status(status).value}.",
                 details={
                     "field": "status",
                     "status": status.value,

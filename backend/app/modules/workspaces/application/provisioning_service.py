@@ -44,6 +44,7 @@ from app.db.models import Team, User, UserTeam, Workspace
 from app.db.models.enums import OrgRole, UserTeamRole
 from app.modules.auth.infrastructure.security import hash_password
 from app.modules.tasks.application.board_service import BoardService
+from app.modules.tasks.domain.board_defaults import COLUNAS_PADRAO
 from app.modules.tasks.application.project_service import ProjectService
 from app.shared.exceptions.base import ConflictError, ValidationError
 
@@ -183,7 +184,14 @@ class WorkspaceProvisioningService:
         # ⚠️ BoardService nao usa BaseRepository e nao precisa de tenant, mas
         # fica dentro do escopo por simetria com o passo 5.
         quadro = await BoardService(self._session).create_default_board(
-            workspace_id=workspace.id, team_id=team.id
+            workspace_id=workspace.id,
+            team_id=team.id,
+            # ⚠️ AS OITO, e explicitas desde 10/09: elas sao a copia da
+            # migration `0008` e do `test_quadro_novo_nasce_igual_ao_migrado`.
+            # O quadro do Marketing em producao tem essas oito, e este caminho
+            # tem de continuar reproduzindo o que esta la. Time raiz NOVO nasce
+            # com QUATRO -- ver `create_default_board`.
+            colunas=COLUNAS_PADRAO,
         )
 
         logger.info(
