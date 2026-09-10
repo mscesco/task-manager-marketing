@@ -1,4 +1,4 @@
-"""Visibilidade de tasks: pessoal e lente de time.
+"""Visibilidade de tasks: a lente de time.
 
 ⚠️ O `created_by` NAO concede mais visibilidade (Spec 037, E1 -- ADR 0038).
 Ate a 037 este arquivo afirmava o furo da ADR 0013 ("quem cria sempre ve");
@@ -30,29 +30,6 @@ async def _tree(db):
 
 def _forest(r, a, b):
     return (node(r), node(a, r), node(b, r))
-
-
-async def test_pessoal_dono_ve_outro_404(db) -> None:
-    ws, r, a, b = await _tree(db)
-    dono = await f.make_user(db, workspace_id=ws)
-    outro = await f.make_user(db, workspace_id=ws)
-    await f.add_member(db, workspace_id=ws, user_id=outro, team_id=a, role="OPERATOR")
-    pessoal = await f.make_project(
-        db, workspace_id=ws, created_by=dono, team_id=None, is_personal=True
-    )
-    task = await f.make_task(db, workspace_id=ws, created_by=dono, team_id=None, project_id=pessoal)
-    # dono ve
-    with acting_as(workspace_id=ws, user_id=dono):
-        assert (await TaskService(db).get(task.id)).id == task.id
-    # outro nao ve -> 404
-    with acting_as(
-        workspace_id=ws,
-        user_id=outro,
-        memberships=(mship(a, "OPERATOR"),),
-        team_tree=_forest(r, a, b),
-    ):
-        with pytest.raises(EntityNotFoundError):
-            await TaskService(db).get(task.id)
 
 
 async def test_projeto_comum_visivel_por_time_do_projeto(db) -> None:
@@ -150,22 +127,23 @@ async def test_created_by_continua_na_resposta_de_quem_alcanca(db) -> None:
         assert t.created_by == op_b
 
 
-async def test_admin_ve_tudo_menos_pessoal_alheio(db) -> None:
+async def test_admin_ve_TUDO_sem_excecao(db) -> None:
+    """⚠️⚠️ ESTE TESTE SE CHAMAVA `test_admin_ve_tudo_menos_pessoal_alheio`, e o
+    "menos" saiu em 10/09 com o projeto pessoal.
+
+    Ele afirmava a UNICA excecao a "admin ve tudo" que este produto ja teve:
+    tarefa em projeto pessoal era invisivel inclusive para o admin. Sem projeto
+    pessoal, a frase perdeu a ressalva -- e o teste, a segunda metade.
+
+    ⚠️ E ELE FICA, com a asserção que sobrou: "admin ve tudo" continua sendo
+    regra, e uma regra sem teste e uma regra que alguem estreita sem perceber.
+    """
     ws, r, a, b = await _tree(db)
     admin = await f.make_user(db, workspace_id=ws)
     await f.add_member(db, workspace_id=ws, user_id=admin, team_id=r, role="ADMIN")
     outro = await f.make_user(db, workspace_id=ws)
     avulsa_b = await f.make_task(db, workspace_id=ws, created_by=outro, team_id=b, project_id=None)
-    pessoal_outro = await f.make_project(
-        db, workspace_id=ws, created_by=outro, team_id=None, is_personal=True
-    )
-    task_pessoal = await f.make_task(
-        db, workspace_id=ws, created_by=outro, team_id=None, project_id=pessoal_outro
-    )
     with acting_as(
         workspace_id=ws, user_id=admin, memberships=(mship(r, "ADMIN"),), team_tree=_forest(r, a, b)
     ):
-        svc = TaskService(db)
-        assert (await svc.get(avulsa_b.id)).id == avulsa_b.id  # admin ve tudo
-        with pytest.raises(EntityNotFoundError):
-            await svc.get(task_pessoal.id)  # menos pessoal alheio
+        assert (await TaskService(db).get(avulsa_b.id)).id == avulsa_b.id

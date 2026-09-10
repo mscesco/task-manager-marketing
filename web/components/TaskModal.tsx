@@ -313,7 +313,7 @@ export default function TaskModal({
   useEffect(() => {
     if (!open || !mostrarSeletorProjeto) return;
     listProjects({ size: 100 })
-      .then((r) => setProjetos(r.items.filter((p) => !p.is_personal)))
+      .then((r) => setProjetos(r.items))
       .catch(() => {});
   }, [open, mostrarSeletorProjeto]);
 

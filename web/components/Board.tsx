@@ -242,7 +242,6 @@ export default function Board({
   );
   // Mapa project_id -> titulo, so no quadro geral (pra tag do card).
   const [projectNames, setProjectNames] = useState<Map<string, string>>(new Map());
-  const [projetosPessoais, setProjetosPessoais] = useState<Set<string>>(new Set());
   // §8 (03/08): project_id -> team_id do projeto. Alimenta escopoDaTask, que
   // ate entao classificava a pill por `task.team_id` -- fonte DIFERENTE da que
   // o backend usa pra decidir visibilidade (`project.team_id`, task_guards
@@ -471,9 +470,10 @@ export default function Board({
     listMembers()
       .then((ms) => {
         setMembers(new Map(ms.map((m) => [m.id, { name: m.name }])));
-        // Spec 031 (C14): a parte, pelo mesmo motivo de `projetosPessoais` --
-        // o mapa de nomes precisa de TODOS (pra resolver quem ja esta
-        // designado), o seletor e que nao deve OFERECER desativado.
+        // Spec 031 (C14): a parte -- o mapa de nomes precisa de TODOS (pra
+        // resolver quem ja esta designado), o seletor e que nao deve OFERECER
+        // desativado. ⚠️ O gemeo deste padrao era `projetosPessoais`, e ele
+        // saiu em 10/09 com o projeto pessoal.
         setMembrosInativos(new Set(ms.filter((m) => !m.is_active).map((m) => m.id)));
         setMemberTeam(new Map(ms.map((m) => [m.id, m.team_ids])));
       })
@@ -487,7 +487,6 @@ export default function Board({
         // Spec 031 (C13): guardado a parte -- o mapa de nomes precisa de TODOS
         // (inclusive pessoal, pra resolver o nome de quem ja mora la), mas o
         // seletor de "mudar projeto" nao deve OFERECER pessoal.
-        setProjetosPessoais(new Set(r.items.filter((p) => p.is_personal).map((p) => p.id)));
         setTimeDoProjeto(new Map(r.items.map((p) => [p.id, p.team_id])));
       })
       .catch(() => {})
@@ -2414,7 +2413,6 @@ export default function Board({
         onTaskMoved={() => recarregarTasks()}
         onExcluir={aoExcluir}
         mostrarArquivadas={mostrarArquivadas}
-        projetosPessoais={projetosPessoais}
         membrosInativos={membrosInativos}
       />
 

@@ -2038,7 +2038,6 @@ export type Project = {
   due_date: string | null;
   completed_at: string | null;
   is_archived: boolean;
-  is_personal: boolean;
   team_id: string | null;
   created_by: string;
   created_at: string;
@@ -2052,8 +2051,12 @@ export type ProjectListResponse = {
   size: number;
 };
 
-// Lista projetos do workspace (paginado). NAO filtra pessoal -> o pessoal do
-// proprio usuario vem junto; a tela de pastas descarta is_personal no front.
+// Lista projetos do workspace (paginado).
+//
+// ⚠️ ESTE COMENTARIO DIZIA "NAO filtra pessoal -> o pessoal do proprio usuario
+// vem junto; a tela de pastas descarta is_personal no front". O projeto
+// pessoal saiu em 10/09, e com ele o campo `is_personal` da resposta -- hoje
+// todo projeto pertence a um time e a lista nao esconde nem oferece nada.
 export async function listProjects(
   params: {
     page?: number;

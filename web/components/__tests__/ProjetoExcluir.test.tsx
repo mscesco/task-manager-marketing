@@ -92,7 +92,6 @@ function projeto(over: Partial<Project> = {}): Project {
     start_date: null,
     due_date: null,
     is_archived: false,
-    is_personal: false,
     team_id: "team-1",
     created_by: "user-1",
     completed_at: null,
@@ -166,15 +165,6 @@ describe("Projeto -- excluir", () => {
     expect(screen.queryByText("Excluir projeto")).toBeNull();
     await abrirEdicao();
     expect(screen.getByText("Excluir projeto")).toBeTruthy();
-  });
-
-  it("⚠️ projeto PESSOAL não oferece nem o lápis -- o backend recusa com 409", async () => {
-    // A trava dupla é de propósito: sem ela a tela ofereceria uma ação que
-    // sempre falha, e a pessoa descobriria pelo erro.
-    montar({ is_personal: true });
-    await waitFor(() => expect(api.getProject).toHaveBeenCalled());
-    expect(screen.queryByLabelText("Editar projeto")).toBeNull();
-    expect(screen.queryByText("Excluir projeto")).toBeNull();
   });
 
   it("cancelar a confirmação não chama a API", async () => {

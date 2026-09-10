@@ -18,7 +18,6 @@ from app.modules.tasks.api.schemas import (
     MeRelation,
     MyAssignmentsResponse,
     MyTaskItem,
-    ProjectResponse,
     TaskResponse,
 )
 from app.modules.tasks.application.collaboration_service import (
@@ -28,23 +27,9 @@ from app.modules.tasks.application.me_service import MeService
 from app.modules.tasks.infrastructure.task_repository import (
     TaskRepository,
 )
-from app.modules.tasks.application.project_service import ProjectService
 from app.shared.pagination import PageParams
 
 router = APIRouter(prefix="/me", tags=["me"])
-
-
-@router.get("/personal-project", response_model=ProjectResponse)
-async def get_my_personal_project(_: TenantContextDep, session: SessionDep) -> ProjectResponse:
-    """Retorna o projeto pessoal do user logado.
-
-    O pessoal eh criado automaticamente no provisionamento e no
-    cadastro de membro (ver ADR 0001), entao em condicao normal
-    sempre existe. Se nao existir, devolve 404 (sinal de bug ou
-    banco inconsistente -- logamos com severidade alta).
-    """
-    project = await ProjectService(session).get_personal_for_current_user()
-    return ProjectResponse.model_validate(project)
 
 
 _ALL_RELATIONS = frozenset({"assignee", "creator", "watcher"})

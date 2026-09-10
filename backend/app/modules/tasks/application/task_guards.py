@@ -39,12 +39,11 @@ def task_visible(
     *,
     task: Task,
     project: Project | None,
-    viewer_user_id: uuid.UUID,
     visible: frozenset[uuid.UUID] | None,
 ) -> bool:
     """A task e visivel para o usuario com esta lente?
 
-    `visible=None` => admin (ve tudo, menos pessoal alheio).
+    `visible=None` => admin (ve tudo).
     `project` = projeto carregado da task (None se avulsa). Se a task tem
     project_id mas o projeto nao veio (inconsistencia), trata como invisivel.
     """
@@ -52,10 +51,11 @@ def task_visible(
     if task.project_id is not None and project is None:
         return False
 
-    # Pessoal: so o dono ve (vale ate para admin). created_by do pessoal
-    # E o dono, entao a regra de created_by nunca expoe pessoal alheio.
-    if project is not None and project.is_personal:
-        return project.created_by == viewer_user_id
+    # ⚠️⚠️ AQUI HAVIA O RAMO DO PROJETO PESSOAL, e ele saiu em 10/09 junto
+    # com o projeto pessoal. Era a UNICA regra de privacidade do produto:
+    # tarefa em pessoal era invisivel para todo mundo, INCLUSIVE para o admin.
+    # Hoje nao ha nada privado aqui -- a lente de time e a unica fonte de
+    # visibilidade, sem excecao.
 
     # ⚠️ AQUI HAVIA O RAMO `created_by` DA ADR 0013, E ELE SAIU NA SPEC 037
     # (E1). A regra era "quem criou sempre ve, mesmo fora da lente" -- ou seja,
@@ -65,18 +65,18 @@ def task_visible(
     #
     # ⚠️ ESTE E UM DOS **DOIS** PONTOS DA E1. O outro e o ramo
     # `Task.created_by == tenant.user_id` do bloco (B) em
-    # `task_repository.py`. NAO existe um terceiro: `task_repository.py:117`,
-    # `:130` e `project_service.py:215` mencionam `created_by` mas sao o filtro
-    # de PESSOAL ALHEIO -- apagar qualquer um deles VAZA projeto pessoal, e o
-    # portao nao pega (ver `spec.md` §Correcao de 06/08).
+    # `task_repository.py`.
+    #
+    # ⚠️ ESTE COMENTARIO CITAVA UM TERCEIRO GRUPO -- os filtros de "pessoal
+    # alheio" em `task_repository.py` e `project_service.py`, com o aviso de
+    # que apagar qualquer um deles VAZAVA projeto pessoal. Eles sairam em
+    # 10/09, com o proprio projeto pessoal. Nao ha mais nada a vazar.
     #
     # ⚠️ `task.created_by` CONTINUA EXISTINDO E SENDO EXIBIDO (E2). A tarefa
     # mostra "criada por fulano" mesmo depois de fulano perder a lente -- e
     # historico, nao permissao. A E1 nao pode ser implementada apagando o
     # campo, e ha teste afirmando isso (criterio 2 da spec).
     #
-    # ⚠️ O RAMO DE PESSOAL ACIMA NAO E ESTE. `project.is_personal` compara
-    # `project.created_by`, nao `task.created_by`, e ele fica.
 
     # Admin ve o resto.
     if visible is None:
@@ -94,7 +94,6 @@ def task_editable(
     *,
     task: Task,
     project: Project | None,
-    viewer_user_id: uuid.UUID,
     editable: frozenset[uuid.UUID] | None,
 ) -> bool:
     """A task e editavel para o usuario com esta lente de edicao?
@@ -106,13 +105,9 @@ def task_editable(
     """
     if editable is None:
         return True
-    # Pessoal proprio: o dono edita.
-    if (
-        project is not None
-        and project.is_personal
-        and project.created_by == viewer_user_id
-    ):
-        return True
+    # ⚠️ AQUI HAVIA A EXCECAO DO PESSOAL PROPRIO: o dono editava a tarefa do
+    # seu projeto pessoal mesmo com o time dela fora da lente de edicao. Saiu
+    # em 10/09 -- hoje quem edita e funcao do time da tarefa, e de mais nada.
     return task.team_id is not None and task.team_id in editable
 
 
@@ -174,7 +169,6 @@ async def user_can_view_task(
     return task_visible(
         task=task,
         project=project,
-        viewer_user_id=user_id,
         visible=visible,  # type: ignore[arg-type]
     )
 
@@ -230,7 +224,6 @@ class TaskScopeGuards:
         if not task_visible(
             task=task,
             project=project,
-            viewer_user_id=tenant.user_id,
             visible=visible,
         ):
             raise EntityNotFoundError("Task", identifier=task.id)
@@ -250,7 +243,6 @@ class TaskScopeGuards:
         if not task_editable(
             task=task,
             project=project,
-            viewer_user_id=tenant.user_id,
             editable=editable,
         ):
             raise AuthorizationError(

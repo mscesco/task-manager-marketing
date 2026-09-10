@@ -106,10 +106,11 @@ function Minhas() {
   const [items, setItems] = useState<MyTaskItem[] | null>(null);
   const [members, setMembers] = useState<Map<string, { name: string }>>(new Map());
   const [projectNames, setProjectNames] = useState<Map<string, string>>(new Map());
-  const [projetosPessoais, setProjetosPessoais] = useState<Set<string>>(new Set());
-  // Spec 031 (C14): mesmo desenho de `projetosPessoais` -- `members` continua
-  // COMPLETO (resolve o nome de quem ja esta designado) e este conjunto so
-  // tira do seletor e marca a pilula como desativado.
+  // Spec 031 (C14): `members` continua COMPLETO (resolve o nome de quem ja
+  // esta designado) e este conjunto so tira do seletor e marca a pilula como
+  // desativado. ⚠️ Este comentario citava `projetosPessoais` como o desenho
+  // gemeo -- ele saiu em 10/09 com o projeto pessoal, e este ficou como unico
+  // exemplo do padrao.
   const [membrosInativos, setMembrosInativos] = useState<Set<string>>(new Set());
   const [erro, setErro] = useState<string | null>(null);
   // null = nao truncou. Se a lista passar do teto de busca, vira aviso honesto
@@ -244,7 +245,6 @@ function Minhas() {
         // Spec 031 (C13): guardado a parte -- o mapa de nomes precisa de TODOS
         // (inclusive pessoal, pra resolver o nome de quem ja mora la), mas o
         // seletor de "mudar projeto" nao deve OFERECER pessoal.
-        setProjetosPessoais(new Set(r.items.filter((p) => p.is_personal).map((p) => p.id)));
       })
       .catch(() => {});
   }, []);
@@ -1276,7 +1276,6 @@ function Minhas() {
         onDuplicar={(t) => setDuplicando(t)}
         onAssigneesChange={aoMudarResponsaveis}
         mostrarArquivadas={mostrarArquivadas}
-        projetosPessoais={projetosPessoais}
         membrosInativos={membrosInativos}
         onAbrirSubtarefa={abrirSubtarefa}
         onSubtaskUpsert={aoUpsertComFilhos}

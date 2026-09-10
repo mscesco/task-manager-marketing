@@ -73,7 +73,7 @@ function Projetos() {
   useEffect(() => {
     listProjects({ size: 100 })
       // pasta = projeto comum; o pessoal do proprio usuario nao entra aqui.
-      .then((r) => setItems(r.items.filter((p) => !p.is_personal)))
+      .then((r) => setItems(r.items))
       .catch((e: ApiError) => setErro(e.message));
     // ⚠️ As duas juntas porque `rootsForPerson` precisa das DUAS: a árvore e os
     // vínculos de quem está olhando. Um operador do Marketing não escolhe TI.

@@ -148,7 +148,6 @@ export default function TaskDetail({
   onTaskMoved,
   onExcluir,
   mostrarArquivadas,
-  projetosPessoais,
   membrosInativos,
   modo = "modal",
 }: {
@@ -200,15 +199,12 @@ export default function TaskDetail({
   // nao teria como distinguir "nao ha arquivada" de "ha, mas escondida".
   mostrarArquivadas: boolean;
   // Ids de projeto PESSOAL. Eles continuam em `projects` -- o mapa resolve
-  // NOME e a tarefa que ja mora num pessoal precisa exibir o dela. O que este
-  // conjunto muda e o SELETOR: pessoal nao e destino oferecido.
+  // ⚠️ AQUI HAVIA `projetosPessoais`, um conjunto que tirava os projetos
+  // pessoais do SELETOR de "mudar projeto" -- mover uma tarefa de time para um
+  // pessoal a fazia sumir do quadro dos outros. Saiu em 10/09 com o projeto
+  // pessoal; hoje todo projeto tem time e nenhum destino esconde a tarefa.
   //
-  // ⚠️ Mover tarefa de time pra projeto pessoal a faz sumir do quadro dos
-  // outros -- o backend filtra por `is_personal=false OR created_by=me`
-  // (task_repository:82-95). Nao e um bug do seletor: e o seletor oferecendo
-  // um caminho que produz sumico silencioso.
-  projetosPessoais: Set<string>;
-  // Ids de membro DESATIVADO. Mesmo desenho de `projetosPessoais`: `members`
+  // Ids de membro DESATIVADO. Mesmo desenho que aquele conjunto tinha: `members`
   // continua completo (a tarefa que ja tem um inativo designado precisa
   // resolver o NOME dele), e o conjunto so tira do SELETOR.
   //
@@ -1953,14 +1949,6 @@ export default function TaskDetail({
                 >
                   <option value="">— Sem projeto (tirar) —</option>
                   {Array.from(projects.entries())
-                    // Pessoal fora, MENOS o atual: se a tarefa ja esta num
-                    // pessoal e ele nao entrasse na lista, o <select> ficaria
-                    // com valor que nao existe entre as opcoes e o browser
-                    // mostraria a primeira -- dando a impressao de que o
-                    // projeto mudou sozinho.
-                    .filter(
-                      ([id]) => !projetosPessoais.has(id) || id === projetoAtual
-                    )
                     .sort((a, b) => a[1].localeCompare(b[1], "pt-BR"))
                     .map(([id, titulo]) => (
                       <option key={id} value={id}>

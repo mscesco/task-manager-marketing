@@ -43,7 +43,6 @@ class _Task:
 class _Project:
     team_id: uuid.UUID | None
     created_by: uuid.UUID
-    is_personal: bool = False
 
 
 def _id() -> uuid.UUID:
@@ -85,18 +84,6 @@ def test_build_unassigned_entry() -> None:
 # --------------------------------------------------------
 # task_visible (ADR 0013 + Entrega 3)
 # --------------------------------------------------------
-def test_visible_personal_owner_yes_other_no() -> None:
-    owner, other = _id(), _id()
-    task = _Task(id=_id(), created_by=owner, project_id=_id())
-    proj = _Project(team_id=None, created_by=owner, is_personal=True)
-    # dono ve
-    assert task_visible(task=task, project=proj, viewer_user_id=owner, visible=None)
-    # outro NAO ve, nem admin (visible=None)
-    assert not task_visible(
-        task=task, project=proj, viewer_user_id=other, visible=None
-    )
-
-
 def test_visible_creator_NAO_ve_avulsa_fora_da_lente() -> None:
     """Spec 037, E1 -- este teste INVERTEU, e a inversao e a entrega.
 
@@ -114,40 +101,40 @@ def test_visible_creator_NAO_ve_avulsa_fora_da_lente() -> None:
     task = _Task(id=_id(), created_by=creator, team_id=team_copy, project_id=None)
     # criar NAO concede leitura: sem o time na lente, nao ve.
     assert not task_visible(
-        task=task, project=None, viewer_user_id=creator, visible=frozenset()
+        task=task, project=None, visible=frozenset()
     )
     # e com o time na lente, ve -- como qualquer outra pessoa.
     assert task_visible(
-        task=task, project=None, viewer_user_id=creator, visible=frozenset({team_copy})
+        task=task, project=None, visible=frozenset({team_copy})
     )
 
 
 def test_visible_noncreator_avulsa_needs_lens() -> None:
-    creator, viewer = _id(), _id()
+    creator = _id()
     team_copy = _id()
     task = _Task(id=_id(), created_by=creator, team_id=team_copy, project_id=None)
     # quem nao criou e nao tem o time na lente: nao ve
     assert not task_visible(
-        task=task, project=None, viewer_user_id=viewer, visible=frozenset()
+        task=task, project=None, visible=frozenset()
     )
     # com o time na lente: ve
     assert task_visible(
-        task=task, project=None, viewer_user_id=viewer, visible=frozenset({team_copy})
+        task=task, project=None, visible=frozenset({team_copy})
     )
 
 
 def test_visible_common_project_by_project_team() -> None:
-    creator, viewer = _id(), _id()
+    creator = _id()
     proj_team = _id()
     task = _Task(id=_id(), created_by=creator, team_id=_id(), project_id=_id())
-    proj = _Project(team_id=proj_team, created_by=creator, is_personal=False)
+    proj = _Project(team_id=proj_team, created_by=creator)
     # ve o projeto (team do projeto na lente) -> ve a task
     assert task_visible(
-        task=task, project=proj, viewer_user_id=viewer, visible=frozenset({proj_team})
+        task=task, project=proj, visible=frozenset({proj_team})
     )
     # projeto fora da lente e nao e criador -> nao ve
     assert not task_visible(
-        task=task, project=proj, viewer_user_id=viewer, visible=frozenset()
+        task=task, project=proj, visible=frozenset()
     )
 
 
@@ -155,7 +142,7 @@ def test_visible_missing_project_is_invisible() -> None:
     task = _Task(id=_id(), created_by=_id(), project_id=_id())
     # project_id setado mas projeto ausente (inconsistencia) -> 404
     assert not task_visible(
-        task=task, project=None, viewer_user_id=task.created_by, visible=None
+        task=task, project=None, visible=None
     )
 
 
@@ -168,7 +155,7 @@ def test_editable_creator_does_not_get_edit() -> None:
     task = _Task(id=_id(), created_by=creator, team_id=team_copy, project_id=None)
     # criador, mas time da task fora da lente de edicao -> NAO edita
     assert not task_editable(
-        task=task, project=None, viewer_user_id=creator, editable=frozenset()
+        task=task, project=None, editable=frozenset()
     )
 
 
@@ -176,21 +163,12 @@ def test_editable_by_team_in_lens() -> None:
     team = _id()
     task = _Task(id=_id(), created_by=_id(), team_id=team, project_id=None)
     assert task_editable(
-        task=task, project=None, viewer_user_id=_id(), editable=frozenset({team})
+        task=task, project=None, editable=frozenset({team})
     )
 
 
 def test_editable_admin_edits_all() -> None:
     task = _Task(id=_id(), created_by=_id(), team_id=_id(), project_id=None)
     assert task_editable(
-        task=task, project=None, viewer_user_id=_id(), editable=None
-    )
-
-
-def test_editable_personal_owner() -> None:
-    owner = _id()
-    task = _Task(id=_id(), created_by=owner, project_id=_id())
-    proj = _Project(team_id=None, created_by=owner, is_personal=True)
-    assert task_editable(
-        task=task, project=proj, viewer_user_id=owner, editable=frozenset()
+        task=task, project=None, editable=None
     )

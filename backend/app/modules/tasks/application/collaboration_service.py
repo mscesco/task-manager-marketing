@@ -38,7 +38,6 @@ from app.modules.tasks.infrastructure.collaboration_repository import (
     TaskAssignmentRepository,
     TaskWatcherRepository,
 )
-from app.modules.tasks.infrastructure.project_repository import ProjectRepository
 from app.modules.tasks.infrastructure.task_repository import TaskRepository
 from app.shared.exceptions.base import (
     AuthorizationError,
@@ -60,7 +59,6 @@ class CollaborationService:
         self._tasks = TaskRepository(session)
         self._assignees = TaskAssignmentRepository(session)
         self._watchers = TaskWatcherRepository(session)
-        self._projects = ProjectRepository(session)
         self._guards = TaskScopeGuards(session)
         self._notify = NotificationEmitter(session)
 
@@ -79,7 +77,6 @@ class CollaborationService:
         task = await self._tasks.get_by_id_or_raise(task_id)
         await self._guards.assert_visible(task)
         await self._guards.assert_editable(task)
-        await self._assert_personal_monouser(task=task, user_id=user_id)
         await self._assert_target_reaches_task(task=task, user_id=user_id)
 
         if await self._assignees.get(task_id=task_id, user_id=user_id) is not None:
@@ -148,7 +145,6 @@ class CollaborationService:
         invalidos: list[uuid.UUID] = []
         for uid in ids:
             try:
-                await self._assert_personal_monouser(task=task, user_id=uid)
                 await self._assert_target_reaches_task(task=task, user_id=uid)
             except (ValidationError, ConflictError):
                 invalidos.append(uid)
@@ -259,7 +255,6 @@ class CollaborationService:
         target = user_id if user_id is not None else tenant.user_id
         if target != tenant.user_id:
             await self._assert_can_manage_others(task)
-            await self._assert_personal_monouser(task=task, user_id=target)
             await self._assert_target_reaches_task(task=task, user_id=target)
 
         if await self._watchers.get(task_id=task_id, user_id=target) is not None:
@@ -354,21 +349,4 @@ class CollaborationService:
                 # a segunda copia voltando pela porta dos fundos.
                 "Usuario designado inexistente, inativo ou sem acesso a esta task.",
                 details={"field": "user_id"},
-            )
-
-    async def _assert_personal_monouser(
-        self, *, task: Task, user_id: uuid.UUID
-    ) -> None:
-        """409 se a task e de projeto pessoal e `user_id` nao e o dono."""
-        if task.project_id is None:
-            return
-        project = await self._projects.get_by_id(task.project_id)
-        if (
-            project is not None
-            and project.is_personal
-            and project.created_by != user_id
-        ):
-            raise ConflictError(
-                "Task de projeto pessoal e monouser.",
-                details={"task_id": str(task.id)},
             )

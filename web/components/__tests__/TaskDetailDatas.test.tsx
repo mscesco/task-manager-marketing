@@ -115,7 +115,6 @@ function montar(over: Partial<Task> = {}, onTaskMoved = vi.fn()) {
       onTaskMoved={onTaskMoved}
       onExcluir={vi.fn()}
       mostrarArquivadas={false}
-      projetosPessoais={new Set()}
       membrosInativos={new Set()}
     />
   );

@@ -187,7 +187,6 @@ function project(id: string, team_id: string | null): Project {
     due_date: null,
     completed_at: null,
     is_archived: false,
-    is_personal: false,
     team_id,
     created_by: ANA,
     created_at: "2026-07-01T12:00:00Z",

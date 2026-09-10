@@ -138,8 +138,7 @@ async def update_project(
 ) -> ProjectResponse:
     """Atualiza campos editaveis. Semantica PATCH.
 
-    Pessoal NAO eh editavel via PATCH (409). is_personal e
-    created_by sao imutaveis por design (nao entram no payload).
+    `created_by` e imutavel por design (nao entra no payload).
     """
     project = await ProjectService(uow.session).update(
         project_id=project_id,

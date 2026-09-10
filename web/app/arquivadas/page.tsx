@@ -78,7 +78,6 @@ function Arquivadas() {
   // detalhe abre com os nomes em branco em vez de nao abrir.
   const [members, setMembers] = useState<Map<string, { name: string }>>(new Map());
   const [projectNames, setProjectNames] = useState<Map<string, string>>(new Map());
-  const [projetosPessoais, setProjetosPessoais] = useState<Set<string>>(new Set());
   // Spec 031 (C14): so tira do seletor e marca a pilula. `members` fica
   // completo -- tarefa arquivada costuma ter justamente quem ja saiu do time.
   const [membrosInativos, setMembrosInativos] = useState<Set<string>>(new Set());
@@ -132,7 +131,6 @@ function Arquivadas() {
     listAllProjects()
       .then((r) => {
         setProjectNames(new Map(r.items.map((p) => [p.id, p.title])));
-        setProjetosPessoais(new Set(r.items.filter((p) => p.is_personal).map((p) => p.id)));
       })
       .catch(() => {});
   }, []);
@@ -243,7 +241,6 @@ function Arquivadas() {
         // Esta tela E o arquivo: esconder subtarefa arquivada aqui seria
         // esconder justamente o que a pessoa veio ver.
         mostrarArquivadas
-        projetosPessoais={projetosPessoais}
         membrosInativos={membrosInativos}
         onSubtaskUpsert={() => carregar(page)}
         onTaskMoved={() => carregar(page)}

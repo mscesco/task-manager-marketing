@@ -15,7 +15,6 @@ import uuid
 from datetime import date, datetime, time
 
 from sqlalchemy import (
-    Boolean,
     CheckConstraint,
     Date,
     DateTime,
@@ -60,14 +59,13 @@ class Ltree(UserDefinedType):
 class Project(
     UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, ArchivableMixin, Base
 ):
-    """Projeto. Container de tasks.
+    """Projeto. Container de tasks. Pertence a um TIME.
 
-    is_personal:
-        True identifica o projeto pessoal de um user (1 por user,
-        garantido pelo indice parcial `project_personal_per_user`).
-        Pessoais nao podem ser deletados, arquivados nem editados
-        via PATCH (regras no ProjectService). Pessoal alheio eh
-        invisivel em list/get. Ver ADR 0001.
+    ⚠️⚠️ `is_personal` SAIU EM 10/09/2026, com o projeto pessoal (ADR 0001,
+    marcada como revertida). Ele era o unico jeito de um projeto existir SEM
+    time -- e por isso o CHECK abaixo tinha um `is_personal OR` na frente.
+    Sem ele a invariante fica mais simples e mais forte: **projeto vivo tem
+    time**, sem excecao.
     """
 
     __tablename__ = "project"
@@ -79,17 +77,17 @@ class Project(
             ondelete="RESTRICT",
             name="project_created_by",
         ),
-        # Entrega 3: time dono do projeto (FK composta). Nulo no pessoal.
+        # Entrega 3: time dono do projeto (FK composta).
         ForeignKeyConstraint(
             ["team_id", "workspace_id"],
             ["team.id", "team.workspace_id"],
             ondelete="RESTRICT",
             name="project_team",
         ),
-        # Entrega 3 (ADR 0007): projeto comum exige time. Pessoal e
-        # soft-deleted ficam isentos.
+        # Entrega 3 (ADR 0007): projeto exige time. So o soft-deleted fica
+        # isento -- o `deleted_at` cobre a linha antiga que ja perdeu o time.
         CheckConstraint(
-            "is_personal OR team_id IS NOT NULL OR deleted_at IS NOT NULL",
+            "team_id IS NOT NULL OR deleted_at IS NOT NULL",
             name="project_team_required_when_common",
         ),
     )
@@ -123,15 +121,6 @@ class Project(
     team_id: Mapped[uuid.UUID | None] = mapped_column(
         PG_UUID(as_uuid=True), nullable=True
     )
-    # Adicionado na migration 0002. server_default garante valor
-    # para linhas pre-existentes e para INSERTs que omitam o campo.
-    is_personal: Mapped[bool] = mapped_column(
-        Boolean,
-        nullable=False,
-        server_default="false",
-        default=False,
-    )
-
 
 class Task(
     UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, ArchivableMixin, Base

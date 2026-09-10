@@ -92,10 +92,10 @@ function Projeto() {
 
   // Pessoal nunca edita por aqui (backend devolve 409). A lista ja filtra
   // pessoal; guardamos defensivamente tambem na detalhe.
-  const editavel = podeEditar && !project.is_personal;
+  const editavel = podeEditar;
   // ⚠️ PESSOAL NUNCA, e o backend também recusa (409). A trava dupla é de
   // propósito: sem ela a tela ofereceria um botão que sempre falha.
-  const excluivel = podeExcluir && !project.is_personal;
+  const excluivel = podeExcluir;
 
   async function excluir() {
     // ⚠️ O AVISO DIZ O QUE ACONTECE COM AS TAREFAS, e isso não é zelo: o

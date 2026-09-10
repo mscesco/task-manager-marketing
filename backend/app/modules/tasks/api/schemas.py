@@ -3,9 +3,11 @@
 Contem schemas de Project (Entrega 1) e Task (Entrega 2).
 
 NOTAS de design:
-    - is_personal e created_by NAO aparecem em Create/Update --
-      pessoal nao eh criado via /projects (so via fluxos internos)
-      e ambos os campos sao imutaveis.
+    - created_by NAO aparece em Create/Update -- e imutavel.
+    - ⚠️ `is_personal` SAIU DO SCHEMA em 10/09, com o projeto pessoal.
+      Era campo de resposta, entao a remocao e MUDANCA DE CONTRATO: o
+      front lia `is_personal` em oito lugares para nao OFERECER pessoal
+      nos seletores de projeto, e os oito sairam no mesmo commit.
     - Validacao cruzada (start_date <= due_date) vive no service,
       sobre o estado RESULTANTE do PATCH.
     - Em Task, project_id e parent_task_id NAO entram em
@@ -50,7 +52,6 @@ class ProjectResponse(BaseModel):
     due_date: date | None
     completed_at: datetime | None
     is_archived: bool
-    is_personal: bool
     team_id: uuid.UUID | None
     created_by: uuid.UUID
     created_at: datetime
@@ -58,8 +59,8 @@ class ProjectResponse(BaseModel):
 
 
 class ProjectCreateRequest(BaseModel):
-    """Criacao de projeto COMUM. workspace_id, created_by e is_personal
-    sao internos -- nunca vem do cliente."""
+    """Criacao de projeto. workspace_id e created_by sao internos --
+    nunca vem do cliente."""
 
     title: str = Field(min_length=1, max_length=255)
     team_id: uuid.UUID  # Entrega 3: time dono (obrigatorio em comum).
@@ -73,7 +74,7 @@ class ProjectCreateRequest(BaseModel):
 class ProjectUpdateRequest(BaseModel):
     """Atualizacao parcial (PATCH). Campo ausente = nao mexer.
 
-    is_personal e created_by ausentes por design -- imutaveis.
+    `created_by` ausente por design -- imutavel.
     """
 
     title: str | None = Field(default=None, min_length=1, max_length=255)

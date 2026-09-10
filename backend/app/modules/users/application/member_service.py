@@ -558,12 +558,6 @@ class MemberService:
         )
         await self._session.flush()
 
-        # --- projeto pessoal automatico (ADR 0001) ---
-        # No mesmo UoW: se algo abaixo falhar, o user tambem rola
-        # back. create_personal_for eh idempotente -- re-rodar o
-        # caso de uso nao duplica pessoal.
-        await self._projects.create_personal_for(user.id)
-
         logger.info(
             "member.created",
             user_id=str(user.id),
@@ -636,12 +630,13 @@ class MemberService:
         as seis de uma vez.
 
         ⚠️ Este filtro NAO decide se da pra DESIGNAR -- so se alcanca.
-        Designar tem uma segunda validacao (`_assert_personal_monouser`,
-        409 em projeto pessoal alheio) que segue vivendo no
-        CollaborationService. A D3 da 034 mediu que projeto pessoal nao tem
-        como ser criado pela interface (`GET /me/personal-project` existe e
-        o front nunca chama), entao expor isso aqui seria campo de API
-        defendendo zero linha.
+        Designar tem uma segunda validacao (`_assert_target_reaches_task`) que
+        segue vivendo no CollaborationService.
+
+        ⚠️ Este bloco citava tambem `_assert_personal_monouser`, a trava de
+        "409 em projeto pessoal alheio". Ela saiu em 10/09 com o projeto
+        pessoal -- e a propria D3 da 034 ja media que aquele projeto nao tinha
+        como ser criado pela interface.
 
         ⚠️ Custo: uma consulta de membership POR MEMBRO. Com 24 contas e
         aceitavel. Passando de algumas centenas, carregar os memberships em

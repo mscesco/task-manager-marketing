@@ -5,8 +5,8 @@ ESTE E O CASO DE USO REAL, nao um script descartavel.
 Provisionar um workspace e a operacao de "dar vida" a uma
 empresa nova no sistema: cria, de forma ATOMICA, o
 workspace + sua primeira equipe + seu primeiro usuario
-admin + o projeto pessoal do admin (ADR 0001). E uma
-operacao administrativa rara -- nao um signup publico.
+admin + o quadro geral do time raiz. E uma operacao
+administrativa rara -- nao um signup publico.
 
 QUEM ACIONA este service pode mudar ao longo do tempo:
     - hoje: um script de linha de comando
@@ -23,10 +23,10 @@ Por que NAO usa o BaseRepository (parcialmente):
     user_team. Este service escreve direto na sessao para
     esses.
 
-    DEPOIS de criar o admin, abrimos um tenant_scope
-    efemero para reaproveitar o ProjectService.create_personal_for
-    (que usa BaseRepository). Mantemos o principio "provisioning
-    nao tem tenant inicial" sem duplicar a logica de pessoal.
+    ⚠️ ATE 10/09 HAVIA UM `tenant_scope` EFEMERO AQUI, aberto para
+    reaproveitar `ProjectService.create_personal_for` -- o projeto
+    pessoal do admin (ADR 0001). O projeto pessoal saiu do produto, e
+    com ele o unico passo do provisionamento que precisava de tenant.
 """
 
 from __future__ import annotations
@@ -39,13 +39,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger
-from app.core.tenant import tenant_scope
 from app.db.models import Team, User, UserTeam, Workspace
 from app.db.models.enums import OrgRole, UserTeamRole
 from app.modules.auth.infrastructure.security import hash_password
 from app.modules.tasks.application.board_service import BoardService
 from app.modules.tasks.domain.board_defaults import COLUNAS_PADRAO
-from app.modules.tasks.application.project_service import ProjectService
 from app.shared.exceptions.base import ConflictError, ValidationError
 
 logger = get_logger(__name__)
@@ -78,7 +76,6 @@ class ProvisionWorkspaceResult:
     workspace_id: uuid.UUID
     team_id: uuid.UUID
     admin_user_id: uuid.UUID
-    personal_project_id: uuid.UUID
 
 
 class WorkspaceProvisioningService:
@@ -90,12 +87,12 @@ class WorkspaceProvisioningService:
     async def provision(
         self, command: ProvisionWorkspaceCommand
     ) -> ProvisionWorkspaceResult:
-        """Cria workspace + equipe inicial + admin + pessoal do admin.
+        """Cria workspace + equipe inicial + admin + quadro geral.
 
         Tudo numa unica transacao: ou as cinco linhas (workspace,
-        team, users, user_team, project_personal) sao gravadas, ou
-        nenhuma. Quem chama este service e responsavel pelo commit
-        (Unit of Work ou session_scope).
+        team, users, user_team, board) sao gravadas, ou nenhuma. Quem
+        chama este service e responsavel pelo commit (Unit of Work ou
+        session_scope).
 
         Erros possiveis:
             ValidationError -- slug/e-mail mal formado.
@@ -167,22 +164,12 @@ class WorkspaceProvisioningService:
         self._session.add(membership)
         await self._session.flush()
 
-        # 5. Projeto pessoal do admin (ADR 0001).
-        # ProjectService usa BaseRepository -> require_tenant(),
-        # entao abrimos um tenant_scope efemero. Tudo continua no
-        # mesmo session/transacao.
-        with tenant_scope(workspace.id, admin.id):
-            personal = await ProjectService(self._session).create_personal_for(
-                admin.id
-            )
-
-        # 6. Quadro geral do time RAIZ (Spec 035 fatia 3a, ADR 0032).
+        # 5. Quadro geral do time RAIZ (Spec 035 fatia 3a, ADR 0032).
         # ⚠️ Do time raiz, e um so -- subtime nao ganha quadro por existir.
         # Dentro da mesma transacao: workspace sem quadro e o estado que a
         # `0008` deixou para tras e que a `0011` tem de consertar. Nao vale a
         # pena criar mais nenhum.
-        # ⚠️ BoardService nao usa BaseRepository e nao precisa de tenant, mas
-        # fica dentro do escopo por simetria com o passo 5.
+        # ⚠️ BoardService nao usa BaseRepository e nao precisa de tenant.
         quadro = await BoardService(self._session).create_default_board(
             workspace_id=workspace.id,
             team_id=team.id,
@@ -199,14 +186,12 @@ class WorkspaceProvisioningService:
             workspace_id=str(workspace.id),
             workspace_slug=workspace.slug,
             admin_user_id=str(admin.id),
-            personal_project_id=str(personal.id),
             board_id=str(quadro.id),
         )
         return ProvisionWorkspaceResult(
             workspace_id=workspace.id,
             team_id=team.id,
             admin_user_id=admin.id,
-            personal_project_id=personal.id,
         )
 
     # ----------------------------------------------------

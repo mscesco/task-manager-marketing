@@ -12,7 +12,6 @@ from app.modules.tasks.application.task_service import (
 )
 from app.shared.exceptions.base import (
     AuthorizationError,
-    ConflictError,
     EntityNotFoundError,
     ValidationError,
 )
@@ -117,19 +116,6 @@ async def test_remove_assignee_history_e_404(db) -> None:
         )
     ).scalar_one()
     assert un == 1
-
-
-async def test_pessoal_monouser_409(db) -> None:
-    ws, r, a, b, manager, proj, forest, mgr_ctx = await _world(db)
-    dono = await f.make_user(db, workspace_id=ws)
-    outro = await f.make_user(db, workspace_id=ws)
-    pessoal = await f.make_project(
-        db, workspace_id=ws, created_by=dono, team_id=None, is_personal=True
-    )
-    task = await f.make_task(db, workspace_id=ws, created_by=dono, team_id=None, project_id=pessoal)
-    with acting_as(workspace_id=ws, user_id=dono):
-        with pytest.raises(ConflictError):
-            await CollaborationService(db).add_assignee(task_id=task.id, user_id=outro)
 
 
 async def test_assignee_fora_de_alcance_422(db) -> None:

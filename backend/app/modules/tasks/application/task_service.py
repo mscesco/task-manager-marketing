@@ -36,7 +36,6 @@ from app.core.tenant import require_tenant
 from app.db.models import Project, Task
 from app.db.models.enums import PriorityLevel, TaskStatus
 from app.modules.auth.domain import team_scope
-from app.modules.tasks.application.project_service import ProjectService
 from app.modules.tasks.application.task_guards import (
     TaskScopeGuards,
     user_can_view_task,
@@ -594,11 +593,14 @@ class TaskService:
         project: Project | None = None
         if command.project_id is not None:
             project = await self._projects.get_by_id_or_raise(command.project_id)
-            ProjectService._assert_visible_to_current_user(project)
-            # Em projeto comum, o time da task fica na subarvore do time
-            # do projeto (regra 8 da spec). A heranca do pai ja satisfaz isto
-            # por construcao (o pai passou pela mesma checagem ao nascer).
-            if not project.is_personal and project.team_id is not None:
+            # O time da task fica na subarvore do time do projeto (regra 8 da
+            # spec). A heranca do pai ja satisfaz isto por construcao (o pai
+            # passou pela mesma checagem ao nascer).
+            #
+            # ⚠️ AQUI HAVIA UM `_assert_visible_to_current_user` e um
+            # `not project.is_personal`, os dois do projeto pessoal. Sairam em
+            # 10/09 com ele.
+            if project.team_id is not None:
                 allowed = {project.team_id} | team_scope.descendants(
                     project.team_id, tenant.team_tree
                 )
@@ -1348,11 +1350,15 @@ class TaskService:
                 details={"task_id": str(task.id)},
             )
 
-        # Projeto novo deve existir e ser visivel (pessoal alheio -> 404).
-        # Detach (new_project_id None) pula: nao ha projeto destino pra validar.
+        # Projeto novo deve existir. Detach (new_project_id None) pula: nao ha
+        # projeto destino pra validar.
+        #
+        # ⚠️ AQUI HAVIA UM `_assert_visible_to_current_user`, que devolvia 404
+        # para pessoal alheio. Saiu em 10/09 com o projeto pessoal -- o
+        # `get_by_id_or_raise` ja escopa por tenant, e nao ha mais projeto que
+        # um membro do workspace nao possa ver.
         if new_project_id is not None and new_project_id != task.project_id:
-            new_project = await self._projects.get_by_id_or_raise(new_project_id)
-            ProjectService._assert_visible_to_current_user(new_project)
+            await self._projects.get_by_id_or_raise(new_project_id)
 
         # Pai novo (se houver): existe, mesmo workspace, mesmo projeto final.
         new_parent: Task | None = None
