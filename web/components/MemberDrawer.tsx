@@ -241,6 +241,7 @@ export default function MemberDrawer({
                     member={member}
                     scope={scope}
                     isAdmin={isAdmin}
+                    isSelf={isSelf}
                     onChanged={onChanged}
                   />
                 ))}
@@ -294,12 +295,15 @@ function MembershipRow({
   member,
   scope,
   isAdmin,
+  isSelf,
   onChanged,
 }: {
   row: ReturnType<typeof drawerMemberships>[number];
   member: Member;
   scope: Alcance;
   isAdmin: boolean;
+  /** É a própria pessoa que está olhando? Ver o `!isSelf` no "Tirar". */
+  isSelf: boolean;
   onChanged: (aviso: string) => Promise<void>;
 }) {
   const [escolhido, setEscolhido] = useState<MemberRole>(row.role);

@@ -13,22 +13,37 @@
 // arredondados em elipses — foi o *"ficou torta"* que ela viu. Com o `viewBox`
 // no tamanho real em pixels, canto é canto.
 //
-// ⚠️⚠️ UMA LINHA SÓ, DO CENTRO DE BAIXO AO CENTRO DE BAIXO, também a pedido:
-// *"poderia ser uma linha só que contorna o card e para na parte do contorno
-// de baixo central"*. Por isso é um `<path>` e não um `<rect>`: `rect` começa
-// a desenhar no canto superior esquerdo e não há como escolher, enquanto o
-// `path` diz onde o traço nasce. Ele desce ao meio da base, corre a volta
-// inteira e volta ao mesmo ponto.
+// ⚠️⚠️ UM TRAÇO CURTO QUE CORRE E PARA EMBAIXO, e não a volta inteira
+// desenhada. A primeira versão acendia o perímetro todo e ficava com o cartão
+// contornado no fim; ela corrigiu: *"ele tá muito grande, contornando tudo, eu
+// pensei em uma linha pequena que corre contornando o card e para embaixo"*.
 //
-// ⚠️ `pathLength` NORMALIZA O PERÍMETRO para 1, e é isso que torna o efeito
-// possível sem calcular comprimento: sem ele, `strokeDasharray` precisaria do
-// perímetro em pixels, que muda com a largura da coluna.
+// ⚠️ SÃO DUAS PROPRIEDADES DIFERENTES, e é aí que estava meu erro:
+//
+//     `pathLength` -- QUANTO do caminho fica visível. Fixo em 0,22: um quarto
+//                     do perímetro, o "cometa".
+//     `pathOffset` -- ONDE esse pedaço está. É ele que ANIMA, de 0 a 0,78.
+//
+// Somando, o fim do traço para exatamente em 1 -- o fim do caminho, que é o
+// meio da base. Antes eu animava o `pathLength`, e animar "quanto aparece"
+// é justamente desenhar a volta inteira.
+//
+// ⚠️ Por isso é um `<path>` e não um `<rect>`: `rect` começa no canto superior
+// esquerdo e não há como escolher, enquanto o `path` diz onde o traço nasce e
+// morre. As duas pontas estão no meio da base.
+//
+// ⚠️ As duas propriedades são NORMALIZADAS (0 a 1), e é o que torna o efeito
+// possível sem calcular comprimento: em CSS puro, `strokeDasharray` precisaria
+// do perímetro em pixels, que muda com a largura da coluna.
 //
 // ⚠️ `aria-hidden` e `pointer-events: none`: é decoração pura, e um SVG por
 // cima do cartão roubaria o clique.
 
 import { useEffect, useRef, useState } from "react";
 import { motion } from "motion/react";
+
+/** Quanto do perímetro o traço ocupa. Ver o bloco no topo. */
+const TAMANHO_DO_TRACO = 0.22;
 
 /**
  * O caminho da volta, começando e terminando no MEIO DA BASE.
@@ -97,17 +112,24 @@ export default function AnimatedOutline({
             stroke="var(--accent)"
             strokeWidth={2}
             strokeLinecap="round"
+            // ⚠️ FIXO: é o TAMANHO do traço, não o progresso. Ver o topo.
+            pathLength={TAMANHO_DO_TRACO}
             initial={false}
-            animate={{ pathLength: show ? 1 : 0, opacity: show ? 1 : 0 }}
+            animate={{
+              // O traço nasce escondido antes do início e para com a ponta
+              // no fim do caminho — o meio da base.
+              pathOffset: show ? 1 - TAMANHO_DO_TRACO : -TAMANHO_DO_TRACO,
+              opacity: show ? 1 : 0,
+            }}
             transition={{
               // ⚠️ QUASE UM SEGUNDO, e a primeira versão levava 0,45s -- *"e
               // extremamente rápida"*. Um traço que corre um perímetro inteiro
-              // precisa de tempo para se ler como traço; rápido demais, ele
-              // vira um piscar.
-              // ⚠️ `ease` e não mola: mola desacelera no fim e o último trecho
-              // do contorno rasteja.
-              pathLength: { duration: 0.85, ease: "easeInOut" },
-              // A opacidade só acompanha -- se ela durasse o mesmo, o traço
+              // precisa de tempo para se ler como traço; rápido demais, vira
+              // um piscar.
+              // ⚠️ `ease` e não mola: mola desacelera no fim, e a chegada no
+              // meio da base — que é o ponto da animação — rastejaria.
+              pathOffset: { duration: 0.85, ease: "easeInOut" },
+              // A opacidade só acompanha; se durasse o mesmo, o traço
               // apareceria por transparência em vez de correr.
               opacity: { duration: show ? 0.05 : 0.25 },
             }}
