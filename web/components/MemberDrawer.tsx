@@ -17,11 +17,13 @@
 // ⚠️ MORA EM `components/` -- o `include` do vitest cobre isso, e `app/` não.
 
 import { useEffect, useState } from "react";
-import { motion } from "motion/react";
+import { AnimatePresence, motion } from "motion/react";
 import { ChevronRight, X } from "lucide-react";
 import Badge from "@/components/Badge";
 import MenuSelect from "@/components/MenuSelect";
 import PillSelect from "@/components/PillSelect";
+import Reveal from "@/components/Reveal";
+import TemporaryPassword from "@/components/TemporaryPassword";
 import {
   ApiError,
   assignMemberToTeam,
@@ -76,7 +78,6 @@ export default function MemberDrawer({
   isSelf,
   onClose,
   onChanged,
-  onRevealPassword,
 }: {
   member: Member;
   teams: Team[];
@@ -86,11 +87,23 @@ export default function MemberDrawer({
   isSelf: boolean;
   onClose: () => void;
   onChanged: (aviso: string) => Promise<void>;
-  onRevealPassword: (r: { title: string; email: string; password: string }) => void;
 }) {
   const [vinculos, setVinculos] = useState<MemberTeamComCadeado[] | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [adicionando, setAdicionando] = useState(false);
+  // ⚠️⚠️ A SENHA PROVISORIA MORA AQUI DENTRO desde 09/09, a pedido dela:
+  // *"essa tela em azul deve aparecer (...) dentro dessa sobreposição, não na
+  // tela comum"*. Antes ela subia para a página e aparecia atrás da gaveta.
+  //
+  // ⚠️ E ENQUANTO ELA ESTA NA TELA, A GAVETA NAO FECHA -- nem pelo X, nem pelo
+  // scrim, nem pelo Esc. O segredo volta UMA vez (ADR 0021) e não há rota para
+  // relê-lo: fechar por engano o perderia, e a saída é o "Concluir".
+  const [revelado, setRevelado] = useState<{
+    title: string;
+    email: string;
+    password: string;
+  } | null>(null);
+  const podeFechar = revelado === null;
 
   useEffect(() => {
     let vivo = true;
@@ -123,7 +136,7 @@ export default function MemberDrawer({
       <div
         className="fixed inset-0 z-40 bg-black/10"
         onMouseDown={(e) => {
-          if (e.target === e.currentTarget) onClose();
+          if (e.target === e.currentTarget && podeFechar) onClose();
         }}
       />
       <motion.aside
@@ -138,7 +151,7 @@ export default function MemberDrawer({
         aria-modal="true"
         aria-label={`Editar ${member.name}`}
         onKeyDown={(e) => {
-          if (e.key === "Escape") onClose();
+          if (e.key === "Escape" && podeFechar) onClose();
         }}
       >
         {/* ⚠️ `items-center`, e não `items-start`: o nome e o e-mail são
@@ -149,12 +162,39 @@ export default function MemberDrawer({
             <h2 className="truncate text-lg font-semibold">{member.name}</h2>
             <div className="muted truncate text-xs">{member.email}</div>
           </div>
-          <button className="btn btn-ghost" aria-label="Fechar" onClick={onClose}>
+          <button
+            className="btn btn-ghost"
+            aria-label="Fechar"
+            disabled={!podeFechar}
+            title={podeFechar ? undefined : "Copie a senha e clique em Concluir"}
+            onClick={onClose}
+          >
             <X size={16} aria-hidden="true" />
           </button>
         </div>
 
         <div className="flex-1 overflow-y-auto p-4">
+          {/* ⚠️ Entra deslizando de cima: o bloco aparece DEPOIS de um clique
+              em "Resetar senha", e sem transição ele lê-se como um erro. */}
+          <AnimatePresence>
+            {revelado && (
+              <motion.div
+                initial={{ opacity: 0, y: -8, height: 0 }}
+                animate={{ opacity: 1, y: 0, height: "auto" }}
+                exit={{ opacity: 0, y: -8, height: 0 }}
+                transition={{ type: "spring", duration: 0.32, bounce: 0.1 }}
+                style={{ overflow: "hidden" }}
+              >
+                <TemporaryPassword
+                  title={revelado.title}
+                  email={revelado.email}
+                  password={revelado.password}
+                  onClose={() => setRevelado(null)}
+                />
+              </motion.div>
+            )}
+          </AnimatePresence>
+
           {erro && <div className="error-box mb-3 text-xs">{erro}</div>}
 
           {/* ---- AÇÕES DA CONTA ------------------------------------------
@@ -164,7 +204,7 @@ export default function MemberDrawer({
               deste time" (§4.2). */}
           <div className="mb-5 flex flex-wrap gap-2">
             {podeResetarSenha(scope) && (
-              <ResetPassword member={member} onReveal={onRevealPassword} />
+              <ResetPassword member={member} onReveal={setRevelado} />
             )}
             {member.is_active && podeDesativarConta(scope) && !isSelf && (
               <Deactivate member={member} onChanged={onChanged} />
@@ -211,7 +251,7 @@ export default function MemberDrawer({
                 em cada um. */}
             {availableTeams.length > 0 && (
               <div className="mt-3">
-                {!adicionando ? (
+                <Reveal show={!adicionando}>
                   <button
                     className="btn btn-ghost flex items-center gap-1 text-sm"
                     onClick={() => setAdicionando(true)}
@@ -219,14 +259,15 @@ export default function MemberDrawer({
                     Adicionar a um time
                     <ChevronRight size={14} aria-hidden="true" />
                   </button>
-                ) : (
+                </Reveal>
+                <Reveal show={adicionando}>
                   <AddToTeam
                     member={member}
                     availableTeams={availableTeams}
                     onCancel={() => setAdicionando(false)}
                     onChanged={onChanged}
                   />
-                )}
+                </Reveal>
               </div>
             )}
           </section>
@@ -349,7 +390,7 @@ function MembershipRow({
         )}
       </div>
 
-      {mudou && (
+      <Reveal show={mudou}>
         <div className="mt-2 border-t border-border pt-2">
           <div className="muted text-xs">
             {roleConsequence(escolhido, row.team.name)}
@@ -371,7 +412,7 @@ function MembershipRow({
             </button>
           </div>
         </div>
-      )}
+      </Reveal>
 
       {/* ---- TIRAR DO TIME ---------------------------------------------
           ⚠️ Pedido dela em 09/09. Fica DENTRO da linha do vínculo, e não num
@@ -382,14 +423,15 @@ function MembershipRow({
           cadeado de cargo aqui esconderia dele a única ação que tem. */}
       {!mudou && podeRemoverDoTime(scope, row.team.id, row.role) && (
         <div className="mt-2">
-          {!confirmandoSaida ? (
+          <Reveal show={!confirmandoSaida}>
             <button
               className="btn btn-ghost px-0 text-xs"
               onClick={() => setConfirmandoSaida(true)}
             >
               Tirar de {row.team.name}
             </button>
-          ) : (
+          </Reveal>
+          <Reveal show={confirmandoSaida}>
             <div className="rounded border border-border p-2">
               <div className="text-xs">
                 {member.name} sai de <strong>{row.team.name}</strong>. A
@@ -421,7 +463,7 @@ function MembershipRow({
                 </button>
               </div>
             </div>
-          )}
+          </Reveal>
         </div>
       )}
 
@@ -541,7 +583,7 @@ function OrgRoleField({
         </div>
       )}
       {erro && <div className="error-box mt-2 text-xs">{erro}</div>}
-      {mudou && !isSelf && (
+      <Reveal show={mudou && !isSelf}>
         <div className="mt-2 flex gap-2">
           <button
             className="btn btn-primary"
@@ -580,7 +622,7 @@ function OrgRoleField({
             Cancelar
           </button>
         </div>
-      )}
+      </Reveal>
     </div>
   );
 }
@@ -601,9 +643,10 @@ function ResetPassword({
         setSalvando(true);
         try {
           const r = await resetMemberPassword(member.id);
-          // ⚠️ O segredo volta UMA vez (ADR 0021) e sobe para a página, que é
-          // quem desenha o bloco reveal-once. Guardá-lo aqui o perderia ao
-          // fechar a gaveta.
+          // ⚠️ O segredo volta UMA vez (ADR 0021) e sobe UM nível, para a
+          // gaveta -- que o desenha por cima do conteúdo dela e se recusa a
+          // fechar enquanto ele estiver na tela. Até 09/09 ele subia para a
+          // PÁGINA, e o bloco aparecia atrás da gaveta aberta.
           onReveal({
             title: `Senha nova de ${member.name}`,
             email: member.email,
@@ -629,17 +672,17 @@ function Deactivate({
   const [confirmando, setConfirmando] = useState(false);
   const [salvando, setSalvando] = useState(false);
 
-  if (!confirmando) {
-    return (
-      <button
-        className="btn btn-ghost text-xs"
-        onClick={() => setConfirmando(true)}
-      >
-        Desativar
-      </button>
-    );
-  }
   return (
+    <>
+      <Reveal show={!confirmando}>
+        <button
+          className="btn btn-ghost text-xs"
+          onClick={() => setConfirmando(true)}
+        >
+          Desativar
+        </button>
+      </Reveal>
+      <Reveal show={confirmando}>
     <div className="w-full rounded border border-border p-2">
       <div className="text-xs">
         <strong>{member.name}</strong> deixa de acessar o sistema — em TODOS os
@@ -670,5 +713,7 @@ function Deactivate({
         </button>
       </div>
     </div>
+      </Reveal>
+    </>
   );
 }

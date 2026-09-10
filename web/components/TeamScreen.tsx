@@ -429,25 +429,25 @@ export default function TeamScreen({ teamId }: { teamId: string }) {
             members={members}
             isAdmin={isAdmin}
             canManage={podeMexerEmTimes}
+            scope={scope}
             onClose={() => setGavetaDeTime(null)}
             onChanged={async (texto) => {
               setGavetaDeTime(null);
               setAviso(texto);
               await carregar();
             }}
-            // ⚠️ FECHA A DO TIME AO ABRIR A DA PESSOA: duas gavetas empilhadas
-            // na mesma borda dariam o defeito que a Camila já relatou em 09/09
-            // -- *"fica um sobre o outro e se clicar pra fora não fecha"*.
-            onOpenMember={(m) => {
-              setGavetaDeTime(null);
-              setGavetaDePessoa(m);
-            }}
+            // ⚠️⚠️ RECARREGA SEM FECHAR. Adicionar gente é operação em SÉRIE, e
+            // fechar a gaveta a cada uma obrigava a reabrir o time -- foi o que
+            // ela relatou em 09/09. O `carregar()` traz a lista nova, e a
+            // `AnimatePresence` de lá faz a linha entrar deslizando.
+            onRefresh={carregar}
           />
         )}
       </AnimatePresence>
 
-      {/* ⚠️ O reveal-once fica FORA da gaveta: fechar a gaveta levaria o
-          segredo junto, e não há rota para relê-lo (ADR 0021). */}
+      {/* ⚠️ A GAVETA DESENHA A PRÓPRIA senha provisória, desde 09/09 -- o
+          bloco azul aparecia aqui, ATRÁS dela. O `revelado` desta tela agora
+          serve só ao CADASTRO, que acontece sem gaveta nenhuma aberta. */}
       <AnimatePresence>
         {gavetaDePessoa && (
           <MemberDrawer
@@ -461,7 +461,6 @@ export default function TeamScreen({ teamId }: { teamId: string }) {
             }
             isSelf={gavetaDePessoa.id === me?.id}
             onClose={() => setGavetaDePessoa(null)}
-            onRevealPassword={setRevelado}
             onChanged={async (texto) => {
               setGavetaDePessoa(null);
               setAviso(texto);

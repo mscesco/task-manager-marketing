@@ -709,6 +709,24 @@ class MemberService:
         )
         return alcancam
 
+    async def list_team_members(
+        self, *, team_id: uuid.UUID
+    ) -> list[UserTeam]:
+        """Os vinculos de UM time -- Spec 047, revisao de 09/09.
+
+        ⚠️ LEITURA ABERTA a qualquer autenticado, como `list_member_teams`:
+        "quem esta neste time" e a pergunta que a gaveta existe para responder.
+        Quem pode MEXER e o cadeado, resolvido na rota pela MESMA funcao que o
+        PATCH usa.
+
+        Erros:
+            EntityNotFoundError -- time inexistente no workspace.
+        """
+        team = await self._teams.get_by_id(team_id)
+        if team is None:
+            raise EntityNotFoundError("Team", identifier=team_id)
+        return await self._users.list_memberships_of_team(team_id=team_id)
+
     async def list_member_teams(
         self, *, user_id: uuid.UUID
     ) -> list[UserTeam]:

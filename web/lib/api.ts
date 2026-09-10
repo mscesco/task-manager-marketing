@@ -1709,6 +1709,32 @@ export async function createMember(input: {
   return r;
 }
 
+/** Uma pessoa DENTRO de um time, com o cadeado. Spec 047, revisao de 09/09. */
+export type TeamMemberComCadeado = {
+  user_id: string;
+  role: MemberRole;
+  can_edit_role: boolean;
+};
+
+/**
+ * Quem esta NESTE time, e quais desses cargos eu posso trocar.
+ *
+ * ⚠️⚠️ E O ESPELHO de `listMemberTeams`: aquela responde "onde esta esta
+ * pessoa?", esta responde "quem esta neste time?". A gaveta do subtime faz a
+ * segunda -- e ate 09/09 ela tinha os vinculos (pela listagem de membros) mas
+ * NAO o cadeado de cada um, entao nao oferecia edicao nenhuma. A Camila tentou
+ * trocar o cargo ali e nao conseguiu.
+ *
+ * ⚠️ ROTA NOVA, e nao regra espelhada no front: *"se aparecer necessidade de
+ * filtrar escopo no front, falta parametro na rota"*. Deduzir o cadeado na
+ * tela e exatamente o que a Spec 034 desfez.
+ */
+export async function listTeamMembers(
+  teamId: string,
+): Promise<TeamMemberComCadeado[]> {
+  return api<TeamMemberComCadeado[]>(`/api/v1/members/by-team/${teamId}`);
+}
+
 // Spec 015, Fatia 1: papeis de um membro por time. Leitura -- so exige estar
 // autenticado. Nao usa o cache de membros (e detalhe sob demanda).
 export async function listMemberTeams(

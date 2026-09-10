@@ -41,6 +41,7 @@ from app.modules.users.api.schemas import (
     MemberListResponse,
     MemberResponse,
     MemberTeamListItemResponse,
+    TeamMemberListItemResponse,
     MemberTeamResponse,
     MoveSubteamRequest,
     ResetPasswordResponse,
@@ -110,6 +111,49 @@ async def list_members(
         ],
         total=len(members),
     )
+
+
+@router.get(
+    "/by-team/{team_id}",
+    response_model=list[TeamMemberListItemResponse],
+)
+async def list_team_members(
+    team_id: uuid.UUID, _: TenantContextDep, session: SessionDep
+) -> list[TeamMemberListItemResponse]:
+    """Os vinculos DAQUELE time, com o cadeado. Spec 047, revisao de 09/09.
+
+    ⚠️⚠️ A PERGUNTA ESPELHADA de `/{user_id}/teams`: aquela e "onde esta esta
+    pessoa?", esta e "quem esta neste time, e quais desses cargos eu posso
+    trocar?". A gaveta do subtime faz a segunda, e ate aqui nao havia rota que
+    a respondesse -- a tela conhecia os vinculos (pela listagem de membros) mas
+    nao o CADEADO de cada um, entao nao oferecia edicao nenhuma. A Camila
+    tentou trocar o cargo ali e nao conseguiu.
+
+    ⚠️ ROTA NOVA, e nao regra espelhada no front. E a prescricao literal do
+    briefing: *"se aparecer necessidade de filtrar escopo no front, falta
+    parametro na rota"*. Deduzir o cadeado na tela e o que a Spec 034 desfez.
+
+    ⚠️ `/by-team/` VEM ANTES DE `/{user_id}/` no arquivo de proposito: o
+    FastAPI casa as rotas na ordem de registro, e `/{user_id}/teams` nao
+    conflita, mas um `/{user_id}` futuro engoliria `by-team` como se fosse um
+    id. Deixar a rota literal em cima e a defesa barata.
+
+    ⚠️ O CADEADO SAI DA MESMA FUNCAO QUE O PATCH USA -- duas listas de regras
+    que precisam concordar divergem no primeiro `if` novo, e a divergencia e
+    silenciosa dos dois lados.
+    """
+    svc = MemberService(session)
+    memberships = await svc.list_team_members(team_id=team_id)
+    return [
+        TeamMemberListItemResponse(
+            user_id=m.user_id,
+            role=m.role,
+            can_edit_role=svc.pode_trocar_papel_do_vinculo(
+                user_id=m.user_id, team_id=m.team_id, papel_atual=m.role
+            ),
+        )
+        for m in memberships
+    ]
 
 
 @router.get(

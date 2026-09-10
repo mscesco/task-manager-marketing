@@ -360,3 +360,31 @@ describe("subteamCandidates", () => {
     expect(candidatos.map((m) => m.name)).toEqual(["Ana", "Zara"]);
   });
 });
+
+describe("subteamCandidates e quem está INATIVO", () => {
+  function inativa(m: Member): Member {
+    return { ...m, is_active: false };
+  }
+
+  it("⭐⭐ não oferece pessoa desativada", () => {
+    // ⚠️ Relatado na tela em 09/09: *"adicionar membro está mostrando pessoas
+    // inativas"*. Desativar desliga a pessoa do sistema inteiro e NÃO há rota
+    // de reativar (D5 da Spec 028) — vinculá-la a um time é uma escrita que
+    // não serve para nada: o vínculo existe e ela continua sem entrar.
+    const candidatos = subteamCandidates(SEO, [
+      pessoa("Ana", [[MKT, "OPERATOR"]]),
+      inativa(pessoa("Bia", [[MKT, "OPERATOR"]])),
+    ]);
+    expect(candidatos.map((m) => m.name)).toEqual(["Ana"]);
+  });
+
+  it("⚠️ e isto é o CONTRÁRIO da regra da tabela, de propósito", () => {
+    // ⚠️ Na tabela, inativo APARECE (§3.2 — esconder linha já fez o contador
+    // do cabeçalho divergir do corpo, em 27/07). A diferença é que a tabela
+    // INFORMA e o seletor PROPÕE UMA AÇÃO: informar sobre quem saiu é útil;
+    // oferecer uma ação sobre quem saiu é oferecer o que não funciona.
+    const bia = inativa(pessoa("Bia", [[SEO, "OPERATOR"]]));
+    expect(teamRows(SEO, TIMES, [bia])).toHaveLength(1);
+    expect(subteamCandidates(JR, [bia])).toEqual([]);
+  });
+});

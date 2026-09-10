@@ -214,12 +214,24 @@ export function directMembers(
  * daquele time. Cadastrar gente nova dispara senha provisória e é outra ação
  * (D3 da Spec 028); misturar as duas num seletor só faria o "adicionar" às
  * vezes criar uma conta sem avisar.
+ *
+ * ⚠️⚠️ INATIVO NÃO É CANDIDATO, e a Camila viu isso na tela em 09/09:
+ * *"adicionar membro está mostrando pessoas inativas"*. Desativar desliga a
+ * pessoa do sistema inteiro (não há rota de reativar — D5 da Spec 028), então
+ * pô-la num time é uma escrita que não serve para nada: o vínculo existe e a
+ * pessoa continua sem entrar.
+ *
+ * ⚠️ E ISTO É O CONTRÁRIO da regra da TABELA, de propósito. Lá inativo APARECE
+ * (§3.2 — esconder linha já fez o contador divergir do corpo). A diferença é
+ * que a tabela INFORMA e o seletor PROPÕE UMA AÇÃO: informar sobre quem saiu é
+ * útil; oferecer uma ação sobre quem saiu é oferecer o que não funciona.
  */
 export function subteamCandidates(
   teamId: string,
   members: readonly Member[],
 ): Member[] {
   return members
+    .filter((m) => m.is_active)
     .filter((m) => !(m.memberships ?? []).some((v) => v.team_id === teamId))
     .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
 }

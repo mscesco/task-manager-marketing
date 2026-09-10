@@ -111,3 +111,32 @@ async def test_sem_papel_de_organizacao_o_operator_nao_administra_ninguem(db):
         assert not svc.pode_trocar_papel_do_vinculo(
             user_id=op, team_id=sub, papel_atual=UserTeamRole.OPERATOR
         )
+
+
+async def test_a_listagem_por_time_traz_o_cadeado_de_cada_um(db):
+    """⭐⭐ A rota que a gaveta do subtime precisava -- 09/09.
+
+    ⚠️ Ela existe porque a tela NAO pode deduzir o cadeado. A gaveta do subtime
+    lista as pessoas com o cargo, e ate agora nao tinha como saber quais desses
+    cargos ela podia oferecer para editar -- entao nao oferecia nenhum.
+    """
+    ws, raiz, sub, dona, op, sup = await _mundo(db)
+    svc = MemberService(db)
+    with _como_dona(ws, dona, raiz, sub):
+        vinculos = await svc.list_team_members(team_id=sub)
+        por_user = {v.user_id: v for v in vinculos}
+
+    # As tres pessoas do subtime, e ninguem da raiz.
+    assert set(por_user) == {dona, op, sup}
+
+    with _como_dona(ws, dona, raiz, sub):
+        cadeados = {
+            v.user_id: svc.pode_trocar_papel_do_vinculo(
+                user_id=v.user_id, team_id=sub, papel_atual=v.role
+            )
+            for v in vinculos
+        }
+    assert cadeados[op] is True
+    assert cadeados[sup] is True
+    # ⚠️ O proprio vinculo continua fechado -- anti-lockout (C3).
+    assert cadeados[dona] is False

@@ -13,24 +13,25 @@
 // valor atual, clicável. É o mesmo argumento que fez a pílula virar controle
 // na Spec 039 (F6).
 //
-// ⚠️⚠️ ESCOLHER **NÃO** GRAVA, ao contrário do seletor de coluna. Lá, clicar
-// aplica na hora porque errar a coluna se desfaz num clique. Aqui, errar o
-// cargo dá alcance no sistema inteiro, em silêncio — então escolher só
-// PROPÕE, e quem grava é o Salvar de quem chama. A Camila pediu o Salvar com
-// todas as letras em 09/09.
+// ⚠️⚠️ ESCOLHER **NÃO** GRAVA por conta própria: ele só devolve a escolha.
+// No seletor de coluna, clicar aplica na hora porque errar a coluna se desfaz
+// num clique; aqui errar o cargo dá alcance no sistema inteiro, em silêncio.
+// Quem chama decide se propõe (com Salvar) ou aplica.
 //
-// ⚠️ FECHA AO CLICAR FORA com `contains`, e não comparando `e.target ===
-// e.currentTarget`: aquele é o padrão do SCRIM de modal, e num painel
-// suspenso ele fecharia ao clicar DENTRO da lista. O `TaskDetail` registra a
-// mesma distinção — e a Camila já apanhou de um painel meu que não fechava.
-//
-// ⚠️ GENÉRICO sobre o valor porque a gaveta tem DOIS seletores de permissão:
-// o cargo no time e o papel na organização (que inclui "nenhum", e portanto
-// não é um `MemberRole`). Dois desenhos diferentes na mesma gaveta seriam
-// duas coisas para aprender onde há uma só.
+// ⚠️⚠️ O PAINEL ERA `absolute` E NASCIA RECORTADO. As gavetas têm
+// `overflow-y-auto`, então o painel do seletor de papel da organização
+// aparecia cortado e deslocado para fora da gaveta — *"o seletor de papéis da
+// organização ficou bugado"*. Agora ele usa `AnchoredPanel`, que é `fixed`,
+// mede o gatilho e anima a entrada E a saída.
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useState } from "react";
+import { AnimatePresence, motion } from "motion/react";
+import { Check } from "lucide-react";
 import Badge from "@/components/Badge";
+import AnchoredPanel, {
+  PANEL_ITEM,
+  useAnchoredPanel,
+} from "@/components/AnchoredPanel";
 
 export type PillOption<T extends string> = {
   readonly id: T;
@@ -60,36 +61,27 @@ export default function PillSelect<T extends string>({
   label: string;
   onSelect: (id: T) => void;
 }) {
-  const [aberto, setAberto] = useState(false);
-  const wrapRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!aberto) return;
-    function onDown(e: MouseEvent) {
-      // ⚠️ `wrapRef` PRECISA estar preso ao `<div>` abaixo. Um ref declarado
-      // e nunca anexado compila, passa no `tsc` e não fecha nada — foi
-      // exatamente o defeito que a Camila viu em 09/09.
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
-        setAberto(false);
-      }
-    }
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [aberto]);
+  const [isOpen, setIsOpen] = useState(false);
+  const fechar = useCallback(() => setIsOpen(false), []);
+  const { anchorRef, panelRef, box } = useAnchoredPanel<HTMLButtonElement>(
+    isOpen,
+    fechar,
+  );
 
   const atual = options.find((o) => o.id === value);
 
   return (
-    <div ref={wrapRef} className="relative inline-flex">
+    <>
       <button
+        ref={anchorRef}
         type="button"
         className="tappable"
         disabled={disabled}
         aria-haspopup="listbox"
-        aria-expanded={aberto}
+        aria-expanded={isOpen}
         aria-label={label}
         title={disabled ? undefined : "Mudar"}
-        onClick={() => setAberto((v) => !v)}
+        onClick={() => setIsOpen((v) => !v)}
         style={{
           border: "none",
           background: "none",
@@ -103,77 +95,62 @@ export default function PillSelect<T extends string>({
         </Badge>
       </button>
 
-      {aberto && (
-        <div
-          role="listbox"
-          aria-label={label}
-          style={{
-            position: "absolute",
-            top: "calc(100% + 6px)",
-            right: 0,
-            zIndex: 30,
-            minWidth: 200,
-            maxHeight: 280,
-            overflowY: "auto",
-            padding: 4,
-            borderRadius: 10,
-            background: "var(--surface)",
-            border: "1px solid var(--border)",
-            boxShadow: "var(--shadow)",
-            display: "flex",
-            flexDirection: "column",
-            gap: 2,
-          }}
-        >
-          {/* ⚠️ A ORDEM É A DA LISTA RECEBIDA, que vem de `papeisAtribuiveis`
-              — do mais alto para o mais baixo. Ordenar alfabeticamente poria
-              "Gerente" antes de "Operador" por acaso e obrigaria a LER cada
-              linha em vez de mirar. É a mesma razão pela qual a lista de
-              prioridade segue a ordem do enum, e não o alfabeto. */}
-          {options.map((o) => {
-            const selecionada = o.id === value;
-            return (
-              <button
-                key={o.id}
-                type="button"
-                role="option"
-                aria-selected={selecionada}
-                onClick={() => {
-                  setAberto(false);
-                  onSelect(o.id);
-                }}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 8,
-                  border: "none",
-                  borderRadius: 8,
-                  padding: "6px 10px",
-                  fontSize: 13,
-                  textAlign: "left",
-                  cursor: "pointer",
-                  background: selecionada ? "var(--accent-soft)" : "transparent",
-                  color: selecionada ? "var(--accent)" : "var(--text)",
-                  fontWeight: selecionada ? 600 : 400,
-                }}
-              >
-                <span
-                  aria-hidden
-                  style={{
-                    width: 8,
-                    height: 8,
-                    borderRadius: 999,
-                    flexShrink: 0,
-                    border: "1.5px solid var(--accent)",
-                    background: o.commands ? "var(--accent)" : "transparent",
-                  }}
-                />
-                <span>{o.label}</span>
-              </button>
-            );
-          })}
-        </div>
-      )}
-    </div>
+      {/* ⚠️ `AnimatePresence` é o que permite a SAÍDA animada: sem ele o React
+          desmonta o nó na hora e o `exit` nunca roda. Abrir suave e sumir seco
+          é pior do que não animar. */}
+      <AnimatePresence>
+        {isOpen && box && (
+          <AnchoredPanel
+            box={box}
+            panelRef={panelRef}
+            aria-label={label}
+            minWidth={200}
+          >
+            {/* ⚠️ A ORDEM É A DA LISTA RECEBIDA, que vem de `papeisAtribuiveis`
+                — do mais alto para o mais baixo. Ordenar alfabeticamente poria
+                "Gerente" antes de "Operador" por acaso e obrigaria a LER cada
+                linha em vez de mirar. É a mesma razão pela qual a lista de
+                prioridade segue a ordem do enum, e não o alfabeto. */}
+            {options.map((o) => {
+              const selecionada = o.id === value;
+              return (
+                <motion.div key={o.id} variants={PANEL_ITEM}>
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={selecionada}
+                    onClick={() => {
+                      setIsOpen(false);
+                      onSelect(o.id);
+                    }}
+                    className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[13px] ${
+                      selecionada
+                        ? "bg-accent-soft font-semibold text-accent"
+                        : "text-ink-soft hover:bg-surface-2"
+                    }`}
+                  >
+                    <span
+                      aria-hidden
+                      style={{
+                        width: 8,
+                        height: 8,
+                        borderRadius: 999,
+                        flexShrink: 0,
+                        border: "1.5px solid var(--accent)",
+                        background: o.commands ? "var(--accent)" : "transparent",
+                      }}
+                    />
+                    <span className="min-w-0 flex-1 truncate">{o.label}</span>
+                    {selecionada && (
+                      <Check size={14} aria-hidden="true" className="shrink-0" />
+                    )}
+                  </button>
+                </motion.div>
+              );
+            })}
+          </AnchoredPanel>
+        )}
+      </AnimatePresence>
+    </>
   );
 }

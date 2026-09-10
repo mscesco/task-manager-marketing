@@ -24,17 +24,19 @@
 //
 // ⚠️ A DECISÃO MORA EM `lib/contextSwitcher.ts`, testada — aqui só se desenha.
 //
-// ⚠️ O PAINEL É `fixed`, E NÃO `absolute`: o `<aside>` da barra tem
-// `overflow-y-auto` (posto em 05/08, para o menu não sumir com zoom). Um
-// painel `absolute` dentro dele seria RECORTADO. Por isso ele mede o gatilho
-// na abertura — e, por medir na abertura, FECHA ao rolar ou redimensionar.
-//
-// ⚠️ E ABRE PARA CIMA, porque está no rodapé: um menu que desce daqui sai da
-// tela. A origem da escala acompanha (`bottom left`).
+// ⚠️ A MECÂNICA DO PAINEL mora em `AnchoredPanel`, compartilhada com os
+// seletores de papel e de time: `fixed` (o `<aside>` da barra tem
+// `overflow-y-auto` e recortaria um `absolute`), medido na abertura, fechando
+// ao rolar, e abrindo PARA CIMA quando não há espaço embaixo — que é sempre o
+// caso aqui, porque ele mora no rodapé.
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { Building2, Check, ChevronDown } from "lucide-react";
+import AnchoredPanel, {
+  PANEL_ITEM,
+  useAnchoredPanel,
+} from "@/components/AnchoredPanel";
 import type { CurrentUser, Team } from "@/lib/api";
 import { contextChoice } from "@/lib/contextSwitcher";
 
@@ -54,48 +56,13 @@ export default function ContextSwitcher({
   expanded: boolean;
 }) {
   const [isOpen, setIsOpen] = useState(false);
-  const [caixa, setCaixa] = useState<{ bottom: number; left: number } | null>(
-    null,
+  const fechar = useCallback(() => setIsOpen(false), []);
+  const { anchorRef, panelRef, box } = useAnchoredPanel<HTMLButtonElement>(
+    isOpen,
+    fechar,
   );
-  const gatilhoRef = useRef<HTMLButtonElement>(null);
-  const painelRef = useRef<HTMLDivElement>(null);
 
   const escolha = contextChoice(teams, me, canManageOrg);
-
-  // ⚠️ `useLayoutEffect` e não `useEffect`: medir depois da PINTURA faria o
-  // painel aparecer um quadro no canto (0,0) e saltar para o lugar.
-  useLayoutEffect(() => {
-    if (!isOpen) return;
-    const r = gatilhoRef.current?.getBoundingClientRect();
-    if (r) setCaixa({ bottom: window.innerHeight - r.top + 6, left: r.left });
-  }, [isOpen]);
-
-  useEffect(() => {
-    if (!isOpen) return;
-    function onDown(e: MouseEvent) {
-      const alvo = e.target as Node;
-      if (
-        !gatilhoRef.current?.contains(alvo) &&
-        !painelRef.current?.contains(alvo)
-      ) {
-        setIsOpen(false);
-      }
-    }
-    function onEsc(e: KeyboardEvent) {
-      if (e.key === "Escape") setIsOpen(false);
-    }
-    const fechar = () => setIsOpen(false);
-    document.addEventListener("mousedown", onDown);
-    document.addEventListener("keydown", onEsc);
-    window.addEventListener("resize", fechar);
-    window.addEventListener("scroll", fechar, true);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("keydown", onEsc);
-      window.removeEventListener("resize", fechar);
-      window.removeEventListener("scroll", fechar, true);
-    };
-  }, [isOpen]);
 
   if (escolha.kind === "none") return null;
 
@@ -137,7 +104,7 @@ export default function ContextSwitcher({
   return (
     <>
       <button
-        ref={gatilhoRef}
+        ref={anchorRef}
         type="button"
         aria-haspopup="menu"
         aria-expanded={isOpen}
@@ -165,89 +132,49 @@ export default function ContextSwitcher({
       {/* ⚠️ `AnimatePresence` é o que permite a SAÍDA animada: sem ele o React
           desmonta o nó na hora e o `exit` nunca roda. */}
       <AnimatePresence>
-        {isOpen && caixa && (
-          <motion.div
-            ref={painelRef}
+        {isOpen && box && (
+          <AnchoredPanel
+            box={box}
+            panelRef={panelRef}
             role="menu"
             aria-label="Áreas"
-            initial={{ opacity: 0, y: 6, scale: 0.97 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 6, scale: 0.97 }}
-            transition={{ type: "spring", duration: 0.26, bounce: 0.16 }}
-            style={{
-              position: "fixed",
-              bottom: caixa.bottom,
-              left: caixa.left,
-              zIndex: 60,
-              // ⚠️ A escala nasce no canto de BAIXO à esquerda, que é onde o
-              // gatilho está. Do centro, o painel cresceria para os dois lados
-              // e pareceria brotar do nada.
-              transformOrigin: "bottom left",
-              width: 248,
-              maxHeight: "min(70vh, 520px)",
-              overflowY: "auto",
-              borderRadius: 12,
-              padding: 6,
-              background: "var(--surface)",
-              border: "1px solid var(--border)",
-              boxShadow: "var(--shadow)",
-            }}
+            minWidth={248}
           >
-            {/* ⚠️ AS LINHAS ENTRAM EM CASCATA (`staggerChildren`), com 18ms de
-                atraso. Curto de propósito: menu é onde ninguém quer esperar. */}
-            <motion.div
-              initial="fechado"
-              animate="aberto"
-              variants={{
-                aberto: { transition: { staggerChildren: 0.018 } },
-                fechado: {},
-              }}
-            >
-              {escolha.roots.length === 0 && (
-                <div className="muted px-2 py-2 text-xs">
-                  Nenhuma área ainda.
-                </div>
-              )}
+            {escolha.roots.length === 0 && (
+              <div className="muted px-2 py-2 text-xs">Nenhuma área ainda.</div>
+            )}
 
-              {escolha.roots.map((t) => (
-                <SwitcherItem
-                  key={t.id}
-                  href={`/times/${t.id}`}
-                  label={t.name}
-                  active={pathname === `/times/${t.id}`}
+            {escolha.roots.map((t) => (
+              <SwitcherItem
+                key={t.id}
+                href={`/times/${t.id}`}
+                label={t.name}
+                active={pathname === `/times/${t.id}`}
+              />
+            ))}
+
+            {escolha.canManageOrg && (
+              <>
+                {/* ⚠️ A LINHA SEPARA DUAS COISAS DIFERENTES: acima, PARA ONDE
+                    IR; abaixo, ADMINISTRAR o conjunto. Sem ela, "Gerenciar a
+                    organização" lê-se como mais uma área. */}
+                <motion.div
+                  variants={PANEL_ITEM}
+                  className="my-1.5 border-t border-border"
                 />
-              ))}
-
-              {escolha.canManageOrg && (
-                <>
-                  {/* ⚠️ A LINHA SEPARA DUAS COISAS DIFERENTES: acima, PARA
-                      ONDE IR; abaixo, ADMINISTRAR o conjunto. Sem ela,
-                      "Gerenciar a organização" lê-se como mais uma área. */}
-                  <motion.div
-                    variants={ITEM_VARIANTS}
-                    className="my-1.5 border-t border-border"
-                  />
-                  <SwitcherItem
-                    href="/organizacao"
-                    label="Gerenciar a organização"
-                    active={pathname === "/organizacao"}
-                  />
-                </>
-              )}
-            </motion.div>
-          </motion.div>
+                <SwitcherItem
+                  href="/organizacao"
+                  label="Gerenciar a organização"
+                  active={pathname === "/organizacao"}
+                />
+              </>
+            )}
+          </AnchoredPanel>
         )}
       </AnimatePresence>
     </>
   );
 }
-
-// Cada linha sobe 4px enquanto aparece. Curto: é confirmação de que o menu
-// abriu, não um número de dança.
-const ITEM_VARIANTS = {
-  fechado: { opacity: 0, y: 4 },
-  aberto: { opacity: 1, y: 0 },
-};
 
 function SwitcherItem({
   href,
@@ -259,7 +186,7 @@ function SwitcherItem({
   active: boolean;
 }) {
   return (
-    <motion.div variants={ITEM_VARIANTS}>
+    <motion.div variants={PANEL_ITEM}>
       {/* ⚠️ `<a href>` E NÃO `<Link>`: a navegação deste app é recarga total
           (registrado no topo do `AppShell`, junto do motivo de a barra
           persistir o próprio estado). Misturar os dois faria metade das telas

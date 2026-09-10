@@ -304,6 +304,25 @@ class UserRepository(BaseRepository[User]):
             out.setdefault(user_id, []).append(team_id)
         return out
 
+    async def list_memberships_of_team(
+        self, *, team_id: uuid.UUID
+    ) -> list[UserTeam]:
+        """Os vinculos DAQUELE time -- Spec 047, revisao de 09/09.
+
+        ⚠️ A PERGUNTA ESPELHADA de `list_team_memberships`: aquela e "onde esta
+        esta pessoa?", esta e "quem esta neste time?". A gaveta do subtime faz
+        a segunda, e ate 09/09 nao havia rota que a respondesse COM O CADEADO
+        -- a tela tinha os vinculos (via `/members`) mas nao sabia quais podia
+        editar, entao nao oferecia nenhum.
+        """
+        workspace_id = require_tenant().workspace_id
+        stmt = select(UserTeam).where(
+            UserTeam.workspace_id == workspace_id,
+            UserTeam.team_id == team_id,
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
     async def list_team_memberships(
         self, *, user_id: uuid.UUID
     ) -> list[UserTeam]:

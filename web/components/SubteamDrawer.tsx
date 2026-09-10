@@ -17,23 +17,30 @@
 //
 // ⚠️ MORA EM `components/` -- `app/` fica fora do `include` do vitest.
 
-import { useEffect, useState } from "react";
-import { motion } from "motion/react";
+import { useCallback, useEffect, useState } from "react";
+import { AnimatePresence, motion } from "motion/react";
 import { X } from "lucide-react";
 import Badge from "@/components/Badge";
 import MenuSelect from "@/components/MenuSelect";
+import PillSelect from "@/components/PillSelect";
+import Reveal from "@/components/Reveal";
 import {
   ApiError,
   assignMemberToTeam,
+  changeMemberRole,
   deleteTeam,
   esvaziarERemoverTeam,
+  listTeamMembers,
   previaRemocaoTeam,
   removeMemberFromTeam,
   updateTeam,
   type Member,
+  type MemberRole,
   type PreviaRemocao,
   type Team,
+  type TeamMemberComCadeado,
 } from "@/lib/api";
+import { papeisAtribuiveis, type Alcance } from "@/lib/permissoesMembros";
 import { confirmacaoValida, descreveConteudo } from "@/lib/gestaoTimes";
 import { ROLE_LABEL } from "@/components/MembersTable";
 import { directMembers, subteamCandidates } from "@/lib/teamScreen";
@@ -43,9 +50,10 @@ export default function SubteamDrawer({
   members,
   isAdmin,
   canManage,
+  scope,
   onClose,
   onChanged,
-  onOpenMember,
+  onRefresh,
 }: {
   team: Team;
   /** Todo mundo da árvore do time PAI — de onde saem os candidatos. */
@@ -53,10 +61,19 @@ export default function SubteamDrawer({
   /** Só administrador remove time (Spec 029, D1). */
   isAdmin: boolean;
   canManage: boolean;
+  scope: Alcance;
   onClose: () => void;
+  /** Mudou algo que FECHA a gaveta (renomear, excluir). */
   onChanged: (aviso: string) => Promise<void>;
-  /** Abre a gaveta DA PESSOA — é lá que o cargo se troca. */
-  onOpenMember: (member: Member) => void;
+  /**
+   * Mudou algo que a gaveta continua mostrando (entrou, saiu, trocou cargo).
+   *
+   * ⚠️⚠️ SEPARADO DE `onChanged` por causa de um defeito relatado: *"quando
+   * adiciono alguém a tela reseta e tenho que abrir o time de novo"*. Fechar
+   * a gaveta depois de adicionar obrigava a reabrir para adicionar o próximo,
+   * que é justamente o que se faz em série.
+   */
+  onRefresh: () => Promise<void>;
 }) {
   // ⚠️ A GAVETA ATENDE OS DOIS NÍVEIS desde a unificação de 09/09: da tela
   // da organização ela abre uma ÁREA; da tela de um time, um subtime. Chamar
@@ -64,6 +81,31 @@ export default function SubteamDrawer({
   const ehArea = team.parent_team_id === null;
   const dentro = directMembers(team.id, members);
   const candidates = subteamCandidates(team.id, members);
+
+  // ⚠️⚠️ O CADEADO VEM DO BACKEND, por vínculo, e é o que permite oferecer o
+  // seletor aqui. A tela NÃO recalcula escopo -- a Spec 034 já desfez essa
+  // tentativa uma vez, e o resultado foi gestor e admin sumindo dos seletores.
+  const [cadeados, setCadeados] = useState<Map<string, boolean>>(new Map());
+  useEffect(() => {
+    let vivo = true;
+    listTeamMembers(team.id)
+      .then((linhas: TeamMemberComCadeado[]) => {
+        if (vivo) {
+          setCadeados(new Map(linhas.map((l) => [l.user_id, l.can_edit_role])));
+        }
+      })
+      .catch(() => {
+        // ⚠️ FALHA FECHA O CADEADO, e não abre: um mapa vazio deixa tudo em
+        // leitura. Oferecer edição sem saber se ela é permitida termina em 403
+        // depois do clique.
+        if (vivo) setCadeados(new Map());
+      });
+    return () => {
+      vivo = false;
+    };
+    // ⚠️ `members` na dependência: depois de adicionar alguém, o cadeado do
+    // recém-chegado ainda não foi buscado.
+  }, [team.id, members]);
 
   return (
     <>
@@ -110,47 +152,49 @@ export default function SubteamDrawer({
                 Ninguém {ehArea ? "nesta área" : "neste subtime"} ainda.
               </div>
             ) : (
+              // ⚠️ `AnimatePresence` + `layout`: quem entra DESLIZA para o
+              // lugar e quem sai some suave, em vez de a lista pular. Foi o
+              // pedido dela para o "adicionar" -- *"atualize entrando com uma
+              // animaçãozinha de slider"*.
               <ul className="m-0 list-none space-y-1.5 p-0">
-                {dentro.map(({ member, role }) => (
-                  <li
-                    key={member.id}
-                    className="flex flex-wrap items-center gap-2 rounded border border-border p-2"
-                  >
-                    {/* ⚠️⚠️ O NOME ABRE A GAVETA DA PESSOA, e esta linha é
-                        o conserto de 09/09: *"não estou conseguindo mudar as
-                        permissões da galera"*. O cargo continua sem se editar
-                        AQUI -- decidi-lo exige ver os OUTROS vínculos da
-                        pessoa, por causa da invariante de nível (Spec 045) --
-                        mas antes não havia caminho nenhum daqui para lá, e a
-                        lista de cargos ficava sendo um beco.
-                        ⚠️ Não é uma segunda porta de ESCRITA: é a mesma
-                        gaveta, alcançada de outro lugar. */}
-                    <button
-                      type="button"
-                      className="tappable text-left text-sm font-semibold hover:underline"
-                      onClick={() => onOpenMember(member)}
+                <AnimatePresence initial={false}>
+                  {dentro.map(({ member, role }) => (
+                    <motion.li
+                      key={member.id}
+                      layout
+                      initial={{ opacity: 0, x: 16 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      exit={{ opacity: 0, x: -16 }}
+                      transition={{ type: "spring", duration: 0.32, bounce: 0.12 }}
+                      className="flex flex-wrap items-center gap-2 rounded border border-border p-2"
                     >
-                      {member.name}
-                    </button>
-                    <button
-                      type="button"
-                      className="tappable"
-                      title={`Mudar o cargo de ${member.name}`}
-                      onClick={() => onOpenMember(member)}
-                    >
-                      <Badge tone="neutral" size="sm" className="border">
-                        {ROLE_LABEL[role]}
-                      </Badge>
-                    </button>
+                    <strong className="text-sm">{member.name}</strong>
+                    {/* ⚠️⚠️ O CARGO SE EDITA AQUI, e a mudança é de 09/09: o
+                        selo abria a gaveta da pessoa, e ela não queria isso --
+                        *"eu só quero editar a permissão da pessoa nesse time,
+                        então é pra ser só o dropdown"*.
+                        ⚠️ SEM CADEADO, É SÓ INFORMAÇÃO -- *"se não tenho
+                        acesso, é só pra exibir a informação, não é pra ser
+                        clicável"*. E quem responde isso é o backend. */}
+                    <RoleCell
+                      member={member}
+                      team={team}
+                      role={role}
+                      canEdit={cadeados.get(member.id) ?? false}
+                      scope={scope}
+                      isAdmin={isAdmin}
+                      onRefresh={onRefresh}
+                    />
                     {canManage && (
                       <RemoveFromTeam
                         member={member}
                         team={team}
-                        onChanged={onChanged}
+                        onChanged={onRefresh}
                       />
                     )}
-                  </li>
-                ))}
+                    </motion.li>
+                  ))}
+                </AnimatePresence>
               </ul>
             )}
           </section>
@@ -159,7 +203,7 @@ export default function SubteamDrawer({
             <AddMember
               team={team}
               candidates={candidates}
-              onChanged={onChanged}
+              onChanged={onRefresh}
             />
           )}
 
@@ -225,7 +269,7 @@ function Identity({
 
       {erro && <div className="error-box mt-2 text-xs">{erro}</div>}
 
-      {mudou && (
+      <Reveal show={mudou}>
         <div className="mt-2 flex gap-2">
           <button
             className="btn btn-primary"
@@ -258,7 +302,7 @@ function Identity({
             Cancelar
           </button>
         </div>
-      )}
+      </Reveal>
     </section>
   );
 }
@@ -276,17 +320,17 @@ function RemoveFromTeam({
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
-  if (!confirmando) {
-    return (
-      <button
-        className="btn btn-ghost ml-auto px-1.5 text-xs"
-        onClick={() => setConfirmando(true)}
-      >
-        Tirar
-      </button>
-    );
-  }
   return (
+    <>
+      <Reveal show={!confirmando}>
+        <button
+          className="btn btn-ghost ml-auto px-1.5 text-xs"
+          onClick={() => setConfirmando(true)}
+        >
+          Tirar
+        </button>
+      </Reveal>
+      <Reveal show={confirmando}>
     <div className="w-full">
       <div className="text-xs">
         {member.name} sai de {team.name}. A conta continua ativa.
@@ -323,6 +367,8 @@ function RemoveFromTeam({
         </button>
       </div>
     </div>
+      </Reveal>
+    </>
   );
 }
 
@@ -535,5 +581,83 @@ function DeleteTeam({
         </button>
       </div>
     </div>
+  );
+}
+
+/**
+ * O cargo da pessoa NESTE time: dropdown se der para editar, selo se não.
+ *
+ * ⚠️⚠️ APLICA NO CLIQUE, sem Salvar, ao contrário da gaveta do membro. E a
+ * diferença é de CONTEXTO, não de descuido: lá a lista mostra TODOS os
+ * vínculos da pessoa, e a escolha de um deles depende dos outros (invariante
+ * de nível, Spec 045) — por isso a consequência aparece antes de gravar. Aqui
+ * o assunto é um time só, e a Camila pediu o caminho curto: *"é pra ser só o
+ * dropdown com animação mesmo com as permissões possíveis"*.
+ *
+ * ⚠️ AS OPÇÕES SAEM DE `papeisAtribuiveis`, que já cruza NÍVEL (invariante da
+ * Spec 045) com ALCANCE de quem edita (matriz da Spec 016). Escrever a lista
+ * aqui criaria uma segunda cópia dela no front.
+ */
+function RoleCell({
+  member,
+  team,
+  role,
+  canEdit,
+  scope,
+  isAdmin,
+  onRefresh,
+}: {
+  member: Member;
+  team: Team;
+  role: MemberRole;
+  canEdit: boolean;
+  scope: Alcance;
+  isAdmin: boolean;
+  onRefresh: () => Promise<void>;
+}) {
+  const [salvando, setSalvando] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+  const options = papeisAtribuiveis(scope, isAdmin, team.parent_team_id === null);
+
+  if (!canEdit || options.length === 0) {
+    // ⚠️ SELO, e não botão desabilitado: "não é pra ser clicável". Um botão
+    // apagado convida ao clique e não responde.
+    return (
+      <span title="Você não administra este vínculo">
+        <Badge tone="neutral" size="sm" className="border">
+          {ROLE_LABEL[role]}
+        </Badge>
+      </span>
+    );
+  }
+
+  return (
+    <>
+      <PillSelect
+        value={role}
+        disabled={salvando}
+        label={`Cargo de ${member.name} em ${team.name}`}
+        options={options.map((p) => ({ id: p, label: ROLE_LABEL[p] }))}
+        onSelect={async (novo) => {
+          if (novo === role) return;
+          setSalvando(true);
+          setErro(null);
+          try {
+            await changeMemberRole(member.id, team.id, novo);
+            await onRefresh();
+          } catch (e) {
+            const a = e as ApiError;
+            setErro(
+              a.status === 403
+                ? "Você não administra este vínculo."
+                : a.message || "Não consegui trocar o cargo.",
+            );
+          } finally {
+            setSalvando(false);
+          }
+        }}
+      />
+      {erro && <span className="error-box w-full text-xs">{erro}</span>}
+    </>
   );
 }

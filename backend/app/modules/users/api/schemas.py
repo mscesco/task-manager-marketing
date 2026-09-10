@@ -205,6 +205,29 @@ class TeamMembershipResponse(BaseModel):
     joined_at: datetime
 
 
+class TeamMemberListItemResponse(BaseModel):
+    """Uma pessoa DENTRO de um time, com o cadeado. Spec 047, revisao 09/09.
+
+    ⚠️⚠️ TRAZ `user_id` E NAO `team_id`, e a inversao e o ponto: este e o
+    espelho de `MemberTeamListItemResponse`. La a pergunta e "onde esta esta
+    pessoa?" (varios times, um usuario); aqui e "quem esta neste time?" (varias
+    pessoas, um time). Repetir o `team_id` em toda linha seria repetir o que a
+    URL ja diz.
+
+    ⚠️ CLASSE PROPRIA, e nao um campo a mais na outra: as duas listagens tem
+    chaves diferentes, e um `user_id` opcional na outra viraria um `None`
+    significando "nao perguntei" -- o tri-estado que o comentario da irma ja
+    recusou uma vez.
+    """
+
+    model_config = {"from_attributes": True}
+
+    user_id: uuid.UUID
+    role: UserTeamRole
+    #: O ator conseguiria trocar o papel deste vinculo? Mesma funcao do PATCH.
+    can_edit_role: bool
+
+
 class MemberTeamListItemResponse(MemberTeamResponse):
     """Um vinculo NA LISTAGEM, com o cadeado resolvido. Spec 047, fatia A.
 
