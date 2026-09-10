@@ -21,7 +21,7 @@ import type { Member, Team } from "./api";
 /** Um card da grade de areas. */
 export type AreaCard = {
   readonly area: Team;
-  /** Pessoas com vinculo na area OU em qualquer subtime dela. */
+  /** Pessoas ATIVAS com vinculo na area OU em qualquer subtime dela. */
   readonly pessoas: number;
   /** Subtimes -- diretos e indiretos. */
   readonly subteams: number;
@@ -35,10 +35,28 @@ export type AreaCard = {
  * tambem num subtime dela -- e esse e o cadastro normal de quem coordena.
  * O backend ja deduplica (`areas_por_membro`, com `DISTINCT`).
  *
- * ⚠️ E ela conta TODO MUNDO, inclusive inativo. A §3.2 e explicita: esconder
- * linha ja causou defeito aqui, em 27/07, quando o contador do cabecalho
- * divergiu do corpo. Se um dia a tela filtrar inativos, o card tem de dizer
- * "12 de 15" -- nao mostrar 12 e calar sobre os 3.
+ * ⚠️⚠️ SO ATIVOS -- e ate 10/09 era todo mundo, inclusive inativo. A Camila
+ * viu na tela: *"nesse card eu quero que apareca apenas as pessoas ativas no
+ * time (...) esta aparecendo o total"*.
+ *
+ * ⚠️⚠️ E A REGRA E A MESMA DE `subteamCards` (`lib/teamScreen.ts`), DE
+ * PROPOSITO. Aquele cartao ja contava so ativos desde 10/09, pelo mesmo
+ * motivo: a gaveta do subtime deixou de listar inativo e o numero ficou
+ * dizendo outra coisa. Duas contagens de cartao com regras diferentes e o
+ * defeito de contador da §3.2 com roupa nova -- so que entre TELAS, onde
+ * ninguem compara os dois lado a lado e por isso demora a aparecer.
+ *
+ * ⚠️ E ISTO NAO CONTRADIZ A §3.2 (o defeito de 27/07). Lá o problema era
+ * CABECALHO contra CORPO na mesma tela: o topo dizia 12, a lista mostrava 15.
+ * O cartao nao tem corpo -- ele nao lista ninguem, e quem quer a lista abre a
+ * area, onde os inativos tem aba propria com o proprio numero. Nada esconde
+ * ninguem; o cartao passou a responder "quantas pessoas trabalham aqui".
+ *
+ * ⚠️ SUBTIME EXCLUIDO NAO CONTA, e nao ha o que fazer para isso: `team` nao
+ * tem soft delete (o model so carrega `UUIDPrimaryKeyMixin` e
+ * `TimestampMixin`), entao apagar um subtime e um DELETE de verdade -- ele sai
+ * da tabela, nao volta na listagem, e nao ha linha para contar. Pergunta da
+ * Camila em 10/09.
  */
 export function areaCards(
   teams: readonly Team[],
@@ -50,7 +68,9 @@ export function areaCards(
 
   return areas.map((area) => ({
     area,
-    pessoas: members.filter((m) => (m.area_ids ?? []).includes(area.id)).length,
+    pessoas: members.filter(
+      (m) => m.is_active && (m.area_ids ?? []).includes(area.id),
+    ).length,
     subteams: descendentes(area.id, teams).size,
   }));
 }

@@ -56,6 +56,7 @@ function desenhar(opts: {
   canManageOrg?: boolean;
   pathname?: string;
   teams?: Team[];
+  orgName?: string;
 }) {
   render(
     <ContextSwitcher
@@ -64,6 +65,7 @@ function desenhar(opts: {
       pathname={opts.pathname ?? "/minhas-tarefas"}
       canManageOrg={opts.canManageOrg ?? false}
       expanded
+      orgName={opts.orgName ?? "UniFECAF"}
     />,
   );
 }
@@ -80,7 +82,7 @@ describe("ContextSwitcher", () => {
 
   it("duas áreas: vira botão que abre o menu", () => {
     desenhar({ vinculos: [SEO, TI] });
-    const gatilho = screen.getByRole("button", { name: "Trocar de área" });
+    const gatilho = screen.getByRole("button", { name: /trocar de time/i });
     expect(gatilho.getAttribute("aria-expanded")).toBe("false");
     fireEvent.click(gatilho);
     expect(gatilho.getAttribute("aria-expanded")).toBe("true");
@@ -92,7 +94,7 @@ describe("ContextSwitcher", () => {
     // times raiz e a opção de gerenciar a organização"*. O seletor responde
     // "em qual ÁREA estou"; subtime é navegação DENTRO da área.
     desenhar({ vinculos: [], canManageOrg: true });
-    fireEvent.click(screen.getByRole("button", { name: "Trocar de área" }));
+    fireEvent.click(screen.getByRole("button", { name: /trocar de time/i }));
     const itens = screen
       .getAllByRole("menuitem")
       .map((el) => el.getAttribute("href"));
@@ -107,7 +109,7 @@ describe("ContextSwitcher", () => {
     // gate perdido numa mudança de NAVEGAÇÃO é invisível: no sentido frouxo só
     // o 403 acusa; no apertado, a porta simplesmente some.
     desenhar({ vinculos: [], canManageOrg: true });
-    fireEvent.click(screen.getByRole("button", { name: "Trocar de área" }));
+    fireEvent.click(screen.getByRole("button", { name: /trocar de time/i }));
     expect(
       screen.getByRole("menuitem", { name: "Gerenciar a organização" }),
     ).toBeTruthy();
@@ -115,7 +117,7 @@ describe("ContextSwitcher", () => {
     cleanup();
     // Sem o poder, e com duas áreas para que ainda haja seletor.
     desenhar({ vinculos: [SEO, TI] });
-    fireEvent.click(screen.getByRole("button", { name: "Trocar de área" }));
+    fireEvent.click(screen.getByRole("button", { name: /trocar de time/i }));
     expect(
       screen.queryByRole("menuitem", { name: "Gerenciar a organização" }),
     ).toBeNull();
@@ -131,14 +133,36 @@ describe("ContextSwitcher", () => {
       canManageOrg: true,
       teams: [TIMES[1], TIMES[2]],
     });
-    expect(screen.getByRole("button", { name: "Trocar de área" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /trocar de time/i })).toBeTruthy();
   });
 
   it("marca a área em que a pessoa está", () => {
     desenhar({ vinculos: [SEO, TI], pathname: `/times/${MKT}` });
-    fireEvent.click(screen.getByRole("button", { name: "Trocar de área" }));
+    fireEvent.click(screen.getByRole("button", { name: /trocar de time/i }));
     const marketing = screen.getByRole("menuitem", { name: /Marketing/ });
     expect(marketing.className).toContain("text-accent");
+  });
+
+  it("⭐⭐ o botão MOSTRA onde a pessoa está, e nunca 'Trocar de área'", () => {
+    // ⚠️⚠️ Reportado em 10/09: *"não é para ser mostrado 'Trocar de área', mas
+    // sim onde ele está no momento"*. O texto visível é o contexto; a AÇÃO
+    // sobrou só no `aria-label` e no `title`, onde ela é resposta a "o que este
+    // botão faz" e não a "onde estou".
+    desenhar({ vinculos: [SEO, TI], pathname: `/times/${SEO}` });
+    const gatilho = screen.getByRole("button", { name: /trocar de time/i });
+    // O subtime resolve para a ÁREA.
+    expect(gatilho.textContent).toContain("Marketing");
+    expect(gatilho.textContent).not.toContain("Trocar de time");
+  });
+
+  it("⭐ fora de uma área, o botão mostra o nome da ORGANIZAÇÃO", () => {
+    desenhar({
+      vinculos: [SEO, TI],
+      pathname: "/minhas-tarefas",
+      orgName: "UniFECAF",
+    });
+    const gatilho = screen.getByRole("button", { name: /trocar de time/i });
+    expect(gatilho.textContent).toContain("UniFECAF");
   });
 
   it("sem área e sem poder na organização, não desenha nada", () => {
@@ -149,6 +173,7 @@ describe("ContextSwitcher", () => {
         pathname="/minhas-tarefas"
         canManageOrg={false}
         expanded
+        orgName="UniFECAF"
       />,
     );
     expect(container.textContent).toBe("");

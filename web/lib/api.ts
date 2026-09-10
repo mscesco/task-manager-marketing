@@ -55,6 +55,7 @@ export function clearTokens() {
   _teams = undefined;
   _members = undefined;
   _me = undefined;
+  _workspace = undefined;
 }
 
 export class ApiError extends Error {
@@ -703,8 +704,30 @@ export async function listSubteams(): Promise<Team[]> {
 // nome (pt-BR). Deriva do mesmo listTeams() memoizado.
 // Zera o cache de times -> a proxima listTeams() rebusca. Chamar apos criar,
 // editar ou remover. Espelha invalidateMembers.
+//
+// ⚠️⚠️ E AVISA QUEM JA LEU, desde 10/09. Zerar o cache faz a PROXIMA leitura
+// vir fresca; nao faz quem ja leu reler. A Camila viu na tela: *"criei uma raiz
+// e nao apareceu direto na barra lateral"* -- a `/organizacao` recarregava o
+// proprio estado e o `AppShell`, que buscou os times uma vez na montagem,
+// seguia com a lista velha.
+//
+// ⚠️ ATE AQUI ISSO NUNCA APARECEU porque a navegacao deste app e RECARGA TOTAL
+// (registrado no topo do `AppShell`): trocar de tela remontava a barra e ela
+// relia. Criar area e o primeiro caso em que a arvore muda SEM navegacao.
+//
+// ⚠️ EVENTO DE `window`, e nao contexto de React: o cache mora em modulo, fora
+// da arvore, e quem o invalida sao funcoes de `lib/` -- nenhuma delas pode
+// chamar um `setState`. Um contexto exigiria que TODA mutacao de time passasse
+// por um provider, o que e o oposto de onde a decisao mora hoje.
+export const TIMES_MUDARAM = "times:mudaram";
+
 export function invalidateTeams() {
   _teams = undefined;
+  // ⚠️ A guarda e para o SSR: `lib/api` e importado por componente de
+  // servidor na build, e `window` nao existe la.
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event(TIMES_MUDARAM));
+  }
 }
 
 // Spec 029/D1: criar exige team.manage (ADMIN ou MANAGER). 409 = slug repetido
@@ -823,16 +846,32 @@ export async function changeOrganizationRole(
   return m;
 }
 
+// ⚠️⚠️ MEMOIZADO desde 10/09, e o motivo e a BARRA: o rodapé passou a mostrar
+// o nome da organizacao em toda tela que nao tem area na URL (pedido da
+// Camila), entao o `AppShell` pede este dado sempre -- e sem cache seria uma
+// requisicao a mais em cada navegacao, para um nome que muda uma vez por ano.
+// Mesmo padrao de `_teams` e `_me`, inclusive a limpeza no `clearTokens`.
+let _workspace: Workspace | undefined;
+
 export async function getWorkspace(): Promise<Workspace> {
-  return api<Workspace>("/api/v1/workspaces/current");
+  if (_workspace !== undefined) return _workspace;
+  _workspace = await api<Workspace>("/api/v1/workspaces/current");
+  return _workspace;
 }
 
 // Renomear exige `workspace.manage` -> so ADMIN de organizacao. 403 se nao.
+//
+// ⚠️ ELA REESCREVE O CACHE em vez de o invalidar: a resposta JA E o workspace
+// novo, entao guardar o que voltou evita uma segunda ida ao servidor e mantem
+// a barra e a tela dizendo a mesma coisa. Invalidar deixaria o proximo leitor
+// buscar de novo -- correto, mas por nada.
 export async function renameWorkspace(name: string): Promise<Workspace> {
-  return api<Workspace>("/api/v1/workspaces/current", {
+  const ws = await api<Workspace>("/api/v1/workspaces/current", {
     method: "PATCH",
     body: { name },
   });
+  _workspace = ws;
+  return ws;
 }
 
 export async function listTeamsAll(): Promise<Team[]> {

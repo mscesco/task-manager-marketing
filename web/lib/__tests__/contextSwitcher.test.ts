@@ -11,6 +11,7 @@
 import { describe, it, expect } from "vitest";
 import {
   contextChoice,
+  currentContext,
   peopleEntry,
   rootsForPerson,
 } from "../contextSwitcher";
@@ -140,6 +141,91 @@ describe("peopleEntry", () => {
 
   it("nenhuma área: não inventa destino", () => {
     expect(peopleEntry([])).toEqual({ kind: "none" });
+  });
+});
+
+describe("currentContext — o botão diz ONDE VOCÊ ESTÁ", () => {
+  const ORG = "UniFECAF";
+
+  it("na tela da área: o nome da área", () => {
+    expect(currentContext(`/times/${MKT}`, TIMES, ORG)).toEqual({
+      label: "Marketing",
+      activeRootId: MKT,
+    });
+  });
+
+  it("⚠️ num SUBTIME: sobe e mostra a ÁREA", () => {
+    // ⚠️ O botão abre uma lista de ÁREAS. Mostrar "SEO" daria um nome que não
+    // existe no menu, e o ✓ não teria onde pousar.
+    expect(currentContext(`/times/${SEO}`, TIMES, ORG)).toEqual({
+      label: "Marketing",
+      activeRootId: MKT,
+    });
+  });
+
+  it("⚠️ num NETO: sobe os dois níveis", () => {
+    expect(currentContext(`/times/${JR}`, TIMES, ORG).label).toBe("Marketing");
+  });
+
+  it("⚠️ no QUADRO do time: é a mesma área", () => {
+    // ⚠️ É a tela onde se passa o dia, e ela TEM time na URL. Deixá-la de fora
+    // apagaria o contexto justamente onde ele é mais verdadeiro.
+    expect(currentContext(`/quadro/${SEO}`, TIMES, ORG)).toEqual({
+      label: "Marketing",
+      activeRootId: MKT,
+    });
+  });
+
+  it("na tela da organização: o NOME dela, e nenhuma área marcada", () => {
+    // ⚠️ Antes de 10/09 era o literal "Organização" -- o nome próprio é o
+    // pedido dela: *"se estiver no gerenciamento da organização, aparecer o
+    // nome da organização"*.
+    expect(currentContext("/organizacao", TIMES, ORG)).toEqual({
+      label: ORG,
+      activeRootId: null,
+    });
+  });
+
+  it("⚠️⚠️ NUNCA diz 'Trocar de área' — sem área na URL, é a organização", () => {
+    // ⚠️ Era este o defeito reportado: o botão dizia o que ele FAZ, não onde a
+    // pessoa está. Estas são as telas que não têm time na URL.
+    for (const rota of [
+      "/minhas-tarefas",
+      "/projetos",
+      "/solicitacoes",
+      "/perfil",
+      "/tarefa/abc",
+      "/times",
+      "/quadro",
+      "/",
+    ]) {
+      expect(currentContext(rota, TIMES, ORG)).toEqual({
+        label: ORG,
+        activeRootId: null,
+      });
+    }
+  });
+
+  it("id desconhecido na URL não inventa nome", () => {
+    // A lista de times ainda carregando, ou um id colado à mão.
+    expect(currentContext("/times/nao-existe", TIMES, ORG).label).toBe(ORG);
+    expect(currentContext(`/times/${MKT}`, [], ORG).label).toBe(ORG);
+  });
+
+  it("sem o nome da organização, cai num rótulo em vez de vazio", () => {
+    // ⚠️ O instante antes de `getWorkspace()` voltar. Sem isto o botão pisca
+    // vazio em cada carga de página.
+    expect(currentContext("/minhas-tarefas", TIMES, "").label).toBe(
+      "Organização",
+    );
+    expect(currentContext("/minhas-tarefas", TIMES, "   ").label).toBe(
+      "Organização",
+    );
+  });
+
+  it("caminho com sufixo resolve o MESMO time", () => {
+    // `/times/<id>/` ou uma sub-rota futura não podem apagar o contexto.
+    expect(currentContext(`/times/${MKT}/`, TIMES, ORG).label).toBe("Marketing");
   });
 });
 

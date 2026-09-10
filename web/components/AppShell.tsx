@@ -7,6 +7,8 @@ import {
   getToken,
   logout,
   listTeamsAll,
+  getWorkspace,
+  TIMES_MUDARAM,
   ApiError,
   type CurrentUser,
   type Team,
@@ -70,6 +72,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   // check de auth, ja no cliente.
   const [open, setOpen] = useState(lerBarraAberta);
   const [teams, setTeams] = useState<Team[]>([]);
+  // ⚠️ O NOME DA ORGANIZAÇÃO É DA BARRA desde 10/09: o rodapé o mostra em toda
+  // tela que não tem área na URL. `getWorkspace` é memoizado em módulo, então
+  // isto é uma requisição por sessão, não por navegação.
+  const [orgName, setOrgName] = useState("");
   const [quadrosOpen, setQuadrosOpen] = useState(lerQuadrosAberto); // accordion
   // Preferencia de tema. Ler localStorage no inicializador e seguro aqui: com
   // `loading` comecando true, a barra so renderiza depois do check de auth, ja
@@ -112,6 +118,13 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         listTeamsAll()
           .then(setTeams)
           .catch(() => {});
+        // ⚠️ TAMBEM SEM BLOQUEAR, e o `catch` vazio e de proposito: sem o nome
+        // o seletor cai no rotulo "Organização" (ver `currentContext`), o que
+        // e feio e nao quebra nada. Derrubar a barra inteira por causa dele
+        // seria trocar um rotulo generico por uma tela branca.
+        getWorkspace()
+          .then((ws) => setOrgName(ws.name))
+          .catch(() => {});
       })
       .catch((_e: ApiError) => {
         // ⚠️ NAO chamar logout() aqui. Este caminho e "o getMe falhou", ou
@@ -121,6 +134,24 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         router.replace("/login");
       });
   }, [router]);
+
+  // ⚠️⚠️ A ARVORE PODE MUDAR SEM NAVEGACAO, e ate 10/09 a barra nao ficava
+  // sabendo: *"criei uma raiz e nao apareceu direto na barra lateral"*. O
+  // `useEffect` de cima roda uma vez; criar area acontece na `/organizacao`,
+  // que recarrega o proprio estado e nao o desta barra.
+  //
+  // ⚠️ QUEM AVISA E `invalidateTeams()`, entao TODA mutacao de time serve --
+  // criar, renomear, remover, de qualquer tela. Ouvir o evento da criacao
+  // especificamente cobriria um caso e deixaria os outros dois.
+  useEffect(() => {
+    const reler = () => {
+      listTeamsAll()
+        .then(setTeams)
+        .catch(() => {});
+    };
+    window.addEventListener(TIMES_MUDARAM, reler);
+    return () => window.removeEventListener(TIMES_MUDARAM, reler);
+  }, []);
 
   if (loading) return <LoadingScreen />;
 
@@ -392,6 +423,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             pathname={pathname}
             canManageOrg={podeVerOrganizacao}
             expanded={open}
+            orgName={orgName}
           />
           <a
             href="/perfil"

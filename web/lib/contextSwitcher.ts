@@ -55,6 +55,72 @@ export function rootsForPerson(
   return raizes.filter((t) => minhas.has(t.id));
 }
 
+/**
+ * O que o botão da barra MOSTRA, e qual item leva o ✓.
+ *
+ * ⚠️⚠️ ELE DIZ ONDE VOCÊ ESTÁ, e até 10/09 dizia "Trocar de área" — que é o
+ * que se FAZ com ele, não onde se está. A Camila corrigiu: *"não é para ser
+ * mostrado 'Trocar de área', mas sim onde ele está no momento. exemplo, eu
+ * estou no marketing, então é para aparecer o nome do time, se estiver no
+ * gerenciamento da organização, aparecer o nome da organização"*.
+ *
+ * ⚠️⚠️ DE UM SUBTIME, MOSTRA A ÁREA — sobe até a raiz. O botão responde *"em
+ * qual ÁREA eu estou"* (é essa a lista que ele abre), e subtime é navegação
+ * dentro dela. Mostrar "SEO" aqui daria um nome que não existe no menu abaixo,
+ * e o ✓ não teria onde pousar.
+ *
+ * ⚠️⚠️ SEM ÁREA NA URL, O NOME DA ORGANIZAÇÃO — decisão dela em 10/09, entre
+ * três opções. A alternativa era mostrar a área DA PESSOA em toda tela, e ela
+ * mente numa tela como "Minhas tarefas", que atravessa áreas: o nome sugeriria
+ * um recorte que a tela não aplica. O nome da organização é verdade em
+ * qualquer tela — você está nela, só não numa área.
+ *
+ * ⚠️ O QUADRO CONTA COMO ÁREA (`/quadro/<id>`), e não é detalhe: é a tela onde
+ * se passa o dia, e ela TEM time na URL. Deixá-la de fora faria o contexto
+ * desaparecer justamente onde ele é mais verdadeiro.
+ *
+ * ⚠️ E o `activeRootId` sai daqui junto, e não de comparar `pathname` com
+ * `/times/<id>` no componente: com a comparação crua, estar num subtime do
+ * Marketing deixava o menu inteiro sem ✓ — o botão diria "Marketing" e a lista
+ * não marcaria nada.
+ */
+export type CurrentContext = {
+  /** O que o botão mostra. Nunca vazio. */
+  readonly label: string;
+  /** Qual área leva o ✓ no menu. `null` = nenhuma (você está na organização). */
+  readonly activeRootId: string | null;
+};
+
+/** As telas que carregam um time NA URL, e onde ele está no caminho. */
+const ROTAS_COM_TIME = ["/times/", "/quadro/"] as const;
+
+export function currentContext(
+  pathname: string,
+  teams: readonly Team[],
+  orgName: string,
+): CurrentContext {
+  // ⚠️ O fallback existe para o instante ANTES de `getWorkspace()` voltar: sem
+  // ele o botão pisca vazio em cada carga de página.
+  const organizacao = { label: orgName.trim() || "Organização", activeRootId: null };
+
+  const prefixo = ROTAS_COM_TIME.find((p) => pathname.startsWith(p));
+  if (!prefixo) return organizacao;
+
+  // ⚠️ `split` e não regex: `/times/<id>/algo` (uma tela futura, ou um link
+  // com barra no fim) tem de resolver para o MESMO time. Uma regex ancorada no
+  // fim devolveria "sem área" e o contexto sumiria da barra.
+  const id = pathname.slice(prefixo.length).split("/")[0];
+  if (!id) return organizacao;
+
+  const porId = new Map(teams.map((t) => [t.id, t]));
+  const raiz = rootOf(id, porId);
+  const time = raiz ? porId.get(raiz) : undefined;
+  // ⚠️ Time desconhecido (lista ainda carregando, ou id inválido na URL) cai na
+  // organização em vez de inventar um nome.
+  if (!time) return organizacao;
+  return { label: time.name, activeRootId: time.id };
+}
+
 /** Sobe até a raiz. `guarda` porque ciclo em dados é mais barato que travar. */
 function rootOf(teamId: string, porId: Map<string, Team>): string | null {
   let atual = porId.get(teamId);

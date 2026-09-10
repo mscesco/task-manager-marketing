@@ -190,18 +190,34 @@ export default function TeamScreen({ teamId }: { teamId: string }) {
     ? teams.find((t) => t.id === team.parent_team_id) ?? null
     : null;
 
+  // ⚠️⚠️ E NUMA ÁREA O NÍVEL DE CIMA É A ORGANIZAÇÃO, achado dela em 10/09:
+  // *"se eu vou para a tela de time de /organizacao, não tem botão de voltar
+  // para a organização"*. A primeira versão deste link tratava "não tenho pai"
+  // como "não há acima" -- e há: a grade de áreas é de onde ela veio.
+  //
+  // ⚠️ SÓ PARA QUEM ALCANÇA AQUELA TELA, e o teste é o MESMO do `AppShell`
+  // (`org_role` não nulo) -- não `roles`, que junta os dois níveis e faria um
+  // ADMIN de time ganhar um link para um 403. Quem não administra a
+  // organização nunca esteve lá, e para essa pessoa a área É o topo.
+  const podeVerOrganizacao = (me?.org_role ?? null) !== null;
+  const voltar = pai
+    ? { href: `/times/${pai.id}`, label: pai.name }
+    : podeVerOrganizacao
+      ? { href: "/organizacao", label: "Organização" }
+      : null;
+
   const podeAgir =
     view === "people" ? podeCadastrarMembro(scope) : podeMexerEmTimes;
 
   return (
     <>
-      {pai && (
+      {voltar && (
         <a
-          href={`/times/${pai.id}`}
+          href={voltar.href}
           className="muted mb-2 inline-flex items-center gap-1.5 text-xs hover:text-accent"
         >
           <ArrowLeft size={14} aria-hidden="true" />
-          {pai.name}
+          {voltar.label}
         </a>
       )}
 
@@ -214,7 +230,7 @@ export default function TeamScreen({ teamId }: { teamId: string }) {
                 subtime, só ele e o que está abaixo. */}
             {team && (
               <Badge tone="outline" size="sm">
-                {ehArea ? "Área" : "Subtime"}
+                {ehArea ? "Time" : "Subtime"}
               </Badge>
             )}
           </span>

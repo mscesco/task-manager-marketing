@@ -15,6 +15,9 @@ import {
   organizationManagers,
   peopleWithoutArea,
 } from "../organization";
+// ⚠️ Importado de OUTRO modulo de proposito: o teste de concordancia entre as
+// duas telas so tem valor se ele chamar as duas implementacoes de verdade.
+import { subteamCards } from "../teamScreen";
 import type { Member, Team, OrgRole } from "../api";
 
 const MKT = "t-mkt";
@@ -36,14 +39,18 @@ const TIMES: Team[] = [
 function pessoa(
   nome: string,
   areas: string[],
-  extra: { email?: string; org_role?: OrgRole | null } = {},
+  extra: {
+    email?: string;
+    org_role?: OrgRole | null;
+    is_active?: boolean;
+  } = {},
 ): Member {
   return {
     id: `u-${nome}`,
     workspace_id: "ws",
     name: nome,
     email: extra.email ?? `${nome.toLowerCase()}@t.dev`,
-    is_active: true,
+    is_active: extra.is_active ?? true,
     org_role: extra.org_role ?? null,
     area_ids: areas,
     team_ids: [],
@@ -74,6 +81,34 @@ describe("areaCards", () => {
 
   it("conta neto como subtime -- a arvore tem tres niveis", () => {
     expect(areaCards(TIMES, [])[0].subteams).toBe(2);
+  });
+
+  it("⚠️ NAO conta inativo -- o card diz quem trabalha ali", () => {
+    // ⚠️ Reportado pela Camila em 10/09, na tela: o card do Marketing dizia
+    // "8 pessoas" contando quem ja saiu. O inativo continua tendo aba propria
+    // na tela da area, com o proprio numero -- nada o esconde.
+    const cards = areaCards(TIMES, [
+      pessoa("Ana", [MKT]),
+      pessoa("Bia", [MKT], { is_active: false }),
+    ]);
+    expect(cards[0].pessoas).toBe(1);
+  });
+
+  it("⚠️ concorda com `subteamCards`: a regra de inativo e UMA", () => {
+    // ⚠️⚠️ ESTE TESTE AMARRA DUAS TELAS. `subteamCards` (tela de time) e
+    // `areaCards` (tela da organizacao) contam pessoas para o MESMO tipo de
+    // cartao; se uma passar a incluir inativo e a outra nao, o mesmo subtime
+    // mostra dois numeros em telas diferentes -- e ninguem ve as duas lado a
+    // lado, entao o defeito vive muito tempo.
+    const so = [time(MKT, "Marketing", null), time(SEO, "SEO", MKT)];
+    const vinculo = [{ team_id: SEO, role: "OPERATOR" as const }];
+    const gente: Member[] = [
+      { ...pessoa("Ana", [MKT]), memberships: vinculo },
+      { ...pessoa("Bia", [MKT], { is_active: false }), memberships: vinculo },
+    ];
+    expect(areaCards(so, gente)[0].pessoas).toBe(
+      subteamCards(MKT, so, gente)[0].pessoas,
+    );
   });
 
   it("area vazia mostra zero, e nao some da grade", () => {

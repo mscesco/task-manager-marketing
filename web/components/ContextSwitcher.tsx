@@ -38,7 +38,7 @@ import AnchoredPanel, {
   useAnchoredPanel,
 } from "@/components/AnchoredPanel";
 import type { CurrentUser, Team } from "@/lib/api";
-import { contextChoice } from "@/lib/contextSwitcher";
+import { contextChoice, currentContext } from "@/lib/contextSwitcher";
 
 export default function ContextSwitcher({
   teams,
@@ -48,12 +48,18 @@ export default function ContextSwitcher({
   canManageOrg,
   /** A barra está expandida? Retraída, sobra só o ícone. */
   expanded,
+  /**
+   * O nome da organização — é o que o botão mostra quando a tela não tem área
+   * na URL (decisão da Camila, 10/09). Ver `currentContext`.
+   */
+  orgName,
 }: {
   teams: Team[];
   me: CurrentUser | null;
   pathname: string;
   canManageOrg: boolean;
   expanded: boolean;
+  orgName: string;
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const fechar = useCallback(() => setIsOpen(false), []);
@@ -91,15 +97,14 @@ export default function ContextSwitcher({
   }
 
   // ---- SELETOR ----------------------------------------------------------
-  const atual = escolha.roots.find((t) => pathname === `/times/${t.id}`);
-  const rotulo = atual
-    ? atual.name
-    : pathname === "/organizacao"
-    ? "Organização"
-    : // ⚠️ Fora dessas telas ele NÃO MENTE dizendo um time. Escolher um nome
-      // qualquer (o primeiro, o da pessoa) sugeriria um contexto ativo que a
-      // tela não tem.
-      "Trocar de área";
+  // ⚠️⚠️ A REGRA MORA EM `lib/contextSwitcher.ts`, testada. Aqui havia três
+  // ternários que decidiam o rótulo no meio do JSX — e o do meio dizia
+  // "Trocar de área", que é o que o botão FAZ, não onde a pessoa está.
+  const { label: rotulo, activeRootId } = currentContext(
+    pathname,
+    teams,
+    orgName,
+  );
 
   return (
     <>
@@ -108,8 +113,10 @@ export default function ContextSwitcher({
         type="button"
         aria-haspopup="menu"
         aria-expanded={isOpen}
-        aria-label="Trocar de área"
-        title="Trocar de área"
+        // ⚠️ O NOME ENTRA NO `aria-label` porque, com a barra retraída, o botão
+        // é só um ícone — o leitor de tela não tem de onde tirar o contexto.
+        aria-label={`${rotulo} — trocar de time`}
+        title={`Você está em ${rotulo}. Trocar de time`}
         onClick={() => setIsOpen((v) => !v)}
         className={`${base} text-ink-soft hover:bg-surface-2`}
       >
@@ -137,11 +144,11 @@ export default function ContextSwitcher({
             box={box}
             panelRef={panelRef}
             role="menu"
-            aria-label="Áreas"
+            aria-label="Times"
             minWidth={248}
           >
             {escolha.roots.length === 0 && (
-              <div className="muted px-2 py-2 text-xs">Nenhuma área ainda.</div>
+              <div className="muted px-2 py-2 text-xs">Nenhum time ainda.</div>
             )}
 
             {escolha.roots.map((t) => (
@@ -149,7 +156,11 @@ export default function ContextSwitcher({
                 key={t.id}
                 href={`/times/${t.id}`}
                 label={t.name}
-                active={pathname === `/times/${t.id}`}
+                // ⚠️ Vem de `currentContext`, e não de comparar o `pathname`
+                // com `/times/<id>`: estar num SUBTIME do Marketing (ou no
+                // quadro dele) é estar no Marketing, e a comparação crua
+                // deixava a lista inteira sem ✓.
+                active={activeRootId === t.id}
               />
             ))}
 

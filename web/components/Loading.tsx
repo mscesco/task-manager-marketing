@@ -56,6 +56,21 @@ export default function Loading({
 }) {
   const { ponto, pulo } = MEDIDAS[tamanho];
 
+  // ⚠️⚠️ O CENTRO É VERTICAL TAMBÉM, e não era: *"em algumas telas ela aparece
+  // no centro superior, eu quero no centro centro da área em que é chamada"*.
+  // O `justifyContent: center` de baixo só resolvia a horizontal; na vertical o
+  // contêiner tinha a altura dos pontos, então ele pousava onde o fluxo o
+  // deixasse — encostado no topo da área.
+  //
+  // ⚠️ E A CORREÇÃO MORA AQUI, não nos 20 lugares que chamam: o `bloco` é
+  // SEMPRE "o conteúdo desta área ainda não chegou" (`if (!items) return
+  // <Loading />`), então a centragem é propriedade dele. Corrigir por fora
+  // exigiria lembrar em cada tela nova — que é como este defeito nasceu.
+  //
+  // ⚠️ `linha` NÃO ganha altura: ele vive ao lado de um rótulo dentro de uma
+  // gaveta, e reservar meia tela ali empurraria o painel inteiro.
+  // `tela` também não: quem o usa é o `LoadingScreen`, que já centra em 100vh.
+
   // ⚠️ AS VARIANTES DEPENDEM DO TAMANHO, então nascem aqui dentro e não em
   // constante de módulo: uma constante fixaria o pulo de 30px do exemplo em
   // todos os três casos.
@@ -71,7 +86,7 @@ export default function Loading({
     },
   };
 
-  return (
+  const pontos = (
     <motion.div
       role="status"
       aria-label={rotulo}
@@ -104,6 +119,20 @@ export default function Loading({
         />
       ))}
     </motion.div>
+  );
+
+  if (tamanho !== "bloco") return pontos;
+
+  // ⚠️ `45vh` e não `100%`: o `<main>` do `AppShell` é um bloco comum, então
+  // `height: 100%` aqui resolveria para a altura do conteúdo — que é zero,
+  // porque o conteúdo é justamente o que não chegou. A medida relativa à
+  // JANELA é a única que centra sem pedir que todo ancestral vire flex.
+  return (
+    <div
+      style={{ display: "grid", placeItems: "center", minHeight: "45vh" }}
+    >
+      {pontos}
+    </div>
   );
 }
 
