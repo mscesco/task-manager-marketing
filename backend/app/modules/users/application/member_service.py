@@ -1340,7 +1340,9 @@ class MemberService:
 
         atual = user.org_role
         if atual is OrgRole.ADMIN and new_role is not OrgRole.ADMIN:
-            await self._assert_nao_e_o_ultimo_admin(user_id=user_id)
+            await self._assert_nao_e_o_ultimo_admin(
+                user_id=user_id, saida="rebaixar"
+            )
 
         user.org_role = new_role
         logger.info(
@@ -1351,8 +1353,20 @@ class MemberService:
         )
         return user
 
-    async def _assert_nao_e_o_ultimo_admin(self, *, user_id: uuid.UUID) -> None:
+    async def _assert_nao_e_o_ultimo_admin(
+        self, *, user_id: uuid.UUID, saida: str
+    ) -> None:
         """A organizacao nunca fica sem ADMIN (Spec 045, §4.3).
+
+        ⚠️⚠️ DOIS CHAMADORES, E O SEGUNDO NASCEU EM 10/09: a pergunta da Camila
+        foi *"e possivel ter alguma organizacao sem nenhum admin? nao
+        deveria"*. Era possivel, e nao pelo rebaixamento -- por
+        `deactivate_member`. Ver o bloco la.
+
+        ⚠️ `saida` entra na MENSAGEM porque as duas recusas nomeiam acoes
+        diferentes ("antes de rebaixar" / "antes de desativar"), e uma frase
+        que fala de rebaixamento para quem clicou em desativar manda a pessoa
+        procurar a tela errada.
 
         ⚠️ CONTA SO OS ATIVOS. Um admin desativado nao administra nada, entao
         deixar o ultimo ATIVO ser rebaixado porque existe um inativo no cadastro
@@ -1367,7 +1381,7 @@ class MemberService:
         if outros == 0:
             raise BusinessRuleError(
                 "A organização precisa de pelo menos um administrador. "
-                "Promova outra pessoa antes de rebaixar esta.",
+                f"Promova outra pessoa antes de {saida} esta.",
                 details={"user_id": str(user_id)},
             )
 
@@ -1380,6 +1394,30 @@ class MemberService:
 
         Regra de seguranca: um usuario nao pode desativar a si
         mesmo -- evita o admin se trancar para fora.
+
+        ⚠️⚠️ E A TRAVA DE NAO-SE-DESATIVAR NAO BASTAVA, achado em 10/09 pela
+        pergunta da Camila (*"e possivel ter alguma organizacao sem nenhum
+        admin? nao deveria"*). Era, e o caminho nao passava por admin nenhum:
+
+            1. o gate desta operacao e `_assert_gestao_ampla`, que pede
+               `team.manage` -- e `team.manage` e de ADMIN **e MANAGER**;
+            2. um MANAGER de area nao tem papel de organizacao, entao a trava
+               do ultimo admin (que vivia so em `change_organization_role`)
+               nunca era consultada;
+            3. o alvo podia ser o unico ADMIN ATIVO. A conta dele ia a
+               `is_active = False`, e a organizacao acordava sem ninguem que
+               renomeasse, apagasse area ou promovesse gestor.
+
+        A trava de nao-se-desativar nao alcanca isso porque quem desativa e
+        OUTRA pessoa -- ela protege o ator, nao a organizacao.
+
+        ⚠️ E ela e a mesma trava do rebaixamento, e nao uma copia: um caminho
+        tira o papel, o outro tira a conta que o carrega, e o resultado no
+        banco e identico -- zero admin ativo. Duas regras separadas
+        divergiriam na primeira mudanca.
+
+        Erros:
+            BusinessRuleError -- a propria conta, ou o ultimo ADMIN ativo (409).
         """
         # Spec 028/D4: supervisor tira do subtime, mas NUNCA desativa conta.
         self._assert_gestao_ampla(acao="deactivate_member")
@@ -1394,6 +1432,18 @@ class MemberService:
         user = await self._users.get_by_id(user_id)
         if user is None:
             raise EntityNotFoundError("User", identifier=user_id)
+
+        # ⚠️ DEPOIS do `get_by_id`, e nao antes: a trava so se aplica a quem E
+        # ADMIN, e descobrir isso exige ter o usuario na mao. Antes dele, a
+        # ordem cobraria uma consulta a mais de todo mundo.
+        # ⚠️ `is_active` NA CONDICAO: desativar quem JA esta desativado nao
+        # muda a contagem de admins ativos, e sem esta metade a operacao
+        # inofensiva levaria 409 -- "promova outra pessoa" para quem so
+        # reclicou no botao.
+        if user.is_active and user.org_role is OrgRole.ADMIN:
+            await self._assert_nao_e_o_ultimo_admin(
+                user_id=user_id, saida="desativar"
+            )
 
         user.is_active = False
         logger.info("member.deactivated", user_id=str(user_id))
