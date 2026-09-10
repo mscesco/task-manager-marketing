@@ -78,7 +78,18 @@ export default function Tabs<T extends string>({
             key={aba.id}
             role="tab"
             aria-selected={selecionada}
-            className="tappable relative rounded-t px-3 pb-2 pt-1.5 text-sm"
+            // ⚠️⚠️ O CONTORNO DE FOCO SAIU DAQUI, a pedido dela: *"nessa área
+            // pode tirar o contorno: em volta de ativos, inativos e
+            // convidados"*. O anel retangular do `:focus-visible` global
+            // envolvia uma aba de cantos arredondados só em cima, e ficava
+            // torto.
+            //
+            // ⚠️ MAS O FOCO CONTINUA VISÍVEL -- ele virou FUNDO
+            // (`focus-visible:bg-surface-2`), e não sumiu. Um controle que o
+            // teclado alcança sem dizer onde está é inutilizável para quem não
+            // usa mouse, e a barra já perdeu essa briga uma vez (a §C1/C2 do
+            // `globals.css` existe por isso).
+            className="tappable relative rounded-t px-3 pb-2 pt-1.5 text-sm outline-none focus-visible:bg-surface-2 focus-visible:outline-none"
             onClick={() => onSelect(aba.id)}
           >
             {/* ⚠️ O INDICADOR É IRMÃO DO TEXTO, e não pai: envolvendo o

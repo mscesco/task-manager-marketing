@@ -1761,10 +1761,21 @@ export async function changeMemberRole(
   teamId: string,
   role: MemberRole
 ): Promise<MemberTeam> {
-  return api<MemberTeam>(`/api/v1/members/${userId}/teams/${teamId}`, {
+  const r = await api<MemberTeam>(`/api/v1/members/${userId}/teams/${teamId}`, {
     method: "PATCH",
     body: { role },
   });
+  // ⚠️⚠️ FALTAVA, e o sintoma era exatamente este: *"quando mudo o cargo nao
+  // atualiza na hora na tela"*. `listMembers()` e MEMOIZADO em modulo, e o
+  // PAPEL viaja dentro de `Member.memberships` -- entao trocar o cargo mudava
+  // o banco e a tela seguia lendo a lista velha do cache.
+  //
+  // ⚠️ As irmas (`assignMemberToTeam`, `removeMemberFromTeam`,
+  // `changeOrganizationRole`) ja invalidavam. Esta escapou porque o efeito
+  // dela nao MUDA A LISTA -- muda um campo dentro de cada item --, e isso e
+  // facil de nao ver ate a tela contar a historia velha.
+  invalidateMembers();
+  return r;
 }
 
 // Spec 016: adiciona um membro EXISTENTE a um time, com um papel. Exige

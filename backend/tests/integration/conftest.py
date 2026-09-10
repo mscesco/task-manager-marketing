@@ -164,6 +164,16 @@ def acting_as(
         ),
         memberships=memberships,
         team_tree=team_tree,
+        # ⚠️⚠️ SEM ESTA LINHA, TODA REGRA DE PAPEL DE ORGANIZACAO FICAVA
+        # INVISIVEL NOS TESTES. O `org_role` entrava so em `roles` e em
+        # `permissions_for_actor` -- `require_tenant().org_role` respondia
+        # `None` mesmo com `acting_as(..., org_role="ADMIN")`.
+        #
+        # Achado em 10/09, escrevendo a abertura do anti-lockout para quem
+        # administra a organizacao: o teste falhava com a regra CERTA. E a
+        # mesma classe do defeito que este helper ja registra logo acima --
+        # o contexto do teste diferindo do contexto da requisicao.
+        org_role=org_role,
     ) as ctx:
         yield ctx
 

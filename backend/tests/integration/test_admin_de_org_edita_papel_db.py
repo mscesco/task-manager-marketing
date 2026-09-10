@@ -38,7 +38,11 @@ async def _mundo(db):
     sub = await f.make_team(db, workspace_id=ws, parent_team_id=raiz, slug="crm")
 
     # A conta dela: ADMIN da ORGANIZACAO, e OPERATOR nos dois times.
-    dona = await f.make_user(db, workspace_id=ws, email="dona@t.dev")
+    # ⚠️ `org_role` NO BANCO, e nao so no contexto: a trava do ultimo vinculo
+    # olha o ALVO (`alvo.org_role`), e o alvo vem do repositorio.
+    dona = await f.make_user(
+        db, workspace_id=ws, email="dona@t.dev", org_role="ADMIN"
+    )
     await f.add_member(db, workspace_id=ws, user_id=dona, team_id=raiz, role="OPERATOR")
     await f.add_member(db, workspace_id=ws, user_id=dona, team_id=sub, role="OPERATOR")
 
@@ -77,12 +81,22 @@ async def test_admin_de_org_com_vinculo_de_operator_abre_o_cadeado(db):
         ), "admin da organizacao nao consegue editar supervisor do subtime"
 
 
-async def test_o_proprio_vinculo_continua_fechado(db):
-    """⚠️ O UNICO cadeado fechado que ela deve ver -- anti-lockout (C3)."""
+async def test_o_proprio_vinculo_ABRE_para_quem_manda_pela_organizacao(db):
+    """⚠️⚠️ ESTE TESTE AFIRMAVA O CONTRARIO ate 10/09 ("o proprio vinculo
+    continua fechado"), e a inversao e uma DECISAO, nao um conserto.
+
+    A pergunta veio dela: *"eu realmente nao posso mudar meu cargo dentro dos
+    times? sou admin da organizacao, se eu me tirar de um time nao deveria ter
+    problema pois posso me colocar de volta, nao?"*. A C3 protege contra quem
+    se tranca para fora -- e quem manda pela ORGANIZACAO nao se tranca, porque
+    a autoridade dele nao mora em `user_team`.
+
+    Ver `test_SEM_papel_de_organizacao_a_trava_continua` para o contraste.
+    """
     ws, raiz, sub, dona, op, sup = await _mundo(db)
     svc = MemberService(db)
     with _como_dona(ws, dona, raiz, sub):
-        assert not svc.pode_trocar_papel_do_vinculo(
+        assert svc.pode_trocar_papel_do_vinculo(
             user_id=dona, team_id=sub, papel_atual=UserTeamRole.OPERATOR
         )
 
@@ -139,8 +153,9 @@ async def test_a_listagem_por_time_traz_o_cadeado_de_cada_um(db):
         }
     assert cadeados[op] is True
     assert cadeados[sup] is True
-    # ⚠️ O proprio vinculo continua fechado -- anti-lockout (C3).
-    assert cadeados[dona] is False
+    # ⚠️ E o PROPRIO vinculo tambem abre, desde 10/09: ela manda pela
+    # organizacao. Ver `test_o_proprio_vinculo_ABRE_...`.
+    assert cadeados[dona] is True
 
 
 async def test_conta_desativada_nao_tem_cargo_a_administrar(db):
@@ -260,3 +275,94 @@ async def test_ADMIN_nao_e_papel_de_time(db):
             await svc.change_member_role(
                 user_id=op, team_id=sub, new_role=UserTeamRole.ADMIN
             )
+
+
+async def test_quem_manda_pela_organizacao_mexe_no_PROPRIO_vinculo(db):
+    """⭐⭐ A pergunta da Camila em 10/09, e ela estava certa.
+
+    *"eu realmente nao posso mudar meu cargo dentro dos times? sou admin da
+    organizacao, se eu me tirar de um time nao deveria ter problema pois posso
+    me colocar de volta, nao?"*
+
+    ⚠️ A C3 (anti-lockout) nasceu contra quem se TRANCA PARA FORA: rebaixar o
+    proprio papel de time era perder a autoridade que permitia desfazer. Quem
+    tem papel de ORGANIZACAO nao passa por isso -- a autoridade dele nao mora
+    em `user_team`, entao a operacao e sempre reversivel.
+    """
+    ws, raiz, sub, dona, op, sup = await _mundo(db)
+    svc = MemberService(db)
+    with _como_dona(ws, dona, raiz, sub):
+        # O cadeado ABRE no proprio vinculo.
+        assert svc.pode_trocar_papel_do_vinculo(
+            user_id=dona, team_id=sub, papel_atual=UserTeamRole.OPERATOR
+        )
+        # ⚠️ E o SERVIDOR ACEITA: ela se tira do proprio subtime, que e
+        # exatamente o que ela tentou fazer na tela.
+        #
+        # ⚠️ O ALVO E A REMOCAO, e nao uma promocao, de proposito: promover a
+        # si mesma esbarraria em OUTRAS regras (a §4.1-bis da Spec 044, ou a
+        # §4.4 do comando na raiz) e o teste passaria a afirmar aquelas, e nao
+        # o anti-lockout. Cada teste prende UMA regra.
+        await svc.remove_member_from_team(user_id=dona, team_id=sub)
+    await db.flush()
+
+    with _como_dona(ws, dona, raiz, sub):
+        restantes = await svc.list_member_teams(user_id=dona)
+    assert {v.team_id for v in restantes} == {raiz}
+
+
+async def test_SEM_papel_de_organizacao_a_trava_continua(db):
+    """⚠️⚠️ O CONTRASTE, e ele e o que torna a abertura segura: um MANAGER que
+    se rebaixa perde `team.manage` e NAO volta sozinho. Para ele, a C3 segue
+    sendo a rede."""
+    ws, raiz, sub, dona, op, sup = await _mundo(db)
+    gerente = await f.make_user(db, workspace_id=ws, email="ger@t.dev")
+    await f.add_member(
+        db, workspace_id=ws, user_id=gerente, team_id=raiz, role="MANAGER"
+    )
+    await db.flush()
+
+    svc = MemberService(db)
+    with acting_as(
+        workspace_id=ws,
+        user_id=gerente,
+        memberships=(mship(raiz, "MANAGER"),),
+        team_tree=(node(raiz), node(sub, raiz)),
+    ):
+        assert not svc.pode_trocar_papel_do_vinculo(
+            user_id=gerente, team_id=raiz, papel_atual=UserTeamRole.MANAGER
+        )
+        with pytest.raises(BusinessRuleError):
+            await svc.change_member_role(
+                user_id=gerente, team_id=raiz, new_role=UserTeamRole.OPERATOR
+            )
+
+
+async def test_quem_tem_papel_de_organizacao_pode_ficar_SEM_TIME(db):
+    """⚠️ A outra metade: a trava do ULTIMO vinculo tambem nao vale para ela.
+
+    "Sem time" nao e orfa para quem administra a organizacao -- e o estado
+    normal desde a Spec 045 (fatia B), e e como a conta de administracao da
+    Camila vive desde 08/09.
+    """
+    ws, raiz, sub, dona, op, sup = await _mundo(db)
+    svc = MemberService(db)
+    with _como_dona(ws, dona, raiz, sub):
+        await svc.remove_member_from_team(user_id=dona, team_id=sub)
+        await svc.remove_member_from_team(user_id=dona, team_id=raiz)
+    await db.flush()
+
+    with _como_dona(ws, dona, raiz, sub):
+        restantes = await svc.list_member_teams(user_id=dona)
+    assert restantes == []
+
+
+async def test_o_ultimo_vinculo_de_quem_NAO_tem_org_continua_travado(db):
+    """⚠️ O contraste da regra acima: sem papel de organizacao, ficar sem time
+    e ficar sem acesso a nada -- e a Spec 014 existiu para eliminar isso."""
+    ws, raiz, sub, dona, op, sup = await _mundo(db)
+    svc = MemberService(db)
+    with _como_dona(ws, dona, raiz, sub):
+        with pytest.raises(BusinessRuleError):
+            # `op` so tem o vinculo do subtime.
+            await svc.remove_member_from_team(user_id=op, team_id=sub)

@@ -365,11 +365,10 @@ function RemoveFromTeam({
               await onChanged(`${member.name} saiu de ${team.name}.`);
             } catch (e) {
               const a = e as ApiError;
-              setErro(
-                a.status === 409
-                  ? "Este é o único time da pessoa — ela ficaria sem nenhum."
-                  : a.message || "Não consegui tirar do time.",
-              );
+              // ⚠️ A MENSAGEM VEM DO SERVIDOR -- ver o comentário gêmeo em
+              // `MemberDrawer`. O 409 tem mais de uma razão, e a tela não sabe
+              // qual foi.
+              setErro(a.message || "Não consegui tirar do time.");
               setSalvando(false);
             }
           }}

@@ -60,6 +60,7 @@ async def make_user(
     workspace_id: uuid.UUID,
     email: str | None = None,
     is_active: bool = True,
+    org_role: str | None = None,
 ) -> uuid.UUID:
     """⚠️ `is_active=False` existe para o filtro de destinatario de aviso de
     prazo (12/08). O PADRAO continua `True` -- nenhuma chamada existente muda
@@ -73,6 +74,7 @@ async def make_user(
             email=email or f"u-{uid.hex[:8]}@teste.dev",
             password_hash="x",
             is_active=is_active,
+            org_role=org_role,
         )
     )
     await db.flush()

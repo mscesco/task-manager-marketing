@@ -136,9 +136,13 @@ function ToastCard({
       exit={{ opacity: 0, y: 24, scale: 0.96 }}
       transition={{ type: "spring", duration: 0.34, bounce: 0 }}
       style={{ zIndex: 10 - profundidade }}
-      className="pointer-events-auto absolute bottom-0 left-0 right-0 flex items-start gap-2 rounded-lg border border-border bg-surface p-3 shadow-[var(--shadow)]"
+      className="pointer-events-auto absolute bottom-0 left-0 right-0 flex items-center gap-2 rounded-lg border border-border bg-surface p-3 shadow-[var(--shadow)]"
     >
-      <span className="min-w-0 flex-1 text-xs leading-relaxed">
+      {/* ⚠️ O X OCUPA ESPAÇO À ESQUERDA TAMBÉM (um `span` vazio do mesmo
+          tamanho), senão "centralizar o texto" centra numa caixa que já perdeu
+          20px para o botão — e a frase fica visivelmente à esquerda do meio. */}
+      <span aria-hidden="true" className="w-5 shrink-0" />
+      <span className="min-w-0 flex-1 text-center text-xs leading-relaxed">
         {toast.text}
       </span>
       <button

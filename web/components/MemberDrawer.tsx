@@ -340,11 +340,16 @@ function MembershipRow({
       await onChanged(`${member.name} saiu de ${row.team.name}.`);
     } catch (e) {
       const a = e as ApiError;
-      setErro(
-        a.status === 409
-          ? "Este é o único time da pessoa — ela ficaria sem nenhum. Adicione a outro antes."
-          : a.message || "Não consegui tirar do time.",
-      );
+      // ⚠️⚠️ A MENSAGEM VEM DO SERVIDOR, e não de um palpite meu sobre o 409.
+      // Eu traduzia TODO 409 para "é o único time da pessoa" -- e a rota tem
+      // pelo menos três razões para recusar: o último vínculo, o PRÓPRIO
+      // vínculo (anti-lockout) e deixar tarefa órfã. A Camila levou a mensagem
+      // errada estando em DOIS times, duas vezes.
+      //
+      // ⚠️ Inventar a razão a partir do status é o espelho do "botão que a
+      // tela oferece e o servidor recusa": aqui a tela EXPLICA uma recusa que
+      // ela não tem como explicar.
+      setErro(a.message || "Não consegui tirar do time.");
       setConfirmandoSaida(false);
     } finally {
       setSalvando(false);

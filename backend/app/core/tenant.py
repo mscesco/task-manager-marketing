@@ -194,6 +194,7 @@ def tenant_scope(
     permissions: frozenset[str] | Any | None = None,
     memberships: tuple[Membership, ...] = (),
     team_tree: tuple[TeamNode, ...] = (),
+    org_role: str | None = None,
 ) -> Iterator[TenantContext]:
     """Context manager para setar tenant em jobs/workers/scripts.
 
@@ -211,6 +212,7 @@ def tenant_scope(
         permissions=permissions or frozenset(),
         memberships=memberships,
         team_tree=team_tree,
+        org_role=org_role,
     )
     token = _tenant_ctx.set(context)
     try:

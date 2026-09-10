@@ -791,7 +791,10 @@ class MemberService:
         045. Incluir aqui exigiria um palpite sobre a escolha da pessoa.
         """
         tenant = require_tenant()
-        if user_id == tenant.user_id:
+        # ⚠️ O cadeado acompanha a abertura da C3: quem manda pela organizacao
+        # edita o proprio vinculo. Se os dois discordarem, o painel mostra
+        # cadeado fechado para uma acao que o PATCH aceita.
+        if user_id == tenant.user_id and tenant.org_role is None:
             return False
         # ⚠️ PARAMETRO EXPLICITO, e nao uma ida ao banco aqui dentro: esta
         # funcao e SINCRONA e roda em laco (uma vez por vinculo da listagem).
@@ -899,6 +902,26 @@ class MemberService:
         )
         return membership
 
+    def _autoridade_vem_da_organizacao(self) -> bool:
+        """O ator manda por PAPEL DE ORGANIZACAO, e nao pelo vinculo de time?
+
+        ⚠️⚠️ ELE EXISTE PARA ABRIR O ANTI-LOCKOUT (C3), e a pergunta foi da
+        Camila em 10/09: *"eu realmente nao posso mudar meu cargo dentro dos
+        times? sou admin da organizacao, se eu me tirar de um time nao deveria
+        ter problema pois posso me colocar de volta, nao?"*.
+
+        Ela esta certa, e o motivo e estrutural. A C3 nasceu para impedir que
+        alguem se trancasse para fora: rebaixar o proprio papel de time era
+        perder a autoridade que permitia desfazer o rebaixamento. Quem tem
+        papel de ORGANIZACAO nao passa por isso -- a autoridade dele nao mora
+        em `user_team`, entao mexer no proprio vinculo e sempre reversivel.
+
+        ⚠️ A TRAVA CONTINUA PARA TODO O RESTO. Um MANAGER que se rebaixa a
+        OPERATOR perde `team.manage` e nao volta sozinho -- para ele, a C3
+        continua sendo a rede.
+        """
+        return require_tenant().org_role is not None
+
     async def _assert_alvo_ativo(self, user_id: uuid.UUID) -> None:
         """Nao se administra vinculo de conta DESATIVADA. 10/09.
 
@@ -954,7 +977,12 @@ class MemberService:
             )
 
         # C3 -- nao pode rebaixar/promover a si mesmo (evita auto-lockout).
-        if user_id == require_tenant().user_id:
+        # ⚠️ SALVO quem manda pela ORGANIZACAO -- ver
+        # `_autoridade_vem_da_organizacao`.
+        if (
+            user_id == require_tenant().user_id
+            and not self._autoridade_vem_da_organizacao()
+        ):
             raise BusinessRuleError(
                 "Um membro nao pode alterar o proprio papel.",
                 details={"user_id": str(user_id)},
@@ -1055,7 +1083,12 @@ class MemberService:
             raise EntityNotFoundError(
                 "UserTeam", identifier=f"{user_id}/{team_id}"
             )
-        if user_id == require_tenant().user_id:
+        # ⚠️ Mesma abertura do `change_member_role`: quem manda pela
+        # organizacao pode se tirar de um time e se recolocar depois.
+        if (
+            user_id == require_tenant().user_id
+            and not self._autoridade_vem_da_organizacao()
+        ):
             raise BusinessRuleError(
                 "Um membro nao pode remover o proprio vinculo.",
                 details={"user_id": str(user_id)},
@@ -1071,8 +1104,16 @@ class MemberService:
         # Nao pode remover o ULTIMO vinculo: deixaria o membro orfao (sem
         # time, sem acesso) -- exatamente o estado que a Spec 014 eliminou.
         # Para tirar de um time, mova-o ou remova um vinculo nao-unico.
+        #
+        # ⚠️⚠️ SALVO QUEM TEM PAPEL DE ORGANIZACAO: para essa pessoa, "sem time"
+        # NAO e orfa -- e o estado normal desde a Spec 045 (fatia B), e e
+        # exatamente como a conta de administracao da Camila vive desde 08/09.
+        # A regra existe contra o membro que ficaria sem acesso a nada; quem
+        # administra a organizacao alcanca tudo sem vinculo nenhum.
         vinculos = await self._users.list_team_memberships(user_id=user_id)
-        if len(vinculos) <= 1:
+        alvo = await self._users.get_by_id(user_id)
+        alvo_tem_org = alvo is not None and alvo.org_role is not None
+        if len(vinculos) <= 1 and not alvo_tem_org:
             raise BusinessRuleError(
                 "Nao e possivel remover o ultimo vinculo do membro "
                 "(ele ficaria sem time).",
