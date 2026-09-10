@@ -143,16 +143,20 @@ async def list_team_members(
     silenciosa dos dois lados.
     """
     svc = MemberService(session)
-    memberships = await svc.list_team_members(team_id=team_id)
+    linhas = await svc.list_team_members(team_id=team_id)
     return [
         TeamMemberListItemResponse(
             user_id=m.user_id,
             role=m.role,
+            is_active=ativo,
             can_edit_role=svc.pode_trocar_papel_do_vinculo(
-                user_id=m.user_id, team_id=m.team_id, papel_atual=m.role
+                user_id=m.user_id,
+                team_id=m.team_id,
+                papel_atual=m.role,
+                alvo_ativo=ativo,
             ),
         )
-        for m in memberships
+        for m, ativo in linhas
     ]
 
 

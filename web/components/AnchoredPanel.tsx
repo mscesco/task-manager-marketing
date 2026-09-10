@@ -22,6 +22,15 @@
 //      ao clicar DENTRO da lista.
 //   5. A escala nasce do lado do gatilho: do centro, o painel cresceria para
 //      os dois lados e pareceria brotar do nada.
+//   6. O painel NAO SAI PELA DIREITA -- ele desloca para caber na janela. O
+//      gatilho pode ser uma pilula estreita, e o painel e mais largo que ela.
+//
+// ⚠️ `bounce: 0`, e nao um valor pequeno: com qualquer overshoot a caixa
+// passa do tamanho final e volta, e isso le-se como TRANCO -- *"a animacao das
+// aparicoes de caixas está levemente brusca (...) gostaria de algo mais
+// fluido, sem bounce"*. Mola sem bounce e criticamente amortecida: chega e
+// para. O indicador das ABAS mantem o dele, porque ali o movimento e de um
+// objeto que desliza, e nao de uma caixa que nasce.
 
 import {
   useEffect,
@@ -35,14 +44,27 @@ import { motion } from "motion/react";
 
 /** Quanto o painel precisa de espaço embaixo para não virar para cima. */
 const ESPACO_MINIMO = 220;
+/** Respiro nas bordas da janela, para o painel não encostar. */
+const MARGEM = 8;
 
 export type PanelBox = {
   readonly top?: number;
   readonly bottom?: number;
   readonly left: number;
   readonly width: number;
+  /** Teto de largura, para o painel caber na janela. */
+  readonly maxWidth: number;
   readonly paraCima: boolean;
 };
+
+/**
+ * Largura assumida quando o gatilho é estreito (uma pílula, por exemplo).
+ *
+ * ⚠️ Ela existe para o CÁLCULO DE BORDA: sem ela, o painel de um gatilho de
+ * 80px seria posicionado como se coubesse em 80px, e os 200px reais vazariam
+ * pela direita.
+ */
+const LARGURA_MINIMA = 220;
 
 export function useAnchoredPanel<T extends HTMLElement>(
   isOpen: boolean,
@@ -63,13 +85,30 @@ export function useAnchoredPanel<T extends HTMLElement>(
     const r = anchorRef.current?.getBoundingClientRect();
     if (!r) return;
     const cabeEmbaixo = window.innerHeight - r.bottom > ESPACO_MINIMO;
+
+    // ⚠️⚠️ O PAINEL NAO PODE SAIR PELA DIREITA, e saía: relatado duas vezes
+    // pela Camila -- *"o seletor de papel, se o nome é muito grande, fica
+    // cortado"*. O gatilho é uma pílula estreita, e o painel é mais largo que
+    // ela; ancorado à esquerda do gatilho, ele passava da janela.
+    //
+    // ⚠️ A correção é DESLOCAR, e não estreitar: um painel mais estreito
+    // cortaria o texto de dentro, que é o que se foi ler. Ele encosta na
+    // margem direita e continua com a largura que precisa.
+    const largura = Math.max(r.width, LARGURA_MINIMA);
+    const maxWidth = Math.max(160, window.innerWidth - 2 * MARGEM);
+    const left = Math.max(
+      MARGEM,
+      Math.min(r.left, window.innerWidth - MARGEM - Math.min(largura, maxWidth)),
+    );
+
     setBox(
       cabeEmbaixo
-        ? { top: r.bottom + 6, left: r.left, width: r.width, paraCima: false }
+        ? { top: r.bottom + 6, left, width: r.width, maxWidth, paraCima: false }
         : {
             bottom: window.innerHeight - r.top + 6,
-            left: r.left,
+            left,
             width: r.width,
+            maxWidth,
             paraCima: true,
           },
     );
@@ -140,13 +179,14 @@ export default function AnchoredPanel({
       initial={{ opacity: 0, y: box.paraCima ? 6 : -6, scale: 0.97 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: box.paraCima ? 6 : -6, scale: 0.97 }}
-      transition={{ type: "spring", duration: 0.26, bounce: 0.16 }}
+      transition={{ type: "spring", duration: 0.26, bounce: 0 }}
       style={{
         position: "fixed",
         top: box.top,
         bottom: box.bottom,
         left: box.left,
-        minWidth: minWidth ?? box.width,
+        minWidth: Math.min(minWidth ?? box.width, box.maxWidth),
+        maxWidth: box.maxWidth,
         zIndex: 60,
         transformOrigin: box.paraCima ? "bottom left" : "top left",
         maxHeight: "min(50vh, 320px)",

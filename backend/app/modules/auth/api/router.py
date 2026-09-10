@@ -120,6 +120,8 @@ async def me(user: PendingUserDep, session: SessionDep) -> CurrentUserResponse:
         must_change_password=user.must_change_password,
         roles=sorted(roles),
         permissions=sorted(permissions),
+        # ⚠️ SEPARADO de `roles` de proposito -- ver o comentario no schema.
+        org_role=membership.org_role,
         teams=[
             TeamMembershipOut(team_id=team_id, role=role)
             for team_id, role in membership.team_roles

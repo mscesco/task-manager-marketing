@@ -224,6 +224,12 @@ class TeamMemberListItemResponse(BaseModel):
 
     user_id: uuid.UUID
     role: UserTeamRole
+    #: A conta esta ativa?
+    #:
+    #: ⚠️ A TELA PRECISA DISTINGUIR DUAS RAZOES para o cadeado estar fechado:
+    #: "fora do seu escopo" e "esta pessoa foi desativada". As duas travam a
+    #: edicao, mas a segunda tem explicacao propria -- e a lista mostra o selo.
+    is_active: bool
     #: O ator conseguiria trocar o papel deste vinculo? Mesma funcao do PATCH.
     can_edit_role: bool
 

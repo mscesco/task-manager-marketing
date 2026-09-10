@@ -37,7 +37,7 @@ export default function Reveal({
           initial={{ opacity: 0, height: 0 }}
           animate={{ opacity: 1, height: "auto" }}
           exit={{ opacity: 0, height: 0 }}
-          transition={{ type: "spring", duration: 0.3, bounce: 0.08 }}
+          transition={{ type: "spring", duration: 0.3, bounce: 0 }}
           style={{ overflow: "hidden" }}
         >
           {children}

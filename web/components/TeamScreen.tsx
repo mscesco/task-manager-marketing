@@ -43,6 +43,7 @@ import Toggle from "@/components/Toggle";
 import Badge from "@/components/Badge";
 import Card from "@/components/Card";
 import PageHeader from "@/components/PageHeader";
+import Reveal from "@/components/Reveal";
 import TemporaryPassword from "@/components/TemporaryPassword";
 import SubteamDrawer from "@/components/SubteamDrawer";
 import MembersTable, { ROLE_LABEL } from "@/components/MembersTable";
@@ -270,20 +271,24 @@ export default function TeamScreen({ teamId }: { teamId: string }) {
           >
             {view === "people" ? (
               <>
-                {criando && team && (
-                  <NewMember
-                    team={team}
-                    scope={scope}
-                    isAdmin={isAdmin}
-                    onCancel={() => setCriando(false)}
-                    onCreated={async (r, texto) => {
-                      setRevelado(r);
-                      setCriando(false);
-                      setAviso(texto);
-                      await carregar();
-                    }}
-                  />
-                )}
+                {/* ⚠️ `Reveal` e não `{criando && …}`: o formulário empurra a
+                    tabela para baixo, e sem transição a lista SALTA. */}
+                <Reveal show={criando && team !== null}>
+                  {team && (
+                    <NewMember
+                      team={team}
+                      scope={scope}
+                      isAdmin={isAdmin}
+                      onCancel={() => setCriando(false)}
+                      onCreated={async (r, texto) => {
+                        setRevelado(r);
+                        setCriando(false);
+                        setAviso(texto);
+                        await carregar();
+                      }}
+                    />
+                  )}
+                </Reveal>
 
                 {/* ---- A BUSCA ---------------------------------------------
                     ⚠️ ELA VALE NOS TRÊS NÍVEIS. Nasceu na organização, onde
@@ -362,17 +367,19 @@ export default function TeamScreen({ teamId }: { teamId: string }) {
               </>
             ) : (
               <>
-                {criando && team && (
-                  <NewSubteam
-                    parent={team}
-                    onCancel={() => setCriando(false)}
-                    onCreated={async (texto) => {
-                      setCriando(false);
-                      setAviso(texto);
-                      await carregar();
-                    }}
-                  />
-                )}
+                <Reveal show={criando && team !== null}>
+                  {team && (
+                    <NewSubteam
+                      parent={team}
+                      onCancel={() => setCriando(false)}
+                      onCreated={async (texto) => {
+                        setCriando(false);
+                        setAviso(texto);
+                        await carregar();
+                      }}
+                    />
+                  )}
+                </Reveal>
 
                 {cards.length === 0 ? (
                   <div className="muted">

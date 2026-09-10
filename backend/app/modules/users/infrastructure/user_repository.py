@@ -306,8 +306,8 @@ class UserRepository(BaseRepository[User]):
 
     async def list_memberships_of_team(
         self, *, team_id: uuid.UUID
-    ) -> list[UserTeam]:
-        """Os vinculos DAQUELE time -- Spec 047, revisao de 09/09.
+    ) -> list[tuple[UserTeam, bool]]:
+        """Os vinculos DAQUELE time, com o `is_active` de cada pessoa.
 
         ⚠️ A PERGUNTA ESPELHADA de `list_team_memberships`: aquela e "onde esta
         esta pessoa?", esta e "quem esta neste time?". A gaveta do subtime faz
@@ -316,12 +316,18 @@ class UserRepository(BaseRepository[User]):
         editar, entao nao oferecia nenhum.
         """
         workspace_id = require_tenant().workspace_id
-        stmt = select(UserTeam).where(
-            UserTeam.workspace_id == workspace_id,
-            UserTeam.team_id == team_id,
+        # ⚠️ JOIN, e nao N consultas: a tela desenha uma linha por pessoa, e
+        # buscar `is_active` uma a uma seria N+1 escondido numa gaveta.
+        stmt = (
+            select(UserTeam, User.is_active)
+            .join(User, User.id == UserTeam.user_id)
+            .where(
+                UserTeam.workspace_id == workspace_id,
+                UserTeam.team_id == team_id,
+            )
         )
         result = await self.session.execute(stmt)
-        return list(result.scalars().all())
+        return [(vinculo, ativo) for vinculo, ativo in result.all()]
 
     async def list_team_memberships(
         self, *, user_id: uuid.UUID

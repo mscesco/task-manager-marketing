@@ -145,7 +145,7 @@ export default function MemberDrawer({
         initial={{ x: 24, opacity: 0 }}
         animate={{ x: 0, opacity: 1 }}
         exit={{ x: 24, opacity: 0 }}
-        transition={{ type: "spring", duration: 0.28, bounce: 0.1 }}
+        transition={{ type: "spring", duration: 0.28, bounce: 0 }}
         className="fixed right-0 top-0 z-50 flex h-full w-full max-w-[420px] flex-col border-l border-border bg-surface"
         role="dialog"
         aria-modal="true"
@@ -182,7 +182,7 @@ export default function MemberDrawer({
                 initial={{ opacity: 0, y: -8, height: 0 }}
                 animate={{ opacity: 1, y: 0, height: "auto" }}
                 exit={{ opacity: 0, y: -8, height: 0 }}
-                transition={{ type: "spring", duration: 0.32, bounce: 0.1 }}
+                transition={{ type: "spring", duration: 0.32, bounce: 0 }}
                 style={{ overflow: "hidden" }}
               >
                 <TemporaryPassword

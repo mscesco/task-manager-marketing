@@ -85,20 +85,29 @@ export default function SubteamDrawer({
   // ⚠️⚠️ O CADEADO VEM DO BACKEND, por vínculo, e é o que permite oferecer o
   // seletor aqui. A tela NÃO recalcula escopo -- a Spec 034 já desfez essa
   // tentativa uma vez, e o resultado foi gestor e admin sumindo dos seletores.
-  const [cadeados, setCadeados] = useState<Map<string, boolean>>(new Map());
+  const [doServidor, setDoServidor] = useState<
+    Map<string, { canEdit: boolean; isActive: boolean }>
+  >(new Map());
   useEffect(() => {
     let vivo = true;
     listTeamMembers(team.id)
       .then((linhas: TeamMemberComCadeado[]) => {
         if (vivo) {
-          setCadeados(new Map(linhas.map((l) => [l.user_id, l.can_edit_role])));
+          setDoServidor(
+            new Map(
+              linhas.map((l) => [
+                l.user_id,
+                { canEdit: l.can_edit_role, isActive: l.is_active },
+              ]),
+            ),
+          );
         }
       })
       .catch(() => {
         // ⚠️ FALHA FECHA O CADEADO, e não abre: um mapa vazio deixa tudo em
         // leitura. Oferecer edição sem saber se ela é permitida termina em 403
         // depois do clique.
-        if (vivo) setCadeados(new Map());
+        if (vivo) setDoServidor(new Map());
       });
     return () => {
       vivo = false;
@@ -119,7 +128,7 @@ export default function SubteamDrawer({
         initial={{ x: 24, opacity: 0 }}
         animate={{ x: 0, opacity: 1 }}
         exit={{ x: 24, opacity: 0 }}
-        transition={{ type: "spring", duration: 0.28, bounce: 0.1 }}
+        transition={{ type: "spring", duration: 0.28, bounce: 0 }}
         className="fixed right-0 top-0 z-50 flex h-full w-full max-w-[420px] flex-col border-l border-border bg-surface"
         role="dialog"
         aria-modal="true"
@@ -165,7 +174,7 @@ export default function SubteamDrawer({
                       initial={{ opacity: 0, x: 16 }}
                       animate={{ opacity: 1, x: 0 }}
                       exit={{ opacity: 0, x: -16 }}
-                      transition={{ type: "spring", duration: 0.32, bounce: 0.12 }}
+                      transition={{ type: "spring", duration: 0.32, bounce: 0 }}
                       className="flex flex-wrap items-center gap-2 rounded border border-border p-2"
                     >
                     <strong className="text-sm">{member.name}</strong>
@@ -176,11 +185,24 @@ export default function SubteamDrawer({
                         ⚠️ SEM CADEADO, É SÓ INFORMAÇÃO -- *"se não tenho
                         acesso, é só pra exibir a informação, não é pra ser
                         clicável"*. E quem responde isso é o backend. */}
+                    {/* ⚠️⚠️ INATIVO APARECE, mas NÃO se administra. Esconder a
+                        linha faria a contagem do cabeçalho divergir do corpo
+                        (§3.2, o defeito de 27/07) -- e quem administra precisa
+                        saber que aquele vínculo existe para poder desfazê-lo.
+                        O que sai é a EDIÇÃO: quem foi desativado não volta
+                        (não há rota de reativar, D5), então mudar o cargo dela
+                        grava um estado sem efeito. A trava está no servidor;
+                        aqui é só o desenho. */}
+                    {doServidor.get(member.id)?.isActive === false && (
+                      <Badge tone="outline" size="sm">
+                        Inativo
+                      </Badge>
+                    )}
                     <RoleCell
                       member={member}
                       team={team}
                       role={role}
-                      canEdit={cadeados.get(member.id) ?? false}
+                      canEdit={doServidor.get(member.id)?.canEdit ?? false}
                       scope={scope}
                       isAdmin={isAdmin}
                       onRefresh={onRefresh}

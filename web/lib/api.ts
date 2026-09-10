@@ -254,6 +254,12 @@ export type CurrentUser = {
   must_change_password: boolean;
   roles: string[];
   permissions: string[];
+  // ⚠️⚠️ O PAPEL NA ORGANIZACAO, separado -- e a unica forma de responder
+  // "esta pessoa administra a ORGANIZACAO?". `roles` e `permissions` MISTURAM
+  // os dois niveis de proposito (servem a "quais acoes ela pode"), e por isso
+  // um ADMIN de TIME aparecia la como "ADMIN" e ganhava a porta da tela de
+  // organizacao. Visto em producao em 10/09.
+  org_role?: OrgRole | null;
   // Trabalho 2: vinculos (time, papel) do usuario -> base da lente
   // (quais quadros de subtime mostrar, qual e a raiz).
   teams: TeamMembership[];
@@ -1713,6 +1719,10 @@ export async function createMember(input: {
 export type TeamMemberComCadeado = {
   user_id: string;
   role: MemberRole;
+  // ⚠️ A conta esta ATIVA? A tela precisa distinguir DUAS razoes para o
+  // cadeado fechado: "fora do seu escopo" e "esta pessoa foi desativada". As
+  // duas travam a edicao, mas a segunda tem explicacao propria.
+  is_active: boolean;
   can_edit_role: boolean;
 };
 

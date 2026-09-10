@@ -136,15 +136,21 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   const podeGerirTimes = user?.permissions.includes("team.manage") ?? false;
 
-  // ⚠️ Spec 047, fatia B: a `/organizacao` e para quem ADMINISTRA A
-  // ORGANIZACAO, e nao para quem gere um time. `area.create` e a permissao
-  // que separa os dois -- ela existe SO nos papeis de organizacao (Spec 046,
-  // §4.1), enquanto `team.manage` um MANAGER tambem tem.
+  // ⚠️⚠️ O PAPEL DE ORGANIZACAO, e NAO uma permissao -- consertado em 10/09,
+  // com o defeito na tela: uma pessoa que "nao administra a organizacao" via
+  // "Gerenciar a organizacao" no seletor da barra.
   //
-  // ⚠️ Usar `team.manage` aqui poria a porta na frente de todo gerente, e a
-  // tela inteira dele seria leitura: ele nao renomeia a organizacao nem cria
-  // area. Porta que nao abre e o que este arquivo ja evita em Solicitacoes.
-  const podeVerOrganizacao = user?.permissions.includes("area.create") ?? false;
+  // O gate era `permissions.includes("area.create")`, e parecia certo: a §4.1
+  // da Spec 046 diz que `area.create` so existe nos papeis de organizacao. So
+  // que `_ORG_ROLE_PERMISSIONS[ADMIN]` E LITERALMENTE `_ROLE_PERMISSIONS[
+  // UserTeamRole.ADMIN]` -- o mesmo conjunto --, entao quem tem papel de TIME
+  // ADMIN (residuo anterior a Spec 045, que ainda existe em `user_team`)
+  // carrega `area.create` tambem.
+  //
+  // ⚠️ E `roles` NAO SERVE para desempatar: o `/auth/me` junta os dois niveis
+  // ali de proposito, e "ADMIN" no array pode ser um ou outro. Por isso a
+  // rota passou a devolver `org_role` como campo proprio.
+  const podeVerOrganizacao = (user?.org_role ?? null) !== null;
 
   // Spec 043 (fatia C). ⚠️ PERMISSÃO PRÓPRIA, e não a de triagem: definir o
   // que se pergunta e responder a fila são trabalhos diferentes, e o backend

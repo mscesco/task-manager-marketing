@@ -711,7 +711,7 @@ class MemberService:
 
     async def list_team_members(
         self, *, team_id: uuid.UUID
-    ) -> list[UserTeam]:
+    ) -> list[tuple[UserTeam, bool]]:
         """Os vinculos de UM time -- Spec 047, revisao de 09/09.
 
         ⚠️ LEITURA ABERTA a qualquer autenticado, como `list_member_teams`:
@@ -726,6 +726,10 @@ class MemberService:
         if team is None:
             raise EntityNotFoundError("Team", identifier=team_id)
         return await self._users.list_memberships_of_team(team_id=team_id)
+
+    # ⚠️ Devolve `(vinculo, ativo)` porque a tela precisa dos DOIS: o vinculo
+    # para desenhar, e o `ativo` para saber que o cadeado esta fechado por
+    # DESATIVACAO -- que e uma explicacao diferente de "fora do seu escopo".
 
     async def list_member_teams(
         self, *, user_id: uuid.UUID
@@ -745,7 +749,12 @@ class MemberService:
         return await self._users.list_team_memberships(user_id=user_id)
 
     def pode_trocar_papel_do_vinculo(
-        self, *, user_id: uuid.UUID, team_id: uuid.UUID, papel_atual: UserTeamRole
+        self,
+        *,
+        user_id: uuid.UUID,
+        team_id: uuid.UUID,
+        papel_atual: UserTeamRole,
+        alvo_ativo: bool = True,
     ) -> bool:
         """O ator conseguiria trocar o papel DESTE vinculo? Spec 047, fatia A.
 
@@ -783,6 +792,11 @@ class MemberService:
         """
         tenant = require_tenant()
         if user_id == tenant.user_id:
+            return False
+        # ⚠️ PARAMETRO EXPLICITO, e nao uma ida ao banco aqui dentro: esta
+        # funcao e SINCRONA e roda em laco (uma vez por vinculo da listagem).
+        # Uma consulta escondida aqui viraria N+1 sem ninguem notar.
+        if not alvo_ativo:
             return False
         # ⚠️ NAQUELE TIME, e nao "em algum lugar" (decisao da Camila, 09/09).
         # A pergunta ampla dizia que um MANAGER de Marketing pode editar um
@@ -823,6 +837,14 @@ class MemberService:
         user = await self._users.get_by_id(user_id)
         if user is None:
             raise EntityNotFoundError("User", identifier=user_id)
+
+        # ⚠️ E estar ATIVO: vincular quem foi desativado escreve um estado sem
+        # efeito -- ver `_assert_alvo_ativo`.
+        if not user.is_active:
+            raise BusinessRuleError(
+                "Esta conta esta desativada: o vinculo dela nao se administra.",
+                details={"user_id": str(user_id)},
+            )
 
         # equipe deve existir no workspace
         team = await self._teams.get_by_id(team_id)
@@ -877,6 +899,33 @@ class MemberService:
         )
         return membership
 
+    async def _assert_alvo_ativo(self, user_id: uuid.UUID) -> None:
+        """Nao se administra vinculo de conta DESATIVADA. 10/09.
+
+        ⚠️⚠️ RELATADO NA TELA: *"Kaua ta inativo e aparecendo na lista de
+        membros do subtime e ainda consigo fazer alteracoes com alguem
+        desativado"*. Ela esta certa, e a trava faltava NO SERVIDOR -- a tela
+        so nao oferecia o botao em alguns lugares.
+
+        Desativar desliga a pessoa do sistema INTEIRO, e nao ha rota de
+        reativar (D5 da Spec 028). Entao promover, rebaixar ou vincular uma
+        conta desativada e escrever um estado que nao produz efeito nenhum: a
+        pessoa continua sem entrar. Pior, ela mente para quem administra --
+        "supervisor de SEO" numa conta que ninguem usa.
+
+        ⚠️ REMOVER DO TIME CONTINUA PERMITIDO, de proposito: e a operacao de
+        LIMPEZA de quem saiu da empresa, e barra-la deixaria o vinculo morto
+        preso para sempre.
+        """
+        user = await self._users.get_by_id(user_id)
+        if user is None:
+            raise EntityNotFoundError("User", identifier=user_id)
+        if not user.is_active:
+            raise BusinessRuleError(
+                "Esta conta esta desativada: o vinculo dela nao se administra.",
+                details={"user_id": str(user_id)},
+            )
+
     async def change_member_role(
         self,
         *,
@@ -910,6 +959,9 @@ class MemberService:
                 "Um membro nao pode alterar o proprio papel.",
                 details={"user_id": str(user_id)},
             )
+
+        # ⚠️ Conta desativada nao tem cargo a mudar -- ver `_assert_alvo_ativo`.
+        await self._assert_alvo_ativo(user_id)
 
         # Spec 028: trocar papel NAO foi aberto ao supervisor (D2 -- ele nao
         # promove; criar outro SUPERVISOR e trabalho do MANAGER).

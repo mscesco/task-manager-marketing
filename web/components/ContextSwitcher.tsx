@@ -121,7 +121,7 @@ export default function ContextSwitcher({
             <motion.span
               className="inline-flex shrink-0"
               animate={{ rotate: isOpen ? 180 : 0 }}
-              transition={{ type: "spring", duration: 0.3, bounce: 0.2 }}
+              transition={{ type: "spring", duration: 0.3, bounce: 0 }}
             >
               <ChevronDown size={15} aria-hidden="true" />
             </motion.span>
