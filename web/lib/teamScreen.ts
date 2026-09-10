@@ -167,8 +167,18 @@ export function subteamCards(
       const arvore = teamTree(team.id, teams);
       return {
         team,
-        pessoas: members.filter((m) =>
-          (m.memberships ?? []).some((v) => arvore.has(v.team_id)),
+        // ⚠️⚠️ SÓ ATIVOS, e a razão é CONCORDÂNCIA: a gaveta do subtime
+        // deixou de listar inativo (`directMembers`, 10/09), e o cartão
+        // continuava contando todo mundo. Resultado na tela: *"desenvolvimento
+        // aparece somente as 2 pessoas mas no card AINDA está com 3"*.
+        //
+        // ⚠️ Dois números para a mesma pergunta é o defeito de contador que a
+        // §3.2 registra — só que aqui não é cabeçalho contra corpo, é cartão
+        // contra gaveta. Quem muda um TEM de mudar o outro.
+        pessoas: members.filter(
+          (m) =>
+            m.is_active &&
+            (m.memberships ?? []).some((v) => arvore.has(v.team_id)),
         ).length,
         // `arvore` inclui o próprio time; os subteams são o resto.
         subteams: arvore.size - 1,

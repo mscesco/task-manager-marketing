@@ -273,10 +273,21 @@ describe("subteamCards", () => {
     expect(cards.find((c) => c.team.id === SEO)?.pessoas).toBe(1);
   });
 
-  it("conta inativo também — o cartão diz o total", () => {
-    // §3.2: esconder linha já fez o contador do cabeçalho divergir do corpo.
+  it("⚠️ NÃO conta inativo — a regra MUDOU em 10/09", () => {
+    // ⚠️⚠️ ESTE TESTE AFIRMAVA O CONTRÁRIO ("conta inativo também — o cartão
+    // diz o total"), e a inversão é deliberada, não um conserto.
+    //
+    // O argumento antigo era a §3.2: esconder linha já fez o contador do
+    // cabeçalho divergir do corpo (27/07). Ele continua valendo NA TABELA,
+    // que é o inventário de pessoas e tem uma aba para inativos.
+    //
+    // O cartão não é inventário: ele resume o que a GAVETA vai mostrar, e a
+    // gaveta deixou de listar inativo por decisão da Camila. Com o cartão
+    // contando todo mundo, os dois passaram a discordar na cara dela --
+    // *"desenvolvimento aparece somente as 2 pessoas mas no card AINDA está
+    // com 3"*. Ou seja: manter esta asserção seria manter o defeito.
     const inativa = { ...pessoa("Bia", [[CRM, "OPERATOR"]]), is_active: false };
-    expect(subteamCards(MKT, TIMES, [inativa])[0].pessoas).toBe(1);
+    expect(subteamCards(MKT, TIMES, [inativa])[0].pessoas).toBe(0);
   });
 
   it("subtime vazio mostra zero, e não some da grade", () => {
@@ -410,5 +421,35 @@ describe("directMembers e quem está INATIVO", () => {
     const inativa = { ...pessoa("Bia", [[SEO, "OPERATOR"]]), is_active: false };
     expect(teamRows(SEO, TIMES, [inativa])).toHaveLength(1);
     expect(directMembers(SEO, [inativa])).toEqual([]);
+  });
+});
+
+describe("subteamCards e quem está INATIVO", () => {
+  it("⭐⭐ o cartão conta o MESMO que a gaveta lista", () => {
+    // ⚠️ Relatado na tela em 10/09: *"desenvolvimento aparece somente as 2
+    // pessoas mas no card AINDA está com 3"*. A gaveta passou a filtrar
+    // inativo e o cartão não — dois números para a mesma pergunta.
+    //
+    // ⚠️ Este teste amarra as DUAS funções de propósito: quem mudar uma sem a
+    // outra vê o defeito aqui, e não na tela.
+    const gente = [
+      pessoa("Ana", [[SEO, "OPERATOR"]]),
+      pessoa("Bia", [[JR, "OPERATOR"]]),
+      { ...pessoa("Zeca", [[SEO, "OPERATOR"]]), is_active: false },
+    ];
+    const card = subteamCards(MKT, TIMES, gente).find((c) => c.team.id === SEO);
+    const naGaveta = directMembers(SEO, gente);
+
+    expect(card?.pessoas).toBe(2); // Ana (SEO) + Bia (neto), sem o Zeca
+    // ⚠️ A gaveta é DIRETA (não conta o neto), então os números não são
+    // iguais — o que tem de bater é a AUSÊNCIA do inativo nos dois.
+    expect(naGaveta.map((d) => d.member.name)).toEqual(["Ana"]);
+  });
+
+  it("⚠️ um subtime só de inativos mostra zero, e não some da grade", () => {
+    const so = [{ ...pessoa("Zeca", [[SEO, "OPERATOR"]]), is_active: false }];
+    const cards = subteamCards(MKT, TIMES, so);
+    expect(cards.find((c) => c.team.id === SEO)?.pessoas).toBe(0);
+    expect(cards).toHaveLength(2);
   });
 });

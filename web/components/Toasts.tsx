@@ -80,7 +80,10 @@ export default function Toasts({
   return (
     <div
       aria-live="polite"
-      className="pointer-events-none fixed bottom-4 right-4 z-[70] w-[min(360px,calc(100vw-2rem))]"
+      // ⚠️ CENTRO INFERIOR, a pedido dela em 10/09. `left-1/2` +
+      // `-translate-x-1/2` porque a largura é fluida (`min(...)`): centrar com
+      // `right`/`left` fixos exigiria saber a largura de antemão.
+      className="pointer-events-none fixed bottom-4 left-1/2 z-[70] w-[min(420px,calc(100vw-2rem))] -translate-x-1/2"
       // ⚠️ ALTURA FIXA no contêiner: as cartas se sobrepõem em `absolute`, e
       // sem uma altura a caixa colapsaria para zero e nada apareceria.
       style={{ height: 96 }}

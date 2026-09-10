@@ -82,10 +82,16 @@ export default function PillSelect<T extends string>({
         aria-label={label}
         title={disabled ? undefined : "Mudar"}
         onClick={() => setIsOpen((v) => !v)}
+        // ⚠️⚠️ `borderRadius: 999` NO BOTÃO, e não no selo de dentro: o
+        // `outline` do `.tappable:hover` e o do `:focus-visible` seguem o raio
+        // do ELEMENTO que os recebe. Sem isto, um selo em forma de pílula
+        // ganhava um retângulo duro em volta — *"aqui ainda tá ruim o contorno
+        // do seletor"*.
         style={{
           border: "none",
           background: "none",
           padding: 0,
+          borderRadius: 999,
           cursor: disabled ? "default" : "pointer",
           opacity: disabled ? 0.5 : 1,
         }}

@@ -37,7 +37,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { AnimatePresence, motion } from "motion/react";
-import { Pencil, Search } from "lucide-react";
+import { ArrowLeft, Pencil, Search } from "lucide-react";
 import Tabs from "@/components/Tabs";
 import Toggle from "@/components/Toggle";
 import Badge from "@/components/Badge";
@@ -177,12 +177,33 @@ export default function TeamScreen({ teamId }: { teamId: string }) {
   }
 
   const ehArea = team?.parent_team_id === null;
+  // ⚠️⚠️ O CAMINHO DE VOLTA, pedido dela em 10/09: *"essa tela de subtime
+  // precisa de algum botão pra voltar"*. E ela chegou nesta tela por um CARTÃO
+  // -- não há "voltar" óbvio quando a navegação foi para dentro.
+  //
+  // ⚠️ SOBE UM NÍVEL, e não usa o histórico do navegador: `history.back()`
+  // levaria para onde a pessoa VEIO, que pode ser o quadro, a busca, ou nada
+  // (aba nova). Um link para o PAI é sempre o mesmo lugar, e é o que a
+  // hierarquia promete. Numa ÁREA ele não aparece: não há acima.
+  const pai = team?.parent_team_id
+    ? teams.find((t) => t.id === team.parent_team_id) ?? null
+    : null;
 
   const podeAgir =
     view === "people" ? podeCadastrarMembro(scope) : podeMexerEmTimes;
 
   return (
     <>
+      {pai && (
+        <a
+          href={`/times/${pai.id}`}
+          className="muted mb-2 inline-flex items-center gap-1.5 text-xs hover:text-accent"
+        >
+          <ArrowLeft size={14} aria-hidden="true" />
+          {pai.name}
+        </a>
+      )}
+
       <PageHeader
         title={
           <span className="inline-flex items-center gap-2">
