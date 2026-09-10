@@ -20,6 +20,7 @@ import { useEffect, useState } from "react";
 
 import CarregaFormularioPublico from "@/components/CarregaFormularioPublico";
 import FormularioSolicitacao from "@/components/FormularioSolicitacao";
+import Loading from "@/components/Loading";
 import {
   listarFormulariosPublicos,
   type FormularioPublicoResumo,
@@ -55,9 +56,7 @@ export default function SolicitarPage() {
   if (formularios === null) {
     return (
       <Casca>
-        <p className="muted" style={{ fontSize: 14 }}>
-          Carregando…
-        </p>
+        <Loading />
       </Casca>
     );
   }

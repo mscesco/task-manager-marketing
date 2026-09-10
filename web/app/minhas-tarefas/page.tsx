@@ -54,6 +54,7 @@ import {
 import { sincronizarTaskNaUrl } from "@/lib/urlTarefa";
 import { ORDENACOES, ordenar, type Ordenacao } from "@/lib/ordenacao";
 
+import Loading from "@/components/Loading";
 const RELATION_LABEL: Record<string, string> = {
   assignee: "Responsável",
   creator: "Criei",
@@ -730,7 +731,7 @@ function Minhas() {
   // ate as colunas chegarem, em vez de pintar sem filtro e reordenar depois --
   // lista que pisca mostrando concluidas que ninguem pediu e pior que meio
   // segundo de "Carregando".
-  if (!items || !colunas) return <div className="muted">Carregando…</div>;
+  if (!items || !colunas) return <Loading />;
 
   // Detalhe e subtarefas SEMPRE sobre a lista completa (um filtro ativo nao
   // pode quebrar abrir/navegar uma task que esta fora do filtro atual).

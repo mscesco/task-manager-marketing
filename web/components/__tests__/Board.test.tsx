@@ -470,7 +470,7 @@ describe("Board -- guardas de carregamento", () => {
     render(<Board subteamId={CRM} title="CRM e Automação" />);
     // Os outros quatro endpoints ja resolveram; so os projetos faltam.
     await waitFor(() => {
-      expect(screen.getByText(/Carregando tarefas/)).toBeTruthy();
+      expect(screen.getByRole("status", { name: /Carregando tarefas/ })).toBeTruthy();
     });
     expect(screen.queryByText("Leads inbound")).toBeNull();
 
@@ -931,7 +931,7 @@ describe("Board -- as colunas vem da API (fatia 4c)", () => {
 
     render(<Board subteamId={CRM} title="CRM e Automação" />);
     await waitFor(() => {
-      expect(screen.getByText(/Carregando tarefas/)).toBeTruthy();
+      expect(screen.getByRole("status", { name: /Carregando tarefas/ })).toBeTruthy();
     });
     expect(screen.queryByText("Aguardando quadro")).toBeNull();
 
@@ -952,7 +952,7 @@ describe("Board -- as colunas vem da API (fatia 4c)", () => {
     // Sai do "Carregando": nao ha coluna, entao nao ha card -- mas a tela
     // responde, e o contador denuncia a tarefa que ficou de fora.
     await waitFor(() => {
-      expect(screen.queryByText(/Carregando tarefas/)).toBeNull();
+      expect(screen.queryByRole("status", { name: /Carregando tarefas/ })).toBeNull();
     });
     expect(screen.queryByText("Sem quadro nenhum")).toBeNull();
   });
@@ -1163,7 +1163,7 @@ describe("Board -- o quadro sai das TAREFAS, nao da flag de padrão (fatia 4c)",
     // Sem tarefa nenhuma o quadro mostra o estado vazio, entao a asserção é
     // que a tela RESPONDE -- e não trava escolhendo quadro.
     await waitFor(() => {
-      expect(screen.queryByText(/Carregando tarefas/)).toBeNull();
+      expect(screen.queryByRole("status", { name: /Carregando tarefas/ })).toBeNull();
     });
   });
 });

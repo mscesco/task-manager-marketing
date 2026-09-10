@@ -21,6 +21,7 @@ import { Pencil, Plus, Trash2, X } from "lucide-react";
 import AppShell from "@/components/AppShell";
 import PageHeader from "@/components/PageHeader";
 import { useFecharAoClicarFora } from "@/lib/useCliqueFora";
+import Loading from "@/components/Loading";
 import {
   ApiError,
   createTeam,
@@ -257,7 +258,7 @@ export default function TimesPage() {
       {erro && <div className="error-box">{erro}</div>}
 
       {times === null ? (
-        <div className="muted">Carregando…</div>
+        <Loading />
       ) : (
         <div
           style={{

@@ -29,6 +29,7 @@ import { Check, Pencil, Plus, Search, X } from "lucide-react";
 import AppShell from "@/components/AppShell";
 import Badge from "@/components/Badge";
 import PageHeader from "@/components/PageHeader";
+import Loading from "@/components/Loading";
 import {
   ApiError,
   changeOrganizationRole,
@@ -208,7 +209,7 @@ export default function OrganizacaoPage() {
       )}
 
       {carregando ? (
-        <div className="muted">Carregando…</div>
+        <Loading />
       ) : (
         <>
           {/* ---- busca por pessoa, atravessando as areas -------------------

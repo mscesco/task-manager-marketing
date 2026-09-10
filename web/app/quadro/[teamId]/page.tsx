@@ -13,6 +13,7 @@ import {
   type Team,
 } from "@/lib/api";
 import { computeLens } from "@/lib/lens";
+import Loading from "@/components/Loading";
 import {
   alcanceDeQuadro,
   podeGerirQuadrosDe,
@@ -153,7 +154,7 @@ export default function QuadroSubtimePage() {
   return (
     <AppShell>
       {carregando ? (
-        <div className="muted">Carregando…</div>
+        <Loading />
       ) : !team ? (
         <div className="muted">
           Time não encontrado. Verifique o endereço ou volte ao{" "}

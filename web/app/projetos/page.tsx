@@ -4,6 +4,7 @@ import AppShell from "@/components/AppShell";
 import EmptyState from "@/components/EmptyState";
 import Card from "@/components/Card";
 import PageHeader from "@/components/PageHeader";
+import Loading from "@/components/Loading";
 import {
   listProjects,
   createProject,
@@ -76,7 +77,7 @@ function Projetos() {
   }
 
   if (erro) return <div className="error-box" style={{ maxWidth: 480 }}>{erro}</div>;
-  if (!items) return <div className="muted">Carregando…</div>;
+  if (!items) return <Loading />;
 
   return (
     <div>

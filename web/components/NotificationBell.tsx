@@ -11,6 +11,7 @@ import {
 } from "@/lib/api";
 import { destinoDaNotificacao } from "@/lib/notificacoes";
 
+import Loading from "@/components/Loading";
 // Sino de notificacoes (Spec 018, Front-B). Polla a contagem de nao-lidas
 // a cada 30s (pausando quando a aba esta em background) e, ao abrir, busca
 // o feed. Clicar numa notificacao marca lida (otimista) e navega pro destino
@@ -210,8 +211,8 @@ export default function NotificationBell() {
           </div>
           <div className="max-h-96 overflow-y-auto">
             {carregando ? (
-              <div className="px-3 py-6 text-center text-sm text-ink-faint">
-                Carregando…
+              <div className="px-3 py-6">
+                <Loading tamanho="linha" rotulo="Carregando as notificações" />
               </div>
             ) : items.length === 0 ? (
               <div className="px-3 py-6 text-center text-sm text-ink-faint">

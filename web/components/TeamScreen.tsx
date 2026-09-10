@@ -76,6 +76,7 @@ import {
 } from "@/lib/permissoesMembros";
 import { lerEstadoDaTela, gravarEstadoDaTela } from "@/lib/estadoDaTela";
 
+import Loading from "@/components/Loading";
 type View = "people" | "structure";
 type RevealedPassword = { title: string; email: string; password: string };
 
@@ -281,7 +282,7 @@ export default function TeamScreen({ teamId }: { teamId: string }) {
           pessoas para uma grade de times. Sem transição, a troca lê-se como
           "a página recarregou", e o olho perde onde estava. */}
       {loading ? (
-        <div className="muted">Carregando…</div>
+        <Loading />
       ) : (
         <AnimatePresence mode="wait">
           <motion.div

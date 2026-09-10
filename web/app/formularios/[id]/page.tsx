@@ -18,6 +18,7 @@ import { useParams } from "next/navigation";
 
 import AppShell from "@/components/AppShell";
 import PageHeader from "@/components/PageHeader";
+import Loading from "@/components/Loading";
 import {
   ApiError,
   apagarPergunta,
@@ -136,7 +137,7 @@ function Editor() {
       </div>
     );
   }
-  if (!form) return <div className="muted">Carregando…</div>;
+  if (!form) return <Loading />;
 
   const secoes = ordenadasPorPosicao(form.sections);
   const total = contaPerguntas(secoes);

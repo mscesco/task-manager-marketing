@@ -51,6 +51,7 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
+import Loading, { LoadingScreen } from "@/components/Loading";
 // Navegacao lateral retratil. Itens usam a MESMA classe-base `itemCls` ->
 // alinham por construcao. Expandido: icone + rotulo. Retraido: so icone.
 // Fatia 7b: grupo "Quadros" (accordion, abre com clique) com o Quadro Geral
@@ -121,7 +122,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       });
   }, [router]);
 
-  if (loading) return <div className="center-screen muted">Carregando…</div>;
+  if (loading) return <LoadingScreen />;
 
   // Fatia 2/7b: sub-abas de quadro = subtimes visiveis na lente do usuario.
   const lens = user ? computeLens(user.teams, teams, user.roles) : null;

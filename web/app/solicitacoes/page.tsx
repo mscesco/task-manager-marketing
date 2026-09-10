@@ -36,6 +36,7 @@ import {
 } from "@/lib/api";
 import { rotuloDaCategoria } from "@/lib/rotuloDaCategoria";
 
+import Loading from "@/components/Loading";
 const STATUS_LABEL: Record<SolicitacaoStatus, string> = {
   PENDING: "Pendente",
   APPROVED: "Aprovada",
@@ -192,7 +193,7 @@ function Solicitacoes() {
       )}
 
       {erro && <div className="error-box" style={{ marginBottom: 16 }}>{erro}</div>}
-      {envios === null && <p className="muted">Carregando…</p>}
+      {envios === null && <Loading />}
 
       {envios !== null && envios.length === 0 && !erro && (
         <EmptyState

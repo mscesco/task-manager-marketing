@@ -5,6 +5,7 @@ import Card from "@/components/Card";
 import PageHeader from "@/components/PageHeader";
 import { currentUser, ApiError, type CurrentUser } from "@/lib/api";
 
+import Loading from "@/components/Loading";
 // Perfil v1: SO leitura (nome, e-mail, papeis) + atalho pra trocar senha.
 // Editar nome/avatar nao existe no backend -> fora desta entrega (ADR 0009).
 const PAPEL_LABEL: Record<string, string> = {
@@ -33,7 +34,7 @@ function Perfil() {
   }, []);
 
   if (erro) return <div className="error-box" style={{ maxWidth: 480 }}>{erro}</div>;
-  if (!me) return <div className="muted">Carregando…</div>;
+  if (!me) return <Loading />;
 
   const papeis =
     me.roles.length > 0

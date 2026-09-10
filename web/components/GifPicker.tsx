@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { searchGifs, trendingGifs, GIPHY_ENABLED, type Gif } from "@/lib/giphy";
 
+import Loading from "@/components/Loading";
 // Seletor de GIF (GIPHY). Mesmo padrao do EmojiPicker: um botao que abre um
 // popover; ao escolher, chama onPick(url) e quem usa insere o token [gif:url]
 // na posicao do cursor. Se a key da GIPHY nao estiver configurada, o botao
@@ -133,8 +134,8 @@ export default function GifPicker({
             }}
           >
             {loading && (
-              <div className="muted" style={{ gridColumn: "1 / -1", fontSize: 12, padding: 8 }}>
-                Carregando…
+              <div style={{ gridColumn: "1 / -1", padding: 8 }}>
+                <Loading tamanho="linha" rotulo="Carregando os GIFs" />
               </div>
             )}
             {!loading && erro && (

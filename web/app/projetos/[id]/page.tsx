@@ -17,6 +17,7 @@ import {
 } from "@/lib/api";
 import { PRIORITY_LABEL } from "@/lib/status";
 
+import Loading from "@/components/Loading";
 // Status de PROJETO (proprio; difere do status de TASK em lib/status).
 // Duplicado de app/projetos/page.tsx de proposito, para manter esta
 // entrega em UM arquivo. Divida cosmetica: extrair para lib se desejado.
@@ -87,7 +88,7 @@ function Projeto() {
   }, []);
 
   if (erro) return <div className="error-box" style={{ maxWidth: 480 }}>{erro}</div>;
-  if (!project) return <div className="muted">Carregando…</div>;
+  if (!project) return <Loading />;
 
   // Pessoal nunca edita por aqui (backend devolve 409). A lista ja filtra
   // pessoal; guardamos defensivamente tambem na detalhe.

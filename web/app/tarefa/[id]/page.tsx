@@ -4,6 +4,7 @@ import { useParams, useRouter } from "next/navigation";
 import AppShell from "@/components/AppShell";
 import TaskDetail from "@/components/TaskDetail";
 import TaskModal from "@/components/TaskModal";
+import Loading from "@/components/Loading";
 import {
   getTask,
   listTasks,
@@ -209,7 +210,7 @@ function Tarefa() {
     []
   );
 
-  if (carregando) return <div className="muted">Carregando…</div>;
+  if (carregando) return <Loading />;
 
   if (erro || !task) {
     return (

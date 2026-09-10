@@ -40,6 +40,7 @@ import {
   type Team,
 } from "@/lib/api";
 import { roleConsequence, drawerMemberships } from "@/lib/memberDrawer";
+import Loading from "@/components/Loading";
 import {
   papeisAtribuiveis,
   podeDesativarConta,
@@ -225,7 +226,7 @@ export default function MemberDrawer({
           <section>
             <h3 className="label mb-2">Relação de times e subtimes</h3>
             {vinculos === null ? (
-              <div className="muted text-xs">Carregando…</div>
+              <Loading tamanho="linha" rotulo="Carregando os vínculos" />
             ) : rows.length === 0 ? (
               <div className="muted text-xs">
                 Sem vínculo de time. A pessoa existe na organização, mas não
