@@ -142,7 +142,7 @@ export default function SubteamDrawer({
           <div className="min-w-0 flex-1">
             <h2 className="truncate text-lg font-semibold">{team.name}</h2>
             <div className="muted truncate text-xs">
-              {ehArea ? "Área" : "Subtime"} · {dentro.length}{" "}
+              {ehArea ? "Time" : "Subtime"} · {dentro.length}{" "}
               {dentro.length === 1 ? "pessoa" : "pessoas"}
             </div>
           </div>
@@ -158,7 +158,7 @@ export default function SubteamDrawer({
             <h3 className="label mb-2">Quem está aqui</h3>
             {dentro.length === 0 ? (
               <div className="muted text-xs">
-                Ninguém {ehArea ? "nesta área" : "neste subtime"} ainda.
+                Ninguém {ehArea ? "neste time" : "neste subtime"} ainda.
               </div>
             ) : (
               // ⚠️ `AnimatePresence` + `layout`: quem entra DESLIZA para o

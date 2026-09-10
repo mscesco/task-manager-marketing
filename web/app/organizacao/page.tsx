@@ -30,6 +30,7 @@ import AppShell from "@/components/AppShell";
 import Badge from "@/components/Badge";
 import PageHeader from "@/components/PageHeader";
 import Loading from "@/components/Loading";
+import { useDrawnOutline } from "@/components/AnimatedOutline";
 import {
   ApiError,
   changeOrganizationRole,
@@ -50,6 +51,7 @@ import {
   areaCards,
   organizationManagers,
   peopleWithoutArea,
+  type AreaCard,
 } from "@/lib/organization";
 
 /**
@@ -286,7 +288,12 @@ export default function OrganizacaoPage() {
                             <Link
                               key={a.id}
                               href={`/times/${a.id}`}
-                              className="tappable"
+                              // ⚠️ `pill-target`: o anel de foco segue o raio
+                              // de QUEM O RECEBE, e quem o recebe é este
+                              // `<a>`, não o `Badge` de dentro. Sem a classe,
+                              // era um retângulo em volta de uma pílula --
+                              // *"no time da pessoa também"*, 10/09.
+                              className="tappable pill-target"
                             >
                               <Badge tone="soft" size="sm" color="var(--accent)">
                                 {a.name}
@@ -329,18 +336,8 @@ export default function OrganizacaoPage() {
               gap: 14,
             }}
           >
-            {cards.map(({ area, pessoas, subteams }) => (
-              <Link
-                key={area.id}
-                href={`/times/${area.id}`}
-                className="tappable block rounded-lg border border-border bg-surface p-4"
-              >
-                <strong className="text-[15px]">{area.name}</strong>
-                <div className="muted mt-1.5 text-xs">
-                  {pessoas} {pessoas === 1 ? "pessoa" : "pessoas"} ·{" "}
-                  {subteams} {subteams === 1 ? "subtime" : "subtimes"}
-                </div>
-              </Link>
+            {cards.map((card) => (
+              <CartaoDeArea key={card.area.id} card={card} />
             ))}
 
             {/* ⚠️ O CARD QUE IMPEDE GENTE INVISÍVEL. Sem ele, quem é
@@ -349,7 +346,7 @@ export default function OrganizacaoPage() {
                 lista está vazia. */}
             {semArea.length > 0 && (
               <div className="rounded-lg border border-dashed border-border p-4">
-                <strong className="text-[15px]">Pessoas sem área</strong>
+                <strong className="text-[15px]">Pessoas sem time</strong>
                 <div className="muted mt-1.5 text-xs">
                   {semArea.length}{" "}
                   {semArea.length === 1 ? "pessoa" : "pessoas"} sem vínculo
@@ -374,6 +371,40 @@ export default function OrganizacaoPage() {
         </>
       )}
     </AppShell>
+  );
+}
+
+/**
+ * Um cartão da grade de áreas.
+ *
+ * ⚠️⚠️ ELE VIROU COMPONENTE em 10/09 para poder ter o CONTORNO DESENHADO: o
+ * cartão era um `<Link className="tappable">` dentro do `.map()`, e gancho não
+ * se chama dentro de um `map`. A Camila viu a diferença na tela — *"no
+ * /organizacao o contorno está sem animação"* — porque este cartão e o de
+ * subtime pareciam iguais e se comportavam diferente.
+ *
+ * ⚠️ MESMO `radius` DO `rounded-lg` (8px). O contorno é um `<path>` desenhado
+ * em pixels; um raio diferente do CSS deixa o traço passando por dentro ou por
+ * fora do canto, e é o tipo de erro que só aparece no canto de cima.
+ */
+function CartaoDeArea({ card }: { card: AreaCard }) {
+  const { area, pessoas, subteams } = card;
+  const { alvo, outline } = useDrawnOutline();
+  return (
+    <Link
+      href={`/times/${area.id}`}
+      // ⚠️ `relative` é o que faz o contorno medir ESTE cartão. Sem ela ele
+      // mediria o ancestral posicionado mais próximo — a grade inteira.
+      className="relative block cursor-pointer rounded-lg border border-border bg-surface p-4"
+      {...alvo}
+    >
+      {outline}
+      <strong className="text-[15px]">{area.name}</strong>
+      <div className="muted mt-1.5 text-xs">
+        {pessoas} {pessoas === 1 ? "pessoa" : "pessoas"} · {subteams}{" "}
+        {subteams === 1 ? "subtime" : "subtimes"}
+      </div>
+    </Link>
   );
 }
 
@@ -505,10 +536,10 @@ function CriarArea({ onCriada }: { onCriada: () => Promise<void> }) {
       const a = e as ApiError;
       setErro(
         a.status === 403
-          ? "Criar área exige papel de organização."
+          ? "Criar um time exige papel de organização."
           : a.status === 409
           ? "Já existe um time com esse endereço."
-          : a.message || "Não consegui criar a área.",
+          : a.message || "Não consegui criar o time.",
       );
     } finally {
       setSalvando(false);
@@ -518,7 +549,7 @@ function CriarArea({ onCriada }: { onCriada: () => Promise<void> }) {
   if (!isOpen) {
     return (
       <button className="btn btn-primary" onClick={() => setAberto(true)}>
-        <Plus size={14} aria-hidden="true" /> Nova área
+        <Plus size={14} aria-hidden="true" /> Novo time
       </button>
     );
   }
@@ -671,7 +702,11 @@ function OrgRoleField({
     // nunca fechava. O `tsc` NAO acusa -- ref declarada e nao usada e valida.
     <span className="relative inline-flex" ref={wrapRef}>
       <button
-        className="tappable"
+        // ⚠️ `pill-target` -- ERA ESTE o contorno que ela chamou de tenebroso:
+        // *"o contorno em torno do meu nome e cargo está tenebroso de feio"*.
+        // O `Badge` de dentro é uma pílula; o anel vinha neste `<button>`, que
+        // não tinha raio nenhum, e desenhava um retângulo em volta dela.
+        className="tappable pill-target"
         onClick={() => {
           setErro(null);
           onOpen();
@@ -692,14 +727,14 @@ function OrgRoleField({
           <Opcao
             active={member.org_role === "ADMIN"}
             title="Administradora"
-            consequencia="Define a organização: renomeia, apaga área e promove gestores."
+            consequencia="Define a organização: renomeia, apaga time e promove gestores."
             onSelect={() => void aplicar("ADMIN")}
             disabled={salvando}
           />
           <Opcao
             active={member.org_role === "GESTOR"}
             title="Gestora"
-            consequencia="Opera a organização: cria área, cadastra pessoas e distribui papéis de time. Não desfaz a organização."
+            consequencia="Opera a organização: cria time, cadastra pessoas e distribui papéis. Não desfaz a organização."
             onSelect={() => void aplicar("GESTOR")}
             disabled={salvando}
           />
@@ -787,13 +822,20 @@ function Opcao({
   onSelect: () => void;
   disabled: boolean;
 }) {
+  // ⚠️ SUPERFÍCIE, e não controle: é um bloco com borda, título e uma linha de
+  // consequência -- do tamanho de um cartão, e é onde se decide o papel de
+  // alguém. O traço que corre é o registro certo aqui.
+  // ⚠️ `radius` 4: o `rounded` do Tailwind, e não o `rounded-lg` dos cartões.
+  const { alvo, outline } = useDrawnOutline();
   return (
     <button
-      className="tappable mb-1 block w-full rounded border border-border p-2 text-left"
+      className="relative mb-1 block w-full cursor-pointer rounded border border-border p-2 text-left"
       onClick={onSelect}
       disabled={disabled || active}
       aria-current={active}
+      {...alvo}
     >
+      {outline}
       <span className="text-sm font-semibold">
         {title}
         {active && <span className="muted font-normal"> · atual</span>}

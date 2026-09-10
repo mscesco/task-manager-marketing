@@ -165,7 +165,7 @@ function Linha({
           ))}
           {outrasAreas > 0 && (
             <Badge tone="outline" size="sm">
-              +{outrasAreas} {outrasAreas === 1 ? "área" : "áreas"}
+              +{outrasAreas} {outrasAreas === 1 ? "time" : "times"}
             </Badge>
           )}
         </span>

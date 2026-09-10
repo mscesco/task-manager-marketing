@@ -511,7 +511,7 @@ function AddToTeam({
         options={availableTeams.map((t) => ({
           id: t.id,
           label: t.name,
-          hint: t.parent_team_id === null ? "área" : undefined,
+          hint: t.parent_team_id === null ? undefined : "subtime",
         }))}
       />
       {/* ⚠️ OPERADOR É O PADRÃO, por um motivo estrutural: operador é o piso
@@ -582,9 +582,9 @@ function OrgRoleField({
       />
       <div className="muted mt-1 text-xs">
         {escolhido === "ADMIN"
-          ? "Define a organização: renomeia, apaga área e promove gestores."
+          ? "Define a organização: renomeia, apaga time e promove gestores."
           : escolhido === "GESTOR"
-          ? "Opera a organização: cria área, cadastra pessoas e distribui papéis de time."
+          ? "Opera a organização: cria time, cadastra pessoas e distribui papéis."
           : "Só os times em que está."}
       </div>
       {isSelf && (

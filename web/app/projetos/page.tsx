@@ -5,14 +5,18 @@ import EmptyState from "@/components/EmptyState";
 import Card from "@/components/Card";
 import PageHeader from "@/components/PageHeader";
 import Loading from "@/components/Loading";
+import { useDrawnOutline } from "@/components/AnimatedOutline";
 import {
   listProjects,
   createProject,
   currentUser,
+  listTeamsAll,
   ApiError,
   type Project,
   type ProjectStatus,
+  type Team,
 } from "@/lib/api";
+import { rootsForPerson } from "@/lib/contextSwitcher";
 
 // Projeto e "pasta" -- tudo no time raiz, todos veem. Designar e so nas tasks.
 const PROJECT_STATUS: { key: ProjectStatus; label: string; color: string }[] = [
@@ -47,24 +51,55 @@ function Projetos() {
   const [status, setStatus] = useState<ProjectStatus>("PLANNING");
   const [salvando, setSalvando] = useState(false);
   const [erroForm, setErroForm] = useState<string | null>(null);
+  // ⚠️⚠️ A AREA DO PROJETO, e ela nasceu de um defeito de 10/09: criar projeto
+  // parou de funcionar no dia em que a segunda area passou a existir.
+  //
+  // `createProject` sem `team_id` caía em `getRootTeamId()`, que a Spec 046
+  // (fatia 1) fez LEVANTAR com mais de uma raiz -- de propósito, porque "a
+  // raiz" deixou de ser uma pergunta com resposta. O erro subia como
+  // `AreaIndefinidaError` e a tela mostrava "não consegui criar o projeto".
+  //
+  // ⚠️ A CORREÇÃO É PERGUNTAR, e não adivinhar. Escolher a primeira por nome
+  // (o que `peopleEntry` faz para NAVEGAR) criaria o projeto no Comercial
+  // porque "C" vem antes de "M" -- silenciosamente, na área errada.
+  //
+  // ⚠️ E ISTO NÃO É A ÁREA COMO CONTEXTO (a spec que vem): quando a área
+  // ambiente existir, este seletor deixa de ser pergunta e passa a ser
+  // confirmação do lugar onde a pessoa já está. O campo continua; muda quem o
+  // preenche.
+  const [areas, setAreas] = useState<Team[]>([]);
+  const [areaId, setAreaId] = useState<string>("");
 
   useEffect(() => {
     listProjects({ size: 100 })
       // pasta = projeto comum; o pessoal do proprio usuario nao entra aqui.
       .then((r) => setItems(r.items.filter((p) => !p.is_personal)))
       .catch((e: ApiError) => setErro(e.message));
-    currentUser()
-      .then((me) => setPodeCriar(me.permissions.includes("project.create")))
+    // ⚠️ As duas juntas porque `rootsForPerson` precisa das DUAS: a árvore e os
+    // vínculos de quem está olhando. Um operador do Marketing não escolhe TI.
+    Promise.all([currentUser(), listTeamsAll()])
+      .then(([me, times]) => {
+        setPodeCriar(me.permissions.includes("project.create"));
+        const minhas = rootsForPerson(
+          times,
+          me,
+          (me.org_role ?? null) !== null,
+        );
+        setAreas(minhas);
+        // ⚠️ COM UMA ÁREA SÓ, NÃO HÁ PERGUNTA: pré-seleciona e o campo nem
+        // aparece. É o cadastro da maioria, e um seletor de um item é ruído.
+        if (minhas.length === 1) setAreaId(minhas[0].id);
+      })
       .catch(() => {});
   }, []);
 
   async function criar() {
     const t = titulo.trim();
-    if (!t) return;
+    if (!t || !areaId) return;
     setSalvando(true);
     setErroForm(null);
     try {
-      const novo = await createProject({ title: t, status });
+      const novo = await createProject({ title: t, status, team_id: areaId });
       setItems((prev) => [novo, ...(prev ?? [])]);
       setTitulo("");
       setStatus("PLANNING");
@@ -129,6 +164,29 @@ function Projetos() {
               ))}
             </select>
           </div>
+          {/* ⚠️ SÓ COM DUAS OU MAIS. Ver o bloco em `areaId`, no topo: com uma
+              área a resposta é única e o campo seria uma pergunta retórica. */}
+          {areas.length > 1 && (
+            <div className="field">
+              <span className="label">Time</span>
+              <select
+                className="input"
+                value={areaId}
+                disabled={salvando}
+                onChange={(e) => setAreaId(e.target.value)}
+              >
+                {/* ⚠️ A VAZIA VEM PRIMEIRO E FICA: sem ela o `<select>` já
+                    nasceria com a primeira área marcada, e criar projeto na
+                    área errada por não ter olhado o campo é pior que o erro
+                    que este seletor veio consertar. O botão fica desligado
+                    enquanto nada foi escolhido. */}
+                <option value="">— escolha o time —</option>
+                {areas.map((a) => (
+                  <option key={a.id} value={a.id}>{a.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
           {erroForm && <div className="error-box">{erroForm}</div>}
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
             <button
@@ -138,7 +196,8 @@ function Projetos() {
               Cancelar
             </button>
             <button
-              type="button" className="btn btn-primary" disabled={salvando || !titulo.trim()}
+              type="button" className="btn btn-primary"
+              disabled={salvando || !titulo.trim() || !areaId}
               onClick={criar}
             >
               {salvando ? "Criando…" : "Criar projeto"}
@@ -183,15 +242,41 @@ function Projetos() {
           }}
         >
           {items.map((p, i) => (
+            <LinhaDeProjeto key={p.id} p={p} primeira={i === 0} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Uma faixa da lista de projetos.
+ *
+ * ⚠️⚠️ VIROU COMPONENTE em 10/09 pelo CONTORNO: a faixa era um
+ * `<a className="tappable">` dentro do `.map()`, e o anel duro do
+ * `.tappable:hover` saiu do CSS global -- *"da para identificar e mudar
+ * absolutamente todos para ficar com a animacao igual dos subtimes?"*. Gancho
+ * nao se chama dentro de um `map`, entao a faixa passou a ter nome.
+ *
+ * ⚠️ `radius` 0: a faixa NAO tem raio proprio -- o raio de 12 mora no
+ * contêiner, e as faixas se dividem por borda. Passar 12 aqui desenharia o
+ * traco arredondado no meio de uma lista de cantos retos.
+ */
+function LinhaDeProjeto({ p, primeira }: { p: Project; primeira: boolean }) {
+  const { alvo, outline } = useDrawnOutline();
+  return (
             <a
-              key={p.id}
               href={`/projetos/${p.id}`}
-              className="tappable"
+              {...alvo}
               style={{
+                // ⚠️ `relative` e o que faz o contorno medir ESTA faixa.
+                position: "relative",
+                cursor: "pointer",
                 background: "var(--surface)", textDecoration: "none", color: "inherit",
                 // A borda de cima faz a divisória entre linhas; a primeira não
                 // tem, senão dobraria com a borda do container.
-                borderTop: i === 0 ? "none" : "1px solid var(--border)",
+                borderTop: primeira ? "none" : "1px solid var(--border)",
                 // ⚠️ ALTURA MÍNIMA, e não só padding maior: sem ela a linha
                 // encolhe de volta quando não há descrição, e a lista fica com
                 // faixas de alturas diferentes -- que é justamente o que sair
@@ -201,6 +286,7 @@ function Projetos() {
                 opacity: p.is_archived ? 0.6 : 1,
               }}
             >
+              {outline}
               <span
                 aria-hidden
                 style={{
@@ -245,9 +331,5 @@ function Projetos() {
                 {p.is_archived && " · arquivado"}
               </span>
             </a>
-          ))}
-        </div>
-      )}
-    </div>
   );
 }
