@@ -185,19 +185,15 @@ export default function SubteamDrawer({
                         ⚠️ SEM CADEADO, É SÓ INFORMAÇÃO -- *"se não tenho
                         acesso, é só pra exibir a informação, não é pra ser
                         clicável"*. E quem responde isso é o backend. */}
-                    {/* ⚠️⚠️ INATIVO APARECE, mas NÃO se administra. Esconder a
-                        linha faria a contagem do cabeçalho divergir do corpo
-                        (§3.2, o defeito de 27/07) -- e quem administra precisa
-                        saber que aquele vínculo existe para poder desfazê-lo.
-                        O que sai é a EDIÇÃO: quem foi desativado não volta
-                        (não há rota de reativar, D5), então mudar o cargo dela
-                        grava um estado sem efeito. A trava está no servidor;
-                        aqui é só o desenho. */}
-                    {doServidor.get(member.id)?.isActive === false && (
-                      <Badge tone="outline" size="sm">
-                        Inativo
-                      </Badge>
-                    )}
+                    {/* ⚠️⚠️ INATIVO NEM APARECE AQUI desde 10/09 -- decisão
+                        dela: *"não quero nem que a pessoa apareça aqui se ela
+                        está inativa. Os inativos só aparecem na aba de
+                        inativos em membros"*. O filtro está em
+                        `directMembers`, testado.
+                        ⚠️ `is_active` continua vindo da rota porque o CADEADO
+                        depende dele -- se um vínculo escapar do filtro (dado
+                        recém-mudado noutra aba, por exemplo), ele nasce em
+                        leitura em vez de editável. */}
                     <RoleCell
                       member={member}
                       team={team}

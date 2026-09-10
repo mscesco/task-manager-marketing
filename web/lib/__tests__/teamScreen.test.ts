@@ -388,3 +388,27 @@ describe("subteamCandidates e quem está INATIVO", () => {
     expect(subteamCandidates(JR, [bia])).toEqual([]);
   });
 });
+
+describe("directMembers e quem está INATIVO", () => {
+  it("⭐⭐ não lista quem foi desativado", () => {
+    // ⚠️ Decisão da Camila em 10/09: *"não quero nem que a pessoa apareça aqui
+    // se ela está inativa. Os inativos só aparecem na aba de inativos em
+    // membros"*. A gaveta é a lista de TRABALHO de um time; quem saiu da
+    // empresa não está nela.
+    const inativa = { ...pessoa("Bia", [[SEO, "OPERATOR"]]), is_active: false };
+    const diretos = directMembers(SEO, [
+      pessoa("Ana", [[SEO, "OPERATOR"]]),
+      inativa,
+    ]);
+    expect(diretos.map((d) => d.member.name)).toEqual(["Ana"]);
+  });
+
+  it("⚠️ e a TABELA continua mostrando — as duas regras convivem", () => {
+    // ⚠️ Não é contradição com a §3.2: a tabela é o INVENTÁRIO de pessoas, e
+    // lá esconder faria "8 pessoas" no cabeçalho com 5 linhas no corpo. Ela
+    // tem uma aba própria para inativos; a gaveta não.
+    const inativa = { ...pessoa("Bia", [[SEO, "OPERATOR"]]), is_active: false };
+    expect(teamRows(SEO, TIMES, [inativa])).toHaveLength(1);
+    expect(directMembers(SEO, [inativa])).toEqual([]);
+  });
+});

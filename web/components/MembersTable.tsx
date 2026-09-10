@@ -55,6 +55,7 @@ export default function MembersTable({
   rows,
   middleColumn,
   count,
+  podeAbrir,
   onOpenMember,
 }: {
   rows: TeamRow[];
@@ -62,6 +63,15 @@ export default function MembersTable({
   middleColumn: { title: string; render: (row: TeamRow) => ReactNode };
   /** Texto do contador. ⚠️ Diz o TOTAL — ver o comentário no `<caption>`. */
   count?: string;
+  /**
+   * Esta linha tem o que fazer na gaveta?
+   *
+   * ⚠️⚠️ SEM ISTO O LÁPIS APARECIA PARA TODO MUNDO, e a Camila apontou:
+   * *"Rafael é só operator e ainda tem a opção de editar o membro, mesmo não
+   * podendo fazer nada na tela, tem algum propósito?"*. Não tinha. E é POR
+   * LINHA, e não por tela: um supervisor alcança uns vínculos e não outros.
+   */
+  podeAbrir: (row: TeamRow) => boolean;
   /** ⚠️ A TABELA NÃO ABRE A GAVETA -- ver o bloco no topo. */
   onOpenMember: (member: Member) => void;
 }) {
@@ -107,7 +117,7 @@ export default function MembersTable({
                 key={row.member.id}
                 row={row}
                 middleColumn={middleColumn}
-                onOpen={() => onOpenMember(row.member)}
+                onOpen={podeAbrir(row) ? () => onOpenMember(row.member) : null}
               />
             ))}
           </tbody>
@@ -125,7 +135,8 @@ function Linha({
 }: {
   row: TeamRow;
   middleColumn: { title: string; render: (row: TeamRow) => ReactNode };
-  onOpen: () => void;
+  /** `null` = não há nada a fazer com esta pessoa; a coluna fica vazia. */
+  onOpen: (() => void) | null;
 }) {
   const { member, subteams, outrasAreas } = row;
 
@@ -160,19 +171,24 @@ function Linha({
         </span>
       </td>
 
-      {/* ⚠️⚠️ UM BOTÃO SÓ. E ele aparece para TODO MUNDO, inclusive para quem
-          não administra nada: a gaveta também RESPONDE "onde esta pessoa
-          está", e essa leitura vale para qualquer um. Quem não pode escrever
-          não vê os controles — a gaveta trava ação por ação, com o
-          `can_edit_role` que vem do backend. */}
+      {/* ⚠️⚠️ UM BOTÃO SÓ, E SÓ PARA QUEM TEM O QUE FAZER LÁ DENTRO. Ele
+          aparecia para todo mundo, com o argumento de que a gaveta também
+          RESPONDE "onde esta pessoa está" -- e a Camila desfez o argumento
+          olhando a tela: *"Rafael é só operator e ainda tem a opção de editar
+          o membro, mesmo não podendo fazer nada"*. Um botão que abre uma
+          gaveta inteira em leitura é uma promessa que não se cumpre.
+          ⚠️ A pergunta é POR LINHA (`podeAbrir`), porque um supervisor alcança
+          uns vínculos e não outros. */}
       <td className="whitespace-nowrap px-3 py-2 text-right align-middle">
-        <button
-          className="btn btn-ghost"
-          aria-label={`Editar ${member.name}`}
-          onClick={onOpen}
-        >
-          <Pencil size={14} aria-hidden="true" />
-        </button>
+        {onOpen && (
+          <button
+            className="btn btn-ghost"
+            aria-label={`Editar ${member.name}`}
+            onClick={onOpen}
+          >
+            <Pencil size={14} aria-hidden="true" />
+          </button>
+        )}
       </td>
     </tr>
   );

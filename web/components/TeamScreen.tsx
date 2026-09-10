@@ -44,6 +44,8 @@ import Badge from "@/components/Badge";
 import Card from "@/components/Card";
 import PageHeader from "@/components/PageHeader";
 import Reveal from "@/components/Reveal";
+import Toasts, { useToasts } from "@/components/Toasts";
+import SubteamCardTile from "@/components/SubteamCardTile";
 import TemporaryPassword from "@/components/TemporaryPassword";
 import SubteamDrawer from "@/components/SubteamDrawer";
 import MembersTable, { ROLE_LABEL } from "@/components/MembersTable";
@@ -69,8 +71,10 @@ import {
   papeisAtribuiveis,
   podeCadastrarMembro,
   podeMoverSubtime,
+  temAcaoPossivel,
   type Alcance,
 } from "@/lib/permissoesMembros";
+import { lerEstadoDaTela, gravarEstadoDaTela } from "@/lib/estadoDaTela";
 
 type View = "people" | "structure";
 type RevealedPassword = { title: string; email: string; password: string };
@@ -81,10 +85,18 @@ export default function TeamScreen({ teamId }: { teamId: string }) {
   const [me, setMe] = useState<CurrentUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
-  const [aviso, setAviso] = useState<string | null>(null);
+  // ⚠️ Os avisos viraram uma PILHA no canto (`Toasts`). O aviso inline
+  // empurrava a tela para baixo justamente quando a pessoa olhava para a
+  // linha que acabou de mudar.
+  const { toasts, avisar, dispensar } = useToasts();
 
-  const [view, setView] = useState<View>("people");
-  const [tab, setTab] = useState<MemberState>("active");
+  // ⚠️⚠️ O ESTADO DA TELA MORA NA URL, e não só em `useState`: *"se eu
+  // recarrego a tela, ela não lembra onde eu estava"*. Na URL ele sobrevive ao
+  // F5 E vira link — mandar "olha os inativos do Marketing" passa a ser
+  // possível, o que estado em memória nunca daria.
+  const inicial = lerEstadoDaTela();
+  const [view, setView] = useState<View>(inicial.view);
+  const [tab, setTab] = useState<MemberState>(inicial.tab);
   const [busca, setBusca] = useState("");
   const [criando, setCriando] = useState(false);
   const [revelado, setRevelado] = useState<RevealedPassword | null>(null);
@@ -209,18 +221,6 @@ export default function TeamScreen({ teamId }: { teamId: string }) {
 
       {erro && <div className="error-box">{erro}</div>}
 
-      {aviso && (
-        <div role="status" className="muted mb-4 flex items-center gap-2 text-xs">
-          <span>{aviso}</span>
-          <button
-            className="btn btn-ghost px-1.5 text-xs"
-            onClick={() => setAviso(null)}
-          >
-            Entendi
-          </button>
-        </div>
-      )}
-
       {revelado && (
         <TemporaryPassword
           title={revelado.title}
@@ -241,6 +241,7 @@ export default function TeamScreen({ teamId }: { teamId: string }) {
           active={view}
           onSelect={(v) => {
             setView(v);
+            gravarEstadoDaTela({ view: v, tab });
             // ⚠️ Fecha o formulário ao virar a chave: ele pertence ao assunto
             // anterior, e deixá-lo aberto criaria uma área a partir de um
             // formulário que a pessoa abriu para cadastrar gente.
@@ -283,7 +284,7 @@ export default function TeamScreen({ teamId }: { teamId: string }) {
                       onCreated={async (r, texto) => {
                         setRevelado(r);
                         setCriando(false);
-                        setAviso(texto);
+                        avisar(texto);
                         await carregar();
                       }}
                     />
@@ -323,7 +324,10 @@ export default function TeamScreen({ teamId }: { teamId: string }) {
                         aria-label="Estado das pessoas"
                         group="estado"
                         active={tab}
-                        onSelect={setTab}
+                        onSelect={(t) => {
+                          setTab(t);
+                          gravarEstadoDaTela({ view, tab: t });
+                        }}
                         tabs={[
                           { id: "active", label: "Ativos", count: count.active },
                           {
@@ -357,6 +361,19 @@ export default function TeamScreen({ teamId }: { teamId: string }) {
                             rows={visiveis}
                             middleColumn={middleColumn}
                             count={`${visiveis.length} de ${rows.length} pessoas`}
+                            // ⚠️⚠️ SÓ PARA QUEM TEM O QUE FAZER LÁ DENTRO:
+                            // *"Rafael é só operator e ainda tem a opção de
+                            // editar o membro, mesmo não podendo fazer nada na
+                            // tela, tem algum propósito?"*. Não tinha. A
+                            // pergunta é `temAcaoPossivel`, que já existe e é
+                            // testada -- e é POR LINHA, porque um supervisor
+                            // alcança uns e não outros.
+                            podeAbrir={(row) =>
+                              temAcaoPossivel(
+                                scope,
+                                row.member.team_ids ?? [],
+                              )
+                            }
                             onOpenMember={setGavetaDePessoa}
                           />
                         )}
@@ -374,7 +391,7 @@ export default function TeamScreen({ teamId }: { teamId: string }) {
                       onCancel={() => setCriando(false)}
                       onCreated={async (texto) => {
                         setCriando(false);
-                        setAviso(texto);
+                        avisar(texto);
                         await carregar();
                       }}
                     />
@@ -388,37 +405,12 @@ export default function TeamScreen({ teamId }: { teamId: string }) {
                 ) : (
                   <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                     {cards.map((c) => (
-                      <div
+                      <SubteamCardTile
                         key={c.team.id}
-                        className="flex flex-col gap-2 rounded-lg border border-border bg-surface p-3"
-                      >
-                        <div className="flex items-center gap-2">
-                          {/* ⚠️ O NOME É LINK, e o lápis abre a gaveta: são
-                              duas intenções diferentes -- "entrar" e "editar
-                              isto" -- e o mesmo clique para as duas obrigaria
-                              a escolher uma. */}
-                          <Link
-                            href={`/times/${c.team.id}`}
-                            className="min-w-0 flex-1 truncate font-semibold hover:underline"
-                          >
-                            {c.team.name}
-                          </Link>
-                          <button
-                            className="btn btn-ghost"
-                            aria-label={`Editar ${c.team.name}`}
-                            onClick={() => setGavetaDeTime(c.team)}
-                          >
-                            <Pencil size={14} aria-hidden="true" />
-                          </button>
-                        </div>
-                        <div className="muted text-xs">
-                          {c.pessoas} {c.pessoas === 1 ? "pessoa" : "pessoas"}
-                          {c.subteams > 0 &&
-                            ` · ${c.subteams} ${
-                              c.subteams === 1 ? "subtime" : "subtimes"
-                            }`}
-                        </div>
-                      </div>
+                        card={c}
+                        canManage={podeMexerEmTimes}
+                        onEdit={() => setGavetaDeTime(c.team)}
+                      />
                     ))}
                   </div>
                 )}
@@ -440,7 +432,7 @@ export default function TeamScreen({ teamId }: { teamId: string }) {
             onClose={() => setGavetaDeTime(null)}
             onChanged={async (texto) => {
               setGavetaDeTime(null);
-              setAviso(texto);
+              avisar(texto);
               await carregar();
             }}
             // ⚠️⚠️ RECARREGA SEM FECHAR. Adicionar gente é operação em SÉRIE, e
@@ -470,12 +462,14 @@ export default function TeamScreen({ teamId }: { teamId: string }) {
             onClose={() => setGavetaDePessoa(null)}
             onChanged={async (texto) => {
               setGavetaDePessoa(null);
-              setAviso(texto);
+              avisar(texto);
               await carregar();
             }}
           />
         )}
       </AnimatePresence>
+
+      <Toasts toasts={toasts} onDismiss={dispensar} />
     </>
   );
 }

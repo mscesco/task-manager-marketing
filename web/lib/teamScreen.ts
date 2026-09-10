@@ -190,12 +190,26 @@ export type DirectMember = {
  * o neto conta); a GAVETA responde *"quem está neste time"*, e é a lista de
  * onde se tira alguém. Oferecer "Tirar" para quem está só no neto removeria
  * um vínculo que não existe — 404 — ou, pior, o vínculo errado.
+ *
+ * ⚠️⚠️ E SÓ QUEM ESTÁ ATIVO. Decisão da Camila em 10/09: *"não quero nem que a
+ * pessoa apareça aqui se ela está inativa. Os inativos só aparecem na aba de
+ * inativos em membros"*.
+ *
+ * ⚠️ NÃO CONTRADIZ A §3.2 ("esconder linha faz o contador divergir do corpo"),
+ * e a diferença é onde cada coisa CONTA. A tabela é o inventário de pessoas:
+ * lá esconder inativo faria "8 pessoas" no cabeçalho e 5 linhas no corpo, e
+ * ela tem uma ABA para eles. A gaveta é a lista de trabalho de um time — quem
+ * está lá para fazer coisa. Quem saiu da empresa não está.
+ *
+ * ⚠️ E o vínculo continua existindo: ele reaparece na gaveta DA PESSOA, na aba
+ * "Inativos", que é de onde se desfaz. Some da lista, não do banco.
  */
 export function directMembers(
   teamId: string,
   members: readonly Member[],
 ): DirectMember[] {
   return members
+    .filter((m) => m.is_active)
     .map((member): DirectMember | null => {
       const v = (member.memberships ?? []).find((x) => x.team_id === teamId);
       return v ? { member, role: v.role } : null;
