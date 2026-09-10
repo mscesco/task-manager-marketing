@@ -17,6 +17,7 @@
 // Anti-bot: input honeypot "website" escondido.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useDrawnOutline } from "@/components/AnimatedOutline";
 import {
   enviarSolicitacaoPublica,
   ApiError,
@@ -525,63 +526,14 @@ export default function FormularioSolicitacao({
               gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
             }}
           >
-            {categorias.map((cat) => {
-              const posicao = selecionadas.indexOf(cat.slug);
-              const marcada = posicao >= 0;
-              return (
-                <button
-                  key={cat.slug}
-                  type="button"
-                  onClick={() => alternarCategoria(cat.slug)}
-                  aria-pressed={marcada}
-                  className="tappable"
-                  style={{
-                    textAlign: "left",
-                    background: "var(--surface)",
-                    border: `1px solid ${marcada ? "var(--accent)" : "var(--border)"}`,
-                    boxShadow: marcada ? "0 0 0 1px var(--accent) inset" : undefined,
-                    borderRadius: 12,
-                    padding: 16,
-                    cursor: "pointer",
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: 6,
-                    font: "inherit",
-                    color: "var(--text)",
-                    position: "relative",
-                  }}
-                >
-                  {marcada && (
-                    <span
-                      aria-hidden="true"
-                      style={{
-                        position: "absolute",
-                        top: 10,
-                        right: 10,
-                        width: 22,
-                        height: 22,
-                        borderRadius: "50%",
-                        background: "var(--accent)",
-                        color: "#fff",
-                        fontSize: 12,
-                        fontWeight: 700,
-                        display: "grid",
-                        placeItems: "center",
-                      }}
-                    >
-                      {posicao + 1}
-                    </span>
-                  )}
-                  <span style={{ fontSize: 22 }}>{cat.emoji}</span>
-                  <span style={{ fontWeight: 600, fontSize: 14 }}>{cat.titulo}</span>
-                  {cat.prazo && (
-                    <span className="muted" style={{ fontSize: 12 }}>
-                      ⏱ {cat.prazo}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
+            {categorias.map((cat) => (
+              <CartaoDeCategoria
+                key={cat.slug}
+                cat={cat}
+                posicao={selecionadas.indexOf(cat.slug)}
+                onAlternar={() => alternarCategoria(cat.slug)}
+              />
+            ))}
           </div>
 
           <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 20 }}>
@@ -1045,5 +997,85 @@ function CampoInput({
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * Um cartão de categoria, na escolha do que se vai pedir.
+ *
+ * ⚠️⚠️ VIROU COMPONENTE em 10/09 pelo CONTORNO: o cartão era um
+ * `<button className="tappable">` dentro do `.map()`, e o anel duro do CSS deu
+ * lugar ao traço desenhado -- gancho não se chama dentro de um `map`.
+ *
+ * ⚠️ `marcada` NÃO É PROP, e é derivada de `posicao`: dois campos para o mesmo
+ * fato ("estou selecionada" e "sou a n-ésima") divergem no primeiro chamador
+ * distraído. A posição é a verdade; a marca é uma pergunta sobre ela.
+ *
+ * ⚠️ `radius` 12 = o `borderRadius` de baixo. Os dois têm de andar juntos.
+ */
+function CartaoDeCategoria({
+  cat,
+  posicao,
+  onAlternar,
+}: {
+  cat: Categoria;
+  posicao: number;
+  onAlternar: () => void;
+}) {
+  const marcada = posicao >= 0;
+  const { alvo, outline } = useDrawnOutline();
+  return (
+    <button
+      type="button"
+      onClick={onAlternar}
+      aria-pressed={marcada}
+      {...alvo}
+      style={{
+        textAlign: "left",
+        background: "var(--surface)",
+        border: `1px solid ${marcada ? "var(--accent)" : "var(--border)"}`,
+        boxShadow: marcada ? "0 0 0 1px var(--accent) inset" : undefined,
+        borderRadius: 12,
+        padding: 16,
+        cursor: "pointer",
+        display: "flex",
+        flexDirection: "column",
+        gap: 6,
+        font: "inherit",
+        color: "var(--text)",
+        // ⚠️ É ele que faz o contorno medir ESTE cartão.
+        position: "relative",
+      }}
+    >
+      {outline}
+                  {marcada && (
+                    <span
+                      aria-hidden="true"
+                      style={{
+                        position: "absolute",
+                        top: 10,
+                        right: 10,
+                        width: 22,
+                        height: 22,
+                        borderRadius: "50%",
+                        background: "var(--accent)",
+                        color: "#fff",
+                        fontSize: 12,
+                        fontWeight: 700,
+                        display: "grid",
+                        placeItems: "center",
+                      }}
+                    >
+                      {posicao + 1}
+                    </span>
+                  )}
+                  <span style={{ fontSize: 22 }}>{cat.emoji}</span>
+                  <span style={{ fontWeight: 600, fontSize: 14 }}>{cat.titulo}</span>
+                  {cat.prazo && (
+                    <span className="muted" style={{ fontSize: 12 }}>
+                      ⏱ {cat.prazo}
+                    </span>
+                  )}
+    </button>
   );
 }

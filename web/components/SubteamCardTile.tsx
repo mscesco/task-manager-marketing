@@ -22,10 +22,9 @@
 // ⚠️ MORA EM `components/`, então tem guardião — `app/` fica fora do
 // `include` do vitest.
 
-import { useState } from "react";
 import Link from "next/link";
 import { Pencil } from "lucide-react";
-import AnimatedOutline from "@/components/AnimatedOutline";
+import { useDrawnOutline } from "@/components/AnimatedOutline";
 import type { SubteamCard } from "@/lib/teamScreen";
 
 export default function SubteamCardTile({
@@ -39,17 +38,23 @@ export default function SubteamCardTile({
 }) {
   // ⚠️ O contorno acende no hover DO CARTÃO e no foco DO LINK -- os dois são
   // "este é o alvo", e um só dos dois deixaria o teclado sem destaque.
-  const [aceso, setAceso] = useState(false);
+  //
+  // ⚠️ A MECÂNICA SAIU DAQUI em 10/09: este cartão foi o primeiro a ter o
+  // contorno desenhado, e o `useState` + os dois `onMouse*` viviam aqui. Com o
+  // contorno virando o do produto inteiro (sete superfícies), a mecânica
+  // passou a morar em `useDrawnOutline` -- senão eram sete cópias do mesmo par
+  // de handlers, e a sétima erraria um deles.
+  const { alvo, outline } = useDrawnOutline();
 
   return (
     <div
       className="relative flex flex-col gap-2 rounded-lg border border-border bg-surface p-3"
-      onMouseEnter={() => setAceso(true)}
-      onMouseLeave={() => setAceso(false)}
+      onMouseEnter={alvo.onMouseEnter}
+      onMouseLeave={alvo.onMouseLeave}
     >
       {/* ⚠️ O contorno DESENHADO substitui o `outline` do CSS, que aparecia
           inteiro de uma vez e não acompanhava o raio do cartão. */}
-      <AnimatedOutline show={aceso} radius={8} />
+      {outline}
 
       <div className="flex items-center gap-2">
         <span className="min-w-0 flex-1 truncate font-semibold">
@@ -83,8 +88,8 @@ export default function SubteamCardTile({
         href={`/times/${card.team.id}`}
         aria-label={`Abrir ${card.team.name}`}
         className="absolute inset-0 rounded-lg"
-        onFocus={() => setAceso(true)}
-        onBlur={() => setAceso(false)}
+        onFocus={alvo.onFocus}
+        onBlur={alvo.onBlur}
       />
     </div>
   );

@@ -75,23 +75,27 @@ export default function PillSelect<T extends string>({
       <button
         ref={anchorRef}
         type="button"
-        className="tappable"
+        // ⚠️⚠️ `pill-target` É A FORMA DO ALVO, e ela vivia aqui como
+        // `borderRadius: 999` inline: o anel de foco segue o raio do ELEMENTO
+        // que o recebe, e sem isto um selo em forma de pílula ganhava um
+        // retângulo duro em volta — *"aqui ainda tá ruim o contorno do
+        // seletor"*.
+        //
+        // ⚠️ A CORREÇÃO GANHOU NOME em 10/09, e o motivo é que ela reapareceu
+        // duas vezes: a pílula de papel de organização e a de área na busca
+        // nasceram sem ela, cada uma com o mesmo retângulo. Uma correção
+        // anônima, escrita à mão num arquivo, não se propaga.
+        className="tappable pill-target"
         disabled={disabled}
         aria-haspopup="listbox"
         aria-expanded={isOpen}
         aria-label={label}
         title={disabled ? undefined : "Mudar"}
         onClick={() => setIsOpen((v) => !v)}
-        // ⚠️⚠️ `borderRadius: 999` NO BOTÃO, e não no selo de dentro: o
-        // `outline` do `.tappable:hover` e o do `:focus-visible` seguem o raio
-        // do ELEMENTO que os recebe. Sem isto, um selo em forma de pílula
-        // ganhava um retângulo duro em volta — *"aqui ainda tá ruim o contorno
-        // do seletor"*.
         style={{
           border: "none",
           background: "none",
           padding: 0,
-          borderRadius: 999,
           cursor: disabled ? "default" : "pointer",
           opacity: disabled ? 0.5 : 1,
         }}
