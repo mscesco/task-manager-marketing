@@ -76,7 +76,8 @@ export type ActiveTeam =
  *   1. o time no CAMINHO (`/times/<id>`, `/quadro/<id>`), subindo até a raiz;
  *   2. `?time=tudo`;
  *   3. `?time=<id>`, se for uma raiz que a pessoa alcança;
- *   4. a raiz da própria pessoa (a primeira por nome), como INFERIDA;
+ *   4. o time em que a pessoa TRABALHA (ou, sem vínculo, o primeiro que ela
+ *      alcança), como INFERIDO;
  *   5. nada.
  *
  * ⚠️⚠️ O CAMINHO GANHA DO PARÂMETRO, e não é arbitrário: numa tela **do** time,
@@ -94,16 +95,31 @@ export type ActiveTeam =
  *     para link velho é cair no time da pessoa e reescrever a URL, não desenhar
  *     uma tela vazia sem explicação.
  *
- * ⚠️ `reachable` vem de `rootsForPerson` já ordenado por nome, e é por isso que
- * o item 4 é "a primeira": a ordem da API não é contrato de ninguém, e sem
- * critério estável a pessoa cairia em times diferentes sem ter mudado nada. É a
- * mesma regra de `peopleEntry` e de `entradaDoQuadro`.
+ * ⚠️⚠️ O ITEM 4 PREFERE `own`, E ISSO CORRIGE UM DEFEITO DA PRÓPRIA SPEC. A
+ * §4.5 dizia "o time DA PESSOA, a mesma conta de `peopleEntry`" — e
+ * `peopleEntry` recebe `rootsForPerson`, que para quem tem papel de organização
+ * devolve TODOS os times. Para a conta da Camila (ADMIN) o primeiro por nome é
+ * "Comercial", e ela trabalha no Marketing: a reserva cairia exatamente no
+ * defeito que esta spec existe para matar.
+ *
+ * Então a ordem da reserva é: **o time em que ela trabalha** (`own`, de
+ * `ownRootTeams`) e, só se ela não tiver vínculo nenhum — o cadastro de quem
+ * administra a organização desde 08/09 —, o primeiro que ela alcança.
+ *
+ * ⚠️ As duas listas vêm ORDENADAS POR NOME (`rootTeams` ordena), e é por isso
+ * que "a primeira" é critério e não sorteio: a ordem da API não é contrato de
+ * ninguém, e sem critério estável a pessoa cairia em times diferentes sem ter
+ * mudado nada.
+ *
+ * ⚠️ `own ⊆ reachable`, sempre — quem tem vínculo num time o alcança. A
+ * validação do parâmetro usa `reachable`, que é o conjunto maior.
  */
 export function activeTeam(
   pathname: string,
   search: string,
   teams: readonly Team[],
   reachable: readonly Team[],
+  own: readonly Team[],
 ): ActiveTeam {
   const doCaminho = teamInPath(pathname, teams);
   if (doCaminho !== null) {
@@ -118,8 +134,38 @@ export function activeTeam(
     return { kind: "team", teamId: pedido, fromUrl: true };
   }
 
-  if (reachable.length === 0) return { kind: "none" };
-  return { kind: "team", teamId: reachable[0].id, fromUrl: false };
+  const reserva = preferredTeams(reachable, own)[0];
+  if (!reserva) return { kind: "none" };
+  return { kind: "team", teamId: reserva.id, fromUrl: false };
+}
+
+/**
+ * Os times da pessoa, na ordem em que o produto deve preferi-los.
+ *
+ * ⚠️⚠️ ELA EXISTE PARA NÃO SER TRÊS CÓPIAS. A mesma pergunta — *"qual time
+ * oferecer quando ninguém escolheu?"* — é feita em três lugares: a reserva do
+ * `activeTeam`, o destino do item **Time** do menu (`peopleEntry`) e a entrada
+ * do quadro (`entradaDoQuadro`). Escrever `own.length ? own : reachable` nos
+ * três seria a quarta cópia de regra de navegação deste projeto, e as três
+ * anteriores já divergiram (`rootOf`, duas vezes; a regra de alcance na Spec
+ * 034).
+ *
+ * ⚠️ ONDE ELA TRABALHA PRIMEIRO, e só depois o que ela alcança. Para quem tem
+ * papel de organização as duas listas diferem muito: `reachable` são todos os
+ * times, `own` é onde ela tem vínculo. Preferir `reachable` é o defeito 3.1 —
+ * "entrar no sistema abre o Comercial".
+ *
+ * ⚠️ E O RESTO VEM DEPOIS, em vez de ser descartado: quem alcança dois times e
+ * trabalha num só ainda pode navegar para o outro, e a lista completa é o que
+ * permite a `entradaDoQuadro` distinguir "tem uma só, desenha" de "tem várias,
+ * redireciona".
+ */
+export function preferredTeams(
+  reachable: readonly Team[],
+  own: readonly Team[],
+): Team[] {
+  const idsProprios = new Set(own.map((t) => t.id));
+  return [...own, ...reachable.filter((t) => !idsProprios.has(t.id))];
 }
 
 /**

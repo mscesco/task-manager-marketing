@@ -186,17 +186,39 @@ export function urlDoQuadroDeArea(areaId: string): string {
  *   `sem-area`      -- workspace quebrado. Não há para onde mandar, e
  *                      inventar um destino seria pior que mostrar o vazio.
  *
- * ⚠️ O DESTINO É A PRIMEIRA POR NOME, e a estabilidade é o ponto: `rootTeams`
- * ordena, então duas visitas seguidas caem na mesma área. Com a ordem da API,
- * a pessoa entraria em áreas diferentes sem ter mudado nada.
+ * ⚠️⚠️ A ENTRADA RECEBE OS TIMES **DA PESSOA**, EM ORDEM DE PREFERÊNCIA, e até
+ * 11/09 ela recebia a árvore inteira e mandava para a primeira raiz POR NOME.
+ * Era o defeito 3.1 da Spec 048, e o efeito na tela era direto: com "Comercial"
+ * e "Marketing" no banco, **entrar no sistema abria o Comercial** — porque "C"
+ * vem antes de "M" —, inclusive para quem trabalha no Marketing.
+ *
+ * Quem monta a lista é o chamador, com `ownRootTeams` primeiro e
+ * `rootsForPerson` como reserva (a mesma ordem de `activeTeam`). Duas
+ * consequências, as duas desejadas:
+ *
+ *   - um operador do Marketing num workspace de dois times alcança UM, e por
+ *     isso cai em `desenhar` em vez de ser redirecionado;
+ *   - quem administra a organização e trabalha no Marketing entra no Marketing,
+ *     e não no primeiro do alfabeto.
+ *
+ * ⚠️ A ORDEM AINDA É CRITÉRIO, e não sorteio: as duas listas vêm ordenadas por
+ * nome, então duas visitas seguidas caem no mesmo lugar. O que mudou foi QUAL
+ * lista, não o critério dentro dela.
+ *
+ * ⚠️ E ELA AINDA FILTRA RAIZ, mesmo recebendo uma lista que deveria só ter
+ * raízes: o tipo é `Team[]` nos dois casos, e o `tsc` não distingue "lista de
+ * raízes" de "lista de times". O filtro é o que impede um subtime passado por
+ * engano de virar destino de entrada.
  */
 export type EntradaDoQuadro =
   | { readonly tipo: "desenhar"; readonly areaId: string }
   | { readonly tipo: "redirecionar"; readonly para: string }
   | { readonly tipo: "sem-area" };
 
-export function entradaDoQuadro(teams: readonly Team[]): EntradaDoQuadro {
-  const areas = rootTeams(teams);
+export function entradaDoQuadro(
+  myRoots: readonly Team[]
+): EntradaDoQuadro {
+  const areas = myRoots.filter((t) => t.parent_team_id === null);
   if (areas.length === 0) return { tipo: "sem-area" };
   if (areas.length === 1) return { tipo: "desenhar", areaId: areas[0].id };
   return { tipo: "redirecionar", para: urlDoQuadroDeArea(areas[0].id) };

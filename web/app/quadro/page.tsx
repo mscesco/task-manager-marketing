@@ -8,6 +8,8 @@ import SeletorDeQuadro from "@/components/SeletorDeQuadro";
 import AcoesDoQuadro from "@/components/AcoesDoQuadro";
 import { currentUser, listBoards, listTeamsAll, type Quadro } from "@/lib/api";
 import { entradaDoQuadro } from "@/lib/areas";
+import { preferredTeams } from "@/lib/activeTeam";
+import { ownRootTeams, rootsForPerson } from "@/lib/contextSwitcher";
 import Loading from "@/components/Loading";
 import {
   alcanceDeQuadro,
@@ -81,12 +83,26 @@ function QuadroGeral() {
     // URL, então ela não merece uma entrada no histórico. Com `push`, o botão
     // Voltar traria a pessoa para cá e o redirecionamento a levaria de novo
     // para a frente -- um laço que ela não consegue sair.
-    listTeamsAll()
-      .then((times) => {
+    Promise.all([listTeamsAll(), currentUser()])
+      .then(([times, me]) => {
         // ⚠️ A ESCOLHA E DE `lib/areas`, e esta pagina so a EXECUTA -- `app/`
         // esta fora do `include` do vitest, e regra escrita aqui nao teria
         // guardiao (mesma licao de `candidatosParaAdicionar`, Spec 044).
-        const entrada = entradaDoQuadro(times);
+        //
+        // ⚠️⚠️ E ELA RECEBE OS TIMES **DA PESSOA**, em ordem de preferencia
+        // (Spec 048, fatia B). Ate 11/09 recebia a arvore inteira e mandava
+        // para a primeira raiz POR NOME -- ou seja, **entrar no sistema abria o
+        // Comercial**, inclusive para quem trabalha no Marketing. Era o defeito
+        // 3.1 da spec, e a Camila o descreveu assim: *"tudo ta levando em
+        // consideracao o quadro do comercial que nao tem nada, mesmo que eu
+        // esteja no marketing"*.
+        const podeVerOrganizacao = (me.org_role ?? null) !== null;
+        const entrada = entradaDoQuadro(
+          preferredTeams(
+            rootsForPerson(times, me, podeVerOrganizacao),
+            ownRootTeams(times, me),
+          ),
+        );
         if (entrada.tipo === "desenhar") {
           setRootId(entrada.areaId);
           return;

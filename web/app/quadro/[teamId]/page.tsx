@@ -13,6 +13,7 @@ import {
   type Team,
 } from "@/lib/api";
 import { computeLens } from "@/lib/lens";
+import { rootTeamOf } from "@/lib/areas";
 import Loading from "@/components/Loading";
 import {
   alcanceDeQuadro,
@@ -102,7 +103,16 @@ export default function QuadroSubtimePage() {
         if (!vivo) return;
         const alvo = teams.find((t) => t.id === teamId) ?? null;
         setTeam(alvo);
-        const lens = computeLens(me.teams, teams, me.roles);
+        // ⚠️ O TIME ATIVO AQUI E A RAIZ DO TIME DA URL (Spec 048, fatia B).
+        // Esta tela so usa `visibleTeamIds`, que nao depende dele -- mas passar
+        // `null` faria `boardSubteams` sair vazio, e o dia em que alguem ler
+        // essa parte aqui seria um menu vazio sem causa aparente.
+        const lens = computeLens(
+          me.teams,
+          teams,
+          me.roles,
+          rootTeamOf(teamId, teams),
+        );
         setTemAcesso(alvo ? lens.visibleTeamIds.has(alvo.id) : false);
         // ⚠️ A DECISAO MORA EM `lib/seletorDeQuadro`, e nao aqui. A tela so
         // guarda a resposta.

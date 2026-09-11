@@ -2,7 +2,7 @@
 
 **Status:** escrita em 10/09/2026, decidida com a Camila na mesma conversa.
 Decisões tomadas — a última (§4.1, a forma da URL) confirmada por ela em
-11/09: *"pode ser como recomenda"*. **Fatia A entregue em 11/09.**
+11/09: *"pode ser como recomenda"*. **Fatias A e B entregues em 11/09.**
 **Escopo:** frontend, mais **duas** mudanças de backend (§5, fatias D e E).
 **Depende de:** **Spec 046 fatia 4** (a área na URL do quadro, e o `area_id`
 obrigatório em `default_board_and_column_for_status`) e **Spec 047** (o seletor
@@ -210,8 +210,27 @@ formulário e o time"*. O que nunca existiu foi o `WHERE`.
 ### 4.5. Onde a pessoa cai ao entrar
 
 ⚠️ Hoje `/` manda para `/quadro`, que redireciona para a primeira raiz por nome.
-**Nesta spec, `/` manda para o quadro do time DA PESSOA** — a mesma conta de
-`peopleEntry`, e não a ordem alfabética.
+**Nesta spec, `/` manda para o quadro do time DA PESSOA.**
+
+⚠️⚠️ **E "a mesma conta de `peopleEntry`" ESTAVA ERRADO** — era o que esta seção
+dizia até 11/09, e a fatia B pegou ao ligar. `peopleEntry` recebe
+`rootsForPerson`, que para quem tem **papel de organização devolve TODOS os
+times**; a primeira por nome é "Comercial", e ela trabalha no Marketing. A spec
+conservava o próprio defeito que ela existe para matar, com outra roupa.
+
+A conta certa distingue duas perguntas que não são a mesma:
+
+    rootsForPerson  -> onde a pessoa ALCANÇA   (para quem administra: todos)
+    ownRootTeams    -> onde a pessoa TRABALHA  (o vínculo, resolvido na árvore)
+
+E a ordem de preferência — `preferredTeams` — é **trabalha primeiro, alcança
+depois**. O resto não é descartado: é ele que distingue "tem um time só,
+desenha" de "tem vários, redireciona".
+
+⚠️ Vale para os TRÊS lugares que fazem a mesma pergunta: a reserva do
+`activeTeam`, o destino do item **Time** do menu e a entrada do quadro. Escrever
+a regra nos três seria a quarta cópia de regra de navegação deste projeto — e as
+três anteriores já divergiram.
 
 ⚠️ **O dashboard não entra aqui.** Ela pediu um painel de "o que fazer agora", e
 combinamos que é spec própria e **depois** desta: o painel é por time, e precisa
@@ -239,12 +258,26 @@ um subtime era raiz; a outra devolvia `null`). Viraram uma,
 `rootTeamOf` em `lib/areas.ts`, unificada no `null` — fail-closed. Três cópias
 de uma caminhada de árvore é o defeito que a Spec 034 já pagou (D2/D4).
 
-**Fatia B — a barra deixa de sortear (front).**
-`computeLens` passa a receber o time ativo; os sub-quadros do menu passam a ser
-os daquele time; "Quadro geral" aponta para ele; a entrada `/` e `/quadro`
-deixam de redirecionar pela ordem alfabética. Mata os defeitos 3.1 e 3.2.
-⚠️ **É a fatia que destrava o smoke da 047.** Depois dela a Camila consegue
-testar os blocos 3 a 5 e subir.
+**Fatia B — a barra deixa de sortear (front).** ✅ **ENTREGUE em 11/09.**
+`computeLens(myTeams, allTeams, roles, activeRootId)` — o time ativo **sem
+default**, pelo mesmo argumento da Spec 046 fatia 4: o `tsc` apontou os dois
+chamadores em vez de deixá-los compilando e errados. `boardSubteams` passou a
+ser os subtimes **daquele** time; "Quadro geral" aponta para ele; e
+`entradaDoQuadro` passou a receber os times **da pessoa em ordem de
+preferência** em vez da árvore inteira. Mata os defeitos 3.1 e 3.2.
+⚠️ **É a fatia que destrava o smoke da 047.**
+
+⚠️⚠️ **O `search` VAI VAZIO nesta fatia, e é decisão, não esquecimento.**
+Nenhuma tela escreve `?time=` ainda, então ler a query na barra não
+acrescentaria informação — e obrigaria a resolver AGORA o `useSearchParams` em
+rota estática. A barra resolve pelo caminho e, fora dele, pelo time em que a
+pessoa trabalha. **A fatia C tem de ligar a query no `AppShell` junto com as
+telas**; sem isso a barra mostraria os quadros de um time e a tela o conteúdo de
+outro.
+
+⚠️ E a §4.2 (trocar de time mantém a tela) **ficou para a fatia C**, de
+propósito: escrever `?time=` no seletor antes de as telas honrarem o parâmetro
+poria uma URL que mente — ela diria o time e a tela não filtraria.
 
 **Fatia C — as telas recortam (front).**
 Projetos, Arquivadas, Solicitações e Formulários passam a ler o time ativo e a

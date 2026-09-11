@@ -31,7 +31,13 @@ import {
 } from "@/lib/sidebar";
 import NotificationBell from "@/components/NotificationBell";
 import ContextSwitcher from "@/components/ContextSwitcher";
-import { peopleEntry, rootsForPerson } from "@/lib/contextSwitcher";
+import {
+  ownRootTeams,
+  peopleEntry,
+  rootsForPerson,
+} from "@/lib/contextSwitcher";
+import { activeTeam, preferredTeams } from "@/lib/activeTeam";
+import { urlDoQuadroDeArea } from "@/lib/areas";
 import {
   LayoutGrid,
   FolderKanban,
@@ -155,8 +161,43 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   if (loading) return <LoadingScreen />;
 
-  // Fatia 2/7b: sub-abas de quadro = subtimes visiveis na lente do usuario.
-  const lens = user ? computeLens(user.teams, teams, user.roles) : null;
+  // ⚠️⚠️ O PAPEL DE ORGANIZACAO SOBE PARA CA (era calculado depois da lente):
+  // ele decide quais times a pessoa ALCANCA, e o alcance entra na lente.
+  //
+  // ⚠️ E NAO E UMA PERMISSAO -- consertado em 10/09, com o defeito na tela: uma
+  // pessoa que "nao administra a organizacao" via "Gerenciar a organizacao" no
+  // seletor. O gate era `permissions.includes("area.create")`, e parecia certo
+  // (§4.1 da Spec 046), mas `_ORG_ROLE_PERMISSIONS[ADMIN]` E LITERALMENTE
+  // `_ROLE_PERMISSIONS[UserTeamRole.ADMIN]` -- entao quem tem papel de TIME
+  // ADMIN (residuo anterior a Spec 045) carrega `area.create` tambem. E `roles`
+  // nao desempata: o `/auth/me` junta os dois niveis ali de proposito.
+  const podeVerOrganizacao = (user?.org_role ?? null) !== null;
+
+  // ONDE a pessoa alcanca, e onde ela TRABALHA -- duas perguntas diferentes, e
+  // para quem administra a organizacao as respostas divergem muito.
+  const alcanca = rootsForPerson(teams, user, podeVerOrganizacao);
+  const trabalha = ownRootTeams(teams, user);
+  const preferidos = preferredTeams(alcanca, trabalha);
+
+  // ⚠️⚠️ O TIME ATIVO DA BARRA (Spec 048, fatia B). Ate 11/09 a lente pegava a
+  // PRIMEIRA RAIZ da lista, e o menu respondia pelo time errado: com dois
+  // times, os sub-quadros eram os de todos eles juntos e o "Quadro geral"
+  // apontava para o primeiro do alfabeto.
+  //
+  // ⚠️⚠️ `search` VAI VAZIO NESTA FATIA, E E DE PROPOSITO -- nao e esquecimento.
+  // Nenhuma tela escreve `?time=` ainda (isso e a fatia C), entao ler a query
+  // aqui nao acrescentaria informacao e obrigaria a decidir AGORA a questao de
+  // `useSearchParams` em rota estatica (`AGENTS.md` §6). A fatia C liga a query
+  // junto com as telas, que e onde a fronteira de `Suspense` tem de existir.
+  // ⚠️ Enquanto isso, a barra resolve pelo CAMINHO (`/times/<id>`,
+  // `/quadro/<id>`) e, fora deles, pelo time em que a pessoa trabalha.
+  const contexto = activeTeam(pathname, "", teams, alcanca, trabalha);
+  const timeAtivo = contexto.kind === "team" ? contexto.teamId : null;
+
+  // Fatia 2/7b: sub-abas de quadro = subtimes DO TIME ATIVO que a lente alcanca.
+  const lens = user
+    ? computeLens(user.teams, teams, user.roles, timeAtivo)
+    : null;
   const subteams = lens ? lens.boardSubteams : [];
 
   // Spec 025/D11: a fila de solicitações é do time principal. Só quem
@@ -167,22 +208,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     user?.permissions.includes("solicitation.review") ?? false;
 
   const podeGerirTimes = user?.permissions.includes("team.manage") ?? false;
-
-  // ⚠️⚠️ O PAPEL DE ORGANIZACAO, e NAO uma permissao -- consertado em 10/09,
-  // com o defeito na tela: uma pessoa que "nao administra a organizacao" via
-  // "Gerenciar a organizacao" no seletor da barra.
-  //
-  // O gate era `permissions.includes("area.create")`, e parecia certo: a §4.1
-  // da Spec 046 diz que `area.create` so existe nos papeis de organizacao. So
-  // que `_ORG_ROLE_PERMISSIONS[ADMIN]` E LITERALMENTE `_ROLE_PERMISSIONS[
-  // UserTeamRole.ADMIN]` -- o mesmo conjunto --, entao quem tem papel de TIME
-  // ADMIN (residuo anterior a Spec 045, que ainda existe em `user_team`)
-  // carrega `area.create` tambem.
-  //
-  // ⚠️ E `roles` NAO SERVE para desempatar: o `/auth/me` junta os dois niveis
-  // ali de proposito, e "ADMIN" no array pode ser um ou outro. Por isso a
-  // rota passou a devolver `org_role` como campo proprio.
-  const podeVerOrganizacao = (user?.org_role ?? null) !== null;
 
   // Spec 043 (fatia C). ⚠️ PERMISSÃO PRÓPRIA, e não a de triagem: definir o
   // que se pergunta e responder a fila são trabalhos diferentes, e o backend
@@ -200,8 +225,12 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   // um "/membros" que sirva para todo mundo: a entrada cai na area DA PESSOA,
   // e quem administra a organizacao cai na primeira por nome. A regra mora em
   // `lib/contextSwitcher.ts`, testada -- aqui so se le.
-  const minhasAreas = rootsForPerson(teams, user, podeVerOrganizacao);
-  const entradaDoTime = peopleEntry(minhasAreas);
+  // ⚠️ `preferidos`, e nao `alcanca`: o item TIME leva ao time em que a pessoa
+  // TRABALHA. Com `alcanca`, quem administra a organizacao caia no primeiro do
+  // alfabeto -- o mesmo defeito do "Quadro geral", e a Camila o descreveu com
+  // estas palavras: *"tudo ta levando em consideracao o quadro do comercial que
+  // nao tem nada, mesmo que eu esteja no marketing"*.
+  const entradaDoTime = peopleEntry(preferidos);
 
   // Itens simples (fora do grupo Quadros).
   const nav: { href: string; label: string; icon: LucideIcon }[] = [
@@ -265,7 +294,15 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     }`;
 
   const w = open ? "w-56" : "w-16";
-  const geralActive = pathname === "/quadro";
+  // ⚠️⚠️ O "QUADRO GERAL" APONTA PARA O TIME ATIVO, e nao mais para `/quadro`
+  // cru -- que redirecionava para a primeira raiz por nome (defeito 3.1).
+  // ⚠️ Sem time ativo ele cai em `/quadro`, que ainda sabe decidir sozinho (ou
+  // desenhar, com uma raiz so, ou mostrar o vazio). Melhor um endereco que se
+  // resolve que um link morto.
+  const hrefGeral = timeAtivo ? urlDoQuadroDeArea(timeAtivo) : "/quadro";
+  // ⚠️ E o ATIVO passa a casar com os DOIS enderecos: quem chegou por
+  // `/quadro` (link antigo, favorito) e quem chegou por `/quadro/<ativo>`.
+  const geralActive = pathname === "/quadro" || pathname === hrefGeral;
   const algumQuadroAtivo = pathname.startsWith("/quadro");
 
   return (
@@ -348,7 +385,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               </button>
               {quadrosOpen && (
                 <div className="flex flex-col gap-0.5">
-                  <a href="/quadro" className={subItemCls(geralActive)}>
+                  <a href={hrefGeral} className={subItemCls(geralActive)}>
                     <span className="truncate">Quadro geral</span>
                   </a>
                   {subteams.map((t) => {
@@ -363,7 +400,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               )}
             </>
           ) : (
-            <a href="/quadro" title="Quadros" aria-label="Quadros" className={itemCls(algumQuadroAtivo)}>
+            <a href={hrefGeral} title="Quadros" aria-label="Quadros" className={itemCls(algumQuadroAtivo)}>
               <Columns3 size={18} className="shrink-0" />
             </a>
           )}

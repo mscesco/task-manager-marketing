@@ -12,6 +12,7 @@ import { describe, it, expect } from "vitest";
 import {
   contextChoice,
   currentContext,
+  ownRootTeams,
   peopleEntry,
   rootsForPerson,
 } from "../contextSwitcher";
@@ -226,6 +227,48 @@ describe("currentContext — o botão diz ONDE VOCÊ ESTÁ", () => {
   it("caminho com sufixo resolve o MESMO time", () => {
     // `/times/<id>/` ou uma sub-rota futura não podem apagar o contexto.
     expect(currentContext(`/times/${MKT}/`, TIMES, ORG).label).toBe("Marketing");
+  });
+});
+
+describe("ownRootTeams — onde a pessoa TRABALHA", () => {
+  it("⚠️⚠️ subconjunto de `rootsForPerson`, e a diferença é o defeito da §4.5", () => {
+    // ⚠️ Quem administra a organização ALCANÇA todos os times e TRABALHA em um.
+    // A spec dizia que a entrada cai no "time da pessoa, pela mesma conta de
+    // `peopleEntry`" -- e `peopleEntry` recebe o alcance. Para a conta dela
+    // (ADMIN, vínculo no Marketing) isso dava "Comercial", o primeiro do
+    // alfabeto.
+    const admin = pessoa([MKT]);
+    expect(rootsForPerson(TIMES, admin, true).map((t) => t.name)).toEqual([
+      "Marketing",
+      "TI",
+    ]);
+    expect(ownRootTeams(TIMES, admin).map((t) => t.name)).toEqual(["Marketing"]);
+  });
+
+  it("⚠️ resolve o vínculo na ÁRVORE: quem está só no subtime trabalha no time", () => {
+    expect(ownRootTeams(TIMES, pessoa([SEO])).map((t) => t.name)).toEqual([
+      "Marketing",
+    ]);
+    expect(ownRootTeams(TIMES, pessoa([JR])).map((t) => t.name)).toEqual([
+      "Marketing",
+    ]);
+  });
+
+  it("⚠️ VAZIO é resposta válida -- é o cadastro dela desde 08/09", () => {
+    // Papel de organização pode não ter vínculo nenhum (Spec 045, fatia B).
+    // Quem trata esse caso é `preferredTeams`, caindo no alcance.
+    expect(ownRootTeams(TIMES, pessoa([]))).toEqual([]);
+  });
+
+  it("sem usuário, vazio", () => {
+    expect(ownRootTeams(TIMES, null)).toEqual([]);
+  });
+
+  it("ordenado por nome, como todo lugar que responde 'a primeira'", () => {
+    expect(ownRootTeams(TIMES, pessoa([TI, SEO])).map((t) => t.name)).toEqual([
+      "Marketing",
+      "TI",
+    ]);
   });
 });
 

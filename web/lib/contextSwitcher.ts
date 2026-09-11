@@ -55,6 +55,38 @@ export function rootsForPerson(
 }
 
 /**
+ * Os times raiz em que ESTA pessoa tem vínculo de trabalho.
+ *
+ * ⚠️⚠️ SUBCONJUNTO DE `rootsForPerson`, E A DIFERENÇA É O PONTO. Aquela responde
+ * *"quais times ela ALCANÇA"* — e para quem tem papel de organização a resposta
+ * é "todos". Esta responde *"em quais ela TRABALHA"*, e para a mesma pessoa a
+ * resposta costuma ser um.
+ *
+ * ⚠️⚠️ ELA NASCEU DE UM DEFEITO MEU, achado ao ligar a fatia B: a §4.5 da Spec
+ * 048 dizia que a entrada cai no "time da pessoa, pela mesma conta de
+ * `peopleEntry`" — e `peopleEntry` recebe `rootsForPerson`, que para a conta da
+ * Camila (ADMIN de organização) devolve TODOS os times. O primeiro por nome é
+ * "Comercial", e ela trabalha no Marketing. Ou seja: a spec conservava o
+ * próprio defeito que a fatia existe para matar, com outra roupa.
+ *
+ * ⚠️ VAZIO É RESPOSTA VÁLIDA, e é o cadastro dela desde 08/09: quem administra a
+ * organização pode não ter vínculo nenhum (Spec 045, fatia B). Nesse caso a
+ * preferência cai para `rootsForPerson`, e aí sim a primeira por nome.
+ */
+export function ownRootTeams(
+  teams: readonly Team[],
+  me: CurrentUser | null,
+): Team[] {
+  if (!me) return [];
+  const minhas = new Set<string>();
+  for (const vinculo of me.teams) {
+    const raiz = rootTeamOf(vinculo.team_id, teams);
+    if (raiz) minhas.add(raiz);
+  }
+  return rootTeams(teams).filter((t) => minhas.has(t.id));
+}
+
+/**
  * O que o botão da barra MOSTRA, e qual item leva o ✓.
  *
  * ⚠️⚠️ ELE DIZ ONDE VOCÊ ESTÁ, e até 10/09 dizia "Trocar de área" — que é o
