@@ -1023,13 +1023,13 @@ function CartaoDeCategoria({
   onAlternar: () => void;
 }) {
   const marcada = posicao >= 0;
-  const { alvo, outline } = useDrawnOutline();
+  const { target, outline } = useDrawnOutline();
   return (
     <button
       type="button"
       onClick={onAlternar}
       aria-pressed={marcada}
-      {...alvo}
+      {...target}
       style={{
         textAlign: "left",
         background: "var(--surface)",

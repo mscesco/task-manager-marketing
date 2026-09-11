@@ -1350,7 +1350,7 @@ function FaixaClicavel({
   style: React.CSSProperties;
   children: React.ReactNode;
 }) {
-  const { alvo, outline } = useDrawnOutline();
+  const { target, outline } = useDrawnOutline();
   return (
     <div
       role="button"
@@ -1362,7 +1362,7 @@ function FaixaClicavel({
           onAbrir();
         }
       }}
-      {...alvo}
+      {...target}
       // ⚠️ `position: relative` é o que faz o contorno medir ESTA faixa.
       style={{ position: "relative", cursor: "pointer", ...style }}
     >

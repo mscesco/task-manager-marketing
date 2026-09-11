@@ -264,11 +264,11 @@ function Projetos() {
  * traco arredondado no meio de uma lista de cantos retos.
  */
 function LinhaDeProjeto({ p, primeira }: { p: Project; primeira: boolean }) {
-  const { alvo, outline } = useDrawnOutline();
+  const { target, outline } = useDrawnOutline();
   return (
             <a
               href={`/projetos/${p.id}`}
-              {...alvo}
+              {...target}
               style={{
                 // ⚠️ `relative` e o que faz o contorno medir ESTA faixa.
                 position: "relative",

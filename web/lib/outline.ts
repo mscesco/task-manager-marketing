@@ -19,7 +19,7 @@
  */
 
 /** Espessura do traço, em pixels. */
-export const ESPESSURA = 2;
+export const STROKE_WIDTH = 2;
 
 /**
  * Metade da espessura — o quanto o caminho recua para dentro da caixa.
@@ -27,7 +27,7 @@ export const ESPESSURA = 2;
  * ⚠️ Um traço tem espessura para os DOIS lados da linha. Correndo sobre a
  * borda (`0,0` a `w,h`), 1px fica fora da `viewBox` e o navegador o corta.
  */
-export const RECUO = ESPESSURA / 2;
+export const INSET = STROKE_WIDTH / 2;
 
 /**
  * O caminho da volta, começando e terminando no MEIO DA BASE.
@@ -48,17 +48,17 @@ export const RECUO = ESPESSURA / 2;
  * @param h altura da superfície, em pixels
  * @param r raio da superfície (o do CSS dela), em pixels
  */
-export function caminhoDaVolta(w: number, h: number, r: number): string {
-  const x0 = RECUO;
-  const y0 = RECUO;
-  const x1 = w - RECUO;
-  const y1 = h - RECUO;
+export function outlinePath(w: number, h: number, r: number): string {
+  const x0 = INSET;
+  const y0 = INSET;
+  const x1 = w - INSET;
+  const y1 = h - INSET;
   // ⚠️ O `max(0, …)` cobre o raio 0 (faixa de lista, que se divide por borda):
-  // `0 - RECUO` daria -1, e raio negativo num arco de SVG não desenha nada.
+  // `0 - INSET` daria -1, e raio negativo num arco de SVG não desenha nada.
   // ⚠️ E os dois `min` cobrem a superfície mais estreita que o próprio raio --
   // um cartão de 10px de altura com raio 12 desenharia arcos maiores que a
   // caixa, e a volta se dobraria sobre si mesma.
-  const raio = Math.max(0, Math.min(r - RECUO, (x1 - x0) / 2, (y1 - y0) / 2));
+  const raio = Math.max(0, Math.min(r - INSET, (x1 - x0) / 2, (y1 - y0) / 2));
   return [
     `M ${(x0 + x1) / 2} ${y1}`,
     `L ${x0 + raio} ${y1}`,
@@ -81,7 +81,7 @@ export function caminhoDaVolta(w: number, h: number, r: number): string {
  * vez, aqui, deixa o teste falar sobre GEOMETRIA -- "nenhum ponto encosta na
  * borda" -- em vez de sobre formatação.
  */
-export function pontosDoCaminho(d: string): { x: number; y: number }[] {
+export function pathPoints(d: string): { x: number; y: number }[] {
   // Os comandos são `M x y`, `L x y`, `A rx ry rot arc sweep x y` e `Z`. Em
   // todos, os DOIS ÚLTIMOS números são o ponto de destino -- inclusive no arco,
   // que também termina num ponto do contorno. É o que este laço aproveita, em

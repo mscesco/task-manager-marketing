@@ -315,7 +315,7 @@ function CardEnvio({
   // arredondado; e mover o clique para o cartão inteiro faria os botões de
   // dentro (aprovar, recusar) alternarem a seção sem querer.
   // ⚠️ `radius` 8 = o `rounded-lg` do `Card`.
-  const { alvo, outline } = useDrawnOutline();
+  const { target, outline } = useDrawnOutline();
 
   return (
     <Card className="relative p-4">
@@ -323,7 +323,7 @@ function CardEnvio({
       {/* ---------- cabeçalho: o solicitante ---------- */}
       <div
         onClick={onToggle}
-        {...alvo}
+        {...target}
         style={{
           display: "flex", alignItems: "flex-start", gap: 12, flexWrap: "wrap",
           cursor: "pointer",

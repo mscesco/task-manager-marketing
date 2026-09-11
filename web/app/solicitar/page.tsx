@@ -177,11 +177,11 @@ function CartaoDeFormulario({
 }: {
   f: { slug: string; title: string; description?: string | null };
 }) {
-  const { alvo, outline } = useDrawnOutline();
+  const { target, outline } = useDrawnOutline();
   return (
     <a
       href={`/solicitar/${f.slug}`}
-      {...alvo}
+      {...target}
       style={{
         // ⚠️ `relative` é o que faz o contorno medir ESTE cartão.
         position: "relative",

@@ -389,14 +389,14 @@ export default function OrganizacaoPage() {
  */
 function CartaoDeArea({ card }: { card: AreaCard }) {
   const { area, pessoas, subteams } = card;
-  const { alvo, outline } = useDrawnOutline();
+  const { target, outline } = useDrawnOutline();
   return (
     <Link
       href={`/times/${area.id}`}
       // ⚠️ `relative` é o que faz o contorno medir ESTE cartão. Sem ela ele
       // mediria o ancestral posicionado mais próximo — a grade inteira.
       className="relative block cursor-pointer rounded-lg border border-border bg-surface p-4"
-      {...alvo}
+      {...target}
     >
       {outline}
       <strong className="text-[15px]">{area.name}</strong>
@@ -826,14 +826,14 @@ function Opcao({
   // consequência -- do tamanho de um cartão, e é onde se decide o papel de
   // alguém. O traço que corre é o registro certo aqui.
   // ⚠️ `radius` 4: o `rounded` do Tailwind, e não o `rounded-lg` dos cartões.
-  const { alvo, outline } = useDrawnOutline();
+  const { target, outline } = useDrawnOutline();
   return (
     <button
       className="relative mb-1 block w-full cursor-pointer rounded border border-border p-2 text-left"
       onClick={onSelect}
       disabled={disabled || active}
       aria-current={active}
-      {...alvo}
+      {...target}
     >
       {outline}
       <span className="text-sm font-semibold">

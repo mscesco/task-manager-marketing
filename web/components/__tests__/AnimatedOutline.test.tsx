@@ -21,9 +21,9 @@ afterEach(cleanup);
 
 /** Uma superfície qualquer, montada como as sete reais montam. */
 function Superficie({ onClick }: { onClick: () => void }) {
-  const { alvo, outline } = useDrawnOutline(8);
+  const { target, outline } = useDrawnOutline(8);
   return (
-    <button className="relative" onClick={onClick} {...alvo}>
+    <button className="relative" onClick={onClick} {...target}>
       {outline}
       Abrir a área
     </button>
@@ -72,8 +72,8 @@ describe("AnimatedOutline", () => {
     // destaque -- que é exatamente o que o `:focus-visible` do CSS fazia de
     // graça antes de o contorno o substituir nas superfícies.
     function Sonda() {
-      const { alvo } = useDrawnOutline();
-      return <span data-testid="chaves">{Object.keys(alvo).join(",")}</span>;
+      const { target } = useDrawnOutline();
+      return <span data-testid="chaves">{Object.keys(target).join(",")}</span>;
     }
     render(<Sonda />);
     expect(screen.getByTestId("chaves").textContent).toBe(

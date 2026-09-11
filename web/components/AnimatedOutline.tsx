@@ -44,7 +44,7 @@ import { motion } from "motion/react";
 // ⚠️ A GEOMETRIA MORA EM `lib/`, e nao aqui: em jsdom nao ha layout, o
 // `<svg>` nunca monta, e nenhum teste de componente alcanca o caminho. Foi
 // por isso que o traco cortado no canto chegou a tela sem ninguem ver.
-import { caminhoDaVolta, ESPESSURA } from "@/lib/contorno";
+import { outlinePath, STROKE_WIDTH } from "@/lib/outline";
 
 /** Quanto do perímetro o traço ocupa. Ver o bloco no topo. */
 const TAMANHO_DO_TRACO = 0.22;
@@ -64,7 +64,7 @@ const TAMANHO_DO_TRACO = 0.22;
  * elemento é o que fecha essa porta -- inclusive para quem mudar o token
  * depois.
  */
-function raioDoPai(el: Element): number | null {
+function cssRadiusOf(el: Element): number | null {
   const pai = el.parentElement;
   if (!pai) return null;
   // ⚠️ `getComputedStyle` devolve "" em jsdom e "0px" quando não há raio; os
@@ -84,13 +84,13 @@ export default function AnimatedOutline({
   show: boolean;
   /**
    * Raio, em pixels — **reserva**. O normal é NÃO passar: o contorno lê o raio
-   * do CSS da superfície (`raioDoPai`). Só serve para o caso em que ler falhe
+   * do CSS da superfície (`cssRadiusOf`). Só serve para o caso em que ler falhe
    * (raio em porcentagem, ou ambiente sem layout).
    */
   radius?: number;
 }) {
   const ref = useRef<HTMLSpanElement | null>(null);
-  const [medida, setMedida] = useState<{
+  const [measured, setMeasured] = useState<{
     w: number;
     h: number;
     r: number;
@@ -106,10 +106,10 @@ export default function AnimatedOutline({
     // tamanho, mas muda com o TEMA e com qualquer troca do token -- e reler
     // aqui custa nada, enquanto uma leitura única na montagem envelheceria.
     const medir = () =>
-      setMedida({
+      setMeasured({
         w: el.offsetWidth,
         h: el.offsetHeight,
-        r: raioDoPai(el) ?? radius ?? 0,
+        r: cssRadiusOf(el) ?? radius ?? 0,
       });
     medir();
     // ⚠️⚠️ A GUARDA NÃO É PARANOIA COM NAVEGADOR VELHO -- é o jsdom. Enquanto
@@ -144,18 +144,18 @@ export default function AnimatedOutline({
       aria-hidden="true"
       className="pointer-events-none absolute inset-0 block"
     >
-      {medida && medida.w > 0 && (
+      {measured && measured.w > 0 && (
         <svg
           className="absolute inset-0"
-          width={medida.w}
-          height={medida.h}
-          viewBox={`0 0 ${medida.w} ${medida.h}`}
+          width={measured.w}
+          height={measured.h}
+          viewBox={`0 0 ${measured.w} ${measured.h}`}
         >
           <motion.path
-            d={caminhoDaVolta(medida.w, medida.h, medida.r)}
+            d={outlinePath(measured.w, measured.h, measured.r)}
             fill="none"
             stroke="var(--accent)"
-            strokeWidth={ESPESSURA}
+            strokeWidth={STROKE_WIDTH}
             strokeLinecap="round"
             // ⚠️ FIXO: é o TAMANHO do traço, não o progresso. Ver o topo.
             pathLength={TAMANHO_DO_TRACO}
@@ -200,8 +200,8 @@ export default function AnimatedOutline({
  * tudo isso e ainda escolher a tag. O gancho devolve as três peças e deixa a
  * tag onde ela está:
  *
- *     const { alvo, outline } = useDrawnOutline();
- *     <a {...alvo} className="relative …">{outline}…</a>
+ *     const { target, outline } = useDrawnOutline();
+ *     <a {...target} className="relative …">{outline}…</a>
  *
  * ⚠️ `relative` FICA NO CHAMADOR, de propósito: o contorno é `absolute
  * inset-0`, e sem contexto de posicionamento ele mediria o ancestral posicionado
@@ -219,18 +219,18 @@ export default function AnimatedOutline({
  * muito bem os arredondados"* de 10/09.
  */
 export function useDrawnOutline(radius?: number) {
-  const [aceso, setAceso] = useState(false);
-  const alvo = useMemo(
+  const [lit, setLit] = useState(false);
+  const target = useMemo(
     () => ({
-      onMouseEnter: () => setAceso(true),
-      onMouseLeave: () => setAceso(false),
-      onFocus: () => setAceso(true),
-      onBlur: () => setAceso(false),
+      onMouseEnter: () => setLit(true),
+      onMouseLeave: () => setLit(false),
+      onFocus: () => setLit(true),
+      onBlur: () => setLit(false),
     }),
     [],
   );
   return {
-    alvo,
-    outline: <AnimatedOutline show={aceso} radius={radius} />,
+    target,
+    outline: <AnimatedOutline show={lit} radius={radius} />,
   };
 }

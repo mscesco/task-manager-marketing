@@ -44,13 +44,13 @@ export default function SubteamCardTile({
   // contorno virando o do produto inteiro (sete superfícies), a mecânica
   // passou a morar em `useDrawnOutline` -- senão eram sete cópias do mesmo par
   // de handlers, e a sétima erraria um deles.
-  const { alvo, outline } = useDrawnOutline();
+  const { target, outline } = useDrawnOutline();
 
   return (
     <div
       className="relative flex flex-col gap-2 rounded-lg border border-border bg-surface p-3"
-      onMouseEnter={alvo.onMouseEnter}
-      onMouseLeave={alvo.onMouseLeave}
+      onMouseEnter={target.onMouseEnter}
+      onMouseLeave={target.onMouseLeave}
     >
       {/* ⚠️ O contorno DESENHADO substitui o `outline` do CSS, que aparecia
           inteiro de uma vez e não acompanhava o raio do cartão. */}
@@ -88,8 +88,8 @@ export default function SubteamCardTile({
         href={`/times/${card.team.id}`}
         aria-label={`Abrir ${card.team.name}`}
         className="absolute inset-0 rounded-lg"
-        onFocus={alvo.onFocus}
-        onBlur={alvo.onBlur}
+        onFocus={target.onFocus}
+        onBlur={target.onBlur}
       />
     </div>
   );
