@@ -5,6 +5,7 @@ import EmptyState from "@/components/EmptyState";
 import Card from "@/components/Card";
 import PageHeader from "@/components/PageHeader";
 import Loading from "@/components/Loading";
+import { useActiveTeamId } from "@/lib/useActiveTeam";
 import { useDrawnOutline } from "@/components/AnimatedOutline";
 import {
   listProjects,
@@ -70,21 +71,30 @@ function Projetos() {
   const [areas, setAreas] = useState<Team[]>([]);
   const [areaId, setAreaId] = useState<string>("");
 
+  // ⚠⚠ O TIME ATIVO VEM DA BARRA (fatia C), e nao de um `useSearchParams`
+  // aqui: esta rota e ESTATICA (`○ /projetos` no build) e o hook derrubaria o
+  // portao. Quem le a query e o `TeamParamReader`, atras da unica fronteira de
+  // `Suspense` do produto. Ver `lib/useActiveTeam.tsx`.
+  const timeAtivo = useActiveTeamId();
+  // ⚠️ O NOME sai de `areas`, que esta tela já busca para o formulário -- e
+  // não de uma requisição nova. `null` enquanto a lista não chegou: o rótulo
+  // cai no texto sem time em vez de piscar um nome vazio.
+  const nomeDoTime = areas.find((t) => t.id === timeAtivo)?.name ?? null;
+
   useEffect(() => {
-    listProjects({
-      size: 100,
-      // ⚠️ AINDA SEM RECORTE, E ISTO E UMA PENDENCIA E NAO UMA DECISAO. Esta
-      // tela DEVERIA recortar (ela oferece escolha), mas o time ativo so chega
-      // as telas na fatia C -- ela le `?time=` e ainda nao o le. Enquanto isso
-      // a lista mostra os projetos de todos os times que a pessoa alcanca.
-      //
-      // ⚠️ O SELETOR DE PROJETO DO MODAL DE CRIAR TAREFA JA RECORTA: era ali
-      // que o defeito aparecia. Aqui o efeito e so a tela listar mais do que o
-      // contexto pede -- incomodo, nao vazamento (a lente do backend vale).
-      teamId: null,
-    })
+    // ⚠⚠ ESPERA O TIME, em vez de buscar sem recorte. Buscar antes mostraria
+    // os projetos de todos os times por um instante -- o defeito que a spec veio
+    // matar, piscando. `null` aqui e "a arvore de times ainda nao chegou".
+    if (!timeAtivo) return;
+    listProjects({ size: 100, teamId: timeAtivo })
       .then((r) => setItems(r.items))
       .catch((e: ApiError) => setErro(e.message));
+    // ⚠️ `timeAtivo` NAS DEPENDENCIAS: trocar de time reescreve a query e esta
+    // tela tem de rebuscar. Sem isso o seletor mudaria a URL e a lista ficaria a
+    // mesma -- pior que nao recortar, porque a tela passaria a mentir.
+  }, [timeAtivo]);
+
+  useEffect(() => {
     // ⚠️ As duas juntas porque `rootsForPerson` precisa das DUAS: a árvore e os
     // vínculos de quem está olhando. Um operador do Marketing não escolhe TI.
     Promise.all([currentUser(), listTeamsAll()])
@@ -128,7 +138,18 @@ function Projetos() {
     <div>
       <PageHeader
         title="Projetos"
-        count={`${items.length} projetos`}
+        /* ⚠⚠ O NOME DO TIME ENTRA NA CONTAGEM (fatia C), e isso não é
+           enfeite: a lista agora é RECORTADA, e uma lista recortada que não
+           diz pelo quê parece a lista inteira. A §7 da spec nomeia esse risco
+           para a fila de solicitações -- *"a tela precisa dizer 'a fila do
+           Marketing está vazia', e não mostrar um vazio sem contexto"* -- e ele
+           é o mesmo aqui. Sem o nome do time, quem trocou de contexto e não
+           encontra um projeto conclui que ele foi apagado. */
+        count={
+          nomeDoTime
+            ? `${items.length} projetos em ${nomeDoTime}`
+            : `${items.length} projetos`
+        }
         actions={
           podeCriar && !criando && (
             <button type="button" className="btn btn-primary" onClick={() => setCriando(true)}>
@@ -218,7 +239,9 @@ function Projetos() {
 
       {items.length === 0 ? (
         <EmptyState
-          title="Nenhum projeto ainda"
+          title={
+            nomeDoTime ? `Nenhum projeto em ${nomeDoTime}` : "Nenhum projeto ainda"
+          }
           description="Crie um projeto para agrupar tarefas de um trabalho maior."
           action={
             podeCriar && (

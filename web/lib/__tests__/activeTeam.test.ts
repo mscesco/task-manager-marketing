@@ -15,6 +15,7 @@ import {
   TEAM_PARAM,
   activeTeam,
   preferredTeams,
+  teamUrlToWrite,
   withTeam,
 } from "../activeTeam";
 import { rootTeamOf } from "../areas";
@@ -313,3 +314,60 @@ describe("preferredTeams", () => {
 //      fatia.
 //   E. Trocar o `params.set` por concatenação de string em `withTeam`.
 //      **Cai 2**: o time duplica na URL e os outros parâmetros somem.
+
+// ⚠️ A §4.1 da spec: sem a reescrita, o recorte existe e é invisível -- copiar
+// o link manda outra pessoa para o time DELA.
+describe("teamUrlToWrite", () => {
+  const RAIZ_A = "raiz-a";
+
+  it("na tela recortada, com time INFERIDO, escreve", () => {
+    expect(
+      teamUrlToWrite("/minhas-tarefas", { kind: "team", teamId: RAIZ_A, fromUrl: false }, ""),
+    ).toBe(`/minhas-tarefas?time=${RAIZ_A}`);
+  });
+
+  it("⚠️ preserva os outros parâmetros que já estavam lá", () => {
+    expect(
+      teamUrlToWrite(
+        "/minhas-tarefas",
+        { kind: "team", teamId: RAIZ_A, fromUrl: false },
+        "?ver=lista",
+      ),
+    ).toBe(`/minhas-tarefas?ver=lista&time=${RAIZ_A}`);
+  });
+
+  it("⚠️⚠️ com a query AINDA NÃO LIDA (`null`), NÃO escreve", () => {
+    // O caso que estragaria link colado: na primeira renderização o
+    // `TeamParamReader` ainda não reportou, `activeTeam` cai na reserva, e
+    // escrever aqui sobrescreveria o `?time=` que estava na URL antes de
+    // alguém tê-lo lido.
+    expect(
+      teamUrlToWrite("/minhas-tarefas", { kind: "team", teamId: RAIZ_A, fromUrl: false }, null),
+    ).toBe(null);
+  });
+
+  it("quando a URL JÁ disse, não escreve (senão é laço)", () => {
+    expect(
+      teamUrlToWrite(
+        "/minhas-tarefas",
+        { kind: "team", teamId: RAIZ_A, fromUrl: true },
+        `?time=${RAIZ_A}`,
+      ),
+    ).toBe(null);
+  });
+
+  it("`tudo` e `nenhum` não escrevem", () => {
+    expect(teamUrlToWrite("/minhas-tarefas", { kind: "all" }, "?time=tudo")).toBe(null);
+    expect(teamUrlToWrite("/minhas-tarefas", { kind: "none" }, "")).toBe(null);
+  });
+
+  it("⚠️ numa tela que NÃO carrega o parâmetro, nunca escreve", () => {
+    // Escrever em `/quadro/<id>` ou `/organizacao` produziria a URL que mente
+    // -- e em `/quadro/<id>` o `activeTeam` ignora o parâmetro de propósito.
+    for (const tela of ["/quadro/raiz-a", "/organizacao", "/times/raiz-a", "/tarefa/t1"]) {
+      expect(
+        teamUrlToWrite(tela, { kind: "team", teamId: RAIZ_A, fromUrl: false }, ""),
+      ).toBe(null);
+    }
+  });
+});

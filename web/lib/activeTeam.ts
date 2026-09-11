@@ -56,6 +56,30 @@ export const ALL_TEAMS = "tudo";
 const ROTAS_COM_TIME = ["/times/", "/quadro/"] as const;
 
 /**
+ * As cinco telas que são SUAS, recortadas pelo time via `?time=`.
+ *
+ * ⚠️⚠️ LISTA EXPLÍCITA, e não "tudo o que não for tela de time". A diferença é
+ * o que separa um recorte de uma URL que mente: numa tela que NÃO lê o
+ * parâmetro, escrevê-lo produz um endereço que diz o time e não filtra nada.
+ * A §4.2 da spec adiou o seletor até a fatia C exatamente por isso. A lista é
+ * o que impede o acidente de se repetir: **uma tela nova só entra aqui quando
+ * alguém a ensinar a ler o parâmetro.**
+ *
+ * ⚠️ ELA MORA JUNTO DE `TEAM_PARAM` de propósito. Dois consumidores já
+ * dependem dela -- `switcherHref` (para onde o seletor leva) e
+ * `teamUrlToWrite` (quando reescrever a URL) -- e o dia em que os dois
+ * tiverem listas próprias é o dia em que o seletor manda para uma tela que
+ * não reescreve, ou vice-versa.
+ */
+export const TEAM_PARAM_SCREENS = [
+  "/minhas-tarefas",
+  "/projetos",
+  "/arquivadas",
+  "/solicitacoes",
+  "/formularios",
+] as const;
+
+/**
  * Em que time a tela está, e se a URL já dizia.
  *
  * `fromUrl: false` é o que manda a tela **reescrever a URL** (`replace`, não
@@ -210,4 +234,42 @@ export function withTeam(
   const params = new URLSearchParams(search);
   params.set(TEAM_PARAM, value);
   return `${pathname}?${params.toString()}`;
+}
+
+/**
+ * A URL que a tela deve REESCREVER para carregar o time, ou `null`.
+ *
+ * ⚠️⚠️ É O QUE FAZ `fromUrl: false` VALER ALGO (§4.1). Sem a reescrita, a
+ * pessoa abre "Minhas tarefas", a tela recorta pelo time em que ela trabalha --
+ * e a URL não diz isso. Copiar aquele link manda outra pessoa para o time
+ * DELA, e o Voltar do navegador volta para um estado sem time. O recorte
+ * existiria e seria invisível.
+ *
+ * ⚠️⚠️ `replace` E NÃO `push`, e isso é decisão e não detalhe: a pessoa não
+ * NAVEGOU para cá, a tela só está dizendo onde já estava. Com `push`, o Voltar
+ * do navegador cairia na mesma tela sem o parâmetro, que reescreveria de novo --
+ * um botão Voltar que não volta.
+ *
+ * As três razões de devolver `null`:
+ *   - a tela não carrega o parâmetro (ver `TEAM_PARAM_SCREENS`) -- escrever ali
+ *     é justamente a URL que mente;
+ *   - a URL JÁ disse (`fromUrl: true`, ou `?time=tudo`) -- reescrever seria
+ *     laço: a query muda, o efeito roda, escreve de novo;
+ *   - não há time (`kind: "none"`) -- não há o que dizer.
+ *
+ * ⚠️ `search` PODE SER `null`, e a distinção é necessária: `null` = a query
+ * ainda não foi lida (o `TeamParamReader` ainda não reportou), `""` = lida e
+ * vazia. Sem separar as duas, a primeira renderização reescreveria a URL com o
+ * time de reserva **por cima de um `?time=` que estava lá** -- link colado
+ * apontando para outro time seria sobrescrito antes de ser lido.
+ */
+export function teamUrlToWrite(
+  pathname: string,
+  active: ActiveTeam,
+  search: string | null,
+): string | null {
+  if (search === null) return null;
+  if (!(TEAM_PARAM_SCREENS as readonly string[]).includes(pathname)) return null;
+  if (active.kind !== "team" || active.fromUrl) return null;
+  return withTeam(pathname, search, active.teamId);
 }

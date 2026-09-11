@@ -24,7 +24,7 @@
 
 import type { CurrentUser, Team } from "./api";
 import { rootTeams, rootTeamOf, urlDoQuadroDeArea } from "./areas";
-import { withTeam } from "./activeTeam";
+import { TEAM_PARAM_SCREENS, withTeam } from "./activeTeam";
 
 /**
  * As áreas que ESTA pessoa alcança.
@@ -207,24 +207,6 @@ export function peopleEntry(roots: readonly Team[]): PeopleEntry {
 }
 
 /**
- * As cinco telas que são SUAS, recortadas pelo time via `?time=`.
- *
- * ⚠️ LISTA EXPLÍCITA, e não "tudo o que não for tela de time". A diferença
- * importa: numa tela que NÃO lê o parâmetro, escrever `?time=` produziria uma
- * URL que mente -- ela diria o time e a tela não filtraria nada. Já aconteceu
- * neste projeto (a §4.2 da spec adiou este seletor para a fatia C exatamente
- * por isso), e a lista é o que impede que aconteça de novo por acidente: uma
- * tela nova só entra aqui quando alguém a ensinar a ler o parâmetro.
- */
-const TELAS_RECORTADAS = [
-  "/minhas-tarefas",
-  "/projetos",
-  "/arquivadas",
-  "/solicitacoes",
-  "/formularios",
-] as const;
-
-/**
  * Para onde o seletor de time leva, **preservando a tela** — Spec 048, §4.2.
  *
  * ⚠️⚠️ ATÉ A FATIA C ELE IA SEMPRE PARA `/times/<id>`, e isso era um defeito de
@@ -257,7 +239,7 @@ export function switcherHref(
   if (pathname === "/quadro" || pathname.startsWith("/quadro/")) {
     return urlDoQuadroDeArea(teamId);
   }
-  if ((TELAS_RECORTADAS as readonly string[]).includes(pathname)) {
+  if ((TEAM_PARAM_SCREENS as readonly string[]).includes(pathname)) {
     return withTeam(pathname, search, teamId);
   }
   return `/times/${teamId}`;

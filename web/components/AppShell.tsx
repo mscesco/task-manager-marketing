@@ -32,12 +32,13 @@ import {
 import NotificationBell from "@/components/NotificationBell";
 import ContextSwitcher from "@/components/ContextSwitcher";
 import TeamParamReader from "@/components/TeamParamReader";
+import { ActiveTeamProvider } from "@/lib/useActiveTeam";
 import {
   ownRootTeams,
   peopleEntry,
   rootsForPerson,
 } from "@/lib/contextSwitcher";
-import { activeTeam, preferredTeams } from "@/lib/activeTeam";
+import { activeTeam, preferredTeams, teamUrlToWrite } from "@/lib/activeTeam";
 import { urlDoQuadroDeArea } from "@/lib/areas";
 import {
   LayoutGrid,
@@ -83,11 +84,18 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   // tela que não tem área na URL. `getWorkspace` é memoizado em módulo, então
   // isto é uma requisição por sessão, não por navegação.
   const [orgName, setOrgName] = useState("");
-  // ⚠️ A QUERY DA URL, entregue pelo `TeamParamReader` (fatia C). `""` = ainda
-  // não chegou (ou não há) -- e `activeTeam` trata isso como "a URL não disse",
-  // caindo na reserva. Ver o bloco de aviso no `TeamParamReader`: a fronteira
-  // de `Suspense` que o `useSearchParams` exige não pode ficar aqui.
-  const [search, setSearch] = useState("");
+  // ⚠️⚠️ A QUERY DA URL, entregue pelo `TeamParamReader` (fatia C), e `null` NÃO
+  // É O MESMO QUE `""`: `null` = ainda não lida, `""` = lida e vazia.
+  //
+  // A distinção existe por causa da REESCRITA (§4.1): na primeira renderização
+  // a query não chegou, `activeTeam` cai na reserva, e reescrever ali
+  // sobrescreveria um `?time=` que estava na URL antes de alguém tê-lo lido --
+  // link colado apontando para outro time viraria o time da pessoa. Quem trata
+  // isso é `teamUrlToWrite`, que recebe o `null`.
+  //
+  // Ver o bloco de aviso no `TeamParamReader`: a fronteira de `Suspense` que o
+  // `useSearchParams` exige não pode ficar aqui.
+  const [search, setSearch] = useState<string | null>(null);
   const [quadrosOpen, setQuadrosOpen] = useState(lerQuadrosAberto); // accordion
   // Preferencia de tema. Ler localStorage no inicializador e seguro aqui: com
   // `loading` comecando true, a barra so renderiza depois do check de auth, ja
@@ -165,8 +173,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener(TIMES_MUDARAM, reler);
   }, []);
 
-  if (loading) return <LoadingScreen />;
-
   // ⚠️⚠️ O PAPEL DE ORGANIZACAO SOBE PARA CA (era calculado depois da lente):
   // ele decide quais times a pessoa ALCANCA, e o alcance entra na lente.
   //
@@ -197,8 +203,28 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   // ⚠️ SEM ISTO A FATIA C SERIA INCOERENTE, e a spec já avisava: as telas
   // recortariam pelo `?time=` e a barra seguiria mostrando os quadros de outro
   // time -- a pessoa veria o menu do Marketing com o conteúdo do Comercial.
-  const contexto = activeTeam(pathname, search, teams, alcanca, trabalha);
+  const contexto = activeTeam(pathname, search ?? "", teams, alcanca, trabalha);
   const timeAtivo = contexto.kind === "team" ? contexto.teamId : null;
+
+  // ⚠️⚠️ A REESCRITA DA URL (§4.1), e ela mora AQUI e não nas telas -- mesmo
+  // motivo do contexto: a barra é quem resolve o time, e cinco telas
+  // reescrevendo seriam cinco cópias da mesma regra.
+  //
+  // `replace` e não `push`: a pessoa não NAVEGOU para cá, a tela só está
+  // dizendo onde já estava. Com `push`, o Voltar cairia na mesma tela sem o
+  // parâmetro, que reescreveria de novo -- um Voltar que não volta.
+  //
+  // ⚠️ Quando reescrever é decisão de `teamUrlToWrite`, com teste. O laço é
+  // impossível por construção: depois do `replace` a query passa a dizer o
+  // time, `fromUrl` vira `true`, e a função devolve `null`.
+  const urlComTime = teamUrlToWrite(pathname, contexto, search);
+  useEffect(() => {
+    if (urlComTime) router.replace(urlComTime);
+  }, [urlComTime, router]);
+
+  if (loading) return <LoadingScreen />;
+
+
 
   // Fatia 2/7b: sub-abas de quadro = subtimes DO TIME ATIVO que a lente alcanca.
   const lens = user
@@ -472,7 +498,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             teams={teams}
             me={user}
             pathname={pathname}
-            search={search}
+            // ⚠️ `?? ""` aqui e não no estado: para o SELETOR, "query não lida"
+            // e "query vazia" dão o mesmo link. Quem precisa distinguir os dois
+            // é a reescrita da URL (`teamUrlToWrite`), e é por isso que o
+            // estado guarda `null`.
+            search={search ?? ""}
             canManageOrg={podeVerOrganizacao}
             expanded={open}
             orgName={orgName}
@@ -521,7 +551,16 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             <NotificationBell />
           </div>
         </div>
-        <main className="min-w-0 flex-1 px-4 pb-4 pt-16 sm:px-6 sm:pb-6">{children}</main>
+        {/* ⚠️ O TIME ATIVO DESCE PARA AS TELAS AQUI (fatia C). A barra já
+            resolveu o time -- ela tem a query, a árvore e quem está olhando --,
+            e as cinco telas recortadas perguntam com `useActiveTeam()`. O
+            motivo de ser contexto e não cada tela resolvendo o seu está no
+            topo de `lib/useActiveTeam.tsx`. */}
+        <main className="min-w-0 flex-1 px-4 pb-4 pt-16 sm:px-6 sm:pb-6">
+          <ActiveTeamProvider value={{ active: contexto, search }}>
+            {children}
+          </ActiveTeamProvider>
+        </main>
       </div>
     </div>
   );
