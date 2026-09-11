@@ -261,7 +261,8 @@ function Arquivadas() {
         // Duplicar uma arquivada COM subarvore se faz pelo quadro.
         filhosDaOrigem={[]}
         defaultProjectId={null}
-        defaultTeamId={null}
+        // Esta tela nao cria tarefa do zero (`open` exige editar ou duplicar).
+        newTaskTeam={null}
         onClose={() => {
           setEditando(null);
           setDuplicando(null);

@@ -179,8 +179,21 @@ class ProjectService:
 
         ⚠️ NAO HA MAIS PREDICADO DE PRIVACIDADE. Ate 10/09 este metodo injetava
         `(is_personal = false) OR (created_by = me)` para esconder o pessoal
-        alheio. Sem projeto pessoal, todo projeto pertence a um time e a lente
-        do time responde sozinha.
+        alheio.
+
+        ⚠️⚠️ E NAO HA PREDICADO DE TIME NENHUM -- O ESCOPO AQUI E O WORKSPACE.
+        Quando tirei a privacidade eu escrevi neste lugar que "a lente do time
+        responde sozinha". ISSO ERA FALSO: os filtros abaixo sao status,
+        priority e arquivado, e o `_base_select` do `BaseRepository` fecha por
+        `workspace_id` e soft delete. Nada olha `Project.team_id`.
+        Consequencia, reportada na tela em 11/09: o seletor de projeto oferece
+        projeto de OUTRO time raiz.
+        (Verificado lendo `BaseRepository._base_select`, e nao a spec.)
+
+        Conserto pertence a Spec 048 -- e uma DECISAO, nao um filtro a mais:
+        seis telas leem esta rota (`/projetos`, `/minhas-tarefas`,
+        `/arquivadas`, `/tarefa/[id]`, o quadro e o modal de criar), e
+        escopar por time por padrao muda o que cada uma mostra.
 
         Ordenacao fixa: created_at DESC.
         """

@@ -266,6 +266,8 @@ function Tarefa() {
         task={editando}
         duplicarDe={duplicando}
         filhosDaOrigem={duplicando ? filhos : []}
+        // Esta tela nao cria tarefa do zero (`open` exige editar ou duplicar).
+        newTaskTeam={null}
         onClose={() => {
           setEditando(null);
           setDuplicando(null);

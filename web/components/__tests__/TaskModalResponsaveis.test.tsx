@@ -108,7 +108,18 @@ function mocks() {
 /** Abre o modal e o seletor de responsáveis, e devolve o painel. */
 async function abrirSeletor(props: Record<string, unknown> = {}) {
   mocks();
-  render(<TaskModal open onClose={() => {}} onSaved={() => {}} {...props} />);
+  // ⚠️ `newTaskTeam={null}` ANTES do spread, de proposito: e o caminho LEGADO
+  // (a tela nao sabe o time, o modal cai no `getRootTeamId()`), e os testes que
+  // exercitam o caminho novo o sobrescrevem pelo `props`.
+  render(
+    <TaskModal
+      open
+      newTaskTeam={null}
+      onClose={() => {}}
+      onSaved={() => {}}
+      {...props}
+    />,
+  );
   fireEvent.click(await screen.findByLabelText("Designar responsável"));
   return await screen.findByPlaceholderText("Buscar pessoa…");
 }
@@ -202,6 +213,7 @@ describe("TaskModal -- selecionar todos e limpar (criação)", () => {
     mocks();
     render(
       <TaskModal
+        newTaskTeam={null}
         open
         task={task({ assignee_ids: [ANA] })}
         onClose={() => {}}
@@ -220,6 +232,7 @@ describe("TaskModal -- selecionar todos e limpar (criação)", () => {
     mocks();
     render(
       <TaskModal
+        newTaskTeam={null}
         open
         duplicarDe={task({ id: "origem", title: "Campanha", assignee_ids: [ANA] })}
         filhosDaOrigem={[]}
@@ -231,5 +244,118 @@ describe("TaskModal -- selecionar todos e limpar (criação)", () => {
     // Abre o seletor pelo resumo da seleção herdada.
     fireEvent.click(await screen.findByLabelText("Designar responsável"));
     expect(screen.queryByText(/Selecionar todos/)).toBeNull();
+  });
+});
+
+// ⚠️⚠️ O DEFEITO DE 11/09, reportado na tela com duas capturas: no quadro geral
+// de um time RAIZ o seletor de responsável oferecia a organização inteira --
+// "responsáveis que não são nem desse time também".
+//
+// A cadeia: o `Board` mandava `null` (não há quadro avulso nem subtime), o
+// modal caía no `getRootTeamId()` dele próprio, e essa função LEVANTA desde a
+// Spec 046 quando existe mais de uma raiz. Sem raiz, sem `?reaches_team=`, sem
+// filtro -- de volta ao "todo mundo" que a Spec 034 tirou.
+//
+// ⚠️ POR QUE NENHUM TESTE PEGOU: todos os daqui mockam `getRootTeamId` com
+// `mockResolvedValue`. Com UMA raiz ela resolve, e o caminho de queda nunca é
+// exercitado. O que faltava era o mock que REJEITA.
+describe("TaskModal -- a raiz vem da tela, e não de um sorteio", () => {
+  const OUTRA_RAIZ = "team-outra-raiz";
+  const DEDE = "u-dede";
+
+  /** Membro de OUTRO time raiz: `GET /members` o devolve, o time não. */
+  function forasteiro(): Member {
+    return {
+      id: DEDE,
+      workspace_id: "ws",
+      name: "Dedé",
+      email: "dede@x.com",
+      is_active: true,
+      team_ids: [OUTRA_RAIZ],
+    };
+  }
+
+  function mocksComDuasRaizes() {
+    mocks();
+    // A organização inteira, o forasteiro incluído.
+    vi.mocked(api.listMembers).mockResolvedValue([...TIME, forasteiro()]);
+    // Quem alcança a RAIZ: só o time dela. É a resposta do backend.
+    vi.mocked(api.listMembersDoTime).mockResolvedValue(TIME);
+    // ⚠️ DUAS RAÍZES => `getRootTeamId` levanta (`soleRootTeam`).
+    vi.mocked(api.getRootTeamId).mockRejectedValue(
+      new Error("mais de uma raiz"),
+    );
+  }
+
+  it("com a raiz na prop, o forasteiro NÃO é oferecido", async () => {
+    mocksComDuasRaizes();
+    render(
+      <TaskModal
+        open
+        newTaskTeam={{ teamId: RAIZ, internal: false }}
+        onClose={() => {}}
+        onSaved={() => {}}
+      />,
+    );
+    fireEvent.click(await screen.findByLabelText("Designar responsável"));
+
+    // O número no rótulo é o que denuncia: três, e não quatro.
+    expect(await screen.findByText("Selecionar todos (3)")).toBeTruthy();
+    expect(screen.queryByText("Dedé")).toBeNull();
+    // E a pergunta foi feita para a raiz CERTA, sem passar pelo sorteio.
+    expect(api.listMembersDoTime).toHaveBeenCalledWith(RAIZ);
+  });
+
+  it("⚠️ O SELETOR DE PROJETO CONTINUA NA TELA (a outra metade do defeito)", async () => {
+    // ⚠️ Este é o teste que prende a separação. Enquanto o time da tarefa e o
+    // "nasce interna" eram UMA prop (`defaultTeamId`), responder a raiz aqui
+    // APAGAVA o seletor de projeto -- consertar um lado quebrava o outro.
+    // Agora `teamId` responde escopo e `internal` responde seletor.
+    mocksComDuasRaizes();
+    render(
+      <TaskModal
+        open
+        newTaskTeam={{ teamId: RAIZ, internal: false }}
+        onClose={() => {}}
+        onSaved={() => {}}
+      />,
+    );
+    expect(await screen.findByLabelText(/^Projeto/)).toBeTruthy();
+  });
+
+  it("quadro de subtime: escopo do subtime E seletor de projeto escondido", async () => {
+    mocksComDuasRaizes();
+    const SUB = "team-sub";
+    render(
+      <TaskModal
+        open
+        newTaskTeam={{ teamId: SUB, internal: true }}
+        onClose={() => {}}
+        onSaved={() => {}}
+      />,
+    );
+    await screen.findByLabelText("Designar responsável");
+    expect(api.listMembersDoTime).toHaveBeenCalledWith(SUB);
+    expect(screen.queryByLabelText(/^Projeto/)).toBeNull();
+  });
+
+  it("caminho LEGADO (`newTaskTeam={null}`) segue sem filtro, de propósito", async () => {
+    // ⚠️ ISTO NÃO É O DEFEITO SOBREVIVENDO: é `/quadro` sem time na URL, onde
+    // ninguém sabe a raiz. Errar oferecendo demais devolve o comportamento
+    // anterior, com o 422 do backend de pé; errar escondendo demais tira gente
+    // do trabalho. O teste existe para que a próxima pessoa saiba que a queda
+    // é decidida, e veja onde ela mora.
+    mocksComDuasRaizes();
+    render(
+      <TaskModal
+        open
+        newTaskTeam={null}
+        onClose={() => {}}
+        onSaved={() => {}}
+      />,
+    );
+    fireEvent.click(await screen.findByLabelText("Designar responsável"));
+    expect(await screen.findByText("Selecionar todos (4)")).toBeTruthy();
+    expect(api.listMembersDoTime).not.toHaveBeenCalled();
   });
 });

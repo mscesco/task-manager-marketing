@@ -74,6 +74,7 @@ import {
 import EmptyStateBox from "@/components/EmptyState";
 import { terminal, type Coluna } from "@/lib/coluna";
 import { listAllTasks, listAllProjects, listarFilhas, getTask, updateTask, listMembers, listSubteams, getRootTeamId, listBoards, colunaComContagem, aplicarLoteDeColunas, ApiError, type Task, type Team, type Quadro } from "@/lib/api";
+import { newTaskTeam } from "@/lib/escopoTarefa";
 import { mesclaTarefa } from "@/lib/mesclaTarefa";
 import { sincronizarTaskNaUrl, lerTaskDaUrl } from "@/lib/urlTarefa";
 import { ORDENACOES, ordenar, type Ordenacao } from "@/lib/ordenacao";
@@ -1343,9 +1344,22 @@ export default function Board({
     if (novo) setRascunho(novo);
   }
 
-  const timeDaTarefaNova = boardId
-    ? (quadro?.team_id ?? null)
-    : (subteamId ?? null);
+  // ⚠️ ISTO ERA `boardId ? (quadro?.team_id ?? null) : (subteamId ?? null)`
+  // ESCRITO AQUI, e faltava o terceiro caso: o quadro geral de um time RAIZ,
+  // que caia em `null`. O modal entao perguntava a raiz por conta propria
+  // (`getRootTeamId()`), funcao que LEVANTA desde a Spec 046 quando existe mais
+  // de uma -- e sem raiz o seletor de responsavel voltava a oferecer a
+  // organizacao inteira. Reportado na tela em 11/09, com captura.
+  //
+  // A raiz esta AQUI desde a Spec 046 fatia 4 (`rootId`, vindo da URL). A
+  // decisao mudou de lugar para `lib/`, onde ha teste -- este arquivo esta fora
+  // do `include` do vitest.
+  const novaTarefa = newTaskTeam({
+    boardId: boardId ?? null,
+    boardTeamId: quadro?.team_id ?? null,
+    subteamId: subteamId ?? null,
+    rootId,
+  });
 
   // ⚠️ SPEC 042 (B2) -- O CONTADOR VEM PRONTO DO BACKEND. Ate aqui ele era
   // somado varrendo as filhas carregadas, e era esse laco que obrigava o
@@ -2361,7 +2375,7 @@ export default function Board({
         // buscavam por conta propria; o quadro era o unico que derivava.
         filhosDaOrigem={filhasDaOrigem}
         defaultProjectId={projectId ?? null}
-        defaultTeamId={timeDaTarefaNova}
+        newTaskTeam={novaTarefa}
         defaultBoardId={boardId ?? null}
         nomeDoQuadro={boardId ? (quadro?.name ?? null) : null}
         onClose={() => {

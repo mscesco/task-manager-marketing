@@ -1241,6 +1241,8 @@ function Minhas() {
         filhosDaOrigem={
           duplicando && focado?.id === duplicando.id ? filhosParaDetalhe : []
         }
+        // Esta tela nao cria tarefa do zero (`open` exige editar ou duplicar).
+        newTaskTeam={null}
         onClose={() => {
           setEditando(null);
           setDuplicando(null);
