@@ -18,9 +18,22 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 
 import FormulariosPage from "@/app/formularios/page";
 import type { Formulario, Team } from "@/lib/api";
+import {
+  ActiveTeamProvider,
+  type ActiveTeamContext,
+} from "@/lib/useActiveTeam";
 
+// ⚠⚠ O MOCK FORNECE O CONTEXTO DE TIME, porque o `AppShell` de verdade
+// fornece (Spec 048, fatia E). Sem isto a tela fica carregando para sempre:
+// ela ESPERA a barra resolver o time antes de listar.
+//
+// ⚠️ Variável mutável porque os testes precisam de valores diferentes, e a
+// fábrica do `vi.mock` é içada -- não dá para parametrizá-la por teste. A
+// fábrica não LÊ a variável (só o corpo do componente, no render): sem TDZ.
 vi.mock("@/components/AppShell", () => ({
-  default: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  default: ({ children }: { children: React.ReactNode }) => (
+    <ActiveTeamProvider value={contextoDoTeste}>{children}</ActiveTeamProvider>
+  ),
 }));
 
 vi.mock("@/lib/api", async (importOriginal) => {
@@ -37,6 +50,14 @@ vi.mock("@/lib/api", async (importOriginal) => {
 });
 
 const api = await import("@/lib/api");
+
+/** O contexto que o `AppShell` falso entrega. Reposto no `afterEach`. */
+const CONTEXTO_PADRAO: ActiveTeamContext = {
+  active: { kind: "team", teamId: "t-raiz", fromUrl: true },
+  search: "?time=t-raiz",
+  teamName: "Marketing",
+};
+let contextoDoTeste: ActiveTeamContext = CONTEXTO_PADRAO;
 
 const RAIZ = "t-raiz";
 const SUB = "t-sub";
@@ -91,6 +112,10 @@ afterEach(() => {
   cleanup();
   vi.clearAllMocks();
   vi.restoreAllMocks();
+  // ⚠️ DEVOLVE O CONTEXTO PADRÃO: sem isto o valor do último teste vazaria
+  // para os de cima, e eles falhariam na ORDEM em que rodam -- o pior tipo de
+  // teste quebrado, porque a causa não está no teste que falha.
+  contextoDoTeste = CONTEXTO_PADRAO;
 });
 
 describe("Formulários -- a lista", () => {
@@ -120,15 +145,48 @@ describe("Formulários -- a lista", () => {
 });
 
 describe("Formulários -- criar", () => {
-  it("⚠️ o time padrão é a RAIZ, e não o primeiro da lista", async () => {
-    // Em produção o Marketing É a raiz, e é dele que sai a maioria dos
-    // formulários. Ordem alfabética escolheria "Audiovisual" por acaso -- e o
-    // time é ESCOLHA DEFINITIVA, então o padrão errado vira formulário no time
-    // errado sem volta.
+  it("⚠⚠ o time padrão é o TIME ATIVO (reescrito na Spec 048)", async () => {
+    // O argumento original deste teste segue valendo, e é dele que sai a
+    // correção: *"o time é ESCOLHA DEFINITIVA, então o padrão errado vira
+    // formulário no time errado sem volta"*.
+    //
+    // ⚠️ O QUE MUDOU: o padrão era "a primeira raiz", e o comentário antigo o
+    // justificava com *"em produção o Marketing É a raiz"* -- verdade quando
+    // foi escrito, e mentira desde a Spec 046. Com duas raizes,
+    // `find(parent === null)` devolve a primeira que a API listar, e o
+    // formulário nasceria no Comercial enquanto a pessoa olha o Marketing.
+    // Mesmo defeito que o `createProject` pagou em 10/09.
+    contextoDoTeste = {
+      active: { kind: "team", teamId: SUB, fromUrl: true },
+      search: `?time=${SUB}`,
+      teamName: "SEO",
+    };
+    montar([]);
+    fireEvent.click(await screen.findByText("+ Novo formulário"));
+    const select = screen.getByLabelText("Time responsável") as HTMLSelectElement;
+    await waitFor(() => expect(select.value).toBe(SUB));
+  });
+
+  it("sem time ativo, o padrão cai na RAIZ (a reserva de sempre)", async () => {
+    // `kind: "none"`: a pessoa não tem vínculo, ou a árvore não chegou. A
+    // reserva antiga continua lá -- ela só deixou de ser a primeira resposta.
+    contextoDoTeste = { active: { kind: "none" }, search: "", teamName: null };
     montar([]);
     fireEvent.click(await screen.findByText("+ Novo formulário"));
     const select = screen.getByLabelText("Time responsável") as HTMLSelectElement;
     await waitFor(() => expect(select.value).toBe(RAIZ));
+  });
+
+  it("⚠️ e o time ativo NÃO PISA numa escolha já feita", async () => {
+    // O efeito que preenche o campo roda de novo a cada troca de time. Se ele
+    // fizesse `setTime(timeAtivo)` em vez de `atual || timeAtivo`, apagaria o
+    // time que a pessoa acabou de escolher no formulário aberto.
+    montar([]);
+    fireEvent.click(await screen.findByText("+ Novo formulário"));
+    const select = screen.getByLabelText("Time responsável") as HTMLSelectElement;
+    await waitFor(() => expect(select.value).toBe(RAIZ));
+    fireEvent.change(select, { target: { value: SUB } });
+    await waitFor(() => expect(select.value).toBe(SUB));
   });
 
   it("mostra a URL que o endereço vai gerar, enquanto se digita", async () => {

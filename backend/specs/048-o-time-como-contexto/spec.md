@@ -110,6 +110,35 @@ que devia (`form.team_id`, §2).
 Mesma coisa: quem tem `solicitation_form.manage` vê e edita os formulários de
 todos os times.
 
+> ⚠️⚠️ **CORREÇÃO DE 11/09 — a §3.5 e a §3.6 estavam ERRADAS, e do mesmo jeito.**
+> As duas dizem que não há filtro de time. **Há**: o recorte por `form.team_id`
+> existe desde a Spec 043 fatia A — no `_base_select` do
+> `SolicitationRepository` (com teste) e no `listar_formularios` (sem teste
+> nenhum até hoje). Fui ler os dois arquivos e as duas afirmações caíram.
+>
+> ⚠️ **Com o `list_page` de projetos, são TRÊS afirmações desta spec sobre o
+> código que não sobreviveram à leitura dele — e as três têm a mesma origem:**
+> escrevi a partir das notas de "o que falta" da spec anterior, em vez de abrir
+> o arquivo. A nota da Spec 043 dizia *"o que nunca existiu foi o `WHERE`"*, e
+> isso era verdade **no dia em que foi escrita**.
+>
+> **O que faltava de verdade, nos três lugares, era o segundo recorte:**
+>
+> | | pergunta | para papel de organização |
+> |---|---|---|
+> | a **lente** | "posso ver?" | `None` — vê tudo |
+> | o **`team_id`** | "estou olhando qual time?" | recorta |
+>
+> A lente sozinha não conserta o que ela reportou, porque ela administra a
+> organização e alcança o Comercial de verdade. Tratar isso como um problema só
+> teria fechado o furo de quem não administra e deixado o defeito da tela de pé.
+>
+> ⚠️ **E a §3.6 cobria uma regra sem teste.** A listagem de formulários tinha a
+> lente escrita, comentada — e nenhum teste. Apagar o `if visiveis is not None`
+> deixaria a suíte inteira verde. Agora há
+> `tests/integration/test_formularios_do_time_db.py`, e a sabotagem foi
+> executada.
+
 ---
 
 ## 4. As decisões

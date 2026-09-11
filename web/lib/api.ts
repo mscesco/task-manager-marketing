@@ -2460,8 +2460,23 @@ export type Formulario = {
   polo_label: string | null;
 };
 
-export async function listarFormularios(): Promise<Formulario[]> {
-  return api<Formulario[]>("/api/v1/solicitacoes/formularios");
+/**
+ * Os formulários de um time (Spec 048, fatia E).
+ *
+ * ⚠️⚠️ `teamId` OBRIGATÓRIO, `null` é resposta -- a mesma decisão de
+ * `listProjects` e `listarEnvios`. Aqui ela pesa mais do que parece: desta
+ * lista se abre o EDITOR de cada formulário, e editar formulário de outro time
+ * muda a porta pública dele.
+ */
+export async function listarFormularios(
+  teamId: string | null
+): Promise<Formulario[]> {
+  const q = new URLSearchParams();
+  if (teamId) q.set("team_id", teamId);
+  const qs = q.toString();
+  return api<Formulario[]>(
+    `/api/v1/solicitacoes/formularios${qs ? `?${qs}` : ""}`
+  );
 }
 
 /**
