@@ -510,15 +510,20 @@ class SolicitationService:
         return {tid: titulo for tid, titulo in linhas}
 
     async def list_batches(
-        self, *, params: PageParams, filtro: str | None
+        self, *, params: PageParams, filtro: str | None, team_id: uuid.UUID | None
     ) -> tuple[list[Batch], int]:
-        """Fila agrupada por ENVIO (um card por submissao)."""
+        """Fila agrupada por ENVIO (um card por submissao).
+
+        `team_id` recorta a fila pelo time do FORMULARIO (Spec 048, fatia D).
+        `None` = sem recorte. Sem default nos tres metodos de leitura, de
+        proposito -- ver `SolicitationRepository.count_pending`.
+        """
         validos = set(SolicitationStatus) | {"SEM_TAREFA"}
         if filtro is not None and filtro not in validos:
             raise ValidationError("Filtro invalido.")
 
         linhas, total = await self.repo.list_batches(
-            params=params, filtro=filtro
+            params=params, filtro=filtro, team_id=team_id
         )
 
         # Agrupa preservando a ordem devolvida pelo repositorio (envio mais
@@ -541,11 +546,11 @@ class SolicitationService:
             for batch_id, itens in agrupado.items()
         ], total
 
-    async def count_pending(self) -> int:
-        return await self.repo.count_pending()
+    async def count_pending(self, team_id: uuid.UUID | None) -> int:
+        return await self.repo.count_pending(team_id)
 
-    async def count_approved_without_task(self) -> int:
-        return await self.repo.count_approved_without_task()
+    async def count_approved_without_task(self, team_id: uuid.UUID | None) -> int:
+        return await self.repo.count_approved_without_task(team_id)
 
     async def _assert_tarefa_do_workspace(self, task_id: uuid.UUID) -> Task:
         """A tarefa existe, e VIVA e e deste workspace?

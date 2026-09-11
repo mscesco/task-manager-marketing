@@ -2887,14 +2887,31 @@ export type BatchListResponse = {
   approved_without_task_total: number;
 };
 
-/** Fila de triagem: um card por envio, com todas as seções dentro. */
+/**
+ * Fila de triagem: um card por envio, com todas as seções dentro.
+ *
+ * ⚠️⚠️ `teamId` É OBRIGATÓRIO, e `null` é uma resposta -- mesma decisão de
+ * `listProjects`, e pelo mesmo motivo. A fila recortada e a fila da organização
+ * são coisas muito diferentes para sair de um parâmetro omitido: quem tria
+ * veria pedido de outro time e agiria sobre ele.
+ *
+ * ⚠️ OS BADGES VÃO NO MESMO PAYLOAD (`pending_total`,
+ * `approved_without_task_total`) e o backend os conta com o MESMO `team_id` --
+ * contador que diverge da lista é pior que não ter contador.
+ */
 export async function listarEnvios(
-  params: { filtro?: SolicitacaoFiltro; page?: number; size?: number } = {}
+  params: {
+    teamId: string | null;
+    filtro?: SolicitacaoFiltro;
+    page?: number;
+    size?: number;
+  }
 ): Promise<BatchListResponse> {
   const q = new URLSearchParams();
   if (params.filtro) q.set("status", params.filtro);
   q.set("page", String(params.page ?? 1));
   q.set("size", String(params.size ?? 20));
+  if (params.teamId) q.set("team_id", params.teamId);
   return api<BatchListResponse>(`/api/v1/solicitacoes?${q.toString()}`);
 }
 

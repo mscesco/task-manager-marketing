@@ -36,9 +36,25 @@ import type { ActiveTeam } from "./activeTeam";
 export type ActiveTeamContext = {
   readonly active: ActiveTeam | null;
   readonly search: string | null;
+  /**
+   * O NOME do time ativo, para a tela dizer pelo que recortou.
+   *
+   * ⚠⚠ ISSO NÃO É ENFEITE, e a §7 da spec o nomeia: *"a tela precisa dizer
+   * 'a fila do Marketing está vazia', e não mostrar um vazio sem contexto"*.
+   * Uma lista recortada que não diz pelo quê parece a lista inteira -- e quem
+   * troca de time e não encontra um item conclui que ele foi apagado.
+   *
+   * ⚠️ VEM DA BARRA, e não de cada tela buscar a árvore de times: o `AppShell`
+   * já tem `listTeamsAll()` na mão. `null` enquanto ela não chegou.
+   */
+  readonly teamName: string | null;
 };
 
-const Ctx = createContext<ActiveTeamContext>({ active: null, search: null });
+const Ctx = createContext<ActiveTeamContext>({
+  active: null,
+  search: null,
+  teamName: null,
+});
 
 export const ActiveTeamProvider = Ctx.Provider;
 

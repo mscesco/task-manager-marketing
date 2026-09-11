@@ -5,7 +5,7 @@ import EmptyState from "@/components/EmptyState";
 import Card from "@/components/Card";
 import PageHeader from "@/components/PageHeader";
 import Loading from "@/components/Loading";
-import { useActiveTeamId } from "@/lib/useActiveTeam";
+import { useActiveTeam, useActiveTeamId } from "@/lib/useActiveTeam";
 import { useDrawnOutline } from "@/components/AnimatedOutline";
 import {
   listProjects,
@@ -76,23 +76,29 @@ function Projetos() {
   // portao. Quem le a query e o `TeamParamReader`, atras da unica fronteira de
   // `Suspense` do produto. Ver `lib/useActiveTeam.tsx`.
   const timeAtivo = useActiveTeamId();
-  // ⚠️ O NOME sai de `areas`, que esta tela já busca para o formulário -- e
-  // não de uma requisição nova. `null` enquanto a lista não chegou: o rótulo
-  // cai no texto sem time em vez de piscar um nome vazio.
-  const nomeDoTime = areas.find((t) => t.id === timeAtivo)?.name ?? null;
+  // ⚠⚠ `active === null` ("a barra ainda não resolveu") e `kind: "none"` ("ela
+  // resolveu, e não há time") são COISAS DIFERENTES. `listTeamsAll()` falha em
+  // silêncio no `AppShell`: sem a distinção, uma falha de rede ali deixaria esta
+  // tela em `Loading` para sempre, sem erro nenhum.
+  // ⚠️ O NOME VEM DA BARRA (`teamName`), e não de `areas`. As duas respostas
+  // coincidem quando a lista de áreas já chegou -- mas `areas` é buscada POR
+  // ESTA TELA e só contém as raizes que a pessoa alcança, enquanto o `teamName`
+  // sai da mesma árvore que resolveu o time ativo. Uma fonte, e não duas que
+  // podem divergir.
+  const { active, teamName: nomeDoTime } = useActiveTeam();
 
   useEffect(() => {
-    // ⚠⚠ ESPERA O TIME, em vez de buscar sem recorte. Buscar antes mostraria
-    // os projetos de todos os times por um instante -- o defeito que a spec veio
-    // matar, piscando. `null` aqui e "a arvore de times ainda nao chegou".
-    if (!timeAtivo) return;
+    // ⚠⚠ ESPERA A BARRA RESOLVER, em vez de buscar sem recorte. Buscar antes
+    // mostraria os projetos de todos os times por um instante -- o defeito que
+    // a spec veio matar, piscando.
+    if (active === null) return;
     listProjects({ size: 100, teamId: timeAtivo })
       .then((r) => setItems(r.items))
       .catch((e: ApiError) => setErro(e.message));
     // ⚠️ `timeAtivo` NAS DEPENDENCIAS: trocar de time reescreve a query e esta
     // tela tem de rebuscar. Sem isso o seletor mudaria a URL e a lista ficaria a
     // mesma -- pior que nao recortar, porque a tela passaria a mentir.
-  }, [timeAtivo]);
+  }, [timeAtivo, active]);
 
   useEffect(() => {
     // ⚠️ As duas juntas porque `rootsForPerson` precisa das DUAS: a árvore e os

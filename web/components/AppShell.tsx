@@ -557,7 +557,14 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             motivo de ser contexto e não cada tela resolvendo o seu está no
             topo de `lib/useActiveTeam.tsx`. */}
         <main className="min-w-0 flex-1 px-4 pb-4 pt-16 sm:px-6 sm:pb-6">
-          <ActiveTeamProvider value={{ active: contexto, search }}>
+          <ActiveTeamProvider
+            value={{
+              active: contexto,
+              search,
+              teamName:
+                teams.find((t) => t.id === timeAtivo)?.name ?? null,
+            }}
+          >
             {children}
           </ActiveTeamProvider>
         </main>

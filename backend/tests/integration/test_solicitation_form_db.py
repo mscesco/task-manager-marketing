@@ -250,8 +250,7 @@ async def test_fila_mostra_so_o_time_do_FORMULARIO(db) -> None:
     # O supervisor do Marketing so enxerga o time dele (e a raiz).
     with acting_as(**_ctx(ws, user, arvore, mship(mkt, "SUPERVISOR"))):
         linhas, _ = await SolicitationRepository(db).list_batches(
-            params=PageParams(page=1, size=50)
-        )
+            params=PageParams(page=1, size=50), team_id=None)
 
     assert [s.form_id for s in linhas] == [f_mkt.id]
 
@@ -271,8 +270,7 @@ async def test_solicitacao_SEM_formulario_continua_na_fila(db) -> None:
 
     with acting_as(**_ctx(ws, user, arvore, mship(mkt, "SUPERVISOR"))):
         linhas, total = await SolicitationRepository(db).list_batches(
-            params=PageParams(page=1, size=50)
-        )
+            params=PageParams(page=1, size=50), team_id=None)
 
     assert total == 1
     assert [s.form_id for s in linhas] == [None]
@@ -297,8 +295,7 @@ async def test_ADMIN_ve_a_fila_inteira(db) -> None:
         await _solicitacao(db, ws, form_id=None)
 
         linhas, total = await SolicitationRepository(db).list_batches(
-            params=PageParams(page=1, size=50)
-        )
+            params=PageParams(page=1, size=50), team_id=None)
 
     assert total == 3
     assert len(linhas) == 3
@@ -320,7 +317,7 @@ async def test_contadores_respeitam_o_mesmo_recorte(db) -> None:
     await _solicitacao(db, ws, form_id=f_dsg.id)
 
     with acting_as(**_ctx(ws, user, arvore, mship(mkt, "SUPERVISOR"))):
-        assert await SolicitationRepository(db).count_pending() == 1
+        assert await SolicitationRepository(db).count_pending(None) == 1
 
 
 # ----------------------------------------------------------
