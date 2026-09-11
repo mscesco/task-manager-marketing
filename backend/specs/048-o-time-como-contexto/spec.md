@@ -286,6 +286,38 @@ filtrar. Minhas tarefas ganha os dois seletores da §4.3, e
 ⚠️ E as duas escritas do 3.4 param de cair em `getRootTeamId()` — o time ativo
 substitui o palpite, como já aconteceu no `createProject`.
 
+> ⚠️⚠️ **CORREÇÃO DE 11/09 — A ORDEM DESTA LISTA ESTAVA ERRADA, e o erro é
+> desta spec.** A fatia C é de FRONT, e quatro das cinco telas dela não podiam
+> recortar porque **a rota que cada uma lê não aceita time**. Medido, rota por
+> rota, e não deduzido:
+>
+> | tela | rota | o que faltava |
+> |---|---|---|
+> | `/projetos` | `GET /projects` | ✅ resolvido em 11/09 (lente da ADR 0007 + `team_id`) |
+> | `/minhas-tarefas` | `GET /me/assignments` | nenhum parâmetro de time |
+> | `/arquivadas` | `GET /tasks` | tem `team_id`, **mas é igualdade em `Task.team_id`** |
+> | `/solicitacoes` | a fila | fatia D |
+> | `/formularios` | a listagem | fatia E |
+>
+> ⚠️ **O caso de `/arquivadas` é o mais traiçoeiro dos cinco**, porque o
+> parâmetro EXISTE e usá-lo pareceria pronto. `team_id` em `GET /tasks` casa
+> `Task.team_id == team_id` — igualdade crua. Recortar por raiz com ele
+> **esconderia toda tarefa interna de subtime**, e ignoraria a regra do time
+> efetivo que o próprio repositório documenta: *"o time que decide o alcance é
+> `COALESCE(project.team_id, task.team_id)`"*. O recorte por raiz precisa de
+> parâmetro PRÓPRIO, com a semântica de raiz + descendentes sobre o time
+> efetivo — e não de reaproveitar o que existe.
+>
+> **A ordem certa é D e E ANTES do resto de C**, mais um parâmetro novo para as
+> duas rotas de tarefa. O que foi entregue da C em 11/09 é a fundação (a barra
+> lendo `?time=`, o contexto descendo para as telas, a reescrita da URL, a §4.2)
+> e a única tela cuja rota estava pronta.
+>
+> **Por que o erro passou:** a fatia foi escrita listando as TELAS, e nenhuma
+> linha dela perguntava *"a rota aceita?"*. Escrever fatia de front sem
+> conferir o contrato que ela consome é o mesmo defeito, de outro tamanho, do
+> comentário que eu pus no `list_page` dizendo que a lente já respondia.
+
 **Fatia D — a fila é do time (backend).**
 `list_batches` e as duas contagens (`count_pending`,
 `count_approved_without_task`) passam a receber o time e a filtrar por
