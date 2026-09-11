@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import {
   getMe,
@@ -31,6 +31,7 @@ import {
 } from "@/lib/sidebar";
 import NotificationBell from "@/components/NotificationBell";
 import ContextSwitcher from "@/components/ContextSwitcher";
+import TeamParamReader from "@/components/TeamParamReader";
 import {
   ownRootTeams,
   peopleEntry,
@@ -82,6 +83,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   // tela que não tem área na URL. `getWorkspace` é memoizado em módulo, então
   // isto é uma requisição por sessão, não por navegação.
   const [orgName, setOrgName] = useState("");
+  // ⚠️ A QUERY DA URL, entregue pelo `TeamParamReader` (fatia C). `""` = ainda
+  // não chegou (ou não há) -- e `activeTeam` trata isso como "a URL não disse",
+  // caindo na reserva. Ver o bloco de aviso no `TeamParamReader`: a fronteira
+  // de `Suspense` que o `useSearchParams` exige não pode ficar aqui.
+  const [search, setSearch] = useState("");
   const [quadrosOpen, setQuadrosOpen] = useState(lerQuadrosAberto); // accordion
   // Preferencia de tema. Ler localStorage no inicializador e seguro aqui: com
   // `loading` comecando true, a barra so renderiza depois do check de auth, ja
@@ -184,14 +190,14 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   // times, os sub-quadros eram os de todos eles juntos e o "Quadro geral"
   // apontava para o primeiro do alfabeto.
   //
-  // ⚠️⚠️ `search` VAI VAZIO NESTA FATIA, E E DE PROPOSITO -- nao e esquecimento.
-  // Nenhuma tela escreve `?time=` ainda (isso e a fatia C), entao ler a query
-  // aqui nao acrescentaria informacao e obrigaria a decidir AGORA a questao de
-  // `useSearchParams` em rota estatica (`AGENTS.md` §6). A fatia C liga a query
-  // junto com as telas, que e onde a fronteira de `Suspense` tem de existir.
-  // ⚠️ Enquanto isso, a barra resolve pelo CAMINHO (`/times/<id>`,
-  // `/quadro/<id>`) e, fora deles, pelo time em que a pessoa trabalha.
-  const contexto = activeTeam(pathname, "", teams, alcanca, trabalha);
+  // ⚠️ `search` LIGADO NA FATIA C (era `""`). A barra resolve o time na ordem
+  // do `activeTeam`: caminho (`/times/<id>`, `/quadro/<id>`), depois `?time=`,
+  // depois o time em que a pessoa trabalha.
+  //
+  // ⚠️ SEM ISTO A FATIA C SERIA INCOERENTE, e a spec já avisava: as telas
+  // recortariam pelo `?time=` e a barra seguiria mostrando os quadros de outro
+  // time -- a pessoa veria o menu do Marketing com o conteúdo do Comercial.
+  const contexto = activeTeam(pathname, search, teams, alcanca, trabalha);
   const timeAtivo = contexto.kind === "team" ? contexto.teamId : null;
 
   // Fatia 2/7b: sub-abas de quadro = subtimes DO TIME ATIVO que a lente alcanca.
@@ -307,6 +313,14 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex min-h-screen">
+      {/* ⚠️⚠️ A FRONTEIRA DE `Suspense` DO PRODUTO INTEIRO PARA O `?time=`.
+          IRMÃO, e não ancestral: envolver a barra e o `children` faria as telas
+          remontarem (e refazerem os `fetch`) quando a query resolvesse.
+          `fallback={null}` não pisca porque o componente não desenha nada.
+          O motivo completo está no topo de `TeamParamReader.tsx`. */}
+      <Suspense fallback={null}>
+        <TeamParamReader onSearch={setSearch} />
+      </Suspense>
       {/* ⚠️ ALTURA FIXA + COLUNA = MENU QUE SOME COM ZOOM.
           A barra e `h-screen` e nao rola: com zoom do navegador (ou tela
           baixa) a lista de itens passa de 100vh e o que sobra fica CORTADO
@@ -458,6 +472,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             teams={teams}
             me={user}
             pathname={pathname}
+            search={search}
             canManageOrg={podeVerOrganizacao}
             expanded={open}
             orgName={orgName}

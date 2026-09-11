@@ -15,6 +15,7 @@ import {
   ownRootTeams,
   peopleEntry,
   rootsForPerson,
+  switcherHref,
 } from "../contextSwitcher";
 import type { CurrentUser, Team } from "../api";
 
@@ -279,3 +280,58 @@ describe("ownRootTeams — onde a pessoa TRABALHA", () => {
 //   B. Devolver todas as raízes para todo mundo. **Cai 7**.
 //   C. Virar rótulo quando há uma área só, ignorando `canManageOrg`.
 //      **Cai 3**: some a única porta para a tela de organização.
+
+// ⚠️⚠️ A §4.2 DA SPEC 048, que ficou para a fatia C de propósito: escrever
+// `?time=` antes de as telas honrarem o parâmetro poria uma URL que mente.
+describe("switcherHref -- trocar de time preserva a tela", () => {
+  const B = "time-b";
+
+  it("nas cinco telas recortadas, fica na MESMA tela", () => {
+    // Decisão dela: "trocar de time é gesto de trabalho, e jogar a pessoa para
+    // outra tela no meio dele é perder o lugar".
+    for (const tela of [
+      "/minhas-tarefas",
+      "/projetos",
+      "/arquivadas",
+      "/solicitacoes",
+      "/formularios",
+    ]) {
+      expect(switcherHref(tela, "", B)).toBe(`${tela}?time=${B}`);
+    }
+  });
+
+  it("⚠️ e PRESERVA os outros parâmetros da tela", () => {
+    // Sem isto a pessoa perderia a aba ou o filtro que escolheu por ter
+    // trocado de time.
+    expect(switcherHref("/minhas-tarefas", "?ver=lista&time=time-a", B)).toBe(
+      `/minhas-tarefas?ver=lista&time=${B}`,
+    );
+  });
+
+  it("no quadro, vai para o QUADRO do outro time (caminho, não parâmetro)", () => {
+    // ⚠️ `withTeam` aqui produziria `/quadro/<A>?time=<B>`, que o `activeTeam`
+    // ignora de propósito (o caminho ganha do parâmetro) -- a URL passaria a
+    // mentir sem efeito.
+    expect(switcherHref("/quadro/time-a", "", B)).toBe(`/quadro/${B}`);
+    expect(switcherHref("/quadro/time-a", "?quadro=xyz", B)).toBe(`/quadro/${B}`);
+    // O endereço legado, sem time no caminho, também é quadro.
+    expect(switcherHref("/quadro", "", B)).toBe(`/quadro/${B}`);
+  });
+
+  it("na organização, vai para a tela do time (a exceção da spec)", () => {
+    // "não há tela equivalente para preservar".
+    expect(switcherHref("/organizacao", "", B)).toBe(`/times/${B}`);
+  });
+
+  it("na tela de um time, troca o time da URL", () => {
+    expect(switcherHref("/times/time-a", "", B)).toBe(`/times/${B}`);
+    expect(switcherHref("/times/time-a", "?aba=inativos", B)).toBe(`/times/${B}`);
+  });
+
+  it("⚠️ numa tela que NÃO lê o parâmetro, não inventa `?time=`", () => {
+    // A tarefa pertence a UM time; "a mesma tarefa no outro time" não existe.
+    // Escrever o parâmetro aqui daria uma URL que diz o time e não filtra nada.
+    expect(switcherHref("/tarefa/t-1", "", B)).toBe(`/times/${B}`);
+    expect(switcherHref("/perfil", "", B)).toBe(`/times/${B}`);
+  });
+});

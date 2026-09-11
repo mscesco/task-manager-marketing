@@ -23,7 +23,8 @@
  */
 
 import type { CurrentUser, Team } from "./api";
-import { rootTeams, rootTeamOf } from "./areas";
+import { rootTeams, rootTeamOf, urlDoQuadroDeArea } from "./areas";
+import { withTeam } from "./activeTeam";
 
 /**
  * As áreas que ESTA pessoa alcança.
@@ -203,4 +204,61 @@ export type PeopleEntry =
 export function peopleEntry(roots: readonly Team[]): PeopleEntry {
   if (roots.length === 0) return { kind: "none" };
   return { kind: "team", teamId: roots[0].id };
+}
+
+/**
+ * As cinco telas que são SUAS, recortadas pelo time via `?time=`.
+ *
+ * ⚠️ LISTA EXPLÍCITA, e não "tudo o que não for tela de time". A diferença
+ * importa: numa tela que NÃO lê o parâmetro, escrever `?time=` produziria uma
+ * URL que mente -- ela diria o time e a tela não filtraria nada. Já aconteceu
+ * neste projeto (a §4.2 da spec adiou este seletor para a fatia C exatamente
+ * por isso), e a lista é o que impede que aconteça de novo por acidente: uma
+ * tela nova só entra aqui quando alguém a ensinar a ler o parâmetro.
+ */
+const TELAS_RECORTADAS = [
+  "/minhas-tarefas",
+  "/projetos",
+  "/arquivadas",
+  "/solicitacoes",
+  "/formularios",
+] as const;
+
+/**
+ * Para onde o seletor de time leva, **preservando a tela** — Spec 048, §4.2.
+ *
+ * ⚠️⚠️ ATÉ A FATIA C ELE IA SEMPRE PARA `/times/<id>`, e isso era um defeito de
+ * produto: estando em "Minhas tarefas" e trocando de time, a pessoa era jogada
+ * na tela de pessoas daquele time. Decisão dela, na spec: *"trocar de time é
+ * gesto de trabalho, e jogar a pessoa para outra tela no meio dele é perder o
+ * lugar"*. Ver as pessoas de um time é outro ato, e tem porta própria (o item
+ * **Time** do menu).
+ *
+ * As três respostas, e o motivo de cada uma:
+ *
+ *   1. **quadro** (`/quadro`, `/quadro/<id>`) -> o quadro DO outro time. O time
+ *      mora no CAMINHO ali, então trocar de time é trocar de endereço, não
+ *      acrescentar parâmetro. `withTeam` não serve (produziria
+ *      `/quadro/<A>?time=<B>`, que o `activeTeam` ignora de propósito).
+ *   2. **as cinco telas recortadas** -> a MESMA tela, com o outro time. Aqui
+ *      `withTeam` preserva os outros parâmetros: a pessoa não perde o recorte
+ *      que escolheu por ter trocado de time.
+ *   3. **qualquer outra** (`/organizacao`, `/times/<id>`, `/tarefa/<id>`, o
+ *      perfil…) -> a tela do time. A spec nomeia a exceção da `/organizacao`
+ *      ("não há tela equivalente para preservar"), e a mesma lógica vale para
+ *      as demais: uma tarefa pertence a UM time, e "a mesma tarefa no outro
+ *      time" não existe.
+ */
+export function switcherHref(
+  pathname: string,
+  search: string,
+  teamId: string,
+): string {
+  if (pathname === "/quadro" || pathname.startsWith("/quadro/")) {
+    return urlDoQuadroDeArea(teamId);
+  }
+  if ((TELAS_RECORTADAS as readonly string[]).includes(pathname)) {
+    return withTeam(pathname, search, teamId);
+  }
+  return `/times/${teamId}`;
 }
