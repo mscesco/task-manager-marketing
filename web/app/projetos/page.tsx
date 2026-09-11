@@ -71,8 +71,18 @@ function Projetos() {
   const [areaId, setAreaId] = useState<string>("");
 
   useEffect(() => {
-    listProjects({ size: 100 })
-      // pasta = projeto comum; o pessoal do proprio usuario nao entra aqui.
+    listProjects({
+      size: 100,
+      // ⚠️ AINDA SEM RECORTE, E ISTO E UMA PENDENCIA E NAO UMA DECISAO. Esta
+      // tela DEVERIA recortar (ela oferece escolha), mas o time ativo so chega
+      // as telas na fatia C -- ela le `?time=` e ainda nao o le. Enquanto isso
+      // a lista mostra os projetos de todos os times que a pessoa alcanca.
+      //
+      // ⚠️ O SELETOR DE PROJETO DO MODAL DE CRIAR TAREFA JA RECORTA: era ali
+      // que o defeito aparecia. Aqui o efeito e so a tela listar mais do que o
+      // contexto pede -- incomodo, nao vazamento (a lente do backend vale).
+      teamId: null,
+    })
       .then((r) => setItems(r.items))
       .catch((e: ApiError) => setErro(e.message));
     // ⚠️ As duas juntas porque `rootsForPerson` precisa das DUAS: a árvore e os

@@ -359,3 +359,45 @@ describe("TaskModal -- a raiz vem da tela, e não de um sorteio", () => {
     expect(api.listMembersDoTime).not.toHaveBeenCalled();
   });
 });
+
+// ⚠️ A OUTRA METADE DO QUE ELA REPORTOU: *"estão aparecendo projetos de outro
+// time raiz né"*. O conserto tem duas pontas -- o backend passou a aceitar
+// `?team_id=` (`GET /projects`, provado em
+// `backend/tests/integration/test_projects_lente_http_db.py`) e o modal passou
+// a mandá-lo. Sem este teste a ponta do front não tem ninguém: `tsc` garante
+// que o campo EXISTE, não que o valor está certo.
+describe("TaskModal -- o seletor de projeto recorta pelo time", () => {
+  it("manda o time do quadro no `listProjects`", async () => {
+    mocks();
+    render(
+      <TaskModal
+        open
+        newTaskTeam={{ teamId: RAIZ, internal: false }}
+        onClose={() => {}}
+        onSaved={() => {}}
+      />,
+    );
+    await screen.findByLabelText(/^Projeto/);
+    await waitFor(() => {
+      expect(api.listProjects).toHaveBeenCalledWith(
+        expect.objectContaining({ teamId: RAIZ }),
+      );
+    });
+  });
+
+  it("⚠️ e NÃO pergunta nada quando o seletor não aparece", async () => {
+    // Quadro de subtime: a tarefa nasce interna, não há projeto a escolher.
+    // Uma requisição aqui seria trabalho para montar uma lista que ninguém vê.
+    mocks();
+    render(
+      <TaskModal
+        open
+        newTaskTeam={{ teamId: "team-sub", internal: true }}
+        onClose={() => {}}
+        onSaved={() => {}}
+      />,
+    );
+    await screen.findByLabelText("Designar responsável");
+    expect(api.listProjects).not.toHaveBeenCalled();
+  });
+});

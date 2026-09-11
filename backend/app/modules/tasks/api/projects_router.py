@@ -59,10 +59,24 @@ async def list_projects(
     project_status: ProjectStatus | None = Query(None, alias="status"),
     priority: PriorityLevel | None = None,
     include_archived: bool = False,
+    team_id: uuid.UUID | None = Query(
+        None,
+        description=(
+            "Recorta pelos projetos deste time e dos descendentes dele. "
+            "Ausente = todos os que a lente permite."
+        ),
+    ),
 ) -> ProjectListResponse:
     """Lista projetos do workspace, paginado, com filtros.
 
-    PRIVACIDADE: pessoal alheio nao aparece (filtro no service).
+    VISIBILIDADE: a lente de time filtra no service (ADR 0007) -- projeto de
+    time fora da lente nao aparece. `team_id` recorta ainda mais, e e o que as
+    telas usam para seguir o time ativo (Spec 048).
+
+    ⚠️ `team_id` e OPCIONAL no contrato de proposito: as telas que mostram um
+    SELO de projeto (o mapa id -> titulo) precisam de todos os que a pessoa
+    alcanca, senao a tarefa aparece sem o nome do projeto dela. Quem oferece
+    ESCOLHA e que recorta.
     """
     page_result = await ProjectService(session).list_page(
         params=PageParams(page=page, size=size),
@@ -70,6 +84,7 @@ async def list_projects(
             status=project_status,
             priority=priority,
             include_archived=include_archived,
+            team_id=team_id,
         ),
     )
     return ProjectListResponse(

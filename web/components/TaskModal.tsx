@@ -325,12 +325,21 @@ export default function TaskModal({
   }, [open, task]);
 
   // Carrega projetos comuns pro seletor (so quando ele aparece).
+  //
+  // ⚠️ ESCOLHER, e por isso RECORTA pelo time. Foi aqui que ela viu o defeito:
+  // *"estão aparecendo projetos de outro time raiz"*. A rota nunca filtrou por
+  // time -- o escopo dela era o workspace inteiro (ver `list_page` no
+  // `project_service.py`).
+  //
+  // ⚠️ `newTaskTeam.teamId` E O TIME CERTO AQUI sem nenhuma conta extra: este
+  // seletor so aparece quando `internal` e falso, e `internal` falso quer dizer
+  // exatamente "a tarefa nasce no quadro geral da raiz". Logo o time e a raiz.
   useEffect(() => {
     if (!open || !mostrarSeletorProjeto) return;
-    listProjects({ size: 100 })
+    listProjects({ size: 100, teamId: newTaskTeam?.teamId ?? null })
       .then((r) => setProjetos(r.items))
       .catch(() => {});
-  }, [open, mostrarSeletorProjeto]);
+  }, [open, mostrarSeletorProjeto, newTaskTeam?.teamId]);
 
   // Carrega membros pro seletor de responsaveis (so ao CRIAR).
   useEffect(() => {

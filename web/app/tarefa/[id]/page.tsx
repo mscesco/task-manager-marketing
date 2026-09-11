@@ -86,7 +86,13 @@ function Tarefa() {
         setMembrosInativos(new Set(ms.filter((m) => !m.is_active).map((m) => m.id)));
       })
       .catch(() => {});
-    listAllProjects()
+    listAllProjects({
+      // ROTULAR, nao escolher: este mapa id -> titulo desenha o selo de
+      // projeto no card. Recortar por time apagaria o selo de uma tarefa que
+      // a pessoa ENXERGA, em vez de proteger algo -- a lente do backend ja
+      // limita o que volta. Ver `listProjects` em `lib/api.ts`.
+      teamId: null,
+    })
       .then((r) => {
         if (!vivo) return;
         setProjectNames(new Map(r.items.map((p) => [p.id, p.title])));

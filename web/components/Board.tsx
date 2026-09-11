@@ -482,7 +482,13 @@ export default function Board({
       .finally(() => setMembrosCarregados(true));
     // Spec 022: projectNames alimenta o chip E o seletor de "mudar projeto" no
     // detalhe -> carrega em qualquer quadro (antes so no geral).
-    listAllProjects()
+    listAllProjects({
+      // ROTULAR, nao escolher: este mapa id -> titulo desenha o selo de
+      // projeto no card. Recortar por time apagaria o selo de uma tarefa que
+      // a pessoa ENXERGA, em vez de proteger algo -- a lente do backend ja
+      // limita o que volta. Ver `listProjects` em `lib/api.ts`.
+      teamId: null,
+    })
       .then((r) => {
         setProjectNames(new Map(r.items.map((p) => [p.id, p.title])));
         // Spec 031 (C13): guardado a parte -- o mapa de nomes precisa de TODOS

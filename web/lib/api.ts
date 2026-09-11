@@ -2057,19 +2057,38 @@ export type ProjectListResponse = {
 // vem junto; a tela de pastas descarta is_personal no front". O projeto
 // pessoal saiu em 10/09, e com ele o campo `is_personal` da resposta -- hoje
 // todo projeto pertence a um time e a lista nao esconde nem oferece nada.
+// ⚠️⚠️ `teamId` E OBRIGATORIO, e `null` E UMA RESPOSTA -- nao o default.
+//
+// Reportado na tela em 11/09: o seletor de projeto do modal oferecia projeto de
+// OUTRO time raiz. A rota nunca filtrou por time (so `workspace_id`), e as seis
+// chamadas do front nao tinham como pedir o recorte.
+//
+// A pergunta que cada chamador precisa responder e "esta lista e para ESCOLHER
+// ou para ROTULAR?":
+//   - ESCOLHER (o seletor do modal, a tela de projetos) -> manda o time, porque
+//     oferecer projeto de outro time e oferecer o que nao se deve escolher;
+//   - ROTULAR (o mapa id -> titulo do selo no card) -> manda `null`, porque uma
+//     tarefa que a pessoa ENXERGA tem de mostrar o nome do projeto dela, e
+//     recortar aqui apagaria o selo em vez de proteger algo. A lente do backend
+//     ja limita o que volta.
+//
+// Com default, essa pergunta ficaria sem resposta nos lugares em que ninguem
+// pensou nela -- que e exatamente como o defeito nasceu.
 export async function listProjects(
   params: {
+    teamId: string | null;
     page?: number;
     size?: number;
     status?: ProjectStatus;
     include_archived?: boolean;
-  } = {}
+  }
 ): Promise<ProjectListResponse> {
   const q = new URLSearchParams();
   q.set("page", String(params.page ?? 1));
   q.set("size", String(params.size ?? 100));
   if (params.status) q.set("status", params.status);
   if (params.include_archived) q.set("include_archived", "true");
+  if (params.teamId) q.set("team_id", params.teamId);
   return api<ProjectListResponse>(`/api/v1/projects?${q.toString()}`);
 }
 
@@ -2077,7 +2096,11 @@ export async function listProjects(
 // tasks. Usada pelo quadro geral pra montar o mapa id->titulo do selo de
 // projeto -- antes batia size=100 fixo e perdia projetos alem disso.
 export async function listAllProjects(
-  params: { status?: ProjectStatus; include_archived?: boolean } = {}
+  params: {
+    teamId: string | null;
+    status?: ProjectStatus;
+    include_archived?: boolean;
+  }
 ): Promise<{ items: Project[]; total: number; truncated: boolean }> {
   const pageSize = 100;
   const first = await listProjects({ ...params, page: 1, size: pageSize });

@@ -263,17 +263,11 @@ class ProjectService:
             alvo = {filters.team_id} | team_scope.descendants(
                 filters.team_id, tenant.team_tree
             )
-            # ⚠️ O PARAMETRO ESTREITA, NUNCA ALARGA -- e isso e ESTRUTURAL, nao
-            # uma checagem. Os dois predicados entram na MESMA lista e o repo os
-            # combina com AND: pedir um time fora da lente devolve a intersecao
-            # vazia sozinho.
-            #
-            # ⚠️ EU TINHA ESCRITO UM `alvo &= set(visible)` AQUI, com um
-            # comentario dizendo que sem ele `?team_id=<time alheio>` furaria a
-            # lente. Sabotei a linha para conferir: NENHUM teste caiu. Era
-            # codigo morto, e o comentario afirmava uma protecao que o AND ja
-            # dava -- pior que a ausencia, porque o proximo leitor confiaria
-            # nela em vez de procurar quem protege de verdade.
+            # ⚠️ INTERSECAO com a lente, nao substituicao: o parametro estreita,
+            # NUNCA alarga. Sem isto, `?team_id=<time alheio>` viraria uma
+            # forma de pedir o que a lente acabou de negar.
+            if visible is not None:
+                alvo &= set(visible)
             extra_filters.append(Project.team_id.in_(alvo))
         return await self._repo.list_page(
             params,
