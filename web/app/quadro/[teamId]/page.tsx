@@ -76,11 +76,31 @@ export default function QuadroSubtimePage() {
   // ⚠️ A VALIDACAO MORA EM `lib/seletorDeQuadro`, TESTADA. O `include` do
   // vitest e so `lib/**` e `components/**` -- regra escrita dentro de `app/`
   // nasce sem guardiao.
-  const pedido = resolverQuadroPedido(
-    searchParams.get("quadro"),
-    quadros,
-    teamId,
-  );
+  //
+  // ⚠️⚠️ NA RAIZ, ESCOLHER O QUADRO GERAL E LEGITIMO -- e este ramo e o que
+  // faltava. Reportado por ela em 11/09, com captura: *"o quadro esta sendo
+  // chamado de lente do time"*, estando no Comercial (uma raiz).
+  //
+  // ⚠️⚠️ E QUEM EXPOS FOI A FATIA B desta spec, nao codigo novo: ate 11/09 o
+  // "Quadro geral" da barra apontava para `/quadro` (a rota legada), que SEMPRE
+  // tratou a raiz certo -- ela passa `daRaiz` ao seletor e normaliza o pedido.
+  // A fatia B passou a apontar para `/quadro/<time-ativo>`, ou seja, para ESTA
+  // rota, que nunca soube da raiz. O defeito estava aqui desde a Spec 046 fatia
+  // 4 (quando a rota aprendeu a aceitar id de area) e ninguem passava por ele.
+  //
+  // ⚠️ SO NA RAIZ. Num SUBTIME, `?quadro=<geral>` e mesmo uma queda para a
+  // lente, e o aviso "e-o-quadro-geral" esta certo ali -- o quadro geral nem
+  // aparece na lista daquela tela. Normalizar nos dois casos apagaria um aviso
+  // verdadeiro.
+  const ehRaiz = team !== null && team.parent_team_id === null;
+  const pedidoCru = searchParams.get("quadro");
+  const pedidoEhOGeral =
+    !!pedidoCru &&
+    (quadros?.find((q) => q.id === pedidoCru)?.is_default ?? false);
+  const pedido =
+    ehRaiz && pedidoEhOGeral
+      ? { id: null, motivo: null }
+      : resolverQuadroPedido(pedidoCru, quadros, teamId);
   const quadroSelecionado = pedido.id;
 
   // ⚠️ `push`, E NAO `replace`. Trocar de quadro e navegar: a pessoa espera
@@ -91,9 +111,17 @@ export default function QuadroSubtimePage() {
   // a pessoa colaria outro link morto e nao veria nada.
   const [quedaDispensada, setQuedaDispensada] = useState<string | null>(null);
 
+  // ⚠️ ESCOLHER O QUADRO GERAL LIMPA O `?quadro=`, e nao o escreve. Sem isto a
+  // URL guardaria o id do geral e o `Board` entraria pelo ramo de `boardId` --
+  // que e OUTRO filtro (um registro proprio, e nao o quadro geral da area). O
+  // endereco do quadro geral de um time e `/quadro/<time>`, limpo. Mesma
+  // normalizacao que a rota legada `/quadro` ja fazia.
   const selecionarQuadro = useCallback(
-    (id: string | null) => router.push(urlDoQuadro(teamId, id)),
-    [router, teamId],
+    (id: string | null) => {
+      const ehGeral = quadros?.find((q) => q.id === id)?.is_default ?? false;
+      router.push(urlDoQuadro(teamId, ehGeral ? null : id));
+    },
+    [router, teamId, quadros],
   );
 
   useEffect(() => {
@@ -158,6 +186,13 @@ export default function QuadroSubtimePage() {
       podeGerir={podeGerir}
       onSelecionar={selecionarQuadro}
       onMudou={carregarQuadros}
+      // ⚠️⚠️ ERA ESTA A LINHA QUE FALTAVA. Sem ela o seletor usa
+      // `opcoesDoSeletor` sempre -- a lista de SUBTIME, cujo primeiro item e a
+      // LENTE ("Lente do time / espelho do quadro geral"). Numa raiz nao ha
+      // lente: o quadro geral e a coisa em si, e entra pelo NOME dele. O corpo
+      // do quadro ja tratava a raiz certo desde a Spec 046 fatia 4 (`areaId`, e
+      // nao `subteamId`); so o cabecalho nao sabia.
+      daRaiz={team.parent_team_id === null}
     />
   ) : null;
 

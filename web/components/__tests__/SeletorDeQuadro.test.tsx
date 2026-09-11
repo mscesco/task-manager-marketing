@@ -71,6 +71,12 @@ function montar(over: Partial<Parameters<typeof SeletorDeQuadro>[0]> = {}) {
     podeGerir: true,
     onSelecionar: vi.fn(),
     onMudou: vi.fn(),
+    // ⚠️ O DEFAULT DO HELPER E `false` -- a tela de SUBTIME, que e o assunto da
+    // maioria destes testes. A prop virou OBRIGATORIA em 11/09 (ver o bloco
+    // dela): ela era opcional, e a rota `/quadro/[teamId]` nao a passava, o que
+    // punha "Lente do time" no cabecalho de uma raiz. O default aqui e do
+    // ARREIO, e nao do componente -- quem desenha tem de dizer.
+    daRaiz: false,
     ...over,
   };
   render(<SeletorDeQuadro {...props} />);

@@ -74,8 +74,19 @@ export default function SeletorDeQuadro({
    * o primeiro item e a LENTE, e o Quadro geral fica FORA da lista porque ela
    * ja o representa. Na raiz nao ha lente: o Quadro geral e a coisa em si, e
    * entra pelo nome dele. Ver `opcoesDoSeletorDaRaiz`.
+   *
+   * ⚠️⚠️ OBRIGATORIA DESDE 11/09, E A MUDANCA E O CONSERTO. Ela era
+   * `daRaiz?: boolean`, e a rota `/quadro/[teamId]` simplesmente NAO a passava
+   * -- entao uma raiz aberta por ali mostrava "Lente do time" no cabecalho.
+   * Reportado por ela com captura, estando no Comercial.
+   *
+   * ⚠️ E O DEFEITO MORAVA EM `app/`, que esta fora do `include` do vitest: nem
+   * teste de componente nem de lib alcancavam a omissao. Tornar a prop
+   * obrigatoria transforma o `tsc` no guardiao -- e ele apontou os dois
+   * chamadores na hora. Booleano OPCIONAL que muda comportamento e um default
+   * escondendo uma pergunta que alguem tem de responder.
    */
-  daRaiz?: boolean;
+  daRaiz: boolean;
 }) {
   const opcoes = daRaiz
     ? opcoesDoSeletorDaRaiz(quadros, teamId, podeGerir)
