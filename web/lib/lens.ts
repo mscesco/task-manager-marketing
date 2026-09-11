@@ -15,6 +15,7 @@
 // pura e testavel isolada.
 
 import type { Team, TeamMembership } from "@/lib/api";
+import { rootTeamOf } from "@/lib/areas";
 
 // Papeis que enxergam os descendentes (espelha _MANAGING_ROLES no backend).
 const MANAGING_ROLES = new Set(["MANAGER", "ADMIN"]);
@@ -53,19 +54,6 @@ function withDescendants(teamId: string, teams: Team[]): Set<string> {
     }
   }
   return out;
-}
-
-/** Sobe da folha ate a raiz (parent === null), protegido contra ciclo. */
-function rootOf(teamId: string, teams: Team[]): string | null {
-  let atual = teams.find((t) => t.id === teamId);
-  let guard = 0;
-  while (atual && atual.parent_team_id !== null && guard < 1000) {
-    guard += 1;
-    const pai = teams.find((t) => t.id === atual!.parent_team_id);
-    if (!pai) break;
-    atual = pai;
-  }
-  return atual ? atual.id : null;
 }
 
 /**
@@ -123,7 +111,7 @@ export function computeLens(
       for (const id of withDescendants(m.team_id, allTeams)) visible.add(id);
     } else {
       visible.add(m.team_id);
-      const r = rootOf(m.team_id, allTeams);
+      const r = rootTeamOf(m.team_id, allTeams);
       if (r) visible.add(r);
     }
   }

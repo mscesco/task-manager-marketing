@@ -48,7 +48,6 @@ from app.db.models.organization import Team
 from app.modules.auth.domain import team_scope
 from app.modules.tasks.domain.board_defaults import (
     COLUNAS_BASE,
-    COLUNAS_PADRAO,
     ColunaPadrao,
     NOME_QUADRO_GERAL,
 )

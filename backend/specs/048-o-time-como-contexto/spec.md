@@ -1,7 +1,8 @@
 # Spec 048 — O time como contexto
 
 **Status:** escrita em 10/09/2026, decidida com a Camila na mesma conversa.
-Decisões tomadas; **uma pendente de confirmação** (§4.1, a forma da URL).
+Decisões tomadas — a última (§4.1, a forma da URL) confirmada por ela em
+11/09: *"pode ser como recomenda"*. **Fatia A entregue em 11/09.**
 **Escopo:** frontend, mais **duas** mudanças de backend (§5, fatias D e E).
 **Depende de:** **Spec 046 fatia 4** (a área na URL do quadro, e o `area_id`
 obrigatório em `default_board_and_column_for_status`) e **Spec 047** (o seletor
@@ -113,21 +114,21 @@ todos os times.
 
 ## 4. As decisões
 
-### 4.1. O time mora na URL — e a forma é uma pergunta em aberto
+### 4.1. O time mora na URL, como query
 
 **Decidido por ela:** *"área entra na url, pois estarei movendo entre times
 diferentes"*. Coincide com a Spec 046 §4.4, que escolheu URL para o quadro com
 motivo escrito: é o que faz o link compartilhável e o botão Voltar funcionarem,
 "coisas que 'área ativa' guardada em estado não dá".
 
-**O que falta decidir é a FORMA**, e há duas:
+**A FORMA foi confirmada em 11/09** — query. As duas que estavam na mesa:
 
 | forma | como fica | custo |
 |---|---|---|
 | **query** (recomendada) | `/minhas-tarefas?time=<id>` | nenhuma rota muda. ⚠️ `useSearchParams` em rota estática **derruba o `next build`** — armadilha já registrada duas vezes (`AGENTS.md` §6 e Spec 047 §7). **Cinco telas** precisariam de fronteira de `Suspense`, e as cinco são estáticas hoje: `/minhas-tarefas`, `/projetos`, `/arquivadas`, `/solicitacoes`, `/formularios` (conferido no `next build` de 10/09) |
 | **prefixo de caminho** | `/t/<id>/minhas-tarefas` | conceitualmente mais limpo. Reescreve as cinco rotas e todo link interno que aponta para elas |
 
-⭐ **A recomendação é a query, e o argumento não é preguiça:** as duas rotas que
+⭐ **A escolhida foi a query, e o argumento não é preguiça:** as duas rotas que
 **já** carregam o time no caminho (`/times/[id]` e `/quadro/[teamId]`) são telas
 **do** time — o time é o assunto delas. As outras cinco são telas **filtradas
 pelo** time. A distinção é real, e a URL passa a dizê-la:
@@ -222,13 +223,21 @@ que o contexto exista para poder ser recortado.
 
 Cada uma fica verde sozinha, e a ordem não é negociável nas três primeiras.
 
-**Fatia A — o time ativo tem nome, e uma fonte só (front).**
-Uma função em `lib/` que responde *"em que time estou?"* a partir da URL,
-estendendo `currentContext`: além de `/times/<id>` e `/quadro/<id>`, ela passa a
-ler o parâmetro; sem nenhum dos três, resolve o time da pessoa. **Nada de tela
-muda nesta fatia** — ela só cria a resposta, com teste.
+**Fatia A — o time ativo tem nome, e uma fonte só (front).** ✅ **ENTREGUE
+em 11/09.**
+`lib/activeTeam.ts`: `activeTeam(pathname, search, teams, reachable)` responde
+*"em que time estou?"* em cinco degraus (caminho → `tudo` → parâmetro → time da
+pessoa → nada), e `withTeam` monta a URL preservando os outros parâmetros.
+**Nada de tela mudou** — a fatia só criou a resposta, com 25 testes.
 ⚠️ Vai primeiro porque as três seguintes a consomem, e porque a regra em `lib/`
 é a única que tem guardião (`app/` está fora do `include` do vitest).
+
+⚠️⚠️ **E ela trouxe uma dívida à tona:** `rootOf` existia DUAS vezes, privada,
+em `lib/contextSwitcher.ts` e `lib/lens.ts` — e as duas **já divergiam** no caso
+de pai pendurado (a de `lens.ts` devolvia o último nó conhecido, afirmando que
+um subtime era raiz; a outra devolvia `null`). Viraram uma,
+`rootTeamOf` em `lib/areas.ts`, unificada no `null` — fail-closed. Três cópias
+de uma caminhada de árvore é o defeito que a Spec 034 já pagou (D2/D4).
 
 **Fatia B — a barra deixa de sortear (front).**
 `computeLens` passa a receber o time ativo; os sub-quadros do menu passam a ser

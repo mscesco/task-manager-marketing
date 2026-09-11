@@ -78,6 +78,50 @@ export function rootTeams(teams: readonly Team[]): Team[] {
     .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
 }
 
+/** Teto de saltos ao subir a árvore. Ela tem três níveis; 50 é folga. */
+const MAX_SALTOS = 50;
+
+/**
+ * O time RAIZ acima de `teamId` — sobe a árvore até o que não tem pai.
+ *
+ * ⚠️⚠️ ELA EXISTIA DUAS VEZES, privada, em `lib/contextSwitcher.ts` e
+ * `lib/lens.ts`, e a Spec 048 (fatia A) precisava da terceira. Três cópias de
+ * uma caminhada de árvore é o defeito que este projeto já pagou com a regra de
+ * alcance (Spec 034, D2/D4): ela divergiu entre duas cópias e ninguém viu.
+ *
+ * ⚠️⚠️ E AS DUAS CÓPIAS JÁ DIVERGIAM, num caso: **pai pendurado** (o ancestral
+ * não está na lista recebida). A de `lens.ts` fazia `break` e devolvia o último
+ * nó conhecido — ou seja, **afirmava que um subtime era raiz**. A de
+ * `contextSwitcher.ts` devolvia `null`.
+ *
+ * Esta unifica no `null`, e a escolha é fail-closed: "não sei qual é a raiz" faz
+ * o chamador cair no caminho de reserva (o nome da organização, o time da
+ * pessoa), enquanto o último-nó-conhecido escreve um time errado como se fosse
+ * certo — e recortar uma tela por um subtime achando que é raiz é exatamente o
+ * tipo de resposta errada que não levanta erro.
+ *
+ * ⚠️ Na prática as duas dão o mesmo resultado hoje: quem chama passa a árvore
+ * INTEIRA (`listTeamsAll`), onde não há pai pendurado. A divergência era latente
+ * — e é por isso que ela merecia ser resolvida de propósito, e não por acidente
+ * de qual cópia sobrou.
+ *
+ * ⚠️ O teto de saltos existe porque ciclo em dado é mais barato que travar a
+ * aba: um `parent_team_id` apontando para um descendente giraria para sempre.
+ */
+export function rootTeamOf(
+  teamId: string,
+  teams: readonly Team[],
+): string | null {
+  const byId = new Map(teams.map((t) => [t.id, t]));
+  let atual = byId.get(teamId);
+  let saltos = 0;
+  while (atual && atual.parent_team_id !== null && saltos < MAX_SALTOS) {
+    saltos += 1;
+    atual = byId.get(atual.parent_team_id);
+  }
+  return atual ? atual.id : null;
+}
+
 /**
  * A ÚNICA área do workspace. Levanta se não houver exatamente uma.
  *

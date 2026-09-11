@@ -23,7 +23,7 @@
  */
 
 import type { CurrentUser, Team } from "./api";
-import { rootTeams } from "./areas";
+import { rootTeams, rootTeamOf } from "./areas";
 
 /**
  * As áreas que ESTA pessoa alcança.
@@ -46,10 +46,9 @@ export function rootsForPerson(
   if (canManageOrg) return raizes;
   if (!me) return [];
 
-  const porId = new Map(teams.map((t) => [t.id, t]));
   const minhas = new Set<string>();
   for (const vinculo of me.teams) {
-    const raiz = rootOf(vinculo.team_id, porId);
+    const raiz = rootTeamOf(vinculo.team_id, teams);
     if (raiz) minhas.add(raiz);
   }
   return raizes.filter((t) => minhas.has(t.id));
@@ -112,24 +111,12 @@ export function currentContext(
   const id = pathname.slice(prefixo.length).split("/")[0];
   if (!id) return organizacao;
 
-  const porId = new Map(teams.map((t) => [t.id, t]));
-  const raiz = rootOf(id, porId);
-  const time = raiz ? porId.get(raiz) : undefined;
+  const raiz = rootTeamOf(id, teams);
+  const time = raiz ? teams.find((t) => t.id === raiz) : undefined;
   // ⚠️ Time desconhecido (lista ainda carregando, ou id inválido na URL) cai na
   // organização em vez de inventar um nome.
   if (!time) return organizacao;
   return { label: time.name, activeRootId: time.id };
-}
-
-/** Sobe até a raiz. `guarda` porque ciclo em dados é mais barato que travar. */
-function rootOf(teamId: string, porId: Map<string, Team>): string | null {
-  let atual = porId.get(teamId);
-  let guarda = 0;
-  while (atual && atual.parent_team_id !== null && guarda < 50) {
-    guarda += 1;
-    atual = porId.get(atual.parent_team_id);
-  }
-  return atual ? atual.id : null;
 }
 
 /** O que desenhar na barra. Ver o bloco no topo do arquivo. */
