@@ -405,6 +405,15 @@ export async function listTasks(params: {
   root_only?: boolean;
   // Spec 042 (A2): busca por titulo, casando tambem o de descendente.
   q?: string;
+  /**
+   * Recorte por time ATIVO (Spec 048): este time e os DESCENDENTES dele, pelo
+   * time EFETIVO da tarefa.
+   *
+   * ⚠️ VAI PARA `under_team_id`, e não para `team_id`. O backend tem os dois:
+   * `team_id` casa `Task.team_id` por igualdade e serviria mal aqui -- ver o
+   * bloco de `_sob_o_time` no repositório.
+   */
+  underTeamId?: string | null;
 } = {}): Promise<TaskListResponse> {
   const q = new URLSearchParams();
   q.set("page", String(params.page ?? 1));
@@ -416,6 +425,7 @@ export async function listTasks(params: {
   if (params.q && params.q.trim() !== "") q.set("q", params.q.trim());
   if (params.include_archived) q.set("include_archived", "true");
   if (params.archived_only) q.set("archived_only", "true");
+  if (params.underTeamId) q.set("under_team_id", params.underTeamId);
   return api<TaskListResponse>(`/api/v1/tasks?${q.toString()}`);
 }
 
@@ -559,13 +569,27 @@ export type MyAssignmentsResponse = {
   size: number;
 };
 
+/**
+ * As minhas tarefas, opcionalmente recortadas por time (Spec 048).
+ *
+ * ⚠️⚠️ `teamId` OBRIGATÓRIO, e `null` aqui é MODO DE USO -- não
+ * esquecimento. Decisão dela na §4.3: esta é a única tela que atravessa times
+ * de propósito, e o filtro `tudo | por time` é o que ela pediu. *"O time muda
+ * com a área; o que é meu, não."*
+ *
+ * ⚠️ `under_team_id` E NÃO `team_id`: o backend tem os dois, e `team_id` casa
+ * `Task.team_id` por igualdade -- ele esconderia toda tarefa interna de
+ * subtime e ignoraria o time do projeto. Ver `_sob_o_time` no repositório.
+ */
 export async function listMyAssignments(params: {
+  teamId: string | null;
   page?: number;
   size?: number;
-} = {}): Promise<MyAssignmentsResponse> {
+}): Promise<MyAssignmentsResponse> {
   const q = new URLSearchParams();
   q.set("page", String(params.page ?? 1));
   q.set("size", String(params.size ?? 100));
+  if (params.teamId) q.set("under_team_id", params.teamId);
   return api<MyAssignmentsResponse>(`/api/v1/me/assignments?${q.toString()}`);
 }
 
@@ -585,9 +609,17 @@ export type AllMyAssignmentsResult = {
   truncated: boolean;
 };
 
-export async function listAllMyAssignments(): Promise<AllMyAssignmentsResult> {
+/**
+ * ⚠️ `teamId` OBRIGATÓRIO, e ele TEM de ir em TODAS as páginas -- não só na
+ * primeira. Mandar só na primeira daria um `total` recortado e páginas
+ * seguintes sem recorte: a lista encheria de tarefa de outro time a partir da
+ * página 2, e o `truncated` mentiria junto.
+ */
+export async function listAllMyAssignments(
+  teamId: string | null
+): Promise<AllMyAssignmentsResult> {
   const pageSize = 100; // teto do backend por pagina
-  const first = await listMyAssignments({ page: 1, size: pageSize });
+  const first = await listMyAssignments({ teamId, page: 1, size: pageSize });
   const total = first.total;
   const cap = Math.min(total, TASK_FETCH_CEILING);
 
@@ -605,7 +637,7 @@ export async function listAllMyAssignments(): Promise<AllMyAssignmentsResult> {
 
   let page = 2;
   while (items.length < cap) {
-    const next = await listMyAssignments({ page, size: pageSize });
+    const next = await listMyAssignments({ teamId, page, size: pageSize });
     if (next.items.length === 0) break; // defensivo: nada mais a buscar
     push(next.items);
     page++;
@@ -946,25 +978,6 @@ export async function listBoards(): Promise<Quadro[]> {
   return api<Quadro[]>("/api/v1/boards");
 }
 
-/**
- * As colunas do quadro PADRAO do time raiz -- o "Quadro geral".
- *
- * Existe porque a fatia 4b troca `STATUSES` (const sincrona de 8 status) pela
- * lista de colunas, e as telas que hoje leem `STATUSES` (`/minhas-tarefas`,
- * `/arquivadas`, `TaskModal`) desenham o quadro geral, nao um quadro escolhido.
- *
- * ⚠️ DEVOLVE `[]`, E NAO LEVANTA, quando nao acha o quadro padrao. Quem chama
- * distingue "ainda carregando" (`null` no estado) de "carregou e nao ha
- * coluna" (`[]`) -- e uma tela sem coluna nenhuma e um estado que a fatia 4b
- * tem de desenhar de propósito (a sabotagem da fatia 4 no `plan.md` e
- * literalmente "devolver a lista de colunas vazia da API").
- *
- * ⚠️ `is_default` E O CRITERIO, nao o nome do quadro. Nome e editavel na
- * fatia 5; a flag tem indice parcial no banco (`board_um_padrao_por_time`).
- */
-export async function colunasDoQuadroGeral(): Promise<Coluna[]> {
-  return (await quadroGeralComIndice()).colunas;
-}
 
 /**
  * As colunas do Quadro geral E o indice de TODAS as colunas alcancaveis, numa
@@ -988,12 +1001,33 @@ export async function colunasDoQuadroGeral(): Promise<Coluna[]> {
  * bloco acima) e o indice **continua cheio**, com nome de quadro em toda
  * coluna. E o certo: se nao ha quadro desta tela, nenhuma coluna e "daqui".
  */
-export async function quadroGeralComIndice(): Promise<{
+/**
+ * As colunas do quadro geral DE UM TIME, mais o índice de todos os alcançáveis.
+ *
+ * ⚠️⚠️ `teamId` OBRIGATÓRIO, e este é o defeito 3.3 da Spec 048. A linha era
+ * `quadros.find((q) => q.is_default)` -- **"o" padrão, no singular**. Com um
+ * time raiz só isso era verdade; com dois existem DOIS quadros com
+ * `is_default`, e `find` devolve o que a API listar primeiro. A tela espelhava
+ * as colunas de um time enquanto mostrava as tarefas de outro, sem erro nenhum.
+ *
+ * ⚠️ `null` = sem time (o "tudo" de Minhas tarefas). Aí não há quadro geral
+ * que sirva, e devolver as colunas de um deles seria escolher por sorteio de
+ * novo -- devolve VAZIO, e a tela cai na lista. Quem precisa de colunas exige
+ * um time, que é a decisão da §4.3: *"o quadro não pode [dizer tudo] -- kanban
+ * não espelha dois quadros ao mesmo tempo"*.
+ *
+ * ⚠️ O ÍNDICE continua de TODOS os quadros alcançáveis, de propósito: ele serve
+ * para ROTULAR a coluna de uma tarefa que vive em quadro avulso (fatia 5b-5b),
+ * e recortá-lo faria a tarefa aparecer sem nome de coluna.
+ */
+export async function quadroGeralComIndice(teamId: string | null): Promise<{
   colunas: Coluna[];
   indice: Map<string, OrigemDaColuna>;
 }> {
   const quadros = await listBoards();
-  const geral = quadros.find((q) => q.is_default);
+  const geral = teamId
+    ? quadros.find((q) => q.is_default && q.team_id === teamId)
+    : undefined;
   const colunas = geral
     ? [...geral.colunas].sort((a, b) => a.position - b.position)
     : [];
@@ -1986,13 +2020,23 @@ export async function unarchiveTask(id: string): Promise<ArchiveResult> {
 // ---------------------------------------------------------------
 // Lista pagina DE VERDADE (page/size): o conjunto de arquivadas cresce sem
 // fim, entao nao usa fetch-all/teto como o quadro -- uma lista pagina natural.
-export async function listArchivedTasks(
-  params: { page?: number; size?: number } = {}
-): Promise<TaskListResponse> {
+/**
+ * As arquivadas, recortadas pelo time ativo (Spec 048).
+ *
+ * ⚠️ `teamId` OBRIGATÓRIO, `null` = sem recorte. Diferente de Minhas
+ * tarefas, aqui `null` não é um modo que a tela oferece -- é só a resposta
+ * para "a barra resolveu e não há time".
+ */
+export async function listArchivedTasks(params: {
+  teamId: string | null;
+  page?: number;
+  size?: number;
+}): Promise<TaskListResponse> {
   return listTasks({
     page: params.page ?? 1,
     size: params.size ?? 30,
     archived_only: true,
+    underTeamId: params.teamId,
   });
 }
 

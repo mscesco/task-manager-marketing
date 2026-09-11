@@ -279,6 +279,13 @@ class TaskFilters:
     status: TaskStatus | None = None
     priority: PriorityLevel | None = None
     team_id: uuid.UUID | None = None
+    #: Recorte por time ATIVO (Spec 048): este time e os DESCENDENTES dele,
+    #: pelo time EFETIVO da tarefa (projeto, ou a propria se avulsa).
+    #:
+    #: ⚠️ NAO E O `team_id` ACIMA. Aquele casa `Task.team_id` por igualdade --
+    #: usa-lo para recortar por raiz esconderia toda tarefa interna de subtime
+    #: e ignoraria o time do projeto. Ver `_sob_o_time` no repositorio.
+    under_team_id: uuid.UUID | None = None
     include_archived: bool = False
     archived_only: bool = False
     created_by: uuid.UUID | None = None
@@ -1082,6 +1089,7 @@ class TaskService:
             status=filters.status,
             priority=filters.priority,
             team_id=filters.team_id,
+            under_team_id=filters.under_team_id,
             created_by=filters.created_by,
             include_archived=filters.include_archived,
             archived_only=filters.archived_only,

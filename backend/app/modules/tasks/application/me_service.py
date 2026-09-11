@@ -12,6 +12,7 @@ ele e a fronteira do modulo, e a proxima regra de "minhas tarefas" mora aqui.
 
 from __future__ import annotations
 
+import uuid
 from dataclasses import dataclass
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -40,6 +41,7 @@ class MeService:
         params: PageParams,
         *,
         relations: frozenset[str],
+        under_team_id: uuid.UUID | None,
     ) -> Page[MyTaskRow]:
         """Lista tasks onde tenho ao menos uma das `relations`.
 
@@ -57,7 +59,9 @@ class MeService:
         de que uma regra de visibilidade voltou para a camada de aplicacao --
         e o lugar dela e o repositorio, junto da consulta.
         """
-        page = await self._repo.list_my_relations(params, relations=relations)
+        page = await self._repo.list_my_relations(
+            params, relations=relations, under_team_id=under_team_id
+        )
 
         rows = [
             MyTaskRow(task=task, relations=rels)

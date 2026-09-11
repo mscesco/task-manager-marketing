@@ -23,6 +23,7 @@ import { rotuloDeColuna, type OrigemDaColuna } from "@/lib/coluna";
 import { mensagemExclusao } from "@/lib/exclusao";
 
 import Loading from "@/components/Loading";
+import { useActiveTeam, useActiveTeamId } from "@/lib/useActiveTeam";
 // Tela de arquivadas (Spec 013, fatia 4). Lista paginada de tarefas
 // arquivadas (manuais ou pela varredura) + reativar (volta pra BACKLOG e
 // desarquiva). Pagina de verdade: o conjunto cresce sem fim.
@@ -110,11 +111,19 @@ function Arquivadas() {
   // so faria "duplicar" e "editar" se sobrescreverem em silencio.
   const [duplicando, setDuplicando] = useState<Task | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  // ⚠️ O time ativo vem da barra (Spec 048). Rota estática -- `useSearchParams`
+  // aqui derrubaria o `next build`. Ver `lib/useActiveTeam.tsx`.
+  const { active, teamName: nomeDoTime } = useActiveTeam();
+  const timeAtivo = useActiveTeamId();
 
   // O indice de colunas de TODOS os quadros alcancaveis, so para o rotulo do
   // badge -- esta tela nao desenha coluna nenhuma.
   useEffect(() => {
-    quadroGeralComIndice()
+    // ⚠️ `null` AQUI DE PROPÓSITO: esta tela usa SÓ o `indice`, para o rótulo do
+    // badge de coluna, e o índice é de todos os quadros alcançáveis. Passar o
+    // time recortaria as COLUNAS (que esta tela nem desenha) e não mudaria o
+    // índice -- pedir um time seria fingir que importa.
+    quadroGeralComIndice(null)
       .then(({ indice: ix }) => setIndice(ix))
       // ⚠️ FALHA EM SILENCIO, de proposito: o badge cai na reserva por status
       // e a tela segue funcionando. O assunto desta tela e reativar tarefa.
@@ -181,7 +190,11 @@ function Arquivadas() {
   async function carregar(p: number) {
     setErro(null);
     try {
-      const r = await listArchivedTasks({ page: p, size: PAGE_SIZE });
+      const r = await listArchivedTasks({
+        page: p,
+        size: PAGE_SIZE,
+        teamId: timeAtivo,
+      });
       setTasks(r.items);
       setTotal(r.total);
       setPage(r.page);
@@ -195,8 +208,16 @@ function Arquivadas() {
   }
 
   useEffect(() => {
+    // ⚠⚠ ESPERA A BARRA RESOLVER o time, e `active === null` ("ainda não sei")
+    // é diferente de `kind: "none"` ("resolveu, e não há time") -- senão uma
+    // falha do `listTeamsAll()` do `AppShell`, que é engolida de propósito,
+    // deixaria esta tela carregando para sempre.
+    if (active === null) return;
     carregar(1);
-  }, []);
+    // ⚠️ `timeAtivo` NAS DEPENDÊNCIAS: trocar de time tem de refazer a busca, e
+    // volta para a página 1 -- a página 3 do Marketing não existe no Comercial.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [timeAtivo, active]);
 
   const totalPaginas = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
@@ -205,11 +226,22 @@ function Arquivadas() {
 
   return (
     <div style={{ maxWidth: 720 }}>
-      <PageHeader title="Arquivadas" count={total} />
+      {/* ⚠️ O NOME DO TIME, pelo mesmo motivo das outras três telas: lista
+          recortada que não diz pelo quê parece a lista inteira, e quem não
+          encontra uma tarefa arquivada conclui que ela foi apagada -- justamente
+          nesta tela, onde "apagada" é uma coisa que de fato acontece. */}
+      <PageHeader
+        title={nomeDoTime ? `Arquivadas · ${nomeDoTime}` : "Arquivadas"}
+        count={total}
+      />
 
       {tasks.length === 0 ? (
         <EmptyState
-          title="Nenhuma tarefa arquivada"
+          title={
+            nomeDoTime
+              ? `Nenhuma tarefa arquivada em ${nomeDoTime}`
+              : "Nenhuma tarefa arquivada"
+          }
           description="Tarefas concluídas ou canceladas antigas aparecem aqui."
         />
       ) : (

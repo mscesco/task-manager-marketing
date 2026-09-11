@@ -36,7 +36,12 @@ def _forest(r, a, b):
 
 
 async def _list(db, **kw):
-    return await MeService(db).list_assignments(PageParams(size=100), relations=ALL, **kw)
+    # ⚠️ `under_team_id=None` = sem recorte por time (Spec 048). Estes testes
+    # sao sobre RELACAO e lente, nao sobre o recorte de tela -- ele tem arquivo
+    # proprio (`test_tarefas_sob_o_time_db.py`).
+    return await MeService(db).list_assignments(
+        PageParams(size=100), relations=ALL, **kw, under_team_id=None
+    )
 
 
 # ----------------------------------------------------------
@@ -83,8 +88,7 @@ async def test_filtro_relation_assignee_only(db) -> None:
         workspace_id=ws, user_id=me, memberships=(mship(a, "OPERATOR"),), team_tree=_forest(r, a, b)
     ):
         page = await MeService(db).list_assignments(
-            PageParams(size=100), relations=frozenset({"assignee"})
-        )
+            PageParams(size=100), relations=frozenset({"assignee"}), under_team_id=None)
     ids = {row.task.id for row in page.items}
     assert ids == {t_assignee.id}  # t_creator NÃO entra
 

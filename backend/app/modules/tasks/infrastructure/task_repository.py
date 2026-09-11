@@ -23,7 +23,7 @@ from sqlalchemy import and_, delete, exists, func, or_, select, text
 from sqlalchemy.orm import aliased
 from sqlalchemy.sql.elements import ColumnElement
 
-from app.core.tenant import require_tenant
+from app.core.tenant import TeamNode, require_tenant
 from app.db.models import (
     BoardColumn,
     Project,
@@ -138,16 +138,75 @@ def _lente_de_time(visible: frozenset[uuid.UUID]) -> ColumnElement[bool]:
 
     Exige que `Project` ja esteja no FROM (outerjoin), o que os dois
     chamadores fazem.
+
+    ⚠️ DELEGA para `_time_efetivo_em` desde a Spec 048: o RECORTE por time
+    ativo faz a mesma pergunta com outro conjunto, e duas escritas da mesma
+    pergunta divergiriam -- ver o bloco de la.
+    """
+    return _time_efetivo_em(visible)
+
+
+def _time_efetivo_em(
+    times: frozenset[uuid.UUID] | set[uuid.UUID],
+) -> ColumnElement[bool]:
+    """"O time da tarefa esta neste conjunto?" -- UMA definicao, DOIS usos.
+
+    ⚠⚠ EXTRAIDA NA SPEC 048 porque a pergunta passou a ser feita por dois
+    motivos diferentes, e as respostas TEM de coincidir:
+
+        a LENTE      (`_lente_de_time`)      -- "posso ver esta tarefa?"
+        o RECORTE    (`under_team_id`)       -- "ela e do time que estou vendo?"
+
+    Se as duas usassem escritas diferentes de "o time da tarefa", apareceria o
+    pior tipo de defeito: tarefa que passa pela lente e cai no recorte (ou o
+    contrario) por uma diferenca de forma que ninguem ve na tela -- some da
+    lista sem erro nenhum.
+
+    ⚠⚠ E A ESCRITA E ESTA, e nao `coalesce(Project.team_id, Task.team_id)`,
+    embora o `list_my_relations` descreva a regra de alcance com o coalesce
+    (linha ~864). As duas formas DIFEREM em um caso: tarefa com `project_id`
+    preenchido cujo projeto nao esta visivel (apagado, ou fora do tenant). O
+    `outerjoin` nao acha linha, `Project.team_id` fica NULL, e o coalesce
+    CAIRIA para `task.team_id` -- ou seja, mostraria a tarefa de um projeto
+    que a pessoa nao ve. Esta forma exige `project_id IS NULL` para olhar o
+    time da tarefa, e portanto fecha.
+
+    ⚠️ Exige `Project` no FROM (outerjoin). Os tres chamadores fazem.
     """
     return or_(
-        # projeto cujo time esta na lente -> ve tudo dele
-        Project.team_id.in_(visible),
-        # avulsa cujo time esta na lente
+        # projeto cujo time esta no conjunto -> vale para todas as tarefas dele
+        Project.team_id.in_(times),
+        # avulsa cujo proprio time esta no conjunto
         and_(
             Task.project_id.is_(None),
-            Task.team_id.in_(visible),
+            Task.team_id.in_(times),
         ),
     )
+
+
+def _sob_o_time(
+    team_id: uuid.UUID, tree: tuple[TeamNode, ...]
+) -> ColumnElement[bool]:
+    """O recorte da TELA: tarefas do time e dos DESCENDENTES dele.
+
+    ⚠⚠ ISTO NAO E O `team_id` QUE JA EXISTE em `GET /tasks`. Aquele casa
+    `Task.team_id == team_id` -- igualdade crua no time da PROPRIA tarefa -- e
+    usar aquele para recortar por raiz teria dois defeitos de uma vez:
+
+      1. esconderia toda tarefa INTERNA de subtime (o time dela e o subtime,
+         nao a raiz);
+      2. ignoraria o time do PROJETO, que e quem decide o alcance de uma
+         tarefa de projeto.
+
+    Foi a armadilha mais provavel desta fatia, porque o parametro existe e
+    usa-lo parecia pronto.
+
+    ⚠️ O `team_id` antigo FICA -- endpoint e contrato. Registrado: o front
+    nao o usa em nenhum lugar (conferido em 11/09, `lib/api.ts` nunca o
+    escreve para `/tasks`), entao ele serve so a clientes externos. Aposentar
+    um parametro de rota e assunto de spec propria.
+    """
+    return _time_efetivo_em({team_id} | team_scope.descendants(team_id, tree))
 
 
 class TaskRepository(BaseRepository[Task]):
@@ -202,6 +261,7 @@ class TaskRepository(BaseRepository[Task]):
         status: ColumnElement | None = None,
         priority: ColumnElement | None = None,
         team_id: uuid.UUID | None = None,
+        under_team_id: uuid.UUID | None = None,
         created_by: uuid.UUID | None = None,
         include_archived: bool = False,
         archived_only: bool = False,
@@ -254,6 +314,8 @@ class TaskRepository(BaseRepository[Task]):
             base = base.where(Task.priority == priority)
         if team_id is not None:
             base = base.where(Task.team_id == team_id)
+        if under_team_id is not None:
+            base = base.where(_sob_o_time(under_team_id, tenant.team_tree))
         if created_by is not None:
             base = base.where(Task.created_by == created_by)
         if q is not None and q.strip() != "":
@@ -332,6 +394,7 @@ class TaskRepository(BaseRepository[Task]):
         params: PageParams,
         *,
         relations: frozenset[str],
+        under_team_id: uuid.UUID | None,
     ) -> Page[tuple[Task, Project | None, frozenset[str]]]:
         """Tasks do tenant (nao deletadas) onde sou assignee/creator/watcher.
 
@@ -405,6 +468,13 @@ class TaskRepository(BaseRepository[Task]):
             org_role=tenant.org_role,)
         if visible is not None:
             base = base.where(_lente_de_time(visible))
+
+        # ⚠️ O RECORTE DA TELA (Spec 048). SEM DEFAULT no parametro: esta lista
+        # e "as minhas tarefas", e a diferenca entre "de todos os times" e "de
+        # um time" e a tela inteira. `None` = sem recorte, e e resposta
+        # legitima -- o filtro "tudo" de Minhas tarefas (§4.3) e exatamente ele.
+        if under_team_id is not None:
+            base = base.where(_sob_o_time(under_team_id, tenant.team_tree))
 
         # Recorte por relacao selecionada (OR). `relations` nunca vazio
         # (o router preenche o default com as tres).

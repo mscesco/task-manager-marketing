@@ -25,6 +25,7 @@
 import { createContext, useContext } from "react";
 
 import type { ActiveTeam } from "./activeTeam";
+import type { Team } from "./api";
 
 /**
  * O que a barra publica.
@@ -48,12 +49,28 @@ export type ActiveTeamContext = {
    * já tem `listTeamsAll()` na mão. `null` enquanto ela não chegou.
    */
   readonly teamName: string | null;
+  /**
+   * Os times raiz que esta pessoa pode escolher, na ORDEM DE PREFERÊNCIA
+   * (`preferredTeams`: onde ela trabalha primeiro, o resto depois).
+   *
+   * ⚠️⚠️ EXISTE PARA MINHAS TAREFAS, que é a única tela com seletor PRÓPRIO
+   * de time (§4.3: a lista alterna `tudo | por time`, e o quadro exige um).
+   * As outras quatro herdam o time da barra e não oferecem escolha.
+   *
+   * ⚠️ VEM DA BARRA e não de a tela buscar: montar esta lista exige a árvore
+   * de times, os vínculos da pessoa E o papel de organização dela --
+   * `rootsForPerson` + `ownRootTeams` + `preferredTeams`. Refazer isso na tela
+   * seria a quarta cópia de uma regra que este projeto já viu divergir três
+   * vezes.
+   */
+  readonly teams: readonly Team[];
 };
 
 const Ctx = createContext<ActiveTeamContext>({
   active: null,
   search: null,
   teamName: null,
+  teams: [],
 });
 
 export const ActiveTeamProvider = Ctx.Provider;

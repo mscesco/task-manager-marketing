@@ -35,6 +35,8 @@ import { indiceDeColunas, type Coluna } from "@/lib/coluna";
 // ⚠️ O AppShell (importado por 13 paginas) usa `usePathname` pra marcar o
 // item ativo do menu. Mock incompleto de next/navigation derruba a arvore
 // inteira com um erro que nao fala de AppShell nenhum.
+import { ActiveTeamProvider } from "@/lib/useActiveTeam";
+
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }),
   usePathname: () => "/arquivadas",
@@ -46,9 +48,27 @@ vi.mock("next/navigation", () => ({
 // aplicacao pra dentro de um teste sobre "de onde veio esta subtarefa", e
 // falhava com erros que nao falam da tela testada ("myTeams is not
 // iterable"). O que se quer medir aqui e a PAGINA.
+// ⚠⚠ O MOCK FORNECE O CONTEXTO DE TIME, porque o `AppShell` de verdade
+// fornece (Spec 048, fatia C). Sem isto a tela fica carregando para sempre:
+// ela ESPERA a barra resolver o time antes de buscar -- e um passa-tudo nunca
+// o entrega (`active` fica `null`, que significa "ainda não sei").
 vi.mock("@/components/AppShell", () => ({
-  default: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  default: ({ children }: { children: React.ReactNode }) => (
+    <ActiveTeamProvider
+      value={{
+        active: { kind: "team", teamId: TIME_DO_TESTE, fromUrl: true },
+        search: `?time=${TIME_DO_TESTE}`,
+        teamName: "Marketing",
+        teams: [],
+      }}
+    >
+      {children}
+    </ActiveTeamProvider>
+  ),
 }));
+
+/** O time que o `AppShell` falso diz estar ativo. */
+const TIME_DO_TESTE = "time-do-teste";
 
 vi.mock("@/lib/api", async (importOriginal) => {
   const real = await importOriginal<typeof import("@/lib/api")>();

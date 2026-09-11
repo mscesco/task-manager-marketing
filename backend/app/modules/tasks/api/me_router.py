@@ -8,6 +8,7 @@ Vive no modulo `tasks` porque o conteudo retornado eh um projeto.
 
 from __future__ import annotations
 
+import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Query
@@ -42,6 +43,15 @@ async def list_my_assignments(
     relation: Annotated[list[MeRelation] | None, Query()] = None,
     page: int = 1,
     size: int = 20,
+    under_team_id: uuid.UUID | None = Query(
+        None,
+        description=(
+            "Recorta pelas minhas tarefas deste time e dos descendentes dele, "
+            "pelo time EFETIVO. Ausente = de todos os times -- que aqui e um "
+            "modo de uso, e nao um esquecimento: esta e a unica tela que "
+            "atravessa times de proposito (Spec 048, §4.3)."
+        ),
+    ),
 ) -> MyAssignmentsResponse:
     """Tasks onde sou assignee/creator/watcher (ADR 0017/0018).
 
@@ -55,7 +65,9 @@ async def list_my_assignments(
     """
     rels = frozenset(r.value for r in relation) if relation else _ALL_RELATIONS
     result = await MeService(session).list_assignments(
-        PageParams(page=page, size=size), relations=rels
+        PageParams(page=page, size=size),
+        relations=rels,
+        under_team_id=under_team_id,
     )
     # Responsaveis da pagina em UMA query (lote), igual a listagem do quadro
     # (ADR 0025). Sem isto, /me/assignments nao devolve assignee_ids e o

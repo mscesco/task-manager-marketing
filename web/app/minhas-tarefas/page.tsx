@@ -53,6 +53,8 @@ import {
 } from "@/lib/api";
 import { sincronizarTaskNaUrl } from "@/lib/urlTarefa";
 import { ORDENACOES, ordenar, type Ordenacao } from "@/lib/ordenacao";
+import { ALL_TEAMS, withTeam } from "@/lib/activeTeam";
+import { useActiveTeam, useActiveTeamId } from "@/lib/useActiveTeam";
 
 import Loading from "@/components/Loading";
 import { useDrawnOutline } from "@/components/AnimatedOutline";
@@ -161,6 +163,24 @@ function Minhas() {
   // leitura e async: so vira true quando a abertura inicial resolve.
   const [urlLiberada, setUrlLiberada] = useState(false);
 
+  // ⚠️⚠️ OS DOIS RECORTES DA §4.3, E ELES SÃO INDEPENDENTES. Decisão dela,
+  // depois de eu propor tirar a visão de quadro e ela recusar:
+  //
+  //   LISTA  -> `tudo | por time raiz`. Mora na URL (`?time=`), porque é o
+  //             recorte DA TELA -- link compartilhável, botão Voltar.
+  //   QUADRO -> exige UM time. *"Kanban não espelha dois quadros ao mesmo
+  //             tempo"*: as colunas são as do quadro geral daquele time.
+  //
+  // ⚠️ E O DO QUADRO NÃO VAI NA URL, de propósito: `?time=` significa "o
+  // recorte desta tela", e o time do quadro é uma escolha DENTRO de uma das
+  // duas visões. Dois parâmetros disputando o mesmo sentido exigiriam uma
+  // regra de quem ganha -- e a própria visão (lista/quadro) já é sessão-only
+  // pelo mesmo motivo.
+  const { active, search, teams: timesDisponiveis } = useActiveTeam();
+  /** `null` = "tudo" (ou nenhum time). O `kind: "all"` cai aqui. */
+  const timeDaLista = useActiveTeamId();
+  const [timeDoQuadro, setTimeDoQuadro] = useState<string | null>(null);
+
   // Vista: lista (agrupada por prazo) x quadro (kanban por status). Sessao-only.
   const [vista, setVista] = useState<"lista" | "quadro">("lista");
   // Mesmo seletor do quadro geral, mesmo comparador (`lib/ordenacao.ts`).
@@ -204,8 +224,22 @@ function Minhas() {
     medirAltura();
   });
 
+  // ⚠️ O time do QUADRO é semeado pelo da lista, e não pisa numa escolha feita
+  // (`atual ?? ...`): trocar a lista para "tudo" não deve resetar o quadro que
+  // a pessoa estava olhando. Sem time na lista, cai no primeiro PREFERIDO --
+  // onde ela trabalha, e não o primeiro do alfabeto (defeito 3.1).
   useEffect(() => {
-    listAllMyAssignments()
+    const reserva = timeDaLista ?? timesDisponiveis[0]?.id ?? null;
+    if (reserva) setTimeDoQuadro((atual) => atual ?? reserva);
+  }, [timeDaLista, timesDisponiveis]);
+
+  useEffect(() => {
+    // ⚠️⚠️ ESPERA A BARRA RESOLVER. `active === null` = "ainda não sei";
+    // `kind: "all"` e `kind: "none"` JÁ são respostas, e as duas dão
+    // `timeDaLista === null` -- que aqui significa "de todos os times", o modo
+    // que esta tela oferece de propósito.
+    if (active === null) return;
+    listAllMyAssignments(timeDaLista)
       .then((r) => {
         // ⚠️ O FILTRO DE CLIENTE SAIU AQUI (Spec 037, E5). Ele descartava
         // os itens marcados pela ADR 0017 porque elas davam 404 no detalhe
@@ -217,6 +251,11 @@ function Minhas() {
         setTruncadoTotal(r.truncated ? r.total : null);
       })
       .catch((e: ApiError) => setErro(e.message));
+    // ⚠️ `timeDaLista` e `active` NAS DEPENDÊNCIAS -- ver o fim do efeito.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [timeDaLista, active]);
+
+  useEffect(() => {
     // Colunas do quadro geral E o indice de todas as colunas alcancaveis. O
     // filtro padrao da tela sai das colunas: liga todas menos as de semantica
     // DONE (ADR 0040 -- Cancelado CONTINUA aparecendo).
@@ -225,7 +264,11 @@ function Minhas() {
     // Antes daqui a tela so conhecia as colunas do geral, e tarefa de quadro
     // avulso sumia da LISTA em silencio e caia no contador `foraDaColuna` no
     // kanban. Uma requisicao so, a mesma de antes.
-    quadroGeralComIndice()
+    // ⚠️⚠️ AS COLUNAS SÃO DO TIME DO QUADRO, e este é o defeito 3.3: a função
+    // fazia `quadros.find(q => q.is_default)` -- "o" padrão, no singular. Com
+    // dois times raiz existem dois, e a tela espelhava as colunas de um
+    // enquanto mostrava as tarefas do outro.
+    quadroGeralComIndice(timeDoQuadro)
       .then(({ colunas: cs, indice: ix }) => {
         setColunas(cs);
         setIndice(ix);
@@ -253,7 +296,11 @@ function Minhas() {
         // seletor de "mudar projeto" nao deve OFERECER pessoal.
       })
       .catch(() => {});
-  }, []);
+    // ⚠️ `timeDoQuadro` NAS DEPENDÊNCIAS: trocar o time do quadro tem de
+    // rebuscar as COLUNAS, senão o kanban desenha as colunas do time anterior
+    // com os cards do novo -- e ninguém vê erro nenhum.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [timeDoQuadro]);
 
   // Abre o detalhe de uma task pelo id, procurando na lista COMPLETA (items),
   // nao na filtrada -- um filtro ativo nao deve furar o link. Se a task nao
@@ -967,6 +1014,56 @@ function Minhas() {
           >
             {ORDENACOES.map((o) => (
               <option key={o.key} value={o.key}>{o.label}</option>
+            ))}
+          </select>
+        )}
+
+        {/* ⚠️⚠️ OS DOIS SELETORES DA §4.3, e o de cada visão aparece SÓ na
+            visão dele. Desenhar os dois de uma vez faria a tela oferecer duas
+            respostas para "qual time?" ao mesmo tempo -- e a pessoa ajustaria o
+            que não está olhando.
+
+            LISTA: tem "Tudo", e escreve na URL. É a única tela com "tudo",
+            porque é a única que atravessa times de propósito -- *"o time muda
+            com a área; o que é meu, não"*.
+
+            QUADRO: NÃO tem "Tudo". Kanban espelha as colunas de UM quadro
+            geral; com dois times não há conjunto de colunas que sirva. */}
+        {timesDisponiveis.length > 1 && (
+          <select
+            className="input"
+            aria-label={
+              vista === "lista"
+                ? "Time das minhas tarefas"
+                : "Time do quadro"
+            }
+            style={{ width: "auto", padding: "5px 10px", fontSize: 12 }}
+            value={
+              vista === "lista"
+                ? (timeDaLista ?? ALL_TEAMS)
+                : (timeDoQuadro ?? "")
+            }
+            onChange={(e) => {
+              if (vista === "quadro") {
+                setTimeDoQuadro(e.target.value || null);
+                return;
+              }
+              // ⚠️ `<a href>` E RECARGA TOTAL, como toda navegação deste app
+              // (registrado no topo do `AppShell`). Um `router.replace` aqui
+              // trocaria a URL sem recarregar, e metade das telas recarrega e
+              // metade não -- a mistura que aquele bloco proibiu.
+              window.location.href = withTeam(
+                "/minhas-tarefas",
+                search ?? "",
+                e.target.value,
+              );
+            }}
+          >
+            {vista === "lista" && <option value={ALL_TEAMS}>Todos os times</option>}
+            {timesDisponiveis.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name}
+              </option>
             ))}
           </select>
         )}

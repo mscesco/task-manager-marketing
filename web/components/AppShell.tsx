@@ -563,6 +563,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               search,
               teamName:
                 teams.find((t) => t.id === timeAtivo)?.name ?? null,
+              // ⚠️ OS PREFERIDOS, e não `teams`: a lista completa inclui
+              // subtime, e o seletor de Minhas tarefas é de time RAIZ. A ordem
+              // também importa -- `preferredTeams` põe onde a pessoa trabalha
+              // primeiro, e é dela que sai o padrão do seletor do quadro.
+              teams: preferidos,
             }}
           >
             {children}

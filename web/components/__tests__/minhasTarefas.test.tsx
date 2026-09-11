@@ -53,6 +53,8 @@ import { indiceDeColunas, type Coluna } from "@/lib/coluna";
 // to be mounted` -- um erro que nao fala de AppShell nenhum. Medido em
 // 10/08/2026: sem estes dois blocos, os cinco testes deste arquivo falham no
 // primeiro render, antes de qualquer assercao.
+import { ActiveTeamProvider } from "@/lib/useActiveTeam";
+
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }),
   usePathname: () => "/minhas-tarefas",
@@ -64,9 +66,27 @@ vi.mock("next/navigation", () => ({
 // monta o menu inteiro. Arrastar isso pra dentro de um teste sobre o filtro
 // padrao de `/minhas-tarefas` faz o teste falhar por coisas que nao tem
 // relacao com o que ele mede. O que se quer medir aqui e a PAGINA.
+// ⚠⚠ O MOCK FORNECE O CONTEXTO DE TIME, porque o `AppShell` de verdade
+// fornece (Spec 048, fatia C). Sem isto a tela fica carregando para sempre:
+// ela ESPERA a barra resolver o time antes de buscar -- e um passa-tudo nunca
+// o entrega (`active` fica `null`, que significa "ainda não sei").
 vi.mock("@/components/AppShell", () => ({
-  default: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  default: ({ children }: { children: React.ReactNode }) => (
+    <ActiveTeamProvider
+      value={{
+        active: { kind: "team", teamId: TIME_DO_TESTE, fromUrl: true },
+        search: `?time=${TIME_DO_TESTE}`,
+        teamName: "Marketing",
+        teams: [],
+      }}
+    >
+      {children}
+    </ActiveTeamProvider>
+  ),
 }));
+
+/** O time que o `AppShell` falso diz estar ativo. */
+const TIME_DO_TESTE = "time-do-teste";
 
 // ⚠️ `importOriginal` em vez de fabrica seca: `@/lib/api` tem ~40 exports e
 // TaskCard/TaskModal/TaskDetail importam varios deles. Uma fabrica que so

@@ -56,7 +56,8 @@ const CONTEXTO_PADRAO: ActiveTeamContext = {
   active: { kind: "team", teamId: "t-raiz", fromUrl: true },
   search: "?time=t-raiz",
   teamName: "Marketing",
-};
+        teams: [],
+      };
 let contextoDoTeste: ActiveTeamContext = CONTEXTO_PADRAO;
 
 const RAIZ = "t-raiz";
@@ -160,7 +161,8 @@ describe("Formulários -- criar", () => {
       active: { kind: "team", teamId: SUB, fromUrl: true },
       search: `?time=${SUB}`,
       teamName: "SEO",
-    };
+        teams: [],
+      };
     montar([]);
     fireEvent.click(await screen.findByText("+ Novo formulário"));
     const select = screen.getByLabelText("Time responsável") as HTMLSelectElement;
@@ -170,7 +172,9 @@ describe("Formulários -- criar", () => {
   it("sem time ativo, o padrão cai na RAIZ (a reserva de sempre)", async () => {
     // `kind: "none"`: a pessoa não tem vínculo, ou a árvore não chegou. A
     // reserva antiga continua lá -- ela só deixou de ser a primeira resposta.
-    contextoDoTeste = { active: { kind: "none" }, search: "", teamName: null };
+    contextoDoTeste = { active: { kind: "none" }, search: "", teamName: null,
+        teams: [],
+      };
     montar([]);
     fireEvent.click(await screen.findByText("+ Novo formulário"));
     const select = screen.getByLabelText("Time responsável") as HTMLSelectElement;

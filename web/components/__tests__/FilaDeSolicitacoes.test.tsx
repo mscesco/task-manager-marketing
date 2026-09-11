@@ -47,7 +47,8 @@ let contextoDoTeste: ActiveTeamContext = {
   active: { kind: "team", teamId: "team-da-fila", fromUrl: true },
   search: "?time=team-da-fila",
   teamName: "Marketing",
-};
+        teams: [],
+      };
 
 vi.mock("@/lib/api", async (importOriginal) => {
   const real = await importOriginal<typeof import("@/lib/api")>();
@@ -512,7 +513,7 @@ describe("a fila recorta pelo time, e não espera para sempre", () => {
       pending_total: 0,
       approved_without_task_total: 0,
     });
-    contextoDoTeste = { active, search: "", teamName: null };
+    contextoDoTeste = { active, search: "", teamName: null, teams: [] };
     render(<SolicitacoesPage />);
   }
 
@@ -524,7 +525,8 @@ describe("a fila recorta pelo time, e não espera para sempre", () => {
       active: { kind: "team", teamId: "team-da-fila", fromUrl: true },
       search: "?time=team-da-fila",
       teamName: "Marketing",
-    };
+        teams: [],
+      };
   });
 
   it("manda o time ativo no `listarEnvios`", async () => {
