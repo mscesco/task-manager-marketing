@@ -122,6 +122,25 @@ function Projetos() {
       .catch(() => {});
   }, []);
 
+  // ⚠⚠ O TIME ATIVO PREENCHE O CAMPO (14/09). O bloco de `areaId` no topo já
+  // tinha escrito a decisão, antes de haver time ativo: *"quando a área
+  // ambiente existir, este seletor deixa de ser pergunta e passa a ser
+  // confirmação do lugar onde a pessoa já está. O campo continua; muda quem o
+  // preenche."* Até aqui ele só se preenchia com UMA área -- com duas ficava
+  // vazio, e a tela ignorava que a pessoa estava no Comercial.
+  //
+  // ⚠️ NÃO É O CHUTE QUE O BLOCO DO `<select>` PROÍBE. Aquele aviso é contra
+  // pré-selecionar "a primeira área" por acaso. O time ativo não é acaso: é
+  // onde ela está, e o nome dele está no cabeçalho.
+  //
+  // ⚠️ `atual || timeAtivo`, e não `setAreaId(timeAtivo)`: o efeito roda de novo
+  // quando o time muda, e sobrescrever apagaria a escolha já feita no
+  // formulário aberto. Mesmo desenho do `/formularios`.
+  useEffect(() => {
+    if (!timeAtivo) return;
+    setAreaId((atual) => atual || timeAtivo);
+  }, [timeAtivo]);
+
   async function criar() {
     const t = titulo.trim();
     if (!t || !areaId) return;
@@ -129,7 +148,13 @@ function Projetos() {
     setErroForm(null);
     try {
       const novo = await createProject({ title: t, status, team_id: areaId });
-      setItems((prev) => [novo, ...(prev ?? [])]);
+      // ⚠️ SÓ ENTRA NA LISTA SE FOR DO TIME MOSTRADO (14/09). A lista é recortada
+      // pelo time ativo; um projeto criado para OUTRO time apareceria aqui até
+      // recarregar -- dizendo "em Comercial" sobre um projeto do Marketing.
+      // `areaId` é sempre uma raiz (`rootsForPerson`), então a igualdade basta.
+      if (timeAtivo === null || areaId === timeAtivo) {
+        setItems((prev) => [novo, ...(prev ?? [])]);
+      }
       setTitulo("");
       setStatus("PLANNING");
       setCriando(false);
@@ -209,8 +234,13 @@ function Projetos() {
           {areas.length > 1 && (
             <div className="field">
               <span className="label">Time</span>
+              {/* ⚠️ O `aria-label` É O NOME DO CAMPO para leitor de tela (14/09): o
+                  "Time" acima é um `<span>` sem ligação com o `<select>`, e o campo
+                  era anunciado só como "caixa de seleção". É também por esse nome
+                  que o teste o acha. */}
               <select
                 className="input"
+                aria-label="Time do projeto"
                 value={areaId}
                 disabled={salvando}
                 onChange={(e) => setAreaId(e.target.value)}
