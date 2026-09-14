@@ -681,3 +681,28 @@ describe("minhas-tarefas -- tarefa de outro quadro (fatia 5b-5b)", () => {
     expect(screen.queryByText(/atrasad/i)).toBeNull();
   });
 });
+
+// ⚠️⚠️ DEFEITO DE 14/09, reportado na tela: com a lista recortada pelo Comercial
+// e zero tarefas lá, o aviso de vazio SUBSTITUÍA a barra inteira -- e desde a
+// Spec 048 é nela que mora o seletor de time. A tela sumia com a única porta
+// de volta. Antes do recorte, "zero tarefas" era "zero em todo lugar" e
+// esconder os controles não custava nada; agora vazio é o estado de UM time.
+describe("Minhas tarefas -- vazia, a barra continua", () => {
+  it("⚠️ sem tarefa no time, os controles seguem na tela", async () => {
+    montarApi([]);
+    render(<MinhasTarefasPage />);
+    // O toggle mora na mesma barra que o seletor de time: se ele está aqui, a
+    // barra sobreviveu ao vazio.
+    expect(await screen.findByRole("button", { name: "Quadro" })).toBeTruthy();
+  });
+
+  it("e o vazio diz de QUAL time, em vez de \"você está em dia\"", async () => {
+    // "Você está em dia" com a lista recortada é mentira: você pode ter vinte
+    // tarefas no Marketing. O mock do `AppShell` diz que o time ativo é o
+    // Marketing.
+    montarApi([]);
+    render(<MinhasTarefasPage />);
+    expect(await screen.findByText("Nenhuma tarefa sua em Marketing")).toBeTruthy();
+    expect(screen.queryByText("Você está em dia")).toBeNull();
+  });
+});

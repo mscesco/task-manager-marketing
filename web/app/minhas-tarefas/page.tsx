@@ -176,7 +176,12 @@ function Minhas() {
   // duas visões. Dois parâmetros disputando o mesmo sentido exigiriam uma
   // regra de quem ganha -- e a própria visão (lista/quadro) já é sessão-only
   // pelo mesmo motivo.
-  const { active, search, teams: timesDisponiveis } = useActiveTeam();
+  const {
+    active,
+    search,
+    teams: timesDisponiveis,
+    teamName: nomeDoTime,
+  } = useActiveTeam();
   /** `null` = "tudo" (ou nenhum time). O `kind: "all"` cai aqui. */
   const timeDaLista = useActiveTeamId();
   const [timeDoQuadro, setTimeDoQuadro] = useState<string | null>(null);
@@ -1228,10 +1233,27 @@ function Minhas() {
       )}
 
       {items.length === 0 ? (
-        <EmptyState
-          title="Você está em dia"
-          description="Tarefas em que você é responsável ou criador aparecem aqui."
-        />
+        // ⚠⚠ A BARRA FICA MESMO SEM TAREFA (14/09, reportado na tela). Até aqui o
+        // vazio SUBSTITUÍA a barra inteira -- e desde a Spec 048 é nela que
+        // mora o seletor de time. Com a lista recortada pelo Comercial e zero
+        // tarefas lá, a tela sumia com a única porta de volta para o Marketing.
+        // Antes do recorte "zero tarefas" era "zero em todo lugar", e esconder
+        // os controles não custava nada; agora vazio é um estado de um time.
+        <div className="max-w-[1100px]">
+          {barraFiltros()}
+          <EmptyState
+            title={
+              timeDaLista && nomeDoTime
+                ? `Nenhuma tarefa sua em ${nomeDoTime}`
+                : "Você está em dia"
+            }
+            description={
+              timeDaLista && nomeDoTime
+                ? "Troque o time acima para ver as tarefas de outro, ou escolha “Todos os times”."
+                : "Tarefas em que você é responsável ou criador aparecem aqui."
+            }
+          />
+        </div>
       ) : (
         <div className={vista === "quadro" ? "" : "max-w-[1100px]"}>
           {barraFiltros()}
