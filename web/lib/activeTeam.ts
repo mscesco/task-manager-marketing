@@ -154,8 +154,17 @@ export function activeTeam(
   // `window.location.search` ou o que o roteador der, e os dois funcionam.
   const pedido = new URLSearchParams(search).get(TEAM_PARAM);
   if (pedido === ALL_TEAMS) return { kind: "all" };
-  if (pedido !== null && reachable.some((t) => t.id === pedido)) {
-    return { kind: "team", teamId: pedido, fromUrl: true };
+  // ⚠⚠ O PARÂMETRO SOBE ATÉ A RAIZ, como o caminho já sobe (14/09). O voltar
+  // do detalhe de PROJETO leva o time DO projeto -- e projeto pode ser de
+  // SUBTIME. Sem subir, `?time=<subtime>` não casava com nenhuma raiz alcançada
+  // e caía na reserva: o mesmo defeito do menu, por outra porta.
+  //
+  // ⚠️ `fromUrl` só é `true` quando a URL JÁ dizia a raiz. Com um subtime, a
+  // resposta é outra que a URL, e `teamUrlToWrite` reescreve para a raiz --
+  // um endereço por time, e não um por subtime.
+  const raizDoPedido = pedido !== null ? rootTeamOf(pedido, teams) : null;
+  if (raizDoPedido !== null && reachable.some((t) => t.id === raizDoPedido)) {
+    return { kind: "team", teamId: raizDoPedido, fromUrl: pedido === raizDoPedido };
   }
 
   const reserva = preferredTeams(reachable, own)[0];
@@ -307,4 +316,33 @@ export function teamUrlToWrite(
   if (!(TEAM_PARAM_SCREENS as readonly string[]).includes(pathname)) return null;
   if (active.kind !== "team" || active.fromUrl) return null;
   return withTeam(pathname, search, active.teamId);
+}
+
+/**
+ * O endereço de um item do MENU, levando o time ativo junto -- ou o caminho puro.
+ *
+ * ⚠️⚠️ NASCEU DE UM DEFEITO REPORTADO EM 14/09: com o Comercial ativo, clicar
+ * em "Projetos" abria o Marketing. Os itens do menu eram caminhos puros
+ * (`/projetos`); o clique apagava o `?time=`, a tela caía na RESERVA (o time
+ * em que a pessoa trabalha) e `teamUrlToWrite` reescrevia a URL com ele -- o
+ * sorteio ficava com cara de escolha.
+ *
+ * As regras, e o motivo de cada uma:
+ *
+ *   - só as telas de `TEAM_PARAM_SCREENS` recebem o parâmetro. Nas outras ele
+ *     seria a URL que mente (ver o bloco da lista);
+ *   - só `kind: "team"` é levado. `"all"` é o "Todos os times" de Minhas
+ *     tarefas, e as outras quatro não oferecem "tudo" -- levá-lo para Projetos
+ *     pediria uma tela que não existe. Sem time, o caminho puro deixa a tela
+ *     resolver pela reserva, que é a resposta honesta;
+ *   - `null` ("a barra ainda não sabe") dá o caminho puro, e não o palpite:
+ *     é o mesmo motivo de `publishedActiveTeam` existir.
+ *
+ * ⚠️ OS OUTROS PARÂMETROS NÃO VÃO: eles pertencem à tela de ORIGEM (`?ver=`,
+ * `?quadro=`), e carregá-los para outra tela seria arrastar filtro alheio.
+ */
+export function navHref(pathname: string, active: ActiveTeam | null): string {
+  if (!(TEAM_PARAM_SCREENS as readonly string[]).includes(pathname)) return pathname;
+  if (active === null || active.kind !== "team") return pathname;
+  return withTeam(pathname, "", active.teamId);
 }

@@ -197,7 +197,9 @@ describe("o atalho do cabeçalho", () => {
     const atalho = await screen.findByRole("link", {
       name: "Gerenciar formulários",
     });
-    expect(atalho.getAttribute("href")).toBe("/formularios");
+    // ⚠️ COM O TIME (14/09): o caminho puro apagava o `?time=` e a lista de
+    // formulários caía na reserva. O mock do `AppShell` diz `team-da-fila`.
+    expect(atalho.getAttribute("href")).toBe("/formularios?time=team-da-fila");
     expect(
       screen.queryAllByRole("link", { name: /formulário público/i })
     ).toHaveLength(0);

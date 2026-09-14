@@ -38,6 +38,7 @@ import { rotuloDaCategoria } from "@/lib/rotuloDaCategoria";
 
 import Loading from "@/components/Loading";
 import { useActiveTeam, useActiveTeamId } from "@/lib/useActiveTeam";
+import { navHref } from "@/lib/activeTeam";
 import { useDrawnOutline } from "@/components/AnimatedOutline";
 const STATUS_LABEL: Record<SolicitacaoStatus, string> = {
   PENDING: "Pendente",
@@ -187,7 +188,10 @@ function Solicitacoes() {
           // qualquer um deles, ao editor e ao link público de cada um. Sem
           // `target="_blank"`: é navegação interna do app, não é mais "abrir
           // o que o solicitante vê".
-          <Link className="btn btn-ghost ml-auto" href="/formularios">
+          // ⚠️ O TIME VAI JUNTO (14/09): o caminho puro apagava o `?time=` e
+          // a tela de formulários caía na reserva -- saindo da fila do
+          // Comercial, abria os formulários do Marketing.
+          <Link className="btn btn-ghost ml-auto" href={navHref("/formularios", active)}>
             Gerenciar formulários
           </Link>
         }

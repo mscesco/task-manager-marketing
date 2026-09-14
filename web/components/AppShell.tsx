@@ -41,6 +41,7 @@ import {
 import {
   activeTeam,
   preferredTeams,
+  navHref,
   publishedActiveTeam,
   teamUrlToWrite,
 } from "@/lib/activeTeam";
@@ -217,6 +218,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   // recortariam pelo `?time=` e a barra seguiria mostrando os quadros de outro
   // time -- a pessoa veria o menu do Marketing com o conteúdo do Comercial.
   const contexto = activeTeam(pathname, search ?? "", teams, alcanca, trabalha);
+  // ⚠️ O QUE A BARRA PUBLICA, calculado UMA vez: as telas o recebem pelo
+  // contexto, e o menu o usa para levar o time junto nos links. Duas chamadas
+  // separadas poderiam divergir no dia em que uma delas mudar.
+  const publicado = publishedActiveTeam(contexto, teamsLoaded, search);
   const timeAtivo = contexto.kind === "team" ? contexto.teamId : null;
 
   // ⚠️⚠️ A REESCRITA DA URL (§4.1), e ela mora AQUI e não nas telas -- mesmo
@@ -465,7 +470,12 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             return (
               <a
                 key={n.href}
-                href={n.href}
+                // ⚠⚠ O TIME VAI JUNTO (14/09, reportado na tela: com o
+                // Comercial ativo, "Projetos" abria o Marketing). O caminho puro
+                // apagava o `?time=`, a tela caía na reserva e a URL era
+                // reescrita com ela. `key` e o ativo seguem pelo caminho puro:
+                // o `pathname` não carrega a query.
+                href={navHref(n.href, publicado)}
                 title={!open ? n.label : undefined}
                 // ⚠️ SPEC 039 (F3): COLAPSADO O LINK SO TEM ICONE, e o `title`
                 // sozinho nao e nome acessivel confiavel -- ele depende de o
@@ -577,7 +587,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               // a query ainda não lida ele diz o time de RESERVA -- e as telas
               // buscavam com essas respostas provisórias. Em Minhas tarefas o
               // pedido do Comercial chegava e era atropelado pelos provisórios.
-              active: publishedActiveTeam(contexto, teamsLoaded, search),
+              active: publicado,
               search,
               teamName:
                 teams.find((t) => t.id === timeAtivo)?.name ?? null,

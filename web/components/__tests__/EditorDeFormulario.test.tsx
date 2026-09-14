@@ -600,7 +600,10 @@ describe("erros", () => {
   it("⚠️ o voltar existe -- ele já foi esquecido uma vez na tela de projeto", async () => {
     montar();
     const voltar = await screen.findByText("‹ Formulários");
-    expect(voltar.getAttribute("href")).toBe("/formularios");
+    // ⚠️ COM O TIME DO FORMULÁRIO (14/09): o caminho puro apagava o `?time=`
+    // e a lista caía na reserva. O fixture é do `t1`. (No ramo de erro, sem
+    // formulário carregado, o voltar segue puro -- não há time para levar.)
+    expect(voltar.getAttribute("href")).toBe("/formularios?time=t1");
   });
 });
 

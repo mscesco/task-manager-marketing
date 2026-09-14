@@ -14,6 +14,7 @@ import {
   ALL_TEAMS,
   TEAM_PARAM,
   activeTeam,
+  navHref,
   preferredTeams,
   publishedActiveTeam,
   teamUrlToWrite,
@@ -409,3 +410,62 @@ describe("publishedActiveTeam -- a barra só publica o que já sabe", () => {
 });
 
 type ActiveTeamForTest = Parameters<typeof publishedActiveTeam>[0];
+
+// ⚠️⚠️ DEFEITO DE 14/09: com o Comercial ativo, "Projetos" no menu abria o
+// Marketing. O item era `/projetos` puro; o clique apagava o time, a tela caía
+// na reserva e a URL era reescrita com ela.
+describe("navHref -- o menu leva o time junto", () => {
+  const COMERCIAL: ActiveTeamForTest = { kind: "team", teamId: "com", fromUrl: true };
+
+  it("⚠️ tela recortada recebe o time ativo", () => {
+    expect(navHref("/projetos", COMERCIAL)).toBe("/projetos?time=com");
+    expect(navHref("/arquivadas", COMERCIAL)).toBe("/arquivadas?time=com");
+  });
+
+  it("vale também quando o time veio do CAMINHO (saindo do quadro)", () => {
+    // Do quadro do Comercial para Projetos: o time do caminho é o ativo.
+    const doCaminho: ActiveTeamForTest = { kind: "team", teamId: "com", fromUrl: true };
+    expect(navHref("/minhas-tarefas", doCaminho)).toBe("/minhas-tarefas?time=com");
+  });
+
+  it("⚠️ \"Todos os times\" NÃO é levado para as outras telas", () => {
+    // Só Minhas tarefas oferece "tudo". Levá-lo a Projetos pediria uma tela que
+    // não existe; o caminho puro deixa a tela resolver pela reserva.
+    expect(navHref("/projetos", { kind: "all" })).toBe("/projetos");
+  });
+
+  it("⚠️ barra ainda sem resposta (`null`) dá o caminho puro, e não um palpite", () => {
+    expect(navHref("/projetos", null)).toBe("/projetos");
+  });
+
+  it("tela que não lê o parâmetro não o recebe", () => {
+    expect(navHref("/organizacao", COMERCIAL)).toBe("/organizacao");
+    expect(navHref("/perfil", COMERCIAL)).toBe("/perfil");
+  });
+});
+
+// ⚠️ 14/09: o voltar do detalhe de projeto leva o time DO projeto, e projeto
+// pode ser de subtime. O parâmetro precisa subir até a raiz, como o caminho.
+describe("activeTeam -- parâmetro com SUBTIME sobe até a raiz", () => {
+  it("⚠️ `?time=<subtime>` resolve para a raiz dele", () => {
+    expect(
+      activeTeam("/projetos", `?${TEAM_PARAM}=${SEO}`, TIMES, AMBOS, SO_MKT),
+    ).toMatchObject({ kind: "team", teamId: MKT });
+  });
+
+  it("⚠️ e pede reescrita da URL para a raiz (`fromUrl: false`)", () => {
+    // Um endereço por time. Sem isto a URL guardaria o subtime e a barra
+    // mostraria a raiz -- os dois discordando na mesma página.
+    expect(
+      activeTeam("/projetos", `?${TEAM_PARAM}=${JR}`, TIMES, AMBOS, SO_MKT),
+    ).toEqual({ kind: "team", teamId: MKT, fromUrl: false });
+  });
+
+  it("subtime de raiz FORA do alcance continua caindo na reserva", () => {
+    // Subir até a raiz não pode virar porta para o time alheio.
+    const soComercial: Team[] = [TIMES[0]];
+    expect(
+      activeTeam("/projetos", `?${TEAM_PARAM}=${SEO}`, TIMES, soComercial, soComercial),
+    ).toEqual({ kind: "team", teamId: COM, fromUrl: false });
+  });
+});
