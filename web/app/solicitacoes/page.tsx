@@ -126,7 +126,10 @@ function Solicitacoes() {
     }
     // ⚠️ `timeAtivo` NAS DEPENDÊNCIAS: trocar de time reescreve a query, e sem
     // isto a fila ficaria a mesma com a URL dizendo outro time.
-  }, [filtro, pagina, timeAtivo, active]);
+    // ⚠️ `active === null` E NÃO `active`: o objeto é NOVO a cada render da
+    // barra, e depender dele refazia o pedido a cada render -- vários pedidos
+    // em voo, e o último a responder vencia (defeito de 14/09).
+  }, [filtro, pagina, timeAtivo, active === null]);
 
   useEffect(() => {
     setEnvios(null);

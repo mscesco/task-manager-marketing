@@ -239,8 +239,13 @@ function Minhas() {
     // `timeDaLista === null` -- que aqui significa "de todos os times", o modo
     // que esta tela oferece de propósito.
     if (active === null) return;
+    // ⚠⚠ GUARDA DE CORRIDA (14/09). Sem ela, um pedido mais velho que
+    // respondesse depois do novo sobrescrevia a lista -- foi o que pos as
+    // tarefas do Marketing numa tela que dizia Comercial.
+    let vivo = true;
     listAllMyAssignments(timeDaLista)
       .then((r) => {
+        if (!vivo) return;
         // ⚠️ O FILTRO DE CLIENTE SAIU AQUI (Spec 037, E5). Ele descartava
         // os itens marcados pela ADR 0017 porque elas davam 404 no detalhe
         // (o "bug E6"), e o comentario dizia "quando for tratar, troca este
@@ -250,12 +255,23 @@ function Minhas() {
         setItems(r.items);
         setTruncadoTotal(r.truncated ? r.total : null);
       })
-      .catch((e: ApiError) => setErro(e.message));
-    // ⚠️ `timeDaLista` e `active` NAS DEPENDÊNCIAS -- ver o fim do efeito.
+      .catch((e: ApiError) => {
+        if (vivo) setErro(e.message);
+      });
+    return () => {
+      vivo = false;
+    };
+    // ⚠️ `active === null` E NÃO `active`: o objeto é NOVO a cada render da
+    // barra, e depender dele refazia o pedido a cada render -- vários pedidos
+    // em voo, e o último a responder vencia (defeito de 14/09).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [timeDaLista, active]);
+  }, [timeDaLista, active === null]);
 
   useEffect(() => {
+    // ⚠️ Guarda de corrida: o seletor do QUADRO troca `timeDoQuadro` sem
+    // recarregar a página, e as colunas do time anterior não podem chegar
+    // depois das do novo.
+    let vivo = true;
     // Colunas do quadro geral E o indice de todas as colunas alcancaveis. O
     // filtro padrao da tela sai das colunas: liga todas menos as de semantica
     // DONE (ADR 0040 -- Cancelado CONTINUA aparecendo).
@@ -270,6 +286,7 @@ function Minhas() {
     // enquanto mostrava as tarefas do outro.
     quadroGeralComIndice(timeDoQuadro)
       .then(({ colunas: cs, indice: ix }) => {
+        if (!vivo) return;
         setColunas(cs);
         setIndice(ix);
         setColunasOn(new Set(colunasPadraoMinhasTarefas(cs)));
@@ -299,6 +316,9 @@ function Minhas() {
     // ⚠️ `timeDoQuadro` NAS DEPENDÊNCIAS: trocar o time do quadro tem de
     // rebuscar as COLUNAS, senão o kanban desenha as colunas do time anterior
     // com os cards do novo -- e ninguém vê erro nenhum.
+    return () => {
+      vivo = false;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [timeDoQuadro]);
 

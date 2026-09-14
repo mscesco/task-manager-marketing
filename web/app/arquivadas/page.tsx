@@ -217,7 +217,10 @@ function Arquivadas() {
     // ⚠️ `timeAtivo` NAS DEPENDÊNCIAS: trocar de time tem de refazer a busca, e
     // volta para a página 1 -- a página 3 do Marketing não existe no Comercial.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [timeAtivo, active]);
+    // ⚠️ `active === null` E NÃO `active`: o objeto é NOVO a cada render da
+    // barra, e depender dele refazia o pedido a cada render -- vários pedidos
+    // em voo, e o último a responder vencia (defeito de 14/09).
+  }, [timeAtivo, active === null]);
 
   const totalPaginas = Math.max(1, Math.ceil(total / PAGE_SIZE));
 

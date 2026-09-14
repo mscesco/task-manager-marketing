@@ -98,7 +98,10 @@ function Projetos() {
     // ⚠️ `timeAtivo` NAS DEPENDENCIAS: trocar de time reescreve a query e esta
     // tela tem de rebuscar. Sem isso o seletor mudaria a URL e a lista ficaria a
     // mesma -- pior que nao recortar, porque a tela passaria a mentir.
-  }, [timeAtivo, active]);
+    // ⚠️ `active === null` E NÃO `active`: o objeto é NOVO a cada render da
+    // barra, e depender dele refazia o pedido a cada render -- vários pedidos
+    // em voo, e o último a responder vencia (defeito de 14/09).
+  }, [timeAtivo, active === null]);
 
   useEffect(() => {
     // ⚠️ As duas juntas porque `rootsForPerson` precisa das DUAS: a árvore e os

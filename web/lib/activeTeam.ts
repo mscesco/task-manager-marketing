@@ -237,6 +237,41 @@ export function withTeam(
 }
 
 /**
+ * O time ativo que a barra PUBLICA para as telas -- ou `null`, "ainda não sei".
+ *
+ * ⚠️⚠️ NASCEU DE UM DEFEITO REPORTADO NA TELA EM 14/09: em Minhas tarefas com
+ * `?time=<Comercial>`, a lista mostrava as tarefas do Marketing. Os logs do
+ * servidor mostraram a sequência de cada carga -- um pedido COM
+ * `under_team_id` do Comercial e, depois dele, pedidos SEM recorte. O último a
+ * responder vencia.
+ *
+ * A causa: a barra publicava `activeTeam(...)` desde o primeiro render, e ele
+ * responde ANTES de ter como responder:
+ *
+ *   - com a árvore de times ainda a caminho, `reachable` é vazio -> `kind: "none"`;
+ *   - com a query ainda não lida, o `?time=` não conta -> o time de RESERVA.
+ *
+ * As telas tratavam as duas respostas como resolvidas -- `kind: "none"` é
+ * literalmente "resolvi, e não há time" -- e buscavam. Eu tinha escrito a
+ * distinção `null` x `"none"` para evitar exatamente este pisca, e a barra
+ * nunca publicava o `null`.
+ *
+ * ⚠️ `teamsLoaded` E NÃO `teams.length > 0`. A árvore pode FALHAR (o `catch` do
+ * `AppShell` é silencioso de propósito), e aí ela fica vazia para sempre.
+ * Esperar por "tem times" deixaria a tela carregando para sempre -- o outro
+ * defeito que `kind: "none"` existe para evitar. O flag diz "a pergunta foi
+ * respondida", com sucesso ou não.
+ */
+export function publishedActiveTeam(
+  resolved: ActiveTeam,
+  teamsLoaded: boolean,
+  search: string | null,
+): ActiveTeam | null {
+  if (!teamsLoaded || search === null) return null;
+  return resolved;
+}
+
+/**
  * A URL que a tela deve REESCREVER para carregar o time, ou `null`.
  *
  * ⚠️⚠️ É O QUE FAZ `fromUrl: false` VALER ALGO (§4.1). Sem a reescrita, a

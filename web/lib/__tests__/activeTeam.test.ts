@@ -15,6 +15,7 @@ import {
   TEAM_PARAM,
   activeTeam,
   preferredTeams,
+  publishedActiveTeam,
   teamUrlToWrite,
   withTeam,
 } from "../activeTeam";
@@ -371,3 +372,40 @@ describe("teamUrlToWrite", () => {
     }
   });
 });
+
+// ⚠️⚠️ O DEFEITO DE 14/09, reportado na tela: Minhas tarefas com
+// `?time=<Comercial>` mostrava as tarefas do Marketing. A barra publicava o
+// time ativo ANTES de ter como resolvê-lo, e as telas buscavam com a resposta
+// provisória. Os logs do servidor mostraram o pedido certo chegando e sendo
+// atropelado pelos provisórios.
+describe("publishedActiveTeam -- a barra só publica o que já sabe", () => {
+  const COMERCIAL: ActiveTeamForTest = { kind: "team", teamId: "com", fromUrl: true };
+  const NENHUM: ActiveTeamForTest = { kind: "none" };
+
+  it("⚠️ árvore de times AINDA a caminho -> null, e não `kind: \"none\"`", () => {
+    // Com a árvore vazia, `activeTeam` responde `none` -- e `none` é "resolvi,
+    // e não há time". A tela buscava sem recorte. Foi a primeira metade.
+    expect(publishedActiveTeam(NENHUM, false, "?time=com")).toBe(null);
+  });
+
+  it("⚠️ query AINDA não lida -> null, e não o time de reserva", () => {
+    // Sem a query, o `?time=` não conta e a reserva (o time em que a pessoa
+    // trabalha) aparece como resposta. A tela buscava o Marketing. Foi a
+    // segunda metade.
+    const reserva: ActiveTeamForTest = { kind: "team", teamId: "mkt", fromUrl: false };
+    expect(publishedActiveTeam(reserva, true, null)).toBe(null);
+  });
+
+  it("as duas respondidas -> publica", () => {
+    expect(publishedActiveTeam(COMERCIAL, true, "?time=com")).toBe(COMERCIAL);
+  });
+
+  it("⚠️ árvore que FALHOU conta como respondida -- `none` sai, e a tela não trava", () => {
+    // O `catch` de `listTeamsAll()` no `AppShell` é silencioso de propósito.
+    // Esperar por "tem times" deixaria a tela carregando para sempre; o flag
+    // diz "a pergunta foi respondida", com sucesso ou não.
+    expect(publishedActiveTeam(NENHUM, true, "")).toBe(NENHUM);
+  });
+});
+
+type ActiveTeamForTest = Parameters<typeof publishedActiveTeam>[0];

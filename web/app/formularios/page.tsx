@@ -67,7 +67,10 @@ function Formularios() {
       .then(setItens)
       .catch((e: ApiError) => setErro(e.message));
     // ⚠️ `timeAtivo` NAS DEPENDÊNCIAS: trocar de time tem de refazer a lista.
-  }, [timeAtivo, active]);
+    // ⚠️ `active === null` E NÃO `active`: o objeto é NOVO a cada render da
+    // barra, e depender dele refazia o pedido a cada render -- vários pedidos
+    // em voo, e o último a responder vencia (defeito de 14/09).
+  }, [timeAtivo, active === null]);
 
   useEffect(() => {
     listTeamsAll()

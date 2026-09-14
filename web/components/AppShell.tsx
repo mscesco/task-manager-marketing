@@ -38,7 +38,12 @@ import {
   peopleEntry,
   rootsForPerson,
 } from "@/lib/contextSwitcher";
-import { activeTeam, preferredTeams, teamUrlToWrite } from "@/lib/activeTeam";
+import {
+  activeTeam,
+  preferredTeams,
+  publishedActiveTeam,
+  teamUrlToWrite,
+} from "@/lib/activeTeam";
 import { urlDoQuadroDeArea } from "@/lib/areas";
 import {
   LayoutGrid,
@@ -96,6 +101,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   // Ver o bloco de aviso no `TeamParamReader`: a fronteira de `Suspense` que o
   // `useSearchParams` exige não pode ficar aqui.
   const [search, setSearch] = useState<string | null>(null);
+  // ⚠️ "A ÁRVORE DE TIMES JÁ FOI PERGUNTADA", com sucesso ou não -- e não
+  // `teams.length > 0`. Sem ele a barra publicava o time ativo antes de poder
+  // resolvê-lo; ver `publishedActiveTeam` e o defeito de 14/09.
+  const [teamsLoaded, setTeamsLoaded] = useState(false);
   const [quadrosOpen, setQuadrosOpen] = useState(lerQuadrosAberto); // accordion
   // Preferencia de tema. Ler localStorage no inicializador e seguro aqui: com
   // `loading` comecando true, a barra so renderiza depois do check de auth, ja
@@ -137,7 +146,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         // arvore de times para derivar as sub-abas (nao bloqueia a UI)
         listTeamsAll()
           .then(setTeams)
-          .catch(() => {});
+          .catch(() => {})
+          // ⚠️ `finally`, e não só no `then`: se a árvore falhar, as telas
+          // recortadas precisam saber que a pergunta foi respondida -- senão
+          // ficam carregando para sempre esperando por ela.
+          .finally(() => setTeamsLoaded(true));
         // ⚠️ TAMBEM SEM BLOQUEAR, e o `catch` vazio e de proposito: sem o nome
         // o seletor cai no rotulo "Organização" (ver `currentContext`), o que
         // e feio e nao quebra nada. Derrubar a barra inteira por causa dele
@@ -559,7 +572,12 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         <main className="min-w-0 flex-1 px-4 pb-4 pt-16 sm:px-6 sm:pb-6">
           <ActiveTeamProvider
             value={{
-              active: contexto,
+              // ⚠⚠ `publishedActiveTeam`, e NÃO `contexto` cru. Até 14/09 era o
+              // cru: com a árvore ainda a caminho ele diz `kind: "none"`, e com
+              // a query ainda não lida ele diz o time de RESERVA -- e as telas
+              // buscavam com essas respostas provisórias. Em Minhas tarefas o
+              // pedido do Comercial chegava e era atropelado pelos provisórios.
+              active: publishedActiveTeam(contexto, teamsLoaded, search),
               search,
               teamName:
                 teams.find((t) => t.id === timeAtivo)?.name ?? null,
