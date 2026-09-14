@@ -2,13 +2,18 @@
 
 **Status:** escrita em 10/09/2026, decidida com a Camila na mesma conversa.
 Decisões tomadas — a última (§4.1, a forma da URL) confirmada por ela em
-11/09: *"pode ser como recomenda"*. **Fatias A e B entregues em 11/09.**
+11/09: *"pode ser como recomenda"*. **Todas as fatias entregues** — A e B em
+11/09; C, D e E entre 11 e 14/09.
+**PR:** #53, empilhado sobre o #52 (Spec 047).
 **Escopo:** frontend, mais **duas** mudanças de backend (§5, fatias D e E).
 **Depende de:** **Spec 046 fatia 4** (a área na URL do quadro, e o `area_id`
 obrigatório em `default_board_and_column_for_status`) e **Spec 047** (o seletor
 de contexto no rodapé, e o `currentContext` que resolve o time pela URL).
 **Placar na abertura:** backend **1103**, front **1249**, `tsc --noEmit` limpo,
 `next build` ok — medido em 10/09 no branch `spec-047`.
+**Placar no fechamento:** backend **1133**, front **1353**, `tsc --noEmit` limpo,
+`next build` ok com as cinco rotas estáticas, `ruff` 49 (inalterado) — medido em
+14/09 no branch `spec-048`.
 **Não faz parte desta spec:** o dashboard de entrada, e o recorte de
 permissões. Ver §6.
 
@@ -308,7 +313,7 @@ outro.
 propósito: escrever `?time=` no seletor antes de as telas honrarem o parâmetro
 poria uma URL que mente — ela diria o time e a tela não filtraria.
 
-**Fatia C — as telas recortam (front).**
+**Fatia C — as telas recortam (front).** ✅ **ENTREGUE entre 11 e 14/09.**
 Projetos, Arquivadas, Solicitações e Formulários passam a ler o time ativo e a
 filtrar. Minhas tarefas ganha os dois seletores da §4.3, e
 `quadroGeralComIndice` passa a receber o time (defeito 3.3).
@@ -347,7 +352,26 @@ substitui o palpite, como já aconteceu no `createProject`.
 > conferir o contrato que ela consome é o mesmo defeito, de outro tamanho, do
 > comentário que eu pus no `list_page` dizendo que a lente já respondia.
 
-**Fatia D — a fila é do time (backend).**
+> ✅ **COMO A C FOI ENTREGUE, na ordem corrigida acima:**
+>
+> - a barra lê `?time=` com **uma** fronteira de `Suspense` (`TeamParamReader`,
+>   irmão do conteúdo, `fallback={null}`), e o time desce às telas por contexto
+>   (`lib/useActiveTeam.tsx`) — sem cinco cópias da regra;
+> - a URL passa a dizer o time (`teamUrlToWrite`, com `replace`), e trocar de
+>   time preserva a tela (`switcherHref`, §4.2);
+> - `GET /tasks` e `GET /me/assignments` ganharam **`under_team_id`**: raiz +
+>   descendentes pelo **time efetivo**, num predicado único com a lente
+>   (`_time_efetivo_em`). O `team_id` antigo ficou — endpoint é contrato;
+> - Minhas tarefas tem os dois seletores da §4.3, e o defeito 3.3 morreu:
+>   `quadroGeralComIndice(teamId)`;
+> - o 3.4 morreu por outro caminho: o modal de criar recebe o time do quadro
+>   (`newTaskTeam`), e só a rota legada `/quadro` ainda cai em `getRootTeamId`.
+>
+> ⚠️ **Uma sabotagem achou furo fora do código desta spec:** o ramo
+> `Project.team_id` da lente não tinha teste que o distinguisse do ramo da
+> tarefa. Ganhou (`test_a_LENTE_olha_o_time_do_PROJETO_e_nao_o_da_tarefa`).
+
+**Fatia D — a fila é do time (backend).** ✅ **ENTREGUE em 11/09.**
 `list_batches` e as duas contagens (`count_pending`,
 `count_approved_without_task`) passam a receber o time e a filtrar por
 `form.team_id`. Papel de organização continua vendo tudo, e as órfãs seguem a
@@ -356,8 +380,46 @@ substitui o palpite, como já aconteceu no `createProject`.
 `default_board_and_column_for_status`: um `team_id: uuid.UUID | None = None`
 deixaria todo chamador existente compilando e errado em silêncio.
 
-**Fatia E — a listagem de formulários é do time (backend).**
+> ✅ A lente já existia (Spec 043); o que faltou foi o `team_id`. Sem default
+> nos três métodos — o `pytest` apontou os treze chamadores. E uma sabotagem
+> que não pegou nada revelou que ninguém testava o `total` da fila recortada:
+> ganhou teste.
+
+**Fatia E — a listagem de formulários é do time (backend).** ✅ **ENTREGUE em
+11/09.**
 Mesmo desenho, no `form_router` e no serviço.
+
+> ✅ E a lente desta listagem, escrita desde a Spec 043, **não tinha teste
+> nenhum** — apagá-la deixava a suíte verde. Ganhou
+> `test_formularios_do_time_db.py`, com as três sabotagens executadas.
+
+---
+
+## 5-bis. O que o teste na tela achou em 14/09
+
+Com as fatias entregues, a Camila testou como admin da organização, com o
+Comercial ativo. Nenhum destes defeitos derrubava portão — todos respondiam pelo
+time errado, ou escondiam um botão:
+
+- **a barra publicava o time antes de saber qual era** (a árvore a caminho dava
+  `kind: "none"`; a query não lida dava a reserva), e as telas refaziam o pedido
+  a cada render. O último a responder vencia a lista. → `publishedActiveTeam`;
+- **o menu e os "voltar" apagavam o `?time=`**, e a tela caía na reserva. →
+  `navHref`; o `?time=` passou a subir de subtime até a raiz;
+- **o item Time ignorava o time ativo.** → `peopleEntryFor`;
+- **Minhas tarefas vazia sumia com a barra**, e com ela o único seletor de time;
+- **o quadro geral era "o" primeiro**: três cópias de `find(is_default)` no
+  `Board`. Tarefa criada no Comercial era salva certa e não aparecia. →
+  `quadroGeralDoTime`, uma fonte só;
+- **novo projeto ignorava o time ativo**, e entrava na lista de outro time;
+- **em `/quadro/[teamId]`, o quadro geral da raiz perdeu o lápis e o
+  renomear** — o ramo nasceu sem `podeEditarColunas`, sem `acoesDoQuadro`, e o
+  avulso sem `daRaiz`. As três viraram obrigatórias: esquecer deixa de compilar.
+
+⚠️ **O padrão que se repetiu seis vezes nesta branch:** prop opcional que muda
+comportamento esconde uma pergunta que alguém tem de responder (`daRaiz`,
+`newTaskTeam`, `podeEditarColunas`, `acoesDoQuadro`…). A resposta foi sempre a
+mesma — obrigatória, e `null`/`false` explícitos onde a ausência é decisão.
 
 ---
 
@@ -369,6 +431,7 @@ Mesmo desenho, no `form_router` e no serviço.
   `~/Documents/gestor-de-tarefas-permissoes.html`, e **decidido para depois**
   desta spec, com motivo: o recorte não encosta na camada de escopo que esta
   spec mexe, e é mudança larga — melhor sobre base verde e já entregue.
+  → **Spec 049**, escrita em 14/09.
 - **Mudar quem enxerga o quê.** Esta spec **recorta a tela** pelo time ativo;
   ela não altera a lente. ⚠️ Se uma tela precisar de um recorte que a lente não
   dá, **falta parâmetro na rota** — a mesma prescrição da Spec 047 §3.1, que a
@@ -403,3 +466,20 @@ Mesmo desenho, no `form_router` e no serviço.
   Marketing está vazia"*, e não mostrar um vazio sem contexto.
 - **A solicitação órfã** (§4.4) não tem teste hoje, e o caminho dela é o que
   menos gente exercita.
+  ✅ Na fila, ganhou teste na fatia D. ⚠️ **Criar tarefa a partir dela** segue
+  sem resposta com mais de um time raiz — ver §8.
+
+---
+
+## 8. O que falta para encerrar
+
+- **O merge**, depois do #52. Aí a base do #53 troca para `main`.
+- ⚠️ **A migration `0024_sai_o_projeto_pessoal`** tem de rodar no deploy de
+  produção. O código já não esconde o projeto pessoal; sem ela, os "Pessoal" que
+  existirem aparecem para todo mundo.
+- **Decisão dela, em aberto:** a tarefa criada a partir de uma solicitação
+  ÓRFÃ não tem time para herdar, e com mais de uma raiz o backend recusa
+  (`_time_do_quadro_alvo`). É o "adotar a órfã" da §4.4 — perguntar o time na
+  tela, ou outra saída.
+- **Sem roteiro de smoke formal**: esta spec foi testada pela Camila ao longo do
+  caminho, não por roteiro.
