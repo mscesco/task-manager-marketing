@@ -2,7 +2,7 @@
 
 **Status:** escrita em 14/09/2026, a partir do documento de 10/09
 (`~/Documents/gestor-de-tarefas-permissoes.html`) e da matriz CRUD do artefato
-"Mapa do Gestor de Tarefas". **Nenhuma fatia começou.** As quatro perguntas
+"Mapa do Gestor de Tarefas". **Fatias 0 e 0b entregues em 14/09.** As quatro perguntas
 da §8 foram respondidas em 14/09 — a spec entrega o corte **e** o alvo (fatias
 0 a H). Resta um detalhe de teto na fatia H, com recomendação.
 **Escopo:** backend (mapa de permissões, escopo de comando, portões de rota e
@@ -222,7 +222,13 @@ mesmos arquivos. É o argumento da fatia 0 provado no primeiro dia.
    vazia. Pela rota: toda ação de tarefa e comentário devolve 404 (criar, 422
    "time fora do seu alcance"), formulário 403, solicitação 404. Quadro, time,
    pessoa e projeto passam — porque esses **não** olham a lente (item 3).
-   Contra: Spec 045, *"quem OPERA a organização (GESTOR)"*.
+   Contra: `045/decisoes.md`, tabela da lente — *"ADMIN / GESTOR | tudo"* — e
+   *"Premissa em vigor: gestor vê tudo."*
+   ⚠️ **E um teste protegia o defeito:** `test_papel_de_organizacao_db::
+   test_gestor_nao_ve_tudo` esperava a lente vazia, e dizia que ver tudo
+   *"é decisão de produto e entra aqui de propósito"*. A decisão já existia.
+   Foi a única falha da suíte com a 0b, e o teste virou
+   `test_gestor_ve_tudo_sem_ser_admin`, citando a decisão.
 2. **O MANAGER do Marketing mexe no Comercial.** Cria e renomeia subtime,
    cadastra pessoa, reseta senha, desativa conta, cria e renomeia o quadro geral,
    apaga quadro, cria coluna. A trava pergunta `has_permission` ("em algum
@@ -238,9 +244,13 @@ mesmos arquivos. É o argumento da fatia 0 provado no primeiro dia.
    `create` só confere que o time existe no workspace. **O SUPERVISOR do SEO
    editou um projeto do Comercial (200).** Contra: ADR 0007.
 
-A tabela registra o comportamento de hoje com a marca `defeito` — **não** é
-aval. Quem consertar muda as linhas no mesmo commit. Onde consertar é a
-pergunta 6 da §8.
+✅ **Os três foram consertados na fatia 0b** (§5), no mesmo dia — decisão dela:
+*"aceito a fatia nova"*. Nenhuma linha da tabela carrega `defeito` hoje.
+
+⚠️ **Contexto que tira a urgência, e não a necessidade** (ela, 14/09): *papel
+de organização só existe no dev dela*, e **nada da 047 nem da 048 foi para
+produção** — as três specs sobem juntas, depois de ela testar permissão e troca
+de time. Nenhum destes defeitos chegou a um usuário.
 
 ---
 
@@ -381,6 +391,27 @@ sumido) é invisível aos quatro portões, e fechar o tipo o torna um erro de
 Por que não gerar no build: o job `front` não tem Python, e o `next build` dela
 em dev passaria a depender do backend. Commitado, o front continua se bastando.
 
+### 4.9. A conta de uma pessoa é de todas as árvores dela — escolha minha, 14/09
+
+Resetar senha e desativar valem para a **pessoa inteira**, e não para um
+vínculo. Na fatia 0b a pergunta passou a ser (`_assert_reaches_person`):
+
+| quem age | alcança a conta? |
+|---|---|
+| papel de organização | sempre |
+| MANAGER, e **todos** os vínculos da pessoa estão na árvore dele | sim |
+| MANAGER, e **algum** vínculo está em outra árvore | **não** — só a organização |
+| MANAGER, e a pessoa não tem vínculo de time | **não** — só a organização |
+
+⚠️ **"Todos", e não "algum", foi escolha minha, e está aqui para ela confirmar**
+(pergunta 7 da §8). Com "algum", o MANAGER do Marketing desativaria a conta de
+quem também trabalha no Comercial, e o Comercial descobriria pela ausência. É a
+leitura estrita de *"gerente só mexe na própria árvore"*. A tabela tem a linha:
+`person.deactivate [alguem do Marketing E do Comercial]`.
+
+⚠️ Resetar a **própria** senha não passa pela pergunta — já era permitido, e
+não depende de árvore.
+
 ---
 
 ## 5. As fatias
@@ -415,6 +446,25 @@ de alvo cruzado, dá algumas centenas de casos. Por isso **uma tabela e um laço
 e não um teste escrito à mão por caso — a revisão de cada fatia seguinte vira o
 diff dessa tabela.
 
+**Fatia 0b — os três defeitos do §3.6.** ✅ **Entregue em 14/09.**
+Decisão dela: *"aceito a fatia nova"*. Vem antes de A de propósito: A a C
+prometem não mudar a tabela, e consertar dentro delas quebraria a promessa.
+
+| defeito | conserto |
+|---|---|
+| GESTOR sem lente | `team_scope.visible_team_ids`: **todo papel de organização** (`ORG_ROLES`) vê tudo, e não só `is_admin` |
+| MANAGER na outra raiz | `has_permission_in` (neste time) em `TeamService.create` (subtime) e `update`, `BoardService._assert_pode_gerir` (os três ramos), `MemberService.create_member` e `move_member_subteam` (origem **e** destino); conta da pessoa por `_assert_reaches_person` (§4.9) |
+| projeto fora da lente | `update`, `archive`, `unarchive` e `soft_delete` passam pelo `get` (404); `create` exige o time na lente (422, igual ao `POST /tasks`) |
+
+A tabela ganhou 4 linhas (mover entre subtimes nas duas raízes, arquivar
+projeto do Comercial, a conta de quem está nas duas árvores): **62 ações × 5 =
+310 casos**. Três sabotagens executadas e registradas no cabeçalho do teste.
+
+⚠️ **O que a 0b NÃO fez, de propósito:** o vínculo do MANAGER no Comercial
+continua recusado **pela trava do supervisor** (sabotagem B da fatia 0). Está
+certo na resposta e torto no caminho — é trabalho da fatia B, que dá nome ao
+escopo de comando.
+
 **Fatia A — cortar os verbos, sem mudar comportamento.**
 O mapa passa a conceder os verbos do §4.2; cada pacote antigo vira exatamente
 os verbos que ele já dava. Rotas e serviços passam a cobrar o verbo.
@@ -445,9 +495,10 @@ do mais contido ao que desfaz decisão escrita.
   verbos `*.delete`, **exceto** `task.delete` e `person.deactivate` — as duas
   exceções da regra de 10/09. Só pacote; nenhuma rota nova. (O "só admin mexe
   em admin" é teto, e mora na fatia G.)
-- **E — item 07: o MANAGER cadastra pessoa só no próprio time.** `person.create`
-  do MANAGER passa a exigir que o vínculo inicial caia no escopo de comando
-  (fatia B). Trava no serviço, com o `command_team_ids` — não uma quinta regra.
+- **E — item 07: o MANAGER cadastra pessoa só no próprio time.** ✅ **Absorvida
+  pela fatia 0b**: era a mesma linha do defeito "MANAGER na outra raiz"
+  (`create_member` com `_assert_gestao_ampla_em`). Não sobra nada para E além
+  de a fatia B passar esta trava a perguntar ao `command_team_ids`.
 - **F — item 03: o SUPERVISOR edita o próprio subtime.** `subteam.update` entra
   no pacote do SUPERVISOR, com escopo de comando — que para ele é **só** o
   subtime (§4.3). ⚠️ A linha "SUPERVISOR renomeia a **raiz**" tem de continuar
@@ -524,18 +575,13 @@ do mais contido ao que desfaz decisão escrita.
    dois supervisores de um subtime podem rebaixar um ao outro. **Só trava a
    fatia H**; 0 a G andam sem ela.
 
-6. **Onde consertar os três defeitos do §3.6?** Eles não cabem nas fatias A a
-   C, que prometem não mudar comportamento — consertar ali quebraria a própria
-   regra da tabela.
-   - **(a) uma fatia nova da 049, logo depois da 0** — os três viram linhas da
-     tabela mudando de `defeito` para o certo, no mesmo PR. **Recomendação.**
-     O conserto do item 2 é, por construção, o `command_team_ids` (§4.3)
-     usado de verdade, e o do item 1 é a mesma função respondendo pelo GESTOR —
-     fazer antes das fatias A a C é o que deixa elas sem mudança de
-     comportamento.
-   - **(b) um PR de conserto separado, de `main`**, como o #51 da lente do
-     admin. Sai antes, mas depende do #54 (a 048 em `main`) e parte a spec em
-     dois lugares.
+6. **Onde consertar os três defeitos do §3.6?** — *"aceito a fatia nova"*.
+   Virou a fatia 0b, entregue. E a urgência: *papel de organização só existe
+   no dev dela, e nada da 047/048 subiu nem sobe antes de ela testar a 049*.
 
-   ⚠️ **Antes de decidir a urgência do item 1**, vale saber se há GESTOR em
-   produção — se houver, ele está hoje sem ver tarefa nenhuma.
+7. **A conta de quem está em duas árvores** (§4.9). Escolhi "todos os vínculos
+   na árvore do MANAGER" para resetar senha e desativar: quem está no Marketing
+   e no Comercial só é desativado pela organização. A alternativa ("algum
+   vínculo") deixa o MANAGER de uma árvore desativar gente que a outra usa.
+   **Não trava fatia nenhuma**; se ela preferir "algum", é uma linha no serviço
+   e uma na tabela.

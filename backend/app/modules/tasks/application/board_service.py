@@ -1670,17 +1670,23 @@ class BoardService:
         tenant = require_tenant()
         eh_raiz = time.parent_team_id is None
 
+        # ⚠️⚠️ AS TRES PERGUNTAS ABAIXO SAO "NESTE TIME" (`has_permission_in`),
+        # desde 14/09 (Spec 049, fatia 0b). Eram `has_permission` ("em algum
+        # lugar"), com a premissa escrita mais abaixo -- *"ADMIN e MANAGER so
+        # existem na raiz e respondem pela arvore inteira"* --, que era verdade
+        # com UMA raiz. Com duas, o MANAGER do Marketing criava, renomeava e
+        # apagava quadro do Comercial.
         if eh_raiz:
             # ⚠️ `board.manage.subteam` NAO serve aqui, e essa e a linha que
             # separa o supervisor do Quadro geral.
-            if not tenant.has_permission("board.manage.root"):
+            if not tenant.has_permission_in("board.manage.root", time.id):
                 raise AuthorizationError(
                     "Apenas admin ou manager administram quadros do time raiz.",
                     details={"team_id": str(time.id)},
                 )
             return
 
-        if not tenant.has_permission("board.manage.subteam"):
+        if not tenant.has_permission_in("board.manage.subteam", time.id):
             raise AuthorizationError(
                 "Sem permissao para administrar quadros deste subtime.",
                 details={"team_id": str(time.id)},
@@ -1696,7 +1702,7 @@ class BoardService:
         # `test_manager_cria_nos_dois_niveis` e
         # `test_renomear_usa_a_mesma_trava_de_escopo`. O terceiro cai pelo
         # SETUP, nao pela afirmacao dele.
-        if tenant.has_permission("board.manage.root"):
+        if tenant.has_permission_in("board.manage.root", time.id):
             return
 
         if time.id not in self._subtimes_supervisionados():

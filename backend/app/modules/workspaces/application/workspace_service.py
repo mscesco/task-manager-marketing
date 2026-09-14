@@ -265,6 +265,16 @@ class TeamService:
             parent = await self._repo.get_by_id(parent_team_id)
             if parent is None:
                 raise EntityNotFoundError("Team", identifier=parent_team_id)
+            # ⚠️⚠️ NESTE TIME, e nao "em algum lugar" (Spec 049, fatia 0b). A
+            # rota cobra `team.manage` sem saber o pai; ate 14/09 ninguem
+            # perguntava depois, e o MANAGER do Marketing criava subtime no
+            # Comercial. Contra a decisao dela de 09/09: *"gerente so mexe na
+            # propria arvore"*.
+            if not require_tenant().has_permission_in("team.manage", parent_team_id):
+                raise AuthorizationError(
+                    "Voce administra times, mas nao nesta arvore.",
+                    details={"parent_team_id": str(parent_team_id)},
+                )
 
         # workspace_id e injetado pelo BaseRepository.add a partir
         # do tenant corrente -- nao precisamos seta-lo aqui.
@@ -353,6 +363,15 @@ class TeamService:
         team = await self._repo.get_by_id(team_id)
         if team is None:
             raise EntityNotFoundError("Team", identifier=team_id)
+
+        # ⚠️ Mesma pergunta do `create`, e antes da regra da raiz: quem nao
+        # manda neste time leva 403, e nao a explicacao de uma regra que nao
+        # e dele (Spec 049, fatia 0b).
+        if not require_tenant().has_permission_in("team.manage", team_id):
+            raise AuthorizationError(
+                "Voce administra times, mas nao nesta arvore.",
+                details={"team_id": str(team_id)},
+            )
 
         if team.parent_team_id is None:
             raise BusinessRuleError(

@@ -117,16 +117,28 @@ def test_a_fonte_velha_continua_valendo():
     assert team_scope.is_admin(vinculo_admin, org_role=None) is True
 
 
-def test_gestor_nao_ve_tudo():
-    """GESTOR administra a organizacao, mas NAO e a lente do ADMIN.
+def test_gestor_ve_tudo_sem_ser_admin():
+    """GESTOR ve tudo -- e continua NAO sendo ADMIN.
 
-    ⚠️ `is_admin` responde so por ADMIN. Se um dia o GESTOR precisar enxergar
-    todas as areas, isso e decisao de produto e entra aqui de propósito -- nao
-    de carona.
+    ⚠️⚠️ ESTE TESTE AFIRMOU O CONTRARIO ATE 14/09, e o contrario nao era
+    decisao. Ele se chamava `test_gestor_nao_ve_tudo`, esperava a lente VAZIA,
+    e dizia que ver tudo "e decisao de produto e entra aqui de proposito". A
+    decisao JA EXISTIA, escrita antes deste arquivo: `045/decisoes.md`, tabela
+    da lente -- *"ADMIN / GESTOR | tudo"* -- e, na lista de premissas,
+    *"Premissa em vigor: gestor ve tudo."*
+
+    O que o teste protegia na pratica era um GESTOR que nao via tarefa
+    nenhuma: 404 em toda tarefa, 403 em todo formulario. Achado pela matriz da
+    Spec 049 (fatia 0) e consertado na fatia 0b.
+
+    ⚠️ AS DUAS AFIRMACOES FICAM SEPARADAS de proposito: `is_admin` continua
+    respondendo so por ADMIN (e a pergunta "quem DEFINE a organizacao"), e a
+    lente e decidida pelo papel de organizacao, em `visible_team_ids`.
     """
     raiz = __import__("uuid").uuid4()
     assert team_scope.is_admin((), org_role="GESTOR") is False
-    assert team_scope.visible_team_ids((), (node(raiz),), org_role="GESTOR") == frozenset()
+    assert team_scope.visible_team_ids((), (node(raiz),), org_role="GESTOR") is None
+    assert team_scope.editable_team_ids((), (node(raiz),), org_role="GESTOR") is None
 
 
 # ------------------------------------------------------------- ponta a ponta

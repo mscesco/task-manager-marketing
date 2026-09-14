@@ -513,6 +513,11 @@ class MemberService:
         if team is None:
             raise EntityNotFoundError("Team", identifier=command.team_id)
 
+        # ⚠️ Spec 049, fatia 0b: cadastrar e vincular NAQUELE time. Ate 14/09 o
+        # MANAGER do Marketing cadastrava gente direto no Comercial -- e o
+        # item 07 da matriz de 10/09 sai junto, porque e a mesma linha.
+        self._assert_gestao_ampla_em(team.id, acao="create_member")
+
         # Spec 024/D3 -- porta 1 de 4 da invariante de papel por nivel.
         assert_role_permitido_no_nivel(
             command.role, is_root=team.parent_team_id is None
@@ -581,6 +586,10 @@ class MemberService:
         user = await self._users.get_by_id(user_id)
         if user is None:
             raise EntityNotFoundError("User", identifier=user_id)
+        # ⚠️ A PROPRIA CONTA SAI ANTES da pergunta de alcance: forcar a si mesmo
+        # a trocar a senha e permitido (docstring), e nao depende de arvore.
+        if user_id != require_tenant().user_id:
+            await self._assert_reaches_person(user_id, acao="reset_password")
 
         temporary_password = generate_temporary_password()
         user.password_hash = hash_password(temporary_password)
@@ -1193,6 +1202,10 @@ class MemberService:
         # Spec 028: mover entre subtimes NAO foi aberto ao supervisor -- a
         # operacao toca o subtime de ORIGEM, que nao e dele (viola D1).
         self._assert_gestao_ampla(acao="move_member_subteam")
+        # ⚠️ Spec 049, fatia 0b: e NOS DOIS times. Mover toca a origem (tira) e
+        # o destino (poe); mandar em so um deles e mexer na arvore alheia.
+        self._assert_gestao_ampla_em(from_team_id, acao="move_member_subteam")
+        self._assert_gestao_ampla_em(to_team_id, acao="move_member_subteam")
 
         # ⚠️⚠️ O PAPEL NEM SEMPRE VIAJA INTEIRO -- Spec 045, fatia D, decisao da
         # Camila em 08/09. Mover um SUPERVISOR para a RAIZ o rebaixa a
@@ -1428,6 +1441,8 @@ class MemberService:
         if user is None:
             raise EntityNotFoundError("User", identifier=user_id)
 
+        await self._assert_reaches_person(user_id, acao="deactivate_member")
+
         # ⚠️ DEPOIS do `get_by_id`, e nao antes: a trava so se aplica a quem E
         # ADMIN, e descobrir isso exige ter o usuario na mao. Antes dele, a
         # ordem cobraria uma consulta a mais de todo mundo.
@@ -1559,6 +1574,43 @@ class MemberService:
         raise AuthorizationError(
             "Voce administra membros, mas nao nesta area.",
             details={"acao": acao, "team_id": str(team_id)},
+        )
+
+    async def _assert_reaches_person(self, user_id: uuid.UUID, *, acao: str) -> None:
+        """A CONTA de uma pessoa, e nao um vinculo dela. Spec 049, fatia 0b.
+
+        Resetar senha e desativar valem para a pessoa INTEIRA, em todo time
+        onde ela esta. Por isso a pergunta e sobre TODOS os vinculos:
+
+            papel de organizacao        -> passa (`can_in` responde pela
+                                           parcela global, qualquer time);
+            todos os vinculos na minha  -> passa;
+            arvore
+            algum vinculo fora dela     -> 403;
+            nenhum vinculo de time      -> 403 (so papel de organizacao
+                                           alcanca quem nao tem time).
+
+        ⚠️⚠️ "TODOS", E NAO "ALGUM", E ISSO FOI ESCOLHA -- registrada na spec
+        para ela confirmar. Com "algum", o MANAGER do Marketing desativaria a
+        conta de quem tambem trabalha no Comercial, e o Comercial descobriria
+        pela ausencia. Quem esta nas duas arvores e da organizacao.
+
+        ⚠️ Ate 14/09 nao havia pergunta nenhuma: o MANAGER do Marketing
+        resetava senha e desativava conta de quem so estava no Comercial.
+        """
+        tenant = require_tenant()
+        # `None` como time: so a parcela de ORGANIZACAO responde (`can_in`).
+        if tenant.has_permission_in("team.manage", None):
+            return
+        vinculos = await self._users.list_team_memberships(user_id=user_id)
+        if vinculos and all(
+            tenant.has_permission_in("team.manage", v.team_id) for v in vinculos
+        ):
+            return
+        raise AuthorizationError(
+            "Esta pessoa tem vinculo fora da sua arvore; so a organizacao a "
+            "administra.",
+            details={"acao": acao, "user_id": str(user_id)},
         )
 
     def _assert_gestao_ampla(self, *, acao: str) -> None:
