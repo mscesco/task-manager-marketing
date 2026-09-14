@@ -24,7 +24,7 @@
 
 import type { CurrentUser, Team } from "./api";
 import { rootTeams, rootTeamOf, urlDoQuadroDeArea } from "./areas";
-import { TEAM_PARAM_SCREENS, withTeam } from "./activeTeam";
+import { TEAM_PARAM_SCREENS, withTeam, type ActiveTeam } from "./activeTeam";
 
 /**
  * As áreas que ESTA pessoa alcança.
@@ -243,4 +243,32 @@ export function switcherHref(
     return withTeam(pathname, search, teamId);
   }
   return `/times/${teamId}`;
+}
+
+/**
+ * Para qual time o item **Time** do menu leva.
+ *
+ * ⚠️⚠️ NASCEU DE UM DEFEITO REPORTADO EM 14/09: com o Comercial ativo, clicar
+ * em "Time" abria o Marketing. O item usava só `peopleEntry(preferidos)` -- o
+ * primeiro time PREFERIDO, que é onde a pessoa trabalha -- e ignorava o time
+ * que a barra estava mostrando. Mesma família do defeito do menu corrigido em
+ * `navHref`, por outra porta: aqui o time mora no CAMINHO (`/times/<id>`), e
+ * não no `?time=`, então `navHref` não o alcançava.
+ *
+ * ⚠️ NÃO ERA "COISA DE ADMIN". Aparecia mais para quem administra a
+ * organização porque essa pessoa alcança todos os times, mas qualquer um com
+ * dois times raiz cairia no mesmo lugar.
+ *
+ * A ordem: o time ATIVO, se a barra já resolveu um; senão a regra de sempre
+ * (`peopleEntry`). `kind: "all"` ("Todos os times" de Minhas tarefas) e `null`
+ * (ainda sem resposta) não são um time, e caem na regra de sempre.
+ */
+export function peopleEntryFor(
+  active: ActiveTeam | null,
+  preferred: readonly Team[],
+): PeopleEntry {
+  if (active !== null && active.kind === "team") {
+    return { kind: "team", teamId: active.teamId };
+  }
+  return peopleEntry(preferred);
 }

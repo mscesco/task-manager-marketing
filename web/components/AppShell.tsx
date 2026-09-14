@@ -35,7 +35,7 @@ import TeamParamReader from "@/components/TeamParamReader";
 import { ActiveTeamProvider } from "@/lib/useActiveTeam";
 import {
   ownRootTeams,
-  peopleEntry,
+  peopleEntryFor,
   rootsForPerson,
 } from "@/lib/contextSwitcher";
 import {
@@ -280,7 +280,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   // alfabeto -- o mesmo defeito do "Quadro geral", e a Camila o descreveu com
   // estas palavras: *"tudo ta levando em consideracao o quadro do comercial que
   // nao tem nada, mesmo que eu esteja no marketing"*.
-  const entradaDoTime = peopleEntry(preferidos);
+  // ⚠⚠ E SEGUE O TIME ATIVO (14/09, reportado na tela: com o Comercial ativo,
+  // "Time" abria o Marketing). `peopleEntry` sozinho só olhava os preferidos,
+  // e o primeiro preferido é onde a pessoa trabalha. `navHref` não alcançava
+  // este item porque aqui o time mora no CAMINHO, não no `?time=`.
+  const entradaDoTime = peopleEntryFor(publicado, preferidos);
 
   // Itens simples (fora do grupo Quadros).
   const nav: { href: string; label: string; icon: LucideIcon }[] = [

@@ -14,6 +14,7 @@ import {
   currentContext,
   ownRootTeams,
   peopleEntry,
+  peopleEntryFor,
   rootsForPerson,
   switcherHref,
 } from "../contextSwitcher";
@@ -333,5 +334,32 @@ describe("switcherHref -- trocar de time preserva a tela", () => {
     // Escrever o parâmetro aqui daria uma URL que diz o time e não filtra nada.
     expect(switcherHref("/tarefa/t-1", "", B)).toBe(`/times/${B}`);
     expect(switcherHref("/perfil", "", B)).toBe(`/times/${B}`);
+  });
+});
+
+// ⚠️⚠️ DEFEITO DE 14/09: com o Comercial ativo, "Time" no menu abria o Marketing.
+// O item ignorava o time ativo e usava o primeiro preferido.
+describe("peopleEntryFor -- o item Time segue o time ativo", () => {
+  const MKT_T: Team = { id: "mkt", workspace_id: "ws", parent_team_id: null, name: "Marketing", slug: "mkt" };
+  const COM_T: Team = { id: "com", workspace_id: "ws", parent_team_id: null, name: "Comercial", slug: "com" };
+  // Preferidos: onde a pessoa trabalha (Marketing) primeiro.
+  const PREFERIDOS = [MKT_T, COM_T];
+
+  it("⚠️ com o Comercial ativo, leva ao Comercial -- e não ao primeiro preferido", () => {
+    expect(
+      peopleEntryFor({ kind: "team", teamId: "com", fromUrl: true }, PREFERIDOS),
+    ).toEqual({ kind: "team", teamId: "com" });
+  });
+
+  it("sem time ativo resolvido (`null`), cai na regra de sempre", () => {
+    expect(peopleEntryFor(null, PREFERIDOS)).toEqual({ kind: "team", teamId: "mkt" });
+  });
+
+  it("\"Todos os times\" não é um time: regra de sempre", () => {
+    expect(peopleEntryFor({ kind: "all" }, PREFERIDOS)).toEqual({ kind: "team", teamId: "mkt" });
+  });
+
+  it("sem time nenhum, continua sem entrada", () => {
+    expect(peopleEntryFor({ kind: "none" }, [])).toEqual({ kind: "none" });
   });
 });
