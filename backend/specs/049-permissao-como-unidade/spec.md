@@ -2,8 +2,9 @@
 
 **Status:** escrita em 14/09/2026, a partir do documento de 10/09
 (`~/Documents/gestor-de-tarefas-permissoes.html`) e da matriz CRUD do artefato
-"Mapa do Gestor de Tarefas". **Nenhuma fatia começou.** Há perguntas abertas
-para a Camila na §8 — a principal decide o tamanho da spec.
+"Mapa do Gestor de Tarefas". **Nenhuma fatia começou.** As quatro perguntas
+da §8 foram respondidas em 14/09 — a spec entrega o corte **e** o alvo (fatias
+0 a H). Resta um detalhe de teto na fatia H, com recomendação.
 **Escopo:** backend (mapa de permissões, escopo de comando, portões de rota e
 de serviço) e os portões de **tela** que leem permissão. Nenhuma tela nova.
 **Depende de:** **Spec 048** mergeada (#53). A fatia 0 registra o
@@ -152,6 +153,10 @@ nunca "onde"**. Os pontos, medidos:
 esquecer uma delas não dá erro: **o botão some**. É exatamente a classe do
 defeito de 14/09.
 
+A raiz do problema tem endereço: `web/lib/api.ts:258` tipa
+`permissions: string[]`, e `permissoesMembros.ts:30` e `seletorDeQuadro.ts:45`
+repetem o `string[]`. Com `string`, `.includes("qualquer.coisa")` compila.
+
 ### 2.5. Os testes que já existem
 
 - `test_permissoes_com_escopo.py` (9) — o escopo com **duas raízes** em memória
@@ -243,6 +248,14 @@ mudam — é contrato; muda a permissão que cada um cobra.
 ⚠️ `person.reactivate` **não entra**: é permissão para uma ação que não existe.
 Nasce com ela (§6).
 
+⚠️ **`task.archive` e `project.archive` entram no corte — decisão dela, 14/09.**
+Hoje `POST /tasks/{id}/archive` e `/unarchive` cobram `task.update`
+(`tasks_router.py:381,399`), e os de projeto cobram `project.update`
+(`projects_router.py:176,190`). No corte, **arquivar e desarquivar** passam a
+cobrar o verbo próprio, concedido a exatamente quem hoje tem o `update` — os
+quatro papéis na tarefa; ADMIN, MANAGER e SUPERVISOR no projeto. Nada muda na
+tela; o que muda é que "edita mas não arquiva" passa a ser uma linha no pacote.
+
 ### 4.3. O escopo de comando ganha nome
 
 Uma função em `team_scope`, ao lado de `visible_team_ids`:
@@ -274,6 +287,66 @@ defeito de hoje, em escala maior.
 
 A matriz vira **teste antes de qualquer mudança**, e cada fatia seguinte muda
 linhas da tabela junto com o código. Ver §5.
+
+### 4.7. O supervisor troca cargo no próprio subtime — decisão dela, 14/09
+
+⚠️⚠️ **Isto DESFAZ uma decisão escrita**, e não preenche um vazio. A Spec 028
+(D2) fechou o contrário: *"supervisor não promove; criar outro SUPERVISOR é
+trabalho do MANAGER"*. Está no código (`member_service.py:989` e
+`_assert_escopo_supervisor`, que recusa alvo que não seja OPERATOR) e em três
+testes que existem para provar a recusa:
+
+- `test_cadeado_do_vinculo_db.py::test_supervisor_NAO_troca_papel_de_ninguem`
+- `test_supervisor_member_scope_db.py::test_supervisor_nao_troca_papel`
+- `test_supervisor_member_scope_db.py` (linha 150, *"D2: supervisor não cria
+  par"*)
+
+⚠️ **Num subtime só cabem SUPERVISOR e OPERATOR** (`team_scope._SUBTEAM_ROLES`).
+Então "trocar cargo" ali é, sempre, **promover a supervisor ou rebaixar a
+operador** — não há terceira opção. A resposta dela é a regra; o que falta
+decidir é **em quem**:
+
+- **promover** um OPERATOR do próprio subtime a SUPERVISOR — sim, é o pedido;
+- **rebaixar outro SUPERVISOR** do mesmo subtime — ⚠️ *em aberto.* Com dois
+  supervisores, cada um poderia rebaixar o outro, e o último a clicar fica
+  sozinho no posto. **Recomendação:** não — rebaixar um par continua sendo do
+  MANAGER. É o mesmo desenho do teto do §4.5 (*"o gestor concede até gestor"*):
+  o limite é sobre o **alvo**, e mora no serviço.
+
+  ⚠️ **Consequência da recomendação, dita inteira:** como o único cargo acima
+  de operador num subtime é supervisor, "não mexe em par" faz a troca do
+  supervisor ser, na prática, **só promover**. Se ela quiser que ele também
+  rebaixe, a regra passa a ser "rebaixa par", com o risco acima. É a única
+  pergunta que sobra, e ela só trava a fatia H.
+
+E, junto, sem decisão nova: **ninguém troca o próprio cargo** (C3) continua
+valendo, e o **cadeado** da Spec 047 (fatia A, `GET /members/{id}/teams`) tem de
+abrir na mesma linha em que o PATCH abre — é a mesma função, e é o que ela
+existe para garantir.
+
+### 4.8. Os nomes das permissões viram um tipo no front — decisão dela, 14/09
+
+Ela aceitou *"se é o correto e coerente"*. **É**, pelo motivo do §2.4: o
+defeito que a fatia A mais provavelmente produz (string esquecida, botão
+sumido) é invisível aos quatro portões, e fechar o tipo o torna um erro de
+`tsc`. O desenho, escolhido para caber no CI que existe:
+
+- **Um arquivo gerado e commitado:** `web/lib/permissions.generated.ts`, com
+  `export const PERMISSIONS = [...] as const` e
+  `export type Permission = (typeof PERMISSIONS)[number]`. Sai de um script do
+  backend que lê o mapa (`backend/scripts/`).
+- **`permissions: Permission[]`** em `api.ts:258` e nos dois `string[]` do §2.4.
+  Com isso, `me.permissions.includes("team.manage")` **deixa de compilar** no
+  dia em que `team.manage` sair do mapa.
+- ⚠️ **O guardião do arquivo é um teste do BACKEND**, e não um passo novo no CI:
+  o job `backend` faz checkout do repositório inteiro, então um pytest compara o
+  conteúdo que o script geraria com o arquivo commitado. Mapa mudado e arquivo
+  velho = pytest vermelho, com a instrução de regenerar na mensagem.
+- ⚠️ **O que ele não pega:** permissão que continua existindo, mas é a errada
+  para aquele botão. Isso segue sendo a tabela da fatia 0 e a tela.
+
+Por que não gerar no build: o job `front` não tem Python, e o `next build` dela
+em dev passaria a depender do backend. Commitado, o front continua se bastando.
 
 ---
 
@@ -310,6 +383,12 @@ O mapa passa a conceder os verbos do §4.2; cada pacote antigo vira exatamente
 os verbos que ele já dava. Rotas e serviços passam a cobrar o verbo.
 ⚠️ **Os portões de tela do §2.4 mudam NA MESMA FATIA** — uma string esquecida é
 um botão sumido (§3.4).
+⚠️ **O tipo do §4.8 vem PRIMEIRO dentro da fatia**, num commit próprio, ainda
+com os nomes de hoje: gerar o arquivo, trocar os `string[]`, `tsc` limpo. Só
+depois se cortam os verbos — e aí o `tsc` lista cada tela a mudar, em vez de
+uma conferência à mão.
+Entram aqui `task.archive` e `project.archive` (§4.2), com as quatro rotas de
+arquivar e desarquivar.
 ⚠️ **A tabela da fatia 0 não muda uma linha.** Se mudar, a fatia errou.
 
 **Fatia B — o escopo de comando ganha nome.**
@@ -319,9 +398,32 @@ Comportamento igual; a tabela da fatia 0 continua intacta.
 **Fatia C — o GESTOR vira lista.**
 §4.4. Ainda sem mudar comportamento: a lista reproduz a subtração de hoje.
 
-**Fatia D em diante — as mudanças do alvo.**
-Cada uma é um conjunto de linhas da tabela passando de "hoje" para "alvo", junto
-com o código. Quais entram aqui é a pergunta 1 da §8.
+**Fatias D a H — as mudanças do alvo (decisão dela, 14/09: todas entram).**
+Cada uma é um conjunto de linhas da tabela passando de `# DIVERGE DO ALVO` para
+o esperado novo, **no mesmo commit** que o código. O diff da tabela é a revisão.
+Depois de C, as cinco são independentes entre si; a ordem abaixo é a de risco,
+do mais contido ao que desfaz decisão escrita.
+
+- **D — item 01: o GESTOR não apaga.** Saem da lista do GESTOR (fatia C) os
+  verbos `*.delete`, **exceto** `task.delete` e `person.deactivate` — as duas
+  exceções da regra de 10/09. Só pacote; nenhuma rota nova. (O "só admin mexe
+  em admin" é teto, e mora na fatia G.)
+- **E — item 07: o MANAGER cadastra pessoa só no próprio time.** `person.create`
+  do MANAGER passa a exigir que o vínculo inicial caia no escopo de comando
+  (fatia B). Trava no serviço, com o `command_team_ids` — não uma quinta regra.
+- **F — item 03: o SUPERVISOR edita o próprio subtime.** `subteam.update` entra
+  no pacote do SUPERVISOR, com escopo de comando — que para ele é **só** o
+  subtime (§4.3). ⚠️ A linha "SUPERVISOR renomeia a **raiz**" tem de continuar
+  `negado`: é a armadilha do §3.3 por outro caminho.
+- **G — item 02: o GESTOR edita a organização e promove até gestor.**
+  `organization.update` e `org_role.grant` entram na lista; o teto (*"até
+  gestor; só admin mexe em admin"*) mora no serviço (§4.5), com linha própria
+  na tabela para "GESTOR promove a ADMIN" = `negado`.
+- **H — o SUPERVISOR troca cargo no próprio subtime** (§4.7). Os três testes de
+  recusa listados no §4.7 **mudam de lado, de propósito**, no mesmo commit — e
+  a mensagem do commit diz que a Spec 028 D2 foi revogada, e por quem. O cadeado
+  (`GET /members/{id}/teams`) abre junto; o front (`papeisAtribuiveis`) passa a
+  oferecer SUPERVISOR ao supervisor. ⚠️ Trava no detalhe de teto do §4.7.
 
 ---
 
@@ -345,9 +447,15 @@ com o código. Quais entram aqui é a pergunta 1 da §8.
 ## 7. O que os portões não vão pegar
 
 - ⚠️⚠️ **Permissão renomeada e string esquecida na tela = botão sumido, com os
-  quatro portões verdes.** O `tsc` não vê string. A fatia A precisa de uma
-  lista dos pontos do §2.4 conferida à mão — ou de um tipo que feche os nomes
-  (pergunta 3 da §8).
+  quatro portões verdes.** O `tsc` não vê string. **Resolvido pelo tipo do
+  §4.8** — desde que ele entre ANTES do corte (fatia A). Até lá, a armadilha
+  está de pé.
+- ⚠️ **O tipo não pega a permissão CERTA no botão errado.** `task.update` no
+  lugar de `task.archive` compila. Isso é a tabela da fatia 0 (no servidor) e a
+  tela (no botão).
+- ⚠️ **Fatia H revoga a Spec 028 D2.** Os testes que a protegiam mudam de lado;
+  um revisor que leia só "teste alterado" vê uma trava sendo afrouxada. A
+  mensagem do commit tem de dizer que foi decisão.
 - ⚠️ **`permissions_for_roles` ignora papel desconhecido em silêncio**, de
   propósito. Um papel escrito errado no mapa não levanta: nasce sem permissão.
 - ⚠️ **A subtração do GESTOR** (§2.1) enquanto a fatia C não chegar: um verbo
@@ -360,32 +468,21 @@ com o código. Quais entram aqui é a pergunta 1 da §8.
 
 ---
 
-## 8. Perguntas para a Camila
+## 8. As perguntas, e o que ela respondeu em 14/09
 
-1. **O tamanho da spec.** Esta spec é só o corte (fatias 0 a C, sem mudar
-   comportamento) ou já entrega as mudanças de permissão do alvo? As candidatas,
-   que viram "uma linha no pacote" depois do corte:
-   - **01** — tirar os deletes do GESTOR (exceto apagar tarefa e desativar
-     pessoa);
-   - **02** — GESTOR edita a organização e promove até gestor;
-   - **03** — SUPERVISOR edita o próprio subtime;
-   - **07** — MANAGER cadastra pessoa só com vínculo no time dele.
+1. **O tamanho da spec** — *"inclui"*. Os itens 01, 02, 03 e 07 entram, como
+   fatias D a G (§5).
+2. **Supervisor e cargo** — *"supervisor troca o cargo de alguém dentro do seu
+   subtime"*. ⚠️ Medido depois da resposta: **hoje ele NÃO troca** (Spec 028
+   D2), então isto é mudança, não conferência. Virou a fatia H e o §4.7.
+3. **Tipo para os nomes** — *"aceito, se é o correto e coerente a se fazer"*.
+   É; o desenho e o porquê estão no §4.8.
+4. **`task.archive`** — *"separa a permissão e entra agora também"*. Entra na
+   fatia A, com `project.archive` pelo mesmo motivo (§4.2).
 
-   *Recomendação:* as quatro entram como fatias D a G. Sem elas, a spec entrega
-   estrutura e nenhuma diferença que se veja — e a regra de 10/09 é o motivo de
-   ela existir.
+### A que sobra
 
-2. **O que o documento deixou como "conferir".** O supervisor hoje consegue
-   trocar o cargo dentro do próprio subtime, ou só adicionar e remover? A fatia
-   0 mede isso — mas o alvo precisa ser dela.
-
-3. **Fechar os nomes num tipo.** Os nomes das permissões podem virar um tipo
-   gerado do backend no front (uma lista `as const`), para o `tsc` apontar a
-   string esquecida do §7. Custa um passo de geração; resolve a armadilha mais
-   provável da fatia A.
-
-4. **`task.archive` separado.** Hoje arquivar entra em `task.update`, e a matriz
-   diz que SUPERVISOR e OPERATOR **arquivam no lugar de apagar** — o que já é
-   verdade. Separar o verbo não muda nada hoje; ele só serve se um dia algum
-   papel puder editar e não arquivar. Entra no corte, ou fica para quando for
-   preciso?
+5. **Supervisor rebaixa outro supervisor?** (§4.7) Com a recomendação (não), a
+   troca de cargo do supervisor é, na prática, só promover operador. Com "sim",
+   dois supervisores de um subtime podem rebaixar um ao outro. **Só trava a
+   fatia H**; 0 a G andam sem ela.
