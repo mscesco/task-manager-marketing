@@ -41,8 +41,10 @@ export type AtorMinimo = {
  */
 export function alcanceDe(me: AtorMinimo | null | undefined): Alcance {
   if (!me) return { tipo: "nenhum" };
-  if (me.permissions.includes("team.manage")) return { tipo: "amplo" };
-  if (me.permissions.includes("member.manage.subteam")) {
+  // Spec 049, fatia A: "amplo" e quem troca cargo (`membership.update`, so
+  // comando); "subtime" e quem so vincula e desvincula (`membership.create`).
+  if (me.permissions.includes("membership.update")) return { tipo: "amplo" };
+  if (me.permissions.includes("membership.create")) {
     return {
       tipo: "subtime",
       subtimes: me.teams

@@ -48,7 +48,7 @@ export function podeEditar(
   permissoes: readonly Permission[]
 ): boolean {
   if (ehRaiz(time)) return false;
-  return permissoes.includes("team.manage");
+  return permissoes.includes("subteam.update");
 }
 
 /**
@@ -62,7 +62,7 @@ export function podeRemover(
   permissoes: readonly Permission[]
 ): boolean {
   if (ehRaiz(time)) return false;
-  if (!permissoes.includes("workspace.manage")) return false;
+  if (!permissoes.includes("subteam.delete")) return false;
   return estaVazio(time);
 }
 
@@ -79,7 +79,7 @@ export function podeEsvaziarERemover(
   permissoes: readonly Permission[]
 ): boolean {
   if (ehRaiz(time)) return false;
-  if (!permissoes.includes("workspace.manage")) return false;
+  if (!permissoes.includes("subteam.delete")) return false;
   return time.filhos === 0;
 }
 
@@ -134,7 +134,7 @@ export function motivoNaoRemove(
   permissoes: readonly Permission[]
 ): string | null {
   if (ehRaiz(time)) return "O time principal não pode ser removido.";
-  if (!permissoes.includes("workspace.manage")) {
+  if (!permissoes.includes("subteam.delete")) {
     return "Só um administrador pode remover times.";
   }
   if (estaVazio(time)) return null;

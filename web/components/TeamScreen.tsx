@@ -494,7 +494,7 @@ export default function TeamScreen({ teamId }: { teamId: string }) {
             scope={scope}
             isAdmin={isAdmin}
             canManageOrg={
-              me?.permissions.includes("workspace.manage") ?? false
+              me?.permissions.includes("org_role.grant") ?? false
             }
             isSelf={gavetaDePessoa.id === me?.id}
             onClose={() => setGavetaDePessoa(null)}

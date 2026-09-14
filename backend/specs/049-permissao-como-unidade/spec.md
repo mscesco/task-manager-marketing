@@ -288,6 +288,63 @@ O padrão `<componente>.<verbo>`, com o nível ainda no nome onde o §3.3 exige.
 ⚠️ **Nomes em inglês** (código novo), prosa em português. Os endpoints não
 mudam — é contrato; muda a permissão que cada um cobra.
 
+#### 4.2-bis. ⚠️⚠️ O corte de verdade, rota a rota (escrito na fatia A, 14/09)
+
+A tabela de cima corta **por nome**. Implementar por ela mudaria comportamento,
+porque os pacotes de hoje não protegem o que o nome diz: `workspace.manage` é
+também o portão de **apagar, mover e esvaziar time**. A regra do corte é outra:
+**cada rota cobra o verbo da ação que executa, e cada verbo é concedido
+exatamente a quem tinha o pacote que protegia aquela rota.**
+
+| pacote de hoje (quem tem) | verbos | onde é cobrado |
+|---|---|---|
+| `workspace.manage` (ADMIN) | `organization.update` | `PATCH /workspaces/current` |
+| | `org_role.grant` · `org_role.revoke` | `PATCH /members/{id}/organization-role` — a rota aceita qualquer um dos dois; **o serviço ainda não distingue** (ver nota abaixo) |
+| | `subteam.delete` | `DELETE /teams/{id}`, `GET …/previa-remocao`, `POST …/esvaziar-e-remover` |
+| | `team.move` | `POST /teams/{id}/move` |
+| `area.create` (ADMIN, GESTOR) | `team.create` | `TeamService.create` sem pai; rota `POST /teams` cobra `team.create` **ou** `subteam.create` |
+| `team.manage` (ADMIN, GESTOR, MANAGER) | `subteam.create` · `subteam.update` | `TeamService.create` com pai · `PATCH /teams/{id}` |
+| | `person.create` · `person.update` · `person.deactivate` | `POST /members` · `…/reset-password` · `…/deactivate` (+ `_assert_reaches_person`) |
+| | `membership.update` · `membership.move` | `PATCH /members/{id}/teams/{t}` · `…/move-subteam` |
+| `member.manage.subteam` (+ SUPERVISOR, só no próprio time) | `membership.create` · `membership.delete` | `POST …/team` · `DELETE …/teams/{t}` |
+| `board.manage.root` (ADMIN, GESTOR, MANAGER) | `board.create.root` · `board.update.root` · `board.delete.root` | `_assert_pode_gerir` num time raiz |
+| `board.manage.subteam` (+ SUPERVISOR, só no próprio time) | `board.create` · `board.update` · `board.delete` | `_assert_pode_gerir` num subtime |
+| (herdado dos dois) | `column.create` · `column.update` · `column.delete` | criar · renomear, reordenar, alvo, aviso de prazo · apagar; o lote cobra os três |
+| `solicitation.review` | `solicitation.read` · `solicitation.review` | os dois `GET` · triar, andamento, tarefa |
+| `solicitation_form.manage` | `form.read` · `form.create` · `form.update` · `form.publish` · `form.delete` | listar/abrir · criar · editar, seções, perguntas · publicar · apagar |
+| `project.update` · `task.update` | + `project.archive` · `task.archive` | arquivar **e** desarquivar |
+
+⚠️ **O que NÃO entra, pela regra do `person.reactivate`** (permissão para ação
+que não existe): `organization.delete`, e `team.update`/`team.delete` de time
+**raiz** — renomear e apagar raiz são recusados pela regra (§6, item 04).
+
+⚠️⚠️ **Coluna do quadro GERAL cobra `board.update.root`, e não `column.*` —
+corrigido durante a fatia.** A primeira versão cobrava `column.*` também na
+raiz, contando com `_OWN_TEAM_ONLY` para prender o supervisor ao próprio
+subtime. **Com permissão com escopo isso vale; sem escopo, não.** O contexto
+legado (`frozenset` — jobs e testes antigos) faz `has_permission_in` responder
+a pergunta ampla de propósito, e o supervisor, que tem `column.create` em
+algum lugar, criou coluna no Quadro geral: `test_board_coluna_http_db` pegou,
+com a tabela da fatia 0 verde. Pela rota real nada mudava — mas a trava não
+pode depender do escopo para dizer não. ⚠️ **E é por isso mesmo que o `.root`
+de `board.*` fica** (§3.3): o argumento "o escopo já protege" tem a mesma
+fraqueza enquanto existir contexto sem escopo.
+
+⚠️ **`org_role.grant` e `.revoke` só se distinguem na rota.** A primeira versão
+os separava também no serviço (`revoke` se `role` é nulo) e derrubou 5 testes
+que chamam o serviço direto — mudança de comportamento, e para nada: os dois
+estão nos mesmos papéis. A distinção nasce na fatia G, com o teto do GESTOR.
+
+⚠️ **O router de formulários mantém um portão geral** (qualquer `form.*`) além
+do verbo de cada rota. Sem ele, uma rota nova esquecida nasceria aberta — o
+router inteiro era fechado por uma linha só.
+
+⚠️ **Travas de serviço que perguntavam `team.manage` passam a receber o verbo
+do chamador.** A que decide "é gestão ampla, e não supervisor?"
+(`_assert_escopo_supervisor`) pergunta `membership.update`, que só papel de
+comando tem — nome torto para a pergunta, e é exatamente o que a fatia B
+existe para nomear (`command_team_ids`).
+
 ⚠️ `person.reactivate` **não entra**: é permissão para uma ação que não existe.
 Nasce com ela (§6).
 
@@ -496,6 +553,18 @@ Sabotagens: `"team.manag"` em `gestaoTimes.ts` → `tsc` recusa (TS2345);
 Entram aqui `task.archive` e `project.archive` (§4.2), com as quatro rotas de
 arquivar e desarquivar.
 ⚠️ **A tabela da fatia 0 não muda uma linha.** Se mudar, a fatia errou.
+
+✅ **Commit 2 da fatia A entregue em 14/09** — o corte, pelo mapa do §4.2-bis:
+**15 permissões viraram 40**, cada rota cobra o verbo da sua ação, e as travas
+de serviço recebem o verbo do chamador. **A tabela da fatia 0 não mudou uma
+linha (310 verdes).**
+⚠️ **E ela não bastou:** os dois tropeços da primeira versão (coluna do quadro
+geral por `column.*`; `org_role.grant/revoke` separados no serviço) passaram
+verdes na matriz e caíram na suíte — um pelo contexto sem escopo, outro por
+quem chama o serviço direto. A matriz prova a ROTA com escopo real; ela não
+substitui os testes de serviço, e as duas notas do §4.2-bis dizem o porquê.
+Sabotagem: `DELETE /teams/{id}` cobrando `subteam.update` → a matriz acusa
+GESTOR e MANAGER apagando subtime.
 
 **Fatia B — o escopo de comando ganha nome.**
 `command_team_ids` (§4.3), e os quatro pontos do §2.3 passam a usá-la.

@@ -421,7 +421,7 @@ class BoardService:
         """
         tenant = require_tenant()
         time = await self._time_do_workspace(team_id)
-        self._assert_pode_gerir(time)
+        self._assert_pode_gerir(time, "board.create")
 
         nome_limpo = self._nome_valido(nome)
         # ⚠️ ANTES DO `add`, e nao depois. Com a linha ja na sessao, o `flush`
@@ -473,7 +473,7 @@ class BoardService:
         tenant = require_tenant()
         quadro = await self._quadro_do_workspace(board_id)
         time = await self._time_do_workspace(quadro.team_id)
-        self._assert_pode_gerir(time)
+        self._assert_pode_gerir(time, "board.update")
 
         anterior = quadro.name
         nome_limpo = self._nome_valido(nome)
@@ -583,7 +583,7 @@ class BoardService:
         # ⚠️ A UNICA TRAVA DE QUADRO QUE SOBROU E NO APAGAR
         # (`_assert_ponte_sobrevive`), e criar nao tem equivalente porque
         # coluna nova nasce sem ponte e sem alvo: nao segura funcao nenhuma.
-        self._assert_pode_gerir(time)
+        self._assert_pode_gerir(time, "column.create")
 
         nome_limpo = self._nome_de_coluna_valido(nome)
         if cor is not None and cor not in CORES_DE_COLUNA:
@@ -758,7 +758,9 @@ class BoardService:
         ANTES de apagar.
         """
         quadro = await self._quadro_do_workspace(board_id)
-        self._assert_pode_gerir(await self._time_do_workspace(quadro.team_id))
+        self._assert_pode_gerir(
+            await self._time_do_workspace(quadro.team_id), "column.update"
+        )
 
         # ⚠️ REUSA `_coluna_do_quadro`, e nao refaz a busca. Ele confere que a
         # coluna e DESTE quadro (nao so que existe) e levanta o 404 no formato
@@ -832,7 +834,9 @@ class BoardService:
         ⚠️ NAO FAZ COMMIT -- mesma unidade de trabalho do chamador.
         """
         quadro = await self._quadro_do_workspace(board_id)
-        self._assert_pode_gerir(await self._time_do_workspace(quadro.team_id))
+        self._assert_pode_gerir(
+            await self._time_do_workspace(quadro.team_id), "column.update"
+        )
         coluna = await self._coluna_do_quadro(quadro.id, column_id)
         coluna.notify_deadline = avisa
         await self._session.flush()
@@ -893,7 +897,13 @@ class BoardService:
         # um lote so de `ordem` vazia e listas vazias nao passaria por nenhum
         # dos quatro metodos -- e responderia 200 a quem nao pode editar nada.
         quadro = await self._quadro_do_workspace(board_id)
-        self._assert_pode_gerir(await self._time_do_workspace(quadro.team_id))
+        # ⚠️ O LOTE CRIA, RENOMEIA E APAGA -- entao cobra os tres verbos de
+        # coluna (Spec 049, fatia A). Hoje estao nos mesmos papeis; o dia em
+        # que um papel puder renomear e nao apagar, o lote inteiro recusa, que
+        # e mais seguro que aplicar metade.
+        time_do_lote = await self._time_do_workspace(quadro.team_id)
+        for verbo in ("column.create", "column.update", "column.delete"):
+            self._assert_pode_gerir(time_do_lote, verbo)
 
         # ---- etapa 0: os nomes do RESULTADO FINAL (fatia 9) ----------------
         #
@@ -1081,7 +1091,7 @@ class BoardService:
         quadro = await self._quadro_do_workspace(board_id)
         time = await self._time_do_workspace(quadro.team_id)
         # Mesma ordem de `criar_coluna` e `renomear_coluna`: autoriza, recusa.
-        self._assert_pode_gerir(time)
+        self._assert_pode_gerir(time, "column.update")
 
         atuais = await self._colunas_do_quadro(quadro.id)
         pedidos = list(column_ids)
@@ -1156,7 +1166,7 @@ class BoardService:
         quadro = await self._quadro_do_workspace(board_id)
         time = await self._time_do_workspace(quadro.team_id)
         # Mesma ordem de `criar_coluna`: autoriza, depois recusa.
-        self._assert_pode_gerir(time)
+        self._assert_pode_gerir(time, "column.update")
 
         coluna = await self._coluna_do_quadro(quadro.id, column_id)
         anterior = coluna.name
@@ -1282,7 +1292,7 @@ class BoardService:
         tenant = require_tenant()
         quadro = await self._quadro_do_workspace(board_id)
         time = await self._time_do_workspace(quadro.team_id)
-        self._assert_pode_gerir(time)
+        self._assert_pode_gerir(time, "column.delete")
 
         coluna = await self._coluna_do_quadro(quadro.id, column_id)
         colunas = await self._colunas_do_quadro(quadro.id)
@@ -1647,8 +1657,40 @@ class BoardService:
             raise EntityNotFoundError("Coluna", identifier=column_id)
         return coluna
 
-    def _assert_pode_gerir(self, time: Team) -> None:
+    @staticmethod
+    def _verbo_na_raiz(verbo: str) -> str:
+        """O verbo que o time RAIZ cobra (Spec 049, fatia A).
+
+        `board.X` vira `board.X.root` -- o sufixo que separa o supervisor do
+        Quadro geral (§3.3).
+
+        ⚠️⚠️ E `column.X` NA RAIZ COBRA `board.update.root`, e nao `column.X`.
+        A primeira versao desta fatia cobrava `column.X` e contava com
+        `_OWN_TEAM_ONLY` para prender o supervisor ao proprio subtime. Com
+        permissao COM ESCOPO isso vale; com o contexto legado (`frozenset`),
+        `has_permission_in` cai na pergunta AMPLA de proposito, e o supervisor
+        -- que TEM `column.create` em algum lugar -- criou coluna no Quadro
+        geral. `test_board_coluna_http_db` pegou. Mexer na coluna do geral e
+        editar o geral: os mesmos tres papeis de antes, por um nome que nao
+        depende do escopo para dizer nao.
+        """
+        if verbo.startswith("board."):
+            return f"{verbo}.root"
+        return "board.update.root"
+
+    @staticmethod
+    def _verbo_de_comando(verbo: str) -> str:
+        """O verbo `board.X.root` da MESMA acao -- a saida de gestao ampla."""
+        return f"board.{verbo.split('.')[1]}.root"
+
+    def _assert_pode_gerir(self, time: Team, verbo: str) -> None:
         """Quem pode criar/renomear quadro DESTE time.
+
+        ⚠️ Spec 049, fatia A: `verbo` e a acao (`board.create`, `column.update`,
+        ...). Ate aqui a trava perguntava sempre `board.manage.*`, para criar,
+        renomear e apagar quadro e coluna -- o mesmo pacote para seis acoes.
+        Os verbos estao exatamente nos papeis que tinham o pacote, entao nada
+        muda; o que muda e que cada chamador diz o que esta fazendo.
 
         ⚠️ DUAS PERGUNTAS, NESTA ORDEM, e sao perguntas diferentes:
 
@@ -1679,14 +1721,14 @@ class BoardService:
         if eh_raiz:
             # ⚠️ `board.manage.subteam` NAO serve aqui, e essa e a linha que
             # separa o supervisor do Quadro geral.
-            if not tenant.has_permission_in("board.manage.root", time.id):
+            if not tenant.has_permission_in(self._verbo_na_raiz(verbo), time.id):
                 raise AuthorizationError(
                     "Apenas admin ou manager administram quadros do time raiz.",
                     details={"team_id": str(time.id)},
                 )
             return
 
-        if not tenant.has_permission_in("board.manage.subteam", time.id):
+        if not tenant.has_permission_in(verbo, time.id):
             raise AuthorizationError(
                 "Sem permissao para administrar quadros deste subtime.",
                 details={"team_id": str(time.id)},
@@ -1702,7 +1744,7 @@ class BoardService:
         # `test_manager_cria_nos_dois_niveis` e
         # `test_renomear_usa_a_mesma_trava_de_escopo`. O terceiro cai pelo
         # SETUP, nao pela afirmacao dele.
-        if tenant.has_permission_in("board.manage.root", time.id):
+        if tenant.has_permission_in(self._verbo_de_comando(verbo), time.id):
             return
 
         if time.id not in self._subtimes_supervisionados():
@@ -1829,7 +1871,7 @@ class BoardService:
         tenant = require_tenant()
         quadro = await self._quadro_do_workspace(board_id)
         time = await self._time_do_workspace(quadro.team_id)
-        self._assert_pode_gerir(time)
+        self._assert_pode_gerir(time, "board.delete")
 
         if quadro.is_default:
             raise ValidationError(

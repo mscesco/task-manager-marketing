@@ -65,7 +65,7 @@ describe("alcanceDeQuadro", () => {
 
   it("board.manage.root -> amplo", () => {
     const a = alcanceDeQuadro({
-      permissions: ["board.manage.root", "board.manage.subteam"],
+      permissions: ["board.update.root", "board.update"],
       teams: [],
     });
     expect(a.tipo).toBe("amplo");
@@ -79,7 +79,7 @@ describe("alcanceDeQuadro", () => {
     // sem subtime nenhum cairia em `subtime: []` e perderia o botao em TODO
     // time. E ele e quem administra os subtimes de que nao e supervisor.
     const a = alcanceDeQuadro({
-      permissions: ["board.manage.subteam", "board.manage.root"],
+      permissions: ["board.update", "board.update.root"],
       teams: [],
     });
     expect(a.tipo).toBe("amplo");
@@ -87,7 +87,7 @@ describe("alcanceDeQuadro", () => {
 
   it("so subteam -> lista os subtimes onde e SUPERVISOR", () => {
     const a = alcanceDeQuadro({
-      permissions: ["board.manage.subteam"],
+      permissions: ["board.update"],
       teams: [
         { team_id: SEO, role: "SUPERVISOR" },
         { team_id: CRM, role: "OPERATOR" },

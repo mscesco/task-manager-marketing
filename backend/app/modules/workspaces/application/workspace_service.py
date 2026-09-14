@@ -247,7 +247,7 @@ class TeamService:
             # alternativa, e ela troca uma checagem por uma rota duplicada com
             # as mesmas cinco validacoes.
             tenant = require_tenant()
-            if not tenant.has_permission("area.create"):
+            if not tenant.has_permission("team.create"):
                 raise AuthorizationError(
                     # ⚠️ VOCABULARIO DE 10/09: organizacao, time, subtime -- e
                     # nada de "area". A frase antiga dizia "area" e "time" na
@@ -255,7 +255,7 @@ class TeamService:
                     # que a pessoa lia ao levar o 403.
                     "Criar um time exige papel de organizacao. "
                     "Para criar um subtime dentro do seu, escolha o time pai.",
-                    details={"required": "area.create"},
+                    details={"required": "team.create"},
                 )
 
         # Se o pai foi informado, ele precisa existir no workspace.
@@ -270,7 +270,7 @@ class TeamService:
             # perguntava depois, e o MANAGER do Marketing criava subtime no
             # Comercial. Contra a decisao dela de 09/09: *"gerente so mexe na
             # propria arvore"*.
-            if not require_tenant().has_permission_in("team.manage", parent_team_id):
+            if not require_tenant().has_permission_in("subteam.create", parent_team_id):
                 raise AuthorizationError(
                     "Voce administra times, mas nao nesta arvore.",
                     details={"parent_team_id": str(parent_team_id)},
@@ -367,7 +367,7 @@ class TeamService:
         # ⚠️ Mesma pergunta do `create`, e antes da regra da raiz: quem nao
         # manda neste time leva 403, e nao a explicacao de uma regra que nao
         # e dele (Spec 049, fatia 0b).
-        if not require_tenant().has_permission_in("team.manage", team_id):
+        if not require_tenant().has_permission_in("subteam.update", team_id):
             raise AuthorizationError(
                 "Voce administra times, mas nao nesta arvore.",
                 details={"team_id": str(team_id)},

@@ -16,8 +16,9 @@ import {
 } from "@/lib/gestaoTimes";
 import type { Permission } from "@/lib/permissions.generated";
 
-const ADMIN: Permission[] = ["workspace.manage", "team.manage"];
-const MANAGER: Permission[] = ["team.manage"];
+// Spec 049, fatia A: eram `workspace.manage` + `team.manage`, e `team.manage`.
+const ADMIN: Permission[] = ["subteam.delete", "subteam.update", "subteam.create"];
+const MANAGER: Permission[] = ["subteam.update", "subteam.create"];
 const OPERATOR: Permission[] = [];
 
 function time(over: Partial<TimeGerenciavel> = {}): TimeGerenciavel {

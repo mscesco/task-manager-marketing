@@ -358,10 +358,10 @@ async def test_quem_administra_membro_de_subtime_no_mapa(db) -> None:
 
     # Os tres papeis de comando e supervisao a tem; o OPERATOR nao.
     for papel in ("ADMIN", "MANAGER", "SUPERVISOR"):
-        assert "member.manage.subteam" in permissions_for_roles(
+        assert "membership.create" in permissions_for_roles(
             frozenset({papel})
         ), f"{papel} deveria administrar membro de subtime pelo MAPA"
-    assert "member.manage.subteam" not in permissions_for_roles(
+    assert "membership.create" not in permissions_for_roles(
         frozenset({"OPERATOR"})
     )
 

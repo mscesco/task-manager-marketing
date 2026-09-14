@@ -35,7 +35,10 @@ import uuid
 from fastapi import APIRouter, Depends, Query, Response, status
 
 from app.core.deps import UoWDep
-from app.modules.auth.api.dependencies import require_permission
+from app.modules.auth.api.dependencies import (
+    require_any_permission,
+    require_permission,
+)
 from app.modules.solicitations.api.form_schemas import (
     CondicionalRequest,
     FormCreateRequest,
@@ -56,14 +59,25 @@ from app.modules.solicitations.application.form_service import (
     SolicitationFormService,
 )
 
+#: Spec 049, fatia A: `solicitation_form.manage` cortado em cinco verbos.
+_FORM_PERMISSIONS = ("form.read", "form.create", "form.update", "form.publish", "form.delete")
+
+# ⚠️⚠️ O PORTAO DO ROUTER FICA, alem do verbo de cada rota. Ate a fatia A ele
+# era a UNICA trava de todas as rotas daqui, numa linha so. Trocando por um
+# verbo por rota, uma rota nova esquecida sem `dependencies` nasceria ABERTA a
+# qualquer pessoa logada; com este piso, nasce fechada a quem nao tem nenhum
+# verbo de formulario.
 router = APIRouter(
     prefix="/solicitacoes",
     tags=["solicitacoes"],
-    dependencies=[Depends(require_permission("solicitation_form.manage"))],
+    dependencies=[Depends(require_any_permission(*_FORM_PERMISSIONS))],
 )
 
+_LER = [Depends(require_permission("form.read"))]
+_EDITAR = [Depends(require_permission("form.update"))]
 
-@router.get("/formularios", response_model=list[FormResponse])
+
+@router.get("/formularios", response_model=list[FormResponse], dependencies=_LER)
 async def listar_formularios(
     uow: UoWDep,
     team_id: uuid.UUID | None = Query(
@@ -90,6 +104,7 @@ async def listar_formularios(
     "/formularios",
     response_model=FormResponse,
     status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_permission("form.create"))],
 )
 async def criar_formulario(
     payload: FormCreateRequest, uow: UoWDep
@@ -125,7 +140,9 @@ def _secao_para_resposta(secao, perguntas) -> SectionResponse:
     )
 
 
-@router.get("/formularios/{form_id}", response_model=FormDetailResponse)
+@router.get(
+    "/formularios/{form_id}", response_model=FormDetailResponse, dependencies=_LER
+)
 async def obter_formulario(form_id: uuid.UUID, uow: UoWDep) -> FormDetailResponse:
     """O formulario com as secoes e perguntas VIVAS, em ordem.
 
@@ -148,7 +165,9 @@ async def obter_formulario(form_id: uuid.UUID, uow: UoWDep) -> FormDetailRespons
     )
 
 
-@router.patch("/formularios/{form_id}", response_model=FormResponse)
+@router.patch(
+    "/formularios/{form_id}", response_model=FormResponse, dependencies=_EDITAR
+)
 async def renomear_formulario(
     form_id: uuid.UUID, payload: FormUpdateRequest, uow: UoWDep
 ) -> FormResponse:
@@ -172,7 +191,11 @@ async def renomear_formulario(
     return resposta
 
 
-@router.post("/formularios/{form_id}/publicar", response_model=FormResponse)
+@router.post(
+    "/formularios/{form_id}/publicar",
+    response_model=FormResponse,
+    dependencies=[Depends(require_permission("form.publish"))],
+)
 async def publicar_formulario(
     form_id: uuid.UUID, payload: PublicarRequest, uow: UoWDep
 ) -> FormResponse:
@@ -195,6 +218,7 @@ async def publicar_formulario(
     "/formularios/{form_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     response_class=Response,
+    dependencies=[Depends(require_permission("form.delete"))],
 )
 async def apagar_formulario(form_id: uuid.UUID, uow: UoWDep) -> Response:
     await SolicitationFormService(uow.session).apagar_formulario(form_id=form_id)
@@ -206,6 +230,7 @@ async def apagar_formulario(form_id: uuid.UUID, uow: UoWDep) -> Response:
     "/formularios/{form_id}/secoes",
     response_model=SectionResponse,
     status_code=status.HTTP_201_CREATED,
+    dependencies=_EDITAR,
 )
 async def criar_secao(
     form_id: uuid.UUID, payload: SectionCreateRequest, uow: UoWDep
@@ -226,7 +251,11 @@ async def criar_secao(
 # ela tem tres segmentos (`formularios/{id}/secoes/ordem`) e a irma tem dois,
 # entao nao ha como uma engolir a outra. A conferencia foi feita -- e o motivo
 # de estar escrita e o 422 de 26/08, que nasceu de nao fazer esta conta.
-@router.post("/formularios/{form_id}/secoes/ordem", response_model=list[SectionResponse])
+@router.post(
+    "/formularios/{form_id}/secoes/ordem",
+    response_model=list[SectionResponse],
+    dependencies=_EDITAR,
+)
 async def reordenar_secoes(
     form_id: uuid.UUID, payload: OrdemRequest, uow: UoWDep
 ) -> list[SectionResponse]:
@@ -242,7 +271,9 @@ async def reordenar_secoes(
     return resposta
 
 
-@router.patch("/secoes/{section_id}", response_model=SectionResponse)
+@router.patch(
+    "/secoes/{section_id}", response_model=SectionResponse, dependencies=_EDITAR
+)
 async def editar_secao(
     section_id: uuid.UUID, payload: SectionUpdateRequest, uow: UoWDep
 ) -> SectionResponse:
@@ -261,7 +292,9 @@ async def editar_secao(
     return resposta
 
 
-@router.post("/secoes/{section_id}/resumo", response_model=SectionResponse)
+@router.post(
+    "/secoes/{section_id}/resumo", response_model=SectionResponse, dependencies=_EDITAR
+)
 async def definir_resumo(
     section_id: uuid.UUID, payload: ResumoRequest, uow: UoWDep
 ) -> SectionResponse:
@@ -280,6 +313,7 @@ async def definir_resumo(
     "/secoes/{section_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     response_class=Response,
+    dependencies=_EDITAR,
 )
 async def apagar_secao(section_id: uuid.UUID, uow: UoWDep) -> Response:
     await SolicitationFormService(uow.session).apagar_secao(section_id=section_id)
@@ -291,6 +325,7 @@ async def apagar_secao(section_id: uuid.UUID, uow: UoWDep) -> Response:
     "/secoes/{section_id}/perguntas",
     response_model=QuestionResponse,
     status_code=status.HTTP_201_CREATED,
+    dependencies=_EDITAR,
 )
 async def criar_pergunta(
     section_id: uuid.UUID, payload: QuestionCreateRequest, uow: UoWDep
@@ -310,7 +345,9 @@ async def criar_pergunta(
 
 
 @router.post(
-    "/secoes/{section_id}/perguntas/ordem", response_model=list[QuestionResponse]
+    "/secoes/{section_id}/perguntas/ordem",
+    response_model=list[QuestionResponse],
+    dependencies=_EDITAR,
 )
 async def reordenar_perguntas(
     section_id: uuid.UUID, payload: OrdemRequest, uow: UoWDep
@@ -327,7 +364,9 @@ async def reordenar_perguntas(
     return resposta
 
 
-@router.patch("/perguntas/{question_id}", response_model=QuestionResponse)
+@router.patch(
+    "/perguntas/{question_id}", response_model=QuestionResponse, dependencies=_EDITAR
+)
 async def editar_pergunta(
     question_id: uuid.UUID, payload: QuestionUpdateRequest, uow: UoWDep
 ) -> QuestionResponse:
@@ -345,7 +384,11 @@ async def editar_pergunta(
     return resposta
 
 
-@router.post("/perguntas/{question_id}/condicional", response_model=QuestionResponse)
+@router.post(
+    "/perguntas/{question_id}/condicional",
+    response_model=QuestionResponse,
+    dependencies=_EDITAR,
+)
 async def definir_condicional(
     question_id: uuid.UUID, payload: CondicionalRequest, uow: UoWDep
 ) -> QuestionResponse:
@@ -362,6 +405,7 @@ async def definir_condicional(
     "/perguntas/{question_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     response_class=Response,
+    dependencies=_EDITAR,
 )
 async def apagar_pergunta(question_id: uuid.UUID, uow: UoWDep) -> Response:
     await SolicitationFormService(uow.session).apagar_pergunta(

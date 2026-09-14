@@ -222,7 +222,7 @@ def require_any_permission(*permissions: str) -> Callable[..., TenantContext]:
         @router.post(
             "/{user_id}/teams",
             dependencies=[Depends(require_any_permission(
-                "team.manage", "member.manage.subteam",
+                "org_role.grant", "org_role.revoke",
             ))],
         )
 

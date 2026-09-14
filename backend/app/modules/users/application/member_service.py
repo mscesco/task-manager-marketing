@@ -516,7 +516,7 @@ class MemberService:
         # ⚠️ Spec 049, fatia 0b: cadastrar e vincular NAQUELE time. Ate 14/09 o
         # MANAGER do Marketing cadastrava gente direto no Comercial -- e o
         # item 07 da matriz de 10/09 sai junto, porque e a mesma linha.
-        self._assert_gestao_ampla_em(team.id, acao="create_member")
+        self._assert_gestao_ampla_em("person.create", team.id, acao="create_member")
 
         # Spec 024/D3 -- porta 1 de 4 da invariante de papel por nivel.
         assert_role_permitido_no_nivel(
@@ -589,7 +589,9 @@ class MemberService:
         # ⚠️ A PROPRIA CONTA SAI ANTES da pergunta de alcance: forcar a si mesmo
         # a trocar a senha e permitido (docstring), e nao depende de arvore.
         if user_id != require_tenant().user_id:
-            await self._assert_reaches_person(user_id, acao="reset_password")
+            await self._assert_reaches_person(
+                "person.update", user_id, acao="reset_password"
+            )
 
         temporary_password = generate_temporary_password()
         user.password_hash = hash_password(temporary_password)
@@ -809,7 +811,7 @@ class MemberService:
         # A pergunta ampla dizia que um MANAGER de Marketing pode editar um
         # vinculo do TI -- e o PATCH concordava, porque os dois perguntavam a
         # mesma coisa errada. Os dois foram estreitados juntos.
-        if not self._tem_gestao_ampla(team_id):
+        if not self._tem_gestao_ampla("membership.update", team_id):
             return False
         # A matriz C2, sem levantar -- mesma condicao de
         # `_assert_actor_can_target`, lida como pergunta.
@@ -1008,7 +1010,9 @@ class MemberService:
         # (`pode_trocar_papel_do_vinculo`) foi estreitado NO MESMO COMMIT: se
         # so um dos dois mudar, tela e servidor passam a discordar -- cadeado
         # aberto que da 403, ou cadeado fechado escondendo acao permitida.
-        self._assert_gestao_ampla_em(team_id, acao="change_member_role")
+        self._assert_gestao_ampla_em(
+            "membership.update", team_id, acao="change_member_role"
+        )
 
         # C2 -- matriz de autorizacao (alvo atual + papel a atribuir).
         self._assert_actor_can_target(membership.role)
@@ -1201,11 +1205,15 @@ class MemberService:
 
         # Spec 028: mover entre subtimes NAO foi aberto ao supervisor -- a
         # operacao toca o subtime de ORIGEM, que nao e dele (viola D1).
-        self._assert_gestao_ampla(acao="move_member_subteam")
+        self._assert_gestao_ampla("membership.move", acao="move_member_subteam")
         # ⚠️ Spec 049, fatia 0b: e NOS DOIS times. Mover toca a origem (tira) e
         # o destino (poe); mandar em so um deles e mexer na arvore alheia.
-        self._assert_gestao_ampla_em(from_team_id, acao="move_member_subteam")
-        self._assert_gestao_ampla_em(to_team_id, acao="move_member_subteam")
+        self._assert_gestao_ampla_em(
+            "membership.move", from_team_id, acao="move_member_subteam"
+        )
+        self._assert_gestao_ampla_em(
+            "membership.move", to_team_id, acao="move_member_subteam"
+        )
 
         # ⚠️⚠️ O PAPEL NEM SEMPRE VIAJA INTEIRO -- Spec 045, fatia D, decisao da
         # Camila em 08/09. Mover um SUPERVISOR para a RAIZ o rebaixa a
@@ -1342,6 +1350,12 @@ class MemberService:
             EntityNotFoundError -- usuario inexistente no workspace.
             BusinessRuleError   -- deixaria a organizacao sem ADMIN (409).
         """
+        # ⚠️ Spec 049, fatia A: a rota aceita `org_role.grant` OU `.revoke`, e
+        # este servico NAO distingue os dois -- de proposito. Hoje os dois
+        # verbos estao nos mesmos papeis, e a primeira versao da fatia que os
+        # separava aqui mudou comportamento para quem chama o servico direto
+        # (5 testes caindo). A distincao nasce na fatia G, junto com o teto do
+        # GESTOR ("promove ate gestor"), que e onde ela passa a valer algo.
         user = await self._users.get_by_id(user_id)
         if user is None:
             raise EntityNotFoundError("User", identifier=user_id)
@@ -1428,7 +1442,7 @@ class MemberService:
             BusinessRuleError -- a propria conta, ou o ultimo ADMIN ativo (409).
         """
         # Spec 028/D4: supervisor tira do subtime, mas NUNCA desativa conta.
-        self._assert_gestao_ampla(acao="deactivate_member")
+        self._assert_gestao_ampla("person.deactivate", acao="deactivate_member")
 
         tenant = require_tenant()
         if user_id == tenant.user_id:
@@ -1441,7 +1455,9 @@ class MemberService:
         if user is None:
             raise EntityNotFoundError("User", identifier=user_id)
 
-        await self._assert_reaches_person(user_id, acao="deactivate_member")
+        await self._assert_reaches_person(
+            "person.deactivate", user_id, acao="deactivate_member"
+        )
 
         # ⚠️ DEPOIS do `get_by_id`, e nao antes: a trava so se aplica a quem E
         # ADMIN, e descobrir isso exige ter o usuario na mao. Antes dele, a
@@ -1473,8 +1489,17 @@ class MemberService:
     # Por isso os dois gates abaixo. Eles NAO substituem a matriz C2:
     # rodam junto com ela.
 
-    def _tem_gestao_ampla(self, team_id: uuid.UUID | None = None) -> bool:
-        """True para quem tem `team.manage` -- hoje ADMIN e MANAGER.
+    def _tem_gestao_ampla(
+        self, permission: str, team_id: uuid.UUID | None = None
+    ) -> bool:
+        """True para quem tem `permission` -- um verbo de GESTAO de membro.
+
+        ⚠️⚠️ Spec 049, fatia A: ATE AQUI O VERBO ERA FIXO, `team.manage`, e cada
+        chamador perguntava a mesma coisa para acoes diferentes (cadastrar,
+        mover, desativar, trocar cargo). Com o pacote cortado, o CHAMADOR diz o
+        verbo da acao dele. Os verbos que chegam aqui (`person.*`,
+        `membership.update`, `membership.move`) estao exatamente nos papeis
+        que tinham `team.manage` -- por isso nada muda de comportamento.
 
         Checa PERMISSAO, nao papel: se um papel novo ganhar `team.manage`
         no mapa, este gate acompanha sozinho.
@@ -1507,8 +1532,8 @@ class MemberService:
         # nesse caso. Ele so apareceu quando o `acting_as` passou a montar
         # permissoes COM ESCOPO -- oito testes caindo de uma vez.
         if team_id is None:
-            return tenant.has_permission("team.manage")
-        return tenant.has_permission_in("team.manage", team_id)
+            return tenant.has_permission(permission)
+        return tenant.has_permission_in(permission, team_id)
 
     def _subtimes_supervisionados(self) -> frozenset[uuid.UUID]:
         """team_ids onde o ator e SUPERVISOR.
@@ -1539,7 +1564,11 @@ class MemberService:
 
         Levanta AuthorizationError (403) na violacao.
         """
-        if self._tem_gestao_ampla(team_id):
+        # ⚠️ `membership.update`, e nao o verbo da acao (`create`/`delete`): a
+        # pergunta aqui e "e COMANDO, e nao supervisor?", e o supervisor TEM
+        # `membership.create`. So papel de comando troca cargo. Nome torto
+        # para a pergunta -- e o que a fatia B nomeia (`command_team_ids`).
+        if self._tem_gestao_ampla("membership.update", team_id):
             return
 
         # Daqui pra baixo o ator so pode ter chegado por
@@ -1556,7 +1585,7 @@ class MemberService:
             )
 
     def _assert_gestao_ampla_em(
-        self, team_id: uuid.UUID, *, acao: str
+        self, permission: str, team_id: uuid.UUID, *, acao: str
     ) -> None:
         """Gestao de membros NAQUELE time. Spec 047 (revisao de 09/09).
 
@@ -1569,14 +1598,16 @@ class MemberService:
         mesma frase dos dois casos faria a pessoa procurar a permissao que ela
         ja tem.
         """
-        if self._tem_gestao_ampla(team_id):
+        if self._tem_gestao_ampla(permission, team_id):
             return
         raise AuthorizationError(
             "Voce administra membros, mas nao nesta area.",
             details={"acao": acao, "team_id": str(team_id)},
         )
 
-    async def _assert_reaches_person(self, user_id: uuid.UUID, *, acao: str) -> None:
+    async def _assert_reaches_person(
+        self, permission: str, user_id: uuid.UUID, *, acao: str
+    ) -> None:
         """A CONTA de uma pessoa, e nao um vinculo dela. Spec 049, fatia 0b.
 
         Resetar senha e desativar valem para a pessoa INTEIRA, em todo time
@@ -1600,11 +1631,11 @@ class MemberService:
         """
         tenant = require_tenant()
         # `None` como time: so a parcela de ORGANIZACAO responde (`can_in`).
-        if tenant.has_permission_in("team.manage", None):
+        if tenant.has_permission_in(permission, None):
             return
         vinculos = await self._users.list_team_memberships(user_id=user_id)
         if vinculos and all(
-            tenant.has_permission_in("team.manage", v.team_id) for v in vinculos
+            tenant.has_permission_in(permission, v.team_id) for v in vinculos
         ):
             return
         raise AuthorizationError(
@@ -1613,7 +1644,7 @@ class MemberService:
             details={"acao": acao, "user_id": str(user_id)},
         )
 
-    def _assert_gestao_ampla(self, *, acao: str) -> None:
+    def _assert_gestao_ampla(self, permission: str, *, acao: str) -> None:
         """Barra o ator supervisor-only em operacoes que a 028 NAO abriu.
 
         Defesa em profundidade: hoje as rotas de trocar papel, mover de
@@ -1622,7 +1653,7 @@ class MemberService:
         para o dia em que alguem afrouxar uma dessas rotas sem ler a spec
         -- o service recusa mesmo assim.
         """
-        if self._tem_gestao_ampla():
+        if self._tem_gestao_ampla(permission):
             return
         raise AuthorizationError(
             "Esta operacao exige gestao ampla de membros.",

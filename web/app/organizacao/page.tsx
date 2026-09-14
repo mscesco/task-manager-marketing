@@ -123,8 +123,8 @@ export default function OrganizacaoPage() {
   // (Spec 046, §4.1) -- e as duas SAO DIFERENTES: um GESTOR cria area e nao
   // renomeia a organizacao. Ler as duas separadas e o que impede a tela de
   // tratar "administra" como uma coisa so.
-  const podeRenomear = me?.permissions.includes("workspace.manage") ?? false;
-  const podeCriarArea = me?.permissions.includes("area.create") ?? false;
+  const podeRenomear = me?.permissions.includes("organization.update") ?? false;
+  const podeCriarArea = me?.permissions.includes("team.create") ?? false;
 
   const cards = useMemo(() => areaCards(teams, members), [teams, members]);
   const gestores = useMemo(() => organizationManagers(members), [members]);

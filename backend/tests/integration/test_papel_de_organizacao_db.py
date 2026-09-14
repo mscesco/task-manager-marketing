@@ -74,11 +74,20 @@ def test_gestor_opera_mas_nao_desfaz_a_organizacao():
     gestor = permissions_for_org_role("GESTOR")
     admin = permissions_for_org_role("ADMIN")
 
-    assert "workspace.manage" not in gestor
-    assert "team.manage" in gestor
-    # A diferenca e EXATAMENTE uma permissao -- se alguem acrescentar outra
-    # sem decidir, este assert cai.
-    assert admin - gestor == frozenset({"workspace.manage"})
+    assert "organization.update" not in gestor
+    assert "subteam.create" in gestor
+    # A diferenca e EXATAMENTE o que era `workspace.manage` -- desde a Spec 049
+    # (fatia A), os cinco verbos em que ele foi cortado. Se alguem acrescentar
+    # outra sem decidir, este assert cai.
+    assert admin - gestor == frozenset(
+        {
+            "organization.update",
+            "org_role.grant",
+            "org_role.revoke",
+            "subteam.delete",
+            "team.move",
+        }
+    )
 
 
 def test_sem_papel_de_organizacao_nao_ganha_nada():

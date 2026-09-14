@@ -247,7 +247,7 @@ export default function TimesPage() {
         title="Times"
         count={times ? `${listaOrdenada.filter((t) => !ehRaiz(t)).length} subtimes` : null}
         actions={
-          raiz && permissoes.includes("team.manage") ? (
+          raiz && permissoes.includes("subteam.create") ? (
             <button className="btn btn-primary" onClick={abrirCriar}>
               <Plus size={16} /> Novo subtime
             </button>

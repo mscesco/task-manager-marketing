@@ -93,7 +93,10 @@ function Formularios() {
       .catch(() => {});
     currentUser()
       .then((me) =>
-        setPodeGerir(me.permissions.includes("solicitation_form.manage"))
+        // Spec 049, fatia A: era `solicitation_form.manage`. `podeGerir` desenha
+        // criar, publicar e apagar juntos; os verbos estao nos mesmos papeis,
+        // e `form.update` e o que diz "mexer no formulario".
+        setPodeGerir(me.permissions.includes("form.update"))
       )
       .catch(() => setPodeGerir(false));
   }, []);

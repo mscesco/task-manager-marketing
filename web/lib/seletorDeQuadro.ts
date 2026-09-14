@@ -59,8 +59,9 @@ export function alcanceDeQuadro(
   me: AtorMinimo | null | undefined,
 ): AlcanceDeQuadro {
   if (!me) return { tipo: "nenhum" };
-  if (me.permissions.includes("board.manage.root")) return { tipo: "amplo" };
-  if (me.permissions.includes("board.manage.subteam")) {
+  // Spec 049, fatia A: eram `board.manage.root` e `board.manage.subteam`.
+  if (me.permissions.includes("board.update.root")) return { tipo: "amplo" };
+  if (me.permissions.includes("board.update")) {
     return {
       tipo: "subtime",
       subtimes: me.teams

@@ -50,13 +50,13 @@ function time(id: string, parent: string | null = RAIZ): Team {
 
 describe("alcanceDe", () => {
   it("team.manage vira alcance amplo", () => {
-    const a = alcanceDe({ permissions: ["team.manage"], teams: [] });
+    const a = alcanceDe({ permissions: ["membership.update"], teams: [] });
     expect(a.tipo).toBe("amplo");
   });
 
   it("member.manage.subteam vira alcance de subtime, com os times supervisionados", () => {
     const a = alcanceDe({
-      permissions: ["member.manage.subteam"],
+      permissions: ["membership.create"],
       teams: [
         { team_id: SEO, role: "SUPERVISOR" },
         { team_id: RAIZ, role: "OPERATOR" },
@@ -67,7 +67,7 @@ describe("alcanceDe", () => {
 
   it("so entra no alcance o time onde o papel e SUPERVISOR", () => {
     const a = alcanceDe({
-      permissions: ["member.manage.subteam"],
+      permissions: ["membership.create"],
       teams: [
         { team_id: SEO, role: "SUPERVISOR" },
         { team_id: CRM, role: "OPERATOR" },
@@ -89,7 +89,7 @@ describe("alcanceDe", () => {
 
   it("quem tem as duas permissoes fica com a maior", () => {
     const a = alcanceDe({
-      permissions: ["member.manage.subteam", "team.manage"],
+      permissions: ["membership.create", "membership.update"],
       teams: [{ team_id: SEO, role: "SUPERVISOR" }],
     });
     expect(a.tipo).toBe("amplo");

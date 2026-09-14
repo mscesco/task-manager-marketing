@@ -90,7 +90,7 @@ function formulario(over: Partial<Formulario> = {}): Formulario {
 
 function montar(
   itens: Formulario[] = [formulario()],
-  permissoes: string[] = ["solicitation_form.manage"]
+  permissoes: string[] = ["form.update"]
 ) {
   vi.mocked(api.listarFormularios).mockResolvedValue(itens);
   // ⚠️ "Audiovisual" ANTES da raiz de propósito: se a tela pegar o primeiro da
@@ -132,7 +132,7 @@ describe("Formulários -- a lista", () => {
     // ⚠️ O backend barra por 403 de qualquer forma; esconder aqui evita
     // oferecer uma porta que não abre. Mesmo espírito dos gates de
     // Solicitações e Times na barra lateral.
-    montar([formulario()], ["solicitation.review"]);
+    montar([formulario()], ["solicitation.read"]);
     expect(await screen.findByText("Solicitação ao Marketing")).toBeTruthy();
     expect(screen.queryByText("+ Novo formulário")).toBeNull();
     expect(screen.queryByText("Despublicar")).toBeNull();

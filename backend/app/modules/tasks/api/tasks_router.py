@@ -9,8 +9,8 @@ Rotas:
     GET    /tasks/{id}              -- get
     PATCH  /tasks/{id}              -- update (task.update)
     POST   /tasks/{id}/move         -- move (task.update)
-    POST   /tasks/{id}/archive      -- archive (task.update)
-    POST   /tasks/{id}/unarchive    -- unarchive (task.update)
+    POST   /tasks/{id}/archive      -- archive (task.archive)
+    POST   /tasks/{id}/unarchive    -- unarchive (task.archive)
     DELETE /tasks/{id}              -- soft-delete CASCATEADO (task.delete)
 """
 
@@ -378,7 +378,7 @@ async def move_task(
 @router.post(
     "/{task_id}/archive",
     response_model=ArchiveTaskResponse,
-    dependencies=[Depends(require_permission("task.update"))],
+    dependencies=[Depends(require_permission("task.archive"))],
 )
 async def archive_task(task_id: uuid.UUID, uow: UoWDep) -> ArchiveTaskResponse:
     """Arquiva a task E a subarvore (05/08). Idempotente.
@@ -396,7 +396,7 @@ async def archive_task(task_id: uuid.UUID, uow: UoWDep) -> ArchiveTaskResponse:
 @router.post(
     "/{task_id}/unarchive",
     response_model=ArchiveTaskResponse,
-    dependencies=[Depends(require_permission("task.update"))],
+    dependencies=[Depends(require_permission("task.archive"))],
 )
 async def unarchive_task(
     task_id: uuid.UUID, uow: UoWDep
