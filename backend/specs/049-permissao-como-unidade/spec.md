@@ -209,6 +209,39 @@ Pedaços têm teste; o todo não. Uma mudança larga — muitos arquivos, risco
 baixo por arquivo — é exatamente o perfil em que algo para de funcionar num
 canto que ninguém olhou. Foi o que aconteceu em 14/09, por outro caminho.
 
+### 3.6. ⚠️⚠️ O que a fatia 0 achou na primeira rodada — e não estava nesta spec
+
+A tabela rodou com as minhas previsões lidas do código: **38 de 290 não
+bateram**. Três eram montagem do teste (regra de cargo da raiz; publicar
+formulário sem perguntas). As outras são **três defeitos contra decisões JÁ
+tomadas antes desta spec** — e nenhum aparece no §2, que eu escrevi lendo os
+mesmos arquivos. É o argumento da fatia 0 provado no primeiro dia.
+
+1. **O GESTOR de organização não enxerga nada.** `team_scope.is_admin` só
+   conta `org_role == "ADMIN"`; o GESTOR não tem vínculo, então a lente dele é
+   vazia. Pela rota: toda ação de tarefa e comentário devolve 404 (criar, 422
+   "time fora do seu alcance"), formulário 403, solicitação 404. Quadro, time,
+   pessoa e projeto passam — porque esses **não** olham a lente (item 3).
+   Contra: Spec 045, *"quem OPERA a organização (GESTOR)"*.
+2. **O MANAGER do Marketing mexe no Comercial.** Cria e renomeia subtime,
+   cadastra pessoa, reseta senha, desativa conta, cria e renomeia o quadro geral,
+   apaga quadro, cria coluna. A trava pergunta `has_permission` ("em algum
+   lugar"), e não `has_permission_in` ("neste time") — `board_service.py:1676`
+   escreve a premissa: *"ADMIN e MANAGER só existem na raiz e respondem pela
+   árvore inteira"*, verdade com **uma** raiz. Contra: a decisão dela de
+   09/09, *"gerente só mexe na própria árvore"* — aplicada até hoje só na
+   troca de cargo.
+   ⚠️ E o vínculo só está certo por acidente: a sabotagem B mostrou que o
+   MANAGER é barrado no Comercial **pela trava do supervisor**.
+3. **Projeto se edita fora da lente.** `ProjectService.update`, `archive` e
+   `soft_delete` buscam por id sem a lente (só o `get` a tem, desde 11/09), e
+   `create` só confere que o time existe no workspace. **O SUPERVISOR do SEO
+   editou um projeto do Comercial (200).** Contra: ADR 0007.
+
+A tabela registra o comportamento de hoje com a marca `defeito` — **não** é
+aval. Quem consertar muda as linhas no mesmo commit. Onde consertar é a
+pergunta 6 da §8.
+
 ---
 
 ## 4. As decisões
@@ -354,7 +387,11 @@ em dev passaria a depender do backend. Commitado, o front continua se bastando.
 
 Cada uma fica verde sozinha. A ordem das três primeiras não é negociável.
 
-**Fatia 0 — a matriz de hoje, em teste (backend).**
+**Fatia 0 — a matriz de hoje, em teste (backend).** ✅ **Entregue em 14/09.**
+58 ações × 5 papéis = **290 casos**, verdes. Duas marcas por linha: `diverge`
+(o alvo dela, que uma fatia desta spec muda) e `defeito` (decisão anterior que
+o código não cumpre — §3.6). Duas sabotagens executadas e registradas no
+cabeçalho do arquivo.
 Um arquivo de integração **por tabela**, pela ROTA:
 `tests/integration/test_matriz_de_permissoes_http_db.py`.
 
@@ -480,9 +517,25 @@ do mais contido ao que desfaz decisão escrita.
 4. **`task.archive`** — *"separa a permissão e entra agora também"*. Entra na
    fatia A, com `project.archive` pelo mesmo motivo (§4.2).
 
-### A que sobra
+### As que sobram
 
 5. **Supervisor rebaixa outro supervisor?** (§4.7) Com a recomendação (não), a
    troca de cargo do supervisor é, na prática, só promover operador. Com "sim",
    dois supervisores de um subtime podem rebaixar um ao outro. **Só trava a
    fatia H**; 0 a G andam sem ela.
+
+6. **Onde consertar os três defeitos do §3.6?** Eles não cabem nas fatias A a
+   C, que prometem não mudar comportamento — consertar ali quebraria a própria
+   regra da tabela.
+   - **(a) uma fatia nova da 049, logo depois da 0** — os três viram linhas da
+     tabela mudando de `defeito` para o certo, no mesmo PR. **Recomendação.**
+     O conserto do item 2 é, por construção, o `command_team_ids` (§4.3)
+     usado de verdade, e o do item 1 é a mesma função respondendo pelo GESTOR —
+     fazer antes das fatias A a C é o que deixa elas sem mudança de
+     comportamento.
+   - **(b) um PR de conserto separado, de `main`**, como o #51 da lente do
+     admin. Sai antes, mas depende do #54 (a 048 em `main`) e parte a spec em
+     dois lugares.
+
+   ⚠️ **Antes de decidir a urgência do item 1**, vale saber se há GESTOR em
+   produção — se houver, ele está hoje sem ver tarefa nenhuma.
