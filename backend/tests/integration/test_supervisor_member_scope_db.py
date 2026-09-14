@@ -30,7 +30,7 @@ from app.db.models.enums import UserTeamRole
 from app.modules.users.application.member_service import MemberService
 from app.shared.exceptions.base import AuthorizationError
 from tests.integration import factories as f
-from tests.integration.conftest import acting_as
+from tests.integration.conftest import acting_as, node
 
 pytestmark = pytest.mark.integration
 
@@ -63,6 +63,12 @@ async def _cenario(db):
     return {
         "ws": ws, "raiz": raiz, "seo": seo, "crm": crm,
         "sup_seo": sup_seo, "sup_crm": sup_crm, "op": op,
+        # ⚠️⚠️ A ARVORE E OBRIGATORIA NESTE ARQUIVO desde a Spec 049, fatia B.
+        # A trava D1 deixou de recalcular "onde sou supervisor" a mao e passou
+        # a perguntar a permissao COM ESCOPO -- e sem `team_tree` o `acting_as`
+        # monta um `frozenset`, com o qual `has_permission_in` responde a
+        # pergunta AMPLA. Os testes de D1 ficariam verdes com a trava errada.
+        "arvore": (node(raiz), node(seo, raiz), node(crm, raiz)),
     }
 
 
@@ -71,6 +77,7 @@ def _como_supervisor(c, *, subtime_key="seo", ator_key="sup_seo"):
         workspace_id=c["ws"],
         user_id=c[ator_key],
         memberships=(Membership(team_id=c[subtime_key], role="SUPERVISOR"),),
+        team_tree=c["arvore"],
     )
 
 
@@ -259,6 +266,7 @@ async def test_manager_mantem_alcance_amplo(db) -> None:
     with acting_as(
         workspace_id=c["ws"], user_id=mgr,
         memberships=(Membership(team_id=c["raiz"], role="MANAGER"),),
+        team_tree=c["arvore"],
     ):
         svc = MemberService(db)
         # subtime onde o MANAGER nao e supervisor de nada: passa.
@@ -286,14 +294,20 @@ async def test_papeis_divergentes_o_escopo_segue_o_vinculo(db) -> None:
     aqui agora que a trava saiu.
 
     A ADR 0039 listou "papel efetivo quando os papeis divergem" como pergunta
-    ABERTA. Nao e: a Spec 028 ja respondeu em codigo, vinculo a vinculo --
-    `_subtimes_supervisionados` filtra por `role == SUPERVISOR`. Este teste
-    existe para que a resposta CONTINUE sendo essa: a pessoa administra onde
-    e supervisora, e so ali, mesmo tendo permissao `member.manage.subteam`
-    pela uniao dos papeis (que ignora o time, de proposito).
+    ABERTA. Nao e: a Spec 028 ja respondeu em codigo, vinculo a vinculo. Este
+    teste existe para que a resposta CONTINUE sendo essa: a pessoa administra
+    onde e supervisora, e so ali, mesmo tendo `membership.create` pela uniao
+    dos papeis (que ignora o time, de proposito).
 
-    Sabotagem: trocar o filtro de `_subtimes_supervisionados` por "todos os
-    meus subtimes" deixa o segundo bloco verde, e este teste cai.
+    ⚠️ QUEM RESPONDE MUDOU na Spec 049, fatia B: era `_subtimes_supervisionados`
+    (filtro `role == SUPERVISOR`, recalculado a mao); hoje e
+    `permissions_for_actor`, que concede `membership.*` ao papel de execucao so
+    no time DAQUELE vinculo (`_OWN_TEAM_ONLY`). O OPERATOR do CRM nao tem
+    `membership.create` nenhum -- entao o CRM nao entra.
+
+    Sabotagem: tirar `membership.create` de `_OWN_TEAM_ONLY` NAO derruba este
+    teste (o OPERATOR nao tem o verbo em lugar nenhum); o que derruba e dar
+    `membership.create` ao OPERATOR no mapa -- o segundo bloco passa.
     """
     c = await _cenario(db)
 
@@ -306,6 +320,7 @@ async def test_papeis_divergentes_o_escopo_segue_o_vinculo(db) -> None:
     with acting_as(
         workspace_id=c["ws"], user_id=admin,
         memberships=(Membership(team_id=c["raiz"], role="ADMIN"),),
+        team_tree=c["arvore"],
     ):
         await MemberService(db).assign_to_team(
             user_id=c["sup_seo"], team_id=c["crm"], role=UserTeamRole.OPERATOR
@@ -318,7 +333,8 @@ async def test_papeis_divergentes_o_escopo_segue_o_vinculo(db) -> None:
 
     # No SEO, onde ela e SUPERVISORA: administra.
     with acting_as(
-        workspace_id=c["ws"], user_id=c["sup_seo"], memberships=divergente
+        workspace_id=c["ws"], user_id=c["sup_seo"], memberships=divergente,
+        team_tree=c["arvore"],
     ):
         ut = await MemberService(db).assign_to_team(
             user_id=c["op"], team_id=c["seo"], role=UserTeamRole.OPERATOR
@@ -328,7 +344,8 @@ async def test_papeis_divergentes_o_escopo_segue_o_vinculo(db) -> None:
     # No CRM, onde ela e apenas OPERADORA: 403 -- ainda que a uniao dos
     # papeis lhe de `member.manage.subteam`.
     with acting_as(
-        workspace_id=c["ws"], user_id=c["sup_seo"], memberships=divergente
+        workspace_id=c["ws"], user_id=c["sup_seo"], memberships=divergente,
+        team_tree=c["arvore"],
     ):
         with pytest.raises(AuthorizationError):
             await MemberService(db).assign_to_team(

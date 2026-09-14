@@ -48,7 +48,7 @@ from app.db.models.boards import Board, BoardColumn
 from app.db.unit_of_work import UnitOfWork
 from app.main import create_app
 from app.modules.auth.api.dependencies import get_tenant_context
-from app.modules.auth.domain.permissions import permissions_for_roles
+from app.modules.auth.domain.permissions import permissions_for_actor
 from app.modules.tasks.domain.board_defaults import COLUNAS_BASE
 from tests.integration import factories as f
 from tests.integration.conftest import node
@@ -80,12 +80,19 @@ async def _setup(db):
     arvore = (node(raiz), node(seo, raiz), node(crm, raiz))
 
     def _ctx(user_id, team_id, papel):
+        # ⚠️ PERMISSOES COM ESCOPO (Spec 049, fatia B). Este arquivo montava
+        # `permissions_for_roles` -- um `frozenset`, com o qual
+        # `has_permission_in` responde a pergunta AMPLA. O "supervisor em
+        # subtime alheio" so recebia 403 porque a trava recalculava o subtime a
+        # mao; quando ela passou a perguntar a permissao, o teste deixou de
+        # distinguir. Montado como `get_tenant_context` monta.
+        vinculos = (Membership(team_id=team_id, role=papel),)
         return TenantContext(
             workspace_id=ws,
             user_id=user_id,
             roles=frozenset({papel}),
-            permissions=permissions_for_roles(frozenset({papel})),
-            memberships=(Membership(team_id=team_id, role=papel),),
+            permissions=permissions_for_actor(memberships=vinculos, tree=arvore),
+            memberships=vinculos,
             team_tree=arvore,
         )
 

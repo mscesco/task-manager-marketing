@@ -64,6 +64,9 @@ SABOTAGENS DA FATIA 0 (14/09, sobre o codigo ANTES da 0b, restaurado por
        nao, e quem recusa e o codigo seguinte, escrito para outro papel. A
        fatia B (o escopo de comando com nome) precisa manter isso verde por um
        caminho que diga o que faz.
+       ✅ Feito na fatia B: `_assert_escopo_de_membro` pergunta primeiro
+       `has_permission_in(verbo, time)` para TODO papel. O MANAGER cai no
+       "onde", e nao mais na trava do supervisor.
 
 SABOTAGENS DA FATIA 0b (14/09, as tres na mesma rodada, sobre o codigo
 consertado; desfeitas por edicao inversa e conferidas por `git grep SABOTAGEM`):

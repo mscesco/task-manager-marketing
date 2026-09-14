@@ -67,28 +67,23 @@ class SolicitationFormService:
     # ------------------------------------------------------------------
     # Guardas
     # ------------------------------------------------------------------
-    def _assert_pode_gerir(self, team_id: uuid.UUID) -> None:
-        """O papel alcanca ESTE time?
+    def _assert_pode_gerir(self, verbo: str, team_id: uuid.UUID) -> None:
+        """O ator tem `verbo` NESTE time?
 
-        ⚠️ A PERMISSAO SOZINHA NAO BASTA, e e por isso que esta funcao existe.
-        `solicitation_form.manage` esta em ADMIN e MANAGER (decisao da Camila,
-        22/08) -- mas MANAGER e um papel de TIME. Sem esta conferencia, o
-        gestor de Design editaria a porta de entrada do Marketing, e "cada
-        equipe cria o seu" viraria "qualquer gestor edita o de qualquer um".
+        ⚠️ A PERMISSAO DA ROTA SOZINHA NAO BASTA, e e por isso que esta funcao
+        existe. `form.*` esta em ADMIN e MANAGER (decisao da Camila, 22/08) --
+        mas MANAGER e um papel de TIME. Sem esta conferencia, o gestor de
+        Design editaria a porta de entrada do Marketing.
 
-        ⚠️ `editable_team_ids` DEVOLVE `None` PARA ADMIN -- "sem filtro de
-        time". Tratar `None` como conjunto vazio travaria justamente o papel
-        que enxerga tudo.
+        ⚠️⚠️ Spec 049, fatia B: ATE AQUI O "ONDE" VINHA DA LENTE DE TRABALHO
+        (`editable_team_ids`), e nao da permissao. Davam a mesma resposta por
+        coincidencia -- MANAGER edita a arvore nas duas, e SUPERVISOR/OPERATOR
+        nem tem `form.*` --, mas eram DUAS regras para uma pergunta: a lente
+        de trabalho do supervisor inclui a RAIZ, e no dia em que um papel de
+        execucao ganhasse `form.update`, ele editaria o formulario do time
+        principal por esta linha. A permissao com escopo e a regra unica.
         """
-        tenant = require_tenant()
-        editaveis = team_scope.editable_team_ids(
-            tenant.memberships,
-            tenant.team_tree,
-            org_role=tenant.org_role,
-        )
-        if editaveis is None:
-            return
-        if team_id not in editaveis:
+        if not require_tenant().has_permission_in(verbo, team_id):
             raise AuthorizationError(
                 "Você não gerencia formulários deste time."
             )
@@ -186,11 +181,12 @@ class SolicitationFormService:
     async def _assert_time_existe(self, team_id: uuid.UUID) -> None:
         """O time existe NESTE workspace?
 
-        ⚠️ SO IMPORTA PARA ADMIN. Para os outros papeis, `_assert_pode_gerir`
-        ja recusa qualquer time fora de `editable_team_ids` -- e um time de
-        outro workspace nunca esta na arvore do tenant. Mas para ADMIN aquela
-        funcao RETORNA CEDO (`editaveis is None` = sem filtro), e nenhum
-        caminho conferia se o id existe.
+        ⚠️ ELA VEM ANTES DE `_assert_pode_gerir`, e isso e o contrato: um id
+        que nao existe (ou e de outro workspace) responde 404, e nao 403 --
+        o 403 confirmaria que ha algo ali. Ate a Spec 049 (fatia B) esta
+        funcao "so importava para ADMIN", porque a lente de trabalho deixava o
+        ADMIN passar sem filtro; com a permissao com escopo, ela e a primeira
+        pergunta para todo mundo.
 
         ⚠️ SEM ISTO O ERRO VEM DO BANCO: a FK composta
         `(team_id, workspace_id)` recusa, e sai **500** em vez de 404. Mesmo
@@ -251,8 +247,13 @@ class SolicitationFormService:
         criacao, ele apareceria na lista publica como uma porta que nao
         pergunta nada. Publicar e um gesto proprio, depois de montar.
         """
-        self._assert_pode_gerir(team_id)
+        # ⚠️ 404 ANTES DE 403, e a ordem virou obrigatoria na Spec 049 (fatia
+        # B). Com a lente de trabalho, um ADMIN passava pela permissao por
+        # "sem filtro" e chegava aqui; com a permissao COM ESCOPO, um time que
+        # nao existe nunca esta na arvore de ninguem, e a recusa vinha antes --
+        # 403 para um id inexistente. Existir e a primeira pergunta.
         await self._assert_time_existe(team_id)
+        self._assert_pode_gerir("form.create", team_id)
         limpo = self._assert_slug_valido(slug)
         await self._assert_slug_livre(limpo)
         tenant = require_tenant()
@@ -345,7 +346,7 @@ class SolicitationFormService:
         `team_id`.
         """
         form = await self._form_do_workspace(form_id)
-        self._assert_pode_gerir(form.team_id)
+        self._assert_pode_gerir("form.update", form.team_id)
         if slug is not None:
             limpo = self._assert_slug_valido(slug)
             await self._assert_slug_livre(limpo, exceto=form.id)
@@ -381,7 +382,7 @@ class SolicitationFormService:
         e ela vai achar que o site quebrou. Despublicar nao exige nada.
         """
         form = await self._form_do_workspace(form_id)
-        self._assert_pode_gerir(form.team_id)
+        self._assert_pode_gerir("form.publish", form.team_id)
         if publicado:
             total = (
                 await self._session.execute(
@@ -420,7 +421,7 @@ class SolicitationFormService:
         e `LEFT`. Apagar a porta nao apaga quem entrou por ela.
         """
         form = await self._form_do_workspace(form_id)
-        self._assert_pode_gerir(form.team_id)
+        self._assert_pode_gerir("form.delete", form.team_id)
 
         # ⚠️ AS SECOES E PERGUNTAS VAO JUNTO (ADR-0005), e ate a revisao de
         # 31/08 nao iam. Era inerte -- todo caminho que as alcancaria passa
@@ -478,7 +479,7 @@ class SolicitationFormService:
         sla_text: str | None = None,
     ) -> SolicitationSection:
         form = await self._form_do_workspace(form_id)
-        self._assert_pode_gerir(form.team_id)
+        self._assert_pode_gerir("form.update", form.team_id)
         limpo = self._assert_slug_valido(slug)
         await self._assert_slug_de_secao_livre(form_id=form.id, slug=limpo)
         tenant = require_tenant()
@@ -548,7 +549,7 @@ class SolicitationFormService:
         """
         secao = await self._secao_do_workspace(section_id)
         form = await self._form_do_workspace(secao.form_id)
-        self._assert_pode_gerir(form.team_id)
+        self._assert_pode_gerir("form.update", form.team_id)
 
         if title is not None:
             secao.title = title.strip()
@@ -573,7 +574,7 @@ class SolicitationFormService:
         """
         secao = await self._secao_do_workspace(section_id)
         form = await self._form_do_workspace(secao.form_id)
-        self._assert_pode_gerir(form.team_id)
+        self._assert_pode_gerir("form.update", form.team_id)
 
         if question_id is not None:
             pergunta = await self._pergunta_do_workspace(question_id)
@@ -601,7 +602,7 @@ class SolicitationFormService:
         """
         secao = await self._secao_do_workspace(section_id)
         form = await self._form_do_workspace(secao.form_id)
-        self._assert_pode_gerir(form.team_id)
+        self._assert_pode_gerir("form.update", form.team_id)
 
         perguntas = list(
             (
@@ -648,7 +649,7 @@ class SolicitationFormService:
     ) -> list[SolicitationSection]:
         """A nova ordem das secoes de um formulario."""
         form = await self._form_do_workspace(form_id)
-        self._assert_pode_gerir(form.team_id)
+        self._assert_pode_gerir("form.update", form.team_id)
 
         vivas = list(
             (
@@ -694,7 +695,7 @@ class SolicitationFormService:
         """
         secao = await self._secao_do_workspace(section_id)
         form = await self._form_do_workspace(secao.form_id)
-        self._assert_pode_gerir(form.team_id)
+        self._assert_pode_gerir("form.update", form.team_id)
 
         if not kind_valido(kind):
             raise ValidationError(
@@ -804,7 +805,7 @@ class SolicitationFormService:
     ) -> SolicitationSection:
         secao = await self._secao_do_workspace(pergunta.section_id)
         form = await self._form_do_workspace(secao.form_id)
-        self._assert_pode_gerir(form.team_id)
+        self._assert_pode_gerir("form.update", form.team_id)
         return secao
 
     async def editar_pergunta(
@@ -1020,7 +1021,7 @@ class SolicitationFormService:
         """
         secao = await self._secao_do_workspace(section_id)
         form = await self._form_do_workspace(secao.form_id)
-        self._assert_pode_gerir(form.team_id)
+        self._assert_pode_gerir("form.update", form.team_id)
 
         vivas = list(
             (

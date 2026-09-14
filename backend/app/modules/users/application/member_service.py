@@ -863,9 +863,11 @@ class MemberService:
         # matriz (Spec 016): so pode atribuir papel que o ator alcanca.
         self._assert_actor_can_assign(role)
 
-        # Spec 028: se o ator for SUPERVISOR, so OPERATOR e so no proprio
-        # subtime. No-op para ADMIN/MANAGER.
-        self._assert_escopo_supervisor(team_id=team_id, papel_alvo=role)
+        # Spec 028 + Spec 049 (fatia B): onde (o verbo neste time) e ate que
+        # papel (quem nao troca cargo aqui so vincula OPERATOR).
+        self._assert_escopo_de_membro(
+            "membership.create", team_id=team_id, papel_alvo=role
+        )
 
         # Spec 024/D3 -- porta 2 de 4.
         assert_role_permitido_no_nivel(role, is_root=team.parent_team_id is None)
@@ -1103,10 +1105,10 @@ class MemberService:
             )
         self._assert_actor_can_target(membership.role)
 
-        # Spec 028: se o ator for SUPERVISOR, so OPERATOR e so no proprio
-        # subtime. No-op para ADMIN/MANAGER.
-        self._assert_escopo_supervisor(
-            team_id=team_id, papel_alvo=membership.role
+        # Spec 028 + Spec 049 (fatia B): onde e ate que papel -- ver
+        # `_assert_escopo_de_membro`.
+        self._assert_escopo_de_membro(
+            "membership.delete", team_id=team_id, papel_alvo=membership.role
         )
 
         # Nao pode remover o ULTIMO vinculo: deixaria o membro orfao (sem
@@ -1535,53 +1537,48 @@ class MemberService:
             return tenant.has_permission(permission)
         return tenant.has_permission_in(permission, team_id)
 
-    def _subtimes_supervisionados(self) -> frozenset[uuid.UUID]:
-        """team_ids onde o ator e SUPERVISOR.
-
-        Sai do TenantContext (`memberships`), populado por requisicao em
-        `get_tenant_context`. Sem ida ao banco.
-        """
-        return frozenset(
-            m.team_id
-            for m in require_tenant().memberships
-            if m.role == UserTeamRole.SUPERVISOR.value
-        )
-
-    def _assert_escopo_supervisor(
-        self, *, team_id: uuid.UUID, papel_alvo: UserTeamRole
+    def _assert_escopo_de_membro(
+        self, verbo: str, *, team_id: uuid.UUID, papel_alvo: UserTeamRole
     ) -> None:
-        """Spec 028: SUPERVISOR so mexe em OPERATOR do PROPRIO subtime.
+        """Vincular e desvincular: ONDE, e ATE QUE PAPEL. Spec 028; Spec 049, B.
 
-        No-op para ADMIN/MANAGER -- eles seguem governados pela matriz C2.
+        As duas travas, e agora valem para TODO papel, e nao so o supervisor:
 
-        As duas travas, nesta ordem:
-            D2 -- o alvo tem de ser OPERATOR. Supervisor nao promove nem
-                  mexe em par (criar outro SUPERVISOR e trabalho do MANAGER).
-            D1 -- o time tem de ser um subtime ONDE O ATOR E SUPERVISOR.
-                  Sem esta linha, qualquer supervisor alcanca o operator de
-                  qualquer subtime. E a trava que a spec chama de
-                  inegociavel; o teste de sabotagem existe por causa dela.
+            D1 -- ONDE. O ator tem `verbo` NESTE time? E a permissao com
+                  escopo que responde (`has_permission_in`): para SUPERVISOR,
+                  `membership.*` e `_OWN_TEAM_ONLY` -- so o subtime do vinculo;
+                  para MANAGER, a arvore; para papel de organizacao, tudo.
+            D2 -- TETO. Quem NAO troca cargo neste time (`membership.update`)
+                  so vincula e desvincula OPERATOR. Supervisor nao cria par --
+                  e um limite sobre o VALOR (spec §4.5), e nao uma permissao.
+
+        ⚠️⚠️ ATE A FATIA B DA SPEC 049 ESTA FUNCAO SE CHAMAVA
+        `_assert_escopo_supervisor` E TINHA TRES DEFEITOS DE FORMA, nenhum de
+        comportamento:
+          - o ONDE do supervisor era recalculado a mao dos vinculos
+            (`_subtimes_supervisionados`), numa COPIA identica a do
+            `BoardService` -- a mesma resposta que `_OWN_TEAM_ONLY` ja dava;
+          - ela abria com "e comando? entao nao e comigo", e o MANAGER do
+            Marketing so era barrado no Comercial porque CAIA na trava do
+            supervisor (sabotagem B da fatia 0);
+          - o teto (D2) vinha ANTES do onde (D1), e a mensagem do 403 dizia
+            "so OPERATOR" a quem estava no time errado.
 
         Levanta AuthorizationError (403) na violacao.
         """
-        # ⚠️ `membership.update`, e nao o verbo da acao (`create`/`delete`): a
-        # pergunta aqui e "e COMANDO, e nao supervisor?", e o supervisor TEM
-        # `membership.create`. So papel de comando troca cargo. Nome torto
-        # para a pergunta -- e o que a fatia B nomeia (`command_team_ids`).
-        if self._tem_gestao_ampla("membership.update", team_id):
-            return
-
-        # Daqui pra baixo o ator so pode ter chegado por
-        # "member.manage.subteam" -- ou seja, e SUPERVISOR.
-        if papel_alvo is not UserTeamRole.OPERATOR:
+        tenant = require_tenant()
+        if not tenant.has_permission_in(verbo, team_id):
+            raise AuthorizationError(
+                "Voce nao administra membros deste time.",
+                details={"team_id": str(team_id)},
+            )
+        if (
+            not tenant.has_permission_in("membership.update", team_id)
+            and papel_alvo is not UserTeamRole.OPERATOR
+        ):
             raise AuthorizationError(
                 "Supervisor so administra membros OPERATOR.",
                 details={"role": papel_alvo.value},
-            )
-        if team_id not in self._subtimes_supervisionados():
-            raise AuthorizationError(
-                "Supervisor so administra membros do proprio subtime.",
-                details={"team_id": str(team_id)},
             )
 
     def _assert_gestao_ampla_em(

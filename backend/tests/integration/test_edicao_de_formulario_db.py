@@ -451,8 +451,13 @@ async def test_endereco_de_secao_APAGADA_pode_ser_reaproveitado(db) -> None:
 # ⚠️ O time tem de existir (achado do review da fatia A)
 # ==========================================================
 async def test_ADMIN_com_time_inexistente_leva_404_e_nao_500(db) -> None:
-    """⚠️ `_assert_pode_gerir` RETORNA CEDO PARA ADMIN (`editable_team_ids`
-    devolve `None` = sem filtro), então nenhum caminho conferia se o id existe.
+    """⚠️ Nascido quando `_assert_pode_gerir` retornava cedo para ADMIN, e
+    nenhum caminho conferia se o id existe.
+
+    ⚠️ E ELE PEGOU A FATIA B DA SPEC 049: com a permissão com escopo, a
+    recusa por "time fora da sua árvore" vinha ANTES da existência, e o id
+    inexistente respondia 403. A ordem em `criar_formulario` virou existência
+    primeiro.
 
     Sem esta guarda o INSERT ia com um `team_id` inválido, a FK composta
     `(team_id, workspace_id)` recusava, e saía **500** em vez de 404 -- mesmo

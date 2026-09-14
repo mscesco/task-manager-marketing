@@ -34,7 +34,7 @@ from app.core.tenant import Membership, TenantContext, set_tenant
 from app.db.unit_of_work import UnitOfWork
 from app.main import create_app
 from app.modules.auth.api.dependencies import get_tenant_context
-from app.modules.auth.domain.permissions import permissions_for_roles
+from app.modules.auth.domain.permissions import permissions_for_actor
 from tests.integration import factories as f
 from tests.integration.conftest import node
 
@@ -57,13 +57,19 @@ async def _setup(db):
         db, workspace_id=ws, user_id=op, team_id=raiz, role="OPERATOR"
     )
 
+    # ⚠️ PERMISSOES COM ESCOPO (Spec 049, fatia B). Com `permissions_for_roles`
+    # (um `frozenset`), `test_http_trava_d1_outro_subtime` so dava 403 porque a
+    # trava recalculava "onde sou supervisor" a mao. Ela passou a perguntar a
+    # permissao -- e o contexto do teste tem de ser o da requisicao de verdade.
+    arvore = (node(raiz), node(seo, raiz), node(crm, raiz))
+    vinculos = (Membership(team_id=seo, role="SUPERVISOR"),)
     ctx = TenantContext(
         workspace_id=ws,
         user_id=sup,
         roles=frozenset({"SUPERVISOR"}),
-        permissions=permissions_for_roles(frozenset({"SUPERVISOR"})),
-        memberships=(Membership(team_id=seo, role="SUPERVISOR"),),
-        team_tree=(node(raiz), node(seo, raiz), node(crm, raiz)),
+        permissions=permissions_for_actor(memberships=vinculos, tree=arvore),
+        memberships=vinculos,
+        team_tree=arvore,
     )
     return {"ws": ws, "raiz": raiz, "seo": seo, "crm": crm,
             "sup": sup, "op": op, "ctx": ctx}
@@ -221,14 +227,15 @@ async def test_http_manager_segue_amplo(db) -> None:
         team_id=c["raiz"], role="MANAGER",
     )
     await db.commit()
+    arvore = (node(c["raiz"]), node(c["seo"], c["raiz"]), node(c["crm"], c["raiz"]))
+    vinculos = (Membership(team_id=c["raiz"], role="MANAGER"),)
     ctx = TenantContext(
         workspace_id=c["ws"],
         user_id=mgr,
         roles=frozenset({"MANAGER"}),
-        permissions=permissions_for_roles(frozenset({"MANAGER"})),
-        memberships=(Membership(team_id=c["raiz"], role="MANAGER"),),
-        team_tree=(node(c["raiz"]), node(c["seo"], c["raiz"]),
-                   node(c["crm"], c["raiz"])),
+        permissions=permissions_for_actor(memberships=vinculos, tree=arvore),
+        memberships=vinculos,
+        team_tree=arvore,
     )
     async with _client(db, ctx) as cli:
         r = await cli.post(f"/api/v1/members/{c['op']}/deactivate")

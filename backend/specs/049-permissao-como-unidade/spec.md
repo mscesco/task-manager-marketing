@@ -370,6 +370,37 @@ Os quatro pontos do §2.3 passam a perguntar a ela. **Só depois disso** os
 sufixos `.subteam` podem sair dos nomes — e o `.root` é revisto então, não
 antes (§3.3).
 
+#### 4.3-bis. ⚠️⚠️ Revisto na fatia B (14/09): a função já existia, e com outro nome
+
+**`command_team_ids` NÃO foi criada.** Esta seção foi escrita lendo os quatro
+pontos do §2.3 e não o que a Spec 045 (fatia C) já tinha construído embaixo
+deles: `permissions_for_actor` concede **cada verbo com o seu escopo** — o
+papel de comando na árvore, o de execução no time e na raiz, e os verbos de
+`_OWN_TEAM_ONLY` só no time do vínculo. "Onde eu mando" **é**
+`has_permission_in(verbo, time)`, por verbo, que é mais fino que um conjunto
+por papel. Uma `command_team_ids` ao lado seria **uma segunda fonte para a
+mesma resposta** — a doença que esta spec existe para curar.
+
+O que estava espalhado era outra coisa, e foi isso que a fatia B recolheu:
+
+| onde | o que fazia | virou |
+|---|---|---|
+| `MemberService._subtimes_supervisionados` | recalculava "onde sou supervisor" dos vínculos | **saiu** |
+| `BoardService._subtimes_supervisionados` | cópia idêntica ("deliberada") | **saiu** |
+| `_assert_escopo_supervisor` | "é comando? então não é comigo" + teto antes do onde | `_assert_escopo_de_membro`: **onde** (o verbo neste time) para todo papel, depois **teto** (quem não troca cargo só mexe em OPERATOR) |
+| `BoardService._assert_pode_gerir`, subtime | três perguntas (verbo, atalho de comando, subtime à mão) | **uma**: o verbo neste subtime |
+| `FormService._assert_pode_gerir` | a lente de TRABALHO (`editable_team_ids`) | o verbo neste time |
+
+⚠️⚠️ **O obstáculo real para tirar o `.root` não é um nome que falta — é o
+contexto sem escopo.** Com `frozenset` (jobs e testes antigos),
+`has_permission_in` responde a pergunta ampla, de propósito. A fatia A tropeçou
+nisso (coluna do quadro geral) e a fatia B também: **quatro testes HTTP e o
+arquivo de escopo do supervisor só distinguiam "subtime alheio" porque a
+trava recalculava o subtime à mão.** Eles passaram a montar o contexto como a
+requisição monta. Enquanto houver chamador de serviço com `frozenset`, o
+`.root` é o que diz não sem depender do escopo — **ele fica**. Tirar o fail-open
+é o pré-requisito, e é trabalho próprio (§6).
+
 ### 4.4. O GESTOR deixa de ser subtração
 
 `GESTOR = ADMIN - {…}` vira **lista explícita**. Com os verbos cortados, a
@@ -566,9 +597,15 @@ substitui os testes de serviço, e as duas notas do §4.2-bis dizem o porquê.
 Sabotagem: `DELETE /teams/{id}` cobrando `subteam.update` → a matriz acusa
 GESTOR e MANAGER apagando subtime.
 
-**Fatia B — o escopo de comando ganha nome.**
-`command_team_ids` (§4.3), e os quatro pontos do §2.3 passam a usá-la.
-Comportamento igual; a tabela da fatia 0 continua intacta.
+**Fatia B — o escopo de comando ganha nome.** ✅ **Entregue em 14/09**, por
+um caminho diferente do escrito: **a permissão com escopo é o nome** (§4.3-bis).
+As duas cópias de `_subtimes_supervisionados` saíram; as travas de membro,
+quadro e formulário perguntam `has_permission_in(verbo, time)`. O MANAGER do
+Marketing é barrado no vínculo do Comercial **pelo onde**, e não mais por cair
+na trava do supervisor (a sabotagem B da fatia 0 fica respondida).
+A tabela da fatia 0 não mudou uma linha. Mudaram cinco testes antigos que
+perguntavam escopo com contexto sem escopo, e a ordem de `criar_formulario`
+(existência antes da permissão: 404 antes de 403).
 
 **Fatia C — o GESTOR vira lista.**
 §4.4. Ainda sem mudar comportamento: a lista reproduz a subtração de hoje.
@@ -617,6 +654,10 @@ do mais contido ao que desfaz decisão escrita.
 - **Reações no comentário** (item 10). Componente novo, spec própria.
 - **A tarefa da solicitação órfã** com várias raízes (Spec 048 §8) — é regra de
   produto, não de permissão.
+- **Tirar o fail-open de `has_permission_in`** (contexto `frozenset` respondendo
+  a pergunta ampla). É o que impede o `.root` de sair (§4.3-bis), e mexe em
+  todo teste antigo que monta contexto sem escopo — spec própria, com a
+  contagem na mão antes.
 
 ---
 

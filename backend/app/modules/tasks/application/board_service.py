@@ -1678,11 +1678,6 @@ class BoardService:
             return f"{verbo}.root"
         return "board.update.root"
 
-    @staticmethod
-    def _verbo_de_comando(verbo: str) -> str:
-        """O verbo `board.X.root` da MESMA acao -- a saida de gestao ampla."""
-        return f"board.{verbo.split('.')[1]}.root"
-
     def _assert_pode_gerir(self, time: Team, verbo: str) -> None:
         """Quem pode criar/renomear quadro DESTE time.
 
@@ -1692,16 +1687,20 @@ class BoardService:
         Os verbos estao exatamente nos papeis que tinham o pacote, entao nada
         muda; o que muda e que cada chamador diz o que esta fazendo.
 
-        ⚠️ DUAS PERGUNTAS, NESTA ORDEM, e sao perguntas diferentes:
+        ⚠️ UMA PERGUNTA POR NIVEL (Spec 049, fatia B):
 
-          1. o time e RAIZ ou SUBTIME? decide QUAL permissao vale;
-          2. tendo so a de subtime, o ator e supervisor DAQUELE subtime?
+          - RAIZ: tem `board.X.root` (ou `board.update.root`, para coluna)
+            neste time? O sufixo e o que separa o supervisor do Quadro geral.
+          - SUBTIME: tem `board.X`/`column.X` NESTE subtime?
 
-        ⚠️ O MAPA DE PERMISSAO NAO RESPONDE A 2. Ele diz "o que", nao "onde" --
-        exatamente como a `member.manage.subteam` da Spec 028, cujo escopo mora
-        no `MemberService._assert_escopo_supervisor`. Sem a pergunta 2,
-        QUALQUER supervisor cria e renomeia quadro de QUALQUER subtime, e o
-        mapa continua parecendo certo.
+        ⚠️ O "ONDE" MORA NA PERMISSAO COM ESCOPO, e nao aqui. Ate a fatia B
+        esta funcao dizia que "o mapa de permissao nao responde onde" e fazia a
+        conta a mao. Desde a Spec 045 (fatia C) ele responde:
+        `permissions_for_actor` concede `board.*` ao supervisor SO no subtime
+        do vinculo (`_OWN_TEAM_ONLY`).
+        ⚠️ E ISSO SO VALE COM CONTEXTO COM ESCOPO. Com `frozenset` (legado),
+        `has_permission_in` responde a pergunta ampla -- teste que pergunta
+        ESCOPO tem de montar a arvore (`acting_as(team_tree=...)`).
 
         ⚠️ CHECA PERMISSAO, NAO PAPEL. Se um papel novo ganhar
         `board.manage.root` no mapa, esta trava acompanha sozinha -- mesmo
@@ -1728,44 +1727,23 @@ class BoardService:
                 )
             return
 
+        # ⚠️⚠️ NO SUBTIME, UMA PERGUNTA SO -- desde a Spec 049, fatia B. O verbo
+        # `board.*`/`column.*` e `_OWN_TEAM_ONLY` para papel de execucao, entao
+        # "tem `board.update` NESTE subtime?" ja responde as duas coisas que
+        # esta funcao perguntava em separado: o papel pode, e e o subtime DELE.
+        # Para MANAGER a permissao cobre a arvore; para papel de organizacao,
+        # tudo.
+        #
+        # Ate a fatia B havia mais duas linhas aqui: uma saida "gestao ampla"
+        # por `board.manage.root`, e depois `_subtimes_supervisionados`, que
+        # recalculava a mao, dos vinculos, a MESMA resposta -- numa copia
+        # identica a do `MemberService`, que a docstring chamava de
+        # "deliberada". As tres perguntas davam o resultado de uma.
         if not tenant.has_permission_in(verbo, time.id):
             raise AuthorizationError(
                 "Sem permissao para administrar quadros deste subtime.",
                 details={"team_id": str(time.id)},
             )
-
-        # ⚠️ Gestao ampla (`board.manage.root`) dispensa a pergunta de escopo:
-        # ADMIN e MANAGER so existem na raiz (Spec 024) e respondem pela arvore
-        # inteira. Sem esta saida, ADMIN e MANAGER seriam barrados no quadro de
-        # QUALQUER subtime, por nao serem SUPERVISOR de nenhum.
-        #
-        # ⚠️ MEDIDO: tirar estas duas linhas derruba TRES testes, e nao um --
-        # `test_admin_cria_quadro_em_subtime_de_que_nao_e_supervisor`,
-        # `test_manager_cria_nos_dois_niveis` e
-        # `test_renomear_usa_a_mesma_trava_de_escopo`. O terceiro cai pelo
-        # SETUP, nao pela afirmacao dele.
-        if tenant.has_permission_in(self._verbo_de_comando(verbo), time.id):
-            return
-
-        if time.id not in self._subtimes_supervisionados():
-            raise AuthorizationError(
-                "Supervisor so administra quadros do proprio subtime.",
-                details={"team_id": str(time.id)},
-            )
-
-    @staticmethod
-    def _subtimes_supervisionados() -> frozenset[uuid.UUID]:
-        """team_ids onde o ator e SUPERVISOR, direto do TenantContext.
-
-        Sem ida ao banco -- `memberships` ja vem populado por requisicao. Copia
-        deliberada do `MemberService`: as duas specs concedem escopo de
-        subtime, e amarrar uma na outra faria mexer em membro mexer em quadro.
-        """
-        return frozenset(
-            m.team_id
-            for m in require_tenant().memberships
-            if m.role == "SUPERVISOR"
-        )
 
     @staticmethod
     def _nome_valido(nome: str) -> str:
