@@ -183,22 +183,26 @@ decidido **no backend**, pela mesma função que o PATCH usa. É a §3.1, e é a
 fatia de backend desta spec.
 ⚠️ Vai primeiro: sem ela o painel não tem como desenhar o cadeado sem repetir a
 Spec 034.
+✅ **ENTREGUE** — `37209b8`.
 
 **Fatia B — `/organizacao` (front).**
 A tela nova: cabeçalho com nome e gestores, grade de áreas, card "Pessoas sem
 área", busca. Renomear a organização ganha tela pela primeira vez.
 ⚠️ **Rota nova e estática** — conferir `useSearchParams` antes do `next build`
 (`AGENTS.md` §6); o `npm run dev` não reclama.
+✅ **ENTREGUE** — `6ae0699`.
 
 **Fatia C — `/times/[id]` (front).**
 A tabela e o seletor do lápis. ⚠️ **Depende da Spec 044 fatia 3**: enquanto
 `_assert_one_subteam` existir, marcar o segundo subtime devolve 422, e
 `timesParaAdicionar` (`permissoesMembros.ts:148`) ainda espelha a trava. **Soltar
 os dois na mesma fatia**, ou a tela oferece um destino que o backend recusa.
+✅ **ENTREGUE** — `13fc0e8`.
 
 **Fatia D — o painel do membro (front).**
 Consome a fatia A. As cápsulas de cargo, o cadeado, a consequência em texto e o
 `alocada · autoridade de X`.
+✅ **ENTREGUE** — `e522178`.
 
 **Fatia E — a tela de membros de hoje.** ✅ **DECIDIDA em 09/09.**
 
@@ -229,6 +233,21 @@ linhas e a de time, de 529 para 190.
 ⚠️ **O que NÃO saiu, e é o que importa preservar:** cadastrar membro, resetar
 senha e o bloco de senha provisória revelada uma vez (ADR 0021). São capacidades
 que só existem nesta tela.
+
+> ⚠️⚠️ **ESTADO EM 14/09 — AS CINCO FATIAS ESTÃO NO CÓDIGO; ESTE DOCUMENTO NÃO
+> DIZIA.** Só a E estava marcada. Em cima delas vieram uns 25 consertos, quase
+> todos achados pela Camila no smoke dos blocos 1 e 2 (contorno, carregamento,
+> barra lateral, trava do último admin, contagem de inativos).
+>
+> **O que falta para fechar a spec não é código:**
+>
+> - **o smoke dos blocos 3 a 5** — adiado por ela até a 048 destravar o quadro
+>   geral, que abria o time errado. Em andamento desde 14/09. É o que a §7 diz
+>   que os portões não pegam;
+> - **o PR.** A branch `spec-047/telas-de-organizacao-e-time` acumulou também a
+>   remoção do projeto pessoal e quase toda a Spec 048. A regra é um PR por
+>   spec, então a 047 sai num PR próprio, cortado no último commit dela, e a 048
+>   vem num segundo, empilhado — ela depende desta.
 
 ---
 
