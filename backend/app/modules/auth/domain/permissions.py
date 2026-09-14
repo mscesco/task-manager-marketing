@@ -280,21 +280,64 @@ _ROLE_PERMISSIONS: dict[UserTeamRole, frozenset[str]] = {
 # ---------------------------------------------------------------------
 _ORG_ROLE_PERMISSIONS: dict[OrgRole, frozenset[str]] = {
     OrgRole.ADMIN: _ROLE_PERMISSIONS[UserTeamRole.ADMIN],
-    # GESTOR opera a organizacao, mas nao a desfaz: tudo do ADMIN MENOS o que
-    # era `workspace.manage` -- desde a Spec 049 (fatia A), os cinco verbos em
-    # que ele foi cortado.
-    # ⚠️ Ninguem e GESTOR hoje -- o papel nasce para a tela da Spec 047 poder
-    # atribui-lo.
-    # ⚠️⚠️ AINDA E SUBTRACAO (§2.1): todo verbo novo escrito no ADMIN chega ao
-    # GESTOR sem ninguem decidir. A fatia C a troca por lista explicita.
-    OrgRole.GESTOR: _ROLE_PERMISSIONS[UserTeamRole.ADMIN]
-    - {
-        "organization.update",
-        "org_role.grant",
-        "org_role.revoke",
-        "subteam.delete",
-        "team.move",
-    },
+    # GESTOR opera a organizacao, mas nao a desfaz.
+    #
+    # ⚠️⚠️ LISTA EXPLICITA, E NAO "ADMIN MENOS ALGO" -- Spec 049, fatia C. Ate
+    # aqui esta linha era uma SUBTRACAO, e todo verbo novo escrito no ADMIN
+    # chegava ao GESTOR sem ninguem decidir -- foi assim que ele herdou todos
+    # os deletes (item 01 da matriz de 10/09). Agora um verbo novo no ADMIN
+    # PARA no ADMIN, e `test_papel_de_organizacao_db::
+    # test_gestor_opera_mas_nao_desfaz_a_organizacao` cai ate alguem escrever
+    # aqui se ele vale para o GESTOR.
+    #
+    # ⚠️ ESTA LISTA REPRODUZ A SUBTRACAO DE HOJE, verbo a verbo (35 = 40 - 5):
+    # nao tira os deletes ainda. Quem os tira e a fatia D, mudando esta lista e
+    # as linhas da matriz no mesmo commit.
+    OrgRole.GESTOR: frozenset(
+        {
+            # organizacao: fora `organization.update`, `org_role.*`,
+            # `subteam.delete`, `team.move` -- o que era `workspace.manage`.
+            "team.create",
+            # times e pessoas
+            "subteam.create",
+            "subteam.update",
+            "person.create",
+            "person.update",
+            "person.deactivate",
+            "membership.create",
+            "membership.update",
+            "membership.move",
+            "membership.delete",
+            # solicitacoes e formularios
+            "solicitation.read",
+            "solicitation.review",
+            "form.read",
+            "form.create",
+            "form.update",
+            "form.publish",
+            "form.delete",
+            # projetos e tarefas
+            "project.create",
+            "project.update",
+            "project.archive",
+            "project.delete",
+            "task.create",
+            "task.update",
+            "task.archive",
+            "task.delete",
+            "task.assign",
+            # quadros e colunas
+            "board.create.root",
+            "board.update.root",
+            "board.delete.root",
+            "board.create",
+            "board.update",
+            "board.delete",
+            "column.create",
+            "column.update",
+            "column.delete",
+        }
+    ),
 }
 
 

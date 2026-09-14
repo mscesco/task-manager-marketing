@@ -77,8 +77,14 @@ def test_gestor_opera_mas_nao_desfaz_a_organizacao():
     assert "organization.update" not in gestor
     assert "subteam.create" in gestor
     # A diferenca e EXATAMENTE o que era `workspace.manage` -- desde a Spec 049
-    # (fatia A), os cinco verbos em que ele foi cortado. Se alguem acrescentar
-    # outra sem decidir, este assert cai.
+    # (fatia A), os cinco verbos em que ele foi cortado.
+    #
+    # ⚠️⚠️ E DESDE A FATIA C ESTE ASSERT E O GUARDIAO DO GESTOR. A lista dele
+    # deixou de ser "ADMIN menos cinco" e passou a ser escrita: um verbo novo no
+    # ADMIN nao chega mais ao GESTOR sozinho -- ele entra nesta diferenca, e
+    # este assert cai. Quem o fizer passar tem de DECIDIR: escrever o verbo na
+    # lista do GESTOR, ou acrescenta-lo aqui como mais uma coisa que so o ADMIN
+    # faz.
     assert admin - gestor == frozenset(
         {
             "organization.update",

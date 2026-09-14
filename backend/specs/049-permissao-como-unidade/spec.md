@@ -607,8 +607,12 @@ A tabela da fatia 0 não mudou uma linha. Mudaram cinco testes antigos que
 perguntavam escopo com contexto sem escopo, e a ordem de `criar_formulario`
 (existência antes da permissão: 404 antes de 403).
 
-**Fatia C — o GESTOR vira lista.**
-§4.4. Ainda sem mudar comportamento: a lista reproduz a subtração de hoje.
+**Fatia C — o GESTOR vira lista.** ✅ **Entregue em 14/09.**
+§4.4. Ainda sem mudar comportamento: a lista reproduz a subtração de hoje —
+**35 verbos escritos**, os 40 do ADMIN menos os cinco que eram
+`workspace.manage`. O guardião é o assert que já existia
+(`admin - gestor == {cinco}`): com a subtração ele era tautologia; com a lista,
+um verbo novo no ADMIN entra nessa diferença e o teste cai até alguém decidir.
 
 **Fatias D a H — as mudanças do alvo (decisão dela, 14/09: todas entram).**
 Cada uma é um conjunto de linhas da tabela passando de `# DIVERGE DO ALVO` para
@@ -675,8 +679,11 @@ do mais contido ao que desfaz decisão escrita.
   mensagem do commit tem de dizer que foi decisão.
 - ⚠️ **`permissions_for_roles` ignora papel desconhecido em silêncio**, de
   propósito. Um papel escrito errado no mapa não levanta: nasce sem permissão.
-- ⚠️ **A subtração do GESTOR** (§2.1) enquanto a fatia C não chegar: um verbo
-  novo de delete escrito no ADMIN chega ao GESTOR.
+- ~~**A subtração do GESTOR** (§2.1) enquanto a fatia C não chegar: um verbo
+  novo de delete escrito no ADMIN chega ao GESTOR.~~ ✅ Fechado na fatia C —
+  e o assert que o fecha **só pega verbo novo no ADMIN**. Verbo novo escrito
+  direto na lista do GESTOR (e não no ADMIN) passa calado; a revisão do diff
+  do mapa continua sendo a rede.
 - **Olhar só a rota** (§2.3) diz que quadro, coluna e vínculo estão abertos.
 - **Teste com `frozenset` no contexto** passa com escopo errado (§5, fatia 0).
 - **A projeção `/auth/me` é com perda** ("o que", nunca "onde"). A tela nunca
