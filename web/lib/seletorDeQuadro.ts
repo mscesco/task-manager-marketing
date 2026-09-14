@@ -191,6 +191,11 @@ export function opcoesDoSeletor(
   quadros: readonly Quadro[],
   teamId: string,
   podeGerir: boolean,
+  /**
+   * ⚠️ SEPARADO DE `podeGerir` desde a Spec 049, fatia D: o GESTOR renomeia
+   * quadro e NÃO apaga. Quem calcula é `podeApagarQuadros`, na tela.
+   */
+  podeApagar: boolean,
 ): OpcaoDeQuadro[] {
   const avulsos = quadros
     .filter((q) => q.team_id === teamId && !q.is_default)
@@ -213,9 +218,39 @@ export function opcoesDoSeletor(
       id: q.id,
       nome: q.name,
       podeRenomear: podeGerir,
-      podeApagar: podeGerir,
+      podeApagar,
     })),
   ];
+}
+
+/**
+ * Pode apagar quadro AVULSO neste nivel? (Spec 049, fatia D)
+ *
+ * ⚠️ UM VERBO POR NIVEL, igual ao backend: quadro de time RAIZ cobra
+ * `board.delete.root`, de subtime cobra `board.delete`. O GESTOR tem os dois
+ * de editar e nenhum dos dois de apagar -- sem esta funcao, o botao aparecia
+ * para ele junto com o de renomear.
+ *
+ * ⚠️ NAO SUBSTITUI `podeGerirQuadrosDe`: esta pergunta "o que", aquela
+ * "onde". A tela combina as duas (`&&`), porque ter `board.delete` nao da ao
+ * supervisor o quadro de outro subtime.
+ */
+export function podeApagarQuadros(
+  permissoes: readonly Permission[],
+  ehRaiz: boolean,
+): boolean {
+  return permissoes.includes(ehRaiz ? "board.delete.root" : "board.delete");
+}
+
+/**
+ * Pode apagar COLUNA? (Spec 049, fatia D)
+ *
+ * ⚠️ O GESTOR EDITA COLUNA E NAO APAGA. Sem esta pergunta o modo de edicao
+ * oferecia o "x" junto do renomear, e o lote inteiro voltava 403 no Concluir.
+ * Como em `podeApagarQuadros`, a tela combina com `podeGerirQuadrosDe`.
+ */
+export function podeApagarColunas(permissoes: readonly Permission[]): boolean {
+  return permissoes.includes("column.delete");
 }
 
 /**
@@ -240,6 +275,8 @@ export function opcoesDoSeletorDaRaiz(
   quadros: readonly Quadro[],
   rootTeamId: string,
   podeGerir: boolean,
+  /** Ver `opcoesDoSeletor` -- separado de `podeGerir` desde a fatia D. */
+  podeApagar: boolean,
 ): OpcaoDeQuadro[] {
   const daRaiz = quadros.filter((q) => q.team_id === rootTeamId);
   const geral = daRaiz.find((q) => q.is_default);
@@ -266,7 +303,7 @@ export function opcoesDoSeletorDaRaiz(
       id: q.id,
       nome: q.name,
       podeRenomear: podeGerir,
-      podeApagar: podeGerir,
+      podeApagar,
     })),
   ];
 }

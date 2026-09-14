@@ -620,10 +620,26 @@ o esperado novo, **no mesmo commit** que o código. O diff da tabela é a revis�
 Depois de C, as cinco são independentes entre si; a ordem abaixo é a de risco,
 do mais contido ao que desfaz decisão escrita.
 
-- **D — item 01: o GESTOR não apaga.** Saem da lista do GESTOR (fatia C) os
-  verbos `*.delete`, **exceto** `task.delete` e `person.deactivate` — as duas
-  exceções da regra de 10/09. Só pacote; nenhuma rota nova. (O "só admin mexe
+- **D — item 01: o GESTOR não apaga.** ✅ **Entregue em 14/09.** Saem da lista
+  do GESTOR (fatia C) os verbos de apagar, **exceto** `task.delete` e
+  `person.deactivate` — as duas exceções da regra de 10/09. (O "só admin mexe
   em admin" é teto, e mora na fatia G.)
+  ⚠️ **Quais saíram foi lido no Mapa de 10/09, e não deduzido do nome:** os
+  seis componentes com `·` na coluna D do GESTOR — vínculo, coluna, quadro
+  secundário da raiz, quadro de subtime, projeto, formulário. Seções e perguntas
+  de formulário ficam (são U). **`membership.delete` não estava marcado como
+  divergência** na tabela da fatia 0: tirar do time parecia "mover".
+  ⚠️⚠️ **"Só pacote; nenhuma rota nova" não se confirmou**, e em três lugares:
+  - **coluna do quadro da RAIZ** cobrava só `board.update.root` (fatia A), e o
+    GESTOR, que o tem, apagaria coluna ali sem `column.delete` — agora cobra os
+    dois; a tabela ganhou o quadro secundário do Marketing para ver isto;
+  - **o lote de colunas** cobrava os três verbos sempre, e o GESTOR perderia até
+    RENOMEAR coluna (a tela manda toda edição pelo lote) — agora cobra
+    `column.update`, e `create`/`delete` só se o pedido cria ou apaga;
+  - **a tela**: quatro botões apareciam ao GESTOR e dariam 403 — apagar quadro
+    (`podeApagar` saía de `podeGerir`), o "x" de coluna, "Excluir" formulário e
+    "Tirar do time" (alcance amplo respondia sim). Cada um passou a perguntar o
+    próprio verbo, por prop **obrigatória** ou parâmetro de lib.
 - **E — item 07: o MANAGER cadastra pessoa só no próprio time.** ✅ **Absorvida
   pela fatia 0b**: era a mesma linha do defeito "MANAGER na outra raiz"
   (`create_member` com `_assert_gestao_ampla_em`). Não sobra nada para E além

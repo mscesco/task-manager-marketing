@@ -119,7 +119,15 @@ export function podeRemoverDoTime(
   a: Alcance,
   teamId: string,
   papelAtual: MemberRole,
+  /**
+   * ⚠️ OBRIGATÓRIO desde a Spec 049, fatia D. O ALCANCE diz "onde"; tirar do
+   * time tem verbo próprio (`membership.delete`), e o GESTOR -- que tem alcance
+   * amplo, porque troca cargo -- NÃO o tem: o Mapa de 10/09 põe `·` na coluna D
+   * do vínculo para ele. Sem este parâmetro, "amplo" respondia sim.
+   */
+  permissoes: readonly Permission[],
 ): boolean {
+  if (!permissoes.includes("membership.delete")) return false;
   if (a.tipo === "amplo") return true;
   if (a.tipo === "nenhum") return false;
   return papelAtual === "OPERATOR" && a.subtimes.includes(teamId);

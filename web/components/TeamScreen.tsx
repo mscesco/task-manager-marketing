@@ -467,6 +467,7 @@ export default function TeamScreen({ teamId }: { teamId: string }) {
             isAdmin={isAdmin}
             canManage={podeMexerEmTimes}
             scope={scope}
+            permissoes={me?.permissions ?? []}
             onClose={() => setGavetaDeTime(null)}
             onChanged={async (texto) => {
               setGavetaDeTime(null);
@@ -492,6 +493,7 @@ export default function TeamScreen({ teamId }: { teamId: string }) {
             member={gavetaDePessoa}
             teams={teams}
             scope={scope}
+            permissoes={me?.permissions ?? []}
             isAdmin={isAdmin}
             canManageOrg={
               me?.permissions.includes("org_role.grant") ?? false

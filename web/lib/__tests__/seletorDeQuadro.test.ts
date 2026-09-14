@@ -30,6 +30,7 @@ import {
   opcaoSelecionada,
   opcoesDoSeletor,
   opcoesDoSeletorDaRaiz,
+  podeApagarQuadros,
   podeGerirQuadrosDe,
   quadroPedidoNaUrl,
   resolverQuadroPedido,
@@ -103,6 +104,36 @@ describe("alcanceDeQuadro", () => {
   });
 });
 
+describe("podeApagar (Spec 049, fatia D)", () => {
+  it("⚠️ renomear e apagar vêm de verbos diferentes: o GESTOR renomeia e não apaga", () => {
+    const avulsos = opcoesDoSeletor(QUADROS, SEO, true, false).filter(
+      (o) => o.id !== null,
+    );
+    expect(avulsos.length).toBeGreaterThan(0);
+    for (const o of avulsos) {
+      expect(o.podeRenomear).toBe(true);
+      expect(o.podeApagar).toBe(false);
+    }
+  });
+
+  it("na raiz também: o geral nunca se apaga, e o avulso segue o verbo", () => {
+    const [geral, ...avulsos] = opcoesDoSeletorDaRaiz(QUADROS, RAIZ, true, false);
+    expect(geral.podeApagar).toBe(false);
+    for (const o of avulsos) expect(o.podeApagar).toBe(false);
+  });
+
+  it("podeApagarQuadros: um verbo por nível, igual ao backend", () => {
+    expect(podeApagarQuadros(["board.delete.root"], true)).toBe(true);
+    expect(podeApagarQuadros(["board.delete.root"], false)).toBe(false);
+    expect(podeApagarQuadros(["board.delete"], false)).toBe(true);
+    expect(podeApagarQuadros(["board.delete"], true)).toBe(false);
+    // o GESTOR: edita nos dois níveis, apaga em nenhum
+    expect(
+      podeApagarQuadros(["board.update.root", "board.update"], true),
+    ).toBe(false);
+  });
+});
+
 describe("podeGerirQuadrosDe", () => {
   it("amplo pode em qualquer time", () => {
     expect(podeGerirQuadrosDe({ tipo: "amplo" }, CRM)).toBe(true);
@@ -125,7 +156,7 @@ describe("podeGerirQuadrosDe", () => {
 
 describe("opcoesDoSeletor", () => {
   it("a LENTE vem sempre primeiro, e com a descricao fixa", () => {
-    const [primeira] = opcoesDoSeletor(QUADROS, SEO, true);
+    const [primeira] = opcoesDoSeletor(QUADROS, SEO, true, true);
     expect(primeira.id).toBeNull();
     expect(primeira.descricao).toBe(DESCRICAO_DA_LENTE);
   });
@@ -133,7 +164,7 @@ describe("opcoesDoSeletor", () => {
   it("⚠️ a lente NUNCA tem afordancia de renomear -- nem para quem pode tudo", () => {
     // ADR 0034 item 2: ausente, e nao desabilitada. Nao ha o que renomear --
     // a lente nao existe como registro no banco.
-    const [lente] = opcoesDoSeletor(QUADROS, SEO, true);
+    const [lente] = opcoesDoSeletor(QUADROS, SEO, true, true);
     expect(lente.podeRenomear).toBe(false);
   });
 
@@ -142,14 +173,14 @@ describe("opcoesDoSeletor", () => {
     // isso inclui os quadros de todos os subtimes. Sem o filtro, o seletor do
     // SEO listaria "Automações" (do CRM), e criar tarefa ali a mandaria para
     // um quadro que ninguem do SEO ve.
-    const nomes = opcoesDoSeletor(QUADROS, SEO, true).map((o) => o.nome);
+    const nomes = opcoesDoSeletor(QUADROS, SEO, true, true).map((o) => o.nome);
     expect(nomes).not.toContain("Automações");
   });
 
   it("⚠️ o quadro PADRAO nao entra -- a lente ja o representa", () => {
     // Lista-lo poria a mesma coisa duas vezes no menu, uma delas com botao de
     // renomear que a outra nao tem.
-    const nomes = opcoesDoSeletor(QUADROS, RAIZ, true).map((o) => o.nome);
+    const nomes = opcoesDoSeletor(QUADROS, RAIZ, true, true).map((o) => o.nome);
     expect(nomes).not.toContain("Quadro geral");
     expect(nomes).toEqual(["Lente do time"]);
   });
@@ -157,7 +188,7 @@ describe("opcoesDoSeletor", () => {
   it("⚠️ ordena por NOME, e nao pela ordem que a API devolveu", () => {
     // `GET /boards` nao promete ordem. Sem isto o menu se reordena sozinho
     // entre dois carregamentos, e o item que a pessoa ia clicar muda de lugar.
-    const nomes = opcoesDoSeletor(QUADROS, SEO, true).map((o) => o.nome);
+    const nomes = opcoesDoSeletor(QUADROS, SEO, true, true).map((o) => o.nome);
     expect(nomes).toEqual([
       "Lente do time",
       "Construção de links",
@@ -168,18 +199,18 @@ describe("opcoesDoSeletor", () => {
   it("sem permissao, os avulsos aparecem mas sem renomear", () => {
     // ⚠️ VER continua valendo: quem alcanca o quadro pela lente alcanca o
     // conteudo dele. O que some e a afordancia de EDITAR.
-    const opcoes = opcoesDoSeletor(QUADROS, SEO, false);
+    const opcoes = opcoesDoSeletor(QUADROS, SEO, false, false);
     expect(opcoes).toHaveLength(3);
     expect(opcoes.every((o) => !o.podeRenomear)).toBe(true);
   });
 
   it("time sem quadro avulso mostra so a lente", () => {
-    expect(opcoesDoSeletor([], SEO, true)).toHaveLength(1);
+    expect(opcoesDoSeletor([], SEO, true, true)).toHaveLength(1);
   });
 });
 
 describe("opcaoSelecionada", () => {
-  const OPCOES = opcoesDoSeletor(QUADROS, SEO, true);
+  const OPCOES = opcoesDoSeletor(QUADROS, SEO, true, true);
 
   it("acha pelo id", () => {
     expect(opcaoSelecionada(OPCOES, "b-pauta").nome).toBe("Pauta editorial");
@@ -314,7 +345,7 @@ describe("opcoesDoSeletor -- afordância de apagar", () => {
   it("⚠️ a LENTE nunca oferece apagar, nem para quem gere", () => {
     // Não há registro para apagar, e botão que não funciona é botão em que
     // alguém clica (ADR 0034 item 2).
-    const opcoes = opcoesDoSeletor(QUADROS, SEO, true);
+    const opcoes = opcoesDoSeletor(QUADROS, SEO, true, true);
     expect(opcoes[0].id).toBeNull();
     expect(opcoes[0].podeApagar).toBe(false);
   });
@@ -322,12 +353,12 @@ describe("opcoesDoSeletor -- afordância de apagar", () => {
   it("⚠️ o QUADRO GERAL não aparece na lista, então não há o que apagar", () => {
     // Ele é onde nasce toda tarefa de topo; o backend recusa com
     // `quadro_padrao_nao_apagavel`, e a tela nem chega a oferecer.
-    const ids = opcoesDoSeletor(QUADROS, SEO, true).map((o) => o.id);
+    const ids = opcoesDoSeletor(QUADROS, SEO, true, true).map((o) => o.id);
     expect(ids).not.toContain("b-geral");
   });
 
   it("sem permissão, quadro avulso não oferece apagar", () => {
-    const opcoes = opcoesDoSeletor(QUADROS, SEO, false);
+    const opcoes = opcoesDoSeletor(QUADROS, SEO, false, false);
     expect(opcoes.every((o) => !o.podeApagar)).toBe(true);
   });
 });
@@ -432,7 +463,7 @@ describe("opcoesDoSeletorDaRaiz -- a tela do Quadro geral (fatia 5c)", () => {
     // LENTE, e o geral fica FORA (`!q.is_default`) porque ela já o representa.
     // Na raiz não há lente: o que a lente espelha É o geral, e na tela dele a
     // coisa é ela mesma.
-    const o = opcoesDoSeletorDaRaiz(QUADROS, RAIZ, true);
+    const o = opcoesDoSeletorDaRaiz(QUADROS, RAIZ, true, true);
     expect(o[0].nome).toBe("Quadro geral");
     // ⚠️ E com id de VERDADE -- `null` é a lente, e reaproveitá-lo aqui faria
     // a tela do geral se comportar como espelho de si mesma.
@@ -442,32 +473,32 @@ describe("opcoesDoSeletorDaRaiz -- a tela do Quadro geral (fatia 5c)", () => {
   it("⚠️ o Quadro geral NUNCA pode ser apagado, nem para quem gere", () => {
     // `quadro_padrao_nao_apagavel` no backend; ADR 0034 item 2 na tela --
     // ausente, e não desabilitado.
-    expect(opcoesDoSeletorDaRaiz(QUADROS, RAIZ, true)[0].podeApagar).toBe(false);
+    expect(opcoesDoSeletorDaRaiz(QUADROS, RAIZ, true, true)[0].podeApagar).toBe(false);
   });
 
   it("mas PODE ser renomeado -- e até a 5c isso não tinha tela", () => {
     // `board_service.py` diz "O QUADRO GERAL PODE SER RENOMEADO", e o seletor
     // do subtime nunca o listou.
-    expect(opcoesDoSeletorDaRaiz(QUADROS, RAIZ, true)[0].podeRenomear).toBe(true);
-    expect(opcoesDoSeletorDaRaiz(QUADROS, RAIZ, false)[0].podeRenomear).toBe(false);
+    expect(opcoesDoSeletorDaRaiz(QUADROS, RAIZ, true, true)[0].podeRenomear).toBe(true);
+    expect(opcoesDoSeletorDaRaiz(QUADROS, RAIZ, false, false)[0].podeRenomear).toBe(false);
   });
 
   it("os avulsos DA RAIZ entram depois, em ordem de nome", () => {
-    const o = opcoesDoSeletorDaRaiz(QUADROS, RAIZ, true);
+    const o = opcoesDoSeletorDaRaiz(QUADROS, RAIZ, true, true);
     expect(o.map((x) => x.nome)).toEqual(["Quadro geral", "Campanhas 2027"]);
   });
 
   it("⚠️ quadro de OUTRO time não entra", () => {
     // Sem este filtro, a tela do geral listaria o quadro de um subtime, e
     // criar tarefa ali a mandaria para um lugar que ninguém da raiz vê.
-    const nomes = opcoesDoSeletorDaRaiz(QUADROS, RAIZ, true).map((x) => x.nome);
+    const nomes = opcoesDoSeletorDaRaiz(QUADROS, RAIZ, true, true).map((x) => x.nome);
     expect(nomes).not.toContain("Pauta");
   });
 
   it("sem o geral na lista, não inventa uma opção", () => {
     // ⚠️ Acontece se o `listBoards` falhar e cair em `[]`. Melhor uma lista
     // curta que uma opção que não existe.
-    const o = opcoesDoSeletorDaRaiz([QUADROS[1]], RAIZ, true);
+    const o = opcoesDoSeletorDaRaiz([QUADROS[1]], RAIZ, true, true);
     expect(o.map((x) => x.nome)).toEqual(["Campanhas 2027"]);
   });
 });

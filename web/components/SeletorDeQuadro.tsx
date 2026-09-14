@@ -49,6 +49,7 @@ export default function SeletorDeQuadro({
   quadros,
   selecionado,
   podeGerir,
+  podeApagar,
   onSelecionar,
   onMudou,
   // ⚠️ SEM `= false` (14/09): o tipo já é obrigatório desde 11/09, e o padrão que
@@ -60,6 +61,11 @@ export default function SeletorDeQuadro({
   /** `null` = a lente. Ver `OpcaoDeQuadro.id`. */
   selecionado: string | null;
   podeGerir: boolean;
+  /**
+   * ⚠️ OBRIGATÓRIA, e separada de `podeGerir` (Spec 049, fatia D): o GESTOR
+   * renomeia e não apaga. Ver `podeApagarQuadros`.
+   */
+  podeApagar: boolean;
   onSelecionar: (id: string | null) => void;
   /**
    * Chamado depois de criar, para a tela recarregar a lista.
@@ -91,8 +97,8 @@ export default function SeletorDeQuadro({
   daRaiz: boolean;
 }) {
   const opcoes = daRaiz
-    ? opcoesDoSeletorDaRaiz(quadros, teamId, podeGerir)
-    : opcoesDoSeletor(quadros, teamId, podeGerir);
+    ? opcoesDoSeletorDaRaiz(quadros, teamId, podeGerir, podeApagar)
+    : opcoesDoSeletor(quadros, teamId, podeGerir, podeApagar);
   const atual = opcaoSelecionada(opcoes, selecionado);
 
   const [aberto, setAberto] = useState(false);

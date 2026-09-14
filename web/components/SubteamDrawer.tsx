@@ -40,7 +40,12 @@ import {
   type Team,
   type TeamMemberComCadeado,
 } from "@/lib/api";
-import { papeisAtribuiveis, type Alcance } from "@/lib/permissoesMembros";
+import {
+  papeisAtribuiveis,
+  podeRemoverDoTime,
+  type Alcance,
+} from "@/lib/permissoesMembros";
+import type { Permission } from "@/lib/permissions.generated";
 import { confirmacaoValida, descreveConteudo } from "@/lib/gestaoTimes";
 import { ROLE_LABEL } from "@/components/MembersTable";
 import { directMembers, subteamCandidates } from "@/lib/teamScreen";
@@ -51,6 +56,7 @@ export default function SubteamDrawer({
   isAdmin,
   canManage,
   scope,
+  permissoes,
   onClose,
   onChanged,
   onRefresh,
@@ -62,6 +68,12 @@ export default function SubteamDrawer({
   isAdmin: boolean;
   canManage: boolean;
   scope: Alcance;
+  /**
+   * ⚠️ OBRIGATÓRIA desde a Spec 049, fatia D: "Tirar" pergunta o verbo
+   * (`membership.delete`), e o alcance amplo sozinho não basta -- o GESTOR o
+   * tem e não tira ninguém de time. Ver `podeRemoverDoTime`.
+   */
+  permissoes: readonly Permission[];
   onClose: () => void;
   /** Mudou algo que FECHA a gaveta (renomear, excluir). */
   onChanged: (aviso: string) => Promise<void>;
@@ -203,7 +215,8 @@ export default function SubteamDrawer({
                       isAdmin={isAdmin}
                       onRefresh={onRefresh}
                     />
-                    {canManage && (
+                    {canManage &&
+                      podeRemoverDoTime(scope, team.id, role, permissoes) && (
                       <RemoveFromTeam
                         member={member}
                         team={team}

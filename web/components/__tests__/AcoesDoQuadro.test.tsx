@@ -63,6 +63,7 @@ function montar(over: Partial<Parameters<typeof AcoesDoQuadro>[0]> = {}) {
     quadros: QUADROS,
     selecionado: "b-pauta" as string | null,
     podeGerir: true,
+    podeApagar: true,
     onSelecionar: vi.fn(),
     onMudou: vi.fn(),
     // ⚠️ `false` porque o `SEO` é SUBTIME. Obrigatória desde 14/09; quem testa a
@@ -90,6 +91,7 @@ describe("AcoesDoQuadro -- o que ele oferece", () => {
         quadros={QUADROS}
         selecionado={null}
         podeGerir
+        podeApagar
         onSelecionar={vi.fn()}
         onMudou={vi.fn()}
         daRaiz={false}
@@ -99,8 +101,18 @@ describe("AcoesDoQuadro -- o que ele oferece", () => {
   });
 
   it("⚠️ sem permissão não desenha NADA", () => {
-    montar({ podeGerir: false });
+    // ⚠️ AS DUAS EM `false`: desde a Spec 049 (fatia D) apagar é prop própria, e
+    // a tela a calcula como `podeGerir && verbo` -- não existe `podeApagar`
+    // sem `podeGerir`.
+    montar({ podeGerir: false, podeApagar: false });
     expect(screen.queryByLabelText(/^Renomear /)).toBeNull();
+    expect(screen.queryByLabelText(/^Apagar /)).toBeNull();
+  });
+
+  it("⚠️ GESTOR (Spec 049, fatia D): renomeia, e NÃO oferece apagar", () => {
+    // Com uma prop só, o "Apagar" vinha junto do "Renomear" e dava 403.
+    montar({ podeGerir: true, podeApagar: false });
+    expect(screen.getByLabelText("Renomear Pauta editorial")).toBeTruthy();
     expect(screen.queryByLabelText(/^Apagar /)).toBeNull();
   });
 });

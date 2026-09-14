@@ -88,6 +88,15 @@ consertado; desfeitas por edicao inversa e conferidas por `git grep SABOTAGEM`):
 
     Resultado: 29 failed, 281 passed.
 
+FATIA D (14/09) -- A PRIMEIRA QUE MUDOU LINHAS DE PROPOSITO. Item 01: "o
+admin apaga, o gestor nao", com as duas excecoes dela (apagar tarefa e
+desativar pessoa). As linhas `diverge="item 01"` passaram a NEGADO para o
+GESTOR, e duas coisas que a tabela nao tinha entraram junto:
+    - `membership.delete` do GESTOR mudou SEM estar marcada: o Mapa de 10/09
+      poe `·` na coluna D do vinculo, e a tabela da fatia 0 nao tinha lido;
+    - o quadro SECUNDARIO da raiz (apagar quadro, e renomear/apagar coluna):
+      sem ele, coluna de quadro da raiz passava pelo GESTOR sem `column.delete`.
+
 O QUE ESTA TABELA NAO COBRE (de proposito, e anotado para quem estender):
     - editar comentario (autoria, nao permissao -- spec §4.5) e seguidores
       (o servico decide "eu" contra "terceiro");
@@ -225,6 +234,20 @@ async def _mundo(db) -> dict:
     quadro_vendas = await f.make_board(
         db, workspace_id=ws, team_id=vendas, name="De Vendas", colunas=COLUNAS_BASE
     )
+    # ⚠️ Fatia D: um quadro SECUNDARIO na raiz do Marketing -- nem o geral (que
+    # nao se apaga e cujas colunas tem ponte), nem de subtime. Sem ele a tabela
+    # nao tinha como ver `board.delete.root`, nem coluna de quadro da raiz.
+    secundario_mkt = await f.make_board(
+        db, workspace_id=ws, team_id=mkt, name="Secundario", colunas=COLUNAS_BASE
+    )
+    cancelado_secundario = (
+        await db.execute(
+            select(BoardColumn.id).where(
+                BoardColumn.board_id == secundario_mkt.id,
+                BoardColumn.legacy_status == TaskStatus.CANCELLED,
+            )
+        )
+    ).scalar_one()
     cancelado_seo = (
         await db.execute(
             select(BoardColumn.id).where(
@@ -296,6 +319,8 @@ async def _mundo(db) -> dict:
                 "geral_mkt": geral_mkt, "geral_com": geral_com,
                 "quadro_seo": quadro_seo.id, "quadro_vendas": quadro_vendas.id,
                 "cancelado_seo": cancelado_seo,
+                "secundario_mkt": secundario_mkt.id,
+                "cancelado_secundario": cancelado_secundario,
                 "tarefa_mkt": tarefa_mkt.id, "tarefa_com": tarefa_com.id,
                 "projeto_mkt": projeto_mkt, "projeto_com": projeto_com,
                 "form_mkt": form_mkt.id, "form_com": form_com.id,
@@ -440,12 +465,15 @@ MATRIZ: tuple[Linha, ...] = (
     Linha("membership.update", "OPERATOR->SUPERVISOR em Vendas", "patch",
           f"{T}/members/{{alvo_com}}/teams/{{vendas}}", {"role": "SUPERVISOR"},
           (OK, OK, NEGADO, NEGADO, NEGADO)),
+    # ⚠️ FATIA D: o GESTOR nao tira ninguem de time. Esta linha NAO estava
+    # marcada como divergencia -- tirar do time parecia "mover", e o Mapa de
+    # 10/09 poe `·` na coluna D do vinculo para o GESTOR. Ver spec, fatia D.
     Linha("membership.delete", "OPERATOR do SEO", "delete",
           f"{T}/members/{{alvo_mkt}}/teams/{{seo}}", None,
-          (OK, OK, OK, OK, NEGADO)),
+          (OK, NEGADO, OK, OK, NEGADO)),
     Linha("membership.delete", "OPERATOR de Vendas", "delete",
           f"{T}/members/{{alvo_com}}/teams/{{vendas}}", None,
-          (OK, OK, NEGADO, NEGADO, NEGADO)),
+          (OK, NEGADO, NEGADO, NEGADO, NEGADO)),
     Linha("membership.move", "Design -> Vazio-MKT", "post",
           f"{T}/members/{{alvo_mkt}}/move-subteam",
           {"from_team_id": "{design}", "to_team_id": "{vazio_mkt}"},
@@ -470,13 +498,15 @@ MATRIZ: tuple[Linha, ...] = (
     Linha("board.update.root", "quadro geral do Comercial", "patch",
           f"{T}/boards/{{geral_com}}", {"name": "Geral"},
           (OK, OK, NEGADO, NEGADO, NEGADO)),
+    # Fatia D (item 01): o GESTOR nao apaga quadro -- de subtime nem da raiz.
     Linha("board.delete", "quadro do SEO", "delete", f"{T}/boards/{{quadro_seo}}", None,
-          (OK, OK, OK, OK, NEGADO),
-          diverge="item 01: GESTOR nao apaga"),
+          (OK, NEGADO, OK, OK, NEGADO)),
     Linha("board.delete", "quadro de Vendas", "delete",
           f"{T}/boards/{{quadro_vendas}}", None,
-          (OK, OK, NEGADO, NEGADO, NEGADO),
-          diverge="item 01: GESTOR nao apaga"),
+          (OK, NEGADO, NEGADO, NEGADO, NEGADO)),
+    Linha("board.delete.root", "quadro secundario do Marketing", "delete",
+          f"{T}/boards/{{secundario_mkt}}", None,
+          (OK, NEGADO, OK, NEGADO, NEGADO)),
     # ---------------------------------------------------------- coluna
     Linha("column.create", "no geral do Marketing", "post",
           f"{T}/boards/{{geral_mkt}}/columns", {"name": "Revisao", "semantic": "IN_PROGRESS"},
@@ -489,8 +519,18 @@ MATRIZ: tuple[Linha, ...] = (
           (OK, OK, OK, OK, NEGADO)),
     Linha("column.delete", "coluna vazia do SEO", "delete",
           f"{T}/boards/{{quadro_seo}}/columns/{{cancelado_seo}}", None,
-          (OK, OK, OK, OK, NEGADO),
-          diverge="item 01: GESTOR nao apaga"),
+          (OK, NEGADO, OK, OK, NEGADO)),
+    # ⚠️ AS DUAS DE BAIXO SAO O PAR QUE A FATIA D PRECISAVA: numa coluna de
+    # quadro da RAIZ o GESTOR renomeia (continua editando) e NAO apaga. Antes
+    # da D, coluna da raiz cobrava so `board.update.root`, e o GESTOR -- que o
+    # tem -- apagaria por ai mesmo sem `column.delete`.
+    Linha("column.update", "renomear coluna do secundario do Marketing", "patch",
+          f"{T}/boards/{{secundario_mkt}}/columns/{{cancelado_secundario}}",
+          {"name": "Outro nome"},
+          (OK, OK, OK, NEGADO, NEGADO)),
+    Linha("column.delete", "coluna do secundario do Marketing", "delete",
+          f"{T}/boards/{{secundario_mkt}}/columns/{{cancelado_secundario}}", None,
+          (OK, NEGADO, OK, NEGADO, NEGADO)),
     # ---------------------------------------------------------- tarefa
     Linha("task.create", "no Marketing", "post", f"{T}/tasks",
           {"title": "T", "team_id": "{mkt}", "board_id": "{geral_mkt}",
@@ -540,12 +580,10 @@ MATRIZ: tuple[Linha, ...] = (
           (OK, OK, OCULTO, OCULTO, NEGADO)),
     Linha("project.delete", "do Marketing", "delete", f"{T}/projects/{{projeto_mkt}}",
           None,
-          (OK, OK, OK, NEGADO, NEGADO),
-          diverge="item 01: GESTOR nao apaga"),
+          (OK, NEGADO, OK, NEGADO, NEGADO)),
     Linha("project.delete", "do Comercial", "delete", f"{T}/projects/{{projeto_com}}",
           None,
-          (OK, OK, OCULTO, NEGADO, NEGADO),
-          diverge="item 01: GESTOR nao apaga"),
+          (OK, NEGADO, OCULTO, NEGADO, NEGADO)),
     # ---------------------------------------------------------- formulario
     Linha("form.create", "no Marketing", "post", f"{T}/solicitacoes/formularios",
           {"team_id": "{mkt}", "slug": "novo", "title": "Novo"},
@@ -567,12 +605,10 @@ MATRIZ: tuple[Linha, ...] = (
           (OK, OK, OK, NEGADO, NEGADO)),
     Linha("form.delete", "do Marketing", "delete",
           f"{T}/solicitacoes/formularios/{{form_mkt}}", None,
-          (OK, OK, OK, NEGADO, NEGADO),
-          diverge="item 01: GESTOR nao apaga"),
+          (OK, NEGADO, OK, NEGADO, NEGADO)),
     Linha("form.delete", "do Comercial", "delete",
           f"{T}/solicitacoes/formularios/{{form_com}}", None,
-          (OK, OK, NEGADO, NEGADO, NEGADO),
-          diverge="item 01: GESTOR nao apaga"),
+          (OK, NEGADO, NEGADO, NEGADO, NEGADO)),
     # ---------------------------------------------------------- solicitacao
     Linha("solicitation.review", "aprovar do Marketing", "post",
           f"{T}/solicitacoes/{{sol_mkt}}/aprovar", {},

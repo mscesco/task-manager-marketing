@@ -13,6 +13,8 @@ import { ownRootTeams, rootsForPerson } from "@/lib/contextSwitcher";
 import Loading from "@/components/Loading";
 import {
   alcanceDeQuadro,
+  podeApagarColunas,
+  podeApagarQuadros,
   podeGerirQuadroDaRaiz,
   resolverQuadroPedido,
   TEXTO_DA_QUEDA,
@@ -43,10 +45,24 @@ function QuadroGeral() {
   // MANAGER usam. E o backend recusa com 403 de qualquer forma: isto so evita
   // oferecer.
   const [podeEditar, setPodeEditar] = useState(false);
+  // ⚠️ APAGAR TEM VERBO PRÓPRIO desde a Spec 049, fatia D: o GESTOR edita o
+  // quadro e as colunas, e não apaga nenhum dos dois. Os dois estados abaixo
+  // exigem `podeEditar` TAMBÉM -- o verbo diz "o quê", o alcance diz "onde".
+  const [apagaQuadros, setApagaQuadros] = useState(false);
+  const [apagaColunas, setApagaColunas] = useState(false);
   useEffect(() => {
     currentUser()
-      .then((eu) => setPodeEditar(podeGerirQuadroDaRaiz(alcanceDeQuadro(eu))))
-      .catch(() => setPodeEditar(false));
+      .then((eu) => {
+        const gere = podeGerirQuadroDaRaiz(alcanceDeQuadro(eu));
+        setPodeEditar(gere);
+        setApagaQuadros(gere && podeApagarQuadros(eu.permissions, true));
+        setApagaColunas(gere && podeApagarColunas(eu.permissions));
+      })
+      .catch(() => {
+        setPodeEditar(false);
+        setApagaQuadros(false);
+        setApagaColunas(false);
+      });
   }, []);
 
   // ⚠️ `null` = ainda carregando, nos DOIS. Ver `resolverQuadroPedido`: com a
@@ -167,6 +183,7 @@ function QuadroGeral() {
       quadros={quadros ?? []}
       selecionado={pedido.id}
       podeGerir={podeEditar}
+      podeApagar={apagaQuadros}
       onSelecionar={selecionarQuadro}
       onMudou={carregarQuadros}
       daRaiz
@@ -207,6 +224,7 @@ function QuadroGeral() {
         boardId={pedido.id ?? undefined}
         title={seletor}
         podeEditarColunas={podeEditar}
+        podeApagarColunas={apagaColunas}
         acoesDoQuadro={
           rootId ? (
             <AcoesDoQuadro
@@ -214,6 +232,7 @@ function QuadroGeral() {
               quadros={quadros ?? []}
               selecionado={pedido.id}
               podeGerir={podeEditar}
+              podeApagar={apagaQuadros}
               onSelecionar={selecionarQuadro}
               onMudou={carregarQuadros}
               daRaiz

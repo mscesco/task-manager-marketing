@@ -290,15 +290,25 @@ _ORG_ROLE_PERMISSIONS: dict[OrgRole, frozenset[str]] = {
     # test_gestor_opera_mas_nao_desfaz_a_organizacao` cai ate alguem escrever
     # aqui se ele vale para o GESTOR.
     #
-    # ⚠️ ESTA LISTA REPRODUZ A SUBTRACAO DE HOJE, verbo a verbo (35 = 40 - 5):
-    # nao tira os deletes ainda. Quem os tira e a fatia D, mudando esta lista e
-    # as linhas da matriz no mesmo commit.
+    # ⭐ Spec 049, FATIA D -- item 01 da matriz de 10/09, com as palavras dela:
+    # *"a diferenca entre ADMIN e GESTOR e o delete: o admin apaga, o gestor
+    # nao"*. Duas excecoes, as duas dela: o gestor APAGA TAREFA (e modera
+    # comentario, que vai pelo mesmo verbo) e DESATIVA PESSOA.
+    #
+    # ⚠️ O QUE SAIU FOI LIDO NO MAPA DE 10/09, componente a componente, e nao
+    # deduzido do nome do verbo: vinculo, coluna, quadro secundario da raiz,
+    # quadro de subtime, projeto e formulario tem `·` na coluna D do GESTOR.
+    # `membership.delete` NAO estava marcado como divergencia na tabela da
+    # fatia 0 -- tirar alguem do time parecia "mover", e o Mapa diz que nao.
+    #
+    # ⚠️ Seções e perguntas de formulario continuam com o GESTOR: sao EDITAR o
+    # formulario (`form.update`), e o Mapa as poe em U, nao em D.
     OrgRole.GESTOR: frozenset(
         {
             # organizacao: fora `organization.update`, `org_role.*`,
             # `subteam.delete`, `team.move` -- o que era `workspace.manage`.
             "team.create",
-            # times e pessoas
+            # times e pessoas -- desativar FICA (excecao dela); tirar do time sai
             "subteam.create",
             "subteam.update",
             "person.create",
@@ -307,35 +317,29 @@ _ORG_ROLE_PERMISSIONS: dict[OrgRole, frozenset[str]] = {
             "membership.create",
             "membership.update",
             "membership.move",
-            "membership.delete",
-            # solicitacoes e formularios
+            # solicitacoes e formularios -- apagar formulario sai
             "solicitation.read",
             "solicitation.review",
             "form.read",
             "form.create",
             "form.update",
             "form.publish",
-            "form.delete",
-            # projetos e tarefas
+            # projetos e tarefas -- apagar TAREFA fica (excecao dela); projeto sai
             "project.create",
             "project.update",
             "project.archive",
-            "project.delete",
             "task.create",
             "task.update",
             "task.archive",
             "task.delete",
             "task.assign",
-            # quadros e colunas
+            # quadros e colunas -- nenhum delete
             "board.create.root",
             "board.update.root",
-            "board.delete.root",
             "board.create",
             "board.update",
-            "board.delete",
             "column.create",
             "column.update",
-            "column.delete",
         }
     ),
 }

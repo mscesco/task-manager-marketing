@@ -87,13 +87,25 @@ def test_gestor_opera_mas_nao_desfaz_a_organizacao():
     # faz.
     assert admin - gestor == frozenset(
         {
+            # o que era `workspace.manage` (fatia A)
             "organization.update",
             "org_role.grant",
             "org_role.revoke",
             "subteam.delete",
             "team.move",
+            # ⭐ fatia D, item 01: "o admin apaga, o gestor nao" -- e SO os
+            # deletes que o Mapa de 10/09 marca. `task.delete` e
+            # `person.deactivate` ficam com o GESTOR: sao as duas excecoes dela.
+            "membership.delete",
+            "form.delete",
+            "project.delete",
+            "board.delete.root",
+            "board.delete",
+            "column.delete",
         }
     )
+    assert "task.delete" in gestor
+    assert "person.deactivate" in gestor
 
 
 def test_sem_papel_de_organizacao_nao_ganha_nada():

@@ -140,21 +140,32 @@ describe("podeAdicionarAoTime", () => {
 });
 
 describe("podeRemoverDoTime", () => {
+  // Quem tem o verbo: ADMIN, MANAGER e SUPERVISOR (Spec 049, fatia A).
+  const TIRA = ["membership.create", "membership.delete"] as const;
+
   it("supervisor remove OPERATOR do proprio subtime", () => {
-    expect(podeRemoverDoTime(SUP, SEO, "OPERATOR")).toBe(true);
+    expect(podeRemoverDoTime(SUP, SEO, "OPERATOR", TIRA)).toBe(true);
   });
 
   it("A TRAVA D1 tambem no remover: outro subtime, nao", () => {
-    expect(podeRemoverDoTime(SUP, CRM, "OPERATOR")).toBe(false);
+    expect(podeRemoverDoTime(SUP, CRM, "OPERATOR", TIRA)).toBe(false);
   });
 
   it("D2: supervisor nao remove par SUPERVISOR nem superior", () => {
-    expect(podeRemoverDoTime(SUP, SEO, "SUPERVISOR")).toBe(false);
-    expect(podeRemoverDoTime(SUP, SEO, "MANAGER")).toBe(false);
+    expect(podeRemoverDoTime(SUP, SEO, "SUPERVISOR", TIRA)).toBe(false);
+    expect(podeRemoverDoTime(SUP, SEO, "MANAGER", TIRA)).toBe(false);
   });
 
   it("alcance amplo remove qualquer vinculo", () => {
-    expect(podeRemoverDoTime(AMPLO, CRM, "SUPERVISOR")).toBe(true);
+    expect(podeRemoverDoTime(AMPLO, CRM, "SUPERVISOR", TIRA)).toBe(true);
+  });
+
+  it("⚠️ GESTOR (Spec 049, fatia D): alcance AMPLO e mesmo assim NAO tira do time", () => {
+    // O alcance dele e amplo porque ele troca cargo (`membership.update`); o
+    // verbo de tirar ele nao tem. Sem o parametro de permissoes, "amplo" dizia
+    // sim e o botao dava 403.
+    const GESTOR = ["membership.create", "membership.update", "membership.move"] as const;
+    expect(podeRemoverDoTime(AMPLO, CRM, "OPERATOR", GESTOR)).toBe(false);
   });
 });
 

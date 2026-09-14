@@ -17,6 +17,8 @@ import { rootTeamOf } from "@/lib/areas";
 import Loading from "@/components/Loading";
 import {
   alcanceDeQuadro,
+  podeApagarColunas,
+  podeApagarQuadros,
   podeGerirQuadrosDe,
   resolverQuadroPedido,
   TEXTO_DA_QUEDA,
@@ -65,6 +67,10 @@ export default function QuadroSubtimePage() {
   // banco (ADR 0034). O estado de carga e `quadros === null`.
   const [quadros, setQuadros] = useState<Quadro[] | null>(null);
   const [podeGerir, setPodeGerir] = useState(false);
+  // ⚠️ APAGAR TEM VERBO PRÓPRIO desde a Spec 049, fatia D: o GESTOR edita e não
+  // apaga. Ver o efeito abaixo e `podeApagarQuadros`.
+  const [apagaQuadros, setApagaQuadros] = useState(false);
+  const [apagaColunas, setApagaColunas] = useState(false);
 
   // ⚠️ A URL E A FONTE UNICA, e por isso aqui NAO ha `useState` do quadro
   // escolhido. Guardar a escolha em estado E na URL daria duas verdades para
@@ -144,7 +150,15 @@ export default function QuadroSubtimePage() {
         setTemAcesso(alvo ? lens.visibleTeamIds.has(alvo.id) : false);
         // ⚠️ A DECISAO MORA EM `lib/seletorDeQuadro`, e nao aqui. A tela so
         // guarda a resposta.
-        setPodeGerir(podeGerirQuadrosDe(alcanceDeQuadro(me), teamId));
+        const gere = podeGerirQuadrosDe(alcanceDeQuadro(me), teamId);
+        setPodeGerir(gere);
+        // O verbo diz "o quê" (e o do quadro depende do NÍVEL); o alcance diz
+        // "onde". Os dois, sempre -- ter `board.delete` não dá ao supervisor o
+        // quadro de outro subtime.
+        setApagaQuadros(
+          gere && podeApagarQuadros(me.permissions, alvo?.parent_team_id === null),
+        );
+        setApagaColunas(gere && podeApagarColunas(me.permissions));
         setCarregando(false);
       })
       .catch(() => {
@@ -184,6 +198,7 @@ export default function QuadroSubtimePage() {
       quadros={quadros ?? []}
       selecionado={quadroSelecionado}
       podeGerir={podeGerir}
+      podeApagar={apagaQuadros}
       onSelecionar={selecionarQuadro}
       onMudou={carregarQuadros}
       // ⚠️⚠️ ERA ESTA A LINHA QUE FALTAVA. Sem ela o seletor usa
@@ -281,6 +296,7 @@ export default function QuadroSubtimePage() {
             <Board
               boardId={quadroSelecionado}
               podeEditarColunas={podeGerir}
+              podeApagarColunas={apagaColunas}
               title={seletor}
               // ⚠️ RENOMEAR E APAGAR SO NO RAMO DO QUADRO AVULSO. No ramo da
               // lente nao ha registro para nenhum dos dois, e o proprio
@@ -293,6 +309,7 @@ export default function QuadroSubtimePage() {
                   quadros={quadros ?? []}
                   selecionado={quadroSelecionado}
                   podeGerir={podeGerir}
+                  podeApagar={apagaQuadros}
                   onSelecionar={selecionarQuadro}
                   onMudou={carregarQuadros}
                   // ⚠️ FALTAVA (14/09): quadro avulso de um time RAIZ usa a lista da
@@ -333,12 +350,14 @@ export default function QuadroSubtimePage() {
               areaId={team.id}
               title={seletor}
               podeEditarColunas={podeGerir}
+              podeApagarColunas={apagaColunas}
               acoesDoQuadro={
                 <AcoesDoQuadro
                   teamId={team.id}
                   quadros={quadros ?? []}
                   selecionado={null}
                   podeGerir={podeGerir}
+                  podeApagar={apagaQuadros}
                   onSelecionar={selecionarQuadro}
                   onMudou={carregarQuadros}
                   daRaiz
@@ -353,6 +372,7 @@ export default function QuadroSubtimePage() {
               subteamId={team.id}
               title={seletor}
               podeEditarColunas={false}
+              podeApagarColunas={false}
               acoesDoQuadro={null}
             />
           )}

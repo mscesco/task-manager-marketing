@@ -26,6 +26,7 @@ export default function CabecalhoDeColunaEditavel({
   podeIrDireita,
   onRenomear,
   onMarcar,
+  podeApagar,
   onTornarAlvo,
   onAvisar,
   onMover,
@@ -38,6 +39,15 @@ export default function CabecalhoDeColunaEditavel({
   podeIrDireita: boolean;
   onRenomear: (nome: string) => void;
   onMarcar: () => void;
+  /**
+   * Se a pessoa pode APAGAR coluna (Spec 049, fatia D).
+   *
+   * ⚠️ OBRIGATÓRIA. O GESTOR edita coluna e não apaga; com o "x" sempre
+   * presente, ele marcava, concluía, e o lote inteiro voltava 403. Coluna que
+   * ainda nem foi salva (`tmp:`) é outra coisa: tirá-la é desfazer o próprio
+   * rascunho, e não apagar -- ver a condição do botão.
+   */
+  podeApagar: boolean;
   /**
    * Torna esta coluna o ALVO da semântica dela (Spec 036, fatia 12).
    *
@@ -320,8 +330,13 @@ export default function CabecalhoDeColunaEditavel({
 
         {/* ⚠️ COM IMPEDIMENTO, O BOTÃO NÃO EXISTE -- e o motivo aparece no
             lugar. Desabilitado seria pior: a pessoa clica, nada acontece, e ela
-            não sabe se o produto travou ou se ela não pode. */}
-        {linha.impedimento ? (
+            não sabe se o produto travou ou se ela não pode.
+
+            ⚠️ E SEM O VERBO NÃO HÁ NEM O BOTÃO NEM O MOTIVO (Spec 049, fatia
+            D): para quem não apaga coluna, "não pode ser apagada" explicaria
+            uma trava que nunca foi dela. A exceção é a coluna NOVA -- tirá-la é
+            desfazer o próprio rascunho, e não apagar nada. */}
+        {(podeApagar || linha.nova) && (linha.impedimento ? (
           <span
             className="muted"
             style={{ fontSize: 10, maxWidth: 120, lineHeight: 1.2 }}
@@ -351,7 +366,7 @@ export default function CabecalhoDeColunaEditavel({
               <X size={14} />
             )}
           </button>
-        )}
+        ))}
       </span>
     </div>
   );

@@ -90,7 +90,7 @@ function formulario(over: Partial<Formulario> = {}): Formulario {
 
 function montar(
   itens: Formulario[] = [formulario()],
-  permissoes: string[] = ["form.update"]
+  permissoes: string[] = ["form.update", "form.delete"]
 ) {
   vi.mocked(api.listarFormularios).mockResolvedValue(itens);
   // ⚠️ "Audiovisual" ANTES da raiz de propósito: se a tela pegar o primeiro da
@@ -126,6 +126,14 @@ describe("Formulários -- a lista", () => {
     expect(screen.getByText("/solicitar/marketing")).toBeTruthy();
     await waitFor(() => expect(screen.getByText("Marketing")).toBeTruthy());
     expect(screen.getByText("Publicado")).toBeTruthy();
+  });
+
+  it("⚠️ GESTOR (Spec 049, fatia D): publica, e NÃO oferece excluir", async () => {
+    // O botão de excluir tem o próprio verbo. Dentro de `podeGerir` ele
+    // apareceria para o GESTOR e levaria 403 no clique.
+    montar([formulario()], ["form.update", "form.publish"]);
+    expect(await screen.findByText("Despublicar")).toBeTruthy();
+    expect(screen.queryByText("Excluir")).toBeNull();
   });
 
   it("⚠️ sem a permissão, a tela LÊ e não oferece ação nenhuma", async () => {

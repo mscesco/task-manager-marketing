@@ -897,13 +897,21 @@ class BoardService:
         # um lote so de `ordem` vazia e listas vazias nao passaria por nenhum
         # dos quatro metodos -- e responderia 200 a quem nao pode editar nada.
         quadro = await self._quadro_do_workspace(board_id)
-        # ⚠️ O LOTE CRIA, RENOMEIA E APAGA -- entao cobra os tres verbos de
-        # coluna (Spec 049, fatia A). Hoje estao nos mesmos papeis; o dia em
-        # que um papel puder renomear e nao apagar, o lote inteiro recusa, que
-        # e mais seguro que aplicar metade.
+        # ⚠️ O LOTE COBRA O VERBO DO QUE ELE TRAZ, e nao os tres sempre.
+        #
+        # ⚠️⚠️ Na fatia A cobrava os tres, com a justificativa "no dia em que um
+        # papel puder renomear e nao apagar, o lote inteiro recusa". Esse dia
+        # foi a fatia D, e a recusa inteira era o defeito: o GESTOR, sem
+        # `column.delete`, deixava de conseguir RENOMEAR coluna, porque a tela
+        # manda toda edicao pelo lote. `column.update` sempre (editar colunas e
+        # o que um lote e); `create` e `delete` so se ha o que criar e apagar.
+        # E cada etapa delegada abaixo confere o seu verbo de novo.
         time_do_lote = await self._time_do_workspace(quadro.team_id)
-        for verbo in ("column.create", "column.update", "column.delete"):
-            self._assert_pode_gerir(time_do_lote, verbo)
+        self._assert_pode_gerir(time_do_lote, "column.update")
+        if criar:
+            self._assert_pode_gerir(time_do_lote, "column.create")
+        if apagar:
+            self._assert_pode_gerir(time_do_lote, "column.delete")
 
         # ---- etapa 0: os nomes do RESULTADO FINAL (fatia 9) ----------------
         #
@@ -1720,7 +1728,15 @@ class BoardService:
         if eh_raiz:
             # ⚠️ `board.manage.subteam` NAO serve aqui, e essa e a linha que
             # separa o supervisor do Quadro geral.
-            if not tenant.has_permission_in(self._verbo_na_raiz(verbo), time.id):
+            # ⚠️ COLUNA NA RAIZ COBRA OS DOIS (Spec 049, fatia D): o do quadro
+            # geral, que diz nao sem depender do escopo (ver `_verbo_na_raiz`),
+            # E o proprio verbo de coluna. So o primeiro deixava o GESTOR --
+            # que tem `board.update.root` e nao tem `column.delete` -- apagar
+            # coluna do quadro da raiz.
+            pede_o_verbo_tambem = verbo.startswith("column.")
+            if not tenant.has_permission_in(self._verbo_na_raiz(verbo), time.id) or (
+                pede_o_verbo_tambem and not tenant.has_permission_in(verbo, time.id)
+            ):
                 raise AuthorizationError(
                     "Apenas admin ou manager administram quadros do time raiz.",
                     details={"team_id": str(time.id)},

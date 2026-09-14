@@ -49,6 +49,7 @@ import {
   timesParaAdicionar,
   type Alcance,
 } from "@/lib/permissoesMembros";
+import type { Permission } from "@/lib/permissions.generated";
 
 const ROLE_LABEL: Record<MemberRole, string> = {
   ADMIN: "Administrador",
@@ -77,6 +78,7 @@ export default function MemberDrawer({
   isAdmin,
   canManageOrg,
   isSelf,
+  permissoes,
   onClose,
   onChanged,
 }: {
@@ -86,6 +88,12 @@ export default function MemberDrawer({
   isAdmin: boolean;
   canManageOrg: boolean;
   isSelf: boolean;
+  /**
+   * ⚠️ OBRIGATÓRIA desde a Spec 049, fatia D: "Tirar de…" pergunta o verbo
+   * (`membership.delete`), e o alcance amplo não basta -- o GESTOR o tem e não
+   * tira ninguém de time. Ver `podeRemoverDoTime`.
+   */
+  permissoes: readonly Permission[];
   onClose: () => void;
   onChanged: (aviso: string) => Promise<void>;
 }) {
@@ -242,6 +250,7 @@ export default function MemberDrawer({
                     scope={scope}
                     isAdmin={isAdmin}
                     isSelf={isSelf}
+                    permissoes={permissoes}
                     onChanged={onChanged}
                   />
                 ))}
@@ -296,6 +305,7 @@ function MembershipRow({
   scope,
   isAdmin,
   isSelf,
+  permissoes,
   onChanged,
 }: {
   row: ReturnType<typeof drawerMemberships>[number];
@@ -304,6 +314,8 @@ function MembershipRow({
   isAdmin: boolean;
   /** É a própria pessoa que está olhando? Ver o `!isSelf` no "Tirar". */
   isSelf: boolean;
+  /** Ver a prop homônima do `MemberDrawer` (Spec 049, fatia D). */
+  permissoes: readonly Permission[];
   onChanged: (aviso: string) => Promise<void>;
 }) {
   const [escolhido, setEscolhido] = useState<MemberRole>(row.role);
@@ -431,7 +443,7 @@ function MembershipRow({
           permissões diferentes. O supervisor tira gente do próprio subtime
           (D1 da Spec 028) sem poder trocar cargo de ninguém (D2). Usar o
           cadeado de cargo aqui esconderia dele a única ação que tem. */}
-      {!mudou && podeRemoverDoTime(scope, row.team.id, row.role) && (
+      {!mudou && podeRemoverDoTime(scope, row.team.id, row.role, permissoes) && (
         <div className="mt-2">
           <Reveal show={!confirmandoSaida}>
             <button
