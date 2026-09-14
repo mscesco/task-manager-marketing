@@ -12,6 +12,7 @@
  */
 
 import type { MemberRole, Team } from "./api";
+import type { Permission } from "./permissions.generated";
 
 /** O que o ator alcanca na gestao de membros. */
 export type Alcance =
@@ -27,7 +28,7 @@ export type Alcance =
 
 /** So o que precisamos do usuario autenticado -- facilita testar. */
 export type AtorMinimo = {
-  permissions: string[];
+  permissions: Permission[];
   teams: { team_id: string; role: string }[];
 };
 

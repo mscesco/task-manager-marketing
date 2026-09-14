@@ -21,6 +21,7 @@
  */
 
 import type { Quadro } from "./api";
+import type { Permission } from "./permissions.generated";
 
 /** O que o ator alcanca na gestao de quadros. */
 export type AlcanceDeQuadro =
@@ -42,7 +43,7 @@ export type AlcanceDeQuadro =
 
 /** So o que precisamos do usuario autenticado -- facilita testar. */
 export type AtorMinimo = {
-  permissions: string[];
+  permissions: Permission[];
   teams: { team_id: string; role: string }[];
 };
 

@@ -391,7 +391,7 @@ sumido) é invisível aos quatro portões, e fechar o tipo o torna um erro de
 Por que não gerar no build: o job `front` não tem Python, e o `next build` dela
 em dev passaria a depender do backend. Commitado, o front continua se bastando.
 
-### 4.9. A conta de uma pessoa é de todas as árvores dela — escolha minha, 14/09
+### 4.9. A conta de uma pessoa é de todas as árvores dela — confirmado por ela, 14/09
 
 Resetar senha e desativar valem para a **pessoa inteira**, e não para um
 vínculo. Na fatia 0b a pergunta passou a ser (`_assert_reaches_person`):
@@ -474,6 +474,25 @@ um botão sumido (§3.4).
 com os nomes de hoje: gerar o arquivo, trocar os `string[]`, `tsc` limpo. Só
 depois se cortam os verbos — e aí o `tsc` lista cada tela a mudar, em vez de
 uma conferência à mão.
+
+✅ **Commit 1 da fatia A entregue em 14/09** — o tipo, com os 15 nomes de hoje:
+- `ALL_PERMISSIONS` em `permissions.py`, **derivada** dos mapas (não uma lista
+  paralela);
+- `backend/scripts/gen_permissions_ts.py` gera `web/lib/permissions.generated.ts`;
+  `tests/test_permissions_generated_ts.py` **falha** (não pula) se o arquivo
+  estiver atrasado ou ausente;
+- `permissions: Permission[]` em `api.ts`, `permissoesMembros.ts`,
+  `seletorDeQuadro.ts` e `gestaoTimes.ts`;
+- ⭐ **uma trava a mais, que a spec não previa:** `require_permission` e
+  `require_any_permission` recusam, **no import**, nome que nenhum papel
+  concede. Sem ela, uma rota com o nome velho subiria e responderia 403 a todo
+  mundo — o mesmo defeito do front, do lado do servidor.
+- ⚠️ **O `docker-compose.yml` passou a montar `./web/lib` no `api-dev`**: o
+  container só via `./backend`, e o teste guardião precisa ler o arquivo.
+
+Sabotagens: `"team.manag"` em `gestaoTimes.ts` → `tsc` recusa (TS2345);
+`require_permission("team.manag")` numa rota → a coleta da suíte cai com
+`ValueError: Permissao desconhecida em rota`.
 Entram aqui `task.archive` e `project.archive` (§4.2), com as quatro rotas de
 arquivar e desarquivar.
 ⚠️ **A tabela da fatia 0 não muda uma linha.** Se mudar, a fatia errou.
@@ -579,9 +598,6 @@ do mais contido ao que desfaz decisão escrita.
    Virou a fatia 0b, entregue. E a urgência: *papel de organização só existe
    no dev dela, e nada da 047/048 subiu nem sobe antes de ela testar a 049*.
 
-7. **A conta de quem está em duas árvores** (§4.9). Escolhi "todos os vínculos
-   na árvore do MANAGER" para resetar senha e desativar: quem está no Marketing
-   e no Comercial só é desativado pela organização. A alternativa ("algum
-   vínculo") deixa o MANAGER de uma árvore desativar gente que a outra usa.
-   **Não trava fatia nenhuma**; se ela preferir "algum", é uma linha no serviço
-   e uma na tabela.
+7. **A conta de quem está em duas árvores** (§4.9) — *"confirmo o 'todos'"*
+   (14/09). Resetar senha e desativar exigem todos os vínculos da pessoa na
+   árvore de quem age; quem está em duas árvores é da organização.

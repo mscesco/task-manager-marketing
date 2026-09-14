@@ -35,7 +35,10 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from app.core.deps import SessionDep
 from app.core.tenant import Membership, TeamNode, TenantContext, set_tenant
 from app.db.models import User
-from app.modules.auth.domain.permissions import permissions_for_actor
+from app.modules.auth.domain.permissions import (
+    ALL_PERMISSIONS,
+    permissions_for_actor,
+)
 from app.modules.auth.infrastructure.security import (
     TokenType,
     decode_token,
@@ -165,6 +168,23 @@ async def get_current_user(
     return user
 
 
+def _assert_known_permissions(*permissions: str) -> None:
+    """Recusa, NO IMPORT DO ROUTER, permissao que nenhum papel concede.
+
+    ⚠️⚠️ Spec 049, fatia A. Sem isto, uma rota que cobra um nome renomeado (ou
+    escrito errado) sobe normalmente e responde 403 para TODO MUNDO, inclusive
+    o ADMIN -- e a unica pista e a tela de quem clicou. Com isto, o app nem
+    importa: `create_app()` falha no primeiro teste da suite, com o nome na
+    mensagem.
+    """
+    desconhecidas = [p for p in permissions if p not in ALL_PERMISSIONS]
+    if desconhecidas:
+        raise ValueError(
+            f"Permissao desconhecida em rota: {desconhecidas}. Nenhum papel a "
+            "concede (ver `ALL_PERMISSIONS` em auth/domain/permissions.py)."
+        )
+
+
 def require_permission(permission: str) -> Callable[..., TenantContext]:
     """Fabrica de dependency: protege uma rota por permissao.
 
@@ -179,6 +199,7 @@ def require_permission(permission: str) -> Callable[..., TenantContext]:
     quiser). Lanca AuthorizationError (-> HTTP 403) se o
     usuario autenticado nao tiver a permissao.
     """
+    _assert_known_permissions(permission)
 
     def _guard(
         context: Annotated[TenantContext, Depends(get_tenant_context)],
@@ -216,6 +237,7 @@ def require_any_permission(*permissions: str) -> Callable[..., TenantContext]:
 
     Lanca AuthorizationError (-> HTTP 403) se nao tiver nenhuma.
     """
+    _assert_known_permissions(*permissions)
 
     def _guard(
         context: Annotated[TenantContext, Depends(get_tenant_context)],

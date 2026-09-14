@@ -20,6 +20,7 @@ import {
   quadroGeralDoTime,
 } from "@/lib/coluna";
 import { soleRootTeam } from "@/lib/areas";
+import type { Permission } from "@/lib/permissions.generated";
 
 // Cliente unico de acesso ao backend FastAPI. Centraliza:
 //  - a URL base (RELATIVA por padrao -- topologia A, ADR 0001 da raiz)
@@ -255,7 +256,10 @@ export type CurrentUser = {
   is_active: boolean;
   must_change_password: boolean;
   roles: string[];
-  permissions: string[];
+  // ⚠️ `Permission`, e nao `string` (Spec 049, fatia A): e o que faz
+  // `permissions.includes("nome.que.saiu")` deixar de compilar. A lista vem
+  // gerada do mapa do backend -- ver `lib/permissions.generated.ts`.
+  permissions: Permission[];
   // ⚠️⚠️ O PAPEL NA ORGANIZACAO, separado -- e a unica forma de responder
   // "esta pessoa administra a ORGANIZACAO?". `roles` e `permissions` MISTURAM
   // os dois niveis de proposito (servem a "quais acoes ela pode"), e por isso

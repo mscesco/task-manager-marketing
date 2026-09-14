@@ -14,10 +14,11 @@ import {
   sugereSlug,
   type TimeGerenciavel,
 } from "@/lib/gestaoTimes";
+import type { Permission } from "@/lib/permissions.generated";
 
-const ADMIN = ["workspace.manage", "team.manage"];
-const MANAGER = ["team.manage"];
-const OPERATOR: string[] = [];
+const ADMIN: Permission[] = ["workspace.manage", "team.manage"];
+const MANAGER: Permission[] = ["team.manage"];
+const OPERATOR: Permission[] = [];
 
 function time(over: Partial<TimeGerenciavel> = {}): TimeGerenciavel {
   return {

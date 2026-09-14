@@ -13,6 +13,8 @@
 // checada no cliente e sugestao, nao trava.
 // =====================================================================
 
+import type { Permission } from "./permissions.generated";
+
 /** O que aponta para um time. Vem em lote no GET /current/teams. */
 export type ContagensTime = {
   tarefas: number;
@@ -43,7 +45,7 @@ export function estaVazio(c: ContagensTime): boolean {
  */
 export function podeEditar(
   time: { parent_team_id: string | null },
-  permissoes: readonly string[]
+  permissoes: readonly Permission[]
 ): boolean {
   if (ehRaiz(time)) return false;
   return permissoes.includes("team.manage");
@@ -57,7 +59,7 @@ export function podeEditar(
  */
 export function podeRemover(
   time: TimeGerenciavel,
-  permissoes: readonly string[]
+  permissoes: readonly Permission[]
 ): boolean {
   if (ehRaiz(time)) return false;
   if (!permissoes.includes("workspace.manage")) return false;
@@ -74,7 +76,7 @@ export function podeRemover(
  */
 export function podeEsvaziarERemover(
   time: TimeGerenciavel,
-  permissoes: readonly string[]
+  permissoes: readonly Permission[]
 ): boolean {
   if (ehRaiz(time)) return false;
   if (!permissoes.includes("workspace.manage")) return false;
@@ -129,7 +131,7 @@ export function resumoDoEsvaziamento(p: {
  */
 export function motivoNaoRemove(
   time: TimeGerenciavel,
-  permissoes: readonly string[]
+  permissoes: readonly Permission[]
 ): string | null {
   if (ehRaiz(time)) return "O time principal não pode ser removido.";
   if (!permissoes.includes("workspace.manage")) {

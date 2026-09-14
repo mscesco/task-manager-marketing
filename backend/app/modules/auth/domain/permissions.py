@@ -213,6 +213,18 @@ _ORG_ROLE_PERMISSIONS: dict[OrgRole, frozenset[str]] = {
 }
 
 
+#: TODA permissao que algum papel concede -- o vocabulario inteiro.
+#:
+#: ⚠️ DERIVADA DOS MAPAS, e nao uma terceira lista escrita a mao: uma lista
+#: paralela seria mais um lugar para esquecer o nome novo. Serve a dois
+#: guardioes (Spec 049, fatia A): `require_permission` recusa, no IMPORT, nome
+#: que nao esteja aqui; e `web/lib/permissions.generated.ts` e gerado dela, para
+#: o `tsc` recusar no front o nome que saiu daqui.
+ALL_PERMISSIONS: frozenset[str] = frozenset().union(
+    *_ROLE_PERMISSIONS.values(), *_ORG_ROLE_PERMISSIONS.values()
+)
+
+
 def permissions_for_org_role(org_role: str | None) -> frozenset[str]:
     """Permissoes do papel de ORGANIZACAO. `None` = nenhum papel, nenhuma.
 
