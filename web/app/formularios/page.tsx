@@ -16,6 +16,7 @@ import Link from "next/link";
 
 import AppShell from "@/components/AppShell";
 import PageHeader from "@/components/PageHeader";
+import Loading from "@/components/Loading";
 import {
   ApiError,
   apagarFormulario,
@@ -145,7 +146,7 @@ function Formularios() {
   if (erro && itens === null) {
     return <div className="error-box" style={{ maxWidth: 480 }}>{erro}</div>;
   }
-  if (itens === null) return <div className="muted">Carregando…</div>;
+  if (itens === null) return <Loading />;
 
   return (
     <div>

@@ -7,6 +7,8 @@ import {
   getToken,
   logout,
   listTeamsAll,
+  getWorkspace,
+  TIMES_MUDARAM,
   ApiError,
   type CurrentUser,
   type Team,
@@ -28,13 +30,13 @@ import {
   gravarQuadrosAberto,
 } from "@/lib/sidebar";
 import NotificationBell from "@/components/NotificationBell";
+import ContextSwitcher from "@/components/ContextSwitcher";
+import { peopleEntry, rootsForPerson } from "@/lib/contextSwitcher";
 import {
   LayoutGrid,
   FolderKanban,
   ListChecks,
   Users,
-  Network,
-  Building2,
   Archive,
   User,
   LogOut,
@@ -51,6 +53,7 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
+import Loading, { LoadingScreen } from "@/components/Loading";
 // Navegacao lateral retratil. Itens usam a MESMA classe-base `itemCls` ->
 // alinham por construcao. Expandido: icone + rotulo. Retraido: so icone.
 // Fatia 7b: grupo "Quadros" (accordion, abre com clique) com o Quadro Geral
@@ -69,6 +72,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   // check de auth, ja no cliente.
   const [open, setOpen] = useState(lerBarraAberta);
   const [teams, setTeams] = useState<Team[]>([]);
+  // ⚠️ O NOME DA ORGANIZAÇÃO É DA BARRA desde 10/09: o rodapé o mostra em toda
+  // tela que não tem área na URL. `getWorkspace` é memoizado em módulo, então
+  // isto é uma requisição por sessão, não por navegação.
+  const [orgName, setOrgName] = useState("");
   const [quadrosOpen, setQuadrosOpen] = useState(lerQuadrosAberto); // accordion
   // Preferencia de tema. Ler localStorage no inicializador e seguro aqui: com
   // `loading` comecando true, a barra so renderiza depois do check de auth, ja
@@ -111,6 +118,13 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         listTeamsAll()
           .then(setTeams)
           .catch(() => {});
+        // ⚠️ TAMBEM SEM BLOQUEAR, e o `catch` vazio e de proposito: sem o nome
+        // o seletor cai no rotulo "Organização" (ver `currentContext`), o que
+        // e feio e nao quebra nada. Derrubar a barra inteira por causa dele
+        // seria trocar um rotulo generico por uma tela branca.
+        getWorkspace()
+          .then((ws) => setOrgName(ws.name))
+          .catch(() => {});
       })
       .catch((_e: ApiError) => {
         // ⚠️ NAO chamar logout() aqui. Este caminho e "o getMe falhou", ou
@@ -121,7 +135,25 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       });
   }, [router]);
 
-  if (loading) return <div className="center-screen muted">Carregando…</div>;
+  // ⚠️⚠️ A ARVORE PODE MUDAR SEM NAVEGACAO, e ate 10/09 a barra nao ficava
+  // sabendo: *"criei uma raiz e nao apareceu direto na barra lateral"*. O
+  // `useEffect` de cima roda uma vez; criar area acontece na `/organizacao`,
+  // que recarrega o proprio estado e nao o desta barra.
+  //
+  // ⚠️ QUEM AVISA E `invalidateTeams()`, entao TODA mutacao de time serve --
+  // criar, renomear, remover, de qualquer tela. Ouvir o evento da criacao
+  // especificamente cobriria um caso e deixaria os outros dois.
+  useEffect(() => {
+    const reler = () => {
+      listTeamsAll()
+        .then(setTeams)
+        .catch(() => {});
+    };
+    window.addEventListener(TIMES_MUDARAM, reler);
+    return () => window.removeEventListener(TIMES_MUDARAM, reler);
+  }, []);
+
+  if (loading) return <LoadingScreen />;
 
   // Fatia 2/7b: sub-abas de quadro = subtimes visiveis na lente do usuario.
   const lens = user ? computeLens(user.teams, teams, user.roles) : null;
@@ -136,12 +168,40 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   const podeGerirTimes = user?.permissions.includes("team.manage") ?? false;
 
+  // ⚠️⚠️ O PAPEL DE ORGANIZACAO, e NAO uma permissao -- consertado em 10/09,
+  // com o defeito na tela: uma pessoa que "nao administra a organizacao" via
+  // "Gerenciar a organizacao" no seletor da barra.
+  //
+  // O gate era `permissions.includes("area.create")`, e parecia certo: a §4.1
+  // da Spec 046 diz que `area.create` so existe nos papeis de organizacao. So
+  // que `_ORG_ROLE_PERMISSIONS[ADMIN]` E LITERALMENTE `_ROLE_PERMISSIONS[
+  // UserTeamRole.ADMIN]` -- o mesmo conjunto --, entao quem tem papel de TIME
+  // ADMIN (residuo anterior a Spec 045, que ainda existe em `user_team`)
+  // carrega `area.create` tambem.
+  //
+  // ⚠️ E `roles` NAO SERVE para desempatar: o `/auth/me` junta os dois niveis
+  // ali de proposito, e "ADMIN" no array pode ser um ou outro. Por isso a
+  // rota passou a devolver `org_role` como campo proprio.
+  const podeVerOrganizacao = (user?.org_role ?? null) !== null;
+
   // Spec 043 (fatia C). ⚠️ PERMISSÃO PRÓPRIA, e não a de triagem: definir o
   // que se pergunta e responder a fila são trabalhos diferentes, e o backend
   // já os separa. Mesmo espírito dos dois gates acima -- quem não tem a
   // permissão não veria botão útil nenhum lá dentro.
   const podeGerirFormularios =
     user?.permissions.includes("solicitation_form.manage") ?? false;
+
+  // ⚠️⚠️ "TIME" NAO E UMA TELA PROPRIA: ele aponta para `/times/<area>`, a
+  // MESMA tela que se abre clicando numa area. A rota `/membros` existia e
+  // sumiu em 09/09 -- a Camila viu as duas e resolveu: *"tirar o /membros e
+  // deixar 'time', e quando abrir ser o /times/id"*.
+  //
+  // ⚠️ E O DESTINO E CALCULADO, nao fixo. Com varias areas (Spec 046) nao ha
+  // um "/membros" que sirva para todo mundo: a entrada cai na area DA PESSOA,
+  // e quem administra a organizacao cai na primeira por nome. A regra mora em
+  // `lib/contextSwitcher.ts`, testada -- aqui so se le.
+  const minhasAreas = rootsForPerson(teams, user, podeVerOrganizacao);
+  const entradaDoTime = peopleEntry(minhasAreas);
 
   // Itens simples (fora do grupo Quadros).
   const nav: { href: string; label: string; icon: LucideIcon }[] = [
@@ -153,14 +213,34 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     ...(podeGerirFormularios
       ? [{ href: "/formularios", label: "Formulários", icon: ClipboardList }]
       : []),
-    { href: "/membros", label: "Membros", icon: Users },
-    // Spec 029: gestao da arvore de times. Gate no mesmo espirito de
-    // Solicitacoes -- quem nao tem `team.manage` nao veria botao nenhum
-    // util la dentro, entao nem oferecemos a porta. O backend barra por 403
-    // de qualquer forma.
-    ...(podeGerirTimes
-      ? [{ href: "/times", label: "Times", icon: Network }]
+    // ⚠️ SEM AREA, SEM ENTRADA: nao ha destino, e um item que leva a lugar
+    // nenhum e pior que um item ausente. Acontece com quem foi cadastrado e
+    // nunca alocado -- e a conta de administracao cai no ramo de cima, porque
+    // `rootsForPerson` devolve todas as areas para quem administra a
+    // organizacao.
+    ...(entradaDoTime.kind === "team"
+      ? [
+          {
+            href: `/times/${entradaDoTime.teamId}`,
+            label: "Time",
+            icon: Users,
+          },
+        ]
       : []),
+    // ⚠️⚠️ AQUI ESTAVAM "Organização" e "Times", e as duas SAIRAM em 09/09,
+    // por decisão da Camila: *"ela não é para estar no menu junto com
+    // projetos, minhas tarefas e afins, é outra seção"*.
+    //
+    // E ela está certa sobre a natureza da lista: "Projetos", "Minhas
+    // tarefas" e "Solicitações" são LUGARES DE TRABALHO -- coisas que se
+    // abrem para fazer algo. A organização e a árvore de times são ONDE VOCÊ
+    // ESTÁ. Misturar as duas naturezas fazia a lista crescer sem que nenhum
+    // item ficasse mais fácil de achar.
+    //
+    // ⚠️ AS DUAS PORTAS CONTINUAM EXISTINDO, no `ContextSwitcher` acima -- e
+    // com os MESMOS gates de antes: a lista de times aparece para quem tem
+    // `team.manage`, e "Gerenciar a organização" só com `area.create`.
+    // Cortar do menu não pode virar cortar o acesso.
     { href: "/arquivadas", label: "Arquivadas", icon: Archive },
   ];
 
@@ -318,42 +398,33 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             espaco quando falta altura e a lista de navegacao (que rola),
             nunca o rodape (que nao tem como ser alcancado de outro jeito). */}
         <div className="flex shrink-0 flex-col gap-1 border-t border-border pt-2">
-          {/* ⚠️ SPEC 039 (F3) -- "TIME PRINCIPAL", e ele NAO e placeholder.
-              O controle navega entre times RAIZ, e a regra combinada com a
-              Camila em 19/08 e:
-                um time raiz    -> nome, texto simples, SEM chevron
-                dois ou mais    -> seletor
-              Hoje toda pessoa cai no primeiro caso porque so existe um time
-              raiz -- entao isto e o ESTADO REAL, e nao uma casca esperando a
-              spec de multiplos times raiz. O seletor entra quando o segundo
-              existir.
+          {/* ---- ONDE VOCE ESTA ----------------------------------------
+              ⚠️⚠️ ESTE E O "TIME PRINCIPAL" DA SPEC 039 (F3), com a outra
+              metade finalmente feita. A regra combinada com a Camila em 19/08
+              e repetida em 09/09:
 
-              ⚠️ Nao e link: com um time so nao ha para onde ir, e um item
-              clicavel que nao leva a lugar nenhum e pior que um rotulo. A
-              regra "se parece clicavel, tem de ser clicavel" vale ao
-              contrario tambem. */}
-          {(() => {
-            const raizes = teams.filter((t) => t.parent_team_id === null);
-            if (raizes.length !== 1) return null;
-            const raiz = raizes[0];
-            return (
-              <div
-                title={`Você está no time ${raiz.name}`}
-                aria-label={`Time atual: ${raiz.name}`}
-                className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-semibold text-ink-faint ${
-                  open ? "" : "justify-center"
-                }`}
-              >
-                {/* ⚠️ `Building2` E NAO `Network`: "Times" (gestao da arvore)
-                    ja usa o Network, e retraida a barra mostra so o icone --
-                    os dois viravam o MESMO simbolo em lugares diferentes.
-                    Achado pela Camila na tela. Aqui o sentido e "a organizacao
-                    em que voce esta", nao "a arvore de times". */}
-                <Building2 size={18} className="shrink-0" />
-                {open && <span className="truncate">{raiz.name}</span>}
-              </div>
-            );
-          })()}
+                  um time raiz, sem poder na organizacao  -> nome, sem chevron
+                  dois ou mais, ou administra a org       -> seletor
+
+              A primeira metade ja existia aqui como texto simples; a Spec 046
+              (varias areas) criou o caso que exige a segunda.
+
+              ⚠️ E ELE FICA AQUI, acima do nome da pessoa, e nao no topo da
+              barra. Eu ja o pus la em cima uma vez e a Camila corrigiu: o
+              rodape e o bloco do "quem sou eu e onde estou"; o topo e a
+              identidade do produto.
+
+              ⚠️ SO TIMES RAIZ entram na lista -- subtime e navegacao DENTRO
+              da area, e o lugar dela e a tela do time. A regra inteira mora em
+              `lib/contextSwitcher.ts`, testada. */}
+          <ContextSwitcher
+            teams={teams}
+            me={user}
+            pathname={pathname}
+            canManageOrg={podeVerOrganizacao}
+            expanded={open}
+            orgName={orgName}
+          />
           <a
             href="/perfil"
             title={!open ? "Meu perfil" : undefined}

@@ -55,6 +55,7 @@ export function clearTokens() {
   _teams = undefined;
   _members = undefined;
   _me = undefined;
+  _workspace = undefined;
 }
 
 export class ApiError extends Error {
@@ -254,6 +255,12 @@ export type CurrentUser = {
   must_change_password: boolean;
   roles: string[];
   permissions: string[];
+  // ⚠️⚠️ O PAPEL NA ORGANIZACAO, separado -- e a unica forma de responder
+  // "esta pessoa administra a ORGANIZACAO?". `roles` e `permissions` MISTURAM
+  // os dois niveis de proposito (servem a "quais acoes ela pode"), e por isso
+  // um ADMIN de TIME aparecia la como "ADMIN" e ganhava a porta da tela de
+  // organizacao. Visto em producao em 10/09.
+  org_role?: OrgRole | null;
   // Trabalho 2: vinculos (time, papel) do usuario -> base da lente
   // (quais quadros de subtime mostrar, qual e a raiz).
   teams: TeamMembership[];
@@ -697,8 +704,30 @@ export async function listSubteams(): Promise<Team[]> {
 // nome (pt-BR). Deriva do mesmo listTeams() memoizado.
 // Zera o cache de times -> a proxima listTeams() rebusca. Chamar apos criar,
 // editar ou remover. Espelha invalidateMembers.
+//
+// ⚠️⚠️ E AVISA QUEM JA LEU, desde 10/09. Zerar o cache faz a PROXIMA leitura
+// vir fresca; nao faz quem ja leu reler. A Camila viu na tela: *"criei uma raiz
+// e nao apareceu direto na barra lateral"* -- a `/organizacao` recarregava o
+// proprio estado e o `AppShell`, que buscou os times uma vez na montagem,
+// seguia com a lista velha.
+//
+// ⚠️ ATE AQUI ISSO NUNCA APARECEU porque a navegacao deste app e RECARGA TOTAL
+// (registrado no topo do `AppShell`): trocar de tela remontava a barra e ela
+// relia. Criar area e o primeiro caso em que a arvore muda SEM navegacao.
+//
+// ⚠️ EVENTO DE `window`, e nao contexto de React: o cache mora em modulo, fora
+// da arvore, e quem o invalida sao funcoes de `lib/` -- nenhuma delas pode
+// chamar um `setState`. Um contexto exigiria que TODA mutacao de time passasse
+// por um provider, o que e o oposto de onde a decisao mora hoje.
+export const TIMES_MUDARAM = "times:mudaram";
+
 export function invalidateTeams() {
   _teams = undefined;
+  // ⚠️ A guarda e para o SSR: `lib/api` e importado por componente de
+  // servidor na build, e `window` nao existe la.
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event(TIMES_MUDARAM));
+  }
 }
 
 // Spec 029/D1: criar exige team.manage (ADMIN ou MANAGER). 409 = slug repetido
@@ -706,7 +735,15 @@ export function invalidateTeams() {
 export async function createTeam(input: {
   name: string;
   slug: string;
-  parent_team_id: string;
+  // ⚠️⚠️ AUSENTE (ou `null`) = cria uma AREA; preenchido = cria um SUBTIME.
+  // Ate a Spec 046 este campo era OBRIGATORIO no tipo, porque so havia uma
+  // area e ninguem podia criar outra -- a tela de times so criava subtime.
+  //
+  // ⚠️ E `""` NAO SERVE COMO "sem pai": o backend tipa
+  // `parent_team_id: uuid.UUID | None`, entao string vazia e 422. A primeira
+  // versao da tela de organizacao mandava `""` e o `tsc` nao acusou, porque
+  // `""` E uma `string` -- foi a leitura do schema que pegou.
+  parent_team_id?: string | null;
 }): Promise<Team> {
   const t = await api<Team>("/api/v1/workspaces/current/teams", {
     method: "POST",
@@ -773,6 +810,68 @@ export async function esvaziarERemoverTeam(
   );
   invalidateTeams();
   return r;
+}
+
+// ===========================================================================
+// WORKSPACE (a ORGANIZACAO) -- Spec 047, fatia B
+// ===========================================================================
+// ⚠️ A rota de renomear existe desde sempre e NUNCA teve tela: a Spec 047 e a
+// primeira que a expoe. Por isso este bloco nasce agora, e nao porque faltava
+// backend.
+export type Workspace = {
+  id: string;
+  name: string;
+  slug: string;
+};
+
+// Promove/rebaixa o papel de ORGANIZACAO. `null` remove.
+//
+// ⚠️ A rota existe desde a Spec 045 (fatia D) e NUNCA teve tela -- ate aqui o
+// unico jeito de promover alguem era SQL na mao. E a razao de ela existir e a
+// invariante de nivel: `POST /members` recusa `role=ADMIN`, porque ADMIN
+// deixou de ser papel de time.
+//
+// 409 = seria o ULTIMO administrador ativo. Sem nenhum, ninguem tem
+// `workspace.manage`, que e o portao desta propria rota -- a organizacao se
+// trancaria e a saida seria SQL.
+export async function changeOrganizationRole(
+  userId: string,
+  role: OrgRole | null,
+): Promise<Member> {
+  const m = await api<Member>(
+    `/api/v1/members/${userId}/organization-role`,
+    { method: "PATCH", body: { role } },
+  );
+  invalidateMembers();
+  return m;
+}
+
+// ⚠️⚠️ MEMOIZADO desde 10/09, e o motivo e a BARRA: o rodapé passou a mostrar
+// o nome da organizacao em toda tela que nao tem area na URL (pedido da
+// Camila), entao o `AppShell` pede este dado sempre -- e sem cache seria uma
+// requisicao a mais em cada navegacao, para um nome que muda uma vez por ano.
+// Mesmo padrao de `_teams` e `_me`, inclusive a limpeza no `clearTokens`.
+let _workspace: Workspace | undefined;
+
+export async function getWorkspace(): Promise<Workspace> {
+  if (_workspace !== undefined) return _workspace;
+  _workspace = await api<Workspace>("/api/v1/workspaces/current");
+  return _workspace;
+}
+
+// Renomear exige `workspace.manage` -> so ADMIN de organizacao. 403 se nao.
+//
+// ⚠️ ELA REESCREVE O CACHE em vez de o invalidar: a resposta JA E o workspace
+// novo, entao guardar o que voltou evita uma segunda ida ao servidor e mantem
+// a barra e a tela dizendo a mesma coisa. Invalidar deixaria o proximo leitor
+// buscar de novo -- correto, mas por nada.
+export async function renameWorkspace(name: string): Promise<Workspace> {
+  const ws = await api<Workspace>("/api/v1/workspaces/current", {
+    method: "PATCH",
+    body: { name },
+  });
+  _workspace = ws;
+  return ws;
 }
 
 export async function listTeamsAll(): Promise<Team[]> {
@@ -1472,12 +1571,37 @@ export async function moveTask(
 // Lista por-workspace, estavel na sessao -> buscada uma vez e memoizada
 // (mesmo padrao do time raiz). Limpa no clearTokens.
 
+/** Papel na ORGANIZACAO -- sem time (Spec 045, fatia B). */
+export type OrgRole = "ADMIN" | "GESTOR";
+
 export type Member = {
   id: string;
   workspace_id: string;
   name: string;
   email: string;
   is_active: boolean;
+  // Papel na ORGANIZACAO (Spec 045, fatia B). `null` = nenhum, a maioria.
+  // A `/organizacao` mostra os gestores no cabecalho a partir daqui.
+  org_role?: OrgRole | null;
+  // ⚠️ ALIMENTA A ABA "CONVIDADOS": quem recebeu a senha provisória e ainda
+  // NÃO entrou. Não é estado novo no banco -- é `is_active` cruzado com este
+  // campo. Ver `memberState` em `lib/memberState.ts`.
+  must_change_password?: boolean;
+  // ⚠️⚠️ AS AREAS (raizes) da pessoa -- Spec 047, fatia B. DISTINTO de
+  // `team_ids`, logo abaixo, que traz so os SUBTIMES. Quem esta vinculado
+  // apenas na area tem `team_ids` VAZIO e `area_ids` cheio -- usar o campo
+  // errado no card "Pessoas sem area" classificaria essa pessoa como solta.
+  // Lista vazia AQUI = sem vinculo nenhum.
+  // ⚠️ Opcional porque respostas de MUTACAO nao a resolvem; so a listagem.
+  area_ids?: string[];
+  // ⚠️ TODOS os vinculos, COM o papel (Spec 047, fatia C). A tabela da tela
+  // de time mostra `SEO · supervisor` -- sem o papel, a coluna diz ONDE a
+  // pessoa esta e esconde O QUE ela e, numa tela cujo assunto e permissao.
+  //
+  // ⚠️ NAO SUBSTITUI `team_ids`: aquele e a projecao SO-SUBTIMES de que o
+  // filtro do quadro depende. Os dois saem da MESMA consulta no backend,
+  // entao nao ha como discordarem. Opcional pelo mesmo motivo de `area_ids`.
+  memberships?: MemberTeam[];
   // Entrega 13 (Fatia 2): ids dos SUBTIMES do membro (times nao-raiz). O
   // backend nunca devolve aqui o time raiz. Usado pelo filtro de subtime no
   // quadro (Fatia 3). Lista VAZIA = sem subtime; nao existe `null`.
@@ -1564,6 +1688,21 @@ export type MemberRole = "ADMIN" | "MANAGER" | "SUPERVISOR" | "OPERATOR";
 // administracao de papel (mostrar o papel atual antes de oferecer alterar).
 export type MemberTeam = { team_id: string; role: MemberRole };
 
+/**
+ * Um vínculo NA LISTAGEM de `/members/{id}/teams`, com o cadeado resolvido.
+ *
+ * ⚠️⚠️ `can_edit_role` VEM DO BACKEND, e o painel NÃO pode recalculá-lo. A
+ * Spec 034 já desfez uma regra de escopo espelhada no front -- ela fazia
+ * gestor e admin sumirem dos seletores, e foi reportado duas vezes com
+ * captura. A prescrição é literal: "se aparecer necessidade de filtrar escopo
+ * no front, falta parâmetro na rota". Este é o parâmetro (Spec 047, fatia A).
+ *
+ * ⚠️ Ele responde SÓ pelo papel. Remover do time é outra rota, com outro gate
+ * (aberto ao SUPERVISOR pela Spec 028) -- usar este campo para esconder o
+ * botão de remover esconderia uma ação permitida.
+ */
+export type MemberTeamComCadeado = MemberTeam & { can_edit_role: boolean };
+
 // POST /members devolve a senha provisoria UMA vez (ADR 0021 backend /
 // 0008 front). So existe nesta resposta; nao e re-buscavel.
 export type MemberCreated = Member & {
@@ -1615,10 +1754,42 @@ export async function createMember(input: {
   return r;
 }
 
+/** Uma pessoa DENTRO de um time, com o cadeado. Spec 047, revisao de 09/09. */
+export type TeamMemberComCadeado = {
+  user_id: string;
+  role: MemberRole;
+  // ⚠️ A conta esta ATIVA? A tela precisa distinguir DUAS razoes para o
+  // cadeado fechado: "fora do seu escopo" e "esta pessoa foi desativada". As
+  // duas travam a edicao, mas a segunda tem explicacao propria.
+  is_active: boolean;
+  can_edit_role: boolean;
+};
+
+/**
+ * Quem esta NESTE time, e quais desses cargos eu posso trocar.
+ *
+ * ⚠️⚠️ E O ESPELHO de `listMemberTeams`: aquela responde "onde esta esta
+ * pessoa?", esta responde "quem esta neste time?". A gaveta do subtime faz a
+ * segunda -- e ate 09/09 ela tinha os vinculos (pela listagem de membros) mas
+ * NAO o cadeado de cada um, entao nao oferecia edicao nenhuma. A Camila tentou
+ * trocar o cargo ali e nao conseguiu.
+ *
+ * ⚠️ ROTA NOVA, e nao regra espelhada no front: *"se aparecer necessidade de
+ * filtrar escopo no front, falta parametro na rota"*. Deduzir o cadeado na
+ * tela e exatamente o que a Spec 034 desfez.
+ */
+export async function listTeamMembers(
+  teamId: string,
+): Promise<TeamMemberComCadeado[]> {
+  return api<TeamMemberComCadeado[]>(`/api/v1/members/by-team/${teamId}`);
+}
+
 // Spec 015, Fatia 1: papeis de um membro por time. Leitura -- so exige estar
 // autenticado. Nao usa o cache de membros (e detalhe sob demanda).
-export async function listMemberTeams(userId: string): Promise<MemberTeam[]> {
-  return api<MemberTeam[]>(`/api/v1/members/${userId}/teams`);
+export async function listMemberTeams(
+  userId: string,
+): Promise<MemberTeamComCadeado[]> {
+  return api<MemberTeamComCadeado[]>(`/api/v1/members/${userId}/teams`);
 }
 
 // Spec 015, Fatia 2: troca o papel de um membro num time. Exige team.manage;
@@ -1629,10 +1800,21 @@ export async function changeMemberRole(
   teamId: string,
   role: MemberRole
 ): Promise<MemberTeam> {
-  return api<MemberTeam>(`/api/v1/members/${userId}/teams/${teamId}`, {
+  const r = await api<MemberTeam>(`/api/v1/members/${userId}/teams/${teamId}`, {
     method: "PATCH",
     body: { role },
   });
+  // ⚠️⚠️ FALTAVA, e o sintoma era exatamente este: *"quando mudo o cargo nao
+  // atualiza na hora na tela"*. `listMembers()` e MEMOIZADO em modulo, e o
+  // PAPEL viaja dentro de `Member.memberships` -- entao trocar o cargo mudava
+  // o banco e a tela seguia lendo a lista velha do cache.
+  //
+  // ⚠️ As irmas (`assignMemberToTeam`, `removeMemberFromTeam`,
+  // `changeOrganizationRole`) ja invalidavam. Esta escapou porque o efeito
+  // dela nao MUDA A LISTA -- muda um campo dentro de cada item --, e isso e
+  // facil de nao ver ate a tela contar a historia velha.
+  invalidateMembers();
+  return r;
 }
 
 // Spec 016: adiciona um membro EXISTENTE a um time, com um papel. Exige

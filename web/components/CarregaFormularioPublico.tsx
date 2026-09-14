@@ -9,6 +9,7 @@ import {
 import { paraCategorias, porSlug } from "@/lib/formularioDoBanco";
 import type { Categoria } from "@/lib/solicitacaoForm";
 
+import Loading from "@/components/Loading";
 /**
  * Busca um formulário publicado e entrega as categorias a quem desenha.
  *
@@ -86,9 +87,7 @@ export default function CarregaFormularioPublico({
   }
   if (!form) {
     return (
-      <p className="muted" style={{ fontSize: 14 }}>
-        Carregando o formulário…
-      </p>
+      <Loading rotulo="Carregando o formulário" />
     );
   }
 

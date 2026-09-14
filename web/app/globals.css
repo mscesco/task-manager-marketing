@@ -446,18 +446,72 @@ button { font-family: inherit; cursor: pointer; }
   box-shadow: 0 2px 4px rgba(16, 24, 40, 0.07), 0 4px 12px rgba(16, 24, 40, 0.08);
 }
 
-/* --- Affordance de clique: hover + foco visivel por teclado (C1/C2) --- */
-/* outline funciona por cima de estilos inline: border e box-shadow inline
-   ganham de :hover, mas outline nao e setado inline. O mesmo anel accent
-   serve pra hover (interno, sutil) e foco de teclado (externo). */
-.tappable { cursor: pointer; }
-.tappable:hover { outline: 1px solid var(--accent); outline-offset: -1px; }
+/* --- Affordance de clique: hover + foco visivel por teclado (C1/C2) ---
 
+   ⚠️⚠️ O ANEL DE HOVER MORREU EM 10/09, e o motivo foi a tela: *"o contorno em
+   torno do meu nome e cargo esta tenebroso de feio (...) da para identificar e
+   mudar absolutamente todos para ficar com a animacao igual dos subtimes?"*.
+
+   O que ele era: `outline: 1px solid var(--accent)` aparecendo INTEIRO, de uma
+   vez, colado no conteudo. Dois defeitos somados:
+
+     1. em SUPERFICIE (cartao, linha de lista) ele lia como "selecionado", e nao
+        como "passei o mouse" -- e nao acompanhava o raio;
+     2. em PILULA ele desenhava um RETANGULO em volta de uma forma redonda,
+        porque quem recebia o anel era o `<a>`/`<button>` de fora, que nao tem
+        raio nenhum. Era isto na captura dela.
+
+   A divisao que substituiu (decisao dela entre tres opcoes, 10/09):
+
+     SUPERFICIE  -> o contorno DESENHADO (`useDrawnOutline`), o traco que corre
+                    e para no meio da base. Nada de anel; nada aqui no CSS.
+     CONTROLE    -> nenhum anel de hover. O feedback e o proprio elemento
+                    escurecendo, e o FOCO continua sendo anel (acessibilidade).
+
+   ⚠️⚠️ `filter` E NAO `opacity`, e a razao esta no comentario que este bloco
+   substituiu: *"outline funciona por cima de estilos inline: border e
+   box-shadow inline ganham de :hover"*. `opacity` tem o MESMO problema -- e
+   nao e hipotetico, sao dois lugares reais: a pilula de filtro de
+   `minhas-tarefas` (`opacity: on ? 1 : 0.45`) e o `PillSelect`
+   (`opacity: disabled ? 0.5 : 1`). Nos dois, o inline venceria e o hover
+   simplesmente nao aconteceria -- silenciosamente, em dois controles, sem
+   nenhum portao para dizer.
+   `filter` nao e setado inline em lugar nenhum desta base (conferido), entao
+   ele e a unica propriedade que chega a todos.
+
+   ⚠️ SAO DUAS REGRAS, uma por tema, porque brilho nao e simetrico: no claro o
+   controle ESCURECE, no escuro ele CLAREIA. Uma regra so teria de escolher um
+   tema para funcionar. `.btn-primary:hover` ja e assim, logo acima.
+
+   ⚠️ ARMADILHA CONHECIDA: `filter` cria bloco de contencao -- um filho
+   `position: fixed` DENTRO de um `.tappable` passaria a se posicionar pelo
+   controle, e nao pela janela. Hoje nenhum painel e filho de um `.tappable`
+   (no `PillSelect` e no papel de organizacao o painel e IRMAO do botao), mas
+   quem puser um la dentro vai ver o painel saltar no hover. */
+.tappable { cursor: pointer; transition: filter .12s ease-out; }
+.tappable:hover { filter: brightness(.93); }
+[data-theme="escuro"] .tappable:hover { filter: brightness(1.25); }
+
+/* ⚠️⚠️ A FORMA DO ALVO E DA PILULA QUE ELE EMBRULHA. Quando um `<a>` ou
+   `<button>` contem SO um `Badge`, o anel de foco segue o raio de QUEM O
+   RECEBE -- o elemento de fora --, e sem esta classe ele e um retangulo em
+   volta de uma pilula.
+   ⚠️ Ela existe como classe, e nao como componente, porque o que falta e um
+   FATO DE ESTILO ("este alvo tem a forma do filho"), nao comportamento. E ela
+   e grepavel: `PillSelect` ja resolvia isto com `borderRadius: 999` inline, na
+   mao, e a segunda e a terceira ocorrencia do mesmo defeito nasceram
+   justamente porque a correcao nao tinha nome. */
+.pill-target { border-radius: 999px; }
+
+/* ⚠️ SEM `border-radius` AQUI: a regra antiga impunha `6px` ao elemento
+   focado, o que (a) arredondava o proprio elemento no momento do foco -- um
+   salto visual -- e (b) quadrava o anel em volta de qualquer coisa mais
+   redonda que 6px, pilula inclusive. Sem a linha, o anel segue o raio real de
+   cada elemento, que e o que o navegador ja faz de graca. */
 a:focus-visible,
 button:focus-visible,
 [role="button"]:focus-visible,
 [tabindex]:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
-  border-radius: 6px;
 }

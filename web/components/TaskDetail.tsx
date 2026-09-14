@@ -79,6 +79,7 @@ import {
 } from "@/lib/criacaoTarefa";
 import { linkify } from "@/lib/linkify";
 
+import Loading from "@/components/Loading";
 // ⚠️ RESERVA DO BADGE, e so isso (fatia 4c-2). O rotulo do badge passou a sair
 // de `coluna.name`; este mapa responde pelo caso em que a coluna da tarefa nao
 // esta na lista carregada -- quadro sem alcance, coluna apagada na fatia 5, ou
@@ -2670,7 +2671,7 @@ export default function TaskDetail({
           )}
 
           {comentarios === null ? (
-            <span className="muted" style={{ fontSize: 13 }}>Carregando…</span>
+            <Loading tamanho="linha" rotulo="Carregando os comentários" />
           ) : comentarios.length === 0 ? (
             <span className="muted" style={{ fontSize: 13 }}>
               Nenhum comentário ainda.

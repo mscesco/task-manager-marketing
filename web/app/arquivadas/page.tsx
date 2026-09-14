@@ -22,6 +22,7 @@ import { STATUSES, STATUS_TEXT } from "@/lib/status";
 import { rotuloDeColuna, type OrigemDaColuna } from "@/lib/coluna";
 import { mensagemExclusao } from "@/lib/exclusao";
 
+import Loading from "@/components/Loading";
 // Tela de arquivadas (Spec 013, fatia 4). Lista paginada de tarefas
 // arquivadas (manuais ou pela varredura) + reativar (volta pra BACKLOG e
 // desarquiva). Pagina de verdade: o conjunto cresce sem fim.
@@ -196,7 +197,7 @@ function Arquivadas() {
   const totalPaginas = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   if (erro) return <div className="error-box" style={{ maxWidth: 560 }}>{erro}</div>;
-  if (!tasks) return <div className="muted">Carregando arquivadas…</div>;
+  if (!tasks) return <Loading rotulo="Carregando arquivadas" />;
 
   return (
     <div style={{ maxWidth: 720 }}>

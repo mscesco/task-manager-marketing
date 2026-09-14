@@ -54,6 +54,8 @@ import {
 import { sincronizarTaskNaUrl } from "@/lib/urlTarefa";
 import { ORDENACOES, ordenar, type Ordenacao } from "@/lib/ordenacao";
 
+import Loading from "@/components/Loading";
+import { useDrawnOutline } from "@/components/AnimatedOutline";
 const RELATION_LABEL: Record<string, string> = {
   assignee: "Responsável",
   creator: "Criei",
@@ -730,7 +732,7 @@ function Minhas() {
   // ate as colunas chegarem, em vez de pintar sem filtro e reordenar depois --
   // lista que pisca mostrando concluidas que ninguem pediu e pior que meio
   // segundo de "Carregando".
-  if (!items || !colunas) return <div className="muted">Carregando…</div>;
+  if (!items || !colunas) return <Loading />;
 
   // Detalhe e subtarefas SEMPRE sobre a lista completa (um filtro ativo nao
   // pode quebrar abrir/navegar uma task que esta fora do filtro atual).
@@ -796,24 +798,14 @@ function Minhas() {
     // seguro (o contrario pintaria de vermelho por falta de dado).
     const dueTone = col ? deadlineTonePorColuna(col, t.due_date, t.is_archived, t.due_time) : null;
     return (
-      <div
+      <FaixaClicavel
         key={t.id}
-        onClick={() => abrirDetalhe(t)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            abrirDetalhe(t);
-          }
-        }}
-        role="button"
-        tabIndex={0}
-        className="tappable"
+        onAbrir={() => abrirDetalhe(t)}
         style={{
           display: "flex", alignItems: "center", gap: 14, padding: "12px 16px",
           borderTop: i === 0 ? "none" : "1px solid var(--border)",
           // Reserva sempre a borda (transparente) pra nao deslocar o texto.
           borderLeft: `3px solid ${dueTone ? DEADLINE_COLOR[dueTone] : "transparent"}`,
-          cursor: "pointer",
         }}
       >
         <span
@@ -893,7 +885,7 @@ function Minhas() {
         <Badge tone="soft" size="sm" color={PRIORITY_COLOR[t.priority]} className="shrink-0">
           {PRIORITY_LABEL[t.priority] || t.priority}
         </Badge>
-      </div>
+      </FaixaClicavel>
     );
   }
 
@@ -1329,6 +1321,58 @@ function Minhas() {
 
 // --- Kanban do minhas-tarefas (duplicado do Board de proposito: mantem o
 // quadro geral intocado). Coluna droppable + card draggable, reusando TaskCard. ---
+/**
+ * Uma faixa clicável da lista — só a casca, com o contorno desenhado.
+ *
+ * ⚠️⚠️ ELA EXISTE PARA O CONTORNO, e não é só embrulho: o anel duro do
+ * `.tappable:hover` saiu do CSS global em 10/09 e deu lugar ao traço que
+ * corre, e o gancho que o desenha não pode ser chamado de dentro de
+ * `linhaTarefa` -- aquela função roda uma vez por tarefa.
+ *
+ * ⚠️ E ELA LEVA SÓ `onAbrir` E `style`, e não a tarefa: passar `t` faria esta
+ * casca conhecer o formato da linha, e aí ela deixaria de ser casca. O
+ * conteúdo continua sendo montado em `linhaTarefa`, onde estão `colunaDe`,
+ * `rotuloDe` e o resto do fechamento.
+ *
+ * ⚠️ `radius` 0: a faixa não tem raio -- as linhas se dividem por borda dentro
+ * de um contêiner que tem o raio. Um traço arredondado no meio de uma lista de
+ * cantos retos é pior que nenhum.
+ *
+ * ⚠️ O `onKeyDown` vem junto: a faixa é `role="button"`, então Enter e Espaço
+ * TÊM de abrir. Deixá-lo em `linhaTarefa` faria a casca prometer um papel que
+ * ela não cumpre.
+ */
+function FaixaClicavel({
+  onAbrir,
+  style,
+  children,
+}: {
+  onAbrir: () => void;
+  style: React.CSSProperties;
+  children: React.ReactNode;
+}) {
+  const { alvo, outline } = useDrawnOutline();
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={onAbrir}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onAbrir();
+        }
+      }}
+      {...alvo}
+      // ⚠️ `position: relative` é o que faz o contorno medir ESTA faixa.
+      style={{ position: "relative", cursor: "pointer", ...style }}
+    >
+      {outline}
+      {children}
+    </div>
+  );
+}
+
 function ColunaMinhas({
   coluna,
   count,

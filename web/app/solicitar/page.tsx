@@ -20,6 +20,8 @@ import { useEffect, useState } from "react";
 
 import CarregaFormularioPublico from "@/components/CarregaFormularioPublico";
 import FormularioSolicitacao from "@/components/FormularioSolicitacao";
+import Loading from "@/components/Loading";
+import { useDrawnOutline } from "@/components/AnimatedOutline";
 import {
   listarFormulariosPublicos,
   type FormularioPublicoResumo,
@@ -55,9 +57,7 @@ export default function SolicitarPage() {
   if (formularios === null) {
     return (
       <Casca>
-        <p className="muted" style={{ fontSize: 14 }}>
-          Carregando…
-        </p>
+        <Loading />
       </Casca>
     );
   }
@@ -152,35 +152,60 @@ export default function SolicitarPage() {
           </h2>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {lista.map((f) => (
-              <a
-                key={f.slug}
-                href={`/solicitar/${f.slug}`}
-                className="tappable"
-                style={{
-                  display: "block",
-                  padding: "14px 16px",
-                  borderRadius: 12,
-                  border: "1px solid var(--border)",
-                  background: "var(--surface)",
-                  textDecoration: "none",
-                  color: "inherit",
-                }}
-              >
-                <strong style={{ fontSize: 15 }}>{f.title}</strong>
-                {f.description && (
-                  <span
-                    className="muted"
-                    style={{ display: "block", fontSize: 13, marginTop: 3 }}
-                  >
-                    {f.description}
-                  </span>
-                )}
-              </a>
+              <CartaoDeFormulario key={f.slug} f={f} />
             ))}
           </div>
         </section>
       ))}
     </Casca>
+  );
+}
+
+/**
+ * Um cartão de formulário público.
+ *
+ * ⚠️ VIROU COMPONENTE em 10/09 pelo mesmo motivo das outras superfícies: o
+ * anel duro do `.tappable:hover` saiu do CSS global e deu lugar ao contorno
+ * DESENHADO, e gancho não se chama dentro de um `.map()`.
+ *
+ * ⚠️ `radius` 12, igual ao `borderRadius` de baixo. Os dois têm de andar
+ * juntos: o contorno é um `<path>` em pixels, e um raio diferente do CSS passa
+ * o traço por dentro ou por fora do canto.
+ */
+function CartaoDeFormulario({
+  f,
+}: {
+  f: { slug: string; title: string; description?: string | null };
+}) {
+  const { alvo, outline } = useDrawnOutline();
+  return (
+    <a
+      href={`/solicitar/${f.slug}`}
+      {...alvo}
+      style={{
+        // ⚠️ `relative` é o que faz o contorno medir ESTE cartão.
+        position: "relative",
+        cursor: "pointer",
+        display: "block",
+        padding: "14px 16px",
+        borderRadius: 12,
+        border: "1px solid var(--border)",
+        background: "var(--surface)",
+        textDecoration: "none",
+        color: "inherit",
+      }}
+    >
+      {outline}
+      <strong style={{ fontSize: 15 }}>{f.title}</strong>
+      {f.description && (
+        <span
+          className="muted"
+          style={{ display: "block", fontSize: 13, marginTop: 3 }}
+        >
+          {f.description}
+        </span>
+      )}
+    </a>
   );
 }
 

@@ -24,6 +24,7 @@ from sqlalchemy import select
 from app.db.models.boards import Board, BoardColumn
 from app.db.models.enums import TaskStatus
 from app.modules.tasks.application.board_service import BoardService
+from app.modules.tasks.domain.board_defaults import COLUNAS_PADRAO
 from tests.integration import factories as f
 
 pytestmark = pytest.mark.integration
@@ -64,7 +65,8 @@ async def test_make_board_gera_o_mesmo_quadro_que_o_servico(db) -> None:
     sub_b = await f.make_team(db, workspace_id=ws, parent_team_id=raiz)
 
     pelo_servico = await BoardService(db).create_default_board(
-        workspace_id=ws, team_id=sub_a
+        workspace_id=ws, team_id=sub_a,
+        colunas=COLUNAS_PADRAO,
     )
     pela_factory = await f.make_board(
         db, workspace_id=ws, team_id=sub_b, is_default=True

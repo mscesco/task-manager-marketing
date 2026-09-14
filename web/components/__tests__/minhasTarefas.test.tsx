@@ -21,7 +21,7 @@
  * chegarem. E a alternativa ao "lista pisca mostrando concluidas que ninguem
  * pediu". A sondagem dizia que isso daria "um estado de carregando que a tela
  * nao tinha", e **isso esta errado**: o gate ja existe hoje
- * (`page.tsx:582`, `if (!items) return <div>Carregando…</div>`). A 4b
+ * (`page.tsx`, `if (!items) return <Loading />`). A 4b
  * acrescenta uma condicao a esse `if`, nao uma tela nova. O teste 1 prende o
  * gate para que essa extensao seja barata e verificavel.
  *
@@ -285,7 +285,7 @@ describe("minhas-tarefas -- fiacao da tela", () => {
 
     render(<MinhasTarefasPage />);
 
-    expect(screen.getByText(/Carregando/i)).toBeTruthy();
+    expect(screen.getByRole("status", { name: /Carregando/i })).toBeTruthy();
     expect(screen.queryByText("Tarefa em andamento")).toBeNull();
 
     resolver({
@@ -319,7 +319,7 @@ describe("minhas-tarefas -- fiacao da tela", () => {
 
     // A lista resolve na hora; as colunas nao. A tela tem de segurar.
     await waitFor(() => {
-      expect(screen.getByText(/Carregando/i)).toBeTruthy();
+      expect(screen.getByRole("status", { name: /Carregando/i })).toBeTruthy();
     });
     expect(screen.queryByText("Tarefa qualquer")).toBeNull();
 

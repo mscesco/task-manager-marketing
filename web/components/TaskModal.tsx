@@ -53,6 +53,7 @@ import { timeDaTarefaNova } from "@/lib/escopoTarefa";
 import Avatar from "@/components/Avatar";
 import { nomeCurto } from "@/lib/people";
 
+import Loading from "@/components/Loading";
 const PRIORITIES = ["LOW", "MEDIUM", "HIGH", "URGENT"] as const;
 
 // Gatilho compacto redondo (mesmo padrao do detalhe): troca o despejo de 30
@@ -949,7 +950,7 @@ export default function TaskModal({
               </span>
             </label>
             {membros.length === 0 ? (
-              <span className="muted" style={{ fontSize: 13 }}>Carregando membros…</span>
+              <Loading tamanho="linha" rotulo="Carregando os membros" />
             ) : (
               <div ref={respWrapRef} style={{ position: "relative" }}>
                 <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6 }}>

@@ -37,7 +37,10 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from app.core.tenant import Membership, TeamNode, TenantContext, tenant_scope
-from app.modules.auth.domain.permissions import permissions_for_roles
+from app.modules.auth.domain.permissions import (
+    permissions_for_actor,
+    permissions_for_roles,
+)
 
 # dump tirado da produção em 0007,
 # stamp aqui, upgrade aplica só 0008+
@@ -106,20 +109,71 @@ def acting_as(
     user_id: uuid.UUID,
     memberships: tuple[Membership, ...] = (),
     team_tree: tuple[TeamNode, ...] = (),
+    org_role: str | None = None,
 ) -> Iterator[TenantContext]:
     """Seta o TenantContext do teste (reusa tenant_scope do app).
 
-    permissions sao derivadas dos papeis das memberships -- mesmo caminho
-    do get_tenant_context real.
+    ⚠️⚠️ AS PERMISSOES SAO MONTADAS **COM ESCOPO**, por `permissions_for_actor`
+    -- o mesmo caminho de `get_tenant_context`. Ate 09/09 este helper passava
+    um `frozenset` de `permissions_for_roles`, e isso tornava INVISIVEL nos
+    testes toda regra escopada por time.
+
+    O motivo esta escrito em `TenantContext.has_permission_in`: quando
+    `permissions` nao tem `can_in` (ou seja, e um `frozenset`), ele CAI PARA A
+    PERGUNTA AMPLA, de proposito e fail-open. Com um `frozenset` aqui,
+    "tem `team.manage` NAQUELA arvore" respondia igual a "tem `team.manage`
+    em algum lugar" -- e um teste de duas areas passaria verde com a regra
+    errada.
+
+    ⚠️ E o comentario de la ja anunciava esta troca: *"E fail-OPEN (...)
+    enquanto houver uma raiz so, as duas respostas coincidem em todo caso
+    real. A fatia D estreita isto quando o cadastro permitir."* O cadastro
+    permitiu na Spec 046; a troca e esta.
+
+    ⚠️ `org_role` entra como parametro proprio porque papel de ORGANIZACAO nao
+    tem time (Spec 045, fatia B) -- quem administra a organizacao alcanca
+    tudo, e isso nao sai de `memberships`.
     """
-    roles = frozenset(m.role for m in memberships)
+    roles = frozenset(m.role for m in memberships) | (
+        frozenset({org_role}) if org_role else frozenset()
+    )
     with tenant_scope(
         workspace_id=workspace_id,
         user_id=user_id,
         roles=roles,
-        permissions=permissions_for_roles(roles),
+        # ⚠️⚠️ SO ESCOPA QUANDO A ARVORE FOI DECLARADA, e isto e uma escolha,
+        # nao um atalho. `permissions_for_actor` concede ao papel de COMANDO o
+        # time do vinculo MAIS OS DESCENDENTES -- e sem `team_tree` nao ha de
+        # onde tirar descendente nenhum. Um MANAGER da raiz ficaria com
+        # `team.manage` SO na raiz e seria recusado ao mexer num subtime.
+        #
+        # Dezenas de testes antigos nao passam `team_tree` porque nunca
+        # precisaram: a pergunta deles nao e sobre escopo. Escopar todos de uma
+        # vez quebraria 31 deles por um motivo que nao e o assunto de nenhum.
+        #
+        # ⚠️ E A REGRA PARA QUEM ESCREVE TESTE NOVO: se a sua pergunta e sobre
+        # ESCOPO -- quem alcanca qual arvore --, PASSE `team_tree`. Sem ela o
+        # contexto cai na pergunta ampla (`has_permission_in` e fail-open com
+        # `frozenset`), e o teste fica verde com a regra errada.
+        permissions=(
+            permissions_for_actor(
+                memberships=memberships, tree=team_tree, org_role=org_role
+            )
+            if team_tree
+            else permissions_for_roles(roles)
+        ),
         memberships=memberships,
         team_tree=team_tree,
+        # ⚠️⚠️ SEM ESTA LINHA, TODA REGRA DE PAPEL DE ORGANIZACAO FICAVA
+        # INVISIVEL NOS TESTES. O `org_role` entrava so em `roles` e em
+        # `permissions_for_actor` -- `require_tenant().org_role` respondia
+        # `None` mesmo com `acting_as(..., org_role="ADMIN")`.
+        #
+        # Achado em 10/09, escrevendo a abertura do anti-lockout para quem
+        # administra a organizacao: o teste falhava com a regra CERTA. E a
+        # mesma classe do defeito que este helper ja registra logo acima --
+        # o contexto do teste diferindo do contexto da requisicao.
+        org_role=org_role,
     ) as ctx:
         yield ctx
 

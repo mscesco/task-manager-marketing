@@ -28,6 +28,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.logging import get_logger
 from app.core.tenant import require_tenant
 from app.db.models import Team, UserTeam, UserTeamRole, Workspace
+from app.modules.tasks.application.board_service import BoardService
+from app.modules.tasks.domain.board_defaults import COLUNAS_BASE
 from app.modules.tasks.domain.history import build_archived_entry
 from app.modules.tasks.infrastructure.task_repository import TaskRepository
 from app.modules.workspaces.infrastructure.team_repository import (
@@ -247,8 +249,12 @@ class TeamService:
             tenant = require_tenant()
             if not tenant.has_permission("area.create"):
                 raise AuthorizationError(
-                    "Criar uma area exige papel de organizacao. "
-                    "Para criar um time dentro da sua area, escolha o time pai.",
+                    # ⚠️ VOCABULARIO DE 10/09: organizacao, time, subtime -- e
+                    # nada de "area". A frase antiga dizia "area" e "time" na
+                    # MESMA sentenca, para dois niveis diferentes, e era ela
+                    # que a pessoa lia ao levar o 403.
+                    "Criar um time exige papel de organizacao. "
+                    "Para criar um subtime dentro do seu, escolha o time pai.",
                     details={"required": "area.create"},
                 )
 
@@ -265,6 +271,52 @@ class TeamService:
         team = Team(name=name, slug=slug, parent_team_id=parent_team_id)
         self._repo.add(team)
         await self._repo.session.flush()  # garante o id
+
+        # ⚠️⚠️ TIME RAIZ NAO NASCE SEM QUADRO. Invariante ditada pela Camila em
+        # 10/09, com todas as letras: *"time raiz que nao pode nascer sem
+        # quadro"*.
+        #
+        # ⚠️⚠️ E ELA JA ERA DECISAO, tomada na Spec 046 §4.3 em 02/09 -- *"o
+        # quadro geral deixa de ser um objeto unico do workspace e passa a ser
+        # uma propriedade da area: cada raiz tem o seu, criado junto com ela"*.
+        # A metade que GARANTE UM SO foi implementada (o indice parcial
+        # `board_um_padrao_por_time`); a metade que CRIA ficou de fora, porque
+        # `create_default_board` so era chamado do provisionamento do
+        # workspace. Resultado na tela: o segundo time raiz nascia sem quadro
+        # geral, e a Camila viu o Comercial vazio de um jeito inexplicavel.
+        #
+        # ⚠️ SO RAIZ. Subtime nao tem quadro geral -- ele tem quadro INTERNO,
+        # que e `is_default=False`, criado por gente, com nome escolhido. Criar
+        # um padrao aqui daria a cada subtime um segundo "Quadro geral", e o
+        # indice parcial nem reclamaria (ele e por time).
+        #
+        # ⚠️ MESMA TRANSACAO, e e por isso que nao ha commit aqui nem la: um
+        # time raiz que existisse sem o quadro seria exatamente o estado que
+        # esta linha veio matar. Quem commita e a unidade de trabalho da rota.
+        #
+        # ⚠️ E O QUADRO E EDITAVEL, que foi a outra metade do pedido dela. Isso
+        # ja e verdade e nao precisou de nada: a trava larga que recusava
+        # mexer nas colunas do padrao caiu em 13/08, e hoje sobra so
+        # `_assert_ponte_sobrevive` -- apagar coluna que carrega `legacy_status`
+        # no quadro padrao. Renomear, reordenar e criar coluna estao abertos
+        # para ADMIN e MANAGER da raiz (`board.manage.root`).
+        if parent_team_id is None:
+            await BoardService(self._repo.session).create_default_board(
+                workspace_id=team.workspace_id,
+                team_id=team.id,
+                # ⚠️⚠️ AS QUATRO, E NAO AS OITO -- correcao dela em 10/09: *"o
+                # quadro nao e pra nascer igual o do marketing, e pra nascer
+                # como um quadro comum, com backlog, em andamento, concluido e
+                # cancelado"*. As oito do Marketing sao historicas (a copia da
+                # migration `0008`); um time novo nao herda o passado dele.
+                #
+                # ⚠️ E ELAS RECEBEM TAREFA porque nascem com PONTE e como ALVO
+                # da semantica. Os quatro status sem coluna propria (`PLANNED`,
+                # `IN_REVIEW`, `EXTERNAL_APPROVAL`, `BLOCKED`) caem no alvo da
+                # semantica deles -- o que exige o segundo degrau em
+                # `default_board_and_column_for_status`, que entrou junto.
+                colunas=COLUNAS_BASE,
+            )
 
         logger.info("team.created", team_id=str(team.id), slug=slug)
         return team

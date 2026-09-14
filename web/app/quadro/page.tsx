@@ -8,6 +8,7 @@ import SeletorDeQuadro from "@/components/SeletorDeQuadro";
 import AcoesDoQuadro from "@/components/AcoesDoQuadro";
 import { currentUser, listBoards, listTeamsAll, type Quadro } from "@/lib/api";
 import { entradaDoQuadro } from "@/lib/areas";
+import Loading from "@/components/Loading";
 import {
   alcanceDeQuadro,
   podeGerirQuadroDaRaiz,
@@ -224,12 +225,12 @@ function QuadroGeral() {
  * no código delas, e sim em o Next pré-renderizar uma e não a outra.
  *
  * ⚠️ O `fallback` É O QUE APARECE NO HTML ESTÁTICO, antes de o cliente hidratar.
- * "Carregando…" é o mesmo texto que a tela do time usa, e não uma tela em
- * branco: o Quadro geral é a página que 26 pessoas abrem todo dia.
+ * É o MESMO `Loading` do resto do produto, e não uma tela em branco: o Quadro
+ * geral é a página que 26 pessoas abrem todo dia.
  */
 export default function QuadroPage() {
   return (
-    <Suspense fallback={<AppShell><div className="muted">Carregando…</div></AppShell>}>
+    <Suspense fallback={<AppShell><Loading /></AppShell>}>
       <QuadroGeral />
     </Suspense>
   );

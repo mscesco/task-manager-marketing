@@ -78,6 +78,7 @@ import { mesclaTarefa } from "@/lib/mesclaTarefa";
 import { sincronizarTaskNaUrl, lerTaskDaUrl } from "@/lib/urlTarefa";
 import { ORDENACOES, ordenar, type Ordenacao } from "@/lib/ordenacao";
 
+import Loading from "@/components/Loading";
 // Spec 031 (C3): `normalizar` saiu daqui pra lib/filtrosQuadro (agora
 // `normalizarBusca`) -- "Minhas tarefas" tambem busca, e duas copias da
 // mesma regra sao um bug esperando.
@@ -947,22 +948,22 @@ export default function Board({
   }
 
   if (erro) return <div className="error-box" style={{ maxWidth: 480 }}>{erro}</div>;
-  if (!tasks) return <div className="muted">Carregando tarefas…</div>;
+  if (!tasks) return <Loading rotulo="Carregando tarefas" />;
   // Quadro geral/subtime dependem do rootId pro filtro. Espera ele
   // carregar pra nao piscar tasks que o filtro vai esconder. Projeto
   // (projectId) nao usa rootId -> nao espera.
   if (!projectId && !rootCarregado)
-    return <div className="muted">Carregando tarefas…</div>;
+    return <Loading rotulo="Carregando tarefas" />;
   // Modo SUBTIME depende TAMBEM dos membros: o filtro hibrido usa memberTeam
   // pra decidir as "compartilhadas". Espera os membros pra elas nao aparecerem
   // atrasadas. Geral e projeto nao dependem disso -> nao esperam.
   if (!projectId && subteamId && !membrosCarregados)
-    return <div className="muted">Carregando tarefas…</div>;
+    return <Loading rotulo="Carregando tarefas" />;
   // §8: o modo SUBTIME tambem depende dos PROJETOS -- a pill e o filtro de
   // origem classificam pelo time do projeto. Sem esperar, tudo nasce
   // "indefinido" (sem pill) e se corrige sozinho na tela um instante depois.
   if (!projectId && subteamId && !projetosCarregados)
-    return <div className="muted">Carregando tarefas…</div>;
+    return <Loading rotulo="Carregando tarefas" />;
   // ⚠️ O ERRO DE `/boards` VEM ANTES DA ESPERA, e ate 13/08 ele nao existia.
   //
   // O `catch` gravava `[]` e seguia. Com `boardId`, `[]` fazia a busca do
@@ -990,7 +991,7 @@ export default function Board({
       </div>
     );
   // Fatia 4c: sem as colunas nao ha kanban. Espera igual aos outros.
-  if (!quadros) return <div className="muted">Carregando tarefas…</div>;
+  if (!quadros) return <Loading rotulo="Carregando tarefas" />;
 
   // ---- As colunas deste quadro (fatia 4c) ----
   //
@@ -1093,7 +1094,7 @@ export default function Board({
     // transformaria um quadro apagado numa tela que bate no servidor para
     // sempre, que e o defeito ANTERIOR (a espera eterna) com custo de rede.
     if (quadrosPara !== boardId || buscasSemOQuadro < 2) {
-      return <div className="muted">Carregando tarefas…</div>;
+      return <Loading rotulo="Carregando tarefas" />;
     }
     return (
       <div className="error-box" role="alert" style={{ maxWidth: 480 }}>

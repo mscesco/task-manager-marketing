@@ -60,6 +60,7 @@ async def make_user(
     workspace_id: uuid.UUID,
     email: str | None = None,
     is_active: bool = True,
+    org_role: str | None = None,
 ) -> uuid.UUID:
     """⚠️ `is_active=False` existe para o filtro de destinatario de aviso de
     prazo (12/08). O PADRAO continua `True` -- nenhuma chamada existente muda
@@ -73,6 +74,7 @@ async def make_user(
             email=email or f"u-{uid.hex[:8]}@teste.dev",
             password_hash="x",
             is_active=is_active,
+            org_role=org_role,
         )
     )
     await db.flush()
@@ -99,6 +101,18 @@ async def make_team(
     await db.flush()
 
     # ⚠️ TIME RAIZ NASCE COM QUADRO, igual ao produto (Spec 035 fatia 3a).
+    #
+    # ⚠️⚠️ E "IGUAL AO PRODUTO" ERA MENTIRA ATE 10/09, o que vale ficar escrito
+    # porque foi essa frase que esconderu o defeito: `create_default_board` so
+    # era chamado do PROVISIONAMENTO, entao o segundo time raiz em diante
+    # nascia sem quadro na producao -- e aqui, na bancada, todo time sem pai
+    # ganhava um. A factory cumpria a invariante que o produto violava. Hoje o
+    # `TeamService.create` a cumpre, e a frase voltou a ser verdadeira.
+    #
+    # ⚠️ AS OITO (`COLUNAS_PADRAO`), e explicitas: esta factory monta o mundo
+    # do PROVISIONAMENTO, que e onde as oito vivem. Um time raiz criado pela
+    # tela nasce com QUATRO (`COLUNAS_BASE`) desde 10/09 -- quem quiser testar
+    # AQUELE caminho chama `TeamService.create`, e nao esta factory.
     # Desde a fatia 3b, `TaskService.create` resolve a coluna a partir do
     # status e FALHA se o workspace nao tiver quadro -- sem isto aqui, os 53
     # arquivos de teste que montam mundo pela factory parariam de conseguir
@@ -113,7 +127,8 @@ async def make_team(
     # comum, nao todos os mundos.
     if parent_team_id is None:
         await BoardService(db).create_default_board(
-            workspace_id=workspace_id, team_id=tid
+            workspace_id=workspace_id, team_id=tid,
+            colunas=COLUNAS_PADRAO,
         )
     return tid
 

@@ -23,13 +23,16 @@ Roda so com db-test de pe + TEST_DATABASE_URL (senao e PULADO).
 from __future__ import annotations
 
 import pytest
+from sqlalchemy import select
 
-from app.db.models.enums import TaskStatus
+from app.db.models import Board, BoardColumn
+from app.db.models.enums import TaskStatus, UserTeamRole
 from app.modules.tasks.application.task_service import CreateTaskCommand, TaskService
 from app.modules.tasks.infrastructure.board_repository import BoardRepository
 from app.modules.workspaces.application.workspace_service import TeamService
+from app.modules.users.application.member_service import MemberService
 from app.modules.workspaces.infrastructure.team_repository import TeamRepository
-from app.shared.exceptions.base import ValidationError
+from app.shared.exceptions.base import AuthorizationError, ValidationError
 from tests.integration import factories as f
 from tests.integration.conftest import acting_as, mship, node
 
@@ -95,6 +98,182 @@ async def test_criar_a_segunda_area_pelo_servico(db) -> None:
 
     assert nova.parent_team_id is None
     assert len(areas) == 3
+
+
+async def test_a_area_NOVA_nasce_COM_quadro_geral(db) -> None:
+    """⭐⭐ A invariante ditada pela Camila em 10/09: *"time raiz que nao pode
+    nascer sem quadro"*.
+
+    ⚠️⚠️ E ELA JA ERA DECISAO desde 02/09 (Spec 046 §4.3): *"cada raiz tem o
+    seu, criado junto com ela"*. A metade que GARANTE UM SO foi implementada --
+    o indice parcial `board_um_padrao_por_time`. A metade que CRIA ficou de
+    fora: `create_default_board` so era chamado do provisionamento do
+    WORKSPACE, e o `POST /teams` nao passa por lá. Da segunda area em diante, o
+    time raiz nascia sem quadro.
+
+    ⚠️⚠️ E O MOTIVO DE NENHUM TESTE TER PEGADO ESTA AQUI DENTRO: a factory
+    `make_team` cria o quadro padrao para todo time sem pai, e o comentario
+    dela diz **"igual ao produto"**. Nao era igual. A bancada cumpria a
+    invariante que a producao violava, entao o defeito era invisivel por
+    construcao -- toda area destes testes nasceu com quadro porque a FACTORY o
+    criou, nunca porque o servico o criasse.
+
+    ⚠️ A ASSERCAO E PELO CAMINHO QUE IMPORTA, e nao por um `SELECT` em `board`:
+    `default_board_and_column_for_status` e quem responde onde nasce toda
+    tarefa de topo. Se ela acha o quadro da area nova, a area nova funciona.
+    Provar que "existe uma linha em board" provaria menos.
+    """
+    ctx, ws, marketing, *_ = await _duas_areas(db)
+    with acting_as(**ctx):
+        nova = await TeamService(db).create(name="Design", slug="design")
+        await db.flush()
+        quadro, coluna = await BoardRepository(db).default_board_and_column_for_status(
+            TaskStatus.BACKLOG, area_id=nova.id
+        )
+
+    assert quadro is not None
+    assert coluna is not None
+
+    # E o quadro e DELE, nao o de outro time.
+    with acting_as(**ctx):
+        do_marketing, _ = await BoardRepository(
+            db
+        ).default_board_and_column_for_status(TaskStatus.BACKLOG, area_id=marketing)
+    assert quadro != do_marketing
+
+
+async def test_o_time_novo_nasce_com_as_QUATRO_colunas_comuns(db) -> None:
+    """⭐⭐ Correcao dela em 10/09: *"o quadro nao e pra nascer igual o do
+    marketing, e pra nascer como um quadro comum, com backlog, em andamento,
+    concluido e cancelado"*.
+
+    ⚠️ As oito do Marketing sao HISTORICAS -- a copia da migration `0008`, o
+    que esta em producao. Um time novo nao herda o passado dele.
+
+    Sabotagem: passar `COLUNAS_PADRAO` no `TeamService.create` faz este teste
+    ficar vermelho, e so ele.
+    """
+    ctx, ws, marketing, *_ = await _duas_areas(db)
+    with acting_as(**ctx):
+        nova = await TeamService(db).create(name="Design", slug="design")
+        await db.flush()
+        colunas = (
+            (
+                await db.execute(
+                    select(BoardColumn.name)
+                    .join(Board, Board.id == BoardColumn.board_id)
+                    .where(Board.team_id == nova.id, Board.is_default.is_(True))
+                    .order_by(BoardColumn.position)
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+    assert list(colunas) == [
+        "Backlog",
+        "Em Andamento",
+        "Concluído",
+        "Cancelado",
+    ]
+
+
+async def test_os_QUATRO_status_sem_coluna_propria_caem_na_semantica(db) -> None:
+    """⭐⭐ O degrau que torna as quatro colunas seguras para receber tarefa.
+
+    ⚠️⚠️ SEM ELE, O TIME NOVO NAO RECEBE TAREFA DE TOPO com `PLANNED`,
+    `IN_REVIEW`, `EXTERNAL_APPROVAL` nem `BLOCKED`: a
+    `default_board_and_column_for_status` casava SO pela ponte
+    (`legacy_status`), e as quatro colunas comuns tem quatro pontes. A ADR 0042
+    tinha deixado esta funcao de fora do degrau de proposito -- e estava certo
+    enquanto todo quadro geral tinha as oito.
+
+    ⚠️ E NAO APARECERIA PELA TELA: o `createTask` do front nem manda `status`, e
+    o padrao do backend e `BACKLOG`, que tem ponte. Quem manda status explicito
+    e n8n, Swagger ou script -- 422 para eles, dias depois, sem relacao
+    aparente com a criacao do time.
+
+    ⚠️ CADA UM CAI NO ALVO DA SUA SEMANTICA: `PLANNED` e OPEN -> Backlog;
+    `IN_REVIEW`, `EXTERNAL_APPROVAL` e `BLOCKED` sao IN_PROGRESS -> Em
+    Andamento.
+    """
+    ctx, ws, marketing, *_ = await _duas_areas(db)
+    with acting_as(**ctx):
+        nova = await TeamService(db).create(name="Design", slug="design")
+        await db.flush()
+        repo = BoardRepository(db)
+        destino = {}
+        for st in (
+            TaskStatus.PLANNED,
+            TaskStatus.IN_REVIEW,
+            TaskStatus.EXTERNAL_APPROVAL,
+            TaskStatus.BLOCKED,
+        ):
+            _, coluna_id = await repo.default_board_and_column_for_status(
+                st, area_id=nova.id
+            )
+            destino[st] = (
+                await db.execute(
+                    select(BoardColumn.name).where(BoardColumn.id == coluna_id)
+                )
+            ).scalar_one()
+
+    assert destino[TaskStatus.PLANNED] == "Backlog"
+    assert destino[TaskStatus.IN_REVIEW] == "Em Andamento"
+    assert destino[TaskStatus.EXTERNAL_APPROVAL] == "Em Andamento"
+    assert destino[TaskStatus.BLOCKED] == "Em Andamento"
+
+
+async def test_a_PONTE_continua_ganhando_do_alvo_da_semantica(db) -> None:
+    """⚠️ A ordem dos degraus, no quadro de OITO colunas.
+
+    ⚠️ Inverter os degraus produz um estado VALIDO e errado: uma tarefa
+    `EXTERNAL_APPROVAL` no quadro do Marketing pararia em "Em Andamento" --
+    coluna do quadro certo, com a semantica certa, e no lugar errado. Nenhuma
+    FK recusa e nenhum tipo reclama.
+    """
+    ctx, ws, marketing, *_ = await _duas_areas(db)
+    with acting_as(**ctx):
+        _, coluna_id = await BoardRepository(
+            db
+        ).default_board_and_column_for_status(
+            TaskStatus.EXTERNAL_APPROVAL, area_id=marketing
+        )
+        nome = (
+            await db.execute(
+                select(BoardColumn.name).where(BoardColumn.id == coluna_id)
+            )
+        ).scalar_one()
+
+    assert nome == "Aprovação Externa"
+
+
+async def test_SUBTIME_novo_nao_nasce_com_quadro_geral(db) -> None:
+    """⚠️ A outra metade da invariante, e ela e uma NEGACAO.
+
+    Subtime nao tem quadro geral -- ele tem quadro INTERNO, `is_default=False`,
+    criado por gente e com nome escolhido (ADR 0032). Criar um padrao aqui
+    daria a cada subtime um segundo "Quadro geral", e o indice parcial nem
+    reclamaria: ele e por TIME, e o subtime e outro time.
+
+    Sabotagem: tirar o `if parent_team_id is None` do `TeamService.create` faz
+    este teste ficar vermelho, e nenhum outro.
+    """
+    ctx, ws, marketing, *_ = await _duas_areas(db)
+    with acting_as(**ctx):
+        sub = await TeamService(db).create(
+            name="Conteudo", slug="conteudo", parent_team_id=marketing
+        )
+        await db.flush()
+        padroes = (
+            await db.execute(
+                select(Board).where(
+                    Board.team_id == sub.id, Board.is_default.is_(True)
+                )
+            )
+        ).scalars().all()
+
+    assert padroes == []
 
 
 async def test_areas_ids_vem_ORDENADA_por_nome(db) -> None:
@@ -266,3 +445,92 @@ async def test_sem_time_e_sem_quadro_com_DUAS_areas_e_recusado(db) -> None:
             )
 
     assert "mais de uma area" in str(exc.value)
+
+
+# ------------------------------------------------------------------
+# ⭐⭐ Gerente so mexe na PROPRIA arvore (decisao da Camila, 09/09)
+# ------------------------------------------------------------------
+async def test_gerente_NAO_administra_gente_de_outra_area(db) -> None:
+    """⭐⭐ O achado do code review de 09/09, virando regra.
+
+    Ate aqui `change_member_role` perguntava "voce tem `team.manage` EM ALGUM
+    LUGAR?" -- e com uma area so isso coincidia com a verdade, porque nao
+    havia outro lugar. Com duas areas a pergunta larga vira um buraco: a
+    gerente do Marketing troca o cargo de alguem no TI.
+
+    ⚠️ E O CADEADO DO PAINEL FOI ESTREITADO NO MESMO COMMIT. Se so um dos dois
+    mudasse, tela e servidor passariam a discordar -- cadeado aberto que da
+    403 ao salvar, ou cadeado fechado escondendo acao permitida. E o teste da
+    concordancia (`test_o_cadeado_concorda_com_o_patch`) nao pegaria: ele roda
+    com UMA area, onde as duas perguntas continuam iguais.
+
+    ⚠️ E ESTE TESTE SO ENXERGA A DIFERENCA PORQUE PASSA `team_tree`. Sem a
+    arvore, `acting_as` monta as permissoes como `frozenset`, e
+    `has_permission_in` cai fail-open na pergunta ampla -- o teste ficaria
+    verde com a regra errada. Esta escrito no `conftest`.
+    """
+    ctx, ws, marketing, seo, ti, infra, q_mkt, q_ti, admin = await _duas_areas(db)
+
+    gerente = await f.make_user(db, workspace_id=ws, email="mgr@t.dev")
+    await f.add_member(
+        db, workspace_id=ws, user_id=gerente, team_id=marketing, role="MANAGER"
+    )
+    alheio = await f.make_user(db, workspace_id=ws, email="ti@t.dev")
+    await f.add_member(
+        db, workspace_id=ws, user_id=alheio, team_id=infra, role="OPERATOR"
+    )
+    await db.flush()
+
+    como_gerente = dict(ctx)
+    como_gerente["user_id"] = gerente
+    como_gerente["memberships"] = (mship(marketing, "MANAGER"),)
+
+    with acting_as(**como_gerente):
+        svc = MemberService(db)
+
+        # ⚠️ O cadeado FECHA para a area alheia...
+        assert not svc.pode_trocar_papel_do_vinculo(
+            user_id=alheio, team_id=infra, papel_atual=UserTeamRole.OPERATOR
+        )
+        # ...e o PATCH recusa, pelo mesmo motivo.
+        with pytest.raises(AuthorizationError):
+            await svc.change_member_role(
+                user_id=alheio,
+                team_id=infra,
+                new_role=UserTeamRole.SUPERVISOR,
+            )
+
+
+async def test_gerente_CONTINUA_administrando_a_propria_arvore(db) -> None:
+    """⚠️ A metade que impede o conserto de virar bloqueio geral.
+
+    Sem este caso, "gerente nao administra ninguem" passaria pelo teste acima
+    -- e o estreitamento teria tirado do MANAGER o trabalho que e dele.
+    """
+    ctx, ws, marketing, seo, ti, infra, q_mkt, q_ti, admin = await _duas_areas(db)
+
+    gerente = await f.make_user(db, workspace_id=ws, email="mgr@t.dev")
+    await f.add_member(
+        db, workspace_id=ws, user_id=gerente, team_id=marketing, role="MANAGER"
+    )
+    dele = await f.make_user(db, workspace_id=ws, email="seo@t.dev")
+    await f.add_member(
+        db, workspace_id=ws, user_id=dele, team_id=seo, role="OPERATOR"
+    )
+    await db.flush()
+
+    como_gerente = dict(ctx)
+    como_gerente["user_id"] = gerente
+    como_gerente["memberships"] = (mship(marketing, "MANAGER"),)
+
+    with acting_as(**como_gerente):
+        svc = MemberService(db)
+        assert svc.pode_trocar_papel_do_vinculo(
+            user_id=dele, team_id=seo, papel_atual=UserTeamRole.OPERATOR
+        )
+        # ⚠️ O SUBTIME conta como "propria arvore": `permissions_for_actor`
+        # concede ao comando o time do vinculo MAIS os descendentes.
+        vinculo = await svc.change_member_role(
+            user_id=dele, team_id=seo, new_role=UserTeamRole.SUPERVISOR
+        )
+    assert vinculo.role is UserTeamRole.SUPERVISOR

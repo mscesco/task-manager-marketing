@@ -14,9 +14,13 @@ quadro por existir; quadro de subtime e o personalizado, criado por gente
 
 ⚠️ DOIS CAMINHOS DE CRIACAO, DE PROPOSITO (Spec 036, fatia 5b):
 
-  - `create_default_board` -- provisionamento. Oito colunas (`COLUNAS_PADRAO`),
-    `is_default=True`, sem ator, sem permissao: quem chama e o registro do
-    workspace, e nao existe usuario para autorizar.
+  - `create_default_board` -- quadro geral de time RAIZ. A lista de colunas vem
+    de FORA (`colunas`): oito (`COLUNAS_PADRAO`) no provisionamento do
+    workspace, quatro (`COLUNAS_BASE`) num time raiz novo -- decisao da Camila
+    em 10/09. Antes desta data era sempre oito, e o chamador novo herdaria as
+    oito em silencio. Grava `is_default=True`, e segue sem ator e sem
+    permissao: quem chama e o registro do workspace ou o
+    `TeamService.create`, e o primeiro nao tem usuario para autorizar.
   - `criar_quadro` -- pessoa. Quatro colunas (`COLUNAS_BASE`),
     `is_default=False`, com permissao e trava de escopo.
 
@@ -292,20 +296,47 @@ class BoardService:
         self._session = session
 
     async def create_default_board(
-        self, *, workspace_id: uuid.UUID, team_id: uuid.UUID
+        self,
+        *,
+        workspace_id: uuid.UUID,
+        team_id: uuid.UUID,
+        colunas: tuple[ColunaPadrao, ...],
     ) -> Board:
-        """Cria o quadro do time raiz com as colunas padrao.
+        """Cria o quadro geral de um time RAIZ.
 
         ⚠️ NAO faz commit -- quem commita e o chamador, na mesma unidade de
-        trabalho do provisionamento. Se o quadro falhasse fora da transacao do
-        workspace, nasceria um workspace sem quadro: exatamente o estado que a
-        `0011` vai ter de consertar para os workspaces criados entre a `0008` e
-        esta fatia.
+        trabalho. Se o quadro falhasse fora da transacao que cria o time,
+        nasceria um TIME RAIZ SEM QUADRO, que e o estado que a invariante de
+        10/09 proibe: *"time raiz que nao pode nascer sem quadro"*.
 
         ⚠️ Nao e idempotente de proposito. O indice parcial
         `board_um_padrao_por_time` recusa o segundo quadro padrao do mesmo time
         NO BANCO. Engolir isso aqui com um "se ja existe, retorna" esconderia a
         chamada duplicada, que e defeito de quem chama.
+
+        ⚠️⚠️ `colunas` E PARAMETRO OBRIGATORIO, SEM DEFAULT, e a razao e que os
+        dois chamadores querem listas DIFERENTES -- decisao da Camila em 10/09:
+        *"o quadro nao e pra nascer igual o do marketing, e pra nascer como um
+        quadro comum, com backlog, em andamento, concluido e cancelado"*.
+
+            provisionamento do workspace -> `COLUNAS_PADRAO` (oito)
+            time raiz novo               -> `COLUNAS_BASE`   (quatro)
+
+        Um default aqui faria o chamador novo herdar as oito em silencio, que e
+        exatamente o defeito que ela apontou. Sem default, quem criar um
+        terceiro caminho tem de escolher.
+
+        ⚠️ AS OITO CONTINUAM CONGELADAS no provisionamento, e nao por inercia:
+        elas sao a copia da migration `0008` e do
+        `test_quadro_novo_nasce_igual_ao_migrado` -- o quadro do Marketing em
+        producao tem essas oito, e o provisionamento tem de continuar
+        reproduzindo o que esta lá.
+
+        ⚠️ E AS QUATRO SAO SEGURAS PARA RECEBER TAREFA porque nascem com PONTE
+        (`legacy_status`) **e** como ALVO da semantica (`is_default_target`) --
+        ver o bloco de `COLUNAS_BASE`. O que falta para elas cobrirem os quatro
+        status sem coluna propria e o segundo degrau em
+        `default_board_and_column_for_status`, que entra no mesmo commit.
         """
         quadro = Board(
             workspace_id=workspace_id,
@@ -320,16 +351,14 @@ class BoardService:
         # O que os dois caminhos compartilham e o mapeamento mecanico
         # NamedTuple -> BoardColumn; o que NAO compartilham e qual lista, se e
         # padrao e quem autoriza. Ver o cabecalho do modulo.
-        self._add_colunas(
-            quadro, workspace_id=workspace_id, colunas=COLUNAS_PADRAO
-        )
+        self._add_colunas(quadro, workspace_id=workspace_id, colunas=colunas)
         await self._session.flush()
 
         logger.info(
             "board.created",
             board_id=str(quadro.id),
             team_id=str(team_id),
-            colunas=len(COLUNAS_PADRAO),
+            colunas=len(colunas),
         )
         return quadro
 

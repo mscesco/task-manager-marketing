@@ -11,6 +11,8 @@ import uuid
 
 from pydantic import BaseModel, EmailStr, Field
 
+from app.db.models.enums import OrgRole
+
 
 class LoginRequest(BaseModel):
     """Credenciais de login."""
@@ -73,6 +75,19 @@ class CurrentUserResponse(BaseModel):
     must_change_password: bool = False
     roles: list[str]
     permissions: list[str]
+    #: Papel na ORGANIZACAO -- `None` para a maioria. Spec 047, 10/09.
+    #:
+    #: ⚠️⚠️ CAMPO PROPRIO PORQUE `roles` MISTURA OS DOIS NIVEIS, de proposito
+    #: (ver o comentario na rota). A mistura serve para "quais acoes esta
+    #: pessoa pode" e ARRUINA a pergunta "ela administra a ORGANIZACAO?" --
+    #: um ADMIN de TIME entra em `roles` como "ADMIN" e fica indistinguivel
+    #: de um ADMIN de organizacao.
+    #:
+    #: ⚠️ E o defeito foi visto em producao, em 10/09: uma pessoa com papel de
+    #: time ADMIN (residuo anterior a Spec 045) via "Gerenciar a organizacao"
+    #: no seletor da barra. O gate era `permissions.includes("area.create")`,
+    #: e `area.create` tambem vem do papel de TIME ADMIN.
+    org_role: OrgRole | None = None
     #: Trabalho 2: vinculos (time, papel) para o front derivar a lente
     #: (quais quadros de subtime mostrar, qual e a raiz).
     teams: list[TeamMembershipOut] = []

@@ -2,7 +2,7 @@
 // app/times/page.tsx
 // Tela de gestao de times (Spec 029, Fatia 4).
 //
-// Rota PROPRIA, nao aba dentro de /membros: gerir organograma e cadastrar
+// Rota PROPRIA: gerir organograma e cadastrar
 // pessoa sao coisas diferentes, e foi essa separacao que manteve a Spec 028
 // (membros) e esta (times) com escopos tratáveis.
 //
@@ -21,6 +21,7 @@ import { Pencil, Plus, Trash2, X } from "lucide-react";
 import AppShell from "@/components/AppShell";
 import PageHeader from "@/components/PageHeader";
 import { useFecharAoClicarFora } from "@/lib/useCliqueFora";
+import Loading from "@/components/Loading";
 import {
   ApiError,
   createTeam,
@@ -257,7 +258,7 @@ export default function TimesPage() {
       {erro && <div className="error-box">{erro}</div>}
 
       {times === null ? (
-        <div className="muted">Carregando…</div>
+        <Loading />
       ) : (
         <div
           style={{

@@ -17,7 +17,11 @@ O que este arquivo prova:
     2. rebaixar funciona quando ha outro admin
     3. ⭐ rebaixar o ULTIMO admin e recusado -- 409
     4. admin INATIVO nao conta para a trava
-    5. GESTOR pode ser removido livremente (a trava e so do ADMIN)
+    5. ⭐⭐ DESATIVAR o ultimo admin tambem e recusado (achado em 10/09) -- o
+       caminho que escapava da trava, por um ator sem papel de organizacao
+    6. desativar admin passa quando ha outro ativo
+    7. desativar quem nao administra a organizacao segue livre
+    8. GESTOR pode ser removido livremente (a trava e so do ADMIN)
 
 Roda so com db-test de pe + TEST_DATABASE_URL (senao e PULADO).
 """
@@ -26,6 +30,7 @@ from __future__ import annotations
 
 import pytest
 
+from app.core.tenant import Membership
 from app.db.models import User
 from app.db.models.enums import OrgRole
 from app.modules.users.application.member_service import MemberService
@@ -129,6 +134,87 @@ async def test_admin_INATIVO_nao_conta_para_a_trava(db) -> None:
             await MemberService(db).change_organization_role(
                 user_id=dona, new_role=None
             )
+
+
+async def test_DESATIVAR_o_ultimo_admin_e_recusado(db) -> None:
+    """⭐⭐ O buraco de 10/09, e ele nao passava por admin nenhum.
+
+    Pergunta da Camila: *"e possivel ter alguma organizacao sem nenhum admin?
+    nao deveria"*. Era, e o caminho era `deactivate_member`:
+
+        - o gate dela e `team.manage`, que MANAGER tambem tem;
+        - a trava do ultimo admin vivia SO em `change_organization_role`;
+        - entao um MANAGER de area desativava a conta do unico ADMIN, e a
+          organizacao acordava sem ninguem com `workspace.manage`.
+
+    ⚠️ O ATOR AQUI E UM MANAGER DE PROPOSITO, e nao um segundo admin: com um
+    admin no comando o teste passaria pela trava de "nao desativar a propria
+    conta" e nao provaria nada. O buraco existia justamente para quem NAO tem
+    papel de organizacao.
+
+    ⚠️ E a saida seria SQL na mao, como no rebaixamento: sem ADMIN ninguem tem
+    `workspace.manage`, que e o portao da rota que promoveria alguem de volta.
+
+    Sabotagem: remover a chamada a `_assert_nao_e_o_ultimo_admin` de
+    `deactivate_member` faz este teste passar direto.
+    """
+    ws, raiz, dona = await _mundo(db)
+    mgr = await f.make_user(db, workspace_id=ws, email="mgr@t.dev")
+    await f.add_member(db, workspace_id=ws, user_id=mgr, team_id=raiz, role="MANAGER")
+
+    with acting_as(
+        workspace_id=ws,
+        user_id=mgr,
+        memberships=(Membership(team_id=raiz, role="MANAGER"),),
+    ):
+        with pytest.raises(BusinessRuleError):
+            await MemberService(db).deactivate_member(user_id=dona)
+
+    # E a conta continua ativa -- a recusa nao pode ter passado pela escrita.
+    user = await db.get(User, dona)
+    assert user.is_active is True
+    assert user.org_role is OrgRole.ADMIN
+
+
+async def test_desativar_admin_passa_quando_ha_outro_ativo(db) -> None:
+    """A trava guarda o ULTIMO, e nao o cargo: com dois, desligar um e normal."""
+    ws, raiz, dona = await _mundo(db)
+    segunda = await f.make_user(db, workspace_id=ws, email="segunda@t.dev")
+    await _set_org_role(db, segunda, OrgRole.ADMIN)
+    mgr = await f.make_user(db, workspace_id=ws, email="mgr@t.dev")
+    await f.add_member(db, workspace_id=ws, user_id=mgr, team_id=raiz, role="MANAGER")
+
+    with acting_as(
+        workspace_id=ws,
+        user_id=mgr,
+        memberships=(Membership(team_id=raiz, role="MANAGER"),),
+    ):
+        user = await MemberService(db).deactivate_member(user_id=segunda)
+
+    assert user.is_active is False
+
+
+async def test_desativar_quem_nao_administra_a_organizacao_segue_livre(db) -> None:
+    """⚠️ A trava nao pode virar pedagio na desativacao comum.
+
+    A operacao de toda semana e desligar quem saiu da empresa -- gente sem
+    papel de organizacao. Se a trava consultasse o contador para todo mundo,
+    ela custaria uma query a mais em cada desligamento e, pior, um `409`
+    inesperado no dia em que a contagem tivesse qualquer defeito.
+    """
+    ws, raiz, dona = await _mundo(db)
+    saiu = await f.make_user(db, workspace_id=ws, email="saiu@t.dev")
+    await f.add_member(db, workspace_id=ws, user_id=saiu, team_id=raiz, role="OPERATOR")
+
+    with acting_as(
+        workspace_id=ws,
+        user_id=dona,
+        memberships=(),
+        org_role=OrgRole.ADMIN.value,
+    ):
+        user = await MemberService(db).deactivate_member(user_id=saiu)
+
+    assert user.is_active is False
 
 
 async def test_a_trava_e_so_do_admin_gestor_sai_livre(db) -> None:

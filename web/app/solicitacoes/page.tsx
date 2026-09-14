@@ -36,6 +36,8 @@ import {
 } from "@/lib/api";
 import { rotuloDaCategoria } from "@/lib/rotuloDaCategoria";
 
+import Loading from "@/components/Loading";
+import { useDrawnOutline } from "@/components/AnimatedOutline";
 const STATUS_LABEL: Record<SolicitacaoStatus, string> = {
   PENDING: "Pendente",
   APPROVED: "Aprovada",
@@ -192,7 +194,7 @@ function Solicitacoes() {
       )}
 
       {erro && <div className="error-box" style={{ marginBottom: 16 }}>{erro}</div>}
-      {envios === null && <p className="muted">Carregando…</p>}
+      {envios === null && <Loading />}
 
       {envios !== null && envios.length === 0 && !erro && (
         <EmptyState
@@ -307,13 +309,25 @@ function CardEnvio({
     (i) => i.status === "APPROVED" && !i.task_created_at
   ).length;
 
+  // ⚠️⚠️ O CONTORNO TRAÇA O CARTÃO, e o clique mora no CABEÇALHO -- os dois não
+  // são o mesmo nó, de propósito. Desenhar o traço só em volta do cabeçalho
+  // daria um retângulo de cantos retos flutuando dentro de um cartão
+  // arredondado; e mover o clique para o cartão inteiro faria os botões de
+  // dentro (aprovar, recusar) alternarem a seção sem querer.
+  // ⚠️ `radius` 8 = o `rounded-lg` do `Card`.
+  const { alvo, outline } = useDrawnOutline();
+
   return (
-    <Card className="p-4">
+    <Card className="relative p-4">
+      {outline}
       {/* ---------- cabeçalho: o solicitante ---------- */}
       <div
-        className="tappable"
         onClick={onToggle}
-        style={{ display: "flex", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}
+        {...alvo}
+        style={{
+          display: "flex", alignItems: "flex-start", gap: 12, flexWrap: "wrap",
+          cursor: "pointer",
+        }}
       >
         <div style={{ flex: 1, minWidth: 220 }}>
           <div style={{ fontWeight: 600, fontSize: 14 }}>
