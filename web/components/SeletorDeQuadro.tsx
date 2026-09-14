@@ -51,7 +51,9 @@ export default function SeletorDeQuadro({
   podeGerir,
   onSelecionar,
   onMudou,
-  daRaiz = false,
+  // ⚠️ SEM `= false` (14/09): o tipo já é obrigatório desde 11/09, e o padrão que
+  // sobrou aqui não fazia nada -- só dizia a quem lesse que omitir era permitido.
+  daRaiz,
 }: {
   teamId: string;
   quadros: readonly Quadro[];

@@ -222,6 +222,7 @@ function Projeto() {
           ausência achando que é esquecimento. */}
       <Board
         podeEditarColunas={false}
+        acoesDoQuadro={null}
         projectId={id}
         title={project.title}
         acoesDoTitulo={

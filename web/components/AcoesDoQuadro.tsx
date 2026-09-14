@@ -48,7 +48,7 @@ export default function AcoesDoQuadro({
   podeGerir,
   onSelecionar,
   onMudou,
-  daRaiz = false,
+  daRaiz,
 }: {
   teamId: string;
   quadros: readonly Quadro[];
@@ -64,8 +64,12 @@ export default function AcoesDoQuadro({
    * o primeiro item e a LENTE, e o Quadro geral fica FORA da lista porque ela
    * ja o representa. Na raiz nao ha lente: o Quadro geral e a coisa em si, e
    * entra pelo nome dele. Ver `opcoesDoSeletorDaRaiz`.
+   *
+   * ⚠⚠ OBRIGATÓRIA DESDE 14/09. Era `daRaiz?: boolean`, e a rota
+   * `/quadro/[teamId]` não a passava -- o mesmo defeito que o irmão
+   * `SeletorDeQuadro` tinha e perdeu em 11/09. Obrigatória, o `tsc` aponta.
    */
-  daRaiz?: boolean;
+  daRaiz: boolean;
 }) {
   const opcoes = daRaiz
     ? opcoesDoSeletorDaRaiz(quadros, teamId, podeGerir)

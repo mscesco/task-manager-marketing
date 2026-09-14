@@ -187,7 +187,12 @@ export default function Board({
    * cada quadro, que e exatamente o que a fatia 7 piorou e esta fatia
    * desfaz.
    */
-  acoesDoQuadro?: ReactNode;
+  /**
+   * ⚠⚠ OBRIGATÓRIA DESDE 14/09, e `null` é resposta. A rota `/quadro/[teamId]`
+   * não a passava no ramo do quadro geral, e renomear o geral sumiu -- a
+   * mesma omissão que tirou o lápis (`podeEditarColunas`), na mesma linha.
+   */
+  acoesDoQuadro: ReactNode;
   /**
    * Controles que moram GRUDADOS no título, depois do contador.
    *

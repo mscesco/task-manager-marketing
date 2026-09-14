@@ -295,6 +295,10 @@ export default function QuadroSubtimePage() {
                   podeGerir={podeGerir}
                   onSelecionar={selecionarQuadro}
                   onMudou={carregarQuadros}
+                  // ⚠️ FALTAVA (14/09): quadro avulso de um time RAIZ usa a lista da
+                  // raiz, e a de subtime usa a da lente. O irmão `SeletorDeQuadro`
+                  // já exigia isto desde 11/09; este ficou para trás.
+                  daRaiz={team.parent_team_id === null}
                 />
               }
             />
@@ -318,11 +322,39 @@ export default function QuadroSubtimePage() {
             // team.id)`, e com um time RAIZ coincide por construção com
             // `podeGerirQuadroDaRaiz` (a regra do `/quadro`) -- `board.manage.root`
             // é o alcance "amplo", e o de subtime nunca contém uma raiz.
-            <Board areaId={team.id} title={seletor} podeEditarColunas={podeGerir} />
+            // ⚠⚠ E `acoesDoQuadro` TAMBÉM FALTAVA (14/09): renomear o quadro geral
+            // mora nele, e a rota antiga `/quadro` o passava com `daRaiz`. Este
+            // ramo nasceu sem ele -- mesma omissão do lápis, na mesma linha.
+            //
+            // ⚠️ `selecionado={null}` É O QUADRO GERAL AQUI, e é igual ao `/quadro`:
+            // `opcaoSelecionada` não acha `id === null` na lista da RAIZ (o geral
+            // tem id de verdade) e devolve `opcoes[0]` -- que, com `daRaiz`, é ele.
+            <Board
+              areaId={team.id}
+              title={seletor}
+              podeEditarColunas={podeGerir}
+              acoesDoQuadro={
+                <AcoesDoQuadro
+                  teamId={team.id}
+                  quadros={quadros ?? []}
+                  selecionado={null}
+                  podeGerir={podeGerir}
+                  onSelecionar={selecionarQuadro}
+                  onMudou={carregarQuadros}
+                  daRaiz
+                />
+              }
+            />
           ) : (
             // ⚠️ `false` EXPLÍCITO: é a LENTE, espelho do quadro geral filtrado
             // por pessoa, e ela não oferece edição (ADR 0034 item 2).
-            <Board subteamId={team.id} title={seletor} podeEditarColunas={false} />
+            // ⚠️ `null` EXPLÍCITO: a lente não tem registro para renomear nem apagar.
+            <Board
+              subteamId={team.id}
+              title={seletor}
+              podeEditarColunas={false}
+              acoesDoQuadro={null}
+            />
           )}
         </>
       )}

@@ -65,6 +65,9 @@ function montar(over: Partial<Parameters<typeof AcoesDoQuadro>[0]> = {}) {
     podeGerir: true,
     onSelecionar: vi.fn(),
     onMudou: vi.fn(),
+    // ⚠️ `false` porque o `SEO` é SUBTIME. Obrigatória desde 14/09; quem testa a
+    // raiz sobrescreve pelo `over`.
+    daRaiz: false,
     ...over,
   };
   render(<AcoesDoQuadro {...props} />);
@@ -89,6 +92,7 @@ describe("AcoesDoQuadro -- o que ele oferece", () => {
         podeGerir
         onSelecionar={vi.fn()}
         onMudou={vi.fn()}
+        daRaiz={false}
       />
     );
     expect(container.textContent).toBe("");
