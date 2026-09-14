@@ -17,6 +17,7 @@ import {
   indiceDeColunas,
   type Coluna,
   type OrigemDaColuna,
+  quadroGeralDoTime,
 } from "@/lib/coluna";
 import { soleRootTeam } from "@/lib/areas";
 
@@ -1025,9 +1026,9 @@ export async function quadroGeralComIndice(teamId: string | null): Promise<{
   indice: Map<string, OrigemDaColuna>;
 }> {
   const quadros = await listBoards();
-  const geral = teamId
-    ? quadros.find((q) => q.is_default && q.team_id === teamId)
-    : undefined;
+  // ⚠️ A REGRA MORA EM `quadroGeralDoTime` desde 14/09: o `Board.tsx` tinha
+  // três cópias do `find` no singular que este bloco já tinha corrigido.
+  const geral = teamId ? quadroGeralDoTime(quadros, teamId) : undefined;
   const colunas = geral
     ? [...geral.colunas].sort((a, b) => a.position - b.position)
     : [];
@@ -1321,8 +1322,16 @@ export async function apagarColuna(
  */
 export async function colunasDoQuadro(boardId: string): Promise<Coluna[]> {
   const quadros = await listBoards();
+  // ⚠⚠ A RESERVA NÃO CHUTA COM MAIS DE UM GERAL (14/09). Ela só dispara
+  // quando o quadro da tarefa não voltou na lista (sem alcance, apagado), e
+  // era `find(is_default)` -- "o" geral, no singular, o mesmo defeito 3.3. Com
+  // dois times raiz ela mostraria as colunas do OUTRO time no modal. Sem
+  // como saber qual, `[]` ("não há coluna") é a resposta honesta; com um
+  // geral só, ele continua valendo.
+  const gerais = quadros.filter((q) => q.is_default);
   const quadro =
-    quadros.find((q) => q.id === boardId) ?? quadros.find((q) => q.is_default);
+    quadros.find((q) => q.id === boardId) ??
+    (gerais.length === 1 ? gerais[0] : undefined);
   if (!quadro) return [];
   return [...quadro.colunas].sort((a, b) => a.position - b.position);
 }

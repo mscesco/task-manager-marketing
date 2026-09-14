@@ -72,7 +72,7 @@ import {
   type Rascunho,
 } from "@/lib/rascunhoDeColunas";
 import EmptyStateBox from "@/components/EmptyState";
-import { terminal, type Coluna } from "@/lib/coluna";
+import { quadroGeralDoTime, terminal, type Coluna } from "@/lib/coluna";
 import { listAllTasks, listAllProjects, listarFilhas, getTask, updateTask, listMembers, listSubteams, getRootTeamId, listBoards, colunaComContagem, aplicarLoteDeColunas, ApiError, type Task, type Team, type Quadro } from "@/lib/api";
 import { newTaskTeam } from "@/lib/escopoTarefa";
 import { mesclaTarefa } from "@/lib/mesclaTarefa";
@@ -1057,11 +1057,26 @@ export default function Board({
   // a unica pista de quais colunas desenhar. Na LENTE ela e inofensiva (a D1
   // de 11/08 ja filtra por `board_id` do geral), mas usar o padrao direto diz
   // a mesma coisa com menos indireção.
+  // ⚠⚠ O QUADRO GERAL DESTE TIME, e não "o" quadro geral (14/09). Aqui havia
+  // TRÊS cópias de `quadros.find((q) => q.is_default)` -- o defeito 3.3 que eu
+  // tinha consertado só no `quadroGeralComIndice`. Com dois times raiz existem
+  // dois gerais, e o `find` pegava o do Marketing (o mais antigo). Reportado
+  // na tela: tarefa criada no geral do Comercial, salva CERTA no banco, sumia
+  // -- os cards eram filtrados pelo geral do Marketing, e as colunas
+  // desenhadas também eram as dele. Uma fonte só, usada nos três lugares.
+  //
+  // ⚠️ SEM `rootId` FICA O COMPORTAMENTO DE ANTES, e isso é decisão: só
+  // acontece na rota antiga `/quadro` sem time na URL, que com mais de uma raiz
+  // redireciona antes de chegar aqui (`entradaDoQuadro`). Com uma raiz só, "o"
+  // geral é verdade.
+  const quadroGeral = rootId
+    ? quadroGeralDoTime(quadros, rootId)
+    : quadros.find((q) => q.is_default);
   const quadro = boardId
     ? quadroPedido
     : projectId
-      ? (quadroDoLote ?? quadros.find((q) => q.is_default))
-      : quadros.find((q) => q.is_default);
+      ? (quadroDoLote ?? quadroGeral)
+      : quadroGeral;
   // ⚠️ QUADRO PEDIDO E NAO ENCONTRADO = ESPERA, e nao um kanban vazio. Sem
   // esta saida a tela desenharia ZERO colunas com o titulo do quadro avulso, e
   // o modo de edicao mostraria uma lista de colunas vazia -- o que parece um
@@ -1516,7 +1531,8 @@ export default function Board({
   // projeto continuam como estao; quadro extra da raiz e assunto da 5c, e a
   // escolha do quadro por lote (acima) ja cai no padrao e denuncia o resto no
   // contador de `foraDaColuna`.
-  const quadroGeralId = quadros.find((q) => q.is_default)?.id ?? null;
+  // ⚠️ O MESMO `quadroGeral` de cima -- era aqui a cópia que escondia o card.
+  const quadroGeralId = quadroGeral?.id ?? null;
   const noQuadroGeral = (t: Task) =>
     quadroGeralId === null || t.board_id === quadroGeralId;
   const visiveis = tasks.filter((t) => {

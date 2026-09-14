@@ -2118,3 +2118,69 @@ describe("Board -- Ordenar e Mostrar arquivadas vivem no painel (F4/F5)", () => 
     expect(screen.getByRole("button", { name: "Filtros" })).toBeTruthy();
   });
 });
+
+// ⚠️⚠️ O DEFEITO DE 14/09, reportado na tela: uma tarefa criada no quadro geral
+// do COMERCIAL foi salva certa -- time, quadro e coluna do Comercial, conferido
+// no banco -- e não apareceu.
+//
+// O `Board` escolhia "o" quadro geral com `quadros.find((q) => q.is_default)`,
+// três vezes. Com dois times raiz existem dois gerais, e o `find` pegava o
+// PRIMEIRO da lista: no banco dela, o do Marketing (o mais antigo). A tela do
+// Comercial filtrava os cards pelo id do geral do Marketing -- e desenhava as
+// colunas dele.
+//
+// ⚠️ O teste da `lib` (`quadroGeralDoTime.test.ts`) prova a regra; este prova
+// que o QUADRO a usa. Sem ele, desfazer a ligação no `Board.tsx` passaria verde.
+describe("Board -- com DOIS quadros gerais, a raiz desenha o DELA", () => {
+  const COMERCIAL = "team-comercial";
+  const QUADRO_COM: Quadro = {
+    id: "quadro-geral-comercial",
+    name: "Quadro Geral",
+    team_id: COMERCIAL,
+    is_default: true,
+    colunas: [
+      {
+        id: "col-com-backlog",
+        name: "Backlog do Comercial",
+        color: "var(--status-backlog-dot)",
+        position: 0,
+        semantic: "OPEN",
+        notify_deadline: true,
+        is_default_target: true,
+        is_status_bridge: true,
+      },
+    ],
+  };
+
+  function montarDoisGerais() {
+    montarApi(
+      [
+        task({
+          id: "t-com",
+          title: "Tarefa Teste Comercial",
+          team_id: COMERCIAL,
+          board_id: QUADRO_COM.id,
+          column_id: "col-com-backlog",
+        }),
+      ],
+      [],
+    );
+    // ⚠️ O MARKETING VEM PRIMEIRO, como no banco: é a ordem em que o `find`
+    // no singular errava.
+    vi.mocked(api.listBoards).mockResolvedValue([QUADRO, QUADRO_COM]);
+  }
+
+  it("⚠️ a tarefa do Comercial aparece no quadro geral do Comercial", async () => {
+    montarDoisGerais();
+    render(<Board areaId={COMERCIAL} title="Quadro Geral" />);
+    expect(await screen.findByText("Tarefa Teste Comercial")).toBeTruthy();
+  });
+
+  it("⚠️ e as colunas desenhadas são as do Comercial, e não as do Marketing", async () => {
+    montarDoisGerais();
+    render(<Board areaId={COMERCIAL} title="Quadro Geral" />);
+    expect(await screen.findByText("Backlog do Comercial")).toBeTruthy();
+    // "Em Andamento" só existe no geral do Marketing deste fixture.
+    expect(screen.queryByText("Em Andamento")).toBeNull();
+  });
+});
