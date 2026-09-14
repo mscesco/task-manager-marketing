@@ -101,7 +101,7 @@ export default function Board({
   subteamId,
   areaId,
   boardId,
-  podeEditarColunas = false,
+  podeEditarColunas,
   title,
   acoesDoQuadro,
   acoesDoTitulo,
@@ -148,7 +148,16 @@ export default function Board({
    * ⚠️ NAO E SEGURANCA. O backend recusa com 403; isto so evita oferecer o
    * botao.
    */
-  podeEditarColunas?: boolean;
+  /**
+   * ⚠⚠ OBRIGATÓRIA DESDE 14/09, e era `podeEditarColunas = false`. A rota
+   * `/quadro/[teamId]` não a passava no ramo do QUADRO GERAL DA RAIZ, e o lápis
+   * sumiu para todo mundo -- inclusive para quem administra a organização. Nada
+   * ficou vermelho: `false` por omissão é um valor válido. Foi a MESMA lição
+   * do `daRaiz` (11/09) e do `newTaskTeam`: prop opcional que muda comportamento
+   * esconde uma pergunta que alguém tem de responder. Obrigatória, o `tsc`
+   * aponta cada tela que desenha um quadro.
+   */
+  podeEditarColunas: boolean;
   /**
    * O título do quadro, na barra.
    *

@@ -309,9 +309,20 @@ export default function QuadroSubtimePage() {
             //
             // ⚠️ E `areaId` e o que impede o `Board` de perguntar "qual e a
             // raiz?" -- pergunta que, com N areas, nao tem resposta.
-            <Board areaId={team.id} title={seletor} />
+            // ⚠⚠ `podeEditarColunas` FALTAVA AQUI (14/09, reportado na tela:
+            // admin da organização sem lápis no quadro geral do Comercial). Este
+            // ramo nasceu na Spec 046 fatia 4, e o lápis só era ligado no ramo
+            // do quadro avulso; desde a fatia B da 048 a barra aponta para cá.
+            //
+            // ⚠️ `podeGerir` SERVE PARA A RAIZ: ele é `podeGerirQuadrosDe(alcance,
+            // team.id)`, e com um time RAIZ coincide por construção com
+            // `podeGerirQuadroDaRaiz` (a regra do `/quadro`) -- `board.manage.root`
+            // é o alcance "amplo", e o de subtime nunca contém uma raiz.
+            <Board areaId={team.id} title={seletor} podeEditarColunas={podeGerir} />
           ) : (
-            <Board subteamId={team.id} title={seletor} />
+            // ⚠️ `false` EXPLÍCITO: é a LENTE, espelho do quadro geral filtrado
+            // por pessoa, e ela não oferece edição (ADR 0034 item 2).
+            <Board subteamId={team.id} title={seletor} podeEditarColunas={false} />
           )}
         </>
       )}

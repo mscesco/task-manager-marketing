@@ -294,7 +294,7 @@ describe("Board -- quadro de subtime, pill de escopo (§8)", () => {
       [task({ id: "t1", title: "Ajuste avulso do CRM", team_id: CRM })],
       []
     );
-    render(<Board subteamId={CRM} title="CRM e Automação" />);
+    render(<Board podeEditarColunas={false} subteamId={CRM} title="CRM e Automação" />);
     await screen.findByText("Ajuste avulso do CRM");
     expect(pillDe("Ajuste avulso do CRM")).toBe("Interna");
   });
@@ -317,7 +317,7 @@ describe("Board -- quadro de subtime, pill de escopo (§8)", () => {
       ],
       [project("p-mkt", RAIZ)]
     );
-    render(<Board subteamId={CRM} title="CRM e Automação" />);
+    render(<Board podeEditarColunas={false} subteamId={CRM} title="CRM e Automação" />);
     await screen.findByText("Pipeline HubSpot");
     expect(pillDe("Pipeline HubSpot")).toBe("Compartilhada");
   });
@@ -334,7 +334,7 @@ describe("Board -- quadro de subtime, pill de escopo (§8)", () => {
       ],
       [project("p-crm", CRM)]
     );
-    render(<Board subteamId={CRM} title="CRM e Automação" />);
+    render(<Board podeEditarColunas={false} subteamId={CRM} title="CRM e Automação" />);
     await screen.findByText("Automação interna");
     expect(pillDe("Automação interna")).toBe("Interna");
   });
@@ -353,7 +353,7 @@ describe("Board -- quadro de subtime, pill de escopo (§8)", () => {
       ],
       []
     );
-    render(<Board subteamId={CRM} title="CRM e Automação" />);
+    render(<Board podeEditarColunas={false} subteamId={CRM} title="CRM e Automação" />);
     await screen.findByText("Integração desconhecida");
     expect(pillDe("Integração desconhecida")).toBeNull();
   });
@@ -370,7 +370,7 @@ describe("Board -- quadro de subtime, pill de escopo (§8)", () => {
       ],
       [project("p-sem-time", null)]
     );
-    render(<Board subteamId={CRM} title="CRM e Automação" />);
+    render(<Board podeEditarColunas={false} subteamId={CRM} title="CRM e Automação" />);
     await screen.findByText("Tarefa em projeto sem time");
     expect(pillDe("Tarefa em projeto sem time")).toBeNull();
   });
@@ -406,7 +406,7 @@ describe("Board -- quadro de subtime, pill de escopo (§8)", () => {
       { ...MEMBROS[0], team_ids: [SEO, CRM] },
     ]);
 
-    render(<Board subteamId={CRM} title="CRM e Automação" />);
+    render(<Board podeEditarColunas={false} subteamId={CRM} title="CRM e Automação" />);
     expect(await screen.findByText("Texto do lançamento")).toBeTruthy();
   });
 
@@ -428,7 +428,7 @@ describe("Board -- quadro de subtime, pill de escopo (§8)", () => {
       { ...MEMBROS[0], team_ids: [SEO] },
     ]);
 
-    render(<Board subteamId={CRM} title="CRM e Automação" />);
+    render(<Board podeEditarColunas={false} subteamId={CRM} title="CRM e Automação" />);
     // Espera o quadro terminar de montar antes de afirmar a AUSENCIA -- senao
     // o teste passaria so por chegar antes dos dados.
     await screen.findByRole("button", { name: /Filtros/ });
@@ -466,7 +466,7 @@ describe("Board -- guardas de carregamento", () => {
       })
     );
 
-    render(<Board subteamId={CRM} title="CRM e Automação" />);
+    render(<Board podeEditarColunas={false} subteamId={CRM} title="CRM e Automação" />);
     // Os outros quatro endpoints ja resolveram; so os projetos faltam.
     await waitFor(() => {
       expect(screen.getByRole("status", { name: /Carregando tarefas/ })).toBeTruthy();
@@ -491,7 +491,7 @@ describe("Board -- guardas de carregamento", () => {
     );
     vi.mocked(api.listAllProjects).mockRejectedValue(new Error("500"));
 
-    render(<Board subteamId={CRM} title="CRM e Automação" />);
+    render(<Board podeEditarColunas={false} subteamId={CRM} title="CRM e Automação" />);
     await screen.findByText("Tarefa avulsa");
     expect(pillDe("Tarefa avulsa")).toBe("Interna");
   });
@@ -529,7 +529,7 @@ describe("Board -- filtro de responsável (multi-seleção, UNIÃO)", () => {
 
   it("sem filtro, mostra as três", async () => {
     montarEquipe();
-    render(<Board subteamId={CRM} title="CRM e Automação" />);
+    render(<Board podeEditarColunas={false} subteamId={CRM} title="CRM e Automação" />);
     await screen.findByText("Tarefa da Beatriz");
     expect(screen.getByText("Tarefa da Clara")).toBeTruthy();
     expect(screen.getByText("Tarefa de ninguém")).toBeTruthy();
@@ -537,7 +537,7 @@ describe("Board -- filtro de responsável (multi-seleção, UNIÃO)", () => {
 
   it("uma marcada mostra só a dela", async () => {
     montarEquipe();
-    render(<Board subteamId={CRM} title="CRM e Automação" />);
+    render(<Board podeEditarColunas={false} subteamId={CRM} title="CRM e Automação" />);
     await screen.findByText("Tarefa da Beatriz");
     abrirPainel();
     marcar("Beatriz");
@@ -554,7 +554,7 @@ describe("Board -- filtro de responsável (multi-seleção, UNIÃO)", () => {
    */
   it("UNIÃO: duas marcadas mostram as tarefas de CADA uma", async () => {
     montarEquipe();
-    render(<Board subteamId={CRM} title="CRM e Automação" />);
+    render(<Board podeEditarColunas={false} subteamId={CRM} title="CRM e Automação" />);
     await screen.findByText("Tarefa da Beatriz");
     abrirPainel();
     marcar("Beatriz");
@@ -568,7 +568,7 @@ describe("Board -- filtro de responsável (multi-seleção, UNIÃO)", () => {
 
   it("desmarcar volta ao estado anterior", async () => {
     montarEquipe();
-    render(<Board subteamId={CRM} title="CRM e Automação" />);
+    render(<Board podeEditarColunas={false} subteamId={CRM} title="CRM e Automação" />);
     await screen.findByText("Tarefa da Beatriz");
     abrirPainel();
     marcar("Beatriz");
@@ -579,7 +579,7 @@ describe("Board -- filtro de responsável (multi-seleção, UNIÃO)", () => {
 
   it("duas pessoas contam como UM filtro, não dois", async () => {
     montarEquipe();
-    render(<Board subteamId={CRM} title="CRM e Automação" />);
+    render(<Board podeEditarColunas={false} subteamId={CRM} title="CRM e Automação" />);
     await screen.findByText("Tarefa da Beatriz");
     abrirPainel();
     marcar("Beatriz");
@@ -605,7 +605,7 @@ describe("Board -- filtro de responsável (multi-seleção, UNIÃO)", () => {
       []
     );
     vi.mocked(api.listMembers).mockResolvedValue(EQUIPE);
-    render(<Board subteamId={CRM} title="CRM e Automação" />);
+    render(<Board podeEditarColunas={false} subteamId={CRM} title="CRM e Automação" />);
     await screen.findByText("Raiz sem responsável");
     abrirPainel();
     marcar("Beatriz");
@@ -644,7 +644,7 @@ describe("Board -- depois de duplicar, abre a CÓPIA", () => {
       skipped_assignees: [],
       promoted_to_root: false,
     });
-    render(<Board subteamId={CRM} title="CRM e Automação" />);
+    render(<Board podeEditarColunas={false} subteamId={CRM} title="CRM e Automação" />);
     await screen.findByText("Tarefa original");
 
     fireEvent.click(screen.getByText("Tarefa original"));
@@ -732,7 +732,7 @@ describe("Board -- depois de duplicar, a CÓPIA aparece com as subtarefas", () =
       promoted_to_root: false,
     });
 
-    render(<Board subteamId={CRM} title="CRM e Automação" />);
+    render(<Board podeEditarColunas={false} subteamId={CRM} title="CRM e Automação" />);
     await screen.findByText("Tarefa original");
 
     fireEvent.click(screen.getByText("Tarefa original"));
@@ -785,7 +785,7 @@ describe("Board -- busca por título alcança as SUBTAREFAS (05/08)", () => {
       ],
       []
     );
-    render(<Board subteamId={CRM} title="CRM e Automação" />);
+    render(<Board podeEditarColunas={false} subteamId={CRM} title="CRM e Automação" />);
     await screen.findByText("Campanha de matrícula");
 
     fireEvent.change(screen.getByPlaceholderText("Buscar por título…"), {
@@ -849,7 +849,7 @@ describe("Board -- busca por título alcança as SUBTAREFAS (05/08)", () => {
 describe("Board -- as colunas vem da API (fatia 4c)", () => {
   it("desenha o nome das colunas do quadro, e nao os rotulos de status", async () => {
     montarApi([task({ id: "c1", title: "Post do blog" })], []);
-    render(<Board subteamId={CRM} title="CRM e Automação" />);
+    render(<Board podeEditarColunas={false} subteamId={CRM} title="CRM e Automação" />);
     await screen.findByText("Post do blog");
 
     // Os tres nomes vem de `QUADRO.colunas[].name`.
@@ -881,7 +881,7 @@ describe("Board -- as colunas vem da API (fatia 4c)", () => {
       ],
       []
     );
-    render(<Board subteamId={CRM} title="CRM e Automação" />);
+    render(<Board podeEditarColunas={false} subteamId={CRM} title="CRM e Automação" />);
     const card = await screen.findByText("Card teimoso");
 
     // Sobe do texto do card ate a coluna e confere o cabecalho dela.
@@ -905,7 +905,7 @@ describe("Board -- as colunas vem da API (fatia 4c)", () => {
       ],
       []
     );
-    render(<Board subteamId={CRM} title="CRM e Automação" />);
+    render(<Board podeEditarColunas={false} subteamId={CRM} title="CRM e Automação" />);
     await screen.findByText("Card normal");
 
     expect(screen.queryByText("Card perdido")).toBeNull();
@@ -928,7 +928,7 @@ describe("Board -- as colunas vem da API (fatia 4c)", () => {
       })
     );
 
-    render(<Board subteamId={CRM} title="CRM e Automação" />);
+    render(<Board podeEditarColunas={false} subteamId={CRM} title="CRM e Automação" />);
     await waitFor(() => {
       expect(screen.getByRole("status", { name: /Carregando tarefas/ })).toBeTruthy();
     });
@@ -947,7 +947,7 @@ describe("Board -- as colunas vem da API (fatia 4c)", () => {
     montarApi([task({ id: "c6", title: "Sem quadro nenhum" })], []);
     vi.mocked(api.listBoards).mockRejectedValue(new Error("500"));
 
-    render(<Board subteamId={CRM} title="CRM e Automação" />);
+    render(<Board podeEditarColunas={false} subteamId={CRM} title="CRM e Automação" />);
     // Sai do "Carregando": nao ha coluna, entao nao ha card -- mas a tela
     // responde, e o contador denuncia a tarefa que ficou de fora.
     await waitFor(() => {
@@ -1005,7 +1005,7 @@ describe("Board -- o card decide pela coluna (fatia 4c)", () => {
       { ...QUADRO, colunas: [...QUADRO.colunas, BLOQUEADO] },
     ]);
 
-    render(<Board subteamId={CRM} title="CRM e Automação" />);
+    render(<Board podeEditarColunas={false} subteamId={CRM} title="CRM e Automação" />);
     await screen.findByText("Parada faz tempo");
 
     // A que esta em "Em Andamento" (cobra prazo) ganha o selo...
@@ -1103,7 +1103,7 @@ describe("Board -- o quadro sai das TAREFAS, nao da flag de padrão (fatia 4c)",
     // ⚠️ A REGRA QUE ELE GUARDA NÃO MUDOU: o quadro sai do `board_id` DAS
     // TAREFAS, e não da flag `is_default`. Só o lugar onde ela ainda pode ser
     // exercitada é que encolheu -- da lente (5b-5b) para o projeto (5c).
-    render(<Board projectId="proj-1" title="Nome do Projeto" />);
+    render(<Board podeEditarColunas={false} projectId="proj-1" title="Nome do Projeto" />);
     await screen.findByText("Pauta de agosto");
 
     expect(screen.getByText("A escrever")).toBeTruthy();
@@ -1135,7 +1135,7 @@ describe("Board -- o quadro sai das TAREFAS, nao da flag de padrão (fatia 4c)",
     );
     vi.mocked(api.listBoards).mockResolvedValue([QUADRO, INTERNO]);
 
-    render(<Board title="Quadro geral" />);
+    render(<Board podeEditarColunas={false} title="Quadro geral" />);
 
     // ⚠️ SEM TAREFA VISÍVEL, O GERAL CAI NO ESTADO VAZIO -- e é isso que prova
     // que a tarefa do quadro extra NÃO entrou. Ela existe na resposta da API
@@ -1158,7 +1158,7 @@ describe("Board -- o quadro sai das TAREFAS, nao da flag de padrão (fatia 4c)",
     montarApi([], []);
     vi.mocked(api.listBoards).mockResolvedValue([QUADRO, INTERNO]);
 
-    render(<Board subteamId={CRM} title="CRM e Automação" />);
+    render(<Board podeEditarColunas={false} subteamId={CRM} title="CRM e Automação" />);
     // Sem tarefa nenhuma o quadro mostra o estado vazio, entao a asserção é
     // que a tela RESPONDE -- e não trava escolhendo quadro.
     await waitFor(() => {
@@ -1202,7 +1202,7 @@ describe("Board -- checklist e prazo leem a coluna (fatia 4c)", () => {
       ],
       []
     );
-    render(<Board subteamId={CRM} title="CRM e Automação" />);
+    render(<Board podeEditarColunas={false} subteamId={CRM} title="CRM e Automação" />);
     await screen.findByText("Campanha com filhas");
 
     expect(screen.getByTitle("1 de 1 subtarefas concluídas")).toBeTruthy();
@@ -1237,7 +1237,7 @@ describe("Board -- checklist e prazo leem a coluna (fatia 4c)", () => {
       ],
       []
     );
-    render(<Board subteamId={CRM} title="CRM e Automação" />);
+    render(<Board podeEditarColunas={false} subteamId={CRM} title="CRM e Automação" />);
     await screen.findByText("Campanha com filhas");
 
     expect(screen.getByTitle("0 de 1 subtarefas concluídas")).toBeTruthy();
@@ -1291,7 +1291,7 @@ describe("Board -- checklist e prazo leem a coluna (fatia 4c)", () => {
         ],
       },
     ]);
-    render(<Board subteamId={CRM} title="CRM e Automação" />);
+    render(<Board podeEditarColunas={false} subteamId={CRM} title="CRM e Automação" />);
     await screen.findByText("Campanha com cancelada");
 
     expect(screen.getByTitle("0 de 1 subtarefas concluídas")).toBeTruthy();
@@ -1319,7 +1319,7 @@ describe("Board -- checklist e prazo leem a coluna (fatia 4c)", () => {
       ],
       []
     );
-    render(<Board subteamId={CRM} title="CRM e Automação" />);
+    render(<Board podeEditarColunas={false} subteamId={CRM} title="CRM e Automação" />);
     await screen.findByText("Atrasada de verdade");
 
     fireEvent.click(screen.getByRole("button", { name: /Filtros/ }));
@@ -1363,7 +1363,7 @@ describe("Board -- o card diz a hora do prazo (Spec 039, F7)", () => {
       ],
       []
     );
-    render(<Board subteamId={CRM} title="CRM e Automação" />);
+    render(<Board podeEditarColunas={false} subteamId={CRM} title="CRM e Automação" />);
     await screen.findByText("Com hora marcada");
 
     expect(within(card("Com hora marcada")).getByText("31/12/2026 18:00")).toBeTruthy();
@@ -1410,7 +1410,7 @@ describe("Board -- a lente so mostra o Quadro geral (fatia 5b-5b, D1)", () => {
       []
     );
 
-    render(<Board subteamId={CRM} title="CRM e Automação" />);
+    render(<Board podeEditarColunas={false} subteamId={CRM} title="CRM e Automação" />);
     await screen.findByText("Do quadro geral");
 
     expect(screen.queryByText("Do quadro extra")).toBeNull();
@@ -1443,7 +1443,7 @@ describe("Board -- a lente so mostra o Quadro geral (fatia 5b-5b, D1)", () => {
       []
     );
 
-    render(<Board subteamId={CRM} title="CRM e Automação" />);
+    render(<Board podeEditarColunas={false} subteamId={CRM} title="CRM e Automação" />);
     await screen.findByText("Interna no geral");
 
     expect(screen.queryByText("Interna no avulso")).toBeNull();
@@ -1526,7 +1526,7 @@ describe("Board -- quadro avulso (fatia 5b-6)", () => {
     // qualquer pessoa encontra, porque todo quadro nasce vazio.
     comAvulso([]);
 
-    render(<Board boardId={AVULSO} title="Quadro · Campanhas" />);
+    render(<Board podeEditarColunas={false} boardId={AVULSO} title="Quadro · Campanhas" />);
 
     expect(await screen.findByText("Em Revisão")).toBeTruthy();
     // "Bloqueado" so existe no Quadro geral.
@@ -1545,7 +1545,7 @@ describe("Board -- quadro avulso (fatia 5b-6)", () => {
       task({ id: "t-geral", title: "Do geral", team_id: RAIZ }),
     ]);
 
-    render(<Board boardId={AVULSO} title="Quadro · Campanhas" />);
+    render(<Board podeEditarColunas={false} boardId={AVULSO} title="Quadro · Campanhas" />);
 
     expect(await screen.findByText("Do Campanhas")).toBeTruthy();
     // ⚠️ Sem o filtro por `board_id`, a do geral entraria e cairia em
@@ -1562,7 +1562,7 @@ describe("Board -- quadro avulso (fatia 5b-6)", () => {
     // designacoes.
     comAvulso([]);
 
-    render(<Board boardId={AVULSO} title="Quadro · Campanhas" />);
+    render(<Board podeEditarColunas={false} boardId={AVULSO} title="Quadro · Campanhas" />);
     fireEvent.click(await screen.findByText("+ Nova tarefa"));
 
     // ⚠️ UM NO DE TEXTO SO -- ver o comentario no `TaskModal`. Se alguem
@@ -1595,7 +1595,7 @@ describe("Board -- quadro avulso (fatia 5b-6)", () => {
       })
     );
 
-    render(<Board boardId={AVULSO} title="Quadro · Campanhas" />);
+    render(<Board podeEditarColunas={false} boardId={AVULSO} title="Quadro · Campanhas" />);
     fireEvent.click(await screen.findByText("+ Nova tarefa"));
     fireEvent.change(await screen.findByLabelText("Título"), {
       target: { value: "Tarefa nova" },
@@ -1628,7 +1628,7 @@ describe("Board -- quadro avulso (fatia 5b-6)", () => {
     // ⚠️ Sem esta trava, um OPERATOR abriria um modo onde toda acao da 403 --
     // e ele so descobriria depois de reorganizar o quadro inteiro.
     comAvulso([]);
-    render(<Board boardId={AVULSO} title="Campanhas" />);
+    render(<Board podeEditarColunas={false} boardId={AVULSO} title="Campanhas" />);
     expect(await screen.findByText("Campanhas")).toBeTruthy();
     expect(screen.queryByLabelText("Editar colunas")).toBeNull();
 
@@ -1929,7 +1929,7 @@ describe("Board -- a API de quadros falhou (fatia 5b-6)", () => {
     montarApi([], []);
     vi.mocked(api.listBoards).mockRejectedValue(new Error("rede"));
 
-    render(<Board boardId="board-campanhas" title="Quadro · Campanhas" />);
+    render(<Board podeEditarColunas={false} boardId="board-campanhas" title="Quadro · Campanhas" />);
 
     expect(
       await screen.findByText(/não consegui carregar os quadros/i)
@@ -1949,7 +1949,7 @@ describe("Board -- a API de quadros falhou (fatia 5b-6)", () => {
     montarApi([task({ id: "t1", title: "Campanha de maio", team_id: RAIZ })], []);
     vi.mocked(api.listBoards).mockRejectedValue(new Error("rede"));
 
-    render(<Board title="Quadro geral" />);
+    render(<Board podeEditarColunas={false} title="Quadro geral" />);
 
     expect(
       await screen.findByText(/não consegui carregar os quadros/i)
@@ -1991,7 +1991,7 @@ describe("Board -- quadro pedido que ainda nao esta na lista (fatia 5b-6)", () =
     montarApi([], []);
     // A lista NAO tem o quadro pedido -- e o que acontece depois de apagar.
     vi.mocked(api.listBoards).mockResolvedValue([QUADRO]);
-    render(<Board boardId="board-apagado" title="Campanhas" />);
+    render(<Board podeEditarColunas={false} boardId="board-apagado" title="Campanhas" />);
     expect(await screen.findByText("Este quadro não existe mais.")).toBeTruthy();
   });
 
@@ -2000,7 +2000,7 @@ describe("Board -- quadro pedido que ainda nao esta na lista (fatia 5b-6)", () =
     // A lista NAO tem o quadro pedido: e o estado logo depois de criar.
     vi.mocked(api.listBoards).mockResolvedValue([QUADRO]);
 
-    render(<Board boardId="board-que-acabou-de-nascer" title="Quadro · Novo" />);
+    render(<Board podeEditarColunas={false} boardId="board-que-acabou-de-nascer" title="Quadro · Novo" />);
 
     await waitFor(() =>
       expect(vi.mocked(api.listBoards)).toHaveBeenCalled()
@@ -2061,7 +2061,7 @@ describe("Board -- quadro pedido que ainda nao esta na lista (fatia 5b-6)", () =
       .mockResolvedValueOnce([QUADRO])
       .mockResolvedValue([QUADRO, avulso]);
 
-    render(<Board boardId="board-que-acabou-de-nascer" title="Quadro · Novo" />);
+    render(<Board podeEditarColunas={false} boardId="board-que-acabou-de-nascer" title="Quadro · Novo" />);
 
     // A coluna do quadro NOVO aparece: a segunda busca o trouxe.
     expect(await screen.findByText("Em Revisão")).toBeTruthy();
@@ -2086,7 +2086,7 @@ describe("Board -- quadro pedido que ainda nao esta na lista (fatia 5b-6)", () =
 describe("Board -- Ordenar e Mostrar arquivadas vivem no painel (F4/F5)", () => {
   it("não aparecem no cabeçalho, e aparecem ao abrir Filtros", async () => {
     montarApi([task({ id: "t1", title: "Tarefa qualquer" })], []);
-    render(<Board subteamId={CRM} title="CRM e Automação" />);
+    render(<Board podeEditarColunas={false} subteamId={CRM} title="CRM e Automação" />);
     await screen.findByText("Tarefa qualquer");
 
     // Com o painel FECHADO, nenhum dos dois está na tela.
@@ -2108,7 +2108,7 @@ describe("Board -- Ordenar e Mostrar arquivadas vivem no painel (F4/F5)", () => 
     // a CONTA -- era a objeção registrada no código quando o Ordenar ficava
     // fora do painel, e é o que este caso prende.
     montarApi([task({ id: "t1", title: "Tarefa qualquer" })], []);
-    render(<Board subteamId={CRM} title="CRM e Automação" />);
+    render(<Board podeEditarColunas={false} subteamId={CRM} title="CRM e Automação" />);
     await screen.findByText("Tarefa qualquer");
 
     fireEvent.click(screen.getByRole("button", { name: "Filtros" }));
@@ -2172,13 +2172,13 @@ describe("Board -- com DOIS quadros gerais, a raiz desenha o DELA", () => {
 
   it("⚠️ a tarefa do Comercial aparece no quadro geral do Comercial", async () => {
     montarDoisGerais();
-    render(<Board areaId={COMERCIAL} title="Quadro Geral" />);
+    render(<Board podeEditarColunas={false} areaId={COMERCIAL} title="Quadro Geral" />);
     expect(await screen.findByText("Tarefa Teste Comercial")).toBeTruthy();
   });
 
   it("⚠️ e as colunas desenhadas são as do Comercial, e não as do Marketing", async () => {
     montarDoisGerais();
-    render(<Board areaId={COMERCIAL} title="Quadro Geral" />);
+    render(<Board podeEditarColunas={false} areaId={COMERCIAL} title="Quadro Geral" />);
     expect(await screen.findByText("Backlog do Comercial")).toBeTruthy();
     // "Em Andamento" só existe no geral do Marketing deste fixture.
     expect(screen.queryByText("Em Andamento")).toBeNull();

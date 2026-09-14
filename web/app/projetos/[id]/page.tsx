@@ -221,6 +221,7 @@ function Projeto() {
           ser possível editar o quadro". Fica escrito para ninguém "corrigir" a
           ausência achando que é esquecimento. */}
       <Board
+        podeEditarColunas={false}
         projectId={id}
         title={project.title}
         acoesDoTitulo={
