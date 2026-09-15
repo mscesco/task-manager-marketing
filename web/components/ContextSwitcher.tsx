@@ -38,12 +38,24 @@ import AnchoredPanel, {
   useAnchoredPanel,
 } from "@/components/AnchoredPanel";
 import type { CurrentUser, Team } from "@/lib/api";
-import { contextChoice, currentContext } from "@/lib/contextSwitcher";
+import {
+  contextChoice,
+  currentContext,
+  switcherHref,
+} from "@/lib/contextSwitcher";
 
 export default function ContextSwitcher({
   teams,
   me,
   pathname,
+  /**
+   * A query da URL, para o seletor PRESERVAR a tela (Spec 048, §4.2).
+   *
+   * ⚠️ OBRIGATÓRIA, e `""` é uma resposta. Sem ela, trocar de time numa tela
+   * recortada apagaria os outros parâmetros da URL -- a pessoa perderia a aba
+   * ou o filtro que escolheu por ter trocado de time.
+   */
+  search,
   /** `area.create` — existe só nos papéis de organização (Spec 046, §4.1). */
   canManageOrg,
   /** A barra está expandida? Retraída, sobra só o ícone. */
@@ -57,6 +69,7 @@ export default function ContextSwitcher({
   teams: Team[];
   me: CurrentUser | null;
   pathname: string;
+  search: string;
   canManageOrg: boolean;
   expanded: boolean;
   orgName: string;
@@ -154,7 +167,10 @@ export default function ContextSwitcher({
             {escolha.roots.map((t) => (
               <SwitcherItem
                 key={t.id}
-                href={`/times/${t.id}`}
+                // ⚠️ PRESERVA A TELA (Spec 048, §4.2): em "Minhas tarefas",
+                // trocar de time continua em "Minhas tarefas". A decisão
+                // inteira, com os três casos, mora em `switcherHref`.
+                href={switcherHref(pathname, search, t.id)}
                 label={t.name}
                 // ⚠️ Vem de `currentContext`, e não de comparar o `pathname`
                 // com `/times/<id>`: estar num SUBTIME do Marketing (ou no

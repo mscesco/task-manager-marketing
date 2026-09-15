@@ -65,7 +65,6 @@ function Tarefa() {
   // completos (resolvem nome de quem/do que ja esta na tarefa); estes so tiram
   // da lista de escolha -- projeto pessoal como destino some a tarefa do quadro
   // dos outros, e membro desativado nao deve receber tarefa nova.
-  const [projetosPessoais, setProjetosPessoais] = useState<Set<string>>(new Set());
   const [membrosInativos, setMembrosInativos] = useState<Set<string>>(new Set());
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
@@ -87,13 +86,16 @@ function Tarefa() {
         setMembrosInativos(new Set(ms.filter((m) => !m.is_active).map((m) => m.id)));
       })
       .catch(() => {});
-    listAllProjects()
+    listAllProjects({
+      // ROTULAR, nao escolher: este mapa id -> titulo desenha o selo de
+      // projeto no card. Recortar por time apagaria o selo de uma tarefa que
+      // a pessoa ENXERGA, em vez de proteger algo -- a lente do backend ja
+      // limita o que volta. Ver `listProjects` em `lib/api.ts`.
+      teamId: null,
+    })
       .then((r) => {
         if (!vivo) return;
         setProjectNames(new Map(r.items.map((p) => [p.id, p.title])));
-        setProjetosPessoais(
-          new Set(r.items.filter((p) => p.is_personal).map((p) => p.id))
-        );
       })
       .catch(() => {});
     return () => {
@@ -237,7 +239,6 @@ function Tarefa() {
         // `false` explicito em vez de default: a prop e obrigatoria justamente
         // pra esta decisao aparecer na chamada.
         mostrarArquivadas={false}
-        projetosPessoais={projetosPessoais}
         membrosInativos={membrosInativos}
         // "Voltar" so aparece quando o pai foi carregado de fato -- e leva pra
         // rota do pai (cada nivel tem endereco proprio, entao nao ha pilha).
@@ -271,6 +272,8 @@ function Tarefa() {
         task={editando}
         duplicarDe={duplicando}
         filhosDaOrigem={duplicando ? filhos : []}
+        // Esta tela nao cria tarefa do zero (`open` exige editar ou duplicar).
+        newTaskTeam={null}
         onClose={() => {
           setEditando(null);
           setDuplicando(null);

@@ -5,6 +5,7 @@ import EmptyState from "@/components/EmptyState";
 import Card from "@/components/Card";
 import PageHeader from "@/components/PageHeader";
 import Loading from "@/components/Loading";
+import { useActiveTeam, useActiveTeamId } from "@/lib/useActiveTeam";
 import { useDrawnOutline } from "@/components/AnimatedOutline";
 import {
   listProjects,
@@ -70,11 +71,39 @@ function Projetos() {
   const [areas, setAreas] = useState<Team[]>([]);
   const [areaId, setAreaId] = useState<string>("");
 
+  // ⚠⚠ O TIME ATIVO VEM DA BARRA (fatia C), e nao de um `useSearchParams`
+  // aqui: esta rota e ESTATICA (`○ /projetos` no build) e o hook derrubaria o
+  // portao. Quem le a query e o `TeamParamReader`, atras da unica fronteira de
+  // `Suspense` do produto. Ver `lib/useActiveTeam.tsx`.
+  const timeAtivo = useActiveTeamId();
+  // ⚠⚠ `active === null` ("a barra ainda não resolveu") e `kind: "none"` ("ela
+  // resolveu, e não há time") são COISAS DIFERENTES. `listTeamsAll()` falha em
+  // silêncio no `AppShell`: sem a distinção, uma falha de rede ali deixaria esta
+  // tela em `Loading` para sempre, sem erro nenhum.
+  // ⚠️ O NOME VEM DA BARRA (`teamName`), e não de `areas`. As duas respostas
+  // coincidem quando a lista de áreas já chegou -- mas `areas` é buscada POR
+  // ESTA TELA e só contém as raizes que a pessoa alcança, enquanto o `teamName`
+  // sai da mesma árvore que resolveu o time ativo. Uma fonte, e não duas que
+  // podem divergir.
+  const { active, teamName: nomeDoTime } = useActiveTeam();
+
   useEffect(() => {
-    listProjects({ size: 100 })
-      // pasta = projeto comum; o pessoal do proprio usuario nao entra aqui.
-      .then((r) => setItems(r.items.filter((p) => !p.is_personal)))
+    // ⚠⚠ ESPERA A BARRA RESOLVER, em vez de buscar sem recorte. Buscar antes
+    // mostraria os projetos de todos os times por um instante -- o defeito que
+    // a spec veio matar, piscando.
+    if (active === null) return;
+    listProjects({ size: 100, teamId: timeAtivo })
+      .then((r) => setItems(r.items))
       .catch((e: ApiError) => setErro(e.message));
+    // ⚠️ `timeAtivo` NAS DEPENDENCIAS: trocar de time reescreve a query e esta
+    // tela tem de rebuscar. Sem isso o seletor mudaria a URL e a lista ficaria a
+    // mesma -- pior que nao recortar, porque a tela passaria a mentir.
+    // ⚠️ `active === null` E NÃO `active`: o objeto é NOVO a cada render da
+    // barra, e depender dele refazia o pedido a cada render -- vários pedidos
+    // em voo, e o último a responder vencia (defeito de 14/09).
+  }, [timeAtivo, active === null]);
+
+  useEffect(() => {
     // ⚠️ As duas juntas porque `rootsForPerson` precisa das DUAS: a árvore e os
     // vínculos de quem está olhando. Um operador do Marketing não escolhe TI.
     Promise.all([currentUser(), listTeamsAll()])
@@ -93,6 +122,25 @@ function Projetos() {
       .catch(() => {});
   }, []);
 
+  // ⚠⚠ O TIME ATIVO PREENCHE O CAMPO (14/09). O bloco de `areaId` no topo já
+  // tinha escrito a decisão, antes de haver time ativo: *"quando a área
+  // ambiente existir, este seletor deixa de ser pergunta e passa a ser
+  // confirmação do lugar onde a pessoa já está. O campo continua; muda quem o
+  // preenche."* Até aqui ele só se preenchia com UMA área -- com duas ficava
+  // vazio, e a tela ignorava que a pessoa estava no Comercial.
+  //
+  // ⚠️ NÃO É O CHUTE QUE O BLOCO DO `<select>` PROÍBE. Aquele aviso é contra
+  // pré-selecionar "a primeira área" por acaso. O time ativo não é acaso: é
+  // onde ela está, e o nome dele está no cabeçalho.
+  //
+  // ⚠️ `atual || timeAtivo`, e não `setAreaId(timeAtivo)`: o efeito roda de novo
+  // quando o time muda, e sobrescrever apagaria a escolha já feita no
+  // formulário aberto. Mesmo desenho do `/formularios`.
+  useEffect(() => {
+    if (!timeAtivo) return;
+    setAreaId((atual) => atual || timeAtivo);
+  }, [timeAtivo]);
+
   async function criar() {
     const t = titulo.trim();
     if (!t || !areaId) return;
@@ -100,7 +148,13 @@ function Projetos() {
     setErroForm(null);
     try {
       const novo = await createProject({ title: t, status, team_id: areaId });
-      setItems((prev) => [novo, ...(prev ?? [])]);
+      // ⚠️ SÓ ENTRA NA LISTA SE FOR DO TIME MOSTRADO (14/09). A lista é recortada
+      // pelo time ativo; um projeto criado para OUTRO time apareceria aqui até
+      // recarregar -- dizendo "em Comercial" sobre um projeto do Marketing.
+      // `areaId` é sempre uma raiz (`rootsForPerson`), então a igualdade basta.
+      if (timeAtivo === null || areaId === timeAtivo) {
+        setItems((prev) => [novo, ...(prev ?? [])]);
+      }
       setTitulo("");
       setStatus("PLANNING");
       setCriando(false);
@@ -118,7 +172,18 @@ function Projetos() {
     <div>
       <PageHeader
         title="Projetos"
-        count={`${items.length} projetos`}
+        /* ⚠⚠ O NOME DO TIME ENTRA NA CONTAGEM (fatia C), e isso não é
+           enfeite: a lista agora é RECORTADA, e uma lista recortada que não
+           diz pelo quê parece a lista inteira. A §7 da spec nomeia esse risco
+           para a fila de solicitações -- *"a tela precisa dizer 'a fila do
+           Marketing está vazia', e não mostrar um vazio sem contexto"* -- e ele
+           é o mesmo aqui. Sem o nome do time, quem trocou de contexto e não
+           encontra um projeto conclui que ele foi apagado. */
+        count={
+          nomeDoTime
+            ? `${items.length} projetos em ${nomeDoTime}`
+            : `${items.length} projetos`
+        }
         actions={
           podeCriar && !criando && (
             <button type="button" className="btn btn-primary" onClick={() => setCriando(true)}>
@@ -169,8 +234,13 @@ function Projetos() {
           {areas.length > 1 && (
             <div className="field">
               <span className="label">Time</span>
+              {/* ⚠️ O `aria-label` É O NOME DO CAMPO para leitor de tela (14/09): o
+                  "Time" acima é um `<span>` sem ligação com o `<select>`, e o campo
+                  era anunciado só como "caixa de seleção". É também por esse nome
+                  que o teste o acha. */}
               <select
                 className="input"
+                aria-label="Time do projeto"
                 value={areaId}
                 disabled={salvando}
                 onChange={(e) => setAreaId(e.target.value)}
@@ -208,7 +278,9 @@ function Projetos() {
 
       {items.length === 0 ? (
         <EmptyState
-          title="Nenhum projeto ainda"
+          title={
+            nomeDoTime ? `Nenhum projeto em ${nomeDoTime}` : "Nenhum projeto ainda"
+          }
           description="Crie um projeto para agrupar tarefas de um trabalho maior."
           action={
             podeCriar && (
@@ -264,11 +336,11 @@ function Projetos() {
  * traco arredondado no meio de uma lista de cantos retos.
  */
 function LinhaDeProjeto({ p, primeira }: { p: Project; primeira: boolean }) {
-  const { alvo, outline } = useDrawnOutline();
+  const { target, outline } = useDrawnOutline();
   return (
             <a
               href={`/projetos/${p.id}`}
-              {...alvo}
+              {...target}
               style={{
                 // ⚠️ `relative` e o que faz o contorno medir ESTA faixa.
                 position: "relative",

@@ -49,7 +49,7 @@ import {
   valoresIniciaisDaCopia,
 } from "@/lib/duplicacaoTarefa";
 import { useFecharAoClicarFora } from "@/lib/useCliqueFora";
-import { timeDaTarefaNova } from "@/lib/escopoTarefa";
+import { timeDaTarefaNova, type NewTaskTeam } from "@/lib/escopoTarefa";
 import Avatar from "@/components/Avatar";
 import { nomeCurto } from "@/lib/people";
 
@@ -82,7 +82,7 @@ export default function TaskModal({
   onClose,
   onSaved,
   defaultProjectId = null,
-  defaultTeamId = null,
+  newTaskTeam,
   defaultBoardId = null,
   nomeDoQuadro = null,
   duplicarDe = null,
@@ -93,9 +93,20 @@ export default function TaskModal({
   onClose: () => void;
   onSaved: (task: Task) => void;
   defaultProjectId?: string | null; // criar dentro deste projeto (Entrega 11)
-  // Fatia 5: time da task de topo. So o quadro de SUBTIME passa (o id do
-  // subtime) -> task nasce interna. Null nos demais -> pin na raiz.
-  defaultTeamId?: string | null;
+  /**
+   * O time da tarefa nova, decidido pelo QUADRO. `null` = esta tela nao cria
+   * tarefa do zero (so edita ou duplica).
+   *
+   * ⚠️⚠️ OBRIGATORIA, e um OBJETO (`lib/escopoTarefa.ts`). Ate 11/09 era
+   * `defaultTeamId?: string | null` -- opcional, e carregando dois
+   * significados numa unica string (qual time, e se esconde o seletor de
+   * projeto). O `Board` nunca lhe deu a raiz, e no quadro geral de um time
+   * raiz o seletor de responsavel voltou a oferecer a organizacao inteira.
+   *
+   * Sendo obrigatoria, o `tsc` aponta os quatro chamadores em vez de deixar
+   * cada tela decidir por omissao -- que foi como o defeito entrou.
+   */
+  newTaskTeam: NewTaskTeam | null;
   /**
    * Em QUAL quadro a tarefa de topo nasce (Spec 036, fatia 5b-6).
    *
@@ -154,16 +165,20 @@ export default function TaskModal({
   const [erro, setErro] = useState<string | null>(null);
 
   // Seletor de projeto: so ao CRIAR fora de um projeto fixo (quadro geral).
-  // No quadro de SUBTIME (defaultTeamId setado) a task de topo nasce INTERNA
-  // do subtime por decisao do modelo -> esconder o seletor. Sem isto, dava
+  // Num quadro PROPRIO (`internal`: subtime ou quadro avulso) a task de topo
+  // nasce INTERNA por decisao do modelo -> esconder o seletor. Sem isto, dava
   // pra criar uma task com team_id=subtime E project_id=projeto-da-raiz (o
   // backend aceita, pois o subtime e descendente da raiz), e essa task sumia
   // do quadro geral e aparecia so no projeto + como "Interna" no subtime.
   // ⚠️ Ao DUPLICAR o seletor some: a cópia herda o projeto da origem
   // (critério 8 -- cópia de subtarefa nasce irmã, e irmã fora do projeto
   // do pai é combinação que o backend recusa).
+  //
+  // ⚠️ `internal`, e NAO `teamId`. Sao coisas diferentes desde 11/09: no quadro
+  // geral da raiz a tarefa TEM time (a raiz) e mesmo assim o seletor de projeto
+  // aparece. Ver `NewTaskTeam` em `lib/escopoTarefa.ts`.
   const mostrarSeletorProjeto =
-    !editando && !duplicando && !defaultProjectId && !defaultTeamId;
+    !editando && !duplicando && !defaultProjectId && !newTaskTeam?.internal;
   const [projetos, setProjetos] = useState<Project[]>([]);
   const [projetoSel, setProjetoSel] = useState(""); // "" => avulsa
 
@@ -310,12 +325,21 @@ export default function TaskModal({
   }, [open, task]);
 
   // Carrega projetos comuns pro seletor (so quando ele aparece).
+  //
+  // ⚠️ ESCOLHER, e por isso RECORTA pelo time. Foi aqui que ela viu o defeito:
+  // *"estão aparecendo projetos de outro time raiz"*. A rota nunca filtrou por
+  // time -- o escopo dela era o workspace inteiro (ver `list_page` no
+  // `project_service.py`).
+  //
+  // ⚠️ `newTaskTeam.teamId` E O TIME CERTO AQUI sem nenhuma conta extra: este
+  // seletor so aparece quando `internal` e falso, e `internal` falso quer dizer
+  // exatamente "a tarefa nasce no quadro geral da raiz". Logo o time e a raiz.
   useEffect(() => {
     if (!open || !mostrarSeletorProjeto) return;
-    listProjects({ size: 100 })
-      .then((r) => setProjetos(r.items.filter((p) => !p.is_personal)))
+    listProjects({ size: 100, teamId: newTaskTeam?.teamId ?? null })
+      .then((r) => setProjetos(r.items))
       .catch(() => {});
-  }, [open, mostrarSeletorProjeto]);
+  }, [open, mostrarSeletorProjeto, newTaskTeam?.teamId]);
 
   // Carrega membros pro seletor de responsaveis (so ao CRIAR).
   useEffect(() => {
@@ -372,10 +396,11 @@ export default function TaskModal({
 
 
   // ⚠️ ESCOPO DE TIME NA CRIACAO.
-  // A tarefa nova ja nasce com time decidido AQUI: `defaultTeamId` (quadro de
-  // subtime -> nasce INTERNA daquele subtime) ou, quando null, a raiz -- e o
-  // que o `createTask` faz com o pin (`lib/api.ts`). Logo da pra saber, antes
-  // de oferecer, quem vai alcancar a tarefa.
+  // A tarefa nova ja nasce com time decidido no QUADRO, e chega aqui pronto em
+  // `newTaskTeam.teamId` -- subtime, quadro avulso, ou a raiz que a tela
+  // recebeu pela URL. E o mesmo valor que vai no pin do `createTask`
+  // (`lib/api.ts`). Logo da pra saber, antes de oferecer, quem vai alcancar a
+  // tarefa.
   //
   // Antes esta lista era TODO MUNDO e o comentario acima do campo dizia "o
   // backend valida escopo e recusa os invalidos com 422". Recusava mesmo --
@@ -390,7 +415,11 @@ export default function TaskModal({
   //
   // `null` = ainda carregando (ou falhou) => nao esconde ninguem, com o 422
   // do backend ainda de pe.
-  const timeAlvo = timeDaTarefaNova(defaultTeamId, rootTeamId);
+  // ⚠️ O `?? rootTeamId` SOBREVIVE, mas agora e SO o caminho legado: `/quadro`
+  // sem time na URL, onde `getRootTeamId()` ainda e a unica resposta -- e onde
+  // ela levanta se houver mais de uma raiz (Spec 046). Quem chega por
+  // `/quadro/<time>` traz `teamId` pronto e nunca depende dele.
+  const timeAlvo = timeDaTarefaNova(newTaskTeam?.teamId ?? null, rootTeamId);
   const [alcancamTime, setAlcancamTime] = useState<Set<string> | null>(null);
   // ⚠️ `alcancamTime === null` e AMBIGUO: significa "ainda carregando" E
   // "falhou". O pre-preenchimento precisa distinguir os dois -- esperar pelo
@@ -740,7 +769,10 @@ export default function TaskModal({
           due_time: null,
           project_id: defaultProjectId ?? (projetoSel || null),
           assignee_ids: assigneeIds,
-          team_id: defaultTeamId,
+          // ⚠️ O MESMO valor que o seletor de responsavel usou para perguntar
+          // "quem alcanca este time". Se os dois divergirem, a tela oferece um
+          // escopo e o POST grava outro -- e o 422 aparece no Salvar.
+          team_id: newTaskTeam?.teamId ?? null,
           // ⚠️ Spec 036, fatia 5b-6. `null` = Quadro geral (comportamento de
           // sempre). Sem esta linha o campo e descartado em silencio e a
           // tarefa nasce no geral -- quem a criou dentro do quadro avulso nao

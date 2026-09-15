@@ -69,6 +69,15 @@ async def list_tasks(
     task_status: TaskStatus | None = Query(None, alias="status"),
     priority: PriorityLevel | None = None,
     team_id: uuid.UUID | None = None,
+    under_team_id: uuid.UUID | None = Query(
+        None,
+        description=(
+            "Recorta pelas tarefas deste time e dos descendentes dele, pelo "
+            "time EFETIVO (o do projeto, ou o da propria tarefa se avulsa). "
+            "NAO confundir com `team_id`, que casa o time da tarefa por "
+            "igualdade."
+        ),
+    ),
     created_by: uuid.UUID | None = None,
     include_archived: bool = False,
     archived_only: bool = False,
@@ -101,6 +110,7 @@ async def list_tasks(
             status=task_status,
             priority=priority,
             team_id=team_id,
+            under_team_id=under_team_id,
             created_by=created_by,
             include_archived=include_archived,
             archived_only=archived_only,

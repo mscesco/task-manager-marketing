@@ -436,3 +436,37 @@ export function rotuloDeColuna(origem: OrigemDaColuna | undefined): string | nul
 export function corEhHex(coluna: Coluna): boolean {
   return coluna.color.startsWith("#");
 }
+
+/**
+ * O quadro geral DE UM TIME -- e nao "o" quadro geral.
+ *
+ * ⚠️⚠️ O DEFEITO 3.3 DA SPEC 048 TINHA CÓPIAS, e foi assim que ele voltou em
+ * 14/09. Eu havia consertado `quadros.find((q) => q.is_default)` -- "o" padrão,
+ * no SINGULAR -- dentro de `quadroGeralComIndice`. O `Board.tsx` tinha a MESMA
+ * linha três vezes. O índice do banco é `board_um_padrao_por_time`: com dois
+ * times raiz existem DOIS gerais, e o `find` devolve o primeiro da resposta --
+ * no banco dela, o do Marketing, que é o mais antigo.
+ *
+ * Reportado na tela: uma tarefa criada no quadro geral do Comercial foi salva
+ * CERTA (time, quadro e coluna do Comercial, conferido no banco) e não apareceu
+ * -- a tela filtrava os cards pelo id do quadro geral do MARKETING. E as
+ * colunas desenhadas eram as do Marketing também; ninguém viu antes porque o
+ * Comercial não tinha tarefa.
+ *
+ * ⚠️ POR ISSO É UMA FUNÇÃO, e não uma quarta cópia corrigida. A regra "qual é
+ * o quadro geral daqui" é feita em mais de um lugar, e cópia de regra de
+ * navegação é o que este projeto já viu divergir várias vezes.
+ *
+ * ⚠️ `teamId` NÃO ACEITA `null`, de propósito. "Sem time" tem respostas
+ * DIFERENTES em cada chamador -- em Minhas tarefas é "nenhuma coluna" (o modo
+ * "tudo"); na rota antiga `/quadro`, de uma raiz só, é o único geral que existe.
+ * Uma função que escolhesse por eles esconderia essa diferença.
+ *
+ * ⚠️ TIPO ESTRUTURAL, pelo mesmo motivo de `indiceDeColunas`: `lib/api.ts`
+ * importa este módulo, e importar `Quadro` de lá fecharia ciclo.
+ */
+export function quadroGeralDoTime<
+  Q extends { readonly is_default: boolean; readonly team_id: string },
+>(quadros: readonly Q[], teamId: string): Q | undefined {
+  return quadros.find((q) => q.is_default && q.team_id === teamId);
+}

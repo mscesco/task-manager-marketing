@@ -8,6 +8,7 @@ Vive no modulo `tasks` porque o conteudo retornado eh um projeto.
 
 from __future__ import annotations
 
+import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Query
@@ -18,7 +19,6 @@ from app.modules.tasks.api.schemas import (
     MeRelation,
     MyAssignmentsResponse,
     MyTaskItem,
-    ProjectResponse,
     TaskResponse,
 )
 from app.modules.tasks.application.collaboration_service import (
@@ -28,23 +28,9 @@ from app.modules.tasks.application.me_service import MeService
 from app.modules.tasks.infrastructure.task_repository import (
     TaskRepository,
 )
-from app.modules.tasks.application.project_service import ProjectService
 from app.shared.pagination import PageParams
 
 router = APIRouter(prefix="/me", tags=["me"])
-
-
-@router.get("/personal-project", response_model=ProjectResponse)
-async def get_my_personal_project(_: TenantContextDep, session: SessionDep) -> ProjectResponse:
-    """Retorna o projeto pessoal do user logado.
-
-    O pessoal eh criado automaticamente no provisionamento e no
-    cadastro de membro (ver ADR 0001), entao em condicao normal
-    sempre existe. Se nao existir, devolve 404 (sinal de bug ou
-    banco inconsistente -- logamos com severidade alta).
-    """
-    project = await ProjectService(session).get_personal_for_current_user()
-    return ProjectResponse.model_validate(project)
 
 
 _ALL_RELATIONS = frozenset({"assignee", "creator", "watcher"})
@@ -57,6 +43,15 @@ async def list_my_assignments(
     relation: Annotated[list[MeRelation] | None, Query()] = None,
     page: int = 1,
     size: int = 20,
+    under_team_id: uuid.UUID | None = Query(
+        None,
+        description=(
+            "Recorta pelas minhas tarefas deste time e dos descendentes dele, "
+            "pelo time EFETIVO. Ausente = de todos os times -- que aqui e um "
+            "modo de uso, e nao um esquecimento: esta e a unica tela que "
+            "atravessa times de proposito (Spec 048, §4.3)."
+        ),
+    ),
 ) -> MyAssignmentsResponse:
     """Tasks onde sou assignee/creator/watcher (ADR 0017/0018).
 
@@ -70,7 +65,9 @@ async def list_my_assignments(
     """
     rels = frozenset(r.value for r in relation) if relation else _ALL_RELATIONS
     result = await MeService(session).list_assignments(
-        PageParams(page=page, size=size), relations=rels
+        PageParams(page=page, size=size),
+        relations=rels,
+        under_team_id=under_team_id,
     )
     # Responsaveis da pagina em UMA query (lote), igual a listagem do quadro
     # (ADR 0025). Sem isto, /me/assignments nao devolve assignee_ids e o

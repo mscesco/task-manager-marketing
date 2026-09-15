@@ -53,6 +53,8 @@ import { indiceDeColunas, type Coluna } from "@/lib/coluna";
 // to be mounted` -- um erro que nao fala de AppShell nenhum. Medido em
 // 10/08/2026: sem estes dois blocos, os cinco testes deste arquivo falham no
 // primeiro render, antes de qualquer assercao.
+import { ActiveTeamProvider } from "@/lib/useActiveTeam";
+
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }),
   usePathname: () => "/minhas-tarefas",
@@ -64,9 +66,27 @@ vi.mock("next/navigation", () => ({
 // monta o menu inteiro. Arrastar isso pra dentro de um teste sobre o filtro
 // padrao de `/minhas-tarefas` faz o teste falhar por coisas que nao tem
 // relacao com o que ele mede. O que se quer medir aqui e a PAGINA.
+// ⚠⚠ O MOCK FORNECE O CONTEXTO DE TIME, porque o `AppShell` de verdade
+// fornece (Spec 048, fatia C). Sem isto a tela fica carregando para sempre:
+// ela ESPERA a barra resolver o time antes de buscar -- e um passa-tudo nunca
+// o entrega (`active` fica `null`, que significa "ainda não sei").
 vi.mock("@/components/AppShell", () => ({
-  default: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  default: ({ children }: { children: React.ReactNode }) => (
+    <ActiveTeamProvider
+      value={{
+        active: { kind: "team", teamId: TIME_DO_TESTE, fromUrl: true },
+        search: `?time=${TIME_DO_TESTE}`,
+        teamName: "Marketing",
+        teams: [],
+      }}
+    >
+      {children}
+    </ActiveTeamProvider>
+  ),
 }));
+
+/** O time que o `AppShell` falso diz estar ativo. */
+const TIME_DO_TESTE = "time-do-teste";
 
 // ⚠️ `importOriginal` em vez de fabrica seca: `@/lib/api` tem ~40 exports e
 // TaskCard/TaskModal/TaskDetail importam varios deles. Uma fabrica que so
@@ -659,5 +679,30 @@ describe("minhas-tarefas -- tarefa de outro quadro (fatia 5b-5b)", () => {
     await screen.findByText("Tarefa do Campanhas");
 
     expect(screen.queryByText(/atrasad/i)).toBeNull();
+  });
+});
+
+// ⚠️⚠️ DEFEITO DE 14/09, reportado na tela: com a lista recortada pelo Comercial
+// e zero tarefas lá, o aviso de vazio SUBSTITUÍA a barra inteira -- e desde a
+// Spec 048 é nela que mora o seletor de time. A tela sumia com a única porta
+// de volta. Antes do recorte, "zero tarefas" era "zero em todo lugar" e
+// esconder os controles não custava nada; agora vazio é o estado de UM time.
+describe("Minhas tarefas -- vazia, a barra continua", () => {
+  it("⚠️ sem tarefa no time, os controles seguem na tela", async () => {
+    montarApi([]);
+    render(<MinhasTarefasPage />);
+    // O toggle mora na mesma barra que o seletor de time: se ele está aqui, a
+    // barra sobreviveu ao vazio.
+    expect(await screen.findByRole("button", { name: "Quadro" })).toBeTruthy();
+  });
+
+  it("e o vazio diz de QUAL time, em vez de \"você está em dia\"", async () => {
+    // "Você está em dia" com a lista recortada é mentira: você pode ter vinte
+    // tarefas no Marketing. O mock do `AppShell` diz que o time ativo é o
+    // Marketing.
+    montarApi([]);
+    render(<MinhasTarefasPage />);
+    expect(await screen.findByText("Nenhuma tarefa sua em Marketing")).toBeTruthy();
+    expect(screen.queryByText("Você está em dia")).toBeNull();
   });
 });

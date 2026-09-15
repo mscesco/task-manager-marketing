@@ -18,10 +18,37 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 
 import SolicitacoesPage from "@/app/solicitacoes/page";
 import type { Batch, BatchItem } from "@/lib/api";
+import {
+  ActiveTeamProvider,
+  type ActiveTeamContext,
+} from "@/lib/useActiveTeam";
 
+// ⚠⚠ O MOCK FORNECE O CONTEXTO DE TIME, porque o `AppShell` de verdade
+// fornece (Spec 048, fatia C). Sem isto a tela fica em `Loading` para sempre:
+// ela ESPERA o time ativo antes de buscar, e um passa-tudo nunca o entrega.
+//
+// ⚠️ E o valor precisa ser RESOLVIDO (`kind: "team"`), não `null`: `null`
+// significa "a barra ainda não sabe", que é o estado de espera.
 vi.mock("@/components/AppShell", () => ({
-  default: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  default: ({ children }: { children: React.ReactNode }) => (
+    <ActiveTeamProvider value={contextoDoTeste}>{children}</ActiveTeamProvider>
+  ),
 }));
+
+/**
+ * O contexto que o `AppShell` falso entrega, MUTÁVEL pelo teste.
+ *
+ * ⚠️ Variável em vez de valor fixo porque três testes precisam de valores
+ * DIFERENTES (time resolvido, `kind: "none"`, e `null`), e a fábrica do
+ * `vi.mock` é içada -- não dá para parametrizá-la por teste. A fábrica não LÊ
+ * a variável (só o corpo do componente lê, no render), então não há TDZ.
+ */
+let contextoDoTeste: ActiveTeamContext = {
+  active: { kind: "team", teamId: "team-da-fila", fromUrl: true },
+  search: "?time=team-da-fila",
+  teamName: "Marketing",
+        teams: [],
+      };
 
 vi.mock("@/lib/api", async (importOriginal) => {
   const real = await importOriginal<typeof import("@/lib/api")>();
@@ -170,7 +197,9 @@ describe("o atalho do cabeçalho", () => {
     const atalho = await screen.findByRole("link", {
       name: "Gerenciar formulários",
     });
-    expect(atalho.getAttribute("href")).toBe("/formularios");
+    // ⚠️ COM O TIME (14/09): o caminho puro apagava o `?time=` e a lista de
+    // formulários caía na reserva. O mock do `AppShell` diz `team-da-fila`.
+    expect(atalho.getAttribute("href")).toBe("/formularios?time=team-da-fila");
     expect(
       screen.queryAllByRole("link", { name: /formulário público/i })
     ).toHaveLength(0);
@@ -463,5 +492,71 @@ describe("as duas ações que a fila existe para fazer", () => {
     await waitFor(() =>
       expect(api.rejeitarSolicitacao).toHaveBeenCalledWith("i1", "fora do escopo")
     );
+  });
+});
+
+// ⚠️⚠️ O RECORTE POR TIME (Spec 048, fatia D) e o modo de falha que ele trouxe.
+//
+// A tela ESPERA o time ativo antes de buscar -- buscar antes mostraria a fila
+// da organização inteira por um instante, e aqui isso é pior que numa lista
+// qualquer: quem tria poderia aprovar um pedido de outro time no meio do pisca.
+//
+// O risco de esperar é esperar PARA SEMPRE. `listTeamsAll()` falha em silêncio
+// no `AppShell` (`.catch(() => {})`, decisão antiga e deliberada), então sem
+// distinguir "a barra ainda não resolveu" de "ela resolveu e não há time" uma
+// falha de rede viraria uma fila que nunca carrega, sem erro nenhum na tela.
+describe("a fila recorta pelo time, e não espera para sempre", () => {
+  function comContexto(active: ActiveTeamContext["active"]) {
+    vi.mocked(api.listarEnvios).mockResolvedValue({
+      items: [],
+      total: 0,
+      page: 1,
+      size: 10,
+      pending_total: 0,
+      approved_without_task_total: 0,
+    });
+    contextoDoTeste = { active, search: "", teamName: null, teams: [] };
+    render(<SolicitacoesPage />);
+  }
+
+  afterEach(() => {
+    // ⚠️ DEVOLVE O PADRÃO: sem isto o último valor vazaria para os testes de
+    // cima, que montam a cena esperando um time resolvido -- e falhariam na
+    // ordem em que rodam, o pior tipo de teste quebrado.
+    contextoDoTeste = {
+      active: { kind: "team", teamId: "team-da-fila", fromUrl: true },
+      search: "?time=team-da-fila",
+      teamName: "Marketing",
+        teams: [],
+      };
+  });
+
+  it("manda o time ativo no `listarEnvios`", async () => {
+    comContexto({ kind: "team", teamId: "t-mkt", fromUrl: true });
+    await waitFor(() => {
+      expect(api.listarEnvios).toHaveBeenCalledWith(
+        expect.objectContaining({ teamId: "t-mkt" }),
+      );
+    });
+  });
+
+  it("⚠️ `kind: \"none\"` BUSCA SEM RECORTE, e não fica carregando", async () => {
+    // A barra resolveu e não há time (sem vínculo, ou a árvore não chegou e o
+    // erro foi engolido). A resposta certa é a fila da organização -- o
+    // comportamento de antes desta fatia --, e não uma tela parada.
+    comContexto({ kind: "none" });
+    await waitFor(() => {
+      expect(api.listarEnvios).toHaveBeenCalledWith(
+        expect.objectContaining({ teamId: null }),
+      );
+    });
+  });
+
+  it("⚠️ com a barra AINDA sem resposta (`null`), não busca nada", async () => {
+    // A outra metade: buscar aqui é o pisca que a espera existe para evitar.
+    comContexto(null);
+    await waitFor(() => {
+      expect(api.listarEnvios).not.toHaveBeenCalled();
+    });
   });
 });

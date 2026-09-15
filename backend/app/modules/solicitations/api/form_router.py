@@ -32,7 +32,7 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, Response, status
+from fastapi import APIRouter, Depends, Query, Response, status
 
 from app.core.deps import UoWDep
 from app.modules.auth.api.dependencies import require_permission
@@ -64,8 +64,25 @@ router = APIRouter(
 
 
 @router.get("/formularios", response_model=list[FormResponse])
-async def listar_formularios(uow: UoWDep) -> list[FormResponse]:
-    formularios = await SolicitationFormService(uow.session).listar_formularios()
+async def listar_formularios(
+    uow: UoWDep,
+    team_id: uuid.UUID | None = Query(
+        None,
+        description=(
+            "Recorta pelos formularios deste time e dos descendentes dele. "
+            "Ausente = todos os que a lente permite."
+        ),
+    ),
+) -> list[FormResponse]:
+    """Os formularios de um time (Spec 048, fatia E).
+
+    ⚠️ `team_id` opcional no CONTRATO, obrigatorio no SERVICO: a rota tem de
+    aceitar a ausencia (e a fila da organizacao), e o servico nao pode ter um
+    default que deixe chamador errado em silencio.
+    """
+    formularios = await SolicitationFormService(uow.session).listar_formularios(
+        team_id
+    )
     return [FormResponse.model_validate(f) for f in formularios]
 
 

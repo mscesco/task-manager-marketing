@@ -1,5 +1,5 @@
 // =====================================================
-// lib/__tests__/quadros.test.ts -- `listBoards` e `colunasDoQuadroGeral`
+// lib/__tests__/quadros.test.ts -- `listBoards` e `quadroGeralComIndice`
 // -----------------------------------------------------
 // Spec 036, fatia 4b. As duas funcoes que trazem as colunas da API para o
 // front, e que substituem a const `STATUSES` a partir daqui.
@@ -52,7 +52,6 @@ import {
   clearTokens,
   apagarColuna,
   colunaComContagem,
-  colunasDoQuadroGeral,
   createBoard,
   criarColuna,
   quadroGeralComIndice,
@@ -154,7 +153,20 @@ describe("listBoards", () => {
   });
 });
 
-describe("colunasDoQuadroGeral", () => {
+// ⚠⚠ ESTE BLOCO TESTAVA `colunasDoQuadroGeral`, QUE FOI REMOVIDA EM 11/09.
+//
+// Ela nao tinha NENHUM chamador no produto -- so estes cinco testes. Ao dar o
+// `teamId` obrigatorio ao `quadroGeralComIndice` (defeito 3.3 da Spec 048), o
+// `tsc` apontou a funcao morta, e propagar o parametro por ela seria manter
+// cinco testes verdes sobre codigo que ninguem chama. A regra deste projeto
+// esta escrita em `test_projects.py`: *"deixar teste orfao verde de codigo que
+// ninguem chama e pior que nao ter teste: parece cobertura"*.
+//
+// ⚠️ OS TESTES FICARAM, reapontados para `quadroGeralComIndice`. O
+// comportamento que eles prendem (o criterio `is_default`, a ordem por
+// `position`, `[]` em vez de levantar, os campos de coluna preservados) e do
+// `quadroGeralComIndice` -- a funcao removida so o delegava desde a 5b-5b.
+describe("quadroGeralComIndice -- as colunas do quadro geral", () => {
   it("acha o quadro padrao pela FLAG, nao pelo nome", async () => {
     // ⚠️ E O TESTE QUE A SABOTAGEM DERRUBA. O nome do quadro e editavel na
     // fatia 5; `is_default` tem indice parcial no banco
@@ -170,7 +182,7 @@ describe("colunasDoQuadroGeral", () => {
       }),
     ]);
 
-    const colunas = await colunasDoQuadroGeral();
+    const colunas = (await quadroGeralComIndice("team-marketing")).colunas;
 
     expect(colunas.map((c) => c.id)).toEqual(["c-1"]);
   });
@@ -193,7 +205,7 @@ describe("colunasDoQuadroGeral", () => {
       }),
     ]);
 
-    const colunas = await colunasDoQuadroGeral();
+    const colunas = (await quadroGeralComIndice("team-marketing")).colunas;
 
     expect(colunas.map((c) => c.name)).toEqual([
       "Backlog",
@@ -208,13 +220,13 @@ describe("colunasDoQuadroGeral", () => {
     // da fatia 4 provaria outra coisa.
     mockFetch([quadro({ id: "b-seo", name: "Interno SEO", team_id: "t-seo" })]);
 
-    await expect(colunasDoQuadroGeral()).resolves.toEqual([]);
+    await expect(quadroGeralComIndice("team-marketing")).resolves.toMatchObject({ colunas: [] });
   });
 
   it("devolve [] quando a API nao devolve quadro nenhum", async () => {
     mockFetch([]);
 
-    await expect(colunasDoQuadroGeral()).resolves.toEqual([]);
+    await expect(quadroGeralComIndice("team-marketing")).resolves.toMatchObject({ colunas: [] });
   });
 
   it("preserva semantic e notify_deadline de cada coluna", async () => {
@@ -236,7 +248,7 @@ describe("colunasDoQuadroGeral", () => {
       }),
     ]);
 
-    const [bloqueado] = await colunasDoQuadroGeral();
+    const [bloqueado] = (await quadroGeralComIndice("team-marketing")).colunas;
 
     expect(bloqueado.semantic).toBe("IN_PROGRESS");
     expect(bloqueado.notify_deadline).toBe(false);
@@ -268,7 +280,7 @@ describe("quadroGeralComIndice", () => {
     // muda.
     const spy = mockFetch(doisQuadros());
 
-    await quadroGeralComIndice();
+    await quadroGeralComIndice("team-marketing");
 
     expect(spy).toHaveBeenCalledTimes(1);
   });
@@ -276,7 +288,7 @@ describe("quadroGeralComIndice", () => {
   it("devolve as colunas do padrao, ordenadas por position", async () => {
     mockFetch(doisQuadros());
 
-    const { colunas } = await quadroGeralComIndice();
+    const { colunas } = await quadroGeralComIndice("team-marketing");
 
     expect(colunas.map((c) => c.id)).toEqual(["g-back", "g-and"]);
   });
@@ -287,7 +299,7 @@ describe("quadroGeralComIndice", () => {
     // de coluna, e o rotulo caia na reserva por status -- sem erro nenhum.
     mockFetch(doisQuadros());
 
-    const { indice } = await quadroGeralComIndice();
+    const { indice } = await quadroGeralComIndice("team-marketing");
 
     expect(indice.get("c-rev")?.coluna.name).toBe("Em Revisão");
     expect(indice.get("c-rev")?.nomeDoQuadro).toBe("Campanhas");
@@ -296,7 +308,7 @@ describe("quadroGeralComIndice", () => {
   it("coluna do proprio geral vem com nomeDoQuadro null", async () => {
     mockFetch(doisQuadros());
 
-    const { indice } = await quadroGeralComIndice();
+    const { indice } = await quadroGeralComIndice("team-marketing");
 
     expect(indice.get("g-and")?.nomeDoQuadro).toBeNull();
   });
@@ -313,7 +325,7 @@ describe("quadroGeralComIndice", () => {
       }),
     ]);
 
-    const { colunas, indice } = await quadroGeralComIndice();
+    const { colunas, indice } = await quadroGeralComIndice("team-marketing");
 
     expect(colunas).toEqual([]);
     expect(indice.get("c-rev")?.nomeDoQuadro).toBe("Campanhas");
@@ -435,5 +447,70 @@ describe("escrita de quadro e de coluna (fatia 5b-6)", () => {
     await apagarColuna("b1", "c1");
 
     expect(chamada(spy).url).not.toContain("destino_id");
+  });
+});
+
+// ⚠️⚠️ O DEFEITO 3.3 DA SPEC 048, e ele é de UMA PALAVRA: a função fazia
+// `quadros.find((q) => q.is_default)` -- **"o" padrão, no singular**.
+//
+// Com um time raiz só isso era verdade. Com dois existem DOIS quadros com
+// `is_default` (o índice parcial do banco é `board_um_padrao_por_time`, um por
+// TIME), e `find` devolve o que a API listar primeiro. Minhas tarefas
+// espelhava as colunas de um time enquanto mostrava as tarefas de outro, e
+// nenhum portão via nada: a resposta era uma lista de colunas válida.
+describe("quadroGeralComIndice -- com DUAS raizes, o padrao e por TIME", () => {
+  const MKT = "team-marketing";
+  const COM = "team-comercial";
+
+  function doisGerais() {
+    mockFetch([
+      quadro({
+        id: "b-com",
+        name: "Quadro geral",
+        team_id: COM,
+        is_default: true,
+        colunas: [col("c-com", "Prospecção", 0)],
+      }),
+      quadro({
+        id: "b-mkt",
+        name: "Quadro geral",
+        team_id: MKT,
+        is_default: true,
+        colunas: [col("c-mkt", "Pauta", 0)],
+      }),
+    ]);
+  }
+
+  it("⚠️ devolve as colunas do time PEDIDO, e não a primeira que a API mandou", async () => {
+    // O Comercial vem PRIMEIRO na resposta, de propósito: com o `find` antigo
+    // este teste receberia "Prospecção" pedindo o Marketing.
+    doisGerais();
+    const { colunas } = await quadroGeralComIndice(MKT);
+    expect(colunas.map((c) => c.name)).toEqual(["Pauta"]);
+  });
+
+  it("e o outro time devolve o outro quadro", async () => {
+    doisGerais();
+    const { colunas } = await quadroGeralComIndice(COM);
+    expect(colunas.map((c) => c.name)).toEqual(["Prospecção"]);
+  });
+
+  it("⚠️ sem time (`null`) devolve VAZIO, e não um sorteio", async () => {
+    // É o "tudo" de Minhas tarefas. Devolver as colunas de um dos dois seria
+    // voltar ao sorteio com outra roupa -- a §4.3 decidiu que o quadro exige
+    // um time, e é a tela que tem de pedir.
+    doisGerais();
+    const { colunas } = await quadroGeralComIndice(null);
+    expect(colunas).toEqual([]);
+  });
+
+  it("⚠️ mas o ÍNDICE continua de todos os quadros, mesmo sem time", async () => {
+    // O índice rotula a coluna de tarefa que vive em quadro avulso (fatia
+    // 5b-5b). Recortá-lo faria a tarefa aparecer sem nome de coluna -- e ela
+    // aparece justamente no modo "tudo".
+    doisGerais();
+    const { indice } = await quadroGeralComIndice(null);
+    expect(indice.get("c-mkt")).toBeTruthy();
+    expect(indice.get("c-com")).toBeTruthy();
   });
 });

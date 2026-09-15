@@ -53,6 +53,8 @@ import {
 } from "@/lib/api";
 import { sincronizarTaskNaUrl } from "@/lib/urlTarefa";
 import { ORDENACOES, ordenar, type Ordenacao } from "@/lib/ordenacao";
+import { ALL_TEAMS, withTeam } from "@/lib/activeTeam";
+import { useActiveTeam, useActiveTeamId } from "@/lib/useActiveTeam";
 
 import Loading from "@/components/Loading";
 import { useDrawnOutline } from "@/components/AnimatedOutline";
@@ -106,10 +108,11 @@ function Minhas() {
   const [items, setItems] = useState<MyTaskItem[] | null>(null);
   const [members, setMembers] = useState<Map<string, { name: string }>>(new Map());
   const [projectNames, setProjectNames] = useState<Map<string, string>>(new Map());
-  const [projetosPessoais, setProjetosPessoais] = useState<Set<string>>(new Set());
-  // Spec 031 (C14): mesmo desenho de `projetosPessoais` -- `members` continua
-  // COMPLETO (resolve o nome de quem ja esta designado) e este conjunto so
-  // tira do seletor e marca a pilula como desativado.
+  // Spec 031 (C14): `members` continua COMPLETO (resolve o nome de quem ja
+  // esta designado) e este conjunto so tira do seletor e marca a pilula como
+  // desativado. ⚠️ Este comentario citava `projetosPessoais` como o desenho
+  // gemeo -- ele saiu em 10/09 com o projeto pessoal, e este ficou como unico
+  // exemplo do padrao.
   const [membrosInativos, setMembrosInativos] = useState<Set<string>>(new Set());
   const [erro, setErro] = useState<string | null>(null);
   // null = nao truncou. Se a lista passar do teto de busca, vira aviso honesto
@@ -160,6 +163,29 @@ function Minhas() {
   // leitura e async: so vira true quando a abertura inicial resolve.
   const [urlLiberada, setUrlLiberada] = useState(false);
 
+  // ⚠️⚠️ OS DOIS RECORTES DA §4.3, E ELES SÃO INDEPENDENTES. Decisão dela,
+  // depois de eu propor tirar a visão de quadro e ela recusar:
+  //
+  //   LISTA  -> `tudo | por time raiz`. Mora na URL (`?time=`), porque é o
+  //             recorte DA TELA -- link compartilhável, botão Voltar.
+  //   QUADRO -> exige UM time. *"Kanban não espelha dois quadros ao mesmo
+  //             tempo"*: as colunas são as do quadro geral daquele time.
+  //
+  // ⚠️ E O DO QUADRO NÃO VAI NA URL, de propósito: `?time=` significa "o
+  // recorte desta tela", e o time do quadro é uma escolha DENTRO de uma das
+  // duas visões. Dois parâmetros disputando o mesmo sentido exigiriam uma
+  // regra de quem ganha -- e a própria visão (lista/quadro) já é sessão-only
+  // pelo mesmo motivo.
+  const {
+    active,
+    search,
+    teams: timesDisponiveis,
+    teamName: nomeDoTime,
+  } = useActiveTeam();
+  /** `null` = "tudo" (ou nenhum time). O `kind: "all"` cai aqui. */
+  const timeDaLista = useActiveTeamId();
+  const [timeDoQuadro, setTimeDoQuadro] = useState<string | null>(null);
+
   // Vista: lista (agrupada por prazo) x quadro (kanban por status). Sessao-only.
   const [vista, setVista] = useState<"lista" | "quadro">("lista");
   // Mesmo seletor do quadro geral, mesmo comparador (`lib/ordenacao.ts`).
@@ -203,9 +229,28 @@ function Minhas() {
     medirAltura();
   });
 
+  // ⚠️ O time do QUADRO é semeado pelo da lista, e não pisa numa escolha feita
+  // (`atual ?? ...`): trocar a lista para "tudo" não deve resetar o quadro que
+  // a pessoa estava olhando. Sem time na lista, cai no primeiro PREFERIDO --
+  // onde ela trabalha, e não o primeiro do alfabeto (defeito 3.1).
   useEffect(() => {
-    listAllMyAssignments()
+    const reserva = timeDaLista ?? timesDisponiveis[0]?.id ?? null;
+    if (reserva) setTimeDoQuadro((atual) => atual ?? reserva);
+  }, [timeDaLista, timesDisponiveis]);
+
+  useEffect(() => {
+    // ⚠️⚠️ ESPERA A BARRA RESOLVER. `active === null` = "ainda não sei";
+    // `kind: "all"` e `kind: "none"` JÁ são respostas, e as duas dão
+    // `timeDaLista === null` -- que aqui significa "de todos os times", o modo
+    // que esta tela oferece de propósito.
+    if (active === null) return;
+    // ⚠⚠ GUARDA DE CORRIDA (14/09). Sem ela, um pedido mais velho que
+    // respondesse depois do novo sobrescrevia a lista -- foi o que pos as
+    // tarefas do Marketing numa tela que dizia Comercial.
+    let vivo = true;
+    listAllMyAssignments(timeDaLista)
       .then((r) => {
+        if (!vivo) return;
         // ⚠️ O FILTRO DE CLIENTE SAIU AQUI (Spec 037, E5). Ele descartava
         // os itens marcados pela ADR 0017 porque elas davam 404 no detalhe
         // (o "bug E6"), e o comentario dizia "quando for tratar, troca este
@@ -215,7 +260,23 @@ function Minhas() {
         setItems(r.items);
         setTruncadoTotal(r.truncated ? r.total : null);
       })
-      .catch((e: ApiError) => setErro(e.message));
+      .catch((e: ApiError) => {
+        if (vivo) setErro(e.message);
+      });
+    return () => {
+      vivo = false;
+    };
+    // ⚠️ `active === null` E NÃO `active`: o objeto é NOVO a cada render da
+    // barra, e depender dele refazia o pedido a cada render -- vários pedidos
+    // em voo, e o último a responder vencia (defeito de 14/09).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [timeDaLista, active === null]);
+
+  useEffect(() => {
+    // ⚠️ Guarda de corrida: o seletor do QUADRO troca `timeDoQuadro` sem
+    // recarregar a página, e as colunas do time anterior não podem chegar
+    // depois das do novo.
+    let vivo = true;
     // Colunas do quadro geral E o indice de todas as colunas alcancaveis. O
     // filtro padrao da tela sai das colunas: liga todas menos as de semantica
     // DONE (ADR 0040 -- Cancelado CONTINUA aparecendo).
@@ -224,8 +285,13 @@ function Minhas() {
     // Antes daqui a tela so conhecia as colunas do geral, e tarefa de quadro
     // avulso sumia da LISTA em silencio e caia no contador `foraDaColuna` no
     // kanban. Uma requisicao so, a mesma de antes.
-    quadroGeralComIndice()
+    // ⚠️⚠️ AS COLUNAS SÃO DO TIME DO QUADRO, e este é o defeito 3.3: a função
+    // fazia `quadros.find(q => q.is_default)` -- "o" padrão, no singular. Com
+    // dois times raiz existem dois, e a tela espelhava as colunas de um
+    // enquanto mostrava as tarefas do outro.
+    quadroGeralComIndice(timeDoQuadro)
       .then(({ colunas: cs, indice: ix }) => {
+        if (!vivo) return;
         setColunas(cs);
         setIndice(ix);
         setColunasOn(new Set(colunasPadraoMinhasTarefas(cs)));
@@ -238,16 +304,28 @@ function Minhas() {
       })
       .catch(() => {});
     // Spec 022: alimenta o chip de projeto e o seletor de "mudar projeto" no detalhe.
-    listAllProjects()
+    listAllProjects({
+      // ROTULAR, nao escolher: este mapa id -> titulo desenha o selo de
+      // projeto no card. Recortar por time apagaria o selo de uma tarefa que
+      // a pessoa ENXERGA, em vez de proteger algo -- a lente do backend ja
+      // limita o que volta. Ver `listProjects` em `lib/api.ts`.
+      teamId: null,
+    })
       .then((r) => {
         setProjectNames(new Map(r.items.map((p) => [p.id, p.title])));
         // Spec 031 (C13): guardado a parte -- o mapa de nomes precisa de TODOS
         // (inclusive pessoal, pra resolver o nome de quem ja mora la), mas o
         // seletor de "mudar projeto" nao deve OFERECER pessoal.
-        setProjetosPessoais(new Set(r.items.filter((p) => p.is_personal).map((p) => p.id)));
       })
       .catch(() => {});
-  }, []);
+    // ⚠️ `timeDoQuadro` NAS DEPENDÊNCIAS: trocar o time do quadro tem de
+    // rebuscar as COLUNAS, senão o kanban desenha as colunas do time anterior
+    // com os cards do novo -- e ninguém vê erro nenhum.
+    return () => {
+      vivo = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [timeDoQuadro]);
 
   // Abre o detalhe de uma task pelo id, procurando na lista COMPLETA (items),
   // nao na filtrada -- um filtro ativo nao deve furar o link. Se a task nao
@@ -965,6 +1043,56 @@ function Minhas() {
           </select>
         )}
 
+        {/* ⚠️⚠️ OS DOIS SELETORES DA §4.3, e o de cada visão aparece SÓ na
+            visão dele. Desenhar os dois de uma vez faria a tela oferecer duas
+            respostas para "qual time?" ao mesmo tempo -- e a pessoa ajustaria o
+            que não está olhando.
+
+            LISTA: tem "Tudo", e escreve na URL. É a única tela com "tudo",
+            porque é a única que atravessa times de propósito -- *"o time muda
+            com a área; o que é meu, não"*.
+
+            QUADRO: NÃO tem "Tudo". Kanban espelha as colunas de UM quadro
+            geral; com dois times não há conjunto de colunas que sirva. */}
+        {timesDisponiveis.length > 1 && (
+          <select
+            className="input"
+            aria-label={
+              vista === "lista"
+                ? "Time das minhas tarefas"
+                : "Time do quadro"
+            }
+            style={{ width: "auto", padding: "5px 10px", fontSize: 12 }}
+            value={
+              vista === "lista"
+                ? (timeDaLista ?? ALL_TEAMS)
+                : (timeDoQuadro ?? "")
+            }
+            onChange={(e) => {
+              if (vista === "quadro") {
+                setTimeDoQuadro(e.target.value || null);
+                return;
+              }
+              // ⚠️ `<a href>` E RECARGA TOTAL, como toda navegação deste app
+              // (registrado no topo do `AppShell`). Um `router.replace` aqui
+              // trocaria a URL sem recarregar, e metade das telas recarrega e
+              // metade não -- a mistura que aquele bloco proibiu.
+              window.location.href = withTeam(
+                "/minhas-tarefas",
+                search ?? "",
+                e.target.value,
+              );
+            }}
+          >
+            {vista === "lista" && <option value={ALL_TEAMS}>Todos os times</option>}
+            {timesDisponiveis.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name}
+              </option>
+            ))}
+          </select>
+        )}
+
         {/* Toggle de vista (sessao-only). No quadro, as COLUNAS DA API viram
             as colunas do kanban (fatia 4c-2; antes eram os status). */}
         <div style={{ display: "inline-flex", gap: 4 }}>
@@ -1105,10 +1233,27 @@ function Minhas() {
       )}
 
       {items.length === 0 ? (
-        <EmptyState
-          title="Você está em dia"
-          description="Tarefas em que você é responsável ou criador aparecem aqui."
-        />
+        // ⚠⚠ A BARRA FICA MESMO SEM TAREFA (14/09, reportado na tela). Até aqui o
+        // vazio SUBSTITUÍA a barra inteira -- e desde a Spec 048 é nela que
+        // mora o seletor de time. Com a lista recortada pelo Comercial e zero
+        // tarefas lá, a tela sumia com a única porta de volta para o Marketing.
+        // Antes do recorte "zero tarefas" era "zero em todo lugar", e esconder
+        // os controles não custava nada; agora vazio é um estado de um time.
+        <div className="max-w-[1100px]">
+          {barraFiltros()}
+          <EmptyState
+            title={
+              timeDaLista && nomeDoTime
+                ? `Nenhuma tarefa sua em ${nomeDoTime}`
+                : "Você está em dia"
+            }
+            description={
+              timeDaLista && nomeDoTime
+                ? "Troque o time acima para ver as tarefas de outro, ou escolha “Todos os times”."
+                : "Tarefas em que você é responsável ou criador aparecem aqui."
+            }
+          />
+        </div>
       ) : (
         <div className={vista === "quadro" ? "" : "max-w-[1100px]"}>
           {barraFiltros()}
@@ -1241,6 +1386,8 @@ function Minhas() {
         filhosDaOrigem={
           duplicando && focado?.id === duplicando.id ? filhosParaDetalhe : []
         }
+        // Esta tela nao cria tarefa do zero (`open` exige editar ou duplicar).
+        newTaskTeam={null}
         onClose={() => {
           setEditando(null);
           setDuplicando(null);
@@ -1276,7 +1423,6 @@ function Minhas() {
         onDuplicar={(t) => setDuplicando(t)}
         onAssigneesChange={aoMudarResponsaveis}
         mostrarArquivadas={mostrarArquivadas}
-        projetosPessoais={projetosPessoais}
         membrosInativos={membrosInativos}
         onAbrirSubtarefa={abrirSubtarefa}
         onSubtaskUpsert={aoUpsertComFilhos}
@@ -1351,7 +1497,7 @@ function FaixaClicavel({
   style: React.CSSProperties;
   children: React.ReactNode;
 }) {
-  const { alvo, outline } = useDrawnOutline();
+  const { target, outline } = useDrawnOutline();
   return (
     <div
       role="button"
@@ -1363,7 +1509,7 @@ function FaixaClicavel({
           onAbrir();
         }
       }}
-      {...alvo}
+      {...target}
       // ⚠️ `position: relative` é o que faz o contorno medir ESTA faixa.
       style={{ position: "relative", cursor: "pointer", ...style }}
     >

@@ -2,7 +2,12 @@
 
 ## Status
 
-Proposed (aguarda aprovação junto da Entrega 1)
+**REVERTIDA em 10/09/2026.** Implementada e retirada — ver a nota no fim
+deste documento. O texto original fica **inteiro**, porque o raciocínio
+continua válido: ele é o registro de por que a opção 3 venceu as outras
+duas, e quem for reabrir o assunto precisa começar de onde ele parou.
+
+(Status anterior: Proposed, aguardando aprovação junto da Entrega 1.)
 
 ## Contexto
 
@@ -113,3 +118,46 @@ custa uma coluna boolean e ganha um invariante claro.
 **Opção 3b — `is_personal` sem unique parcial.** Rejeitada: abre
 porta pra ter 2 pessoais por user em caso de bug. O índice é a
 salvaguarda final.
+
+---
+
+## Reversão — 10/09/2026
+
+**Decisão da Camila**, com estas palavras: *"não sei como implementar projeto
+pessoal, muito confuso, minha intenção é tirar, pois foi pensado de outra
+forma"*.
+
+### O que foi medido antes de tirar
+
+- **29 projetos pessoais no banco, todos com ZERO tarefas.** A consulta está
+  registrada no commit da remoção.
+- **Nenhuma tela.** A rota `GET /me/personal-project` existia desde a Entrega 1
+  e o front **nunca a chamou**. A D3 da Spec 034 já havia medido isso e usado
+  como argumento para não expor um filtro na API: *"projeto pessoal não tem
+  como ser criado pela interface"*.
+
+Ou seja: a decisão foi implementada de verdade, viveu no schema por um ano, e
+nunca chegou ao produto.
+
+### O que saiu junto, e é o que importa lembrar
+
+O projeto pessoal era a **única regra de privacidade do sistema**. Uma tarefa
+dentro dele era invisível para todo mundo — **inclusive para o ADMIN** — e o
+dono podia editá-la mesmo com o time dela fora da lente de edição. Isso vivia
+em cinco lugares: dois ramos em `task_guards.py`, dois predicados SQL em
+`task_repository.py` e um filtro em `ProjectService.list_page`.
+
+**Hoje não há nada privado neste produto.** Tudo o que existe pertence a um
+time, e quem alcança o time vê. Se um dia voltar a fazer sentido esconder algo
+de todos, é um recorte NOVO — e não a volta de uma flag booleana num projeto.
+
+### O que a reversão simplificou
+
+A invariante do schema ficou mais forte. O CHECK
+`project_team_required_when_common` dizia
+`is_personal OR team_id IS NOT NULL OR deleted_at IS NOT NULL`; hoje diz
+`team_id IS NOT NULL OR deleted_at IS NOT NULL`. **Projeto vivo tem time**, sem
+exceção — e o `is_personal OR` era a única razão de a coluna `team_id` poder
+ser nula.
+
+Migration: `0024_sai_o_projeto_pessoal`.

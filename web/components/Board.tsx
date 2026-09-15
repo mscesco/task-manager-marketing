@@ -72,8 +72,9 @@ import {
   type Rascunho,
 } from "@/lib/rascunhoDeColunas";
 import EmptyStateBox from "@/components/EmptyState";
-import { terminal, type Coluna } from "@/lib/coluna";
+import { quadroGeralDoTime, terminal, type Coluna } from "@/lib/coluna";
 import { listAllTasks, listAllProjects, listarFilhas, getTask, updateTask, listMembers, listSubteams, getRootTeamId, listBoards, colunaComContagem, aplicarLoteDeColunas, ApiError, type Task, type Team, type Quadro } from "@/lib/api";
+import { newTaskTeam } from "@/lib/escopoTarefa";
 import { mesclaTarefa } from "@/lib/mesclaTarefa";
 import { sincronizarTaskNaUrl, lerTaskDaUrl } from "@/lib/urlTarefa";
 import { ORDENACOES, ordenar, type Ordenacao } from "@/lib/ordenacao";
@@ -100,7 +101,7 @@ export default function Board({
   subteamId,
   areaId,
   boardId,
-  podeEditarColunas = false,
+  podeEditarColunas,
   title,
   acoesDoQuadro,
   acoesDoTitulo,
@@ -147,7 +148,16 @@ export default function Board({
    * ⚠️ NAO E SEGURANCA. O backend recusa com 403; isto so evita oferecer o
    * botao.
    */
-  podeEditarColunas?: boolean;
+  /**
+   * ⚠⚠ OBRIGATÓRIA DESDE 14/09, e era `podeEditarColunas = false`. A rota
+   * `/quadro/[teamId]` não a passava no ramo do QUADRO GERAL DA RAIZ, e o lápis
+   * sumiu para todo mundo -- inclusive para quem administra a organização. Nada
+   * ficou vermelho: `false` por omissão é um valor válido. Foi a MESMA lição
+   * do `daRaiz` (11/09) e do `newTaskTeam`: prop opcional que muda comportamento
+   * esconde uma pergunta que alguém tem de responder. Obrigatória, o `tsc`
+   * aponta cada tela que desenha um quadro.
+   */
+  podeEditarColunas: boolean;
   /**
    * O título do quadro, na barra.
    *
@@ -177,7 +187,12 @@ export default function Board({
    * cada quadro, que e exatamente o que a fatia 7 piorou e esta fatia
    * desfaz.
    */
-  acoesDoQuadro?: ReactNode;
+  /**
+   * ⚠⚠ OBRIGATÓRIA DESDE 14/09, e `null` é resposta. A rota `/quadro/[teamId]`
+   * não a passava no ramo do quadro geral, e renomear o geral sumiu -- a
+   * mesma omissão que tirou o lápis (`podeEditarColunas`), na mesma linha.
+   */
+  acoesDoQuadro: ReactNode;
   /**
    * Controles que moram GRUDADOS no título, depois do contador.
    *
@@ -242,7 +257,6 @@ export default function Board({
   );
   // Mapa project_id -> titulo, so no quadro geral (pra tag do card).
   const [projectNames, setProjectNames] = useState<Map<string, string>>(new Map());
-  const [projetosPessoais, setProjetosPessoais] = useState<Set<string>>(new Set());
   // §8 (03/08): project_id -> team_id do projeto. Alimenta escopoDaTask, que
   // ate entao classificava a pill por `task.team_id` -- fonte DIFERENTE da que
   // o backend usa pra decidir visibilidade (`project.team_id`, task_guards
@@ -471,9 +485,10 @@ export default function Board({
     listMembers()
       .then((ms) => {
         setMembers(new Map(ms.map((m) => [m.id, { name: m.name }])));
-        // Spec 031 (C14): a parte, pelo mesmo motivo de `projetosPessoais` --
-        // o mapa de nomes precisa de TODOS (pra resolver quem ja esta
-        // designado), o seletor e que nao deve OFERECER desativado.
+        // Spec 031 (C14): a parte -- o mapa de nomes precisa de TODOS (pra
+        // resolver quem ja esta designado), o seletor e que nao deve OFERECER
+        // desativado. ⚠️ O gemeo deste padrao era `projetosPessoais`, e ele
+        // saiu em 10/09 com o projeto pessoal.
         setMembrosInativos(new Set(ms.filter((m) => !m.is_active).map((m) => m.id)));
         setMemberTeam(new Map(ms.map((m) => [m.id, m.team_ids])));
       })
@@ -481,13 +496,18 @@ export default function Board({
       .finally(() => setMembrosCarregados(true));
     // Spec 022: projectNames alimenta o chip E o seletor de "mudar projeto" no
     // detalhe -> carrega em qualquer quadro (antes so no geral).
-    listAllProjects()
+    listAllProjects({
+      // ROTULAR, nao escolher: este mapa id -> titulo desenha o selo de
+      // projeto no card. Recortar por time apagaria o selo de uma tarefa que
+      // a pessoa ENXERGA, em vez de proteger algo -- a lente do backend ja
+      // limita o que volta. Ver `listProjects` em `lib/api.ts`.
+      teamId: null,
+    })
       .then((r) => {
         setProjectNames(new Map(r.items.map((p) => [p.id, p.title])));
         // Spec 031 (C13): guardado a parte -- o mapa de nomes precisa de TODOS
         // (inclusive pessoal, pra resolver o nome de quem ja mora la), mas o
         // seletor de "mudar projeto" nao deve OFERECER pessoal.
-        setProjetosPessoais(new Set(r.items.filter((p) => p.is_personal).map((p) => p.id)));
         setTimeDoProjeto(new Map(r.items.map((p) => [p.id, p.team_id])));
       })
       .catch(() => {})
@@ -1051,11 +1071,26 @@ export default function Board({
   // a unica pista de quais colunas desenhar. Na LENTE ela e inofensiva (a D1
   // de 11/08 ja filtra por `board_id` do geral), mas usar o padrao direto diz
   // a mesma coisa com menos indireção.
+  // ⚠⚠ O QUADRO GERAL DESTE TIME, e não "o" quadro geral (14/09). Aqui havia
+  // TRÊS cópias de `quadros.find((q) => q.is_default)` -- o defeito 3.3 que eu
+  // tinha consertado só no `quadroGeralComIndice`. Com dois times raiz existem
+  // dois gerais, e o `find` pegava o do Marketing (o mais antigo). Reportado
+  // na tela: tarefa criada no geral do Comercial, salva CERTA no banco, sumia
+  // -- os cards eram filtrados pelo geral do Marketing, e as colunas
+  // desenhadas também eram as dele. Uma fonte só, usada nos três lugares.
+  //
+  // ⚠️ SEM `rootId` FICA O COMPORTAMENTO DE ANTES, e isso é decisão: só
+  // acontece na rota antiga `/quadro` sem time na URL, que com mais de uma raiz
+  // redireciona antes de chegar aqui (`entradaDoQuadro`). Com uma raiz só, "o"
+  // geral é verdade.
+  const quadroGeral = rootId
+    ? quadroGeralDoTime(quadros, rootId)
+    : quadros.find((q) => q.is_default);
   const quadro = boardId
     ? quadroPedido
     : projectId
-      ? (quadroDoLote ?? quadros.find((q) => q.is_default))
-      : quadros.find((q) => q.is_default);
+      ? (quadroDoLote ?? quadroGeral)
+      : quadroGeral;
   // ⚠️ QUADRO PEDIDO E NAO ENCONTRADO = ESPERA, e nao um kanban vazio. Sem
   // esta saida a tela desenharia ZERO colunas com o titulo do quadro avulso, e
   // o modo de edicao mostraria uma lista de colunas vazia -- o que parece um
@@ -1344,9 +1379,22 @@ export default function Board({
     if (novo) setRascunho(novo);
   }
 
-  const timeDaTarefaNova = boardId
-    ? (quadro?.team_id ?? null)
-    : (subteamId ?? null);
+  // ⚠️ ISTO ERA `boardId ? (quadro?.team_id ?? null) : (subteamId ?? null)`
+  // ESCRITO AQUI, e faltava o terceiro caso: o quadro geral de um time RAIZ,
+  // que caia em `null`. O modal entao perguntava a raiz por conta propria
+  // (`getRootTeamId()`), funcao que LEVANTA desde a Spec 046 quando existe mais
+  // de uma -- e sem raiz o seletor de responsavel voltava a oferecer a
+  // organizacao inteira. Reportado na tela em 11/09, com captura.
+  //
+  // A raiz esta AQUI desde a Spec 046 fatia 4 (`rootId`, vindo da URL). A
+  // decisao mudou de lugar para `lib/`, onde ha teste -- este arquivo esta fora
+  // do `include` do vitest.
+  const novaTarefa = newTaskTeam({
+    boardId: boardId ?? null,
+    boardTeamId: quadro?.team_id ?? null,
+    subteamId: subteamId ?? null,
+    rootId,
+  });
 
   // ⚠️ SPEC 042 (B2) -- O CONTADOR VEM PRONTO DO BACKEND. Ate aqui ele era
   // somado varrendo as filhas carregadas, e era esse laco que obrigava o
@@ -1497,7 +1545,8 @@ export default function Board({
   // projeto continuam como estao; quadro extra da raiz e assunto da 5c, e a
   // escolha do quadro por lote (acima) ja cai no padrao e denuncia o resto no
   // contador de `foraDaColuna`.
-  const quadroGeralId = quadros.find((q) => q.is_default)?.id ?? null;
+  // ⚠️ O MESMO `quadroGeral` de cima -- era aqui a cópia que escondia o card.
+  const quadroGeralId = quadroGeral?.id ?? null;
   const noQuadroGeral = (t: Task) =>
     quadroGeralId === null || t.board_id === quadroGeralId;
   const visiveis = tasks.filter((t) => {
@@ -2362,7 +2411,7 @@ export default function Board({
         // buscavam por conta propria; o quadro era o unico que derivava.
         filhosDaOrigem={filhasDaOrigem}
         defaultProjectId={projectId ?? null}
-        defaultTeamId={timeDaTarefaNova}
+        newTaskTeam={novaTarefa}
         defaultBoardId={boardId ?? null}
         nomeDoQuadro={boardId ? (quadro?.name ?? null) : null}
         onClose={() => {
@@ -2414,7 +2463,6 @@ export default function Board({
         onTaskMoved={() => recarregarTasks()}
         onExcluir={aoExcluir}
         mostrarArquivadas={mostrarArquivadas}
-        projetosPessoais={projetosPessoais}
         membrosInativos={membrosInativos}
       />
 

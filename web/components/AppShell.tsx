@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import {
   getMe,
@@ -31,7 +31,21 @@ import {
 } from "@/lib/sidebar";
 import NotificationBell from "@/components/NotificationBell";
 import ContextSwitcher from "@/components/ContextSwitcher";
-import { peopleEntry, rootsForPerson } from "@/lib/contextSwitcher";
+import TeamParamReader from "@/components/TeamParamReader";
+import { ActiveTeamProvider } from "@/lib/useActiveTeam";
+import {
+  ownRootTeams,
+  peopleEntryFor,
+  rootsForPerson,
+} from "@/lib/contextSwitcher";
+import {
+  activeTeam,
+  preferredTeams,
+  navHref,
+  publishedActiveTeam,
+  teamUrlToWrite,
+} from "@/lib/activeTeam";
+import { urlDoQuadroDeArea } from "@/lib/areas";
 import {
   LayoutGrid,
   FolderKanban,
@@ -76,6 +90,22 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   // tela que não tem área na URL. `getWorkspace` é memoizado em módulo, então
   // isto é uma requisição por sessão, não por navegação.
   const [orgName, setOrgName] = useState("");
+  // ⚠️⚠️ A QUERY DA URL, entregue pelo `TeamParamReader` (fatia C), e `null` NÃO
+  // É O MESMO QUE `""`: `null` = ainda não lida, `""` = lida e vazia.
+  //
+  // A distinção existe por causa da REESCRITA (§4.1): na primeira renderização
+  // a query não chegou, `activeTeam` cai na reserva, e reescrever ali
+  // sobrescreveria um `?time=` que estava na URL antes de alguém tê-lo lido --
+  // link colado apontando para outro time viraria o time da pessoa. Quem trata
+  // isso é `teamUrlToWrite`, que recebe o `null`.
+  //
+  // Ver o bloco de aviso no `TeamParamReader`: a fronteira de `Suspense` que o
+  // `useSearchParams` exige não pode ficar aqui.
+  const [search, setSearch] = useState<string | null>(null);
+  // ⚠️ "A ÁRVORE DE TIMES JÁ FOI PERGUNTADA", com sucesso ou não -- e não
+  // `teams.length > 0`. Sem ele a barra publicava o time ativo antes de poder
+  // resolvê-lo; ver `publishedActiveTeam` e o defeito de 14/09.
+  const [teamsLoaded, setTeamsLoaded] = useState(false);
   const [quadrosOpen, setQuadrosOpen] = useState(lerQuadrosAberto); // accordion
   // Preferencia de tema. Ler localStorage no inicializador e seguro aqui: com
   // `loading` comecando true, a barra so renderiza depois do check de auth, ja
@@ -117,7 +147,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         // arvore de times para derivar as sub-abas (nao bloqueia a UI)
         listTeamsAll()
           .then(setTeams)
-          .catch(() => {});
+          .catch(() => {})
+          // ⚠️ `finally`, e não só no `then`: se a árvore falhar, as telas
+          // recortadas precisam saber que a pergunta foi respondida -- senão
+          // ficam carregando para sempre esperando por ela.
+          .finally(() => setTeamsLoaded(true));
         // ⚠️ TAMBEM SEM BLOQUEAR, e o `catch` vazio e de proposito: sem o nome
         // o seletor cai no rotulo "Organização" (ver `currentContext`), o que
         // e feio e nao quebra nada. Derrubar a barra inteira por causa dele
@@ -153,10 +187,67 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener(TIMES_MUDARAM, reler);
   }, []);
 
+  // ⚠️⚠️ O PAPEL DE ORGANIZACAO SOBE PARA CA (era calculado depois da lente):
+  // ele decide quais times a pessoa ALCANCA, e o alcance entra na lente.
+  //
+  // ⚠️ E NAO E UMA PERMISSAO -- consertado em 10/09, com o defeito na tela: uma
+  // pessoa que "nao administra a organizacao" via "Gerenciar a organizacao" no
+  // seletor. O gate era `permissions.includes("area.create")`, e parecia certo
+  // (§4.1 da Spec 046), mas `_ORG_ROLE_PERMISSIONS[ADMIN]` E LITERALMENTE
+  // `_ROLE_PERMISSIONS[UserTeamRole.ADMIN]` -- entao quem tem papel de TIME
+  // ADMIN (residuo anterior a Spec 045) carrega `area.create` tambem. E `roles`
+  // nao desempata: o `/auth/me` junta os dois niveis ali de proposito.
+  const podeVerOrganizacao = (user?.org_role ?? null) !== null;
+
+  // ONDE a pessoa alcanca, e onde ela TRABALHA -- duas perguntas diferentes, e
+  // para quem administra a organizacao as respostas divergem muito.
+  const alcanca = rootsForPerson(teams, user, podeVerOrganizacao);
+  const trabalha = ownRootTeams(teams, user);
+  const preferidos = preferredTeams(alcanca, trabalha);
+
+  // ⚠️⚠️ O TIME ATIVO DA BARRA (Spec 048, fatia B). Ate 11/09 a lente pegava a
+  // PRIMEIRA RAIZ da lista, e o menu respondia pelo time errado: com dois
+  // times, os sub-quadros eram os de todos eles juntos e o "Quadro geral"
+  // apontava para o primeiro do alfabeto.
+  //
+  // ⚠️ `search` LIGADO NA FATIA C (era `""`). A barra resolve o time na ordem
+  // do `activeTeam`: caminho (`/times/<id>`, `/quadro/<id>`), depois `?time=`,
+  // depois o time em que a pessoa trabalha.
+  //
+  // ⚠️ SEM ISTO A FATIA C SERIA INCOERENTE, e a spec já avisava: as telas
+  // recortariam pelo `?time=` e a barra seguiria mostrando os quadros de outro
+  // time -- a pessoa veria o menu do Marketing com o conteúdo do Comercial.
+  const contexto = activeTeam(pathname, search ?? "", teams, alcanca, trabalha);
+  // ⚠️ O QUE A BARRA PUBLICA, calculado UMA vez: as telas o recebem pelo
+  // contexto, e o menu o usa para levar o time junto nos links. Duas chamadas
+  // separadas poderiam divergir no dia em que uma delas mudar.
+  const publicado = publishedActiveTeam(contexto, teamsLoaded, search);
+  const timeAtivo = contexto.kind === "team" ? contexto.teamId : null;
+
+  // ⚠️⚠️ A REESCRITA DA URL (§4.1), e ela mora AQUI e não nas telas -- mesmo
+  // motivo do contexto: a barra é quem resolve o time, e cinco telas
+  // reescrevendo seriam cinco cópias da mesma regra.
+  //
+  // `replace` e não `push`: a pessoa não NAVEGOU para cá, a tela só está
+  // dizendo onde já estava. Com `push`, o Voltar cairia na mesma tela sem o
+  // parâmetro, que reescreveria de novo -- um Voltar que não volta.
+  //
+  // ⚠️ Quando reescrever é decisão de `teamUrlToWrite`, com teste. O laço é
+  // impossível por construção: depois do `replace` a query passa a dizer o
+  // time, `fromUrl` vira `true`, e a função devolve `null`.
+  const urlComTime = teamUrlToWrite(pathname, contexto, search);
+  useEffect(() => {
+    if (urlComTime) router.replace(urlComTime);
+  }, [urlComTime, router]);
+
   if (loading) return <LoadingScreen />;
 
-  // Fatia 2/7b: sub-abas de quadro = subtimes visiveis na lente do usuario.
-  const lens = user ? computeLens(user.teams, teams, user.roles) : null;
+
+
+  // Fatia 2/7b: sub-abas de quadro = subtimes DO TIME ATIVO que a lente alcanca.
+  const lens = user
+    ? computeLens(user.teams, teams, user.roles, timeAtivo)
+    : null;
   const subteams = lens ? lens.boardSubteams : [];
 
   // Spec 025/D11: a fila de solicitações é do time principal. Só quem
@@ -167,22 +258,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     user?.permissions.includes("solicitation.review") ?? false;
 
   const podeGerirTimes = user?.permissions.includes("team.manage") ?? false;
-
-  // ⚠️⚠️ O PAPEL DE ORGANIZACAO, e NAO uma permissao -- consertado em 10/09,
-  // com o defeito na tela: uma pessoa que "nao administra a organizacao" via
-  // "Gerenciar a organizacao" no seletor da barra.
-  //
-  // O gate era `permissions.includes("area.create")`, e parecia certo: a §4.1
-  // da Spec 046 diz que `area.create` so existe nos papeis de organizacao. So
-  // que `_ORG_ROLE_PERMISSIONS[ADMIN]` E LITERALMENTE `_ROLE_PERMISSIONS[
-  // UserTeamRole.ADMIN]` -- o mesmo conjunto --, entao quem tem papel de TIME
-  // ADMIN (residuo anterior a Spec 045, que ainda existe em `user_team`)
-  // carrega `area.create` tambem.
-  //
-  // ⚠️ E `roles` NAO SERVE para desempatar: o `/auth/me` junta os dois niveis
-  // ali de proposito, e "ADMIN" no array pode ser um ou outro. Por isso a
-  // rota passou a devolver `org_role` como campo proprio.
-  const podeVerOrganizacao = (user?.org_role ?? null) !== null;
 
   // Spec 043 (fatia C). ⚠️ PERMISSÃO PRÓPRIA, e não a de triagem: definir o
   // que se pergunta e responder a fila são trabalhos diferentes, e o backend
@@ -200,8 +275,16 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   // um "/membros" que sirva para todo mundo: a entrada cai na area DA PESSOA,
   // e quem administra a organizacao cai na primeira por nome. A regra mora em
   // `lib/contextSwitcher.ts`, testada -- aqui so se le.
-  const minhasAreas = rootsForPerson(teams, user, podeVerOrganizacao);
-  const entradaDoTime = peopleEntry(minhasAreas);
+  // ⚠️ `preferidos`, e nao `alcanca`: o item TIME leva ao time em que a pessoa
+  // TRABALHA. Com `alcanca`, quem administra a organizacao caia no primeiro do
+  // alfabeto -- o mesmo defeito do "Quadro geral", e a Camila o descreveu com
+  // estas palavras: *"tudo ta levando em consideracao o quadro do comercial que
+  // nao tem nada, mesmo que eu esteja no marketing"*.
+  // ⚠⚠ E SEGUE O TIME ATIVO (14/09, reportado na tela: com o Comercial ativo,
+  // "Time" abria o Marketing). `peopleEntry` sozinho só olhava os preferidos,
+  // e o primeiro preferido é onde a pessoa trabalha. `navHref` não alcançava
+  // este item porque aqui o time mora no CAMINHO, não no `?time=`.
+  const entradaDoTime = peopleEntryFor(publicado, preferidos);
 
   // Itens simples (fora do grupo Quadros).
   const nav: { href: string; label: string; icon: LucideIcon }[] = [
@@ -265,11 +348,27 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     }`;
 
   const w = open ? "w-56" : "w-16";
-  const geralActive = pathname === "/quadro";
+  // ⚠️⚠️ O "QUADRO GERAL" APONTA PARA O TIME ATIVO, e nao mais para `/quadro`
+  // cru -- que redirecionava para a primeira raiz por nome (defeito 3.1).
+  // ⚠️ Sem time ativo ele cai em `/quadro`, que ainda sabe decidir sozinho (ou
+  // desenhar, com uma raiz so, ou mostrar o vazio). Melhor um endereco que se
+  // resolve que um link morto.
+  const hrefGeral = timeAtivo ? urlDoQuadroDeArea(timeAtivo) : "/quadro";
+  // ⚠️ E o ATIVO passa a casar com os DOIS enderecos: quem chegou por
+  // `/quadro` (link antigo, favorito) e quem chegou por `/quadro/<ativo>`.
+  const geralActive = pathname === "/quadro" || pathname === hrefGeral;
   const algumQuadroAtivo = pathname.startsWith("/quadro");
 
   return (
     <div className="flex min-h-screen">
+      {/* ⚠️⚠️ A FRONTEIRA DE `Suspense` DO PRODUTO INTEIRO PARA O `?time=`.
+          IRMÃO, e não ancestral: envolver a barra e o `children` faria as telas
+          remontarem (e refazerem os `fetch`) quando a query resolvesse.
+          `fallback={null}` não pisca porque o componente não desenha nada.
+          O motivo completo está no topo de `TeamParamReader.tsx`. */}
+      <Suspense fallback={null}>
+        <TeamParamReader onSearch={setSearch} />
+      </Suspense>
       {/* ⚠️ ALTURA FIXA + COLUNA = MENU QUE SOME COM ZOOM.
           A barra e `h-screen` e nao rola: com zoom do navegador (ou tela
           baixa) a lista de itens passa de 100vh e o que sobra fica CORTADO
@@ -348,7 +447,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               </button>
               {quadrosOpen && (
                 <div className="flex flex-col gap-0.5">
-                  <a href="/quadro" className={subItemCls(geralActive)}>
+                  <a href={hrefGeral} className={subItemCls(geralActive)}>
                     <span className="truncate">Quadro geral</span>
                   </a>
                   {subteams.map((t) => {
@@ -363,7 +462,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               )}
             </>
           ) : (
-            <a href="/quadro" title="Quadros" aria-label="Quadros" className={itemCls(algumQuadroAtivo)}>
+            <a href={hrefGeral} title="Quadros" aria-label="Quadros" className={itemCls(algumQuadroAtivo)}>
               <Columns3 size={18} className="shrink-0" />
             </a>
           )}
@@ -375,7 +474,12 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             return (
               <a
                 key={n.href}
-                href={n.href}
+                // ⚠⚠ O TIME VAI JUNTO (14/09, reportado na tela: com o
+                // Comercial ativo, "Projetos" abria o Marketing). O caminho puro
+                // apagava o `?time=`, a tela caía na reserva e a URL era
+                // reescrita com ela. `key` e o ativo seguem pelo caminho puro:
+                // o `pathname` não carrega a query.
+                href={navHref(n.href, publicado)}
                 title={!open ? n.label : undefined}
                 // ⚠️ SPEC 039 (F3): COLAPSADO O LINK SO TEM ICONE, e o `title`
                 // sozinho nao e nome acessivel confiavel -- ele depende de o
@@ -421,6 +525,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             teams={teams}
             me={user}
             pathname={pathname}
+            // ⚠️ `?? ""` aqui e não no estado: para o SELETOR, "query não lida"
+            // e "query vazia" dão o mesmo link. Quem precisa distinguir os dois
+            // é a reescrita da URL (`teamUrlToWrite`), e é por isso que o
+            // estado guarda `null`.
+            search={search ?? ""}
             canManageOrg={podeVerOrganizacao}
             expanded={open}
             orgName={orgName}
@@ -469,7 +578,33 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             <NotificationBell />
           </div>
         </div>
-        <main className="min-w-0 flex-1 px-4 pb-4 pt-16 sm:px-6 sm:pb-6">{children}</main>
+        {/* ⚠️ O TIME ATIVO DESCE PARA AS TELAS AQUI (fatia C). A barra já
+            resolveu o time -- ela tem a query, a árvore e quem está olhando --,
+            e as cinco telas recortadas perguntam com `useActiveTeam()`. O
+            motivo de ser contexto e não cada tela resolvendo o seu está no
+            topo de `lib/useActiveTeam.tsx`. */}
+        <main className="min-w-0 flex-1 px-4 pb-4 pt-16 sm:px-6 sm:pb-6">
+          <ActiveTeamProvider
+            value={{
+              // ⚠⚠ `publishedActiveTeam`, e NÃO `contexto` cru. Até 14/09 era o
+              // cru: com a árvore ainda a caminho ele diz `kind: "none"`, e com
+              // a query ainda não lida ele diz o time de RESERVA -- e as telas
+              // buscavam com essas respostas provisórias. Em Minhas tarefas o
+              // pedido do Comercial chegava e era atropelado pelos provisórios.
+              active: publicado,
+              search,
+              teamName:
+                teams.find((t) => t.id === timeAtivo)?.name ?? null,
+              // ⚠️ OS PREFERIDOS, e não `teams`: a lista completa inclui
+              // subtime, e o seletor de Minhas tarefas é de time RAIZ. A ordem
+              // também importa -- `preferredTeams` põe onde a pessoa trabalha
+              // primeiro, e é dela que sai o padrão do seletor do quadro.
+              teams: preferidos,
+            }}
+          >
+            {children}
+          </ActiveTeamProvider>
+        </main>
       </div>
     </div>
   );

@@ -213,7 +213,6 @@ function Pai({
       onTaskMoved={vi.fn()}
       onExcluir={vi.fn()}
       mostrarArquivadas={false}
-      projetosPessoais={new Set()}
       membrosInativos={new Set()}
     />
   );

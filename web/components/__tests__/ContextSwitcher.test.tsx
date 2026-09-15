@@ -57,12 +57,14 @@ function desenhar(opts: {
   pathname?: string;
   teams?: Team[];
   orgName?: string;
+  search?: string;
 }) {
   render(
     <ContextSwitcher
       teams={opts.teams ?? TIMES}
       me={pessoa(opts.vinculos)}
       pathname={opts.pathname ?? "/minhas-tarefas"}
+      search={opts.search ?? ""}
       canManageOrg={opts.canManageOrg ?? false}
       expanded
       orgName={opts.orgName ?? "UniFECAF"}
@@ -97,11 +99,18 @@ describe("ContextSwitcher", () => {
     fireEvent.click(screen.getByRole("button", { name: /trocar de time/i }));
     const itens = screen
       .getAllByRole("menuitem")
-      .map((el) => el.getAttribute("href"));
-    expect(itens).toContain(`/times/${MKT}`);
-    expect(itens).toContain(`/times/${TI}`);
-    expect(itens).not.toContain(`/times/${SEO}`);
-    expect(itens).not.toContain(`/times/${JR}`);
+      .map((el) => el.getAttribute("href") ?? "");
+    // ⚠️ AFIRMA O ID, E NÃO A ROTA -- reescrito na fatia C. O destino de cada
+    // item deixou de ser sempre `/times/<id>` (§4.2: trocar de time preserva a
+    // tela, e o `desenhar` monta em `/minhas-tarefas`). O assunto DESTE teste é
+    // QUAIS times entram na lista; prender a rota aqui o fazia falhar por uma
+    // mudança que não é dele. Quem prende o destino é `switcherHref`, em
+    // `lib/__tests__/contextSwitcher.test.ts`.
+    const temTime = (id: string) => itens.some((h) => h.includes(id));
+    expect(temTime(MKT)).toBe(true);
+    expect(temTime(TI)).toBe(true);
+    expect(temTime(SEO)).toBe(false);
+    expect(temTime(JR)).toBe(false);
   });
 
   it("⭐⭐ 'Gerenciar a organização' respeita o gate", () => {
@@ -171,6 +180,7 @@ describe("ContextSwitcher", () => {
         teams={TIMES}
         me={pessoa([])}
         pathname="/minhas-tarefas"
+        search=""
         canManageOrg={false}
         expanded
         orgName="UniFECAF"

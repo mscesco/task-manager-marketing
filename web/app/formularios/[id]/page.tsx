@@ -19,6 +19,7 @@ import { useParams } from "next/navigation";
 import AppShell from "@/components/AppShell";
 import PageHeader from "@/components/PageHeader";
 import Loading from "@/components/Loading";
+import { withTeam } from "@/lib/activeTeam";
 import {
   ApiError,
   apagarPergunta,
@@ -128,6 +129,9 @@ function Editor() {
   if (fatal) {
     return (
       <div>
+        {/* ⚠️ CAMINHO PURO AQUI, e é o único: o formulário não carregou (apagado,
+            ou sem acesso), então não há time dele para levar. A lista resolve
+            pela reserva -- que é a resposta honesta quando não se sabe. */}
         <Link href="/formularios" className="muted" style={{ fontSize: 13 }}>
           ‹ Formulários
         </Link>
@@ -145,8 +149,17 @@ function Editor() {
   return (
     <div style={{ maxWidth: 900 }}>
       {/* ⚠️ O VOLTAR EXISTE PORQUE ELE JÁ FOI ESQUECIDO UMA VEZ, na tela de
-          projeto (Spec 039). Sem ele a única saída é o menu lateral. */}
-      <Link href="/formularios" className="muted" style={{ fontSize: 13 }}>
+          projeto (Spec 039). Sem ele a única saída é o menu lateral.
+
+          ⚠⚠ E LEVA O TIME DO FORMULÁRIO (14/09). O caminho puro apagava o
+          time, e a lista caía na reserva: editando um formulário do Comercial,
+          voltar abria os do Marketing. Esta rota não tem `?time=`; quem sabe
+          o time certo é o formulário. */}
+      <Link
+        href={withTeam("/formularios", "", form.team_id)}
+        className="muted"
+        style={{ fontSize: 13 }}
+      >
         ‹ Formulários
       </Link>
 

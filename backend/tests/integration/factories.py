@@ -239,7 +239,6 @@ async def make_project(
     workspace_id: uuid.UUID,
     created_by: uuid.UUID,
     team_id: uuid.UUID | None,
-    is_personal: bool = False,
     title: str = "Projeto",
 ) -> uuid.UUID:
     pid = uuid.uuid4()
@@ -251,7 +250,6 @@ async def make_project(
             description="",
             created_by=created_by,
             team_id=team_id,
-            is_personal=is_personal,
         )
     )
     await db.flush()

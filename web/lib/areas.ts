@@ -78,6 +78,50 @@ export function rootTeams(teams: readonly Team[]): Team[] {
     .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
 }
 
+/** Teto de saltos ao subir a árvore. Ela tem três níveis; 50 é folga. */
+const MAX_SALTOS = 50;
+
+/**
+ * O time RAIZ acima de `teamId` — sobe a árvore até o que não tem pai.
+ *
+ * ⚠️⚠️ ELA EXISTIA DUAS VEZES, privada, em `lib/contextSwitcher.ts` e
+ * `lib/lens.ts`, e a Spec 048 (fatia A) precisava da terceira. Três cópias de
+ * uma caminhada de árvore é o defeito que este projeto já pagou com a regra de
+ * alcance (Spec 034, D2/D4): ela divergiu entre duas cópias e ninguém viu.
+ *
+ * ⚠️⚠️ E AS DUAS CÓPIAS JÁ DIVERGIAM, num caso: **pai pendurado** (o ancestral
+ * não está na lista recebida). A de `lens.ts` fazia `break` e devolvia o último
+ * nó conhecido — ou seja, **afirmava que um subtime era raiz**. A de
+ * `contextSwitcher.ts` devolvia `null`.
+ *
+ * Esta unifica no `null`, e a escolha é fail-closed: "não sei qual é a raiz" faz
+ * o chamador cair no caminho de reserva (o nome da organização, o time da
+ * pessoa), enquanto o último-nó-conhecido escreve um time errado como se fosse
+ * certo — e recortar uma tela por um subtime achando que é raiz é exatamente o
+ * tipo de resposta errada que não levanta erro.
+ *
+ * ⚠️ Na prática as duas dão o mesmo resultado hoje: quem chama passa a árvore
+ * INTEIRA (`listTeamsAll`), onde não há pai pendurado. A divergência era latente
+ * — e é por isso que ela merecia ser resolvida de propósito, e não por acidente
+ * de qual cópia sobrou.
+ *
+ * ⚠️ O teto de saltos existe porque ciclo em dado é mais barato que travar a
+ * aba: um `parent_team_id` apontando para um descendente giraria para sempre.
+ */
+export function rootTeamOf(
+  teamId: string,
+  teams: readonly Team[],
+): string | null {
+  const byId = new Map(teams.map((t) => [t.id, t]));
+  let atual = byId.get(teamId);
+  let saltos = 0;
+  while (atual && atual.parent_team_id !== null && saltos < MAX_SALTOS) {
+    saltos += 1;
+    atual = byId.get(atual.parent_team_id);
+  }
+  return atual ? atual.id : null;
+}
+
 /**
  * A ÚNICA área do workspace. Levanta se não houver exatamente uma.
  *
@@ -142,17 +186,39 @@ export function urlDoQuadroDeArea(areaId: string): string {
  *   `sem-area`      -- workspace quebrado. Não há para onde mandar, e
  *                      inventar um destino seria pior que mostrar o vazio.
  *
- * ⚠️ O DESTINO É A PRIMEIRA POR NOME, e a estabilidade é o ponto: `rootTeams`
- * ordena, então duas visitas seguidas caem na mesma área. Com a ordem da API,
- * a pessoa entraria em áreas diferentes sem ter mudado nada.
+ * ⚠️⚠️ A ENTRADA RECEBE OS TIMES **DA PESSOA**, EM ORDEM DE PREFERÊNCIA, e até
+ * 11/09 ela recebia a árvore inteira e mandava para a primeira raiz POR NOME.
+ * Era o defeito 3.1 da Spec 048, e o efeito na tela era direto: com "Comercial"
+ * e "Marketing" no banco, **entrar no sistema abria o Comercial** — porque "C"
+ * vem antes de "M" —, inclusive para quem trabalha no Marketing.
+ *
+ * Quem monta a lista é o chamador, com `ownRootTeams` primeiro e
+ * `rootsForPerson` como reserva (a mesma ordem de `activeTeam`). Duas
+ * consequências, as duas desejadas:
+ *
+ *   - um operador do Marketing num workspace de dois times alcança UM, e por
+ *     isso cai em `desenhar` em vez de ser redirecionado;
+ *   - quem administra a organização e trabalha no Marketing entra no Marketing,
+ *     e não no primeiro do alfabeto.
+ *
+ * ⚠️ A ORDEM AINDA É CRITÉRIO, e não sorteio: as duas listas vêm ordenadas por
+ * nome, então duas visitas seguidas caem no mesmo lugar. O que mudou foi QUAL
+ * lista, não o critério dentro dela.
+ *
+ * ⚠️ E ELA AINDA FILTRA RAIZ, mesmo recebendo uma lista que deveria só ter
+ * raízes: o tipo é `Team[]` nos dois casos, e o `tsc` não distingue "lista de
+ * raízes" de "lista de times". O filtro é o que impede um subtime passado por
+ * engano de virar destino de entrada.
  */
 export type EntradaDoQuadro =
   | { readonly tipo: "desenhar"; readonly areaId: string }
   | { readonly tipo: "redirecionar"; readonly para: string }
   | { readonly tipo: "sem-area" };
 
-export function entradaDoQuadro(teams: readonly Team[]): EntradaDoQuadro {
-  const areas = rootTeams(teams);
+export function entradaDoQuadro(
+  myRoots: readonly Team[]
+): EntradaDoQuadro {
+  const areas = myRoots.filter((t) => t.parent_team_id === null);
   if (areas.length === 0) return { tipo: "sem-area" };
   if (areas.length === 1) return { tipo: "desenhar", areaId: areas[0].id };
   return { tipo: "redirecionar", para: urlDoQuadroDeArea(areas[0].id) };

@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import Select, func, or_, select
+from sqlalchemy import ColumnElement, Select, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.tenant import require_tenant
@@ -64,8 +64,25 @@ class SolicitationRepository(BaseRepository[Solicitation]):
         para ADMIN, e `None` aqui significa "sem filtro de time" -- o mesmo
         contrato que o `board_repository` ja usa. Trata-lo como conjunto vazio
         esconderia a fila inteira do unico papel que enxerga tudo.
+
+        ⚠️⚠️ O `JOIN` PASSOU A SER INCONDICIONAL NA SPEC 048 (fatia D), e antes
+        ele só entrava para não-ADMIN. O motivo é o recorte por time
+        (`_recorte_de_time`): ele também precisa de `SolicitationForm` no FROM,
+        e juntar a mesma tabela duas vezes é erro de SQLAlchemy. Com o `JOIN`
+        condicional, o recorte funcionaria para quem não administra e
+        explodiria para quem administra -- o oposto do que se quer testar.
+        O custo é um LEFT JOIN por PK numa consulta que o ADMIN faz; medido em
+        zero linhas a mais, porque é LEFT.
         """
-        stmt = super()._base_select(include_deleted=include_deleted)
+        stmt = (
+            super()
+            ._base_select(include_deleted=include_deleted)
+            .outerjoin(
+                SolicitationForm,
+                (SolicitationForm.id == Solicitation.form_id)
+                & (SolicitationForm.workspace_id == Solicitation.workspace_id),
+            )
+        )
         tenant = require_tenant()
         visiveis = team_scope.visible_team_ids(
             tenant.memberships,
@@ -74,11 +91,7 @@ class SolicitationRepository(BaseRepository[Solicitation]):
         )
         if visiveis is None:  # ADMIN
             return stmt
-        return stmt.outerjoin(
-            SolicitationForm,
-            (SolicitationForm.id == Solicitation.form_id)
-            & (SolicitationForm.workspace_id == Solicitation.workspace_id),
-        ).where(
+        return stmt.where(
             or_(
                 # historico sem formulario -- ver o aviso acima
                 Solicitation.form_id.is_(None),
@@ -86,8 +99,56 @@ class SolicitationRepository(BaseRepository[Solicitation]):
             )
         )
 
+    def _recorte_de_time(
+        self, team_id: uuid.UUID | None
+    ) -> list[ColumnElement[bool]]:
+        """O recorte da TELA: a fila do time que a pessoa está olhando.
+
+        ⚠️⚠️ ISTO NAO E A LENTE, E CONFUNDIR OS DOIS CONSERTA METADE. A lente
+        (no `_base_select`) responde *"posso ver?"* -- e para papel de
+        organizacao ela e `None`, ou seja ela NAO tira a fila do Comercial da
+        tela de quem administra. Este recorte responde *"estou olhando qual
+        time?"*, e vale para todos. Mesma dupla que a listagem de projetos
+        precisou em 11/09, pelo mesmo motivo.
+
+        ⚠️ `None` = SEM RECORTE, e e resposta legitima (a fila da organizacao
+        inteira). Nao ha default: ver a assinatura de `list_batches`.
+
+        ⚠️ O TIME E SEUS DESCENDENTES. Formulario pode pertencer a um subtime,
+        e pedir a raiz e receber so o que e dela esconderia a fila daquele
+        subtime de quem olha a raiz.
+
+        ⚠️⚠️ E A ORFA (§4.4). Solicitacao sem `form_id` -- historico de antes da
+        Spec 043, ou formulario apagado depois -- nao tem time para comparar.
+        Decisao da spec: **ela fica visivel para papel de organizacao**, que e
+        quem pode adota-la; sai da fila de time, nao do produto. Excluí-la de
+        todas as filas seria perder trabalho pendente por causa de um vinculo
+        que o produto nem exigia quando ela chegou.
+
+        ⚠️ A VERRUGA, dita: para quem administra, a orfa aparece na fila de
+        TODO time -- ela nao e de nenhum. A alternativa era nao aparecer em
+        nenhuma, e ai ninguem a adota.
+        """
+        if team_id is None:
+            return []
+        tenant = require_tenant()
+        alvo = {team_id} | team_scope.descendants(team_id, tenant.team_tree)
+        do_time = SolicitationForm.team_id.in_(alvo)
+        if tenant.org_role is not None:
+            return [or_(do_time, Solicitation.form_id.is_(None))]
+        return [do_time]
+
     async def list_batches(
-        self, *, params: PageParams, filtro: str | None = None
+        self,
+        *,
+        params: PageParams,
+        # ⚠️ `filtro` MANTEM o default, e `team_id` NAO tem. A diferenca nao e
+        # descuido: a ausencia de `filtro` significa "todos os status", que e
+        # uma resposta obvia e que nenhum chamador erra em silencio. A ausencia
+        # de recorte de time significa "a organizacao inteira" -- e um chamador
+        # que a receba sem querer mostra a fila de outro time.
+        filtro: str | None = None,
+        team_id: uuid.UUID | None,
     ) -> tuple[list[Solicitation], int]:
         """Pagina por ENVIO, nao por linha.
 
@@ -109,7 +170,8 @@ class SolicitationRepository(BaseRepository[Solicitation]):
             SEM_TAREFA                -- envio com aprovada sem tarefa criada
             None                      -- todos
         """
-        alvo = self._base_select().subquery()
+        recorte = self._recorte_de_time(team_id)
+        alvo = self._base_select().where(*recorte).subquery()
 
         cond = None
         if filtro == "SEM_TAREFA":
@@ -154,6 +216,12 @@ class SolicitationRepository(BaseRepository[Solicitation]):
             (
                 await self.session.execute(
                     self._base_select()
+                    # ⚠️ O RECORTE TAMBEM AQUI. Este e o segundo tempo da
+                    # consulta (traz as linhas dos lotes da pagina), e ele
+                    # repete o `_base_select` -- repetir o base e esquecer o
+                    # recorte devolveria linhas de outro time dentro de um lote
+                    # que passou pelo filtro.
+                    .where(*recorte)
                     .where(Solicitation.batch_id.in_(ids))
                     .order_by(
                         Solicitation.created_at.desc(),
@@ -166,10 +234,11 @@ class SolicitationRepository(BaseRepository[Solicitation]):
         )
         return linhas, total
 
-    async def count_approved_without_task(self) -> int:
+    async def count_approved_without_task(self, team_id: uuid.UUID | None) -> int:
         """Aprovadas que ninguem transformou em tarefa (o buraco do fluxo)."""
         stmt = select(func.count()).select_from(
             self._base_select()
+            .where(*self._recorte_de_time(team_id))
             .where(
                 # ⚠️ MESMO CONJUNTO DO FILTRO, obrigatoriamente: o badge conta
                 # o que a lista mostra. Um contador que diverge da lista e pior
@@ -181,10 +250,19 @@ class SolicitationRepository(BaseRepository[Solicitation]):
         )
         return (await self.session.execute(stmt)).scalar_one()
 
-    async def count_pending(self) -> int:
-        """Total de PENDING do workspace (badge da aba)."""
+    async def count_pending(self, team_id: uuid.UUID | None) -> int:
+        """Total de PENDING da fila que a tela mostra (badge da aba).
+
+        ⚠️ O `team_id` NAO TEM DEFAULT, nos tres metodos de leitura, pelo
+        mesmo motivo que a Spec 046 fatia 4 usou em
+        `default_board_and_column_for_status`: um `= None` deixaria todo
+        chamador existente compilando e ERRADO em silencio -- o badge contando
+        a organizacao inteira ao lado de uma lista recortada por time. Sem
+        default, o `pytest` aponta cada chamador.
+        """
         stmt = select(func.count()).select_from(
             self._base_select()
+            .where(*self._recorte_de_time(team_id))
             .where(Solicitation.status == "PENDING")
             .subquery()
         )

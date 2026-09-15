@@ -276,12 +276,35 @@ class SolicitationFormService:
         )
         return form
 
-    async def listar_formularios(self) -> list[SolicitationForm]:
+    async def listar_formularios(
+        self, team_id: uuid.UUID | None
+    ) -> list[SolicitationForm]:
         """Os formularios que o papel ALCANCA, publicados ou nao.
 
         ⚠️ FILTRA POR TIME PELO MESMO MOTIVO DA FILA (§11.3 da spec): o
         formulario e do time, e quem nao alcanca o time nao tem o que fazer
         com o formulario dele.
+
+        ⚠⚠ SAO DOIS RECORTES, e a §3.6 da Spec 048 dizia que nao havia nenhum.
+        Estava ERRADO -- a LENTE abaixo existe desde a Spec 043. O que faltava
+        era o `team_id`:
+
+            a LENTE      responde "posso ver?"   -- `None` para papel de
+                         organizacao, ou seja ela NAO tira o formulario do
+                         Comercial da tela de quem administra;
+            o `team_id`  responde "estou olhando qual time?" -- vale para todos.
+
+        (Terceira afirmacao desta spec que nao sobreviveu a leitura do codigo:
+        as outras duas foram o `list_page` de projetos e a §3.5, da fila. As
+        tres tinham a mesma origem -- escrevi a partir das notas da spec
+        anterior em vez de abrir o arquivo.)
+
+        ⚠️ `team_id` SEM DEFAULT, como na fatia D: `None` = a organizacao
+        inteira, e a diferenca e grande demais para sair de um valor omitido.
+
+        ⚠️ O TIME E SEUS DESCENDENTES. Formulario de subtime pertence ao
+        contexto da raiz dele -- e e assim que a tela do Marketing mostra o
+        formulario do SEO.
         """
         tenant = require_tenant()
         stmt = (
@@ -299,6 +322,9 @@ class SolicitationFormService:
         )
         if visiveis is not None:
             stmt = stmt.where(SolicitationForm.team_id.in_(visiveis))
+        if team_id is not None:
+            alvo = {team_id} | team_scope.descendants(team_id, tenant.team_tree)
+            stmt = stmt.where(SolicitationForm.team_id.in_(alvo))
         return list((await self._session.execute(stmt)).scalars().all())
 
     async def renomear_formulario(

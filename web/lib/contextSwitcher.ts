@@ -23,7 +23,8 @@
  */
 
 import type { CurrentUser, Team } from "./api";
-import { rootTeams } from "./areas";
+import { rootTeams, rootTeamOf, urlDoQuadroDeArea } from "./areas";
+import { TEAM_PARAM_SCREENS, withTeam, type ActiveTeam } from "./activeTeam";
 
 /**
  * As áreas que ESTA pessoa alcança.
@@ -46,13 +47,44 @@ export function rootsForPerson(
   if (canManageOrg) return raizes;
   if (!me) return [];
 
-  const porId = new Map(teams.map((t) => [t.id, t]));
   const minhas = new Set<string>();
   for (const vinculo of me.teams) {
-    const raiz = rootOf(vinculo.team_id, porId);
+    const raiz = rootTeamOf(vinculo.team_id, teams);
     if (raiz) minhas.add(raiz);
   }
   return raizes.filter((t) => minhas.has(t.id));
+}
+
+/**
+ * Os times raiz em que ESTA pessoa tem vínculo de trabalho.
+ *
+ * ⚠️⚠️ SUBCONJUNTO DE `rootsForPerson`, E A DIFERENÇA É O PONTO. Aquela responde
+ * *"quais times ela ALCANÇA"* — e para quem tem papel de organização a resposta
+ * é "todos". Esta responde *"em quais ela TRABALHA"*, e para a mesma pessoa a
+ * resposta costuma ser um.
+ *
+ * ⚠️⚠️ ELA NASCEU DE UM DEFEITO MEU, achado ao ligar a fatia B: a §4.5 da Spec
+ * 048 dizia que a entrada cai no "time da pessoa, pela mesma conta de
+ * `peopleEntry`" — e `peopleEntry` recebe `rootsForPerson`, que para a conta da
+ * Camila (ADMIN de organização) devolve TODOS os times. O primeiro por nome é
+ * "Comercial", e ela trabalha no Marketing. Ou seja: a spec conservava o
+ * próprio defeito que a fatia existe para matar, com outra roupa.
+ *
+ * ⚠️ VAZIO É RESPOSTA VÁLIDA, e é o cadastro dela desde 08/09: quem administra a
+ * organização pode não ter vínculo nenhum (Spec 045, fatia B). Nesse caso a
+ * preferência cai para `rootsForPerson`, e aí sim a primeira por nome.
+ */
+export function ownRootTeams(
+  teams: readonly Team[],
+  me: CurrentUser | null,
+): Team[] {
+  if (!me) return [];
+  const minhas = new Set<string>();
+  for (const vinculo of me.teams) {
+    const raiz = rootTeamOf(vinculo.team_id, teams);
+    if (raiz) minhas.add(raiz);
+  }
+  return rootTeams(teams).filter((t) => minhas.has(t.id));
 }
 
 /**
@@ -112,24 +144,12 @@ export function currentContext(
   const id = pathname.slice(prefixo.length).split("/")[0];
   if (!id) return organizacao;
 
-  const porId = new Map(teams.map((t) => [t.id, t]));
-  const raiz = rootOf(id, porId);
-  const time = raiz ? porId.get(raiz) : undefined;
+  const raiz = rootTeamOf(id, teams);
+  const time = raiz ? teams.find((t) => t.id === raiz) : undefined;
   // ⚠️ Time desconhecido (lista ainda carregando, ou id inválido na URL) cai na
   // organização em vez de inventar um nome.
   if (!time) return organizacao;
   return { label: time.name, activeRootId: time.id };
-}
-
-/** Sobe até a raiz. `guarda` porque ciclo em dados é mais barato que travar. */
-function rootOf(teamId: string, porId: Map<string, Team>): string | null {
-  let atual = porId.get(teamId);
-  let guarda = 0;
-  while (atual && atual.parent_team_id !== null && guarda < 50) {
-    guarda += 1;
-    atual = porId.get(atual.parent_team_id);
-  }
-  return atual ? atual.id : null;
 }
 
 /** O que desenhar na barra. Ver o bloco no topo do arquivo. */
@@ -184,4 +204,71 @@ export type PeopleEntry =
 export function peopleEntry(roots: readonly Team[]): PeopleEntry {
   if (roots.length === 0) return { kind: "none" };
   return { kind: "team", teamId: roots[0].id };
+}
+
+/**
+ * Para onde o seletor de time leva, **preservando a tela** — Spec 048, §4.2.
+ *
+ * ⚠️⚠️ ATÉ A FATIA C ELE IA SEMPRE PARA `/times/<id>`, e isso era um defeito de
+ * produto: estando em "Minhas tarefas" e trocando de time, a pessoa era jogada
+ * na tela de pessoas daquele time. Decisão dela, na spec: *"trocar de time é
+ * gesto de trabalho, e jogar a pessoa para outra tela no meio dele é perder o
+ * lugar"*. Ver as pessoas de um time é outro ato, e tem porta própria (o item
+ * **Time** do menu).
+ *
+ * As três respostas, e o motivo de cada uma:
+ *
+ *   1. **quadro** (`/quadro`, `/quadro/<id>`) -> o quadro DO outro time. O time
+ *      mora no CAMINHO ali, então trocar de time é trocar de endereço, não
+ *      acrescentar parâmetro. `withTeam` não serve (produziria
+ *      `/quadro/<A>?time=<B>`, que o `activeTeam` ignora de propósito).
+ *   2. **as cinco telas recortadas** -> a MESMA tela, com o outro time. Aqui
+ *      `withTeam` preserva os outros parâmetros: a pessoa não perde o recorte
+ *      que escolheu por ter trocado de time.
+ *   3. **qualquer outra** (`/organizacao`, `/times/<id>`, `/tarefa/<id>`, o
+ *      perfil…) -> a tela do time. A spec nomeia a exceção da `/organizacao`
+ *      ("não há tela equivalente para preservar"), e a mesma lógica vale para
+ *      as demais: uma tarefa pertence a UM time, e "a mesma tarefa no outro
+ *      time" não existe.
+ */
+export function switcherHref(
+  pathname: string,
+  search: string,
+  teamId: string,
+): string {
+  if (pathname === "/quadro" || pathname.startsWith("/quadro/")) {
+    return urlDoQuadroDeArea(teamId);
+  }
+  if ((TEAM_PARAM_SCREENS as readonly string[]).includes(pathname)) {
+    return withTeam(pathname, search, teamId);
+  }
+  return `/times/${teamId}`;
+}
+
+/**
+ * Para qual time o item **Time** do menu leva.
+ *
+ * ⚠️⚠️ NASCEU DE UM DEFEITO REPORTADO EM 14/09: com o Comercial ativo, clicar
+ * em "Time" abria o Marketing. O item usava só `peopleEntry(preferidos)` -- o
+ * primeiro time PREFERIDO, que é onde a pessoa trabalha -- e ignorava o time
+ * que a barra estava mostrando. Mesma família do defeito do menu corrigido em
+ * `navHref`, por outra porta: aqui o time mora no CAMINHO (`/times/<id>`), e
+ * não no `?time=`, então `navHref` não o alcançava.
+ *
+ * ⚠️ NÃO ERA "COISA DE ADMIN". Aparecia mais para quem administra a
+ * organização porque essa pessoa alcança todos os times, mas qualquer um com
+ * dois times raiz cairia no mesmo lugar.
+ *
+ * A ordem: o time ATIVO, se a barra já resolveu um; senão a regra de sempre
+ * (`peopleEntry`). `kind: "all"` ("Todos os times" de Minhas tarefas) e `null`
+ * (ainda sem resposta) não são um time, e caem na regra de sempre.
+ */
+export function peopleEntryFor(
+  active: ActiveTeam | null,
+  preferred: readonly Team[],
+): PeopleEntry {
+  if (active !== null && active.kind === "team") {
+    return { kind: "team", teamId: active.teamId };
+  }
+  return peopleEntry(preferred);
 }

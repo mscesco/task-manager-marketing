@@ -150,23 +150,44 @@ describe("entradaDoQuadro", () => {
     // ⚠️ É a diferença entre um DEFAULT DE ENTRADA e "área ativa": depois do
     // redirecionamento a URL diz qual área é, então o link é compartilhável e
     // duas pessoas veem a mesma coisa. Com estado invisível, não veriam.
-    expect(entradaDoQuadro([TI, MARKETING])).toEqual({
+    expect(entradaDoQuadro([MARKETING, TI])).toEqual({
       tipo: "redirecionar",
       para: "/quadro/t-mkt",
     });
   });
 
-  it("o destino é ESTÁVEL: a primeira por nome, não a que a API mandou antes", () => {
-    // ⚠️ O guardião do defeito que a Spec 046 §3 descreve. Com a ordem da API,
-    // duas visitas seguidas cairiam em áreas diferentes sem ninguém ter
-    // mudado nada -- e nada acusaria.
-    const numaOrdem = entradaDoQuadro([TI, MARKETING]);
-    const noutraOrdem = entradaDoQuadro([MARKETING, TI]);
-    expect(numaOrdem).toEqual(noutraOrdem);
+  it("⚠️⚠️ o destino é a PRIMEIRA DA LISTA, e a lista é do chamador", () => {
+    // ⚠️⚠️ ESTE TESTE INVERTEU EM 11/09, e a inversão é a entrega da fatia B.
+    // Até aqui a função ordenava POR NOME internamente, e mandava para a
+    // primeira do alfabeto: com "Comercial" e "Marketing" no banco, **entrar no
+    // sistema abria o Comercial**, inclusive para quem trabalha no Marketing.
+    //
+    // Agora ela respeita a ORDEM RECEBIDA, e quem monta é o chamador:
+    // `ownRootTeams` (onde a pessoa trabalha) primeiro, `rootsForPerson` como
+    // reserva. Ordenar aqui destruiria essa preferência -- "Marketing" voltaria
+    // para depois de "Comercial".
+    //
+    // ⚠️ A ESTABILIDADE NÃO SE PERDEU, ELA SUBIU: as duas listas vêm de
+    // `rootTeams`, que ordena por nome e tem teste próprio neste arquivo. O que
+    // mudou foi QUAL lista, não o critério dentro dela.
+    expect(entradaDoQuadro([TI, MARKETING])).toEqual({
+      tipo: "redirecionar",
+      para: "/quadro/t-ti",
+    });
+    expect(entradaDoQuadro([MARKETING, TI])).toEqual({
+      tipo: "redirecionar",
+      para: "/quadro/t-mkt",
+    });
   });
 
   it("sem área nenhuma: não inventa destino", () => {
     // Redirecionar para lugar nenhum seria pior que mostrar o vazio.
+    expect(entradaDoQuadro([])).toEqual({ tipo: "sem-area" });
+  });
+
+  it("⚠️ subtime passado por engano não vira destino de entrada", () => {
+    // O tipo é `Team[]` nos dois casos, e o `tsc` não distingue "lista de
+    // raízes" de "lista de times". O filtro interno é o que impede isso.
     expect(entradaDoQuadro([SEO])).toEqual({ tipo: "sem-area" });
   });
 });

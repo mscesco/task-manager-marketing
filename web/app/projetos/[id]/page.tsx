@@ -18,6 +18,7 @@ import {
 import { PRIORITY_LABEL } from "@/lib/status";
 
 import Loading from "@/components/Loading";
+import { withTeam } from "@/lib/activeTeam";
 // Status de PROJETO (proprio; difere do status de TASK em lib/status).
 // Duplicado de app/projetos/page.tsx de proposito, para manter esta
 // entrega em UM arquivo. Divida cosmetica: extrair para lib se desejado.
@@ -92,10 +93,19 @@ function Projeto() {
 
   // Pessoal nunca edita por aqui (backend devolve 409). A lista ja filtra
   // pessoal; guardamos defensivamente tambem na detalhe.
-  const editavel = podeEditar && !project.is_personal;
+  const editavel = podeEditar;
   // ⚠️ PESSOAL NUNCA, e o backend também recusa (409). A trava dupla é de
   // propósito: sem ela a tela ofereceria um botão que sempre falha.
-  const excluivel = podeExcluir && !project.is_personal;
+  const excluivel = podeExcluir;
+
+  // ⚠⚠ O VOLTAR LEVA O TIME DO PROJETO (14/09, mesmo defeito do menu: com o
+  // Comercial ativo, voltar abria os projetos do Marketing). Esta rota não tem
+  // `?time=`, então o "time ativo" aqui seria a RESERVA -- quem sabe o time
+  // certo é o próprio projeto. Se ele for de subtime, `activeTeam` sobe até a
+  // raiz na chegada.
+  const listaDoTime = project.team_id
+    ? withTeam("/projetos", "", project.team_id)
+    : "/projetos";
 
   async function excluir() {
     // ⚠️ O AVISO DIZ O QUE ACONTECE COM AS TAREFAS, e isso não é zelo: o
@@ -114,7 +124,9 @@ function Projeto() {
       await deleteProject(project!.id);
       // ⚠️ `replace`, e não `push`: a página do projeto apagado não pode
       // sobrar no histórico -- o "voltar" cairia num 404.
-      router.replace("/projetos");
+      // ⚠️ VOLTA PARA A LISTA DO TIME DO PROJETO (14/09). O caminho puro
+      // apagava o time e a lista caía na reserva.
+      router.replace(listaDoTime);
     } catch (e) {
       const err = e as ApiError;
       setErroExcluir(
@@ -187,7 +199,7 @@ function Projeto() {
           coisas -- é a mesma separação que o `acoesDoTitulo` respeita do outro
           lado. */}
       <a
-        href="/projetos"
+        href={listaDoTime}
         className="muted"
         style={{ fontSize: 13, display: "inline-block", marginBottom: 10 }}
       >
@@ -209,6 +221,8 @@ function Projeto() {
           ser possível editar o quadro". Fica escrito para ninguém "corrigir" a
           ausência achando que é esquecimento. */}
       <Board
+        podeEditarColunas={false}
+        acoesDoQuadro={null}
         projectId={id}
         title={project.title}
         acoesDoTitulo={

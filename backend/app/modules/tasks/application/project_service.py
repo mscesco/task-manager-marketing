@@ -6,33 +6,34 @@ acionado no router (ou no service-caller, no caso do provisioning).
 
 Casos de uso (publicos):
     ProjectService.create                    -- cria projeto comum
-    ProjectService.get                       -- obtem projeto (com
-                                                check de privacidade)
+    ProjectService.get                       -- obtem projeto
     ProjectService.list_page                 -- lista paginada
     ProjectService.update                    -- atualiza campos
     ProjectService.archive                   -- is_archived=True
     ProjectService.unarchive                 -- is_archived=False
     ProjectService.soft_delete               -- deleted_at=now()
-    ProjectService.create_personal_for       -- cria pessoal (uso
-                                                interno do provisioning
-                                                e do MemberService)
-    ProjectService.get_personal_for_current_user
-                                             -- usado pelo /me/personal-project
 
-Decisoes-chave (ver specs/001-projects/spec.md +
-docs/adr/0001-projeto-pessoal-automatico.md):
+Decisoes-chave (ver specs/001-projects/spec.md):
 
   - soft-delete (deleted_at) e archive (is_archived) sao SEMANTICAS
     DISTINTAS: archive eh reversivel; delete eh remocao operacional.
   - status livre + auto-marcacao de completed_at.
   - start_date <= due_date quando ambos informados.
   - PATCH "campo ausente = nao mexer".
-  - Projeto pessoal:
-      * is_personal eh flag imutavel (nem entra no UpdateProjectCommand);
-      * created_by do pessoal eh imutavel;
-      * pessoal NAO pode ser PATCHed, deletado nem arquivado (409 em
-        todos os tres casos);
-      * pessoal alheio eh invisivel em list/get (404, nao 403).
+
+⚠️⚠️ O PROJETO PESSOAL SAIU EM 10/09/2026, e com ele a ADR 0001 (marcada como
+revertida la). Decisao dela: *"nao sei como implementar projeto pessoal, muito
+confuso, minha intencao e tirar, pois foi pensado de outra forma"*.
+
+⚠️ E O QUE SAIU JUNTO E O QUE VALE LEMBRAR: era a UNICA regra de privacidade do
+produto -- tarefa em projeto pessoal era invisivel para todo mundo, inclusive
+para o ADMIN, e o dono a editava mesmo fora dos times que ele alcanca. Hoje nao
+ha nada privado neste sistema: tudo o que existe pertence a um time, e quem
+alcanca o time ve. Se um dia voltar a fazer sentido esconder algo de todos,
+isto e um recorte novo -- e nao a volta de uma flag.
+
+⚠️ A remocao foi limpa por sorte de medicao: 29 pessoais no banco, TODOS com
+zero tarefas, e sem tela nenhuma que os expusesse.
 """
 
 from __future__ import annotations
@@ -41,38 +42,26 @@ import uuid
 from dataclasses import dataclass
 from datetime import date
 
-from sqlalchemy import func, or_
+from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger
 from app.core.tenant import require_tenant
 from app.db.models import Project
 from app.db.models.enums import PriorityLevel, ProjectStatus
+from app.modules.auth.domain import team_scope
 from app.modules.tasks.infrastructure.project_repository import ProjectRepository
-from app.shared.exceptions.base import (
-    BusinessRuleError,
-    EntityNotFoundError,
-    ValidationError,
-)
+from app.shared.exceptions.base import EntityNotFoundError, ValidationError
 from app.shared.pagination import Page, PageParams
 
 logger = get_logger(__name__)
-
-# Constantes do projeto pessoal. Title FIXO -- nao renomeavel
-# (ver ADR 0001 e decisao 22 da spec).
-PERSONAL_PROJECT_TITLE = "Pessoal"
-
 
 # --------------------------------------------------------
 # Commands / DTOs internos do dominio
 # --------------------------------------------------------
 @dataclass(frozen=True, slots=True)
 class CreateProjectCommand:
-    """Dados para criar um projeto COMUM.
-
-    Pessoais NAO sao criados via este command -- veja
-    `ProjectService.create_personal_for`.
-    """
+    """Dados para criar um projeto."""
 
     title: str
     team_id: uuid.UUID  # Entrega 3: time dono (obrigatorio em comum).
@@ -87,8 +76,8 @@ class CreateProjectCommand:
 class UpdateProjectCommand:
     """Patch parcial. Campo None = "nao mexer".
 
-    `is_personal` e `created_by` ausentes por DESIGN -- nao sao
-    editaveis em nenhuma circunstancia.
+    `created_by` ausente por DESIGN -- nao e editavel em nenhuma
+    circunstancia.
     """
 
     title: str | None = None
@@ -106,6 +95,10 @@ class ProjectFilters:
     status: ProjectStatus | None = None
     priority: PriorityLevel | None = None
     include_archived: bool = False
+    #: Recorte por TIME (Spec 048). ``None`` = sem recorte -- a lente decide
+    #: sozinha. Quando vem, casa o time E seus descendentes: projeto criado num
+    #: subtime continua aparecendo no contexto da raiz dele.
+    team_id: uuid.UUID | None = None
 
 
 # --------------------------------------------------------
@@ -151,7 +144,6 @@ class ProjectService:
             due_date=command.due_date,
             created_by=tenant.user_id,
             team_id=command.team_id,
-            is_personal=False,
         )
         # Se ja vem como COMPLETED, marca completed_at na criacao.
         if command.status == ProjectStatus.COMPLETED:
@@ -171,15 +163,33 @@ class ProjectService:
         return project
 
     async def get(self, project_id: uuid.UUID) -> Project:
-        """Retorna um projeto pelo id, com check de privacidade.
+        """Retorna um projeto pelo id, DENTRO da lente de time.
 
         Erros:
             EntityNotFoundError -- projeto nao existe, esta em outro
-              workspace, OU eh pessoal de outro user (404, nao 403,
-              pra nao vazar existencia).
+              workspace, OU o time dele esta fora da lente de quem pergunta.
+
+        ⚠️ 404 E NAO 403, de proposito: a mesma convencao que o projeto pessoal
+        usava ("privacy-preserving") -- responder 403 confirmaria que aquele id
+        existe. Aqui nem o nome do projeto de outro time raiz deve escapar.
+
+        ⚠️ SEM ISTO A LENTE DA LISTAGEM SERIA ENFEITE: esconder o projeto da
+        lista e entrega-lo por `GET /projects/<id>` protege contra navegar, nao
+        contra pedir. Um unico chamador (o router), entao a trava mora aqui.
         """
         project = await self._repo.get_by_id_or_raise(project_id)
-        self._assert_visible_to_current_user(project)
+        tenant = require_tenant()
+        visible = team_scope.visible_team_ids(
+            tenant.memberships,
+            tenant.team_tree,
+            org_role=tenant.org_role,
+        )
+        if visible is not None and project.team_id not in visible:
+            # ⚠️ A MESMA FORMA que o `get_by_id_or_raise` levanta quando o id
+            # nao existe (`_base_select` -> `EntityNotFoundError(model, id)`).
+            # Uma mensagem propria aqui tornaria as duas respostas
+            # DISTINGUIVEIS, e distinguir e justamente o que o 404 nega.
+            raise EntityNotFoundError(Project.__name__, identifier=project_id)
         return project
 
     async def list_page(
@@ -187,20 +197,45 @@ class ProjectService:
         params: PageParams,
         filters: ProjectFilters,
     ) -> Page[Project]:
-        """Listagem paginada, escopada ao tenant.
+        """Listagem paginada, escopada ao tenant, A LENTE e (opcionalmente) a um time.
 
         Filtros aplicados:
             - status, priority (opcionais, igualdade exata);
             - include_archived (default False);
-            - PRIVACIDADE: pessoal alheio sempre invisivel. O service
-              injeta o predicado
-                  (is_personal = false) OR (created_by = me)
-              antes de delegar ao repo.
+            - LENTE DE TIME (sempre, exceto admin);
+            - team_id (opcional): aquele time e seus descendentes.
+
+        ⚠️ NAO HA MAIS PREDICADO DE PRIVACIDADE. Ate 10/09 este metodo injetava
+        `(is_personal = false) OR (created_by = me)` para esconder o pessoal
+        alheio.
+
+        ⚠️⚠️ E ATE 11/09 NAO HAVIA PREDICADO DE TIME NENHUM -- O ESCOPO ERA O
+        WORKSPACE INTEIRO. Quando tirei a privacidade eu escrevi aqui que "a
+        lente do time responde sozinha". ERA FALSO: os filtros eram status,
+        priority e arquivado, e o `_base_select` do `BaseRepository` fecha por
+        `workspace_id` e soft delete -- nada olhava `Project.team_id`.
+        Reportado na tela: o seletor de projeto oferecia projeto de outro time
+        raiz. (Achado LENDO `BaseRepository._base_select`, e nao a spec.)
+
+        ⚠️⚠️ E A LENTE AQUI NAO E FEATURE NOVA: e a ADR 0007, por escrito, desde
+        o dia em que `project.team_id` nasceu -- *"a visibilidade de um projeto
+        passa a depender de project.team_id estar na lente de time do usuario"*.
+        Ela foi implementada para as TASKS (`_lente_de_time`, que casa por
+        `Project.team_id`) e esquecida na listagem dos PROJETOS. O vazamento
+        era de METADADO, nao de trabalho: dava para ler o nome de um projeto de
+        outro time raiz, nunca as tarefas dele.
+
+        ⚠️ SAO DOIS RECORTES, E SO UM RESOLVE O QUE ELA REPORTOU:
+          - a LENTE responde "posso ver?", e para o ADMIN ela e `None` (ve
+            tudo) -- portanto sozinha ela NAO tira o projeto do Comercial da
+            tela de quem administra;
+          - `team_id` responde "estou olhando qual time?", e vale para todos.
+        Confundir os dois teria fechado o furo de seguranca e deixado o defeito
+        da tela de pe.
 
         Ordenacao fixa: created_at DESC.
         """
         tenant = require_tenant()
-
         extra_filters = []
         if filters.status is not None:
             extra_filters.append(Project.status == filters.status)
@@ -208,14 +243,38 @@ class ProjectService:
             extra_filters.append(Project.priority == filters.priority)
         if not filters.include_archived:
             extra_filters.append(Project.is_archived.is_(False))
-        # Privacidade: esconde pessoal alheio.
-        extra_filters.append(
-            or_(
-                Project.is_personal.is_(False),
-                Project.created_by == tenant.user_id,
-            )
-        )
 
+        # (A) A lente. `None` = admin de organizacao, sem filtro de TIME -- e
+        # nao "sem filtro": o `workspace_id` entra sempre, no `_base_select`.
+        visible = team_scope.visible_team_ids(
+            tenant.memberships,
+            tenant.team_tree,
+            org_role=tenant.org_role,
+        )
+        if visible is not None:
+            extra_filters.append(Project.team_id.in_(visible))
+
+        # (B) O recorte por time pedido pela tela.
+        if filters.team_id is not None:
+            # ⚠️ O TIME E SEUS DESCENDENTES, e nao igualdade. Projeto criado
+            # num SUBTIME pertence ao contexto da raiz dele -- pedir a raiz e
+            # receber so o que e dela mesma esconderia esse projeto de toda
+            # tela que recorta por raiz.
+            alvo = {filters.team_id} | team_scope.descendants(
+                filters.team_id, tenant.team_tree
+            )
+            # ⚠️ O PARAMETRO ESTREITA, NUNCA ALARGA -- e isso e ESTRUTURAL, nao
+            # uma checagem. Os dois predicados entram na MESMA lista e o repo os
+            # combina com AND: pedir um time fora da lente devolve a intersecao
+            # vazia sozinho.
+            #
+            # ⚠️ EU TINHA ESCRITO UM `alvo &= set(visible)` AQUI, com um
+            # comentario dizendo que sem ele `?team_id=<time alheio>` furaria a
+            # lente. Sabotei a linha para conferir: NENHUM teste caiu. Era
+            # codigo morto, e o comentario afirmava uma protecao que o AND ja
+            # dava -- pior que a ausencia, porque o proximo leitor confiaria
+            # nela em vez de procurar quem protege de verdade.
+            extra_filters.append(Project.team_id.in_(alvo))
         return await self._repo.list_page(
             params,
             filters=extra_filters,
@@ -230,12 +289,6 @@ class ProjectService:
     ) -> Project:
         """Atualiza campos editaveis com semantica PATCH.
 
-        Pessoal eh IMUTAVEL via PATCH (decisao 22 da spec): qualquer
-        tentativa em projeto com is_personal=true devolve 409. O
-        usuario interage com o pessoal exclusivamente via as tasks
-        dentro dele -- nao com o container.
-
-        Para projetos comuns:
             - title eh normalizado com strip() se vier;
             - start_date <= due_date sobre o estado RESULTANTE
               (apos o merge);
@@ -243,13 +296,10 @@ class ProjectService:
             - transicao saindo de COMPLETED -> limpa completed_at.
 
         Erros:
-            EntityNotFoundError -- projeto nao existe / pessoal alheio.
-            BusinessRuleError   -- PATCH em projeto pessoal.
+            EntityNotFoundError -- projeto nao existe.
             ValidationError     -- title invalido ou datas inconsistentes.
         """
         project = await self._repo.get_by_id_or_raise(project_id)
-        self._assert_visible_to_current_user(project)
-        self._assert_not_personal(project, operation="editado")
 
         # Aplica o patch campo a campo. None = nao mexer.
         if command.title is not None:
@@ -296,12 +346,9 @@ class ProjectService:
         """Marca is_archived=True. Idempotente.
 
         Erros:
-            EntityNotFoundError -- projeto nao existe / pessoal alheio.
-            BusinessRuleError   -- tentativa de arquivar PROPRIO pessoal.
+            EntityNotFoundError -- projeto nao existe.
         """
         project = await self._repo.get_by_id_or_raise(project_id)
-        self._assert_visible_to_current_user(project)
-        self._assert_not_personal(project, operation="arquivado")
 
         if not project.is_archived:
             project.is_archived = True
@@ -315,20 +362,15 @@ class ProjectService:
         """Marca is_archived=False. Idempotente.
 
         Erros:
-            EntityNotFoundError -- projeto nao existe / pessoal alheio.
-
-        Pessoal nunca esta arquivado (decisao 22), entao chamar
-        unarchive nele eh sempre no-op. NAO levanta erro -- pra
-        manter idempotencia coerente.
+            EntityNotFoundError -- projeto nao existe.
         """
         project = await self._repo.get_by_id_or_raise(project_id)
-        self._assert_visible_to_current_user(project)
 
         if project.is_archived:
             project.is_archived = False
             await self._session.flush()
             logger.info("project.unarchived", project_id=str(project.id))
-        # Se ja desarquivado (inclui pessoal): no-op.
+        # Se ja desarquivado: no-op.
 
         return project
 
@@ -336,82 +378,14 @@ class ProjectService:
         """Soft-delete: seta deleted_at.
 
         Erros:
-            EntityNotFoundError -- projeto nao existe / pessoal alheio.
-            BusinessRuleError   -- tentativa de deletar PROPRIO pessoal.
+            EntityNotFoundError -- projeto nao existe.
         """
         project = await self._repo.get_by_id_or_raise(project_id)
-        self._assert_visible_to_current_user(project)
-        self._assert_not_personal(project, operation="deletado")
 
         project.deleted_at = func.now()  # type: ignore[assignment]
         await self._session.flush()
 
         logger.info("project.deleted", project_id=str(project.id))
-        return project
-
-    # ----------------------------------------------------
-    # Pessoal -- uso interno e endpoint /me
-    # ----------------------------------------------------
-    async def create_personal_for(self, user_id: uuid.UUID) -> Project:
-        """Cria o projeto pessoal de `user_id` no workspace corrente.
-
-        Chamado por:
-            - WorkspaceProvisioningService (pro admin, dentro de
-              tenant_scope efemero);
-            - MemberService.create_member (pro novo membro).
-
-        Idempotente: se o user ja tem pessoal (indice unico parcial),
-        retorna o existente em vez de estourar IntegrityError. Isso
-        torna o backfill e o cadastro de membro re-roda-veis sem dor.
-        """
-        existing = await self._repo.get_personal_by_user(user_id)
-        if existing is not None:
-            logger.info(
-                "project.personal_already_exists",
-                project_id=str(existing.id),
-                user_id=str(user_id),
-            )
-            return existing
-
-        project = Project(
-            title=PERSONAL_PROJECT_TITLE,
-            description="",
-            status=ProjectStatus.ACTIVE,
-            priority=PriorityLevel.MEDIUM,
-            created_by=user_id,
-            is_personal=True,
-        )
-        self._repo.add(project)
-        await self._session.flush()
-
-        logger.info(
-            "project.personal_created",
-            project_id=str(project.id),
-            user_id=str(user_id),
-        )
-        return project
-
-    async def get_personal_for_current_user(self) -> Project:
-        """Retorna o projeto pessoal do user logado.
-
-        Usado pelo endpoint GET /me/personal-project.
-
-        Erros:
-            EntityNotFoundError -- pessoal nao existe (cenario que
-              indica bug ou banco corrompido; logamos com severidade
-              alta antes de levantar).
-        """
-        tenant = require_tenant()
-        project = await self._repo.get_personal_by_user(tenant.user_id)
-        if project is None:
-            logger.error(
-                "project.personal_missing",
-                user_id=str(tenant.user_id),
-                workspace_id=str(tenant.workspace_id),
-            )
-            raise EntityNotFoundError(
-                "PersonalProject", identifier=tenant.user_id
-            )
         return project
 
     # ----------------------------------------------------
@@ -428,36 +402,3 @@ class ProjectService:
                     "Data de inicio nao pode ser posterior a data limite.",
                     details={"field": "due_date"},
                 )
-
-    @staticmethod
-    def _assert_not_personal(project: Project, *, operation: str) -> None:
-        """Bloqueia delete/archive/update em projeto pessoal.
-
-        Args:
-            project: o projeto a checar (ja carregado).
-            operation: rotulo da operacao para a mensagem de erro
-                (ex. "deletado", "arquivado", "editado").
-
-        Erros:
-            BusinessRuleError (-> HTTP 409) se project.is_personal.
-        """
-        if project.is_personal:
-            raise BusinessRuleError(
-                f"Projeto pessoal nao pode ser {operation}.",
-                details={
-                    "project_id": str(project.id),
-                    "is_personal": True,
-                },
-            )
-
-    @staticmethod
-    def _assert_visible_to_current_user(project: Project) -> None:
-        """Bloqueia leitura/escrita em pessoal alheio.
-
-        Levanta EntityNotFoundError (-> HTTP 404) -- nao
-        AuthorizationError -- pra nao vazar existencia do pessoal
-        do outro user.
-        """
-        tenant = require_tenant()
-        if project.is_personal and project.created_by != tenant.user_id:
-            raise EntityNotFoundError("Project", identifier=project.id)

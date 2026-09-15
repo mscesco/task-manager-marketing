@@ -23,6 +23,7 @@ import { rotuloDeColuna, type OrigemDaColuna } from "@/lib/coluna";
 import { mensagemExclusao } from "@/lib/exclusao";
 
 import Loading from "@/components/Loading";
+import { useActiveTeam, useActiveTeamId } from "@/lib/useActiveTeam";
 // Tela de arquivadas (Spec 013, fatia 4). Lista paginada de tarefas
 // arquivadas (manuais ou pela varredura) + reativar (volta pra BACKLOG e
 // desarquiva). Pagina de verdade: o conjunto cresce sem fim.
@@ -78,7 +79,6 @@ function Arquivadas() {
   // detalhe abre com os nomes em branco em vez de nao abrir.
   const [members, setMembers] = useState<Map<string, { name: string }>>(new Map());
   const [projectNames, setProjectNames] = useState<Map<string, string>>(new Map());
-  const [projetosPessoais, setProjetosPessoais] = useState<Set<string>>(new Set());
   // Spec 031 (C14): so tira do seletor e marca a pilula. `members` fica
   // completo -- tarefa arquivada costuma ter justamente quem ja saiu do time.
   const [membrosInativos, setMembrosInativos] = useState<Set<string>>(new Set());
@@ -111,11 +111,19 @@ function Arquivadas() {
   // so faria "duplicar" e "editar" se sobrescreverem em silencio.
   const [duplicando, setDuplicando] = useState<Task | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  // ⚠️ O time ativo vem da barra (Spec 048). Rota estática -- `useSearchParams`
+  // aqui derrubaria o `next build`. Ver `lib/useActiveTeam.tsx`.
+  const { active, teamName: nomeDoTime } = useActiveTeam();
+  const timeAtivo = useActiveTeamId();
 
   // O indice de colunas de TODOS os quadros alcancaveis, so para o rotulo do
   // badge -- esta tela nao desenha coluna nenhuma.
   useEffect(() => {
-    quadroGeralComIndice()
+    // ⚠️ `null` AQUI DE PROPÓSITO: esta tela usa SÓ o `indice`, para o rótulo do
+    // badge de coluna, e o índice é de todos os quadros alcançáveis. Passar o
+    // time recortaria as COLUNAS (que esta tela nem desenha) e não mudaria o
+    // índice -- pedir um time seria fingir que importa.
+    quadroGeralComIndice(null)
       .then(({ indice: ix }) => setIndice(ix))
       // ⚠️ FALHA EM SILENCIO, de proposito: o badge cai na reserva por status
       // e a tela segue funcionando. O assunto desta tela e reativar tarefa.
@@ -129,10 +137,15 @@ function Arquivadas() {
         setMembrosInativos(new Set(ms.filter((m) => !m.is_active).map((m) => m.id)));
       })
       .catch(() => {});
-    listAllProjects()
+    listAllProjects({
+      // ROTULAR, nao escolher: este mapa id -> titulo desenha o selo de
+      // projeto no card. Recortar por time apagaria o selo de uma tarefa que
+      // a pessoa ENXERGA, em vez de proteger algo -- a lente do backend ja
+      // limita o que volta. Ver `listProjects` em `lib/api.ts`.
+      teamId: null,
+    })
       .then((r) => {
         setProjectNames(new Map(r.items.map((p) => [p.id, p.title])));
-        setProjetosPessoais(new Set(r.items.filter((p) => p.is_personal).map((p) => p.id)));
       })
       .catch(() => {});
   }, []);
@@ -177,7 +190,11 @@ function Arquivadas() {
   async function carregar(p: number) {
     setErro(null);
     try {
-      const r = await listArchivedTasks({ page: p, size: PAGE_SIZE });
+      const r = await listArchivedTasks({
+        page: p,
+        size: PAGE_SIZE,
+        teamId: timeAtivo,
+      });
       setTasks(r.items);
       setTotal(r.total);
       setPage(r.page);
@@ -191,8 +208,19 @@ function Arquivadas() {
   }
 
   useEffect(() => {
+    // ⚠⚠ ESPERA A BARRA RESOLVER o time, e `active === null` ("ainda não sei")
+    // é diferente de `kind: "none"` ("resolveu, e não há time") -- senão uma
+    // falha do `listTeamsAll()` do `AppShell`, que é engolida de propósito,
+    // deixaria esta tela carregando para sempre.
+    if (active === null) return;
     carregar(1);
-  }, []);
+    // ⚠️ `timeAtivo` NAS DEPENDÊNCIAS: trocar de time tem de refazer a busca, e
+    // volta para a página 1 -- a página 3 do Marketing não existe no Comercial.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // ⚠️ `active === null` E NÃO `active`: o objeto é NOVO a cada render da
+    // barra, e depender dele refazia o pedido a cada render -- vários pedidos
+    // em voo, e o último a responder vencia (defeito de 14/09).
+  }, [timeAtivo, active === null]);
 
   const totalPaginas = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
@@ -201,11 +229,22 @@ function Arquivadas() {
 
   return (
     <div style={{ maxWidth: 720 }}>
-      <PageHeader title="Arquivadas" count={total} />
+      {/* ⚠️ O NOME DO TIME, pelo mesmo motivo das outras três telas: lista
+          recortada que não diz pelo quê parece a lista inteira, e quem não
+          encontra uma tarefa arquivada conclui que ela foi apagada -- justamente
+          nesta tela, onde "apagada" é uma coisa que de fato acontece. */}
+      <PageHeader
+        title={nomeDoTime ? `Arquivadas · ${nomeDoTime}` : "Arquivadas"}
+        count={total}
+      />
 
       {tasks.length === 0 ? (
         <EmptyState
-          title="Nenhuma tarefa arquivada"
+          title={
+            nomeDoTime
+              ? `Nenhuma tarefa arquivada em ${nomeDoTime}`
+              : "Nenhuma tarefa arquivada"
+          }
           description="Tarefas concluídas ou canceladas antigas aparecem aqui."
         />
       ) : (
@@ -243,7 +282,6 @@ function Arquivadas() {
         // Esta tela E o arquivo: esconder subtarefa arquivada aqui seria
         // esconder justamente o que a pessoa veio ver.
         mostrarArquivadas
-        projetosPessoais={projetosPessoais}
         membrosInativos={membrosInativos}
         onSubtaskUpsert={() => carregar(page)}
         onTaskMoved={() => carregar(page)}
@@ -264,7 +302,8 @@ function Arquivadas() {
         // Duplicar uma arquivada COM subarvore se faz pelo quadro.
         filhosDaOrigem={[]}
         defaultProjectId={null}
-        defaultTeamId={null}
+        // Esta tela nao cria tarefa do zero (`open` exige editar ou duplicar).
+        newTaskTeam={null}
         onClose={() => {
           setEditando(null);
           setDuplicando(null);

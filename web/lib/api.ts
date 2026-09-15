@@ -17,6 +17,7 @@ import {
   indiceDeColunas,
   type Coluna,
   type OrigemDaColuna,
+  quadroGeralDoTime,
 } from "@/lib/coluna";
 import { soleRootTeam } from "@/lib/areas";
 
@@ -405,6 +406,15 @@ export async function listTasks(params: {
   root_only?: boolean;
   // Spec 042 (A2): busca por titulo, casando tambem o de descendente.
   q?: string;
+  /**
+   * Recorte por time ATIVO (Spec 048): este time e os DESCENDENTES dele, pelo
+   * time EFETIVO da tarefa.
+   *
+   * ⚠️ VAI PARA `under_team_id`, e não para `team_id`. O backend tem os dois:
+   * `team_id` casa `Task.team_id` por igualdade e serviria mal aqui -- ver o
+   * bloco de `_sob_o_time` no repositório.
+   */
+  underTeamId?: string | null;
 } = {}): Promise<TaskListResponse> {
   const q = new URLSearchParams();
   q.set("page", String(params.page ?? 1));
@@ -416,6 +426,7 @@ export async function listTasks(params: {
   if (params.q && params.q.trim() !== "") q.set("q", params.q.trim());
   if (params.include_archived) q.set("include_archived", "true");
   if (params.archived_only) q.set("archived_only", "true");
+  if (params.underTeamId) q.set("under_team_id", params.underTeamId);
   return api<TaskListResponse>(`/api/v1/tasks?${q.toString()}`);
 }
 
@@ -559,13 +570,27 @@ export type MyAssignmentsResponse = {
   size: number;
 };
 
+/**
+ * As minhas tarefas, opcionalmente recortadas por time (Spec 048).
+ *
+ * ⚠️⚠️ `teamId` OBRIGATÓRIO, e `null` aqui é MODO DE USO -- não
+ * esquecimento. Decisão dela na §4.3: esta é a única tela que atravessa times
+ * de propósito, e o filtro `tudo | por time` é o que ela pediu. *"O time muda
+ * com a área; o que é meu, não."*
+ *
+ * ⚠️ `under_team_id` E NÃO `team_id`: o backend tem os dois, e `team_id` casa
+ * `Task.team_id` por igualdade -- ele esconderia toda tarefa interna de
+ * subtime e ignoraria o time do projeto. Ver `_sob_o_time` no repositório.
+ */
 export async function listMyAssignments(params: {
+  teamId: string | null;
   page?: number;
   size?: number;
-} = {}): Promise<MyAssignmentsResponse> {
+}): Promise<MyAssignmentsResponse> {
   const q = new URLSearchParams();
   q.set("page", String(params.page ?? 1));
   q.set("size", String(params.size ?? 100));
+  if (params.teamId) q.set("under_team_id", params.teamId);
   return api<MyAssignmentsResponse>(`/api/v1/me/assignments?${q.toString()}`);
 }
 
@@ -585,9 +610,17 @@ export type AllMyAssignmentsResult = {
   truncated: boolean;
 };
 
-export async function listAllMyAssignments(): Promise<AllMyAssignmentsResult> {
+/**
+ * ⚠️ `teamId` OBRIGATÓRIO, e ele TEM de ir em TODAS as páginas -- não só na
+ * primeira. Mandar só na primeira daria um `total` recortado e páginas
+ * seguintes sem recorte: a lista encheria de tarefa de outro time a partir da
+ * página 2, e o `truncated` mentiria junto.
+ */
+export async function listAllMyAssignments(
+  teamId: string | null
+): Promise<AllMyAssignmentsResult> {
   const pageSize = 100; // teto do backend por pagina
-  const first = await listMyAssignments({ page: 1, size: pageSize });
+  const first = await listMyAssignments({ teamId, page: 1, size: pageSize });
   const total = first.total;
   const cap = Math.min(total, TASK_FETCH_CEILING);
 
@@ -605,7 +638,7 @@ export async function listAllMyAssignments(): Promise<AllMyAssignmentsResult> {
 
   let page = 2;
   while (items.length < cap) {
-    const next = await listMyAssignments({ page, size: pageSize });
+    const next = await listMyAssignments({ teamId, page, size: pageSize });
     if (next.items.length === 0) break; // defensivo: nada mais a buscar
     push(next.items);
     page++;
@@ -946,25 +979,6 @@ export async function listBoards(): Promise<Quadro[]> {
   return api<Quadro[]>("/api/v1/boards");
 }
 
-/**
- * As colunas do quadro PADRAO do time raiz -- o "Quadro geral".
- *
- * Existe porque a fatia 4b troca `STATUSES` (const sincrona de 8 status) pela
- * lista de colunas, e as telas que hoje leem `STATUSES` (`/minhas-tarefas`,
- * `/arquivadas`, `TaskModal`) desenham o quadro geral, nao um quadro escolhido.
- *
- * ⚠️ DEVOLVE `[]`, E NAO LEVANTA, quando nao acha o quadro padrao. Quem chama
- * distingue "ainda carregando" (`null` no estado) de "carregou e nao ha
- * coluna" (`[]`) -- e uma tela sem coluna nenhuma e um estado que a fatia 4b
- * tem de desenhar de propósito (a sabotagem da fatia 4 no `plan.md` e
- * literalmente "devolver a lista de colunas vazia da API").
- *
- * ⚠️ `is_default` E O CRITERIO, nao o nome do quadro. Nome e editavel na
- * fatia 5; a flag tem indice parcial no banco (`board_um_padrao_por_time`).
- */
-export async function colunasDoQuadroGeral(): Promise<Coluna[]> {
-  return (await quadroGeralComIndice()).colunas;
-}
 
 /**
  * As colunas do Quadro geral E o indice de TODAS as colunas alcancaveis, numa
@@ -988,12 +1002,33 @@ export async function colunasDoQuadroGeral(): Promise<Coluna[]> {
  * bloco acima) e o indice **continua cheio**, com nome de quadro em toda
  * coluna. E o certo: se nao ha quadro desta tela, nenhuma coluna e "daqui".
  */
-export async function quadroGeralComIndice(): Promise<{
+/**
+ * As colunas do quadro geral DE UM TIME, mais o índice de todos os alcançáveis.
+ *
+ * ⚠️⚠️ `teamId` OBRIGATÓRIO, e este é o defeito 3.3 da Spec 048. A linha era
+ * `quadros.find((q) => q.is_default)` -- **"o" padrão, no singular**. Com um
+ * time raiz só isso era verdade; com dois existem DOIS quadros com
+ * `is_default`, e `find` devolve o que a API listar primeiro. A tela espelhava
+ * as colunas de um time enquanto mostrava as tarefas de outro, sem erro nenhum.
+ *
+ * ⚠️ `null` = sem time (o "tudo" de Minhas tarefas). Aí não há quadro geral
+ * que sirva, e devolver as colunas de um deles seria escolher por sorteio de
+ * novo -- devolve VAZIO, e a tela cai na lista. Quem precisa de colunas exige
+ * um time, que é a decisão da §4.3: *"o quadro não pode [dizer tudo] -- kanban
+ * não espelha dois quadros ao mesmo tempo"*.
+ *
+ * ⚠️ O ÍNDICE continua de TODOS os quadros alcançáveis, de propósito: ele serve
+ * para ROTULAR a coluna de uma tarefa que vive em quadro avulso (fatia 5b-5b),
+ * e recortá-lo faria a tarefa aparecer sem nome de coluna.
+ */
+export async function quadroGeralComIndice(teamId: string | null): Promise<{
   colunas: Coluna[];
   indice: Map<string, OrigemDaColuna>;
 }> {
   const quadros = await listBoards();
-  const geral = quadros.find((q) => q.is_default);
+  // ⚠️ A REGRA MORA EM `quadroGeralDoTime` desde 14/09: o `Board.tsx` tinha
+  // três cópias do `find` no singular que este bloco já tinha corrigido.
+  const geral = teamId ? quadroGeralDoTime(quadros, teamId) : undefined;
   const colunas = geral
     ? [...geral.colunas].sort((a, b) => a.position - b.position)
     : [];
@@ -1287,8 +1322,16 @@ export async function apagarColuna(
  */
 export async function colunasDoQuadro(boardId: string): Promise<Coluna[]> {
   const quadros = await listBoards();
+  // ⚠⚠ A RESERVA NÃO CHUTA COM MAIS DE UM GERAL (14/09). Ela só dispara
+  // quando o quadro da tarefa não voltou na lista (sem alcance, apagado), e
+  // era `find(is_default)` -- "o" geral, no singular, o mesmo defeito 3.3. Com
+  // dois times raiz ela mostraria as colunas do OUTRO time no modal. Sem
+  // como saber qual, `[]` ("não há coluna") é a resposta honesta; com um
+  // geral só, ele continua valendo.
+  const gerais = quadros.filter((q) => q.is_default);
   const quadro =
-    quadros.find((q) => q.id === boardId) ?? quadros.find((q) => q.is_default);
+    quadros.find((q) => q.id === boardId) ??
+    (gerais.length === 1 ? gerais[0] : undefined);
   if (!quadro) return [];
   return [...quadro.colunas].sort((a, b) => a.position - b.position);
 }
@@ -1986,13 +2029,23 @@ export async function unarchiveTask(id: string): Promise<ArchiveResult> {
 // ---------------------------------------------------------------
 // Lista pagina DE VERDADE (page/size): o conjunto de arquivadas cresce sem
 // fim, entao nao usa fetch-all/teto como o quadro -- uma lista pagina natural.
-export async function listArchivedTasks(
-  params: { page?: number; size?: number } = {}
-): Promise<TaskListResponse> {
+/**
+ * As arquivadas, recortadas pelo time ativo (Spec 048).
+ *
+ * ⚠️ `teamId` OBRIGATÓRIO, `null` = sem recorte. Diferente de Minhas
+ * tarefas, aqui `null` não é um modo que a tela oferece -- é só a resposta
+ * para "a barra resolveu e não há time".
+ */
+export async function listArchivedTasks(params: {
+  teamId: string | null;
+  page?: number;
+  size?: number;
+}): Promise<TaskListResponse> {
   return listTasks({
     page: params.page ?? 1,
     size: params.size ?? 30,
     archived_only: true,
+    underTeamId: params.teamId,
   });
 }
 
@@ -2038,7 +2091,6 @@ export type Project = {
   due_date: string | null;
   completed_at: string | null;
   is_archived: boolean;
-  is_personal: boolean;
   team_id: string | null;
   created_by: string;
   created_at: string;
@@ -2052,21 +2104,44 @@ export type ProjectListResponse = {
   size: number;
 };
 
-// Lista projetos do workspace (paginado). NAO filtra pessoal -> o pessoal do
-// proprio usuario vem junto; a tela de pastas descarta is_personal no front.
+// Lista projetos do workspace (paginado).
+//
+// ⚠️ ESTE COMENTARIO DIZIA "NAO filtra pessoal -> o pessoal do proprio usuario
+// vem junto; a tela de pastas descarta is_personal no front". O projeto
+// pessoal saiu em 10/09, e com ele o campo `is_personal` da resposta -- hoje
+// todo projeto pertence a um time e a lista nao esconde nem oferece nada.
+// ⚠️⚠️ `teamId` E OBRIGATORIO, e `null` E UMA RESPOSTA -- nao o default.
+//
+// Reportado na tela em 11/09: o seletor de projeto do modal oferecia projeto de
+// OUTRO time raiz. A rota nunca filtrou por time (so `workspace_id`), e as seis
+// chamadas do front nao tinham como pedir o recorte.
+//
+// A pergunta que cada chamador precisa responder e "esta lista e para ESCOLHER
+// ou para ROTULAR?":
+//   - ESCOLHER (o seletor do modal, a tela de projetos) -> manda o time, porque
+//     oferecer projeto de outro time e oferecer o que nao se deve escolher;
+//   - ROTULAR (o mapa id -> titulo do selo no card) -> manda `null`, porque uma
+//     tarefa que a pessoa ENXERGA tem de mostrar o nome do projeto dela, e
+//     recortar aqui apagaria o selo em vez de proteger algo. A lente do backend
+//     ja limita o que volta.
+//
+// Com default, essa pergunta ficaria sem resposta nos lugares em que ninguem
+// pensou nela -- que e exatamente como o defeito nasceu.
 export async function listProjects(
   params: {
+    teamId: string | null;
     page?: number;
     size?: number;
     status?: ProjectStatus;
     include_archived?: boolean;
-  } = {}
+  }
 ): Promise<ProjectListResponse> {
   const q = new URLSearchParams();
   q.set("page", String(params.page ?? 1));
   q.set("size", String(params.size ?? 100));
   if (params.status) q.set("status", params.status);
   if (params.include_archived) q.set("include_archived", "true");
+  if (params.teamId) q.set("team_id", params.teamId);
   return api<ProjectListResponse>(`/api/v1/projects?${q.toString()}`);
 }
 
@@ -2074,7 +2149,11 @@ export async function listProjects(
 // tasks. Usada pelo quadro geral pra montar o mapa id->titulo do selo de
 // projeto -- antes batia size=100 fixo e perdia projetos alem disso.
 export async function listAllProjects(
-  params: { status?: ProjectStatus; include_archived?: boolean } = {}
+  params: {
+    teamId: string | null;
+    status?: ProjectStatus;
+    include_archived?: boolean;
+  }
 ): Promise<{ items: Project[]; total: number; truncated: boolean }> {
   const pageSize = 100;
   const first = await listProjects({ ...params, page: 1, size: pageSize });
@@ -2434,8 +2513,23 @@ export type Formulario = {
   polo_label: string | null;
 };
 
-export async function listarFormularios(): Promise<Formulario[]> {
-  return api<Formulario[]>("/api/v1/solicitacoes/formularios");
+/**
+ * Os formulários de um time (Spec 048, fatia E).
+ *
+ * ⚠️⚠️ `teamId` OBRIGATÓRIO, `null` é resposta -- a mesma decisão de
+ * `listProjects` e `listarEnvios`. Aqui ela pesa mais do que parece: desta
+ * lista se abre o EDITOR de cada formulário, e editar formulário de outro time
+ * muda a porta pública dele.
+ */
+export async function listarFormularios(
+  teamId: string | null
+): Promise<Formulario[]> {
+  const q = new URLSearchParams();
+  if (teamId) q.set("team_id", teamId);
+  const qs = q.toString();
+  return api<Formulario[]>(
+    `/api/v1/solicitacoes/formularios${qs ? `?${qs}` : ""}`
+  );
 }
 
 /**
@@ -2861,14 +2955,31 @@ export type BatchListResponse = {
   approved_without_task_total: number;
 };
 
-/** Fila de triagem: um card por envio, com todas as seções dentro. */
+/**
+ * Fila de triagem: um card por envio, com todas as seções dentro.
+ *
+ * ⚠️⚠️ `teamId` É OBRIGATÓRIO, e `null` é uma resposta -- mesma decisão de
+ * `listProjects`, e pelo mesmo motivo. A fila recortada e a fila da organização
+ * são coisas muito diferentes para sair de um parâmetro omitido: quem tria
+ * veria pedido de outro time e agiria sobre ele.
+ *
+ * ⚠️ OS BADGES VÃO NO MESMO PAYLOAD (`pending_total`,
+ * `approved_without_task_total`) e o backend os conta com o MESMO `team_id` --
+ * contador que diverge da lista é pior que não ter contador.
+ */
 export async function listarEnvios(
-  params: { filtro?: SolicitacaoFiltro; page?: number; size?: number } = {}
+  params: {
+    teamId: string | null;
+    filtro?: SolicitacaoFiltro;
+    page?: number;
+    size?: number;
+  }
 ): Promise<BatchListResponse> {
   const q = new URLSearchParams();
   if (params.filtro) q.set("status", params.filtro);
   q.set("page", String(params.page ?? 1));
   q.set("size", String(params.size ?? 20));
+  if (params.teamId) q.set("team_id", params.teamId);
   return api<BatchListResponse>(`/api/v1/solicitacoes?${q.toString()}`);
 }
 

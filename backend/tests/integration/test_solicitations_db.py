@@ -179,8 +179,7 @@ async def test_fila_escopada_por_tenant(db) -> None:
         workspace_id=ws_b, user_id=user_b, memberships=(mship(team_b, "MANAGER"),)
     ):
         lotes, total = await SolicitationService(db).list_batches(
-            params=PageParams(size=100), filtro=None
-        )
+            params=PageParams(size=100), filtro=None, team_id=None)
     assert (lotes, total) == ([], 0)
 
     team_a, user_a = await _reviewer(db, ws_a)
@@ -188,8 +187,7 @@ async def test_fila_escopada_por_tenant(db) -> None:
         workspace_id=ws_a, user_id=user_a, memberships=(mship(team_a, "MANAGER"),)
     ):
         lotes_a, total_a = await SolicitationService(db).list_batches(
-            params=PageParams(size=100), filtro=None
-        )
+            params=PageParams(size=100), filtro=None, team_id=None)
     assert total_a == 1
     assert len(lotes_a[0].items) == 1
 
@@ -214,17 +212,15 @@ async def test_fila_filtra_por_status_e_conta_pendentes(db) -> None:
                 uow, ReviewCommand(solicitation_id=s1.id, approve=True, note=None)
             )
         _, pend = await svc.list_batches(
-            params=PageParams(size=100), filtro="PENDING"
-        )
+            params=PageParams(size=100), filtro="PENDING", team_id=None)
         _, aprov = await svc.list_batches(
-            params=PageParams(size=100), filtro="APPROVED"
-        )
+            params=PageParams(size=100), filtro="APPROVED", team_id=None)
         assert pend == 1  # envios com ao menos uma pendente
         assert aprov == 1
-        assert await svc.count_pending() == 1  # demandas pendentes
+        assert await svc.count_pending(None) == 1  # demandas pendentes
 
         with pytest.raises(ValidationError):
-            await svc.list_batches(params=PageParams(size=100), filtro="QUALQUER")
+            await svc.list_batches(params=PageParams(size=100), filtro="QUALQUER", team_id=None)
 
 
 # --------------------------------------------------------
@@ -720,8 +716,7 @@ async def test_fila_agrupa_um_card_por_envio(db) -> None:
         workspace_id=ws, user_id=user, memberships=(mship(team, "MANAGER"),)
     ):
         lotes, total = await SolicitationService(db).list_batches(
-            params=PageParams(size=100), filtro=None
-        )
+            params=PageParams(size=100), filtro=None, team_id=None)
     assert total == 1  # UM envio, nao tres demandas
     assert len(lotes[0].items) == 3
     assert [i.batch_seq for i in lotes[0].items] == [1, 2, 3]
@@ -747,11 +742,9 @@ async def test_paginacao_por_envio_nao_parte_lote_ao_meio(db) -> None:
     ):
         svc = SolicitationService(db)
         pg1, total = await svc.list_batches(
-            params=PageParams(page=1, size=2), filtro=None
-        )
+            params=PageParams(page=1, size=2), filtro=None, team_id=None)
         pg2, _ = await svc.list_batches(
-            params=PageParams(page=2, size=2), filtro=None
-        )
+            params=PageParams(page=2, size=2), filtro=None, team_id=None)
 
     assert total == 3          # ENVIOS, nao as 6 demandas
     assert len(pg1) == 2
@@ -784,8 +777,7 @@ async def test_filtro_traz_envio_inteiro_mesmo_com_status_misto(db) -> None:
                     ReviewCommand(solicitation_id=alvo.id, approve=True, note=None),
                 )
         lotes, total = await svc.list_batches(
-            params=PageParams(size=100), filtro="PENDING"
-        )
+            params=PageParams(size=100), filtro="PENDING", team_id=None)
 
     assert total == 1
     assert len(lotes[0].items) == 3  # o card vem COMPLETO
@@ -810,10 +802,9 @@ async def test_filtro_aprovadas_sem_tarefa(db) -> None:
                     ReviewCommand(solicitation_id=alvo.id, approve=True, note=None),
                 )
         # duas aprovadas, nenhuma virou tarefa ainda
-        assert await svc.count_approved_without_task() == 2
+        assert await svc.count_approved_without_task(None) == 2
         _, total = await svc.list_batches(
-            params=PageParams(size=100), filtro="SEM_TAREFA"
-        )
+            params=PageParams(size=100), filtro="SEM_TAREFA", team_id=None)
         assert total == 1
 
         # marca uma -> some da contagem
@@ -826,7 +817,7 @@ async def test_filtro_aprovadas_sem_tarefa(db) -> None:
                     task_ref="https://quadro/tarefa/1",
                 ),
             )
-        assert await svc.count_approved_without_task() == 1
+        assert await svc.count_approved_without_task(None) == 1
 
         # marca a outra -> o envio inteiro sai do filtro
         async with UnitOfWork(db) as uow:
@@ -834,10 +825,9 @@ async def test_filtro_aprovadas_sem_tarefa(db) -> None:
                 uow,
                 MarkTaskCommand(solicitation_id=criadas[1].id, created=True),
             )
-        assert await svc.count_approved_without_task() == 0
+        assert await svc.count_approved_without_task(None) == 0
         _, total_final = await svc.list_batches(
-            params=PageParams(size=100), filtro="SEM_TAREFA"
-        )
+            params=PageParams(size=100), filtro="SEM_TAREFA", team_id=None)
         assert total_final == 0
 
 

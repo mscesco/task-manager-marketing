@@ -36,7 +36,6 @@ from app.core.tenant import require_tenant
 from app.db.models import Project, Task
 from app.db.models.enums import PriorityLevel, TaskStatus
 from app.modules.auth.domain import team_scope
-from app.modules.tasks.application.project_service import ProjectService
 from app.modules.tasks.application.task_guards import (
     TaskScopeGuards,
     user_can_view_task,
@@ -280,6 +279,13 @@ class TaskFilters:
     status: TaskStatus | None = None
     priority: PriorityLevel | None = None
     team_id: uuid.UUID | None = None
+    #: Recorte por time ATIVO (Spec 048): este time e os DESCENDENTES dele,
+    #: pelo time EFETIVO da tarefa (projeto, ou a propria se avulsa).
+    #:
+    #: ⚠️ NAO E O `team_id` ACIMA. Aquele casa `Task.team_id` por igualdade --
+    #: usa-lo para recortar por raiz esconderia toda tarefa interna de subtime
+    #: e ignoraria o time do projeto. Ver `_sob_o_time` no repositorio.
+    under_team_id: uuid.UUID | None = None
     include_archived: bool = False
     archived_only: bool = False
     created_by: uuid.UUID | None = None
@@ -594,11 +600,14 @@ class TaskService:
         project: Project | None = None
         if command.project_id is not None:
             project = await self._projects.get_by_id_or_raise(command.project_id)
-            ProjectService._assert_visible_to_current_user(project)
-            # Em projeto comum, o time da task fica na subarvore do time
-            # do projeto (regra 8 da spec). A heranca do pai ja satisfaz isto
-            # por construcao (o pai passou pela mesma checagem ao nascer).
-            if not project.is_personal and project.team_id is not None:
+            # O time da task fica na subarvore do time do projeto (regra 8 da
+            # spec). A heranca do pai ja satisfaz isto por construcao (o pai
+            # passou pela mesma checagem ao nascer).
+            #
+            # ⚠️ AQUI HAVIA UM `_assert_visible_to_current_user` e um
+            # `not project.is_personal`, os dois do projeto pessoal. Sairam em
+            # 10/09 com ele.
+            if project.team_id is not None:
                 allowed = {project.team_id} | team_scope.descendants(
                     project.team_id, tenant.team_tree
                 )
@@ -1080,6 +1089,7 @@ class TaskService:
             status=filters.status,
             priority=filters.priority,
             team_id=filters.team_id,
+            under_team_id=filters.under_team_id,
             created_by=filters.created_by,
             include_archived=filters.include_archived,
             archived_only=filters.archived_only,
@@ -1348,11 +1358,15 @@ class TaskService:
                 details={"task_id": str(task.id)},
             )
 
-        # Projeto novo deve existir e ser visivel (pessoal alheio -> 404).
-        # Detach (new_project_id None) pula: nao ha projeto destino pra validar.
+        # Projeto novo deve existir. Detach (new_project_id None) pula: nao ha
+        # projeto destino pra validar.
+        #
+        # ⚠️ AQUI HAVIA UM `_assert_visible_to_current_user`, que devolvia 404
+        # para pessoal alheio. Saiu em 10/09 com o projeto pessoal -- o
+        # `get_by_id_or_raise` ja escopa por tenant, e nao ha mais projeto que
+        # um membro do workspace nao possa ver.
         if new_project_id is not None and new_project_id != task.project_id:
-            new_project = await self._projects.get_by_id_or_raise(new_project_id)
-            ProjectService._assert_visible_to_current_user(new_project)
+            await self._projects.get_by_id_or_raise(new_project_id)
 
         # Pai novo (se houver): existe, mesmo workspace, mesmo projeto final.
         new_parent: Task | None = None

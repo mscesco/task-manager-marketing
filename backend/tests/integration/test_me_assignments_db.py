@@ -12,8 +12,7 @@ from app.main import create_app
 from app.modules.auth.api.dependencies import get_tenant_context
 from app.modules.auth.domain.permissions import permissions_for_roles
 from app.modules.tasks.application.me_service import MeService
-from app.modules.tasks.application.task_service import TaskService, UpdateTaskCommand
-from app.shared.exceptions.base import EntityNotFoundError
+from app.modules.tasks.application.task_service import TaskService
 from app.shared.pagination import PageParams
 from tests.integration import factories as f
 from tests.integration.conftest import acting_as, mship, node
@@ -37,7 +36,12 @@ def _forest(r, a, b):
 
 
 async def _list(db, **kw):
-    return await MeService(db).list_assignments(PageParams(size=100), relations=ALL, **kw)
+    # ⚠️ `under_team_id=None` = sem recorte por time (Spec 048). Estes testes
+    # sao sobre RELACAO e lente, nao sobre o recorte de tela -- ele tem arquivo
+    # proprio (`test_tarefas_sob_o_time_db.py`).
+    return await MeService(db).list_assignments(
+        PageParams(size=100), relations=ALL, **kw, under_team_id=None
+    )
 
 
 # ----------------------------------------------------------
@@ -84,8 +88,7 @@ async def test_filtro_relation_assignee_only(db) -> None:
         workspace_id=ws, user_id=me, memberships=(mship(a, "OPERATOR"),), team_tree=_forest(r, a, b)
     ):
         page = await MeService(db).list_assignments(
-            PageParams(size=100), relations=frozenset({"assignee"})
-        )
+            PageParams(size=100), relations=frozenset({"assignee"}), under_team_id=None)
     ids = {row.task.id for row in page.items}
     assert ids == {t_assignee.id}  # t_creator NÃO entra
 
@@ -103,24 +106,6 @@ async def test_mesma_task_duas_relacoes_um_item_relations_completo(db) -> None:
         page = await _list(db)
     assert len(page.items) == 1
     assert page.items[0].relations == frozenset({"creator", "watcher"})
-
-
-async def test_pessoal_alheio_nunca_aparece(db) -> None:
-    ws, r, a, b = await _tree(db)
-    me = await f.make_user(db, workspace_id=ws)
-    await f.add_member(db, workspace_id=ws, user_id=me, team_id=a, role="OPERATOR")
-    dono = await f.make_user(db, workspace_id=ws)
-    pessoal = await f.make_project(
-        db, workspace_id=ws, created_by=dono, team_id=None, is_personal=True
-    )
-    t = await f.make_task(db, workspace_id=ws, created_by=dono, team_id=None, project_id=pessoal)
-    # forço (cenário impossível em prod, defesa em profundidade): watcher no pessoal alheio
-    await f.make_watcher(db, workspace_id=ws, task_id=t.id, user_id=me)
-    with acting_as(
-        workspace_id=ws, user_id=me, memberships=(mship(a, "OPERATOR"),), team_tree=_forest(r, a, b)
-    ):
-        page = await _list(db)
-    assert all(row.task.id != t.id for row in page.items)
 
 
 async def test_soft_deleted_nao_aparece(db) -> None:

@@ -16,6 +16,7 @@ import Link from "next/link";
 
 import AppShell from "@/components/AppShell";
 import PageHeader from "@/components/PageHeader";
+import { useActiveTeam, useActiveTeamId } from "@/lib/useActiveTeam";
 import Loading from "@/components/Loading";
 import {
   ApiError,
@@ -44,6 +45,11 @@ function Formularios() {
   const [podeGerir, setPodeGerir] = useState(false);
   const [ocupado, setOcupado] = useState<string | null>(null);
 
+  // ⚠⚠ O time ativo vem da barra (Spec 048). Rota estática: `useSearchParams`
+  // aqui derrubaria o build -- ver `lib/useActiveTeam.tsx`.
+  const { active, teamName: nomeDoTimeAtivo } = useActiveTeam();
+  const timeAtivo = useActiveTeamId();
+
   const [criando, setCriando] = useState(false);
   const [titulo, setTitulo] = useState("");
   const [slug, setSlug] = useState("");
@@ -52,16 +58,37 @@ function Formularios() {
   const [salvando, setSalvando] = useState(false);
 
   useEffect(() => {
-    listarFormularios()
+    // ⚠⚠ ESPERA A BARRA RESOLVER o time, em vez de listar sem recorte -- e
+    // `active === null` ("ainda não sei") é diferente de `kind: "none"` ("sei
+    // que não há time"), senão uma falha do `listTeamsAll()` do `AppShell`
+    // deixaria esta tela carregando para sempre.
+    if (active === null) return;
+    listarFormularios(timeAtivo)
       .then(setItens)
       .catch((e: ApiError) => setErro(e.message));
+    // ⚠️ `timeAtivo` NAS DEPENDÊNCIAS: trocar de time tem de refazer a lista.
+    // ⚠️ `active === null` E NÃO `active`: o objeto é NOVO a cada render da
+    // barra, e depender dele refazia o pedido a cada render -- vários pedidos
+    // em voo, e o último a responder vencia (defeito de 14/09).
+  }, [timeAtivo, active === null]);
+
+  useEffect(() => {
     listTeamsAll()
       .then((t) => {
         setTimes(t);
-        // ⚠️ O TIME RAIZ COMO PADRÃO, e não o primeiro da lista: em produção o
-        // Marketing É a raiz, e é dele que sai a maioria dos formulários.
-        // Ordem alfabética escolheria "Audiovisual" por acaso.
-        setTime(t.find((x) => x.parent_team_id === null)?.id ?? t[0]?.id ?? "");
+        // ⚠⚠ O TIME ATIVO COMO PADRÃO, e ATÉ 11/09 ERA "a primeira raiz".
+        // O comentário antigo dizia: *"em produção o Marketing É a raiz"* --
+        // verdade quando foi escrito, e mentira desde a Spec 046. Com duas
+        // raizes, `find(parent === null)` devolve a primeira que a API listar:
+        // o formulário nasceria no Comercial enquanto a pessoa olha o
+        // Marketing, em silêncio. É o mesmo defeito que o `createProject`
+        // pagou em 10/09, e a mesma correção -- o contexto responde, ninguém
+        // adivinha.
+        // ⚠️ A RESERVA, para quando não há time ativo. O time ativo entra no
+        // efeito abaixo, que sabe não pisar numa escolha já feita.
+        setTime(
+          (atual) => atual || (t.find((x) => x.parent_team_id === null)?.id ?? "")
+        );
       })
       .catch(() => {});
     currentUser()
@@ -70,6 +97,15 @@ function Formularios() {
       )
       .catch(() => setPodeGerir(false));
   }, []);
+
+  // ⚠⚠ O TIME ATIVO PREENCHE O CAMPO, E NÃO PISA NA ESCOLHA. `atual || ...`
+  // e não `setTime(timeAtivo)`: o efeito roda de novo quando a barra resolve o
+  // time (e a cada troca), e sobrescrever ali apagaria o time que a pessoa
+  // acabou de escolher no formulário aberto.
+  useEffect(() => {
+    if (!timeAtivo) return;
+    setTime((atual) => atual || timeAtivo);
+  }, [timeAtivo]);
 
   function nomeDoTime(id: string) {
     return times.find((t) => t.id === id)?.name ?? "—";
@@ -151,7 +187,9 @@ function Formularios() {
   return (
     <div>
       <PageHeader
-        title="Formulários"
+        /* ⚠️ O NOME DO TIME, pelo mesmo motivo da fila e dos projetos: lista
+           recortada que não diz pelo quê parece a lista inteira. */
+        title={nomeDoTimeAtivo ? `Formulários · ${nomeDoTimeAtivo}` : "Formulários"}
         count={`${itens.length} ${itens.length === 1 ? "formulário" : "formulários"}`}
         actions={
           podeGerir &&

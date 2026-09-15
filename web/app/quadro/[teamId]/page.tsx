@@ -13,6 +13,7 @@ import {
   type Team,
 } from "@/lib/api";
 import { computeLens } from "@/lib/lens";
+import { rootTeamOf } from "@/lib/areas";
 import Loading from "@/components/Loading";
 import {
   alcanceDeQuadro,
@@ -75,11 +76,31 @@ export default function QuadroSubtimePage() {
   // ⚠️ A VALIDACAO MORA EM `lib/seletorDeQuadro`, TESTADA. O `include` do
   // vitest e so `lib/**` e `components/**` -- regra escrita dentro de `app/`
   // nasce sem guardiao.
-  const pedido = resolverQuadroPedido(
-    searchParams.get("quadro"),
-    quadros,
-    teamId,
-  );
+  //
+  // ⚠️⚠️ NA RAIZ, ESCOLHER O QUADRO GERAL E LEGITIMO -- e este ramo e o que
+  // faltava. Reportado por ela em 11/09, com captura: *"o quadro esta sendo
+  // chamado de lente do time"*, estando no Comercial (uma raiz).
+  //
+  // ⚠️⚠️ E QUEM EXPOS FOI A FATIA B desta spec, nao codigo novo: ate 11/09 o
+  // "Quadro geral" da barra apontava para `/quadro` (a rota legada), que SEMPRE
+  // tratou a raiz certo -- ela passa `daRaiz` ao seletor e normaliza o pedido.
+  // A fatia B passou a apontar para `/quadro/<time-ativo>`, ou seja, para ESTA
+  // rota, que nunca soube da raiz. O defeito estava aqui desde a Spec 046 fatia
+  // 4 (quando a rota aprendeu a aceitar id de area) e ninguem passava por ele.
+  //
+  // ⚠️ SO NA RAIZ. Num SUBTIME, `?quadro=<geral>` e mesmo uma queda para a
+  // lente, e o aviso "e-o-quadro-geral" esta certo ali -- o quadro geral nem
+  // aparece na lista daquela tela. Normalizar nos dois casos apagaria um aviso
+  // verdadeiro.
+  const ehRaiz = team !== null && team.parent_team_id === null;
+  const pedidoCru = searchParams.get("quadro");
+  const pedidoEhOGeral =
+    !!pedidoCru &&
+    (quadros?.find((q) => q.id === pedidoCru)?.is_default ?? false);
+  const pedido =
+    ehRaiz && pedidoEhOGeral
+      ? { id: null, motivo: null }
+      : resolverQuadroPedido(pedidoCru, quadros, teamId);
   const quadroSelecionado = pedido.id;
 
   // ⚠️ `push`, E NAO `replace`. Trocar de quadro e navegar: a pessoa espera
@@ -90,9 +111,17 @@ export default function QuadroSubtimePage() {
   // a pessoa colaria outro link morto e nao veria nada.
   const [quedaDispensada, setQuedaDispensada] = useState<string | null>(null);
 
+  // ⚠️ ESCOLHER O QUADRO GERAL LIMPA O `?quadro=`, e nao o escreve. Sem isto a
+  // URL guardaria o id do geral e o `Board` entraria pelo ramo de `boardId` --
+  // que e OUTRO filtro (um registro proprio, e nao o quadro geral da area). O
+  // endereco do quadro geral de um time e `/quadro/<time>`, limpo. Mesma
+  // normalizacao que a rota legada `/quadro` ja fazia.
   const selecionarQuadro = useCallback(
-    (id: string | null) => router.push(urlDoQuadro(teamId, id)),
-    [router, teamId],
+    (id: string | null) => {
+      const ehGeral = quadros?.find((q) => q.id === id)?.is_default ?? false;
+      router.push(urlDoQuadro(teamId, ehGeral ? null : id));
+    },
+    [router, teamId, quadros],
   );
 
   useEffect(() => {
@@ -102,7 +131,16 @@ export default function QuadroSubtimePage() {
         if (!vivo) return;
         const alvo = teams.find((t) => t.id === teamId) ?? null;
         setTeam(alvo);
-        const lens = computeLens(me.teams, teams, me.roles);
+        // ⚠️ O TIME ATIVO AQUI E A RAIZ DO TIME DA URL (Spec 048, fatia B).
+        // Esta tela so usa `visibleTeamIds`, que nao depende dele -- mas passar
+        // `null` faria `boardSubteams` sair vazio, e o dia em que alguem ler
+        // essa parte aqui seria um menu vazio sem causa aparente.
+        const lens = computeLens(
+          me.teams,
+          teams,
+          me.roles,
+          rootTeamOf(teamId, teams),
+        );
         setTemAcesso(alvo ? lens.visibleTeamIds.has(alvo.id) : false);
         // ⚠️ A DECISAO MORA EM `lib/seletorDeQuadro`, e nao aqui. A tela so
         // guarda a resposta.
@@ -148,6 +186,13 @@ export default function QuadroSubtimePage() {
       podeGerir={podeGerir}
       onSelecionar={selecionarQuadro}
       onMudou={carregarQuadros}
+      // ⚠️⚠️ ERA ESTA A LINHA QUE FALTAVA. Sem ela o seletor usa
+      // `opcoesDoSeletor` sempre -- a lista de SUBTIME, cujo primeiro item e a
+      // LENTE ("Lente do time / espelho do quadro geral"). Numa raiz nao ha
+      // lente: o quadro geral e a coisa em si, e entra pelo NOME dele. O corpo
+      // do quadro ja tratava a raiz certo desde a Spec 046 fatia 4 (`areaId`, e
+      // nao `subteamId`); so o cabecalho nao sabia.
+      daRaiz={team.parent_team_id === null}
     />
   ) : null;
 
@@ -250,6 +295,10 @@ export default function QuadroSubtimePage() {
                   podeGerir={podeGerir}
                   onSelecionar={selecionarQuadro}
                   onMudou={carregarQuadros}
+                  // ⚠️ FALTAVA (14/09): quadro avulso de um time RAIZ usa a lista da
+                  // raiz, e a de subtime usa a da lente. O irmão `SeletorDeQuadro`
+                  // já exigia isto desde 11/09; este ficou para trás.
+                  daRaiz={team.parent_team_id === null}
                 />
               }
             />
@@ -264,9 +313,48 @@ export default function QuadroSubtimePage() {
             //
             // ⚠️ E `areaId` e o que impede o `Board` de perguntar "qual e a
             // raiz?" -- pergunta que, com N areas, nao tem resposta.
-            <Board areaId={team.id} title={seletor} />
+            // ⚠⚠ `podeEditarColunas` FALTAVA AQUI (14/09, reportado na tela:
+            // admin da organização sem lápis no quadro geral do Comercial). Este
+            // ramo nasceu na Spec 046 fatia 4, e o lápis só era ligado no ramo
+            // do quadro avulso; desde a fatia B da 048 a barra aponta para cá.
+            //
+            // ⚠️ `podeGerir` SERVE PARA A RAIZ: ele é `podeGerirQuadrosDe(alcance,
+            // team.id)`, e com um time RAIZ coincide por construção com
+            // `podeGerirQuadroDaRaiz` (a regra do `/quadro`) -- `board.manage.root`
+            // é o alcance "amplo", e o de subtime nunca contém uma raiz.
+            // ⚠⚠ E `acoesDoQuadro` TAMBÉM FALTAVA (14/09): renomear o quadro geral
+            // mora nele, e a rota antiga `/quadro` o passava com `daRaiz`. Este
+            // ramo nasceu sem ele -- mesma omissão do lápis, na mesma linha.
+            //
+            // ⚠️ `selecionado={null}` É O QUADRO GERAL AQUI, e é igual ao `/quadro`:
+            // `opcaoSelecionada` não acha `id === null` na lista da RAIZ (o geral
+            // tem id de verdade) e devolve `opcoes[0]` -- que, com `daRaiz`, é ele.
+            <Board
+              areaId={team.id}
+              title={seletor}
+              podeEditarColunas={podeGerir}
+              acoesDoQuadro={
+                <AcoesDoQuadro
+                  teamId={team.id}
+                  quadros={quadros ?? []}
+                  selecionado={null}
+                  podeGerir={podeGerir}
+                  onSelecionar={selecionarQuadro}
+                  onMudou={carregarQuadros}
+                  daRaiz
+                />
+              }
+            />
           ) : (
-            <Board subteamId={team.id} title={seletor} />
+            // ⚠️ `false` EXPLÍCITO: é a LENTE, espelho do quadro geral filtrado
+            // por pessoa, e ela não oferece edição (ADR 0034 item 2).
+            // ⚠️ `null` EXPLÍCITO: a lente não tem registro para renomear nem apagar.
+            <Board
+              subteamId={team.id}
+              title={seletor}
+              podeEditarColunas={false}
+              acoesDoQuadro={null}
+            />
           )}
         </>
       )}

@@ -142,6 +142,13 @@ async def list_solicitations(
             "demanda dele casar."
         ),
     ),
+    team_id: uuid.UUID | None = Query(
+        None,
+        description=(
+            "Recorta a fila pelos formularios deste time e dos descendentes "
+            "dele. Ausente = tudo o que a lente permite."
+        ),
+    ),
 ) -> BatchListResponse:
     """Fila de triagem agrupada por ENVIO -- um card por submissao.
 
@@ -150,7 +157,7 @@ async def list_solicitations(
     """
     service = SolicitationService(session)
     lotes, total = await service.list_batches(
-        params=PageParams(page=page, size=size), filtro=filtro
+        params=PageParams(page=page, size=size), filtro=filtro, team_id=team_id
     )
     # ⚠️ UMA CONSULTA SO PARA A PAGINA INTEIRA, e nao uma por item: dez envios
     # de quatro categorias seriam 40 idas ao banco para buscar um titulo.
@@ -192,8 +199,13 @@ async def list_solicitations(
         total=total,
         page=page,
         size=size,
-        pending_total=await service.count_pending(),
-        approved_without_task_total=await service.count_approved_without_task(),
+        # ⚠️ OS BADGES RECEBEM O MESMO `team_id` DA LISTA. Um contador que
+        # conta a organizacao ao lado de uma lista recortada por time e pior que
+        # nao ter contador: a aba diria "7 pendentes" e a fila mostraria duas.
+        pending_total=await service.count_pending(team_id),
+        approved_without_task_total=await service.count_approved_without_task(
+            team_id
+        ),
     )
 
 

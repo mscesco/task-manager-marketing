@@ -223,11 +223,10 @@ async def test_SEM_TAREFA_continua_achando_o_que_ja_COMECOU(db) -> None:
         await _andar(db, pedido, "IN_PROGRESS")
 
         lotes, _ = await svc.list_batches(
-            params=PageParams(page=1, size=10), filtro="SEM_TAREFA"
-        )
+            params=PageParams(page=1, size=10), filtro="SEM_TAREFA", team_id=None)
         # ⚠️ O CONTADOR TEM DE CONCORDAR COM A LISTA. Um badge que conta
         # diferente do que a tela mostra é pior que não ter badge.
-        assert await svc.count_approved_without_task() == 1
+        assert await svc.count_approved_without_task(None) == 1
     assert len(lotes) == 1
 
 
@@ -239,11 +238,9 @@ async def test_a_fila_filtra_pelos_status_novos(db) -> None:
         await _andar(db, pedido, "DONE")
 
         prontas, _ = await svc.list_batches(
-            params=PageParams(page=1, size=10), filtro="DONE"
-        )
+            params=PageParams(page=1, size=10), filtro="DONE", team_id=None)
         pendentes, _ = await svc.list_batches(
-            params=PageParams(page=1, size=10), filtro="PENDING"
-        )
+            params=PageParams(page=1, size=10), filtro="PENDING", team_id=None)
     assert len(prontas) == 1
     assert pendentes == []
 
@@ -252,10 +249,10 @@ async def test_pedido_CONCLUIDO_sai_do_contador_de_pendentes(db) -> None:
     ws, pedido, team, user = await _cena(db)
     with acting_as(**_como(ws, user, team)):
         svc = SolicitationService(db)
-        assert await svc.count_pending() == 1
+        assert await svc.count_pending(None) == 1
         await _aprovar(db, pedido)
         await _andar(db, pedido, "DONE")
-        assert await svc.count_pending() == 0
+        assert await svc.count_pending(None) == 0
 
 
 async def test_permissao_e_a_mesma_da_triagem(db) -> None:

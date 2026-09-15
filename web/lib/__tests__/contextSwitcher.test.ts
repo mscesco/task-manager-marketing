@@ -12,8 +12,11 @@ import { describe, it, expect } from "vitest";
 import {
   contextChoice,
   currentContext,
+  ownRootTeams,
   peopleEntry,
+  peopleEntryFor,
   rootsForPerson,
+  switcherHref,
 } from "../contextSwitcher";
 import type { CurrentUser, Team } from "../api";
 
@@ -229,6 +232,48 @@ describe("currentContext — o botão diz ONDE VOCÊ ESTÁ", () => {
   });
 });
 
+describe("ownRootTeams — onde a pessoa TRABALHA", () => {
+  it("⚠️⚠️ subconjunto de `rootsForPerson`, e a diferença é o defeito da §4.5", () => {
+    // ⚠️ Quem administra a organização ALCANÇA todos os times e TRABALHA em um.
+    // A spec dizia que a entrada cai no "time da pessoa, pela mesma conta de
+    // `peopleEntry`" -- e `peopleEntry` recebe o alcance. Para a conta dela
+    // (ADMIN, vínculo no Marketing) isso dava "Comercial", o primeiro do
+    // alfabeto.
+    const admin = pessoa([MKT]);
+    expect(rootsForPerson(TIMES, admin, true).map((t) => t.name)).toEqual([
+      "Marketing",
+      "TI",
+    ]);
+    expect(ownRootTeams(TIMES, admin).map((t) => t.name)).toEqual(["Marketing"]);
+  });
+
+  it("⚠️ resolve o vínculo na ÁRVORE: quem está só no subtime trabalha no time", () => {
+    expect(ownRootTeams(TIMES, pessoa([SEO])).map((t) => t.name)).toEqual([
+      "Marketing",
+    ]);
+    expect(ownRootTeams(TIMES, pessoa([JR])).map((t) => t.name)).toEqual([
+      "Marketing",
+    ]);
+  });
+
+  it("⚠️ VAZIO é resposta válida -- é o cadastro dela desde 08/09", () => {
+    // Papel de organização pode não ter vínculo nenhum (Spec 045, fatia B).
+    // Quem trata esse caso é `preferredTeams`, caindo no alcance.
+    expect(ownRootTeams(TIMES, pessoa([]))).toEqual([]);
+  });
+
+  it("sem usuário, vazio", () => {
+    expect(ownRootTeams(TIMES, null)).toEqual([]);
+  });
+
+  it("ordenado por nome, como todo lugar que responde 'a primeira'", () => {
+    expect(ownRootTeams(TIMES, pessoa([TI, SEO])).map((t) => t.name)).toEqual([
+      "Marketing",
+      "TI",
+    ]);
+  });
+});
+
 // SABOTAGENS medidas (contando também os testes de desenho, em
 // `components/__tests__/ContextSwitcher.test.tsx` -- 20 no total):
 //   A. Resolver a raiz pelo vínculo DIRETO, sem subir a árvore. **Cai 9**:
@@ -236,3 +281,85 @@ describe("currentContext — o botão diz ONDE VOCÊ ESTÁ", () => {
 //   B. Devolver todas as raízes para todo mundo. **Cai 7**.
 //   C. Virar rótulo quando há uma área só, ignorando `canManageOrg`.
 //      **Cai 3**: some a única porta para a tela de organização.
+
+// ⚠️⚠️ A §4.2 DA SPEC 048, que ficou para a fatia C de propósito: escrever
+// `?time=` antes de as telas honrarem o parâmetro poria uma URL que mente.
+describe("switcherHref -- trocar de time preserva a tela", () => {
+  const B = "time-b";
+
+  it("nas cinco telas recortadas, fica na MESMA tela", () => {
+    // Decisão dela: "trocar de time é gesto de trabalho, e jogar a pessoa para
+    // outra tela no meio dele é perder o lugar".
+    for (const tela of [
+      "/minhas-tarefas",
+      "/projetos",
+      "/arquivadas",
+      "/solicitacoes",
+      "/formularios",
+    ]) {
+      expect(switcherHref(tela, "", B)).toBe(`${tela}?time=${B}`);
+    }
+  });
+
+  it("⚠️ e PRESERVA os outros parâmetros da tela", () => {
+    // Sem isto a pessoa perderia a aba ou o filtro que escolheu por ter
+    // trocado de time.
+    expect(switcherHref("/minhas-tarefas", "?ver=lista&time=time-a", B)).toBe(
+      `/minhas-tarefas?ver=lista&time=${B}`,
+    );
+  });
+
+  it("no quadro, vai para o QUADRO do outro time (caminho, não parâmetro)", () => {
+    // ⚠️ `withTeam` aqui produziria `/quadro/<A>?time=<B>`, que o `activeTeam`
+    // ignora de propósito (o caminho ganha do parâmetro) -- a URL passaria a
+    // mentir sem efeito.
+    expect(switcherHref("/quadro/time-a", "", B)).toBe(`/quadro/${B}`);
+    expect(switcherHref("/quadro/time-a", "?quadro=xyz", B)).toBe(`/quadro/${B}`);
+    // O endereço legado, sem time no caminho, também é quadro.
+    expect(switcherHref("/quadro", "", B)).toBe(`/quadro/${B}`);
+  });
+
+  it("na organização, vai para a tela do time (a exceção da spec)", () => {
+    // "não há tela equivalente para preservar".
+    expect(switcherHref("/organizacao", "", B)).toBe(`/times/${B}`);
+  });
+
+  it("na tela de um time, troca o time da URL", () => {
+    expect(switcherHref("/times/time-a", "", B)).toBe(`/times/${B}`);
+    expect(switcherHref("/times/time-a", "?aba=inativos", B)).toBe(`/times/${B}`);
+  });
+
+  it("⚠️ numa tela que NÃO lê o parâmetro, não inventa `?time=`", () => {
+    // A tarefa pertence a UM time; "a mesma tarefa no outro time" não existe.
+    // Escrever o parâmetro aqui daria uma URL que diz o time e não filtra nada.
+    expect(switcherHref("/tarefa/t-1", "", B)).toBe(`/times/${B}`);
+    expect(switcherHref("/perfil", "", B)).toBe(`/times/${B}`);
+  });
+});
+
+// ⚠️⚠️ DEFEITO DE 14/09: com o Comercial ativo, "Time" no menu abria o Marketing.
+// O item ignorava o time ativo e usava o primeiro preferido.
+describe("peopleEntryFor -- o item Time segue o time ativo", () => {
+  const MKT_T: Team = { id: "mkt", workspace_id: "ws", parent_team_id: null, name: "Marketing", slug: "mkt" };
+  const COM_T: Team = { id: "com", workspace_id: "ws", parent_team_id: null, name: "Comercial", slug: "com" };
+  // Preferidos: onde a pessoa trabalha (Marketing) primeiro.
+  const PREFERIDOS = [MKT_T, COM_T];
+
+  it("⚠️ com o Comercial ativo, leva ao Comercial -- e não ao primeiro preferido", () => {
+    expect(
+      peopleEntryFor({ kind: "team", teamId: "com", fromUrl: true }, PREFERIDOS),
+    ).toEqual({ kind: "team", teamId: "com" });
+  });
+
+  it("sem time ativo resolvido (`null`), cai na regra de sempre", () => {
+    expect(peopleEntryFor(null, PREFERIDOS)).toEqual({ kind: "team", teamId: "mkt" });
+  });
+
+  it("\"Todos os times\" não é um time: regra de sempre", () => {
+    expect(peopleEntryFor({ kind: "all" }, PREFERIDOS)).toEqual({ kind: "team", teamId: "mkt" });
+  });
+
+  it("sem time nenhum, continua sem entrada", () => {
+    expect(peopleEntryFor({ kind: "none" }, [])).toEqual({ kind: "none" });
+  });
+});

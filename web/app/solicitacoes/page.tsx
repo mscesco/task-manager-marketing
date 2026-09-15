@@ -37,6 +37,8 @@ import {
 import { rotuloDaCategoria } from "@/lib/rotuloDaCategoria";
 
 import Loading from "@/components/Loading";
+import { useActiveTeam, useActiveTeamId } from "@/lib/useActiveTeam";
+import { navHref } from "@/lib/activeTeam";
 import { useDrawnOutline } from "@/components/AnimatedOutline";
 const STATUS_LABEL: Record<SolicitacaoStatus, string> = {
   PENDING: "Pendente",
@@ -73,6 +75,16 @@ export default function SolicitacoesPage() {
 }
 
 function Solicitacoes() {
+  // ⚠⚠ O TIME ATIVO VEM DA BARRA (Spec 048, fatia C/D), e não de um
+  // `useSearchParams` aqui: esta rota é estática e o hook derrubaria o build.
+  // Ver `lib/useActiveTeam.tsx`.
+  // ⚠⚠ `active === null` (a barra ainda não resolveu) e `kind: "none"` (ela
+  // resolveu, e não há time) são COISAS DIFERENTES, e confundi-las deixa a tela
+  // em `Loading` para sempre. `listTeamsAll()` no `AppShell` falha em silêncio
+  // de propósito (`.catch(() => {})`): sem esta distinção, uma falha de rede
+  // ali viraria uma fila que nunca carrega, sem erro nenhum na tela.
+  const { active, teamName: nomeDoTime } = useActiveTeam();
+  const timeAtivo = useActiveTeamId();
   const [filtro, setFiltro] = useState<Filtro>("PENDING");
   const [pagina, setPagina] = useState(1);
   const [envios, setEnvios] = useState<Batch[] | null>(null);
@@ -84,12 +96,18 @@ function Solicitacoes() {
   const [aberto, setAberto] = useState<string | null>(null);
 
   const carregar = useCallback(async () => {
+    // ⚠⚠ ESPERA O TIME em vez de buscar sem recorte. Buscar antes mostraria a
+    // fila da organização inteira por um instante -- e aqui isso é pior que numa
+    // lista qualquer: quem tria poderia APROVAR um pedido de outro time no
+    // meio do pisca.
+    if (active === null) return;
     setErro(null);
     try {
       const r = await listarEnvios({
         ...(filtro === "ALL" ? {} : { filtro: filtro as SolicitacaoFiltro }),
         page: pagina,
         size: TAMANHO_PAGINA,
+        teamId: timeAtivo,
       });
       setEnvios(r.items);
       setTotalEnvios(r.total);
@@ -107,7 +125,12 @@ function Solicitacoes() {
       }
       setEnvios([]);
     }
-  }, [filtro, pagina]);
+    // ⚠️ `timeAtivo` NAS DEPENDÊNCIAS: trocar de time reescreve a query, e sem
+    // isto a fila ficaria a mesma com a URL dizendo outro time.
+    // ⚠️ `active === null` E NÃO `active`: o objeto é NOVO a cada render da
+    // barra, e depender dele refazia o pedido a cada render -- vários pedidos
+    // em voo, e o último a responder vencia (defeito de 14/09).
+  }, [filtro, pagina, timeAtivo, active === null]);
 
   useEffect(() => {
     setEnvios(null);
@@ -142,7 +165,13 @@ function Solicitacoes() {
   return (
     <div>
       <PageHeader
-        title="Solicitações"
+        /* ⚠⚠ O NOME DO TIME NO TÍTULO (fatia D). A §7 da spec previu
+           exatamente este risco: *"a fila filtrada pode ficar VAZIA e parecer
+           quebrada (...) a tela precisa dizer 'a fila do Marketing está
+           vazia', e não mostrar um vazio sem contexto"*. Hoje quem tria vê
+           tudo; a partir desta fatia um gestor do Marketing deixa de ver a
+           fila do Comercial -- e sem o nome ele conclui que a fila sumiu. */
+        title={nomeDoTime ? `Solicitações · ${nomeDoTime}` : "Solicitações"}
         count={
           pendentes > 0
             ? `${pendentes} demanda${pendentes > 1 ? "s" : ""} pendente${pendentes > 1 ? "s" : ""}`
@@ -159,7 +188,10 @@ function Solicitacoes() {
           // qualquer um deles, ao editor e ao link público de cada um. Sem
           // `target="_blank"`: é navegação interna do app, não é mais "abrir
           // o que o solicitante vê".
-          <Link className="btn btn-ghost ml-auto" href="/formularios">
+          // ⚠️ O TIME VAI JUNTO (14/09): o caminho puro apagava o `?time=` e
+          // a tela de formulários caía na reserva -- saindo da fila do
+          // Comercial, abria os formulários do Marketing.
+          <Link className="btn btn-ghost ml-auto" href={navHref("/formularios", active)}>
             Gerenciar formulários
           </Link>
         }
@@ -198,7 +230,9 @@ function Solicitacoes() {
 
       {envios !== null && envios.length === 0 && !erro && (
         <EmptyState
-          title="Nenhum envio aqui"
+          title={
+            nomeDoTime ? `Nenhum envio em ${nomeDoTime}` : "Nenhum envio aqui"
+          }
           description={
             filtro === "PENDING"
               ? "Quando alguém enviar o formulário público, o pedido aparece nesta fila."
@@ -315,7 +349,7 @@ function CardEnvio({
   // arredondado; e mover o clique para o cartão inteiro faria os botões de
   // dentro (aprovar, recusar) alternarem a seção sem querer.
   // ⚠️ `radius` 8 = o `rounded-lg` do `Card`.
-  const { alvo, outline } = useDrawnOutline();
+  const { target, outline } = useDrawnOutline();
 
   return (
     <Card className="relative p-4">
@@ -323,7 +357,7 @@ function CardEnvio({
       {/* ---------- cabeçalho: o solicitante ---------- */}
       <div
         onClick={onToggle}
-        {...alvo}
+        {...target}
         style={{
           display: "flex", alignItems: "flex-start", gap: 12, flexWrap: "wrap",
           cursor: "pointer",

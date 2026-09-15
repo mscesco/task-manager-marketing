@@ -15,6 +15,7 @@
 // pura e testavel isolada.
 
 import type { Team, TeamMembership } from "@/lib/api";
+import { rootTeamOf } from "@/lib/areas";
 
 // Papeis que enxergam os descendentes (espelha _MANAGING_ROLES no backend).
 const MANAGING_ROLES = new Set(["MANAGER", "ADMIN"]);
@@ -55,19 +56,6 @@ function withDescendants(teamId: string, teams: Team[]): Set<string> {
   return out;
 }
 
-/** Sobe da folha ate a raiz (parent === null), protegido contra ciclo. */
-function rootOf(teamId: string, teams: Team[]): string | null {
-  let atual = teams.find((t) => t.id === teamId);
-  let guard = 0;
-  while (atual && atual.parent_team_id !== null && guard < 1000) {
-    guard += 1;
-    const pai = teams.find((t) => t.id === atual!.parent_team_id);
-    if (!pai) break;
-    atual = pai;
-  }
-  return atual ? atual.id : null;
-}
-
 /**
  * Deriva a lente a partir dos vinculos do usuario (/me.teams), da arvore de
  * times (listTeams) e dos PAPEIS dele (/me.roles). Pura: nao bate na API.
@@ -100,10 +88,21 @@ function rootOf(teamId: string, teams: Team[]): string | null {
 export function computeLens(
   myTeams: TeamMembership[],
   allTeams: Team[],
-  roles: readonly string[] = []
+  roles: readonly string[],
+  activeRootId: string | null
 ): TeamLens {
-  const root = allTeams.find((t) => t.parent_team_id === null) ?? null;
-  const rootId = root ? root.id : null;
+  // ⚠️⚠️ A RAIZ VEM DE FORA, e ate 11/09 esta linha era
+  // `allTeams.find((t) => t.parent_team_id === null)` -- A PRIMEIRA RAIZ QUE
+  // APARECESSE. Com duas, a ordem e a que a API devolver, e o menu passou a
+  // responder pelo time errado: a Camila viu o Comercial vazio estando no
+  // Marketing. E o defeito 3.2 da Spec 048.
+  //
+  // ⚠️ SEM DEFAULT, de proposito -- mesmo argumento que a Spec 046 (fatia 4)
+  // usou em `default_board_and_column_for_status`: um
+  // `activeRootId: string | null = null` deixaria os dois chamadores
+  // compilando e continuando errados em silencio. Sem default, o `tsc` aponta
+  // os dois.
+  const rootId = activeRootId;
 
   // Admin (de time, legado, OU de organizacao) enxerga a arvore inteira --
   // espelha `visible_team_ids` devolvendo `None` no backend.
@@ -111,9 +110,7 @@ export function computeLens(
     return {
       rootId,
       visibleTeamIds: new Set(allTeams.map((t) => t.id)),
-      boardSubteams: allTeams
-        .filter((t) => t.parent_team_id !== null)
-        .sort((a, b) => a.name.localeCompare(b.name, "pt-BR")),
+      boardSubteams: subteamsOf(activeRootId, allTeams),
     };
   }
 
@@ -123,15 +120,39 @@ export function computeLens(
       for (const id of withDescendants(m.team_id, allTeams)) visible.add(id);
     } else {
       visible.add(m.team_id);
-      const r = rootOf(m.team_id, allTeams);
+      const r = rootTeamOf(m.team_id, allTeams);
       if (r) visible.add(r);
     }
   }
 
-  // Sub-abas = times visiveis que NAO sao a raiz, ordenados por nome.
-  const boardSubteams = allTeams
-    .filter((t) => t.parent_team_id !== null && visible.has(t.id))
-    .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+  // Sub-abas = subtimes DO TIME ATIVO que a lente alcanca.
+  //
+  // ⚠️⚠️ O RECORTE POR TIME E NOVO (11/09). Antes eram os subtimes visiveis de
+  // QUALQUER time, e para um ADMIN isso era a arvore inteira: o menu listava os
+  // subtimes do Comercial e do Marketing juntos, sem dizer de quem era cada um.
+  const boardSubteams = subteamsOf(activeRootId, allTeams).filter((t) =>
+    visible.has(t.id)
+  );
 
   return { rootId, visibleTeamIds: visible, boardSubteams };
+}
+
+/**
+ * Os subtimes -- diretos e indiretos -- do time raiz `rootId`.
+ *
+ * ⚠️ `null` devolve VAZIO, e nao "todos". Sem time ativo nao ha sub-aba a
+ * mostrar, e o menu com a arvore inteira e exatamente o defeito que o recorte
+ * veio matar. Falha fechada.
+ *
+ * ⚠️ Ordenado por nome, pelo mesmo motivo de `rootTeams`: a ordem da API nao e
+ * contrato, e uma lista de menu que troca de ordem entre dois carregamentos le
+ * como se o produto tivesse mexido em algo.
+ */
+function subteamsOf(rootId: string | null, allTeams: Team[]): Team[] {
+  if (rootId === null) return [];
+  return allTeams
+    .filter(
+      (t) => t.parent_team_id !== null && rootTeamOf(t.id, allTeams) === rootId
+    )
+    .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
 }

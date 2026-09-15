@@ -23,7 +23,7 @@ from sqlalchemy import and_, delete, exists, func, or_, select, text
 from sqlalchemy.orm import aliased
 from sqlalchemy.sql.elements import ColumnElement
 
-from app.core.tenant import require_tenant
+from app.core.tenant import TeamNode, require_tenant
 from app.db.models import (
     BoardColumn,
     Project,
@@ -109,9 +109,7 @@ def _casa_busca_na_subarvore(
     return sub.exists()
 
 
-def _lente_de_time(
-    visible: frozenset[uuid.UUID], *, me: uuid.UUID
-) -> ColumnElement[bool]:
+def _lente_de_time(visible: frozenset[uuid.UUID]) -> ColumnElement[bool]:
     """A camada (B): a lente de time, em SQL. UM lugar, DOIS chamadores.
 
     ⚠️ EXTRAIDA NA SPEC 037 (F6), E A EXTRACAO E PARTE DA ENTREGA. Ate a F6
@@ -129,30 +127,86 @@ def _lente_de_time(
     que o filtro por `team_id` nao esconde o furo por acidente.
 
     ⚠️ `created_by` NAO ESTA AQUI, e a ausencia e a E1 (F5). Quem criou nao
-    enxerga mais por ter criado. O `Project.created_by` do primeiro ramo e
-    outra coisa -- e "pessoal proprio", e sem ele a pessoa perde o proprio
-    projeto pessoal de vista.
+    enxerga mais por ter criado.
+
+    ⚠️⚠️ E ATE 10/09 HAVIA UM RAMO DE `Project.created_by` AQUI -- o "pessoal
+    proprio", que mantinha o dono vendo o projeto pessoal dele fora da lente.
+    Ele saiu junto com o projeto pessoal, e com ele saiu o parametro `me`: hoje
+    esta funcao nao depende de QUEM pergunta, so da lente de time. Se um dia
+    voltar a depender, o parametro volta -- e sera sinal de que uma excecao de
+    visibilidade por pessoa nasceu de novo.
 
     Exige que `Project` ja esteja no FROM (outerjoin), o que os dois
     chamadores fazem.
+
+    ⚠️ DELEGA para `_time_efetivo_em` desde a Spec 048: o RECORTE por time
+    ativo faz a mesma pergunta com outro conjunto, e duas escritas da mesma
+    pergunta divergiriam -- ver o bloco de la.
+    """
+    return _time_efetivo_em(visible)
+
+
+def _time_efetivo_em(
+    times: frozenset[uuid.UUID] | set[uuid.UUID],
+) -> ColumnElement[bool]:
+    """"O time da tarefa esta neste conjunto?" -- UMA definicao, DOIS usos.
+
+    ⚠⚠ EXTRAIDA NA SPEC 048 porque a pergunta passou a ser feita por dois
+    motivos diferentes, e as respostas TEM de coincidir:
+
+        a LENTE      (`_lente_de_time`)      -- "posso ver esta tarefa?"
+        o RECORTE    (`under_team_id`)       -- "ela e do time que estou vendo?"
+
+    Se as duas usassem escritas diferentes de "o time da tarefa", apareceria o
+    pior tipo de defeito: tarefa que passa pela lente e cai no recorte (ou o
+    contrario) por uma diferenca de forma que ninguem ve na tela -- some da
+    lista sem erro nenhum.
+
+    ⚠⚠ E A ESCRITA E ESTA, e nao `coalesce(Project.team_id, Task.team_id)`,
+    embora o `list_my_relations` descreva a regra de alcance com o coalesce
+    (linha ~864). As duas formas DIFEREM em um caso: tarefa com `project_id`
+    preenchido cujo projeto nao esta visivel (apagado, ou fora do tenant). O
+    `outerjoin` nao acha linha, `Project.team_id` fica NULL, e o coalesce
+    CAIRIA para `task.team_id` -- ou seja, mostraria a tarefa de um projeto
+    que a pessoa nao ve. Esta forma exige `project_id IS NULL` para olhar o
+    time da tarefa, e portanto fecha.
+
+    ⚠️ Exige `Project` no FROM (outerjoin). Os tres chamadores fazem.
     """
     return or_(
-        # pessoal proprio: sempre visivel
-        and_(
-            Project.is_personal.is_(True),
-            Project.created_by == me,
-        ),
-        # projeto comum cujo time esta na lente -> ve tudo dele
-        and_(
-            Project.is_personal.is_(False),
-            Project.team_id.in_(visible),
-        ),
-        # avulsa cujo time esta na lente
+        # projeto cujo time esta no conjunto -> vale para todas as tarefas dele
+        Project.team_id.in_(times),
+        # avulsa cujo proprio time esta no conjunto
         and_(
             Task.project_id.is_(None),
-            Task.team_id.in_(visible),
+            Task.team_id.in_(times),
         ),
     )
+
+
+def _sob_o_time(
+    team_id: uuid.UUID, tree: tuple[TeamNode, ...]
+) -> ColumnElement[bool]:
+    """O recorte da TELA: tarefas do time e dos DESCENDENTES dele.
+
+    ⚠⚠ ISTO NAO E O `team_id` QUE JA EXISTE em `GET /tasks`. Aquele casa
+    `Task.team_id == team_id` -- igualdade crua no time da PROPRIA tarefa -- e
+    usar aquele para recortar por raiz teria dois defeitos de uma vez:
+
+      1. esconderia toda tarefa INTERNA de subtime (o time dela e o subtime,
+         nao a raiz);
+      2. ignoraria o time do PROJETO, que e quem decide o alcance de uma
+         tarefa de projeto.
+
+    Foi a armadilha mais provavel desta fatia, porque o parametro existe e
+    usa-lo parecia pronto.
+
+    ⚠️ O `team_id` antigo FICA -- endpoint e contrato. Registrado: o front
+    nao o usa em nenhum lugar (conferido em 11/09, `lib/api.ts` nunca o
+    escreve para `/tasks`), entao ele serve so a clientes externos. Aposentar
+    um parametro de rota e assunto de spec propria.
+    """
+    return _time_efetivo_em({team_id} | team_scope.descendants(team_id, tree))
 
 
 class TaskRepository(BaseRepository[Task]):
@@ -207,15 +261,17 @@ class TaskRepository(BaseRepository[Task]):
         status: ColumnElement | None = None,
         priority: ColumnElement | None = None,
         team_id: uuid.UUID | None = None,
+        under_team_id: uuid.UUID | None = None,
         created_by: uuid.UUID | None = None,
         include_archived: bool = False,
         archived_only: bool = False,
         q: str | None = None,
     ) -> Page[Task]:
-        """Lista tasks com filtros + privacidade do pessoal.
+        """Lista tasks com filtros.
 
-        PRIVACIDADE: JOIN com project filtrando
-        `project.is_personal=false OR project.created_by=me`.
+        ⚠️ ATE 10/09 HAVIA AQUI UMA CAMADA (A) DE PRIVACIDADE, que escondia
+        pessoal alheio "ate do admin". Ela saiu com o projeto pessoal -- hoje a
+        lente de time e a unica camada.
 
         `q` (Spec 042, A2): busca por TITULO, casando tambem o titulo de
         qualquer DESCENDENTE e devolvendo a raiz. Ver
@@ -224,8 +280,9 @@ class TaskRepository(BaseRepository[Task]):
         tenant = require_tenant()
         base = self._base_select()
 
-        # Privacidade do pessoal + lente de time (Entrega 3).
-        # LEFT JOIN: tarefa avulsa (project_id NULL) nao some.
+        # Lente de time (Entrega 3).
+        # LEFT JOIN: tarefa avulsa (project_id NULL) nao some -- e o `Project`
+        # continua no FROM porque `_lente_de_time` le `Project.team_id`.
         visible = team_scope.visible_team_ids(
             tenant.memberships,
             tenant.team_tree,
@@ -240,18 +297,9 @@ class TaskRepository(BaseRepository[Task]):
             ),
         )
 
-        # (A) nunca mostrar pessoal alheio (vale ate pra admin).
-        base = base.where(
-            or_(
-                Task.project_id.is_(None),
-                Project.is_personal.is_(False),
-                Project.created_by == tenant.user_id,
-            )
-        )
-
-        # (B) lente de time -- pulada para admin (visible is None).
+        # Lente de time -- pulada para admin (visible is None).
         if visible is not None:
-            base = base.where(_lente_de_time(visible, me=tenant.user_id))
+            base = base.where(_lente_de_time(visible))
 
         # Filtros opcionais.
         if project_id is not None:
@@ -266,6 +314,8 @@ class TaskRepository(BaseRepository[Task]):
             base = base.where(Task.priority == priority)
         if team_id is not None:
             base = base.where(Task.team_id == team_id)
+        if under_team_id is not None:
+            base = base.where(_sob_o_time(under_team_id, tenant.team_tree))
         if created_by is not None:
             base = base.where(Task.created_by == created_by)
         if q is not None and q.strip() != "":
@@ -344,6 +394,7 @@ class TaskRepository(BaseRepository[Task]):
         params: PageParams,
         *,
         relations: frozenset[str],
+        under_team_id: uuid.UUID | None,
     ) -> Page[tuple[Task, Project | None, frozenset[str]]]:
         """Tasks do tenant (nao deletadas) onde sou assignee/creator/watcher.
 
@@ -410,22 +461,20 @@ class TaskRepository(BaseRepository[Task]):
             )
         )
 
-        # (A) nunca mostrar pessoal alheio (vale ate pra admin).
-        base = base.where(
-            or_(
-                Task.project_id.is_(None),
-                Project.is_personal.is_(False),
-                Project.created_by == me,
-            )
-        )
-
-        # (B) lente de time -- pulada para admin (visible is None), igual ao
+        # Lente de time -- pulada para admin (visible is None), igual ao
         # `list_page`. MESMO predicado, uma copia so: `_lente_de_time`.
         visible = team_scope.visible_team_ids(tenant.memberships,
             tenant.team_tree,
             org_role=tenant.org_role,)
         if visible is not None:
-            base = base.where(_lente_de_time(visible, me=me))
+            base = base.where(_lente_de_time(visible))
+
+        # ⚠️ O RECORTE DA TELA (Spec 048). SEM DEFAULT no parametro: esta lista
+        # e "as minhas tarefas", e a diferenca entre "de todos os times" e "de
+        # um time" e a tela inteira. `None` = sem recorte, e e resposta
+        # legitima -- o filtro "tudo" de Minhas tarefas (§4.3) e exatamente ele.
+        if under_team_id is not None:
+            base = base.where(_sob_o_time(under_team_id, tenant.team_tree))
 
         # Recorte por relacao selecionada (OR). `relations` nunca vazio
         # (o router preenche o default com as tres).
@@ -892,10 +941,6 @@ class TaskRepository(BaseRepository[Task]):
         Hoje os dois dao o mesmo resultado: os 20 projetos de producao estao
         todos na raiz (consulta 6 de `scripts/invariantes.sql`).
 
-        ⚠️ PESSOAL NUNCA BLOQUEIA. Projeto pessoal e do dono e a lente de time
-        nao o alcanca nem o perde -- ele sai por `is_personal = false` no
-        filtro, e nao por ausencia de caso de teste.
-
         ⚠️ `is_archived` E `deleted_at` os DOIS. Arquivar nao e apagar
         (`ArchivableMixin`): sao dois estados independentes e cada um sozinho
         deixaria metade do passivo bloqueando movimentacao a toa.
@@ -955,7 +1000,6 @@ class TaskRepository(BaseRepository[Task]):
             .where(Task.workspace_id == tenant.workspace_id)
             .where(Task.deleted_at.is_(None))
             .where(Task.is_archived.is_(False))
-            .where(func.coalesce(Project.is_personal, False).is_(False))
             .where(BoardColumn.semantic.not_in(TERMINAL_SEMANTICS))
             .where(
                 or_(
@@ -1050,7 +1094,6 @@ class TaskRepository(BaseRepository[Task]):
             .where(Task.workspace_id == tenant.workspace_id)
             .where(Task.deleted_at.is_(None))
             .where(Task.is_archived.is_(False))
-            .where(func.coalesce(Project.is_personal, False).is_(False))
             .where(or_(eh_resp, eh_obs))
             .where(
                 or_(

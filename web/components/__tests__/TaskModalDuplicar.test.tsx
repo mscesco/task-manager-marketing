@@ -150,6 +150,7 @@ function montar(alcancam: string[] = [ANA, SUMIDO]) {
 function abrir(filhos: Task[] = []) {
   return render(
     <TaskModal
+      newTaskTeam={null}
       open
       duplicarDe={ORIGEM}
       filhosDaOrigem={filhos}
@@ -317,6 +318,7 @@ describe("TaskModal -- modo duplicar", () => {
       task({ id: "s1", title: "sub s1", parent_task_id: ORIGEM.id, assignee_ids: [SUMIDO] });
     const { rerender } = render(
       <TaskModal
+        newTaskTeam={null}
         open
         duplicarDe={ORIGEM}
         filhosDaOrigem={[pendente()]}
@@ -333,6 +335,7 @@ describe("TaskModal -- modo duplicar", () => {
 
     rerender(
       <TaskModal
+        newTaskTeam={null}
         open
         duplicarDe={ORIGEM}
         filhosDaOrigem={[pendente()]}
@@ -504,6 +507,7 @@ describe("TaskModal -- as edições da pessoa SOBREVIVEM", () => {
     montar();
     const { rerender } = render(
       <TaskModal
+        newTaskTeam={null}
         open
         duplicarDe={ORIGEM}
         filhosDaOrigem={[]}
@@ -524,6 +528,7 @@ describe("TaskModal -- as edições da pessoa SOBREVIVEM", () => {
     // ARRAY NOVO, como o Board manda a cada render.
     rerender(
       <TaskModal
+        newTaskTeam={null}
         open
         duplicarDe={ORIGEM}
         filhosDaOrigem={[]}
@@ -542,6 +547,7 @@ describe("TaskModal -- as edições da pessoa SOBREVIVEM", () => {
     montar();
     const { rerender } = render(
       <TaskModal
+        newTaskTeam={null}
         open
         duplicarDe={ORIGEM}
         filhosDaOrigem={[]}
@@ -565,6 +571,7 @@ describe("TaskModal -- as edições da pessoa SOBREVIVEM", () => {
 
     rerender(
       <TaskModal
+        newTaskTeam={null}
         open
         duplicarDe={ORIGEM}
         filhosDaOrigem={[]}
@@ -581,6 +588,7 @@ describe("TaskModal -- as edições da pessoa SOBREVIVEM", () => {
     const filhas = [filha("s1"), filha("s2")];
     const { rerender } = render(
       <TaskModal
+        newTaskTeam={null}
         open
         duplicarDe={ORIGEM}
         filhosDaOrigem={filhas}
@@ -600,6 +608,7 @@ describe("TaskModal -- as edições da pessoa SOBREVIVEM", () => {
     // Array NOVO com o mesmo conteúdo -- o que o Board faz.
     rerender(
       <TaskModal
+        newTaskTeam={null}
         open
         duplicarDe={ORIGEM}
         filhosDaOrigem={[filha("s1"), filha("s2")]}
@@ -631,6 +640,7 @@ describe("TaskModal -- guardas do pré-preenchimento", () => {
     montar();
     const { rerender } = render(
       <TaskModal
+        newTaskTeam={null}
         open
         duplicarDe={ORIGEM}
         filhosDaOrigem={[]}
@@ -650,6 +660,7 @@ describe("TaskModal -- guardas do pré-preenchimento", () => {
     // Mesmo id, objeto novo -- o que uma re-busca de tarefas produz.
     rerender(
       <TaskModal
+        newTaskTeam={null}
         open
         duplicarDe={{ ...ORIGEM }}
         filhosDaOrigem={[]}
@@ -679,6 +690,7 @@ describe("TaskModal -- guardas do pré-preenchimento", () => {
     );
     render(
       <TaskModal
+        newTaskTeam={null}
         open
         duplicarDe={ORIGEM}
         filhosDaOrigem={[]}
@@ -714,6 +726,7 @@ describe("TaskModal -- a espera pelo alcance é real", () => {
 
     render(
       <TaskModal
+        newTaskTeam={null}
         open
         duplicarDe={ORIGEM}
         filhosDaOrigem={[]}
@@ -758,6 +771,7 @@ describe("TaskModal -- responsável DESATIVADO depois (o 422 de 04/08)", () => {
 
     render(
       <TaskModal
+        newTaskTeam={null}
         open
         duplicarDe={ORIGEM}
         filhosDaOrigem={[]}
@@ -821,6 +835,7 @@ describe("TaskModal -- board_id na criacao (fatia 5b-6)", () => {
     vi.mocked(api.createTask).mockResolvedValue(task({ id: "nova", title: "X" }));
     render(
       <TaskModal
+        newTaskTeam={null}
         open
         defaultBoardId={defaultBoardId}
         onClose={() => {}}
