@@ -61,7 +61,7 @@ from app.db.models.operational import Task
 from app.db.unit_of_work import UnitOfWork
 from app.main import create_app
 from app.modules.auth.api.dependencies import get_tenant_context
-from app.modules.auth.domain.permissions import permissions_for_roles
+from app.modules.auth.domain.permissions import permissions_for_actor
 from app.modules.tasks.application.board_service import (
     CODIGO_SEM_DESTINO,
     CODIGO_SEMANTICA_OBRIGATORIA,
@@ -97,12 +97,16 @@ async def _setup(db):
     arvore = (node(raiz), node(seo, raiz), node(crm, raiz))
 
     def _ctx(user_id, team_id, papel):
+        # ⚠️ PERMISSOES COM ESCOPO (Spec 049, fatia B) -- mesmo motivo do
+        # `test_boards_escrita_http_db`: com `frozenset`, o 403 do supervisor em
+        # subtime alheio dependia de a trava recalcular o subtime a mao.
+        vinculos = (Membership(team_id=team_id, role=papel),)
         return TenantContext(
             workspace_id=ws,
             user_id=user_id,
             roles=frozenset({papel}),
-            permissions=permissions_for_roles(frozenset({papel})),
-            memberships=(Membership(team_id=team_id, role=papel),),
+            permissions=permissions_for_actor(memberships=vinculos, tree=arvore),
+            memberships=vinculos,
             team_tree=arvore,
         )
 

@@ -69,6 +69,7 @@ function montar(over: Partial<Parameters<typeof SeletorDeQuadro>[0]> = {}) {
     quadros: QUADROS,
     selecionado: null,
     podeGerir: true,
+    podeApagar: true,
     onSelecionar: vi.fn(),
     onMudou: vi.fn(),
     // ⚠️ O DEFAULT DO HELPER E `false` -- a tela de SUBTIME, que e o assunto da

@@ -74,11 +74,40 @@ def test_gestor_opera_mas_nao_desfaz_a_organizacao():
     gestor = permissions_for_org_role("GESTOR")
     admin = permissions_for_org_role("ADMIN")
 
-    assert "workspace.manage" not in gestor
-    assert "team.manage" in gestor
-    # A diferenca e EXATAMENTE uma permissao -- se alguem acrescentar outra
-    # sem decidir, este assert cai.
-    assert admin - gestor == frozenset({"workspace.manage"})
+    # ⚠️ Desde a Spec 049, fatia G, o GESTOR EDITA a organizacao (item 02) --
+    # o que ele nao faz e desfaze-la: apagar e mover time seguem do ADMIN.
+    assert "organization.update" in gestor
+    assert "subteam.delete" not in gestor
+    assert "subteam.create" in gestor
+    # A diferenca e EXATAMENTE o que era `workspace.manage` -- desde a Spec 049
+    # (fatia A), os cinco verbos em que ele foi cortado.
+    #
+    # ⚠️⚠️ E DESDE A FATIA C ESTE ASSERT E O GUARDIAO DO GESTOR. A lista dele
+    # deixou de ser "ADMIN menos cinco" e passou a ser escrita: um verbo novo no
+    # ADMIN nao chega mais ao GESTOR sozinho -- ele entra nesta diferenca, e
+    # este assert cai. Quem o fizer passar tem de DECIDIR: escrever o verbo na
+    # lista do GESTOR, ou acrescenta-lo aqui como mais uma coisa que so o ADMIN
+    # faz.
+    assert admin - gestor == frozenset(
+        {
+            # o que era `workspace.manage` (fatia A), MENOS o que a fatia G deu
+            # ao GESTOR (item 02): editar a organizacao e dar/tirar papel de
+            # organizacao -- com o teto no servico, e nao aqui.
+            "subteam.delete",
+            "team.move",
+            # ⭐ fatia D, item 01: "o admin apaga, o gestor nao" -- e SO os
+            # deletes que o Mapa de 10/09 marca. `task.delete` e
+            # `person.deactivate` ficam com o GESTOR: sao as duas excecoes dela.
+            "membership.delete",
+            "form.delete",
+            "project.delete",
+            "board.delete.root",
+            "board.delete",
+            "column.delete",
+        }
+    )
+    assert "task.delete" in gestor
+    assert "person.deactivate" in gestor
 
 
 def test_sem_papel_de_organizacao_nao_ganha_nada():
@@ -117,16 +146,28 @@ def test_a_fonte_velha_continua_valendo():
     assert team_scope.is_admin(vinculo_admin, org_role=None) is True
 
 
-def test_gestor_nao_ve_tudo():
-    """GESTOR administra a organizacao, mas NAO e a lente do ADMIN.
+def test_gestor_ve_tudo_sem_ser_admin():
+    """GESTOR ve tudo -- e continua NAO sendo ADMIN.
 
-    ⚠️ `is_admin` responde so por ADMIN. Se um dia o GESTOR precisar enxergar
-    todas as areas, isso e decisao de produto e entra aqui de propósito -- nao
-    de carona.
+    ⚠️⚠️ ESTE TESTE AFIRMOU O CONTRARIO ATE 14/09, e o contrario nao era
+    decisao. Ele se chamava `test_gestor_nao_ve_tudo`, esperava a lente VAZIA,
+    e dizia que ver tudo "e decisao de produto e entra aqui de proposito". A
+    decisao JA EXISTIA, escrita antes deste arquivo: `045/decisoes.md`, tabela
+    da lente -- *"ADMIN / GESTOR | tudo"* -- e, na lista de premissas,
+    *"Premissa em vigor: gestor ve tudo."*
+
+    O que o teste protegia na pratica era um GESTOR que nao via tarefa
+    nenhuma: 404 em toda tarefa, 403 em todo formulario. Achado pela matriz da
+    Spec 049 (fatia 0) e consertado na fatia 0b.
+
+    ⚠️ AS DUAS AFIRMACOES FICAM SEPARADAS de proposito: `is_admin` continua
+    respondendo so por ADMIN (e a pergunta "quem DEFINE a organizacao"), e a
+    lente e decidida pelo papel de organizacao, em `visible_team_ids`.
     """
     raiz = __import__("uuid").uuid4()
     assert team_scope.is_admin((), org_role="GESTOR") is False
-    assert team_scope.visible_team_ids((), (node(raiz),), org_role="GESTOR") == frozenset()
+    assert team_scope.visible_team_ids((), (node(raiz),), org_role="GESTOR") is None
+    assert team_scope.editable_team_ids((), (node(raiz),), org_role="GESTOR") is None
 
 
 # ------------------------------------------------------------- ponta a ponta

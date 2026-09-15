@@ -60,17 +60,17 @@ def test_manager_manda_na_propria_arvore_e_nao_na_irma():
     """
     p = _ator((MKT, "MANAGER"))
 
-    assert p.can_in("team.manage", MKT) is True
-    assert p.can_in("team.manage", SEO) is True      # desce a arvore
-    assert p.can_in("team.manage", MIDIAS) is True
+    assert p.can_in("subteam.update", MKT) is True
+    assert p.can_in("subteam.update", SEO) is True      # desce a arvore
+    assert p.can_in("subteam.update", MIDIAS) is True
 
     # ⚠️ AQUI ESTAVA O BURACO. TI e IRMAO, nao descendente.
-    assert p.can_in("team.manage", TI) is False
-    assert p.can_in("team.manage", SUPORTE) is False
+    assert p.can_in("subteam.update", TI) is False
+    assert p.can_in("subteam.update", SUPORTE) is False
 
     # E a pergunta AMPLA continua respondendo True -- de proposito: ela serve
     # ao portao de ROTA, que ainda nao sabe qual e o alvo.
-    assert p.can("team.manage") is True
+    assert p.can("subteam.update") is True
 
 
 def test_manager_de_duas_raizes_manda_nas_duas():
@@ -82,7 +82,7 @@ def test_manager_de_duas_raizes_manda_nas_duas():
     p = _ator((MKT, "MANAGER"), (TI, "MANAGER"))
 
     for time in (MKT, SEO, MIDIAS, TI, SUPORTE):
-        assert p.can_in("team.manage", time) is True
+        assert p.can_in("subteam.update", time) is True
 
 
 # ---------------------------------------------------- execucao: time + raiz
@@ -114,9 +114,9 @@ def test_supervisor_administra_membro_SO_no_proprio_subtime():
     p = _ator((SEO, "SUPERVISOR"))
 
     assert p.can_in("task.create", MKT) is True          # trabalha no geral
-    assert p.can_in("member.manage.subteam", SEO) is True
-    assert p.can_in("member.manage.subteam", MKT) is False   # <- a excecao
-    assert p.can_in("board.manage.subteam", MKT) is False
+    assert p.can_in("membership.create", SEO) is True
+    assert p.can_in("membership.create", MKT) is False   # <- a excecao
+    assert p.can_in("board.update", MKT) is False
 
 
 def test_para_comando_as_duas_do_subteam_descem_a_arvore():
@@ -126,9 +126,9 @@ def test_para_comando_as_duas_do_subteam_descem_a_arvore():
     """
     p = _ator((MKT, "MANAGER"))
 
-    assert p.can_in("member.manage.subteam", SEO) is True
-    assert p.can_in("board.manage.subteam", MIDIAS) is True
-    assert p.can_in("member.manage.subteam", SUPORTE) is False  # arvore irma
+    assert p.can_in("membership.create", SEO) is True
+    assert p.can_in("board.update", MIDIAS) is True
+    assert p.can_in("membership.create", SUPORTE) is False  # arvore irma
 
 
 # ------------------------------------------------------------- organizacao
@@ -140,8 +140,8 @@ def test_papel_de_organizacao_vale_em_todo_lugar_sem_ter_time():
 
     assert p.by_team == {}
     for time in (MKT, TI, SEO, SUPORTE):
-        assert p.can_in("workspace.manage", time) is True
-    assert p.can("workspace.manage") is True
+        assert p.can_in("organization.update", time) is True
+    assert p.can("organization.update") is True
 
 
 def test_sem_time_nao_e_curinga():
@@ -151,10 +151,10 @@ def test_sem_time_nao_e_curinga():
     -- so a parcela global (organizacao) responde por ele.
     """
     manager = _ator((MKT, "MANAGER"))
-    assert manager.can_in("team.manage", None) is False
+    assert manager.can_in("subteam.update", None) is False
 
     admin_org = _ator(org_role="ADMIN")
-    assert admin_org.can_in("workspace.manage", None) is True
+    assert admin_org.can_in("organization.update", None) is True
 
 
 # ---------------------------------------------------- compatibilidade
@@ -168,16 +168,16 @@ def test_o_contrato_antigo_continua_de_pe():
     """
     p = _ator((MKT, "MANAGER"))
 
-    assert "team.manage" in p
-    assert "workspace.manage" not in p
-    assert "team.manage" in p.all_permissions()
+    assert "subteam.update" in p
+    assert "organization.update" not in p
+    assert "subteam.update" in p.all_permissions()
 
     ctx = TenantContext(
         workspace_id=uuid.uuid4(), user_id=uuid.uuid4(), permissions=p
     )
-    assert ctx.has_permission("team.manage") is True
-    assert ctx.has_permission_in("team.manage", MKT) is True
-    assert ctx.has_permission_in("team.manage", TI) is False
+    assert ctx.has_permission("subteam.update") is True
+    assert ctx.has_permission_in("subteam.update", MKT) is True
+    assert ctx.has_permission_in("subteam.update", TI) is False
 
 
 def test_contexto_legado_com_frozenset_cai_para_a_pergunta_ampla():
@@ -190,6 +190,6 @@ def test_contexto_legado_com_frozenset_cai_para_a_pergunta_ampla():
     ctx = TenantContext(
         workspace_id=uuid.uuid4(),
         user_id=uuid.uuid4(),
-        permissions=frozenset({"team.manage"}),
+        permissions=frozenset({"subteam.update"}),
     )
-    assert ctx.has_permission_in("team.manage", TI) is True
+    assert ctx.has_permission_in("subteam.update", TI) is True

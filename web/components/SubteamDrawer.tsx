@@ -40,8 +40,17 @@ import {
   type Team,
   type TeamMemberComCadeado,
 } from "@/lib/api";
-import { papeisAtribuiveis, type Alcance } from "@/lib/permissoesMembros";
-import { confirmacaoValida, descreveConteudo } from "@/lib/gestaoTimes";
+import {
+  papeisAtribuiveis,
+  podeRemoverDoTime,
+  type Alcance,
+} from "@/lib/permissoesMembros";
+import type { Permission } from "@/lib/permissions.generated";
+import {
+  confirmacaoValida,
+  descreveConteudo,
+  podeEditar,
+} from "@/lib/gestaoTimes";
 import { ROLE_LABEL } from "@/components/MembersTable";
 import { directMembers, subteamCandidates } from "@/lib/teamScreen";
 
@@ -51,6 +60,7 @@ export default function SubteamDrawer({
   isAdmin,
   canManage,
   scope,
+  permissoes,
   onClose,
   onChanged,
   onRefresh,
@@ -62,6 +72,12 @@ export default function SubteamDrawer({
   isAdmin: boolean;
   canManage: boolean;
   scope: Alcance;
+  /**
+   * ⚠️ OBRIGATÓRIA desde a Spec 049, fatia D: "Tirar" pergunta o verbo
+   * (`membership.delete`), e o alcance amplo sozinho não basta -- o GESTOR o
+   * tem e não tira ninguém de time. Ver `podeRemoverDoTime`.
+   */
+  permissoes: readonly Permission[];
   onClose: () => void;
   /** Mudou algo que FECHA a gaveta (renomear, excluir). */
   onChanged: (aviso: string) => Promise<void>;
@@ -152,7 +168,11 @@ export default function SubteamDrawer({
         </div>
 
         <div className="flex-1 overflow-y-auto p-4">
-          {canManage && <Identity team={team} onChanged={onChanged} />}
+          {/* ⚠️ RENOMEAR PERGUNTA AO SERVIDOR, e não ao alcance (Spec 049, fatia
+              F). O supervisor edita o próprio subtime sem ter alcance amplo; e
+              o gerente de uma árvore tem alcance amplo sem editar o subtime da
+              outra. `canManage` responde as duas errado. */}
+          {podeEditar(team) && <Identity team={team} onChanged={onChanged} />}
 
           <section className="mt-5">
             <h3 className="label mb-2">Quem está aqui</h3>
@@ -203,7 +223,8 @@ export default function SubteamDrawer({
                       isAdmin={isAdmin}
                       onRefresh={onRefresh}
                     />
-                    {canManage && (
+                    {canManage &&
+                      podeRemoverDoTime(scope, team.id, role, permissoes) && (
                       <RemoveFromTeam
                         member={member}
                         team={team}

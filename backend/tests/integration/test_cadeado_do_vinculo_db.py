@@ -115,12 +115,16 @@ async def test_manager_NAO_edita_vinculo_de_manager(db) -> None:
         )
 
 
-async def test_supervisor_NAO_troca_papel_de_ninguem(db) -> None:
-    """Spec 028/D2: trocar papel nao foi aberto ao supervisor.
+async def test_supervisor_troca_papel_so_no_proprio_subtime(db) -> None:
+    """Spec 049, fatia H: o cadeado ABRE para o supervisor -- no subtime dele.
 
-    ⚠️ E ele CHEGA no service -- a 028 abriu `assign` e `remove` para
-    `member.manage.subteam`. O cadeado tem de dizer nao aqui, senao a tela do
-    supervisor oferece uma promocao que o PATCH recusa.
+    ⚠️⚠️ ESTE TESTE SE CHAMAVA `test_supervisor_NAO_troca_papel_de_ninguem` e
+    afirmava a D2 da Spec 028 ("trocar papel nao foi aberto ao supervisor").
+    A Camila a revogou -- *"supervisor troca o cargo de alguem dentro do seu
+    subtime"* (14/09), e rebaixar outro supervisor tambem (15/09).
+
+    ⚠️ AS DUAS METADES SAO O TESTE. So a primeira passaria com o cadeado
+    aberto em todo lugar; so a segunda, com ele fechado em todo lugar.
     """
     ws, raiz, seo, _admin = await _mundo(db)
     sup = await f.make_user(db, workspace_id=ws, email="sup@t.dev")
@@ -131,10 +135,19 @@ async def test_supervisor_NAO_troca_papel_de_ninguem(db) -> None:
     await f.add_member(
         db, workspace_id=ws, user_id=operador, team_id=seo, role="OPERATOR"
     )
+    na_raiz = await f.make_user(db, workspace_id=ws, email="raiz@t.dev")
+    await f.add_member(
+        db, workspace_id=ws, user_id=na_raiz, team_id=raiz, role="OPERATOR"
+    )
 
     with _como(ws, sup, raiz, seo, "SUPERVISOR"):
-        assert not MemberService(db).pode_trocar_papel_do_vinculo(
+        svc = MemberService(db)
+        assert svc.pode_trocar_papel_do_vinculo(
             user_id=operador, team_id=seo, papel_atual=UserTeamRole.OPERATOR
+        )
+        # A raiz nao e dele: `membership.update` e `_OWN_TEAM_ONLY`.
+        assert not svc.pode_trocar_papel_do_vinculo(
+            user_id=na_raiz, team_id=raiz, papel_atual=UserTeamRole.OPERATOR
         )
 
 

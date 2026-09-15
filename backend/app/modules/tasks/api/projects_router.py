@@ -17,8 +17,8 @@ Rotas:
     GET    /projects/{id}              -- get
     PATCH  /projects/{id}              -- update (project.update)
     DELETE /projects/{id}              -- soft delete (project.delete)
-    POST   /projects/{id}/archive      -- archive (project.update)
-    POST   /projects/{id}/unarchive    -- unarchive (project.update)
+    POST   /projects/{id}/archive      -- archive (project.archive)
+    POST   /projects/{id}/unarchive    -- unarchive (project.archive)
 """
 
 from __future__ import annotations
@@ -173,7 +173,7 @@ async def update_project(
 @router.post(
     "/{project_id}/archive",
     response_model=ProjectResponse,
-    dependencies=[Depends(require_permission("project.update"))],
+    dependencies=[Depends(require_permission("project.archive"))],
 )
 async def archive_project(
     project_id: uuid.UUID, uow: UoWDep
@@ -187,7 +187,7 @@ async def archive_project(
 @router.post(
     "/{project_id}/unarchive",
     response_model=ProjectResponse,
-    dependencies=[Depends(require_permission("project.update"))],
+    dependencies=[Depends(require_permission("project.archive"))],
 )
 async def unarchive_project(
     project_id: uuid.UUID, uow: UoWDep

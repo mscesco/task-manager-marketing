@@ -29,6 +29,9 @@ from app.shared.exceptions.base import BusinessRuleError
 
 _MANAGING_ROLES = frozenset({"ADMIN", "MANAGER"})
 
+#: Papéis de ORGANIZAÇÃO -- sem time, e por isso sem lente a calcular.
+ORG_ROLES = frozenset({"ADMIN", "GESTOR"})
+
 
 def _children_map(tree: tuple[TeamNode, ...]) -> dict[uuid.UUID, list[uuid.UUID]]:
     """Mapa pai -> filhos, para descer a árvore."""
@@ -109,8 +112,15 @@ def visible_team_ids(
     de passá-lo faz o admin de organização enxergar **menos**, nunca mais.
     Falha fechada de propósito: um esquecimento aqui vira "a tela ficou vazia",
     que alguém reporta no mesmo dia, e não "vazou time alheio", que ninguém vê.
+
+    ⚠️⚠️ TODO PAPEL DE ORGANIZAÇÃO VÊ TUDO, e não só o ADMIN (Spec 049, fatia
+    0b). Até 14/09 esta linha perguntava só `is_admin`, que conta ADMIN -- e o
+    GESTOR, que não tem vínculo de time por definição (Spec 045), ficava com a
+    lente VAZIA: 404 em toda tarefa, 403 em todo formulário. As permissões dele
+    eram de organização (`unscoped`), a lente não. Achado pela tabela da fatia
+    0, que é onde isto está provado.
     """
-    if is_admin(memberships, org_role=org_role):
+    if org_role in ORG_ROLES or is_admin(memberships, org_role=org_role):
         return None
     out: set[uuid.UUID] = set()
     for m in memberships:

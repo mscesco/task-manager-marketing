@@ -118,7 +118,7 @@ def test_tenant_context_carries_roles_and_permissions() -> None:
         assert ctx.has_role("ADMIN")
         assert not ctx.has_role("OPERATOR")
         assert ctx.has_permission("task.create")
-        assert not ctx.has_permission("workspace.manage")
+        assert not ctx.has_permission("organization.update")
 
 
 def test_permissions_derived_from_roles() -> None:
@@ -130,7 +130,7 @@ def test_permissions_derived_from_roles() -> None:
     assert "project.delete" not in operator  # operator nao deleta projeto
 
     admin = permissions_for_roles(frozenset({"ADMIN"}))
-    assert "workspace.manage" in admin
+    assert "organization.update" in admin
 
     # Uniao de papeis acumula permissoes; papel invalido e ignorado.
     mixed = permissions_for_roles(frozenset({"OPERATOR", "MANAGER", "LIXO"}))

@@ -3,8 +3,9 @@
 Como nao ha signup publico, e por estas rotas que usuarios
 entram no sistema: um admin/manager cadastra os membros.
 
-Autorizacao: cadastrar, vincular e desativar membros exige
-a permissao "team.manage" (ADMIN e MANAGER a possuem).
+Autorizacao: cada rota cobra o VERBO da acao (`person.*`, `membership.*`,
+`org_role.*`) -- desde a Spec 049 (fatia A); antes era `team.manage` para
+quase tudo. O "onde" continua no servico.
 Listar membros exige apenas estar autenticado.
 
 Rotas:
@@ -209,7 +210,7 @@ async def list_member_teams(
     "",
     response_model=MemberCreatedResponse,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_permission("team.manage"))],
+    dependencies=[Depends(require_permission("person.create"))],
 )
 async def create_member(
     payload: MemberCreateRequest, uow: UoWDep
@@ -248,7 +249,7 @@ async def create_member(
 @router.post(
     "/{user_id}/reset-password",
     response_model=ResetPasswordResponse,
-    dependencies=[Depends(require_permission("team.manage"))],
+    dependencies=[Depends(require_permission("person.update"))],
 )
 async def reset_member_password(
     user_id: uuid.UUID, uow: UoWDep
@@ -275,11 +276,9 @@ async def reset_member_password(
     "/{user_id}/team",
     response_model=TeamMembershipResponse,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[
-        Depends(
-            require_any_permission("team.manage", "member.manage.subteam")
-        )
-    ],
+    # Spec 049, fatia A: era `require_any(team.manage, member.manage.subteam)`
+    # -- os mesmos tres papeis que hoje tem `membership.create`.
+    dependencies=[Depends(require_permission("membership.create"))],
 )
 async def assign_member_to_team(
     user_id: uuid.UUID, payload: TeamAssignmentRequest, uow: UoWDep
@@ -301,7 +300,7 @@ async def assign_member_to_team(
 @router.patch(
     "/{user_id}/teams/{team_id}",
     response_model=MemberTeamResponse,
-    dependencies=[Depends(require_permission("team.manage"))],
+    dependencies=[Depends(require_permission("membership.update"))],
 )
 async def change_member_role(
     user_id: uuid.UUID,
@@ -327,11 +326,7 @@ async def change_member_role(
     "/{user_id}/teams/{team_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     response_class=Response,
-    dependencies=[
-        Depends(
-            require_any_permission("team.manage", "member.manage.subteam")
-        )
-    ],
+    dependencies=[Depends(require_permission("membership.delete"))],
 )
 async def remove_member_from_team(
     user_id: uuid.UUID, team_id: uuid.UUID, uow: UoWDep
@@ -354,7 +349,7 @@ async def remove_member_from_team(
 @router.post(
     "/{user_id}/move-subteam",
     response_model=MemberTeamResponse,
-    dependencies=[Depends(require_permission("team.manage"))],
+    dependencies=[Depends(require_permission("membership.move"))],
 )
 async def move_member_subteam(
     user_id: uuid.UUID, payload: MoveSubteamRequest, uow: UoWDep
@@ -382,7 +377,12 @@ async def move_member_subteam(
 @router.patch(
     "/{user_id}/organization-role",
     response_model=MemberResponse,
-    dependencies=[Depends(require_permission("workspace.manage"))],
+    # Spec 049: a porta aceita os dois verbos (ADMIN e GESTOR os tem, desde a
+    # fatia G). O TETO -- "so admin mexe em admin" -- depende do CORPO e do
+    # ALVO, que a porta nao ve: mora em `change_organization_role`.
+    dependencies=[
+        Depends(require_any_permission("org_role.grant", "org_role.revoke"))
+    ],
 )
 async def change_organization_role(
     user_id: uuid.UUID,
@@ -412,7 +412,7 @@ async def change_organization_role(
 @router.post(
     "/{user_id}/deactivate",
     response_model=MemberResponse,
-    dependencies=[Depends(require_permission("team.manage"))],
+    dependencies=[Depends(require_permission("person.deactivate"))],
 )
 async def deactivate_member(
     user_id: uuid.UUID, uow: UoWDep

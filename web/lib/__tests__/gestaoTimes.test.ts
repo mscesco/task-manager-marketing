@@ -14,10 +14,12 @@ import {
   sugereSlug,
   type TimeGerenciavel,
 } from "@/lib/gestaoTimes";
+import type { Permission } from "@/lib/permissions.generated";
 
-const ADMIN = ["workspace.manage", "team.manage"];
-const MANAGER = ["team.manage"];
-const OPERATOR: string[] = [];
+// Spec 049, fatia A: eram `workspace.manage` + `team.manage`, e `team.manage`.
+const ADMIN: Permission[] = ["subteam.delete", "subteam.update", "subteam.create"];
+const MANAGER: Permission[] = ["subteam.update", "subteam.create"];
+const OPERATOR: Permission[] = [];
 
 function time(over: Partial<TimeGerenciavel> = {}): TimeGerenciavel {
   return {
@@ -48,17 +50,25 @@ describe("ehRaiz / estaVazio", () => {
   });
 });
 
-describe("podeEditar", () => {
-  it("MANAGER edita subtime", () => {
-    expect(podeEditar(time(), MANAGER)).toBe(true);
+describe("podeEditar -- o cadeado vem do servidor (Spec 049, fatia F)", () => {
+  it("subtime que o servidor diz editavel: edita", () => {
+    expect(podeEditar({ ...time(), can_update: true })).toBe(true);
   });
 
-  it("ninguem edita a raiz -- nem ADMIN (D5)", () => {
-    expect(podeEditar(time({ parent_team_id: null }), ADMIN)).toBe(false);
+  it("⚠️ o servidor diz que nao (o subtime IRMAO do supervisor): nao edita", () => {
+    // A pergunta que a tela nao sabe responder: a pessoa tem `subteam.update`,
+    // mas nao NESTE time.
+    expect(podeEditar({ ...time(), can_update: false })).toBe(false);
   });
 
-  it("sem team.manage nao edita", () => {
-    expect(podeEditar(time(), OPERATOR)).toBe(false);
+  it("⚠️ AUSENTE e nao -- um Team de outra origem nao abre lapis", () => {
+    expect(podeEditar(time())).toBe(false);
+  });
+
+  it("ninguem edita a raiz -- nem com o servidor dizendo sim (D5)", () => {
+    expect(podeEditar({ ...time({ parent_team_id: null }), can_update: true })).toBe(
+      false,
+    );
   });
 });
 

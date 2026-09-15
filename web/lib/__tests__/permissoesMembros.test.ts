@@ -17,7 +17,6 @@ import {
   podeCadastrarMembro,
   podeResetarSenha,
   podeDesativarConta,
-  podeTrocarPapel,
   podeMoverSubtime,
   podeAdicionarAoTime,
   podeRemoverDoTime,
@@ -49,14 +48,25 @@ function time(id: string, parent: string | null = RAIZ): Team {
 }
 
 describe("alcanceDe", () => {
-  it("team.manage vira alcance amplo", () => {
-    const a = alcanceDe({ permissions: ["team.manage"], teams: [] });
+  it("mover entre subtimes vira alcance amplo", () => {
+    const a = alcanceDe({ permissions: ["membership.move"], teams: [] });
     expect(a.tipo).toBe("amplo");
+  });
+
+  it("⚠️ Spec 049, fatia H: trocar cargo NAO faz o supervisor virar amplo", () => {
+    // Desde a H o supervisor tem `membership.update` -- no proprio subtime. Se
+    // o marcador de "amplo" continuasse sendo esse verbo, ele ganharia botao
+    // de gestao em todo time, e cada clique fora do subtime daria 403.
+    const a = alcanceDe({
+      permissions: ["membership.create", "membership.update", "membership.delete"],
+      teams: [{ team_id: SEO, role: "SUPERVISOR" }],
+    });
+    expect(a).toEqual({ tipo: "subtime", subtimes: [SEO] });
   });
 
   it("member.manage.subteam vira alcance de subtime, com os times supervisionados", () => {
     const a = alcanceDe({
-      permissions: ["member.manage.subteam"],
+      permissions: ["membership.create"],
       teams: [
         { team_id: SEO, role: "SUPERVISOR" },
         { team_id: RAIZ, role: "OPERATOR" },
@@ -67,7 +77,7 @@ describe("alcanceDe", () => {
 
   it("so entra no alcance o time onde o papel e SUPERVISOR", () => {
     const a = alcanceDe({
-      permissions: ["member.manage.subteam"],
+      permissions: ["membership.create"],
       teams: [
         { team_id: SEO, role: "SUPERVISOR" },
         { team_id: CRM, role: "OPERATOR" },
@@ -89,7 +99,7 @@ describe("alcanceDe", () => {
 
   it("quem tem as duas permissoes fica com a maior", () => {
     const a = alcanceDe({
-      permissions: ["member.manage.subteam", "team.manage"],
+      permissions: ["membership.create", "membership.update", "membership.move"],
       teams: [{ team_id: SEO, role: "SUPERVISOR" }],
     });
     expect(a.tipo).toBe("amplo");
@@ -101,7 +111,6 @@ describe("acoes que a 028 NAO abriu ao supervisor", () => {
     ["cadastrar membro (D3)", podeCadastrarMembro],
     ["resetar senha", podeResetarSenha],
     ["desativar conta (D4)", podeDesativarConta],
-    ["trocar papel (D2)", podeTrocarPapel],
     ["mover de subtime (D1)", podeMoverSubtime],
   ])("%s: so alcance amplo", (_nome, fn) => {
     expect(fn(AMPLO)).toBe(true);
@@ -123,8 +132,12 @@ describe("podeAdicionarAoTime", () => {
     expect(podeAdicionarAoTime(SUP, RAIZ, "OPERATOR")).toBe(false);
   });
 
-  it("D2: supervisor nao atribui papel acima de OPERATOR", () => {
-    expect(podeAdicionarAoTime(SUP, SEO, "SUPERVISOR")).toBe(false);
+  // ⚠️⚠️ ESTE TESTE AFIRMAVA O CONTRARIO ("D2: supervisor nao atribui papel
+  // acima de OPERATOR"). A Spec 049, fatia H, revogou a D2 da Spec 028 por
+  // decisao da Camila: o supervisor cria par no proprio subtime.
+  it("fatia H: supervisor atribui SUPERVISOR no proprio subtime -- e so ate ai", () => {
+    expect(podeAdicionarAoTime(SUP, SEO, "SUPERVISOR")).toBe(true);
+    expect(podeAdicionarAoTime(SUP, CRM, "SUPERVISOR")).toBe(false);
     expect(podeAdicionarAoTime(SUP, SEO, "MANAGER")).toBe(false);
     expect(podeAdicionarAoTime(SUP, SEO, "ADMIN")).toBe(false);
   });
@@ -140,21 +153,34 @@ describe("podeAdicionarAoTime", () => {
 });
 
 describe("podeRemoverDoTime", () => {
+  // Quem tem o verbo: ADMIN, MANAGER e SUPERVISOR (Spec 049, fatia A).
+  const TIRA = ["membership.create", "membership.delete"] as const;
+
   it("supervisor remove OPERATOR do proprio subtime", () => {
-    expect(podeRemoverDoTime(SUP, SEO, "OPERATOR")).toBe(true);
+    expect(podeRemoverDoTime(SUP, SEO, "OPERATOR", TIRA)).toBe(true);
   });
 
   it("A TRAVA D1 tambem no remover: outro subtime, nao", () => {
-    expect(podeRemoverDoTime(SUP, CRM, "OPERATOR")).toBe(false);
+    expect(podeRemoverDoTime(SUP, CRM, "OPERATOR", TIRA)).toBe(false);
   });
 
-  it("D2: supervisor nao remove par SUPERVISOR nem superior", () => {
-    expect(podeRemoverDoTime(SUP, SEO, "SUPERVISOR")).toBe(false);
-    expect(podeRemoverDoTime(SUP, SEO, "MANAGER")).toBe(false);
+  // ⚠️ Era "D2: supervisor nao remove par SUPERVISOR" -- revogada na fatia H.
+  it("fatia H: supervisor tira outro SUPERVISOR do proprio subtime, e nao superior", () => {
+    expect(podeRemoverDoTime(SUP, SEO, "SUPERVISOR", TIRA)).toBe(true);
+    expect(podeRemoverDoTime(SUP, CRM, "SUPERVISOR", TIRA)).toBe(false);
+    expect(podeRemoverDoTime(SUP, SEO, "MANAGER", TIRA)).toBe(false);
   });
 
   it("alcance amplo remove qualquer vinculo", () => {
-    expect(podeRemoverDoTime(AMPLO, CRM, "SUPERVISOR")).toBe(true);
+    expect(podeRemoverDoTime(AMPLO, CRM, "SUPERVISOR", TIRA)).toBe(true);
+  });
+
+  it("⚠️ GESTOR (Spec 049, fatia D): alcance AMPLO e mesmo assim NAO tira do time", () => {
+    // O alcance dele e amplo porque ele move entre subtimes (`membership.move`); o
+    // verbo de tirar ele nao tem. Sem o parametro de permissoes, "amplo" dizia
+    // sim e o botao dava 403.
+    const GESTOR = ["membership.create", "membership.update", "membership.move"] as const;
+    expect(podeRemoverDoTime(AMPLO, CRM, "OPERATOR", GESTOR)).toBe(false);
   });
 });
 
@@ -162,8 +188,15 @@ const NA_RAIZ = true;
 const EM_SUBTIME = false;
 
 describe("papeisAtribuiveis", () => {
-  it("supervisor so oferece OPERATOR", () => {
-    expect(papeisAtribuiveis(SUP, false, EM_SUBTIME)).toEqual(["OPERATOR"]);
+  // ⚠️ Era "supervisor so oferece OPERATOR" (D2 da Spec 028), revogada na
+  // Spec 049, fatia H: sem SUPERVISOR na lista, a tela escondia a promocao que
+  // o servidor passou a aceitar.
+  it("fatia H: supervisor oferece SUPERVISOR e OPERADOR no subtime, e nada na raiz", () => {
+    expect(papeisAtribuiveis(SUP, false, EM_SUBTIME)).toEqual([
+      "SUPERVISOR",
+      "OPERATOR",
+    ]);
+    expect(papeisAtribuiveis(SUP, false, NA_RAIZ)).toEqual([]);
   });
 
   it("na raiz: GERENTE e OPERADOR", () => {

@@ -102,6 +102,7 @@ export default function Board({
   areaId,
   boardId,
   podeEditarColunas,
+  podeApagarColunas,
   title,
   acoesDoQuadro,
   acoesDoTitulo,
@@ -158,6 +159,15 @@ export default function Board({
    * aponta cada tela que desenha um quadro.
    */
   podeEditarColunas: boolean;
+  /**
+   * Se a pessoa pode APAGAR coluna, no modo de edição (Spec 049, fatia D).
+   *
+   * ⚠️ SEPARADA DE `podeEditarColunas`, e obrigatória pelo mesmo motivo dela.
+   * O GESTOR edita coluna e não apaga: com uma prop só, o "x" aparecia para ele
+   * e o lote inteiro voltava 403 no Concluir. A tela calcula com
+   * `podeApagarColunas` (lib/seletorDeQuadro).
+   */
+  podeApagarColunas: boolean;
   /**
    * O título do quadro, na barra.
    *
@@ -2325,6 +2335,7 @@ export default function Board({
                       cor={c.color}
                       indice={ordemVisivel.indexOf(c.id)}
                       total={ordemVisivel.length}
+                      podeApagar={podeApagarColunas}
                       onRenomear={(nome) =>
                         setRascunho((r) => (r ? comRenome(r, c.id, nome) : r))
                       }
@@ -2518,6 +2529,7 @@ function CabecalhoSortavel({
   onTornarAlvo,
   onAvisar,
   onMover,
+  podeApagar,
 }: {
   /** ⚠️ Pode faltar por um render ao trocar de quadro -- ver o chamador. */
   linha: LinhaDeEdicao | undefined;
@@ -2526,6 +2538,8 @@ function CabecalhoSortavel({
   total: number;
   onRenomear: (nome: string) => void;
   onMarcar: () => void;
+  /** Ver `podeApagarColunas` no `Board` (Spec 049, fatia D). */
+  podeApagar: boolean;
   onTornarAlvo: () => void;
   onAvisar: (valor: boolean) => void;
   onMover: (direcao: "esquerda" | "direita") => void;
@@ -2563,6 +2577,7 @@ function CabecalhoSortavel({
         podeIrDireita={indice < total - 1}
         onRenomear={onRenomear}
         onMarcar={onMarcar}
+        podeApagar={podeApagar}
         onTornarAlvo={onTornarAlvo}
         onAvisar={onAvisar}
         onMover={onMover}

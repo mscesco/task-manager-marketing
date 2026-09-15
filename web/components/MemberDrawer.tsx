@@ -49,6 +49,7 @@ import {
   timesParaAdicionar,
   type Alcance,
 } from "@/lib/permissoesMembros";
+import type { Permission } from "@/lib/permissions.generated";
 
 const ROLE_LABEL: Record<MemberRole, string> = {
   ADMIN: "Administrador",
@@ -75,8 +76,9 @@ export default function MemberDrawer({
   teams,
   scope,
   isAdmin,
-  canManageOrg,
+  opcoesDeOrganizacao,
   isSelf,
+  permissoes,
   onClose,
   onChanged,
 }: {
@@ -84,8 +86,20 @@ export default function MemberDrawer({
   teams: Team[];
   scope: Alcance;
   isAdmin: boolean;
-  canManageOrg: boolean;
+  /**
+   * Os papéis de organização que quem olha pode dar a ESTA pessoa; `null` = a
+   * seção não aparece. ⚠️ Era `canManageOrg: boolean`, e um booleano não
+   * cabia o teto da Spec 049 (fatia G): o GESTOR mexe em gestor, e não em
+   * admin, nem oferece admin. Ver `papeisDeOrganizacaoAtribuiveis`.
+   */
+  opcoesDeOrganizacao: readonly (OrgRole | null)[] | null;
   isSelf: boolean;
+  /**
+   * ⚠️ OBRIGATÓRIA desde a Spec 049, fatia D: "Tirar de…" pergunta o verbo
+   * (`membership.delete`), e o alcance amplo não basta -- o GESTOR o tem e não
+   * tira ninguém de time. Ver `podeRemoverDoTime`.
+   */
+  permissoes: readonly Permission[];
   onClose: () => void;
   onChanged: (aviso: string) => Promise<void>;
 }) {
@@ -212,11 +226,12 @@ export default function MemberDrawer({
             )}
           </div>
 
-          {canManageOrg && (
+          {opcoesDeOrganizacao && (
             <section className="mb-5">
               <h3 className="label mb-2">Na organização</h3>
               <OrgRoleField
                 member={member}
+                opcoes={opcoesDeOrganizacao}
                 isSelf={isSelf}
                 onChanged={onChanged}
               />
@@ -242,6 +257,7 @@ export default function MemberDrawer({
                     scope={scope}
                     isAdmin={isAdmin}
                     isSelf={isSelf}
+                    permissoes={permissoes}
                     onChanged={onChanged}
                   />
                 ))}
@@ -296,6 +312,7 @@ function MembershipRow({
   scope,
   isAdmin,
   isSelf,
+  permissoes,
   onChanged,
 }: {
   row: ReturnType<typeof drawerMemberships>[number];
@@ -304,6 +321,8 @@ function MembershipRow({
   isAdmin: boolean;
   /** É a própria pessoa que está olhando? Ver o `!isSelf` no "Tirar". */
   isSelf: boolean;
+  /** Ver a prop homônima do `MemberDrawer` (Spec 049, fatia D). */
+  permissoes: readonly Permission[];
   onChanged: (aviso: string) => Promise<void>;
 }) {
   const [escolhido, setEscolhido] = useState<MemberRole>(row.role);
@@ -428,10 +447,10 @@ function MembershipRow({
           ⚠️ Pedido dela em 09/09. Fica DENTRO da linha do vínculo, e não num
           menu à parte: a ação é sobre ESTE time, e o nome dele está ali.
           ⚠️ A pergunta é `podeRemoverDoTime` e NÃO `podeEditarCargo`: são
-          permissões diferentes. O supervisor tira gente do próprio subtime
-          (D1 da Spec 028) sem poder trocar cargo de ninguém (D2). Usar o
-          cadeado de cargo aqui esconderia dele a única ação que tem. */}
-      {!mudou && podeRemoverDoTime(scope, row.team.id, row.role) && (
+          permissões diferentes (`membership.delete` e `membership.update`) —
+          o GESTOR, por exemplo, troca cargo e não tira do time. Usar o
+          cadeado de cargo aqui mostraria a ele um botão que dá 403. */}
+      {!mudou && podeRemoverDoTime(scope, row.team.id, row.role, permissoes) && (
         <div className="mt-2">
           <Reveal show={!confirmandoSaida}>
             <button
@@ -549,10 +568,13 @@ function AddToTeam({
 
 function OrgRoleField({
   member,
+  opcoes,
   isSelf,
   onChanged,
 }: {
   member: Member;
+  /** Ver a prop `opcoesDeOrganizacao` do `MemberDrawer`. */
+  opcoes: readonly (OrgRole | null)[];
   isSelf: boolean;
   onChanged: (aviso: string) => Promise<void>;
 }) {
@@ -574,7 +596,10 @@ function OrgRoleField({
         disabled={salvando || isSelf}
         label="Papel na organização"
         options={[
-          { id: "ADMIN", label: ORG_ROLE_LABEL.ADMIN, commands: true },
+          // ⚠️ ADMIN só para quem pode dar ADMIN (Spec 049, fatia G).
+          ...(opcoes.includes("ADMIN")
+            ? [{ id: "ADMIN" as const, label: ORG_ROLE_LABEL.ADMIN, commands: true }]
+            : []),
           { id: "GESTOR", label: ORG_ROLE_LABEL.GESTOR, commands: true },
           { id: "", label: "Não administra a organização" },
         ]}

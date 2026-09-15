@@ -58,6 +58,10 @@ services:
       - ./backend/.env
     volumes:
       - ./backend:/app
+      # Spec 049, fatia A: `scripts/gen_permissions_ts.py` ESCREVE aqui, e
+      # `tests/test_permissions_generated_ts.py` le daqui. Sem esta linha o
+      # teste FALHA (de proposito, e nao pula) -- o CI tem o repo inteiro.
+      - ./web/lib:/web/lib
     working_dir: /app
     entrypoint: []
     extra_hosts:

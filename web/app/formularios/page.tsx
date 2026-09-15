@@ -43,6 +43,10 @@ function Formularios() {
   const [times, setTimes] = useState<Team[]>([]);
   const [erro, setErro] = useState<string | null>(null);
   const [podeGerir, setPodeGerir] = useState(false);
+  // ⚠️ SEPARADO DE `podeGerir` desde a Spec 049, fatia D: o GESTOR edita e
+  // publica formulário, e NÃO apaga. Um "Excluir" dentro de `podeGerir` seria o
+  // botão que a tela oferece e o servidor recusa.
+  const [podeApagar, setPodeApagar] = useState(false);
   const [ocupado, setOcupado] = useState<string | null>(null);
 
   // ⚠⚠ O time ativo vem da barra (Spec 048). Rota estática: `useSearchParams`
@@ -92,10 +96,16 @@ function Formularios() {
       })
       .catch(() => {});
     currentUser()
-      .then((me) =>
-        setPodeGerir(me.permissions.includes("solicitation_form.manage"))
-      )
-      .catch(() => setPodeGerir(false));
+      .then((me) => {
+        // Spec 049, fatia A: era `solicitation_form.manage`. `podeGerir` desenha
+        // criar e publicar; `form.update` e o que diz "mexer no formulario".
+        setPodeGerir(me.permissions.includes("form.update"));
+        setPodeApagar(me.permissions.includes("form.delete"));
+      })
+      .catch(() => {
+        setPodeGerir(false);
+        setPodeApagar(false);
+      });
   }, []);
 
   // ⚠⚠ O TIME ATIVO PREENCHE O CAMPO, E NÃO PISA NA ESCOLHA. `atual || ...`
@@ -363,15 +373,17 @@ function Formularios() {
                   >
                     {f.is_published ? "Despublicar" : "Publicar"}
                   </button>
-                  <button
-                    type="button"
-                    className="btn btn-ghost"
-                    style={{ fontSize: 12, color: "var(--danger)" }}
-                    disabled={ocupado === f.id}
-                    onClick={() => apagar(f)}
-                  >
-                    Excluir
-                  </button>
+                  {podeApagar && (
+                    <button
+                      type="button"
+                      className="btn btn-ghost"
+                      style={{ fontSize: 12, color: "var(--danger)" }}
+                      disabled={ocupado === f.id}
+                      onClick={() => apagar(f)}
+                    >
+                      Excluir
+                    </button>
+                  )}
                 </>
               )}
             </div>

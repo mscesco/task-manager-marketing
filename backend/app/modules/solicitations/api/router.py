@@ -124,7 +124,7 @@ async def create_public_solicitation(
 @router.get(
     "",
     response_model=BatchListResponse,
-    dependencies=[Depends(require_permission("solicitation.review"))],
+    dependencies=[Depends(require_permission("solicitation.read"))],
 )
 async def list_solicitations(
     _: TenantContextDep,
@@ -212,7 +212,7 @@ async def list_solicitations(
 @router.get(
     "/{solicitation_id}",
     response_model=SolicitationResponse,
-    dependencies=[Depends(require_permission("solicitation.review"))],
+    dependencies=[Depends(require_permission("solicitation.read"))],
 )
 async def get_solicitation(
     solicitation_id: uuid.UUID,

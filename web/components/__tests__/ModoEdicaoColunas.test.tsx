@@ -47,6 +47,7 @@ function montar(over: Partial<LinhaDeEdicao> = {}, props: Partial<Record<string,
       podeIrDireita
       onRenomear={onRenomear}
       onMarcar={onMarcar}
+      podeApagar
       onTornarAlvo={onTornarAlvo}
       onAvisar={onAvisar}
       onMover={onMover}
@@ -119,6 +120,7 @@ describe("CabecalhoDeColunaEditavel -- renomear no lugar", () => {
           podeIrDireita
           onRenomear={vi.fn()}
           onMarcar={vi.fn()}
+          podeApagar
           onTornarAlvo={vi.fn()}
           onAvisar={vi.fn()}
           onMover={vi.fn()}
@@ -130,6 +132,23 @@ describe("CabecalhoDeColunaEditavel -- renomear no lugar", () => {
       key: "Escape",
     });
     expect(noPai).not.toHaveBeenCalled();
+  });
+});
+
+describe("CabecalhoDeColunaEditavel -- sem `column.delete` (Spec 049, fatia D)", () => {
+  it("⚠️ não oferece apagar coluna salva -- o GESTOR edita e não apaga", () => {
+    montar({}, { podeApagar: false });
+    expect(screen.queryByLabelText("Apagar Backlog")).toBeNull();
+  });
+
+  it("nem explica uma trava que não é dele", () => {
+    montar({ impedimento: "é o alvo de OPEN" }, { podeApagar: false });
+    expect(screen.queryByText("não pode ser apagada")).toBeNull();
+  });
+
+  it("mas tira do rascunho a coluna que ele mesmo criou -- isso não é apagar", () => {
+    montar({ nova: true, nome: "Entregue" }, { podeApagar: false });
+    expect(screen.getByLabelText("Apagar Entregue")).toBeTruthy();
   });
 });
 

@@ -255,16 +255,16 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   // Spec 024, só existem na raiz) enxerga a aba. O backend também barra
   // por 403; esconder aqui evita oferecer uma porta que não abre.
   const podeVerSolicitacoes =
-    user?.permissions.includes("solicitation.review") ?? false;
+    user?.permissions.includes("solicitation.read") ?? false;
 
-  const podeGerirTimes = user?.permissions.includes("team.manage") ?? false;
+  const podeGerirTimes = user?.permissions.includes("subteam.update") ?? false;
 
   // Spec 043 (fatia C). ⚠️ PERMISSÃO PRÓPRIA, e não a de triagem: definir o
   // que se pergunta e responder a fila são trabalhos diferentes, e o backend
   // já os separa. Mesmo espírito dos dois gates acima -- quem não tem a
   // permissão não veria botão útil nenhum lá dentro.
   const podeGerirFormularios =
-    user?.permissions.includes("solicitation_form.manage") ?? false;
+    user?.permissions.includes("form.read") ?? false;
 
   // ⚠️⚠️ "TIME" NAO E UMA TELA PROPRIA: ele aponta para `/times/<area>`, a
   // MESMA tela que se abre clicando numa area. A rota `/membros` existia e

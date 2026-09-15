@@ -63,9 +63,9 @@ import {
   type Team,
 } from "@/lib/api";
 import { subteamCards, teamRows } from "@/lib/teamScreen";
-import { matchesSearch } from "@/lib/organization";
+import { matchesSearch, papeisDeOrganizacaoAtribuiveis } from "@/lib/organization";
 import { countByState, memberState, type MemberState } from "@/lib/memberState";
-import { sugereSlug } from "@/lib/gestaoTimes";
+import { podeEditar, sugereSlug } from "@/lib/gestaoTimes";
 import {
   alcanceDe,
   papeisAtribuiveis,
@@ -446,7 +446,10 @@ export default function TeamScreen({ teamId }: { teamId: string }) {
                       <SubteamCardTile
                         key={c.team.id}
                         card={c}
-                        canManage={podeMexerEmTimes}
+                        // ⚠️ Spec 049, fatia F: o lápis também abre para quem EDITA
+                        // este subtime sem ter alcance amplo -- o supervisor, no
+                        // dele. Quem decide é o servidor (`can_update`).
+                        canManage={podeMexerEmTimes || podeEditar(c.team)}
                         onEdit={() => setGavetaDeTime(c.team)}
                       />
                     ))}
@@ -467,6 +470,7 @@ export default function TeamScreen({ teamId }: { teamId: string }) {
             isAdmin={isAdmin}
             canManage={podeMexerEmTimes}
             scope={scope}
+            permissoes={me?.permissions ?? []}
             onClose={() => setGavetaDeTime(null)}
             onChanged={async (texto) => {
               setGavetaDeTime(null);
@@ -492,9 +496,12 @@ export default function TeamScreen({ teamId }: { teamId: string }) {
             member={gavetaDePessoa}
             teams={teams}
             scope={scope}
+            permissoes={me?.permissions ?? []}
             isAdmin={isAdmin}
-            canManageOrg={
-              me?.permissions.includes("workspace.manage") ?? false
+            opcoesDeOrganizacao={
+              me
+                ? papeisDeOrganizacaoAtribuiveis(me, gavetaDePessoa.org_role ?? null)
+                : null
             }
             isSelf={gavetaDePessoa.id === me?.id}
             onClose={() => setGavetaDePessoa(null)}

@@ -50,6 +50,7 @@ import {
   searchPeople,
   areaCards,
   organizationManagers,
+  papeisDeOrganizacaoAtribuiveis,
   peopleWithoutArea,
   type AreaCard,
 } from "@/lib/organization";
@@ -119,12 +120,14 @@ export default function OrganizacaoPage() {
     void carregar();
   }, []);
 
-  // ⚠️ Renomear exige `workspace.manage`; criar area exige `area.create`
-  // (Spec 046, §4.1) -- e as duas SAO DIFERENTES: um GESTOR cria area e nao
-  // renomeia a organizacao. Ler as duas separadas e o que impede a tela de
-  // tratar "administra" como uma coisa so.
-  const podeRenomear = me?.permissions.includes("workspace.manage") ?? false;
-  const podeCriarArea = me?.permissions.includes("area.create") ?? false;
+  // ⚠️ TRES PERGUNTAS DIFERENTES, e ler cada uma pelo seu verbo e o que impede
+  // a tela de tratar "administra" como uma coisa so. Renomear e
+  // `organization.update`; criar time e `team.create`; dar papel de organizacao
+  // e `org_role.grant`. Desde a Spec 049 (fatia G) o GESTOR tem as tres -- e o
+  // teto dele (nao mexe em ADMIN) e `papeisDeOrganizacaoAtribuiveis`.
+  const podeRenomear = me?.permissions.includes("organization.update") ?? false;
+  const podeCriarArea = me?.permissions.includes("team.create") ?? false;
+  const podeDarPapel = me?.permissions.includes("org_role.grant") ?? false;
 
   const cards = useMemo(() => areaCards(teams, members), [teams, members]);
   const gestores = useMemo(() => organizationManagers(members), [members]);
@@ -171,7 +174,9 @@ export default function OrganizacaoPage() {
             <OrgRoleField
               key={g.id}
               member={g}
-              canEdit={podeRenomear}
+              // ⚠️ POR PESSOA, e não um booleano da tela (Spec 049, fatia G): o
+              // GESTOR mexe na pílula de outro gestor e NÃO na de um admin.
+              opcoes={me ? papeisDeOrganizacaoAtribuiveis(me, g.org_role ?? null) : null}
               isSelf={g.id === me?.id}
               // ⚠️ QUAL ESTA ABERTO E ESTADO DO PAI, e nao de cada pilula.
               // Com um `useState` por pilula, abrir a segunda nao fechava a
@@ -307,7 +312,7 @@ export default function OrganizacaoPage() {
                             rótulo — e "Tornar gestor" não é um fato sobre a
                             pessoa, é um botão.
                             ⚠️ `shrink-0`: quem cede espaço é o texto. */}
-                        {podeRenomear && !member.org_role && (
+                        {podeDarPapel && !member.org_role && (
                           <span className="ml-auto shrink-0">
                             <PromoverNaOrganizacao
                               member={member}
@@ -608,7 +613,7 @@ function CriarArea({ onCriada }: { onCriada: () => Promise<void> }) {
  */
 function OrgRoleField({
   member,
-  canEdit,
+  opcoes,
   isSelf,
   isOpen,
   onOpen,
@@ -617,7 +622,11 @@ function OrgRoleField({
   onNotice,
 }: {
   member: Member;
-  canEdit: boolean;
+  /**
+   * Os destinos que o ator pode dar a ESTA pessoa; `null` = não mexe nela.
+   * Ver `papeisDeOrganizacaoAtribuiveis` (Spec 049, fatia G).
+   */
+  opcoes: readonly (OrgRole | null)[] | null;
   isSelf: boolean;
   isOpen: boolean;
   onOpen: () => void;
@@ -656,7 +665,7 @@ function OrgRoleField({
 
   const label = ORG_ROLE_LABEL[member.org_role ?? ""] ?? "organização";
 
-  if (!canEdit) {
+  if (opcoes === null) {
     return (
       <Badge tone="soft" size="sm" color="var(--accent)">
         {member.name} · {label}
@@ -724,13 +733,17 @@ function OrgRoleField({
 
           {/* ⚠️ A consequência de CADA papel, em texto. É o que a §4.3 pede no
               lugar de chaves por permissão. */}
-          <Opcao
-            active={member.org_role === "ADMIN"}
-            title="Administradora"
-            consequencia="Define a organização: renomeia, apaga time e promove gestores."
-            onSelect={() => void aplicar("ADMIN")}
-            disabled={salvando}
-          />
+          {/* ⚠️ SÓ PARA QUEM PODE DAR ADMIN (Spec 049, fatia G). O gestor traz
+              para gestor e tira de volta; administrador é do administrador. */}
+          {opcoes.includes("ADMIN") && (
+            <Opcao
+              active={member.org_role === "ADMIN"}
+              title="Administradora"
+              consequencia="Define a organização: renomeia, apaga time e promove gestores."
+              onSelect={() => void aplicar("ADMIN")}
+              disabled={salvando}
+            />
+          )}
           <Opcao
             active={member.org_role === "GESTOR"}
             title="Gestora"

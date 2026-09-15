@@ -135,6 +135,18 @@ class ProjectService:
                 "Time informado nao existe neste workspace.",
                 details={"field": "team_id"},
             )
+        # ⚠️⚠️ E TEM DE ESTAR NA LENTE de quem cria (Spec 049, fatia 0b). Ate
+        # 14/09 bastava existir: o MANAGER do Marketing criava projeto no
+        # Comercial. Mesma forma e mesma mensagem do `POST /tasks` (Spec 037):
+        # 422 no campo, porque o time e um VALOR que o corpo trouxe.
+        editavel = team_scope.editable_team_ids(
+            tenant.memberships, tenant.team_tree, org_role=tenant.org_role
+        )
+        if editavel is not None and command.team_id not in editavel:
+            raise ValidationError(
+                "Time informado esta fora do seu alcance.",
+                details={"field": "team_id"},
+            )
         project = Project(
             title=title,
             description=command.description,
@@ -299,7 +311,12 @@ class ProjectService:
             EntityNotFoundError -- projeto nao existe.
             ValidationError     -- title invalido ou datas inconsistentes.
         """
-        project = await self._repo.get_by_id_or_raise(project_id)
+        # ⚠️⚠️ PELO `get`, E NAO PELO REPOSITORIO (Spec 049, fatia 0b): o `get`
+        # tem a lente, e o repositorio so o workspace. Ate 14/09 as quatro
+        # escritas daqui buscavam direto -- a lente de 11/09 protegia o LER e
+        # deixava o ESCREVER aberto, e o SUPERVISOR do SEO editou projeto do
+        # Comercial. Fora da lente e 404, como no `get`.
+        project = await self.get(project_id)
 
         # Aplica o patch campo a campo. None = nao mexer.
         if command.title is not None:
@@ -348,7 +365,7 @@ class ProjectService:
         Erros:
             EntityNotFoundError -- projeto nao existe.
         """
-        project = await self._repo.get_by_id_or_raise(project_id)
+        project = await self.get(project_id)  # a lente -- ver `update`
 
         if not project.is_archived:
             project.is_archived = True
@@ -364,7 +381,7 @@ class ProjectService:
         Erros:
             EntityNotFoundError -- projeto nao existe.
         """
-        project = await self._repo.get_by_id_or_raise(project_id)
+        project = await self.get(project_id)  # a lente -- ver `update`
 
         if project.is_archived:
             project.is_archived = False
@@ -380,7 +397,7 @@ class ProjectService:
         Erros:
             EntityNotFoundError -- projeto nao existe.
         """
-        project = await self._repo.get_by_id_or_raise(project_id)
+        project = await self.get(project_id)  # a lente -- ver `update`
 
         project.deleted_at = func.now()  # type: ignore[assignment]
         await self._session.flush()

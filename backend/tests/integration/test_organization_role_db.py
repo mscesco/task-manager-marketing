@@ -60,7 +60,7 @@ async def test_promove_alguem_sem_tocar_em_time_nenhum(db) -> None:
     ws, raiz, dona = await _mundo(db)
     nova = await f.make_user(db, workspace_id=ws, email="nova@t.dev")
 
-    with acting_as(workspace_id=ws, user_id=dona):
+    with acting_as(workspace_id=ws, user_id=dona, org_role="ADMIN"):
         svc = MemberService(db)
         user = await svc.change_organization_role(
             user_id=nova, new_role=OrgRole.GESTOR
@@ -82,7 +82,7 @@ async def test_rebaixar_funciona_quando_ha_outro_admin(db) -> None:
     segunda = await f.make_user(db, workspace_id=ws, email="segunda@t.dev")
     await _set_org_role(db, segunda, OrgRole.ADMIN)
 
-    with acting_as(workspace_id=ws, user_id=dona):
+    with acting_as(workspace_id=ws, user_id=dona, org_role="ADMIN"):
         user = await MemberService(db).change_organization_role(
             user_id=segunda, new_role=None
         )
@@ -103,7 +103,7 @@ async def test_rebaixar_o_ULTIMO_admin_e_recusado(db) -> None:
     """
     ws, raiz, dona = await _mundo(db)
 
-    with acting_as(workspace_id=ws, user_id=dona):
+    with acting_as(workspace_id=ws, user_id=dona, org_role="ADMIN"):
         with pytest.raises(BusinessRuleError):
             await MemberService(db).change_organization_role(
                 user_id=dona, new_role=None
@@ -129,7 +129,7 @@ async def test_admin_INATIVO_nao_conta_para_a_trava(db) -> None:
     user.is_active = False
     await db.flush()
 
-    with acting_as(workspace_id=ws, user_id=dona):
+    with acting_as(workspace_id=ws, user_id=dona, org_role="ADMIN"):
         with pytest.raises(BusinessRuleError):
             await MemberService(db).change_organization_role(
                 user_id=dona, new_role=None
@@ -223,7 +223,7 @@ async def test_a_trava_e_so_do_admin_gestor_sai_livre(db) -> None:
     gestor = await f.make_user(db, workspace_id=ws, email="gestor@t.dev")
     await _set_org_role(db, gestor, OrgRole.GESTOR)
 
-    with acting_as(workspace_id=ws, user_id=dona):
+    with acting_as(workspace_id=ws, user_id=dona, org_role="ADMIN"):
         user = await MemberService(db).change_organization_role(
             user_id=gestor, new_role=None
         )

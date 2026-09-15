@@ -12,14 +12,15 @@
  */
 
 import type { MemberRole, Team } from "./api";
+import type { Permission } from "./permissions.generated";
 
 /** O que o ator alcanca na gestao de membros. */
 export type Alcance =
   /** `team.manage` -- ADMIN/MANAGER. Alcanca o workspace inteiro. */
   | { readonly tipo: "amplo" }
   /**
-   * `member.manage.subteam` -- SUPERVISOR. So OPERATOR, e so nos subtimes
-   * listados (aqueles onde ELE e supervisor).
+   * SUPERVISOR. So nos subtimes listados (aqueles onde ELE e supervisor), e
+   * ali vincula, tira e troca cargo de SUPERVISOR e OPERATOR (Spec 049, H).
    */
   | { readonly tipo: "subtime"; readonly subtimes: readonly string[] }
   /** Sem permissao de gestao: a tela vira somente leitura. */
@@ -27,7 +28,7 @@ export type Alcance =
 
 /** So o que precisamos do usuario autenticado -- facilita testar. */
 export type AtorMinimo = {
-  permissions: string[];
+  permissions: Permission[];
   teams: { team_id: string; role: string }[];
 };
 
@@ -40,8 +41,12 @@ export type AtorMinimo = {
  */
 export function alcanceDe(me: AtorMinimo | null | undefined): Alcance {
   if (!me) return { tipo: "nenhum" };
-  if (me.permissions.includes("team.manage")) return { tipo: "amplo" };
-  if (me.permissions.includes("member.manage.subteam")) {
+  // ⚠️⚠️ Spec 049, fatia H: "amplo" e quem MOVE entre subtimes
+  // (`membership.move`, so comando e organizacao). Ate a H era quem troca cargo
+  // (`membership.update`) -- e o supervisor passou a ter esse verbo no proprio
+  // subtime, o que o faria virar "amplo" e ganhar botao em todo time.
+  if (me.permissions.includes("membership.move")) return { tipo: "amplo" };
+  if (me.permissions.includes("membership.create")) {
     return {
       tipo: "subtime",
       subtimes: me.teams
@@ -77,11 +82,6 @@ export function podeDesativarConta(a: Alcance): boolean {
   return a.tipo === "amplo";
 }
 
-/** D2: supervisor nao promove ninguem -- trocar papel e do MANAGER. */
-export function podeTrocarPapel(a: Alcance): boolean {
-  return a.tipo === "amplo";
-}
-
 /** Mover entre subtimes toca o subtime de ORIGEM -> fora do alcance (D1). */
 export function podeMoverSubtime(a: Alcance): boolean {
   return a.tipo === "amplo";
@@ -94,7 +94,9 @@ export function podeMoverSubtime(a: Alcance): boolean {
 /**
  * Pode vincular alguem a este time, com este papel?
  *
- * Supervisor: so OPERATOR (D2) e so em subtime proprio (D1).
+ * Supervisor: so em subtime proprio (D1), com os papeis que cabem num subtime.
+ * ⚠️ Ate a Spec 049 (fatia H) era "so OPERATOR" -- a D2 da Spec 028, que ela
+ * revogou.
  */
 export function podeAdicionarAoTime(
   a: Alcance,
@@ -103,7 +105,11 @@ export function podeAdicionarAoTime(
 ): boolean {
   if (a.tipo === "amplo") return true;
   if (a.tipo === "nenhum") return false;
-  return papel === "OPERATOR" && a.subtimes.includes(teamId);
+  return ehPapelDeSubtime(papel) && a.subtimes.includes(teamId);
+}
+
+function ehPapelDeSubtime(papel: MemberRole): boolean {
+  return papel === "SUPERVISOR" || papel === "OPERATOR";
 }
 
 /**
@@ -116,17 +122,27 @@ export function podeRemoverDoTime(
   a: Alcance,
   teamId: string,
   papelAtual: MemberRole,
+  /**
+   * ⚠️ OBRIGATÓRIO desde a Spec 049, fatia D. O ALCANCE diz "onde"; tirar do
+   * time tem verbo próprio (`membership.delete`), e o GESTOR -- que tem alcance
+   * amplo, porque troca cargo -- NÃO o tem: o Mapa de 10/09 põe `·` na coluna D
+   * do vínculo para ele. Sem este parâmetro, "amplo" respondia sim.
+   */
+  permissoes: readonly Permission[],
 ): boolean {
+  if (!permissoes.includes("membership.delete")) return false;
   if (a.tipo === "amplo") return true;
   if (a.tipo === "nenhum") return false;
-  return papelAtual === "OPERATOR" && a.subtimes.includes(teamId);
+  // Fatia H: tira tambem outro SUPERVISOR do proprio subtime.
+  return ehPapelDeSubtime(papelAtual) && a.subtimes.includes(teamId);
 }
 
 /**
  * Papeis que o ator pode atribuir NAQUELE TIME.
  *
  * Duas perguntas, e as duas filtram:
- *   quem e o ator   -- supervisor so atribui OPERATOR (D2 da Spec 028);
+ *   quem e o ator   -- supervisor so age em subtime (desde a Spec 049, H,
+ *                      atribui SUPERVISOR tambem; ate ali, so OPERATOR);
  *   qual e o nivel  -- invariante de nivel (Spec 045, fatia D).
  *
  * ⚠️⚠️ O PARAMETRO `ehRaiz` NASCEU NA SPEC 045, e sem ele esta funcao MENTIA
@@ -152,9 +168,9 @@ export function papeisAtribuiveis(
   ehRaiz: boolean,
 ): MemberRole[] {
   if (a.tipo === "nenhum") return [];
-  // Supervisor so alcanca OPERATOR, e OPERATOR cabe nos dois niveis --
-  // entao este ramo nao depende do nivel.
-  if (a.tipo === "subtime") return ["OPERATOR"];
+  // Supervisor so alcanca o proprio subtime: na raiz nao atribui nada, e no
+  // subtime oferece os dois papeis que cabem ali (fatia H).
+  if (a.tipo === "subtime") return ehRaiz ? [] : ["SUPERVISOR", "OPERATOR"];
   // `souAdmin` deixou de escolher a LISTA e passou a nao escolher nada aqui:
   // o unico papel que ele tinha a mais era ADMIN, que saiu do nivel de time.
   // O parametro fica porque o dia em que a tela da organizacao existir ele

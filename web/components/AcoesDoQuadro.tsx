@@ -46,6 +46,7 @@ export default function AcoesDoQuadro({
   quadros,
   selecionado,
   podeGerir,
+  podeApagar,
   onSelecionar,
   onMudou,
   daRaiz,
@@ -55,6 +56,11 @@ export default function AcoesDoQuadro({
   /** `null` = a lente. Ver `OpcaoDeQuadro.id`. */
   selecionado: string | null;
   podeGerir: boolean;
+  /**
+   * ⚠️ OBRIGATÓRIA, e separada de `podeGerir` (Spec 049, fatia D): o GESTOR
+   * renomeia e não apaga. Ver `podeApagarQuadros`.
+   */
+  podeApagar: boolean;
   onSelecionar: (id: string | null) => void;
   onMudou: () => void;
   /**
@@ -72,8 +78,8 @@ export default function AcoesDoQuadro({
   daRaiz: boolean;
 }) {
   const opcoes = daRaiz
-    ? opcoesDoSeletorDaRaiz(quadros, teamId, podeGerir)
-    : opcoesDoSeletor(quadros, teamId, podeGerir);
+    ? opcoesDoSeletorDaRaiz(quadros, teamId, podeGerir, podeApagar)
+    : opcoesDoSeletor(quadros, teamId, podeGerir, podeApagar);
   const atual = opcaoSelecionada(opcoes, selecionado);
 
   // ---- renomear ----
