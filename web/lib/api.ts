@@ -2379,7 +2379,9 @@ export async function deleteComment(
 export type NotificationType =
   | "TASK_ASSIGNED"
   | "TASK_COMMENTED"
-  | "TASK_MENTIONED";
+  | "TASK_MENTIONED"
+  // Spec 050 (fatia B): reagiram ao comentario da pessoa.
+  | "TASK_COMMENT_REACTED";
 
 export type AppNotification = {
   id: string;
@@ -2387,7 +2389,8 @@ export type AppNotification = {
   actor_id: string | null;
   task_id: string | null;
   comment_id: string | null;
-  payload: { actor_name?: string; task_title?: string } | null;
+  // `emoji` so em TASK_COMMENT_REACTED (Spec 050): o que foi, no momento.
+  payload: { actor_name?: string; task_title?: string; emoji?: string } | null;
   read_at: string | null; // null = nao lida
   created_at: string;
 };

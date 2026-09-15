@@ -352,6 +352,11 @@ class CommentService:
         logger.info(
             "comment.reaction_set", comment_id=str(comment_id), created=nasceu
         )
+        # Spec 050, fatia B: notifica o autor SO quando a reacao nasce. Trocar
+        # o emoji nao notifica (decisao dela); tirar e por de novo, sim -- o
+        # banco nao lembra da reacao removida.
+        if nasceu:
+            await self._notificar_autor_da_reacao(comment=comment, emoji=normalizado)
         return self._to_dto(comment, reactions=await self._reacoes_de(comment))
 
     async def remove_reaction(
@@ -375,6 +380,34 @@ class CommentService:
     # ----------------------------------------------------
     # Helpers
     # ----------------------------------------------------
+    async def _notificar_autor_da_reacao(self, *, comment: Comment, emoji: str) -> None:
+        """Avisa o autor do comentario de que reagiram. Spec 050, §4.5.
+
+        ⚠️ SAI CEDO NA AUTO-REACAO, antes de carregar a tarefa: o emissor
+        tambem recusa, mas so depois de uma consulta que nao serviria a nada.
+
+        ⚠️⚠️ O AUTOR PODE TER PERDIDO O ALCANCE desde que comentou (trocou de
+        time). Mesma regra das mencoes (`_emitir_mencoes`, filtro 3): so
+        notifica quem ENXERGA a tarefa. Sem isso, o aviso leva a um 404 e o
+        payload vaza o titulo da tarefa para fora do escopo dele.
+        """
+        ator = require_tenant().user_id
+        if comment.user_id == ator:
+            return
+        task = await self._tasks.get_by_id_or_raise(comment.task_id)
+        if not await user_can_view_task(
+            self._session, task=task, user_id=comment.user_id
+        ):
+            return
+        await self._notify.comment_reacted(
+            recipient_id=comment.user_id,
+            actor_id=ator,
+            task_id=task.id,
+            task_title=task.title,
+            comment_id=comment.id,
+            emoji=emoji,
+        )
+
     async def _reacoes_de(self, comment: Comment) -> tuple[ReactionSummary, ...]:
         """A fileira de UM comentario (as rotas de reagir e o editar)."""
         reacoes = await self._reactions.summaries_for_comments([comment.id])

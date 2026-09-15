@@ -30,6 +30,8 @@
 // Sem alcance, sem tarefa, em todo lugar (ADR 0038, E6).
 // =====================================================================
 
+import type { AppNotification } from "./api";
+
 /** O minimo que precisamos saber de uma notificacao para achar o destino. */
 export type NotificacaoNavegavel = {
   task_id: string | null;
@@ -44,4 +46,34 @@ export type NotificacaoNavegavel = {
 export function destinoDaNotificacao(n: NotificacaoNavegavel): string {
   if (!n.task_id) return "/minhas-tarefas";
   return `/tarefa/${n.task_id}`;
+}
+
+/**
+ * O texto de uma notificacao no sino.
+ *
+ * ⚠️ MORAVA DENTRO DO `NotificationBell` e nao tinha teste nenhum: a regra
+ * da Spec 027 e que `components/` desenha e `lib/` decide -- e texto por tipo
+ * e decisao. Veio para ca na Spec 050 (fatia B), junto com o tipo novo, para
+ * que o texto da reacao nascesse com guardiao.
+ *
+ * ⚠️ O `emoji` vem do PAYLOAD, e nao da reacao atual: a notificacao e
+ * snapshot. Se a pessoa trocar 👍 por ❤️ depois, o aviso continua dizendo o que
+ * aconteceu quando foi emitido. Sem `emoji` (payload antigo ou falho), a frase
+ * fica sem ele em vez de mostrar "undefined".
+ */
+export function textoDaNotificacao(
+  n: Pick<AppNotification, "type" | "payload">,
+): string {
+  const ator = n.payload?.actor_name || "Alguém";
+  const task = n.payload?.task_title || "uma tarefa";
+  if (n.type === "TASK_ASSIGNED") return `${ator} designou você em "${task}"`;
+  if (n.type === "TASK_COMMENTED") return `${ator} comentou em "${task}"`;
+  if (n.type === "TASK_MENTIONED") return `${ator} mencionou você em "${task}"`;
+  if (n.type === "TASK_COMMENT_REACTED") {
+    const emoji = n.payload?.emoji;
+    return emoji
+      ? `${ator} reagiu com ${emoji} ao seu comentário em "${task}"`
+      : `${ator} reagiu ao seu comentário em "${task}"`;
+  }
+  return `Atualização em "${task}"`;
 }

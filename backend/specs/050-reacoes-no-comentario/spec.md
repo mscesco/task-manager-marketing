@@ -5,7 +5,7 @@
 na mesma data. **As três perguntas de desenho foram respondidas em 15/09**
 (§8). A quarta — a fonte do seletor — foi respondida no mesmo dia: catálogo
 próprio, gerado do `emojibase-data`.
-**Fatia A entregue em 15/09.**
+**Fatias A e B entregues em 15/09.**
 **Escopo:** backend (tabela, rotas, contagem na listagem, notificação) e front
 (botão de reagir, seletor, fileira de reações). Nenhuma tela nova — tudo mora
 no comentário do detalhe da tarefa.
@@ -339,7 +339,16 @@ Um PR, um commit por fatia, CI conferido a cada commit.
 
   **Testes:** reagir ao próprio não emite; autor sem alcance da tarefa não
   recebe; trocar **não** emite; tirar e pôr de novo emite; tirar não emite.
-  **Sabotagem:** tirar a exclusão do autor e ver o teste de auto-reação cair.
+  **Sabotagem:** notificar sem olhar se a reação nasceu (tirar o `if nasceu`)
+  e ver o teste de troca cair.
+  ⚠️ **Não a exclusão do autor**, que era a sabotagem escrita aqui antes: ela
+  mora em **dois** lugares (o service sai cedo para não carregar a tarefa, e o
+  emissor recusa de novo, como em todo tipo). Tirar uma das duas deixa os testes
+  verdes — prova a redundância, e não a trava.
+  **Front:** o texto do sino saiu de dentro do `NotificationBell` para
+  `lib/notificacoes.ts` (`textoDaNotificacao`), porque não tinha teste nenhum e a
+  fronteira da Spec 027 põe decisão em `lib/`. As três frases que já existiam
+  ganharam teste junto, para provar que a mudança de casa não alterou nenhuma.
 
 - **C — a tela.** ⚠️ **Trava na pergunta 4 da §8.**
   - a decisão em `lib/` (Spec 027, fronteira do teste): agrupar e ordenar a
