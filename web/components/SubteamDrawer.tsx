@@ -46,7 +46,11 @@ import {
   type Alcance,
 } from "@/lib/permissoesMembros";
 import type { Permission } from "@/lib/permissions.generated";
-import { confirmacaoValida, descreveConteudo } from "@/lib/gestaoTimes";
+import {
+  confirmacaoValida,
+  descreveConteudo,
+  podeEditar,
+} from "@/lib/gestaoTimes";
 import { ROLE_LABEL } from "@/components/MembersTable";
 import { directMembers, subteamCandidates } from "@/lib/teamScreen";
 
@@ -164,7 +168,11 @@ export default function SubteamDrawer({
         </div>
 
         <div className="flex-1 overflow-y-auto p-4">
-          {canManage && <Identity team={team} onChanged={onChanged} />}
+          {/* ⚠️ RENOMEAR PERGUNTA AO SERVIDOR, e não ao alcance (Spec 049, fatia
+              F). O supervisor edita o próprio subtime sem ter alcance amplo; e
+              o gerente de uma árvore tem alcance amplo sem editar o subtime da
+              outra. `canManage` responde as duas errado. */}
+          {podeEditar(team) && <Identity team={team} onChanged={onChanged} />}
 
           <section className="mt-5">
             <h3 className="label mb-2">Quem está aqui</h3>

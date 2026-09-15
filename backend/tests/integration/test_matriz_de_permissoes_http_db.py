@@ -411,10 +411,13 @@ MATRIZ: tuple[Linha, ...] = (
           f"{T}/workspaces/current/teams/{{mkt}}", {"name": "Outro"},
           (409, 409, 409, NEGADO, NEGADO),
           diverge="item 04 (fora desta spec): renomear time raiz"),
+    # Fatia F (item 03): o SUPERVISOR edita o PROPRIO subtime -- e so ele.
     Linha("subteam.update", "o SEO", "patch",
           f"{T}/workspaces/current/teams/{{seo}}", {"name": "Outro"},
-          (OK, OK, OK, NEGADO, NEGADO),
-          diverge="item 03: SUPERVISOR edita o proprio subtime"),
+          (OK, OK, OK, OK, NEGADO)),
+    Linha("subteam.update", "o Design (irmao do SEO)", "patch",
+          f"{T}/workspaces/current/teams/{{design}}", {"name": "Outro"},
+          (OK, OK, OK, NEGADO, NEGADO)),
     Linha("subteam.update", "Vendas (Comercial)", "patch",
           f"{T}/workspaces/current/teams/{{vendas}}", {"name": "Outro"},
           (OK, OK, NEGADO, NEGADO, NEGADO)),
@@ -661,3 +664,38 @@ async def test_matriz(db, linha: Linha, papel: str, esperado) -> None:
         + (f"\n  (linha marcada: DIVERGE DO ALVO, {linha.diverge})" if linha.diverge else "")
         + (f"\n  (linha marcada: DEFEITO, {linha.defeito})" if linha.defeito else "")
     )
+
+
+# ---------------------------------------------------------------- o cadeado
+
+
+#: Os subtimes que cada papel EDITA -- o `can_update` que a listagem devolve.
+#: Raiz nunca aparece: renomear raiz e recusado para todos (item 04, fora).
+EDITA = {
+    "ADMIN": {"seo", "design", "vazio_mkt", "vendas", "suporte", "vazio_com"},
+    "GESTOR": {"seo", "design", "vazio_mkt", "vendas", "suporte", "vazio_com"},
+    "MANAGER": {"seo", "design", "vazio_mkt"},
+    "SUPERVISOR": {"seo"},
+    "OPERATOR": set(),
+}
+
+
+@pytest.mark.parametrize("papel", PAPEIS)
+async def test_listagem_de_times_diz_o_que_cada_papel_edita(db, papel: str) -> None:
+    """Spec 049, fatia F -- o cadeado do time vem do servidor.
+
+    ⚠️ E O PAR DAS LINHAS `subteam.update` DA MATRIZ, e nao um teste a parte:
+    a tabela prova que o PATCH recusa; este prova que a TELA nao ofereceria.
+    Sem ele, o lapis do supervisor apareceria em todos os subtimes -- a tela
+    sabe "o que" a pessoa pode, e so o servidor sabe "onde".
+    """
+    m = await _mundo(db)
+    async with _client(db, _contexto(m, papel)) as cli:
+        r = await cli.get(f"{T}/workspaces/current/teams")
+    assert r.status_code == 200, r.text
+
+    nome_do_id = {v: k for k, v in m["ids"].items()}
+    editaveis = {
+        nome_do_id[item["id"]] for item in r.json()["items"] if item["can_update"]
+    }
+    assert editaveis == EDITA[papel], f"{papel} edita {editaveis}"

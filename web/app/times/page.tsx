@@ -311,7 +311,7 @@ export default function TimesPage() {
                   </div>
                 </div>
 
-                {podeEditar(t, permissoes) && (
+                {podeEditar(t) && (
                   <button
                     type="button"
                     className="btn btn-ghost"

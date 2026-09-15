@@ -66,6 +66,16 @@ class TeamListItem(TeamResponse):
     projetos: int = 0
     membros: int = 0
     filhos: int = 0
+    #: Quem pergunta pode EDITAR este time? (Spec 049, fatia F)
+    #:
+    #: ⚠️⚠️ O CADEADO VEM DO SERVIDOR, e nao da tela -- mesma regra da Spec 047
+    #: §3.1 (`can_edit_role` do vinculo). O front so sabe "o que" a pessoa
+    #: pode, nunca "onde"; com o SUPERVISOR editando o proprio subtime, a tela
+    #: que olhasse so `subteam.update` desenharia o lapis em TODOS os subtimes,
+    #: e todos menos um dariam 403. Calculado pela mesma pergunta do PATCH.
+    #:
+    #: ⚠️ OBRIGATORIO, sem default: quem monta um `TeamListItem` tem de responder.
+    can_update: bool
 
 
 class TeamCreateRequest(BaseModel):

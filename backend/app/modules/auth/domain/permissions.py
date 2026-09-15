@@ -216,6 +216,11 @@ _ROLE_PERMISSIONS: dict[UserTeamRole, frozenset[str]] = {
     ),
     UserTeamRole.SUPERVISOR: frozenset(
         {
+            # ⭐ Spec 049, FATIA F -- item 03 da matriz de 10/09: o
+            # SUPERVISOR edita o PROPRIO subtime (nome e descricao). So dele:
+            # `subteam.update` e `_OWN_TEAM_ONLY`, entao nao alcanca a raiz nem
+            # o subtime irmao -- e renomear raiz segue recusado para todos.
+            "subteam.update",
             "project.update",
             "project.archive",
             "task.create",
@@ -430,6 +435,10 @@ _OWN_TEAM_ONLY: frozenset[str] = frozenset(
         # e a lista cresce com o corte -- cada verbo que saiu delas.
         "membership.create",
         "membership.delete",
+        # ⚠️ Fatia F: o supervisor edita O SEU subtime. Sem esta linha, a regra
+        # de execucao ("o time do vinculo + a raiz") lhe daria editar o time
+        # RAIZ -- que o servico recusa por outra regra, mas nao por esta.
+        "subteam.update",
         "board.create",
         "board.update",
         "board.delete",

@@ -84,7 +84,7 @@ async def update_current_workspace(
 # --------------------------------------------------------
 @router.get("/current/teams", response_model=TeamListResponse)
 async def list_teams(
-    _: TenantContextDep, session: SessionDep
+    ctx: TenantContextDep, session: SessionDep
 ) -> TeamListResponse:
     """Lista todas as equipes do workspace corrente.
 
@@ -106,6 +106,15 @@ async def list_teams(
                 projetos=c.projetos if c else 0,
                 membros=c.membros if c else 0,
                 filhos=c.filhos if c else 0,
+                # ⚠️ A MESMA PERGUNTA DO `TeamService.update`, na mesma ordem
+                # de efeito: raiz nunca (a regra recusa para todos), subtime se
+                # houver `subteam.update` NESTE time. Se as duas divergirem, a
+                # tela oferece o lapis e o PATCH recusa -- ou esconde o que
+                # funcionaria. Spec 049, fatia F.
+                can_update=(
+                    t.parent_team_id is not None
+                    and ctx.has_permission_in("subteam.update", t.id)
+                ),
             )
         )
     return TeamListResponse(items=itens, total=len(itens))

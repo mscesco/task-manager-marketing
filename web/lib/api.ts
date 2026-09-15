@@ -675,6 +675,11 @@ export type Team = {
   projetos?: number;
   membros?: number;
   filhos?: number;
+  // Spec 049, fatia F: quem pergunta pode EDITAR este time? O CADEADO VEM DO
+  // SERVIDOR, calculado pela mesma pergunta do PATCH -- a tela sabe "o que" a
+  // pessoa pode, nunca "onde". Opcional como as contagens: só a listagem o
+  // traz, e AUSENTE LÊ-SE COMO "NÃO" (`podeEditar` fecha, não abre).
+  can_update?: boolean;
 };
 
 type TeamListResponse = { items: Team[]; total: number };

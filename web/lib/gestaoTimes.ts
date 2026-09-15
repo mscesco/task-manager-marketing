@@ -41,14 +41,24 @@ export function estaVazio(c: ContagensTime): boolean {
 }
 
 /**
- * Editar exige `team.manage` (ADMIN ou MANAGER) e um time nao-raiz (D1, D5).
+ * Pode editar este time? O SERVIDOR responde, por time (Spec 049, fatia F).
+ *
+ * ⚠️⚠️ ATE A FATIA F ESTA FUNCAO OLHAVA A PERMISSAO (`subteam.update`), e isso
+ * so dava certo porque quem a tinha editava a arvore inteira. Com o
+ * SUPERVISOR editando SO o proprio subtime, a mesma linha desenharia o lapis
+ * em todos os subtimes, e todos menos um dariam 403 -- a tela nao sabe "onde".
+ * Agora ela le `can_update`, que a listagem calcula com a mesma pergunta do
+ * PATCH (mesma regra do cadeado do vinculo, Spec 047 §3.1).
+ *
+ * ⚠️ AUSENTE E "NAO". `can_update` so vem da listagem de times; um `Team` de
+ * outra origem nao abre lapis por engano.
  */
-export function podeEditar(
-  time: { parent_team_id: string | null },
-  permissoes: readonly Permission[]
-): boolean {
+export function podeEditar(time: {
+  parent_team_id: string | null;
+  can_update?: boolean;
+}): boolean {
   if (ehRaiz(time)) return false;
-  return permissoes.includes("subteam.update");
+  return time.can_update === true;
 }
 
 /**

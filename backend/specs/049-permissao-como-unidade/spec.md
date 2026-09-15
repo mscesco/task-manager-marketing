@@ -644,10 +644,18 @@ do mais contido ao que desfaz decisão escrita.
   pela fatia 0b**: era a mesma linha do defeito "MANAGER na outra raiz"
   (`create_member` com `_assert_gestao_ampla_em`). Não sobra nada para E além
   de a fatia B passar esta trava a perguntar ao `command_team_ids`.
-- **F — item 03: o SUPERVISOR edita o próprio subtime.** `subteam.update` entra
-  no pacote do SUPERVISOR, com escopo de comando — que para ele é **só** o
-  subtime (§4.3). ⚠️ A linha "SUPERVISOR renomeia a **raiz**" tem de continuar
-  `negado`: é a armadilha do §3.3 por outro caminho.
+- **F — item 03: o SUPERVISOR edita o próprio subtime.** ✅ **Entregue em 15/09.**
+  `subteam.update` entra no pacote do SUPERVISOR e em `_OWN_TEAM_ONLY` — só o
+  subtime do vínculo. A linha "SUPERVISOR renomeia a **raiz**" continua `negado`,
+  e entrou "SUPERVISOR edita o subtime **irmão**" = `negado`.
+  ⚠️⚠️ **O custo estava na tela, não no mapa.** `podeEditar` olhava
+  `subteam.update`, e isso só funcionava porque quem o tinha editava a árvore
+  inteira: com o supervisor, o lápis apareceria em **todos** os subtimes. A
+  listagem de times (`GET /teams`) passou a devolver **`can_update` por time**,
+  calculado pela mesma pergunta do PATCH — o cadeado vem do servidor, como o
+  `can_edit_role` da Spec 047 §3.1 — e a tela lê isso (`podeEditar(time)`,
+  gaveta do subtime, cartão). Um teste compara o `can_update` de cada papel com
+  as linhas da matriz.
 - **G — item 02: o GESTOR edita a organização e promove até gestor.**
   `organization.update` e `org_role.grant` entram na lista; o teto (*"até
   gestor; só admin mexe em admin"*) mora no serviço (§4.5), com linha própria
