@@ -9,6 +9,8 @@ Casos de uso:
     create_comment  -- quem ve, comenta (D1); valida threading (D4)
     edit_comment    -- so o autor (D2); seta edited_at
     delete_comment  -- autor ou moderador task.delete (D3); soft-delete
+    set_reaction    -- quem ve, reage; reagir de novo troca (Spec 050)
+    remove_reaction -- tira a propria reacao (Spec 050)
 """
 
 from __future__ import annotations
@@ -38,8 +40,15 @@ from app.modules.tasks.domain.comment import (
     mask_content,
     normalize_content,
 )
+from app.modules.tasks.domain.comment_reaction import (
+    ReactionSummary,
+    normalize_emoji,
+)
 from app.modules.tasks.infrastructure.collaboration_repository import (
     TaskAssignmentRepository,
+)
+from app.modules.tasks.infrastructure.comment_reaction_repository import (
+    CommentReactionRepository,
 )
 from app.modules.tasks.infrastructure.comment_repository import CommentRepository
 from app.modules.tasks.infrastructure.task_repository import TaskRepository
@@ -69,6 +78,10 @@ class CommentDTO:
     edited_at: datetime | None
     created_at: datetime
     is_deleted: bool
+    #: Spec 050. ⚠️ SEM default, de proposito: todo `_to_dto` tem de dizer de
+    #: onde vem a fileira. Um `= ()` aqui faria o chamador esquecido devolver
+    #: "ninguem reagiu" em silencio.
+    reactions: tuple[ReactionSummary, ...]
 
 
 class CommentService:
@@ -81,6 +94,7 @@ class CommentService:
         self._guards = TaskScopeGuards(session)
         self._assignees = TaskAssignmentRepository(session)
         self._notify = NotificationEmitter(session)
+        self._reactions = CommentReactionRepository(session)
 
     async def list_comments(
         self, *, task_id: uuid.UUID, params: PageParams
@@ -92,7 +106,13 @@ class CommentService:
         items, total = await self._comments.list_for_task(
             task_id=task_id, limit=params.limit, offset=params.offset
         )
-        dtos = [self._to_dto(c) for c in items]
+        # Spec 050: a fileira de todos os comentarios da pagina numa query so.
+        # ⚠️ So de comentario ATIVO (§4.6): as reacoes seguem a marca do
+        # comentario, e o tombstone nao tem fileira.
+        reacoes = await self._reactions.summaries_for_comments(
+            [c.id for c in items if c.deleted_at is None]
+        )
+        dtos = [self._to_dto(c, reactions=reacoes.get(c.id, ())) for c in items]
         return Page(items=dtos, total=total, page=params.page, size=params.size)
 
     async def _emitir_mencoes(
@@ -231,7 +251,8 @@ class CommentService:
             comment_id=str(comment.id),
             is_reply=parent_comment_id is not None,
         )
-        return self._to_dto(comment)
+        # Comentario recem-criado: ninguem reagiu ainda.
+        return self._to_dto(comment, reactions=())
 
     async def edit_comment(
         self, *, task_id: uuid.UUID, comment_id: uuid.UUID, content: str
@@ -282,7 +303,8 @@ class CommentService:
             comment_id=str(comment_id),
             mencoes_novas=len(novos),
         )
-        return self._to_dto(comment)
+        # ⚠️ Editar NAO tira as reacoes: a resposta leva a fileira de verdade.
+        return self._to_dto(comment, reactions=await self._reacoes_de(comment))
 
     async def delete_comment(
         self, *, task_id: uuid.UUID, comment_id: uuid.UUID
@@ -304,9 +326,60 @@ class CommentService:
 
         logger.info("comment.deleted", comment_id=str(comment_id))
 
+    async def set_reaction(
+        self, *, task_id: uuid.UUID, comment_id: uuid.UUID, emoji: str
+    ) -> CommentDTO:
+        """Poe ou troca a reacao de quem chama. Spec 050.
+
+        Quem ve a tarefa, reage (§4.1) -- sem permissao, como comentar. Vale
+        para comentario de topo e replica.
+
+        Erros:
+            EntityNotFoundError -- tarefa invisivel, ou comentario inexistente,
+                                   apagado ou de outra tarefa (`_load_active`).
+            ValidationError     -- nao e exatamente um emoji (422).
+
+        ⚠️ O 404 VEM ANTES DO 422, de proposito: quem nao ve a tarefa nao pode
+        descobrir, mandando lixo, que o comentario existe.
+        """
+        comment = await self._load_active(task_id=task_id, comment_id=comment_id)
+        normalizado = normalize_emoji(emoji)
+        nasceu = await self._reactions.upsert(
+            comment_id=comment.id,
+            user_id=require_tenant().user_id,
+            emoji=normalizado,
+        )
+        logger.info(
+            "comment.reaction_set", comment_id=str(comment_id), created=nasceu
+        )
+        return self._to_dto(comment, reactions=await self._reacoes_de(comment))
+
+    async def remove_reaction(
+        self, *, task_id: uuid.UUID, comment_id: uuid.UUID
+    ) -> CommentDTO:
+        """Tira a reacao de quem chama. Spec 050.
+
+        ⚠️ Tirar o que nao existe NAO e 404: chega ao mesmo estado, e o duplo
+        clique nao vira erro na tela (§5). O 404 continua valendo para a
+        tarefa e o comentario (`_load_active`).
+        """
+        comment = await self._load_active(task_id=task_id, comment_id=comment_id)
+        removeu = await self._reactions.remove(
+            comment_id=comment.id, user_id=require_tenant().user_id
+        )
+        logger.info(
+            "comment.reaction_removed", comment_id=str(comment_id), removed=removeu
+        )
+        return self._to_dto(comment, reactions=await self._reacoes_de(comment))
+
     # ----------------------------------------------------
     # Helpers
     # ----------------------------------------------------
+    async def _reacoes_de(self, comment: Comment) -> tuple[ReactionSummary, ...]:
+        """A fileira de UM comentario (as rotas de reagir e o editar)."""
+        reacoes = await self._reactions.summaries_for_comments([comment.id])
+        return reacoes.get(comment.id, ())
+
     async def _load_active(
         self, *, task_id: uuid.UUID, comment_id: uuid.UUID
     ) -> Comment:
@@ -322,7 +395,9 @@ class CommentService:
         return comment
 
     @staticmethod
-    def _to_dto(comment: Comment) -> CommentDTO:
+    def _to_dto(
+        comment: Comment, *, reactions: tuple[ReactionSummary, ...]
+    ) -> CommentDTO:
         is_deleted = comment.deleted_at is not None
         return CommentDTO(
             id=comment.id,
@@ -333,4 +408,8 @@ class CommentService:
             edited_at=comment.edited_at,
             created_at=comment.created_at,
             is_deleted=is_deleted,
+            # ⚠️ Spec 050, §4.6: comentario apagado nao mostra reacao, venha o
+            # que vier do chamador. As linhas continuam no banco -- seguem a
+            # marca do comentario, e voltam se ele voltar.
+            reactions=() if is_deleted else reactions,
         )

@@ -5,6 +5,8 @@ Rotas (sob /tasks/{task_id}):
     POST   /comments               -- comenta (exige ver a task -- D1)
     PATCH  /comments/{comment_id}  -- edita (so o autor -- D2)
     DELETE /comments/{comment_id}  -- apaga (autor ou moderador task.delete -- D3)
+    PUT    /comments/{comment_id}/reaction -- poe ou troca a propria reacao (Spec 050)
+    DELETE /comments/{comment_id}/reaction -- tira a propria reacao (Spec 050)
 
 NENHUMA rota usa require_permission (igual ao watcher da E4): "quem ve,
 comenta", e a alcada de edicao/moderacao e resolvida no CommentService.
@@ -23,6 +25,7 @@ from app.modules.auth.api.dependencies import TenantContextDep
 from app.modules.tasks.api.schemas import (
     CommentCreateRequest,
     CommentListResponse,
+    CommentReactionSetRequest,
     CommentResponse,
     CommentUpdateRequest,
 )
@@ -98,3 +101,40 @@ async def delete_comment(
     )
     await uow.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.put("/comments/{comment_id}/reaction", response_model=CommentResponse)
+async def set_comment_reaction(
+    task_id: uuid.UUID,
+    comment_id: uuid.UUID,
+    payload: CommentReactionSetRequest,
+    _: TenantContextDep,
+    uow: UoWDep,
+) -> CommentResponse:
+    """Poe ou troca a reacao de quem chama (Spec 050). Quem ve a task, reage.
+
+    `PUT` porque e idempotente: "a minha reacao aqui passa a ser X". Devolve o
+    comentario inteiro, para a tela trocar a fileira sem recarregar o thread.
+    404 se nao ve a task ou o comentario nao esta ativo; 422 se nao e um emoji.
+    """
+    dto = await CommentService(uow.session).set_reaction(
+        task_id=task_id, comment_id=comment_id, emoji=payload.emoji
+    )
+    await uow.commit()
+    return CommentResponse.model_validate(dto)
+
+
+@router.delete("/comments/{comment_id}/reaction", response_model=CommentResponse)
+async def remove_comment_reaction(
+    task_id: uuid.UUID, comment_id: uuid.UUID, _: TenantContextDep, uow: UoWDep
+) -> CommentResponse:
+    """Tira a reacao de quem chama (Spec 050).
+
+    ⚠️ 200 COM CORPO, e nao 204: a tela precisa da fileira atualizada. Mesmo
+    desenho do `remove_watcher`. Tirar reacao que nao existe tambem e 200.
+    """
+    dto = await CommentService(uow.session).remove_reaction(
+        task_id=task_id, comment_id=comment_id
+    )
+    await uow.commit()
+    return CommentResponse.model_validate(dto)

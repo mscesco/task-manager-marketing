@@ -3,8 +3,9 @@
 **Status:** escrita em 15/09/2026, a partir do item 10 do documento de 10/09
 (`~/Documents/gestor-de-tarefas-permissoes.html`, passo 4) e das respostas dela
 na mesma data. **As três perguntas de desenho foram respondidas em 15/09**
-(§8). Sobra uma — a fonte do seletor —, e ela só trava a fatia C.
-**Nenhuma fatia começou.**
+(§8). A quarta — a fonte do seletor — foi respondida no mesmo dia: catálogo
+próprio, gerado do `emojibase-data`.
+**Fatia A entregue em 15/09.**
 **Escopo:** backend (tabela, rotas, contagem na listagem, notificação) e front
 (botão de reagir, seletor, fileira de reações). Nenhuma tela nova — tudo mora
 no comentário do detalhe da tarefa.
@@ -162,8 +163,13 @@ pessoa manda depende do teclado dela. O servidor grava sempre a forma
   `LinhaComentario` já tem o mapa `members` para trocar id por nome. A contagem
   é `user_ids.length`; "eu reagi" é `user_ids.includes(me.id)`. Nada disso
   precisa de campo próprio.
-- **Ordem:** pela primeira reação de cada emoji (o emoji que chegou primeiro
-  fica à esquerda, e não pula quando outro passa na frente em número).
+- **Ordem:** pela reação mais antiga com cada emoji (o emoji que chegou
+  primeiro fica à esquerda, e não pula quando outro passa na frente em número).
+  ⚠️ **Trocar conta como reação nova no emoji de destino** — a ordem lê o
+  `updated_at`, e não o `created_at`. Com o `created_at`, quem trocou 👍 por 🎉
+  entraria no 🎉 com a hora do 👍, e a pílula nova podia nascer à esquerda de
+  pílulas mais antigas. Reagir de novo com o **mesmo** emoji não regrava nada
+  (a pílula não muda de lugar sem nada ter mudado).
 - ⚠️ **Uma consulta por PÁGINA, e não por comentário.** A listagem já é
   paginada; as reações dos comentários da página vêm num único `SELECT … WHERE
   comment_id IN (…)`. Mesmo desenho de `assignee_ids_for_tasks` (ADR 0025).
@@ -294,7 +300,8 @@ comment_reaction
   UNIQUE (comment_id, user_id)  -- cobre a busca por comment_id
 ```
 
-- `created_at` ordena a fileira (§4.4); `updated_at` registra a troca.
+- `updated_at` ordena a fileira e registra a troca (§4.4); `created_at` fica
+  como registro de quando a pessoa reagiu pela primeira vez.
 - **`varchar(16)`:** o maior emoji da biblioteca tem **10 code points**
   (medido), e o `varchar` do Postgres conta caractere. A validação é quem
   garante o conteúdo; o tamanho só barra lixo que escapasse dela.
@@ -380,7 +387,7 @@ Um PR, um commit por fatia, CI conferido a cada commit.
    o documento de 10/09 (§4.3).
 3. **Trocar de emoji notifica de novo?** — *"não"* (§4.5).
 
-### A que sobra — só trava a fatia C
+### A quarta — respondida em 15/09
 
 4. **De onde vêm as categorias e a busca em português do seletor?** Com emoji
    livre, o seletor mostra perto de 1.900 emojis, e a biblioteca do backend não
@@ -398,6 +405,42 @@ Um PR, um commit por fatia, CI conferido a cada commit.
      nosso, com os tokens do produto.
      ⚠️ **Custo:** mais trabalho na fatia C (grade, abas de categoria, busca,
      teclado), e a fonte de dados precisa ser escolhida e medida antes.
-   - **Recomendação: b.** O seletor é pequeno (duas linhas fixas + grade + busca)
-     e fica dentro de uma tela do produto, onde o visual de terceiro destoa; e
-     dependência parada há mais de um ano é dívida desde o primeiro dia.
+   - **c) OpenMoji** (sugestão dela, 15/09). Medido no pacote `openmoji` 17.0.0
+     (abril de 2026, **mantido**), licença **CC BY-SA 4.0**:
+     - ✅ **tem categorias**: 12 grupos e 100 subgrupos, com 3.953 emojis Unicode
+       (1.923 sem tom de pele);
+     - ⚠️ **não tem português**: o nome e as etiquetas são em inglês
+       (`annotation: "thumbs up"`, `tags: "+1, good, hand, like…"`). A busca em
+       português continua precisando de outra fonte;
+     - ⚠️ **é um conjunto de DESENHOS**, e não só dados. Usar as imagens muda o
+       emoji de todo mundo para o traço do OpenMoji (igual em qualquer sistema)
+       e exige **crédito visível** pela licença. Usar só os dados (grupos) mantém
+       o emoji nativo de cada sistema;
+     - ⚠️ traz **542 itens que não são Unicode** (`extras-openmoji`,
+       `extras-unicode`) — o servidor os recusa, e o gerador tem de tirá-los;
+     - ⚠️ o `emoji` dele vem com um U+FE0F a mais em alguns casos (👍 é `👍️`), então
+       a ponte com o que o servidor grava é pelo `hexcode`, e não pelo texto.
+   - **Resposta dela, 15/09:** *"se não tiver nenhuma aberta que possamos usar,
+     pode deixar catálogo próprio mesmo"*.
+
+   **Tem uma aberta, e ela resolve o que faltava — fonte do catálogo próprio:
+   `emojibase-data`** (17.0.0, novembro de 2025, licença **MIT**). Medido no
+   pacote em 15/09, `pt/data.json`:
+   - 1.949 emojis, com **nome em português** (`👍` → *"polegar para cima"*) e
+     **etiquetas em português** (*"joia"*, *"beleza"*, *"valeu"*, *"concordo"*…)
+     — a busca por "joia" acha o 👍;
+   - **grupo** de cada emoji, com os nomes dos grupos também em português
+     (*"sorrisos e emoção"*, *"pessoas e corpo"*…);
+   - tons de pele (`skins`) por emoji.
+
+   ⚠️ O mesmo cuidado do OpenMoji: o campo `emoji` às vezes traz um U+FE0F a
+   mais (👍 vem `👍️`). O gerador tem de passar cada emoji pela mesma
+   normalização do servidor, senão o seletor manda uma forma e a pílula mostra
+   outra.
+
+   **Desenho da fatia C:** um script gera, do `pt/data.json`, um arquivo
+   commitado no front (emoji normalizado, nome, etiquetas, grupo) — como o
+   `permissions.generated.ts` da 049 —, e o seletor é nosso, com os tokens do
+   produto e o emoji nativo de cada sistema. Sem dependência de runtime no
+   front: o pacote só é lido pelo gerador. O OpenMoji fica de fora — ele não
+   traz português, e as imagens mudariam o emoji de todo mundo.
