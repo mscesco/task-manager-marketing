@@ -9,7 +9,9 @@ MANAGER/ADMIN, entao supervisor mexendo em OPERATOR passaria direto.
 O que este arquivo prova, em ordem de importancia:
 
     D1  supervisor NAO alcanca outro subtime      <- a trava inegociavel
-    D2  supervisor so mexe em OPERATOR
+    H   supervisor cria, troca e tira par SUPERVISOR no proprio subtime
+        (era a D2, "so mexe em OPERATOR" -- revogada pela Camila na Spec 049,
+        fatia H; os tres testes do bloco mudaram de lado de proposito)
     D3  supervisor nao cadastra pessoa nova (rota segue team.manage)
     D4  supervisor nao desativa conta
         ADMIN/MANAGER sem regressao
@@ -150,63 +152,99 @@ async def test_supervisor_remove_do_proprio_subtime(db) -> None:
     assert c["raiz"] in restantes  # o vinculo de origem continua
 
 
-# ----------------------------------------------------------------- D2
+# ----------------------------------------------------------------- H (era D2)
+#
+# ⚠️⚠️ OS TRES TESTES DESTE BLOCO AFIRMAVAM O CONTRARIO ate a Spec 049, fatia H.
+# Eram a prova da D2 da Spec 028 -- "supervisor nao promove; criar outro
+# SUPERVISOR e trabalho do MANAGER". A Camila a revogou: *"supervisor troca o
+# cargo de alguem dentro do seu subtime"* (14/09), e sobre rebaixar outro
+# supervisor, *"Sim, pode rebaixar, qualquer coisa o gerente arruma ne"*
+# (15/09). Nao e trava afrouxada por engano: e decisao, e o que continua
+# travado esta nas metades negativas de cada teste.
+#
+# ⚠️ O ALVO NAO ESTA NA RAIZ, e e de proposito: OPERATOR na raiz promovido a
+# SUPERVISOR no subtime esbarra em "o papel no time principal nao pode ser
+# menor" (409), e o teste mediria essa regra em vez da permissao.
 
 
-async def test_supervisor_nao_atribui_supervisor(db) -> None:
-    """D2: supervisor nao cria par. Promover e trabalho do MANAGER."""
+async def _operador_do_crm(db, c, email: str):
+    uid = await f.make_user(db, workspace_id=c["ws"], email=email)
+    await f.add_member(
+        db, workspace_id=c["ws"], user_id=uid, team_id=c["crm"], role="OPERATOR"
+    )
+    return uid
+
+
+async def test_supervisor_atribui_supervisor_no_proprio_subtime(db) -> None:
+    """Fatia H: o supervisor cria par -- no subtime dele, e so ate supervisor."""
     c = await _cenario(db)
+    pessoa = await _operador_do_crm(db, c, "pessoa@t.dev")
     with _como_supervisor(c):
+        svc = MemberService(db)
+        ut = await svc.assign_to_team(
+            user_id=pessoa, team_id=c["seo"], role=UserTeamRole.SUPERVISOR
+        )
+        assert ut.role == UserTeamRole.SUPERVISOR
+        # O teto que sobra e a matriz C2: gerente nao e papel que ele atribua.
+        outra = await _operador_do_crm(db, c, "outra@t.dev")
         with pytest.raises(AuthorizationError):
-            await MemberService(db).assign_to_team(
-                user_id=c["op"], team_id=c["seo"], role=UserTeamRole.SUPERVISOR
+            await svc.assign_to_team(
+                user_id=outra, team_id=c["seo"], role=UserTeamRole.MANAGER
             )
 
 
-async def test_supervisor_nao_troca_papel(db) -> None:
-    """D2: trocar papel nao foi aberto ao supervisor (nem no proprio time)."""
+async def test_supervisor_troca_papel_no_proprio_subtime(db) -> None:
+    """Fatia H: promove e rebaixa no subtime dele; fora dele, 403 (D1)."""
     c = await _cenario(db)
+    pessoa = await _operador_do_crm(db, c, "pessoa@t.dev")
     with _como_supervisor(c):
         svc = MemberService(db)
         await svc.assign_to_team(
-            user_id=c["op"], team_id=c["seo"], role=UserTeamRole.OPERATOR
+            user_id=pessoa, team_id=c["seo"], role=UserTeamRole.OPERATOR
         )
+        promovido = await svc.change_member_role(
+            user_id=pessoa, team_id=c["seo"], new_role=UserTeamRole.SUPERVISOR
+        )
+        assert promovido.role == UserTeamRole.SUPERVISOR
+        # ⭐ E rebaixa um par -- a pergunta 5 da spec, respondida "sim".
+        rebaixado = await svc.change_member_role(
+            user_id=pessoa, team_id=c["seo"], new_role=UserTeamRole.OPERATOR
+        )
+        assert rebaixado.role == UserTeamRole.OPERATOR
+        # D1: o vinculo do CRM nao e dele.
         with pytest.raises(AuthorizationError):
             await svc.change_member_role(
-                user_id=c["op"],
-                team_id=c["seo"],
-                new_role=UserTeamRole.SUPERVISOR,
+                user_id=pessoa, team_id=c["crm"], new_role=UserTeamRole.SUPERVISOR
             )
 
 
-async def test_supervisor_nao_remove_par_supervisor(db) -> None:
-    """D2 no caminho destrutivo: nem o supervisor do proprio time sai.
+async def test_supervisor_remove_par_supervisor(db) -> None:
+    """Fatia H no caminho destrutivo: o outro supervisor do subtime sai.
 
     Cobre o caso em que dois supervisores dividem o mesmo subtime.
     """
     c = await _cenario(db)
-    outro_sup = await f.make_user(db, workspace_id=c["ws"], email="sup2@t.dev")
-    await f.add_member(
-        db, workspace_id=c["ws"], user_id=outro_sup,
-        team_id=c["raiz"], role="OPERATOR",
-    )
+    outro_sup = await _operador_do_crm(db, c, "sup2@t.dev")
     await f.add_member(
         db, workspace_id=c["ws"], user_id=outro_sup,
         team_id=c["seo"], role="SUPERVISOR",
     )
     with _como_supervisor(c):
-        with pytest.raises(AuthorizationError):
-            await MemberService(db).remove_member_from_team(
-                user_id=outro_sup, team_id=c["seo"]
-            )
+        svc = MemberService(db)
+        await svc.remove_member_from_team(user_id=outro_sup, team_id=c["seo"])
+        restantes = {
+            ut.team_id for ut in await svc.list_member_teams(user_id=outro_sup)
+        }
+    assert restantes == {c["crm"]}
 
 
 async def test_supervisor_nao_mexe_em_manager_nem_admin(db) -> None:
     """Criterio 5 da spec: alvo MANAGER/ADMIN -> 403.
 
-    Barrado pela MESMA linha que barra SUPERVISOR (papel_alvo != OPERATOR),
-    mas o criterio estava declarado sem prova -- e criterio sem teste e
-    afirmacao, nao garantia.
+    ⚠️ Ate a Spec 049, fatia H, quem barrava era a trava "so OPERATOR" (a D2),
+    que saiu. Hoje barram duas outras, e este teste e o que prova que sobrou
+    alguma: gerente e admin moram na RAIZ, onde o supervisor nao tem
+    `membership.delete` (D1), e a matriz C2 recusa o alvo.
     """
     c = await _cenario(db)
     for papel in ("MANAGER", "ADMIN"):

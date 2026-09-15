@@ -4,7 +4,8 @@
 (`~/Documents/gestor-de-tarefas-permissoes.html`) e da matriz CRUD do artefato
 "Mapa do Gestor de Tarefas". **Fatias 0 e 0b entregues em 14/09.** As quatro perguntas
 da §8 foram respondidas em 14/09 — a spec entrega o corte **e** o alvo (fatias
-0 a H). Resta um detalhe de teto na fatia H, com recomendação.
+0 a H). O detalhe de teto da fatia H foi respondido em 15/09 (§8, pergunta 5).
+**Fatias A a H entregues em 14 e 15/09.**
 **Escopo:** backend (mapa de permissões, escopo de comando, portões de rota e
 de serviço) e os portões de **tela** que leem permissão. Nenhuma tela nova.
 **Depende de:** **Spec 048** mergeada (#53). A fatia 0 registra o
@@ -438,17 +439,17 @@ operador** — não há terceira opção. A resposta dela é a regra; o que falt
 decidir é **em quem**:
 
 - **promover** um OPERATOR do próprio subtime a SUPERVISOR — sim, é o pedido;
-- **rebaixar outro SUPERVISOR** do mesmo subtime — ⚠️ *em aberto.* Com dois
-  supervisores, cada um poderia rebaixar o outro, e o último a clicar fica
-  sozinho no posto. **Recomendação:** não — rebaixar um par continua sendo do
-  MANAGER. É o mesmo desenho do teto do §4.5 (*"o gestor concede até gestor"*):
-  o limite é sobre o **alvo**, e mora no serviço.
+- **rebaixar outro SUPERVISOR** do mesmo subtime — ✅ **sim, decisão dela em
+  15/09**: *"Sim, pode rebaixar, qualquer coisa o gerente arruma ne"*. Com dois
+  supervisores, cada um pode rebaixar o outro, e o último a clicar fica sozinho
+  no posto. A recomendação tinha sido "não" (limite sobre o alvo, como o teto
+  do §4.5); ela escolheu confiar no MANAGER para desfazer.
 
-  ⚠️ **Consequência da recomendação, dita inteira:** como o único cargo acima
-  de operador num subtime é supervisor, "não mexe em par" faz a troca do
-  supervisor ser, na prática, **só promover**. Se ela quiser que ele também
-  rebaixe, a regra passa a ser "rebaixa par", com o risco acima. É a única
-  pergunta que sobra, e ela só trava a fatia H.
+  ⚠️ **Consequência no código:** a trava "quem não troca cargo só mexe em
+  OPERATOR" (`_assert_escopo_de_membro`) ficou sem caso — todo papel que vincula
+  num time também troca cargo ali — e saiu. O que segue barrando supervisor ×
+  gerente é a matriz C2 e a invariante de nível (num subtime só cabem SUPERVISOR
+  e OPERATOR).
 
 E, junto, sem decisão nova: **ninguém troca o próprio cargo** (C3) continua
 valendo, e o **cadeado** da Spec 047 (fatia A, `GET /members/{id}/teams`) tem de
@@ -676,7 +677,19 @@ do mais contido ao que desfaz decisão escrita.
   recusa listados no §4.7 **mudam de lado, de propósito**, no mesmo commit — e
   a mensagem do commit diz que a Spec 028 D2 foi revogada, e por quem. O cadeado
   (`GET /members/{id}/teams`) abre junto; o front (`papeisAtribuiveis`) passa a
-  oferecer SUPERVISOR ao supervisor. ⚠️ Trava no detalhe de teto do §4.7.
+  oferecer SUPERVISOR ao supervisor. ✅ **Entregue em 15/09.**
+  - `membership.update` entra no SUPERVISOR e em `_OWN_TEAM_ONLY` (sem esta
+    segunda, ele trocaria cargo na raiz).
+  - ⚠️ **Eram quatro testes, e não três**: o §4.7 não listava
+    `test_supervisor_member_routes_http_db::test_http_trava_d2_papel_acima`,
+    nem o de remover par. Todos mudaram de lado, cada um com uma metade negativa
+    (outro subtime, raiz ou gerente) para provar o que continua travado.
+  - ⚠️ **O front tinha a mesma armadilha em outro lugar**: `alcanceDe` marcava
+    "amplo" por `membership.update`. Com o verbo no supervisor, ele viraria amplo
+    e ganharia botão em todo time. O marcador passou a `membership.move`.
+  - Matriz: a linha que divergia passou a OK para o SUPERVISOR, e entraram
+    "SUPERVISOR no SEO", "rebaixar outro SUPERVISOR no SEO", "promover no Design"
+    (negada a ele) e "tirar outro SUPERVISOR do SEO".
 
 ---
 
@@ -742,10 +755,10 @@ do mais contido ao que desfaz decisão escrita.
 
 ### As que sobram
 
-5. **Supervisor rebaixa outro supervisor?** (§4.7) Com a recomendação (não), a
-   troca de cargo do supervisor é, na prática, só promover operador. Com "sim",
-   dois supervisores de um subtime podem rebaixar um ao outro. **Só trava a
-   fatia H**; 0 a G andam sem ela.
+5. **Supervisor rebaixa outro supervisor?** (§4.7) — *"Sim, pode rebaixar,
+   qualquer coisa o gerente arruma ne"* (15/09). Recomendei que não; ela
+   decidiu que sim. Dois supervisores de um subtime podem rebaixar um ao outro,
+   e o MANAGER desfaz. Entregue na fatia H.
 
 6. **Onde consertar os três defeitos do §3.6?** — *"aceito a fatia nova"*.
    Virou a fatia 0b, entregue. E a urgência: *papel de organização só existe

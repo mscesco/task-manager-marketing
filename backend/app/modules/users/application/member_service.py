@@ -787,7 +787,8 @@ class MemberService:
         As tres perguntas, na ordem em que o PATCH as faz:
 
             C3  -- ninguem troca o proprio papel (anti-lockout)
-            028 -- trocar papel exige gestao ampla (supervisor nao promove)
+            049 -- `membership.update` NAQUELE time (o supervisor o tem no
+                   proprio subtime desde a fatia H)
             C2  -- a matriz: ADMIN mexe em qualquer papel; MANAGER so em
                    SUPERVISOR/OPERATOR
 
@@ -864,8 +865,8 @@ class MemberService:
         # matriz (Spec 016): so pode atribuir papel que o ator alcanca.
         self._assert_actor_can_assign(role)
 
-        # Spec 028 + Spec 049 (fatia B): onde (o verbo neste time) e ate que
-        # papel (quem nao troca cargo aqui so vincula OPERATOR).
+        # Spec 028 + Spec 049 (fatias B e H): onde -- o verbo neste time. O ate
+        # que papel e a matriz logo acima e o nivel logo abaixo.
         self._assert_escopo_de_membro(
             "membership.create", team_id=team_id, papel_alvo=role
         )
@@ -1000,8 +1001,14 @@ class MemberService:
         # ⚠️ Conta desativada nao tem cargo a mudar -- ver `_assert_alvo_ativo`.
         await self._assert_alvo_ativo(user_id)
 
-        # Spec 028: trocar papel NAO foi aberto ao supervisor (D2 -- ele nao
-        # promove; criar outro SUPERVISOR e trabalho do MANAGER).
+        # ⚠️⚠️ Spec 049, FATIA H: o supervisor TROCA cargo no proprio subtime --
+        # promove operador e rebaixa outro supervisor. Ate aqui era o contrario
+        # (Spec 028 D2, "supervisor nao promove"), e a Camila revogou: *"supervisor
+        # troca o cargo de alguem dentro do seu subtime"* (14/09); *"Sim, pode
+        # rebaixar, qualquer coisa o gerente arruma ne"* (15/09). Nada mudou
+        # nesta linha: quem responde "onde" e `membership.update` em
+        # `_OWN_TEAM_ONLY`, e o cadeado (`pode_trocar_papel_do_vinculo`) abre
+        # junto, porque faz a mesma pergunta.
         #
         # ⚠️⚠️ E A PERGUNTA E "NAQUELE TIME", desde 09/09 -- decisao da Camila:
         # *"gerente so mexe na propria arvore"*. Ate aqui era a pergunta ampla
@@ -1106,8 +1113,8 @@ class MemberService:
             )
         self._assert_actor_can_target(membership.role)
 
-        # Spec 028 + Spec 049 (fatia B): onde e ate que papel -- ver
-        # `_assert_escopo_de_membro`.
+        # Spec 028 + Spec 049 (fatias B e H): onde -- ver
+        # `_assert_escopo_de_membro`. O ate que papel e a matriz logo acima.
         self._assert_escopo_de_membro(
             "membership.delete", team_id=team_id, papel_alvo=membership.role
         )
@@ -1565,17 +1572,29 @@ class MemberService:
     def _assert_escopo_de_membro(
         self, verbo: str, *, team_id: uuid.UUID, papel_alvo: UserTeamRole
     ) -> None:
-        """Vincular e desvincular: ONDE, e ATE QUE PAPEL. Spec 028; Spec 049, B.
+        """Vincular e desvincular: ONDE. Spec 028; Spec 049, fatias B e H.
 
-        As duas travas, e agora valem para TODO papel, e nao so o supervisor:
+        D1 -- ONDE. O ator tem `verbo` NESTE time? E a permissao com escopo
+              que responde (`has_permission_in`): para SUPERVISOR,
+              `membership.*` e `_OWN_TEAM_ONLY` -- so o subtime do vinculo;
+              para MANAGER, a arvore; para papel de organizacao, tudo.
 
-            D1 -- ONDE. O ator tem `verbo` NESTE time? E a permissao com
-                  escopo que responde (`has_permission_in`): para SUPERVISOR,
-                  `membership.*` e `_OWN_TEAM_ONLY` -- so o subtime do vinculo;
-                  para MANAGER, a arvore; para papel de organizacao, tudo.
-            D2 -- TETO. Quem NAO troca cargo neste time (`membership.update`)
-                  so vincula e desvincula OPERATOR. Supervisor nao cria par --
-                  e um limite sobre o VALOR (spec §4.5), e nao uma permissao.
+        ⚠️⚠️ ATE A FATIA H HAVIA UMA SEGUNDA TRAVA AQUI, a D2 da Spec 028: quem
+        nao tinha `membership.update` neste time so vinculava e desvinculava
+        OPERATOR ("supervisor nao cria par"). A Camila a revogou -- *"supervisor
+        troca o cargo de alguem dentro do seu subtime"* (14/09) e *"Sim, pode
+        rebaixar, qualquer coisa o gerente arruma ne"* (15/09). O supervisor
+        ganhou `membership.update` no proprio subtime, e a trava ficou SEM CASO:
+        todo papel que vincula num time tambem troca cargo ali. Ela saiu em vez
+        de ficar como codigo morto.
+
+        ⚠️ O QUE CONTINUA BARRANDO SUPERVISOR X GERENTE NAO ERA ELA: e a matriz
+        C2 (`_assert_actor_can_assign` / `_assert_actor_can_target`), que os
+        dois chamadores fazem antes, e o nivel -- num subtime so cabem
+        SUPERVISOR e OPERATOR.
+
+        (`papel_alvo` segue no parametro e vai no `details` do 403, para quem
+        le o erro saber que vinculo foi recusado.)
 
         ⚠️⚠️ ATE A FATIA B DA SPEC 049 ESTA FUNCAO SE CHAMAVA
         `_assert_escopo_supervisor` E TINHA TRES DEFEITOS DE FORMA, nenhum de
@@ -1591,19 +1610,10 @@ class MemberService:
 
         Levanta AuthorizationError (403) na violacao.
         """
-        tenant = require_tenant()
-        if not tenant.has_permission_in(verbo, team_id):
+        if not require_tenant().has_permission_in(verbo, team_id):
             raise AuthorizationError(
                 "Voce nao administra membros deste time.",
-                details={"team_id": str(team_id)},
-            )
-        if (
-            not tenant.has_permission_in("membership.update", team_id)
-            and papel_alvo is not UserTeamRole.OPERATOR
-        ):
-            raise AuthorizationError(
-                "Supervisor so administra membros OPERATOR.",
-                details={"role": papel_alvo.value},
+                details={"team_id": str(team_id), "role": papel_alvo.value},
             )
 
     def _assert_gestao_ampla_em(

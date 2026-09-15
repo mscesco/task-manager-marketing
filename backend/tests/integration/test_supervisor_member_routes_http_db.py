@@ -19,7 +19,8 @@ POR QUE ESTE ARQUIVO EXISTE:
 O que cada bloco cobre:
     portas ABERTAS   -- POST /{id}/team e DELETE /{id}/teams/{tid}
     porta FECHADA    -- POST /{id}/deactivate segue exigindo team.manage (D4)
-    trava pela rota  -- D1 e D2 continuam valendo no caminho HTTP
+    trava pela rota  -- D1 continua valendo no caminho HTTP; a D2 ("so
+                        OPERATOR") foi revogada na Spec 049, fatia H
 """
 
 from __future__ import annotations
@@ -152,16 +153,37 @@ async def test_http_trava_d1_outro_subtime(db) -> None:
     assert r.status_code == 403, r.text
 
 
-async def test_http_trava_d2_papel_acima(db) -> None:
-    """D2 pelo caminho HTTP: papel acima de OPERATOR -> 403."""
+async def test_http_supervisor_atribui_supervisor_e_nao_gerente(db) -> None:
+    """Spec 049, fatia H, pelo caminho HTTP: SUPERVISOR -> 201; MANAGER -> 403.
+
+    ⚠️⚠️ ESTE TESTE SE CHAMAVA `test_http_trava_d2_papel_acima` e esperava 403
+    para SUPERVISOR. A D2 da Spec 028 foi revogada por decisao da Camila
+    (*"supervisor troca o cargo de alguem dentro do seu subtime"*). O teto que
+    sobra -- gerente -- e a matriz C2, e a segunda metade prova que ele segue.
+
+    ⚠️ As pessoas estao no CRM, e nao na raiz: OPERATOR na raiz virando
+    SUPERVISOR no subtime da 409 (papel na raiz menor), e o teste mediria isso.
+    """
     c = await _setup(db)
+    pessoas = []
+    for email in ("par@t.dev", "gerente@t.dev"):
+        uid = await f.make_user(db, workspace_id=c["ws"], email=email)
+        await f.add_member(
+            db, workspace_id=c["ws"], user_id=uid, team_id=c["crm"], role="OPERATOR"
+        )
+        pessoas.append(uid)
     await db.commit()
     async with _client(db, c["ctx"]) as cli:
-        r = await cli.post(
-            f"/api/v1/members/{c['op']}/team",
+        par = await cli.post(
+            f"/api/v1/members/{pessoas[0]}/team",
             json={"team_id": str(c["seo"]), "role": "SUPERVISOR"},
         )
-    assert r.status_code == 403, r.text
+        gerente = await cli.post(
+            f"/api/v1/members/{pessoas[1]}/team",
+            json={"team_id": str(c["seo"]), "role": "MANAGER"},
+        )
+    assert par.status_code == 201, par.text
+    assert gerente.status_code == 403, gerente.text
 
 
 # ------------------------------------------------ portas que seguem FECHADAS

@@ -229,6 +229,13 @@ async def _mundo(db) -> dict:
     livre_com = await _operador(db, ws, com)
     # `misto` esta nas DUAS arvores -- a linha que diz de quem e a conta dele.
     misto = await _operador(db, ws, seo, vendas)
+    # ⚠️ Fatia H: o PAR do supervisor -- outro SUPERVISOR no SEO, com um
+    # segundo vinculo (Design) para tira-lo do SEO nao ser "o ultimo vinculo".
+    sup_par = await _operador(db, ws, design)
+    await f.add_member(db, workspace_id=ws, user_id=sup_par, team_id=seo, role="SUPERVISOR")
+    # `livre_design` so esta num subtime, e nao na raiz: vira SUPERVISOR no SEO
+    # sem esbarrar em "o papel no time principal nao pode ser menor" (409).
+    livre_design = await _operador(db, ws, design)
 
     # --- quadros e colunas
     geral_mkt = await _quadro_padrao(db, mkt)
@@ -321,6 +328,7 @@ async def _mundo(db) -> dict:
                 "vazio_com": vazio_com,
                 "alvo_mkt": alvo_mkt, "alvo_com": alvo_com,
                 "livre_mkt": livre_mkt, "livre_com": livre_com, "misto": misto,
+                "sup_par": sup_par, "livre_design": livre_design,
                 "admin2": admin2, "gestor2": gestor2,
                 "geral_mkt": geral_mkt, "geral_com": geral_com,
                 "quadro_seo": quadro_seo.id, "quadro_vendas": quadro_vendas.id,
@@ -477,10 +485,22 @@ MATRIZ: tuple[Linha, ...] = (
     Linha("membership.create", "OPERATOR em Vendas", "post",
           f"{T}/members/{{livre_com}}/team", {"team_id": "{vendas}", "role": "OPERATOR"},
           (OK, OK, NEGADO, NEGADO, NEGADO)),
+    # ⚠️⚠️ FATIA H -- REVOGA A SPEC 028 D2, por decisao da Camila: o SUPERVISOR
+    # cria par, promove, rebaixa e tira outro supervisor NO PROPRIO SUBTIME
+    # (*"Sim, pode rebaixar, qualquer coisa o gerente arruma ne"*). O par de
+    # cada linha fora do SEO e o que prova que "proprio" continua valendo.
+    Linha("membership.create", "SUPERVISOR no SEO", "post",
+          f"{T}/members/{{livre_design}}/team", {"team_id": "{seo}", "role": "SUPERVISOR"},
+          (OK, OK, OK, OK, NEGADO)),
     Linha("membership.update", "OPERATOR->SUPERVISOR no SEO", "patch",
           f"{T}/members/{{alvo_mkt}}/teams/{{seo}}", {"role": "SUPERVISOR"},
-          (OK, OK, OK, NEGADO, NEGADO),
-          diverge="fatia H: SUPERVISOR troca cargo no proprio subtime"),
+          (OK, OK, OK, OK, NEGADO)),
+    Linha("membership.update", "rebaixar outro SUPERVISOR no SEO", "patch",
+          f"{T}/members/{{sup_par}}/teams/{{seo}}", {"role": "OPERATOR"},
+          (OK, OK, OK, OK, NEGADO)),
+    Linha("membership.update", "OPERATOR->SUPERVISOR no Design (irmao do SEO)", "patch",
+          f"{T}/members/{{alvo_mkt}}/teams/{{design}}", {"role": "SUPERVISOR"},
+          (OK, OK, OK, NEGADO, NEGADO)),
     Linha("membership.update", "OPERATOR->SUPERVISOR em Vendas", "patch",
           f"{T}/members/{{alvo_com}}/teams/{{vendas}}", {"role": "SUPERVISOR"},
           (OK, OK, NEGADO, NEGADO, NEGADO)),
@@ -489,6 +509,9 @@ MATRIZ: tuple[Linha, ...] = (
     # 10/09 poe `·` na coluna D do vinculo para o GESTOR. Ver spec, fatia D.
     Linha("membership.delete", "OPERATOR do SEO", "delete",
           f"{T}/members/{{alvo_mkt}}/teams/{{seo}}", None,
+          (OK, NEGADO, OK, OK, NEGADO)),
+    Linha("membership.delete", "outro SUPERVISOR do SEO", "delete",
+          f"{T}/members/{{sup_par}}/teams/{{seo}}", None,
           (OK, NEGADO, OK, OK, NEGADO)),
     Linha("membership.delete", "OPERATOR de Vendas", "delete",
           f"{T}/members/{{alvo_com}}/teams/{{vendas}}", None,

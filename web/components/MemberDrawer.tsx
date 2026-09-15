@@ -447,9 +447,9 @@ function MembershipRow({
           ⚠️ Pedido dela em 09/09. Fica DENTRO da linha do vínculo, e não num
           menu à parte: a ação é sobre ESTE time, e o nome dele está ali.
           ⚠️ A pergunta é `podeRemoverDoTime` e NÃO `podeEditarCargo`: são
-          permissões diferentes. O supervisor tira gente do próprio subtime
-          (D1 da Spec 028) sem poder trocar cargo de ninguém (D2). Usar o
-          cadeado de cargo aqui esconderia dele a única ação que tem. */}
+          permissões diferentes (`membership.delete` e `membership.update`) —
+          o GESTOR, por exemplo, troca cargo e não tira do time. Usar o
+          cadeado de cargo aqui mostraria a ele um botão que dá 403. */}
       {!mudou && podeRemoverDoTime(scope, row.team.id, row.role, permissoes) && (
         <div className="mt-2">
           <Reveal show={!confirmandoSaida}>

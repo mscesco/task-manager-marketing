@@ -239,6 +239,14 @@ _ROLE_PERMISSIONS: dict[UserTeamRole, frozenset[str]] = {
             # mapa. Ver o bloco do ADMIN.
             "membership.create",
             "membership.delete",
+            # ⚠️⚠️ Spec 049, FATIA H -- REVOGA A SPEC 028 D2 ("supervisor nao
+            # promove"), por decisao da Camila em 14/09: *"supervisor troca o
+            # cargo de alguem dentro do seu subtime"*. E em 15/09, sobre
+            # rebaixar outro supervisor do mesmo subtime: *"Sim, pode rebaixar,
+            # qualquer coisa o gerente arruma ne"*. Onde: SO o proprio subtime
+            # (`_OWN_TEAM_ONLY`). Ate onde: num subtime so cabem SUPERVISOR e
+            # OPERATOR (`assert_role_permitido_no_nivel`).
+            "membership.update",
             # Spec 036 fatia 5b: quadro proprio do subtime, e SO dele.
             # ⚠️ NAO ganha `board.manage.root`. E a diferenca inteira entre os
             # dois papeis nesta spec: o supervisor monta o quadro do time dele,
@@ -441,6 +449,9 @@ _OWN_TEAM_ONLY: frozenset[str] = frozenset(
         # e a lista cresce com o corte -- cada verbo que saiu delas.
         "membership.create",
         "membership.delete",
+        # ⚠️ Fatia H: sem esta linha, o supervisor trocaria cargo tambem na RAIZ
+        # (a regra de execucao e "o time do vinculo + a raiz").
+        "membership.update",
         # ⚠️ Fatia F: o supervisor edita O SEU subtime. Sem esta linha, a regra
         # de execucao ("o time do vinculo + a raiz") lhe daria editar o time
         # RAIZ -- que o servico recusa por outra regra, mas nao por esta.
