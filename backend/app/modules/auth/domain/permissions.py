@@ -310,8 +310,14 @@ _ORG_ROLE_PERMISSIONS: dict[OrgRole, frozenset[str]] = {
     # formulario (`form.update`), e o Mapa as poe em U, nao em D.
     OrgRole.GESTOR: frozenset(
         {
-            # organizacao: fora `organization.update`, `org_role.*`,
-            # `subteam.delete`, `team.move` -- o que era `workspace.manage`.
+            # organizacao -- ⭐ FATIA G (item 02): o GESTOR edita a organizacao
+            # e da/tira papel de organizacao. O TETO ("so ate gestor; so admin
+            # mexe em admin") NAO e permissao: e limite sobre o VALOR, e mora
+            # em `MemberService.change_organization_role` (spec §4.5).
+            # Seguem so do ADMIN: `subteam.delete` e `team.move`.
+            "organization.update",
+            "org_role.grant",
+            "org_role.revoke",
             "team.create",
             # times e pessoas -- desativar FICA (excecao dela); tirar do time sai
             "subteam.create",

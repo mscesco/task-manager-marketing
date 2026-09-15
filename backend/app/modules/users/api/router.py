@@ -377,9 +377,9 @@ async def move_member_subteam(
 @router.patch(
     "/{user_id}/organization-role",
     response_model=MemberResponse,
-    # Spec 049, fatia A: a porta aceita os dois verbos. Qual deles vale depende
-    # do CORPO (`role: null` e revogar) -- e a distincao so ganha servico na
-    # fatia G, com o teto do GESTOR. Hoje os dois estao nos mesmos papeis.
+    # Spec 049: a porta aceita os dois verbos (ADMIN e GESTOR os tem, desde a
+    # fatia G). O TETO -- "so admin mexe em admin" -- depende do CORPO e do
+    # ALVO, que a porta nao ve: mora em `change_organization_role`.
     dependencies=[
         Depends(require_any_permission("org_role.grant", "org_role.revoke"))
     ],

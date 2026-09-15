@@ -657,9 +657,21 @@ do mais contido ao que desfaz decisão escrita.
   gaveta do subtime, cartão). Um teste compara o `can_update` de cada papel com
   as linhas da matriz.
 - **G — item 02: o GESTOR edita a organização e promove até gestor.**
-  `organization.update` e `org_role.grant` entram na lista; o teto (*"até
-  gestor; só admin mexe em admin"*) mora no serviço (§4.5), com linha própria
-  na tabela para "GESTOR promove a ADMIN" = `negado`.
+  ✅ **Entregue em 15/09.** `organization.update`, `org_role.grant` e
+  `org_role.revoke` entram na lista do GESTOR. O teto mora no serviço (§4.5), em
+  **duas metades**, porque são dois caminhos para o mesmo estrago: quem não é
+  ADMIN não escolhe ADMIN como destino, **e** não mexe em quem já é ADMIN (nem
+  para tirar). A tabela ganhou as duas linhas do teto e a de "tirar outro
+  gestor".
+  ⚠️ **O serviço continua sem distinguir `grant` de `revoke`** — os dois verbos
+  estão nos mesmos papéis, e o teto é sobre ADMIN, não sobre conceder ou tirar.
+  ⚠️ **Os testes do papel de organização passaram a agir como ADMIN.** Eles
+  chamavam o serviço sem papel nenhum, e passavam porque a única checagem era a
+  rota; com o teto no serviço, "rebaixar outro admin" exige ser admin também ali.
+  ⚠️ **E a tela**: a pílula de papel na `/organizacao` e a seção da gaveta de
+  membro recebiam um booleano (`podeRenomear`, `canManageOrg`), que não cabe o
+  teto. Passaram a receber, **por pessoa**, a lista de destinos de
+  `papeisDeOrganizacaoAtribuiveis` — `null` quando o ator não mexe nela.
 - **H — o SUPERVISOR troca cargo no próprio subtime** (§4.7). Os três testes de
   recusa listados no §4.7 **mudam de lado, de propósito**, no mesmo commit — e
   a mensagem do commit diz que a Spec 028 D2 foi revogada, e por quem. O cadeado

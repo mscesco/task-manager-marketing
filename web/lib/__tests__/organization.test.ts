@@ -10,6 +10,7 @@
 import { describe, it, expect } from "vitest";
 import {
   searchPeople,
+  papeisDeOrganizacaoAtribuiveis,
   areaCards,
   matchesSearch,
   organizationManagers,
@@ -165,6 +166,30 @@ describe("organizationManagers", () => {
 
   it("sem gestor nenhum, lista vazia", () => {
     expect(organizationManagers([pessoa("Ana", [MKT])])).toEqual([]);
+  });
+});
+
+describe("papeisDeOrganizacaoAtribuiveis -- o teto do gestor (Spec 049, fatia G)", () => {
+  const ADMIN = { org_role: "ADMIN" as const, permissions: ["org_role.grant"] as const };
+  const GESTOR = { org_role: "GESTOR" as const, permissions: ["org_role.grant"] as const };
+  const MANAGER = { org_role: null, permissions: ["membership.update"] as const };
+
+  it("o ADMIN dá qualquer papel, a qualquer pessoa", () => {
+    expect(papeisDeOrganizacaoAtribuiveis(ADMIN, "ADMIN")).toEqual(["ADMIN", "GESTOR", null]);
+    expect(papeisDeOrganizacaoAtribuiveis(ADMIN, null)).toEqual(["ADMIN", "GESTOR", null]);
+  });
+
+  it("⚠️ o GESTOR traz para gestor e tira de volta -- e NÃO oferece ADMIN", () => {
+    expect(papeisDeOrganizacaoAtribuiveis(GESTOR, null)).toEqual(["GESTOR", null]);
+    expect(papeisDeOrganizacaoAtribuiveis(GESTOR, "GESTOR")).toEqual(["GESTOR", null]);
+  });
+
+  it("⚠️ o GESTOR NÃO mexe em quem já é ADMIN -- nem para tirar", () => {
+    expect(papeisDeOrganizacaoAtribuiveis(GESTOR, "ADMIN")).toBeNull();
+  });
+
+  it("sem o verbo, não mexe em ninguém", () => {
+    expect(papeisDeOrganizacaoAtribuiveis(MANAGER, null)).toBeNull();
   });
 });
 

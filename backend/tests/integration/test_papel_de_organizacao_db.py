@@ -74,7 +74,10 @@ def test_gestor_opera_mas_nao_desfaz_a_organizacao():
     gestor = permissions_for_org_role("GESTOR")
     admin = permissions_for_org_role("ADMIN")
 
-    assert "organization.update" not in gestor
+    # ⚠️ Desde a Spec 049, fatia G, o GESTOR EDITA a organizacao (item 02) --
+    # o que ele nao faz e desfaze-la: apagar e mover time seguem do ADMIN.
+    assert "organization.update" in gestor
+    assert "subteam.delete" not in gestor
     assert "subteam.create" in gestor
     # A diferenca e EXATAMENTE o que era `workspace.manage` -- desde a Spec 049
     # (fatia A), os cinco verbos em que ele foi cortado.
@@ -87,10 +90,9 @@ def test_gestor_opera_mas_nao_desfaz_a_organizacao():
     # faz.
     assert admin - gestor == frozenset(
         {
-            # o que era `workspace.manage` (fatia A)
-            "organization.update",
-            "org_role.grant",
-            "org_role.revoke",
+            # o que era `workspace.manage` (fatia A), MENOS o que a fatia G deu
+            # ao GESTOR (item 02): editar a organizacao e dar/tirar papel de
+            # organizacao -- com o teto no servico, e nao aqui.
             "subteam.delete",
             "team.move",
             # ⭐ fatia D, item 01: "o admin apaga, o gestor nao" -- e SO os

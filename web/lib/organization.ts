@@ -16,7 +16,8 @@
  *   - onde esta a Fulana (a busca que atravessa as areas)
  */
 
-import type { Member, Team } from "./api";
+import type { Member, OrgRole, Team } from "./api";
+import type { Permission } from "./permissions.generated";
 
 /** Um card da grade de areas. */
 export type AreaCard = {
@@ -127,6 +128,36 @@ export function organizationManagers(members: readonly Member[]): Member[] {
 }
 
 /** Uma pessoa achada pela busca, com as areas em que ela esta. */
+/** Só o que a regra abaixo precisa de quem está olhando. */
+export type AtorDeOrganizacao = {
+  org_role?: OrgRole | null;
+  permissions: readonly Permission[];
+};
+
+/**
+ * Os papéis de organização que o ator pode dar a esta pessoa (Spec 049, fatia G).
+ *
+ * Devolve a lista de destinos possíveis -- `null` na lista é "tirar da
+ * administração" --, ou `null` quando o ator NÃO mexe no papel desta pessoa.
+ *
+ * ⚠️ O TETO DELA, do Mapa de 10/09: o GESTOR *"traz alguém para gestor e tira
+ * de volta"*, e *"só admin promove ou rebaixa admin"*. Duas metades, como no
+ * servidor: o gestor não oferece ADMIN como destino, e não mexe em quem já é.
+ * Oferecer seria a pílula que a tela mostra e o servidor recusa com 403.
+ *
+ * ⚠️ NÃO É SEGURANÇA. O servidor confere o mesmo teto em
+ * `change_organization_role`; isto só decide o que DESENHAR.
+ */
+export function papeisDeOrganizacaoAtribuiveis(
+  ator: AtorDeOrganizacao,
+  papelDoAlvo: OrgRole | null,
+): readonly (OrgRole | null)[] | null {
+  if (!ator.permissions.includes("org_role.grant")) return null;
+  if (ator.org_role === "ADMIN") return ["ADMIN", "GESTOR", null];
+  if (papelDoAlvo === "ADMIN") return null;
+  return ["GESTOR", null];
+}
+
 export type FoundPerson = {
   readonly member: Member;
   readonly areas: Team[];

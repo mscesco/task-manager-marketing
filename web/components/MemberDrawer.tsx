@@ -76,7 +76,7 @@ export default function MemberDrawer({
   teams,
   scope,
   isAdmin,
-  canManageOrg,
+  opcoesDeOrganizacao,
   isSelf,
   permissoes,
   onClose,
@@ -86,7 +86,13 @@ export default function MemberDrawer({
   teams: Team[];
   scope: Alcance;
   isAdmin: boolean;
-  canManageOrg: boolean;
+  /**
+   * Os papéis de organização que quem olha pode dar a ESTA pessoa; `null` = a
+   * seção não aparece. ⚠️ Era `canManageOrg: boolean`, e um booleano não
+   * cabia o teto da Spec 049 (fatia G): o GESTOR mexe em gestor, e não em
+   * admin, nem oferece admin. Ver `papeisDeOrganizacaoAtribuiveis`.
+   */
+  opcoesDeOrganizacao: readonly (OrgRole | null)[] | null;
   isSelf: boolean;
   /**
    * ⚠️ OBRIGATÓRIA desde a Spec 049, fatia D: "Tirar de…" pergunta o verbo
@@ -220,11 +226,12 @@ export default function MemberDrawer({
             )}
           </div>
 
-          {canManageOrg && (
+          {opcoesDeOrganizacao && (
             <section className="mb-5">
               <h3 className="label mb-2">Na organização</h3>
               <OrgRoleField
                 member={member}
+                opcoes={opcoesDeOrganizacao}
                 isSelf={isSelf}
                 onChanged={onChanged}
               />
@@ -561,10 +568,13 @@ function AddToTeam({
 
 function OrgRoleField({
   member,
+  opcoes,
   isSelf,
   onChanged,
 }: {
   member: Member;
+  /** Ver a prop `opcoesDeOrganizacao` do `MemberDrawer`. */
+  opcoes: readonly (OrgRole | null)[];
   isSelf: boolean;
   onChanged: (aviso: string) => Promise<void>;
 }) {
@@ -586,7 +596,10 @@ function OrgRoleField({
         disabled={salvando || isSelf}
         label="Papel na organização"
         options={[
-          { id: "ADMIN", label: ORG_ROLE_LABEL.ADMIN, commands: true },
+          // ⚠️ ADMIN só para quem pode dar ADMIN (Spec 049, fatia G).
+          ...(opcoes.includes("ADMIN")
+            ? [{ id: "ADMIN" as const, label: ORG_ROLE_LABEL.ADMIN, commands: true }]
+            : []),
           { id: "GESTOR", label: ORG_ROLE_LABEL.GESTOR, commands: true },
           { id: "", label: "Não administra a organização" },
         ]}

@@ -63,7 +63,7 @@ import {
   type Team,
 } from "@/lib/api";
 import { subteamCards, teamRows } from "@/lib/teamScreen";
-import { matchesSearch } from "@/lib/organization";
+import { matchesSearch, papeisDeOrganizacaoAtribuiveis } from "@/lib/organization";
 import { countByState, memberState, type MemberState } from "@/lib/memberState";
 import { podeEditar, sugereSlug } from "@/lib/gestaoTimes";
 import {
@@ -498,8 +498,10 @@ export default function TeamScreen({ teamId }: { teamId: string }) {
             scope={scope}
             permissoes={me?.permissions ?? []}
             isAdmin={isAdmin}
-            canManageOrg={
-              me?.permissions.includes("org_role.grant") ?? false
+            opcoesDeOrganizacao={
+              me
+                ? papeisDeOrganizacaoAtribuiveis(me, gavetaDePessoa.org_role ?? null)
+                : null
             }
             isSelf={gavetaDePessoa.id === me?.id}
             onClose={() => setGavetaDePessoa(null)}

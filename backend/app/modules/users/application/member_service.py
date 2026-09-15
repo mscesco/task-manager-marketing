@@ -31,6 +31,7 @@ from app.modules.auth.domain.team_scope import (
     assert_raiz_nao_menor_que_subtime,
     assert_role_permitido_no_nivel,
     find_command_with_subteam,
+    is_admin,
     is_subteam,
     root_of,
     visible_team_ids,
@@ -1337,10 +1338,12 @@ class MemberService:
         Irma de `change_member_role`: aquela mexe no papel NAQUELE time, esta no
         papel na ORGANIZACAO, que nao tem time.
 
-        ⚠️ O PORTAO E `workspace.manage`, aplicado na rota -- e so o ADMIN de
-        organizacao o tem. Bate com a tabela decidida em 02/09: promover ou
-        rebaixar gestor e ✅ para ADMIN e — para GESTOR. Quem opera a
-        organizacao nao decide quem a opera.
+        ⚠️⚠️ O PORTAO MUDOU NA SPEC 049 (fatia G). Ate la era `workspace.manage`,
+        so do ADMIN: "quem opera a organizacao nao decide quem a opera". O Mapa
+        de 10/09 decidiu diferente, com as palavras dela: o GESTOR *"traz alguem
+        para gestor e tira de volta -- o que e reversivel por ele mesmo"*, e
+        *"so admin promove ou rebaixa admin"*. A rota passou a aceitar
+        `org_role.grant`/`.revoke`, que o GESTOR tem; o TETO mora aqui.
 
         ⚠️⚠️ E AQUI NASCE A TRAVA DO ULTIMO ADMIN, que a Spec 045 §4.3 pediu na
         fatia B. Ela NAO foi implementada la, e estava certo por acidente: sem
@@ -1350,17 +1353,39 @@ class MemberService:
 
         Erros:
             EntityNotFoundError -- usuario inexistente no workspace.
+            AuthorizationError  -- quem nao e ADMIN tentando mexer em ADMIN (403).
             BusinessRuleError   -- deixaria a organizacao sem ADMIN (409).
         """
-        # ⚠️ Spec 049, fatia A: a rota aceita `org_role.grant` OU `.revoke`, e
-        # este servico NAO distingue os dois -- de proposito. Hoje os dois
-        # verbos estao nos mesmos papeis, e a primeira versao da fatia que os
-        # separava aqui mudou comportamento para quem chama o servico direto
-        # (5 testes caindo). A distincao nasce na fatia G, junto com o teto do
-        # GESTOR ("promove ate gestor"), que e onde ela passa a valer algo.
+        tenant = require_tenant()
         user = await self._users.get_by_id(user_id)
         if user is None:
             raise EntityNotFoundError("User", identifier=user_id)
+
+        # ⭐ Spec 049, FATIA G -- o TETO. *"So admin promove ou rebaixa admin."*
+        #
+        # ⚠️ E LIMITE SOBRE O VALOR, e nao permissao (spec §4.5): o GESTOR TEM
+        # `org_role.grant` e `.revoke`, e o que ele nao pode e escolher ADMIN
+        # como destino nem tocar em quem ja e ADMIN. As duas metades, porque
+        # sao dois caminhos para o mesmo estrago -- criar um admin, ou tirar um.
+        #
+        # ⚠️ `is_admin`, e nao `org_role == "ADMIN"`: conta tambem o vinculo
+        # ADMIN antigo (`user_team`), a mesma fonte dupla da lente.
+        #
+        # ⚠️ O SERVICO AINDA NAO DISTINGUE `grant` DE `revoke`, e nao precisa:
+        # os dois verbos estao nos mesmos papeis. A fatia A tentou separar e
+        # mudou comportamento de quem chama o servico direto; o teto e o que a
+        # regra dela pede, e ele e sobre ADMIN, nao sobre conceder ou tirar.
+        ator_e_admin = is_admin(tenant.memberships, org_role=tenant.org_role)
+        if not ator_e_admin and (
+            new_role is OrgRole.ADMIN or user.org_role is OrgRole.ADMIN
+        ):
+            raise AuthorizationError(
+                "So um administrador promove ou rebaixa um administrador.",
+                details={
+                    "alvo": user.org_role.value if user.org_role else None,
+                    "novo": new_role.value if new_role else None,
+                },
+            )
 
         atual = user.org_role
         if atual is OrgRole.ADMIN and new_role is not OrgRole.ADMIN:

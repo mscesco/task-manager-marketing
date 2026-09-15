@@ -202,6 +202,11 @@ async def _mundo(db) -> dict:
     # --- os cinco atores
     admin = await f.make_user(db, workspace_id=ws, org_role="ADMIN")
     gestor = await f.make_user(db, workspace_id=ws, org_role="GESTOR")
+    # ⚠️ Fatia G: os ALVOS do teto. Um segundo admin (rebaixa-lo nao esbarra na
+    # trava do ultimo admin, porque o ator tambem e admin) e um segundo gestor
+    # (tira-lo nao e o GESTOR tirando a si mesmo).
+    admin2 = await f.make_user(db, workspace_id=ws, org_role="ADMIN")
+    gestor2 = await f.make_user(db, workspace_id=ws, org_role="GESTOR")
     manager = await f.make_user(db, workspace_id=ws)
     await f.add_member(db, workspace_id=ws, user_id=manager, team_id=mkt, role="MANAGER")
     supervisor = await f.make_user(db, workspace_id=ws)
@@ -316,6 +321,7 @@ async def _mundo(db) -> dict:
                 "vazio_com": vazio_com,
                 "alvo_mkt": alvo_mkt, "alvo_com": alvo_com,
                 "livre_mkt": livre_mkt, "livre_com": livre_com, "misto": misto,
+                "admin2": admin2, "gestor2": gestor2,
                 "geral_mkt": geral_mkt, "geral_com": geral_com,
                 "quadro_seo": quadro_seo.id, "quadro_vendas": quadro_vendas.id,
                 "cancelado_seo": cancelado_seo,
@@ -389,14 +395,24 @@ T = "/api/v1"
 
 MATRIZ: tuple[Linha, ...] = (
     # ---------------------------------------------------------- organizacao
+    # ⭐ Fatia G (item 02): o GESTOR edita a organizacao e mexe em GESTOR -- e
+    # so ate ai. As duas linhas com ADMIN como destino ou como alvo sao o TETO,
+    # que mora no servico e nao na permissao.
     Linha("organization.update", "a organizacao", "patch", f"{T}/workspaces/current",
           {"name": "Outro nome"},
-          (OK, NEGADO, NEGADO, NEGADO, NEGADO),
-          diverge="item 02: GESTOR edita a organizacao"),
+          (OK, OK, NEGADO, NEGADO, NEGADO)),
     Linha("org_role.grant", "GESTOR a uma pessoa", "patch",
           f"{T}/members/{{alvo_mkt}}/organization-role", {"role": "GESTOR"},
-          (OK, NEGADO, NEGADO, NEGADO, NEGADO),
-          diverge="item 02: GESTOR promove ate gestor"),
+          (OK, OK, NEGADO, NEGADO, NEGADO)),
+    Linha("org_role.grant", "ADMIN a uma pessoa (o teto)", "patch",
+          f"{T}/members/{{alvo_mkt}}/organization-role", {"role": "ADMIN"},
+          (OK, NEGADO, NEGADO, NEGADO, NEGADO)),
+    Linha("org_role.revoke", "tirar o papel de outro GESTOR", "patch",
+          f"{T}/members/{{gestor2}}/organization-role", {"role": None},
+          (OK, OK, NEGADO, NEGADO, NEGADO)),
+    Linha("org_role.revoke", "tirar o papel de outro ADMIN (o teto)", "patch",
+          f"{T}/members/{{admin2}}/organization-role", {"role": None},
+          (OK, NEGADO, NEGADO, NEGADO, NEGADO)),
     # ---------------------------------------------------------- time
     Linha("team.create", "raiz nova", "post", f"{T}/workspaces/current/teams",
           {"name": "Nova", "slug": "nova"},
