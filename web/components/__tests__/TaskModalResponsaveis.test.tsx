@@ -206,26 +206,9 @@ describe("TaskModal -- selecionar todos e limpar (criação)", () => {
     expect(painel.style.position).toBe("fixed");
   });
 
-  it("⚠️ EDITAR não tem seletor NENHUM -- e isso é mais forte que não ter os botões", async () => {
-    // ⚠️ EU IA ESCREVER ESTE TESTE ERRADO. Fui procurar os dois botões no modo
-    // de edição e não achei nem o gatilho: a seção inteira de Responsáveis é
-    // `{!editando && ...}`. Editar tarefa não mexe em responsável -- isso se
-    // faz no painel de detalhe. Registro o fato real, e não a versão que eu
-    // supunha.
-    mocks();
-    render(
-      <TaskModal
-        newTaskTeam={null}
-        open
-        task={task({ assignee_ids: [ANA] })}
-        onClose={() => {}}
-        onSaved={() => {}}
-      />,
-    );
-    await screen.findByDisplayValue("Tarefa");
-    expect(screen.queryByLabelText("Designar responsável")).toBeNull();
-    expect(screen.queryByText(/Selecionar todos/)).toBeNull();
-  });
+  // ⚠️ AQUI MORAVA "EDITAR não tem seletor NENHUM". O modo editar saiu do
+  // modal na Spec 052 (fatia D): título, descrição e links se editam no
+  // detalhe, e responsável sempre foi do detalhe.
 
   it("⚠️ DUPLICAR não tem os botões -- a lista dali é entrada do passo 2", async () => {
     // Na cópia os responsáveis já vêm REVISADOS da origem (ADR 0031), e o

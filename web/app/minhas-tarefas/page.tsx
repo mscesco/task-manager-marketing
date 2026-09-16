@@ -153,10 +153,9 @@ function Minhas() {
   // de `items` (evita flash de lista vazia). O fetch keys por detalhe?.id (=
   // id do foco); `focado` so existe depois das guardas, entao uso detalhe.
   const [filhosDoFocado, setFilhosDoFocado] = useState<Task[] | null>(null);
-  const [editando, setEditando] = useState<Task | null>(null);
-  // Spec 033: tarefa que esta sendo DUPLICADA. Separado de `editando` de
-  // proposito -- os dois abrem o mesmo modal em modos diferentes, e um estado
-  // so faria "duplicar" e "editar" se sobrescreverem em silencio.
+  // Spec 033: tarefa que esta sendo DUPLICADA. ⚠️ O `editando` que morava ao
+  // lado saiu na Spec 052 (fatia D): titulo, descricao e links se editam no
+  // proprio detalhe, e o modal so cria e duplica.
   const [duplicando, setDuplicando] = useState<Task | null>(null);
   const [deepLinkFeito, setDeepLinkFeito] = useState(false);
   // Libera a ESCRITA do ?task= na URL. Separado do deepLinkFeito porque a
@@ -633,7 +632,6 @@ function Minhas() {
 
   function aoSalvar(saved: Task) {
     aoUpsert(saved);
-    setEditando(null);
   }
 
   // --- filtros ---
@@ -1376,8 +1374,7 @@ function Minhas() {
       )}
 
       <TaskModal
-        open={editando !== null || duplicando !== null}
-        task={editando}
+        open={duplicando !== null}
         duplicarDe={duplicando}
         // ⚠️ `filhosParaDetalhe` e nao `items`: esta tela lista SO as MINHAS
         // tarefas, entao uma subtarefa de outra pessoa nao esta em `items` e
@@ -1386,10 +1383,9 @@ function Minhas() {
         filhosDaOrigem={
           duplicando && focado?.id === duplicando.id ? filhosParaDetalhe : []
         }
-        // Esta tela nao cria tarefa do zero (`open` exige editar ou duplicar).
+        // Esta tela nao cria tarefa do zero (`open` exige duplicar).
         newTaskTeam={null}
         onClose={() => {
-          setEditando(null);
           setDuplicando(null);
         }}
         onSaved={(t) => {
@@ -1417,9 +1413,6 @@ function Minhas() {
         pai={pilha[pilha.length - 1] ?? null}
         onVoltar={voltarDetalhe}
         onClose={fecharDetalhe}
-        onEditar={(t) => {
-          setEditando(t);
-        }}
         onDuplicar={(t) => setDuplicando(t)}
         onAssigneesChange={aoMudarResponsaveis}
         mostrarArquivadas={mostrarArquivadas}

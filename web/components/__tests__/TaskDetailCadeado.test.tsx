@@ -102,7 +102,6 @@ function montar(over: Partial<Task>) {
       temVoltar={false}
       onVoltar={vi.fn()}
       onClose={vi.fn()}
-      onEditar={vi.fn()}
       onDuplicar={vi.fn()}
       onAssigneesChange={vi.fn()}
       onAbrirSubtarefa={vi.fn()}

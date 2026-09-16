@@ -4,12 +4,10 @@
 //   - a fileira mostra o NOME como link, em aba nova, com o endereço no title;
 //   - o editor adiciona, remove, reordena e completa o https:// ao sair do campo;
 //   - ⚠️ os erros só aparecem depois de tentar salvar;
-//   - ⭐ no modal, mudar SÓ os links salva os links e não faz PATCH da tarefa;
-//   - ⭐ abrir e salvar sem mexer não envia nada;
 //   - na CÓPIA não há editor (os links vão pelo servidor).
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { useState } from "react";
 
 import EditorDeLinks from "@/components/EditorDeLinks";
@@ -156,36 +154,10 @@ function mocks() {
   vi.mocked(api.putTaskLinks).mockResolvedValue(SALVOS);
 }
 
-describe("TaskModal -- links (Spec 052, fatia B)", () => {
-  it("⭐ editar: mudar SÓ os links salva os links e não faz PATCH da tarefa", async () => {
-    mocks();
-    const onSaved = vi.fn();
-    render(<TaskModal open task={task()} newTaskTeam={null} onClose={() => {}} onSaved={onSaved} />);
-
-    const nome = (await screen.findByDisplayValue("Pasta principal")) as HTMLInputElement;
-    fireEvent.change(nome, { target: { value: "Pasta do CBV" } });
-    fireEvent.click(screen.getByText("Salvar"));
-
-    await waitFor(() =>
-      expect(api.putTaskLinks).toHaveBeenCalledWith("t1", [
-        { title: "Pasta do CBV", url: "https://drive.google.com/x" },
-        { title: "Banco de imagens", url: "https://voleibrasil.media/" },
-      ]),
-    );
-    expect(api.updateTask).not.toHaveBeenCalled();
-    await waitFor(() => expect(onSaved).toHaveBeenCalled());
-  });
-
-  it("⭐ editar sem mexer em nada não envia links", async () => {
-    mocks();
-    const onClose = vi.fn();
-    render(<TaskModal open task={task()} newTaskTeam={null} onClose={onClose} onSaved={() => {}} />);
-    await screen.findByDisplayValue("Pasta principal");
-    fireEvent.click(screen.getByText("Salvar"));
-    await waitFor(() => expect(onClose).toHaveBeenCalled());
-    expect(api.putTaskLinks).not.toHaveBeenCalled();
-    expect(api.updateTask).not.toHaveBeenCalled();
-  });
+describe("TaskModal -- links na cópia (Spec 052, fatia B)", () => {
+  // ⚠️ OS DOIS TESTES DE "EDITAR" QUE MORAVAM AQUI foram para
+  // `EdicaoNoLugar.test.tsx`: o modo editar saiu do modal na fatia D, e os
+  // links de uma tarefa existente se editam no detalhe (`LinksEditaveis`).
 
   it("na cópia não há editor -- os links vão pelo servidor", async () => {
     mocks();

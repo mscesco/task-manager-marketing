@@ -299,12 +299,58 @@ banco descartável em `head`, que também desceu e subiu a `0026`).
 - `TextoFormatado` (o renderizador, com a lista do que é permitido) usado no
   detalhe da tarefa e no bloco "Sobre o projeto" — que troca o `linkify` da
   fatia A por ele;
-- `EditorDeDescricao` (barra, atalhos, "Escrever"/"Visualizar") no modal da
+- `EditorDeDescricao` (barra, atalhos, "Escrever"/"Visualizar") no
+  `DescricaoEditavel` do detalhe da tarefa (fatia D), no modal de **criar**
   tarefa e no painel do projeto;
 - a remoção da marcação no resumo da lista de projetos;
 - testes: o que desenha e o que NÃO desenha (HTML, `javascript:`), a quebra de
   linha simples preservada, **o briefing de uma solicitação desenhado igual ao
   de hoje**, e cada botão da barra escrevendo a marcação certa.
+
+**Fatia D — título e descrição editados no lugar** (pedido dela em 16/09, com
+print do Trello). Só front. Entrou antes da C.
+
+> *"quero trocar o botão de editar. Ele agora serve só pra trocar a descrição e
+> o título né, já que prioridade, datas e afins podem ser trocadas pelas
+> cápsulas."*
+
+- **Título:** clicar edita; **Enter salva, clicar fora salva, Esc desiste**.
+  Vazio volta ao original. Quebra de linha colada vira espaço.
+- **Descrição:** "Descrição" com **Editar** ao lado (só com texto; sem texto, o
+  próprio espaço vazio é o botão). Salvar e Cancelar; **clicar fora salva**,
+  **Ctrl+Enter salva**, **Esc desiste**. ⚠️ Enter **não** salva — é a quebra
+  de linha.
+- **Links:** o modal de editar era o único lugar onde os links de uma tarefa
+  existente se editavam, então ganharam o mesmo gesto: **Editar** (ou
+  "Adicionar link"), clicar fora salva, Esc desiste. ⚠️ Link com erro **não**
+  salva ao clicar fora — o editor fica aberto com o erro marcado.
+- **O "Editar" do rodapé saiu, e com ele o modo editar do `TaskModal`**, que
+  agora só cria e duplica. Coluna, prioridade, datas, projeto e responsáveis já
+  eram das pílulas; nada ficou sem lugar.
+- ⚠️ **O Esc do campo não fecha o modal do detalhe** (`stopPropagation`).
+- ⚠️ **O detalhe guarda o que salvou.** `/tarefa/[id]` e `/arquivadas` não
+  aplicam `onSubtaskUpsert` na tarefa aberta; sem a cópia local o título
+  voltaria ao antigo logo depois do Enter.
+
+✅ **Entregue em 16/09.** Front **1488**, `tsc` limpo, `next build` ok, a
+classe `hover:bg-[var(--surface-2)]` conferida no CSS do build. Backend não
+mudou.
+- `lib/edicaoNoLugar.ts` (o que salvar), `lib/useSairDoBloco.ts` (clicar fora
+  **ou** Tab para fora; não depende de o botão receber foco, que o Safari não
+  dá), `components/TituloEditavel.tsx`, `DescricaoEditavel.tsx`,
+  `LinksEditaveis.tsx`; `TaskDetail.tsx` os usa; `TaskModal.tsx` perdeu o modo
+  editar; `onEditar` saiu das quatro telas.
+- **Testes:** `edicaoNoLugar.test.ts` (8), `EdicaoNoLugar.test.tsx` (18). Três
+  testes saíram junto com o modo editar (os dois de links do modal viraram
+  testes do `LinksEditaveis`).
+- **Sabotagens:** sem o `stopPropagation` no Esc do título → cai o teste do
+  Esc; sem a cópia local no detalhe → cai o do título que o pai não aplica; sem
+  a guarda de "já confirmei" na descrição → cai o do salvar UMA vez. ⚠️ Esse
+  último passava na primeira versão do teste (dois `fireEvent` separados deixam
+  o React redesenhar entre eles); reescrito com os dois eventos no mesmo `act`.
+- ⚠️ **Não coberto por teste:** a aparência (título com fundo ao passar o
+  mouse, campo do título do mesmo tamanho do texto), nos dois temas; o clique
+  fora de verdade no navegador.
 
 ---
 

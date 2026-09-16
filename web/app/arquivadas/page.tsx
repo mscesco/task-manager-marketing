@@ -105,10 +105,9 @@ function Arquivadas() {
   // (ela pagina so as arquivadas), entao busca sob demanda ao abrir -- e o
   // numero que a confirmacao de exclusao usa. `null` = ainda carregando.
   const [filhos, setFilhos] = useState<Task[] | null>(null);
-  const [editando, setEditando] = useState<Task | null>(null);
-  // Spec 033: tarefa que esta sendo DUPLICADA. Separado de `editando` de
-  // proposito -- os dois abrem o mesmo modal em modos diferentes, e um estado
-  // so faria "duplicar" e "editar" se sobrescreverem em silencio.
+  // Spec 033: tarefa que esta sendo DUPLICADA. ⚠️ O `editando` que morava ao
+  // lado saiu na Spec 052 (fatia D): titulo, descricao e links se editam no
+  // proprio detalhe, e o modal so cria e duplica.
   const [duplicando, setDuplicando] = useState<Task | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   // ⚠️ O time ativo vem da barra (Spec 048). Rota estática -- `useSearchParams`
@@ -275,7 +274,6 @@ function Arquivadas() {
           if (paiDoDetalhe) abrirDetalhe(paiDoDetalhe);
         }}
         onClose={fecharDetalhe}
-        onEditar={(t) => setEditando(t)}
         onDuplicar={(t) => setDuplicando(t)}
         onAssigneesChange={() => {}}
         onAbrirSubtarefa={(sub) => abrirDetalhe(sub)}
@@ -294,18 +292,16 @@ function Arquivadas() {
       />
 
       <TaskModal
-        open={editando !== null || duplicando !== null}
-        task={editando}
+        open={duplicando !== null}
         duplicarDe={duplicando}
         // A tela de arquivadas nao carrega a arvore: sem filhas conhecidas, a
         // caixa da D7 nao aparece (criterio 16) e a copia sai so com o pai.
         // Duplicar uma arquivada COM subarvore se faz pelo quadro.
         filhosDaOrigem={[]}
         defaultProjectId={null}
-        // Esta tela nao cria tarefa do zero (`open` exige editar ou duplicar).
+        // Esta tela nao cria tarefa do zero (`open` exige duplicar).
         newTaskTeam={null}
         onClose={() => {
-          setEditando(null);
           setDuplicando(null);
         }}
         onSaved={(t) => {
@@ -317,7 +313,6 @@ function Arquivadas() {
             router.push(`/tarefa/${t.id}`);
             return;
           }
-          setEditando(null);
           carregar(page);
         }}
       />
