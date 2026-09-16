@@ -41,6 +41,9 @@ export default defineConfig({
   },
   test: {
     environment: "jsdom",
+    // ⚠️ Espera a destruição agendada do editor (Tiptap) antes de o jsdom sair
+    // -- ver o cabeçalho do arquivo. Sem isto o CI caiu em 16/09.
+    setupFiles: ["./vitest.setup.ts"],
     include: [
       "lib/**/*.test.{ts,tsx}",
       "components/**/*.test.{ts,tsx}",
