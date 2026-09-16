@@ -393,6 +393,64 @@ mudou.
   mouse, campo do título do mesmo tamanho do texto), nos dois temas; o clique
   fora de verdade no navegador.
 
+**Fatia E — o editor que já mostra formatado** (pedido dela em 16/09, depois
+de usar a C). ⚠️ **Revoga a decisão 3** e tira "editor visual" do §6.
+
+> *"não gostei muito de como ficou a edição da descrição, gostaria que ficasse
+> como veríamos mesmo e só formatar caso cole algo em md e formata já como
+> veríamos (...) hífen espaço gera a lista, número e ponto e espaço também lista
+> numérica (...) não gostei dos asteriscos e afins"*
+
+- **O campo mostra formatado enquanto se escreve**, sem asterisco e sem aba
+  "Visualizar". `- ` vira lista, `1. ` vira numerada, `## ` vira cabeçalho,
+  `**x**` vira negrito. Ctrl+B, Ctrl+I, Ctrl+K (link) e uma barra pequena
+  com os mesmos, marcando o que está ativo.
+- **Colar:** HTML (Docs, Trello, página) já entra formatado; texto que
+  **parece** Markdown entra formatado; texto comum entra como texto (`2 * 3`
+  não vira itálico).
+- **Enter** abre parágrafo; **Shift+Enter** quebra a linha; **Ctrl+Enter**
+  continua sendo salvar.
+- **O que é guardado não mudou: Markdown.** O `TextoFormatado` da fatia C
+  continua desenhando, não há migração, e o briefing abre e volta com as mesmas
+  quebras (testado).
+
+✅ **Entregue em 16/09.** Front **1526**, `tsc` limpo, `next build` ok.
+- **Biblioteca:** Tiptap 3.31.3 (`@tiptap/react`, `core`, `pm`, `starter-kit`,
+  `markdown`, `extension-link`, `extension-hard-break`, `extensions`), em
+  `dependencies`; e `@types/react-dom` 18 em dev (faltava, e o `npm install`
+  puxava a 19, incompatível). Nenhum aviso do `npm audit` vem delas.
+- `lib/editorDeDescricao.ts` (as extensões: só o que o renderizador desenha;
+  `pareceMarkdown`), `components/EditorDeDescricao.tsx` (reescrito, mesmas
+  props), `components/EditorDeDescricaoAdiado.tsx`. A barra que escrevia
+  asteriscos (`aplicarNaSelecao`, `acaoDoAtalho`) saiu de `lib/markdown.ts`;
+  `semMarcacao` aprendeu a tirar o escape que o editor escreve.
+- **Medido e tratado:**
+  - ⚠️ **o editor reescreve o texto ao lê-lo** (`[Design]` → `\[Design\]`,
+    `1)` → `1.`). Por isso ele só avisa mudança quando a pessoa edita — e
+    **`setEditable` emitia "update" ao abrir**, o que fazia clicar fora salvar
+    uma descrição intocada, reescrita. Desligado, com teste;
+  - a quebra padrão do Tiptap é `"  \n"` (dois espaços antes); aqui é `\n`;
+  - o Ctrl+Enter padrão quebra linha; aqui não (é salvar);
+  - as regras de colar do Tiptap faziam `2 * 3 * 4` virar itálico; desligadas;
+  - `[x](javascript:…)` lido do texto salvo entrava como link (o
+    `isAllowedUri` só barra comando e colagem); a leitura agora recusa;
+  - ⚠️ **peso:** importado direto, o editor subia a primeira carga de
+    `/minhas-tarefas`, `/tarefa/[id]` e `/projetos/[id]` de ~290 kB para
+    ~435 kB. Com `React.lazy`, ele só é baixado ao editar — voltou a ~290 kB.
+- **Testes:** `lib/__tests__/editorDeDescricao.test.ts` (14 — ida e volta,
+  digitar `- `/`1. `/`## `/`**x**`, teclas, links, `pareceMarkdown`),
+  `EditorDeDescricao.test.tsx` (10 — abrir sem mexer não avisa, barra, colar,
+  Ctrl+K, valor de fora). Os testes da descrição no `EdicaoNoLugar.test.tsx`
+  foram reescritos (o campo não é mais `textarea`); os do editor da C saíram.
+- **Sabotagens:** `setEditable` emitindo → caem 3; regras de colar ligadas →
+  cai o de colar texto comum; quebra com dois espaços → caem 4; leitura de link
+  sem trava → cai o do `javascript:`; Ctrl+Enter quebrando → ⚠️ passava na
+  primeira versão (o Markdown aparado escondia a quebra no fim); o teste passou
+  a olhar o documento e agora cai.
+- ⚠️ **Não coberto por teste:** digitar de verdade no navegador (o jsdom não
+  digita em `contenteditable` — as regras são testadas pelo editor sem tela);
+  colar do Google Docs e do Trello; a aparência nos dois temas.
+
 ---
 
 ## 6. O que esta spec deliberadamente NÃO faz
@@ -401,7 +459,7 @@ mudou.
   menção: `@[nome](uuid)` tem a forma de um link Markdown, e o comentário
   precisa tratar menção e GIF **antes** da formatação — senão a menção vira um
   link quebrado.
-- **Editor visual** (ver formatado enquanto digita). Decisão 3.
+- ~~**Editor visual** (ver formatado enquanto digita). Decisão 3.~~ ⚠️ Revogado em 16/09: é a fatia E.
 - **Links em comentário, formulário ou time.**
 - **Anexar arquivo.** Link aponta para onde o arquivo já mora (Drive).
 - **Prévia do link** (título e imagem buscados da página). Exigiria o servidor
@@ -431,7 +489,8 @@ mudou.
 2. **Formatação** — *"só as descrições por enquanto"*. Projeto e tarefa;
    comentários depois (§4.3, §6).
 3. **Edição** — *"pode ser como recomenda"*: barra de botões com "Visualizar"
-   (§4.3).
+   (§4.3). ⚠️ **Revogada por ela no mesmo dia, depois de usar:** editor que já
+   mostra formatado, como o Trello (fatia E).
 
 ### As duas que sobraram, respondidas em 16/09
 

@@ -11,13 +11,13 @@
 // e o Enter é a quebra de linha. O atalho de salvar é o mesmo do resto do
 // produto (`ehAtalhoDeSalvar`).
 //
-// Fatia C: o texto é desenhado com formatação (`TextoFormatado`) e o campo é o
-// `EditorDeDescricao` (barra, atalhos, "Visualizar"). O gesto de abrir, salvar
-// e desistir é desta fatia D e não mudou.
+// Fatias C e E: o texto é desenhado com formatação (`TextoFormatado`) e o campo
+// é o `EditorDeDescricao`, que já mostra formatado enquanto se escreve. O gesto
+// de abrir, salvar e desistir é desta fatia D e não mudou.
 
-import { useEffect, useId, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { useId, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { decidirDescricao } from "@/lib/edicaoNoLugar";
-import EditorDeDescricao from "@/components/EditorDeDescricao";
+import EditorDeDescricao from "@/components/EditorDeDescricaoAdiado";
 import TextoFormatado from "@/components/TextoFormatado";
 import { ehAtalhoDeSalvar } from "@/lib/teclasFormulario";
 import { useSairDoBloco } from "@/lib/useSairDoBloco";
@@ -35,7 +35,6 @@ export default function DescricaoEditavel({
   const [emVoo, setEmVoo] = useState<string | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const blocoRef = useRef<HTMLDivElement | null>(null);
-  const campoRef = useRef<HTMLTextAreaElement | null>(null);
   // Mesma guarda do `TituloEditavel`: clicar num campo de fora dispara
   // `mousedown` E `focusout`, e só o primeiro pode confirmar.
   const abertoRef = useRef(false);
@@ -43,16 +42,6 @@ export default function DescricaoEditavel({
 
   const texto = emVoo ?? valor ?? "";
   const temTexto = texto.trim().length > 0;
-
-  // O foco vai para o FIM do texto, e não seleciona tudo: na descrição a
-  // pessoa quase sempre acrescenta, e com tudo selecionado a primeira tecla
-  // apagaria a descrição inteira.
-  useEffect(() => {
-    const el = campoRef.current;
-    if (!editando || !el) return;
-    el.focus();
-    el.setSelectionRange(el.value.length, el.value.length);
-  }, [editando]);
 
   function abrir() {
     if (emVoo !== null) return;
@@ -144,7 +133,9 @@ export default function DescricaoEditavel({
             valor={rascunho}
             onChange={setRascunho}
             rotuloId={idDoRotulo}
-            campoRef={campoRef}
+            // O cursor vai para o FIM, e não seleciona tudo: na descrição a
+            // pessoa quase sempre acrescenta.
+            focarAoAbrir
           />
           {erro && (
             <div className="error-box" role="alert">

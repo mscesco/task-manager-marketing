@@ -20,6 +20,10 @@ import LinksEditaveis from "@/components/LinksEditaveis";
 import TaskDetail from "@/components/TaskDetail";
 import type { Coluna } from "@/lib/coluna";
 import type { Task } from "@/lib/api";
+import type { Editor } from "@tiptap/core";
+import { prepararEditorNoJsdom } from "./editorNoJsdom";
+
+prepararEditorNoJsdom();
 
 vi.mock("@/lib/api", async (importOriginal) => {
   const real = await importOriginal<typeof import("@/lib/api")>();
@@ -120,23 +124,45 @@ describe("TituloEditavel", () => {
 
 // ------------------------------------------------------------------ descrição
 
+/**
+ * O editor da descrição (fatia E) e um jeito de ESCREVER nele.
+ *
+ * ⚠️ O CAMPO NÃO É MAIS `textarea`: é um editor (`contenteditable`), e o jsdom
+ * não digita nele. Escrever é mandar o conteúdo pelo próprio editor, que avisa
+ * o `onChange` como uma edição de verdade. O que se prova aqui é o GESTO em
+ * volta (salvar, desistir, clicar fora); digitar `- ` virando lista está em
+ * `lib/__tests__/editorDeDescricao.test.ts`.
+ */
+async function campoDaDescricao() {
+  const el = await screen.findByRole("textbox", { name: "Descrição" });
+  await waitFor(() => expect((el as unknown as { editor?: Editor }).editor).toBeTruthy());
+  const editor = (el as unknown as { editor: Editor }).editor;
+  return {
+    el,
+    escrever: (markdown: string) =>
+      act(() => {
+        editor.commands.setContent(markdown, { contentType: "markdown" });
+      }),
+  };
+}
+
 describe("DescricaoEditavel", () => {
-  it("sem descrição: o convite abre o campo, e não há \"Editar\"", () => {
+  it("sem descrição: o convite abre o campo, e não há \"Editar\"", async () => {
     render(<DescricaoEditavel valor="" onSalvar={vi.fn()} />);
     expect(screen.queryByRole("button", { name: "Editar descrição" })).toBeNull();
     fireEvent.click(screen.getByText("Adicionar uma descrição…"));
-    expect(screen.getByRole("textbox")).toBeTruthy();
+    expect((await campoDaDescricao()).el).toBeTruthy();
   });
 
   it("⭐ Enter NÃO salva (é quebra de linha); Ctrl+Enter salva", async () => {
     const onSalvar = vi.fn().mockResolvedValue(undefined);
     render(<DescricaoEditavel valor="briefing" onSalvar={onSalvar} />);
     fireEvent.click(screen.getByRole("button", { name: "Editar descrição" }));
-    const campo = screen.getByRole("textbox");
-    fireEvent.change(campo, { target: { value: "briefing\nlinha 2" } });
-    fireEvent.keyDown(campo, { key: "Enter" });
+    const campo = await campoDaDescricao();
+    campo.escrever("briefing\nlinha 2");
+    fireEvent.keyDown(campo.el, { key: "Enter" });
     expect(onSalvar).not.toHaveBeenCalled();
-    fireEvent.keyDown(campo, { key: "Enter", ctrlKey: true });
+    fireEvent.keyDown(campo.el, { key: "Enter", ctrlKey: true });
     await waitFor(() => expect(onSalvar).toHaveBeenCalledWith("briefing\nlinha 2"));
   });
 
@@ -149,8 +175,8 @@ describe("DescricaoEditavel", () => {
       </>,
     );
     fireEvent.click(screen.getByRole("button", { name: "Editar descrição" }));
-    const campo = screen.getByRole("textbox", { name: "Descrição" });
-    fireEvent.change(campo, { target: { value: "briefing novo" } });
+    const campo = await campoDaDescricao();
+    campo.escrever("briefing novo");
     const fora = screen.getByLabelText("lá fora");
     // ⚠️ NO MESMO `act`: no navegador os dois eventos chegam antes de o React
     // redesenhar. Em dois `fireEvent` separados o bloco já teria saído da tela
@@ -158,17 +184,17 @@ describe("DescricaoEditavel", () => {
     // guarda passava assim).
     act(() => {
       fora.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
-      campo.dispatchEvent(new FocusEvent("focusout", { bubbles: true, relatedTarget: fora }));
+      campo.el.dispatchEvent(new FocusEvent("focusout", { bubbles: true, relatedTarget: fora }));
     });
     await waitFor(() => expect(onSalvar).toHaveBeenCalledWith("briefing novo"));
     expect(onSalvar).toHaveBeenCalledTimes(1);
   });
 
-  it("clicar DENTRO (no Cancelar) não salva, e Cancelar desiste", () => {
+  it("clicar DENTRO (no Cancelar) não salva, e Cancelar desiste", async () => {
     const onSalvar = vi.fn();
     render(<DescricaoEditavel valor="briefing" onSalvar={onSalvar} />);
     fireEvent.click(screen.getByRole("button", { name: "Editar descrição" }));
-    fireEvent.change(screen.getByRole("textbox"), { target: { value: "mudou" } });
+    (await campoDaDescricao()).escrever("mudou");
     const cancelar = screen.getByText("Cancelar");
     fireEvent.mouseDown(cancelar);
     fireEvent.click(cancelar);
@@ -176,13 +202,14 @@ describe("DescricaoEditavel", () => {
     expect(screen.getByText("briefing")).toBeTruthy();
   });
 
-  it("⚠️ Esc desiste e não chega à janela", () => {
+  it("⚠️ Esc desiste e não chega à janela", async () => {
     const { espiao, parar } = espiarEscNaJanela();
     const onSalvar = vi.fn();
     render(<DescricaoEditavel valor="briefing" onSalvar={onSalvar} />);
     fireEvent.click(screen.getByRole("button", { name: "Editar descrição" }));
-    fireEvent.change(screen.getByRole("textbox"), { target: { value: "mudou" } });
-    fireEvent.keyDown(screen.getByRole("textbox"), { key: "Escape" });
+    const campo = await campoDaDescricao();
+    campo.escrever("mudou");
+    fireEvent.keyDown(campo.el, { key: "Escape" });
     parar();
     expect(espiao).not.toHaveBeenCalled();
     expect(onSalvar).not.toHaveBeenCalled();
@@ -364,8 +391,7 @@ describe("TaskDetail -- edição no lugar (Spec 052, fatia D)", () => {
     vi.mocked(api.updateTask).mockResolvedValue(task({ description: "briefing" }));
     montar();
     fireEvent.click(await screen.findByText("Adicionar uma descrição…"));
-    const campo = screen.getByRole("textbox", { name: "Descrição" });
-    fireEvent.change(campo, { target: { value: "briefing" } });
+    (await campoDaDescricao()).escrever("briefing");
     fireEvent.click(screen.getByText("Salvar"));
     await waitFor(() => expect(api.updateTask).toHaveBeenCalledWith("t1", { description: "briefing" }));
     expect(await screen.findByText("briefing")).toBeTruthy();

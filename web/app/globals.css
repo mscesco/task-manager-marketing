@@ -539,3 +539,23 @@ button:focus-visible,
 .texto-formatado strong { font-weight: 700; }
 .texto-formatado em { font-style: italic; }
 .texto-formatado a { color: var(--accent); text-decoration: underline; }
+
+/* ⚠️ O EDITOR DA DESCRICAO (Spec 052, fatia E). Ele usa a MESMA classe
+   `.texto-formatado` do texto salvo -- e o ponto: o que se ve escrevendo e o
+   que se ve depois. So o que e dele esta aqui:
+   - dentro do editor os cabecalhos sao `h1`/`h2`/`h3` de verdade (o
+     `TextoFormatado` rebaixa para h3/h4 ao desenhar), entao os tres ganham os
+     mesmos tamanhos da tela salva;
+   - o texto de exemplo do campo vazio (extensao Placeholder do Tiptap). */
+.editor-descricao { cursor: text; }
+.editor-descricao h1,
+.editor-descricao h2 { font-size: 15px; font-weight: 700; margin-top: 0.9em; }
+.editor-descricao h3 { font-size: 14px; font-weight: 700; margin-top: 0.8em; }
+.editor-descricao > :first-child { margin-top: 0; }
+.editor-descricao p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  color: var(--text-faint);
+  float: left;
+  height: 0;
+  pointer-events: none;
+}

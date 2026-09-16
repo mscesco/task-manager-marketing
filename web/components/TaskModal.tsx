@@ -25,7 +25,7 @@ import {
   type Project,
   type Member,
 } from "@/lib/api";
-import EditorDeDescricao from "@/components/EditorDeDescricao";
+import EditorDeDescricao from "@/components/EditorDeDescricaoAdiado";
 import EditorDeLinks from "@/components/EditorDeLinks";
 import {
   errosDosLinks,
@@ -852,12 +852,14 @@ export default function TaskModal({
         </div>
 
         <div className="field">
-          <label className="label" htmlFor="t-desc">
+          {/* ⚠️ `span` com id, e não `label htmlFor`: o campo é um editor
+              (`contenteditable`), e `label` só aponta para campo de formulário. */}
+          <span className="label" id="t-desc-rotulo">
             Descrição <span className="muted" style={{ fontWeight: 400 }}>(opcional)</span>
-          </label>
-          {/* Spec 052, fatia C: barra de formatação e "Visualizar". */}
+          </span>
+          {/* Spec 052, fatia E: o editor que já mostra formatado. */}
           <EditorDeDescricao
-            id="t-desc"
+            rotuloId="t-desc-rotulo"
             valor={description}
             onChange={setDescription}
             rows={4}

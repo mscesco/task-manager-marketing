@@ -6,7 +6,7 @@ import AppShell from "@/components/AppShell";
 import Board from "@/components/Board";
 import Card from "@/components/Card";
 import SobreOProjeto from "@/components/SobreOProjeto";
-import EditorDeDescricao from "@/components/EditorDeDescricao";
+import EditorDeDescricao from "@/components/EditorDeDescricaoAdiado";
 import EditorDeLinks from "@/components/EditorDeLinks";
 import LinksDoItem from "@/components/LinksDoItem";
 import {
@@ -374,10 +374,10 @@ function EditPanel({
         />
       </div>
       <div className="field">
-        <label className="label" htmlFor="projeto-descricao">Descrição</label>
-        {/* Spec 052, fatia C: barra de formatação e "Visualizar". */}
+        <span className="label" id="projeto-descricao-rotulo">Descrição</span>
+        {/* Spec 052, fatia E: o editor que já mostra formatado. */}
         <EditorDeDescricao
-          id="projeto-descricao"
+          rotuloId="projeto-descricao-rotulo"
           valor={description}
           onChange={setDescription}
           rows={5}

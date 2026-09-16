@@ -1,5 +1,4 @@
-// Spec 052, fatia C -- o que a descrição desenha, o que ela NÃO desenha, e o
-// editor com a barra.
+// Spec 052, fatia C -- o que a descrição desenha e o que ela NÃO desenha.
 //
 // O que ele prende:
 //   - ⭐ o briefing de uma solicitação sai com as MESMAS quebras de hoje (linha
@@ -7,16 +6,15 @@
 //   - ⚠️ HTML escrito à mão aparece como texto, e nunca vira elemento;
 //   - ⚠️ `javascript:` não vira link; link bom abre em aba nova;
 //   - título nunca compete com a página (`#` vira `<h3>`);
-//   - tabela, imagem e código não viram elemento;
-//   - o editor: botão da barra escreve em volta da SELEÇÃO do campo; Ctrl+B
-//     também; "Visualizar" mostra formatado; o clique na barra não tira o foco.
+//   - tabela, imagem e código não viram elemento.
+//
+// ⚠️ Os testes do editor com asteriscos e "Visualizar" saíram com ele (fatia E).
+// O editor novo está em `EditorDeDescricao.test.tsx`.
 
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { useState } from "react";
+import { cleanup, render, screen } from "@testing-library/react";
 
 import TextoFormatado from "@/components/TextoFormatado";
-import EditorDeDescricao from "@/components/EditorDeDescricao";
 
 afterEach(cleanup);
 
@@ -99,54 +97,5 @@ describe("TextoFormatado", () => {
     expect(container.textContent).toContain("cod");
     expect(container.textContent).toContain("risco");
     expect(container.textContent).toContain("cita");
-  });
-});
-
-function EditorControlado({ inicial }: { inicial: string }) {
-  const [valor, setValor] = useState(inicial);
-  return (
-    <>
-      <span id="rotulo">Descrição</span>
-      <EditorDeDescricao valor={valor} onChange={setValor} rotuloId="rotulo" />
-    </>
-  );
-}
-
-describe("EditorDeDescricao", () => {
-  function campo() {
-    return screen.getByRole("textbox", { name: "Descrição" }) as HTMLTextAreaElement;
-  }
-
-  it("⭐ o botão B envolve a SELEÇÃO do campo, e a palavra continua selecionada", () => {
-    render(<EditorControlado inicial="um dois três" />);
-    campo().setSelectionRange(3, 7);
-    fireEvent.click(screen.getByRole("button", { name: "Negrito (Ctrl+B)" }));
-    expect(campo().value).toBe("um **dois** três");
-    expect([campo().selectionStart, campo().selectionEnd]).toEqual([5, 9]);
-    expect(document.activeElement).toBe(campo());
-  });
-
-  it("⚠️ o mousedown na barra é cancelado -- o campo não perde a seleção", () => {
-    render(<EditorControlado inicial="um dois" />);
-    const botao = screen.getByRole("button", { name: "Lista" });
-    // `fireEvent` devolve false quando alguém chamou `preventDefault`.
-    expect(fireEvent.mouseDown(botao)).toBe(false);
-  });
-
-  it("Ctrl+K no campo faz o link, e não chega ao navegador", () => {
-    render(<EditorControlado inicial="Pasta" />);
-    campo().setSelectionRange(0, 5);
-    expect(fireEvent.keyDown(campo(), { key: "k", ctrlKey: true })).toBe(false);
-    expect(campo().value).toBe("[Pasta](https://)");
-  });
-
-  it("⭐ \"Visualizar\" mostra formatado, sem a barra; \"Escrever\" volta com o texto", () => {
-    render(<EditorControlado inicial={"**neg**"} />);
-    fireEvent.click(screen.getByRole("tab", { name: "Visualizar" }));
-    expect(screen.queryByRole("textbox")).toBeNull();
-    expect(screen.queryByRole("toolbar")).toBeNull();
-    expect(screen.getByText("neg").tagName).toBe("STRONG");
-    fireEvent.click(screen.getByRole("tab", { name: "Escrever" }));
-    expect(campo().value).toBe("**neg**");
   });
 });
