@@ -139,12 +139,16 @@ async def test_tarefa_apagada_ANTES_nao_muda_de_carimbo(db) -> None:
     carimbo do quadro e **ressuscitaria junto** no resgate -- desfazendo a
     decisao de outra pessoa sem ninguem perceber.
     """
-    ws, _raiz, sub_a, user, arvore = await _mundo(db)
+    ws, raiz, sub_a, user, arvore = await _mundo(db)
     quadro = await _quadro(db, ws, user, arvore, sub_a)
     antiga = await _tarefa(db, ws, user, arvore, sub_a, "Antiga", quadro.id)
     await _tarefa(db, ws, user, arvore, sub_a, "Viva", quadro.id)
 
-    with acting_as(**_ctx(ws, user, arvore, mship(sub_a, "SUPERVISOR"))):
+    # ⚠️ A PREPARACAO E DE UM MANAGER, e ate a Spec 051 era do supervisor. O
+    # supervisor nao tem `task.delete` -- quem barrava era so a ROTA, e este
+    # teste chama o servico. Desde a fatia A o servico confere o verbo no time
+    # da tarefa, e o atalho deixou de existir.
+    with acting_as(**_ctx(ws, user, arvore, mship(raiz, "MANAGER"))):
         await TaskService(db).soft_delete(task_id=antiga.id)
     await db.flush()
     carimbo_antigo = (

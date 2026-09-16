@@ -3,7 +3,7 @@
 **Status:** escrita em 16/09/2026, a partir da revisão de permissões do mesmo
 dia (cinco frentes contra o Mapa de 10/09 e a Spec 049) e das **oito decisões
 dela**, respondidas em 16/09 (§8), mais as duas que a escrita levantou (A e B,
-respondidas no mesmo dia). **Fatia 0 entregue em 16/09.**
+respondidas no mesmo dia). **Fatias 0 e A entregues em 16/09.**
 **Escopo:** backend (travas de serviço, matriz C2, duas rotas novas de leitura
 de cadeado e uma de escrita) e as telas que hoje decidem sozinhas o que o
 servidor deveria dizer.
@@ -385,6 +385,45 @@ metade). `teams_with` nasce aqui, com teste unitário ao lado dos de
 comentário e os botões do projeto passam a perguntar pelo time do item — a
 resposta vem na leitura do item (`can_delete` na tarefa e no projeto,
 `can_moderate` nos comentários), e não do `/auth/me`.
+
+✅ **Entregue em 16/09.** Backend **1749**, front **1422**, `tsc` limpo,
+`next build` ok, `ruff` sem erro novo (50 antes e depois — os mesmos).
+
+- **Servidor:** `TaskService.soft_delete`, `CommentService.delete_comment` e
+  as cinco escritas de `ProjectService` perguntam
+  `has_permission_in(verbo, time do item)` **depois** da lente — fora dela
+  continua 404 (e 422 no `create`), na lente sem o verbo é 403.
+  `ActorPermissions.teams_with` e `TenantContext.teams_with_permission`
+  nasceram, com o fail-open do contexto legado escrito e testado; quem os usa
+  é a fatia B.
+- **Os cadeados, e dois desvios do texto acima:**
+  - ⚠️ **não nasceu `can_moderate` nos comentários.** Moderar é
+    `task.delete` no time da TAREFA — a mesma pergunta do "Excluir". Um campo
+    por comentário repetiria a resposta N vezes; a tela passa
+    `task.can_delete` para cada linha (`podeModerar`, prop obrigatória).
+  - ⚠️ **`can_delete` da tarefa e `can_update`/`can_archive`/`can_delete` do
+    projeto são `computed_field` no SCHEMA**, e não montados no router como o
+    `can_update` de `GET /teams`. Tarefa e projeto saem por muitas rotas
+    (quadro, detalhe, minhas tarefas, arquivadas, criar, mover…); no router,
+    a rota esquecida devolveria o item sem cadeado. É puro (lê o contexto da
+    requisição, não o banco) e responde `False` sem contexto.
+  - ➕ **`can_create_project` em `GET /teams`**, que a spec não previa. A tela
+    de projetos oferecia como destino toda área que a pessoa alcança — para
+    `DUAS_ARVORES`, o Comercial (e ativo, pré-selecionado), com 403 no POST.
+    Agora só as áreas em que ela cria; nenhuma, e o botão some.
+- **Matriz:** as 6 linhas de §4.1 desta fatia viraram NEGADO para
+  `DUAS_ARVORES` (a da fila é da fatia B). E dois testes novos amarram o
+  cadeado à tabela: `test_o_cadeado_do_item_concorda_com_a_matriz` (o campo de
+  cada tarefa e projeto contra a linha da ação, por papel) e
+  `test_listagem_de_times_diz_onde_cada_papel_cria_projeto`.
+- ⚠️ **Um teste antigo afirmava o atalho:**
+  `test_tarefa_apagada_ANTES_nao_muda_de_carimbo` apagava tarefa **como
+  supervisor**, chamando o serviço direto — só a rota barrava. A preparação
+  passou a ser de um MANAGER.
+- **Sabotagens:** backend, a F do cabeçalho da matriz (fatia 0). Front,
+  duas de uma vez — a tarefa voltando a ler `me.permissions` e o lápis do
+  projeto sempre aberto: caíram exatamente os dois testes novos
+  (`TaskDetailCadeado`, `ProjetoExcluir`), e só eles.
 
 **Fatia B — solicitação e formulário** (§4.1, segunda metade; §4.8, itens 1 e
 2 do formulário). A fila e a lista passam de lente a `teams_with`; a órfã sai

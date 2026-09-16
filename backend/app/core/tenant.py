@@ -130,6 +130,24 @@ class TenantContext:
             return self.has_permission(permission)
         return bool(can_in(permission, team_id))
 
+    def teams_with_permission(
+        self, permission: str
+    ) -> frozenset[uuid.UUID] | None:
+        """Em QUAIS times tem esta permissao? `None` = todos. Spec 051, fatia A.
+
+        A irma de `has_permission_in` para quem nao tem UM item, e sim uma lista
+        a filtrar -- ver `ActorPermissions.teams_with`.
+
+        ⚠️ HERDA O MESMO FAIL-OPEN, escrito pelo mesmo motivo: contexto sem
+        escopo (`frozenset`, job de fundo e teste antigo) nao sabe "onde", e
+        responde `None` ("todos") se tiver a permissao em algum lugar. Sem ela,
+        e o conjunto vazio.
+        """
+        teams_with = getattr(self.permissions, "teams_with", None)
+        if teams_with is None:
+            return None if self.has_permission(permission) else frozenset()
+        return teams_with(permission)
+
     def has_permission(self, permission: str) -> bool:
         """True se o usuario tem a permissao informada.
 

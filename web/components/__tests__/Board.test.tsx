@@ -163,6 +163,8 @@ function task(over: Partial<Task> & { id: string; title: string }): Task {
     // 10/08, no `minhasTarefas.test.tsx`.
     board_id: QUADRO_ID,
     column_id: "col-backlog",
+    // Spec 051, fatia A: o cadeado vem do servidor, em toda resposta.
+    can_delete: true,
     start_date: null,
     due_date: null,
     due_time: null,
@@ -191,6 +193,10 @@ function project(id: string, team_id: string | null): Project {
     created_by: ANA,
     created_at: "2026-07-01T12:00:00Z",
     updated_at: "2026-07-01T12:00:00Z",
+    // Spec 051, fatia A: os botões vêm do servidor, no time do projeto.
+    can_update: true,
+    can_archive: true,
+    can_delete: true,
   };
 }
 

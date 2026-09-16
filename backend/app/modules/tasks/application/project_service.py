@@ -51,7 +51,11 @@ from app.db.models import Project
 from app.db.models.enums import PriorityLevel, ProjectStatus
 from app.modules.auth.domain import team_scope
 from app.modules.tasks.infrastructure.project_repository import ProjectRepository
-from app.shared.exceptions.base import EntityNotFoundError, ValidationError
+from app.shared.exceptions.base import (
+    AuthorizationError,
+    EntityNotFoundError,
+    ValidationError,
+)
 from app.shared.pagination import Page, PageParams
 
 logger = get_logger(__name__)
@@ -147,6 +151,11 @@ class ProjectService:
                 "Time informado esta fora do seu alcance.",
                 details={"field": "team_id"},
             )
+        # ⚠️⚠️ Spec 051, fatia A: E O VERBO NAQUELE TIME. A lente acima responde
+        # "trabalho la?"; quem e OPERATOR no Comercial trabalha, e a rota ja
+        # tinha visto `project.create` -- no Marketing, onde a pessoa e MANAGER.
+        # Fora da lente continua 422 no campo; na lente sem o verbo, 403.
+        self._assert_verbo_no_time("project.create", command.team_id)
         project = Project(
             title=title,
             description=command.description,
@@ -317,6 +326,8 @@ class ProjectService:
         # deixava o ESCREVER aberto, e o SUPERVISOR do SEO editou projeto do
         # Comercial. Fora da lente e 404, como no `get`.
         project = await self.get(project_id)
+        # Spec 051, fatia A: a lente (404) e do `get`; o verbo no time, daqui.
+        self._assert_verbo_no_time("project.update", project.team_id)
 
         # Aplica o patch campo a campo. None = nao mexer.
         if command.title is not None:
@@ -366,6 +377,7 @@ class ProjectService:
             EntityNotFoundError -- projeto nao existe.
         """
         project = await self.get(project_id)  # a lente -- ver `update`
+        self._assert_verbo_no_time("project.archive", project.team_id)
 
         if not project.is_archived:
             project.is_archived = True
@@ -382,6 +394,7 @@ class ProjectService:
             EntityNotFoundError -- projeto nao existe.
         """
         project = await self.get(project_id)  # a lente -- ver `update`
+        self._assert_verbo_no_time("project.archive", project.team_id)
 
         if project.is_archived:
             project.is_archived = False
@@ -398,12 +411,30 @@ class ProjectService:
             EntityNotFoundError -- projeto nao existe.
         """
         project = await self.get(project_id)  # a lente -- ver `update`
+        self._assert_verbo_no_time("project.delete", project.team_id)
 
         project.deleted_at = func.now()  # type: ignore[assignment]
         await self._session.flush()
 
         logger.info("project.deleted", project_id=str(project.id))
         return project
+
+    @staticmethod
+    def _assert_verbo_no_time(verbo: str, team_id: uuid.UUID | None) -> None:
+        """403 se quem chama nao tem `verbo` NO TIME do projeto. Spec 051, fatia A.
+
+        ⚠️ SEMPRE DEPOIS DA LENTE (o `get`, ou o 422 do `create`): o que chega
+        aqui a pessoa ja enxerga, entao o 403 nao vaza existencia.
+
+        ⚠️ `team_id` NULO so existe em projeto antigo sem time, e `can_in(p,
+        None)` responde so pela organizacao -- o mesmo "sem time nao e curinga"
+        da Spec 045.
+        """
+        if not require_tenant().has_permission_in(verbo, team_id):
+            raise AuthorizationError(
+                "Você não tem essa permissão nos projetos deste time.",
+                details={"permission": verbo},
+            )
 
     # ----------------------------------------------------
     # Helpers puros (testaveis sem DB)

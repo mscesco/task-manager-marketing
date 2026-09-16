@@ -312,10 +312,19 @@ class CommentService:
         """Soft-delete. Autor ou moderador (task.delete) -- D3."""
         comment = await self._load_active(task_id=task_id, comment_id=comment_id)
         tenant = require_tenant()
+        # ⚠️⚠️ Spec 051, fatia A: MODERAR E TER O VERBO NO TIME DA TAREFA. Ate
+        # aqui era `task.delete in tenant.permissions` -- "em algum lugar" -- e
+        # quem e MANAGER no Marketing e OPERATOR no Comercial apagava comentario
+        # alheio do Comercial. A tarefa ja passou pela lente em `_load_active`
+        # (404); aqui o que falta e o "onde". Mesma pergunta do `soft_delete` da
+        # tarefa, e a tela le a resposta dela em `TaskResponse.can_delete`.
+        task = await self._tasks.get_by_id_or_raise(task_id)
         autorizado = can_delete(
             author_id=comment.user_id,
             actor_id=tenant.user_id,
-            actor_can_moderate=_MODERATE_PERMISSION in tenant.permissions,
+            actor_can_moderate=tenant.has_permission_in(
+                _MODERATE_PERMISSION, task.team_id
+            ),
         )
         if not autorizado:
             raise AuthorizationError(

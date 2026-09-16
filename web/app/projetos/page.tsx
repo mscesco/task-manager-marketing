@@ -108,12 +108,17 @@ function Projetos() {
     // vínculos de quem está olhando. Um operador do Marketing não escolhe TI.
     Promise.all([currentUser(), listTeamsAll()])
       .then(([me, times]) => {
-        setPodeCriar(me.permissions.includes("project.create"));
+        // ⚠️⚠️ Spec 051, fatia A: SÓ AS ÁREAS EM QUE ELA CRIA, e não todas as
+        // que alcança. Quem é gerente no Marketing e operador no Comercial
+        // alcança as duas, e cria só no Marketing -- o seletor ofereceria o
+        // Comercial e o POST daria 403. Quem sabe "onde" é o servidor
+        // (`can_create_project`); `me.permissions` só diz "o que".
         const minhas = rootsForPerson(
           times,
           me,
           (me.org_role ?? null) !== null,
-        );
+        ).filter((t) => t.can_create_project === true);
+        setPodeCriar(minhas.length > 0);
         setAreas(minhas);
         // ⚠️ COM UMA ÁREA SÓ, NÃO HÁ PERGUNTA: pré-seleciona e o campo nem
         // aparece. É o cadastro da maioria, e um seletor de um item é ruído.

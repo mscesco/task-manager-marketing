@@ -9,7 +9,6 @@ import {
   getProject,
   updateProject,
   deleteProject,
-  currentUser,
   ApiError,
   type Project,
   type ProjectStatus,
@@ -59,11 +58,6 @@ function Projeto() {
   const [project, setProject] = useState<Project | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const router = useRouter();
-  const [podeEditar, setPodeEditar] = useState(false);
-  // Bug relatado em 22/08: "não dá pra excluir projeto". A rota existia; a
-  // tela não. ⚠️ PERMISSÃO PRÓPRIA -- `project.delete` não vem junto com
-  // `project.update`, e quem pode editar não necessariamente pode apagar.
-  const [podeExcluir, setPodeExcluir] = useState(false);
   const [excluindo, setExcluindo] = useState(false);
   const [erroExcluir, setErroExcluir] = useState<string | null>(null);
   const [editando, setEditando] = useState(false);
@@ -76,27 +70,18 @@ function Projeto() {
       );
   }, [id]);
 
-  useEffect(() => {
-    currentUser()
-      .then((me) => {
-        setPodeEditar(me.permissions.includes("project.update"));
-        setPodeExcluir(me.permissions.includes("project.delete"));
-      })
-      .catch(() => {
-        setPodeEditar(false);
-        setPodeExcluir(false);
-      });
-  }, []);
-
   if (erro) return <div className="error-box" style={{ maxWidth: 480 }}>{erro}</div>;
   if (!project) return <Loading />;
 
-  // Pessoal nunca edita por aqui (backend devolve 409). A lista ja filtra
-  // pessoal; guardamos defensivamente tambem na detalhe.
-  const editavel = podeEditar;
-  // ⚠️ PESSOAL NUNCA, e o backend também recusa (409). A trava dupla é de
-  // propósito: sem ela a tela ofereceria um botão que sempre falha.
-  const excluivel = podeExcluir;
+  // ⚠️⚠️ Spec 051, fatia A: OS BOTÕES VÊM DO PROJETO, e não de `me.permissions`.
+  // Até aqui a tela perguntava `project.update`/`project.delete` "em algum
+  // lugar" -- e quem é gerente no Marketing e operador no Comercial via Editar
+  // e Excluir num projeto do Comercial, que o servidor recusa. O servidor
+  // calcula as duas no time do projeto, pela mesma pergunta da escrita.
+  // ⚠️ E continuam SEPARADOS (bug de 22/08, "não dá pra excluir projeto"):
+  // quem pode editar não necessariamente pode apagar.
+  const editavel = project.can_update;
+  const excluivel = project.can_delete;
 
   // ⚠⚠ O VOLTAR LEVA O TIME DO PROJETO (14/09, mesmo defeito do menu: com o
   // Comercial ativo, voltar abria os projetos do Marketing). Esta rota não tem

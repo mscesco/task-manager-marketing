@@ -340,6 +340,20 @@ export type Task = {
   board_id: string;
   column_id: string;
   /**
+   * Spec 051, fatia A: quem pergunta pode APAGAR esta tarefa -- e moderar
+   * comentário alheio nela, que é a mesma pergunta (`task.delete` no time da
+   * tarefa).
+   *
+   * ⚠️⚠️ O BOTÃO VEM DAQUI, e não de `me.permissions`. O `/auth/me` diz "o que",
+   * nunca "onde": quem é gerente no Marketing e operador no Comercial tem
+   * `task.delete` e VÊ a tarefa do Comercial -- e o servidor recusa apagá-la.
+   *
+   * ⚠️ OBRIGATÓRIO, ao contrário dos contadores abaixo: o backend o calcula no
+   * próprio `TaskResponse`, então TODA resposta de tarefa o traz, inclusive as
+   * de mutação.
+   */
+  can_delete: boolean;
+  /**
    * ⚠️ SPEC 042 (A1 + B2). Os tres campos abaixo chegam SO na LISTAGEM
    * (`TaskListItem`), calculados em lote pelo backend. Eles sao o que permite
    * o quadro parar de carregar a subarvore: medido em 19/08, ele baixava 917
@@ -680,6 +694,9 @@ export type Team = {
   // pessoa pode, nunca "onde". Opcional como as contagens: só a listagem o
   // traz, e AUSENTE LÊ-SE COMO "NÃO" (`podeEditar` fecha, não abre).
   can_update?: boolean;
+  // Spec 051, fatia A: quem pergunta pode CRIAR PROJETO neste time? Mesma regra
+  // do `can_update`: só a listagem traz, e ausente lê-se como "não".
+  can_create_project?: boolean;
 };
 
 type TeamListResponse = { items: Team[]; total: number };
@@ -2104,6 +2121,12 @@ export type Project = {
   created_by: string;
   created_at: string;
   updated_at: string;
+  // ⚠️ Spec 051, fatia A: os botões do projeto, calculados pelo servidor NO TIME
+  // do projeto -- e não `me.permissions`, que diz "o que" e nunca "onde".
+  // Obrigatórios: toda resposta de projeto os traz.
+  can_update: boolean;
+  can_archive: boolean;
+  can_delete: boolean;
 };
 
 export type ProjectListResponse = {

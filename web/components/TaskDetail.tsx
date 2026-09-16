@@ -2685,6 +2685,7 @@ export default function TaskDetail({
                       excluidos={foraDoAutocompletar}
                       me={me}
                       taskId={tid}
+                      podeModerar={task.can_delete}
                       onEditado={aoEditado}
                       onApagado={recarregarComentarios}
                     />
@@ -2699,6 +2700,7 @@ export default function TaskDetail({
                             excluidos={foraDoAutocompletar}
                             me={me}
                             taskId={tid}
+                            podeModerar={task.can_delete}
                             onEditado={aoEditado}
                             onApagado={recarregarComentarios}
                           />
@@ -2894,7 +2896,9 @@ export default function TaskDetail({
           >
             {copiado ? "Copiado!" : "Copiar link"}
           </button>
-          {(me?.permissions.includes("task.delete") ?? false) && !confirmandoExcluir && (
+          {/* Spec 051, fatia A: o cadeado vem da TAREFA (`task.delete` no time
+              dela), e não de `me.permissions` -- que diz "o que", nunca "onde". */}
+          {task.can_delete && !confirmandoExcluir && (
             <button
               type="button" className="btn btn-ghost"
               onClick={() => { setErro(null); setConfirmandoExcluir(true); }}
@@ -2926,8 +2930,8 @@ export default function TaskDetail({
 }
 
 // Uma linha do thread: avatar + autor + hora + conteudo, com acoes inline.
-// Lapis (editar) so pro autor; lixeira (apagar) pro autor OU quem tem
-// task.delete (mirror do backend). Tombstone nao tem acao. Apagar e 204:
+// Lapis (editar) so pro autor; lixeira (apagar) pro autor OU quem modera a
+// tarefa (`podeModerar`, do servidor). Tombstone nao tem acao. Apagar e 204:
 // quem decide tombstone-vs-some e o backend -> a linha so dispara o reload.
 function LinhaComentario({
   c,
@@ -2935,6 +2939,7 @@ function LinhaComentario({
   excluidos,
   me,
   taskId,
+  podeModerar,
   onEditado,
   onApagado,
 }: {
@@ -2953,6 +2958,15 @@ function LinhaComentario({
   excluidos: Set<string>;
   me: CurrentUser | null;
   taskId: string;
+  /**
+   * Spec 051, fatia A: quem pergunta modera comentario alheio NESTA tarefa --
+   * `task.can_delete`, a mesma pergunta que o servidor faz ao apagar.
+   *
+   * ⚠️ OBRIGATORIA, pelo motivo de `excluidos`: com `?`, a replica esquecida
+   * sairia sem lixeira nenhuma (ou com a de `me.permissions`, que diz "o que"
+   * e nunca "onde") e nenhum portao reclamaria.
+   */
+  podeModerar: boolean;
   onEditado: (atualizado: Comment) => void;
   onApagado: () => void;
 }) {
@@ -2966,7 +2980,6 @@ function LinhaComentario({
 
   const nome = members.get(c.user_id)?.name ?? "";
   const souAutor = me != null && me.id === c.user_id;
-  const podeModerar = me?.permissions.includes("task.delete") ?? false;
   const temAcao = !c.is_deleted && me != null;
   const podeEditar = temAcao && souAutor;
   const podeApagar = temAcao && (souAutor || podeModerar);

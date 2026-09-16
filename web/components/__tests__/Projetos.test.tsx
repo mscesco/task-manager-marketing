@@ -48,8 +48,17 @@ const api = await import("@/lib/api");
 const MKT = "team-marketing";
 const COM = "team-comercial";
 
-function time(id: string, name: string): Team {
-  return { id, workspace_id: "ws", parent_team_id: null, name, slug: id };
+function time(id: string, name: string, criaProjeto = true): Team {
+  // ⚠️ Spec 051, fatia A: `can_create_project` vem do servidor, e AUSENTE
+  // LÊ-SE COMO "NÃO" -- sem ele aqui, nenhuma área seria oferecida.
+  return {
+    id,
+    workspace_id: "ws",
+    parent_team_id: null,
+    name,
+    slug: id,
+    can_create_project: criaProjeto,
+  };
 }
 
 /** O contexto padrão: o Comercial ativo. Reposto no `afterEach`. */
@@ -76,6 +85,10 @@ function projeto(over: Partial<Project> & { id: string; title: string }): Projec
     created_by: "user-1",
     created_at: "2026-09-14T12:00:00Z",
     updated_at: "2026-09-14T12:00:00Z",
+    // Spec 051, fatia A: os botões vêm do servidor, no time do projeto.
+    can_update: true,
+    can_archive: true,
+    can_delete: true,
     ...over,
   };
 }
@@ -166,5 +179,81 @@ describe("/projetos -- a criação segue o time ativo", () => {
     fireEvent.click(screen.getByText("Criar projeto"));
 
     expect(await screen.findByText("Metas do trimestre")).toBeTruthy();
+  });
+});
+
+describe("/projetos -- só oferece a área em que a pessoa CRIA (Spec 051, fatia A)", () => {
+  it("⚠️ gerente no Marketing e operador no Comercial: o Comercial ativo não vira destino", async () => {
+    // O caso da fatia. Ela alcança as duas áreas (`rootsForPerson`) e tem
+    // `project.create` em algum lugar -- mas só cria no Marketing. Antes, o
+    // campo vinha preenchido com o Comercial (o time ativo) e o POST dava 403.
+    vi.mocked(api.listProjects).mockResolvedValue({
+      items: [],
+      total: 0,
+      page: 1,
+      size: 100,
+    });
+    vi.mocked(api.currentUser).mockResolvedValue({
+      id: "user-2",
+      name: "Duas árvores",
+      email: "duas@t.dev",
+      must_change_password: false,
+      roles: ["MANAGER", "OPERATOR"],
+      permissions: ["project.create"],
+      org_role: null,
+      teams: [
+        { team_id: MKT, role: "MANAGER" },
+        { team_id: COM, role: "OPERATOR" },
+      ],
+    } as unknown as CurrentUser);
+    vi.mocked(api.listTeamsAll).mockResolvedValue([
+      time(COM, "Comercial", false),
+      time(MKT, "Marketing", true),
+    ]);
+    vi.mocked(api.createProject).mockResolvedValue(
+      projeto({ id: "p-mkt", title: "Campanha", team_id: MKT }),
+    );
+    render(<ProjetosPage />);
+
+    const [doCabecalho] = await screen.findAllByText("+ Novo projeto");
+    fireEvent.click(doCabecalho);
+    fireEvent.change(await screen.findByPlaceholderText("Ex.: Campanha Q3"), {
+      target: { value: "Campanha" },
+    });
+    // Uma área só: não há pergunta, e o campo nem é desenhado.
+    expect(screen.queryByLabelText("Time do projeto")).toBeNull();
+    fireEvent.click(screen.getByText("Criar projeto"));
+
+    await waitFor(() =>
+      expect(api.createProject).toHaveBeenCalledWith(
+        expect.objectContaining({ team_id: MKT }),
+      ),
+    );
+  });
+
+  it("sem área nenhuma em que crie, não há botão de novo projeto", async () => {
+    vi.mocked(api.listProjects).mockResolvedValue({
+      items: [],
+      total: 0,
+      page: 1,
+      size: 100,
+    });
+    vi.mocked(api.currentUser).mockResolvedValue({
+      id: "user-3",
+      name: "Operadora",
+      email: "op@t.dev",
+      must_change_password: false,
+      roles: ["OPERATOR"],
+      permissions: [],
+      org_role: null,
+      teams: [{ team_id: COM, role: "OPERATOR" }],
+    } as unknown as CurrentUser);
+    vi.mocked(api.listTeamsAll).mockResolvedValue([time(COM, "Comercial", false)]);
+    render(<ProjetosPage />);
+
+    await waitFor(() => expect(api.listTeamsAll).toHaveBeenCalled());
+    // Um tique para o `then` da busca assentar antes de afirmar a ausência.
+    await new Promise((r) => setTimeout(r, 0));
+    expect(screen.queryByText("+ Novo projeto")).toBeNull();
   });
 });

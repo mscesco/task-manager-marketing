@@ -113,6 +113,12 @@ viram. Todas as previsoes, lidas do codigo, bateram na primeira rodada.
        Nenhum outro papel muda, porque para eles lente e verbo coincidem --
        que e exatamente por que a tabela nao via.
 
+SPEC 051, FATIA A (16/09) -- tarefa, comentario e projeto pelo verbo no time.
+As seis linhas `051 §4.1` desta fatia viraram NEGADO para DUAS_ARVORES (a da
+fila e da fatia B). Nenhuma outra celula mudou. O cadeado de cada item
+(`can_delete`, `can_update`...) passou a ser conferido CONTRA estas linhas --
+ver `test_o_cadeado_do_item_concorda_com_a_matriz`.
+
 O QUE ESTA TABELA NAO COBRE (de proposito, e anotado para quem estender):
     - editar comentario (autoria, nao permissao -- spec §4.5) e seguidores
       (o servico decide "eu" contra "terceiro");
@@ -744,8 +750,7 @@ MATRIZ: tuple[Linha, ...] = (
     # (e operador la) e tem `task.delete` NO MARKETING. O servico pergunta a
     # lente, e nao o verbo no time da tarefa -- e ela apaga.
     Linha("task.delete", "do Comercial", "delete", f"{T}/tasks/{{tarefa_com}}", None,
-          (OK, OK, OCULTO, NEGADO, NEGADO, OK),
-          diverge="051 §4.1: o verbo no time do item"),
+          (OK, OK, OCULTO, NEGADO, NEGADO, NEGADO)),  # 051, fatia A: o verbo no time do item
     Linha("task.assign", "responsavel na do Marketing", "post",
           f"{T}/tasks/{{tarefa_mkt}}/assignees", {"user_id": "{alvo_mkt}"},
           (OK, OK, OK, OK, OK, OK)),
@@ -754,37 +759,32 @@ MATRIZ: tuple[Linha, ...] = (
           (OK, OK, OK, NEGADO, NEGADO, OK)),
     Linha("comment.moderate", "apagar comentario alheio do Comercial", "delete",
           f"{T}/tasks/{{tarefa_com}}/comments/{{comentario_com}}", None,
-          (OK, OK, OCULTO, OCULTO, OCULTO, OK),
-          diverge="051 §4.1: moderar pede `task.delete` no time da tarefa"),
+          (OK, OK, OCULTO, OCULTO, OCULTO, NEGADO)),  # 051, fatia A: moderar pede o verbo no time
     # ---------------------------------------------------------- projeto
     Linha("project.create", "no Marketing", "post", f"{T}/projects",
           {"title": "P", "team_id": "{mkt}"},
           (OK, OK, OK, NEGADO, NEGADO, OK)),
     Linha("project.create", "no Comercial", "post", f"{T}/projects",
           {"title": "P", "team_id": "{com}"},
-          (OK, OK, 422, NEGADO, NEGADO, OK),
-          diverge="051 §4.1: na lente sem o verbo e 403"),
+          (OK, OK, 422, NEGADO, NEGADO, NEGADO)),  # 051, fatia A: na lente sem o verbo e 403
     Linha("project.update", "do Marketing", "patch", f"{T}/projects/{{projeto_mkt}}",
           {"title": "Outro"},
           (OK, OK, OK, OK, NEGADO, OK)),
     Linha("project.update", "do Comercial", "patch", f"{T}/projects/{{projeto_com}}",
           {"title": "Outro"},
-          (OK, OK, OCULTO, OCULTO, NEGADO, OK),
-          diverge="051 §4.1: o verbo no time do item"),
+          (OK, OK, OCULTO, OCULTO, NEGADO, NEGADO)),  # 051, fatia A: o verbo no time do item
     Linha("project.archive", "do Marketing", "post",
           f"{T}/projects/{{projeto_mkt}}/archive", None,
           (OK, OK, OK, OK, NEGADO, OK)),
     Linha("project.archive", "do Comercial", "post",
           f"{T}/projects/{{projeto_com}}/archive", None,
-          (OK, OK, OCULTO, OCULTO, NEGADO, OK),
-          diverge="051 §4.1: o verbo no time do item"),
+          (OK, OK, OCULTO, OCULTO, NEGADO, NEGADO)),  # 051, fatia A: o verbo no time do item
     Linha("project.delete", "do Marketing", "delete", f"{T}/projects/{{projeto_mkt}}",
           None,
           (OK, NEGADO, OK, NEGADO, NEGADO, OK)),
     Linha("project.delete", "do Comercial", "delete", f"{T}/projects/{{projeto_com}}",
           None,
-          (OK, NEGADO, OCULTO, NEGADO, NEGADO, OK),
-          diverge="051 §4.1: o verbo no time do item"),
+          (OK, NEGADO, OCULTO, NEGADO, NEGADO, NEGADO)),  # 051, fatia A: o verbo no time do item
     # ---------------------------------------------------------- formulario
     Linha("form.create", "no Marketing", "post", f"{T}/solicitacoes/formularios",
           {"team_id": "{mkt}", "slug": "novo", "title": "Novo"},
@@ -884,6 +884,83 @@ async def test_matriz(db, linha: Linha, papel: str, esperado) -> None:
 
 
 # ---------------------------------------------------------------- o cadeado
+
+
+def _linha(acao: str, alvo: str) -> Linha:
+    (achada,) = [x for x in MATRIZ if x.acao == acao and x.alvo == alvo]
+    return achada
+
+
+#: Spec 051, fatia A: (leitura, campo, linha da MATRIZ que o campo espelha).
+#: ⚠️ O CAMPO E A LINHA TEM DE CONCORDAR -- e o `test_o_cadeado_concorda_com_o_patch`
+#: da Spec 047, para tarefa e projeto. Campo aberto e linha NEGADO e botao que da
+#: 403; o contrario, botao escondido para uma acao permitida.
+CADEADOS_DE_ITEM = (
+    ("/tasks/{tarefa_mkt}", "can_delete", ("task.delete", "do Marketing")),
+    ("/tasks/{tarefa_com}", "can_delete", ("task.delete", "do Comercial")),
+    ("/projects/{projeto_mkt}", "can_update", ("project.update", "do Marketing")),
+    ("/projects/{projeto_com}", "can_update", ("project.update", "do Comercial")),
+    ("/projects/{projeto_mkt}", "can_archive", ("project.archive", "do Marketing")),
+    ("/projects/{projeto_com}", "can_archive", ("project.archive", "do Comercial")),
+    ("/projects/{projeto_mkt}", "can_delete", ("project.delete", "do Marketing")),
+    ("/projects/{projeto_com}", "can_delete", ("project.delete", "do Comercial")),
+)
+
+
+@pytest.mark.parametrize("papel", PAPEIS)
+async def test_o_cadeado_do_item_concorda_com_a_matriz(db, papel: str) -> None:
+    """Spec 051, fatia A -- o botao da tarefa e do projeto vem do servidor.
+
+    ⚠️ So compara o que o papel ENXERGA: item fora da lente e 404 na leitura, e
+    nao ha botao a desenhar. A linha nao pode dizer OK nesses casos -- e diz
+    OCULTO ou NEGADO, conforme quem responde primeiro: a lente (404) ou o
+    portao da rota, para quem nao tem o verbo em lugar nenhum (403).
+    """
+    m = await _mundo(db)
+    idx = PAPEIS.index(papel)
+    async with _client(db, _contexto(m, papel)) as cli:
+        for caminho, campo, (acao, alvo) in CADEADOS_DE_ITEM:
+            r = await cli.get(T + _preencher(caminho, m["ids"]))
+            esperado = _linha(acao, alvo).esperado[idx]
+            if r.status_code == 404:
+                assert esperado != OK, f"{papel}: {caminho} oculto, linha OK"
+                continue
+            assert r.status_code == 200, r.text
+            assert r.json()[campo] is (esperado == OK), (
+                f"{papel} em {acao} ({alvo}): {campo}={r.json()[campo]}, linha {esperado}"
+            )
+
+
+#: Spec 051, fatia A: as areas em que cada papel CRIA projeto -- `can_create_project`.
+CRIA_PROJETO = {
+    "ADMIN": {"mkt", "com"},
+    "GESTOR": {"mkt", "com"},
+    "MANAGER": {"mkt"},
+    "SUPERVISOR": set(),
+    "OPERATOR": set(),
+    # ⚠️ O caso da fatia: enxerga o Comercial (e operador la), e nao cria nele.
+    "DUAS_ARVORES": {"mkt"},
+}
+
+
+@pytest.mark.parametrize("papel", PAPEIS)
+async def test_listagem_de_times_diz_onde_cada_papel_cria_projeto(db, papel: str) -> None:
+    m = await _mundo(db)
+    async with _client(db, _contexto(m, papel)) as cli:
+        r = await cli.get(f"{T}/workspaces/current/teams")
+    assert r.status_code == 200, r.text
+    nome_do_id = {v: k for k, v in m["ids"].items()}
+    raizes = {
+        nome_do_id[i["id"]]
+        for i in r.json()["items"]
+        if i["can_create_project"] and i["parent_team_id"] is None
+    }
+    assert raizes == CRIA_PROJETO[papel], f"{papel} cria em {raizes}"
+    # E as linhas `project.create` da matriz dizem o mesmo das duas raizes.
+    idx = PAPEIS.index(papel)
+    for alvo, time in (("no Marketing", "mkt"), ("no Comercial", "com")):
+        linha = _linha("project.create", alvo).esperado[idx]
+        assert (linha == OK) is (time in raizes), f"{papel} {alvo}: linha {linha}"
 
 
 #: Os subtimes que cada papel EDITA -- o `can_update` que a listagem devolve.

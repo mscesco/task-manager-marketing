@@ -97,18 +97,19 @@ function projeto(over: Partial<Project> = {}): Project {
     completed_at: null,
     created_at: "2026-08-01T12:00:00Z",
     updated_at: "2026-08-01T12:00:00Z",
+    // Spec 051, fatia A: os botões vêm do servidor, no time do projeto.
+    can_update: true,
+    can_archive: true,
+    can_delete: true,
     ...over,
   };
 }
 
-function montar(
-  over: Partial<Project> = {},
-  permissoes: string[] = ["project.delete", "project.update"],
-) {
+function montar(over: Partial<Project> = {}) {
+  // ⚠️ Spec 051, fatia A: SEM `currentUser`. Os botões vêm do PROJETO
+  // (`can_update`, `can_delete`), calculados pelo servidor no time dele; a
+  // página deixou de ler `me.permissions`, que diz "o que" e nunca "onde".
   vi.mocked(api.getProject).mockResolvedValue(projeto(over));
-  vi.mocked(api.currentUser).mockResolvedValue({
-    permissions: permissoes,
-  } as never);
   render(<PaginaDoProjeto />);
 }
 
@@ -153,11 +154,21 @@ describe("Projeto -- navegação", () => {
 });
 
 describe("Projeto -- excluir", () => {
-  it("⚠️ sem `project.delete` não há botão -- e ela não vem junto de `.update`", async () => {
-    montar({}, ["project.update"]);
+  it("⚠️ sem `can_delete` não há botão -- e ele não vem junto de `can_update`", async () => {
+    montar({ can_delete: false });
     // Quem só pode EDITAR chega ao painel e não encontra o excluir lá dentro.
     await abrirEdicao();
     expect(screen.queryByText("Excluir projeto")).toBeNull();
+  });
+
+  it("⚠️ Spec 051: sem `can_update` não há lápis -- mesmo com a permissão em algum lugar", async () => {
+    // O caso da fatia: gerente no Marketing e operador no Comercial, abrindo um
+    // projeto do Comercial. `me.permissions` tem `project.update`; o projeto diz
+    // que ali não. Quem manda é o projeto.
+    montar({ can_update: false, can_delete: false });
+    // O "‹ Projetos" só aparece com o projeto carregado -- é a espera certa.
+    await screen.findByText(/Projetos/);
+    expect(screen.queryByLabelText("Editar projeto")).toBeNull();
   });
 
   it("⚠️ o excluir NÃO fica solto no cabeçalho -- só dentro da edição", async () => {

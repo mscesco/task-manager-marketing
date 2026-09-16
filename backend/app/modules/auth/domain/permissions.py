@@ -515,6 +515,26 @@ class ActorPermissions:
             return False
         return team_id in self.by_team.get(permission, frozenset())
 
+    def teams_with(self, permission: str) -> frozenset[uuid.UUID] | None:
+        """EM QUAIS times tem esta permissao? (Spec 051, fatia A)
+
+        `None` = em TODOS (a parcela de organizacao a tem). Senao, os times de
+        `by_team` -- que pode ser vazio.
+
+        ⚠️⚠️ E A PERGUNTA DAS LISTAS, e nao uma lente nova. Uma listagem nao tem
+        item para perguntar `can_in`; ela precisa do conjunto para filtrar. Ate
+        a Spec 051 as listas usavam a LENTE (`visible_team_ids`) no lugar, e com
+        uma pessoa em duas arvores as duas respostas divergem: a lente de quem e
+        operador no Comercial inclui o Comercial, e os verbos de comando dela nao.
+
+        ⚠️ `None` E NAO O CONJUNTO DE TODOS OS TIMES, pelo mesmo contrato de
+        `visible_team_ids`: esta classe nao conhece a arvore, e "todos" dito
+        como `None` nao envelhece quando um time novo nasce.
+        """
+        if permission in self.unscoped:
+            return None
+        return self.by_team.get(permission, frozenset())
+
     def all_permissions(self) -> frozenset[str]:
         """Achatado, para o contrato de `/auth/me` e para telas.
 
