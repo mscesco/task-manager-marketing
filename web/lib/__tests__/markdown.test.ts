@@ -47,4 +47,9 @@ describe("semMarcacao", () => {
     expect(semMarcacao("2 \\* 3 e 4 \\* 5")).toBe("2 * 3 e 4 * 5");
     expect(semMarcacao("arquivo\\_final\\_v2")).toBe("arquivo_final_v2");
   });
+
+  it("⚠️ as entidades que o editor grava voltam a ser o caractere", () => {
+    expect(semMarcacao("Trocar &lt;nome do cliente&gt; no texto")).toBe("Trocar <nome do cliente> no texto");
+    expect(semMarcacao("P&amp;D e &amp;lt; literal")).toBe("P&D e &lt; literal");
+  });
 });

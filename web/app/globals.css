@@ -559,3 +559,27 @@ button:focus-visible,
   height: 0;
   pointer-events: none;
 }
+
+/* ⚠️ O QUE A REVISAO DE 16/09 DEVOLVEU A DESCRICAO: codigo, citacao, linha e
+   tabela. Antes o editor os apagava ao salvar; agora eles existem no editor e
+   no texto salvo, e precisam de cara nos dois (a classe e a mesma). */
+.texto-formatado code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.9em; background: var(--surface-2); border-radius: 4px; padding: 0.1em 0.3em;
+}
+.texto-formatado pre {
+  background: var(--surface-2); border-radius: 6px; padding: 0.6em 0.8em;
+  overflow-x: auto; white-space: pre;
+}
+.texto-formatado pre code { background: none; padding: 0; font-size: 13px; }
+.texto-formatado blockquote {
+  border-left: 3px solid var(--border); padding-left: 0.8em; color: var(--text-soft);
+}
+.texto-formatado del, .texto-formatado s { text-decoration: line-through; }
+.texto-formatado hr { border: none; border-top: 1px solid var(--border); }
+.texto-formatado table { border-collapse: collapse; display: block; overflow-x: auto; }
+.texto-formatado th, .texto-formatado td { border: 1px solid var(--border); padding: 4px 8px; text-align: left; }
+.texto-formatado th { font-weight: 700; background: var(--surface-2); }
+.texto-formatado ul[data-type="taskList"], .texto-formatado ul.contains-task-list { list-style: none; padding-left: 0.2em; }
+.texto-formatado ul[data-type="taskList"] li { display: flex; gap: 0.5em; align-items: flex-start; }
+.texto-formatado ul[data-type="taskList"] li > label { margin-top: 0.2em; }

@@ -40,6 +40,9 @@ vi.mock("@/lib/api", async (importOriginal) => {
   const real = await importOriginal<typeof import("@/lib/api")>();
   return {
     ...real,
+    // Spec 052 (revisão de 16/09): sem isto a busca de links vai à rede, falha, e
+    // o aviso "Não consegui carregar os links" (role=alert) entra na tela.
+    getTaskLinks: async () => [],
     colunasDoQuadro: vi.fn(),
     updateTask: vi.fn(),
     listComments: vi.fn(),

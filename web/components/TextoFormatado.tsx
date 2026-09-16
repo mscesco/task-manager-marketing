@@ -44,6 +44,24 @@ const COMPONENTES: Components = {
   h4: ({ children }) => <h4>{children}</h4>,
   h5: ({ children }) => <h4>{children}</h4>,
   h6: ({ children }) => <h4>{children}</h4>,
+  // ⚠️ IMAGEM VIRA LINK (revisão de 16/09): o editor não mostra imagem, e
+  // desenhá-la aqui carregaria endereço externo na tela de quem só abre a
+  // tarefa. O texto alternativo é o nome; sem ele, "imagem".
+  img({ src, alt }) {
+    const url = enderecoSeguro(typeof src === "string" ? src : null);
+    const nome = alt || "imagem";
+    if (!url) return <span>{nome}</span>;
+    return (
+      <a href={url} target="_blank" rel="noopener noreferrer">
+        {nome}
+      </a>
+    );
+  },
+  // Caixa de lista de tarefas: só a marca, sem clique -- marcar aqui não salva.
+  input({ type, checked }) {
+    if (type !== "checkbox") return null;
+    return <input type="checkbox" checked={!!checked} disabled readOnly />;
+  },
 };
 
 export default function TextoFormatado({
@@ -59,8 +77,8 @@ export default function TextoFormatado({
       <Markdown
         remarkPlugins={PLUGINS}
         allowedElements={ELEMENTOS_PERMITIDOS}
-        // ⚠️ DESEMBRULHA o que não é permitido: uma tabela vira o texto das
-        // células, e não some com o conteúdo junto.
+        // ⚠️ DESEMBRULHA o que não é permitido: o conteúdo fica como texto, e
+        // não some junto com o elemento.
         unwrapDisallowed
         // ⚠️ E NÃO REESCREVE ENDEREÇO: `enderecoSeguro` decide no `a`, onde dá
         // para trocar o link por texto. O `urlTransform` padrão devolveria `""`,

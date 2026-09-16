@@ -113,3 +113,19 @@ export function moverLink<T>(lista: readonly T[], i: number, delta: -1 | 1): T[]
   [nova[i], nova[j]] = [nova[j], nova[i]];
   return nova;
 }
+
+/**
+ * A lista a ENVIAR ao salvar, ou `null` para não mexer nos links.
+ *
+ * ⚠️⚠️ SÓ COM OS DOIS LADOS CONHECIDOS (revisão de 16/09). `salvos === null` é
+ * "a lista salva ainda não chegou, ou a busca falhou" -- e não "sem links".
+ * Comparar um rascunho com uma lista que a tela nunca viu fazia o `PUT` mandar
+ * a lista vazia (ou só o link novo) e APAGAR os links que existiam.
+ */
+export function linksParaEnviar(
+  salvos: readonly LinkItem[] | null,
+  rascunho: readonly RascunhoLink[] | null,
+): { title: string; url: string }[] | null {
+  if (salvos === null || rascunho === null) return null;
+  return linksMudaram(salvos, rascunho) ? paraEnvio(rascunho) : null;
+}

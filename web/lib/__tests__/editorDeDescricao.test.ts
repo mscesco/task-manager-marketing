@@ -7,13 +7,18 @@
 //     negrito -- ao digitar, como no Trello;
 //   - ⚠️ Ctrl+Enter NÃO quebra linha (é o atalho de salvar); Shift+Enter quebra;
 //   - a quebra é salva como `\n`, e não com dois espaços;
-//   - ⚠️ citação, código e risco não existem no editor;
+//   - ⭐⚠️ NADA do texto salvo some ao editar (código, citação, tabela, imagem...);
 //   - ⚠️ `javascript:` não vira link;
-//   - `pareceMarkdown`: o que é lido como Markdown ao colar, e o que não é.
+//   - `pareceMarkdown` e `colarComoMarkdown`: o que é lido como Markdown ao colar.
 
 import { afterEach, describe, expect, it } from "vitest";
 import { Editor } from "@tiptap/core";
-import { extensoesDaDescricao, markdownDoEditor, pareceMarkdown } from "@/lib/editorDeDescricao";
+import {
+  colarComoMarkdown,
+  extensoesDaDescricao,
+  markdownDoEditor,
+  pareceMarkdown,
+} from "@/lib/editorDeDescricao";
 
 let abertos: Editor[] = [];
 afterEach(() => {
@@ -75,12 +80,32 @@ describe("ida e volta do texto salvo", () => {
     expect(markdownDoEditor(editor(md))).toBe(md);
   });
 
-  it("⚠️ citação, código e risco não existem no editor -- o texto fica", () => {
-    const e = editor("> cita\n\n`cod` ~~risco~~");
-    const tipos = JSON.stringify(e.getJSON());
-    expect(tipos).not.toMatch(/blockquote|"code"|strike/);
-    expect(e.getText()).toContain("cita");
-    expect(e.getText()).toContain("risco");
+  /** Abre, EDITA (um espaço no fim) e devolve o que seria salvo. */
+  function editarESalvar(markdown: string): string {
+    const e = editor(markdown);
+    e.commands.insertContentAt(e.state.doc.content.size - 1, " ");
+    return markdownDoEditor(e);
+  }
+
+  it("⭐⚠️ NADA SOME AO EDITAR -- o que a revisão de 16/09 mediu sumindo", () => {
+    // Cada caso: o texto salvo, e o que PRECISA continuar nele depois de editar.
+    const casos: [string, string[]][] = [
+      ["Senha do wifi: `Fecaf@2026` na recepção", ["`Fecaf@2026`"]],
+      ["```\ncódigo importante\n```", ["```", "código importante"]],
+      ["> citação importante", ["> citação importante"]],
+      ["linha com ~~risco~~", ["~~risco~~"]],
+      ["antes\n\n---\n\ndepois", ["---"]],
+      ["- [ ] pendente\n- [x] feita", ["[ ] pendente", "[x] feita"]],
+      ["![logo](https://x.com/y.png) legenda", ["https://x.com/y.png", "logo"]],
+      [
+        "| Item | Valor |\n|---|---|\n| Cota | R$ 550 mil |",
+        ["| Item | Valor |\n|---|---|\n| Cota | R$ 550 mil |"],
+      ],
+    ];
+    for (const [salvo, precisa] of casos) {
+      const depois = editarESalvar(salvo);
+      for (const trecho of precisa) expect(depois, `de: ${salvo}`).toContain(trecho);
+    }
   });
 });
 
@@ -159,5 +184,28 @@ describe("pareceMarkdown -- o que é lido como Markdown ao colar", () => {
     expect(pareceMarkdown("arquivo_final_v2.png maria_silva@x.com")).toBe(false);
     expect(pareceMarkdown("https://drive.google.com/drive/folders/1X7GB")).toBe(false);
     expect(pareceMarkdown("-5 graus")).toBe(false);
+  });
+});
+
+describe("colarComoMarkdown -- quem cola: o Markdown ou o HTML", () => {
+  const md = "## Objetivo\n\n- um\n- dois";
+
+  it("⭐ texto puro que parece Markdown: lê como Markdown", () => {
+    expect(colarComoMarkdown(md, null)).toBe(true);
+  });
+
+  it("⭐⚠️ Markdown do VS Code (HTML só de div/span ao lado): lê como Markdown", () => {
+    const htmlDoVsCode =
+      '<meta charset="utf-8"><div style="color:#d4d4d4"><div><span style="color:#569cd6">## Objetivo</span></div><div><span>- um</span></div></div>';
+    expect(colarComoMarkdown(md, htmlDoVsCode)).toBe(true);
+  });
+
+  it("HTML com formatação de verdade (Docs, Trello, página): fica com o editor", () => {
+    expect(colarComoMarkdown(md, "<h2>Objetivo</h2><ul><li>um</li></ul>")).toBe(false);
+    expect(colarComoMarkdown(md, '<p>veja <b>isto</b></p>')).toBe(false);
+  });
+
+  it("texto que não parece Markdown nunca é lido como Markdown", () => {
+    expect(colarComoMarkdown("Conta: 2 * 3 * 4", null)).toBe(false);
   });
 });

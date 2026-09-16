@@ -6,7 +6,7 @@
 //   - ⚠️ HTML escrito à mão aparece como texto, e nunca vira elemento;
 //   - ⚠️ `javascript:` não vira link; link bom abre em aba nova;
 //   - título nunca compete com a página (`#` vira `<h3>`);
-//   - tabela, imagem e código não viram elemento.
+//   - tabela, código, citação e caixa de tarefa são desenhados; imagem vira link.
 //
 // ⚠️ Os testes do editor com asteriscos e "Visualizar" saíram com ele (fatia E).
 // O editor novo está em `EditorDeDescricao.test.tsx`.
@@ -89,13 +89,28 @@ describe("TextoFormatado", () => {
     expect(h).toContain("<h4>Três</h4>");
   });
 
-  it("tabela, imagem, código, citação e risco não viram elemento -- o texto fica", () => {
+  it("tabela, código, citação e risco são desenhados -- o editor os preserva (revisão de 16/09)", () => {
     const { container } = render(
-      <TextoFormatado texto={"| a | b |\n|---|---|\n| 1 | 2 |\n\n![foto](https://x/y.png)\n\n`cod` ~~risco~~\n\n> cita"} />,
+      <TextoFormatado texto={"| a | b |\n|---|---|\n| 1 | 2 |\n\n`cod` ~~risco~~\n\n> cita\n\n- [x] feita"} />,
     );
-    expect(container.querySelector("table, img, code, pre, del, blockquote, hr, input")).toBeNull();
-    expect(container.textContent).toContain("cod");
-    expect(container.textContent).toContain("risco");
-    expect(container.textContent).toContain("cita");
+    expect(container.querySelectorAll("td")).toHaveLength(2);
+    expect(container.querySelector("code")?.textContent).toBe("cod");
+    expect(container.querySelector("del")?.textContent).toBe("risco");
+    expect(container.querySelector("blockquote")?.textContent).toContain("cita");
+    const caixa = container.querySelector("input") as HTMLInputElement;
+    expect(caixa.checked).toBe(true);
+    expect(caixa.disabled).toBe(true);
+  });
+
+  it("⚠️ imagem NÃO vira <img>: vira link com o texto alternativo; endereço ruim, só texto", () => {
+    const { container } = render(
+      <TextoFormatado texto={"![logo](https://x.com/y.png) e ![ruim](javascript:alert(1))"} />,
+    );
+    expect(container.querySelector("img")).toBeNull();
+    const links = container.querySelectorAll("a");
+    expect(links).toHaveLength(1);
+    expect(links[0].getAttribute("href")).toBe("https://x.com/y.png");
+    expect(links[0].textContent).toBe("logo");
+    expect(container.textContent).toContain("ruim");
   });
 });

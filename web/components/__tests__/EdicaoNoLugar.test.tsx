@@ -134,8 +134,12 @@ describe("TituloEditavel", () => {
  * `lib/__tests__/editorDeDescricao.test.ts`.
  */
 async function campoDaDescricao() {
-  const el = await screen.findByRole("textbox", { name: "Descrição" });
-  await waitFor(() => expect((el as unknown as { editor?: Editor }).editor).toBeTruthy());
+  // ⚠️ PRAZO DE 5 s: o editor é baixado sob demanda (`React.lazy`) e montado
+  // depois; com a suíte inteira rodando em paralelo, o 1 s padrão já falhou.
+  const el = await screen.findByRole("textbox", { name: "Descrição" }, { timeout: 5000 });
+  await waitFor(() => expect((el as unknown as { editor?: Editor }).editor).toBeTruthy(), {
+    timeout: 5000,
+  });
   const editor = (el as unknown as { editor: Editor }).editor;
   return {
     el,
@@ -235,7 +239,7 @@ const SALVOS = [
 describe("LinksEditaveis", () => {
   it("⭐ renomear um link e clicar fora envia a lista inteira", async () => {
     const onSalvar = vi.fn().mockResolvedValue(undefined);
-    render(<LinksEditaveis links={SALVOS} onSalvar={onSalvar} />);
+    render(<LinksEditaveis links={SALVOS} falhou={false} onTentarDeNovo={vi.fn()} onSalvar={onSalvar} />);
     fireEvent.click(screen.getByRole("button", { name: "Editar links" }));
     fireEvent.change(screen.getByLabelText("Nome do link 1"), { target: { value: "Pasta do CBV" } });
     fireEvent.mouseDown(document.body);
@@ -250,7 +254,7 @@ describe("LinksEditaveis", () => {
 
   it("⭐ sem mudança, Salvar não envia nada", () => {
     const onSalvar = vi.fn();
-    render(<LinksEditaveis links={SALVOS} onSalvar={onSalvar} />);
+    render(<LinksEditaveis links={SALVOS} falhou={false} onTentarDeNovo={vi.fn()} onSalvar={onSalvar} />);
     fireEvent.click(screen.getByRole("button", { name: "Editar links" }));
     fireEvent.click(screen.getByText("Salvar"));
     expect(onSalvar).not.toHaveBeenCalled();
@@ -259,7 +263,7 @@ describe("LinksEditaveis", () => {
 
   it("⚠️ link com erro NÃO salva ao clicar fora -- o editor fica, com o erro", () => {
     const onSalvar = vi.fn();
-    render(<LinksEditaveis links={[]} onSalvar={onSalvar} />);
+    render(<LinksEditaveis links={[]} falhou={false} onTentarDeNovo={vi.fn()} onSalvar={onSalvar} />);
     fireEvent.click(screen.getByText("Adicionar link"));
     fireEvent.change(screen.getByLabelText("Nome do link 1"), { target: { value: "Pasta" } });
     fireEvent.mouseDown(document.body);
@@ -270,12 +274,31 @@ describe("LinksEditaveis", () => {
 
   it("sem links, \"Adicionar link\" abre com uma linha vazia -- e desistir não envia", () => {
     const onSalvar = vi.fn();
-    render(<LinksEditaveis links={[]} onSalvar={onSalvar} />);
+    render(<LinksEditaveis links={[]} falhou={false} onTentarDeNovo={vi.fn()} onSalvar={onSalvar} />);
     fireEvent.click(screen.getByText("Adicionar link"));
     expect(document.activeElement).toBe(screen.getByLabelText("Nome do link 1"));
     fireEvent.mouseDown(document.body);
     expect(onSalvar).not.toHaveBeenCalled();
     expect(screen.getByText("Adicionar link")).toBeTruthy();
+  });
+
+  it("⚠️ lista ainda não carregada: nada para editar -- nem \"Adicionar link\"", () => {
+    const { container } = render(
+      <LinksEditaveis links={null} falhou={false} onTentarDeNovo={vi.fn()} onSalvar={vi.fn()} />,
+    );
+    expect(container.innerHTML).toBe("");
+  });
+
+  it("⚠️⚠️ a busca falhou: aparece o erro com \"Tentar de novo\", e NÃO há como editar", () => {
+    // Revisão de 16/09: com a falha virando `[]`, adicionar um link mandava só
+    // ele e apagava os que existiam.
+    const onTentarDeNovo = vi.fn();
+    render(<LinksEditaveis links={null} falhou onTentarDeNovo={onTentarDeNovo} onSalvar={vi.fn()} />);
+    expect(screen.getByRole("alert").textContent).toContain("Não consegui carregar os links");
+    expect(screen.queryByText("Adicionar link")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Editar links" })).toBeNull();
+    fireEvent.click(screen.getByText("Tentar de novo"));
+    expect(onTentarDeNovo).toHaveBeenCalled();
   });
 });
 
@@ -344,10 +367,10 @@ describe("TaskDetail -- edição no lugar (Spec 052, fatia D)", () => {
     vi.mocked(api.getTaskLinks).mockResolvedValue([]);
   });
 
-  function montar(onSubtaskUpsert = vi.fn()) {
-    render(
+  function detalhe(t: Task, onSubtaskUpsert = vi.fn()) {
+    return (
       <TaskDetail
-        task={task()}
+        task={t}
         members={new Map()}
         projects={new Map()}
         temVoltar={false}
@@ -361,8 +384,12 @@ describe("TaskDetail -- edição no lugar (Spec 052, fatia D)", () => {
         onExcluir={vi.fn()}
         mostrarArquivadas={false}
         membrosInativos={new Set()}
-      />,
+      />
     );
+  }
+
+  function montar(onSubtaskUpsert = vi.fn()) {
+    return render(detalhe(task(), onSubtaskUpsert));
   }
 
   it("⭐ não há mais o \"Editar\" do rodapé", async () => {
@@ -395,5 +422,41 @@ describe("TaskDetail -- edição no lugar (Spec 052, fatia D)", () => {
     fireEvent.click(screen.getByText("Salvar"));
     await waitFor(() => expect(api.updateTask).toHaveBeenCalledWith("t1", { description: "briefing" }));
     expect(await screen.findByText("briefing")).toBeTruthy();
+  });
+
+  it("⚠️⚠️ salvar os links de A e ir para B antes da resposta: B NÃO recebe os links de A", async () => {
+    // Revisão de 16/09: o clique fora que salva os links pode ser o mesmo que
+    // abre outra tarefa (uma subtarefa da checklist). A resposta de A chegava
+    // depois e pintava os links de A no detalhe de B.
+    const LINKS_A = [{ id: "la", title: "Pasta de A", url: "https://a.com/pasta" }];
+    vi.mocked(api.getTaskLinks).mockImplementation(async (id: string) => (id === "t1" ? LINKS_A : []));
+    let responder: (v: typeof LINKS_A) => void = () => {};
+    vi.mocked(api.putTaskLinks).mockImplementation(
+      () => new Promise((ok) => { responder = ok; }),
+    );
+
+    const { rerender } = render(detalhe(task()));
+    fireEvent.click(await screen.findByRole("button", { name: "Editar links" }));
+    fireEvent.change(screen.getByLabelText("Nome do link 1"), { target: { value: "Pasta de A (nova)" } });
+    fireEvent.click(screen.getByText("Salvar"));
+    await waitFor(() => expect(api.putTaskLinks).toHaveBeenCalled());
+
+    // Navega para B com o PUT de A ainda em voo.
+    rerender(detalhe(task({ id: "t2", path: "t2", title: "Tarefa B" })));
+    expect(await screen.findByText("Adicionar link")).toBeTruthy();
+
+    await act(async () => {
+      responder([{ id: "la", title: "Pasta de A (nova)", url: "https://a.com/pasta" }]);
+    });
+    expect(screen.queryByText("Pasta de A (nova)")).toBeNull();
+    expect(screen.getByText("Adicionar link")).toBeTruthy();
+  });
+
+  it("⚠️ a busca dos links da tarefa falhou: aparece o erro, e tentar de novo busca", async () => {
+    vi.mocked(api.getTaskLinks).mockRejectedValueOnce(new Error("rede")).mockResolvedValue([]);
+    montar();
+    fireEvent.click(await screen.findByText("Tentar de novo"));
+    expect(await screen.findByText("Adicionar link")).toBeTruthy();
+    expect(api.getTaskLinks).toHaveBeenCalledTimes(2);
   });
 });

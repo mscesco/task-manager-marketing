@@ -5,6 +5,7 @@ import {
   errosDosLinks,
   linhaVazia,
   linksMudaram,
+  linksParaEnviar,
   MAX_LINKS,
   moverLink,
   paraEnvio,
@@ -112,5 +113,29 @@ describe("moverLink", () => {
   it("nas pontas não faz nada", () => {
     expect(moverLink(["a", "b"], 0, -1)).toEqual(["a", "b"]);
     expect(moverLink(["a", "b"], 1, 1)).toEqual(["a", "b"]);
+  });
+});
+
+describe("linksParaEnviar -- o que vai ao servidor ao salvar", () => {
+  const salvos = [{ id: "1", title: "A", url: "https://a.com" }];
+
+  it("⚠️⚠️ lista salva DESCONHECIDA (carregando ou falhou): não envia nada", () => {
+    // Revisão de 16/09: o painel do projeto aberto antes dos links chegarem
+    // mandava `[]` e apagava os links.
+    expect(linksParaEnviar(null, [])).toBeNull();
+    expect(linksParaEnviar(null, [linha("Novo", "https://n.com")])).toBeNull();
+  });
+
+  it("rascunho desconhecido também não envia", () => {
+    expect(linksParaEnviar(salvos, null)).toBeNull();
+  });
+
+  it("sem mudança não envia; com mudança, a lista limpa", () => {
+    expect(linksParaEnviar(salvos, rascunhoDe(salvos))).toBeNull();
+    expect(linksParaEnviar(salvos, [])).toEqual([]);
+    expect(linksParaEnviar(salvos, [...rascunhoDe(salvos), linha("B", "b.com")])).toEqual([
+      { title: "A", url: "https://a.com" },
+      { title: "B", url: "https://b.com" },
+    ]);
   });
 });

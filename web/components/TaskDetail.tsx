@@ -417,18 +417,35 @@ export default function TaskDetail({
   const [threadAberto, setThreadAberto] = useState(true);
 
   // Spec 052, fatia B: os links com nome da tarefa, logo abaixo da descrição.
-  // ⚠️ `[]` ao trocar de tarefa, antes da resposta: sem zerar, a tarefa nova
+  // ⚠️ ZERA ao trocar de tarefa, antes da resposta: sem isso, a tarefa nova
   // mostraria por um instante os links da anterior.
-  const [links, setLinks] = useState<LinkItem[]>([]);
+  // ⚠️⚠️ `null` = AINDA NÃO SEI, e não "sem links" (revisão de 16/09). A busca
+  // falhava em silêncio e a lista ficava `[]`: "Adicionar link" mandava só o
+  // link novo e APAGAVA os que existiam. Agora a falha aparece, com "Tentar de
+  // novo", e não há edição sem a lista salva.
+  const [links, setLinks] = useState<LinkItem[] | null>(null);
+  const [falhouLinks, setFalhouLinks] = useState(false);
+  const [tentativaLinks, setTentativaLinks] = useState(0);
   const idDaTarefa = task?.id ?? null;
+  // ⚠️ A TAREFA QUE ESTÁ NA TELA AGORA, e não a do closure (revisão de 16/09).
+  // `salvarLinks` compara com ela depois do `await`: salvar os links de A e
+  // navegar para B no mesmo clique fazia a resposta de A pintar os links de A
+  // no detalhe de B.
+  const idNaTela = useRef<string | null>(idDaTarefa);
+  idNaTela.current = idDaTarefa;
   useEffect(() => {
-    setLinks([]);
+    setLinks(null);
+    setFalhouLinks(false);
     if (!idDaTarefa) return;
     let vivo = true;
     const buscar = () =>
       getTaskLinks(idDaTarefa)
-        .then((l) => vivo && setLinks(l))
-        .catch(() => {});
+        .then((l) => {
+          if (!vivo) return;
+          setLinks(l);
+          setFalhouLinks(false);
+        })
+        .catch(() => vivo && setFalhouLinks(true));
     void buscar();
     // Salvar links no MODAL não muda a tarefa (nem o `updated_at`): quem avisa
     // é o evento, e só para ESTA tarefa.
@@ -441,7 +458,7 @@ export default function TaskDetail({
       vivo = false;
       window.removeEventListener(LINKS_MUDARAM, aoMudar);
     };
-  }, [idDaTarefa]);
+  }, [idDaTarefa, tentativaLinks]);
 
   // Spec 052, fatia D: o título e a descrição salvos NO LUGAR.
   // ⚠️ POR QUE O DETALHE GUARDA O QUE SALVOU, em vez de só avisar o pai: os
@@ -983,7 +1000,7 @@ export default function TaskDetail({
     const alvo = task.id;
     try {
       const salvos = await putTaskLinks(alvo, novos);
-      if (idDaTarefa === alvo) setLinks(salvos);
+      if (idNaTela.current === alvo) setLinks(salvos);
     } catch (e) {
       const err = e as ApiError;
       throw new Error(
@@ -2247,7 +2264,13 @@ export default function TaskDetail({
           valor={salvoNoLugar?.id === task.id && salvoNoLugar.description !== undefined ? salvoNoLugar.description : task.description}
           onSalvar={(nova) => salvarNoLugar({ description: nova })}
         />
-        <LinksEditaveis key={`links-${task.id}`} links={links} onSalvar={salvarLinks} />
+        <LinksEditaveis
+          key={`links-${task.id}`}
+          links={links}
+          falhou={falhouLinks}
+          onTentarDeNovo={() => setTentativaLinks((n) => n + 1)}
+          onSalvar={salvarLinks}
+        />
 
         {/* ---- Subtarefas ---- */}
         <div className="field">

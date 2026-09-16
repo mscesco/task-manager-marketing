@@ -18,9 +18,14 @@
 // =====================================================================
 
 /**
- * O que a descrição desenha. Tabela, imagem, código, citação, risco e linha
- * horizontal ficam de fora (spec §4.3): o conteúdo deles aparece como texto
- * corrido, ou some quando não tem texto (imagem, linha).
+ * O que a descrição desenha.
+ *
+ * ⚠️ AMPLIADA NA REVISÃO DE 16/09. A primeira lista deixava de fora código,
+ * citação, risco, linha, tabela e imagem -- e o editor da fatia E, seguindo a
+ * lista, APAGAVA esse conteúdo ao salvar. Agora o editor preserva tudo, e aqui
+ * se desenha o mesmo. Imagem não vira `<img>` (endereço externo carregado
+ * sozinho na tela de todo mundo): vira LINK com o texto alternativo, como no
+ * editor. Caixa de tarefa (`input`) só desenhada desabilitada.
  */
 export const ELEMENTOS_PERMITIDOS: readonly string[] = [
   "p",
@@ -37,6 +42,19 @@ export const ELEMENTOS_PERMITIDOS: readonly string[] = [
   "ol",
   "li",
   "a",
+  "code",
+  "pre",
+  "blockquote",
+  "del",
+  "hr",
+  "img",
+  "input",
+  "table",
+  "thead",
+  "tbody",
+  "tr",
+  "th",
+  "td",
 ];
 
 const ESQUEMAS_PERMITIDOS = new Set(["http:", "https:", "mailto:"]);
@@ -97,5 +115,14 @@ export function semMarcacao(texto: string): string {
     .replace(/(^|\W)_(?=\S)([^_\n]*?\S)_(?!\w)/g, "$1$2")
     .replace(/~~(?=\S)([\s\S]*?\S)~~/g, "$1")
     .replace(/`([^`\n]+)`/g, "$1")
+    // ⚠️ O EDITOR TAMBÉM GRAVA `<` E `>` COMO `&lt;`/`&gt;` (revisão de 16/09):
+    // sem isto, "Trocar <nome do cliente>" aparecia como "&lt;nome do
+    // cliente&gt;" na lista de projetos. `&amp;` por último, para `&amp;lt;`
+    // virar `&lt;` literal, e não `<`.
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#(\d+);/g, (_, n: string) => String.fromCodePoint(Number(n)))
+    .replace(/&amp;/g, "&")
     .replace(/(\d+)/g, (_, i: string) => guardados[Number(i)]);
 }

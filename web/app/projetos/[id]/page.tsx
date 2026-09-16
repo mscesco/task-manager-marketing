@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Pencil } from "lucide-react";
 import AppShell from "@/components/AppShell";
@@ -23,12 +23,12 @@ import {
 } from "@/lib/api";
 import {
   errosDosLinks,
-  linksMudaram,
+  linksParaEnviar,
   MAX_LINKS,
-  paraEnvio,
   passaDoTeto,
   rascunhoDe,
   temErro,
+  type RascunhoLink,
 } from "@/lib/links";
 import { PRIORITY_LABEL } from "@/lib/status";
 
@@ -77,9 +77,25 @@ function Projeto() {
   const [excluindo, setExcluindo] = useState(false);
   const [erroExcluir, setErroExcluir] = useState<string | null>(null);
   const [editando, setEditando] = useState(false);
-  // Spec 052, fatia B. `[]` até chegar: falhar em buscar os links não pode
-  // derrubar a página do projeto -- ela continua útil sem eles.
-  const [links, setLinks] = useState<LinkItem[]>([]);
+  // Spec 052, fatia B. Falhar em buscar os links não pode derrubar a página do
+  // projeto -- ela continua útil sem eles.
+  // ⚠️⚠️ `null` = AINDA NÃO SEI, e não "sem links" (revisão de 16/09). Com `[]`
+  // até a resposta chegar, abrir o painel de editar cedo (ou com a busca
+  // falhando) começava o editor vazio -- e salvar mandava a lista vazia,
+  // APAGANDO os links do projeto.
+  const [links, setLinks] = useState<LinkItem[] | null>(null);
+  const [falhouLinks, setFalhouLinks] = useState(false);
+
+  // A resposta só vale para o projeto que ainda está na tela.
+  const idAtual = useRef(id);
+  idAtual.current = id;
+  function carregarLinks() {
+    const alvo = id;
+    setFalhouLinks(false);
+    getProjectLinks(alvo)
+      .then((l) => idAtual.current === alvo && setLinks(l))
+      .catch(() => idAtual.current === alvo && setFalhouLinks(true));
+  }
 
   useEffect(() => {
     getProject(id)
@@ -87,10 +103,9 @@ function Projeto() {
       .catch((e: ApiError) =>
         setErro(e.status === 404 ? "Projeto não encontrado." : e.message)
       );
-    getProjectLinks(id)
-      .then(setLinks)
-      .catch(() => {});
-  }, [id]);
+    setLinks(null);
+    carregarLinks();
+  }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (erro) return <div className="error-box" style={{ maxWidth: 480 }}>{erro}</div>;
   if (!project) return <Loading />;
@@ -180,7 +195,7 @@ function Projeto() {
       {project.is_archived && <span>· arquivado</span>}
       {/* Spec 052, fatia B: os links do projeto, só com o nome, na mesma linha
           da meta -- é a primeira coisa que as pessoas abrem. */}
-      <LinksDoItem links={links} rotulo="Links do projeto" />
+      <LinksDoItem links={links ?? []} rotulo="Links do projeto" />
     </div>
   );
 
@@ -254,6 +269,8 @@ function Projeto() {
                 onExcluir={excluir}
                 onCancel={() => setEditando(false)}
                 links={links}
+                falhouLinks={falhouLinks}
+                onRecarregarLinks={carregarLinks}
                 onSaved={(p, salvos) => {
                   setProject(p);
                   setLinks(salvos);
@@ -285,6 +302,8 @@ function EditPanel({
   onCancel,
   onSaved,
   links,
+  falhouLinks,
+  onRecarregarLinks,
 }: {
   project: Project;
   /**
@@ -299,14 +318,24 @@ function EditPanel({
   excluindo: boolean;
   onExcluir: () => void;
   onCancel: () => void;
-  onSaved: (p: Project, links: LinkItem[]) => void;
-  /** Os links salvos -- o ponto de partida do editor. */
-  links: LinkItem[];
+  onSaved: (p: Project, links: LinkItem[] | null) => void;
+  /** Os links salvos -- o ponto de partida do editor. `null` = ainda não chegaram. */
+  links: LinkItem[] | null;
+  /** A busca dos links falhou: o editor não aparece, e os links não são enviados. */
+  falhouLinks: boolean;
+  onRecarregarLinks: () => void;
 }) {
   const [title, setTitle] = useState(project.title);
   // Spec 052, fatia B: os links entram no MESMO formulário e salvam no mesmo
   // botão. Só vai ao servidor se a lista mudou (`linksMudaram`).
-  const [rascunhoLinks, setRascunhoLinks] = useState(() => rascunhoDe(links));
+  // ⚠️ `null` ENQUANTO OS LINKS NÃO CHEGAM (revisão de 16/09): o rascunho nasce
+  // da lista SALVA, nunca de uma lista vazia que só significa "ainda não sei".
+  const [rascunhoLinks, setRascunhoLinks] = useState<RascunhoLink[] | null>(() =>
+    links ? rascunhoDe(links) : null,
+  );
+  useEffect(() => {
+    if (links && rascunhoLinks === null) setRascunhoLinks(rascunhoDe(links));
+  }, [links, rascunhoLinks]);
   const [tentouSalvar, setTentouSalvar] = useState(false);
   const [description, setDescription] = useState(project.description ?? "");
   const [status, setStatus] = useState<ProjectStatus>(project.status);
@@ -323,11 +352,11 @@ function EditPanel({
       return;
     }
     setTentouSalvar(true);
-    if (temErro(errosDosLinks(rascunhoLinks))) {
+    if (rascunhoLinks && temErro(errosDosLinks(rascunhoLinks))) {
       setErroForm("Confira os links marcados.");
       return;
     }
-    if (passaDoTeto(rascunhoLinks)) {
+    if (rascunhoLinks && passaDoTeto(rascunhoLinks)) {
       setErroForm(`No máximo ${MAX_LINKS} links.`);
       return;
     }
@@ -349,9 +378,11 @@ function EditPanel({
       // ⚠️ DEPOIS do projeto, e só se mudou. Se o PUT dos links falhar, o
       // projeto já foi salvo: o erro aparece e o painel continua aberto com o
       // rascunho, para tentar de novo sem redigitar.
-      const salvos = linksMudaram(links, rascunhoLinks)
-        ? await putProjectLinks(project.id, paraEnvio(rascunhoLinks))
-        : links;
+      // ⚠️ E SÓ COM OS DOIS LADOS CONHECIDOS: sem a lista salva (ainda
+      // carregando, ou a busca falhou) não há com o que comparar, e mandar o
+      // rascunho substituiria links que a tela nunca viu.
+      const envio = linksParaEnviar(links, rascunhoLinks);
+      const salvos = envio ? await putProjectLinks(project.id, envio) : links;
       onSaved(atualizado, salvos);
     } catch (e) {
       setErroForm((e as ApiError).message || "Não consegui salvar o projeto.");
@@ -386,12 +417,23 @@ function EditPanel({
       </div>
       <div className="field">
         <span className="label">Links</span>
-        <EditorDeLinks
-          valor={rascunhoLinks}
-          onChange={setRascunhoLinks}
-          desabilitado={salvando}
-          mostrarErros={tentouSalvar}
-        />
+        {rascunhoLinks ? (
+          <EditorDeLinks
+            valor={rascunhoLinks}
+            onChange={setRascunhoLinks}
+            desabilitado={salvando}
+            mostrarErros={tentouSalvar}
+          />
+        ) : falhouLinks ? (
+          <p className="text-xs text-danger" role="alert">
+            Não consegui carregar os links -- eles não serão alterados ao salvar.{" "}
+            <button type="button" className="font-semibold underline" onClick={onRecarregarLinks}>
+              Tentar de novo
+            </button>
+          </p>
+        ) : (
+          <p className="muted text-xs">Carregando links…</p>
+        )}
       </div>
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
         <div className="field" style={{ flex: 1, minWidth: 160 }}>

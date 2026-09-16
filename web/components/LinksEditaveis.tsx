@@ -21,9 +21,8 @@ import type { LinkItem } from "@/lib/api";
 import {
   errosDosLinks,
   linhaVazia,
-  linksMudaram,
+  linksParaEnviar,
   MAX_LINKS,
-  paraEnvio,
   passaDoTeto,
   rascunhoDe,
   temErro,
@@ -33,9 +32,19 @@ import { useSairDoBloco } from "@/lib/useSairDoBloco";
 
 export default function LinksEditaveis({
   links,
+  falhou,
+  onTentarDeNovo,
   onSalvar,
 }: {
-  links: readonly LinkItem[];
+  /**
+   * Os links salvos. ⚠️ `null` = AINDA NÃO CHEGARAM (ou a busca falhou), e não
+   * "sem links" -- revisão de 16/09: com `[]` no lugar, "Adicionar link" numa
+   * lista que não carregou mandava só o link novo e apagava os que existiam.
+   */
+  links: readonly LinkItem[] | null;
+  /** A busca falhou: nada de editar, e um jeito de tentar de novo. */
+  falhou: boolean;
+  onTentarDeNovo: () => void;
   /** Grava a lista inteira. ⚠️ Em erro, LANÇA com a mensagem pronta. */
   onSalvar: (novos: { title: string; url: string }[]) => Promise<void>;
 }) {
@@ -58,6 +67,7 @@ export default function LinksEditaveis({
   }, [editando]);
 
   function abrir() {
+    if (links === null) return;
     const inicial = rascunhoDe(links);
     setRascunho(inicial.length > 0 ? inicial : [linhaVazia()]);
     setTentouSalvar(false);
@@ -82,7 +92,8 @@ export default function LinksEditaveis({
       setErro(`No máximo ${MAX_LINKS} links.`);
       return;
     }
-    if (!linksMudaram(links, rascunho)) {
+    const envio = linksParaEnviar(links, rascunho);
+    if (envio === null) {
       setEditando(false);
       setErro(null);
       return;
@@ -91,7 +102,7 @@ export default function LinksEditaveis({
     setSalvando(true);
     setErro(null);
     try {
-      await onSalvar(paraEnvio(rascunho));
+      await onSalvar(envio);
       setEditando(false);
     } catch (e) {
       setErro(e instanceof Error ? e.message : "Não consegui salvar os links.");
@@ -107,6 +118,18 @@ export default function LinksEditaveis({
   const manterFoco = (e: ReactMouseEvent) => e.preventDefault();
 
   if (!editando) {
+    if (links === null) {
+      // Carregando: nada, para não piscar "Adicionar link" antes da lista.
+      if (!falhou) return null;
+      return (
+        <p className="text-xs text-danger" role="alert">
+          Não consegui carregar os links.{" "}
+          <button type="button" className="font-semibold underline" onClick={onTentarDeNovo}>
+            Tentar de novo
+          </button>
+        </p>
+      );
+    }
     if (links.length === 0) {
       return (
         <div>

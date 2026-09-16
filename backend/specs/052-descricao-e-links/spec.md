@@ -451,6 +451,51 @@ de usar a C). ⚠️ **Revoga a decisão 3** e tira "editor visual" do §6.
   digita em `contenteditable` — as regras são testadas pelo editor sem tela);
   colar do Google Docs e do Trello; a aparência nos dois temas.
 
+**Revisão de código de 16/09 — sete achados, todos corrigidos.** Pedida por ela
+("ver se está funcionando corretamente de acordo com permissões e funcionamento
+num geral"). **Permissões e migration: nada encontrado** — leitura na lente
+(404), escrita com o verbo do item no time dele (403), `http`/`https` no
+servidor, cópia de links no duplicar na mesma transação, trava de tabela vazia.
+
+1. ⚠️⚠️ **O editor apagava texto ao salvar.** Medido: `` `Fecaf@2026` ``
+   sumia inteiro; imagem perdia o endereço; tabela virava uma linha; `- [ ]`
+   perdia a caixa. Causa: o editor desligava tudo o que a fatia C não
+   desenhava. **Corrigido:** o editor entende código, bloco de código, citação,
+   risco, linha e lista de tarefas; imagem vira link com o texto alternativo;
+   tabela é guardada como as linhas dela. O `TextoFormatado` passou a desenhar
+   esses elementos (imagem como LINK, nunca `<img>`; caixa de tarefa
+   desabilitada). Teste "NADA SOME AO EDITAR" com os casos medidos.
+2. ⚠️⚠️ **Editar o projeto antes de os links chegarem os apagava.** O rascunho
+   nascia de `[]`. **Corrigido:** `null` = "ainda não sei"; o editor de links
+   só aparece com a lista salva; falha mostra "Tentar de novo"; e
+   `lib/links.ts::linksParaEnviar` não envia nada sem os dois lados.
+3. ⚠️ **Salvar os links de A e ir para B pintava os links de A em B.**
+   **Corrigido:** a comparação é com a tarefa na tela agora (ref), não com a
+   do closure.
+4. ⚠️ **Falha ao baixar o editor derrubava a página inteira** (o app não tem
+   fronteira de erro). **Corrigido:** fronteira no `EditorDeDescricaoAdiado`,
+   com "Tentar de novo" e "Recarregar a página".
+5. **Markdown colado do VS Code não formatava** (vem com um HTML sem
+   formatação ao lado). **Corrigido:** `colarComoMarkdown` — HTML com
+   formatação de verdade fica com o editor; sem, lê-se o Markdown.
+6. **Falha ao buscar os links da tarefa virava lista vazia** — e adicionar um
+   link apagava os outros. **Corrigido** junto com o 2 e o 3: aviso com
+   "Tentar de novo", sem edição.
+7. **O resumo da lista de projetos mostrava `&lt;`** (o editor grava `<` como
+   entidade). **Corrigido** no `semMarcacao`.
+
+- Front **1541**, `tsc` limpo, `next build` ok (primeira carga inalterada:
+  `/tarefa/[id]` 266 kB, `/projetos/[id]` 303 kB), CSS novo conferido no build.
+  Nova dependência: `@tiptap/extension-list` (lista de tarefas).
+- **Sabotagens:** uma por correção (duas no item 1), cada uma derrubando o teste
+  dela.
+- ⚠️ Os quatro testes antigos do `TaskDetail` ganharam `getTaskLinks` simulado:
+  com a falha dos links agora VISÍVEL (`role="alert"`), a busca real que caía
+  em silêncio passou a aparecer na tela deles.
+- ⚠️ **Não coberto por teste:** o painel do projeto (`app/` fora do vitest — a
+  regra dele está em `linksParaEnviar`, testada); colar de verdade do VS Code;
+  a aparência de código, citação e tabela nos dois temas.
+
 ---
 
 ## 6. O que esta spec deliberadamente NÃO faz

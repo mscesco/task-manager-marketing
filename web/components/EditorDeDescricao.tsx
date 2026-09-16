@@ -13,7 +13,7 @@
 //     digitar (regras do Tiptap);
 //   - Ctrl+B, Ctrl+I e Ctrl+K (link), e uma barra pequena com os mesmos;
 //   - colar HTML (Docs, Trello, página) já entra formatado; colar texto que
-//     PARECE Markdown também (`pareceMarkdown`); o resto entra como texto;
+//     PARECE Markdown também (`colarComoMarkdown`); o resto entra como texto;
 //   - Enter abre parágrafo, Shift+Enter quebra a linha.
 //
 // ⚠️ A INTERFACE CONTINUA SENDO MARKDOWN: `valor` e `onChange` levam o texto
@@ -28,7 +28,7 @@ import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type R
 import { EditorContent, useEditor, type Editor } from "@tiptap/react";
 import { Placeholder } from "@tiptap/extensions";
 import { Bold, Heading2, Italic, Link2, List, ListOrdered } from "lucide-react";
-import { extensoesDaDescricao, markdownDoEditor, pareceMarkdown } from "@/lib/editorDeDescricao";
+import { colarComoMarkdown, extensoesDaDescricao, markdownDoEditor } from "@/lib/editorDeDescricao";
 import { enderecoSeguro } from "@/lib/markdown";
 import { completarEndereco } from "@/lib/links";
 
@@ -116,7 +116,7 @@ export default function EditorDeDescricao({
     shouldRerenderOnTransaction: true,
     // ⚠️ SEM AS REGRAS DE COLAR do Tiptap: com elas, colar "2 * 3 * 4" virava
     // itálico no " 3 " (medido em 16/09). Colar Markdown continua formatando --
-    // quem decide é o `handlePaste` abaixo, com `pareceMarkdown` --, e colar
+    // quem decide é o `handlePaste` abaixo, com `colarComoMarkdown` --, e colar
     // HTML e link também (não dependem dessas regras).
     enablePasteRules: false,
     editable: !desabilitado,
@@ -140,15 +140,17 @@ export default function EditorDeDescricao({
         }
         return false;
       },
-      // ⚠️ COLAR: HTML fica com o editor (ele já formata). Texto puro só é
-      // lido como Markdown quando PARECE Markdown -- `2 * 3` colado não pode
-      // virar itálico.
+      // ⚠️ COLAR: quem decide é `colarComoMarkdown` (lib). HTML com formatação
+      // de verdade fica com o editor; texto que parece Markdown -- mesmo vindo
+      // do VS Code com um HTML "vazio" ao lado -- é lido como Markdown; o resto
+      // entra como texto (`2 * 3` colado não vira itálico).
       handlePaste: (_view, e) => {
         const dados = e.clipboardData;
         const ed = editorRef.current;
-        if (!dados || !ed || dados.types.includes("text/html")) return false;
+        if (!dados || !ed) return false;
         const texto = dados.getData("text/plain");
-        if (!pareceMarkdown(texto)) return false;
+        const html = Array.from(dados.types).includes("text/html") ? dados.getData("text/html") : null;
+        if (!colarComoMarkdown(texto, html)) return false;
         e.preventDefault();
         ed.commands.insertContent(texto, { contentType: "markdown" });
         return true;
