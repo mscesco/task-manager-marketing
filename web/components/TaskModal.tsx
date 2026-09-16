@@ -19,12 +19,26 @@ import {
   listMembers,
   listMembersDoTime,
   getRootTeamId,
+  getTaskLinks,
+  putTaskLinks,
   ApiError,
+  type LinkItem,
   type Task,
   type TaskUpdateInput,
   type Project,
   type Member,
 } from "@/lib/api";
+import EditorDeLinks from "@/components/EditorDeLinks";
+import {
+  errosDosLinks,
+  linksMudaram,
+  MAX_LINKS,
+  paraEnvio,
+  passaDoTeto,
+  rascunhoDe,
+  temErro,
+  type RascunhoLink,
+} from "@/lib/links";
 import { PRIORITY_LABEL } from "@/lib/status";
 import type { Coluna } from "@/lib/coluna";
 import {
@@ -141,6 +155,11 @@ export default function TaskModal({
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
+  // Spec 052, fatia B: links com nome. `linksSalvos` é o ponto de partida (na
+  // edição) e a base do "mudou?"; `rascunhoLinks` é o que está no editor.
+  const [linksSalvos, setLinksSalvos] = useState<LinkItem[]>([]);
+  const [rascunhoLinks, setRascunhoLinks] = useState<RascunhoLink[]>([]);
+  const [tentouSalvarLinks, setTentouSalvarLinks] = useState(false);
   const [priority, setPriority] = useState<string>("MEDIUM");
   const [dueDate, setDueDate] = useState("");
   /**
@@ -322,7 +341,29 @@ export default function TaskModal({
     setMembrosResolvidos(false);
     setRootResolvido(false);
     setAlcanceResolvido(false);
+    setLinksSalvos([]);
+    setRascunhoLinks([]);
+    setTentouSalvarLinks(false);
   }, [open, task]);
+
+  // Spec 052, fatia B: na EDIÇÃO, os links atuais da tarefa entram no editor.
+  // ⚠️ Falhar aqui deixa o editor vazio -- e salvar com ele vazio NÃO apaga os
+  // links, porque `linksMudaram` compara com `linksSalvos`, que também ficou
+  // vazio: nada é enviado.
+  useEffect(() => {
+    if (!open || !task) return;
+    let vivo = true;
+    getTaskLinks(task.id)
+      .then((l) => {
+        if (!vivo) return;
+        setLinksSalvos(l);
+        setRascunhoLinks(rascunhoDe(l));
+      })
+      .catch(() => {});
+    return () => {
+      vivo = false;
+    };
+  }, [open, task?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Carrega projetos comuns pro seletor (so quando ele aparece).
   //
@@ -659,6 +700,21 @@ export default function TaskModal({
         return;
       }
     }
+    // Spec 052, fatia B: os links validam ANTES de qualquer escrita -- uma
+    // tarefa criada com o link recusado depois deixaria meio salvo.
+    // Na CÓPIA não há editor: os links da original vão junto pelo servidor.
+    if (!duplicando) {
+      setTentouSalvarLinks(true);
+      if (temErro(errosDosLinks(rascunhoLinks))) {
+        setErro("Confira os links marcados.");
+        return;
+      }
+      if (passaDoTeto(rascunhoLinks)) {
+        setErro(`No máximo ${MAX_LINKS} links.`);
+        return;
+      }
+    }
+    const linksMudou = !duplicando && linksMudaram(linksSalvos, rascunhoLinks);
     setSaving(true);
     setErro(null);
     try {
@@ -688,13 +744,16 @@ export default function TaskModal({
         const inicio = startDate || null;
         if (inicio !== (task.start_date ?? null)) diff.start_date = inicio;
 
-        if (Object.keys(diff).length === 0) {
+        if (Object.keys(diff).length === 0 && !linksMudou) {
           // Nada mudou: nao chama a API, so fecha.
           setSaving(false);
           onClose();
           return;
         }
-        saved = await updateTask(task.id, diff);
+        // ⚠️ Só os links mudaram: não há PATCH a fazer, e a tarefa segue igual.
+        saved =
+          Object.keys(diff).length > 0 ? await updateTask(task.id, diff) : task;
+        if (linksMudou) await putTaskLinks(task.id, paraEnvio(rascunhoLinks));
       } else if (duplicando && duplicarDe) {
         // ⚠️ `duplicateTask`, nao `createTask`: a subarvore inteira precisa
         // nascer na MESMA transacao do backend (criterio 10). Criar o pai
@@ -780,6 +839,20 @@ export default function TaskModal({
           // `tasks_router.py` ja teve com `assignee_ids`.
           board_id: defaultBoardId,
         });
+        // Spec 052, fatia B: os links vão DEPOIS de a tarefa existir.
+        // ⚠️ Se falharem, a tarefa JÁ foi criada: o aviso diz isso, em vez de
+        // manter o modal aberto -- clicar de novo criaria uma segunda tarefa.
+        if (linksMudou) {
+          try {
+            await putTaskLinks(saved.id, paraEnvio(rascunhoLinks));
+          } catch (errLinks) {
+            window.alert(
+              "Tarefa criada, mas os links não foram salvos: " +
+                ((errLinks as ApiError).message || "erro desconhecido") +
+                ". Abra a tarefa e edite para tentar de novo.",
+            );
+          }
+        }
       }
       setSaving(false);
       onSaved(saved);
@@ -895,6 +968,25 @@ export default function TaskModal({
             style={{ resize: "vertical", fontFamily: "inherit" }}
           />
         </div>
+
+        {/* Spec 052, fatia B. ⚠️ Na CÓPIA não há editor: o servidor copia os
+            links da original junto (decisão dela), e um editor aqui sugeriria
+            que a pessoa precisa refazê-los. */}
+        {duplicando ? (
+          <p className="muted text-xs">Os links da tarefa original vão junto na cópia.</p>
+        ) : (
+          <div className="field">
+            <span className="label">
+              Links <span className="muted" style={{ fontWeight: 400 }}>(opcional)</span>
+            </span>
+            <EditorDeLinks
+              valor={rascunhoLinks}
+              onChange={setRascunhoLinks}
+              desabilitado={saving}
+              mostrarErros={tentouSalvarLinks}
+            />
+          </div>
+        )}
 
         <div style={{ display: "flex", gap: 12 }}>
           <div className="field" style={{ flex: 1 }}>

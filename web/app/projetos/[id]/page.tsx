@@ -6,15 +6,29 @@ import AppShell from "@/components/AppShell";
 import Board from "@/components/Board";
 import Card from "@/components/Card";
 import SobreOProjeto from "@/components/SobreOProjeto";
+import EditorDeLinks from "@/components/EditorDeLinks";
+import LinksDoItem from "@/components/LinksDoItem";
 import {
   getProject,
+  getProjectLinks,
+  putProjectLinks,
   updateProject,
   deleteProject,
   ApiError,
+  type LinkItem,
   type Project,
   type ProjectStatus,
   type ProjectUpdateInput,
 } from "@/lib/api";
+import {
+  errosDosLinks,
+  linksMudaram,
+  MAX_LINKS,
+  paraEnvio,
+  passaDoTeto,
+  rascunhoDe,
+  temErro,
+} from "@/lib/links";
 import { PRIORITY_LABEL } from "@/lib/status";
 
 import Loading from "@/components/Loading";
@@ -62,6 +76,9 @@ function Projeto() {
   const [excluindo, setExcluindo] = useState(false);
   const [erroExcluir, setErroExcluir] = useState<string | null>(null);
   const [editando, setEditando] = useState(false);
+  // Spec 052, fatia B. `[]` até chegar: falhar em buscar os links não pode
+  // derrubar a página do projeto -- ela continua útil sem eles.
+  const [links, setLinks] = useState<LinkItem[]>([]);
 
   useEffect(() => {
     getProject(id)
@@ -69,6 +86,9 @@ function Projeto() {
       .catch((e: ApiError) =>
         setErro(e.status === 404 ? "Projeto não encontrado." : e.message)
       );
+    getProjectLinks(id)
+      .then(setLinks)
+      .catch(() => {});
   }, [id]);
 
   if (erro) return <div className="error-box" style={{ maxWidth: 480 }}>{erro}</div>;
@@ -157,6 +177,9 @@ function Projeto() {
       {project.start_date && <span>Início: {dataBR(project.start_date)}</span>}
       {project.due_date && <span>Prazo: {dataBR(project.due_date)}</span>}
       {project.is_archived && <span>· arquivado</span>}
+      {/* Spec 052, fatia B: os links do projeto, só com o nome, na mesma linha
+          da meta -- é a primeira coisa que as pessoas abrem. */}
+      <LinksDoItem links={links} rotulo="Links do projeto" />
     </div>
   );
 
@@ -229,8 +252,10 @@ function Projeto() {
                 excluindo={excluindo}
                 onExcluir={excluir}
                 onCancel={() => setEditando(false)}
-                onSaved={(p) => {
+                links={links}
+                onSaved={(p, salvos) => {
                   setProject(p);
+                  setLinks(salvos);
                   setEditando(false);
                 }}
               />
@@ -258,6 +283,7 @@ function EditPanel({
   onExcluir,
   onCancel,
   onSaved,
+  links,
 }: {
   project: Project;
   /**
@@ -272,9 +298,15 @@ function EditPanel({
   excluindo: boolean;
   onExcluir: () => void;
   onCancel: () => void;
-  onSaved: (p: Project) => void;
+  onSaved: (p: Project, links: LinkItem[]) => void;
+  /** Os links salvos -- o ponto de partida do editor. */
+  links: LinkItem[];
 }) {
   const [title, setTitle] = useState(project.title);
+  // Spec 052, fatia B: os links entram no MESMO formulário e salvam no mesmo
+  // botão. Só vai ao servidor se a lista mudou (`linksMudaram`).
+  const [rascunhoLinks, setRascunhoLinks] = useState(() => rascunhoDe(links));
+  const [tentouSalvar, setTentouSalvar] = useState(false);
   const [description, setDescription] = useState(project.description ?? "");
   const [status, setStatus] = useState<ProjectStatus>(project.status);
   const [priority, setPriority] = useState<string>(project.priority || "MEDIUM");
@@ -287,6 +319,15 @@ function EditPanel({
     const t = title.trim();
     if (!t) {
       setErroForm("Título não pode ser vazio.");
+      return;
+    }
+    setTentouSalvar(true);
+    if (temErro(errosDosLinks(rascunhoLinks))) {
+      setErroForm("Confira os links marcados.");
+      return;
+    }
+    if (passaDoTeto(rascunhoLinks)) {
+      setErroForm(`No máximo ${MAX_LINKS} links.`);
       return;
     }
     setSalvando(true);
@@ -304,7 +345,13 @@ function EditPanel({
         ...(dueDate ? { due_date: dueDate } : {}),
       };
       const atualizado = await updateProject(project.id, patch);
-      onSaved(atualizado);
+      // ⚠️ DEPOIS do projeto, e só se mudou. Se o PUT dos links falhar, o
+      // projeto já foi salvo: o erro aparece e o painel continua aberto com o
+      // rascunho, para tentar de novo sem redigitar.
+      const salvos = linksMudaram(links, rascunhoLinks)
+        ? await putProjectLinks(project.id, paraEnvio(rascunhoLinks))
+        : links;
+      onSaved(atualizado, salvos);
     } catch (e) {
       setErroForm((e as ApiError).message || "Não consegui salvar o projeto.");
     } finally {
@@ -334,6 +381,15 @@ function EditPanel({
           disabled={salvando}
           style={{ resize: "vertical" }}
           onChange={(e) => setDescription(e.target.value)}
+        />
+      </div>
+      <div className="field">
+        <span className="label">Links</span>
+        <EditorDeLinks
+          valor={rascunhoLinks}
+          onChange={setRascunhoLinks}
+          desabilitado={salvando}
+          mostrarErros={tentouSalvar}
         />
       </div>
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>

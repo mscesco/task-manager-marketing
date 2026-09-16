@@ -800,6 +800,37 @@ MATRIZ: tuple[Linha, ...] = (
     Linha("project.delete", "do Comercial", "delete", f"{T}/projects/{{projeto_com}}",
           None,
           (OK, NEGADO, OCULTO, NEGADO, NEGADO, NEGADO)),  # 051, fatia A: o verbo no time do item
+    # ---------------------------------------------------------- links (Spec 052, B)
+    # ⚠️ SEM VERBO NOVO: ler e de quem enxerga o item; substituir e de quem o
+    # edita. As linhas tem de bater, papel a papel, com `task.update` e
+    # `project.update` logo acima -- se divergirem, o link ganhou uma regra
+    # propria que ninguem decidiu.
+    Linha("task.links", "ler os da do Marketing", "get",
+          f"{T}/tasks/{{tarefa_mkt}}/links", None,
+          (OK, OK, OK, OK, OK, OK)),
+    Linha("task.links", "substituir os da do Marketing", "put",
+          f"{T}/tasks/{{tarefa_mkt}}/links", {"links": [{"title": "Pasta", "url": "https://drive.google.com/x"}]},
+          (OK, OK, OK, OK, OK, OK)),
+    Linha("task.links", "ler os da do Comercial", "get",
+          f"{T}/tasks/{{tarefa_com}}/links", None,
+          (OK, OK, OCULTO, OCULTO, OCULTO, OK)),
+    Linha("task.links", "substituir os da do Comercial", "put",
+          f"{T}/tasks/{{tarefa_com}}/links", {"links": [{"title": "Pasta", "url": "https://drive.google.com/x"}]},
+          (OK, OK, OCULTO, OCULTO, OCULTO, OK)),
+    Linha("project.links", "ler os do Marketing", "get",
+          f"{T}/projects/{{projeto_mkt}}/links", None,
+          (OK, OK, OK, OK, OK, OK)),
+    Linha("project.links", "substituir os do Marketing", "put",
+          f"{T}/projects/{{projeto_mkt}}/links", {"links": [{"title": "Pasta", "url": "https://drive.google.com/x"}]},
+          (OK, OK, OK, OK, NEGADO, OK)),
+    Linha("project.links", "ler os do Comercial", "get",
+          f"{T}/projects/{{projeto_com}}/links", None,
+          (OK, OK, OCULTO, OCULTO, OCULTO, OK)),
+    # A pessoa das duas arvores ENXERGA o projeto do Comercial (e operadora la)
+    # e nao o edita -- a mesma resposta de `project.update[do Comercial]`.
+    Linha("project.links", "substituir os do Comercial", "put",
+          f"{T}/projects/{{projeto_com}}/links", {"links": [{"title": "Pasta", "url": "https://drive.google.com/x"}]},
+          (OK, OK, OCULTO, OCULTO, NEGADO, NEGADO)),
     # ---------------------------------------------------------- formulario
     Linha("form.create", "no Marketing", "post", f"{T}/solicitacoes/formularios",
           {"team_id": "{mkt}", "slug": "novo", "title": "Novo"},

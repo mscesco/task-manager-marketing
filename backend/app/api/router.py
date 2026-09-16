@@ -29,6 +29,7 @@ from app.modules.tasks.api.collaboration_router import (
     router as collaboration_router,
 )
 from app.modules.tasks.api.comment_router import router as comment_router
+from app.modules.tasks.api.links_router import router as links_router
 from app.modules.tasks.api.me_router import router as me_router
 from app.modules.tasks.api.projects_router import router as projects_router
 from app.modules.tasks.api.system_router import router as system_router
@@ -51,6 +52,8 @@ api_v1_router.include_router(tasks_router)
 api_v1_router.include_router(boards_router)
 api_v1_router.include_router(collaboration_router)
 api_v1_router.include_router(comment_router)
+# Spec 052, fatia B: links com nome de projeto e de tarefa.
+api_v1_router.include_router(links_router)
 api_v1_router.include_router(notifications_router)
 # ⚠️⚠️ O ROUTER DE FORMULARIOS VEM ANTES, E A ORDEM E O CONSERTO DE UM 422 EM
 # PRODUCAO (26/08). O router de solicitacoes tem `GET /solicitacoes/{id}`, e o

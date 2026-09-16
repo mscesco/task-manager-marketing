@@ -50,11 +50,15 @@ import {
   setCommentReaction,
   deleteCommentReaction,
   currentUser,
+  getTaskLinks,
+  LINKS_MUDARAM,
   ApiError,
+  type LinkItem,
   type Task,
   type Comment,
   type CurrentUser,
 } from "@/lib/api";
+import LinksDoItem from "@/components/LinksDoItem";
 import {
   PRIORITY_LABEL,
   PRIORITY_COLOR,
@@ -411,6 +415,33 @@ export default function TaskDetail({
   // visivel). Sessao-level de proposito: NAO entra no reset por task -- fica
   // como a pessoa deixou enquanto navega entre tarefas.
   const [threadAberto, setThreadAberto] = useState(true);
+
+  // Spec 052, fatia B: os links com nome da tarefa, logo abaixo da descrição.
+  // ⚠️ `[]` ao trocar de tarefa, antes da resposta: sem zerar, a tarefa nova
+  // mostraria por um instante os links da anterior.
+  const [links, setLinks] = useState<LinkItem[]>([]);
+  const idDaTarefa = task?.id ?? null;
+  useEffect(() => {
+    setLinks([]);
+    if (!idDaTarefa) return;
+    let vivo = true;
+    const buscar = () =>
+      getTaskLinks(idDaTarefa)
+        .then((l) => vivo && setLinks(l))
+        .catch(() => {});
+    void buscar();
+    // Salvar links no MODAL não muda a tarefa (nem o `updated_at`): quem avisa
+    // é o evento, e só para ESTA tarefa.
+    const aoMudar = (e: Event) => {
+      const d = (e as CustomEvent<{ dono: string; id: string }>).detail;
+      if (d?.dono === "task" && d.id === idDaTarefa) void buscar();
+    };
+    window.addEventListener(LINKS_MUDARAM, aoMudar);
+    return () => {
+      vivo = false;
+      window.removeEventListener(LINKS_MUDARAM, aoMudar);
+    };
+  }, [idDaTarefa]);
 
   // GIFs escolhidos no rascunho (viram token [gif:URL] so no envio). Ficam como
   // chip de preview abaixo do campo -- o textarea nao mostra o link.
@@ -2153,6 +2184,13 @@ export default function TaskDetail({
             </div>
           ) : (
             <span className="muted" style={{ fontSize: 13 }}>Sem descrição.</span>
+          )}
+          {/* Spec 052, fatia B: os links com nome, logo abaixo da descrição.
+              Sem links, nada -- nem um "Sem links" ocupando espaço. */}
+          {links.length > 0 && (
+            <div className="mt-2">
+              <LinksDoItem links={links} rotulo="Links da tarefa" />
+            </div>
           )}
         </div>
 

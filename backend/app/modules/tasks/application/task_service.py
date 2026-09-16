@@ -52,6 +52,9 @@ from app.modules.tasks.domain.history import (
     build_status_change_entry,
     build_unarchived_entry,
 )
+from app.modules.tasks.infrastructure.attachment_repository import (
+    AttachmentRepository,
+)
 from app.modules.tasks.infrastructure.board_repository import BoardRepository
 from app.modules.tasks.infrastructure.comment_repository import CommentRepository
 from app.modules.tasks.infrastructure.project_repository import ProjectRepository
@@ -864,6 +867,13 @@ class TaskService:
             )
         )
 
+        # ⚠️ Spec 052 (§4.4, decisao dela em 16/09): a COPIA LEVA OS LINKS da
+        # origem, na mesma ordem -- a descricao ja vinha, e os links sao o mesmo
+        # contexto. Na mesma transacao: falhou algo depois, nada persiste.
+        await AttachmentRepository(self._session).copy_task_links(
+            from_task_id=source.id, to_task_id=novo.id
+        )
+
         pulados: list[uuid.UUID] = []
         if command.include_subtasks:
             await self._validar_mapa_de_subtarefas(command, source)
@@ -968,6 +978,10 @@ class TaskService:
                     priority=filho.priority,
                     assignee_ids=escolhidos,
                 )
+            )
+            # Spec 052: a subtarefa copiada leva os links dela, como o pai.
+            await AttachmentRepository(self._session).copy_task_links(
+                from_task_id=filho.id, to_task_id=copia.id
             )
             await self._copiar_subarvore(
                 origem=filho,

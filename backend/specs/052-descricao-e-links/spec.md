@@ -3,7 +3,7 @@
 **Status:** escrita em 16/09/2026, a partir do pedido dela com o projeto
 "CBV - CICLO 2026/2028" na tela, das três respostas do mesmo dia e das duas
 perguntas que a escrita levantou (§8, respondidas também em 16/09).
-**Fatia A entregue em 16/09.**
+**Fatias A e B entregues em 16/09.**
 **Escopo:** backend (duas tabelas de links, uma migration, rotas) e front
 (descrição do projeto, links de projeto e tarefa, formatação nas descrições).
 **Depende de:** Spec 051 mergeada (#58). As permissões de escrita dos links
@@ -100,26 +100,36 @@ hoje"*. A descrição da tarefa continua inteira no detalhe.
 
 ### 4.2. Links com nome — no projeto e na tarefa (decisão 1)
 
-**O modelo.** Duas tabelas, uma por dono, com o mesmo formato:
+**O modelo.** ⚠️⚠️ **REVISTO EM 16/09, antes da fatia B, por pergunta dela:**
+*"Precisa ser uma tabela nova? não dá pra usar attachments?"*. A primeira versão
+desta seção pedia duas tabelas novas (`project_link`, `task_link`). O schema v5
+já tinha `attachment` — "anexo de arquivo de tarefa" —, **nunca usada** por
+rota, serviço ou tela, e **vazia em produção** (ela mediu no Adminer:
+`count(*) = 0`). A `0026` a **reforma** num anexo genérico:
 
-    project_link / task_link
-      id, workspace_id, project_id | task_id,
-      title      texto, 1 a 120 caracteres
-      url        texto, http:// ou https://, até 2048 caracteres
-      position   inteiro (a ordem da lista)
-      created_at, updated_at
+    attachment
+      id, workspace_id
+      task_id OU project_id        exatamente um (CHECK)
+      kind                         LINK ou FILE (CHECK)
+      title                        o nome que aparece (era file_name)
+      url                          até 2048; obrigatória para LINK (CHECK)
+      storage_key, mime_type,      obrigatórias para FILE (CHECK);
+      file_size                    nenhum FILE existe ainda
+      position                     a ordem da lista
+      uploaded_by, created_at
 
-- FK composta com `workspace_id`, como o resto do schema;
-  `ON DELETE CASCADE` no dono.
-- **Sem `deleted_at` próprio:** o link segue o dono. Tarefa ou projeto
-  apagados (soft delete) somem das telas e levam os links junto, que voltam se
-  o dono voltar pelo script de resgate.
+- FKs compostas com `workspace_id`; a de **tarefa** passou de `RESTRICT` a
+  `CASCADE`, e a de **projeto** nasce `CASCADE`.
+- **Sem `deleted_at` próprio:** o anexo segue o dono. Tarefa ou projeto
+  apagados (soft delete) somem das telas e levam os links junto.
 - **Até 20 links por item.** Uma lista maior deixa de ser "os links
   principais" e vira pasta — e a pasta é um link.
-
-⚠️ **Duas tabelas, e não uma com "tipo de dono":** a FK de verdade para o dono
-é o que garante que não sobra link de tarefa apagada do banco, e o repositório
-de cada módulo fica com uma consulta simples.
+- ⚠️ **As regras de dono e de tipo moram no BANCO** (CHECKs), porque uma tabela
+  para dois donos e dois tipos perde o que duas tabelas davam de graça.
+- ⚠️ **A `0026` PARA se a tabela tiver linhas**, na subida e na descida: só é
+  barato reformar a tabela vazia.
+- **Ganho:** o upload de arquivo, se um dia entrar, cai na mesma lista, sem
+  outra mudança de modelo.
 
 **As rotas.**
 
@@ -243,15 +253,47 @@ não mudou.
   "Ver menos".
 
 **Fatia B — links com nome** (§4.2, §4.4).
-- Backend: as duas tabelas e a migration **`0026`**; rotas `GET`/`PUT` de
-  projeto e tarefa; validação; testes de serviço e **linhas na matriz de
+- Backend: a reforma da `attachment` na migration **`0026`**; rotas `GET`/`PUT`
+  de projeto e tarefa; validação; testes de serviço e **linhas na matriz de
   permissões** (`PUT` de links do Marketing e do Comercial, por papel, com a
   coluna `DUAS_ARVORES`).
 - Front: os botões no cabeçalho do projeto e no detalhe da tarefa; o editor de
   lista no painel do projeto e no modal da tarefa; duplicar copia.
-- ⚠️ **Deploy: migration ANTES do código** — tabela nova que o código novo lê
-  (o motivo da `0025`). Com o código antes, abrir projeto ou tarefa daria erro
-  até a migration rodar. Vai escrito no `DEPLOY.md` no mesmo commit.
+- ⚠️ **Deploy: migration ANTES do código** — o código novo lê a tabela
+  reformada, e o velho nunca a consulta. Escrito no `DEPLOY.md` no mesmo commit.
+
+✅ **Entregue em 16/09.** Backend **1849**, front **1465**, `tsc` limpo,
+`next build` ok, `ruff` 50 antes e depois, **drift limpo** (upgrade vazio num
+banco descartável em `head`, que também desceu e subiu a `0026`).
+- **Backend:** `alembic/versions/0026_anexo_de_projeto_e_tarefa.py`;
+  `Attachment` em `db/models/collaboration.py`;
+  `tasks/infrastructure/attachment_repository.py` (lê, substitui e copia — todo
+  filtro diz `kind = 'LINK'`, para um dia não apagar arquivo ao salvar links);
+  `tasks/application/link_service.py` (`validar_links` pura; as permissões de
+  ler e escrever); `tasks/api/links_router.py` (as quatro rotas).
+- **Duplicar** copia os links da tarefa **e das subtarefas copiadas**, na mesma
+  transação (`TaskService.duplicate` e `_copiar_subarvore`). Na cópia, o modal
+  não mostra editor — diz que os links vão junto.
+- **Front:** `lib/links.ts` (completar `https://`, erros, "mudou?", reordenar),
+  `components/LinksDoItem.tsx` (os botões com o nome), `EditorDeLinks.tsx`
+  (controlado; erros só depois de tentar salvar). Projeto: botões na linha da
+  meta, editor no painel de editar. Tarefa: botões abaixo da descrição no
+  detalhe, editor abaixo da descrição no modal. Os links salvam **no mesmo
+  botão** do formulário, e só se mudaram; mudar só os links não faz PATCH da
+  tarefa. O detalhe aberto se atualiza pelo evento `LINKS_MUDARAM`.
+- **Matriz:** 8 linhas (ler e substituir, tarefa e projeto, Marketing e
+  Comercial) — todas as 48 previsões bateram, e cada linha bate com a de
+  `task.update`/`project.update`: sem regra própria.
+- **Testes:** `test_validar_links.py` (13), `test_links_db.py` (10: ordem,
+  substituir, lista vazia, projeto separado, duplicar com subtarefa, tarefa
+  apagada, e **6 casos em que o banco recusa** anexo fora da regra passando por
+  fora do serviço); front `links.test.ts` (15) e `LinksDaTarefa.test.tsx` (8).
+- **Nenhum teste antigo caiu.**
+- **Sabotagens:** modal achando que os links sempre mudam e sempre fazendo PATCH
+  → caem os 2 testes do modal; `replace_project_links` sem o verbo no time →
+  cai exatamente `project.links[substituir os do Comercial]-DUAS_ARVORES`.
+- ⚠️ **Não coberto por teste:** a aparência dos botões e do editor, nos dois
+  temas.
 
 **Fatia C — formatação nas descrições** (§4.3). Só front:
 - `TextoFormatado` (o renderizador, com a lista do que é permitido) usado no
