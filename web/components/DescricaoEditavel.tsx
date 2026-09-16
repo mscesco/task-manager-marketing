@@ -11,13 +11,14 @@
 // e o Enter é a quebra de linha. O atalho de salvar é o mesmo do resto do
 // produto (`ehAtalhoDeSalvar`).
 //
-// ⚠️ A FATIA C (Markdown) TROCA O MIOLO DESTE COMPONENTE: o `linkify` vira o
-// renderizador, e o `textarea` ganha a barra e o "Visualizar". O gesto de
-// abrir, salvar e desistir fica.
+// Fatia C: o texto é desenhado com formatação (`TextoFormatado`) e o campo é o
+// `EditorDeDescricao` (barra, atalhos, "Visualizar"). O gesto de abrir, salvar
+// e desistir é desta fatia D e não mudou.
 
 import { useEffect, useId, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { decidirDescricao } from "@/lib/edicaoNoLugar";
-import { linkify } from "@/lib/linkify";
+import EditorDeDescricao from "@/components/EditorDeDescricao";
+import TextoFormatado from "@/components/TextoFormatado";
 import { ehAtalhoDeSalvar } from "@/lib/teclasFormulario";
 import { useSairDoBloco } from "@/lib/useSairDoBloco";
 
@@ -119,32 +120,31 @@ export default function DescricaoEditavel({
       </div>
 
       {editando ? (
-        <div ref={blocoRef} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          <textarea
-            ref={campoRef}
-            className="input"
-            aria-labelledby={idDoRotulo}
-            value={rascunho}
-            rows={6}
-            maxLength={100_000}
-            placeholder="Detalhes, contexto, links…"
-            aria-invalid={erro ? true : undefined}
-            onChange={(e) => setRascunho(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Escape") {
-                // ⚠️ Só desiste da descrição -- o Esc do detalhe fecharia o modal.
-                e.preventDefault();
-                e.stopPropagation();
-                desistir();
-                return;
-              }
-              if (ehAtalhoDeSalvar(e)) {
-                e.preventDefault();
-                e.stopPropagation();
-                void confirmar();
-              }
-            }}
-            style={{ resize: "vertical", fontFamily: "inherit", lineHeight: 1.5 }}
+        <div
+          ref={blocoRef}
+          style={{ display: "flex", flexDirection: "column", gap: 8 }}
+          // ⚠️ AS TECLAS FICAM NO BLOCO, e não no campo: na aba "Visualizar" o
+          // campo não existe, e o Esc e o Ctrl+Enter precisam continuar valendo.
+          onKeyDown={(e) => {
+            if (e.key === "Escape") {
+              // ⚠️ Só desiste da descrição -- o Esc do detalhe fecharia o modal.
+              e.preventDefault();
+              e.stopPropagation();
+              desistir();
+              return;
+            }
+            if (ehAtalhoDeSalvar(e)) {
+              e.preventDefault();
+              e.stopPropagation();
+              void confirmar();
+            }
+          }}
+        >
+          <EditorDeDescricao
+            valor={rascunho}
+            onChange={setRascunho}
+            rotuloId={idDoRotulo}
+            campoRef={campoRef}
           />
           {erro && (
             <div className="error-box" role="alert">
@@ -174,20 +174,8 @@ export default function DescricaoEditavel({
           </div>
         </div>
       ) : temTexto ? (
-        // linkify: URL http/https vira <a>. Descricao NAO passa pelo parser de
-        // mencao/gif -- esses tokens so existem em comentario.
-        // overflowWrap: URL longa SEM hifen (so barras/underscore) nao tem ponto
-        // de quebra natural e vazaria a largura do modal.
-        <div
-          style={{
-            fontSize: 14,
-            lineHeight: 1.5,
-            whiteSpace: "pre-wrap",
-            overflowWrap: "anywhere",
-            opacity: emVoo !== null ? 0.6 : 1,
-          }}
-        >
-          {linkify(texto, "desc-")}
+        <div style={{ opacity: emVoo !== null ? 0.6 : 1 }}>
+          <TextoFormatado texto={texto} />
         </div>
       ) : (
         // ⚠️ SEM DESCRIÇÃO, O CONVITE É O ALVO -- não há "Editar" para editar o

@@ -25,6 +25,7 @@ import {
   type Project,
   type Member,
 } from "@/lib/api";
+import EditorDeDescricao from "@/components/EditorDeDescricao";
 import EditorDeLinks from "@/components/EditorDeLinks";
 import {
   errosDosLinks,
@@ -854,11 +855,12 @@ export default function TaskModal({
           <label className="label" htmlFor="t-desc">
             Descrição <span className="muted" style={{ fontWeight: 400 }}>(opcional)</span>
           </label>
-          <textarea
-            id="t-desc" className="input" value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder="Detalhes, contexto, links…" rows={4}
-            style={{ resize: "vertical", fontFamily: "inherit" }}
+          {/* Spec 052, fatia C: barra de formatação e "Visualizar". */}
+          <EditorDeDescricao
+            id="t-desc"
+            valor={description}
+            onChange={setDescription}
+            rows={4}
           />
         </div>
 

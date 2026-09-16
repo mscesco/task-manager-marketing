@@ -18,6 +18,7 @@ import {
   type Team,
 } from "@/lib/api";
 import { rootsForPerson } from "@/lib/contextSwitcher";
+import { semMarcacao } from "@/lib/markdown";
 
 // Projeto e "pasta" -- tudo no time raiz, todos veem. Designar e so nas tasks.
 const PROJECT_STATUS: { key: ProjectStatus; label: string; color: string }[] = [
@@ -385,13 +386,15 @@ function LinhaDeProjeto({ p, primeira }: { p: Project; primeira: boolean }) {
               {p.description && p.description.trim().length > 0 && (
                 <span
                   className="muted"
-                  title={p.description}
+                  title={semMarcacao(p.description)}
                   style={{
                     fontSize: 13, minWidth: 0, flex: 1,
                     overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                   }}
                 >
-                  {p.description}
+                  {/* Spec 052, fatia C: o resumo sai SEM a marcação -- `**` e
+                      `##` numa linha cortada parecem defeito. */}
+                  {semMarcacao(p.description)}
                 </span>
               )}
               {/* O status vai para a DIREITA e é o que a Camila nomeou junto do

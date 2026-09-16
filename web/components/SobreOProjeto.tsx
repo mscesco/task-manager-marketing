@@ -19,7 +19,7 @@
 // decisão dela, no mesmo dia: *"na tarefa pode deixar como é hoje"*.
 
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
-import { linkify } from "@/lib/linkify";
+import TextoFormatado from "@/components/TextoFormatado";
 
 export default function SobreOProjeto({ texto }: { texto: string }) {
   const [aberto, setAberto] = useState(false);
@@ -53,18 +53,15 @@ export default function SobreOProjeto({ texto }: { texto: string }) {
   return (
     <section className="mb-4" aria-label="Sobre o projeto">
       <h2 className="label mb-1">Sobre o projeto</h2>
-      {/* ⚠️ `whitespace-pre-wrap` mantém as quebras de linha como foram
-          digitadas, e `wrap-anywhere` quebra URL comprida sem hífen, que
-          vazaria a largura -- o mesmo tratamento da descrição da tarefa. */}
-      <div
-        id={id}
-        ref={corpo}
-        className={
-          "whitespace-pre-wrap wrap-anywhere text-sm leading-relaxed" +
-          (aberto ? "" : " line-clamp-4")
-        }
-      >
-        {linkify(texto, "sobre-")}
+      {/* Fatia C: o texto sai FORMATADO (`TextoFormatado`), e não mais pelo
+          `linkify` com `whitespace-pre-wrap` -- as quebras simples viram `<br>`
+          no renderizador, e a quebra de URL comprida está na classe
+          `.texto-formatado`.
+          ⚠️ O CORTE CONTINUA SENDO `line-clamp-4` NO BLOCO DE FORA, agora com
+          parágrafos e listas dentro. O Chromium corta atravessando os blocos;
+          é conferência na tela, não teste (o jsdom não faz layout). */}
+      <div id={id} ref={corpo} className={aberto ? "" : "line-clamp-4"}>
+        <TextoFormatado texto={texto} />
       </div>
       {(passaDoCorte || aberto) && (
         <button

@@ -515,3 +515,27 @@ button:focus-visible,
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+
+/* ⚠️ A DESCRICAO FORMATADA (Spec 052, fatia C). `components/TextoFormatado.tsx`
+   desenha elementos soltos (p, ul, h3...) e o preflight do Tailwind zera margem
+   e marcador de lista -- sem esta classe, lista vira linhas sem bolinha e
+   paragrafos grudam.
+   ⚠️ SO TOKENS, nenhuma cor cravada: o tema escuro troca as variaveis e o texto
+   acompanha sem regra propria.
+   ⚠️ SEM `white-space: pre-wrap`: a quebra de linha simples ja vira `<br>`
+   (`remark-breaks`), e o pre-wrap desenharia TAMBEM as quebras que o Markdown
+   poe entre os blocos -- cada paragrafo ganharia uma linha em branco a mais. */
+.texto-formatado { font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
+.texto-formatado > * + * { margin-top: 0.6em; }
+.texto-formatado ul { list-style: disc; padding-left: 1.4em; }
+.texto-formatado ol { list-style: decimal; padding-left: 1.6em; }
+.texto-formatado li + li { margin-top: 0.15em; }
+.texto-formatado li > ul,
+.texto-formatado li > ol { margin-top: 0.15em; }
+.texto-formatado h3 { font-size: 15px; font-weight: 700; margin-top: 0.9em; }
+.texto-formatado h4 { font-size: 14px; font-weight: 700; margin-top: 0.8em; }
+.texto-formatado > h3:first-child,
+.texto-formatado > h4:first-child { margin-top: 0; }
+.texto-formatado strong { font-weight: 700; }
+.texto-formatado em { font-style: italic; }
+.texto-formatado a { color: var(--accent); text-decoration: underline; }

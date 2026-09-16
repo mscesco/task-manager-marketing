@@ -86,10 +86,12 @@ describe("SobreOProjeto", () => {
   });
 
   it("as quebras de linha ficam como foram digitadas", () => {
+    // ⚠️ Fatia C: era `whitespace-pre-wrap` sobre o texto cru. Agora o texto é
+    // formatado, e a quebra simples vira `<br>` (`remark-breaks`) -- é ela que
+    // se prende aqui.
     medida(300, 96);
     const { container } = render(<SobreOProjeto texto={LONGA} />);
-    const corpo = container.querySelector(".whitespace-pre-wrap");
-    expect(corpo).not.toBeNull();
-    expect(corpo?.textContent).toContain("Objetivo do Projeto\nGestão");
+    const paragrafo = container.querySelector(".texto-formatado p");
+    expect(paragrafo?.innerHTML).toMatch(/Objetivo do Projeto<br>\s*Gestão/);
   });
 });

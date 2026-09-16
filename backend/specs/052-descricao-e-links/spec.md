@@ -307,6 +307,47 @@ banco descartável em `head`, que também desceu e subiu a `0026`).
   linha simples preservada, **o briefing de uma solicitação desenhado igual ao
   de hoje**, e cada botão da barra escrevendo a marcação certa.
 
+✅ **Entregue em 16/09.** Front **1519**, `tsc` limpo, `next build` ok, as
+classes novas conferidas no CSS do build. Backend não mudou.
+- **Bibliotecas** em `dependencies` (não em dev — é a pergunta de bolso do
+  `AGENTS.md` §5, e o `npm ci` da imagem só instala o lockfile):
+  `react-markdown` 10.1.0, `remark-gfm` 4.0.1, `remark-breaks` 4.0.0. Nenhum
+  aviso do `npm audit` vem delas (os que existem são de `next`, `postcss`,
+  `vitest`, `nanoid`, `undici`, anteriores).
+- `lib/markdown.ts`: a lista do que é permitido; `enderecoSeguro` (só `http`,
+  `https`, `mailto` — relativo também não); `semMarcacao` (o resumo);
+  `aplicarNaSelecao` (o que cada botão escreve, e **apertar de novo desfaz**);
+  `acaoDoAtalho` (Ctrl/Cmd + B, I, K; com Shift ou Alt não).
+- `components/TextoFormatado.tsx`: o único lugar que desenha descrição.
+  Endereço recusado vira **texto**, não `<a href="">`. `#`/`##` saem `<h3>`,
+  o resto `<h4>`. Estilo na classe `.texto-formatado` do `globals.css` (só
+  tokens; o preflight zerava lista e margem).
+- `components/EditorDeDescricao.tsx`: abas "Escrever"/"Visualizar", barra
+  (Negrito, Itálico, Cabeçalho, Lista, Lista numerada, Link), atalhos, e uma
+  linha de ajuda com a sintaxe. ⚠️ O botão de título se chama **"Cabeçalho"**:
+  com "Título", o `getByLabelText(/Título/)` dos testes do modal achava dois
+  campos — e um leitor de tela também confundiria com o título da tarefa.
+- **Onde:** `DescricaoEditavel` (detalhe da tarefa; Esc e Ctrl+Enter passaram
+  para o bloco, para valer também na aba "Visualizar"), modal de criar/duplicar
+  tarefa, painel de editar projeto, `SobreOProjeto` (troca o `linkify`) e o
+  resumo da lista de projetos (`semMarcacao`).
+- ⚠️ **O `linkify` continua existindo** — os comentários ainda o usam (formatação
+  em comentário é §6).
+- **Medido antes de escrever:** sem `rehype-raw`, o `react-markdown` desenha
+  `<script>` como texto; `[x](javascript:…)` sai com `href=""` pelo padrão (por
+  isso o `urlTransform` não reescreve e o `a` decide); o briefing sai com as
+  mesmas quebras.
+- **Testes:** `markdown.test.ts` (20), `TextoFormatado.test.tsx` (11 — inclui
+  o editor). `SobreOProjeto.test.tsx` teve um teste reescrito: ele procurava a
+  classe `whitespace-pre-wrap`, e agora a quebra é `<br>`.
+- **Sabotagens:** sem `allowedElements` → cai o de tabela/imagem/código; sem
+  `remark-breaks` → caem o do briefing e o de quebras do "Sobre o projeto"; o
+  `a` sem `enderecoSeguro` → cai o do `javascript:`; a barra sem o
+  `preventDefault` no `mousedown` → cai o do foco.
+- ⚠️ **Não coberto por teste:** o corte de 4 linhas do "Sobre o projeto" agora
+  corta um bloco com parágrafos e listas dentro (o jsdom não faz layout); a
+  barra com seleção real no navegador; os dois temas.
+
 **Fatia D — título e descrição editados no lugar** (pedido dela em 16/09, com
 print do Trello). Só front. Entrou antes da C.
 

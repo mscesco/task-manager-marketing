@@ -6,6 +6,7 @@ import AppShell from "@/components/AppShell";
 import Board from "@/components/Board";
 import Card from "@/components/Card";
 import SobreOProjeto from "@/components/SobreOProjeto";
+import EditorDeDescricao from "@/components/EditorDeDescricao";
 import EditorDeLinks from "@/components/EditorDeLinks";
 import LinksDoItem from "@/components/LinksDoItem";
 import {
@@ -373,14 +374,14 @@ function EditPanel({
         />
       </div>
       <div className="field">
-        <span className="label">Descrição</span>
-        <textarea
-          className="input"
-          value={description}
-          rows={3}
-          disabled={salvando}
-          style={{ resize: "vertical" }}
-          onChange={(e) => setDescription(e.target.value)}
+        <label className="label" htmlFor="projeto-descricao">Descrição</label>
+        {/* Spec 052, fatia C: barra de formatação e "Visualizar". */}
+        <EditorDeDescricao
+          id="projeto-descricao"
+          valor={description}
+          onChange={setDescription}
+          rows={5}
+          desabilitado={salvando}
         />
       </div>
       <div className="field">
