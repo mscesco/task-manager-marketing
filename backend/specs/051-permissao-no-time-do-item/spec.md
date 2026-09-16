@@ -3,14 +3,16 @@
 **Status:** escrita em 16/09/2026, a partir da revisão de permissões do mesmo
 dia (cinco frentes contra o Mapa de 10/09 e a Spec 049) e das **oito decisões
 dela**, respondidas em 16/09 (§8), mais as duas que a escrita levantou (A e B,
-respondidas no mesmo dia). Nenhuma fatia entregue.
+respondidas no mesmo dia). **Fatia 0 entregue em 16/09.**
 **Escopo:** backend (travas de serviço, matriz C2, duas rotas novas de leitura
 de cadeado e uma de escrita) e as telas que hoje decidem sozinhas o que o
 servidor deveria dizer.
 **Depende de:** **PR #57** (`fix/conta-respeita-o-papel-do-alvo`) mergeado. A
 trava de conta dele (`_assert_pode_agir_sobre_a_conta`) é a regra que as
 fatias C e E reusam, e a matriz da fatia 0 parte das 4 linhas que ele pôs.
-**Placar na abertura:** backend **1572** (com o #57), front a medir na fatia 0.
+**Placar na abertura:** backend **1572** (com o #57). Depois da fatia 0:
+**1734** (+162 casos da matriz, conta feita; a matriz sozinha rodou 552 verdes).
+O front não mudou na fatia 0; o número entra na primeira fatia que o toca.
 
 ---
 
@@ -142,13 +144,22 @@ SUPERVISOR e OPERATOR**. `has_role("ADMIN")` conta o papel de organização, mas
 - **O seletor de cargo** (`papeisAtribuiveis`, `permissoesMembros.ts:165`)
   decide por `souAdmin`; muda com a decisão 6.
 
-### 3.6. Achados das frentes de revisão que eu NÃO conferi
+### 3.6. Achados das frentes de revisão que eu não tinha conferido
 
-Ficam para a fatia 0 confirmar ou descartar **antes** de virar linha:
+Conferidos na fatia 0 (16/09):
 
-- `mark_task` devolveria o título de tarefa fora da lente;
-- formulário de outra árvore responderia 403 (e não 404) em algumas rotas de
-  escrita — o que confirma que o id existe.
+- ✅ **Confirmado: `mark_task` vincula tarefa fora da lente.**
+  `service.py:694` checa o `task_id` só contra o workspace
+  (`_assert_tarefa_do_workspace`), e a fila mostra o título dela
+  (`titulos_das_tarefas`, sem lente). O MANAGER do Marketing marca uma tarefa
+  do Comercial numa solicitação do Marketing — e lê o título. Vira linha, e a
+  correção entra na fatia B: tarefa fora da lente é 404, como em toda leitura.
+- ⚖️ **Confirmado, e FICA: escrita em formulário de outra árvore responde
+  403.** O mesmo vale para quadro, coluna, time e vínculo — toda a gestão
+  responde 403 fora da árvore, desde a Spec 049. Trocar só o formulário para
+  404 deixaria a regra desigual, e quem manda a escrita já tem o id. O que
+  vira 404 é a **leitura** pelo id (§4.8, item 2), que é por onde alguém
+  descobre o que não devia.
 
 ---
 
@@ -345,17 +356,25 @@ Cada uma fica verde sozinha. A 0 vem primeiro; as outras são independentes
 entre si e estão na ordem de risco.
 
 **Fatia 0 — o ator de duas árvores, e as linhas das decisões.**
+✅ **Entregue em 16/09**, em dois commits. Matriz: **552 casos** (92 linhas
+× 6 papéis), verdes. Todas as previsões, lidas do código, bateram na primeira
+rodada — a coluna nova (77) e as 14 linhas novas.
+Sabotagem F (no cabeçalho do teste): a trava da fatia A só em
+`TaskService.soft_delete` derruba **uma** célula, a do ator novo na tarefa do
+Comercial.
+
 Na matriz HTTP (`test_matriz_de_permissoes_http_db.py`):
 
-- **um sexto ator: `misto`** — MANAGER no Marketing **e** OPERATOR no
-  Comercial. A tabela ganha a coluna.
+- **um sexto ator: `DUAS_ARVORES`** — MANAGER no Marketing **e** OPERATOR no
+  Comercial. A tabela ganha a coluna. (O nome não é `misto` porque a matriz já
+  tem um ALVO `misto`, desde a 049.)
 - **as linhas que mostram cada buraco**, com o esperado DE HOJE e a marca
   `# DIVERGE DO ALVO: 051 §x` — como a 049 fez. Cada fatia seguinte vira as
   linhas dela;
 - **confirmar ou descartar o §3.6**, com uma linha cada;
 - **a linha do §4.4** (supervisor apaga quadro com tarefas), já OK.
 
-⚠️ **O mundo da matriz só tem um ator por coluna.** Adicionar `misto` como
+⚠️ **O mundo da matriz só tem um ator por coluna.** Adicionar `DUAS_ARVORES` como
 coluna muda o formato de TODAS as linhas (5 → 6 valores). É mecânico, e é
 um commit próprio, antes das linhas novas — para o diff de cada uma continuar
 legível.
@@ -409,8 +428,8 @@ papel de organização, e a guarda da `/organizacao`. Só front.
 - ⚠️⚠️ **Botão calculado pelo `/auth/me` em tela de item.** O `/auth/me` diz
   "o que", nunca "onde" (Spec 049 §7). Toda tela que esta spec toca troca essa
   leitura por um campo do item; **uma que fique para trás mostra botão que dá
-  403**, com os quatro portões verdes. A rede é a matriz com o ator `misto` —
-  no servidor — e a tela aberta como `misto`.
+  403**, com os quatro portões verdes. A rede é a matriz com o ator `DUAS_ARVORES` —
+  no servidor — e a tela aberta como essa pessoa.
 - ⚠️ **`teams_with` com contexto sem escopo responde `None`** ("todos"). Job
   de fundo que liste fila ou formulário por ela veria tudo. Hoje nenhum lista.
 - ⚠️ **A matriz C2 mora em três lugares** (as duas `_assert_actor_*`, o
