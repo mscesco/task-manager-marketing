@@ -1940,6 +1940,23 @@ export async function moveMemberSubteam(
 
 // Reset administrativo: gera nova senha provisoria, devolvida UMA vez
 // (team.manage). Nao invalida _members (so muda senha, nao a lista).
+/**
+ * Os botões da CONTA de uma pessoa: quem olha consegue resetar a senha dela, e
+ * desativá-la? (Spec 051, fatia E)
+ *
+ * ⚠️ O SERVIDOR RESPONDE, pelas mesmas travas das duas ações. A gaveta decidia
+ * por "alcance amplo" e mostrava os botões ao gerente na conta de outro
+ * gerente -- que o servidor recusa desde o conserto de 16/09 (#57).
+ */
+export type AcoesDaConta = {
+  can_reset_password: boolean;
+  can_deactivate: boolean;
+};
+
+export async function memberAccountActions(userId: string): Promise<AcoesDaConta> {
+  return api<AcoesDaConta>(`/api/v1/members/${userId}/account-actions`);
+}
+
 export async function resetMemberPassword(
   userId: string
 ): Promise<ResetPasswordResult> {
@@ -2312,6 +2329,40 @@ export async function currentUser(): Promise<CurrentUser> {
   if (_me !== undefined) return _me;
   _me = await getMe();
   return _me;
+}
+
+/**
+ * Evento de `window` quando o PRÓPRIO nome muda (Spec 051, fatia E). O
+ * `detail` é o nome novo.
+ *
+ * ⚠️ Mesmo desenho do `TIMES_MUDARAM`: a barra lateral buscou o usuário uma vez
+ * na montagem e mostra o nome dele; trocar o nome no `/perfil` não navega, e
+ * sem o aviso a barra seguiria com o nome velho até recarregar.
+ */
+export const NOME_MUDOU = "me:nome-mudou";
+
+/**
+ * Troca o PRÓPRIO nome (Spec 051, fatia E -- decisão 8: "só o próprio").
+ *
+ * ⚠️ Não há `userId`, e a ausência é a regra: o servidor pega o alvo do token.
+ *
+ * ⚠️ TRÊS CACHES MOSTRAM O NOME, e os três são acertados aqui, e não na tela:
+ *   - `_me` (quem chamar `currentUser()` depois recebe o nome novo);
+ *   - a lista de membros (`invalidateMembers`): seletores, responsáveis e o
+ *     `@` mostram o nome das pessoas, inclusive o meu;
+ *   - a barra lateral, que tem o seu próprio estado -- pelo evento.
+ */
+export async function renameSelf(name: string): Promise<string> {
+  const r = await api<{ name: string }>("/api/v1/auth/me", {
+    method: "PATCH",
+    body: { name },
+  });
+  if (_me !== undefined) _me = { ..._me, name: r.name };
+  invalidateMembers();
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent(NOME_MUDOU, { detail: r.name }));
+  }
+  return r.name;
 }
 
 // ---------------------------------------------------------------

@@ -3,7 +3,7 @@
 **Status:** escrita em 16/09/2026, a partir da revisão de permissões do mesmo
 dia (cinco frentes contra o Mapa de 10/09 e a Spec 049) e das **oito decisões
 dela**, respondidas em 16/09 (§8), mais as duas que a escrita levantou (A e B,
-respondidas no mesmo dia). **Fatias 0, A, B, C e D entregues em 16/09.**
+respondidas no mesmo dia). **Fatias 0 e A a E entregues em 16/09.**
 **Escopo:** backend (travas de serviço, matriz C2, duas rotas novas de leitura
 de cadeado e uma de escrita) e as telas que hoje decidem sozinhas o que o
 servidor deveria dizer.
@@ -579,6 +579,42 @@ dentro da árvore, e `GET /boards/{id}` pela lente. O `permissions.generated.ts`
 
 **Fatia E — conta** (§4.7, §4.8 item 5). `PATCH /auth/me`, a tela do nome,
 `can_reset_password` e `can_deactivate`.
+
+✅ **Entregue em 16/09.** Backend **1778**, front **1432**, `tsc` limpo,
+`next build` ok, `ruff` 50 antes e depois.
+
+- **`PATCH /auth/me`** (`AuthService.rename_self`): só `name` no corpo; o alvo
+  sai do token. Apara, recusa vazio (422), **não** mexe em `token_version` — o
+  nome não é credencial. Usa a dependência estrita: quem está preso na troca de
+  senha obrigatória resolve a senha primeiro.
+- ⚠️ **Desvio: a tela do nome é o `/perfil`, e não o menu da conta.** A página
+  já existia (nome, e-mail, papéis, "Trocar senha"), com o comentário *"Editar
+  nome não existe no backend"* — o lugar certo, e o link do rodapé da barra já
+  leva a ela. A regra do campo está em `lib/nomeProprio.ts` (testada). Depois de
+  salvar, `renameSelf` acerta os três caches que mostram o nome: `_me`, a lista
+  de membros, e a barra lateral por um evento (`NOME_MUDOU`, mesmo desenho do
+  `TIMES_MUDARAM`).
+- ⚠️ **Desvio: os cadeados da conta são uma ROTA POR PESSOA**
+  (`GET /members/{id}/account-actions`), e não dois campos na listagem de
+  membros como o §4.8 dizia. A listagem alimenta seis telas, e cada item
+  custaria as consultas de alcance e de papel do alvo; só a gaveta pergunta, uma
+  pessoa por vez. `MemberService.acoes_da_conta` roda **as mesmas travas** de
+  `reset_password` e `deactivate_member`, lidas como pergunta. ⚠️ A trava do
+  **último admin** fica de fora do cadeado de propósito: é regra (409 com a
+  saída escrita), e esconder o botão esconderia a mensagem.
+- **Tela:** a gaveta do membro lê a rota ao abrir, e não mostra botão nenhum
+  enquanto ela não responde. `podeResetarSenha` e `podeDesativarConta` **saíram**
+  de `permissoesMembros.ts` (com um aviso no lugar para não voltarem).
+- **Testes novos:** `test_editar_o_proprio_nome_db` (aparar, vazio, e ⭐ um
+  `user_id` alheio no corpo não muda a outra pessoa); na matriz,
+  `test_o_cadeado_da_conta_concorda_com_a_matriz` (os dois campos contra as 9
+  linhas de senha e desativação, por papel); no front, `nomeProprio.test.ts` e
+  `MemberDrawerConta.test.tsx` (com `scope` amplo nos três casos — é o alcance
+  que enganava a tela).
+- **Nenhum teste antigo caiu.**
+- **Sabotagens:** a gaveta de volta a "alcance amplo" → caem 2 dos 3 testes da
+  gaveta; o cadeado sem o papel do alvo → caem GESTOR, MANAGER e DUAS_ARVORES no
+  teste da matriz.
 
 **Fatia F — telas que decidem sozinhas** (§4.8 itens 3 e 4). `lens.ts` para
 papel de organização, e a guarda da `/organizacao`. Só front.

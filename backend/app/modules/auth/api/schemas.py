@@ -43,6 +43,20 @@ class ChangePasswordRequest(BaseModel):
     new_password: str = Field(min_length=8, max_length=128)
 
 
+class RenameSelfRequest(BaseModel):
+    """Troca do PROPRIO nome (Spec 051, fatia E).
+
+    ⚠️ So `name`: nao ha `user_id` no corpo, e a ausencia e a trava -- o alvo
+    e sempre quem esta no token.
+    """
+
+    name: str = Field(min_length=1, max_length=255)
+
+
+class RenameSelfResponse(BaseModel):
+    name: str
+
+
 class TeamMembershipOut(BaseModel):
     """Um vinculo (time, papel) do usuario. Base para o front derivar a
     lente: quais quadros de time mostrar e qual e a raiz. So leitura."""

@@ -630,6 +630,56 @@ class MemberService:
         )
         return ProvisionedMember(user=user, temporary_password=temporary_password)
 
+    async def acoes_da_conta(self, *, user_id: uuid.UUID) -> tuple[bool, bool]:
+        """(resetar senha, desativar) -- o ator conseguiria? Spec 051, fatia E.
+
+        ⚠️⚠️ O CADEADO DOS DOIS BOTOES DA CONTA, e ele existe pelo #57. A tela
+        decidia por "alcance amplo" (`podeResetarSenha`, `podeDesativarConta`),
+        sem olhar a pessoa -- e desde que a conta passou a respeitar o papel do
+        alvo, o gerente via os dois botoes na conta de outro gerente e levava
+        403. Mesma prescricao de sempre: *"falta parametro na rota"*.
+
+        ⚠️⚠️ AS MESMAS TRAVAS DE `reset_password` E `deactivate_member`, lidas
+        como pergunta -- e nao uma lista parecida. Se alguem acrescentar uma
+        trava a uma das duas acoes, tem de acrescentar aqui; o teste que compara
+        com a matriz e quem cobra.
+
+        ⚠️ FORA DO CADEADO, DE PROPOSITO: a trava do ULTIMO ADMIN. Ela e regra
+        de negocio (409 com explicacao: "promova outra pessoa"), e esconder o
+        botao tiraria justamente a mensagem que ensina a saida.
+        """
+        tenant = require_tenant()
+        user = await self._users.get_by_id(user_id)
+        if user is None:
+            raise EntityNotFoundError("User", identifier=user_id)
+        proprio = user_id == tenant.user_id
+
+        async def alcanca_a_conta(verbo: str, acao: str) -> bool:
+            if not tenant.has_permission(verbo):
+                return False
+            try:
+                await self._assert_reaches_person(verbo, user_id, acao=acao)
+                await self._assert_pode_agir_sobre_a_conta(user, acao=acao)
+            except AuthorizationError:
+                return False
+            return True
+
+        # Resetar a PROPRIA senha dispensa alcance e papel (ver `reset_password`),
+        # mas nao a permissao da rota.
+        pode_resetar = (
+            tenant.has_permission("person.update")
+            if proprio
+            else await alcanca_a_conta("person.update", "reset_password")
+        )
+        # Desativar: nunca a si mesmo, e nunca quem ja esta desativado (a tela
+        # nao tem o que oferecer -- nao ha reativar).
+        pode_desativar = (
+            not proprio
+            and user.is_active
+            and await alcanca_a_conta("person.deactivate", "deactivate_member")
+        )
+        return pode_resetar, pode_desativar
+
     async def list_members(
         self,
         *,

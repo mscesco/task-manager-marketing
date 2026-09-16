@@ -205,6 +205,19 @@ class TeamMembershipResponse(BaseModel):
     joined_at: datetime
 
 
+class MemberAccountActionsResponse(BaseModel):
+    """O cadeado das acoes da CONTA de uma pessoa (Spec 051, fatia E).
+
+    ⚠️ ROTA POR PESSOA, e nao dois campos a mais em `GET /members`: aquela
+    listagem alimenta seis telas (quadro, tarefa, modal...), e cada item
+    custaria as consultas de alcance e de papel do alvo. So a gaveta do membro
+    pergunta isto, uma pessoa por vez.
+    """
+
+    can_reset_password: bool
+    can_deactivate: bool
+
+
 class TeamMemberListItemResponse(BaseModel):
     """Uma pessoa DENTRO de um time, com o cadeado. Spec 047, revisao 09/09.
 

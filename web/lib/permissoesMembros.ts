@@ -72,15 +72,12 @@ export function podeCadastrarMembro(a: Alcance): boolean {
   return a.tipo === "amplo";
 }
 
-/** Resetar senha segue com quem cadastra. */
-export function podeResetarSenha(a: Alcance): boolean {
-  return a.tipo === "amplo";
-}
-
-/** D4: supervisor tira do subtime, mas nunca desativa a conta. */
-export function podeDesativarConta(a: Alcance): boolean {
-  return a.tipo === "amplo";
-}
+// ⚠️⚠️ AQUI MORAVAM `podeResetarSenha` e `podeDesativarConta`, e sairam na
+// Spec 051 (fatia E). Respondiam por "alcance amplo", sem olhar a PESSOA -- e
+// desde o conserto de 16/09 (#57) a conta respeita o papel do alvo: o gerente
+// nao reseta nem desativa outro gerente. A pergunta passou a ter "quem", e a
+// tela nao sabe responder "quem" sem refazer a regra do servidor. A gaveta le
+// `GET /members/{id}/account-actions`. Nao traga as duas de volta.
 
 /** Mover entre subtimes toca o subtime de ORIGEM -> fora do alcance (D1). */
 export function podeMoverSubtime(a: Alcance): boolean {

@@ -943,6 +943,46 @@ async def test_o_cadeado_do_item_concorda_com_a_matriz(db, papel: str) -> None:
             )
 
 
+#: Spec 051, fatia E: (pessoa, linha de resetar senha, linha de desativar).
+#: `None` = a matriz nao tem a linha para essa acao nessa pessoa.
+CONTAS = (
+    ("alvo_mkt", ("person.update", "senha de alguem do Marketing"),
+     ("person.deactivate", "alguem do Marketing")),
+    ("alvo_com", ("person.update", "senha de alguem do Comercial"),
+     ("person.deactivate", "alguem do Comercial")),
+    ("misto", None, ("person.deactivate", "alguem do Marketing E do Comercial")),
+    ("admin2", ("person.update", "senha de outro ADMIN"),
+     ("person.deactivate", "outro ADMIN")),
+    ("manager2", ("person.update", "senha de outro MANAGER do Marketing"),
+     ("person.deactivate", "outro MANAGER do Marketing")),
+)
+
+
+@pytest.mark.parametrize("papel", PAPEIS)
+async def test_o_cadeado_da_conta_concorda_com_a_matriz(db, papel: str) -> None:
+    """Spec 051, fatia E -- os botoes de resetar senha e desativar.
+
+    ⚠️ O CASO QUE MOTIVOU: depois do #57, o gerente via os dois botoes na conta
+    de outro gerente (a tela decidia por "alcance amplo") e levava 403. Cada
+    campo e comparado com a linha da acao, papel a papel -- botao aberto e
+    linha NEGADO e o defeito; o contrario, acao escondida.
+    """
+    m = await _mundo(db)
+    idx = PAPEIS.index(papel)
+    async with _client(db, _contexto(m, papel)) as cli:
+        for pessoa, senha, desativar in CONTAS:
+            r = await cli.get(T + _preencher(f"/members/{{{pessoa}}}/account-actions", m["ids"]))
+            assert r.status_code == 200, r.text
+            corpo = r.json()
+            for campo, linha in (("can_reset_password", senha), ("can_deactivate", desativar)):
+                if linha is None:
+                    continue
+                esperado = _linha(*linha).esperado[idx]
+                assert corpo[campo] is (esperado == OK), (
+                    f"{papel} em {pessoa}: {campo}={corpo[campo]}, linha {esperado}"
+                )
+
+
 @pytest.mark.parametrize("papel", PAPEIS)
 async def test_o_cadeado_do_vinculo_de_gerente_concorda_com_a_matriz(db, papel: str) -> None:
     """Spec 051, fatia C -- o `can_edit_role` do vinculo de um GERENTE.

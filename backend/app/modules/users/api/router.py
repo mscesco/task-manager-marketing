@@ -37,6 +37,7 @@ from app.modules.auth.api.dependencies import (
 from app.modules.users.api.schemas import (
     ChangeMemberRoleRequest,
     ChangeOrganizationRoleRequest,
+    MemberAccountActionsResponse,
     MemberCreatedResponse,
     MemberCreateRequest,
     MemberListResponse,
@@ -159,6 +160,27 @@ async def list_team_members(
         )
         for m, ativo in linhas
     ]
+
+
+@router.get(
+    "/{user_id}/account-actions",
+    response_model=MemberAccountActionsResponse,
+)
+async def member_account_actions(
+    user_id: uuid.UUID, _: TenantContextDep, session: SessionDep
+) -> MemberAccountActionsResponse:
+    """Resetar senha e desativar: o ator conseguiria? Spec 051, fatia E.
+
+    Leitura aberta a qualquer autenticado, como `/{user_id}/teams`: a resposta
+    e sobre QUEM PERGUNTA, e nao revela nada da pessoa alem do que a gaveta ja
+    mostra. As mesmas travas das duas acoes -- ver `MemberService.acoes_da_conta`.
+    """
+    pode_resetar, pode_desativar = await MemberService(session).acoes_da_conta(
+        user_id=user_id
+    )
+    return MemberAccountActionsResponse(
+        can_reset_password=pode_resetar, can_deactivate=pode_desativar
+    )
 
 
 @router.get(
