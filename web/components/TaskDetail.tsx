@@ -23,6 +23,9 @@ import {
   // aconteceu aqui (o mesmo `Network` em "Times" e "Time Principal", corrigido
   // em 21/08); desta vez o par foi olhado antes.
   FolderOpen,
+  // Spec 050: a lixeira do comentario entrou na capsula de acoes, e o emoji
+  // 🗑 que ela era destoava dos icones do lapis e do reagir.
+  Trash2,
 } from "lucide-react";
 
 import { mesclaTarefa } from "@/lib/mesclaTarefa";
@@ -67,6 +70,7 @@ import EmojiPicker from "@/components/EmojiPicker";
 import GifPicker from "@/components/GifPicker";
 import FileiraDeReacoes from "@/components/FileiraDeReacoes";
 import SeletorDeReacao from "@/components/SeletorDeReacao";
+import CapsulaDeAcoes, { BOTAO_DA_CAPSULA } from "@/components/CapsulaDeAcoes";
 import { acaoDaPilula } from "@/lib/reacoes";
 import { isGiphyUrl } from "@/lib/giphy";
 import CommentText from "@/components/CommentText";
@@ -3062,43 +3066,46 @@ function LinhaComentario({
             <span className="muted" style={{ fontSize: 11.5 }}>(editado)</span>
           )}
 
-          {/* acoes inline (reagir / lapis / lixeira) */}
+          {/* acoes inline (reagir / lapis / lixeira), numa capsula -- Spec 050.
+              ⚠️ Elas aparecem com o mouse em cima da linha, ou com o foco de
+              teclado dentro dela: ver CapsulaDeAcoes. */}
           {!editando &&
             !confirmando &&
             (podeReagir || podeEditar || podeApagar) && (
-            <span style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
-              {/* Spec 050: a bolinha vem PRIMEIRO -- e a acao que todo mundo
-                  que ve o comentario tem; editar e apagar sao de poucos. */}
+            <CapsulaDeAcoes>
+              {/* Reagir vem PRIMEIRO -- e a acao que todo mundo que ve o
+                  comentario tem; editar e apagar sao de poucos. */}
               {podeReagir && <SeletorDeReacao onEscolher={alternarReacao} />}
               {podeEditar && (
                 <button
-                  type="button" className="btn btn-ghost"
+                  type="button"
+                  className={BOTAO_DA_CAPSULA}
                   onClick={() => {
                     setTexto(c.content);
                     setErroLinha(null);
                     setEditando(true);
                   }}
                   title="Editar"
-                  style={{ padding: "0 6px", fontSize: 12 }}
                   aria-label="Editar comentário"
                 >
-                  <Pencil size={13} strokeWidth={2} aria-hidden />
+                  <Pencil size={14} strokeWidth={2} aria-hidden />
                 </button>
               )}
               {podeApagar && (
                 <button
-                  type="button" className="btn btn-ghost"
+                  type="button"
+                  className={BOTAO_DA_CAPSULA}
                   onClick={() => {
                     setErroLinha(null);
                     setConfirmando(true);
                   }}
                   title="Apagar"
-                  style={{ padding: "0 6px", fontSize: 12 }}
+                  aria-label="Apagar comentário"
                 >
-                  🗑
+                  <Trash2 size={14} strokeWidth={2} aria-hidden />
                 </button>
               )}
-            </span>
+            </CapsulaDeAcoes>
           )}
 
           {/* confirmacao de apagar (inline, sem dialog do browser) */}

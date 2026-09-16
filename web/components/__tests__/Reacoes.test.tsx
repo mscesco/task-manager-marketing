@@ -10,7 +10,13 @@
  */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 
 import FileiraDeReacoes from "../FileiraDeReacoes";
 import SeletorDeReacao from "../SeletorDeReacao";
@@ -115,13 +121,17 @@ describe("SeletorDeReacao", () => {
     expect(screen.getByLabelText("Reagir com ❤️")).toBeDefined();
   });
 
-  it("escolher um sugerido avisa o pai e fecha", () => {
+  // ⚠️ `waitFor` nos testes de FECHAR: o painel sai com animacao
+  // (`AnimatePresence`), e fica no DOM ate ela terminar.
+  it("escolher um sugerido avisa o pai e fecha", async () => {
     const onEscolher = vi.fn();
     render(<SeletorDeReacao onEscolher={onEscolher} />);
     abrirSeletor();
     fireEvent.click(screen.getByLabelText("Reagir com 👍"));
     expect(onEscolher).toHaveBeenCalledWith("👍");
-    expect(screen.queryByLabelText("Buscar emoji")).toBeNull();
+    await waitFor(() =>
+      expect(screen.queryByLabelText("Buscar emoji")).toBeNull(),
+    );
   });
 
   it("⚠️ a busca e em portugues: 'joia' acha o polegar", () => {
@@ -144,13 +154,39 @@ describe("SeletorDeReacao", () => {
     expect(screen.getByText(/Nenhum emoji/)).toBeDefined();
   });
 
-  it("Escape fecha o seletor", () => {
+  it("Escape fecha o seletor", async () => {
     render(<SeletorDeReacao onEscolher={() => {}} />);
     abrirSeletor();
     fireEvent.keyDown(screen.getByLabelText("Buscar emoji"), {
       key: "Escape",
     });
-    expect(screen.queryByLabelText("Buscar emoji")).toBeNull();
+    await waitFor(() =>
+      expect(screen.queryByLabelText("Buscar emoji")).toBeNull(),
+    );
+  });
+
+  it("⚠️ rolar a GRADE nao fecha o seletor -- rolar e o gesto principal ali", () => {
+    // O `AnchoredPanel` fechava a qualquer rolagem, inclusive a de dentro
+    // dele. Com uma grade de emojis, isso fechava o painel na cara de quem
+    // rolava.
+    render(<SeletorDeReacao onEscolher={() => {}} />);
+    abrirSeletor();
+    fireEvent.scroll(screen.getByRole("group", { name: "Emojis" }));
+    // ⚠️ O ESTADO DO GATILHO, e nao "o campo de busca ainda existe": fechado,
+    // o painel CONTINUA no DOM durante a animacao de saida, e a versao
+    // anterior deste teste passava com a trava removida (sabotagem 050D).
+    expect(
+      screen.getByLabelText("Reagir ao comentário").getAttribute("aria-expanded"),
+    ).toBe("true");
+  });
+
+  it("rolar FORA do seletor fecha -- a medida do gatilho envelheceu", async () => {
+    render(<SeletorDeReacao onEscolher={() => {}} />);
+    abrirSeletor();
+    fireEvent.scroll(window);
+    await waitFor(() =>
+      expect(screen.queryByLabelText("Buscar emoji")).toBeNull(),
+    );
   });
 
   it("⚠️ um grupo por vez -- a grade nao desenha o catalogo inteiro", () => {

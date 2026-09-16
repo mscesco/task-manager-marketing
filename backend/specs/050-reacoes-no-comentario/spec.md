@@ -367,6 +367,21 @@ Um PR, um commit por fatia, CI conferido a cada commit.
     oferecer o que o `PUT` recusaria (422) ou gravaria em outra forma.
   - **Um grupo por vez** na grade, mais a busca: desenhar os 1.914 seriam 1.914
     botões no DOM de cada comentário aberto.
+  - **Revisão dela na tela, 16/09** — *"tá mal feito a reação"*, os botões
+    *"muito avulsos"*, e pedido de animação de abrir e fechar:
+    - as três ações (reagir, editar, apagar) entraram numa **cápsula** com
+      contorno (`CapsulaDeAcoes`), que aparece com o mouse na linha, com o foco
+      de teclado dentro dela, ou com o seletor aberto. ⚠️ **Editar e apagar
+      passaram a aparecer só no hover também** — antes ficavam sempre à mostra;
+    - o "🙂+" virou o ícone `SmilePlus`, e a lixeira 🗑 virou `Trash2`;
+    - ⚠️ **o seletor era `absolute` e nascia cortado** pela borda do detalhe da
+      tarefa, com barra de rolagem horizontal — o mesmo defeito que o
+      `PillSelect` já tinha tido. Passou a usar o `AnchoredPanel`, que traz a
+      animação dos outros seletores;
+    - ⚠️ **o `AnchoredPanel` fechava a qualquer rolagem, inclusive a de dentro
+      dele** — na grade de emojis, rolar fechava o painel. Passou a ignorar a
+      rolagem interna. E o teste pegou um segundo defeito no conserto: rolagem
+      da janela chega com o `Window` como alvo, e `contains(window)` levanta.
   - ⚠️ **Cobertura, dita inteira:** os testes de componente que já existiam
     simulam a lista de comentários **vazia**, então nenhum deles desenha
     comentário — a fileira e o seletor são exercitados só pelos testes novos
