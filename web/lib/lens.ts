@@ -20,6 +20,10 @@ import { rootTeamOf } from "@/lib/areas";
 // Papeis que enxergam os descendentes (espelha _MANAGING_ROLES no backend).
 const MANAGING_ROLES = new Set(["MANAGER", "ADMIN"]);
 
+// Papeis que veem TODOS os times, sem vinculo (Spec 051, fatia F -- ver
+// `computeLens`). Espelha `ORG_ROLES` do `team_scope`.
+const ROLES_QUE_VEEM_TUDO = ["ADMIN", "GESTOR"] as const;
+
 export type TeamLens = {
   /** Id do time raiz (parent_team_id === null). null se nao houver. */
   rootId: string | null;
@@ -78,12 +82,16 @@ function withDescendants(teamId: string, teams: Team[]): Set<string> {
  * `team.manage`, e tratar isso como "ve tudo" quebraria o escopo dele com N
  * areas -- ele passaria a ver os subtimes do TI. O papel e a pergunta certa.
  *
- * ⚠️ SO `ADMIN`, E NAO `GESTOR`: e o espelho exato de `team_scope.is_admin`,
- * que devolve `True` apenas para `org_role == "ADMIN"`. Um GESTOR sem vinculo
- * de time enxergaria vazio -- **no backend tambem**, e por isso nao invento a
- * diferenca aqui: seria a tela mostrando o que o servidor nao entrega.
- * Ninguem e GESTOR hoje ("o papel nasce para a tela da Spec 047 poder
- * atribui-lo"), entao a decisao cabe a ela, com o caso na frente.
+ * ⚠️⚠️ ADMIN **E GESTOR** DESDE A SPEC 051 (fatia F). Ate ali esta linha era
+ * so `ADMIN`, com o argumento de espelhar `team_scope.is_admin` -- e o
+ * argumento caducou na Spec 049 (fatia 0b): o backend passou a abrir a lente
+ * para TODO papel de organizacao (`visible_team_ids`, *"gestor ve tudo"*,
+ * decisao da Spec 045). A tela ficou para tras, e um GESTOR sem vinculo de time
+ * abria o quadro e lia "Voce nao tem acesso ao quadro deste time" sobre um
+ * quadro que o servidor lhe entregava.
+ *
+ * ⚠️ `ADMIN` continua cobrindo os dois niveis: o papel de organizacao e o
+ * vinculo ADMIN antigo de time chegam iguais em `roles`.
  */
 export function computeLens(
   myTeams: TeamMembership[],
@@ -104,9 +112,9 @@ export function computeLens(
   // os dois.
   const rootId = activeRootId;
 
-  // Admin (de time, legado, OU de organizacao) enxerga a arvore inteira --
-  // espelha `visible_team_ids` devolvendo `None` no backend.
-  if (roles.includes("ADMIN")) {
+  // Papel de ORGANIZACAO (ADMIN ou GESTOR) -- e o vinculo ADMIN antigo de time
+  // -- enxerga a arvore inteira: espelha `visible_team_ids` devolvendo `None`.
+  if (ROLES_QUE_VEEM_TUDO.some((r) => roles.includes(r))) {
     return {
       rootId,
       visibleTeamIds: new Set(allTeams.map((t) => t.id)),

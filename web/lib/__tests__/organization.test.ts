@@ -15,6 +15,7 @@ import {
   matchesSearch,
   organizationManagers,
   peopleWithoutArea,
+  podeAbrirOrganizacao,
 } from "../organization";
 // ⚠️ Importado de OUTRO modulo de proposito: o teste de concordancia entre as
 // duas telas so tem valor se ele chamar as duas implementacoes de verdade.
@@ -248,5 +249,25 @@ describe("matchesSearch", () => {
 
   it("não casa quem não tem o term", () => {
     expect(matchesSearch("zeca", pessoa("Ana", [MKT]))).toBe(false);
+  });
+});
+
+describe("podeAbrirOrganizacao -- a guarda da /organizacao (Spec 051, fatia F)", () => {
+  it("papel de organizacao abre: ADMIN e GESTOR", () => {
+    expect(podeAbrirOrganizacao({ org_role: "ADMIN" })).toBe(true);
+    expect(podeAbrirOrganizacao({ org_role: "GESTOR" })).toBe(true);
+  });
+
+  it("⚠️ sem papel de organizacao nao abre -- mesmo com vinculo de gerente", () => {
+    // O defeito: a pagina abria para quem digitasse o endereco. O papel de
+    // TIME (inclusive o ADMIN antigo de time) nao entra: a pergunta e so
+    // `org_role`.
+    expect(podeAbrirOrganizacao({ org_role: null })).toBe(false);
+    expect(podeAbrirOrganizacao({})).toBe(false);
+  });
+
+  it("ainda carregando e nao -- nada da organizacao por palpite", () => {
+    expect(podeAbrirOrganizacao(null)).toBe(false);
+    expect(podeAbrirOrganizacao(undefined)).toBe(false);
   });
 });

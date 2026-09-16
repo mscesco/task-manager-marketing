@@ -3,7 +3,8 @@
 **Status:** escrita em 16/09/2026, a partir da revisão de permissões do mesmo
 dia (cinco frentes contra o Mapa de 10/09 e a Spec 049) e das **oito decisões
 dela**, respondidas em 16/09 (§8), mais as duas que a escrita levantou (A e B,
-respondidas no mesmo dia). **Fatias 0 e A a E entregues em 16/09.**
+respondidas no mesmo dia). **Todas as fatias (0 e A a F) entregues em 16/09.**
+Placar no fim: backend **1778**, front **1436**.
 **Escopo:** backend (travas de serviço, matriz C2, duas rotas novas de leitura
 de cadeado e uma de escrita) e as telas que hoje decidem sozinhas o que o
 servidor deveria dizer.
@@ -618,6 +619,28 @@ dentro da árvore, e `GET /boards/{id}` pela lente. O `permissions.generated.ts`
 
 **Fatia F — telas que decidem sozinhas** (§4.8 itens 3 e 4). `lens.ts` para
 papel de organização, e a guarda da `/organizacao`. Só front.
+
+✅ **Entregue em 16/09.** Front **1436**, `tsc` limpo, `next build` ok. Backend
+não mudou (1778, medido na fatia E).
+
+- **`lib/lens.ts`:** `computeLens` abre a árvore inteira para `ADMIN` **e
+  `GESTOR`** (`ROLES_QUE_VEEM_TUDO`). O comentário antigo justificava "só
+  ADMIN" por espelhar `team_scope.is_admin` — o argumento caducou na 049 0b,
+  quando o backend abriu a lente para todo papel de organização.
+- **`/organizacao`:** a página busca o `/auth/me` **primeiro, sozinho**; sem
+  papel de organização, `router.replace("/")` antes de ler membros e áreas.
+  Até liberar, só a moldura com "carregando" — nenhum nome de área nem de
+  pessoa.
+- **`podeAbrirOrganizacao`** nasceu em `lib/organization.ts`, testada, e as
+  **três cópias** de `(me.org_role ?? null) !== null` (`AppShell`,
+  `TeamScreen`, `quadro/page`) passaram a chamá-la. (O nome não é
+  `podeVerOrganizacao` porque é o da variável local nas três telas.)
+- ⚠️ **O que os portões não provam:** a LIGAÇÃO da guarda na página. `app/`
+  está fora do `include` do vitest; o que tem teste é a decisão
+  (`podeAbrirOrganizacao`). Conferir na tela, entrando como gerente e
+  digitando `/organizacao`.
+- **Sabotagem:** a lente de volta a "só ADMIN" → cai exatamente o teste do
+  GESTOR.
 
 ---
 

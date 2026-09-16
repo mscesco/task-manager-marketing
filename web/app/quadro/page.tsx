@@ -10,6 +10,7 @@ import { currentUser, listBoards, listTeamsAll, type Quadro } from "@/lib/api";
 import { entradaDoQuadro } from "@/lib/areas";
 import { preferredTeams } from "@/lib/activeTeam";
 import { ownRootTeams, rootsForPerson } from "@/lib/contextSwitcher";
+import { podeAbrirOrganizacao } from "@/lib/organization";
 import Loading from "@/components/Loading";
 import {
   alcanceDeQuadro,
@@ -112,7 +113,7 @@ function QuadroGeral() {
         // 3.1 da spec, e a Camila o descreveu assim: *"tudo ta levando em
         // consideracao o quadro do comercial que nao tem nada, mesmo que eu
         // esteja no marketing"*.
-        const podeVerOrganizacao = (me.org_role ?? null) !== null;
+        const podeVerOrganizacao = podeAbrirOrganizacao(me);
         const entrada = entradaDoQuadro(
           preferredTeams(
             rootsForPerson(times, me, podeVerOrganizacao),

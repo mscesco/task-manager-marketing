@@ -14,6 +14,7 @@ import {
   type CurrentUser,
   type Team,
 } from "@/lib/api";
+import { podeAbrirOrganizacao } from "@/lib/organization";
 import { computeLens } from "@/lib/lens";
 import {
   lerTema,
@@ -211,7 +212,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   // `_ROLE_PERMISSIONS[UserTeamRole.ADMIN]` -- entao quem tem papel de TIME
   // ADMIN (residuo anterior a Spec 045) carrega `area.create` tambem. E `roles`
   // nao desempata: o `/auth/me` junta os dois niveis ali de proposito.
-  const podeVerOrganizacao = (user?.org_role ?? null) !== null;
+  // Spec 051, fatia F: a condicao mora em `lib/organization` -- a propria
+  // `/organizacao` faz a mesma pergunta para barrar quem digita o endereco.
+  const podeVerOrganizacao = podeAbrirOrganizacao(user);
 
   // ONDE a pessoa alcanca, e onde ela TRABALHA -- duas perguntas diferentes, e
   // para quem administra a organizacao as respostas divergem muito.
