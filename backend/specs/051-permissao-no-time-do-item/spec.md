@@ -3,7 +3,7 @@
 **Status:** escrita em 16/09/2026, a partir da revisão de permissões do mesmo
 dia (cinco frentes contra o Mapa de 10/09 e a Spec 049) e das **oito decisões
 dela**, respondidas em 16/09 (§8), mais as duas que a escrita levantou (A e B,
-respondidas no mesmo dia). **Fatias 0, A e B entregues em 16/09.**
+respondidas no mesmo dia). **Fatias 0, A, B e C entregues em 16/09.**
 **Escopo:** backend (travas de serviço, matriz C2, duas rotas novas de leitura
 de cadeado e uma de escrita) e as telas que hoje decidem sozinhas o que o
 servidor deveria dizer.
@@ -481,6 +481,52 @@ na árvore", a matriz C2 nova e o cadastro passando por ela, o cadeado e o
 `papeisAtribuiveis` juntos. ⚠️ **É a fatia que revoga decisão escrita** (Spec
 015 C2); os testes de recusa mudam de lado com a mensagem do commit dizendo
 por quê.
+
+✅ **Entregue em 16/09.** Backend **1761**; front não mudou (1422); `ruff` 50
+antes e depois.
+
+- **Matriz C2** (`member_service.py`): `_papeis_que_mira` e
+  `_papeis_que_atribui`, e as duas travas e o cadeado
+  (`pode_trocar_papel_do_vinculo`) leem **as mesmas funções** — o cadeado
+  tinha uma cópia da condição, que teria deixado o GESTOR com cadeado fechado
+  num gerente.
+  - mira: ADMIN tudo; GESTOR até MANAGER; os demais SUPERVISOR/OPERATOR;
+  - atribui: ADMIN tudo; os demais até MANAGER. "Dentro da sua árvore" não
+    mora aqui: o onde (`membership.*`/`person.create` no time) e o nível (MANAGER
+    só na raiz) já respondem, e o supervisor nunca tem MANAGER válido para dar.
+- **`create_member` chama a matriz** — era o caminho que dava cargo sem ela.
+- **"Já está na árvore"** (`_assert_ja_esta_na_arvore`, em `assign_to_team`):
+  quem não administra a organização só vincula quem tem vínculo em algum time
+  da mesma raiz. ⚠️ **"Organização" inclui o vínculo ADMIN antigo de time**,
+  pelo mesmo `is_admin` da trava de conta do #57 — com critérios diferentes, o
+  mesmo ator juntaria árvores e não resetaria senha, ou o contrário.
+- **Mover subtime recusa conta desativada** (409), depois das travas de
+  permissão.
+- **Tela:** nada mudou, e foi medido, não suposto. `papeisAtribuiveis` já
+  oferecia MANAGER na raiz a quem tem alcance amplo (o servidor é que
+  recusava); o cadeado do vínculo vem do servidor; e a lista de candidatos do
+  subtime (`subteamCandidates`) já era "todo mundo da árvore do time pai".
+- **Matriz:** 4 linhas viradas, e um teste que amarra o `can_edit_role` do
+  vínculo de um gerente à linha "rebaixar outro MANAGER", por papel.
+- ⚠️⚠️ **16 testes antigos caíram.** Nenhum era defeito:
+  - **alvo SEM TIME NENHUM vinculado por gerente, supervisor ou admin de time**
+    (`test_comando_sem_subtime_db`, `test_posto_raiz_nao_menor_db`,
+    `test_role_invariant_db`, `test_member_assign_db`,
+    `test_supervisor_member_scope_db`). Essa pessoa não existe fora de teste —
+    todo membro nasce com vínculo (Spec 014). Os de admin voltaram a passar com
+    o critério `is_admin`; os de gerente ganharam um vínculo na árvore (e um,
+    a árvore no contexto, que faltava);
+  - **mudou de lado de propósito:** `test_manager_nao_promove_para_manager`
+    virou `test_manager_PROMOVE_a_manager_mas_nao_rebaixa_o_par`, com as duas
+    metades da decisão;
+  - **supervisor dando MANAGER no subtime** (`test_supervisor_member_routes_http_db`,
+    `test_supervisor_member_scope_db`): continua recusado, mas por 409 (nível)
+    e não 403 (matriz) — a matriz deixou de responder por papel de ator, e a
+    regra que explica a recusa é a de nível.
+- **Sabotagem:** sem a regra da árvore e sem o GESTOR na matriz de mira →
+  caíram exatamente 5: as três células de "quem só está no Comercial"
+  (MANAGER, SUPERVISOR, DUAS_ARVORES), o GESTOR rebaixando gerente e o cadeado
+  do GESTOR.
 
 **Fatia D — estrutura** (§4.3, §4.6, §4.8 item 2 do quadro). `subteam.delete`
 no MANAGER com a trava de árvore, `can_delete` em `GET /teams`, mover time só

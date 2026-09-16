@@ -30,7 +30,7 @@ import pytest
 from app.core.tenant import Membership
 from app.db.models.enums import UserTeamRole
 from app.modules.users.application.member_service import MemberService
-from app.shared.exceptions.base import AuthorizationError
+from app.shared.exceptions.base import AuthorizationError, BusinessRuleError
 from tests.integration import factories as f
 from tests.integration.conftest import acting_as, node
 
@@ -185,9 +185,12 @@ async def test_supervisor_atribui_supervisor_no_proprio_subtime(db) -> None:
             user_id=pessoa, team_id=c["seo"], role=UserTeamRole.SUPERVISOR
         )
         assert ut.role == UserTeamRole.SUPERVISOR
-        # O teto que sobra e a matriz C2: gerente nao e papel que ele atribua.
+        # O teto que sobra e o NIVEL: gerente nao existe em subtime, e o
+        # supervisor so alcanca subtime. ⚠️ Ate a Spec 051 (fatia C) quem barrava
+        # era a matriz C2 (403); ela passou a deixar gestor e gerente darem
+        # MANAGER, e a recusa do supervisor ficou com a regra que a explica.
         outra = await _operador_do_crm(db, c, "outra@t.dev")
-        with pytest.raises(AuthorizationError):
+        with pytest.raises(BusinessRuleError):
             await svc.assign_to_team(
                 user_id=outra, team_id=c["seo"], role=UserTeamRole.MANAGER
             )
@@ -315,6 +318,12 @@ async def test_manager_mantem_alcance_amplo(db) -> None:
         # subtime). O que este teste prova -- que o MANAGER alcanca subtime
         # onde nao supervisiona -- nao depende do papel do alvo na raiz.
         novo = await f.make_user(db, workspace_id=c["ws"], email="novo@t.dev")
+        # ⚠️ Spec 051, fatia C: e com vinculo NA ARVORE (o SEO) -- quem nao e da
+        # organizacao so vincula quem ja esta nela. Sem time nenhum, so a
+        # organizacao.
+        await f.add_member(
+            db, workspace_id=c["ws"], user_id=novo, team_id=c["seo"], role="OPERATOR"
+        )
         ut = await svc.assign_to_team(
             user_id=novo, team_id=c["crm"], role=UserTeamRole.SUPERVISOR
         )

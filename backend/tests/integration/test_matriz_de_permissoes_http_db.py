@@ -124,6 +124,11 @@ fila do Comercial some para DUAS_ARVORES; a orfa, para quem nao e da
 organizacao; marcar tarefa fora da lente e 404; abrir formulario de outra
 arvore pelo id e 404. Nenhuma outra celula mudou.
 
+SPEC 051, FATIA C (16/09) -- vinculo e cargo. Quatro linhas: vincular quem so
+esta no Comercial (so a organizacao); promover a gerente (gestor e gerente);
+rebaixar outro gerente (gestor sim, gerente nao -- "gerente so promove");
+mover conta desativada (409). Nenhuma outra celula mudou.
+
 O QUE ESTA TABELA NAO COBRE (de proposito, e anotado para quem estender):
     - editar comentario (autoria, nao permissao -- spec §4.5) e seguidores
       (o servico decide "eu" contra "terceiro");
@@ -620,8 +625,8 @@ MATRIZ: tuple[Linha, ...] = (
     # valendo (pergunta A).
     Linha("membership.create", "OPERATOR no SEO, de quem so esta no Comercial", "post",
           f"{T}/members/{{livre_com}}/team", {"team_id": "{seo}", "role": "OPERATOR"},
-          (OK, OK, OK, OK, NEGADO, OK),
-          diverge="051 §4.2: so vincula quem ja esta na arvore"),
+          # 051, fatia C: so vincula quem ja esta na arvore
+          (OK, OK, NEGADO, NEGADO, NEGADO, NEGADO)),
     Linha("membership.create", "OPERATOR no SEO, de quem esta no Design E em Vendas", "post",
           f"{T}/members/{{misto_design}}/team", {"team_id": "{seo}", "role": "OPERATOR"},
           (OK, OK, OK, OK, NEGADO, OK)),
@@ -642,12 +647,11 @@ MATRIZ: tuple[Linha, ...] = (
     # continua com gestor e admin, e a linha de baixo fica NEGADO para ele.
     Linha("membership.update", "OPERATOR->MANAGER no Marketing", "patch",
           f"{T}/members/{{livre_mkt}}/teams/{{mkt}}", {"role": "MANAGER"},
-          (OK, NEGADO, NEGADO, NEGADO, NEGADO, NEGADO),
-          diverge="051 §4.5: GESTOR e MANAGER promovem a gerente"),
+          (OK, OK, OK, NEGADO, NEGADO, OK)),  # 051, fatia C: gestor e gerente promovem a gerente
     Linha("membership.update", "rebaixar outro MANAGER do Marketing", "patch",
           f"{T}/members/{{manager2}}/teams/{{mkt}}", {"role": "OPERATOR"},
-          (OK, NEGADO, NEGADO, NEGADO, NEGADO, NEGADO),
-          diverge="051 §4.5: GESTOR mexe em vinculo de gerente (MANAGER continua NEGADO)"),
+          # 051, fatia C: gestor rebaixa gerente; gerente so promove
+          (OK, OK, NEGADO, NEGADO, NEGADO, NEGADO)),
     # ⚠️ FATIA D: o GESTOR nao tira ninguem de time. Esta linha NAO estava
     # marcada como divergencia -- tirar do time parecia "mover", e o Mapa de
     # 10/09 poe `·` na coluna D do vinculo para o GESTOR. Ver spec, fatia D.
@@ -671,8 +675,8 @@ MATRIZ: tuple[Linha, ...] = (
     Linha("membership.move", "conta DESATIVADA, Design -> Vazio-MKT", "post",
           f"{T}/members/{{desativado}}/move-subteam",
           {"from_team_id": "{design}", "to_team_id": "{vazio_mkt}"},
-          (OK, OK, OK, NEGADO, NEGADO, OK),
-          diverge="051 §4.8 item 6: conta desativada nao muda de subtime (409)"),
+          # 051, fatia C: conta desativada nao muda de subtime
+          (409, 409, 409, NEGADO, NEGADO, 409)),
     # ---------------------------------------------------------- quadro
     Linha("board.create.root", "no Marketing", "post", f"{T}/boards",
           {"name": "Campanhas", "team_id": "{mkt}"},
@@ -931,6 +935,27 @@ async def test_o_cadeado_do_item_concorda_com_a_matriz(db, papel: str) -> None:
             assert r.json()[campo] is (esperado == OK), (
                 f"{papel} em {acao} ({alvo}): {campo}={r.json()[campo]}, linha {esperado}"
             )
+
+
+@pytest.mark.parametrize("papel", PAPEIS)
+async def test_o_cadeado_do_vinculo_de_gerente_concorda_com_a_matriz(db, papel: str) -> None:
+    """Spec 051, fatia C -- o `can_edit_role` do vinculo de um GERENTE.
+
+    ⚠️ E A REGRA "GERENTE SO PROMOVE" VISTA PELA TELA. O cadeado repetia a
+    condicao da matriz C2 numa copia; com a regra nova, a copia deixaria o
+    GESTOR com cadeado fechado num gerente que o PATCH aceita. Aqui o campo e
+    comparado com a linha "rebaixar outro MANAGER do Marketing", papel a papel.
+    """
+    m = await _mundo(db)
+    idx = PAPEIS.index(papel)
+    esperado = _linha("membership.update", "rebaixar outro MANAGER do Marketing").esperado[idx]
+    async with _client(db, _contexto(m, papel)) as cli:
+        r = await cli.get(T + _preencher("/members/{manager2}/teams", m["ids"]))
+    assert r.status_code == 200, r.text
+    (vinculo,) = [v for v in r.json() if v["team_id"] == m["ids"]["mkt"]]
+    assert vinculo["can_edit_role"] is (esperado == OK), (
+        f"{papel}: can_edit_role={vinculo['can_edit_role']}, linha {esperado}"
+    )
 
 
 #: Spec 051, fatia B: o que cada papel ve na FILA e na lista de FORMULARIOS.
