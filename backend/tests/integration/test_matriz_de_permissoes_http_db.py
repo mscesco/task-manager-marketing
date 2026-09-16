@@ -30,6 +30,8 @@ nao distinguem nada:
              MANAGER do Marketing
              SUPERVISOR do SEO
              OPERATOR do SEO
+             DUAS_ARVORES: MANAGER do Marketing E OPERATOR do Comercial
+                           (Spec 051 -- a coluna em que lente e verbo divergem)
 
 COMO LER UMA LINHA: `esperado` tem um valor por papel, na ordem de `PAPEIS`.
 `OK` e qualquer 2xx; `NEGADO` e 403; `OCULTO` e 404 (a lente nao deixa ver, e
@@ -134,7 +136,7 @@ from tests.integration.conftest import acting_as, mship, node
 
 pytestmark = pytest.mark.integration
 
-PAPEIS = ("ADMIN", "GESTOR", "MANAGER", "SUPERVISOR", "OPERATOR")
+PAPEIS = ("ADMIN", "GESTOR", "MANAGER", "SUPERVISOR", "OPERATOR", "DUAS_ARVORES")
 
 OK = "ok"
 NEGADO = 403
@@ -219,6 +221,19 @@ async def _mundo(db) -> dict:
         db, workspace_id=ws, user_id=supervisor, team_id=seo, role="SUPERVISOR"
     )
     operator = await _operador(db, ws, seo)
+    # ⚠️⚠️ Spec 051, fatia 0: o ator que a matriz nao tinha. MANAGER no Marketing
+    # E OPERATOR no Comercial -- o cadastro permite, e a Camila decidiu que
+    # continua permitido (051, decisao 1). E nele que lente e verbo divergem: a
+    # lente dele inclui o Comercial (e onde ele trabalha), os verbos de comando
+    # nao. Com um vinculo so por ator, as duas perguntas davam a mesma resposta
+    # e a tabela ficava verde com a pergunta errada.
+    duas_arvores = await f.make_user(db, workspace_id=ws)
+    await f.add_member(
+        db, workspace_id=ws, user_id=duas_arvores, team_id=mkt, role="MANAGER"
+    )
+    await f.add_member(
+        db, workspace_id=ws, user_id=duas_arvores, team_id=com, role="OPERATOR"
+    )
 
     # --- pessoas-alvo
     #
@@ -323,6 +338,14 @@ async def _mundo(db) -> dict:
             "OPERATOR": (
                 operator, (Membership(team_id=seo, role="OPERATOR"),), None
             ),
+            "DUAS_ARVORES": (
+                duas_arvores,
+                (
+                    Membership(team_id=mkt, role="MANAGER"),
+                    Membership(team_id=com, role="OPERATOR"),
+                ),
+                None,
+            ),
         },
         # tudo o que um caminho ou corpo pode citar, como string
         "ids": {
@@ -413,76 +436,76 @@ MATRIZ: tuple[Linha, ...] = (
     # que mora no servico e nao na permissao.
     Linha("organization.update", "a organizacao", "patch", f"{T}/workspaces/current",
           {"name": "Outro nome"},
-          (OK, OK, NEGADO, NEGADO, NEGADO)),
+          (OK, OK, NEGADO, NEGADO, NEGADO, NEGADO)),
     Linha("org_role.grant", "GESTOR a uma pessoa", "patch",
           f"{T}/members/{{alvo_mkt}}/organization-role", {"role": "GESTOR"},
-          (OK, OK, NEGADO, NEGADO, NEGADO)),
+          (OK, OK, NEGADO, NEGADO, NEGADO, NEGADO)),
     Linha("org_role.grant", "ADMIN a uma pessoa (o teto)", "patch",
           f"{T}/members/{{alvo_mkt}}/organization-role", {"role": "ADMIN"},
-          (OK, NEGADO, NEGADO, NEGADO, NEGADO)),
+          (OK, NEGADO, NEGADO, NEGADO, NEGADO, NEGADO)),
     Linha("org_role.revoke", "tirar o papel de outro GESTOR", "patch",
           f"{T}/members/{{gestor2}}/organization-role", {"role": None},
-          (OK, OK, NEGADO, NEGADO, NEGADO)),
+          (OK, OK, NEGADO, NEGADO, NEGADO, NEGADO)),
     Linha("org_role.revoke", "tirar o papel de outro ADMIN (o teto)", "patch",
           f"{T}/members/{{admin2}}/organization-role", {"role": None},
-          (OK, NEGADO, NEGADO, NEGADO, NEGADO)),
+          (OK, NEGADO, NEGADO, NEGADO, NEGADO, NEGADO)),
     # ---------------------------------------------------------- time
     Linha("team.create", "raiz nova", "post", f"{T}/workspaces/current/teams",
           {"name": "Nova", "slug": "nova"},
-          (OK, OK, NEGADO, NEGADO, NEGADO)),
+          (OK, OK, NEGADO, NEGADO, NEGADO, NEGADO)),
     Linha("subteam.create", "no Marketing", "post", f"{T}/workspaces/current/teams",
           {"name": "Novo", "slug": "novo", "parent_team_id": "{mkt}"},
-          (OK, OK, OK, NEGADO, NEGADO)),
+          (OK, OK, OK, NEGADO, NEGADO, OK)),
     Linha("subteam.create", "no Comercial", "post", f"{T}/workspaces/current/teams",
           {"name": "Novo", "slug": "novo", "parent_team_id": "{com}"},
-          (OK, OK, NEGADO, NEGADO, NEGADO)),
+          (OK, OK, NEGADO, NEGADO, NEGADO, NEGADO)),
     Linha("team.update", "o Marketing (raiz)", "patch",
           f"{T}/workspaces/current/teams/{{mkt}}", {"name": "Outro"},
-          (409, 409, 409, NEGADO, NEGADO),
+          (409, 409, 409, NEGADO, NEGADO, 409),
           diverge="item 04 (fora desta spec): renomear time raiz"),
     # Fatia F (item 03): o SUPERVISOR edita o PROPRIO subtime -- e so ele.
     Linha("subteam.update", "o SEO", "patch",
           f"{T}/workspaces/current/teams/{{seo}}", {"name": "Outro"},
-          (OK, OK, OK, OK, NEGADO)),
+          (OK, OK, OK, OK, NEGADO, OK)),
     Linha("subteam.update", "o Design (irmao do SEO)", "patch",
           f"{T}/workspaces/current/teams/{{design}}", {"name": "Outro"},
-          (OK, OK, OK, NEGADO, NEGADO)),
+          (OK, OK, OK, NEGADO, NEGADO, OK)),
     Linha("subteam.update", "Vendas (Comercial)", "patch",
           f"{T}/workspaces/current/teams/{{vendas}}", {"name": "Outro"},
-          (OK, OK, NEGADO, NEGADO, NEGADO)),
+          (OK, OK, NEGADO, NEGADO, NEGADO, NEGADO)),
     Linha("subteam.delete", "vazio do Marketing", "delete",
           f"{T}/workspaces/current/teams/{{vazio_mkt}}", None,
-          (OK, NEGADO, NEGADO, NEGADO, NEGADO)),
+          (OK, NEGADO, NEGADO, NEGADO, NEGADO, NEGADO)),
     Linha("subteam.delete", "vazio do Comercial", "delete",
           f"{T}/workspaces/current/teams/{{vazio_com}}", None,
-          (OK, NEGADO, NEGADO, NEGADO, NEGADO)),
+          (OK, NEGADO, NEGADO, NEGADO, NEGADO, NEGADO)),
     # ---------------------------------------------------------- pessoa
     Linha("person.create", "no Marketing", "post", f"{T}/members",
           {"name": "Nova", "email": "nova@t.dev", "team_id": "{mkt}", "role": "OPERATOR"},
-          (OK, OK, OK, NEGADO, NEGADO)),
+          (OK, OK, OK, NEGADO, NEGADO, OK)),
     # ⚠️ O item 07 da matriz de 10/09 ("MANAGER cadastra so com vinculo no time
     # dele") saiu na fatia 0b: era a mesma linha do defeito da outra raiz.
     Linha("person.create", "no Comercial", "post", f"{T}/members",
           {"name": "Nova", "email": "nova@t.dev", "team_id": "{com}", "role": "OPERATOR"},
-          (OK, OK, NEGADO, NEGADO, NEGADO)),
+          (OK, OK, NEGADO, NEGADO, NEGADO, NEGADO)),
     Linha("person.update", "senha de alguem do Marketing", "post",
           f"{T}/members/{{alvo_mkt}}/reset-password", None,
-          (OK, OK, OK, NEGADO, NEGADO)),
+          (OK, OK, OK, NEGADO, NEGADO, OK)),
     Linha("person.update", "senha de alguem do Comercial", "post",
           f"{T}/members/{{alvo_com}}/reset-password", None,
-          (OK, OK, NEGADO, NEGADO, NEGADO)),
+          (OK, OK, NEGADO, NEGADO, NEGADO, NEGADO)),
     Linha("person.deactivate", "alguem do Marketing", "post",
           f"{T}/members/{{alvo_mkt}}/deactivate", None,
-          (OK, OK, OK, NEGADO, NEGADO)),
+          (OK, OK, OK, NEGADO, NEGADO, OK)),
     Linha("person.deactivate", "alguem do Comercial", "post",
           f"{T}/members/{{alvo_com}}/deactivate", None,
-          (OK, OK, NEGADO, NEGADO, NEGADO)),
+          (OK, OK, NEGADO, NEGADO, NEGADO, NEGADO)),
     # ⚠️ A CONTA E DE TODAS AS ARVORES DA PESSOA (fatia 0b, escolha registrada
     # na spec §4.9): com um vinculo no SEO e outro em Vendas, o MANAGER do
     # Marketing NAO a desativa -- so a organizacao.
     Linha("person.deactivate", "alguem do Marketing E do Comercial", "post",
           f"{T}/members/{{misto}}/deactivate", None,
-          (OK, OK, NEGADO, NEGADO, NEGADO)),
+          (OK, OK, NEGADO, NEGADO, NEGADO, NEGADO)),
     # ⚠️⚠️ REVISAO DE 16/09 -- A CONTA RESPEITA O PAPEL DO ALVO. Resetar senha
     # devolve a provisoria a quem clicou: sem estas travas, era tomar a conta.
     # Os alvos antes eram so operadores, e a matriz nao via isso.
@@ -490,100 +513,100 @@ MATRIZ: tuple[Linha, ...] = (
     # prova a trava nova e o GESTOR nas linhas de ADMIN, e o MANAGER no par.
     Linha("person.update", "senha de outro ADMIN", "post",
           f"{T}/members/{{admin2}}/reset-password", None,
-          (OK, NEGADO, NEGADO, NEGADO, NEGADO)),
+          (OK, NEGADO, NEGADO, NEGADO, NEGADO, NEGADO)),
     Linha("person.update", "senha de outro MANAGER do Marketing", "post",
           f"{T}/members/{{manager2}}/reset-password", None,
-          (OK, OK, NEGADO, NEGADO, NEGADO)),
+          (OK, OK, NEGADO, NEGADO, NEGADO, NEGADO)),
     Linha("person.deactivate", "outro ADMIN", "post",
           f"{T}/members/{{admin2}}/deactivate", None,
-          (OK, NEGADO, NEGADO, NEGADO, NEGADO)),
+          (OK, NEGADO, NEGADO, NEGADO, NEGADO, NEGADO)),
     Linha("person.deactivate", "outro MANAGER do Marketing", "post",
           f"{T}/members/{{manager2}}/deactivate", None,
-          (OK, OK, NEGADO, NEGADO, NEGADO)),
+          (OK, OK, NEGADO, NEGADO, NEGADO, NEGADO)),
     # ---------------------------------------------------------- vinculo
     Linha("membership.create", "OPERATOR no SEO", "post",
           f"{T}/members/{{livre_mkt}}/team", {"team_id": "{seo}", "role": "OPERATOR"},
-          (OK, OK, OK, OK, NEGADO)),
+          (OK, OK, OK, OK, NEGADO, OK)),
     Linha("membership.create", "OPERATOR em Vendas", "post",
           f"{T}/members/{{livre_com}}/team", {"team_id": "{vendas}", "role": "OPERATOR"},
-          (OK, OK, NEGADO, NEGADO, NEGADO)),
+          (OK, OK, NEGADO, NEGADO, NEGADO, NEGADO)),
     # ⚠️⚠️ FATIA H -- REVOGA A SPEC 028 D2, por decisao da Camila: o SUPERVISOR
     # cria par, promove, rebaixa e tira outro supervisor NO PROPRIO SUBTIME
     # (*"Sim, pode rebaixar, qualquer coisa o gerente arruma ne"*). O par de
     # cada linha fora do SEO e o que prova que "proprio" continua valendo.
     Linha("membership.create", "SUPERVISOR no SEO", "post",
           f"{T}/members/{{livre_design}}/team", {"team_id": "{seo}", "role": "SUPERVISOR"},
-          (OK, OK, OK, OK, NEGADO)),
+          (OK, OK, OK, OK, NEGADO, OK)),
     Linha("membership.update", "OPERATOR->SUPERVISOR no SEO", "patch",
           f"{T}/members/{{alvo_mkt}}/teams/{{seo}}", {"role": "SUPERVISOR"},
-          (OK, OK, OK, OK, NEGADO)),
+          (OK, OK, OK, OK, NEGADO, OK)),
     Linha("membership.update", "rebaixar outro SUPERVISOR no SEO", "patch",
           f"{T}/members/{{sup_par}}/teams/{{seo}}", {"role": "OPERATOR"},
-          (OK, OK, OK, OK, NEGADO)),
+          (OK, OK, OK, OK, NEGADO, OK)),
     Linha("membership.update", "OPERATOR->SUPERVISOR no Design (irmao do SEO)", "patch",
           f"{T}/members/{{alvo_mkt}}/teams/{{design}}", {"role": "SUPERVISOR"},
-          (OK, OK, OK, NEGADO, NEGADO)),
+          (OK, OK, OK, NEGADO, NEGADO, OK)),
     Linha("membership.update", "OPERATOR->SUPERVISOR em Vendas", "patch",
           f"{T}/members/{{alvo_com}}/teams/{{vendas}}", {"role": "SUPERVISOR"},
-          (OK, OK, NEGADO, NEGADO, NEGADO)),
+          (OK, OK, NEGADO, NEGADO, NEGADO, NEGADO)),
     # ⚠️ FATIA D: o GESTOR nao tira ninguem de time. Esta linha NAO estava
     # marcada como divergencia -- tirar do time parecia "mover", e o Mapa de
     # 10/09 poe `·` na coluna D do vinculo para o GESTOR. Ver spec, fatia D.
     Linha("membership.delete", "OPERATOR do SEO", "delete",
           f"{T}/members/{{alvo_mkt}}/teams/{{seo}}", None,
-          (OK, NEGADO, OK, OK, NEGADO)),
+          (OK, NEGADO, OK, OK, NEGADO, OK)),
     Linha("membership.delete", "outro SUPERVISOR do SEO", "delete",
           f"{T}/members/{{sup_par}}/teams/{{seo}}", None,
-          (OK, NEGADO, OK, OK, NEGADO)),
+          (OK, NEGADO, OK, OK, NEGADO, OK)),
     Linha("membership.delete", "OPERATOR de Vendas", "delete",
           f"{T}/members/{{alvo_com}}/teams/{{vendas}}", None,
-          (OK, NEGADO, NEGADO, NEGADO, NEGADO)),
+          (OK, NEGADO, NEGADO, NEGADO, NEGADO, NEGADO)),
     Linha("membership.move", "Design -> Vazio-MKT", "post",
           f"{T}/members/{{alvo_mkt}}/move-subteam",
           {"from_team_id": "{design}", "to_team_id": "{vazio_mkt}"},
-          (OK, OK, OK, NEGADO, NEGADO)),
+          (OK, OK, OK, NEGADO, NEGADO, OK)),
     Linha("membership.move", "Suporte -> Vazio-COM", "post",
           f"{T}/members/{{alvo_com}}/move-subteam",
           {"from_team_id": "{suporte}", "to_team_id": "{vazio_com}"},
-          (OK, OK, NEGADO, NEGADO, NEGADO)),
+          (OK, OK, NEGADO, NEGADO, NEGADO, NEGADO)),
     # ---------------------------------------------------------- quadro
     Linha("board.create.root", "no Marketing", "post", f"{T}/boards",
           {"name": "Campanhas", "team_id": "{mkt}"},
-          (OK, OK, OK, NEGADO, NEGADO)),
+          (OK, OK, OK, NEGADO, NEGADO, OK)),
     Linha("board.create.root", "no Comercial", "post", f"{T}/boards",
           {"name": "Campanhas", "team_id": "{com}"},
-          (OK, OK, NEGADO, NEGADO, NEGADO)),
+          (OK, OK, NEGADO, NEGADO, NEGADO, NEGADO)),
     Linha("board.create", "no SEO", "post", f"{T}/boards",
           {"name": "Pauta", "team_id": "{seo}"},
-          (OK, OK, OK, OK, NEGADO)),
+          (OK, OK, OK, OK, NEGADO, OK)),
     Linha("board.update.root", "quadro geral do Marketing", "patch",
           f"{T}/boards/{{geral_mkt}}", {"name": "Geral"},
-          (OK, OK, OK, NEGADO, NEGADO)),
+          (OK, OK, OK, NEGADO, NEGADO, OK)),
     Linha("board.update.root", "quadro geral do Comercial", "patch",
           f"{T}/boards/{{geral_com}}", {"name": "Geral"},
-          (OK, OK, NEGADO, NEGADO, NEGADO)),
+          (OK, OK, NEGADO, NEGADO, NEGADO, NEGADO)),
     # Fatia D (item 01): o GESTOR nao apaga quadro -- de subtime nem da raiz.
     Linha("board.delete", "quadro do SEO", "delete", f"{T}/boards/{{quadro_seo}}", None,
-          (OK, NEGADO, OK, OK, NEGADO)),
+          (OK, NEGADO, OK, OK, NEGADO, OK)),
     Linha("board.delete", "quadro de Vendas", "delete",
           f"{T}/boards/{{quadro_vendas}}", None,
-          (OK, NEGADO, NEGADO, NEGADO, NEGADO)),
+          (OK, NEGADO, NEGADO, NEGADO, NEGADO, NEGADO)),
     Linha("board.delete.root", "quadro secundario do Marketing", "delete",
           f"{T}/boards/{{secundario_mkt}}", None,
-          (OK, NEGADO, OK, NEGADO, NEGADO)),
+          (OK, NEGADO, OK, NEGADO, NEGADO, OK)),
     # ---------------------------------------------------------- coluna
     Linha("column.create", "no geral do Marketing", "post",
           f"{T}/boards/{{geral_mkt}}/columns", {"name": "Revisao", "semantic": "IN_PROGRESS"},
-          (OK, OK, OK, NEGADO, NEGADO)),
+          (OK, OK, OK, NEGADO, NEGADO, OK)),
     Linha("column.create", "no geral do Comercial", "post",
           f"{T}/boards/{{geral_com}}/columns", {"name": "Revisao", "semantic": "IN_PROGRESS"},
-          (OK, OK, NEGADO, NEGADO, NEGADO)),
+          (OK, OK, NEGADO, NEGADO, NEGADO, NEGADO)),
     Linha("column.create", "no quadro do SEO", "post",
           f"{T}/boards/{{quadro_seo}}/columns", {"name": "Revisao", "semantic": "IN_PROGRESS"},
-          (OK, OK, OK, OK, NEGADO)),
+          (OK, OK, OK, OK, NEGADO, OK)),
     Linha("column.delete", "coluna vazia do SEO", "delete",
           f"{T}/boards/{{quadro_seo}}/columns/{{cancelado_seo}}", None,
-          (OK, NEGADO, OK, OK, NEGADO)),
+          (OK, NEGADO, OK, OK, NEGADO, OK)),
     # ⚠️ AS DUAS DE BAIXO SAO O PAR QUE A FATIA D PRECISAVA: numa coluna de
     # quadro da RAIZ o GESTOR renomeia (continua editando) e NAO apaga. Antes
     # da D, coluna da raiz cobrava so `board.update.root`, e o GESTOR -- que o
@@ -591,95 +614,95 @@ MATRIZ: tuple[Linha, ...] = (
     Linha("column.update", "renomear coluna do secundario do Marketing", "patch",
           f"{T}/boards/{{secundario_mkt}}/columns/{{cancelado_secundario}}",
           {"name": "Outro nome"},
-          (OK, OK, OK, NEGADO, NEGADO)),
+          (OK, OK, OK, NEGADO, NEGADO, OK)),
     Linha("column.delete", "coluna do secundario do Marketing", "delete",
           f"{T}/boards/{{secundario_mkt}}/columns/{{cancelado_secundario}}", None,
-          (OK, NEGADO, OK, NEGADO, NEGADO)),
+          (OK, NEGADO, OK, NEGADO, NEGADO, OK)),
     # ---------------------------------------------------------- tarefa
     Linha("task.create", "no Marketing", "post", f"{T}/tasks",
           {"title": "T", "team_id": "{mkt}", "board_id": "{geral_mkt}",
            "assignee_ids": ["{alvo_mkt}"]},
-          (OK, OK, OK, OK, OK)),
+          (OK, OK, OK, OK, OK, OK)),
     Linha("task.create", "no Comercial", "post", f"{T}/tasks",
           {"title": "T", "team_id": "{com}", "board_id": "{geral_com}",
            "assignee_ids": ["{alvo_com}"]},
-          (OK, OK, 422, 422, 422)),
+          (OK, OK, 422, 422, 422, OK)),
     Linha("task.update", "do Marketing", "patch", f"{T}/tasks/{{tarefa_mkt}}",
           {"title": "Outro"},
-          (OK, OK, OK, OK, OK)),
+          (OK, OK, OK, OK, OK, OK)),
     Linha("task.update", "do Comercial", "patch", f"{T}/tasks/{{tarefa_com}}",
           {"title": "Outro"},
-          (OK, OK, OCULTO, OCULTO, OCULTO)),
+          (OK, OK, OCULTO, OCULTO, OCULTO, OK)),
     Linha("task.archive", "do Marketing", "post", f"{T}/tasks/{{tarefa_mkt}}/archive",
           None,
-          (OK, OK, OK, OK, OK)),
+          (OK, OK, OK, OK, OK, OK)),
     Linha("task.delete", "do Marketing", "delete", f"{T}/tasks/{{tarefa_mkt}}", None,
-          (OK, OK, OK, NEGADO, NEGADO)),
+          (OK, OK, OK, NEGADO, NEGADO, OK)),
     Linha("task.delete", "do Comercial", "delete", f"{T}/tasks/{{tarefa_com}}", None,
-          (OK, OK, OCULTO, NEGADO, NEGADO)),
+          (OK, OK, OCULTO, NEGADO, NEGADO, OK)),
     Linha("task.assign", "responsavel na do Marketing", "post",
           f"{T}/tasks/{{tarefa_mkt}}/assignees", {"user_id": "{alvo_mkt}"},
-          (OK, OK, OK, OK, OK)),
+          (OK, OK, OK, OK, OK, OK)),
     Linha("comment.moderate", "apagar comentario alheio", "delete",
           f"{T}/tasks/{{tarefa_mkt}}/comments/{{comentario}}", None,
-          (OK, OK, OK, NEGADO, NEGADO)),
+          (OK, OK, OK, NEGADO, NEGADO, OK)),
     # ---------------------------------------------------------- projeto
     Linha("project.create", "no Marketing", "post", f"{T}/projects",
           {"title": "P", "team_id": "{mkt}"},
-          (OK, OK, OK, NEGADO, NEGADO)),
+          (OK, OK, OK, NEGADO, NEGADO, OK)),
     Linha("project.create", "no Comercial", "post", f"{T}/projects",
           {"title": "P", "team_id": "{com}"},
-          (OK, OK, 422, NEGADO, NEGADO)),
+          (OK, OK, 422, NEGADO, NEGADO, OK)),
     Linha("project.update", "do Marketing", "patch", f"{T}/projects/{{projeto_mkt}}",
           {"title": "Outro"},
-          (OK, OK, OK, OK, NEGADO)),
+          (OK, OK, OK, OK, NEGADO, OK)),
     Linha("project.update", "do Comercial", "patch", f"{T}/projects/{{projeto_com}}",
           {"title": "Outro"},
-          (OK, OK, OCULTO, OCULTO, NEGADO)),
+          (OK, OK, OCULTO, OCULTO, NEGADO, OK)),
     Linha("project.archive", "do Marketing", "post",
           f"{T}/projects/{{projeto_mkt}}/archive", None,
-          (OK, OK, OK, OK, NEGADO)),
+          (OK, OK, OK, OK, NEGADO, OK)),
     Linha("project.archive", "do Comercial", "post",
           f"{T}/projects/{{projeto_com}}/archive", None,
-          (OK, OK, OCULTO, OCULTO, NEGADO)),
+          (OK, OK, OCULTO, OCULTO, NEGADO, OK)),
     Linha("project.delete", "do Marketing", "delete", f"{T}/projects/{{projeto_mkt}}",
           None,
-          (OK, NEGADO, OK, NEGADO, NEGADO)),
+          (OK, NEGADO, OK, NEGADO, NEGADO, OK)),
     Linha("project.delete", "do Comercial", "delete", f"{T}/projects/{{projeto_com}}",
           None,
-          (OK, NEGADO, OCULTO, NEGADO, NEGADO)),
+          (OK, NEGADO, OCULTO, NEGADO, NEGADO, OK)),
     # ---------------------------------------------------------- formulario
     Linha("form.create", "no Marketing", "post", f"{T}/solicitacoes/formularios",
           {"team_id": "{mkt}", "slug": "novo", "title": "Novo"},
-          (OK, OK, OK, NEGADO, NEGADO)),
+          (OK, OK, OK, NEGADO, NEGADO, OK)),
     Linha("form.create", "no Comercial", "post", f"{T}/solicitacoes/formularios",
           {"team_id": "{com}", "slug": "novo", "title": "Novo"},
-          (OK, OK, NEGADO, NEGADO, NEGADO)),
+          (OK, OK, NEGADO, NEGADO, NEGADO, NEGADO)),
     Linha("form.update", "do Marketing", "patch",
           f"{T}/solicitacoes/formularios/{{form_mkt}}", {"title": "Outro"},
-          (OK, OK, OK, NEGADO, NEGADO)),
+          (OK, OK, OK, NEGADO, NEGADO, OK)),
     Linha("form.update", "do Comercial", "patch",
           f"{T}/solicitacoes/formularios/{{form_com}}", {"title": "Outro"},
-          (OK, OK, NEGADO, NEGADO, NEGADO)),
+          (OK, OK, NEGADO, NEGADO, NEGADO, NEGADO)),
     # ⚠️ DESPUBLICAR, e nao publicar: publicar um formulario sem perguntas e 422
     # ("sem perguntas nao pode ser publicado") -- a linha mediria a regra, e nao
     # a permissao. O portao dos dois sentidos e o mesmo.
     Linha("form.publish", "despublicar do Marketing", "post",
           f"{T}/solicitacoes/formularios/{{form_mkt}}/publicar", {"publicado": False},
-          (OK, OK, OK, NEGADO, NEGADO)),
+          (OK, OK, OK, NEGADO, NEGADO, OK)),
     Linha("form.delete", "do Marketing", "delete",
           f"{T}/solicitacoes/formularios/{{form_mkt}}", None,
-          (OK, NEGADO, OK, NEGADO, NEGADO)),
+          (OK, NEGADO, OK, NEGADO, NEGADO, OK)),
     Linha("form.delete", "do Comercial", "delete",
           f"{T}/solicitacoes/formularios/{{form_com}}", None,
-          (OK, NEGADO, NEGADO, NEGADO, NEGADO)),
+          (OK, NEGADO, NEGADO, NEGADO, NEGADO, NEGADO)),
     # ---------------------------------------------------------- solicitacao
     Linha("solicitation.review", "aprovar do Marketing", "post",
           f"{T}/solicitacoes/{{sol_mkt}}/aprovar", {},
-          (OK, OK, OK, NEGADO, NEGADO)),
+          (OK, OK, OK, NEGADO, NEGADO, OK)),
     Linha("solicitation.review", "aprovar do Comercial", "post",
           f"{T}/solicitacoes/{{sol_com}}/aprovar", {},
-          (OK, OK, OCULTO, NEGADO, NEGADO)),
+          (OK, OK, OCULTO, NEGADO, NEGADO, OK)),
 )
 
 
@@ -738,6 +761,8 @@ EDITA = {
     "MANAGER": {"seo", "design", "vazio_mkt"},
     "SUPERVISOR": {"seo"},
     "OPERATOR": set(),
+    # Spec 051: o OPERATOR do Comercial nao edita subtime -- so a arvore do MANAGER.
+    "DUAS_ARVORES": {"seo", "design", "vazio_mkt"},
 }
 
 
