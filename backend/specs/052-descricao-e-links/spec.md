@@ -3,7 +3,7 @@
 **Status:** escrita em 16/09/2026, a partir do pedido dela com o projeto
 "CBV - CICLO 2026/2028" na tela, das três respostas do mesmo dia e das duas
 perguntas que a escrita levantou (§8, respondidas também em 16/09).
-Nenhuma fatia entregue.
+**Fatia A entregue em 16/09.**
 **Escopo:** backend (duas tabelas de links, uma migration, rotas) e front
 (descrição do projeto, links de projeto e tarefa, formatação nas descrições).
 **Depende de:** Spec 051 mergeada (#58). As permissões de escrita dos links
@@ -94,6 +94,9 @@ O cabeçalho fica com status, prioridade, datas e os links (§4.2).
 ⚠️ **"4 linhas" é visual, não contagem de caracteres:** um corte por
 `line-clamp`, e o "Ver mais" só aparece quando o texto de fato passa do corte
 (medido no navegador, não adivinhado pelo tamanho da string).
+
+⚠️ **Só no projeto** — ela, em 16/09: *"Não, na tarefa pode deixar como é
+hoje"*. A descrição da tarefa continua inteira no detalhe.
 
 ### 4.2. Links com nome — no projeto e na tarefa (decisão 1)
 
@@ -219,6 +222,25 @@ detalhe da tarefa.
 **Fatia A — a descrição do projeto legível** (§4.1). Só front: o bloco "Sobre o
 projeto" com "Ver mais", quebras de linha e links clicáveis (o mesmo `linkify`
 da tarefa). Resolve o problema de hoje sem esperar o resto.
+
+✅ **Entregue em 16/09.** Front **1442**, `tsc` limpo, `next build` ok. Backend
+não mudou.
+- `components/SobreOProjeto.tsx`: corte de 4 linhas (`line-clamp-4`),
+  `whitespace-pre-wrap` + `wrap-anywhere`, `linkify`. O botão aparece se
+  `scrollHeight > clientHeight` com o corte aplicado — medido em
+  `useLayoutEffect` (sem pular um quadro) e de novo num `ResizeObserver` (a
+  largura muda, o corte muda). ⚠️ **Mede só FECHADO:** aberto não há corte e a
+  medida empataria, apagando o "Ver menos" recém-usado.
+- `app/projetos/[id]/page.tsx`: a descrição saiu da linha da meta; o bloco vem
+  logo abaixo dela, e some quando não há descrição.
+- ⚠️ **As quatro classes conferidas no CSS do build** (`line-clamp-4`,
+  `wrap-anywhere`, `whitespace-pre-wrap`, `leading-relaxed`): Tailwind v4 só
+  gera o que encontra, e classe inexistente não dá erro em portão nenhum.
+- **Testes:** `SobreOProjeto.test.tsx` (6) — o jsdom não faz layout, então a
+  medida é simulada; o que se prova é a decisão sobre ela. **O corte visual é
+  conferência na tela, nos dois temas.**
+- **Sabotagem:** sem as duas guardas do "aberto" → cai exatamente o teste do
+  "Ver menos".
 
 **Fatia B — links com nome** (§4.2, §4.4).
 - Backend: as duas tabelas e a migration **`0026`**; rotas `GET`/`PUT` de

@@ -5,6 +5,7 @@ import { Pencil } from "lucide-react";
 import AppShell from "@/components/AppShell";
 import Board from "@/components/Board";
 import Card from "@/components/Card";
+import SobreOProjeto from "@/components/SobreOProjeto";
 import {
   getProject,
   updateProject,
@@ -130,10 +131,10 @@ function Projeto() {
   // e o `Quadro Projeto.png` tem UMA linha. A escolha foi "vira uma linha
   // discreta abaixo": o desenho é respeitado e nenhum dado some da tela.
   //
-  // ⚠️ A DESCRIÇÃO FICA, TRUNCADA EM UMA LINHA. "Linha discreta" não cabe um
-  // parágrafo, mas apagar a descrição da tela seria decidir mais do que foi
-  // pedido -- ela vira uma linha com reticências, e o texto inteiro segue no
-  // painel de edição.
+  // ⚠️⚠️ A DESCRIÇÃO SAIU DESTA LINHA (Spec 052, fatia A). Ela ficava aqui
+  // cortada em uma linha com reticências -- e com uma descrição longa não se
+  // lia nada. Agora é o bloco "Sobre o projeto", logo abaixo, com o começo à
+  // vista e "Ver mais". A linha discreta de 22/08 continua sendo a META.
   const metaDoProjeto = (
     <div
       className="muted"
@@ -156,17 +157,6 @@ function Projeto() {
       {project.start_date && <span>Início: {dataBR(project.start_date)}</span>}
       {project.due_date && <span>Prazo: {dataBR(project.due_date)}</span>}
       {project.is_archived && <span>· arquivado</span>}
-      {project.description && project.description.trim().length > 0 && (
-        <span
-          title={project.description}
-          style={{
-            maxWidth: 420, overflow: "hidden", textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-          }}
-        >
-          · {project.description}
-        </span>
-      )}
     </div>
   );
 
@@ -245,7 +235,14 @@ function Projeto() {
                 }}
               />
             ) : (
-              metaDoProjeto
+              <>
+                {metaDoProjeto}
+                {/* Sem descrição, sem bloco -- nada de "Sem descrição" ocupando
+                    espaço acima do quadro. */}
+                {project.description && project.description.trim().length > 0 && (
+                  <SobreOProjeto texto={project.description} />
+                )}
+              </>
             )}
           </div>
         }
