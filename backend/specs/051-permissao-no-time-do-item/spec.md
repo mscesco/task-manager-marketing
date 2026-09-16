@@ -2,7 +2,8 @@
 
 **Status:** escrita em 16/09/2026, a partir da revisão de permissões do mesmo
 dia (cinco frentes contra o Mapa de 10/09 e a Spec 049) e das **oito decisões
-dela**, respondidas em 16/09 (§8). Nenhuma fatia entregue.
+dela**, respondidas em 16/09 (§8), mais as duas que a escrita levantou (A e B,
+respondidas no mesmo dia). Nenhuma fatia entregue.
 **Escopo:** backend (travas de serviço, matriz C2, duas rotas novas de leitura
 de cadeado e uma de escrita) e as telas que hoje decidem sozinhas o que o
 servidor deveria dizer.
@@ -205,11 +206,10 @@ lente não muda. Some o botão (fatia A, tela) e a escrita dá 403.
 - **Quem entra na empresa** entra pelo cadastro (`create_member`), que cria a
   pessoa já dentro da árvore — não passa por esta regra.
 
-⚠️ **Escolha minha, para ela confirmar (§8, pergunta A):** quem **já está** em
+✅ **Confirmado por ela (§8, pergunta A):** quem **já está** em
 duas árvores (Marketing e Comercial) pode ser vinculado a outro subtime do
 Marketing pelo gerente ou supervisor do Marketing. A pessoa já é daquela
-árvore; o vínculo novo não junta árvore nenhuma. A leitura literal da decisão
-3 ("não põe alguém de outra árvore") recusaria.
+árvore; o vínculo novo não junta árvore nenhuma.
 
 ⚠️ **E quem tem papel de organização sem time nenhum** (a conta de
 administração dela) **não é vinculável** por gerente nem supervisor: não está
@@ -225,9 +225,8 @@ não precisa — origem e destino já estão na árvore de quem move (Spec 049, 
 team.id)` — o escopo de comando do MANAGER é a árvore dele, então a trava de
 árvore é essa linha.
 
-⚠️ **O GESTOR fica sem**, pela regra de 10/09 (*"admin pode deletar e gestor
-não"*) — o que deixa um desenho torto: o gerente apaga subtime e o gestor, que
-está acima, não. **Pergunta B da §8.**
+✅ **O GESTOR fica sem** — confirmado por ela (§8, pergunta B): o gestor está
+acima, mas o papel dele é ver a organização, não desfazer time.
 
 ⚠️ **O botão vem do servidor.** `GET /teams` já devolve `can_update` por time
 (Spec 049, fatia F); ganha `can_delete`, pela mesma função da rota. Sem isso,
@@ -441,12 +440,12 @@ As oito, com a opção escolhida:
 7. **Mover time entre árvores** — *a, "mas desenhar depois"*. §4.6.
 8. **Editar nome** — *"liberar somente para próprio"*. §4.7.
 
-### As que sobram
+### As duas que sobraram, respondidas em 16/09
 
 A. **Quem já está em duas árvores pode ganhar vínculo novo numa delas**, pelo
-   gerente ou supervisor daquela árvore? Recomendo **sim** (§4.2): a pessoa já
-   é da árvore, e o vínculo não junta nada.
+   gerente ou supervisor daquela árvore? — *"pode uai"*. Sim (§4.2).
 
-B. **O GESTOR apaga subtime?** Com a decisão 4 o gerente apaga e o gestor, pela
-   regra de 10/09, não. Recomendo **manter o gestor sem**, pela regra — mas o
-   desenho fica torto, e é decisão dela.
+B. **O GESTOR apaga subtime?** — **Não.** *"o gestor apesar de estar acima do
+   gerente é alguém que basicamente só quer ver os times e subtimes, não
+   necessariamente acabar com um do nada"*. O desenho não é torto: o gestor
+   supervisiona a organização; quem opera a árvore é o gerente (§4.3).
