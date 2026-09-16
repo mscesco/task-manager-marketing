@@ -34,7 +34,7 @@ from app.core.tenant import Membership
 from app.db.models import User
 from app.db.models.enums import OrgRole
 from app.modules.users.application.member_service import MemberService
-from app.shared.exceptions.base import BusinessRuleError
+from app.shared.exceptions.base import AuthorizationError, BusinessRuleError
 from tests.integration import factories as f
 from tests.integration.conftest import acting_as
 
@@ -147,25 +147,51 @@ async def test_DESATIVAR_o_ultimo_admin_e_recusado(db) -> None:
         - entao um MANAGER de area desativava a conta do unico ADMIN, e a
           organizacao acordava sem ninguem com `workspace.manage`.
 
-    ⚠️ O ATOR AQUI E UM MANAGER DE PROPOSITO, e nao um segundo admin: com um
-    admin no comando o teste passaria pela trava de "nao desativar a propria
-    conta" e nao provaria nada. O buraco existia justamente para quem NAO tem
-    papel de organizacao.
+    ⚠️⚠️ O ATOR MUDOU NA REVISAO DE PERMISSOES DE 16/09, e o motivo e uma trava
+    NOVA na frente desta. Ate ali o ator era um MANAGER, de proposito: o buraco
+    existia para quem nao tinha papel de organizacao. Desde 16/09 um MANAGER
+    nao desativa conta de ADMIN NENHUM -- nem o ultimo, nem o penultimo
+    (`_assert_pode_agir_sobre_a_conta`: so ADMIN mexe em conta de ADMIN), e
+    leva 403 antes de chegar aqui. A primeira metade abaixo prende isso.
+
+    ⚠️ QUEM AINDA ALCANCA A TRAVA DO ULTIMO ADMIN e o vinculo ADMIN ANTIGO de
+    time: `is_admin` o reconhece como administrador (passa pela trava de
+    papel), mas ele nao conta como ADMIN de ORGANIZACAO ativo. Um segundo admin
+    de organizacao no comando cairia na trava de "nao desativar a propria
+    conta" -- ou nao seria o ultimo -- e nao provaria nada.
 
     ⚠️ E a saida seria SQL na mao, como no rebaixamento: sem ADMIN ninguem tem
-    `workspace.manage`, que e o portao da rota que promoveria alguem de volta.
+    `organization.update`, e so ADMIN promove ADMIN.
 
     Sabotagem: remover a chamada a `_assert_nao_e_o_ultimo_admin` de
-    `deactivate_member` faz este teste passar direto.
+    `deactivate_member` faz a segunda metade passar direto.
     """
     ws, raiz, dona = await _mundo(db)
     mgr = await f.make_user(db, workspace_id=ws, email="mgr@t.dev")
     await f.add_member(db, workspace_id=ws, user_id=mgr, team_id=raiz, role="MANAGER")
+    legado = await f.make_user(db, workspace_id=ws, email="legado@t.dev")
+    await f.add_member(db, workspace_id=ws, user_id=legado, team_id=raiz, role="ADMIN")
+    # ⚠️ A dona ganha um vinculo na raiz, e por dois motivos: sem time, so
+    # papel de ORGANIZACAO a alcanca (`_assert_reaches_person`), e o ator
+    # antigo levaria 403 de ALCANCE antes da trava do ultimo admin; e, com o
+    # alcance resolvido, o 403 do MANAGER abaixo prova a trava de PAPEL, e nao
+    # a de alcance.
+    await f.add_member(db, workspace_id=ws, user_id=dona, team_id=raiz, role="OPERATOR")
 
+    # 1) o MANAGER ja nao chega a trava do ultimo admin: e 403 antes.
     with acting_as(
         workspace_id=ws,
         user_id=mgr,
         memberships=(Membership(team_id=raiz, role="MANAGER"),),
+    ):
+        with pytest.raises(AuthorizationError):
+            await MemberService(db).deactivate_member(user_id=dona)
+
+    # 2) quem passa pela trava de papel ainda esbarra na do ultimo admin.
+    with acting_as(
+        workspace_id=ws,
+        user_id=legado,
+        memberships=(Membership(team_id=raiz, role="ADMIN"),),
     ):
         with pytest.raises(BusinessRuleError):
             await MemberService(db).deactivate_member(user_id=dona)
@@ -177,18 +203,16 @@ async def test_DESATIVAR_o_ultimo_admin_e_recusado(db) -> None:
 
 
 async def test_desativar_admin_passa_quando_ha_outro_ativo(db) -> None:
-    """A trava guarda o ULTIMO, e nao o cargo: com dois, desligar um e normal."""
+    """A trava guarda o ULTIMO, e nao o cargo: com dois, desligar um e normal.
+
+    ⚠️ O ator era um MANAGER ate 16/09. Desde a revisao de permissoes, so ADMIN
+    mexe em conta de ADMIN -- e e a propria dona quem desliga a segunda.
+    """
     ws, raiz, dona = await _mundo(db)
     segunda = await f.make_user(db, workspace_id=ws, email="segunda@t.dev")
     await _set_org_role(db, segunda, OrgRole.ADMIN)
-    mgr = await f.make_user(db, workspace_id=ws, email="mgr@t.dev")
-    await f.add_member(db, workspace_id=ws, user_id=mgr, team_id=raiz, role="MANAGER")
 
-    with acting_as(
-        workspace_id=ws,
-        user_id=mgr,
-        memberships=(Membership(team_id=raiz, role="MANAGER"),),
-    ):
+    with acting_as(workspace_id=ws, user_id=dona, org_role="ADMIN"):
         user = await MemberService(db).deactivate_member(user_id=segunda)
 
     assert user.is_active is False

@@ -593,6 +593,10 @@ class MemberService:
             await self._assert_reaches_person(
                 "person.update", user_id, acao="reset_password"
             )
+            # ⚠️⚠️ E O PAPEL DO ALVO -- revisao de permissoes de 16/09. Sem isto,
+            # resetar senha era TOMAR A CONTA: a provisoria volta para quem
+            # clicou. Ver `_assert_pode_agir_sobre_a_conta`.
+            await self._assert_pode_agir_sobre_a_conta(user, acao="reset_password")
 
         temporary_password = generate_temporary_password()
         user.password_hash = hash_password(temporary_password)
@@ -1492,6 +1496,10 @@ class MemberService:
         await self._assert_reaches_person(
             "person.deactivate", user_id, acao="deactivate_member"
         )
+        # ⚠️ O papel do alvo -- mesma trava do reset (revisao de 16/09). Antes
+        # da do ultimo admin: quem nao pode mexer em ADMIN leva 403, e nao a
+        # mensagem "promova outra pessoa", que supoe que ele poderia.
+        await self._assert_pode_agir_sobre_a_conta(user, acao="deactivate_member")
 
         # ⚠️ DEPOIS do `get_by_id`, e nao antes: a trava so se aplica a quem E
         # ADMIN, e descobrir isso exige ter o usuario na mao. Antes dele, a
@@ -1675,6 +1683,63 @@ class MemberService:
             "administra.",
             details={"acao": acao, "user_id": str(user_id)},
         )
+
+    async def _assert_pode_agir_sobre_a_conta(self, user: User, *, acao: str) -> None:
+        """O PAPEL de quem recebe o reset de senha ou a desativacao.
+
+        ⚠️⚠️ ACHADO NA REVISAO DE PERMISSOES DE 16/09, e era tomada de conta.
+        `reset_password` devolve a senha provisoria a QUEM CLICOU. Com a unica
+        pergunta sendo "voce alcanca esta pessoa?" (`_assert_reaches_person`),
+        um GESTOR resetava a senha de um ADMIN, entrava com a provisoria e
+        trocava a senha -- o teto do papel de organizacao (*"so admin mexe em
+        admin"*, `change_organization_role`) ficava contornado por outra porta.
+        Um MANAGER fazia o mesmo com outro MANAGER, contra a matriz C2
+        (`_assert_actor_can_target`: MANAGER so atua sobre SUPERVISOR/OPERATOR).
+        Em producao (PR #51) era pior: nem a pergunta de alcance existia.
+
+        NAO E REGRA NOVA -- sao as duas regras que ja valiam para trocar papel,
+        aplicadas a conta:
+
+            ator ADMIN                -> qualquer conta;
+            alvo ADMIN                -> so ADMIN (org_role OU vinculo antigo --
+                                         `is_admin`, a mesma fonte dupla do
+                                         teto e da lente);
+            ator GESTOR               -> GESTOR e abaixo;
+            ator de time (MANAGER)    -> so quem nao tem papel de organizacao e
+                                         nao e MANAGER nem ADMIN em time nenhum.
+
+        ⚠️ SO PAPEL, e nunca "onde": o alcance ja foi decidido antes, por
+        `_assert_reaches_person`. As duas perguntas ficam separadas para que a
+        mensagem do 403 diga qual das duas falhou.
+        """
+        tenant = require_tenant()
+        if is_admin(tenant.memberships, org_role=tenant.org_role):
+            return
+
+        vinculos = await self._users.list_team_memberships(user_id=user.id)
+        papeis_de_time = tuple(
+            Membership(team_id=v.team_id, role=v.role.value) for v in vinculos
+        )
+        alvo_org = user.org_role.value if user.org_role else None
+
+        if is_admin(papeis_de_time, org_role=alvo_org):
+            raise AuthorizationError(
+                "So um administrador reseta a senha ou desativa a conta de um "
+                "administrador.",
+                details={"acao": acao, "user_id": str(user.id)},
+            )
+
+        if tenant.org_role == OrgRole.GESTOR.value:
+            return
+
+        if alvo_org is not None or any(
+            v.role in (UserTeamRole.MANAGER, UserTeamRole.ADMIN) for v in vinculos
+        ):
+            raise AuthorizationError(
+                "Gerente so reseta a senha ou desativa a conta de supervisor e "
+                "operador.",
+                details={"acao": acao, "user_id": str(user.id)},
+            )
 
     def _assert_gestao_ampla(self, permission: str, *, acao: str) -> None:
         """Barra o ator supervisor-only em operacoes que a 028 NAO abriu.
