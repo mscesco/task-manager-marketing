@@ -1,7 +1,8 @@
 # Spec 052 — Descrição legível, links com nome e formatação
 
 **Status:** escrita em 16/09/2026, a partir do pedido dela com o projeto
-"CBV - CICLO 2026/2028" na tela, e das três respostas do mesmo dia (§8).
+"CBV - CICLO 2026/2028" na tela, das três respostas do mesmo dia e das duas
+perguntas que a escrita levantou (§8, respondidas também em 16/09).
 Nenhuma fatia entregue.
 **Escopo:** backend (duas tabelas de links, uma migration, rotas) e front
 (descrição do projeto, links de projeto e tarefa, formatação nas descrições).
@@ -206,7 +207,10 @@ URL solta vira link) e `remark-breaks` (a quebra de linha simples). Sem
 ### 4.4. Duplicar tarefa copia os links
 
 `lib/duplicacaoTarefa.ts` já copia a descrição; os links da tarefa de origem
-vão junto, na mesma ordem. ⚠️ **Proposta minha, confirmar (§8, pergunta A).**
+vão junto, na mesma ordem. ✅ **Confirmado por ela (§8, pergunta A).**
+
+⚠️ **E os links NÃO aparecem no card do quadro** (§8, pergunta B): só no
+detalhe da tarefa.
 
 ---
 
@@ -278,11 +282,9 @@ da tarefa). Resolve o problema de hoje sem esperar o resto.
 3. **Edição** — *"pode ser como recomenda"*: barra de botões com "Visualizar"
    (§4.3).
 
-### As que sobram
+### As duas que sobraram, respondidas em 16/09
 
-A. **Duplicar tarefa copia os links?** Recomendo **sim** (§4.4): a descrição
-   já é copiada, e os links são parte do mesmo contexto.
+A. **Duplicar tarefa copia os links?** — **Sim** (§4.4).
 
-B. **Os links da tarefa aparecem no card do quadro?** Recomendo **não**: o card
-   já tem responsáveis, prazo, prioridade e subtarefas, e os links estão a um
-   clique, no detalhe.
+B. **Os links da tarefa aparecem no card do quadro?** — **Não.** Ficam só no
+   detalhe da tarefa.
