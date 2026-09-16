@@ -173,6 +173,42 @@ domínio também barrava — e essa sai no mesmo deploy, no código.
 e nomeia o índice. Se acontecer: **não force.** Decida qual área continua sendo a
 única e mova as outras para baixo dela, ou apague-as, antes de descer.
 
+⚠️⚠️ **A `0024` E A `0025` VÃO JUNTAS, E PUXAM A ORDEM PARA LADOS OPOSTOS**
+(Specs 048 e 050; escrito em 16/09/2026, antes de subirem). Produção estava no
+PR #51, em `0023`; o `alembic` é linear, então `upgrade head` roda as duas de uma
+vez.
+
+- **`0024` (sai o projeto pessoal) pede CÓDIGO ANTES.** Ela derruba
+  `project.is_personal`, e o código VELHO ainda mapeia a coluna — com a migration
+  antes, toda leitura de projeto dá 500 até o `up`. O código novo não pergunta
+  por ela.
+  ⚠️ **Ela APAGA os projetos pessoais e as tarefas dentro deles, e o `downgrade`
+  não os devolve.** Medido em produção pela Camila em 16/09, no Adminer: **29
+  projetos pessoais, todos com 0 tarefas, nenhum excluído** — o `DELETE` não
+  leva trabalho de ninguém. Se o deploy atrasar dias, **meça de novo**:
+  ```sql
+  SELECT p.id, p.title, count(t.id) AS tarefas
+  FROM project p LEFT JOIN task t ON t.project_id = p.id
+  WHERE p.is_personal GROUP BY p.id, p.title ORDER BY tarefas DESC;
+  -- esperado: toda linha com 0. Alguma > 0 = PARE.
+  ```
+- **`0025` (reações no comentário) pede MIGRATION ANTES.** É tabela nova (não é
+  coluna em model existente), mas o código novo **lê dela** ao listar
+  comentários — é o terceiro motivo, o da `0015`. Com o código antes, a lista de
+  comentários do detalhe da tarefa dá 500 até a migration.
+
+**Decisão: código antes, migration IMEDIATAMENTE depois, no mesmo comando.** As
+janelas não são do mesmo tamanho: migration antes quebra a leitura de projeto,
+que aparece no quadro inteiro; código antes quebra só a lista de comentários,
+pelos segundos do `alembic upgrade`. O comando do passo 2+3 fica encadeado:
+```bash
+docker compose -f docker-compose.prod.yml up -d && \
+docker compose -f docker-compose.prod.yml run --rm --entrypoint "" api alembic upgrade head
+```
+
+⚠️ **A `0025` traz dependência nova de runtime** (`emoji==2.15.0`, em
+`dependencies`). O passo a.1 (a imagem importa o app?) é o portão dela.
+
 ⚠️ **A `0015` (`unaccent`) TAMBÉM inverte a ordem — por um terceiro motivo, e
 ✅ ELA ESTÁ EM PRODUÇÃO DESDE 21/08/2026.** Ela não acrescenta coluna a model
 nenhum (a checagem do `git diff -- backend/app/db/models/` sai vazia), então
@@ -257,8 +293,9 @@ existia, é ordem invertida. Executado assim em 06/08/2026 (`0008`).
    > ⚠️ **O critério é `0 failed`, não um número.** Este arquivo já ficou
    > meses dizendo `379 passed` quando o real era 493 — e roteiro que mente
    > treina quem faz o deploy a ignorar o portão. Se quiser conferir a ordem
-   > de grandeza: em 09/09/2026 eram **1082** (backend) e **1108** (front),
-   > depois da Spec 046 inteira.
+   > de grandeza: em 16/09/2026 eram **1546** (backend) e **1417** (front),
+   > no topo do PR #56 (Specs 047 a 050).
+   > (Em 09/09/2026 eram 1082 e 1108, depois da Spec 046 inteira.)
    > (Em 08/09/2026 eram 1047 e 1085, depois das fatias A–D da Spec 045.)
    > (Em 31/08/2026 eram 1012 e 1078, depois da Spec 043 inteira.)
    > (Em 10/08/2026 eram 657 e 529.)

@@ -382,6 +382,58 @@ Um PR, um commit por fatia, CI conferido a cada commit.
       dele** — na grade de emojis, rolar fechava o painel. Passou a ignorar a
       rolagem interna. E o teste pegou um segundo defeito no conserto: rolagem
       da janela chega com o `Window` como alvo, e `contains(window)` levanta.
+  - **Segunda captura, 16/09** — *"o seletor ficou ainda pior"*, e ela desenhou
+    onde queria o painel:
+    - ele **esticava até a borda da janela**: o `AnchoredPanel` só define
+      largura mínima, e o conteúdo empurrava. O conteúdo do seletor passou a ter
+      largura fixa (288px com o respiro do painel);
+    - ele abria alinhado pela **esquerda** do botão, que fica no canto direito
+      da linha, e saía do detalhe da tarefa. O `useAnchoredPanel` ganhou a opção
+      `alinhar: "direita"` — os seletores que já existiam continuam pela
+      esquerda.
+  - **Animação, 16/09** — *"a animação está bem ruinzinha"*, e *"quero uma
+    animação para a aparição da reação"*:
+    - a **pílula** entra crescendo, sai encolhendo, as vizinhas deslizam
+      (`layout`) e o número troca com um deslize curto — mesma mola da lista da
+      gaveta de subtime. O que já estava na tela ao abrir o comentário não anima;
+    - as **abas de grupo viraram o primeiro emoji de cada grupo** (com o nome no
+      rótulo e no título): escritas por extenso, não cabiam, e o painel rolava
+      inteiro — duas barras de rolagem;
+    - ⚠️ **a gravação de tela dela foi vista quadro a quadro** (1/30s). Abrindo,
+      a cascata das seções clareava o conteúdo **depois** da caixa — uma
+      piscada; saiu. Fechando, a caixa branca sumia aos ~50% e os emojis
+      coloridos ficavam flutuando uns três quadros; o conteúdo ganhou saída
+      própria, mais curta que a da caixa;
+    - ⚠️ **uma hipótese minha estava errada, e ficou registrada no código**:
+      suspeitei que limpar a busca ao fechar trocava o conteúdo no meio da
+      saída. A sabotagem não derrubou nada — o `AnimatePresence` congela o
+      painel que sai.
+  - **Fluidez, 16/09** — *"parece que eu clico pra abrir aí ela abre e depois
+    anima e ainda travado"*. Bate com a gravação: no primeiro quadro visível o
+    painel já estava quase pronto, porque montar ~150 emojis no clique atrasava
+    o primeiro quadro da animação:
+    - o clique monta só a caixa, os sugeridos, a busca e as abas; **a grade
+      chega dois quadros depois**, num espaço de altura fixa;
+    - os grupos do catálogo passaram a ser calculados **uma vez**, e não uma vez
+      por comentário;
+    - os botões de emoji perderam o elemento interno (metade do que montar);
+    - `will-change` no `AnchoredPanel`: a caixa é desenhada uma vez e só movida
+      enquanto escala.
+    Ela, depois: *"ficou bem melhor, qualquer anomalia eu retorno"*.
+  - ⚠️ **Nenhum teste enxerga animação** (jsdom não anima nem mede quadro). Os
+    testes prendem o que ela não pode quebrar — abrir, buscar, trocar de grupo,
+    escolher, fechar, rolar, alinhar, e a grade chegar depois da caixa. A
+    fluidez foi confirmada na tela, por ela.
+  - **Antes do merge, 16/09 — deploy:** produção estava no PR #51, em `0023`.
+    Este deploy leva as Specs 047 a 050 e as migrations `0024` e `0025`, que
+    puxam a ordem para lados opostos — registrado em `DEPLOY.md`. A `0024`
+    apaga os projetos pessoais: ela mediu no Adminer, **29, todos com 0
+    tarefas**. E a consulta 6 do `invariantes.sql` usava `is_personal`, e daria
+    erro depois do deploy — corrigida.
+  - **Dívida antiga achada no caminho, fora desta spec:** nenhuma animação do
+    `motion` no app respeita o "reduzir movimento" do sistema (não há
+    `MotionConfig`; o bloco do `globals.css` só alcança CSS). As duas animações
+    novas desta spec respeitam, à mão.
   - ⚠️ **Cobertura, dita inteira:** os testes de componente que já existiam
     simulam a lista de comentários **vazia**, então nenhum deles desenha
     comentário — a fileira e o seletor são exercitados só pelos testes novos
