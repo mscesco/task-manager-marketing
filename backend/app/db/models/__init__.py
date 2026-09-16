@@ -13,6 +13,7 @@ from app.db.models.boards import Board, BoardColumn
 from app.db.models.collaboration import (
     Attachment,
     Comment,
+    CommentReaction,
     TaskAssignment,
     TaskHistory,
     TaskWatcher,
@@ -51,6 +52,7 @@ __all__ = [
     "TaskAssignment",
     "TaskWatcher",
     "Comment",
+    "CommentReaction",
     "Attachment",
     "TimeEntry",
     "TaskHistory",

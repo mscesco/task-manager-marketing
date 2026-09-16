@@ -143,6 +143,50 @@ class NotificationEmitter:
 
         await self._emit_safely("TASK_MENTIONED", _do)
 
+    async def comment_reacted(
+        self,
+        *,
+        recipient_id: uuid.UUID,
+        actor_id: uuid.UUID,
+        task_id: uuid.UUID,
+        task_title: str,
+        comment_id: uuid.UUID,
+        emoji: str,
+    ) -> None:
+        """Avisa o autor de que reagiram ao comentario dele (Spec 050, fatia B).
+
+        No-op se o autor reagiu ao proprio comentario (decisao da Camila).
+
+        ⚠️ "SO QUANDO NASCE" NAO E DECIDIDO AQUI, e sim por quem chama: o
+        emissor nao sabe se foi reacao nova ou troca de emoji. Quem sabe e o
+        banco, no mesmo comando do upsert (`CommentReactionRepository.upsert`).
+
+        ⚠️ E O ALCANCE TAMBEM NAO: filtrar quem enxerga a tarefa e do service,
+        mesmo desenho das mencoes (`_emitir_mencoes`). O emissor so escreve.
+
+        `emoji` vai no payload: o texto do sino mostra qual foi, e a notificacao
+        e snapshot -- se a pessoa trocar depois, o aviso continua dizendo o que
+        aconteceu naquele momento.
+        """
+        if recipient_id == actor_id:
+            return
+
+        async def _do() -> None:
+            self._repo.create(
+                recipient_id=recipient_id,
+                actor_id=actor_id,
+                type=NotificationType.TASK_COMMENT_REACTED.value,
+                task_id=task_id,
+                comment_id=comment_id,
+                payload={
+                    "actor_name": await self._actor_name(actor_id),
+                    "task_title": task_title,
+                    "emoji": emoji,
+                },
+            )
+
+        await self._emit_safely("TASK_COMMENT_REACTED", _do)
+
     async def due_soon(
         self,
         *,

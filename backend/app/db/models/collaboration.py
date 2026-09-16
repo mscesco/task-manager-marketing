@@ -163,6 +163,53 @@ class Comment(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
     )
 
 
+class CommentReaction(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Reacao de uma pessoa a um comentario (Spec 050).
+
+    Uma por pessoa por comentario -- reagir de novo TROCA o emoji. Quem ve a
+    task, reage (sem permissao, como comentar).
+
+    ⚠️ SEM soft-delete PROPRIO, de proposito (spec §4.6): as reacoes seguem a
+    marca do COMENTARIO. Comentario apagado nao mostra reacao, e voltam se
+    ele voltar (`restaurar_quadro.sql`). Uma segunda marca aqui teria de ser
+    lembrada no servico, no SQL cru da cascata de tarefa e no script.
+
+    ⚠️ `updated_at` ORDENA a fileira (§4.4): trocar conta como reacao nova no
+    emoji de destino. O upsert do repository o seta explicitamente -- o
+    `onupdate` do mixin so vale para UPDATE pelo ORM.
+    """
+
+    __tablename__ = "comment_reaction"
+    __table_args__ = (
+        # CASCADE: se um dia um comentario for apagado DE VERDADE, as reacoes
+        # nao seguram a linha.
+        ForeignKeyConstraint(
+            ["comment_id", "workspace_id"],
+            ["comment.id", "comment.workspace_id"],
+            ondelete="CASCADE",
+            name="comment_reaction_comment",
+        ),
+        ForeignKeyConstraint(
+            ["user_id", "workspace_id"],
+            ["users.id", "users.workspace_id"],
+            ondelete="CASCADE",
+            name="comment_reaction_user",
+        ),
+        # ⚠️ "Uma por pessoa" MORA AQUI, e nao no servico (§4.2): dois cliques
+        # rapidos sao duas requisicoes. O upsert do repository cita este nome.
+        UniqueConstraint(
+            "comment_id", "user_id", name="uq_comment_reaction_comment_user"
+        ),
+    )
+
+    workspace_id: Mapped[uuid.UUID] = _ws_fk()
+    comment_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    user_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    #: A forma fully-qualified (`normalize_emoji`). 16 cabe folgado: o maior
+    #: emoji da biblioteca tem 10 code points (medido em 15/09).
+    emoji: Mapped[str] = mapped_column(String(16), nullable=False)
+
+
 class Attachment(UUIDPrimaryKeyMixin, Base):
     """Anexo de arquivo de uma task. created_at via TimestampMixin? Nao:
     o schema so tem created_at aqui -- declarado explicitamente."""

@@ -9,7 +9,7 @@ import {
   ApiError,
   type AppNotification,
 } from "@/lib/api";
-import { destinoDaNotificacao } from "@/lib/notificacoes";
+import { destinoDaNotificacao, textoDaNotificacao } from "@/lib/notificacoes";
 
 import Loading from "@/components/Loading";
 // Sino de notificacoes (Spec 018, Front-B). Polla a contagem de nao-lidas
@@ -25,15 +25,6 @@ import Loading from "@/components/Loading";
 // canonica `/tarefa/<id>`, que busca por id e nao depende de lista.
 
 const POLL_MS = 30_000;
-
-function texto(n: AppNotification): string {
-  const ator = n.payload?.actor_name || "Alguém";
-  const task = n.payload?.task_title || "uma tarefa";
-  if (n.type === "TASK_ASSIGNED") return `${ator} designou você em "${task}"`;
-  if (n.type === "TASK_COMMENTED") return `${ator} comentou em "${task}"`;
-  if (n.type === "TASK_MENTIONED") return `${ator} mencionou você em "${task}"`;
-  return `Atualização em "${task}"`;
-}
 
 // created_at vem como ISO COMPLETO com timezone -> new Date() e seguro aqui
 // (o bug de UTC so afeta strings date-only "YYYY-MM-DD").
@@ -234,7 +225,7 @@ export default function NotificationBell() {
                     }`}
                   />
                   <span className="min-w-0 flex-1">
-                    <span className="block text-base text-ink">{texto(n)}</span>
+                    <span className="block text-base text-ink">{textoDaNotificacao(n)}</span>
                     <span className="mt-0.5 block text-xs text-ink-faint">
                       {quando(n.created_at)}
                     </span>

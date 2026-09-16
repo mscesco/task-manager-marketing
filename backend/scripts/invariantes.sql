@@ -15,7 +15,9 @@
 -- `root-postgres-1`, do stack do n8n, alcancado pela rede `root_default`.
 -- Rodar da raiz do repo, na VPS.
 --
--- Toda consulta abaixo deve devolver 0, exceto a 5 e a 7 (contexto).
+-- Toda consulta abaixo deve devolver 0, exceto a 5, a 6 e a 7 (contexto).
+-- ⚠️ A 6 SAIU DA LISTA DE INVARIANTES EM 16/09: o projeto passou a ter lente de
+-- time (Specs 048/049), e projeto em subtime virou estado normal.
 -- ⚠️ A 7 SAIU DA LISTA DE INVARIANTES EM 18/08. Ela era invariante enquanto
 -- toda tarefa vivia no quadro da RAIZ; a fatia 5 tornou "tarefa em quadro de
 -- subtime" um estado NORMAL e desenhado. Ela virou CONTEXTO, e o alarme dela
@@ -141,30 +143,27 @@ FROM board b
 JOIN team t ON t.id = b.team_id AND t.workspace_id = b.workspace_id
 ORDER BY apagado, eh_raiz DESC, b.name;
 
-\echo '=== 6. nenhum projeto comum fora do time raiz (alarme da Spec 037) ==='
--- ⚠️ ESTA NAO E UMA INVARIANTE DE MODELO -- E UM ALARME.
+\echo '=== 6. CONTEXTO: projetos vivos em SUBTIME (deixou de ser alarme em 16/09) ==='
+-- ⚠️⚠️ ESTA CONSULTA ERA UM ALARME, E O MOTIVO DELE ACABOU.
 --
--- `project_service` NAO tem lente de time em lugar nenhum: `list_page` (:211) e
--- `_assert_visible_to_current_user` (:462) so escondem projeto PESSOAL alheio.
--- Nao existe filtro por `team_id` na listagem nem no detalhe de projeto.
+-- Ate a Spec 048 o `project_service` NAO tinha lente de time: listagem e
+-- detalhe so escondiam projeto PESSOAL alheio, e um projeto nascido em subtime
+-- ficava visivel para quem nao deveria. Este numero em 0 era o que tornava o
+-- buraco teorico (06/08/2026: 20 projetos, todos na raiz).
 --
--- Hoje isso nao expoe nada, e o motivo e este numero: em 06/08/2026 os 20
--- projetos comuns (480 tarefas vivas) estao TODOS na raiz, que esta na lente
--- de todo mundo. O buraco e teorico enquanto este numero for 0.
+-- Hoje o `project_service` (backend/app/modules/tasks/application/) filtra por
+-- `team_scope.visible_team_ids` no detalhe e na listagem -- Spec 048, com o
+-- conserto de edicao fora da lente na Spec 049 (fatia 0b). Projeto em subtime
+-- virou estado NORMAL, e este numero pode ser maior que 0 sem defeito nenhum.
 --
--- ⚠️ `project_service.py:140` NAO trava projeto na raiz -- aceita qualquer time
--- da arvore. E comportamento de TELA, nao de API. Basta um projeto nascer em
--- subtime (n8n, Swagger, chamada direta) para o buraco virar real, e ele nao
--- avisa: ninguem recebe erro, o projeto so fica visivel para quem nao deveria.
---
--- SE ESTE NUMERO DEIXAR DE SER 0: a lente de time sobre `project` sai de
--- divida e vira spec com prioridade. Ver `specs/037-acesso-deriva-do-time/
--- spec.md` §Correcao de 06/08 e §Fora de escopo.
-SELECT count(*) AS projeto_comum_fora_da_raiz
+-- ⚠️ E A COLUNA `is_personal` SAIU (migration `0024`, Spec 048): a condicao
+-- `p.is_personal = false` que estava aqui fazia a consulta dar ERRO depois do
+-- deploy -- e o `psql` sem `ON_ERROR_STOP` segue para a proxima, calado. Sem
+-- projeto pessoal, todo projeto e "comum".
+SELECT count(*) AS projeto_vivo_em_subtime
 FROM project p
 JOIN team tm ON tm.id = p.team_id
-WHERE p.is_personal = false
-  AND p.deleted_at IS NULL
+WHERE p.deleted_at IS NULL
   AND tm.parent_team_id IS NOT NULL;
 
 \echo '=== 7. CONTEXTO: tarefas vivas em quadro de SUBTIME (esperado > 0 desde a fatia 5) ==='

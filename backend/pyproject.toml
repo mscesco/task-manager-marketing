@@ -43,6 +43,14 @@ dependencies = [
     # frequentemente nao trazem /usr/share/zoneinfo. tzdata (pure-data)
     # garante o fuso independente do SO base.
     "tzdata==2025.1",
+    # --- Reacoes no comentario (Spec 050, fatia A) ---
+    # ⚠️ RUNTIME, E NAO `dev` -- a mesma licao do `httpx` acima: o dominio
+    # `comment_reaction` importa `emoji` no topo, e o `comment_service` o
+    # importa em cascata. Um `emoji` so no `dev` derruba o import da API.
+    # Ela responde "e exatamente UM emoji?" (tom de pele, ZWJ, bandeira) e
+    # normaliza para a forma fully-qualified -- regra que nao cabe numa faixa
+    # de Unicode escrita a mao (spec 050, §4.3).
+    "emoji==2.15.0",
 ]
 
 [project.optional-dependencies]

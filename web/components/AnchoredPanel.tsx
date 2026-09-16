@@ -55,6 +55,8 @@ export type PanelBox = {
   /** Teto de largura, para o painel caber na janela. */
   readonly maxWidth: number;
   readonly paraCima: boolean;
+  /** O painel cresce a partir da borda DIREITA do gatilho (ver `alinhar`). */
+  readonly alinhadoADireita: boolean;
 };
 
 /**
@@ -69,6 +71,25 @@ const LARGURA_MINIMA = 220;
 export function useAnchoredPanel<T extends HTMLElement>(
   isOpen: boolean,
   onClose: () => void,
+  opcoes: {
+    /**
+     * Largura REAL do painel, quando ela passa de `LARGURA_MINIMA`.
+     *
+     * ⚠️ Spec 050: o seletor de reacao tem 288px. Sem isto o calculo de borda
+     * supunha 220 e o painel vazava 68px pela direita quando o gatilho estava
+     * perto da borda da janela -- o mesmo defeito da regra 6, por outro lado.
+     */
+    larguraPainel?: number;
+    /**
+     * De que lado do gatilho o painel se alinha. Padrao: `esquerda`.
+     *
+     * ⚠️ Spec 050, pedido dela em 16/09 com captura: o seletor de reacao tem o
+     * gatilho no CANTO DIREITO da linha do comentario. Alinhado pela esquerda,
+     * ele abria para fora do detalhe da tarefa; ela desenhou onde queria --
+     * embaixo e para a ESQUERDA do botao, dentro do detalhe.
+     */
+    alinhar?: "esquerda" | "direita";
+  } = {},
 ): {
   anchorRef: MutableRefObject<T | null>;
   panelRef: MutableRefObject<HTMLDivElement | null>;
@@ -94,22 +115,36 @@ export function useAnchoredPanel<T extends HTMLElement>(
     // ⚠️ A correção é DESLOCAR, e não estreitar: um painel mais estreito
     // cortaria o texto de dentro, que é o que se foi ler. Ele encosta na
     // margem direita e continua com a largura que precisa.
-    const largura = Math.max(r.width, LARGURA_MINIMA);
+    const largura = Math.max(r.width, opcoes.larguraPainel ?? LARGURA_MINIMA);
     const maxWidth = Math.max(160, window.innerWidth - 2 * MARGEM);
+    const alinhadoADireita = opcoes.alinhar === "direita";
+    // Pela direita: a borda direita do painel encosta na do gatilho, e ele
+    // cresce para a esquerda. As duas travas de janela valem igual.
+    const inicio = alinhadoADireita
+      ? r.right - Math.min(largura, maxWidth)
+      : r.left;
     const left = Math.max(
       MARGEM,
-      Math.min(r.left, window.innerWidth - MARGEM - Math.min(largura, maxWidth)),
+      Math.min(inicio, window.innerWidth - MARGEM - Math.min(largura, maxWidth)),
     );
 
     setBox(
       cabeEmbaixo
-        ? { top: r.bottom + 6, left, width: r.width, maxWidth, paraCima: false }
+        ? {
+            top: r.bottom + 6,
+            left,
+            width: r.width,
+            maxWidth,
+            paraCima: false,
+            alinhadoADireita,
+          }
         : {
             bottom: window.innerHeight - r.top + 6,
             left,
             width: r.width,
             maxWidth,
             paraCima: true,
+            alinhadoADireita,
           },
     );
   }, [isOpen]);
@@ -128,15 +163,29 @@ export function useAnchoredPanel<T extends HTMLElement>(
     function onEsc(e: KeyboardEvent) {
       if (e.key === "Escape") onClose();
     }
+    // ⚠️⚠️ ROLAGEM DE DENTRO DO PAINEL NAO FECHA. O ouvinte e de captura na
+    // janela, e por isso recebe a rolagem de QUALQUER elemento -- inclusive a
+    // do proprio painel. Nos menus curtos ninguem rolava por dentro; na grade
+    // de emojis da Spec 050 rolar e o gesto principal, e o painel fechava na
+    // cara de quem rolava. A regra 2 continua valendo para o que rola por FORA.
+    //
+    // ⚠️ `instanceof Node` ANTES do `contains`: rolagem da propria janela chega
+    // com o `Window` como alvo, e `contains(window)` LEVANTA `TypeError` -- o
+    // painel nao fechava e o erro estourava. Pego pelo teste da Spec 050.
+    function onScroll(e: Event) {
+      const alvo = e.target;
+      if (alvo instanceof Node && panelRef.current?.contains(alvo)) return;
+      onClose();
+    }
     document.addEventListener("mousedown", onDown);
     document.addEventListener("keydown", onEsc);
     window.addEventListener("resize", onClose);
-    window.addEventListener("scroll", onClose, true);
+    window.addEventListener("scroll", onScroll, true);
     return () => {
       document.removeEventListener("mousedown", onDown);
       document.removeEventListener("keydown", onEsc);
       window.removeEventListener("resize", onClose);
-      window.removeEventListener("scroll", onClose, true);
+      window.removeEventListener("scroll", onScroll, true);
     };
   }, [isOpen, onClose]);
 
@@ -165,7 +214,8 @@ export default function AnchoredPanel({
 }: {
   box: PanelBox;
   panelRef: MutableRefObject<HTMLDivElement | null>;
-  role?: "listbox" | "menu";
+  /** `dialog` quando o painel tem mais que opcoes (ex.: busca). Spec 050. */
+  role?: "listbox" | "menu" | "dialog";
   "aria-label": string;
   /** Por padrão acompanha a largura do gatilho. */
   minWidth?: number;
@@ -188,9 +238,18 @@ export default function AnchoredPanel({
         minWidth: Math.min(minWidth ?? box.width, box.maxWidth),
         maxWidth: box.maxWidth,
         zIndex: 60,
-        transformOrigin: box.paraCima ? "bottom left" : "top left",
+        // Regra 5: a escala nasce do lado do gatilho -- inclusive quando ele
+        // esta a DIREITA do painel.
+        transformOrigin: `${box.paraCima ? "bottom" : "top"} ${
+          box.alinhadoADireita ? "right" : "left"
+        }`,
         maxHeight: "min(50vh, 320px)",
         overflowY: "auto",
+        // ⚠️ Camada propria DURANTE a animacao: o navegador rasteriza a caixa
+        // uma vez e so a compoe enquanto ela escala. Sem isto, cada quadro da
+        // escala redesenhava o conteudo -- no seletor de reacao (Spec 050) sao
+        // dezenas de emojis coloridos, e a abertura travava (16/09).
+        willChange: "transform, opacity",
         borderRadius: 12,
         padding: 6,
         background: "var(--surface)",

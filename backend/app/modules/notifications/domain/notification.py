@@ -29,6 +29,9 @@ class NotificationType(str, Enum):
     # ⚠️ SEM MIGRATION: `notification.type` e `String(40)` no banco, nao ENUM
     # nativo. Este enum e a fonte de verdade do CODIGO, e so dele.
     ACCESS_LOST = "ACCESS_LOST"
+    # Spec 050 (fatia B): alguem reagiu ao comentario da pessoa. So quando a
+    # reacao NASCE -- trocar o emoji nao notifica (decisao da Camila, 15/09).
+    TASK_COMMENT_REACTED = "TASK_COMMENT_REACTED"
 
 
 @dataclass(frozen=True, slots=True)

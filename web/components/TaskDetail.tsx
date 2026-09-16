@@ -23,6 +23,9 @@ import {
   // aconteceu aqui (o mesmo `Network` em "Times" e "Time Principal", corrigido
   // em 21/08); desta vez o par foi olhado antes.
   FolderOpen,
+  // Spec 050: a lixeira do comentario entrou na capsula de acoes, e o emoji
+  // 🗑 que ela era destoava dos icones do lapis e do reagir.
+  Trash2,
 } from "lucide-react";
 
 import { mesclaTarefa } from "@/lib/mesclaTarefa";
@@ -44,6 +47,8 @@ import {
   createComment,
   editComment,
   deleteComment,
+  setCommentReaction,
+  deleteCommentReaction,
   currentUser,
   ApiError,
   type Task,
@@ -63,6 +68,10 @@ import Badge from "@/components/Badge";
 import Avatar from "@/components/Avatar";
 import EmojiPicker from "@/components/EmojiPicker";
 import GifPicker from "@/components/GifPicker";
+import FileiraDeReacoes from "@/components/FileiraDeReacoes";
+import SeletorDeReacao from "@/components/SeletorDeReacao";
+import CapsulaDeAcoes, { BOTAO_DA_CAPSULA } from "@/components/CapsulaDeAcoes";
+import { acaoDaPilula } from "@/lib/reacoes";
 import { isGiphyUrl } from "@/lib/giphy";
 import CommentText from "@/components/CommentText";
 import MentionTextarea from "@/components/MentionTextarea";
@@ -2953,6 +2962,7 @@ function LinhaComentario({
   const [confirmando, setConfirmando] = useState(false);
   const [apagando, setApagando] = useState(false);
   const [erroLinha, setErroLinha] = useState<string | null>(null);
+  const [erroReacao, setErroReacao] = useState<string | null>(null);
 
   const nome = members.get(c.user_id)?.name ?? "";
   const souAutor = me != null && me.id === c.user_id;
@@ -2960,6 +2970,38 @@ function LinhaComentario({
   const temAcao = !c.is_deleted && me != null;
   const podeEditar = temAcao && souAutor;
   const podeApagar = temAcao && (souAutor || podeModerar);
+  // Spec 050: quem VE reage -- sem permissao, como comentar. Tombstone nao.
+  const podeReagir = temAcao;
+
+  /**
+   * Poe, troca ou tira a minha reacao (Spec 050).
+   *
+   * ⚠️ QUEM DECIDE POR-OU-TIRAR E `lib/reacoes`, e nao este componente: a
+   * regra e a mesma do clique na pilula e do clique no seletor.
+   *
+   * ⚠️ A RESPOSTA DO SERVIDOR E QUE MANDA. Ele devolve o comentario inteiro,
+   * com a fileira nova, e a linha troca com `onEditado` -- a tela nao remonta
+   * a fileira por conta, e por isso nao precisa saber a regra de ordem.
+   */
+  async function alternarReacao(emoji: string) {
+    if (!me) return;
+    setErroReacao(null);
+    const acao = acaoDaPilula(c.reactions, emoji, me.id);
+    try {
+      const atualizado =
+        acao === "tirar"
+          ? await deleteCommentReaction(taskId, c.id)
+          : await setCommentReaction(taskId, c.id, emoji);
+      onEditado(atualizado);
+    } catch (e) {
+      const err = e as ApiError;
+      setErroReacao(
+        err.status === 404
+          ? "Este comentário não está mais disponível."
+          : err.message || "Não consegui reagir."
+      );
+    }
+  }
 
   async function salvarEdicao() {
     const t = texto.trim();
@@ -3001,7 +3043,12 @@ function LinhaComentario({
   }
 
   return (
-    <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+    /* ⚠️ `group`: e o que faz a bolinha de reagir aparecer com o mouse em cima
+       da LINHA (e com o foco de teclado dentro dela) -- ver SeletorDeReacao. */
+    <div
+      className="group"
+      style={{ display: "flex", gap: 8, alignItems: "flex-start" }}
+    >
       <Avatar
         id={c.user_id}
         name={nome}
@@ -3019,38 +3066,46 @@ function LinhaComentario({
             <span className="muted" style={{ fontSize: 11.5 }}>(editado)</span>
           )}
 
-          {/* acoes inline (lapis / lixeira) */}
-          {!editando && !confirmando && (podeEditar || podeApagar) && (
-            <span style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+          {/* acoes inline (reagir / lapis / lixeira), numa capsula -- Spec 050.
+              ⚠️ Elas aparecem com o mouse em cima da linha, ou com o foco de
+              teclado dentro dela: ver CapsulaDeAcoes. */}
+          {!editando &&
+            !confirmando &&
+            (podeReagir || podeEditar || podeApagar) && (
+            <CapsulaDeAcoes>
+              {/* Reagir vem PRIMEIRO -- e a acao que todo mundo que ve o
+                  comentario tem; editar e apagar sao de poucos. */}
+              {podeReagir && <SeletorDeReacao onEscolher={alternarReacao} />}
               {podeEditar && (
                 <button
-                  type="button" className="btn btn-ghost"
+                  type="button"
+                  className={BOTAO_DA_CAPSULA}
                   onClick={() => {
                     setTexto(c.content);
                     setErroLinha(null);
                     setEditando(true);
                   }}
                   title="Editar"
-                  style={{ padding: "0 6px", fontSize: 12 }}
                   aria-label="Editar comentário"
                 >
-                  <Pencil size={13} strokeWidth={2} aria-hidden />
+                  <Pencil size={14} strokeWidth={2} aria-hidden />
                 </button>
               )}
               {podeApagar && (
                 <button
-                  type="button" className="btn btn-ghost"
+                  type="button"
+                  className={BOTAO_DA_CAPSULA}
                   onClick={() => {
                     setErroLinha(null);
                     setConfirmando(true);
                   }}
                   title="Apagar"
-                  style={{ padding: "0 6px", fontSize: 12 }}
+                  aria-label="Apagar comentário"
                 >
-                  🗑
+                  <Trash2 size={14} strokeWidth={2} aria-hidden />
                 </button>
               )}
-            </span>
+            </CapsulaDeAcoes>
           )}
 
           {/* confirmacao de apagar (inline, sem dialog do browser) */}
@@ -3130,6 +3185,22 @@ function LinhaComentario({
           >
             <CommentText content={c.content} deleted={c.is_deleted} />
           </div>
+        )}
+
+        {/* Spec 050: a fileira. Comentario apagado nao tem -- o servidor
+            devolve vazia, e esta condicao evita até o espaço em branco. */}
+        {!c.is_deleted && (
+          <FileiraDeReacoes
+            reactions={c.reactions}
+            membros={members}
+            meuId={me?.id ?? null}
+            onAlternar={alternarReacao}
+            desabilitado={!podeReagir}
+          />
+        )}
+
+        {erroReacao && (
+          <div className="error-box" style={{ marginTop: 6 }}>{erroReacao}</div>
         )}
 
         {erroLinha && (

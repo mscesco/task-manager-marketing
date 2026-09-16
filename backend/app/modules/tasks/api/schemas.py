@@ -475,6 +475,31 @@ class CommentUpdateRequest(BaseModel):
     content: str = Field(min_length=1, max_length=5000)
 
 
+class CommentReactionSetRequest(BaseModel):
+    """Poe ou troca a reacao de quem chama (Spec 050).
+
+    ⚠️ "E exatamente um emoji?" NAO mora aqui, e sim no dominio
+    (`normalize_emoji`), que devolve 422 pelo caminho do `ValidationError`.
+    Validador do Pydantic que levanta devolve 500 (AGENTS.md §9). O
+    `max_length` so barra payload absurdo cedo.
+    """
+
+    emoji: str = Field(min_length=1, max_length=64)
+
+
+class CommentReactionResponse(BaseModel):
+    """Uma pilula da fileira: o emoji e quem reagiu com ele (Spec 050, §4.4).
+
+    ⚠️ `user_ids`, e nao a contagem: a tela mostra QUEM reagiu, e a contagem e
+    o tamanho da lista.
+    """
+
+    model_config = {"from_attributes": True}
+
+    emoji: str
+    user_ids: list[uuid.UUID]
+
+
 class CommentResponse(BaseModel):
     """Representacao de um comentario na API. Quando is_deleted, `content` ja
     vem mascarado (tombstone) -- ver D5."""
@@ -489,6 +514,8 @@ class CommentResponse(BaseModel):
     edited_at: datetime | None
     created_at: datetime
     is_deleted: bool
+    #: Spec 050: a fileira, na ordem de chegada. Vazia em comentario apagado.
+    reactions: list[CommentReactionResponse]
 
 
 class CommentListResponse(BaseModel):

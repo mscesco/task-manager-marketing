@@ -2305,6 +2305,12 @@ export type Comment = {
   edited_at: string | null;
   created_at: string;
   is_deleted: boolean;
+  /**
+   * Spec 050: a fileira de reacoes, na ordem de chegada de cada emoji. Vazia
+   * em comentario apagado. `user_ids` (e nao contagem) porque a tela mostra
+   * QUEM reagiu -- a contagem e o tamanho da lista.
+   */
+  reactions: { emoji: string; user_ids: string[] }[];
 };
 
 export type CommentList = {
@@ -2368,6 +2374,38 @@ export async function deleteComment(
 }
 
 // ---------------------------------------------------------------
+// REACOES NO COMENTARIO  (Spec 050)
+// ---------------------------------------------------------------
+// ⚠️ `PUT`, e nao `POST`: a operacao e "a minha reacao neste comentario passa
+// a ser X" -- idempotente, e trocar e o mesmo gesto que por. As duas devolvem
+// o COMENTARIO inteiro, com a fileira nova, para a tela trocar a linha sem
+// recarregar o thread.
+// ⚠️ Emoji invalido e 422 do servidor, e nao validacao aqui: quem decide o que
+// e um emoji e a biblioteca do backend (spec §4.3). A tela so oferece o
+// catalogo gerado, que o `test_emoji_catalogo_front` prova que ele aceita.
+export async function setCommentReaction(
+  taskId: string,
+  commentId: string,
+  emoji: string
+): Promise<Comment> {
+  return api<Comment>(
+    `/api/v1/tasks/${taskId}/comments/${commentId}/reaction`,
+    { method: "PUT", body: { emoji } }
+  );
+}
+
+// Tirar o que nao existe tambem e 200 -- o duplo clique nao vira erro.
+export async function deleteCommentReaction(
+  taskId: string,
+  commentId: string
+): Promise<Comment> {
+  return api<Comment>(
+    `/api/v1/tasks/${taskId}/comments/${commentId}/reaction`,
+    { method: "DELETE" }
+  );
+}
+
+// ---------------------------------------------------------------
 // NOTIFICACOES IN-APP  (Spec 018)
 // ---------------------------------------------------------------
 // Pessoais: o backend escopa tudo por recipient == usuario logado.
@@ -2379,7 +2417,9 @@ export async function deleteComment(
 export type NotificationType =
   | "TASK_ASSIGNED"
   | "TASK_COMMENTED"
-  | "TASK_MENTIONED";
+  | "TASK_MENTIONED"
+  // Spec 050 (fatia B): reagiram ao comentario da pessoa.
+  | "TASK_COMMENT_REACTED";
 
 export type AppNotification = {
   id: string;
@@ -2387,7 +2427,8 @@ export type AppNotification = {
   actor_id: string | null;
   task_id: string | null;
   comment_id: string | null;
-  payload: { actor_name?: string; task_title?: string } | null;
+  // `emoji` so em TASK_COMMENT_REACTED (Spec 050): o que foi, no momento.
+  payload: { actor_name?: string; task_title?: string; emoji?: string } | null;
   read_at: string | null; // null = nao lida
   created_at: string;
 };
