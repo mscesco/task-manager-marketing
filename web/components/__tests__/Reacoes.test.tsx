@@ -7,6 +7,9 @@
  *
  * ⚠️ `fireEvent`, e nao `user-event`: o projeto nao tem essa dependencia, e os
  * testes de componente que existem (Board, TaskDetail) usam `fireEvent`.
+ *
+ * ⚠️ `findBy*` para os emojis da GRADE: ela chega dois quadros depois da caixa
+ * (ver `SeletorDeReacao`), e um `getBy*` logo apos abrir nao a encontra.
  */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -16,6 +19,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 
 import FileiraDeReacoes from "../FileiraDeReacoes";
@@ -39,6 +43,10 @@ const REACTIONS = [
 
 function abrirSeletor() {
   fireEvent.click(screen.getByLabelText("Reagir ao comentário"));
+}
+
+function grade() {
+  return screen.getByRole("group", { name: "Emojis" });
 }
 
 describe("FileiraDeReacoes", () => {
@@ -168,6 +176,20 @@ describe("SeletorDeReacao", () => {
     expect(screen.getByLabelText("Reagir com ❤️")).toBeDefined();
   });
 
+  it("⚠️ a grade chega DEPOIS da caixa -- o clique so monta o que e leve", async () => {
+    // Gravacao dela de 16/09: *"parece que eu clico pra abrir aí ela abre e
+    // depois anima e ainda travado"*. Montar ~150 emojis no quadro do clique
+    // atrasava o primeiro quadro da animacao. A caixa, os sugeridos e a busca
+    // nascem no clique; a grade, dois quadros depois.
+    render(<SeletorDeReacao onEscolher={() => {}} />);
+    abrirSeletor();
+    expect(within(grade()).queryAllByRole("button")).toHaveLength(0);
+    expect(screen.getByLabelText("Reagir com 👍")).toBeDefined();
+    await waitFor(() =>
+      expect(within(grade()).getAllByRole("button").length).toBeGreaterThan(0),
+    );
+  });
+
   // ⚠️ `waitFor` nos testes de FECHAR: o painel sai com animacao
   // (`AnimatePresence`), e fica no DOM ate ela terminar.
   it("escolher um sugerido avisa o pai e fecha", async () => {
@@ -181,27 +203,27 @@ describe("SeletorDeReacao", () => {
     );
   });
 
-  it("⚠️ a busca e em portugues: 'joia' acha o polegar", () => {
+  it("⚠️ a busca e em portugues: 'joia' acha o polegar", async () => {
     const onEscolher = vi.fn();
     render(<SeletorDeReacao onEscolher={onEscolher} />);
     abrirSeletor();
     fireEvent.change(screen.getByLabelText("Buscar emoji"), {
       target: { value: "joia" },
     });
-    fireEvent.click(screen.getByLabelText("polegar para cima"));
+    fireEvent.click(await screen.findByLabelText("polegar para cima"));
     expect(onEscolher).toHaveBeenCalledWith("👍");
   });
 
-  it("busca sem resultado avisa, em vez de ficar vazia", () => {
+  it("busca sem resultado avisa, em vez de ficar vazia", async () => {
     render(<SeletorDeReacao onEscolher={() => {}} />);
     abrirSeletor();
     fireEvent.change(screen.getByLabelText("Buscar emoji"), {
       target: { value: "zzzzz" },
     });
-    expect(screen.getByText(/Nenhum emoji/)).toBeDefined();
+    expect(await screen.findByText(/Nenhum emoji/)).toBeDefined();
   });
 
-  it("a aba de grupo troca a grade -- e diz o nome do grupo", () => {
+  it("a aba de grupo troca a grade -- e diz o nome do grupo", async () => {
     render(<SeletorDeReacao onEscolher={() => {}} />);
     abrirSeletor();
     // A aba desenha um emoji, mas o nome do grupo esta no rotulo.
@@ -209,7 +231,7 @@ describe("SeletorDeReacao", () => {
     expect(
       screen.getByRole("tab", { name: "pessoas e corpo" }).getAttribute("aria-selected"),
     ).toBe("true");
-    expect(screen.getByLabelText("polegar para cima")).toBeDefined();
+    expect(await screen.findByLabelText("polegar para cima")).toBeDefined();
   });
 
   it("reabrir comeca com a busca vazia", async () => {
@@ -249,7 +271,7 @@ describe("SeletorDeReacao", () => {
     // rolava.
     render(<SeletorDeReacao onEscolher={() => {}} />);
     abrirSeletor();
-    fireEvent.scroll(screen.getByRole("group", { name: "Emojis" }));
+    fireEvent.scroll(grade());
     // ⚠️ O ESTADO DO GATILHO, e nao "o campo de busca ainda existe": fechado,
     // o painel CONTINUA no DOM durante a animacao de saida, e a versao
     // anterior deste teste passava com a trava removida (sabotagem 050D).
@@ -285,9 +307,14 @@ describe("SeletorDeReacao", () => {
     );
   });
 
-  it("⚠️ um grupo por vez -- a grade nao desenha o catalogo inteiro", () => {
+  it("⚠️ um grupo por vez -- a grade nao desenha o catalogo inteiro", async () => {
     render(<SeletorDeReacao onEscolher={() => {}} />);
     abrirSeletor();
+    // ⚠️ ESPERA A GRADE CHEGAR antes de contar: logo apos abrir ela esta vazia,
+    // e "menos de 400 botoes" passaria sem provar nada.
+    await waitFor(() =>
+      expect(within(grade()).getAllByRole("button").length).toBeGreaterThan(0),
+    );
     // 1.914 emojis no catalogo; a grade do primeiro grupo e uma fracao disso.
     expect(screen.getAllByRole("button").length).toBeLessThan(400);
   });

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { SmilePlus } from "lucide-react";
 
@@ -15,6 +15,15 @@ const LARGURA = 288;
 const LARGURA_DO_CONTEUDO = "w-[276px]";
 
 /**
+ * Os grupos do catalogo, calculados UMA vez por carga da pagina.
+ *
+ * ⚠️ Era um `useMemo` dentro do componente -- e ha um seletor por COMENTARIO,
+ * entao abrir uma tarefa com 20 comentarios agrupava os 1.914 emojis 20 vezes.
+ * O catalogo e constante: o resultado tambem.
+ */
+const GRUPOS = porGrupo(CATALOGO_DE_EMOJI);
+
+/**
  * O botao de reagir e o seletor que ele abre (Spec 050, §4.7).
  *
  * O gesto e o do WhatsApp, pedido dela em 15/09: o botao aparece ao passar o
@@ -26,23 +35,23 @@ const LARGURA_DO_CONTEUDO = "w-[276px]";
  * pela borda da gaveta -- o MESMO defeito que o `PillSelect` ja tinha tido.
  * A caixa usa a mesma mola dos seletores da organizacao.
  *
- * ⚠️⚠️ MAS O CONTEUDO NAO USA A CASCATA DELES (`PANEL_ITEM`), e isto foi visto
- * quadro a quadro na gravacao dela de 16/09 (*"a animação está bem
- * ruinzinha"*):
- *   - ABRINDO, a caixa aparecia inteira e o conteudo, entrando em cascata
- *     DEPOIS, clareava de novo por um quadro -- lia-se como piscada. Nos
- *     seletores da organizacao a cascata e em linhas de texto e nao se nota;
- *     aqui sao dezenas de emojis coloridos. Sem cascata, o conteudo nasce
- *     junto com a caixa.
- *   - FECHANDO, a caixa (branca, de borda clara, sobre fundo branco) sumia aos
- *     ~50% de opacidade, e os emojis coloridos continuavam visiveis por uns
- *     tres quadros -- uma grade flutuando sem painel. Por isso o conteudo tem
- *     SAIDA PROPRIA, so de opacidade e mais rapida que a da caixa: ele some
- *     primeiro, e a caixa nunca fica com os emojis soltos.
+ * ⚠️⚠️ A ANIMACAO, vista quadro a quadro na gravacao dela de 16/09:
+ *   - A GRADE ENTRA DEPOIS DA CAIXA (ver `gradeLiberada`). Montar ~150 botoes
+ *     de emoji colorido no mesmo quadro do clique atrasava o PRIMEIRO quadro da
+ *     animacao; quando ele saia, a mola ja tinha "andado" no tempo, e o painel
+ *     aparecia quase pronto e terminava aos trancos -- *"parece que eu clico pra
+ *     abrir aí ela abre e depois anima e ainda travado"*. Agora o clique monta
+ *     so a caixa leve; a grade chega dois quadros depois, num espaco de altura
+ *     FIXA, para nada mudar de lugar quando ela aparece.
+ *   - O CONTEUDO NAO USA A CASCATA dos seletores da organizacao (`PANEL_ITEM`):
+ *     entrando depois da caixa, ela clareava o conteudo por um quadro -- uma
+ *     piscada.
+ *   - FECHANDO, o conteudo SAI ANTES da caixa (60ms, so opacidade). A caixa
+ *     branca sobre o detalhe branco some aos ~50%, e sem isso os emojis
+ *     coloridos ficavam flutuando sem painel por uns tres quadros.
  *
- * ⚠️ UM GRUPO POR VEZ, e nao a grade inteira: sao 1.914 emojis no catalogo, e
- * desenhar todos sao 1.914 botoes no DOM. A busca (em portugues, sem acento) e
- * o caminho para o resto.
+ * ⚠️ UM GRUPO POR VEZ, e nao a grade inteira: sao 1.914 emojis no catalogo. A
+ * busca (em portugues, sem acento) e o caminho para o resto.
  */
 export default function SeletorDeReacao({
   onEscolher,
@@ -54,6 +63,7 @@ export default function SeletorDeReacao({
   const [aberto, setAberto] = useState(false);
   const [termo, setTermo] = useState("");
   const [grupoAtivo, setGrupoAtivo] = useState(0);
+  const [gradeLiberada, setGradeLiberada] = useState(false);
   // O app nao tem `MotionConfig`: a preferencia do sistema e respeitada aqui.
   const menosMovimento = useReducedMotion();
 
@@ -66,6 +76,7 @@ export default function SeletorDeReacao({
   const fechar = useCallback(() => setAberto(false), []);
   const abrir = useCallback(() => {
     setTermo("");
+    setGradeLiberada(false);
     setAberto(true);
   }, []);
   const { anchorRef, panelRef, box } = useAnchoredPanel<HTMLButtonElement>(
@@ -76,13 +87,27 @@ export default function SeletorDeReacao({
     { larguraPainel: LARGURA, alinhar: "direita" },
   );
 
-  const grupos = useMemo(() => porGrupo(CATALOGO_DE_EMOJI), []);
+  // ⚠️ DOIS quadros, e nao um: o primeiro `requestAnimationFrame` roda ANTES da
+  // pintura do quadro em que a caixa foi montada. So no segundo a caixa ja foi
+  // pintada e a animacao ja comecou -- e ai a grade pode custar o que custa.
+  useEffect(() => {
+    if (!aberto) return;
+    let segundo = 0;
+    const primeiro = requestAnimationFrame(() => {
+      segundo = requestAnimationFrame(() => setGradeLiberada(true));
+    });
+    return () => {
+      cancelAnimationFrame(primeiro);
+      cancelAnimationFrame(segundo);
+    };
+  }, [aberto]);
+
   const achados = useMemo(
     () => filtrarCatalogo(CATALOGO_DE_EMOJI, termo),
     [termo],
   );
   const buscando = termo.trim() !== "";
-  const mostrando = buscando ? achados : (grupos[grupoAtivo]?.itens ?? []);
+  const mostrando = buscando ? achados : (GRUPOS[grupoAtivo]?.itens ?? []);
 
   function escolher(emoji: string) {
     onEscolher(emoji);
@@ -119,9 +144,8 @@ export default function SeletorDeReacao({
             {/* ⚠️⚠️ LARGURA FIXA NO CONTEUDO. O `AnchoredPanel` so define
                 largura MINIMA, e o conteudo esticava o painel ate a borda da
                 janela -- a captura de 16/09 ("o seletor ficou ainda pior").
-                ⚠️ `initial={false}`: NENHUMA animacao de entrada propria -- o
-                conteudo aparece com a caixa (ver o cabecalho). So a SAIDA e
-                dele, e mais curta que a da caixa. */}
+                ⚠️ `initial={false}`: nenhuma entrada propria -- o conteudo
+                aparece com a caixa. So a SAIDA e dele, mais curta que a dela. */}
             <motion.div
               className={LARGURA_DO_CONTEUDO}
               initial={false}
@@ -140,7 +164,7 @@ export default function SeletorDeReacao({
                     onClick={() => escolher(emoji)}
                     aria-label={`Reagir com ${emoji}`}
                   >
-                    <span aria-hidden>{emoji}</span>
+                    {emoji}
                   </button>
                 ))}
               </div>
@@ -170,7 +194,7 @@ export default function SeletorDeReacao({
                   role="tablist"
                   aria-label="Grupos de emoji"
                 >
-                  {grupos.map((g, i) => (
+                  {GRUPOS.map((g, i) => (
                     <button
                       key={g.grupo}
                       type="button"
@@ -185,30 +209,35 @@ export default function SeletorDeReacao({
                       }
                       onClick={() => setGrupoAtivo(i)}
                     >
-                      <span aria-hidden>{g.itens[0]?.emoji}</span>
+                      {g.itens[0]?.emoji}
                     </button>
                   ))}
                 </div>
               )}
 
+              {/* ⚠️ ALTURA FIXA (`h-40`), e nao maxima: a grade chega depois da
+                  caixa, e com altura maxima o painel CRESCERIA no quadro em que
+                  ela chega -- o pulo que a gravacao mostrava. Com a altura
+                  reservada, so os emojis aparecem. */}
               <div
-                className="mt-1 grid max-h-40 grid-cols-8 gap-0.5 overflow-y-auto px-1"
+                className="mt-1 grid h-40 grid-cols-8 content-start gap-0.5 overflow-y-auto px-1"
                 role="group"
                 aria-label="Emojis"
               >
-                {mostrando.map((item) => (
-                  <button
-                    key={item.emoji}
-                    type="button"
-                    className="flex aspect-square items-center justify-center rounded-md text-lg transition-colors hover:bg-surface-2"
-                    onClick={() => escolher(item.emoji)}
-                    title={item.nome}
-                    aria-label={item.nome}
-                  >
-                    <span aria-hidden>{item.emoji}</span>
-                  </button>
-                ))}
-                {buscando && mostrando.length === 0 && (
+                {gradeLiberada &&
+                  mostrando.map((item) => (
+                    <button
+                      key={item.emoji}
+                      type="button"
+                      className="flex aspect-square items-center justify-center rounded-md text-lg transition-colors hover:bg-surface-2"
+                      onClick={() => escolher(item.emoji)}
+                      title={item.nome}
+                      aria-label={item.nome}
+                    >
+                      {item.emoji}
+                    </button>
+                  ))}
+                {gradeLiberada && buscando && mostrando.length === 0 && (
                   <p className="col-span-8 py-3 text-center text-xs text-ink-faint">
                     Nenhum emoji para “{termo}”.
                   </p>

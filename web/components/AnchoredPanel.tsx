@@ -245,6 +245,11 @@ export default function AnchoredPanel({
         }`,
         maxHeight: "min(50vh, 320px)",
         overflowY: "auto",
+        // ⚠️ Camada propria DURANTE a animacao: o navegador rasteriza a caixa
+        // uma vez e so a compoe enquanto ela escala. Sem isto, cada quadro da
+        // escala redesenhava o conteudo -- no seletor de reacao (Spec 050) sao
+        // dezenas de emojis coloridos, e a abertura travava (16/09).
+        willChange: "transform, opacity",
         borderRadius: 12,
         padding: 6,
         background: "var(--surface)",
