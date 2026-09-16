@@ -115,6 +115,11 @@ async def list_teams(
                     t.parent_team_id is not None
                     and ctx.has_permission_in("subteam.update", t.id)
                 ),
+                can_create_project=ctx.has_permission_in("project.create", t.id),
+                can_delete=(
+                    t.parent_team_id is not None
+                    and ctx.has_permission_in("subteam.delete", t.id)
+                ),
             )
         )
     return TeamListResponse(items=itens, total=len(itens))

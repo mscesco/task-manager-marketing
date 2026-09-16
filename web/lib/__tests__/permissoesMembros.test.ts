@@ -15,8 +15,6 @@ import {
   alcanceDe,
   podeGerenciarAlgo,
   podeCadastrarMembro,
-  podeResetarSenha,
-  podeDesativarConta,
   podeMoverSubtime,
   podeAdicionarAoTime,
   podeRemoverDoTime,
@@ -109,8 +107,8 @@ describe("alcanceDe", () => {
 describe("acoes que a 028 NAO abriu ao supervisor", () => {
   it.each([
     ["cadastrar membro (D3)", podeCadastrarMembro],
-    ["resetar senha", podeResetarSenha],
-    ["desativar conta (D4)", podeDesativarConta],
+    // Resetar senha e desativar conta sairam daqui na Spec 051 (fatia E): o
+    // cadeado passou a ser por PESSOA, e vem do servidor.
     ["mover de subtime (D1)", podeMoverSubtime],
   ])("%s: so alcance amplo", (_nome, fn) => {
     expect(fn(AMPLO)).toBe(true);

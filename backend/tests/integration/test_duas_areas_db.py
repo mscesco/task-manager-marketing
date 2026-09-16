@@ -338,6 +338,11 @@ async def test_esvaziar_subtime_do_TI_nao_despeja_no_marketing(db) -> None:
         )
         await db.flush()
 
+    # ⚠️ Spec 051, fatia D: ESVAZIAR COMO ADMIN DE ORGANIZACAO. O vinculo ADMIN
+    # antigo no Marketing e comando SO naquela arvore, e esvaziar o Infra (do
+    # TI) passou a conferir `subteam.delete` no time. O que este teste mede e o
+    # destino do esvaziamento, e para isso o ator precisa alcancar as duas.
+    with acting_as(**{**ctx, "org_role": "ADMIN"}):
         previa = await TeamService(db).esvaziar_e_remover(team_id=infra)
 
     await db.refresh(tarefa)

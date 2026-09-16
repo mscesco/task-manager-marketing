@@ -220,6 +220,35 @@ class AuthService:
             token_version=user.token_version,
         )
 
+    async def rename_self(self, *, user_id: uuid.UUID, name: str) -> User:
+        """Troca o NOME do proprio usuario. Spec 051, fatia E (decisao 8).
+
+        ⚠️⚠️ SO O PROPRIO, e isso e a regra inteira -- *"liberar somente para
+        proprio, eu posso editar meu proprio nome"* (Camila, 16/09). Por isso
+        NAO ha permissao nem alvo: o `user_id` vem do token, nunca do corpo, e
+        ninguem edita o nome de outra pessoa -- admin incluido. Nao nasce
+        `person.update` para isto: esse verbo e o reset de senha.
+
+        ⚠️ NAO MEXE EM `token_version`, ao contrario da troca de senha: o nome
+        nao e credencial, e derrubar as sessoes por ele seria punir quem so
+        corrigiu um acento.
+
+        Erros:
+            AuthenticationError -- token valido e usuario sumido (inconsistente).
+            ValidationError     -- nome vazio depois de aparado (422).
+        """
+        user = await self._session.get(User, user_id)
+        if user is None:
+            raise AuthenticationError("Usuario nao encontrado.")
+        limpo = name.strip()
+        if not limpo:
+            raise ValidationError(
+                "O nome não pode ficar vazio.", details={"field": "name"}
+            )
+        user.name = limpo
+        logger.info("auth.name_changed", user_id=str(user_id))
+        return user
+
     async def logout(self, *, user_id: uuid.UUID) -> None:
         """Encerra TODAS as sessoes do usuario (Spec 030, D4).
 

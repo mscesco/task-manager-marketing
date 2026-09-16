@@ -193,3 +193,46 @@ def test_contexto_legado_com_frozenset_cai_para_a_pergunta_ampla():
         permissions=frozenset({"subteam.update"}),
     )
     assert ctx.has_permission_in("subteam.update", TI) is True
+
+
+# ------------------------------------------- em quais times (Spec 051, fatia A)
+
+
+def test_em_quais_times_quem_esta_em_duas_arvores_tem_o_verbo():
+    """⭐ A pergunta das LISTAS, no ator em que lente e verbo divergem.
+
+    MANAGER no Marketing e OPERATOR no TI: `task.delete` so na arvore do
+    Marketing; `task.create` nas duas (o operador trabalha no geral do TI).
+    Sabotagem: devolver a lente (time + raiz, para todo vinculo) poe o TI no
+    primeiro conjunto.
+    """
+    p = _ator((MKT, "MANAGER"), (TI, "OPERATOR"))
+
+    assert p.teams_with("task.delete") == {MKT, SEO, MIDIAS}
+    assert p.teams_with("task.create") == {MKT, SEO, MIDIAS, TI}
+    assert p.teams_with("organization.update") == frozenset()
+
+
+def test_em_quais_times_organizacao_responde_todos_como_None():
+    """`None` = todos, o contrato de `visible_team_ids` -- e nao a lista de hoje."""
+    assert _ator(org_role="GESTOR").teams_with("task.delete") is None
+    # O GESTOR nao tem `project.delete` (Spec 049, fatia D): vazio, e nao None.
+    assert _ator(org_role="GESTOR").teams_with("project.delete") == frozenset()
+
+
+def test_em_quais_times_no_contexto_legado_cai_para_todos():
+    """⚠️ O mesmo fail-open de `has_permission_in`, escrito."""
+    ctx = TenantContext(
+        workspace_id=uuid.uuid4(),
+        user_id=uuid.uuid4(),
+        permissions=frozenset({"task.delete"}),
+    )
+    assert ctx.teams_with_permission("task.delete") is None
+    assert ctx.teams_with_permission("project.delete") == frozenset()
+
+    escopo = TenantContext(
+        workspace_id=uuid.uuid4(),
+        user_id=uuid.uuid4(),
+        permissions=_ator((MKT, "MANAGER")),
+    )
+    assert escopo.teams_with_permission("task.delete") == {MKT, SEO, MIDIAS}

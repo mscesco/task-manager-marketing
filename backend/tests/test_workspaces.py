@@ -159,6 +159,13 @@ class _FakeTeamRepo:
             current = self._tree.get(current)
         return ancestors
 
+    async def area_de(self, team_id):
+        """Espelha `TeamRepository.area_de` (Spec 051, fatia D): sobe ate a raiz."""
+        if team_id not in self._tree:
+            return None
+        ancestrais = await self.collect_ancestor_ids(team_id)
+        return ancestrais[-1] if ancestrais else team_id
+
 
 class _FakeSession:
     async def flush(self):
@@ -216,7 +223,26 @@ async def test_promover_a_area_e_recusado_INDEPENDENTE_de_quantas_existem() -> N
 
 
 async def test_team_move_under_another_parent_works() -> None:
-    """Mover entre paes diferentes (sem ciclo) e valido."""
+    """Mover entre paes diferentes DA MESMA ARVORE (sem ciclo) e valido.
+
+    ⚠️ Ate a Spec 051 (fatia D) este teste movia o CRM do Marketing para o
+    Comercial -- outra arvore -- e esperava sucesso. A Camila decidiu (16/09,
+    decisao 7) que mover entre arvores fica recusado ate ser desenhado; o
+    teste passou a mover dentro da arvore, e a recusa tem teste proprio abaixo.
+    """
+    marketing = uuid.uuid4()
+    seo = uuid.uuid4()
+    crm = uuid.uuid4()
+    svc = _build_team_service_with_tree(
+        {marketing: None, seo: marketing, crm: marketing}
+    )
+
+    result = await svc.move(team_id=crm, new_parent_id=seo)
+    assert result.parent_team_id == seo
+
+
+async def test_team_move_para_OUTRA_arvore_e_recusado() -> None:
+    """Spec 051, fatia D (decisao 7): subtime nao muda de arvore."""
     marketing = uuid.uuid4()
     comercial = uuid.uuid4()
     crm = uuid.uuid4()
@@ -224,8 +250,20 @@ async def test_team_move_under_another_parent_works() -> None:
         {marketing: None, comercial: None, crm: marketing}
     )
 
-    result = await svc.move(team_id=crm, new_parent_id=comercial)
-    assert result.parent_team_id == comercial
+    with pytest.raises(BusinessRuleError) as exc:
+        await svc.move(team_id=crm, new_parent_id=comercial)
+    assert "outra area" in exc.value.message.lower()
+
+
+async def test_team_move_RAIZ_ganhando_pai_e_recusado() -> None:
+    """Spec 051, fatia D (decisao 7): time principal nao vira subtime."""
+    marketing = uuid.uuid4()
+    comercial = uuid.uuid4()
+    svc = _build_team_service_with_tree({marketing: None, comercial: None})
+
+    with pytest.raises(BusinessRuleError) as exc:
+        await svc.move(team_id=comercial, new_parent_id=marketing)
+    assert "time principal" in exc.value.message.lower()
 
 
 async def test_team_move_rejects_self_as_parent() -> None:

@@ -31,8 +31,10 @@ import {
   changeOrganizationRole,
   deactivateMember,
   listMemberTeams,
+  memberAccountActions,
   removeMemberFromTeam,
   resetMemberPassword,
+  type AcoesDaConta,
   type Member,
   type MemberRole,
   type MemberTeamComCadeado,
@@ -43,9 +45,7 @@ import { roleConsequence, drawerMemberships } from "@/lib/memberDrawer";
 import Loading from "@/components/Loading";
 import {
   papeisAtribuiveis,
-  podeDesativarConta,
   podeRemoverDoTime,
-  podeResetarSenha,
   timesParaAdicionar,
   type Alcance,
 } from "@/lib/permissoesMembros";
@@ -119,6 +119,12 @@ export default function MemberDrawer({
     password: string;
   } | null>(null);
   const podeFechar = revelado === null;
+  // ⚠️⚠️ Spec 051, fatia E: OS BOTÕES DA CONTA VÊM DO SERVIDOR, por pessoa. Até
+  // aqui eram `podeResetarSenha(scope)` e `podeDesativarConta(scope)` --
+  // "alcance amplo", sem olhar QUEM é a pessoa. Desde que a conta respeita o
+  // papel do alvo (#57), o gerente via os dois na conta de outro gerente e
+  // levava 403. `null` enquanto não chegou: nenhum botão aparece por palpite.
+  const [acoes, setAcoes] = useState<AcoesDaConta | null>(null);
 
   useEffect(() => {
     let vivo = true;
@@ -127,6 +133,11 @@ export default function MemberDrawer({
       .catch((e) =>
         vivo ? setErro((e as ApiError).message || "Não consegui carregar.") : null,
       );
+    // ⚠️ `catch` que só deixa os botões fechados: falhar aqui não pode derrubar
+    // a gaveta inteira -- os vínculos e o cargo continuam úteis sem eles.
+    memberAccountActions(member.id)
+      .then((a) => vivo && setAcoes(a))
+      .catch(() => {});
     return () => {
       vivo = false;
     };
@@ -218,10 +229,12 @@ export default function MemberDrawer({
               um time acima, "Desativar" lido junto dos vínculos parece "tirar
               deste time" (§4.2). */}
           <div className="mb-5 flex flex-wrap gap-2">
-            {podeResetarSenha(scope) && (
+            {acoes?.can_reset_password && (
               <ResetPassword member={member} onReveal={setRevelado} />
             )}
-            {member.is_active && podeDesativarConta(scope) && !isSelf && (
+            {/* O servidor já responde "não" para a própria conta e para conta
+                desativada; as duas condições ficam aqui como o desenho diz. */}
+            {member.is_active && acoes?.can_deactivate && !isSelf && (
               <Deactivate member={member} onChanged={onChanged} />
             )}
           </div>

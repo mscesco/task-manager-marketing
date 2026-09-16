@@ -224,14 +224,23 @@ class SolicitationFormService:
     # Formulario
     # ------------------------------------------------------------------
     async def obter_formulario(self, form_id: uuid.UUID) -> SolicitationForm:
-        """Um formulario do workspace, ou 404.
+        """Um formulario que quem chama LE, ou 404.
 
-        ⚠️ LEITURA NAO EXIGE ALCANCE DE TIME, e a rota exige a permissao. Quem
-        chega aqui ja passou por `solicitation_form.manage`; conferir o time
-        tambem na leitura devolveria 403 para um ADMIN olhando o formulario de
-        outro time -- que e exatamente o que ele pode fazer.
+        ⚠️⚠️ Spec 051, fatia B: ATE AQUI A LEITURA NAO CONFERIA TIME NENHUM, e o
+        motivo escrito era "conferir devolveria 403 para um ADMIN olhando o
+        formulario de outro time". Com permissao com escopo isso deixou de ser
+        verdade -- o ADMIN tem `form.read` em todo lugar -- e o que sobrou foi
+        o buraco: o MANAGER do Marketing abria, pelo id, o formulario do
+        Comercial, rascunho inclusive.
+
+        ⚠️ 404 E NAO 403: e LEITURA pelo id, e 403 confirmaria que existe. A
+        escrita em formulario de outra arvore continua 403, como toda a gestao
+        (quadro, time, vinculo) -- decisao registrada na spec, §3.6.
         """
-        return await self._form_do_workspace(form_id)
+        form = await self._form_do_workspace(form_id)
+        if not require_tenant().has_permission_in("form.read", form.team_id):
+            raise EntityNotFoundError("Formulário não encontrado.")
+        return form
 
     async def criar_formulario(
         self,
@@ -316,13 +325,13 @@ class SolicitationFormService:
             )
             .order_by(SolicitationForm.title)
         )
-        visiveis = team_scope.visible_team_ids(
-            tenant.memberships,
-            tenant.team_tree,
-            org_role=tenant.org_role,
-        )
-        if visiveis is not None:
-            stmt = stmt.where(SolicitationForm.team_id.in_(visiveis))
+        # ⚠️⚠️ Spec 051, fatia B: O RECORTE E `form.read`, E NAO A LENTE. Quem e
+        # MANAGER no Marketing e OPERATOR no Comercial trabalha no Comercial (a
+        # lente o inclui) e nao gerencia formulario la. A lista mostrava os
+        # formularios do Comercial, e cada botao deles dava 403.
+        leitura = tenant.teams_with_permission("form.read")
+        if leitura is not None:
+            stmt = stmt.where(SolicitationForm.team_id.in_(leitura))
         if team_id is not None:
             alvo = {team_id} | team_scope.descendants(team_id, tenant.team_tree)
             stmt = stmt.where(SolicitationForm.team_id.in_(alvo))

@@ -73,6 +73,17 @@ describe("computeLens -- admin de ORGANIZACAO, sem vinculo nenhum", () => {
   it("a raiz e a que veio de fora, e nao a que a lista trouxe primeiro", () => {
     expect(computeLens([], TIMES, ["ADMIN"], RAIZ).rootId).toBe(RAIZ);
   });
+
+  it("⭐ Spec 051, fatia F: o GESTOR sem vinculo tambem ve tudo", () => {
+    // ⚠️ O defeito: um GESTOR sem time abria o quadro e lia "Voce nao tem
+    // acesso ao quadro deste time", sobre um quadro que o servidor entrega
+    // (a lente do backend abre para todo papel de organizacao desde a 049).
+    const lens = computeLens([], TIMES, ["GESTOR"], RAIZ);
+
+    expect(lens.boardSubteams.map((t) => t.id).sort()).toEqual([CRM, SEO].sort());
+    expect(lens.visibleTeamIds.has(RAIZ)).toBe(true);
+    expect(lens.visibleTeamIds.has(SEO)).toBe(true);
+  });
 });
 
 describe("computeLens -- o que NAO pode mudar", () => {

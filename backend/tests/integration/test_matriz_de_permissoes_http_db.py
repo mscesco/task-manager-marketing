@@ -30,6 +30,8 @@ nao distinguem nada:
              MANAGER do Marketing
              SUPERVISOR do SEO
              OPERATOR do SEO
+             DUAS_ARVORES: MANAGER do Marketing E OPERATOR do Comercial
+                           (Spec 051 -- a coluna em que lente e verbo divergem)
 
 COMO LER UMA LINHA: `esperado` tem um valor por papel, na ordem de `PAPEIS`.
 `OK` e qualquer 2xx; `NEGADO` e 403; `OCULTO` e 404 (a lente nao deixa ver, e
@@ -97,6 +99,42 @@ GESTOR, e duas coisas que a tabela nao tinha entraram junto:
     - o quadro SECUNDARIO da raiz (apagar quadro, e renomear/apagar coluna):
       sem ele, coluna de quadro da raiz passava pelo GESTOR sem `column.delete`.
 
+SPEC 051, FATIA 0 (16/09) -- A COLUNA DUAS_ARVORES E AS LINHAS DOS BURACOS. A
+revisao de permissoes de 16/09 achou buracos com esta tabela 370/370 verde:
+nenhum ator tinha vinculo em duas arvores, e e so nele que "enxergo o item?"
+(a lente) e "tenho o verbo no time do item?" dao respostas diferentes. A
+coluna entrou num commit proprio (so o sexto valor em cada linha); depois, 14
+linhas com o esperado DE HOJE e `diverge="051 §x"` -- as fatias A a F as
+viram. Todas as previsoes, lidas do codigo, bateram na primeira rodada.
+
+    Sabotagem F. `TaskService.soft_delete` perguntando `has_permission_in(
+       "task.delete", task.team_id)` depois da lente -- o conserto da fatia A,
+       so num ponto. Caiu UMA celula: `task.delete[do Comercial]-DUAS_ARVORES`.
+       Nenhum outro papel muda, porque para eles lente e verbo coincidem --
+       que e exatamente por que a tabela nao via.
+
+SPEC 051, FATIA A (16/09) -- tarefa, comentario e projeto pelo verbo no time.
+As seis linhas `051 §4.1` desta fatia viraram NEGADO para DUAS_ARVORES (a da
+fila e da fatia B). Nenhuma outra celula mudou. O cadeado de cada item
+(`can_delete`, `can_update`...) passou a ser conferido CONTRA estas linhas --
+ver `test_o_cadeado_do_item_concorda_com_a_matriz`.
+
+SPEC 051, FATIA B (16/09) -- fila e formularios pelo verbo. Quatro linhas: a
+fila do Comercial some para DUAS_ARVORES; a orfa, para quem nao e da
+organizacao; marcar tarefa fora da lente e 404; abrir formulario de outra
+arvore pelo id e 404. Nenhuma outra celula mudou.
+
+SPEC 051, FATIA C (16/09) -- vinculo e cargo. Quatro linhas: vincular quem so
+esta no Comercial (so a organizacao); promover a gerente (gestor e gerente);
+rebaixar outro gerente (gestor sim, gerente nao -- "gerente so promove");
+mover conta desativada (409). Nenhuma outra celula mudou.
+
+SPEC 051, FATIA D (16/09) -- estrutura. Quatro linhas: o gerente apaga subtime
+da propria arvore; mover time para outra arvore e dar pai a um time raiz sao
+409 (mesmo para o ADMIN); ler quadro de outra arvore pelo id e 404. O cadeado
+`can_delete` de `GET /teams` e conferido em
+`test_listagem_de_times_diz_o_que_cada_papel_apaga`.
+
 O QUE ESTA TABELA NAO COBRE (de proposito, e anotado para quem estender):
     - editar comentario (autoria, nao permissao -- spec §4.5) e seguidores
       (o servico decide "eu" contra "terceiro");
@@ -117,7 +155,7 @@ from sqlalchemy import select
 
 from app.core.deps import get_db_session, get_uow
 from app.core.tenant import Membership, TenantContext, set_tenant
-from app.db.models import Solicitation
+from app.db.models import Solicitation, User
 from app.db.models.boards import Board, BoardColumn
 from app.db.models.enums import TaskStatus
 from app.db.unit_of_work import UnitOfWork
@@ -134,7 +172,7 @@ from tests.integration.conftest import acting_as, mship, node
 
 pytestmark = pytest.mark.integration
 
-PAPEIS = ("ADMIN", "GESTOR", "MANAGER", "SUPERVISOR", "OPERATOR")
+PAPEIS = ("ADMIN", "GESTOR", "MANAGER", "SUPERVISOR", "OPERATOR", "DUAS_ARVORES")
 
 OK = "ok"
 NEGADO = 403
@@ -152,7 +190,7 @@ async def _quadro_padrao(db, team_id: uuid.UUID) -> uuid.UUID:
     ).scalar_one()
 
 
-async def _solicitacao(db, ws: uuid.UUID, form_id: uuid.UUID) -> uuid.UUID:
+async def _solicitacao(db, ws: uuid.UUID, form_id: uuid.UUID | None) -> uuid.UUID:
     s = Solicitation(
         workspace_id=ws,
         requester_name="Fulana",
@@ -219,6 +257,19 @@ async def _mundo(db) -> dict:
         db, workspace_id=ws, user_id=supervisor, team_id=seo, role="SUPERVISOR"
     )
     operator = await _operador(db, ws, seo)
+    # ⚠️⚠️ Spec 051, fatia 0: o ator que a matriz nao tinha. MANAGER no Marketing
+    # E OPERATOR no Comercial -- o cadastro permite, e a Camila decidiu que
+    # continua permitido (051, decisao 1). E nele que lente e verbo divergem: a
+    # lente dele inclui o Comercial (e onde ele trabalha), os verbos de comando
+    # nao. Com um vinculo so por ator, as duas perguntas davam a mesma resposta
+    # e a tabela ficava verde com a pergunta errada.
+    duas_arvores = await f.make_user(db, workspace_id=ws)
+    await f.add_member(
+        db, workspace_id=ws, user_id=duas_arvores, team_id=mkt, role="MANAGER"
+    )
+    await f.add_member(
+        db, workspace_id=ws, user_id=duas_arvores, team_id=com, role="OPERATOR"
+    )
 
     # --- pessoas-alvo
     #
@@ -241,6 +292,13 @@ async def _mundo(db) -> dict:
     # `livre_design` so esta num subtime, e nao na raiz: vira SUPERVISOR no SEO
     # sem esbarrar em "o papel no time principal nao pode ser menor" (409).
     livre_design = await _operador(db, ws, design)
+    # ⚠️ Spec 051 (pergunta A, "pode uai"): quem ja esta em DUAS arvores ganha
+    # vinculo novo numa delas. Design e Vendas, e nao SEO: o supervisor do SEO
+    # precisa poder puxar -- e a pessoa nao pode ja estar la.
+    misto_design = await _operador(db, ws, design, vendas)
+    # Spec 051 §4.8 item 6: conta DESATIVADA, para a linha de mover subtime.
+    desativado = await _operador(db, ws, design)
+    (await db.get(User, desativado)).is_active = False
 
     # --- quadros e colunas
     geral_mkt = await _quadro_padrao(db, mkt)
@@ -296,6 +354,12 @@ async def _mundo(db) -> dict:
         form_com = await forms.criar_formulario(team_id=com, slug="metas", title="Metas")
     sol_mkt = await _solicitacao(db, ws, form_mkt.id)
     sol_com = await _solicitacao(db, ws, form_com.id)
+    # Spec 051 §4.8 item 1: a ORFA (sem formulario) -- a Spec 048 a quer so
+    # para a organizacao.
+    sol_orfa = await _solicitacao(db, ws, None)
+    # Spec 051 §3.6: uma APROVADA, para marcar tarefa (so aceita pedido aceito).
+    sol_aprovada_mkt = await _solicitacao(db, ws, form_mkt.id)
+    (await db.get(Solicitation, sol_aprovada_mkt)).status = "APPROVED"
 
     # --- um comentario de OUTRA pessoa, para a linha de moderacao
     with acting_as(
@@ -307,6 +371,21 @@ async def _mundo(db) -> dict:
         comentario = await CommentService(db).create_comment(
             task_id=tarefa_mkt.id, content="de outra pessoa"
         )
+    # Spec 051 §4.1: o mesmo, no COMERCIAL -- onde DUAS_ARVORES e operador.
+    with acting_as(
+        workspace_id=ws,
+        user_id=alvo_com,
+        memberships=(mship(vendas, "OPERATOR"), mship(suporte, "OPERATOR")),
+        team_tree=arvore,
+    ):
+        comentario_com = await CommentService(db).create_comment(
+            task_id=tarefa_com.id, content="de outra pessoa"
+        )
+    # Spec 051 §4.4: o quadro do SEO passa a ter TAREFA -- a linha de apagar
+    # quadro mede o apagar COM tarefas, que e o que a decisao 5 confirmou.
+    await f.make_task(
+        db, workspace_id=ws, created_by=alvo_mkt, team_id=seo, board_id=quadro_seo.id
+    )
 
     await db.commit()
 
@@ -322,6 +401,14 @@ async def _mundo(db) -> dict:
             ),
             "OPERATOR": (
                 operator, (Membership(team_id=seo, role="OPERATOR"),), None
+            ),
+            "DUAS_ARVORES": (
+                duas_arvores,
+                (
+                    Membership(team_id=mkt, role="MANAGER"),
+                    Membership(team_id=com, role="OPERATOR"),
+                ),
+                None,
             ),
         },
         # tudo o que um caminho ou corpo pode citar, como string
@@ -345,6 +432,9 @@ async def _mundo(db) -> dict:
                 "form_mkt": form_mkt.id, "form_com": form_com.id,
                 "sol_mkt": sol_mkt, "sol_com": sol_com,
                 "comentario": comentario.id,
+                "comentario_com": comentario_com.id,
+                "misto_design": misto_design, "desativado": desativado,
+                "sol_orfa": sol_orfa, "sol_aprovada_mkt": sol_aprovada_mkt,
             }.items()
         },
     }
@@ -413,76 +503,97 @@ MATRIZ: tuple[Linha, ...] = (
     # que mora no servico e nao na permissao.
     Linha("organization.update", "a organizacao", "patch", f"{T}/workspaces/current",
           {"name": "Outro nome"},
-          (OK, OK, NEGADO, NEGADO, NEGADO)),
+          (OK, OK, NEGADO, NEGADO, NEGADO, NEGADO)),
     Linha("org_role.grant", "GESTOR a uma pessoa", "patch",
           f"{T}/members/{{alvo_mkt}}/organization-role", {"role": "GESTOR"},
-          (OK, OK, NEGADO, NEGADO, NEGADO)),
+          (OK, OK, NEGADO, NEGADO, NEGADO, NEGADO)),
     Linha("org_role.grant", "ADMIN a uma pessoa (o teto)", "patch",
           f"{T}/members/{{alvo_mkt}}/organization-role", {"role": "ADMIN"},
-          (OK, NEGADO, NEGADO, NEGADO, NEGADO)),
+          (OK, NEGADO, NEGADO, NEGADO, NEGADO, NEGADO)),
     Linha("org_role.revoke", "tirar o papel de outro GESTOR", "patch",
           f"{T}/members/{{gestor2}}/organization-role", {"role": None},
-          (OK, OK, NEGADO, NEGADO, NEGADO)),
+          (OK, OK, NEGADO, NEGADO, NEGADO, NEGADO)),
     Linha("org_role.revoke", "tirar o papel de outro ADMIN (o teto)", "patch",
           f"{T}/members/{{admin2}}/organization-role", {"role": None},
-          (OK, NEGADO, NEGADO, NEGADO, NEGADO)),
+          (OK, NEGADO, NEGADO, NEGADO, NEGADO, NEGADO)),
     # ---------------------------------------------------------- time
     Linha("team.create", "raiz nova", "post", f"{T}/workspaces/current/teams",
           {"name": "Nova", "slug": "nova"},
-          (OK, OK, NEGADO, NEGADO, NEGADO)),
+          (OK, OK, NEGADO, NEGADO, NEGADO, NEGADO)),
     Linha("subteam.create", "no Marketing", "post", f"{T}/workspaces/current/teams",
           {"name": "Novo", "slug": "novo", "parent_team_id": "{mkt}"},
-          (OK, OK, OK, NEGADO, NEGADO)),
+          (OK, OK, OK, NEGADO, NEGADO, OK)),
     Linha("subteam.create", "no Comercial", "post", f"{T}/workspaces/current/teams",
           {"name": "Novo", "slug": "novo", "parent_team_id": "{com}"},
-          (OK, OK, NEGADO, NEGADO, NEGADO)),
+          (OK, OK, NEGADO, NEGADO, NEGADO, NEGADO)),
     Linha("team.update", "o Marketing (raiz)", "patch",
           f"{T}/workspaces/current/teams/{{mkt}}", {"name": "Outro"},
-          (409, 409, 409, NEGADO, NEGADO),
+          (409, 409, 409, NEGADO, NEGADO, 409),
           diverge="item 04 (fora desta spec): renomear time raiz"),
     # Fatia F (item 03): o SUPERVISOR edita o PROPRIO subtime -- e so ele.
     Linha("subteam.update", "o SEO", "patch",
           f"{T}/workspaces/current/teams/{{seo}}", {"name": "Outro"},
-          (OK, OK, OK, OK, NEGADO)),
+          (OK, OK, OK, OK, NEGADO, OK)),
     Linha("subteam.update", "o Design (irmao do SEO)", "patch",
           f"{T}/workspaces/current/teams/{{design}}", {"name": "Outro"},
-          (OK, OK, OK, NEGADO, NEGADO)),
+          (OK, OK, OK, NEGADO, NEGADO, OK)),
     Linha("subteam.update", "Vendas (Comercial)", "patch",
           f"{T}/workspaces/current/teams/{{vendas}}", {"name": "Outro"},
-          (OK, OK, NEGADO, NEGADO, NEGADO)),
+          (OK, OK, NEGADO, NEGADO, NEGADO, NEGADO)),
     Linha("subteam.delete", "vazio do Marketing", "delete",
           f"{T}/workspaces/current/teams/{{vazio_mkt}}", None,
-          (OK, NEGADO, NEGADO, NEGADO, NEGADO)),
+          # 051, fatia D: o gerente apaga subtime da propria arvore; o gestor nao
+          (OK, NEGADO, OK, NEGADO, NEGADO, OK)),
     Linha("subteam.delete", "vazio do Comercial", "delete",
           f"{T}/workspaces/current/teams/{{vazio_com}}", None,
-          (OK, NEGADO, NEGADO, NEGADO, NEGADO)),
+          (OK, NEGADO, NEGADO, NEGADO, NEGADO, NEGADO)),
+    # ⚠️ Spec 051 §4.6: mover time so DENTRO da arvore. As duas de baixo sao o
+    # que a API aceita hoje e nunca foi desenhado (a raiz virando subtime leva a
+    # arvore inteira junto); a de cima e o que continua valendo.
+    Linha("team.move", "Vazio-MKT para dentro do SEO (mesma arvore)", "post",
+          f"{T}/workspaces/current/teams/{{vazio_mkt}}/move", {"new_parent_id": "{seo}"},
+          (OK, NEGADO, NEGADO, NEGADO, NEGADO, NEGADO)),
+    Linha("team.move", "Vazio-MKT para dentro do Comercial", "post",
+          f"{T}/workspaces/current/teams/{{vazio_mkt}}/move", {"new_parent_id": "{com}"},
+          # 051, fatia D: destino em outra arvore e recusado
+          (409, NEGADO, NEGADO, NEGADO, NEGADO, NEGADO)),
+    Linha("team.move", "o Comercial (raiz) para dentro do Marketing", "post",
+          f"{T}/workspaces/current/teams/{{com}}/move", {"new_parent_id": "{mkt}"},
+          # 051, fatia D: time raiz ganhando pai e recusado
+          (409, NEGADO, NEGADO, NEGADO, NEGADO, NEGADO)),
     # ---------------------------------------------------------- pessoa
     Linha("person.create", "no Marketing", "post", f"{T}/members",
           {"name": "Nova", "email": "nova@t.dev", "team_id": "{mkt}", "role": "OPERATOR"},
-          (OK, OK, OK, NEGADO, NEGADO)),
+          (OK, OK, OK, NEGADO, NEGADO, OK)),
+    # Spec 051 §4.5 (decisao 6): gestor e gerente fazem gerente. O cadastro ja
+    # deixa HOJE -- sem chamar a matriz C2, que e o buraco; com a regra nova a
+    # linha fica igual e passa a estar certa pelo motivo certo.
+    Linha("person.create", "como MANAGER no Marketing", "post", f"{T}/members",
+          {"name": "Nova", "email": "nova@t.dev", "team_id": "{mkt}", "role": "MANAGER"},
+          (OK, OK, OK, NEGADO, NEGADO, OK)),
     # ⚠️ O item 07 da matriz de 10/09 ("MANAGER cadastra so com vinculo no time
     # dele") saiu na fatia 0b: era a mesma linha do defeito da outra raiz.
     Linha("person.create", "no Comercial", "post", f"{T}/members",
           {"name": "Nova", "email": "nova@t.dev", "team_id": "{com}", "role": "OPERATOR"},
-          (OK, OK, NEGADO, NEGADO, NEGADO)),
+          (OK, OK, NEGADO, NEGADO, NEGADO, NEGADO)),
     Linha("person.update", "senha de alguem do Marketing", "post",
           f"{T}/members/{{alvo_mkt}}/reset-password", None,
-          (OK, OK, OK, NEGADO, NEGADO)),
+          (OK, OK, OK, NEGADO, NEGADO, OK)),
     Linha("person.update", "senha de alguem do Comercial", "post",
           f"{T}/members/{{alvo_com}}/reset-password", None,
-          (OK, OK, NEGADO, NEGADO, NEGADO)),
+          (OK, OK, NEGADO, NEGADO, NEGADO, NEGADO)),
     Linha("person.deactivate", "alguem do Marketing", "post",
           f"{T}/members/{{alvo_mkt}}/deactivate", None,
-          (OK, OK, OK, NEGADO, NEGADO)),
+          (OK, OK, OK, NEGADO, NEGADO, OK)),
     Linha("person.deactivate", "alguem do Comercial", "post",
           f"{T}/members/{{alvo_com}}/deactivate", None,
-          (OK, OK, NEGADO, NEGADO, NEGADO)),
+          (OK, OK, NEGADO, NEGADO, NEGADO, NEGADO)),
     # ⚠️ A CONTA E DE TODAS AS ARVORES DA PESSOA (fatia 0b, escolha registrada
     # na spec §4.9): com um vinculo no SEO e outro em Vendas, o MANAGER do
     # Marketing NAO a desativa -- so a organizacao.
     Linha("person.deactivate", "alguem do Marketing E do Comercial", "post",
           f"{T}/members/{{misto}}/deactivate", None,
-          (OK, OK, NEGADO, NEGADO, NEGADO)),
+          (OK, OK, NEGADO, NEGADO, NEGADO, NEGADO)),
     # ⚠️⚠️ REVISAO DE 16/09 -- A CONTA RESPEITA O PAPEL DO ALVO. Resetar senha
     # devolve a provisoria a quem clicou: sem estas travas, era tomar a conta.
     # Os alvos antes eram so operadores, e a matriz nao via isso.
@@ -490,100 +601,135 @@ MATRIZ: tuple[Linha, ...] = (
     # prova a trava nova e o GESTOR nas linhas de ADMIN, e o MANAGER no par.
     Linha("person.update", "senha de outro ADMIN", "post",
           f"{T}/members/{{admin2}}/reset-password", None,
-          (OK, NEGADO, NEGADO, NEGADO, NEGADO)),
+          (OK, NEGADO, NEGADO, NEGADO, NEGADO, NEGADO)),
     Linha("person.update", "senha de outro MANAGER do Marketing", "post",
           f"{T}/members/{{manager2}}/reset-password", None,
-          (OK, OK, NEGADO, NEGADO, NEGADO)),
+          (OK, OK, NEGADO, NEGADO, NEGADO, NEGADO)),
     Linha("person.deactivate", "outro ADMIN", "post",
           f"{T}/members/{{admin2}}/deactivate", None,
-          (OK, NEGADO, NEGADO, NEGADO, NEGADO)),
+          (OK, NEGADO, NEGADO, NEGADO, NEGADO, NEGADO)),
     Linha("person.deactivate", "outro MANAGER do Marketing", "post",
           f"{T}/members/{{manager2}}/deactivate", None,
-          (OK, OK, NEGADO, NEGADO, NEGADO)),
+          (OK, OK, NEGADO, NEGADO, NEGADO, NEGADO)),
     # ---------------------------------------------------------- vinculo
     Linha("membership.create", "OPERATOR no SEO", "post",
           f"{T}/members/{{livre_mkt}}/team", {"team_id": "{seo}", "role": "OPERATOR"},
-          (OK, OK, OK, OK, NEGADO)),
+          (OK, OK, OK, OK, NEGADO, OK)),
     Linha("membership.create", "OPERATOR em Vendas", "post",
           f"{T}/members/{{livre_com}}/team", {"team_id": "{vendas}", "role": "OPERATOR"},
-          (OK, OK, NEGADO, NEGADO, NEGADO)),
+          (OK, OK, NEGADO, NEGADO, NEGADO, NEGADO)),
     # ⚠️⚠️ FATIA H -- REVOGA A SPEC 028 D2, por decisao da Camila: o SUPERVISOR
     # cria par, promove, rebaixa e tira outro supervisor NO PROPRIO SUBTIME
     # (*"Sim, pode rebaixar, qualquer coisa o gerente arruma ne"*). O par de
     # cada linha fora do SEO e o que prova que "proprio" continua valendo.
     Linha("membership.create", "SUPERVISOR no SEO", "post",
           f"{T}/members/{{livre_design}}/team", {"team_id": "{seo}", "role": "SUPERVISOR"},
-          (OK, OK, OK, OK, NEGADO)),
+          (OK, OK, OK, OK, NEGADO, OK)),
+    # ⚠️ Spec 051 §4.2 (decisoes 2 e 3): quem nao e da organizacao so vincula
+    # quem JA ESTA naquela arvore. Hoje o supervisor e o gerente puxam gente
+    # que so esta no Comercial -- e a de baixo, quem esta nas duas, continua
+    # valendo (pergunta A).
+    Linha("membership.create", "OPERATOR no SEO, de quem so esta no Comercial", "post",
+          f"{T}/members/{{livre_com}}/team", {"team_id": "{seo}", "role": "OPERATOR"},
+          # 051, fatia C: so vincula quem ja esta na arvore
+          (OK, OK, NEGADO, NEGADO, NEGADO, NEGADO)),
+    Linha("membership.create", "OPERATOR no SEO, de quem esta no Design E em Vendas", "post",
+          f"{T}/members/{{misto_design}}/team", {"team_id": "{seo}", "role": "OPERATOR"},
+          (OK, OK, OK, OK, NEGADO, OK)),
     Linha("membership.update", "OPERATOR->SUPERVISOR no SEO", "patch",
           f"{T}/members/{{alvo_mkt}}/teams/{{seo}}", {"role": "SUPERVISOR"},
-          (OK, OK, OK, OK, NEGADO)),
+          (OK, OK, OK, OK, NEGADO, OK)),
     Linha("membership.update", "rebaixar outro SUPERVISOR no SEO", "patch",
           f"{T}/members/{{sup_par}}/teams/{{seo}}", {"role": "OPERATOR"},
-          (OK, OK, OK, OK, NEGADO)),
+          (OK, OK, OK, OK, NEGADO, OK)),
     Linha("membership.update", "OPERATOR->SUPERVISOR no Design (irmao do SEO)", "patch",
           f"{T}/members/{{alvo_mkt}}/teams/{{design}}", {"role": "SUPERVISOR"},
-          (OK, OK, OK, NEGADO, NEGADO)),
+          (OK, OK, OK, NEGADO, NEGADO, OK)),
     Linha("membership.update", "OPERATOR->SUPERVISOR em Vendas", "patch",
           f"{T}/members/{{alvo_com}}/teams/{{vendas}}", {"role": "SUPERVISOR"},
-          (OK, OK, NEGADO, NEGADO, NEGADO)),
+          (OK, OK, NEGADO, NEGADO, NEGADO, NEGADO)),
+    # ⚠️⚠️ Spec 051 §4.5 (decisao 6) -- REVOGA a C2 da Spec 015 num ponto: gestor
+    # e gerente fazem gerente. Mas o gerente SO PROMOVE: rebaixar outro gerente
+    # continua com gestor e admin, e a linha de baixo fica NEGADO para ele.
+    Linha("membership.update", "OPERATOR->MANAGER no Marketing", "patch",
+          f"{T}/members/{{livre_mkt}}/teams/{{mkt}}", {"role": "MANAGER"},
+          (OK, OK, OK, NEGADO, NEGADO, OK)),  # 051, fatia C: gestor e gerente promovem a gerente
+    Linha("membership.update", "rebaixar outro MANAGER do Marketing", "patch",
+          f"{T}/members/{{manager2}}/teams/{{mkt}}", {"role": "OPERATOR"},
+          # 051, fatia C: gestor rebaixa gerente; gerente so promove
+          (OK, OK, NEGADO, NEGADO, NEGADO, NEGADO)),
     # ⚠️ FATIA D: o GESTOR nao tira ninguem de time. Esta linha NAO estava
     # marcada como divergencia -- tirar do time parecia "mover", e o Mapa de
     # 10/09 poe `·` na coluna D do vinculo para o GESTOR. Ver spec, fatia D.
     Linha("membership.delete", "OPERATOR do SEO", "delete",
           f"{T}/members/{{alvo_mkt}}/teams/{{seo}}", None,
-          (OK, NEGADO, OK, OK, NEGADO)),
+          (OK, NEGADO, OK, OK, NEGADO, OK)),
     Linha("membership.delete", "outro SUPERVISOR do SEO", "delete",
           f"{T}/members/{{sup_par}}/teams/{{seo}}", None,
-          (OK, NEGADO, OK, OK, NEGADO)),
+          (OK, NEGADO, OK, OK, NEGADO, OK)),
     Linha("membership.delete", "OPERATOR de Vendas", "delete",
           f"{T}/members/{{alvo_com}}/teams/{{vendas}}", None,
-          (OK, NEGADO, NEGADO, NEGADO, NEGADO)),
+          (OK, NEGADO, NEGADO, NEGADO, NEGADO, NEGADO)),
     Linha("membership.move", "Design -> Vazio-MKT", "post",
           f"{T}/members/{{alvo_mkt}}/move-subteam",
           {"from_team_id": "{design}", "to_team_id": "{vazio_mkt}"},
-          (OK, OK, OK, NEGADO, NEGADO)),
+          (OK, OK, OK, NEGADO, NEGADO, OK)),
     Linha("membership.move", "Suporte -> Vazio-COM", "post",
           f"{T}/members/{{alvo_com}}/move-subteam",
           {"from_team_id": "{suporte}", "to_team_id": "{vazio_com}"},
-          (OK, OK, NEGADO, NEGADO, NEGADO)),
+          (OK, OK, NEGADO, NEGADO, NEGADO, NEGADO)),
+    Linha("membership.move", "conta DESATIVADA, Design -> Vazio-MKT", "post",
+          f"{T}/members/{{desativado}}/move-subteam",
+          {"from_team_id": "{design}", "to_team_id": "{vazio_mkt}"},
+          # 051, fatia C: conta desativada nao muda de subtime
+          (409, 409, 409, NEGADO, NEGADO, 409)),
     # ---------------------------------------------------------- quadro
     Linha("board.create.root", "no Marketing", "post", f"{T}/boards",
           {"name": "Campanhas", "team_id": "{mkt}"},
-          (OK, OK, OK, NEGADO, NEGADO)),
+          (OK, OK, OK, NEGADO, NEGADO, OK)),
     Linha("board.create.root", "no Comercial", "post", f"{T}/boards",
           {"name": "Campanhas", "team_id": "{com}"},
-          (OK, OK, NEGADO, NEGADO, NEGADO)),
+          (OK, OK, NEGADO, NEGADO, NEGADO, NEGADO)),
     Linha("board.create", "no SEO", "post", f"{T}/boards",
           {"name": "Pauta", "team_id": "{seo}"},
-          (OK, OK, OK, OK, NEGADO)),
+          (OK, OK, OK, OK, NEGADO, OK)),
     Linha("board.update.root", "quadro geral do Marketing", "patch",
           f"{T}/boards/{{geral_mkt}}", {"name": "Geral"},
-          (OK, OK, OK, NEGADO, NEGADO)),
+          (OK, OK, OK, NEGADO, NEGADO, OK)),
     Linha("board.update.root", "quadro geral do Comercial", "patch",
           f"{T}/boards/{{geral_com}}", {"name": "Geral"},
-          (OK, OK, NEGADO, NEGADO, NEGADO)),
+          (OK, OK, NEGADO, NEGADO, NEGADO, NEGADO)),
     # Fatia D (item 01): o GESTOR nao apaga quadro -- de subtime nem da raiz.
-    Linha("board.delete", "quadro do SEO", "delete", f"{T}/boards/{{quadro_seo}}", None,
-          (OK, NEGADO, OK, OK, NEGADO)),
+    # Spec 051 §4.4 (decisao 5): o quadro do SEO TEM tarefa, e o supervisor o
+    # apaga assim mesmo -- o aviso com a contagem mora na tela, para todo papel.
+    Linha("board.delete", "quadro do SEO, com tarefa", "delete",
+          f"{T}/boards/{{quadro_seo}}", None,
+          (OK, NEGADO, OK, OK, NEGADO, OK)),
     Linha("board.delete", "quadro de Vendas", "delete",
           f"{T}/boards/{{quadro_vendas}}", None,
-          (OK, NEGADO, NEGADO, NEGADO, NEGADO)),
+          (OK, NEGADO, NEGADO, NEGADO, NEGADO, NEGADO)),
     Linha("board.delete.root", "quadro secundario do Marketing", "delete",
           f"{T}/boards/{{secundario_mkt}}", None,
-          (OK, NEGADO, OK, NEGADO, NEGADO)),
+          (OK, NEGADO, OK, NEGADO, NEGADO, OK)),
+    # Spec 051 §4.8 item 2: ler quadro PELO ID nao olha a lente -- qualquer um
+    # le o quadro de Vendas, com a contagem de tarefas.
+    Linha("board.read", "quadro de Vendas, pelo id", "get",
+          f"{T}/boards/{{quadro_vendas}}", None,
+          # 051, fatia D: fora da lente e 404
+          (OK, OK, OCULTO, OCULTO, OCULTO, OCULTO)),
     # ---------------------------------------------------------- coluna
     Linha("column.create", "no geral do Marketing", "post",
           f"{T}/boards/{{geral_mkt}}/columns", {"name": "Revisao", "semantic": "IN_PROGRESS"},
-          (OK, OK, OK, NEGADO, NEGADO)),
+          (OK, OK, OK, NEGADO, NEGADO, OK)),
     Linha("column.create", "no geral do Comercial", "post",
           f"{T}/boards/{{geral_com}}/columns", {"name": "Revisao", "semantic": "IN_PROGRESS"},
-          (OK, OK, NEGADO, NEGADO, NEGADO)),
+          (OK, OK, NEGADO, NEGADO, NEGADO, NEGADO)),
     Linha("column.create", "no quadro do SEO", "post",
           f"{T}/boards/{{quadro_seo}}/columns", {"name": "Revisao", "semantic": "IN_PROGRESS"},
-          (OK, OK, OK, OK, NEGADO)),
+          (OK, OK, OK, OK, NEGADO, OK)),
     Linha("column.delete", "coluna vazia do SEO", "delete",
           f"{T}/boards/{{quadro_seo}}/columns/{{cancelado_seo}}", None,
-          (OK, NEGADO, OK, OK, NEGADO)),
+          (OK, NEGADO, OK, OK, NEGADO, OK)),
     # ⚠️ AS DUAS DE BAIXO SAO O PAR QUE A FATIA D PRECISAVA: numa coluna de
     # quadro da RAIZ o GESTOR renomeia (continua editando) e NAO apaga. Antes
     # da D, coluna da raiz cobrava so `board.update.root`, e o GESTOR -- que o
@@ -591,95 +737,117 @@ MATRIZ: tuple[Linha, ...] = (
     Linha("column.update", "renomear coluna do secundario do Marketing", "patch",
           f"{T}/boards/{{secundario_mkt}}/columns/{{cancelado_secundario}}",
           {"name": "Outro nome"},
-          (OK, OK, OK, NEGADO, NEGADO)),
+          (OK, OK, OK, NEGADO, NEGADO, OK)),
     Linha("column.delete", "coluna do secundario do Marketing", "delete",
           f"{T}/boards/{{secundario_mkt}}/columns/{{cancelado_secundario}}", None,
-          (OK, NEGADO, OK, NEGADO, NEGADO)),
+          (OK, NEGADO, OK, NEGADO, NEGADO, OK)),
     # ---------------------------------------------------------- tarefa
     Linha("task.create", "no Marketing", "post", f"{T}/tasks",
           {"title": "T", "team_id": "{mkt}", "board_id": "{geral_mkt}",
            "assignee_ids": ["{alvo_mkt}"]},
-          (OK, OK, OK, OK, OK)),
+          (OK, OK, OK, OK, OK, OK)),
     Linha("task.create", "no Comercial", "post", f"{T}/tasks",
           {"title": "T", "team_id": "{com}", "board_id": "{geral_com}",
            "assignee_ids": ["{alvo_com}"]},
-          (OK, OK, 422, 422, 422)),
+          (OK, OK, 422, 422, 422, OK)),
     Linha("task.update", "do Marketing", "patch", f"{T}/tasks/{{tarefa_mkt}}",
           {"title": "Outro"},
-          (OK, OK, OK, OK, OK)),
+          (OK, OK, OK, OK, OK, OK)),
     Linha("task.update", "do Comercial", "patch", f"{T}/tasks/{{tarefa_com}}",
           {"title": "Outro"},
-          (OK, OK, OCULTO, OCULTO, OCULTO)),
+          (OK, OK, OCULTO, OCULTO, OCULTO, OK)),
     Linha("task.archive", "do Marketing", "post", f"{T}/tasks/{{tarefa_mkt}}/archive",
           None,
-          (OK, OK, OK, OK, OK)),
+          (OK, OK, OK, OK, OK, OK)),
     Linha("task.delete", "do Marketing", "delete", f"{T}/tasks/{{tarefa_mkt}}", None,
-          (OK, OK, OK, NEGADO, NEGADO)),
+          (OK, OK, OK, NEGADO, NEGADO, OK)),
+    # ⚠️⚠️ SPEC 051 §2, A CAUSA COMUM: DUAS_ARVORES enxerga a tarefa do Comercial
+    # (e operador la) e tem `task.delete` NO MARKETING. O servico pergunta a
+    # lente, e nao o verbo no time da tarefa -- e ela apaga.
     Linha("task.delete", "do Comercial", "delete", f"{T}/tasks/{{tarefa_com}}", None,
-          (OK, OK, OCULTO, NEGADO, NEGADO)),
+          (OK, OK, OCULTO, NEGADO, NEGADO, NEGADO)),  # 051, fatia A: o verbo no time do item
     Linha("task.assign", "responsavel na do Marketing", "post",
           f"{T}/tasks/{{tarefa_mkt}}/assignees", {"user_id": "{alvo_mkt}"},
-          (OK, OK, OK, OK, OK)),
+          (OK, OK, OK, OK, OK, OK)),
     Linha("comment.moderate", "apagar comentario alheio", "delete",
           f"{T}/tasks/{{tarefa_mkt}}/comments/{{comentario}}", None,
-          (OK, OK, OK, NEGADO, NEGADO)),
+          (OK, OK, OK, NEGADO, NEGADO, OK)),
+    Linha("comment.moderate", "apagar comentario alheio do Comercial", "delete",
+          f"{T}/tasks/{{tarefa_com}}/comments/{{comentario_com}}", None,
+          (OK, OK, OCULTO, OCULTO, OCULTO, NEGADO)),  # 051, fatia A: moderar pede o verbo no time
     # ---------------------------------------------------------- projeto
     Linha("project.create", "no Marketing", "post", f"{T}/projects",
           {"title": "P", "team_id": "{mkt}"},
-          (OK, OK, OK, NEGADO, NEGADO)),
+          (OK, OK, OK, NEGADO, NEGADO, OK)),
     Linha("project.create", "no Comercial", "post", f"{T}/projects",
           {"title": "P", "team_id": "{com}"},
-          (OK, OK, 422, NEGADO, NEGADO)),
+          (OK, OK, 422, NEGADO, NEGADO, NEGADO)),  # 051, fatia A: na lente sem o verbo e 403
     Linha("project.update", "do Marketing", "patch", f"{T}/projects/{{projeto_mkt}}",
           {"title": "Outro"},
-          (OK, OK, OK, OK, NEGADO)),
+          (OK, OK, OK, OK, NEGADO, OK)),
     Linha("project.update", "do Comercial", "patch", f"{T}/projects/{{projeto_com}}",
           {"title": "Outro"},
-          (OK, OK, OCULTO, OCULTO, NEGADO)),
+          (OK, OK, OCULTO, OCULTO, NEGADO, NEGADO)),  # 051, fatia A: o verbo no time do item
     Linha("project.archive", "do Marketing", "post",
           f"{T}/projects/{{projeto_mkt}}/archive", None,
-          (OK, OK, OK, OK, NEGADO)),
+          (OK, OK, OK, OK, NEGADO, OK)),
     Linha("project.archive", "do Comercial", "post",
           f"{T}/projects/{{projeto_com}}/archive", None,
-          (OK, OK, OCULTO, OCULTO, NEGADO)),
+          (OK, OK, OCULTO, OCULTO, NEGADO, NEGADO)),  # 051, fatia A: o verbo no time do item
     Linha("project.delete", "do Marketing", "delete", f"{T}/projects/{{projeto_mkt}}",
           None,
-          (OK, NEGADO, OK, NEGADO, NEGADO)),
+          (OK, NEGADO, OK, NEGADO, NEGADO, OK)),
     Linha("project.delete", "do Comercial", "delete", f"{T}/projects/{{projeto_com}}",
           None,
-          (OK, NEGADO, OCULTO, NEGADO, NEGADO)),
+          (OK, NEGADO, OCULTO, NEGADO, NEGADO, NEGADO)),  # 051, fatia A: o verbo no time do item
     # ---------------------------------------------------------- formulario
     Linha("form.create", "no Marketing", "post", f"{T}/solicitacoes/formularios",
           {"team_id": "{mkt}", "slug": "novo", "title": "Novo"},
-          (OK, OK, OK, NEGADO, NEGADO)),
+          (OK, OK, OK, NEGADO, NEGADO, OK)),
     Linha("form.create", "no Comercial", "post", f"{T}/solicitacoes/formularios",
           {"team_id": "{com}", "slug": "novo", "title": "Novo"},
-          (OK, OK, NEGADO, NEGADO, NEGADO)),
+          (OK, OK, NEGADO, NEGADO, NEGADO, NEGADO)),
+    # Spec 051 §4.8 item 2: abrir formulario pelo id nao conferia o time -- o
+    # MANAGER lia o do Comercial, rascunho inclusive. Fatia B: fora de
+    # `form.read` no time e 404.
+    Linha("form.read", "do Comercial, pelo id", "get",
+          f"{T}/solicitacoes/formularios/{{form_com}}", None,
+          (OK, OK, OCULTO, NEGADO, NEGADO, OCULTO)),
     Linha("form.update", "do Marketing", "patch",
           f"{T}/solicitacoes/formularios/{{form_mkt}}", {"title": "Outro"},
-          (OK, OK, OK, NEGADO, NEGADO)),
+          (OK, OK, OK, NEGADO, NEGADO, OK)),
     Linha("form.update", "do Comercial", "patch",
           f"{T}/solicitacoes/formularios/{{form_com}}", {"title": "Outro"},
-          (OK, OK, NEGADO, NEGADO, NEGADO)),
+          (OK, OK, NEGADO, NEGADO, NEGADO, NEGADO)),
     # ⚠️ DESPUBLICAR, e nao publicar: publicar um formulario sem perguntas e 422
     # ("sem perguntas nao pode ser publicado") -- a linha mediria a regra, e nao
     # a permissao. O portao dos dois sentidos e o mesmo.
     Linha("form.publish", "despublicar do Marketing", "post",
           f"{T}/solicitacoes/formularios/{{form_mkt}}/publicar", {"publicado": False},
-          (OK, OK, OK, NEGADO, NEGADO)),
+          (OK, OK, OK, NEGADO, NEGADO, OK)),
     Linha("form.delete", "do Marketing", "delete",
           f"{T}/solicitacoes/formularios/{{form_mkt}}", None,
-          (OK, NEGADO, OK, NEGADO, NEGADO)),
+          (OK, NEGADO, OK, NEGADO, NEGADO, OK)),
     Linha("form.delete", "do Comercial", "delete",
           f"{T}/solicitacoes/formularios/{{form_com}}", None,
-          (OK, NEGADO, NEGADO, NEGADO, NEGADO)),
+          (OK, NEGADO, NEGADO, NEGADO, NEGADO, NEGADO)),
     # ---------------------------------------------------------- solicitacao
     Linha("solicitation.review", "aprovar do Marketing", "post",
           f"{T}/solicitacoes/{{sol_mkt}}/aprovar", {},
-          (OK, OK, OK, NEGADO, NEGADO)),
+          (OK, OK, OK, NEGADO, NEGADO, OK)),
     Linha("solicitation.review", "aprovar do Comercial", "post",
           f"{T}/solicitacoes/{{sol_com}}/aprovar", {},
-          (OK, OK, OCULTO, NEGADO, NEGADO)),
+          (OK, OK, OCULTO, NEGADO, NEGADO, OCULTO)),  # 051, fatia B: a fila pelo verbo
+    Linha("solicitation.review", "aprovar a orfa (sem formulario)", "post",
+          f"{T}/solicitacoes/{{sol_orfa}}/aprovar", {},
+          (OK, OK, OCULTO, NEGADO, NEGADO, OCULTO)),  # 051, fatia B: a orfa e so da organizacao
+    # ⚠️ Spec 051 §3.6, achado de uma frente de revisao e conferido lendo
+    # `mark_task`: o `task_id` so e checado contra o WORKSPACE. O MANAGER
+    # vincula uma tarefa do Comercial, e a fila passa a mostrar o titulo dela
+    # (`titulos_das_tarefas`, sem lente).
+    Linha("solicitation.review", "marcar tarefa do Comercial na do Marketing", "post",
+          f"{T}/solicitacoes/{{sol_aprovada_mkt}}/tarefa", {"task_id": "{tarefa_com}"},
+          (OK, OK, OCULTO, NEGADO, NEGADO, OK)),  # 051, fatia B: tarefa fora da lente e 404
 )
 
 
@@ -730,6 +898,197 @@ async def test_matriz(db, linha: Linha, papel: str, esperado) -> None:
 # ---------------------------------------------------------------- o cadeado
 
 
+def _linha(acao: str, alvo: str) -> Linha:
+    (achada,) = [x for x in MATRIZ if x.acao == acao and x.alvo == alvo]
+    return achada
+
+
+#: Spec 051, fatia A: (leitura, campo, linha da MATRIZ que o campo espelha).
+#: ⚠️ O CAMPO E A LINHA TEM DE CONCORDAR -- e o `test_o_cadeado_concorda_com_o_patch`
+#: da Spec 047, para tarefa e projeto. Campo aberto e linha NEGADO e botao que da
+#: 403; o contrario, botao escondido para uma acao permitida.
+CADEADOS_DE_ITEM = (
+    ("/tasks/{tarefa_mkt}", "can_delete", ("task.delete", "do Marketing")),
+    ("/tasks/{tarefa_com}", "can_delete", ("task.delete", "do Comercial")),
+    ("/projects/{projeto_mkt}", "can_update", ("project.update", "do Marketing")),
+    ("/projects/{projeto_com}", "can_update", ("project.update", "do Comercial")),
+    ("/projects/{projeto_mkt}", "can_archive", ("project.archive", "do Marketing")),
+    ("/projects/{projeto_com}", "can_archive", ("project.archive", "do Comercial")),
+    ("/projects/{projeto_mkt}", "can_delete", ("project.delete", "do Marketing")),
+    ("/projects/{projeto_com}", "can_delete", ("project.delete", "do Comercial")),
+)
+
+
+@pytest.mark.parametrize("papel", PAPEIS)
+async def test_o_cadeado_do_item_concorda_com_a_matriz(db, papel: str) -> None:
+    """Spec 051, fatia A -- o botao da tarefa e do projeto vem do servidor.
+
+    ⚠️ So compara o que o papel ENXERGA: item fora da lente e 404 na leitura, e
+    nao ha botao a desenhar. A linha nao pode dizer OK nesses casos -- e diz
+    OCULTO ou NEGADO, conforme quem responde primeiro: a lente (404) ou o
+    portao da rota, para quem nao tem o verbo em lugar nenhum (403).
+    """
+    m = await _mundo(db)
+    idx = PAPEIS.index(papel)
+    async with _client(db, _contexto(m, papel)) as cli:
+        for caminho, campo, (acao, alvo) in CADEADOS_DE_ITEM:
+            r = await cli.get(T + _preencher(caminho, m["ids"]))
+            esperado = _linha(acao, alvo).esperado[idx]
+            if r.status_code == 404:
+                assert esperado != OK, f"{papel}: {caminho} oculto, linha OK"
+                continue
+            assert r.status_code == 200, r.text
+            assert r.json()[campo] is (esperado == OK), (
+                f"{papel} em {acao} ({alvo}): {campo}={r.json()[campo]}, linha {esperado}"
+            )
+
+
+#: Spec 051, fatia E: (pessoa, linha de resetar senha, linha de desativar).
+#: `None` = a matriz nao tem a linha para essa acao nessa pessoa.
+CONTAS = (
+    ("alvo_mkt", ("person.update", "senha de alguem do Marketing"),
+     ("person.deactivate", "alguem do Marketing")),
+    ("alvo_com", ("person.update", "senha de alguem do Comercial"),
+     ("person.deactivate", "alguem do Comercial")),
+    ("misto", None, ("person.deactivate", "alguem do Marketing E do Comercial")),
+    ("admin2", ("person.update", "senha de outro ADMIN"),
+     ("person.deactivate", "outro ADMIN")),
+    ("manager2", ("person.update", "senha de outro MANAGER do Marketing"),
+     ("person.deactivate", "outro MANAGER do Marketing")),
+)
+
+
+@pytest.mark.parametrize("papel", PAPEIS)
+async def test_o_cadeado_da_conta_concorda_com_a_matriz(db, papel: str) -> None:
+    """Spec 051, fatia E -- os botoes de resetar senha e desativar.
+
+    ⚠️ O CASO QUE MOTIVOU: depois do #57, o gerente via os dois botoes na conta
+    de outro gerente (a tela decidia por "alcance amplo") e levava 403. Cada
+    campo e comparado com a linha da acao, papel a papel -- botao aberto e
+    linha NEGADO e o defeito; o contrario, acao escondida.
+    """
+    m = await _mundo(db)
+    idx = PAPEIS.index(papel)
+    async with _client(db, _contexto(m, papel)) as cli:
+        for pessoa, senha, desativar in CONTAS:
+            r = await cli.get(T + _preencher(f"/members/{{{pessoa}}}/account-actions", m["ids"]))
+            assert r.status_code == 200, r.text
+            corpo = r.json()
+            for campo, linha in (("can_reset_password", senha), ("can_deactivate", desativar)):
+                if linha is None:
+                    continue
+                esperado = _linha(*linha).esperado[idx]
+                assert corpo[campo] is (esperado == OK), (
+                    f"{papel} em {pessoa}: {campo}={corpo[campo]}, linha {esperado}"
+                )
+
+
+@pytest.mark.parametrize("papel", PAPEIS)
+async def test_o_cadeado_do_vinculo_de_gerente_concorda_com_a_matriz(db, papel: str) -> None:
+    """Spec 051, fatia C -- o `can_edit_role` do vinculo de um GERENTE.
+
+    ⚠️ E A REGRA "GERENTE SO PROMOVE" VISTA PELA TELA. O cadeado repetia a
+    condicao da matriz C2 numa copia; com a regra nova, a copia deixaria o
+    GESTOR com cadeado fechado num gerente que o PATCH aceita. Aqui o campo e
+    comparado com a linha "rebaixar outro MANAGER do Marketing", papel a papel.
+    """
+    m = await _mundo(db)
+    idx = PAPEIS.index(papel)
+    esperado = _linha("membership.update", "rebaixar outro MANAGER do Marketing").esperado[idx]
+    async with _client(db, _contexto(m, papel)) as cli:
+        r = await cli.get(T + _preencher("/members/{manager2}/teams", m["ids"]))
+    assert r.status_code == 200, r.text
+    (vinculo,) = [v for v in r.json() if v["team_id"] == m["ids"]["mkt"]]
+    assert vinculo["can_edit_role"] is (esperado == OK), (
+        f"{papel}: can_edit_role={vinculo['can_edit_role']}, linha {esperado}"
+    )
+
+
+#: Spec 051, fatia B: o que cada papel ve na FILA e na lista de FORMULARIOS.
+#: SUPERVISOR e OPERATOR nao aparecem: a rota recusa antes (403), e a matriz
+#: ja tem essa linha. `None` = a rota recusa.
+FILA = {
+    "ADMIN": {"sol_mkt", "sol_com", "sol_orfa", "sol_aprovada_mkt"},
+    "GESTOR": {"sol_mkt", "sol_com", "sol_orfa", "sol_aprovada_mkt"},
+    "MANAGER": {"sol_mkt", "sol_aprovada_mkt"},
+    "SUPERVISOR": None,
+    "OPERATOR": None,
+    # ⚠️ O caso da fatia: e operador no Comercial, e a lente o inclui -- a fila
+    # dele nao.
+    "DUAS_ARVORES": {"sol_mkt", "sol_aprovada_mkt"},
+}
+FORMULARIOS = {
+    "ADMIN": {"form_mkt", "form_com"},
+    "GESTOR": {"form_mkt", "form_com"},
+    "MANAGER": {"form_mkt"},
+    "SUPERVISOR": None,
+    "OPERATOR": None,
+    "DUAS_ARVORES": {"form_mkt"},
+}
+
+
+@pytest.mark.parametrize("papel", PAPEIS)
+async def test_fila_e_formularios_pelo_verbo_e_nao_pela_lente(db, papel: str) -> None:
+    """Spec 051, fatia B -- as LISTAS, que linha de matriz nao mede.
+
+    ⚠️ A orfa (`sol_orfa`) so aparece para a organizacao (Spec 048). Antes
+    desta fatia ela aparecia para todo MANAGER de qualquer area.
+    """
+    m = await _mundo(db)
+    nome_do_id = {v: k for k, v in m["ids"].items()}
+    async with _client(db, _contexto(m, papel)) as cli:
+        fila = await cli.get(f"{T}/solicitacoes", params={"size": 50})
+        formularios = await cli.get(f"{T}/solicitacoes/formularios")
+
+    if FILA[papel] is None:
+        assert fila.status_code == 403, fila.text
+    else:
+        assert fila.status_code == 200, fila.text
+        vistas = {
+            nome_do_id[i["id"]] for lote in fila.json()["items"] for i in lote["items"]
+        }
+        assert vistas == FILA[papel], f"{papel} ve na fila {vistas}"
+
+    if FORMULARIOS[papel] is None:
+        assert formularios.status_code == 403, formularios.text
+    else:
+        assert formularios.status_code == 200, formularios.text
+        vistos = {nome_do_id[f_["id"]] for f_ in formularios.json()}
+        assert vistos == FORMULARIOS[papel], f"{papel} ve os formularios {vistos}"
+
+
+#: Spec 051, fatia A: as areas em que cada papel CRIA projeto -- `can_create_project`.
+CRIA_PROJETO = {
+    "ADMIN": {"mkt", "com"},
+    "GESTOR": {"mkt", "com"},
+    "MANAGER": {"mkt"},
+    "SUPERVISOR": set(),
+    "OPERATOR": set(),
+    # ⚠️ O caso da fatia: enxerga o Comercial (e operador la), e nao cria nele.
+    "DUAS_ARVORES": {"mkt"},
+}
+
+
+@pytest.mark.parametrize("papel", PAPEIS)
+async def test_listagem_de_times_diz_onde_cada_papel_cria_projeto(db, papel: str) -> None:
+    m = await _mundo(db)
+    async with _client(db, _contexto(m, papel)) as cli:
+        r = await cli.get(f"{T}/workspaces/current/teams")
+    assert r.status_code == 200, r.text
+    nome_do_id = {v: k for k, v in m["ids"].items()}
+    raizes = {
+        nome_do_id[i["id"]]
+        for i in r.json()["items"]
+        if i["can_create_project"] and i["parent_team_id"] is None
+    }
+    assert raizes == CRIA_PROJETO[papel], f"{papel} cria em {raizes}"
+    # E as linhas `project.create` da matriz dizem o mesmo das duas raizes.
+    idx = PAPEIS.index(papel)
+    for alvo, time in (("no Marketing", "mkt"), ("no Comercial", "com")):
+        linha = _linha("project.create", alvo).esperado[idx]
+        assert (linha == OK) is (time in raizes), f"{papel} {alvo}: linha {linha}"
+
+
 #: Os subtimes que cada papel EDITA -- o `can_update` que a listagem devolve.
 #: Raiz nunca aparece: renomear raiz e recusado para todos (item 04, fora).
 EDITA = {
@@ -738,7 +1097,43 @@ EDITA = {
     "MANAGER": {"seo", "design", "vazio_mkt"},
     "SUPERVISOR": {"seo"},
     "OPERATOR": set(),
+    # Spec 051: o OPERATOR do Comercial nao edita subtime -- so a arvore do MANAGER.
+    "DUAS_ARVORES": {"seo", "design", "vazio_mkt"},
 }
+
+#: Spec 051, fatia D: os subtimes que cada papel APAGA -- `can_delete`.
+#: ⚠️ O GESTOR NAO (pergunta B): esta acima do gerente e nao apaga time.
+APAGA = {
+    "ADMIN": {"seo", "design", "vazio_mkt", "vendas", "suporte", "vazio_com"},
+    "GESTOR": set(),
+    "MANAGER": {"seo", "design", "vazio_mkt"},
+    "SUPERVISOR": set(),
+    "OPERATOR": set(),
+    "DUAS_ARVORES": {"seo", "design", "vazio_mkt"},
+}
+
+
+@pytest.mark.parametrize("papel", PAPEIS)
+async def test_listagem_de_times_diz_o_que_cada_papel_apaga(db, papel: str) -> None:
+    """Spec 051, fatia D -- a lixeira do time vem do servidor.
+
+    O par das linhas `subteam.delete`: a tabela prova que o DELETE recusa ou
+    aceita; este prova que a tela ofereceria a mesma coisa. E as duas linhas
+    da matriz sao conferidas contra o conjunto, papel a papel.
+    """
+    m = await _mundo(db)
+    async with _client(db, _contexto(m, papel)) as cli:
+        r = await cli.get(f"{T}/workspaces/current/teams")
+    assert r.status_code == 200, r.text
+    nome_do_id = {v: k for k, v in m["ids"].items()}
+    apagaveis = {
+        nome_do_id[item["id"]] for item in r.json()["items"] if item["can_delete"]
+    }
+    assert apagaveis == APAGA[papel], f"{papel} apaga {apagaveis}"
+    idx = PAPEIS.index(papel)
+    for alvo, time in (("vazio do Marketing", "vazio_mkt"), ("vazio do Comercial", "vazio_com")):
+        linha = _linha("subteam.delete", alvo).esperado[idx]
+        assert (linha == OK) is (time in apagaveis), f"{papel} {alvo}: linha {linha}"
 
 
 @pytest.mark.parametrize("papel", PAPEIS)

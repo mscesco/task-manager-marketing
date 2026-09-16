@@ -20,8 +20,9 @@ import uuid
 from datetime import date, datetime, time
 from enum import Enum
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field
 
+from app.core.tenant import current_tenant
 from app.db.models.enums import (
     ColumnSemantic,
     PriorityLevel,
@@ -32,6 +33,26 @@ from app.db.models.enums import (
 # Limite defensivo para description -- generoso, mas evita uploads
 # acidentais de Mb de texto.
 _DESCRIPTION_MAX = 100_000
+
+
+def _pode_no_time(permission: str, team_id: uuid.UUID | None) -> bool:
+    """O cadeado de um item, pela MESMA pergunta do servico. Spec 051, fatia A.
+
+    ⚠️⚠️ POR QUE NO SCHEMA, e nao no router como o `can_update` de `GET /teams`:
+    tarefa e projeto saem por MUITAS rotas (quadro, lista, detalhe, minhas
+    tarefas, arquivadas, criar, editar, mover...). Um campo montado no router
+    teria de ser lembrado em cada uma, e a rota esquecida devolveria a tarefa
+    sem cadeado -- ou com um default que mente. Aqui o campo sai onde o item sai.
+
+    ⚠️ E PURO: le o contexto da requisicao, nao o banco. Sem N+1 numa pagina
+    de 173 tarefas.
+
+    ⚠️ SEM CONTEXTO (serializacao fora de requisicao) responde False: o campo
+    diz "mostre o botao", e na duvida o botao nao aparece -- o servidor recusa
+    de qualquer jeito.
+    """
+    tenant = current_tenant()
+    return tenant is not None and tenant.has_permission_in(permission, team_id)
 
 
 # =========================================================
@@ -56,6 +77,25 @@ class ProjectResponse(BaseModel):
     created_by: uuid.UUID
     created_at: datetime
     updated_at: datetime
+
+    # ⚠️ Spec 051, fatia A: os botoes do projeto vem daqui, e nao do `/auth/me`
+    # -- que diz "o que", nunca "onde". Quem e MANAGER no Marketing e OPERATOR
+    # no Comercial VE o projeto do Comercial e nao mexe nele. Mesmas perguntas
+    # de `ProjectService._assert_verbo_no_time`.
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def can_update(self) -> bool:
+        return _pode_no_time("project.update", self.team_id)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def can_archive(self) -> bool:
+        return _pode_no_time("project.archive", self.team_id)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def can_delete(self) -> bool:
+        return _pode_no_time("project.delete", self.team_id)
 
 
 class ProjectCreateRequest(BaseModel):
@@ -151,6 +191,14 @@ class TaskResponse(BaseModel):
     created_by: uuid.UUID
     created_at: datetime
     updated_at: datetime
+
+    # ⚠️ Spec 051, fatia A: "Excluir" a tarefa E moderar comentario alheio nela
+    # -- as duas perguntas sao `task.delete` no time da tarefa
+    # (`TaskService.soft_delete`, `CommentService.delete_comment`).
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def can_delete(self) -> bool:
+        return _pode_no_time("task.delete", self.team_id)
 
 
 class DeleteTaskResponse(TaskResponse):

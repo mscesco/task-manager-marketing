@@ -112,6 +112,28 @@ export function peopleWithoutArea(members: readonly Member[]): Member[] {
 }
 
 /**
+ * Quem pode ABRIR a tela `/organizacao`? Papel de organizacao (ADMIN ou GESTOR).
+ *
+ * ⚠️⚠️ Spec 051, fatia F: A TELA ABRIA PARA QUALQUER UM QUE DIGITASSE O
+ * ENDERECO. O link do menu so aparecia para papel de organizacao, mas a pagina
+ * nao conferia nada -- um operador lia a lista de areas, de gestores e de
+ * "pessoas sem area" (as escritas o servidor ja recusava).
+ *
+ * ⚠️ E ESTA CONDICAO ESTAVA COPIADA EM TRES ARQUIVOS (`AppShell`, `TeamScreen`,
+ * `quadro/page`) como `(me.org_role ?? null) !== null`. Uma quarta copia, na
+ * pagina, divergiria da primeira na proxima mudanca; as quatro passaram a
+ * perguntar aqui.
+ *
+ * ⚠️ `null`/`undefined` (ainda carregando) e "nao": a pagina espera o `me`
+ * antes de decidir, e nao mostra nada ate la.
+ */
+export function podeAbrirOrganizacao(
+  me: { org_role?: OrgRole | null } | null | undefined,
+): boolean {
+  return (me?.org_role ?? null) !== null;
+}
+
+/**
  * Quem administra a ORGANIZACAO -- vai no cabecalho, junto do nome.
  *
  * ⚠️ Gente pouca, e por isso cabe ao lado do nome em vez de virar secao: sao

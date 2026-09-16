@@ -271,7 +271,7 @@ export default function TimesPage() {
             const c = contagens(t);
             const alvo = { ...t, ...c };
             const raizItem = ehRaiz(t);
-            const bloqueio = motivoNaoRemove(alvo, permissoes);
+            const bloqueio = motivoNaoRemove(alvo);
             const resumo = descreveConteudo(c);
             return (
               <div
@@ -333,13 +333,13 @@ export default function TimesPage() {
                     type="button"
                     className="btn btn-ghost"
                     onClick={() => abrirRemover(t)}
-                    disabled={!podeEsvaziarERemover(alvo, permissoes)}
+                    disabled={!podeEsvaziarERemover(alvo)}
                     aria-label={`Remover ${t.name}`}
                     title={bloqueio ?? "Remover"}
                     style={{
                       padding: "6px 10px",
-                      opacity: podeEsvaziarERemover(alvo, permissoes) ? 1 : 0.4,
-                      cursor: podeEsvaziarERemover(alvo, permissoes)
+                      opacity: podeEsvaziarERemover(alvo) ? 1 : 0.4,
+                      cursor: podeEsvaziarERemover(alvo)
                         ? "pointer"
                         : "not-allowed",
                     }}

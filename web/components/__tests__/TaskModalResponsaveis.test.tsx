@@ -88,6 +88,8 @@ function task(over: Partial<Task> = {}): Task {
     assignee_ids: [],
     board_id: "board-geral",
     column_id: "col-backlog",
+    // Spec 051, fatia A: o cadeado vem do servidor, em toda resposta.
+    can_delete: true,
     ...over,
   };
 }

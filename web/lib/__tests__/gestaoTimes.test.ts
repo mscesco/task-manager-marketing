@@ -7,6 +7,7 @@ import {
   estaVazio,
   motivoNaoRemove,
   ordenaParaTela,
+  podeApagarTime,
   podeEditar,
   podeEsvaziarERemover,
   podeRemover,
@@ -14,12 +15,14 @@ import {
   sugereSlug,
   type TimeGerenciavel,
 } from "@/lib/gestaoTimes";
-import type { Permission } from "@/lib/permissions.generated";
 
-// Spec 049, fatia A: eram `workspace.manage` + `team.manage`, e `team.manage`.
-const ADMIN: Permission[] = ["subteam.delete", "subteam.update", "subteam.create"];
-const MANAGER: Permission[] = ["subteam.update", "subteam.create"];
-const OPERATOR: Permission[] = [];
+// ⚠️ Spec 051, fatia D: quem APAGA vem do servidor, por time (`can_delete`), e
+// nao mais de `me.permissions`. Ate ali estes testes montavam listas de
+// permissao (ADMIN com `subteam.delete`, MANAGER sem) -- e o gerente passou a
+// apagar subtime da propria arvore, que uma lista "em algum lugar" nao sabe
+// dizer.
+const APAGA = { can_delete: true };
+const NAO_APAGA = { can_delete: false };
 
 function time(over: Partial<TimeGerenciavel> = {}): TimeGerenciavel {
   return {
@@ -72,48 +75,64 @@ describe("podeEditar -- o cadeado vem do servidor (Spec 049, fatia F)", () => {
   });
 });
 
+describe("podeApagarTime -- o cadeado vem do servidor (Spec 051, fatia D)", () => {
+  it("subtime que o servidor diz apagavel: apaga", () => {
+    expect(podeApagarTime(time(APAGA))).toBe(true);
+  });
+
+  it("⚠️ o servidor diz que nao (subtime de OUTRA arvore do gerente): nao apaga", () => {
+    expect(podeApagarTime(time(NAO_APAGA))).toBe(false);
+  });
+
+  it("⚠️ AUSENTE e nao -- um Team de outra origem nao abre lixeira", () => {
+    expect(podeApagarTime(time())).toBe(false);
+  });
+
+  it("ninguem apaga a raiz -- nem com o servidor dizendo sim (D5)", () => {
+    expect(podeApagarTime(time({ ...APAGA, parent_team_id: null }))).toBe(false);
+  });
+});
+
 describe("podeRemover", () => {
-  it("ADMIN remove subtime vazio", () => {
-    expect(podeRemover(time(), ADMIN)).toBe(true);
+  it("quem apaga remove subtime vazio", () => {
+    expect(podeRemover(time(APAGA))).toBe(true);
   });
 
-  it("MANAGER NAO remove, mesmo com o time vazio (D1)", () => {
-    // Este e o ponto que separa remover de criar/editar: MANAGER tem
-    // team.manage, mas remover exige workspace.manage.
-    expect(podeRemover(time(), MANAGER)).toBe(false);
+  it("quem NAO apaga nao remove, mesmo com o time vazio", () => {
+    expect(podeRemover(time(NAO_APAGA))).toBe(false);
   });
 
-  it("ADMIN nao remove time com conteudo", () => {
-    expect(podeRemover(time({ tarefas: 14 }), ADMIN)).toBe(false);
-    expect(podeRemover(time({ membros: 2 }), ADMIN)).toBe(false);
-    expect(podeRemover(time({ filhos: 1 }), ADMIN)).toBe(false);
+  it("quem apaga nao remove time com conteudo", () => {
+    expect(podeRemover(time({ ...APAGA, tarefas: 14 }))).toBe(false);
+    expect(podeRemover(time({ ...APAGA, membros: 2 }))).toBe(false);
+    expect(podeRemover(time({ ...APAGA, filhos: 1 }))).toBe(false);
   });
 
-  it("ADMIN nao remove a raiz (D5)", () => {
-    expect(podeRemover(time({ parent_team_id: null }), ADMIN)).toBe(false);
+  it("ninguem remove a raiz (D5)", () => {
+    expect(podeRemover(time({ ...APAGA, parent_team_id: null }))).toBe(false);
   });
 });
 
 describe("motivoNaoRemove", () => {
   it("devolve null quando da pra remover", () => {
-    expect(motivoNaoRemove(time(), ADMIN)).toBe(null);
+    expect(motivoNaoRemove(time(APAGA))).toBe(null);
   });
 
   it("raiz vem antes de qualquer outro motivo", () => {
-    const raizCheia = time({ parent_team_id: null, tarefas: 214, membros: 5 });
-    expect(motivoNaoRemove(raizCheia, ADMIN)).toContain("principal");
+    const raizCheia = time({ ...APAGA, parent_team_id: null, tarefas: 214, membros: 5 });
+    expect(motivoNaoRemove(raizCheia)).toContain("principal");
   });
 
   it("falta de permissao vem antes do conteudo", () => {
-    // Mandar um MANAGER esvaziar um time que ele nao poderia remover de
-    // qualquer jeito e trabalho jogado fora.
-    const motivo = motivoNaoRemove(time({ tarefas: 14 }), MANAGER);
-    expect(motivo).toContain("administrador");
+    // Mandar alguem esvaziar um time que ele nao poderia remover de qualquer
+    // jeito e trabalho jogado fora.
+    const motivo = motivoNaoRemove(time({ ...NAO_APAGA, tarefas: 14 }));
+    expect(motivo).toContain("não remove");
     expect(motivo).not.toContain("14");
   });
 
   it("com permissao, explica o que falta esvaziar", () => {
-    const motivo = motivoNaoRemove(time({ tarefas: 14, membros: 2 }), ADMIN);
+    const motivo = motivoNaoRemove(time({ ...APAGA, tarefas: 14, membros: 2 }));
     expect(motivo).toContain("14 tarefas");
     expect(motivo).toContain("2 membros");
   });
@@ -204,18 +223,18 @@ describe("ordenaParaTela", () => {
 // -------------------------------------------------------------------
 describe("podeEsvaziarERemover", () => {
   it("aceita time COM conteudo -- e o que diferencia de podeRemover", () => {
-    const cheio = time({ tarefas: 14, membros: 2 });
-    expect(podeRemover(cheio, ADMIN)).toBe(false);
-    expect(podeEsvaziarERemover(cheio, ADMIN)).toBe(true);
+    const cheio = time({ ...APAGA, tarefas: 14, membros: 2 });
+    expect(podeRemover(cheio)).toBe(false);
+    expect(podeEsvaziarERemover(cheio)).toBe(true);
   });
 
   it("recusa time com subtime filho -- o filho tem de sair antes", () => {
-    expect(podeEsvaziarERemover(time({ filhos: 1 }), ADMIN)).toBe(false);
+    expect(podeEsvaziarERemover(time({ ...APAGA, filhos: 1 }))).toBe(false);
   });
 
-  it("recusa a raiz e recusa quem nao e admin", () => {
-    expect(podeEsvaziarERemover(time({ parent_team_id: null }), ADMIN)).toBe(false);
-    expect(podeEsvaziarERemover(time({ tarefas: 3 }), MANAGER)).toBe(false);
+  it("recusa a raiz e recusa quem o servidor diz que nao apaga", () => {
+    expect(podeEsvaziarERemover(time({ ...APAGA, parent_team_id: null }))).toBe(false);
+    expect(podeEsvaziarERemover(time({ ...NAO_APAGA, tarefas: 3 }))).toBe(false);
   });
 });
 

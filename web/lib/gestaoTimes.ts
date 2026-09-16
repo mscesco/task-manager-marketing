@@ -13,8 +13,6 @@
 // checada no cliente e sugestao, nao trava.
 // =====================================================================
 
-import type { Permission } from "./permissions.generated";
-
 /** O que aponta para um time. Vem em lote no GET /current/teams. */
 export type ContagensTime = {
   tarefas: number;
@@ -28,6 +26,8 @@ export type TimeGerenciavel = ContagensTime & {
   name: string;
   slug: string;
   parent_team_id: string | null;
+  /** Spec 051, fatia D: o servidor diz se quem olha APAGA este time. */
+  can_delete?: boolean;
 };
 
 /** Raiz = sem pai. E a ancora do tenant: nao se edita nem se remove (D5). */
@@ -62,17 +62,32 @@ export function podeEditar(time: {
 }
 
 /**
- * Remover exige `workspace.manage` (so ADMIN), time nao-raiz E vazio.
+ * Pode APAGAR este time? O SERVIDOR responde, por time (Spec 051, fatia D).
+ *
+ * ⚠️⚠️ ATE A FATIA D ESTA PERGUNTA ERA `permissoes.includes("subteam.delete")`
+ * -- e so dava certo porque o verbo era do ADMIN, que apaga em qualquer arvore.
+ * O gerente passou a apagar subtime da PROPRIA arvore (decisao 4, 16/09); com a
+ * pergunta "em algum lugar", a lixeira apareceria em todo subtime do workspace
+ * e todos os de outra arvore dariam 403. Mesma virada do `podeEditar`.
+ *
+ * ⚠️ AUSENTE E "NAO": `can_delete` so vem da listagem de times.
+ */
+export function podeApagarTime(time: {
+  parent_team_id: string | null;
+  can_delete?: boolean;
+}): boolean {
+  if (ehRaiz(time)) return false;
+  return time.can_delete === true;
+}
+
+/**
+ * Remover direto: time que se apaga E vazio.
  *
  * Deliberadamente mais restrito que editar: criar e renomear se desfazem,
  * remover nao.
  */
-export function podeRemover(
-  time: TimeGerenciavel,
-  permissoes: readonly Permission[]
-): boolean {
-  if (ehRaiz(time)) return false;
-  if (!permissoes.includes("subteam.delete")) return false;
+export function podeRemover(time: TimeGerenciavel): boolean {
+  if (!podeApagarTime(time)) return false;
   return estaVazio(time);
 }
 
@@ -84,12 +99,8 @@ export function podeRemover(
  * permissao, ou ter subtime filho (o filho tem de sair antes, senao a FK
  * `fk_team_parent` recusaria).
  */
-export function podeEsvaziarERemover(
-  time: TimeGerenciavel,
-  permissoes: readonly Permission[]
-): boolean {
-  if (ehRaiz(time)) return false;
-  if (!permissoes.includes("subteam.delete")) return false;
+export function podeEsvaziarERemover(time: TimeGerenciavel): boolean {
+  if (!podeApagarTime(time)) return false;
   return time.filhos === 0;
 }
 
@@ -139,13 +150,12 @@ export function resumoDoEsvaziamento(p: {
  * A ordem importa: o motivo mais estrutural primeiro. Dizer "tem 3 tarefas"
  * para quem nem tem permissao manda a pessoa esvaziar o time a toa.
  */
-export function motivoNaoRemove(
-  time: TimeGerenciavel,
-  permissoes: readonly Permission[]
-): string | null {
+export function motivoNaoRemove(time: TimeGerenciavel): string | null {
   if (ehRaiz(time)) return "O time principal não pode ser removido.";
-  if (!permissoes.includes("subteam.delete")) {
-    return "Só um administrador pode remover times.";
+  if (!podeApagarTime(time)) {
+    // ⚠️ Spec 051: nao e mais "so administrador" -- o gerente apaga na arvore
+    // dele. A frase diz o que vale para os dois casos.
+    return "Você não remove times nesta área.";
   }
   if (estaVazio(time)) return null;
   return `Ainda tem ${descreveConteudo(time)}.`;

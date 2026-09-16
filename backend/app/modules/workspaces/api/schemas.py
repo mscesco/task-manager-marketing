@@ -76,6 +76,20 @@ class TeamListItem(TeamResponse):
     #:
     #: ⚠️ OBRIGATORIO, sem default: quem monta um `TeamListItem` tem de responder.
     can_update: bool
+    #: Quem pergunta pode CRIAR PROJETO neste time? (Spec 051, fatia A)
+    #:
+    #: ⚠️ A tela de projetos escolhe a area pela lista de raizes da pessoa, e
+    #: para quem e MANAGER no Marketing e OPERATOR no Comercial as duas
+    #: aparecem -- mas so numa ela cria. Sem isto o seletor ofereceria o
+    #: Comercial e o POST daria 403. Mesma pergunta do `ProjectService.create`.
+    can_create_project: bool
+    #: Quem pergunta pode APAGAR este time? (Spec 051, fatia D)
+    #:
+    #: ⚠️ O gerente passou a apagar subtime da PROPRIA arvore. A tela olhava
+    #: `subteam.delete` em `me.permissions` -- "em algum lugar" -- e desenharia a
+    #: lixeira em todo subtime do workspace. Mesma pergunta de
+    #: `TeamService._assert_apaga_subtime`; raiz nunca (a regra recusa).
+    can_delete: bool
 
 
 class TeamCreateRequest(BaseModel):

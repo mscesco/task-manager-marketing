@@ -51,9 +51,13 @@ async def _mundo(db):
     return ws, raiz, mkt, design, user, arvore
 
 
-def _ctx(ws, user, arvore, *membros):
+def _ctx(ws, user, arvore, *membros, org_role=None):
     return dict(
-        workspace_id=ws, user_id=user, memberships=tuple(membros), team_tree=arvore
+        workspace_id=ws,
+        user_id=user,
+        memberships=tuple(membros),
+        team_tree=arvore,
+        org_role=org_role,
     )
 
 
@@ -247,33 +251,44 @@ async def test_fila_mostra_so_o_time_do_FORMULARIO(db) -> None:
     await _solicitacao(db, ws, form_id=f_mkt.id)
     await _solicitacao(db, ws, form_id=f_dsg.id)
 
-    # O supervisor do Marketing so enxerga o time dele (e a raiz).
-    with acting_as(**_ctx(ws, user, arvore, mship(mkt, "SUPERVISOR"))):
+    # O gerente do Marketing so le o time dele.
+    # ⚠️ Ate a Spec 051 (fatia B) era o SUPERVISOR -- que nao tem
+    # `solicitation.read`, e so "via" a fila porque o recorte era a lente e o
+    # teste chama o repositorio direto. O recorte virou o verbo.
+    with acting_as(**_ctx(ws, user, arvore, mship(mkt, "MANAGER"))):
         linhas, _ = await SolicitationRepository(db).list_batches(
             params=PageParams(page=1, size=50), team_id=None)
 
     assert [s.form_id for s in linhas] == [f_mkt.id]
 
 
-async def test_solicitacao_SEM_formulario_continua_na_fila(db) -> None:
-    """⚠️⚠️ O TESTE QUE A SPEC PEDIU ANTES DE HAVER CODIGO.
+async def test_solicitacao_SEM_formulario_continua_na_fila_da_ORGANIZACAO(db) -> None:
+    """⚠️⚠️ O TESTE QUE A SPEC PEDIU ANTES DE HAVER CODIGO -- e a metade dele
+    que mudou de lado na Spec 051.
 
     Toda solicitacao anterior a esta fatia tem `form_id` NULL. Com um `JOIN`
     interno, elas sumiriam da fila **em silencio** -- sem erro, sem aviso, e
-    ninguem notaria que a fila encolheu. O `JOIN` e `LEFT`, e orfa continua
-    visivel a quem tem `solicitation.review` no workspace: nao ha time para
-    comparar, e esconde-la de todos seria perder trabalho pendente por causa de
-    um vinculo que o produto nem exigia quando ela chegou.
+    ninguem notaria que a fila encolheu. O `JOIN` continua `LEFT`, e a orfa
+    continua na fila de QUEM ADMINISTRA A ORGANIZACAO.
+
+    ⚠️⚠️ ATE A SPEC 051 (fatia B) ELA APARECIA PARA QUEM TIVESSE O VERBO EM
+    QUALQUER TIME -- este teste a mostrava a um supervisor. Com varias arvores,
+    "no workspace" virou "qualquer gerente de qualquer area", e a Spec 048 ja
+    tinha decidido: a orfa e da organizacao. Esta e a linha que mudou de lado.
     """
     ws, raiz, mkt, design, user, arvore = await _mundo(db)
     await _solicitacao(db, ws, form_id=None)
 
-    with acting_as(**_ctx(ws, user, arvore, mship(mkt, "SUPERVISOR"))):
+    with acting_as(**_ctx(ws, user, arvore, org_role="ADMIN")):
         linhas, total = await SolicitationRepository(db).list_batches(
             params=PageParams(page=1, size=50), team_id=None)
-
     assert total == 1
     assert [s.form_id for s in linhas] == [None]
+
+    with acting_as(**_ctx(ws, user, arvore, mship(raiz, "MANAGER"))):
+        _, total_do_gerente = await SolicitationRepository(db).list_batches(
+            params=PageParams(page=1, size=50), team_id=None)
+    assert total_do_gerente == 0
 
 
 async def test_ADMIN_ve_a_fila_inteira(db) -> None:
@@ -284,7 +299,9 @@ async def test_ADMIN_ve_a_fila_inteira(db) -> None:
     duvidar da propria conta.
     """
     ws, raiz, mkt, design, user, arvore = await _mundo(db)
-    with acting_as(**_ctx(ws, user, arvore, mship(raiz, "ADMIN"))):
+    # ⚠️ ADMIN DE ORGANIZACAO, e nao o vinculo ADMIN antigo de time: desde a
+    # Spec 051 (fatia B) a orfa e so de quem le em todos os times.
+    with acting_as(**_ctx(ws, user, arvore, org_role="ADMIN")):
         svc = SolicitationFormService(db)
         f_mkt = await svc.criar_formulario(team_id=mkt, slug="arte", title="Arte")
         f_dsg = await svc.criar_formulario(
@@ -316,7 +333,8 @@ async def test_contadores_respeitam_o_mesmo_recorte(db) -> None:
     await _solicitacao(db, ws, form_id=f_mkt.id)
     await _solicitacao(db, ws, form_id=f_dsg.id)
 
-    with acting_as(**_ctx(ws, user, arvore, mship(mkt, "SUPERVISOR"))):
+    # Gerente, e nao supervisor: ver `test_fila_mostra_so_o_time_do_FORMULARIO`.
+    with acting_as(**_ctx(ws, user, arvore, mship(mkt, "MANAGER"))):
         assert await SolicitationRepository(db).count_pending(None) == 1
 
 

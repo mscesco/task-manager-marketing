@@ -17,13 +17,15 @@ from fastapi import APIRouter, Depends, Response, status
 
 from app.core.deps import SessionDep, UoWDep
 from app.core.rate_limit import login_limiter, rate_limit, refresh_limiter
-from app.modules.auth.api.dependencies import PendingUserDep
+from app.modules.auth.api.dependencies import CurrentUserDep, PendingUserDep
 from app.modules.auth.api.schemas import (
     ChangePasswordRequest,
     CurrentUserResponse,
     TeamMembershipOut,
     LoginRequest,
     RefreshRequest,
+    RenameSelfRequest,
+    RenameSelfResponse,
     TokenPair,
 )
 from app.modules.auth.application.service import AuthService
@@ -127,6 +129,23 @@ async def me(user: PendingUserDep, session: SessionDep) -> CurrentUserResponse:
             for team_id, role in membership.team_roles
         ],
     )
+
+
+@router.patch("/me", response_model=RenameSelfResponse)
+async def rename_self(
+    payload: RenameSelfRequest, user: CurrentUserDep, uow: UoWDep
+) -> RenameSelfResponse:
+    """Troca o PROPRIO nome (Spec 051, fatia E -- decisao 8).
+
+    ⚠️ `CurrentUserDep`, e nao a leniente: quem esta preso na troca de senha
+    obrigatoria resolve a senha primeiro. So a troca de senha e o logout
+    passam pelo gate (ADR 0020).
+    """
+    atualizado = await AuthService(uow.session).rename_self(
+        user_id=user.id, name=payload.name
+    )
+    await uow.commit()
+    return RenameSelfResponse(name=atualizado.name)
 
 
 @router.post("/change-password", status_code=status.HTTP_200_OK)

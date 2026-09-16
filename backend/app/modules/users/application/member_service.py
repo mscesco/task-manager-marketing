@@ -164,6 +164,15 @@ def _role_at_destination(
     return _DEMOTION_INTO_ROOT.get(role, role)
 
 
+#: Matriz C2 (Spec 015; Spec 051, fatia C). Os dois tetos que nao sao "tudo".
+_PAPEIS_DE_EXECUCAO: frozenset[UserTeamRole] = frozenset(
+    {UserTeamRole.SUPERVISOR, UserTeamRole.OPERATOR}
+)
+_PAPEIS_ATE_GERENTE: frozenset[UserTeamRole] = _PAPEIS_DE_EXECUCAO | {
+    UserTeamRole.MANAGER
+}
+
+
 class MemberService:
     """Casos de uso de gestao de membros."""
 
@@ -518,6 +527,13 @@ class MemberService:
         # MANAGER do Marketing cadastrava gente direto no Comercial -- e o
         # item 07 da matriz de 10/09 sai junto, porque e a mesma linha.
         self._assert_gestao_ampla_em("person.create", team.id, acao="create_member")
+        # ⚠️⚠️ Spec 051, fatia C: O CADASTRO PASSA PELA MATRIZ C2. Ate aqui nao
+        # passava -- e era por onde o MANAGER criava outro MANAGER enquanto a
+        # troca de cargo o recusava. Com a regra nova (gestor e gerente fazem
+        # gerente) a resposta hoje e a mesma, e a chamada fica pelo motivo que
+        # a revisao de 16/09 achou: um caminho que da cargo sem a matriz e um
+        # caminho que diverge dela na proxima mudanca.
+        self._assert_actor_can_assign(command.role)
 
         # Spec 024/D3 -- porta 1 de 4 da invariante de papel por nivel.
         assert_role_permitido_no_nivel(
@@ -613,6 +629,56 @@ class MemberService:
             token_version=user.token_version,
         )
         return ProvisionedMember(user=user, temporary_password=temporary_password)
+
+    async def acoes_da_conta(self, *, user_id: uuid.UUID) -> tuple[bool, bool]:
+        """(resetar senha, desativar) -- o ator conseguiria? Spec 051, fatia E.
+
+        ⚠️⚠️ O CADEADO DOS DOIS BOTOES DA CONTA, e ele existe pelo #57. A tela
+        decidia por "alcance amplo" (`podeResetarSenha`, `podeDesativarConta`),
+        sem olhar a pessoa -- e desde que a conta passou a respeitar o papel do
+        alvo, o gerente via os dois botoes na conta de outro gerente e levava
+        403. Mesma prescricao de sempre: *"falta parametro na rota"*.
+
+        ⚠️⚠️ AS MESMAS TRAVAS DE `reset_password` E `deactivate_member`, lidas
+        como pergunta -- e nao uma lista parecida. Se alguem acrescentar uma
+        trava a uma das duas acoes, tem de acrescentar aqui; o teste que compara
+        com a matriz e quem cobra.
+
+        ⚠️ FORA DO CADEADO, DE PROPOSITO: a trava do ULTIMO ADMIN. Ela e regra
+        de negocio (409 com explicacao: "promova outra pessoa"), e esconder o
+        botao tiraria justamente a mensagem que ensina a saida.
+        """
+        tenant = require_tenant()
+        user = await self._users.get_by_id(user_id)
+        if user is None:
+            raise EntityNotFoundError("User", identifier=user_id)
+        proprio = user_id == tenant.user_id
+
+        async def alcanca_a_conta(verbo: str, acao: str) -> bool:
+            if not tenant.has_permission(verbo):
+                return False
+            try:
+                await self._assert_reaches_person(verbo, user_id, acao=acao)
+                await self._assert_pode_agir_sobre_a_conta(user, acao=acao)
+            except AuthorizationError:
+                return False
+            return True
+
+        # Resetar a PROPRIA senha dispensa alcance e papel (ver `reset_password`),
+        # mas nao a permissao da rota.
+        pode_resetar = (
+            tenant.has_permission("person.update")
+            if proprio
+            else await alcanca_a_conta("person.update", "reset_password")
+        )
+        # Desativar: nunca a si mesmo, e nunca quem ja esta desativado (a tela
+        # nao tem o que oferecer -- nao ha reativar).
+        pode_desativar = (
+            not proprio
+            and user.is_active
+            and await alcanca_a_conta("person.deactivate", "deactivate_member")
+        )
+        return pode_resetar, pode_desativar
 
     async def list_members(
         self,
@@ -819,11 +885,12 @@ class MemberService:
         # mesma coisa errada. Os dois foram estreitados juntos.
         if not self._tem_gestao_ampla("membership.update", team_id):
             return False
-        # A matriz C2, sem levantar -- mesma condicao de
-        # `_assert_actor_can_target`, lida como pergunta.
-        if tenant.has_role("ADMIN"):
-            return True
-        return papel_atual in (UserTeamRole.SUPERVISOR, UserTeamRole.OPERATOR)
+        # A matriz C2, sem levantar -- a MESMA funcao de
+        # `_assert_actor_can_target`, lida como pergunta. (Ate a Spec 051 era
+        # uma copia da condicao; a fatia C mudou a regra, e a copia teria
+        # ficado para tras -- o GESTOR com cadeado fechado num gerente.)
+        alcance = self._papeis_que_mira()
+        return alcance is None or papel_atual in alcance
 
     async def assign_to_team(
         self,
@@ -874,6 +941,8 @@ class MemberService:
         self._assert_escopo_de_membro(
             "membership.create", team_id=team_id, papel_alvo=role
         )
+        # Spec 051, fatia C: e DE ONDE a pessoa vem.
+        await self._assert_ja_esta_na_arvore(user_id=user_id, team_id=team_id)
 
         # Spec 024/D3 -- porta 2 de 4.
         assert_role_permitido_no_nivel(role, is_root=team.parent_team_id is None)
@@ -915,6 +984,50 @@ class MemberService:
             role=role.value,
         )
         return membership
+
+    async def _assert_ja_esta_na_arvore(
+        self, *, user_id: uuid.UUID, team_id: uuid.UUID
+    ) -> None:
+        """Quem nao e da organizacao so vincula quem JA ESTA na arvore do time.
+
+        ⚠️⚠️ Spec 051, fatia C -- decisoes 2 e 3 da Camila (16/09):
+          - o supervisor puxa para o subtime quem esta em QUALQUER time daquela
+            arvore (a raiz ou outro subtime) -- e nao qualquer pessoa ativa;
+          - o gerente nao poe no time dele alguem de OUTRA arvore: *"so a
+            organizacao junta arvores"*.
+        Uma regra so para os dois. Ate aqui `assign_to_team` perguntava papel,
+        onde e nivel -- e nada sobre de onde a pessoa vinha.
+
+        ⚠️ QUEM JA ESTA EM DUAS ARVORES PASSA (pergunta A, *"pode uai"*): ter
+        vinculo NESTA arvore basta, porque o vinculo novo nao junta nada.
+
+        ⚠️ E POR QUE ISTO IMPORTA ALEM DA ORGANIZACAO DA TELA: pela regra
+        "todos os vinculos" da Spec 049 (§4.9), quem entra em outra arvore sai
+        do alcance de conta dos dois gerentes -- ninguem abaixo da organizacao
+        reseta a senha dela depois.
+
+        ⚠️ QUEM NAO TEM TIME NENHUM (conta de administracao, papel de
+        organizacao sem vinculo) nao esta em arvore nenhuma, e so a organizacao
+        a vincula. Pessoa NOVA nao passa por aqui: entra pelo cadastro, que ja
+        cria o vinculo no time de quem cadastra.
+        """
+        tenant = require_tenant()
+        # ⚠️ "ORGANIZACAO" INCLUI O VINCULO ADMIN ANTIGO DE TIME, pelo mesmo
+        # `is_admin` da trava de conta (#57, `_assert_pode_agir_sobre_a_conta`):
+        # as duas regras dizem "so quem administra", e com criterios diferentes
+        # o mesmo ator juntaria arvores e nao resetaria senha, ou o contrario.
+        if tenant.org_role is not None or is_admin(
+            tenant.memberships, org_role=tenant.org_role
+        ):
+            return
+        raiz = root_of(team_id, tenant.team_tree)
+        vinculos = await self._users.list_team_memberships(user_id=user_id)
+        if any(root_of(v.team_id, tenant.team_tree) == raiz for v in vinculos):
+            return
+        raise AuthorizationError(
+            "Esta pessoa não está nesta área. Quem junta áreas é a organização.",
+            details={"user_id": str(user_id), "team_id": str(team_id)},
+        )
 
     def _autoridade_vem_da_organizacao(self) -> bool:
         """O ator manda por PAPEL DE ORGANIZACAO, e nao pelo vinculo de time?
@@ -1228,6 +1341,13 @@ class MemberService:
         self._assert_gestao_ampla_em(
             "membership.move", to_team_id, acao="move_member_subteam"
         )
+        # ⚠️ Spec 051, fatia C: conta DESATIVADA nao muda de subtime -- ver
+        # `_assert_alvo_ativo`. Trocar cargo e vincular ja recusavam; mover era o
+        # caminho que sobrava, e escrevia um vinculo novo numa conta que ninguem
+        # usa. DEPOIS das travas de permissao, de proposito: quem nao move
+        # ninguem leva 403, e nao descobre por um 409 que a conta existe e esta
+        # desativada.
+        await self._assert_alvo_ativo(user_id)
 
         # ⚠️⚠️ O PAPEL NEM SEMPRE VIAJA INTEIRO -- Spec 045, fatia D, decisao da
         # Camila em 08/09. Mover um SUPERVISOR para a RAIZ o rebaixa a
@@ -1760,29 +1880,69 @@ class MemberService:
     # ----------------------------------------------------
     # Matriz de autorizacao (Spec 015, C2) -- reusada por F2 e F4
     # ----------------------------------------------------
-    def _assert_actor_can_target(self, current_role: UserTeamRole) -> None:
-        """ADMIN atua sobre qualquer papel; MANAGER so sobre SUPERVISOR/OPERATOR.
+    @staticmethod
+    def _papeis_que_mira() -> frozenset[UserTeamRole] | None:
+        """Em que papeis de vinculo o ator MEXE (rebaixar, tirar, mover).
 
-        Levanta AuthorizationError (403) quando um nao-ADMIN tenta mexer num
-        membro que e MANAGER ou ADMIN.
+        `None` = em todos. Ver `_assert_actor_can_target`.
         """
-        if require_tenant().has_role("ADMIN"):
-            return
-        if current_role not in (UserTeamRole.SUPERVISOR, UserTeamRole.OPERATOR):
+        tenant = require_tenant()
+        if tenant.has_role("ADMIN"):
+            return None
+        if tenant.org_role == OrgRole.GESTOR.value:
+            return _PAPEIS_ATE_GERENTE
+        return _PAPEIS_DE_EXECUCAO
+
+    def _assert_actor_can_target(self, current_role: UserTeamRole) -> None:
+        """Em quem o ator mexe, pelo papel ATUAL do vinculo. Matriz C2.
+
+            ADMIN      -> qualquer papel
+            GESTOR     -> MANAGER, SUPERVISOR, OPERATOR   (Spec 051)
+            os demais  -> SUPERVISOR, OPERATOR
+
+        ⚠️⚠️ Spec 051, fatia C (decisao 6, 16/09): o GESTOR passou a mexer em
+        vinculo de gerente -- ate aqui so o ADMIN. E o MANAGER NAO: *"gerente
+        so promove"*. Depois de promovido, o novo gerente e um PAR, e rebaixar,
+        tirar ou mover um par continua com gestor e admin. Sem isso, dois
+        gerentes da mesma arvore podiam se rebaixar um ao outro.
+
+        ⚠️ Vinculo ADMIN antigo de time continua so do ADMIN (`has_role`
+        reconhece os dois niveis) -- a mesma regra da conta, no #57.
+        """
+        alcance = self._papeis_que_mira()
+        if alcance is not None and current_role not in alcance:
             raise AuthorizationError(
                 "Sem permissao para administrar um membro com este papel.",
                 details={"role": current_role.value},
             )
 
-    def _assert_actor_can_assign(self, new_role: UserTeamRole) -> None:
-        """ADMIN atribui qualquer papel; MANAGER so SUPERVISOR/OPERATOR.
-
-        Impede que um MANAGER promova alguem acima do proprio teto (criar par
-        ou superior). Levanta AuthorizationError (403) na violacao.
-        """
+    @staticmethod
+    def _papeis_que_atribui() -> frozenset[UserTeamRole] | None:
+        """Que papeis de vinculo o ator DA. `None` = todos. Ver abaixo."""
         if require_tenant().has_role("ADMIN"):
-            return
-        if new_role not in (UserTeamRole.SUPERVISOR, UserTeamRole.OPERATOR):
+            return None
+        return _PAPEIS_ATE_GERENTE
+
+    def _assert_actor_can_assign(self, new_role: UserTeamRole) -> None:
+        """Que papel o ator da. Matriz C2.
+
+            ADMIN      -> qualquer papel
+            os demais  -> MANAGER, SUPERVISOR, OPERATOR   (Spec 051)
+
+        ⚠️⚠️ REVOGA A C2 DA SPEC 015 NUM PONTO, por decisao da Camila (16/09):
+        *"gerente pode tornar alguem de dentro da sua arvore gerente"*, e o
+        gestor faz gerente pelos dois caminhos. Ate aqui so o ADMIN dava
+        MANAGER, e a trava existia para impedir "criar par".
+
+        ⚠️ "DENTRO DA SUA ARVORE" NAO MORA AQUI, e nao precisa: quem chama ja
+        perguntou o ONDE (`membership.*`/`person.create` NAQUELE time), e o
+        nivel (`assert_role_permitido_no_nivel`) so aceita MANAGER na raiz. O
+        supervisor, que chega aqui pelo proprio subtime, nunca tem um MANAGER
+        valido para dar. Uma lista de papeis por tipo de ator repetiria essas
+        duas regras, e a copia divergiria na primeira mudanca.
+        """
+        permitidos = self._papeis_que_atribui()
+        if permitidos is not None and new_role not in permitidos:
             raise AuthorizationError(
                 "Sem permissao para atribuir este papel.",
                 details={"role": new_role.value},

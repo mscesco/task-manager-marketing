@@ -1972,6 +1972,26 @@ class BoardService:
             raise EntityNotFoundError("Quadro", identifier=board_id)
         return quadro
 
+    async def quadro_visivel(self, board_id: uuid.UUID) -> Board:
+        """O quadro, se quem pergunta o ENXERGA -- senao 404. Spec 051, fatia D.
+
+        ⚠️⚠️ `GET /boards/{id}` usava `_quadro_do_workspace` direto: qualquer
+        pessoa lia quadro de outra arvore, ou de subtime irmao, com a contagem
+        de tarefas -- bastava o id. A LISTA (`list_visible`) ja tinha a lente;
+        a leitura por id, nao. Mesmo defeito que o projeto teve em 11/09.
+
+        ⚠️ A TRAVA JA EXISTIA, e para a coluna: `_assert_quadro_alcancavel`
+        (13/08), escrita quando o mesmo buraco apareceu em `GET .../columns/{id}`.
+        O detalhe do QUADRO, rota vizinha, ficou de fora. Reusar, e nao escrever
+        outra lente: duas definicoes de "quadro que eu alcanco" divergiriam.
+
+        ⚠️ SO A LEITURA. As escritas continuam por `_quadro_do_workspace` +
+        `_assert_pode_gerir` (403 fora da arvore), como toda a gestao.
+        """
+        quadro = await self._quadro_do_workspace(board_id)
+        await self._assert_quadro_alcancavel(quadro)
+        return quadro
+
     def _add_colunas(
         self,
         quadro: Board,

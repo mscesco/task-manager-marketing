@@ -1,13 +1,15 @@
 """Spec 015, Fatia 2 -- trocar papel de membro existente (matriz C2 + C3).
 
-Matriz (C2):
+Matriz (C2), como ficou na Spec 051 (fatia C, decisao 6 de 16/09):
     ADMIN   -> qualquer alvo, qualquer papel.
-    MANAGER -> so alvo SUPERVISOR/OPERATOR e so atribui SUPERVISOR/OPERATOR.
+    GESTOR  -> alvo ate MANAGER; atribui ate MANAGER.
+    MANAGER -> so alvo SUPERVISOR/OPERATOR; atribui ate MANAGER ("so promove").
 Anti-lockout (C3): ninguem altera o proprio papel.
 
-Cobre: ADMIN promove p/ qualquer (inclui ADMIN), MANAGER OPERATOR->SUPERVISOR,
-MANAGER bloqueado ao atribuir MANAGER/ADMIN, MANAGER bloqueado ao mexer em
-alvo MANAGER/ADMIN, auto-alteracao bloqueada, vinculo inexistente -> 404.
+Cobre: ADMIN promove p/ qualquer papel de time, MANAGER OPERATOR->SUPERVISOR,
+MANAGER promove a MANAGER e nao rebaixa o par, MANAGER bloqueado ao atribuir
+ADMIN, MANAGER bloqueado ao mexer em alvo MANAGER/ADMIN, auto-alteracao
+bloqueada, vinculo inexistente -> 404.
 
 Roda so com db-test de pe + TEST_DATABASE_URL (senao e PULADO).
 """
@@ -99,7 +101,18 @@ async def test_manager_troca_operator_para_supervisor(db) -> None:
         assert await _papel_atual(db, user_id=alvo, team_id=seo) == UserTeamRole.SUPERVISOR
 
 
-async def test_manager_nao_promove_para_manager(db) -> None:
+async def test_manager_PROMOVE_a_manager_mas_nao_rebaixa_o_par(db) -> None:
+    """⚠️⚠️ MUDOU DE LADO NA SPEC 051 (fatia C) -- e revoga a C2 da Spec 015.
+
+    Ate 16/09 este teste se chamava `test_manager_nao_promove_para_manager` e
+    afirmava a recusa: MANAGER so dava SUPERVISOR/OPERATOR, para nao "criar
+    par". A Camila decidiu o contrario (decisao 6): *"gerente pode tornar
+    alguem de dentro da sua arvore gerente"* -- e, no mesmo dia, que ele SO
+    PROMOVE: rebaixar o gerente recem-criado continua com gestor e admin.
+
+    As duas metades ficam aqui, porque uma sem a outra e a regra errada: so a
+    primeira deixaria dois gerentes se rebaixando; so a segunda e a C2 antiga.
+    """
     ws = await f.make_workspace(db)
     raiz = await f.make_team(db, workspace_id=ws, slug="marketing")
     mgr = await f.make_user(db, workspace_id=ws, email="mgr@t.dev")
@@ -112,9 +125,17 @@ async def test_manager_nao_promove_para_manager(db) -> None:
         user_id=mgr,
         memberships=(Membership(team_id=raiz, role="MANAGER"),),
     ):
+        await MemberService(db).change_member_role(
+            user_id=alvo, team_id=raiz, new_role=UserTeamRole.MANAGER
+        )
+        assert (
+            await _papel_atual(db, user_id=alvo, team_id=raiz) == UserTeamRole.MANAGER
+        )
+
+        # O par que ele acabou de criar ja nao e dele para rebaixar.
         with pytest.raises(AuthorizationError):
             await MemberService(db).change_member_role(
-                user_id=alvo, team_id=raiz, new_role=UserTeamRole.MANAGER
+                user_id=alvo, team_id=raiz, new_role=UserTeamRole.OPERATOR
             )
 
 

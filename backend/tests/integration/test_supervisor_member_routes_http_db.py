@@ -183,7 +183,13 @@ async def test_http_supervisor_atribui_supervisor_e_nao_gerente(db) -> None:
             json={"team_id": str(c["seo"]), "role": "MANAGER"},
         )
     assert par.status_code == 201, par.text
-    assert gerente.status_code == 403, gerente.text
+    # ⚠️ 409, E NAO 403, DESDE A SPEC 051 (fatia C). Quem barrava era a matriz
+    # C2 ("so ADMIN da MANAGER"); a Camila decidiu que gestor e gerente tambem
+    # dao, e a matriz deixou de responder por papel de ator. O supervisor
+    # continua sem conseguir -- agora pela invariante de NIVEL, que e a regra
+    # de verdade aqui: MANAGER nao existe em subtime, e o supervisor so alcanca
+    # subtime.
+    assert gerente.status_code == 409, gerente.text
 
 
 # ------------------------------------------------ portas que seguem FECHADAS

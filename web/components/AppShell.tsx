@@ -9,10 +9,12 @@ import {
   listTeamsAll,
   getWorkspace,
   TIMES_MUDARAM,
+  NOME_MUDOU,
   ApiError,
   type CurrentUser,
   type Team,
 } from "@/lib/api";
+import { podeAbrirOrganizacao } from "@/lib/organization";
 import { computeLens } from "@/lib/lens";
 import {
   lerTema,
@@ -187,6 +189,19 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener(TIMES_MUDARAM, reler);
   }, []);
 
+  // ⚠️ Spec 051, fatia E: O PRÓPRIO NOME TAMBÉM MUDA SEM NAVEGAÇÃO -- no
+  // `/perfil`. Mesmo desenho do `TIMES_MUDARAM` logo acima: sem ouvir, o rodapé
+  // da barra seguiria com o nome antigo até recarregar. O nome vem no `detail`,
+  // e por isso não há ida ao servidor.
+  useEffect(() => {
+    const trocar = (e: Event) => {
+      const novo = (e as CustomEvent<string>).detail;
+      setUser((u) => (u ? { ...u, name: novo } : u));
+    };
+    window.addEventListener(NOME_MUDOU, trocar);
+    return () => window.removeEventListener(NOME_MUDOU, trocar);
+  }, []);
+
   // ⚠️⚠️ O PAPEL DE ORGANIZACAO SOBE PARA CA (era calculado depois da lente):
   // ele decide quais times a pessoa ALCANCA, e o alcance entra na lente.
   //
@@ -197,7 +212,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   // `_ROLE_PERMISSIONS[UserTeamRole.ADMIN]` -- entao quem tem papel de TIME
   // ADMIN (residuo anterior a Spec 045) carrega `area.create` tambem. E `roles`
   // nao desempata: o `/auth/me` junta os dois niveis ali de proposito.
-  const podeVerOrganizacao = (user?.org_role ?? null) !== null;
+  // Spec 051, fatia F: a condicao mora em `lib/organization` -- a propria
+  // `/organizacao` faz a mesma pergunta para barrar quem digita o endereco.
+  const podeVerOrganizacao = podeAbrirOrganizacao(user);
 
   // ONDE a pessoa alcanca, e onde ela TRABALHA -- duas perguntas diferentes, e
   // para quem administra a organizacao as respostas divergem muito.

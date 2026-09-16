@@ -63,7 +63,11 @@ import {
   type Team,
 } from "@/lib/api";
 import { subteamCards, teamRows } from "@/lib/teamScreen";
-import { matchesSearch, papeisDeOrganizacaoAtribuiveis } from "@/lib/organization";
+import {
+  matchesSearch,
+  papeisDeOrganizacaoAtribuiveis,
+  podeAbrirOrganizacao,
+} from "@/lib/organization";
 import { countByState, memberState, type MemberState } from "@/lib/memberState";
 import { podeEditar, sugereSlug } from "@/lib/gestaoTimes";
 import {
@@ -199,7 +203,7 @@ export default function TeamScreen({ teamId }: { teamId: string }) {
   // (`org_role` não nulo) -- não `roles`, que junta os dois níveis e faria um
   // ADMIN de time ganhar um link para um 403. Quem não administra a
   // organização nunca esteve lá, e para essa pessoa a área É o topo.
-  const podeVerOrganizacao = (me?.org_role ?? null) !== null;
+  const podeVerOrganizacao = podeAbrirOrganizacao(me);
   const voltar = pai
     ? { href: `/times/${pai.id}`, label: pai.name }
     : podeVerOrganizacao

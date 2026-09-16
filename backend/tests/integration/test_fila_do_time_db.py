@@ -130,11 +130,19 @@ def _como_admin(m):
     )
 
 
-def _como_supervisor_do_seo(m):
+def _como_gerente_do_marketing(m):
+    """Quem LE a fila sem ser da organizacao.
+
+    ⚠️⚠️ ATE A SPEC 051 (fatia B) ERA O SUPERVISOR DO SEO -- que nao tem
+    `solicitation.read`. Os testes chamam o repositorio direto, e o recorte era
+    a LENTE (onde a pessoa trabalha), entao o supervisor "via" a fila que a
+    rota nunca lhe mostraria. O recorte virou o verbo, e o leitor de verdade
+    abaixo da organizacao e o MANAGER.
+    """
     return acting_as(
         workspace_id=m["ws"],
         user_id=m["user"],
-        memberships=(mship(m["seo"], "SUPERVISOR"),),
+        memberships=(mship(m["marketing"], "MANAGER"),),
         team_tree=m["arvore"],
     )
 
@@ -203,11 +211,11 @@ async def test_sem_recorte_a_fila_e_da_organizacao(db) -> None:
 
 
 async def test_team_id_nao_alarga_a_lente(db) -> None:
-    """O supervisor do SEO pede a fila do Comercial, e recebe vazio.
+    """O gerente do Marketing pede a fila do Comercial, e recebe vazio.
 
-    A lente dele e {SEO, Marketing}; o recorte pede Comercial. Os dois
-    predicados entram na MESMA consulta e se combinam com AND -- a intersecao
-    vazia sai de graca.
+    Ele le {Marketing, SEO}; o recorte pede Comercial. Os dois predicados
+    entram na MESMA consulta e se combinam com AND -- a intersecao vazia sai
+    de graca.
 
     ⚠️ ESTE TESTE NAO PROVA UMA CHECAGEM, e sim o contrato: na listagem de
     projetos eu tinha escrito uma intersecao explicita para isto e a sabotagem
@@ -215,16 +223,16 @@ async def test_team_id_nao_alarga_a_lente(db) -> None:
     (aplicar o recorte ANTES da lente, ou em vez dela) apareca.
     """
     m = await _mundo(db)
-    with _como_supervisor_do_seo(m):
+    with _como_gerente_do_marketing(m):
         forms = await _forms_na_fila(db, team_id=m["comercial"])
 
     assert forms == []
 
 
-async def test_supervisor_no_seu_time_ve_a_fila_dele(db) -> None:
+async def test_gerente_no_seu_time_ve_a_fila_dele(db) -> None:
     """A trava nao pode fechar a porta de quem tem a chave."""
     m = await _mundo(db)
-    with _como_supervisor_do_seo(m):
+    with _como_gerente_do_marketing(m):
         forms = await _forms_na_fila(db, team_id=m["marketing"])
 
     assert m["f_seo"].id in forms
@@ -259,12 +267,20 @@ async def test_orfa_fica_para_quem_administra_a_organizacao(db) -> None:
 
 
 async def test_orfa_NAO_aparece_na_fila_de_quem_nao_administra(db) -> None:
-    """A outra metade da §4.4: "some da fila de time"."""
+    """A outra metade da §4.4: "some da fila de time".
+
+    ⚠️ Spec 051, fatia B: com o SUPERVISOR este teste passava por acaso -- ele
+    nao lia fila nenhuma. Com o gerente (que le) ele prova a regra, e prova
+    tambem sem recorte: a orfa nao e de gerente nenhum.
+    """
     m = await _mundo(db)
-    with _como_supervisor_do_seo(m):
+    with _como_gerente_do_marketing(m):
         forms = await _forms_na_fila(db, team_id=m["marketing"])
+        sem_recorte = await _forms_na_fila(db, team_id=None)
 
     assert None not in forms
+    assert None not in sem_recorte
+    assert m["f_seo"].id in sem_recorte
 
 
 # ------------------------------------------------- 4. os contadores

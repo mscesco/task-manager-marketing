@@ -340,6 +340,20 @@ export type Task = {
   board_id: string;
   column_id: string;
   /**
+   * Spec 051, fatia A: quem pergunta pode APAGAR esta tarefa -- e moderar
+   * comentário alheio nela, que é a mesma pergunta (`task.delete` no time da
+   * tarefa).
+   *
+   * ⚠️⚠️ O BOTÃO VEM DAQUI, e não de `me.permissions`. O `/auth/me` diz "o que",
+   * nunca "onde": quem é gerente no Marketing e operador no Comercial tem
+   * `task.delete` e VÊ a tarefa do Comercial -- e o servidor recusa apagá-la.
+   *
+   * ⚠️ OBRIGATÓRIO, ao contrário dos contadores abaixo: o backend o calcula no
+   * próprio `TaskResponse`, então TODA resposta de tarefa o traz, inclusive as
+   * de mutação.
+   */
+  can_delete: boolean;
+  /**
    * ⚠️ SPEC 042 (A1 + B2). Os tres campos abaixo chegam SO na LISTAGEM
    * (`TaskListItem`), calculados em lote pelo backend. Eles sao o que permite
    * o quadro parar de carregar a subarvore: medido em 19/08, ele baixava 917
@@ -680,6 +694,12 @@ export type Team = {
   // pessoa pode, nunca "onde". Opcional como as contagens: só a listagem o
   // traz, e AUSENTE LÊ-SE COMO "NÃO" (`podeEditar` fecha, não abre).
   can_update?: boolean;
+  // Spec 051, fatia A: quem pergunta pode CRIAR PROJETO neste time? Mesma regra
+  // do `can_update`: só a listagem traz, e ausente lê-se como "não".
+  can_create_project?: boolean;
+  // Spec 051, fatia D: quem pergunta pode APAGAR este time? O gerente apaga
+  // subtime da própria árvore; ausente lê-se como "não".
+  can_delete?: boolean;
 };
 
 type TeamListResponse = { items: Team[]; total: number };
@@ -1920,6 +1940,23 @@ export async function moveMemberSubteam(
 
 // Reset administrativo: gera nova senha provisoria, devolvida UMA vez
 // (team.manage). Nao invalida _members (so muda senha, nao a lista).
+/**
+ * Os botões da CONTA de uma pessoa: quem olha consegue resetar a senha dela, e
+ * desativá-la? (Spec 051, fatia E)
+ *
+ * ⚠️ O SERVIDOR RESPONDE, pelas mesmas travas das duas ações. A gaveta decidia
+ * por "alcance amplo" e mostrava os botões ao gerente na conta de outro
+ * gerente -- que o servidor recusa desde o conserto de 16/09 (#57).
+ */
+export type AcoesDaConta = {
+  can_reset_password: boolean;
+  can_deactivate: boolean;
+};
+
+export async function memberAccountActions(userId: string): Promise<AcoesDaConta> {
+  return api<AcoesDaConta>(`/api/v1/members/${userId}/account-actions`);
+}
+
 export async function resetMemberPassword(
   userId: string
 ): Promise<ResetPasswordResult> {
@@ -2104,6 +2141,12 @@ export type Project = {
   created_by: string;
   created_at: string;
   updated_at: string;
+  // ⚠️ Spec 051, fatia A: os botões do projeto, calculados pelo servidor NO TIME
+  // do projeto -- e não `me.permissions`, que diz "o que" e nunca "onde".
+  // Obrigatórios: toda resposta de projeto os traz.
+  can_update: boolean;
+  can_archive: boolean;
+  can_delete: boolean;
 };
 
 export type ProjectListResponse = {
@@ -2286,6 +2329,40 @@ export async function currentUser(): Promise<CurrentUser> {
   if (_me !== undefined) return _me;
   _me = await getMe();
   return _me;
+}
+
+/**
+ * Evento de `window` quando o PRÓPRIO nome muda (Spec 051, fatia E). O
+ * `detail` é o nome novo.
+ *
+ * ⚠️ Mesmo desenho do `TIMES_MUDARAM`: a barra lateral buscou o usuário uma vez
+ * na montagem e mostra o nome dele; trocar o nome no `/perfil` não navega, e
+ * sem o aviso a barra seguiria com o nome velho até recarregar.
+ */
+export const NOME_MUDOU = "me:nome-mudou";
+
+/**
+ * Troca o PRÓPRIO nome (Spec 051, fatia E -- decisão 8: "só o próprio").
+ *
+ * ⚠️ Não há `userId`, e a ausência é a regra: o servidor pega o alvo do token.
+ *
+ * ⚠️ TRÊS CACHES MOSTRAM O NOME, e os três são acertados aqui, e não na tela:
+ *   - `_me` (quem chamar `currentUser()` depois recebe o nome novo);
+ *   - a lista de membros (`invalidateMembers`): seletores, responsáveis e o
+ *     `@` mostram o nome das pessoas, inclusive o meu;
+ *   - a barra lateral, que tem o seu próprio estado -- pelo evento.
+ */
+export async function renameSelf(name: string): Promise<string> {
+  const r = await api<{ name: string }>("/api/v1/auth/me", {
+    method: "PATCH",
+    body: { name },
+  });
+  if (_me !== undefined) _me = { ..._me, name: r.name };
+  invalidateMembers();
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent(NOME_MUDOU, { detail: r.name }));
+  }
+  return r.name;
 }
 
 // ---------------------------------------------------------------

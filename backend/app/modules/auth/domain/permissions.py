@@ -170,6 +170,16 @@ _ROLE_PERMISSIONS: dict[UserTeamRole, frozenset[str]] = {
         {
             "subteam.create",
             "subteam.update",
+            # ⭐ Spec 051, FATIA D -- decisao 4 da Camila (16/09): o gerente apaga
+            # subtime da PROPRIA arvore, como o Mapa de 10/09 ja dizia. O "onde"
+            # e o escopo de comando (arvore dele) e mora no servico
+            # (`TeamService.delete`, `previa_remocao`, `esvaziar_e_remover`), que
+            # ate aqui nao conferia arvore nenhuma -- inofensivo so enquanto o
+            # verbo era do ADMIN.
+            # ⚠️ O GESTOR NAO o recebe (pergunta B, 16/09): *"o gestor apesar de
+            # estar acima do gerente e alguem que basicamente so quer ver os
+            # times e subtimes, nao necessariamente acabar com um do nada"*.
+            "subteam.delete",
             "person.create",
             "person.update",
             "person.deactivate",
@@ -322,7 +332,8 @@ _ORG_ROLE_PERMISSIONS: dict[OrgRole, frozenset[str]] = {
             # e da/tira papel de organizacao. O TETO ("so ate gestor; so admin
             # mexe em admin") NAO e permissao: e limite sobre o VALOR, e mora
             # em `MemberService.change_organization_role` (spec §4.5).
-            # Seguem so do ADMIN: `subteam.delete` e `team.move`.
+            # Nao recebe: `subteam.delete` (do ADMIN e, desde a Spec 051, do
+            # MANAGER na arvore dele -- pergunta B) e `team.move` (so ADMIN).
             "organization.update",
             "org_role.grant",
             "org_role.revoke",
@@ -514,6 +525,26 @@ class ActorPermissions:
         if team_id is None:
             return False
         return team_id in self.by_team.get(permission, frozenset())
+
+    def teams_with(self, permission: str) -> frozenset[uuid.UUID] | None:
+        """EM QUAIS times tem esta permissao? (Spec 051, fatia A)
+
+        `None` = em TODOS (a parcela de organizacao a tem). Senao, os times de
+        `by_team` -- que pode ser vazio.
+
+        ⚠️⚠️ E A PERGUNTA DAS LISTAS, e nao uma lente nova. Uma listagem nao tem
+        item para perguntar `can_in`; ela precisa do conjunto para filtrar. Ate
+        a Spec 051 as listas usavam a LENTE (`visible_team_ids`) no lugar, e com
+        uma pessoa em duas arvores as duas respostas divergem: a lente de quem e
+        operador no Comercial inclui o Comercial, e os verbos de comando dela nao.
+
+        ⚠️ `None` E NAO O CONJUNTO DE TODOS OS TIMES, pelo mesmo contrato de
+        `visible_team_ids`: esta classe nao conhece a arvore, e "todos" dito
+        como `None` nao envelhece quando um time novo nasce.
+        """
+        if permission in self.unscoped:
+            return None
+        return self.by_team.get(permission, frozenset())
 
     def all_permissions(self) -> frozenset[str]:
         """Achatado, para o contrato de `/auth/me` e para telas.

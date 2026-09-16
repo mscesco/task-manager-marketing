@@ -3,11 +3,16 @@ import { useEffect, useState } from "react";
 import AppShell from "@/components/AppShell";
 import Card from "@/components/Card";
 import PageHeader from "@/components/PageHeader";
-import { currentUser, ApiError, type CurrentUser } from "@/lib/api";
+import { currentUser, renameSelf, ApiError, type CurrentUser } from "@/lib/api";
+import { NOME_MAXIMO, nomeParaSalvar } from "@/lib/nomeProprio";
 
 import Loading from "@/components/Loading";
-// Perfil v1: SO leitura (nome, e-mail, papeis) + atalho pra trocar senha.
-// Editar nome/avatar nao existe no backend -> fora desta entrega (ADR 0009).
+// Perfil: nome (editável), e-mail e papéis + atalho pra trocar senha.
+//
+// ⚠️ Spec 051, fatia E: O NOME PASSOU A SER EDITÁVEL AQUI, e só aqui -- decisão
+// da Camila (16/09): *"liberar somente para próprio"*. Ninguém edita o nome de
+// outra pessoa, admin incluído, e por isso a gaveta do membro não ganha campo.
+// Avatar e e-mail seguem fora (ADR 0009).
 const PAPEL_LABEL: Record<string, string> = {
   ADMIN: "Administrador",
   MANAGER: "Gerente",
@@ -26,10 +31,17 @@ export default function PerfilPage() {
 function Perfil() {
   const [me, setMe] = useState<CurrentUser | null>(null);
   const [erro, setErro] = useState<string | null>(null);
+  const [nome, setNome] = useState("");
+  const [salvando, setSalvando] = useState(false);
+  const [erroNome, setErroNome] = useState<string | null>(null);
+  const [salvo, setSalvo] = useState(false);
 
   useEffect(() => {
     currentUser()
-      .then(setMe)
+      .then((u) => {
+        setMe(u);
+        setNome(u.name);
+      })
       .catch((e: ApiError) => setErro(e.message || "Não consegui carregar seu perfil."));
   }, []);
 
@@ -41,15 +53,72 @@ function Perfil() {
       ? me.roles.map((r) => PAPEL_LABEL[r] ?? r).join(", ")
       : "Sem papel atribuido";
 
+  const paraSalvar = nomeParaSalvar(nome, me.name);
+
+  async function salvarNome() {
+    if (paraSalvar === null) return;
+    setSalvando(true);
+    setErroNome(null);
+    setSalvo(false);
+    try {
+      const novo = await renameSelf(paraSalvar);
+      setMe((atual) => (atual ? { ...atual, name: novo } : atual));
+      setNome(novo);
+      setSalvo(true);
+    } catch (e) {
+      setErroNome((e as ApiError).message || "Não consegui salvar o nome.");
+    } finally {
+      setSalvando(false);
+    }
+  }
+
   return (
     <div style={{ maxWidth: 480 }}>
       <PageHeader title="Meu perfil" />
 
       <Card className="flex flex-col gap-4">
-        <div className="field">
-          <span className="label">Nome</span>
-          <div style={{ fontSize: 14 }}>{me.name}</div>
-        </div>
+        <form
+          className="field"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void salvarNome();
+          }}
+        >
+          <label className="label" htmlFor="perfil-nome">
+            Nome
+          </label>
+          <div className="flex gap-2">
+            <input
+              id="perfil-nome"
+              className="input flex-1"
+              value={nome}
+              maxLength={NOME_MAXIMO}
+              disabled={salvando}
+              autoComplete="name"
+              onChange={(e) => {
+                setNome(e.target.value);
+                setSalvo(false);
+              }}
+            />
+            <button
+              type="submit"
+              className="btn btn-primary"
+              disabled={salvando || paraSalvar === null}
+            >
+              {salvando ? "Salvando…" : "Salvar"}
+            </button>
+          </div>
+          {erroNome && (
+            <div className="error-box mt-2 text-xs" role="alert">
+              {erroNome}
+            </div>
+          )}
+          {salvo && (
+            <div className="muted mt-2 text-xs" role="status">
+              Nome atualizado.
+            </div>
+          )}
+        </form>
         <div className="field">
           <span className="label">E-mail</span>
           <div style={{ fontSize: 14 }}>{me.email}</div>

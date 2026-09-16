@@ -25,6 +25,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Check, Pencil, Plus, Search, X } from "lucide-react";
 import AppShell from "@/components/AppShell";
 import Badge from "@/components/Badge";
@@ -52,6 +53,7 @@ import {
   organizationManagers,
   papeisDeOrganizacaoAtribuiveis,
   peopleWithoutArea,
+  podeAbrirOrganizacao,
   type AreaCard,
 } from "@/lib/organization";
 
@@ -95,14 +97,28 @@ export default function OrganizacaoPage() {
   // tinha apagado a pessoa.
   const [aviso, setAviso] = useState<string | null>(null);
 
+  const router = useRouter();
+  // ⚠️⚠️ Spec 051, fatia F: A GUARDA. Ate aqui esta pagina abria para quem
+  // digitasse o endereco -- o link do menu so aparecia para papel de
+  // organizacao, e a pagina nao conferia nada. `false` ate saber, e so vira
+  // `true` com o `me` na mao: nada da organizacao e desenhado por palpite.
+  const [liberada, setLiberada] = useState(false);
+
   async function carregar() {
     setCarregando(true);
     try {
-      const [w, t, m, u] = await Promise.all([
+      // ⚠️ O `me` PRIMEIRO, e sozinho: quem nao pode ver a tela nao dispara as
+      // leituras da organizacao (membros, areas) so para ser mandado embora.
+      const u = await currentUser();
+      if (!podeAbrirOrganizacao(u)) {
+        router.replace("/");
+        return;
+      }
+      setLiberada(true);
+      const [w, t, m] = await Promise.all([
         getWorkspace(),
         listTeamsAll(),
         listMembers(),
-        currentUser(),
       ]);
       setWs(w);
       setTimes(t);
@@ -136,6 +152,18 @@ export default function OrganizacaoPage() {
     () => searchPeople(busca, members, teams),
     [busca, members, teams],
   );
+
+  // ⚠️ DEPOIS DOS HOOKS, e nao no topo: um `return` antes de `useMemo` mudaria
+  // a ordem dos hooks entre renderizacoes. Enquanto a guarda nao liberou (ou
+  // esta mandando embora), so a moldura com o carregando -- nenhum nome de
+  // area nem de pessoa.
+  if (!liberada) {
+    return (
+      <AppShell>
+        <Loading />
+      </AppShell>
+    );
+  }
 
   return (
     <AppShell>

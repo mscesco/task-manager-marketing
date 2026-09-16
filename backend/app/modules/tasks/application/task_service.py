@@ -58,6 +58,7 @@ from app.modules.tasks.infrastructure.project_repository import ProjectRepositor
 from app.modules.tasks.infrastructure.task_repository import TaskRepository
 from app.modules.workspaces.infrastructure.team_repository import TeamRepository
 from app.shared.exceptions.base import (
+    AuthorizationError,
     BusinessRuleError,
     ValidationError,
 )
@@ -1710,6 +1711,19 @@ class TaskService:
         task = await self._repo.get_by_id_or_raise(task_id)
         await self._assert_visible_via_project(task)
         await self._assert_editable(task)
+        # ⚠️⚠️ Spec 051, fatia A: O VERBO NO TIME DA TAREFA, depois da lente. Ate
+        # aqui a rota perguntava `task.delete` "em algum lugar" e este servico so
+        # a lente -- e quem e MANAGER no Marketing e OPERATOR no Comercial
+        # apagava tarefa do Comercial: enxerga (e operador la), e tem o verbo
+        # (no Marketing). Com um vinculo so as duas perguntas coincidem, e por
+        # isso a matriz da 049 ficou verde.
+        # ⚠️ A ORDEM E A DA SPEC (§4.1): fora da lente e 404 (acima), na lente
+        # sem o verbo e 403 (aqui). O inverso confirmaria que o id existe.
+        if not require_tenant().has_permission_in("task.delete", task.team_id):
+            raise AuthorizationError(
+                "Você não apaga tarefas deste time.",
+                details={"task_id": str(task.id)},
+            )
 
         cascade_count = await self._repo.soft_delete_subtree(task=task)
 

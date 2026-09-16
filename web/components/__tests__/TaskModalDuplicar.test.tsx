@@ -101,6 +101,8 @@ function task(over: Partial<Task> & { id: string; title: string }): Task {
     // 10/08, no `minhasTarefas.test.tsx`.
     board_id: "board-geral",
     column_id: "col-backlog",
+    // Spec 051, fatia A: o cadeado vem do servidor, em toda resposta.
+    can_delete: true,
     start_date: null,
     due_date: "2026-03-10",
     due_time: null,

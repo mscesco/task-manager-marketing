@@ -24,7 +24,7 @@ from app.shared.exceptions.base import (
     ConflictError,
 )
 from tests.integration import factories as f
-from tests.integration.conftest import acting_as
+from tests.integration.conftest import acting_as, node
 
 pytestmark = pytest.mark.integration
 
@@ -73,14 +73,25 @@ async def test_manager_adiciona_supervisor(db) -> None:
     ws = await f.make_workspace(db)
     raiz = await f.make_team(db, workspace_id=ws, slug="marketing")
     seo = await f.make_team(db, workspace_id=ws, parent_team_id=raiz, slug="seo")
+    design = await f.make_team(
+        db, workspace_id=ws, parent_team_id=raiz, slug="design"
+    )
     mgr = await f.make_user(db, workspace_id=ws, email="mgr@t.dev")
     await f.add_member(db, workspace_id=ws, user_id=mgr, team_id=raiz, role="MANAGER")
     # ⚠️ Sem vinculo na raiz -- ver a nota do teste acima (Spec 044, fatia 5).
+    # ⚠️⚠️ MAS COM VINCULO NA ARVORE (Design), desde a Spec 051, fatia C: quem
+    # nao e da organizacao so vincula quem ja esta naquela arvore. O alvo SEM
+    # time nenhum que este teste usava nao existe fora de teste -- todo membro
+    # nasce com um vinculo (Spec 014) -- e hoje so a organizacao o vincula.
     alvo = await f.make_user(db, workspace_id=ws, email="alvo@t.dev")
+    await f.add_member(db, workspace_id=ws, user_id=alvo, team_id=design, role="OPERATOR")
 
     with acting_as(
         workspace_id=ws, user_id=mgr,
         memberships=(Membership(team_id=raiz, role="MANAGER"),),
+        # ⚠️ A ARVORE, desde a Spec 051: "ja esta na arvore" pergunta a raiz de
+        # cada time, e sem arvore o SEO e o Design seriam raizes de si mesmos.
+        team_tree=(node(raiz), node(seo, raiz), node(design, raiz)),
     ):
         ut = await MemberService(db).assign_to_team(
             user_id=alvo, team_id=seo, role=UserTeamRole.SUPERVISOR
