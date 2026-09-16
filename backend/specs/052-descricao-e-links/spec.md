@@ -83,7 +83,7 @@ Não há entidade de link. Todo link hoje é URL solta no texto.
 ### 4.1. A descrição do projeto sai do cabeçalho
 
 Vira um bloco **"Sobre o projeto"** logo abaixo do cabeçalho:
-- mostra as **primeiras 4 linhas** e um **"Ver mais"** que abre o resto (e
+- mostra as **primeiras 2 linhas** (eram 4; ela pediu 2 em 16/09) e um **"Ver mais"** que abre o resto (e
   "Ver menos" para fechar); texto curto não mostra o botão;
 - **mantém as quebras de linha** e deixa os links clicáveis — o mesmo
   tratamento que a descrição da tarefa já tem;
@@ -91,7 +91,7 @@ Vira um bloco **"Sobre o projeto"** logo abaixo do cabeçalho:
 
 O cabeçalho fica com status, prioridade, datas e os links (§4.2).
 
-⚠️ **"4 linhas" é visual, não contagem de caracteres:** um corte por
+⚠️ **"2 linhas" é visual, não contagem de caracteres:** um corte por
 `line-clamp`, e o "Ver mais" só aparece quando o texto de fato passa do corte
 (medido no navegador, não adivinhado pelo tamanho da string).
 
