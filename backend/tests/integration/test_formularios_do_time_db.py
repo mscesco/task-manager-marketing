@@ -92,11 +92,18 @@ def _como_admin(m):
     )
 
 
-def _como_supervisor_do_seo(m):
+def _como_gerente_do_marketing(m):
+    """Quem LE formulario sem ser da organizacao.
+
+    ⚠️ Ate a Spec 051 (fatia B) era o SUPERVISOR do SEO, que nao tem
+    `form.read` -- o recorte era a lente, e o teste chama o servico direto. O
+    recorte virou o verbo; o leitor de verdade abaixo da organizacao e o
+    MANAGER.
+    """
     return acting_as(
         workspace_id=m["ws"],
         user_id=m["user"],
-        memberships=(mship(m["seo"], "SUPERVISOR"),),
+        memberships=(mship(m["marketing"], "MANAGER"),),
         team_tree=m["arvore"],
     )
 
@@ -150,15 +157,15 @@ async def test_sem_recorte_a_lista_e_da_organizacao(db) -> None:
 async def test_a_LENTE_esconde_o_formulario_de_outra_raiz(db) -> None:
     """⚠️⚠️ A REGRA DA SPEC 043 QUE NUNCA TEVE TESTE.
 
-    O supervisor do SEO alcanca {SEO, Marketing}. O Comercial e outra raiz: o
+    O gerente do Marketing le {Marketing, SEO}. O Comercial e outra raiz: o
     formulario dele nao e dele para ver, nem pelo titulo -- e o editor daquele
     formulario abre a partir desta lista.
 
-    SABOTAGEM: apagar o `if visiveis is not None` -> este teste cai. Antes de
+    SABOTAGEM: apagar o `if leitura is not None` -> este teste cai. Antes de
     hoje, a mesma sabotagem passaria com a suite inteira verde.
     """
     m = await _mundo(db)
-    with _como_supervisor_do_seo(m):
+    with _como_gerente_do_marketing(m):
         slugs = await _slugs(db, team_id=None)
 
     assert "metas" not in slugs
@@ -170,11 +177,11 @@ async def test_a_LENTE_esconde_o_formulario_de_outra_raiz(db) -> None:
 async def test_team_id_nao_alarga_a_lente(db) -> None:
     """O parametro ESTREITA, nunca alarga.
 
-    O supervisor do SEO pede o Comercial explicitamente e recebe vazio -- os
-    dois predicados entram na mesma consulta e se combinam com AND.
+    O gerente do Marketing pede o Comercial explicitamente e recebe vazio --
+    os dois predicados entram na mesma consulta e se combinam com AND.
     """
     m = await _mundo(db)
-    with _como_supervisor_do_seo(m):
+    with _como_gerente_do_marketing(m):
         slugs = await _slugs(db, team_id=m["comercial"])
 
     assert slugs == set()

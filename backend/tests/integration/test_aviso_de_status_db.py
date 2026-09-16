@@ -92,6 +92,10 @@ async def _cena(db):
         user_id=user,
         memberships=(mship(raiz, "ADMIN"),),
         team_tree=(node(raiz),),
+        # ⚠️ Spec 051, fatia B: o pedido desta cena e ORFAO (a rota publica sem
+        # formulario), e orfa passou a ser so de quem administra a ORGANIZACAO.
+        # O vinculo ADMIN antigo de time, sozinho, ja nao o encontra (404).
+        org_role="ADMIN",
     )
     return ws, pedido, ctx
 

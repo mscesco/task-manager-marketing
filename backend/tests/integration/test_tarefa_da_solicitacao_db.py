@@ -68,6 +68,10 @@ async def _cena(db, *, com_formulario: bool = True):
         user_id=user,
         memberships=(mship(raiz, "ADMIN"),),
         team_tree=arvore,
+        # ⚠️ Spec 051, fatia B: com `com_formulario=False` o pedido e ORFAO, e
+        # orfa e so de quem administra a ORGANIZACAO -- o vinculo ADMIN antigo
+        # de time ja nao a encontra.
+        org_role="ADMIN",
     )
 
     form_id = None
@@ -179,6 +183,7 @@ async def test_pedido_PENDENTE_nao_vira_tarefa(db) -> None:
         user_id=user,
         memberships=(mship(raiz, "ADMIN"),),
         team_tree=(node(raiz),),
+        org_role="ADMIN",  # pedido orfao -- ver `_cena`
     ):
         with pytest.raises(BusinessRuleError) as erro:
             async with UnitOfWork(db) as uow:

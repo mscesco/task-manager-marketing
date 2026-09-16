@@ -83,21 +83,26 @@ class SolicitationRepository(BaseRepository[Solicitation]):
                 & (SolicitationForm.workspace_id == Solicitation.workspace_id),
             )
         )
-        tenant = require_tenant()
-        visiveis = team_scope.visible_team_ids(
-            tenant.memberships,
-            tenant.team_tree,
-            org_role=tenant.org_role,
-        )
-        if visiveis is None:  # ADMIN
+        # ⚠️⚠️ Spec 051, fatia B: O RECORTE E O VERBO, E NAO A LENTE. Ate aqui
+        # era `visible_team_ids` -- "onde a pessoa trabalha". Com uma pessoa em
+        # duas arvores (MANAGER no Marketing, OPERATOR no Comercial) a lente
+        # inclui o Comercial, a rota ve `solicitation.read` no Marketing, e ela
+        # lia e triava a fila do Comercial. A pergunta certa e "em que times ela
+        # le solicitacao?" -- e so ela, porque e a unica porta de toda leitura
+        # (ver acima). Triar ainda confere `solicitation.review` no servico.
+        #
+        # ⚠️⚠️ E A ORFA (sem formulario) SAIU DE QUEM NAO E DA ORGANIZACAO --
+        # decisao da Spec 048 que o codigo nao cumpria. O aviso acima ("orfa
+        # continua visivel a quem tem `solicitation.review` no workspace") era
+        # verdade com uma arvore so; com varias, "no workspace" virava "qualquer
+        # gerente de qualquer area", e a orfa nao tem time para dizer de qual.
+        # Quem a ve agora e so quem le em TODOS os times (`None`): o papel de
+        # organizacao. O `LEFT JOIN` continua: para eles, sumir com ela seria
+        # perder trabalho pendente.
+        leitura = require_tenant().teams_with_permission("solicitation.read")
+        if leitura is None:  # organizacao (ou contexto legado com o verbo)
             return stmt
-        return stmt.where(
-            or_(
-                # historico sem formulario -- ver o aviso acima
-                Solicitation.form_id.is_(None),
-                SolicitationForm.team_id.in_(visiveis),
-            )
-        )
+        return stmt.where(SolicitationForm.team_id.in_(leitura))
 
     def _recorte_de_time(
         self, team_id: uuid.UUID | None

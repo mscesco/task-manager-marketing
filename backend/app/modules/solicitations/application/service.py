@@ -52,10 +52,12 @@ from app.modules.solicitations.infrastructure.repository import (
     insert_public,
 )
 from app.shared.exceptions.base import (
+    AuthorizationError,
     BusinessRuleError,
     EntityNotFoundError,
     ValidationError,
 )
+from app.modules.tasks.application.task_guards import TaskScopeGuards
 from app.modules.solicitations.domain.briefing import (
     briefing,
     titulo_da_tarefa,
@@ -597,9 +599,7 @@ class SolicitationService:
         pularia a triagem por um caminho lateral -- a mesma razao de `andar`
         recusar PENDING.
         """
-        solicitation = await self.repo.get_by_id_or_raise(
-            command.solicitation_id
-        )
+        solicitation = await self._para_triar(command.solicitation_id)
         if solicitation.status not in ACEITOS:
             raise BusinessRuleError(
                 "Aprove a solicitação antes de criar a tarefa."
@@ -640,6 +640,39 @@ class SolicitationService:
         await self.session.refresh(solicitation)
         return solicitation, tarefa
 
+    async def _para_triar(self, solicitation_id: uuid.UUID) -> Solicitation:
+        """O pedido, se quem chama o TRIA. Spec 051, fatia B.
+
+        Duas perguntas, nesta ordem:
+
+            ler   -- o `_base_select` do repositorio ja recorta por
+                     `solicitation.read` no time do formulario: fora dele, 404;
+            triar -- `solicitation.review` NO TIME DO FORMULARIO: sem ele, 403.
+
+        ⚠️ HOJE OS DOIS VERBOS ESTAO NOS MESMOS PAPEIS, e o 403 nao acontece por
+        nenhum papel pre-definido. A pergunta fica porque a rota so ve
+        `solicitation.review` "em algum lugar" -- e o dia em que um papel ler
+        sem triar e o dia em que ele triaria a fila de outro time.
+
+        ⚠️ O TIME E O DO FORMULARIO MESMO APAGADO, como no `_base_select` (que
+        junta sem olhar `deleted_at`): a fila e o triar tem de concordar sobre
+        de quem e o pedido. Orfa de verdade (sem `form_id`) nao tem time, e
+        `can_in(p, None)` responde so pela organizacao.
+        """
+        solicitation = await self.repo.get_by_id_or_raise(solicitation_id)
+        time = None
+        if solicitation.form_id is not None:
+            time = (
+                await self.session.execute(
+                    select(SolicitationForm.team_id).where(
+                        SolicitationForm.id == solicitation.form_id
+                    )
+                )
+            ).scalar_one_or_none()
+        if not require_tenant().has_permission_in("solicitation.review", time):
+            raise AuthorizationError("Você não tria as solicitações deste time.")
+        return solicitation
+
     async def _time_do_pedido(self, solicitation: Solicitation):
         """O time dono do FORMULARIO por onde o pedido entrou.
 
@@ -668,9 +701,7 @@ class SolicitationService:
         valor esta no CONTRARIO: o que fica sem marca aparece no filtro
         "aprovadas sem tarefa" e para de ser invisivel.
         """
-        solicitation = await self.repo.get_by_id_or_raise(
-            command.solicitation_id
-        )
+        solicitation = await self._para_triar(command.solicitation_id)
 
         # ⚠️ OS TRES ACEITOS (Spec 043, fatia D), e nao so APPROVED. Um pedido
         # EM ANDAMENTO e justamente aquele em que a tarefa foi criada -- exigir
@@ -691,7 +722,13 @@ class SolicitationService:
                 # composta ja impediria apontar para outro cliente, mas o erro
                 # viria do banco como violacao de integridade -- feio e sem
                 # explicacao. Aqui vira 404 com texto.
-                await self._assert_tarefa_do_workspace(command.task_id)
+                tarefa = await self._assert_tarefa_do_workspace(command.task_id)
+                # ⚠️⚠️ Spec 051, fatia B: E ESTAR NA LENTE de quem marca. So o
+                # workspace era conferido -- um gerente do Marketing vinculava
+                # uma tarefa do Comercial (bastava o id) e a fila passava a
+                # mostrar o TITULO dela (`titulos_das_tarefas`). Fora da lente,
+                # a mesma resposta de tarefa inexistente: 404.
+                await TaskScopeGuards(self.session).assert_visible(tarefa)
             solicitation.task_id = command.task_id
         else:
             solicitation.task_created_at = None
@@ -792,7 +829,7 @@ class SolicitationService:
         GUARDA E OUTRA: `can_review` continua exigindo PENDING, e este caminho
         exige o contrario -- ja ter saido de PENDING.
         """
-        solicitation = await self.repo.get_by_id_or_raise(command.solicitation_id)
+        solicitation = await self._para_triar(command.solicitation_id)
 
         if command.novo_status not in ACEITOS:
             raise ValidationError(
@@ -831,7 +868,7 @@ class SolicitationService:
         solicitante tera (nao ha conta/notificacao pra ele) -- a
         justificativa fica registrada pra quando ele cobrar.
         """
-        solicitation = await self.repo.get_by_id_or_raise(command.solicitation_id)
+        solicitation = await self._para_triar(command.solicitation_id)
 
         if not can_review(solicitation.status):
             raise BusinessRuleError(

@@ -119,6 +119,11 @@ fila e da fatia B). Nenhuma outra celula mudou. O cadeado de cada item
 (`can_delete`, `can_update`...) passou a ser conferido CONTRA estas linhas --
 ver `test_o_cadeado_do_item_concorda_com_a_matriz`.
 
+SPEC 051, FATIA B (16/09) -- fila e formularios pelo verbo. Quatro linhas: a
+fila do Comercial some para DUAS_ARVORES; a orfa, para quem nao e da
+organizacao; marcar tarefa fora da lente e 404; abrir formulario de outra
+arvore pelo id e 404. Nenhuma outra celula mudou.
+
 O QUE ESTA TABELA NAO COBRE (de proposito, e anotado para quem estender):
     - editar comentario (autoria, nao permissao -- spec §4.5) e seguidores
       (o servico decide "eu" contra "terceiro");
@@ -792,12 +797,12 @@ MATRIZ: tuple[Linha, ...] = (
     Linha("form.create", "no Comercial", "post", f"{T}/solicitacoes/formularios",
           {"team_id": "{com}", "slug": "novo", "title": "Novo"},
           (OK, OK, NEGADO, NEGADO, NEGADO, NEGADO)),
-    # Spec 051 §4.8 item 2: abrir formulario pelo id nao confere o time. O
-    # MANAGER le o do Comercial, rascunho inclusive.
+    # Spec 051 §4.8 item 2: abrir formulario pelo id nao conferia o time -- o
+    # MANAGER lia o do Comercial, rascunho inclusive. Fatia B: fora de
+    # `form.read` no time e 404.
     Linha("form.read", "do Comercial, pelo id", "get",
           f"{T}/solicitacoes/formularios/{{form_com}}", None,
-          (OK, OK, OK, NEGADO, NEGADO, OK),
-          diverge="051 §4.8 item 2: fora de `form.read` no time e 404"),
+          (OK, OK, OCULTO, NEGADO, NEGADO, OCULTO)),
     Linha("form.update", "do Marketing", "patch",
           f"{T}/solicitacoes/formularios/{{form_mkt}}", {"title": "Outro"},
           (OK, OK, OK, NEGADO, NEGADO, OK)),
@@ -822,20 +827,17 @@ MATRIZ: tuple[Linha, ...] = (
           (OK, OK, OK, NEGADO, NEGADO, OK)),
     Linha("solicitation.review", "aprovar do Comercial", "post",
           f"{T}/solicitacoes/{{sol_com}}/aprovar", {},
-          (OK, OK, OCULTO, NEGADO, NEGADO, OK),
-          diverge="051 §4.1: a fila pelo verbo, e nao pela lente"),
+          (OK, OK, OCULTO, NEGADO, NEGADO, OCULTO)),  # 051, fatia B: a fila pelo verbo
     Linha("solicitation.review", "aprovar a orfa (sem formulario)", "post",
           f"{T}/solicitacoes/{{sol_orfa}}/aprovar", {},
-          (OK, OK, OK, NEGADO, NEGADO, OK),
-          diverge="051 §4.8 item 1: a orfa e so da organizacao"),
+          (OK, OK, OCULTO, NEGADO, NEGADO, OCULTO)),  # 051, fatia B: a orfa e so da organizacao
     # ⚠️ Spec 051 §3.6, achado de uma frente de revisao e conferido lendo
     # `mark_task`: o `task_id` so e checado contra o WORKSPACE. O MANAGER
     # vincula uma tarefa do Comercial, e a fila passa a mostrar o titulo dela
     # (`titulos_das_tarefas`, sem lente).
     Linha("solicitation.review", "marcar tarefa do Comercial na do Marketing", "post",
           f"{T}/solicitacoes/{{sol_aprovada_mkt}}/tarefa", {"task_id": "{tarefa_com}"},
-          (OK, OK, OK, NEGADO, NEGADO, OK),
-          diverge="051 §3.6: tarefa fora da lente e 404"),
+          (OK, OK, OCULTO, NEGADO, NEGADO, OK)),  # 051, fatia B: tarefa fora da lente e 404
 )
 
 
@@ -929,6 +931,59 @@ async def test_o_cadeado_do_item_concorda_com_a_matriz(db, papel: str) -> None:
             assert r.json()[campo] is (esperado == OK), (
                 f"{papel} em {acao} ({alvo}): {campo}={r.json()[campo]}, linha {esperado}"
             )
+
+
+#: Spec 051, fatia B: o que cada papel ve na FILA e na lista de FORMULARIOS.
+#: SUPERVISOR e OPERATOR nao aparecem: a rota recusa antes (403), e a matriz
+#: ja tem essa linha. `None` = a rota recusa.
+FILA = {
+    "ADMIN": {"sol_mkt", "sol_com", "sol_orfa", "sol_aprovada_mkt"},
+    "GESTOR": {"sol_mkt", "sol_com", "sol_orfa", "sol_aprovada_mkt"},
+    "MANAGER": {"sol_mkt", "sol_aprovada_mkt"},
+    "SUPERVISOR": None,
+    "OPERATOR": None,
+    # ⚠️ O caso da fatia: e operador no Comercial, e a lente o inclui -- a fila
+    # dele nao.
+    "DUAS_ARVORES": {"sol_mkt", "sol_aprovada_mkt"},
+}
+FORMULARIOS = {
+    "ADMIN": {"form_mkt", "form_com"},
+    "GESTOR": {"form_mkt", "form_com"},
+    "MANAGER": {"form_mkt"},
+    "SUPERVISOR": None,
+    "OPERATOR": None,
+    "DUAS_ARVORES": {"form_mkt"},
+}
+
+
+@pytest.mark.parametrize("papel", PAPEIS)
+async def test_fila_e_formularios_pelo_verbo_e_nao_pela_lente(db, papel: str) -> None:
+    """Spec 051, fatia B -- as LISTAS, que linha de matriz nao mede.
+
+    ⚠️ A orfa (`sol_orfa`) so aparece para a organizacao (Spec 048). Antes
+    desta fatia ela aparecia para todo MANAGER de qualquer area.
+    """
+    m = await _mundo(db)
+    nome_do_id = {v: k for k, v in m["ids"].items()}
+    async with _client(db, _contexto(m, papel)) as cli:
+        fila = await cli.get(f"{T}/solicitacoes", params={"size": 50})
+        formularios = await cli.get(f"{T}/solicitacoes/formularios")
+
+    if FILA[papel] is None:
+        assert fila.status_code == 403, fila.text
+    else:
+        assert fila.status_code == 200, fila.text
+        vistas = {
+            nome_do_id[i["id"]] for lote in fila.json()["items"] for i in lote["items"]
+        }
+        assert vistas == FILA[papel], f"{papel} ve na fila {vistas}"
+
+    if FORMULARIOS[papel] is None:
+        assert formularios.status_code == 403, formularios.text
+    else:
+        assert formularios.status_code == 200, formularios.text
+        vistos = {nome_do_id[f_["id"]] for f_ in formularios.json()}
+        assert vistos == FORMULARIOS[papel], f"{papel} ve os formularios {vistos}"
 
 
 #: Spec 051, fatia A: as areas em que cada papel CRIA projeto -- `can_create_project`.

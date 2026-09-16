@@ -3,7 +3,7 @@
 **Status:** escrita em 16/09/2026, a partir da revisão de permissões do mesmo
 dia (cinco frentes contra o Mapa de 10/09 e a Spec 049) e das **oito decisões
 dela**, respondidas em 16/09 (§8), mais as duas que a escrita levantou (A e B,
-respondidas no mesmo dia). **Fatias 0 e A entregues em 16/09.**
+respondidas no mesmo dia). **Fatias 0, A e B entregues em 16/09.**
 **Escopo:** backend (travas de serviço, matriz C2, duas rotas novas de leitura
 de cadeado e uma de escrita) e as telas que hoje decidem sozinhas o que o
 servidor deveria dizer.
@@ -429,6 +429,52 @@ resposta vem na leitura do item (`can_delete` na tarefa e no projeto,
 2 do formulário). A fila e a lista passam de lente a `teams_with`; a órfã sai
 para quem não é da organização; `obter_formulario` responde 404 fora de
 `form.read`.
+
+✅ **Entregue em 16/09.** Backend **1755**; front não mudou (1422); `ruff` 50
+antes e depois.
+
+- **Fila:** o `_base_select` do repositório — a única porta de toda leitura
+  de solicitação (lista, contadores, `get`) — recorta por
+  `teams_with_permission("solicitation.read")` no time do formulário. A órfã
+  só aparece quando a resposta é `None`: papel de organização.
+- **Triar** (aprovar, rejeitar, andamento, criar tarefa, marcar tarefa) passa
+  por `_para_triar`: o 404 vem do recorte, e depois
+  `solicitation.review` **no time do formulário** (403). ⚠️ Hoje os dois verbos
+  estão nos mesmos papéis e o 403 não acontece para nenhum papel
+  pré-definido — mas a sabotagem mostrou que ele é a segunda rede: sem o
+  recorte, aprovar a fila alheia deu 403, e não 200.
+- **Marcar tarefa (§3.6):** a tarefa passa pela lente de quem marca
+  (`TaskScopeGuards.assert_visible`) — fora dela, 404.
+  ⚠️ **O que NÃO foi feito:** `titulos_das_tarefas` continua sem lente. Com a
+  marcação fechada, o título fora da lente só aparece para vínculo feito
+  ANTES desta fatia, ou para tarefa que mudou de time depois de vinculada.
+  Registrado, não corrigido: filtrar ali esconderia o título de tarefa que
+  quem tria criou.
+- **Formulários:** a lista recorta por `form.read`; `obter_formulario`
+  responde 404 fora de `form.read` no time. A escrita cruzada segue 403 (§3.6).
+- **Matriz:** 4 linhas viradas (fila do Comercial, órfã, marcar tarefa,
+  formulário pelo id) e um teste de LISTA por papel
+  (`test_fila_e_formularios_pelo_verbo_e_nao_pela_lente`) — linha de matriz não
+  mede o que some de uma lista.
+- ⚠️⚠️ **17 testes antigos caíram, e nenhum era defeito da fatia.** Dois atalhos
+  que ela fechou:
+  - **o SUPERVISOR como leitor da fila e dos formulários** (`test_fila_do_time_db`,
+    `test_formularios_do_time_db`, `test_solicitation_form_db`). Ele não tem
+    `solicitation.read` nem `form.read`; os testes chamam o repositório ou o
+    serviço direto, e o recorte era a lente. O leitor passou a ser o MANAGER.
+  - **o vínculo ADMIN antigo de time diante de pedido ÓRFÃO**
+    (`test_aviso_de_status_db`, `test_tarefa_da_solicitacao_db`). A órfã é da
+    organização; o contexto ganhou `org_role="ADMIN"`.
+  - ⚠️ **um mudou de lado de propósito:**
+    `test_solicitacao_SEM_formulario_continua_na_fila` afirmava a órfã para
+    quem tem o verbo em qualquer time. Virou
+    `..._na_fila_da_ORGANIZACAO`, com a metade negativa (o gerente não a vê).
+- ⚠️ **Efeito em produção, no próximo deploy:** solicitação antiga sem
+  formulário some da fila de gerente, e de quem só tem o vínculo ADMIN antigo
+  de time. Continua na fila de ADMIN e GESTOR de organização.
+- **Sabotagem:** o repositório de volta à lente → caíram exatamente 5: as
+  duas linhas da órfã, a da fila do Comercial, e o teste de lista para
+  MANAGER e DUAS_ARVORES.
 
 **Fatia C — vínculo e cargo** (§4.2, §4.5, §4.8 item 6). A regra de "já está
 na árvore", a matriz C2 nova e o cadastro passando por ela, o cadeado e o
