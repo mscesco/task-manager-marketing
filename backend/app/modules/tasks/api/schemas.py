@@ -125,6 +125,32 @@ class ProjectUpdateRequest(BaseModel):
     due_date: date | None = None
 
 
+class LinkIn(BaseModel):
+    """Um link a gravar (Spec 052, fatia B).
+
+    ⚠️ Os limites daqui sao so a primeira barreira contra payload inflado; a
+    regra de verdade (nome nao vazio depois de aparar, `http`/`https`, ate 20)
+    mora em `link_service.validar_links`, com a mensagem que a tela mostra.
+    """
+
+    title: str = Field(max_length=500)
+    url: str = Field(max_length=4096)
+
+
+class LinksReplaceRequest(BaseModel):
+    """A lista INTEIRA de links do item, na ordem -- substitui a atual."""
+
+    links: list[LinkIn] = Field(max_length=100)
+
+
+class LinkResponse(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: uuid.UUID
+    title: str
+    url: str
+
+
 class ProjectListResponse(BaseModel):
     """Pagina de projetos."""
 

@@ -1,11 +1,13 @@
 "use client";
 // components/TaskModal.tsx
-// Modal de CRIAR e EDITAR tarefa.
-//  - sem `task`  -> criar  (POST /tasks, pin do time raiz no api.ts)
-//  - com `task`  -> editar (PATCH /tasks/{id} SO com o que mudou)
+// Modal de CRIAR e DUPLICAR tarefa.
+//  - sem `duplicarDe` -> criar    (POST /tasks, pin do time raiz no api.ts)
+//  - com `duplicarDe` -> duplicar (POST /tasks/{id}/duplicate)
 //
-// EDITAR prefilla com o objeto que a listagem ja trouxe -- nao ha
-// GET /tasks/{id} (contorna o bug E6, ver web/docs/adr/0002).
+// ⚠️ EDITAR SAIU DAQUI na Spec 052, fatia D (pedido dela, 16/09, no modelo do
+// Trello): titulo, descricao e links se editam no proprio `TaskDetail`, e
+// coluna, prioridade, datas, projeto e responsaveis ja eram das pilulas. O
+// modal de editar repetia tudo isso num segundo lugar.
 // O time NAO aparece de proposito: o quadro define o time (ADR 0001).
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties, useCallback } from "react";
@@ -13,20 +15,27 @@ import { X } from "lucide-react";
 import {
   createTask,
   duplicateTask,
-  updateTask,
-  colunasDoQuadro,
   listProjects,
   listMembers,
   listMembersDoTime,
   getRootTeamId,
+  putTaskLinks,
   ApiError,
   type Task,
-  type TaskUpdateInput,
   type Project,
   type Member,
 } from "@/lib/api";
+import EditorDeDescricao from "@/components/EditorDeDescricaoAdiado";
+import EditorDeLinks from "@/components/EditorDeLinks";
+import {
+  errosDosLinks,
+  MAX_LINKS,
+  paraEnvio,
+  passaDoTeto,
+  temErro,
+  type RascunhoLink,
+} from "@/lib/links";
 import { PRIORITY_LABEL } from "@/lib/status";
-import type { Coluna } from "@/lib/coluna";
 import {
   deveBloquearEnter,
   ehAtalhoDeSalvar,
@@ -78,7 +87,6 @@ const GATILHO_STYLE: CSSProperties = {
 
 export default function TaskModal({
   open,
-  task,
   onClose,
   onSaved,
   defaultProjectId = null,
@@ -89,13 +97,12 @@ export default function TaskModal({
   filhosDaOrigem = [],
 }: {
   open: boolean;
-  task?: Task | null; // presente => modo editar
   onClose: () => void;
   onSaved: (task: Task) => void;
   defaultProjectId?: string | null; // criar dentro deste projeto (Entrega 11)
   /**
    * O time da tarefa nova, decidido pelo QUADRO. `null` = esta tela nao cria
-   * tarefa do zero (so edita ou duplica).
+   * tarefa do zero (so duplica).
    *
    * ⚠️⚠️ OBRIGATORIA, e um OBJETO (`lib/escopoTarefa.ts`). Ate 11/09 era
    * `defaultTeamId?: string | null` -- opcional, e carregando dois
@@ -129,18 +136,21 @@ export default function TaskModal({
    * caminho de abrir modal.
    */
   nomeDoQuadro?: string | null;
-  // Spec 033: presente => modo DUPLICAR. Mutuamente exclusivo com `task`
-  // (nao se duplica editando). O modal abre pre-preenchido a partir daqui.
+  // Spec 033: presente => modo DUPLICAR. O modal abre pre-preenchido a partir
+  // daqui.
   duplicarDe?: Task | null;
   // Filhas DIRETAS da origem, pra contar o rotulo da caixa (D7). Vem do
   // chamador porque quem tem a arvore e o quadro, nao o modal.
   filhosDaOrigem?: Task[];
 }) {
-  const editando = !!task;
-  const duplicando = !editando && !!duplicarDe;
+  const duplicando = !!duplicarDe;
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
+  // Spec 052, fatia B: links com nome. Na criacao nao ha lista salva: o que
+  // estiver no editor e o que vai.
+  const [rascunhoLinks, setRascunhoLinks] = useState<RascunhoLink[]>([]);
+  const [tentouSalvarLinks, setTentouSalvarLinks] = useState(false);
   const [priority, setPriority] = useState<string>("MEDIUM");
   const [dueDate, setDueDate] = useState("");
   /**
@@ -152,15 +162,6 @@ export default function TaskModal({
    * que nao e o que esta fatia faz.
    */
   const [startDate, setStartDate] = useState("");
-  // ⚠️ Fatia 4c-2: o seletor deixou de escolher STATUS e passou a escolher
-  // COLUNA. O estado guarda um `column_id`; `""` = nenhuma (colunas ainda
-  // chegando, ou tarefa em coluna que nao e deste quadro).
-  const [colunaId, setColunaId] = useState<string>("");
-  // As colunas do quadro DA TAREFA. Carregadas AQUI, e nao recebidas por prop,
-  // porque QUATRO telas montam este modal (quadro, /minhas-tarefas,
-  // /arquivadas, /tarefa/[id]) -- mesma decisao tomada no `TaskDetail`.
-  // ⚠️ Uma requisicao a mais ao abrir o modal de edicao; NAO MEDIDA.
-  const [colunas, setColunas] = useState<Coluna[] | null>(null);
   const [saving, setSaving] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
@@ -178,7 +179,7 @@ export default function TaskModal({
   // geral da raiz a tarefa TEM time (a raiz) e mesmo assim o seletor de projeto
   // aparece. Ver `NewTaskTeam` em `lib/escopoTarefa.ts`.
   const mostrarSeletorProjeto =
-    !editando && !duplicando && !defaultProjectId && !newTaskTeam?.internal;
+    !duplicando && !defaultProjectId && !newTaskTeam?.internal;
   const [projetos, setProjetos] = useState<Project[]>([]);
   const [projetoSel, setProjetoSel] = useState(""); // "" => avulsa
 
@@ -281,33 +282,14 @@ export default function TaskModal({
     };
   }, [abertoResp, medirResp]);
 
-  // Colunas do quadro da tarefa em edicao. Em erro fica `[]` e nao `null`,
-  // senao o seletor some para sempre quando a API de quadros cai.
-  useEffect(() => {
-    if (!open || !task) return;
-    let vivo = true;
-    setColunas(null);
-    colunasDoQuadro(task.board_id)
-      .then((c) => {
-        if (vivo) setColunas(c);
-      })
-      .catch(() => {
-        if (vivo) setColunas([]);
-      });
-    return () => {
-      vivo = false;
-    };
-  }, [open, task?.board_id]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Prefilla (ou limpa) sempre que abre / troca a task alvo.
+  // Limpa sempre que abre (o modo duplicar pre-preenche depois, ver abaixo).
   useEffect(() => {
     if (!open) return;
-    setTitle(task?.title ?? "");
-    setDescription(task?.description ?? "");
-    setPriority(task?.priority ?? "MEDIUM");
-    setDueDate(task?.due_date ?? "");
-    setStartDate(task?.start_date ?? "");
-    setColunaId(task?.column_id ?? "");
+    setTitle("");
+    setDescription("");
+    setPriority("MEDIUM");
+    setDueDate("");
+    setStartDate("");
     setProjetoSel("");
     setAssigneeIds([]);
     setInvalidIds(new Set());
@@ -322,7 +304,9 @@ export default function TaskModal({
     setMembrosResolvidos(false);
     setRootResolvido(false);
     setAlcanceResolvido(false);
-  }, [open, task]);
+    setRascunhoLinks([]);
+    setTentouSalvarLinks(false);
+  }, [open]);
 
   // Carrega projetos comuns pro seletor (so quando ele aparece).
   //
@@ -341,9 +325,9 @@ export default function TaskModal({
       .catch(() => {});
   }, [open, mostrarSeletorProjeto, newTaskTeam?.teamId]);
 
-  // Carrega membros pro seletor de responsaveis (so ao CRIAR).
+  // Carrega membros pro seletor de responsaveis.
   useEffect(() => {
-    if (!open || editando) return;
+    if (!open) return;
     listMembers()
       .then((ms) => setMembros(ms.filter((m) => m.is_active)))
       .catch(() => {})
@@ -359,7 +343,7 @@ export default function TaskModal({
       // Fatia 4: a área vem de fora e esta chamada some.
       .catch((e) => console.error("TaskModal: área indefinida", e))
       .finally(() => setRootResolvido(true));
-  }, [open, editando]);
+  }, [open]);
 
   // Esc fecha (quando aberto e nao salvando).
   useEffect(() => {
@@ -385,14 +369,9 @@ export default function TaskModal({
   }, [abertoResp]);
 
   // Membros filtrados pela busca do picker, ordenados por nome.
-  // Bloqueio do botao: no modo CRIAR exige titulo E responsavel; na edicao
-  // basta o titulo. A mensagem vai no `title` do botao, para a pessoa saber o
-  // que falta antes de tentar.
-  const motivoBloqueio = editando
-    ? title.trim()
-      ? null
-      : "Escreva o título da tarefa."
-    : motivoNaoCria({ titulo: title, assigneeIds, dueDate });
+  // Bloqueio do botao: exige titulo, responsavel e prazo. A mensagem vai no
+  // `title` do botao, para a pessoa saber o que falta antes de tentar.
+  const motivoBloqueio = motivoNaoCria({ titulo: title, assigneeIds, dueDate });
 
 
   // ⚠️ ESCOPO DE TIME NA CRIACAO.
@@ -639,63 +618,42 @@ export default function TaskModal({
       setErro("O título é obrigatório.");
       return;
     }
-    // Responsavel obrigatorio ao CRIAR (29/07). Nao vale na edicao: o modal de
-    // edicao nao mexe em responsaveis (Spec 021), e cobrar aqui travaria quem
-    // so quer corrigir um titulo.
+    // Responsavel obrigatorio ao CRIAR (29/07).
     //
     // Medido antes da regra: 50 tarefas ativas sem ninguem designado. Nas
     // raizes o habito ja era atribuir -- nenhuma das 13 em Backlog estava sem
     // responsavel -- entao a trava formaliza a pratica em vez de mudar
     // comportamento. A obrigacao e de UI: o POST segue aceitando sem
     // responsavel, senao n8n e triagem de solicitacao quebravam.
-    if (!editando) {
-      const impedimento = motivoNaoCria({
-        titulo: t,
-        assigneeIds: assigneeIds,
-        dueDate: dueDate,
-      });
-      if (impedimento) {
-        setErro(impedimento);
+    const impedimento = motivoNaoCria({
+      titulo: t,
+      assigneeIds: assigneeIds,
+      dueDate: dueDate,
+    });
+    if (impedimento) {
+      setErro(impedimento);
+      return;
+    }
+    // Spec 052, fatia B: os links validam ANTES de qualquer escrita -- uma
+    // tarefa criada com o link recusado depois deixaria meio salvo.
+    // Na CÓPIA não há editor: os links da original vão junto pelo servidor.
+    if (!duplicando) {
+      setTentouSalvarLinks(true);
+      if (temErro(errosDosLinks(rascunhoLinks))) {
+        setErro("Confira os links marcados.");
+        return;
+      }
+      if (passaDoTeto(rascunhoLinks)) {
+        setErro(`No máximo ${MAX_LINKS} links.`);
         return;
       }
     }
+    const temLinks = !duplicando && paraEnvio(rascunhoLinks).length > 0;
     setSaving(true);
     setErro(null);
     try {
       let saved: Task;
-      if (editando && task) {
-        // PATCH parcial: monta so o que mudou em relacao ao original.
-        const diff: TaskUpdateInput = {};
-        if (t !== task.title) diff.title = t;
-        const d = description.trim();
-        if (d !== (task.description ?? "")) diff.description = d;
-        if (priority !== task.priority) diff.priority = priority;
-        // ⚠️ MANDA `column_id`, NUNCA `status` (fatia 4c-2 / ADR 0041). Os dois
-        // no mesmo payload sao 422, e aqui o risco e real: este `diff` junta
-        // varios campos numa chamada so. Como `status` nao entra mais em lugar
-        // nenhum deste arquivo, nao ha como os dois se encontrarem.
-        if (colunaId && colunaId !== task.column_id) diff.column_id = colunaId;
-        const due = dueDate || null;
-        if (due !== (task.due_date ?? null)) diff.due_date = due;
-        // ⚠️ SÓ SE MUDOU, como os vizinhos -- `fields_set` no backend
-        // distingue "não mexeu" de "apagou", e mandar sempre gravaria
-        // entrada de histórico para campo intocado.
-        //
-        // ⚠️ MAS SE UM DOS DOIS MUDOU, O BACKEND VALIDA O PAR FINAL
-        // (`_validate_dates`): mexer só no início pode ser recusado por causa
-        // de um prazo que a pessoa não tocou. O 422 traz a mensagem certa, e
-        // é ela que aparece -- ver o `catch` deste arquivo.
-        const inicio = startDate || null;
-        if (inicio !== (task.start_date ?? null)) diff.start_date = inicio;
-
-        if (Object.keys(diff).length === 0) {
-          // Nada mudou: nao chama a API, so fecha.
-          setSaving(false);
-          onClose();
-          return;
-        }
-        saved = await updateTask(task.id, diff);
-      } else if (duplicando && duplicarDe) {
+      if (duplicando && duplicarDe) {
         // ⚠️ `duplicateTask`, nao `createTask`: a subarvore inteira precisa
         // nascer na MESMA transacao do backend (criterio 10). Criar o pai
         // aqui e depois criar as filhas em chamadas separadas devolveria
@@ -780,6 +738,20 @@ export default function TaskModal({
           // `tasks_router.py` ja teve com `assignee_ids`.
           board_id: defaultBoardId,
         });
+        // Spec 052, fatia B: os links vão DEPOIS de a tarefa existir.
+        // ⚠️ Se falharem, a tarefa JÁ foi criada: o aviso diz isso, em vez de
+        // manter o modal aberto -- clicar de novo criaria uma segunda tarefa.
+        if (temLinks) {
+          try {
+            await putTaskLinks(saved.id, paraEnvio(rascunhoLinks));
+          } catch (errLinks) {
+            window.alert(
+              "Tarefa criada, mas os links não foram salvos: " +
+                ((errLinks as ApiError).message || "erro desconhecido") +
+                ". Abra a tarefa e adicione os links por lá.",
+            );
+          }
+        }
       }
       setSaving(false);
       onSaved(saved);
@@ -844,15 +816,10 @@ export default function TaskModal({
       >
         <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
           <h2 style={{ margin: 0, fontSize: 18, letterSpacing: "-0.02em" }}>
-            {editando
-              ? "Editar tarefa"
-              : duplicando
-                ? "Duplicar tarefa"
-                : "Nova tarefa"}
-            {/* ⚠️ SO NA CRIACAO. Editar nao move a tarefa de quadro (isso e a
-                fatia 5c), entao dizer "no quadro X" ao editar prometeria uma
-                escolha que nao existe. */}
-            {!editando && !duplicando && nomeDoQuadro && (
+            {duplicando ? "Duplicar tarefa" : "Nova tarefa"}
+            {/* ⚠️ SO NA CRIACAO. A copia nasce no quadro da origem, e dizer
+                "no quadro X" prometeria uma escolha que nao existe. */}
+            {!duplicando && nomeDoQuadro && (
               <span
                 className="muted"
                 style={{ fontSize: 13, fontWeight: 600, marginLeft: 8 }}
@@ -885,16 +852,38 @@ export default function TaskModal({
         </div>
 
         <div className="field">
-          <label className="label" htmlFor="t-desc">
+          {/* ⚠️ `span` com id, e não `label htmlFor`: o campo é um editor
+              (`contenteditable`), e `label` só aponta para campo de formulário. */}
+          <span className="label" id="t-desc-rotulo">
             Descrição <span className="muted" style={{ fontWeight: 400 }}>(opcional)</span>
-          </label>
-          <textarea
-            id="t-desc" className="input" value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder="Detalhes, contexto, links…" rows={4}
-            style={{ resize: "vertical", fontFamily: "inherit" }}
+          </span>
+          {/* Spec 052, fatia E: o editor que já mostra formatado. */}
+          <EditorDeDescricao
+            rotuloId="t-desc-rotulo"
+            valor={description}
+            onChange={setDescription}
+            rows={4}
           />
         </div>
+
+        {/* Spec 052, fatia B. ⚠️ Na CÓPIA não há editor: o servidor copia os
+            links da original junto (decisão dela), e um editor aqui sugeriria
+            que a pessoa precisa refazê-los. */}
+        {duplicando ? (
+          <p className="muted text-xs">Os links da tarefa original vão junto na cópia.</p>
+        ) : (
+          <div className="field">
+            <span className="label">
+              Links <span className="muted" style={{ fontWeight: 400 }}>(opcional)</span>
+            </span>
+            <EditorDeLinks
+              valor={rascunhoLinks}
+              onChange={setRascunhoLinks}
+              desabilitado={saving}
+              mostrarErros={tentouSalvarLinks}
+            />
+          </div>
+        )}
 
         <div style={{ display: "flex", gap: 12 }}>
           <div className="field" style={{ flex: 1 }}>
@@ -962,278 +951,245 @@ export default function TaskModal({
           </div>
         )}
 
-        {/* Spec 021: responsaveis -- so na criacao (na edicao, mexe-se no detalhe).
+        {/* Spec 021: responsaveis.
             Lista os membros ativos que ALCANCAM a tarefa que vai nascer (ver
             `foraDoEscopoAqui`). O 422 do backend continua sendo a trava real
             -- os recusados ficam vermelhos aqui, sem perder a selecao --, mas
             agora ele e a rede de seguranca, nao o primeiro aviso. */}
-        {!editando && (
-          <div className="field">
-            <label className="label">
-              Responsáveis{" "}
-              <span
-                style={{ fontWeight: 400, color: "#dc2626" }}
-                aria-hidden="true"
-              >
-                *
-              </span>{" "}
-              <span className="muted" style={{ fontWeight: 400 }}>
-                (obrigatório)
-              </span>
-            </label>
-            {membros.length === 0 ? (
-              <Loading tamanho="linha" rotulo="Carregando os membros" />
-            ) : (
-              <div ref={respWrapRef} style={{ position: "relative" }}>
-                <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6 }}>
-                  {assigneeIds.length === 0 && (
-                    <span className="muted" style={{ fontSize: 13 }}>Ninguem designado.</span>
-                  )}
-                  {assigneeIds.map((id) => {
-                    const m = membros.find((x) => x.id === id);
-                    const nome = m?.name ?? "";
-                    const bad = invalidIds.has(id);
-                    return (
-                      <span
-                        key={id}
-                        style={{
-                          display: "inline-flex", alignItems: "center", gap: 6,
-                          borderRadius: 999, padding: "2px 4px 2px 2px", fontSize: 12.5,
-                          background: bad ? "rgba(220,38,38,0.08)" : "var(--surface-2)",
-                          border: `1px solid ${bad ? "var(--danger)" : "transparent"}`,
-                          color: bad ? "var(--danger)" : "var(--text)",
-                        }}
-                      >
-                        <Avatar id={id} name={nome} size="sm" />
-                        {nome ? nomeCurto(nome) : "Responsável"}
-                        <button
-                          type="button"
-                          aria-label={`Remover ${nome || "responsável"}`}
-                          title="Remover"
-                          onClick={() => toggleAssignee(id)}
-                          style={{
-                            width: 16, height: 16, borderRadius: 999, border: "none",
-                            background: "transparent", color: "inherit", cursor: "pointer",
-                            fontSize: 13, lineHeight: 1, padding: 0,
-                            display: "inline-flex", alignItems: "center", justifyContent: "center",
-                          }}
-                        >
-                          ×
-                        </button>
-                      </span>
-                    );
-                  })}
-
-                  <button
-                    type="button"
-                    onClick={() => setAbertoResp((v) => !v)}
-                    aria-label="Designar responsável"
-                    aria-expanded={abertoResp}
-                    title="Designar"
-                    style={GATILHO_STYLE}
-                  >
-                    {abertoResp ? "×" : "+"}
-                  </button>
-                </div>
-
-                {abertoResp && (
-                  <div
-                    style={{
-                      // ⚠️ `fixed`, e não `absolute` -- ver `posResp`. O card
-                      // do modal recorta filho absoluto, e o campo fica perto
-                      // do rodapé.
-                      position: "fixed",
-                      top: posResp?.top ?? 0,
-                      left: posResp?.left ?? 0,
-                      // ⚠️ 70 É FOLGA, E NÃO NECESSIDADE -- conferido, não
-                      // suposto: o card do modal não tem `position` nem
-                      // `z-index`, então não abre contexto de empilhamento, e
-                      // qualquer valor positivo já o venceria. O número existe
-                      // para sobreviver ao dia em que o card ganhar um
-                      // `z-index` próprio.
-                      zIndex: 70,
-                      width: posResp?.largura ?? 300,
-                      maxWidth: "calc(100vw - 24px)",
-                      // Enquanto não mediu, fica invisível: desenhar em 0,0 e
-                      // pular para o lugar certo no quadro seguinte é pior que
-                      // não desenhar.
-                      visibility: posResp ? "visible" : "hidden",
-                      background: "var(--surface)", border: "1px solid var(--border)",
-                      borderRadius: 10, boxShadow: "var(--shadow)", padding: 8,
-                    }}
-                  >
-                    <input
-                      className="input"
-                      placeholder="Buscar pessoa…"
-                      value={buscaResp}
-                      autoFocus
-                      onChange={(e) => setBuscaResp(e.target.value)}
-                      // Enter aqui SELECIONA o primeiro da lista filtrada. Era
-                      // o pior caso do submit implicito: a pessoa digitava o
-                      // nome, apertava Enter esperando escolher, e a tarefa
-                      // nascia sem responsavel nenhum. Deixar o Enter inerte
-                      // consertaria pela metade -- o que se espera dele aqui e
-                      // escolher. Para o form nao ver a tecla (o handler de
-                      // cima ja bloquearia, mas explicito e melhor que sorte).
-                      onKeyDown={(e) => {
-                        if (e.key !== "Enter") return;
-                        e.preventDefault();
-                        e.stopPropagation();
-                        const id = primeiroSelecionavel(membrosFiltrados);
-                        if (id === null) return;
-                        toggleAssignee(id);
-                        setBuscaResp("");
-                      }}
-                    />
-                    {/* ---- "Selecionar todos" e "Limpar" -----------------
-                        Pedido da Camila em 22/08. ⚠️ SO NA CRIACAO, e ela foi
-                        explicita ("quero no criar so").
-
-                        ⚠️ E O MOTIVO DE NAO ESTAR NO DETALHE DA TAREFA E
-                        MEDIDO, nao estetico: la cada caixa marcada e UMA
-                        requisicao imediata (`addAssignee`), e cada designacao
-                        dispara uma notificacao "Designada". Num time de ~26
-                        pessoas, um clique viraria 26 requisicoes e 25 avisos.
-                        Aqui a selecao e LOCAL ate o "Criar" -- da para
-                        desmarcar antes de qualquer coisa sair.
-
-                        ⚠️ E FORA DA DUPLICACAO tambem, e isso e decisao e nao
-                        descuido: na copia a lista de responsaveis ja vem
-                        REVISADA da origem (ADR 0031), e o passo 2 decide
-                        subtarefa por subtarefa a partir dela. Um "selecionar
-                        todos" ali mexeria na entrada daquele fluxo.
-
-                        ⚠️ "TODOS" E OS VISIVEIS, e nao o time inteiro. Com
-                        busca ativa, agir sobre quem nao esta na tela seria
-                        escolher pelas costas -- por isso o rotulo carrega o
-                        numero, que muda junto com a busca. */}
-                    {!editando && !duplicando && (
-                      <div
-                        style={{
-                          display: "flex", alignItems: "center", gap: 6,
-                          marginTop: 6,
-                        }}
-                      >
-                        {!todosJaEscolhidos(
-                          assigneeIds,
-                          membrosFiltrados.map((m) => m.id),
-                        ) && (
-                          <button
-                            type="button"
-                            className="btn btn-ghost"
-                            style={{ fontSize: 12, padding: "3px 8px" }}
-                            onClick={() =>
-                              setAssigneeIds((prev) =>
-                                comTodosOsResponsaveis(
-                                  prev,
-                                  membrosFiltrados.map((m) => m.id),
-                                ),
-                              )
-                            }
-                          >
-                            Selecionar todos ({membrosFiltrados.length})
-                          </button>
-                        )}
-                        {/* ⚠️ SO COM ALGUEM ESCOLHIDO: "limpar" sobre selecao
-                            vazia e afordancia que nao faz nada. Mesma regra do
-                            "Limpar hora" da capsula de datas. */}
-                        {assigneeIds.length > 0 && (
-                          <button
-                            type="button"
-                            className="btn btn-ghost"
-                            style={{ fontSize: 12, padding: "3px 8px" }}
-                            onClick={() => setAssigneeIds([])}
-                          >
-                            Limpar
-                          </button>
-                        )}
-                      </div>
-                    )}
-                    <div
+        <div className="field">
+          <label className="label">
+            Responsáveis{" "}
+            <span
+              style={{ fontWeight: 400, color: "#dc2626" }}
+              aria-hidden="true"
+            >
+              *
+            </span>{" "}
+            <span className="muted" style={{ fontWeight: 400 }}>
+              (obrigatório)
+            </span>
+          </label>
+          {membros.length === 0 ? (
+            <Loading tamanho="linha" rotulo="Carregando os membros" />
+          ) : (
+            <div ref={respWrapRef} style={{ position: "relative" }}>
+              <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6 }}>
+                {assigneeIds.length === 0 && (
+                  <span className="muted" style={{ fontSize: 13 }}>Ninguem designado.</span>
+                )}
+                {assigneeIds.map((id) => {
+                  const m = membros.find((x) => x.id === id);
+                  const nome = m?.name ?? "";
+                  const bad = invalidIds.has(id);
+                  return (
+                    <span
+                      key={id}
                       style={{
-                        // ⚠️ A ALTURA SAI DA MEDIÇÃO, e não é fixa em 240: com
-                        // o painel flutuando, uma lista alta demais sairia da
-                        // janela em vez de rolar por dentro. Os ~96px
-                        // descontados são a busca, a barra de ações e as
-                        // bordas.
-                        maxHeight: Math.max(120, (posResp?.maxAltura ?? 336) - 96),
-                        overflowY: "auto", marginTop: 6,
-                        border: "1px solid var(--border)", borderRadius: 8,
+                        display: "inline-flex", alignItems: "center", gap: 6,
+                        borderRadius: 999, padding: "2px 4px 2px 2px", fontSize: 12.5,
+                        background: bad ? "rgba(220,38,38,0.08)" : "var(--surface-2)",
+                        border: `1px solid ${bad ? "var(--danger)" : "transparent"}`,
+                        color: bad ? "var(--danger)" : "var(--text)",
                       }}
                     >
-                      {membrosFiltrados.length === 0 ? (
-                        <div className="muted" style={{ fontSize: 13, padding: "10px 12px" }}>
-                          Ninguem encontrado.
-                        </div>
-                      ) : (
-                        membrosFiltrados.map((m, i) => {
-                          const on = assigneeIds.includes(m.id);
-                          const bad = invalidIds.has(m.id);
-                          return (
-                            <label
-                              key={m.id}
-                              style={{
-                                display: "flex", alignItems: "center", gap: 10,
-                                padding: "8px 12px", cursor: "pointer",
-                                borderTop: i === 0 ? "none" : "1px solid var(--border)",
-                              }}
-                            >
-                              <input
-                                type="checkbox"
-                                checked={on}
-                                onChange={() => toggleAssignee(m.id)}
-                              />
-                              <Avatar id={m.id} name={m.name} size="sm" />
-                              <span
-                                style={{
-                                  fontSize: 13.5,
-                                  color: bad ? "var(--danger)" : undefined,
-                                }}
-                              >
-                                {m.name}
-                              </span>
-                            </label>
-                          );
-                        })
+                      <Avatar id={id} name={nome} size="sm" />
+                      {nome ? nomeCurto(nome) : "Responsável"}
+                      <button
+                        type="button"
+                        aria-label={`Remover ${nome || "responsável"}`}
+                        title="Remover"
+                        onClick={() => toggleAssignee(id)}
+                        style={{
+                          width: 16, height: 16, borderRadius: 999, border: "none",
+                          background: "transparent", color: "inherit", cursor: "pointer",
+                          fontSize: 13, lineHeight: 1, padding: 0,
+                          display: "inline-flex", alignItems: "center", justifyContent: "center",
+                        }}
+                      >
+                        ×
+                      </button>
+                    </span>
+                  );
+                })}
+
+                <button
+                  type="button"
+                  onClick={() => setAbertoResp((v) => !v)}
+                  aria-label="Designar responsável"
+                  aria-expanded={abertoResp}
+                  title="Designar"
+                  style={GATILHO_STYLE}
+                >
+                  {abertoResp ? "×" : "+"}
+                </button>
+              </div>
+
+              {abertoResp && (
+                <div
+                  style={{
+                    // ⚠️ `fixed`, e não `absolute` -- ver `posResp`. O card
+                    // do modal recorta filho absoluto, e o campo fica perto
+                    // do rodapé.
+                    position: "fixed",
+                    top: posResp?.top ?? 0,
+                    left: posResp?.left ?? 0,
+                    // ⚠️ 70 É FOLGA, E NÃO NECESSIDADE -- conferido, não
+                    // suposto: o card do modal não tem `position` nem
+                    // `z-index`, então não abre contexto de empilhamento, e
+                    // qualquer valor positivo já o venceria. O número existe
+                    // para sobreviver ao dia em que o card ganhar um
+                    // `z-index` próprio.
+                    zIndex: 70,
+                    width: posResp?.largura ?? 300,
+                    maxWidth: "calc(100vw - 24px)",
+                    // Enquanto não mediu, fica invisível: desenhar em 0,0 e
+                    // pular para o lugar certo no quadro seguinte é pior que
+                    // não desenhar.
+                    visibility: posResp ? "visible" : "hidden",
+                    background: "var(--surface)", border: "1px solid var(--border)",
+                    borderRadius: 10, boxShadow: "var(--shadow)", padding: 8,
+                  }}
+                >
+                  <input
+                    className="input"
+                    placeholder="Buscar pessoa…"
+                    value={buscaResp}
+                    autoFocus
+                    onChange={(e) => setBuscaResp(e.target.value)}
+                    // Enter aqui SELECIONA o primeiro da lista filtrada. Era
+                    // o pior caso do submit implicito: a pessoa digitava o
+                    // nome, apertava Enter esperando escolher, e a tarefa
+                    // nascia sem responsavel nenhum. Deixar o Enter inerte
+                    // consertaria pela metade -- o que se espera dele aqui e
+                    // escolher. Para o form nao ver a tecla (o handler de
+                    // cima ja bloquearia, mas explicito e melhor que sorte).
+                    onKeyDown={(e) => {
+                      if (e.key !== "Enter") return;
+                      e.preventDefault();
+                      e.stopPropagation();
+                      const id = primeiroSelecionavel(membrosFiltrados);
+                      if (id === null) return;
+                      toggleAssignee(id);
+                      setBuscaResp("");
+                    }}
+                  />
+                  {/* ---- "Selecionar todos" e "Limpar" -----------------
+                      Pedido da Camila em 22/08. ⚠️ SO NA CRIACAO, e ela foi
+                      explicita ("quero no criar so").
+
+                      ⚠️ E O MOTIVO DE NAO ESTAR NO DETALHE DA TAREFA E
+                      MEDIDO, nao estetico: la cada caixa marcada e UMA
+                      requisicao imediata (`addAssignee`), e cada designacao
+                      dispara uma notificacao "Designada". Num time de ~26
+                      pessoas, um clique viraria 26 requisicoes e 25 avisos.
+                      Aqui a selecao e LOCAL ate o "Criar" -- da para
+                      desmarcar antes de qualquer coisa sair.
+
+                      ⚠️ E FORA DA DUPLICACAO tambem, e isso e decisao e nao
+                      descuido: na copia a lista de responsaveis ja vem
+                      REVISADA da origem (ADR 0031), e o passo 2 decide
+                      subtarefa por subtarefa a partir dela. Um "selecionar
+                      todos" ali mexeria na entrada daquele fluxo.
+
+                      ⚠️ "TODOS" E OS VISIVEIS, e nao o time inteiro. Com
+                      busca ativa, agir sobre quem nao esta na tela seria
+                      escolher pelas costas -- por isso o rotulo carrega o
+                      numero, que muda junto com a busca. */}
+                  {!duplicando && (
+                    <div
+                      style={{
+                        display: "flex", alignItems: "center", gap: 6,
+                        marginTop: 6,
+                      }}
+                    >
+                      {!todosJaEscolhidos(
+                        assigneeIds,
+                        membrosFiltrados.map((m) => m.id),
+                      ) && (
+                        <button
+                          type="button"
+                          className="btn btn-ghost"
+                          style={{ fontSize: 12, padding: "3px 8px" }}
+                          onClick={() =>
+                            setAssigneeIds((prev) =>
+                              comTodosOsResponsaveis(
+                                prev,
+                                membrosFiltrados.map((m) => m.id),
+                              ),
+                            )
+                          }
+                        >
+                          Selecionar todos ({membrosFiltrados.length})
+                        </button>
+                      )}
+                      {/* ⚠️ SO COM ALGUEM ESCOLHIDO: "limpar" sobre selecao
+                          vazia e afordancia que nao faz nada. Mesma regra do
+                          "Limpar hora" da capsula de datas. */}
+                      {assigneeIds.length > 0 && (
+                        <button
+                          type="button"
+                          className="btn btn-ghost"
+                          style={{ fontSize: 12, padding: "3px 8px" }}
+                          onClick={() => setAssigneeIds([])}
+                        >
+                          Limpar
+                        </button>
                       )}
                     </div>
+                  )}
+                  <div
+                    style={{
+                      // ⚠️ A ALTURA SAI DA MEDIÇÃO, e não é fixa em 240: com
+                      // o painel flutuando, uma lista alta demais sairia da
+                      // janela em vez de rolar por dentro. Os ~96px
+                      // descontados são a busca, a barra de ações e as
+                      // bordas.
+                      maxHeight: Math.max(120, (posResp?.maxAltura ?? 336) - 96),
+                      overflowY: "auto", marginTop: 6,
+                      border: "1px solid var(--border)", borderRadius: 8,
+                    }}
+                  >
+                    {membrosFiltrados.length === 0 ? (
+                      <div className="muted" style={{ fontSize: 13, padding: "10px 12px" }}>
+                        Ninguem encontrado.
+                      </div>
+                    ) : (
+                      membrosFiltrados.map((m, i) => {
+                        const on = assigneeIds.includes(m.id);
+                        const bad = invalidIds.has(m.id);
+                        return (
+                          <label
+                            key={m.id}
+                            style={{
+                              display: "flex", alignItems: "center", gap: 10,
+                              padding: "8px 12px", cursor: "pointer",
+                              borderTop: i === 0 ? "none" : "1px solid var(--border)",
+                            }}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={on}
+                              onChange={() => toggleAssignee(m.id)}
+                            />
+                            <Avatar id={m.id} name={m.name} size="sm" />
+                            <span
+                              style={{
+                                fontSize: 13.5,
+                                color: bad ? "var(--danger)" : undefined,
+                              }}
+                            >
+                              {m.name}
+                            </span>
+                          </label>
+                        );
+                      })
+                    )}
                   </div>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Coluna, so no modo editar -- na criacao a tarefa nasce na coluna
-            padrao do quadro e arrasta-se depois.
-            ⚠️ ERA "Status" ate a fatia 4c-2. O rotulo mudou junto com a fonte:
-            chamar de status uma lista de nomes de coluna seria mentir para
-            quem usa. */}
-        {editando && (
-          <div className="field">
-            <label className="label" htmlFor="t-coluna">Coluna</label>
-            <select
-              id="t-coluna" className="input" value={colunaId}
-              disabled={!colunas}
-              onChange={(e) => setColunaId(e.target.value)}
-            >
-              {/* ⚠️ Enquanto as colunas nao chegam, o seletor fica DESABILITADO
-                  com o nome da coluna atual invisivel -- e nao vazio: campo que
-                  pisca de vazio para preenchido parece que perdeu o dado. */}
-              {!colunas && <option value={colunaId}>Carregando…</option>}
-              {/* ⚠️ A COLUNA ATUAL PODE NAO ESTAR NA LISTA (quadro trocado,
-                  coluna apagada na fatia 5). Sem esta opcao o `<select>`
-                  mostraria a PRIMEIRA coluna como se fosse a atual, e salvar
-                  moveria a tarefa sem ninguem pedir. */}
-              {colunas && colunaId && !colunas.some((c) => c.id === colunaId) && (
-                <option value={colunaId}>(coluna atual, fora deste quadro)</option>
+                </div>
               )}
-              {(colunas ?? []).map((c) => (
-                <option key={c.id} value={c.id}>{c.name}</option>
-              ))}
-            </select>
-          </div>
-        )}
+            </div>
+          )}
+        </div>
 
         {duplicando && (
           <div
@@ -1376,9 +1332,7 @@ export default function TaskModal({
         >
             {saving
               ? "Salvando…"
-              : editando
-                ? "Salvar"
-                : duplicando
+              : duplicando
                   ? "Duplicar"
                   : "Criar tarefa"}
           </button>

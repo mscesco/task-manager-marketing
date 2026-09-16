@@ -209,6 +209,25 @@ docker compose -f docker-compose.prod.yml run --rm --entrypoint "" api alembic u
 ⚠️ **A `0025` traz dependência nova de runtime** (`emoji==2.15.0`, em
 `dependencies`). O passo a.1 (a imagem importa o app?) é o portão dela.
 
+⚠️⚠️ **A `0026` (anexo de projeto e tarefa, Spec 052) pede MIGRATION ANTES DO
+CÓDIGO** (escrito em 16/09/2026, antes de subir). Ela **reforma** a tabela
+`attachment` — que existia desde o schema v5 e nunca foi usada — em vez de criar
+outra: `file_name` vira `title`, entram `project_id`, `kind`, `url` e
+`position`, e as colunas de arquivo ficam opcionais. O código novo **lê** a
+tabela reformada (links do projeto e da tarefa); o velho nunca a consulta.
+Então: migration com o código velho no ar é seguro; código novo antes da
+migration dá erro ao abrir projeto e tarefa.
+```bash
+docker compose -f docker-compose.prod.yml build
+docker compose -f docker-compose.prod.yml run --rm --entrypoint "" api alembic upgrade head
+docker compose -f docker-compose.prod.yml up -d
+```
+⚠️ **Ela PARA de propósito se a `attachment` tiver qualquer linha** — só é
+seguro reformar a tabela vazia. Medido pela Camila em produção em 16/09:
+`SELECT count(*) FROM attachment` = **0**. Se a migration recusar, **não force**:
+veja de onde vieram as linhas. O `downgrade` tem a mesma trava (descer com links
+gravados os perderia).
+
 ⚠️ **A `0015` (`unaccent`) TAMBÉM inverte a ordem — por um terceiro motivo, e
 ✅ ELA ESTÁ EM PRODUÇÃO DESDE 21/08/2026.** Ela não acrescenta coluna a model
 nenhum (a checagem do `git diff -- backend/app/db/models/` sai vazia), então

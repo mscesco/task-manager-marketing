@@ -1,19 +1,35 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Pencil } from "lucide-react";
 import AppShell from "@/components/AppShell";
 import Board from "@/components/Board";
 import Card from "@/components/Card";
+import SobreOProjeto from "@/components/SobreOProjeto";
+import EditorDeDescricao from "@/components/EditorDeDescricaoAdiado";
+import EditorDeLinks from "@/components/EditorDeLinks";
+import LinksDoItem from "@/components/LinksDoItem";
 import {
   getProject,
+  getProjectLinks,
+  putProjectLinks,
   updateProject,
   deleteProject,
   ApiError,
+  type LinkItem,
   type Project,
   type ProjectStatus,
   type ProjectUpdateInput,
 } from "@/lib/api";
+import {
+  errosDosLinks,
+  linksParaEnviar,
+  MAX_LINKS,
+  passaDoTeto,
+  rascunhoDe,
+  temErro,
+  type RascunhoLink,
+} from "@/lib/links";
 import { PRIORITY_LABEL } from "@/lib/status";
 
 import Loading from "@/components/Loading";
@@ -61,6 +77,25 @@ function Projeto() {
   const [excluindo, setExcluindo] = useState(false);
   const [erroExcluir, setErroExcluir] = useState<string | null>(null);
   const [editando, setEditando] = useState(false);
+  // Spec 052, fatia B. Falhar em buscar os links não pode derrubar a página do
+  // projeto -- ela continua útil sem eles.
+  // ⚠️⚠️ `null` = AINDA NÃO SEI, e não "sem links" (revisão de 16/09). Com `[]`
+  // até a resposta chegar, abrir o painel de editar cedo (ou com a busca
+  // falhando) começava o editor vazio -- e salvar mandava a lista vazia,
+  // APAGANDO os links do projeto.
+  const [links, setLinks] = useState<LinkItem[] | null>(null);
+  const [falhouLinks, setFalhouLinks] = useState(false);
+
+  // A resposta só vale para o projeto que ainda está na tela.
+  const idAtual = useRef(id);
+  idAtual.current = id;
+  function carregarLinks() {
+    const alvo = id;
+    setFalhouLinks(false);
+    getProjectLinks(alvo)
+      .then((l) => idAtual.current === alvo && setLinks(l))
+      .catch(() => idAtual.current === alvo && setFalhouLinks(true));
+  }
 
   useEffect(() => {
     getProject(id)
@@ -68,7 +103,9 @@ function Projeto() {
       .catch((e: ApiError) =>
         setErro(e.status === 404 ? "Projeto não encontrado." : e.message)
       );
-  }, [id]);
+    setLinks(null);
+    carregarLinks();
+  }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (erro) return <div className="error-box" style={{ maxWidth: 480 }}>{erro}</div>;
   if (!project) return <Loading />;
@@ -130,10 +167,10 @@ function Projeto() {
   // e o `Quadro Projeto.png` tem UMA linha. A escolha foi "vira uma linha
   // discreta abaixo": o desenho é respeitado e nenhum dado some da tela.
   //
-  // ⚠️ A DESCRIÇÃO FICA, TRUNCADA EM UMA LINHA. "Linha discreta" não cabe um
-  // parágrafo, mas apagar a descrição da tela seria decidir mais do que foi
-  // pedido -- ela vira uma linha com reticências, e o texto inteiro segue no
-  // painel de edição.
+  // ⚠️⚠️ A DESCRIÇÃO SAIU DESTA LINHA (Spec 052, fatia A). Ela ficava aqui
+  // cortada em uma linha com reticências -- e com uma descrição longa não se
+  // lia nada. Agora é o bloco "Sobre o projeto", logo abaixo, com o começo à
+  // vista e "Ver mais". A linha discreta de 22/08 continua sendo a META.
   const metaDoProjeto = (
     <div
       className="muted"
@@ -156,17 +193,9 @@ function Projeto() {
       {project.start_date && <span>Início: {dataBR(project.start_date)}</span>}
       {project.due_date && <span>Prazo: {dataBR(project.due_date)}</span>}
       {project.is_archived && <span>· arquivado</span>}
-      {project.description && project.description.trim().length > 0 && (
-        <span
-          title={project.description}
-          style={{
-            maxWidth: 420, overflow: "hidden", textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-          }}
-        >
-          · {project.description}
-        </span>
-      )}
+      {/* Spec 052, fatia B: os links do projeto, só com o nome, na mesma linha
+          da meta -- é a primeira coisa que as pessoas abrem. */}
+      <LinksDoItem links={links ?? []} rotulo="Links do projeto" />
     </div>
   );
 
@@ -239,13 +268,24 @@ function Projeto() {
                 excluindo={excluindo}
                 onExcluir={excluir}
                 onCancel={() => setEditando(false)}
-                onSaved={(p) => {
+                links={links}
+                falhouLinks={falhouLinks}
+                onRecarregarLinks={carregarLinks}
+                onSaved={(p, salvos) => {
                   setProject(p);
+                  setLinks(salvos);
                   setEditando(false);
                 }}
               />
             ) : (
-              metaDoProjeto
+              <>
+                {metaDoProjeto}
+                {/* Sem descrição, sem bloco -- nada de "Sem descrição" ocupando
+                    espaço acima do quadro. */}
+                {project.description && project.description.trim().length > 0 && (
+                  <SobreOProjeto texto={project.description} />
+                )}
+              </>
             )}
           </div>
         }
@@ -261,6 +301,9 @@ function EditPanel({
   onExcluir,
   onCancel,
   onSaved,
+  links,
+  falhouLinks,
+  onRecarregarLinks,
 }: {
   project: Project;
   /**
@@ -275,9 +318,25 @@ function EditPanel({
   excluindo: boolean;
   onExcluir: () => void;
   onCancel: () => void;
-  onSaved: (p: Project) => void;
+  onSaved: (p: Project, links: LinkItem[] | null) => void;
+  /** Os links salvos -- o ponto de partida do editor. `null` = ainda não chegaram. */
+  links: LinkItem[] | null;
+  /** A busca dos links falhou: o editor não aparece, e os links não são enviados. */
+  falhouLinks: boolean;
+  onRecarregarLinks: () => void;
 }) {
   const [title, setTitle] = useState(project.title);
+  // Spec 052, fatia B: os links entram no MESMO formulário e salvam no mesmo
+  // botão. Só vai ao servidor se a lista mudou (`linksMudaram`).
+  // ⚠️ `null` ENQUANTO OS LINKS NÃO CHEGAM (revisão de 16/09): o rascunho nasce
+  // da lista SALVA, nunca de uma lista vazia que só significa "ainda não sei".
+  const [rascunhoLinks, setRascunhoLinks] = useState<RascunhoLink[] | null>(() =>
+    links ? rascunhoDe(links) : null,
+  );
+  useEffect(() => {
+    if (links && rascunhoLinks === null) setRascunhoLinks(rascunhoDe(links));
+  }, [links, rascunhoLinks]);
+  const [tentouSalvar, setTentouSalvar] = useState(false);
   const [description, setDescription] = useState(project.description ?? "");
   const [status, setStatus] = useState<ProjectStatus>(project.status);
   const [priority, setPriority] = useState<string>(project.priority || "MEDIUM");
@@ -290,6 +349,15 @@ function EditPanel({
     const t = title.trim();
     if (!t) {
       setErroForm("Título não pode ser vazio.");
+      return;
+    }
+    setTentouSalvar(true);
+    if (rascunhoLinks && temErro(errosDosLinks(rascunhoLinks))) {
+      setErroForm("Confira os links marcados.");
+      return;
+    }
+    if (rascunhoLinks && passaDoTeto(rascunhoLinks)) {
+      setErroForm(`No máximo ${MAX_LINKS} links.`);
       return;
     }
     setSalvando(true);
@@ -307,7 +375,15 @@ function EditPanel({
         ...(dueDate ? { due_date: dueDate } : {}),
       };
       const atualizado = await updateProject(project.id, patch);
-      onSaved(atualizado);
+      // ⚠️ DEPOIS do projeto, e só se mudou. Se o PUT dos links falhar, o
+      // projeto já foi salvo: o erro aparece e o painel continua aberto com o
+      // rascunho, para tentar de novo sem redigitar.
+      // ⚠️ E SÓ COM OS DOIS LADOS CONHECIDOS: sem a lista salva (ainda
+      // carregando, ou a busca falhou) não há com o que comparar, e mandar o
+      // rascunho substituiria links que a tela nunca viu.
+      const envio = linksParaEnviar(links, rascunhoLinks);
+      const salvos = envio ? await putProjectLinks(project.id, envio) : links;
+      onSaved(atualizado, salvos);
     } catch (e) {
       setErroForm((e as ApiError).message || "Não consegui salvar o projeto.");
     } finally {
@@ -329,15 +405,35 @@ function EditPanel({
         />
       </div>
       <div className="field">
-        <span className="label">Descrição</span>
-        <textarea
-          className="input"
-          value={description}
-          rows={3}
-          disabled={salvando}
-          style={{ resize: "vertical" }}
-          onChange={(e) => setDescription(e.target.value)}
+        <span className="label" id="projeto-descricao-rotulo">Descrição</span>
+        {/* Spec 052, fatia E: o editor que já mostra formatado. */}
+        <EditorDeDescricao
+          rotuloId="projeto-descricao-rotulo"
+          valor={description}
+          onChange={setDescription}
+          rows={5}
+          desabilitado={salvando}
         />
+      </div>
+      <div className="field">
+        <span className="label">Links</span>
+        {rascunhoLinks ? (
+          <EditorDeLinks
+            valor={rascunhoLinks}
+            onChange={setRascunhoLinks}
+            desabilitado={salvando}
+            mostrarErros={tentouSalvar}
+          />
+        ) : falhouLinks ? (
+          <p className="text-xs text-danger" role="alert">
+            Não consegui carregar os links -- eles não serão alterados ao salvar.{" "}
+            <button type="button" className="font-semibold underline" onClick={onRecarregarLinks}>
+              Tentar de novo
+            </button>
+          </p>
+        ) : (
+          <p className="muted text-xs">Carregando links…</p>
+        )}
       </div>
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
         <div className="field" style={{ flex: 1, minWidth: 160 }}>

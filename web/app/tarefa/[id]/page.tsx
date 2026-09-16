@@ -68,10 +68,9 @@ function Tarefa() {
   const [membrosInativos, setMembrosInativos] = useState<Set<string>>(new Set());
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
-  const [editando, setEditando] = useState<Task | null>(null);
-  // Spec 033: tarefa que esta sendo DUPLICADA. Separado de `editando` de
-  // proposito -- os dois abrem o mesmo modal em modos diferentes, e um estado
-  // so faria "duplicar" e "editar" se sobrescreverem em silencio.
+  // Spec 033: tarefa que esta sendo DUPLICADA. ⚠️ O `editando` que morava ao
+  // lado saiu na Spec 052 (fatia D): titulo, descricao e links se editam no
+  // proprio detalhe, e o modal so cria e duplica.
   const [duplicando, setDuplicando] = useState<Task | null>(null);
 
   // Contexto que nao depende do id (nomes de pessoa e de projeto). listMembers
@@ -248,7 +247,6 @@ function Tarefa() {
         }}
         // Nesta rota nao existe "fechar": o X leva pro quadro.
         onClose={() => router.push("/quadro")}
-        onEditar={(t) => setEditando(t)}
         onDuplicar={(t) => setDuplicando(t)}
         onAssigneesChange={aoMudarResponsaveis}
         // Subtarefa vira NAVEGACAO: ganha endereco proprio, compartilhavel em
@@ -268,14 +266,12 @@ function Tarefa() {
       />
 
       <TaskModal
-        open={editando !== null || duplicando !== null}
-        task={editando}
+        open={duplicando !== null}
         duplicarDe={duplicando}
         filhosDaOrigem={duplicando ? filhos : []}
-        // Esta tela nao cria tarefa do zero (`open` exige editar ou duplicar).
+        // Esta tela nao cria tarefa do zero (`open` exige duplicar).
         newTaskTeam={null}
         onClose={() => {
-          setEditando(null);
           setDuplicando(null);
         }}
         onSaved={(t) => {
@@ -287,7 +283,6 @@ function Tarefa() {
             return;
           }
           setTask((prev) => (prev ? mesclar(prev, t) : t));
-          setEditando(null);
         }}
       />
     </>

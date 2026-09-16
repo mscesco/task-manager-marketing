@@ -515,3 +515,71 @@ button:focus-visible,
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+
+/* ⚠️ A DESCRICAO FORMATADA (Spec 052, fatia C). `components/TextoFormatado.tsx`
+   desenha elementos soltos (p, ul, h3...) e o preflight do Tailwind zera margem
+   e marcador de lista -- sem esta classe, lista vira linhas sem bolinha e
+   paragrafos grudam.
+   ⚠️ SO TOKENS, nenhuma cor cravada: o tema escuro troca as variaveis e o texto
+   acompanha sem regra propria.
+   ⚠️ SEM `white-space: pre-wrap`: a quebra de linha simples ja vira `<br>`
+   (`remark-breaks`), e o pre-wrap desenharia TAMBEM as quebras que o Markdown
+   poe entre os blocos -- cada paragrafo ganharia uma linha em branco a mais. */
+.texto-formatado { font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
+.texto-formatado > * + * { margin-top: 0.6em; }
+.texto-formatado ul { list-style: disc; padding-left: 1.4em; }
+.texto-formatado ol { list-style: decimal; padding-left: 1.6em; }
+.texto-formatado li + li { margin-top: 0.15em; }
+.texto-formatado li > ul,
+.texto-formatado li > ol { margin-top: 0.15em; }
+.texto-formatado h3 { font-size: 15px; font-weight: 700; margin-top: 0.9em; }
+.texto-formatado h4 { font-size: 14px; font-weight: 700; margin-top: 0.8em; }
+.texto-formatado > h3:first-child,
+.texto-formatado > h4:first-child { margin-top: 0; }
+.texto-formatado strong { font-weight: 700; }
+.texto-formatado em { font-style: italic; }
+.texto-formatado a { color: var(--accent); text-decoration: underline; }
+
+/* ⚠️ O EDITOR DA DESCRICAO (Spec 052, fatia E). Ele usa a MESMA classe
+   `.texto-formatado` do texto salvo -- e o ponto: o que se ve escrevendo e o
+   que se ve depois. So o que e dele esta aqui:
+   - dentro do editor os cabecalhos sao `h1`/`h2`/`h3` de verdade (o
+     `TextoFormatado` rebaixa para h3/h4 ao desenhar), entao os tres ganham os
+     mesmos tamanhos da tela salva;
+   - o texto de exemplo do campo vazio (extensao Placeholder do Tiptap). */
+.editor-descricao { cursor: text; }
+.editor-descricao h1,
+.editor-descricao h2 { font-size: 15px; font-weight: 700; margin-top: 0.9em; }
+.editor-descricao h3 { font-size: 14px; font-weight: 700; margin-top: 0.8em; }
+.editor-descricao > :first-child { margin-top: 0; }
+.editor-descricao p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  color: var(--text-faint);
+  float: left;
+  height: 0;
+  pointer-events: none;
+}
+
+/* ⚠️ O QUE A REVISAO DE 16/09 DEVOLVEU A DESCRICAO: codigo, citacao, linha e
+   tabela. Antes o editor os apagava ao salvar; agora eles existem no editor e
+   no texto salvo, e precisam de cara nos dois (a classe e a mesma). */
+.texto-formatado code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.9em; background: var(--surface-2); border-radius: 4px; padding: 0.1em 0.3em;
+}
+.texto-formatado pre {
+  background: var(--surface-2); border-radius: 6px; padding: 0.6em 0.8em;
+  overflow-x: auto; white-space: pre;
+}
+.texto-formatado pre code { background: none; padding: 0; font-size: 13px; }
+.texto-formatado blockquote {
+  border-left: 3px solid var(--border); padding-left: 0.8em; color: var(--text-soft);
+}
+.texto-formatado del, .texto-formatado s { text-decoration: line-through; }
+.texto-formatado hr { border: none; border-top: 1px solid var(--border); }
+.texto-formatado table { border-collapse: collapse; display: block; overflow-x: auto; }
+.texto-formatado th, .texto-formatado td { border: 1px solid var(--border); padding: 4px 8px; text-align: left; }
+.texto-formatado th { font-weight: 700; background: var(--surface-2); }
+.texto-formatado ul[data-type="taskList"], .texto-formatado ul.contains-task-list { list-style: none; padding-left: 0.2em; }
+.texto-formatado ul[data-type="taskList"] li { display: flex; gap: 0.5em; align-items: flex-start; }
+.texto-formatado ul[data-type="taskList"] li > label { margin-top: 0.2em; }

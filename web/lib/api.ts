@@ -2149,6 +2149,63 @@ export type Project = {
   can_delete: boolean;
 };
 
+// ---------------------------------------------------------------
+// LINKS COM NOME -- projeto e tarefa (Spec 052, fatia B)
+// ---------------------------------------------------------------
+
+/** Um link salvo: o nome que aparece e o endereço. */
+export type LinkItem = { id: string; title: string; url: string };
+
+/**
+ * Evento de `window` quando a lista de links de um item muda. `detail` =
+ * `{ dono: "task" | "project", id }`.
+ *
+ * ⚠️ O detalhe da tarefa mostra os links e o MODAL os edita, e salvar links não
+ * muda a tarefa em si (nem o `updated_at`) -- sem o aviso, o detalhe aberto
+ * seguiria com a lista antiga. Mesmo desenho do `TIMES_MUDARAM`.
+ */
+export const LINKS_MUDARAM = "links:mudaram";
+
+function avisarLinks(dono: "task" | "project", id: string) {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent(LINKS_MUDARAM, { detail: { dono, id } }));
+  }
+}
+
+export async function getTaskLinks(taskId: string): Promise<LinkItem[]> {
+  return api<LinkItem[]>(`/api/v1/tasks/${taskId}/links`);
+}
+
+/** Substitui a lista INTEIRA de links da tarefa, na ordem dada. */
+export async function putTaskLinks(
+  taskId: string,
+  links: { title: string; url: string }[],
+): Promise<LinkItem[]> {
+  const r = await api<LinkItem[]>(`/api/v1/tasks/${taskId}/links`, {
+    method: "PUT",
+    body: { links },
+  });
+  avisarLinks("task", taskId);
+  return r;
+}
+
+export async function getProjectLinks(projectId: string): Promise<LinkItem[]> {
+  return api<LinkItem[]>(`/api/v1/projects/${projectId}/links`);
+}
+
+/** Substitui a lista INTEIRA de links do projeto, na ordem dada. */
+export async function putProjectLinks(
+  projectId: string,
+  links: { title: string; url: string }[],
+): Promise<LinkItem[]> {
+  const r = await api<LinkItem[]>(`/api/v1/projects/${projectId}/links`, {
+    method: "PUT",
+    body: { links },
+  });
+  avisarLinks("project", projectId);
+  return r;
+}
+
 export type ProjectListResponse = {
   items: Project[];
   total: number;

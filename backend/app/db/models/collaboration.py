@@ -210,17 +210,44 @@ class CommentReaction(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     emoji: Mapped[str] = mapped_column(String(16), nullable=False)
 
 
+#: Os dois tipos de anexo. Hoje so LINK e gravado (Spec 052); FILE guarda o
+#: lugar do upload, que nao existe ainda.
+ATTACHMENT_KINDS = ("LINK", "FILE")
+
+
 class Attachment(UUIDPrimaryKeyMixin, Base):
-    """Anexo de arquivo de uma task. created_at via TimestampMixin? Nao:
-    o schema so tem created_at aqui -- declarado explicitamente."""
+    """Anexo de um PROJETO ou de uma TAREFA -- link ou arquivo. Spec 052, fatia B.
+
+    ⚠️⚠️ ERA "anexo de arquivo de task", do schema v5, e nunca foi usado (0
+    linhas em producao em 16/09). A `0026` o reformou em vez de criar tabelas
+    novas, por decisao da Camila. Ver o cabecalho da migration.
+
+    Regras que moram no BANCO (CHECKs da `0026`):
+      - exatamente um dono: `task_id` OU `project_id`;
+      - `kind` LINK exige `url` e nao tem `storage_key`;
+      - `kind` FILE exige `storage_key`, `mime_type` e `file_size`, sem `url`.
+
+    ⚠️ SEM soft-delete PROPRIO: o anexo segue a marca do dono, como as reacoes
+    seguem a do comentario. Tarefa ou projeto apagados somem das telas e levam
+    os anexos junto.
+
+    `created_at` explicito, sem `TimestampMixin`: o schema nunca teve
+    `updated_at` aqui, e a lista e substituida inteira (nao ha edicao de linha).
+    """
 
     __tablename__ = "attachment"
     __table_args__ = (
         ForeignKeyConstraint(
             ["task_id", "workspace_id"],
             ["task.id", "task.workspace_id"],
-            ondelete="RESTRICT",
+            ondelete="CASCADE",
             name="attachment_task",
+        ),
+        ForeignKeyConstraint(
+            ["project_id", "workspace_id"],
+            ["project.id", "project.workspace_id"],
+            ondelete="CASCADE",
+            name="attachment_project",
         ),
         ForeignKeyConstraint(
             ["uploaded_by", "workspace_id"],
@@ -229,15 +256,31 @@ class Attachment(UUIDPrimaryKeyMixin, Base):
             name="attachment_user",
         ),
         CheckConstraint("file_size >= 0", name="attachment_file_size_non_negative"),
+        CheckConstraint(
+            "(task_id IS NULL) <> (project_id IS NULL)", name="attachment_um_dono"
+        ),
+        CheckConstraint("kind IN ('LINK', 'FILE')", name="attachment_kind"),
     )
 
     workspace_id: Mapped[uuid.UUID] = _ws_fk()
-    task_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    task_id: Mapped[uuid.UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True), nullable=True
+    )
+    project_id: Mapped[uuid.UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True), nullable=True
+    )
     uploaded_by: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
-    file_name: Mapped[str] = mapped_column(String(512), nullable=False)
-    storage_key: Mapped[str] = mapped_column(String(1024), nullable=False)
-    mime_type: Mapped[str] = mapped_column(String(255), nullable=False)
-    file_size: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    kind: Mapped[str] = mapped_column(String(10), nullable=False)
+    #: O nome que aparece (era `file_name`).
+    title: Mapped[str] = mapped_column(String(512), nullable=False)
+    url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    storage_key: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    mime_type: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    file_size: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    #: A ordem na lista do dono.
+    position: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="0"
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

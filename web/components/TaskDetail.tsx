@@ -50,11 +50,18 @@ import {
   setCommentReaction,
   deleteCommentReaction,
   currentUser,
+  getTaskLinks,
+  putTaskLinks,
+  LINKS_MUDARAM,
   ApiError,
+  type LinkItem,
   type Task,
   type Comment,
   type CurrentUser,
 } from "@/lib/api";
+import TituloEditavel from "@/components/TituloEditavel";
+import DescricaoEditavel from "@/components/DescricaoEditavel";
+import LinksEditaveis from "@/components/LinksEditaveis";
 import {
   PRIORITY_LABEL,
   PRIORITY_COLOR,
@@ -86,7 +93,6 @@ import {
   resumoResponsaveis,
   proximoDaSequencia,
 } from "@/lib/criacaoTarefa";
-import { linkify } from "@/lib/linkify";
 
 import Loading from "@/components/Loading";
 // ⚠️ RESERVA DO BADGE, e so isso (fatia 4c-2). O rotulo do badge passou a sair
@@ -149,7 +155,6 @@ export default function TaskDetail({
   temVoltar,
   onVoltar,
   onClose,
-  onEditar,
   onDuplicar,
   onAssigneesChange,
   onAbrirSubtarefa,
@@ -175,7 +180,6 @@ export default function TaskDetail({
   temVoltar: boolean;
   onVoltar: () => void;
   onClose: () => void;
-  onEditar: (task: Task) => void;
   // Spec 033. ⚠️ OBRIGATORIA, pelo mesmo motivo das tres props abaixo: o
   // TaskDetail tem QUATRO chamadores, e prop opcional e onde "esqueci um
   // chamador" vira silencio -- o botao simplesmente nao apareceria em tres
@@ -411,6 +415,67 @@ export default function TaskDetail({
   // visivel). Sessao-level de proposito: NAO entra no reset por task -- fica
   // como a pessoa deixou enquanto navega entre tarefas.
   const [threadAberto, setThreadAberto] = useState(true);
+
+  // Spec 052, fatia B: os links com nome da tarefa, logo abaixo da descrição.
+  // ⚠️ ZERA ao trocar de tarefa, antes da resposta: sem isso, a tarefa nova
+  // mostraria por um instante os links da anterior.
+  // ⚠️⚠️ `null` = AINDA NÃO SEI, e não "sem links" (revisão de 16/09). A busca
+  // falhava em silêncio e a lista ficava `[]`: "Adicionar link" mandava só o
+  // link novo e APAGAVA os que existiam. Agora a falha aparece, com "Tentar de
+  // novo", e não há edição sem a lista salva.
+  const [links, setLinks] = useState<LinkItem[] | null>(null);
+  const [falhouLinks, setFalhouLinks] = useState(false);
+  const [tentativaLinks, setTentativaLinks] = useState(0);
+  const idDaTarefa = task?.id ?? null;
+  // ⚠️ A TAREFA QUE ESTÁ NA TELA AGORA, e não a do closure (revisão de 16/09).
+  // `salvarLinks` compara com ela depois do `await`: salvar os links de A e
+  // navegar para B no mesmo clique fazia a resposta de A pintar os links de A
+  // no detalhe de B.
+  const idNaTela = useRef<string | null>(idDaTarefa);
+  idNaTela.current = idDaTarefa;
+  useEffect(() => {
+    setLinks(null);
+    setFalhouLinks(false);
+    if (!idDaTarefa) return;
+    let vivo = true;
+    const buscar = () =>
+      getTaskLinks(idDaTarefa)
+        .then((l) => {
+          if (!vivo) return;
+          setLinks(l);
+          setFalhouLinks(false);
+        })
+        .catch(() => vivo && setFalhouLinks(true));
+    void buscar();
+    // Salvar links no MODAL não muda a tarefa (nem o `updated_at`): quem avisa
+    // é o evento, e só para ESTA tarefa.
+    const aoMudar = (e: Event) => {
+      const d = (e as CustomEvent<{ dono: string; id: string }>).detail;
+      if (d?.dono === "task" && d.id === idDaTarefa) void buscar();
+    };
+    window.addEventListener(LINKS_MUDARAM, aoMudar);
+    return () => {
+      vivo = false;
+      window.removeEventListener(LINKS_MUDARAM, aoMudar);
+    };
+  }, [idDaTarefa, tentativaLinks]);
+
+  // Spec 052, fatia D: o título e a descrição salvos NO LUGAR.
+  // ⚠️ POR QUE O DETALHE GUARDA O QUE SALVOU, em vez de só avisar o pai: os
+  // quatro chamadores aplicam `onSubtaskUpsert` de jeitos diferentes -- o
+  // quadro troca a tarefa na lista, mas `/tarefa/[id]` só atualiza as FILHAS e
+  // `/arquivadas` recarrega a página sem tocar no `detalhe`. Sem isto, nesses
+  // dois o título voltaria ao antigo logo depois do Enter.
+  // ⚠️ E ZERA QUANDO A `task` MUDA: se o pai aplicou a resposta, a prop já
+  // traz o valor novo e a cópia daqui não pode mascarar edições posteriores.
+  const [salvoNoLugar, setSalvoNoLugar] = useState<{
+    id: string;
+    title?: string;
+    description?: string;
+  } | null>(null);
+  useEffect(() => {
+    setSalvoNoLugar(null);
+  }, [task]);
 
   // GIFs escolhidos no rascunho (viram token [gif:URL] so no envio). Ficam como
   // chip de preview abaixo do campo -- o textarea nao mostra o link.
@@ -894,6 +959,57 @@ export default function TaskDetail({
       );
     } finally {
       setSalvandoDatas(false);
+    }
+  }
+
+  /**
+   * Grava título ou descrição editados no lugar (Spec 052, fatia D).
+   *
+   * ⚠️ LANÇA COM A MENSAGEM PRONTA: quem chama é o componente do campo, que
+   * reabre com o texto da pessoa e mostra a mensagem embaixo.
+   *
+   * ⚠️ `onSubtaskUpsert`, e não `onTaskMoved`: mesmo motivo da prioridade --
+   * o título muda o que o card mostra, não onde a tarefa mora.
+   */
+  async function salvarNoLugar(campo: { title: string } | { description: string }) {
+    if (!task) return;
+    const alvo = task.id;
+    try {
+      const t = await updateTask(alvo, campo);
+      setSalvoNoLugar((prev) => ({
+        ...(prev?.id === alvo ? prev : {}),
+        id: alvo,
+        title: t.title,
+        description: t.description ?? "",
+      }));
+      onSubtaskUpsert(t);
+    } catch (e) {
+      const err = e as ApiError;
+      throw new Error(
+        err.status === 403
+          ? "Você não pode editar esta tarefa."
+          : err.status === 422
+          ? err.message || "O servidor recusou o texto."
+          : "Não consegui salvar. Tente de novo."
+      );
+    }
+  }
+
+  async function salvarLinks(novos: { title: string; url: string }[]) {
+    if (!task) return;
+    const alvo = task.id;
+    try {
+      const salvos = await putTaskLinks(alvo, novos);
+      if (idNaTela.current === alvo) setLinks(salvos);
+    } catch (e) {
+      const err = e as ApiError;
+      throw new Error(
+        err.status === 403
+          ? "Você não pode editar esta tarefa."
+          : err.status === 422
+          ? err.message || "Confira os links."
+          : "Não consegui salvar os links. Tente de novo."
+      );
     }
   }
 
@@ -1404,9 +1520,14 @@ export default function TaskDetail({
           {/* `overflowWrap` pelo mesmo motivo do título do card: título é texto
               de usuário e pode vir sem espaço nenhum. Aqui o painel é largo e
               disfarça, mas o buraco é o mesmo. */}
-          <h2 style={{ margin: 0, fontSize: 22, fontWeight: 700, letterSpacing: "-0.02em", lineHeight: 1.27, overflowWrap: "anywhere" }}>
-            {task.title}
-          </h2>
+          {/* Spec 052, fatia D: clicar no título edita; Enter ou clicar fora
+              salva, Esc desiste. `key` pelo id: trocar de tarefa com o campo
+              aberto não pode levar o rascunho para a outra. */}
+          <TituloEditavel
+            key={task.id}
+            valor={salvoNoLugar?.id === task.id && salvoNoLugar.title !== undefined ? salvoNoLugar.title : task.title}
+            onSalvar={(novo) => salvarNoLugar({ title: novo })}
+          />
           <button
             type="button" className="btn btn-ghost" onClick={fecharSuave}
             style={{ padding: "4px 10px", flexShrink: 0 }} aria-label="Fechar"
@@ -2134,27 +2255,22 @@ export default function TaskDetail({
             espremeria os controles e sumiria junto com o painel. */}
         {erroProj && <div className="error-box">{erroProj}</div>}
 
-        <div className="field">
-          <span className="label">Descrição</span>
-          {task.description && task.description.trim().length > 0 ? (
-            // linkify: URL http/https vira <a>. Descricao NAO passa pelo
-            // parser de mencao/gif -- esses tokens so existem em comentario.
-            // overflowWrap: URL longa SEM hifen (so barras/underscore) nao tem
-            // ponto de quebra natural e vazaria a largura do modal.
-            <div
-              style={{
-                fontSize: 14,
-                lineHeight: 1.5,
-                whiteSpace: "pre-wrap",
-                overflowWrap: "anywhere",
-              }}
-            >
-              {linkify(task.description, "desc-")}
-            </div>
-          ) : (
-            <span className="muted" style={{ fontSize: 13 }}>Sem descrição.</span>
-          )}
-        </div>
+        {/* Spec 052, fatia D: a descrição e os links se editam AQUI. O
+            "Editar" do rodapé, que abria o modal inteiro, saiu -- o resto
+            (coluna, prioridade, datas, projeto, responsáveis) já era das
+            pílulas. `key` pelo id pelo mesmo motivo do título. */}
+        <DescricaoEditavel
+          key={`desc-${task.id}`}
+          valor={salvoNoLugar?.id === task.id && salvoNoLugar.description !== undefined ? salvoNoLugar.description : task.description}
+          onSalvar={(nova) => salvarNoLugar({ description: nova })}
+        />
+        <LinksEditaveis
+          key={`links-${task.id}`}
+          links={links}
+          falhou={falhouLinks}
+          onTentarDeNovo={() => setTentativaLinks((n) => n + 1)}
+          onSalvar={salvarLinks}
+        />
 
         {/* ---- Subtarefas ---- */}
         <div className="field">
@@ -2920,9 +3036,6 @@ export default function TaskDetail({
                 Duplicar
               </button>
             )}
-          <button type="button" className="btn btn-primary" onClick={() => onEditar(task)}>
-            Editar
-          </button>
         </div>
       </div>
     </div>

@@ -281,10 +281,9 @@ export default function Board({
   const [projetosCarregados, setProjetosCarregados] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [criando, setCriando] = useState(false);
-  const [editando, setEditando] = useState<Task | null>(null);
-  // Spec 033: tarefa que esta sendo DUPLICADA. Separado de `editando` de
-  // proposito -- os dois abrem o mesmo modal em modos diferentes, e um estado
-  // so faria "duplicar" e "editar" se sobrescreverem em silencio.
+  // Spec 033: tarefa que esta sendo DUPLICADA. ⚠️ O `editando` que morava ao
+  // lado saiu na Spec 052 (fatia D): titulo, descricao e links se editam no
+  // proprio detalhe, e o modal so cria e duplica.
   const [duplicando, setDuplicando] = useState<Task | null>(null);
   // ⚠️ SPEC 042 (B2). O modal de duplicacao precisa das filhas DE VERDADE --
   // ele lista uma a uma, com responsavel por linha (ADR 0031) --, entao
@@ -726,7 +725,6 @@ export default function Board({
         : [m, ...lista];
     });
     setCriando(false);
-    setEditando(null);
   }
 
   function abrirDetalhe(task: Task) {
@@ -2412,8 +2410,7 @@ export default function Board({
       )}
 
       <TaskModal
-        open={criando || editando !== null || duplicando !== null}
-        task={editando}
+        open={criando || duplicando !== null}
         duplicarDe={duplicando}
         // ⚠️ SPEC 042 (B2): vem de BUSCA, e nao mais de `tasks`. Com
         // `root_only` o filtro por `parent_task_id` daria SEMPRE lista vazia --
@@ -2427,7 +2424,6 @@ export default function Board({
         nomeDoQuadro={boardId ? (quadro?.name ?? null) : null}
         onClose={() => {
           setCriando(false);
-          setEditando(null);
           setDuplicando(null);
         }}
         onSaved={(t) => {
@@ -2464,9 +2460,6 @@ export default function Board({
         pai={pilha[pilha.length - 1] ?? null}
         onVoltar={voltarDetalhe}
         onClose={fecharDetalhe}
-        onEditar={(t) => {
-          setEditando(t);
-        }}
         onDuplicar={(t) => setDuplicando(t)}
         onAssigneesChange={aoMudarResponsaveis}
         onAbrirSubtarefa={abrirSubtarefa}
