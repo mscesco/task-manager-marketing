@@ -2305,6 +2305,12 @@ export type Comment = {
   edited_at: string | null;
   created_at: string;
   is_deleted: boolean;
+  /**
+   * Spec 050: a fileira de reacoes, na ordem de chegada de cada emoji. Vazia
+   * em comentario apagado. `user_ids` (e nao contagem) porque a tela mostra
+   * QUEM reagiu -- a contagem e o tamanho da lista.
+   */
+  reactions: { emoji: string; user_ids: string[] }[];
 };
 
 export type CommentList = {
@@ -2365,6 +2371,38 @@ export async function deleteComment(
   await api<void>(`/api/v1/tasks/${taskId}/comments/${commentId}`, {
     method: "DELETE",
   });
+}
+
+// ---------------------------------------------------------------
+// REACOES NO COMENTARIO  (Spec 050)
+// ---------------------------------------------------------------
+// ⚠️ `PUT`, e nao `POST`: a operacao e "a minha reacao neste comentario passa
+// a ser X" -- idempotente, e trocar e o mesmo gesto que por. As duas devolvem
+// o COMENTARIO inteiro, com a fileira nova, para a tela trocar a linha sem
+// recarregar o thread.
+// ⚠️ Emoji invalido e 422 do servidor, e nao validacao aqui: quem decide o que
+// e um emoji e a biblioteca do backend (spec §4.3). A tela so oferece o
+// catalogo gerado, que o `test_emoji_catalogo_front` prova que ele aceita.
+export async function setCommentReaction(
+  taskId: string,
+  commentId: string,
+  emoji: string
+): Promise<Comment> {
+  return api<Comment>(
+    `/api/v1/tasks/${taskId}/comments/${commentId}/reaction`,
+    { method: "PUT", body: { emoji } }
+  );
+}
+
+// Tirar o que nao existe tambem e 200 -- o duplo clique nao vira erro.
+export async function deleteCommentReaction(
+  taskId: string,
+  commentId: string
+): Promise<Comment> {
+  return api<Comment>(
+    `/api/v1/tasks/${taskId}/comments/${commentId}/reaction`,
+    { method: "DELETE" }
+  );
 }
 
 // ---------------------------------------------------------------

@@ -5,7 +5,7 @@
 na mesma data. **As três perguntas de desenho foram respondidas em 15/09**
 (§8). A quarta — a fonte do seletor — foi respondida no mesmo dia: catálogo
 próprio, gerado do `emojibase-data`.
-**Fatias A e B entregues em 15/09.**
+**Fatias A, B e C entregues em 15/09 — a spec está completa.**
 **Escopo:** backend (tabela, rotas, contagem na listagem, notificação) e front
 (botão de reagir, seletor, fileira de reações). Nenhuma tela nova — tudo mora
 no comentário do detalhe da tarefa.
@@ -350,7 +350,27 @@ Um PR, um commit por fatia, CI conferido a cada commit.
   fronteira da Spec 027 põe decisão em `lib/`. As três frases que já existiam
   ganharam teste junto, para provar que a mudança de casa não alterou nenhuma.
 
-- **C — a tela.** ⚠️ **Trava na pergunta 4 da §8.**
+- **C — a tela.** ✅ **Entregue em 15/09.**
+  - **O catálogo** (`web/lib/emojiCatalogo.generated.ts`, 1.914 emojis) é gerado
+    do `emojibase-data/pt` por `web/scripts/gen-emoji-catalogo.mjs`, com nome,
+    etiquetas e grupo em português. A fonte é dependência de **desenvolvimento**:
+    só o gerador a lê, e nada dela vai para o pacote da tela.
+  - ⚠️⚠️ **A forma canônica NÃO é "tirar o U+FE0F"**, e essa era a armadilha da
+    fatia: 👍 vem da fonte como `👍️` e precisa perdê-lo, mas `#️⃣` e 🏳️‍🌈 também
+    o têm e precisam mantê-lo. Quem decide é o campo `type` (1 = apresentação de
+    emoji → a sequência do `hexcode`; 0 = apresentação de texto, como ❤ ☺ © →
+    `hexcode` + U+FE0F).
+  - **Dois guardiões, com perguntas diferentes:**
+    `emojiCatalogo.generated.test.ts` pergunta se o arquivo está em dia com a
+    fonte; `backend/tests/test_emoji_catalogo_front.py` passa **cada** emoji por
+    `normalize_emoji` e exige que ele volte igual — é o que impede o seletor de
+    oferecer o que o `PUT` recusaria (422) ou gravaria em outra forma.
+  - **Um grupo por vez** na grade, mais a busca: desenhar os 1.914 seriam 1.914
+    botões no DOM de cada comentário aberto.
+  - ⚠️ **Cobertura, dita inteira:** os testes de componente que já existiam
+    simulam a lista de comentários **vazia**, então nenhum deles desenha
+    comentário — a fileira e o seletor são exercitados só pelos testes novos
+    (`components/__tests__/Reacoes.test.tsx`) e pelo smoke na tela.
   - a decisão em `lib/` (Spec 027, fronteira do teste): agrupar e ordenar a
     fileira, montar "Ana, Bruno e você", decidir o que o clique na pílula faz;
   - `setCommentReaction`/`deleteCommentReaction` em `lib/api.ts`, com teste de
