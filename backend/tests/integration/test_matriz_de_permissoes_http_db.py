@@ -129,6 +129,12 @@ esta no Comercial (so a organizacao); promover a gerente (gestor e gerente);
 rebaixar outro gerente (gestor sim, gerente nao -- "gerente so promove");
 mover conta desativada (409). Nenhuma outra celula mudou.
 
+SPEC 051, FATIA D (16/09) -- estrutura. Quatro linhas: o gerente apaga subtime
+da propria arvore; mover time para outra arvore e dar pai a um time raiz sao
+409 (mesmo para o ADMIN); ler quadro de outra arvore pelo id e 404. O cadeado
+`can_delete` de `GET /teams` e conferido em
+`test_listagem_de_times_diz_o_que_cada_papel_apaga`.
+
 O QUE ESTA TABELA NAO COBRE (de proposito, e anotado para quem estender):
     - editar comentario (autoria, nao permissao -- spec §4.5) e seguidores
       (o servico decide "eu" contra "terceiro");
@@ -536,8 +542,8 @@ MATRIZ: tuple[Linha, ...] = (
           (OK, OK, NEGADO, NEGADO, NEGADO, NEGADO)),
     Linha("subteam.delete", "vazio do Marketing", "delete",
           f"{T}/workspaces/current/teams/{{vazio_mkt}}", None,
-          (OK, NEGADO, NEGADO, NEGADO, NEGADO, NEGADO),
-          diverge="051 §4.3: MANAGER apaga subtime da propria arvore; GESTOR nao"),
+          # 051, fatia D: o gerente apaga subtime da propria arvore; o gestor nao
+          (OK, NEGADO, OK, NEGADO, NEGADO, OK)),
     Linha("subteam.delete", "vazio do Comercial", "delete",
           f"{T}/workspaces/current/teams/{{vazio_com}}", None,
           (OK, NEGADO, NEGADO, NEGADO, NEGADO, NEGADO)),
@@ -549,12 +555,12 @@ MATRIZ: tuple[Linha, ...] = (
           (OK, NEGADO, NEGADO, NEGADO, NEGADO, NEGADO)),
     Linha("team.move", "Vazio-MKT para dentro do Comercial", "post",
           f"{T}/workspaces/current/teams/{{vazio_mkt}}/move", {"new_parent_id": "{com}"},
-          (OK, NEGADO, NEGADO, NEGADO, NEGADO, NEGADO),
-          diverge="051 §4.6: destino em outra arvore"),
+          # 051, fatia D: destino em outra arvore e recusado
+          (409, NEGADO, NEGADO, NEGADO, NEGADO, NEGADO)),
     Linha("team.move", "o Comercial (raiz) para dentro do Marketing", "post",
           f"{T}/workspaces/current/teams/{{com}}/move", {"new_parent_id": "{mkt}"},
-          (OK, NEGADO, NEGADO, NEGADO, NEGADO, NEGADO),
-          diverge="051 §4.6: time raiz ganhando pai"),
+          # 051, fatia D: time raiz ganhando pai e recusado
+          (409, NEGADO, NEGADO, NEGADO, NEGADO, NEGADO)),
     # ---------------------------------------------------------- pessoa
     Linha("person.create", "no Marketing", "post", f"{T}/members",
           {"name": "Nova", "email": "nova@t.dev", "team_id": "{mkt}", "role": "OPERATOR"},
@@ -709,8 +715,8 @@ MATRIZ: tuple[Linha, ...] = (
     # le o quadro de Vendas, com a contagem de tarefas.
     Linha("board.read", "quadro de Vendas, pelo id", "get",
           f"{T}/boards/{{quadro_vendas}}", None,
-          (OK, OK, OK, OK, OK, OK),
-          diverge="051 §4.8 item 2: fora da lente e 404"),
+          # 051, fatia D: fora da lente e 404
+          (OK, OK, OCULTO, OCULTO, OCULTO, OCULTO)),
     # ---------------------------------------------------------- coluna
     Linha("column.create", "no geral do Marketing", "post",
           f"{T}/boards/{{geral_mkt}}/columns", {"name": "Revisao", "semantic": "IN_PROGRESS"},
@@ -1054,6 +1060,40 @@ EDITA = {
     # Spec 051: o OPERATOR do Comercial nao edita subtime -- so a arvore do MANAGER.
     "DUAS_ARVORES": {"seo", "design", "vazio_mkt"},
 }
+
+#: Spec 051, fatia D: os subtimes que cada papel APAGA -- `can_delete`.
+#: ⚠️ O GESTOR NAO (pergunta B): esta acima do gerente e nao apaga time.
+APAGA = {
+    "ADMIN": {"seo", "design", "vazio_mkt", "vendas", "suporte", "vazio_com"},
+    "GESTOR": set(),
+    "MANAGER": {"seo", "design", "vazio_mkt"},
+    "SUPERVISOR": set(),
+    "OPERATOR": set(),
+    "DUAS_ARVORES": {"seo", "design", "vazio_mkt"},
+}
+
+
+@pytest.mark.parametrize("papel", PAPEIS)
+async def test_listagem_de_times_diz_o_que_cada_papel_apaga(db, papel: str) -> None:
+    """Spec 051, fatia D -- a lixeira do time vem do servidor.
+
+    O par das linhas `subteam.delete`: a tabela prova que o DELETE recusa ou
+    aceita; este prova que a tela ofereceria a mesma coisa. E as duas linhas
+    da matriz sao conferidas contra o conjunto, papel a papel.
+    """
+    m = await _mundo(db)
+    async with _client(db, _contexto(m, papel)) as cli:
+        r = await cli.get(f"{T}/workspaces/current/teams")
+    assert r.status_code == 200, r.text
+    nome_do_id = {v: k for k, v in m["ids"].items()}
+    apagaveis = {
+        nome_do_id[item["id"]] for item in r.json()["items"] if item["can_delete"]
+    }
+    assert apagaveis == APAGA[papel], f"{papel} apaga {apagaveis}"
+    idx = PAPEIS.index(papel)
+    for alvo, time in (("vazio do Marketing", "vazio_mkt"), ("vazio do Comercial", "vazio_com")):
+        linha = _linha("subteam.delete", alvo).esperado[idx]
+        assert (linha == OK) is (time in apagaveis), f"{papel} {alvo}: linha {linha}"
 
 
 @pytest.mark.parametrize("papel", PAPEIS)

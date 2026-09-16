@@ -49,6 +49,7 @@ import type { Permission } from "@/lib/permissions.generated";
 import {
   confirmacaoValida,
   descreveConteudo,
+  podeApagarTime,
   podeEditar,
 } from "@/lib/gestaoTimes";
 import { ROLE_LABEL } from "@/components/MembersTable";
@@ -246,9 +247,11 @@ export default function SubteamDrawer({
             />
           )}
 
-          {/* ⚠️ SÓ ADMINISTRADOR, e a trava é da Spec 029 (D1): remover time
-              exige `workspace.manage`. Mostrar o botão a um gerente daria
-              403 depois que ele já digitou o nome do time para confirmar.
+          {/* ⚠️⚠️ QUEM APAGA VEM DO SERVIDOR, por time (Spec 051, fatia D). Até
+              ali era `isAdmin` -- a trava da Spec 029 dizia "só administrador".
+              O gerente passou a apagar subtime da PRÓPRIA árvore (decisão 4), e
+              `can_delete` responde onde: sem ele, o gerente veria o botão em
+              subtime de outra árvore e levaria 403 depois de digitar o nome.
 
               ⚠️⚠️ E **NUNCA PARA ÁREA**: o backend responde 409 *"se for a
               raiz"* nas DUAS rotas (`delete_team` e `esvaziar-e-remover`).
@@ -257,7 +260,9 @@ export default function SubteamDrawer({
               tela oferece e o servidor recusa" que a Spec 044 registrou.
               Quem quer apagar uma área move ou apaga os subtimes e fala com
               quem administra o workspace. */}
-          {isAdmin && !ehArea && <DeleteTeam team={team} onChanged={onChanged} />}
+          {!ehArea && podeApagarTime(team) && (
+            <DeleteTeam team={team} onChanged={onChanged} />
+          )}
           {isAdmin && ehArea && (
             <div className="muted mt-6 border-t border-border pt-3 text-xs">
               Área não se exclui por aqui — ela é a raiz de uma árvore, e o

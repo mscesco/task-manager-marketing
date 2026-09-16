@@ -697,6 +697,9 @@ export type Team = {
   // Spec 051, fatia A: quem pergunta pode CRIAR PROJETO neste time? Mesma regra
   // do `can_update`: só a listagem traz, e ausente lê-se como "não".
   can_create_project?: boolean;
+  // Spec 051, fatia D: quem pergunta pode APAGAR este time? O gerente apaga
+  // subtime da própria árvore; ausente lê-se como "não".
+  can_delete?: boolean;
 };
 
 type TeamListResponse = { items: Team[]; total: number };

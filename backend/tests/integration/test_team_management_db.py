@@ -99,14 +99,21 @@ async def test_manager_cria_subtime(db) -> None:
     assert resp.json()["name"] == "Influenciadores"
 
 
-async def test_manager_nao_remove(db) -> None:
-    """D1: remover segue restrito a ADMIN (workspace.manage)."""
+async def test_manager_remove_subtime_da_propria_arvore(db) -> None:
+    """⚠️⚠️ MUDOU DE LADO NA SPEC 051 (fatia D).
+
+    Ate 16/09 este teste se chamava `test_manager_nao_remove` e afirmava o D1
+    da Spec 029: remover era so do ADMIN. A Camila decidiu (decisao 4) que o
+    gerente apaga subtime da PROPRIA arvore, como o Mapa de 10/09 ja dizia. A
+    metade negativa -- subtime de OUTRA arvore segue 403 -- mora na matriz
+    (`subteam.delete[vazio do Comercial]`), que tem as duas arvores.
+    """
     _ws, _raiz, sub, _ator, ctx = await _mundo(db, papel="MANAGER")
     await db.commit()
     async with _client(db, ctx) as c:
         resp = await c.delete(f"/api/v1/workspaces/current/teams/{sub}")
-    assert resp.status_code == 403
-    assert await _existe(db, sub)
+    assert resp.status_code == 204
+    assert not await _existe(db, sub)
 
 
 async def test_admin_remove_time_vazio(db) -> None:
@@ -529,16 +536,21 @@ async def test_esvaziar_recusa_a_raiz(db) -> None:
     assert "time principal" in resp.json()["error"]["message"]
 
 
-async def test_manager_nao_esvazia(db) -> None:
-    """Mesmo gate do DELETE simples: e a mesma acao destrutiva (D1)."""
+async def test_manager_esvazia_subtime_da_propria_arvore(db) -> None:
+    """Mesmo gate do DELETE simples: e a mesma acao destrutiva.
+
+    ⚠️⚠️ MUDOU DE LADO NA SPEC 051 (fatia D), junto com o teste do DELETE --
+    ate 16/09 era `test_manager_nao_esvazia` (403). Ver
+    `test_manager_remove_subtime_da_propria_arvore`.
+    """
     _ws, _raiz, sub, _ator, ctx = await _mundo(db, papel="MANAGER")
     await db.commit()
     async with _client(db, ctx) as c:
         resp = await c.post(
             f"/api/v1/workspaces/current/teams/{sub}/esvaziar-e-remover"
         )
-    assert resp.status_code == 403
-    assert await _existe(db, sub)
+    assert resp.status_code == 200, resp.text
+    assert not await _existe(db, sub)
 
 
 async def test_previa_conta_vivas_e_lixeira_separadas(db) -> None:

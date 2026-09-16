@@ -83,6 +83,13 @@ class TeamListItem(TeamResponse):
     #: aparecem -- mas so numa ela cria. Sem isto o seletor ofereceria o
     #: Comercial e o POST daria 403. Mesma pergunta do `ProjectService.create`.
     can_create_project: bool
+    #: Quem pergunta pode APAGAR este time? (Spec 051, fatia D)
+    #:
+    #: ⚠️ O gerente passou a apagar subtime da PROPRIA arvore. A tela olhava
+    #: `subteam.delete` em `me.permissions` -- "em algum lugar" -- e desenharia a
+    #: lixeira em todo subtime do workspace. Mesma pergunta de
+    #: `TeamService._assert_apaga_subtime`; raiz nunca (a regra recusa).
+    can_delete: bool
 
 
 class TeamCreateRequest(BaseModel):

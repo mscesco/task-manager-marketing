@@ -3,7 +3,7 @@
 **Status:** escrita em 16/09/2026, a partir da revisão de permissões do mesmo
 dia (cinco frentes contra o Mapa de 10/09 e a Spec 049) e das **oito decisões
 dela**, respondidas em 16/09 (§8), mais as duas que a escrita levantou (A e B,
-respondidas no mesmo dia). **Fatias 0, A, B e C entregues em 16/09.**
+respondidas no mesmo dia). **Fatias 0, A, B, C e D entregues em 16/09.**
 **Escopo:** backend (travas de serviço, matriz C2, duas rotas novas de leitura
 de cadeado e uma de escrita) e as telas que hoje decidem sozinhas o que o
 servidor deveria dizer.
@@ -532,6 +532,50 @@ antes e depois.
 no MANAGER com a trava de árvore, `can_delete` em `GET /teams`, mover time só
 dentro da árvore, e `GET /boards/{id}` pela lente. O `permissions.generated.ts`
 é regenerado (o guardião da 049 cobra).
+
+✅ **Entregue em 16/09.** Backend **1769**, front **1426**, `tsc` limpo,
+`next build` ok, `ruff` 50 antes e depois.
+
+- **`subteam.delete` no MANAGER**, e as três operações de apagar
+  (`delete`, `previa_remocao`, `esvaziar_e_remover`) perguntam
+  `has_permission_in("subteam.delete", time)` logo depois do 404 — **no mesmo
+  commit**: dar o verbo sem a trava abriria a falha. ⚠️ O
+  `permissions.generated.ts` **não** mudou: nenhum nome novo, só um papel a
+  mais para um verbo que já existia (o texto acima previa regenerar).
+- **`GET /teams` ganha `can_delete`**; a tela deixa de decidir.
+  `gestaoTimes.ts` ganhou `podeApagarTime`, e `podeRemover`,
+  `podeEsvaziarERemover` e `motivoNaoRemove` perderam o parâmetro de
+  permissões (o `tsc` apontou os chamadores). ⚠️ **A gaveta do subtime
+  mostrava a lixeira por `isAdmin`** (papel ADMIN), e não pela permissão —
+  agora é `podeApagarTime(team)`.
+- **Mover time:** recusa (409) dar pai a um time raiz e mover para outra área
+  (`area_de` do destino ≠ do time). ⚠️ **A checagem de ciclo foi para ANTES das
+  duas**: mover um time para dentro do próprio descendente é ciclo mesmo quando
+  o time é raiz, e a mensagem de ciclo diz o erro de verdade.
+- **`GET /boards/{id}`** passa por `BoardService.quadro_visivel`, que reusa
+  `_assert_quadro_alcancavel` — a trava que a coluna ganhou em 13/08, quando o
+  mesmo buraco apareceu na rota vizinha. Duas definições de "quadro que eu
+  alcanço" divergiriam.
+- **Matriz:** 4 linhas viradas e `test_listagem_de_times_diz_o_que_cada_papel_apaga`
+  (o `can_delete` por papel, amarrado às duas linhas `subteam.delete`).
+- ⚠️ **5 testes antigos caíram**, nenhum defeito:
+  - **mudaram de lado de propósito:** `test_manager_nao_remove` e
+    `test_manager_nao_esvazia` (D1 da Spec 029) viraram
+    `..._remove_subtime_da_propria_arvore` e `..._esvazia_...`; a metade
+    negativa (outra árvore) é a linha `subteam.delete[vazio do Comercial]`;
+  - **`test_team_move_under_another_parent_works`** movia para OUTRA árvore
+    esperando sucesso: passou a mover dentro da árvore, e as duas recusas
+    ganharam testes unitários próprios;
+  - **`test_team_move_rejects_indirect_cycle`** esperava a mensagem de ciclo e
+    recebia a de raiz — resolvido pela ordem, sem mexer no teste;
+  - **`test_esvaziar_subtime_do_TI_nao_despeja_no_marketing`** usava o vínculo
+    ADMIN antigo no Marketing para esvaziar um subtime do TI; só esse passo
+    passou a ser como admin de organização. (Pôr `org_role` no contexto
+    compartilhado do arquivo quebrou outro teste, que o reaproveita para montar
+    um gerente — por isso o ajuste é local.)
+- **Sabotagem:** sem a trava de árvore e sem as duas recusas de mover → caíram
+  exatamente 4: MANAGER e DUAS_ARVORES apagando subtime do Comercial, e as duas
+  linhas de mover do ADMIN.
 
 **Fatia E — conta** (§4.7, §4.8 item 5). `PATCH /auth/me`, a tela do nome,
 `can_reset_password` e `can_deactivate`.

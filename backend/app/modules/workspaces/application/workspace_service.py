@@ -396,6 +396,27 @@ class TeamService:
         logger.info("team.updated", team_id=str(team_id))
         return team
 
+    @staticmethod
+    def _assert_apaga_subtime(team_id: uuid.UUID) -> None:
+        """403 se quem chama nao tem `subteam.delete` NESTE time. Spec 051, D.
+
+        ⚠️⚠️ ATE A FATIA D AS TRES OPERACOES DE APAGAR NAO CONFERIAM ARVORE
+        NENHUMA -- so a rota, "em algum lugar". Inofensivo enquanto o verbo era
+        so do ADMIN (que alcanca tudo); no dia em que o MANAGER o recebeu
+        (decisao 4), o gerente do Marketing apagaria subtime do Comercial por
+        aqui. Dar o verbo sem esta linha seria abrir a falha, e por isso os dois
+        entram no mesmo commit.
+
+        ⚠️ DEPOIS DO 404, antes da regra da raiz: time inexistente e 404 para
+        todos; quem nao manda nesta arvore leva 403, e nao a explicacao de uma
+        regra que nao e dele. Mesma ordem do `update`.
+        """
+        if not require_tenant().has_permission_in("subteam.delete", team_id):
+            raise AuthorizationError(
+                "Voce administra times, mas nao nesta arvore.",
+                details={"team_id": str(team_id)},
+            )
+
     async def delete(self, *, team_id: uuid.UUID) -> None:
         """Remove uma equipe VAZIA (Spec 029/D3, caminho A).
 
@@ -418,6 +439,7 @@ class TeamService:
         team = await self._repo.get_by_id(team_id)
         if team is None:
             raise EntityNotFoundError("Team", identifier=team_id)
+        self._assert_apaga_subtime(team_id)
 
         if team.parent_team_id is None:
             raise BusinessRuleError(
@@ -523,11 +545,45 @@ class TeamService:
             # Checagem de ciclo: subo a arvore a partir do novo
             # pai; se eu encontrar o proprio team_id no caminho,
             # estou criando um ciclo.
+            # ⚠️ Spec 051: ANTES das duas recusas abaixo. Mover um time para
+            # dentro do proprio descendente e ciclo mesmo quando o time e raiz,
+            # e "criaria um ciclo" diz o erro de verdade -- "time principal nao
+            # vira subtime" seria certo e menos util.
             ancestors = await self._repo.collect_ancestor_ids(new_parent_id)
             if team_id in ancestors:
                 raise BusinessRuleError(
                     "Movimentacao criaria um ciclo na hierarquia "
                     "de equipes.",
+                    details={
+                        "team_id": str(team_id),
+                        "new_parent_id": str(new_parent_id),
+                    },
+                )
+
+            # ⚠️⚠️ Spec 051, fatia D -- decisao 7 da Camila (16/09): MOVER SO
+            # DENTRO DA ARVORE, "e desenhar depois". Ate aqui esta funcao
+            # recusava promover subtime a raiz (acima), auto-referencia e ciclo
+            # -- e ACEITAVA as duas operacoes que ninguem desenhou:
+            #   - dar pai a um time RAIZ: a area inteira vira subtime de outra,
+            #     com o quadro geral, os membros e o gerente dela;
+            #   - jogar um subtime numa OUTRA arvore: as tarefas mudam de area,
+            #     e o gerente de origem perde gente que trabalha com ele.
+            # Nenhuma tinha botao; a API deixava. As perguntas sao as mesmas da
+            # promocao a raiz (quadro geral? membros? alcance?), e a resposta e
+            # a mesma: recusar e melhor que escolher calado. ⚠️ TROCAR ISTO POR
+            # "deixa passar" nao e tirar uma trava velha -- e fazer existir uma
+            # operacao que a spec registrou como NAO desenhada.
+            if team.parent_team_id is None:
+                raise BusinessRuleError(
+                    "Transformar um time principal em subtime ainda nao e "
+                    "possivel.",
+                    details={"team_id": str(team_id), "field": "new_parent_id"},
+                )
+            if await self._repo.area_de(new_parent_id) != await self._repo.area_de(
+                team_id
+            ):
+                raise BusinessRuleError(
+                    "Mover um time para outra area ainda nao e possivel.",
                     details={
                         "team_id": str(team_id),
                         "new_parent_id": str(new_parent_id),
@@ -558,6 +614,9 @@ class TeamService:
         team = await self._repo.get_by_id(team_id)
         if team is None:
             raise EntityNotFoundError("Team", identifier=team_id)
+        # A previa e o primeiro passo de apagar: mesma pergunta, para a tela
+        # nao mostrar "isto vai sair junto" a quem nao pode apagar.
+        self._assert_apaga_subtime(team_id)
 
         tarefas = await self._repo.tarefas_do_time(team_id)
         c = await self._repo.contagens(team_id)
@@ -629,6 +688,7 @@ class TeamService:
         team = await self._repo.get_by_id(team_id)
         if team is None:
             raise EntityNotFoundError("Team", identifier=team_id)
+        self._assert_apaga_subtime(team_id)
 
         if team.parent_team_id is None:
             raise BusinessRuleError(

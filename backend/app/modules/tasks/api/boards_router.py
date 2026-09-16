@@ -244,7 +244,9 @@ async def get_board(
     O `DELETE` devolve quantas APAGOU; se os dois numeros discordarem, alguem
     criou tarefa ali no meio -- mesmo desenho do `movidas` do lote de colunas.
     """
-    quadro = await BoardService(session)._quadro_do_workspace(board_id)
+    # ⚠️ Spec 051, fatia D: pela LENTE (404), e nao so pelo workspace -- ver
+    # `BoardService.quadro_visivel`.
+    quadro = await BoardService(session).quadro_visivel(board_id)
     base = await _resposta(session, quadro)
     return BoardDetailResponse(
         **base.model_dump(),
