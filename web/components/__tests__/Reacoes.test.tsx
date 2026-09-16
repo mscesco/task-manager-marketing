@@ -96,8 +96,10 @@ describe("FileiraDeReacoes", () => {
     expect(onAlternar).toHaveBeenCalledWith("🎉");
   });
 
-  it("sem reacao, nao desenha nada", () => {
-    const { container } = render(
+  it("sem reacao, nao desenha pilula nenhuma", () => {
+    // ⚠️ O conteiner EXISTE vazio (`empty:hidden`), e e de proposito: sem ele
+    // a ultima pilula a sair era desmontada junto e nunca animava a saida.
+    render(
       <FileiraDeReacoes
         reactions={[]}
         membros={MEMBROS}
@@ -105,7 +107,52 @@ describe("FileiraDeReacoes", () => {
         onAlternar={() => {}}
       />,
     );
-    expect(container.firstChild).toBeNull();
+    expect(screen.queryAllByRole("button")).toHaveLength(0);
+  });
+
+  it("uma reacao nova aparece na fileira que ja estava na tela", () => {
+    const { rerender } = render(
+      <FileiraDeReacoes
+        reactions={[]}
+        membros={MEMBROS}
+        meuId={EU}
+        onAlternar={() => {}}
+      />,
+    );
+    rerender(
+      <FileiraDeReacoes
+        reactions={[{ emoji: "🎉", user_ids: [ANA] }]}
+        membros={MEMBROS}
+        meuId={EU}
+        onAlternar={() => {}}
+      />,
+    );
+    expect(screen.getByLabelText(/🎉, 1: Ana/)).toBeDefined();
+  });
+
+  it("a contagem muda sem trocar a pilula de lugar", () => {
+    const { rerender } = render(
+      <FileiraDeReacoes
+        reactions={REACTIONS}
+        membros={MEMBROS}
+        meuId={EU}
+        onAlternar={() => {}}
+      />,
+    );
+    rerender(
+      <FileiraDeReacoes
+        reactions={[
+          { emoji: "👍", user_ids: [ANA, EU, "outro"] },
+          { emoji: "🎉", user_ids: [ANA] },
+        ]}
+        membros={MEMBROS}
+        meuId={EU}
+        onAlternar={() => {}}
+      />,
+    );
+    const pilulas = screen.getAllByRole("button");
+    expect(pilulas[0].getAttribute("aria-label")).toMatch(/^👍, 3/);
+    expect(pilulas[1].getAttribute("aria-label")).toMatch(/^🎉, 1/);
   });
 });
 
@@ -152,6 +199,37 @@ describe("SeletorDeReacao", () => {
       target: { value: "zzzzz" },
     });
     expect(screen.getByText(/Nenhum emoji/)).toBeDefined();
+  });
+
+  it("a aba de grupo troca a grade -- e diz o nome do grupo", () => {
+    render(<SeletorDeReacao onEscolher={() => {}} />);
+    abrirSeletor();
+    // A aba desenha um emoji, mas o nome do grupo esta no rotulo.
+    fireEvent.click(screen.getByRole("tab", { name: "pessoas e corpo" }));
+    expect(
+      screen.getByRole("tab", { name: "pessoas e corpo" }).getAttribute("aria-selected"),
+    ).toBe("true");
+    expect(screen.getByLabelText("polegar para cima")).toBeDefined();
+  });
+
+  it("reabrir comeca com a busca vazia", async () => {
+    // ⚠️ Este teste NAO afirma nada sobre o conteudo durante a saida: o
+    // `AnimatePresence` congela o painel que sai, e um teste sobre isso
+    // testaria a biblioteca, e nao este componente.
+    render(<SeletorDeReacao onEscolher={() => {}} />);
+    abrirSeletor();
+    fireEvent.change(screen.getByLabelText("Buscar emoji"), {
+      target: { value: "joia" },
+    });
+    fireEvent.keyDown(screen.getByLabelText("Buscar emoji"), { key: "Escape" });
+    await waitFor(() =>
+      expect(screen.queryByLabelText("Buscar emoji")).toBeNull(),
+    );
+
+    abrirSeletor();
+    expect(
+      (screen.getByLabelText("Buscar emoji") as HTMLInputElement).value,
+    ).toBe("");
   });
 
   it("Escape fecha o seletor", async () => {
