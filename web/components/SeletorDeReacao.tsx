@@ -11,6 +11,8 @@ import { REACOES_SUGERIDAS, filtrarCatalogo, porGrupo } from "@/lib/reacoes";
 
 /** Largura do painel -- informada ao calculo de borda do `AnchoredPanel`. */
 const LARGURA = 288;
+/** O conteudo, descontado o `padding: 6` de cada lado do painel. */
+const LARGURA_DO_CONTEUDO = "w-[276px]";
 
 /**
  * O botao de reagir e o seletor que ele abre (Spec 050, §4.7).
@@ -48,7 +50,9 @@ export default function SeletorDeReacao({
   const { anchorRef, panelRef, box } = useAnchoredPanel<HTMLButtonElement>(
     aberto,
     fechar,
-    { larguraPainel: LARGURA },
+    // O botao fica no canto DIREITO da linha: o painel abre embaixo e para a
+    // esquerda, dentro do detalhe da tarefa -- onde ela desenhou em 16/09.
+    { larguraPainel: LARGURA, alinhar: "direita" },
   );
 
   const grupos = useMemo(() => porGrupo(CATALOGO_DE_EMOJI), []);
@@ -91,6 +95,13 @@ export default function SeletorDeReacao({
             aria-label="Escolher reação"
             minWidth={LARGURA}
           >
+            {/* ⚠️⚠️ LARGURA FIXA NO CONTEUDO. O `AnchoredPanel` so define
+                largura MINIMA, e a linha de abas nao quebra: ela esticava o
+                painel ate a borda da janela, e a grade de 8 colunas virava
+                celulas enormes com o emoji solto no meio -- a captura de 16/09
+                ("o seletor ficou ainda pior"). Com a largura presa aqui, as
+                abas rolam dentro dela. */}
+            <div className={LARGURA_DO_CONTEUDO}>
             {/* Os dois de sempre, maiores -- pedido dela. */}
             <div className="flex items-center gap-1 px-1 pb-2">
               {REACOES_SUGERIDAS.map((emoji) => (
@@ -168,6 +179,7 @@ export default function SeletorDeReacao({
                   Nenhum emoji para “{termo}”.
                 </p>
               )}
+            </div>
             </div>
           </AnchoredPanel>
         )}

@@ -180,6 +180,24 @@ describe("SeletorDeReacao", () => {
     ).toBe("true");
   });
 
+  it("⚠️ abre alinhado pela DIREITA do botao -- para dentro do detalhe", () => {
+    // Pedido dela em 16/09, com captura: o botao fica no canto direito da
+    // linha, e o painel alinhado pela esquerda saia para fora do detalhe.
+    const antes = HTMLElement.prototype.getBoundingClientRect;
+    HTMLElement.prototype.getBoundingClientRect = () =>
+      ({ top: 100, bottom: 126, left: 574, right: 600, width: 26, height: 26 }) as DOMRect;
+    try {
+      render(<SeletorDeReacao onEscolher={() => {}} />);
+      abrirSeletor();
+      const painel = screen.getByRole("dialog", { name: "Escolher reação" });
+      // borda direita do painel (288px) encosta na do botao: 600 - 288 = 312
+      expect(painel.style.left).toBe("312px");
+      expect(painel.style.transformOrigin).toBe("top right");
+    } finally {
+      HTMLElement.prototype.getBoundingClientRect = antes;
+    }
+  });
+
   it("rolar FORA do seletor fecha -- a medida do gatilho envelheceu", async () => {
     render(<SeletorDeReacao onEscolher={() => {}} />);
     abrirSeletor();

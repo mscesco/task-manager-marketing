@@ -55,6 +55,8 @@ export type PanelBox = {
   /** Teto de largura, para o painel caber na janela. */
   readonly maxWidth: number;
   readonly paraCima: boolean;
+  /** O painel cresce a partir da borda DIREITA do gatilho (ver `alinhar`). */
+  readonly alinhadoADireita: boolean;
 };
 
 /**
@@ -78,6 +80,15 @@ export function useAnchoredPanel<T extends HTMLElement>(
      * perto da borda da janela -- o mesmo defeito da regra 6, por outro lado.
      */
     larguraPainel?: number;
+    /**
+     * De que lado do gatilho o painel se alinha. Padrao: `esquerda`.
+     *
+     * ⚠️ Spec 050, pedido dela em 16/09 com captura: o seletor de reacao tem o
+     * gatilho no CANTO DIREITO da linha do comentario. Alinhado pela esquerda,
+     * ele abria para fora do detalhe da tarefa; ela desenhou onde queria --
+     * embaixo e para a ESQUERDA do botao, dentro do detalhe.
+     */
+    alinhar?: "esquerda" | "direita";
   } = {},
 ): {
   anchorRef: MutableRefObject<T | null>;
@@ -106,20 +117,34 @@ export function useAnchoredPanel<T extends HTMLElement>(
     // margem direita e continua com a largura que precisa.
     const largura = Math.max(r.width, opcoes.larguraPainel ?? LARGURA_MINIMA);
     const maxWidth = Math.max(160, window.innerWidth - 2 * MARGEM);
+    const alinhadoADireita = opcoes.alinhar === "direita";
+    // Pela direita: a borda direita do painel encosta na do gatilho, e ele
+    // cresce para a esquerda. As duas travas de janela valem igual.
+    const inicio = alinhadoADireita
+      ? r.right - Math.min(largura, maxWidth)
+      : r.left;
     const left = Math.max(
       MARGEM,
-      Math.min(r.left, window.innerWidth - MARGEM - Math.min(largura, maxWidth)),
+      Math.min(inicio, window.innerWidth - MARGEM - Math.min(largura, maxWidth)),
     );
 
     setBox(
       cabeEmbaixo
-        ? { top: r.bottom + 6, left, width: r.width, maxWidth, paraCima: false }
+        ? {
+            top: r.bottom + 6,
+            left,
+            width: r.width,
+            maxWidth,
+            paraCima: false,
+            alinhadoADireita,
+          }
         : {
             bottom: window.innerHeight - r.top + 6,
             left,
             width: r.width,
             maxWidth,
             paraCima: true,
+            alinhadoADireita,
           },
     );
   }, [isOpen]);
@@ -213,7 +238,11 @@ export default function AnchoredPanel({
         minWidth: Math.min(minWidth ?? box.width, box.maxWidth),
         maxWidth: box.maxWidth,
         zIndex: 60,
-        transformOrigin: box.paraCima ? "bottom left" : "top left",
+        // Regra 5: a escala nasce do lado do gatilho -- inclusive quando ele
+        // esta a DIREITA do painel.
+        transformOrigin: `${box.paraCima ? "bottom" : "top"} ${
+          box.alinhadoADireita ? "right" : "left"
+        }`,
         maxHeight: "min(50vh, 320px)",
         overflowY: "auto",
         borderRadius: 12,
