@@ -209,6 +209,11 @@ async def _mundo(db) -> dict:
     gestor2 = await f.make_user(db, workspace_id=ws, org_role="GESTOR")
     manager = await f.make_user(db, workspace_id=ws)
     await f.add_member(db, workspace_id=ws, user_id=manager, team_id=mkt, role="MANAGER")
+    # ⚠️ Revisao de 16/09: um PAR do MANAGER, alvo das linhas de conta. Resetar
+    # a senha de um par e tomar a conta dele -- e a matriz C2 diz que MANAGER so
+    # atua sobre SUPERVISOR e OPERATOR.
+    manager2 = await f.make_user(db, workspace_id=ws)
+    await f.add_member(db, workspace_id=ws, user_id=manager2, team_id=mkt, role="MANAGER")
     supervisor = await f.make_user(db, workspace_id=ws)
     await f.add_member(
         db, workspace_id=ws, user_id=supervisor, team_id=seo, role="SUPERVISOR"
@@ -329,7 +334,7 @@ async def _mundo(db) -> dict:
                 "alvo_mkt": alvo_mkt, "alvo_com": alvo_com,
                 "livre_mkt": livre_mkt, "livre_com": livre_com, "misto": misto,
                 "sup_par": sup_par, "livre_design": livre_design,
-                "admin2": admin2, "gestor2": gestor2,
+                "admin2": admin2, "gestor2": gestor2, "manager2": manager2,
                 "geral_mkt": geral_mkt, "geral_com": geral_com,
                 "quadro_seo": quadro_seo.id, "quadro_vendas": quadro_vendas.id,
                 "cancelado_seo": cancelado_seo,
@@ -477,6 +482,23 @@ MATRIZ: tuple[Linha, ...] = (
     # Marketing NAO a desativa -- so a organizacao.
     Linha("person.deactivate", "alguem do Marketing E do Comercial", "post",
           f"{T}/members/{{misto}}/deactivate", None,
+          (OK, OK, NEGADO, NEGADO, NEGADO)),
+    # ⚠️⚠️ REVISAO DE 16/09 -- A CONTA RESPEITA O PAPEL DO ALVO. Resetar senha
+    # devolve a provisoria a quem clicou: sem estas travas, era tomar a conta.
+    # Os alvos antes eram so operadores, e a matriz nao via isso.
+    # O MANAGER ja levava 403 no ADMIN pelo ALCANCE (admin2 nao tem time); quem
+    # prova a trava nova e o GESTOR nas linhas de ADMIN, e o MANAGER no par.
+    Linha("person.update", "senha de outro ADMIN", "post",
+          f"{T}/members/{{admin2}}/reset-password", None,
+          (OK, NEGADO, NEGADO, NEGADO, NEGADO)),
+    Linha("person.update", "senha de outro MANAGER do Marketing", "post",
+          f"{T}/members/{{manager2}}/reset-password", None,
+          (OK, OK, NEGADO, NEGADO, NEGADO)),
+    Linha("person.deactivate", "outro ADMIN", "post",
+          f"{T}/members/{{admin2}}/deactivate", None,
+          (OK, NEGADO, NEGADO, NEGADO, NEGADO)),
+    Linha("person.deactivate", "outro MANAGER do Marketing", "post",
+          f"{T}/members/{{manager2}}/deactivate", None,
           (OK, OK, NEGADO, NEGADO, NEGADO)),
     # ---------------------------------------------------------- vinculo
     Linha("membership.create", "OPERATOR no SEO", "post",

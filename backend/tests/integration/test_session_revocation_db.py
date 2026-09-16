@@ -249,8 +249,16 @@ async def test_reset_pelo_gestor_derruba_sessao_do_alvo(db) -> None:
 
 
 async def test_reset_pelo_gestor_nao_derruba_terceiros(db) -> None:
-    """Criterio 3 (a outra metade): o incremento e por pessoa, nao global."""
+    """Criterio 3 (a outra metade): o incremento e por pessoa, nao global.
+
+    ⚠️ QUEM RESETA E UM GESTOR DE ORGANIZACAO desde a revisao de permissoes de
+    16/09. Ate ali era um MANAGER resetando outro MANAGER (o alvo de `_pessoa`)
+    -- justamente a tomada de conta que a revisao fechou: MANAGER so reseta
+    senha de SUPERVISOR e OPERATOR. O que este teste prova (a sessao de QUEM
+    CLICOU sobrevive) nao depende do papel do ator.
+    """
     from app.core.tenant import Membership, TeamNode
+    from app.db.models.enums import OrgRole
     from app.modules.users.application.member_service import MemberService
     from tests.integration.conftest import acting_as
 
@@ -258,6 +266,7 @@ async def test_reset_pelo_gestor_nao_derruba_terceiros(db) -> None:
     outro_id = await f.make_user(db, workspace_id=ws.id)
     outro = await db.get(User, outro_id)
     outro.password_hash = hash_password(_SENHA)
+    outro.org_role = OrgRole.GESTOR
     await f.add_member(
         db, workspace_id=ws.id, user_id=outro_id, team_id=team, role="MANAGER"
     )
@@ -271,6 +280,7 @@ async def test_reset_pelo_gestor_nao_derruba_terceiros(db) -> None:
             user_id=outro_id,
             memberships=(Membership(team_id=team, role="MANAGER"),),
             team_tree=(TeamNode(team_id=team, parent_team_id=None),),
+            org_role=OrgRole.GESTOR.value,
         ):
             await MemberService(db).reset_password(user_id=alvo.id)
         await db.commit()
