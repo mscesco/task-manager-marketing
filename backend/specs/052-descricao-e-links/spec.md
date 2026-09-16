@@ -235,7 +235,7 @@ da tarefa). Resolve o problema de hoje sem esperar o resto.
 
 ✅ **Entregue em 16/09.** Front **1442**, `tsc` limpo, `next build` ok. Backend
 não mudou.
-- `components/SobreOProjeto.tsx`: corte de 4 linhas (`line-clamp-4`),
+- `components/SobreOProjeto.tsx`: corte de 4 linhas (`line-clamp-4`) ⚠️ **reduzido a 2 (`line-clamp-2`) a pedido dela em 16/09** — *"4 linhas está muita coisa"*; teste prende a classe,
   `whitespace-pre-wrap` + `wrap-anywhere`, `linkify`. O botão aparece se
   `scrollHeight > clientHeight` com o corte aplicado — medido em
   `useLayoutEffect` (sem pular um quadro) e de novo num `ResizeObserver` (a

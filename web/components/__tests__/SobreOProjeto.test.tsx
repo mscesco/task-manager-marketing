@@ -36,6 +36,19 @@ const LONGA =
   "Escopo e Parâmetros Contratuais\nInvestimento Fixo: R$ 550 mil/ano.";
 
 describe("SobreOProjeto", () => {
+  it("⚠️ fechado corta em 2 linhas -- ela pediu 2 em 16/09 (eram 4); aberto, sem corte", () => {
+    // O jsdom não faz layout: o que se prende é a CLASSE do corte, que é o
+    // número que ela escolheu. Se alguém voltar a 4, isto cai.
+    medida(300, 96);
+    render(<SobreOProjeto texto={LONGA} />);
+    const corpo = document.getElementById(
+      screen.getByRole("button", { name: "Ver mais" }).getAttribute("aria-controls")!,
+    )!;
+    expect(corpo.className).toBe("line-clamp-2");
+    fireEvent.click(screen.getByRole("button", { name: "Ver mais" }));
+    expect(corpo.className).toBe("");
+  });
+
   it("⭐ texto que passa do corte mostra o começo e 'Ver mais'", () => {
     medida(300, 96);
     render(<SobreOProjeto texto={LONGA} />);

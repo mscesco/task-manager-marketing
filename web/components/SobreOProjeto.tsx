@@ -11,7 +11,7 @@
 //
 // ⚠️ O "VER MAIS" SÓ APARECE QUANDO O TEXTO PASSA DO CORTE, e isso é MEDIDO no
 // navegador, não adivinhado pelo tamanho da string: 300 caracteres sem quebra
-// cabem em 4 linhas numa tela larga e não numa estreita, e 5 linhas curtas
+// cabem em 2 linhas numa tela larga e não numa estreita, e 3 linhas curtas
 // passam do corte com 40 caracteres. Um botão que não abre nada é pior que
 // nenhum.
 //
@@ -57,10 +57,10 @@ export default function SobreOProjeto({ texto }: { texto: string }) {
           `linkify` com `whitespace-pre-wrap` -- as quebras simples viram `<br>`
           no renderizador, e a quebra de URL comprida está na classe
           `.texto-formatado`.
-          ⚠️ O CORTE CONTINUA SENDO `line-clamp-4` NO BLOCO DE FORA, agora com
+          ⚠️ O CORTE CONTINUA SENDO `line-clamp-2` NO BLOCO DE FORA, agora com
           parágrafos e listas dentro. O Chromium corta atravessando os blocos;
           é conferência na tela, não teste (o jsdom não faz layout). */}
-      <div id={id} ref={corpo} className={aberto ? "" : "line-clamp-4"}>
+      <div id={id} ref={corpo} className={aberto ? "" : "line-clamp-2"}>
         <TextoFormatado texto={texto} />
       </div>
       {(passaDoCorte || aberto) && (
