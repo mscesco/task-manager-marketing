@@ -1,7 +1,8 @@
 # Spec 054 — Preferências de notificação
 
 **Status:** escrita em 17/09/2026, a partir de quatro rodadas de perguntas
-respondidas por ela no mesmo dia (§4). **Aguarda revisão.** O código só começa
+respondidas por ela no mesmo dia (§4). **Aprovada em 17/09**, com as seis
+propostas da §9 como escritas. O código só começa
 **depois do merge do PR #61** (Spec 053), porque esta spec depende dos tipos de
 aviso, da tela `/notificacoes` e da trava que a 053 cria.
 **Escopo:** backend (tabela de preferências, papel gravado no aviso, migration
@@ -246,7 +247,7 @@ código**, como a 0027.
 
 ---
 
-## 9. ⚠️ Propostas minhas — CONFIRMAR NA REVISÃO
+## 9. Propostas que nenhuma pergunta cobriu — APROVADAS em 17/09
 
 1. **Nomes:** `notification_mute` (uma linha = desligado) e `notification.roles`.
 2. **Grade** (linhas × papéis) em vez de lista de 24 (§5).
