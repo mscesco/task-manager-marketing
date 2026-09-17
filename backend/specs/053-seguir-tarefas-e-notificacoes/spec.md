@@ -1,8 +1,8 @@
 # Spec 053 — Seguir tarefas e a tela de notificações
 
-**Status:** escrita em 17/09/2026. Todas as decisões de §4 vieram de dez
-rodadas de perguntas respondidas por ela no mesmo dia. **Nenhuma fatia
-começou**, e o código só começa depois da revisão desta spec.
+**Status:** escrita e **aprovada em 17/09/2026**. Todas as decisões de §4
+vieram de dez rodadas de perguntas respondidas por ela no mesmo dia, e as oito
+propostas da §9 foram aprovadas como escritas. **Nenhuma fatia começou.**
 **Escopo:** backend (regras de seguidor, avisos novos, junção de avisos, filtros
 de notificação e uma migration) e front (seguir no detalhe e na criação, filtro
 em Minhas tarefas, textos do sino e a tela `/notificacoes`).
@@ -483,10 +483,11 @@ commit, com a branch saindo de `main`.
 
 ---
 
-## 9. ⚠️ Propostas minhas que ela ainda não viu — CONFIRMAR NA REVISÃO
+## 9. Propostas que nenhuma pergunta cobriu — APROVADAS em 17/09
 
-Nenhuma pergunta cobriu estes pontos. Estão escritos acima como proposta, e
-qualquer um pode mudar sem mexer no resto.
+Nenhuma pergunta cobriu estes pontos. Foram escritos como proposta e aprovados
+como estão, na revisão da spec inteira. O item 2 decide a tensão com a D27: o
+aviso de exclusão **mostra** o título.
 
 1. **Exclusão em cascata (§2.4).** Excluir a mãe exclui as filhas, mas só a
    **mãe** avisa, pela mesma regra do gesto direto (D16). Quem segue só uma
