@@ -213,12 +213,23 @@ outra regra, ele cai.
 ### 6.6. Front
 
 - **Cartão "Notificações"** em `/perfil`:
-  - a grade de §5, com o `Toggle` que já existe;
+  - a grade de §5, com um interruptor de liga/desliga em cada célula;
   - otimista: grava a cada clique e volta atrás com aviso se falhar;
   - as três linhas travadas.
+
+  ⚠️ **Escrito aqui como "o `Toggle` que já existe", e na fatia D isso mudou.**
+  O `Toggle` da Spec 047 escolhe entre **dois assuntos**, com as duas palavras à
+  vista, e ocupa 320px — inviável em 24 células. A fatia D criou
+  `components/Switch.tsx`, e agora são três componentes com papéis distintos:
+  `Tabs` recorta uma lista, `Toggle` troca de assunto, `Switch` liga um valor.
 - **`/notificacoes`:**
   - terceira aba, "Silenciadas";
   - link "Configurar" no cabeçalho, levando a `/perfil#notificacoes`.
+
+  ⚠️ **O `muted` entra no FILTRO, e não só na listagem** (achado da fatia D). O
+  "marcar todas" mandava `{}` quando não havia recorte de tipo ou tarefa — e na
+  aba "Silenciadas" isso marcaria as notificações das OUTRAS abas, deixando
+  intactas as que estavam na tela. A regra virou `filtroDeMarcar`, com teste.
 - **Regra em `lib/preferenciasDeNotificacao.ts`:** grupos, rótulos, travados e o
   mapa toggle → tipos. Com teste.
 
