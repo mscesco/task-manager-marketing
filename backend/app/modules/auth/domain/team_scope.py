@@ -198,11 +198,13 @@ def editable_team_ids(
 # ⚠️ O QUE **NAO** MUDA, e o motivo importa: OPERATOR continua nos DOIS
 # niveis. Estar so no time geral e estado de produto projetado (Spec 003,
 # decisoes 7 e 17) -- e assim que se tira alguem de um subtime sem remover a
-# pessoa (`move_member_subteam` pra raiz, preservando o papel). Proibir
-# OPERATOR na raiz mataria esse fluxo.
+# pessoa (era `move_member_subteam` pra raiz; a rota saiu em 17/09/2026, e hoje
+# e vincular na raiz e remover o vinculo do subtime). Proibir OPERATOR na raiz
+# mataria esse fluxo.
 #
 # ⚠️ CONSEQUENCIA QUE NAO E EFEITO COLATERAL, E SIM A REGRA: mover um
-# SUPERVISOR de subtime para a raiz passa a ser RECUSADO (porta 4). O
+# SUPERVISOR de subtime para a raiz passa a ser RECUSADO (porta 4, que ja nao
+# existe -- ver acima). O
 # comentario daquela porta ja afirmava que isso "viola a invariante" -- e era
 # FALSO ate esta fatia, porque a raiz aceitava os quatro. A partir daqui o
 # comentario vira verdade. Quem precisa mover um supervisor para a raiz troca

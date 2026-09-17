@@ -1,12 +1,15 @@
 """Router de colaboracao: responsaveis e observadores de uma task -- Entrega 4.
 
 Rotas (sob /tasks/{task_id}):
-    GET    /assignees                 -- lista IDs (exige ver a task)
     POST   /assignees                 -- designa (task.assign)
     DELETE /assignees/{user_id}       -- desatribui (task.assign)
     GET    /watchers                  -- lista IDs (exige ver a task)
     POST   /watchers                  -- observa (self: sem perm; 3o: task.assign)
     DELETE /watchers/{user_id}        -- deixa de observar
+
+⚠️ `GET /assignees` SAIU EM 17/09/2026, sem chamador: quadro e detalhe leem
+`assignee_ids` do proprio payload da tarefa. `CollaborationService.list_assignees`
+FICOU -- o `POST` e o `DELETE` daqui devolvem a lista atual por ele.
 
 NOTA (ADR 0011): o POST/DELETE de watcher NAO usa require_permission no
 router -- a distincao self vs terceiro (e a permissao do terceiro) e
@@ -40,15 +43,6 @@ router = APIRouter(prefix="/tasks/{task_id}", tags=["collaboration"])
 # --------------------------------------------------------
 # Assignees
 # --------------------------------------------------------
-@router.get("/assignees", response_model=CollaboratorListResponse)
-async def list_assignees(
-    task_id: uuid.UUID, _: TenantContextDep, session: SessionDep
-) -> CollaboratorListResponse:
-    """Lista responsaveis. Exige enxergar a task (404 senao)."""
-    ids = await CollaborationService(session).list_assignees(task_id=task_id)
-    return CollaboratorListResponse(task_id=task_id, user_ids=ids)
-
-
 @router.post(
     "/assignees",
     response_model=CollaboratorListResponse,

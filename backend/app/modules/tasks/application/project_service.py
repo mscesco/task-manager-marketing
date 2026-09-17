@@ -9,14 +9,15 @@ Casos de uso (publicos):
     ProjectService.get                       -- obtem projeto
     ProjectService.list_page                 -- lista paginada
     ProjectService.update                    -- atualiza campos
-    ProjectService.archive                   -- is_archived=True
-    ProjectService.unarchive                 -- is_archived=False
     ProjectService.soft_delete               -- deleted_at=now()
 
 Decisoes-chave (ver specs/001-projects/spec.md):
 
-  - soft-delete (deleted_at) e archive (is_archived) sao SEMANTICAS
-    DISTINTAS: archive eh reversivel; delete eh remocao operacional.
+  - ⚠️ ARQUIVAR PROJETO SAIU EM 17/09/2026 (`archive`/`unarchive` e as duas
+    rotas), por decisao da Camila: com projeto apagavel, arquivar nao tinha
+    uso. `project.is_archived` CONTINUA no modelo e e LIDO (filtro
+    `include_archived` da listagem, campo da resposta), mas NAO TEM MAIS
+    ESCRITOR no produto -- ver `ProjectFilters.include_archived`.
   - status livre + auto-marcacao de completed_at.
   - start_date <= due_date quando ambos informados.
   - PATCH "campo ausente = nao mexer".
@@ -98,6 +99,11 @@ class ProjectFilters:
 
     status: ProjectStatus | None = None
     priority: PriorityLevel | None = None
+    #: ⚠️ SEM ESCRITOR DESDE 17/09/2026: arquivar projeto saiu do produto, e
+    #: nenhum caminho grava `is_archived=True` num projeto. O filtro ficou
+    #: porque o front ainda manda o parametro e le o campo -- mas um projeto
+    #: arquivado ANTES dessa data continua escondido por padrao, e nao ha
+    #: mais rota para desarquiva-lo (so SQL).
     include_archived: bool = False
     #: Recorte por TIME (Spec 048). ``None`` = sem recorte -- a lente decide
     #: sozinha. Quando vem, casa o time E seus descendentes: projeto criado num
@@ -321,9 +327,9 @@ class ProjectService:
             ValidationError     -- title invalido ou datas inconsistentes.
         """
         # ⚠️⚠️ PELO `get`, E NAO PELO REPOSITORIO (Spec 049, fatia 0b): o `get`
-        # tem a lente, e o repositorio so o workspace. Ate 14/09 as quatro
-        # escritas daqui buscavam direto -- a lente de 11/09 protegia o LER e
-        # deixava o ESCREVER aberto, e o SUPERVISOR do SEO editou projeto do
+        # tem a lente, e o repositorio so o workspace. Ate 14/09 as escritas
+        # daqui (eram quatro; arquivar saiu em 17/09) buscavam direto -- a
+        # lente de 11/09 protegia o LER e deixava o ESCREVER aberto, e o SUPERVISOR do SEO editou projeto do
         # Comercial. Fora da lente e 404, como no `get`.
         project = await self.get(project_id)
         # Spec 051, fatia A: a lente (404) e do `get`; o verbo no time, daqui.
@@ -368,40 +374,6 @@ class ProjectService:
             "project.updated",
             project_id=str(project.id),
         )
-        return project
-
-    async def archive(self, *, project_id: uuid.UUID) -> Project:
-        """Marca is_archived=True. Idempotente.
-
-        Erros:
-            EntityNotFoundError -- projeto nao existe.
-        """
-        project = await self.get(project_id)  # a lente -- ver `update`
-        self._assert_verbo_no_time("project.archive", project.team_id)
-
-        if not project.is_archived:
-            project.is_archived = True
-            await self._session.flush()
-            logger.info("project.archived", project_id=str(project.id))
-        # Se ja arquivado: no-op (idempotente).
-
-        return project
-
-    async def unarchive(self, *, project_id: uuid.UUID) -> Project:
-        """Marca is_archived=False. Idempotente.
-
-        Erros:
-            EntityNotFoundError -- projeto nao existe.
-        """
-        project = await self.get(project_id)  # a lente -- ver `update`
-        self._assert_verbo_no_time("project.archive", project.team_id)
-
-        if project.is_archived:
-            project.is_archived = False
-            await self._session.flush()
-            logger.info("project.unarchived", project_id=str(project.id))
-        # Se ja desarquivado: no-op.
-
         return project
 
     async def soft_delete(self, *, project_id: uuid.UUID) -> Project:

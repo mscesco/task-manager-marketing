@@ -7,7 +7,7 @@ Cobre os criterios de aceite 1-11 ponta a ponta:
     1-2  create_member com papel fora do nivel
     3    assign_to_team com papel fora do nivel
     4    change_member_role promovendo em subtime
-    5    move_member_subteam levando o papel pro nivel errado
+    5    (move_member_subteam -- saiu com a rota em 17/09/2026)
     6-7  TeamService.create/move -> 409 de dominio, NUNCA IntegrityError
     8    workspace nunca fica sem raiz (ciclo continua barrando)
     9    provisionamento/seed rodam limpos sob a invariante
@@ -198,122 +198,6 @@ async def test_change_member_role_permite_troca_dentro_do_mesmo_nivel(db) -> Non
             user_id=membro, team_id=sub, new_role=UserTeamRole.SUPERVISOR
         )
     assert vinculo.role == UserTeamRole.SUPERVISOR
-
-
-# ------------------------------------------------------------------
-# 5. move_member_subteam
-# ------------------------------------------------------------------
-async def test_move_member_recusa_levar_manager_para_subtime(db) -> None:
-    """O papel VIAJA junto: mover MANAGER da raiz pro subtime violaria.
-
-    ⚠️⚠️ E ESTE TESTE PASSOU A GUARDAR O **ESCOPO DO REBAIXAMENTO AUTOMATICO**
-    (Spec 045, fatia D). Desde 08/09, mover um SUPERVISOR para a raiz nao e
-    recusado: ele e REBAIXADO a OPERATOR. A regra que faz isso e um mapa de
-    UMA entrada (`_DEMOTION_INTO_ROOT`), e nao "o maior papel que cabe no
-    destino" -- porque a versao calculada tambem rebaixaria MANAGER a
-    SUPERVISOR aqui, calado, o que ninguem decidiu.
-
-    Sabotagem rodada: mapa trocado pela versao calculada -> este teste cai.
-    """
-    ws, raiz, sub, admin = await _mundo(db)
-    gerente = await f.make_user(db, workspace_id=ws)
-    await f.add_member(
-        db, workspace_id=ws, user_id=gerente, team_id=raiz, role="MANAGER"
-    )
-
-    with _como_admin(ws, raiz, sub, admin):
-        with pytest.raises(BusinessRuleError):
-            await MemberService(db).move_member_subteam(
-                user_id=gerente, from_team_id=raiz, to_team_id=sub
-            )
-
-
-async def test_mover_OPERATOR_para_raiz_e_o_fluxo_tirar_do_subtime(db) -> None:
-    """"Tirar do subtime" = mover pra raiz preservando o papel.
-
-    ⚠️⚠️ ESTE TESTE ERA COM SUPERVISOR, e a Spec 045 fatia D o inverteu --
-    leia o de baixo antes de "consertar" qualquer um dos dois.
-
-    O fluxo da Spec 003 continua vivo, e e por isso que OPERATOR ficou nos
-    dois niveis: e ele que carrega o caso normal. O que mudou e que o papel
-    de SUPERVISOR nao viaja mais junto para a raiz.
-    """
-    ws, raiz, sub, admin = await _mundo(db)
-    operador = await f.make_user(db, workspace_id=ws)
-    await f.add_member(
-        db, workspace_id=ws, user_id=operador, team_id=sub, role="OPERATOR"
-    )
-
-    with _como_admin(ws, raiz, sub, admin):
-        vinculo = await MemberService(db).move_member_subteam(
-            user_id=operador, from_team_id=sub, to_team_id=raiz
-        )
-    assert vinculo.team_id == raiz
-    assert vinculo.role == UserTeamRole.OPERATOR  # papel preservado
-
-
-async def test_mover_SUPERVISOR_para_raiz_REBAIXA_para_operator(db) -> None:
-    """⭐⭐ O unico rebaixamento automatico do sistema. Decisao da Camila, 08/09.
-
-    ⚠️⚠️ ESTE TESTE JA AFIRMOU O CONTRARIO -- que a operacao era RECUSADA e a
-    saida era de duas etapas (rebaixar, depois mover). Eu implementei assim e
-    levantei a alternativa; ela escolheu o rebaixamento automatico. O que segue
-    e a decisao dela, e nao um efeito colateral que ninguem viu.
-
-    A leitura que a sustenta: levar alguem para o time geral **e** deixar de
-    supervisionar um braco. O rebaixamento nao acrescenta significado a
-    operacao -- ele diz a mesma coisa que ela ja dizia.
-
-    ⚠️ E POR ISSO O PAPEL ANTERIOR VAI PARA O LOG, em dois eventos: o
-    `member.moved_subteam` ganha `role_before`/`demoted`, e um
-    `member.role_demoted_on_move` sobe separado. Mudanca de autoridade dentro
-    de uma operacao chamada "mover" precisa deixar rastro proprio.
-    """
-    ws, raiz, sub, admin = await _mundo(db)
-    supervisor = await f.make_user(db, workspace_id=ws)
-    await f.add_member(
-        db, workspace_id=ws, user_id=supervisor, team_id=sub, role="SUPERVISOR"
-    )
-
-    with _como_admin(ws, raiz, sub, admin):
-        vinculo = await MemberService(db).move_member_subteam(
-            user_id=supervisor, from_team_id=sub, to_team_id=raiz
-        )
-
-    assert vinculo.team_id == raiz
-    # ⚠️ O RETORNO CARREGA O PAPEL NOVO, e nao o antigo: e por ele que a tela
-    # tem como contar o que aconteceu. Se um dia isto voltar SUPERVISOR, o
-    # front mostraria um papel que nao existe no banco.
-    assert vinculo.role == UserTeamRole.OPERATOR
-
-
-# ⚠️ AQUI MORAVA `test_mover_MANAGER_para_subtime_continua_RECUSADO`, escrito
-# na fatia D para guardar o escopo do rebaixamento. Ele era DUPLICATA exata de
-# `test_move_member_recusa_levar_manager_para_subtime`, acima -- mesmo cenario,
-# mesma assercao, nome diferente. Descoberto pela sabotagem, que derrubou DOIS
-# testes quando eu tinha afirmado que derrubaria um. O raciocinio foi para a
-# docstring do teste original, que e onde ele pertencia desde o comeco.
-
-
-async def test_move_member_entre_subtimes_continua_funcionando(db) -> None:
-    ws, raiz, sub, admin = await _mundo(db)
-    outro_sub = await f.make_team(
-        db, workspace_id=ws, parent_team_id=raiz, slug="social"
-    )
-    membro = await f.make_user(db, workspace_id=ws)
-    await f.add_member(
-        db, workspace_id=ws, user_id=membro, team_id=sub, role="OPERATOR"
-    )
-    with acting_as(
-        workspace_id=ws,
-        user_id=admin,
-        memberships=(mship(raiz, "ADMIN"),),
-        team_tree=(node(raiz), node(sub, raiz), node(outro_sub, raiz)),
-    ):
-        vinculo = await MemberService(db).move_member_subteam(
-            user_id=membro, from_team_id=sub, to_team_id=outro_sub
-        )
-    assert vinculo.team_id == outro_sub
 
 
 # ------------------------------------------------------------------

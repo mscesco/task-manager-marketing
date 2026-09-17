@@ -675,7 +675,8 @@ class TeamService:
            Quem JA tem vinculo com a raiz so perde o do subtime.
         4. **Time** -> apagado.
 
-        NAO reusa `MemberService.move_member_subteam` de proposito: as travas
+        NAO reusava `MemberService.move_member_subteam` (removido em 17/09/2026)
+        de proposito, e o motivo vale para qualquer caso de uso de membro: as travas
         de la sao interpessoais ("nao mexer em si mesmo", matriz de quem pode
         mirar quem, conflito de destino) e quebram numa operacao em lote. Caso
         real: quem executa pode ser MANAGER na raiz E membro do subtime que

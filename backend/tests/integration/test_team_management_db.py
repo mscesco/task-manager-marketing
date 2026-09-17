@@ -494,9 +494,9 @@ async def test_membro_ja_na_raiz_so_perde_o_subtime(db) -> None:
 
 
 async def test_esvaziar_o_time_onde_o_ator_e_membro(db) -> None:
-    """O caso que `move_member_subteam` reprovaria.
+    """O caso que `move_member_subteam` reprovaria (removida em 17/09/2026).
 
-    Ela tem uma trava de "um membro nao pode mover a si mesmo", que dispara
+    Ela tinha uma trava de "um membro nao pode mover a si mesmo", que dispara
     ANTES de qualquer outra checagem. Se o esvaziamento reusasse aquela
     funcao, quem esta no time nunca conseguiria remove-lo.
     """

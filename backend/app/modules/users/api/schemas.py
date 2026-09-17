@@ -186,13 +186,6 @@ class ChangeOrganizationRoleRequest(BaseModel):
     role: OrgRole | None = None
 
 
-class MoveSubteamRequest(BaseModel):
-    """Move um membro de um time para outro, preservando o papel. F4 (B2)."""
-
-    from_team_id: uuid.UUID
-    to_team_id: uuid.UUID
-
-
 class TeamMembershipResponse(BaseModel):
     """Representacao de um vinculo membro<->equipe."""
 
@@ -251,8 +244,9 @@ class MemberTeamListItemResponse(MemberTeamResponse):
     """Um vinculo NA LISTAGEM, com o cadeado resolvido. Spec 047, fatia A.
 
     ⚠️⚠️ SUBCLASSE, E NAO UM CAMPO NOVO NA MAE, e o motivo e concreto:
-    `MemberTeamResponse` tambem e a resposta de `POST /move-subteam`, que
-    devolve UM vinculo recem-escrito. Ali "voce pode editar o papel deste
+    `MemberTeamResponse` tambem e a resposta de `PATCH /teams/{team_id}` (e
+    era a de `POST /move-subteam`, removida em 17/09), que devolve UM vinculo
+    recem-escrito. Ali "voce pode editar o papel deste
     vinculo?" nao e pergunta que alguem fez, e um `can_edit_role` opcional
     viraria um `None` significando "nao perguntei" -- o tipo de tri-estado
     que o front trata errado uma vez e ninguem descobre.

@@ -110,12 +110,11 @@ def test_operator_aceito_na_raiz() -> None:
 def test_supervisor_recusado_na_raiz() -> None:
     """⭐ Nasce na fatia D, invertendo o que este arquivo afirmava.
 
-    ⚠️ E A METADE DA REGRA QUE TEM CONSEQUENCIA DE PRODUTO: mover um
-    supervisor de subtime para a raiz nao pode mais gravar SUPERVISOR la. A
-    porta 4 do MemberService resolve isso REBAIXANDO para OPERATOR (decisao
-    da Camila, 08/09) -- ver `_role_at_destination`. Esta funcao continua
-    dizendo apenas que o papel nao cabe; quem decide o que fazer com isso e o
-    caso de uso.
+    ⚠️ E A METADE DA REGRA QUE TINHA CONSEQUENCIA DE PRODUTO: mover um
+    supervisor de subtime para a raiz nao podia mais gravar SUPERVISOR la, e a
+    porta 4 do MemberService (`move_member_subteam`) o REBAIXAVA para OPERATOR
+    (decisao da Camila, 08/09). A porta e o rebaixamento sairam com a rota em
+    17/09/2026. Esta funcao continua dizendo apenas que o papel nao cabe.
 
     ⚠️ E o motivo nao e estetico. `_subtimes_supervisionados` devolvia a
     PROPRIA RAIZ quando o vinculo SUPERVISOR estava la, deixando um
@@ -226,53 +225,3 @@ def test_mensagem_de_erro_orienta_o_usuario() -> None:
     texto = str(exc.value).lower()
     assert "principal" in texto      # onde o papel PERTENCE
     assert "subtime" in texto        # e o que usar no lugar
-
-
-# ------------------------------------------------------------------
-# O rebaixamento automatico (Spec 045, fatia D -- decisao de 08/09)
-# ------------------------------------------------------------------
-def test_supervisor_indo_para_a_raiz_vira_operator() -> None:
-    from app.modules.users.application.member_service import (
-        _role_at_destination,
-    )
-
-    assert (
-        _role_at_destination(UserTeamRole.SUPERVISOR, to_root=True)
-        is UserTeamRole.OPERATOR
-    )
-
-
-def test_o_rebaixamento_so_vale_indo_para_a_RAIZ() -> None:
-    """Entre subtimes o papel viaja inteiro -- nao ha nivel sendo cruzado."""
-    from app.modules.users.application.member_service import (
-        _role_at_destination,
-    )
-
-    assert (
-        _role_at_destination(UserTeamRole.SUPERVISOR, to_root=False)
-        is UserTeamRole.SUPERVISOR
-    )
-
-
-def test_o_mapa_de_rebaixamento_tem_UMA_entrada_so() -> None:
-    """⚠️ GUARDIAO CONTRA ALARGAMENTO **DO MAPA**, e so isso -- seja exato
-    sobre o que ele cobre.
-
-    Rebaixamento automatico e perda de autoridade sem ninguem ter pedido. A
-    Camila decidiu UM caso: supervisor indo para a raiz. Se alguem
-    acrescentar uma entrada aqui, este teste reprova e obriga a decisao a
-    passar por uma pessoa.
-
-    ⚠️ O QUE ELE **NAO** PEGA, medido: reescrever `_role_at_destination` para
-    calcular o papel e ignorar o mapa. Nessa sabotagem o mapa continua com uma
-    entrada so, e este teste fica verde -- quem denuncia e
-    `test_move_member_recusa_levar_manager_para_subtime`, na suite de
-    integracao. Os dois cobrem metades diferentes.
-    """
-    from app.modules.users.application.member_service import (
-        _DEMOTION_INTO_ROOT,
-    )
-
-    assert _DEMOTION_INTO_ROOT == {
-        UserTeamRole.SUPERVISOR: UserTeamRole.OPERATOR
-    }

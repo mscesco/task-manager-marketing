@@ -135,10 +135,22 @@ async def _tarefa(db, m, *, time, titulo, status=TaskStatus.BACKLOG,
 
 
 async def _mover(db, m):
+    """Tira a `gi` do Design, deixando-a no SEO -- a mesma lente de antes.
+
+    ⚠️ ERA `POST /members/{id}/move-subteam` (Design -> SEO), rota removida em
+    17/09/2026. A remocao (E3) e a notificacao (E9) moram em
+    `_remover_relacoes_perdidas`, que continua sendo chamada por
+    `remove_member_from_team` e `change_member_role` -- entao a cobertura foi
+    portada para a REMOCAO, que chega ao mesmo estado final: vinculo no SEO,
+    sem vinculo no Design. O vinculo no SEO entra pela factory, antes.
+    """
+    await f.add_member(
+        db, workspace_id=m["ws"], user_id=m["gi"], team_id=m["seo"],
+        role="OPERATOR",
+    )
     async with _client(db, m["ctx"]) as cli:
-        return await cli.post(
-            f"/api/v1/members/{m['gi']}/move-subteam",
-            json={"from_team_id": str(m["design"]), "to_team_id": str(m["seo"])},
+        return await cli.delete(
+            f"/api/v1/members/{m['gi']}/teams/{m['design']}"
         )
 
 
@@ -193,7 +205,7 @@ async def test_movimentacao_permitida_remove_a_designacao(db) -> None:
     )
 
     r = await _mover(db, m)
-    assert r.status_code == 200, r.text
+    assert r.status_code == 204, r.text
 
     assert await _responsaveis(db, t.id) == {m["colega"]}
 
@@ -218,7 +230,7 @@ async def test_terminal_e_observador_tambem_saem(db) -> None:
     )
 
     r = await _mover(db, m)
-    assert r.status_code == 200, r.text
+    assert r.status_code == 204, r.text
 
     # ⚠️ Terminal PODE ficar sem responsavel: trabalho encerrado nao precisa de
     # dono, e e por isso que a E4 nao a barrou. A ADR 0031 fala da CRIACAO.
@@ -238,7 +250,7 @@ async def test_raiz_e_subtime_mantido_nao_mudam(db) -> None:
     )
 
     r = await _mover(db, m)
-    assert r.status_code == 200, r.text
+    assert r.status_code == 204, r.text
 
     assert await _responsaveis(db, na_raiz.id) == {m["gi"]}
     assert await _responsaveis(db, no_destino.id) == {m["gi"]}
@@ -262,7 +274,7 @@ async def test_a_contagem_da_notificacao_bate(db) -> None:
         )
 
     r = await _mover(db, m)
-    assert r.status_code == 200, r.text
+    assert r.status_code == 204, r.text
 
     notifs = await _notificacoes(db, m["gi"])
     assert len(notifs) == 1
@@ -288,7 +300,7 @@ async def test_uma_notificacao_e_nao_N(db) -> None:
         )
 
     r = await _mover(db, m)
-    assert r.status_code == 200, r.text
+    assert r.status_code == 204, r.text
 
     total = (
         await db.execute(
@@ -311,6 +323,6 @@ async def test_sem_perda_nao_notifica(db) -> None:
     )
 
     r = await _mover(db, m)
-    assert r.status_code == 200, r.text
+    assert r.status_code == 204, r.text
 
     assert await _notificacoes(db, m["gi"]) == []

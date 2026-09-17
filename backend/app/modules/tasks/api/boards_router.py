@@ -79,10 +79,7 @@ from app.core.deps import SessionDep, UoWDep
 from app.db.models.boards import Board, BoardColumn
 from app.modules.auth.api.dependencies import TenantContextDep
 from app.modules.tasks.api.schemas import (
-    BoardColumnCreateRequest,
-    BoardColumnDeleteResponse,
     BoardColumnDetailResponse,
-    BoardColumnRenameRequest,
     BoardColumnResponse,
     BoardDeleteResponse,
     BoardDetailResponse,
@@ -290,6 +287,15 @@ async def delete_board(
 # coluna alheia com a permissao do quadro proprio. Com o `board_id` na URL, o
 # servico confere os dois (`_coluna_do_quadro`).
 #
+# Rotas de coluna que existem:
+#     PUT /boards/{board_id}/columns              -- o LOTE, unica escrita
+#     GET /boards/{board_id}/columns/{column_id}  -- a coluna, com a contagem
+#
+# ⚠️ AS ROTAS DE COLUNA UNICA SAIRAM EM 17/09/2026 (`POST .../columns`,
+# `PATCH` e `DELETE .../columns/{column_id}`): a tela so edita coluna pelo
+# lote, e elas nao tinham chamador. Os metodos do servico (`criar_coluna`,
+# `renomear_coluna`, `apagar_coluna`) FICARAM -- sao as etapas do lote.
+#
 # ⚠️ AS DUAS SEGUEM SEM `require_permission` E COM `TenantContextDep`, pelo
 # mesmo motivo das rotas de quadro -- leia o cabecalho deste modulo antes de
 # "consertar". `_: TenantContextDep` parece nao usado e NAO E.
@@ -315,10 +321,9 @@ async def apply_columns_batch(
     aparencia de coisa viva. `BoardService.reordenar_colunas` sobreviveu: virou
     a ultima etapa do lote.
 
-    ⚠️ `PUT` NA MESMA URL DO `POST`, e isso NAO e colisao: o FastAPI casa por
-    metodo alem do caminho. O que colide e SEGMENTO FIXO contra PARAMETRO --
-    `columns/order` contra `columns/{column_id}` --, e foi assim que a rota
-    apagada quebrou em 13/08 antes de ser movida.
+    ⚠️ SEGMENTO FIXO CONTRA PARAMETRO COLIDE -- `columns/order` contra
+    `columns/{column_id}` --, e foi assim que a rota apagada quebrou em 13/08
+    antes de ser movida. (A `POST` na mesma URL deste `PUT` saiu em 17/09.)
 
     ⚠️ UMA TRANSACAO SO. O `commit` daqui e o unico; qualquer recusa no meio do
     lote sobe e o UoW desfaz as etapas anteriores. E o que torna aceitavel o
@@ -374,65 +379,6 @@ async def apply_columns_batch(
     return resposta
 
 
-@router.post(
-    "/{board_id}/columns",
-    response_model=BoardColumnResponse,
-    status_code=status.HTTP_201_CREATED,
-)
-async def create_column(
-    board_id: uuid.UUID,
-    payload: BoardColumnCreateRequest,
-    _: TenantContextDep,
-    uow: UoWDep,
-) -> BoardColumnResponse:
-    """Acrescenta uma coluna ao fim de um quadro avulso.
-
-    ⚠️ O QUADRO PADRAO ACEITA, DESDE 13/08. A recusa por quadro
-    (`_assert_quadro_editavel`) saiu: o Quadro geral e tao personalizavel
-    quanto os outros, e quem filtra e a PERMISSAO -- `board.manage.root`, que
-    esta em ADMIN e MANAGER e nao no SUPERVISOR. Criar coluna la nao tem risco
-    tecnico: nasce vazia, `legacy_status` NULL, `is_default_target` False.
-
-    ⚠️ 404 antes de 403, igual ao `PATCH /boards`: a permissao depende do
-    `team_id` do quadro, entao ele e buscado primeiro. Um 403 confirmaria que o
-    quadro existe.
-
-    ⚠️ A coluna nasce com `legacy_status` NULL e `is_default_target` False, e
-    nenhum dos dois e parametro. Ver `BoardService.criar_coluna`.
-    """
-    coluna = await BoardService(uow.session).criar_coluna(
-        board_id=board_id, nome=payload.name, semantica=payload.semantic
-    )
-    resposta = BoardColumnResponse.model_validate(coluna)
-    await uow.commit()
-    return resposta
-
-
-@router.patch(
-    "/{board_id}/columns/{column_id}",
-    response_model=BoardColumnResponse,
-)
-async def rename_column(
-    board_id: uuid.UUID,
-    column_id: uuid.UUID,
-    payload: BoardColumnRenameRequest,
-    _: TenantContextDep,
-    uow: UoWDep,
-) -> BoardColumnResponse:
-    """Renomeia uma coluna. NAO mexe em semantica, cor, posicao nem alvo.
-
-    ⚠️ COLUNA DE OUTRO QUADRO DEVOLVE 404, e nao 403. O servico busca a coluna
-    com o `board_id` no WHERE; ela simplesmente nao existe naquele quadro. Um
-    403 diria que ela existe em algum lugar.
-    """
-    coluna = await BoardService(uow.session).renomear_coluna(
-        board_id=board_id, column_id=column_id, nome=payload.name
-    )
-    resposta = BoardColumnResponse.model_validate(coluna)
-    await uow.commit()
-    return resposta
-
-
 @router.get(
     "/{board_id}/columns/{column_id}",
     response_model=BoardColumnDetailResponse,
@@ -475,47 +421,3 @@ async def get_column(
         **BoardColumnResponse.model_validate(coluna).model_dump(),
         task_count=contagem,
     )
-
-
-@router.delete(
-    "/{board_id}/columns/{column_id}",
-    response_model=BoardColumnDeleteResponse,
-)
-async def delete_column(
-    board_id: uuid.UUID,
-    column_id: uuid.UUID,
-    _: TenantContextDep,
-    uow: UoWDep,
-    destino_id: uuid.UUID | None = None,
-) -> BoardColumnDeleteResponse:
-    """Apaga uma coluna, mandando as tarefas dela para `destino_id`.
-
-    ⚠️ `destino_id` VAI NA QUERY STRING, e nao no corpo. `DELETE` com corpo e
-    aceito pelo FastAPI e ignorado por parte da infraestrutura de rede -- e
-    quando o corpo se perde, este endpoint deixa de mover tarefa e passa a
-    recusar por falta de destino, que e um 422 sem causa aparente.
-
-    ⚠️ TRES RECUSAS DIFERENTES, as tres 422:
-      - sem `destino_id` numa coluna com tarefas -- "para onde vao estas?";
-      - ultima `OPEN` ou ultima `DONE` -- "o quadro continua funcionando?".
-    A segunda vale MESMO com destino escolhido: nada impede apagar a ultima
-    `DONE` mandando tudo para `Backlog`, e a quebra so apareceria na semana
-    seguinte, numa cascata de conclusao.
-
-    ⚠️ A TERCEIRA E DE 13/08 (`coluna_ponte_obrigatoria`): coluna do quadro
-    PADRAO que ainda tem `legacy_status`. `default_board_and_column_for_status`
-    casa so pela ponte, sem degrau de semantica -- apagar "Planejado" faria
-    toda tarefa de topo com status `PLANNED` devolver 422 dias depois, para
-    outra pessoa. Coluna SEM ponte no geral (criada por gente) pode ser
-    apagada normalmente.
-
-    ⚠️ DESTINO TERMINAL NAO E MOVER -- e concluir ou cancelar o lote, com
-    cascata de subtarefas, `terminal_since` ligando e avisos de prazo morrendo.
-    O aviso da tela tem de dizer isso com outro texto (fatia 5b-6); o backend
-    faz a coisa certa nos dois casos porque delega ao `TaskService`.
-    """
-    movidas = await BoardService(uow.session).apagar_coluna(
-        board_id=board_id, column_id=column_id, destino_id=destino_id
-    )
-    await uow.commit()
-    return BoardColumnDeleteResponse(movidas=movidas)

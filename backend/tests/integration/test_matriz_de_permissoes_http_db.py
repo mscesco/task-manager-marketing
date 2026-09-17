@@ -296,7 +296,8 @@ async def _mundo(db) -> dict:
     # vinculo novo numa delas. Design e Vendas, e nao SEO: o supervisor do SEO
     # precisa poder puxar -- e a pessoa nao pode ja estar la.
     misto_design = await _operador(db, ws, design, vendas)
-    # Spec 051 §4.8 item 6: conta DESATIVADA, para a linha de mover subtime.
+    # Spec 051 §4.8 item 6: conta DESATIVADA. Era da linha de mover subtime;
+    # desde 17/09 (rota removida), da linha de trocar cargo.
     desativado = await _operador(db, ws, design)
     (await db.get(User, desativado)).is_active = False
 
@@ -670,19 +671,13 @@ MATRIZ: tuple[Linha, ...] = (
     Linha("membership.delete", "OPERATOR de Vendas", "delete",
           f"{T}/members/{{alvo_com}}/teams/{{vendas}}", None,
           (OK, NEGADO, NEGADO, NEGADO, NEGADO, NEGADO)),
-    Linha("membership.move", "Design -> Vazio-MKT", "post",
-          f"{T}/members/{{alvo_mkt}}/move-subteam",
-          {"from_team_id": "{design}", "to_team_id": "{vazio_mkt}"},
-          (OK, OK, OK, NEGADO, NEGADO, OK)),
-    Linha("membership.move", "Suporte -> Vazio-COM", "post",
-          f"{T}/members/{{alvo_com}}/move-subteam",
-          {"from_team_id": "{suporte}", "to_team_id": "{vazio_com}"},
-          (OK, OK, NEGADO, NEGADO, NEGADO, NEGADO)),
-    Linha("membership.move", "conta DESATIVADA, Design -> Vazio-MKT", "post",
-          f"{T}/members/{{desativado}}/move-subteam",
-          {"from_team_id": "{design}", "to_team_id": "{vazio_mkt}"},
-          # 051, fatia C: conta desativada nao muda de subtime
-          (409, 409, 409, NEGADO, NEGADO, 409)),
+    # ⚠️ AS TRES LINHAS `membership.move` SAIRAM EM 17/09/2026, com a rota
+    # `POST /members/{id}/move-subteam` (sem chamador). A da conta DESATIVADA
+    # (051, fatia C) era a unica que via `_assert_alvo_ativo` pela rota, e foi
+    # portada para a troca de cargo, que usa a mesma trava.
+    Linha("membership.update", "conta DESATIVADA, OPERATOR->SUPERVISOR no Design", "patch",
+          f"{T}/members/{{desativado}}/teams/{{design}}", {"role": "SUPERVISOR"},
+          (409, 409, 409, 409, NEGADO, 409)),
     # ---------------------------------------------------------- quadro
     Linha("board.create.root", "no Marketing", "post", f"{T}/boards",
           {"name": "Campanhas", "team_id": "{mkt}"},
@@ -718,28 +713,36 @@ MATRIZ: tuple[Linha, ...] = (
           # 051, fatia D: fora da lente e 404
           (OK, OK, OCULTO, OCULTO, OCULTO, OCULTO)),
     # ---------------------------------------------------------- coluna
-    Linha("column.create", "no geral do Marketing", "post",
-          f"{T}/boards/{{geral_mkt}}/columns", {"name": "Revisao", "semantic": "IN_PROGRESS"},
+    # ⚠️ PELO LOTE (`PUT /boards/{id}/columns`) DESDE 17/09/2026. As rotas de
+    # coluna UNICA (`POST`, `PATCH`, `DELETE`) sairam sem chamador; o lote e o
+    # unico caminho de escrita de coluna, e cobra o verbo do que traz (ver
+    # `BoardService.aplicar_lote`). Os esperados sao os mesmos das rotas antigas.
+    Linha("column.create", "no geral do Marketing", "put",
+          f"{T}/boards/{{geral_mkt}}/columns",
+          {"criar": [{"tmp": "nova", "name": "Revisao", "semantic": "IN_PROGRESS"}]},
           (OK, OK, OK, NEGADO, NEGADO, OK)),
-    Linha("column.create", "no geral do Comercial", "post",
-          f"{T}/boards/{{geral_com}}/columns", {"name": "Revisao", "semantic": "IN_PROGRESS"},
+    Linha("column.create", "no geral do Comercial", "put",
+          f"{T}/boards/{{geral_com}}/columns",
+          {"criar": [{"tmp": "nova", "name": "Revisao", "semantic": "IN_PROGRESS"}]},
           (OK, OK, NEGADO, NEGADO, NEGADO, NEGADO)),
-    Linha("column.create", "no quadro do SEO", "post",
-          f"{T}/boards/{{quadro_seo}}/columns", {"name": "Revisao", "semantic": "IN_PROGRESS"},
+    Linha("column.create", "no quadro do SEO", "put",
+          f"{T}/boards/{{quadro_seo}}/columns",
+          {"criar": [{"tmp": "nova", "name": "Revisao", "semantic": "IN_PROGRESS"}]},
           (OK, OK, OK, OK, NEGADO, OK)),
-    Linha("column.delete", "coluna vazia do SEO", "delete",
-          f"{T}/boards/{{quadro_seo}}/columns/{{cancelado_seo}}", None,
+    Linha("column.delete", "coluna vazia do SEO", "put",
+          f"{T}/boards/{{quadro_seo}}/columns", {"apagar": [{"id": "{cancelado_seo}"}]},
           (OK, NEGADO, OK, OK, NEGADO, OK)),
     # ⚠️ AS DUAS DE BAIXO SAO O PAR QUE A FATIA D PRECISAVA: numa coluna de
     # quadro da RAIZ o GESTOR renomeia (continua editando) e NAO apaga. Antes
     # da D, coluna da raiz cobrava so `board.update.root`, e o GESTOR -- que o
     # tem -- apagaria por ai mesmo sem `column.delete`.
-    Linha("column.update", "renomear coluna do secundario do Marketing", "patch",
-          f"{T}/boards/{{secundario_mkt}}/columns/{{cancelado_secundario}}",
-          {"name": "Outro nome"},
+    Linha("column.update", "renomear coluna do secundario do Marketing", "put",
+          f"{T}/boards/{{secundario_mkt}}/columns",
+          {"renomear": [{"id": "{cancelado_secundario}", "name": "Outro nome"}]},
           (OK, OK, OK, NEGADO, NEGADO, OK)),
-    Linha("column.delete", "coluna do secundario do Marketing", "delete",
-          f"{T}/boards/{{secundario_mkt}}/columns/{{cancelado_secundario}}", None,
+    Linha("column.delete", "coluna do secundario do Marketing", "put",
+          f"{T}/boards/{{secundario_mkt}}/columns",
+          {"apagar": [{"id": "{cancelado_secundario}"}]},
           (OK, NEGADO, OK, NEGADO, NEGADO, OK)),
     # ---------------------------------------------------------- tarefa
     Linha("task.create", "no Marketing", "post", f"{T}/tasks",
@@ -787,12 +790,6 @@ MATRIZ: tuple[Linha, ...] = (
           (OK, OK, OK, OK, NEGADO, OK)),
     Linha("project.update", "do Comercial", "patch", f"{T}/projects/{{projeto_com}}",
           {"title": "Outro"},
-          (OK, OK, OCULTO, OCULTO, NEGADO, NEGADO)),  # 051, fatia A: o verbo no time do item
-    Linha("project.archive", "do Marketing", "post",
-          f"{T}/projects/{{projeto_mkt}}/archive", None,
-          (OK, OK, OK, OK, NEGADO, OK)),
-    Linha("project.archive", "do Comercial", "post",
-          f"{T}/projects/{{projeto_com}}/archive", None,
           (OK, OK, OCULTO, OCULTO, NEGADO, NEGADO)),  # 051, fatia A: o verbo no time do item
     Linha("project.delete", "do Marketing", "delete", f"{T}/projects/{{projeto_mkt}}",
           None,
@@ -943,8 +940,6 @@ CADEADOS_DE_ITEM = (
     ("/tasks/{tarefa_com}", "can_delete", ("task.delete", "do Comercial")),
     ("/projects/{projeto_mkt}", "can_update", ("project.update", "do Marketing")),
     ("/projects/{projeto_com}", "can_update", ("project.update", "do Comercial")),
-    ("/projects/{projeto_mkt}", "can_archive", ("project.archive", "do Marketing")),
-    ("/projects/{projeto_com}", "can_archive", ("project.archive", "do Comercial")),
     ("/projects/{projeto_mkt}", "can_delete", ("project.delete", "do Marketing")),
     ("/projects/{projeto_com}", "can_delete", ("project.delete", "do Comercial")),
 )

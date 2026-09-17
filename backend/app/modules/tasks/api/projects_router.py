@@ -17,8 +17,11 @@ Rotas:
     GET    /projects/{id}              -- get
     PATCH  /projects/{id}              -- update (project.update)
     DELETE /projects/{id}              -- soft delete (project.delete)
-    POST   /projects/{id}/archive      -- archive (project.archive)
-    POST   /projects/{id}/unarchive    -- unarchive (project.archive)
+
+⚠️ ARQUIVAR PROJETO SAIU EM 17/09/2026 (`POST /projects/{id}/archive` e
+`/unarchive`), por decisao da Camila: com projeto apagavel, arquivar nao tinha
+mais uso, e nenhuma tela chamava as rotas. A COLUNA `project.is_archived`
+FICOU no banco, sem escritor -- ver `ProjectFilters.include_archived`.
 """
 
 from __future__ import annotations
@@ -166,34 +169,6 @@ async def update_project(
             due_date=payload.due_date,
         ),
     )
-    await uow.commit()
-    return ProjectResponse.model_validate(project)
-
-
-@router.post(
-    "/{project_id}/archive",
-    response_model=ProjectResponse,
-    dependencies=[Depends(require_permission("project.archive"))],
-)
-async def archive_project(
-    project_id: uuid.UUID, uow: UoWDep
-) -> ProjectResponse:
-    """Arquiva o projeto. Idempotente. Pessoal NAO pode ser arquivado (409)."""
-    project = await ProjectService(uow.session).archive(project_id=project_id)
-    await uow.commit()
-    return ProjectResponse.model_validate(project)
-
-
-@router.post(
-    "/{project_id}/unarchive",
-    response_model=ProjectResponse,
-    dependencies=[Depends(require_permission("project.archive"))],
-)
-async def unarchive_project(
-    project_id: uuid.UUID, uow: UoWDep
-) -> ProjectResponse:
-    """Desarquiva o projeto. Idempotente."""
-    project = await ProjectService(uow.session).unarchive(project_id=project_id)
     await uow.commit()
     return ProjectResponse.model_validate(project)
 

@@ -134,36 +134,6 @@ def _temp_password_expiry() -> datetime:
     )
 
 
-#: O unico rebaixamento automatico do sistema, e ele tem UMA entrada.
-#:
-#: ⚠️ MAPA EXPLICITO, e nao "o maior papel que cabe no destino". A versao
-#: calculada tambem rebaixaria MANAGER -> SUPERVISOR ao mover para subtime, o
-#: que ninguem decidiu e que ninguem veria acontecer. Aqui, acrescentar um caso
-#: exige escrever a linha -- e a linha e o lugar de justificar.
-_DEMOTION_INTO_ROOT: dict[UserTeamRole, UserTeamRole] = {
-    UserTeamRole.SUPERVISOR: UserTeamRole.OPERATOR,
-}
-
-
-def _role_at_destination(
-    role: UserTeamRole, *, to_root: bool
-) -> UserTeamRole:
-    """Papel que sera GRAVADO no destino de um `move_member_subteam`.
-
-    Igual ao de origem, exceto no unico caso decidido pela Camila em 08/09:
-    mover um SUPERVISOR para a RAIZ o rebaixa a OPERATOR.
-
-    ⚠️⚠️ ISTO E UMA MUDANCA DE AUTORIDADE ACONTECENDO DENTRO DE UMA OPERACAO
-    CHAMADA "MOVER", e por isso ela e estreita e visivel: uma entrada de mapa,
-    um log proprio no chamador, e o papel novo no objeto devolvido. Quem
-    ampliar este mapa esta decidindo que mais alguem pode perder posto sem ter
-    pedido -- pense duas vezes e escreva o motivo.
-    """
-    if not to_root:
-        return role
-    return _DEMOTION_INTO_ROOT.get(role, role)
-
-
 #: Matriz C2 (Spec 015; Spec 051, fatia C). Os dois tetos que nao sao "tudo".
 _PAPEIS_DE_EXECUCAO: frozenset[UserTeamRole] = frozenset(
     {UserTeamRole.SUPERVISOR, UserTeamRole.OPERATOR}
@@ -535,12 +505,13 @@ class MemberService:
         # caminho que diverge dela na proxima mudanca.
         self._assert_actor_can_assign(command.role)
 
-        # Spec 024/D3 -- porta 1 de 4 da invariante de papel por nivel.
+        # Spec 024/D3 -- porta 1 de 3 da invariante de papel por nivel (eram 4;
+        # a quarta, `move_member_subteam`, saiu com a rota em 17/09/2026).
         assert_role_permitido_no_nivel(
             command.role, is_root=team.parent_team_id is None
         )
 
-        # Spec 044, fatia 5 -- porta 1 de 4.
+        # Spec 044, fatia 5 -- porta 1 de 3.
         #
         # ⚠️ HOJE E ESTRUTURALMENTE UM NO-OP, e esta aqui de proposito: o
         # usuario e NOVO (e-mail unico por workspace), entao nasce com UM
@@ -551,7 +522,7 @@ class MemberService:
         await self._assert_posto_coerente(
             vinculos_depois=[(command.team_id, command.role)]
         )
-        # ⚠️ Spec 045, §4.4 -- porta 1 de 4. Aqui ela e NO-OP por construcao
+        # ⚠️ Spec 045, §4.4 -- porta 1 de 3. Aqui ela e NO-OP por construcao
         # (membro nasce com um vinculo so), e a chamada fica assim mesmo: no
         # dia em que o cadastro criar dois vinculos de uma vez, a regra ja
         # esta ligada. A irma da 044 esta aqui pelo mesmo motivo.
@@ -944,7 +915,7 @@ class MemberService:
         # Spec 051, fatia C: e DE ONDE a pessoa vem.
         await self._assert_ja_esta_na_arvore(user_id=user_id, team_id=team_id)
 
-        # Spec 024/D3 -- porta 2 de 4.
+        # Spec 024/D3 -- porta 2 de 3.
         assert_role_permitido_no_nivel(role, is_root=team.parent_team_id is None)
 
         # nao pode duplicar o vinculo (UNIQUE user_id, team_id)
@@ -957,14 +928,14 @@ class MemberService:
                 details={"user_id": str(user_id), "team_id": str(team_id)},
             )
 
-        # Spec 044, fatia 5 -- porta 2 de 4. Adicionar e aditivo, entao o
+        # Spec 044, fatia 5 -- porta 2 de 3. Adicionar e aditivo, entao o
         # estado DEPOIS e o que ja existe mais este vinculo.
         vinculos = await self._users.list_team_memberships(user_id=user_id)
         await self._assert_posto_coerente(
             vinculos_depois=[(v.team_id, v.role) for v in vinculos]
             + [(team_id, role)]
         )
-        # ⚠️ Spec 045, §4.4 -- porta 2 de 4, e A PORTA PRINCIPAL DESTA REGRA:
+        # ⚠️ Spec 045, §4.4 -- porta 2 de 3, e A PORTA PRINCIPAL DESTA REGRA:
         # adicionar a gerente da area a um subtime dela e exatamente o caso
         # que a Camila descreveu em 02/09.
         await self._assert_command_has_no_subteam(
@@ -1145,7 +1116,7 @@ class MemberService:
         self._assert_actor_can_target(membership.role)
         self._assert_actor_can_assign(new_role)
 
-        # Spec 024/D3 -- porta 3 de 4. Diferente das outras, este caso de uso
+        # Spec 024/D3 -- porta 3 de 3. Diferente das outras, este caso de uso
         # nao carregava o time (so o vinculo); precisa carregar pra saber o
         # nivel. O vinculo existe, entao o time existe.
         team = await self._teams.get_by_id(team_id)
@@ -1159,18 +1130,19 @@ class MemberService:
         # os subtimes de uma vez: MANAGER da raiz enxerga raiz + descendentes,
         # OPERATOR da raiz enxerga so a raiz. Medido em 06/08: hoje nenhuma
         # pessoa seria barrada por este gatilho, porque os gestores estao na
-        # raiz e tarefa de raiz ninguem perde -- o gatilho com cliente real e o
-        # `move_member_subteam`. Isto NAO torna esta chamada opcional: o dia do
-        # quadro interno (fatia 5 da Spec 036) e o dia em que ela passa a doer.
+        # raiz e tarefa de raiz ninguem perde -- o gatilho com cliente real era o
+        # `move_member_subteam` (removido em 17/09/2026). Isto NAO torna esta
+        # chamada opcional: o dia do quadro interno (fatia 5 da Spec 036) e o
+        # dia em que ela passa a doer.
         vinculos = await self._users.list_team_memberships(user_id=user_id)
         depois = [
             (v.team_id, new_role if v.team_id == team_id else v.role)
             for v in vinculos
         ]
-        # Spec 044, fatia 5 -- porta 3 de 4. Vale nos DOIS sentidos: rebaixar o
+        # Spec 044, fatia 5 -- porta 3 de 3. Vale nos DOIS sentidos: rebaixar o
         # papel da raiz pode inverter contra um subtime que nao foi tocado.
         await self._assert_posto_coerente(vinculos_depois=depois)
-        # ⚠️ Spec 045, §4.4 -- porta 3 de 4, e o caminho MENOS obvio para o
+        # ⚠️ Spec 045, §4.4 -- porta 3 de 3, e o caminho MENOS obvio para o
         # estado proibido: ninguem adiciona ninguem a subtime nenhum aqui. O
         # vinculo de subtime ja existe, e e a PROMOCAO na raiz (a OPERATOR que
         # vira MANAGER) que cria o acumulo, sem que a operacao mencione
@@ -1281,185 +1253,6 @@ class MemberService:
             user_id=str(user_id),
             team_id=str(team_id),
         )
-
-    async def move_member_subteam(
-        self,
-        *,
-        user_id: uuid.UUID,
-        from_team_id: uuid.UUID,
-        to_team_id: uuid.UUID,
-    ) -> UserTeam:
-        """Move um membro de um time para outro, preservando o papel. F4 (B2).
-
-        Atomico: remove o vinculo de origem ANTES de adicionar o de destino.
-        Se algo abaixo falhar, o UoW nao commita e tudo rola back.
-
-        ⚠️ A ORDEM ERA OBRIGATORIA pela invariante "1 subtime por pessoa"
-        (ADR 0008), que saiu na Spec 044, fatia 3. Ela FICA por outro motivo:
-        e o que faz esta operacao significar MOVER. Invertida, existiria um
-        instante com os dois vinculos -- hoje um estado valido, e por isso
-        mesmo indistinguivel de "adicionar", que ja tem rota propria.
-
-        Regra C1: a pessoa perde o acesso ao time de origem (tarefas ficam).
-        Matriz C2 (sobre o papel atual, preservado) + anti-lockout C3 aplicam.
-
-        Erros:
-            BusinessRuleError   -- origem == destino, ou mover a si mesmo.
-            EntityNotFoundError -- vinculo de origem ou time de destino ausente.
-            ConflictError       -- ja existe vinculo no destino.
-            AuthorizationError  -- viola a matriz C2.
-        """
-        if from_team_id == to_team_id:
-            raise BusinessRuleError(
-                "Time de origem e destino sao o mesmo.",
-                details={"fields": ["from_team_id", "to_team_id"]},
-            )
-        origem = await self._users.get_team_membership(
-            user_id=user_id, team_id=from_team_id
-        )
-        if origem is None:
-            raise EntityNotFoundError(
-                "UserTeam", identifier=f"{user_id}/{from_team_id}"
-            )
-        if user_id == require_tenant().user_id:
-            raise BusinessRuleError(
-                "Um membro nao pode mover a si mesmo.",
-                details={"user_id": str(user_id)},
-            )
-        destino = await self._teams.get_by_id(to_team_id)
-        if destino is None:
-            raise EntityNotFoundError("Team", identifier=to_team_id)
-
-        # Spec 028: mover entre subtimes NAO foi aberto ao supervisor -- a
-        # operacao toca o subtime de ORIGEM, que nao e dele (viola D1).
-        self._assert_gestao_ampla("membership.move", acao="move_member_subteam")
-        # ⚠️ Spec 049, fatia 0b: e NOS DOIS times. Mover toca a origem (tira) e
-        # o destino (poe); mandar em so um deles e mexer na arvore alheia.
-        self._assert_gestao_ampla_em(
-            "membership.move", from_team_id, acao="move_member_subteam"
-        )
-        self._assert_gestao_ampla_em(
-            "membership.move", to_team_id, acao="move_member_subteam"
-        )
-        # ⚠️ Spec 051, fatia C: conta DESATIVADA nao muda de subtime -- ver
-        # `_assert_alvo_ativo`. Trocar cargo e vincular ja recusavam; mover era o
-        # caminho que sobrava, e escrevia um vinculo novo numa conta que ninguem
-        # usa. DEPOIS das travas de permissao, de proposito: quem nao move
-        # ninguem leva 403, e nao descobre por um 409 que a conta existe e esta
-        # desativada.
-        await self._assert_alvo_ativo(user_id)
-
-        # ⚠️⚠️ O PAPEL NEM SEMPRE VIAJA INTEIRO -- Spec 045, fatia D, decisao da
-        # Camila em 08/09. Mover um SUPERVISOR para a RAIZ o rebaixa a
-        # OPERATOR, em vez de recusar a operacao.
-        #
-        # Por que existe: `SUPERVISOR` saiu da raiz (invariante de nivel), e
-        # sem isto o fluxo "tirar do subtime" da Spec 003 -- que e mover para a
-        # raiz preservando o papel -- morreria para supervisor. A alternativa
-        # era recusar e exigir duas etapas (rebaixar, depois mover).
-        #
-        # ⚠️ E SO ESTE CASO, de proposito. A regra NAO e "rebaixe qualquer papel
-        # que nao couber no destino": mover um MANAGER para subtime continua
-        # RECUSADO, e nao virando SUPERVISOR calado. A diferenca e o
-        # significado -- levar alguem para o time geral E deixar de supervisionar
-        # um braco, entao o rebaixamento diz a mesma coisa que a operacao; mandar
-        # um dono de arvore para dentro de um braco nao tem leitura obvia
-        # nenhuma, e adivinhar ali seria inventar intencao.
-        origem_role = origem.role
-        role = _role_at_destination(
-            origem_role, to_root=destino.parent_team_id is None
-        )
-        demoted = role is not origem_role
-
-        # Matriz: `target` sobre o papel ATUAL (e preciso poder mexer num
-        # supervisor) e `assign` sobre o papel que sera GRAVADO -- que nem
-        # sempre e o mesmo desde o rebaixamento acima.
-        self._assert_actor_can_target(origem_role)
-        self._assert_actor_can_assign(role)
-
-        # Spec 024/D3 -- porta 4 de 4. Continua valendo, e agora sobre o papel
-        # ja resolvido: mover um MANAGER pra subtime segue violando a
-        # invariante. O unico caso que deixou de chegar aqui e o do supervisor
-        # indo para a raiz, tratado acima.
-        assert_role_permitido_no_nivel(
-            role, is_root=destino.parent_team_id is None
-        )
-
-        # ⚠️ Spec 037, E4 -- ANTES do `remove_team_membership`, que e a primeira
-        # escrita deste caso de uso. O metodo remove a origem primeiro para
-        # nunca violar "1 subtime por pessoa"; barrar depois disso significaria
-        # depender do rollback do UoW para desfazer, e a diferenca aparece no
-        # dia em que alguem chamar este service fora de um UoW.
-        #
-        # ⚠️ ESTE E O GATILHO COM CLIENTE REAL. As 33 tarefas nao-terminais de
-        # subtime com um responsavel so (30 delas em duas pessoas) sao
-        # exatamente movimentacao de time.
-        vinculos = await self._users.list_team_memberships(user_id=user_id)
-        depois = [
-            (v.team_id, v.role) for v in vinculos if v.team_id != from_team_id
-        ] + [(to_team_id, role)]
-        # Spec 044, fatia 5 -- porta 4 de 4. O papel VIAJA junto, entao mover
-        # para um subtime de outra arvore pode inverter contra a raiz de la.
-        await self._assert_posto_coerente(vinculos_depois=depois)
-        # ⚠️ Spec 045, §4.4 -- porta 4 de 4. Mover para um subtime de uma
-        # arvore onde a pessoa MANDA e o mesmo estado proibido, chegando por
-        # outra porta.
-        await self._assert_command_has_no_subteam(vinculos_depois=depois)
-        await self._assert_nao_deixa_orfa(
-            user_id=user_id,
-            vinculos_depois=depois,
-            acao="move_member_subteam",
-        )
-        await self._remover_relacoes_perdidas(
-            user_id=user_id,
-            vinculos_depois=[
-                (v.team_id, v.role) for v in vinculos if v.team_id != from_team_id
-            ]
-            + [(to_team_id, role)],
-        )
-
-        # Remove a origem PRIMEIRO -- ver a docstring: a ordem deixou de ser
-        # exigida pela trava e passou a ser o que define "mover".
-        await self._users.remove_team_membership(origem)
-        await self._session.flush()
-
-        existing = await self._users.get_team_membership(
-            user_id=user_id, team_id=to_team_id
-        )
-        if existing is not None:
-            raise ConflictError(
-                "Membro ja faz parte do time de destino.",
-                details={"user_id": str(user_id), "team_id": str(to_team_id)},
-            )
-        nova = self._users.add_team_membership(
-            user_id=user_id, team_id=to_team_id, role=role
-        )
-        await self._session.flush()
-        logger.info(
-            "member.moved_subteam",
-            user_id=str(user_id),
-            from_team_id=str(from_team_id),
-            to_team_id=str(to_team_id),
-            role=role.value,
-            # ⚠️ O PAPEL ANTERIOR VAI JUNTO SEMPRE, e nao so quando muda: um
-            # log que so aparece na excecao obriga quem investiga a saber que
-            # a excecao existe. Com os dois campos, "perdi o posto de
-            # supervisora e nao lembro quando" e uma busca, nao uma arqueologia.
-            role_before=origem_role.value,
-            demoted=demoted,
-        )
-        if demoted:
-            # Evento PROPRIO, alem do campo acima: mudanca de autoridade nao
-            # deve ficar escondida dentro de um log chamado "moved".
-            logger.info(
-                "member.role_demoted_on_move",
-                user_id=str(user_id),
-                to_team_id=str(to_team_id),
-                de=origem_role.value,
-                para=role.value,
-                motivo="SUPERVISOR nao existe no time principal (Spec 045, D)",
-            )
-        return nova
 
     async def change_organization_role(
         self, *, user_id: uuid.UUID, new_role: OrgRole | None
@@ -1660,7 +1453,7 @@ class MemberService:
         chamador perguntava a mesma coisa para acoes diferentes (cadastrar,
         mover, desativar, trocar cargo). Com o pacote cortado, o CHAMADOR diz o
         verbo da acao dele. Os verbos que chegam aqui (`person.*`,
-        `membership.update`, `membership.move`) estao exatamente nos papeis
+        `membership.update`; `membership.move` ate 17/09) estao exatamente nos papeis
         que tinham `team.manage` -- por isso nada muda de comportamento.
 
         Checa PERMISSAO, nao papel: se um papel novo ganhar `team.manage`
@@ -1864,8 +1657,8 @@ class MemberService:
     def _assert_gestao_ampla(self, permission: str, *, acao: str) -> None:
         """Barra o ator supervisor-only em operacoes que a 028 NAO abriu.
 
-        Defesa em profundidade: hoje as rotas de trocar papel, mover de
-        subtime, desativar, cadastrar e resetar senha continuam exigindo
+        Defesa em profundidade: hoje as rotas de trocar papel,
+        desativar, cadastrar e resetar senha continuam exigindo
         `team.manage`, entao o supervisor nem chega aqui. Este gate existe
         para o dia em que alguem afrouxar uma dessas rotas sem ler a spec
         -- o service recusa mesmo assim.
