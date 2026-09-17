@@ -1547,9 +1547,8 @@ export default function TaskDetail({
               vindo de `STATUS_TEXT`, e isso NAO e esquecimento: `coluna.color`
               e token de TRACO (bolinha, borda), e como fundo sob texto ele
               reprova AA (Spec 031 §2.2b). A cor acessivel de uma coluna
-              arbitraria tem de sair da luminancia, e `lib/coluna.ts::corEhHex`
-              ja registra que essa derivacao e da FATIA 5. Ate la, cor por
-              status e rotulo por coluna. */}
+              arbitraria tem de sair da luminancia, e essa derivacao nunca foi
+              feita. Ate la, cor por status e rotulo por coluna. */}
           {/* ⚠️ A PILULA VIROU O CONTROLE (Spec 039, F6-b). Ela era rotulo
               morto, e o comentario acima ja anunciava "que a fatia 5 vai
               deixar editar" -- ficou pendente desde la. Mudar de coluna exigia

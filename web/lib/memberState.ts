@@ -22,9 +22,6 @@ import type { Member } from "./api";
 
 export type MemberState = "active" | "invited" | "inactive";
 
-/** A aba selecionada. `todos` existe para quem não quer filtrar. */
-export type MemberStateTab = MemberState | "all";
-
 export function memberState(member: Member): MemberState {
   // ⚠️ INATIVO GANHA DOS OUTROS DOIS. Alguém desativado antes de entrar é
   // inativo, e não invited: a conta não vale mais, e mostrá-la entre os
@@ -44,19 +41,4 @@ export function countByState(
   };
   for (const m of members) out[memberState(m)] += 1;
   return out;
-}
-
-/**
- * Filtra pela aba.
- *
- * ⚠️ `todos` devolve a lista inteira, e não é o mesmo que "ativos": a §3.2
- * manda que esconder linha seja sempre visível como escolha. Quem abre a tela
- * numa aba vê o número dela E o total, nunca só o filtrado.
- */
-export function filterByState(
-  members: readonly Member[],
-  aba: MemberStateTab,
-): Member[] {
-  if (aba === "all") return [...members];
-  return members.filter((m) => memberState(m) === aba);
 }

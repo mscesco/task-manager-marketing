@@ -43,12 +43,6 @@ export type Rascunho = {
   dueDate: string; // "" = sem prazo
 };
 
-export const RASCUNHO_VAZIO: Rascunho = {
-  titulo: "",
-  assigneeIds: [],
-  dueDate: "",
-};
-
 /** Motivo pelo qual ainda nao da pra criar. `null` = pode criar. */
 export function motivoNaoCria(r: Rascunho): string | null {
   if (!r.titulo.trim()) return "Escreva o título da subtarefa.";
@@ -96,9 +90,10 @@ export function acaoDoEnterNoTitulo(r: Rascunho): AcaoDoEnter {
  * a volta e uma linha -- mas volta como decisao, nao como esquecimento.
  */
 export function proximoDaSequencia(_r: Rascunho): Rascunho {
-  // ⚠️ Array NOVO, nao `{...RASCUNHO_VAZIO}`: espalhamento e copia RASA e o
-  // `assigneeIds` sairia sendo a MESMA referencia da constante do modulo --
-  // uma mutacao em qualquer chamador corromperia o "vazio" de todo mundo.
+  // ⚠️ Array NOVO, nao o espalhamento de uma constante "vazia": espalhamento
+  // e copia RASA e o `assigneeIds` sairia sendo a MESMA referencia da
+  // constante -- uma mutacao em qualquer chamador corromperia o "vazio" de
+  // todo mundo.
   return { titulo: "", assigneeIds: [], dueDate: "" };
 }
 

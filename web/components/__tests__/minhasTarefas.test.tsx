@@ -30,8 +30,8 @@
  *   - drag-and-drop (dnd-kit exige eventos de ponteiro que o jsdom nao gera
  *     de forma confiavel; isso e E2E);
  *   - aparencia -- cor, espacamento, tema continuam sendo conferencia visual;
- *   - REGRA. `statusPadraoMinhasTarefas` ja tem 296 linhas de teste em
- *     `lib/__tests__/status.test.ts`. Aqui se testa a MONTAGEM dela na tela,
+ *   - REGRA. `colunasPadraoMinhasTarefas` ja tem teste em
+ *     `lib/__tests__/paridadeColuna.test.ts`. Aqui se testa a MONTAGEM dela na tela,
  *     que e exatamente o que nao tinha cobertura.
  */
 
@@ -381,7 +381,7 @@ describe("minhas-tarefas -- fiacao da tela", () => {
 
   // ------------------------------------------------------------------ 2
   it("abre escondendo as CONCLUIDAS, e so elas", async () => {
-    // ⚠️ O PONTO DURO DO §5 DA SONDAGEM. `statusPadraoMinhasTarefas()` roda
+    // ⚠️ O PONTO DURO DO §5 DA SONDAGEM. `statusPadraoMinhasTarefas()` rodava
     // como inicializador de `useState` -- no primeiro render, antes do fetch.
     // Quando a lista de status vier da API, este inicializador nao tem mais o
     // dado na hora em que roda. Este teste e o que diz se a solucao escolhida

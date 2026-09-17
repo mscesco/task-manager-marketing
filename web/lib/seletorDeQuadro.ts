@@ -265,7 +265,7 @@ export function podeApagarColunas(permissoes: readonly Permission[]): boolean {
  * ⚠️ LOGO O PRIMEIRO ITEM E O QUADRO GERAL, PELO NOME DELE, e com `id`
  * de verdade -- nao `null`. Reaproveitar o `id: null` da lente aqui faria a
  * tela do Quadro geral se comportar como espelho de si mesma, e o
- * `quadroPedidoNaUrl` o recusaria como `is_default`.
+ * `resolverQuadroPedido` o recusaria como `is_default`.
  *
  * ⚠️ E ELE NUNCA PODE SER APAGADO (`quadro_padrao_nao_apagavel`), nem quando
  * quem olha e ADMIN. Renomear PODE -- `board_service.py` diz "O QUADRO GERAL
@@ -324,44 +324,6 @@ export function opcaoSelecionada(
 }
 
 /**
- * Valida o `?quadro=` da URL contra os quadros carregados.
- *
- * Devolve o id que a tela deve desenhar, ou `null` para a lente.
- *
- * ⚠️ POR QUE A URL, E NAO ESTADO DE COMPONENTE (13/08). Ate aqui a escolha do
- * quadro vivia num `useState` da pagina: F5 voltava para a lente, o link
- * mandado para um colega abria a lente, e o botao Voltar do navegador saia da
- * pagina do time em vez de desfazer a troca. E havia um efeito pior que os
- * tres: depois de criar uma tarefa no quadro avulso, um F5 devolvia a pessoa
- * para a lente -- onde a tarefa NAO aparece, porque a lente e espelho do
- * Quadro geral. O sintoma ficava identico ao do `board_id` que faltava no
- * corpo do `POST /tasks`, com causa completamente diferente.
- *
- * ⚠️ `quadros === null` DEVOLVE O PEDIDO SEM CONFERIR, e isso e o ponto. `null`
- * e "a lista ainda nao chegou", nao "nao ha quadros" -- conferir agora
- * derrubaria toda selecao para a lente por um instante a cada carga, e a tela
- * piscaria a lente antes de mostrar o quadro pedido.
- *
- * ⚠️ CONFERE O **TIME** TAMBEM, e nao so a existencia. `listBoards` devolve
- * tudo que a pessoa alcanca, inclusive quadros de outros times. Sem esta
- * parte, `/quadro/{timeA}?quadro={quadroDoTimeB}` desenharia o quadro de B sob
- * a pagina de A -- e o seletor, que filtra por time, nao teria aba marcada:
- * corpo mostrando um quadro, cabecalho dizendo "Lente do time".
- *
- * ⚠️ ID INVALIDO CAI NA LENTE EM SILENCIO, igual ao `opcaoSelecionada` acima e
- * pelo mesmo motivo: link velho, quadro apagado por outra pessoa, ou id
- * digitado na mao. Erro na cara de quem so abriu a tela seria pior que o lugar
- * padrao dela.
- */
-export function quadroPedidoNaUrl(
-  parametro: string | null | undefined,
-  quadros: readonly Quadro[] | null,
-  teamId: string,
-): string | null {
-  return resolverQuadroPedido(parametro, quadros, teamId).id;
-}
-
-/**
  * Por que o `?quadro=` da URL nao virou o quadro desenhado (Spec 036, fatia 11).
  *
  * ⚠️ `null` = NAO HA O QUE AVISAR. Cobre os dois casos silenciosos legitimos:
@@ -404,13 +366,30 @@ export type QuadroPedido = {
 };
 
 /**
- * A versao que DIZ POR QUE, e a razao de ela existir (fatia 11).
+ * Valida o `?quadro=` da URL contra os quadros carregados, e DIZ POR QUE
+ * quando o pedido nao vira o quadro desenhado (fatia 11). O `id` devolvido e o
+ * que a tela deve desenhar, ou `null` para a lente.
  *
- * ⚠️ ATE AQUI A QUEDA ERA MUDA, E ERA CERTO ASSIM. O docstring do
- * `quadroPedidoNaUrl` explicava: link velho ou id digitado na mao nao merecem
- * erro na cara de quem so abriu a tela. **A fatia 7 mudou o mundo**: agora uma
- * pessoa APAGA o quadro que a outra tem aberto, e a tela da segunda troca de
- * lugar sozinha. Silencio, ali, e indistinguivel de defeito.
+ * ⚠️ POR QUE A URL, E NAO ESTADO DE COMPONENTE (13/08). Ate aqui a escolha do
+ * quadro vivia num `useState` da pagina: F5 voltava para a lente, o link
+ * mandado para um colega abria a lente, e o botao Voltar do navegador saia da
+ * pagina do time em vez de desfazer a troca. E havia um efeito pior que os
+ * tres: depois de criar uma tarefa no quadro avulso, um F5 devolvia a pessoa
+ * para a lente -- onde a tarefa NAO aparece, porque a lente e espelho do
+ * Quadro geral. O sintoma ficava identico ao do `board_id` que faltava no
+ * corpo do `POST /tasks`, com causa completamente diferente.
+ *
+ * ⚠️ CONFERE O **TIME** TAMBEM, e nao so a existencia. `listBoards` devolve
+ * tudo que a pessoa alcanca, inclusive quadros de outros times. Sem esta
+ * parte, `/quadro/{timeA}?quadro={quadroDoTimeB}` desenharia o quadro de B sob
+ * a pagina de A -- e o seletor, que filtra por time, nao teria aba marcada:
+ * corpo mostrando um quadro, cabecalho dizendo "Lente do time".
+ *
+ * ⚠️ ATE A FATIA 7 A QUEDA ERA MUDA, E ERA CERTO ASSIM: link velho ou id
+ * digitado na mao nao merecem erro na cara de quem so abriu a tela. **A fatia
+ * 7 mudou o mundo**: agora uma pessoa APAGA o quadro que a outra tem aberto,
+ * e a tela da segunda troca de lugar sozinha. Silencio, ali, e indistinguivel
+ * de defeito.
  *
  * ⚠️ E O CASO DEIXOU DE SER HIPOTETICO EM 18/08: existe quadro avulso em
  * producao, e um ja foi apagado ("Cobertura e captacoes", consulta 5).

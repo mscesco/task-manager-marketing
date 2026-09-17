@@ -49,7 +49,6 @@ import {
 } from "@/lib/activeTeam";
 import { urlDoQuadroDeArea } from "@/lib/areas";
 import {
-  LayoutGrid,
   FolderKanban,
   ListChecks,
   Users,
@@ -69,7 +68,7 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
-import Loading, { LoadingScreen } from "@/components/Loading";
+import { LoadingScreen } from "@/components/Loading";
 // Navegacao lateral retratil. Itens usam a MESMA classe-base `itemCls` ->
 // alinham por construcao. Expandido: icone + rotulo. Retraido: so icone.
 // Fatia 7b: grupo "Quadros" (accordion, abre com clique) com o Quadro Geral
@@ -273,8 +272,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   // por 403; esconder aqui evita oferecer uma porta que não abre.
   const podeVerSolicitacoes =
     user?.permissions.includes("solicitation.read") ?? false;
-
-  const podeGerirTimes = user?.permissions.includes("subteam.update") ?? false;
 
   // Spec 043 (fatia C). ⚠️ PERMISSÃO PRÓPRIA, e não a de triagem: definir o
   // que se pergunta e responder a fila são trabalhos diferentes, e o backend

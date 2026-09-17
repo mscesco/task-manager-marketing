@@ -125,7 +125,7 @@ export function terminal(coluna: Coluna): boolean {
  * ⚠️ TOKEN, NUNCA HEX (corte de 11/08, mantido em 22/08). Token inverte no tema
  * escuro; hex não. A decisão da Camila foi "os 8 tokens agora, roda RGB
  * depois" — e a roda é fatia própria, porque ela obriga a derivar a cor do
- * texto por luminância (ver `corEhHex`, sem leitor até hoje).
+ * texto por luminância, e nada no front faz isso ainda.
  */
 export const CORES_DE_COLUNA: readonly string[] = [
   "var(--status-backlog-dot)",
@@ -222,16 +222,16 @@ export function deadlineTonePorColuna(
 /**
  * Dias inteiros desde a ultima mudanca, ou `null` quando nao ha selo.
  *
- * Substitui `status.diasParado(updatedAt, status, isArchived)`.
+ * Substituiu `status.diasParado(updatedAt, status, isArchived)`, que ja saiu.
  *
  * `null` (e nao 0) para "nao se aplica": arquivada, coluna onde parar nao e
  * noticia, ou abaixo do limiar. Quem chama testa `!= null`, sem confundir com
  * "0 dias".
  *
  * ⚠️ O CORPO E COPIA LITERAL do original, trocando so o predicado de entrada.
- * Isso e intencional: qualquer "melhoria" na aritmetica aqui tornaria o teste
- * de paridade incapaz de provar que nada mudou, que e a unica coisa que
- * autoriza as duas implementacoes a coexistirem.
+ * Foi intencional: a paridade entre os dois foi provada enquanto coexistiram,
+ * e os testes de aritmetica do original agora miram esta
+ * (`status.test.ts`).
  */
 export function diasParadoPorColuna(
   coluna: Coluna,
@@ -253,9 +253,9 @@ export function diasParadoPorColuna(
 /**
  * Colunas ligadas quando `/minhas-tarefas` abre: todas menos as CONCLUIDAS.
  *
- * Substitui `status.statusPadraoMinhasTarefas()`, que devolvia chaves de
- * status; esta devolve os `id` das colunas, que e o que a tela vai filtrar
- * depois da fatia 4b.
+ * Substituiu `status.statusPadraoMinhasTarefas()` (ja saiu), que devolvia
+ * chaves de status; esta devolve os `id` das colunas, que e o que a tela
+ * filtra desde a fatia 4b.
  *
  * ⚠️ CANCELADO CONTINUA APARECENDO, e isso e decisao explicita (ADR 0040,
  * item 5). `CANCELLED` tambem e semantica terminal, e esconder as duas seria
@@ -267,36 +267,6 @@ export function colunasPadraoMinhasTarefas(colunas: readonly Coluna[]): string[]
   return colunas.filter((c) => c.semantic !== "DONE").map((c) => c.id);
 }
 
-/**
- * A cor da coluna, pronta para ir num `style`.
- *
- * ⚠️ O CAMPO `color` GUARDA DOIS FORMATOS, e nao e transicao inacabada -- e
- * decisao (ADR 0040, item 4):
- *
- *   - as 8 colunas padrao guardam `"var(--status-backlog-dot)"`, e continuam
- *     assim porque o token INVERTE COM O TEMA. Migra-las para hex pioraria o
- *     que 100% das tarefas de producao usam hoje;
- *   - coluna criada por gente guarda hex (`"#7C3AED"`), escolhido numa roda
- *     RGB. Hex nao inverte com o tema -- e o preco aceito de deixar a pessoa
- *     escolher a cor.
- *
- * ⚠️ ESTA FUNCAO NAO VALIDA NADA. A partir da fatia 5 o valor passa a ser
- * ENTRADA DE USUARIO indo parar num `style`, e **a validacao
- * (`^#[0-9a-fA-F]{6}$`) e do BACKEND**, no CRUD de coluna. Nao confie no
- * `<input type="color">`: o campo e `String(60)` e cabe muita coisa que nao e
- * cor.
- */
-export function corDaColuna(coluna: Coluna): string {
-  return coluna.color;
-}
-
-/**
- * A coluna e hex livre (e portanto NAO inverte com o tema)?
- *
- * Existe para quem precisar derivar contraste do texto por cima: com token
- * ha `--*-text` pareado; com hex nao ha par, e a cor do texto tem de sair da
- * luminancia. Essa derivacao e da fatia 5 -- aqui so se responde a pergunta.
- */
 /**
  * A coluna de `destino` equivalente a `coluna`, que pode ser de OUTRO quadro.
  *
@@ -431,10 +401,6 @@ export function rotuloDeColuna(origem: OrigemDaColuna | undefined): string | nul
   return origem.nomeDoQuadro === null
     ? origem.coluna.name
     : `${origem.nomeDoQuadro} · ${origem.coluna.name}`;
-}
-
-export function corEhHex(coluna: Coluna): boolean {
-  return coluna.color.startsWith("#");
 }
 
 /**

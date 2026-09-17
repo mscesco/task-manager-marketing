@@ -409,8 +409,3 @@ export function listaFiltrosAtivos(
 export function contaFiltrosAtivos(f: EstadoFiltros): number {
   return listaFiltrosAtivos(f).filter((c) => c.campo !== "arquivadas").length;
 }
-
-/** Ha algum filtro ligado? Atalho de leitura para o JSX. */
-export function temFiltroAtivo(f: EstadoFiltros): boolean {
-  return contaFiltrosAtivos(f) > 0;
-}

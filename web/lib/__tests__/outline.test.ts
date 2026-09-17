@@ -16,8 +16,36 @@ import {
   STROKE_WIDTH,
   INSET,
   outlinePath,
-  pathPoints,
 } from "../outline";
+
+/**
+ * Os pontos do caminho, para o teste conferir a conta.
+ *
+ * ⚠️ MORA AQUI, e não em `lib/outline.ts`, porque só o teste lê: afirmar coisas
+ * sobre uma string de `path` com expressão regular é frágil e ilegível. Extrair
+ * os números uma vez deixa o teste falar sobre GEOMETRIA -- "nenhum ponto
+ * encosta na borda" -- em vez de sobre formatação.
+ */
+function pathPoints(d: string): { x: number; y: number }[] {
+  // Os comandos são `M x y`, `L x y`, `A rx ry rot arc sweep x y` e `Z`. Em
+  // todos, os DOIS ÚLTIMOS números são o ponto de destino -- inclusive no arco,
+  // que também termina num ponto do contorno. É o que este laço aproveita, em
+  // vez de interpretar cada comando.
+  const pontos: { x: number; y: number }[] = [];
+  for (const trecho of d.split(/(?=[MLAZ])/)) {
+    const t = trecho.trim();
+    if (!t || t.startsWith("Z")) continue;
+    const ns = t
+      .slice(1)
+      .split(/\s+/)
+      .filter((s) => s.length > 0)
+      .map(Number);
+    if (ns.length >= 2) {
+      pontos.push({ x: ns[ns.length - 2], y: ns[ns.length - 1] });
+    }
+  }
+  return pontos;
+}
 
 describe("outlinePath", () => {
   it("⚠️⚠️ A STROKE_WIDTH INTEIRA CABE NO DESENHO — era este o defeito", () => {

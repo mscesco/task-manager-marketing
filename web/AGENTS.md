@@ -110,7 +110,8 @@ Estão aqui para não virarem promessa falsa. Cada uma tem motivo.
 ## 5. Estado e navegação
 
 - 👁 **A URL reflete o estado** — filtro, aba, tarefa aberta.
-  ⚠️ O `quadroPedidoNaUrl` derrubava `?quadro=` em silêncio; a fatia 11 acabou
+  ⚠️ A validação do `?quadro=` (antes `quadroPedidoNaUrl`, hoje
+  `resolverQuadroPedido`) derrubava o parâmetro em silêncio; a fatia 11 acabou
   com isso. Estado que some da URL é defeito, não detalhe.
 - 🟢 Navegação usa `<a>` / `<Link>` — nunca `<div onClick>`. Suporta
   Cmd/Ctrl/clique-do-meio.

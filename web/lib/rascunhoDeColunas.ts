@@ -474,8 +474,7 @@ export function comColunaNova(
 /**
  * Reposiciona `ref` no índice pedido. `null` = nada muda.
  *
- * ⚠️ MESMO CONTRATO DE `lib/ordemDeColunas`: `null` quando nada muda, e destino
- * grampeado na faixa. É o que impede a seta na ponta de virar edição pendente
+ * ⚠️ `null` quando nada muda, e destino grampeado na faixa. É o que impede a seta na ponta de virar edição pendente
  * -- e, com ela, um aviso de "há alterações não salvas" sobre nada.
  */
 export function comOrdem(

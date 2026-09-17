@@ -87,7 +87,6 @@ function projeto(over: Partial<Project> & { id: string; title: string }): Projec
     updated_at: "2026-09-14T12:00:00Z",
     // Spec 051, fatia A: os botões vêm do servidor, no time do projeto.
     can_update: true,
-    can_archive: true,
     can_delete: true,
     ...over,
   };

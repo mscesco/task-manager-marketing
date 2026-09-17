@@ -37,7 +37,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { AnimatePresence, motion } from "motion/react";
-import { ArrowLeft, Pencil, Search } from "lucide-react";
+import { ArrowLeft, Search } from "lucide-react";
 import Tabs from "@/components/Tabs";
 import Toggle from "@/components/Toggle";
 import Badge from "@/components/Badge";

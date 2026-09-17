@@ -4,8 +4,7 @@
 // Não havia defeito no backend: `DELETE /projects/{id}` está lá desde sempre,
 // com permissão `project.delete` e a recusa do projeto pessoal (409). O que
 // faltava era a tela -- e **nenhum portão podia pegar isso**, porque não há
-// teste para "rota de API sem chamador nenhum". O `archiveProject` e o
-// `unarchiveProject` continuam nessa situação hoje.
+// teste para "rota de API sem chamador nenhum".
 //
 // O que ele prende:
 //   - sem `project.delete`, não há botão (e ele NÃO vem junto de `.update`);
@@ -99,7 +98,6 @@ function projeto(over: Partial<Project> = {}): Project {
     updated_at: "2026-08-01T12:00:00Z",
     // Spec 051, fatia A: os botões vêm do servidor, no time do projeto.
     can_update: true,
-    can_archive: true,
     can_delete: true,
     ...over,
   };

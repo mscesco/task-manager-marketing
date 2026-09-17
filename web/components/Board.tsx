@@ -84,16 +84,6 @@ import Loading from "@/components/Loading";
 // `normalizarBusca`) -- "Minhas tarefas" tambem busca, e duas copias da
 // mesma regra sao um bug esperando.
 
-// "Hoje" como YYYY-MM-DD no fuso LOCAL. due_date vem do backend como date
-// pura (sem hora), entao a comparacao e string vs string (ISO ordena certo).
-// Nada de new Date(due_date): isso interpretaria como UTC e escorregaria 1 dia.
-function hojeISO() {
-  const d = new Date();
-  const mes = String(d.getMonth() + 1).padStart(2, "0");
-  const dia = String(d.getDate()).padStart(2, "0");
-  return `${d.getFullYear()}-${mes}-${dia}`;
-}
-
 type FiltroPrazo = "todos" | "atrasadas" | "em-dia";
 
 export default function Board({
@@ -228,8 +218,6 @@ export default function Board({
   abaixoDoCabecalho?: ReactNode;
 }) {
   const [tasks, setTasks] = useState<Task[] | null>(null);
-  // Fatia 5b-6: o modo de EDICAO DE COLUNAS. So existe em quadro avulso.
-  const [editandoColunas, setEditandoColunas] = useState(false);
   // Fatia 4c: os quadros que quem olha alcanca. `null` = ainda carregando --
   // a tela NAO desenha coluna nenhuma ate chegarem (mesma decisao de 10/08
   // tomada em `/minhas-tarefas`), porque pintar um kanban com a lista velha e
@@ -1471,7 +1459,6 @@ export default function Board({
   // visiveis apos busca + prazo (eixos que ESTREITAM). Os contadores e o
   // porStatus saem de `raizes` pra nao mentir quando ha filtro ativo.
   const buscaNorm = normalizarBusca(busca);
-  const hoje = hojeISO();
   // ⚠️ UMA LEITURA DO RELOGIO POR RENDER, e nao uma por tarefa. Com 799 cartoes,
   // chamar `agoraNoWorkspace()` dentro do filtro criaria 799 `Intl.DateTimeFormat`
   // por render -- e, pior, duas tarefas poderiam ser avaliadas contra minutos

@@ -4,7 +4,7 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { getToken } from "@/lib/api";
 
-import Loading, { LoadingScreen } from "@/components/Loading";
+import { LoadingScreen } from "@/components/Loading";
 export default function Home() {
   const router = useRouter();
   useEffect(() => {

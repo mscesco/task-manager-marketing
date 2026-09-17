@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import AppShell from "@/components/AppShell";
 import EmptyState from "@/components/EmptyState";
@@ -435,7 +435,7 @@ function LinhaArquivada({
           {/* Nome da coluna; reserva no rotulo do status. A COR continua
               vindo de `STATUS_TEXT` -- `coluna.color` e token de traco e
               reprova AA como texto (Spec 031 §2.2b); a derivacao acessivel de
-              cor arbitraria e da fatia 5 (`lib/coluna.ts::corEhHex`). */}
+              cor arbitraria nunca foi feita. */}
           {rotuloDaColuna ?? STATUS_LABEL[t.status] ?? t.status}
         </Badge>
 

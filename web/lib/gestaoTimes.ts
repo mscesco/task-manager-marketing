@@ -81,20 +81,9 @@ export function podeApagarTime(time: {
 }
 
 /**
- * Remover direto: time que se apaga E vazio.
- *
- * Deliberadamente mais restrito que editar: criar e renomear se desfazem,
- * remover nao.
- */
-export function podeRemover(time: TimeGerenciavel): boolean {
-  if (!podeApagarTime(time)) return false;
-  return estaVazio(time);
-}
-
-/**
  * Da para esvaziar e remover? (D3-B)
  *
- * Diferente de `podeRemover`: aqui o time PODE ter conteudo -- ele sera
+ * Aqui o time PODE ter conteudo -- ele sera
  * movido para a raiz e arquivado. O que ainda bloqueia e ser a raiz, nao ter
  * permissao, ou ter subtime filho (o filho tem de sair antes, senao a FK
  * `fk_team_parent` recusaria).

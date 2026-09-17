@@ -32,7 +32,6 @@ import {
   opcoesDoSeletorDaRaiz,
   podeApagarQuadros,
   podeGerirQuadrosDe,
-  quadroPedidoNaUrl,
   resolverQuadroPedido,
   TEXTO_DA_QUEDA,
   urlDoQuadro,
@@ -228,51 +227,6 @@ describe("opcaoSelecionada", () => {
   });
 });
 
-describe("quadroPedidoNaUrl", () => {
-  const CRM = "team-crm";
-  const OUTRO = "team-design";
-  const avulso = (id: string, team: string): Quadro =>
-    ({ id, name: `Quadro ${id}`, team_id: team, is_default: false, colunas: [] } as unknown as Quadro);
-  const geral = (id: string, team: string): Quadro =>
-    ({ id, name: "Quadro geral", team_id: team, is_default: true, colunas: [] } as unknown as Quadro);
-
-  it("sem parametro, e a lente", () => {
-    expect(quadroPedidoNaUrl(null, [avulso("b1", CRM)], CRM)).toBeNull();
-    expect(quadroPedidoNaUrl("", [avulso("b1", CRM)], CRM)).toBeNull();
-  });
-
-  it("parametro que existe naquele time passa", () => {
-    expect(quadroPedidoNaUrl("b1", [avulso("b1", CRM)], CRM)).toBe("b1");
-  });
-
-  it("⚠️ com a lista AINDA NAO CARREGADA, confia no parametro", () => {
-    // ⚠️ `null` e "nao chegou", nao "nao ha quadros". Conferindo aqui, toda
-    // carga de pagina derrubaria a selecao para a lente por um instante e a
-    // tela piscaria a lente antes de mostrar o quadro pedido.
-    expect(quadroPedidoNaUrl("b1", null, CRM)).toBe("b1");
-  });
-
-  it("⚠️ quadro de OUTRO time cai na lente", () => {
-    // `listBoards` devolve tudo que a pessoa alcanca. Sem esta trava,
-    // `/quadro/{timeA}?quadro={quadroDoTimeB}` desenharia o quadro de B sob a
-    // pagina de A -- e o seletor, que filtra por time, ficaria sem aba
-    // marcada: corpo mostrando um quadro, cabecalho dizendo "Lente do time".
-    expect(quadroPedidoNaUrl("b2", [avulso("b2", OUTRO)], CRM)).toBeNull();
-  });
-
-  it("id inexistente cai na lente, sem erro", () => {
-    // Link velho, ou quadro apagado por outra pessoa.
-    expect(quadroPedidoNaUrl("sumiu", [avulso("b1", CRM)], CRM)).toBeNull();
-  });
-
-  it("⚠️ o Quadro geral nao e uma opcao desta tela", () => {
-    // Ele tem tela propria (`/quadro`) e nao aparece no seletor -- aceitar o
-    // id dele aqui daria um corpo sem aba correspondente, igual ao caso do
-    // time alheio.
-    expect(quadroPedidoNaUrl("g1", [geral("g1", CRM)], CRM)).toBeNull();
-  });
-});
-
 describe("urlDoQuadro", () => {
   it("lente e a URL sem parametro", () => {
     expect(urlDoQuadro("t1", null)).toBe("/quadro/t1");
@@ -364,9 +318,8 @@ describe("opcoesDoSeletor -- afordância de apagar", () => {
 });
 
 describe("resolverQuadroPedido -- a queda deixou de ser muda (fatia 11)", () => {
-  // ⚠️ ATE A FATIA 7 A QUEDA MUDA ERA A DECISAO CERTA, e o docstring do
-  // `quadroPedidoNaUrl` explicava: link velho ou id na mao nao merecem erro na
-  // cara de quem só abriu a tela. A fatia 7 criou um caso novo -- uma pessoa
+  // ⚠️ ATE A FATIA 7 A QUEDA MUDA ERA A DECISAO CERTA: link velho ou id na mao
+  // nao merecem erro na cara de quem só abriu a tela. A fatia 7 criou um caso novo -- uma pessoa
   // apaga o quadro que a outra tem aberto -- e em 18/08 ele deixou de ser
   // hipotético: existe quadro avulso em produção, e um já foi apagado.
   const QUADROS = [
@@ -425,18 +378,6 @@ describe("resolverQuadroPedido -- a queda deixou de ser muda (fatia 11)", () => 
       id: null,
       motivo: "e-o-quadro-geral",
     });
-  });
-
-  it("⚠️ o `quadroPedidoNaUrl` continua valendo, e delega", () => {
-    // Os testes antigos dele não mudaram nesta fatia -- ele virou uma casca.
-    // Se alguém reimplementar o corpo dele em vez de delegar, as duas versões
-    // divergem no primeiro ajuste, que é o defeito que esta fatia não pode
-    // introduzir.
-    for (const id of ["b-pauta", "b-morto", "b-crm", "b-geral", null]) {
-      expect(quadroPedidoNaUrl(id, QUADROS, SEO)).toBe(
-        resolverQuadroPedido(id, QUADROS, SEO).id
-      );
-    }
   });
 
   it("todo motivo tem texto, e nenhum texto sobra", () => {

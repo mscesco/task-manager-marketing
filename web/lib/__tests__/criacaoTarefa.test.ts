@@ -6,14 +6,13 @@ import {
   todosJaEscolhidos,
   motivoNaoCria,
   podeCriar,
-  RASCUNHO_VAZIO,
   resumoResponsaveis,
   proximoDaSequencia,
   type Rascunho,
 } from "@/lib/criacaoTarefa";
 
 function r(over: Partial<Rascunho> = {}): Rascunho {
-  return { ...RASCUNHO_VAZIO, ...over };
+  return { titulo: "", assigneeIds: [], dueDate: "", ...over };
 }
 
 describe("motivoNaoCria / podeCriar", () => {
@@ -44,7 +43,7 @@ describe("motivoNaoCria / podeCriar", () => {
   it("titulo cobrado antes do responsavel", () => {
     // Pedir "escolha quem vai fazer" para um campo vazio manda a pessoa
     // resolver a coisa errada primeiro.
-    expect(motivoNaoCria(RASCUNHO_VAZIO)).toContain("título");
+    expect(motivoNaoCria(r())).toContain("título");
   });
 });
 
@@ -60,7 +59,7 @@ describe("acaoDoEnterNoTitulo", () => {
   });
 
   it("com titulo vazio, Enter nao faz nada", () => {
-    expect(acaoDoEnterNoTitulo(RASCUNHO_VAZIO)).toBe("nada");
+    expect(acaoDoEnterNoTitulo(r())).toBe("nada");
     expect(acaoDoEnterNoTitulo(r({ titulo: "  ", assigneeIds: ["u1"] }))).toBe("nada");
   });
 });
@@ -129,8 +128,8 @@ describe("proximoDaSequencia", () => {
 
 describe("proximoDaSequencia -- isolamento de referencia", () => {
   it("nao devolve a MESMA lista duas vezes", () => {
-    // ⚠️ `{...RASCUNHO_VAZIO}` e copia rasa: os dois resultados dividiriam o
-    // mesmo array, e mutar um mexeria no outro (e na constante do modulo).
+    // ⚠️ Espalhar uma constante "vazia" seria copia rasa: os dois resultados
+    // dividiriam o mesmo array, e mutar um mexeria no outro (e na constante).
     const a = proximoDaSequencia(r({ titulo: "X", assigneeIds: ["u1"] }));
     const b = proximoDaSequencia(r({ titulo: "Y", assigneeIds: ["u2"] }));
     expect(a.assigneeIds).not.toBe(b.assigneeIds);

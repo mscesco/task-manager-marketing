@@ -22,7 +22,6 @@ import {
   responsaveisPorRaiz,
   passaResponsavel,
   raizesQueCasamBusca,
-  temFiltroAtivo,
   temFiltroNovo,
   type TaskMin,
 } from "../filtrosQuadro";
@@ -337,7 +336,6 @@ describe("temFiltroNovo", () => {
 describe("contaFiltrosAtivos", () => {
   it("zero quando nada estreita o quadro", () => {
     expect(contaFiltrosAtivos(FILTROS_LIMPOS)).toBe(0);
-    expect(temFiltroAtivo(FILTROS_LIMPOS)).toBe(false);
   });
 
   it("conta cada eixo ligado", () => {
