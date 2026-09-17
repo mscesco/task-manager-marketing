@@ -2045,7 +2045,9 @@ export type Project = {
   start_date: string | null;
   due_date: string | null;
   completed_at: string | null;
-  is_archived: boolean;
+  // ⚠️ `is_archived` SAIU daqui em 17/09: arquivar projeto deixou de existir
+  // (a rota saiu, e não havia nenhum projeto arquivado). O backend ainda manda
+  // o campo; a tela não o lê.
   team_id: string | null;
   created_by: string;
   created_at: string;
@@ -2150,14 +2152,12 @@ export async function listProjects(
     page?: number;
     size?: number;
     status?: ProjectStatus;
-    include_archived?: boolean;
   }
 ): Promise<ProjectListResponse> {
   const q = new URLSearchParams();
   q.set("page", String(params.page ?? 1));
   q.set("size", String(params.size ?? 100));
   if (params.status) q.set("status", params.status);
-  if (params.include_archived) q.set("include_archived", "true");
   if (params.teamId) q.set("team_id", params.teamId);
   return api<ProjectListResponse>(`/api/v1/projects?${q.toString()}`);
 }
@@ -2169,7 +2169,6 @@ export async function listAllProjects(
   params: {
     teamId: string | null;
     status?: ProjectStatus;
-    include_archived?: boolean;
   }
 ): Promise<{ items: Project[]; total: number; truncated: boolean }> {
   const pageSize = 100;

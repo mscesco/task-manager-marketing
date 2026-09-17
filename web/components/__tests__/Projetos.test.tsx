@@ -80,7 +80,6 @@ function projeto(over: Partial<Project> & { id: string; title: string }): Projec
     start_date: null,
     due_date: null,
     completed_at: null,
-    is_archived: false,
     team_id: COM,
     created_by: "user-1",
     created_at: "2026-09-14T12:00:00Z",

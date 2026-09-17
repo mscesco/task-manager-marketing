@@ -80,6 +80,7 @@ import { sincronizarTaskNaUrl, lerTaskDaUrl } from "@/lib/urlTarefa";
 import { ORDENACOES, ordenar, type Ordenacao } from "@/lib/ordenacao";
 
 import Loading from "@/components/Loading";
+import { useAvisar } from "@/components/Toasts";
 // Spec 031 (C3): `normalizar` saiu daqui pra lib/filtrosQuadro (agora
 // `normalizarBusca`) -- "Minhas tarefas" tambem busca, e duas copias da
 // mesma regra sao um bug esperando.
@@ -306,7 +307,7 @@ export default function Board({
   // da URL so depois dela (ver os efeitos de "URL viva").
   const [deepLinkFeito, setDeepLinkFeito] = useState(false);
   const [activeId, setActiveId] = useState<string | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
+  const avisar = useAvisar();
   const [mostrarArquivadas, setMostrarArquivadas] = useState(false);
   // Filtros client-side (Entrega 13). NAO entram no useEffect de fetch:
   // filtram em memoria sobre o lote ja carregado, sem bater na API.
@@ -693,12 +694,6 @@ export default function Board({
     sincronizarTaskNaUrl(detalhe?.id ?? null);
   }, [detalhe, deepLinkFeito]);
 
-  useEffect(() => {
-    if (!toast) return;
-    const id = setTimeout(() => setToast(null), 3500);
-    return () => clearTimeout(id);
-  }, [toast]);
-
   function aoSalvar(saved: Task) {
     setTasks((prev) => {
       const lista = prev ?? [];
@@ -750,7 +745,7 @@ export default function Board({
     if (pilha.length > 0) voltarDetalhe();
     else fecharDetalhe();
     const extra = cascadeCount > 0 ? ` e ${cascadeCount} subtarefa(s)` : "";
-    setToast(`Tarefa${extra} excluída(s).`);
+    avisar(`Tarefa${extra} excluída(s).`);
   }
 
   function aoUpsert(t: Task) {
@@ -955,7 +950,7 @@ export default function Board({
         })
       );
       const e2 = err as ApiError;
-      setToast(
+      avisar(
         e2.status === 403
           ? "Você não pode mover esta tarefa. Voltei pra coluna anterior."
           : "Não consegui mover o card. Voltei pra coluna anterior."
@@ -1312,7 +1307,7 @@ export default function Board({
         totalPrevisto(rascunho, contagens ?? {}),
         resposta.movidas,
       );
-      if (divergencia) setToast(divergencia);
+      if (divergencia) avisar(divergencia);
       setRascunho(null);
       setRevisando(false);
       setCriandoColuna(false);
@@ -2457,21 +2452,6 @@ export default function Board({
         membrosInativos={membrosInativos}
       />
 
-      {toast && (
-        <div
-          style={{
-            position: "fixed", left: "50%", bottom: 24, transform: "translateX(-50%)",
-            // color usa --surface (e nao "#fff" cravado): o fundo e --text, e
-            // os dois invertem juntos no tema escuro. Com branco fixo, o toast
-            // ficaria branco sobre fundo claro -- ilegivel.
-            background: "var(--text)", color: "var(--surface)", padding: "10px 16px",
-            borderRadius: 10, fontSize: 13, fontWeight: 500, zIndex: 60,
-            boxShadow: "var(--shadow)", maxWidth: 420,
-          }}
-        >
-          {toast}
-        </div>
-      )}
     </div>
   );
 }

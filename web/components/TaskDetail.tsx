@@ -95,6 +95,7 @@ import {
 } from "@/lib/criacaoTarefa";
 
 import Loading from "@/components/Loading";
+import { useAvisar } from "@/components/Toasts";
 // ⚠️ RESERVA DO BADGE, e so isso (fatia 4c-2). O rotulo do badge passou a sair
 // de `coluna.name`; este mapa responde pelo caso em que a coluna da tarefa nao
 // esta na lista carregada -- quadro sem alcance, coluna apagada na fatia 5, ou
@@ -333,7 +334,11 @@ export default function TaskDetail({
   const [abertoResp, setAbertoResp] = useState(false);
   const [busca, setBusca] = useState("");
   const [saving, setSaving] = useState<Set<string>>(new Set());
-  const [erro, setErro] = useState<string | null>(null);
+  // ⚠️ ERA `const [erro, setErro]`, e nada o desenhava desde 30/07: a caixa
+  // saiu num redesenho e as falhas de responsavel, prioridade, coluna,
+  // arquivar e excluir passaram a acontecer em silencio. Agora e a mesma
+  // pilha de avisos do app (`components/Toasts.tsx`, montada no AppShell).
+  const avisar = useAvisar();
 
   // Projeto (Spec 022): eco local do project_id exibido -- atualiza no sucesso
   // do move sem depender do round-trip do pai. abertoProj abre o seletor;
@@ -524,7 +529,6 @@ export default function TaskDetail({
     setAssignees(task?.assignee_ids ?? []);
     setAbertoResp(false);
     setBusca("");
-    setErro(null);
     setSaving(new Set());
     setProjetoAtual(task?.project_id ?? null);
     setAbertoProj(false);
@@ -854,7 +858,6 @@ export default function TaskDetail({
       ? assignees.filter((x) => x !== userId)
       : [...assignees, userId];
 
-    setErro(null);
     setAssignees(otimista);
     onAssigneesChange(tid, otimista);
     setSaving((s) => new Set(s).add(userId));
@@ -869,7 +872,7 @@ export default function TaskDetail({
       setAssignees(anterior);
       onAssigneesChange(tid, anterior);
       const err = e as ApiError;
-      setErro(
+      avisar(
         err.status === 403
           ? "Você não pode designar nesta tarefa."
           : err.status === 422
@@ -1038,7 +1041,6 @@ export default function TaskDetail({
       setAbertoPrio(false);
       return;
     }
-    setErro(null);
     setSalvandoPrio(true);
     try {
       const t = await updateTask(tid, { priority: destino });
@@ -1046,7 +1048,7 @@ export default function TaskDetail({
       onSubtaskUpsert(t);
     } catch (e) {
       const err = e as ApiError;
-      setErro(
+      avisar(
         err.status === 403
           ? "Você não pode editar esta tarefa."
           : "Não consegui mudar a prioridade."
@@ -1086,7 +1088,6 @@ export default function TaskDetail({
       setAbertoCol(false);
       return;
     }
-    setErro(null);
     setSalvandoCol(true);
     const viraConcluida =
       colunaPorId.get(destino)?.semantic === "DONE" &&
@@ -1098,7 +1099,7 @@ export default function TaskDetail({
       if (viraConcluida && filhos.length > 0) void recarregarFilhos();
     } catch (e) {
       const err = e as ApiError;
-      setErro(
+      avisar(
         err.status === 403
           ? "Você não pode editar esta tarefa."
           : err.status === 422
@@ -1328,7 +1329,6 @@ export default function TaskDetail({
   }
 
   async function alternarArquivo() {
-    setErro(null);
     setArquivando(true);
     try {
       const desarquivando = task!.is_archived;
@@ -1352,7 +1352,7 @@ export default function TaskDetail({
         // citou. Em silencio, ela so descobriria pela ausencia delas.
         const n = r.cascade_count;
         const plural = n === 1 ? "subtarefa foi" : "subtarefas foram";
-        window.alert(
+        avisar(
           desarquivando
             ? `${n} ${plural} desarquivada${n === 1 ? "" : "s"} junto.`
             : `${n} ${plural} arquivada${n === 1 ? "" : "s"} junto.`
@@ -1360,7 +1360,7 @@ export default function TaskDetail({
       }
     } catch (e) {
       const a = e as ApiError;
-      setErro(
+      avisar(
         a.status === 403
           ? "Você não pode arquivar esta tarefa."
           : // ⚠️ `a.message` no 422: e aqui que chega a mensagem que NOMEIA o
@@ -1376,13 +1376,12 @@ export default function TaskDetail({
   }
 
   async function excluir() {
-    setErro(null);
     setExcluindo(true);
     try {
       const r = await deleteTask(tid);
       onExcluir(task!, r.cascade_count); // quadro remove a subtree e fecha
     } catch (e) {
-      setErro(
+      avisar(
         (e as ApiError).status === 403
           ? "Você não pode excluir esta tarefa."
           : "Não consegui excluir a tarefa."
@@ -3016,7 +3015,7 @@ export default function TaskDetail({
           {task.can_delete && !confirmandoExcluir && (
             <button
               type="button" className="btn btn-ghost"
-              onClick={() => { setErro(null); setConfirmandoExcluir(true); }}
+              onClick={() => setConfirmandoExcluir(true)}
               style={{ color: "var(--danger, #b42318)" }}
             >
               Excluir

@@ -63,6 +63,7 @@ import Avatar from "@/components/Avatar";
 import { nomeCurto } from "@/lib/people";
 
 import Loading from "@/components/Loading";
+import { useAvisar } from "@/components/Toasts";
 const PRIORITIES = ["LOW", "MEDIUM", "HIGH", "URGENT"] as const;
 
 // Gatilho compacto redondo (mesmo padrao do detalhe): troca o despejo de 30
@@ -202,6 +203,9 @@ export default function TaskModal({
   // herdar, a pessoa resolve subtarefa a subtarefa. Recolocar a caixa desfaz
   // a ADR -- não é preferência de tela.
   const [escolhasSub, setEscolhasSub] = useState<Record<string, string[]>>({});
+  // ⚠️ Os avisos pós-cópia e o de links não salvos eram `window.alert`. Agora
+  // vão para a pilha do app, que sobrevive ao modal se fechar logo depois.
+  const avisar = useAvisar();
   const [puladasSub, setPuladasSub] = useState<Set<string>>(new Set());
   const [abertoResp, setAbertoResp] = useState(false);
   /**
@@ -704,7 +708,7 @@ export default function TaskModal({
           );
         }
         if (avisos.length) {
-          window.alert(`Cópia criada. ${avisos.join(" ")}`);
+          avisar(`Cópia criada. ${avisos.join(" ")}`);
         }
         saved = copia;
       } else {
@@ -743,7 +747,7 @@ export default function TaskModal({
           try {
             await putTaskLinks(saved.id, paraEnvio(rascunhoLinks));
           } catch (errLinks) {
-            window.alert(
+            avisar(
               "Tarefa criada, mas os links não foram salvos: " +
                 ((errLinks as ApiError).message || "erro desconhecido") +
                 ". Abra a tarefa e adicione os links por lá.",

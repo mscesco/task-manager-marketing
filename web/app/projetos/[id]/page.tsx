@@ -192,7 +192,6 @@ function Projeto() {
       <span>Prioridade: {PRIORITY_LABEL[project.priority] || project.priority}</span>
       {project.start_date && <span>Início: {dataBR(project.start_date)}</span>}
       {project.due_date && <span>Prazo: {dataBR(project.due_date)}</span>}
-      {project.is_archived && <span>· arquivado</span>}
       {/* Spec 052, fatia B: os links do projeto, só com o nome, na mesma linha
           da meta -- é a primeira coisa que as pessoas abrem. */}
       <LinksDoItem links={links ?? []} rotulo="Links do projeto" />

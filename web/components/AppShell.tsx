@@ -69,6 +69,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 
 import { LoadingScreen } from "@/components/Loading";
+import { AvisosProvider } from "@/components/Toasts";
 // Navegacao lateral retratil. Itens usam a MESMA classe-base `itemCls` ->
 // alinham por construcao. Expandido: icone + rotulo. Retraido: so icone.
 // Fatia 7b: grupo "Quadros" (accordion, abre com clique) com o Quadro Geral
@@ -374,6 +375,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const algumQuadroAtivo = pathname.startsWith("/quadro");
 
   return (
+    <AvisosProvider>
     <div className="flex min-h-screen">
       {/* ⚠️⚠️ A FRONTEIRA DE `Suspense` DO PRODUTO INTEIRO PARA O `?time=`.
           IRMÃO, e não ancestral: envolver a barra e o `children` faria as telas
@@ -621,5 +623,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         </main>
       </div>
     </div>
+    </AvisosProvider>
   );
 }

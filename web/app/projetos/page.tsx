@@ -361,7 +361,6 @@ function LinhaDeProjeto({ p, primeira }: { p: Project; primeira: boolean }) {
                 // da grade veio consertar.
                 minHeight: 56, padding: "14px 20px",
                 display: "flex", alignItems: "center", gap: 12,
-                opacity: p.is_archived ? 0.6 : 1,
               }}
             >
               {outline}
@@ -408,7 +407,6 @@ function LinhaDeProjeto({ p, primeira }: { p: Project; primeira: boolean }) {
                 }}
               >
                 {STATUS_LABEL[p.status] || p.status}
-                {p.is_archived && " · arquivado"}
               </span>
             </a>
   );

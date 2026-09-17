@@ -90,7 +90,6 @@ function projeto(over: Partial<Project> = {}): Project {
     priority: "MEDIUM",
     start_date: null,
     due_date: null,
-    is_archived: false,
     team_id: "team-1",
     created_by: "user-1",
     completed_at: null,
