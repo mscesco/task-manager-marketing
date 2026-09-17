@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Awaitable, Callable
+from datetime import timedelta
 
 from sqlalchemy import select
 
@@ -45,6 +46,11 @@ from app.modules.notifications.infrastructure.notification_repository import (
 )
 
 logger = get_logger(__name__)
+
+#: Spec 053, D18: avisos seguidos do mesmo autor se juntam dentro desta janela.
+JANELA_DE_JUNCAO = timedelta(minutes=10)
+
+_T = NotificationType
 
 
 class NotificationEmitter:
@@ -216,15 +222,16 @@ class NotificationEmitter:
         async def _do() -> None:
             if not await self._so_quem_alcanca(task_id, [recipient_id]):
                 return
-            self._repo.create(
+            await self._juntar(
                 recipient_id=recipient_id,
                 actor_id=actor_id,
-                type=NotificationType.TASK_WATCH_ADDED.value,
                 task_id=task_id,
+                tipo=_T.TASK_WATCH_ADDED,
                 payload={
                     "actor_name": await self._actor_name(actor_id),
                     "task_title": task_title,
                 },
+                opostos=(_T.TASK_WATCH_REMOVED,),
             )
 
         await self._emit_safely("TASK_WATCH_ADDED", _do)
@@ -249,18 +256,73 @@ class NotificationEmitter:
         async def _do() -> None:
             if not await self._so_quem_alcanca(task_id, [recipient_id]):
                 return
-            self._repo.create(
+            await self._juntar(
                 recipient_id=recipient_id,
                 actor_id=actor_id,
-                type=NotificationType.TASK_WATCH_REMOVED.value,
                 task_id=task_id,
+                tipo=_T.TASK_WATCH_REMOVED,
                 payload={
                     "actor_name": await self._actor_name(actor_id),
                     "task_title": task_title,
                 },
+                opostos=(_T.TASK_WATCH_ADDED,),
             )
 
         await self._emit_safely("TASK_WATCH_REMOVED", _do)
+
+    async def mudanca_na_tarefa(
+        self,
+        *,
+        tipo: NotificationType,
+        recipient_ids: list[uuid.UUID],
+        actor_id: uuid.UUID,
+        task_id: uuid.UUID,
+        task_title: str,
+        extra: dict | None = None,
+    ) -> None:
+        """Os avisos de mudanca da Spec 053 (fatia C): coluna, prazo, descricao,
+        arquivar, desarquivar e excluir.
+
+        Um metodo so, e nao seis, porque os seis tem a MESMA forma -- fan-out
+        para a audiencia da tarefa, menos o autor, pela trava, com juncao. O que
+        muda entre eles e o `extra` do payload e a regra de juntar
+        (`_combinar`).
+
+        ⚠️ QUEM CHAMA DECIDE SE FOI GESTO DIRETO (D16). Este metodo nao sabe se
+        a mudanca de coluna veio do arraste ou do laco de apagar coluna -- e
+        por isso ele e chamado das ROTAS, e nunca de dentro do `TaskService`.
+        """
+        alvos = [r for r in dict.fromkeys(recipient_ids) if r != actor_id]
+        if not alvos:
+            return
+        opostos: tuple[NotificationType, ...] = ()
+        absorve: tuple[NotificationType, ...] = ()
+        if tipo is _T.TASK_ARCHIVED:
+            opostos = (_T.TASK_UNARCHIVED,)
+        elif tipo is _T.TASK_UNARCHIVED:
+            opostos = (_T.TASK_ARCHIVED,)
+            # §6.5: "Reativar" e PATCH de coluna + desarquivar. Um gesto, um
+            # aviso: o desarquivar leva junto a mudanca de coluna recente.
+            absorve = (_T.TASK_COLUMN_CHANGED,)
+
+        async def _do() -> None:
+            actor_name = await self._actor_name(actor_id)
+            for rid in await self._so_quem_alcanca(task_id, alvos):
+                await self._juntar(
+                    recipient_id=rid,
+                    actor_id=actor_id,
+                    task_id=task_id,
+                    tipo=tipo,
+                    payload={
+                        "actor_name": actor_name,
+                        "task_title": task_title,
+                        **(extra or {}),
+                    },
+                    opostos=opostos,
+                    absorve=absorve,
+                )
+
+        await self._emit_safely(tipo.value, _do)
 
     async def due_soon(
         self,
@@ -370,6 +432,67 @@ class NotificationEmitter:
 
         await self._emit_safely("ACCESS_LOST", _do)
 
+    async def _juntar(
+        self,
+        *,
+        recipient_id: uuid.UUID,
+        actor_id: uuid.UUID,
+        task_id: uuid.UUID,
+        tipo: NotificationType,
+        payload: dict,
+        opostos: tuple[NotificationType, ...] = (),
+        absorve: tuple[NotificationType, ...] = (),
+    ) -> None:
+        """A JUNCAO DE AVISOS (Spec 053, D18), para UM destinatario.
+
+        Na ordem:
+          1. `absorve`: aviso recente destes tipos some (o desarquivar leva a
+             mudanca de coluna do "Reativar");
+          2. `opostos`: se ha um aviso recente do tipo OPOSTO, os dois se anulam
+             -- apaga o antigo e nao cria nada (arquivar <-> desarquivar,
+             colocar <-> tirar como seguidor);
+          3. mesmo tipo recente: combina (`_combinar`); se o estado final e o
+             inicial, apaga;
+          4. senao, cria.
+
+        "Recente" = nao lido, mesmo autor, mesma tarefa, dentro de
+        `JANELA_DE_JUNCAO`. ⚠️ Aviso JA LIDO nunca e tocado: quem leu "moveu
+        para B" nao pode ver a frase mudar para "moveu para C".
+        """
+        for t in absorve:
+            velho = await self._repo.recente_nao_lida(
+                recipient_id=recipient_id, task_id=task_id, actor_id=actor_id,
+                tipos=(t.value,), janela=JANELA_DE_JUNCAO,
+            )
+            if velho is not None:
+                await self._repo.apagar(velho)
+        if opostos:
+            oposto = await self._repo.recente_nao_lida(
+                recipient_id=recipient_id, task_id=task_id, actor_id=actor_id,
+                tipos=tuple(t.value for t in opostos), janela=JANELA_DE_JUNCAO,
+            )
+            if oposto is not None:
+                await self._repo.apagar(oposto)
+                return
+        mesmo = await self._repo.recente_nao_lida(
+            recipient_id=recipient_id, task_id=task_id, actor_id=actor_id,
+            tipos=(tipo.value,), janela=JANELA_DE_JUNCAO,
+        )
+        if mesmo is None:
+            self._repo.create(
+                recipient_id=recipient_id,
+                actor_id=actor_id,
+                type=tipo.value,
+                task_id=task_id,
+                payload=payload,
+            )
+            return
+        combinado = _combinar(tipo, mesmo.payload or {}, payload)
+        if combinado is None:
+            await self._repo.apagar(mesmo)
+        else:
+            await self._repo.atualizar(mesmo, payload=combinado)
+
     async def _so_quem_alcanca(
         self, task_id: uuid.UUID, ids: list[uuid.UUID]
     ) -> list[uuid.UUID]:
@@ -418,3 +541,21 @@ class NotificationEmitter:
         )
         name = (await self._session.execute(stmt)).scalar_one_or_none()
         return name or ""
+
+
+def _combinar(tipo: NotificationType, velho: dict, novo: dict) -> dict | None:
+    """O payload de dois avisos do MESMO tipo juntados. `None` = se anularam.
+
+    - coluna: guarda a coluna de ORIGEM do primeiro e a de destino do ultimo;
+      origem == destino (foi e voltou) -> some;
+    - prazo: guarda o prazo ANTERIOR do primeiro e o novo do ultimo; iguais ->
+      some;
+    - o resto (descricao, colocar/tirar...): o mais novo vale.
+    """
+    if tipo is _T.TASK_COLUMN_CHANGED:
+        juntado = {**novo, "from_column": velho.get("from_column")}
+        return None if juntado["from_column"] == juntado.get("to_column") else juntado
+    if tipo is _T.TASK_DUE_CHANGED:
+        juntado = {**novo, "from_due": velho.get("from_due")}
+        return None if juntado["from_due"] == juntado.get("to_due") else juntado
+    return novo

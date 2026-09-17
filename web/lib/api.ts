@@ -2460,7 +2460,18 @@ export type NotificationType =
   | "ACCESS_LOST"
   // Spec 053 (B): outra pessoa colocou ou tirou quem recebe como seguidor.
   | "TASK_WATCH_ADDED"
-  | "TASK_WATCH_REMOVED";
+  | "TASK_WATCH_REMOVED"
+  // Spec 053 (C): o que acontece na tarefa, para quem segue, e responsavel ou
+  // criou. So o gesto direto avisa, e avisos seguidos do mesmo autor se juntam.
+  | "TASK_COLUMN_CHANGED"
+  | "TASK_DUE_CHANGED"
+  | "TASK_DESCRIPTION_CHANGED"
+  | "TASK_ARCHIVED"
+  | "TASK_UNARCHIVED"
+  | "TASK_DELETED";
+
+/** O prazo como vem no payload de `TASK_DUE_CHANGED`. `time` = "HH:MM" ou null. */
+export type PrazoDoAviso = { date: string; time: string | null };
 
 export type AppNotification = {
   id: string;
@@ -2476,9 +2487,17 @@ export type AppNotification = {
     emoji?: string;
     due_date?: string;
     quantidade?: number;
+    // Spec 053 (C). Colunas vao pelo NOME: o aviso e retrato do momento.
+    from_column?: string | null;
+    to_column?: string | null;
+    from_due?: PrazoDoAviso | null;
+    to_due?: PrazoDoAviso | null;
   } | null;
   read_at: string | null; // null = nao lida
   created_at: string;
+  // Spec 053 (C): a ULTIMA mudanca. Difere de `created_at` quando avisos seguidos
+  // do mesmo autor se juntaram -- e o horario que a tela mostra.
+  updated_at?: string;
 };
 
 export type NotificationListResponse = {

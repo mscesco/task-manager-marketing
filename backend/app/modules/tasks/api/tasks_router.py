@@ -39,6 +39,7 @@ from app.modules.tasks.api.schemas import (
 from app.modules.tasks.application.collaboration_service import (
     CollaborationService,
 )
+from app.modules.tasks.application.task_notices import AvisosDaTarefa
 from app.modules.tasks.application.task_service import (
     CreateTaskCommand,
     DuplicateTaskCommand,
@@ -334,6 +335,10 @@ async def update_task(
             details={"field": "column_id"},
         )
 
+    # Spec 053 (C): os avisos saem DAQUI, e nao do servico -- ver o topo de
+    # `task_notices.py` (o `update` tambem roda no laco de apagar coluna).
+    avisos = AvisosDaTarefa(uow.session)
+    antes = await avisos.retrato(task_id)
     task = await TaskService(uow.session).update(
         task_id=task_id,
         command=UpdateTaskCommand(
@@ -353,6 +358,7 @@ async def update_task(
             fields_set=frozenset(payload.model_fields_set),
         ),
     )
+    await avisos.depois_da_edicao(antes, task)
     await uow.commit()
     return TaskResponse.model_validate(task)
 
@@ -388,7 +394,10 @@ async def archive_task(task_id: uuid.UUID, uow: UoWDep) -> ArchiveTaskResponse:
 
     `cascade_count` = subtarefas arquivadas junto (nao conta a propria).
     """
+    avisos = AvisosDaTarefa(uow.session)
+    antes = await avisos.retrato(task_id)
     resultado = await TaskService(uow.session).archive(task_id=task_id)
+    await avisos.depois_de_arquivar(antes, resultado.task)
     await uow.commit()
     task_data = TaskResponse.model_validate(resultado.task).model_dump()
     return ArchiveTaskResponse(
@@ -408,7 +417,10 @@ async def unarchive_task(
 
     Recusa (422) quando o PAI esta arquivado -- ver `TaskService.unarchive`.
     """
+    avisos = AvisosDaTarefa(uow.session)
+    antes = await avisos.retrato(task_id)
     resultado = await TaskService(uow.session).unarchive(task_id=task_id)
+    await avisos.depois_de_arquivar(antes, resultado.task)
     await uow.commit()
     task_data = TaskResponse.model_validate(resultado.task).model_dump()
     return ArchiveTaskResponse(
@@ -429,6 +441,7 @@ async def delete_task(
     Resposta inclui `cascade_count` (numero de filhas apagadas junto).
     """
     result = await TaskService(uow.session).soft_delete(task_id=task_id)
+    await AvisosDaTarefa(uow.session).depois_de_excluir(result.task)
     await uow.commit()
     # Combina campos do TaskResponse com cascade_count.
     task_data = TaskResponse.model_validate(result.task).model_dump()

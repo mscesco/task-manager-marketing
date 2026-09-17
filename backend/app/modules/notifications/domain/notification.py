@@ -36,6 +36,15 @@ class NotificationType(str, Enum):
     # seguidor. Quem se inscreve sozinho nao se avisa.
     TASK_WATCH_ADDED = "TASK_WATCH_ADDED"
     TASK_WATCH_REMOVED = "TASK_WATCH_REMOVED"
+    # Spec 053, fatia C (D14): o que acontece na tarefa, para seguidores +
+    # responsaveis + criador. So o GESTO DIRETO avisa (D16) -- ver
+    # `tasks/application/task_notices.py`.
+    TASK_COLUMN_CHANGED = "TASK_COLUMN_CHANGED"
+    TASK_DUE_CHANGED = "TASK_DUE_CHANGED"
+    TASK_DESCRIPTION_CHANGED = "TASK_DESCRIPTION_CHANGED"
+    TASK_ARCHIVED = "TASK_ARCHIVED"
+    TASK_UNARCHIVED = "TASK_UNARCHIVED"
+    TASK_DELETED = "TASK_DELETED"
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,6 +59,7 @@ class NotificationDTO:
     payload: dict | None
     read_at: datetime | None
     created_at: datetime
+    updated_at: datetime
 
     @property
     def is_read(self) -> bool:

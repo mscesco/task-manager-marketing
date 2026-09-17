@@ -131,8 +131,22 @@ async def test_por_e_tirar_outra_pessoa_grava_historico_e_avisa(db) -> None:
     assert await _historico(db, task.id, "unwatched") == [
         {"target_user_id": str(op_a), "by_self": False, "reason": "manual"}
     ]
+    # ⚠️ Pos e tirou dentro da janela de 10 minutos, sem ninguem ler: os dois
+    # avisos se ANULAM (Spec 053, D18, fatia C). Cada um sozinho avisa -- ver
+    # `test_por_outra_pessoa_avisa_quem_foi_posto`.
+    assert await _avisos(db, op_a, "TASK_WATCH_ADDED") == 0
+    assert await _avisos(db, op_a, "TASK_WATCH_REMOVED") == 0
+
+
+async def test_por_outra_pessoa_avisa_quem_foi_posto(db) -> None:
+    ws, r, a, b, gerente, op_a, op_b, forest = await _mundo(db)
+    task = await f.make_task(db, workspace_id=ws, created_by=gerente, team_id=a)
+
+    with _como_gerente(ws, r, gerente, forest):
+        await CollaborationService(db).add_watcher(task_id=task.id, user_id=op_a)
+        await db.flush()
+
     assert await _avisos(db, op_a, "TASK_WATCH_ADDED") == 1
-    assert await _avisos(db, op_a, "TASK_WATCH_REMOVED") == 1
 
 
 async def test_seguir_a_si_mesmo_nao_avisa(db) -> None:

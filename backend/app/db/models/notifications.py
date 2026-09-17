@@ -13,7 +13,10 @@ Decisoes (Spec 018):
     registro historico que sobrevive a task/comentario sumir (D2).
   - `recipient_id` TEM FK composta (id, workspace_id) -> users: um
     destinatario invalido nao faz sentido.
-  - sem soft-delete, sem updated_at: notificacao nasce e so muda read_at.
+  - sem soft-delete. ⚠️ ESTA LINHA DIZIA "sem updated_at: notificacao nasce e
+    so muda read_at" -- deixou de ser verdade na Spec 053 (fatia C): avisos
+    seguidos do mesmo autor se JUNTAM (payload e `updated_at` mudam) e, quando
+    se anulam, a linha e APAGADA. Ver `NotificationEmitter._juntar`.
 """
 
 from __future__ import annotations
@@ -75,5 +78,10 @@ class Notification(UUIDPrimaryKeyMixin, Base):
         DateTime(timezone=True), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    # Spec 053, fatia C (migration 0027): a ultima mudanca do aviso. Igual a
+    # `created_at` ate uma juncao atualiza-lo. O sino ordena por aqui.
+    updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

@@ -47,6 +47,7 @@ from app.modules.tasks.domain.comment_reaction import (
 )
 from app.modules.tasks.infrastructure.collaboration_repository import (
     TaskAssignmentRepository,
+    TaskWatcherRepository,
 )
 from app.modules.tasks.infrastructure.comment_reaction_repository import (
     CommentReactionRepository,
@@ -94,6 +95,7 @@ class CommentService:
         self._comments = CommentRepository(session)
         self._guards = TaskScopeGuards(session)
         self._assignees = TaskAssignmentRepository(session)
+        self._watchers = TaskWatcherRepository(session)
         self._notify = NotificationEmitter(session)
         self._reactions = CommentReactionRepository(session)
 
@@ -225,16 +227,20 @@ class CommentService:
             task=task, comment_id=comment.id, conteudo=clean
         )
 
-        # 2) Comentario: fan-out pros responsaveis E pro criador, menos o autor
+        # 2) Comentario: fan-out pros SEGUIDORES (Spec 053, D15), responsaveis
+        #    e criador, menos o autor
         #    (emitter) e MENOS quem ja foi mencionado (D3: a mencao tem
         #    prioridade -- ninguem recebe duas notificacoes pelo mesmo
         #    comentario). Replica tambem notifica.
         mencionados_set = set(mencionados)
         recipient_ids = [
             uid
-            for uid in (
-                *await self._assignees.list_user_ids(task_id),
-                task.created_by,
+            for uid in dict.fromkeys(
+                (
+                    *await self._watchers.list_user_ids(task_id),
+                    *await self._assignees.list_user_ids(task_id),
+                    task.created_by,
+                )
             )
             if uid not in mencionados_set
         ]

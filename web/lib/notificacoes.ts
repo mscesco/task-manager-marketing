@@ -96,6 +96,26 @@ export function textoDaNotificacao(
   // não se avisa.
   if (n.type === "TASK_WATCH_ADDED") return `${ator} colocou você para seguir "${task}"`;
   if (n.type === "TASK_WATCH_REMOVED") return `${ator} tirou você de "${task}"`;
+  // Spec 053 (C): o que acontece na tarefa.
+  if (n.type === "TASK_COLUMN_CHANGED") {
+    const de = n.payload?.from_column;
+    const para = n.payload?.to_column;
+    if (de && para) return `${ator} moveu "${task}" de ${de} para ${para}`;
+    if (para) return `${ator} moveu "${task}" para ${para}`;
+    return `${ator} moveu "${task}"`;
+  }
+  if (n.type === "TASK_DUE_CHANGED") {
+    const novo = n.payload?.to_due;
+    if (!novo) return `${ator} tirou o prazo de "${task}"`;
+    // ⚠️ Corta a string YYYY-MM-DD, sem `new Date` (que leria meia-noite UTC e
+    // escorregaria um dia) -- mesma regra do `lib/prazo.ts`.
+    const dia = `${novo.date.slice(8, 10)}/${novo.date.slice(5, 7)}`;
+    return `${ator} mudou o prazo de "${task}" para ${dia}${novo.time ? ` ${novo.time}` : ""}`;
+  }
+  if (n.type === "TASK_DESCRIPTION_CHANGED") return `${ator} editou a descrição de "${task}"`;
+  if (n.type === "TASK_ARCHIVED") return `${ator} arquivou "${task}"`;
+  if (n.type === "TASK_UNARCHIVED") return `${ator} desarquivou "${task}"`;
+  if (n.type === "TASK_DELETED") return `${ator} excluiu "${task}"`;
   if (n.type === "ACCESS_LOST") {
     // "acesso", e nao "deixou de ser responsavel": a contagem inclui tarefas
     // em que a pessoa so observava (Spec 053 §5).

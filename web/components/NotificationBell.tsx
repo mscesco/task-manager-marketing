@@ -227,7 +227,8 @@ export default function NotificationBell() {
                   <span className="min-w-0 flex-1">
                     <span className="block text-base text-ink">{textoDaNotificacao(n)}</span>
                     <span className="mt-0.5 block text-xs text-ink-faint">
-                      {quando(n.created_at)}
+                      {/* Spec 053 (C): a ultima mudanca, se avisos se juntaram. */}
+                      {quando(n.updated_at ?? n.created_at)}
                     </span>
                   </span>
                 </button>

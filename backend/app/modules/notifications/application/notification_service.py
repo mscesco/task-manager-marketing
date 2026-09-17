@@ -65,4 +65,5 @@ class NotificationService:
             payload=row.payload,
             read_at=row.read_at,
             created_at=row.created_at,
+            updated_at=row.updated_at,
         )

@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import func, select, update
+from datetime import timedelta
+
+from sqlalchemy import delete, func, select, update
 
 from app.core.tenant import require_tenant
 from app.db.models import Notification
@@ -69,8 +71,10 @@ class NotificationRepository(BaseRepository[Notification]):
         ).scalar_one()
 
         stmt = (
+            # ⚠️ `updated_at`, e nao `created_at`, desde a Spec 053 (C): o
+            # aviso que juntou uma mudanca nova sobe para o topo.
             base.order_by(
-                Notification.created_at.desc(), Notification.id.desc()
+                Notification.updated_at.desc(), Notification.id.desc()
             )
             .offset((params.page - 1) * params.size)
             .limit(params.size)
@@ -78,6 +82,52 @@ class NotificationRepository(BaseRepository[Notification]):
         rows = (await self.session.execute(stmt)).scalars().all()
         return Page(
             items=list(rows), total=total, page=params.page, size=params.size
+        )
+
+    async def recente_nao_lida(
+        self,
+        *,
+        recipient_id: uuid.UUID,
+        task_id: uuid.UUID,
+        actor_id: uuid.UUID,
+        tipos: tuple[str, ...],
+        janela: timedelta,
+    ) -> Notification | None:
+        """O aviso NAO LIDO mais recente deste autor, tarefa e destinatario,
+        de um destes tipos, dentro da janela (Spec 053, D18).
+
+        ⚠️ A janela conta a partir de `now()` do BANCO -- que e o instante da
+        TRANSACAO (armadilha do AGENTS.md). Numa mesma requisicao todas as
+        comparacoes usam o mesmo relogio, que e o que se quer.
+        """
+        stmt = (
+            self._base_select()
+            .where(
+                Notification.recipient_id == recipient_id,
+                Notification.task_id == task_id,
+                Notification.actor_id == actor_id,
+                Notification.type.in_(tipos),
+                Notification.read_at.is_(None),
+                Notification.updated_at >= func.now() - janela,
+            )
+            .order_by(Notification.updated_at.desc(), Notification.id.desc())
+            .limit(1)
+        )
+        return (await self.session.execute(stmt)).scalar_one_or_none()
+
+    async def atualizar(self, row: Notification, *, payload: dict) -> None:
+        """Junta uma mudanca nova num aviso existente: payload + `updated_at`."""
+        await self.session.execute(
+            update(Notification)
+            .where(Notification.id == row.id)
+            .values(payload=payload, updated_at=func.now())
+        )
+
+    async def apagar(self, row: Notification) -> None:
+        """Remove um aviso que se ANULOU (Spec 053, D18). Nunca um lido: quem
+        chama so chega aqui com `recente_nao_lida`."""
+        await self.session.execute(
+            delete(Notification).where(Notification.id == row.id)
         )
 
     async def count_unread(self) -> int:

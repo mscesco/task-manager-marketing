@@ -110,20 +110,25 @@ async def test_scoping_so_ve_as_minhas(db) -> None:
 
 
 async def test_ordem_mais_nova_primeiro(db) -> None:
-    """created_at explicito distinto -> feed retorna a mais nova primeiro.
+    """Carimbos distintos -> feed retorna a mais nova primeiro.
 
     func.now() e constante na transacao, entao os testes carimbam
     created_at distintos em vez de confiar no relogio do banco.
+
+    ⚠️ Desde a Spec 053 (C) a ordem e por `updated_at` (o aviso que juntou uma
+    mudanca nova sobe). Aviso recem-nascido tem `updated_at == created_at`, e
+    o teste carimba os dois do mesmo jeito.
     """
     ws, r, me, other, ctx = await _world(db)
     base = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
     velha = Notification(
         workspace_id=ws, recipient_id=me, actor_id=other,
-        type="TASK_ASSIGNED", created_at=base,
+        type="TASK_ASSIGNED", created_at=base, updated_at=base,
     )
     nova = Notification(
         workspace_id=ws, recipient_id=me, actor_id=other,
         type="TASK_COMMENTED", created_at=base + timedelta(minutes=5),
+        updated_at=base + timedelta(minutes=5),
     )
     db.add(velha)
     db.add(nova)

@@ -21,6 +21,9 @@ class NotificationResponse(BaseModel):
     payload: dict | None
     read_at: datetime | None
     created_at: datetime
+    # Spec 053 (C): a ultima mudanca -- difere de `created_at` quando avisos
+    # seguidos se juntaram. E o horario que a tela mostra.
+    updated_at: datetime
 
 
 class NotificationListResponse(BaseModel):

@@ -130,6 +130,44 @@ describe("textoDaNotificacao -- prazo e acesso (Spec 053, A)", () => {
     );
   });
 
+  it("Spec 053 (C): coluna diz de onde e para onde", () => {
+    expect(
+      textoDaNotificacao({
+        type: "TASK_COLUMN_CHANGED",
+        payload: { actor_name: "Ana", task_title: "Banner", from_column: "Backlog", to_column: "Concluído" },
+      }),
+    ).toBe('Ana moveu "Banner" de Backlog para Concluído');
+  });
+
+  it("Spec 053 (C): prazo com hora, sem hora e tirado", () => {
+    const base = { actor_name: "Ana", task_title: "Banner" };
+    expect(
+      textoDaNotificacao({
+        type: "TASK_DUE_CHANGED",
+        payload: { ...base, to_due: { date: "2026-09-20", time: "18:00" } },
+      }),
+    ).toBe('Ana mudou o prazo de "Banner" para 20/09 18:00');
+    expect(
+      textoDaNotificacao({
+        type: "TASK_DUE_CHANGED",
+        payload: { ...base, to_due: { date: "2026-09-20", time: null } },
+      }),
+    ).toBe('Ana mudou o prazo de "Banner" para 20/09');
+    expect(
+      textoDaNotificacao({ type: "TASK_DUE_CHANGED", payload: { ...base, to_due: null } }),
+    ).toBe('Ana tirou o prazo de "Banner"');
+  });
+
+  it("Spec 053 (C): descricao, arquivar, desarquivar e excluir", () => {
+    const p = { actor_name: "Ana", task_title: "Banner" };
+    expect(textoDaNotificacao({ type: "TASK_DESCRIPTION_CHANGED", payload: p })).toBe(
+      'Ana editou a descrição de "Banner"',
+    );
+    expect(textoDaNotificacao({ type: "TASK_ARCHIVED", payload: p })).toBe('Ana arquivou "Banner"');
+    expect(textoDaNotificacao({ type: "TASK_UNARCHIVED", payload: p })).toBe('Ana desarquivou "Banner"');
+    expect(textoDaNotificacao({ type: "TASK_DELETED", payload: p })).toBe('Ana excluiu "Banner"');
+  });
+
   it("nenhum dos tres cai mais no texto generico", () => {
     for (const type of ["TASK_DUE_SOON", "TASK_OVERDUE", "ACCESS_LOST"] as const) {
       expect(
