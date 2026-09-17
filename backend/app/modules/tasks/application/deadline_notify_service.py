@@ -188,7 +188,8 @@ class DeadlineNotifyService:
 
         tasks = list((await self._session.execute(stmt)).scalars().all())
         for t in tasks:
-            recipients = await self._recipients(ws_id=ws_id, task=t)
+            recipients, papel = await self._recipients(ws_id=ws_id, task=t)
+            papeis = {uid: [papel] for uid in recipients}
             due_iso = t.due_date.isoformat()  # type: ignore[union-attr]
             if overdue:
                 await emitter.overdue(
@@ -196,6 +197,7 @@ class DeadlineNotifyService:
                     task_id=t.id,
                     task_title=t.title,
                     due_date_iso=due_iso,
+                    papeis=papeis,
                 )
                 t.overdue_notified_for = t.due_date
             else:
@@ -204,6 +206,7 @@ class DeadlineNotifyService:
                     task_id=t.id,
                     task_title=t.title,
                     due_date_iso=due_iso,
+                    papeis=papeis,
                 )
                 t.due_soon_notified_for = t.due_date
 
@@ -211,8 +214,14 @@ class DeadlineNotifyService:
 
     async def _recipients(
         self, *, ws_id: uuid.UUID, task: Task
-    ) -> list[uuid.UUID]:
+    ) -> tuple[list[uuid.UUID], str]:
         """Responsaveis ATIVOS da task; se nao houver, o criador se ATIVO.
+
+        Devolve `(ids, papel)` -- `assignee` ou `creator` (Spec 054, D12). Os
+        dois caminhos sao limpos, entao o papel sai daqui sem adivinhar.
+        ⚠️ NUNCA `watcher`: aviso de prazo nao vai para seguidor, e a tela de
+        preferencias nao tem esse toggle -- com o papel, estes avisos nunca
+        poderiam ser silenciados.
 
         ⚠️ O FILTRO `is_active` E O PONTO DESTE METODO, e ele nao existia ate
         12/08. Sem ele a varredura emitia aviso de prazo para conta desativada:
@@ -261,8 +270,8 @@ class DeadlineNotifyService:
         )
         ids = list((await self._session.execute(stmt)).scalars().all())
         if ids:
-            return ids
-        return await self._criador_se_ativo(ws_id=ws_id, task=task)
+            return ids, "assignee"
+        return await self._criador_se_ativo(ws_id=ws_id, task=task), "creator"
 
     async def _criador_se_ativo(
         self, *, ws_id: uuid.UUID, task: Task

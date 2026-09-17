@@ -17,6 +17,11 @@ adiado pro commit da transacao compartilhada, aborta a transacao INTEIRA
 no Postgres quando falha -- envenenando tambem a acao principal. O flush
 DENTRO do savepoint faz a falha acontecer isolada e reversivel.
 
+⚠️ O PAPEL (Spec 054, D12): todo aviso de tarefa grava POR QUE chegou para cada
+destinatario -- `watcher`, `assignee`, `creator` --, e quem chama informa em
+`papeis`. E o que a tela de preferencias usa para silenciar por papel. Os tipos
+pessoais gravam vazio, e vazio nunca e silenciado.
+
 ⚠️ A TRAVA (Spec 053, fatia A): nenhum aviso de TAREFA vai para quem nao a
 alcanca no momento do envio. Mora AQUI, e nao em cada service, para que um
 tipo novo nao dependa de alguem lembrar -- foi assim que o aviso de comentario
@@ -99,6 +104,7 @@ class NotificationEmitter:
         task_id: uuid.UUID,
         task_title: str,
         comment_id: uuid.UUID,
+        papeis: dict[uuid.UUID, list[str]] | None = None,
     ) -> None:
         """Notifica a audiencia da task de que houve um comentario.
 
@@ -121,6 +127,7 @@ class NotificationEmitter:
                     task_id=task_id,
                     comment_id=comment_id,
                     payload={"actor_name": actor_name, "task_title": task_title},
+                    roles=self._papel_de(papeis, rid),
                 )
 
         await self._emit_safely("TASK_COMMENTED", _do)
@@ -279,6 +286,7 @@ class NotificationEmitter:
         task_id: uuid.UUID,
         task_title: str,
         extra: dict | None = None,
+        papeis: dict[uuid.UUID, list[str]] | None = None,
     ) -> None:
         """Os avisos de mudanca da Spec 053 (fatia C): coluna, prazo, descricao,
         arquivar, desarquivar e excluir.
@@ -320,6 +328,7 @@ class NotificationEmitter:
                     },
                     opostos=opostos,
                     absorve=absorve,
+                    roles=self._papel_de(papeis, rid),
                 )
 
         await self._emit_safely(tipo.value, _do)
@@ -331,6 +340,7 @@ class NotificationEmitter:
         task_id: uuid.UUID,
         task_title: str,
         due_date_iso: str,
+        papeis: dict[uuid.UUID, list[str]] | None = None,
     ) -> None:
         """Spec 023: avisa os destinatarios que a task vence em ~2 dias.
 
@@ -350,6 +360,7 @@ class NotificationEmitter:
                     type=NotificationType.TASK_DUE_SOON.value,
                     task_id=task_id,
                     payload={"task_title": task_title, "due_date": due_date_iso},
+                    roles=self._papel_de(papeis, rid),
                 )
 
         await self._emit_safely("TASK_DUE_SOON", _do)
@@ -361,6 +372,7 @@ class NotificationEmitter:
         task_id: uuid.UUID,
         task_title: str,
         due_date_iso: str,
+        papeis: dict[uuid.UUID, list[str]] | None = None,
     ) -> None:
         """Spec 023: avisa os destinatarios que a task atrasou.
 
@@ -379,6 +391,7 @@ class NotificationEmitter:
                     type=NotificationType.TASK_OVERDUE.value,
                     task_id=task_id,
                     payload={"task_title": task_title, "due_date": due_date_iso},
+                    roles=self._papel_de(papeis, rid),
                 )
 
         await self._emit_safely("TASK_OVERDUE", _do)
@@ -442,6 +455,7 @@ class NotificationEmitter:
         payload: dict,
         opostos: tuple[NotificationType, ...] = (),
         absorve: tuple[NotificationType, ...] = (),
+        roles: tuple[str, ...] = (),
     ) -> None:
         """A JUNCAO DE AVISOS (Spec 053, D18), para UM destinatario.
 
@@ -485,13 +499,25 @@ class NotificationEmitter:
                 type=tipo.value,
                 task_id=task_id,
                 payload=payload,
+                roles=roles,
             )
             return
         combinado = _combinar(tipo, mesmo.payload or {}, payload)
         if combinado is None:
             await self._repo.apagar(mesmo)
         else:
-            await self._repo.atualizar(mesmo, payload=combinado)
+            await self._repo.atualizar(mesmo, payload=combinado, roles=roles)
+
+    @staticmethod
+    def _papel_de(
+        papeis: dict[uuid.UUID, list[str]] | None, rid: uuid.UUID
+    ) -> tuple[str, ...]:
+        """Os papeis de UM destinatario, como tupla estavel.
+
+        Sem `papeis` (ou sem entrada para a pessoa) devolve vazio -- e vazio
+        nunca e silenciado por toggle de papel (Spec 054, D13).
+        """
+        return tuple((papeis or {}).get(rid, ()))
 
     async def _so_quem_alcanca(
         self, task_id: uuid.UUID, ids: list[uuid.UUID]

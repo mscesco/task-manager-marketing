@@ -67,8 +67,15 @@ class NotificationRepository(BaseRepository[Notification]):
         task_id: uuid.UUID | None = None,
         comment_id: uuid.UUID | None = None,
         payload: dict | None = None,
+        roles: tuple[str, ...] = (),
     ) -> Notification:
-        """Registra uma notificacao na sessao (sem commit)."""
+        """Registra uma notificacao na sessao (sem commit).
+
+        `roles` (Spec 054, D12): POR QUE o aviso chegou para esta pessoa --
+        `watcher`, `assignee` e/ou `creator`, no instante do envio. Vazio nos
+        tipos pessoais (mencao, designacao, reacao, por/tirar, perda de
+        acesso), e vazio nunca e silenciado por toggle de papel.
+        """
         tenant = require_tenant()
         row = Notification(
             workspace_id=tenant.workspace_id,
@@ -78,6 +85,7 @@ class NotificationRepository(BaseRepository[Notification]):
             task_id=task_id,
             comment_id=comment_id,
             payload=payload,
+            roles=list(roles),
         )
         self.session.add(row)
         return row
@@ -155,12 +163,21 @@ class NotificationRepository(BaseRepository[Notification]):
         )
         return (await self.session.execute(stmt)).scalar_one_or_none()
 
-    async def atualizar(self, row: Notification, *, payload: dict) -> None:
-        """Junta uma mudanca nova num aviso existente: payload + `updated_at`."""
+    async def atualizar(
+        self, row: Notification, *, payload: dict, roles: tuple[str, ...] = ()
+    ) -> None:
+        """Junta uma mudanca nova num aviso existente: payload + `updated_at`.
+
+        ⚠️ OS PAPEIS SE UNEM (Spec 054, §6.2): a pessoa pode ter virado
+        responsavel entre o primeiro aviso e o segundo. Perder o papel do
+        primeiro faria o aviso juntado ser silenciado por um toggle que nao
+        cobre tudo o que ele conta.
+        """
+        unidos = list(dict.fromkeys([*(row.roles or []), *roles]))
         await self.session.execute(
             update(Notification)
             .where(Notification.id == row.id)
-            .values(payload=payload, updated_at=func.now())
+            .values(payload=payload, roles=unidos, updated_at=func.now())
         )
 
     async def apagar(self, row: Notification) -> None:
