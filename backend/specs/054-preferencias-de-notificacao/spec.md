@@ -25,7 +25,7 @@ Ela, em 17/09, com a 053 quase pronta:
 
 ## 2. O que existe — depois da Spec 053
 
-- **Tipos de aviso**, 13 (`notifications/domain/notification.py`):
+- **Tipos de aviso**, 15 (`notifications/domain/notification.py`):
   - de tarefa, com audiência: `TASK_COMMENTED`, `TASK_COLUMN_CHANGED`,
     `TASK_DUE_CHANGED`, `TASK_DESCRIPTION_CHANGED`, `TASK_ARCHIVED`,
     `TASK_UNARCHIVED`, `TASK_DELETED`, `TASK_DUE_SOON`, `TASK_OVERDUE`;
