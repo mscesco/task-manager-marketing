@@ -23,6 +23,7 @@ from enum import Enum
 from pydantic import BaseModel, Field, computed_field
 
 from app.core.tenant import current_tenant
+from app.modules.auth.domain import team_scope
 from app.db.models.enums import (
     ColumnSemantic,
     PriorityLevel,
@@ -223,6 +224,23 @@ class TaskResponse(BaseModel):
     @property
     def can_delete(self) -> bool:
         return _pode_no_time("task.delete", self.team_id)
+
+    # Spec 053, fatia D: o `+` de "Seguidores" -- por e tirar OUTRA pessoa.
+    # A MESMA pergunta de `CollaborationService._assert_can_manage_others`:
+    # `task.assign` no time da tarefa E o time na lente de edicao. Seguir a si
+    # mesmo nao depende disto (so ver a tarefa).
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def can_manage_watchers(self) -> bool:
+        tenant = current_tenant()
+        if tenant is None or not _pode_no_time("task.assign", self.team_id):
+            return False
+        editaveis = team_scope.editable_team_ids(
+            tenant.memberships, tenant.team_tree, org_role=tenant.org_role
+        )
+        return editaveis is None or (
+            self.team_id is not None and self.team_id in editaveis
+        )
 
 
 class DeleteTaskResponse(TaskResponse):

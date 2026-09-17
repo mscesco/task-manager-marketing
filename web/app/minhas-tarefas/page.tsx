@@ -62,10 +62,9 @@ import { useDrawnOutline } from "@/components/AnimatedOutline";
 const RELATION_LABEL: Record<string, string> = {
   assignee: "Responsável",
   creator: "Criei",
-  // ⚠️ FICA, mesmo com o filtro removido. O `/me` continua devolvendo a
-  // relacao `watcher` se ela existir no banco (n8n, API direta), e sem este
-  // rotulo a linha mostraria a string crua "watcher" na tela.
-  watcher: "Acompanho",
+  // Spec 053, fatia D (D1): na tela e "seguir". Era "Acompanho" enquanto so
+  // o n8n ou a API inscreviam alguem.
+  watcher: "Sigo",
 };
 // ⚠️ `STATUS_LABEL` e `STATUS_COLOR` SAIRAM DAQUI (Spec 036, fatia 4b).
 // Eram derivadas de `STATUSES` em escopo de MODULO -- calculadas no import,
@@ -79,12 +78,10 @@ const RELACOES = [
   { key: "todas", label: "Todas" },
   { key: "creator", label: "Que criei" },
   { key: "assignee", label: "Designadas a mim" },
-  // ⚠️ "Que acompanho" (watcher) SAIU. O backend tem a feature inteira
-  // (TaskWatcher, GET/POST/DELETE /tasks/{id}/watchers, e o /me ja filtra por
-  // relacao), mas o front nao tem UMA funcao de watcher em `lib/api.ts` --
-  // nao existe lugar nenhum no produto onde alguem passe a acompanhar. O
-  // filtro estava na tela prometendo uma lista que jamais teria item.
-  // Voltar aqui QUANDO existir o botao de acompanhar, nao antes.
+  // Spec 053, fatia D (D7): VOLTOU, agora que o botao "Seguir" existe no
+  // detalhe. Tinha saido em agosto por prometer uma lista que ninguem conseguia
+  // preencher. "Todas" continua incluindo as tarefas que a pessoa segue.
+  { key: "watcher", label: "Que sigo" },
 ] as const;
 
 // ⚠️ `TODOS_STATUS` SAIU DAQUI pelo mesmo motivo. Quem responde "todas as

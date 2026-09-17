@@ -354,6 +354,13 @@ export type Task = {
    */
   can_delete: boolean;
   /**
+   * Spec 053, fatia D: pode por e tirar OUTRA pessoa como seguidora (o `+` da
+   * linha "Seguidores"). Calculado no servidor pela mesma pergunta do servico
+   * (`task.assign` no time da tarefa + edicao) -- a tela nao recalcula.
+   * Seguir a si mesmo nao depende disto.
+   */
+  can_manage_watchers?: boolean;
+  /**
    * ⚠️ SPEC 042 (A1 + B2). Os tres campos abaixo chegam SO na LISTAGEM
    * (`TaskListItem`), calculados em lote pelo backend. Eles sao o que permite
    * o quadro parar de carregar a subarvore: medido em 19/08, ele baixava 917
@@ -1317,6 +1324,13 @@ export type TaskCreateInput = {
   due_time?: string | null;
   project_id?: string | null; // criar dentro de um projeto (Entrega 11)
   assignee_ids?: string[]; // Spec 021: responsaveis ja na criacao
+  /**
+   * Spec 053, fatia D: seguidores ja na criacao. ⚠️ DECLARAR AQUI NAO BASTA
+   * -- ver a linha dentro do corpo de `createTask` e o
+   * `createTaskCorpo.test.ts`. O backend e atomico: quem nao alcanca volta
+   * em `details.invalid_ids` com `details.field = "watcher_ids"`.
+   */
+  watcher_ids?: string[];
   // Fatia 5: time EXPLICITO da task de topo. Ausente => pin na raiz
   // (ADR 0001, comportamento de hoje). Presente => usa este time
   // (ex.: quadro de subtime cria task INTERNA daquele subtime).
@@ -1455,6 +1469,9 @@ export async function createTask(input: TaskCreateInput): Promise<Task> {
       ...(input.project_id ? { project_id: input.project_id } : {}),
       // Spec 021: responsaveis na criacao (so manda se houver).
       ...(input.assignee_ids?.length ? { assignee_ids: input.assignee_ids } : {}),
+      // ⚠️ Spec 053, fatia D -- a MESMA armadilha do `board_id` abaixo. Sem
+      // esta linha os seguidores escolhidos no modal somem em silencio.
+      ...(input.watcher_ids?.length ? { watcher_ids: input.watcher_ids } : {}),
       // ⚠️ FALTAVA, DESDE A FATIA 5b-6 (achado em 13/08, na tela). O tipo
       // `TaskCreateInput` declara `board_id` com quinze linhas de comentario,
       // o `TaskModal` o preenche, o `Board` o passa e o backend inteiro o
@@ -1917,6 +1934,45 @@ export async function removeAssignee(
 ): Promise<string[]> {
   const res = await api<CollaboratorList>(
     `/api/v1/tasks/${taskId}/assignees/${userId}`,
+    { method: "DELETE" }
+  );
+  return res.user_ids;
+}
+
+// ---------------------------------------------------------------
+// SEGUIDORES -- Spec 053, fatia D (no backend: `watchers`)
+// ---------------------------------------------------------------
+// Mesma forma dos responsaveis: toda rota devolve a lista atual de ids, na
+// ordem em que as pessoas passaram a seguir.
+
+export async function listWatchers(taskId: string): Promise<string[]> {
+  const res = await api<CollaboratorList>(`/api/v1/tasks/${taskId}/watchers`);
+  return res.user_ids;
+}
+
+/**
+ * Poe alguem para seguir. SEM `userId` = a propria pessoa (o botao "Seguir").
+ *
+ * ⚠️ Recusas: 403 (por outra pessoa sem permissao), 422 com
+ * `code: "tarefa_arquivada"` (arquivada e so leitura) ou 422 de alcance.
+ */
+export async function addWatcher(
+  taskId: string,
+  userId?: string
+): Promise<string[]> {
+  const res = await api<CollaboratorList>(`/api/v1/tasks/${taskId}/watchers`, {
+    method: "POST",
+    body: userId ? { user_id: userId } : {},
+  });
+  return res.user_ids;
+}
+
+export async function removeWatcher(
+  taskId: string,
+  userId: string
+): Promise<string[]> {
+  const res = await api<CollaboratorList>(
+    `/api/v1/tasks/${taskId}/watchers/${userId}`,
     { method: "DELETE" }
   );
   return res.user_ids;

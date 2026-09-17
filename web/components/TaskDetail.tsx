@@ -60,6 +60,11 @@ import {
   type CurrentUser,
 } from "@/lib/api";
 import TituloEditavel from "@/components/TituloEditavel";
+import {
+  BotaoSeguir,
+  LinhaDeSeguidores,
+  useSeguidores,
+} from "@/components/SeguidoresDaTarefa";
 import DescricaoEditavel from "@/components/DescricaoEditavel";
 import LinksEditaveis from "@/components/LinksEditaveis";
 import {
@@ -759,6 +764,10 @@ export default function TaskDetail({
       vivo = false;
     };
   }, [task?.id]);
+
+  // Spec 053, fatia D: quem segue. UM estado para o botao do topo e para a
+  // linha "Seguidores" -- ver `components/SeguidoresDaTarefa.tsx`.
+  const seguidores = useSeguidores(task?.id ?? null, avisar);
 
   // Quem NAO alcanca. Vazio enquanto a lista nao chegou (ver acima).
   const foraDoEscopoAqui = useMemo(() => {
@@ -1527,6 +1536,12 @@ export default function TaskDetail({
             valor={salvoNoLugar?.id === task.id && salvoNoLugar.title !== undefined ? salvoNoLugar.title : task.title}
             onSalvar={(novo) => salvarNoLugar({ title: novo })}
           />
+          {/* Spec 053 (D5): o gesto de um clique, no topo. */}
+          <BotaoSeguir
+            estado={seguidores}
+            meuId={me?.id ?? null}
+            arquivada={task.is_archived}
+          />
           <button
             type="button" className="btn btn-ghost" onClick={fecharSuave}
             style={{ padding: "4px 10px", flexShrink: 0 }} aria-label="Fechar"
@@ -2246,6 +2261,19 @@ export default function TaskDetail({
               </div>
             )}
           </div>
+
+          {/* -- Seguidores (Spec 053, D5): logo abaixo de Responsaveis, mesmo
+              desenho. O `+` so aparece para quem pode por OUTRA pessoa
+              (`can_manage_watchers`, do servidor); arquivada e so leitura. -- */}
+          <LinhaDeSeguidores
+            estado={seguidores}
+            meuId={me?.id ?? null}
+            arquivada={task.is_archived}
+            podeGerenciar={task.can_manage_watchers}
+            nomes={members}
+            inativos={membrosInativos}
+            foraDoEscopo={foraDoEscopoAqui}
+          />
 
         </div>
 

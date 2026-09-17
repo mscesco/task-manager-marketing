@@ -117,6 +117,19 @@ describe("createTask -- o corpo que realmente sai", () => {
     expect(corpo.start_date).toBe(null);
   });
 
+  it("⚠️ leva watcher_ids -- Spec 053, fatia D", async () => {
+    // A falha do topo deste arquivo, evitada pela quarta vez: o backend aceita
+    // `watcher_ids` e o descartaria em silencio se a linha nao estivesse no
+    // corpo.
+    await createTask({ ...BASE, watcher_ids: ["u-bia"] });
+    expect(corpoEnviado().watcher_ids).toEqual(["u-bia"]);
+  });
+
+  it("sem seguidores, omite o campo (como `assignee_ids`)", async () => {
+    await createTask({ ...BASE, watcher_ids: [] });
+    expect("watcher_ids" in corpoEnviado()).toBe(false);
+  });
+
   it("continua mandando o que ja mandava antes da fatia 5b-6", async () => {
     await createTask({
       ...BASE,

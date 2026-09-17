@@ -363,3 +363,45 @@ async def test_trocar_projeto_tira_seguidor_da_subarvore(db) -> None:
     assert await _historico(db, filha.id, "unwatched") == [
         {"target_user_id": str(op_a), "by_self": False, "reason": "lost_access"}
     ]
+
+
+# ----------------------------------------------------------
+# Spec 053, fatia D: o cadeado do `+` vem do servidor
+# ----------------------------------------------------------
+async def test_http_can_manage_watchers_segue_a_regra_do_servico(db) -> None:
+    """`can_manage_watchers` responde a MESMA pergunta de
+    `_assert_can_manage_others`: `task.assign` no time da tarefa + edicao.
+
+    O operador de A ve a tarefa de B (pelo projeto de A) e NAO pode por
+    outra pessoa -- o campo tem de dizer `false`, senao a tela ofereceria um
+    `+` que o servidor recusa.
+    """
+    from app.modules.auth.domain.permissions import permissions_for_actor
+
+    ws, r, a, b, gerente, op_a, op_b, forest = await _mundo(db)
+    proj_a = await f.make_project(db, workspace_id=ws, created_by=gerente, team_id=a)
+    task_b = await f.make_task(
+        db, workspace_id=ws, created_by=gerente, team_id=b, project_id=proj_a
+    )
+    await db.commit()
+
+    vinculos_op = (Membership(team_id=a, role="OPERATOR"),)
+    ctx_op = TenantContext(
+        workspace_id=ws, user_id=op_a, roles=frozenset({"OPERATOR"}),
+        permissions=permissions_for_actor(memberships=vinculos_op, tree=forest),
+        memberships=vinculos_op, team_tree=forest,
+    )
+    async with _cliente(db, ctx_op) as c:
+        visto_pelo_op = await c.get(f"/api/v1/tasks/{task_b.id}")
+    vinculos_ger = (Membership(team_id=r, role="MANAGER"),)
+    ctx_ger = TenantContext(
+        workspace_id=ws, user_id=gerente, roles=frozenset({"MANAGER"}),
+        permissions=permissions_for_actor(memberships=vinculos_ger, tree=forest),
+        memberships=vinculos_ger, team_tree=forest,
+    )
+    async with _cliente(db, ctx_ger) as c:
+        visto_pelo_gerente = await c.get(f"/api/v1/tasks/{task_b.id}")
+
+    assert visto_pelo_op.status_code == 200, visto_pelo_op.text
+    assert visto_pelo_op.json()["can_manage_watchers"] is False
+    assert visto_pelo_gerente.json()["can_manage_watchers"] is True
