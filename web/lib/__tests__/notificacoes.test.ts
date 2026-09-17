@@ -58,10 +58,18 @@ describe("textoDaNotificacao", () => {
     );
   });
 
-  it("sem payload, cai nos rotulos genericos", () => {
+  it("sem payload, cai nos rotulos genericos -- e 'uma tarefa' vai SEM aspas", () => {
+    // ⚠️ Ate a Spec 053 (F) saia `comentou em "uma tarefa"`, como se esse fosse
+    // o nome. Sem titulo agora e comum: o servidor o tira quando a tarefa foi
+    // excluida ou saiu do alcance (D27).
     expect(textoDaNotificacao({ type: "TASK_COMMENTED", payload: null })).toBe(
-      'Alguém comentou em "uma tarefa"',
+      "Alguém comentou em uma tarefa",
     );
+  });
+
+  it("Spec 053 (F): tarefa inacessivel nao tem destino", () => {
+    expect(destinoDaNotificacao({ task_id: "t1", task_access: "gone" })).toBeNull();
+    expect(destinoDaNotificacao({ task_id: "t1", task_access: "ok" })).toBe("/tarefa/t1");
   });
 });
 

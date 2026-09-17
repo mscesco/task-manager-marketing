@@ -2554,6 +2554,12 @@ export type AppNotification = {
   // Spec 053 (C): a ULTIMA mudanca. Difere de `created_at` quando avisos seguidos
   // do mesmo autor se juntaram -- e o horario que a tela mostra.
   updated_at?: string;
+  /**
+   * Spec 053 (E, D27): "ok" = a tarefa existe e quem le a alcanca; "gone" =
+   * excluida ou fora do alcance -- o servidor ja tirou `task_title` do payload
+   * (menos no aviso de exclusao); null = aviso sem tarefa.
+   */
+  task_access?: "ok" | "gone" | null;
 };
 
 export type NotificationListResponse = {
@@ -2563,14 +2569,35 @@ export type NotificationListResponse = {
   size: number;
 };
 
-// Feed paginado, mais novas primeiro.
+/**
+ * Os filtros da tela de notificacoes (Spec 053, D22). Os MESMOS vao para a
+ * listagem e para o "marcar estas como lidas" (D25) -- por isso um tipo so.
+ */
+export type FiltroDeNotificacoes = {
+  types?: readonly string[];
+  task_id?: string | null;
+  project_id?: string | null;
+};
+
+function aplicarFiltro(q: URLSearchParams, f: FiltroDeNotificacoes): void {
+  for (const t of f.types ?? []) q.append("type", t);
+  if (f.task_id) q.set("task_id", f.task_id);
+  if (f.project_id) q.set("project_id", f.project_id);
+}
+
+// Feed paginado, ultima mudanca primeiro.
 export async function listNotifications(
-  params: { unread_only?: boolean; page?: number; size?: number } = {}
+  params: {
+    unread_only?: boolean;
+    page?: number;
+    size?: number;
+  } & FiltroDeNotificacoes = {}
 ): Promise<NotificationListResponse> {
   const q = new URLSearchParams();
   if (params.unread_only) q.set("unread_only", "true");
   q.set("page", String(params.page ?? 1));
   q.set("size", String(params.size ?? 20));
+  aplicarFiltro(q, params);
   return api<NotificationListResponse>(`/api/v1/notifications?${q.toString()}`);
 }
 
@@ -2585,12 +2612,36 @@ export async function markNotificationRead(id: string): Promise<void> {
   await api<void>(`/api/v1/notifications/${id}/read`, { method: "POST" });
 }
 
-// Marca todas as nao-lidas como lidas. Retorna quantas.
-export async function markAllNotificationsRead(): Promise<number> {
-  const r = await api<{ updated: number }>("/api/v1/notifications/read-all", {
-    method: "POST",
-  });
+// Marca as nao-lidas como lidas -- todas, ou so as do filtro (Spec 053, D25).
+// Retorna quantas.
+export async function markAllNotificationsRead(
+  filtro: FiltroDeNotificacoes = {}
+): Promise<number> {
+  const q = new URLSearchParams();
+  aplicarFiltro(q, filtro);
+  const qs = q.toString();
+  const r = await api<{ updated: number }>(
+    `/api/v1/notifications/read-all${qs ? `?${qs}` : ""}`,
+    { method: "POST" }
+  );
   return r.updated;
+}
+
+/** Uma sugestao do campo "Tarefa ou projeto" (Spec 053, D23). */
+export type AlvoDeNotificacao = {
+  kind: "task" | "project";
+  id: string;
+  title: string;
+};
+
+export async function listNotificationTargets(
+  termo: string
+): Promise<AlvoDeNotificacao[]> {
+  const q = new URLSearchParams({ q: termo });
+  const r = await api<{ items: AlvoDeNotificacao[] }>(
+    `/api/v1/notifications/targets?${q.toString()}`
+  );
+  return r.items;
 }
 
 // ---------------------------------------------------------------

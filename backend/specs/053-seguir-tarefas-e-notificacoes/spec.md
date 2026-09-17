@@ -2,7 +2,8 @@
 
 **Status:** escrita e **aprovada em 17/09/2026**. Todas as decisões de §4
 vieram de dez rodadas de perguntas respondidas por ela no mesmo dia, e as oito
-propostas da §9 foram aprovadas como escritas. **Nenhuma fatia começou.**
+propostas da §9 foram aprovadas como escritas. **As seis fatias (A–F) foram
+entregues em 17/09, no PR #61.** Falta a conferência dela na tela.
 **Escopo:** backend (regras de seguidor, avisos novos, junção de avisos, filtros
 de notificação e uma migration) e front (seguir no detalhe e na criação, filtro
 em Minhas tarefas, textos do sino e a tela `/notificacoes`).
