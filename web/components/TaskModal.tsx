@@ -11,7 +11,7 @@
 // O time NAO aparece de proposito: o quadro define o time (ADR 0001).
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties, useCallback } from "react";
-import { X } from "lucide-react";
+import { Plus, X } from "lucide-react";
 import {
   createTask,
   duplicateTask,
@@ -1030,7 +1030,7 @@ export default function TaskModal({
             <div ref={respWrapRef} style={{ position: "relative" }}>
               <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6 }}>
                 {assigneeIds.length === 0 && (
-                  <span className="muted" style={{ fontSize: 13 }}>Ninguem designado.</span>
+                  <span className="muted" style={{ fontSize: 13 }}>Ninguém designado.</span>
                 )}
                 {assigneeIds.map((id) => {
                   const m = membros.find((x) => x.id === id);
@@ -1075,7 +1075,13 @@ export default function TaskModal({
                   title="Designar"
                   style={GATILHO_STYLE}
                 >
-                  {abertoResp ? "×" : "+"}
+                  {/* Icone, e nao o caractere "+"/"×": o mesmo do detalhe da
+                      tarefa e da linha de Seguidores logo abaixo (17/09). */}
+                  {abertoResp ? (
+                    <X size={13} strokeWidth={2.2} aria-hidden />
+                  ) : (
+                    <Plus size={13} strokeWidth={2.2} aria-hidden />
+                  )}
                 </button>
               </div>
 
@@ -1206,7 +1212,7 @@ export default function TaskModal({
                   >
                     {membrosFiltrados.length === 0 ? (
                       <div className="muted" style={{ fontSize: 13, padding: "10px 12px" }}>
-                        Ninguem encontrado.
+                        Ninguém encontrado.
                       </div>
                     ) : (
                       membrosFiltrados.map((m, i) => {
