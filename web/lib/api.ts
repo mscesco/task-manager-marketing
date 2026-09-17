@@ -2577,12 +2577,22 @@ export type FiltroDeNotificacoes = {
   types?: readonly string[];
   task_id?: string | null;
   project_id?: string | null;
+  /**
+   * Spec 054 (D5): a aba "Silenciadas". Ausente/`false` = o de sempre, que
+   * ESCONDE as silenciadas.
+   *
+   * ⚠️ Mora no FILTRO, e não só na listagem, porque o "marcar todas" usa o
+   * mesmo objeto (D25): o botão tem de marcar o que a aba mostrou, e um
+   * `muted` que ficasse de fora faria a aba "Silenciadas" marcar as outras.
+   */
+  muted?: boolean;
 };
 
 function aplicarFiltro(q: URLSearchParams, f: FiltroDeNotificacoes): void {
   for (const t of f.types ?? []) q.append("type", t);
   if (f.task_id) q.set("task_id", f.task_id);
   if (f.project_id) q.set("project_id", f.project_id);
+  if (f.muted) q.set("muted", "true");
 }
 
 // Feed paginado, ultima mudanca primeiro.
@@ -2602,8 +2612,12 @@ export async function listNotifications(
 }
 
 // Contagem de nao-lidas (endpoint leve; e o que o sino polla).
-export async function getUnreadCount(): Promise<number> {
-  const r = await api<{ count: number }>("/api/v1/notifications/unread-count");
+//
+// ⚠️ O sino NAO conta silenciadas (Spec 054, D14) -- e o padrao do servidor.
+// `muted` conta as da aba "Silenciadas".
+export async function getUnreadCount(muted = false): Promise<number> {
+  const qs = muted ? "?muted=true" : "";
+  const r = await api<{ count: number }>(`/api/v1/notifications/unread-count${qs}`);
   return r.count;
 }
 
@@ -2625,6 +2639,36 @@ export async function markAllNotificationsRead(
     { method: "POST" }
   );
   return r.updated;
+}
+
+/** Um toggle da tela de preferencias (Spec 054, §6.5). */
+export type NotificationToggle = {
+  type_group: string;
+  role: string;
+  enabled: boolean;
+  /** Travado (D3): sempre ligado, e o PUT recusa 422. */
+  locked: boolean;
+};
+
+export async function listNotificationPreferences(): Promise<NotificationToggle[]> {
+  const r = await api<{ items: NotificationToggle[] }>(
+    "/api/v1/me/notification-preferences"
+  );
+  return r.items;
+}
+
+// Liga ou desliga UM toggle. Devolve a lista INTEIRA -- os grupos que governam
+// dois tipos mudam junto, e a tela nao precisa adivinhar o que o servidor fez.
+export async function setNotificationPreference(pref: {
+  type_group: string;
+  role: string;
+  enabled: boolean;
+}): Promise<NotificationToggle[]> {
+  const r = await api<{ items: NotificationToggle[] }>(
+    "/api/v1/me/notification-preferences",
+    { method: "PUT", body: pref }
+  );
+  return r.items;
 }
 
 /** Uma sugestao do campo "Tarefa ou projeto" (Spec 053, D23). */

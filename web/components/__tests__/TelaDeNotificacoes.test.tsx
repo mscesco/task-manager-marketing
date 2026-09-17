@@ -81,6 +81,8 @@ describe("tela de notificações", () => {
       types: ["TASK_DUE_CHANGED", "TASK_DUE_SOON", "TASK_OVERDUE"],
       task_id: "t9",
       project_id: null,
+      // Spec 054: fora da aba "Silenciadas" a lista ESCONDE as silenciadas.
+      muted: false,
       unread_only: false,
       page: 1,
       size: 20,
@@ -98,7 +100,45 @@ describe("tela de notificações", () => {
       types: ["TASK_MENTIONED"],
       task_id: null,
       project_id: null,
+      muted: false,
     });
+  });
+
+  // ---------------------------------------------- Spec 054: aba "Silenciadas"
+  it("⚠️ a aba Silenciadas pede muted, e o botao marca SO as silenciadas", async () => {
+    window.history.replaceState(null, "", "/notificacoes?aba=silenciadas");
+    render(<TelaDeNotificacoes />);
+
+    await waitFor(() => expect(api.listNotifications).toHaveBeenCalled());
+    const chamada = vi.mocked(api.listNotifications).mock.calls[0][0];
+    expect(chamada?.muted).toBe(true);
+    // ⚠️ `unread_only` fica FALSE: a aba mostra tudo o que foi silenciado, lido
+    // ou nao -- e o "não lidas" e a outra aba.
+    expect(chamada?.unread_only).toBe(false);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Marcar todas como lidas" }));
+    await waitFor(() => expect(api.markAllNotificationsRead).toHaveBeenCalled());
+    // Sem filtro de tipo/tarefa o "marcar" vai sem recorte -- MENOS o `muted`,
+    // que e o que impede o botao da aba de marcar as outras (D14).
+    expect(vi.mocked(api.markAllNotificationsRead).mock.calls[0][0]).toEqual({
+      types: [],
+      task_id: null,
+      project_id: null,
+      muted: true,
+    });
+  });
+
+  it("vazio na aba Silenciadas nao diz 'Nenhuma notificação'", async () => {
+    vi.mocked(api.listNotifications).mockResolvedValue(pagina([]));
+    window.history.replaceState(null, "", "/notificacoes?aba=silenciadas");
+    render(<TelaDeNotificacoes />);
+    expect(await screen.findByText("Nenhuma notificação silenciada")).toBeTruthy();
+  });
+
+  it("o cabecalho leva para as preferencias", async () => {
+    render(<TelaDeNotificacoes />);
+    const link = await screen.findByRole("link", { name: "Configurar" });
+    expect(link.getAttribute("href")).toBe("/perfil#notificacoes");
   });
 
   it("sem filtro, o botao marca todas", async () => {
