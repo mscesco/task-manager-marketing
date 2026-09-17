@@ -24,8 +24,17 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, ForeignKeyConstraint, String, func
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    ForeignKeyConstraint,
+    String,
+    UniqueConstraint,
+    func,
+    text,
+)
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -83,5 +92,55 @@ class Notification(UUIDPrimaryKeyMixin, Base):
     # Spec 053, fatia C (migration 0027): a ultima mudanca do aviso. Igual a
     # `created_at` ate uma juncao atualiza-lo. O sino ordena por aqui.
     updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    # Spec 054 (migration 0028): POR QUE o aviso chegou para quem recebe --
+    # `watcher`, `assignee` e/ou `creator`, gravado no instante do envio (D12).
+    # Vazio = sem papel: tipos pessoais, ou aviso antigo sem papel reconstruido.
+    # ⚠️ Vazio NUNCA e silenciado por toggle de papel (D13).
+    roles: Mapped[list[str]] = mapped_column(
+        ARRAY(String(10)),
+        server_default=text("'{}'::character varying[]"),
+        nullable=False,
+    )
+
+
+class NotificationMute(UUIDPrimaryKeyMixin, Base):
+    """Um toggle de notificacao DESLIGADO (Spec 054, §6.1).
+
+    ⚠️ UMA LINHA = DESLIGADO, e a ausencia = ligado. E isso que faz tudo nascer
+    ligado (D11), inclusive tipo de aviso que ainda nao existe, sem linha para
+    ninguem e sem migration.
+
+    `role = "none"` e o toggle de papel unico (reacao; por/tirar como seguidor).
+    So a propria pessoa grava as suas (D15): a rota e `/me`.
+    """
+
+    __tablename__ = "notification_mute"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["user_id", "workspace_id"],
+            ["users.id", "users.workspace_id"],
+            ondelete="CASCADE",
+            name="notification_mute_user",
+        ),
+        UniqueConstraint(
+            "user_id", "type", "role", name="uq_notification_mute_user_type_role"
+        ),
+        CheckConstraint(
+            "role IN ('watcher', 'assignee', 'creator', 'none')",
+            name="ck_notification_mute_role",
+        ),
+    )
+
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("workspace.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    type: Mapped[str] = mapped_column(String(40), nullable=False)
+    role: Mapped[str] = mapped_column(String(10), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

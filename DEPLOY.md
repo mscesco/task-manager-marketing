@@ -242,6 +242,27 @@ docker compose -f docker-compose.prod.yml up -d
 A migration copia `created_at` para `updated_at` em toda linha, então nenhum aviso
 antigo muda de posição no sino. O `downgrade` só remove a coluna e o índice.
 
+⚠️⚠️ **A `0028` (preferências de notificação, Spec 054) pede MIGRATION ANTES DO
+CÓDIGO, pelo MESMO motivo da `0027`** (escrito em 17/09/2026, antes de subir).
+Ela acrescenta `notification.roles` a um model que já existe — e outra vez é
+**toda leitura de notificação** que quebra se o código novo subir primeiro, com
+o sino consultando a cada 30 s em toda aba aberta. A tabela `notification_mute`
+é nova e não tem esse problema; o `roles` é que manda na ordem. Os mesmos três
+comandos da `0027` valem aqui.
+
+A migration também **reconstrói o papel dos avisos antigos** (quem é seguidor,
+responsável ou criador da tarefa HOJE). É aproximado, e a aproximação erra para
+o lado seguro: um papel a mais só torna o silêncio mais difícil, e aviso sem
+papel nenhum **nunca** é silenciado. O `downgrade` derruba a coluna e a tabela —
+e com isso os toggles que alguém já tiver desligado, porque eles moram lá.
+
+Para medir antes de subir, no Adminer:
+```sql
+SELECT count(*) AS avisos,
+       count(*) FILTER (WHERE task_id IS NOT NULL) AS com_tarefa
+FROM notification;
+```
+
 ⚠️ **A `0015` (`unaccent`) TAMBÉM inverte a ordem — por um terceiro motivo, e
 ✅ ELA ESTÁ EM PRODUÇÃO DESDE 21/08/2026.** Ela não acrescenta coluna a model
 nenhum (a checagem do `git diff -- backend/app/db/models/` sai vazia), então

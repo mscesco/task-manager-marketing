@@ -13,6 +13,7 @@ import {
   agruparPorDia,
   ESTADO_INICIAL,
   filtroDaApi,
+  filtroDeMarcar,
   lerEstado,
   queryDoEstado,
   rotuloDoBotaoMarcar,
@@ -66,12 +67,45 @@ describe("filtroDaApi e temFiltro", () => {
       types: ["TASK_DUE_CHANGED", "TASK_DUE_SOON", "TASK_OVERDUE"],
       task_id: null,
       project_id: "p-1",
+      // Spec 054: fora da aba "Silenciadas", a lista as esconde.
+      muted: false,
     });
   });
 
   it("a aba sozinha nao conta como filtro", () => {
     expect(temFiltro({ ...ESTADO_INICIAL, aba: "todas" })).toBe(false);
     expect(temFiltro({ ...ESTADO_INICIAL, tipo: "mencoes" })).toBe(true);
+  });
+
+  it("a aba Silenciadas pede muted", () => {
+    expect(filtroDaApi({ ...ESTADO_INICIAL, aba: "silenciadas" }).muted).toBe(true);
+    expect(lerEstado("?aba=silenciadas").aba).toBe("silenciadas");
+    expect(queryDoEstado({ ...ESTADO_INICIAL, aba: "silenciadas" })).toBe(
+      "?aba=silenciadas",
+    );
+  });
+});
+
+describe("filtroDeMarcar", () => {
+  it("sem recorte manda vazio -- e o 'marcar todas' de sempre", () => {
+    expect(filtroDeMarcar(ESTADO_INICIAL)).toEqual({});
+    expect(filtroDeMarcar({ ...ESTADO_INICIAL, aba: "todas" })).toEqual({});
+  });
+
+  it("⚠️ na aba Silenciadas o muted vai mesmo SEM outro filtro", () => {
+    // Um objeto vazio aqui faria o botao da aba marcar as notificacoes das
+    // OUTRAS abas e deixar intactas as que estavam na tela (D14).
+    expect(filtroDeMarcar({ ...ESTADO_INICIAL, aba: "silenciadas" })).toEqual({
+      types: [],
+      task_id: null,
+      project_id: null,
+      muted: true,
+    });
+  });
+
+  it("com recorte, manda o mesmo filtro da lista", () => {
+    const e = { ...ESTADO_INICIAL, aba: "silenciadas" as const, tipo: "mencoes" };
+    expect(filtroDeMarcar(e)).toEqual(filtroDaApi(e));
   });
 });
 

@@ -146,14 +146,22 @@ class AvisosDaTarefa:
         )
 
     # ----------------------------------------------------
-    async def _destinatarios(self, task: Task) -> list[uuid.UUID]:
-        """Seguidores + responsaveis + criador (D15). O emissor tira o autor e
-        quem nao alcanca a tarefa."""
-        seguidores = await TaskWatcherRepository(self._session).list_user_ids(task.id)
-        responsaveis = await TaskAssignmentRepository(self._session).list_user_ids(
+    async def _destinatarios(self, task: Task) -> dict[uuid.UUID, list[str]]:
+        """Seguidores + responsaveis + criador, cada um com os PAPEIS que tem
+        na tarefa agora (Spec 053, D15; Spec 054, D12).
+
+        O emissor tira o autor do gesto e quem nao alcanca a tarefa, e grava
+        os papeis em `notification.roles`.
+        """
+        papeis: dict[uuid.UUID, list[str]] = {}
+        for uid in await TaskWatcherRepository(self._session).list_user_ids(task.id):
+            papeis.setdefault(uid, []).append("watcher")
+        for uid in await TaskAssignmentRepository(self._session).list_user_ids(
             task.id
-        )
-        return list(dict.fromkeys([*seguidores, *responsaveis, task.created_by]))
+        ):
+            papeis.setdefault(uid, []).append("assignee")
+        papeis.setdefault(task.created_by, []).append("creator")
+        return papeis
 
     async def _nomes_das_colunas(
         self, ids: list[uuid.UUID | None]
@@ -170,7 +178,7 @@ class AvisosDaTarefa:
         self,
         tipo: NotificationType,
         task: Task,
-        destinatarios: list[uuid.UUID],
+        destinatarios: dict[uuid.UUID, list[str]],
         *,
         extra: dict | None = None,
     ) -> None:
@@ -178,7 +186,8 @@ class AvisosDaTarefa:
             return
         await self._notify.mudanca_na_tarefa(
             tipo=tipo,
-            recipient_ids=destinatarios,
+            recipient_ids=list(destinatarios),
+            papeis=destinatarios,
             actor_id=require_tenant().user_id,
             task_id=task.id,
             task_title=task.title,

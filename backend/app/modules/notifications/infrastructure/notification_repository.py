@@ -12,12 +12,77 @@ import uuid
 
 from datetime import timedelta
 
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import delete, func, select, text, update
 
 from app.core.tenant import require_tenant
 from app.db.models import Notification, Task
 from app.db.repository import BaseRepository
+from app.modules.notifications.domain.preferences import (
+    PAPEL_UNICO,
+    TIPOS_DE_PAPEL_UNICO,
+    TIPOS_POR_PAPEL,
+)
 from app.shared.pagination import Page, PageParams
+
+
+def _em(tipos: tuple[str, ...]) -> str:
+    """Os tipos como lista SQL. Sao CONSTANTES do codigo (o catalogo da
+    Spec 054), nunca entrada de usuario -- e por isso vao inteiros no SQL, e
+    nao como parametro de array."""
+    return ", ".join(f"'{t}'" for t in tipos) or "''"
+
+
+#: A REGRA DE SILENCIO, NUM LUGAR SO (Spec 054, §6.4).
+#:
+#: ⚠️ As QUATRO leituras (sino, "Todas", "Silenciadas" e a contagem) usam
+#: esta mesma expressao. Se cada uma montasse a sua, a aba "Silenciadas"
+#: mostraria um conjunto e o contador do sino outro -- e a pessoa veria um
+#: numero que nao corresponde a nada na tela.
+#:
+#: Um aviso esta silenciado quando:
+#:   - tipo COM PAPEL: `roles` nao esta vazio e existe linha de mute para
+#:     CADA papel do aviso. Um papel ligado basta para aparecer (D4), e
+#:     `roles` vazio nunca silencia (D13);
+#:   - tipo de PAPEL UNICO (reacao, por/tirar como seguidor): existe a linha
+#:     com `role = 'none'`.
+#: Tipo TRAVADO nunca silencia -- e isso nao depende de `roles` estar vazio:
+#: ele simplesmente nao esta em nenhuma das duas listas.
+_SILENCIADA = f"""(
+    notification.type IN ({_em(TIPOS_POR_PAPEL)})
+    AND cardinality(notification.roles) > 0
+    AND NOT EXISTS (
+        SELECT 1 FROM unnest(notification.roles) AS papel
+        WHERE NOT EXISTS (
+            SELECT 1 FROM notification_mute m
+            WHERE m.workspace_id = CAST(:silencio_ws AS uuid)
+              AND m.user_id = CAST(:silencio_me AS uuid)
+              AND m.type = notification.type
+              AND m.role = papel
+        )
+    )
+) OR (
+    notification.type IN ({_em(TIPOS_DE_PAPEL_UNICO)})
+    AND EXISTS (
+        SELECT 1 FROM notification_mute m
+        WHERE m.workspace_id = CAST(:silencio_ws AS uuid)
+          AND m.user_id = CAST(:silencio_me AS uuid)
+          AND m.type = notification.type
+          AND m.role = '{PAPEL_UNICO}'
+    )
+)"""
+
+
+def filtro_de_silencio(*, silenciadas: bool):
+    """O recorte de silencio do usuario logado (Spec 054, §6.4).
+
+    `silenciadas=True` devolve SO as silenciadas (a aba nova);
+    `False` devolve o resto (sino, "Nao lidas", "Todas", contagem).
+    """
+    tenant = require_tenant()
+    sql = _SILENCIADA if silenciadas else f"NOT ({_SILENCIADA})"
+    return text(sql).bindparams(
+        silencio_ws=str(tenant.workspace_id), silencio_me=str(tenant.user_id)
+    )
 
 
 def filtrar(
@@ -67,8 +132,15 @@ class NotificationRepository(BaseRepository[Notification]):
         task_id: uuid.UUID | None = None,
         comment_id: uuid.UUID | None = None,
         payload: dict | None = None,
+        roles: tuple[str, ...] = (),
     ) -> Notification:
-        """Registra uma notificacao na sessao (sem commit)."""
+        """Registra uma notificacao na sessao (sem commit).
+
+        `roles` (Spec 054, D12): POR QUE o aviso chegou para esta pessoa --
+        `watcher`, `assignee` e/ou `creator`, no instante do envio. Vazio nos
+        tipos pessoais (mencao, designacao, reacao, por/tirar, perda de
+        acesso), e vazio nunca e silenciado por toggle de papel.
+        """
         tenant = require_tenant()
         row = Notification(
             workspace_id=tenant.workspace_id,
@@ -78,6 +150,7 @@ class NotificationRepository(BaseRepository[Notification]):
             task_id=task_id,
             comment_id=comment_id,
             payload=payload,
+            roles=list(roles),
         )
         self.session.add(row)
         return row
@@ -90,6 +163,7 @@ class NotificationRepository(BaseRepository[Notification]):
         tipos: tuple[str, ...] = (),
         task_id: uuid.UUID | None = None,
         project_id: uuid.UUID | None = None,
+        muted: bool = False,
     ) -> Page[Notification]:
         """Feed do usuario logado, mais novas primeiro (desempate por id).
 
@@ -97,12 +171,16 @@ class NotificationRepository(BaseRepository[Notification]):
         recorte por recipient. Desempate por `id` porque func.now() e
         constante na transacao (created_at pode empatar -- mesmo
         aprendizado dos comentarios).
+
+        `muted` (Spec 054, D5): `False` -- o padrao -- ESCONDE as silenciadas
+        de "Nao lidas" e "Todas"; `True` mostra SO elas, que e a aba nova.
         """
         me = require_tenant().user_id
         base = self._base_select().where(Notification.recipient_id == me)
         if unread_only:
             base = base.where(Notification.read_at.is_(None))
         base = filtrar(base, tipos=tipos, task_id=task_id, project_id=project_id)
+        base = base.where(filtro_de_silencio(silenciadas=muted))
 
         total = (
             await self.session.execute(
@@ -155,12 +233,21 @@ class NotificationRepository(BaseRepository[Notification]):
         )
         return (await self.session.execute(stmt)).scalar_one_or_none()
 
-    async def atualizar(self, row: Notification, *, payload: dict) -> None:
-        """Junta uma mudanca nova num aviso existente: payload + `updated_at`."""
+    async def atualizar(
+        self, row: Notification, *, payload: dict, roles: tuple[str, ...] = ()
+    ) -> None:
+        """Junta uma mudanca nova num aviso existente: payload + `updated_at`.
+
+        ⚠️ OS PAPEIS SE UNEM (Spec 054, §6.2): a pessoa pode ter virado
+        responsavel entre o primeiro aviso e o segundo. Perder o papel do
+        primeiro faria o aviso juntado ser silenciado por um toggle que nao
+        cobre tudo o que ele conta.
+        """
+        unidos = list(dict.fromkeys([*(row.roles or []), *roles]))
         await self.session.execute(
             update(Notification)
             .where(Notification.id == row.id)
-            .values(payload=payload, updated_at=func.now())
+            .values(payload=payload, roles=unidos, updated_at=func.now())
         )
 
     async def apagar(self, row: Notification) -> None:
@@ -188,8 +275,14 @@ class NotificationRepository(BaseRepository[Notification]):
         )
         return [r[0] for r in rows.all()]
 
-    async def count_unread(self) -> int:
-        """Quantidade de nao-lidas do usuario logado (barato; usado no badge)."""
+    async def count_unread(self, *, muted: bool = False) -> int:
+        """Quantidade de nao-lidas do usuario logado (barato; usado no badge).
+
+        ⚠️ Silenciada NAO conta no sino (Spec 054, D14): ela so conta dentro
+        da propria aba, e e para isso que serve `muted=True`. Um numero que
+        inclui o que a pessoa nao consegue ver em lugar nenhum e um numero
+        que nunca zera.
+        """
         tenant = require_tenant()
         stmt = (
             select(func.count())
@@ -198,6 +291,7 @@ class NotificationRepository(BaseRepository[Notification]):
                 Notification.workspace_id == tenant.workspace_id,
                 Notification.recipient_id == tenant.user_id,
                 Notification.read_at.is_(None),
+                filtro_de_silencio(silenciadas=muted),
             )
         )
         return (await self.session.execute(stmt)).scalar_one()
@@ -227,9 +321,14 @@ class NotificationRepository(BaseRepository[Notification]):
         tipos: tuple[str, ...] = (),
         task_id: uuid.UUID | None = None,
         project_id: uuid.UUID | None = None,
+        muted: bool = False,
     ) -> int:
         """Marca as nao-lidas do usuario logado como lidas -- todas, ou so as
         do filtro (Spec 053, D25). Retorna quantas foram marcadas.
+
+        `muted` (Spec 054, D14): o "Marcar todas" do sino e das abas comuns
+        NAO toca nas silenciadas, e o da aba "Silenciadas" marca SO elas --
+        o mesmo recorte que cada uma mostra.
         """
         tenant = require_tenant()
         stmt = filtrar(
@@ -237,6 +336,7 @@ class NotificationRepository(BaseRepository[Notification]):
                 Notification.workspace_id == tenant.workspace_id,
                 Notification.recipient_id == tenant.user_id,
                 Notification.read_at.is_(None),
+                filtro_de_silencio(silenciadas=muted),
             ),
             tipos=tipos,
             task_id=task_id,

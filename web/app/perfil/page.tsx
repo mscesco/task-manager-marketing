@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import AppShell from "@/components/AppShell";
 import Card from "@/components/Card";
 import PageHeader from "@/components/PageHeader";
+import NotificationPreferences from "@/components/NotificationPreferences";
 import { currentUser, renameSelf, ApiError, type CurrentUser } from "@/lib/api";
 import { NOME_MAXIMO, nomeParaSalvar } from "@/lib/nomeProprio";
 
@@ -73,10 +74,12 @@ function Perfil() {
   }
 
   return (
-    <div style={{ maxWidth: 480 }}>
+    // ⚠️ 640 e nao os 480 de antes: o cartao de notificacoes e uma GRADE
+    // (uma coluna por papel), e em 480 as tres colunas se esmagavam.
+    <div style={{ maxWidth: 640 }}>
       <PageHeader title="Meu perfil" />
 
-      <Card className="flex flex-col gap-4">
+      <Card className="flex max-w-[480px] flex-col gap-4">
         <form
           className="field"
           onSubmit={(e) => {
@@ -136,6 +139,15 @@ function Perfil() {
           Trocar senha
         </a>
       </Card>
+
+      {/* ⚠️ O `id` E O DESTINO DO "Configurar" de `/notificacoes`
+          (`/perfil#notificacoes`, Spec 054 §9.6). Tirar o id nao quebra
+          nada visivelmente -- so faz o link cair no topo da pagina. */}
+      <section id="notificacoes" className="mt-4 scroll-mt-4">
+        <Card>
+          <NotificationPreferences />
+        </Card>
+      </section>
     </div>
   );
 }

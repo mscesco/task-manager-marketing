@@ -44,6 +44,7 @@ import {
   POR_PAGINA,
   agruparPorDia,
   filtroDaApi,
+  filtroDeMarcar,
   lerEstado,
   queryDoEstado,
   rotuloDoBotaoMarcar,
@@ -53,6 +54,8 @@ import {
 const ABAS = [
   { id: "nao-lidas" as const, label: "Não lidas" },
   { id: "todas" as const, label: "Todas" },
+  // Spec 054 (D5): o que a pessoa desligou continua aqui, e SO aqui.
+  { id: "silenciadas" as const, label: "Silenciadas" },
 ];
 
 export default function TelaDeNotificacoes() {
@@ -119,7 +122,7 @@ export default function TelaDeNotificacoes() {
     if (!estado) return;
     setMarcando(true);
     try {
-      await markAllNotificationsRead(temFiltro(estado) ? filtroDaApi(estado) : {});
+      await markAllNotificationsRead(filtroDeMarcar(estado));
       setRecarga((n) => n + 1);
     } catch {
       setErro("Não consegui marcar as notificações como lidas.");
@@ -139,14 +142,21 @@ export default function TelaDeNotificacoes() {
         title="Notificações"
         count={naoLidas === 1 ? "1 não lida" : `${naoLidas} não lidas`}
         actions={
-          <button
-            type="button"
-            className="btn ml-auto"
-            onClick={marcarEstas}
-            disabled={marcando || naoLidas === 0}
-          >
-            {marcando ? "Marcando…" : rotuloDoBotaoMarcar(filtrado, naoLidas)}
-          </button>
+          <div className="ml-auto flex items-center gap-2">
+            {/* Spec 054 (§9.6): o link mora AQUI, e nao no sino -- o sino e
+                para ler o aviso, nao para configurar. */}
+            <Link href="/perfil#notificacoes" className="btn btn-ghost">
+              Configurar
+            </Link>
+            <button
+              type="button"
+              className="btn"
+              onClick={marcarEstas}
+              disabled={marcando || naoLidas === 0}
+            >
+              {marcando ? "Marcando…" : rotuloDoBotaoMarcar(filtrado, naoLidas)}
+            </button>
+          </div>
         }
       />
 
@@ -225,7 +235,12 @@ export default function TelaDeNotificacoes() {
                 ? "Nenhuma notificação com esses filtros"
                 : estado.aba === "nao-lidas"
                   ? "Nenhuma notificação não lida"
-                  : "Nenhuma notificação"
+                  : // Spec 054: vazio aqui é bom sinal -- nada foi silenciado.
+                    // "Nenhuma notificação" seria mentira: elas estão nas
+                    // outras abas.
+                    estado.aba === "silenciadas"
+                    ? "Nenhuma notificação silenciada"
+                    : "Nenhuma notificação"
             }
             action={
               filtrado ? (

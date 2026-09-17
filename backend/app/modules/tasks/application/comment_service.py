@@ -233,19 +233,17 @@ class CommentService:
         #    prioridade -- ninguem recebe duas notificacoes pelo mesmo
         #    comentario). Replica tambem notifica.
         mencionados_set = set(mencionados)
-        recipient_ids = [
-            uid
-            for uid in dict.fromkeys(
-                (
-                    *await self._watchers.list_user_ids(task_id),
-                    *await self._assignees.list_user_ids(task_id),
-                    task.created_by,
-                )
-            )
-            if uid not in mencionados_set
-        ]
+        # Spec 054 (D12): cada destinatario leva o PAPEL que tem na tarefa.
+        papeis: dict[uuid.UUID, list[str]] = {}
+        for uid in await self._watchers.list_user_ids(task_id):
+            papeis.setdefault(uid, []).append("watcher")
+        for uid in await self._assignees.list_user_ids(task_id):
+            papeis.setdefault(uid, []).append("assignee")
+        papeis.setdefault(task.created_by, []).append("creator")
+        recipient_ids = [u for u in papeis if u not in mencionados_set]
         await self._notify.comment_on_task(
             recipient_ids=recipient_ids,
+            papeis=papeis,
             actor_id=tenant.user_id,
             task_id=task_id,
             task_title=task.title,

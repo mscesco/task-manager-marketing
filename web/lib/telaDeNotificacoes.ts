@@ -11,7 +11,12 @@ import { type Agora, diaNoWorkspace } from "./prazo";
 /** Avisos por pagina (Spec 053, §9.6). */
 export const POR_PAGINA = 20;
 
-export type Aba = "nao-lidas" | "todas";
+/**
+ * ⚠️ "silenciadas" e uma aba de VERDADE, e nao um filtro: o que esta
+ * silenciado nao aparece nas outras duas (Spec 054, D5), entao ela e o
+ * unico lugar onde esse aviso existe.
+ */
+export type Aba = "nao-lidas" | "todas" | "silenciadas";
 
 /**
  * Uma opcao do filtro "tipo". Cada uma pode juntar varios tipos do backend:
@@ -77,7 +82,9 @@ export const ESTADO_INICIAL: EstadoDaTelaDeNotificacoes = {
  */
 export function lerEstado(busca: string): EstadoDaTelaDeNotificacoes {
   const p = new URLSearchParams(busca);
-  const aba: Aba = p.get("aba") === "todas" ? "todas" : "nao-lidas";
+  const abaCru = p.get("aba");
+  const aba: Aba =
+    abaCru === "todas" || abaCru === "silenciadas" ? abaCru : "nao-lidas";
   const tipoCru = p.get("tipo");
   const tipo = tipoCru && TIPO_POR_CHAVE.has(tipoCru) ? tipoCru : null;
   const nome = p.get("nome") ?? "";
@@ -96,7 +103,7 @@ export function lerEstado(busca: string): EstadoDaTelaDeNotificacoes {
 /** A query que representa o estado. Padrao nao entra: a URL limpa e a inicial. */
 export function queryDoEstado(e: EstadoDaTelaDeNotificacoes): string {
   const p = new URLSearchParams();
-  if (e.aba === "todas") p.set("aba", "todas");
+  if (e.aba !== "nao-lidas") p.set("aba", e.aba);
   if (e.tipo) p.set("tipo", e.tipo);
   if (e.alvo) {
     p.set(e.alvo.kind === "task" ? "tarefa" : "projeto", e.alvo.id);
@@ -107,18 +114,38 @@ export function queryDoEstado(e: EstadoDaTelaDeNotificacoes): string {
   return q ? `?${q}` : "";
 }
 
-/** O que vai para a API -- a listagem E o "marcar estas" usam o mesmo (D25). */
+/** O que vai para a API -- a listagem E o "marcar estas" usam o mesmo (D25).
+ *
+ * ⚠️ `muted` SAI DA ABA, e entra aqui junto com os filtros: e o que faz o
+ * botao de marcar tocar exatamente o que a aba mostrou (Spec 054, D14). Na
+ * aba "Silenciadas" ele marca so silenciadas; nas outras, nunca as toca.
+ */
 export function filtroDaApi(e: EstadoDaTelaDeNotificacoes): FiltroDeNotificacoes {
   return {
     types: e.tipo ? TIPO_POR_CHAVE.get(e.tipo)?.tipos ?? [] : [],
     task_id: e.alvo?.kind === "task" ? e.alvo.id : null,
     project_id: e.alvo?.kind === "project" ? e.alvo.id : null,
+    muted: e.aba === "silenciadas",
   };
 }
 
 /** Ha filtro alem da aba? Decide o rotulo do botao e o texto do vazio. */
 export function temFiltro(e: EstadoDaTelaDeNotificacoes): boolean {
   return e.tipo !== null || e.alvo !== null;
+}
+
+/**
+ * O que o "marcar" manda. Sem recorte de tipo ou tarefa ele vai VAZIO -- e o
+ * "marcar todas" de sempre, o mesmo do sino.
+ *
+ * ⚠️ MENOS O `muted`, QUE NUNCA PODE FALTAR (Spec 054, D14). Na aba
+ * "Silenciadas" sem nenhum filtro, um objeto vazio faria o botao marcar as
+ * notificacoes das OUTRAS abas -- as que a pessoa nem estava vendo -- e deixar
+ * intactas as que ela tinha na frente.
+ */
+export function filtroDeMarcar(e: EstadoDaTelaDeNotificacoes): FiltroDeNotificacoes {
+  if (temFiltro(e)) return filtroDaApi(e);
+  return e.aba === "silenciadas" ? filtroDaApi(e) : {};
 }
 
 /**

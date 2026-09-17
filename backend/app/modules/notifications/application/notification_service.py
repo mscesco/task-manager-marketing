@@ -52,6 +52,7 @@ class NotificationService:
         tipos: tuple[str, ...] = (),
         task_id: uuid.UUID | None = None,
         project_id: uuid.UUID | None = None,
+        muted: bool = False,
     ) -> Page[NotificationDTO]:
         page = await self._repo.list_for_me(
             params=params,
@@ -59,6 +60,7 @@ class NotificationService:
             tipos=tipos,
             task_id=task_id,
             project_id=project_id,
+            muted=muted,
         )
         acesso = await self._acesso_as_tarefas(
             [row.task_id for row in page.items if row.task_id is not None]
@@ -70,8 +72,10 @@ class NotificationService:
             size=page.size,
         )
 
-    async def count_unread(self) -> int:
-        return await self._repo.count_unread()
+    async def count_unread(self, *, muted: bool = False) -> int:
+        """Nao-lidas de quem esta lendo. ⚠️ Silenciada nao entra no numero
+        do sino (Spec 054, D14) -- `muted=True` conta so as da aba."""
+        return await self._repo.count_unread(muted=muted)
 
     async def mark_read(self, notification_id: uuid.UUID) -> None:
         """Marca uma notificacao do usuario como lida. 404 se nao e dele."""
@@ -85,13 +89,16 @@ class NotificationService:
         tipos: tuple[str, ...] = (),
         task_id: uuid.UUID | None = None,
         project_id: uuid.UUID | None = None,
+        muted: bool = False,
     ) -> int:
         """Marca as nao-lidas do usuario -- todas, ou so as do filtro (D25).
 
-        ⚠️ Os filtros sao os MESMOS da listagem (`repository.filtrar`).
+        ⚠️ Os filtros sao os MESMOS da listagem (`repository.filtrar`), e o
+        recorte de silencio tambem (Spec 054, §6.4): o botao marca o que a
+        aba mostra, nunca o que ela esconde.
         """
         return await self._repo.mark_all_read(
-            tipos=tipos, task_id=task_id, project_id=project_id
+            tipos=tipos, task_id=task_id, project_id=project_id, muted=muted
         )
 
     async def alvos(self, termo: str) -> list[AlvoDeFiltro]:

@@ -2,7 +2,8 @@
 
 Rotas (sob /notifications):
     GET    /                       -- feed paginado (unread_only, type, task_id,
-                                      project_id -- Spec 053, fatia E)
+                                      project_id -- Spec 053, fatia E; muted --
+                                      Spec 054, D5)
     GET    /targets?q=             -- sugestoes do filtro "Tarefa ou projeto"
     GET    /unread-count           -- contagem de nao-lidas (badge)
     POST   /read-all               -- marca como lidas (todas, ou as do filtro)
@@ -50,6 +51,9 @@ async def list_notifications(
     type: list[str] = Query(default_factory=list),
     task_id: uuid.UUID | None = None,
     project_id: uuid.UUID | None = None,
+    # Spec 054 (D5): a aba "Silenciadas". Ausente = o de sempre, que
+    # ESCONDE as silenciadas.
+    muted: bool = False,
 ) -> NotificationListResponse:
     """Feed do usuario logado, ultima mudanca primeiro."""
     result = await NotificationService(session).list_for_me(
@@ -58,6 +62,7 @@ async def list_notifications(
         tipos=tuple(type),
         task_id=task_id,
         project_id=project_id,
+        muted=muted,
     )
     return NotificationListResponse(
         items=[NotificationResponse.model_validate(d) for d in result.items],
@@ -69,10 +74,14 @@ async def list_notifications(
 
 @router.get("/unread-count", response_model=UnreadCountResponse)
 async def unread_count(
-    _: TenantContextDep, session: SessionDep
+    _: TenantContextDep, session: SessionDep, muted: bool = False
 ) -> UnreadCountResponse:
-    """Contagem de nao-lidas (barato; o front polla isto pro badge)."""
-    count = await NotificationService(session).count_unread()
+    """Contagem de nao-lidas (barato; o front polla isto pro badge).
+
+    ⚠️ O padrao NAO conta silenciadas (Spec 054, D14) -- e o numero do
+    sino. `muted=true` conta as da aba "Silenciadas".
+    """
+    count = await NotificationService(session).count_unread(muted=muted)
     return UnreadCountResponse(count=count)
 
 
@@ -94,10 +103,15 @@ async def mark_all_read(
     type: list[str] = Query(default_factory=list),
     task_id: uuid.UUID | None = None,
     project_id: uuid.UUID | None = None,
+    # Spec 054 (D14): o mesmo recorte da aba que mostrou a lista.
+    muted: bool = False,
 ) -> MarkAllReadResponse:
     """Marca as nao-lidas do usuario como lidas -- todas, ou as do filtro."""
     updated = await NotificationService(uow.session).mark_all_read(
-        tipos=tuple(type), task_id=task_id, project_id=project_id
+        tipos=tuple(type),
+        task_id=task_id,
+        project_id=project_id,
+        muted=muted,
     )
     await uow.commit()
     return MarkAllReadResponse(updated=updated)
