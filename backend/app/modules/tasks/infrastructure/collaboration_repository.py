@@ -103,11 +103,13 @@ class TaskWatcherRepository(BaseRepository[TaskWatcher]):
     model = TaskWatcher
 
     async def list_user_ids(self, task_id: uuid.UUID) -> list[uuid.UUID]:
+        # ⚠️ Por `created_at` desde a Spec 053 (B): era por `id` (UUID), uma
+        # ordem sem sentido para quem le a lista "Seguidores" na tela.
         stmt = (
             self._base_select()
             .with_only_columns(TaskWatcher.user_id)
             .where(TaskWatcher.task_id == task_id)
-            .order_by(TaskWatcher.id.asc())
+            .order_by(TaskWatcher.created_at.asc(), TaskWatcher.id.asc())
         )
         rows = (await self.session.execute(stmt)).scalars().all()
         return list(rows)
@@ -130,6 +132,40 @@ class TaskWatcherRepository(BaseRepository[TaskWatcher]):
         )
         self.session.add(row)
         return row
+
+    async def list_user_ids_for_tasks(
+        self, task_ids: list[uuid.UUID]
+    ) -> dict[uuid.UUID, list[uuid.UUID]]:
+        """Seguidores de VARIAS tarefas em UMA consulta (Spec 053, B).
+
+        Toda tarefa pedida aparece, com lista vazia se ninguem segue.
+        """
+        if not task_ids:
+            return {}
+        stmt = (
+            self._base_select()
+            .with_only_columns(TaskWatcher.task_id, TaskWatcher.user_id)
+            .where(TaskWatcher.task_id.in_(task_ids))
+            .order_by(TaskWatcher.created_at.asc(), TaskWatcher.id.asc())
+        )
+        out: dict[uuid.UUID, list[uuid.UUID]] = {tid: [] for tid in task_ids}
+        for task_id, user_id in (await self.session.execute(stmt)).all():
+            out.setdefault(task_id, []).append(user_id)
+        return out
+
+    async def remove_many(
+        self, *, task_id: uuid.UUID, user_ids: list[uuid.UUID]
+    ) -> None:
+        """Tira varios seguidores de uma tarefa num `DELETE` so."""
+        if not user_ids:
+            return
+        await self.session.execute(
+            delete(TaskWatcher).where(
+                TaskWatcher.workspace_id == require_tenant().workspace_id,
+                TaskWatcher.task_id == task_id,
+                TaskWatcher.user_id.in_(user_ids),
+            )
+        )
 
     async def remove(self, *, task_id: uuid.UUID, user_id: uuid.UUID) -> bool:
         stmt = delete(TaskWatcher).where(

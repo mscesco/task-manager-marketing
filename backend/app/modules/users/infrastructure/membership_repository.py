@@ -72,6 +72,58 @@ class MembershipRepository:
             org_role=user.org_role.value if user.org_role is not None else None,
         )
 
+    async def get_memberships(
+        self, *, user_ids: list[uuid.UUID], workspace_id: uuid.UUID
+    ) -> dict[uuid.UUID, WorkspaceMembership]:
+        """O `get_membership` para VARIAS pessoas, em duas consultas (Spec 053, A).
+
+        ⚠️ EXISTE POR CAUSA DA TRAVA DOS AVISOS: todo aviso de tarefa confere,
+        antes de gravar, quem dos destinatarios ainda alcanca a tarefa. Com
+        `get_membership` em laco seriam duas consultas POR destinatario, dentro
+        do mesmo gesto que comentou ou moveu.
+
+        Quem nao existe ou e de outro workspace simplesmente nao aparece no
+        dicionario -- o mesmo `None` do irmao, so que por ausencia.
+        """
+        ids = list(dict.fromkeys(user_ids))
+        if not ids:
+            return {}
+        users = (
+            await self._session.execute(
+                select(User).where(
+                    User.id.in_(ids), User.workspace_id == workspace_id
+                )
+            )
+        ).scalars().all()
+        if not users:
+            return {}
+        rows = (
+            await self._session.execute(
+                select(UserTeam.user_id, UserTeam.team_id, UserTeam.role).where(
+                    UserTeam.user_id.in_([u.id for u in users]),
+                    UserTeam.workspace_id == workspace_id,
+                )
+            )
+        ).all()
+        papeis: dict[uuid.UUID, list[tuple[uuid.UUID, str]]] = {}
+        for user_id, team_id, role in rows:
+            papeis.setdefault(user_id, []).append((team_id, role.value))
+
+        resultado: dict[uuid.UUID, WorkspaceMembership] = {}
+        for user in users:
+            team_roles = tuple(papeis.get(user.id, ()))
+            resultado[user.id] = WorkspaceMembership(
+                user_id=user.id,
+                workspace_id=workspace_id,
+                roles=frozenset(role for _, role in team_roles),
+                is_active=user.is_active,
+                must_change_password=user.must_change_password,
+                token_version=user.token_version,
+                team_roles=team_roles,
+                org_role=user.org_role.value if user.org_role is not None else None,
+            )
+        return resultado
+
     async def load_team_tree(
         self, *, workspace_id: uuid.UUID
     ) -> tuple[tuple[uuid.UUID, uuid.UUID | None], ...]:

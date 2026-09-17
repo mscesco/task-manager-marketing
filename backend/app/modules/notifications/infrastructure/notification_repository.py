@@ -10,12 +10,47 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import func, select, update
+from datetime import timedelta
+
+from sqlalchemy import delete, func, select, update
 
 from app.core.tenant import require_tenant
-from app.db.models import Notification
+from app.db.models import Notification, Task
 from app.db.repository import BaseRepository
 from app.shared.pagination import Page, PageParams
+
+
+def filtrar(
+    stmt,
+    *,
+    tipos: tuple[str, ...] = (),
+    task_id: uuid.UUID | None = None,
+    project_id: uuid.UUID | None = None,
+):
+    """Os filtros da tela de notificacoes (Spec 053, D22), num lugar so.
+
+    ⚠️ A LISTAGEM E O "MARCAR ESTAS COMO LIDAS" USAM ESTA MESMA FUNCAO (D25):
+    se cada um montasse o proprio recorte, o botao marcaria outra coisa que
+    nao a lista na tela -- e o contador do sino cairia um numero diferente
+    do que a pessoa viu.
+
+    `project_id`: a notificacao nao guarda projeto, entao passa pela tarefa.
+    Tarefa apagada continua na tabela (soft-delete) e continua casando.
+    """
+    if tipos:
+        stmt = stmt.where(Notification.type.in_(tipos))
+    if task_id is not None:
+        stmt = stmt.where(Notification.task_id == task_id)
+    if project_id is not None:
+        stmt = stmt.where(
+            Notification.task_id.in_(
+                select(Task.id).where(
+                    Task.project_id == project_id,
+                    Task.workspace_id == require_tenant().workspace_id,
+                )
+            )
+        )
+    return stmt
 
 
 class NotificationRepository(BaseRepository[Notification]):
@@ -48,7 +83,13 @@ class NotificationRepository(BaseRepository[Notification]):
         return row
 
     async def list_for_me(
-        self, *, params: PageParams, unread_only: bool = False
+        self,
+        *,
+        params: PageParams,
+        unread_only: bool = False,
+        tipos: tuple[str, ...] = (),
+        task_id: uuid.UUID | None = None,
+        project_id: uuid.UUID | None = None,
     ) -> Page[Notification]:
         """Feed do usuario logado, mais novas primeiro (desempate por id).
 
@@ -61,6 +102,7 @@ class NotificationRepository(BaseRepository[Notification]):
         base = self._base_select().where(Notification.recipient_id == me)
         if unread_only:
             base = base.where(Notification.read_at.is_(None))
+        base = filtrar(base, tipos=tipos, task_id=task_id, project_id=project_id)
 
         total = (
             await self.session.execute(
@@ -69,8 +111,10 @@ class NotificationRepository(BaseRepository[Notification]):
         ).scalar_one()
 
         stmt = (
+            # ⚠️ `updated_at`, e nao `created_at`, desde a Spec 053 (C): o
+            # aviso que juntou uma mudanca nova sobe para o topo.
             base.order_by(
-                Notification.created_at.desc(), Notification.id.desc()
+                Notification.updated_at.desc(), Notification.id.desc()
             )
             .offset((params.page - 1) * params.size)
             .limit(params.size)
@@ -79,6 +123,70 @@ class NotificationRepository(BaseRepository[Notification]):
         return Page(
             items=list(rows), total=total, page=params.page, size=params.size
         )
+
+    async def recente_nao_lida(
+        self,
+        *,
+        recipient_id: uuid.UUID,
+        task_id: uuid.UUID,
+        actor_id: uuid.UUID,
+        tipos: tuple[str, ...],
+        janela: timedelta,
+    ) -> Notification | None:
+        """O aviso NAO LIDO mais recente deste autor, tarefa e destinatario,
+        de um destes tipos, dentro da janela (Spec 053, D18).
+
+        ⚠️ A janela conta a partir de `now()` do BANCO -- que e o instante da
+        TRANSACAO (armadilha do AGENTS.md). Numa mesma requisicao todas as
+        comparacoes usam o mesmo relogio, que e o que se quer.
+        """
+        stmt = (
+            self._base_select()
+            .where(
+                Notification.recipient_id == recipient_id,
+                Notification.task_id == task_id,
+                Notification.actor_id == actor_id,
+                Notification.type.in_(tipos),
+                Notification.read_at.is_(None),
+                Notification.updated_at >= func.now() - janela,
+            )
+            .order_by(Notification.updated_at.desc(), Notification.id.desc())
+            .limit(1)
+        )
+        return (await self.session.execute(stmt)).scalar_one_or_none()
+
+    async def atualizar(self, row: Notification, *, payload: dict) -> None:
+        """Junta uma mudanca nova num aviso existente: payload + `updated_at`."""
+        await self.session.execute(
+            update(Notification)
+            .where(Notification.id == row.id)
+            .values(payload=payload, updated_at=func.now())
+        )
+
+    async def apagar(self, row: Notification) -> None:
+        """Remove um aviso que se ANULOU (Spec 053, D18). Nunca um lido: quem
+        chama so chega aqui com `recente_nao_lida`."""
+        await self.session.execute(
+            delete(Notification).where(Notification.id == row.id)
+        )
+
+    async def task_ids_para_mim(self) -> list[uuid.UUID]:
+        """As tarefas que aparecem em alguma notificacao do usuario logado.
+
+        Base das sugestoes do filtro "Tarefa ou projeto" (Spec 053, D23): so
+        o que tem aviso -- nenhuma sugestao leva a uma lista vazia.
+        """
+        tenant = require_tenant()
+        rows = await self.session.execute(
+            select(Notification.task_id)
+            .where(
+                Notification.workspace_id == tenant.workspace_id,
+                Notification.recipient_id == tenant.user_id,
+                Notification.task_id.is_not(None),
+            )
+            .distinct()
+        )
+        return [r[0] for r in rows.all()]
 
     async def count_unread(self) -> int:
         """Quantidade de nao-lidas do usuario logado (barato; usado no badge)."""
@@ -113,20 +221,26 @@ class NotificationRepository(BaseRepository[Notification]):
             )
         return True
 
-    async def mark_all_read(self) -> int:
-        """Marca todas as nao-lidas do usuario logado como lidas.
-
-        Retorna quantas foram marcadas.
+    async def mark_all_read(
+        self,
+        *,
+        tipos: tuple[str, ...] = (),
+        task_id: uuid.UUID | None = None,
+        project_id: uuid.UUID | None = None,
+    ) -> int:
+        """Marca as nao-lidas do usuario logado como lidas -- todas, ou so as
+        do filtro (Spec 053, D25). Retorna quantas foram marcadas.
         """
         tenant = require_tenant()
-        stmt = (
-            update(Notification)
-            .where(
+        stmt = filtrar(
+            update(Notification).where(
                 Notification.workspace_id == tenant.workspace_id,
                 Notification.recipient_id == tenant.user_id,
                 Notification.read_at.is_(None),
-            )
-            .values(read_at=func.now())
-        )
+            ),
+            tipos=tipos,
+            task_id=task_id,
+            project_id=project_id,
+        ).values(read_at=func.now())
         result = await self.session.execute(stmt)
         return result.rowcount or 0

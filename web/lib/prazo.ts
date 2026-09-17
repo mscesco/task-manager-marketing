@@ -93,6 +93,17 @@ export function agoraNoWorkspace(agora: Date = new Date()): Agora {
 }
 
 /**
+ * O DIA (`YYYY-MM-DD`) de um instante ISO completo, no fuso do workspace.
+ *
+ * Spec 053 (F): a tela de notificacoes agrupa por dia. ⚠️ Sem isto, um aviso
+ * das 23h de Brasilia cairia no dia seguinte para quem estivesse num runner
+ * em UTC -- o defeito de fuso que o AGENTS.md conta.
+ */
+export function diaNoWorkspace(iso: string): string {
+  return agoraNoWorkspace(new Date(iso)).data;
+}
+
+/**
  * A tarefa passou do prazo?
  *
  * ⚠️ SÃO DUAS REGRAS, E A DE CIMA É A DE SEMPRE:

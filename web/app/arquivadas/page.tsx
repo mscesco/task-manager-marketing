@@ -24,6 +24,7 @@ import { mensagemExclusao } from "@/lib/exclusao";
 
 import Loading from "@/components/Loading";
 import { useActiveTeam, useActiveTeamId } from "@/lib/useActiveTeam";
+import Paginacao from "@/components/Paginacao";
 // Tela de arquivadas (Spec 013, fatia 4). Lista paginada de tarefas
 // arquivadas (manuais ou pela varredura) + reativar (volta pra BACKLOG e
 // desarquiva). Pagina de verdade: o conjunto cresce sem fim.
@@ -209,7 +210,6 @@ function Arquivadas() {
     // em voo, e o último a responder vencia (defeito de 14/09).
   }, [timeAtivo, active === null]);
 
-  const totalPaginas = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   if (erro) return <div className="error-box" style={{ maxWidth: 560 }}>{erro}</div>;
   if (!tasks) return <Loading rotulo="Carregando arquivadas" />;
@@ -304,29 +304,13 @@ function Arquivadas() {
         }}
       />
 
-      {totalPaginas > 1 && (
-        <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 16 }}>
-          <button
-            className="btn btn-ghost"
-            disabled={page <= 1}
-            onClick={() => carregar(page - 1)}
-            style={{ padding: "6px 12px" }}
-          >
-            ← Anterior
-          </button>
-          <span className="muted" style={{ fontSize: 13 }}>
-            Página {page} de {totalPaginas}
-          </span>
-          <button
-            className="btn btn-ghost"
-            disabled={page >= totalPaginas}
-            onClick={() => carregar(page + 1)}
-            style={{ padding: "6px 12px" }}
-          >
-            Próxima →
-          </button>
-        </div>
-      )}
+      <Paginacao
+        pagina={page}
+        total={total}
+        porPagina={PAGE_SIZE}
+        rotulo="Tarefas"
+        onIr={carregar}
+      />
     </div>
   );
 }

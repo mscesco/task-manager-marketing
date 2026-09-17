@@ -40,6 +40,7 @@ import Loading from "@/components/Loading";
 import { useActiveTeam, useActiveTeamId } from "@/lib/useActiveTeam";
 import { navHref } from "@/lib/activeTeam";
 import { useDrawnOutline } from "@/components/AnimatedOutline";
+import Paginacao from "@/components/Paginacao";
 const STATUS_LABEL: Record<SolicitacaoStatus, string> = {
   PENDING: "Pendente",
   APPROVED: "Aprovada",
@@ -257,71 +258,18 @@ function Solicitacoes() {
         ))}
       </div>
 
+      {/* `rotulo` explicito: "Envios", porque pending_total conta DEMANDAS (R5). */}
       <Paginacao
         pagina={pagina}
         total={totalEnvios}
+        porPagina={TAMANHO_PAGINA}
+        rotulo="Envios"
         onIr={(p) => {
           setPagina(p);
           setAberto(null); // card aberto de outra página não faz sentido
           window.scrollTo({ top: 0 });
         }}
       />
-    </div>
-  );
-}
-
-/** Navegação de páginas. `total` conta ENVIOS, não demandas (R5). */
-function Paginacao({
-  pagina,
-  total,
-  onIr,
-}: {
-  pagina: number;
-  total: number;
-  onIr: (p: number) => void;
-}) {
-  const paginas = Math.max(1, Math.ceil(total / TAMANHO_PAGINA));
-  if (total === 0) return null;
-
-  const primeiro = (pagina - 1) * TAMANHO_PAGINA + 1;
-  const ultimo = Math.min(pagina * TAMANHO_PAGINA, total);
-
-  return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        gap: 12,
-        marginTop: 20,
-        flexWrap: "wrap",
-      }}
-    >
-      <span className="muted" style={{ fontSize: 12 }}>
-        {/* rótulo explícito: "envios", porque pending_total conta demandas */}
-        Envios {primeiro}–{ultimo} de {total}
-      </span>
-      {paginas > 1 && (
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <button
-            className="btn"
-            onClick={() => onIr(pagina - 1)}
-            disabled={pagina <= 1}
-          >
-            ← Anterior
-          </button>
-          <span className="muted" style={{ fontSize: 12 }}>
-            {pagina} / {paginas}
-          </span>
-          <button
-            className="btn"
-            onClick={() => onIr(pagina + 1)}
-            disabled={pagina >= paginas}
-          >
-            Próxima →
-          </button>
-        </div>
-      )}
     </div>
   );
 }

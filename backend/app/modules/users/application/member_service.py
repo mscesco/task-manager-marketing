@@ -49,6 +49,10 @@ from app.modules.tasks.application.task_guards import (
 from app.modules.notifications.application.notification_emitter import (
     NotificationEmitter,
 )
+from app.modules.tasks.domain.history import (
+    MotivoDoSeguidor,
+    build_unwatched_entry,
+)
 from app.modules.tasks.infrastructure.task_repository import TaskRepository
 from app.modules.users.infrastructure.user_repository import UserRepository
 from app.modules.workspaces.infrastructure.team_repository import TeamRepository
@@ -401,9 +405,24 @@ class MemberService:
         if not perdidas:
             return 0
 
-        await TaskRepository(self._session).apagar_relacoes(
+        repo = TaskRepository(self._session)
+        _, seguia_em = await repo.apagar_relacoes(
             user_id=user_id, task_ids=[p.task_id for p in perdidas]
         )
+        # Spec 053, fatia B (D13): sair como seguidor entra no historico,
+        # inclusive quando e a mudanca de vinculo que tira.
+        for task_id in seguia_em:
+            await repo.write_history_por_id(
+                task_id=task_id,
+                user_id=tenant.user_id,
+                entries=[
+                    build_unwatched_entry(
+                        user_id=user_id,
+                        by=tenant.user_id,
+                        reason=MotivoDoSeguidor.LOST_ACCESS,
+                    )
+                ],
+            )
 
         # ⚠️ Nomes de subtime SEM repetir e em ordem estavel. `set` daria ordem
         # de hash, e a mensagem mudaria de forma entre duas execucoes iguais --

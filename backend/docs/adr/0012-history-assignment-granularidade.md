@@ -2,7 +2,15 @@
 
 ## Status
 
-Accepted
+Accepted — **revogada em parte pela Spec 053 (17/09/2026)**: a parte
+de watcher.
+
+> **Nota de 17/09/2026:** entrar e sair como seguidor ("watcher" no código)
+> passou a gravar histórico, sempre — decisão D13 da Spec 053. São os eventos
+> `watched` e `unwatched`, com `metadata = {target_user_id, by_self, reason}`
+> e `reason` em `manual`, `created_with` ou `lost_access`. Foi o caminho que
+> esta ADR previu na última linha: tipos e builders novos, sem migration. A
+> parte de `assigned`/`unassigned` continua valendo como está.
 
 ## Contexto
 

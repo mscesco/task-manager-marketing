@@ -23,6 +23,7 @@ from enum import Enum
 from pydantic import BaseModel, Field, computed_field
 
 from app.core.tenant import current_tenant
+from app.modules.auth.domain import team_scope
 from app.db.models.enums import (
     ColumnSemantic,
     PriorityLevel,
@@ -224,6 +225,23 @@ class TaskResponse(BaseModel):
     def can_delete(self) -> bool:
         return _pode_no_time("task.delete", self.team_id)
 
+    # Spec 053, fatia D: o `+` de "Seguidores" -- por e tirar OUTRA pessoa.
+    # A MESMA pergunta de `CollaborationService._assert_can_manage_others`:
+    # `task.assign` no time da tarefa E o time na lente de edicao. Seguir a si
+    # mesmo nao depende disto (so ver a tarefa).
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def can_manage_watchers(self) -> bool:
+        tenant = current_tenant()
+        if tenant is None or not _pode_no_time("task.assign", self.team_id):
+            return False
+        editaveis = team_scope.editable_team_ids(
+            tenant.memberships, tenant.team_tree, org_role=tenant.org_role
+        )
+        return editaveis is None or (
+            self.team_id is not None and self.team_id in editaveis
+        )
+
 
 class DeleteTaskResponse(TaskResponse):
     """Resposta do DELETE -- inclui contagem de filhas apagadas (ADR 0005)."""
@@ -277,6 +295,11 @@ class TaskCreateRequest(BaseModel):
     # (comportamento anterior). Validacao (alcance/ativo/monouser) e atomica
     # no service: qualquer invalido -> 422 listando todos, nada criado.
     assignee_ids: list[uuid.UUID] = Field(default_factory=list)
+    # Spec 053, fatia B (D6): seguidores ja na criacao. Mesma forma do
+    # `assignee_ids`: atomico, invalido -> 422 com `invalid_ids`, nada criado.
+    # ⚠️ PRECISA DE LINHA NO ROUTER -- o Pydantic aceita o campo e o command
+    # tem default [], entao sem a linha ele some em silencio.
+    watcher_ids: list[uuid.UUID] = Field(default_factory=list)
 
 
 class TaskUpdateRequest(BaseModel):

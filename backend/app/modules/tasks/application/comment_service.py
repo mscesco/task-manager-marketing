@@ -31,6 +31,7 @@ from app.modules.notifications.application.notification_emitter import (
 from app.modules.tasks.application.task_guards import (
     TaskScopeGuards,
     user_can_view_task,
+    user_ids_that_can_view_task,
 )
 from app.modules.tasks.domain.comment import (
     assert_reply_target,
@@ -46,6 +47,7 @@ from app.modules.tasks.domain.comment_reaction import (
 )
 from app.modules.tasks.infrastructure.collaboration_repository import (
     TaskAssignmentRepository,
+    TaskWatcherRepository,
 )
 from app.modules.tasks.infrastructure.comment_reaction_repository import (
     CommentReactionRepository,
@@ -93,6 +95,7 @@ class CommentService:
         self._comments = CommentRepository(session)
         self._guards = TaskScopeGuards(session)
         self._assignees = TaskAssignmentRepository(session)
+        self._watchers = TaskWatcherRepository(session)
         self._notify = NotificationEmitter(session)
         self._reactions = CommentReactionRepository(session)
 
@@ -164,11 +167,11 @@ class CommentService:
         )
         mencionados = [m for m in mencionados if m in validos]
         if mencionados:
-            mencionados = [
-                m
-                for m in mencionados
-                if await user_can_view_task(self._session, task=task, user_id=m)
-            ]
+            # Em lote desde a Spec 053 (A): antes era uma consulta por mencionado.
+            alcancam = await user_ids_that_can_view_task(
+                self._session, task=task, user_ids=mencionados
+            )
+            mencionados = [m for m in mencionados if m in alcancam]
         if mencionados:
             await self._notify.mentioned(
                 recipient_ids=mencionados,
@@ -224,16 +227,20 @@ class CommentService:
             task=task, comment_id=comment.id, conteudo=clean
         )
 
-        # 2) Comentario: fan-out pros responsaveis E pro criador, menos o autor
+        # 2) Comentario: fan-out pros SEGUIDORES (Spec 053, D15), responsaveis
+        #    e criador, menos o autor
         #    (emitter) e MENOS quem ja foi mencionado (D3: a mencao tem
         #    prioridade -- ninguem recebe duas notificacoes pelo mesmo
         #    comentario). Replica tambem notifica.
         mencionados_set = set(mencionados)
         recipient_ids = [
             uid
-            for uid in (
-                *await self._assignees.list_user_ids(task_id),
-                task.created_by,
+            for uid in dict.fromkeys(
+                (
+                    *await self._watchers.list_user_ids(task_id),
+                    *await self._assignees.list_user_ids(task_id),
+                    task.created_by,
+                )
             )
             if uid not in mencionados_set
         ]

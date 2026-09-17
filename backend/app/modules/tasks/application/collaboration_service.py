@@ -1,14 +1,21 @@
 """Casos de uso de colaboracao: responsaveis (assignees) e observadores
 (watchers) de uma task -- Entrega 4.
 
-Regras (fonte da verdade: specs/004-assignment-watchers/spec.md):
+Regras (fontes: specs/004-assignment-watchers e
+specs/053-seguir-tarefas-e-notificacoes):
     - assignment reusa os gates de time (TaskScopeGuards, ADR 0010) e NAO
       concede edicao;
     - designado precisa alcancar a task (lente DELE) -> 422 senao;
-    - pessoal e monouser -> 409 pra terceiro;
-    - watcher: self exige so ver; terceiro exige task.assign+edicao (ADR 0011);
-    - assigned/unassigned entram no history; watcher nao (ADR 0012);
+    - watcher (na tela, "seguidor"): self exige so ver; terceiro exige
+      `task.assign` NO TIME DA TAREFA + edicao (Spec 053, §6.1);
+    - tarefa ARQUIVADA: seguidores so leitura -> 422 `tarefa_arquivada`
+      (Spec 053, D10), inclusive para si mesmo;
+    - assigned/unassigned E watched/unwatched entram no history (a ADR 0012
+      deixava observador de fora; a Spec 053, D13, revogou essa parte);
     - idempotente: re-adicionar -> no-op; remover inexistente -> 404.
+
+⚠️ O "pessoal e monouser -> 409" que esta lista trazia saiu: o projeto pessoal
+nao existe desde 10/09, e nenhum caminho levanta mais esse 409.
 
 Reuso do gate de time: via TaskScopeGuards (helpers extraidos do
 TaskService). NAO duplica logica de time.
@@ -18,6 +25,7 @@ from __future__ import annotations
 
 import uuid
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger
@@ -29,10 +37,14 @@ from app.modules.notifications.application.notification_emitter import (
 from app.modules.tasks.application.task_guards import (
     TaskScopeGuards,
     user_can_view_task,
+    user_ids_that_can_view_task,
 )
 from app.modules.tasks.domain.history import (
+    MotivoDoSeguidor,
     build_assigned_entry,
     build_unassigned_entry,
+    build_unwatched_entry,
+    build_watched_entry,
 )
 from app.modules.tasks.infrastructure.collaboration_repository import (
     TaskAssignmentRepository,
@@ -245,11 +257,15 @@ class CollaborationService:
     async def add_watcher(
         self, *, task_id: uuid.UUID, user_id: uuid.UUID | None
     ) -> tuple[Task, bool]:
-        """Inscreve observador. Self (user_id None/==eu) exige so ver;
-        terceiro exige task.assign+edicao + alcance + monouser.
-        Idempotente. Sem history (ADR 0012)."""
+        """Inscreve seguidor. Retorna (task, created).
+
+        Self (user_id None/==eu) exige so ver; terceiro exige `task.assign` no
+        time da tarefa + edicao + alcance do alvo. Tarefa arquivada -> 422.
+        Idempotente, e o no-op NAO grava historico nem avisa.
+        """
         task = await self._tasks.get_by_id_or_raise(task_id)
         await self._guards.assert_visible(task)
+        self._assert_nao_arquivada(task)
 
         tenant = require_tenant()
         target = user_id if user_id is not None else tenant.user_id
@@ -260,18 +276,24 @@ class CollaborationService:
         if await self._watchers.get(task_id=task_id, user_id=target) is not None:
             return task, False  # idempotente
 
-        self._watchers.add(task_id=task_id, user_id=target)
-        await self._session.flush()
+        await self._gravar_seguidor(
+            task=task, user_id=target, motivo=MotivoDoSeguidor.MANUAL
+        )
         logger.info("task.watched", task_id=str(task_id), user_id=str(target))
         return task, True
 
     async def remove_watcher(
         self, *, task_id: uuid.UUID, user_id: uuid.UUID
     ) -> Task:
-        """Remove observador. Self exige so ver; terceiro exige permissao.
-        Par inexistente -> 404."""
+        """Tira seguidor. Self exige so ver; terceiro exige a mesma permissao
+        de por. Par inexistente -> 404. Tarefa arquivada -> 422.
+
+        ⚠️ SEM conferir alcance do alvo, de proposito: e assim que se tira
+        quem ja nao alcanca a tarefa.
+        """
         task = await self._tasks.get_by_id_or_raise(task_id)
         await self._guards.assert_visible(task)
+        self._assert_nao_arquivada(task)
 
         tenant = require_tenant()
         if user_id != tenant.user_id:
@@ -279,8 +301,138 @@ class CollaborationService:
 
         if not await self._watchers.remove(task_id=task_id, user_id=user_id):
             raise EntityNotFoundError("TaskWatcher", identifier=user_id)
+        await self._session.flush()
+        await self._tasks.write_history(
+            task=task,
+            user_id=tenant.user_id,
+            entries=[
+                build_unwatched_entry(
+                    user_id=user_id, by=tenant.user_id, reason=MotivoDoSeguidor.MANUAL
+                )
+            ],
+        )
+        await self._session.flush()
+        await self._notify.watch_removed(
+            recipient_id=user_id,
+            actor_id=tenant.user_id,
+            task_id=task.id,
+            task_title=task.title,
+        )
         logger.info("task.unwatched", task_id=str(task_id), user_id=str(user_id))
         return task
+
+    async def watch_many_or_fail(
+        self, *, task: Task, user_ids: list[uuid.UUID]
+    ) -> list[uuid.UUID]:
+        """Seguidores escolhidos no modal de CRIAR (Spec 053, D6 e §6.10).
+
+        ATOMICO, na forma de `assign_many_or_fail`: valida TODOS antes de gravar
+        qualquer um; havendo quem nao alcance a tarefa, 422 com
+        `details.invalid_ids` e a criacao inteira reverte.
+
+        Pedir outra pessoa exige a permissao de por terceiro, uma vez; so a
+        propria pessoa nao exige nada alem de ver.
+        """
+        ids = list(dict.fromkeys(user_ids))
+        if not ids:
+            return []
+
+        tenant = require_tenant()
+        await self._guards.assert_visible(task)
+        if any(uid != tenant.user_id for uid in ids):
+            await self._assert_can_manage_others(task)
+
+        alcancam = await user_ids_that_can_view_task(
+            self._session, task=task, user_ids=ids
+        )
+        invalidos = [uid for uid in ids if uid not in alcancam]
+        if invalidos:
+            raise ValidationError(
+                "Um ou mais seguidores nao alcancam esta tarefa.",
+                details={
+                    "field": "watcher_ids",
+                    "invalid_ids": [str(u) for u in invalidos],
+                },
+            )
+
+        inscritos: list[uuid.UUID] = []
+        for uid in ids:
+            if await self._watchers.get(task_id=task.id, user_id=uid) is not None:
+                continue
+            await self._gravar_seguidor(
+                task=task, user_id=uid, motivo=MotivoDoSeguidor.CREATED_WITH
+            )
+            inscritos.append(uid)
+        return inscritos
+
+    async def remove_watchers_without_reach(
+        self, *, task_ids: list[uuid.UUID]
+    ) -> int:
+        """Tira os seguidores que deixaram de alcancar ESTAS tarefas (D12, §6.8).
+
+        Chamado depois que uma tarefa troca de time (`PATCH team_id`) ou de
+        projeto (`POST /move`, que troca o da subarvore inteira).
+
+        ⚠️ SEM AVISO para quem sai: o aviso mostraria o titulo de uma tarefa
+        que a pessoa nao pode mais ver. O historico grava `lost_access`.
+
+        ⚠️ RECARREGA as tarefas do banco (`populate_existing`): o `move` troca o
+        projeto por SQL cru, e a copia em memoria ainda diria o projeto antigo
+        -- a regra de alcance leria o time de antes.
+
+        ⚠️ Responsavel que perde o alcance NAO sai (Spec 053, §8): tira-lo
+        esbarra na regra do ultimo responsavel (ADR 0031). Ele so para de
+        receber aviso, pela trava do emissor.
+
+        Devolve quantas saidas houve.
+        """
+        if not task_ids:
+            return 0
+        por_tarefa = await self._watchers.list_user_ids_for_tasks(task_ids)
+        com_seguidor = [tid for tid, uids in por_tarefa.items() if uids]
+        if not com_seguidor:
+            return 0
+
+        await self._session.flush()
+        tarefas = (
+            await self._session.execute(
+                select(Task)
+                .where(Task.id.in_(com_seguidor))
+                .execution_options(populate_existing=True)
+            )
+        ).scalars().all()
+
+        tenant = require_tenant()
+        saidas = 0
+        for tarefa in tarefas:
+            seguidores = por_tarefa[tarefa.id]
+            alcancam = await user_ids_that_can_view_task(
+                self._session, task=tarefa, user_ids=seguidores
+            )
+            perderam = [uid for uid in seguidores if uid not in alcancam]
+            if not perderam:
+                continue
+            await self._watchers.remove_many(task_id=tarefa.id, user_ids=perderam)
+            await self._tasks.write_history(
+                task=tarefa,
+                user_id=tenant.user_id,
+                entries=[
+                    build_unwatched_entry(
+                        user_id=uid,
+                        by=tenant.user_id,
+                        reason=MotivoDoSeguidor.LOST_ACCESS,
+                    )
+                    for uid in perderam
+                ],
+            )
+            saidas += len(perderam)
+
+        if saidas:
+            await self._session.flush()
+            logger.info(
+                "task.watchers_lost_access", tarefas=len(com_seguidor), saidas=saidas
+            )
+        return saidas
 
     async def list_watchers(self, *, task_id: uuid.UUID) -> list[uuid.UUID]:
         task = await self._tasks.get_by_id_or_raise(task_id)
@@ -309,10 +461,53 @@ class CollaborationService:
     # ----------------------------------------------------
     # Helpers privados
     # ----------------------------------------------------
-    async def _assert_can_manage_others(self, task: Task) -> None:
-        """Gate pra mexer em colaborador de TERCEIRO: task.assign + edicao."""
+    async def _gravar_seguidor(
+        self, *, task: Task, user_id: uuid.UUID, motivo: MotivoDoSeguidor
+    ) -> None:
+        """Grava UM seguidor + a linha de historico + o aviso de "colocou voce".
+
+        O caminho unico de entrada como seguidor, para que o gesto na tela e o
+        modal de criar nao divirjam no que gravam.
+        """
         tenant = require_tenant()
-        if not tenant.has_permission(_ASSIGN_PERMISSION):
+        self._watchers.add(task_id=task.id, user_id=user_id)
+        await self._session.flush()
+        await self._tasks.write_history(
+            task=task,
+            user_id=tenant.user_id,
+            entries=[
+                build_watched_entry(user_id=user_id, by=tenant.user_id, reason=motivo)
+            ],
+        )
+        await self._session.flush()
+        await self._notify.watch_added(
+            recipient_id=user_id,
+            actor_id=tenant.user_id,
+            task_id=task.id,
+            task_title=task.title,
+        )
+
+    @staticmethod
+    def _assert_nao_arquivada(task: Task) -> None:
+        """Seguidores de tarefa arquivada sao so leitura (Spec 053, D10)."""
+        if task.is_archived:
+            raise ValidationError(
+                "Tarefa arquivada: os seguidores não podem mudar.",
+                code="tarefa_arquivada",
+                details={"task_id": str(task.id)},
+            )
+
+    async def _assert_can_manage_others(self, task: Task) -> None:
+        """Gate pra mexer em seguidor de TERCEIRO: `task.assign` NO TIME DA
+        TAREFA + edicao.
+
+        ⚠️ Era `has_permission` -- "tem em algum time" -- ate a Spec 053 (B).
+        Como os quatro papeis tem `task.assign` em algum lugar, a metade
+        "ve mas nao tem a permissao -> 403" era inalcancavel; a pergunta no
+        time do item (Spec 051) a torna real.
+        """
+        tenant = require_tenant()
+        if not tenant.has_permission_in(_ASSIGN_PERMISSION, task.team_id):
             raise AuthorizationError(
                 f"Permissao necessaria: {_ASSIGN_PERMISSION}.",
                 details={"required_permission": _ASSIGN_PERMISSION},

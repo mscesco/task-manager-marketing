@@ -22,10 +22,11 @@ import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.tenant import Membership, require_tenant
+from app.core.tenant import Membership, TeamNode, require_tenant
 from app.db.models import Project, Task
 from app.modules.auth.domain import team_scope
 from app.modules.tasks.infrastructure.project_repository import ProjectRepository
+from app.modules.users.domain.membership import WorkspaceMembership
 from app.modules.users.infrastructure.membership_repository import (
     MembershipRepository,
 )
@@ -132,6 +133,39 @@ async def _lente_do_usuario(
     membership = await MembershipRepository(session).get_membership(
         user_id=user_id, workspace_id=tenant.workspace_id
     )
+    return _lente_de(membership, await _arvore_de_times(session))
+
+
+async def _arvore_de_times(session: AsyncSession) -> tuple[TeamNode, ...]:
+    """A arvore de times do contexto -- ou do banco, se o contexto nao a trouxe.
+
+    ⚠️⚠️ JOB DE FUNDO ENTRA SEM ARVORE. `tenant_scope` tem `team_tree=()` por
+    padrao, e os jobs (`deadline_notify`, `archive-stale`) nao a passam. Com a
+    arvore vazia, `visible_team_ids` perde os DESCENDENTES: o gerente da raiz
+    deixa de enxergar a tarefa do subtime. Achado na Spec 053 (A), quando a
+    trava dos avisos passou a rodar dentro do job de prazo -- e teria calado,
+    sem erro nenhum, o aviso de prazo de quem enxerga por hierarquia.
+
+    Arvore vazia so pode ser "nao carregada": todo workspace tem o time raiz.
+    """
+    tenant = require_tenant()
+    if tenant.team_tree:
+        return tenant.team_tree
+    rows = await MembershipRepository(session).load_team_tree(
+        workspace_id=tenant.workspace_id
+    )
+    return tuple(TeamNode(team_id=tid, parent_team_id=pid) for tid, pid in rows)
+
+
+def _lente_de(
+    membership: WorkspaceMembership | None,
+    tree: tuple[TeamNode, ...],
+) -> frozenset[uuid.UUID] | None | object:
+    """A lente de UM vinculo ja carregado. Mesmos tres retornos de
+    `_lente_do_usuario`, que agora so carrega e delega para ca -- a versao em
+    lote (`user_ids_that_can_view_task`) usa esta mesma funcao, para que a
+    regra nao exista duas vezes.
+    """
     if membership is None or not membership.is_active:
         return _SEM_ACESSO
     target_memberships = tuple(
@@ -139,10 +173,10 @@ async def _lente_do_usuario(
     )
     # ⚠️ O `org_role` E O DO ALVO, e nao o do ator (Spec 045, fatia B). Esta
     # funcao responde "o que ELE enxerga"; passar o papel de quem pergunta
-    # faria um admin enxergar por todo mundo. O `get_membership` acima ja
-    # trouxe o campo, entao nao ha query nova.
+    # faria um admin enxergar por todo mundo. O vinculo carregado ja traz o
+    # campo, entao nao ha query nova.
     return team_scope.visible_team_ids(
-        target_memberships, tenant.team_tree, org_role=membership.org_role
+        target_memberships, tree, org_role=membership.org_role
     )
 
 
@@ -171,6 +205,42 @@ async def user_can_view_task(
         project=project,
         visible=visible,  # type: ignore[arg-type]
     )
+
+
+async def user_ids_that_can_view_task(
+    session: AsyncSession, *, task: Task, user_ids: list[uuid.UUID]
+) -> set[uuid.UUID]:
+    """Quais destes usuarios enxergam a `task`? `user_can_view_task` em lote.
+
+    Spec 053, fatia A: a TRAVA DOS AVISOS. Nenhum aviso de tarefa vai para quem
+    nao a alcanca no momento do envio -- responsavel ou criador que perdeu o
+    time continuavam recebendo o aviso de comentario, com o titulo da tarefa.
+
+    ⚠️ Duas consultas para o grupo inteiro (usuarios + papeis), mais o projeto
+    uma vez. A regra e a MESMA de `user_can_view_task` (`_lente_de` +
+    `task_visible`) -- ha teste afirmando que as duas respondem igual.
+    """
+    ids = list(dict.fromkeys(user_ids))
+    if not ids:
+        return set()
+    tenant = require_tenant()
+    vinculos = await MembershipRepository(session).get_memberships(
+        user_ids=ids, workspace_id=tenant.workspace_id
+    )
+    project = (
+        await ProjectRepository(session).get_by_id(task.project_id)
+        if task.project_id is not None
+        else None
+    )
+    arvore = await _arvore_de_times(session)
+    alcancam: set[uuid.UUID] = set()
+    for uid in ids:
+        visible = _lente_de(vinculos.get(uid), arvore)
+        if visible is _SEM_ACESSO:
+            continue
+        if task_visible(task=task, project=project, visible=visible):  # type: ignore[arg-type]
+            alcancam.add(uid)
+    return alcancam
 
 
 async def user_can_view_team(

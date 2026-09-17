@@ -60,6 +60,12 @@ import {
   type CurrentUser,
 } from "@/lib/api";
 import TituloEditavel from "@/components/TituloEditavel";
+import { bloqueioAoTirar, mensagemDeFalhaDoResponsavel } from "@/lib/responsaveis";
+import {
+  BotaoSeguir,
+  LinhaDeSeguidores,
+  useSeguidores,
+} from "@/components/SeguidoresDaTarefa";
 import DescricaoEditavel from "@/components/DescricaoEditavel";
 import LinksEditaveis from "@/components/LinksEditaveis";
 import {
@@ -760,6 +766,10 @@ export default function TaskDetail({
     };
   }, [task?.id]);
 
+  // Spec 053, fatia D: quem segue. UM estado para o botao do topo e para a
+  // linha "Seguidores" -- ver `components/SeguidoresDaTarefa.tsx`.
+  const seguidores = useSeguidores(task?.id ?? null, avisar);
+
   // Quem NAO alcanca. Vazio enquanto a lista nao chegou (ver acima).
   const foraDoEscopoAqui = useMemo(() => {
     const fora = new Set<string>();
@@ -853,6 +863,13 @@ export default function TaskDetail({
 
   async function toggle(userId: string) {
     const jaEra = assignees.includes(userId);
+    // Tirar o ULTIMO responsavel: o servidor recusaria (ADR 0031). Diz antes,
+    // em vez de sumir com a pilula e trazer de volta.
+    const bloqueio = jaEra ? bloqueioAoTirar(assignees, userId) : null;
+    if (bloqueio) {
+      avisar(bloqueio);
+      return;
+    }
     const anterior = assignees;
     const otimista = jaEra
       ? assignees.filter((x) => x !== userId)
@@ -871,14 +888,9 @@ export default function TaskDetail({
     } catch (e) {
       setAssignees(anterior);
       onAssigneesChange(tid, anterior);
-      const err = e as ApiError;
-      avisar(
-        err.status === 403
-          ? "Você não pode designar nesta tarefa."
-          : err.status === 422
-          ? "Essa pessoa não alcança esta tarefa (fora do time)."
-          : "Não consegui atualizar o responsável."
-      );
+      // ⚠️ Todo 422 virava "nao alcanca" -- inclusive o do ultimo
+      // responsavel. Ver `lib/responsaveis.ts`.
+      avisar(mensagemDeFalhaDoResponsavel(e as ApiError));
     } finally {
       setSaving((s) => {
         const n = new Set(s);
@@ -1526,6 +1538,12 @@ export default function TaskDetail({
             key={task.id}
             valor={salvoNoLugar?.id === task.id && salvoNoLugar.title !== undefined ? salvoNoLugar.title : task.title}
             onSalvar={(novo) => salvarNoLugar({ title: novo })}
+          />
+          {/* Spec 053 (D5): o gesto de um clique, no topo. */}
+          <BotaoSeguir
+            estado={seguidores}
+            meuId={me?.id ?? null}
+            arquivada={task.is_archived}
           />
           <button
             type="button" className="btn btn-ghost" onClick={fecharSuave}
@@ -2246,6 +2264,19 @@ export default function TaskDetail({
               </div>
             )}
           </div>
+
+          {/* -- Seguidores (Spec 053, D5): logo abaixo de Responsaveis, mesmo
+              desenho. O `+` so aparece para quem pode por OUTRA pessoa
+              (`can_manage_watchers`, do servidor); arquivada e so leitura. -- */}
+          <LinhaDeSeguidores
+            estado={seguidores}
+            meuId={me?.id ?? null}
+            arquivada={task.is_archived}
+            podeGerenciar={task.can_manage_watchers}
+            nomes={members}
+            inativos={membrosInativos}
+            foraDoEscopo={foraDoEscopoAqui}
+          />
 
         </div>
 

@@ -190,6 +190,14 @@ Estão aqui para não virarem promessa falsa. Cada uma tem motivo.
   (eram 477 em 30/07 — cresce ~7 por dia). Token no `@theme`, classe utilitária
   ou primitivo. Exceção documentada: cor dinâmica de runtime (`corAvatar`, cor
   de coluna) continua via `style`.
+- ⚠️⚠️ **`.btn` e `.input` NÃO ESTÃO EM `@layer` — e por isso VENCEM o
+  Tailwind.** O `globals.css` os declara soltos, e CSS fora de camada ganha de
+  qualquer utilitário em camada. Resultado: `className="btn px-2 py-1 text-sm"`
+  **não muda nada** — o botão sai com o `padding` e a fonte do `.btn`. Aconteceu
+  com o "Seguir" do detalhe (17/09, "tá torto e muito grande"), e com dois botões
+  da tela de notificações. Para ajustar padding/fonte de um `.btn`, use `style`
+  (como o "fechar" do `TaskDetail`) — é a exceção. Largura (`w-*`) funciona,
+  porque `.input` não a declara.
 - **Primitivo é casca.** `Card`, `Badge`, `Avatar`, `EmptyState`, `PageHeader`
   não engolem comportamento; clique, arraste e `href` ficam no call-site.
 - **A fronteira do teste** (Spec 027): `lib/` decide e é testado como função

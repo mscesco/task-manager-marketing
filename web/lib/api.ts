@@ -354,6 +354,13 @@ export type Task = {
    */
   can_delete: boolean;
   /**
+   * Spec 053, fatia D: pode por e tirar OUTRA pessoa como seguidora (o `+` da
+   * linha "Seguidores"). Calculado no servidor pela mesma pergunta do servico
+   * (`task.assign` no time da tarefa + edicao) -- a tela nao recalcula.
+   * Seguir a si mesmo nao depende disto.
+   */
+  can_manage_watchers?: boolean;
+  /**
    * ⚠️ SPEC 042 (A1 + B2). Os tres campos abaixo chegam SO na LISTAGEM
    * (`TaskListItem`), calculados em lote pelo backend. Eles sao o que permite
    * o quadro parar de carregar a subarvore: medido em 19/08, ele baixava 917
@@ -1317,6 +1324,13 @@ export type TaskCreateInput = {
   due_time?: string | null;
   project_id?: string | null; // criar dentro de um projeto (Entrega 11)
   assignee_ids?: string[]; // Spec 021: responsaveis ja na criacao
+  /**
+   * Spec 053, fatia D: seguidores ja na criacao. ⚠️ DECLARAR AQUI NAO BASTA
+   * -- ver a linha dentro do corpo de `createTask` e o
+   * `createTaskCorpo.test.ts`. O backend e atomico: quem nao alcanca volta
+   * em `details.invalid_ids` com `details.field = "watcher_ids"`.
+   */
+  watcher_ids?: string[];
   // Fatia 5: time EXPLICITO da task de topo. Ausente => pin na raiz
   // (ADR 0001, comportamento de hoje). Presente => usa este time
   // (ex.: quadro de subtime cria task INTERNA daquele subtime).
@@ -1455,6 +1469,9 @@ export async function createTask(input: TaskCreateInput): Promise<Task> {
       ...(input.project_id ? { project_id: input.project_id } : {}),
       // Spec 021: responsaveis na criacao (so manda se houver).
       ...(input.assignee_ids?.length ? { assignee_ids: input.assignee_ids } : {}),
+      // ⚠️ Spec 053, fatia D -- a MESMA armadilha do `board_id` abaixo. Sem
+      // esta linha os seguidores escolhidos no modal somem em silencio.
+      ...(input.watcher_ids?.length ? { watcher_ids: input.watcher_ids } : {}),
       // ⚠️ FALTAVA, DESDE A FATIA 5b-6 (achado em 13/08, na tela). O tipo
       // `TaskCreateInput` declara `board_id` com quinze linhas de comentario,
       // o `TaskModal` o preenche, o `Board` o passa e o backend inteiro o
@@ -1917,6 +1934,45 @@ export async function removeAssignee(
 ): Promise<string[]> {
   const res = await api<CollaboratorList>(
     `/api/v1/tasks/${taskId}/assignees/${userId}`,
+    { method: "DELETE" }
+  );
+  return res.user_ids;
+}
+
+// ---------------------------------------------------------------
+// SEGUIDORES -- Spec 053, fatia D (no backend: `watchers`)
+// ---------------------------------------------------------------
+// Mesma forma dos responsaveis: toda rota devolve a lista atual de ids, na
+// ordem em que as pessoas passaram a seguir.
+
+export async function listWatchers(taskId: string): Promise<string[]> {
+  const res = await api<CollaboratorList>(`/api/v1/tasks/${taskId}/watchers`);
+  return res.user_ids;
+}
+
+/**
+ * Poe alguem para seguir. SEM `userId` = a propria pessoa (o botao "Seguir").
+ *
+ * ⚠️ Recusas: 403 (por outra pessoa sem permissao), 422 com
+ * `code: "tarefa_arquivada"` (arquivada e so leitura) ou 422 de alcance.
+ */
+export async function addWatcher(
+  taskId: string,
+  userId?: string
+): Promise<string[]> {
+  const res = await api<CollaboratorList>(`/api/v1/tasks/${taskId}/watchers`, {
+    method: "POST",
+    body: userId ? { user_id: userId } : {},
+  });
+  return res.user_ids;
+}
+
+export async function removeWatcher(
+  taskId: string,
+  userId: string
+): Promise<string[]> {
+  const res = await api<CollaboratorList>(
+    `/api/v1/tasks/${taskId}/watchers/${userId}`,
     { method: "DELETE" }
   );
   return res.user_ids;
@@ -2452,7 +2508,26 @@ export type NotificationType =
   | "TASK_COMMENTED"
   | "TASK_MENTIONED"
   // Spec 050 (fatia B): reagiram ao comentario da pessoa.
-  | "TASK_COMMENT_REACTED";
+  | "TASK_COMMENT_REACTED"
+  // ⚠️ Os tres abaixo o backend emite desde as Specs 023 e 037, e o front nao
+  // os conhecia: caiam no texto generico "Atualização em ..." (Spec 053, A).
+  | "TASK_DUE_SOON"
+  | "TASK_OVERDUE"
+  | "ACCESS_LOST"
+  // Spec 053 (B): outra pessoa colocou ou tirou quem recebe como seguidor.
+  | "TASK_WATCH_ADDED"
+  | "TASK_WATCH_REMOVED"
+  // Spec 053 (C): o que acontece na tarefa, para quem segue, e responsavel ou
+  // criou. So o gesto direto avisa, e avisos seguidos do mesmo autor se juntam.
+  | "TASK_COLUMN_CHANGED"
+  | "TASK_DUE_CHANGED"
+  | "TASK_DESCRIPTION_CHANGED"
+  | "TASK_ARCHIVED"
+  | "TASK_UNARCHIVED"
+  | "TASK_DELETED";
+
+/** O prazo como vem no payload de `TASK_DUE_CHANGED`. `time` = "HH:MM" ou null. */
+export type PrazoDoAviso = { date: string; time: string | null };
 
 export type AppNotification = {
   id: string;
@@ -2461,9 +2536,30 @@ export type AppNotification = {
   task_id: string | null;
   comment_id: string | null;
   // `emoji` so em TASK_COMMENT_REACTED (Spec 050): o que foi, no momento.
-  payload: { actor_name?: string; task_title?: string; emoji?: string } | null;
+  // `due_date` (YYYY-MM-DD) nos avisos de prazo; `quantidade` no ACCESS_LOST.
+  payload: {
+    actor_name?: string;
+    task_title?: string;
+    emoji?: string;
+    due_date?: string;
+    quantidade?: number;
+    // Spec 053 (C). Colunas vao pelo NOME: o aviso e retrato do momento.
+    from_column?: string | null;
+    to_column?: string | null;
+    from_due?: PrazoDoAviso | null;
+    to_due?: PrazoDoAviso | null;
+  } | null;
   read_at: string | null; // null = nao lida
   created_at: string;
+  // Spec 053 (C): a ULTIMA mudanca. Difere de `created_at` quando avisos seguidos
+  // do mesmo autor se juntaram -- e o horario que a tela mostra.
+  updated_at?: string;
+  /**
+   * Spec 053 (E, D27): "ok" = a tarefa existe e quem le a alcanca; "gone" =
+   * excluida ou fora do alcance -- o servidor ja tirou `task_title` do payload
+   * (menos no aviso de exclusao); null = aviso sem tarefa.
+   */
+  task_access?: "ok" | "gone" | null;
 };
 
 export type NotificationListResponse = {
@@ -2473,14 +2569,35 @@ export type NotificationListResponse = {
   size: number;
 };
 
-// Feed paginado, mais novas primeiro.
+/**
+ * Os filtros da tela de notificacoes (Spec 053, D22). Os MESMOS vao para a
+ * listagem e para o "marcar estas como lidas" (D25) -- por isso um tipo so.
+ */
+export type FiltroDeNotificacoes = {
+  types?: readonly string[];
+  task_id?: string | null;
+  project_id?: string | null;
+};
+
+function aplicarFiltro(q: URLSearchParams, f: FiltroDeNotificacoes): void {
+  for (const t of f.types ?? []) q.append("type", t);
+  if (f.task_id) q.set("task_id", f.task_id);
+  if (f.project_id) q.set("project_id", f.project_id);
+}
+
+// Feed paginado, ultima mudanca primeiro.
 export async function listNotifications(
-  params: { unread_only?: boolean; page?: number; size?: number } = {}
+  params: {
+    unread_only?: boolean;
+    page?: number;
+    size?: number;
+  } & FiltroDeNotificacoes = {}
 ): Promise<NotificationListResponse> {
   const q = new URLSearchParams();
   if (params.unread_only) q.set("unread_only", "true");
   q.set("page", String(params.page ?? 1));
   q.set("size", String(params.size ?? 20));
+  aplicarFiltro(q, params);
   return api<NotificationListResponse>(`/api/v1/notifications?${q.toString()}`);
 }
 
@@ -2495,12 +2612,36 @@ export async function markNotificationRead(id: string): Promise<void> {
   await api<void>(`/api/v1/notifications/${id}/read`, { method: "POST" });
 }
 
-// Marca todas as nao-lidas como lidas. Retorna quantas.
-export async function markAllNotificationsRead(): Promise<number> {
-  const r = await api<{ updated: number }>("/api/v1/notifications/read-all", {
-    method: "POST",
-  });
+// Marca as nao-lidas como lidas -- todas, ou so as do filtro (Spec 053, D25).
+// Retorna quantas.
+export async function markAllNotificationsRead(
+  filtro: FiltroDeNotificacoes = {}
+): Promise<number> {
+  const q = new URLSearchParams();
+  aplicarFiltro(q, filtro);
+  const qs = q.toString();
+  const r = await api<{ updated: number }>(
+    `/api/v1/notifications/read-all${qs ? `?${qs}` : ""}`,
+    { method: "POST" }
+  );
   return r.updated;
+}
+
+/** Uma sugestao do campo "Tarefa ou projeto" (Spec 053, D23). */
+export type AlvoDeNotificacao = {
+  kind: "task" | "project";
+  id: string;
+  title: string;
+};
+
+export async function listNotificationTargets(
+  termo: string
+): Promise<AlvoDeNotificacao[]> {
+  const q = new URLSearchParams({ q: termo });
+  const r = await api<{ items: AlvoDeNotificacao[] }>(
+    `/api/v1/notifications/targets?${q.toString()}`
+  );
+  return r.items;
 }
 
 // ---------------------------------------------------------------

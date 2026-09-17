@@ -38,6 +38,18 @@ async def _world(db):
     return ws, r, manager, task, ctx
 
 
+async def _membro(db, ws, r):
+    """Um OPERATOR do time da tarefa.
+
+    ⚠️ PRECISA DE VINCULO desde a Spec 053 (fatia A): o emissor so grava aviso
+    para quem ALCANCA a tarefa. Estes testes nasceram com usuarios soltos, sem
+    time -- que hoje a trava barra, e com razao.
+    """
+    u = await f.make_user(db, workspace_id=ws)
+    await f.add_member(db, workspace_id=ws, user_id=u, team_id=r, role="OPERATOR")
+    return u
+
+
 async def _mention_notifs(db, recipient_id):
     return (
         await db.execute(
@@ -51,8 +63,8 @@ async def _mention_notifs(db, recipient_id):
 
 async def test_mentioned_emite_para_mencionados(db) -> None:
     ws, r, manager, task, ctx = await _world(db)
-    u1 = await f.make_user(db, workspace_id=ws)
-    u2 = await f.make_user(db, workspace_id=ws)
+    u1 = await _membro(db, ws, r)
+    u2 = await _membro(db, ws, r)
     with acting_as(**ctx):
         await NotificationEmitter(db).mentioned(
             recipient_ids=[u1, u2], actor_id=manager,
@@ -68,7 +80,7 @@ async def test_mentioned_emite_para_mencionados(db) -> None:
 
 async def test_mentioned_dedup_e_exclui_autor(db) -> None:
     ws, r, manager, task, ctx = await _world(db)
-    u1 = await f.make_user(db, workspace_id=ws)
+    u1 = await _membro(db, ws, r)
     with acting_as(**ctx):
         await NotificationEmitter(db).mentioned(
             recipient_ids=[u1, u1, manager],  # duplicado + o proprio autor

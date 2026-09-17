@@ -11,7 +11,7 @@
 // O time NAO aparece de proposito: o quadro define o time (ADR 0001).
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties, useCallback } from "react";
-import { X } from "lucide-react";
+import { Plus, X } from "lucide-react";
 import {
   createTask,
   duplicateTask,
@@ -64,6 +64,8 @@ import { nomeCurto } from "@/lib/people";
 
 import Loading from "@/components/Loading";
 import { useAvisar } from "@/components/Toasts";
+import SeletorDePessoas from "@/components/SeletorDePessoas";
+import { pessoasOferecidas } from "@/lib/seguidores";
 const PRIORITIES = ["LOW", "MEDIUM", "HIGH", "URGENT"] as const;
 
 // Gatilho compacto redondo (mesmo padrao do detalhe): troca o despejo de 30
@@ -191,6 +193,11 @@ export default function TaskModal({
   // alcanca) de "tarefa interna de subtime" (so o subtime alcanca).
   const [rootTeamId, setRootTeamId] = useState<string | null>(null);
   const [assigneeIds, setAssigneeIds] = useState<string[]>([]);
+  // Spec 053, fatia D (D6): seguidores na criacao. NASCEM VAZIOS -- ninguem
+  // segue automaticamente, nem quem cria (D3). Selecao local ate o "Criar".
+  const [watcherIds, setWatcherIds] = useState<string[]>([]);
+  const [buscaSeg, setBuscaSeg] = useState("");
+  const [invalidSeg, setInvalidSeg] = useState<Set<string>>(new Set());
   const [invalidIds, setInvalidIds] = useState<Set<string>>(new Set());
   // Picker com busca (popover): abre/fecha, termo, e ref pra clique-fora.
   // Spec 033: a caixa das subtarefas (D7). `levarResponsaveis` (D13) =
@@ -298,6 +305,9 @@ export default function TaskModal({
     setInvalidIds(new Set());
     setAbertoResp(false);
     setBuscaResp("");
+    setWatcherIds([]);
+    setBuscaSeg("");
+    setInvalidSeg(new Set());
     setErro(null);
     setLevarSubtarefas(true);
     // ⚠️ As flags de "ja respondeu" precisam ZERAR junto: sem isto, reabrir o
@@ -544,6 +554,35 @@ export default function TaskModal({
       .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
   }, [membros, buscaResp, foraDoEscopoAqui, assigneeIds]);
 
+  const seguidoresOferecidos = useMemo(
+    () =>
+      pessoasOferecidas({
+        membros,
+        busca: buscaSeg,
+        inativos: new Set(),
+        foraDoEscopo: foraDoEscopoAqui,
+        marcados: watcherIds,
+      }),
+    [membros, buscaSeg, foraDoEscopoAqui, watcherIds]
+  );
+
+  const nomesDosMembros = useMemo(
+    () => new Map(membros.map((m) => [m.id, { name: m.name }])),
+    [membros]
+  );
+
+  function alternarSeguidor(id: string) {
+    setWatcherIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+    setInvalidSeg((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+  }
+
   const subtarefasVivas = useMemo(
     () => filhosDaOrigem.filter((f) => !f.is_archived).length,
     [filhosDaOrigem]
@@ -729,6 +768,9 @@ export default function TaskModal({
           due_time: null,
           project_id: defaultProjectId ?? (projetoSel || null),
           assignee_ids: assigneeIds,
+          // ⚠️ Spec 053, fatia D. Mesma armadilha do `start_date` acima: a
+          // linha correspondente DENTRO do `createTask` e que poe no POST.
+          watcher_ids: watcherIds,
           // ⚠️ O MESMO valor que o seletor de responsavel usou para perguntar
           // "quem alcanca este time". Se os dois divergirem, a tela oferece um
           // escopo e o POST grava outro -- e o 422 aparece no Salvar.
@@ -760,7 +802,18 @@ export default function TaskModal({
     } catch (err) {
       const e = err as ApiError;
       const invalidos: string[] | undefined = e.details?.invalid_ids;
-      if (invalidos?.length) {
+      if (invalidos?.length && e.details?.field === "watcher_ids") {
+        // Spec 053 (D): o 422 dos SEGUIDORES. O backend e atomico -- nada foi
+        // criado --, entao a selecao fica e os recusados ficam em vermelho.
+        setInvalidSeg(new Set(invalidos));
+        const nomes = invalidos
+          .map((id) => membros.find((m) => m.id === id)?.name ?? "alguem")
+          .join(", ");
+        setErro(
+          `Não foi possível pôr para seguir: ${nomes}. ` +
+            "Essas pessoas não alcançam o time desta tarefa — remova-as para criar."
+        );
+      } else if (invalidos?.length) {
         // Marca os recusados em vermelho, mantem o resto da selecao.
         setInvalidIds(new Set(invalidos));
         const nomes = invalidos
@@ -977,7 +1030,7 @@ export default function TaskModal({
             <div ref={respWrapRef} style={{ position: "relative" }}>
               <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6 }}>
                 {assigneeIds.length === 0 && (
-                  <span className="muted" style={{ fontSize: 13 }}>Ninguem designado.</span>
+                  <span className="muted" style={{ fontSize: 13 }}>Ninguém designado.</span>
                 )}
                 {assigneeIds.map((id) => {
                   const m = membros.find((x) => x.id === id);
@@ -1022,7 +1075,13 @@ export default function TaskModal({
                   title="Designar"
                   style={GATILHO_STYLE}
                 >
-                  {abertoResp ? "×" : "+"}
+                  {/* Icone, e nao o caractere "+"/"×": o mesmo do detalhe da
+                      tarefa e da linha de Seguidores logo abaixo (17/09). */}
+                  {abertoResp ? (
+                    <X size={13} strokeWidth={2.2} aria-hidden />
+                  ) : (
+                    <Plus size={13} strokeWidth={2.2} aria-hidden />
+                  )}
                 </button>
               </div>
 
@@ -1153,7 +1212,7 @@ export default function TaskModal({
                   >
                     {membrosFiltrados.length === 0 ? (
                       <div className="muted" style={{ fontSize: 13, padding: "10px 12px" }}>
-                        Ninguem encontrado.
+                        Ninguém encontrado.
                       </div>
                     ) : (
                       membrosFiltrados.map((m, i) => {
@@ -1192,6 +1251,33 @@ export default function TaskModal({
             </div>
           )}
         </div>
+
+        {/* Spec 053, fatia D (D4, D6): seguidores na CRIACAO. Fora da
+            duplicacao -- a copia nao leva seguidores (D9). */}
+        {!duplicando && (
+          <div className="field">
+            <label className="label">
+              Seguidores <span className="muted font-normal">(opcional)</span>
+            </label>
+            {membros.length === 0 ? (
+              <Loading tamanho="linha" rotulo="Carregando os membros" />
+            ) : (
+              <SeletorDePessoas
+                marcados={watcherIds}
+                nomes={nomesDosMembros}
+                inativos={new Set()}
+                invalidos={invalidSeg}
+                oferecidas={seguidoresOferecidos}
+                busca={buscaSeg}
+                onBusca={setBuscaSeg}
+                onAlternar={alternarSeguidor}
+                podeAbrir
+                textoVazio="Ninguém segue ainda."
+                rotuloDoBotao="Escolher seguidores"
+              />
+            )}
+          </div>
+        )}
 
         {duplicando && (
           <div

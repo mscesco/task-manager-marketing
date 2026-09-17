@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   getUnreadCount,
@@ -136,7 +137,11 @@ export default function NotificationBell() {
     // existia aqui saiu -- ele so cobria aquele caso. O listener em
     // /minhas-tarefas continua no lugar: ele ainda serve ao deep-link
     // `?task=` de links antigos que ja circularam.
-    router.push(destinoDaNotificacao(n));
+    //
+    // ⚠️ Spec 053 (D27): tarefa excluida ou fora do alcance NAO tem destino --
+    // o clique so marca como lida.
+    const destino = destinoDaNotificacao(n);
+    if (destino) router.push(destino);
   }
 
   async function marcarTodas() {
@@ -225,15 +230,33 @@ export default function NotificationBell() {
                     }`}
                   />
                   <span className="min-w-0 flex-1">
-                    <span className="block text-base text-ink">{textoDaNotificacao(n)}</span>
+                    <span
+                      className={`block text-base ${
+                        n.task_access === "gone" ? "text-ink-faint" : "text-ink"
+                      }`}
+                    >
+                      {textoDaNotificacao(n)}
+                    </span>
                     <span className="mt-0.5 block text-xs text-ink-faint">
-                      {quando(n.created_at)}
+                      {/* Spec 053 (C): a ultima mudanca, se avisos se juntaram. */}
+                      {quando(n.updated_at ?? n.created_at)}
+                      {/* Spec 053 (D27): sem link e sem titulo. */}
+                      {n.task_access === "gone" && " · tarefa excluída ou sem acesso"}
                     </span>
                   </span>
                 </button>
               ))
             )}
           </div>
+          {/* Spec 053 (D20, D26): o unico caminho para a tela de notificacoes --
+              o menu lateral nao ganha item. O sino mostra so as 20 mais novas. */}
+          <Link
+            href="/notificacoes"
+            onClick={() => setOpen(false)}
+            className="block border-t border-border px-3 py-2 text-center text-sm font-semibold text-accent hover:bg-surface-2"
+          >
+            Ver todas
+          </Link>
         </div>
       )}
     </div>

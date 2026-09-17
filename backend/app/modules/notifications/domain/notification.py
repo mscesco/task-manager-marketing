@@ -32,6 +32,28 @@ class NotificationType(str, Enum):
     # Spec 050 (fatia B): alguem reagiu ao comentario da pessoa. So quando a
     # reacao NASCE -- trocar o emoji nao notifica (decisao da Camila, 15/09).
     TASK_COMMENT_REACTED = "TASK_COMMENT_REACTED"
+    # Spec 053, fatia B (D17): OUTRA pessoa colocou ou tirou alguem como
+    # seguidor. Quem se inscreve sozinho nao se avisa.
+    TASK_WATCH_ADDED = "TASK_WATCH_ADDED"
+    TASK_WATCH_REMOVED = "TASK_WATCH_REMOVED"
+    # Spec 053, fatia C (D14): o que acontece na tarefa, para seguidores +
+    # responsaveis + criador. So o GESTO DIRETO avisa (D16) -- ver
+    # `tasks/application/task_notices.py`.
+    TASK_COLUMN_CHANGED = "TASK_COLUMN_CHANGED"
+    TASK_DUE_CHANGED = "TASK_DUE_CHANGED"
+    TASK_DESCRIPTION_CHANGED = "TASK_DESCRIPTION_CHANGED"
+    TASK_ARCHIVED = "TASK_ARCHIVED"
+    TASK_UNARCHIVED = "TASK_UNARCHIVED"
+    TASK_DELETED = "TASK_DELETED"
+
+
+@dataclass(frozen=True, slots=True)
+class AlvoDeFiltro:
+    """Uma sugestao do campo "Tarefa ou projeto" (Spec 053, D23)."""
+
+    kind: str  # "task" | "project"
+    id: uuid.UUID
+    title: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,6 +68,10 @@ class NotificationDTO:
     payload: dict | None
     read_at: datetime | None
     created_at: datetime
+    updated_at: datetime
+    #: Spec 053 (E, D27): "ok" = a tarefa existe e quem le ainda a alcanca;
+    #: "gone" = excluida ou fora do alcance; None = aviso sem tarefa.
+    task_access: str | None = None
 
     @property
     def is_read(self) -> bool:
