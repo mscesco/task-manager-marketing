@@ -1,5 +1,5 @@
 "use client";
-// components/PreferenciasDeNotificacao.tsx
+// components/NotificationPreferences.tsx
 // O cartão "Notificações" do Meu perfil (Spec 054, fatia D).
 //
 // Pedido dela, 17/09: *"uma tela de configuração de notificações dentro do
@@ -15,11 +15,11 @@
 // de caixas a pergunta "este interruptor é de quê?" se responde OLHANDO para a
 // linha e a coluna; quem usa leitor de tela não olha. Com a tabela, cada
 // interruptor é anunciado com a linha e a coluna dele -- e é por isso que o
-// rótulo acessível vem de `lib/preferenciasDeNotificacao.ts` e não do desenho.
+// rótulo acessível vem de `lib/notificationPreferences.ts` e não do desenho.
 //
 // ⚠️ MORA EM `components/` e não em `app/`, para ter guardião: o `include` do
 // vitest não lê `app/`. A regra (linhas, colunas, rótulos, o que a ausência
-// significa) está em `lib/preferenciasDeNotificacao.ts` -- aqui só se desenha.
+// significa) está em `lib/notificationPreferences.ts` -- aqui só se desenha.
 
 import { useEffect, useState } from "react";
 
@@ -33,80 +33,81 @@ import {
   type NotificationToggle,
 } from "@/lib/api";
 import {
-  COLUNAS,
-  SECOES,
-  type LinhaDePreferencia,
-  type Papel,
-  chave,
-  estaLigado,
-  mapear,
-  resumo,
-  rotuloDoToggle,
-} from "@/lib/preferenciasDeNotificacao";
+  COLUMNS,
+  SECTIONS,
+  type PreferenceRow,
+  type Role,
+  type ToggleMap,
+  indexToggles,
+  isEnabled,
+  summary,
+  toggleKey,
+  toggleLabel,
+} from "@/lib/notificationPreferences";
 
-export default function PreferenciasDeNotificacao() {
+export default function NotificationPreferences() {
   const avisar = useAvisar();
   const [toggles, setToggles] = useState<NotificationToggle[] | null>(null);
-  const [erro, setErro] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   // Quais células estão no ar agora. Duas podem estar: a pessoa clica numa
   // linha e noutra sem esperar, e travar a grade inteira a cada clique faria
   // a tela parecer lenta num gesto que é instantâneo.
-  const [noAr, setNoAr] = useState<ReadonlySet<string>>(new Set());
+  const [inFlight, setInFlight] = useState<ReadonlySet<string>>(new Set());
 
   useEffect(() => {
     listNotificationPreferences()
       .then(setToggles)
-      .catch(() => setErro("Não consegui carregar suas preferências de notificação."));
+      .catch(() => setError("Não consegui carregar suas preferências de notificação."));
   }, []);
 
-  async function mudar(linha: LinhaDePreferencia, papel: Papel, ligado: boolean) {
-    const k = chave(linha.grupo, papel);
+  async function change(row: PreferenceRow, role: Role, enabled: boolean) {
+    const key = toggleKey(row.group, role);
     // ⚠️ OTIMISTA (D7): o interruptor vira agora. Numa grade, esperar a
     // resposta a cada clique faria a pastilha "voltar" por um instante --
     // e o gesto aqui é sempre uma sequência de vários.
-    const antes = toggles;
-    setToggles((atual) =>
-      atual?.map((t) =>
-        t.type_group === linha.grupo && t.role === papel ? { ...t, enabled: ligado } : t,
-      ) ?? atual,
+    const before = toggles;
+    setToggles((current) =>
+      current?.map((t) =>
+        t.type_group === row.group && t.role === role ? { ...t, enabled } : t,
+      ) ?? current,
     );
-    setNoAr((s) => new Set(s).add(k));
+    setInFlight((s) => new Set(s).add(key));
     try {
       // O servidor devolve a lista INTEIRA: os grupos que governam dois tipos
       // (arquivar+desarquivar, pôr+tirar) mudam junto, e assim a tela mostra o
       // que ficou gravado em vez de deduzir.
-      const lista = await setNotificationPreference({
-        type_group: linha.grupo,
-        role: papel,
-        enabled: ligado,
+      const saved = await setNotificationPreference({
+        type_group: row.group,
+        role,
+        enabled,
       });
-      setToggles(lista);
+      setToggles(saved);
       avisar("Preferência salva.");
     } catch (e) {
       // ⚠️ VOLTA ATRÁS E DIZ (D7): sem isto o interruptor ficaria mostrando um
       // silêncio que o servidor não gravou, e a pessoa descobriria ao não
       // receber -- ou ao receber -- semanas depois.
-      setToggles(antes);
+      setToggles(before);
       avisar((e as ApiError).message || "Não consegui salvar a preferência.");
     } finally {
-      setNoAr((s) => {
-        const proximo = new Set(s);
-        proximo.delete(k);
-        return proximo;
+      setInFlight((s) => {
+        const next = new Set(s);
+        next.delete(key);
+        return next;
       });
     }
   }
 
-  if (erro) {
+  if (error) {
     return (
       <div className="error-box" role="alert">
-        {erro}
+        {error}
       </div>
     );
   }
   if (!toggles) return <Loading tamanho="linha" rotulo="Carregando suas preferências" />;
 
-  const mapa = mapear(toggles);
+  const map = indexToggles(toggles);
 
   return (
     <div className="flex flex-col gap-3">
@@ -118,7 +119,7 @@ export default function PreferenciasDeNotificacao() {
           Religar traz de volta o que já chegou.
         </p>
         <p className="muted mt-1 text-sm" role="status">
-          {resumo(toggles)}
+          {summary(toggles)}
         </p>
       </div>
 
@@ -129,63 +130,60 @@ export default function PreferenciasDeNotificacao() {
               <th scope="col" className="p-0 text-left">
                 <span className="sr-only">Aviso</span>
               </th>
-              {COLUNAS.map((c) => (
+              {COLUMNS.map((c) => (
                 <th
-                  key={c.papel}
+                  key={c.role}
                   scope="col"
                   className="w-[88px] px-1 pb-2 text-sm font-semibold text-ink-faint"
                 >
-                  {c.rotulo}
+                  {c.label}
                 </th>
               ))}
             </tr>
           </thead>
-          {SECOES.map((secao) => (
-            <tbody key={secao.titulo}>
+          {SECTIONS.map((section) => (
+            <tbody key={section.title}>
               <tr>
                 <th
                   scope="colgroup"
-                  colSpan={1 + COLUNAS.length}
+                  colSpan={1 + COLUMNS.length}
                   className="pt-3 pb-1 text-left text-sm font-semibold uppercase tracking-[0.06em] text-ink-faint"
                 >
-                  {secao.titulo}
+                  {section.title}
                 </th>
               </tr>
-              {secao.linhas.map((linha) => (
-                <tr key={linha.grupo} className="border-t border-border">
+              {section.rows.map((row) => (
+                <tr key={row.group} className="border-t border-border">
                   <th scope="row" className="py-2 pr-3 text-left font-normal">
-                    {linha.rotulo}
-                    {linha.ajuda && (
-                      <span
-                        id={`ajuda-${linha.grupo}`}
-                        className="muted mt-0.5 block text-sm"
-                      >
-                        {linha.ajuda}
+                    {row.label}
+                    {row.help && (
+                      <span id={`ajuda-${row.group}`} className="muted mt-0.5 block text-sm">
+                        {row.help}
                       </span>
                     )}
                   </th>
-                  {linha.papeis[0] === "none" ? (
+                  {row.roles[0] === "none" ? (
                     // Um interruptor só, no meio das três colunas: a linha não
                     // se divide por papel (reação, pôr/tirar, e as travadas).
-                    <td colSpan={COLUNAS.length} className="py-2 text-center">
-                      <Celula
-                        linha={linha}
-                        papel="none"
-                        mapa={mapa}
-                        noAr={noAr}
-                        onMudar={mudar}
+                    <td colSpan={COLUMNS.length} className="py-2 text-center">
+                      <Cell
+                        row={row}
+                        role="none"
+                        map={map}
+                        inFlight={inFlight}
+                        onChange={change}
                       />
                     </td>
                   ) : (
-                    COLUNAS.map((c) => (
-                      <td key={c.papel} className="py-2 text-center">
-                        {linha.papeis.includes(c.papel) ? (
-                          <Celula
-                            linha={linha}
-                            papel={c.papel}
-                            mapa={mapa}
-                            noAr={noAr}
-                            onMudar={mudar}
+                    COLUMNS.map((c) => (
+                      <td key={c.role} className="py-2 text-center">
+                        {row.roles.includes(c.role) ? (
+                          <Cell
+                            row={row}
+                            role={c.role}
+                            map={map}
+                            inFlight={inFlight}
+                            onChange={change}
                           />
                         ) : (
                           // ⚠️ Prazo não tem coluna de seguidor (§5). Um traço,
@@ -208,29 +206,29 @@ export default function PreferenciasDeNotificacao() {
   );
 }
 
-function Celula({
-  linha,
-  papel,
-  mapa,
-  noAr,
-  onMudar,
+function Cell({
+  row,
+  role,
+  map,
+  inFlight,
+  onChange,
 }: {
-  linha: LinhaDePreferencia;
-  papel: Papel;
-  mapa: ReturnType<typeof mapear>;
-  noAr: ReadonlySet<string>;
-  onMudar: (linha: LinhaDePreferencia, papel: Papel, ligado: boolean) => void;
+  row: PreferenceRow;
+  role: Role;
+  map: ToggleMap;
+  inFlight: ReadonlySet<string>;
+  onChange: (row: PreferenceRow, role: Role, enabled: boolean) => void;
 }) {
-  const ligado = linha.travada || estaLigado(mapa, linha.grupo, papel);
+  const enabled = row.locked || isEnabled(map, row.group, role);
   return (
     <Switch
-      checked={ligado}
+      checked={enabled}
       // Travado fica LIGADO e desabilitado (D6): a linha existe para mostrar
       // que o aviso existe, e a explicação ao lado diz por que não se desliga.
-      disabled={linha.travada || noAr.has(chave(linha.grupo, papel))}
-      aria-label={rotuloDoToggle(linha, papel)}
-      aria-describedby={linha.ajuda ? `ajuda-${linha.grupo}` : undefined}
-      onChange={(proximo) => onMudar(linha, papel, proximo)}
+      disabled={row.locked || inFlight.has(toggleKey(row.group, role))}
+      aria-label={toggleLabel(row, role)}
+      aria-describedby={row.help ? `ajuda-${row.group}` : undefined}
+      onChange={(next) => onChange(row, role, next)}
     />
   );
 }

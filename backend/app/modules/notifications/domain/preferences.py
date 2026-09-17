@@ -35,7 +35,7 @@ class GrupoDeToggle:
 
     `key` e o `type_group` do contrato da API (nome em ingles, regra do
     projeto). Os ROTULOS nao moram aqui: quem desenha e o front
-    (`lib/preferenciasDeNotificacao.ts`), pela fronteira da Spec 027.
+    (`lib/notificationPreferences.ts`), pela fronteira da Spec 027.
     """
 
     key: str

@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import AppShell from "@/components/AppShell";
 import Card from "@/components/Card";
 import PageHeader from "@/components/PageHeader";
-import PreferenciasDeNotificacao from "@/components/PreferenciasDeNotificacao";
+import NotificationPreferences from "@/components/NotificationPreferences";
 import { currentUser, renameSelf, ApiError, type CurrentUser } from "@/lib/api";
 import { NOME_MAXIMO, nomeParaSalvar } from "@/lib/nomeProprio";
 
@@ -145,7 +145,7 @@ function Perfil() {
           nada visivelmente -- so faz o link cair no topo da pagina. */}
       <section id="notificacoes" className="mt-4 scroll-mt-4">
         <Card>
-          <PreferenciasDeNotificacao />
+          <NotificationPreferences />
         </Card>
       </section>
     </div>

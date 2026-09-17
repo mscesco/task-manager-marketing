@@ -1,6 +1,6 @@
 // Spec 054, fatia D -- o cartao "Notificações" do Meu perfil (montagem).
 //
-// A regra esta em `lib/preferenciasDeNotificacao.ts` e tem teste proprio; aqui
+// A regra esta em `lib/notificationPreferences.ts` e tem teste proprio; aqui
 // se prende o que o desenho faz:
 //   - a grade nasce com um interruptor por celula, cada um com o nome da linha
 //     e da coluna;
@@ -10,15 +10,15 @@
 //   - travada fica ligada e desabilitada, com a explicacao ao lado;
 //   - prazo nao tem celula de seguidor.
 //
-// SABOTAGEM (medida): em `mudar`, tirar o `setToggles(antes)` do `catch`. Deve
+// SABOTAGEM (medida): em `change`, tirar o `setToggles(before)` do `catch`. Deve
 // cair "falha volta atras e avisa".
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 
-import PreferenciasDeNotificacao from "@/components/PreferenciasDeNotificacao";
+import NotificationPreferences from "@/components/NotificationPreferences";
 import { ApiError, type NotificationToggle } from "@/lib/api";
-import { LINHAS } from "@/lib/preferenciasDeNotificacao";
+import { ROWS } from "@/lib/notificationPreferences";
 
 vi.mock("@/lib/api", async (importOriginal) => {
   const real = await importOriginal<typeof import("@/lib/api")>();
@@ -33,12 +33,12 @@ const api = await import("@/lib/api");
 
 /** Tudo ligado, como o servidor devolve para quem nunca mexeu. */
 function tudoLigado(): NotificationToggle[] {
-  return LINHAS.flatMap((l) =>
-    l.papeis.map((papel) => ({
-      type_group: l.grupo,
-      role: papel,
+  return ROWS.flatMap((r) =>
+    r.roles.map((role) => ({
+      type_group: r.group,
+      role,
       enabled: true,
-      locked: l.travada,
+      locked: r.locked,
     })),
   );
 }
@@ -59,7 +59,7 @@ afterEach(() => cleanup());
 
 describe("a grade", () => {
   it("nasce com 27 interruptores, todos ligados", async () => {
-    render(<PreferenciasDeNotificacao />);
+    render(<NotificationPreferences />);
     const interruptores = await screen.findAllByRole("switch");
     expect(interruptores.length).toBe(27); // 24 + as 3 travadas
     expect(interruptores.every((b) => b.getAttribute("aria-checked") === "true")).toBe(true);
@@ -67,7 +67,7 @@ describe("a grade", () => {
   });
 
   it("cada celula se chama pela linha e pela coluna", async () => {
-    render(<PreferenciasDeNotificacao />);
+    render(<NotificationPreferences />);
     expect(
       await screen.findByRole("switch", { name: "Comentário novo, como seguidor" }),
     ).toBeTruthy();
@@ -77,7 +77,7 @@ describe("a grade", () => {
   });
 
   it("⚠️ prazo nao tem celula de seguidor", async () => {
-    render(<PreferenciasDeNotificacao />);
+    render(<NotificationPreferences />);
     await screen.findAllByRole("switch");
     expect(
       screen.queryByRole("switch", { name: "Prazo chegando, como seguidor" }),
@@ -90,7 +90,7 @@ describe("a grade", () => {
   });
 
   it("travada fica ligada, desabilitada e com a explicacao", async () => {
-    render(<PreferenciasDeNotificacao />);
+    render(<NotificationPreferences />);
     const mencao = await screen.findByRole("switch", { name: "Menção" });
     expect(mencao.getAttribute("aria-checked")).toBe("true");
     expect((mencao as HTMLButtonElement).disabled).toBe(true);
@@ -100,7 +100,7 @@ describe("a grade", () => {
 
 describe("gravar", () => {
   it("clicar desliga na hora e manda o toggle", async () => {
-    render(<PreferenciasDeNotificacao />);
+    render(<NotificationPreferences />);
     const celula = await screen.findByRole("switch", {
       name: "Comentário novo, como seguidor",
     });
@@ -122,7 +122,7 @@ describe("gravar", () => {
         t.type_group === "reaction" ? { ...t, enabled: false } : t,
       ),
     );
-    render(<PreferenciasDeNotificacao />);
+    render(<NotificationPreferences />);
     const celula = await screen.findByRole("switch", { name: "Reação ao seu comentário" });
     expect(celula.getAttribute("aria-checked")).toBe("false");
 
@@ -138,7 +138,7 @@ describe("gravar", () => {
     vi.mocked(api.setNotificationPreference).mockRejectedValue(
       new ApiError(422, "Este aviso nao pode ser desligado.", "validation_error"),
     );
-    render(<PreferenciasDeNotificacao />);
+    render(<NotificationPreferences />);
     const celula = await screen.findByRole("switch", {
       name: "Comentário novo, como seguidor",
     });
@@ -156,7 +156,7 @@ describe("gravar", () => {
         t.type_group === "archive" ? { ...t, enabled: false } : t,
       ),
     );
-    render(<PreferenciasDeNotificacao />);
+    render(<NotificationPreferences />);
     fireEvent.click(
       await screen.findByRole("switch", { name: "Arquivar e desarquivar, como criador" }),
     );
@@ -174,7 +174,7 @@ describe("gravar", () => {
 describe("carregar", () => {
   it("erro mostra recado e nenhuma grade", async () => {
     vi.mocked(api.listNotificationPreferences).mockRejectedValue(new Error("caiu"));
-    render(<PreferenciasDeNotificacao />);
+    render(<NotificationPreferences />);
     expect(
       await screen.findByText("Não consegui carregar suas preferências de notificação."),
     ).toBeTruthy();
@@ -182,7 +182,7 @@ describe("carregar", () => {
   });
 
   it("a tabela tem cabecalho de coluna para cada papel", async () => {
-    render(<PreferenciasDeNotificacao />);
+    render(<NotificationPreferences />);
     const tabela = await screen.findByRole("table");
     for (const rotulo of ["Seguidor", "Responsável", "Criador"]) {
       expect(within(tabela).getByRole("columnheader", { name: rotulo })).toBeTruthy();

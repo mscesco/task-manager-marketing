@@ -230,7 +230,7 @@ outra regra, ele cai.
   "marcar todas" mandava `{}` quando não havia recorte de tipo ou tarefa — e na
   aba "Silenciadas" isso marcaria as notificações das OUTRAS abas, deixando
   intactas as que estavam na tela. A regra virou `filtroDeMarcar`, com teste.
-- **Regra em `lib/preferenciasDeNotificacao.ts`:** grupos, rótulos, travados e o
+- **Regra em `lib/notificationPreferences.ts`:** grupos, rótulos, travados e o
   mapa toggle → tipos. Com teste.
 
 ---
