@@ -2452,7 +2452,12 @@ export type NotificationType =
   | "TASK_COMMENTED"
   | "TASK_MENTIONED"
   // Spec 050 (fatia B): reagiram ao comentario da pessoa.
-  | "TASK_COMMENT_REACTED";
+  | "TASK_COMMENT_REACTED"
+  // ⚠️ Os tres abaixo o backend emite desde as Specs 023 e 037, e o front nao
+  // os conhecia: caiam no texto generico "Atualização em ..." (Spec 053, A).
+  | "TASK_DUE_SOON"
+  | "TASK_OVERDUE"
+  | "ACCESS_LOST";
 
 export type AppNotification = {
   id: string;
@@ -2461,7 +2466,14 @@ export type AppNotification = {
   task_id: string | null;
   comment_id: string | null;
   // `emoji` so em TASK_COMMENT_REACTED (Spec 050): o que foi, no momento.
-  payload: { actor_name?: string; task_title?: string; emoji?: string } | null;
+  // `due_date` (YYYY-MM-DD) nos avisos de prazo; `quantidade` no ACCESS_LOST.
+  payload: {
+    actor_name?: string;
+    task_title?: string;
+    emoji?: string;
+    due_date?: string;
+    quantidade?: number;
+  } | null;
   read_at: string | null; // null = nao lida
   created_at: string;
 };

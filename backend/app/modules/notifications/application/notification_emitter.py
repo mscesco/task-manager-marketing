@@ -17,6 +17,13 @@ adiado pro commit da transacao compartilhada, aborta a transacao INTEIRA
 no Postgres quando falha -- envenenando tambem a acao principal. O flush
 DENTRO do savepoint faz a falha acontecer isolada e reversivel.
 
+⚠️ A TRAVA (Spec 053, fatia A): nenhum aviso de TAREFA vai para quem nao a
+alcanca no momento do envio. Mora AQUI, e nao em cada service, para que um
+tipo novo nao dependa de alguem lembrar -- foi assim que o aviso de comentario
+passou meses mandando o titulo da tarefa para responsavel e criador que tinham
+perdido o time. A checagem roda dentro do savepoint: se ela falhar, o aviso nao
+sai (e a acao principal continua).
+
 Snapshot de exibicao (D1): no momento da emissao gravamos
 `{actor_name, task_title}` no payload. O read fica barato (scan de 1
 tabela) ao custo de o titulo ficar "congelado" se a task for renomeada.
@@ -63,6 +70,8 @@ class NotificationEmitter:
             return
 
         async def _do() -> None:
+            if not await self._so_quem_alcanca(task_id, [recipient_id]):
+                return
             self._repo.create(
                 recipient_id=recipient_id,
                 actor_id=actor_id,
@@ -98,7 +107,7 @@ class NotificationEmitter:
 
         async def _do() -> None:
             actor_name = await self._actor_name(actor_id)
-            for rid in alvos:
+            for rid in await self._so_quem_alcanca(task_id, alvos):
                 self._repo.create(
                     recipient_id=rid,
                     actor_id=actor_id,
@@ -131,7 +140,7 @@ class NotificationEmitter:
 
         async def _do() -> None:
             actor_name = await self._actor_name(actor_id)
-            for rid in alvos:
+            for rid in await self._so_quem_alcanca(task_id, alvos):
                 self._repo.create(
                     recipient_id=rid,
                     actor_id=actor_id,
@@ -161,8 +170,8 @@ class NotificationEmitter:
         emissor nao sabe se foi reacao nova ou troca de emoji. Quem sabe e o
         banco, no mesmo comando do upsert (`CommentReactionRepository.upsert`).
 
-        ⚠️ E O ALCANCE TAMBEM NAO: filtrar quem enxerga a tarefa e do service,
-        mesmo desenho das mencoes (`_emitir_mencoes`). O emissor so escreve.
+        ⚠️ O ALCANCE e conferido duas vezes: pelo service, que sai cedo sem
+        carregar nada a mais, e pela trava geral deste emissor (Spec 053, A).
 
         `emoji` vai no payload: o texto do sino mostra qual foi, e a notificacao
         e snapshot -- se a pessoa trocar depois, o aviso continua dizendo o que
@@ -172,6 +181,8 @@ class NotificationEmitter:
             return
 
         async def _do() -> None:
+            if not await self._so_quem_alcanca(task_id, [recipient_id]):
+                return
             self._repo.create(
                 recipient_id=recipient_id,
                 actor_id=actor_id,
@@ -206,7 +217,7 @@ class NotificationEmitter:
             return
 
         async def _do() -> None:
-            for rid in alvos:
+            for rid in await self._so_quem_alcanca(task_id, alvos):
                 self._repo.create(
                     recipient_id=rid,
                     actor_id=None,
@@ -235,7 +246,7 @@ class NotificationEmitter:
             return
 
         async def _do() -> None:
-            for rid in alvos:
+            for rid in await self._so_quem_alcanca(task_id, alvos):
                 self._repo.create(
                     recipient_id=rid,
                     actor_id=None,
@@ -254,7 +265,12 @@ class NotificationEmitter:
         quantidade: int,
         subtimes: list[str],
     ) -> None:
-        """Avisa que ela deixou de ser responsavel por N tarefas (Spec 037 E9).
+        """Avisa que ela perdeu acesso a N tarefas (Spec 037 E9).
+
+        ⚠️ "ACESSO", e nao "deixou de ser responsavel": esta linha dizia isso
+        ate a Spec 053, e a `quantidade` nunca foi so de responsavel -- conta
+        tambem as tarefas em que a pessoa so observava
+        (`member_service._remover_relacoes_perdidas`).
 
         ⚠️ UMA notificacao por MOVIMENTACAO, nunca uma por tarefa. Medido em
         06/08: duas pessoas carregam 30 das 33 tarefas que travariam hoje --
@@ -289,6 +305,30 @@ class NotificationEmitter:
             )
 
         await self._emit_safely("ACCESS_LOST", _do)
+
+    async def _so_quem_alcanca(
+        self, task_id: uuid.UUID, ids: list[uuid.UUID]
+    ) -> list[uuid.UUID]:
+        """A TRAVA: dos `ids`, so quem enxerga a tarefa agora, na mesma ordem.
+
+        Tarefa que nao existe mais -> ninguem.
+
+        ⚠️ IMPORT TARDIO de proposito: `task_guards` vive em `tasks`, e os
+        services de `tasks` importam este emissor. No topo do modulo, o ciclo
+        dependeria da ordem de import de quem subir primeiro.
+        """
+        from app.db.models import Task
+        from app.modules.tasks.application.task_guards import (
+            user_ids_that_can_view_task,
+        )
+
+        task = await self._session.get(Task, task_id)
+        if task is None:
+            return []
+        alcancam = await user_ids_that_can_view_task(
+            self._session, task=task, user_ids=ids
+        )
+        return [i for i in ids if i in alcancam]
 
     async def _emit_safely(
         self, tipo: str, do: Callable[[], Awaitable[None]]

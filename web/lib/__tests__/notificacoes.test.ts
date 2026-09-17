@@ -64,3 +64,67 @@ describe("textoDaNotificacao", () => {
     );
   });
 });
+
+// Spec 053, fatia A: os tres tipos que o backend emitia e o sino nao sabia
+// dizer -- caiam todos em `Atualização em "..."`.
+//
+// SABOTAGEM: apagar o ramo `TASK_OVERDUE` de `textoDaNotificacao`. Deve cair
+// "atrasada tem texto proprio".
+describe("textoDaNotificacao -- prazo e acesso (Spec 053, A)", () => {
+  const HOJE = { data: "2026-09-17", hora: "09:00" };
+
+  it("vence em breve: com a data, no formato DD/MM", () => {
+    expect(
+      textoDaNotificacao(
+        { type: "TASK_DUE_SOON", payload: { task_title: "Banner", due_date: "2026-09-19" } },
+        HOJE,
+      ),
+    ).toBe('"Banner" vence em 19/09');
+  });
+
+  it("vence hoje, quando o prazo e o dia de hoje NO FUSO DO WORKSPACE", () => {
+    expect(
+      textoDaNotificacao(
+        { type: "TASK_DUE_SOON", payload: { task_title: "Banner", due_date: "2026-09-17" } },
+        HOJE,
+      ),
+    ).toBe('"Banner" vence hoje');
+  });
+
+  it("vence em breve sem data no payload nao mostra 'undefined'", () => {
+    const texto = textoDaNotificacao(
+      { type: "TASK_DUE_SOON", payload: { task_title: "Banner" } },
+      HOJE,
+    );
+    expect(texto).toBe('"Banner" vence em breve');
+  });
+
+  it("atrasada tem texto proprio", () => {
+    expect(
+      textoDaNotificacao({ type: "TASK_OVERDUE", payload: { task_title: "Banner" } }),
+    ).toBe('"Banner" está atrasada');
+  });
+
+  it("perda de acesso fala em ACESSO, no singular e no plural", () => {
+    expect(
+      textoDaNotificacao({
+        type: "ACCESS_LOST",
+        payload: { actor_name: "Ana", quantidade: 3 },
+      }),
+    ).toBe("Ana mudou seu time: você deixou de ter acesso a 3 tarefas");
+    expect(
+      textoDaNotificacao({
+        type: "ACCESS_LOST",
+        payload: { actor_name: "Ana", quantidade: 1 },
+      }),
+    ).toBe("Ana mudou seu time: você deixou de ter acesso a 1 tarefa");
+  });
+
+  it("nenhum dos tres cai mais no texto generico", () => {
+    for (const type of ["TASK_DUE_SOON", "TASK_OVERDUE", "ACCESS_LOST"] as const) {
+      expect(
+        textoDaNotificacao({ type, payload: { task_title: "X", quantidade: 2 } }, HOJE),
+      ).not.toContain("Atualização em");
+    }
+  });
+});

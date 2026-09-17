@@ -9,9 +9,12 @@
 //
 // Isso vale para TASK_ASSIGNED. Nao vale para TASK_MENTIONED nem
 // TASK_COMMENTED: qualquer pessoa pode ser mencionada numa tarefa de que
-// nao e responsavel, e watcher recebe aviso de comentario sem estar
+// nao e responsavel, e o criador recebe aviso de comentario sem estar
 // designado. Nesses casos a tarefa nao esta na lista de atribuicoes, a
 // pagina nao acha nada e o clique nao abre coisa alguma.
+//
+// ⚠️ ESTE PARAGRAFO DIZIA QUE "watcher recebe aviso de comentario". Nao
+// recebia (Spec 053, §2.3) -- passa a receber na fatia C da 053.
 //
 // POR QUE NAO O QUADRO GERAL
 // Trocaria um destino que as vezes falha por outro que as vezes falha. O
@@ -31,6 +34,7 @@
 // =====================================================================
 
 import type { AppNotification } from "./api";
+import { agoraNoWorkspace, type Agora } from "./prazo";
 
 /** O minimo que precisamos saber de uma notificacao para achar o destino. */
 export type NotificacaoNavegavel = {
@@ -63,6 +67,7 @@ export function destinoDaNotificacao(n: NotificacaoNavegavel): string {
  */
 export function textoDaNotificacao(
   n: Pick<AppNotification, "type" | "payload">,
+  agora: Agora = agoraNoWorkspace(),
 ): string {
   const ator = n.payload?.actor_name || "Alguém";
   const task = n.payload?.task_title || "uma tarefa";
@@ -74,6 +79,25 @@ export function textoDaNotificacao(
     return emoji
       ? `${ator} reagiu com ${emoji} ao seu comentário em "${task}"`
       : `${ator} reagiu ao seu comentário em "${task}"`;
+  }
+  // ⚠️ Spec 053 (A): os tres tipos abaixo o backend emitia havia semanas e
+  // caiam na frase generica do fim.
+  if (n.type === "TASK_DUE_SOON") {
+    const prazo = n.payload?.due_date;
+    if (!prazo) return `"${task}" vence em breve`;
+    // ⚠️ "Hoje" e o do FUSO DO WORKSPACE (`lib/prazo.ts`), e a data vem como
+    // YYYY-MM-DD: comparar e cortar a string, sem `new Date` -- que leria
+    // meia-noite UTC e escorregaria um dia.
+    if (prazo === agora.data) return `"${task}" vence hoje`;
+    return `"${task}" vence em ${prazo.slice(8, 10)}/${prazo.slice(5, 7)}`;
+  }
+  if (n.type === "TASK_OVERDUE") return `"${task}" está atrasada`;
+  if (n.type === "ACCESS_LOST") {
+    // "acesso", e nao "deixou de ser responsavel": a contagem inclui tarefas
+    // em que a pessoa so observava (Spec 053 §5).
+    const q = n.payload?.quantidade ?? 0;
+    const tarefas = q === 1 ? "1 tarefa" : `${q} tarefas`;
+    return `${ator} mudou seu time: você deixou de ter acesso a ${tarefas}`;
   }
   return `Atualização em "${task}"`;
 }

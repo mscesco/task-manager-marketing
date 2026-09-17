@@ -31,6 +31,7 @@ from app.modules.notifications.application.notification_emitter import (
 from app.modules.tasks.application.task_guards import (
     TaskScopeGuards,
     user_can_view_task,
+    user_ids_that_can_view_task,
 )
 from app.modules.tasks.domain.comment import (
     assert_reply_target,
@@ -164,11 +165,11 @@ class CommentService:
         )
         mencionados = [m for m in mencionados if m in validos]
         if mencionados:
-            mencionados = [
-                m
-                for m in mencionados
-                if await user_can_view_task(self._session, task=task, user_id=m)
-            ]
+            # Em lote desde a Spec 053 (A): antes era uma consulta por mencionado.
+            alcancam = await user_ids_that_can_view_task(
+                self._session, task=task, user_ids=mencionados
+            )
+            mencionados = [m for m in mencionados if m in alcancam]
         if mencionados:
             await self._notify.mentioned(
                 recipient_ids=mencionados,

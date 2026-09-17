@@ -142,6 +142,13 @@ fatia futura recalcularia tudo e a spec nasceria com dívida.
 responsável por 18 tarefas do subtime Mídias Sociais."* Uma notificação por
 evento, nunca uma por tarefa. O sistema de notificação já existe.
 
+> **Nota de 17/09/2026 (Spec 053, fatia A):** a contagem nunca foi só de
+> responsável — ela inclui as tarefas em que a pessoa só observava
+> (`member_service._remover_relacoes_perdidas`). O texto do sino diz *"Ana
+> mudou seu time: você deixou de ter acesso a 18 tarefas"*. E, até a 053, o
+> front nem tinha texto para este aviso: ele aparecia como "Atualização em uma
+> tarefa".
+
 ## Consequências
 
 - **NÃO existe janela de regressão na tela, e isso foi medido.** A hipótese
