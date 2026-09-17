@@ -61,6 +61,10 @@ O campo singular `member.team_id` chega a cinco lugares, e **não é só rótulo
 | `TaskDetail.tsx:653` | `foraDoEscopo(subtimePorMembro, …)` — o aviso de responsável fora do escopo | ⚠️ o aviso passa a mentir |
 | `Board.tsx:2366` | passa o mesmo mapa adiante | idem |
 
+> **Nota de 17/09/2026:** `membros/page.tsx` não existe mais — a rota
+> `/membros` saiu na Spec 047 (commit `3490a47`). Pessoas se administram na
+> tela do time, `web/app/times/[id]/page.tsx`.
+
 ⚠️ **`temAcaoPossivel` é o achado desta seção.** A assinatura é
 `(a: Alcance, subtimeDoMembro: string | null)` e a regra é
 `a.subtimes.includes(subtimeDoMembro)`. Com N subtimes a pergunta certa deixa de

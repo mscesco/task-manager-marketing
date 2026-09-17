@@ -40,6 +40,10 @@
 - `AppShell`: item "Membros" no nav.
 - Sem ações ainda. Smoke: lista renderiza.
 
+> **Nota de 17/09/2026:** `app/membros/page.tsx` não existe mais — a rota
+> `/membros` saiu na Spec 047 (commit `3490a47`). Pessoas se administram na
+> tela do time, `app/times/[id]/page.tsx`.
+
 ## Fatia 4 — Gestão (na página Membros) — gated por `team.manage`
 
 - Lê `me.permissions` via `currentUser()`. Se não tem `team.manage`, nenhuma

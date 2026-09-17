@@ -13,6 +13,11 @@ Hoje só **ADMIN** e **MANAGER** (papéis do time raiz) mexem em membros. A tela
 SUPERVISOR possui. Um supervisor de subtime não consegue puxar um operator
 para dentro do próprio time nem tirá-lo — precisa pedir para a Camila.
 
+> **Nota de 17/09/2026:** `web/app/membros/page.tsx`, citada ao longo desta
+> spec, não existe mais — a rota `/membros` saiu na Spec 047 (commit
+> `3490a47`). Pessoas se administram na tela do time,
+> `web/app/times/[id]/page.tsx`.
+
 Esta spec abre **uma fatia estreita**: o SUPERVISOR de um subtime pode
 **adicionar e remover OPERATOR dentro do próprio subtime**, e nada além disso.
 

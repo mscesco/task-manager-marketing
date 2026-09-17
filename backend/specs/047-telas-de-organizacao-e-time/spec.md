@@ -223,6 +223,12 @@ telas; a coluna do meio é parâmetro ("Cargo aqui" na tela de time, "Áreas" na
 pessoas). `/membros` ganhou a busca e virou a tabela da organização, e a busca da
 `/organizacao` aponta para lá.
 
+> **Nota de 17/09/2026:** no mesmo 09/09, `lib/telaDoTime.ts` virou
+> `lib/teamScreen.ts` e `components/TabelaDeMembros.tsx` virou
+> `components/MembersTable.tsx` (commit `a53e060`, nomes em inglês). E a rota
+> `/membros` saiu (commit `3490a47`): a entrada do menu virou "Time" e aponta
+> para `/times/<id>`.
+
 ⚠️ **Eu tinha dimensionado isto como "reescrever uma tela de 948 linhas", e a
 Camila corrigiu: *"não é refazer a tela, só tornar o /membros nessa tela da
 org"*.** Ela estava certa, e o número engana — 580 daquelas linhas eram

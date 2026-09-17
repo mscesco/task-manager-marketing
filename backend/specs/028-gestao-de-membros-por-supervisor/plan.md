@@ -98,6 +98,10 @@ exercita a rota real contra o Postgres real, não espiona função interna.
 
 ## Fatia 4 — Front: ampliar a tela de membros (não criar nova)
 
+> **Nota de 17/09/2026:** `web/app/membros/page.tsx` não existe mais — a rota
+> `/membros` saiu na Spec 047 (commit `3490a47`). Pessoas se administram na
+> tela do time, `web/app/times/[id]/page.tsx`.
+
 Arquivos:
 - `web/app/membros/page.tsx`
   - Gate hoje: `podeGerenciar = permissions.includes("team.manage")`
