@@ -36,6 +36,10 @@ class TaskHistoryEventType(str, Enum):
     DELETED = "deleted"
     ASSIGNED = "assigned"
     UNASSIGNED = "unassigned"
+    # Spec 053 (D13): seguir entra no historico, revogando a ADR 0012 na parte
+    # de observador. Sem migration: `event_type` e `String(80)`.
+    WATCHED = "watched"
+    UNWATCHED = "unwatched"
 
 
 @dataclass(frozen=True, slots=True)
@@ -186,6 +190,52 @@ def build_assigned_entry(
         metadata={
             "user_id": _stringify(user_id),
             "assigned_by": _stringify(assigned_by),
+        },
+    )
+
+
+class MotivoDoSeguidor(str, Enum):
+    """Por que alguem entrou ou saiu como seguidor (Spec 053, §6.9)."""
+
+    MANUAL = "manual"  # o gesto de seguir / deixar de seguir / por / tirar
+    CREATED_WITH = "created_with"  # escolhido no modal de criar tarefa
+    LOST_ACCESS = "lost_access"  # saiu sozinho: deixou de alcancar a tarefa
+
+
+def build_watched_entry(
+    *, user_id: uuid.UUID, by: uuid.UUID, reason: MotivoDoSeguidor
+) -> HistoryEntry:
+    """Alguem passou a seguir a tarefa (Spec 053, D13).
+
+    `by_self` separa "passou a seguir" de "foi posto para seguir" sem que a
+    leitura precise comparar o `user_id` da linha com o alvo.
+    """
+    return HistoryEntry(
+        event_type=TaskHistoryEventType.WATCHED,
+        metadata={
+            "target_user_id": _stringify(user_id),
+            "by_self": user_id == by,
+            "reason": reason.value,
+        },
+    )
+
+
+def build_unwatched_entry(
+    *, user_id: uuid.UUID, by: uuid.UUID, reason: MotivoDoSeguidor
+) -> HistoryEntry:
+    """Alguem deixou de seguir a tarefa (Spec 053, D13).
+
+    ⚠️ Com `reason=LOST_ACCESS`, `by` e quem fez a mudanca que tirou o alcance
+    (trocou o time da tarefa, ou o vinculo da pessoa) -- e `by_self` e falso
+    mesmo que tenha sido a propria pessoa, porque ela nao deixou de seguir:
+    foi tirada.
+    """
+    return HistoryEntry(
+        event_type=TaskHistoryEventType.UNWATCHED,
+        metadata={
+            "target_user_id": _stringify(user_id),
+            "by_self": user_id == by and reason is not MotivoDoSeguidor.LOST_ACCESS,
+            "reason": reason.value,
         },
     )
 

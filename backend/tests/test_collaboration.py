@@ -5,12 +5,14 @@ Cobertura:
     - history builders: assigned / unassigned (event_type + metadata).
     - task_guards (puro): task_visible / task_editable cobrindo
         * pessoal proprio vs alheio
-        * criador sempre ve (ADR 0013) mas NAO edita
+        * criador sempre ve (ADR 0013) mas NAO edita -- ⚠️ a ADR 0013 caiu
+          com a 0038 (E1): hoje criar nao concede leitura
         * lente de time (comum / avulsa)
         * admin (lente None)
 
-Os fluxos com escrita real no Postgres (insert de assignment/watcher,
-history, idempotencia, 404/409/422 ponta a ponta) validam no smoke /docs.
+Os fluxos com escrita real no Postgres (assignment/watcher, history,
+idempotencia, 404/422 ponta a ponta) estao em `tests/integration/`, em
+especial `test_collaboration_db.py` e `test_seguidores_053b_db.py`.
 """
 
 from __future__ import annotations

@@ -71,6 +71,13 @@ watcher decide quem acompanha. São três eixos independentes.**
    Inscrever-se a si mesmo exige apenas **enxergar** a tarefa (passa no
    gate 404). Inscrever **outra pessoa** exige `task.assign` + escopo de
    edição (mesmo gate do assignment). (ADR 0011)
+> **Nota de 17/09/2026 (Spec 053):** as decisões 5 e 10 e a tabela de
+> contratos abaixo estão superadas. O projeto pessoal saiu em 10/09, e
+> nenhum caminho levanta mais o 409 de "monouser". "Criador sempre vê" foi
+> revogado pela ADR 0038 (E1). O DELETE de observador sempre respondeu 200
+> com a lista, nunca 204. E observador entra no histórico desde a Spec 053
+> (D13), que também passou a perguntar `task.assign` no time da tarefa.
+
 5. **Pessoal é monouser.** Em tarefa de projeto pessoal, só o **dono**
    pode ser responsável ou observador; qualquer outro `user_id` → **409**
    (`pessoal é monouser`).

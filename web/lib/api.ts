@@ -2457,7 +2457,10 @@ export type NotificationType =
   // os conhecia: caiam no texto generico "Atualização em ..." (Spec 053, A).
   | "TASK_DUE_SOON"
   | "TASK_OVERDUE"
-  | "ACCESS_LOST";
+  | "ACCESS_LOST"
+  // Spec 053 (B): outra pessoa colocou ou tirou quem recebe como seguidor.
+  | "TASK_WATCH_ADDED"
+  | "TASK_WATCH_REMOVED";
 
 export type AppNotification = {
   id: string;

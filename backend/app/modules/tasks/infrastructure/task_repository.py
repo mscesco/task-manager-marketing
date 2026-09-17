@@ -883,6 +883,24 @@ class TaskRepository(BaseRepository[Task]):
 
         NAO faz commit -- mesma sessao do caller (atomico no UoW).
         """
+        await self.write_history_por_id(
+            task_id=task.id, user_id=user_id, entries=entries
+        )
+
+    async def write_history_por_id(
+        self,
+        *,
+        task_id: uuid.UUID,
+        user_id: uuid.UUID,
+        entries: list[HistoryEntry],
+    ) -> None:
+        """O `write_history` para quem so tem o id da tarefa (Spec 053, B).
+
+        Existe porque a remocao em massa por perda de alcance
+        (`apagar_relacoes`) sabe EM QUAIS tarefas apagou, mas nao carregou
+        nenhuma -- e carregar dezenas de `Task` so para ler o `id` seria a
+        consulta que o `DELETE` em massa existe para evitar.
+        """
         if not entries:
             return
 
@@ -890,7 +908,7 @@ class TaskRepository(BaseRepository[Task]):
         for entry in entries:
             row = TaskHistory(
                 workspace_id=tenant.workspace_id,
-                task_id=task.id,
+                task_id=task_id,
                 user_id=user_id,
                 event_type=entry.event_type.value,
                 field_name=entry.field_name,
@@ -1120,8 +1138,13 @@ class TaskRepository(BaseRepository[Task]):
 
     async def apagar_relacoes(
         self, *, user_id: uuid.UUID, task_ids: list[uuid.UUID]
-    ) -> tuple[int, int]:
-        """Apaga responsavel e observador dela nessas tarefas. (resp, obs).
+    ) -> tuple[int, list[uuid.UUID]]:
+        """Apaga responsavel e observador dela nessas tarefas.
+
+        Devolve `(responsaveis apagados, tarefas em que ELA SEGUIA)`. ⚠️ A
+        segunda parte era uma contagem ate a Spec 053 (B): virou a lista de
+        ids porque sair como seguidor passou a entrar no historico (D13), e o
+        historico e por tarefa.
 
         ⚠️ `DELETE` em massa, e nao `session.delete` linha a linha: sao ate
         dezenas de tarefas por movimentacao, e o caminho ORM faria um SELECT
@@ -1144,13 +1167,38 @@ class TaskRepository(BaseRepository[Task]):
             )
         )
         obs = await self.session.execute(
-            delete(TaskWatcher).where(
+            delete(TaskWatcher)
+            .where(
                 TaskWatcher.workspace_id == tenant.workspace_id,
                 TaskWatcher.user_id == user_id,
                 TaskWatcher.task_id.in_(task_ids),
             )
+            .returning(TaskWatcher.task_id)
         )
-        return (resp.rowcount or 0, obs.rowcount or 0)
+        return (resp.rowcount or 0, list(obs.scalars().all()))
+
+    async def ids_da_subarvore(self, *, path: str) -> list[uuid.UUID]:
+        """Ids VIVOS da tarefa de `path` e de todas as descendentes.
+
+        Spec 053 (B): trocar o projeto de uma tarefa troca o da subarvore
+        inteira (`reparent_subtree`), e os seguidores de cada uma podem perder
+        o alcance. ⚠️ Chamar ANTES do reparent: os ids nao mudam, o `path` sim.
+
+        EXCECAO AUTORIZADA ao `_base_select` (ADR 0003), mesma razao do
+        `detect_cycle`: ltree. Tenant explicito.
+        """
+        rows = await self.session.execute(
+            text(
+                """
+                SELECT id FROM task
+                WHERE path <@ CAST(:path AS ltree)
+                  AND workspace_id = :tenant_id
+                  AND deleted_at IS NULL
+                """
+            ),
+            {"path": path, "tenant_id": require_tenant().workspace_id},
+        )
+        return [r[0] for r in rows.all()]
 
     # ----------------------------------------------------
     # Agregacao de subtarefa para a listagem (Spec 042)

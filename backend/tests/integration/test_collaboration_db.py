@@ -159,7 +159,13 @@ async def test_assignment_nao_concede_edicao(db) -> None:
             await TaskService(db).update(task_id=task.id, command=UpdateTaskCommand(title="x"))
 
 
-async def test_watcher_self_sem_permissao_sem_history(db) -> None:
+async def test_watcher_self_sem_permissao_grava_history(db) -> None:
+    """Seguir a si mesmo exige so ver (ADR 0011) -- e GRAVA historico.
+
+    ⚠️ Ate a Spec 053 este teste afirmava ZERO linhas de historico (ADR 0012).
+    A D13 da 053 revogou essa parte: entrar e sair como seguidor e gravado,
+    sempre, com `by_self` e `reason`.
+    """
     ws, r, a, b, manager, proj, forest, mgr_ctx = await _world(db)
     op = await f.make_user(db, workspace_id=ws)
     await f.add_member(db, workspace_id=ws, user_id=op, team_id=a, role="OPERATOR")
@@ -176,14 +182,22 @@ async def test_watcher_self_sem_permissao_sem_history(db) -> None:
         )
     ).scalar_one()
     assert w == 1
-    # nenhum evento de history relacionado a watcher
-    h = (
+    linhas = (
         await db.execute(
-            text("SELECT count(*) FROM task_history WHERE task_id=:i AND event_type LIKE 'watch%'"),
+            text(
+                "SELECT event_type, metadata FROM task_history "
+                "WHERE task_id=:i AND event_type LIKE 'watch%'"
+            ),
             {"i": task.id},
         )
-    ).scalar_one()
-    assert h == 0
+    ).all()
+    assert len(linhas) == 1
+    assert linhas[0][0] == "watched"
+    assert linhas[0][1] == {
+        "target_user_id": str(op),
+        "by_self": True,
+        "reason": "manual",
+    }
 
 
 async def test_watcher_terceiro_fora_do_escopo_de_edicao_403(db) -> None:
@@ -196,6 +210,11 @@ async def test_watcher_terceiro_fora_do_escopo_de_edicao_403(db) -> None:
     vazios) que enxergava a task por ter criado (o ramo `created_by` da ADR
     0013). Ela afirmava a metade da PERMISSAO da regra: ve, mas nao tem
     `task.assign` -> 403.
+
+    ⚠️ (Spec 053, B: a metade VOLTOU a ter caminho -- a permissao passou a ser
+    perguntada no time da tarefa, e este mesmo cenario hoje e barrado por
+    ela, e nao pela edicao. Ver `test_seguidores_053b_db.py`. O paragrafo
+    abaixo fica como registro de 037.)
 
     ⚠️ ESSA METADE FICOU SEM CAMINHO. Depois da E1, enxergar exige vinculo de
     time, e os QUATRO papeis carregam `task.assign`

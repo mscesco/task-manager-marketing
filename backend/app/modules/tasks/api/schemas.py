@@ -277,6 +277,11 @@ class TaskCreateRequest(BaseModel):
     # (comportamento anterior). Validacao (alcance/ativo/monouser) e atomica
     # no service: qualquer invalido -> 422 listando todos, nada criado.
     assignee_ids: list[uuid.UUID] = Field(default_factory=list)
+    # Spec 053, fatia B (D6): seguidores ja na criacao. Mesma forma do
+    # `assignee_ids`: atomico, invalido -> 422 com `invalid_ids`, nada criado.
+    # ⚠️ PRECISA DE LINHA NO ROUTER -- o Pydantic aceita o campo e o command
+    # tem default [], entao sem a linha ele some em silencio.
+    watcher_ids: list[uuid.UUID] = Field(default_factory=list)
 
 
 class TaskUpdateRequest(BaseModel):

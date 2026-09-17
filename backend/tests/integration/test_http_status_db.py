@@ -111,9 +111,9 @@ async def test_watcher_terceiro_fora_do_escopo_de_edicao_403(db) -> None:
     alcanca) pinada no time B (que ele nao alcanca) -- ve pelo projeto, edita
     pela task.
 
-    A metade da PERMISSAO da ADR 0011 (`task.assign`) ficou sem caminho: os
-    quatro papeis a carregam, e enxergar agora exige vinculo. Ver o comentario
-    em `test_collaboration_db.py`.
+    ⚠️ Desde a Spec 053 (B) quem barra este cenario e a PERMISSAO, perguntada
+    no time da tarefa -- a metade que ficara sem caminho voltou a existir. O
+    status continua 403. Ver `test_seguidores_053b_db.py`.
     """
     ws, r, a, manager, proj, ctx = await _world(db)
     b = await f.make_team(db, workspace_id=ws, parent_team_id=r)

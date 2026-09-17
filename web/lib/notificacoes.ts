@@ -92,6 +92,10 @@ export function textoDaNotificacao(
     return `"${task}" vence em ${prazo.slice(8, 10)}/${prazo.slice(5, 7)}`;
   }
   if (n.type === "TASK_OVERDUE") return `"${task}" está atrasada`;
+  // Spec 053 (B, D17): só chegam quando foi OUTRA pessoa -- quem segue sozinho
+  // não se avisa.
+  if (n.type === "TASK_WATCH_ADDED") return `${ator} colocou você para seguir "${task}"`;
+  if (n.type === "TASK_WATCH_REMOVED") return `${ator} tirou você de "${task}"`;
   if (n.type === "ACCESS_LOST") {
     // "acesso", e nao "deixou de ser responsavel": a contagem inclui tarefas
     // em que a pessoa so observava (Spec 053 §5).

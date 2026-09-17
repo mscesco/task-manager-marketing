@@ -138,6 +138,10 @@ class CreateTaskCommand:
     # Spec 021: responsaveis aplicados APOS a task nascer, reusando os gates
     # de atribuicao. Atomico: invalido(s) -> 422 e a criacao inteira reverte.
     assignee_ids: list[uuid.UUID] = field(default_factory=list)
+    # Spec 053, fatia B (D6): seguidores aplicados depois dos responsaveis,
+    # tambem atomicos. ⚠️ `duplicate` chama `create` sem eles, de proposito:
+    # a copia nao leva seguidores (D9).
+    watcher_ids: list[uuid.UUID] = field(default_factory=list)
 
 
 @dataclass(frozen=True, slots=True)
@@ -789,6 +793,15 @@ class TaskService:
                 task=task, user_ids=command.assignee_ids
             )
 
+        if command.watcher_ids:
+            from app.modules.tasks.application.collaboration_service import (
+                CollaborationService,
+            )
+
+            await CollaborationService(self._session).watch_many_or_fail(
+                task=task, user_ids=command.watcher_ids
+            )
+
         return task
 
     async def duplicate(self, command: DuplicateTaskCommand) -> DuplicateResult:
@@ -1195,6 +1208,7 @@ class TaskService:
             await self._assert_time_do_quadro(
                 board_id=task.board_id, team_id=command.team_id
             )
+            trocou_de_time = task.team_id != command.team_id
             task.team_id = command.team_id
 
         # Status com ajuste de completed_at.
@@ -1302,6 +1316,16 @@ class TaskService:
             await self._repo.complete_descendants(task=task)
 
         await self._session.flush()
+
+        # Spec 053, fatia B (D12): quem seguia e deixou de alcancar sai.
+        if command.team_id is not None and trocou_de_time:
+            from app.modules.tasks.application.collaboration_service import (
+                CollaborationService,
+            )
+
+            await CollaborationService(
+                self._session
+            ).remove_watchers_without_reach(task_ids=[task.id])
         logger.info(
             "task.updated",
             task_id=str(task.id),
@@ -1455,6 +1479,15 @@ class TaskService:
         old_path = task.path
         old_depth = task.depth
 
+        # Spec 053, fatia B (D12): os ids da subarvore ANTES do reparent --
+        # o `path` muda, os ids nao.
+        trocou_de_projeto = old_project_id != new_project_id
+        subarvore = (
+            await self._repo.ids_da_subarvore(path=old_path)
+            if trocou_de_projeto
+            else []
+        )
+
         # Reparent: atualiza task e subtree via SQL textual.
         await self._repo.reparent_subtree(
             task=task,
@@ -1478,6 +1511,17 @@ class TaskService:
             task=task, user_id=tenant.user_id, entries=[entry]
         )
         await self._session.flush()
+
+        # Spec 053, fatia B (D12): trocar o projeto troca o da subarvore
+        # inteira, e o time que decide quem ve vem do projeto.
+        if subarvore:
+            from app.modules.tasks.application.collaboration_service import (
+                CollaborationService,
+            )
+
+            await CollaborationService(
+                self._session
+            ).remove_watchers_without_reach(task_ids=subarvore)
 
         logger.info(
             "task.moved",

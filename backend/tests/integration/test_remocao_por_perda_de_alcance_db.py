@@ -45,7 +45,7 @@ from collections.abc import AsyncIterator
 
 import pytest
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 
 from app.core.deps import get_db_session, get_uow
 from app.core.tenant import Membership, TenantContext, set_tenant
@@ -237,6 +237,21 @@ async def test_terminal_e_observador_tambem_saem(db) -> None:
     assert await _responsaveis(db, terminal.id) == set()
     assert await _observadores(db, observada.id) == set()
     assert await _responsaveis(db, observada.id) == {m["colega"]}
+
+    # Spec 053, fatia B (D13): sair como seguidor entra no historico, inclusive
+    # quando e a mudanca de vinculo que tira.
+    linhas = (
+        await db.execute(
+            text(
+                "SELECT metadata FROM task_history "
+                "WHERE task_id=:t AND event_type='unwatched'"
+            ),
+            {"t": observada.id},
+        )
+    ).scalars().all()
+    assert linhas == [
+        {"target_user_id": str(m["gi"]), "by_self": False, "reason": "lost_access"}
+    ]
 
 
 async def test_raiz_e_subtime_mantido_nao_mudam(db) -> None:

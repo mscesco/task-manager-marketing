@@ -198,6 +198,70 @@ class NotificationEmitter:
 
         await self._emit_safely("TASK_COMMENT_REACTED", _do)
 
+    async def watch_added(
+        self,
+        *,
+        recipient_id: uuid.UUID,
+        actor_id: uuid.UUID,
+        task_id: uuid.UUID,
+        task_title: str,
+    ) -> None:
+        """Outra pessoa colocou `recipient_id` para seguir a tarefa (Spec 053, D17).
+
+        No-op quando a pessoa seguiu sozinha: ela sabe o que fez.
+        """
+        if recipient_id == actor_id:
+            return
+
+        async def _do() -> None:
+            if not await self._so_quem_alcanca(task_id, [recipient_id]):
+                return
+            self._repo.create(
+                recipient_id=recipient_id,
+                actor_id=actor_id,
+                type=NotificationType.TASK_WATCH_ADDED.value,
+                task_id=task_id,
+                payload={
+                    "actor_name": await self._actor_name(actor_id),
+                    "task_title": task_title,
+                },
+            )
+
+        await self._emit_safely("TASK_WATCH_ADDED", _do)
+
+    async def watch_removed(
+        self,
+        *,
+        recipient_id: uuid.UUID,
+        actor_id: uuid.UUID,
+        task_id: uuid.UUID,
+        task_title: str,
+    ) -> None:
+        """Outra pessoa tirou `recipient_id` dos seguidores (Spec 053, D17).
+
+        No-op quando a pessoa saiu sozinha. ⚠️ A saida AUTOMATICA por perda de
+        alcance (§6.8) nao passa por aqui: avisar mostraria o titulo de uma
+        tarefa que ela nao pode mais ver -- e a trava barraria de todo jeito.
+        """
+        if recipient_id == actor_id:
+            return
+
+        async def _do() -> None:
+            if not await self._so_quem_alcanca(task_id, [recipient_id]):
+                return
+            self._repo.create(
+                recipient_id=recipient_id,
+                actor_id=actor_id,
+                type=NotificationType.TASK_WATCH_REMOVED.value,
+                task_id=task_id,
+                payload={
+                    "actor_name": await self._actor_name(actor_id),
+                    "task_title": task_title,
+                },
+            )
+
+        await self._emit_safely("TASK_WATCH_REMOVED", _do)
+
     async def due_soon(
         self,
         *,

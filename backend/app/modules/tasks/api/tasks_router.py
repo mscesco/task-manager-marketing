@@ -227,6 +227,9 @@ async def create_task(
             # sem erro (o CreateTaskCommand tem default []). Coberto por
             # test_task_create_assignees_http_db.py (fatia HTTP).
             assignee_ids=payload.assignee_ids,
+            # ⚠️ Spec 053, fatia B: a MESMA armadilha das tres linhas acima.
+            # Coberto por `test_seguidores_053b_db.py` (pelo HTTP).
+            watcher_ids=payload.watcher_ids,
         )
     )
     # Le do BANCO o que foi de fato gravado -- nao ecoa payload.assignee_ids.

@@ -32,6 +32,10 @@ class NotificationType(str, Enum):
     # Spec 050 (fatia B): alguem reagiu ao comentario da pessoa. So quando a
     # reacao NASCE -- trocar o emoji nao notifica (decisao da Camila, 15/09).
     TASK_COMMENT_REACTED = "TASK_COMMENT_REACTED"
+    # Spec 053, fatia B (D17): OUTRA pessoa colocou ou tirou alguem como
+    # seguidor. Quem se inscreve sozinho nao se avisa.
+    TASK_WATCH_ADDED = "TASK_WATCH_ADDED"
+    TASK_WATCH_REMOVED = "TASK_WATCH_REMOVED"
 
 
 @dataclass(frozen=True, slots=True)

@@ -120,6 +120,16 @@ describe("textoDaNotificacao -- prazo e acesso (Spec 053, A)", () => {
     ).toBe("Ana mudou seu time: você deixou de ter acesso a 1 tarefa");
   });
 
+  it("Spec 053 (B): colocar e tirar como seguidor dizem quem fez", () => {
+    const p = { actor_name: "Ana", task_title: "Banner" };
+    expect(textoDaNotificacao({ type: "TASK_WATCH_ADDED", payload: p })).toBe(
+      'Ana colocou você para seguir "Banner"',
+    );
+    expect(textoDaNotificacao({ type: "TASK_WATCH_REMOVED", payload: p })).toBe(
+      'Ana tirou você de "Banner"',
+    );
+  });
+
   it("nenhum dos tres cai mais no texto generico", () => {
     for (const type of ["TASK_DUE_SOON", "TASK_OVERDUE", "ACCESS_LOST"] as const) {
       expect(
