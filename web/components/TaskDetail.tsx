@@ -60,6 +60,7 @@ import {
   type CurrentUser,
 } from "@/lib/api";
 import TituloEditavel from "@/components/TituloEditavel";
+import { bloqueioAoTirar, mensagemDeFalhaDoResponsavel } from "@/lib/responsaveis";
 import {
   BotaoSeguir,
   LinhaDeSeguidores,
@@ -862,6 +863,13 @@ export default function TaskDetail({
 
   async function toggle(userId: string) {
     const jaEra = assignees.includes(userId);
+    // Tirar o ULTIMO responsavel: o servidor recusaria (ADR 0031). Diz antes,
+    // em vez de sumir com a pilula e trazer de volta.
+    const bloqueio = jaEra ? bloqueioAoTirar(assignees, userId) : null;
+    if (bloqueio) {
+      avisar(bloqueio);
+      return;
+    }
     const anterior = assignees;
     const otimista = jaEra
       ? assignees.filter((x) => x !== userId)
@@ -880,14 +888,9 @@ export default function TaskDetail({
     } catch (e) {
       setAssignees(anterior);
       onAssigneesChange(tid, anterior);
-      const err = e as ApiError;
-      avisar(
-        err.status === 403
-          ? "Você não pode designar nesta tarefa."
-          : err.status === 422
-          ? "Essa pessoa não alcança esta tarefa (fora do time)."
-          : "Não consegui atualizar o responsável."
-      );
+      // ⚠️ Todo 422 virava "nao alcanca" -- inclusive o do ultimo
+      // responsavel. Ver `lib/responsaveis.ts`.
+      avisar(mensagemDeFalhaDoResponsavel(e as ApiError));
     } finally {
       setSaving((s) => {
         const n = new Set(s);

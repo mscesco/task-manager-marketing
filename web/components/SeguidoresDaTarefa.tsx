@@ -109,12 +109,18 @@ export function BotaoSeguir({
   return (
     <button
       type="button"
-      className="btn btn-ghost shrink-0 px-2.5 py-1"
+      className="btn btn-ghost shrink-0 gap-1.5"
+      // ⚠️ INLINE, e e o unico jeito que funciona aqui: o `.btn` do
+      // `globals.css` nao esta em camada, e por isso vence `px-*`/`py-*` do
+      // Tailwind -- as classes nao mudavam nada e o botao saia do tamanho de
+      // um "Salvar". Mesmo padding e fonte do "fechar" ao lado, para os dois
+      // alinharem (pedido dela, 17/09: "tá torto e muito grande").
+      style={{ padding: "4px 10px", fontSize: 13 }}
       onClick={() => void estado.alternar(meuId, true)}
       disabled={ocupado}
       aria-pressed={sigo}
     >
-      {sigo ? <BellOff size={14} aria-hidden /> : <Bell size={14} aria-hidden />}
+      {sigo ? <BellOff size={13} aria-hidden /> : <Bell size={13} aria-hidden />}
       {rotulo}
     </button>
   );
@@ -165,7 +171,7 @@ export function LinhaDeSeguidores({
       onAlternar={(id) => void estado.alternar(id, id === meuId)}
       podeAbrir={mexerEmOutros && estado.seguidores !== null}
       ocupados={estado.ocupados}
-      textoVazio={estado.seguidores === null ? "…" : "ninguém"}
+      // Pedido dela (17/09): sem "ninguem" -- vazio e so o `+`.
       rotuloDoBotao="Escolher seguidores"
     />
   );

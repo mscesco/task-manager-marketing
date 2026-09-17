@@ -43,7 +43,7 @@ export default function SeletorDePessoas({
   onAlternar,
   podeAbrir,
   ocupados,
-  textoVazio = "ninguém",
+  textoVazio,
   rotuloDoBotao,
 }: {
   /** O rotulo ao lado das pilulas. Ausente quando quem chama ja tem um `<label>`. */
@@ -61,6 +61,7 @@ export default function SeletorDePessoas({
   /** Sem permissao (ou tarefa arquivada): so a linha, sem `+`. */
   podeAbrir: boolean;
   ocupados?: ReadonlySet<string>;
+  /** O que aparece sem ninguem escolhido. Ausente = nada, so o `+`. */
   textoVazio?: string;
   /** aria-label do `+`, ex.: "Escolher seguidores". */
   rotuloDoBotao: string;
@@ -120,7 +121,7 @@ export default function SeletorDePessoas({
       {rotulo && <span className="shrink-0 text-sm text-ink-soft">{rotulo}</span>}
 
       {marcados.length === 0 ? (
-        <span className="text-base text-ink-faint">{textoVazio}</span>
+        textoVazio ? <span className="text-base text-ink-faint">{textoVazio}</span> : null
       ) : (
         marcados.map((id) => {
           const nome = nomes.get(id)?.name ?? "";

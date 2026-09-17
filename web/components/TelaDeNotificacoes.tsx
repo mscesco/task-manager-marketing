@@ -184,7 +184,10 @@ export default function TelaDeNotificacoes() {
             </strong>
             <button
               type="button"
-              className="btn btn-ghost px-1 py-0"
+              className="btn btn-ghost"
+              // ⚠️ Padding INLINE: o `.btn` do globals.css nao esta em camada e
+              // vence `px-*`/`py-*` do Tailwind.
+              style={{ padding: "0 4px" }}
               aria-label="Tirar o filtro de tarefa ou projeto"
               onClick={() => mudar({ alvo: null })}
             >
@@ -353,7 +356,9 @@ function LinhaDeAviso({
       {aviso.task_id && !filtrandoEstaTarefa && (
         <button
           type="button"
-          className="btn btn-ghost shrink-0 px-2 py-0.5 text-sm"
+          className="btn btn-ghost shrink-0"
+          // ⚠️ Inline pelo mesmo motivo do `×` do filtro (o `.btn` vence o Tailwind).
+          style={{ padding: "2px 8px", fontSize: 12 }}
           onClick={onSoDestaTarefa}
         >
           Só desta tarefa
