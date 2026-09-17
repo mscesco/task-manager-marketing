@@ -26,7 +26,7 @@ from app.db.models.enums import (
     TaskStatus,
     UserTeamRole,
 )
-from app.db.models.notifications import Notification
+from app.db.models.notifications import Notification, NotificationMute
 from app.db.models.operational import Project, Task
 from app.db.models.organization import Team, User, UserTeam, Workspace
 from app.db.models.solicitations import (
@@ -58,6 +58,7 @@ __all__ = [
     "TaskHistory",
     # Notificacoes
     "Notification",
+    "NotificationMute",
     # Solicitacoes (formulario publico)
     "Solicitation",
     "SolicitationForm",
