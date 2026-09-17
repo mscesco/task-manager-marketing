@@ -48,6 +48,15 @@ class NotificationType(str, Enum):
 
 
 @dataclass(frozen=True, slots=True)
+class AlvoDeFiltro:
+    """Uma sugestao do campo "Tarefa ou projeto" (Spec 053, D23)."""
+
+    kind: str  # "task" | "project"
+    id: uuid.UUID
+    title: str
+
+
+@dataclass(frozen=True, slots=True)
 class NotificationDTO:
     """Notificacao para leitura (API). Imutavel."""
 
@@ -60,6 +69,9 @@ class NotificationDTO:
     read_at: datetime | None
     created_at: datetime
     updated_at: datetime
+    #: Spec 053 (E, D27): "ok" = a tarefa existe e quem le ainda a alcanca;
+    #: "gone" = excluida ou fora do alcance; None = aviso sem tarefa.
+    task_access: str | None = None
 
     @property
     def is_read(self) -> bool:
