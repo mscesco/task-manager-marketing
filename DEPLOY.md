@@ -228,6 +228,20 @@ seguro reformar a tabela vazia. Medido pela Camila em produção em 16/09:
 veja de onde vieram as linhas. O `downgrade` tem a mesma trava (descer com links
 gravados os perderia).
 
+⚠️⚠️ **A `0027` (junção de avisos, Spec 053) pede MIGRATION ANTES DO CÓDIGO**
+(escrito em 17/09/2026, antes de subir). Ela acrescenta
+`notification.updated_at` a um model que já existe. Com o código novo no ar e a
+coluna ausente, **toda leitura de notificação dá 500** — e o sino consulta a
+cada 30 s, em toda aba aberta. Com a migration antes, o código velho não conhece
+a coluna e os `INSERT` dele caem no `DEFAULT now()`: seguro.
+```bash
+docker compose -f docker-compose.prod.yml build
+docker compose -f docker-compose.prod.yml run --rm --entrypoint "" api alembic upgrade head
+docker compose -f docker-compose.prod.yml up -d
+```
+A migration copia `created_at` para `updated_at` em toda linha, então nenhum aviso
+antigo muda de posição no sino. O `downgrade` só remove a coluna e o índice.
+
 ⚠️ **A `0015` (`unaccent`) TAMBÉM inverte a ordem — por um terceiro motivo, e
 ✅ ELA ESTÁ EM PRODUÇÃO DESDE 21/08/2026.** Ela não acrescenta coluna a model
 nenhum (a checagem do `git diff -- backend/app/db/models/` sai vazia), então
