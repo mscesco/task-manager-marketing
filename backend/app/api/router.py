@@ -17,6 +17,9 @@ from app.api.health import router as health_router
 from app.api.client_errors import router as client_errors_router
 from app.modules.auth.api.router import router as auth_router
 from app.modules.notifications.api.router import router as notifications_router
+from app.modules.notifications.api.preferences_router import (
+    router as notification_preferences_router,
+)
 from app.modules.solicitations.api.form_public_router import (
     router as solicitation_forms_public_router,
 )
@@ -55,6 +58,9 @@ api_v1_router.include_router(comment_router)
 # Spec 052, fatia B: links com nome de projeto e de tarefa.
 api_v1_router.include_router(links_router)
 api_v1_router.include_router(notifications_router)
+# Spec 054: /me/notification-preferences. Segundo router com prefixo /me
+# (o outro e o de projeto pessoal, no modulo de tarefas).
+api_v1_router.include_router(notification_preferences_router)
 # ⚠️⚠️ O ROUTER DE FORMULARIOS VEM ANTES, E A ORDEM E O CONSERTO DE UM 422 EM
 # PRODUCAO (26/08). O router de solicitacoes tem `GET /solicitacoes/{id}`, e o
 # FastAPI casa rota NA ORDEM DE REGISTRO: com ele primeiro,

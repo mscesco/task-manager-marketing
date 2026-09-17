@@ -63,3 +63,30 @@ class MarkAllReadResponse(BaseModel):
     """Resultado de marcar todas como lidas."""
 
     updated: int
+
+
+class ToggleResponse(BaseModel):
+    """Um toggle da tela de preferencias (Spec 054, §6.5)."""
+
+    model_config = {"from_attributes": True}
+
+    type_group: str
+    role: str
+    enabled: bool
+    #: Travado (D3): sempre ligado, e o PUT recusa 422. A tela desenha a
+    #: linha desabilitada com a explicacao do porque.
+    locked: bool
+
+
+class PreferencesResponse(BaseModel):
+    """Os toggles, na ordem da tela."""
+
+    items: list[ToggleResponse]
+
+
+class SetTogglePayload(BaseModel):
+    """Liga ou desliga UM toggle."""
+
+    type_group: str
+    role: str
+    enabled: bool
