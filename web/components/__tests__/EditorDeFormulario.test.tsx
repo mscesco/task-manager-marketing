@@ -18,6 +18,14 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import EditorPage from "@/app/formularios/[id]/page";
 import type { FormularioDetalhado, PerguntaDoEditor } from "@/lib/api";
 
+// ⚠️ Os avisos saíram de `window.alert` para a pilha do app (17/09). O teste
+// espia o `useAvisar` em vez de montar o `AvisosProvider`.
+const avisar = vi.hoisted(() => vi.fn());
+vi.mock("@/components/Toasts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/components/Toasts")>()),
+  useAvisar: () => avisar,
+}));
+
 vi.mock("@/components/AppShell", () => ({
   default: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
@@ -167,7 +175,6 @@ function montar(form: FormularioDetalhado = formulario()) {
 
 beforeEach(() => {
   vi.spyOn(window, "confirm").mockReturnValue(true);
-  vi.spyOn(window, "alert").mockImplementation(() => {});
 });
 
 afterEach(() => {
@@ -398,7 +405,7 @@ describe("as guardas da condicional", () => {
     const linha = (await screen.findByText("O que você precisa?")).closest("div")!;
     fireEvent.click(within_(linha, "Excluir"));
 
-    const aviso = vi.mocked(window.alert).mock.calls[0][0] as string;
+    const aviso = avisar.mock.calls[0][0] as string;
     expect(aviso).toContain("Data da sessão");
     expect(api.apagarPergunta).not.toHaveBeenCalled();
   });

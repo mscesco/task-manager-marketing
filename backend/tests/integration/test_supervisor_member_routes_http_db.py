@@ -227,22 +227,6 @@ async def test_http_rotas_fechadas_ao_supervisor(
     assert r.status_code == 403, f"{url} devia recusar: {r.text}"
 
 
-async def test_http_move_subteam_fechado(db) -> None:
-    """Mover entre subtimes segue fechado (toca o subtime de origem)."""
-    c = await _setup(db)
-    await f.add_member(
-        db, workspace_id=c["ws"], user_id=c["op"],
-        team_id=c["crm"], role="OPERATOR",
-    )
-    await db.commit()
-    async with _client(db, c["ctx"]) as cli:
-        r = await cli.post(
-            f"/api/v1/members/{c['op']}/move-subteam",
-            json={"from_team_id": str(c["crm"]), "to_team_id": str(c["seo"])},
-        )
-    assert r.status_code == 403, r.text
-
-
 # ------------------------------------------------ sem regressao
 
 

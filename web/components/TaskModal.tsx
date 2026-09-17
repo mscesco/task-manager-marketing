@@ -63,6 +63,7 @@ import Avatar from "@/components/Avatar";
 import { nomeCurto } from "@/lib/people";
 
 import Loading from "@/components/Loading";
+import { useAvisar } from "@/components/Toasts";
 const PRIORITIES = ["LOW", "MEDIUM", "HIGH", "URGENT"] as const;
 
 // Gatilho compacto redondo (mesmo padrao do detalhe): troca o despejo de 30
@@ -202,8 +203,10 @@ export default function TaskModal({
   // herdar, a pessoa resolve subtarefa a subtarefa. Recolocar a caixa desfaz
   // a ADR -- não é preferência de tela.
   const [escolhasSub, setEscolhasSub] = useState<Record<string, string[]>>({});
+  // ⚠️ Os avisos pós-cópia e o de links não salvos eram `window.alert`. Agora
+  // vão para a pilha do app, que sobrevive ao modal se fechar logo depois.
+  const avisar = useAvisar();
   const [puladasSub, setPuladasSub] = useState<Set<string>>(new Set());
-  const [aviso, setAviso] = useState<string | null>(null);
   const [abertoResp, setAbertoResp] = useState(false);
   /**
    * Onde desenhar o painel de responsáveis, em coordenadas de VIEWPORT.
@@ -297,7 +300,6 @@ export default function TaskModal({
     setBuscaResp("");
     setErro(null);
     setLevarSubtarefas(true);
-    setAviso(null);
     // ⚠️ As flags de "ja respondeu" precisam ZERAR junto: sem isto, reabrir o
     // modal pra outra tarefa pre-preencheria na hora, com o alcance da tarefa
     // ANTERIOR ainda em memoria.
@@ -706,7 +708,7 @@ export default function TaskModal({
           );
         }
         if (avisos.length) {
-          window.alert(`Cópia criada. ${avisos.join(" ")}`);
+          avisar(`Cópia criada. ${avisos.join(" ")}`);
         }
         saved = copia;
       } else {
@@ -745,7 +747,7 @@ export default function TaskModal({
           try {
             await putTaskLinks(saved.id, paraEnvio(rascunhoLinks));
           } catch (errLinks) {
-            window.alert(
+            avisar(
               "Tarefa criada, mas os links não foram salvos: " +
                 ((errLinks as ApiError).message || "erro desconhecido") +
                 ". Abra a tarefa e adicione os links por lá.",
@@ -1300,18 +1302,6 @@ export default function TaskModal({
                   </div>
                 )}
               </>
-            )}
-
-            {/* ⚠️ D14: este aviso é a ÚNICA proteção contra o passivo que a
-                regra de 29/07 combate (44 das 50 tarefas ativas sem
-                responsável eram subtarefas). Não remova sem remover a caixa. */}
-            {aviso && (
-              <p
-                className="muted"
-                style={{ margin: "2px 0 0 22px", fontSize: 12.5, color: "var(--warn, var(--text-soft))" }}
-              >
-                ⚠️ {aviso}
-              </p>
             )}
 
             <p className="muted" style={{ margin: "4px 0 0", fontSize: 12.5 }}>

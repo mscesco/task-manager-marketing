@@ -915,8 +915,9 @@ class TaskRepository(BaseRepository[Task]):
         mudanca de vinculo -- quem a calcula e o chamador (a F3), porque so ele
         sabe qual das quatro mudancas esta acontecendo.
 
-        ⚠️ ESTE E O PREDICADO UNICO. A F3 o chama nos tres gatilhos que barram
-        (`move_member_subteam`, `remove_member_from_team`, `change_member_role`).
+        ⚠️ ESTE E O PREDICADO UNICO. A F3 o chama nos gatilhos que barram
+        (`remove_member_from_team`, `change_member_role`; o terceiro,
+        `move_member_subteam`, saiu com a rota em 17/09/2026).
         **Se aparecer uma segunda copia desta regra em qualquer fatia, e
         defeito**, nao otimizacao.
 

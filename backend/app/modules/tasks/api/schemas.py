@@ -87,10 +87,8 @@ class ProjectResponse(BaseModel):
     def can_update(self) -> bool:
         return _pode_no_time("project.update", self.team_id)
 
-    @computed_field  # type: ignore[prop-decorator]
-    @property
-    def can_archive(self) -> bool:
-        return _pode_no_time("project.archive", self.team_id)
+    # ⚠️ `can_archive` SAIU EM 17/09/2026, junto com as rotas de arquivar
+    # projeto: era o cadeado de um botao sem rota.
 
     @computed_field  # type: ignore[prop-decorator]
     @property
@@ -618,8 +616,8 @@ class BoardColumnResponse(BaseModel):
     ⚠️ `notify_deadline` pelo mesmo motivo: o backend ja o respeita
     (`DeadlineNotifyService`), e hoje o front cobra prazo de coluna que o
     backend sabe que nao deve cobrar. ⚠️ **RESPEITAR NAO E PODER ESCREVER:**
-    nenhum caminho de produto muda esta flag -- ver `BoardColumnCreateRequest`. Expor agora custa uma linha; expor depois
-    custa uma versao de endpoint.
+    desde 22/08 o lote muda esta flag -- ver `ColunaParaAvisar`. Expor agora
+    custa uma linha; expor depois custa uma versao de endpoint.
 
     ⚠️ `legacy_status` NAO entra. Ele e ponte com data de demolicao (ADR 0033)
     e some quando o front passar a ler colunas do banco -- que e exatamente o
@@ -704,107 +702,21 @@ class BoardRenameRequest(BaseModel):
     name: str
 
 
-class BoardColumnCreateRequest(BaseModel):
-    """Corpo de `POST /boards/{id}/columns` (Spec 036, fatia 5b-4a).
-
-    ⚠️ SEM `@model_validator` e sem `Field(min_length=...)`, pelo mesmo motivo
-    do `BoardCreateRequest`: o `_validation_error_handler` deste projeto
-    devolve **500** para validador do Pydantic. Nome vazio e nome longo demais
-    sao recusados no `BoardService._nome_de_coluna_valido`.
-
-    ⚠️⚠️ ESTE SCHEMA FICOU PARA TRAS EM 22/08, E DE PROPOSITO. A Spec 039 (F9)
-    deu escritor a `color` e a `notify_deadline` -- mas no LOTE
-    (`ColunaParaCriar` / `ColunaParaAvisar`), que e por onde o produto cria
-    coluna. Este endpoint solto **nao tem um unico chamador no front**:
-    `lib/api.ts::criarColuna` so aparece nos testes dele mesmo. Acrescentar os
-    campos aqui seria entregar contrato que ninguem exercita -- a mesma
-    cicatriz de "campo sem leitor" que esta spec ja tem duas vezes, virada do
-    avesso.
-
-    **Se um dia alguem voltar a usar esta rota, os dois campos vem junto** --
-    e as notas abaixo, que descrevem o estado ANTERIOR a F9, precisam ser lidas
-    com essa data em mente.
-
-    ⚠️ `color` NAO ENTRA AQUI (corte de 11/08). Coluna nova nasce com token, por
-    rotacao fixa. Aceitar hex aqui abriria `style` a entrada de usuario num
-    campo `String(60)`, exigiria validar `^#[0-9a-fA-F]{6}$` no backend e
-    derivar o texto por luminancia no front -- e a Spec 031 (C1a) ja tinha
-    tirado os hex do produto porque nao invertem no tema escuro.
-
-    ⚠️ `is_default_target` NAO ENTRA, e a ausencia e a trava. O indice parcial
-    `board_column_um_destino_por_semantica` recusa o segundo alvo da mesma
-    semantica NO BANCO -- aceitar o campo deixaria a API pedir um estado que o
-    schema nega, e o erro chegaria como 500. Mesma ausencia de `is_default` em
-    `BoardCreateRequest`.
-
-    ⚠️ `legacy_status` NAO ENTRA, NUNCA. Coluna criada por gente nao
-    corresponde a status nenhum, e e justamente esse NULL que faz a ADR 0041
-    valer para ela.
-
-    ⚠️ `position` NAO ENTRA. Coluna nova vai para o fim; reordenar e da fatia
-    5b-6, junto com a tela que arrasta.
-
-    ⚠️⚠️ `notify_deadline` NAO ENTRA AQUI -- e ate 22/08 nao entrava em lugar
-    NENHUM, que era a ausencia que mais enganava quem lia o codigo (registrado
-    em 18/08, decisao de 13/08 de nao fazer; **revertida pelo §7.3 da Spec 039
-    em 19/08 e implementada no lote em 22/08**).
-
-    O paragrafo abaixo descreve o mundo de ANTES, e vale guardar porque ele
-    explica por que as 8 colunas de producao nasceram todas cobrando prazo.
-
-    O campo e **lido** (`DeadlineNotifyService` filtra por ele), e **exposto**
-    (`BoardColumnResponse.notify_deadline`) -- mas **nao tem escritor**:
-    `BoardService.criar_coluna` crava `True`, o `BoardColumnRenameRequest` nao
-    o edita, e o lote de colunas tambem nao. Ou seja: **na pratica ele so e
-    `False` nas colunas base que o `board_defaults` cria assim** (o
-    `Bloqueado`), e nao ha caminho de produto que o mude.
-
-    ⚠️ TRES LUGARES DO CODIGO PROMETIAM O CONTRARIO POR ESCRITO -- e desde
-    22/08 as tres promessas sao verdade, pelo lote:
-
-      1. `deadline_notify_service.py` -- "a flag `notify_deadline`, que e como
-         a ADR 0030 prometeu que um time criaria 'Aguardando cliente' sem
-         codigo novo". **Sem codigo novo nao da: a coluna nasce cobrando
-         prazo.**
-      2. `schemas.py`, no `BoardColumnResponse` -- "o backend ja o respeita".
-         Respeita mesmo, mas ninguem consegue escrever nele.
-      3. `board_semantics.py` -- "so `Bloqueado` nasce com `False`", que
-         descreve o default e soa como se houvesse outro caminho.
-
-    ⚠️ POR QUE NAO FOI FEITO (decisao da Camila, 13/08): "Aprovacao Externa" ja
-    cobra prazo hoje, no Quadro geral, para as 26 pessoas. Coluna nova cobrando
-    prazo **nao e regressao nem barulho novo** -- e o mesmo comportamento que
-    todo mundo ja vive. O custo de deixar assim e ZERO para quem usa, e este
-    paragrafo e o que impede que ele volte a ser zero para quem LE.
-
-    ⚠️ E O AVISO QUE ESTAVA ESCRITO AQUI SE CONFIRMOU: "o campo e a parte
-    facil; o que decide o tamanho e o PATCH". Editar `notify_deadline` de uma
-    coluna que JA TEM tarefas com prazo muda, em silencio, quais avisos vao
-    sair amanha, e sem uma linha de historico. A Spec 039 (§7.3) aceitou isso
-    de olhos abertos, e a mitigacao e de INTERFACE: o rotulo na tela e "Cobrar
-    prazo nesta coluna", com as consequencias escritas ao lado. Ver
-    `BoardService.definir_aviso_de_prazo`.
-    """
-
-    name: str
-    semantic: ColumnSemantic
-
-
-class BoardColumnRenameRequest(BaseModel):
-    """Corpo de `PATCH /boards/{id}/columns/{id}` (Spec 036, fatia 5b-4a).
-
-    ⚠️ SO O NOME. `semantic` fora de proposito: ela decide cascata de
-    conclusao, varredura de arquivamento, proporcao da checklist e aviso de
-    prazo -- os quatro em silencio. Trocar a semantica de uma coluna com
-    tarefas dentro muda o significado das tarefas sem tocar em nenhuma delas e
-    sem uma linha de historico. Ver `BoardService.renomear_coluna`.
-    """
-
-    name: str
-
-
 class ColunaParaCriar(BaseModel):
-    """Uma coluna a nascer dentro do lote (Spec 036, fatia 6a-ter)."""
+    """Uma coluna a nascer dentro do lote (Spec 036, fatia 6a-ter).
+
+    ⚠️ E O UNICO CORPO QUE CRIA COLUNA desde 17/09/2026. O `POST
+    /boards/{id}/columns` e o schema dele (`BoardColumnCreateRequest`) sairam
+    sem chamador; a nota longa que morava la -- por que `color` e
+    `notify_deadline` so ganharam escritor pelo lote (Spec 039, F9) -- esta no
+    historico do git e na docstring de `BoardService.criar_coluna`.
+
+    ⚠️ `is_default_target` NAO ENTRA, e a ausencia e a trava: o indice parcial
+    `board_column_um_destino_por_semantica` recusaria o segundo alvo NO BANCO
+    (500). Trocar alvo e a lista `alvos` do lote. `legacy_status` NAO ENTRA,
+    NUNCA: coluna criada por gente nao corresponde a status nenhum (ADR 0041).
+    `position` NAO ENTRA: quem ordena e a lista `ordem` do lote.
+    """
 
     #: ⚠️ APELIDO DO CLIENTE, e nao id. A coluna ainda nao existe quando a
     #: pessoa escolhe que as tarefas de outra vao para ela -- e esse caso e a
@@ -830,8 +742,8 @@ class ColunaParaCriar(BaseModel):
 class ColunaParaAvisar(BaseModel):
     """Coluna que muda de opiniao sobre cobrar prazo (Spec 039, F9).
 
-    ⚠️ ESTE E O CAMPO QUE PASSOU MESES SEM ESCRITOR, e o `BoardColumnCreateRequest`
-    tem a nota longa contando a historia: ele era LIDO pelo `DeadlineNotifyService`
+    ⚠️ ESTE E O CAMPO QUE PASSOU MESES SEM ESCRITOR (a nota longa morava no
+    `BoardColumnCreateRequest`, removido em 17/09): ele era LIDO pelo `DeadlineNotifyService`
     e EXPOSTO na resposta, mas nenhuma rota o escrevia. Tres lugares do codigo
     prometiam por escrito que dava para criar "Aguardando cliente" sem cobrar
     prazo; nao dava. A partir daqui da.
@@ -935,27 +847,16 @@ class BoardColumnDetailResponse(BoardColumnResponse):
 
     ⚠️ `task_count` NAO CONTA APAGADAS e CONTA ARQUIVADAS. Ver
     `BoardService.contar_tarefas_da_coluna`: e o numero que a PESSOA ve, e
-    tarefa apagada nao existe para ela. O movimento do `DELETE` leva as
-    apagadas junto por causa da FK `RESTRICT`, entao os dois numeros divergem
-    de proposito.
+    tarefa apagada nao existe para ela. Apagar a coluna (etapa `apagar` do lote)
+    move as apagadas junto por causa da FK `RESTRICT`, entao os dois numeros
+    divergem de proposito.
 
     ⚠️ ELE ENVELHECE. Alguem pode mover uma tarefa para ca entre este `GET` e o
-    `DELETE`. A divergencia possivel e entre o AVISO e o resultado, nunca entre
+    lote. A divergencia possivel e entre o AVISO e o resultado, nunca entre
     o resultado e o banco.
     """
 
     task_count: int
-
-
-class BoardColumnDeleteResponse(BaseModel):
-    """Resultado de apagar coluna (Spec 036, fatia 5b-4b).
-
-    ⚠️ DEVOLVE O NUMERO QUE REALMENTE MOVEU, e nao ecoa o do aviso. Se ele vier
-    diferente do que a tela mostrou, alguem mexeu no meio -- e a tela pode
-    dizer isso em vez de fingir que sabia.
-    """
-
-    movidas: int
 
 
 class BoardResponse(BaseModel):

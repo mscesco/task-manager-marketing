@@ -17,7 +17,7 @@
 //
 // ⚠️ MORA EM `components/` -- `app/` fica fora do `include` do vitest.
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { X } from "lucide-react";
 import Badge from "@/components/Badge";

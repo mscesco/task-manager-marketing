@@ -18,8 +18,12 @@ Rotas:
     POST   /members/{user_id}/team         -- vincular a equipe (team.manage)
     PATCH  /members/{user_id}/teams/{team_id} -- trocar papel (team.manage)
     DELETE /members/{user_id}/teams/{team_id} -- remover do time (team.manage)
-    POST   /members/{user_id}/move-subteam -- mover de time (team.manage)
     POST   /members/{user_id}/deactivate   -- desativar membro (team.manage)
+
+⚠️ `POST /members/{user_id}/move-subteam` SAIU EM 17/09/2026, sem chamador na
+tela. Mudar alguem de subtime e vincular no novo e remover do antigo -- as
+travas de orfa (E4) e de remocao de relacoes (E3) valem nas duas portas que
+ficaram.
 """
 
 from __future__ import annotations
@@ -45,7 +49,6 @@ from app.modules.users.api.schemas import (
     MemberTeamListItemResponse,
     TeamMemberListItemResponse,
     MemberTeamResponse,
-    MoveSubteamRequest,
     ResetPasswordResponse,
     TeamAssignmentRequest,
     TeamMembershipResponse,
@@ -366,34 +369,6 @@ async def remove_member_from_team(
     )
     await uow.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
-
-
-@router.post(
-    "/{user_id}/move-subteam",
-    response_model=MemberTeamResponse,
-    dependencies=[Depends(require_permission("membership.move"))],
-)
-async def move_member_subteam(
-    user_id: uuid.UUID, payload: MoveSubteamRequest, uow: UoWDep
-) -> MemberTeamResponse:
-    """Move um membro de um time para outro. F4 (B2).
-
-    Atomico (remove origem antes de adicionar destino). Matriz C2 + C3.
-    400/404/409 conforme a regra; 403 na matriz.
-
-    ⚠️ "PRESERVANDO O PAPEL" SAIU DESTA FRASE na Spec 045 (fatia D), e nao por
-    estilo: mover um SUPERVISOR para a RAIZ o REBAIXA a OPERATOR, porque o
-    papel deixou de existir la. Quem le a resposta precisa olhar o `role` que
-    volta, e nao assumir o de origem -- e e por isso que o `MemberTeamResponse`
-    devolve o papel GRAVADO.
-    """
-    membership = await MemberService(uow.session).move_member_subteam(
-        user_id=user_id,
-        from_team_id=payload.from_team_id,
-        to_team_id=payload.to_team_id,
-    )
-    await uow.commit()
-    return MemberTeamResponse(team_id=membership.team_id, role=membership.role)
 
 
 @router.patch(

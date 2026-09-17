@@ -15,14 +15,10 @@
 import { describe, it, expect } from "vitest";
 import {
   teamTree,
-  rolesLostOnUnpick,
   subteamCards,
   subteamCandidates,
   teamRows,
   directMembers,
-  pickerOptions,
-  membershipPlan,
-  offeredSubteams,
 } from "../teamScreen";
 import type { Member, MemberRole, Team } from "../api";
 
@@ -142,93 +138,6 @@ describe("teamRows", () => {
     ]);
     expect(linhas.map((l) => l.member.name)).toEqual(["Ana", "Zara"]);
     expect(linhas[0].subteams.map((c) => c.team.name)).toEqual(["CRM", "SEO"]);
-  });
-});
-
-describe("rolesLostOnUnpick", () => {
-  const supervisora = { team: TIMES[2], role: "SUPERVISOR" as MemberRole };
-  const operadora = { team: TIMES[1], role: "OPERATOR" as MemberRole };
-
-  it("⭐⭐ desmarcar quem é SUPERVISOR avisa o que se perde", () => {
-    // ⚠️ O defeito silencioso: remarcar depois traz a pessoa de volta como
-    // OPERADOR, porque é assim que o vínculo novo nasce. O cargo some sem
-    // ninguém dizer nada.
-    const perdidos = rolesLostOnUnpick([supervisora, operadora], [CRM]);
-    expect(perdidos.map((c) => c.team.name)).toEqual(["SEO"]);
-  });
-
-  it("⚠️ desmarcar OPERADOR não pede confirmação", () => {
-    // ⚠️ Confirmar aqui treinaria a pessoa a clicar em "sim" sem ler -- que é
-    // como a confirmação do caso GRAVE também passaria despercebida.
-    expect(rolesLostOnUnpick([operadora], [])).toEqual([]);
-  });
-
-  it("não avisa sobre o que continua marcado", () => {
-    expect(rolesLostOnUnpick([supervisora], [SEO])).toEqual([]);
-  });
-});
-
-describe("pickerOptions", () => {
-  it("⭐ quem JÁ está marcado nunca some da lista", () => {
-    // ⭐ A regra copiada de `TaskDetail.tsx:726-730`, que a spec manda copiar.
-    // ⚠️ Sem ela, salvar o seletor removeria em silêncio um vínculo que você
-    // não via -- e o defeito só apareceria dias depois.
-    const foraDoEscopo = { team: TIMES[4], role: "OPERATOR" as MemberRole };
-    const opcoes = pickerOptions(offeredSubteams(MKT, TIMES), [
-      foraDoEscopo,
-    ]);
-    expect(opcoes.map((t) => t.name)).toContain("TI");
-  });
-
-  it("não duplica quem já está entre os oferecidos", () => {
-    const jaOferecido = { team: TIMES[2], role: "SUPERVISOR" as MemberRole };
-    const opcoes = pickerOptions(offeredSubteams(MKT, TIMES), [
-      jaOferecido,
-    ]);
-    expect(opcoes.filter((t) => t.id === SEO)).toHaveLength(1);
-  });
-});
-
-describe("offeredSubteams", () => {
-  it("oferece a árvore abaixo, sem o próprio time", () => {
-    expect(offeredSubteams(MKT, TIMES).map((t) => t.name)).toEqual([
-      "CRM",
-      "SEO",
-      "SEO Junior",
-    ]);
-  });
-
-  it("não oferece time de outra área", () => {
-    expect(offeredSubteams(MKT, TIMES).map((t) => t.id)).not.toContain(TI);
-  });
-});
-
-describe("membershipPlan", () => {
-  const marketing = { team: TIMES[0], role: "MANAGER" as MemberRole };
-  const seo = { team: TIMES[2], role: "SUPERVISOR" as MemberRole };
-
-  it("⭐⭐ ADICIONAR vem antes de REMOVER — trocar o único time precisa disso", () => {
-    // ⚠️ O defeito que isto mata: o backend recusa remover o ÚLTIMO vínculo
-    // ("ele ficaria sem time"). Removendo primeiro, trocar Marketing por SEO
-    // — estado final perfeitamente válido — batia em 409 antes de o SEO
-    // existir. A pessoa simplesmente não conseguia trocar de time pela tela.
-    const plano = membershipPlan([marketing], [SEO]);
-    expect(plano.adicionar).toEqual([SEO]);
-    expect(plano.remover).toEqual([MKT]);
-  });
-
-  it("só adiciona o que ainda não existe", () => {
-    expect(membershipPlan([seo], [SEO, MKT]).adicionar).toEqual([MKT]);
-  });
-
-  it("só remove o que saiu da marcação", () => {
-    expect(membershipPlan([marketing, seo], [MKT]).remover).toEqual([SEO]);
-  });
-
-  it("sem mudança, nada a escrever", () => {
-    const plano = membershipPlan([marketing], [MKT]);
-    expect(plano.adicionar).toEqual([]);
-    expect(plano.remover).toEqual([]);
   });
 });
 

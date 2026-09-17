@@ -37,14 +37,14 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { AnimatePresence, motion } from "motion/react";
-import { ArrowLeft, Pencil, Search } from "lucide-react";
+import { ArrowLeft, Search } from "lucide-react";
 import Tabs from "@/components/Tabs";
 import Toggle from "@/components/Toggle";
 import Badge from "@/components/Badge";
 import Card from "@/components/Card";
 import PageHeader from "@/components/PageHeader";
 import Reveal from "@/components/Reveal";
-import Toasts, { useToasts } from "@/components/Toasts";
+import { useAvisar } from "@/components/Toasts";
 import SubteamCardTile from "@/components/SubteamCardTile";
 import TemporaryPassword from "@/components/TemporaryPassword";
 import SubteamDrawer from "@/components/SubteamDrawer";
@@ -93,7 +93,7 @@ export default function TeamScreen({ teamId }: { teamId: string }) {
   // ⚠️ Os avisos viraram uma PILHA no canto (`Toasts`). O aviso inline
   // empurrava a tela para baixo justamente quando a pessoa olhava para a
   // linha que acabou de mudar.
-  const { toasts, avisar, dispensar } = useToasts();
+  const avisar = useAvisar();
 
   // ⚠️⚠️ O ESTADO DA TELA MORA NA URL, e não só em `useState`: *"se eu
   // recarrego a tela, ela não lembra onde eu estava"*. Na URL ele sobrevive ao
@@ -517,8 +517,6 @@ export default function TeamScreen({ teamId }: { teamId: string }) {
           />
         )}
       </AnimatePresence>
-
-      <Toasts toasts={toasts} onDismiss={dispensar} />
     </>
   );
 }

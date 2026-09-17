@@ -80,14 +80,12 @@ function projeto(over: Partial<Project> & { id: string; title: string }): Projec
     start_date: null,
     due_date: null,
     completed_at: null,
-    is_archived: false,
     team_id: COM,
     created_by: "user-1",
     created_at: "2026-09-14T12:00:00Z",
     updated_at: "2026-09-14T12:00:00Z",
     // Spec 051, fatia A: os botões vêm do servidor, no time do projeto.
     can_update: true,
-    can_archive: true,
     can_delete: true,
     ...over,
   };

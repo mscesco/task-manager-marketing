@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  avisoSemResponsaveis,
   LIMITE_TITULO,
   PREFIXO_COPIA,
   rotuloCaixaSubtarefas,
@@ -132,36 +131,5 @@ describe("rotuloCaixaSubtarefas (D7)", () => {
     const r = rotuloCaixaSubtarefas(4);
     expect(r).toContain("4");
     expect(r).toContain("diretas");
-  });
-});
-
-describe("avisoSemResponsaveis (D14)", () => {
-  it("cala quando os responsáveis vão junto", () => {
-    expect(avisoSemResponsaveis(true, true, 3)).toBeNull();
-  });
-
-  it("cala quando as subtarefas não vão", () => {
-    expect(avisoSemResponsaveis(false, false, 3)).toBeNull();
-  });
-
-  it("cala quando não há subtarefa viva", () => {
-    expect(avisoSemResponsaveis(true, false, 0)).toBeNull();
-  });
-
-  /**
-   * ⚠️ Este aviso é a ÚNICA proteção que sobrou. A regra de 29/07 nasceu
-   * porque 44 das 50 tarefas ativas sem responsável eram subtarefas; a caixa
-   * desmarcada recria isso de N em N num clique. A porta foi aberta de
-   * propósito (D14, opção 2) -- com aviso.
-   */
-  it("AVISA quando as subtarefas vão sem responsável", () => {
-    expect(avisoSemResponsaveis(true, false, 3)).toContain("3");
-    expect(avisoSemResponsaveis(true, false, 3)).toContain("sem responsável");
-  });
-
-  it("singular no caso de uma", () => {
-    const r = avisoSemResponsaveis(true, false, 1);
-    expect(r).toContain("A subtarefa");
-    expect(r).not.toContain("As 1");
   });
 });

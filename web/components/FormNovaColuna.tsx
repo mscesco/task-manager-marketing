@@ -173,8 +173,7 @@ export default function FormNovaColuna({
             hex não. Um roxo escolhido no claro sumiria no fundo escuro, e foi
             por isso que a Spec 031 (C1a) tirou os hex do produto. A roda RGB
             é fatia própria porque ela obriga a derivar a cor do TEXTO por
-            luminância -- é o dia em que `lib/coluna.ts::corEhHex` ganha o
-            primeiro leitor.
+            luminância, e nada no front faz essa derivação ainda.
 
             ⚠️ "AUTOMÁTICA" É UMA OPÇÃO DE VERDADE, e vem primeiro: ela manda
             `undefined` e deixa a rotação do backend decidir, que é o

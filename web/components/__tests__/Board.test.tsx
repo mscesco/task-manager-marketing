@@ -188,14 +188,12 @@ function project(id: string, team_id: string | null): Project {
     start_date: null,
     due_date: null,
     completed_at: null,
-    is_archived: false,
     team_id,
     created_by: ANA,
     created_at: "2026-07-01T12:00:00Z",
     updated_at: "2026-07-01T12:00:00Z",
     // Spec 051, fatia A: os botões vêm do servidor, no time do projeto.
     can_update: true,
-    can_archive: true,
     can_delete: true,
   };
 }
@@ -822,8 +820,8 @@ describe("Board -- busca por título alcança as SUBTAREFAS (05/08)", () => {
 //      VERDE -- com um quadro so, as duas regras dao a mesma resposta. O
 //      portao nasceu da sabotagem, nao do plano.
 //
-//   2. Voltar `diasParadoPorColuna(coluna, ...)` para
-//      `diasParado(..., task.status, ...)` no `TaskCard`. **Cai UM:** "coluna
+//   2. Voltar `diasParadoPorColuna(coluna, ...)` para a regra por status
+//      (`diasParado`, que ja saiu do codigo) no `TaskCard`. **Cai UM:** "coluna
 //      que nao cobra prazo nao ganha selo de parada".
 //
 //   3. Apagar o `else foraDaColuna++` do agrupamento. **Cai UM:** "card em

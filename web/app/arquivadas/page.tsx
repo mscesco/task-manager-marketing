@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import AppShell from "@/components/AppShell";
 import EmptyState from "@/components/EmptyState";
@@ -7,13 +7,13 @@ import PageHeader from "@/components/PageHeader";
 import Badge from "@/components/Badge";
 import TaskDetail from "@/components/TaskDetail";
 import TaskModal from "@/components/TaskModal";
+import { useAvisar } from "@/components/Toasts";
 import {
   getTask,
   listArchivedTasks,
   reactivateTask,
   listMembers,
   listAllProjects,
-  listAllTasks,
   quadroGeralComIndice,
   ApiError,
   type Task,
@@ -101,15 +101,11 @@ function Arquivadas() {
   // Mesmo padrao ja usado em /tarefa/[id]: UMA chamada, so quando o detalhe
   // abre. Nao e N+1 na lista.
   const [paiDoDetalhe, setPaiDoDetalhe] = useState<Task | null>(null);
-  // Filhos da tarefa focada. A listagem de arquivadas NAO traz a subarvore
-  // (ela pagina so as arquivadas), entao busca sob demanda ao abrir -- e o
-  // numero que a confirmacao de exclusao usa. `null` = ainda carregando.
-  const [filhos, setFilhos] = useState<Task[] | null>(null);
   // Spec 033: tarefa que esta sendo DUPLICADA. ⚠️ O `editando` que morava ao
   // lado saiu na Spec 052 (fatia D): titulo, descricao e links se editam no
   // proprio detalhe, e o modal so cria e duplica.
   const [duplicando, setDuplicando] = useState<Task | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
+  const avisar = useAvisar();
   // ⚠️ O time ativo vem da barra (Spec 048). Rota estática -- `useSearchParams`
   // aqui derrubaria o `next build`. Ver `lib/useActiveTeam.tsx`.
   const { active, teamName: nomeDoTime } = useActiveTeam();
@@ -149,13 +145,12 @@ function Arquivadas() {
       .catch(() => {});
   }, []);
 
-  // ⚠️ Busca a subarvore ANTES de deixar o detalhe util: a confirmacao de
-  // exclusao mostra `filhos.length`, e com a lista vazia ela mentiria dizendo
-  // "0 subtarefas" numa tarefa que tem seis. Falhou? filhos = [] e a
-  // confirmacao apenas omite a contagem -- nunca afirma que nao ha filhas.
-  async function abrirDetalhe(t: Task) {
+  // ⚠️ ESTA TELA BUSCAVA A SUBARVORE AQUI (`listAllTasks`, ate 1000 tarefas
+  // por detalhe aberto) para a contagem da confirmacao de exclusao -- e nada a
+  // lia desde que o `TaskDetail` passou a buscar as proprias filhas (B1). A
+  // contagem continua certa, vinda de la. Saiu em 17/09.
+  function abrirDetalhe(t: Task) {
     setDetalhe(t);
-    setFilhos(null);
     // ⚠️ Busca o pai SEMPRE, em vez de depender da `pilha`.
     //
     // A pilha desta tela NUNCA funcionou: `onAbrirSubtarefa` empilhava e
@@ -172,18 +167,11 @@ function Arquivadas() {
         .then((p) => setPaiDoDetalhe(p))
         .catch(() => setPaiDoDetalhe(null));
     }
-    try {
-      const r = await listAllTasks({ include_archived: true });
-      setFilhos(r.items.filter((x) => x.parent_task_id === t.id));
-    } catch {
-      setFilhos([]);
-    }
   }
 
   function fecharDetalhe() {
     setDetalhe(null);
     setPaiDoDetalhe(null);
-    setFilhos(null);
   }
 
   async function carregar(p: number) {
@@ -286,8 +274,7 @@ function Arquivadas() {
         onExcluir={(t, cascade) => {
           fecharDetalhe();
           carregar(page);
-          setToast(mensagemExclusao(t.title, cascade));
-          setTimeout(() => setToast(null), 4000);
+          avisar(mensagemExclusao(t.title, cascade));
         }}
       />
 
@@ -316,19 +303,6 @@ function Arquivadas() {
           carregar(page);
         }}
       />
-
-      {toast && (
-        <div
-          style={{
-            position: "fixed", left: "50%", bottom: 24, transform: "translateX(-50%)",
-            background: "var(--text)", color: "var(--surface)", padding: "10px 16px",
-            borderRadius: 10, fontSize: 13, fontWeight: 500, zIndex: 60,
-            boxShadow: "var(--shadow)", maxWidth: 420,
-          }}
-        >
-          {toast}
-        </div>
-      )}
 
       {totalPaginas > 1 && (
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 16 }}>
@@ -435,7 +409,7 @@ function LinhaArquivada({
           {/* Nome da coluna; reserva no rotulo do status. A COR continua
               vindo de `STATUS_TEXT` -- `coluna.color` e token de traco e
               reprova AA como texto (Spec 031 §2.2b); a derivacao acessivel de
-              cor arbitraria e da fatia 5 (`lib/coluna.ts::corEhHex`). */}
+              cor arbitraria nunca foi feita. */}
           {rotuloDaColuna ?? STATUS_LABEL[t.status] ?? t.status}
         </Badge>
 

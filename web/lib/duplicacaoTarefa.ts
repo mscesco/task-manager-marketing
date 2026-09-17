@@ -101,29 +101,6 @@ export function valoresIniciaisDaCopia(
   };
 }
 
-/**
- * Aviso da D14 quando a pessoa DESMARCA "levar os responsáveis das
- * subtarefas". `null` = nada a avisar.
- *
- * ⚠️ Este aviso é a única proteção que sobrou. A regra de 29/07 (responsável
- * obrigatório) nasceu porque 44 das 50 tarefas ativas sem responsável eram
- * subtarefas; a caixa desmarcada recria esse passivo de N em N, num clique.
- * A porta foi aberta de propósito (D14, opção 2) -- com aviso. Tirar o aviso
- * sem tirar a caixa desfaz a decisão.
- */
-export function avisoSemResponsaveis(
-  levarSubtarefas: boolean,
-  levarResponsaveis: boolean,
-  subtarefasVivas: number,
-): string | null {
-  if (!levarSubtarefas || levarResponsaveis || subtarefasVivas === 0) {
-    return null;
-  }
-  return subtarefasVivas === 1
-    ? "A subtarefa copiada nascerá sem responsável."
-    : `As ${subtarefasVivas} subtarefas copiadas nascerão sem responsável.`;
-}
-
 /** Rótulo da caixa da D7. `null` quando não há filha viva (critério 16). */
 export function rotuloCaixaSubtarefas(subtarefasVivas: number): string | null {
   if (subtarefasVivas === 0) return null;

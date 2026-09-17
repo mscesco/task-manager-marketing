@@ -35,7 +35,7 @@
 // =====================================================
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { ApiError, clearTokens, moveMemberSubteam, setTokens } from "@/lib/api";
+import { ApiError, clearTokens, removeMemberFromTeam, setTokens } from "@/lib/api";
 
 /** Responde SEMPRE com o corpo dado, no status dado. */
 function mockFetchComCorpo(status: number, corpo: unknown) {
@@ -60,7 +60,9 @@ async function capturar(fn: () => Promise<unknown>): Promise<ApiError> {
   throw new Error("a chamada NAO lancou -- o teste nao afirma nada assim");
 }
 
-const mover = () => moveMemberSubteam("u-1", "t-origem", "t-destino");
+// Qualquer chamada serve de veiculo: o que se testa e o parser de erro, nao a
+// rota. Esta e uma das que recebem o 422 da E8.
+const chamar = () => removeMemberFromTeam("u-1", "t-origem");
 
 beforeEach(() => {
   localStorage.clear();
@@ -84,7 +86,7 @@ describe("parser de erro de lib/api.ts", () => {
       request_id: null,
     });
 
-    const erro = await capturar(mover);
+    const erro = await capturar(chamar);
 
     expect(erro.status).toBe(422);
     expect(erro.message).toBe(
@@ -104,7 +106,7 @@ describe("parser de erro de lib/api.ts", () => {
       request_id: null,
     });
 
-    const erro = await capturar(mover);
+    const erro = await capturar(chamar);
 
     expect(erro.code).toBe("password_change_required");
   });
@@ -115,7 +117,7 @@ describe("parser de erro de lib/api.ts", () => {
         code: "validation_error",
         message: "Esta pessoa e a unica responsavel por tarefas.",
         details: {
-          acao: "move_member_subteam",
+          acao: "remove_member_from_team",
           user_id: "u-1",
           tarefas: [
             {
@@ -131,9 +133,9 @@ describe("parser de erro de lib/api.ts", () => {
       request_id: null,
     });
 
-    const erro = await capturar(mover);
+    const erro = await capturar(chamar);
 
-    expect(erro.details?.acao).toBe("move_member_subteam");
+    expect(erro.details?.acao).toBe("remove_member_from_team");
     expect(erro.details?.tarefas).toHaveLength(1);
     // Os CAMPOS, e nao o tamanho -- e o que impede a E8 de virar so contagem.
     expect(erro.details?.tarefas[0]).toMatchObject({
@@ -154,7 +156,7 @@ describe("parser de erro de lib/api.ts", () => {
       request_id: null,
     });
 
-    const erro = await capturar(mover);
+    const erro = await capturar(chamar);
 
     expect(erro.details?.invalid_ids).toEqual(["u-9", "u-10"]);
   });
@@ -170,7 +172,7 @@ describe("parser de erro de lib/api.ts", () => {
     );
     vi.stubGlobal("fetch", spy);
 
-    const erro = await capturar(mover);
+    const erro = await capturar(chamar);
 
     expect(erro.status).toBe(502);
     expect(erro.message).toBe("Bad Gateway");
@@ -179,7 +181,7 @@ describe("parser de erro de lib/api.ts", () => {
   it("cai no literal Erro <status> quando o corpo nao traz mensagem", async () => {
     mockFetchComCorpo(500, {});
 
-    const erro = await capturar(mover);
+    const erro = await capturar(chamar);
 
     expect(erro.message).toBe("Erro 500");
   });

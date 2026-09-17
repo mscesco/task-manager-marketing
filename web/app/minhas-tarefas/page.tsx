@@ -57,6 +57,7 @@ import { ALL_TEAMS, withTeam } from "@/lib/activeTeam";
 import { useActiveTeam, useActiveTeamId } from "@/lib/useActiveTeam";
 
 import Loading from "@/components/Loading";
+import { useAvisar } from "@/components/Toasts";
 import { useDrawnOutline } from "@/components/AnimatedOutline";
 const RELATION_LABEL: Record<string, string> = {
   assignee: "Responsável",
@@ -197,7 +198,7 @@ function Minhas() {
   const [ordenacao, setOrdenacao] = useState<Ordenacao>("criacao");
   // Drag no modo quadro (mesmo padrao do Board).
   const [activeId, setActiveId] = useState<string | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
+  const avisar = useAvisar();
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
   );
@@ -335,7 +336,7 @@ function Minhas() {
       if (items === null) return;
       const t = items.find((x) => x.id === id);
       if (!t) {
-        setToast("Não foi possível abrir: essa tarefa não está na sua lista.");
+        avisar("Não foi possível abrir: essa tarefa não está na sua lista.");
         return;
       }
       // Se for SUBTAREFA, abre no modo sub com "voltar" pro(s) pai(s) -- mesma
@@ -411,13 +412,6 @@ function Minhas() {
     if (!urlLiberada) return;
     sincronizarTaskNaUrl(detalhe?.id ?? null);
   }, [detalhe, urlLiberada]);
-
-  // Toast do drag (auto-some).
-  useEffect(() => {
-    if (!toast) return;
-    const id = setTimeout(() => setToast(null), 3500);
-    return () => clearTimeout(id);
-  }, [toast]);
 
   // Busca as subtarefas COMPLETAS do foco (todas, nao so as minhas) quando o
   // detalhe muda. Sem include_archived (paridade com o padrao do quadro geral).
@@ -622,7 +616,7 @@ function Minhas() {
           : prev
       );
       const e2 = err as ApiError;
-      setToast(
+      avisar(
         e2.status === 403
           ? "Você não pode mover esta tarefa. Voltei pra coluna anterior."
           : "Não consegui mover o card. Voltei pra coluna anterior."
@@ -1441,19 +1435,6 @@ function Minhas() {
         }}
       />
 
-      {toast && (
-        <div
-          role="status"
-          style={{
-            position: "fixed", left: "50%", bottom: 24, transform: "translateX(-50%)",
-            background: "var(--surface)", border: "1px solid var(--border)",
-            borderRadius: 10, padding: "10px 16px", boxShadow: "var(--shadow)",
-            fontSize: 13, zIndex: 80, maxWidth: "90vw",
-          }}
-        >
-          {toast}
-        </div>
-      )}
     </div>
   );
 }

@@ -80,19 +80,10 @@ import { sincronizarTaskNaUrl, lerTaskDaUrl } from "@/lib/urlTarefa";
 import { ORDENACOES, ordenar, type Ordenacao } from "@/lib/ordenacao";
 
 import Loading from "@/components/Loading";
+import { useAvisar } from "@/components/Toasts";
 // Spec 031 (C3): `normalizar` saiu daqui pra lib/filtrosQuadro (agora
 // `normalizarBusca`) -- "Minhas tarefas" tambem busca, e duas copias da
 // mesma regra sao um bug esperando.
-
-// "Hoje" como YYYY-MM-DD no fuso LOCAL. due_date vem do backend como date
-// pura (sem hora), entao a comparacao e string vs string (ISO ordena certo).
-// Nada de new Date(due_date): isso interpretaria como UTC e escorregaria 1 dia.
-function hojeISO() {
-  const d = new Date();
-  const mes = String(d.getMonth() + 1).padStart(2, "0");
-  const dia = String(d.getDate()).padStart(2, "0");
-  return `${d.getFullYear()}-${mes}-${dia}`;
-}
 
 type FiltroPrazo = "todos" | "atrasadas" | "em-dia";
 
@@ -228,8 +219,6 @@ export default function Board({
   abaixoDoCabecalho?: ReactNode;
 }) {
   const [tasks, setTasks] = useState<Task[] | null>(null);
-  // Fatia 5b-6: o modo de EDICAO DE COLUNAS. So existe em quadro avulso.
-  const [editandoColunas, setEditandoColunas] = useState(false);
   // Fatia 4c: os quadros que quem olha alcanca. `null` = ainda carregando --
   // a tela NAO desenha coluna nenhuma ate chegarem (mesma decisao de 10/08
   // tomada em `/minhas-tarefas`), porque pintar um kanban com a lista velha e
@@ -318,7 +307,7 @@ export default function Board({
   // da URL so depois dela (ver os efeitos de "URL viva").
   const [deepLinkFeito, setDeepLinkFeito] = useState(false);
   const [activeId, setActiveId] = useState<string | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
+  const avisar = useAvisar();
   const [mostrarArquivadas, setMostrarArquivadas] = useState(false);
   // Filtros client-side (Entrega 13). NAO entram no useEffect de fetch:
   // filtram em memoria sobre o lote ja carregado, sem bater na API.
@@ -705,12 +694,6 @@ export default function Board({
     sincronizarTaskNaUrl(detalhe?.id ?? null);
   }, [detalhe, deepLinkFeito]);
 
-  useEffect(() => {
-    if (!toast) return;
-    const id = setTimeout(() => setToast(null), 3500);
-    return () => clearTimeout(id);
-  }, [toast]);
-
   function aoSalvar(saved: Task) {
     setTasks((prev) => {
       const lista = prev ?? [];
@@ -762,7 +745,7 @@ export default function Board({
     if (pilha.length > 0) voltarDetalhe();
     else fecharDetalhe();
     const extra = cascadeCount > 0 ? ` e ${cascadeCount} subtarefa(s)` : "";
-    setToast(`Tarefa${extra} excluída(s).`);
+    avisar(`Tarefa${extra} excluída(s).`);
   }
 
   function aoUpsert(t: Task) {
@@ -967,7 +950,7 @@ export default function Board({
         })
       );
       const e2 = err as ApiError;
-      setToast(
+      avisar(
         e2.status === 403
           ? "Você não pode mover esta tarefa. Voltei pra coluna anterior."
           : "Não consegui mover o card. Voltei pra coluna anterior."
@@ -1324,7 +1307,7 @@ export default function Board({
         totalPrevisto(rascunho, contagens ?? {}),
         resposta.movidas,
       );
-      if (divergencia) setToast(divergencia);
+      if (divergencia) avisar(divergencia);
       setRascunho(null);
       setRevisando(false);
       setCriandoColuna(false);
@@ -1471,7 +1454,6 @@ export default function Board({
   // visiveis apos busca + prazo (eixos que ESTREITAM). Os contadores e o
   // porStatus saem de `raizes` pra nao mentir quando ha filtro ativo.
   const buscaNorm = normalizarBusca(busca);
-  const hoje = hojeISO();
   // ⚠️ UMA LEITURA DO RELOGIO POR RENDER, e nao uma por tarefa. Com 799 cartoes,
   // chamar `agoraNoWorkspace()` dentro do filtro criaria 799 `Intl.DateTimeFormat`
   // por render -- e, pior, duas tarefas poderiam ser avaliadas contra minutos
@@ -2470,21 +2452,6 @@ export default function Board({
         membrosInativos={membrosInativos}
       />
 
-      {toast && (
-        <div
-          style={{
-            position: "fixed", left: "50%", bottom: 24, transform: "translateX(-50%)",
-            // color usa --surface (e nao "#fff" cravado): o fundo e --text, e
-            // os dois invertem juntos no tema escuro. Com branco fixo, o toast
-            // ficaria branco sobre fundo claro -- ilegivel.
-            background: "var(--text)", color: "var(--surface)", padding: "10px 16px",
-            borderRadius: 10, fontSize: 13, fontWeight: 500, zIndex: 60,
-            boxShadow: "var(--shadow)", maxWidth: 420,
-          }}
-        >
-          {toast}
-        </div>
-      )}
     </div>
   );
 }

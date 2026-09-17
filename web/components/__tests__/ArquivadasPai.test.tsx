@@ -269,8 +269,11 @@ describe("/arquivadas -- de onde veio esta subtarefa?", () => {
     montar([PAI]);
     render(<Arquivadas />);
     fireEvent.click(await screen.findByText("Campanha de março"));
+    // O detalhe abriu quando o título aparece DUAS vezes (linha + detalhe).
+    // ⚠️ Era `listAllTasks` chamado -- a busca da subárvore que esta tela fazia
+    // à toa e saiu em 17/09.
     await waitFor(() => {
-      expect(api.listAllTasks).toHaveBeenCalled();
+      expect(screen.getAllByText("Campanha de março").length).toBeGreaterThan(1);
     });
     expect(api.getTask).not.toHaveBeenCalled();
   });

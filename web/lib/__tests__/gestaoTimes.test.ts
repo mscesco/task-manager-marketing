@@ -10,7 +10,6 @@ import {
   podeApagarTime,
   podeEditar,
   podeEsvaziarERemover,
-  podeRemover,
   resumoDoEsvaziamento,
   sugereSlug,
   type TimeGerenciavel,
@@ -90,26 +89,6 @@ describe("podeApagarTime -- o cadeado vem do servidor (Spec 051, fatia D)", () =
 
   it("ninguem apaga a raiz -- nem com o servidor dizendo sim (D5)", () => {
     expect(podeApagarTime(time({ ...APAGA, parent_team_id: null }))).toBe(false);
-  });
-});
-
-describe("podeRemover", () => {
-  it("quem apaga remove subtime vazio", () => {
-    expect(podeRemover(time(APAGA))).toBe(true);
-  });
-
-  it("quem NAO apaga nao remove, mesmo com o time vazio", () => {
-    expect(podeRemover(time(NAO_APAGA))).toBe(false);
-  });
-
-  it("quem apaga nao remove time com conteudo", () => {
-    expect(podeRemover(time({ ...APAGA, tarefas: 14 }))).toBe(false);
-    expect(podeRemover(time({ ...APAGA, membros: 2 }))).toBe(false);
-    expect(podeRemover(time({ ...APAGA, filhos: 1 }))).toBe(false);
-  });
-
-  it("ninguem remove a raiz (D5)", () => {
-    expect(podeRemover(time({ ...APAGA, parent_team_id: null }))).toBe(false);
   });
 });
 
@@ -222,9 +201,8 @@ describe("ordenaParaTela", () => {
 // Fatia 3 -- esvaziar e remover (D3-B)
 // -------------------------------------------------------------------
 describe("podeEsvaziarERemover", () => {
-  it("aceita time COM conteudo -- e o que diferencia de podeRemover", () => {
+  it("aceita time COM conteudo", () => {
     const cheio = time({ ...APAGA, tarefas: 14, membros: 2 });
-    expect(podeRemover(cheio)).toBe(false);
     expect(podeEsvaziarERemover(cheio)).toBe(true);
   });
 

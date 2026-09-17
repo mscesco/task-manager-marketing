@@ -43,7 +43,6 @@ import {
   ordenaParaTela,
   podeEditar,
   podeEsvaziarERemover,
-  podeRemover,
   resumoDoEsvaziamento,
   sugereSlug,
 } from "@/lib/gestaoTimes";

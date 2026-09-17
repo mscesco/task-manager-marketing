@@ -206,9 +206,6 @@ function Linha({
 // divergindo do corpo, não o filtro em si.
 //
 // ⚠️⚠️ E AQUI MORAVA `SeletorDeSubtimes`, o painel de checkboxes do lápis.
-// Ele saiu com o redesenho de 09/09. Se for reintroduzido algum dia, o que
-// ele PRECISA carregar junto está registrado em `lib/teamScreen.ts`:
-// `rolesLostOnUnpick` (desmarcar apaga o cargo, e remarcar traz a pessoa como
-// operadora), `pickerOptions` (quem já está marcado nunca some da lista) e
-// `membershipPlan` (adicionar ANTES de remover, senão trocar o único time de
-// alguém é impossível). As três continuam testadas.
+// Ele saiu com o redesenho de 09/09. As três regras que ele precisaria carregar
+// (`lib/teamScreen.ts`) saíram na limpeza de código morto e podem ser
+// recuperadas do histórico do git no commit `2979442` (main antes da limpeza).

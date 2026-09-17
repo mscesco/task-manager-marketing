@@ -1,8 +1,13 @@
-"""Spec 037, fatia 3 -- os tres gatilhos que barram (E4 + E8), pela ROTA.
+"""Spec 037, fatia 3 -- os gatilhos que barram (E4 + E8), pela ROTA.
 
 A REGRA: mudanca de vinculo que deixaria uma tarefa NAO-TERMINAL sem ninguem
-que a alcance e recusada. Tres portas usam o MESMO predicado:
-`move_member_subteam`, `remove_member_from_team`, `change_member_role`.
+que a alcance e recusada. As portas usam o MESMO predicado:
+`remove_member_from_team`, `change_member_role`.
+
+⚠️ ERAM TRES: `move_member_subteam` saiu com a rota `POST /move-subteam` em
+17/09/2026. Os testes dele que provavam algo que NAO era do mover (o corpo do
+422 da E8, e "sem tarefa, passa") foram portados para `remover do time`; o
+"mover barra" era duplicata de `test_remover_do_time_barra` e saiu.
 
 ⚠️ `deactivate_member` NAO esta aqui, e a ausencia e decisao (E7): desligar
 alguem nao pode ser barrado por trabalho pendente -- a pessoa ja foi embora.
@@ -24,7 +29,7 @@ se alguem unificar os dois, esse teste avisa qual mudou.
 O MUNDO (`_mundo`): raiz Marketing + subtimes SEO e Design.
     `gi` : OPERATOR do Design, unica responsavel por UMA tarefa BACKLOG do
            Design. Lente hoje = {Design, raiz}.
-    `ator`: ADMIN da raiz, quem executa as tres operacoes.
+    `ator`: ADMIN da raiz, quem executa as operacoes.
 
 SABOTAGEM DESTA FATIA (executada, resultado no handoff):
     Remover a chamada INTEIRA a `_assert_nao_deixa_orfa` do
@@ -140,39 +145,6 @@ async def _mundo(db, *, papel_da_gi: str = "OPERATOR", com_tarefa: bool = True):
     }
 
 
-# ------------------------------------------------------- 1. mover de subtime
-
-
-async def test_mover_de_subtime_barra(db) -> None:
-    """⚠️ O GATILHO COM CLIENTE REAL.
-
-    As 33 tarefas nao-terminais de subtime com um responsavel so (30 delas em
-    duas pessoas, medido em 06/08) sao exatamente este caso.
-    """
-    m = await _mundo(db)
-    async with _client(db, m["ctx"]) as cli:
-        r = await cli.post(
-            f"/api/v1/members/{m['gi']}/move-subteam",
-            json={"from_team_id": str(m["design"]), "to_team_id": str(m["seo"])},
-        )
-
-    assert r.status_code == 422, r.text
-    assert r.json()["error"]["details"]["acao"] == "move_member_subteam"
-
-
-async def test_mover_de_subtime_passa_quando_nao_ha_tarefa(db) -> None:
-    """A trava nao pode virar parede: sem tarefa pendurada, a movimentacao vai."""
-    m = await _mundo(db, com_tarefa=False)
-    async with _client(db, m["ctx"]) as cli:
-        r = await cli.post(
-            f"/api/v1/members/{m['gi']}/move-subteam",
-            json={"from_team_id": str(m["design"]), "to_team_id": str(m["seo"])},
-        )
-
-    assert r.status_code == 200, r.text
-    assert uuid.UUID(r.json()["team_id"]) == m["seo"]
-
-
 # ------------------------------------------------------ 2. remover do time
 
 
@@ -192,6 +164,25 @@ async def test_remover_do_time_barra(db) -> None:
 
     assert r.status_code == 422, r.text
     assert r.json()["error"]["details"]["acao"] == "remove_member_from_team"
+
+
+async def test_remover_do_time_passa_quando_nao_ha_tarefa(db) -> None:
+    """A trava nao pode virar parede: sem tarefa pendurada, a remocao vai.
+
+    ⚠️ PORTADO DE `test_mover_de_subtime_passa_quando_nao_ha_tarefa` em
+    17/09/2026, quando a rota de mover saiu.
+    """
+    m = await _mundo(db, com_tarefa=False)
+    await f.add_member(
+        db, workspace_id=m["ws"], user_id=m["gi"], team_id=m["raiz"],
+        role="OPERATOR",
+    )
+    async with _client(db, m["ctx"]) as cli:
+        r = await cli.delete(
+            f"/api/v1/members/{m['gi']}/teams/{m['design']}"
+        )
+
+    assert r.status_code == 204, r.text
 
 
 async def test_ultimo_vinculo_continua_409_e_nao_422(db) -> None:
@@ -269,10 +260,15 @@ async def test_o_corpo_do_422_traz_a_lista_e_nao_a_contagem(db) -> None:
     esta lista pronta, nao recalcular tudo.
     """
     m = await _mundo(db)
+    # ⚠️ Pela REMOCAO desde 17/09/2026 (a rota de mover saiu). O segundo
+    # vinculo e para a trava do ultimo vinculo (409) nao responder primeiro.
+    await f.add_member(
+        db, workspace_id=m["ws"], user_id=m["gi"], team_id=m["raiz"],
+        role="OPERATOR",
+    )
     async with _client(db, m["ctx"]) as cli:
-        r = await cli.post(
-            f"/api/v1/members/{m['gi']}/move-subteam",
-            json={"from_team_id": str(m["design"]), "to_team_id": str(m["seo"])},
+        r = await cli.delete(
+            f"/api/v1/members/{m['gi']}/teams/{m['design']}"
         )
 
     assert r.status_code == 422, r.text

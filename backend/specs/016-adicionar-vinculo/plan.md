@@ -24,5 +24,9 @@ novo é só o 403 — confirmar nenhuma regressão nos testes que usam assign).
   recarregarVinculos() + onMudou(). Trata 403/409/422.
 - esbuild isolado; depois `npm run build` + smoke.
 
+> **Nota de 17/09/2026:** `web/app/membros/page.tsx` não existe mais — a rota
+> `/membros` saiu na Spec 047 (commit `3490a47`). Pessoas se administram na
+> tela do time, `web/app/times/[id]/page.tsx`.
+
 ## Ordem
 1 → 2. Parar após cada fatia pra você testar/commitar, como sempre.

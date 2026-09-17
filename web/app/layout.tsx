@@ -48,7 +48,10 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="pt-BR" className={raleway.variable}>
+    // `suppressHydrationWarning`: o script abaixo poe `data-theme` no <html>
+    // antes de o React hidratar, e o React avisava da diferenca a cada pagina.
+    // Vale so para os atributos DESTA tag, nao para os filhos.
+    <html lang="pt-BR" className={raleway.variable} suppressHydrationWarning>
       <head>
         {/*
           Aplica o tema ANTES da primeira pintura. Sem isto a pagina nasce

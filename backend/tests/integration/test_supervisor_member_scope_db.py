@@ -276,20 +276,6 @@ async def test_supervisor_nao_desativa_conta(db) -> None:
             await MemberService(db).deactivate_member(user_id=c["op"])
 
 
-async def test_supervisor_nao_move_entre_subtimes(db) -> None:
-    """Mover toca o subtime de ORIGEM, que nao e do ator -> viola D1."""
-    c = await _cenario(db)
-    with _como_supervisor(c, subtime_key="crm", ator_key="sup_crm"):
-        await MemberService(db).assign_to_team(
-            user_id=c["op"], team_id=c["crm"], role=UserTeamRole.OPERATOR
-        )
-    with _como_supervisor(c):
-        with pytest.raises(AuthorizationError):
-            await MemberService(db).move_member_subteam(
-                user_id=c["op"], from_team_id=c["crm"], to_team_id=c["seo"]
-            )
-
-
 # ----------------------------------------------------- sem regressao
 
 

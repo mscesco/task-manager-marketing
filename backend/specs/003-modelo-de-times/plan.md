@@ -91,6 +91,10 @@ tests/test_team_scope.py
 - fluxo de membros (users/workspaces) — invariante de subtime.
 - `tests/test_tasks.py` — casos novos.
 
+> **Nota de 17/09/2026:** nunca houve módulo `app/modules/projects`. Projeto
+> mora em `app/modules/tasks`: `api/projects_router.py`, `api/schemas.py`
+> (onde está o `ProjectResponse`) e `application/project_service.py`.
+
 ## Como verificar
 
 ```

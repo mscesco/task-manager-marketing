@@ -1072,7 +1072,7 @@ export async function quadroGeralComIndice(teamId: string | null): Promise<{
 // nas fatias 5b-3 e 5b-4; estas funcoes existem para a tela que os consome, e
 // sao entregues JUNTO com ela de proposito -- o projeto ja tem duas cicatrizes
 // de codigo sem leitor nesta mesma spec (`is_default_target` ate a 4c,
-// `corEhHex` ate hoje).
+// `corEhHex`, que saiu sem nunca ter tido um).
 //
 // ⚠️ AS ROTAS DE COLUNA SAO ANINHADAS, e isso e trava e nao estetica. A
 // autorizacao no backend acontece sobre o TIME DO QUADRO, e o servico confere
@@ -1146,33 +1146,6 @@ export async function renameBoard(
   });
 }
 
-/**
- * Acrescenta uma coluna ao FIM de um quadro avulso.
- *
- * ⚠️ SO NOME E SEMANTICA. Cor, posicao, `is_default_target` e `legacy_status`
- * nao sao parametro no backend, e cada um por um motivo diferente -- ver
- * `BoardService.criar_coluna`. Mandar qualquer um deles nao daria erro (o
- * Pydantic descarta chave desconhecida), e a tela ficaria com a impressao de
- * ter escolhido algo que ninguem leu.
- */
-export async function criarColuna(
-  boardId: string,
-  input: { name: string; semantic: Coluna["semantic"] }
-): Promise<Coluna> {
-  return api<Coluna>(`/api/v1/boards/${boardId}/columns`, {
-    method: "POST",
-    body: input,
-  });
-}
-
-/**
- * Renomeia uma coluna.
- *
- * ⚠️ SEMANTICA NAO SE EDITA. Ela decide cascata de conclusao, varredura de
- * arquivamento, proporcao da checklist e aviso de prazo -- os quatro em
- * silencio. Trocar a semantica de uma coluna com tarefas dentro mudaria o
- * significado das tarefas sem tocar em nenhuma delas.
- */
 /** Uma coluna a nascer no lote. `tmp` e apelido do cliente, nao id. */
 export type LoteCriar = {
   tmp: string;
@@ -1277,23 +1250,13 @@ export async function aplicarLoteDeColunas(
   );
 }
 
-export async function renomearColuna(
-  boardId: string,
-  columnId: string,
-  name: string
-): Promise<Coluna> {
-  return api<Coluna>(`/api/v1/boards/${boardId}/columns/${columnId}`, {
-    method: "PATCH",
-    body: { name },
-  });
-}
-
 /**
  * Uma coluna com quantas tarefas VIVAS ela tem. E o numero do aviso de apagar.
  *
  * ⚠️ ELE ENVELHECE, e a tela tem de aceitar isso. Alguem pode mover uma tarefa
- * para ca entre esta chamada e o `DELETE`. O que o `DELETE` devolve e quantas
- * REALMENTE moveram -- se os dois numeros divergirem, quem mente e o aviso.
+ * para ca entre esta chamada e o lote. O que o lote devolve (`movidas`) e
+ * quantas REALMENTE moveram -- se os dois numeros divergirem, quem mente e o
+ * aviso.
  *
  * ⚠️ NAO CONTA APAGADAS e CONTA ARQUIVADAS. E o numero que a PESSOA ve; tarefa
  * apagada nao existe para ela. O movimento leva as apagadas junto por causa da
@@ -1306,34 +1269,6 @@ export async function colunaComContagem(
   return api<ColunaComContagem>(
     `/api/v1/boards/${boardId}/columns/${columnId}`
   );
-}
-
-/**
- * Apaga uma coluna, mandando as tarefas dela para `destinoId`.
- *
- * Devolve quantas tarefas VIVAS foram movidas.
- *
- * ⚠️ `destino_id` VAI NA QUERY STRING, e nao no corpo. `DELETE` com corpo e
- * descartado por parte da infraestrutura de rede -- e quando o corpo se perde,
- * o backend para de mover tarefa e passa a recusar por falta de destino, que e
- * um 422 sem causa aparente.
- *
- * ⚠️ DUAS RECUSAS DIFERENTES CHEGAM COMO 422, e a tela precisa distingui-las
- * pela mensagem: "para onde vao estas tarefas?" (falta destino) e "o quadro
- * continua funcionando depois?" (ultima coluna OPEN ou DONE). A segunda vale
- * MESMO com destino escolhido -- passar um destino nao a contorna.
- */
-export async function apagarColuna(
-  boardId: string,
-  columnId: string,
-  destinoId?: string
-): Promise<number> {
-  const query = destinoId ? `?destino_id=${encodeURIComponent(destinoId)}` : "";
-  const res = await api<{ movidas: number }>(
-    `/api/v1/boards/${boardId}/columns/${columnId}${query}`,
-    { method: "DELETE" }
-  );
-  return res.movidas;
 }
 
 
@@ -1917,27 +1852,6 @@ export async function removeMemberFromTeam(
   invalidateMembers(); // o subtime exibido na lista pode mudar
 }
 
-// Spec 015, Fatia 4: move um membro de um time para outro (B2).
-// Atomico no backend; matriz (403); 409 = mesmo time ou ja no destino.
-//
-// ⚠️ NAO PRESERVA SEMPRE O PAPEL -- esta linha dizia que sim ate a Spec 045
-// (fatia D). Mover um SUPERVISOR para a RAIZ o REBAIXA a OPERATOR, porque o
-// papel nao existe la. USE O `role` QUE VOLTA: quem assumir o de origem vai
-// desenhar um papel que nao esta no banco. `avisoDeRebaixamento` compara os
-// dois e devolve a frase para a tela.
-export async function moveMemberSubteam(
-  userId: string,
-  fromTeamId: string,
-  toTeamId: string
-): Promise<MemberTeam> {
-  const r = await api<MemberTeam>(`/api/v1/members/${userId}/move-subteam`, {
-    method: "POST",
-    body: { from_team_id: fromTeamId, to_team_id: toTeamId },
-  });
-  invalidateMembers(); // o subtime exibido na lista mudou
-  return r;
-}
-
 // Reset administrativo: gera nova senha provisoria, devolvida UMA vez
 // (team.manage). Nao invalida _members (so muda senha, nao a lista).
 /**
@@ -1983,11 +1897,6 @@ export async function deactivateMember(userId: string): Promise<Member> {
 // lista atual de user_ids da task. N responsaveis por (sub)tarefa.
 
 export type CollaboratorList = { task_id: string; user_ids: string[] };
-
-export async function listAssignees(taskId: string): Promise<string[]> {
-  const res = await api<CollaboratorList>(`/api/v1/tasks/${taskId}/assignees`);
-  return res.user_ids;
-}
 
 export async function addAssignee(
   taskId: string,
@@ -2136,7 +2045,9 @@ export type Project = {
   start_date: string | null;
   due_date: string | null;
   completed_at: string | null;
-  is_archived: boolean;
+  // ⚠️ `is_archived` SAIU daqui em 17/09: arquivar projeto deixou de existir
+  // (a rota saiu, e não havia nenhum projeto arquivado). O backend ainda manda
+  // o campo; a tela não o lê.
   team_id: string | null;
   created_by: string;
   created_at: string;
@@ -2145,7 +2056,6 @@ export type Project = {
   // do projeto -- e não `me.permissions`, que diz "o que" e nunca "onde".
   // Obrigatórios: toda resposta de projeto os traz.
   can_update: boolean;
-  can_archive: boolean;
   can_delete: boolean;
 };
 
@@ -2242,14 +2152,12 @@ export async function listProjects(
     page?: number;
     size?: number;
     status?: ProjectStatus;
-    include_archived?: boolean;
   }
 ): Promise<ProjectListResponse> {
   const q = new URLSearchParams();
   q.set("page", String(params.page ?? 1));
   q.set("size", String(params.size ?? 100));
   if (params.status) q.set("status", params.status);
-  if (params.include_archived) q.set("include_archived", "true");
   if (params.teamId) q.set("team_id", params.teamId);
   return api<ProjectListResponse>(`/api/v1/projects?${q.toString()}`);
 }
@@ -2261,7 +2169,6 @@ export async function listAllProjects(
   params: {
     teamId: string | null;
     status?: ProjectStatus;
-    include_archived?: boolean;
   }
 ): Promise<{ items: Project[]; total: number; truncated: boolean }> {
   const pageSize = 100;
@@ -2362,14 +2269,6 @@ export async function updateProject(
  */
 export async function deleteProject(id: string): Promise<Project> {
   return api<Project>(`/api/v1/projects/${id}`, { method: "DELETE" });
-}
-
-export async function archiveProject(id: string): Promise<Project> {
-  return api<Project>(`/api/v1/projects/${id}/archive`, { method: "POST" });
-}
-
-export async function unarchiveProject(id: string): Promise<Project> {
-  return api<Project>(`/api/v1/projects/${id}/unarchive`, { method: "POST" });
 }
 
 

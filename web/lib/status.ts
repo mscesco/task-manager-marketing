@@ -77,35 +77,6 @@ export const PRIORITY_COLOR: Record<string, string> = {
   URGENT: "var(--prio-urgent-text)",
 };
 
-// Cromatico da prioridade. Ainda sem call-site -- entra na C2, quando o selo
-// de prioridade vira bolinha + rotulo (Spec 031 D3). Exportado agora para o
-// par nascer junto e ninguem precisar reabrir globals.css depois.
-export const PRIORITY_DOT: Record<string, string> = {
-  LOW: "var(--prio-low-dot)",
-  MEDIUM: "var(--prio-medium-dot)",
-  HIGH: "var(--prio-high-dot)",
-  URGENT: "var(--prio-urgent-dot)",
-};
-
-// Status que "Minhas tarefas" mostra ao ABRIR (pedido da Camila, 29/07).
-//
-// COMPLETED fica de fora: a tela responde "o que eu tenho pra fazer", e o que
-// ja foi feito nao e resposta pra isso. Antes, toda visita comecava com a
-// pessoa desmarcando "Concluido" na mao.
-//
-// CANCELLED continua LIGADO de proposito, mesmo sendo terminal: cancelamento
-// costuma ser noticia ("por que isso foi cancelado?"), enquanto conclusao e
-// rotina. Se incomodar, e so incluir "CANCELLED" no Set abaixo.
-//
-// O filtro segue manual: "Todos" traz tudo de volta em um clique.
-const STATUS_OCULTOS_POR_PADRAO = new Set<string>(["COMPLETED"]);
-
-export function statusPadraoMinhasTarefas(): string[] {
-  return STATUSES.map((s) => s.key).filter(
-    (k) => !STATUS_OCULTOS_POR_PADRAO.has(k)
-  );
-}
-
 // Cor de prazo (Spec 023): laranja perto de vencer, vermelho atrasado.
 // null = sem alerta (sem prazo, arquivada, ou status terminal).
 export type DeadlineTone = "overdue" | "soon" | null;
@@ -118,23 +89,17 @@ export const DEADLINE_COLOR: Record<"overdue" | "soon", string> = {
   soon: "var(--due-soon-text)",
 };
 
-// Cromatico do prazo. Sem call-site hoje -- mesmo motivo do PRIORITY_DOT.
-export const DEADLINE_DOT: Record<"overdue" | "soon", string> = {
-  overdue: "var(--due-overdue-dot)",
-  soon: "var(--due-soon-dot)",
-};
-
 // ===========================================================================
 // SELO "PARADA HA X DIAS" (Spec 031, C2 / D6)
 // ===========================================================================
 //
 // ⚠️⚠️ ESTE BLOCO TEM DATA DE DEMOLICAO (Spec 036, fatia 4c / ADR 0040).
 //
-// `STATUS_QUE_PARAM`, `diasParado`, `deadlineTone` e
-// `statusPadraoMinhasTarefas` reimplementam a mao o que `column.semantic` e
-// `column.notify_deadline` ja dizem. Eles funcionam para os 8 status legados e
+// `deadlineTone` reimplementa a mao o que `column.semantic` e
+// `column.notify_deadline` ja dizem. Ele funciona para os 8 status legados e
 // SO para eles: coluna criada por gente nasce com `legacy_status` NULL e cai
-// fora de todos os conjuntos aqui, em silencio.
+// fora da lista aqui, em silencio. (`diasParado` e `statusPadraoMinhasTarefas`,
+// do mesmo bloco, sairam na limpeza de codigo morto: nao tinham mais leitor.)
 //
 // **As versoes por COLUNA vivem em `lib/coluna.ts`** e sao as que devem ser
 // usadas em codigo novo. Este bloco fica ate a fatia 4c migrar os quatro
@@ -156,42 +121,6 @@ export const DEADLINE_DOT: Record<"overdue" | "soon", string> = {
 // Nao existe trigger de updated_at no banco -- quem escreve e o ORM.
 export const DIAS_PARA_PARADA = 7;
 
-// Status em que parar E noticia. BACKLOG fica de fora: parado la e o estado
-// normal, nao abandono. BLOCKED tambem fica de fora (D6): bloqueio e estado
-// declarado, alguem ja sabe. Aprovacao e o caso mais bem mirado dos tres --
-// e onde some sem ninguem declarar nada.
-const STATUS_QUE_PARAM = new Set<string>([
-  "IN_PROGRESS",
-  "IN_REVIEW",
-  "EXTERNAL_APPROVAL",
-]);
-
-/**
- * Dias inteiros desde a ultima mudanca, ou `null` quando nao ha selo.
- *
- * `null` (e nao 0) para "nao se aplica": arquivada, status fora da lista, ou
- * abaixo do limiar. Quem chama testa `!= null`, sem confundir com "0 dias".
- *
- * Compara em DATA local (meia-noite), igual ao `deadlineDays` -- pelo mesmo
- * motivo registrado la. `updated_at` vem como timestamp ISO do backend.
- */
-export function diasParado(
-  updatedAt: string | null | undefined,
-  status: string,
-  isArchived: boolean
-): number | null {
-  if (!updatedAt || isArchived) return null;
-  if (!STATUS_QUE_PARAM.has(status)) return null;
-  const t = new Date(updatedAt);
-  if (Number.isNaN(t.getTime())) return null; // data suja nao vira selo
-  const desde = new Date(t.getFullYear(), t.getMonth(), t.getDate());
-  const agora = new Date();
-  const hoje = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate());
-  const dias = Math.round((hoje.getTime() - desde.getTime()) / 86400000);
-  if (dias < DIAS_PARA_PARADA) return null;
-  return dias;
-}
-
 /**
  * ⚠️ `plural` SAIU DAQUI na fatia 4a (ADR 0040). Mora em `lib/plural.ts`.
  *
@@ -201,7 +130,7 @@ export function diasParado(
  * tinha virado gaveta. Importe de `@/lib/plural`.
  */
 
-/** Rotulo do selo. So chamar quando `diasParado` != null. */
+/** Rotulo do selo. So chamar quando `diasParadoPorColuna` != null. */
 export function paradaLabel(dias: number): string {
   return `Parada há ${dias} d`;
 }

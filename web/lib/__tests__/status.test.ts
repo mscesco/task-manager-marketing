@@ -9,20 +9,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   DEADLINE_COLOR,
-  DEADLINE_DOT,
   PRIORITY_COLOR,
-  PRIORITY_DOT,
   PRIORITY_LABEL,
   STATUSES,
   STATUS_TEXT,
   DIAS_PARA_PARADA,
   dataHoraBR,
   deadlineLabel,
-  diasParado,
   paradaLabel,
   deadlineTone,
-  statusPadraoMinhasTarefas,
 } from "@/lib/status";
+import { diasParadoPorColuna, type Coluna } from "@/lib/coluna";
 
 const HOJE = "2026-06-25";
 const ONTEM = "2026-06-24";
@@ -114,37 +111,6 @@ describe("deadlineLabel", () => {
   });
 });
 
-// -------------------------------------------------------------------
-// statusPadraoMinhasTarefas -- filtro inicial da tela (29/07)
-// -------------------------------------------------------------------
-describe("statusPadraoMinhasTarefas", () => {
-  it("esconde CONCLUIDO -- a tela responde 'o que tenho pra fazer'", () => {
-    expect(statusPadraoMinhasTarefas()).not.toContain("COMPLETED");
-  });
-
-  it("mantem CANCELLED ligado -- cancelamento e noticia, conclusao e rotina", () => {
-    expect(statusPadraoMinhasTarefas()).toContain("CANCELLED");
-  });
-
-  it("mantem todos os status de trabalho em aberto", () => {
-    const padrao = statusPadraoMinhasTarefas();
-    for (const k of [
-      "BACKLOG",
-      "PLANNED",
-      "IN_PROGRESS",
-      "IN_REVIEW",
-      "EXTERNAL_APPROVAL",
-      "BLOCKED",
-    ]) {
-      expect(padrao).toContain(k);
-    }
-  });
-
-  it("esconde exatamente um status -- nao virou lista curta por acidente", () => {
-    expect(statusPadraoMinhasTarefas()).toHaveLength(7);
-  });
-});
-
 // ---------------------------------------------------------------------------
 // Spec 031 (C1a) -- cor virou token.
 //
@@ -164,9 +130,7 @@ describe("cor virou token (Spec 031)", () => {
     ...STATUSES.map((s) => s.color),
     ...Object.values(STATUS_TEXT),
     ...Object.values(PRIORITY_COLOR),
-    ...Object.values(PRIORITY_DOT),
     ...Object.values(DEADLINE_COLOR),
-    ...Object.values(DEADLINE_DOT),
   ];
 
   it("nenhum hex sobrou -- todo valor e var(--...)", () => {
@@ -176,7 +140,7 @@ describe("cor virou token (Spec 031)", () => {
   });
 
   it("nenhuma cor ficou undefined ou string vazia", () => {
-    expect(TODOS.length).toBe(8 + 8 + 4 + 4 + 2 + 2);
+    expect(TODOS.length).toBe(8 + 8 + 4 + 2);
     for (const v of TODOS) expect(v).toBeTruthy();
   });
 
@@ -194,18 +158,11 @@ describe("cor virou token (Spec 031)", () => {
     for (const s of STATUSES) {
       expect(STATUS_TEXT[s.key]).not.toBe(s.color);
     }
-    for (const p of Object.keys(PRIORITY_COLOR)) {
-      expect(PRIORITY_COLOR[p]).not.toBe(PRIORITY_DOT[p]);
-    }
-    for (const t of ["overdue", "soon"] as const) {
-      expect(DEADLINE_COLOR[t]).not.toBe(DEADLINE_DOT[t]);
-    }
   });
 
   it("prioridade tem as 4 chaves, e as mesmas nos dois mapas", () => {
     const esperado = ["HIGH", "LOW", "MEDIUM", "URGENT"];
     expect(Object.keys(PRIORITY_COLOR).sort()).toEqual(esperado);
-    expect(Object.keys(PRIORITY_DOT).sort()).toEqual(esperado);
     expect(Object.keys(PRIORITY_LABEL).sort()).toEqual(esperado);
   });
 });
@@ -216,60 +173,65 @@ describe("cor virou token (Spec 031)", () => {
 // ---------------------------------------------------------------------------
 const H = (dias: number) => new Date(2026, 5, 25 - dias, 9, 0, 0).toISOString();
 
-describe("diasParado -- quando NAO ha selo", () => {
+// ⚠️ ESTES TESTES ERAM DO `diasParado` POR STATUS, que saiu na limpeza de
+// codigo morto. A aritmetica e a mesma do `diasParadoPorColuna` (copia
+// literal), entao eles passaram a mirar a versao por coluna. Quais colunas
+// ganham selo fica com o `paridadeColuna.test.ts` ("o selo de parada sai so nas
+// tres colunas de trabalho ativo").
+const coluna = (
+  semantic: Coluna["semantic"],
+  notify_deadline = true,
+): Coluna => ({
+  id: `col-${semantic}`,
+  name: semantic,
+  color: "var(--status-progress-dot)",
+  position: 0,
+  semantic,
+  notify_deadline,
+  is_default_target: true,
+  is_status_bridge: false,
+});
+const ANDAMENTO = coluna("IN_PROGRESS");
+
+describe("diasParadoPorColuna -- quando NAO ha selo", () => {
   it("sem updated_at", () => {
-    expect(diasParado(null, "IN_PROGRESS", false)).toBeNull();
-    expect(diasParado(undefined, "IN_PROGRESS", false)).toBeNull();
+    expect(diasParadoPorColuna(ANDAMENTO, null, false)).toBeNull();
+    expect(diasParadoPorColuna(ANDAMENTO, undefined, false)).toBeNull();
   });
   it("arquivada, mesmo parada ha muito tempo", () => {
-    expect(diasParado(H(90), "IN_PROGRESS", true)).toBeNull();
+    expect(diasParadoPorColuna(ANDAMENTO, H(90), true)).toBeNull();
   });
-  it("BACKLOG nao para -- parado la e o estado normal", () => {
-    expect(diasParado(H(90), "BACKLOG", false)).toBeNull();
+  it("coluna OPEN nao para -- parado la e o estado normal", () => {
+    expect(diasParadoPorColuna(coluna("OPEN"), H(90), false)).toBeNull();
   });
-  it("BLOCKED nao para (D6) -- bloqueio e estado declarado", () => {
-    expect(diasParado(H(90), "BLOCKED", false)).toBeNull();
+  it("coluna sem aviso de prazo nao para (D6) -- o BLOCKED", () => {
+    expect(diasParadoPorColuna(coluna("IN_PROGRESS", false), H(90), false)).toBeNull();
   });
-  it("COMPLETED e CANCELLED nao param", () => {
-    expect(diasParado(H(90), "COMPLETED", false)).toBeNull();
-    expect(diasParado(H(90), "CANCELLED", false)).toBeNull();
+  it("colunas terminais nao param", () => {
+    expect(diasParadoPorColuna(coluna("DONE"), H(90), false)).toBeNull();
+    expect(diasParadoPorColuna(coluna("CANCELLED"), H(90), false)).toBeNull();
   });
   it("data invalida nao vira selo", () => {
-    expect(diasParado("nao-e-data", "IN_PROGRESS", false)).toBeNull();
+    expect(diasParadoPorColuna(ANDAMENTO, "nao-e-data", false)).toBeNull();
   });
 });
 
-describe("diasParado -- fronteira do limiar", () => {
+describe("diasParadoPorColuna -- fronteira do limiar", () => {
   it("um dia ABAIXO do limiar nao mostra", () => {
-    expect(diasParado(H(DIAS_PARA_PARADA - 1), "IN_PROGRESS", false)).toBeNull();
+    expect(diasParadoPorColuna(ANDAMENTO, H(DIAS_PARA_PARADA - 1), false)).toBeNull();
   });
   it("exatamente no limiar mostra", () => {
-    expect(diasParado(H(DIAS_PARA_PARADA), "IN_PROGRESS", false)).toBe(
+    expect(diasParadoPorColuna(ANDAMENTO, H(DIAS_PARA_PARADA), false)).toBe(
       DIAS_PARA_PARADA
     );
   });
   it("um dia ACIMA mostra o numero certo", () => {
-    expect(diasParado(H(DIAS_PARA_PARADA + 1), "IN_PROGRESS", false)).toBe(
+    expect(diasParadoPorColuna(ANDAMENTO, H(DIAS_PARA_PARADA + 1), false)).toBe(
       DIAS_PARA_PARADA + 1
     );
   });
   it("hoje mesmo nao mostra", () => {
-    expect(diasParado(H(0), "IN_PROGRESS", false)).toBeNull();
-  });
-});
-
-describe("diasParado -- os tres status que contam (D6)", () => {
-  it("IN_PROGRESS, IN_REVIEW e EXTERNAL_APPROVAL param", () => {
-    for (const st of ["IN_PROGRESS", "IN_REVIEW", "EXTERNAL_APPROVAL"]) {
-      expect(diasParado(H(12), st, false)).toBe(12);
-    }
-  });
-  it("nenhum outro status para -- lista fechada, nao aberta", () => {
-    const param = new Set(["IN_PROGRESS", "IN_REVIEW", "EXTERNAL_APPROVAL"]);
-    for (const s of STATUSES) {
-      if (param.has(s.key)) continue;
-      expect(diasParado(H(12), s.key, false)).toBeNull();
-    }
+    expect(diasParadoPorColuna(ANDAMENTO, H(0), false)).toBeNull();
   });
 });
 

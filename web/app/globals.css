@@ -260,13 +260,13 @@
   --status-cancel-dot:   #94a3b8;  --status-cancel-text:   #475569; /*  7.58 */
   --status-blocked-dot:  #ef4444;  --status-blocked-text:  #b91c1c; /*  6.47 */
 
-  --prio-low-dot:    #64748b;  --prio-low-text:    #334155; /* 10.35 */
-  --prio-medium-dot: #0ea5e9;  --prio-medium-text: #0369a1; /*  5.93 */
-  --prio-high-dot:   #f59e0b;  --prio-high-text:   #92400e; /*  7.09 */
-  --prio-urgent-dot: #ef4444;  --prio-urgent-text: #b91c1c; /*  6.47 */
+  --prio-low-text:    #334155; /* 10.35 */
+  --prio-medium-text: #0369a1; /*  5.93 */
+  --prio-high-text:   #92400e; /*  7.09 */
+  --prio-urgent-text: #b91c1c; /*  6.47 */
 
-  --due-overdue-dot:  #dc2626;  --due-overdue-text:  #b91c1c; /*  6.47 */
-  --due-soon-dot:     #f59e0b;  --due-soon-text:     #92400e; /*  7.09 */
+  --due-overdue-text:  #b91c1c; /*  6.47 */
+  --due-soon-text:     #92400e; /*  7.09 */
 
   /* Selo "parada ha X d" (C2). Token PROPRIO, mesmo tendo o valor do prazo:
      parada e estagnacao, prazo e data -- se um dia divergirem, divergem sem
@@ -309,13 +309,13 @@
   --status-cancel-dot:   #cbd5e1;  --status-cancel-text:   #cbd5e1; /* 11.22 */
   --status-blocked-dot:  #f87171;  --status-blocked-text:  #fca5a5; /*  8.78 */
 
-  --prio-low-dot:    #94a3b8;  --prio-low-text:    #cbd5e1; /* 11.22 */
-  --prio-medium-dot: #38bdf8;  --prio-medium-text: #7dd3fc; /* 9.99 */
-  --prio-high-dot:   #fbbf24;  --prio-high-text:   #fcd34d; /* 11.55 */
-  --prio-urgent-dot: #f87171;  --prio-urgent-text: #fca5a5; /*  8.78 */
+  --prio-low-text:    #cbd5e1; /* 11.22 */
+  --prio-medium-text: #7dd3fc; /* 9.99 */
+  --prio-high-text:   #fcd34d; /* 11.55 */
+  --prio-urgent-text: #fca5a5; /*  8.78 */
 
-  --due-overdue-dot:  #f87171;  --due-overdue-text:  #fca5a5; /*  8.78 */
-  --due-soon-dot:     #fbbf24;  --due-soon-text:     #fcd34d; /* 11.55 */
+  --due-overdue-text:  #fca5a5; /*  8.78 */
+  --due-soon-text:     #fcd34d; /* 11.55 */
 
   --stale-dot: #fbbf24;  --stale-text: #fcd34d; /* 11.55 */
 

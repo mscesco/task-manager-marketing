@@ -812,8 +812,8 @@ class BoardService:
         """Liga ou desliga a cobranca de prazo de UMA coluna (Spec 039, F9).
 
         ⚠️⚠️ ESTE METODO MUDA O QUE SAI DE NOTIFICACAO AMANHA, e sem deixar
-        rastro. O aviso ja estava escrito no `BoardColumnCreateRequest` desde
-        18/08 e vale repetir aqui, porque agora ele deixou de ser hipotetico:
+        rastro. O aviso estava escrito no `BoardColumnCreateRequest` (removido
+        em 17/09) desde 18/08 e vale repetir aqui, porque agora ele deixou de ser hipotetico:
         desligar a flag numa coluna que JA TEM tarefas com prazo silencia, de
         uma vez, todos os avisos daquelas tarefas -- e nao ha uma linha de
         historico dizendo quem desligou. A decisao de aceitar isso e da Camila
@@ -1166,8 +1166,8 @@ class BoardService:
         entrega propria, com o aviso de quantas tarefas mudam de estado.
 
         ⚠️ O `board_id` VEM NA ASSINATURA e nao e decorativo: ele e conferido
-        contra a coluna. Sem isso, `PATCH /boards/{A}/columns/{id-de-B}`
-        renomearia coluna do quadro B pela autorizacao do quadro A -- e a
+        contra a coluna. Sem isso, `PUT /boards/{A}/columns` com
+        `renomear: [{id-de-B}]` renomearia coluna do quadro B pela autorizacao do quadro A -- e a
         autorizacao DEPENDE do time do quadro.
         """
         tenant = require_tenant()

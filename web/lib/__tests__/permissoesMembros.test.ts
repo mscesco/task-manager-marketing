@@ -13,15 +13,11 @@
 import { describe, it, expect } from "vitest";
 import {
   alcanceDe,
-  podeGerenciarAlgo,
   podeCadastrarMembro,
   podeMoverSubtime,
-  podeAdicionarAoTime,
   podeRemoverDoTime,
-  avisoDeRebaixamento,
   papeisAtribuiveis,
   timesParaAdicionar,
-  candidatosParaAdicionar,
   temAcaoPossivel,
   type Alcance,
 } from "../permissoesMembros";
@@ -117,39 +113,6 @@ describe("acoes que a 028 NAO abriu ao supervisor", () => {
   });
 });
 
-describe("podeAdicionarAoTime", () => {
-  it("supervisor adiciona OPERATOR no proprio subtime", () => {
-    expect(podeAdicionarAoTime(SUP, SEO, "OPERATOR")).toBe(true);
-  });
-
-  it("A TRAVA D1: supervisor NAO adiciona em outro subtime", () => {
-    expect(podeAdicionarAoTime(SUP, CRM, "OPERATOR")).toBe(false);
-  });
-
-  it("supervisor nao adiciona na raiz", () => {
-    expect(podeAdicionarAoTime(SUP, RAIZ, "OPERATOR")).toBe(false);
-  });
-
-  // ⚠️⚠️ ESTE TESTE AFIRMAVA O CONTRARIO ("D2: supervisor nao atribui papel
-  // acima de OPERATOR"). A Spec 049, fatia H, revogou a D2 da Spec 028 por
-  // decisao da Camila: o supervisor cria par no proprio subtime.
-  it("fatia H: supervisor atribui SUPERVISOR no proprio subtime -- e so ate ai", () => {
-    expect(podeAdicionarAoTime(SUP, SEO, "SUPERVISOR")).toBe(true);
-    expect(podeAdicionarAoTime(SUP, CRM, "SUPERVISOR")).toBe(false);
-    expect(podeAdicionarAoTime(SUP, SEO, "MANAGER")).toBe(false);
-    expect(podeAdicionarAoTime(SUP, SEO, "ADMIN")).toBe(false);
-  });
-
-  it("alcance amplo passa em qualquer time e papel", () => {
-    expect(podeAdicionarAoTime(AMPLO, CRM, "SUPERVISOR")).toBe(true);
-    expect(podeAdicionarAoTime(AMPLO, RAIZ, "MANAGER")).toBe(true);
-  });
-
-  it("sem alcance, nada", () => {
-    expect(podeAdicionarAoTime(NADA, SEO, "OPERATOR")).toBe(false);
-  });
-});
-
 describe("podeRemoverDoTime", () => {
   // Quem tem o verbo: ADMIN, MANAGER e SUPERVISOR (Spec 049, fatia A).
   const TIRA = ["membership.create", "membership.delete"] as const;
@@ -239,53 +202,6 @@ describe("papeisAtribuiveis", () => {
   });
 });
 
-describe("avisoDeRebaixamento", () => {
-  it("papel igual -> sem aviso (o caso normal)", () => {
-    expect(avisoDeRebaixamento("OPERATOR", "OPERATOR", "Marketing")).toBeNull();
-  });
-
-  it("supervisor que virou operador -> avisa, com os dois papeis e o time", () => {
-    const aviso = avisoDeRebaixamento("SUPERVISOR", "OPERATOR", "Marketing");
-    expect(aviso).toContain("Supervisor");
-    expect(aviso).toContain("Operador");
-    expect(aviso).toContain("Marketing");
-  });
-
-  // ⚠️ A FUNCAO COMPARA, e nao reimplementa a regra do backend. Se o mapa de
-  // rebaixamento mudar la, a tela continua contando a verdade sem ser tocada
-  // -- e este teste e o que registra essa escolha.
-  it("avisa qualquer troca, e nao so a que existe hoje", () => {
-    expect(
-      avisoDeRebaixamento("MANAGER", "OPERATOR", "Marketing"),
-    ).not.toBeNull();
-  });
-});
-
-describe("candidatosParaAdicionar", () => {
-  const times = [time(RAIZ, null), time(SEO), time(CRM)];
-
-  it("⭐ Spec 044 fatia 3: quem ja tem um subtime pode receber outro", () => {
-    // O caso da redatora: ja esta em SEO, e CRM tem de continuar na lista.
-    // ⚠️ ATE A FATIA 3 ISTO ERA `[RAIZ]` -- o segundo subtime era filtrado
-    // aqui porque o backend devolvia 422. Este teste e o guardiao da
-    // ausencia daquele filtro; se alguem o reintroduzir, ele cai.
-    const oferecidos = candidatosParaAdicionar(times, [{ team_id: SEO }]);
-    expect(oferecidos.map((t) => t.id)).toEqual([RAIZ, CRM]);
-  });
-
-  it("nao oferece time onde a pessoa ja esta (seria 409)", () => {
-    const oferecidos = candidatosParaAdicionar(times, [
-      { team_id: SEO },
-      { team_id: CRM },
-    ]);
-    expect(oferecidos.map((t) => t.id)).toEqual([RAIZ]);
-  });
-
-  it("sem vinculo nenhum, oferece tudo", () => {
-    expect(candidatosParaAdicionar(times, [])).toHaveLength(3);
-  });
-});
-
 describe("timesParaAdicionar", () => {
   const times = [time(RAIZ, null), time(SEO), time(CRM)];
 
@@ -346,13 +262,5 @@ describe("temAcaoPossivel", () => {
     // Se isto virar `true`, o supervisor de SEO ganhou botao sobre gente que
     // nao e dele -- o backend recusaria com 403, mas a tela teria oferecido.
     expect(temAcaoPossivel(SUP, [CRM, "outro-qualquer"])).toBe(false);
-  });
-});
-
-describe("podeGerenciarAlgo", () => {
-  it("liga a secao de gestao para amplo e subtime, nao para nenhum", () => {
-    expect(podeGerenciarAlgo(AMPLO)).toBe(true);
-    expect(podeGerenciarAlgo(SUP)).toBe(true);
-    expect(podeGerenciarAlgo(NADA)).toBe(false);
   });
 });

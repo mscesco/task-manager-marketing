@@ -84,7 +84,7 @@ export function paraCategorias(form: FormularioPublico): Categoria[] {
     .filter((c) => c.campos.length > 0);
 }
 
-/** O mapa por slug, como o `CATEGORIA_POR_SLUG` do arquivo estático. */
+/** O mapa por slug, como o que o arquivo estático montava. */
 export function porSlug(categorias: Categoria[]): Record<string, Categoria> {
   return Object.fromEntries(categorias.map((c) => [c.slug, c]));
 }

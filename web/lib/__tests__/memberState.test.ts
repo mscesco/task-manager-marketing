@@ -11,7 +11,6 @@ import { describe, it, expect } from "vitest";
 import {
   countByState,
   memberState,
-  filterByState,
 } from "../memberState";
 import type { Member } from "../api";
 
@@ -79,27 +78,5 @@ describe("countByState", () => {
       invited: 0,
       inactive: 0,
     });
-  });
-});
-
-describe("filterByState", () => {
-  const todos = [ATIVA, CONVIDADA, INATIVA];
-
-  it("cada aba traz só o seu estado", () => {
-    expect(filterByState(todos, "active")).toEqual([ATIVA]);
-    expect(filterByState(todos, "invited")).toEqual([CONVIDADA]);
-    expect(filterByState(todos, "inactive")).toEqual([INATIVA]);
-  });
-
-  it("⚠️ `todos` NÃO é o mesmo que `ativo`", () => {
-    // ⚠️ Confundir os dois é como o inativo some da tela sem ninguém decidir
-    // que ele deveria sumir.
-    expect(filterByState(todos, "all")).toHaveLength(3);
-  });
-
-  it("não muta a lista recebida", () => {
-    const original = [...todos];
-    filterByState(todos, "all").push(pessoa("intrusa"));
-    expect(todos).toEqual(original);
   });
 });

@@ -1,4 +1,14 @@
-"""Spec 036 fatias 5b-4a/4b -- as QUATRO rotas de coluna, pelo HTTP.
+"""Spec 036 fatias 5b-4a/4b -- as rotas de coluna, pelo HTTP.
+
+⚠️⚠️ DESDE 17/09/2026 SAO DUAS ROTAS, E NAO QUATRO. `POST .../columns`,
+`PATCH` e `DELETE .../columns/{column_id}` sairam sem chamador: a tela so
+escreve coluna pelo LOTE (`PUT /boards/{id}/columns`). Os testes deste arquivo
+que exercitavam as rotas de coluna unica foram PORTADOS para o lote -- as
+regras (autorizacao, nome vazio, coluna de outro quadro, as tres recusas de
+apagar) continuam alcancaveis por ele, porque o lote delega aos mesmos metodos
+do servico. Sairam so as afirmacoes que eram da rota removida: o 201 do `POST`
+e o `destino_id` na QUERY STRING do `DELETE` (no lote o destino vai no corpo,
+em `apagar[].destino`).
 
 ⚠️ ESTE ARQUIVO NASCEU DE UMA LACUNA ADMITIDA. As rotas de coluna subiram nas
 fatias 5b-4a e 5b-4b com testes de SERVICO apenas. A matriz de autorizacao e as
@@ -11,9 +21,8 @@ certo?**
 quadro perderam `require_permission` -- decisao CERTA, a autorizacao depende do
 alvo -- e a dependencia `TenantContextDep` foi junto sem querer. Os 17 testes de
 servico ficaram VERDES o tempo todo, e as rotas teriam falhado em **100% das
-requisicoes em producao** com `missing_tenant_context`. As quatro rotas de
-coluna tem exatamente a mesma exposicao, e ate aqui nao tinham nenhum teste que
-a pegasse.
+requisicoes em producao** com `missing_tenant_context`. As rotas de coluna tem
+exatamente a mesma exposicao.
 
 ⚠️ O parametro `_: TenantContextDep` das rotas PARECE nao usado. Nao e:
 `set_tenant` roda dentro de `get_tenant_context` e nao ha middleware. Se um dia
@@ -37,12 +46,6 @@ num teste so e foram partidas em dois por isso -- medido em 12/08.
 ⚠️ ONDE A AFIRMACAO DE BANCO MORA: no teste de SERVICO, que nao tem UoW. Os
 pares "recusado + nada gravado" estao em `test_board_coluna_escrita_db.py` e
 `test_board_coluna_apagar_db.py`. Aqui a pergunta e so o STATUS.
-
-⚠️ O `DELETE` LEVA `destino_id` NA QUERY STRING, e ha um teste so para isso.
-`DELETE` com corpo e aceito pelo FastAPI e descartado por parte da
-infraestrutura de rede; quando o corpo se perde, a rota para de mover tarefa e
-passa a recusar por falta de destino -- um 422 sem causa aparente, que aparece
-em producao e nunca em desenvolvimento.
 """
 
 from __future__ import annotations
@@ -181,19 +184,31 @@ def _por_nome(colunas, nome):
     return next(c for c in colunas if c.name == nome)
 
 
-# ---------------------------------------------------------------- POST
+def _por_nome_json(colunas, nome):
+    return next(c for c in colunas if c["name"] == nome)
 
 
-async def test_supervisor_cria_coluna_e_recebe_201(db) -> None:
+def _lote(board_id) -> str:
+    return f"/api/v1/boards/{board_id}/columns"
+
+
+def _criar(nome: str, semantica: str, tmp: str = "nova") -> dict:
+    return {"criar": [{"tmp": tmp, "name": nome, "semantic": semantica}]}
+
+
+# ------------------------------------------------------- criar (pelo lote)
+
+
+async def test_supervisor_cria_coluna_pelo_lote(db) -> None:
+    """⚠️ PORTADO de `test_supervisor_cria_coluna_e_recebe_201` (17/09/2026).
+
+    O lote responde 200 com o quadro inteiro, e nao 201 com a coluna.
+    """
     c = await _setup(db)
     async with _client(db, c["ctx_sup"]) as cli:
-        r = await cli.post(
-            f"/api/v1/boards/{c['quadro'].id}/columns",
-            json={"name": "Em Revisão", "semantic": "IN_PROGRESS"},
-        )
-    assert r.status_code == 201, r.text
-    corpo = r.json()
-    assert corpo["name"] == "Em Revisão"
+        r = await cli.put(_lote(c["quadro"].id), json=_criar("Em Revisão", "IN_PROGRESS"))
+    assert r.status_code == 200, r.text
+    corpo = _por_nome_json(r.json()["colunas"], "Em Revisão")
     assert corpo["position"] == 4
     assert corpo["is_default_target"] is False
     # ⚠️ `legacy_status` NAO viaja no contrato (ADR 0033). Se ele aparecer aqui,
@@ -211,9 +226,6 @@ async def test_supervisor_cria_coluna_e_recebe_201(db) -> None:
 async def test_operator_recebe_403(db) -> None:
     """⚠️ O caso feliz sozinho nao prova autorizacao nenhuma.
 
-    Sem este par, apagar a chamada ao servico e gravar a coluna direto no router
-    deixaria o teste acima VERDE e a trava inteira sumiria.
-
     ⚠️ E NAO AFIRMA O BANCO. O "nada foi gravado" vive em
     `test_board_coluna_escrita_db.py::test_operator_nao_cria_coluna_nem_no_proprio_subtime`,
     que nao tem UoW. Aqui o rollback ao SAVEPOINT levaria a fixture junto e a
@@ -221,14 +233,11 @@ async def test_operator_recebe_403(db) -> None:
     """
     c = await _setup(db)
     async with _client(db, c["ctx_op"]) as cli:
-        r = await cli.post(
-            f"/api/v1/boards/{c['quadro'].id}/columns",
-            json={"name": "Em Revisão", "semantic": "IN_PROGRESS"},
-        )
+        r = await cli.put(_lote(c["quadro"].id), json=_criar("Em Revisão", "IN_PROGRESS"))
     assert r.status_code == 403, r.text
 
 
-async def test_coluna_no_quadro_geral_devolve_201_para_ADMIN(db) -> None:
+async def test_coluna_no_quadro_geral_devolve_200_para_ADMIN(db) -> None:
     """⚠️ INVERTIDO EM 13/08 -- antes era `..._devolve_422`.
 
     A trava por QUADRO saiu; a que ficou e a de PERMISSAO, que ja existia. Ver
@@ -236,22 +245,16 @@ async def test_coluna_no_quadro_geral_devolve_201_para_ADMIN(db) -> None:
     """
     c = await _setup(db)
     async with _client(db, c["ctx_adm"]) as cli:
-        r = await cli.post(
-            f"/api/v1/boards/{c['geral'].id}/columns",
-            json={"name": "Em Revisão", "semantic": "IN_PROGRESS"},
-        )
-    assert r.status_code == 201, r.text
-    assert r.json()["name"] == "Em Revisão"
+        r = await cli.put(_lote(c["geral"].id), json=_criar("Em Revisão", "IN_PROGRESS"))
+    assert r.status_code == 200, r.text
+    assert "Em Revisão" in [x["name"] for x in r.json()["colunas"]]
 
 
 async def test_coluna_no_quadro_geral_devolve_403_para_SUPERVISOR(db) -> None:
     """O par -- sem ele, a abertura de 13/08 teria virado abertura para todos."""
     c = await _setup(db)
     async with _client(db, c["ctx_sup"]) as cli:
-        r = await cli.post(
-            f"/api/v1/boards/{c['geral'].id}/columns",
-            json={"name": "Em Revisão", "semantic": "IN_PROGRESS"},
-        )
+        r = await cli.put(_lote(c["geral"].id), json=_criar("Em Revisão", "IN_PROGRESS"))
     assert r.status_code == 403, r.text
 
 
@@ -264,38 +267,32 @@ async def test_nome_vazio_devolve_422_e_nao_500(db) -> None:
     """
     c = await _setup(db)
     async with _client(db, c["ctx_sup"]) as cli:
-        r = await cli.post(
-            f"/api/v1/boards/{c['quadro'].id}/columns",
-            json={"name": "   ", "semantic": "IN_PROGRESS"},
-        )
+        r = await cli.put(_lote(c["quadro"].id), json=_criar("   ", "IN_PROGRESS"))
     assert r.status_code == 422, r.text
 
 
 async def test_quadro_inexistente_devolve_404(db) -> None:
     c = await _setup(db)
     async with _client(db, c["ctx_adm"]) as cli:
-        r = await cli.post(
-            f"/api/v1/boards/{uuid.uuid4()}/columns",
-            json={"name": "Em Revisão", "semantic": "IN_PROGRESS"},
-        )
+        r = await cli.put(_lote(uuid.uuid4()), json=_criar("Em Revisão", "IN_PROGRESS"))
     assert r.status_code == 404, r.text
 
 
-# --------------------------------------------------------------- PATCH
+# ---------------------------------------------------- renomear (pelo lote)
 
 
-async def test_patch_renomeia_e_nao_mexe_em_mais_nada(db) -> None:
+async def test_renomear_nao_mexe_em_mais_nada(db) -> None:
     c = await _setup(db)
     antes = _por_nome(await _colunas(db, c["quadro"].id), "Em Andamento")
     semantica, cor, posicao = antes.semantic, antes.color, antes.position
 
     async with _client(db, c["ctx_sup"]) as cli:
-        r = await cli.patch(
-            f"/api/v1/boards/{c['quadro'].id}/columns/{antes.id}",
-            json={"name": "Fazendo"},
+        r = await cli.put(
+            _lote(c["quadro"].id),
+            json={"renomear": [{"id": str(antes.id), "name": "Fazendo"}]},
         )
     assert r.status_code == 200, r.text
-    assert r.json()["name"] == "Fazendo"
+    assert "Fazendo" in [x["name"] for x in r.json()["colunas"]]
 
     await db.refresh(antes)
     assert antes.semantic is semantica
@@ -303,8 +300,8 @@ async def test_patch_renomeia_e_nao_mexe_em_mais_nada(db) -> None:
     assert antes.position == posicao
 
 
-async def test_patch_em_coluna_de_OUTRO_quadro_devolve_404(db) -> None:
-    """⚠️ A TRAVA DA ROTA ANINHADA, e o modo de falha dela e ter EXITO.
+async def test_renomear_coluna_de_OUTRO_quadro_devolve_404(db) -> None:
+    """⚠️ A TRAVA DO `board_id` NA URL, e o modo de falha dela e ter EXITO.
 
     A autorizacao acontece sobre o time do quadro da URL. Sem o `board_id` no
     WHERE de `_coluna_do_quadro`, quem administra o quadro do SEO renomeia
@@ -315,9 +312,9 @@ async def test_patch_em_coluna_de_OUTRO_quadro_devolve_404(db) -> None:
     # esta desanexado e `db.refresh` estoura com `InvalidRequestError`.
     alheia_id = _por_nome(await _colunas(db, c["geral"].id), "Bloqueado").id
     async with _client(db, c["ctx_sup"]) as cli:
-        r = await cli.patch(
-            f"/api/v1/boards/{c['quadro'].id}/columns/{alheia_id}",
-            json={"name": "Invadida"},
+        r = await cli.put(
+            _lote(c["quadro"].id),
+            json={"renomear": [{"id": str(alheia_id), "name": "Invadida"}]},
         )
     assert r.status_code == 404, r.text
 
@@ -349,57 +346,19 @@ async def test_get_devolve_a_contagem_de_tarefas(db) -> None:
     assert r.json()["name"] == "Em Andamento"
 
 
-# -------------------------------------------------------------- DELETE
+# ------------------------------------------------------ apagar (pelo lote)
 
 
-async def test_delete_de_coluna_vazia_devolve_zero_movidas(db) -> None:
+async def test_apagar_coluna_vazia_devolve_zero_movidas(db) -> None:
     c = await _setup(db)
     cancelado = _por_nome(await _colunas(db, c["quadro"].id), "Cancelado")
     async with _client(db, c["ctx_sup"]) as cli:
-        r = await cli.delete(
-            f"/api/v1/boards/{c['quadro'].id}/columns/{cancelado.id}"
+        r = await cli.put(
+            _lote(c["quadro"].id), json={"apagar": [{"id": str(cancelado.id)}]}
         )
     assert r.status_code == 200, r.text
     assert r.json()["movidas"] == 0
     assert len(await _colunas(db, c["quadro"].id)) == 3
-
-
-async def test_delete_leva_o_destino_na_QUERY_STRING(db) -> None:
-    """⚠️ O TESTE QUE PROVA QUE O DESTINO CHEGA.
-
-    `destino_id` no corpo seria aceito pelo FastAPI e descartado por parte da
-    infraestrutura de rede. Quando o corpo se perde, esta rota para de mover
-    tarefa e passa a devolver 422 por falta de destino -- em producao, e nunca
-    em desenvolvimento.
-    """
-    c = await _setup(db)
-    colunas = await _colunas(db, c["quadro"].id)
-    andamento = _por_nome(colunas, "Em Andamento")
-    cancelado = _por_nome(colunas, "Cancelado")
-    tarefa = await f.make_task(
-        db,
-        workspace_id=c["ws"],
-        created_by=c["sup"],
-        team_id=c["seo"],
-        title="Uma",
-        status=TaskStatus.BACKLOG,
-        board_id=c["quadro"].id,
-    )
-    tarefa.column_id = andamento.id
-    await db.flush()
-
-    async with _client(db, c["ctx_sup"]) as cli:
-        r = await cli.delete(
-            f"/api/v1/boards/{c['quadro'].id}/columns/{andamento.id}"
-            f"?destino_id={cancelado.id}"
-        )
-    assert r.status_code == 200, r.text
-    assert r.json()["movidas"] == 1
-
-    await db.refresh(tarefa)
-    assert tarefa.column_id == cancelado.id
-    # ⚠️ E o status foi reescrito pela coluna que RECEBEU (ADR 0042 D2).
-    assert tarefa.status is TaskStatus.CANCELLED
 
 
 async def _com_tarefa(db, c, coluna):
@@ -418,22 +377,45 @@ async def _com_tarefa(db, c, coluna):
     return tarefa
 
 
+async def test_apagar_leva_as_tarefas_para_o_destino(db) -> None:
+    """⚠️ PORTADO de `test_delete_leva_o_destino_na_QUERY_STRING` (17/09/2026).
+
+    A metade "query string" morreu com o `DELETE`; a que fica e o destino
+    ATRAVESSAR schema -> router -> servico, e o status ser reescrito pela
+    coluna que recebeu.
+    """
+    c = await _setup(db)
+    colunas = await _colunas(db, c["quadro"].id)
+    andamento = _por_nome(colunas, "Em Andamento")
+    cancelado = _por_nome(colunas, "Cancelado")
+    tarefa = await _com_tarefa(db, c, andamento)
+
+    async with _client(db, c["ctx_sup"]) as cli:
+        r = await cli.put(
+            _lote(c["quadro"].id),
+            json={"apagar": [{"id": str(andamento.id), "destino": str(cancelado.id)}]},
+        )
+    assert r.status_code == 200, r.text
+    assert r.json()["movidas"] == 1
+
+    await db.refresh(tarefa)
+    assert tarefa.column_id == cancelado.id
+    # ⚠️ E o status foi reescrito pela coluna que RECEBEU (ADR 0042 D2).
+    assert tarefa.status is TaskStatus.CANCELLED
+
+
 async def test_sem_destino_devolve_422_com_o_codigo_do_DESTINO(db) -> None:
     """A primeira das duas recusas: "para onde vao estas tarefas?" (0042 D5).
 
-    ⚠️ UMA REQUISICAO RECUSADA POR TESTE, e a regra vale para o arquivo
-    inteiro. A versao anterior fazia as DUAS no mesmo bloco de cliente e caía
-    com `MissingGreenlet`: o rollback ao SAVEPOINT da primeira deixa a sessao
-    num estado que a segunda nao atravessa. Todos os outros doze testes daqui
-    ja faziam uma so -- este era o unico fora do padrao, e foi o unico a cair.
+    ⚠️ UMA REQUISICAO RECUSADA POR TESTE -- ver o cabecalho do modulo.
     """
     c = await _setup(db)
     andamento = _por_nome(await _colunas(db, c["quadro"].id), "Em Andamento")
     await _com_tarefa(db, c, andamento)
 
     async with _client(db, c["ctx_sup"]) as cli:
-        r = await cli.delete(
-            f"/api/v1/boards/{c['quadro'].id}/columns/{andamento.id}"
+        r = await cli.put(
+            _lote(c["quadro"].id), json={"apagar": [{"id": str(andamento.id)}]}
         )
 
     assert r.status_code == 422, r.text
@@ -459,9 +441,9 @@ async def test_ultima_OPEN_devolve_422_MESMO_com_destino_escolhido(db) -> None:
     await _com_tarefa(db, c, backlog)
 
     async with _client(db, c["ctx_sup"]) as cli:
-        r = await cli.delete(
-            f"/api/v1/boards/{c['quadro'].id}/columns/{backlog.id}"
-            f"?destino_id={andamento.id}"
+        r = await cli.put(
+            _lote(c["quadro"].id),
+            json={"apagar": [{"id": str(backlog.id), "destino": str(andamento.id)}]},
         )
 
     assert r.status_code == 422, r.text
@@ -471,7 +453,7 @@ async def test_ultima_OPEN_devolve_422_MESMO_com_destino_escolhido(db) -> None:
     assert CODIGO_SEM_DESTINO != CODIGO_SEMANTICA_OBRIGATORIA
 
 
-async def test_delete_de_coluna_COM_PONTE_no_geral_devolve_422(db) -> None:
+async def test_apagar_coluna_COM_PONTE_no_geral_devolve_422(db) -> None:
     """⚠️ ESTREITADO EM 13/08 -- antes valia para qualquer coluna do geral.
 
     ⚠️ O `code` E O QUE A TELA LE, e nao a mensagem. Ele existe para o front
@@ -481,14 +463,14 @@ async def test_delete_de_coluna_COM_PONTE_no_geral_devolve_422(db) -> None:
     c = await _setup(db)
     alguma = _por_nome(await _colunas(db, c["geral"].id), "Bloqueado")
     async with _client(db, c["ctx_adm"]) as cli:
-        r = await cli.delete(
-            f"/api/v1/boards/{c['geral'].id}/columns/{alguma.id}"
+        r = await cli.put(
+            _lote(c["geral"].id), json={"apagar": [{"id": str(alguma.id)}]}
         )
     assert r.status_code == 422, r.text
     assert r.json()["error"]["code"] == "coluna_ponte_obrigatoria"
 
 
-async def test_delete_por_supervisor_de_subtime_alheio_devolve_403(db) -> None:
+async def test_apagar_por_supervisor_de_subtime_alheio_devolve_403(db) -> None:
     c = await _setup(db)
     with acting_as(
         workspace_id=c["ws"],
@@ -504,8 +486,8 @@ async def test_delete_por_supervisor_de_subtime_alheio_devolve_403(db) -> None:
 
     # O contexto e o do supervisor do SEO.
     async with _client(db, c["ctx_sup"]) as cli:
-        r = await cli.delete(
-            f"/api/v1/boards/{quadro_crm.id}/columns/{cancelado.id}"
+        r = await cli.put(
+            _lote(quadro_crm.id), json={"apagar": [{"id": str(cancelado.id)}]}
         )
     assert r.status_code == 403, r.text
 
@@ -528,12 +510,9 @@ async def test_PUT_columns_troca_o_alvo_e_devolve_200(db) -> None:
     c = await _setup(db)
     quadro = c["quadro"]
     async with _client(db, c["ctx_sup"]) as cli:
-        nova = await cli.post(
-            f"/api/v1/boards/{quadro.id}/columns",
-            json={"name": "Ideias", "semantic": "OPEN"},
-        )
-        assert nova.status_code == 201, nova.text
-        nova_id = nova.json()["id"]
+        nova = await cli.put(_lote(quadro.id), json=_criar("Ideias", "OPEN"))
+        assert nova.status_code == 200, nova.text
+        nova_id = _por_nome_json(nova.json()["colunas"], "Ideias")["id"]
 
         r = await cli.put(
             f"/api/v1/boards/{quadro.id}/columns",
@@ -556,11 +535,8 @@ async def test_PUT_columns_troca_alvo_E_apaga_a_antiga(db) -> None:
     backlog = _por_nome(await _colunas(db, quadro.id), "Backlog")
 
     async with _client(db, c["ctx_sup"]) as cli:
-        nova = await cli.post(
-            f"/api/v1/boards/{quadro.id}/columns",
-            json={"name": "Ideias", "semantic": "OPEN"},
-        )
-        nova_id = nova.json()["id"]
+        nova = await cli.put(_lote(quadro.id), json=_criar("Ideias", "OPEN"))
+        nova_id = _por_nome_json(nova.json()["colunas"], "Ideias")["id"]
 
         r = await cli.put(
             f"/api/v1/boards/{quadro.id}/columns",

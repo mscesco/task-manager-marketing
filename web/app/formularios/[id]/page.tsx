@@ -19,6 +19,7 @@ import { useParams } from "next/navigation";
 import AppShell from "@/components/AppShell";
 import PageHeader from "@/components/PageHeader";
 import Loading from "@/components/Loading";
+import { useAvisar } from "@/components/Toasts";
 import { withTeam } from "@/lib/activeTeam";
 import {
   ApiError,
@@ -694,6 +695,7 @@ function Pergunta({
   aoMover: (passo: number) => void;
 }) {
   const [aberta, setAberta] = useState(false);
+  const avisar = useAvisar();
 
   const gatilho = pergunta.show_if_question_id
     ? secao.questions.find((q) => q.id === pergunta.show_if_question_id)
@@ -707,11 +709,11 @@ function Pergunta({
     // descobrir por uma caixa vermelha depois do clique é pior do que ler o
     // motivo antes.
     if (dependentes.length > 0) {
-      window.alert(
-        `Não dá para excluir “${pergunta.label}” agora.\n\n` +
-          `Estas perguntas só aparecem por causa dela:\n` +
-          dependentes.map((d) => `• ${d.label}`).join("\n") +
-          `\n\nTire a condição delas primeiro.`
+      avisar(
+        `Não dá para excluir “${pergunta.label}”: ` +
+          dependentes.map((d) => `“${d.label}”`).join(", ") +
+          ` só aparece${dependentes.length === 1 ? "" : "m"} por causa dela. ` +
+          "Tire a condição primeiro."
       );
       return;
     }

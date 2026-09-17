@@ -26,6 +26,14 @@ import {
 import TaskModal from "@/components/TaskModal";
 import type { Member, Task } from "@/lib/api";
 
+// ⚠️ Os avisos saíram de `window.alert` para a pilha do app (17/09). O teste
+// espia o `useAvisar` em vez de montar o `AvisosProvider`.
+const avisar = vi.hoisted(() => vi.fn());
+vi.mock("@/components/Toasts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/components/Toasts")>()),
+  useAvisar: () => avisar,
+}));
+
 vi.mock("@/lib/api", async (importOriginal) => {
   const real = await importOriginal<typeof import("@/lib/api")>();
   return {
@@ -438,7 +446,7 @@ describe("TaskModal -- avisos pós-cópia", () => {
       skipped_assignees: [],
       promoted_to_root: true,
     });
-    const alerta = vi.spyOn(window, "alert").mockImplementation(() => {});
+    const alerta = avisar;
     abrir();
     await waitFor(() => {
       expect(screen.getByText("Duplicar tarefa")).toBeTruthy();
@@ -448,12 +456,11 @@ describe("TaskModal -- avisos pós-cópia", () => {
       expect(alerta).toHaveBeenCalled();
     });
     expect(alerta.mock.calls[0][0]).toContain("tarefa de topo");
-    alerta.mockRestore();
   });
 
   it("cala quando não há nada a avisar", async () => {
     montar();
-    const alerta = vi.spyOn(window, "alert").mockImplementation(() => {});
+    const alerta = avisar;
     abrir();
     await waitFor(() => {
       expect(screen.getByText("Duplicar tarefa")).toBeTruthy();
@@ -463,7 +470,6 @@ describe("TaskModal -- avisos pós-cópia", () => {
       expect(api.duplicateTask).toHaveBeenCalled();
     });
     expect(alerta).not.toHaveBeenCalled();
-    alerta.mockRestore();
   });
 
   it("UM alerta só quando os dois avisos acontecem juntos", async () => {
@@ -474,7 +480,7 @@ describe("TaskModal -- avisos pós-cópia", () => {
       skipped_assignees: [SUMIDO],
       promoted_to_root: true,
     });
-    const alerta = vi.spyOn(window, "alert").mockImplementation(() => {});
+    const alerta = avisar;
     abrir();
     await waitFor(() => {
       expect(screen.getByText("Duplicar tarefa")).toBeTruthy();
@@ -486,7 +492,6 @@ describe("TaskModal -- avisos pós-cópia", () => {
     const texto = alerta.mock.calls[0][0] as string;
     expect(texto).toContain("tarefa de topo");
     expect(texto).toContain("Sumido");
-    alerta.mockRestore();
   });
 });
 

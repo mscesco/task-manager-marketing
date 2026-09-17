@@ -59,10 +59,10 @@ _TZ_SP = ZoneInfo("America/Sao_Paulo")
 # terceiro sai pela flag `notify_deadline`.
 #
 # ⚠️ A ADR 0030 PROMETEU QUE UM TIME CRIARIA "Aguardando cliente" SEM CODIGO
-# NOVO, E ISSO AINDA NAO E VERDADE (18/08). Esta consulta RESPEITA a flag, mas
-# nao ha caminho de produto que a ESCREVA: `criar_coluna` crava `True`. Coluna
-# nova nasce cobrando prazo. O porque de estar assim -- decisao de 13/08 -- e a
-# lista do que custaria mudar estao em `BoardColumnCreateRequest`.
+# NOVO. Ate 22/08 nao era verdade: esta consulta respeitava a flag e nada a
+# escrevia. Desde a Spec 039 (F9) o LOTE de colunas a escreve
+# (`ColunaParaCriar.notify_deadline`, `ColunaParaAvisar`) -- ver
+# `BoardService.definir_aviso_de_prazo`.
 _SEMANTICAS_TERMINAIS_SQL: Final = tuple(
     sorted(TERMINAL_SEMANTICS, key=lambda s: s.value)
 )

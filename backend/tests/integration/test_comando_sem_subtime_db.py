@@ -14,13 +14,14 @@ que a pessoa "esta em" um braco especifico.
 nos seletores de subtime SEM vinculo la. Sem isso, esta trava tiraria gente
 dos seletores e seria revogada em uma semana.
 
-⚠️⚠️ AS TRES PORTAS CHEGAM AO MESMO ESTADO POR CAMINHOS DIFERENTES, e a do
-meio e a que ninguem lembra:
+⚠️⚠️ AS PORTAS CHEGAM AO MESMO ESTADO POR CAMINHOS DIFERENTES, e a segunda
+e a que ninguem lembra:
 
     assign_to_team      -- adiciona a gerente a um subtime      (obvio)
     change_member_role  -- PROMOVE na raiz quem ja tem subtime  (NAO obvio:
                            a operacao nao menciona subtime nenhum)
-    move_member_subteam -- move para um subtime da arvore dela  (obvio)
+
+(Havia uma terceira, `move_member_subteam`, que saiu com a rota em 17/09/2026.)
 
 ⚠️⚠️ ESTE ARQUIVO NAO PROVA A PARTE MAIS FACIL DE ERRAR DA REGRA, e isso e
 deliberado: "comando **nesta** arvore" versus "comando em qualquer lugar" so
@@ -82,7 +83,7 @@ def _como_admin(ws, marketing, admin):
 
 
 # ------------------------------------------------------------------
-# As tres portas
+# As portas
 # ------------------------------------------------------------------
 async def test_manager_da_raiz_nao_entra_em_subtime_dela(db) -> None:
     """⭐ Porta 2 (`assign_to_team`) -- o caso exato que a Camila descreveu."""
@@ -125,23 +126,6 @@ async def test_promover_na_raiz_quem_ja_tem_subtime_e_recusado(db) -> None:
         with pytest.raises(BusinessRuleError):
             await MemberService(db).change_member_role(
                 user_id=alvo, team_id=marketing, new_role=UserTeamRole.MANAGER
-            )
-
-
-async def test_mover_para_subtime_com_comando_na_raiz_e_recusado(db) -> None:
-    """Porta 4 (`move_member_subteam`)."""
-    ws, marketing, seo, social, admin, alvo = await _mundo(db)
-    await f.add_member(
-        db, workspace_id=ws, user_id=alvo, team_id=marketing, role="MANAGER"
-    )
-    await f.add_member(
-        db, workspace_id=ws, user_id=alvo, team_id=social, role="OPERATOR"
-    )
-
-    with _como_admin(ws, marketing, admin):
-        with pytest.raises(BusinessRuleError):
-            await MemberService(db).move_member_subteam(
-                user_id=alvo, from_team_id=social, to_team_id=seo
             )
 
 

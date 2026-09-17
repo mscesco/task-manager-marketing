@@ -29,7 +29,15 @@
 // ⚠️ MORA EM `components/`, então tem guardião — `app/` fica fora do
 // `include` do vitest.
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { X } from "lucide-react";
 
@@ -68,6 +76,40 @@ export function useToasts(): {
   }, []);
 
   return { toasts, avisar, dispensar };
+}
+
+const AvisarContext = createContext<((text: string) => void) | null>(null);
+
+/**
+ * A pilha UNICA do app, montada no `AppShell` (17/09).
+ *
+ * ⚠️ POR QUE UMA SÓ, e não uma por tela: quem avisa muitas vezes FECHA logo
+ * depois -- o modal de duplicar avisa "Cópia criada" e se fecha, o detalhe
+ * exclui a tarefa e some. Uma pilha dentro deles desmontaria junto com o
+ * aviso. E duas pilhas vivas ao mesmo tempo (a da tela do time e a do detalhe
+ * aberto por cima) se desenhariam uma sobre a outra no mesmo canto.
+ */
+export function AvisosProvider({ children }: { children: ReactNode }) {
+  const { toasts, avisar, dispensar } = useToasts();
+  return (
+    <AvisarContext.Provider value={avisar}>
+      {children}
+      <Toasts toasts={toasts} onDismiss={dispensar} />
+    </AvisarContext.Provider>
+  );
+}
+
+const NAO_AVISA = () => {};
+
+/**
+ * Põe um aviso na pilha do app.
+ *
+ * ⚠️ SEM `AvisosProvider` por cima NÃO AVISA NADA, em vez de estourar: é o
+ * caso dos testes que montam um componente sozinho. Teste que afirma um aviso
+ * precisa envolver o componente no provider.
+ */
+export function useAvisar(): (text: string) => void {
+  return useContext(AvisarContext) ?? NAO_AVISA;
 }
 
 export default function Toasts({

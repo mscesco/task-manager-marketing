@@ -20,8 +20,8 @@
  * justamente o mundo em que as regras por status estão erradas — não há com o
  * que comparar. Os casos de coluna nova estão em `coluna.test.ts`.
  *
- * ⚠️ RELÓGIO FAKE OBRIGATÓRIO (Spec 027, D7): `deadlineDays` e `diasParado`
- * chamam `new Date()`. Sem fixar o relógio, este arquivo passaria hoje e
+ * ⚠️ RELÓGIO FAKE OBRIGATÓRIO (Spec 027, D7): `deadlineDays` e
+ * `diasParadoPorColuna` chamam `new Date()`. Sem fixar o relógio, este arquivo passaria hoje e
  * quebraria amanhã. Meio-dia LOCAL de propósito (construtor com componentes,
  * não string ISO): string ISO com Z seria interpretada em UTC e a virada de
  * dia dependeria do fuso da máquina. Mesmo padrão do `status.test.ts`.
@@ -29,7 +29,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { deadlineTone, diasParado, statusPadraoMinhasTarefas } from "@/lib/status";
+import { deadlineTone } from "@/lib/status";
 import {
   colunasPadraoMinhasTarefas,
   deadlineTonePorColuna,
@@ -150,38 +150,14 @@ describe("deadlineTone — paridade caso a caso", () => {
   }
 });
 
-describe("diasParado — paridade caso a caso", () => {
-  for (const { status, coluna } of PADRAO) {
-    it(`${status}: parada há muito responde igual`, () => {
-      expect(diasParadoPorColuna(coluna, PARADA_HA_MUITO, false)).toBe(
-        diasParado(PARADA_HA_MUITO, status, false)
-      );
-    });
-
-    it(`${status}: mexida agora responde igual`, () => {
-      const agora = new Date().toISOString();
-      expect(diasParadoPorColuna(coluna, agora, false)).toBe(
-        diasParado(agora, status, false)
-      );
-    });
-
-    it(`${status}: arquivada responde igual`, () => {
-      expect(diasParadoPorColuna(coluna, PARADA_HA_MUITO, true)).toBe(
-        diasParado(PARADA_HA_MUITO, status, true)
-      );
-    });
-  }
-});
-
 // ---------------------------------------------------------------------------
 
 describe("o filtro padrão de /minhas-tarefas", () => {
-  it("esconde as mesmas colunas que o padrão por status escondia", () => {
-    // ⚠️ Compara CONJUNTOS traduzidos, não listas: a versão por status devolve
-    // chaves de status e a por coluna devolve `id` de coluna. O que tem de
-    // bater é QUAIS colunas ficam ligadas, não em que formato.
-    const porStatus = new Set(statusPadraoMinhasTarefas());
-    const esperado = PADRAO.filter((p) => porStatus.has(p.status)).map(
+  it("esconde só Concluído, como o padrão por status escondia", () => {
+    // ⚠️ O padrão por status (`statusPadraoMinhasTarefas`, que saiu na limpeza
+    // de código morto) escondia só COMPLETED. A lista fica escrita aqui para o
+    // comportamento não mudar calado. Compara CONJUNTOS de `id` de coluna.
+    const esperado = PADRAO.filter((p) => p.status !== "COMPLETED").map(
       (p) => p.coluna.id
     );
     const obtido = colunasPadraoMinhasTarefas(PADRAO.map((p) => p.coluna));

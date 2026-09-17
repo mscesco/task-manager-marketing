@@ -55,6 +55,10 @@ Corrigido na C2: amber-800 (`#92400e`) e green-800 (`#166534`). O comentário no
 | `fontSize` inline | **215**, em **16 tamanhos distintos** (o `@theme` declara 6) |
 | `borderRadius` inline | 7 valores distintos (o `@theme` declara 3) |
 
+> **Nota de 17/09/2026:** as medidas são da época desta spec.
+> `membros/page.tsx` não existe mais — a rota `/membros` saiu na Spec 047
+> (commit `3490a47`).
+
 A Spec 018 §4 estabeleceu a escala; o `globals.css` documenta a duplicação como
 "proposital e **temporária**". O temporário virou a arquitetura. Esta spec
 **não** ataca os 477 — só o subconjunto que produzia erro visível: cor.

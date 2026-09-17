@@ -165,6 +165,13 @@ sem banco; espelha o teste que já existe do balde por IP):
 4. `test_destrava_sozinho_ao_fim_da_janela` (critério 11)
 5. `test_balde_por_ip_continua_valendo` (critério 12)
 6. `test_email_com_maiuscula_cai_no_mesmo_balde`
+
+> **Nota de 17/09/2026:** `backend/tests/test_account_rate_limit.py` não foi
+> criado com esse nome. Os testes saíram em dois arquivos e com outros nomes:
+> os unitários do balde por conta em `backend/tests/test_rate_limit.py`, e os
+> que batem na rota de login em
+> `backend/tests/integration/test_account_rate_limit_db.py`.
+
 > **Sabotagens:**
 >
 > | Sabotagem | Deve ficar vermelho |

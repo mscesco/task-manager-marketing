@@ -174,34 +174,6 @@ async def test_sem_vinculo_na_raiz_o_supervisor_de_subtime_passa(db) -> None:
     assert ut.role == UserTeamRole.SUPERVISOR
 
 
-async def test_mover_entre_subtimes_com_raiz_menor_e_recusado(db) -> None:
-    """Porta 4 de 4 -- `move_member_subteam`, com cadastro LEGADO.
-
-    ⚠️ O ESTADO DE PARTIDA E INVALIDO DE PROPOSITO, e so a factory consegue
-    escreve-lo: as portas 2 e 3 ja o recusam. Ele representa o cadastro que
-    existiria se a varredura de 31/08 tivesse voltado linhas -- e a spec diz
-    que, se um dia voltar, a regra nao pode ser ligada sem decidir o que fazer
-    com essas pessoas. Este teste prende o comportamento nesse caso: mover nao
-    conserta a inversao, entao mover e recusado.
-    """
-    ws, raiz, seo, admin, alvo = await _mundo(db)
-    outro_sub = await f.make_team(
-        db, workspace_id=ws, parent_team_id=raiz, slug="midias"
-    )
-    await f.add_member(
-        db, workspace_id=ws, user_id=alvo, team_id=raiz, role="OPERATOR"
-    )
-    await f.add_member(
-        db, workspace_id=ws, user_id=alvo, team_id=seo, role="SUPERVISOR"
-    )
-
-    with _como_admin(ws, raiz, admin):
-        with pytest.raises(BusinessRuleError):
-            await MemberService(db).move_member_subteam(
-                user_id=alvo, from_team_id=seo, to_team_id=outro_sub
-            )
-
-
 async def test_supervisor_na_raiz_com_operador_no_subtime_passa(db) -> None:
     """O sentido certo (raiz maior) nunca e barrado."""
     ws, raiz, seo, admin, alvo = await _mundo(db)

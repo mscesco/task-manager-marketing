@@ -17,6 +17,11 @@ pura lógica nascem junto.
 
 **Arquivo:** `alembic/versions/0002_project_personal_flag.py`
 
+> **Nota de 17/09/2026:** esta migration não existe com esse nome. A coluna
+> `is_personal` está na baseline `alembic/versions/0001_baseline_v5.py` (o
+> `0002` de hoje é `0002_notifications.py`) e saiu em
+> `0024_sai_o_projeto_pessoal.py`.
+
 DDL:
 ```
 ALTER TABLE project ADD COLUMN is_personal BOOLEAN NOT NULL DEFAULT false;
