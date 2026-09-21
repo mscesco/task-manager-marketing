@@ -134,6 +134,11 @@ describe("CarregaFormularioPublico -- os dois erros são diferentes", () => {
     );
 
     expect(await screen.findByRole("alert")).toBeTruthy();
+    // Revisão de títulos (21/09): o aviso É a página, e tem de ser o título
+    // dela -- com `<strong>`, quem chegava por link quebrado não tinha nenhum.
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Este formulário não está disponível" })
+    ).toBeTruthy();
     expect(screen.getByText(/não existe mais, ou o endereço está errado/i)).toBeTruthy();
     expect(screen.getByText(/Peça o link a quem enviou/i)).toBeTruthy();
   });
@@ -282,7 +287,9 @@ describe("/solicitar -- a porta de entrada", () => {
     vi.mocked(api.listarFormulariosPublicos).mockResolvedValue([]);
     render(<SolicitarPage />);
 
-    expect(await screen.findByText(/Nenhum formulário disponível/i)).toBeTruthy();
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Nenhum formulário disponível" })
+    ).toBeTruthy();
     expect(screen.queryByText(/Não consegui carregar/i)).toBeNull();
   });
 

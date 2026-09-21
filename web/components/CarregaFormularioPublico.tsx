@@ -120,9 +120,12 @@ function Aviso({ titulo, texto }: { titulo: string; texto: string }) {
         background: "var(--surface)",
       }}
     >
-      <strong style={{ fontSize: 16, display: "block", marginBottom: 6 }}>
+      {/* ⚠️ `<h1>`, E NÃO `<strong>` (revisão de títulos, 21/09): este aviso É a
+          página quando algo deu errado, e com `<strong>` ela ficava sem título
+          nenhum -- justo para quem chegou por um link quebrado. */}
+      <h1 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 6px" }}>
         {titulo}
-      </strong>
+      </h1>
       <p className="muted" style={{ fontSize: 14, margin: 0, lineHeight: 1.5 }}>
         {texto}
       </p>
