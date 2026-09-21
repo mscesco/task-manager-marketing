@@ -84,9 +84,9 @@ function montar(over: Partial<Parameters<typeof SeletorDeQuadro>[0]> = {}) {
   return props;
 }
 
-/** Abre o dropdown. O gatilho é o TÍTULO -- ver `aria-label` do botão. */
+/** Abre o dropdown. O gatilho é o TÍTULO -- achado pela descrição, e não pelo nome. */
 function abrir() {
-  fireEvent.click(screen.getByRole("button", { name: /Trocar de quadro/ }));
+  fireEvent.click(screen.getByRole("button", { description: "Trocar de quadro" }));
 }
 
 describe("SeletorDeQuadro -- o gatilho é o título", () => {
@@ -96,7 +96,7 @@ describe("SeletorDeQuadro -- o gatilho é o título", () => {
     // um: `1 + 2N + 1` elementos sempre visiveis. Se alguem "consertar"
     // voltando a lista para a linha, esta linha cai.
     montar();
-    expect(screen.getByRole("button", { name: /Trocar de quadro/ })).toBeTruthy();
+    expect(screen.getByRole("button", { description: "Trocar de quadro" })).toBeTruthy();
     expect(screen.queryByRole("listbox")).toBeNull();
     expect(screen.queryByRole("option")).toBeNull();
   });
@@ -104,7 +104,7 @@ describe("SeletorDeQuadro -- o gatilho é o título", () => {
   it("o nome no gatilho é o do quadro ESCOLHIDO, e não o da lente", () => {
     montar({ selecionado: "b-pauta" });
     expect(
-      screen.getByRole("button", { name: /Trocar de quadro/ }).textContent
+      screen.getByRole("button", { description: "Trocar de quadro" }).textContent
     ).toContain("Pauta editorial");
   });
 
@@ -129,7 +129,7 @@ describe("SeletorDeQuadro -- o gatilho é o título", () => {
     // inline não CRAVA um tamanho -- que é exatamente o erro que aconteceu
     // duas vezes. O alinhamento em si continua ⚪ sem verificação.
     montar();
-    const gatilho = screen.getByRole("button", { name: /Trocar de quadro/ });
+    const gatilho = screen.getByRole("button", { description: "Trocar de quadro" });
     expect(gatilho.style.fontSize).toBe("inherit");
     expect(gatilho.style.fontWeight).toBe("inherit");
     // ⚠️ NADA de tamanho absoluto: era o `19px` que prendia o título. Não dá
@@ -144,8 +144,33 @@ describe("SeletorDeQuadro -- o gatilho é o título", () => {
     // outra pessoa. O gatilho nao pode ficar mostrando um nome que nao existe.
     montar({ selecionado: "b-que-nao-existe" });
     expect(
-      screen.getByRole("button", { name: /Trocar de quadro/ }).textContent
+      screen.getByRole("button", { description: "Trocar de quadro" }).textContent
     ).toContain("Lente do time");
+  });
+});
+
+// Revisão de títulos, 21/09. SABOTAGEM (medida): em `SeletorDeQuadro`, mover o
+// `</PageTitle>` para depois da lista de quadros. Deve cair "⚠️ a lista aberta
+// NÃO fica dentro do h1".
+describe("SeletorDeQuadro -- é o h1 da tela", () => {
+  it("o título se chama pelo nome do quadro, e não pela instrução", () => {
+    montar({ selecionado: "b-pauta" });
+    expect(screen.getByRole("heading", { level: 1, name: "Pauta editorial" })).toBeTruthy();
+  });
+
+  it("⚠️ a lista aberta NÃO fica dentro do h1", () => {
+    montar();
+    abrir();
+    const titulo = screen.getByRole("heading", { level: 1 });
+    expect(titulo.contains(screen.getByRole("listbox"))).toBe(false);
+  });
+
+  it("⚠️ o formulário de novo quadro também fica fora do h1", () => {
+    montar();
+    abrir();
+    fireEvent.click(screen.getByRole("button", { name: "+ Novo quadro" }));
+    const titulo = screen.getByRole("heading", { level: 1 });
+    expect(titulo.contains(screen.getByLabelText("Nome do novo quadro"))).toBe(false);
   });
 });
 

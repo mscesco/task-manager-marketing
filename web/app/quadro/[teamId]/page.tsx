@@ -297,7 +297,7 @@ export default function QuadroSubtimePage() {
               boardId={quadroSelecionado}
               podeEditarColunas={podeGerir}
               podeApagarColunas={apagaColunas}
-              title={seletor}
+              heading={seletor}
               // ⚠️ RENOMEAR E APAGAR SO NO RAMO DO QUADRO AVULSO. No ramo da
               // lente nao ha registro para nenhum dos dois, e o proprio
               // `AcoesDoQuadro` devolve `null` ali -- mas nao passa-lo deixa a
@@ -348,7 +348,7 @@ export default function QuadroSubtimePage() {
             // tem id de verdade) e devolve `opcoes[0]` -- que, com `daRaiz`, é ele.
             <Board
               areaId={team.id}
-              title={seletor}
+              heading={seletor}
               podeEditarColunas={podeGerir}
               podeApagarColunas={apagaColunas}
               acoesDoQuadro={
@@ -370,7 +370,7 @@ export default function QuadroSubtimePage() {
             // ⚠️ `null` EXPLÍCITO: a lente não tem registro para renomear nem apagar.
             <Board
               subteamId={team.id}
-              title={seletor}
+              heading={seletor}
               podeEditarColunas={false}
               podeApagarColunas={false}
               acoesDoQuadro={null}

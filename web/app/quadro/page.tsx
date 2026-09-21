@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import AppShell from "@/components/AppShell";
 import Board from "@/components/Board";
 import SeletorDeQuadro from "@/components/SeletorDeQuadro";
+import PageTitle from "@/components/PageTitle";
 import AcoesDoQuadro from "@/components/AcoesDoQuadro";
 import { currentUser, listBoards, listTeamsAll, type Quadro } from "@/lib/api";
 import { entradaDoQuadro } from "@/lib/areas";
@@ -190,7 +191,9 @@ function QuadroGeral() {
       daRaiz
     />
   ) : (
-    "Quadro geral"
+    // Sem raiz nao ha seletor, e o `<h1>` e so o nome. O seletor desenha o
+    // proprio `<h1>` (ver `SeletorDeQuadro`), entao este ramo tambem desenha.
+    <PageTitle>Quadro geral</PageTitle>
   );
 
   return (
@@ -223,7 +226,7 @@ function QuadroGeral() {
         // ⚠️ SEM `boardId` = O QUADRO GERAL, que e o comportamento de sempre e
         // o de 100% das aberturas desta tela ate a fatia 5c.
         boardId={pedido.id ?? undefined}
-        title={seletor}
+        heading={seletor}
         podeEditarColunas={podeEditar}
         podeApagarColunas={apagaColunas}
         acoesDoQuadro={
