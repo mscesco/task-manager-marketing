@@ -1536,6 +1536,9 @@ export default function TaskDetail({
               aberto não pode levar o rascunho para a outra. */}
           <TituloEditavel
             key={task.id}
+            // ⚠️ `h1` SÓ NA ROTA `/tarefa/[id]`, onde a tarefa É a página. No
+            // quadro e em "Minhas tarefas" ela mora embaixo do `<h1>` da tela.
+            level={modo === "pagina" ? "h1" : "h2"}
             valor={salvoNoLugar?.id === task.id && salvoNoLugar.title !== undefined ? salvoNoLugar.title : task.title}
             onSalvar={(novo) => salvarNoLugar({ title: novo })}
           />

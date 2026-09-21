@@ -65,7 +65,7 @@ describe("TituloEditavel", () => {
   it("⭐ clique abre o campo; Enter salva uma vez e fecha", async () => {
     const onSalvar = vi.fn().mockResolvedValue(undefined);
     render(<TituloEditavel valor="Arte" onSalvar={onSalvar} />);
-    fireEvent.click(screen.getByRole("button", { name: /Editar o título/ }));
+    fireEvent.click(screen.getByRole("button", { description: "Editar o título" }));
     const campo = screen.getByLabelText("Título da tarefa") as HTMLTextAreaElement;
     expect(document.activeElement).toBe(campo);
     fireEvent.change(campo, { target: { value: "Arte do CBV" } });
@@ -79,7 +79,7 @@ describe("TituloEditavel", () => {
   it("clicar fora (blur) salva", async () => {
     const onSalvar = vi.fn().mockResolvedValue(undefined);
     render(<TituloEditavel valor="Arte" onSalvar={onSalvar} />);
-    fireEvent.click(screen.getByRole("button", { name: /Editar o título/ }));
+    fireEvent.click(screen.getByRole("button", { description: "Editar o título" }));
     const campo = screen.getByLabelText("Título da tarefa");
     fireEvent.change(campo, { target: { value: "Arte 2" } });
     fireEvent.blur(campo);
@@ -90,35 +90,61 @@ describe("TituloEditavel", () => {
     const { espiao, parar } = espiarEscNaJanela();
     const onSalvar = vi.fn();
     render(<TituloEditavel valor="Arte" onSalvar={onSalvar} />);
-    fireEvent.click(screen.getByRole("button", { name: /Editar o título/ }));
+    fireEvent.click(screen.getByRole("button", { description: "Editar o título" }));
     const campo = screen.getByLabelText("Título da tarefa");
     fireEvent.change(campo, { target: { value: "Outra coisa" } });
     fireEvent.keyDown(campo, { key: "Escape" });
     parar();
     expect(espiao).not.toHaveBeenCalled();
     expect(onSalvar).not.toHaveBeenCalled();
-    expect(screen.getByRole("button", { name: /Editar o título: Arte/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Arte", description: "Editar o título" })).toBeTruthy();
   });
 
   it("⚠️ título apagado volta ao original, sem salvar", () => {
     const onSalvar = vi.fn();
     render(<TituloEditavel valor="Arte" onSalvar={onSalvar} />);
-    fireEvent.click(screen.getByRole("button", { name: /Editar o título/ }));
+    fireEvent.click(screen.getByRole("button", { description: "Editar o título" }));
     const campo = screen.getByLabelText("Título da tarefa");
     fireEvent.change(campo, { target: { value: "  " } });
     fireEvent.keyDown(campo, { key: "Enter" });
     expect(onSalvar).not.toHaveBeenCalled();
-    expect(screen.getByRole("button", { name: /Editar o título: Arte/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Arte", description: "Editar o título" })).toBeTruthy();
   });
 
   it("⚠️ erro reabre o campo com o que a pessoa escreveu, e a mensagem", async () => {
     const onSalvar = vi.fn().mockRejectedValue(new Error("Você não pode editar esta tarefa."));
     render(<TituloEditavel valor="Arte" onSalvar={onSalvar} />);
-    fireEvent.click(screen.getByRole("button", { name: /Editar o título/ }));
+    fireEvent.click(screen.getByRole("button", { description: "Editar o título" }));
     fireEvent.change(screen.getByLabelText("Título da tarefa"), { target: { value: "Arte 2" } });
     fireEvent.keyDown(screen.getByLabelText("Título da tarefa"), { key: "Enter" });
     expect(await screen.findByText("Você não pode editar esta tarefa.")).toBeTruthy();
     expect((screen.getByLabelText("Título da tarefa") as HTMLTextAreaElement).value).toBe("Arte 2");
+  });
+});
+
+// ------------------------------------------ o título como título da página
+// Revisão de títulos, 21/09. SABOTAGEM (medida): em `TaskDetail`, passar
+// `level="h2"` fixo. Deve cair "⚠️ na página da tarefa o título é o h1".
+
+describe("TituloEditavel como título", () => {
+  it("é h2 por padrão, e o nome do título é o texto da tarefa", () => {
+    render(<TituloEditavel valor="Arte" onSalvar={vi.fn()} />);
+    // ⚠️ O nome é "Arte", e não "Editar o título: Arte": quem navega pelos
+    // títulos com leitor de tela ouve o assunto, e não a instrução.
+    expect(screen.getByRole("heading", { level: 2, name: "Arte" })).toBeTruthy();
+  });
+
+  it("vira h1 quando pedido", () => {
+    render(<TituloEditavel valor="Arte" onSalvar={vi.fn()} level="h1" />);
+    expect(screen.getByRole("heading", { level: 1, name: "Arte" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { level: 2 })).toBeNull();
+  });
+
+  it("⚠️ o título não some enquanto se edita", () => {
+    render(<TituloEditavel valor="Arte" onSalvar={vi.fn()} level="h1" />);
+    fireEvent.click(screen.getByRole("button", { description: "Editar o título" }));
+    const titulo = screen.getByRole("heading", { level: 1 });
+    expect(titulo.contains(screen.getByLabelText("Título da tarefa"))).toBe(true);
   });
 });
 
@@ -367,9 +393,10 @@ describe("TaskDetail -- edição no lugar (Spec 052, fatia D)", () => {
     vi.mocked(api.getTaskLinks).mockResolvedValue([]);
   });
 
-  function detalhe(t: Task, onSubtaskUpsert = vi.fn()) {
+  function detalhe(t: Task, onSubtaskUpsert = vi.fn(), modo?: "modal" | "pagina") {
     return (
       <TaskDetail
+        modo={modo}
         task={t}
         members={new Map()}
         projects={new Map()}
@@ -392,6 +419,17 @@ describe("TaskDetail -- edição no lugar (Spec 052, fatia D)", () => {
     return render(detalhe(task(), onSubtaskUpsert));
   }
 
+  it("⚠️ na página da tarefa o título é o h1", async () => {
+    render(detalhe(task(), vi.fn(), "pagina"));
+    expect(await screen.findByRole("heading", { level: 1, name: "Arte" })).toBeTruthy();
+  });
+
+  it("no painel e no modal o título continua h2", async () => {
+    montar();
+    expect(await screen.findByRole("heading", { level: 2, name: "Arte" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { level: 1 })).toBeNull();
+  });
+
   it("⭐ não há mais o \"Editar\" do rodapé", async () => {
     montar();
     expect(await screen.findByText("Copiar link")).toBeTruthy();
@@ -403,7 +441,7 @@ describe("TaskDetail -- edição no lugar (Spec 052, fatia D)", () => {
     vi.mocked(api.updateTask).mockResolvedValue(task({ title: "Arte do CBV" }));
     const onSubtaskUpsert = vi.fn();
     montar(onSubtaskUpsert);
-    fireEvent.click(screen.getByRole("button", { name: /Editar o título: Arte/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Arte", description: "Editar o título" }));
     const campo = screen.getByLabelText("Título da tarefa");
     fireEvent.change(campo, { target: { value: "Arte do CBV" } });
     await act(async () => {
@@ -411,7 +449,7 @@ describe("TaskDetail -- edição no lugar (Spec 052, fatia D)", () => {
     });
     await waitFor(() => expect(api.updateTask).toHaveBeenCalledWith("t1", { title: "Arte do CBV" }));
     await waitFor(() => expect(onSubtaskUpsert).toHaveBeenCalled());
-    expect(screen.getByRole("button", { name: /Editar o título: Arte do CBV/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Arte do CBV", description: "Editar o título" })).toBeTruthy();
   });
 
   it("descrição salva manda SÓ a descrição", async () => {
