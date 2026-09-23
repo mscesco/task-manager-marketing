@@ -270,3 +270,54 @@ def test_account_key_separa_workspaces():
     a = account_key(email="f@x.com", workspace_slug="ws-a")
     b = account_key(email="f@x.com", workspace_slug="ws-b")
     assert a != b
+
+
+# --------------------------------------------------------
+# 4. A ROTA PUBLICA QUE ESCREVE NO LOG (revisao de seguranca, 23/09)
+# --------------------------------------------------------
+# ⚠️ `/client-errors` e a unica rota sem auth que produz UMA LINHA DE LOG por
+# requisicao. Ate 23/09 ela nao tinha freio nenhum: o teto de 20 vive no
+# sensor do front, e quem abusa nao usa o front. Sem limite, qualquer pessoa
+# na internet enche o disco da VPS compartilhada -- e afoga o grep de
+# deteccao, que procura o mesmo token (`app_error`) que esta rota escreve.
+#
+# SABOTAGEM (medida): tirar o `dependencies=[Depends(rate_limit(...))]` da
+# rota em `app/api/client_errors.py`. Deve cair o teste abaixo.
+async def test_client_errors_tem_freio_por_ip():
+    from app.core.rate_limit import client_error_limiter
+    from app.main import create_app
+
+    app = create_app()
+    teto = client_error_limiter._max  # noqa: SLF001 -- o teto vem do settings
+    corpo = {"kind": "error", "message": "x"}
+    # IP proprio: o balde e por IP, entao este teste nao encosta em nenhum outro.
+    headers = {"X-Forwarded-For": "203.0.113.77"}
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        for _ in range(teto):
+            r = await client.post("/api/v1/client-errors", json=corpo, headers=headers)
+            assert r.status_code == 202, r.text
+        bloqueado = await client.post(
+            "/api/v1/client-errors", json=corpo, headers=headers
+        )
+
+    assert bloqueado.status_code == 429
+    assert bloqueado.json()["error"]["code"] == "rate_limited"
+    assert int(bloqueado.headers["Retry-After"]) > 0
+
+
+async def test_client_errors_continua_sem_exigir_login():
+    """⚠️ O freio NAO pode ter virado autenticacao: o caso que mais importa
+    capturar e o erro na tela de LOGIN, onde nao ha token nenhum."""
+    from app.main import create_app
+
+    app = create_app()
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        r = await client.post(
+            "/api/v1/client-errors",
+            json={"kind": "error", "message": "sem token"},
+            headers={"X-Forwarded-For": "203.0.113.78"},
+        )
+    assert r.status_code == 202, r.text
