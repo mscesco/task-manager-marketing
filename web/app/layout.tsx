@@ -4,6 +4,8 @@ import ClientErrorSensor from "@/components/ClientErrorSensor";
 import "./globals.css";
 import type { Metadata } from "next";
 
+import { APP_NAME } from "@/lib/documentTitle";
+
 /**
  * Raleway, familia unica (Spec 039, F0). Escolhida pela Camila em 19/08/2026
  * comparando as pecas reais do produto nos tamanhos desta spec.
@@ -42,8 +44,17 @@ const raleway = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "Gestor de Tarefas — UniFECAF",
-  description: "Gestor de demandas do time de marketing",
+  // ⚠️ `template` + `default` (revisão de títulos, 21/09): cada rota declara só
+  // o PRÓPRIO nome, no `layout.tsx` dela, e este modelo acrescenta o produto.
+  // Antes havia um título só, e as vinte rotas se chamavam igual na aba.
+  //
+  // ⚠️ O MESMO MODELO está em `lib/documentTitle.ts`, para as telas cujo nome
+  // só se sabe depois de carregar. As duas peças têm de produzir a mesma frase.
+  title: {
+    template: `%s · ${APP_NAME}`,
+    default: `${APP_NAME} — UniFECAF`,
+  },
+  description: "Gestor de demandas dos times da UniFECAF",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

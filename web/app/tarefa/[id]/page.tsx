@@ -5,6 +5,7 @@ import AppShell from "@/components/AppShell";
 import TaskDetail from "@/components/TaskDetail";
 import TaskModal from "@/components/TaskModal";
 import Loading from "@/components/Loading";
+import { useDocumentTitle } from "@/lib/useDocumentTitle";
 import {
   getTask,
   listTasks,
@@ -53,6 +54,8 @@ function Tarefa() {
   const id = typeof params.id === "string" ? params.id : "";
 
   const [task, setTask] = useState<Task | null>(null);
+  // A aba passa a se chamar pela tarefa (o layout da rota diz so "Tarefa").
+  useDocumentTitle(task?.title);
   const [pai, setPai] = useState<Task | null>(null);
   const [filhos, setFilhos] = useState<Task[]>([]);
   const [members, setMembers] = useState<Map<string, { name: string }>>(

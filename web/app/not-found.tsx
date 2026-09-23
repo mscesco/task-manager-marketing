@@ -1,9 +1,8 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 
-export const metadata: Metadata = {
-  title: "Página não encontrada — Gestor de Tarefas",
-};
+// Só o nome da tela: o modelo do `app/layout.tsx` acrescenta o produto.
+export const metadata: Metadata = { title: "Página não encontrada" };
 
 /**
  * O 404 do app. Sem este arquivo o Next desenhava o dele, em inglês e fora do

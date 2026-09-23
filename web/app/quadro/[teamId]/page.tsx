@@ -15,6 +15,7 @@ import {
 import { computeLens } from "@/lib/lens";
 import { rootTeamOf } from "@/lib/areas";
 import Loading from "@/components/Loading";
+import { useDocumentTitle } from "@/lib/useDocumentTitle";
 import {
   alcanceDeQuadro,
   podeApagarColunas,
@@ -59,6 +60,7 @@ export default function QuadroSubtimePage() {
   const teamId = typeof params.teamId === "string" ? params.teamId : "";
 
   const [team, setTeam] = useState<Team | null>(null);
+  useDocumentTitle(team?.name);
   const [temAcesso, setTemAcesso] = useState(false);
   const [carregando, setCarregando] = useState(true);
   // Fatia 5b-6: os quadros deste time, e qual deles a tela desenha.

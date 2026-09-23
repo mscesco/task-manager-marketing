@@ -18,6 +18,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useDrawnOutline } from "@/components/AnimatedOutline";
+import { useDocumentTitle } from "@/lib/useDocumentTitle";
 import {
   enviarSolicitacaoPublica,
   ApiError,
@@ -150,6 +151,7 @@ export default function FormularioSolicitacao({
   // Enviar e não ouvia nada. Com o foco no `<h1>`, ele anuncia "Solicitação
   // enviada".
   const tituloDoResultado = useRef<HTMLHeadingElement>(null);
+  useDocumentTitle(titulo);
   useEffect(() => {
     if (resultado) tituloDoResultado.current?.focus();
   }, [resultado]);

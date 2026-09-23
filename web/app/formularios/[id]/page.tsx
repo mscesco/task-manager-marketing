@@ -21,6 +21,7 @@ import PageHeader from "@/components/PageHeader";
 import Loading from "@/components/Loading";
 import { useAvisar } from "@/components/Toasts";
 import { withTeam } from "@/lib/activeTeam";
+import { useDocumentTitle } from "@/lib/useDocumentTitle";
 import {
   ApiError,
   apagarPergunta,
@@ -66,6 +67,7 @@ function Editor() {
   const formId = params?.id ?? "";
 
   const [form, setForm] = useState<FormularioDetalhado | null>(null);
+  useDocumentTitle(form?.title);
   const [erro, setErro] = useState<string | null>(null);
   const [fatal, setFatal] = useState<string | null>(null);
   const [ocupado, setOcupado] = useState(false);
