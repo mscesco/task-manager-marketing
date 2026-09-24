@@ -18,7 +18,7 @@
 //     branco".
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 import FormularioSolicitacao, {
   camposDeIdentificacao,
@@ -318,5 +318,37 @@ describe("a etapa de identificação, montada de verdade", () => {
   it("a descrição do formulário substitui o texto genérico", async () => {
     montar();
     expect(await screen.findByText("Diga o que você precisa.")).toBeTruthy();
+  });
+});
+
+// =====================================================================
+// Revisão de títulos (21/09) -- a tela de sucesso
+// =====================================================================
+// SABOTAGEM (medida): em `FormularioSolicitacao`, tirar o `focus()` do efeito
+// de `resultado`. Deve cair "⚠️ enviado, o foco vai para o título".
+describe("depois de enviar", () => {
+  it("⚠️ enviado, o foco vai para o título", async () => {
+    // O envio troca a tela inteira e o botão que tinha o foco some. Sem mover
+    // o foco, quem usa leitor de tela aperta Enviar e não ouve nada.
+    vi.mocked(api.enviarSolicitacaoPublica).mockResolvedValue({
+      protocol: "ABC123",
+      created: 1,
+    });
+    montar({ telefone: null, area: null, polo: null });
+    preencher([]);
+    fireEvent.click(screen.getByText(/Continuar|Avançar|Próximo/i));
+    fireEvent.change(await screen.findByLabelText(/Qual sistema/), {
+      target: { value: "o CRM" },
+    });
+    fireEvent.click(screen.getByText(/Continuar|Avançar|Próximo|Revisar/i));
+    fireEvent.click(await screen.findByText("Enviar solicitação"));
+
+    const titulo = await screen.findByRole("heading", {
+      level: 1,
+      name: "Solicitação enviada",
+    });
+    await waitFor(() => expect(document.activeElement).toBe(titulo));
+    // O texto não fala mais de um time fixo: o formulário pode ser de qualquer um.
+    expect(screen.queryByText(/time de marketing/i)).toBeNull();
   });
 });

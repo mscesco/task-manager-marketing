@@ -80,6 +80,7 @@ import { sincronizarTaskNaUrl, lerTaskDaUrl } from "@/lib/urlTarefa";
 import { ORDENACOES, ordenar, type Ordenacao } from "@/lib/ordenacao";
 
 import Loading from "@/components/Loading";
+import PageTitle from "@/components/PageTitle";
 import { useAvisar } from "@/components/Toasts";
 // Spec 031 (C3): `normalizar` saiu daqui pra lib/filtrosQuadro (agora
 // `normalizarBusca`) -- "Minhas tarefas" tambem busca, e duas copias da
@@ -95,6 +96,7 @@ export default function Board({
   podeEditarColunas,
   podeApagarColunas,
   title,
+  heading,
   acoesDoQuadro,
   acoesDoTitulo,
   abaixoDoCabecalho,
@@ -170,8 +172,15 @@ export default function Board({
    * ⚠️ AS 4 CHAMADAS COM STRING CONTINUAM VALENDO (`/quadro`,
    * `/projetos/[id]` e os dois ramos de `/quadro/[teamId]`): `string` E um
    * `ReactNode`. Esta troca nao pede mudanca em quem so passa texto.
+   *
+   * ⚠️ `title` VAI DENTRO DO `<h1>`, entao so texto (revisao de titulos,
+   * 21/09). Quem precisa de controle junto do titulo -- o `SeletorDeQuadro`,
+   * com a lista e o formulario de "Novo quadro" -- passa `heading` e desenha o
+   * proprio `<h1>`, deixando o que nao e titulo FORA dele.
    */
-  title: ReactNode;
+  title?: ReactNode;
+  /** O titulo ja pronto, com o proprio `<h1>` (ver `title`). */
+  heading?: ReactNode;
   /**
    * Ações sobre o QUADRO (renomear, apagar) -- desenhadas na barra do MODO DE
    * EDIÇÃO (fatia 10).
@@ -1709,7 +1718,7 @@ export default function Board({
           (ver §"O que NAO valida": zero responsivo). */}
       {modoEdicao ? (
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 18, flexWrap: "wrap" }}>
-          <h1 style={{ margin: 0, fontSize: 26, fontWeight: 800, lineHeight: 1.23, letterSpacing: "-0.02em" }}>{title}</h1>
+          {heading ?? <PageTitle>{title}</PageTitle>}
           <span
             style={{
               fontSize: 12, fontWeight: 700, padding: "2px 8px", borderRadius: 999,
@@ -1765,7 +1774,7 @@ export default function Board({
         </div>
       ) : (
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 18, flexWrap: "wrap" }}>
-        <h1 style={{ margin: 0, fontSize: 26, fontWeight: 800, lineHeight: 1.23, letterSpacing: "-0.02em" }}>{title}</h1>
+        {heading ?? <PageTitle>{title}</PageTitle>}
         <span className="muted" style={{ fontSize: 13 }}>
           {temFiltro ? `${raizes.length} de ${visiveis.length}` : raizes.length} tarefas
         </span>

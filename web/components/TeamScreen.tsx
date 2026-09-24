@@ -81,6 +81,7 @@ import {
 import { lerEstadoDaTela, gravarEstadoDaTela } from "@/lib/estadoDaTela";
 
 import Loading from "@/components/Loading";
+import { useDocumentTitle } from "@/lib/useDocumentTitle";
 type View = "people" | "structure";
 type RevealedPassword = { title: string; email: string; password: string };
 
@@ -137,6 +138,7 @@ export default function TeamScreen({ teamId }: { teamId: string }) {
   }, [carregar]);
 
   const team = teams.find((t) => t.id === teamId) ?? null;
+  useDocumentTitle(team?.name);
 
   const rows = useMemo(
     () => teamRows(teamId, teams, members),

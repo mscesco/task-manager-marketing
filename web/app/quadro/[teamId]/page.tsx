@@ -15,6 +15,7 @@ import {
 import { computeLens } from "@/lib/lens";
 import { rootTeamOf } from "@/lib/areas";
 import Loading from "@/components/Loading";
+import { useDocumentTitle } from "@/lib/useDocumentTitle";
 import {
   alcanceDeQuadro,
   podeApagarColunas,
@@ -59,6 +60,7 @@ export default function QuadroSubtimePage() {
   const teamId = typeof params.teamId === "string" ? params.teamId : "";
 
   const [team, setTeam] = useState<Team | null>(null);
+  useDocumentTitle(team?.name);
   const [temAcesso, setTemAcesso] = useState(false);
   const [carregando, setCarregando] = useState(true);
   // Fatia 5b-6: os quadros deste time, e qual deles a tela desenha.
@@ -297,7 +299,7 @@ export default function QuadroSubtimePage() {
               boardId={quadroSelecionado}
               podeEditarColunas={podeGerir}
               podeApagarColunas={apagaColunas}
-              title={seletor}
+              heading={seletor}
               // ⚠️ RENOMEAR E APAGAR SO NO RAMO DO QUADRO AVULSO. No ramo da
               // lente nao ha registro para nenhum dos dois, e o proprio
               // `AcoesDoQuadro` devolve `null` ali -- mas nao passa-lo deixa a
@@ -348,7 +350,7 @@ export default function QuadroSubtimePage() {
             // tem id de verdade) e devolve `opcoes[0]` -- que, com `daRaiz`, é ele.
             <Board
               areaId={team.id}
-              title={seletor}
+              heading={seletor}
               podeEditarColunas={podeGerir}
               podeApagarColunas={apagaColunas}
               acoesDoQuadro={
@@ -370,7 +372,7 @@ export default function QuadroSubtimePage() {
             // ⚠️ `null` EXPLÍCITO: a lente não tem registro para renomear nem apagar.
             <Board
               subteamId={team.id}
-              title={seletor}
+              heading={seletor}
               podeEditarColunas={false}
               podeApagarColunas={false}
               acoesDoQuadro={null}

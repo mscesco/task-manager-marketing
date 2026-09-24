@@ -26,10 +26,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Check, Pencil, Plus, Search, X } from "lucide-react";
+import { Plus, Search } from "lucide-react";
 import AppShell from "@/components/AppShell";
 import Badge from "@/components/Badge";
 import PageHeader from "@/components/PageHeader";
+import RenameOrganization from "@/components/RenameOrganization";
 import Loading from "@/components/Loading";
 import { useDrawnOutline } from "@/components/AnimatedOutline";
 import {
@@ -96,6 +97,7 @@ export default function OrganizacaoPage() {
   // tela nao diz que foi isso. A Camila clicou, viu sumir e perguntou se
   // tinha apagado a pessoa.
   const [aviso, setAviso] = useState<string | null>(null);
+  const [renomeando, setRenomeando] = useState(false);
 
   const router = useRouter();
   // ⚠️⚠️ Spec 051, fatia F: A GUARDA. Ate aqui esta pagina abria para quem
@@ -168,19 +170,30 @@ export default function OrganizacaoPage() {
   return (
     <AppShell>
       <PageHeader
+        // ⚠️ SÓ O NOME DENTRO DO `<h1>` (revisão de títulos, 21/09). O lápis e
+        // o campo de renomear vão no `titleAddon`, AO LADO -- dentro, o leitor
+        // de tela anunciava "UniFECAF Renomear a organização" como título.
+        // Enquanto se edita, o campo mostra o nome, e o título fica só para o
+        // leitor de tela: some da vista, mas a página não perde o `<h1>`.
         title={
           ws ? (
-            <NomeDaOrganizacao
-              nome={ws.name}
-              canEdit={podeRenomear}
-              onRenomear={async (novo) => {
+            renomeando ? <span className="sr-only">{ws.name}</span> : ws.name
+          ) : (
+            "Organização"
+          )
+        }
+        titleAddon={
+          ws && podeRenomear ? (
+            <RenameOrganization
+              name={ws.name}
+              editing={renomeando}
+              onEditingChange={setRenomeando}
+              onRename={async (novo) => {
                 const atualizado = await renameWorkspace(novo);
                 setWs(atualizado);
               }}
             />
-          ) : (
-            "Organização"
-          )
+          ) : null
         }
         actions={
           podeCriarArea ? (
@@ -438,109 +451,6 @@ function CartaoDeArea({ card }: { card: AreaCard }) {
         {subteams === 1 ? "subtime" : "subtimes"}
       </div>
     </Link>
-  );
-}
-
-/** O nome da organização, editável no lugar. */
-function NomeDaOrganizacao({
-  nome,
-  canEdit,
-  onRenomear,
-}: {
-  nome: string;
-  canEdit: boolean;
-  onRenomear: (novo: string) => Promise<void>;
-}) {
-  const [editando, setEditando] = useState(false);
-  const [value, setValor] = useState(nome);
-  const [salvando, setSalvando] = useState(false);
-  const [erro, setErro] = useState<string | null>(null);
-
-  useEffect(() => setValor(nome), [nome]);
-
-  if (!canEdit || !editando) {
-    return (
-      <span style={{ display: "inline-flex", gap: 8, alignItems: "center" }}>
-        {nome}
-        {canEdit && (
-          <button
-            className="btn btn-ghost"
-            aria-label="Renomear a organização"
-            onClick={() => {
-              setErro(null);
-              setEditando(true);
-            }}
-          >
-            <Pencil size={14} aria-hidden="true" />
-          </button>
-        )}
-      </span>
-    );
-  }
-
-  async function salvar() {
-    const novo = value.trim();
-    // ⚠️ Vazio não é renomear -- e o backend recusaria com 422. Barrar aqui
-    // evita a viagem; a recusa de verdade continua sendo dele.
-    if (novo === "" || novo === nome) {
-      setEditando(false);
-      setValor(nome);
-      return;
-    }
-    setSalvando(true);
-    try {
-      await onRenomear(novo);
-      setEditando(false);
-      setErro(null);
-    } catch (e) {
-      const a = e as ApiError;
-      setErro(
-        a.status === 403
-          ? "Só quem administra a organização pode renomeá-la."
-          : a.message || "Não consegui renomear.",
-      );
-    } finally {
-      setSalvando(false);
-    }
-  }
-
-  return (
-    <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
-      <input
-        className="input"
-        value={value}
-        disabled={salvando}
-        autoFocus
-        maxLength={255}
-        onChange={(e) => setValor(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") void salvar();
-          if (e.key === "Escape") {
-            setEditando(false);
-            setValor(nome);
-          }
-        }}
-        style={{ fontSize: 18, width: 280 }}
-      />
-      <button className="btn btn-ghost" onClick={() => void salvar()} disabled={salvando}>
-        <Check size={16} aria-hidden="true" />
-      </button>
-      <button
-        className="btn btn-ghost"
-        onClick={() => {
-          setEditando(false);
-          setValor(nome);
-        }}
-        disabled={salvando}
-      >
-        <X size={16} aria-hidden="true" />
-      </button>
-      {erro && (
-        <span className="error-box" style={{ fontSize: 12 }}>
-          {erro}
-        </span>
-      )}
-    </span>
   );
 }
 

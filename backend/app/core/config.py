@@ -93,6 +93,18 @@ class Settings(BaseSettings):
     public_form_rate_limit_max: int = 30
     public_form_rate_limit_window_seconds: int = 60
 
+    # --- Rate limit (coletor de erros do front) -- revisao de seguranca 23/09
+    # `/client-errors` e PUBLICO e ESCREVE NO LOG: e a unica rota sem auth que
+    # produz linha de log por requisicao. O teto de 20 do sensor e do CLIENTE,
+    # e quem abusa nao usa o cliente -- sem freio aqui, qualquer pessoa na
+    # internet enche o disco da VPS compartilhada e afoga o grep de deteccao,
+    # que procura exatamente o token `app_error` que esta rota escreve.
+    #
+    # 30/min por IP: uma pagina em loop de verdade cabe (o sensor manda no
+    # maximo 20 por carregamento), e a enxurrada nao.
+    client_error_rate_limit_max: int = 30
+    client_error_rate_limit_window_seconds: int = 60
+
     # --- Rate limit (login, por CONTA) -- Spec 030 D5 ---
     # O freio por IP acima nao ve o atacante que distribui as tentativas por
     # varios enderecos. Este balde e por (e-mail + workspace) e conta apenas

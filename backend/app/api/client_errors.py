@@ -13,7 +13,9 @@ Endpoint DELIBERADAMENTE:
     justamente esse caso (lider que nao consegue entrar) que
     interessa capturar;
   - TRUNCA os campos no servidor: um front em loop nao pode escrever
-    linhas de log gigantes numa VPS compartilhada.
+    linhas de log gigantes numa VPS compartilhada;
+  - FREIA POR IP: truncar limita o TAMANHO de cada linha, nao quantas
+    linhas chegam. As duas coisas sao necessarias.
 
 Atribuicao de "qual usuario" NAO esta neste passo (endpoint sem
 dependency de auth, nunca 401). Correlacao por horario + rota (`path`)
@@ -22,10 +24,11 @@ por ora; user_id fica como iteracao seguinte, se valer o custo.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Request, status
+from fastapi import APIRouter, Depends, Request, status
 from pydantic import BaseModel, Field
 
 from app.core.logging import get_logger
+from app.core.rate_limit import client_error_limiter, rate_limit
 
 logger = get_logger(__name__)
 
@@ -55,7 +58,16 @@ def _clip(value: str | None, limit: int) -> str | None:
     return value[:limit]
 
 
-@router.post("/client-errors", status_code=status.HTTP_202_ACCEPTED)
+@router.post(
+    "/client-errors",
+    status_code=status.HTTP_202_ACCEPTED,
+    # ⚠️ FREIO POR IP (revisao de seguranca, 23/09). O teto de 20 do sensor e
+    # do CLIENTE, e quem abusa nao usa o cliente: sem isto, a unica rota
+    # publica que ESCREVE NO LOG aceitava requisicao sem limite -- disco da VPS
+    # compartilhada, e o grep de deteccao afogado no proprio token que ele
+    # procura (`app_error`).
+    dependencies=[Depends(rate_limit(client_error_limiter))],
+)
 async def report_client_error(payload: ClientErrorIn, request: Request) -> None:
     """Loga um erro de front como ``app_error`` e responde 204.
 

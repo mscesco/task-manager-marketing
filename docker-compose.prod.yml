@@ -104,6 +104,15 @@ services:
       - "traefik.http.middlewares.tm-sec.headers.frameDeny=true"
       - "traefik.http.middlewares.tm-sec.headers.contentTypeNosniff=true"
       - "traefik.http.middlewares.tm-sec.headers.referrerPolicy=strict-origin-when-cross-origin"
+      # ⚠️ A CSP E A PERMISSIONS-POLICY NAO MORAM AQUI, e isso e proposital
+      # (revisao de seguranca, 23/09): elas descrevem o que o CODIGO do front
+      # carrega -- os dominios do GIPHY estao em `web/lib/giphy.ts` --, entao
+      # vivem em `web/next.config.mjs`, com teste em `lib/__tests__/csp.test.ts`.
+      #
+      # ⚠️ NAO ACRESCENTE UMA AQUI. Dois cabecalhos `Content-Security-Policy` na
+      # mesma resposta nao se somam: o navegador aplica a INTERSECAO dos dois, e
+      # o efeito de afrouxar um deles e nenhum -- enquanto apertar o outro
+      # quebra a tela sem que o arquivo culpado apareca.
 
       # ---------------------------------------------------------------
       # ROUTER :80 -- so redireciona, nao entrega conteudo

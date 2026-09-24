@@ -216,6 +216,12 @@ public_form_limiter = SlidingWindowRateLimiter(
     max_hits=settings.public_form_rate_limit_max,
     window_seconds=settings.public_form_rate_limit_window_seconds,
 )
+# Coletor de erros do front: publico, sem auth, e cada requisicao vira LINHA DE
+# LOG. Ver o bloco em `config.py`.
+client_error_limiter = SlidingWindowRateLimiter(
+    max_hits=settings.client_error_rate_limit_max,
+    window_seconds=settings.client_error_rate_limit_window_seconds,
+)
 # Spec 030 (D5): freio por CONTA no login. Chave = e-mail + workspace, nao
 # IP -- o balde por IP nao ve o atacante que distribui as tentativas por
 # varios enderecos, que e como forca bruta de senha acontece de verdade.

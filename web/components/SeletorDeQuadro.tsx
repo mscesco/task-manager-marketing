@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ChevronDown } from "lucide-react";
 
+import PageTitle from "@/components/PageTitle";
 import { ApiError, createBoard, type Quadro } from "@/lib/api";
 import {
   nomeDeQuadroValido,
@@ -184,58 +185,69 @@ export default function SeletorDeQuadro({
   }
 
   return (
-    <span style={{ display: "inline-flex", flexDirection: "column", gap: 6 }}>
-      <span ref={painelRef} style={{ position: "relative", display: "inline-flex" }}>
+    // ⚠️⚠️ `div`, E NAO `span` (revisao de titulos, 21/09). Ate aqui este
+    // componente era o `title` do `Board`, desenhado DENTRO do `<h1>` -- e com
+    // ele a lista de quadros e o formulario de "Novo quadro" (campo, Criar,
+    // Cancelar, erro): o titulo "continha" todas as opcoes enquanto o menu
+    // estava aberto, e `<div>` dentro de `<h1>` e HTML invalido. Agora o `<h1>`
+    // mora AQUI e envolve so o gatilho; o resto e irmao dele.
+    <div style={{ display: "inline-flex", flexDirection: "column", gap: 6 }}>
+      <div ref={painelRef} style={{ position: "relative", display: "inline-flex" }}>
         {/* ⚠️ O GATILHO E O TITULO, e por isso ele herda o tamanho do `<h1>` em
-            vez de parecer um botao. O `Board` desenha `<h1>{title}</h1>` e este
-            componente E o `title` -- ver a prop `title: ReactNode` la.
+            vez de parecer um botao.
 
             ⚠️ `aria-haspopup="listbox"` + `aria-expanded` E O CONTRATO CERTO
             AQUI, diferente da linha de abas que isto substituiu. Aquela usava
             `role="group"` com `aria-pressed` justamente por NAO ser um menu:
             eram botoes lado a lado. Agora e um gatilho que abre uma lista, que
             e o que estes dois anunciam. */}
-        <button
-          type="button"
-          onClick={() => setAberto((v) => !v)}
-          aria-haspopup="listbox"
-          aria-expanded={aberto}
-          aria-label={`Quadro: ${atual.nome}. Trocar de quadro`}
-          style={{
-            display: "inline-flex", alignItems: "center", gap: 6,
-            background: "none", border: "none", padding: 0, cursor: "pointer",
-            // ⚠️⚠️ AQUI HAVIA `font: "inherit", fontSize: 19` -- E ISSO PRENDIA
-            // O TITULO DO QUADRO NO TAMANHO DE ANTES DA SPEC 039.
-            //
-            // O `Board` desenha `<h1 style={{ fontSize: 26 }}>{title}</h1>` e
-            // este botao E o `title`. O `fontSize: 19` vinha DEPOIS do atalho
-            // `font`, entao ganhava dele -- e o titulo continuou 19px enquanto
-            // a F1 acreditava te-lo levado a 26. Medido no navegador em 22/08:
-            // `getComputedStyle` do gatilho devolvia **19px** dentro de um h1
-            // de 26.
-            //
-            // ⚠️ E ELE SAIA TORTO NA LINHA, que foi como a Camila achou. O h1
-            // reserva a caixa de 26px, o texto desenha 19: o centro optico do
-            // titulo caia em 43,70 enquanto TODOS os vizinhos (selo, botoes)
-            // caiam em 42,00 -- 1,7px abaixo, o suficiente para a linha
-            // parecer desalinhada. Com o conserto: 41,02 contra 42,00, que e
-            // arredondamento e nao desalinho.
-            //
-            // ⚠️ TERCEIRA VEZ DESTE MESMO ATALHO no projeto: ele ja tinha
-            // matado o `fontSize` da pilula de datas (F7) e esta registrado no
-            // `web/AGENTS.md`. `font` e ATALHO -- ele redefine tamanho, peso e
-            // altura de linha junto com a familia, e qualquer coisa antes dele
-            // some. Aqui nem era preciso: o `globals.css` ja tem
-            // `button { font-family: inherit }`.
-            fontSize: "inherit", fontWeight: "inherit", lineHeight: "inherit",
-            letterSpacing: "-0.02em",
-            color: "var(--text)",
-          }}
-        >
-          {atual.nome}
-          {/* Cresceu junto com o titulo: 16 ao lado de 26px ficava miudo. */}
-          <ChevronDown size={20} style={{ opacity: 0.6, flexShrink: 0 }} />
-        </button>
+        <PageTitle>
+          <button
+            type="button"
+            onClick={() => setAberto((v) => !v)}
+            aria-haspopup="listbox"
+            aria-expanded={aberto}
+            // ⚠️ SEM `aria-label`: ele mora dentro do `<h1>`, e o nome dele vira
+            // o nome do titulo. Com "Quadro: X. Trocar de quadro", quem navega
+            // pelos titulos ouvia a instrucao no lugar do quadro. A instrucao
+            // e a DESCRICAO (`title`), anunciada depois do nome.
+            title="Trocar de quadro"
+            style={{
+              display: "inline-flex", alignItems: "center", gap: 6,
+              background: "none", border: "none", padding: 0, cursor: "pointer",
+              // ⚠️⚠️ AQUI HAVIA `font: "inherit", fontSize: 19` -- E ISSO PRENDIA
+              // O TITULO DO QUADRO NO TAMANHO DE ANTES DA SPEC 039.
+              //
+              // O `Board` desenha `<h1 style={{ fontSize: 26 }}>{title}</h1>` e
+              // este botao E o `title`. O `fontSize: 19` vinha DEPOIS do atalho
+              // `font`, entao ganhava dele -- e o titulo continuou 19px enquanto
+              // a F1 acreditava te-lo levado a 26. Medido no navegador em 22/08:
+              // `getComputedStyle` do gatilho devolvia **19px** dentro de um h1
+              // de 26.
+              //
+              // ⚠️ E ELE SAIA TORTO NA LINHA, que foi como a Camila achou. O h1
+              // reserva a caixa de 26px, o texto desenha 19: o centro optico do
+              // titulo caia em 43,70 enquanto TODOS os vizinhos (selo, botoes)
+              // caiam em 42,00 -- 1,7px abaixo, o suficiente para a linha
+              // parecer desalinhada. Com o conserto: 41,02 contra 42,00, que e
+              // arredondamento e nao desalinho.
+              //
+              // ⚠️ TERCEIRA VEZ DESTE MESMO ATALHO no projeto: ele ja tinha
+              // matado o `fontSize` da pilula de datas (F7) e esta registrado no
+              // `web/AGENTS.md`. `font` e ATALHO -- ele redefine tamanho, peso e
+              // altura de linha junto com a familia, e qualquer coisa antes dele
+              // some. Aqui nem era preciso: o `globals.css` ja tem
+              // `button { font-family: inherit }`.
+              fontSize: "inherit", fontWeight: "inherit", lineHeight: "inherit",
+              letterSpacing: "-0.02em",
+              color: "var(--text)",
+            }}
+          >
+            {atual.nome}
+            {/* Cresceu junto com o titulo: 16 ao lado de 26px ficava miudo. */}
+            <ChevronDown size={20} aria-hidden style={{ opacity: 0.6, flexShrink: 0 }} />
+          </button>
+        </PageTitle>
 
         {aberto && (
           <div
@@ -319,7 +331,7 @@ export default function SeletorDeQuadro({
             )}
           </div>
         )}
-      </span>
+      </div>
 
       {criando && (
         <span style={{ display: "inline-flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
@@ -348,6 +360,6 @@ export default function SeletorDeQuadro({
           )}
         </span>
       )}
-    </span>
+    </div>
   );
 }

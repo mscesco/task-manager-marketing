@@ -34,6 +34,7 @@ import { PRIORITY_LABEL } from "@/lib/status";
 
 import Loading from "@/components/Loading";
 import { withTeam } from "@/lib/activeTeam";
+import { useDocumentTitle } from "@/lib/useDocumentTitle";
 // Status de PROJETO (proprio; difere do status de TASK em lib/status).
 // Duplicado de app/projetos/page.tsx de proposito, para manter esta
 // entrega em UM arquivo. Divida cosmetica: extrair para lib se desejado.
@@ -72,6 +73,7 @@ function Projeto() {
   const params = useParams();
   const id = String(params.id);
   const [project, setProject] = useState<Project | null>(null);
+  useDocumentTitle(project?.title);
   const [erro, setErro] = useState<string | null>(null);
   const router = useRouter();
   const [excluindo, setExcluindo] = useState(false);

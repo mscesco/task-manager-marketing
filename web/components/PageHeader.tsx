@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
 
+import PageTitle from "@/components/PageTitle";
+
 /**
  * Cabeçalho de página (Spec 018 / Fatia A5).
  * Substitui a linha "título + contador (+ ações)" repetida em 5 telas
@@ -7,6 +9,9 @@ import type { ReactNode } from "react";
  *
  * - `title`   título da página
  * - `count`   contador opcional ao lado (ex.: 12 / "8 tarefas")
+ * - `titleAddon` o que acompanha o título SEM fazer parte dele: o lápis de
+ *             renomear, o campo de edição. ⚠️ Não ponha isso no `title` --
+ *             tudo dentro do `<h1>` vira o nome do título (ver `PageTitle`).
  * - `actions` opcional; passe `className="ml-auto"` no botão pra empurrar
  *             à direita (equivale ao space-between antigo)
  *
@@ -15,11 +20,13 @@ import type { ReactNode } from "react";
  */
 export default function PageHeader({
   title,
+  titleAddon,
   count,
   actions,
   className = "",
 }: {
   title: ReactNode;
+  titleAddon?: ReactNode;
   count?: ReactNode;
   actions?: ReactNode;
   className?: string;
@@ -30,9 +37,8 @@ export default function PageHeader({
           o PESO é que faz a hierarquia -- ver a tabela em §5.2 da spec.
           O `tracking` foi mantido: apertar título é medição própria na Raleway,
           e a tabela de tracking da Notion ficou de fora (era para Inter). */}
-      <h1 className="text-[26px] font-extrabold leading-[1.23] tracking-[-0.02em]">
-        {title}
-      </h1>
+      <PageTitle>{title}</PageTitle>
+      {titleAddon}
       {count != null && count !== false && (
         <span className="text-base text-ink-faint">{count}</span>
       )}

@@ -18,6 +18,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useDrawnOutline } from "@/components/AnimatedOutline";
+import { useDocumentTitle } from "@/lib/useDocumentTitle";
 import {
   enviarSolicitacaoPublica,
   ApiError,
@@ -144,6 +145,16 @@ export default function FormularioSolicitacao({
   );
   const [hidratado, setHidratado] = useState(false);
   const jaSalvou = useRef(false);
+  // ⚠️ O FOCO VAI PARA O TÍTULO DE SUCESSO (revisão de títulos, 21/09). O
+  // envio troca a tela inteira, e o botão "Enviar", que tinha o foco, deixa de
+  // existir -- o foco caía no `<body>` e quem usa leitor de tela apertava
+  // Enviar e não ouvia nada. Com o foco no `<h1>`, ele anuncia "Solicitação
+  // enviada".
+  const tituloDoResultado = useRef<HTMLHeadingElement>(null);
+  useDocumentTitle(titulo);
+  useEffect(() => {
+    if (resultado) tituloDoResultado.current?.focus();
+  }, [resultado]);
 
   useEffect(() => {
     const r = lerRascunho(formId);
@@ -363,13 +374,20 @@ export default function FormularioSolicitacao({
       <Casca>
         <div style={caixa({ textAlign: "center", gap: 12 })}>
           <div style={{ fontSize: 40 }}>✅</div>
-          <h1 style={{ margin: 0, fontSize: 20 }}>
+          <h1
+            ref={tituloDoResultado}
+            // `-1`: recebe o foco pelo código, mas não entra na ordem do Tab.
+            tabIndex={-1}
+            style={{ margin: 0, fontSize: 20, outline: "none" }}
+          >
             {resultado.created > 1
               ? `${resultado.created} solicitações enviadas`
               : "Solicitação enviada"}
           </h1>
           <p className="muted" style={{ margin: 0, fontSize: 14 }}>
-            Guarde o protocolo para acompanhamento com o time de marketing:
+            {/* ⚠️ Era "com o time de MARKETING", escrito na mão -- de antes de
+                o formulário ser de qualquer time (Spec 043). */}
+            Guarde o protocolo para acompanhar a sua solicitação:
           </p>
           <div
             style={{
