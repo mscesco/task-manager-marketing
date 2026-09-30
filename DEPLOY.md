@@ -347,8 +347,9 @@ existia, é ordem invertida. Executado assim em 06/08/2026 (`0008`).
    > ⚠️ **O critério é `0 failed`, não um número.** Este arquivo já ficou
    > meses dizendo `379 passed` quando o real era 493 — e roteiro que mente
    > treina quem faz o deploy a ignorar o portão. Se quiser conferir a ordem
-   > de grandeza: em 16/09/2026 eram **1546** (backend) e **1417** (front),
-   > no topo do PR #56 (Specs 047 a 050).
+   > de grandeza: em 30/09/2026 eram **1876** (backend) e **1540** (front),
+   > no merge do PR #63.
+   > (Em 16/09/2026 eram 1546 e 1417, no topo do PR #56 -- Specs 047 a 050.)
    > (Em 09/09/2026 eram 1082 e 1108, depois da Spec 046 inteira.)
    > (Em 08/09/2026 eram 1047 e 1085, depois das fatias A–D da Spec 045.)
    > (Em 31/08/2026 eram 1012 e 1078, depois da Spec 043 inteira.)
@@ -488,6 +489,27 @@ O primeiro login do admin força troca de senha. O bootstrap NÃO se repete.
 
 ## Notas
 
+- ✅ **CSP e Permissions-Policy ESTÃO EM PRODUÇÃO DESDE 30/09/2026** (PR #63,
+  deployado por ela). Elas moram em `web/next.config.mjs`, com teste em
+  `web/lib/__tests__/csp.test.ts` — **não** no Traefik, e o
+  `docker-compose.prod.yml` explica por quê (dois cabeçalhos `CSP` na mesma
+  resposta viram INTERSEÇÃO).
+  Conferido no servidor, na hora:
+  ```bash
+  curl -sI https://task.srv1186064.hstgr.cloud/login | grep -i "content-security-policy\|permissions-policy"
+  ```
+  ⚠️ **O que olhar na saída é a AUSÊNCIA de `'unsafe-eval'`** no `script-src`.
+  Ele é necessário em desenvolvimento (Fast Refresh) e proibido em produção; se
+  aparecer lá, o build subiu com `NODE_ENV` de desenvolvimento, e a política
+  inteira fica mais frouxa do que o teste promete. Medido em 30/09: ausente.
+  ⚠️ `script-src` mantém `'unsafe-inline'` de propósito (o Next injeta script
+  inline, e o tema é aplicado antes da primeira pintura). Tirar exige nonce por
+  requisição — middleware do Next, outra entrega.
+- ✅ **O freio do `/client-errors` subiu no MESMO deploy** (30/09/2026): 30
+  requisições/min por IP, pelo mesmo limitador do login. Antes disso a única
+  rota pública que escreve log não tinha limite nenhum. Ela **continua sem
+  exigir login**, de propósito — erro na tela de login é o caso que mais
+  importa capturar.
 - **Sem portas no host:** todo o ingresso passa pelo Traefik (80/443). Os
   containers `api` e `web` só são alcançáveis pela rede `root_default`.
 - **Rede:** o compose entra na rede externa `root_default` (onde estão Traefik
