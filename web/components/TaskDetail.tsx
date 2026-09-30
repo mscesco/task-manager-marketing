@@ -1558,7 +1558,16 @@ export default function TaskDetail({
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className={modo === "modal" ? "modal-card" : undefined}
+        className={[
+          modo === "modal" ? "modal-card" : "",
+          // ⚠️⚠️ AS DUAS COLUNAS ROLAM SOZINHAS a partir de 900px (pedido dela,
+          // 30/09), e por isso o CARTAO para de rolar: com o cartao rolando E
+          // as colunas rolando, a barra de fora movia as duas juntas e a de
+          // dentro só uma -- duas barras para a mesma area.
+          // ⚠️ Empilhado (abaixo de 900px) quem rola volta a ser o cartao: uma
+          // area rolavel dentro de outra, num celular, e rolagem aninhada.
+          modo === "modal" ? "overflow-y-auto min-[900px]:overflow-hidden" : "",
+        ].filter(Boolean).join(" ") || undefined}
         data-saindo={saindo ? "true" : undefined}
         style={{
           // ⚠️ 1040 e nao 700 (Spec 055): a coluna lateral so cabe com
@@ -1570,9 +1579,9 @@ export default function TaskDetail({
           // Modal: altura travada e rolagem POR DENTRO do card (a pagina atras
           // nao rola). Pagina: sem trava -- quem rola e a propria pagina, senao
           // o card ganharia uma segunda barra de rolagem aninhada.
-          ...(modo === "modal"
-            ? { maxHeight: "88vh", overflowY: "auto" as const }
-            : { margin: "0 auto" }),
+          // ⚠️ `overflowY` saiu daqui para a `className` acima: ele precisa
+          // mudar com a largura da tela, e estilo inline nao tem media query.
+          ...(modo === "modal" ? { maxHeight: "88vh" } : { margin: "0 auto" }),
         }}
       >
         {temVoltar && (
@@ -1631,8 +1640,22 @@ export default function TaskDetail({
             direita e o que ACONTECEU com ela. Empilham abaixo de 900px --
             lado a lado num notebook pequeno, a direita esmagaria a
             esquerda, e a descricao e a checklist vivem la. */}
-        <div className="flex flex-col gap-4 min-[900px]:flex-row min-[900px]:gap-6">
-          <div className="flex min-w-0 flex-1 flex-col gap-4">
+        <div
+          className={
+            modo === "modal"
+              ? "flex min-h-0 flex-col gap-4 min-[900px]:flex-1 min-[900px]:flex-row min-[900px]:gap-6"
+              : "flex flex-col gap-4 min-[900px]:flex-row min-[900px]:gap-6"
+          }
+        >
+          {/* ⚠️ `pr-4`: a barra da esquerda encosta na divisória, e o texto
+              nao passa por baixo dela. */}
+          <div
+            className={
+              modo === "modal"
+                ? "flex min-w-0 min-h-0 flex-1 flex-col gap-4 min-[900px]:overflow-y-auto min-[900px]:pr-4"
+                : "flex min-w-0 flex-1 flex-col gap-4 min-[900px]:max-h-[70vh] min-[900px]:overflow-y-auto min-[900px]:pr-4"
+            }
+          >
 
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           {task.parent_task_id && (
@@ -2872,7 +2895,7 @@ export default function TaskDetail({
               vertical, uma borda lateral não separaria nada. Sem
               `items-start` na linha, a borda corre a altura inteira em vez de
               parar onde o conteúdo da lateral acaba. */}
-          <aside className="flex w-full shrink-0 flex-col gap-3 border-t border-border pt-4 min-[900px]:w-[380px] min-[900px]:border-l min-[900px]:border-t-0 min-[900px]:pl-6 min-[900px]:pt-0">
+          <aside className="flex w-full min-h-0 shrink-0 flex-col gap-3 border-t border-border pt-4 min-[900px]:w-[380px] min-[900px]:border-l min-[900px]:border-t-0 min-[900px]:pl-6 min-[900px]:pt-0">
             {/* ⚠️ O MESMO `Toggle` da tela de time (decisao dela, 30/09),
                 com a mesma animacao: a pastilha ANDA. */}
             <Toggle
@@ -2902,7 +2925,13 @@ export default function TaskDetail({
                 ⚠️ SÓ a partir de 900px. Empilhado (celular), uma área rolável
                 DENTRO de um cartão que já rola dá rolagem aninhada, que é pior
                 do que a página crescer. */}
-            <div className="min-[900px]:max-h-[62vh] min-[900px]:overflow-y-auto min-[900px]:pr-1">
+            <div
+              className={
+                modo === "modal"
+                  ? "min-h-0 min-[900px]:flex-1 min-[900px]:overflow-y-auto"
+                  : "min-[900px]:max-h-[70vh] min-[900px]:overflow-y-auto"
+              }
+            >
             {abaLateral === "atividade" ? (
               <AtividadeDaTarefa
                 itens={atividade}
