@@ -1575,10 +1575,14 @@ export default function TaskDetail({
           width: 1040, maxWidth: "100%",
           background: "var(--surface)",
           border: "1px solid var(--border)", borderRadius: 14,
-          // ⚠️ 18 e nao 24 (pedido dela, 30/09): com duas colunas, a moldura
-          // vazia de 24 de cada lado comia largura util da leitura.
-          padding: 18,
-          boxShadow: "var(--shadow)", display: "flex", flexDirection: "column", gap: 16,
+          // ⚠️ 14 e nao 24 (pedidos dela, 30/09): com duas colunas, a moldura
+          // vazia comia largura util de leitura -- e a barra de rolagem da
+          // direita ficava longe da borda do cartao.
+          padding: 14,
+          boxShadow: "var(--shadow)", display: "flex", flexDirection: "column",
+          // ⚠️ 12 e nao 16: e o respiro ENTRE as secoes, e era ele que abria o
+          // vao branco entre a ultima subtarefa e a fileira do "Arquivar".
+          gap: 12,
           // Modal: altura travada e rolagem POR DENTRO do card (a pagina atras
           // nao rola). Pagina: sem trava -- quem rola e a propria pagina, senao
           // o card ganharia uma segunda barra de rolagem aninhada.
@@ -1646,8 +1650,14 @@ export default function TaskDetail({
         <div
           className={
             modo === "modal"
-              ? "flex min-h-0 flex-col gap-4 min-[900px]:flex-1 min-[900px]:flex-row min-[900px]:gap-6"
-              : "flex flex-col gap-4 min-[900px]:flex-row min-[900px]:gap-6"
+              // ⚠️ `gap-0` LADO A LADO (pedido dela, 30/09): o vao entre as
+              // colunas era o `gap` da linha MAIS o `pr` da esquerda MAIS o
+              // `pl` da direita -- tres espacos somados, e a divisoria ficava
+              // num corredor vazio. Agora o respiro e so o `pr-3`/`pl-3`, 12px
+              // de cada lado da linha. Empilhado o `gap-4` volta: ali ele
+              // separa as duas colunas de verdade.
+              ? "flex min-h-0 flex-col gap-4 min-[900px]:flex-1 min-[900px]:flex-row min-[900px]:gap-0"
+              : "flex flex-col gap-4 min-[900px]:flex-row min-[900px]:gap-0"
           }
         >
           {/* ⚠️ `pr-4`: a barra da esquerda encosta na divisória, e o texto
@@ -1655,8 +1665,8 @@ export default function TaskDetail({
           <div
             className={
               modo === "modal"
-                ? "flex min-w-0 min-h-0 flex-1 flex-col gap-4 min-[900px]:overflow-y-auto min-[900px]:pr-4"
-                : "flex min-w-0 flex-1 flex-col gap-4 min-[900px]:max-h-[70vh] min-[900px]:overflow-y-auto min-[900px]:pr-4"
+                ? "flex min-w-0 min-h-0 flex-1 flex-col gap-4 min-[900px]:overflow-y-auto min-[900px]:pr-3"
+                : "flex min-w-0 flex-1 flex-col gap-4 min-[900px]:max-h-[70vh] min-[900px]:overflow-y-auto min-[900px]:pr-3"
             }
           >
 
@@ -2898,7 +2908,7 @@ export default function TaskDetail({
               vertical, uma borda lateral não separaria nada. Sem
               `items-start` na linha, a borda corre a altura inteira em vez de
               parar onde o conteúdo da lateral acaba. */}
-          <aside className="flex w-full min-h-0 shrink-0 flex-col gap-3 border-t border-border pt-4 min-[900px]:w-[380px] min-[900px]:border-l min-[900px]:border-t-0 min-[900px]:pl-6 min-[900px]:pt-0">
+          <aside className="flex w-full min-h-0 shrink-0 flex-col gap-3 border-t border-border pt-4 min-[900px]:w-[380px] min-[900px]:border-l min-[900px]:border-t-0 min-[900px]:pl-3 min-[900px]:pt-0">
             {/* ⚠️ O MESMO `Toggle` da tela de time (decisao dela, 30/09),
                 com a mesma animacao: a pastilha ANDA. */}
             <Toggle
@@ -3183,7 +3193,7 @@ export default function TaskDetail({
           </div>
         )}
 
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 4 }}>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
           <button
             type="button" className="btn btn-ghost" onClick={alternarArquivo}
             disabled={arquivando} style={{ marginRight: "auto" }}
