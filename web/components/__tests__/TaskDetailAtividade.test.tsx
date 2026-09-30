@@ -271,6 +271,56 @@ describe("mostrar mais", () => {
   });
 });
 
+describe("o campo de escrever", () => {
+  it("⚠️ fica FORA da área que rola, e some na aba de atividade", async () => {
+    // Com ele no fim da lista, comentar numa tarefa com vinte comentários
+    // exigia rolar até o fim primeiro.
+    montar();
+    const caixa = await screen.findByPlaceholderText(/Escreva um comentário/);
+    // A área que rola é marcada com `data-rolagem="lateral"` -- a classe
+    // arbitrária do Tailwind não serve de seletor.
+    expect(caixa.closest('[data-rolagem="lateral"]')).toBeNull();
+    // E a lista de comentários ESTÁ lá dentro: é ela que rola.
+    expect(
+      screen.getByText("consegue até sexta?").closest('[data-rolagem="lateral"]'),
+    ).not.toBeNull();
+
+    fireEvent.click(await screen.findByRole("tab", { name: /Atividade/ }));
+    expect(screen.queryByPlaceholderText(/Escreva um comentário/)).toBeNull();
+  });
+});
+
+describe("o par que se anula", () => {
+  it("⚠️ seguir e deixar de seguir em seguida não aparecem", async () => {
+    vi.mocked(api.listTaskHistory).mockResolvedValue({
+      items: [
+        evento({
+          id: "h3",
+          event_type: "unwatched",
+          event_metadata: { target_user_id: ANA, by_self: true },
+          created_at: "2026-09-30T14:00:00Z",
+        }),
+        evento({
+          id: "h2",
+          event_type: "watched",
+          event_metadata: { target_user_id: ANA, by_self: true },
+          created_at: "2026-09-30T13:59:00Z",
+        }),
+        evento({ id: "h1" }),
+      ],
+      total: 3,
+      page: 1,
+      size: 20,
+    });
+    montar();
+    fireEvent.click(await screen.findByRole("tab", { name: /Atividade/ }));
+
+    expect(await screen.findByText("criou a tarefa")).toBeTruthy();
+    expect(screen.queryByText("passou a seguir")).toBeNull();
+    expect(screen.queryByText("deixou de seguir")).toBeNull();
+  });
+});
+
 describe("quando a atividade falha", () => {
   it("⚠️ atividade que falha não derruba o detalhe", async () => {
     vi.mocked(api.listTaskHistory).mockRejectedValue(new Error("caiu"));

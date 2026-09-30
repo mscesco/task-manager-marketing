@@ -213,6 +213,52 @@ export function fraseDoEvento(
   }
 }
 
+/** O par seguir/deixar de seguir, para achar quem anula quem. */
+const PAR_QUE_SE_ANULA: Record<string, string> = {
+  watched: "unwatched",
+  unwatched: "watched",
+};
+
+/**
+ * Tira os pares de seguir/deixar de seguir que se ANULAM (pedido dela, 30/09).
+ *
+ * ⚠️ O QUE ISTO RESOLVE: o histórico real mostrou oito linhas seguidas de
+ * "passou a seguir" / "deixou de seguir" da mesma pessoa, alternando em
+ * minutos. É ruído de quem estava experimentando o botão -- não conta nada
+ * sobre a tarefa, e empurra para baixo o que conta.
+ *
+ * Só some o par que se anula de verdade: MESMA pessoa seguida, MESMO autor do
+ * gesto, e VIZINHOS na lista. Duas pessoas diferentes, ou um "pôs para seguir"
+ * com um "deixou de seguir" no meio de outras coisas, continuam à vista --
+ * esconder ali apagaria história.
+ *
+ * ⚠️ O PAR PARTIDO ENTRE DUAS PÁGINAS SOBREVIVE, e é aceito: a alternativa
+ * seria carregar o histórico inteiro para decidir o que mostrar na primeira
+ * página.
+ */
+export function semParesQueSeAnulam(
+  eventos: readonly EventoDeHistorico[],
+): EventoDeHistorico[] {
+  const saida: EventoDeHistorico[] = [];
+  let i = 0;
+  while (i < eventos.length) {
+    const atual = eventos[i];
+    const seguinte = eventos[i + 1];
+    const oposto = PAR_QUE_SE_ANULA[atual.event_type];
+    const mesmaPessoa =
+      seguinte &&
+      atual.user_id === seguinte.user_id &&
+      meta(atual, "target_user_id") === meta(seguinte, "target_user_id");
+    if (seguinte && oposto === seguinte.event_type && mesmaPessoa) {
+      i += 2; // os dois somem
+      continue;
+    }
+    saida.push(atual);
+    i += 1;
+  }
+  return saida;
+}
+
 /**
  * Junta os eventos do MESMO instante e da MESMA pessoa numa linha só.
  *

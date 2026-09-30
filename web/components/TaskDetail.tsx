@@ -1574,7 +1574,10 @@ export default function TaskDetail({
           // largura. `maxWidth: 100%` continua mandando em tela estreita.
           width: 1040, maxWidth: "100%",
           background: "var(--surface)",
-          border: "1px solid var(--border)", borderRadius: 14, padding: 24,
+          border: "1px solid var(--border)", borderRadius: 14,
+          // ⚠️ 18 e nao 24 (pedido dela, 30/09): com duas colunas, a moldura
+          // vazia de 24 de cada lado comia largura util da leitura.
+          padding: 18,
           boxShadow: "var(--shadow)", display: "flex", flexDirection: "column", gap: 16,
           // Modal: altura travada e rolagem POR DENTRO do card (a pagina atras
           // nao rola). Pagina: sem trava -- quem rola e a propria pagina, senao
@@ -2926,6 +2929,10 @@ export default function TaskDetail({
                 DENTRO de um cartão que já rola dá rolagem aninhada, que é pior
                 do que a página crescer. */}
             <div
+              // ⚠️ A MARCA EXISTE PARA O TESTE poder afirmar que o campo de
+              // escrever esta FORA desta area -- e a classe arbitraria do
+              // Tailwind (`min-[900px]:...`) nao e seletor CSS valido.
+              data-rolagem="lateral"
               className={
                 modo === "modal"
                   ? "min-h-0 min-[900px]:flex-1 min-[900px]:overflow-y-auto"
@@ -3072,52 +3079,61 @@ export default function TaskDetail({
                 </div>
               )}
 
-              {/* caixa de novo comentario (quem ve a tarefa pode comentar) */}
-              <MentionTextarea
-                ref={topComentRef}
-                value={novoComent}
-                onChange={setNovoComent}
-                members={members}
-                excluidos={foraDoAutocompletar}
-                rows={2}
-                placeholder="Escreva um comentário… (@ menciona)"
-                disabled={enviandoComent}
-                maxLength={5000}
-                wrapperStyle={{ marginTop: 10 }}
-                style={{ resize: "vertical" }}
-              />
-              <GifDraftStrip
-                gifs={gifsNovo}
-                onRemove={(i) => setGifsNovo((g) => g.filter((_, j) => j !== i))}
-              />
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
-                <EmojiPicker
-                  disabled={enviandoComent}
-                  onPick={(e) =>
-                    inserirNoCursor(topComentRef, novoComent, setNovoComent, e)
-                  }
-                />
-                <GifPicker
-                  disabled={enviandoComent}
-                  onPick={(url) => setGifsNovo((g) => [...g, url])}
-                />
-                <button
-                  type="button"
-                  className="btn btn-primary"
-                  onClick={enviarComentario}
-                  disabled={enviandoComent || (!novoComent.trim() && gifsNovo.length === 0)}
-                  style={{ padding: "6px 12px" }}
-                >
-                  {enviandoComent ? "Enviando…" : "Comentar"}
-                </button>
-              </div>
-
-              {erroCom && (
-                <div className="error-box" style={{ marginTop: 8 }}>{erroCom}</div>
-              )}
             </div>
             )}
             </div>
+
+            {/* ⚠️⚠️ O CAMPO DE ESCREVER FICA FORA DA AREA QUE ROLA (pedido dela,
+                30/09): com ele no fim da lista, comentar numa tarefa com vinte
+                comentarios exigia rolar ate o fim primeiro. Agora a lista rola
+                por baixo e a caixa fica onde a mao ja esta. */}
+            {abaLateral === "comentarios" && (
+              <div className="shrink-0 border-t border-border pt-3">
+                {/* caixa de novo comentario (quem ve a tarefa pode comentar) */}
+                <MentionTextarea
+                  ref={topComentRef}
+                  value={novoComent}
+                  onChange={setNovoComent}
+                  members={members}
+                  excluidos={foraDoAutocompletar}
+                  rows={2}
+                  placeholder="Escreva um comentário… (@ menciona)"
+                  disabled={enviandoComent}
+                  maxLength={5000}
+                  wrapperStyle={{ marginTop: 10 }}
+                  style={{ resize: "vertical" }}
+                />
+                <GifDraftStrip
+                  gifs={gifsNovo}
+                  onRemove={(i) => setGifsNovo((g) => g.filter((_, j) => j !== i))}
+                />
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
+                  <EmojiPicker
+                    disabled={enviandoComent}
+                    onPick={(e) =>
+                      inserirNoCursor(topComentRef, novoComent, setNovoComent, e)
+                    }
+                  />
+                  <GifPicker
+                    disabled={enviandoComent}
+                    onPick={(url) => setGifsNovo((g) => [...g, url])}
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    onClick={enviarComentario}
+                    disabled={enviandoComent || (!novoComent.trim() && gifsNovo.length === 0)}
+                    style={{ padding: "6px 12px" }}
+                  >
+                    {enviandoComent ? "Enviando…" : "Comentar"}
+                  </button>
+                </div>
+
+                {erroCom && (
+                  <div className="error-box" style={{ marginTop: 8 }}>{erroCom}</div>
+                )}
+              </div>
+            )}
           </aside>
         </div>
 

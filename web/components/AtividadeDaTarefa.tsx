@@ -19,6 +19,7 @@
 import { dataHoraCurta } from "@/lib/prazo";
 import {
   agruparPorInstante,
+  semParesQueSeAnulam,
   type EventoDeHistorico,
   type NomesDoHistorico,
 } from "@/lib/historicoDaTarefa";
@@ -47,7 +48,9 @@ export default function AtividadeDaTarefa({
     );
   }
 
-  const grupos = agruparPorInstante(itens, nomes);
+  // ⚠️ FILTRA ANTES DE AGRUPAR: o par que se anula tem de sumir antes, senão
+  // ele contaria como gesto e deixaria um grupo vazio na lista.
+  const grupos = agruparPorInstante(semParesQueSeAnulam(itens), nomes);
   const faltam = total - itens.length;
 
   return (

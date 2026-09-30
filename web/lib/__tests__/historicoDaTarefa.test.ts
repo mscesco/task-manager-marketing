@@ -22,6 +22,7 @@ import { describe, expect, it } from "vitest";
 import {
   agruparPorInstante,
   fraseDoEvento,
+  semParesQueSeAnulam,
   type EventoDeHistorico,
   type NomesDoHistorico,
 } from "@/lib/historicoDaTarefa";
@@ -235,6 +236,66 @@ describe("⚠️⚠️ as reservas", () => {
     for (const t of tipos) {
       expect(frase({ event_type: t }).trim().length).toBeGreaterThan(0);
     }
+  });
+});
+
+describe("o par que se anula", () => {
+  // ⚠️ Do historico real dela (30/09): oito linhas seguidas de "passou a
+  // seguir" / "deixou de seguir" da mesma pessoa, alternando em minutos.
+  const seguir = (id: string, alvo: string, autor = ANA) =>
+    evento({
+      id,
+      event_type: "watched",
+      user_id: autor,
+      event_metadata: { target_user_id: alvo, by_self: autor === alvo },
+    });
+  const parar = (id: string, alvo: string, autor = ANA) =>
+    evento({
+      id,
+      event_type: "unwatched",
+      user_id: autor,
+      event_metadata: { target_user_id: alvo, by_self: autor === alvo },
+    });
+
+  it("⚠️ vizinhos que se anulam somem os DOIS", () => {
+    const saida = semParesQueSeAnulam([parar("b", ANA), seguir("a", ANA)]);
+    expect(saida).toEqual([]);
+  });
+
+  it("some tambem na ordem inversa, e em sequencia", () => {
+    const saida = semParesQueSeAnulam([
+      seguir("d", ANA),
+      parar("c", ANA),
+      parar("b", ANA),
+      seguir("a", ANA),
+    ]);
+    expect(saida).toEqual([]);
+  });
+
+  it("⚠️ pessoas DIFERENTES nao se anulam", () => {
+    // Tirar o Bruno e por a Ana e historia de verdade, e nao ruido.
+    const entrada = [parar("b", BRUNO), seguir("a", ANA)];
+    expect(semParesQueSeAnulam(entrada)).toEqual(entrada);
+  });
+
+  it("⚠️ com outra coisa no meio, os dois ficam", () => {
+    const meio = evento({ id: "m", event_type: "archived" });
+    const entrada = [parar("c", ANA), meio, seguir("a", ANA)];
+    expect(semParesQueSeAnulam(entrada).map((e) => e.id)).toEqual(["c", "m", "a"]);
+  });
+
+  it("autores diferentes nao se anulam", () => {
+    // "Bruno pos a Ana para seguir" e "a Ana deixou de seguir" sao dois fatos.
+    const entrada = [parar("b", ANA, ANA), seguir("a", ANA, BRUNO)];
+    expect(semParesQueSeAnulam(entrada)).toEqual(entrada);
+  });
+
+  it("o que nao e seguir passa intacto", () => {
+    const entrada = [
+      evento({ id: "x", event_type: "created" }),
+      evento({ id: "y", event_type: "archived" }),
+    ];
+    expect(semParesQueSeAnulam(entrada)).toEqual(entrada);
   });
 });
 
