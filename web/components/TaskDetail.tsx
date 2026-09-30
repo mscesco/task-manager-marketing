@@ -1575,10 +1575,12 @@ export default function TaskDetail({
           width: 1040, maxWidth: "100%",
           background: "var(--surface)",
           border: "1px solid var(--border)", borderRadius: 14,
-          // ⚠️ 14 e nao 24 (pedidos dela, 30/09): com duas colunas, a moldura
-          // vazia comia largura util de leitura -- e a barra de rolagem da
-          // direita ficava longe da borda do cartao.
-          padding: 14,
+          // ⚠️ MOLDURA DESIGUAL, e de proposito (tres rodadas de ajuste com ela
+          // em 30/09): 20 em cima e nos lados, 14 embaixo. Comecou em 24 (vazio
+          // demais), foi a 14 (o titulo e as pilulas ficaram colados na borda) e
+          // parou aqui. Embaixo pode ser menor porque quem encosta na borda e a
+          // fileira de botoes, que ja tem respiro proprio.
+          padding: "20px 20px 14px",
           boxShadow: "var(--shadow)", display: "flex", flexDirection: "column",
           // ⚠️ 12 e nao 16: e o respiro ENTRE as secoes, e era ele que abria o
           // vao branco entre a ultima subtarefa e a fileira do "Arquivar".
@@ -3098,7 +3100,9 @@ export default function TaskDetail({
                 comentarios exigia rolar ate o fim primeiro. Agora a lista rola
                 por baixo e a caixa fica onde a mao ja esta. */}
             {abaLateral === "comentarios" && (
-              <div className="shrink-0 border-t border-border pt-3">
+              // ⚠️ `mt-2`: a linha desce um pouco (pedido dela, 30/09) -- colada
+              // no ultimo comentario, ela parecia cortar o texto de cima.
+              <div className="mt-2 shrink-0 border-t border-border pt-3">
                 {/* caixa de novo comentario (quem ve a tarefa pode comentar) */}
                 <MentionTextarea
                   ref={topComentRef}
