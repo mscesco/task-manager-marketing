@@ -1631,7 +1631,7 @@ export default function TaskDetail({
             direita e o que ACONTECEU com ela. Empilham abaixo de 900px --
             lado a lado num notebook pequeno, a direita esmagaria a
             esquerda, e a descricao e a checklist vivem la. */}
-        <div className="flex flex-col gap-4 min-[900px]:flex-row min-[900px]:items-start min-[900px]:gap-6">
+        <div className="flex flex-col gap-4 min-[900px]:flex-row min-[900px]:gap-6">
           <div className="flex min-w-0 flex-1 flex-col gap-4">
 
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
@@ -2867,7 +2867,12 @@ export default function TaskDetail({
 
           {/* A coluna lateral. `aside`: e conteudo relacionado, e nao a
               tarefa em si. */}
-          <aside className="flex w-full shrink-0 flex-col gap-3 min-[900px]:w-[380px]">
+          {/* ⚠️ A DIVISÓRIA (pedido dela, 30/09): borda À ESQUERDA quando as
+              colunas estão lado a lado, e EM CIMA quando empilham -- na
+              vertical, uma borda lateral não separaria nada. Sem
+              `items-start` na linha, a borda corre a altura inteira em vez de
+              parar onde o conteúdo da lateral acaba. */}
+          <aside className="flex w-full shrink-0 flex-col gap-3 border-t border-border pt-4 min-[900px]:w-[380px] min-[900px]:border-l min-[900px]:border-t-0 min-[900px]:pl-6 min-[900px]:pt-0">
             {/* ⚠️ O MESMO `Toggle` da tela de time (decisao dela, 30/09),
                 com a mesma animacao: a pastilha ANDA. */}
             <Toggle
@@ -2888,6 +2893,16 @@ export default function TaskDetail({
               aria-label="Comentários ou atividade"
             />
 
+            {/* ⚠️⚠️ A LATERAL ROLA POR DENTRO, e esta é a correção do que ela
+                viu em 30/09: com 18 eventos, a aba de atividade esticava o
+                cartão até os 88vh enquanto a de comentários o deixava curto --
+                trocar de aba mudava o tamanho da janela debaixo do cursor.
+                Agora o limite é da COLUNA, e o cartão não se mexe.
+
+                ⚠️ SÓ a partir de 900px. Empilhado (celular), uma área rolável
+                DENTRO de um cartão que já rola dá rolagem aninhada, que é pior
+                do que a página crescer. */}
+            <div className="min-[900px]:max-h-[62vh] min-[900px]:overflow-y-auto min-[900px]:pr-1">
             {abaLateral === "atividade" ? (
               <AtividadeDaTarefa
                 itens={atividade}
@@ -3073,6 +3088,7 @@ export default function TaskDetail({
               )}
             </div>
             )}
+            </div>
           </aside>
         </div>
 
