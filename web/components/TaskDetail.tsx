@@ -42,6 +42,7 @@ import {
   unarchiveTask,
   deleteTask,
   listComments,
+  listTaskHistory,
   colunasDoQuadro,
   listMembers,
   createComment,
@@ -77,6 +78,7 @@ import {
   DEADLINE_COLOR,
   dataHoraBR,
 } from "@/lib/status";
+import { dataHoraCurta } from "@/lib/prazo";
 import Badge from "@/components/Badge";
 import Avatar from "@/components/Avatar";
 import EmojiPicker from "@/components/EmojiPicker";
@@ -86,11 +88,14 @@ import SeletorDeReacao from "@/components/SeletorDeReacao";
 import CapsulaDeAcoes, { BOTAO_DA_CAPSULA } from "@/components/CapsulaDeAcoes";
 import { acaoDaPilula } from "@/lib/reacoes";
 import { isGiphyUrl } from "@/lib/giphy";
+import AtividadeDaTarefa from "@/components/AtividadeDaTarefa";
 import CommentText from "@/components/CommentText";
+import Toggle from "@/components/Toggle";
 import MentionTextarea from "@/components/MentionTextarea";
 import { nomeCurto } from "@/lib/people";
 import { checklist } from "@/lib/subtarefas";
 import { deadlineTonePorColuna, type Coluna } from "@/lib/coluna";
+import type { TaskHistoryEvent } from "@/lib/api";
 import {
   acaoDoEnterNoTitulo,
   alternaResponsavel,
@@ -110,6 +115,9 @@ import { useAvisar } from "@/components/Toasts";
 // natural (menor -> maior); a ordem de insercao do objeto e um acidente que
 // alguem pode reordenar sem perceber que mexeu na interface. Lista explicita
 // falha alto se um valor novo entrar no enum e ninguem vier aqui.
+/** Eventos por pagina na aba de atividade (Spec 055, §9.2). */
+const ATIVIDADE_POR_PAGINA = 20;
+
 const PRIORIDADES = ["LOW", "MEDIUM", "HIGH", "URGENT"] as const;
 
 const STATUS_LABEL: Record<string, string> = Object.fromEntries(
@@ -143,16 +151,9 @@ const GATILHO_STYLE: CSSProperties = {
   padding: 0,
 };
 
-// Data/hora curta do comentario (ex.: "24/06 14:30"). created_at vem ISO
-// com timezone; o browser converte pro fuso local.
-function quando(iso: string): string {
-  return new Date(iso).toLocaleString("pt-BR", {
-    day: "2-digit",
-    month: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
+// ⚠️ O `quando` local virou `dataHoraCurta` em `lib/prazo.ts` (Spec 055): o
+// painel de atividade mostra o mesmo carimbo, e duas copias divergiriam.
+const quando = dataHoraCurta;
 
 export default function TaskDetail({
   task,
@@ -422,10 +423,22 @@ export default function TaskDetail({
   const [enviandoComent, setEnviandoComent] = useState(false);
   const [respondendoId, setRespondendoId] = useState<string | null>(null);
   const [textoResposta, setTextoResposta] = useState("");
-  // Fatia A: historico de comentarios colavel (o composer abaixo fica SEMPRE
-  // visivel). Sessao-level de proposito: NAO entra no reset por task -- fica
-  // como a pessoa deixou enquanto navega entre tarefas.
-  const [threadAberto, setThreadAberto] = useState(true);
+  // ⚠️ O COLAPSO DA THREAD SAIU NA SPEC 055: com as abas, ele virou um segundo
+  // jeito de esconder a mesma coisa. O que sobrou dele e a ideia de nivel de
+  // SESSAO -- a aba escolhida nao volta ao padrao a cada tarefa aberta (§9.4).
+  const [abaLateral, setAbaLateral] = useState<"comentarios" | "atividade">(
+    "comentarios",
+  );
+
+  // ---- Atividade (Spec 055) ----
+  // ⚠️ A PRIMEIRA PAGINA E BUSCADA AO ABRIR, e nao ao clicar na aba: o
+  // contador do alternador precisa do `total`, e um numero que so aparece
+  // depois do primeiro clique nao serve para decidir se vale clicar.
+  const [atividade, setAtividade] = useState<TaskHistoryEvent[]>([]);
+  const [totalAtividade, setTotalAtividade] = useState(0);
+  const [paginaAtividade, setPaginaAtividade] = useState(1);
+  const [carregandoAtividade, setCarregandoAtividade] = useState(false);
+  const [erroAtividade, setErroAtividade] = useState<string | null>(null);
 
   // Spec 052, fatia B: os links com nome da tarefa, logo abaixo da descrição.
   // ⚠️ ZERA ao trocar de tarefa, antes da resposta: sem isso, a tarefa nova
@@ -699,6 +712,56 @@ export default function TaskDetail({
     };
   }, [task?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Atividade da tarefa focada, primeira pagina (Spec 055).
+  useEffect(() => {
+    if (!task) return;
+    let vivo = true;
+    setAtividade([]);
+    setTotalAtividade(0);
+    setPaginaAtividade(1);
+    setErroAtividade(null);
+    setCarregandoAtividade(true);
+    listTaskHistory(task.id, { page: 1, size: ATIVIDADE_POR_PAGINA })
+      .then((r) => {
+        if (!vivo) return;
+        setAtividade(r.items);
+        setTotalAtividade(r.total);
+      })
+      .catch(() => {
+        // ⚠️ Falhar aqui NAO pode derrubar o detalhe: a atividade e o lado
+        // acessorio da tela, e a tarefa em si ja esta carregada.
+        if (vivo) setErroAtividade("Não consegui carregar a atividade.");
+      })
+      .finally(() => {
+        if (vivo) setCarregandoAtividade(false);
+      });
+    return () => {
+      vivo = false;
+    };
+  }, [task?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function carregarMaisAtividade() {
+    if (!task || carregandoAtividade) return;
+    const proxima = paginaAtividade + 1;
+    setCarregandoAtividade(true);
+    try {
+      const r = await listTaskHistory(task.id, {
+        page: proxima,
+        size: ATIVIDADE_POR_PAGINA,
+      });
+      // ⚠️ `total` REGRAVADO a cada pagina: alguem pode ter mexido na tarefa
+      // enquanto esta lista estava aberta, e o botao "Mostrar mais" some pela
+      // conta `total - itens`.
+      setAtividade((atual) => [...atual, ...r.items]);
+      setTotalAtividade(r.total);
+      setPaginaAtividade(proxima);
+    } catch {
+      setErroAtividade("Não consegui carregar o resto da atividade.");
+    } finally {
+      setCarregandoAtividade(false);
+    }
+  }
+
   // Colunas do quadro da tarefa focada. Em erro fica `[]` e nao `null`, senao
   // o contador da checklist nunca aparece quando a API de quadros cai.
   useEffect(() => {
@@ -823,6 +886,13 @@ export default function TaskDetail({
   // Spec 022: task de topo pode trocar/tirar projeto; subtarefa herda do pai
   // (read-only). Nome do projeto atual resolve do Map (null/ausente => avulsa).
   const ehTopo = !task.parent_task_id;
+
+  // Os ids que o historico guarda viram nome com o que a tela JA tem em maos
+  // (Spec 055, fatia B). Quem nao resolve vira frase generica, nunca uuid.
+  const nomesDoHistorico = {
+    pessoa: (id: string) => members.get(id)?.name ?? null,
+    coluna: (id: string) => colunas?.find((c) => c.id === id)?.name ?? null,
+  };
   const nomeProjetoAtual = projetoAtual ? projects.get(projetoAtual) ?? null : null;
   // ⚠️ SOBRE O ECO, e nao sobre `task.due_date` (Spec 038, fatia A). Depois de
   // salvar uma data nova, o `task` do pai ainda e o antigo por um instante --
@@ -1488,19 +1558,39 @@ export default function TaskDetail({
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className={modo === "modal" ? "modal-card" : undefined}
+        className={[
+          modo === "modal" ? "modal-card" : "",
+          // ⚠️⚠️ AS DUAS COLUNAS ROLAM SOZINHAS a partir de 900px (pedido dela,
+          // 30/09), e por isso o CARTAO para de rolar: com o cartao rolando E
+          // as colunas rolando, a barra de fora movia as duas juntas e a de
+          // dentro só uma -- duas barras para a mesma area.
+          // ⚠️ Empilhado (abaixo de 900px) quem rola volta a ser o cartao: uma
+          // area rolavel dentro de outra, num celular, e rolagem aninhada.
+          modo === "modal" ? "overflow-y-auto min-[900px]:overflow-hidden" : "",
+        ].filter(Boolean).join(" ") || undefined}
         data-saindo={saindo ? "true" : undefined}
         style={{
-          width: 700, maxWidth: "100%",
+          // ⚠️ 1040 e nao 700 (Spec 055): a coluna lateral so cabe com
+          // largura. `maxWidth: 100%` continua mandando em tela estreita.
+          width: 1040, maxWidth: "100%",
           background: "var(--surface)",
-          border: "1px solid var(--border)", borderRadius: 14, padding: 24,
-          boxShadow: "var(--shadow)", display: "flex", flexDirection: "column", gap: 16,
+          border: "1px solid var(--border)", borderRadius: 14,
+          // ⚠️ MOLDURA DESIGUAL, e de proposito (tres rodadas de ajuste com ela
+          // em 30/09): 20 em cima e nos lados, 14 embaixo. Comecou em 24 (vazio
+          // demais), foi a 14 (o titulo e as pilulas ficaram colados na borda) e
+          // parou aqui. Embaixo pode ser menor porque quem encosta na borda e a
+          // fileira de botoes, que ja tem respiro proprio.
+          padding: "20px 20px 14px",
+          boxShadow: "var(--shadow)", display: "flex", flexDirection: "column",
+          // ⚠️ 12 e nao 16: e o respiro ENTRE as secoes, e era ele que abria o
+          // vao branco entre a ultima subtarefa e a fileira do "Arquivar".
+          gap: 12,
           // Modal: altura travada e rolagem POR DENTRO do card (a pagina atras
           // nao rola). Pagina: sem trava -- quem rola e a propria pagina, senao
           // o card ganharia uma segunda barra de rolagem aninhada.
-          ...(modo === "modal"
-            ? { maxHeight: "88vh", overflowY: "auto" as const }
-            : { margin: "0 auto" }),
+          // ⚠️ `overflowY` saiu daqui para a `className` acima: ele precisa
+          // mudar com a largura da tela, e estilo inline nao tem media query.
+          ...(modo === "modal" ? { maxHeight: "88vh" } : { margin: "0 auto" }),
         }}
       >
         {temVoltar && (
@@ -1555,6 +1645,32 @@ export default function TaskDetail({
             <X size={15} strokeWidth={2} aria-hidden />
           </button>
         </div>
+        {/* ⚠️⚠️ DUAS COLUNAS (Spec 055): a esquerda e o que a tarefa E, a
+            direita e o que ACONTECEU com ela. Empilham abaixo de 900px --
+            lado a lado num notebook pequeno, a direita esmagaria a
+            esquerda, e a descricao e a checklist vivem la. */}
+        <div
+          className={
+            modo === "modal"
+              // ⚠️ `gap-0` LADO A LADO (pedido dela, 30/09): o vao entre as
+              // colunas era o `gap` da linha MAIS o `pr` da esquerda MAIS o
+              // `pl` da direita -- tres espacos somados, e a divisoria ficava
+              // num corredor vazio. Agora o respiro e so o `pr-3`/`pl-3`, 12px
+              // de cada lado da linha. Empilhado o `gap-4` volta: ali ele
+              // separa as duas colunas de verdade.
+              ? "flex min-h-0 flex-col gap-4 min-[900px]:flex-1 min-[900px]:flex-row min-[900px]:gap-0"
+              : "flex flex-col gap-4 min-[900px]:flex-row min-[900px]:gap-0"
+          }
+        >
+          {/* ⚠️ `pr-4`: a barra da esquerda encosta na divisória, e o texto
+              nao passa por baixo dela. */}
+          <div
+            className={
+              modo === "modal"
+                ? "flex min-w-0 min-h-0 flex-1 flex-col gap-4 min-[900px]:overflow-y-auto min-[900px]:pr-3"
+                : "flex min-w-0 flex-1 flex-col gap-4 min-[900px]:max-h-[70vh] min-[900px]:overflow-y-auto min-[900px]:pr-3"
+            }
+          >
 
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           {task.parent_task_id && (
@@ -2785,204 +2901,254 @@ export default function TaskDetail({
           )}
         </div>
 
-        {/* ---- Comentarios (Entrega 14) ---- */}
-        <div className="field">
-          {comentarios && comentarios.length > 0 ? (
-            <button
-              type="button"
-              onClick={() => setThreadAberto((v) => !v)}
-              aria-expanded={threadAberto}
-              className="label"
-              style={{
-                background: "transparent", border: "none", padding: 0,
-                cursor: "pointer", display: "inline-flex", alignItems: "center",
-                gap: 6, textAlign: "left", alignSelf: "flex-start",
-              }}
-            >
-              <span>Comentários ({comentarios.length})</span>
-              <span
-                aria-hidden
-                style={{
-                  fontSize: 13, lineHeight: 1, display: "inline-block",
-                  transition: "transform 120ms ease",
-                  transform: threadAberto ? "rotate(90deg)" : "rotate(0deg)",
-                }}
-              >
-                ›
-              </span>
-            </button>
-          ) : (
-            <span className="label">Comentários</span>
-          )}
-
-          {comentarios === null ? (
-            <Loading tamanho="linha" rotulo="Carregando os comentários" />
-          ) : comentarios.length === 0 ? (
-            <span className="muted" style={{ fontSize: 13 }}>
-              Nenhum comentário ainda.
-            </span>
-          ) : !threadAberto ? null : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              {comentarios
-                .filter((c) => !c.parent_comment_id)
-                .map((c) => (
-                  <div key={c.id} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                    <LinhaComentario
-                      c={c}
-                      members={members}
-                      excluidos={foraDoAutocompletar}
-                      me={me}
-                      taskId={tid}
-                      podeModerar={task.can_delete}
-                      onEditado={aoEditado}
-                      onApagado={recarregarComentarios}
-                    />
-
-                    {comentarios
-                      .filter((r) => r.parent_comment_id === c.id)
-                      .map((r) => (
-                        <div key={r.id} style={{ marginLeft: 30 }}>
-                          <LinhaComentario
-                            c={r}
-                            members={members}
-                            excluidos={foraDoAutocompletar}
-                            me={me}
-                            taskId={tid}
-                            podeModerar={task.can_delete}
-                            onEditado={aoEditado}
-                            onApagado={recarregarComentarios}
-                          />
-                        </div>
-                      ))}
-
-                    {respondendoId === c.id ? (
-                      <div style={{ marginLeft: 30, display: "flex", flexDirection: "column", gap: 6 }}>
-                        <MentionTextarea
-                          ref={respostaRef}
-                          value={textoResposta}
-                          onChange={setTextoResposta}
-                          members={members}
-            excluidos={foraDoAutocompletar}
-                          autoFocus
-                          rows={2}
-                          placeholder="Responder… (@ menciona)"
-                          disabled={enviandoResp}
-                          maxLength={5000}
-                          style={{ resize: "vertical" }}
-                        />
-                        <GifDraftStrip
-                          gifs={gifsResp}
-                          onRemove={(i) =>
-                            setGifsResp((g) => g.filter((_, j) => j !== i))
-                          }
-                        />
-                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <EmojiPicker
-                            disabled={enviandoResp}
-                            onPick={(e) =>
-                              inserirNoCursor(
-                                respostaRef,
-                                textoResposta,
-                                setTextoResposta,
-                                e
-                              )
-                            }
-                          />
-                          <GifPicker
-                            disabled={enviandoResp}
-                            onPick={(url) => setGifsResp((g) => [...g, url])}
-                          />
-                          <button
-                            type="button"
-                            className="btn btn-primary"
-                            onClick={() => enviarResposta(c.id)}
-                            disabled={
-                              enviandoResp ||
-                              (!textoResposta.trim() && gifsResp.length === 0)
-                            }
-                            style={{ padding: "5px 12px", fontSize: 13 }}
-                          >
-                            {enviandoResp ? "…" : "Responder"}
-                          </button>
-                          <button
-                            type="button"
-                            className="btn btn-ghost"
-                            onClick={() => {
-                              setRespondendoId(null);
-                              setTextoResposta("");
-                            }}
-                            style={{ padding: "5px 12px", fontSize: 13 }}
-                          >
-                            Cancelar
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      !c.is_deleted && (
-                        <button
-                          type="button"
-                          className="btn btn-ghost"
-                          onClick={() => {
-                            setRespondendoId(c.id);
-                            setTextoResposta("");
-                          }}
-                          style={{
-                            marginLeft: 30, alignSelf: "flex-start",
-                            padding: "2px 8px", fontSize: 12,
-                          }}
-                        >
-                          Responder
-                        </button>
-                      )
-                    )}
-                  </div>
-                ))}
-            </div>
-          )}
-
-          {/* caixa de novo comentario (quem ve a tarefa pode comentar) */}
-          <MentionTextarea
-            ref={topComentRef}
-            value={novoComent}
-            onChange={setNovoComent}
-            members={members}
-            excluidos={foraDoAutocompletar}
-            rows={2}
-            placeholder="Escreva um comentário… (@ menciona)"
-            disabled={enviandoComent}
-            maxLength={5000}
-            wrapperStyle={{ marginTop: 10 }}
-            style={{ resize: "vertical" }}
-          />
-          <GifDraftStrip
-            gifs={gifsNovo}
-            onRemove={(i) => setGifsNovo((g) => g.filter((_, j) => j !== i))}
-          />
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
-            <EmojiPicker
-              disabled={enviandoComent}
-              onPick={(e) =>
-                inserirNoCursor(topComentRef, novoComent, setNovoComent, e)
-              }
-            />
-            <GifPicker
-              disabled={enviandoComent}
-              onPick={(url) => setGifsNovo((g) => [...g, url])}
-            />
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={enviarComentario}
-              disabled={enviandoComent || (!novoComent.trim() && gifsNovo.length === 0)}
-              style={{ padding: "6px 12px" }}
-            >
-              {enviandoComent ? "Enviando…" : "Comentar"}
-            </button>
           </div>
 
-          {erroCom && (
-            <div className="error-box" style={{ marginTop: 8 }}>{erroCom}</div>
-          )}
+          {/* A coluna lateral. `aside`: e conteudo relacionado, e nao a
+              tarefa em si. */}
+          {/* ⚠️ A DIVISÓRIA (pedido dela, 30/09): borda À ESQUERDA quando as
+              colunas estão lado a lado, e EM CIMA quando empilham -- na
+              vertical, uma borda lateral não separaria nada. Sem
+              `items-start` na linha, a borda corre a altura inteira em vez de
+              parar onde o conteúdo da lateral acaba. */}
+          <aside className="flex w-full min-h-0 shrink-0 flex-col gap-3 border-t border-border pt-4 min-[900px]:w-[380px] min-[900px]:border-l min-[900px]:border-t-0 min-[900px]:pl-3 min-[900px]:pt-0">
+            {/* ⚠️ O MESMO `Toggle` da tela de time (decisao dela, 30/09),
+                com a mesma animacao: a pastilha ANDA. */}
+            <Toggle
+              sides={[
+                {
+                  id: "comentarios" as const,
+                  label: "Comentários",
+                  count: comentarios?.length,
+                },
+                {
+                  id: "atividade" as const,
+                  label: "Atividade",
+                  count: totalAtividade,
+                },
+              ]}
+              active={abaLateral}
+              onSelect={setAbaLateral}
+              aria-label="Comentários ou atividade"
+            />
+
+            {/* ⚠️⚠️ A LATERAL ROLA POR DENTRO, e esta é a correção do que ela
+                viu em 30/09: com 18 eventos, a aba de atividade esticava o
+                cartão até os 88vh enquanto a de comentários o deixava curto --
+                trocar de aba mudava o tamanho da janela debaixo do cursor.
+                Agora o limite é da COLUNA, e o cartão não se mexe.
+
+                ⚠️ SÓ a partir de 900px. Empilhado (celular), uma área rolável
+                DENTRO de um cartão que já rola dá rolagem aninhada, que é pior
+                do que a página crescer. */}
+            <div
+              // ⚠️ A MARCA EXISTE PARA O TESTE poder afirmar que o campo de
+              // escrever esta FORA desta area -- e a classe arbitraria do
+              // Tailwind (`min-[900px]:...`) nao e seletor CSS valido.
+              data-rolagem="lateral"
+              className={
+                modo === "modal"
+                  ? "min-h-0 min-[900px]:flex-1 min-[900px]:overflow-y-auto"
+                  : "min-[900px]:max-h-[70vh] min-[900px]:overflow-y-auto"
+              }
+            >
+            {abaLateral === "atividade" ? (
+              <AtividadeDaTarefa
+                itens={atividade}
+                total={totalAtividade}
+                nomes={nomesDoHistorico}
+                carregando={carregandoAtividade}
+                erro={erroAtividade}
+                onCarregarMais={() => void carregarMaisAtividade()}
+              />
+            ) : (
+              /* ---- Comentarios (Entrega 14; movidos para a lateral na 055) ---- */
+              <div className="field">
+              {/* ⚠️ SEM O COLAPSO que morava aqui: o alternador acima ja escolhe o
+                  que a coluna mostra, e um "Comentários ›" dentro da aba de
+                  comentários seria um segundo jeito de esconder a mesma coisa. */}
+              {comentarios === null ? (
+                <Loading tamanho="linha" rotulo="Carregando os comentários" />
+              ) : comentarios.length === 0 ? (
+                <span className="muted" style={{ fontSize: 13 }}>
+                  Nenhum comentário ainda.
+                </span>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                  {comentarios
+                    .filter((c) => !c.parent_comment_id)
+                    .map((c) => (
+                      <div key={c.id} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                        <LinhaComentario
+                          c={c}
+                          members={members}
+                          excluidos={foraDoAutocompletar}
+                          me={me}
+                          taskId={tid}
+                          podeModerar={task.can_delete}
+                          onEditado={aoEditado}
+                          onApagado={recarregarComentarios}
+                        />
+
+                        {comentarios
+                          .filter((r) => r.parent_comment_id === c.id)
+                          .map((r) => (
+                            <div key={r.id} style={{ marginLeft: 30 }}>
+                              <LinhaComentario
+                                c={r}
+                                members={members}
+                                excluidos={foraDoAutocompletar}
+                                me={me}
+                                taskId={tid}
+                                podeModerar={task.can_delete}
+                                onEditado={aoEditado}
+                                onApagado={recarregarComentarios}
+                              />
+                            </div>
+                          ))}
+
+                        {respondendoId === c.id ? (
+                          <div style={{ marginLeft: 30, display: "flex", flexDirection: "column", gap: 6 }}>
+                            <MentionTextarea
+                              ref={respostaRef}
+                              value={textoResposta}
+                              onChange={setTextoResposta}
+                              members={members}
+                excluidos={foraDoAutocompletar}
+                              autoFocus
+                              rows={2}
+                              placeholder="Responder… (@ menciona)"
+                              disabled={enviandoResp}
+                              maxLength={5000}
+                              style={{ resize: "vertical" }}
+                            />
+                            <GifDraftStrip
+                              gifs={gifsResp}
+                              onRemove={(i) =>
+                                setGifsResp((g) => g.filter((_, j) => j !== i))
+                              }
+                            />
+                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                              <EmojiPicker
+                                disabled={enviandoResp}
+                                onPick={(e) =>
+                                  inserirNoCursor(
+                                    respostaRef,
+                                    textoResposta,
+                                    setTextoResposta,
+                                    e
+                                  )
+                                }
+                              />
+                              <GifPicker
+                                disabled={enviandoResp}
+                                onPick={(url) => setGifsResp((g) => [...g, url])}
+                              />
+                              <button
+                                type="button"
+                                className="btn btn-primary"
+                                onClick={() => enviarResposta(c.id)}
+                                disabled={
+                                  enviandoResp ||
+                                  (!textoResposta.trim() && gifsResp.length === 0)
+                                }
+                                style={{ padding: "5px 12px", fontSize: 13 }}
+                              >
+                                {enviandoResp ? "…" : "Responder"}
+                              </button>
+                              <button
+                                type="button"
+                                className="btn btn-ghost"
+                                onClick={() => {
+                                  setRespondendoId(null);
+                                  setTextoResposta("");
+                                }}
+                                style={{ padding: "5px 12px", fontSize: 13 }}
+                              >
+                                Cancelar
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          !c.is_deleted && (
+                            <button
+                              type="button"
+                              className="btn btn-ghost"
+                              onClick={() => {
+                                setRespondendoId(c.id);
+                                setTextoResposta("");
+                              }}
+                              style={{
+                                marginLeft: 30, alignSelf: "flex-start",
+                                padding: "2px 8px", fontSize: 12,
+                              }}
+                            >
+                              Responder
+                            </button>
+                          )
+                        )}
+                      </div>
+                    ))}
+                </div>
+              )}
+
+            </div>
+            )}
+            </div>
+
+            {/* ⚠️⚠️ O CAMPO DE ESCREVER FICA FORA DA AREA QUE ROLA (pedido dela,
+                30/09): com ele no fim da lista, comentar numa tarefa com vinte
+                comentarios exigia rolar ate o fim primeiro. Agora a lista rola
+                por baixo e a caixa fica onde a mao ja esta. */}
+            {abaLateral === "comentarios" && (
+              // ⚠️ `mt-2`: a linha desce um pouco (pedido dela, 30/09) -- colada
+              // no ultimo comentario, ela parecia cortar o texto de cima.
+              <div className="mt-2 shrink-0 border-t border-border pt-3">
+                {/* caixa de novo comentario (quem ve a tarefa pode comentar) */}
+                <MentionTextarea
+                  ref={topComentRef}
+                  value={novoComent}
+                  onChange={setNovoComent}
+                  members={members}
+                  excluidos={foraDoAutocompletar}
+                  rows={2}
+                  placeholder="Escreva um comentário… (@ menciona)"
+                  disabled={enviandoComent}
+                  maxLength={5000}
+                  wrapperStyle={{ marginTop: 10 }}
+                  style={{ resize: "vertical" }}
+                />
+                <GifDraftStrip
+                  gifs={gifsNovo}
+                  onRemove={(i) => setGifsNovo((g) => g.filter((_, j) => j !== i))}
+                />
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
+                  <EmojiPicker
+                    disabled={enviandoComent}
+                    onPick={(e) =>
+                      inserirNoCursor(topComentRef, novoComent, setNovoComent, e)
+                    }
+                  />
+                  <GifPicker
+                    disabled={enviandoComent}
+                    onPick={(url) => setGifsNovo((g) => [...g, url])}
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    onClick={enviarComentario}
+                    disabled={enviandoComent || (!novoComent.trim() && gifsNovo.length === 0)}
+                    style={{ padding: "6px 12px" }}
+                  >
+                    {enviandoComent ? "Enviando…" : "Comentar"}
+                  </button>
+                </div>
+
+                {erroCom && (
+                  <div className="error-box" style={{ marginTop: 8 }}>{erroCom}</div>
+                )}
+              </div>
+            )}
+          </aside>
         </div>
 
         {confirmandoExcluir && (
@@ -3031,7 +3197,7 @@ export default function TaskDetail({
           </div>
         )}
 
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 4 }}>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
           <button
             type="button" className="btn btn-ghost" onClick={alternarArquivo}
             disabled={arquivando} style={{ marginRight: "auto" }}

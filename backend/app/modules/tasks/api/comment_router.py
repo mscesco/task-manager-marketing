@@ -1,6 +1,7 @@
 """Router de comentarios -- Entrega 14.
 
 Rotas (sob /tasks/{task_id}):
+    GET    /history                -- historico da tarefa (exige ver a task)
     GET    /comments               -- lista o thread (exige ver a task)
     POST   /comments               -- comenta (exige ver a task -- D1)
     PATCH  /comments/{comment_id}  -- edita (so o autor -- D2)
@@ -28,11 +29,40 @@ from app.modules.tasks.api.schemas import (
     CommentReactionSetRequest,
     CommentResponse,
     CommentUpdateRequest,
+    HistoryEventResponse,
+    HistoryListResponse,
 )
 from app.modules.tasks.application.comment_service import CommentService
+from app.modules.tasks.application.task_history_service import TaskHistoryService
 from app.shared.pagination import PageParams
 
 router = APIRouter(prefix="/tasks/{task_id}", tags=["comments"])
+
+
+@router.get("/history", response_model=HistoryListResponse)
+async def list_history(
+    task_id: uuid.UUID,
+    _: TenantContextDep,
+    session: SessionDep,
+    page: int = 1,
+    size: int = 20,
+) -> HistoryListResponse:
+    """Historico da tarefa, mais NOVO primeiro. 404 se nao ve a task.
+
+    ⚠️ MORA NESTE ROUTER, junto dos comentarios, porque tem a MESMA regra:
+    quem ve a tarefa, le -- sem `require_permission`. Po-la no `tasks_router`,
+    que e trancado por permissao no nivel do router, exigiria abrir uma
+    excecao la dentro.
+    """
+    result = await TaskHistoryService(session).list_for_task(
+        task_id=task_id, params=PageParams(page=page, size=size)
+    )
+    return HistoryListResponse(
+        items=[HistoryEventResponse.model_validate(e) for e in result.items],
+        total=result.total,
+        page=result.page,
+        size=result.size,
+    )
 
 
 @router.get("/comments", response_model=CommentListResponse)

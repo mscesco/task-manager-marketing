@@ -613,6 +613,35 @@ class CommentResponse(BaseModel):
     reactions: list[CommentReactionResponse]
 
 
+class HistoryEventResponse(BaseModel):
+    """Um evento do historico da tarefa (Spec 055, fatia A).
+
+    ⚠️ CRU DE PROPOSITO: `old_value`/`new_value` carregam ids e valores como
+    foram gravados, e quem os vira frase e o front. Ver o topo do
+    `task_history_service.py`.
+    """
+
+    model_config = {"from_attributes": True}
+
+    id: uuid.UUID
+    event_type: str
+    field_name: str | None
+    old_value: dict | None
+    new_value: dict | None
+    event_metadata: dict | None
+    user_id: uuid.UUID
+    created_at: datetime
+
+
+class HistoryListResponse(BaseModel):
+    """Historico paginado, mais NOVO primeiro."""
+
+    items: list[HistoryEventResponse]
+    total: int
+    page: int
+    size: int
+
+
 class CommentListResponse(BaseModel):
     """Pagina do thread de comentarios de uma task (created_at ASC)."""
 

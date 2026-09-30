@@ -99,6 +99,27 @@ export function agoraNoWorkspace(agora: Date = new Date()): Agora {
  * das 23h de Brasilia cairia no dia seguinte para quem estivesse num runner
  * em UTC -- o defeito de fuso que o AGENTS.md conta.
  */
+/**
+ * Data e hora curtas de um instante (ex.: "24/06 14:30").
+ *
+ * ⚠️ AQUI O FUSO E O DO NAVEGADOR, de proposito, e e a excecao desta casa: o
+ * resto do arquivo trabalha no fuso do workspace porque PRAZO e uma data de
+ * calendario, combinada entre pessoas. Isto aqui e um CARIMBO -- quando algo
+ * aconteceu --, e para quem le faz sentido no relogio da propria maquina.
+ *
+ * Veio do `TaskDetail`, onde era uma funcao local chamada `quando`, quando a
+ * Spec 055 precisou do mesmo formato no painel de atividade. Duplicar
+ * formatador e como as regras deste projeto ja divergiram antes.
+ */
+export function dataHoraCurta(iso: string): string {
+  return new Date(iso).toLocaleString("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 export function diaNoWorkspace(iso: string): string {
   return agoraNoWorkspace(new Date(iso)).data;
 }

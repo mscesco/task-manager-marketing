@@ -14,13 +14,32 @@
 // Fatias C e E: o texto é desenhado com formatação (`TextoFormatado`) e o campo
 // é o `EditorDeDescricao`, que já mostra formatado enquanto se escreve. O gesto
 // de abrir, salvar e desistir é desta fatia D e não mudou.
+//
+// ⚠️ "VER MAIS" (pedido dela, 30/09): descrição longa empurrava tudo o que vem
+// depois -- links, subtarefas, checklist -- para fora da vista, e era preciso
+// rolar a coluna inteira para descobrir que a tarefa TEM subtarefas. Agora ela
+// para em `ALTURA_MAXIMA` e o resto abre com um clique.
+//
+// ⚠️ O BOTÃO SÓ APARECE QUANDO EXCEDE, e isso se MEDE (`scrollHeight`), não se
+// adivinha por contagem de caracteres: a altura depende da formatação -- uma
+// lista de dez itens curtos é mais alta que um parágrafo de dez linhas.
 
-import { useId, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+} from "react";
 import { decidirDescricao } from "@/lib/edicaoNoLugar";
 import EditorDeDescricao from "@/components/EditorDeDescricaoAdiado";
 import TextoFormatado from "@/components/TextoFormatado";
 import { ehAtalhoDeSalvar } from "@/lib/teclasFormulario";
 import { useSairDoBloco } from "@/lib/useSairDoBloco";
+
+/** Onde a descrição para, em pixels, antes do "Ver mais". */
+const ALTURA_MAXIMA = 320;
 
 export default function DescricaoEditavel({
   valor,
@@ -31,6 +50,9 @@ export default function DescricaoEditavel({
   onSalvar: (nova: string) => Promise<void>;
 }) {
   const [editando, setEditando] = useState(false);
+  const [expandida, setExpandida] = useState(false);
+  const [excede, setExcede] = useState(false);
+  const textoRef = useRef<HTMLDivElement | null>(null);
   const [rascunho, setRascunho] = useState("");
   const [emVoo, setEmVoo] = useState<string | null>(null);
   const [erro, setErro] = useState<string | null>(null);
@@ -87,6 +109,37 @@ export default function DescricaoEditavel({
   // campo. Sem isto, no Safari (onde botão não recebe foco) o clique em
   // "Cancelar" ainda sairia do campo -- e o que sai do bloco salva.
   const manterFoco = (e: ReactMouseEvent) => e.preventDefault();
+
+  // ⚠️ MEDE DEPOIS DE DESENHAR, e por isso `useLayoutEffect`: com `useEffect` o
+  // navegador chega a pintar a descrição inteira antes de a trava entrar, e a
+  // tela "pula" a cada tarefa aberta.
+  useLayoutEffect(() => {
+    const el = textoRef.current;
+    if (!el) {
+      setExcede(false);
+      return;
+    }
+    setExcede(el.scrollHeight > ALTURA_MAXIMA + 8);
+  }, [valor, editando]);
+
+  // ⚠️ A LARGURA MUDA A ALTURA: a mesma descrição ocupa mais linhas numa
+  // janela estreita. Sem isto, quem estreita a janela fica com o texto cortado
+  // e SEM o botão para abrir.
+  useEffect(() => {
+    const el = textoRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const observador = new ResizeObserver(() => {
+      setExcede(el.scrollHeight > ALTURA_MAXIMA + 8);
+    });
+    observador.observe(el);
+    return () => observador.disconnect();
+  }, [valor, editando]);
+
+  // Trocar de tarefa recolhe de novo: a descrição da PRÓXIMA não herda a
+  // decisão tomada para esta.
+  useEffect(() => {
+    setExpandida(false);
+  }, [valor]);
 
   return (
     <div className="field">
@@ -166,7 +219,38 @@ export default function DescricaoEditavel({
         </div>
       ) : temTexto ? (
         <div style={{ opacity: emVoo !== null ? 0.6 : 1 }}>
-          <TextoFormatado texto={texto} />
+          <div
+            ref={textoRef}
+            style={
+              excede && !expandida
+                ? {
+                    maxHeight: ALTURA_MAXIMA,
+                    overflow: "hidden",
+                    // A última linha some aos poucos, para o corte não parecer
+                    // texto faltando.
+                    maskImage:
+                      "linear-gradient(to bottom, #000 78%, transparent 100%)",
+                    WebkitMaskImage:
+                      "linear-gradient(to bottom, #000 78%, transparent 100%)",
+                  }
+                : undefined
+            }
+          >
+            <TextoFormatado texto={texto} />
+          </div>
+          {excede && (
+            <button
+              type="button"
+              className="btn btn-ghost"
+              // ⚠️ Padding inline: o `.btn` não está em camada e vence o
+              // Tailwind (web/AGENTS.md §11).
+              style={{ padding: "2px 0", fontSize: 13, marginTop: 4 }}
+              aria-expanded={expandida}
+              onClick={() => setExpandida((v) => !v)}
+            >
+              {expandida ? "Ver menos" : "Ver mais"}
+            </button>
+          )}
         </div>
       ) : (
         // ⚠️ SEM DESCRIÇÃO, O CONVITE É O ALVO -- não há "Editar" para editar o
