@@ -95,6 +95,11 @@ que ficar.
 | **D16** | **Sem importação do Notion** nesta spec. |
 | **D17** | **Opção apagada:** as linhas que a tinham ficam vazias (com desfazer, D13). |
 | **D18** | **Trocar o tipo de uma coluna:** permitido; **zera** os valores (com desfazer, D13). |
+| **D19** | **Quem pode criar edita todas as bases** da árvore: nome e texto do topo (`base.update`). O operador não. |
+| **D20** | **Supervisor no time raiz não existe** (`team_scope.assert_role_permitido_no_nivel` recusa desde a Spec 045). Se sobrar algum vínculo antigo, ele ganha os verbos pela regra do §5.3, sem tratamento especial. |
+| **D21** | **Sem modelo pronto** ao criar: só "Base em branco". |
+| **D22** | Na coluna Pessoa, ela deixou o rótulo a meu critério (§7.4). |
+| **D23** | **Teto de linhas com paginação quando precisar** (§8.1). |
 
 ---
 
@@ -205,10 +210,10 @@ criar, escolhe a raiz (só aparecem as raízes em que tem `base.create`, de
 | `base_row.*` (3) | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `base_view.*` (3) | ✓ | ✓ | ✓ | ✓ | ✓ |
 
-- **`base.update` com o grupo de criar** é proposta minha (§15, item 1): o nome
-  e o texto do topo são a orientação da base ("Direcional padrão"), e quem
-  orienta é quem coordena. Se ela preferir "todo mundo", o operador ganha a
-  linha e nada mais muda.
+- **`base.update` com o grupo de criar** (D19): o nome e o texto do topo são a
+  orientação da base ("Direcional padrão"), e quem orienta é quem coordena.
+  Vale para **todas** as bases da árvore, não só as que a pessoa criou: não
+  existe "dono" de base.
 - **Colunas, linhas e visões para todos** vem do pedido: *"permissão pra mexer
   também, todo mundo pode mexer"*.
 
@@ -340,8 +345,15 @@ e valores.
 ### 7.4. Pessoa (D8)
 
 A lista oferece os membros **ativos** da árvore da base (raiz e subtimes). A
-célula de quem não está mais na árvore, ou teve a conta desativada, mostra
-"Usuário inativo" (§15, item 5).
+célula de quem não está mais disponível continua mostrando o **nome**, com um
+rótulo que diz o motivo (D22):
+
+- conta desativada: **"Nome (inativo)"**;
+- conta ativa, mas fora da árvore: **"Nome (fora do time)"**.
+
+Chamar de inativo quem só trocou de time seria mentir. E manter o nome
+preserva a informação de quem fez aquele post. Nenhuma das duas aparece mais
+na lista para escolher.
 
 ---
 
@@ -361,11 +373,30 @@ célula de quem não está mais na árvore, ou teve a conta desativada, mostra
 - **Quadro:** uma coluna por opção do `group_by`, mais "Sem valor". Arrastar
   entre colunas edita a célula.
 
-⚠️ **Filtro e ordenação acontecem NO NAVEGADOR**, com a base inteira carregada
-(teto de **5.000 linhas** por base, §15, item 6). Ordenar JSONB no Postgres por
-tipo (data como data, número como número) é o ponto mais caro de fazer no
-servidor; no volume de uma equipe de mídia, o navegador faz em milissegundos, e
-o ao vivo fica mais simples (o evento chega e a tela reordena sozinha).
+### 8.1. Onde filtrar e ordenar, e o teto (D23)
+
+⚠️ **Paginar e filtrar no navegador não combinam.** Se a tela recebe só 100
+linhas por vez, o filtro "Status = Publicado" só enxerga essas 100. Paginação
+de verdade exige que o **servidor** filtre e ordene, e ordenar JSONB por tipo
+(data como data, número como número) é o ponto mais caro desta spec.
+
+**A medida:** o print mostra uns 12 posts em 5 dias, perto de **900 linhas por
+ano**. Uma base com o calendário da equipe leva anos para chegar a 5.000.
+
+**Por isso, nesta spec:**
+- a base é carregada **inteira**, e filtro e ordenação acontecem no navegador
+  (milissegundos nesse volume, e o ao vivo fica simples: o evento chega e a tela
+  reordena sozinha);
+- **teto de 5.000 linhas** por base. A partir de **4.000**, quem tem `base.update`
+  vê um aviso na base. No teto, criar linha é recusado com uma mensagem que
+  explica;
+- quando alguma base se aproximar do teto, **o filtro passa para o servidor, com
+  paginação**, numa spec própria. **Nada do banco muda** nessa troca (os
+  índices entram nela). Muda a rota de leitura e o jeito de a tela pedir as
+  linhas.
+
+O aviso dos 4.000 é o gatilho dessa spec: ele chega com mais de um ano de
+folga no ritmo de hoje.
 
 ---
 
@@ -481,9 +512,9 @@ arquivamento. Sem isso, nada se perde, mas nada se apaga de vez.
 | **0** | Mede a suíte. Matriz HTTP com as linhas da base marcadas `pendente` (todas as rotas, 5 papéis + `DUAS_ARVORES`, raiz própria e outra raiz) | matriz |
 | **A** | Os 14 verbos no mapa (com a exceção do GESTOR comentada), `permissions.generated.ts`, teste de que nenhum verbo de base está em `_OWN_TEAM_ONLY` | pytest do gerado |
 | **B** | Migration `0029`, modelos, `base` e `base_column` (CRUD, opções, troca de tipo), cadeados por item, `can_create_base` em `GET /teams` | matriz |
-| **C** | `base_row` (CRUD, gravação por chave), `base_view`, `base_change` e as rotas de desfazer com a regra de conflito | matriz |
+| **C** | `base_row` (CRUD, gravação por chave, teto de 5.000 com `row_count` na base), `base_view`, `base_change` e as rotas de desfazer com a regra de conflito | matriz |
 | **D** | Lixeira de bases (10 dias), `POST /system/bases/purge` | — |
-| **E** | Front: menu, lista de bases, criar e excluir, a tabela editável (sem ao vivo: atualiza a cada 10 s) | `next build` |
+| **E** | Front: menu, lista de bases, criar e excluir, a tabela editável (sem ao vivo: atualiza a cada 10 s), o aviso dos 4.000 | `next build` |
 | **F** | Front: visões, filtro, ordenação, colunas visíveis; calendário; quadro | `next build` |
 | **G** | Ao vivo: SSE, `LISTEN/NOTIFY`, releitura do verbo, reconexão; o front troca a atualização de 10 s pelo canal | `next build`, `curl -N` na VPS |
 | **H** | Ctrl+Z na tela (pilha por pessoa, campo de texto fora) e os avisos de conflito | `next build` |
@@ -503,6 +534,9 @@ Deploy: migration `0029` **antes** do código, como nas 053 e 054.
 - Notificação de qualquer tipo (D10).
 - Imagem e arquivo em célula (D9).
 - Ordem manual de linhas (arrastar para reordenar na tabela).
+- Modelo pronto ao criar (D21).
+- Filtro no servidor e paginação: spec própria, quando o aviso dos 4.000
+  aparecer (§8.1).
 - Ligar e desligar verbos por pessoa (§5.9).
 - Base fora de time raiz, ou base de subtime.
 
@@ -510,20 +544,11 @@ Deploy: migration `0029` **antes** do código, como nas 053 e 054.
 
 ## 15. Propostas que nenhuma pergunta cobriu — PRECISAM DA APROVAÇÃO DELA
 
-1. **`base.update` (nome e texto do topo) só para quem cria** (§5.4). O
-   operador edita linha, coluna e visão, mas não a orientação da base.
+Os itens 1, 3, 4, 5 e 6 da primeira versão foram respondidos em 05/10 e viraram
+D19 a D23. Faltam quatro:
+
 2. **Trocar tipo de coluna com o verbo de editar coluna**, e não um verbo
    próprio (§5.2). Hoje dá no mesmo, porque todo mundo tem os dois.
-3. **Supervisor do próprio time raiz também cria.** A D3 fala em "supervisor de
-   algum subtime"; supervisor pode estar só na raiz (Spec 003). Pela regra do
-   §5.3 ele já ganha o verbo, e separar exigiria uma checagem de nível, que é
-   o contrário do §5.1.
-4. **Um modelo "Calendário de conteúdo"** ao criar, além de "Base em branco",
-   com as colunas do print. Custo: um arquivo de dados.
-5. **"Usuário inativo" para quem saiu da árvore mas tem conta ativa** (D8). É
-   o que ela pediu; a alternativa seria "Fora do time", que é mais exato.
-6. **Teto de 5.000 linhas por base**, com aviso ao chegar perto. Passou disso,
-   o filtro vai para o servidor, numa spec própria.
 7. **Edição de célula se desfaz só com a página aberta** (§9.3).
 8. **A visão padrão não se apaga**: a base sempre tem pelo menos uma visão de
    tabela.
