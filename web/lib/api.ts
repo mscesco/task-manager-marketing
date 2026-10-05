@@ -1992,6 +1992,39 @@ export async function removeWatcher(
 // desmonta a leitura de quem faz o que.
 //
 // O endpoint sempre aceitou os dois campos; era a chamada que nao os mandava.
+/** Um evento do historico da tarefa (Spec 055, fatia A). ⚠️ CRU: os valores
+ * vem como o backend os gravou, e quem vira frase e `lib/historicoDaTarefa.ts`. */
+export type TaskHistoryEvent = {
+  id: string;
+  event_type: string;
+  field_name: string | null;
+  old_value: Record<string, unknown> | null;
+  new_value: Record<string, unknown> | null;
+  event_metadata: Record<string, unknown> | null;
+  user_id: string;
+  created_at: string;
+};
+
+export type TaskHistoryPage = {
+  items: TaskHistoryEvent[];
+  total: number;
+  page: number;
+  size: number;
+};
+
+// Historico da tarefa, mais NOVO primeiro. 404 para quem nao ve a tarefa --
+// a mesma regra dos comentarios.
+export async function listTaskHistory(
+  taskId: string,
+  params: { page?: number; size?: number } = {}
+): Promise<TaskHistoryPage> {
+  const q = new URLSearchParams({
+    page: String(params.page ?? 1),
+    size: String(params.size ?? 20),
+  });
+  return api<TaskHistoryPage>(`/api/v1/tasks/${taskId}/history?${q.toString()}`);
+}
+
 export async function createSubtask(
   parentTaskId: string,
   title: string,

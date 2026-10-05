@@ -872,6 +872,48 @@ class TaskRepository(BaseRepository[Task]):
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
+    async def list_history(
+        self, *, task_id: uuid.UUID, limit: int, offset: int
+    ) -> tuple[list[TaskHistory], int]:
+        """As linhas de historico de UMA tarefa, mais NOVA primeiro (Spec 055).
+
+        ⚠️ ESTA E A PRIMEIRA LEITURA DE `task_history` DO PRODUTO. A tabela e
+        gravada desde a Entrega 4 e nunca foi lida por ninguem -- o que
+        significa que o dado ali dentro nunca passou por olhos: ha eventos de
+        todas as versoes dos construtores, inclusive de antes de a Spec 053
+        acrescentar `watched`/`unwatched`. Quem traduz (o front) precisa de
+        frase de reserva para tudo; ver §6.2 da spec.
+
+        ⚠️ MAIS NOVA PRIMEIRO (§9.1, aprovado por ela em 30/09): ninguem abre o
+        historico para ler o comeco. Desempate por `id`, pelo mesmo motivo dos
+        comentarios e dos avisos: `func.now()` e constante na transacao, entao
+        duas linhas gravadas no mesmo `commit` empatam em `created_at` -- e sem
+        desempate a paginacao repete ou pula linha entre as paginas.
+
+        ⚠️ SEM `_base_select`: ele e tipado no `model` do repositorio (`Task`).
+        O filtro de tenant esta escrito aqui, na mao, e e obrigatorio.
+        """
+        tenant = require_tenant()
+        onde = (
+            TaskHistory.workspace_id == tenant.workspace_id,
+            TaskHistory.task_id == task_id,
+        )
+        total = (
+            await self.session.execute(
+                select(func.count()).select_from(TaskHistory).where(*onde)
+            )
+        ).scalar_one()
+        linhas = (
+            await self.session.execute(
+                select(TaskHistory)
+                .where(*onde)
+                .order_by(TaskHistory.created_at.desc(), TaskHistory.id.desc())
+                .offset(offset)
+                .limit(limit)
+            )
+        ).scalars().all()
+        return list(linhas), total
+
     async def write_history(
         self,
         *,
