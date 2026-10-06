@@ -21,21 +21,24 @@ POR QUE ESTE MAPA IGNORA O TIME (Spec 024 -- leia antes de "consertar"):
     e era, ate a Spec 024.
 
     A correcao NAO foi criar permissao por time. Foi restringir ONDE
-    cada papel pode existir: ADMIN e MANAGER so existem no time RAIZ
-    (`team_scope.assert_role_permitido_no_nivel`, aplicado nas quatro
-    portas do MemberService). Como quem carrega esses papeis e
-    necessariamente membro da raiz, "uniao dos papeis" e "autoridade
-    sobre a arvore" (`team_scope.visible_team_ids`) coincidem por
-    construcao.
+    cada papel pode existir (`team_scope.assert_role_permitido_no_nivel`,
+    aplicado nas portas do MemberService): MANAGER so existe no time
+    RAIZ, e ADMIN nem cabe mais em time -- mora em `users.org_role`.
+    Como quem carrega MANAGER e necessariamente membro da raiz, "uniao
+    dos papeis" e "autoridade sobre a arvore"
+    (`team_scope.visible_team_ids`) coincidem por construcao.
 
     Consequencia pratica: este mapa CONTINUA sendo o unico lugar a
     editar quando surgir permissao nova. Se voce esta aqui pensando em
     adicionar escopo de time a uma permissao, provavelmente a resposta
     e outra -- confira se a invariante de nivel ja resolve.
 
-    Cuidado: SUPERVISOR e OPERATOR existem nos DOIS niveis (estar so no
-    time geral e estado valido -- Spec 003, decisoes 7 e 17). A
-    exclusividade vale so pra ADMIN e MANAGER.
+    Cuidado: so OPERATOR existe nos DOIS niveis. SUPERVISOR e dono de um
+    subtime e so existe ali -- a raiz o recusa, e quem vai para a raiz
+    troca o papel para OPERATOR antes. MANAGER e o espelho: so na raiz.
+    A tabela e `team_scope._ROOT_ROLES` / `_SUBTEAM_ROLES`; o que a Spec
+    003 (decisoes 7 e 17) dizia sobre supervisor no time geral nao vale
+    mais.
 
 CONVENCAO de nome de permissao: "<componente>.<verbo>", ex.
 "task.create", "project.archive", "organization.update" -- desde a Spec 049
