@@ -100,6 +100,9 @@ que ficar.
 | **D21** | **Sem modelo pronto** ao criar: só "Base em branco". |
 | **D22** | Na coluna Pessoa, ela deixou o rótulo a meu critério (§7.4). |
 | **D23** | **Teto de linhas com paginação quando precisar** (§8.1). |
+| **D24** | **Trocar o tipo de coluna é editar coluna** (`base_column.update`), sem verbo próprio: basta estar na árvore, independente do papel. |
+| **D25** | **A visão padrão não se apaga**: a base sempre tem pelo menos uma visão de tabela. |
+| **D26** | **Excluir base pede para digitar o nome dela.** |
 
 ---
 
@@ -160,9 +163,9 @@ perguntas que um dia podem ter respostas diferentes.
 `base_column.update`.** Apagar opção esvazia células (D17), e é isso que a deixa
 do lado de "apagar", não o fato de mexer em JSONB.
 
-⚠️ **Trocar o tipo está em `base_column.update`**, embora zere valores (D18).
-Proposta na §15 (item 2): se ela preferir que trocar tipo exija o verbo de
-apagar, vira `base_column.retype`, um verbo próprio.
+⚠️ **Trocar o tipo está em `base_column.update`**, embora zere valores (D18,
+D24). Se um dia precisar de resposta diferente, vira `base_column.retype`, um
+verbo próprio, sem mexer em mais nada.
 
 **Desfazer (§9) não tem verbo próprio:** desfazer uma ação exige o verbo da
 ação original, conferido **de novo na hora do desfazer**. Quem perdeu o verbo
@@ -544,13 +547,12 @@ Deploy: migration `0029` **antes** do código, como nas 053 e 054.
 
 ## 15. Propostas que nenhuma pergunta cobriu — PRECISAM DA APROVAÇÃO DELA
 
-Os itens 1, 3, 4, 5 e 6 da primeira versão foram respondidos em 05/10 e viraram
-D19 a D23. Faltam quatro:
+Os itens 1 a 6, 8 e 9 da primeira versão foram respondidos em 05 e 06/10 e
+viraram D19 a D26. Falta um:
 
-2. **Trocar tipo de coluna com o verbo de editar coluna**, e não um verbo
-   próprio (§5.2). Hoje dá no mesmo, porque todo mundo tem os dois.
-7. **Edição de célula se desfaz só com a página aberta** (§9.3).
-8. **A visão padrão não se apaga**: a base sempre tem pelo menos uma visão de
-   tabela.
-9. **Excluir base pede confirmação digitando o nome**, porque leva junto todas
-   as linhas e visões (mesmo com os 10 dias).
+7. **Edição de célula se desfaz só com a página aberta** (§9.3). Trocar
+   "Publicado" por "Cancelado" e apertar Ctrl+Z volta para "Publicado" enquanto
+   a aba está aberta. Recarregou ou fechou a aba, essa troca não se desfaz
+   mais, porque edição não perde dado: basta escolher de novo. O que se APAGA
+   (linha, coluna, opção, troca de tipo) continua com o 1 dia da D13, mesmo
+   depois de fechar a aba.
