@@ -6,7 +6,8 @@ respondidas em 05 e 06/10 (§4, D1 a D27). **Todas as perguntas respondidas**;
 pronta para a fatia 0.
 **Escopo:** backend (módulo novo, migration, canal ao vivo, verbos novos) e front
 (lista de bases, tabela editável, visões, calendário, quadro).
-**Placar na abertura:** não medido ao escrever; a fatia 0 mede antes de mexer.
+**Placar na abertura:** backend **1883** (medido na fatia 0, em 06/10, sobre a
+`main` em `1c58369`). Depois da fatia 0: **2022**.
 
 ---
 

@@ -135,7 +135,33 @@ da propria arvore; mover time para outra arvore e dar pai a um time raiz sao
 `can_delete` de `GET /teams` e conferido em
 `test_listagem_de_times_diz_o_que_cada_papel_apaga`.
 
+SPEC 056, FATIA 0 (06/10) -- AS LINHAS DA BASE, ANTES DE A BASE EXISTIR. As
+rotas `/bases/...` nao existem, e por isso o esperado DE HOJE e 404 para todo
+papel (rota inexistente, e nao a lente). O que muda em relacao as fatias 0
+anteriores e o campo `meta`: o ALVO da linha, papel a papel, escrito em codigo
+e nao em comentario. As fatias B e C da 056 trocam `esperado` por `meta` e
+APAGAM `meta` e `diverge` no mesmo commit -- `test_linha_com_meta_ainda_nao_
+chegou_la` cai se a linha ja bate com o alvo e continua marcada. Os ids da
+base no `_mundo` sao uuids soltos ate a fatia B criar as tabelas.
+
+    Sabotagem G (06/10): a `meta` da visao padrao igual ao `esperado` de hoje.
+       Caiu so o guardiao, nomeando a linha. Desfeita e conferida por
+       `git grep SABOTAGEM`.
+
+    O que as metas dizem (spec 056 §5.4 e §5.8):
+    - LER, colunas, linhas e visoes: todo papel da arvore, inclusive OPERATOR;
+    - criar, editar (nome e texto do topo), excluir e restaurar a base: todos
+      menos o OPERATOR -- e o GESTOR EXCLUI, excecao dela a 049 fatia D;
+    - base da OUTRA raiz: 404 para quem nao tem `base.read` la, e 403 para
+      DUAS_ARVORES nos verbos que o OPERATOR do Comercial nao tem. Esta e a
+      celula em que lente e verbo divergem, e a que a 051 ensinou a ter;
+    - base em SUBTIME: 422 para quem tem `base.create` em algum lugar.
+
 O QUE ESTA TABELA NAO COBRE (de proposito, e anotado para quem estender):
+    - base: desfazer e refazer (o esperado depende da pilha da pessoa, nao do
+      papel -- fatia C, teste proprio), o canal ao vivo (fluxo, nao resposta --
+      fatia G) e as listas (`GET /bases` e a lixeira, como a fila: teste de
+      conjunto na fatia B);
     - editar comentario (autoria, nao permissao -- spec §4.5) e seguidores
       (o servico decide "eu" contra "terceiro");
     - secoes e perguntas de formulario: mesmo portao de router do formulario;
@@ -393,6 +419,17 @@ async def _mundo(db) -> dict:
 
     await db.commit()
 
+    # --- Spec 056, fatia 0: a base ainda nao tem tabela. Ids soltos, para os
+    # caminhos terem forma; a fatia B troca por factories (base em cada raiz,
+    # uma excluida, coluna com opcao, linha, visao padrao e uma segunda visao).
+    base = {
+        k: uuid.uuid4()
+        for k in (
+            "base_mkt", "base_com", "base_mkt_excluida", "coluna_mkt", "opcao_mkt",
+            "linha_mkt", "linha_com", "visao_mkt", "visao_padrao_mkt",
+        )
+    }
+
     return {
         "ws": ws,
         "arvore": arvore,
@@ -440,6 +477,7 @@ async def _mundo(db) -> dict:
                 "misto_design": misto_design, "desativado": desativado,
                 "desativado_com": desativado_com,
                 "sol_orfa": sol_orfa, "sol_aprovada_mkt": sol_aprovada_mkt,
+                **base,
             }.items()
         },
     }
@@ -497,9 +535,27 @@ class Linha:
     esperado: tuple
     diverge: str = ""
     defeito: str = ""
+    #: Spec 056: o ALVO, um valor por papel, enquanto a linha ainda nao chegou
+    #: nele. Vazio = o `esperado` ja e o alvo.
+    meta: tuple = ()
 
 
 T = "/api/v1"
+
+# Spec 056: os padroes que se repetem nas linhas da base.
+#: Hoje: a rota nao existe, e e 404 para todos.
+_SEM_ROTA = (OCULTO,) * 6
+#: Conteudo (ler, coluna, linha, visao) na base da PROPRIA raiz: todo papel.
+_TODOS = (OK,) * 6
+#: Estrutura (criar, editar, excluir, restaurar a base): todos menos o OPERATOR.
+_QUEM_CRIA = (OK, OK, OK, OK, NEGADO, OK)
+#: Conteudo na base do COMERCIAL: so quem tem `base.read` la -- a organizacao e
+#: DUAS_ARVORES, que e OPERATOR no Comercial.
+_COM_CONTEUDO = (OK, OK, OCULTO, OCULTO, OCULTO, OK)
+#: Estrutura na base do COMERCIAL. O OPERATOR leva 403 no portao da rota (nao
+#: tem o verbo em lugar nenhum), e DUAS_ARVORES le a base mas nao tem o verbo
+#: la: 403, a celula em que lente e verbo divergem.
+_COM_ESTRUTURA = (OK, OK, OCULTO, OCULTO, NEGADO, NEGADO)
 
 MATRIZ: tuple[Linha, ...] = (
     # ---------------------------------------------------------- organizacao
@@ -893,6 +949,83 @@ MATRIZ: tuple[Linha, ...] = (
     Linha("solicitation.review", "marcar tarefa do Comercial na do Marketing", "post",
           f"{T}/solicitacoes/{{sol_aprovada_mkt}}/tarefa", {"task_id": "{tarefa_com}"},
           (OK, OK, OCULTO, NEGADO, NEGADO, OK)),  # 051, fatia B: tarefa fora da lente e 404
+    # ---------------------------------------------------------- base (Spec 056)
+    # ⚠️ TODAS COM `meta`: a rota ainda nao existe. Ver o bloco "SPEC 056, FATIA
+    # 0" no topo. A fatia que entrega a rota troca `esperado` por `meta` e apaga
+    # as duas marcas.
+    Linha("base.create", "no Marketing", "post", f"{T}/bases",
+          {"name": "Calendario", "team_id": "{mkt}"},
+          _SEM_ROTA, diverge="056 fatia B", meta=_QUEM_CRIA),
+    # Sem o verbo NAQUELE time e 403, e nao 404: o time nao e segredo.
+    Linha("base.create", "no Comercial", "post", f"{T}/bases",
+          {"name": "Calendario", "team_id": "{com}"},
+          _SEM_ROTA, diverge="056 fatia B",
+          meta=(OK, OK, NEGADO, NEGADO, NEGADO, NEGADO)),
+    # D6: base so em time raiz. Quem tem o verbo em algum lugar chega na regra.
+    Linha("base.create", "no SEO (subtime)", "post", f"{T}/bases",
+          {"name": "Calendario", "team_id": "{seo}"},
+          _SEM_ROTA, diverge="056 fatia B",
+          meta=(422, 422, 422, 422, NEGADO, 422)),
+    Linha("base.read", "do Marketing", "get", f"{T}/bases/{{base_mkt}}", None,
+          _SEM_ROTA, diverge="056 fatia B", meta=_TODOS),
+    Linha("base.read", "do Comercial", "get", f"{T}/bases/{{base_com}}", None,
+          _SEM_ROTA, diverge="056 fatia B", meta=_COM_CONTEUDO),
+    # D19: quem cria edita TODAS as bases da arvore, nao so as suas.
+    Linha("base.update", "do Marketing", "patch", f"{T}/bases/{{base_mkt}}",
+          {"name": "Outro"},
+          _SEM_ROTA, diverge="056 fatia B", meta=_QUEM_CRIA),
+    Linha("base.update", "do Comercial", "patch", f"{T}/bases/{{base_com}}",
+          {"name": "Outro"},
+          _SEM_ROTA, diverge="056 fatia B", meta=_COM_ESTRUTURA),
+    # ⚠️ O GESTOR EXCLUI: excecao dela (D3) a 049 fatia D.
+    Linha("base.delete", "do Marketing", "delete", f"{T}/bases/{{base_mkt}}", None,
+          _SEM_ROTA, diverge="056 fatia D", meta=_QUEM_CRIA),
+    Linha("base.delete", "do Comercial", "delete", f"{T}/bases/{{base_com}}", None,
+          _SEM_ROTA, diverge="056 fatia D", meta=_COM_ESTRUTURA),
+    Linha("base.restore", "excluida do Marketing", "post",
+          f"{T}/bases/{{base_mkt_excluida}}/restore", None,
+          _SEM_ROTA, diverge="056 fatia D", meta=_QUEM_CRIA),
+    # D24: trocar o tipo e editar coluna -- qualquer um da arvore.
+    Linha("base_column.create", "na do Marketing", "post",
+          f"{T}/bases/{{base_mkt}}/columns", {"name": "Plataforma", "type": "select"},
+          _SEM_ROTA, diverge="056 fatia B", meta=_TODOS),
+    Linha("base_column.create", "na do Comercial", "post",
+          f"{T}/bases/{{base_com}}/columns", {"name": "Plataforma", "type": "select"},
+          _SEM_ROTA, diverge="056 fatia B", meta=_COM_CONTEUDO),
+    Linha("base_column.update", "trocar o tipo, na do Marketing", "patch",
+          f"{T}/bases/{{base_mkt}}/columns/{{coluna_mkt}}", {"type": "text"},
+          _SEM_ROTA, diverge="056 fatia B", meta=_TODOS),
+    Linha("base_column.delete", "apagar opcao, na do Marketing", "delete",
+          f"{T}/bases/{{base_mkt}}/columns/{{coluna_mkt}}/options/{{opcao_mkt}}", None,
+          _SEM_ROTA, diverge="056 fatia B", meta=_TODOS),
+    Linha("base_column.delete", "na do Marketing", "delete",
+          f"{T}/bases/{{base_mkt}}/columns/{{coluna_mkt}}", None,
+          _SEM_ROTA, diverge="056 fatia B", meta=_TODOS),
+    Linha("base_row.create", "na do Marketing", "post", f"{T}/bases/{{base_mkt}}/rows",
+          {"values": {}},
+          _SEM_ROTA, diverge="056 fatia C", meta=_TODOS),
+    Linha("base_row.update", "na do Marketing", "patch",
+          f"{T}/bases/{{base_mkt}}/rows/{{linha_mkt}}", {"values": {}},
+          _SEM_ROTA, diverge="056 fatia C", meta=_TODOS),
+    Linha("base_row.update", "na do Comercial", "patch",
+          f"{T}/bases/{{base_com}}/rows/{{linha_com}}", {"values": {}},
+          _SEM_ROTA, diverge="056 fatia C", meta=_COM_CONTEUDO),
+    Linha("base_row.delete", "na do Marketing", "delete",
+          f"{T}/bases/{{base_mkt}}/rows/{{linha_mkt}}", None,
+          _SEM_ROTA, diverge="056 fatia C", meta=_TODOS),
+    Linha("base_view.create", "na do Marketing", "post", f"{T}/bases/{{base_mkt}}/views",
+          {"name": "Por status", "layout": "board"},
+          _SEM_ROTA, diverge="056 fatia C", meta=_TODOS),
+    Linha("base_view.update", "na do Marketing", "patch",
+          f"{T}/bases/{{base_mkt}}/views/{{visao_mkt}}", {"name": "Outro"},
+          _SEM_ROTA, diverge="056 fatia C", meta=_TODOS),
+    Linha("base_view.delete", "na do Marketing", "delete",
+          f"{T}/bases/{{base_mkt}}/views/{{visao_mkt}}", None,
+          _SEM_ROTA, diverge="056 fatia C", meta=_TODOS),
+    # D25: a visao padrao nao se apaga -- regra, e nao permissao, para todos.
+    Linha("base_view.delete", "a padrao, na do Marketing", "delete",
+          f"{T}/bases/{{base_mkt}}/views/{{visao_padrao_mkt}}", None,
+          _SEM_ROTA, diverge="056 fatia C", meta=(409,) * 6),
 )
 
 
@@ -938,6 +1071,25 @@ async def test_matriz(db, linha: Linha, papel: str, esperado) -> None:
         + (f"\n  (linha marcada: DIVERGE DO ALVO, {linha.diverge})" if linha.diverge else "")
         + (f"\n  (linha marcada: DEFEITO, {linha.defeito})" if linha.defeito else "")
     )
+
+
+def test_linha_com_meta_ainda_nao_chegou_la() -> None:
+    """Spec 056, fatia 0 -- a marca `meta` some quando a linha chega no alvo.
+
+    ⚠️ SEM ESTE TESTE A MARCA APODRECE: a fatia que entrega a rota troca o
+    `esperado`, a tabela fica verde, e o `meta` igual ao `esperado` continua
+    dizendo "ainda falta" para quem le. E toda linha com meta diz QUAL fatia a
+    entrega (`diverge`), para a tabela ser o placar da spec.
+    """
+    for linha in MATRIZ:
+        if not linha.meta:
+            continue
+        nome = f"{linha.acao} ({linha.alvo})"
+        assert len(linha.meta) == len(PAPEIS), nome
+        assert linha.diverge, f"{nome}: meta sem dizer qual fatia a entrega"
+        assert linha.meta != linha.esperado, (
+            f"{nome}: ja chegou no alvo -- apague `meta` e `diverge`"
+        )
 
 
 # ---------------------------------------------------------------- o cadeado
