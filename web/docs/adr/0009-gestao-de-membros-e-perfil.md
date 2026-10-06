@@ -28,6 +28,14 @@ só `deactivate` (soft). Como **não existe endpoint de reativar**, a UI avisa
 na confirmação que a ação não tem desfazer pela tela. O backend ainda barra
 auto-desativação.
 
+> **Revisto em 06/10/2026: reativar passa a existir.** Uma conta desativada
+> por engano seis minutos depois do cadastro só voltou por `UPDATE` no banco,
+> e no meio tempo ganhou quatro senhas que nunca funcionariam (o login trata
+> conta desativada como senha errada). Agora: `POST /members/{id}/reactivate`
+> (verbo `person.reactivate`, as mesmas travas de desativar), o botão
+> "Reativar" na gaveta para conta desativada, e o reset de senha **recusado**
+> (409) enquanto a conta estiver desativada.
+
 **Perfil v1 é só-leitura.** Mostra nome, e-mail e papéis (de `auth/me`) + link
 para `/trocar-senha`. **Não** edita nome/avatar — não há endpoint; seria
 adição de backend, fora desta entrega.

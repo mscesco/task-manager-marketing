@@ -1882,6 +1882,8 @@ export async function removeMemberFromTeam(
 export type AcoesDaConta = {
   can_reset_password: boolean;
   can_deactivate: boolean;
+  /** 06/10/2026: só conta DESATIVADA. E conta desativada não ganha senha. */
+  can_reactivate: boolean;
 };
 
 export async function memberAccountActions(userId: string): Promise<AcoesDaConta> {
@@ -1896,10 +1898,21 @@ export async function resetMemberPassword(
   });
 }
 
-// Desativa (soft). VIA UNICA: nao ha endpoint de reativar (D5). O backend
-// barra desativar a si mesmo. Invalida o cache no sucesso.
+// Desativa (soft). O backend barra desativar a si mesmo. Invalida o cache no
+// sucesso. ⚠️ Ate 06/10/2026 era VIA UNICA (D5 da Spec 012) -- a volta e
+// `reactivateMember`, logo abaixo.
 export async function deactivateMember(userId: string): Promise<Member> {
   const r = await api<Member>(`/api/v1/members/${userId}/deactivate`, {
+    method: "POST",
+  });
+  invalidateMembers();
+  return r;
+}
+
+// Reativa (06/10/2026). A senha NAO muda -- se a provisoria venceu, o reset e o
+// clique seguinte. As sessoes de antes da desativacao nao voltam.
+export async function reactivateMember(userId: string): Promise<Member> {
+  const r = await api<Member>(`/api/v1/members/${userId}/reactivate`, {
     method: "POST",
   });
   invalidateMembers();

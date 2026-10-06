@@ -19,6 +19,7 @@ Rotas:
     PATCH  /members/{user_id}/teams/{team_id} -- trocar papel (team.manage)
     DELETE /members/{user_id}/teams/{team_id} -- remover do time (team.manage)
     POST   /members/{user_id}/deactivate   -- desativar membro (team.manage)
+    POST   /members/{user_id}/reactivate   -- reativar membro (person.reactivate)
 
 ⚠️ `POST /members/{user_id}/move-subteam` SAIU EM 17/09/2026, sem chamador na
 tela. Mudar alguem de subtime e vincular no novo e remover do antigo -- as
@@ -178,11 +179,15 @@ async def member_account_actions(
     e sobre QUEM PERGUNTA, e nao revela nada da pessoa alem do que a gaveta ja
     mostra. As mesmas travas das duas acoes -- ver `MemberService.acoes_da_conta`.
     """
-    pode_resetar, pode_desativar = await MemberService(session).acoes_da_conta(
-        user_id=user_id
-    )
+    (
+        pode_resetar,
+        pode_desativar,
+        pode_reativar,
+    ) = await MemberService(session).acoes_da_conta(user_id=user_id)
     return MemberAccountActionsResponse(
-        can_reset_password=pode_resetar, can_deactivate=pode_desativar
+        can_reset_password=pode_resetar,
+        can_deactivate=pode_desativar,
+        can_reactivate=pode_reativar,
     )
 
 
@@ -419,5 +424,22 @@ async def deactivate_member(
     Um membro nao pode desativar a propria conta.
     """
     user = await MemberService(uow.session).deactivate_member(user_id=user_id)
+    await uow.commit()
+    return MemberResponse.model_validate(user)
+
+
+@router.post(
+    "/{user_id}/reactivate",
+    response_model=MemberResponse,
+    dependencies=[Depends(require_permission("person.reactivate"))],
+)
+async def reactivate_member(
+    user_id: uuid.UUID, uow: UoWDep
+) -> MemberResponse:
+    """Reativa uma conta desativada (06/10/2026). Exige `person.reactivate`.
+
+    A senha nao muda; as sessoes de antes da desativacao nao voltam.
+    """
+    user = await MemberService(uow.session).reactivate_member(user_id=user_id)
     await uow.commit()
     return MemberResponse.model_validate(user)
