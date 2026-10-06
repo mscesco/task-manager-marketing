@@ -2,8 +2,8 @@
 
 **Status:** escrita em 05/10/2026, a partir do pedido dela com o print do Notion
 ("Calendário geral", da equipe de mídia social) e de três rodadas de perguntas
-respondidas no mesmo dia (§4). **Aguarda aprovação**, principalmente das
-propostas da §15.
+respondidas em 05 e 06/10 (§4, D1 a D27). **Todas as perguntas respondidas**;
+pronta para a fatia 0.
 **Escopo:** backend (módulo novo, migration, canal ao vivo, verbos novos) e front
 (lista de bases, tabela editável, visões, calendário, quadro).
 **Placar na abertura:** não medido ao escrever; a fatia 0 mede antes de mexer.
@@ -103,6 +103,7 @@ que ficar.
 | **D24** | **Trocar o tipo de coluna é editar coluna** (`base_column.update`), sem verbo próprio: basta estar na árvore, independente do papel. |
 | **D25** | **A visão padrão não se apaga**: a base sempre tem pelo menos uma visão de tabela. |
 | **D26** | **Excluir base pede para digitar o nome dela.** |
+| **D27** | **Tudo se desfaz por 1 dia, inclusive editar célula**, mesmo depois de fechar a aba. A base guarda a **ação** de cada pessoa (com o valor de antes), não cópias dos dados, e o Ctrl+Z roda a ação ao contrário (§9). Ideia dela, em 06/10. |
 
 ---
 
@@ -299,7 +300,7 @@ Migration `0029`. Módulo novo `app/modules/bases`. Rotas em inglês
 | `base_column` | `id`, `base_id`, `name`, `type`, `options` (JSONB), `position`, `width`, `version`, `deleted_at`, `deleted_by` |
 | `base_row` | `id`, `base_id`, `values` (JSONB: id da coluna → valor), `version`, `created_by`, `created_at`, `updated_at`, `deleted_at`, `deleted_by` |
 | `base_view` | `id`, `base_id`, `name`, `layout` (`table`/`calendar`/`board`), `config` (JSONB), `position` |
-| `base_change` | `id`, `base_id`, `actor_id`, `kind`, `payload` (JSONB), `created_at`, `undone_at` — o diário do desfazer (§9) |
+| `base_change` | `id`, `base_id`, `actor_id`, `kind`, `payload` (JSONB), `created_at`, `undone_at` — o diário de ações: o que cada pessoa fez, com o valor de antes (§9). Índice em (`base_id`, `actor_id`, `created_at`) |
 
 - **`values` guarda pelo id da coluna, nunca pelo nome.** Renomear coluna não
   toca linha nenhuma.
@@ -403,34 +404,93 @@ folga no ritmo de hoje.
 
 ---
 
-## 9. Desfazer (D12, D13)
+## 9. Desfazer: o diário de ações (D12, D13, D27)
 
-### 9.1. O que se desfaz por 1 dia
+### 9.1. A ideia
 
-| Ação | Como fica guardado | Pode dar conflito? |
+A base não guarda cópias de si mesma. Ela guarda **o que cada pessoa fez**, com
+o mínimo para fazer o contrário, e o Ctrl+Z roda o contrário. A ideia é dela
+(06/10), e é o desenho dos editores em geral.
+
+⚠️ **"O contrário" precisa do valor de antes.** A ação "Status virou Cancelado"
+não sabe voltar sozinha: o contrário dela é "Status virou **Publicado**". Por
+isso cada entrada guarda **antes e depois de cada célula que mudou**, e só isso.
+
+Exemplo de entrada:
+
+> Camila, 14:32, linha *Collab Will Domênico*, coluna Status: **de** Publicado
+> **para** Cancelado
+
+**Tamanho:** dezenas de bytes por edição. Mil edições por dia dão perto de
+100 KB, e a rotina diária (§11) apaga tudo o que passou de 1 dia.
+
+### 9.2. O que cada ação guarda, e o que o Ctrl+Z faz
+
+| Ação (`kind`) | O `payload` guarda | O Ctrl+Z faz |
 |---|---|---|
-| Apagar linha | `deleted_at` na linha | Não: ninguém edita linha apagada |
-| Apagar opção | `deleted_at` na opção | Não |
-| Apagar coluna | `deleted_at` na coluna; valores ficam nas linhas | Não |
-| Trocar tipo de coluna | valores antigos no `payload` | **Sim:** se alguém preencheu alguma célula da coluna depois |
+| `cell.update` | por célula: linha, coluna, valor antigo, valor novo | volta o valor antigo |
+| `row.create` | o id da linha | apaga a linha (marca, como em `row.delete`) |
+| `row.delete` | o id (a linha fica marcada, §6) | tira a marca |
+| `column.create` | o id da coluna | apaga a coluna (marca) |
+| `column.update` | campos antigos e novos (nome, largura, posição) | volta os campos |
+| `column.delete` | o id (a coluna fica marcada) | tira a marca |
+| `option.create` / `option.update` | a opção antes e depois | volta a opção |
+| `option.delete` | o id (a opção fica marcada) | tira a marca |
+| `column.retype` | tipo e opções antigos + os valores antigos da coluna | devolve tipo, opções e valores |
+| `view.*` | a configuração antes e depois | volta a configuração |
+
+- **Colar várias células, ou arrastar um card no quadro** que muda mais de uma
+  célula, é **uma** entrada com várias células. Um Ctrl+Z desfaz o grupo
+  inteiro.
+- **Editar célula grava ao confirmar** (Enter, Tab ou sair da célula), não a
+  cada tecla. Digitar "Collab Will" é uma entrada só.
+- **`column.retype` é o único que guarda volume**, e não tem outro jeito: o
+  contrário de "zerar tudo" precisa saber o que havia.
+- **Refazer** (Ctrl+Shift+Z ou Ctrl+Y) roda a ação de novo, com a mesma regra
+  de conflito, enquanto a pessoa não fizer nada novo depois de desfazer.
 
 A base excluída é outro caso: **10 dias** (D5), por **restaurar** na lista de
 excluídas, e não por Ctrl+Z.
 
-### 9.2. A regra de conflito (D12)
+### 9.3. A regra de conflito (D12)
 
-O desfazer de uma troca de tipo é **recusado** se qualquer célula daquela
-coluna não estiver mais vazia. A tela avisa: *"Não dá para desfazer: alguém já
-preencheu esta coluna depois da mudança."* Nunca sobrescreve.
+Antes de desfazer, o servidor confere se o que está lá **ainda é o que a
+pessoa deixou**:
 
-### 9.3. De quem é o Ctrl+Z
+- `cell.update`: cada célula do grupo ainda tem o "valor novo" registrado. Se
+  **uma** não tiver (alguém mudou depois), o grupo inteiro é recusado. Desfazer
+  metade de uma colagem seria pior do que não desfazer.
+- `column.retype`: todas as células da coluna continuam vazias.
+- `column.update`, `option.update`, `view.*`: os campos ainda têm o "depois"
+  registrado.
+- Marcas (`*.delete`): a coisa continua marcada, e a base continua existindo.
 
-- **Cada pessoa desfaz o que ela mesma fez**, do mais recente para trás, como
-  em qualquer editor. O Ctrl+Z da Ana não desfaz o que o Bruno apagou.
+Recusou: a tela avisa *"Não dá para desfazer: alguém mudou isso depois."* O
+servidor nunca sobrescreve, e a entrada sai da pilha da pessoa (o próximo
+Ctrl+Z tenta a anterior).
+
+### 9.4. De quem é o Ctrl+Z
+
+- **Cada pessoa desfaz o que ela mesma fez**, do mais recente para trás. O
+  Ctrl+Z da Ana não desfaz o que o Bruno apagou.
+- **A pilha mora no servidor**: sobrevive a recarregar, fechar a aba e trocar de
+  computador, por 1 dia (D27).
+- **Desfazer exige o verbo da ação original**, conferido de novo na hora (§5.2).
 - **Ctrl+Z dentro de um campo de texto desfaz o texto**, não a base. A pilha da
   base só responde com o foco fora de um campo.
-- **Editar célula** se desfaz só enquanto a página está aberta (memória da aba).
-  Não entra no diário de 1 dia: edição não perde dado, só troca (§15, item 7).
+- **A pilha é por base.** Ctrl+Z na base A não desfaz o que a pessoa fez na B.
+
+### 9.5. Rotas
+
+- `POST /bases/{id}/undo`: desfaz a entrada mais recente da pessoa naquela
+  base que ainda não foi desfeita.
+- `POST /bases/{id}/redo`: refaz a última desfeita.
+- As duas devolvem o que mudou, e o canal ao vivo (§10) avisa os outros como
+  qualquer gravação.
+
+⚠️ **Desfazer também é uma gravação**, com `version` e evento ao vivo. Ele não
+vira uma entrada nova no diário: marca `undone_at` na entrada original, e o
+refazer limpa a marca.
 
 ---
 
@@ -515,7 +575,7 @@ arquivamento. Sem isso, nada se perde, mas nada se apaga de vez.
 | **0** | Mede a suíte. Matriz HTTP com as linhas da base marcadas `pendente` (todas as rotas, 5 papéis + `DUAS_ARVORES`, raiz própria e outra raiz) | matriz |
 | **A** | Os 14 verbos no mapa (com a exceção do GESTOR comentada), `permissions.generated.ts`, teste de que nenhum verbo de base está em `_OWN_TEAM_ONLY` | pytest do gerado |
 | **B** | Migration `0029`, modelos, `base` e `base_column` (CRUD, opções, troca de tipo), cadeados por item, `can_create_base` em `GET /teams` | matriz |
-| **C** | `base_row` (CRUD, gravação por chave, teto de 5.000 com `row_count` na base), `base_view`, `base_change` e as rotas de desfazer com a regra de conflito | matriz |
+| **C** | `base_row` (CRUD, gravação por chave, teto de 5.000 com `row_count` na base), `base_view`, `base_change` gravado em TODA ação (§9.2), `undo`/`redo` com a regra de conflito | matriz, teste por `kind` |
 | **D** | Lixeira de bases (10 dias), `POST /system/bases/purge` | — |
 | **E** | Front: menu, lista de bases, criar e excluir, a tabela editável (sem ao vivo: atualiza a cada 10 s), o aviso dos 4.000 | `next build` |
 | **F** | Front: visões, filtro, ordenação, colunas visíveis; calendário; quadro | `next build` |
@@ -545,14 +605,8 @@ Deploy: migration `0029` **antes** do código, como nas 053 e 054.
 
 ---
 
-## 15. Propostas que nenhuma pergunta cobriu — PRECISAM DA APROVAÇÃO DELA
+## 15. Propostas que nenhuma pergunta cobriu
 
-Os itens 1 a 6, 8 e 9 da primeira versão foram respondidos em 05 e 06/10 e
-viraram D19 a D26. Falta um:
-
-7. **Edição de célula se desfaz só com a página aberta** (§9.3). Trocar
-   "Publicado" por "Cancelado" e apertar Ctrl+Z volta para "Publicado" enquanto
-   a aba está aberta. Recarregou ou fechou a aba, essa troca não se desfaz
-   mais, porque edição não perde dado: basta escolher de novo. O que se APAGA
-   (linha, coluna, opção, troca de tipo) continua com o 1 dia da D13, mesmo
-   depois de fechar a aba.
+**Todas respondidas** em 05 e 06/10 (D19 a D27). A proposta 7 (desfazer edição
+de célula só com a aba aberta) **caiu**: no lugar dela entrou o diário de ações
+da §9, ideia dela.
