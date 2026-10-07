@@ -178,6 +178,22 @@ def current_tenant() -> TenantContext | None:
     return _tenant_ctx.get()
 
 
+def can_in(permission: str, team_id: uuid.UUID | None) -> bool:
+    """O cadeado de um item: o verbo no time dele, pelo contexto da requisicao.
+
+    E a MESMA pergunta que o servico faz antes de agir, so que sem lancar: os
+    schemas de resposta (`can_update`, `can_delete`...) a usam para dizer a
+    tela se mostra o botao. Era repetida igual em `tasks/api/schemas.py`
+    (Spec 051) e `bases/api/schemas.py` (Spec 056); revisao de 07/10/2026.
+
+    ⚠️ PURO: le o contexto, nao o banco -- sem N+1 numa pagina de tarefas.
+    ⚠️ SEM CONTEXTO (serializacao fora de requisicao) responde False: na
+    duvida o botao nao aparece, e o servidor recusa de qualquer jeito.
+    """
+    tenant = _tenant_ctx.get()
+    return tenant is not None and tenant.has_permission_in(permission, team_id)
+
+
 def require_tenant() -> TenantContext:
     """Retorna o contexto corrente ou falha alto.
 
