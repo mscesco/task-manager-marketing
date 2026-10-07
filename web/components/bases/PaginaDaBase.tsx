@@ -14,7 +14,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ChevronLeft } from "lucide-react";
+import { ChevronLeft, Redo2, Undo2 } from "lucide-react";
 import DescricaoEditavel from "@/components/DescricaoEditavel";
 import Loading from "@/components/Loading";
 import TextoFormatado from "@/components/TextoFormatado";
@@ -27,6 +27,7 @@ import QuadroDaBase from "@/components/bases/QuadroDaBase";
 import type { Escolha } from "@/components/bases/EditorDeEscolha";
 import { useGravarCelula } from "@/components/bases/useGravarCelula";
 import { useAoVivo } from "@/components/bases/useAoVivo";
+import { useDesfazer } from "@/components/bases/useDesfazer";
 import {
   ApiError,
   currentUser,
@@ -92,22 +93,29 @@ export default function PaginaDaBase({ id }: { id: string }) {
   // render (editando ou não), e apagaria esta no meio do atraso.
   const salvandoVisao = useRef(false);
   const avisarErro = useAvisar();
+  const visaoPendente = useRef<{ viewId: string; config: ConfigDaVisao } | null>(null);
+  const gravarVisaoAgora = useCallback(async () => {
+    if (gravacaoDaVisao.current) clearTimeout(gravacaoDaVisao.current);
+    gravacaoDaVisao.current = null;
+    const p = visaoPendente.current;
+    visaoPendente.current = null;
+    if (!p) return;
+    try {
+      await updateBaseView(id, p.viewId, { config: p.config });
+    } catch (e) {
+      avisarErro((e as ApiError).message || "Não consegui salvar a visão.");
+    } finally {
+      salvandoVisao.current = false;
+    }
+  }, [id, avisarErro]);
   function mudarConfig(viewId: string, config: ConfigDaVisao) {
     setBase((b) =>
       b ? { ...b, views: b.views.map((v) => (v.id === viewId ? { ...v, config } : v)) } : b
     );
     if (gravacaoDaVisao.current) clearTimeout(gravacaoDaVisao.current);
     salvandoVisao.current = true;
-    gravacaoDaVisao.current = setTimeout(() => {
-      gravacaoDaVisao.current = null;
-      updateBaseView(id, viewId, { config })
-        .catch((e: ApiError) =>
-          avisarErro(e.message || "Não consegui salvar a visão.")
-        )
-        .finally(() => {
-          salvandoVisao.current = false;
-        });
-    }, 600);
+    visaoPendente.current = { viewId, config };
+    gravacaoDaVisao.current = setTimeout(() => void gravarVisaoAgora(), 600);
   }
 
   const atualizarLinhas = useCallback(
@@ -173,6 +181,9 @@ export default function PaginaDaBase({ id }: { id: string }) {
     recarregar();
   }, [recarregar]);
   const aoVivo = useAoVivo(id, meuId, aoMudar);
+  // Fatia H: o Ctrl+Z. Desfeito, recarrega -- o eco da própria ação não chega
+  // pelo canal (ver `useAoVivo`), então a recarga é daqui.
+  const desfazer = useDesfazer(id, recarregar, gravarVisaoAgora);
   useEffect(() => {
     const t = setInterval(() => {
       if (pendente.current && !ocupadoRef.current && !salvandoVisao.current) {
@@ -275,12 +286,36 @@ export default function PaginaDaBase({ id }: { id: string }) {
 
       {visao && (
         <div className="flex flex-col gap-2">
-          <BarraDeVisoes
-            base={base}
-            ativa={visao}
-            onEscolher={escolherVisao}
-            onViews={(f) => setBase((b) => (b ? { ...b, views: f(b.views) } : b))}
-          />
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <div className="min-w-0 flex-1">
+              <BarraDeVisoes
+                base={base}
+                ativa={visao}
+                onEscolher={escolherVisao}
+                onViews={(f) => setBase((b) => (b ? { ...b, views: f(b.views) } : b))}
+              />
+            </div>
+            {/* Os botões existem para quem usa o mouse descobrir o atalho; o
+                servidor diz o que há para desfazer, e a mensagem conta. */}
+            <button
+              className="btn btn-ghost text-sm"
+              disabled={desfazer.ocupado}
+              aria-keyshortcuts="Control+Z"
+              title="Desfazer (Ctrl+Z)"
+              onClick={() => desfazer.rodar("undo")}
+            >
+              <Undo2 size={14} aria-hidden="true" /> Desfazer
+            </button>
+            <button
+              className="btn btn-ghost text-sm"
+              disabled={desfazer.ocupado}
+              aria-keyshortcuts="Control+Shift+Z Control+Y"
+              title="Refazer (Ctrl+Shift+Z)"
+              onClick={() => desfazer.rodar("redo")}
+            >
+              <Redo2 size={14} aria-hidden="true" /> Refazer
+            </button>
+          </div>
           <ControlesDaVisao
             layout={visao.layout}
             colunas={base.columns}

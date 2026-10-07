@@ -3598,6 +3598,21 @@ export function abrirCanalDaBase(baseId: string, signal: AbortSignal): Promise<R
   });
 }
 
+/**
+ * Desfazer e refazer (Spec 056, fatia H, §9): a ação mais recente DA PESSOA
+ * naquela base, dentro de 1 dia. ⚠️ Conflito não é erro: vem 200 com
+ * `conflict: true` (o servidor tirou a entrada da pilha, e isso é gravação).
+ */
+export type BaseUndoResult = { applied: boolean; conflict: boolean; kind: string | null };
+
+export async function undoBase(baseId: string): Promise<BaseUndoResult> {
+  return api<BaseUndoResult>(`/api/v1/bases/${baseId}/undo`, { method: "POST" });
+}
+
+export async function redoBase(baseId: string): Promise<BaseUndoResult> {
+  return api<BaseUndoResult>(`/api/v1/bases/${baseId}/redo`, { method: "POST" });
+}
+
 /** Visões são COMPARTILHADAS (D14): mudar filtro ou ordem muda para todos. */
 export async function createBaseView(
   baseId: string,

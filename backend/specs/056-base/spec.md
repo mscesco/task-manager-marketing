@@ -2,8 +2,9 @@
 
 **Status:** escrita em 05/10/2026, a partir do pedido dela com o print do Notion
 ("Calendário geral", da equipe de mídia social) e de três rodadas de perguntas
-respondidas em 05 e 06/10 (§4, D1 a D27). **Todas as perguntas respondidas**;
-pronta para a fatia 0.
+respondidas em 05 e 06/10 (§4, D1 a D27). **Fatias 0 a H entregues em
+07/10** (branch `spec-056/base`). Falta o smoke na tela e, no deploy, o
+`curl -N` na VPS e o agendamento da rotina no n8n (`DEPLOY.md`).
 **Escopo:** backend (módulo novo, migration, canal ao vivo, verbos novos) e front
 (lista de bases, tabela editável, visões, calendário, quadro).
 **Placar na abertura:** backend **1883** (medido na fatia 0, em 06/10, sobre a
@@ -13,7 +14,7 @@ fatia B: **2081** (drift limpo). Depois da fatia C: **2127**. Depois da fatia D:
 **2142** — o backend da spec está completo. Fatia E (primeira do front):
 front **1613** (+32), `next build` limpo. Fatia F (visões, quadro,
 calendário): front **1640**. Fatia G (ao vivo): backend **2159**, front
-**1649**.
+**1649**. Fatia H (Ctrl+Z na tela): front **1664**.
 
 ---
 
