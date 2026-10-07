@@ -16,17 +16,11 @@ from typing import Any
 
 from pydantic import BaseModel, Field, computed_field
 
-from app.core.tenant import current_tenant
+from app.core.tenant import can_in
 from app.modules.bases.domain.columns import NAME_MAX, live_options
 
 #: O texto do topo (D15) -- generoso, como a descricao de tarefa.
 _DESCRIPTION_MAX = 50_000
-
-
-def _pode(permission: str, team_id: uuid.UUID) -> bool:
-    """Puro: le o contexto da requisicao, nao o banco. Sem contexto, False."""
-    tenant = current_tenant()
-    return tenant is not None and tenant.has_permission_in(permission, team_id)
 
 
 class _Cadeados(BaseModel):
@@ -37,12 +31,12 @@ class _Cadeados(BaseModel):
     @computed_field  # type: ignore[prop-decorator]
     @property
     def can_update(self) -> bool:
-        return _pode("base.update", self.team_id)
+        return can_in("base.update", self.team_id)
 
     @computed_field  # type: ignore[prop-decorator]
     @property
     def can_delete(self) -> bool:
-        return _pode("base.delete", self.team_id)
+        return can_in("base.delete", self.team_id)
 
 
 class OptionResponse(BaseModel):
@@ -114,7 +108,7 @@ class BaseTrashItemResponse(BaseModel):
     @computed_field  # type: ignore[prop-decorator]
     @property
     def can_restore(self) -> bool:
-        return _pode("base.restore", self.team_id)
+        return can_in("base.restore", self.team_id)
 
 
 class BaseResponse(_Cadeados):
@@ -147,47 +141,47 @@ class BaseResponse(_Cadeados):
     @computed_field  # type: ignore[prop-decorator]
     @property
     def can_create_column(self) -> bool:
-        return _pode("base_column.create", self.team_id)
+        return can_in("base_column.create", self.team_id)
 
     @computed_field  # type: ignore[prop-decorator]
     @property
     def can_update_column(self) -> bool:
-        return _pode("base_column.update", self.team_id)
+        return can_in("base_column.update", self.team_id)
 
     @computed_field  # type: ignore[prop-decorator]
     @property
     def can_delete_column(self) -> bool:
-        return _pode("base_column.delete", self.team_id)
+        return can_in("base_column.delete", self.team_id)
 
     @computed_field  # type: ignore[prop-decorator]
     @property
     def can_create_row(self) -> bool:
-        return _pode("base_row.create", self.team_id)
+        return can_in("base_row.create", self.team_id)
 
     @computed_field  # type: ignore[prop-decorator]
     @property
     def can_update_row(self) -> bool:
-        return _pode("base_row.update", self.team_id)
+        return can_in("base_row.update", self.team_id)
 
     @computed_field  # type: ignore[prop-decorator]
     @property
     def can_delete_row(self) -> bool:
-        return _pode("base_row.delete", self.team_id)
+        return can_in("base_row.delete", self.team_id)
 
     @computed_field  # type: ignore[prop-decorator]
     @property
     def can_create_view(self) -> bool:
-        return _pode("base_view.create", self.team_id)
+        return can_in("base_view.create", self.team_id)
 
     @computed_field  # type: ignore[prop-decorator]
     @property
     def can_update_view(self) -> bool:
-        return _pode("base_view.update", self.team_id)
+        return can_in("base_view.update", self.team_id)
 
     @computed_field  # type: ignore[prop-decorator]
     @property
     def can_delete_view(self) -> bool:
-        return _pode("base_view.delete", self.team_id)
+        return can_in("base_view.delete", self.team_id)
 
 
 class BaseCreateRequest(BaseModel):

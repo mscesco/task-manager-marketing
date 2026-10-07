@@ -22,7 +22,7 @@ from enum import Enum
 
 from pydantic import BaseModel, Field, computed_field
 
-from app.core.tenant import current_tenant
+from app.core.tenant import can_in, current_tenant
 from app.db.models.enums import (
     ColumnSemantic,
     PriorityLevel,
@@ -34,26 +34,6 @@ from app.modules.auth.domain import team_scope
 # Limite defensivo para description -- generoso, mas evita uploads
 # acidentais de Mb de texto.
 _DESCRIPTION_MAX = 100_000
-
-
-def _pode_no_time(permission: str, team_id: uuid.UUID | None) -> bool:
-    """O cadeado de um item, pela MESMA pergunta do servico. Spec 051, fatia A.
-
-    ⚠️⚠️ POR QUE NO SCHEMA, e nao no router como o `can_update` de `GET /teams`:
-    tarefa e projeto saem por MUITAS rotas (quadro, lista, detalhe, minhas
-    tarefas, arquivadas, criar, editar, mover...). Um campo montado no router
-    teria de ser lembrado em cada uma, e a rota esquecida devolveria a tarefa
-    sem cadeado -- ou com um default que mente. Aqui o campo sai onde o item sai.
-
-    ⚠️ E PURO: le o contexto da requisicao, nao o banco. Sem N+1 numa pagina
-    de 173 tarefas.
-
-    ⚠️ SEM CONTEXTO (serializacao fora de requisicao) responde False: o campo
-    diz "mostre o botao", e na duvida o botao nao aparece -- o servidor recusa
-    de qualquer jeito.
-    """
-    tenant = current_tenant()
-    return tenant is not None and tenant.has_permission_in(permission, team_id)
 
 
 # =========================================================
@@ -86,7 +66,7 @@ class ProjectResponse(BaseModel):
     @computed_field  # type: ignore[prop-decorator]
     @property
     def can_update(self) -> bool:
-        return _pode_no_time("project.update", self.team_id)
+        return can_in("project.update", self.team_id)
 
     # ⚠️ `can_archive` SAIU EM 17/09/2026, junto com as rotas de arquivar
     # projeto: era o cadeado de um botao sem rota.
@@ -94,7 +74,7 @@ class ProjectResponse(BaseModel):
     @computed_field  # type: ignore[prop-decorator]
     @property
     def can_delete(self) -> bool:
-        return _pode_no_time("project.delete", self.team_id)
+        return can_in("project.delete", self.team_id)
 
 
 class ProjectCreateRequest(BaseModel):
@@ -223,7 +203,7 @@ class TaskResponse(BaseModel):
     @computed_field  # type: ignore[prop-decorator]
     @property
     def can_delete(self) -> bool:
-        return _pode_no_time("task.delete", self.team_id)
+        return can_in("task.delete", self.team_id)
 
     # Spec 053, fatia D: o `+` de "Seguidores" -- por e tirar OUTRA pessoa.
     # A MESMA pergunta de `CollaborationService._assert_can_manage_others`:
@@ -233,7 +213,7 @@ class TaskResponse(BaseModel):
     @property
     def can_manage_watchers(self) -> bool:
         tenant = current_tenant()
-        if tenant is None or not _pode_no_time("task.assign", self.team_id):
+        if tenant is None or not can_in("task.assign", self.team_id):
             return False
         editaveis = team_scope.editable_team_ids(
             tenant.memberships, tenant.team_tree, org_role=tenant.org_role
