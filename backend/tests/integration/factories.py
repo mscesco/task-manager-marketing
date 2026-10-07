@@ -22,11 +22,16 @@ e e o arreio que escreve os testes da F3 e da F5.
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import (
+    BaseColumn,
+    BaseRow,
+    BaseTable,
+    BaseView,
     Project,
     Task,
     Team,
@@ -254,6 +259,84 @@ async def make_project(
     )
     await db.flush()
     return pid
+
+
+async def make_base(
+    db: AsyncSession,
+    *,
+    workspace_id: uuid.UUID,
+    created_by: uuid.UUID,
+    team_id: uuid.UUID,
+    name: str = "Calendario",
+    deleted: bool = False,
+) -> dict[str, uuid.UUID | str]:
+    """Uma base como o produto a cria (Spec 056, D2) -- coluna de titulo e visao
+    padrao --, mais o que a matriz precisa: uma coluna de selecao com uma
+    opcao, uma linha e uma segunda visao.
+
+    ⚠️ Sem passar pelo `BaseService` de proposito: a factory monta o MUNDO, e o
+    servico e o que se testa. Devolve os ids pelo nome.
+    """
+    base_id = uuid.uuid4()
+    titulo_id = uuid.uuid4()
+    coluna_id = uuid.uuid4()
+    opcao_id = str(uuid.uuid4())
+    linha_id = uuid.uuid4()
+    visao_padrao_id = uuid.uuid4()
+    visao_id = uuid.uuid4()
+    db.add(
+        BaseTable(
+            id=base_id,
+            workspace_id=workspace_id,
+            team_id=team_id,
+            name=name,
+            description="",
+            created_by=created_by,
+            deleted_at=datetime.now(UTC) if deleted else None,
+            deleted_by=created_by if deleted else None,
+        )
+    )
+    await db.flush()
+    db.add_all(
+        [
+            BaseColumn(
+                id=titulo_id, workspace_id=workspace_id, base_id=base_id,
+                name="Título", type="title", options=[], position=1,
+            ),
+            BaseColumn(
+                id=coluna_id, workspace_id=workspace_id, base_id=base_id,
+                name="Plataforma", type="select", position=2,
+                options=[
+                    {"id": opcao_id, "label": "Instagram", "color": "purple",
+                     "deleted_at": None}
+                ],
+            ),
+            BaseRow(
+                id=linha_id, workspace_id=workspace_id, base_id=base_id,
+                created_by=created_by,
+                values={str(titulo_id): "Collab", str(coluna_id): opcao_id},
+            ),
+            BaseView(
+                id=visao_padrao_id, workspace_id=workspace_id, base_id=base_id,
+                name="Tabela", layout="table", config={}, position=1,
+                is_default=True,
+            ),
+            BaseView(
+                id=visao_id, workspace_id=workspace_id, base_id=base_id,
+                name="Por status", layout="board", config={}, position=2,
+            ),
+        ]
+    )
+    await db.flush()
+    return {
+        "base": base_id,
+        "titulo": titulo_id,
+        "coluna": coluna_id,
+        "opcao": opcao_id,
+        "linha": linha_id,
+        "visao_padrao": visao_padrao_id,
+        "visao": visao_id,
+    }
 
 
 async def _coluna_do_status_no_quadro(

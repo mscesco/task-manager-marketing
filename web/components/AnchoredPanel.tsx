@@ -24,6 +24,12 @@
 //      os dois lados e pareceria brotar do nada.
 //   6. O painel NAO SAI PELA DIREITA -- ele desloca para caber na janela. O
 //      gatilho pode ser uma pilula estreita, e o painel e mais largo que ela.
+//      ⚠️ Spec 056, fatia J: a conta do hook usa a largura ESPERADA, e o
+//      painel de ordenacao da Base (dois seletores e a lixeira) nasce mais
+//      largo que ela -- vazava pela direita (print dela de 07/10). Por isso o
+//      painel MEDE A PROPRIA LARGURA depois de desenhado e se desloca o que
+//      faltar. E a borda e a da PAGINA (`clientWidth`), sem a barra de
+//      rolagem: com `innerWidth` a ponta ficava escondida debaixo dela.
 //
 // ⚠️ `bounce: 0`, e nao um valor pequeno: com qualquer overshoot a caixa
 // passa do tamanho final e volta, e isso le-se como TRANCO -- *"a animacao das
@@ -46,6 +52,12 @@ import { motion } from "motion/react";
 const ESPACO_MINIMO = 220;
 /** Respiro nas bordas da janela, para o painel não encostar. */
 const MARGEM = 8;
+
+/** A largura útil da página, sem a barra de rolagem vertical. Sem medida (o
+ *  jsdom diz 0), cai na da janela. */
+function larguraDaPagina(): number {
+  return document.documentElement.clientWidth || window.innerWidth;
+}
 
 export type PanelBox = {
   readonly top?: number;
@@ -89,6 +101,19 @@ export function useAnchoredPanel<T extends HTMLElement>(
      * embaixo e para a ESQUERDA do botao, dentro do detalhe.
      */
     alinhar?: "esquerda" | "direita";
+    /**
+     * ⚠️ Spec 056, fatia I: o SUBMENU, que abre AO LADO do item ("Alterar tipo
+     * ›"), e não embaixo -- como o do Notion. À direita do gatilho; sem espaço,
+     * à esquerda. Alto: alinha pelo topo do item, e sobe o que for preciso
+     * para caber na janela.
+     */
+    aoLado?: boolean;
+    /**
+     * Elementos que contam como "dentro" deste painel para o clique-fora e a
+     * rolagem. ⚠️ É o que deixa o menu principal aberto enquanto se usa o
+     * SUBMENU: o submenu é outro painel `fixed`, fora da caixa do principal.
+     */
+    dentro?: readonly MutableRefObject<HTMLElement | null>[];
   } = {},
 ): {
   anchorRef: MutableRefObject<T | null>;
@@ -105,6 +130,16 @@ export function useAnchoredPanel<T extends HTMLElement>(
     if (!isOpen) return;
     const r = anchorRef.current?.getBoundingClientRect();
     if (!r) return;
+    if (opcoes.aoLado) {
+      const largura = opcoes.larguraPainel ?? LARGURA_MINIMA;
+      const maxWidth = Math.max(160, window.innerWidth - 2 * MARGEM);
+      const cabeADireita = r.right + 4 + largura <= window.innerWidth - MARGEM;
+      const left = cabeADireita ? r.right + 4 : Math.max(MARGEM, r.left - 4 - largura);
+      // 320 é o teto de altura do painel (o `maxHeight` lá embaixo).
+      const top = Math.max(MARGEM, Math.min(r.top - 6, window.innerHeight - MARGEM - 320));
+      setBox({ top, left, width: largura, maxWidth, paraCima: false, alinhadoADireita: !cabeADireita });
+      return;
+    }
     const cabeEmbaixo = window.innerHeight - r.bottom > ESPACO_MINIMO;
 
     // ⚠️⚠️ O PAINEL NAO PODE SAIR PELA DIREITA, e saía: relatado duas vezes
@@ -116,7 +151,7 @@ export function useAnchoredPanel<T extends HTMLElement>(
     // cortaria o texto de dentro, que é o que se foi ler. Ele encosta na
     // margem direita e continua com a largura que precisa.
     const largura = Math.max(r.width, opcoes.larguraPainel ?? LARGURA_MINIMA);
-    const maxWidth = Math.max(160, window.innerWidth - 2 * MARGEM);
+    const maxWidth = Math.max(160, larguraDaPagina() - 2 * MARGEM);
     const alinhadoADireita = opcoes.alinhar === "direita";
     // Pela direita: a borda direita do painel encosta na do gatilho, e ele
     // cresce para a esquerda. As duas travas de janela valem igual.
@@ -125,7 +160,7 @@ export function useAnchoredPanel<T extends HTMLElement>(
       : r.left;
     const left = Math.max(
       MARGEM,
-      Math.min(inicio, window.innerWidth - MARGEM - Math.min(largura, maxWidth)),
+      Math.min(inicio, larguraDaPagina() - MARGEM - Math.min(largura, maxWidth)),
     );
 
     setBox(
@@ -151,11 +186,14 @@ export function useAnchoredPanel<T extends HTMLElement>(
 
   useEffect(() => {
     if (!isOpen) return;
+    const dentroDeOutro = (alvo: Node) =>
+      (opcoes.dentro ?? []).some((ref) => ref.current?.contains(alvo));
     function onDown(e: MouseEvent) {
       const alvo = e.target as Node;
       if (
         !anchorRef.current?.contains(alvo) &&
-        !panelRef.current?.contains(alvo)
+        !panelRef.current?.contains(alvo) &&
+        !dentroDeOutro(alvo)
       ) {
         onClose();
       }
@@ -174,7 +212,7 @@ export function useAnchoredPanel<T extends HTMLElement>(
     // painel nao fechava e o erro estourava. Pego pelo teste da Spec 050.
     function onScroll(e: Event) {
       const alvo = e.target;
-      if (alvo instanceof Node && panelRef.current?.contains(alvo)) return;
+      if (alvo instanceof Node && (panelRef.current?.contains(alvo) || dentroDeOutro(alvo))) return;
       onClose();
     }
     document.addEventListener("mousedown", onDown);
@@ -221,6 +259,17 @@ export default function AnchoredPanel({
   minWidth?: number;
   children: ReactNode;
 }) {
+  // Regra 6, segunda metade: quanto o painel ainda precisa andar para a
+  // esquerda depois de medido. ⚠️ `offsetWidth`, e não `getBoundingClientRect`:
+  // este último mede a caixa ESCALADA pela animação de entrada (97%).
+  const [ajuste, setAjuste] = useState(0);
+  useLayoutEffect(() => {
+    const el = panelRef.current;
+    if (!el) return;
+    const borda = larguraDaPagina() - MARGEM;
+    const sobra = box.left + el.offsetWidth - borda;
+    setAjuste(sobra > 0 ? -Math.min(sobra, box.left - MARGEM) : 0);
+  }, [box.left, panelRef]);
   return (
     <motion.div
       ref={panelRef}
@@ -234,7 +283,7 @@ export default function AnchoredPanel({
         position: "fixed",
         top: box.top,
         bottom: box.bottom,
-        left: box.left,
+        left: box.left + ajuste,
         minWidth: Math.min(minWidth ?? box.width, box.maxWidth),
         maxWidth: box.maxWidth,
         zIndex: 60,

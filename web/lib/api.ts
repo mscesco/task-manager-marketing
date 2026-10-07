@@ -707,6 +707,9 @@ export type Team = {
   // Spec 051, fatia D: quem pergunta pode APAGAR este time? O gerente apaga
   // subtime da própria árvore; ausente lê-se como "não".
   can_delete?: boolean;
+  // Spec 056, fatia B: quem pergunta pode CRIAR BASE neste time? Só time raiz;
+  // o supervisor de um subtime recebe na raiz dele. Ausente lê-se como "não".
+  can_create_base?: boolean;
 };
 
 type TeamListResponse = { items: Team[]; total: number };
@@ -3367,4 +3370,285 @@ export async function rejeitarSolicitacao(
     method: "POST",
     body: { note },
   });
+}
+
+// ---------------------------------------------------------------
+// BASE -- a tabela que a equipe monta (Spec 056)
+// ---------------------------------------------------------------
+// ⚠️ OS BOTÕES VÊM DO SERVIDOR, por base (`can_*`). Hoje todo mundo da árvore
+// edita célula, e seria tentador a tela mostrar tudo -- no dia em que um verbo
+// for desligado para alguém, a tela continuaria oferecendo o botão e o
+// servidor recusaria (spec §5.6). A tela nunca deduz de papel.
+// ⚠️ Sem cache de módulo: a base muda o tempo todo (outras pessoas editam), e
+// a página recarrega a cada 10 s até o ao vivo da fatia G.
+
+export type BaseColumnType =
+  | "title"
+  | "text"
+  | "number"
+  | "date"
+  | "select"
+  | "multi_select"
+  | "person"
+  | "link"
+  | "checkbox";
+
+export type BaseOptionColor =
+  | "gray"
+  | "brown"
+  | "orange"
+  | "yellow"
+  | "green"
+  | "blue"
+  | "purple"
+  | "pink"
+  | "red";
+
+export type BaseOption = { id: string; label: string; color: BaseOptionColor };
+
+export type BaseColumn = {
+  id: string;
+  name: string;
+  type: BaseColumnType;
+  options: BaseOption[];
+  position: number;
+  width: number | null;
+  version: number;
+};
+
+export type BaseView = {
+  id: string;
+  name: string;
+  layout: "table" | "calendar" | "board";
+  config: Record<string, unknown>;
+  position: number;
+  is_default: boolean;
+};
+
+export type BaseSummary = {
+  id: string;
+  team_id: string;
+  name: string;
+  updated_at: string;
+  can_update: boolean;
+  can_delete: boolean;
+};
+
+export type BaseDetail = BaseSummary & {
+  description: string;
+  created_by: string;
+  created_at: string;
+  columns: BaseColumn[];
+  views: BaseView[];
+  can_create_column: boolean;
+  can_update_column: boolean;
+  can_delete_column: boolean;
+  can_create_row: boolean;
+  can_update_row: boolean;
+  can_delete_row: boolean;
+  can_create_view: boolean;
+  can_update_view: boolean;
+  can_delete_view: boolean;
+};
+
+/** Valor de célula como o servidor guarda (spec §7.1). Ausente = vazia. */
+/** Fatia J: a célula de link guarda uma lista, cada um com nome opcional. ⚠️
+ *  Células gravadas antes podem ter o texto solto -- leia por `linksDaCelula`. */
+export type BaseLinkValue = { title: string; url: string };
+export type BaseCellValue = string | number | boolean | string[] | BaseLinkValue[];
+
+export type BaseRow = {
+  id: string;
+  values: Record<string, BaseCellValue>;
+  version: number;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type BaseRowList = {
+  items: BaseRow[];
+  total: number;
+  limit: number;
+  warning_at: number;
+};
+
+export type BaseTrashItem = {
+  id: string;
+  team_id: string;
+  name: string;
+  deleted_at: string;
+  deleted_by: string | null;
+  restorable_until: string;
+  can_restore: boolean;
+};
+
+export type BaseOptionInput = { id?: string; label: string; color?: BaseOptionColor };
+
+export async function listBases(): Promise<BaseSummary[]> {
+  return api<BaseSummary[]>("/api/v1/bases");
+}
+
+export async function listBaseTrash(): Promise<BaseTrashItem[]> {
+  return api<BaseTrashItem[]>("/api/v1/bases/trash");
+}
+
+export async function createBase(body: {
+  name: string;
+  team_id: string;
+  description?: string;
+}): Promise<BaseDetail> {
+  return api<BaseDetail>("/api/v1/bases", { method: "POST", body });
+}
+
+export async function getBase(id: string): Promise<BaseDetail> {
+  return api<BaseDetail>(`/api/v1/bases/${id}`);
+}
+
+export async function updateBase(
+  id: string,
+  body: { name?: string; description?: string }
+): Promise<BaseDetail> {
+  return api<BaseDetail>(`/api/v1/bases/${id}`, { method: "PATCH", body });
+}
+
+export async function deleteBase(id: string): Promise<BaseSummary> {
+  return api<BaseSummary>(`/api/v1/bases/${id}`, { method: "DELETE" });
+}
+
+export async function restoreBase(id: string): Promise<BaseDetail> {
+  return api<BaseDetail>(`/api/v1/bases/${id}/restore`, { method: "POST" });
+}
+
+export async function createBaseColumn(
+  baseId: string,
+  body: {
+    name: string;
+    type: BaseColumnType;
+    options?: BaseOptionInput[];
+    /** Fatia I ("Inserir à esquerda/direita"); ausente = no fim. */
+    position?: number;
+  }
+): Promise<BaseColumn> {
+  return api<BaseColumn>(`/api/v1/bases/${baseId}/columns`, { method: "POST", body });
+}
+
+/** Fatia I: "Duplicar propriedade" -- nome, tipo, opções e valores, à direita. */
+export async function duplicateBaseColumn(baseId: string, columnId: string): Promise<BaseColumn> {
+  return api<BaseColumn>(`/api/v1/bases/${baseId}/columns/${columnId}/duplicate`, {
+    method: "POST",
+  });
+}
+
+export async function updateBaseColumn(
+  baseId: string,
+  columnId: string,
+  body: {
+    name?: string;
+    type?: BaseColumnType;
+    options?: BaseOptionInput[];
+    position?: number;
+    width?: number | null;
+  }
+): Promise<BaseColumn> {
+  return api<BaseColumn>(`/api/v1/bases/${baseId}/columns/${columnId}`, {
+    method: "PATCH",
+    body,
+  });
+}
+
+export async function deleteBaseColumn(baseId: string, columnId: string): Promise<BaseColumn> {
+  return api<BaseColumn>(`/api/v1/bases/${baseId}/columns/${columnId}`, {
+    method: "DELETE",
+  });
+}
+
+export async function deleteBaseOption(
+  baseId: string,
+  columnId: string,
+  optionId: string
+): Promise<BaseColumn> {
+  return api<BaseColumn>(
+    `/api/v1/bases/${baseId}/columns/${columnId}/options/${optionId}`,
+    { method: "DELETE" }
+  );
+}
+
+export async function listBaseRows(baseId: string): Promise<BaseRowList> {
+  return api<BaseRowList>(`/api/v1/bases/${baseId}/rows`);
+}
+
+export async function createBaseRow(
+  baseId: string,
+  values: Record<string, BaseCellValue | null> = {}
+): Promise<BaseRow> {
+  return api<BaseRow>(`/api/v1/bases/${baseId}/rows`, { method: "POST", body: { values } });
+}
+
+/** Uma ou mais células como UMA ação -- um Ctrl+Z desfaz o grupo. `null` esvazia. */
+export async function updateBaseCells(
+  baseId: string,
+  cells: { row_id: string; column_id: string; value: BaseCellValue | null }[]
+): Promise<BaseRow[]> {
+  return api<BaseRow[]>(`/api/v1/bases/${baseId}/cells`, { method: "PATCH", body: { cells } });
+}
+
+/**
+ * O canal ao vivo de uma base (Spec 056, fatia G): um `fetch` lido em fluxo.
+ *
+ * ⚠️ NÃO PASSA PELO `api()`, e é a única chamada assim: o `api()` lê o corpo
+ * inteiro, e este corpo não acaba (dura 60 s). Por isso o 401 não renova o
+ * token aqui -- quem chama recarrega a base pelo `api()`, que renova, e reabre.
+ * O token vai no CABEÇALHO, como em toda chamada, e não na URL (ver
+ * `lib/sse.ts`).
+ */
+export function abrirCanalDaBase(baseId: string, signal: AbortSignal): Promise<Response> {
+  const token = getToken();
+  return fetch(`${API_URL}/api/v1/bases/${baseId}/events`, {
+    headers: {
+      Accept: "text/event-stream",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    signal,
+    cache: "no-store",
+  });
+}
+
+/**
+ * Desfazer e refazer (Spec 056, fatia H, §9): a ação mais recente DA PESSOA
+ * naquela base, dentro de 1 dia. ⚠️ Conflito não é erro: vem 200 com
+ * `conflict: true` (o servidor tirou a entrada da pilha, e isso é gravação).
+ */
+export type BaseUndoResult = { applied: boolean; conflict: boolean; kind: string | null };
+
+export async function undoBase(baseId: string): Promise<BaseUndoResult> {
+  return api<BaseUndoResult>(`/api/v1/bases/${baseId}/undo`, { method: "POST" });
+}
+
+export async function redoBase(baseId: string): Promise<BaseUndoResult> {
+  return api<BaseUndoResult>(`/api/v1/bases/${baseId}/redo`, { method: "POST" });
+}
+
+/** Visões são COMPARTILHADAS (D14): mudar filtro ou ordem muda para todos. */
+export async function createBaseView(
+  baseId: string,
+  body: { name: string; layout: BaseView["layout"]; config?: Record<string, unknown> }
+): Promise<BaseView> {
+  return api<BaseView>(`/api/v1/bases/${baseId}/views`, { method: "POST", body });
+}
+
+export async function updateBaseView(
+  baseId: string,
+  viewId: string,
+  body: { name?: string; config?: Record<string, unknown>; position?: number }
+): Promise<BaseView> {
+  return api<BaseView>(`/api/v1/bases/${baseId}/views/${viewId}`, { method: "PATCH", body });
+}
+
+export async function deleteBaseView(baseId: string, viewId: string): Promise<void> {
+  await api<void>(`/api/v1/bases/${baseId}/views/${viewId}`, { method: "DELETE" });
+}
+
+export async function deleteBaseRow(baseId: string, rowId: string): Promise<BaseRow> {
+  return api<BaseRow>(`/api/v1/bases/${baseId}/rows/${rowId}`, { method: "DELETE" });
 }

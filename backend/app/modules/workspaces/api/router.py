@@ -116,6 +116,10 @@ async def list_teams(
                     and ctx.has_permission_in("subteam.update", t.id)
                 ),
                 can_create_project=ctx.has_permission_in("project.create", t.id),
+                can_create_base=(
+                    t.parent_team_id is None
+                    and ctx.has_permission_in("base.create", t.id)
+                ),
                 can_delete=(
                     t.parent_team_id is not None
                     and ctx.has_permission_in("subteam.delete", t.id)

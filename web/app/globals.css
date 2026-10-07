@@ -273,6 +273,21 @@
      tocar no outro. */
   --stale-dot: #f59e0b;  --stale-text: #92400e; /*  7.09 */
 
+  /* Cor das OPCOES da Base (Spec 056, §12) -- a paleta fixa de
+     `bases/domain/columns.py::OPTION_COLORS`. Usadas como `color` do
+     `Badge tone="soft"`, entao os numeros sao COM A TINTA (a cor a 12% sobre a
+     --surface), medidos em 07/10/2026. Pior caso: rosa, 4.93. Sem par
+     `--color-*` no @theme: so o inline do Badge as le. */
+  --opt-gray:   #475569; /* 6.34 */
+  --opt-brown:  #78350f; /* 7.43 */
+  --opt-orange: #9a3412; /* 6.04 */
+  --opt-yellow: #854d0e; /* 5.73 */
+  --opt-green:  #166534; /* 5.95 */
+  --opt-blue:   #1d4ed8; /* 5.57 */
+  --opt-purple: #6d28d9; /* 5.82 */
+  --opt-pink:   #be185d; /* 4.93 */
+  --opt-red:    #b91c1c; /* 5.29 */
+
   /* Texto POR CIMA de um fundo `-text` (Badge tone="solid"). Mesmo papel
      que --on-danger, e pelo mesmo motivo: no escuro o fundo vira o stop
      CLARO da familia, e branco em cima dele reprova. Pior caso medido:
@@ -318,6 +333,17 @@
   --due-soon-text:     #fcd34d; /* 11.55 */
 
   --stale-dot: #fbbf24;  --stale-text: #fcd34d; /* 11.55 */
+
+  /* Opcoes da Base (Spec 056), com a tinta, contra a surface #1f1e1c (07/10). */
+  --opt-gray:   #cbd5e1; /* 8.39 */
+  --opt-brown:  #e7c9a9; /* 7.96 */
+  --opt-orange: #fdba74; /* 7.55 */
+  --opt-yellow: #fde047; /* 9.31 */
+  --opt-green:  #86efac; /* 8.86 */
+  --opt-blue:   #93c5fd; /* 7.18 */
+  --opt-purple: #c4b5fd; /* 7.03 */
+  --opt-pink:   #f9a8d4; /* 7.12 */
+  --opt-red:    #fca5a5; /* 6.88 */
 
   /* ⚠️ ERA A `--surface` ANTIGA CRAVADA (`#161d2b`), e a F2 trocou a surface.
      Sem esta linha o texto de dentro do `Badge tone="solid"` continuaria

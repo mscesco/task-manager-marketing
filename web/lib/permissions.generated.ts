@@ -10,6 +10,20 @@
 // estiver atrasado em relacao ao mapa.
 
 export const PERMISSIONS = [
+  "base.create",
+  "base.delete",
+  "base.read",
+  "base.restore",
+  "base.update",
+  "base_column.create",
+  "base_column.delete",
+  "base_column.update",
+  "base_row.create",
+  "base_row.delete",
+  "base_row.update",
+  "base_view.create",
+  "base_view.delete",
+  "base_view.update",
   "board.create",
   "board.create.root",
   "board.delete",

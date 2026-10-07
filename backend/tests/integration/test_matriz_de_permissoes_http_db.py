@@ -135,7 +135,52 @@ da propria arvore; mover time para outra arvore e dar pai a um time raiz sao
 `can_delete` de `GET /teams` e conferido em
 `test_listagem_de_times_diz_o_que_cada_papel_apaga`.
 
+SPEC 056, FATIA 0 (06/10) -- AS LINHAS DA BASE, ANTES DE A BASE EXISTIR. As
+rotas `/bases/...` nao existem, e por isso o esperado DE HOJE e 404 para todo
+papel (rota inexistente, e nao a lente). O que muda em relacao as fatias 0
+anteriores e o campo `meta`: o ALVO da linha, papel a papel, escrito em codigo
+e nao em comentario. As fatias B e C da 056 trocam `esperado` por `meta` e
+APAGAM `meta` e `diverge` no mesmo commit -- `test_linha_com_meta_ainda_nao_
+chegou_la` cai se a linha ja bate com o alvo e continua marcada. Os ids da
+base no `_mundo` sao uuids soltos ate a fatia B criar as tabelas.
+
+    Sabotagem G (06/10): a `meta` da visao padrao igual ao `esperado` de hoje.
+       Caiu so o guardiao, nomeando a linha. Desfeita e conferida por
+       `git grep SABOTAGEM`.
+
+SPEC 056, FATIA B (07/10) -- base e coluna chegaram ao alvo. As 12 linhas da
+fatia perderam `meta` e `diverge`; os ids do `_mundo` viraram bases de verdade
+(`factories.make_base`). Entraram: a base EXCLUIDA (404 para todos), os
+cadeados `can_update` e `can_create_column` em `CADEADOS_DE_ITEM`, e as listas
+`CRIA_BASE` (`can_create_base` de `GET /teams`) e `LE_BASES` (`GET /bases`).
+⚠️ `base.delete` passou de 404 a 405 SEM chegar ao alvo: o caminho `/bases/{id}`
+existe agora (GET e PATCH), so falta o metodo -- a fatia D o traz.
+
+SPEC 056, FATIAS C E D (07/10) -- linha, visao, desfazer, excluir e restaurar
+chegaram ao alvo. NENHUMA linha tem `meta` agora: a base inteira responde o
+que a spec pediu. O campo e o guardiao ficam, para a proxima spec que escrever
+a matriz antes do codigo. Entraram o lote de celulas, o desfazer com a pilha
+vazia, a lixeira (`LIXEIRA`) e os cadeados de linha, visao e excluir.
+
+    Sabotagem H (07/10): `BaseService._visible` sem a pergunta `base.read`.
+       Cairam 8 celulas, todas da base do COMERCIAL para quem nao a le
+       (MANAGER, SUPERVISOR, OPERATOR): o 404 que esconde a base virou 200 ou
+       403 -- confirmaria que ela existe. Desfeita e conferida.
+
+    O que as metas dizem (spec 056 §5.4 e §5.8):
+    - LER, colunas, linhas e visoes: todo papel da arvore, inclusive OPERATOR;
+    - criar, editar (nome e texto do topo), excluir e restaurar a base: todos
+      menos o OPERATOR -- e o GESTOR EXCLUI, excecao dela a 049 fatia D;
+    - base da OUTRA raiz: 404 para quem nao tem `base.read` la, e 403 para
+      DUAS_ARVORES nos verbos que o OPERATOR do Comercial nao tem. Esta e a
+      celula em que lente e verbo divergem, e a que a 051 ensinou a ter;
+    - base em SUBTIME: 422 para quem tem `base.create` em algum lugar.
+
 O QUE ESTA TABELA NAO COBRE (de proposito, e anotado para quem estender):
+    - base: desfazer e refazer (o esperado depende da pilha da pessoa, nao do
+      papel -- fatia C, teste proprio), o canal ao vivo (fluxo, nao resposta --
+      fatia G) e as listas (`GET /bases` e a lixeira, como a fila: teste de
+      conjunto na fatia B);
     - editar comentario (autoria, nao permissao -- spec §4.5) e seguidores
       (o servico decide "eu" contra "terceiro");
     - secoes e perguntas de formulario: mesmo portao de router do formulario;
@@ -146,6 +191,7 @@ O QUE ESTA TABELA NAO COBRE (de proposito, e anotado para quem estender):
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from dataclasses import dataclass
 
@@ -393,6 +439,26 @@ async def _mundo(db) -> dict:
 
     await db.commit()
 
+    # --- Spec 056, fatia B: as bases de verdade (ate a fatia A eram uuids
+    # soltos). Uma em cada raiz, e uma EXCLUIDA no Marketing.
+    b_mkt = await f.make_base(db, workspace_id=ws, created_by=alvo_mkt, team_id=mkt)
+    b_com = await f.make_base(db, workspace_id=ws, created_by=alvo_com, team_id=com)
+    b_excl = await f.make_base(
+        db, workspace_id=ws, created_by=alvo_mkt, team_id=mkt, deleted=True
+    )
+    base = {
+        "base_mkt": b_mkt["base"],
+        "base_com": b_com["base"],
+        "base_mkt_excluida": b_excl["base"],
+        "coluna_mkt": b_mkt["coluna"],
+        "coluna_com": b_com["coluna"],
+        "opcao_mkt": b_mkt["opcao"],
+        "linha_mkt": b_mkt["linha"],
+        "linha_com": b_com["linha"],
+        "visao_mkt": b_mkt["visao"],
+        "visao_padrao_mkt": b_mkt["visao_padrao"],
+    }
+
     return {
         "ws": ws,
         "arvore": arvore,
@@ -440,6 +506,7 @@ async def _mundo(db) -> dict:
                 "misto_design": misto_design, "desativado": desativado,
                 "desativado_com": desativado_com,
                 "sol_orfa": sol_orfa, "sol_aprovada_mkt": sol_aprovada_mkt,
+                **base,
             }.items()
         },
     }
@@ -497,9 +564,26 @@ class Linha:
     esperado: tuple
     diverge: str = ""
     defeito: str = ""
+    #: Spec 056: o ALVO, um valor por papel, enquanto a linha ainda nao chegou
+    #: nele. Vazio = o `esperado` ja e o alvo.
+    meta: tuple = ()
 
 
 T = "/api/v1"
+
+# Spec 056: os padroes que se repetem nas linhas da base. (`_SEM_ROTA`, o 404
+# de todas antes de as rotas existirem, saiu na fatia D: nenhuma linha o usa.)
+#: Conteudo (ler, coluna, linha, visao) na base da PROPRIA raiz: todo papel.
+_TODOS = (OK,) * 6
+#: Estrutura (criar, editar, excluir, restaurar a base): todos menos o OPERATOR.
+_QUEM_CRIA = (OK, OK, OK, OK, NEGADO, OK)
+#: Conteudo na base do COMERCIAL: so quem tem `base.read` la -- a organizacao e
+#: DUAS_ARVORES, que e OPERATOR no Comercial.
+_COM_CONTEUDO = (OK, OK, OCULTO, OCULTO, OCULTO, OK)
+#: Estrutura na base do COMERCIAL. O OPERATOR leva 403 no portao da rota (nao
+#: tem o verbo em lugar nenhum), e DUAS_ARVORES le a base mas nao tem o verbo
+#: la: 403, a celula em que lente e verbo divergem.
+_COM_ESTRUTURA = (OK, OK, OCULTO, OCULTO, NEGADO, NEGADO)
 
 MATRIZ: tuple[Linha, ...] = (
     # ---------------------------------------------------------- organizacao
@@ -893,6 +977,119 @@ MATRIZ: tuple[Linha, ...] = (
     Linha("solicitation.review", "marcar tarefa do Comercial na do Marketing", "post",
           f"{T}/solicitacoes/{{sol_aprovada_mkt}}/tarefa", {"task_id": "{tarefa_com}"},
           (OK, OK, OCULTO, NEGADO, NEGADO, OK)),  # 051, fatia B: tarefa fora da lente e 404
+    # ---------------------------------------------------------- base (Spec 056)
+    # ⚠️ As linhas que ainda tem `meta` sao das fatias seguintes: a rota nao
+    # existe. Ver o bloco "SPEC 056, FATIA 0" no topo. A fatia que entrega a
+    # rota troca `esperado` por `meta` e apaga as duas marcas -- a B entregou
+    # base e coluna em 07/10.
+    Linha("base.create", "no Marketing", "post", f"{T}/bases",
+          {"name": "Calendario", "team_id": "{mkt}"},
+          _QUEM_CRIA),
+    # Sem o verbo NAQUELE time e 403, e nao 404: o time nao e segredo.
+    Linha("base.create", "no Comercial", "post", f"{T}/bases",
+          {"name": "Calendario", "team_id": "{com}"},
+          (OK, OK, NEGADO, NEGADO, NEGADO, NEGADO)),
+    # D6: base so em time raiz. Quem tem o verbo em algum lugar chega na regra.
+    Linha("base.create", "no SEO (subtime)", "post", f"{T}/bases",
+          {"name": "Calendario", "team_id": "{seo}"},
+          (422, 422, 422, 422, NEGADO, 422)),
+    Linha("base.read", "do Marketing", "get", f"{T}/bases/{{base_mkt}}", None,
+          _TODOS),
+    Linha("base.read", "do Comercial", "get", f"{T}/bases/{{base_com}}", None,
+          _COM_CONTEUDO),
+    # Excluida e 404 para todos, como base que nao existe (D5).
+    Linha("base.read", "excluida do Marketing", "get",
+          f"{T}/bases/{{base_mkt_excluida}}", None,
+          (OCULTO,) * 6),
+    # D19: quem cria edita TODAS as bases da arvore, nao so as suas.
+    Linha("base.update", "do Marketing", "patch", f"{T}/bases/{{base_mkt}}",
+          {"name": "Outro"},
+          _QUEM_CRIA),
+    Linha("base.update", "do Comercial", "patch", f"{T}/bases/{{base_com}}",
+          {"name": "Outro"},
+          _COM_ESTRUTURA),
+    # ⚠️ O GESTOR EXCLUI: excecao dela (D3) a 049 fatia D.
+    Linha("base.delete", "do Marketing", "delete", f"{T}/bases/{{base_mkt}}", None,
+          _QUEM_CRIA),
+    Linha("base.delete", "do Comercial", "delete", f"{T}/bases/{{base_com}}", None,
+          _COM_ESTRUTURA),
+    Linha("base.restore", "excluida do Marketing", "post",
+          f"{T}/bases/{{base_mkt_excluida}}/restore", None,
+          _QUEM_CRIA),
+    # D24: trocar o tipo e editar coluna -- qualquer um da arvore.
+    Linha("base_column.create", "na do Marketing", "post",
+          f"{T}/bases/{{base_mkt}}/columns", {"name": "Plataforma", "type": "select"},
+          _TODOS),
+    Linha("base_column.create", "na do Comercial", "post",
+          f"{T}/bases/{{base_com}}/columns", {"name": "Plataforma", "type": "select"},
+          _COM_CONTEUDO),
+    # Fatia I: duplicar e CRIAR coluna -- o mesmo verbo, o mesmo alcance.
+    Linha("base_column.create", "duplicar, na do Marketing", "post",
+          f"{T}/bases/{{base_mkt}}/columns/{{coluna_mkt}}/duplicate", None,
+          _TODOS),
+    Linha("base_column.create", "duplicar, na do Comercial", "post",
+          f"{T}/bases/{{base_com}}/columns/{{coluna_com}}/duplicate", None,
+          _COM_CONTEUDO),
+    Linha("base_column.update", "trocar o tipo, na do Marketing", "patch",
+          f"{T}/bases/{{base_mkt}}/columns/{{coluna_mkt}}", {"type": "text"},
+          _TODOS),
+    Linha("base_column.delete", "apagar opcao, na do Marketing", "delete",
+          f"{T}/bases/{{base_mkt}}/columns/{{coluna_mkt}}/options/{{opcao_mkt}}", None,
+          _TODOS),
+    Linha("base_column.delete", "na do Marketing", "delete",
+          f"{T}/bases/{{base_mkt}}/columns/{{coluna_mkt}}", None,
+          _TODOS),
+    Linha("base_row.create", "na do Marketing", "post", f"{T}/bases/{{base_mkt}}/rows",
+          {"values": {}},
+          _TODOS),
+    Linha("base_row.update", "na do Marketing", "patch",
+          f"{T}/bases/{{base_mkt}}/rows/{{linha_mkt}}", {"values": {}},
+          _TODOS),
+    Linha("base_row.update", "na do Comercial", "patch",
+          f"{T}/bases/{{base_com}}/rows/{{linha_com}}", {"values": {}},
+          _COM_CONTEUDO),
+    # Fatia C: o LOTE (colar, arrastar card) cobra o mesmo verbo da celula unica.
+    Linha("base_row.update", "lote de celulas, na do Marketing", "patch",
+          f"{T}/bases/{{base_mkt}}/cells",
+          {"cells": [{"row_id": "{linha_mkt}", "column_id": "{coluna_mkt}", "value": None}]},
+          _TODOS),
+    Linha("base_row.update", "lote de celulas, na do Comercial", "patch",
+          f"{T}/bases/{{base_com}}/cells",
+          {"cells": [{"row_id": "{linha_com}", "column_id": "{coluna_com}", "value": None}]},
+          _COM_CONTEUDO),
+    # Fatia C: desfazer com a pilha VAZIA -- 200 para quem le, e a base de outra
+    # arvore continua escondida. O verbo da acao original e conferido so quando
+    # ha acao (teste proprio: `test_base_undo_db`).
+    # Fatia G: o canal ao vivo -- quem LE a base o abre, e a de outra arvore
+    # continua escondida (404, e nao um canal vazio que confirmaria a base).
+    Linha("base.events", "canal ao vivo, na do Marketing", "get",
+          f"{T}/bases/{{base_mkt}}/events", None,
+          _TODOS),
+    Linha("base.events", "canal ao vivo, na do Comercial", "get",
+          f"{T}/bases/{{base_com}}/events", None,
+          _COM_CONTEUDO),
+    Linha("base.undo", "pilha vazia, na do Marketing", "post",
+          f"{T}/bases/{{base_mkt}}/undo", None,
+          _TODOS),
+    Linha("base.undo", "pilha vazia, na do Comercial", "post",
+          f"{T}/bases/{{base_com}}/undo", None,
+          _COM_CONTEUDO),
+    Linha("base_row.delete", "na do Marketing", "delete",
+          f"{T}/bases/{{base_mkt}}/rows/{{linha_mkt}}", None,
+          _TODOS),
+    Linha("base_view.create", "na do Marketing", "post", f"{T}/bases/{{base_mkt}}/views",
+          {"name": "Por status", "layout": "board"},
+          _TODOS),
+    Linha("base_view.update", "na do Marketing", "patch",
+          f"{T}/bases/{{base_mkt}}/views/{{visao_mkt}}", {"name": "Outro"},
+          _TODOS),
+    Linha("base_view.delete", "na do Marketing", "delete",
+          f"{T}/bases/{{base_mkt}}/views/{{visao_mkt}}", None,
+          _TODOS),
+    # D25: a visao padrao nao se apaga -- regra, e nao permissao, para todos.
+    Linha("base_view.delete", "a padrao, na do Marketing", "delete",
+          f"{T}/bases/{{base_mkt}}/views/{{visao_padrao_mkt}}", None,
+          (409,) * 6),
 )
 
 
@@ -919,6 +1116,29 @@ def _casos():
             )
 
 
+class _HubDeMentira:
+    """O `LiveHub` sem banco: a matriz pergunta QUEM abre o canal, e nao se o
+    aviso chega (isso e de `test_base_ao_vivo_db.py`)."""
+
+    async def subscribe(self, _base_id):
+        return asyncio.Queue()
+
+    def unsubscribe(self, _base_id, _fila) -> None:
+        return None
+
+
+@pytest.fixture(autouse=True)
+def _canal_ao_vivo_curto(monkeypatch):
+    """Spec 056, fatia G: o canal `/bases/{id}/events` vive 60 s. Na matriz ele
+    vive ZERO -- abre, diz `ready`, diz `end` e fecha --, senao cada linha
+    permitida esperaria um minuto."""
+    from app.modules.bases.api import router as rotas_da_base
+    from app.modules.bases.infrastructure import live
+
+    monkeypatch.setattr(rotas_da_base, "CANAL_SEGUNDOS", 0.0)
+    monkeypatch.setattr(live, "hub", _HubDeMentira())
+
+
 @pytest.mark.parametrize(("linha", "papel", "esperado"), list(_casos()))
 async def test_matriz(db, linha: Linha, papel: str, esperado) -> None:
     m = await _mundo(db)
@@ -940,6 +1160,25 @@ async def test_matriz(db, linha: Linha, papel: str, esperado) -> None:
     )
 
 
+def test_linha_com_meta_ainda_nao_chegou_la() -> None:
+    """Spec 056, fatia 0 -- a marca `meta` some quando a linha chega no alvo.
+
+    ⚠️ SEM ESTE TESTE A MARCA APODRECE: a fatia que entrega a rota troca o
+    `esperado`, a tabela fica verde, e o `meta` igual ao `esperado` continua
+    dizendo "ainda falta" para quem le. E toda linha com meta diz QUAL fatia a
+    entrega (`diverge`), para a tabela ser o placar da spec.
+    """
+    for linha in MATRIZ:
+        if not linha.meta:
+            continue
+        nome = f"{linha.acao} ({linha.alvo})"
+        assert len(linha.meta) == len(PAPEIS), nome
+        assert linha.diverge, f"{nome}: meta sem dizer qual fatia a entrega"
+        assert linha.meta != linha.esperado, (
+            f"{nome}: ja chegou no alvo -- apague `meta` e `diverge`"
+        )
+
+
 # ---------------------------------------------------------------- o cadeado
 
 
@@ -959,6 +1198,17 @@ CADEADOS_DE_ITEM = (
     ("/projects/{projeto_com}", "can_update", ("project.update", "do Comercial")),
     ("/projects/{projeto_mkt}", "can_delete", ("project.delete", "do Marketing")),
     ("/projects/{projeto_com}", "can_delete", ("project.delete", "do Comercial")),
+    # Spec 056, fatia B: os cadeados da base, um de estrutura e um de conteudo.
+    ("/bases/{base_mkt}", "can_update", ("base.update", "do Marketing")),
+    ("/bases/{base_com}", "can_update", ("base.update", "do Comercial")),
+    ("/bases/{base_mkt}", "can_create_column", ("base_column.create", "na do Marketing")),
+    ("/bases/{base_com}", "can_create_column", ("base_column.create", "na do Comercial")),
+    ("/bases/{base_mkt}", "can_update_row", ("base_row.update", "na do Marketing")),
+    ("/bases/{base_com}", "can_update_row", ("base_row.update", "na do Comercial")),
+    ("/bases/{base_mkt}", "can_delete_view", ("base_view.delete", "na do Marketing")),
+    # Fatia D: a lixeira da base.
+    ("/bases/{base_mkt}", "can_delete", ("base.delete", "do Marketing")),
+    ("/bases/{base_com}", "can_delete", ("base.delete", "do Comercial")),
 )
 
 
@@ -1145,6 +1395,93 @@ async def test_listagem_de_times_diz_onde_cada_papel_cria_projeto(db, papel: str
     for alvo, time in (("no Marketing", "mkt"), ("no Comercial", "com")):
         linha = _linha("project.create", alvo).esperado[idx]
         assert (linha == OK) is (time in raizes), f"{papel} {alvo}: linha {linha}"
+
+
+#: Spec 056, fatia B: as raizes em que cada papel CRIA BASE -- `can_create_base`.
+#: ⚠️ O SUPERVISOR do SEO cria no Marketing (D3), e subtime nunca aparece (D6).
+CRIA_BASE = {
+    "ADMIN": {"mkt", "com"},
+    "GESTOR": {"mkt", "com"},
+    "MANAGER": {"mkt"},
+    "SUPERVISOR": {"mkt"},
+    "OPERATOR": set(),
+    "DUAS_ARVORES": {"mkt"},
+}
+
+#: Spec 056, fatia B: as bases que cada papel LE na lista -- `GET /bases`.
+#: ⚠️ A excluida nao aparece para ninguem. E DUAS_ARVORES le as duas: e
+#: operador no Comercial, e `base.read` e conteudo.
+LE_BASES = {
+    "ADMIN": {"base_mkt", "base_com"},
+    "GESTOR": {"base_mkt", "base_com"},
+    "MANAGER": {"base_mkt"},
+    "SUPERVISOR": {"base_mkt"},
+    "OPERATOR": {"base_mkt"},
+    "DUAS_ARVORES": {"base_mkt", "base_com"},
+}
+
+
+#: Spec 056, fatia D: o que cada papel ve na LIXEIRA -- `GET /bases/trash`.
+#: `None` = a rota recusa (sem `base.restore` em lugar nenhum).
+LIXEIRA = {
+    "ADMIN": {"base_mkt_excluida"},
+    "GESTOR": {"base_mkt_excluida"},
+    "MANAGER": {"base_mkt_excluida"},
+    "SUPERVISOR": {"base_mkt_excluida"},
+    "OPERATOR": None,
+    "DUAS_ARVORES": {"base_mkt_excluida"},
+}
+
+
+@pytest.mark.parametrize("papel", PAPEIS)
+async def test_lixeira_de_bases_pelo_verbo(db, papel: str) -> None:
+    """D4: quem pode criar exclui e restaura -- e e quem ve a lixeira. A linha
+    `base.restore` da matriz diz o mesmo, papel a papel."""
+    m = await _mundo(db)
+    async with _client(db, _contexto(m, papel)) as cli:
+        r = await cli.get(f"{T}/bases/trash")
+    if LIXEIRA[papel] is None:
+        assert r.status_code == 403, r.text
+        return
+    assert r.status_code == 200, r.text
+    nome_do_id = {v: k for k, v in m["ids"].items()}
+    vistas = {nome_do_id[b["id"]] for b in r.json()}
+    assert vistas == LIXEIRA[papel], f"{papel} ve na lixeira {vistas}"
+    assert all(b["can_restore"] for b in r.json())
+    linha = _linha("base.restore", "excluida do Marketing").esperado[PAPEIS.index(papel)]
+    assert linha == OK
+
+
+@pytest.mark.parametrize("papel", PAPEIS)
+async def test_listagem_de_times_diz_onde_cada_papel_cria_base(db, papel: str) -> None:
+    m = await _mundo(db)
+    async with _client(db, _contexto(m, papel)) as cli:
+        r = await cli.get(f"{T}/workspaces/current/teams")
+    assert r.status_code == 200, r.text
+    nome_do_id = {v: k for k, v in m["ids"].items()}
+    cria = {nome_do_id[i["id"]] for i in r.json()["items"] if i["can_create_base"]}
+    assert cria == CRIA_BASE[papel], f"{papel} cria base em {cria}"
+    idx = PAPEIS.index(papel)
+    for alvo, time in (("no Marketing", "mkt"), ("no Comercial", "com")):
+        linha = _linha("base.create", alvo).esperado[idx]
+        assert (linha == OK) is (time in cria), f"{papel} {alvo}: linha {linha}"
+
+
+@pytest.mark.parametrize("papel", PAPEIS)
+async def test_lista_de_bases_pelo_verbo(db, papel: str) -> None:
+    """Spec 056 §5.5 -- `teams_with("base.read")`, e nao a lente. E as linhas
+    `base.read` da matriz dizem o mesmo, papel a papel."""
+    m = await _mundo(db)
+    async with _client(db, _contexto(m, papel)) as cli:
+        r = await cli.get(f"{T}/bases")
+    assert r.status_code == 200, r.text
+    nome_do_id = {v: k for k, v in m["ids"].items()}
+    vistas = {nome_do_id[b["id"]] for b in r.json()}
+    assert vistas == LE_BASES[papel], f"{papel} ve {vistas}"
+    idx = PAPEIS.index(papel)
+    for alvo, base in (("do Marketing", "base_mkt"), ("do Comercial", "base_com")):
+        linha = _linha("base.read", alvo).esperado[idx]
+        assert (linha == OK) is (base in vistas), f"{papel} {alvo}: linha {linha}"
 
 
 #: Os subtimes que cada papel EDITA -- o `can_update` que a listagem devolve.

@@ -46,6 +46,11 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     try:
         yield
     finally:
+        # Spec 056, fatia G: a conexao de escuta do ao vivo sai do pool, e
+        # volta para ele ANTES de o pool fechar.
+        from app.modules.bases.infrastructure.live import hub
+
+        await hub.close()
         await db_manager.dispose()
         logger.info("app.stopped")
 
