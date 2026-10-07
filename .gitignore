@@ -29,3 +29,6 @@ web/build/
 .DS_Store
 Thumbs.db
 *.log
+
+# Copias de banco (db-dev): nunca no git -- tem dados de pessoas.
+*.dump

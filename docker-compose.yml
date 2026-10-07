@@ -12,9 +12,11 @@
 # que rodar direto. Em producao o web TEM service (build standalone, sem
 # reload) -- por isso os dois composes diferem aqui, e isso e intencional.
 #
-# O PostgreSQL continua EXTERNO (VPS Hostinger, a mesma do N8N), acessado
-# via DATABASE_URL no backend/.env. Nao ha Postgres de aplicacao aqui de
-# proposito -- o `db-test` abaixo e efemero, so pra suite de integracao.
+# O banco de DESENVOLVIMENTO e o `db-dev` abaixo, na propria maquina (desde
+# 07/10/2026). Antes ele morava na VPS e era alcancado por tunel SSH na porta
+# 15432 -- o dia inteiro, da rede da FECAF. Nesse dia o acesso ao IP da VPS
+# caiu na rede de la, e ficou decidido: o dev nao depende mais da VPS. O
+# `db-test` continua efemero, so para a suite de integracao.
 # =====================================================
 
 services:
@@ -82,4 +84,44 @@ services:
     volumes:
       - ./backend/schema/00_test_extensions.sql:/docker-entrypoint-initdb.d/00_test_extensions.sql:ro
 
-# Sem volumes de banco: Postgres externo, persiste fora deste compose.
+  # -----------------------------------------------------
+  # db-dev -- o banco do DESENVOLVIMENTO, persistente (volume `db-dev-data`).
+  # Suba com: docker compose up -d db-dev
+  # O backend/.env aponta para ele: ...@db-dev:5432/task_manager_dev
+  # ⚠️ Credenciais `dev`/`dev` de proposito, como as `test`/`test` do db-test:
+  # o banco so existe nesta maquina, e a porta so abre no 127.0.0.1 (para um
+  # cliente de SQL local). Nunca use estas credenciais fora daqui.
+  # Copia do banco da VPS (um `.dump`, que o .gitignore barra):
+  #   docker compose exec -T db-dev pg_restore -U dev -d task_manager_dev
+  #     --no-owner --no-acl --clean --if-exists < task_manager_dev.dump
+  # -----------------------------------------------------
+  db-dev:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: dev
+      POSTGRES_PASSWORD: dev
+      POSTGRES_DB: task_manager_dev
+    ports:
+      - "127.0.0.1:15433:5432"
+    volumes:
+      - db-dev-data:/var/lib/postgresql/data
+
+  # -----------------------------------------------------
+  # adminer -- olhar o db-dev pelo navegador, como o Adminer de producao.
+  # Suba com: docker compose up -d adminer  ->  http://localhost:8081
+  # Sistema PostgreSQL, servidor `db-dev`, usuario `dev`, senha `dev`,
+  # base `task_manager_dev`. So abre no 127.0.0.1.
+  # -----------------------------------------------------
+  adminer:
+    image: adminer:latest
+    restart: unless-stopped
+    environment:
+      ADMINER_DEFAULT_SERVER: db-dev
+    ports:
+      - "127.0.0.1:8081:8080"
+    depends_on:
+      - db-dev
+
+volumes:
+  db-dev-data:
