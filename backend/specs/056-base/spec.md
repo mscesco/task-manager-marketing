@@ -17,7 +17,8 @@ calendário): front **1640**. Fatia G (ao vivo): backend **2159**, front
 **1649**. Fatia H (Ctrl+Z na tela): front **1664**. Fatia I (cabeçalho como o
 do Notion, pedido dela em 07/10): backend **2178**, front **1676**. Fatia J
 (a tabela como planilha, a barra numa linha, o calendário em janela): front
-**1694**, backend sem mudança.
+**1694**, backend sem mudança. Terceira leva da J (link em lista, apagar
+linha, agrupar): front **1706**, backend **2188**.
 
 ### Fatia J — planilha, barra e calendário (07/10)
 
@@ -44,6 +45,22 @@ aplicou no banco local):
   de mês em mês, com "Hoje". Os dias de fora do mês aparecem (e recebem o
   arraste) -- era o que impedia mover um item para 30/09 olhando outubro. Tudo
   sem `Date` (`diasDesdeEpoca`/`dataDosDias`).
+
+Terceira leva, no mesmo dia, depois de ela testar a J:
+
+- **Apagar linha** apaga na hora (a lixeira ao passar o mouse), sem o
+  "Apagar / Cancelar" que vazava para fora da tabela. O aviso lembra o Ctrl+Z
+  (a linha fica guardada 1 dia, D13).
+- **Link virou lista**, com nome opcional, em cápsula como os da tarefa (Spec
+  052) -- o editor é o mesmo `EditorDeLinks`, com `nomeOpcional`. ⚠️ **Muda o
+  backend:** `clean_value` aceita a lista `[{title, url}]` (até 20, nome até
+  120) e ainda aceita o texto solto antigo, que vira lista de um. Sem
+  migration: as células antigas continuam texto até a próxima gravação, e o
+  front lê as duas formas (`linksDaCelula`).
+- **"Agrupar por"** (e "Data", no calendário) deixou de ser `<select>` nativo:
+  é um botão com o nome da coluna, que abre a lista. E **a visão de quadro
+  nasce agrupada**: a coluna se escolhe no próprio "+" (a de data, no
+  calendário).
 
 ### Fatia I — o cabeçalho de coluna como o do Notion (07/10)
 

@@ -35,9 +35,11 @@ import {
   createBaseView,
   deleteBaseView,
   updateBaseView,
+  type BaseColumn,
   type BaseDetail,
   type BaseView,
 } from "@/lib/api";
+import { colunasDeAgrupar, colunasDeData } from "@/lib/baseViews";
 
 const NOME_DO_LAYOUT: Record<BaseView["layout"], string> = {
   table: "Tabela",
@@ -207,6 +209,7 @@ export default function BarraDeVisoes({
       {base.can_create_view && (
         <NovaVisao
           baseId={base.id}
+          colunas={base.columns}
           onCriou={(v) => {
             onViews((vs) => [...vs, v]);
             onEscolher(v.id);
@@ -259,11 +262,25 @@ function CampoDeNome({
   );
 }
 
-function NovaVisao({ baseId, onCriou }: { baseId: string; onCriou: (v: BaseView) => void }) {
+function NovaVisao({
+  baseId,
+  colunas,
+  onCriou,
+}: {
+  baseId: string;
+  colunas: BaseColumn[];
+  onCriou: (v: BaseView) => void;
+}) {
   const avisar = useAvisar();
   const [aberto, setAberto] = useState(false);
   const [nome, setNome] = useState("");
   const [layout, setLayout] = useState<BaseView["layout"]>("table");
+  // Fatia J, pedido dela: o quadro já nasce agrupado -- a coluna se escolhe
+  // aqui, e não depois, num controle à parte. O calendário, pelo mesmo
+  // motivo, já nasce com a coluna de data. A primeira que serve vem marcada.
+  const doLayout = layout === "board" ? colunasDeAgrupar(colunas) : layout === "calendar" ? colunasDeData(colunas) : [];
+  const [coluna, setColuna] = useState<string | null>(null);
+  const escolhida = doLayout.find((c) => c.id === coluna)?.id ?? doLayout[0]?.id ?? null;
   const [ocupado, setOcupado] = useState(false);
   const { anchorRef, panelRef, box } = useAnchoredPanel<HTMLButtonElement>(
     aberto,
@@ -275,9 +292,16 @@ function NovaVisao({ baseId, onCriou }: { baseId: string; onCriou: (v: BaseView)
     const limpo = nome.trim() || NOME_DO_LAYOUT[layout];
     setOcupado(true);
     try {
-      onCriou(await createBaseView(baseId, { name: limpo, layout }));
+      const config =
+        layout === "board" && escolhida
+          ? { group_by: escolhida }
+          : layout === "calendar" && escolhida
+            ? { date_column: escolhida }
+            : {};
+      onCriou(await createBaseView(baseId, { name: limpo, layout, config }));
       setNome("");
       setLayout("table");
+      setColuna(null);
       setAberto(false);
     } catch (e) {
       avisar((e as ApiError).message || "Não consegui criar a visão.");
@@ -332,6 +356,33 @@ function NovaVisao({ baseId, onCriou }: { baseId: string; onCriou: (v: BaseView)
                 </label>
               ))}
             </fieldset>
+            {layout !== "table" && (
+              <div className="field">
+                <label className="label" htmlFor="nova-visao-coluna">
+                  {layout === "board" ? "Agrupar por" : "Coluna de data"}
+                </label>
+                {doLayout.length ? (
+                  <select
+                    id="nova-visao-coluna"
+                    className="input"
+                    value={escolhida ?? ""}
+                    onChange={(e) => setColuna(e.target.value)}
+                  >
+                    {doLayout.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <p className="muted m-0 text-xs">
+                    {layout === "board"
+                      ? "Nenhuma coluna de Seleção ainda. O quadro nasce sem agrupar."
+                      : "Nenhuma coluna de Data ainda. O calendário nasce vazio."}
+                  </p>
+                )}
+              </div>
+            )}
             <button className="btn btn-primary" disabled={ocupado} onClick={criar}>
               {ocupado ? "Criando…" : "Criar visão"}
             </button>

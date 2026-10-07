@@ -35,11 +35,12 @@ import {
   type MutableRefObject,
   type PointerEvent as PointerDoReact,
 } from "react";
-import { Plus, Trash2 } from "lucide-react";
+import { Link2, Plus, Trash2 } from "lucide-react";
 import Badge from "@/components/Badge";
 import { useAnchoredPanel } from "@/components/AnchoredPanel";
 import { useAvisar } from "@/components/Toasts";
 import EditorDeEscolha, { type Escolha } from "@/components/bases/EditorDeEscolha";
+import EditorDeLinksDaCelula from "@/components/bases/EditorDeLinksDaCelula";
 import CabecalhoDaColuna from "@/components/bases/CabecalhoDaColuna";
 import { NovaColuna, criarOpcao } from "@/components/bases/MenuDaColuna";
 import {
@@ -71,7 +72,9 @@ import {
   corDaPessoa,
   editaComTexto,
   interpretarDigitado,
+  linksDaCelula,
   mover,
+  nomeDoLink,
   rotuloDePessoa,
   textoDaCelula,
   textoParaEditar,
@@ -130,7 +133,6 @@ export default function TabelaDaBase({
   const [ativa, setAtiva] = useState<Posicao>({ linha: 0, coluna: 0 });
   const [editando, setEditando] = useState<{ rascunho: string } | null>(null);
   const [escolhendo, setEscolhendo] = useState(false);
-  const [apagando, setApagando] = useState<string | null>(null);
   const celulas = useRef(new Map<string, HTMLTableCellElement>());
 
   ocupadoRef.current = editando !== null || escolhendo;
@@ -273,11 +275,14 @@ export default function TabelaDaBase({
     }
   }
 
+  // Fatia J: apaga NA HORA, sem o "Apagar / Cancelar" -- ela achou ruim, e
+  // ele vazava para fora da tabela. A rede é o Ctrl+Z: a linha apagada fica
+  // guardada por 1 dia (D13), e o aviso diz isso.
   async function apagarLinha(linha: BaseRow) {
-    setApagando(null);
     onLinhas((ls) => ls.filter((l) => l.id !== linha.id));
     try {
       await deleteBaseRow(base.id, linha.id);
+      avisar("Linha apagada. Ctrl+Z (ou Desfazer) traz de volta.");
     } catch (e) {
       onLinhas((ls) => [...ls, linha]);
       avisar((e as ApiError).message || "Não consegui apagar a linha.");
@@ -434,28 +439,19 @@ export default function TabelaDaBase({
                   );
                 })}
                 <td className="px-1 align-middle">
-                  {base.can_delete_row &&
-                    (apagando === linha.id ? (
-                      <span className="flex items-center gap-1">
-                        <button className="btn btn-danger text-xs" onClick={() => apagarLinha(linha)}>
-                          Apagar
-                        </button>
-                        <button className="btn btn-ghost text-xs" onClick={() => setApagando(null)}>
-                          Cancelar
-                        </button>
-                      </span>
-                    ) : (
-                      <button
-                        className="btn btn-ghost opacity-0 group-hover:opacity-100 focus:opacity-100"
-                        style={{ padding: "2px 4px" }}
-                        aria-label={`Apagar a linha ${
-                          titulo ? textoDaCelula(titulo, linha.values[titulo.id]) || li + 1 : li + 1
-                        }`}
-                        onClick={() => setApagando(linha.id)}
-                      >
-                        <Trash2 size={14} aria-hidden="true" />
-                      </button>
-                    ))}
+                  {base.can_delete_row && (
+                    <button
+                      className="btn btn-ghost text-ink-faint opacity-0 hover:text-danger group-hover:opacity-100 focus:opacity-100"
+                      style={{ padding: "2px 4px" }}
+                      title="Apagar a linha"
+                      aria-label={`Apagar a linha ${
+                        titulo ? textoDaCelula(titulo, linha.values[titulo.id]) || li + 1 : li + 1
+                      }`}
+                      onClick={() => apagarLinha(linha)}
+                    >
+                      <Trash2 size={14} aria-hidden="true" />
+                    </button>
+                  )}
                 </td>
               </tr>
             ))}
@@ -648,23 +644,53 @@ function Celula({
           onChange={(e) => onGravar(e.target.checked)}
         />
       );
-    case "link":
-      return typeof valor === "string" ? (
-        <a
-          href={valor}
-          target="_blank"
-          rel="noreferrer noopener"
-          tabIndex={-1}
-          className="block max-w-[320px] truncate text-accent"
-          onClick={(e) => e.stopPropagation()}
-        >
-          {valor}
-        </a>
-      ) : null;
+    case "link": {
+      // Fatia J: vários links, em cápsula como os da tarefa (`LinksDoItem`).
+      // ⚠️ O clique na cápsula ABRE o link (e não edita a célula): é o gesto
+      // de quem quer ver o post. Para editar, clica-se no resto da célula.
+      const links = linksDaCelula(valor);
+      return (
+        <div ref={anchorRef} className="flex min-h-6 flex-wrap items-center gap-1">
+          {links.map((l, i) => (
+            <a
+              key={`${i}-${l.url}`}
+              href={l.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              tabIndex={-1}
+              title={l.url}
+              className="inline-flex max-w-full items-center gap-1 rounded-full border border-border bg-surface px-2 py-0.5 text-xs font-semibold text-accent no-underline hover:bg-accent-soft"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <Link2 size={12} aria-hidden="true" className="shrink-0" />
+              <span className="truncate">{nomeDoLink(l)}</span>
+            </a>
+          ))}
+          {escolhendo && box && (
+            <EditorDeLinksDaCelula
+              box={box}
+              panelRef={panelRef}
+              fecharRef={fecharRef}
+              titulo={coluna.name}
+              links={links}
+              onGravar={onGravar}
+              onFechar={() => {
+                fecharRef.current = null;
+                fechar();
+              }}
+            />
+          )}
+        </div>
+      );
+    }
     case "select":
     case "multi_select":
     case "person": {
-      const ids = Array.isArray(valor) ? valor : typeof valor === "string" ? [valor] : [];
+      const ids = Array.isArray(valor)
+        ? (valor as unknown[]).filter((x): x is string => typeof x === "string")
+        : typeof valor === "string"
+          ? [valor]
+          : [];
       const opcoes: Escolha[] =
         coluna.type === "person"
           ? [...pessoas.daArvore]

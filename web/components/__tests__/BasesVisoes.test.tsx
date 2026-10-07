@@ -18,8 +18,11 @@ vi.mock("@/lib/api", async (original) => ({
   updateBaseView: vi.fn(async (_b: string, id: string, body: { name: string }) => ({
     id, name: body.name, layout: "table", config: {}, position: 1, is_default: true,
   })),
+  createBaseView: vi.fn(async (_b: string, body: { name: string; layout: string; config: object }) => ({
+    id: "nova", position: 9, is_default: false, ...body,
+  })),
 }));
-import { updateBaseView } from "@/lib/api";
+import { createBaseView, updateBaseView } from "@/lib/api";
 
 import BarraDeVisoes, { ESPERA_DO_DUPLO } from "@/components/bases/BarraDeVisoes";
 import ControlesDaVisao from "@/components/bases/ControlesDaVisao";
@@ -92,6 +95,22 @@ describe("ControlesDaVisao", () => {
     fireEvent.click(screen.getByRole("button", { name: /Colunas/ }));
     fireEvent.click(screen.getByRole("checkbox", { name: "Status" }));
     expect(onConfig).toHaveBeenCalledWith(expect.objectContaining({ hidden_columns: ["s"] }));
+  });
+
+  it("o agrupar do quadro é um botão com o nome da coluna, e escolher muda a config", () => {
+    const onConfig = vi.fn();
+    render(
+      <ControlesDaVisao
+        {...props}
+        layout="board"
+        config={lerConfig({})}
+        podeEditar
+        onConfig={onConfig}
+      />
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Agrupar por: nenhuma" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Status" }));
+    expect(onConfig).toHaveBeenCalledWith(expect.objectContaining({ group_by: "s" }));
   });
 
   it("⚠️ sem can_update_view a config aparece, mas não muda (D14)", () => {
@@ -183,6 +202,23 @@ describe("BarraDeVisoes", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
     act(() => vi.advanceTimersByTime(ESPERA_DO_DUPLO));
     expect(screen.getByRole("dialog", { name: "Opções da visão Tabela" })).toBeTruthy();
+  });
+
+  it("⭐ quadro novo já nasce agrupado pela coluna escolhida ali (fatia J)", async () => {
+    const views = [visao("p", true)];
+    const b = { ...base(views), columns: [TITULO, STATUS] };
+    render(<BarraDeVisoes base={b} ativa={views[0]} onEscolher={vi.fn()} onViews={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Nova visão" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Quadro" }));
+    expect((screen.getByLabelText("Agrupar por") as HTMLSelectElement).value).toBe("s");
+    fireEvent.click(screen.getByRole("button", { name: "Criar visão" }));
+    await waitFor(() =>
+      expect(createBaseView).toHaveBeenCalledWith("b1", {
+        name: "Quadro",
+        layout: "board",
+        config: { group_by: "s" },
+      })
+    );
   });
 
   it("o + cria visão, sem a palavra ao lado", () => {

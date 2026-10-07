@@ -396,6 +396,9 @@ function Ordens({
   );
 }
 
+/** "Agrupar por" (quadro) e "Data" (calendário). Fatia J: era um `<select>`
+ *  nativo, que destoava dos outros controles da barra (ela achou ruim). Virou
+ *  um botão com o ícone e o nome da coluna escolhida, que abre a lista. */
 function EscolhaDeColuna({
   rotulo,
   icone,
@@ -413,24 +416,51 @@ function EscolhaDeColuna({
   podeEditar: boolean;
   onEscolher: (id: string | null) => void;
 }) {
+  const [aberto, setAberto] = useState(false);
+  const { anchorRef, panelRef, box } = useAnchoredPanel<HTMLButtonElement>(
+    aberto,
+    () => setAberto(false),
+    { larguraPainel: 240 }
+  );
   if (!colunas.length) return <span className="muted text-sm">{vazio}</span>;
+  const escolhida = colunas.find((c) => c.id === valor);
   return (
-    <label className="flex items-center gap-1 text-sm" title={rotulo}>
-      {icone}
-      <span className="sr-only">{rotulo}</span>
-      <select
-        className="input h-8 w-auto py-0"
-        disabled={!podeEditar}
-        value={valor ?? ""}
-        onChange={(e) => onEscolher(e.target.value || null)}
+    <>
+      <button
+        ref={anchorRef}
+        className="btn btn-ghost text-sm"
+        style={{ padding: "4px 8px" }}
+        aria-label={`${rotulo}: ${escolhida?.name ?? "nenhuma"}`}
+        title={rotulo}
+        aria-haspopup="dialog"
+        aria-expanded={aberto}
+        onClick={() => setAberto((a) => !a)}
       >
-        <option value="">Escolha…</option>
-        {colunas.map((c) => (
-          <option key={c.id} value={c.id}>
-            {c.name}
-          </option>
-        ))}
-      </select>
-    </label>
+        {icone}
+        <span className={escolhida ? "" : "muted"}>{escolhida?.name ?? "Escolha…"}</span>
+      </button>
+      {aberto && box && (
+        <AnchoredPanel box={box} panelRef={panelRef} role="dialog" aria-label={rotulo} minWidth={240}>
+          <fieldset className="m-0 flex flex-col gap-1 border-0 p-1">
+            <legend className="label mb-1">{rotulo}</legend>
+            {colunas.map((c) => (
+              <label key={c.id} className="flex cursor-pointer items-center gap-2 rounded px-1 py-1 text-sm hover:bg-surface-2">
+                <input
+                  type="radio"
+                  name={`escolha-${rotulo}`}
+                  disabled={!podeEditar}
+                  checked={c.id === valor}
+                  onChange={() => {
+                    onEscolher(c.id);
+                    setAberto(false);
+                  }}
+                />
+                <span className="min-w-0 truncate">{c.name}</span>
+              </label>
+            ))}
+          </fieldset>
+        </AnchoredPanel>
+      )}
+    </>
   );
 }

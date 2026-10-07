@@ -262,3 +262,24 @@ describe("larguraArrastada (fatia J)", () => {
     expect(larguraArrastada(700, 500)).toBe(LARGURA_MAX);
   });
 });
+
+describe("link em lista (fatia J)", () => {
+  const LINK = col("l", "link");
+  const valor = [{ title: "Post do reels", url: "https://instagram.com/p/abc" }];
+  it("o filtro procura no nome e no endereço", () => {
+    expect(passa(LINK, valor, { column_id: "l", operator: "contains", value: "reels" })).toBe(true);
+    expect(passa(LINK, valor, { column_id: "l", operator: "contains", value: "instagram" })).toBe(true);
+    expect(passa(LINK, valor, { column_id: "l", operator: "contains", value: "tiktok" })).toBe(false);
+  });
+  it("ordena pelo nome do primeiro link", () => {
+    const linhas = [
+      linha("z", { l: [{ title: "Zebra", url: "https://z.com" }] }),
+      linha("a", { l: "https://abelha.com" }),
+    ];
+    const ordem = aplicarVisao(linhas, [TITULO, LINK], {
+      ...vazia,
+      sorts: [{ column_id: "l", direction: "asc" }],
+    }).map((l) => l.id);
+    expect(ordem).toEqual(["a", "z"]);
+  });
+});

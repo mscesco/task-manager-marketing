@@ -57,13 +57,18 @@ const URL_VALIDA = /^https?:\/\/\S+$/i;
  * Os erros de cada linha, na mesma ordem. Linha TOTALMENTE vazia não é erro:
  * ela é descartada no envio (é o "+ Adicionar link" que a pessoa não usou).
  */
-export function errosDosLinks(rascunho: readonly RascunhoLink[]): ErroDoLink[] {
+export function errosDosLinks(
+  rascunho: readonly RascunhoLink[],
+  /** Spec 056, fatia J: na célula da Base o nome é opcional -- sem ele, a
+   *  cápsula mostra o domínio. Na tarefa e no projeto continua obrigatório. */
+  { nomeOpcional = false }: { nomeOpcional?: boolean } = {},
+): ErroDoLink[] {
   return rascunho.map((l) => {
     const titulo = l.title.trim();
     const url = completarEndereco(l.url);
     if (!titulo && !url) return {};
     const erro: ErroDoLink = {};
-    if (!titulo) erro.title = "Dê um nome ao link.";
+    if (!titulo && !nomeOpcional) erro.title = "Dê um nome ao link.";
     else if (titulo.length > TITULO_MAXIMO)
       erro.title = `No máximo ${TITULO_MAXIMO} caracteres.`;
     if (!url) erro.url = "Falta o endereço.";

@@ -6,6 +6,8 @@ import {
   corDaPessoa,
   dataParaTela,
   interpretarDigitado,
+  linksDaCelula,
+  nomeDoLink,
   mover,
   nomeConfere,
   proximaCor,
@@ -193,5 +195,28 @@ describe("corDaPessoa (fatia J)", () => {
     expect(corDaPessoa("bia", daArvore, todos)).toBe("gray");
     expect(corDaPessoa("caio", daArvore, todos)).toBe("gray");
     expect(corDaPessoa("zz", daArvore, todos)).toBe("gray");
+  });
+});
+
+describe("links da célula (fatia J)", () => {
+  it("⚠️ a célula antiga, de texto solto, vira lista de um sem nome", () => {
+    expect(linksDaCelula("https://instagram.com/p/x")).toEqual([
+      { title: "", url: "https://instagram.com/p/x" },
+    ]);
+    expect(linksDaCelula(undefined)).toEqual([]);
+    expect(linksDaCelula(["solto"])).toEqual([]);
+  });
+  it("a cápsula mostra o nome, ou o domínio sem www", () => {
+    expect(nomeDoLink({ title: " Post ", url: "https://instagram.com/p/x" })).toBe("Post");
+    expect(nomeDoLink({ title: "", url: "https://www.instagram.com/p/x" })).toBe("instagram.com");
+  });
+  it("o texto da célula junta os nomes (é por ele que se ordena e se lê)", () => {
+    const link: BaseColumn = { ...col("link") };
+    expect(
+      textoDaCelula(link, [
+        { title: "Post", url: "https://a.com" },
+        { title: "", url: "https://drive.google.com/x" },
+      ])
+    ).toBe("Post, drive.google.com");
   });
 });

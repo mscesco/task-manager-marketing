@@ -5,6 +5,7 @@
 
 import type {
   BaseCellValue,
+  BaseLinkValue,
   BaseColumn,
   BaseColumnType,
   BaseOptionColor,
@@ -78,7 +79,28 @@ export const TIPOS_ESCOLHIVEIS: readonly BaseColumnType[] = [
 
 /** Tipos cuja célula se edita digitando num campo de texto. */
 export function editaComTexto(tipo: BaseColumnType): boolean {
-  return ["title", "text", "number", "date", "link"].includes(tipo);
+  // Fatia J: o link saiu daqui -- virou lista, editada num painel.
+  return ["title", "text", "number", "date"].includes(tipo);
+}
+
+// --------------------------------------------------------------- link
+/** Os links de uma célula. ⚠️ Antes da fatia J a célula guardava UM texto
+ *  solto, e as gravadas naquela época continuam assim no banco (o servidor só
+ *  normaliza na próxima gravação). Por isso toda leitura passa por aqui. */
+export function linksDaCelula(valor: BaseCellValue | undefined): BaseLinkValue[] {
+  if (typeof valor === "string") return valor ? [{ title: "", url: valor }] : [];
+  if (!Array.isArray(valor)) return [];
+  return (valor as unknown[]).filter(
+    (l): l is BaseLinkValue =>
+      typeof l === "object" && l !== null && typeof (l as BaseLinkValue).url === "string"
+  ).map((l) => ({ title: l.title ?? "", url: l.url }));
+}
+
+/** O que a cápsula mostra: o nome, ou -- sem nome -- o domínio, sem "www.".
+ *  O endereço inteiro do Drive tem 80 caracteres e não diz nada a quem lê. */
+export function nomeDoLink(l: BaseLinkValue): string {
+  if (l.title.trim()) return l.title.trim();
+  return /^https?:\/\/(?:www\.)?([^/?#]+)/i.exec(l.url)?.[1] ?? l.url;
 }
 
 // --------------------------------------------------------------- data
@@ -149,6 +171,8 @@ export function textoDaCelula(
       return typeof valor === "number" ? numeroParaTela(valor) : "";
     case "checkbox":
       return valor === true ? "Sim" : "Não";
+    case "link":
+      return linksDaCelula(valor).map(nomeDoLink).join(", ");
     default:
       return typeof valor === "string" ? valor : "";
   }
@@ -204,7 +228,7 @@ export function interpretarDigitado(coluna: BaseColumn, bruto: string): Interpre
     }
     case "link":
       return /^https?:\/\/\S+$/i.test(texto)
-        ? { ok: true, valor: texto }
+        ? { ok: true, valor: [{ title: "", url: texto }] }
         : { ok: false, erro: "O link precisa começar com http:// ou https://." };
     default:
       return { ok: false, erro: "Este tipo não se edita digitando." };

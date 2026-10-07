@@ -53,6 +53,14 @@ describe("errosDosLinks", () => {
     expect(b.url).toBeUndefined();
   });
 
+  it("na célula da Base (nomeOpcional) o nome pode faltar, mas o endereço não", () => {
+    const [a, b] = errosDosLinks([linha("", "drive.google.com"), linha("Pasta", "")], {
+      nomeOpcional: true,
+    });
+    expect(temErro([a])).toBe(false);
+    expect(b.url).toBeTruthy();
+  });
+
   it("⚠️ endereço com outro esquema é erro", () => {
     const [e] = errosDosLinks([linha("X", "javascript:alert(1)")]);
     expect(e.url).toBeTruthy();

@@ -27,6 +27,7 @@ export default function EditorDeLinks({
   onChange,
   desabilitado = false,
   mostrarErros,
+  nomeOpcional = false,
 }: {
   valor: RascunhoLink[];
   onChange: (novo: RascunhoLink[]) => void;
@@ -37,8 +38,10 @@ export default function EditorDeLinks({
    * criar, antes de ela digitar, é acusar sem motivo.
    */
   mostrarErros: boolean;
+  /** Ver `errosDosLinks`: a célula da Base aceita link sem nome. */
+  nomeOpcional?: boolean;
 }) {
-  const erros = errosDosLinks(valor);
+  const erros = errosDosLinks(valor, { nomeOpcional });
   const cheio = paraEnvio(valor).length >= MAX_LINKS;
 
   function trocar(i: number, campo: "title" | "url", texto: string) {
@@ -63,7 +66,7 @@ export default function EditorDeLinks({
               <input
                 id={idNome}
                 className="input"
-                placeholder="Nome (ex.: Pasta principal)"
+                placeholder={nomeOpcional ? "Nome (opcional)" : "Nome (ex.: Pasta principal)"}
                 value={l.title}
                 maxLength={TITULO_MAXIMO}
                 disabled={desabilitado}

@@ -21,6 +21,9 @@ from app.shared.exceptions.base import ValidationError
 
 TEXT_MAX = 5_000
 LINK_MAX = 2_048
+#: Os mesmos tetos dos links da tarefa (`web/lib/links.ts`).
+LINKS_MAX = 20
+LINK_TITLE_MAX = 120
 _DATA = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
@@ -65,13 +68,27 @@ def clean_value(coluna: Any, valor: Any) -> Any:
         return valor
 
     if tipo == "link":
-        if not isinstance(valor, str) or len(valor) > LINK_MAX:
-            raise _erro(coluna, "Link invalido.")
-        partes = urlparse(valor.strip())
-        # So http e https, como os links da Spec 052.
-        if partes.scheme not in ("http", "https") or not partes.netloc:
-            raise _erro(coluna, "O link precisa comecar com http:// ou https://.")
-        return valor.strip()
+        # Fatia J (pedido dela): VARIOS links por celula, cada um com nome
+        # opcional, como os da tarefa (Spec 052). A forma antiga -- um texto
+        # so -- continua aceita e vira lista de um, sem nome: as celulas
+        # gravadas antes nao precisam de migration.
+        itens = [{"url": valor}] if isinstance(valor, str) else valor
+        if not isinstance(itens, list) or len(itens) > LINKS_MAX:
+            raise _erro(coluna, f"No maximo {LINKS_MAX} links por celula.")
+        limpos = []
+        for item in itens:
+            if not isinstance(item, dict) or not isinstance(item.get("url"), str):
+                raise _erro(coluna, "Link invalido.")
+            titulo = item.get("title") or ""
+            if not isinstance(titulo, str) or len(titulo) > LINK_TITLE_MAX:
+                raise _erro(coluna, f"Nome do link passa de {LINK_TITLE_MAX} caracteres.")
+            url = item["url"].strip()
+            partes = urlparse(url)
+            # So http e https, como os links da Spec 052.
+            if len(url) > LINK_MAX or partes.scheme not in ("http", "https") or not partes.netloc:
+                raise _erro(coluna, "O link precisa comecar com http:// ou https://.")
+            limpos.append({"title": titulo.strip(), "url": url})
+        return limpos or None
 
     if tipo in ("select", "multi_select"):
         vivas = {o["id"] for o in live_options(coluna.options)}

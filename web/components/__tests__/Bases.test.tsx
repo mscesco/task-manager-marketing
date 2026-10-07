@@ -7,7 +7,7 @@
 // rótulo de pessoa) é testada em `lib/__tests__/baseTable.test.ts`.
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { useRef, useState } from "react";
 
 import ListaDeBases from "@/components/bases/ListaDeBases";
@@ -41,6 +41,7 @@ vi.mock("@/lib/api", async (importOriginal) => {
     updateBaseCells: vi.fn(),
     updateBaseColumn: vi.fn(),
     createBaseRow: vi.fn(),
+    deleteBaseRow: vi.fn(),
   };
 });
 
@@ -133,6 +134,9 @@ const TITULO: BaseColumn = {
 };
 const NUMERO: BaseColumn = {
   id: "c-num", name: "Alcance", type: "number", options: [], position: 2, width: null, version: 1,
+};
+const LINK: BaseColumn = {
+  id: "c-link", name: "Post", type: "link", options: [], position: 4, width: null, version: 1,
 };
 const RESP: BaseColumn = {
   id: "c-resp", name: "Responsável", type: "person", options: [], position: 3, width: null, version: 1,
@@ -268,6 +272,79 @@ describe("TabelaDaBase", () => {
     render(<Montada base={detalhe()} linhas={[linha("r1", {})]} />);
     fireEvent.click(screen.getByRole("gridcell", { name: "Responsável, linha 1" }));
     expect(screen.getByRole("dialog")).toBeTruthy();
+  });
+
+  it("link: várias cápsulas, e a célula antiga (texto solto) ainda aparece (fatia J)", () => {
+    render(
+      <Montada
+        base={detalhe({ columns: [TITULO, LINK] })}
+        linhas={[
+          linha("r1", { "c-link": "https://www.instagram.com/p/x" }),
+          linha("r2", {
+            "c-link": [
+              { title: "Reels", url: "https://instagram.com/r" },
+              { title: "", url: "https://drive.google.com/d" },
+            ],
+          }),
+        ]}
+      />
+    );
+    expect(screen.getByRole("link", { name: "instagram.com" }).getAttribute("href")).toBe(
+      "https://www.instagram.com/p/x"
+    );
+    expect(screen.getByRole("link", { name: "Reels" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "drive.google.com" })).toBeTruthy();
+  });
+
+  it("link: um clique abre o editor, e salvar grava a lista inteira numa vez", async () => {
+    vi.mocked(api.updateBaseCells).mockResolvedValue([linha("r1", {})]);
+    render(
+      <Montada
+        base={detalhe({ columns: [TITULO, LINK] })}
+        linhas={[linha("r1", { "c-link": [{ title: "Reels", url: "https://instagram.com/r" }] })]}
+      />
+    );
+    fireEvent.click(screen.getByRole("gridcell", { name: "Post, linha 1" }));
+    const painel = screen.getByRole("dialog", { name: "Links de Post" });
+    fireEvent.click(within(painel).getByRole("button", { name: /Adicionar link/ }));
+    // Sem nome vale: a cápsula mostra o domínio.
+    fireEvent.change(within(painel).getByLabelText("Endereço do link 2"), {
+      target: { value: "drive.google.com/d" },
+    });
+    fireEvent.click(within(painel).getByRole("button", { name: "Salvar" }));
+    await waitFor(() =>
+      expect(api.updateBaseCells).toHaveBeenCalledWith("b1", [
+        {
+          row_id: "r1",
+          column_id: "c-link",
+          value: [
+            { title: "Reels", url: "https://instagram.com/r" },
+            { title: "", url: "https://drive.google.com/d" },
+          ],
+        },
+      ])
+    );
+    expect(api.updateBaseCells).toHaveBeenCalledTimes(1);
+  });
+
+  it("link com erro não fecha nem grava", () => {
+    render(<Montada base={detalhe({ columns: [TITULO, LINK] })} linhas={[linha("r1", {})]} />);
+    fireEvent.click(screen.getByRole("gridcell", { name: "Post, linha 1" }));
+    const painel = screen.getByRole("dialog", { name: "Links de Post" });
+    fireEvent.change(within(painel).getByLabelText("Endereço do link 1"), {
+      target: { value: "javascript:alert(1)" },
+    });
+    fireEvent.click(within(painel).getByRole("button", { name: "Salvar" }));
+    expect(screen.getByRole("dialog", { name: "Links de Post" })).toBeTruthy();
+    expect(api.updateBaseCells).not.toHaveBeenCalled();
+  });
+
+  it("a lixeira apaga a linha na hora, sem o Apagar/Cancelar (fatia J)", async () => {
+    vi.mocked(api.deleteBaseRow).mockResolvedValue(linha("r1", {}));
+    render(<Montada base={detalhe()} linhas={[linha("r1", { "c-titulo": "Collab" })]} />);
+    fireEvent.click(screen.getByRole("button", { name: "Apagar a linha Collab" }));
+    expect(screen.queryByText("Collab")).toBeNull();
+    await waitFor(() => expect(api.deleteBaseRow).toHaveBeenCalledWith("b1", "r1"));
   });
 
   it("arrastar a borda do cabeçalho muda a largura e grava UMA vez, ao soltar", async () => {

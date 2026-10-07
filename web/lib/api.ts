@@ -3452,7 +3452,10 @@ export type BaseDetail = BaseSummary & {
 };
 
 /** Valor de célula como o servidor guarda (spec §7.1). Ausente = vazia. */
-export type BaseCellValue = string | number | boolean | string[];
+/** Fatia J: a célula de link guarda uma lista, cada um com nome opcional. ⚠️
+ *  Células gravadas antes podem ter o texto solto -- leia por `linksDaCelula`. */
+export type BaseLinkValue = { title: string; url: string };
+export type BaseCellValue = string | number | boolean | string[] | BaseLinkValue[];
 
 export type BaseRow = {
   id: string;

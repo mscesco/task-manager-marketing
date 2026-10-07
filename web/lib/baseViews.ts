@@ -8,6 +8,7 @@
 // deixa o ao vivo simples: a linha nova chega e a tela reordena sozinha.
 
 import type { BaseCellValue, BaseColumn, BaseColumnType, BaseRow, BaseView } from "@/lib/api";
+import { linksDaCelula, nomeDoLink } from "@/lib/baseTable";
 
 // --------------------------------------------------------------- config
 export type OperadorDeFiltro =
@@ -167,11 +168,19 @@ function vazio(v: BaseCellValue | undefined): boolean {
 }
 
 function idsDe(v: BaseCellValue | undefined): string[] {
-  if (Array.isArray(v)) return v;
+  if (Array.isArray(v)) return (v as unknown[]).filter((x): x is string => typeof x === "string");
   return typeof v === "string" ? [v] : [];
 }
 
+/** O texto em que o filtro procura. No link (fatia J, uma lista) entram o
+ *  nome e o endereço de cada um. */
 function texto(v: BaseCellValue | undefined): string {
+  if (Array.isArray(v)) {
+    return linksDaCelula(v)
+      .map((l) => `${l.title} ${l.url}`)
+      .join(" ")
+      .toLocaleLowerCase("pt-BR");
+  }
   return typeof v === "string" ? v.toLocaleLowerCase("pt-BR") : "";
 }
 
@@ -235,6 +244,13 @@ export function comparar(
   nomeDePessoa: NomeDePessoa = (id) => id
 ): number {
   switch (coluna.type) {
+    case "link": {
+      const nome = (v: BaseCellValue) => {
+        const l = linksDaCelula(v)[0];
+        return l ? nomeDoLink(l) : "";
+      };
+      return nome(a).localeCompare(nome(b), "pt-BR", { numeric: true });
+    }
     case "number":
       return Number(a) - Number(b);
     case "checkbox":
