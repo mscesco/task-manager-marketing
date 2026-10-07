@@ -13,6 +13,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { StrictMode, useState } from "react";
 
 import NotificationBell from "@/components/NotificationBell";
 import TelaDeNotificacoes from "@/components/TelaDeNotificacoes";
@@ -180,6 +181,48 @@ describe("tela de notificações", () => {
     );
     expect(window.location.search).toContain("tarefa=t1");
     expect(await screen.findByText("Banner", { selector: "strong" })).toBeTruthy();
+  });
+
+  it("⚠️ gravar o filtro na URL nao atualiza o roteador no meio de um render (Next 15)", async () => {
+    // O Next intercepta o `history.replaceState` e atualiza o componente do
+    // roteador. Feito DENTRO do `setEstado(atual => ...)`, isso dava "Cannot
+    // update a component (Router) while rendering a different component" --
+    // que o Next 15 passou a mostrar na tela (07/10). Aqui o "roteador" e um
+    // vizinho que se atualiza quando a URL muda, como o do Next.
+    let avisarRoteador: (() => void) | null = null;
+    function Roteador() {
+      const [, setN] = useState(0);
+      avisarRoteador = () => setN((n) => n + 1);
+      return null;
+    }
+    const original = window.history.replaceState.bind(window.history);
+    const espiao = vi
+      .spyOn(window.history, "replaceState")
+      .mockImplementation((...args: Parameters<History["replaceState"]>) => {
+        original(...args);
+        avisarRoteador?.();
+      });
+    const erro = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      // `StrictMode` faz o React rodar a funcao de atualizacao DURANTE o
+      // render (duas vezes), que e onde o Next a encontra; sem ele o jsdom a
+      // calcula na hora do clique e o aviso nunca aparece.
+      render(
+        <StrictMode>
+          <Roteador />
+          <TelaDeNotificacoes />
+        </StrictMode>,
+      );
+      fireEvent.click(await screen.findByRole("button", { name: "Só desta tarefa" }));
+      await waitFor(() => expect(window.location.search).toContain("tarefa=t1"));
+      const doRender = erro.mock.calls.filter((c) =>
+        String(c[0]).includes("Cannot update a component"),
+      );
+      expect(doRender).toEqual([]);
+    } finally {
+      espiao.mockRestore();
+      erro.mockRestore();
+    }
   });
 
   it("lista vazia com filtro oferece limpar", async () => {
