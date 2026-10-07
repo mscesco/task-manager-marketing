@@ -17,7 +17,6 @@ from sqlalchemy import (
     BigInteger,
     CheckConstraint,
     DateTime,
-    ForeignKey,
     ForeignKeyConstraint,
     Integer,
     String,
@@ -30,16 +29,12 @@ from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
-from app.db.mixins import SoftDeleteMixin, TimestampMixin, UUIDPrimaryKeyMixin
-
-
-def _ws_fk() -> Mapped[uuid.UUID]:
-    """Coluna workspace_id padrao (FK simples para workspace)."""
-    return mapped_column(
-        PG_UUID(as_uuid=True),
-        ForeignKey("workspace.id", ondelete="RESTRICT"),
-        nullable=False,
-    )
+from app.db.mixins import (
+    SoftDeleteMixin,
+    TimestampMixin,
+    UUIDPrimaryKeyMixin,
+    workspace_fk_column,
+)
 
 
 class TaskAssignment(UUIDPrimaryKeyMixin, Base):
@@ -79,7 +74,7 @@ class TaskAssignment(UUIDPrimaryKeyMixin, Base):
         },
     )
 
-    workspace_id: Mapped[uuid.UUID] = _ws_fk()
+    workspace_id: Mapped[uuid.UUID] = workspace_fk_column()
     task_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
     user_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
     assigned_by: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
@@ -115,7 +110,7 @@ class TaskWatcher(UUIDPrimaryKeyMixin, Base):
         UniqueConstraint("task_id", "user_id", name="uq_watcher_task_user"),
     )
 
-    workspace_id: Mapped[uuid.UUID] = _ws_fk()
+    workspace_id: Mapped[uuid.UUID] = workspace_fk_column()
     task_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
     user_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
     # ⚠️ Mesma historia do created_at de task_assignment: existe no banco
@@ -151,7 +146,7 @@ class Comment(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
         ),
     )
 
-    workspace_id: Mapped[uuid.UUID] = _ws_fk()
+    workspace_id: Mapped[uuid.UUID] = workspace_fk_column()
     task_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
     user_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
     parent_comment_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -202,7 +197,7 @@ class CommentReaction(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ),
     )
 
-    workspace_id: Mapped[uuid.UUID] = _ws_fk()
+    workspace_id: Mapped[uuid.UUID] = workspace_fk_column()
     comment_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
     user_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
     #: A forma fully-qualified (`normalize_emoji`). 16 cabe folgado: o maior
@@ -257,7 +252,7 @@ class Attachment(UUIDPrimaryKeyMixin, Base):
         CheckConstraint("kind IN ('LINK', 'FILE')", name="attachment_kind"),
     )
 
-    workspace_id: Mapped[uuid.UUID] = _ws_fk()
+    workspace_id: Mapped[uuid.UUID] = workspace_fk_column()
     task_id: Mapped[uuid.UUID | None] = mapped_column(
         PG_UUID(as_uuid=True), nullable=True
     )
@@ -309,7 +304,7 @@ class TimeEntry(UUIDPrimaryKeyMixin, Base):
         ),
     )
 
-    workspace_id: Mapped[uuid.UUID] = _ws_fk()
+    workspace_id: Mapped[uuid.UUID] = workspace_fk_column()
     task_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
     user_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -349,7 +344,7 @@ class TaskHistory(UUIDPrimaryKeyMixin, Base):
         ),
     )
 
-    workspace_id: Mapped[uuid.UUID] = _ws_fk()
+    workspace_id: Mapped[uuid.UUID] = workspace_fk_column()
     task_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
     user_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
     event_type: Mapped[str] = mapped_column(String(80), nullable=False)

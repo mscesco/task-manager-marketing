@@ -31,7 +31,6 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     DateTime,
-    ForeignKey,
     ForeignKeyConstraint,
     Index,
     Integer,
@@ -46,7 +45,7 @@ from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
-from app.db.mixins import UUIDPrimaryKeyMixin
+from app.db.mixins import UUIDPrimaryKeyMixin, workspace_fk_column
 
 #: Os tipos de coluna (spec §7.1). Lista FECHADA: tipo novo e decisao de spec.
 COLUMN_TYPES: tuple[str, ...] = (
@@ -67,14 +66,6 @@ VIEW_LAYOUTS: tuple[str, ...] = ("table", "calendar", "board")
 
 def _in(valores: tuple[str, ...]) -> str:
     return ", ".join(f"'{v}'" for v in valores)
-
-
-def _workspace_id() -> Mapped[uuid.UUID]:
-    return mapped_column(
-        PG_UUID(as_uuid=True),
-        ForeignKey("workspace.id", ondelete="RESTRICT"),
-        nullable=False,
-    )
 
 
 def _agora() -> Mapped[datetime]:
@@ -112,7 +103,7 @@ class BaseTable(UUIDPrimaryKeyMixin, Base):
         Index("ix_base_workspace_team", "workspace_id", "team_id"),
     )
 
-    workspace_id: Mapped[uuid.UUID] = _workspace_id()
+    workspace_id: Mapped[uuid.UUID] = workspace_fk_column()
     team_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     #: O texto livre do topo (D15), em Markdown -- o editor da descricao de
@@ -152,7 +143,7 @@ class BaseColumn(UUIDPrimaryKeyMixin, Base):
         Index("ix_base_column_base", "base_id"),
     )
 
-    workspace_id: Mapped[uuid.UUID] = _workspace_id()
+    workspace_id: Mapped[uuid.UUID] = workspace_fk_column()
     base_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     type: Mapped[str] = mapped_column(String(20), nullable=False)
@@ -196,7 +187,7 @@ class BaseRow(UUIDPrimaryKeyMixin, Base):
         Index("ix_base_row_base", "base_id"),
     )
 
-    workspace_id: Mapped[uuid.UUID] = _workspace_id()
+    workspace_id: Mapped[uuid.UUID] = workspace_fk_column()
     base_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
     values: Mapped[dict] = mapped_column(
         JSONB, nullable=False, server_default=text("'{}'::jsonb"), default=dict
@@ -244,7 +235,7 @@ class BaseView(UUIDPrimaryKeyMixin, Base):
         ),
     )
 
-    workspace_id: Mapped[uuid.UUID] = _workspace_id()
+    workspace_id: Mapped[uuid.UUID] = workspace_fk_column()
     base_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     layout: Mapped[str] = mapped_column(String(10), nullable=False)
@@ -279,7 +270,7 @@ class BaseChange(UUIDPrimaryKeyMixin, Base):
         Index("ix_base_change_pilha", "base_id", "actor_id", "created_at"),
     )
 
-    workspace_id: Mapped[uuid.UUID] = _workspace_id()
+    workspace_id: Mapped[uuid.UUID] = workspace_fk_column()
     base_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
     actor_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
     kind: Mapped[str] = mapped_column(String(30), nullable=False)
