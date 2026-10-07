@@ -90,6 +90,12 @@ class TeamListItem(TeamResponse):
     #: lixeira em todo subtime do workspace. Mesma pergunta de
     #: `TeamService._assert_apaga_subtime`; raiz nunca (a regra recusa).
     can_delete: bool
+    #: Quem pergunta pode CRIAR BASE neste time? (Spec 056, fatia B)
+    #:
+    #: ⚠️ So time RAIZ (D6) -- e o supervisor de um subtime a recebe na raiz
+    #: dele (D3). Mesma pergunta e mesma ordem do `BaseService.create`: subtime
+    #: e 422 antes do verbo, entao aqui e `False` para todo subtime.
+    can_create_base: bool
 
 
 class TeamCreateRequest(BaseModel):

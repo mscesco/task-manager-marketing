@@ -148,6 +148,19 @@ base no `_mundo` sao uuids soltos ate a fatia B criar as tabelas.
        Caiu so o guardiao, nomeando a linha. Desfeita e conferida por
        `git grep SABOTAGEM`.
 
+SPEC 056, FATIA B (07/10) -- base e coluna chegaram ao alvo. As 12 linhas da
+fatia perderam `meta` e `diverge`; os ids do `_mundo` viraram bases de verdade
+(`factories.make_base`). Entraram: a base EXCLUIDA (404 para todos), os
+cadeados `can_update` e `can_create_column` em `CADEADOS_DE_ITEM`, e as listas
+`CRIA_BASE` (`can_create_base` de `GET /teams`) e `LE_BASES` (`GET /bases`).
+⚠️ `base.delete` passou de 404 a 405 SEM chegar ao alvo: o caminho `/bases/{id}`
+existe agora (GET e PATCH), so falta o metodo -- a fatia D o traz.
+
+    Sabotagem H (07/10): `BaseService._visible` sem a pergunta `base.read`.
+       Cairam 8 celulas, todas da base do COMERCIAL para quem nao a le
+       (MANAGER, SUPERVISOR, OPERATOR): o 404 que esconde a base virou 200 ou
+       403 -- confirmaria que ela existe. Desfeita e conferida.
+
     O que as metas dizem (spec 056 §5.4 e §5.8):
     - LER, colunas, linhas e visoes: todo papel da arvore, inclusive OPERATOR;
     - criar, editar (nome e texto do topo), excluir e restaurar a base: todos
@@ -419,15 +432,23 @@ async def _mundo(db) -> dict:
 
     await db.commit()
 
-    # --- Spec 056, fatia 0: a base ainda nao tem tabela. Ids soltos, para os
-    # caminhos terem forma; a fatia B troca por factories (base em cada raiz,
-    # uma excluida, coluna com opcao, linha, visao padrao e uma segunda visao).
+    # --- Spec 056, fatia B: as bases de verdade (ate a fatia A eram uuids
+    # soltos). Uma em cada raiz, e uma EXCLUIDA no Marketing.
+    b_mkt = await f.make_base(db, workspace_id=ws, created_by=alvo_mkt, team_id=mkt)
+    b_com = await f.make_base(db, workspace_id=ws, created_by=alvo_com, team_id=com)
+    b_excl = await f.make_base(
+        db, workspace_id=ws, created_by=alvo_mkt, team_id=mkt, deleted=True
+    )
     base = {
-        k: uuid.uuid4()
-        for k in (
-            "base_mkt", "base_com", "base_mkt_excluida", "coluna_mkt", "opcao_mkt",
-            "linha_mkt", "linha_com", "visao_mkt", "visao_padrao_mkt",
-        )
+        "base_mkt": b_mkt["base"],
+        "base_com": b_com["base"],
+        "base_mkt_excluida": b_excl["base"],
+        "coluna_mkt": b_mkt["coluna"],
+        "opcao_mkt": b_mkt["opcao"],
+        "linha_mkt": b_mkt["linha"],
+        "linha_com": b_com["linha"],
+        "visao_mkt": b_mkt["visao"],
+        "visao_padrao_mkt": b_mkt["visao_padrao"],
     }
 
     return {
@@ -950,57 +971,62 @@ MATRIZ: tuple[Linha, ...] = (
           f"{T}/solicitacoes/{{sol_aprovada_mkt}}/tarefa", {"task_id": "{tarefa_com}"},
           (OK, OK, OCULTO, NEGADO, NEGADO, OK)),  # 051, fatia B: tarefa fora da lente e 404
     # ---------------------------------------------------------- base (Spec 056)
-    # ⚠️ TODAS COM `meta`: a rota ainda nao existe. Ver o bloco "SPEC 056, FATIA
-    # 0" no topo. A fatia que entrega a rota troca `esperado` por `meta` e apaga
-    # as duas marcas.
+    # ⚠️ As linhas que ainda tem `meta` sao das fatias seguintes: a rota nao
+    # existe. Ver o bloco "SPEC 056, FATIA 0" no topo. A fatia que entrega a
+    # rota troca `esperado` por `meta` e apaga as duas marcas -- a B entregou
+    # base e coluna em 07/10.
     Linha("base.create", "no Marketing", "post", f"{T}/bases",
           {"name": "Calendario", "team_id": "{mkt}"},
-          _SEM_ROTA, diverge="056 fatia B", meta=_QUEM_CRIA),
+          _QUEM_CRIA),
     # Sem o verbo NAQUELE time e 403, e nao 404: o time nao e segredo.
     Linha("base.create", "no Comercial", "post", f"{T}/bases",
           {"name": "Calendario", "team_id": "{com}"},
-          _SEM_ROTA, diverge="056 fatia B",
-          meta=(OK, OK, NEGADO, NEGADO, NEGADO, NEGADO)),
+          (OK, OK, NEGADO, NEGADO, NEGADO, NEGADO)),
     # D6: base so em time raiz. Quem tem o verbo em algum lugar chega na regra.
     Linha("base.create", "no SEO (subtime)", "post", f"{T}/bases",
           {"name": "Calendario", "team_id": "{seo}"},
-          _SEM_ROTA, diverge="056 fatia B",
-          meta=(422, 422, 422, 422, NEGADO, 422)),
+          (422, 422, 422, 422, NEGADO, 422)),
     Linha("base.read", "do Marketing", "get", f"{T}/bases/{{base_mkt}}", None,
-          _SEM_ROTA, diverge="056 fatia B", meta=_TODOS),
+          _TODOS),
     Linha("base.read", "do Comercial", "get", f"{T}/bases/{{base_com}}", None,
-          _SEM_ROTA, diverge="056 fatia B", meta=_COM_CONTEUDO),
+          _COM_CONTEUDO),
+    # Excluida e 404 para todos, como base que nao existe (D5).
+    Linha("base.read", "excluida do Marketing", "get",
+          f"{T}/bases/{{base_mkt_excluida}}", None,
+          (OCULTO,) * 6),
     # D19: quem cria edita TODAS as bases da arvore, nao so as suas.
     Linha("base.update", "do Marketing", "patch", f"{T}/bases/{{base_mkt}}",
           {"name": "Outro"},
-          _SEM_ROTA, diverge="056 fatia B", meta=_QUEM_CRIA),
+          _QUEM_CRIA),
     Linha("base.update", "do Comercial", "patch", f"{T}/bases/{{base_com}}",
           {"name": "Outro"},
-          _SEM_ROTA, diverge="056 fatia B", meta=_COM_ESTRUTURA),
+          _COM_ESTRUTURA),
     # ⚠️ O GESTOR EXCLUI: excecao dela (D3) a 049 fatia D.
+    # ⚠️ HOJE E 405, e nao 404: o caminho `/bases/{id}` ja existe (GET, PATCH),
+    # so falta o metodo DELETE -- a fatia D o traz.
     Linha("base.delete", "do Marketing", "delete", f"{T}/bases/{{base_mkt}}", None,
-          _SEM_ROTA, diverge="056 fatia D", meta=_QUEM_CRIA),
+          (405,) * 6, diverge="056 fatia D", meta=_QUEM_CRIA),
     Linha("base.delete", "do Comercial", "delete", f"{T}/bases/{{base_com}}", None,
-          _SEM_ROTA, diverge="056 fatia D", meta=_COM_ESTRUTURA),
+          (405,) * 6, diverge="056 fatia D", meta=_COM_ESTRUTURA),
     Linha("base.restore", "excluida do Marketing", "post",
           f"{T}/bases/{{base_mkt_excluida}}/restore", None,
           _SEM_ROTA, diverge="056 fatia D", meta=_QUEM_CRIA),
     # D24: trocar o tipo e editar coluna -- qualquer um da arvore.
     Linha("base_column.create", "na do Marketing", "post",
           f"{T}/bases/{{base_mkt}}/columns", {"name": "Plataforma", "type": "select"},
-          _SEM_ROTA, diverge="056 fatia B", meta=_TODOS),
+          _TODOS),
     Linha("base_column.create", "na do Comercial", "post",
           f"{T}/bases/{{base_com}}/columns", {"name": "Plataforma", "type": "select"},
-          _SEM_ROTA, diverge="056 fatia B", meta=_COM_CONTEUDO),
+          _COM_CONTEUDO),
     Linha("base_column.update", "trocar o tipo, na do Marketing", "patch",
           f"{T}/bases/{{base_mkt}}/columns/{{coluna_mkt}}", {"type": "text"},
-          _SEM_ROTA, diverge="056 fatia B", meta=_TODOS),
+          _TODOS),
     Linha("base_column.delete", "apagar opcao, na do Marketing", "delete",
           f"{T}/bases/{{base_mkt}}/columns/{{coluna_mkt}}/options/{{opcao_mkt}}", None,
-          _SEM_ROTA, diverge="056 fatia B", meta=_TODOS),
+          _TODOS),
     Linha("base_column.delete", "na do Marketing", "delete",
           f"{T}/bases/{{base_mkt}}/columns/{{coluna_mkt}}", None,
-          _SEM_ROTA, diverge="056 fatia B", meta=_TODOS),
+          _TODOS),
     Linha("base_row.create", "na do Marketing", "post", f"{T}/bases/{{base_mkt}}/rows",
           {"values": {}},
           _SEM_ROTA, diverge="056 fatia C", meta=_TODOS),
@@ -1111,6 +1137,11 @@ CADEADOS_DE_ITEM = (
     ("/projects/{projeto_com}", "can_update", ("project.update", "do Comercial")),
     ("/projects/{projeto_mkt}", "can_delete", ("project.delete", "do Marketing")),
     ("/projects/{projeto_com}", "can_delete", ("project.delete", "do Comercial")),
+    # Spec 056, fatia B: os cadeados da base, um de estrutura e um de conteudo.
+    ("/bases/{base_mkt}", "can_update", ("base.update", "do Marketing")),
+    ("/bases/{base_com}", "can_update", ("base.update", "do Comercial")),
+    ("/bases/{base_mkt}", "can_create_column", ("base_column.create", "na do Marketing")),
+    ("/bases/{base_com}", "can_create_column", ("base_column.create", "na do Comercial")),
 )
 
 
@@ -1297,6 +1328,62 @@ async def test_listagem_de_times_diz_onde_cada_papel_cria_projeto(db, papel: str
     for alvo, time in (("no Marketing", "mkt"), ("no Comercial", "com")):
         linha = _linha("project.create", alvo).esperado[idx]
         assert (linha == OK) is (time in raizes), f"{papel} {alvo}: linha {linha}"
+
+
+#: Spec 056, fatia B: as raizes em que cada papel CRIA BASE -- `can_create_base`.
+#: ⚠️ O SUPERVISOR do SEO cria no Marketing (D3), e subtime nunca aparece (D6).
+CRIA_BASE = {
+    "ADMIN": {"mkt", "com"},
+    "GESTOR": {"mkt", "com"},
+    "MANAGER": {"mkt"},
+    "SUPERVISOR": {"mkt"},
+    "OPERATOR": set(),
+    "DUAS_ARVORES": {"mkt"},
+}
+
+#: Spec 056, fatia B: as bases que cada papel LE na lista -- `GET /bases`.
+#: ⚠️ A excluida nao aparece para ninguem. E DUAS_ARVORES le as duas: e
+#: operador no Comercial, e `base.read` e conteudo.
+LE_BASES = {
+    "ADMIN": {"base_mkt", "base_com"},
+    "GESTOR": {"base_mkt", "base_com"},
+    "MANAGER": {"base_mkt"},
+    "SUPERVISOR": {"base_mkt"},
+    "OPERATOR": {"base_mkt"},
+    "DUAS_ARVORES": {"base_mkt", "base_com"},
+}
+
+
+@pytest.mark.parametrize("papel", PAPEIS)
+async def test_listagem_de_times_diz_onde_cada_papel_cria_base(db, papel: str) -> None:
+    m = await _mundo(db)
+    async with _client(db, _contexto(m, papel)) as cli:
+        r = await cli.get(f"{T}/workspaces/current/teams")
+    assert r.status_code == 200, r.text
+    nome_do_id = {v: k for k, v in m["ids"].items()}
+    cria = {nome_do_id[i["id"]] for i in r.json()["items"] if i["can_create_base"]}
+    assert cria == CRIA_BASE[papel], f"{papel} cria base em {cria}"
+    idx = PAPEIS.index(papel)
+    for alvo, time in (("no Marketing", "mkt"), ("no Comercial", "com")):
+        linha = _linha("base.create", alvo).esperado[idx]
+        assert (linha == OK) is (time in cria), f"{papel} {alvo}: linha {linha}"
+
+
+@pytest.mark.parametrize("papel", PAPEIS)
+async def test_lista_de_bases_pelo_verbo(db, papel: str) -> None:
+    """Spec 056 §5.5 -- `teams_with("base.read")`, e nao a lente. E as linhas
+    `base.read` da matriz dizem o mesmo, papel a papel."""
+    m = await _mundo(db)
+    async with _client(db, _contexto(m, papel)) as cli:
+        r = await cli.get(f"{T}/bases")
+    assert r.status_code == 200, r.text
+    nome_do_id = {v: k for k, v in m["ids"].items()}
+    vistas = {nome_do_id[b["id"]] for b in r.json()}
+    assert vistas == LE_BASES[papel], f"{papel} ve {vistas}"
+    idx = PAPEIS.index(papel)
+    for alvo, base in (("do Marketing", "base_mkt"), ("do Comercial", "base_com")):
+        linha = _linha("base.read", alvo).esperado[idx]
+        assert (linha == OK) is (base in vistas), f"{papel} {alvo}: linha {linha}"
 
 
 #: Os subtimes que cada papel EDITA -- o `can_update` que a listagem devolve.

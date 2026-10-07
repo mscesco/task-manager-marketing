@@ -9,6 +9,13 @@ Sempre que um novo model for criado, adicione-o aqui.
 
 from __future__ import annotations
 
+from app.db.models.bases import (
+    BaseChange,
+    BaseColumn,
+    BaseRow,
+    BaseTable,
+    BaseView,
+)
 from app.db.models.boards import Board, BoardColumn
 from app.db.models.collaboration import (
     Attachment,
@@ -48,6 +55,12 @@ __all__ = [
     # Quadro (Spec 035)
     "Board",
     "BoardColumn",
+    # Base (Spec 056)
+    "BaseTable",
+    "BaseColumn",
+    "BaseRow",
+    "BaseView",
+    "BaseChange",
     # Colaboracao / tempo / auditoria
     "TaskAssignment",
     "TaskWatcher",

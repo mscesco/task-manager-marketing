@@ -8,7 +8,8 @@ pronta para a fatia 0.
 (lista de bases, tabela editável, visões, calendário, quadro).
 **Placar na abertura:** backend **1883** (medido na fatia 0, em 06/10, sobre a
 `main` em `1c58369`). Depois da fatia 0: **2022**. Rebase sobre o #66 (reativar
-conta, +25): **2047**. Depois da fatia A: **2054**; front **1581**.
+conta, +25): **2047**. Depois da fatia A: **2054**; front **1581**. Depois da
+fatia B: **2081** (drift limpo).
 
 ---
 
@@ -301,7 +302,7 @@ Migration `0029`. Módulo novo `app/modules/bases`. Rotas em inglês
 | `base` | `id`, `workspace_id`, `team_id` (raiz), `name`, `description` (Markdown, D15), `created_by`, `created_at`, `updated_at`, `deleted_at`, `deleted_by` |
 | `base_column` | `id`, `base_id`, `name`, `type`, `options` (JSONB), `position`, `width`, `version`, `deleted_at`, `deleted_by` |
 | `base_row` | `id`, `base_id`, `values` (JSONB: id da coluna → valor), `version`, `created_by`, `created_at`, `updated_at`, `deleted_at`, `deleted_by` |
-| `base_view` | `id`, `base_id`, `name`, `layout` (`table`/`calendar`/`board`), `config` (JSONB), `position` |
+| `base_view` | `id`, `base_id`, `name`, `layout` (`table`/`calendar`/`board`), `config` (JSONB), `position`, `is_default` (a visão com que a base nasce, e a que não se apaga: D25; uma por base, por índice único parcial) |
 | `base_change` | `id`, `base_id`, `actor_id`, `kind`, `payload` (JSONB), `created_at`, `undone_at` — o diário de ações: o que cada pessoa fez, com o valor de antes (§9). Índice em (`base_id`, `actor_id`, `created_at`) |
 
 - **`values` guarda pelo id da coluna, nunca pelo nome.** Renomear coluna não

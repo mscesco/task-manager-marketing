@@ -263,6 +263,13 @@ SELECT count(*) AS avisos,
 FROM notification;
 ```
 
+**A `0029` (a Base, Spec 056) também é MIGRATION ANTES DO CÓDIGO**, mas por um
+motivo mais tranquilo (escrito em 07/10/2026, antes de subir): as cinco
+tabelas (`base`, `base_column`, `base_row`, `base_view`, `base_change`) são
+NOVAS, e o código velho nunca as consulta. Subir a migration com o velho no ar
+é seguro; o código novo sem ela dá 500 só nas rotas `/bases`. O `downgrade`
+apaga as cinco — e as bases que a equipe já tiver criado.
+
 ⚠️ **A `0015` (`unaccent`) TAMBÉM inverte a ordem — por um terceiro motivo, e
 ✅ ELA ESTÁ EM PRODUÇÃO DESDE 21/08/2026.** Ela não acrescenta coluna a model
 nenhum (a checagem do `git diff -- backend/app/db/models/` sai vazia), então

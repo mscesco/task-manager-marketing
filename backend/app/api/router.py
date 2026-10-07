@@ -16,6 +16,7 @@ from fastapi import APIRouter
 from app.api.health import router as health_router
 from app.api.client_errors import router as client_errors_router
 from app.modules.auth.api.router import router as auth_router
+from app.modules.bases.api.router import router as bases_router
 from app.modules.notifications.api.router import router as notifications_router
 from app.modules.notifications.api.preferences_router import (
     router as notification_preferences_router,
@@ -57,6 +58,8 @@ api_v1_router.include_router(collaboration_router)
 api_v1_router.include_router(comment_router)
 # Spec 052, fatia B: links com nome de projeto e de tarefa.
 api_v1_router.include_router(links_router)
+# Spec 056, fatia B: a Base (tabela que a equipe monta).
+api_v1_router.include_router(bases_router)
 api_v1_router.include_router(notifications_router)
 # Spec 054: /me/notification-preferences. Segundo router com prefixo /me
 # (o outro e o de projeto pessoal, no modulo de tarefas).
