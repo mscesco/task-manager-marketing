@@ -18,6 +18,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useDrawnOutline } from "@/components/AnimatedOutline";
+import { MolduraPublica } from "@/components/MolduraPublica";
 import { useDocumentTitle } from "@/lib/useDocumentTitle";
 import {
   enviarSolicitacaoPublica,
@@ -371,7 +372,7 @@ export default function FormularioSolicitacao({
 
   if (resultado) {
     return (
-      <Casca>
+      <MolduraPublica>
         <div style={caixa({ textAlign: "center", gap: 12 })}>
           <div style={{ fontSize: 40 }}>✅</div>
           <h1
@@ -410,12 +411,12 @@ export default function FormularioSolicitacao({
             Enviar outra solicitação
           </button>
         </div>
-      </Casca>
+      </MolduraPublica>
     );
   }
 
   return (
-    <Casca>
+    <MolduraPublica>
       <header style={{ marginBottom: 20 }}>
         <h1 style={{ margin: 0, fontSize: 22, letterSpacing: "-0.02em" }}>
           {titulo}
@@ -730,19 +731,11 @@ export default function FormularioSolicitacao({
           {hidratado && passo > 0 && " Seu preenchimento fica salvo neste navegador."}
         </p>
       </footer>
-    </Casca>
+    </MolduraPublica>
   );
 }
 
 // ---------------- componentes ----------------
-
-function Casca({ children }: { children: React.ReactNode }) {
-  return (
-    <div style={{ minHeight: "100vh", background: "var(--bg)", padding: "32px 16px" }}>
-      <div style={{ maxWidth: 720, margin: "0 auto" }}>{children}</div>
-    </div>
-  );
-}
 
 function caixa(extra: React.CSSProperties = {}): React.CSSProperties {
   return {

@@ -12,49 +12,23 @@
  */
 
 import type { MemberRole, Team } from "./api";
+import { alcancePor, type Alcance, type AtorMinimo } from "./alcance";
 import type { Permission } from "./permissions.generated";
 
-/** O que o ator alcanca na gestao de membros. */
-export type Alcance =
-  /** `team.manage` -- ADMIN/MANAGER. Alcanca o workspace inteiro. */
-  | { readonly tipo: "amplo" }
-  /**
-   * SUPERVISOR. So nos subtimes listados (aqueles onde ELE e supervisor), e
-   * ali vincula, tira e troca cargo de SUPERVISOR e OPERATOR (Spec 049, H).
-   */
-  | { readonly tipo: "subtime"; readonly subtimes: readonly string[] }
-  /** Sem permissao de gestao: a tela vira somente leitura. */
-  | { readonly tipo: "nenhum" };
-
-/** So o que precisamos do usuario autenticado -- facilita testar. */
-export type AtorMinimo = {
-  permissions: Permission[];
-  teams: { team_id: string; role: string }[];
-};
+// O tipo e a derivacao moram em `lib/alcance.ts` desde 07/10 (eram copiados
+// em `lib/seletorDeQuadro.ts`). Reexportados para quem ja os importa daqui.
+export type { Alcance, AtorMinimo } from "./alcance";
 
 /**
- * Deriva o alcance a partir do /auth/me.
+ * O alcance na gestao de MEMBROS.
  *
- * `team.manage` ganha de `member.manage.subteam`: quem tem os dois (nao
- * acontece hoje, mas o mapa de permissoes e uniao de papeis) fica com o
- * alcance maior.
+ * ⚠️⚠️ Spec 049, fatia H: "amplo" e quem MOVE entre subtimes
+ * (`membership.move`, so comando e organizacao). Ate a H era quem troca cargo
+ * (`membership.update`) -- e o supervisor passou a ter esse verbo no proprio
+ * subtime, o que o faria virar "amplo" e ganhar botao em todo time.
  */
 export function alcanceDe(me: AtorMinimo | null | undefined): Alcance {
-  if (!me) return { tipo: "nenhum" };
-  // ⚠️⚠️ Spec 049, fatia H: "amplo" e quem MOVE entre subtimes
-  // (`membership.move`, so comando e organizacao). Ate a H era quem troca cargo
-  // (`membership.update`) -- e o supervisor passou a ter esse verbo no proprio
-  // subtime, o que o faria virar "amplo" e ganhar botao em todo time.
-  if (me.permissions.includes("membership.move")) return { tipo: "amplo" };
-  if (me.permissions.includes("membership.create")) {
-    return {
-      tipo: "subtime",
-      subtimes: me.teams
-        .filter((t) => t.role === "SUPERVISOR")
-        .map((t) => t.team_id),
-    };
-  }
-  return { tipo: "nenhum" };
+  return alcancePor(me, "membership.move", "membership.create");
 }
 
 // --------------------------------------------------------------------
