@@ -178,6 +178,22 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
+
+/**
+ * Clica em "Duplicar" DEPOIS do pré-preenchimento. Antes dele o botão está
+ * travado ("Escreva o título") e o clique não faz nada -- a corrida que o teste
+ * D9 descreve. Até o React 18 o preenchimento chegava antes do primeiro
+ * `waitFor` desses testes, por sorte de tempo; com o React 19 (Next 15) ele
+ * chega um render depois, e cinco testes passaram a esperar um clique que se
+ * perdeu. Esperar o título "Cópia de…" tira a sorte do caminho.
+ */
+async function clicarDuplicar() {
+  await waitFor(() => {
+    expect((screen.getByLabelText(/^Título/) as HTMLInputElement).value).toContain("Cópia de");
+  });
+  fireEvent.click(screen.getByRole("button", { name: /Duplicar$/ }));
+}
+
 describe("TaskModal -- modo duplicar", () => {
   it('abre como "Duplicar tarefa" com o título prefixado', async () => {
     montar();
@@ -291,7 +307,7 @@ describe("TaskModal -- modo duplicar", () => {
     fireEvent.change(screen.getByLabelText(/Responsável de sub s1/), {
       target: { value: ANA },
     });
-    fireEvent.click(screen.getByRole("button", { name: /Duplicar$/ }));
+    await clicarDuplicar();
     await waitFor(() => {
       expect(api.duplicateTask).toHaveBeenCalled();
     });
@@ -307,7 +323,7 @@ describe("TaskModal -- modo duplicar", () => {
       expect(screen.getByLabelText(/Não levar esta subtarefa/)).toBeTruthy();
     });
     fireEvent.click(screen.getByLabelText(/Não levar esta subtarefa/));
-    fireEvent.click(screen.getByRole("button", { name: /Duplicar$/ }));
+    await clicarDuplicar();
     await waitFor(() => {
       expect(api.duplicateTask).toHaveBeenCalled();
     });
@@ -378,7 +394,7 @@ describe("TaskModal -- modo duplicar", () => {
         (screen.getByLabelText(/^Título/) as HTMLInputElement).value
       ).toContain("Cópia de");
     });
-    fireEvent.click(screen.getByRole("button", { name: /Duplicar$/ }));
+    await clicarDuplicar();
     await waitFor(() => {
       expect(api.duplicateTask).toHaveBeenCalled();
     });
@@ -392,7 +408,7 @@ describe("TaskModal -- modo duplicar", () => {
     await waitFor(() => {
       expect(screen.getByText(/Levar as subtarefas/)).toBeTruthy();
     });
-    fireEvent.click(screen.getByRole("button", { name: /Duplicar$/ }));
+    await clicarDuplicar();
 
     await waitFor(() => {
       expect(api.duplicateTask).toHaveBeenCalled();
@@ -420,7 +436,7 @@ describe("TaskModal -- modo duplicar", () => {
     await waitFor(() => {
       expect(screen.getByText("Duplicar tarefa")).toBeTruthy();
     });
-    fireEvent.click(screen.getByRole("button", { name: /Duplicar$/ }));
+    await clicarDuplicar();
     await waitFor(() => {
       expect(api.duplicateTask).toHaveBeenCalled();
     });
@@ -451,7 +467,7 @@ describe("TaskModal -- avisos pós-cópia", () => {
     await waitFor(() => {
       expect(screen.getByText("Duplicar tarefa")).toBeTruthy();
     });
-    fireEvent.click(screen.getByRole("button", { name: /Duplicar$/ }));
+    await clicarDuplicar();
     await waitFor(() => {
       expect(alerta).toHaveBeenCalled();
     });
@@ -465,7 +481,7 @@ describe("TaskModal -- avisos pós-cópia", () => {
     await waitFor(() => {
       expect(screen.getByText("Duplicar tarefa")).toBeTruthy();
     });
-    fireEvent.click(screen.getByRole("button", { name: /Duplicar$/ }));
+    await clicarDuplicar();
     await waitFor(() => {
       expect(api.duplicateTask).toHaveBeenCalled();
     });
@@ -485,7 +501,7 @@ describe("TaskModal -- avisos pós-cópia", () => {
     await waitFor(() => {
       expect(screen.getByText("Duplicar tarefa")).toBeTruthy();
     });
-    fireEvent.click(screen.getByRole("button", { name: /Duplicar$/ }));
+    await clicarDuplicar();
     await waitFor(() => {
       expect(alerta).toHaveBeenCalledTimes(1);
     });
