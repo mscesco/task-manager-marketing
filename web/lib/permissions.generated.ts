@@ -33,6 +33,7 @@ export const PERMISSIONS = [
   "organization.update",
   "person.create",
   "person.deactivate",
+  "person.reactivate",
   "person.update",
   "project.archive",
   "project.create",

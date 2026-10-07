@@ -36,10 +36,10 @@ const OUTRO_GERENTE: Member = {
   team_ids: [],
 };
 
-function montar() {
+function montar(member: Member = OUTRO_GERENTE) {
   render(
     <MemberDrawer
-      member={OUTRO_GERENTE}
+      member={member}
       teams={[]}
       scope={{ tipo: "amplo" }}
       isAdmin={false}
@@ -66,6 +66,7 @@ describe("MemberDrawer -- os botões da conta vêm do servidor (Spec 051, fatia 
     vi.mocked(api.memberAccountActions).mockResolvedValue({
       can_reset_password: false,
       can_deactivate: false,
+      can_reactivate: false,
     });
     montar();
     await waitFor(() =>
@@ -82,11 +83,42 @@ describe("MemberDrawer -- os botões da conta vêm do servidor (Spec 051, fatia 
     vi.mocked(api.memberAccountActions).mockResolvedValue({
       can_reset_password: true,
       can_deactivate: true,
+      can_reactivate: false,
     });
     montar();
 
     expect(await screen.findByText("Resetar senha")).toBeTruthy();
     expect(await screen.findByText("Desativar")).toBeTruthy();
+    expect(screen.queryByText("Reativar")).toBeNull();
+  });
+
+  // ⚠️ 06/10/2026 -- a conta da Juliana: desativada, e resetada quatro vezes
+  // com senhas que nunca funcionariam. A gaveta passa a oferecer SÓ a volta.
+  it("conta desativada: só Reativar, e o aviso de por que não há Resetar senha", async () => {
+    vi.mocked(api.memberAccountActions).mockResolvedValue({
+      can_reset_password: false,
+      can_deactivate: false,
+      can_reactivate: true,
+    });
+    montar({ ...OUTRO_GERENTE, is_active: false });
+
+    expect(await screen.findByText("Reativar")).toBeTruthy();
+    expect(screen.getByText(/reative a conta primeiro/)).toBeTruthy();
+    expect(screen.queryByText("Resetar senha")).toBeNull();
+    expect(screen.queryByText("Desativar")).toBeNull();
+  });
+
+  it("conta desativada, mas o servidor diz que não: nenhum botão", async () => {
+    vi.mocked(api.memberAccountActions).mockResolvedValue({
+      can_reset_password: false,
+      can_deactivate: false,
+      can_reactivate: false,
+    });
+    montar({ ...OUTRO_GERENTE, is_active: false });
+    expect(await screen.findByText(/Sem vínculo de time/)).toBeTruthy();
+    await waitFor(() => expect(api.memberAccountActions).toHaveBeenCalled());
+
+    expect(screen.queryByText("Reativar")).toBeNull();
   });
 
   it("enquanto o servidor não responde, nenhum botão por palpite", async () => {

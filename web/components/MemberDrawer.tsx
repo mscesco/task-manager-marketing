@@ -32,6 +32,7 @@ import {
   deactivateMember,
   listMemberTeams,
   memberAccountActions,
+  reactivateMember,
   removeMemberFromTeam,
   resetMemberPassword,
   type AcoesDaConta,
@@ -237,7 +238,19 @@ export default function MemberDrawer({
             {member.is_active && acoes?.can_deactivate && !isSelf && (
               <Deactivate member={member} onChanged={onChanged} />
             )}
+            {/* ⚠️ 06/10/2026: a volta. Conta desativada não ganha senha (o
+                servidor fecha "Resetar senha"), e "Reativar" é o único botão
+                da conta -- é ele que destrava o resto. */}
+            {!member.is_active && acoes?.can_reactivate && (
+              <Reactivate member={member} onChanged={onChanged} />
+            )}
           </div>
+          {!member.is_active && (
+            <div className="muted mb-5 text-xs">
+              Conta desativada: {member.name} não consegue entrar. Para gerar
+              uma senha nova, reative a conta primeiro.
+            </div>
+          )}
 
           {opcoesDeOrganizacao && (
             <section className="mb-5">
@@ -763,5 +776,38 @@ function Deactivate({
     </div>
       </Reveal>
     </>
+  );
+}
+
+/**
+ * ⚠️ SEM CONFIRMAÇÃO, ao contrário de `Deactivate`: reativar devolve o acesso
+ * que a pessoa já tinha, e o caminho de volta (desativar) existe. Confirmar
+ * pesa onde o clique errado custa -- e foi o clique errado em "Desativar" que
+ * criou este botão (06/10/2026).
+ */
+function Reactivate({
+  member,
+  onChanged,
+}: {
+  member: Member;
+  onChanged: (aviso: string) => Promise<void>;
+}) {
+  const [salvando, setSalvando] = useState(false);
+  return (
+    <button
+      className="btn btn-ghost text-xs"
+      disabled={salvando}
+      onClick={async () => {
+        setSalvando(true);
+        try {
+          await reactivateMember(member.id);
+          await onChanged(`${member.name} foi reativado na organização.`);
+        } finally {
+          setSalvando(false);
+        }
+      }}
+    >
+      Reativar
+    </button>
   );
 }

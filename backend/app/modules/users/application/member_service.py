@@ -604,6 +604,19 @@ class MemberService:
             # clicou. Ver `_assert_pode_agir_sobre_a_conta`.
             await self._assert_pode_agir_sobre_a_conta(user, acao="reset_password")
 
+        # ⚠️⚠️ CONTA DESATIVADA NAO GANHA SENHA (06/10/2026). Ate aqui ganhava, e
+        # a senha nunca funcionava: o login responde a conta desativada IGUAL a
+        # senha errada (de proposito -- `AuthService.login`), entao quem tentava
+        # entrar via "senha incorreta" e alguem resetava de novo. Foi a Juliana:
+        # desativada as 18:21, QUATRO resets ate as 19:18, nenhum servia.
+        # ⚠️ DEPOIS das travas de alcance e papel, e nao antes: quem nao pode
+        # mexer na conta leva 403, e nao a noticia de que ela esta desativada.
+        if not user.is_active:
+            raise BusinessRuleError(
+                "A conta esta desativada. Reative a conta antes de resetar a senha.",
+                details={"user_id": str(user_id), "is_active": False},
+            )
+
         temporary_password = generate_temporary_password()
         user.password_hash = hash_password(temporary_password)
         user.must_change_password = True
@@ -620,8 +633,12 @@ class MemberService:
         )
         return ProvisionedMember(user=user, temporary_password=temporary_password)
 
-    async def acoes_da_conta(self, *, user_id: uuid.UUID) -> tuple[bool, bool]:
-        """(resetar senha, desativar) -- o ator conseguiria? Spec 051, fatia E.
+    async def acoes_da_conta(
+        self, *, user_id: uuid.UUID
+    ) -> tuple[bool, bool, bool]:
+        """(resetar senha, desativar, reativar) -- o ator conseguiria?
+
+        Spec 051, fatia E; reativar desde 06/10/2026.
 
         ⚠️⚠️ O CADEADO DOS DOIS BOTOES DA CONTA, e ele existe pelo #57. A tela
         decidia por "alcance amplo" (`podeResetarSenha`, `podeDesativarConta`),
@@ -655,20 +672,27 @@ class MemberService:
             return True
 
         # Resetar a PROPRIA senha dispensa alcance e papel (ver `reset_password`),
-        # mas nao a permissao da rota.
-        pode_resetar = (
+        # mas nao a permissao da rota. ⚠️ E conta desativada nao ganha senha
+        # (06/10): o botao some, como a acao recusa.
+        pode_resetar = user.is_active and (
             tenant.has_permission("person.update")
             if proprio
             else await alcanca_a_conta("person.update", "reset_password")
         )
-        # Desativar: nunca a si mesmo, e nunca quem ja esta desativado (a tela
-        # nao tem o que oferecer -- nao ha reativar).
+        # Desativar: nunca a si mesmo, e nunca quem ja esta desativado.
         pode_desativar = (
             not proprio
             and user.is_active
             and await alcanca_a_conta("person.deactivate", "deactivate_member")
         )
-        return pode_resetar, pode_desativar
+        # Reativar: o espelho -- so quem ESTA desativado. A propria conta nao
+        # chega aqui desativada (a auth a barra), e fica fora pelo desenho.
+        pode_reativar = (
+            not proprio
+            and not user.is_active
+            and await alcanca_a_conta("person.reactivate", "reactivate_member")
+        )
+        return pode_resetar, pode_desativar, pode_reativar
 
     async def list_members(
         self,
@@ -1447,6 +1471,52 @@ class MemberService:
 
         user.is_active = False
         logger.info("member.deactivated", user_id=str(user_id))
+        return user
+
+    async def reactivate_member(self, *, user_id: uuid.UUID) -> User:
+        """Reativa uma conta desativada (is_active = True). 06/10/2026.
+
+        ⚠️ NAO EXISTIA, e a falta custou: a conta da Juliana foi desativada
+        seis minutos depois do cadastro, e o unico caminho de volta era um
+        UPDATE no banco. O ADR 0009 registrava "nao ha reativar" como decisao
+        de escopo, e a tela avisava -- o aviso nao segurou um clique errado.
+
+        As MESMAS travas de `deactivate_member`, na mesma ordem (alcance, depois
+        papel do alvo): quem nao desativaria esta pessoa nao a reativa.
+
+        ⚠️ `token_version` SOBE. Desativar nao mata sessao (a auth confere
+        `is_active` a cada requisicao, Spec 030), entao um token emitido ANTES
+        da desativacao voltaria a valer no instante da reativacao. Quem volta
+        entra de novo, com senha -- nao herda a sessao de antes.
+
+        ⚠️ A SENHA NAO MUDA. Se a pessoa nunca entrou, a provisoria pode estar
+        vencida: o reset e outro clique, e agora possivel (`reset_password`
+        recusa conta desativada).
+
+        Reativar quem ja esta ativo nao faz nada -- reclicar nao e erro, como em
+        `deactivate_member`.
+        """
+        self._assert_gestao_ampla("person.reactivate", acao="reactivate_member")
+
+        user = await self._users.get_by_id(user_id)
+        if user is None:
+            raise EntityNotFoundError("User", identifier=user_id)
+
+        await self._assert_reaches_person(
+            "person.reactivate", user_id, acao="reactivate_member"
+        )
+        await self._assert_pode_agir_sobre_a_conta(user, acao="reactivate_member")
+
+        if user.is_active:
+            return user
+
+        user.is_active = True
+        user.token_version += 1
+        logger.info(
+            "member.reactivated",
+            user_id=str(user_id),
+            token_version=user.token_version,
+        )
         return user
 
     # ----------------------------------------------------

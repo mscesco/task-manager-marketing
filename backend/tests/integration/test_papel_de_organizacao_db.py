@@ -108,6 +108,8 @@ def test_gestor_opera_mas_nao_desfaz_a_organizacao():
     )
     assert "task.delete" in gestor
     assert "person.deactivate" in gestor
+    # 06/10/2026: quem desativa, reativa -- reativar desfaz, e nao e um delete.
+    assert "person.reactivate" in gestor
 
 
 def test_sem_papel_de_organizacao_nao_ganha_nada():

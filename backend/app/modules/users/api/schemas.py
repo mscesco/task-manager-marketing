@@ -209,6 +209,8 @@ class MemberAccountActionsResponse(BaseModel):
 
     can_reset_password: bool
     can_deactivate: bool
+    #: 06/10/2026 -- so conta DESATIVADA, e com as travas de desativar.
+    can_reactivate: bool
 
 
 class TeamMemberListItemResponse(BaseModel):

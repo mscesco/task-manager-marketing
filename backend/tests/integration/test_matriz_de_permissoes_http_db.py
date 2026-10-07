@@ -300,6 +300,9 @@ async def _mundo(db) -> dict:
     # desde 17/09 (rota removida), da linha de trocar cargo.
     desativado = await _operador(db, ws, design)
     (await db.get(User, desativado)).is_active = False
+    # 06/10/2026: o par no Comercial, para a linha de reativar provar o "onde".
+    desativado_com = await _operador(db, ws, vendas)
+    (await db.get(User, desativado_com)).is_active = False
 
     # --- quadros e colunas
     geral_mkt = await _quadro_padrao(db, mkt)
@@ -435,6 +438,7 @@ async def _mundo(db) -> dict:
                 "comentario": comentario.id,
                 "comentario_com": comentario_com.id,
                 "misto_design": misto_design, "desativado": desativado,
+                "desativado_com": desativado_com,
                 "sol_orfa": sol_orfa, "sol_aprovada_mkt": sol_aprovada_mkt,
             }.items()
         },
@@ -611,6 +615,19 @@ MATRIZ: tuple[Linha, ...] = (
           (OK, NEGADO, NEGADO, NEGADO, NEGADO, NEGADO)),
     Linha("person.deactivate", "outro MANAGER do Marketing", "post",
           f"{T}/members/{{manager2}}/deactivate", None,
+          (OK, OK, NEGADO, NEGADO, NEGADO, NEGADO)),
+    # ⚠️⚠️ 06/10/2026 -- A CONTA DA JULIANA. Desativada as 18:21, resetada
+    # quatro vezes ate as 19:18; cada senha nova nascia inutil, porque o login
+    # trata conta desativada como senha errada. O reset passa a recusar (409,
+    # depois das travas de alcance e papel), e a conta ganha o caminho de volta.
+    Linha("person.update", "senha de conta DESATIVADA do Marketing", "post",
+          f"{T}/members/{{desativado}}/reset-password", None,
+          (409, 409, 409, NEGADO, NEGADO, 409)),
+    Linha("person.reactivate", "conta desativada do Marketing", "post",
+          f"{T}/members/{{desativado}}/reactivate", None,
+          (OK, OK, OK, NEGADO, NEGADO, OK)),
+    Linha("person.reactivate", "conta desativada do Comercial", "post",
+          f"{T}/members/{{desativado_com}}/reactivate", None,
           (OK, OK, NEGADO, NEGADO, NEGADO, NEGADO)),
     # ---------------------------------------------------------- vinculo
     Linha("membership.create", "OPERATOR no SEO", "post",
@@ -969,18 +986,26 @@ async def test_o_cadeado_do_item_concorda_com_a_matriz(db, papel: str) -> None:
             )
 
 
-#: Spec 051, fatia E: (pessoa, linha de resetar senha, linha de desativar).
-#: `None` = a matriz nao tem a linha para essa acao nessa pessoa.
+#: Spec 051, fatia E: (pessoa, linha de resetar senha, linha de desativar,
+#: linha de reativar). `None` = a matriz nao tem a linha para essa acao nessa
+#: pessoa. ⚠️ A coluna de reativar (06/10) tem `False` nas contas ATIVAS: nao ha
+#: linha a comparar, e o botao tem de estar fechado para todo papel.
 CONTAS = (
     ("alvo_mkt", ("person.update", "senha de alguem do Marketing"),
-     ("person.deactivate", "alguem do Marketing")),
+     ("person.deactivate", "alguem do Marketing"), False),
     ("alvo_com", ("person.update", "senha de alguem do Comercial"),
-     ("person.deactivate", "alguem do Comercial")),
-    ("misto", None, ("person.deactivate", "alguem do Marketing E do Comercial")),
+     ("person.deactivate", "alguem do Comercial"), False),
+    ("misto", None, ("person.deactivate", "alguem do Marketing E do Comercial"), False),
     ("admin2", ("person.update", "senha de outro ADMIN"),
-     ("person.deactivate", "outro ADMIN")),
+     ("person.deactivate", "outro ADMIN"), False),
     ("manager2", ("person.update", "senha de outro MANAGER do Marketing"),
-     ("person.deactivate", "outro MANAGER do Marketing")),
+     ("person.deactivate", "outro MANAGER do Marketing"), False),
+    # As desativadas: resetar fica fechado (a linha e 409, nao OK), desativar
+    # tambem (ja esta), e reativar segue a linha da matriz.
+    ("desativado", ("person.update", "senha de conta DESATIVADA do Marketing"), False,
+     ("person.reactivate", "conta desativada do Marketing")),
+    ("desativado_com", None, False,
+     ("person.reactivate", "conta desativada do Comercial")),
 )
 
 
@@ -996,12 +1021,19 @@ async def test_o_cadeado_da_conta_concorda_com_a_matriz(db, papel: str) -> None:
     m = await _mundo(db)
     idx = PAPEIS.index(papel)
     async with _client(db, _contexto(m, papel)) as cli:
-        for pessoa, senha, desativar in CONTAS:
+        for pessoa, senha, desativar, reativar in CONTAS:
             r = await cli.get(T + _preencher(f"/members/{{{pessoa}}}/account-actions", m["ids"]))
             assert r.status_code == 200, r.text
             corpo = r.json()
-            for campo, linha in (("can_reset_password", senha), ("can_deactivate", desativar)):
+            for campo, linha in (
+                ("can_reset_password", senha),
+                ("can_deactivate", desativar),
+                ("can_reactivate", reativar),
+            ):
                 if linha is None:
+                    continue
+                if linha is False:
+                    assert corpo[campo] is False, f"{papel} em {pessoa}: {campo} aberto"
                     continue
                 esperado = _linha(*linha).esperado[idx]
                 assert corpo[campo] is (esperado == OK), (

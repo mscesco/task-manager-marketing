@@ -90,6 +90,13 @@ _ROLE_PERMISSIONS: dict[UserTeamRole, frozenset[str]] = {
             "person.create",
             "person.update",
             "person.deactivate",
+            # ⭐ 06/10/2026: REATIVAR, que nao existia -- a conta desativada por
+            # engano (a da Juliana, 18:21 do dia do cadastro) so voltava por SQL.
+            # Verbo PROPRIO, e nao o de desativar: sao as duas perguntas que um
+            # dia podem ter respostas diferentes (o mesmo argumento de
+            # `base.restore` x `base.delete`, Spec 056 §5.2). Hoje, os mesmos
+            # papeis que desativam.
+            "person.reactivate",
             "membership.update",
             "membership.move",
             # ⭐ Spec 046, fatia 2 (§4.1). CRIAR AREA -- time raiz, sem pai.
@@ -183,6 +190,7 @@ _ROLE_PERMISSIONS: dict[UserTeamRole, frozenset[str]] = {
             "person.create",
             "person.update",
             "person.deactivate",
+            "person.reactivate",  # 06/10/2026 -- ver o bloco do ADMIN
             "membership.update",
             "membership.move",
             "solicitation.read",
@@ -344,6 +352,8 @@ _ORG_ROLE_PERMISSIONS: dict[OrgRole, frozenset[str]] = {
             "person.create",
             "person.update",
             "person.deactivate",
+            # 06/10/2026: quem desativa, reativa -- e reativar desfaz, nao apaga.
+            "person.reactivate",
             "membership.create",
             "membership.update",
             "membership.move",
