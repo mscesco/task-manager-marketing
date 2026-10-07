@@ -394,8 +394,9 @@ async def test_token_sem_claim_tv_continua_valido(db) -> None:
 
     Forja um token no formato ANTIGO -- sem `tv` -- e exige 200.
     """
-    import jwt
     from datetime import UTC, datetime, timedelta
+
+    import jwt
 
     from app.core.config import settings
 

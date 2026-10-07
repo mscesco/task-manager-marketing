@@ -54,7 +54,7 @@ Unit of Work.
 app/
   core/            # config, logging, tenant context, middleware, DI base
   db/              # Base ORM, mixins, session, repository, unit of work
-    models/        # models ORM (1:1 com o schema v5)
+    models/        # models ORM (a fonte do schema, junto das migrations)
   shared/          # exceptions, pagination — utilitários transversais
   api/             # router agregador, health, exception handlers
   modules/         # todos os bounded contexts, com estrutura uniforme:
@@ -66,7 +66,7 @@ app/
     solicitations/ #   formulário público, fila de triagem, formulários
 alembic/           # migrations
 tests/             # unitários na raiz; `tests/integration/` exige Postgres
-docker/  scripts/
+scripts/           # tarefas manuais (provisionar, backup, mapa de permissoes)
 ```
 
 Cada módulo em `app/modules/<contexto>/` repete as quatro
@@ -136,8 +136,8 @@ mas o isolamento atual é por aplicação — ver o cabeçalho do
 
 ## 4. Como rodar (desenvolvimento)
 
-Pré-requisitos: Docker e Docker Compose. O **PostgreSQL é
-externo** (instância da VPS) — não sobe no compose.
+Pré-requisitos: Docker e Docker Compose. O PostgreSQL de
+desenvolvimento é o `db-dev`, que sobe no próprio compose.
 
 1. Copie o `.env`:
    ```
@@ -220,8 +220,11 @@ roda mais `alembic upgrade head` no boot (ADR 0022) — fazê-lo era arriscar a
 produção a cada restart. Após o deploy do código:
 
 ```
-docker compose run --rm api alembic upgrade head
+docker compose -f docker-compose.prod.yml run --rm --entrypoint "" api alembic upgrade head
 ```
+
+(`--entrypoint ""` porque o `entrypoint.sh` da imagem ignora argumentos. O
+roteiro completo está no `DEPLOY.md`.)
 
 > A trigger de imutabilidade de `task_history` (`task_history_immutable` /
 > `task_history_no_update_delete`) e as extensões (`ltree`, `pgcrypto`) são
@@ -230,10 +233,11 @@ docker compose run --rm api alembic upgrade head
 
 ## 6. Convenções de código
 
-- **Lint e formatação:** `ruff` (config no `pyproject.toml`).
-  Rodar `ruff check .` e `ruff format .` antes de commitar.
-- **Tipagem:** `mypy --strict`. Todo código novo é tipado;
-  use `Mapped[...]` nos models (estilo SQLAlchemy 2.0).
+- **Lint:** `ruff check app tests scripts` (config no `pyproject.toml`).
+  **Bloqueia no CI desde 07/10/2026**, quando foi zerado.
+- **Tipagem:** todo código novo é tipado; use `Mapped[...]` nos models
+  (estilo SQLAlchemy 2.0). O `mypy` **ainda não é portão**: há erros antigos
+  (ver `specs/em-espera/portoes-de-lint.md`).
 - **Nomes:** `snake_case` para funções/variáveis, `PascalCase`
   para classes. Tabelas e colunas seguem o `schema_v5.sql`.
 - **Routers não têm regra de negócio.** Se um router está

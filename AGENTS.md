@@ -84,7 +84,7 @@ npx tsc --noEmit && npm test && npx next build
 verde na máquina da equipe (todo mundo em BRT) e reprovou no CI, só entre 00:00
 e 03:00.
 
-### Backend — ~1,5 min
+### Backend — ~8 min
 
 ```bash
 docker compose up -d db-test
@@ -96,8 +96,21 @@ integração viram `s` e o resumo diz "24 skipped" em letra pequena, ao lado de
 um código de saída **zero**. Quem só olha "deu verde" acha que rodou. A URL
 acima é a do `db-test` do compose e está escrita por extenso de propósito.
 
-⚠️ **Depois de mexer no backend: `docker compose up -d --build api-dev`.** O
-`api-dev` **não recarrega sozinho**.
+⚠️ **Trocou para um branch com MENOS migrations?** O `db-test` guarda o estado
+enquanto o container está no ar, e o `alembic` do outro branch não acha a
+revisão que ficou lá ("Can't locate revision") -- TODO teste de integração vira
+`ERROR`. `docker compose restart db-test` zera (o banco é `tmpfs`). Visto em
+07/10/2026: 1634 erros, nenhum deles do código.
+
+O `api` que atende o navegador recarrega sozinho (código montado, `--reload`).
+⚠️ **Dependência nova** exige reconstruir: `docker compose up -d --build api`
+(e `--build api-dev`, para o `pytest` enxergá-la).
+
+```bash
+docker compose run --rm api-dev ruff check app tests scripts
+```
+
+O `ruff` **bloqueia no CI desde 07/10/2026** (zerado nesse dia).
 
 ⚠️⚠️ **CORRIGIDO EM 26/08: o backend RODA na máquina de quem assiste.** Esta
 seção dizia o contrário ("não há Postgres") e a frase custou caro — ela era o
@@ -105,10 +118,10 @@ motivo declarado de dividir toda fatia de backend em duas entregas e de mandar
 a Camila rodar `pytest` por mim. O `db-test` é um Postgres efêmero do próprio
 compose; sobe em segundos e não encosta no banco de desenvolvimento.
 
-Os cinco portões, inclusive o de drift, rodam aqui. **Rode-os antes de
+Todos os portões abaixo, inclusive o de drift, rodam aqui -- e o CI roda de novo. **Rode-os antes de
 entregar**; o número esperado deixa de ser previsão e passa a ser medida.
 
-### ⚠️ E há um QUINTO portão, que só o CI roda: DRIFT de migration
+### ⚠️ DRIFT de migration
 
 ```bash
 docker compose run --rm api-dev sh -c   "alembic upgrade head && alembic revision --autogenerate -m drift &&    cat alembic/versions/*drift*.py; rm -f alembic/versions/*drift*.py"
@@ -129,7 +142,7 @@ rodar não o encontrava. Toda entrega que cria ou altera TABELA precisa dele —
 
 Quais portões rodaram de fato, e o número que a suíte deve mostrar.
 
-### ⚠️ E há um SEXTO portão, que só o CI roda: a IMAGEM DE PRODUÇÃO importa?
+### ⚠️ A IMAGEM DE PRODUÇÃO importa?
 
 ```bash
 cd backend && docker build --target runtime -t api:pre . && docker run --rm   -e DATABASE_URL="postgresql+asyncpg://x:x@localhost:5432/x"   -e JWT_SECRET_KEY="sem-valor-nenhum-0123456789012345" -e APP_ENV=development   --entrypoint python api:pre -c "from app.main import create_app; create_app()"

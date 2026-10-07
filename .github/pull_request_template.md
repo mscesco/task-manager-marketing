@@ -34,13 +34,14 @@ ritual, e ritual e o que se preenche sem ler.
 | portão | esperado | resultado |
 |---|---|---|
 | `npx tsc --noEmit` (em `web/`) | limpo | |
-| `npm test` (em `web/`) | 791 | |
+| `npm test` (em `web/`) | o do último PR + os novos | |
 | `npx next build` (em `web/`) | limpo | |
-| `pytest` (backend, com `TEST_DATABASE_URL`) | 846 | |
+| `pytest` (backend, com `TEST_DATABASE_URL`) | o do último PR + os novos | |
+| `ruff check app tests scripts` (backend) | limpo | |
 
-<!-- ⚠️ Os numeros acima sao os de 18/08/2026. Se a sua fatia acrescenta
-     teste, TROQUE o esperado e diga quantos entraram. Numero velho que
-     ninguem atualiza e pior que numero nenhum. -->
+<!-- ⚠️ Escreva o NUMERO medido e quantos testes entraram. O esperado e o
+     do ultimo PR mergeado -- numero fixo aqui envelheceu (dizia 791/846, de
+     18/08, quando ja eram mais de 1700/2100). -->
 
 - [ ] CI verde — e "verde" quer dizer que o job `backend` **chegou a executar o passo `pytest`**. X vindo do `Set up job` é o GitHub caindo, não o código, e na lista de runs os dois são indistinguíveis.
 
@@ -62,7 +63,7 @@ ritual, e ritual e o que se preenche sem ler.
 - [ ] **Arraste (`onDragEnd`)** — não roda em jsdom, não tem guardião e não vai ter. Se este PR toca em `DndContext`, `useDroppable`, `useSortable` ou id de arraste, **confira na tela** e diga aqui o que conferiu.
 - [ ] **CSS / classes** — o `include` do vitest é só `lib/**` e `components/**`. Classe nova não tem teste.
 - [ ] **Rota nova** — leva teste **HTTP**, e não só de serviço. Teste de serviço não sabe se a rota existe: verbo errado ou `response_model` trocado passam com a suíte verde e aparecem como **405 na tela**.
-- [ ] **Backend mexido** → `docker compose up -d --build api-dev`. O `pytest` sobe container próprio; o `api-dev` que atende o navegador **não recarrega sozinho**.
+- [ ] **Dependência nova no backend** → `docker compose up -d --build api` (e `--build api-dev` para o `pytest`). Mudança só de código não precisa: o `api` que atende o navegador recarrega sozinho.
 
 **Conferi na tela:**
 <!-- O que você abriu e o que viu. "Conferido" sozinho nao serve. -->

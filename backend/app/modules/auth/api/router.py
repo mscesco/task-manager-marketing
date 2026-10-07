@@ -21,11 +21,11 @@ from app.modules.auth.api.dependencies import CurrentUserDep, PendingUserDep
 from app.modules.auth.api.schemas import (
     ChangePasswordRequest,
     CurrentUserResponse,
-    TeamMembershipOut,
     LoginRequest,
     RefreshRequest,
     RenameSelfRequest,
     RenameSelfResponse,
+    TeamMembershipOut,
     TokenPair,
 )
 from app.modules.auth.application.service import AuthService

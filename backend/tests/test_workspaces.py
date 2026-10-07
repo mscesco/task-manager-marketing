@@ -22,7 +22,6 @@ from app.modules.workspaces.application.provisioning_service import (
 )
 from app.shared.exceptions.base import (
     BusinessRuleError,
-    ConflictError,
     ValidationError,
 )
 

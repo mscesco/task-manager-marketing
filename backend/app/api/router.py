@@ -13,13 +13,13 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from app.api.health import router as health_router
 from app.api.client_errors import router as client_errors_router
+from app.api.health import router as health_router
 from app.modules.auth.api.router import router as auth_router
-from app.modules.notifications.api.router import router as notifications_router
 from app.modules.notifications.api.preferences_router import (
     router as notification_preferences_router,
 )
+from app.modules.notifications.api.router import router as notifications_router
 from app.modules.solicitations.api.form_public_router import (
     router as solicitation_forms_public_router,
 )

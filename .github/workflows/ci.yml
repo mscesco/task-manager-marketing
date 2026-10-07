@@ -74,9 +74,9 @@ jobs:
     # docker-compose.yml. Mesma imagem, mesmo usuario/senha/base.
     #
     # ⚠️ NAO CONFUNDIR COM O BANCO DA APLICACAO. Sao dois:
-    #   - o banco REAL, na VPS, alcancado em dev pelo tunel SSH
-    #     (`ssh -L 15432:localhost:5432`) + `host.docker.internal` no
-    #     compose. E o que o DATABASE_URL do backend/.env aponta;
+    #   - o banco de DESENVOLVIMENTO, o `db-dev` do compose, na maquina de
+    #     cada um (desde 07/10/2026; antes era a VPS por tunel SSH). E o que
+    #     o DATABASE_URL do backend/.env aponta;
     #   - o `db-test`, efemero, que a suite de integracao usa. Nunca
     #     precisou de tunel: sobe ao lado do api-dev, na rede do compose.
     # Aqui recriamos SO o segundo. Nada neste job alcanca a VPS, e o CI
@@ -186,8 +186,10 @@ jobs:
       # ANOTACAO DE ERRO na execucao -- um vermelho decorativo em toda
       # rodada, que e como se ensina a ignorar alarme. Saindo com 0, a
       # saida do ruff continua no log e nao ha anotacao.
-      - name: ruff (informativo, nao bloqueia)
-        run: ruff check app/ || true
+      # ⚠️ BLOQUEIA desde 07/10/2026: os 57 avisos que havia foram zerados na
+      # revisao de limpeza, e daqui em diante aviso novo e CI vermelho.
+      - name: ruff
+        run: ruff check app tests scripts
 
   # -------------------------------------------------------------------
   # IMAGEM DE PRODUCAO -- ela IMPORTA o app?

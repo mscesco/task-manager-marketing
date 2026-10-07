@@ -23,8 +23,8 @@ import pytest
 from app.db.models.enums import TaskStatus
 from app.modules.tasks.infrastructure.task_repository import TaskRepository
 from app.shared.pagination import PageParams
-from tests.integration.conftest import acting_as, mship, node
 from tests.integration import factories as f
+from tests.integration.conftest import acting_as, mship, node
 
 pytestmark = pytest.mark.integration
 

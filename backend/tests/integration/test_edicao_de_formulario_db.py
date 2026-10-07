@@ -31,7 +31,6 @@ import inspect
 import uuid
 
 import pytest
-
 from sqlalchemy import text
 
 from app.modules.solicitations.application.form_service import (
@@ -677,7 +676,7 @@ async def test_ordem_PARCIAL_e_recusada(db) -> None:
         svc = SolicitationFormService(db)
         form = await svc.criar_formulario(team_id=mkt, slug="arte", title="Arte")
         a = await svc.criar_secao(form_id=form.id, slug="a", title="A")
-        b = await svc.criar_secao(form_id=form.id, slug="b", title="B")
+        await svc.criar_secao(form_id=form.id, slug="b", title="B")
 
         with pytest.raises(ValidationError) as faltando:
             await svc.reordenar_secoes(form_id=form.id, ids=[a.id])

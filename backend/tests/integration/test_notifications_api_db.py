@@ -7,9 +7,8 @@ as minhas, unread-count, mark-read (flipa read_at), mark-read de outro =
 
 from __future__ import annotations
 
-import uuid
 from collections.abc import AsyncIterator
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -70,7 +69,7 @@ def _notif(ws, recipient, *, read=False, created_at=None) -> Notification:
         recipient_id=recipient,
         actor_id=None,
         type="TASK_ASSIGNED",
-        read_at=datetime.now(timezone.utc) if read else None,
+        read_at=datetime.now(UTC) if read else None,
     )
     if created_at is not None:
         n.created_at = created_at
@@ -153,7 +152,7 @@ async def test_read_all(db) -> None:
 
 async def test_paginacao(db) -> None:
     ws, r, me, other, ctx = await _world(db)
-    base = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
+    base = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
     for i in range(3):
         db.add(_notif(ws, me, created_at=base + timedelta(minutes=i)))
     await db.commit()

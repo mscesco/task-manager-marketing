@@ -37,7 +37,6 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 import structlog
-
 from sqlalchemy import func, select, text
 
 from app.core.tenant import require_tenant
@@ -45,11 +44,10 @@ from app.db.models.boards import Board, BoardColumn
 from app.db.models.enums import ColumnSemantic
 from app.db.models.operational import Task
 from app.db.models.organization import Team
-from app.modules.auth.domain import team_scope
 from app.modules.tasks.domain.board_defaults import (
     COLUNAS_BASE,
-    ColunaPadrao,
     NOME_QUADRO_GERAL,
+    ColunaPadrao,
 )
 from app.modules.tasks.infrastructure.board_repository import BoardRepository
 from app.shared.exceptions.base import (
@@ -1562,35 +1560,6 @@ class BoardService:
                         else None
                     ),
                 },
-            )
-
-    def _assert_quadro_editavel(self, quadro: Board) -> None:
-        """⚠️ SEM CHAMADOR DESDE 13/08 -- ver `_assert_ponte_sobrevive`.
-
-        Mantida por um turno para quem for ler o `git log` e procurar por ela.
-        **Se voce esta lendo isto depois do deploy da fatia 6, apague.**
-
-        Recusa mexer nas COLUNAS do quadro padrao.
-
-        ⚠️ ESTA TRAVA E SOBRE COLUNA, E NAO SOBRE QUADRO. Renomear o quadro
-        geral e permitido (`renomear_quadro`) porque nao toca em coluna
-        nenhuma; acrescentar, renomear ou apagar coluna dele mexe na tela de
-        176 tarefas vivas de todo mundo, e nao ha tela que desfaca.
-
-        ⚠️ E ELA QUE SEGURA `default_board_and_column_for_status`, que ficou de
-        FORA da ADR 0042 de proposito: aquela funcao descobre a coluna de um
-        status no quadro padrao, e o degrau dela e a PONTE. Enquanto as oito
-        colunas do geral existirem com `legacy_status`, ela nao tem como
-        errar. Apagar uma delas a quebraria em silencio.
-
-        ⚠️ VALE ENQUANTO A 5c NAO EXISTIR. Quando o quadro extra da raiz for
-        entregue, a pergunta "quem edita as colunas do geral" volta -- e a
-        resposta provavel e `board.manage.root`, nao esta recusa.
-        """
-        if quadro.is_default:
-            raise ValidationError(
-                "As colunas do quadro geral nao podem ser alteradas.",
-                details={"board_id": str(quadro.id)},
             )
 
     @staticmethod

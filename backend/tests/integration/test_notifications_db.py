@@ -8,7 +8,7 @@ ordenacao (mais nova primeiro). Sem service ainda -- testa o repo direto.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy import select
@@ -120,7 +120,7 @@ async def test_ordem_mais_nova_primeiro(db) -> None:
     o teste carimba os dois do mesmo jeito.
     """
     ws, r, me, other, ctx = await _world(db)
-    base = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
+    base = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
     velha = Notification(
         workspace_id=ws, recipient_id=me, actor_id=other,
         type="TASK_ASSIGNED", created_at=base, updated_at=base,

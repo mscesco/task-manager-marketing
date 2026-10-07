@@ -29,8 +29,8 @@ from app.db.models import Board, BoardColumn
 from app.db.models.enums import TaskStatus, UserTeamRole
 from app.modules.tasks.application.task_service import CreateTaskCommand, TaskService
 from app.modules.tasks.infrastructure.board_repository import BoardRepository
-from app.modules.workspaces.application.workspace_service import TeamService
 from app.modules.users.application.member_service import MemberService
+from app.modules.workspaces.application.workspace_service import TeamService
 from app.modules.workspaces.infrastructure.team_repository import TeamRepository
 from app.shared.exceptions.base import AuthorizationError, ValidationError
 from tests.integration import factories as f

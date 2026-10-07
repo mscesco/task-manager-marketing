@@ -1,10 +1,10 @@
 """Harness dos testes de INTEGRACAO (Entrega 5) -- contra Postgres real.
 
 ESTRATEGIA (ADR 0014):
-    - banco de teste descartavel (container `db-test` do compose), montado
-      a partir do dump `schema/schema_v5.sql` via initdb;
-    - bootstrap 1x por sessao: `alembic stamp <base> && alembic upgrade head`
-      (aplica 0005+ por cima do dump) usando DATABASE_URL=TEST_DATABASE_URL;
+    - banco de teste descartavel (container `db-test` do compose); o initdb
+      so cria as extensoes (`schema/00_test_extensions.sql`);
+    - bootstrap 1x por sessao: `alembic upgrade head` desde o baseline
+      (ADR 0022) usando DATABASE_URL=TEST_DATABASE_URL;
     - isolamento por teste: conexao com transacao externa + AsyncSession com
       join_transaction_mode="create_savepoint"; o UoW.commit() do codigo vira
       SAVEPOINT e o rollback externo desfaz TUDO ao fim do teste.
@@ -14,8 +14,7 @@ integracao sao PULADOS (a suite de logica pura continua rodando em qualquer
 lugar). Marcador: @pytest.mark.integration (registrado no pyproject).
 
 Bootstrap roda via subprocess `alembic` (caminho online/asyncpg do env.py;
-nao precisa de psycopg2). O dump deve ter sido tirado no revision indicado
-em SCHEMA_BASE_REVISION (ver plan.md, passo 0).
+nao precisa de psycopg2).
 """
 
 from __future__ import annotations
@@ -42,8 +41,7 @@ from app.modules.auth.domain.permissions import (
     permissions_for_roles,
 )
 
-# dump tirado da produção em 0007,
-# stamp aqui, upgrade aplica só 0008+
+# o baseline (ADR 0022): o banco de teste nasce dele e o upgrade aplica o resto
 SCHEMA_BASE_REVISION = "0001_baseline_v5"
 
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")

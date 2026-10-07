@@ -15,6 +15,9 @@ import uuid
 
 import pytest
 
+from app.core.tenant import current_tenant, require_tenant, tenant_scope
+from app.db.models import Task
+from app.db.repository import BaseRepository
 from app.modules.auth.infrastructure.security import (
     TokenType,
     create_access_token,
@@ -22,9 +25,6 @@ from app.modules.auth.infrastructure.security import (
     hash_password,
     verify_password,
 )
-from app.core.tenant import current_tenant, require_tenant, tenant_scope
-from app.db.models import Task
-from app.db.repository import BaseRepository
 from app.shared.exceptions.base import (
     AuthenticationError,
     MissingTenantContextError,

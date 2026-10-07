@@ -16,8 +16,6 @@ Roda so com db-test de pe + TEST_DATABASE_URL (senao e PULADO).
 
 from __future__ import annotations
 
-import uuid
-
 import pytest
 
 from app.core.tenant import Membership

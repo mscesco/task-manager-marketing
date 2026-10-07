@@ -389,11 +389,9 @@ existia, é ordem invertida. Executado assim em 06/08/2026 (`0008`).
    docker compose run --rm api-dev sh -c      "alembic upgrade head && alembic revision --autogenerate -m drift_check &&       cat alembic/versions/*drift*.py; rm -f alembic/versions/*drift*.py"
    # esperado: NENHUMA linha `op.`
    ```
-   ⚠️ **Ele precisa de banco alcançável.** Se o túnel SSH para o Postgres da
-   VPS estiver fora, o `alembic upgrade` não conecta e o portão NÃO RODA --
-   sem erro claro. Rodar contra o `db-test` (com `DATABASE_URL` apontando
-   para ele) responde a mesma pergunta, porque ele nasce do baseline e aplica
-   todas as migrations.
+   ⚠️ **Ele precisa de banco alcançável**, e o do `api-dev` é o `db-dev` local
+   (`docker compose up -d db-dev`). Sem ele, o `alembic upgrade` não conecta e
+   o portão NÃO RODA -- sem erro claro.
    Diff sujo = model divergiu do banco. **Não aplique**: conserte o model.
    Até 03/08/2026 esse comando gerava 86 operações, incluindo `drop_column` e
    33 `drop_index` — aplicar teria custado índices de produção.
@@ -417,7 +415,8 @@ existia, é ordem invertida. Executado assim em 06/08/2026 (`0008`).
    SIGPIPE no `gunzip`); os dumps estavam certos o tempo todo. Está consertado,
    e o sentinela acima existe para o silêncio não se repetir.
 
-   **b) Conferir `DATABASE_URL`** (dev e prod moram na MESMA instância),
+   **b) Conferir `DATABASE_URL`** (na VPS ele aponta para o banco de
+   produção; o de desenvolvimento mora na máquina de cada um, no `db-dev`),
    **rodar o backup**, e taguear as imagens atuais para ter rollback:
    ```bash
    ~/task-manager-marketing/backend/scripts/backup_taskmanager.sh
@@ -472,16 +471,16 @@ Aqui não há código velho rodando, então a ordem é a natural:
 ```bash
 docker compose -f docker-compose.prod.yml run --rm --entrypoint "" api \
   python -m scripts.provision_workspace \
-    --workspace-slug unifecaf \
-    --team-slug marketing \
-    --admin-email admin@unifecaf.com.br \
-    --admin-password "UMA_SENHA_FORTE"
+    --workspace-name "UniFECAF" --workspace-slug unifecaf \
+    --team-name "Marketing" --team-slug marketing \
+    --admin-name "Nome do Admin" --admin-email admin@unifecaf.com.br
 
 docker compose -f docker-compose.prod.yml run --rm --entrypoint "" api \
   python -m scripts.seed_unifecaf_teams --workspace-slug unifecaf
 ```
-(Rode `... --entrypoint "" api python -m scripts.provision_workspace --help`
-se quiser ver todos os argumentos.)
+A senha do admin é pedida no terminal -- não passe `--admin-password` na
+linha de comando, que ela fica no histórico do shell. (Rode `... --entrypoint
+"" api python -m scripts.provision_workspace --help` para ver os argumentos.)
 
 O primeiro login do admin força troca de senha. O bootstrap NÃO se repete.
 
