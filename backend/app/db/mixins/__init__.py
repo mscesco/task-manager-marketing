@@ -108,6 +108,23 @@ class ArchivableMixin:
     )
 
 
+def workspace_fk_column() -> Mapped[uuid.UUID]:
+    """`workspace_id` NOT NULL com FK simples para workspace(id), SEM indice.
+
+    ⚠️ DIFERE DO `WorkspaceScopedMixin` SO NO INDICE, e de proposito: as tabelas
+    que usam isto (colaboracao, Base) nasceram sem indice nessa coluna, porque
+    a consulta delas parte da tarefa ou da base, nao do workspace. Trocar pelo
+    mixin criaria indices novos -- e uma migration. Era repetida igual em
+    `models/collaboration.py` (`_ws_fk`) e `models/bases.py` (`_workspace_id`);
+    revisao de 07/10/2026.
+    """
+    return mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("workspace.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+
+
 class WorkspaceScopedMixin:
     """workspace_id NOT NULL -- coluna de tenant.
 
