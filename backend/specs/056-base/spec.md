@@ -11,7 +11,8 @@ pronta para a fatia 0.
 conta, +25): **2047**. Depois da fatia A: **2054**; front **1581**. Depois da
 fatia B: **2081** (drift limpo). Depois da fatia C: **2127**. Depois da fatia D:
 **2142** — o backend da spec está completo. Fatia E (primeira do front):
-front **1613** (+32), `next build` limpo.
+front **1613** (+32), `next build` limpo. Fatia F (visões, quadro,
+calendário): front **1640**.
 
 ---
 

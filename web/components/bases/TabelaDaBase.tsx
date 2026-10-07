@@ -24,11 +24,11 @@ import { useAnchoredPanel } from "@/components/AnchoredPanel";
 import { useAvisar } from "@/components/Toasts";
 import EditorDeEscolha, { type Escolha } from "@/components/bases/EditorDeEscolha";
 import { MenuDaColuna, NovaColuna, criarOpcao } from "@/components/bases/MenuDaColuna";
+import { useGravarCelula } from "@/components/bases/useGravarCelula";
 import {
   ApiError,
   createBaseRow,
   deleteBaseRow,
-  updateBaseCells,
   type BaseCellValue,
   type BaseColumn,
   type BaseDetail,
@@ -53,15 +53,22 @@ export type Pessoas = {
 
 export default function TabelaDaBase({
   base,
+  colunas: visiveis,
   linhas,
   pessoas,
   noTeto,
   onBase,
   onLinhas,
+  onLinhaCriada,
   ocupadoRef,
 }: {
   base: BaseDetail;
+  /** As colunas da VISÃO (fatia F: as escondidas saem). Padrão: todas. */
+  colunas?: BaseColumn[];
+  /** As linhas da visão -- já filtradas e ordenadas. */
   linhas: BaseRow[];
+  /** A linha nova passa pelo filtro da visão até recarregar (ver `aplicarVisao`). */
+  onLinhaCriada?: (id: string) => void;
   pessoas: Pessoas;
   /** No teto de linhas (D23): "+ Nova linha" some. */
   noTeto: boolean;
@@ -71,7 +78,7 @@ export default function TabelaDaBase({
   ocupadoRef: MutableRefObject<boolean>;
 }) {
   const avisar = useAvisar();
-  const colunas = base.columns;
+  const colunas = visiveis ?? base.columns;
   const [ativa, setAtiva] = useState<Posicao>({ linha: 0, coluna: 0 });
   const [editando, setEditando] = useState<{ rascunho: string } | null>(null);
   const [escolhendo, setEscolhendo] = useState(false);
@@ -100,26 +107,7 @@ export default function TabelaDaBase({
   const linhaAtiva = linhas[ativa.linha];
   const colunaAtiva = colunas[ativa.coluna];
 
-  async function gravar(linha: BaseRow, coluna: BaseColumn, valor: BaseCellValue | null) {
-    const antes = linha.values[coluna.id];
-    if (igual(antes, valor)) return;
-    const comValor = (l: BaseRow): BaseRow => {
-      const values = { ...l.values };
-      if (valor === null) delete values[coluna.id];
-      else values[coluna.id] = valor;
-      return { ...l, values };
-    };
-    onLinhas((ls) => ls.map((l) => (l.id === linha.id ? comValor(l) : l)));
-    try {
-      const [nova] = await updateBaseCells(base.id, [
-        { row_id: linha.id, column_id: coluna.id, value: valor },
-      ]);
-      onLinhas((ls) => ls.map((l) => (l.id === nova.id ? nova : l)));
-    } catch (e) {
-      onLinhas((ls) => ls.map((l) => (l.id === linha.id ? linha : l)));
-      avisar((e as ApiError).message || "Não consegui salvar a célula.");
-    }
-  }
+  const gravar = useGravarCelula(base.id, onLinhas);
 
   function comecarEdicao(inicial?: string) {
     if (!base.can_update_row || !linhaAtiva || !colunaAtiva) return;
@@ -200,6 +188,7 @@ export default function TabelaDaBase({
   async function novaLinha() {
     try {
       const nova = await createBaseRow(base.id);
+      onLinhaCriada?.(nova.id);
       onLinhas((ls) => [...ls, nova]);
       setAtiva({ linha: linhas.length, coluna: 0 });
       confirmado.current = false;
@@ -387,11 +376,6 @@ export default function TabelaDaBase({
 
 function chave(p: Posicao): string {
   return `${p.linha}:${p.coluna}`;
-}
-
-function igual(a: BaseCellValue | undefined, b: BaseCellValue | null): boolean {
-  if (a === undefined) return b === null;
-  return JSON.stringify(a) === JSON.stringify(b);
 }
 
 // ------------------------------------------------------------------ editor

@@ -18,6 +18,12 @@ import Loading from "@/components/Loading";
 import TextoFormatado from "@/components/TextoFormatado";
 import { useAvisar } from "@/components/Toasts";
 import TabelaDaBase, { type Pessoas } from "@/components/bases/TabelaDaBase";
+import BarraDeVisoes from "@/components/bases/BarraDeVisoes";
+import CalendarioDaBase from "@/components/bases/CalendarioDaBase";
+import ControlesDaVisao from "@/components/bases/ControlesDaVisao";
+import QuadroDaBase from "@/components/bases/QuadroDaBase";
+import type { Escolha } from "@/components/bases/EditorDeEscolha";
+import { useGravarCelula } from "@/components/bases/useGravarCelula";
 import {
   ApiError,
   deleteBase,
@@ -26,11 +32,20 @@ import {
   listMembers,
   listMembersDoTime,
   updateBase,
+  updateBaseView,
+  type BaseColumn,
   type BaseDetail,
   type BaseRow,
   type BaseRowList,
 } from "@/lib/api";
 import { avisoDeLinhas, nomeConfere } from "@/lib/baseTable";
+import {
+  aplicarVisao,
+  colunasVisiveis,
+  lerConfig,
+  visaoAtiva,
+  type ConfigDaVisao,
+} from "@/lib/baseViews";
 import { useDocumentTitle } from "@/lib/useDocumentTitle";
 
 const RECARGA_MS = 10_000;
@@ -48,6 +63,54 @@ export default function PaginaDaBase({ id }: { id: string }) {
   const [erro, setErro] = useState<string | null>(null);
   const ocupadoRef = useRef(false);
   useDocumentTitle(base?.name);
+
+  // --- a visão (fatia F) ---
+  // ⚠️ A URL diz a visão aberta (web/AGENTS.md §5): `?visao=<id>`. Lida e
+  // escrita por `window.location`/`history`, e não por `useSearchParams` --
+  // o mesmo cuidado das outras telas com o build.
+  const [pedida, setPedida] = useState<string | null>(null);
+  useEffect(() => {
+    setPedida(new URLSearchParams(window.location.search).get("visao"));
+  }, []);
+  function escolherVisao(viewId: string) {
+    setPedida(viewId);
+    const url = new URL(window.location.href);
+    url.searchParams.set("visao", viewId);
+    window.history.replaceState(null, "", url);
+  }
+  // Linhas criadas nesta tela passam pelo filtro (ver `aplicarVisao`).
+  const [fixadas, setFixadas] = useState<ReadonlySet<string>>(new Set());
+  // ⚠️ A config grava com ATRASO: digitar o valor de um filtro seria uma
+  // gravação (e uma entrada no diário) por tecla. E a recarga de 10 s espera,
+  // senão traria a config velha por cima da que está para ser gravada.
+  const gravacaoDaVisao = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // ⚠️ Trava PRÓPRIA, e não o `ocupadoRef`: a tabela reescreve aquele a cada
+  // render (editando ou não), e apagaria esta no meio do atraso.
+  const salvandoVisao = useRef(false);
+  const avisarErro = useAvisar();
+  function mudarConfig(viewId: string, config: ConfigDaVisao) {
+    setBase((b) =>
+      b ? { ...b, views: b.views.map((v) => (v.id === viewId ? { ...v, config } : v)) } : b
+    );
+    if (gravacaoDaVisao.current) clearTimeout(gravacaoDaVisao.current);
+    salvandoVisao.current = true;
+    gravacaoDaVisao.current = setTimeout(() => {
+      gravacaoDaVisao.current = null;
+      updateBaseView(id, viewId, { config })
+        .catch((e: ApiError) =>
+          avisarErro(e.message || "Não consegui salvar a visão.")
+        )
+        .finally(() => {
+          salvandoVisao.current = false;
+        });
+    }, 600);
+  }
+
+  const atualizarLinhas = useCallback(
+    (f: (l: BaseRow[]) => BaseRow[]) => setLinhas((l) => (l ? f(l) : l)),
+    []
+  );
+  const gravar = useGravarCelula(id, atualizarLinhas);
 
   const carregar = useCallback(async () => {
     const [b, l] = await Promise.all([getBase(id), listBaseRows(id)]);
@@ -86,7 +149,7 @@ export default function PaginaDaBase({ id }: { id: string }) {
   useEffect(() => {
     let parado = false;
     const tick = () => {
-      if (parado || document.hidden || ocupadoRef.current) return;
+      if (parado || document.hidden || ocupadoRef.current || salvandoVisao.current) return;
       carregar().catch((e: ApiError) => {
         if (e.status === 401) parado = true;
         if (e.status === 404) {
@@ -119,6 +182,19 @@ export default function PaginaDaBase({ id }: { id: string }) {
 
   const aviso = avisoDeLinhas(linhas.length, teto.warning_at, teto.limit);
   const noTeto = aviso?.nivel === "teto";
+
+  const visao = visaoAtiva(base.views, pedida);
+  const config = lerConfig(visao?.config);
+  const nomeDePessoa = (pid: string) => pessoas.todos.get(pid)?.name ?? "";
+  const daVisao = aplicarVisao(linhas, base.columns, config, { fixadas, nomeDePessoa });
+  const escolhasDe = (c: BaseColumn): Escolha[] =>
+    c.type === "person"
+      ? [...pessoas.daArvore]
+          .map((pid) => ({ id: pid, rotulo: pessoas.todos.get(pid)?.name ?? pid }))
+          .sort((a, b) => a.rotulo.localeCompare(b.rotulo, "pt-BR"))
+      : c.options.map((o) => ({ id: o.id, rotulo: o.label }));
+  const agrupar = base.columns.find((c) => c.id === config.group_by && c.type === "select");
+  const colunaData = base.columns.find((c) => c.id === config.date_column && c.type === "date");
 
   return (
     <div className="flex min-w-0 flex-col gap-4">
@@ -156,15 +232,62 @@ export default function PaginaDaBase({ id }: { id: string }) {
         </div>
       )}
 
-      <TabelaDaBase
-        base={base}
-        linhas={linhas}
-        pessoas={pessoas}
-        noTeto={noTeto}
-        onBase={(f) => setBase((b) => (b ? f(b) : b))}
-        onLinhas={(f) => setLinhas((l) => (l ? f(l) : l))}
-        ocupadoRef={ocupadoRef}
-      />
+      {visao && (
+        <div className="flex flex-col gap-2">
+          <BarraDeVisoes
+            base={base}
+            ativa={visao}
+            onEscolher={escolherVisao}
+            onViews={(f) => setBase((b) => (b ? { ...b, views: f(b.views) } : b))}
+          />
+          <ControlesDaVisao
+            layout={visao.layout}
+            colunas={base.columns}
+            config={config}
+            podeEditar={base.can_update_view}
+            escolhasDe={escolhasDe}
+            onConfig={(c) => mudarConfig(visao.id, c)}
+          />
+        </div>
+      )}
+
+      {visao?.layout === "board" ? (
+        agrupar ? (
+          <QuadroDaBase
+            linhas={daVisao}
+            colunas={base.columns}
+            agrupar={agrupar}
+            podeEditar={base.can_update_row}
+            onGravar={gravar}
+          />
+        ) : (
+          <p className="muted m-0 text-sm">Escolha em "Agrupar por" a coluna de Seleção que monta o quadro.</p>
+        )
+      ) : visao?.layout === "calendar" ? (
+        colunaData ? (
+          <CalendarioDaBase
+            linhas={daVisao}
+            colunas={base.columns}
+            data={colunaData}
+            podeEditar={base.can_update_row}
+            onGravar={gravar}
+          />
+        ) : (
+          <p className="muted m-0 text-sm">Escolha em "Data" a coluna que monta o calendário.</p>
+        )
+      ) : (
+        <TabelaDaBase
+          base={base}
+          colunas={colunasVisiveis(base.columns, config)}
+          linhas={daVisao}
+          pessoas={pessoas}
+          noTeto={noTeto}
+          onBase={(f) => setBase((b) => (b ? f(b) : b))}
+          onLinhas={atualizarLinhas}
+          onLinhaCriada={(rid) => setFixadas((s) => new Set([...s, rid]))}
+          ocupadoRef={ocupadoRef}
+        />
+      )}
     </div>
   );
 }

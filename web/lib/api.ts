@@ -3577,6 +3577,26 @@ export async function updateBaseCells(
   return api<BaseRow[]>(`/api/v1/bases/${baseId}/cells`, { method: "PATCH", body: { cells } });
 }
 
+/** Visões são COMPARTILHADAS (D14): mudar filtro ou ordem muda para todos. */
+export async function createBaseView(
+  baseId: string,
+  body: { name: string; layout: BaseView["layout"]; config?: Record<string, unknown> }
+): Promise<BaseView> {
+  return api<BaseView>(`/api/v1/bases/${baseId}/views`, { method: "POST", body });
+}
+
+export async function updateBaseView(
+  baseId: string,
+  viewId: string,
+  body: { name?: string; config?: Record<string, unknown>; position?: number }
+): Promise<BaseView> {
+  return api<BaseView>(`/api/v1/bases/${baseId}/views/${viewId}`, { method: "PATCH", body });
+}
+
+export async function deleteBaseView(baseId: string, viewId: string): Promise<void> {
+  await api<void>(`/api/v1/bases/${baseId}/views/${viewId}`, { method: "DELETE" });
+}
+
 export async function deleteBaseRow(baseId: string, rowId: string): Promise<BaseRow> {
   return api<BaseRow>(`/api/v1/bases/${baseId}/rows/${rowId}`, { method: "DELETE" });
 }
