@@ -144,28 +144,31 @@ externo** (instância da VPS) — não sobe no compose.
    cp .env.example .env
    ```
 2. Edite o `.env`:
-   - `DATABASE_URL` — aponte para o Postgres da VPS, database
-     `task_manager_dev`. Se o Postgres roda no host da VPS,
-     use `host.docker.internal` (já mapeado no compose).
+   - `DATABASE_URL` — o `.env.example` já aponta para o `db-dev`, o
+     Postgres de desenvolvimento do próprio compose. Não precisa mudar.
    - `JWT_SECRET_KEY` — gere com `openssl rand -hex 32`.
-3. Suba o backend:
+3. Suba o banco e o backend:
    ```
-   docker compose up --build
+   docker compose up -d db-dev
+   docker compose run --rm api-dev alembic upgrade head
+   docker compose up -d --build api
    ```
 4. Verifique:
    - `http://localhost:8000/health` → `{"status":"ok"}`
    - `http://localhost:8000/docs` → Swagger (fora de produção)
 
-OBS: o Postgres e externo (VPS). Em dev, abra um tunel SSH para a porta
-local 15432 antes de subir o backend (a `DATABASE_URL` do `.env.example`
-ja aponta para `host.docker.internal:15432`):
+OBS: desde 07/10/2026 o banco de dev é o `db-dev`, local e persistente
+(volume `db-dev-data`). **Não há mais túnel SSH para a VPS**: ele ficava aberto
+o dia inteiro pela rede corporativa, e o dev parava junto com a VPS. Para
+começar com uma cópia do `task_manager_dev` da VPS em vez do banco vazio, gere
+um `pg_dump -Fc` lá e restaure aqui:
 
 ```
-ssh -L 15432:localhost:5432 <usuario>@<host-da-vps>
+docker compose exec -T db-dev pg_restore -U dev -d task_manager_dev --no-owner --no-acl --clean --if-exists < task_manager_dev.dump
 ```
 
-NUNCA versione host/usuario/IP reais aqui -- eles vivem na sua maquina,
-fora do repo.
+O `.dump` fica fora do git (`*.dump` no `.gitignore`): tem dados de pessoas.
+Para um cliente de SQL: `localhost:15433`, `dev`/`dev`.
 
 ### Testes
 
