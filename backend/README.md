@@ -168,7 +168,9 @@ docker compose exec -T db-dev pg_restore -U dev -d task_manager_dev --no-owner -
 ```
 
 O `.dump` fica fora do git (`*.dump` no `.gitignore`): tem dados de pessoas.
-Para um cliente de SQL: `localhost:15433`, `dev`/`dev`.
+Para olhar o banco pelo navegador: `docker compose up -d adminer` e abra
+`http://localhost:8081` (PostgreSQL, servidor `db-dev`, `dev`/`dev`, base
+`task_manager_dev`). Para um cliente de SQL instalado: `localhost:15433`.
 
 ### Testes
 

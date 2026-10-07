@@ -107,5 +107,21 @@ services:
     volumes:
       - db-dev-data:/var/lib/postgresql/data
 
+  # -----------------------------------------------------
+  # adminer -- olhar o db-dev pelo navegador, como o Adminer de producao.
+  # Suba com: docker compose up -d adminer  ->  http://localhost:8081
+  # Sistema PostgreSQL, servidor `db-dev`, usuario `dev`, senha `dev`,
+  # base `task_manager_dev`. So abre no 127.0.0.1.
+  # -----------------------------------------------------
+  adminer:
+    image: adminer:latest
+    restart: unless-stopped
+    environment:
+      ADMINER_DEFAULT_SERVER: db-dev
+    ports:
+      - "127.0.0.1:8081:8080"
+    depends_on:
+      - db-dev
+
 volumes:
   db-dev-data:
