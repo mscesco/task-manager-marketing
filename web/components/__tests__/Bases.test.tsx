@@ -259,6 +259,18 @@ describe("TabelaDaBase", () => {
     expect(bia).toContain("var(--opt-gray)");
   });
 
+  it("o contorno forte só existe editando: cancelada a edição, a célula ativa não fica marcada (fatia J)", () => {
+    render(<Montada base={detalhe()} linhas={[linha("r1", { "c-titulo": "Collab" })]} />);
+    const celula = screen.getByRole("gridcell", { name: "Título, linha 1" });
+    fireEvent.click(celula);
+    expect(celula.className.split(" ")).toContain("outline-2");
+    fireEvent.keyDown(screen.getByLabelText("Editar Título"), { key: "Escape" });
+    // Sobra só o contorno de foco e o de passar o mouse (as variantes
+    // `focus:` e `hover:`), e nenhum contorno fixo.
+    expect(celula.className.split(" ")).not.toContain("outline-2");
+    expect(celula.className).toContain("focus:outline-2");
+  });
+
   it("⚠️ clicar DENTRO do editor não recomeça a edição (o rascunho fica)", () => {
     render(<Montada base={detalhe()} linhas={[linha("r1", { "c-titulo": "Collab" })]} />);
     fireEvent.click(screen.getByRole("gridcell", { name: "Título, linha 1" }));

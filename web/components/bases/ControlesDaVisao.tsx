@@ -146,7 +146,9 @@ function Painel({
   const { anchorRef, panelRef, box } = useAnchoredPanel<HTMLButtonElement>(
     aberto,
     () => setAberto(false),
-    { larguraPainel: 420 }
+    // Fatia J: os controles moram no canto DIREITO da barra; o painel abre
+    // para a esquerda, para dentro da tela.
+    { larguraPainel: 420, alinhar: "direita" }
   );
   // Fatia J: só o ícone (*"achei que ficou muita coisa escrita"*). O rótulo
   // inteiro -- com a contagem -- fica no `aria-label` e na dica; à vista, só
@@ -420,7 +422,7 @@ function EscolhaDeColuna({
   const { anchorRef, panelRef, box } = useAnchoredPanel<HTMLButtonElement>(
     aberto,
     () => setAberto(false),
-    { larguraPainel: 240 }
+    { larguraPainel: 240, alinhar: "direita" }
   );
   if (!colunas.length) return <span className="muted text-sm">{vazio}</span>;
   const escolhida = colunas.find((c) => c.id === valor);

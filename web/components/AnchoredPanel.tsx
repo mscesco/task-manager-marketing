@@ -24,6 +24,12 @@
 //      os dois lados e pareceria brotar do nada.
 //   6. O painel NAO SAI PELA DIREITA -- ele desloca para caber na janela. O
 //      gatilho pode ser uma pilula estreita, e o painel e mais largo que ela.
+//      ⚠️ Spec 056, fatia J: a conta do hook usa a largura ESPERADA, e o
+//      painel de ordenacao da Base (dois seletores e a lixeira) nasce mais
+//      largo que ela -- vazava pela direita (print dela de 07/10). Por isso o
+//      painel MEDE A PROPRIA LARGURA depois de desenhado e se desloca o que
+//      faltar. E a borda e a da PAGINA (`clientWidth`), sem a barra de
+//      rolagem: com `innerWidth` a ponta ficava escondida debaixo dela.
 //
 // ⚠️ `bounce: 0`, e nao um valor pequeno: com qualquer overshoot a caixa
 // passa do tamanho final e volta, e isso le-se como TRANCO -- *"a animacao das
@@ -46,6 +52,12 @@ import { motion } from "motion/react";
 const ESPACO_MINIMO = 220;
 /** Respiro nas bordas da janela, para o painel não encostar. */
 const MARGEM = 8;
+
+/** A largura útil da página, sem a barra de rolagem vertical. Sem medida (o
+ *  jsdom diz 0), cai na da janela. */
+function larguraDaPagina(): number {
+  return document.documentElement.clientWidth || window.innerWidth;
+}
 
 export type PanelBox = {
   readonly top?: number;
@@ -139,7 +151,7 @@ export function useAnchoredPanel<T extends HTMLElement>(
     // cortaria o texto de dentro, que é o que se foi ler. Ele encosta na
     // margem direita e continua com a largura que precisa.
     const largura = Math.max(r.width, opcoes.larguraPainel ?? LARGURA_MINIMA);
-    const maxWidth = Math.max(160, window.innerWidth - 2 * MARGEM);
+    const maxWidth = Math.max(160, larguraDaPagina() - 2 * MARGEM);
     const alinhadoADireita = opcoes.alinhar === "direita";
     // Pela direita: a borda direita do painel encosta na do gatilho, e ele
     // cresce para a esquerda. As duas travas de janela valem igual.
@@ -148,7 +160,7 @@ export function useAnchoredPanel<T extends HTMLElement>(
       : r.left;
     const left = Math.max(
       MARGEM,
-      Math.min(inicio, window.innerWidth - MARGEM - Math.min(largura, maxWidth)),
+      Math.min(inicio, larguraDaPagina() - MARGEM - Math.min(largura, maxWidth)),
     );
 
     setBox(
@@ -247,6 +259,17 @@ export default function AnchoredPanel({
   minWidth?: number;
   children: ReactNode;
 }) {
+  // Regra 6, segunda metade: quanto o painel ainda precisa andar para a
+  // esquerda depois de medido. ⚠️ `offsetWidth`, e não `getBoundingClientRect`:
+  // este último mede a caixa ESCALADA pela animação de entrada (97%).
+  const [ajuste, setAjuste] = useState(0);
+  useLayoutEffect(() => {
+    const el = panelRef.current;
+    if (!el) return;
+    const borda = larguraDaPagina() - MARGEM;
+    const sobra = box.left + el.offsetWidth - borda;
+    setAjuste(sobra > 0 ? -Math.min(sobra, box.left - MARGEM) : 0);
+  }, [box.left, panelRef]);
   return (
     <motion.div
       ref={panelRef}
@@ -260,7 +283,7 @@ export default function AnchoredPanel({
         position: "fixed",
         top: box.top,
         bottom: box.bottom,
-        left: box.left,
+        left: box.left + ajuste,
         minWidth: Math.min(minWidth ?? box.width, box.maxWidth),
         maxWidth: box.maxWidth,
         zIndex: 60,

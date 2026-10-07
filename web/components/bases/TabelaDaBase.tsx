@@ -405,7 +405,17 @@ export default function TabelaDaBase({
                         ci < congeladas ? "sticky z-[1] bg-canvas" : ""
                       } ${ci === 0 ? "border-l font-medium" : ""} ${
                         base.can_update_row ? "cursor-text" : ""
-                      } ${ehAtiva ? "outline outline-2 -outline-offset-2 outline-accent" : ""}`}
+                      } ${
+                        // Fatia J, pedido dela: o contorno NÃO marca mais a
+                        // "célula ativa" para sempre -- clicar fora o apagava
+                        // e ele ficava. Agora: forte com o FOCO (setas, Enter)
+                        // ou editando; fino com o mouse em cima. A célula ativa
+                        // continua existindo para o teclado (o tabIndex 0), só
+                        // não aparece quando a tabela não está em uso.
+                        ehAtiva && (editando || escolhendo)
+                          ? "outline outline-2 -outline-offset-2 outline-accent"
+                          : "hover:outline hover:outline-1 hover:-outline-offset-1 hover:outline-accent focus:outline focus:outline-2 focus:-outline-offset-2 focus:outline-accent"
+                      }`}
                     >
                       {ehAtiva && editando ? (
                         <EditorDeTexto
