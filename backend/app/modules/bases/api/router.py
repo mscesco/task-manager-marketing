@@ -34,6 +34,10 @@ Fatia D:
 
 Fatia G:
     GET    /bases/{id}/events                            -- base.read (SSE)
+
+Fatia I (o cabecalho como o do Notion):
+    POST   /bases/{id}/columns  com `position`           -- inserir no meio
+    POST   /bases/{id}/columns/{column_id}/duplicate     -- base_column.create
 """
 
 from __future__ import annotations
@@ -202,7 +206,23 @@ async def create_column(
         name=payload.name,
         type=payload.type,
         options=[o.model_dump() for o in payload.options] if payload.options else None,
+        position=payload.position,
     )
+    await uow.commit()
+    return ColumnResponse.from_model(coluna)
+
+
+@router.post(
+    "/{base_id}/columns/{column_id}/duplicate",
+    response_model=ColumnResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_permission("base_column.create"))],
+)
+async def duplicate_column(
+    base_id: uuid.UUID, column_id: uuid.UUID, uow: UoWDep
+) -> ColumnResponse:
+    """Fatia I: "Duplicar propriedade" -- com os valores, logo a direita."""
+    coluna = await BaseService(uow.session).duplicate_column(base_id, column_id)
     await uow.commit()
     return ColumnResponse.from_model(coluna)
 

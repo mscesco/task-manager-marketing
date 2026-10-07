@@ -116,6 +116,20 @@ class BaseColumnRepository(BaseRepository[BaseColumn]):
         )
         return (await self.session.execute(stmt)).scalar_one_or_none()
 
+    async def shift_from(self, base_id: uuid.UUID, position: int) -> None:
+        """Empurra uma casa as colunas (vivas e apagadas) de `position` em
+        diante -- abre a vaga de "Inserir a esquerda/direita"."""
+        await self.session.execute(
+            update(BaseColumn)
+            .where(
+                self._tenant_clause(),
+                BaseColumn.base_id == base_id,
+                BaseColumn.position >= position,
+            )
+            .values(position=BaseColumn.position + 1)
+            .execution_options(synchronize_session="fetch")
+        )
+
     async def next_position(self, base_id: uuid.UUID) -> int:
         """Depois da ultima -- contando as apagadas, para o desfazer devolver a
         coluna ao lugar dela sem colidir."""
@@ -186,6 +200,28 @@ class BaseRowRepository(BaseRepository[BaseRow]):
             self._base_select().where(BaseRow.base_id == base_id).subquery()
         )
         return int((await self.session.execute(stmt)).scalar_one())
+
+    async def copy_column(
+        self, base_id: uuid.UUID, origem: uuid.UUID, destino: uuid.UUID
+    ) -> None:
+        """Copia o valor de `origem` para `destino` em toda linha (viva ou
+        apagada) que o tem -- "Duplicar propriedade". So a chave nova entra."""
+        de, para = str(origem), str(destino)
+        await self.session.execute(
+            update(BaseRow)
+            .where(
+                self._tenant_clause(),
+                BaseRow.base_id == base_id,
+                BaseRow.values.has_key(de),
+            )
+            .values(
+                values=BaseRow.values.op("||")(
+                    func.jsonb_build_object(para, BaseRow.values[de])
+                ),
+                version=BaseRow.version + 1,
+            )
+            .execution_options(synchronize_session=False)
+        )
 
     async def values_of_column(
         self, base_id: uuid.UUID, column_id: uuid.UUID

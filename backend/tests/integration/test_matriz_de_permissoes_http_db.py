@@ -1023,6 +1023,13 @@ MATRIZ: tuple[Linha, ...] = (
     Linha("base_column.create", "na do Comercial", "post",
           f"{T}/bases/{{base_com}}/columns", {"name": "Plataforma", "type": "select"},
           _COM_CONTEUDO),
+    # Fatia I: duplicar e CRIAR coluna -- o mesmo verbo, o mesmo alcance.
+    Linha("base_column.create", "duplicar, na do Marketing", "post",
+          f"{T}/bases/{{base_mkt}}/columns/{{coluna_mkt}}/duplicate", None,
+          _TODOS),
+    Linha("base_column.create", "duplicar, na do Comercial", "post",
+          f"{T}/bases/{{base_com}}/columns/{{coluna_com}}/duplicate", None,
+          _COM_CONTEUDO),
     Linha("base_column.update", "trocar o tipo, na do Marketing", "patch",
           f"{T}/bases/{{base_mkt}}/columns/{{coluna_mkt}}", {"type": "text"},
           _TODOS),

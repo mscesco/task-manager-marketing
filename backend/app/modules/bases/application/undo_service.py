@@ -211,9 +211,9 @@ class UndoService:
     ) -> None:
         coluna = await self._coluna(base_id, uuid.UUID(p["column"]))
         alvo, esperado = (p["before"], p["after"]) if desfazer else (p["after"], p["before"])
-        if coluna.deleted_at is not None or column_snapshot(coluna) != esperado:
+        if coluna.deleted_at is not None or not _confere(coluna, esperado, p):
             raise _Conflito
-        _aplicar_snapshot(coluna, alvo)
+        _aplicar_snapshot(coluna, alvo, mexe_na_posicao=_moveu(p))
 
     async def _retype(
         self, base_id: uuid.UUID, p: dict[str, Any], *, desfazer: bool
@@ -221,7 +221,7 @@ class UndoService:
         coluna = await self._coluna(base_id, uuid.UUID(p["column"]))
         chave = str(coluna.id)
         alvo, esperado = (p["before"], p["after"]) if desfazer else (p["after"], p["before"])
-        if coluna.deleted_at is not None or column_snapshot(coluna) != esperado:
+        if coluna.deleted_at is not None or not _confere(coluna, esperado, p):
             raise _Conflito
         valores: dict[str, Any] = p["values"]
         if desfazer:
@@ -243,7 +243,7 @@ class UndoService:
             if any(valores.get(r) != v for r, v in atuais.items()):
                 raise _Conflito
             await self._rows.clear_column(base_id, coluna.id)
-        _aplicar_snapshot(coluna, alvo)
+        _aplicar_snapshot(coluna, alvo, mexe_na_posicao=_moveu(p))
 
     async def _campos_visao(
         self, base_id: uuid.UUID, p: dict[str, Any], *, desfazer: bool
@@ -294,10 +294,32 @@ def _marcar(item: BaseRow | BaseColumn, marcar: bool) -> None:
     item.version += 1
 
 
-def _aplicar_snapshot(coluna: BaseColumn, s: dict[str, Any]) -> None:
+def _moveu(p: dict[str, Any]) -> bool:
+    """A acao registrada mudou a POSICAO da coluna?"""
+    return p["before"].get("position") != p["after"].get("position")
+
+
+def _confere(coluna: BaseColumn, esperado: dict[str, Any], p: dict[str, Any]) -> bool:
+    """A coluna ainda e como a acao a deixou?
+
+    ⚠️ A POSICAO SO CONTA SE A PROPRIA ACAO A MUDOU (fatia I). "Inserir a
+    esquerda" empurra as outras colunas uma casa -- e sem esta regra o Ctrl+Z de
+    um simples renomear acusaria conflito sem ninguem ter mexido na coluna.
+    """
+    atual = column_snapshot(coluna)
+    if not _moveu(p):
+        atual = {k: v for k, v in atual.items() if k != "position"}
+        esperado = {k: v for k, v in esperado.items() if k != "position"}
+    return atual == esperado
+
+
+def _aplicar_snapshot(
+    coluna: BaseColumn, s: dict[str, Any], *, mexe_na_posicao: bool = True
+) -> None:
     coluna.name = s["name"]
     coluna.type = s["type"]
     coluna.options = s["options"]
-    coluna.position = s["position"]
+    if mexe_na_posicao:
+        coluna.position = s["position"]
     coluna.width = s["width"]
     coluna.version += 1

@@ -283,7 +283,10 @@ class BaseService:
         name: str,
         type: str,
         options: list[dict[str, Any]] | None = None,
+        position: int | None = None,
     ) -> BaseColumn:
+        """Cria a coluna no fim -- ou NA POSICAO dada (fatia I: "Inserir a
+        esquerda/direita"), empurrando as de la em diante uma casa."""
         base = await self._visible(base_id)
         self._exigir("base_column.create", base.team_id)
         check_new_type(type)
@@ -293,7 +296,7 @@ class BaseService:
             name=clean_name(name),
             type=type,
             options=opcoes,
-            position=await self._columns.next_position(base.id),
+            position=await self._abrir_posicao(base.id, position),
         )
         self._columns.add(coluna)
         await self._session.flush()
@@ -301,6 +304,51 @@ class BaseService:
             self._session, base.id, "column.create", {"column": str(coluna.id)}
         )
         return coluna
+
+    async def duplicate_column(self, base_id: uuid.UUID, column_id: uuid.UUID) -> BaseColumn:
+        """Copia a coluna -- nome, tipo, opcoes E OS VALORES de toda linha -- logo
+        a direita dela (fatia I). Uma acao so no diario: o Ctrl+Z apaga a copia.
+
+        ⚠️ AS OPCOES MANTEM OS IDS. O id de opcao e unico DENTRO da coluna, e a
+        celula guarda o id: com os mesmos ids, os valores copiam sem traducao.
+
+        ⚠️ O TITULO NAO SE DUPLICA: ha um so por base (D2).
+        """
+        base = await self._visible(base_id)
+        self._exigir("base_column.create", base.team_id)
+        original = await self._coluna(base.id, column_id)
+        if original.type == "title":
+            raise BusinessRuleError(
+                "A coluna de titulo e unica e nao se duplica.",
+                details={"column_id": str(original.id)},
+            )
+        copia = BaseColumn(
+            base_id=base.id,
+            name=clean_name(f"{original.name} (cópia)"[:120]),
+            type=original.type,
+            options=[dict(o) for o in original.options],
+            width=original.width,
+            position=await self._abrir_posicao(base.id, original.position + 1),
+        )
+        self._columns.add(copia)
+        await self._session.flush()
+        await self._rows.copy_column(base.id, original.id, copia.id)
+        await journal.record(
+            self._session, base.id, "column.create", {"column": str(copia.id)}
+        )
+        return copia
+
+    async def _abrir_posicao(self, base_id: uuid.UUID, position: int | None) -> int:
+        """A posicao da coluna nova: o fim, ou `position` com as de la em diante
+        empurradas uma casa. ⚠️ Empurra as APAGADAS tambem: o desfazer as devolve
+        ao lugar delas, e sem isso voltariam empatadas com a nova."""
+        fim = await self._columns.next_position(base_id)
+        if position is None or position >= fim:
+            return fim
+        if position < 1:
+            raise ValidationError("Posicao comeca em 1.", details={"field": "position"})
+        await self._columns.shift_from(base_id, position)
+        return position
 
     async def update_column(
         self, base_id: uuid.UUID, column_id: uuid.UUID, command: UpdateColumnCommand

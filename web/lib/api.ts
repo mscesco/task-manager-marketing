@@ -3519,9 +3519,22 @@ export async function restoreBase(id: string): Promise<BaseDetail> {
 
 export async function createBaseColumn(
   baseId: string,
-  body: { name: string; type: BaseColumnType; options?: BaseOptionInput[] }
+  body: {
+    name: string;
+    type: BaseColumnType;
+    options?: BaseOptionInput[];
+    /** Fatia I ("Inserir à esquerda/direita"); ausente = no fim. */
+    position?: number;
+  }
 ): Promise<BaseColumn> {
   return api<BaseColumn>(`/api/v1/bases/${baseId}/columns`, { method: "POST", body });
+}
+
+/** Fatia I: "Duplicar propriedade" -- nome, tipo, opções e valores, à direita. */
+export async function duplicateBaseColumn(baseId: string, columnId: string): Promise<BaseColumn> {
+  return api<BaseColumn>(`/api/v1/bases/${baseId}/columns/${columnId}/duplicate`, {
+    method: "POST",
+  });
 }
 
 export async function updateBaseColumn(

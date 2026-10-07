@@ -23,7 +23,18 @@ import Badge from "@/components/Badge";
 import { useAnchoredPanel } from "@/components/AnchoredPanel";
 import { useAvisar } from "@/components/Toasts";
 import EditorDeEscolha, { type Escolha } from "@/components/bases/EditorDeEscolha";
-import { MenuDaColuna, NovaColuna, criarOpcao } from "@/components/bases/MenuDaColuna";
+import CabecalhoDaColuna from "@/components/bases/CabecalhoDaColuna";
+import { NovaColuna, criarOpcao } from "@/components/bases/MenuDaColuna";
+import {
+  deslocamentos,
+  larguraDa,
+  lerConfig,
+  quantasCongeladas,
+  type ConfigDaVisao,
+} from "@/lib/baseViews";
+
+/** A largura das duas colunas de ação (o "+" e o apagar linha). */
+const LARGURA_DE_ACAO = 44;
 import { useGravarCelula } from "@/components/bases/useGravarCelula";
 import {
   ApiError,
@@ -61,7 +72,16 @@ export default function TabelaDaBase({
   onLinhas,
   onLinhaCriada,
   ocupadoRef,
+  config: configDaVisao,
+  onConfig,
+  onRecarregar,
 }: {
+  /** Fatia I: a config da visão -- o menu do cabeçalho filtra, ordena,
+   *  congela e oculta por ela. Sem `onConfig`, esses itens não aparecem. */
+  config?: ConfigDaVisao;
+  onConfig?: (c: ConfigDaVisao) => void;
+  /** Inserir e duplicar mexem na posição das OUTRAS colunas: recarrega. */
+  onRecarregar?: () => void;
   base: BaseDetail;
   /** As colunas da VISÃO (fatia F: as escondidas saem). Padrão: todas. */
   colunas?: BaseColumn[];
@@ -79,6 +99,10 @@ export default function TabelaDaBase({
 }) {
   const avisar = useAvisar();
   const colunas = visiveis ?? base.columns;
+  const config = configDaVisao ?? lerConfig({});
+  const larguras = colunas.map((c, i) => larguraDa(c, i));
+  const esquerdas = deslocamentos(larguras);
+  const congeladas = quantasCongeladas(colunas, config);
   const [ativa, setAtiva] = useState<Posicao>({ linha: 0, coluna: 0 });
   const [editando, setEditando] = useState<{ rascunho: string } | null>(null);
   const [escolhendo, setEscolhendo] = useState(false);
@@ -214,12 +238,18 @@ export default function TabelaDaBase({
   return (
     <div className="flex flex-col gap-2">
       <div className="overflow-x-auto rounded-md border border-border bg-surface">
+        {/* ⚠️ LARGURA FIXA POR COLUNA (`table-fixed`), fatia I: com várias
+            colunas congeladas, cada uma precisa saber onde a anterior acaba
+            (`deslocamentos`). Com largura pelo conteúdo, a segunda presa
+            pousaria por cima da primeira. A largura total é de runtime -- a
+            exceção do estilo inline (web/AGENTS.md §11). */}
         <table
           ref={tabelaRef}
           role="grid"
           aria-label={base.name}
           aria-rowcount={linhas.length + 1}
-          className="w-max min-w-full border-collapse text-base"
+          className="table-fixed border-collapse text-base"
+          style={{ width: larguras.reduce((a, b) => a + b, 0) + 2 * LARGURA_DE_ACAO }}
           onKeyDown={teclaNaGrade}
         >
           <thead>
@@ -228,18 +258,22 @@ export default function TabelaDaBase({
                 <th
                   key={c.id}
                   scope="col"
-                  className={`border-b border-border bg-surface-2 px-2 py-1.5 text-left font-semibold text-ink-soft ${
-                    i === 0 ? "sticky left-0 z-10" : ""
-                  }`}
-                  style={{ minWidth: c.width ?? (i === 0 ? 240 : 160) }}
+                  className={`border-b border-border bg-surface-2 px-2 py-1.5 text-left ${
+                    i < congeladas ? "sticky z-10" : ""
+                  } ${i === congeladas - 1 ? "border-r" : ""}`}
+                  style={{ width: larguras[i], left: i < congeladas ? esquerdas[i] : undefined }}
                 >
                   <div className="flex min-w-0 items-center gap-1">
-                    <span className="min-w-0 flex-1 truncate">{c.name}</span>
-                    <MenuDaColuna
+                    <CabecalhoDaColuna
                       baseId={base.id}
                       coluna={c}
                       podeEditar={base.can_update_column}
+                      podeCriar={base.can_create_column}
                       podeApagar={base.can_delete_column}
+                      podeEditarVisao={!!onConfig && base.can_update_view}
+                      config={config}
+                      onConfig={(c2) => onConfig?.(c2)}
+                      onCriou={() => onRecarregar?.()}
                       onMudou={(nova, zerou) => {
                         onBase((b) => ({
                           ...b,
@@ -264,7 +298,11 @@ export default function TabelaDaBase({
                   </div>
                 </th>
               ))}
-              <th scope="col" className="border-b border-border bg-surface-2 px-1 py-1 text-left">
+              <th
+                scope="col"
+                className="border-b border-border bg-surface-2 px-1 py-1 text-left"
+                style={{ width: LARGURA_DE_ACAO }}
+              >
                 {base.can_create_column && (
                   <NovaColuna
                     baseId={base.id}
@@ -296,9 +334,12 @@ export default function TabelaDaBase({
                         setAtiva({ linha: li, coluna: ci });
                         if (coluna.type !== "checkbox") requestAnimationFrame(() => comecarEdicao());
                       }}
-                      className={`h-9 border-b border-border px-2 align-middle ${
-                        ci === 0 ? "sticky left-0 z-[1] bg-surface font-medium" : ""
-                      } ${ehAtiva ? "outline outline-2 -outline-offset-2 outline-accent" : ""}`}
+                      style={ci < congeladas ? { left: esquerdas[ci] } : undefined}
+                      className={`h-9 overflow-hidden border-b border-border px-2 align-middle ${
+                        ci < congeladas ? "sticky z-[1] bg-surface" : ""
+                      } ${ci === 0 ? "font-medium" : ""} ${ci === congeladas - 1 ? "border-r" : ""} ${
+                        ehAtiva ? "outline outline-2 -outline-offset-2 outline-accent" : ""
+                      }`}
                     >
                       {ehAtiva && editando ? (
                         <EditorDeTexto

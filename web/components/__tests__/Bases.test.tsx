@@ -265,7 +265,8 @@ describe("TabelaDaBase", () => {
     expect(screen.queryByRole("button", { name: /Nova linha/ })).toBeNull();
     expect(screen.queryByRole("button", { name: "Nova coluna" })).toBeNull();
     expect(screen.queryByRole("button", { name: /Apagar a linha/ })).toBeNull();
-    expect(screen.queryByRole("button", { name: /Opções da coluna/ })).toBeNull();
+    // Fatia I: sem nenhum cadeado, o cabeçalho é só o nome -- não vira botão.
+    expect(screen.queryByRole("button", { name: /^Coluna / })).toBeNull();
 
     const celula = screen.getByRole("gridcell", { name: "Título, linha 1" });
     fireEvent.click(celula);

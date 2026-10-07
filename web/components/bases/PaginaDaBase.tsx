@@ -362,6 +362,9 @@ export default function PaginaDaBase({ id }: { id: string }) {
           onLinhas={atualizarLinhas}
           onLinhaCriada={(rid) => setFixadas((s) => new Set([...s, rid]))}
           ocupadoRef={ocupadoRef}
+          config={config}
+          onConfig={visao ? (c) => mudarConfig(visao.id, c) : undefined}
+          onRecarregar={recarregar}
         />
       )}
     </div>

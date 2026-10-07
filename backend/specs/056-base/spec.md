@@ -14,7 +14,23 @@ fatia B: **2081** (drift limpo). Depois da fatia C: **2127**. Depois da fatia D:
 **2142** — o backend da spec está completo. Fatia E (primeira do front):
 front **1613** (+32), `next build` limpo. Fatia F (visões, quadro,
 calendário): front **1640**. Fatia G (ao vivo): backend **2159**, front
-**1649**. Fatia H (Ctrl+Z na tela): front **1664**.
+**1649**. Fatia H (Ctrl+Z na tela): front **1664**. Fatia I (cabeçalho como o
+do Notion, pedido dela em 07/10): backend **2178**, front **1676**.
+
+### Fatia I — o cabeçalho de coluna como o do Notion (07/10)
+
+Pedido dela, com o print do menu "Data" do Notion: *"Tudo é clicável, nada de
+ter que clicar em 3 pontos pra editar"*. O cabeçalho inteiro virou o botão; o
+"⋯" saiu. O menu: o nome editável no topo, Editar propriedade ›, Alterar tipo ›,
+Filtrar, Ordenar ›, Congelar, Ocultar, Inserir à esquerda/direita, Duplicar
+propriedade e Excluir propriedade. As setas abrem **submenu ao lado** (escolha
+dela). Entraram de novo: inserir no meio (o backend empurra as colunas), duplicar
+com os valores (`POST .../duplicate`) e congelar (`frozen_column` na visão; a
+tabela passou a ter largura fixa por coluna). **Ficaram de fora**, por decisão
+dela: Calcular, Agrupar na tabela, Quebrar texto, Acesso à propriedade e IA.
+⚠️ Achado no caminho: o Ctrl+Z de um renomear acusaria conflito depois de outra
+coluna ser inserida à esquerda (a posição empurrada). Agora a posição só conta
+quando a própria ação a mudou.
 
 ---
 

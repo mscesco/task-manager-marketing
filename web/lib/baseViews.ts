@@ -40,6 +40,9 @@ export type ConfigDaVisao = {
   hidden_columns: string[];
   group_by: string | null;
   date_column: string | null;
+  /** Fatia I, "Congelar": a coluna ATÉ a qual a tabela fica presa na rolagem
+   *  horizontal. `null` = só o título. */
+  frozen_column: string | null;
 };
 
 /** O `config` cru do servidor, normalizado. Defensivo: o que não tem a forma
@@ -61,7 +64,39 @@ export function lerConfig(config: Record<string, unknown> | undefined): ConfigDa
     hidden_columns: lista(c.hidden_columns).filter((x): x is string => typeof x === "string"),
     group_by: typeof c.group_by === "string" ? c.group_by : null,
     date_column: typeof c.date_column === "string" ? c.date_column : null,
+    frozen_column: typeof c.frozen_column === "string" ? c.frozen_column : null,
   };
+}
+
+// --------------------------------------------------------------- congelar
+/** Quantas colunas (da esquerda) ficam presas na rolagem horizontal.
+ *  Pelo menos UMA: o título fica sempre (é por ele que se sabe de que linha
+ *  se fala). Coluna congelada que sumiu ou foi ocultada -> só o título. */
+export function quantasCongeladas(
+  visiveis: readonly BaseColumn[],
+  config: ConfigDaVisao
+): number {
+  if (!config.frozen_column) return Math.min(1, visiveis.length);
+  const i = visiveis.findIndex((c) => c.id === config.frozen_column);
+  return i < 0 ? Math.min(1, visiveis.length) : i + 1;
+}
+
+/** O `left` de cada coluna presa: a soma das larguras das anteriores. ⚠️ É
+ *  por isso que a tabela tem largura FIXA por coluna -- com largura pelo
+ *  conteúdo, a segunda coluna presa não saberia onde a primeira acaba. */
+export function deslocamentos(larguras: readonly number[]): number[] {
+  const saida: number[] = [];
+  let soma = 0;
+  for (const l of larguras) {
+    saida.push(soma);
+    soma += l;
+  }
+  return saida;
+}
+
+/** A largura com que cada coluna é desenhada: a escolhida, ou o padrão. */
+export function larguraDa(coluna: BaseColumn, indice: number): number {
+  return coluna.width ?? (indice === 0 ? 240 : 160);
 }
 
 // --------------------------------------------------------------- operadores

@@ -89,6 +89,19 @@ export function useAnchoredPanel<T extends HTMLElement>(
      * embaixo e para a ESQUERDA do botao, dentro do detalhe.
      */
     alinhar?: "esquerda" | "direita";
+    /**
+     * ⚠️ Spec 056, fatia I: o SUBMENU, que abre AO LADO do item ("Alterar tipo
+     * ›"), e não embaixo -- como o do Notion. À direita do gatilho; sem espaço,
+     * à esquerda. Alto: alinha pelo topo do item, e sobe o que for preciso
+     * para caber na janela.
+     */
+    aoLado?: boolean;
+    /**
+     * Elementos que contam como "dentro" deste painel para o clique-fora e a
+     * rolagem. ⚠️ É o que deixa o menu principal aberto enquanto se usa o
+     * SUBMENU: o submenu é outro painel `fixed`, fora da caixa do principal.
+     */
+    dentro?: readonly MutableRefObject<HTMLElement | null>[];
   } = {},
 ): {
   anchorRef: MutableRefObject<T | null>;
@@ -105,6 +118,16 @@ export function useAnchoredPanel<T extends HTMLElement>(
     if (!isOpen) return;
     const r = anchorRef.current?.getBoundingClientRect();
     if (!r) return;
+    if (opcoes.aoLado) {
+      const largura = opcoes.larguraPainel ?? LARGURA_MINIMA;
+      const maxWidth = Math.max(160, window.innerWidth - 2 * MARGEM);
+      const cabeADireita = r.right + 4 + largura <= window.innerWidth - MARGEM;
+      const left = cabeADireita ? r.right + 4 : Math.max(MARGEM, r.left - 4 - largura);
+      // 320 é o teto de altura do painel (o `maxHeight` lá embaixo).
+      const top = Math.max(MARGEM, Math.min(r.top - 6, window.innerHeight - MARGEM - 320));
+      setBox({ top, left, width: largura, maxWidth, paraCima: false, alinhadoADireita: !cabeADireita });
+      return;
+    }
     const cabeEmbaixo = window.innerHeight - r.bottom > ESPACO_MINIMO;
 
     // ⚠️⚠️ O PAINEL NAO PODE SAIR PELA DIREITA, e saía: relatado duas vezes
@@ -151,11 +174,14 @@ export function useAnchoredPanel<T extends HTMLElement>(
 
   useEffect(() => {
     if (!isOpen) return;
+    const dentroDeOutro = (alvo: Node) =>
+      (opcoes.dentro ?? []).some((ref) => ref.current?.contains(alvo));
     function onDown(e: MouseEvent) {
       const alvo = e.target as Node;
       if (
         !anchorRef.current?.contains(alvo) &&
-        !panelRef.current?.contains(alvo)
+        !panelRef.current?.contains(alvo) &&
+        !dentroDeOutro(alvo)
       ) {
         onClose();
       }
@@ -174,7 +200,7 @@ export function useAnchoredPanel<T extends HTMLElement>(
     // painel nao fechava e o erro estourava. Pego pelo teste da Spec 050.
     function onScroll(e: Event) {
       const alvo = e.target;
-      if (alvo instanceof Node && panelRef.current?.contains(alvo)) return;
+      if (alvo instanceof Node && (panelRef.current?.contains(alvo) || dentroDeOutro(alvo))) return;
       onClose();
     }
     document.addEventListener("mousedown", onDown);

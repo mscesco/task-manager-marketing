@@ -213,6 +213,9 @@ class ColumnCreateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=NAME_MAX)
     type: str
     options: list[OptionRequest] | None = None
+    #: Fatia I ("Inserir a esquerda/direita"): a posicao da coluna nova; as de
+    #: la em diante andam uma casa. Ausente = no fim.
+    position: int | None = None
 
 
 class RowResponse(BaseModel):

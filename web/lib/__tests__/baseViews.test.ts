@@ -4,7 +4,9 @@ import {
   agruparNoQuadro,
   aplicarVisao,
   colunasVisiveis,
+  deslocamentos,
   diaDaSemana,
+  quantasCongeladas,
   lerConfig,
   linhasPorDia,
   mesVizinho,
@@ -37,6 +39,7 @@ const LINHAS = [
 
 const vazia: ConfigDaVisao = {
   filters: [], sorts: [], hidden_columns: [], group_by: null, date_column: null,
+  frozen_column: null,
 };
 
 describe("lerConfig", () => {
@@ -162,6 +165,24 @@ describe("calendário (sem Date)", () => {
     const { porDia, semData } = linhasPorDia(LINHAS, DATA);
     expect(porDia.get("2026-08-05")?.map((l) => l.id)).toEqual(["b"]);
     expect(semData.map((l) => l.id)).toEqual(["c"]);
+  });
+});
+
+describe("congelar (fatia I)", () => {
+  it("sem escolha, só o título", () => {
+    expect(quantasCongeladas(COLUNAS, vazia)).toBe(1);
+  });
+  it("até a coluna escolhida, inclusive", () => {
+    expect(quantasCongeladas(COLUNAS, { ...vazia, frozen_column: "n" })).toBe(3);
+  });
+  it("a congelada sumiu ou foi ocultada: volta a só o título", () => {
+    expect(quantasCongeladas(COLUNAS, { ...vazia, frozen_column: "apagada" })).toBe(1);
+  });
+  it("o deslocamento de cada uma é a soma das anteriores", () => {
+    expect(deslocamentos([240, 160, 200])).toEqual([0, 240, 400]);
+  });
+  it("lerConfig lê o frozen_column", () => {
+    expect(lerConfig({ frozen_column: "d" }).frozen_column).toBe("d");
   });
 });
 

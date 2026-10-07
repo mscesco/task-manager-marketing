@@ -32,7 +32,9 @@ from app.shared.exceptions.base import (
 )
 
 _LISTAS = ("filters", "sorts", "hidden_columns", "column_order")
-_TEXTOS = ("group_by", "date_column")
+#: `frozen_column` (fatia I): "Congelar" -- a coluna ATE a qual a tabela fica
+#: presa na rolagem horizontal. Ausente = so o titulo.
+_TEXTOS = ("group_by", "date_column", "frozen_column")
 
 
 def clean_config(config: dict[str, Any]) -> dict[str, Any]:
