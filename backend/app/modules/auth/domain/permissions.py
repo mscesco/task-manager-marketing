@@ -52,6 +52,52 @@ from app.core.tenant import Membership, TeamNode
 from app.db.models.enums import OrgRole, UserTeamRole
 from app.modules.auth.domain.team_scope import descendants, root_of
 
+# ---------------------------------------------------------------------
+# ⭐ Spec 056, fatia A -- os verbos da BASE (a tabela que a equipe monta).
+#
+# ⚠️⚠️ A BASE E A PRIMEIRA COISA QUE NASCE SO DE VERBOS, INCLUSIVE LER. Tarefa e
+# projeto ainda decidem a leitura pela lente (`visible_team_ids`); a base
+# pergunta `can_in("base.read", time)`. E o preparo para o "fim dos papeis"
+# que ela pediu (spec §5.1): quando os verbos deixarem de vir deste mapa e
+# passarem a vir de concessoes por pessoa, a base nao muda uma linha.
+#
+# ⚠️ DOIS GRUPOS, E A FRONTEIRA E DE PROPOSITO (§5.2). Estrutura e o que a base
+# E -- nome, texto do topo, existir. Conteudo e o que se escreve nela -- colunas,
+# linhas, visoes. "Pode preencher mas nao mexe na base" e o desligamento mais
+# provavel no futuro, e ele cai exatamente nesta linha.
+#
+# ⚠️⚠️ NENHUM DELES ENTRA EM `_OWN_TEAM_ONLY` (§5.3). A base mora no time RAIZ, e
+# o escopo de execucao (SUPERVISOR/OPERATOR) e "o time do vinculo + a raiz" --
+# e e por ai que o supervisor de um subtime cria base na raiz (D3) e o operador
+# edita as linhas (D6). Prender ao proprio subtime apagaria a base inteira para
+# eles, inclusive ler. `test_verbos_da_base_alcancam_a_raiz` guarda isso.
+# ---------------------------------------------------------------------
+
+#: Criar, editar (nome e texto do topo -- D19), excluir e restaurar a base.
+#: `restore` separado de `delete`: desfazer um estrago e fazer um sao as duas
+#: perguntas que um dia podem ter respostas diferentes.
+_BASE_ESTRUTURA: frozenset[str] = frozenset(
+    {"base.create", "base.update", "base.delete", "base.restore"}
+)
+
+#: Ler, e mexer em coluna, linha e visao. Trocar o tipo de coluna e
+#: `base_column.update` (D24); apagar OPCAO e `base_column.delete` (esvazia
+#: celulas -- D17). Desfazer nao tem verbo: exige o da acao original, de novo.
+_BASE_CONTEUDO: frozenset[str] = frozenset(
+    {
+        "base.read",
+        "base_column.create",
+        "base_column.update",
+        "base_column.delete",
+        "base_row.create",
+        "base_row.update",
+        "base_row.delete",
+        "base_view.create",
+        "base_view.update",
+        "base_view.delete",
+    }
+)
+
 # Permissoes concedidas por papel. Um usuario com varios
 # papeis acumula a UNIAO das permissoes.
 #
@@ -171,6 +217,9 @@ _ROLE_PERMISSIONS: dict[UserTeamRole, frozenset[str]] = {
             "column.create",
             "column.update",
             "column.delete",
+            # Spec 056, fatia A -- a base inteira (ver o bloco no topo).
+            *_BASE_ESTRUTURA,
+            *_BASE_CONTEUDO,
         }
     ),
     UserTeamRole.MANAGER: frozenset(
@@ -230,6 +279,9 @@ _ROLE_PERMISSIONS: dict[UserTeamRole, frozenset[str]] = {
             "column.create",
             "column.update",
             "column.delete",
+            # Spec 056, fatia A -- a base inteira, na arvore dele.
+            *_BASE_ESTRUTURA,
+            *_BASE_CONTEUDO,
         }
     ),
     UserTeamRole.SUPERVISOR: frozenset(
@@ -279,6 +331,11 @@ _ROLE_PERMISSIONS: dict[UserTeamRole, frozenset[str]] = {
             "column.create",
             "column.update",
             "column.delete",
+            # ⭐ Spec 056, fatia A -- D3: "supervisor de algum subtime ou gerente
+            # do time principal em questao". A base mora na RAIZ, e o escopo de
+            # execucao a alcanca (`permissions_for_actor`) -- sem regra nova.
+            *_BASE_ESTRUTURA,
+            *_BASE_CONTEUDO,
         }
     ),
     UserTeamRole.OPERATOR: frozenset(
@@ -288,6 +345,10 @@ _ROLE_PERMISSIONS: dict[UserTeamRole, frozenset[str]] = {
             # Spec 049, fatia A: o operador ARQUIVA -- no lugar de apagar.
             "task.archive",
             "task.assign",  # Entrega 4: operador distribui no quadro geral / seu subtime.
+            # ⭐ Spec 056, fatia A -- o conteudo, e NAO a estrutura (D3, D19):
+            # *"permissao pra mexer tambem, todo mundo pode mexer"* -- em coluna,
+            # linha e visao. Criar, renomear, excluir e restaurar a base, nao.
+            *_BASE_CONTEUDO,
         }
     ),
 }
@@ -380,6 +441,14 @@ _ORG_ROLE_PERMISSIONS: dict[OrgRole, frozenset[str]] = {
             "board.update",
             "column.create",
             "column.update",
+            # ⭐ Spec 056, fatia A -- a base INTEIRA, com o delete.
+            # ⚠️⚠️ E A TERCEIRA EXCECAO DELA a "o admin apaga, o gestor nao" (fatia
+            # D da 049), ao lado de apagar tarefa e desativar pessoa. Palavras
+            # dela (05/10): *"na permissao de organizacao todos podem, ja que so
+            # tem gestor ou admin"*. Escrita aqui de proposito, e nao herdada:
+            # `test_gestor_opera_mas_nao_desfaz_a_organizacao` confere.
+            *_BASE_ESTRUTURA,
+            *_BASE_CONTEUDO,
         }
     ),
 }
