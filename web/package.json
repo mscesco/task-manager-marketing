@@ -23,7 +23,7 @@
     "@tiptap/starter-kit": "^3.31.3",
     "lucide-react": "^1.52.0",
     "motion": "^13.2.0",
-    "next": "^15.5.24",
+    "next": "^15.5.27",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "react-markdown": "^10.1.0",
