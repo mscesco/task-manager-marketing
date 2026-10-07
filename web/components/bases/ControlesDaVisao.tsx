@@ -11,7 +11,7 @@
 // aqui só se monta a configuração.
 
 import { useState, type ReactNode } from "react";
-import { ArrowUpDown, Columns3, Filter, Plus, Trash2 } from "lucide-react";
+import { ArrowUpDown, CalendarDays, Columns3, Filter, Group, Plus, Trash2 } from "lucide-react";
 import AnchoredPanel, { useAnchoredPanel } from "@/components/AnchoredPanel";
 import type { BaseColumn, BaseView } from "@/lib/api";
 import { NOME_DO_TIPO } from "@/lib/baseTable";
@@ -47,7 +47,7 @@ export default function ControlesDaVisao({
   const escondidas = config.hidden_columns.filter((id) => porId.has(id));
 
   return (
-    <div className="flex flex-wrap items-center gap-1">
+    <div className="flex flex-wrap items-center gap-0.5">
       <Painel
         rotulo={`Filtro${filtros.length ? ` (${filtros.length})` : ""}`}
         icone={<Filter size={14} aria-hidden="true" />}
@@ -108,6 +108,7 @@ export default function ControlesDaVisao({
       {layout === "board" && (
         <EscolhaDeColuna
           rotulo="Agrupar por"
+          icone={<Group size={14} aria-hidden="true" className="text-ink-soft" />}
           colunas={colunasDeAgrupar(colunas)}
           valor={config.group_by}
           vazio="Crie uma coluna de Seleção para montar o quadro."
@@ -118,6 +119,7 @@ export default function ControlesDaVisao({
       {layout === "calendar" && (
         <EscolhaDeColuna
           rotulo="Data"
+          icone={<CalendarDays size={14} aria-hidden="true" className="text-ink-soft" />}
           colunas={colunasDeData(colunas)}
           valor={config.date_column}
           vazio="Crie uma coluna de Data para montar o calendário."
@@ -146,16 +148,28 @@ function Painel({
     () => setAberto(false),
     { larguraPainel: 420 }
   );
+  // Fatia J: só o ícone (*"achei que ficou muita coisa escrita"*). O rótulo
+  // inteiro -- com a contagem -- fica no `aria-label` e na dica; à vista, só
+  // o número, e o ícone azul quando há algo valendo.
+  const contagem = rotulo.match(/\((\d+)/)?.[1];
   return (
     <>
       <button
         ref={anchorRef}
-        className="btn btn-ghost text-sm"
+        className={`btn btn-ghost text-sm ${contagem ? "text-accent" : ""}`}
+        style={{ padding: "4px 6px" }}
+        aria-label={rotulo}
+        title={rotulo}
         aria-haspopup="dialog"
         aria-expanded={aberto}
         onClick={() => setAberto((a) => !a)}
       >
-        {icone} {rotulo}
+        {icone}
+        {contagem && (
+          <span className="text-xs" aria-hidden="true">
+            {contagem}
+          </span>
+        )}
       </button>
       {aberto && box && (
         <AnchoredPanel box={box} panelRef={panelRef} role="dialog" aria-label={titulo} minWidth={420}>
@@ -384,6 +398,7 @@ function Ordens({
 
 function EscolhaDeColuna({
   rotulo,
+  icone,
   colunas,
   valor,
   vazio,
@@ -391,6 +406,7 @@ function EscolhaDeColuna({
   onEscolher,
 }: {
   rotulo: string;
+  icone: ReactNode;
   colunas: BaseColumn[];
   valor: string | null;
   vazio: string;
@@ -399,10 +415,11 @@ function EscolhaDeColuna({
 }) {
   if (!colunas.length) return <span className="muted text-sm">{vazio}</span>;
   return (
-    <label className="flex items-center gap-2 text-sm">
-      <span className="text-ink-soft">{rotulo}</span>
+    <label className="flex items-center gap-1 text-sm" title={rotulo}>
+      {icone}
+      <span className="sr-only">{rotulo}</span>
       <select
-        className="input w-auto"
+        className="input h-8 w-auto py-0"
         disabled={!podeEditar}
         value={valor ?? ""}
         onChange={(e) => onEscolher(e.target.value || null)}

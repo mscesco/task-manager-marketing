@@ -15,7 +15,35 @@ fatia B: **2081** (drift limpo). Depois da fatia C: **2127**. Depois da fatia D:
 front **1613** (+32), `next build` limpo. Fatia F (visões, quadro,
 calendário): front **1640**. Fatia G (ao vivo): backend **2159**, front
 **1649**. Fatia H (Ctrl+Z na tela): front **1664**. Fatia I (cabeçalho como o
-do Notion, pedido dela em 07/10): backend **2178**, front **1676**.
+do Notion, pedido dela em 07/10): backend **2178**, front **1676**. Fatia J
+(a tabela como planilha, a barra numa linha, o calendário em janela): front
+**1694**, backend sem mudança.
+
+### Fatia J — planilha, barra e calendário (07/10)
+
+Segunda leva de pedidos dela, com prints da tela já rodando (a `0029` ela
+aplicou no banco local):
+
+- **Um clique edita** a célula (eram dois). O teclado segue igual.
+- **Linhas de grade** entre todas as células, e o fundo é o da página -- sem a
+  caixa branca à direita das colunas (*"igual uma planilha no sheets ou
+  excel"*). A tabela usa `border-separate`, porque no `border-collapse` a
+  célula congelada rolaria sem a borda.
+- **Largura arrastável** pela borda do cabeçalho, ou pelas setas na alça
+  (`role="separator"`). Grava ao soltar, entre 60 e 800 px (os limites do
+  servidor). A largura é da **coluna**, não da visão -- o campo `width` já
+  existia desde a fatia B; o backend não mudou.
+- **Pessoa vira cápsula colorida**, como a seleção. A cor sai do id da pessoa
+  (`corDaPessoa`); inativo e fora do time ficam cinza.
+- **Filtro, Ordenar e Colunas sobem para a linha das abas**, à direita, só com
+  ícone (a contagem aparece ao lado). Desfazer e Refazer também viraram ícone.
+- **Abas:** o "+ Visão" virou só "+". O "⋯" do fim da fileira saiu -- parecia
+  ser da última aba. Agora clicar na aba **ativa** abre o menu dela, o duplo
+  clique renomeia no lugar, e o botão direito abre o menu de qualquer aba.
+- **Calendário em janela:** semanas inteiras, que andam de semana em semana ou
+  de mês em mês, com "Hoje". Os dias de fora do mês aparecem (e recebem o
+  arraste) -- era o que impedia mover um item para 30/09 olhando outubro. Tudo
+  sem `Date` (`diasDesdeEpoca`/`dataDosDias`).
 
 ### Fatia I — o cabeçalho de coluna como o do Notion (07/10)
 
@@ -600,7 +628,8 @@ arquivamento. Sem isso, nada se perde, mas nada se apaga de vez.
 - **Menu lateral:** "Bases", com a lista das bases que a pessoa lê, agrupadas
   por raiz quando ela está em mais de uma.
 - **Cabeçalho da base:** nome, texto do topo (D15), abas das visões e o botão
-  "+ Visão".
+  "+" (fatia J: o menu de cada visão mora na própria aba; filtro, ordem e
+  colunas ficam à direita, na mesma linha).
 - **Tabela:** primeira coluna (título) fixa na rolagem horizontal; edição na
   célula; criar opção digitando; "+ Nova linha" no fim; "+" no fim das colunas.
 - **Teclado** (`web/AGENTS.md`): setas entre células, Enter edita, Esc cancela,

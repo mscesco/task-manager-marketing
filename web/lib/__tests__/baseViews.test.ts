@@ -1,8 +1,19 @@
 import { describe, expect, it } from "vitest";
 import type { BaseColumn, BaseRow, BaseView } from "@/lib/api";
 import {
+  LARGURA_MAX,
+  LARGURA_MIN,
   agruparNoQuadro,
+  andarJanela,
   aplicarVisao,
+  dataDosDias,
+  diasDaJanela,
+  diasDesdeEpoca,
+  janelaDoMes,
+  larguraArrastada,
+  mesDaJanela,
+  rotuloDoDia,
+  somarDias,
   colunasVisiveis,
   deslocamentos,
   diaDaSemana,
@@ -195,5 +206,59 @@ describe("visaoAtiva", () => {
     expect(visaoAtiva(views, "a")?.id).toBe("a");
     expect(visaoAtiva(views, "sumiu")?.id).toBe("p");
     expect(visaoAtiva(views, null)?.id).toBe("p");
+  });
+});
+
+describe("calendário em janela (fatia J)", () => {
+  it("dias corridos ida e volta, sem Date, inclusive no bissexto e na virada", () => {
+    expect(diasDesdeEpoca(1970, 1, 1)).toBe(0);
+    expect(diasDesdeEpoca(2000, 3, 1) - diasDesdeEpoca(2000, 2, 28)).toBe(2); // 29/02 existiu
+    expect(diasDesdeEpoca(2100, 3, 1) - diasDesdeEpoca(2100, 2, 28)).toBe(1); // 2100 não é bissexto
+    for (const d of ["1969-12-31", "2026-10-07", "2028-02-29", "2026-12-31", "2027-01-01"]) {
+      const [a, m, dd] = d.split("-").map(Number);
+      expect(dataDosDias(diasDesdeEpoca(a, m, dd))).toBe(d);
+    }
+  });
+
+  it("soma dias atravessando mês e ano", () => {
+    expect(somarDias("2026-09-30", 1)).toBe("2026-10-01");
+    expect(somarDias("2026-10-01", -1)).toBe("2026-09-30");
+    expect(somarDias("2026-12-28", 7)).toBe("2027-01-04");
+  });
+
+  it("outubro de 2026 começa no domingo 27/09 e mostra os dias de setembro", () => {
+    const j = janelaDoMes(2026, 10);
+    expect(j).toEqual({ inicio: "2026-09-27", semanas: 5 });
+    const dias = diasDaJanela(j);
+    expect(dias[0]).toEqual([
+      "2026-09-27", "2026-09-28", "2026-09-29", "2026-09-30",
+      "2026-10-01", "2026-10-02", "2026-10-03",
+    ]);
+    expect(dias[4][6]).toBe("2026-10-31");
+  });
+
+  it("anda de semana em semana sem mudar o tamanho, e de mês em mês pela janela do mês", () => {
+    const out = janelaDoMes(2026, 10);
+    const semana = andarJanela(out, "semana", -1);
+    expect(semana).toEqual({ inicio: "2026-09-20", semanas: 5 });
+    expect(mesDaJanela(semana)).toEqual({ ano: 2026, mes: 10 });
+    // Três semanas para trás já é setembro, e o "próximo mês" volta a outubro.
+    const tres = andarJanela(andarJanela(semana, "semana", -1), "semana", -1);
+    expect(mesDaJanela(tres)).toEqual({ ano: 2026, mes: 9 });
+    expect(andarJanela(tres, "mes", 1)).toEqual(out);
+    expect(andarJanela(out, "mes", 1)).toEqual(janelaDoMes(2026, 11));
+  });
+
+  it("o dia 1 leva o mês no rótulo", () => {
+    expect(rotuloDoDia("2026-10-01")).toBe("1 out");
+    expect(rotuloDoDia("2026-09-30")).toBe("30");
+  });
+});
+
+describe("larguraArrastada (fatia J)", () => {
+  it("soma o deslocamento e fica nos limites do servidor", () => {
+    expect(larguraArrastada(160, 40.4)).toBe(200);
+    expect(larguraArrastada(160, -500)).toBe(LARGURA_MIN);
+    expect(larguraArrastada(700, 500)).toBe(LARGURA_MAX);
   });
 });

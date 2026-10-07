@@ -285,45 +285,52 @@ export default function PaginaDaBase({ id }: { id: string }) {
       )}
 
       {visao && (
-        <div className="flex flex-col gap-2">
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <div className="min-w-0 flex-1">
-              <BarraDeVisoes
-                base={base}
-                ativa={visao}
-                onEscolher={escolherVisao}
-                onViews={(f) => setBase((b) => (b ? { ...b, views: f(b.views) } : b))}
-              />
-            </div>
+        // Fatia J: uma linha só, como no Notion -- as abas à esquerda, e
+        // filtro, ordem, colunas e desfazer à direita, só com ícone.
+        <div className="flex min-w-0 flex-wrap items-end gap-2 border-b border-border">
+          <div className="min-w-0 flex-1">
+            <BarraDeVisoes
+              base={base}
+              ativa={visao}
+              onEscolher={escolherVisao}
+              onViews={(f) => setBase((b) => (b ? { ...b, views: f(b.views) } : b))}
+            />
+          </div>
+          <div className="flex items-center gap-0.5 pb-1">
+            <ControlesDaVisao
+              layout={visao.layout}
+              colunas={base.columns}
+              config={config}
+              podeEditar={base.can_update_view}
+              escolhasDe={escolhasDe}
+              onConfig={(c) => mudarConfig(visao.id, c)}
+            />
+            <span className="mx-1 h-5 w-px bg-border" aria-hidden="true" />
             {/* Os botões existem para quem usa o mouse descobrir o atalho; o
                 servidor diz o que há para desfazer, e a mensagem conta. */}
             <button
-              className="btn btn-ghost text-sm"
+              className="btn btn-ghost"
+              style={{ padding: "4px 6px" }}
               disabled={desfazer.ocupado}
+              aria-label="Desfazer"
               aria-keyshortcuts="Control+Z"
               title="Desfazer (Ctrl+Z)"
               onClick={() => desfazer.rodar("undo")}
             >
-              <Undo2 size={14} aria-hidden="true" /> Desfazer
+              <Undo2 size={14} aria-hidden="true" />
             </button>
             <button
-              className="btn btn-ghost text-sm"
+              className="btn btn-ghost"
+              style={{ padding: "4px 6px" }}
               disabled={desfazer.ocupado}
+              aria-label="Refazer"
               aria-keyshortcuts="Control+Shift+Z Control+Y"
               title="Refazer (Ctrl+Shift+Z)"
               onClick={() => desfazer.rodar("redo")}
             >
-              <Redo2 size={14} aria-hidden="true" /> Refazer
+              <Redo2 size={14} aria-hidden="true" />
             </button>
           </div>
-          <ControlesDaVisao
-            layout={visao.layout}
-            colunas={base.columns}
-            config={config}
-            podeEditar={base.can_update_view}
-            escolhasDe={escolhasDe}
-            onConfig={(c) => mudarConfig(visao.id, c)}
-          />
         </div>
       )}
 

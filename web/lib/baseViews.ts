@@ -99,6 +99,18 @@ export function larguraDa(coluna: BaseColumn, indice: number): number {
   return coluna.width ?? (indice === 0 ? 240 : 160);
 }
 
+/** Os limites que o servidor aceita (`WIDTH_MIN`/`WIDTH_MAX` em
+ *  `base_service.py`). Fora deles ele responde 422. */
+export const LARGURA_MIN = 60;
+export const LARGURA_MAX = 800;
+
+/** Fatia J: a largura de uma coluna arrastada pela borda (ou mexida pelas
+ *  setas). Presa nos limites do servidor, para o arraste nunca terminar num
+ *  422 -- a coluna só para de crescer. */
+export function larguraArrastada(inicial: number, deslocamento: number): number {
+  return Math.min(LARGURA_MAX, Math.max(LARGURA_MIN, Math.round(inicial + deslocamento)));
+}
+
 // --------------------------------------------------------------- operadores
 export type OpcaoDeOperador = { id: OperadorDeFiltro; label: string; precisaValor: boolean };
 
@@ -374,6 +386,101 @@ export const NOME_DO_MES = [
   "janeiro", "fevereiro", "março", "abril", "maio", "junho",
   "julho", "agosto", "setembro", "outubro", "novembro", "dezembro",
 ];
+
+// ------------------------------------------------- calendário: a janela
+// Fatia J, pedido dela: *"preciso ser capaz de mudar semana a semana ou mês a
+// mês (…) as vezes eu quero ver as 4 semanas, mas não necessariamente do mesmo
+// mês"*. O calendário deixou de ser "um mês" e virou uma JANELA de semanas
+// inteiras, que anda de 7 em 7 dias ou pula para o mês vizinho. Os dias de
+// fora do mês aparecem (e recebem o arraste) -- era o que faltava para mover
+// um item para 30/09 olhando outubro.
+
+/** Dias corridos desde 1970-01-01, pelo algoritmo de Howard Hinnant
+ *  (`days_from_civil`). ⚠️ SEM `Date`, pelo mesmo motivo de `diaDaSemana`. */
+export function diasDesdeEpoca(ano: number, mes: number, dia: number): number {
+  const a = mes <= 2 ? ano - 1 : ano;
+  const era = Math.floor(a / 400);
+  const anoDaEra = a - era * 400;
+  const diaDoAno = Math.floor((153 * (mes + (mes > 2 ? -3 : 9)) + 2) / 5) + dia - 1;
+  const diaDaEra =
+    anoDaEra * 365 + Math.floor(anoDaEra / 4) - Math.floor(anoDaEra / 100) + diaDoAno;
+  return era * 146097 + diaDaEra - 719468;
+}
+
+/** O inverso de `diasDesdeEpoca` (`civil_from_days`), já em "AAAA-MM-DD". */
+export function dataDosDias(dias: number): string {
+  const z = dias + 719468;
+  const era = Math.floor(z / 146097);
+  const diaDaEra = z - era * 146097;
+  const anoDaEra = Math.floor(
+    (diaDaEra - Math.floor(diaDaEra / 1460) + Math.floor(diaDaEra / 36524) -
+      Math.floor(diaDaEra / 146096)) / 365
+  );
+  const diaDoAno =
+    diaDaEra - (365 * anoDaEra + Math.floor(anoDaEra / 4) - Math.floor(anoDaEra / 100));
+  const mp = Math.floor((5 * diaDoAno + 2) / 153);
+  const dia = diaDoAno - Math.floor((153 * mp + 2) / 5) + 1;
+  const mes = mp < 10 ? mp + 3 : mp - 9;
+  return iso(anoDaEra + era * 400 + (mes <= 2 ? 1 : 0), mes, dia);
+}
+
+/** Um dia "AAAA-MM-DD" mais `n` dias (negativo volta). */
+export function somarDias(dia: string, n: number): string {
+  const [a, m, d] = dia.split("-").map(Number);
+  return dataDosDias(diasDesdeEpoca(a, m, d) + n);
+}
+
+/** O domingo da semana de um dia. */
+export function inicioDaSemana(dia: string): string {
+  const [a, m, d] = dia.split("-").map(Number);
+  return somarDias(dia, -diaDaSemana(a, m, d));
+}
+
+/** O que o calendário mostra: `semanas` semanas inteiras a partir de um
+ *  domingo (`inicio`). */
+export type JanelaDoCalendario = { inicio: string; semanas: number };
+
+/** A janela de um mês: do domingo da semana do dia 1, com as semanas que o mês
+ *  ocupa (5 ou 6, às vezes 4 em fevereiro). */
+export function janelaDoMes(ano: number, mes: number): JanelaDoCalendario {
+  return { inicio: inicioDaSemana(iso(ano, mes, 1)), semanas: semanasDoMes(ano, mes).length };
+}
+
+/** O mês a que a janela "pertence": o do dia do meio. É ele que dá o título e
+ *  que o "mês anterior/próximo" usa de partida. */
+export function mesDaJanela(j: JanelaDoCalendario): { ano: number; mes: number } {
+  const meio = somarDias(j.inicio, Math.floor((j.semanas * 7) / 2));
+  return { ano: Number(meio.slice(0, 4)), mes: Number(meio.slice(5, 7)) };
+}
+
+/** Anda a janela: de semana em semana (mantém o tamanho) ou de mês em mês
+ *  (vira a janela inteira do mês vizinho). */
+export function andarJanela(
+  j: JanelaDoCalendario,
+  passo: "semana" | "mes",
+  sentido: 1 | -1
+): JanelaDoCalendario {
+  if (passo === "semana") return { ...j, inicio: somarDias(j.inicio, 7 * sentido) };
+  const { ano, mes } = mesDaJanela(j);
+  const vizinho = mesVizinho(ano, mes, sentido);
+  return janelaDoMes(vizinho.ano, vizinho.mes);
+}
+
+/** Os dias da janela, semana a semana (domingo a sábado). */
+export function diasDaJanela(j: JanelaDoCalendario): string[][] {
+  return Array.from({ length: j.semanas }, (_, s) =>
+    Array.from({ length: 7 }, (_, d) => somarDias(j.inicio, s * 7 + d))
+  );
+}
+
+const MES_CURTO = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
+
+/** O número do dia na casa; no dia 1 leva o mês ("1 out"), para quem olha
+ *  uma janela que atravessa dois meses saber onde um acaba. */
+export function rotuloDoDia(dia: string): string {
+  const d = Number(dia.slice(8));
+  return d === 1 ? `1 ${MES_CURTO[Number(dia.slice(5, 7)) - 1]}` : String(d);
+}
 
 /** As linhas do calendário: por dia, e as sem data à parte. */
 export function linhasPorDia(

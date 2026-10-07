@@ -116,6 +116,24 @@ export function rotuloDePessoa(
   return p.name;
 }
 
+/** Fatia J: a cor da cápsula de uma pessoa, pedido dela (*"igual a seleção,
+ *  como uma cápsula colorida com o nome"*). Sai do ID, e não da ordem na
+ *  célula: a mesma pessoa tem a mesma cor em toda linha e em toda base. O
+ *  cinza fica de fora -- é dele quem está inativo ou fora do time, para a
+ *  cápsula apagada se distinguir sem depender só do rótulo. */
+export function corDaPessoa(
+  id: string,
+  daArvore: ReadonlySet<string>,
+  todos: ReadonlyMap<string, PessoaConhecida>
+): BaseOptionColor {
+  const p = todos.get(id);
+  if (!p || !p.is_active || !daArvore.has(id)) return "gray";
+  const cores = CORES_DE_OPCAO.filter((c) => c !== "gray");
+  let h = 0;
+  for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return cores[h % cores.length];
+}
+
 // --------------------------------------------------------------- célula
 /** O texto de uma célula, para os tipos que se desenham como texto. Seleção,
  *  pessoa e caixa de seleção têm desenho próprio na tabela. */

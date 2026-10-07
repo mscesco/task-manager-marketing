@@ -3,6 +3,7 @@ import type { BaseColumn, BaseSummary, Team } from "@/lib/api";
 import {
   agruparPorRaiz,
   avisoDeLinhas,
+  corDaPessoa,
   dataParaTela,
   interpretarDigitado,
   mover,
@@ -167,5 +168,30 @@ describe("proximaCor", () => {
   it("a primeira livre, e recomeça quando acaba", () => {
     expect(proximaCor([])).toBe("gray");
     expect(proximaCor(["gray", "brown"])).toBe("orange");
+  });
+});
+
+describe("corDaPessoa (fatia J)", () => {
+  const todos = new Map([
+    ["ana", { name: "Ana", is_active: true }],
+    ["bia", { name: "Bia", is_active: false }],
+    ["caio", { name: "Caio", is_active: true }],
+  ]);
+  const daArvore = new Set(["ana", "bia"]);
+
+  it("a mesma pessoa tem sempre a mesma cor, e nunca o cinza", () => {
+    expect(corDaPessoa("ana", daArvore, todos)).toBe(corDaPessoa("ana", daArvore, todos));
+    expect(corDaPessoa("ana", daArvore, todos)).not.toBe("gray");
+  });
+  it("as cores se espalham pela paleta", () => {
+    const ids = Array.from({ length: 40 }, (_, i) => `pessoa-${i}`);
+    const arvore = new Set(ids);
+    const conhecidas = new Map(ids.map((id) => [id, { name: id, is_active: true }]));
+    expect(new Set(ids.map((id) => corDaPessoa(id, arvore, conhecidas))).size).toBeGreaterThan(4);
+  });
+  it("inativo, fora do time e desconhecido ficam cinza", () => {
+    expect(corDaPessoa("bia", daArvore, todos)).toBe("gray");
+    expect(corDaPessoa("caio", daArvore, todos)).toBe("gray");
+    expect(corDaPessoa("zz", daArvore, todos)).toBe("gray");
   });
 });

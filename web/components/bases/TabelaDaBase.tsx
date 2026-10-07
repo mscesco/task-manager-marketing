@@ -16,8 +16,25 @@
 // ⚠️ A PRIMEIRA COLUNA (título) FICA PRESA na rolagem horizontal (`sticky`).
 // Com 9 colunas o título some da tela, e é por ele que se sabe de que linha
 // se está falando.
+//
+// Fatia J, pedidos dela de 07/10 ("igual uma planilha no sheets ou excel"):
+// - UM CLIQUE EDITA (antes eram dois). O teclado continua igual: as setas
+//   andam, Enter edita.
+// - LINHAS DE GRADE entre todas as células, e o fundo é o da página -- sem a
+//   caixa branca que sobrava à direita das colunas.
+// - A LARGURA SE ARRASTA pela borda direita do cabeçalho (ou pelas setas,
+//   com o foco na alça). Ela é da COLUNA, e não da visão: vale para todo mundo
+//   e em toda visão, como o resto da coluna. O arraste mostra a largura nova na
+//   hora e só grava ao soltar -- um gesto, uma entrada no diário do Ctrl+Z.
 
-import { useEffect, useRef, useState, type KeyboardEvent, type MutableRefObject } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type MutableRefObject,
+  type PointerEvent as PointerDoReact,
+} from "react";
 import { Plus, Trash2 } from "lucide-react";
 import Badge from "@/components/Badge";
 import { useAnchoredPanel } from "@/components/AnchoredPanel";
@@ -26,7 +43,10 @@ import EditorDeEscolha, { type Escolha } from "@/components/bases/EditorDeEscolh
 import CabecalhoDaColuna from "@/components/bases/CabecalhoDaColuna";
 import { NovaColuna, criarOpcao } from "@/components/bases/MenuDaColuna";
 import {
+  LARGURA_MAX,
+  LARGURA_MIN,
   deslocamentos,
+  larguraArrastada,
   larguraDa,
   lerConfig,
   quantasCongeladas,
@@ -40,6 +60,7 @@ import {
   ApiError,
   createBaseRow,
   deleteBaseRow,
+  updateBaseColumn,
   type BaseCellValue,
   type BaseColumn,
   type BaseDetail,
@@ -47,6 +68,7 @@ import {
 } from "@/lib/api";
 import {
   corDaOpcao,
+  corDaPessoa,
   editaComTexto,
   interpretarDigitado,
   mover,
@@ -100,7 +122,9 @@ export default function TabelaDaBase({
   const avisar = useAvisar();
   const colunas = visiveis ?? base.columns;
   const config = configDaVisao ?? lerConfig({});
-  const larguras = colunas.map((c, i) => larguraDa(c, i));
+  // A largura sendo arrastada (ou mexida pelas setas) ainda não gravada.
+  const [previa, setPrevia] = useState<{ id: string; largura: number } | null>(null);
+  const larguras = colunas.map((c, i) => (previa?.id === c.id ? previa.largura : larguraDa(c, i)));
   const esquerdas = deslocamentos(larguras);
   const congeladas = quantasCongeladas(colunas, config);
   const [ativa, setAtiva] = useState<Posicao>({ linha: 0, coluna: 0 });
@@ -133,19 +157,46 @@ export default function TabelaDaBase({
 
   const gravar = useGravarCelula(base.id, onLinhas);
 
-  function comecarEdicao(inicial?: string) {
-    if (!base.can_update_row || !linhaAtiva || !colunaAtiva) return;
-    if (colunaAtiva.type === "checkbox") {
-      gravar(linhaAtiva, colunaAtiva, linhaAtiva.values[colunaAtiva.id] !== true);
+  // ⚠️ A posição vem EXPLÍCITA no clique: ali o `setAtiva` acabou de ser
+  // pedido, e `linhaAtiva`/`colunaAtiva` ainda são os da célula anterior.
+  function comecarEdicao(inicial?: string, em: Posicao = ativa) {
+    const linha = linhas[em.linha];
+    const coluna = colunas[em.coluna];
+    if (!base.can_update_row || !linha || !coluna) return;
+    if (coluna.type === "checkbox") {
+      gravar(linha, coluna, linha.values[coluna.id] !== true);
       return;
     }
-    if (editaComTexto(colunaAtiva.type)) {
+    if (editaComTexto(coluna.type)) {
       confirmado.current = false;
-      setEditando({
-        rascunho: inicial ?? textoParaEditar(colunaAtiva, linhaAtiva.values[colunaAtiva.id]),
-      });
+      setEditando({ rascunho: inicial ?? textoParaEditar(coluna, linha.values[coluna.id]) });
     } else {
       setEscolhendo(true);
+    }
+  }
+
+  // Um clique edita (fatia J). ⚠️ Com uma célula já em edição, o clique não
+  // faz nada: ele pode ser DENTRO do editor (o evento sobe pela árvore do
+  // React, até de um portal), e recomeçar a edição apagaria o que se digitou.
+  // Clicar noutra célula já fecha o editor antes, no `mousedown` (o blur do
+  // campo, ou o "clique fora" do painel de escolha). Se o texto não passou na
+  // validação, o editor fica onde está, e o clique não o arrasta junto.
+  function cliqueNaCelula(em: Posicao, tipo: BaseColumn["type"]) {
+    if (editando || escolhendo) return;
+    setAtiva(em);
+    // A caixa de seleção já se marca pelo próprio `onChange`: alternar aqui
+    // também a desmarcaria de volta.
+    if (tipo !== "checkbox") comecarEdicao(undefined, em);
+  }
+
+  async function gravarLargura(coluna: BaseColumn, largura: number) {
+    try {
+      const nova = await updateBaseColumn(base.id, coluna.id, { width: largura });
+      onBase((b) => ({ ...b, columns: b.columns.map((x) => (x.id === nova.id ? nova : x)) }));
+    } catch (e) {
+      avisar((e as ApiError).message || "Não consegui mudar a largura.");
+    } finally {
+      setPrevia((p) => (p?.id === coluna.id ? null : p));
     }
   }
 
@@ -237,7 +288,9 @@ export default function TabelaDaBase({
 
   return (
     <div className="flex flex-col gap-2">
-      <div className="overflow-x-auto rounded-md border border-border bg-surface">
+      {/* ⚠️ `w-fit`: sem ele a caixa da rolagem ocupa a largura toda, e o
+          espaço à direita da última coluna parecia parte da tabela. */}
+      <div className="w-fit max-w-full overflow-x-auto">
         {/* ⚠️ LARGURA FIXA POR COLUNA (`table-fixed`), fatia I: com várias
             colunas congeladas, cada uma precisa saber onde a anterior acaba
             (`deslocamentos`). Com largura pelo conteúdo, a segunda presa
@@ -248,7 +301,11 @@ export default function TabelaDaBase({
           role="grid"
           aria-label={base.name}
           aria-rowcount={linhas.length + 1}
-          className="table-fixed border-collapse text-base"
+          // ⚠️ `border-separate` com espaçamento zero, e NÃO `border-collapse`:
+          // no modo colapsado a borda é da tabela, e a célula presa (sticky)
+          // rola sem ela. Por isso cada célula desenha só a direita e a de
+          // baixo, e a primeira coluna e o cabeçalho completam o contorno.
+          className="table-fixed border-separate border-spacing-0 text-base"
           style={{ width: larguras.reduce((a, b) => a + b, 0) + 2 * LARGURA_DE_ACAO }}
           onKeyDown={teclaNaGrade}
         >
@@ -258,9 +315,9 @@ export default function TabelaDaBase({
                 <th
                   key={c.id}
                   scope="col"
-                  className={`border-b border-border bg-surface-2 px-2 py-1.5 text-left ${
-                    i < congeladas ? "sticky z-10" : ""
-                  } ${i === congeladas - 1 ? "border-r" : ""}`}
+                  className={`border-y border-r border-border bg-canvas px-2 py-1.5 text-left font-normal text-ink-soft ${
+                    i < congeladas ? "sticky z-10" : "relative"
+                  } ${i === 0 ? "border-l" : ""}`}
                   style={{ width: larguras[i], left: i < congeladas ? esquerdas[i] : undefined }}
                 >
                   <div className="flex min-w-0 items-center gap-1">
@@ -296,11 +353,19 @@ export default function TabelaDaBase({
                       }}
                     />
                   </div>
+                  {base.can_update_column && (
+                    <AlcaDeLargura
+                      coluna={c}
+                      largura={larguras[i]}
+                      onPrevia={(largura) => setPrevia({ id: c.id, largura })}
+                      onSoltar={(largura) => gravarLargura(c, largura)}
+                    />
+                  )}
                 </th>
               ))}
               <th
                 scope="col"
-                className="border-b border-border bg-surface-2 px-1 py-1 text-left"
+                className="px-1 py-1 text-left"
                 style={{ width: LARGURA_DE_ACAO }}
               >
                 {base.can_create_column && (
@@ -329,17 +394,13 @@ export default function TabelaDaBase({
                       tabIndex={ehAtiva ? 0 : -1}
                       aria-label={`${coluna.name}, linha ${li + 1}`}
                       aria-readonly={!base.can_update_row}
-                      onClick={() => setAtiva({ linha: li, coluna: ci })}
-                      onDoubleClick={() => {
-                        setAtiva({ linha: li, coluna: ci });
-                        if (coluna.type !== "checkbox") requestAnimationFrame(() => comecarEdicao());
-                      }}
+                      onClick={() => cliqueNaCelula({ linha: li, coluna: ci }, coluna.type)}
                       style={ci < congeladas ? { left: esquerdas[ci] } : undefined}
-                      className={`h-9 overflow-hidden border-b border-border px-2 align-middle ${
-                        ci < congeladas ? "sticky z-[1] bg-surface" : ""
-                      } ${ci === 0 ? "font-medium" : ""} ${ci === congeladas - 1 ? "border-r" : ""} ${
-                        ehAtiva ? "outline outline-2 -outline-offset-2 outline-accent" : ""
-                      }`}
+                      className={`h-9 overflow-hidden border-b border-r border-border px-2 align-middle ${
+                        ci < congeladas ? "sticky z-[1] bg-canvas" : ""
+                      } ${ci === 0 ? "border-l font-medium" : ""} ${
+                        base.can_update_row ? "cursor-text" : ""
+                      } ${ehAtiva ? "outline outline-2 -outline-offset-2 outline-accent" : ""}`}
                     >
                       {ehAtiva && editando ? (
                         <EditorDeTexto
@@ -372,7 +433,7 @@ export default function TabelaDaBase({
                     </td>
                   );
                 })}
-                <td className="border-b border-border px-1 align-middle">
+                <td className="px-1 align-middle">
                   {base.can_delete_row &&
                     (apagando === linha.id ? (
                       <span className="flex items-center gap-1">
@@ -417,6 +478,82 @@ export default function TabelaDaBase({
 
 function chave(p: Posicao): string {
   return `${p.linha}:${p.coluna}`;
+}
+
+// ------------------------------------------------------------------ largura
+/** A alça na borda direita do cabeçalho. Arrastar mostra a largura nova na
+ *  hora (`onPrevia`) e grava ao soltar (`onSoltar`). Pelo teclado a alça é um
+ *  separador focável: as setas mudam 16px e gravam depois de uma pausa, para
+ *  segurar a seta não virar uma gravação por tecla. */
+function AlcaDeLargura({
+  coluna,
+  largura,
+  onPrevia,
+  onSoltar,
+}: {
+  coluna: BaseColumn;
+  largura: number;
+  onPrevia: (l: number) => void;
+  onSoltar: (l: number) => void;
+}) {
+  const inicio = useRef<{ x: number; largura: number } | null>(null);
+  const atual = useRef(largura);
+  const pausa = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (pausa.current) clearTimeout(pausa.current);
+    },
+    []
+  );
+
+  function mover(e: PointerDoReact<HTMLDivElement>) {
+    if (!inicio.current) return;
+    atual.current = larguraArrastada(inicio.current.largura, e.clientX - inicio.current.x);
+    onPrevia(atual.current);
+  }
+
+  return (
+    <div
+      role="separator"
+      aria-orientation="vertical"
+      aria-label={`Largura da coluna ${coluna.name}`}
+      aria-valuenow={largura}
+      aria-valuemin={LARGURA_MIN}
+      aria-valuemax={LARGURA_MAX}
+      tabIndex={0}
+      title="Arraste para mudar a largura"
+      // Estreita no desenho, larga no alvo (web/AGENTS.md §3): a linha azul
+      // aparece no meio dos 9px, em cima da borda da célula.
+      className="absolute -right-[5px] top-0 z-20 flex h-full w-[9px] cursor-col-resize touch-none justify-center opacity-0 hover:opacity-100 focus-visible:opacity-100"
+      onClick={(e) => e.stopPropagation()}
+      onPointerDown={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        e.currentTarget.setPointerCapture?.(e.pointerId);
+        inicio.current = { x: e.clientX, largura };
+        atual.current = largura;
+      }}
+      onPointerMove={mover}
+      onPointerUp={(e) => {
+        if (!inicio.current) return;
+        const mexeu = atual.current !== inicio.current.largura;
+        inicio.current = null;
+        e.currentTarget.releasePointerCapture?.(e.pointerId);
+        if (mexeu) onSoltar(atual.current);
+      }}
+      onKeyDown={(e) => {
+        if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+        e.preventDefault();
+        e.stopPropagation();
+        atual.current = larguraArrastada(largura, e.key === "ArrowRight" ? 16 : -16);
+        onPrevia(atual.current);
+        if (pausa.current) clearTimeout(pausa.current);
+        pausa.current = setTimeout(() => onSoltar(atual.current), 500);
+      }}
+    >
+      <span className="h-full w-0.5 bg-accent" aria-hidden="true" />
+    </div>
+  );
 }
 
 // ------------------------------------------------------------------ editor
@@ -539,9 +676,17 @@ function Celula({
         <div ref={anchorRef} className="flex min-h-6 flex-wrap items-center gap-1">
           {coluna.type === "person"
             ? ids.map((id) => (
-                <span key={id} className="truncate text-sm">
+                // Fatia J: cápsula como a da seleção, com a cor da pessoa
+                // (`corDaPessoa`); inativo e fora do time ficam cinza.
+                <Badge
+                  key={id}
+                  tone="soft"
+                  weight="semibold"
+                  color={corDaOpcao(corDaPessoa(id, pessoas.daArvore, pessoas.todos))}
+                  className="max-w-full"
+                >
                   {rotuloDePessoa(id, pessoas.daArvore, pessoas.todos)}
-                </span>
+                </Badge>
               ))
             : ids.map((id) => {
                 // Opção apagada: a célula guarda o id, e aparece vazia (D17).

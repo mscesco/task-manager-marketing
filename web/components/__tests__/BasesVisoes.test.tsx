@@ -5,19 +5,33 @@
 //     violação aceita no quadro de tarefas (web/AGENTS.md §1) não se repete;
 //   - sem `can_update_view`, os controles mostram a config mas não a mudam
 //     (visão é compartilhada, D14);
-//   - a visão padrão não oferece "Apagar visão" (D25).
+//   - a visão padrão não oferece "Apagar visão" (D25);
+//   - fatia J: o menu é da PRÓPRIA aba (clicar na ativa), e o duplo clique
+//     renomeia sem o menu piscar no meio.
 // O que filtrar e ordenar significa é de `lib/__tests__/baseViews.test.ts`.
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 
-import BarraDeVisoes from "@/components/bases/BarraDeVisoes";
+vi.mock("@/lib/api", async (original) => ({
+  ...(await original<typeof import("@/lib/api")>()),
+  updateBaseView: vi.fn(async (_b: string, id: string, body: { name: string }) => ({
+    id, name: body.name, layout: "table", config: {}, position: 1, is_default: true,
+  })),
+}));
+import { updateBaseView } from "@/lib/api";
+
+import BarraDeVisoes, { ESPERA_DO_DUPLO } from "@/components/bases/BarraDeVisoes";
 import ControlesDaVisao from "@/components/bases/ControlesDaVisao";
 import QuadroDaBase from "@/components/bases/QuadroDaBase";
 import type { BaseColumn, BaseDetail, BaseRow, BaseView } from "@/lib/api";
 import { lerConfig } from "@/lib/baseViews";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+  vi.mocked(updateBaseView).mockClear();
+});
 
 const TITULO: BaseColumn = {
   id: "t", name: "Título", type: "title", options: [], position: 1, width: null, version: 1,
@@ -114,7 +128,9 @@ describe("BarraDeVisoes", () => {
     const views = [visao("p", true), visao("q", false)];
     render(<BarraDeVisoes base={base(views)} ativa={views[0]} onEscolher={vi.fn()} onViews={vi.fn()} />);
     expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["Tabela", "Por status"]);
-    fireEvent.click(screen.getByRole("button", { name: "Opções da visão Tabela" }));
+    // Clicar na aba que já está ativa abre o menu dela (pelo teclado, na hora).
+    fireEvent.click(screen.getByRole("tab", { name: "Tabela" }));
+    expect(screen.getByRole("dialog", { name: "Opções da visão Tabela" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Apagar visão" })).toBeNull();
     expect(screen.getByText("A visão padrão não se apaga.")).toBeTruthy();
   });
@@ -122,7 +138,57 @@ describe("BarraDeVisoes", () => {
   it("a outra visão oferece apagar", () => {
     const views = [visao("p", true), visao("q", false)];
     render(<BarraDeVisoes base={base(views)} ativa={views[1]} onEscolher={vi.fn()} onViews={vi.fn()} />);
-    fireEvent.click(screen.getByRole("button", { name: "Opções da visão Por status" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Por status" }));
     expect(screen.getByRole("button", { name: "Apagar visão" })).toBeTruthy();
+  });
+
+  it("⚠️ clicar noutra aba só troca de visão -- o menu nunca é de outra aba", () => {
+    const views = [visao("p", true), visao("q", false)];
+    const onEscolher = vi.fn();
+    render(<BarraDeVisoes base={base(views)} ativa={views[1]} onEscolher={onEscolher} onViews={vi.fn()} />);
+    fireEvent.click(screen.getByRole("tab", { name: "Tabela" }));
+    expect(onEscolher).toHaveBeenCalledWith("p");
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("duplo clique renomeia ali mesmo, e o menu não pisca no caminho", async () => {
+    vi.useFakeTimers();
+    const views = [visao("p", true), visao("q", false)];
+    const onViews = vi.fn();
+    render(<BarraDeVisoes base={base(views)} ativa={views[0]} onEscolher={vi.fn()} onViews={onViews} />);
+    const aba = screen.getByRole("tab", { name: "Tabela" });
+    // O mouse manda dois cliques (detail 1 e 2) e depois o dblclick.
+    fireEvent.click(aba, { detail: 1 });
+    fireEvent.click(aba, { detail: 2 });
+    fireEvent.doubleClick(aba);
+    act(() => vi.advanceTimersByTime(ESPERA_DO_DUPLO * 2));
+    expect(screen.queryByRole("dialog")).toBeNull();
+
+    const campo = screen.getByRole("textbox", { name: "Nome da visão" });
+    fireEvent.change(campo, { target: { value: "Todo o conteúdo" } });
+    fireEvent.keyDown(campo, { key: "Enter" });
+    fireEvent.blur(campo);
+    vi.useRealTimers();
+    await waitFor(() => expect(onViews).toHaveBeenCalled());
+    // Uma gravação só: o blur que vem depois do Enter não grava de novo.
+    expect(updateBaseView).toHaveBeenCalledTimes(1);
+    expect(updateBaseView).toHaveBeenCalledWith("b1", "p", { name: "Todo o conteúdo" });
+  });
+
+  it("um clique de mouse na aba ativa abre o menu depois da espera", () => {
+    vi.useFakeTimers();
+    const views = [visao("p", true), visao("q", false)];
+    render(<BarraDeVisoes base={base(views)} ativa={views[0]} onEscolher={vi.fn()} onViews={vi.fn()} />);
+    fireEvent.click(screen.getByRole("tab", { name: "Tabela" }), { detail: 1 });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    act(() => vi.advanceTimersByTime(ESPERA_DO_DUPLO));
+    expect(screen.getByRole("dialog", { name: "Opções da visão Tabela" })).toBeTruthy();
+  });
+
+  it("o + cria visão, sem a palavra ao lado", () => {
+    const views = [visao("p", true)];
+    render(<BarraDeVisoes base={base(views)} ativa={views[0]} onEscolher={vi.fn()} onViews={vi.fn()} />);
+    const mais = screen.getByRole("button", { name: "Nova visão" });
+    expect(mais.textContent).toBe("");
   });
 });

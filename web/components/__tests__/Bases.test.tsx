@@ -39,6 +39,7 @@ vi.mock("@/lib/api", async (importOriginal) => {
     listTeamsAll: vi.fn(),
     restoreBase: vi.fn(),
     updateBaseCells: vi.fn(),
+    updateBaseColumn: vi.fn(),
     createBaseRow: vi.fn(),
   };
 });
@@ -205,12 +206,11 @@ describe("TabelaDaBase", () => {
     expect(grade).toBeTruthy();
   });
 
-  it("Enter edita, e Enter de novo grava SÓ a célula, com o valor interpretado", async () => {
+  it("UM clique edita (fatia J), e Enter grava SÓ a célula, com o valor interpretado", async () => {
     vi.mocked(api.updateBaseCells).mockResolvedValue([linha("r1", { "c-num": 1234.5 })]);
     render(<Montada base={detalhe()} linhas={[linha("r1", {})]} />);
     const celula = screen.getByRole("gridcell", { name: "Alcance, linha 1" });
     fireEvent.click(celula);
-    fireEvent.keyDown(celula, { key: "Enter" });
 
     const campo = screen.getByLabelText("Editar Alcance");
     fireEvent.change(campo, { target: { value: "1.234,5" } });
@@ -234,7 +234,6 @@ describe("TabelaDaBase", () => {
     render(<Montada base={detalhe()} linhas={[linha("r1", { "c-titulo": "Collab" })]} />);
     const celula = screen.getByRole("gridcell", { name: "Título, linha 1" });
     fireEvent.click(celula);
-    fireEvent.keyDown(celula, { key: "Enter" });
     const campo = screen.getByLabelText("Editar Título");
     fireEvent.change(campo, { target: { value: "Outro" } });
     fireEvent.keyDown(campo, { key: "Escape" });
@@ -246,6 +245,56 @@ describe("TabelaDaBase", () => {
     render(<Montada base={detalhe()} linhas={[linha("r1", { "c-resp": ["ana", "bia"] })]} />);
     expect(screen.getByText("Ana")).toBeTruthy();
     expect(screen.getByText("Bia (inativo)")).toBeTruthy();
+  });
+
+  it("pessoa vira cápsula colorida, como a seleção; a inativa fica cinza (fatia J)", () => {
+    render(<Montada base={detalhe()} linhas={[linha("r1", { "c-resp": ["ana", "bia"] })]} />);
+    const ana = screen.getByText("Ana").getAttribute("style") ?? "";
+    const bia = screen.getByText("Bia (inativo)").getAttribute("style") ?? "";
+    expect(ana).toMatch(/var\(--opt-(?!gray)/);
+    expect(bia).toContain("var(--opt-gray)");
+  });
+
+  it("⚠️ clicar DENTRO do editor não recomeça a edição (o rascunho fica)", () => {
+    render(<Montada base={detalhe()} linhas={[linha("r1", { "c-titulo": "Collab" })]} />);
+    fireEvent.click(screen.getByRole("gridcell", { name: "Título, linha 1" }));
+    const campo = screen.getByLabelText("Editar Título") as HTMLInputElement;
+    fireEvent.change(campo, { target: { value: "Collab Will" } });
+    fireEvent.click(campo);
+    expect((screen.getByLabelText("Editar Título") as HTMLInputElement).value).toBe("Collab Will");
+  });
+
+  it("um clique na pessoa abre a escolha", () => {
+    render(<Montada base={detalhe()} linhas={[linha("r1", {})]} />);
+    fireEvent.click(screen.getByRole("gridcell", { name: "Responsável, linha 1" }));
+    expect(screen.getByRole("dialog")).toBeTruthy();
+  });
+
+  it("arrastar a borda do cabeçalho muda a largura e grava UMA vez, ao soltar", async () => {
+    vi.mocked(api.updateBaseColumn).mockResolvedValue({ ...NUMERO, width: 220 });
+    render(<Montada base={detalhe()} linhas={[]} />);
+    const alca = screen.getByRole("separator", { name: "Largura da coluna Alcance" });
+    expect(alca.getAttribute("aria-valuenow")).toBe("160");
+    fireEvent.pointerDown(alca, { clientX: 100, pointerId: 1 });
+    fireEvent.pointerMove(alca, { clientX: 130, pointerId: 1 });
+    fireEvent.pointerMove(alca, { clientX: 160, pointerId: 1 });
+    // A prévia aparece na hora, antes de gravar.
+    expect(alca.getAttribute("aria-valuenow")).toBe("220");
+    expect(api.updateBaseColumn).not.toHaveBeenCalled();
+    fireEvent.pointerUp(alca, { clientX: 160, pointerId: 1 });
+    await waitFor(() => expect(api.updateBaseColumn).toHaveBeenCalledTimes(1));
+    expect(api.updateBaseColumn).toHaveBeenCalledWith("b1", "c-num", { width: 220 });
+  });
+
+  it("a largura também muda pelo teclado, na alça", async () => {
+    vi.mocked(api.updateBaseColumn).mockResolvedValue({ ...NUMERO, width: 176 });
+    render(<Montada base={detalhe()} linhas={[]} />);
+    const alca = screen.getByRole("separator", { name: "Largura da coluna Alcance" });
+    fireEvent.keyDown(alca, { key: "ArrowRight" });
+    expect(alca.getAttribute("aria-valuenow")).toBe("176");
+    await waitFor(() =>
+      expect(api.updateBaseColumn).toHaveBeenCalledWith("b1", "c-num", { width: 176 })
+    );
   });
 
   it("⚠️ o servidor diz que não: sem nova linha, sem nova coluna, sem apagar, e a célula não edita", () => {
@@ -272,5 +321,7 @@ describe("TabelaDaBase", () => {
     fireEvent.click(celula);
     fireEvent.keyDown(celula, { key: "Enter" });
     expect(screen.queryByLabelText("Editar Título")).toBeNull();
+    // Fatia J: sem editar coluna, não há alça de largura.
+    expect(screen.queryByRole("separator")).toBeNull();
   });
 });
