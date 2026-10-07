@@ -444,6 +444,7 @@ async def _mundo(db) -> dict:
         "base_com": b_com["base"],
         "base_mkt_excluida": b_excl["base"],
         "coluna_mkt": b_mkt["coluna"],
+        "coluna_com": b_com["coluna"],
         "opcao_mkt": b_mkt["opcao"],
         "linha_mkt": b_mkt["linha"],
         "linha_com": b_com["linha"],
@@ -1029,29 +1030,47 @@ MATRIZ: tuple[Linha, ...] = (
           _TODOS),
     Linha("base_row.create", "na do Marketing", "post", f"{T}/bases/{{base_mkt}}/rows",
           {"values": {}},
-          _SEM_ROTA, diverge="056 fatia C", meta=_TODOS),
+          _TODOS),
     Linha("base_row.update", "na do Marketing", "patch",
           f"{T}/bases/{{base_mkt}}/rows/{{linha_mkt}}", {"values": {}},
-          _SEM_ROTA, diverge="056 fatia C", meta=_TODOS),
+          _TODOS),
     Linha("base_row.update", "na do Comercial", "patch",
           f"{T}/bases/{{base_com}}/rows/{{linha_com}}", {"values": {}},
-          _SEM_ROTA, diverge="056 fatia C", meta=_COM_CONTEUDO),
+          _COM_CONTEUDO),
+    # Fatia C: o LOTE (colar, arrastar card) cobra o mesmo verbo da celula unica.
+    Linha("base_row.update", "lote de celulas, na do Marketing", "patch",
+          f"{T}/bases/{{base_mkt}}/cells",
+          {"cells": [{"row_id": "{linha_mkt}", "column_id": "{coluna_mkt}", "value": None}]},
+          _TODOS),
+    Linha("base_row.update", "lote de celulas, na do Comercial", "patch",
+          f"{T}/bases/{{base_com}}/cells",
+          {"cells": [{"row_id": "{linha_com}", "column_id": "{coluna_com}", "value": None}]},
+          _COM_CONTEUDO),
+    # Fatia C: desfazer com a pilha VAZIA -- 200 para quem le, e a base de outra
+    # arvore continua escondida. O verbo da acao original e conferido so quando
+    # ha acao (teste proprio: `test_base_undo_db`).
+    Linha("base.undo", "pilha vazia, na do Marketing", "post",
+          f"{T}/bases/{{base_mkt}}/undo", None,
+          _TODOS),
+    Linha("base.undo", "pilha vazia, na do Comercial", "post",
+          f"{T}/bases/{{base_com}}/undo", None,
+          _COM_CONTEUDO),
     Linha("base_row.delete", "na do Marketing", "delete",
           f"{T}/bases/{{base_mkt}}/rows/{{linha_mkt}}", None,
-          _SEM_ROTA, diverge="056 fatia C", meta=_TODOS),
+          _TODOS),
     Linha("base_view.create", "na do Marketing", "post", f"{T}/bases/{{base_mkt}}/views",
           {"name": "Por status", "layout": "board"},
-          _SEM_ROTA, diverge="056 fatia C", meta=_TODOS),
+          _TODOS),
     Linha("base_view.update", "na do Marketing", "patch",
           f"{T}/bases/{{base_mkt}}/views/{{visao_mkt}}", {"name": "Outro"},
-          _SEM_ROTA, diverge="056 fatia C", meta=_TODOS),
+          _TODOS),
     Linha("base_view.delete", "na do Marketing", "delete",
           f"{T}/bases/{{base_mkt}}/views/{{visao_mkt}}", None,
-          _SEM_ROTA, diverge="056 fatia C", meta=_TODOS),
+          _TODOS),
     # D25: a visao padrao nao se apaga -- regra, e nao permissao, para todos.
     Linha("base_view.delete", "a padrao, na do Marketing", "delete",
           f"{T}/bases/{{base_mkt}}/views/{{visao_padrao_mkt}}", None,
-          _SEM_ROTA, diverge="056 fatia C", meta=(409,) * 6),
+          (409,) * 6),
 )
 
 
@@ -1142,6 +1161,9 @@ CADEADOS_DE_ITEM = (
     ("/bases/{base_com}", "can_update", ("base.update", "do Comercial")),
     ("/bases/{base_mkt}", "can_create_column", ("base_column.create", "na do Marketing")),
     ("/bases/{base_com}", "can_create_column", ("base_column.create", "na do Comercial")),
+    ("/bases/{base_mkt}", "can_update_row", ("base_row.update", "na do Marketing")),
+    ("/bases/{base_com}", "can_update_row", ("base_row.update", "na do Comercial")),
+    ("/bases/{base_mkt}", "can_delete_view", ("base_view.delete", "na do Marketing")),
 )
 
 

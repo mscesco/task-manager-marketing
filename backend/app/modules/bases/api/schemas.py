@@ -198,6 +198,75 @@ class ColumnCreateRequest(BaseModel):
     options: list[OptionRequest] | None = None
 
 
+class RowResponse(BaseModel):
+    """Uma linha. `values` e `{id da coluna: valor}`, cru: a chave de uma coluna
+    APAGADA pode estar la (o desfazer precisa dela), e a tela so desenha as
+    colunas vivas que recebeu da base."""
+
+    model_config = {"from_attributes": True}
+
+    id: uuid.UUID
+    values: dict[str, Any]
+    version: int
+    created_by: uuid.UUID
+    created_at: datetime
+    updated_at: datetime
+
+
+class RowListResponse(BaseModel):
+    items: list[RowResponse]
+    total: int
+    #: O teto (5.000) e o ponto do aviso (4.000) -- spec §8.1. A tela mostra o
+    #: aviso a quem tem `base.update` quando `total >= warning_at`.
+    limit: int
+    warning_at: int
+
+
+class RowCreateRequest(BaseModel):
+    values: dict[str, Any] = Field(default_factory=dict)
+
+
+class RowUpdateRequest(BaseModel):
+    """As celulas de UMA linha. `null` esvazia a celula."""
+
+    values: dict[str, Any]
+
+
+class CellRequest(BaseModel):
+    row_id: uuid.UUID
+    column_id: uuid.UUID
+    value: Any = None
+
+
+class CellsUpdateRequest(BaseModel):
+    """Varias celulas, de varias linhas, como UMA acao -- colar, ou arrastar um
+    card que muda mais de uma celula. Um Ctrl+Z desfaz o grupo."""
+
+    cells: list[CellRequest] = Field(min_length=1, max_length=5_000)
+
+
+class ViewCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=NAME_MAX)
+    layout: str
+    config: dict[str, Any] = Field(default_factory=dict)
+
+
+class ViewUpdateRequest(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=NAME_MAX)
+    config: dict[str, Any] | None = None
+    position: int | None = None
+
+
+class UndoResponse(BaseModel):
+    """`applied`: aconteceu. `conflict`: recusado porque alguem mexeu depois --
+    a tela avisa, e o proximo Ctrl+Z tenta a acao anterior. Os dois falsos: nao
+    havia nada. ⚠️ A tela RECARREGA a base depois de um `applied`."""
+
+    applied: bool
+    conflict: bool
+    kind: str | None
+
+
 class ColumnUpdateRequest(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=NAME_MAX)
     type: str | None = None

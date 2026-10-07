@@ -9,7 +9,7 @@ pronta para a fatia 0.
 **Placar na abertura:** backend **1883** (medido na fatia 0, em 06/10, sobre a
 `main` em `1c58369`). Depois da fatia 0: **2022**. Rebase sobre o #66 (reativar
 conta, +25): **2047**. Depois da fatia A: **2054**; front **1581**. Depois da
-fatia B: **2081** (drift limpo).
+fatia B: **2081** (drift limpo). Depois da fatia C: **2127**.
 
 ---
 
@@ -370,8 +370,12 @@ na lista para escolher.
 
 - `filters`: lista de `{column_id, operator, value}`, combinados com E;
 - `sorts`: lista de `{column_id, direction}`;
-- `group_by`: id de uma coluna `select` (obrigatório no quadro);
-- `date_column`: id de uma coluna `date` (obrigatório no calendário);
+- `group_by`: id de uma coluna `select` (o quadro precisa dele para desenhar);
+- `date_column`: id de uma coluna `date` (o calendário precisa dele);
+
+⚠️ Os dois **não são obrigatórios ao criar** (fatia C): a visão nasce pelo
+"+ Visão", e a pessoa escolhe a coluna em seguida. Sem ela, a tela pede a
+escolha em vez de desenhar.
 - `hidden_columns` e `column_order`.
 
 - **Tabela:** a edição acontece aqui.
@@ -437,7 +441,7 @@ Exemplo de entrada:
 | `column.create` | o id da coluna | apaga a coluna (marca) |
 | `column.update` | campos antigos e novos (nome, largura, posição) | volta os campos |
 | `column.delete` | o id (a coluna fica marcada) | tira a marca |
-| `option.create` / `option.update` | a opção antes e depois | volta a opção |
+| ~~`option.create` / `option.update`~~ | cabem em `column.update`: as opções inteiras vão no antes e depois da coluna (fatia C) | volta a coluna |
 | `option.delete` | o id (a opção fica marcada) | tira a marca |
 | `column.retype` | tipo e opções antigos + os valores antigos da coluna | devolve tipo, opções e valores |
 | `view.*` | a configuração antes e depois | volta a configuração |
@@ -471,6 +475,12 @@ pessoa deixou**:
 Recusou: a tela avisa *"Não dá para desfazer: alguém mudou isso depois."* O
 servidor nunca sobrescreve, e a entrada sai da pilha da pessoa (o próximo
 Ctrl+Z tenta a anterior).
+
+⚠️ **Conflito não é erro HTTP** (decidido na fatia C). Tirar a entrada da pilha
+é uma gravação; com 409 a transação voltaria e a entrada ficaria lá, recusando
+para sempre. A resposta é **200** com `{"applied": false, "conflict": true}`.
+Sem o verbo da ação original é 403, e aí a entrada **fica**: devolvido o verbo,
+ela volta a servir.
 
 ### 9.4. De quem é o Ctrl+Z
 

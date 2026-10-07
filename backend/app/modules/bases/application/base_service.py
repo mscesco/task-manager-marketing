@@ -37,6 +37,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.logging import get_logger
 from app.core.tenant import require_tenant
 from app.db.models.bases import BaseColumn, BaseTable, BaseView
+from app.modules.bases.application import journal
+from app.modules.bases.application.access import require_verb, visible_base
 from app.modules.bases.domain.columns import (
     SELECT_TYPES,
     check_new_type,
@@ -51,13 +53,24 @@ from app.modules.bases.infrastructure.base_repository import (
     BaseViewRepository,
 )
 from app.shared.exceptions.base import (
-    AuthorizationError,
     BusinessRuleError,
     EntityNotFoundError,
     ValidationError,
 )
 
 logger = get_logger(__name__)
+
+
+def column_snapshot(coluna: BaseColumn) -> dict[str, Any]:
+    """O que o diario guarda de uma coluna, antes e depois (spec §9.2): tudo o
+    que `update_column` muda. As opcoes inteiras, inclusive as marcadas."""
+    return {
+        "name": coluna.name,
+        "type": coluna.type,
+        "options": list(coluna.options),
+        "position": coluna.position,
+        "width": coluna.width,
+    }
 
 #: Os nomes com que a base nasce (D2). Sao DADOS, e nao rotulo de tela: a
 #: equipe renomeia como quiser.
@@ -220,6 +233,9 @@ class BaseService:
         )
         self._columns.add(coluna)
         await self._session.flush()
+        await journal.record(
+            self._session, base.id, "column.create", {"column": str(coluna.id)}
+        )
         return coluna
 
     async def update_column(
@@ -228,13 +244,15 @@ class BaseService:
         """Renomear, reordenar, largura, opcoes e TROCAR O TIPO (D24: o mesmo
         verbo de editar coluna).
 
-        ⚠️⚠️ TROCAR O TIPO ZERA A COLUNA (D18), em toda linha. A fatia C grava
-        os valores antigos no diario, para o Ctrl+Z de 1 dia (D27); ate la, a
-        troca nao se desfaz.
+        ⚠️⚠️ TROCAR O TIPO ZERA A COLUNA (D18), em toda linha. Os valores de
+        antes vao para o diario (`column.retype`), e o Ctrl+Z de 1 dia os
+        devolve (D27) -- se ninguem tiver preenchido a coluna nesse meio tempo.
         """
         base = await self._visible(base_id)
         self._exigir("base_column.update", base.team_id)
         coluna = await self._coluna(base.id, column_id)
+        antes = column_snapshot(coluna)
+        valores_antes: dict[str, object] = {}
 
         if command.name is not None:
             coluna.name = clean_name(command.name)
@@ -258,6 +276,7 @@ class BaseService:
                     "A coluna de titulo nao troca de tipo.", details={"field": "type"}
                 )
             check_new_type(command.type)
+            valores_antes = await self._rows.values_of_column(base.id, coluna.id)
             zeradas = await self._rows.clear_column(base.id, coluna.id)
             coluna.type = command.type
             coluna.options = self._opcoes_do_tipo(command.type, [], command.options)
@@ -274,6 +293,26 @@ class BaseService:
 
         coluna.version += 1
         await self._session.flush()
+        depois = column_snapshot(coluna)
+        if antes["type"] != depois["type"]:
+            await journal.record(
+                self._session,
+                base.id,
+                "column.retype",
+                {
+                    "column": str(coluna.id),
+                    "before": antes,
+                    "after": depois,
+                    "values": valores_antes,
+                },
+            )
+        elif antes != depois:
+            await journal.record(
+                self._session,
+                base.id,
+                "column.update",
+                {"column": str(coluna.id), "before": antes, "after": depois},
+            )
         return coluna
 
     async def delete_column(self, base_id: uuid.UUID, column_id: uuid.UUID) -> BaseColumn:
@@ -291,6 +330,9 @@ class BaseService:
         coluna.deleted_by = require_tenant().user_id
         coluna.version += 1
         await self._session.flush()
+        await journal.record(
+            self._session, base.id, "column.delete", {"column": str(coluna.id)}
+        )
         return coluna
 
     async def delete_option(
@@ -307,17 +349,17 @@ class BaseService:
         coluna.options = opcoes
         coluna.version += 1
         await self._session.flush()
+        await journal.record(
+            self._session,
+            base.id,
+            "option.delete",
+            {"column": str(coluna.id), "option": option_id},
+        )
         return coluna
 
     # ------------------------------------------------------------ apoio
     async def _visible(self, base_id: uuid.UUID) -> BaseTable:
-        """A base, se a pessoa a LE. Senao 404 -- inclusive base excluida."""
-        base = await self._bases.get_by_id(base_id)
-        if base is None or not require_tenant().has_permission_in(
-            "base.read", base.team_id
-        ):
-            raise EntityNotFoundError("Base", identifier=base_id)
-        return base
+        return await visible_base(self._bases, base_id)
 
     async def _coluna(self, base_id: uuid.UUID, column_id: uuid.UUID) -> BaseColumn:
         coluna = await self._columns.get_in(base_id, column_id)
@@ -327,11 +369,7 @@ class BaseService:
 
     @staticmethod
     def _exigir(verbo: str, team_id: uuid.UUID) -> None:
-        if not require_tenant().has_permission_in(verbo, team_id):
-            raise AuthorizationError(
-                "Voce nao tem permissao para esta acao nesta base.",
-                details={"permission": verbo},
-            )
+        require_verb(verbo, team_id)
 
     @staticmethod
     def _opcoes_do_tipo(
