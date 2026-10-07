@@ -291,6 +291,30 @@ describe("TaskModal -- a raiz vem da tela, e não de um sorteio", () => {
     expect(api.listMembersDoTime).toHaveBeenCalledWith(RAIZ);
   });
 
+  it("com a raiz na prop, nem PERGUNTA a raiz (07/10: o Next 15 mostrava o erro na tela)", async () => {
+    // A pergunta levantava `AreaIndefinidaError` e caia no `console.error` a
+    // cada abertura -- sem efeito no modal, mas o Next 15 desenha todo
+    // `console.error` num painel por cima da tela, em desenvolvimento.
+    mocksComDuasRaizes();
+    const erro = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      render(
+        <TaskModal
+          open
+          newTaskTeam={{ teamId: RAIZ, internal: false }}
+          onClose={() => {}}
+          onSaved={() => {}}
+        />,
+      );
+      await screen.findByLabelText("Designar responsável");
+      await waitFor(() => expect(api.listMembersDoTime).toHaveBeenCalledWith(RAIZ));
+      expect(api.getRootTeamId).not.toHaveBeenCalled();
+      expect(erro).not.toHaveBeenCalled();
+    } finally {
+      erro.mockRestore();
+    }
+  });
+
   it("⚠️ O SELETOR DE PROJETO CONTINUA NA TELA (a outra metade do defeito)", async () => {
     // ⚠️ Este é o teste que prende a separação. Enquanto o time da tarefa e o
     // "nasce interna" eram UMA prop (`defaultTeamId`), responder a raiz aqui

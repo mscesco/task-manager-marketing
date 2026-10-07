@@ -72,6 +72,11 @@ function QuadroGeral() {
   // aviso de queda nao piscar em todo carregamento.
   const [quadros, setQuadros] = useState<Quadro[] | null>(null);
   const [rootId, setRootId] = useState<string | null>(null);
+  // ⚠️ O `Board` SO NASCE DEPOIS DA DECISAO (07/10). Antes ele era desenhado
+  // na hora, sem area, e perguntava "qual e a unica raiz?" por conta propria
+  // -- com varias raizes, `AreaIndefinidaError` no console (que o Next 15
+  // desenha na tela), e isso ANTES de esta pagina redirecionar.
+  const [decidido, setDecidido] = useState(false);
   // ⚠️ DECLARADO ANTES DO EFEITO QUE O USA -- o redirecionamento da fatia 4
   // depende dele, e um `const` abaixo do `useEffect` deixaria a dependencia
   // impossivel de declarar sem TDZ.
@@ -123,6 +128,7 @@ function QuadroGeral() {
         );
         if (entrada.tipo === "desenhar") {
           setRootId(entrada.areaId);
+          setDecidido(true);
           return;
         }
         if (entrada.tipo === "redirecionar") {
@@ -131,10 +137,12 @@ function QuadroGeral() {
         }
         console.error("/quadro: workspace sem nenhuma área");
         setRootId(null);
+        setDecidido(true);
       })
       .catch((e) => {
         console.error("/quadro: não consegui listar as áreas", e);
         setRootId(null);
+        setDecidido(true);
       });
   }, [carregarQuadros, router]);
 
@@ -222,10 +230,14 @@ function QuadroGeral() {
         </div>
       )}
 
+      {!decidido ? (
+        <Loading rotulo="Carregando quadro" />
+      ) : (
       <Board
         // ⚠️ SEM `boardId` = O QUADRO GERAL, que e o comportamento de sempre e
         // o de 100% das aberturas desta tela ate a fatia 5c.
         boardId={pedido.id ?? undefined}
+        areaId={rootId ?? undefined}
         heading={seletor}
         podeEditarColunas={podeEditar}
         podeApagarColunas={apagaColunas}
@@ -244,6 +256,7 @@ function QuadroGeral() {
           ) : null
         }
       />
+      )}
     </AppShell>
   );
 }

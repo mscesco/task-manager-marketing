@@ -78,15 +78,26 @@ export default function TelaDeNotificacoes() {
       const base = atual ?? ESTADO_INICIAL;
       // Mudar qualquer filtro volta para a pagina 1; so mudar a pagina, nao.
       const pagina = "pagina" in parcial ? parcial.pagina ?? 1 : 1;
-      const novo = { ...base, ...parcial, pagina };
-      window.history.replaceState(
-        null,
-        "",
-        `${window.location.pathname}${queryDoEstado(novo)}`,
-      );
-      return novo;
+      return { ...base, ...parcial, pagina };
     });
   }, []);
+
+  // A URL espelha o estado. ⚠️ NUM EFEITO, e NAO dentro do `setEstado(atual
+  // => ...)`: a funcao de atualizacao roda durante o render, e o
+  // `replaceState` avisa o roteador do Next -- "Cannot update a component
+  // (Router) while rendering a different component", que o Next 15 passou a
+  // mostrar na tela (print dela de 07/10). So grava quando muda: na
+  // montagem, o estado acabou de ser LIDO da URL.
+  useEffect(() => {
+    if (!estado) return;
+    const query = queryDoEstado(estado);
+    if (window.location.search === query) return;
+    window.history.replaceState(
+      window.history.state,
+      "",
+      `${window.location.pathname}${query}`,
+    );
+  }, [estado]);
 
   useEffect(() => {
     if (!estado) return;

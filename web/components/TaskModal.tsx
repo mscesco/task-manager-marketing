@@ -344,6 +344,15 @@ export default function TaskModal({
       .then((ms) => setMembros(ms.filter((m) => m.is_active)))
       .catch(() => {})
       .finally(() => setMembrosResolvidos(true));
+    // ⚠️ SO NO CAMINHO LEGADO (07/10): quem traz o time da tarefa nova
+    // (`newTaskTeam`, vindo de `/quadro/<time>`) nunca usa a raiz -- ver o
+    // `timeAlvo` abaixo. Perguntar mesmo assim levantava `AreaIndefinidaError`
+    // a cada abertura com varias raizes, e o Next 15 passou a mostrar isso na
+    // tela.
+    if (newTaskTeam?.teamId) {
+      setRootResolvido(true);
+      return;
+    }
     // Memoizado no api.ts. Falha => segue null e `foraDoEscopo` devolve
     // conjunto vazio (nao esconde ninguem), que e o comportamento antigo.
     getRootTeamId()
@@ -355,7 +364,7 @@ export default function TaskModal({
       // Fatia 4: a área vem de fora e esta chamada some.
       .catch((e) => console.error("TaskModal: área indefinida", e))
       .finally(() => setRootResolvido(true));
-  }, [open]);
+  }, [open, newTaskTeam?.teamId]);
 
   // Esc fecha (quando aberto e nao salvando).
   useEffect(() => {

@@ -607,6 +607,13 @@ export default function Board({
       setRootCarregado(true);
       return;
     }
+    // ⚠️ O QUADRO DE PROJETO NAO USA A RAIZ (o filtro dele e o projeto). Ate
+    // 07/10 ele perguntava mesmo assim, e com varias raizes o
+    // `AreaIndefinidaError` ia para o console -- que o Next 15 desenha na tela.
+    if (projectId) {
+      setRootCarregado(true);
+      return;
+    }
     getRootTeamId()
       .then((id) => setRootId(id))
       // ⚠️ Spec 046, fatia 1: isto era `.catch(() => {})` -- silêncio puro.
@@ -621,7 +628,7 @@ export default function Board({
       // perguntar "qual é a raiz?".
       .catch((e) => console.error("Board: área indefinida", e))
       .finally(() => setRootCarregado(true));
-  }, [areaId]);
+  }, [areaId, projectId]);
 
   // ---- URL viva (?task=<id>) ----
   //

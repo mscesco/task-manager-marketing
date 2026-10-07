@@ -60,6 +60,8 @@ export default function QuadroSubtimePage() {
   const teamId = typeof params.teamId === "string" ? params.teamId : "";
 
   const [team, setTeam] = useState<Team | null>(null);
+
+  const [area, setArea] = useState<string | null>(null);
   useDocumentTitle(team?.name);
   const [temAcesso, setTemAcesso] = useState(false);
   const [carregando, setCarregando] = useState(true);
@@ -139,6 +141,12 @@ export default function QuadroSubtimePage() {
         if (!vivo) return;
         const alvo = teams.find((t) => t.id === teamId) ?? null;
         setTeam(alvo);
+        // A AREA (o time raiz) do time da URL. Vai para TODO `Board` desta
+        // tela: sem ela o `Board` pergunta "qual e a unica raiz?", que nao tem
+        // resposta com varias raizes -- o `AreaIndefinidaError` que o Next 15
+        // passou a mostrar na tela (07/10) -- e a lente de subtime deixava de
+        // filtrar pela raiz.
+        setArea(rootTeamOf(teamId, teams));
         // ⚠️ O TIME ATIVO AQUI E A RAIZ DO TIME DA URL (Spec 048, fatia B).
         // Esta tela so usa `visibleTeamIds`, que nao depende dele -- mas passar
         // `null` faria `boardSubteams` sair vazio, e o dia em que alguem ler
@@ -297,6 +305,7 @@ export default function QuadroSubtimePage() {
           {quadroSelecionado ? (
             <Board
               boardId={quadroSelecionado}
+              areaId={area ?? undefined}
               podeEditarColunas={podeGerir}
               podeApagarColunas={apagaColunas}
               heading={seletor}
@@ -372,6 +381,7 @@ export default function QuadroSubtimePage() {
             // ⚠️ `null` EXPLÍCITO: a lente não tem registro para renomear nem apagar.
             <Board
               subteamId={team.id}
+              areaId={area ?? undefined}
               heading={seletor}
               podeEditarColunas={false}
               podeApagarColunas={false}

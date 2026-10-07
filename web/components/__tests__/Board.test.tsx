@@ -661,10 +661,16 @@ describe("Board -- depois de duplicar, abre a CÓPIA", () => {
     // do rodapé do modal. Ordem do DOM NÃO resolve -- no Board o TaskModal é
     // renderizado ANTES do TaskDetail, então "o último" é o errado. O do
     // detalhe é o único com `title`.
-    const salvar = screen
-      .getAllByRole("button", { name: /^Duplicar$/ })
-      .find((b) => !b.getAttribute("title"));
-    if (!salvar) throw new Error("botão Duplicar do modal não encontrado");
+    // ⚠️ E O DO MODAL SO PERDE O `title` ("Escreva o titulo") DEPOIS do
+    // pre-preenchimento -- com o React 19 isso chega um render mais tarde, e
+    // procurar uma vez so achava os dois com `title`. Espera.
+    const salvar = await waitFor(() => {
+      const b = screen
+        .getAllByRole("button", { name: /^Duplicar$/ })
+        .find((x) => !x.getAttribute("title"));
+      if (!b) throw new Error("botão Duplicar do modal não encontrado");
+      return b;
+    });
     fireEvent.click(salvar);
 
     await waitFor(() => {
@@ -747,10 +753,16 @@ describe("Board -- depois de duplicar, a CÓPIA aparece com as subtarefas", () =
     // A caixa da D7 conta a filha viva -- se ela sumir, o defeito é outro.
     await screen.findByText("Levar as subtarefas (1 diretas)");
 
-    const salvar = screen
-      .getAllByRole("button", { name: /^Duplicar$/ })
-      .find((b) => !b.getAttribute("title"));
-    if (!salvar) throw new Error("botão Duplicar do modal não encontrado");
+    // ⚠️ E O DO MODAL SO PERDE O `title` ("Escreva o titulo") DEPOIS do
+    // pre-preenchimento -- com o React 19 isso chega um render mais tarde, e
+    // procurar uma vez so achava os dois com `title`. Espera.
+    const salvar = await waitFor(() => {
+      const b = screen
+        .getAllByRole("button", { name: /^Duplicar$/ })
+        .find((x) => !x.getAttribute("title"));
+      if (!b) throw new Error("botão Duplicar do modal não encontrado");
+      return b;
+    });
     fireEvent.click(salvar);
 
     await waitFor(() => {
@@ -1116,6 +1128,9 @@ describe("Board -- o quadro sai das TAREFAS, nao da flag de padrão (fatia 4c)",
     // teria voltado a ser `is_default`.
     expect(screen.queryByText("Backlog")).toBeNull();
     expect(screen.queryByText("Em Andamento")).toBeNull();
+    // 07/10: o quadro de projeto nao usa a raiz, e nao pergunta qual e. Com
+    // varias raizes a pergunta levantava, e o Next 15 desenhava o erro.
+    expect(api.getRootTeamId).not.toHaveBeenCalled();
   });
 
   it("⚠️ o QUADRO GERAL não adivinha pelo lote -- fatia 5c", async () => {
@@ -2029,10 +2044,17 @@ describe("Board -- quadro pedido que ainda nao esta na lista (fatia 5b-6)", () =
     // responde. **O que este teste guarda e o que ele sempre guardou: as
     // colunas do Quadro geral nao aparecem.** Os dois desfechos tem teste
     // proprio, logo abaixo e acima.
-    expect(
-      screen.queryByText(/Carregando/i) ??
-        screen.queryByText("Este quadro não existe mais.")
-    ).toBeTruthy();
+    //
+    // ⚠️ "Espera" e o `status` do `Loading`, cujo nome mora no `aria-label`
+    // -- ele nao tem texto visivel. Procurar o TEXTO "Carregando" so passava
+    // quando a segunda busca ja tinha respondido, por sorte de tempo; o React
+    // 19 (Next 15) mudou o tempo e o teste caiu sem o produto mudar.
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("status", { name: /Carregando/i }) ??
+          screen.queryByText("Este quadro não existe mais.")
+      ).toBeTruthy()
+    );
   });
 
   it("⚠️ a corrida de criacao se resolve na SEGUNDA busca", async () => {
