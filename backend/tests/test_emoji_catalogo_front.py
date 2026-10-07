@@ -67,7 +67,7 @@ def test_o_servidor_aceita_cada_emoji_do_catalogo_sem_mudar() -> None:
     for emoji in _emojis_do_catalogo():
         try:
             gravado = normalize_emoji(emoji)
-        except Exception as erro:  # noqa: BLE001 -- o teste reporta, nao trata
+        except Exception as erro:
             problemas.append((emoji, type(erro).__name__))
             continue
         if gravado != emoji:

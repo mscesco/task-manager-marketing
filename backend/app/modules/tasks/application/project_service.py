@@ -51,6 +51,7 @@ from app.core.tenant import require_tenant
 from app.db.models import Project
 from app.db.models.enums import PriorityLevel, ProjectStatus
 from app.modules.auth.domain import team_scope
+from app.modules.tasks.domain.dates import validate_dates
 from app.modules.tasks.infrastructure.project_repository import ProjectRepository
 from app.shared.exceptions.base import (
     AuthorizationError,
@@ -329,8 +330,8 @@ class ProjectService:
         # ⚠️⚠️ PELO `get`, E NAO PELO REPOSITORIO (Spec 049, fatia 0b): o `get`
         # tem a lente, e o repositorio so o workspace. Ate 14/09 as escritas
         # daqui (eram quatro; arquivar saiu em 17/09) buscavam direto -- a
-        # lente de 11/09 protegia o LER e deixava o ESCREVER aberto, e o SUPERVISOR do SEO editou projeto do
-        # Comercial. Fora da lente e 404, como no `get`.
+        # lente de 11/09 protegia o LER e deixava o ESCREVER aberto, e o
+        # SUPERVISOR do SEO editou projeto do Comercial. Fora da lente e 404, como no `get`.
         project = await self.get(project_id)
         # Spec 051, fatia A: a lente (404) e do `get`; o verbo no time, daqui.
         self._assert_verbo_no_time("project.update", project.team_id)
@@ -411,14 +412,4 @@ class ProjectService:
     # ----------------------------------------------------
     # Helpers puros (testaveis sem DB)
     # ----------------------------------------------------
-    @staticmethod
-    def _validate_dates(
-        start_date: date | None, due_date: date | None
-    ) -> None:
-        """Garante start_date <= due_date quando ambos informados."""
-        if start_date is not None and due_date is not None:
-            if start_date > due_date:
-                raise ValidationError(
-                    "Data de inicio nao pode ser posterior a data limite.",
-                    details={"field": "due_date"},
-                )
+    _validate_dates = staticmethod(validate_dates)

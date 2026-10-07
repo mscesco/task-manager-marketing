@@ -30,8 +30,7 @@ O MUNDO (`_mundo`): raiz Marketing + subtimes SEO e Design.
 
 from __future__ import annotations
 
-import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -230,7 +229,7 @@ async def test_6_arquivada_ou_apagada_nao_bloqueia(db) -> None:
         title="Apagada",
         status=TaskStatus.BACKLOG,
     )
-    apagada.deleted_at = datetime.now(timezone.utc)
+    apagada.deleted_at = datetime.now(UTC)
     await db.flush()
 
     await _com_responsavel(db, m, task=arquivada, quem=m["gi"])

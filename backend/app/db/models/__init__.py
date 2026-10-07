@@ -36,7 +36,7 @@ from app.db.models.solicitations import (
     SolicitationSection,
 )
 
-__all__ = [
+__all__ = [  # noqa: RUF022 -- agrupado por assunto, de proposito
     # Organizacao
     "Workspace",
     "Team",

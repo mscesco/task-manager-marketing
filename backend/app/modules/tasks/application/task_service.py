@@ -42,6 +42,7 @@ from app.modules.tasks.application.task_guards import (
 )
 from app.modules.tasks.domain.archival import is_terminal
 from app.modules.tasks.domain.board_semantics import status_da_coluna
+from app.modules.tasks.domain.dates import validate_dates
 from app.modules.tasks.domain.history import (
     HistoryEntry,
     build_archived_entry,
@@ -1865,17 +1866,7 @@ class TaskService:
                 details={"field": "due_time"},
             )
 
-    @staticmethod
-    def _validate_dates(
-        start_date: date | None, due_date: date | None
-    ) -> None:
-        """start_date <= due_date quando ambos informados."""
-        if start_date is not None and due_date is not None:
-            if start_date > due_date:
-                raise ValidationError(
-                    "Data de inicio nao pode ser posterior a data limite.",
-                    details={"field": "due_date"},
-                )
+    _validate_dates = staticmethod(validate_dates)
 
     @staticmethod
     def _diff_for_update(

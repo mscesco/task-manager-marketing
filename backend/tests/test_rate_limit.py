@@ -288,7 +288,7 @@ async def test_client_errors_tem_freio_por_ip():
     from app.main import create_app
 
     app = create_app()
-    teto = client_error_limiter._max  # noqa: SLF001 -- o teto vem do settings
+    teto = client_error_limiter._max
     corpo = {"kind": "error", "message": "x"}
     # IP proprio: o balde e por IP, entao este teste nao encosta em nenhum outro.
     headers = {"X-Forwarded-For": "203.0.113.77"}

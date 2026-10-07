@@ -46,6 +46,6 @@ class Base(DeclarativeBase):
     # RETURNING no mesmo INSERT/UPDATE. Sem isso, ler updated_at logo
     # apos um flush dispara releitura preguicosa -> MissingGreenlet no
     # contexto async (ex. ao serializar a resposta de um PATCH).
-    __mapper_args__ = {"eager_defaults": True}
+    __mapper_args__ = {"eager_defaults": True}  # noqa: RUF012 -- convencao do SQLAlchemy
 
     metadata = MetaData(naming_convention=NAMING_CONVENTION)

@@ -32,3 +32,6 @@ Thumbs.db
 
 # Copias de banco (db-dev): nunca no git -- tem dados de pessoas.
 *.dump
+
+# Estado local do Claude Code (worktrees, configuracao da maquina).
+.claude/

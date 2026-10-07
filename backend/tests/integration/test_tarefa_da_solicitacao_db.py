@@ -379,7 +379,7 @@ class _Falso:
     batch_id = "abc12345-0000-0000-0000-000000000000"
     batch_seq = 2
     batch_total = 3
-    answers = [{"label": "O que precisa?", "value": "um banner"}]
+    answers = [{"label": "O que precisa?", "value": "um banner"}]  # noqa: RUF012 -- dublê
 
     class _Data:
         @staticmethod

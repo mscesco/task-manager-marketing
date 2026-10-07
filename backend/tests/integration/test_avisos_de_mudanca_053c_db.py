@@ -258,7 +258,9 @@ async def test_prazo_compara_valor_e_hora_conta(db) -> None:
     c = await _setup(db)
     async with _cliente(db, c["ctx_sup"]) as cli:
         # So a data de inicio: nao e prazo, nao avisa.
-        await cli.patch(_url(c), json={"start_date": "2026-09-18", "due_date": None, "due_time": None})
+        await cli.patch(
+            _url(c), json={"start_date": "2026-09-18", "due_date": None, "due_time": None}
+        )
         assert await _avisos(db, c["op"], "TASK_DUE_CHANGED") == []
         # Prazo com hora.
         r = await cli.patch(

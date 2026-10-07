@@ -99,7 +99,7 @@ def main() -> int:
         print(f"Falha no provisionamento [{exc.code}]: {exc.message}",
               file=sys.stderr)
         return 1
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         print(f"Erro inesperado: {exc}", file=sys.stderr)
         return 2
     return 0

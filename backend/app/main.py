@@ -21,16 +21,15 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from starlette.middleware.cors import CORSMiddleware
 
+# Garante que TODOS os models sejam registrados no metadata
+# (necessario antes de qualquer uso do ORM / Alembic).
+import app.db.models
 from app.api.errors import register_exception_handlers
 from app.api.router import api_v1_router, infra_router
 from app.core.config import settings
 from app.core.logging import configure_logging, get_logger
 from app.core.middleware import RequestContextMiddleware
 from app.db.session import db_manager
-
-# Garante que TODOS os models sejam registrados no metadata
-# (necessario antes de qualquer uso do ORM / Alembic).
-import app.db.models  # noqa: F401
 
 logger = get_logger(__name__)
 

@@ -65,7 +65,7 @@ def _stringify(value: Any) -> Any:
         return str(value)
     if isinstance(value, Enum):
         return value.value
-    if isinstance(value, (datetime, date)):
+    if isinstance(value, datetime | date):
         return value.isoformat()
     return value
 

@@ -24,12 +24,12 @@ from sqlalchemy import select
 from app.db.models.boards import Board, BoardColumn
 from app.db.models.enums import TaskStatus
 from app.modules.tasks.application.board_service import BoardService
-from app.modules.tasks.domain.board_defaults import COLUNAS_PADRAO
 from app.modules.tasks.application.task_service import (
     CreateTaskCommand,
     TaskService,
     UpdateTaskCommand,
 )
+from app.modules.tasks.domain.board_defaults import COLUNAS_PADRAO
 from tests.integration import factories as f
 from tests.integration.conftest import acting_as, mship, node
 

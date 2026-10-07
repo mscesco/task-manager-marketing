@@ -161,16 +161,14 @@ def test_sem_time_nao_e_curinga():
 
 
 def test_o_contrato_antigo_continua_de_pe():
-    """`in` e `all_permissions()` respondem a pergunta AMPLA, como o conjunto plano.
+    """`in` responde a pergunta AMPLA, como o conjunto plano.
 
-    ⚠️ E o que permite `has_permission` e `/auth/me` nao mudarem nesta fatia.
-    `all_permissions()` e projecao COM PERDA: quem consome sabe "o que", nunca "onde".
+    ⚠️ E o que permite `has_permission` nao mudar nesta fatia.
     """
     p = _ator((MKT, "MANAGER"))
 
     assert "subteam.update" in p
     assert "organization.update" not in p
-    assert "subteam.update" in p.all_permissions()
 
     ctx = TenantContext(
         workspace_id=uuid.uuid4(), user_id=uuid.uuid4(), permissions=p

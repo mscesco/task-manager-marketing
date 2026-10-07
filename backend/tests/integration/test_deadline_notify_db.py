@@ -15,7 +15,7 @@ from sqlalchemy import func, select
 
 from app.core.config import settings
 from app.core.deps import get_db_session
-from app.db.models import Notification, Task
+from app.db.models import Notification
 from app.db.models.enums import TaskStatus
 from app.main import create_app
 from app.modules.tasks.application.deadline_notify_service import (

@@ -26,9 +26,8 @@ from __future__ import annotations
 
 import uuid
 from datetime import date, datetime, timedelta
-from zoneinfo import ZoneInfo
-
 from typing import Final
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -36,10 +35,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.logging import get_logger
 from app.core.tenant import tenant_scope
 from app.db.models import BoardColumn, Task, TaskAssignment, User, Workspace
-from app.modules.tasks.domain.board_semantics import TERMINAL_SEMANTICS
 from app.modules.notifications.application.notification_emitter import (
     NotificationEmitter,
 )
+from app.modules.tasks.domain.board_semantics import TERMINAL_SEMANTICS
 
 logger = get_logger(__name__)
 

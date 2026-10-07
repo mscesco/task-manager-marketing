@@ -81,11 +81,11 @@ from app.modules.auth.api.dependencies import TenantContextDep
 from app.modules.tasks.api.schemas import (
     BoardColumnDetailResponse,
     BoardColumnResponse,
-    BoardDeleteResponse,
-    BoardDetailResponse,
     BoardColumnsBatchRequest,
     BoardColumnsBatchResponse,
     BoardCreateRequest,
+    BoardDeleteResponse,
+    BoardDetailResponse,
     BoardRenameRequest,
     BoardResponse,
 )

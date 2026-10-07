@@ -72,7 +72,3 @@ class NotificationDTO:
     #: Spec 053 (E, D27): "ok" = a tarefa existe e quem le ainda a alcanca;
     #: "gone" = excluida ou fora do alcance; None = aviso sem tarefa.
     task_access: str | None = None
-
-    @property
-    def is_read(self) -> bool:
-        return self.read_at is not None

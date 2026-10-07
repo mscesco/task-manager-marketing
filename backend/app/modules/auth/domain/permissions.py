@@ -556,17 +556,6 @@ class ActorPermissions:
             return None
         return self.by_team.get(permission, frozenset())
 
-    def all_permissions(self) -> frozenset[str]:
-        """Achatado, para o contrato de `/auth/me` e para telas.
-
-        ⚠️ E UMA PROJECAO COM PERDA, de proposito: quem consome isto sabe "o
-        que", nunca "onde". O front usa para decidir se DESENHA um botao; o
-        servidor continua sendo quem decide se a acao acontece.
-        """
-        return self.unscoped | frozenset(
-            p for p, times in self.by_team.items() if times
-        )
-
     def __contains__(self, permission: object) -> bool:
         """Compatibilidade com `"x" in permissions` -- semantica de `pode`."""
         return isinstance(permission, str) and self.can(permission)

@@ -37,11 +37,11 @@ from app.db.repository import BaseRepository
 from app.modules.auth.domain import team_scope
 from app.modules.tasks.domain.archival import TERMINAL_STATUSES
 from app.modules.tasks.domain.board_semantics import TERMINAL_SEMANTICS
+from app.modules.tasks.domain.history import HistoryEntry
 from app.modules.tasks.domain.perda_de_alcance import (
     RelacaoPerdida,
     TarefaBloqueio,
 )
-from app.modules.tasks.domain.history import HistoryEntry
 from app.modules.tasks.domain.subtask_progress import (
     SEMANTICA_CONCLUIDA,
     Progresso,
@@ -1357,7 +1357,7 @@ class TaskRepository(BaseRepository[Task]):
                   AND r.deleted_at IS NULL
                   AND r.id = ANY(CAST(:root_ids AS uuid[]))
                 GROUP BY r.id, a.user_id
-                """  # noqa: S608 -- `filtro_arquivada` e literal fixo, nao entrada
+                """
             ),
             {
                 "tenant_id": tenant.workspace_id,
