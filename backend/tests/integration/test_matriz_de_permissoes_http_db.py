@@ -191,6 +191,7 @@ O QUE ESTA TABELA NAO COBRE (de proposito, e anotado para quem estender):
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from dataclasses import dataclass
 
@@ -1052,6 +1053,14 @@ MATRIZ: tuple[Linha, ...] = (
     # Fatia C: desfazer com a pilha VAZIA -- 200 para quem le, e a base de outra
     # arvore continua escondida. O verbo da acao original e conferido so quando
     # ha acao (teste proprio: `test_base_undo_db`).
+    # Fatia G: o canal ao vivo -- quem LE a base o abre, e a de outra arvore
+    # continua escondida (404, e nao um canal vazio que confirmaria a base).
+    Linha("base.events", "canal ao vivo, na do Marketing", "get",
+          f"{T}/bases/{{base_mkt}}/events", None,
+          _TODOS),
+    Linha("base.events", "canal ao vivo, na do Comercial", "get",
+          f"{T}/bases/{{base_com}}/events", None,
+          _COM_CONTEUDO),
     Linha("base.undo", "pilha vazia, na do Marketing", "post",
           f"{T}/bases/{{base_mkt}}/undo", None,
           _TODOS),
@@ -1098,6 +1107,29 @@ def _casos():
             yield pytest.param(
                 linha, papel, esperado, id=f"{linha.acao}[{linha.alvo}]-{papel}"
             )
+
+
+class _HubDeMentira:
+    """O `LiveHub` sem banco: a matriz pergunta QUEM abre o canal, e nao se o
+    aviso chega (isso e de `test_base_ao_vivo_db.py`)."""
+
+    async def subscribe(self, _base_id):
+        return asyncio.Queue()
+
+    def unsubscribe(self, _base_id, _fila) -> None:
+        return None
+
+
+@pytest.fixture(autouse=True)
+def _canal_ao_vivo_curto(monkeypatch):
+    """Spec 056, fatia G: o canal `/bases/{id}/events` vive 60 s. Na matriz ele
+    vive ZERO -- abre, diz `ready`, diz `end` e fecha --, senao cada linha
+    permitida esperaria um minuto."""
+    from app.modules.bases.api import router as rotas_da_base
+    from app.modules.bases.infrastructure import live
+
+    monkeypatch.setattr(rotas_da_base, "CANAL_SEGUNDOS", 0.0)
+    monkeypatch.setattr(live, "hub", _HubDeMentira())
 
 
 @pytest.mark.parametrize(("linha", "papel", "esperado"), list(_casos()))

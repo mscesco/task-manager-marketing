@@ -50,6 +50,7 @@ from app.modules.bases.infrastructure.base_repository import (
     BaseTableRepository,
     BaseViewRepository,
 )
+from app.modules.bases.infrastructure.live import publicar
 
 logger = get_logger(__name__)
 
@@ -115,6 +116,10 @@ class UndoService:
 
         entrada.undone_at = datetime.now(UTC) if desfazer else None
         await self._session.flush()
+        # Desfazer tambem e uma gravacao (spec §9.5): os outros sao avisados.
+        await publicar(
+            self._session, base.id, "undo" if desfazer else "redo", ator
+        )
         return UndoResult(applied=True, conflict=False, kind=entrada.kind)
 
     # ------------------------------------------------------------ por tipo

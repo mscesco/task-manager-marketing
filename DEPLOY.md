@@ -270,6 +270,19 @@ NOVAS, e o código velho nunca as consulta. Subir a migration com o velho no ar
 é seguro; o código novo sem ela dá 500 só nas rotas `/bases`. O `downgrade`
 apaga as cinco — e as bases que a equipe já tiver criado.
 
+⚠️⚠️ **E O AO VIVO PRECISA DE UMA CONFERÊNCIA NA VPS** (Spec 056, fatia G),
+porque nenhum teste daqui a faz: o canal `GET /api/v1/bases/<id>/events` é um
+fluxo (Server-Sent Events) que fica aberto 60 s, e um proxy que BUFFERIZA
+seguraria os avisos até o fim. O Traefik não bufferiza por padrão, mas
+"por padrão" não é medida. Depois de subir, com um token de acesso válido e o
+id de uma base:
+```bash
+curl -N -H "Authorization: Bearer <token>" https://task.srv1186064.hstgr.cloud/api/v1/bases/<id>/events
+```
+Tem de aparecer `event: ready` **na hora**, um `: ping` a cada 15 s, e
+`event: end` aos 60 s. Se tudo chegar de uma vez só no fim, o proxy está
+bufferizando, e o front cai na recarga de 10 s -- funciona, mas não é ao vivo.
+
 ⚠️ **E A BASE TRAZ UM JOB NOVO PARA O N8N** (Spec 056, fatia D): uma chamada
 diária a `POST /api/v1/system/bases/purge`, com o mesmo header `X-System-Token`
 das outras rotas de sistema. Ela apaga de vez a base excluída há mais de 10

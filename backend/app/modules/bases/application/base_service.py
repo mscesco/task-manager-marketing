@@ -52,6 +52,7 @@ from app.modules.bases.infrastructure.base_repository import (
     BaseTableRepository,
     BaseViewRepository,
 )
+from app.modules.bases.infrastructure.live import publicar
 from app.shared.exceptions.base import (
     BusinessRuleError,
     EntityNotFoundError,
@@ -212,6 +213,7 @@ class BaseService:
         if description is not None:
             base.description = description
         await self._session.flush()
+        await publicar(self._session, base.id, "base.update", require_tenant().user_id)
         return await self._detail(base)
 
     async def delete(self, base_id: uuid.UUID) -> BaseTable:
@@ -227,6 +229,8 @@ class BaseService:
         base.deleted_at = datetime.now(UTC)
         base.deleted_by = require_tenant().user_id
         await self._session.flush()
+        # Quem esta com ela aberta recebe o aviso, recarrega, e da com o 404.
+        await publicar(self._session, base.id, "base.delete", require_tenant().user_id)
         logger.info("base.deleted", base_id=str(base.id))
         return base
 
@@ -267,6 +271,7 @@ class BaseService:
         base.deleted_at = None
         base.deleted_by = None
         await self._session.flush()
+        await publicar(self._session, base.id, "base.restore", require_tenant().user_id)
         logger.info("base.restored", base_id=str(base.id))
         return await self._detail(base)
 

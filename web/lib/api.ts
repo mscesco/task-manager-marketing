@@ -3577,6 +3577,27 @@ export async function updateBaseCells(
   return api<BaseRow[]>(`/api/v1/bases/${baseId}/cells`, { method: "PATCH", body: { cells } });
 }
 
+/**
+ * O canal ao vivo de uma base (Spec 056, fatia G): um `fetch` lido em fluxo.
+ *
+ * ⚠️ NÃO PASSA PELO `api()`, e é a única chamada assim: o `api()` lê o corpo
+ * inteiro, e este corpo não acaba (dura 60 s). Por isso o 401 não renova o
+ * token aqui -- quem chama recarrega a base pelo `api()`, que renova, e reabre.
+ * O token vai no CABEÇALHO, como em toda chamada, e não na URL (ver
+ * `lib/sse.ts`).
+ */
+export function abrirCanalDaBase(baseId: string, signal: AbortSignal): Promise<Response> {
+  const token = getToken();
+  return fetch(`${API_URL}/api/v1/bases/${baseId}/events`, {
+    headers: {
+      Accept: "text/event-stream",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    signal,
+    cache: "no-store",
+  });
+}
+
 /** Visões são COMPARTILHADAS (D14): mudar filtro ou ordem muda para todos. */
 export async function createBaseView(
   baseId: string,

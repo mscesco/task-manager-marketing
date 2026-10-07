@@ -12,7 +12,8 @@ conta, +25): **2047**. Depois da fatia A: **2054**; front **1581**. Depois da
 fatia B: **2081** (drift limpo). Depois da fatia C: **2127**. Depois da fatia D:
 **2142** — o backend da spec está completo. Fatia E (primeira do front):
 front **1613** (+32), `next build` limpo. Fatia F (visões, quadro,
-calendário): front **1640**.
+calendário): front **1640**. Fatia G (ao vivo): backend **2159**, front
+**1649**.
 
 ---
 
@@ -533,9 +534,20 @@ novo.
 
 ### 10.3. O evento
 
-`{kind, entity, id, version, actor_id, data}`. `data` é o estado novo da
-entidade (a linha, a coluna, a visão), o mesmo formato da rota de leitura.
-Quem gravou ignora o próprio eco pela `version`.
+~~`{kind, entity, id, version, actor_id, data}`, com `data` = o estado novo.~~
+
+⚠️ **Mudou na fatia G (07/10): o aviso é só `{base_id, kind, actor_id}`, e
+quem recebe RECARREGA a base.** O `NOTIFY` do Postgres tem teto de 8.000 bytes
+por mensagem, e uma célula de texto pode ter 5.000 caracteres: mandar o estado
+novo exigiria um segundo caminho para o que não cabe. Recarregar é um caminho
+só, e nunca fica pela metade. Vários avisos seguidos viram uma recarga (300
+ms). Quem gravou ignora o próprio eco pelo `actor_id`.
+
+⚠️ **E o canal dura 60 s e se fecha (`event: end`); o front reabre.** Cada
+reabertura passa de novo por `base.read` no time da base -- é a "releitura do
+verbo a cada 60 s" do §5.7, sem um laço dentro do servidor. E o token que
+vence também não reabre: a recarga que acompanha a reabertura passa pelo
+`api()`, que renova o token.
 
 ### 10.4. Reconexão e queda
 

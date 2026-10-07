@@ -39,6 +39,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.tenant import require_tenant
 from app.db.models.bases import BaseChange
 from app.modules.bases.infrastructure.base_repository import BaseChangeRepository
+from app.modules.bases.infrastructure.live import publicar
 
 #: O verbo que DESFAZER (e refazer) cada acao exige, conferido de novo na hora
 #: (spec §9.4): quem perdeu o verbo entre agir e desfazer nao desfaz.
@@ -68,6 +69,9 @@ async def record(
     await repo.drop_undone(base_id, actor)
     repo.add(BaseChange(base_id=base_id, actor_id=actor, kind=kind, payload=payload))
     await session.flush()
+    # Fatia G: toda acao do diario e tambem um aviso ao vivo -- e sai no MESMO
+    # commit. Um lugar so, para nenhuma acao esquecer de avisar.
+    await publicar(session, base_id, kind, actor)
 
 
 def ids(payload: dict[str, Any]) -> dict[str, Any]:

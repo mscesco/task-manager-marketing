@@ -31,15 +31,24 @@ Fatia D:
     DELETE /bases/{id}                                   -- base.delete
     POST   /bases/{id}/restore                           -- base.restore
     (e a rotina diaria, em `/system/bases/purge` -- `tasks/api/system_router`)
+
+Fatia G:
+    GET    /bases/{id}/events                            -- base.read (SSE)
 """
 
 from __future__ import annotations
 
+import asyncio
+import json
+import time
 import uuid
+from collections.abc import AsyncIterator
 
 from fastapi import APIRouter, Depends, Response, status
+from fastapi.responses import StreamingResponse
 
 from app.core.deps import SessionDep, UoWDep
+from app.core.logging import get_logger
 from app.modules.auth.api.dependencies import require_permission
 from app.modules.bases.api.schemas import (
     BaseCreateRequest,
@@ -74,6 +83,9 @@ from app.modules.bases.application.row_service import (
 )
 from app.modules.bases.application.undo_service import UndoService
 from app.modules.bases.application.view_service import ViewService
+from app.modules.bases.infrastructure import live
+
+logger = get_logger(__name__)
 
 router = APIRouter(prefix="/bases", tags=["bases"])
 
@@ -393,3 +405,71 @@ async def redo(base_id: uuid.UUID, uow: UoWDep) -> UndoResponse:
     r = await UndoService(uow.session).redo(base_id)
     await uow.commit()
     return UndoResponse(applied=r.applied, conflict=r.conflict, kind=r.kind)
+
+
+# --------------------------------------------------------------- ao vivo
+#: Quanto um canal vive antes de se fechar (spec §10, fatia G).
+#:
+#: ⚠️⚠️ CURTO DE PROPOSITO. Cada reconexao passa de novo pelo portao e pelo
+#: `base.read` NO TIME DA BASE -- e essa e a "releitura do verbo a cada 60 s"
+#: da spec §5.7, sem um laco extra aqui dentro: quem perdeu o acesso (saiu do
+#: time, conta desativada, papel trocado) nao reabre. E o token que vence
+#: tambem nao reabre, e o front renova na recarga que faz ao reconectar.
+CANAL_SEGUNDOS = 60.0
+#: Comentario SSE a cada tanto, para proxy nenhum fechar o canal por silencio.
+PING_SEGUNDOS = 15.0
+
+
+@router.get(
+    "/{base_id}/events",
+    dependencies=[Depends(require_permission("base.read"))],
+)
+async def base_events(base_id: uuid.UUID, session: SessionDep) -> StreamingResponse:
+    """O canal ao vivo de UMA base (Server-Sent Events).
+
+    Cada `data:` e `{base_id, kind, actor_id}` -- so o AVISO de que mudou; quem
+    recebe recarrega (ver `infrastructure/live.py`). `event: end` = o canal
+    venceu, reconecte.
+
+    ⚠️ A SESSAO E FECHADA ANTES DE TRANSMITIR: o canal fica aberto 60 s, e uma
+    conexao do pool presa por navegador esgotaria o pool com uma dezena de
+    pessoas olhando a mesma base.
+    """
+    await BaseService(session).get_detail(base_id)  # 404 se nao le
+    await session.close()
+
+    async def fluxo() -> AsyncIterator[str]:
+        # ⚠️ A inscricao mora DENTRO do gerador: fora dele, um navegador que
+        # desistisse antes de a transmissao comecar deixaria a fila inscrita
+        # para sempre (o `finally` so roda se o gerador rodou).
+        try:
+            fila = await live.hub.subscribe(base_id)
+        except Exception:  # a escuta nao abriu: o front cai na recarga de 10 s
+            logger.exception("base.live.subscribe_failed", base_id=str(base_id))
+            yield "event: unavailable\ndata: {}\n\n"
+            return
+        try:
+            yield "retry: 3000\n\n"
+            yield "event: ready\ndata: {}\n\n"
+            fim = time.monotonic() + CANAL_SEGUNDOS
+            while (resta := fim - time.monotonic()) > 0:
+                try:
+                    aviso = await asyncio.wait_for(fila.get(), timeout=min(PING_SEGUNDOS, resta))
+                except TimeoutError:
+                    yield ": ping\n\n"
+                    continue
+                yield f"data: {json.dumps(aviso)}\n\n"
+            yield "event: end\ndata: {}\n\n"
+        finally:
+            live.hub.unsubscribe(base_id, fila)
+
+    return StreamingResponse(
+        fluxo(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            # Para proxy que bufferiza por padrao (nginx); o Traefik nao
+            # bufferiza, e a fatia confere na VPS com `curl -N`.
+            "X-Accel-Buffering": "no",
+        },
+    )

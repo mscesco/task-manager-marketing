@@ -3,11 +3,13 @@
 // Uma Base aberta (Spec 056, fatia E): nome, o texto do topo (D15), a tabela,
 // o aviso de linhas (D23) e excluir pedindo o nome (D26).
 //
-// ⚠️⚠️ ATUALIZA A CADA 10 s ATÉ O AO VIVO (fatia G). Outras pessoas editam a
-// mesma base, e sem isto a tela de cada um envelheceria até recarregar. Mesmo
+// ⚠️⚠️ AO VIVO (fatia G): o canal (`useAoVivo`) avisa quando outra pessoa
+// mexe, e a página recarrega. A recarga de 10 s da fatia E FICOU, mas só vale
+// com o canal fora do ar -- ele é um atalho, nunca o único caminho. Mesmo
 // desenho do sino (`NotificationBell`): pula com a aba escondida, volta ao
-// reaparecer, para no 401. ⚠️ E PULA ENQUANTO ALGUÉM EDITA uma célula: trocar
-// as linhas por baixo de um editor aberto o fecharia no meio da digitação.
+// reaparecer, para no 401. ⚠️ E NADA RECARREGA ENQUANTO ALGUÉM EDITA uma
+// célula: trocar as linhas por baixo de um editor aberto o fecharia no meio da
+// digitação -- o aviso fica pendente e vale quando a edição acaba.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
@@ -24,8 +26,10 @@ import ControlesDaVisao from "@/components/bases/ControlesDaVisao";
 import QuadroDaBase from "@/components/bases/QuadroDaBase";
 import type { Escolha } from "@/components/bases/EditorDeEscolha";
 import { useGravarCelula } from "@/components/bases/useGravarCelula";
+import { useAoVivo } from "@/components/bases/useAoVivo";
 import {
   ApiError,
+  currentUser,
   deleteBase,
   getBase,
   listBaseRows,
@@ -145,11 +149,48 @@ export default function PaginaDaBase({ id }: { id: string }) {
     };
   }, [carregar]);
 
-  // A recarga de 10 s (ver o topo).
+  // --- o ao vivo (fatia G) ---
+  // ⚠️ Um aviso que chega com alguém EDITANDO fica PENDENTE, e a recarga
+  // acontece quando a edição acaba: trocar as linhas por baixo de um editor
+  // aberto o faria perder o que está sendo digitado.
+  const [meuId, setMeuId] = useState<string | null>(null);
+  useEffect(() => {
+    currentUser()
+      .then((u) => setMeuId(u.id))
+      .catch(() => {});
+  }, []);
+  const pendente = useRef(false);
+  const recarregar = useCallback(() => {
+    carregar().catch((e: ApiError) => {
+      if (e.status === 404) setErro("Esta base foi excluída.");
+    });
+  }, [carregar]);
+  const aoMudar = useCallback(() => {
+    if (ocupadoRef.current || salvandoVisao.current) {
+      pendente.current = true;
+      return;
+    }
+    recarregar();
+  }, [recarregar]);
+  const aoVivo = useAoVivo(id, meuId, aoMudar);
+  useEffect(() => {
+    const t = setInterval(() => {
+      if (pendente.current && !ocupadoRef.current && !salvandoVisao.current) {
+        pendente.current = false;
+        recarregar();
+      }
+    }, 1_000);
+    return () => clearInterval(t);
+  }, [recarregar]);
+
+  // A recarga de 10 s (ver o topo) -- SÓ com o canal fora do ar.
+  const aoVivoRef = useRef(aoVivo);
+  aoVivoRef.current = aoVivo;
   useEffect(() => {
     let parado = false;
     const tick = () => {
-      if (parado || document.hidden || ocupadoRef.current || salvandoVisao.current) return;
+      if (parado || aoVivoRef.current) return;
+      if (document.hidden || ocupadoRef.current || salvandoVisao.current) return;
       carregar().catch((e: ApiError) => {
         if (e.status === 401) parado = true;
         if (e.status === 404) {
