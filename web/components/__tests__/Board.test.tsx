@@ -1128,6 +1128,9 @@ describe("Board -- o quadro sai das TAREFAS, nao da flag de padrão (fatia 4c)",
     // teria voltado a ser `is_default`.
     expect(screen.queryByText("Backlog")).toBeNull();
     expect(screen.queryByText("Em Andamento")).toBeNull();
+    // 07/10: o quadro de projeto nao usa a raiz, e nao pergunta qual e. Com
+    // varias raizes a pergunta levantava, e o Next 15 desenhava o erro.
+    expect(api.getRootTeamId).not.toHaveBeenCalled();
   });
 
   it("⚠️ o QUADRO GERAL não adivinha pelo lote -- fatia 5c", async () => {
