@@ -83,6 +83,21 @@ class BaseTableRepository(BaseRepository[BaseTable]):
             stmt = stmt.where(BaseTable.team_id.in_(team_ids))
         return list((await self.session.execute(stmt)).scalars().all())
 
+    async def list_deleted_in_teams(
+        self, team_ids: frozenset[uuid.UUID] | None, since: datetime
+    ) -> list[BaseTable]:
+        """A lixeira: excluidas DENTRO do prazo, mais recente primeiro."""
+        stmt = (
+            self._base_select(include_deleted=True)
+            .where(BaseTable.deleted_at.is_not(None), BaseTable.deleted_at >= since)
+            .order_by(BaseTable.deleted_at.desc(), BaseTable.id)
+        )
+        if team_ids is not None:
+            if not team_ids:
+                return []
+            stmt = stmt.where(BaseTable.team_id.in_(team_ids))
+        return list((await self.session.execute(stmt)).scalars().all())
+
 
 class BaseColumnRepository(BaseRepository[BaseColumn]):
     model = BaseColumn

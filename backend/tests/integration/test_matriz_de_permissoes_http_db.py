@@ -156,6 +156,12 @@ cadeados `can_update` e `can_create_column` em `CADEADOS_DE_ITEM`, e as listas
 ⚠️ `base.delete` passou de 404 a 405 SEM chegar ao alvo: o caminho `/bases/{id}`
 existe agora (GET e PATCH), so falta o metodo -- a fatia D o traz.
 
+SPEC 056, FATIAS C E D (07/10) -- linha, visao, desfazer, excluir e restaurar
+chegaram ao alvo. NENHUMA linha tem `meta` agora: a base inteira responde o
+que a spec pediu. O campo e o guardiao ficam, para a proxima spec que escrever
+a matriz antes do codigo. Entraram o lote de celulas, o desfazer com a pilha
+vazia, a lixeira (`LIXEIRA`) e os cadeados de linha, visao e excluir.
+
     Sabotagem H (07/10): `BaseService._visible` sem a pergunta `base.read`.
        Cairam 8 celulas, todas da base do COMERCIAL para quem nao a le
        (MANAGER, SUPERVISOR, OPERATOR): o 404 que esconde a base virou 200 ou
@@ -564,9 +570,8 @@ class Linha:
 
 T = "/api/v1"
 
-# Spec 056: os padroes que se repetem nas linhas da base.
-#: Hoje: a rota nao existe, e e 404 para todos.
-_SEM_ROTA = (OCULTO,) * 6
+# Spec 056: os padroes que se repetem nas linhas da base. (`_SEM_ROTA`, o 404
+# de todas antes de as rotas existirem, saiu na fatia D: nenhuma linha o usa.)
 #: Conteudo (ler, coluna, linha, visao) na base da PROPRIA raiz: todo papel.
 _TODOS = (OK,) * 6
 #: Estrutura (criar, editar, excluir, restaurar a base): todos menos o OPERATOR.
@@ -1003,15 +1008,13 @@ MATRIZ: tuple[Linha, ...] = (
           {"name": "Outro"},
           _COM_ESTRUTURA),
     # ⚠️ O GESTOR EXCLUI: excecao dela (D3) a 049 fatia D.
-    # ⚠️ HOJE E 405, e nao 404: o caminho `/bases/{id}` ja existe (GET, PATCH),
-    # so falta o metodo DELETE -- a fatia D o traz.
     Linha("base.delete", "do Marketing", "delete", f"{T}/bases/{{base_mkt}}", None,
-          (405,) * 6, diverge="056 fatia D", meta=_QUEM_CRIA),
+          _QUEM_CRIA),
     Linha("base.delete", "do Comercial", "delete", f"{T}/bases/{{base_com}}", None,
-          (405,) * 6, diverge="056 fatia D", meta=_COM_ESTRUTURA),
+          _COM_ESTRUTURA),
     Linha("base.restore", "excluida do Marketing", "post",
           f"{T}/bases/{{base_mkt_excluida}}/restore", None,
-          _SEM_ROTA, diverge="056 fatia D", meta=_QUEM_CRIA),
+          _QUEM_CRIA),
     # D24: trocar o tipo e editar coluna -- qualquer um da arvore.
     Linha("base_column.create", "na do Marketing", "post",
           f"{T}/bases/{{base_mkt}}/columns", {"name": "Plataforma", "type": "select"},
@@ -1164,6 +1167,9 @@ CADEADOS_DE_ITEM = (
     ("/bases/{base_mkt}", "can_update_row", ("base_row.update", "na do Marketing")),
     ("/bases/{base_com}", "can_update_row", ("base_row.update", "na do Comercial")),
     ("/bases/{base_mkt}", "can_delete_view", ("base_view.delete", "na do Marketing")),
+    # Fatia D: a lixeira da base.
+    ("/bases/{base_mkt}", "can_delete", ("base.delete", "do Marketing")),
+    ("/bases/{base_com}", "can_delete", ("base.delete", "do Comercial")),
 )
 
 
@@ -1374,6 +1380,37 @@ LE_BASES = {
     "OPERATOR": {"base_mkt"},
     "DUAS_ARVORES": {"base_mkt", "base_com"},
 }
+
+
+#: Spec 056, fatia D: o que cada papel ve na LIXEIRA -- `GET /bases/trash`.
+#: `None` = a rota recusa (sem `base.restore` em lugar nenhum).
+LIXEIRA = {
+    "ADMIN": {"base_mkt_excluida"},
+    "GESTOR": {"base_mkt_excluida"},
+    "MANAGER": {"base_mkt_excluida"},
+    "SUPERVISOR": {"base_mkt_excluida"},
+    "OPERATOR": None,
+    "DUAS_ARVORES": {"base_mkt_excluida"},
+}
+
+
+@pytest.mark.parametrize("papel", PAPEIS)
+async def test_lixeira_de_bases_pelo_verbo(db, papel: str) -> None:
+    """D4: quem pode criar exclui e restaura -- e e quem ve a lixeira. A linha
+    `base.restore` da matriz diz o mesmo, papel a papel."""
+    m = await _mundo(db)
+    async with _client(db, _contexto(m, papel)) as cli:
+        r = await cli.get(f"{T}/bases/trash")
+    if LIXEIRA[papel] is None:
+        assert r.status_code == 403, r.text
+        return
+    assert r.status_code == 200, r.text
+    nome_do_id = {v: k for k, v in m["ids"].items()}
+    vistas = {nome_do_id[b["id"]] for b in r.json()}
+    assert vistas == LIXEIRA[papel], f"{papel} ve na lixeira {vistas}"
+    assert all(b["can_restore"] for b in r.json())
+    linha = _linha("base.restore", "excluida do Marketing").esperado[PAPEIS.index(papel)]
+    assert linha == OK
 
 
 @pytest.mark.parametrize("papel", PAPEIS)

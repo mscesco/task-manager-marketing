@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -78,6 +78,9 @@ TITLE_COLUMN_NAME = "Título"
 DEFAULT_VIEW_NAME = "Tabela"
 
 WIDTH_MIN, WIDTH_MAX = 60, 800
+
+#: D5: a base excluida volta por 10 dias. Depois, a rotina diaria a apaga.
+RESTORE_WINDOW = timedelta(days=10)
 
 
 @dataclass(frozen=True, slots=True)
@@ -209,6 +212,62 @@ class BaseService:
         if description is not None:
             base.description = description
         await self._session.flush()
+        return await self._detail(base)
+
+    async def delete(self, base_id: uuid.UUID) -> BaseTable:
+        """Exclui a base (D5): fica `RESTORE_WINDOW` recuperavel, e a rotina
+        diaria a apaga de vez depois.
+
+        ⚠️ A CONFIRMACAO DIGITANDO O NOME (D26) E DA TELA. O servidor nao a
+        repete: ela protege contra o clique errado, e quem chama a API ja
+        escolheu o id. O que protege contra o resto e o prazo de restaurar.
+        """
+        base = await self._visible(base_id)
+        self._exigir("base.delete", base.team_id)
+        base.deleted_at = datetime.now(UTC)
+        base.deleted_by = require_tenant().user_id
+        await self._session.flush()
+        logger.info("base.deleted", base_id=str(base.id))
+        return base
+
+    async def list_trash(self) -> list[BaseTable]:
+        """As excluidas que a pessoa pode RESTAURAR, ainda no prazo.
+
+        ⚠️ `base.restore`, e nao `base.read`: a lixeira e de quem desfaz o
+        estrago. Hoje os dois grupos coincidem com quem cria (D4).
+        """
+        times = require_tenant().teams_with_permission("base.restore")
+        desde = datetime.now(UTC) - RESTORE_WINDOW
+        return await self._bases.list_deleted_in_teams(times, desde)
+
+    async def restore(self, base_id: uuid.UUID) -> BaseDetail:
+        """Devolve a base excluida, com tudo o que tinha (D4, D5).
+
+        Erros:
+            404 -- nao existe, ou a pessoa nao le o time dela.
+            403 -- le, mas sem `base.restore`.
+            409 -- nao esta excluida, ou o prazo de 10 dias passou (a rotina
+                   diaria ainda nao a apagou, mas ela ja nao volta).
+        """
+        base = await self._bases.get_by_id(base_id, include_deleted=True)
+        if base is None or not require_tenant().has_permission_in(
+            "base.read", base.team_id
+        ):
+            raise EntityNotFoundError("Base", identifier=base_id)
+        self._exigir("base.restore", base.team_id)
+        if base.deleted_at is None:
+            raise BusinessRuleError(
+                "Esta base nao esta excluida.", details={"base_id": str(base.id)}
+            )
+        if base.deleted_at < datetime.now(UTC) - RESTORE_WINDOW:
+            raise BusinessRuleError(
+                "O prazo de 10 dias para restaurar esta base ja passou.",
+                details={"base_id": str(base.id)},
+            )
+        base.deleted_at = None
+        base.deleted_by = None
+        await self._session.flush()
+        logger.info("base.restored", base_id=str(base.id))
         return await self._detail(base)
 
     # ------------------------------------------------------------ coluna

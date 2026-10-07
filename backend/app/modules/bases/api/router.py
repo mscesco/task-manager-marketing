@@ -26,7 +26,11 @@ Fatia C:
     POST   /bases/{id}/undo                              -- base.read (+ o verbo
     POST   /bases/{id}/redo                                 da acao, no servico)
 
-Excluir e restaurar a base chegam na fatia D.
+Fatia D:
+    GET    /bases/trash                                  -- base.restore
+    DELETE /bases/{id}                                   -- base.delete
+    POST   /bases/{id}/restore                           -- base.restore
+    (e a rotina diaria, em `/system/bases/purge` -- `tasks/api/system_router`)
 """
 
 from __future__ import annotations
@@ -41,6 +45,7 @@ from app.modules.bases.api.schemas import (
     BaseCreateRequest,
     BaseResponse,
     BaseSummaryResponse,
+    BaseTrashItemResponse,
     BaseUpdateRequest,
     CellsUpdateRequest,
     ColumnCreateRequest,
@@ -56,6 +61,7 @@ from app.modules.bases.api.schemas import (
     ViewUpdateRequest,
 )
 from app.modules.bases.application.base_service import (
+    RESTORE_WINDOW,
     BaseService,
     CreateBaseCommand,
     UpdateColumnCommand,
@@ -100,6 +106,28 @@ async def create_base(payload: BaseCreateRequest, uow: UoWDep) -> BaseResponse:
 
 
 @router.get(
+    "/trash",
+    response_model=list[BaseTrashItemResponse],
+    dependencies=[Depends(require_permission("base.restore"))],
+)
+async def list_trash(session: SessionDep) -> list[BaseTrashItemResponse]:
+    """⚠️ DECLARADA ANTES de `/{base_id}`: na ordem inversa, "trash" seria lido
+    como id da base e daria 422."""
+    bases = await BaseService(session).list_trash()
+    return [
+        BaseTrashItemResponse(
+            id=b.id,
+            team_id=b.team_id,
+            name=b.name,
+            deleted_at=b.deleted_at,
+            deleted_by=b.deleted_by,
+            restorable_until=b.deleted_at + RESTORE_WINDOW,
+        )
+        for b in bases
+    ]
+
+
+@router.get(
     "/{base_id}",
     response_model=BaseResponse,
     dependencies=[Depends(require_permission("base.read"))],
@@ -119,6 +147,30 @@ async def update_base(
     detail = await BaseService(uow.session).update(
         base_id, name=payload.name, description=payload.description
     )
+    await uow.commit()
+    return BaseResponse.from_detail(detail)
+
+
+@router.delete(
+    "/{base_id}",
+    response_model=BaseSummaryResponse,
+    dependencies=[Depends(require_permission("base.delete"))],
+)
+async def delete_base(base_id: uuid.UUID, uow: UoWDep) -> BaseSummaryResponse:
+    """Exclui (D5): fica 10 dias na lixeira. A confirmacao pelo nome (D26) e da
+    tela."""
+    base = await BaseService(uow.session).delete(base_id)
+    await uow.commit()
+    return BaseSummaryResponse.model_validate(base)
+
+
+@router.post(
+    "/{base_id}/restore",
+    response_model=BaseResponse,
+    dependencies=[Depends(require_permission("base.restore"))],
+)
+async def restore_base(base_id: uuid.UUID, uow: UoWDep) -> BaseResponse:
+    detail = await BaseService(uow.session).restore(base_id)
     await uow.commit()
     return BaseResponse.from_detail(detail)
 

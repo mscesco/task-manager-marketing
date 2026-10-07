@@ -270,6 +270,13 @@ NOVAS, e o código velho nunca as consulta. Subir a migration com o velho no ar
 é seguro; o código novo sem ela dá 500 só nas rotas `/bases`. O `downgrade`
 apaga as cinco — e as bases que a equipe já tiver criado.
 
+⚠️ **E A BASE TRAZ UM JOB NOVO PARA O N8N** (Spec 056, fatia D): uma chamada
+diária a `POST /api/v1/system/bases/purge`, com o mesmo header `X-System-Token`
+das outras rotas de sistema. Ela apaga de vez a base excluída há mais de 10
+dias, e linha, coluna, opção e diário de desfazer com mais de 1 dia. **Sem o
+agendamento nada se perde** — só nada se apaga de vez, e a tabela do diário
+cresce. Idempotente: rodar duas vezes no dia não faz mal.
+
 ⚠️ **A `0015` (`unaccent`) TAMBÉM inverte a ordem — por um terceiro motivo, e
 ✅ ELA ESTÁ EM PRODUÇÃO DESDE 21/08/2026.** Ela não acrescenta coluna a model
 nenhum (a checagem do `git diff -- backend/app/db/models/` sai vazia), então

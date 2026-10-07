@@ -100,6 +100,23 @@ class BaseSummaryResponse(_Cadeados):
     updated_at: datetime
 
 
+class BaseTrashItemResponse(BaseModel):
+    """Uma base na LIXEIRA (D5): quando foi excluida, por quem, e ate quando
+    volta. `can_restore` e a mesma pergunta do `restore`."""
+
+    id: uuid.UUID
+    team_id: uuid.UUID
+    name: str
+    deleted_at: datetime
+    deleted_by: uuid.UUID | None
+    restorable_until: datetime
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def can_restore(self) -> bool:
+        return _pode("base.restore", self.team_id)
+
+
 class BaseResponse(_Cadeados):
     """A base aberta: colunas, visoes e todos os cadeados (spec §5.6)."""
 

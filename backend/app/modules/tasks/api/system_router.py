@@ -16,6 +16,7 @@ from fastapi import APIRouter, Depends, Header
 
 from app.core.config import settings
 from app.core.deps import SessionDep
+from app.modules.bases.application.purge_service import BasePurgeService
 from app.modules.tasks.application.deadline_notify_service import (
     DeadlineNotifyService,
 )
@@ -54,6 +55,19 @@ async def archive_stale(session: SessionDep) -> dict:
     Idempotente. Disparada por job diario (n8n). `now` resolvido no servidor.
     """
     return await StaleArchivalService(session).run(now=datetime.now(UTC))
+
+
+@router.post(
+    "/bases/purge",
+    dependencies=[Depends(require_system_token)],
+)
+async def purge_bases(session: SessionDep) -> dict:
+    """A rotina diaria da Base (Spec 056, §11): apaga de vez a base excluida
+    ha mais de 10 dias, e linha, coluna, opcao e diario com mais de 1 dia.
+
+    Idempotente. Disparada por job diario (n8n), como o `archive-stale`.
+    """
+    return await BasePurgeService(session).run(now=datetime.now(UTC))
 
 
 @router.post(

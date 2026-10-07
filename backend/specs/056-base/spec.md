@@ -9,7 +9,8 @@ pronta para a fatia 0.
 **Placar na abertura:** backend **1883** (medido na fatia 0, em 06/10, sobre a
 `main` em `1c58369`). Depois da fatia 0: **2022**. Rebase sobre o #66 (reativar
 conta, +25): **2047**. Depois da fatia A: **2054**; front **1581**. Depois da
-fatia B: **2081** (drift limpo). Depois da fatia C: **2127**.
+fatia B: **2081** (drift limpo). Depois da fatia C: **2127**. Depois da fatia D:
+**2142** — o backend da spec está completo.
 
 ---
 
