@@ -210,11 +210,6 @@ class CommentReaction(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     emoji: Mapped[str] = mapped_column(String(16), nullable=False)
 
 
-#: Os dois tipos de anexo. Hoje so LINK e gravado (Spec 052); FILE guarda o
-#: lugar do upload, que nao existe ainda.
-ATTACHMENT_KINDS = ("LINK", "FILE")
-
-
 class Attachment(UUIDPrimaryKeyMixin, Base):
     """Anexo de um PROJETO ou de uma TAREFA -- link ou arquivo. Spec 052, fatia B.
 

@@ -33,10 +33,11 @@ SOBRE roles/permissions:
 from __future__ import annotations
 
 import uuid
+from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar, Token
 from dataclasses import dataclass, field
-from typing import Any, Iterator
+from typing import Any
 
 from app.shared.exceptions.base import MissingTenantContextError
 
@@ -172,11 +173,6 @@ def set_tenant(context: TenantContext) -> Token[TenantContext | None]:
     return _tenant_ctx.set(context)
 
 
-def reset_tenant(token: Token[TenantContext | None]) -> None:
-    """Restaura o contexto ao estado anterior ao `set_tenant`."""
-    _tenant_ctx.reset(token)
-
-
 def current_tenant() -> TenantContext | None:
     """Retorna o contexto corrente, ou None se nao houver."""
     return _tenant_ctx.get()
@@ -196,11 +192,6 @@ def require_tenant() -> TenantContext:
             "ativo na requisicao/job corrente."
         )
     return context
-
-
-def current_workspace_id() -> uuid.UUID:
-    """Atalho: workspace_id do tenant corrente (falha alto se ausente)."""
-    return require_tenant().workspace_id
 
 
 @contextmanager

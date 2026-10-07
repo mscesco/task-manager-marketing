@@ -37,10 +37,10 @@ from app.modules.auth.api.dependencies import (
 )
 from app.modules.solicitations.api.schemas import (
     AndarRequest,
-    CriarTarefaRequest,
     BatchItemResponse,
     BatchListResponse,
     BatchResponse,
+    CriarTarefaRequest,
     MarkTaskRequest,
     PublicSolicitationCreateRequest,
     PublicSolicitationCreateResponse,
@@ -50,8 +50,8 @@ from app.modules.solicitations.api.schemas import (
 )
 from app.modules.solicitations.application.service import (
     AndarCommand,
-    CriarTarefaCommand,
     CreatePublicCommand,
+    CriarTarefaCommand,
     MarkTaskCommand,
     ReviewCommand,
     SolicitationItem,

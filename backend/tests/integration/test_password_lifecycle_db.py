@@ -17,8 +17,8 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from app.db.models import User, Workspace
-from app.modules.auth.application.service import AuthService
 from app.db.models.enums import UserTeamRole
+from app.modules.auth.application.service import AuthService
 from app.modules.users.application.member_service import (
     CreateMemberCommand,
     MemberService,

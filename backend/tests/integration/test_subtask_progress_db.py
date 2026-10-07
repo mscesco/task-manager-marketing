@@ -29,8 +29,8 @@ from app.modules.tasks.domain.subtask_progress import (
     progresso,
 )
 from app.modules.tasks.infrastructure.task_repository import TaskRepository
-from tests.integration.conftest import acting_as, mship, node
 from tests.integration import factories as f
+from tests.integration.conftest import acting_as, mship, node
 
 pytestmark = pytest.mark.integration
 

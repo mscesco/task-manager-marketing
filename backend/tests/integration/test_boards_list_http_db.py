@@ -61,7 +61,7 @@ O QUE ESTES TESTES NAO PROVAM:
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -107,7 +107,7 @@ async def _setup(db):
     apagado_seo = await f.make_board(
         db, workspace_id=ws, team_id=seo, name="Interno SEO APAGADO"
     )
-    apagado_seo.deleted_at = datetime.now(timezone.utc)
+    apagado_seo.deleted_at = datetime.now(UTC)
     await db.flush()
 
     # ---- workspace B, so para o teste 3 ter o que vazar

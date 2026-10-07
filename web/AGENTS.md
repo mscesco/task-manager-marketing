@@ -70,7 +70,7 @@ Estão aqui para não virarem promessa falsa. Cada uma tem motivo.
 - **O desfazer do lote de colunas nunca foi validado** — a bancada de teste não
   alcança o rollback.
 - ⚠️ **O rollback de imagem do `DEPLOY.md` nunca foi executado de verdade**, e o
-  próprio arquivo (linha 280) diz que procedimento de emergência não testado é
+  próprio arquivo (na seção do rollback) diz que procedimento de emergência não testado é
   ficção. Rodar uma vez em horário calmo continua pendente.
 
 ---

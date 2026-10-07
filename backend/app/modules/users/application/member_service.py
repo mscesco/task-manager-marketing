@@ -40,14 +40,14 @@ from app.modules.auth.infrastructure.security import (
     generate_temporary_password,
     hash_password,
 )
+from app.modules.notifications.application.notification_emitter import (
+    NotificationEmitter,
+)
 from app.modules.tasks.application.project_service import ProjectService
 from app.modules.tasks.application.task_guards import (
     TaskScopeGuards,
     user_can_view_task,
     user_can_view_team,
-)
-from app.modules.notifications.application.notification_emitter import (
-    NotificationEmitter,
 )
 from app.modules.tasks.domain.history import (
     MotivoDoSeguidor,

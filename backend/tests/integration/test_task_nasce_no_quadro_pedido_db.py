@@ -35,13 +35,12 @@ from sqlalchemy import select
 
 from app.core.deps import get_db_session, get_uow
 from app.core.tenant import Membership, TenantContext, set_tenant
+from app.db.models.boards import BoardColumn
+from app.db.models.enums import ColumnSemantic, TaskStatus
 from app.db.unit_of_work import UnitOfWork
 from app.main import create_app
 from app.modules.auth.api.dependencies import get_tenant_context
 from app.modules.auth.domain.permissions import permissions_for_roles
-
-from app.db.models.boards import BoardColumn
-from app.db.models.enums import ColumnSemantic, TaskStatus
 from app.modules.tasks.application.board_service import BoardService
 from app.modules.tasks.application.task_service import (
     CODIGO_QUADRO_FORA_DE_ALCANCE,

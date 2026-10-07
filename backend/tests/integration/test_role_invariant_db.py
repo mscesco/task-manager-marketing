@@ -35,7 +35,6 @@ from app.modules.workspaces.application.workspace_service import TeamService
 from app.shared.exceptions.base import (
     AuthorizationError,
     BusinessRuleError,
-    ConflictError,
 )
 from tests.integration import factories as f
 from tests.integration.conftest import acting_as, mship, node

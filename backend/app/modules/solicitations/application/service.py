@@ -35,6 +35,10 @@ from app.db.models import (
     Team,
 )
 from app.db.unit_of_work import UnitOfWork
+from app.modules.solicitations.domain.briefing import (
+    briefing,
+    titulo_da_tarefa,
+)
 from app.modules.solicitations.domain.solicitation import (
     ACEITOS,
     CATEGORIES,
@@ -51,20 +55,16 @@ from app.modules.solicitations.infrastructure.repository import (
     get_workspace_by_slug,
     insert_public,
 )
+from app.modules.tasks.application.task_guards import TaskScopeGuards
+from app.modules.tasks.application.task_service import (
+    CreateTaskCommand,
+    TaskService,
+)
 from app.shared.exceptions.base import (
     AuthorizationError,
     BusinessRuleError,
     EntityNotFoundError,
     ValidationError,
-)
-from app.modules.tasks.application.task_guards import TaskScopeGuards
-from app.modules.solicitations.domain.briefing import (
-    briefing,
-    titulo_da_tarefa,
-)
-from app.modules.tasks.application.task_service import (
-    CreateTaskCommand,
-    TaskService,
 )
 from app.shared.pagination import PageParams
 

@@ -2,8 +2,9 @@
 
 Entrega 6 / ADR 0018. ⚠️ A MARCA DA ADR 0017 FOI REMOVIDA pela Spec 037
 (E5) -- o termo nao aparece mais em `app/` nem em `tests/`, por portao (ver
-`spec.md`, criterio 9). O nome dela vive na ADR 0017 e na 0038. Hoje este service so repassa a pagina do repositorio: a lente
-de time e aplicada la, como em todo o resto do produto.
+`spec.md`, criterio 9). O nome dela vive na ADR 0017 e na 0038. Hoje este
+service so repassa a pagina do repositorio: a lente de time e aplicada la,
+como em todo o resto do produto.
 
 ⚠️ ELE FICOU FINO, E ISSO E O ESPERADO. A razao de existir dele era calcular
 a marca por item -- com ela fora, sobra o repasse. Nao o apague:

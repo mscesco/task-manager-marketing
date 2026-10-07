@@ -60,7 +60,6 @@ from app.core.deps import get_db_session, get_uow
 from app.core.tenant import Membership, TenantContext, set_tenant
 from app.db.models.boards import Board, BoardColumn
 from app.db.models.enums import TaskStatus
-from app.db.models.operational import Task
 from app.db.unit_of_work import UnitOfWork
 from app.main import create_app
 from app.modules.auth.api.dependencies import get_tenant_context

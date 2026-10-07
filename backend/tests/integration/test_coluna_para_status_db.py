@@ -26,8 +26,8 @@ from app.modules.tasks.application.task_service import (
     TaskService,
     UpdateTaskCommand,
 )
-from app.modules.tasks.infrastructure.board_repository import BoardRepository
 from app.modules.tasks.domain.board_defaults import COLUNAS_BASE
+from app.modules.tasks.infrastructure.board_repository import BoardRepository
 from app.shared.exceptions.base import ValidationError
 from tests.integration import factories as f
 from tests.integration.conftest import acting_as, mship, node

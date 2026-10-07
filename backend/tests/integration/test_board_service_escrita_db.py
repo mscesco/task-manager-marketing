@@ -108,7 +108,7 @@ async def test_quadro_criado_nasce_com_as_quatro_colunas_base(db) -> None:
     )
 
     assert len(colunas) == 4
-    for posicao, (obtida, esperada) in enumerate(zip(colunas, COLUNAS_BASE)):
+    for posicao, (obtida, esperada) in enumerate(zip(colunas, COLUNAS_BASE, strict=False)):
         assert obtida.name == esperada.nome, posicao
         assert obtida.semantic is esperada.semantica, posicao
         assert obtida.legacy_status is esperada.legacy_status, posicao

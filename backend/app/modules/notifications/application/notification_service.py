@@ -20,7 +20,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.tenant import require_tenant
 from app.db.models import Project, Task
 from app.modules.auth.domain import team_scope
-
 from app.modules.notifications.domain.notification import (
     AlvoDeFiltro,
     NotificationDTO,
@@ -29,8 +28,8 @@ from app.modules.notifications.domain.notification import (
 from app.modules.notifications.infrastructure.notification_repository import (
     NotificationRepository,
 )
-from app.shared.exceptions.base import EntityNotFoundError
 from app.modules.tasks.application.task_guards import task_visible
+from app.shared.exceptions.base import EntityNotFoundError
 from app.shared.pagination import Page, PageParams
 
 #: Quantas sugestoes o campo "Tarefa ou projeto" mostra (Spec 053, §9.6).

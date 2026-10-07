@@ -43,7 +43,7 @@ async def _apagar(db, board_id: uuid.UUID) -> None:
 #      primeira leitura, e não com um assert enigmático mais adiante.
 async def test_board_nasce_com_deleted_at_nulo(db) -> None:
     ws = await f.make_workspace(db)
-    raiz = await f.make_team(db, workspace_id=ws)
+    await f.make_team(db, workspace_id=ws)
 
     quadro = (
         await db.execute(

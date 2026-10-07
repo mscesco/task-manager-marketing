@@ -62,8 +62,3 @@ class WorkspaceMembership:
     #: `team_roles` mentir sobre de onde o papel veio -- e e exatamente esse
     #: tipo de mistura que a fatia B existe para desfazer.
     org_role: str | None = None
-
-    @property
-    def has_any_role(self) -> bool:
-        """True se o usuario participa de ao menos uma equipe."""
-        return len(self.roles) > 0

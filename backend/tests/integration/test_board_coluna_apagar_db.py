@@ -36,7 +36,6 @@ from sqlalchemy import func, select
 
 from app.db.models.boards import Board, BoardColumn
 from app.db.models.enums import ColumnSemantic, TaskStatus
-from app.db.models.operational import Task
 from app.modules.tasks.application.board_service import (
     CODIGO_SEM_DESTINO,
     CODIGO_SEMANTICA_OBRIGATORIA,

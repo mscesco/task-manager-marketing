@@ -9,7 +9,6 @@ soft-delete. O repository NUNCA comita (UoW no router).
 from __future__ import annotations
 
 import uuid
-
 from datetime import timedelta
 
 from sqlalchemy import delete, func, select, text, update

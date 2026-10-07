@@ -23,13 +23,13 @@ from enum import Enum
 from pydantic import BaseModel, Field, computed_field
 
 from app.core.tenant import current_tenant
-from app.modules.auth.domain import team_scope
 from app.db.models.enums import (
     ColumnSemantic,
     PriorityLevel,
     ProjectStatus,
     TaskStatus,
 )
+from app.modules.auth.domain import team_scope
 
 # Limite defensivo para description -- generoso, mas evita uploads
 # acidentais de Mb de texto.
