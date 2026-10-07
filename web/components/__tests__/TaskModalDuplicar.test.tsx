@@ -708,8 +708,14 @@ describe("TaskModal -- guardas do pré-preenchimento", () => {
     // rejeitada e o `.then` do sucesso nunca seria alcancado de qualquer
     // jeito -- o teste passava mesmo com o `.finally` trocado por `.then`.
     // Adiar e o que separa "resolveu na falha" de "resolveu por acaso".
-    vi.mocked(api.listMembersDoTime).mockReturnValue(
-      new Promise((_res, rej) => setTimeout(() => rej(new Error("500")), 10))
+    //
+    // ⚠️ A PROMESSA NASCE NA CHAMADA (`mockImplementation`), e nao na
+    // montagem do mock. Criada antes, ela rejeitava sem dono quando o modal
+    // pedia o alcance depois de 10 ms -- o que passou a acontecer com o React
+    // 19 -- e o vitest acusava "Unhandled Rejection" e saia com erro, com os
+    // 1709 testes verdes.
+    vi.mocked(api.listMembersDoTime).mockImplementation(
+      () => new Promise((_res, rej) => setTimeout(() => rej(new Error("500")), 10))
     );
     render(
       <TaskModal
