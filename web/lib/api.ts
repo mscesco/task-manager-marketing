@@ -707,6 +707,9 @@ export type Team = {
   // Spec 051, fatia D: quem pergunta pode APAGAR este time? O gerente apaga
   // subtime da própria árvore; ausente lê-se como "não".
   can_delete?: boolean;
+  // Spec 056, fatia B: quem pergunta pode CRIAR BASE neste time? Só time raiz;
+  // o supervisor de um subtime recebe na raiz dele. Ausente lê-se como "não".
+  can_create_base?: boolean;
 };
 
 type TeamListResponse = { items: Team[]; total: number };
@@ -3367,4 +3370,213 @@ export async function rejeitarSolicitacao(
     method: "POST",
     body: { note },
   });
+}
+
+// ---------------------------------------------------------------
+// BASE -- a tabela que a equipe monta (Spec 056)
+// ---------------------------------------------------------------
+// ⚠️ OS BOTÕES VÊM DO SERVIDOR, por base (`can_*`). Hoje todo mundo da árvore
+// edita célula, e seria tentador a tela mostrar tudo -- no dia em que um verbo
+// for desligado para alguém, a tela continuaria oferecendo o botão e o
+// servidor recusaria (spec §5.6). A tela nunca deduz de papel.
+// ⚠️ Sem cache de módulo: a base muda o tempo todo (outras pessoas editam), e
+// a página recarrega a cada 10 s até o ao vivo da fatia G.
+
+export type BaseColumnType =
+  | "title"
+  | "text"
+  | "number"
+  | "date"
+  | "select"
+  | "multi_select"
+  | "person"
+  | "link"
+  | "checkbox";
+
+export type BaseOptionColor =
+  | "gray"
+  | "brown"
+  | "orange"
+  | "yellow"
+  | "green"
+  | "blue"
+  | "purple"
+  | "pink"
+  | "red";
+
+export type BaseOption = { id: string; label: string; color: BaseOptionColor };
+
+export type BaseColumn = {
+  id: string;
+  name: string;
+  type: BaseColumnType;
+  options: BaseOption[];
+  position: number;
+  width: number | null;
+  version: number;
+};
+
+export type BaseView = {
+  id: string;
+  name: string;
+  layout: "table" | "calendar" | "board";
+  config: Record<string, unknown>;
+  position: number;
+  is_default: boolean;
+};
+
+export type BaseSummary = {
+  id: string;
+  team_id: string;
+  name: string;
+  updated_at: string;
+  can_update: boolean;
+  can_delete: boolean;
+};
+
+export type BaseDetail = BaseSummary & {
+  description: string;
+  created_by: string;
+  created_at: string;
+  columns: BaseColumn[];
+  views: BaseView[];
+  can_create_column: boolean;
+  can_update_column: boolean;
+  can_delete_column: boolean;
+  can_create_row: boolean;
+  can_update_row: boolean;
+  can_delete_row: boolean;
+  can_create_view: boolean;
+  can_update_view: boolean;
+  can_delete_view: boolean;
+};
+
+/** Valor de célula como o servidor guarda (spec §7.1). Ausente = vazia. */
+export type BaseCellValue = string | number | boolean | string[];
+
+export type BaseRow = {
+  id: string;
+  values: Record<string, BaseCellValue>;
+  version: number;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type BaseRowList = {
+  items: BaseRow[];
+  total: number;
+  limit: number;
+  warning_at: number;
+};
+
+export type BaseTrashItem = {
+  id: string;
+  team_id: string;
+  name: string;
+  deleted_at: string;
+  deleted_by: string | null;
+  restorable_until: string;
+  can_restore: boolean;
+};
+
+export type BaseOptionInput = { id?: string; label: string; color?: BaseOptionColor };
+
+export async function listBases(): Promise<BaseSummary[]> {
+  return api<BaseSummary[]>("/api/v1/bases");
+}
+
+export async function listBaseTrash(): Promise<BaseTrashItem[]> {
+  return api<BaseTrashItem[]>("/api/v1/bases/trash");
+}
+
+export async function createBase(body: {
+  name: string;
+  team_id: string;
+  description?: string;
+}): Promise<BaseDetail> {
+  return api<BaseDetail>("/api/v1/bases", { method: "POST", body });
+}
+
+export async function getBase(id: string): Promise<BaseDetail> {
+  return api<BaseDetail>(`/api/v1/bases/${id}`);
+}
+
+export async function updateBase(
+  id: string,
+  body: { name?: string; description?: string }
+): Promise<BaseDetail> {
+  return api<BaseDetail>(`/api/v1/bases/${id}`, { method: "PATCH", body });
+}
+
+export async function deleteBase(id: string): Promise<BaseSummary> {
+  return api<BaseSummary>(`/api/v1/bases/${id}`, { method: "DELETE" });
+}
+
+export async function restoreBase(id: string): Promise<BaseDetail> {
+  return api<BaseDetail>(`/api/v1/bases/${id}/restore`, { method: "POST" });
+}
+
+export async function createBaseColumn(
+  baseId: string,
+  body: { name: string; type: BaseColumnType; options?: BaseOptionInput[] }
+): Promise<BaseColumn> {
+  return api<BaseColumn>(`/api/v1/bases/${baseId}/columns`, { method: "POST", body });
+}
+
+export async function updateBaseColumn(
+  baseId: string,
+  columnId: string,
+  body: {
+    name?: string;
+    type?: BaseColumnType;
+    options?: BaseOptionInput[];
+    position?: number;
+    width?: number | null;
+  }
+): Promise<BaseColumn> {
+  return api<BaseColumn>(`/api/v1/bases/${baseId}/columns/${columnId}`, {
+    method: "PATCH",
+    body,
+  });
+}
+
+export async function deleteBaseColumn(baseId: string, columnId: string): Promise<BaseColumn> {
+  return api<BaseColumn>(`/api/v1/bases/${baseId}/columns/${columnId}`, {
+    method: "DELETE",
+  });
+}
+
+export async function deleteBaseOption(
+  baseId: string,
+  columnId: string,
+  optionId: string
+): Promise<BaseColumn> {
+  return api<BaseColumn>(
+    `/api/v1/bases/${baseId}/columns/${columnId}/options/${optionId}`,
+    { method: "DELETE" }
+  );
+}
+
+export async function listBaseRows(baseId: string): Promise<BaseRowList> {
+  return api<BaseRowList>(`/api/v1/bases/${baseId}/rows`);
+}
+
+export async function createBaseRow(
+  baseId: string,
+  values: Record<string, BaseCellValue | null> = {}
+): Promise<BaseRow> {
+  return api<BaseRow>(`/api/v1/bases/${baseId}/rows`, { method: "POST", body: { values } });
+}
+
+/** Uma ou mais células como UMA ação -- um Ctrl+Z desfaz o grupo. `null` esvazia. */
+export async function updateBaseCells(
+  baseId: string,
+  cells: { row_id: string; column_id: string; value: BaseCellValue | null }[]
+): Promise<BaseRow[]> {
+  return api<BaseRow[]>(`/api/v1/bases/${baseId}/cells`, { method: "PATCH", body: { cells } });
+}
+
+export async function deleteBaseRow(baseId: string, rowId: string): Promise<BaseRow> {
+  return api<BaseRow>(`/api/v1/bases/${baseId}/rows/${rowId}`, { method: "DELETE" });
 }

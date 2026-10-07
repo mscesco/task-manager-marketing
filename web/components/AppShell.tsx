@@ -65,6 +65,7 @@ import {
   Sun,
   Moon,
   Monitor,
+  Table2,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -281,6 +282,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const podeGerirFormularios =
     user?.permissions.includes("form.read") ?? false;
 
+  // Spec 056, fatia E: a Base -- `base.read` em ALGUM lugar. Quais bases, quem
+  // decide é o servidor (`GET /bases`); aqui é só se o item aparece.
+  const podeVerBases = user?.permissions.includes("base.read") ?? false;
+
   // ⚠️⚠️ "TIME" NAO E UMA TELA PROPRIA: ele aponta para `/times/<area>`, a
   // MESMA tela que se abre clicando numa area. A rota `/membros` existia e
   // sumiu em 09/09 -- a Camila viu as duas e resolveu: *"tirar o /membros e
@@ -311,6 +316,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     ...(podeGerirFormularios
       ? [{ href: "/formularios", label: "Formulários", icon: ClipboardList }]
       : []),
+    ...(podeVerBases ? [{ href: "/bases", label: "Bases", icon: Table2 }] : []),
     // ⚠️ SEM AREA, SEM ENTRADA: nao ha destino, e um item que leva a lugar
     // nenhum e pior que um item ausente. Acontece com quem foi cadastrado e
     // nunca alocado -- e a conta de administracao cai no ramo de cima, porque
@@ -485,7 +491,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
           {/* Demais itens */}
           {nav.map((n) => {
-            const active = pathname === n.href;
+            // ⚠️ Spec 056: `/bases/<id>` acende "Bases" -- a igualdade exata
+            // apagava o item ao abrir uma base. O `/` no fim impede que
+            // `/basesX` acenda `/bases`.
+            const active =
+              pathname === n.href || pathname.startsWith(`${n.href}/`);
             const Icon = n.icon;
             return (
               <a
