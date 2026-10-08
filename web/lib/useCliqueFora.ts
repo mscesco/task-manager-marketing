@@ -23,8 +23,8 @@
 // `Modal` de `app/times`). Tres copias da regra seriam tres chances de
 // consertar so duas.
 // =====================================================
-import { useCallback, useRef } from "react";
-import type { MouseEvent as ReactMouseEvent } from "react";
+import { useCallback, useEffect, useRef } from "react";
+import type { MouseEvent as ReactMouseEvent, RefObject } from "react";
 
 /**
  * Decide se o clique fecha. Pura de proposito: e a tabela-verdade inteira
@@ -74,4 +74,40 @@ export function useFecharAoClicarFora(onFechar: () => void) {
   }, [onFechar]);
 
   return { onMouseDown, onMouseUp, onClick };
+}
+
+// =====================================================
+// useFecharAoClicarForaDe -- o PAINEL SUSPENSO (popover) fecha ao apertar fora
+// -----------------------------------------------------
+// ⚠️ NAO E A REGRA DO MODAL, acima. Aquela pareia `mousedown` e `mouseup` no
+// SCRIM (`target === currentTarget`); um painel suspenso nao tem scrim, e
+// precisa de `contains` -- senao clicar DENTRO da lista fecharia. Aqui basta o
+// `mousedown` fora do elemento.
+//
+// ⚠️ ERAM 15 COPIAS DESTE `useEffect` (revisao de 07/10): seis so no detalhe
+// da tarefa, mais o modal, o quadro, os seletores, o sino, emoji e GIF. O
+// mesmo bloco de nove linhas, com uma ref e um setter trocados.
+// =====================================================
+
+/**
+ * Fecha quando o ponteiro e PRESSIONADO fora de `ref`, enquanto `aberto`.
+ *
+ * `fechar` pode mudar a cada render (uma arrow nova): o hook guarda a mais
+ * recente, e o ouvinte so e refeito quando `aberto` muda.
+ */
+export function useFecharAoClicarForaDe(
+  ref: RefObject<HTMLElement | null>,
+  aberto: boolean,
+  fechar: () => void,
+): void {
+  const fecharRef = useRef(fechar);
+  fecharRef.current = fechar;
+  useEffect(() => {
+    if (!aberto) return;
+    function onDown(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) fecharRef.current();
+    }
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [aberto, ref]);
 }

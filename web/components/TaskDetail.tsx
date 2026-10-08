@@ -10,6 +10,7 @@
 //   cria; o checkbox da linha conclui rapido (desmarcar volta pro status
 //   anterior, guardado na sessao); clicar no titulo NAVEGA pra dentro.
 
+import AnchoredPanel, { useAnchoredPanel } from "@/components/AnchoredPanel";
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   UserPlus,
@@ -392,7 +393,6 @@ export default function TaskDetail({
   const [subPrazo, setSubPrazo] = useState("");
   const [subPickerAberto, setSubPickerAberto] = useState(false);
   const [subBusca, setSubBusca] = useState("");
-  const subPickerRef = useRef<HTMLDivElement>(null);
   const subTituloRef = useRef<HTMLInputElement>(null);
   const [salvandoSub, setSalvandoSub] = useState(false);
   const [erroSub, setErroSub] = useState<string | null>(null);
@@ -509,14 +509,9 @@ export default function TaskDetail({
   const topComentRef = useRef<HTMLTextAreaElement>(null);
   const respostaRef = useRef<HTMLTextAreaElement>(null);
   // Fatia B: wrapper do popover de responsaveis (ancora + deteccao de clique-fora).
-  const respWrapRef = useRef<HTMLDivElement>(null);
   // Spec 031 (C8): o seletor de projeto virou painel flutuante e ganhou a
   // mesma ancora + fechar-ao-clicar-fora. Antes era um <select> inline: nao
   // precisava fechar sozinho porque nao flutuava sobre nada.
-  const projWrapRef = useRef<HTMLDivElement>(null);
-  const datasWrapRef = useRef<HTMLDivElement>(null);
-  const prioWrapRef = useRef<HTMLDivElement>(null);
-  const colWrapRef = useRef<HTMLDivElement>(null);
 
   // Insere um trecho (emoji) na posicao do cursor do textarea e mantem foco.
   function inserirNoCursor(
@@ -612,28 +607,14 @@ export default function TaskDetail({
 
   // Fatia B: fecha o popover de responsaveis ao clicar fora (mesmo padrao do
   // EmojiPicker: mousedown no documento, ignora cliques dentro do wrapper).
-  useEffect(() => {
-    if (!abertoResp) return;
-    function onDown(e: MouseEvent) {
-      if (respWrapRef.current && !respWrapRef.current.contains(e.target as Node)) {
-        setAbertoResp(false);
-      }
-    }
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [abertoResp]);
+  const painelResp = useAnchoredPanel<HTMLButtonElement>(abertoResp, () => setAbertoResp(false), {
+    larguraPainel: 300,
+  });
 
   // Fecha o painel de projeto ao clicar fora (mesmo padrao do de responsaveis).
-  useEffect(() => {
-    if (!abertoProj) return;
-    function onDown(e: MouseEvent) {
-      if (projWrapRef.current && !projWrapRef.current.contains(e.target as Node)) {
-        setAbertoProj(false);
-      }
-    }
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [abertoProj]);
+  const painelProj = useAnchoredPanel<HTMLButtonElement>(abertoProj, () => setAbertoProj(false), {
+    larguraPainel: 280,
+  });
 
   // Fecha o painel de datas ao clicar fora -- MESMO padrao dos dois acima.
   //
@@ -644,16 +625,9 @@ export default function TaskDetail({
   // ⚠️ FECHAR DESCARTA O RASCUNHO, e isso e deliberado: o painel tem botao de
   // salvar, entao clicar fora e o cancelar. Salvar no fechamento mandaria
   // requisicao por engano toda vez que a pessoa clicasse ao lado.
-  useEffect(() => {
-    if (!abertoDatas) return;
-    function onDown(e: MouseEvent) {
-      if (datasWrapRef.current && !datasWrapRef.current.contains(e.target as Node)) {
-        setAbertoDatas(false);
-      }
-    }
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [abertoDatas]);
+  const painelDatas = useAnchoredPanel<HTMLButtonElement>(abertoDatas, () => setAbertoDatas(false), {
+    larguraPainel: 240,
+  });
 
   // ⚠️ MESMO PADRAO DO PAINEL DE DATAS, e nao o `useFecharAoClicarFora`: aquele
   // e do SCRIM do modal (compara `e.target === e.currentTarget`). Painel
@@ -662,27 +636,13 @@ export default function TaskDetail({
   // ⚠️ DIFERENCA PARA O DE DATAS: aqui fechar NAO descarta nada. O de datas
   // tem rascunho e botao de salvar, entao clicar fora e o cancelar; este grava
   // no clique da opcao, entao nao ha o que perder.
-  useEffect(() => {
-    if (!abertoPrio) return;
-    function onDown(e: MouseEvent) {
-      if (prioWrapRef.current && !prioWrapRef.current.contains(e.target as Node)) {
-        setAbertoPrio(false);
-      }
-    }
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [abertoPrio]);
+  const painelPrio = useAnchoredPanel<HTMLButtonElement>(abertoPrio, () => setAbertoPrio(false), {
+    larguraPainel: 150,
+  });
 
-  useEffect(() => {
-    if (!abertoCol) return;
-    function onDown(e: MouseEvent) {
-      if (colWrapRef.current && !colWrapRef.current.contains(e.target as Node)) {
-        setAbertoCol(false);
-      }
-    }
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [abertoCol]);
+  const painelCol = useAnchoredPanel<HTMLButtonElement>(abertoCol, () => setAbertoCol(false), {
+    larguraPainel: 190,
+  });
 
   // Usuario logado: uma vez (memoizado). Falha silenciosa -> sem acoes
   // inline, mas o thread ainda renderiza.
@@ -781,16 +741,9 @@ export default function TaskDetail({
   }, [task?.board_id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fecha o picker de responsavel da subtarefa ao clicar fora.
-  useEffect(() => {
-    if (!subPickerAberto) return;
-    function onDown(e: MouseEvent) {
-      if (subPickerRef.current && !subPickerRef.current.contains(e.target as Node)) {
-        setSubPickerAberto(false);
-      }
-    }
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [subPickerAberto]);
+  const painelSub = useAnchoredPanel<HTMLButtonElement>(subPickerAberto, () => setSubPickerAberto(false), {
+    larguraPainel: 260,
+  });
 
   // Spec 034: quem alcanca ESTA tarefa vem do BACKEND, pela mesma regra que o
   // POST de designacao usa (`user_can_view_task`). Ate 03/08 isto era
@@ -1693,9 +1646,10 @@ export default function TaskDetail({
               ⚠️ DESABILITADA ENQUANTO AS COLUNAS NAO CHEGAM. Sem `colunas` o
               rotulo cai na reserva por `status`, e abrir uma lista vazia
               deixaria a pessoa clicando no nada. */}
-          <div ref={colWrapRef} style={{ position: "relative", display: "inline-flex" }}>
+          <div style={{ position: "relative", display: "inline-flex" }}>
             <button
               type="button"
+              ref={painelCol.anchorRef}
               onClick={() => setAbertoCol((v) => !v)}
               disabled={salvandoCol || !colunas}
               aria-haspopup="listbox"
@@ -1713,19 +1667,9 @@ export default function TaskDetail({
                   task.status}
               </Badge>
             </button>
-            {abertoCol && colunas && (
-              <div
-                role="listbox"
-                aria-label="Coluna"
-                style={{
-                  position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 30,
-                  minWidth: 190, maxHeight: 280, overflowY: "auto",
-                  padding: 4, borderRadius: 10,
-                  background: "var(--surface)", border: "1px solid var(--border)",
-                  boxShadow: "var(--shadow)",
-                  display: "flex", flexDirection: "column", gap: 2,
-                }}
-              >
+            {abertoCol && colunas && painelCol.box && (
+              <AnchoredPanel box={painelCol.box} panelRef={painelCol.panelRef} role="listbox" aria-label="Coluna" minWidth={190}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
                 {/* ⚠️ ORDEM POR `position`, que e a MESMA do quadro. Listar na
                     ordem de chegada da API poria "Concluído" antes de
                     "Backlog" e obrigaria a ler cada linha. */}
@@ -1764,7 +1708,8 @@ export default function TaskDetail({
                       </span>
                     </button>
                   ))}
-              </div>
+                </div>
+              </AnchoredPanel>
             )}
           </div>
           {/* ---- Prioridade (Spec 039, F6) --------------------------------
@@ -1776,9 +1721,10 @@ export default function TaskDetail({
               ⚠️ ORDEM DA LISTA = ordem do enum (Baixa -> Urgente), e nao a
               alfabetica que o `Object.keys` daria. Prioridade tem ordem
               natural; embaralhar obriga a LER cada linha em vez de mirar. */}
-          <div ref={prioWrapRef} style={{ position: "relative", display: "inline-flex" }}>
+          <div style={{ position: "relative", display: "inline-flex" }}>
             <button
               type="button"
+              ref={painelPrio.anchorRef}
               onClick={() => setAbertoPrio((v) => !v)}
               disabled={salvandoPrio}
               aria-haspopup="listbox"
@@ -1794,18 +1740,9 @@ export default function TaskDetail({
                 {PRIORITY_LABEL[task.priority] || task.priority}
               </Badge>
             </button>
-            {abertoPrio && (
-              <div
-                role="listbox"
-                aria-label="Prioridade"
-                style={{
-                  position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 30,
-                  minWidth: 150, padding: 4, borderRadius: 10,
-                  background: "var(--surface)", border: "1px solid var(--border)",
-                  boxShadow: "var(--shadow)",
-                  display: "flex", flexDirection: "column", gap: 2,
-                }}
-              >
+            {abertoPrio && painelPrio.box && (
+              <AnchoredPanel box={painelPrio.box} panelRef={painelPrio.panelRef} role="listbox" aria-label="Prioridade" minWidth={150}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
                 {PRIORIDADES.map((p) => (
                   <button
                     key={p}
@@ -1833,7 +1770,8 @@ export default function TaskDetail({
                     {PRIORITY_LABEL[p]}
                   </button>
                 ))}
-              </div>
+                </div>
+              </AnchoredPanel>
             )}
           </div>
           {/* Spec 031 (C8): a pilula de projeto SAIU daqui. Ela era read-only e
@@ -1856,7 +1794,6 @@ export default function TaskDetail({
               interpretado como UTC e escorrega um dia em fuso negativo -- é o
               mesmo aviso que o `hojeISO()` do `Board.tsx` carrega. */}
           <div
-            ref={datasWrapRef}
             style={{ position: "relative", display: "inline-flex", alignItems: "center", gap: 4, flexShrink: 0 }}
           >
             {/* ⚠️ A PILULA E O PROPRIO GATILHO (decisao da Camila, 18/08).
@@ -1879,6 +1816,7 @@ export default function TaskDetail({
                 enfeite: e o unico sinal de que a tarefa venceu nesta linha. */}
             <button
               type="button"
+              ref={painelDatas.anchorRef}
               onClick={() => (abertoDatas ? setAbertoDatas(false) : abrirDatas())}
               disabled={salvandoDatas}
               aria-label={
@@ -1943,19 +1881,9 @@ export default function TaskDetail({
               )}
             </button>
 
-            {abertoDatas && (
-              <div
-                style={{
-                  // ⚠️ NAO usar maxWidth: "100%" -- o ancora e um flex item do
-                  // tamanho do conteudo, e 100% dele espremeria o painel. Erro
-                  // ja cometido na entrega da C8, anotado no painel de projeto.
-                  position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 40,
-                  width: 240, maxWidth: "80vw",
-                  background: "var(--surface)", border: "1px solid var(--border)",
-                  borderRadius: 10, boxShadow: "var(--shadow)", padding: 10,
-                  display: "flex", flexDirection: "column", gap: 8,
-                }}
-              >
+            {abertoDatas && painelDatas.box && (
+              <AnchoredPanel box={painelDatas.box} panelRef={painelDatas.panelRef} role="dialog" aria-label="Datas" minWidth={240}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: 4 }}>
                 {/* ⚠️ O RÓTULO "Datas" ESTAVA NO DESENHO E EU O OMITI. A
                     cápsula da Camila é um cartão TITULADO, e sem o título o
                     painel não diz do que ele é -- só mostra dois campos soltos
@@ -2064,7 +1992,8 @@ export default function TaskDetail({
                     {salvandoDatas ? "Salvando…" : "Salvar"}
                   </button>
                 </div>
-              </div>
+                </div>
+              </AnchoredPanel>
             )}
           </div>
 
@@ -2095,7 +2024,6 @@ export default function TaskDetail({
               proprio, aqui ela nao tem projeto proprio. A diferenca e real e
               nao deve ser "uniformizada". ---- */}
           <div
-            ref={projWrapRef}
             style={{ position: "relative", display: "inline-flex", flexShrink: 0 }}
           >
             {(() => {
@@ -2141,6 +2069,7 @@ export default function TaskDetail({
               return (
                 <button
                   type="button"
+                  ref={painelProj.anchorRef}
                   onClick={() => setAbertoProj((v) => !v)}
                   disabled={movendoProj}
                   aria-label={
@@ -2184,26 +2113,8 @@ export default function TaskDetail({
 
             {/* O seletor e PAINEL FLUTUANTE: empurrar o layout deslocaria a
                 linha inteira a cada abertura. */}
-            {abertoProj && (
-              <div
-                style={{
-                  // ⚠️ NAO usar maxWidth: "100%". O ancora e um flex item do
-                  // tamanho do conteudo (~120px), entao 100% dele espremia o
-                  // painel de 280 para 120 e o <select> saia cortado
-                  // ("— Sem proj⌄"). Erro da entrega da C8.
-                  position: "absolute",
-                  top: "calc(100% + 6px)",
-                  left: 0,
-                  zIndex: 40,
-                  width: 280,
-                  maxWidth: "80vw",
-                  background: "var(--surface)",
-                  border: "1px solid var(--border)",
-                  borderRadius: 10,
-                  boxShadow: "var(--shadow)",
-                  padding: 8,
-                }}
-              >
+            {abertoProj && painelProj.box && (
+              <AnchoredPanel box={painelProj.box} panelRef={painelProj.panelRef} role="dialog" aria-label="Projeto" minWidth={280}>
                 <select
                   className="input"
                   style={{ width: "100%" }}
@@ -2221,7 +2132,7 @@ export default function TaskDetail({
                       </option>
                     ))}
                 </select>
-              </div>
+              </AnchoredPanel>
             )}
           </div>
           {task.is_archived && (
@@ -2261,7 +2172,6 @@ export default function TaskDetail({
         >
           {/* -- Responsaveis -- */}
           <div
-            ref={respWrapRef}
             style={{
               position: "relative", display: "flex", flexWrap: "wrap",
               alignItems: "center", gap: 6, minWidth: 0,
@@ -2302,6 +2212,7 @@ export default function TaskDetail({
 
             <button
               type="button"
+              ref={painelResp.anchorRef}
               onClick={() => setAbertoResp((v) => !v)}
               aria-label="Designar responsável"
               aria-expanded={abertoResp}
@@ -2315,17 +2226,8 @@ export default function TaskDetail({
               )}
             </button>
 
-            {abertoResp && (
-              <div
-                style={{
-                  // Mesmo motivo do painel de projeto: sem responsavel nenhum o
-                  // ancora tem ~90px e o maxWidth relativo espremeria a busca.
-                  position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 40,
-                  width: 300, maxWidth: "80vw",
-                  background: "var(--surface)", border: "1px solid var(--border)",
-                  borderRadius: 10, boxShadow: "var(--shadow)", padding: 8,
-                }}
-              >
+            {abertoResp && painelResp.box && (
+              <AnchoredPanel box={painelResp.box} panelRef={painelResp.panelRef} role="dialog" aria-label="Responsáveis" minWidth={300}>
                 <input
                   className="input"
                   placeholder="Buscar pessoa…"
@@ -2380,7 +2282,7 @@ export default function TaskDetail({
                     })
                   )}
                 </div>
-              </div>
+              </AnchoredPanel>
             )}
           </div>
 
@@ -2759,9 +2661,10 @@ export default function TaskDetail({
                 {/* Responsavel: obrigatorio. O botao carrega o estado no
                     proprio rotulo, para a exigencia ficar visivel antes do
                     erro aparecer. */}
-                <div ref={subPickerRef} style={{ position: "relative" }}>
+                <div style={{ position: "relative" }}>
                   <button
                     type="button"
+                    ref={painelSub.anchorRef}
                     onClick={() => setSubPickerAberto((v) => !v)}
                     disabled={salvandoSub}
                     aria-expanded={subPickerAberto}
@@ -2781,15 +2684,8 @@ export default function TaskDetail({
                     )}
                   </button>
 
-                  {subPickerAberto && (
-                    <div
-                      style={{
-                        position: "absolute", top: "calc(100% + 6px)", left: 0,
-                        zIndex: 40, width: 260, background: "var(--surface)",
-                        border: "1px solid var(--border)", borderRadius: 10,
-                        boxShadow: "var(--shadow)", padding: 8,
-                      }}
-                    >
+                  {subPickerAberto && painelSub.box && (
+                    <AnchoredPanel box={painelSub.box} panelRef={painelSub.panelRef} role="dialog" aria-label="Responsável da subtarefa" minWidth={260}>
                       <input
                         className="input"
                         placeholder="Buscar pessoa…"
@@ -2843,7 +2739,7 @@ export default function TaskDetail({
                           ))
                         )}
                       </div>
-                    </div>
+                    </AnchoredPanel>
                   )}
                 </div>
 

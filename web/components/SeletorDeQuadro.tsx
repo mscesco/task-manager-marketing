@@ -1,4 +1,5 @@
 "use client";
+import { useFecharAoClicarForaDe } from "@/lib/useCliqueFora";
 import { useEffect, useRef, useState } from "react";
 import { ChevronDown } from "lucide-react";
 
@@ -118,16 +119,7 @@ export default function SeletorDeQuadro({
   // o modal e apagava formulario (defeito de 31/07, com captura). Dropdown nao
   // tem texto para selecionar dentro, e o painel de filtros -- que e o irmao
   // visual disto -- usa este padrao.
-  useEffect(() => {
-    if (!aberto) return;
-    function onDown(e: MouseEvent) {
-      if (painelRef.current && !painelRef.current.contains(e.target as Node)) {
-        setAberto(false);
-      }
-    }
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [aberto]);
+  useFecharAoClicarForaDe(painelRef, aberto, () => setAberto(false));
 
   useEffect(() => {
     if (criando) campoRef.current?.focus();
