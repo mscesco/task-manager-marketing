@@ -2,7 +2,9 @@
 
 ## Status
 
-Proposed
+Superseded pela Spec 044 (uma pessoa em vários times), concluída em 02/09/2026.
+
+(Status anterior: Proposed)
 
 ## Contexto
 

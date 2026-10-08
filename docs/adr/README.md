@@ -4,7 +4,7 @@ Decisões que **cruzam backend e front** (infra, deploy, topologia) moram
 aqui, na raiz do monorepo. Decisões internas de cada lado ficam no
 `docs/adr/` do respectivo projeto:
 
-- `backend/docs/adr/` — decisões do backend (0001–0022).
+- `backend/docs/adr/` — decisões do backend (0001–0042).
 - `web/docs/adr/` — decisões só do front (pin do time raiz, edição sem GET…).
 - `docs/adr/` (aqui) — infra/deploy/topologia que afeta os dois.
 

@@ -171,8 +171,8 @@ Estão aqui para não virarem promessa falsa. Cada uma tem motivo.
 - 👁 Mutação (`POST`/`PATCH`/`DELETE`) mira < 500 ms.
 - ⚪ Prevenir CLS com dimensão explícita em imagem.
 - ⚪ Medir com CPU e rede estranguladas.
-- **Nunca validado:** `Board.tsx` passou de 2200 linhas e o quadro carrega 817
-  tarefas em 9 requisições.
+- **Nunca validado:** `Board.tsx` tem ~2760 linhas (medido em 08/10/2026) e o
+  quadro carrega centenas de tarefas em várias requisições.
 
 ## 11. Estilo do código
 
@@ -186,8 +186,8 @@ Estão aqui para não virarem promessa falsa. Cada uma tem motivo.
   **E o atalho é redundante:** o `globals.css` já tem
   `button { font-family: inherit }`. Se ele aparecer num estilo novo, apague —
   não reordene.
-- ⚠️ **Estilo novo não nasce inline.** São **625** `style={{}}` em 33 arquivos
-  (eram 477 em 30/07 — cresce ~7 por dia). Token no `@theme`, classe utilitária
+- ⚠️ **Estilo novo não nasce inline.** São **736** `style={{}}` em 60 arquivos
+  (medido em 08/10/2026; eram 477 em 30/07). Token no `@theme`, classe utilitária
   ou primitivo. Exceção documentada: cor dinâmica de runtime (`corAvatar`, cor
   de coluna) continua via `style`.
 - ⚠️⚠️ **`.btn` e `.input` NÃO ESTÃO EM `@layer` — e por isso VENCEM o

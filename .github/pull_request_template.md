@@ -28,6 +28,8 @@ ritual, e ritual e o que se preenche sem ler.
 
 ## Portões
 
+<!-- Os comandos e as armadilhas de cada portão: AGENTS.md §5, a lista única. -->
+
 <!-- ⚠️ NUMERO, e nao "passou". "Verde" sem numero nao diz se um teste
      sumiu em silencio -- ja custou sessao neste projeto. -->
 

@@ -2,7 +2,9 @@
 
 ## Status
 
-Proposed — supersede a **0016**.
+Accepted — implementada: o banco nasce da migration `0001_baseline_v5` (conferido em 08/10/2026).
+
+(Status anterior: Proposed — supersede a **0016**.)
 
 ## Contexto
 
