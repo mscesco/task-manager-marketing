@@ -425,6 +425,20 @@ export function comAviso(
   return { ...rascunho, avisos };
 }
 
+/**
+ * Desfaz um "tornar padrão" ainda não salvo (08/10, pedido dela: "só consigo
+ * tornar uma coluna padrão, não consigo desfazer").
+ *
+ * ⚠️ SÓ O PEDIDO DESTE RASCUNHO. O padrão que o servidor já tem não se
+ * desmarca: cada semântica precisa de um, porque é para ele que o sistema manda
+ * as tarefas quando escolhe sozinho. Tirar o pedido devolve o selo à coluna que
+ * já era a padrão (ver `semanticasReclamadas`).
+ */
+export function semAlvo(rascunho: Rascunho, ref: string): Rascunho {
+  if (!rascunho.alvos.includes(ref)) return rascunho;
+  return { ...rascunho, alvos: rascunho.alvos.filter((r) => r !== ref) };
+}
+
 export function comAlvo(rascunho: Rascunho, ref: string): Rascunho {
   if (ehNova(ref)) return rascunho;
   if (rascunho.alvos.includes(ref)) return rascunho;
@@ -506,6 +520,12 @@ export interface LinhaDeEdicao {
   readonly nova: boolean;
   /** Recebe as tarefas quando o sistema decide sozinho. */
   readonly alvo: boolean;
+  /**
+   * O `alvo` veio de um "tornar padrão" DESTE rascunho, ainda não salvo (08/10).
+   * É o que a tela oferece para desfazer: o padrão salvo não se desmarca (cada
+   * semântica tem sempre um), mas o clique errado de agora volta atrás.
+   */
+  readonly alvoPedido: boolean;
   /** `null` se pode ser apagada; o motivo, se não. */
   readonly impedimento: string | null;
   /**
@@ -585,6 +605,7 @@ export function linhasDeEdicao(
       // modelo é de lote, e nada foi salvo ainda. Ler só o `real` deixaria o
       // selo no lugar antigo até "Concluir edição", e a pessoa clicaria de
       // novo achando que não funcionou.
+      alvoPedido: rascunho.alvos.includes(ref),
       alvo:
         rascunho.alvos.includes(ref) ||
         ((real?.is_default_target ?? false) &&
