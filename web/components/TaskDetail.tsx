@@ -30,7 +30,7 @@ import {
 
 import { mesclaTarefa } from "@/lib/mesclaTarefa";
 import { useSaidaAnimada } from "@/lib/useSaidaAnimada";
-import { useFecharAoClicarFora } from "@/lib/useCliqueFora";
+import { useFecharAoClicarFora, useFecharAoClicarForaDe } from "@/lib/useCliqueFora";
 import {
   addAssignee,
   removeAssignee,
@@ -612,28 +612,10 @@ export default function TaskDetail({
 
   // Fatia B: fecha o popover de responsaveis ao clicar fora (mesmo padrao do
   // EmojiPicker: mousedown no documento, ignora cliques dentro do wrapper).
-  useEffect(() => {
-    if (!abertoResp) return;
-    function onDown(e: MouseEvent) {
-      if (respWrapRef.current && !respWrapRef.current.contains(e.target as Node)) {
-        setAbertoResp(false);
-      }
-    }
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [abertoResp]);
+  useFecharAoClicarForaDe(respWrapRef, abertoResp, () => setAbertoResp(false));
 
   // Fecha o painel de projeto ao clicar fora (mesmo padrao do de responsaveis).
-  useEffect(() => {
-    if (!abertoProj) return;
-    function onDown(e: MouseEvent) {
-      if (projWrapRef.current && !projWrapRef.current.contains(e.target as Node)) {
-        setAbertoProj(false);
-      }
-    }
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [abertoProj]);
+  useFecharAoClicarForaDe(projWrapRef, abertoProj, () => setAbertoProj(false));
 
   // Fecha o painel de datas ao clicar fora -- MESMO padrao dos dois acima.
   //
@@ -644,16 +626,7 @@ export default function TaskDetail({
   // ⚠️ FECHAR DESCARTA O RASCUNHO, e isso e deliberado: o painel tem botao de
   // salvar, entao clicar fora e o cancelar. Salvar no fechamento mandaria
   // requisicao por engano toda vez que a pessoa clicasse ao lado.
-  useEffect(() => {
-    if (!abertoDatas) return;
-    function onDown(e: MouseEvent) {
-      if (datasWrapRef.current && !datasWrapRef.current.contains(e.target as Node)) {
-        setAbertoDatas(false);
-      }
-    }
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [abertoDatas]);
+  useFecharAoClicarForaDe(datasWrapRef, abertoDatas, () => setAbertoDatas(false));
 
   // ⚠️ MESMO PADRAO DO PAINEL DE DATAS, e nao o `useFecharAoClicarFora`: aquele
   // e do SCRIM do modal (compara `e.target === e.currentTarget`). Painel
@@ -662,27 +635,9 @@ export default function TaskDetail({
   // ⚠️ DIFERENCA PARA O DE DATAS: aqui fechar NAO descarta nada. O de datas
   // tem rascunho e botao de salvar, entao clicar fora e o cancelar; este grava
   // no clique da opcao, entao nao ha o que perder.
-  useEffect(() => {
-    if (!abertoPrio) return;
-    function onDown(e: MouseEvent) {
-      if (prioWrapRef.current && !prioWrapRef.current.contains(e.target as Node)) {
-        setAbertoPrio(false);
-      }
-    }
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [abertoPrio]);
+  useFecharAoClicarForaDe(prioWrapRef, abertoPrio, () => setAbertoPrio(false));
 
-  useEffect(() => {
-    if (!abertoCol) return;
-    function onDown(e: MouseEvent) {
-      if (colWrapRef.current && !colWrapRef.current.contains(e.target as Node)) {
-        setAbertoCol(false);
-      }
-    }
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [abertoCol]);
+  useFecharAoClicarForaDe(colWrapRef, abertoCol, () => setAbertoCol(false));
 
   // Usuario logado: uma vez (memoizado). Falha silenciosa -> sem acoes
   // inline, mas o thread ainda renderiza.
@@ -781,16 +736,7 @@ export default function TaskDetail({
   }, [task?.board_id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fecha o picker de responsavel da subtarefa ao clicar fora.
-  useEffect(() => {
-    if (!subPickerAberto) return;
-    function onDown(e: MouseEvent) {
-      if (subPickerRef.current && !subPickerRef.current.contains(e.target as Node)) {
-        setSubPickerAberto(false);
-      }
-    }
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [subPickerAberto]);
+  useFecharAoClicarForaDe(subPickerRef, subPickerAberto, () => setSubPickerAberto(false));
 
   // Spec 034: quem alcanca ESTA tarefa vem do BACKEND, pela mesma regra que o
   // POST de designacao usa (`user_can_view_task`). Ate 03/08 isto era

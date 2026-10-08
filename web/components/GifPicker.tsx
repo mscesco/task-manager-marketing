@@ -1,4 +1,5 @@
 "use client";
+import { useFecharAoClicarForaDe } from "@/lib/useCliqueFora";
 import { useEffect, useRef, useState } from "react";
 import { searchGifs, trendingGifs, GIPHY_ENABLED, type Gif } from "@/lib/giphy";
 
@@ -26,16 +27,7 @@ export default function GifPicker({
   const wrapRef = useRef<HTMLDivElement>(null);
 
   // Fecha ao clicar fora.
-  useEffect(() => {
-    if (!open) return;
-    function onDown(e: MouseEvent) {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [open]);
+  useFecharAoClicarForaDe(wrapRef, open, () => setOpen(false));
 
   // Ao abrir: trending imediato. Ao digitar: busca com debounce de 400ms.
   // Vazio -> volta pro trending. Cancela em voo se query muda ou fecha.

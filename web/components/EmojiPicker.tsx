@@ -1,5 +1,6 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useFecharAoClicarForaDe } from "@/lib/useCliqueFora";
+import { useRef, useState } from "react";
 
 // Seletor de emoji simples (sem dependencia externa): um botao que abre
 // uma grade de emojis curados. Ao escolher, chama onPick(emoji) -- quem usa
@@ -29,16 +30,7 @@ export default function EmojiPicker({
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    if (!open) return;
-    function onDown(e: MouseEvent) {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [open]);
+  useFecharAoClicarForaDe(wrapRef, open, () => setOpen(false));
 
   return (
     <div ref={wrapRef} style={{ position: "relative", display: "inline-block" }}>

@@ -57,7 +57,7 @@ import {
   rotuloCaixaSubtarefas,
   valoresIniciaisDaCopia,
 } from "@/lib/duplicacaoTarefa";
-import { useFecharAoClicarFora } from "@/lib/useCliqueFora";
+import { useFecharAoClicarFora, useFecharAoClicarForaDe } from "@/lib/useCliqueFora";
 import { timeDaTarefaNova, type NewTaskTeam } from "@/lib/escopoTarefa";
 import Avatar from "@/components/Avatar";
 import { nomeCurto } from "@/lib/people";
@@ -378,16 +378,7 @@ export default function TaskModal({
   }, [open, saving]);
 
   // Fecha o picker de responsaveis ao clicar fora (padrao EmojiPicker/detalhe).
-  useEffect(() => {
-    if (!abertoResp) return;
-    function onDown(e: MouseEvent) {
-      if (respWrapRef.current && !respWrapRef.current.contains(e.target as Node)) {
-        setAbertoResp(false);
-      }
-    }
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [abertoResp]);
+  useFecharAoClicarForaDe(respWrapRef, abertoResp, () => setAbertoResp(false));
 
   // Membros filtrados pela busca do picker, ordenados por nome.
   // Bloqueio do botao: exige titulo, responsavel e prazo. A mensagem vai no

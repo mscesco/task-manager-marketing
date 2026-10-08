@@ -16,6 +16,7 @@
 // `window.location` na montagem e grava com `history.replaceState` -- o mesmo
 // desenho de `lib/estadoDaTela.ts`.
 
+import { useFecharAoClicarForaDe } from "@/lib/useCliqueFora";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
@@ -424,14 +425,7 @@ function BuscaDeAlvo({ onEscolher }: { onEscolher: (a: AlvoDeNotificacao) => voi
     };
   }, [termo]);
 
-  useEffect(() => {
-    if (!aberto) return;
-    function onDown(e: MouseEvent) {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setAberto(false);
-    }
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [aberto]);
+  useFecharAoClicarForaDe(wrapRef, aberto, () => setAberto(false));
 
   return (
     <div ref={wrapRef} className="relative">

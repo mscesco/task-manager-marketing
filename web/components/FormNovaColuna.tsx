@@ -1,5 +1,6 @@
 "use client";
 
+import CaixaDeDialogo from "@/components/CaixaDeDialogo";
 import { useEffect, useRef, useState } from "react";
 
 import type { ColumnSemantic } from "@/lib/coluna";
@@ -66,53 +67,19 @@ export default function FormNovaColuna({
   const podeCriar = limpo.length > 0 && limpo.length <= MAX_NOME;
 
   return (
-    <div
-      className="modal-scrim"
-      // ⚠️ O POSICIONAMENTO E INLINE, e nao vem da classe. `.modal-scrim` e
-      // `.modal-card` no `globals.css` carregam SO a animacao de entrada --
-      // conferido em 13/08. Confiar nelas para posicionar deixaria a caixa no
-      // fluxo da pagina, empurrando o quadro para baixo em vez de flutuar.
-      style={{
-        position: "fixed",
-        inset: 0,
-        zIndex: 50,
-        background: "rgba(16,24,40,0.45)",
-        display: "flex",
-        alignItems: "flex-start",
-        justifyContent: "center",
-        padding: "12vh 16px 24px",
-      }}
-      onMouseDown={(e) => {
-        // ⚠️ SÓ O CLIQUE NO PRÓPRIO FUNDO FECHA. Sem esta conferência, soltar o
-        // botão fora depois de selecionar texto dentro do formulário fecharia
-        // a caixa e jogaria fora o que a pessoa digitou.
-        if (e.target === e.currentTarget) onCancelar();
-      }}
+    // ⚠️ SÓ O CLIQUE NO PRÓPRIO FUNDO FECHA (`onFundo`, ver `CaixaDeDialogo`):
+    // soltar o botão fora depois de selecionar texto no campo não joga fora o
+    // que a pessoa digitou.
+    <CaixaDeDialogo
+      ariaLabel="Criar coluna"
+      largura={380}
+      caixaRef={caixaRef}
+      onEsc={onCancelar}
+      onFundo={onCancelar}
+      respiroNoTopo="12vh"
+      acimaDeModal={false}
+      isolarCliques
     >
-      <div
-        ref={caixaRef}
-        className="modal-card"
-        role="dialog"
-        aria-modal="true"
-        aria-label="Criar coluna"
-        tabIndex={-1}
-        onKeyDown={(e) => {
-          if (e.key === "Escape") {
-            e.stopPropagation();
-            onCancelar();
-          }
-        }}
-        onMouseDown={(e) => e.stopPropagation()}
-        style={{
-          width: 380,
-          maxWidth: "100%",
-          background: "var(--surface)",
-          border: "1px solid var(--border)",
-          borderRadius: 14,
-          padding: 20,
-          boxShadow: "var(--shadow)",
-        }}
-      >
         <div className="field">
           <label className="label" htmlFor="nova-coluna-nome">
             Nome da coluna
@@ -303,7 +270,6 @@ export default function FormNovaColuna({
             Criar
           </button>
         </div>
-      </div>
-    </div>
+    </CaixaDeDialogo>
   );
 }
