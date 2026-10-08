@@ -1,6 +1,6 @@
 "use client";
-import { useFecharAoClicarForaDe } from "@/lib/useCliqueFora";
-import { useRef, useState } from "react";
+import { useState } from "react";
+import AnchoredPanel, { useAnchoredPanel } from "@/components/AnchoredPanel";
 
 // Seletor de emoji simples (sem dependencia externa): um botao que abre
 // uma grade de emojis curados. Ao escolher, chama onPick(emoji) -- quem usa
@@ -28,72 +28,50 @@ export default function EmojiPicker({
   disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  const wrapRef = useRef<HTMLDivElement>(null);
-
-  useFecharAoClicarForaDe(wrapRef, open, () => setOpen(false));
+  // ⚠️ `AnchoredPanel` (revisao de 07/10): era `position: absolute` dentro do
+  // fluxo, e uma caixa com rolagem em volta o recortava. O painel fixo vira
+  // para cima sozinho quando falta espaco embaixo, e fecha ao clicar fora.
+  const { anchorRef, panelRef, box } = useAnchoredPanel<HTMLButtonElement>(
+    open,
+    () => setOpen(false),
+    { larguraPainel: 260 },
+  );
 
   return (
-    <div ref={wrapRef} style={{ position: "relative", display: "inline-block" }}>
+    <>
       <button
+        ref={anchorRef}
         type="button"
         className="btn btn-ghost"
         disabled={disabled}
         aria-label="Inserir emoji"
+        aria-haspopup="dialog"
+        aria-expanded={open}
         title="Emoji"
         onClick={() => setOpen((v) => !v)}
         style={{ padding: "4px 8px", fontSize: 15, lineHeight: 1 }}
       >
         😀
       </button>
-      {open && (
-        <div
-          style={{
-            position: "absolute",
-            bottom: "calc(100% + 6px)",
-            left: 0,
-            zIndex: 30,
-            width: 260,
-            maxHeight: 220,
-            overflowY: "auto",
-            padding: 8,
-            background: "var(--surface)",
-            border: "1px solid var(--border)",
-            borderRadius: 10,
-            boxShadow: "var(--shadow)",
-            display: "grid",
-            gridTemplateColumns: "repeat(8, 1fr)",
-            gap: 2,
-          }}
-        >
-          {EMOJIS.map((e) => (
-            <button
-              key={e}
-              type="button"
-              onClick={() => {
-                onPick(e);
-                setOpen(false);
-              }}
-              style={{
-                fontSize: 18,
-                lineHeight: 1,
-                padding: "4px 0",
-                background: "transparent",
-                border: "none",
-                borderRadius: 6,
-                cursor: "pointer",
-              }}
-              onMouseEnter={(ev) => {
-                ev.currentTarget.style.background = "var(--surface-2)";
-              }}
-              onMouseLeave={(ev) => {
-                ev.currentTarget.style.background = "transparent";
-              }}
-            >
-              {e}
-            </button>
-          ))}
-        </div>
+      {open && box && (
+        <AnchoredPanel box={box} panelRef={panelRef} role="dialog" aria-label="Emojis" minWidth={260}>
+          <div className="grid grid-cols-8 gap-0.5">
+            {EMOJIS.map((e) => (
+              <button
+                key={e}
+                type="button"
+                className="cursor-pointer rounded-md border-0 bg-transparent py-1 text-[18px] leading-none hover:bg-surface-2"
+                onClick={() => {
+                  onPick(e);
+                  setOpen(false);
+                }}
+              >
+                {e}
+              </button>
+            ))}
+          </div>
+        </AnchoredPanel>
       )}
-    </div>
+    </>
   );
 }
