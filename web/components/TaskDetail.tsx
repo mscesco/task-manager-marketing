@@ -637,11 +637,11 @@ export default function TaskDetail({
   // tem rascunho e botao de salvar, entao clicar fora e o cancelar; este grava
   // no clique da opcao, entao nao ha o que perder.
   const painelPrio = useAnchoredPanel<HTMLButtonElement>(abertoPrio, () => setAbertoPrio(false), {
-    larguraPainel: 260,
+    larguraPainel: 150,
   });
 
   const painelCol = useAnchoredPanel<HTMLButtonElement>(abertoCol, () => setAbertoCol(false), {
-    larguraPainel: 260,
+    larguraPainel: 190,
   });
 
   // Usuario logado: uma vez (memoizado). Falha silenciosa -> sem acoes
@@ -1668,7 +1668,8 @@ export default function TaskDetail({
               </Badge>
             </button>
             {abertoCol && colunas && painelCol.box && (
-              <AnchoredPanel box={painelCol.box} panelRef={painelCol.panelRef} role="listbox" aria-label="Coluna" minWidth={260}>
+              <AnchoredPanel box={painelCol.box} panelRef={painelCol.panelRef} role="listbox" aria-label="Coluna" minWidth={190}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
                 {/* ⚠️ ORDEM POR `position`, que e a MESMA do quadro. Listar na
                     ordem de chegada da API poria "Concluído" antes de
                     "Backlog" e obrigaria a ler cada linha. */}
@@ -1707,6 +1708,7 @@ export default function TaskDetail({
                       </span>
                     </button>
                   ))}
+                </div>
               </AnchoredPanel>
             )}
           </div>
@@ -1739,7 +1741,8 @@ export default function TaskDetail({
               </Badge>
             </button>
             {abertoPrio && painelPrio.box && (
-              <AnchoredPanel box={painelPrio.box} panelRef={painelPrio.panelRef} role="listbox" aria-label="Prioridade" minWidth={260}>
+              <AnchoredPanel box={painelPrio.box} panelRef={painelPrio.panelRef} role="listbox" aria-label="Prioridade" minWidth={150}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
                 {PRIORIDADES.map((p) => (
                   <button
                     key={p}
@@ -1767,6 +1770,7 @@ export default function TaskDetail({
                     {PRIORITY_LABEL[p]}
                   </button>
                 ))}
+                </div>
               </AnchoredPanel>
             )}
           </div>
@@ -1879,6 +1883,7 @@ export default function TaskDetail({
 
             {abertoDatas && painelDatas.box && (
               <AnchoredPanel box={painelDatas.box} panelRef={painelDatas.panelRef} role="dialog" aria-label="Datas" minWidth={240}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: 4 }}>
                 {/* ⚠️ O RÓTULO "Datas" ESTAVA NO DESENHO E EU O OMITI. A
                     cápsula da Camila é um cartão TITULADO, e sem o título o
                     painel não diz do que ele é -- só mostra dois campos soltos
@@ -1986,6 +1991,7 @@ export default function TaskDetail({
                   >
                     {salvandoDatas ? "Salvando…" : "Salvar"}
                   </button>
+                </div>
                 </div>
               </AnchoredPanel>
             )}
