@@ -37,16 +37,15 @@ FROM builder AS dev
 
 WORKDIR /app
 
-# Ferramentas de desenvolvimento/teste, no mesmo venv.
-# Instaladas explicitamente (e nao via ".[dev]") porque o
-# codigo-fonte do projeto nao esta no contexto deste stage
-# -- ele vem por volume em tempo de execucao.
-RUN pip install \
-    pytest==8.3.4 \
-    pytest-asyncio==0.25.0 \
-    httpx==0.28.1 \
-    ruff==0.8.6 \
-    mypy==1.14.1
+# Ferramentas de desenvolvimento/teste, no mesmo venv, A PARTIR DO
+# `pyproject.toml` (o grupo `dev`) -- o mesmo que o CI instala.
+#
+# ⚠️ ATE 08/10 AS VERSOES ESTAVAM CRAVADAS AQUI, repetidas do pyproject. O
+# Dependabot atualiza so o pyproject: o CI passava a usar o pytest 9 e a
+# imagem local seguia no 8, em silencio. Uma lista so. O codigo-fonte nao
+# precisa estar aqui -- so o pyproject, que o builder ja copiou para /build;
+# o codigo vem por volume em tempo de execucao.
+RUN pip install "/build[dev]"
 
 # O codigo e montado por volume pelo docker-compose (servico
 # api-dev), entao nao copiamos nada aqui -- o projeto inteiro,
