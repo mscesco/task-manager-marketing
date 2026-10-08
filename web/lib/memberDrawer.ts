@@ -11,6 +11,7 @@
  */
 
 import type { MemberRole, MemberTeamComCadeado, Team } from "./api";
+import { rootTeamOf } from "./areas";
 
 /** Uma linha do painel: um vínculo, e o que dá para fazer com ele. */
 export type DrawerMembership = {
@@ -93,14 +94,11 @@ export function drawerMemberships(
     });
 }
 
+/** A raiz do time, pela regra unica de `lib/areas` (revisao de 07/10: era
+ *  uma das quatro copias de "subir ate a raiz"). */
 function raizDe(team: Team, teams: readonly Team[]): Team | null {
-  let atual: Team | undefined = team;
-  let guarda = 0;
-  while (atual && atual.parent_team_id !== null && guarda < 100) {
-    guarda += 1;
-    atual = teams.find((t) => t.id === atual!.parent_team_id);
-  }
-  return atual ?? null;
+  const id = rootTeamOf(team.id, teams);
+  return teams.find((t) => t.id === id) ?? null;
 }
 
 /**

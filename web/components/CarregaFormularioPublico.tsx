@@ -10,6 +10,7 @@ import { paraCategorias, porSlug } from "@/lib/formularioDoBanco";
 import type { Categoria } from "@/lib/solicitacaoForm";
 
 import Loading from "@/components/Loading";
+import { AvisoPublico } from "@/components/MolduraPublica";
 /**
  * Busca um formulário publicado e entrega as categorias a quem desenha.
  *
@@ -67,7 +68,7 @@ export default function CarregaFormularioPublico({
 
   if (erro === "nao-existe") {
     return (
-      <Aviso
+      <AvisoPublico estreito
         titulo="Este formulário não está disponível"
         // O texto é o da Camila, ajustado ao tom do produto: ele fala em
         // imperativo com "você" e não usa "lhe" nem "te" em lugar nenhum.
@@ -77,7 +78,7 @@ export default function CarregaFormularioPublico({
   }
   if (erro === "indisponivel") {
     return (
-      <Aviso
+      <AvisoPublico estreito
         titulo="Não consegui carregar o formulário"
         // ⚠️ AQUI NÃO SE PEDE PARA CONFERIR O LINK: ele está certo, e o
         // problema é nosso.
@@ -97,7 +98,7 @@ export default function CarregaFormularioPublico({
     // ficou sem perguntas. Cair no texto de "endereço errado" mandaria a
     // pessoa cobrar quem enviou por algo que quem MONTOU precisa resolver.
     return (
-      <Aviso
+      <AvisoPublico estreito
         titulo="Este formulário ainda não tem perguntas"
         texto="Avise a equipe responsável — ele foi publicado sem conteúdo."
       />
@@ -107,28 +108,3 @@ export default function CarregaFormularioPublico({
   return <>{children({ categorias, categoriaPorSlug: porSlug(categorias), form })}</>;
 }
 
-function Aviso({ titulo, texto }: { titulo: string; texto: string }) {
-  return (
-    <div
-      role="alert"
-      style={{
-        maxWidth: 560,
-        margin: "0 auto",
-        padding: 20,
-        borderRadius: 12,
-        border: "1px solid var(--border)",
-        background: "var(--surface)",
-      }}
-    >
-      {/* ⚠️ `<h1>`, E NÃO `<strong>` (revisão de títulos, 21/09): este aviso É a
-          página quando algo deu errado, e com `<strong>` ela ficava sem título
-          nenhum -- justo para quem chegou por um link quebrado. */}
-      <h1 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 6px" }}>
-        {titulo}
-      </h1>
-      <p className="muted" style={{ fontSize: 14, margin: 0, lineHeight: 1.5 }}>
-        {texto}
-      </p>
-    </div>
-  );
-}

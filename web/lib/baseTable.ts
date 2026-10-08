@@ -301,21 +301,6 @@ function ordenarPorNome(bases: BaseSummary[]): BaseSummary[] {
   return [...bases].sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
 }
 
-/** O time raiz de um time (ele mesmo, se já for raiz). `null` se o id não está
- *  na lista. Serve para pré-escolher onde criar a base a partir do time ativo
- *  do menu -- que pode ser um subtime, e a base mora na raiz (D6). */
-export function raizDe(teamId: string | null, times: readonly Team[]): string | null {
-  if (!teamId) return null;
-  const porId = new Map(times.map((t) => [t.id, t]));
-  let atual = porId.get(teamId);
-  const vistos = new Set<string>();
-  while (atual && atual.parent_team_id && !vistos.has(atual.id)) {
-    vistos.add(atual.id);
-    atual = porId.get(atual.parent_team_id);
-  }
-  return atual ? atual.id : null;
-}
-
 // --------------------------------------------------------------- teto
 /** O aviso de linhas (D23, spec §8.1). `null` = nada a dizer. */
 export function avisoDeLinhas(
@@ -339,7 +324,5 @@ export function avisoDeLinhas(
 }
 
 // --------------------------------------------------------------- excluir
-/** D26: excluir pede o nome. Espaço nas pontas não conta; maiúscula conta. */
-export function nomeConfere(digitado: string, nome: string): boolean {
-  return digitado.trim() === nome.trim();
-}
+/** D26: excluir pede o nome -- a regra unica de `lib/confirmarNome.ts`. */
+export { nomeConfere } from "./confirmarNome";

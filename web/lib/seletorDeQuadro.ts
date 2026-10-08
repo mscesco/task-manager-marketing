@@ -21,55 +21,22 @@
  */
 
 import type { Quadro } from "./api";
+import { alcancePor, type Alcance, type AtorMinimo } from "./alcance";
 import type { Permission } from "./permissions.generated";
 
-/** O que o ator alcanca na gestao de quadros. */
-export type AlcanceDeQuadro =
-  /**
-   * `board.manage.root` -- ADMIN/MANAGER. Alcanca qualquer time.
-   *
-   * ⚠️ NAO CONFUNDIR COM "pode tudo": as colunas do Quadro geral continuam
-   * fora (fatia 5c), e a recusa e do backend.
-   */
-  | { readonly tipo: "amplo" }
-  /**
-   * `board.manage.subteam` -- SUPERVISOR. So nos subtimes onde ELE e
-   * supervisor, e a lista importa: sem ela, o mapa de permissao sozinho
-   * deixaria qualquer supervisor administrar o quadro de qualquer subtime.
-   */
-  | { readonly tipo: "subtime"; readonly subtimes: readonly string[] }
-  /** Sem permissao: o seletor vira somente leitura. */
-  | { readonly tipo: "nenhum" };
+// O tipo e a derivacao moram em `lib/alcance.ts` desde 07/10 (eram copiados
+// em `lib/permissoesMembros.ts`).
+export type { AtorMinimo } from "./alcance";
 
-/** So o que precisamos do usuario autenticado -- facilita testar. */
-export type AtorMinimo = {
-  permissions: Permission[];
-  teams: { team_id: string; role: string }[];
-};
+/** O que o ator alcanca na gestao de quadros. ⚠️ "amplo" nao e "pode tudo":
+ *  as colunas do Quadro geral continuam fora (fatia 5c), e a recusa e do
+ *  backend. */
+export type AlcanceDeQuadro = Alcance;
 
-/**
- * Deriva o alcance a partir do `/auth/me`.
- *
- * ⚠️ `board.manage.root` GANHA de `board.manage.subteam`. Quem tem os dois --
- * e ADMIN e MANAGER tem, porque o mapa de permissoes e uniao de papeis e as
- * duas entram nos conjuntos deles -- fica com o alcance maior. Testar so o
- * supervisor deixaria esta linha invertida passar.
- */
-export function alcanceDeQuadro(
-  me: AtorMinimo | null | undefined,
-): AlcanceDeQuadro {
-  if (!me) return { tipo: "nenhum" };
-  // Spec 049, fatia A: eram `board.manage.root` e `board.manage.subteam`.
-  if (me.permissions.includes("board.update.root")) return { tipo: "amplo" };
-  if (me.permissions.includes("board.update")) {
-    return {
-      tipo: "subtime",
-      subtimes: me.teams
-        .filter((t) => t.role === "SUPERVISOR")
-        .map((t) => t.team_id),
-    };
-  }
-  return { tipo: "nenhum" };
+/** O alcance na gestao de QUADROS (Spec 049, fatia A: os verbos eram
+ *  `board.manage.root` e `board.manage.subteam`). */
+export function alcanceDeQuadro(me: AtorMinimo | null | undefined): AlcanceDeQuadro {
+  return alcancePor(me, "board.update.root", "board.update");
 }
 
 /** True se o ator pode criar e renomear quadro NESTE time. */
@@ -108,31 +75,9 @@ export function podeGerirQuadrosDe(
  * ⚠️ NAO E SEGURANCA. O backend recusa com 403; isto so evita oferecer um
  * botao que nao funcionaria.
  */
-/**
- * O texto digitado confere com o nome do quadro?
- *
- * ⚠️ E A UNICA TRAVA ENTRE UM CLIQUE E APAGAR AS TAREFAS DE OUTRAS PESSOAS.
- * Apagar quadro nao pergunta o destino delas -- diferente de apagar coluna,
- * que sempre pergunta --, e nao ha desfazer no produto: o resgate e um script
- * rodado no banco.
- *
- * ⚠️ SENSIVEL A MAIUSCULA, de proposito. A confirmacao existe para obrigar a
- * pessoa a LER o nome do quadro que ela esta prestes a apagar; aceitar
- * "quadro crm" para "Quadro CRM" afrouxaria justamente o passo que faz ela
- * olhar. E e a mesma regra do nome unico (fatia 9): "Backlog" e "backlog" sao
- * nomes diferentes neste produto.
- *
- * ⚠️ `trim` NAS DUAS PONTAS porque o backend grava com `strip()` -- um espaco
- * colado junto do nome nao pode virar recusa que a pessoa nao consegue ver.
- *
- * ⚠️ NOME VAZIO NUNCA CONFERE, mesmo que o quadro tivesse nome vazio (nao tem
- * -- `_nome_valido` recusa). Sem esta linha, abrir o dialogo e clicar em
- * confirmar sem digitar nada apagaria o quadro.
- */
-export function nomeConfere(digitado: string, nomeDoQuadro: string): boolean {
-  const limpo = digitado.trim();
-  return limpo.length > 0 && limpo === nomeDoQuadro.trim();
-}
+// `nomeConfere` mora em `lib/confirmarNome.ts` desde 07/10 (era copiada na
+// Base, e a copia aceitava nome vazio). Reexportada para quem ja a importa daqui.
+export { nomeConfere } from "./confirmarNome";
 
 export function podeGerirQuadroDaRaiz(alcance: AlcanceDeQuadro): boolean {
   return alcance.tipo === "amplo";

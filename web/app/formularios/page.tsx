@@ -11,6 +11,7 @@
 // porque um editor de perguntas com arrastar, tipos e condicional é grande o
 // bastante para merecer entrega própria.
 
+import { rootTeams } from "@/lib/areas";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 
@@ -90,9 +91,14 @@ function Formularios() {
         // adivinha.
         // ⚠️ A RESERVA, para quando não há time ativo. O time ativo entra no
         // efeito abaixo, que sabe não pisar numa escolha já feita.
-        setTime(
-          (atual) => atual || (t.find((x) => x.parent_team_id === null)?.id ?? "")
-        );
+        // ⚠️ E A RESERVA TAMBEM NAO SORTEIA (revisao de 07/10): era a
+        // "primeira raiz" da lista. Agora so pre-escolhe quando ha UMA raiz;
+        // com varias, o campo pede a escolha e o botao espera.
+        setTime((atual) => {
+          if (atual) return atual;
+          const raizes = rootTeams(t);
+          return raizes.length === 1 ? raizes[0].id : "";
+        });
       })
       .catch(() => {});
     currentUser()
@@ -270,6 +276,11 @@ function Formularios() {
               disabled={salvando}
               onChange={(e) => setTime(e.target.value)}
             >
+              {!time && (
+                <option value="" disabled>
+                  Escolha o time…
+                </option>
+              )}
               {times.map((t) => (
                 <option key={t.id} value={t.id}>{t.name}</option>
               ))}
