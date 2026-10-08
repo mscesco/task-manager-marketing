@@ -55,8 +55,8 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "pytest==8.3.4",
-    "pytest-asyncio==0.25.0",
+    "pytest==9.0.3",
+    "pytest-asyncio==1.4.0",
     # ⚠️ `httpx` SAIU DAQUI e foi para as dependencias de RUNTIME (topo do
     # arquivo): o codigo de producao passou a usa-lo na fatia F, e mante-lo
     # aqui derrubou a API no deploy de 31/08.
