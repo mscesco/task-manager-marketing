@@ -1408,6 +1408,21 @@ CRIA_BASE = {
     "DUAS_ARVORES": {"mkt"},
 }
 
+#: 08/10: os times em que cada papel CRIA FORMULARIO -- `can_create_form`.
+#: ⚠️ SUBTIME ENTRA (decisao dela, 08/10): o formulario de um subtime manda as
+#: solicitacoes para a fila dele. E o MANAGER do Marketing NAO ve o Comercial
+#: -- era o defeito: a tela listava todo time, e o salvar respondia 403.
+_ARVORE_MKT = {"mkt", "seo", "design", "vazio_mkt"}
+_ARVORE_COM = {"com", "vendas", "suporte", "vazio_com"}
+CRIA_FORMULARIO = {
+    "ADMIN": _ARVORE_MKT | _ARVORE_COM,
+    "GESTOR": _ARVORE_MKT | _ARVORE_COM,
+    "MANAGER": _ARVORE_MKT,
+    "SUPERVISOR": set(),
+    "OPERATOR": set(),
+    "DUAS_ARVORES": _ARVORE_MKT,
+}
+
 #: Spec 056, fatia B: as bases que cada papel LE na lista -- `GET /bases`.
 #: ⚠️ A excluida nao aparece para ninguem. E DUAS_ARVORES le as duas: e
 #: operador no Comercial, e `base.read` e conteudo.
@@ -1464,6 +1479,22 @@ async def test_listagem_de_times_diz_onde_cada_papel_cria_base(db, papel: str) -
     idx = PAPEIS.index(papel)
     for alvo, time in (("no Marketing", "mkt"), ("no Comercial", "com")):
         linha = _linha("base.create", alvo).esperado[idx]
+        assert (linha == OK) is (time in cria), f"{papel} {alvo}: linha {linha}"
+
+
+@pytest.mark.parametrize("papel", PAPEIS)
+async def test_listagem_de_times_diz_onde_cada_papel_cria_formulario(db, papel: str) -> None:
+    m = await _mundo(db)
+    async with _client(db, _contexto(m, papel)) as cli:
+        r = await cli.get(f"{T}/workspaces/current/teams")
+    assert r.status_code == 200, r.text
+    nome_do_id = {v: k for k, v in m["ids"].items()}
+    cria = {nome_do_id[i["id"]] for i in r.json()["items"] if i["can_create_form"]}
+    assert cria == CRIA_FORMULARIO[papel], f"{papel} cria formulario em {cria}"
+    # E o cadeado diz o MESMO que o POST de verdade, papel a papel.
+    idx = PAPEIS.index(papel)
+    for alvo, time in (("no Marketing", "mkt"), ("no Comercial", "com")):
+        linha = _linha("form.create", alvo).esperado[idx]
         assert (linha == OK) is (time in cria), f"{papel} {alvo}: linha {linha}"
 
 

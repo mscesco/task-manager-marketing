@@ -96,6 +96,14 @@ class TeamListItem(TeamResponse):
     #: dele (D3). Mesma pergunta e mesma ordem do `BaseService.create`: subtime
     #: e 422 antes do verbo, entao aqui e `False` para todo subtime.
     can_create_base: bool
+    #: Quem pergunta pode CRIAR FORMULARIO de solicitacao neste time? (08/10)
+    #:
+    #: Mesma pergunta do `SolicitationFormService.criar_formulario`
+    #: (`form.create` NESTE time). Subtime vale (decisao dela, 08/10): o
+    #: formulario de um subtime manda as solicitacoes para a fila DELE. Sem
+    #: este campo, a tela listava todos os times do workspace -- e o gestor do
+    #: Marketing via o Comercial, para ouvir 403 ao salvar.
+    can_create_form: bool
 
 
 class TeamCreateRequest(BaseModel):
