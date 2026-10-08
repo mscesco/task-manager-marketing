@@ -23,6 +23,7 @@
 // tela precisar de estado na URL, ou envolve em `Suspense`, ou aceita virar
 // dinamica.
 
+import { useFecharAoClicarForaDe } from "@/lib/useCliqueFora";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -585,16 +586,7 @@ function OrgRoleField({
   // e soltar fora fechava e apagava formulario. O comentario do `TaskDetail`
   // ja registra essa distincao, e eu a ignorei na primeira versao -- o painel
   // simplesmente nao fechava.
-  useEffect(() => {
-    if (!isOpen) return;
-    function onDown(e: MouseEvent) {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
-        onClose();
-      }
-    }
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [isOpen, onClose]);
+  useFecharAoClicarForaDe(wrapRef, isOpen, () => onClose());
 
   // Fechar zera a confirmacao pendente -- reabrir nao pode cair no meio dela.
   useEffect(() => {

@@ -1,4 +1,5 @@
 "use client";
+import { useFecharAoClicarForaDe } from "@/lib/useCliqueFora";
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -93,16 +94,7 @@ export default function NotificationBell() {
   }, []);
 
   // Fecha o dropdown ao clicar fora.
-  useEffect(() => {
-    if (!open) return;
-    function onClick(e: MouseEvent) {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", onClick);
-    return () => document.removeEventListener("mousedown", onClick);
-  }, [open]);
+  useFecharAoClicarForaDe(wrapRef, open, () => setOpen(false));
 
   const alternar = useCallback(async () => {
     const abrindo = !open;

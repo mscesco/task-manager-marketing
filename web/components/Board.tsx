@@ -5,6 +5,7 @@
 // (a listagem ja vem filtrada pelo backend; subtarefa compartilha o project_id
 // do pai, entao a subarvore inteira vem junta). Extraido do antigo
 // quadro/page.tsx na Entrega 11 sem mudar comportamento do geral.
+import { useFecharAoClicarForaDe } from "@/lib/useCliqueFora";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { SlidersHorizontal } from "lucide-react";
@@ -380,16 +381,7 @@ export default function Board({
   const suprimirClique = useRef(false);
 
   // Fecha o painel ao clicar fora (mesmo padrao do picker de responsavel).
-  useEffect(() => {
-    if (!painelAberto) return;
-    function onDown(e: MouseEvent) {
-      if (painelRef.current && !painelRef.current.contains(e.target as Node)) {
-        setPainelAberto(false);
-      }
-    }
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [painelAberto]);
+  useFecharAoClicarForaDe(painelRef, painelAberto, () => setPainelAberto(false));
 
   // --- Trava o quadro na altura da viewport (scroll por coluna) ---
   // Mede a distancia REAL do topo das colunas ate o rodape e usa como altura

@@ -17,9 +17,9 @@
 //
 // ⚠️ MORA EM `components/` -- `app/` fica fora do `include` do vitest.
 
+import Gaveta from "@/components/Gaveta";
 import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { X } from "lucide-react";
 import Badge from "@/components/Badge";
 import MenuSelect from "@/components/MenuSelect";
 import PillSelect from "@/components/PillSelect";
@@ -134,41 +134,17 @@ export default function SubteamDrawer({
   }, [team.id, members]);
 
   return (
-    <>
-      <div
-        className="fixed inset-0 z-40 bg-black/10"
-        onMouseDown={(e) => {
-          if (e.target === e.currentTarget) onClose();
-        }}
-      />
-      <motion.aside
-        initial={{ x: 24, opacity: 0 }}
-        animate={{ x: 0, opacity: 1 }}
-        exit={{ x: 24, opacity: 0 }}
-        transition={{ type: "spring", duration: 0.28, bounce: 0 }}
-        className="fixed right-0 top-0 z-50 flex h-full w-full max-w-[420px] flex-col border-l border-border bg-surface"
-        role="dialog"
-        aria-modal="true"
-        aria-label={`Editar ${team.name}`}
-        onKeyDown={(e) => {
-          if (e.key === "Escape") onClose();
-        }}
-      >
-        {/* Ver o comentário gêmeo em `MemberDrawer`. */}
-        <div className="flex items-center gap-3 border-b border-border p-4">
-          <div className="min-w-0 flex-1">
-            <h2 className="truncate text-lg font-semibold">{team.name}</h2>
-            <div className="muted truncate text-xs">
-              {ehArea ? "Time" : "Subtime"} · {dentro.length}{" "}
-              {dentro.length === 1 ? "pessoa" : "pessoas"}
-            </div>
-          </div>
-          <button className="btn btn-ghost" aria-label="Fechar" onClick={onClose}>
-            <X size={16} aria-hidden="true" />
-          </button>
-        </div>
-
-        <div className="flex-1 overflow-y-auto p-4">
+    <Gaveta
+      ariaLabel={`Editar ${team.name}`}
+      titulo={team.name}
+      subtitulo={
+        <>
+          {ehArea ? "Time" : "Subtime"} · {dentro.length}{" "}
+          {dentro.length === 1 ? "pessoa" : "pessoas"}
+        </>
+      }
+      onClose={onClose}
+    >
           {/* ⚠️ RENOMEAR PERGUNTA AO SERVIDOR, e não ao alcance (Spec 049, fatia
               F). O supervisor edita o próprio subtime sem ter alcance amplo; e
               o gerente de uma árvore tem alcance amplo sem editar o subtime da
@@ -269,9 +245,7 @@ export default function SubteamDrawer({
               servidor recusa. Esvazie os subtimes primeiro.
             </div>
           )}
-        </div>
-      </motion.aside>
-    </>
+    </Gaveta>
   );
 }
 

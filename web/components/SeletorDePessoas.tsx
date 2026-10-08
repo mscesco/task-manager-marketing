@@ -19,6 +19,7 @@
 // ainda -- tem a mesma forma, com estilo inline e regras proprias (obrigatorio,
 // "Selecionar todos"). Juntar as duas e trabalho a parte.
 
+import { useFecharAoClicarForaDe } from "@/lib/useCliqueFora";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Plus, X } from "lucide-react";
 
@@ -100,16 +101,7 @@ export default function SeletorDePessoas({
 
   // Clicar fora fecha. O painel e filho do wrapper no DOM (sem portal), entao
   // `contains` cobre os dois.
-  useEffect(() => {
-    if (!aberto) return;
-    function onDown(e: MouseEvent) {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
-        setAberto(false);
-      }
-    }
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [aberto]);
+  useFecharAoClicarForaDe(wrapRef, aberto, () => setAberto(false));
 
   // Perdeu a permissao com o painel aberto (a tarefa foi arquivada): fecha.
   useEffect(() => {
