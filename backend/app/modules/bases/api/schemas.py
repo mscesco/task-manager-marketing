@@ -19,6 +19,11 @@ from pydantic import BaseModel, Field, computed_field
 from app.core.tenant import can_in
 from app.modules.bases.domain.columns import NAME_MAX, live_options
 
+#: ⚠️ Sem teto, `position` passava direto para uma coluna `integer`, e um
+#: numero alem de 2^31 virava 500 do asyncpg (revisao de 08/10). O piso (1) e
+#: do servico, que da a mensagem certa.
+POSITION_MAX = 10_000
+
 #: O texto do topo (D15) -- generoso, como a descricao de tarefa.
 _DESCRIPTION_MAX = 50_000
 
@@ -209,7 +214,7 @@ class ColumnCreateRequest(BaseModel):
     options: list[OptionRequest] | None = None
     #: Fatia I ("Inserir a esquerda/direita"): a posicao da coluna nova; as de
     #: la em diante andam uma casa. Ausente = no fim.
-    position: int | None = None
+    position: int | None = Field(default=None, le=POSITION_MAX)
 
 
 class RowResponse(BaseModel):
@@ -268,7 +273,7 @@ class ViewCreateRequest(BaseModel):
 class ViewUpdateRequest(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=NAME_MAX)
     config: dict[str, Any] | None = None
-    position: int | None = None
+    position: int | None = Field(default=None, le=POSITION_MAX)
 
 
 class UndoResponse(BaseModel):
@@ -286,5 +291,5 @@ class ColumnUpdateRequest(BaseModel):
     type: str | None = None
     #: A lista VIVA inteira, na ordem da tela. Sumir daqui NAO apaga (422).
     options: list[OptionRequest] | None = None
-    position: int | None = None
+    position: int | None = Field(default=None, le=POSITION_MAX)
     width: int | None = None

@@ -67,6 +67,7 @@ import {
   type BaseDetail,
   type BaseRow,
 } from "@/lib/api";
+import { acompanhar } from "@/lib/gravacoesDaBase";
 import {
   corDaOpcao,
   corDaPessoa,
@@ -264,7 +265,7 @@ export default function TabelaDaBase({
 
   async function novaLinha() {
     try {
-      const nova = await createBaseRow(base.id);
+      const nova = await acompanhar(base.id, createBaseRow(base.id));
       onLinhaCriada?.(nova.id);
       onLinhas((ls) => [...ls, nova]);
       setAtiva({ linha: linhas.length, coluna: 0 });
@@ -279,12 +280,19 @@ export default function TabelaDaBase({
   // ele vazava para fora da tabela. A rede é o Ctrl+Z: a linha apagada fica
   // guardada por 1 dia (D13), e o aviso diz isso.
   async function apagarLinha(linha: BaseRow) {
-    onLinhas((ls) => ls.filter((l) => l.id !== linha.id));
+    let onde = -1;
+    onLinhas((ls) => {
+      onde = ls.findIndex((l) => l.id === linha.id);
+      return ls.filter((l) => l.id !== linha.id);
+    });
     try {
-      await deleteBaseRow(base.id, linha.id);
+      await acompanhar(base.id, deleteBaseRow(base.id, linha.id));
       avisar("Linha apagada. Ctrl+Z (ou Desfazer) traz de volta.");
     } catch (e) {
-      onLinhas((ls) => [...ls, linha]);
+      // Volta para o lugar de onde saiu, e não para o fim.
+      onLinhas((ls) =>
+        onde < 0 ? [...ls, linha] : [...ls.slice(0, onde), linha, ...ls.slice(onde)]
+      );
       avisar((e as ApiError).message || "Não consegui apagar a linha.");
     }
   }

@@ -30,6 +30,7 @@ export default function AtividadeDaTarefa({
   nomes,
   carregando,
   erro,
+  erroAoCarregarMais = null,
   onCarregarMais,
 }: {
   itens: readonly EventoDeHistorico[];
@@ -38,6 +39,12 @@ export default function AtividadeDaTarefa({
   nomes: NomesDoHistorico;
   carregando: boolean;
   erro: string | null;
+  /**
+   * O "Mostrar mais" falhou. ⚠️ SEPARADO de `erro` (revisão de 08/10): o
+   * mesmo estado trocava a lista inteira pelo aviso, e o que já estava
+   * carregado sumia sem jeito de tentar de novo.
+   */
+  erroAoCarregarMais?: string | null;
   onCarregarMais: () => void;
 }) {
   if (erro) {
@@ -87,6 +94,12 @@ export default function AtividadeDaTarefa({
       {carregando && (
         <p className="muted text-sm" role="status">
           Carregando…
+        </p>
+      )}
+
+      {erroAoCarregarMais && (
+        <p className="text-sm text-danger" role="alert">
+          {erroAoCarregarMais}
         </p>
       )}
 
