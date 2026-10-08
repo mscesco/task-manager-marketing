@@ -17,7 +17,7 @@ dependencies = [
     "pydantic[email]==2.10.4",
     "pydantic-settings==2.7.0",
     # --- Auth ---
-    "pyjwt==2.10.1",
+    "pyjwt==2.15.0",
     "passlib[bcrypt]==1.7.4",
     # bcrypt fixado em 4.0.1: versoes 4.1+ removeram o atributo
     # __about__ que o passlib 1.7.4 ainda inspeciona, gerando
