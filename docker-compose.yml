@@ -14,8 +14,7 @@
 #
 # O banco de DESENVOLVIMENTO e o `db-dev` abaixo, na propria maquina (desde
 # 07/10/2026). Antes ele morava na VPS e era alcancado por tunel SSH na porta
-# 15432 -- o dia inteiro, da rede da FECAF. Nesse dia o acesso ao IP da VPS
-# caiu na rede de la, e ficou decidido: o dev nao depende mais da VPS. O
+# 15432, o dia inteiro: quando a VPS caia, o desenvolvimento parava junto. O
 # `db-test` continua efemero, so para a suite de integracao.
 # =====================================================
 

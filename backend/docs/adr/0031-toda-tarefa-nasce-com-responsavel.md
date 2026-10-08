@@ -2,7 +2,9 @@
 
 ## Status
 
-Proposed. **Supersede a D14 de 04/08/2026** ("a porta de criar subtarefa
+Accepted — implementada: o passo 2 do duplicar recusa subtarefa sem responsável (`tasks/api/schemas.py`; conferido em 08/10/2026).
+
+(Status anterior: Proposed. **Supersede a D14 de 04/08/2026** ("a porta de criar subtarefa)
 órfã fica aberta, com aviso na tela").
 
 ## Contexto

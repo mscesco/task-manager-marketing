@@ -1,572 +1,211 @@
-# DEPLOY.md — subir o task-manager na VPS
+# DEPLOY.md — subir o task-manager no servidor
 
-Deploy como imagens Docker na VPS Hostinger, **anexando** ao Traefik e ao
-Postgres que já rodam (stack do n8n). O app responde em
-`https://task.srv1186064.hstgr.cloud`.
+Imagens Docker numa VPS, **anexadas** a um Traefik e a um Postgres que já rodam
+ali (outro stack). Um domínio só: o Traefik roteia `/api/*` → backend e o resto
+→ front (mesma origem, sem CORS; ADR 0001).
 
-Arquitetura (Topologia A, ADR 0001): um domínio só; o Traefik roteia
-`/api/*` → backend e o resto → front. Mesma origem, sem CORS.
+> **Os valores reais** do servidor — domínio, pastas, containers, rede, o
+> diário de cada migration já aplicada e os incidentes — **não ficam neste
+> repositório, que é público.** Aqui eles aparecem como marcadores:
+> `<dominio>`, `<pasta-do-repo-na-vps>`, `<container-do-postgres>`,
+> `<rede-do-traefik>`, `<pasta-de-backup>`.
 
 > **Migrations e bootstrap são passos MANUAIS** (ADR 0022). O entrypoint do
-> backend só sobe o uvicorn; ele **ignora** argumentos, por isso comandos
-> avulsos usam `--entrypoint ""`.
+> backend só sobe o uvicorn e **ignora** argumentos — comandos avulsos usam
+> `--entrypoint ""`.
 
 ---
 
 ## Pré-requisitos (uma vez)
 
-1. **DNS:** `task.srv1186064.hstgr.cloud` precisa resolver para o IP da VPS
-   (o ACME TLS-challenge exige isso pra emitir o certificado). Se o n8n usa
-   wildcard `*.srv1186064.hstgr.cloud`, já está coberto — confirme com
-   `nslookup task.srv1186064.hstgr.cloud`.
-
-2. **Código na VPS:** clone/pull do repo na VPS (ex.: `/root/task-manager`).
+1. **DNS:** `<dominio>` resolve para o IP da VPS (o desafio TLS do ACME exige).
+2. **Código na VPS:**
    ```bash
-   git clone https://github.com/mscesco/task-manager-marketing.git
-   cd task-manager-marketing
+   git clone https://github.com/mscesco/task-manager-marketing.git <pasta-do-repo-na-vps>
    ```
-
-3. **Banco + usuário dedicado + extensões** no Postgres existente. Gere uma
-   senha sem caracteres especiais (evita escapar na URL): `openssl rand -hex 24`.
-   Confirme o superuser do container (provavelmente `postgres`):
-   `docker exec root-postgres-1 env | grep POSTGRES_USER`. Entre no psql:
+3. **Banco, usuário dedicado e extensões** no Postgres que já existe. Senha sem
+   caracteres especiais (evita escapar na URL): `openssl rand -hex 24`.
    ```bash
-   docker exec -it root-postgres-1 psql -U postgres
+   docker exec -it <container-do-postgres> psql -U postgres
    ```
-   No psql (troque a senha pela gerada):
    ```sql
-   -- usuario dedicado do app (isolado do n8n e do task_manager_dev)
-   CREATE USER taskmanager WITH PASSWORD 'COLE_A_SENHA_DO_OPENSSL';
-   -- banco de prod JA com o app como DONO: dono cria tabela no schema public
-   -- sem GRANT extra (resolve o schema travado do Postgres 16).
+   CREATE USER taskmanager WITH PASSWORD 'COLE_A_SENHA';
+   -- o app como DONO do banco: cria tabela no schema public sem GRANT extra
    CREATE DATABASE task_manager OWNER taskmanager;
    \c task_manager
-   -- extensoes como superuser (idempotente; a migration so confirma):
    CREATE EXTENSION IF NOT EXISTS ltree;
    CREATE EXTENSION IF NOT EXISTS pgcrypto;
    \q
    ```
-   Como o `taskmanager` é dono do banco, NAO precisa de `GRANT ON SCHEMA public`.
-
 4. **Env de produção:**
    ```bash
    cp backend/.env.prod.example backend/.env.prod
-   # edite backend/.env.prod:
-   #  - DATABASE_URL: app_user:SUA_SENHA@postgres:5432/task_manager
-   #  - JWT_SECRET_KEY: openssl rand -hex 32
+   # DATABASE_URL: taskmanager:SENHA@<container-do-postgres>:5432/task_manager
+   # JWT_SECRET_KEY: openssl rand -hex 32
    ```
 
 ---
 
-## Atualização (deploy do dia a dia)
+## A ordem: código ou migration primeiro?
 
-Sempre da raiz do repo, usando o `-f docker-compose.prod.yml`.
-**Ordem: código no ar ANTES da migration.** As migrations deste repo são
-escritas para o código novo tolerar o schema velho (padrão: o guard chega no
-código, o índice/constraint chega depois — ver aviso do `0004` abaixo). A
-ordem inversa (migration com código velho rodando) é a que devolve HTTP 500.
-Exceção só se o cabeçalho da própria migration mandar o contrário.
+**Padrão: código no ar ANTES da migration** — as migrations são escritas para o
+código novo tolerar o schema velho (o guard chega no código; o índice ou a
+constraint, depois). Migration com código velho rodando é o que devolve 500.
 
-⚠️ **SEGUNDA EXCEÇÃO, e o cabeçalho da migration pode NÃO avisar: migration
-que acrescenta coluna nova a um model existente INVERTE a ordem.** Se a
-entrega adiciona `mapped_column` numa classe que já existe (foi o caso da
-`0008`, que pôs `board_id`, `column_id` e `terminal_since` no `Task`), o
-código novo NÃO tolera o schema velho: o SQLAlchemy emite lista explícita de
-colunas em todo SELECT daquela entidade, então ele pede colunas que ainda não
-existem e devolve **500 em toda leitura** — o app inteiro, até a migration
-rodar. O contrário é seguro: coluna nullable e tabela nova que ninguém
-referencia não afetam o código velho, que nunca pergunta por elas.
+**A exceção — `build` → migration → `up` — vale sempre que o código novo
+DEPENDE do schema novo:**
 
-⚠️ **A `0012` (`board.deleted_at`) CAI NESTA SEGUNDA EXCEÇÃO. ✅ ELA ESTÁ EM
-PRODUÇÃO DESDE 10/08/2026** (confirmado em `backend/scripts/invariantes.sql`,
-que só roda a consulta 4 com ela aplicada). Ela põe `deleted_at` no `Board`,
-que já existia, e o `board_repository` já roda `AND b.deleted_at IS NULL` em
-SQL cru — por isso, no intervalo entre o commit e o `alembic upgrade`, qualquer
-deploy do `main` quebrava o `create` de tarefa de topo e toda leitura ORM de
-quadro, **inclusive um deploy que você acha que é só de front**, porque o build
-sobe a imagem do backend junto. **Esse intervalo acabou; não há mais nada a
-fazer por causa da `0012`.**
+- **Coluna nova num model que já existe.** O SQLAlchemy lista as colunas em todo
+  `SELECT`: o código novo pede uma que não existe e dá **500 em toda leitura**
+  daquela entidade (às vezes o login inteiro).
+- **Tabela nova que o código novo LÊ** ao listar algo que já existia.
+- **Extensão ou função** que o código novo chama (`unaccent`, por exemplo).
 
-⚠️ **O parágrafo acima já mentiu.** Ele afirmou "ainda NÃO estava em produção"
-depois de a `0012` ter subido, e no mesmo pacote em que outro documento dizia o
-contrário. Enquanto durou, este arquivo anunciava que **não havia caminho de
-hotfix** num dia em que havia. Quando a próxima migration cair nesta segunda
-exceção, escreva a data de aplicação aqui **no mesmo commit** que a aplica.
-
-⚠️⚠️ **A SPEC 043 INTEIRA (`0016` a `0021`) CAI NA SEGUNDA EXCEÇÃO — E O
-CABEÇALHO DE NENHUMA DAS SEIS AVISA.** ✅ **ESTÁ EM PRODUÇÃO DESDE 08/09/2026.**
-
-Como se sabe, sem ter estado lá no dia: o `alembic` é linear, e a `0022` declara
-`down_revision = "0021_slug_de_secao_unico"`. Em 08/09/2026 a coluna
-`users.org_role` — criada pela `0022` — respondia em produção com os dois
-admins preenchidos pelo backfill. Se a `0022` rodou, as seis anteriores rodaram.
-
-O texto abaixo fica como está: ele descreve o que **foi** feito, e é o mesmo
-raciocínio que a próxima migration desta família vai precisar.
-
-A `0016` põe **`form_id`** e a `0019` põe **`task_id`** em `solicitation` — uma
-tabela que **já existe em produção desde a `0005`**. O SQLAlchemy emite lista
-explícita de colunas em todo `SELECT` da entidade, então o código novo pede
-colunas que ainda não existem e devolve **500 em toda leitura de solicitação**:
-a fila de triagem, o envio do formulário público, tudo. Até a migration rodar.
-
-**Portanto, para esta entrega a ordem é MIGRATION ANTES DO CÓDIGO:**
-
+**Como saber:**
 ```bash
-docker compose -f docker-compose.prod.yml run --rm --entrypoint "" api alembic upgrade head
-# só depois: build + up do código novo
+git diff <tag-do-ultimo-deploy>..HEAD -- backend/app/db/models/
 ```
+`mapped_column` novo em classe que já existia = ordem invertida. E leia o
+**cabeçalho de cada migration nova**: ela diz a ordem e o que pode apagar no
+`downgrade`.
 
-⚠️ **E rodar as seis com o código VELHO no ar é seguro** — conferido uma a uma:
-`0016`/`0017` criam tabelas que o código velho nunca consulta; `0018` só ALARGA
-os CHECKs (o velho continua gravando PENDING/APPROVED/REJECTED); `0019` e `0020`
-acrescentam colunas nullable; `0020` afrouxa `NOT NULL` (o velho sempre manda
-valor); `0021` cria índice único de seção, e o código velho não cria seção.
-
-⚠️ **A `0021` PODE PARAR O DEPLOY, de propósito.** Ela recusa subir se houver
-duas seções com o mesmo endereço no mesmo formulário, e a mensagem **nomeia**
-qual formulário e qual endereço. Se isso acontecer, renomeie ou apague a
-duplicada e rode de novo — não force.
-
-⚠️ **A `0017` SEMEIA O FORMULÁRIO DO MARKETING JÁ PUBLICADO.** Ela procura o
-time pelo id de produção (`b8387155-…`) e, se não achar, cai no time RAIZ de
-cada workspace. Depois dela, `/solicitar` passa a servir do banco — confira
-`/solicitar/marketing` antes de anunciar.
-
-⚠️ **A `0018` PERDE INFORMAÇÃO NO `downgrade`**: ela devolve a PENDING os
-pedidos em "Em andamento" e "Concluída", porque esses valores não cabem no
-CHECK antigo. Está escrito no cabeçalho dela. Não há caminho de volta limpo
-depois que alguém usar os status novos.
-
-⚠️ **A `0022` (`users.org_role`, Spec 045) CAI NA SEGUNDA EXCEÇÃO. ✅ ELA ESTÁ
-EM PRODUÇÃO DESDE 08/09/2026.** Ela põe `org_role` no `User`, que já existia —
-a checagem `git diff <sha-da-vps>..origin/main -- backend/app/db/models/` acusou
-o `mapped_column` novo. O modo de falhar era o pior possível: `get_membership`
-faz `session.get(User, ...)`, então o 500 pegaria **o login** e ninguém entraria
-para ver o estrago.
-
-⚠️ **Ela é ADITIVA de propósito: não remove nada.** O vínculo `ADMIN` em
-`user_team` continua onde estava, e o backfill só COPIA quem o tinha para
-`users.org_role`. A limpeza é um **passo 2 manual**, depois do deploy confirmado
-— e enquanto ele não roda, as duas fontes coexistem dizendo a mesma coisa.
-
-✅ **O passo 2 RODOU em 08/09/2026**, no Adminer: a conta de administração saiu
-de `user_team` (fica sem time nenhum), a chefe virou `MANAGER` da raiz e perdeu
-o `org_role`. Restou **um** ADMIN de organização ativo, que é o desenho.
-
-⚠️⚠️ **E ISSO MUDOU O CAMINHO DE ROLLBACK — leia antes de descer qualquer
-migration.** Enquanto as duas fontes coexistiam, `alembic downgrade` da `0022`
-era seguro: a coluna sumia e o vínculo `ADMIN` antigo continuava lá servindo de
-rede. Esse vínculo não existe mais. **Descer da `0022` agora deixa o workspace
-sem NENHUM admin**, e `workspace.manage` é justamente o portão da única rota que
-promoveria alguém de volta — a saída seria SQL na mão. Daqui pra frente,
-problema com a `0022` se resolve para frente.
-
-⚠️ **A `0023` (várias áreas, Spec 046) NÃO cai em exceção nenhuma — ordem
-PADRÃO** (`build` → `up` → migration). Ela só faz `DROP INDEX
-team_unica_raiz_por_workspace`: não muda nenhuma linha, não altera nenhuma
-leitura, e o código velho continua criando uma área só porque a checagem de
-domínio também barrava — e essa sai no mesmo deploy, no código.
-
-⚠️ **MAS O `downgrade` DELA PODE FALHAR, e isso é de propósito.** Recriar um
-índice único num workspace que já tem duas áreas é impossível; o Postgres recusa
-e nomeia o índice. Se acontecer: **não force.** Decida qual área continua sendo a
-única e mova as outras para baixo dela, ou apague-as, antes de descer.
-
-⚠️⚠️ **A `0024` E A `0025` VÃO JUNTAS, E PUXAM A ORDEM PARA LADOS OPOSTOS**
-(Specs 048 e 050; escrito em 16/09/2026, antes de subirem). Produção estava no
-PR #51, em `0023`; o `alembic` é linear, então `upgrade head` roda as duas de uma
-vez.
-
-- **`0024` (sai o projeto pessoal) pede CÓDIGO ANTES.** Ela derruba
-  `project.is_personal`, e o código VELHO ainda mapeia a coluna — com a migration
-  antes, toda leitura de projeto dá 500 até o `up`. O código novo não pergunta
-  por ela.
-  ⚠️ **Ela APAGA os projetos pessoais e as tarefas dentro deles, e o `downgrade`
-  não os devolve.** Medido em produção pela Camila em 16/09, no Adminer: **29
-  projetos pessoais, todos com 0 tarefas, nenhum excluído** — o `DELETE` não
-  leva trabalho de ninguém. Se o deploy atrasar dias, **meça de novo**:
-  ```sql
-  SELECT p.id, p.title, count(t.id) AS tarefas
-  FROM project p LEFT JOIN task t ON t.project_id = p.id
-  WHERE p.is_personal GROUP BY p.id, p.title ORDER BY tarefas DESC;
-  -- esperado: toda linha com 0. Alguma > 0 = PARE.
-  ```
-- **`0025` (reações no comentário) pede MIGRATION ANTES.** É tabela nova (não é
-  coluna em model existente), mas o código novo **lê dela** ao listar
-  comentários — é o terceiro motivo, o da `0015`. Com o código antes, a lista de
-  comentários do detalhe da tarefa dá 500 até a migration.
-
-**Decisão: código antes, migration IMEDIATAMENTE depois, no mesmo comando.** As
-janelas não são do mesmo tamanho: migration antes quebra a leitura de projeto,
-que aparece no quadro inteiro; código antes quebra só a lista de comentários,
-pelos segundos do `alembic upgrade`. O comando do passo 2+3 fica encadeado:
 ```bash
-docker compose -f docker-compose.prod.yml up -d && \
-docker compose -f docker-compose.prod.yml run --rm --entrypoint "" api alembic upgrade head
-```
-
-⚠️ **A `0025` traz dependência nova de runtime** (`emoji==2.15.0`, em
-`dependencies`). O passo a.1 (a imagem importa o app?) é o portão dela.
-
-⚠️⚠️ **A `0026` (anexo de projeto e tarefa, Spec 052) pede MIGRATION ANTES DO
-CÓDIGO** (escrito em 16/09/2026, antes de subir). Ela **reforma** a tabela
-`attachment` — que existia desde o schema v5 e nunca foi usada — em vez de criar
-outra: `file_name` vira `title`, entram `project_id`, `kind`, `url` e
-`position`, e as colunas de arquivo ficam opcionais. O código novo **lê** a
-tabela reformada (links do projeto e da tarefa); o velho nunca a consulta.
-Então: migration com o código velho no ar é seguro; código novo antes da
-migration dá erro ao abrir projeto e tarefa.
-```bash
+# ordem invertida: a imagem nova traz a migration
 docker compose -f docker-compose.prod.yml build
 docker compose -f docker-compose.prod.yml run --rm --entrypoint "" api alembic upgrade head
-docker compose -f docker-compose.prod.yml up -d
-```
-⚠️ **Ela PARA de propósito se a `attachment` tiver qualquer linha** — só é
-seguro reformar a tabela vazia. Medido pela Camila em produção em 16/09:
-`SELECT count(*) FROM attachment` = **0**. Se a migration recusar, **não force**:
-veja de onde vieram as linhas. O `downgrade` tem a mesma trava (descer com links
-gravados os perderia).
-
-⚠️⚠️ **A `0027` (junção de avisos, Spec 053) pede MIGRATION ANTES DO CÓDIGO**
-(escrito em 17/09/2026, antes de subir). Ela acrescenta
-`notification.updated_at` a um model que já existe. Com o código novo no ar e a
-coluna ausente, **toda leitura de notificação dá 500** — e o sino consulta a
-cada 30 s, em toda aba aberta. Com a migration antes, o código velho não conhece
-a coluna e os `INSERT` dele caem no `DEFAULT now()`: seguro.
-```bash
-docker compose -f docker-compose.prod.yml build
-docker compose -f docker-compose.prod.yml run --rm --entrypoint "" api alembic upgrade head
-docker compose -f docker-compose.prod.yml up -d
-```
-A migration copia `created_at` para `updated_at` em toda linha, então nenhum aviso
-antigo muda de posição no sino. O `downgrade` só remove a coluna e o índice.
-
-⚠️⚠️ **A `0028` (preferências de notificação, Spec 054) pede MIGRATION ANTES DO
-CÓDIGO, pelo MESMO motivo da `0027`** (escrito em 17/09/2026, antes de subir).
-Ela acrescenta `notification.roles` a um model que já existe — e outra vez é
-**toda leitura de notificação** que quebra se o código novo subir primeiro, com
-o sino consultando a cada 30 s em toda aba aberta. A tabela `notification_mute`
-é nova e não tem esse problema; o `roles` é que manda na ordem. Os mesmos três
-comandos da `0027` valem aqui.
-
-A migration também **reconstrói o papel dos avisos antigos** (quem é seguidor,
-responsável ou criador da tarefa HOJE). É aproximado, e a aproximação erra para
-o lado seguro: um papel a mais só torna o silêncio mais difícil, e aviso sem
-papel nenhum **nunca** é silenciado. O `downgrade` derruba a coluna e a tabela —
-e com isso os toggles que alguém já tiver desligado, porque eles moram lá.
-
-Para medir antes de subir, no Adminer:
-```sql
-SELECT count(*) AS avisos,
-       count(*) FILTER (WHERE task_id IS NOT NULL) AS com_tarefa
-FROM notification;
-```
-
-**A `0029` (a Base, Spec 056) também é MIGRATION ANTES DO CÓDIGO**, mas por um
-motivo mais tranquilo (escrito em 07/10/2026, antes de subir): as cinco
-tabelas (`base`, `base_column`, `base_row`, `base_view`, `base_change`) são
-NOVAS, e o código velho nunca as consulta. Subir a migration com o velho no ar
-é seguro; o código novo sem ela dá 500 só nas rotas `/bases`. O `downgrade`
-apaga as cinco — e as bases que a equipe já tiver criado.
-
-⚠️⚠️ **E O AO VIVO PRECISA DE UMA CONFERÊNCIA NA VPS** (Spec 056, fatia G),
-porque nenhum teste daqui a faz: o canal `GET /api/v1/bases/<id>/events` é um
-fluxo (Server-Sent Events) que fica aberto 60 s, e um proxy que BUFFERIZA
-seguraria os avisos até o fim. O Traefik não bufferiza por padrão, mas
-"por padrão" não é medida. Depois de subir, com um token de acesso válido e o
-id de uma base:
-```bash
-curl -N -H "Authorization: Bearer <token>" https://task.srv1186064.hstgr.cloud/api/v1/bases/<id>/events
-```
-Tem de aparecer `event: ready` **na hora**, um `: ping` a cada 15 s, e
-`event: end` aos 60 s. Se tudo chegar de uma vez só no fim, o proxy está
-bufferizando, e o front cai na recarga de 10 s -- funciona, mas não é ao vivo.
-
-⚠️ **E A BASE TRAZ UM JOB NOVO PARA O N8N** (Spec 056, fatia D): uma chamada
-diária a `POST /api/v1/system/bases/purge`, com o mesmo header `X-System-Token`
-das outras rotas de sistema. Ela apaga de vez a base excluída há mais de 10
-dias, e linha, coluna, opção e diário de desfazer com mais de 1 dia. **Sem o
-agendamento nada se perde** — só nada se apaga de vez, e a tabela do diário
-cresce. Idempotente: rodar duas vezes no dia não faz mal.
-
-⚠️ **A `0015` (`unaccent`) TAMBÉM inverte a ordem — por um terceiro motivo, e
-✅ ELA ESTÁ EM PRODUÇÃO DESDE 21/08/2026.** Ela não acrescenta coluna a model
-nenhum (a checagem do `git diff -- backend/app/db/models/` sai vazia), então
-não é a segunda exceção. O que inverte é o sentido oposto: **o código novo
-depende do schema novo.** `_casa_busca_na_subarvore` chama `unaccent()`, e com
-o código no ar antes da extensão existir, a primeira pessoa que digitar na
-busca do quadro toma erro de função inexistente — silencioso até alguém
-buscar, e portanto invisível no smoke.
-
-**A regra geral que as duas exceções compartilham:** a ordem padrão só vale
-quando o código novo tolera o schema velho. Sempre que ele **depender** do
-schema novo — coluna nova em model existente, extensão, função — é
-`build` → `migration` → `up`.
-
-Para a PRÓXIMA migration que cair nesta exceção, a ordem é `build` →
-`migration` → `up`, e o `build` vem antes porque a migration mora dentro da
-imagem:
-
-```bash
-docker compose -f docker-compose.prod.yml build
-docker compose -f docker-compose.prod.yml run --rm --entrypoint "" api \
-  alembic upgrade head       # imagem nova, containers antigos ainda no ar
 # conferir o dado aqui, com o app ainda no código velho
 docker compose -f docker-compose.prod.yml up -d
 ```
 
-A vantagem é que a janela de conferência acontece com o desfazer barato
-disponível: se o dado sair errado, `alembic downgrade -1` e nada subiu.
+A janela entre a migration e o `up` é a hora de conferir, com o desfazer
+barato: dado errado → `alembic downgrade -1`, e nada subiu.
 
-**Como saber em qual caso você está:** `git diff <tag-do-ultimo-deploy>..HEAD
--- backend/app/db/models/` — se aparecer `mapped_column` novo em classe que já
-existia, é ordem invertida. Executado assim em 06/08/2026 (`0008`).
+⚠️ Migration que **recusa subir** com dado que não serve (ela nomeia o que
+achou) está fazendo o trabalho dela: **não force** — conserte o dado.
 
-0. **Pré-voo.**
+---
 
-   **a.0) O servidor está igual ao repositório?** Rodar NO SERVIDOR, antes de
-   qualquer outra coisa:
-   ```bash
-   cd ~/task-manager-marketing && git status --porcelain
-   # esperado: VAZIO.
-   ```
-   ⚠️ **Qualquer saída = alguém editou produção à mão e o repositório não
-   sabe. PARE e resolva antes de deployar.** Não é hipótese: em 03/08/2026 o
-   `docker-compose.prod.yml` estava com `stsSeconds=31536000` no servidor e
-   `300` no repo, e só apareceu porque alguém olhou os cabeçalhos de resposta
-   por outro motivo. Enquanto durou, um `git restore` de rotina teria
-   rebaixado o HSTS de um ano para cinco minutos sem log, sem erro e sem
-   ninguém perceber.
+## Deploy do dia a dia
 
-   Ao resolver, o valor do SERVIDOR costuma ser o certo (é o que está no ar):
-   commite a partir dele, não descarte por cima.
+Sempre da raiz do repositório, com `-f docker-compose.prod.yml`.
 
-   **a) Portões de teste — rodar ANTES de buildar.** ⚠️ **EXISTE CI**
-   (`.github/workflows/ci.yml`), com os jobs `front` e `backend`. Este arquivo
-   dizia "não há CI neste projeto" até 06/08/2026 — era verdade quando a Spec
-   027 (D6) foi escrita e deixou de ser depois. Rodar local continua sendo o
-   passo, porque o CI roda no que foi EMPURRADO e o deploy sobe o que está na
-   sua máquina.
+### 0. Pré-voo
 
-   > ⚠️ **"CI VERDE" QUER DIZER QUE O JOB `backend` CHEGOU A EXECUTAR O PASSO
-   > `pytest`.** Não quer dizer "não tem X na lista de runs". Um job pode
-   > morrer no `Set up job` (`Failed to resolve action download info`) ou nunca
-   > ser adquirido por runner (`The job was not acquired by Runner of type
-   > hosted`) — nesses casos o GitHub caiu, o seu código não foi julgado, e na
-   > lista de runs **o X é idêntico ao de um teste reprovado**. Aconteceu nos
-   > runs #16, #17 e #18. O conserto é `Re-run all jobs` na página do run;
-   > **não mexer no `ci.yml`**.
-   >
-   > ⚠️ Se o `Re-run all jobs` também falhar em `Set up job`, confira
-   > `githubstatus.com` antes de procurar defeito no repositório. Em
-   > 06/08/2026 o Actions passou o dia em incidente e nenhum re-run passou.
-   >
-   > ⚠️ O `ci.yml` tem `concurrency: cancel-in-progress: true`. Empurrar
-   > commit novo durante um re-run cancela o re-run.
-   ```bash
-   # backend -- o db-test do compose, e a URL por extenso de proposito
-   docker compose up -d db-test
-   docker compose run --rm      -e TEST_DATABASE_URL="postgresql+asyncpg://test:test@db-test:5432/taskmanager_test"      api-dev pytest -q                        # esperado: 0 failed
-   # front -- os TRES, nesta ordem
-   cd web && TZ=UTC npm test && npx tsc --noEmit && npx next build
-   ```
-   > ⚠️ **O critério é `0 failed`, não um número.** Este arquivo já ficou
-   > meses dizendo `379 passed` quando o real era 493 — e roteiro que mente
-   > treina quem faz o deploy a ignorar o portão. Se quiser conferir a ordem
-   > de grandeza: em 30/09/2026 eram **1876** (backend) e **1540** (front),
-   > no merge do PR #63.
-   > (Em 16/09/2026 eram 1546 e 1417, no topo do PR #56 -- Specs 047 a 050.)
-   > (Em 09/09/2026 eram 1082 e 1108, depois da Spec 046 inteira.)
-   > (Em 08/09/2026 eram 1047 e 1085, depois das fatias A–D da Spec 045.)
-   > (Em 31/08/2026 eram 1012 e 1078, depois da Spec 043 inteira.)
-   > (Em 10/08/2026 eram 657 e 529.)
-   > (Backend saiu de 642 para 657 com a peca de backend da fatia 5:
-   > 8 testes puros de derivacao + 7 de integracao do `PATCH column_id`.)
-   > (Em 06/08 eram 601 e 398; em 03/08, 493 e 293 — este arquivo já ficou
-   > defasado três dias e o aviso acima existe justamente por isso: atualize
-   > o número quando mudar.)
-   > Número absoluto MENOR que o esperado sem uma spec ter removido testes de
-   > propósito é motivo pra parar, não pra seguir.
-   >
-   > ⚠️ **Sem `TEST_DATABASE_URL` o backend dá `165 passed + 328 skipped`** e
-   > ainda assim imprime `0 failed`. Os pulados incluem TODA a regra de
-   > visibilidade. Confira a linha de `skipped` antes de aceitar o portão.
+**a.0) O servidor está igual ao repositório?** No servidor:
+```bash
+cd <pasta-do-repo-na-vps> && git status --porcelain   # esperado: VAZIO
+```
+Qualquer saída = alguém editou produção à mão. **Pare e resolva antes.** O valor
+do servidor costuma ser o certo (é o que está no ar): commite a partir dele.
 
-   **a.1) ⚠️⚠️ A IMAGEM DE PRODUÇÃO IMPORTA O APP?** Este passo existe porque
-   em 31/08/2026 a API **não subiu** depois de um deploy com os cinco portões
-   verdes:
-   ```bash
-   cd backend && docker build --target runtime -t task-manager-api:preflight .
-   docker run --rm      -e DATABASE_URL="postgresql+asyncpg://x:x@localhost:5432/x"      -e JWT_SECRET_KEY="preflight-sem-valor-nenhum-0123456789012"      -e APP_ENV=development      --entrypoint python task-manager-api:preflight      -c "from app.main import create_app; create_app(); print('OK')"
-   ```
-   ⚠️ **Os testes NÃO conseguem pegar esta classe de defeito.** O `api-dev` e o
-   job `backend` do CI instalam `.[dev]`; a imagem de produção roda
-   `pip install .`. Uma dependência declarada só em `dev` e usada em código de
-   runtime passa por tudo e derruba o app no `import` — foi o `httpx` da fatia
-   F. O defeito não está no código: está na **diferença entre as duas
-   instalações**, e só construir a imagem de verdade revela.
+**a) Os portões, na sua máquina** — a lista única está no
+[`AGENTS.md` §5](AGENTS.md#5-os-portões--a-lista-única): front, backend, drift e
+"a imagem de produção importa o app?". O CI roda todos, mas julga o que foi
+**empurrado**; o deploy sobe o que está aqui.
 
-   ⚠️ O CI já roda isto no job `imagem` desde 31/08. Rodar aqui também porque
-   **o CI julga o que foi EMPURRADO e o deploy sobe o que está na sua
-   máquina.**
+> "CI verde" quer dizer que o job `backend` **chegou a executar** o `pytest`. Um
+> job que morre no `Set up job` é o GitHub fora do ar, e na lista de runs o X é
+> igual ao de teste reprovado: `Re-run all jobs`, e confira
+> `githubstatus.com` antes de procurar defeito no código.
 
-   **a.2) Drift de schema.** Contra um banco em `head`:
-   ```bash
-   docker compose run --rm api-dev sh -c      "alembic upgrade head && alembic revision --autogenerate -m drift_check &&       cat alembic/versions/*drift*.py; rm -f alembic/versions/*drift*.py"
-   # esperado: NENHUMA linha `op.`
-   ```
-   ⚠️ **Ele precisa de banco alcançável**, e o do `api-dev` é o `db-dev` local
-   (`docker compose up -d db-dev`). Sem ele, o `alembic upgrade` não conecta e
-   o portão NÃO RODA -- sem erro claro.
-   Diff sujo = model divergiu do banco. **Não aplique**: conserte o model.
-   Até 03/08/2026 esse comando gerava 86 operações, incluindo `drop_column` e
-   33 `drop_index` — aplicar teria custado índices de produção.
+**a.1) As invariantes do banco valem?** No servidor, **antes** e de novo
+**depois** do deploy — o script só lê. Da raiz do repositório:
+```bash
+docker exec -i <container-do-postgres> psql -U <superusuario-do-postgres> -d task_manager < backend/scripts/invariantes.sql
+```
+O cabeçalho do script diz quais consultas têm de voltar **0** e quais são só
+contexto. Uma invariante quebrada = o dado não serve para a migration que vem
+(ou para a que acabou de rodar): pare e leia o comentário da consulta.
 
-   > `npm test` cobre as regras puras de `web/lib/` — NÃO cobre a tela
-   > (o `include` do vitest é `lib/**`). Os três portões passam com a
-   > interface quebrada. Mudança visual continua exigindo teste manual no dev,
-   > nos DOIS temas.
+**b.0) O backup de ontem existe?** No servidor:
+```bash
+cat <pasta-de-backup>/ULTIMO_BACKUP_OK   # esperado: data de hoje ou de ontem
+```
+Data velha ou arquivo inexistente = **PARE**. O backup roda por cron e falha em
+silêncio; este sentinela é o único jeito de saber.
 
-   **b.0) ⚠️⚠️ O BACKUP DE ONTEM EXISTE?** Rodar NO SERVIDOR:
-   ```bash
-   cat /root/backups/taskmanager/ULTIMO_BACKUP_OK   # esperado: data de hoje ou ontem
-   ls -lh /root/backups/taskmanager/
-   ```
-   ⚠️ **Data velha, ou arquivo inexistente = PARE.** Em 31/08/2026 o backup
-   estava falhando **desde 02/07** -- sessenta execuções seguidas -- e ninguém
-   soube, porque o script gritava num log que roda por cron às 2h e que
-   ninguém lê. O último bom era de 30/06. Só apareceu porque alguém foi
-   deployar e olhou.
-   O defeito era um falso negativo do próprio script (`grep -q` + `pipefail` =
-   SIGPIPE no `gunzip`); os dumps estavam certos o tempo todo. Está consertado,
-   e o sentinela acima existe para o silêncio não se repetir.
+**b) Rodar o backup e taguear as imagens atuais** (é o que permite voltar):
+```bash
+<pasta-do-repo-na-vps>/backend/scripts/backup_taskmanager.sh
+cat <pasta-de-backup>/ULTIMO_BACKUP_OK
+docker tag task-manager-api:latest task-manager-api:pre-deploy-$(date +%Y%m%d)
+docker tag task-manager-web:latest task-manager-web:pre-deploy-$(date +%Y%m%d)
+```
 
-   **b) Conferir `DATABASE_URL`** (na VPS ele aponta para o banco de
-   produção; o de desenvolvimento mora na máquina de cada um, no `db-dev`),
-   **rodar o backup**, e taguear as imagens atuais para ter rollback:
-   ```bash
-   ~/task-manager-marketing/backend/scripts/backup_taskmanager.sh
-   cat /root/backups/taskmanager/ULTIMO_BACKUP_OK
-   ```
-   ```bash
-   docker tag task-manager-api:latest task-manager-api:pre-deploy-$(date +%Y%m%d)
-   docker tag task-manager-web:latest task-manager-web:pre-deploy-$(date +%Y%m%d)
-   ```
+### 1. Build
+```bash
+docker compose -f docker-compose.prod.yml build
+```
 
-1. **Build das imagens** (backend runtime + front standalone):
-   ```bash
-   docker compose -f docker-compose.prod.yml build
-   ```
+### 2. Subir o código
+```bash
+docker compose -f docker-compose.prod.yml up -d
+```
 
-2. **Subir o código novo:**
-   ```bash
-   docker compose -f docker-compose.prod.yml up -d
-   ```
+### 3. Migrations
+```bash
+docker compose -f docker-compose.prod.yml run --rm --entrypoint "" api alembic upgrade head
+docker compose -f docker-compose.prod.yml exec api alembic current   # confere a head
+```
+Sem migration nova, é um no-op. (Na ordem invertida, este passo vem antes do 2.)
 
-3. **Migrations** (manual — `--entrypoint ""` porque o entrypoint padrão ignora args):
-   ```bash
-   docker compose -f docker-compose.prod.yml run --rm --entrypoint "" api \
-     alembic upgrade head
-   docker compose -f docker-compose.prod.yml exec api alembic current  # confere a head
-   ```
-   Se não houver migration nova, o passo é um no-op inofensivo.
+### 4. Conferir
+```bash
+docker compose -f docker-compose.prod.yml ps
+docker compose -f docker-compose.prod.yml logs -f api
+```
+Abra `https://<dominio>` e faça um smoke **do que o deploy tocou** — o schema
+existir não prova que o fluxo funciona.
 
-   > **`0004_unique_root_team` (Spec 024) — exemplo do porquê da ordem.** Cria o
-   > índice único de **um time raiz por workspace**. O índice sozinho, com
-   > código velho rodando, faz `TeamService.create(parent_team_id=null)` e
-   > `TeamService.move(new_parent_id=null)` responderem **HTTP 500**
-   > (`IntegrityError` cru) em vez de 409. Código antes, migration depois.
-   > (Aplicada em produção em 2026-07-22, junto com a `0005`.)
+---
 
-4. **Conferir:**
-   ```bash
-   docker compose -f docker-compose.prod.yml ps
-   docker compose -f docker-compose.prod.yml logs -f api   # Ctrl-C pra sair
-   ```
-   Abra `https://task.srv1186064.hstgr.cloud` e faça um smoke do que o deploy
-   tocou (o schema existir não prova que o fluxo funciona).
+## Voltar a versão anterior (rollback)
+
+As imagens do passo 0.b ficam com a tag `:pre-deploy-AAAAMMDD`:
+```bash
+docker tag task-manager-api:pre-deploy-AAAAMMDD task-manager-api:latest
+docker tag task-manager-web:pre-deploy-AAAAMMDD task-manager-web:latest
+docker compose -f docker-compose.prod.yml up -d
+```
+⚠️ **Voltar a imagem NÃO desfaz migration.** Se o deploy aplicou uma, volte o
+schema primeiro (`alembic downgrade`) ou restaure o backup do passo 0.b — código
+velho contra schema novo falha de formas silenciosas.
+
+⚠️ Ensaie este procedimento e a restauração do backup em horário calmo:
+procedimento de emergência que nunca rodou não é procedimento.
 
 ---
 
 ## Primeiro deploy (uma vez só)
 
-Aqui não há código velho rodando, então a ordem é a natural:
-`build` → `migrations` → `bootstrap` → `up -d`.
+Sem código velho rodando, a ordem é a natural: `build` → migrations →
+bootstrap → `up -d`.
 
-**Bootstrap** (cria workspace `unifecaf` + admin, depois os subtimes):
 ```bash
 docker compose -f docker-compose.prod.yml run --rm --entrypoint "" api \
   python -m scripts.provision_workspace \
-    --workspace-name "UniFECAF" --workspace-slug unifecaf \
-    --team-name "Marketing" --team-slug marketing \
-    --admin-name "Nome do Admin" --admin-email admin@unifecaf.com.br
-
-docker compose -f docker-compose.prod.yml run --rm --entrypoint "" api \
-  python -m scripts.seed_unifecaf_teams --workspace-slug unifecaf
+    --workspace-name "<Nome>" --workspace-slug <slug> \
+    --team-name "<Time raiz>" --team-slug <slug-do-time> \
+    --admin-name "<Nome do admin>" --admin-email <email-do-admin>
 ```
-A senha do admin é pedida no terminal -- não passe `--admin-password` na
-linha de comando, que ela fica no histórico do shell. (Rode `... --entrypoint
-"" api python -m scripts.provision_workspace --help` para ver os argumentos.)
-
-O primeiro login do admin força troca de senha. O bootstrap NÃO se repete.
+A senha do admin é pedida no terminal — **não** passe `--admin-password` na
+linha de comando (fica no histórico do shell). O primeiro login força a troca.
+O bootstrap não se repete.
 
 ---
 
 ## Notas
 
-- ✅ **CSP e Permissions-Policy ESTÃO EM PRODUÇÃO DESDE 30/09/2026** (PR #63,
-  deployado por ela). Elas moram em `web/next.config.mjs`, com teste em
-  `web/lib/__tests__/csp.test.ts` — **não** no Traefik, e o
-  `docker-compose.prod.yml` explica por quê (dois cabeçalhos `CSP` na mesma
-  resposta viram INTERSEÇÃO).
-  Conferido no servidor, na hora:
+- **Sem portas no host:** todo o ingresso passa pelo Traefik (80/443); `api` e
+  `web` só são alcançáveis pela `<rede-do-traefik>`. Se o nome da rede mudar,
+  ajuste no `docker-compose.prod.yml`.
+- **CSP e Permissions-Policy** moram em `web/next.config.mjs` (teste em
+  `web/lib/__tests__/csp.test.ts`), e **não** no Traefik — o
+  `docker-compose.prod.yml` explica por quê. Depois de um deploy de front:
   ```bash
-  curl -sI https://task.srv1186064.hstgr.cloud/login | grep -i "content-security-policy\|permissions-policy"
+  curl -sI https://<dominio>/login | grep -i "content-security-policy"
   ```
-  ⚠️ **O que olhar na saída é a AUSÊNCIA de `'unsafe-eval'`** no `script-src`.
-  Ele é necessário em desenvolvimento (Fast Refresh) e proibido em produção; se
-  aparecer lá, o build subiu com `NODE_ENV` de desenvolvimento, e a política
-  inteira fica mais frouxa do que o teste promete. Medido em 30/09: ausente.
-  ⚠️ `script-src` mantém `'unsafe-inline'` de propósito (o Next injeta script
-  inline, e o tema é aplicado antes da primeira pintura). Tirar exige nonce por
-  requisição — middleware do Next, outra entrega.
-- ✅ **O freio do `/client-errors` subiu no MESMO deploy** (30/09/2026): 30
-  requisições/min por IP, pelo mesmo limitador do login. Antes disso a única
-  rota pública que escreve log não tinha limite nenhum. Ela **continua sem
-  exigir login**, de propósito — erro na tela de login é o caso que mais
-  importa capturar.
-- **Sem portas no host:** todo o ingresso passa pelo Traefik (80/443). Os
-  containers `api` e `web` só são alcançáveis pela rede `root_default`.
-- **Rede:** o compose entra na rede externa `root_default` (onde estão Traefik
-  e Postgres). Se o nome mudar, ajuste em `docker-compose.prod.yml`.
-- **Atualizar o app:** `git pull` → `build` → `up -d` → `migrations` (se
-  houver nova). Código primeiro, migration depois — mesma ordem da seção de
-  Atualização. Bootstrap NÃO se repete.
-- **Rollback de imagem: JÁ EXISTE, é o passo 0.b.** As imagens em uso ficam
-  `:latest`, e o pré-voo tagueia as anteriores como
-  `:pre-deploy-AAAAMMDD`. Para voltar, aponte o compose para a tag antiga e
-  suba:
-  ```bash
-  docker tag task-manager-api:pre-deploy-20260803 task-manager-api:latest
-  docker tag task-manager-web:pre-deploy-20260803 task-manager-web:latest
-  docker compose -f docker-compose.prod.yml up -d
-  ```
-  ⚠️ **Rollback de imagem NÃO desfaz migration.** Se o deploy aplicou uma,
-  volte o schema primeiro (`alembic downgrade`) ou restaure o `pg_dump` do
-  passo 0.b — código velho contra schema novo falha de formas silenciosas.
-  ⚠️ **Este procedimento nunca foi executado de verdade.** Procedimento de
-  emergência não testado é ficção: rode uma vez em horário calmo, como foi
-  feito com o restore de backup em 03/08.
-- **`npm audit` no `web/` acusa vulnerabilidades do Next — NÃO rode
-  `npm audit fix --force`.** Ele instala `next@16` (dois majors de salto,
-  breaking change). Triagem feita em 2026-07-22 contra a superfície real
-  deste app: **não se aplicam** os avisos de Image Optimizer (não usamos
-  `next/image`), middleware (não existe), Server Actions (nenhum
-  `"use server"`), i18n de Pages Router (é App Router), `beforeInteractive`
-  (o script de tema é `<script>` cru com string literal) e SSRF via rewrites
-  (só há rewrite em dev, com destino fixo). **Resta** a superfície de RSC,
-  fina num app com 24 arquivos `"use client"` atrás do Traefik.
-  `14.2.35` é a ÚLTIMA versão da linha 14.2 — não existe patch para onde
-  subir; corrigir significa migrar para o Next 15/16, que é projeto próprio.
-  A Spec 027 (testes do front) é o que torna essa migração viável.
+  O que olhar é a **ausência de `'unsafe-eval'`** no `script-src`: se aparecer, o
+  build subiu com `NODE_ENV` de desenvolvimento.
+- **Rotas de sistema** (`/api/v1/system/*`) são chamadas pelo n8n com o header
+  `X-System-Token`. A Base precisa da `POST /api/v1/system/bases/purge` diária.

@@ -174,17 +174,9 @@ Para olhar o banco pelo navegador: `docker compose up -d adminer` e abra
 
 ### Testes
 
-⚠️ **A suíte de integração precisa do `db-test`, um Postgres efêmero do
-próprio compose** — e **sem `TEST_DATABASE_URL` ela não falha: ela PULA**, com
-saída zero e um "N skipped" discreto. Verde de mentira.
-
-```
-docker compose up -d db-test
-docker compose run --rm -e TEST_DATABASE_URL="postgresql+asyncpg://test:test@db-test:5432/taskmanager_test" api-dev pytest
-```
-
-Lint e tipos: `ruff check .` e `mypy app`. Os cinco portões e o número
-esperado da suíte estão no [`AGENTS.md`](../AGENTS.md) §5.
+Os comandos (pytest com o `db-test`, `ruff`, drift, a imagem de produção) e as
+armadilhas de cada um estão num lugar só: [`AGENTS.md` §5](../AGENTS.md).
+⚠️ O mais importante: **sem `TEST_DATABASE_URL` a suíte não falha — ela PULA.**
 
 ## 5. Migrations (Alembic)
 
