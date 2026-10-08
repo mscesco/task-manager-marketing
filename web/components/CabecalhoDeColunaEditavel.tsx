@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Bell, BellOff, ChevronLeft, ChevronRight, GripVertical, X } from "lucide-react";
+import { Bell, BellOff, ChevronLeft, ChevronRight, GripVertical, Lock, X } from "lucide-react";
 
 import type { LinhaDeEdicao } from "@/lib/rascunhoDeColunas";
 import { ROTULO_DA_SEMANTICA } from "@/lib/edicaoDeColunas";
@@ -28,6 +28,7 @@ export default function CabecalhoDeColunaEditavel({
   onMarcar,
   podeApagar,
   onTornarAlvo,
+  onDesfazerAlvo,
   onAvisar,
   onMover,
   arrasteRef,
@@ -56,6 +57,8 @@ export default function CabecalhoDeColunaEditavel({
    * depois, para outra pessoa. Trocar é trocar.
    */
   onTornarAlvo: () => void;
+  /** Desfaz um "tornar padrão" deste rascunho (ver `semAlvo`). */
+  onDesfazerAlvo?: () => void;
   /**
    * Liga ou desliga a cobrança de prazo desta coluna (Spec 039, §7.3).
    *
@@ -106,10 +109,16 @@ export default function CabecalhoDeColunaEditavel({
 
   return (
     <div
+      // ⚠️ `flexWrap` (08/10, print dela): o cabeçalho tem ~250px e carrega
+      // alça, nome, selo, sino, duas setas e o apagar. Sem quebrar, numa
+      // coluna de nome comprido os itens passavam por cima uns dos outros e
+      // da coluna vizinha. Agora o que não cabe desce para uma segunda linha.
       style={{
         display: "flex",
+        flexWrap: "wrap",
         alignItems: "center",
         gap: 6,
+        rowGap: 4,
         marginBottom: 10,
         paddingBottom: 8,
         borderBottom: `2px solid ${cor}`,
@@ -190,6 +199,12 @@ export default function CabecalhoDeColunaEditavel({
             color: "inherit",
             textAlign: "left",
             textDecoration: linha.apagada ? "line-through" : "none",
+            // O nome comprido corta com "…" em vez de empurrar o resto.
+            flex: "1 1 auto",
+            minWidth: 0,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
           }}
         >
           {linha.nome}
@@ -239,6 +254,21 @@ export default function CabecalhoDeColunaEditavel({
         >
           padrão
         </span>
+      )}
+      {/* ⚠️ O "×" SÓ NO PADRÃO PEDIDO AGORA, e não no salvo (08/10, pedido
+          dela). O salvo não se desmarca -- cada semântica precisa de um --, mas
+          o clique errado de "tornar padrão" volta atrás antes de concluir. */}
+      {linha.alvo && linha.alvoPedido && !linha.apagada && onDesfazerAlvo && (
+        <button
+          type="button"
+          className="btn btn-ghost"
+          onClick={onDesfazerAlvo}
+          aria-label={`Desfazer: ${linha.nome} deixa de ser a coluna padrão`}
+          title="Desfazer (volta para a coluna que já era a padrão)"
+          style={{ padding: 0, height: 16, minWidth: 16, fontSize: 11, lineHeight: 1 }}
+        >
+          ×
+        </button>
       )}
 
       {/* ⚠️ E NA QUE NÃO É, O CONVITE -- apagado, e só fora da lista de
@@ -337,12 +367,17 @@ export default function CabecalhoDeColunaEditavel({
             uma trava que nunca foi dela. A exceção é a coluna NOVA -- tirá-la é
             desfazer o próprio rascunho, e não apagar nada. */}
         {(podeApagar || linha.nova) && (linha.impedimento ? (
+          // ⚠️ CADEADO, e não o texto por extenso (08/10): "não pode ser
+          // apagada" em 10px quebrava em quatro linhas e invadia a coluna ao
+          // lado. O motivo continua na dica, e a frase continua para o leitor
+          // de tela.
           <span
             className="muted"
-            style={{ fontSize: 10, maxWidth: 120, lineHeight: 1.2 }}
+            style={{ display: "inline-flex", padding: 2, lineHeight: 0 }}
             title={linha.impedimento}
           >
-            não pode ser apagada
+            <Lock size={13} aria-hidden="true" />
+            <span className="sr-only">não pode ser apagada</span>
           </span>
         ) : (
           <button

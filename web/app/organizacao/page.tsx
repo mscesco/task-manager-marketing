@@ -23,7 +23,8 @@
 // tela precisar de estado na URL, ou envolve em `Suspense`, ou aceita virar
 // dinamica.
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import AnchoredPanel, { useAnchoredPanel } from "@/components/AnchoredPanel";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Plus, Search } from "lucide-react";
@@ -575,26 +576,15 @@ function OrgRoleField({
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [confirmandoSaida, setConfirmandoSaida] = useState(false);
-  const wrapRef = useRef<HTMLSpanElement>(null);
-
-  // ⚠️ FECHAR AO CLICAR FORA -- e este e o padrao de PAINEL SUSPENSO, com
-  // `mousedown` no documento (o mesmo dos tres paineis do `TaskDetail`).
-  //
-  // ⚠️ E NAO o `useFecharAoClicarFora`, que resolve outro problema: aquele
-  // pareia `mousedown` com `mouseup` porque em MODAL, selecionar texto dentro
-  // e soltar fora fechava e apagava formulario. O comentario do `TaskDetail`
-  // ja registra essa distincao, e eu a ignorei na primeira versao -- o painel
-  // simplesmente nao fechava.
-  useEffect(() => {
-    if (!isOpen) return;
-    function onDown(e: MouseEvent) {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
-        onClose();
-      }
-    }
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [isOpen, onClose]);
+  // ⚠️ `AnchoredPanel` (revisao de 07/10): era `absolute`, alinhado pela
+  // esquerda da capsula -- a ultima da fileira abria 290px para fora da tela.
+  // O painel fixo se desloca para caber e fecha ao clicar fora (o padrao de
+  // PAINEL SUSPENSO, e nao o do modal).
+  const { anchorRef, panelRef, box } = useAnchoredPanel<HTMLButtonElement>(
+    isOpen,
+    () => onClose(),
+    { larguraPainel: 290 },
+  );
 
   // Fechar zera a confirmacao pendente -- reabrir nao pode cair no meio dela.
   useEffect(() => {
@@ -647,8 +637,9 @@ function OrgRoleField({
     // declarava `wrapRef` e nunca o pendurava: `wrapRef.current` ficava
     // `null`, a condicao `wrapRef.current && ...` curto-circuitava e o painel
     // nunca fechava. O `tsc` NAO acusa -- ref declarada e nao usada e valida.
-    <span className="relative inline-flex" ref={wrapRef}>
+    <span className="inline-flex">
       <button
+        ref={anchorRef}
         // ⚠️ `pill-target` -- ERA ESTE o contorno que ela chamou de tenebroso:
         // *"o contorno em torno do meu nome e cargo está tenebroso de feio"*.
         // O `Badge` de dentro é uma pílula; o anel vinha neste `<button>`, que
@@ -665,8 +656,9 @@ function OrgRoleField({
         </Badge>
       </button>
 
-      {isOpen && (
-        <div className="absolute left-0 top-full z-20 mt-1 w-[290px] rounded-lg border border-border bg-surface p-3 shadow-lg">
+      {isOpen && box && (
+        <AnchoredPanel box={box} panelRef={panelRef} role="dialog" aria-label={`Papel de ${member.name} na organização`} minWidth={290}>
+        <div className="p-1.5">
           <div className="muted mb-2 text-xs">{member.email}</div>
 
           {/* ⚠️ A consequência de CADA papel, em texto. É o que a §4.3 pede no
@@ -754,6 +746,7 @@ function OrgRoleField({
             <div className="error-box mt-2 text-xs">{erro}</div>
           )}
         </div>
+        </AnchoredPanel>
       )}
     </span>
   );

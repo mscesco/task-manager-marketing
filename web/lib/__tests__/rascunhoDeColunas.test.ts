@@ -22,6 +22,7 @@ import {
   refDoArrasteDeCabecalho,
   comColunaNova,
   comAlvo,
+  semAlvo,
   comAviso,
   comMarcacao,
   comOrdem,
@@ -743,5 +744,31 @@ describe("refDeColunaDoDrop", () => {
     const r = base();
     expect(refDeColunaDoDrop("t-uma-tarefa-qualquer", r)).toBeNull();
     expect(refDeColunaDoDrop(idDeArrasteDoCabecalho("c-de-outro-quadro"), r)).toBeNull();
+  });
+});
+
+describe("semAlvo -- desfazer um \"tornar padrão\" ainda não salvo (08/10)", () => {
+  // Duas colunas OPEN: "Backlog" é a padrão salva, "Ideias" não.
+  const DUAS = [col("c1", "Backlog", "OPEN", true), col("c5", "Ideias", "OPEN")];
+
+  it("desfaz o pedido, e o selo volta para a padrão salva", () => {
+    const pedido = comAlvo(rascunhoInicial(DUAS), "c5");
+    const antes = linhasDeEdicao(pedido, DUAS);
+    expect(antes.find((l) => l.ref === "c5")).toMatchObject({ alvo: true, alvoPedido: true });
+    expect(antes.find((l) => l.ref === "c1")?.alvo).toBe(false);
+
+    const desfeito = semAlvo(pedido, "c5");
+    expect(desfeito.alvos).toEqual([]);
+    const depois = linhasDeEdicao(desfeito, DUAS);
+    expect(depois.find((l) => l.ref === "c5")).toMatchObject({ alvo: false, alvoPedido: false });
+    expect(depois.find((l) => l.ref === "c1")?.alvo).toBe(true);
+  });
+
+  it("⚠️ o padrão SALVO não é um pedido -- não se desmarca", () => {
+    const linhas = linhasDeEdicao(rascunhoInicial(DUAS), DUAS);
+    expect(linhas.find((l) => l.ref === "c1")).toMatchObject({ alvo: true, alvoPedido: false });
+    // E pedir para desfazer o que não foi pedido não muda nada.
+    const r = rascunhoInicial(DUAS);
+    expect(semAlvo(r, "c1")).toBe(r);
   });
 });

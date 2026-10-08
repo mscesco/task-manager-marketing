@@ -1,5 +1,6 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
+import AnchoredPanel, { useAnchoredPanel } from "@/components/AnchoredPanel";
 import { searchGifs, trendingGifs, GIPHY_ENABLED, type Gif } from "@/lib/giphy";
 
 import Loading from "@/components/Loading";
@@ -23,19 +24,6 @@ export default function GifPicker({
   const [gifs, setGifs] = useState<Gif[]>([]);
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
-  const wrapRef = useRef<HTMLDivElement>(null);
-
-  // Fecha ao clicar fora.
-  useEffect(() => {
-    if (!open) return;
-    function onDown(e: MouseEvent) {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [open]);
 
   // Ao abrir: trending imediato. Ao digitar: busca com debounce de 400ms.
   // Vazio -> volta pro trending. Cancela em voo se query muda ou fecha.
@@ -73,40 +61,34 @@ export default function GifPicker({
     setGifs([]);
     setErro(null);
   }
+  // ⚠️ `AnchoredPanel` (revisao de 07/10): era `position: absolute` no fluxo,
+  // recortado por caixa com rolagem. Fixo, vira para cima sozinho, e fecha ao
+  // clicar fora -- pelo `fechar`, que tambem limpa a busca.
+  const { anchorRef, panelRef, box } = useAnchoredPanel<HTMLButtonElement>(open, fechar, {
+    larguraPainel: 320,
+  });
 
   if (!GIPHY_ENABLED) return null;
 
   return (
-    <div ref={wrapRef} style={{ position: "relative", display: "inline-block" }}>
+    <>
       <button
+        ref={anchorRef}
         type="button"
         className="btn btn-ghost"
         disabled={disabled}
         aria-label="Inserir GIF"
+        aria-haspopup="dialog"
+        aria-expanded={open}
         title="GIF"
         onClick={() => (open ? fechar() : setOpen(true))}
         style={{ padding: "4px 8px", fontSize: 12, fontWeight: 700, lineHeight: 1 }}
       >
         GIF
       </button>
-      {open && (
-        <div
-          style={{
-            position: "absolute",
-            bottom: "calc(100% + 6px)",
-            left: 0,
-            zIndex: 30,
-            width: 320,
-            background: "var(--surface)",
-            border: "1px solid var(--border)",
-            borderRadius: 10,
-            boxShadow: "var(--shadow)",
-            padding: 8,
-            display: "flex",
-            flexDirection: "column",
-            gap: 8,
-          }}
-        >
+      {open && box && (
+        <AnchoredPanel box={box} panelRef={panelRef} role="dialog" aria-label="GIFs" minWidth={320}>
+        <div className="flex flex-col gap-2">
           <input
             autoFocus
             value={query}
@@ -125,7 +107,8 @@ export default function GifPicker({
 
           <div
             style={{
-              maxHeight: 260,
+              // Cabe no teto de altura do painel (320) junto da busca e do rodape.
+              maxHeight: 200,
               overflowY: "auto",
               display: "grid",
               gridTemplateColumns: "repeat(2, 1fr)",
@@ -187,7 +170,8 @@ export default function GifPicker({
             Powered by GIPHY
           </div>
         </div>
+        </AnchoredPanel>
       )}
-    </div>
+    </>
   );
 }

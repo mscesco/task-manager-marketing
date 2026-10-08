@@ -2,10 +2,10 @@
 //
 // O teste que importa e "seleciona texto dentro e solta fora": e o caso
 // reportado, e e o unico que passa na versao antiga com `stopPropagation`.
-import { renderHook } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { fireEvent, renderHook } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { deveFecharNoClique, useFecharAoClicarFora } from "@/lib/useCliqueFora";
+import { deveFecharNoClique, useFecharAoClicarFora, useFecharAoClicarForaDe } from "@/lib/useCliqueFora";
 
 describe("deveFecharNoClique", () => {
   it("pressionou fora e soltou fora -> FECHA", () => {
@@ -88,5 +88,47 @@ describe("useFecharAoClicarFora", () => {
       result.current.onClick();
     }
     expect(fechar).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("useFecharAoClicarForaDe -- o painel suspenso (07/10: eram 15 cópias)", () => {
+  function montar(aberto: boolean, fechar: () => void) {
+    const dentro = document.createElement("div");
+    const fora = document.createElement("div");
+    document.body.append(dentro, fora);
+    const ref = { current: dentro };
+    const r = renderHook(({ a, f }) => useFecharAoClicarForaDe(ref, a, f), {
+      initialProps: { a: aberto, f: fechar },
+    });
+    return { dentro, fora, ...r };
+  }
+  afterEach(() => {
+    document.body.innerHTML = "";
+  });
+
+  it("apertar FORA fecha; apertar DENTRO não", () => {
+    const fechar = vi.fn();
+    const { dentro, fora } = montar(true, fechar);
+    fireEvent.mouseDown(dentro);
+    expect(fechar).not.toHaveBeenCalled();
+    fireEvent.mouseDown(fora);
+    expect(fechar).toHaveBeenCalledTimes(1);
+  });
+
+  it("fechado, não escuta nada", () => {
+    const fechar = vi.fn();
+    const { fora } = montar(false, fechar);
+    fireEvent.mouseDown(fora);
+    expect(fechar).not.toHaveBeenCalled();
+  });
+
+  it("usa o `fechar` mais recente, sem refazer o ouvinte", () => {
+    const antigo = vi.fn();
+    const novo = vi.fn();
+    const { fora, rerender } = montar(true, antigo);
+    rerender({ a: true, f: novo });
+    fireEvent.mouseDown(fora);
+    expect(antigo).not.toHaveBeenCalled();
+    expect(novo).toHaveBeenCalledTimes(1);
   });
 });

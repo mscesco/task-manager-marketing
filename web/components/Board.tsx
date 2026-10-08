@@ -5,6 +5,7 @@
 // (a listagem ja vem filtrada pelo backend; subtarefa compartilha o project_id
 // do pai, entao a subarvore inteira vem junta). Extraido do antigo
 // quadro/page.tsx na Entrega 11 sem mudar comportamento do geral.
+import { useFecharAoClicarForaDe } from "@/lib/useCliqueFora";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { SlidersHorizontal } from "lucide-react";
@@ -54,7 +55,7 @@ import {
   destinosDoRascunho,
   totalPrevisto,
   comColunaNova,
-  comAlvo,
+  comAlvo, semAlvo,
   comAviso,
   refDeColunaDoDrop,
   comMarcacao,
@@ -380,16 +381,7 @@ export default function Board({
   const suprimirClique = useRef(false);
 
   // Fecha o painel ao clicar fora (mesmo padrao do picker de responsavel).
-  useEffect(() => {
-    if (!painelAberto) return;
-    function onDown(e: MouseEvent) {
-      if (painelRef.current && !painelRef.current.contains(e.target as Node)) {
-        setPainelAberto(false);
-      }
-    }
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [painelAberto]);
+  useFecharAoClicarForaDe(painelRef, painelAberto, () => setPainelAberto(false));
 
   // --- Trava o quadro na altura da viewport (scroll por coluna) ---
   // Mede a distancia REAL do topo das colunas ate o rodape e usa como altura
@@ -2341,6 +2333,9 @@ export default function Board({
                       onTornarAlvo={() =>
                         setRascunho((r) => (r ? comAlvo(r, c.id) : r))
                       }
+                      onDesfazerAlvo={() =>
+                        setRascunho((r) => (r ? semAlvo(r, c.id) : r))
+                      }
                       // ⚠️ O QUARTO ARGUMENTO E O VALOR DO SERVIDOR, e nao um
                       // detalhe: e com ele que `comAviso` sabe que a pessoa
                       // VOLTOU ao original e tira a entrada do rascunho. Sem
@@ -2503,6 +2498,7 @@ function CabecalhoSortavel({
   onRenomear,
   onMarcar,
   onTornarAlvo,
+  onDesfazerAlvo,
   onAvisar,
   onMover,
   podeApagar,
@@ -2517,6 +2513,7 @@ function CabecalhoSortavel({
   /** Ver `podeApagarColunas` no `Board` (Spec 049, fatia D). */
   podeApagar: boolean;
   onTornarAlvo: () => void;
+  onDesfazerAlvo: () => void;
   onAvisar: (valor: boolean) => void;
   onMover: (direcao: "esquerda" | "direita") => void;
 }) {
@@ -2555,6 +2552,7 @@ function CabecalhoSortavel({
         onMarcar={onMarcar}
         podeApagar={podeApagar}
         onTornarAlvo={onTornarAlvo}
+        onDesfazerAlvo={onDesfazerAlvo}
         onAvisar={onAvisar}
         onMover={onMover}
         arrasteRef={setNodeRef}

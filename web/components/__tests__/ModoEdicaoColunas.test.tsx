@@ -26,6 +26,7 @@ function linha(over: Partial<LinhaDeEdicao> = {}): LinhaDeEdicao {
     apagada: false,
     nova: false,
     alvo: false,
+    alvoPedido: false,
     impedimento: null,
     // Spec 039 (F9). O default do produto: coluna cobra prazo.
     avisaPrazo: true,
@@ -434,6 +435,16 @@ describe("o selo padrão virou o controle (Spec 036, fatia 12)", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: /Tornar Ideias/ }));
     expect(onTornarAlvo).toHaveBeenCalled();
+  });
+
+  it("o padrão PEDIDO agora tem o × de desfazer; o salvo não (08/10)", () => {
+    const onDesfazerAlvo = vi.fn();
+    montar({ ref: "c2", nome: "Ideias", semantic: "OPEN", alvo: true, alvoPedido: true }, { onDesfazerAlvo });
+    fireEvent.click(screen.getByRole("button", { name: /Desfazer: Ideias deixa de ser/ }));
+    expect(onDesfazerAlvo).toHaveBeenCalled();
+    cleanup();
+    montar({ ref: "c1", nome: "Backlog", semantic: "OPEN", alvo: true, alvoPedido: false }, { onDesfazerAlvo });
+    expect(screen.queryByRole("button", { name: /Desfazer/ })).toBeNull();
   });
 
   it("⚠️ coluna NOVA não pode virar alvo", () => {

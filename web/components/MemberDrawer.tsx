@@ -16,9 +16,10 @@
 //
 // ⚠️ MORA EM `components/` -- o `include` do vitest cobre isso, e `app/` não.
 
+import Gaveta from "@/components/Gaveta";
 import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { ChevronRight, X } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import Badge from "@/components/Badge";
 import MenuSelect from "@/components/MenuSelect";
 import PillSelect from "@/components/PillSelect";
@@ -156,51 +157,14 @@ export default function MemberDrawer({
   ).sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
 
   return (
-    <>
-      {/* ⚠️ O scrim é clicável para fechar, mas SEM escurecer forte: a tabela
-          atrás é o contexto do que se edita, e apagá-la contradiz a escolha
-          de gaveta em vez de modal. */}
-      <div
-        className="fixed inset-0 z-40 bg-black/10"
-        onMouseDown={(e) => {
-          if (e.target === e.currentTarget && podeFechar) onClose();
-        }}
-      />
-      <motion.aside
-        // ⚠️ Entra deslizando da direita. `prefers-reduced-motion` é honrado
-        // pelo bloco global do `globals.css` e pelo próprio motion.
-        initial={{ x: 24, opacity: 0 }}
-        animate={{ x: 0, opacity: 1 }}
-        exit={{ x: 24, opacity: 0 }}
-        transition={{ type: "spring", duration: 0.28, bounce: 0 }}
-        className="fixed right-0 top-0 z-50 flex h-full w-full max-w-[420px] flex-col border-l border-border bg-surface"
-        role="dialog"
-        aria-modal="true"
-        aria-label={`Editar ${member.name}`}
-        onKeyDown={(e) => {
-          if (e.key === "Escape" && podeFechar) onClose();
-        }}
-      >
-        {/* ⚠️ `items-center`, e não `items-start`: o nome e o e-mail são
-            duas linhas, e alinhando pelo topo o X encostava no primeiro pixel
-            do nome em vez de acompanhar o par. */}
-        <div className="flex items-center gap-3 border-b border-border p-4">
-          <div className="min-w-0 flex-1">
-            <h2 className="truncate text-lg font-semibold">{member.name}</h2>
-            <div className="muted truncate text-xs">{member.email}</div>
-          </div>
-          <button
-            className="btn btn-ghost"
-            aria-label="Fechar"
-            disabled={!podeFechar}
-            title={podeFechar ? undefined : "Copie a senha e clique em Concluir"}
-            onClick={onClose}
-          >
-            <X size={16} aria-hidden="true" />
-          </button>
-        </div>
-
-        <div className="flex-1 overflow-y-auto p-4">
+    <Gaveta
+      ariaLabel={`Editar ${member.name}`}
+      titulo={member.name}
+      subtitulo={member.email}
+      onClose={onClose}
+      podeFechar={podeFechar}
+      motivoParaNaoFechar="Copie a senha e clique em Concluir"
+    >
           {/* ⚠️ Entra deslizando de cima: o bloco aparece DEPOIS de um clique
               em "Resetar senha", e sem transição ele lê-se como um erro. */}
           <AnimatePresence>
@@ -315,9 +279,7 @@ export default function MemberDrawer({
               </div>
             )}
           </section>
-        </div>
-      </motion.aside>
-    </>
+    </Gaveta>
   );
 }
 

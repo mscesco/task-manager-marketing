@@ -1,5 +1,6 @@
 "use client";
 
+import CaixaDeDialogo from "@/components/CaixaDeDialogo";
 import { useEffect, useRef, useState } from "react";
 
 import { nomeConfere } from "@/lib/seletorDeQuadro";
@@ -60,43 +61,16 @@ export default function ConfirmarExclusaoDeQuadro({
   const podeConfirmar = confere && contagem !== null && !ocupado;
 
   return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        zIndex: 60,
-        background: "rgba(16,24,40,0.45)",
-        display: "flex",
-        alignItems: "flex-start",
-        justifyContent: "center",
-        padding: "8vh 16px 24px",
-      }}
+    // ⚠️ `Esc` FECHA, e `Enter` NÃO confirma. Em todo o resto do produto Enter
+    // confirma; aqui ele é a tecla que a pessoa aperta por reflexo depois de
+    // digitar, e o custo do reflexo seria apagar as tarefas. Sem `onFundo`: em
+    // diálogo destrutivo, clicar ao lado não fecha.
+    <CaixaDeDialogo
+      ariaLabel={`Apagar o quadro ${nome}`}
+      largura={480}
+      caixaRef={caixaRef}
+      onEsc={ocupado ? undefined : onCancelar}
     >
-      <div
-        ref={caixaRef}
-        className="modal-card"
-        role="dialog"
-        aria-modal="true"
-        aria-label={`Apagar o quadro ${nome}`}
-        onKeyDown={(e) => {
-          // ⚠️ `Esc` FECHA, e `Enter` NÃO confirma. Em todo o resto do produto
-          // Enter confirma; aqui ele é a tecla que a pessoa aperta por reflexo
-          // depois de digitar, e o custo do reflexo seria apagar as tarefas.
-          if (e.key === "Escape" && !ocupado) {
-            e.stopPropagation();
-            onCancelar();
-          }
-        }}
-        style={{
-          width: 480,
-          maxWidth: "100%",
-          maxHeight: "84vh",
-          overflowY: "auto",
-          background: "var(--surface)",
-          borderRadius: 12,
-          padding: 20,
-        }}
-      >
         <div style={{ fontWeight: 700, fontSize: 15 }}>
           Apagar o quadro &quot;{nome}&quot;?
         </div>
@@ -175,7 +149,6 @@ export default function ConfirmarExclusaoDeQuadro({
             {ocupado ? "Apagando…" : "Apagar quadro"}
           </button>
         </div>
-      </div>
-    </div>
+    </CaixaDeDialogo>
   );
 }

@@ -1,5 +1,6 @@
 "use client";
 
+import CaixaDeDialogo from "@/components/CaixaDeDialogo";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { Coluna } from "@/lib/coluna";
@@ -101,43 +102,12 @@ export default function RevisaoDaEdicao({
   const podeConfirmar = !carregando && !faltaEscolher && !ocupado;
 
   return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        zIndex: 60,
-        background: "rgba(16,24,40,0.45)",
-        display: "flex",
-        alignItems: "flex-start",
-        justifyContent: "center",
-        padding: "8vh 16px 24px",
-      }}
+    <CaixaDeDialogo
+      ariaLabel="Revisar alterações das colunas"
+      largura={560}
+      caixaRef={caixaRef}
+      onEsc={ocupado ? undefined : onVoltar}
     >
-      <div
-        ref={caixaRef}
-        className="modal-card"
-        role="dialog"
-        aria-modal="true"
-        aria-label="Revisar alterações das colunas"
-        tabIndex={-1}
-        onKeyDown={(e) => {
-          if (e.key === "Escape" && !ocupado) {
-            e.stopPropagation();
-            onVoltar();
-          }
-        }}
-        style={{
-          width: 560,
-          maxWidth: "100%",
-          maxHeight: "84vh",
-          overflowY: "auto",
-          background: "var(--surface)",
-          border: "1px solid var(--border)",
-          borderRadius: 14,
-          padding: 22,
-          boxShadow: "var(--shadow)",
-        }}
-      >
         <h2 style={{ fontSize: 17, fontWeight: 700, margin: 0 }}>
           Revisar alterações
         </h2>
@@ -287,7 +257,6 @@ export default function RevisaoDaEdicao({
             {ocupado ? "Aplicando…" : "Confirmar alterações"}
           </button>
         </div>
-      </div>
-    </div>
+    </CaixaDeDialogo>
   );
 }
