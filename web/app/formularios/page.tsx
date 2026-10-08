@@ -11,7 +11,7 @@
 // porque um editor de perguntas com arrastar, tipos e condicional é grande o
 // bastante para merecer entrega própria.
 
-import { rootTeams } from "@/lib/areas";
+import { timePadraoDoFormulario, timesQueCriamFormulario } from "@/lib/timesDoFormulario";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 
@@ -81,24 +81,7 @@ function Formularios() {
     listTeamsAll()
       .then((t) => {
         setTimes(t);
-        // ⚠⚠ O TIME ATIVO COMO PADRÃO, e ATÉ 11/09 ERA "a primeira raiz".
-        // O comentário antigo dizia: *"em produção o Marketing É a raiz"* --
-        // verdade quando foi escrito, e mentira desde a Spec 046. Com duas
-        // raizes, `find(parent === null)` devolve a primeira que a API listar:
-        // o formulário nasceria no Comercial enquanto a pessoa olha o
-        // Marketing, em silêncio. É o mesmo defeito que o `createProject`
-        // pagou em 10/09, e a mesma correção -- o contexto responde, ninguém
-        // adivinha.
-        // ⚠️ A RESERVA, para quando não há time ativo. O time ativo entra no
-        // efeito abaixo, que sabe não pisar numa escolha já feita.
-        // ⚠️ E A RESERVA TAMBEM NAO SORTEIA (revisao de 07/10): era a
-        // "primeira raiz" da lista. Agora so pre-escolhe quando ha UMA raiz;
-        // com varias, o campo pede a escolha e o botao espera.
-        setTime((atual) => {
-          if (atual) return atual;
-          const raizes = rootTeams(t);
-          return raizes.length === 1 ? raizes[0].id : "";
-        });
+        // O time pre-escolhido sai do efeito abaixo (`timePadraoDoFormulario`).
       })
       .catch(() => {});
     currentUser()
@@ -118,10 +101,15 @@ function Formularios() {
   // e não `setTime(timeAtivo)`: o efeito roda de novo quando a barra resolve o
   // time (e a cada troca), e sobrescrever ali apagaria o time que a pessoa
   // acabou de escolher no formulário aberto.
+  //
+  // ⚠️ E SO ENTRE OS TIMES EM QUE A PESSOA CRIA (08/10). A regra mora em
+  // `lib/timesDoFormulario`: o ativo, se ela cria nele; senao o unico em que
+  // cria; senao nenhum -- nunca "a primeira raiz da lista", o sorteio que a
+  // Spec 046 proibiu. Roda de novo quando os times chegam.
   useEffect(() => {
-    if (!timeAtivo) return;
-    setTime((atual) => atual || timeAtivo);
-  }, [timeAtivo]);
+    if (times.length === 0) return;
+    setTime((atual) => atual || timePadraoDoFormulario(times, timeAtivo));
+  }, [times, timeAtivo]);
 
   function nomeDoTime(id: string) {
     return times.find((t) => t.id === id)?.name ?? "—";
@@ -281,7 +269,11 @@ function Formularios() {
                   Escolha o time…
                 </option>
               )}
-              {times.map((t) => (
+              {/* ⚠️ SO OS TIMES EM QUE A PESSOA CRIA (`can_create_form`, a
+                  pergunta do servidor). Ate 08/10 eram todos os do
+                  workspace, e o gestor do Marketing via o Comercial para
+                  ouvir 403 ao salvar. Subtime entra (decisao dela). */}
+              {timesQueCriamFormulario(times).map((t) => (
                 <option key={t.id} value={t.id}>{t.name}</option>
               ))}
             </select>

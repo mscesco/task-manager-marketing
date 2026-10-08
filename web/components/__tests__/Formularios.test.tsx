@@ -63,13 +63,14 @@ let contextoDoTeste: ActiveTeamContext = CONTEXTO_PADRAO;
 const RAIZ = "t-raiz";
 const SUB = "t-sub";
 
-function time(id: string, name: string, parent: string | null): Team {
+function time(id: string, name: string, parent: string | null, criaFormulario = true): Team {
   return {
     id,
     workspace_id: "ws",
     parent_team_id: parent,
     name,
     slug: name.toLowerCase(),
+    can_create_form: criaFormulario,
   };
 }
 
@@ -219,6 +220,24 @@ describe("Formulários -- criar", () => {
     montar([]);
     fireEvent.click(await screen.findByText("+ Novo formulário"));
     expect(screen.getByText(/Não dá para mudar depois/i)).toBeTruthy();
+  });
+
+  it("⚠️ só oferece os times em que a pessoa CRIA -- o Comercial some para o gestor do Marketing (08/10)", async () => {
+    vi.mocked(api.listarFormularios).mockResolvedValue([]);
+    vi.mocked(api.listTeamsAll).mockResolvedValue([
+      time(RAIZ, "Marketing", null),
+      time(SUB, "Audiovisual", RAIZ),
+      // O servidor diz que ela NAO cria aqui (`can_create_form: false`).
+      time("t-com", "Comercial", null, false),
+    ]);
+    vi.mocked(api.currentUser).mockResolvedValue({ permissions: ["form.update"] } as never);
+    render(<FormulariosPage />);
+    fireEvent.click(await screen.findByText("+ Novo formulário"));
+    const select = screen.getByLabelText("Time responsável") as HTMLSelectElement;
+    await waitFor(() => expect(select.value).toBe(RAIZ));
+    const nomes = Array.from(select.options).map((o) => o.textContent);
+    // Subtime entra (decisão dela); o Comercial não.
+    expect(nomes).toEqual(["Marketing", "Audiovisual"]);
   });
 
   it("cria e acrescenta à lista", async () => {

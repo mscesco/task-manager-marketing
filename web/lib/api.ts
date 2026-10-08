@@ -710,6 +710,9 @@ export type Team = {
   // Spec 056, fatia B: quem pergunta pode CRIAR BASE neste time? Só time raiz;
   // o supervisor de um subtime recebe na raiz dele. Ausente lê-se como "não".
   can_create_base?: boolean;
+  // 08/10: quem pergunta pode CRIAR FORMULÁRIO de solicitação neste time?
+  // Subtime vale (decisão dela). Ausente lê-se como "não".
+  can_create_form?: boolean;
 };
 
 type TeamListResponse = { items: Team[]; total: number };
