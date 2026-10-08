@@ -16,6 +16,7 @@
  * virgula no aviso quebraria a tela em silencio. Por isso os codigos.
  */
 
+import { plural } from "./plural";
 import type { Coluna } from "./coluna";
 
 /** Falta escolher para onde vao as tarefas (ADR 0042 D5). */
@@ -266,7 +267,7 @@ export function avisoDeExclusao(params: {
   if (destinoEhTerminal(destino)) {
     const verbo = destino.semantic === "DONE" ? "concluídas" : "canceladas";
     return {
-      titulo: `Isto vai marcar ${quantas} ${plural(quantas, "tarefa", "tarefas")} como ${verbo}.`,
+      titulo: `Isto vai marcar ${plural(quantas, "tarefa", "tarefas")} como ${verbo}.`,
       linhas: [
         `As tarefas de "${coluna.name}" vão para "${destino.name}".`,
         `As subtarefas delas também serão ${verbo}.`,
@@ -278,15 +279,11 @@ export function avisoDeExclusao(params: {
     };
   }
   return {
-    titulo: `${quantas} ${plural(quantas, "tarefa vai", "tarefas vão")} para "${destino.name}".`,
+    titulo: `${plural(quantas, "tarefa vai", "tarefas vão")} para "${destino.name}".`,
     linhas: [`A coluna "${coluna.name}" será apagada.`],
     terminal: false,
     rotuloDoBotao: "Apagar coluna",
   };
-}
-
-function plural(n: number, um: string, muitos: string): string {
-  return n === 1 ? um : muitos;
 }
 
 /**
@@ -311,8 +308,8 @@ export function mensagemDeDivergencia(
 ): string | null {
   if (previsto === movidas) return null;
   return (
-    `O aviso falava em ${previsto} ${plural(previsto, "tarefa", "tarefas")}, ` +
-    `mas ${movidas} ${plural(movidas, "foi movida", "foram movidas")}. ` +
+    `O aviso falava em ${plural(previsto, "tarefa", "tarefas")}, ` +
+    `mas ${plural(movidas, "foi movida", "foram movidas")}. ` +
     `Alguém mexeu no quadro enquanto você confirmava.`
   );
 }

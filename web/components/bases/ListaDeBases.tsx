@@ -29,7 +29,8 @@ import {
   type BaseTrashItem,
   type Team,
 } from "@/lib/api";
-import { agruparPorRaiz, dataParaTela, raizDe } from "@/lib/baseTable";
+import { agruparPorRaiz, dataParaTela } from "@/lib/baseTable";
+import { rootTeamOf } from "@/lib/areas";
 import { diaNoWorkspace } from "@/lib/prazo";
 import { plural } from "@/lib/plural";
 import { useActiveTeamId } from "@/lib/useActiveTeam";
@@ -76,7 +77,7 @@ export default function ListaDeBases() {
   // O time ativo (pode ser subtime) pré-escolhe a raiz dele, se ela serve.
   useEffect(() => {
     if (raizId) return;
-    const daAtiva = raizDe(timeAtivo, times);
+    const daAtiva = timeAtivo ? rootTeamOf(timeAtivo, times) : null;
     const serve = raizesQueCria.find((r) => r.id === daAtiva);
     if (serve) setRaizId(serve.id);
     else if (raizesQueCria.length === 1) setRaizId(raizesQueCria[0].id);

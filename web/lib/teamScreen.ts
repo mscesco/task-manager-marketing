@@ -14,6 +14,7 @@
  */
 
 import type { Member, MemberRole, Team } from "./api";
+import { rootTeamOf } from "./areas";
 
 /** Uma cápsula da coluna de subteams: onde a pessoa está, e como. */
 export type SubteamChip = {
@@ -107,16 +108,11 @@ export function teamRows(
     .sort((a, b) => a.member.name.localeCompare(b.member.name, "pt-BR"));
 }
 
+/** A raiz do time, pela regra unica de `lib/areas` (revisao de 07/10: era
+ *  uma das quatro copias de "subir ate a raiz"). Com pai fora da lista --
+ *  nao acontece com a arvore inteira do `listTeamsAll` -- fica o proprio time. */
 function raizDe(team: Team, teams: readonly Team[]): string {
-  let atual = team;
-  let guarda = 0;
-  while (atual.parent_team_id !== null && guarda < 100) {
-    guarda += 1;
-    const pai = teams.find((t) => t.id === atual.parent_team_id);
-    if (!pai) break;
-    atual = pai;
-  }
-  return atual.id;
+  return rootTeamOf(team.id, teams) ?? team.id;
 }
 
 /** Um cartão da visão "Subtimes" — Spec 047, redesenho de 09/09. */

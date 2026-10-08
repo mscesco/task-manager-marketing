@@ -11,7 +11,6 @@ import {
   mover,
   nomeConfere,
   proximaCor,
-  raizDe,
   rotuloDePessoa,
   textoDaCelula,
   textoParaEditar,
@@ -131,21 +130,6 @@ describe("agruparPorRaiz", () => {
   it("base de time que a lista não trouxe vai para o fim, sem raiz", () => {
     const grupos = agruparPorRaiz([base("b1", "xx", "Solta")], []);
     expect(grupos).toEqual([{ raiz: null, bases: [base("b1", "xx", "Solta")] }]);
-  });
-});
-
-describe("raizDe", () => {
-  const t = (id: string, pai: string | null): Team => ({
-    id, workspace_id: "w", parent_team_id: pai, name: id, slug: id,
-  });
-  const times = [t("mkt", null), t("seo", "mkt"), t("blog", "seo")];
-  it("sobe até a raiz, de qualquer nível", () => {
-    expect(raizDe("blog", times)).toBe("mkt");
-    expect(raizDe("mkt", times)).toBe("mkt");
-  });
-  it("desconhecido ou nulo", () => {
-    expect(raizDe("xx", times)).toBeNull();
-    expect(raizDe(null, times)).toBeNull();
   });
 });
 

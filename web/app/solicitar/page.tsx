@@ -18,8 +18,8 @@
 
 import { useEffect, useState } from "react";
 
-import CarregaFormularioPublico from "@/components/CarregaFormularioPublico";
-import FormularioSolicitacao from "@/components/FormularioSolicitacao";
+import FormularioPublico from "@/components/FormularioPublico";
+import { AvisoPublico, MolduraPublica } from "@/components/MolduraPublica";
 import Loading from "@/components/Loading";
 import { useDrawnOutline } from "@/components/AnimatedOutline";
 import {
@@ -45,20 +45,20 @@ export default function SolicitarPage() {
 
   if (erro) {
     return (
-      <Casca>
-        <Aviso
+      <MolduraPublica>
+        <AvisoPublico
           titulo="Não consegui carregar os formulários"
           texto="Tente de novo em instantes. Se continuar assim, avise a equipe de marketing."
         />
-      </Casca>
+      </MolduraPublica>
     );
   }
 
   if (formularios === null) {
     return (
-      <Casca>
+      <MolduraPublica>
         <Loading />
-      </Casca>
+      </MolduraPublica>
     );
   }
 
@@ -67,54 +67,25 @@ export default function SolicitarPage() {
     // e o texto de falha mandaria a pessoa esperar por algo que não vai
     // aparecer sozinho.
     return (
-      <Casca>
-        <Aviso
+      <MolduraPublica>
+        <AvisoPublico
           titulo="Nenhum formulário disponível"
           texto="Ainda não há formulários publicados. Avise a equipe de marketing se você esperava encontrar um aqui."
         />
-      </Casca>
+      </MolduraPublica>
     );
   }
 
   if (formularios.length === 1) {
     return (
-      // ⚠️ `<Casca>` AQUI TAMBEM. Os outros quatro ramos deste arquivo já
+      // ⚠️ `<MolduraPublica>` AQUI TAMBEM. Os outros quatro ramos deste arquivo já
       // envolvem, e este não envolvia: enquanto o formulário carrega -- ou se
       // ele der 404/500 --, o texto e a caixa de aviso ficavam soltos no fundo
       // padrão do navegador, sem o fundo e o respiro do produto. A rota irmã
       // `/solicitar/[slug]` já fazia certo.
-      <Casca>
-        <CarregaFormularioPublico slug={formularios[0].slug}>
-          {({ categorias, categoriaPorSlug, form }) => (
-            <FormularioSolicitacao
-              // ⚠️⚠️ `key` PELO ID DO FORMULARIO, e nao enfeite. O
-              // `CarregaFormularioPublico` entrega o formulario por render
-              // prop: se o `slug` mudar, este componente fica na MESMA posicao
-              // da arvore e o React so troca as props -- sem remontar. O
-              // efeito que le o rascunho roda so na montagem, entao o estado
-              // do formulario A sobreviveria, e o efeito de GRAVACAO passaria
-              // a escreve-lo sob a chave de B: o vazamento entre formularios
-              // que a chave por `formId` acabou de fechar, voltando por outra
-              // porta.
-              //
-              // ⚠️ `key` E MELHOR QUE POR `formId` NAS DEPENDENCIAS: remontar
-              // zera TODO o estado (ident, selecionadas, valores, passo), e
-              // nao so o que alguem lembrar de listar.
-              key={form.id}
-              categorias={categorias}
-              categoriaPorSlug={categoriaPorSlug}
-              formId={form.id}
-              titulo={form.title}
-              descricao={form.description}
-              identificacao={{
-                telefone: form.phone_label,
-                area: form.department_label,
-                polo: form.polo_label,
-              }}
-            />
-          )}
-        </CarregaFormularioPublico>
-      </Casca>
+      <MolduraPublica>
+        <FormularioPublico slug={formularios[0].slug} />
+      </MolduraPublica>
     );
   }
 
@@ -129,7 +100,7 @@ export default function SolicitarPage() {
   }
 
   return (
-    <Casca>
+    <MolduraPublica>
       <h1 style={{ margin: "0 0 6px", fontSize: 26, fontWeight: 800 }}>
         O que você precisa?
       </h1>
@@ -157,7 +128,7 @@ export default function SolicitarPage() {
           </div>
         </section>
       ))}
-    </Casca>
+    </MolduraPublica>
   );
 }
 
@@ -209,41 +180,3 @@ function CartaoDeFormulario({
   );
 }
 
-/** A mesma moldura do formulário, para os estados não ficarem soltos na tela. */
-function Casca({ children }: { children: React.ReactNode }) {
-  return (
-    <div
-      style={{
-        minHeight: "100vh",
-        background: "var(--bg)",
-        padding: "32px 16px",
-      }}
-    >
-      <div style={{ maxWidth: 720, margin: "0 auto" }}>{children}</div>
-    </div>
-  );
-}
-
-function Aviso({ titulo, texto }: { titulo: string; texto: string }) {
-  return (
-    <div
-      role="alert"
-      style={{
-        padding: 20,
-        borderRadius: 12,
-        border: "1px solid var(--border)",
-        background: "var(--surface)",
-      }}
-    >
-      {/* ⚠️ `<h1>`, E NÃO `<strong>` (revisão de títulos, 21/09): este aviso É a
-          página quando algo deu errado, e com `<strong>` ela ficava sem título
-          nenhum -- justo para quem chegou por um link quebrado. */}
-      <h1 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 6px" }}>
-        {titulo}
-      </h1>
-      <p className="muted" style={{ fontSize: 14, margin: 0, lineHeight: 1.5 }}>
-        {texto}
-      </p>
-    </div>
-  );
-}
