@@ -33,8 +33,14 @@ def _erro(coluna: Any, mensagem: str) -> ValidationError:
     )
 
 
-def clean_value(coluna: Any, valor: Any) -> Any:
-    """O valor normalizado para gravar, ou `None` para esvaziar. 422 se nao serve."""
+def clean_value(
+    coluna: Any, valor: Any, *, ja_tinha: frozenset[str] | set[str] = frozenset()
+) -> Any:
+    """O valor normalizado para gravar, ou `None` para esvaziar. 422 se nao serve.
+
+    `ja_tinha`: o que a celula guardava. Uma opcao apagada que JA estava ali
+    pode continuar (D17) -- so nao pode ser escolhida de novo.
+    """
     if valor is None:
         return None
     tipo = coluna.type
@@ -91,7 +97,7 @@ def clean_value(coluna: Any, valor: Any) -> Any:
         return limpos or None
 
     if tipo in ("select", "multi_select"):
-        vivas = {o["id"] for o in live_options(coluna.options)}
+        vivas = {o["id"] for o in live_options(coluna.options)} | set(ja_tinha)
         if tipo == "select":
             if not isinstance(valor, str) or valor not in vivas:
                 raise _erro(coluna, "Opcao desconhecida nesta coluna.")

@@ -43,6 +43,7 @@ import {
   type BaseRow,
   type BaseRowList,
 } from "@/lib/api";
+import { esperarGravacoes, geracao, haGravando } from "@/lib/gravacoesDaBase";
 import { avisoDeLinhas, nomeConfere } from "@/lib/baseTable";
 import {
   aplicarVisao,
@@ -124,9 +125,18 @@ export default function PaginaDaBase({ id }: { id: string }) {
   );
   const gravar = useGravarCelula(id, atualizarLinhas);
 
+  const pendente = useRef(false);
   const carregar = useCallback(async () => {
+    const g = geracao(id);
     const [b, l] = await Promise.all([getBase(id), listBaseRows(id)]);
     setBase(b);
+    // ⚠️ Uma gravação de linha começou no meio da leitura: estas linhas podem
+    // ser de ANTES dela e desfariam a edição na tela (ver
+    // `lib/gravacoesDaBase`). Fica pendente, e a próxima volta relê.
+    if (geracao(id) !== g || haGravando(id)) {
+      pendente.current = true;
+      return b;
+    }
     setLinhas(l.items);
     setTeto({ limit: l.limit, warning_at: l.warning_at });
     return b;
@@ -167,32 +177,37 @@ export default function PaginaDaBase({ id }: { id: string }) {
       .then((u) => setMeuId(u.id))
       .catch(() => {});
   }, []);
-  const pendente = useRef(false);
   const recarregar = useCallback(() => {
     carregar().catch((e: ApiError) => {
       if (e.status === 404) setErro("Esta base foi excluída.");
     });
   }, [carregar]);
   const aoMudar = useCallback(() => {
-    if (ocupadoRef.current || salvandoVisao.current) {
+    if (ocupadoRef.current || salvandoVisao.current || haGravando(id)) {
       pendente.current = true;
       return;
     }
     recarregar();
-  }, [recarregar]);
+  }, [id, recarregar]);
   const aoVivo = useAoVivo(id, meuId, aoMudar);
   // Fatia H: o Ctrl+Z. Desfeito, recarrega -- o eco da própria ação não chega
   // pelo canal (ver `useAoVivo`), então a recarga é daqui.
-  const desfazer = useDesfazer(id, recarregar, gravarVisaoAgora);
+  // ⚠️ E espera as gravações de linha em voo: sem isso, Ctrl+Z logo depois
+  // de editar desfazia a ação ANTERIOR (revisão de 08/10).
+  const antesDeDesfazer = useCallback(async () => {
+    await gravarVisaoAgora();
+    await esperarGravacoes(id);
+  }, [id, gravarVisaoAgora]);
+  const desfazer = useDesfazer(id, recarregar, antesDeDesfazer);
   useEffect(() => {
     const t = setInterval(() => {
-      if (pendente.current && !ocupadoRef.current && !salvandoVisao.current) {
+      if (pendente.current && !ocupadoRef.current && !salvandoVisao.current && !haGravando(id)) {
         pendente.current = false;
         recarregar();
       }
     }, 1_000);
     return () => clearInterval(t);
-  }, [recarregar]);
+  }, [id, recarregar]);
 
   // A recarga de 10 s (ver o topo) -- SÓ com o canal fora do ar.
   const aoVivoRef = useRef(aoVivo);
@@ -201,7 +216,7 @@ export default function PaginaDaBase({ id }: { id: string }) {
     let parado = false;
     const tick = () => {
       if (parado || aoVivoRef.current) return;
-      if (document.hidden || ocupadoRef.current || salvandoVisao.current) return;
+      if (document.hidden || ocupadoRef.current || salvandoVisao.current || haGravando(id)) return;
       carregar().catch((e: ApiError) => {
         if (e.status === 401) parado = true;
         if (e.status === 404) {
@@ -218,7 +233,7 @@ export default function PaginaDaBase({ id }: { id: string }) {
       clearInterval(intervalo);
       document.removeEventListener("visibilitychange", aoVoltar);
     };
-  }, [carregar]);
+  }, [id, carregar]);
 
   if (erro) {
     return (

@@ -6,6 +6,12 @@
 // ⚠️ OTIMISTA: a tela muda na hora e VOLTA se o servidor recusar, com o
 // motivo num aviso. A linha que o servidor devolve substitui a local -- é ela
 // que tem a `version` nova. Três cópias disto seriam três jeitos de divergir.
+//
+// ⚠️ DUAS EDIÇÕES NA MESMA LINHA EM VOO (Tab e digitar de novo; revisão de
+// 08/10): a resposta mais velha pode chegar por último. Por isso ela só
+// substitui a linha se a `version` não andar para trás, e o erro desfaz SÓ a
+// própria célula -- voltar a linha inteira apagava a outra edição, que deu
+// certo.
 
 import { useCallback } from "react";
 import { useAvisar } from "@/components/Toasts";
@@ -16,6 +22,7 @@ import {
   type BaseColumn,
   type BaseRow,
 } from "@/lib/api";
+import { acompanhar } from "@/lib/gravacoesDaBase";
 
 export function useGravarCelula(
   baseId: string,
@@ -26,25 +33,29 @@ export function useGravarCelula(
     async (linha: BaseRow, coluna: BaseColumn, valor: BaseCellValue | null) => {
       const antes = linha.values[coluna.id];
       if (igual(antes, valor)) return;
-      const comValor = (l: BaseRow): BaseRow => {
-        const values = { ...l.values };
-        if (valor === null) delete values[coluna.id];
-        else values[coluna.id] = valor;
-        return { ...l, values };
-      };
-      onLinhas((ls) => ls.map((l) => (l.id === linha.id ? comValor(l) : l)));
+      onLinhas((ls) => ls.map((l) => (l.id === linha.id ? comCelula(l, coluna.id, valor) : l)));
       try {
-        const [nova] = await updateBaseCells(baseId, [
-          { row_id: linha.id, column_id: coluna.id, value: valor },
-        ]);
-        onLinhas((ls) => ls.map((l) => (l.id === nova.id ? nova : l)));
+        const [nova] = await acompanhar(
+          baseId,
+          updateBaseCells(baseId, [{ row_id: linha.id, column_id: coluna.id, value: valor }])
+        );
+        onLinhas((ls) => ls.map((l) => (l.id === nova.id && nova.version >= l.version ? nova : l)));
       } catch (e) {
-        onLinhas((ls) => ls.map((l) => (l.id === linha.id ? linha : l)));
+        onLinhas((ls) =>
+          ls.map((l) => (l.id === linha.id ? comCelula(l, coluna.id, antes ?? null) : l))
+        );
         avisar((e as ApiError).message || "Não consegui salvar a célula.");
       }
     },
     [baseId, onLinhas, avisar]
   );
+}
+
+function comCelula(l: BaseRow, colunaId: string, valor: BaseCellValue | null): BaseRow {
+  const values = { ...l.values };
+  if (valor === null) delete values[colunaId];
+  else values[colunaId] = valor;
+  return { ...l, values };
 }
 
 export function igual(a: BaseCellValue | undefined, b: BaseCellValue | null): boolean {

@@ -11,7 +11,7 @@
 //   anterior, guardado na sessao); clicar no titulo NAVEGA pra dentro.
 
 import AnchoredPanel, { useAnchoredPanel } from "@/components/AnchoredPanel";
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   UserPlus,
   X,
@@ -439,6 +439,7 @@ export default function TaskDetail({
   const [paginaAtividade, setPaginaAtividade] = useState(1);
   const [carregandoAtividade, setCarregandoAtividade] = useState(false);
   const [erroAtividade, setErroAtividade] = useState<string | null>(null);
+  const [erroMaisAtividade, setErroMaisAtividade] = useState<string | null>(null);
 
   // Spec 052, fatia B: os links com nome da tarefa, logo abaixo da descrição.
   // ⚠️ ZERA ao trocar de tarefa, antes da resposta: sem isso, a tarefa nova
@@ -673,52 +674,92 @@ export default function TaskDetail({
   }, [task?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Atividade da tarefa focada, primeira pagina (Spec 055).
-  useEffect(() => {
-    if (!task) return;
-    let vivo = true;
-    setAtividade([]);
-    setTotalAtividade(0);
-    setPaginaAtividade(1);
-    setErroAtividade(null);
-    setCarregandoAtividade(true);
-    listTaskHistory(task.id, { page: 1, size: ATIVIDADE_POR_PAGINA })
-      .then((r) => {
-        if (!vivo) return;
+  //
+  // ⚠️ TRES CONSERTOS DA REVISAO DE 08/10:
+  // - RESPOSTA DE OUTRA TAREFA: o "Mostrar mais" nao tinha a guarda do
+  //   primeiro carregamento, e trocar de tarefa (abrir uma subtarefa) no meio
+  //   dele pendurava a pagina 2 da ANTERIOR na lista da nova. Toda resposta
+  //   confere `atividadeDe` antes de entrar.
+  // - A ABA ENVELHECIA: so carregava ao abrir a tarefa; mudar a coluna ou o
+  //   responsavel com o detalhe aberto nao aparecia ate reabrir. Agora relê a
+  //   primeira pagina ao voltar para a aba e quando a tarefa muda
+  //   (`updated_at`) -- sem limpar a lista, para nao piscar.
+  // - O ERRO DO "MOSTRAR MAIS" APAGAVA A LISTA: tem o seu proprio estado
+  //   (`erroMaisAtividade`), e o que ja estava carregado fica.
+  const atividadeDe = useRef<string | null>(null);
+  const recarregarAtividade = useCallback(
+    async (limpar: boolean) => {
+      if (!task) return;
+      const id = task.id;
+      atividadeDe.current = id;
+      if (limpar) {
+        setAtividade([]);
+        setTotalAtividade(0);
+        setErroAtividade(null);
+        setCarregandoAtividade(true);
+      }
+      setErroMaisAtividade(null);
+      try {
+        const r = await listTaskHistory(id, { page: 1, size: ATIVIDADE_POR_PAGINA });
+        if (atividadeDe.current !== id) return;
         setAtividade(r.items);
         setTotalAtividade(r.total);
-      })
-      .catch(() => {
+        setPaginaAtividade(1);
+        setErroAtividade(null);
+      } catch {
         // ⚠️ Falhar aqui NAO pode derrubar o detalhe: a atividade e o lado
         // acessorio da tela, e a tarefa em si ja esta carregada.
-        if (vivo) setErroAtividade("Não consegui carregar a atividade.");
-      })
-      .finally(() => {
-        if (vivo) setCarregandoAtividade(false);
-      });
+        if (atividadeDe.current === id && limpar) {
+          setErroAtividade("Não consegui carregar a atividade.");
+        }
+      } finally {
+        if (atividadeDe.current === id && limpar) setCarregandoAtividade(false);
+      }
+    },
+    [task?.id] // eslint-disable-line react-hooks/exhaustive-deps
+  );
+  useEffect(() => {
+    void recarregarAtividade(true);
     return () => {
-      vivo = false;
+      atividadeDe.current = null;
     };
-  }, [task?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [recarregarAtividade]);
+  // So a MESMA tarefa: a troca de tarefa ja recarrega (e limpa) acima.
+  const ultimaDaAba = useRef<string | null>(null);
+  useEffect(() => {
+    const mesma = ultimaDaAba.current === task?.id;
+    ultimaDaAba.current = task?.id ?? null;
+    if (mesma && abaLateral === "atividade") void recarregarAtividade(false);
+  }, [abaLateral, task?.id, task?.updated_at]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function carregarMaisAtividade() {
     if (!task || carregandoAtividade) return;
+    const id = task.id;
     const proxima = paginaAtividade + 1;
     setCarregandoAtividade(true);
+    setErroMaisAtividade(null);
     try {
-      const r = await listTaskHistory(task.id, {
+      const r = await listTaskHistory(id, {
         page: proxima,
         size: ATIVIDADE_POR_PAGINA,
       });
+      if (atividadeDe.current !== id) return;
       // ⚠️ `total` REGRAVADO a cada pagina: alguem pode ter mexido na tarefa
       // enquanto esta lista estava aberta, e o botao "Mostrar mais" some pela
-      // conta `total - itens`.
-      setAtividade((atual) => [...atual, ...r.items]);
+      // conta `total - itens`. E pelo mesmo motivo a pagina pode repetir
+      // eventos que ja estavam (a lista anda para baixo) -- saem pelo id.
+      setAtividade((atual) => {
+        const ja = new Set(atual.map((e) => e.id));
+        return [...atual, ...r.items.filter((e) => !ja.has(e.id))];
+      });
       setTotalAtividade(r.total);
       setPaginaAtividade(proxima);
     } catch {
-      setErroAtividade("Não consegui carregar o resto da atividade.");
+      if (atividadeDe.current === id) {
+        setErroMaisAtividade("Não consegui carregar o resto da atividade.");
+      }
     } finally {
-      setCarregandoAtividade(false);
+      if (atividadeDe.current === id) setCarregandoAtividade(false);
     }
   }
 
@@ -2854,6 +2895,7 @@ export default function TaskDetail({
                 nomes={nomesDoHistorico}
                 carregando={carregandoAtividade}
                 erro={erroAtividade}
+                erroAoCarregarMais={erroMaisAtividade}
                 onCarregarMais={() => void carregarMaisAtividade()}
               />
             ) : (

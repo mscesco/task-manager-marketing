@@ -188,10 +188,24 @@ class BaseRowRepository(BaseRepository[BaseRow]):
     async def get_many(
         self, base_id: uuid.UUID, row_ids: set[uuid.UUID], *, include_deleted: bool = False
     ) -> dict[uuid.UUID, BaseRow]:
+        """As linhas para REGRAVAR `values` -- travadas ate o fim da transacao.
+
+        ⚠️ SEM A TRAVA, DUAS EDICOES NA MESMA LINHA PERDIAM UMA (revisao de
+        08/10): quem grava monta o `values` inteiro em Python e devolve; A
+        (coluna X) e B (coluna Y) liam a mesma linha velha, e o ultimo commit
+        apagava a celula do outro. Com `FOR UPDATE`, B espera o commit de A e
+        le a linha ja com X. A ordem por id evita deadlock entre duas colagens
+        que pegam as mesmas linhas; `populate_existing` garante que o objeto da
+        sessao recebe o valor relido, e nao o que ja estava em memoria.
+        """
         if not row_ids:
             return {}
-        stmt = self._base_select(include_deleted=include_deleted).where(
-            BaseRow.base_id == base_id, BaseRow.id.in_(row_ids)
+        stmt = (
+            self._base_select(include_deleted=include_deleted)
+            .where(BaseRow.base_id == base_id, BaseRow.id.in_(row_ids))
+            .order_by(BaseRow.id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
         )
         return {r.id: r for r in (await self.session.execute(stmt)).scalars().all()}
 

@@ -124,11 +124,11 @@ function evento(over: Partial<TaskHistoryEvent> = {}): TaskHistoryEvent {
   };
 }
 
-function montar() {
-  render(
+function detalhe(t: Task = task()) {
+  return (
     <AvisosProvider>
       <TaskDetail
-        task={task()}
+        task={t}
         members={new Map([[ANA, { name: "Ana Souza" }]])}
         projects={new Map()}
         temVoltar={false}
@@ -143,7 +143,20 @@ function montar() {
         mostrarArquivadas={false}
         membrosInativos={new Set()}
       />
-    </AvisosProvider>,
+    </AvisosProvider>
+  );
+}
+
+function montar(t: Task = task()) {
+  return render(detalhe(t));
+}
+
+/** Página 1 com um evento de 3; a página 2 é de quem chama. */
+function paginaUmDeTres() {
+  vi.mocked(api.listTaskHistory).mockImplementation(async (_id, p) =>
+    p?.page === 1
+      ? { items: [evento({ id: "h1" })], total: 3, page: 1, size: 20 }
+      : new Promise(() => {}),
   );
 }
 
@@ -243,12 +256,7 @@ describe("mostrar mais", () => {
   });
 
   it("aparece quando falta, e busca a página seguinte", async () => {
-    vi.mocked(api.listTaskHistory).mockResolvedValueOnce({
-      items: [evento({ id: "h1" })],
-      total: 3,
-      page: 1,
-      size: 20,
-    });
+    paginaUmDeTres();
     montar();
     fireEvent.click(await screen.findByRole("tab", { name: /Atividade/ }));
 
@@ -268,6 +276,73 @@ describe("mostrar mais", () => {
       }),
     );
     expect(await screen.findByText("arquivou a tarefa")).toBeTruthy();
+  });
+
+  it("⚠️ falhar NÃO apaga o que já estava, e o botão continua", async () => {
+    // Revisão de 08/10: o erro do "Mostrar mais" usava o mesmo estado do
+    // primeiro carregamento, e a lista inteira virava o aviso.
+    paginaUmDeTres();
+    montar();
+    fireEvent.click(await screen.findByRole("tab", { name: /Atividade/ }));
+    const botao = await screen.findByRole("button", { name: /Mostrar mais/ });
+    vi.mocked(api.listTaskHistory).mockRejectedValueOnce(new Error("caiu"));
+    fireEvent.click(botao);
+
+    expect(
+      await screen.findByText("Não consegui carregar o resto da atividade."),
+    ).toBeTruthy();
+    expect(screen.getByText("criou a tarefa")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Mostrar mais/ })).toBeTruthy();
+  });
+
+  it("⚠️ a página que chega depois de trocar de tarefa é descartada", async () => {
+    // Revisão de 08/10: abrir uma subtarefa no meio do "Mostrar mais"
+    // pendurava a página 2 da tarefa ANTERIOR na lista da nova.
+    paginaUmDeTres();
+    let soltar: (v: unknown) => void = () => {};
+    const { rerender } = montar();
+    fireEvent.click(await screen.findByRole("tab", { name: /Atividade/ }));
+    const botao = await screen.findByRole("button", { name: /Mostrar mais/ });
+    vi.mocked(api.listTaskHistory).mockImplementationOnce(
+      () => new Promise((r) => (soltar = r as (v: unknown) => void)) as never,
+    );
+    fireEvent.click(botao);
+
+    vi.mocked(api.listTaskHistory).mockResolvedValue({
+      items: [evento({ id: "h-t2" })],
+      total: 1,
+      page: 1,
+      size: 20,
+    });
+    rerender(detalhe(task({ id: "t2", title: "Outra", path: "t2" })));
+    await waitFor(() =>
+      expect(vi.mocked(api.listTaskHistory).mock.calls.at(-1)?.[0]).toBe("t2"),
+    );
+    soltar({
+      items: [evento({ id: "h9", event_type: "archived" })],
+      total: 3,
+      page: 2,
+      size: 20,
+    });
+    await screen.findByText("criou a tarefa");
+    await new Promise((r) => setTimeout(r, 0));
+    expect(screen.queryByText("arquivou a tarefa")).toBeNull();
+  });
+});
+
+describe("a atividade não envelhece", () => {
+  it("voltar para a aba relê a primeira página", async () => {
+    // Revisão de 08/10: só carregava ao abrir a tarefa; o que se mudava com
+    // o detalhe aberto não aparecia até reabrir.
+    montar();
+    const atividade = await screen.findByRole("tab", { name: /Atividade/ });
+    await waitFor(() => expect(api.listTaskHistory).toHaveBeenCalledTimes(1));
+    fireEvent.click(atividade);
+    await waitFor(() => expect(api.listTaskHistory).toHaveBeenCalledTimes(2));
+    expect(vi.mocked(api.listTaskHistory).mock.calls[1]).toEqual([
+      "t1",
+      { page: 1, size: 20 },
+    ]);
   });
 });
 

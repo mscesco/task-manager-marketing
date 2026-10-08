@@ -17,6 +17,7 @@
 // ⚠️ MORA EM `components/` -- o `include` do vitest cobre isso, e `app/` não.
 
 import Gaveta from "@/components/Gaveta";
+import { useAvisar } from "@/components/Toasts";
 import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { ChevronRight } from "lucide-react";
@@ -694,6 +695,7 @@ function Deactivate({
 }) {
   const [confirmando, setConfirmando] = useState(false);
   const [salvando, setSalvando] = useState(false);
+  const avisar = useAvisar();
 
   return (
     <>
@@ -720,6 +722,8 @@ function Deactivate({
             try {
               await deactivateMember(member.id);
               await onChanged(`${member.name} foi desativado na organização.`);
+            } catch (e) {
+              avisar((e as ApiError).message || "Não consegui desativar.");
             } finally {
               setSalvando(false);
             }
@@ -755,6 +759,7 @@ function Reactivate({
   onChanged: (aviso: string) => Promise<void>;
 }) {
   const [salvando, setSalvando] = useState(false);
+  const avisar = useAvisar();
   return (
     <button
       className="btn btn-ghost text-xs"
@@ -764,6 +769,10 @@ function Reactivate({
         try {
           await reactivateMember(member.id);
           await onChanged(`${member.name} foi reativado na organização.`);
+        } catch (e) {
+          // ⚠️ Sem isto, um 403/409 virava rejeição não tratada e a tela não
+          // dizia nada (revisão de 08/10). O mesmo no `Deactivate`.
+          avisar((e as ApiError).message || "Não consegui reativar.");
         } finally {
           setSalvando(false);
         }
