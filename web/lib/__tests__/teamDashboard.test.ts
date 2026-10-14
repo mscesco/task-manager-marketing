@@ -3,7 +3,8 @@ import { describe, expect, it } from "vitest";
 import type { DashboardResponse } from "@/lib/api";
 import {
   ageLabel,
-  cardOrder,
+  dashboardLayout,
+  dueTodayCount,
   dayLabel,
   dueLabel,
   weekLabel,
@@ -24,25 +25,40 @@ function resposta(over: Partial<DashboardResponse> = {}): DashboardResponse {
   };
 }
 
-describe("cardOrder", () => {
-  it("operador (sem a carga): o que é dele primeiro, e sem a fila", () => {
-    expect(cardOrder(resposta())).toEqual(["mine", "week", "overdue", "ahead"]);
+describe("dashboardLayout", () => {
+  it("operador (sem a carga): o que é dele logo depois do círculo, e larga", () => {
+    const l = dashboardLayout(resposta());
+    expect(l.cards).toEqual(["weekRing", "mine", "aheadChart", "overdueList"]);
+    expect(l.wideMine).toBe(true);
   });
 
-  it("gestor: o que pede ação em cima, o pessoal no fim", () => {
-    expect(
-      cardOrder(resposta({ workload: [], queue: { pending: 1, oldest_at: null } }))
-    ).toEqual(["week", "overdue", "queue", "workload", "ahead", "mine"]);
-  });
-
-  it("⚠️ supervisor tem a carga mas não a fila: a fila some, o resto fica", () => {
-    expect(cardOrder(resposta({ workload: [] }))).toEqual([
-      "week",
+  it("⚠️ sem a fila, o quarto número vira 'Minhas atrasadas' -- a fileira não fica com buraco", () => {
+    expect(dashboardLayout(resposta()).tiles).toEqual([
+      "weekDone",
       "overdue",
-      "workload",
-      "ahead",
-      "mine",
+      "dueToday",
+      "myOverdue",
     ]);
+    expect(
+      dashboardLayout(resposta({ queue: { pending: 1, oldest_at: null } })).tiles
+    ).toEqual(["weekDone", "overdue", "dueToday", "queue"]);
+  });
+
+  it("gestor: a carga entra, e 'Minhas' volta ao tamanho normal", () => {
+    const l = dashboardLayout(resposta({ workload: [] }));
+    expect(l.cards).toEqual(["weekRing", "aheadChart", "overdueList", "workload", "mine"]);
+    expect(l.wideMine).toBe(false);
+  });
+
+  it("vencem hoje = o dia de hoje do gráfico", () => {
+    const d = resposta({
+      due_ahead: [
+        { date: "2026-10-14", count: 3 },
+        { date: "2026-10-15", count: 1 },
+      ],
+    });
+    expect(dueTodayCount(d)).toBe(3);
+    expect(dueTodayCount(resposta())).toBe(0);
   });
 });
 

@@ -10,21 +10,45 @@ import type { DashboardResponse, DashboardTask } from "./api";
 import { diaDaSemana, diasDesdeEpoca } from "./baseViews";
 import { diaNoWorkspace } from "./prazo";
 
-export type DashboardCard = "mine" | "week" | "overdue" | "ahead" | "queue" | "workload";
+/** Os números grandes da fileira de cima. */
+export type DashboardTile = "weekDone" | "overdue" | "dueToday" | "queue" | "myOverdue";
+
+/** Os cards da grade de baixo. */
+export type DashboardCard = "weekRing" | "aheadChart" | "overdueList" | "workload" | "mine";
+
+export type DashboardLayout = {
+  tiles: DashboardTile[];
+  cards: DashboardCard[];
+  /** Sem a carga, "Minhas" ocupa o lugar dela e fica larga. */
+  wideMine: boolean;
+};
 
 /**
- * A ordem dos cards (Spec 058 §5).
+ * O desenho da tela (Spec 058 §5; o layout em blocos é pedido dela, 14/10, com
+ * uma referência de painel).
  *
  * ⚠️ QUEM É GESTOR SE DESCOBRE PELA RESPOSTA, e não por uma segunda regra de
  * permissão na tela: a carga só vem para quem tem `team_workload.read`. Sem
  * ela, a pessoa é tratada como operador -- o que é dela primeiro (D1).
+ *
+ * ⚠️ SEMPRE QUATRO NÚMEROS EM CIMA: sem a fila (quem não tem
+ * `solicitation.read`), o quarto vira "Minhas atrasadas" -- o número que mais
+ * importa para quem executa --, e a fileira não fica com um buraco.
  */
-export function cardOrder(d: DashboardResponse): DashboardCard[] {
-  const order: DashboardCard[] =
-    d.workload === null
-      ? ["mine", "week", "overdue", "ahead", "queue"]
-      : ["week", "overdue", "queue", "workload", "ahead", "mine"];
-  return order.filter((c) => (c === "queue" ? d.queue !== null : true));
+export function dashboardLayout(d: DashboardResponse): DashboardLayout {
+  const manager = d.workload !== null;
+  return {
+    tiles: ["weekDone", "overdue", "dueToday", d.queue !== null ? "queue" : "myOverdue"],
+    cards: manager
+      ? ["weekRing", "aheadChart", "overdueList", "workload", "mine"]
+      : ["weekRing", "mine", "aheadChart", "overdueList"],
+    wideMine: !manager,
+  };
+}
+
+/** Quantas vencem hoje no time (e ainda não atrasaram): o dia de hoje do gráfico. */
+export function dueTodayCount(d: DashboardResponse): number {
+  return d.due_ahead.find((x) => x.date === d.today)?.count ?? 0;
 }
 
 /** "12/10 a 18/10". */
@@ -46,6 +70,12 @@ export function dayLabel(day: string, today: string): string {
   if (diff === 1) return "Amanhã";
   const [a, m, d] = day.split("-").map(Number);
   return `${WEEKDAY_SHORT[diaDaSemana(a, m, d)]} ${d}`;
+}
+
+/** O dia da semana curto, para o pé das colunas: "Qua". */
+export function weekdayShort(day: string): string {
+  const [a, m, d] = day.split("-").map(Number);
+  return WEEKDAY_SHORT[diaDaSemana(a, m, d)];
 }
 
 /** O prazo de uma tarefa citada: "10/10", ou "hoje 14:00". */
