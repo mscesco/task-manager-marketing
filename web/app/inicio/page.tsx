@@ -23,6 +23,7 @@ import AppShell from "@/components/AppShell";
 import PageHeader from "@/components/PageHeader";
 import TeamDashboard from "@/components/TeamDashboard";
 import Loading from "@/components/Loading";
+import FilterPicker from "@/components/FilterPicker";
 import {
   ApiError,
   getDashboard,
@@ -160,7 +161,7 @@ function Home() {
           showFilters ? (
             <div className="ml-auto flex flex-wrap items-center gap-2">
               {subteams.length > 0 && (
-                <FilterSelect
+                <FilterPicker
                   label="Subtime"
                   value={subteamId}
                   allLabel="Todos os subtimes"
@@ -168,11 +169,12 @@ function Home() {
                   onChange={(v) => writeFilters(v, personId)}
                 />
               )}
-              <FilterSelect
+              <FilterPicker
                 label="Pessoa"
                 value={personId}
                 allLabel="Todas as pessoas"
                 options={people.map((p) => ({ id: p.id, name: p.name }))}
+                people
                 onChange={(v) => writeFilters(subteamId, v)}
               />
             </div>
@@ -197,38 +199,5 @@ function Home() {
         />
       )}
     </div>
-  );
-}
-
-function FilterSelect({
-  label,
-  value,
-  allLabel,
-  options,
-  onChange,
-}: {
-  label: string;
-  value: string | null;
-  allLabel: string;
-  options: { id: string; name: string }[];
-  onChange: (v: string | null) => void;
-}) {
-  return (
-    <label className="flex items-center gap-1.5 text-sm text-ink-soft">
-      {label}
-      <select
-        className="input"
-        style={{ width: "auto", minWidth: 170 }}
-        value={value ?? ""}
-        onChange={(e) => onChange(e.target.value || null)}
-      >
-        <option value="">{allLabel}</option>
-        {options.map((o) => (
-          <option key={o.id} value={o.id}>
-            {o.name}
-          </option>
-        ))}
-      </select>
-    </label>
   );
 }

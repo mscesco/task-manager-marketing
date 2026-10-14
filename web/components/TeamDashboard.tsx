@@ -427,7 +427,8 @@ function MineCard({
           {overdue_total > 0 && (
             <section>
               <p className="m-0 mb-1.5 text-xs font-semibold text-danger">Atrasadas ({overdue_total})</p>
-              <TaskList tasks={overdue} today={data.today} danger />
+              <TaskList tasks={overdue.slice(0, MINE_PREVIEW)} today={data.today} danger />
+              <More shown={Math.min(overdue.length, MINE_PREVIEW)} total={overdue_total} />
             </section>
           )}
           {due_today_total > 0 && (
@@ -435,7 +436,8 @@ function MineCard({
               <p className="m-0 mb-1.5 text-xs font-semibold text-ink-soft">
                 Vencem hoje ({due_today_total})
               </p>
-              <TaskList tasks={due_today} today={data.today} />
+              <TaskList tasks={due_today.slice(0, MINE_PREVIEW)} today={data.today} />
+              <More shown={Math.min(due_today.length, MINE_PREVIEW)} total={due_today_total} />
             </section>
           )}
         </div>
@@ -493,23 +495,23 @@ function TaskList({
   danger?: boolean;
 }) {
   return (
-    <ul className="m-0 flex list-none flex-col gap-2 p-0">
+    <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
       {tasks.map((t) => (
         <li key={t.id}>
           <Link
             href={`/tarefa/${t.id}`}
-            className="group flex items-center gap-3 rounded-md border border-border bg-surface px-3 py-2.5 text-ink no-underline transition-[border-color,background-color] duration-150 hover:border-accent hover:bg-surface-2"
+            className="group flex items-center gap-2.5 rounded-md border border-border bg-surface px-2.5 py-1.5 text-ink no-underline transition-[border-color,background-color] duration-150 hover:border-accent hover:bg-surface-2"
           >
             <span
-              className="h-8 w-1 shrink-0 rounded-full"
+              className="h-6 w-1 shrink-0 rounded-full"
               style={{ background: t.column_color }}
               aria-hidden="true"
             />
-            <span className="flex min-w-0 flex-1 flex-col gap-1">
-              <span className="truncate text-md font-semibold group-hover:text-accent">
+            <span className="flex min-w-0 flex-1 flex-col">
+              <span className="truncate text-base font-semibold group-hover:text-accent">
                 {t.title}
               </span>
-              <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-ink-faint">
+              <span className="flex flex-wrap items-center gap-x-1.5 text-xs text-ink-faint">
                 <span className="flex items-center gap-1">
                   <span
                     className="h-2 w-2 rounded-full"
@@ -550,6 +552,17 @@ function TaskList({
       ))}
     </ul>
   );
+}
+
+/**
+ * Quantas cabem em cada grupo de "Minhas" (14/10: com 10 de cada a tela
+ * rolava). O resto é contado, e "Ver todas" leva à lista inteira.
+ */
+const MINE_PREVIEW = 4;
+
+function More({ shown, total }: { shown: number; total: number }) {
+  if (total <= shown) return null;
+  return <p className="muted m-0 mt-1 text-xs">e mais {total - shown}</p>;
 }
 
 function Empty({ children }: { children: ReactNode }) {
