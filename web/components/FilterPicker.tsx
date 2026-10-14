@@ -103,7 +103,11 @@ export default function FilterPicker({
           />
           <ul
             className="m-0 mt-1.5 list-none overflow-y-auto rounded-md border border-border p-0"
-            style={{ maxHeight: 260 }}
+            // ⚠️ CABE NO PAINEL: o `AnchoredPanel` tem teto de
+            // `min(50vh, 320px)` e rola sozinho. Com a lista mais alta que o
+            // que sobra dele (busca + respiro), apareciam DUAS barras de
+            // rolagem (14/10). 84px = a busca, o espaço e o padding do painel.
+            style={{ maxHeight: "min(calc(50vh - 84px), 236px)" }}
             aria-label={label}
           >
             {!search && (
