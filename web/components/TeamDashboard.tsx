@@ -5,9 +5,22 @@
 // ⚠️ SÓ DESENHA. A ordem dos cards, os textos e o que some são de
 // `lib/teamDashboard.ts`; os números são do servidor, que também decide quem
 // vê o quê (card sem permissão chega `null`).
+//
+// ANIMAÇÃO (pedido dela, 14/10), com o `motion` que o app já usa:
+// - as BARRAS crescem da esquerda com `scaleX`, e NÃO com `width`
+//   (web/AGENTS.md §7: só `transform` e `opacity`). A barra inteira existe
+//   desde o começo; o que anima é a escala, a partir da origem à esquerda;
+// - o CÍRCULO da semana se completa pelo `pathLength` do SVG -- traço, sem
+//   mexer no layout;
+// - trocar o time na barra anima do valor velho para o novo, e não do zero:
+//   o `motion` interpola a partir de onde está;
+// - ⚠️ `useReducedMotion`, e não o bloco do `globals.css`: aquele só alcança
+//   animação de CSS (o mesmo cuidado de `FileiraDeReacoes`). Com a
+//   preferência ligada, tudo aparece já no lugar.
 
 import Link from "next/link";
 import { useState, type ReactNode } from "react";
+import { motion, useReducedMotion, type Transition } from "motion/react";
 import type { DashboardResponse, DashboardTask } from "@/lib/api";
 import {
   WORKLOAD_PREVIEW,
@@ -64,21 +77,14 @@ function WeekCard({ data }: { data: DashboardResponse }) {
         <Empty>Nenhuma tarefa com prazo nesta semana.</Empty>
       ) : (
         <>
-          <p className="m-0 text-base">
-            <strong className="text-3xl font-bold">{done}</strong>
-            <span className="text-ink-soft"> de {total} concluídas</span>
-          </p>
-          <div
-            className="mt-3 h-2 overflow-hidden rounded-full bg-border"
-            role="progressbar"
-            aria-label="Concluídas na semana"
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-valuenow={pct}
-          >
-            <div className="h-full rounded-full bg-accent" style={{ width: `${pct}%` }} />
+          <div className="flex items-center gap-4">
+            <ProgressRing percent={pct} label="Concluídas na semana" />
+            <p className="m-0 text-base">
+              <strong className="text-3xl font-bold">{done}</strong>
+              <span className="text-ink-soft"> de {total} concluídas</span>
+            </p>
           </div>
-          <p className="muted m-0 mt-2 text-xs">
+          <p className="muted m-0 mt-3 text-xs">
             Tarefas com prazo de segunda a domingo; canceladas e bloqueadas ficam fora.
           </p>
         </>
@@ -108,15 +114,10 @@ function AheadCard({ data }: { data: DashboardResponse }) {
   return (
     <CardFrame title="Próximos 7 dias" big={total}>
       <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
-        {data.due_ahead.map((d) => (
+        {data.due_ahead.map((d, i) => (
           <li key={d.date} className="flex items-center gap-2 text-sm">
             <span className="w-16 shrink-0 text-ink-soft">{dayLabel(d.date, data.today)}</span>
-            <span className="h-2 flex-1 overflow-hidden rounded-full bg-border" aria-hidden="true">
-              <span
-                className="block h-full rounded-full bg-accent"
-                style={{ width: `${(d.count / max) * 100}%` }}
-              />
-            </span>
+            <Bar className="flex-1" order={i} parts={[{ fraction: d.count / max, tone: "accent" }]} />
             <span className="w-6 shrink-0 text-right tabular-nums">{d.count}</span>
           </li>
         ))}
@@ -160,7 +161,7 @@ function WorkloadCard({ people }: { people: NonNullable<DashboardResponse["workl
         <Empty>Ninguém neste time ainda.</Empty>
       ) : (
         <ul className="m-0 flex list-none flex-col gap-2 p-0">
-          {shown.map((p) => (
+          {shown.map((p, i) => (
             <li key={p.user_id} className="text-sm">
               <div className="flex items-baseline justify-between gap-2">
                 <span className="min-w-0 truncate">{p.name}</span>
@@ -174,14 +175,16 @@ function WorkloadCard({ people }: { people: NonNullable<DashboardResponse["workl
                   )}
                 </span>
               </div>
-              {/* A parte vermelha é a atrasada, DENTRO da barra das abertas. */}
-              <div className="mt-1 flex h-2 overflow-hidden rounded-full bg-border" aria-hidden="true">
-                <span className="h-full bg-danger" style={{ width: `${(p.overdue / max) * 100}%` }} />
-                <span
-                  className="h-full bg-accent"
-                  style={{ width: `${((p.open - p.overdue) / max) * 100}%` }}
-                />
-              </div>
+              {/* A parte vermelha é a atrasada, DENTRO da barra das abertas:
+                  as duas partem da esquerda, e a vermelha fica por cima. */}
+              <Bar
+                className="mt-1"
+                order={i}
+                parts={[
+                  { fraction: p.open / max, tone: "accent" },
+                  { fraction: p.overdue / max, tone: "danger" },
+                ]}
+              />
             </li>
           ))}
         </ul>
@@ -272,4 +275,86 @@ function TaskList({ tasks, today }: { tasks: DashboardTask[]; today: string }) {
 
 function Empty({ children }: { children: ReactNode }) {
   return <p className="muted m-0 text-sm">{children}</p>;
+}
+
+// ------------------------------------------------------------------ animação
+/** A mola das barras e do círculo: sem quicar, curta o bastante para não
+ *  atrasar quem abre o painel todo dia. */
+const GROW: Transition = { type: "spring", duration: 0.7, bounce: 0 };
+/** Cada barra começa um pouco depois da de cima -- a lista "se desenha". */
+const STAGGER = 0.04;
+
+/**
+ * Uma barra horizontal. Cada parte é uma camada da largura INTEIRA da trilha,
+ * escalada de 0 até a fração (`scaleX`, origem à esquerda); as de depois ficam
+ * por cima das de antes.
+ */
+function Bar({
+  parts,
+  order = 0,
+  className = "",
+}: {
+  parts: { fraction: number; tone: "accent" | "danger" }[];
+  /** A posição na lista, para o atraso escalonado. */
+  order?: number;
+  className?: string;
+}) {
+  const reduce = useReducedMotion();
+  return (
+    <span
+      className={`relative block h-2 overflow-hidden rounded-full bg-border ${className}`}
+      aria-hidden="true"
+    >
+      {parts.map((part, i) => (
+        <motion.span
+          key={i}
+          className={`absolute inset-0 origin-left ${part.tone === "danger" ? "bg-danger" : "bg-accent"}`}
+          initial={reduce ? false : { scaleX: 0 }}
+          animate={{ scaleX: Math.min(1, Math.max(0, part.fraction)) }}
+          transition={reduce ? { duration: 0 } : { ...GROW, delay: order * STAGGER }}
+        />
+      ))}
+    </span>
+  );
+}
+
+/** O círculo da semana: a trilha inteira e, por cima, o arco do concluído. */
+function ProgressRing({ percent, label }: { percent: number; label: string }) {
+  const reduce = useReducedMotion();
+  const size = 88;
+  const stroke = 10;
+  const r = (size - stroke) / 2;
+  return (
+    <div
+      className="relative shrink-0"
+      style={{ width: size, height: size }}
+      role="progressbar"
+      aria-label={label}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={percent}
+    >
+      {/* `-rotate-90`: o arco começa no topo, como um relógio. */}
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="-rotate-90" aria-hidden="true">
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" strokeWidth={stroke} className="stroke-border" />
+        <motion.circle
+          cx={size / 2}
+          cy={size / 2}
+          r={r}
+          fill="none"
+          strokeWidth={stroke}
+          strokeLinecap="round"
+          className="stroke-accent"
+          initial={reduce ? false : { pathLength: 0 }}
+          animate={{ pathLength: percent / 100 }}
+          transition={reduce ? { duration: 0 } : { ...GROW, duration: 0.9 }}
+          // ⚠️ 0% com `strokeLinecap="round"` ainda desenharia um pontinho.
+          style={{ opacity: percent === 0 ? 0 : 1 }}
+        />
+      </svg>
+      <span className="absolute inset-0 flex items-center justify-center text-base font-bold">
+        {percent}%
+      </span>
+    </div>
+  );
 }
