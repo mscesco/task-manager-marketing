@@ -292,5 +292,36 @@ export function agruparPorInstante(
       frases: [frase],
     });
   }
-  return grupos;
+  return grupos.map((g) => ({ ...g, frases: semStatusEspelhado(g.frases) }));
+}
+
+/**
+ * Tira o "mudou o status" que só REPETE o "moveu" do mesmo gesto.
+ *
+ * ⚠️ Mover para uma coluna-ponte grava DOIS eventos (`column_id` e
+ * `status_changed`), e com as colunas padrão os nomes coincidem: a linha saía
+ * "moveu de Planejado para Em Andamento / mudou o status de Planejado para Em
+ * Andamento", e ela leu como duplicado (14/10). Quando os nomes DIFEREM (uma
+ * coluna "Revisão" que é ponte para Em Andamento), o status diz algo que a
+ * coluna não diz, e fica.
+ */
+function semStatusEspelhado(frases: readonly string[]): readonly string[] {
+  const movimentos = new Set(
+    frases
+      .filter((f) => f.startsWith("moveu de ") || f.startsWith("moveu para "))
+      .map((f) => f.slice("moveu ".length)),
+  );
+  if (movimentos.size === 0) return frases;
+  const destinos = new Set(
+    [...movimentos].map((m) => m.slice(m.lastIndexOf("para ") + "para ".length)),
+  );
+  return frases.filter((f) => {
+    if (f.startsWith("mudou o status de ")) {
+      return !movimentos.has(f.slice("mudou o status ".length));
+    }
+    if (f.startsWith("mudou o status para ")) {
+      return !destinos.has(f.slice("mudou o status para ".length));
+    }
+    return true;
+  });
 }

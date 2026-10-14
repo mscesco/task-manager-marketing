@@ -357,6 +357,73 @@ describe("agrupar por instante", () => {
     expect(grupos.map((g) => g.quando)).toEqual([DEPOIS, INSTANTE]);
   });
 
+  it("⚠️ o status que só repete a coluna sai da linha (14/10)", () => {
+    // Mover para uma coluna-ponte grava `column_id` E `status_changed`; com
+    // as colunas padrão os nomes coincidem, e a linha parecia duplicada.
+    const grupos = agruparPorInstante(
+      [
+        evento({
+          id: "a",
+          field_name: "column_id",
+          old_value: { value: BACKLOG },
+          new_value: { value: ANDAMENTO },
+          created_at: INSTANTE,
+        }),
+        evento({
+          id: "b",
+          event_type: "status_changed",
+          old_value: { value: "BACKLOG" },
+          new_value: { value: "IN_PROGRESS" },
+          created_at: INSTANTE,
+        }),
+      ],
+      NOMES,
+    );
+    expect(grupos[0].frases).toEqual(["moveu de Backlog para Em Andamento"]);
+  });
+
+  it("o status que diz OUTRA coisa fica", () => {
+    // Coluna "Em Andamento" que é ponte para Aprovação Interna: o status
+    // conta o que a coluna não conta.
+    const grupos = agruparPorInstante(
+      [
+        evento({
+          id: "a",
+          field_name: "column_id",
+          old_value: { value: BACKLOG },
+          new_value: { value: ANDAMENTO },
+          created_at: INSTANTE,
+        }),
+        evento({
+          id: "b",
+          event_type: "status_changed",
+          old_value: { value: "BACKLOG" },
+          new_value: { value: "IN_REVIEW" },
+          created_at: INSTANTE,
+        }),
+      ],
+      NOMES,
+    );
+    expect(grupos[0].frases).toEqual([
+      "moveu de Backlog para Em Andamento",
+      "mudou o status de Backlog para Aprovação Interna",
+    ]);
+  });
+
+  it("status sozinho (sem mover) continua aparecendo", () => {
+    const grupos = agruparPorInstante(
+      [
+        evento({
+          event_type: "status_changed",
+          old_value: { value: "BACKLOG" },
+          new_value: { value: "IN_PROGRESS" },
+        }),
+      ],
+      NOMES,
+    );
+    expect(grupos[0].frases).toEqual(["mudou o status de Backlog para Em Andamento"]);
+  });
+
   it("lista vazia não quebra", () => {
     expect(agruparPorInstante([], NOMES)).toEqual([]);
   });
