@@ -256,7 +256,15 @@ function Card({
         <WorkloadCard people={data.workload} className={className} onPick={onPickPerson} />
       ) : null;
     case "mine":
-      return <MineCard data={data} link={links.mine} className={className} personName={personName} />;
+      return (
+        <MineCard
+          data={data}
+          link={links.mine}
+          className={className}
+          personName={personName}
+          tall={className.includes("row-span-2")}
+        />
+      );
   }
 }
 
@@ -327,7 +335,10 @@ function OverdueListCard({ data, className }: { data: DashboardResponse; classNa
       {data.overdue_total === 0 ? (
         <Empty>Nenhuma tarefa atrasada.</Empty>
       ) : (
-        <TaskList tasks={data.oldest_overdue} today={data.today} danger />
+        <Scroll className="max-h-[300px]">
+          <TaskList tasks={data.oldest_overdue} today={data.today} danger />
+          <More shown={data.oldest_overdue.length} total={data.overdue_total} />
+        </Scroll>
       )}
     </CardFrame>
   );
@@ -409,11 +420,14 @@ function MineCard({
   link,
   className,
   personName,
+  tall,
 }: {
   data: DashboardResponse;
   link: string;
   className: string;
   personName: string | null;
+  /** Ocupa duas linhas da grade (o desenho do gestor). */
+  tall: boolean;
 }) {
   const { overdue, overdue_total, due_today, due_today_total } = data.mine;
   // Filtrado por pessoa, o card é DELA (o servidor já mandou as dela).
@@ -423,12 +437,14 @@ function MineCard({
       {overdue_total + due_today_total === 0 ? (
         <Empty>Nada atrasado nem vencendo hoje.</Empty>
       ) : (
-        <div className="flex flex-col gap-3">
+        // No gestor o card ocupa duas linhas, e a área que rola acompanha.
+        <Scroll className={tall ? "max-h-[560px]" : "max-h-[300px]"}>
+          <div className="flex flex-col gap-3">
           {overdue_total > 0 && (
             <section>
               <p className="m-0 mb-1.5 text-xs font-semibold text-danger">Atrasadas ({overdue_total})</p>
-              <TaskList tasks={overdue.slice(0, MINE_PREVIEW)} today={data.today} danger />
-              <More shown={Math.min(overdue.length, MINE_PREVIEW)} total={overdue_total} />
+              <TaskList tasks={overdue} today={data.today} danger />
+              <More shown={overdue.length} total={overdue_total} />
             </section>
           )}
           {due_today_total > 0 && (
@@ -436,11 +452,12 @@ function MineCard({
               <p className="m-0 mb-1.5 text-xs font-semibold text-ink-soft">
                 Vencem hoje ({due_today_total})
               </p>
-              <TaskList tasks={due_today.slice(0, MINE_PREVIEW)} today={data.today} />
-              <More shown={Math.min(due_today.length, MINE_PREVIEW)} total={due_today_total} />
+              <TaskList tasks={due_today} today={data.today} />
+              <More shown={due_today.length} total={due_today_total} />
             </section>
           )}
-        </div>
+          </div>
+        </Scroll>
       )}
       {!personName && (
         <Link href={link} className="mt-auto inline-block pt-2 text-sm text-accent">
@@ -555,11 +572,23 @@ function TaskList({
 }
 
 /**
- * Quantas cabem em cada grupo de "Minhas" (14/10: com 10 de cada a tela
- * rolava). O resto é contado, e "Ver todas" leva à lista inteira.
+ * A área que ROLA DENTRO do card (14/10, pedido dela: a tela não rola, a
+ * lista sim, e dá para ver tudo). `pr-1` deixa a barra de rolagem fora das
+ * linhas; `overscroll-contain` impede que chegar ao fim role a página.
  */
-const MINE_PREVIEW = 4;
+function Scroll({ className, children }: { className: string; children: ReactNode }) {
+  return (
+    <div
+      className={`-mr-1 overflow-y-auto overscroll-contain pr-1 ${className}`}
+      tabIndex={0}
+      aria-label="Lista de tarefas, role para ver todas"
+    >
+      {children}
+    </div>
+  );
+}
 
+/** O que passou do teto do servidor (50) -- raro, e dito, e não escondido. */
 function More({ shown, total }: { shown: number; total: number }) {
   if (total <= shown) return null;
   return <p className="muted m-0 mt-1 text-xs">e mais {total - shown}</p>;

@@ -1528,8 +1528,12 @@ class TaskRepository(BaseRepository[Task]):
             )
 
         oldest_first = (t.c.due_date, t.c.due_time.asc().nulls_last(), t.c.id)
+        # ⚠️ As listas ROLAM DENTRO do card (14/10, pedido dela: "conseguir ver
+        # tudo"). O teto e so uma rede para nao mandar milhares de linhas; o
+        # total de verdade vem nas contagens.
+        list_cap = 50
         oldest_overdue = await self._dashboard_items(
-            item_columns().where(p.overdue).order_by(*oldest_first).limit(5)
+            item_columns().where(p.overdue).order_by(*oldest_first).limit(list_cap)
         )
 
         # As minhas: o mesmo conjunto, so as tarefas em que sou responsavel.
@@ -1537,13 +1541,16 @@ class TaskRepository(BaseRepository[Task]):
             TaskAssignment.task_id == t.c.id, TaskAssignment.user_id == me
         )
         my_overdue = await self._dashboard_items(
-            item_columns().where(p.overdue, assigned_to_me).order_by(*oldest_first).limit(10)
+            item_columns()
+            .where(p.overdue, assigned_to_me)
+            .order_by(*oldest_first)
+            .limit(list_cap)
         )
         my_due_today = await self._dashboard_items(
             item_columns()
             .where(p.due_today, assigned_to_me)
             .order_by(t.c.due_time.asc().nulls_last(), t.c.id)
-            .limit(10)
+            .limit(list_cap)
         )
         my_counts = (
             await self.session.execute(
