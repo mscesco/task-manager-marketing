@@ -3655,3 +3655,43 @@ export async function deleteBaseView(baseId: string, viewId: string): Promise<vo
 export async function deleteBaseRow(baseId: string, rowId: string): Promise<BaseRow> {
   return api<BaseRow>(`/api/v1/bases/${baseId}/rows/${rowId}`, { method: "DELETE" });
 }
+
+// ---------------------------------------------------------------
+// TELA INICIAL DO TIME (Spec 058)
+// ---------------------------------------------------------------
+// ⚠️ UM PEDIDO, TODOS OS CARDS. E o servidor que decide quem ve o quê: card
+// sem permissão vem `null` (a carga sem `team_workload.read`, a fila sem
+// `solicitation.read`), e a tela só esconde.
+
+export type DashboardTask = {
+  id: string;
+  title: string;
+  due_date: string | null;
+  /** "18:00:00" -- com segundos, como todo `TIME` do Postgres. */
+  due_time: string | null;
+  parent_task_id: string | null;
+};
+
+export type DashboardResponse = {
+  /** O "hoje" do SERVIDOR, no fuso da organização: a tela não recalcula. */
+  today: string;
+  week: { start: string; end: string; done: number; total: number };
+  overdue_total: number;
+  oldest_overdue: DashboardTask[];
+  /** Sete dias, de hoje em diante -- inclusive os com zero. */
+  due_ahead: { date: string; count: number }[];
+  mine: {
+    overdue: DashboardTask[];
+    overdue_total: number;
+    due_today: DashboardTask[];
+    due_today_total: number;
+  };
+  workload: { user_id: string; name: string; open: number; overdue: number }[] | null;
+  queue: { pending: number; oldest_at: string | null } | null;
+};
+
+/** `teamId` null = "todos os times" da barra. */
+export async function getDashboard(teamId: string | null): Promise<DashboardResponse> {
+  const q = teamId ? `?under_team_id=${encodeURIComponent(teamId)}` : "";
+  return api<DashboardResponse>(`/api/v1/dashboard${q}`);
+}

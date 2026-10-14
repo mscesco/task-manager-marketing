@@ -66,6 +66,7 @@ import {
   Moon,
   Monitor,
   Table2,
+  House,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -443,6 +444,18 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
         {/* Navegacao */}
         <nav className="mt-1 flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto">
+          {/* ⭐ Spec 058 (§10.1): a tela inicial é a ENTRADA, e o primeiro
+              item; os Quadros vêm logo abaixo. Leva o `?time=` da barra
+              (`navHref`), como os outros itens simples. */}
+          <a
+            href={navHref("/inicio", publicado)}
+            title={!open ? "Início" : undefined}
+            aria-label={!open ? "Início" : undefined}
+            className={itemCls(pathname === "/inicio")}
+          >
+            <House size={18} className="shrink-0" />
+            {open && <span className="truncate">Início</span>}
+          </a>
           {/* Grupo QUADROS (accordion). Retraido: vira so o icone, que leva
               ao quadro geral (nao ha espaco pra sub-abas). Expandido:
               cabecalho clicavel que abre/fecha as sub-abas. */}
