@@ -85,10 +85,14 @@ export default function ConfirmarExclusaoDeQuadro({
             "Este quadro não tem nenhuma tarefa."
           ) : (
             <>
-              As <strong>{contagem}</strong>{" "}
-              {plural(contagem, "tarefa", "tarefas")} deste quadro{" "}
+              {/* ⚠️ `plural` JÁ PÕE O NÚMERO na frente: com o número aqui
+                  também, a frase saía "As 5 5 tarefas deste quadro 5 vão
+                  ser apagadas" (revisão de 08/10). */}
+              {contagem === 1 ? "A" : "As"}{" "}
+              <strong>{plural(contagem, "tarefa", "tarefas")}</strong> deste
+              quadro{" "}
               <strong>
-                {plural(contagem, "vai ser apagada", "vão ser apagadas")} junto
+                {contagem === 1 ? "vai ser apagada" : "vão ser apagadas"} junto
               </strong>
               , inclusive as arquivadas.
             </>

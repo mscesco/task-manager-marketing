@@ -368,12 +368,17 @@ class BaseService:
 
         if command.name is not None:
             coluna.name = clean_name(command.name)
-        if command.position is not None:
+        movida: tuple[int, int] | None = None
+        if command.position is not None and command.position != coluna.position:
             if command.position < 1:
                 raise ValidationError(
                     "Posicao comeca em 1.", details={"field": "position"}
                 )
-            coluna.position = command.position
+            # ⚠️ MOVER E ACAO PROPRIA NO DIARIO (`column.move`): o desfazer
+            # precisa andar com as vizinhas de volta, e o snapshot da coluna
+            # so conhece a posicao dela.
+            movida = (coluna.position, command.position)
+            await self._columns.move(base.id, coluna, command.position)
         if "width" in command.fields_set:
             if command.width is not None and not WIDTH_MIN <= command.width <= WIDTH_MAX:
                 raise ValidationError(
@@ -418,12 +423,25 @@ class BaseService:
                     "values": valores_antes,
                 },
             )
-        elif antes != depois:
+        elif _sem_posicao(antes) != _sem_posicao(depois):
             await journal.record(
                 self._session,
                 base.id,
                 "column.update",
-                {"column": str(coluna.id), "before": antes, "after": depois},
+                {
+                    "column": str(coluna.id),
+                    "before": antes,
+                    # A posicao do "depois" e a de ANTES: quem andou foi o
+                    # `column.move`, e o desfazer deste nao mexe nela.
+                    "after": {**depois, "position": antes["position"]},
+                },
+            )
+        if movida is not None:
+            await journal.record(
+                self._session,
+                base.id,
+                "column.move",
+                {"column": str(coluna.id), "from": movida[0], "to": movida[1]},
             )
         return coluna
 
@@ -503,3 +521,7 @@ class BaseService:
             columns=await self._columns.list_for(base.id),
             views=await self._views.list_for(base.id),
         )
+
+
+def _sem_posicao(snapshot: dict[str, object]) -> dict[str, object]:
+    return {k: v for k, v in snapshot.items() if k != "position"}

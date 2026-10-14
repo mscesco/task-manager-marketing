@@ -127,9 +127,13 @@ class BasePurgeService:
         chave = str(coluna.id)
         linhas = (
             await self._session.execute(
-                select(BaseRow).where(
-                    BaseRow.base_id == coluna.base_id, BaseRow.values.has_key(chave)
-                )
+                # A mesma trava do `get_many`: a limpeza nao pode apagar uma
+                # celula que alguem grava ao mesmo tempo.
+                select(BaseRow)
+                .where(BaseRow.base_id == coluna.base_id, BaseRow.values.has_key(chave))
+                .order_by(BaseRow.id)
+                .with_for_update()
+                .execution_options(populate_existing=True)
             )
         ).scalars().all()
         for linha in linhas:

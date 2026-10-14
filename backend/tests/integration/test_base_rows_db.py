@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import pytest
 
+from app.db.models import User
 from app.modules.bases.application import row_service
 from app.modules.bases.application.base_service import BaseService
 from app.modules.bases.application.row_service import CellWrite, RowService
@@ -100,6 +101,32 @@ async def test_pessoa_so_da_arvore_e_ativa(db) -> None:
                 await svc.update_cells(
                     m["base"], [CellWrite(m["linha"], pessoa.id, [str(m[quem])])]
                 )
+
+
+async def test_pessoa_que_saiu_fica_e_a_celula_continua_editavel(db) -> None:
+    """D8 (revisao de 08/10): quem foi desativado FICA na celula, e acrescentar
+    outra pessoa nao e recusado por causa dele -- a tela devolve os ids que ja
+    estavam. Escolher de novo quem saiu continua recusado."""
+    m = await _mundo(db)
+    colega = await f.make_user(db, workspace_id=m["ws"])
+    await f.add_member(db, workspace_id=m["ws"], user_id=colega, team_id=m["mkt"], role="OPERATOR")
+    with _como(m):
+        pessoa = await BaseService(db).create_column(m["base"], name="Resp.", type="person")
+        svc = RowService(db)
+        await svc.update_cells(m["base"], [CellWrite(m["linha"], pessoa.id, [str(colega)])])
+        (await db.get(User, colega)).is_active = False
+        await db.flush()
+        (linha,) = await svc.update_cells(
+            m["base"], [CellWrite(m["linha"], pessoa.id, [str(colega), str(m["op"])])]
+        )
+        assert linha.values[str(pessoa.id)] == [str(colega), str(m["op"])]
+        await svc.update_cells(
+            m["base"], [CellWrite(m["linha"], pessoa.id, [str(m["op"])])]
+        )
+        with pytest.raises(ValidationError):
+            await svc.update_cells(
+                m["base"], [CellWrite(m["linha"], pessoa.id, [str(colega)])]
+            )
 
 
 async def test_coluna_apagada_nao_recebe_valor(db) -> None:

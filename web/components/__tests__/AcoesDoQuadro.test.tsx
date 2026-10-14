@@ -229,8 +229,12 @@ describe("AcoesDoQuadro -- apagar quadro (fatia 7)", () => {
     });
     montar();
     fireEvent.click(screen.getByLabelText("Apagar Pauta editorial"));
-    expect(await screen.findByText("12")).toBeTruthy();
-    expect(screen.getByText(/arquivadas/)).toBeTruthy();
+    expect(await screen.findByText("12 tarefas")).toBeTruthy();
+    const frase = screen.getByText(/arquivadas/).textContent ?? "";
+    expect(frase).toContain("vão ser apagadas");
+    // ⚠️ O número UMA vez só: `plural` já o põe, e a frase saía "As 12 12
+    // tarefas deste quadro 12 vão ser apagadas" (revisão de 08/10).
+    expect(frase.match(/12/g)).toHaveLength(1);
   });
 
   it("⚠️ enquanto a contagem não chega, não dá para confirmar -- sabotagem Y", async () => {

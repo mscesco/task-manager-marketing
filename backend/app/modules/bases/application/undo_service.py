@@ -145,6 +145,8 @@ class UndoService:
             await self._campos_coluna(base_id, p, desfazer=desfazer)
         elif kind == "column.retype":
             await self._retype(base_id, p, desfazer=desfazer)
+        elif kind == "column.move":
+            await self._mover_coluna(base_id, p, desfazer=desfazer)
         elif kind == "view.update":
             await self._campos_visao(base_id, p, desfazer=desfazer)
         elif kind in ("view.create", "view.delete"):
@@ -214,6 +216,18 @@ class UndoService:
         if coluna.deleted_at is not None or not _confere(coluna, esperado, p):
             raise _Conflito
         _aplicar_snapshot(coluna, alvo, mexe_na_posicao=_moveu(p))
+
+    async def _mover_coluna(
+        self, base_id: uuid.UUID, p: dict[str, Any], *, desfazer: bool
+    ) -> None:
+        """Anda de volta (ou de novo). Conflito se a coluna nao esta mais onde
+        a acao a deixou -- alguem moveu ou inseriu coluna no meio tempo."""
+        coluna = await self._coluna(base_id, uuid.UUID(p["column"]))
+        esperado, alvo = (p["to"], p["from"]) if desfazer else (p["from"], p["to"])
+        if coluna.deleted_at is not None or coluna.position != esperado:
+            raise _Conflito
+        await self._columns.move(base_id, coluna, alvo)
+        coluna.version += 1
 
     async def _retype(
         self, base_id: uuid.UUID, p: dict[str, Any], *, desfazer: bool

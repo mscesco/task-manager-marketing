@@ -26,6 +26,15 @@
 //   com o foco na alça). Ela é da COLUNA, e não da visão: vale para todo mundo
 //   e em toda visão, como o resto da coluna. O arraste mostra a largura nova na
 //   hora e só grava ao soltar -- um gesto, uma entrada no diário do Ctrl+Z.
+//
+// Pedidos dela de 14/10 ("como no Notion"):
+// - DUPLO CLIQUE NA BORDA ajusta a coluna ao maior conteúdo numa linha só
+//   (medido no canvas, com a fonte da tabela; a conta é `larguraDoConteudo`).
+// - ARRASTAR O CABEÇALHO muda a coluna de lugar. Por PONTEIRO, e não pelo
+//   arrastar nativo do HTML: o cabeçalho é um botão (abre o menu), e o Firefox
+//   não começa arraste nativo a partir de botão. Só vira arraste depois de 5px
+//   -- antes disso é clique, e o menu abre. A alternativa de teclado é "Mover
+//   para a esquerda/direita" no menu da coluna. O título não sai do lugar.
 
 import {
   useEffect,
@@ -49,7 +58,9 @@ import {
   deslocamentos,
   larguraArrastada,
   larguraDa,
+  larguraQueCabe,
   lerConfig,
+  ordemAoArrastar,
   quantasCongeladas,
   type ConfigDaVisao,
 } from "@/lib/baseViews";
@@ -67,14 +78,17 @@ import {
   type BaseDetail,
   type BaseRow,
 } from "@/lib/api";
+import { acompanhar } from "@/lib/gravacoesDaBase";
 import {
   corDaOpcao,
   corDaPessoa,
   editaComTexto,
   interpretarDigitado,
+  larguraDoConteudo,
   linksDaCelula,
   mover,
   nomeDoLink,
+  pedacosDaCelula,
   rotuloDePessoa,
   textoDaCelula,
   textoParaEditar,
@@ -202,6 +216,55 @@ export default function TabelaDaBase({
     }
   }
 
+  /** Duplo clique na borda: do tamanho do maior conteúdo (das linhas da
+   *  visão e do próprio cabeçalho). */
+  function ajustarLargura(coluna: BaseColumn) {
+    const medir = medidorDeTexto(tabelaRef.current);
+    const pedidas = linhas.map((l) =>
+      larguraDoConteudo(
+        pedacosDaCelula(coluna, l.values[coluna.id], pessoas.daArvore, pessoas.todos),
+        medir
+      )
+    );
+    // O cabeçalho: o nome, o ícone do tipo (14px + o gap) e o respiro.
+    pedidas.push(medir(coluna.name, false) + 18 + 26);
+    const largura = larguraQueCabe(pedidas);
+    if (largura === larguraDa(coluna, colunas.indexOf(coluna))) return;
+    setPrevia({ id: coluna.id, largura });
+    void gravarLargura(coluna, largura);
+  }
+
+  // --- arrastar a coluna ---
+  const cabecalhos = useRef(new Map<string, HTMLTableCellElement>());
+  const inicioDoArraste = useRef<{ id: string; x: number; y: number } | null>(null);
+  const [arraste, setArraste] = useState<{ id: string; alvo: string | null } | null>(null);
+  // O `click` que vem depois de soltar um arraste NÃO abre o menu da coluna.
+  const engolirClique = useRef(false);
+  const podeArrastar = (c: BaseColumn) => base.can_update_column && c.type !== "title";
+
+  function alvoSob(x: number): string | null {
+    for (const c of colunas) {
+      const r = cabecalhos.current.get(c.id)?.getBoundingClientRect();
+      if (r && x >= r.left && x < r.right) return c.type === "title" ? null : c.id;
+    }
+    return null;
+  }
+
+  async function moverColuna(id: string, alvoId: string) {
+    const alvo = base.columns.find((x) => x.id === alvoId);
+    if (id === alvoId || !alvo || alvo.type === "title") return;
+    const antes = base.columns;
+    onBase((b) => ({ ...b, columns: ordemAoArrastar(b.columns, id, alvoId) }));
+    try {
+      await updateBaseColumn(base.id, id, { position: alvo.position });
+      // As do caminho andaram uma casa no servidor: as posições vêm de lá.
+      onRecarregar?.();
+    } catch (e) {
+      onBase((b) => ({ ...b, columns: antes }));
+      avisar((e as ApiError).message || "Não consegui mover a coluna.");
+    }
+  }
+
   function confirmarTexto(depois?: "Enter" | "Tab" | "ShiftTab") {
     if (!editando || !linhaAtiva || !colunaAtiva || confirmado.current) return;
     const r = interpretarDigitado(colunaAtiva, editando.rascunho);
@@ -264,7 +327,7 @@ export default function TabelaDaBase({
 
   async function novaLinha() {
     try {
-      const nova = await createBaseRow(base.id);
+      const nova = await acompanhar(base.id, createBaseRow(base.id));
       onLinhaCriada?.(nova.id);
       onLinhas((ls) => [...ls, nova]);
       setAtiva({ linha: linhas.length, coluna: 0 });
@@ -279,12 +342,19 @@ export default function TabelaDaBase({
   // ele vazava para fora da tabela. A rede é o Ctrl+Z: a linha apagada fica
   // guardada por 1 dia (D13), e o aviso diz isso.
   async function apagarLinha(linha: BaseRow) {
-    onLinhas((ls) => ls.filter((l) => l.id !== linha.id));
+    let onde = -1;
+    onLinhas((ls) => {
+      onde = ls.findIndex((l) => l.id === linha.id);
+      return ls.filter((l) => l.id !== linha.id);
+    });
     try {
-      await deleteBaseRow(base.id, linha.id);
+      await acompanhar(base.id, deleteBaseRow(base.id, linha.id));
       avisar("Linha apagada. Ctrl+Z (ou Desfazer) traz de volta.");
     } catch (e) {
-      onLinhas((ls) => [...ls, linha]);
+      // Volta para o lugar de onde saiu, e não para o fim.
+      onLinhas((ls) =>
+        onde < 0 ? [...ls, linha] : [...ls.slice(0, onde), linha, ...ls.slice(onde)]
+      );
       avisar((e as ApiError).message || "Não consegui apagar a linha.");
     }
   }
@@ -319,11 +389,60 @@ export default function TabelaDaBase({
               {colunas.map((c, i) => (
                 <th
                   key={c.id}
+                  ref={(el) => {
+                    if (el) cabecalhos.current.set(c.id, el);
+                    else cabecalhos.current.delete(c.id);
+                  }}
                   scope="col"
                   className={`border-y border-r border-border bg-canvas px-2 py-1.5 text-left font-normal text-ink-soft ${
                     i < congeladas ? "sticky z-10" : "relative"
-                  } ${i === 0 ? "border-l" : ""}`}
-                  style={{ width: larguras[i], left: i < congeladas ? esquerdas[i] : undefined }}
+                  } ${i === 0 ? "border-l" : ""} ${arraste?.id === c.id ? "opacity-50" : ""} ${
+                    arraste ? "cursor-grabbing select-none" : ""
+                  }`}
+                  style={{
+                    width: larguras[i],
+                    left: i < congeladas ? esquerdas[i] : undefined,
+                    // A linha azul do lado onde a coluna vai cair.
+                    boxShadow:
+                      arraste?.alvo === c.id && arraste.id !== c.id
+                        ? `inset ${
+                            colunas.findIndex((x) => x.id === arraste.id) < i ? "-3px" : "3px"
+                          } 0 0 var(--accent)`
+                        : undefined,
+                  }}
+                  onPointerDown={(e) => {
+                    if (e.button !== 0 || !podeArrastar(c)) return;
+                    inicioDoArraste.current = { id: c.id, x: e.clientX, y: e.clientY };
+                  }}
+                  onPointerMove={(e) => {
+                    const ini = inicioDoArraste.current;
+                    if (!ini) return;
+                    if (!arraste) {
+                      if (Math.hypot(e.clientX - ini.x, e.clientY - ini.y) < 5) return;
+                      e.currentTarget.setPointerCapture?.(e.pointerId);
+                    }
+                    setArraste({ id: ini.id, alvo: alvoSob(e.clientX) });
+                  }}
+                  onPointerUp={(e) => {
+                    const ini = inicioDoArraste.current;
+                    inicioDoArraste.current = null;
+                    if (!ini || !arraste) return;
+                    e.currentTarget.releasePointerCapture?.(e.pointerId);
+                    engolirClique.current = true;
+                    const alvo = arraste.alvo;
+                    setArraste(null);
+                    if (alvo) void moverColuna(ini.id, alvo);
+                  }}
+                  onPointerCancel={() => {
+                    inicioDoArraste.current = null;
+                    setArraste(null);
+                  }}
+                  onClickCapture={(e) => {
+                    if (!engolirClique.current) return;
+                    engolirClique.current = false;
+                    e.stopPropagation();
+                    e.preventDefault();
+                  }}
                 >
                   <div className="flex min-w-0 items-center gap-1">
                     <CabecalhoDaColuna
@@ -336,6 +455,19 @@ export default function TabelaDaBase({
                       config={config}
                       onConfig={(c2) => onConfig?.(c2)}
                       onCriou={() => onRecarregar?.()}
+                      moverPara={
+                        podeArrastar(c)
+                          ? {
+                              esquerda:
+                                colunas[i - 1] && colunas[i - 1].type !== "title"
+                                  ? () => void moverColuna(c.id, colunas[i - 1].id)
+                                  : undefined,
+                              direita: colunas[i + 1]
+                                ? () => void moverColuna(c.id, colunas[i + 1].id)
+                                : undefined,
+                            }
+                          : undefined
+                      }
                       onMudou={(nova, zerou) => {
                         onBase((b) => ({
                           ...b,
@@ -364,6 +496,7 @@ export default function TabelaDaBase({
                       largura={larguras[i]}
                       onPrevia={(largura) => setPrevia({ id: c.id, largura })}
                       onSoltar={(largura) => gravarLargura(c, largura)}
+                      onAjustar={() => ajustarLargura(c)}
                     />
                   )}
                 </th>
@@ -496,11 +629,14 @@ function AlcaDeLargura({
   largura,
   onPrevia,
   onSoltar,
+  onAjustar,
 }: {
   coluna: BaseColumn;
   largura: number;
   onPrevia: (l: number) => void;
   onSoltar: (l: number) => void;
+  /** Duplo clique: do tamanho do maior conteúdo. */
+  onAjustar: () => void;
 }) {
   const inicio = useRef<{ x: number; largura: number } | null>(null);
   const atual = useRef(largura);
@@ -527,11 +663,15 @@ function AlcaDeLargura({
       aria-valuemin={LARGURA_MIN}
       aria-valuemax={LARGURA_MAX}
       tabIndex={0}
-      title="Arraste para mudar a largura"
+      title="Arraste para mudar a largura; clique duas vezes para caber o conteúdo"
       // Estreita no desenho, larga no alvo (web/AGENTS.md §3): a linha azul
       // aparece no meio dos 9px, em cima da borda da célula.
       className="absolute -right-[5px] top-0 z-20 flex h-full w-[9px] cursor-col-resize touch-none justify-center opacity-0 hover:opacity-100 focus-visible:opacity-100"
       onClick={(e) => e.stopPropagation()}
+      onDoubleClick={(e) => {
+        e.stopPropagation();
+        onAjustar();
+      }}
       onPointerDown={(e) => {
         e.preventDefault();
         e.stopPropagation();
@@ -768,6 +908,27 @@ function Celula({
       );
     }
     default:
-      return <span className="block max-w-[420px] truncate">{textoDaCelula(coluna, valor)}</span>;
+      // ⚠️ `max-w-full`, e não um teto fixo: o duplo clique na borda (14/10)
+      // alarga a coluna até o texto caber, e um teto cortaria antes.
+      return <span className="block max-w-full truncate">{textoDaCelula(coluna, valor)}</span>;
   }
+}
+
+/** Mede texto com a fonte da tabela (canvas). Sem canvas (jsdom), estima. */
+function medidorDeTexto(tabela: HTMLElement | null): (texto: string, pequeno: boolean) => number {
+  const estilo = tabela ? getComputedStyle(tabela) : null;
+  const familia = estilo?.fontFamily || "sans-serif";
+  const tamanho = estilo?.fontSize || "16px";
+  let ctx: CanvasRenderingContext2D | null = null;
+  try {
+    ctx = document.createElement("canvas").getContext("2d");
+  } catch {
+    ctx = null;
+  }
+  return (texto, pequeno) => {
+    if (!ctx) return texto.length * (pequeno ? 7 : 9);
+    // As pílulas são `text-xs` semibold; a célula, o texto da tabela.
+    ctx.font = pequeno ? `600 12px ${familia}` : `400 ${tamanho} ${familia}`;
+    return ctx.measureText(texto).width;
+  };
 }

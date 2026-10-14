@@ -126,10 +126,21 @@ class RowService:
         for c in cells:
             por_linha.setdefault(c.row_id, {})[str(c.column_id)] = c.value
 
-        registro: list[dict[str, Any]] = []
+        # ⚠️ AS COLUNAS E AS PESSOAS SAO LIDAS UMA VEZ POR PEDIDO (revisao de
+        # 08/10): eram uma consulta por linha, e uma colagem pode ter 5.000.
+        colunas = await self._colunas_por_id(base)
+        limpos_por_linha: dict[uuid.UUID, dict[str, Any]] = {}
+        pessoas: set[str] = set()
         for row_id, valores in por_linha.items():
+            limpos, novas = self._limpar_com(colunas, valores, linhas[row_id].values)
+            limpos_por_linha[row_id] = limpos
+            pessoas |= novas
+        if pessoas:
+            await self._assert_pessoas_da_arvore(base, pessoas)
+
+        registro: list[dict[str, Any]] = []
+        for row_id, limpos in limpos_por_linha.items():
             linha = linhas[row_id]
-            limpos = await self._limpar(base, valores)
             novos = dict(linha.values)
             for chave, valor in limpos.items():
                 antes = novos.get(chave)
@@ -170,10 +181,30 @@ class RowService:
     async def _limpar(
         self, base: BaseTable, valores: dict[str, Any]
     ) -> dict[str, Any]:
-        """`{id da coluna: valor limpo}`. Coluna desconhecida ou apagada e 422."""
+        """`{id da coluna: valor limpo}` de uma linha NOVA. Coluna desconhecida
+        ou apagada e 422."""
         if not valores:
             return {}
-        colunas = {str(c.id): c for c in await self._columns.list_for(base.id)}
+        limpos, pessoas = self._limpar_com(await self._colunas_por_id(base), valores, {})
+        if pessoas:
+            await self._assert_pessoas_da_arvore(base, pessoas)
+        return limpos
+
+    async def _colunas_por_id(self, base: BaseTable) -> dict[str, Any]:
+        return {str(c.id): c for c in await self._columns.list_for(base.id)}
+
+    @staticmethod
+    def _limpar_com(
+        colunas: dict[str, Any], valores: dict[str, Any], atuais: dict[str, Any]
+    ) -> tuple[dict[str, Any], set[str]]:
+        """Os valores limpos e as pessoas a conferir na arvore.
+
+        ⚠️ SO O QUE A CELULA AINDA NAO TINHA E CONFERIDO (revisao de 08/10).
+        Conferir tudo travava a celula: com a Juliana desativada numa celula
+        Pessoa, acrescentar a Ana dava 422 "fora do time" -- a tela devolve
+        os ids que ja estavam --, e o mesmo com uma opcao apagada numa selecao
+        multipla. D8/D17: quem saiu FICA na celula, so nao e escolhido de novo.
+        """
         limpos: dict[str, Any] = {}
         pessoas: set[str] = set()
         for chave, valor in valores.items():
@@ -183,13 +214,17 @@ class RowService:
                     "Coluna desconhecida nesta base.",
                     details={"field": "values", "column_id": str(chave)},
                 )
-            limpo = clean_value(coluna, valor)
+            ja_tinha: set[str] = set()
+            if coluna.type in ("select", "multi_select", "person"):
+                # Ids (texto); o link guarda dicionarios e nao entra aqui.
+                antes = atuais.get(str(coluna.id))
+                itens = antes if isinstance(antes, list) else [antes] if antes else []
+                ja_tinha = {str(v) for v in itens}
+            limpo = clean_value(coluna, valor, ja_tinha=ja_tinha)
             if coluna.type == "person" and limpo:
-                pessoas.update(limpo)
+                pessoas.update(set(limpo) - ja_tinha)
             limpos[str(coluna.id)] = limpo
-        if pessoas:
-            await self._assert_pessoas_da_arvore(base, pessoas)
-        return limpos
+        return limpos, pessoas
 
     async def _assert_pessoas_da_arvore(self, base: BaseTable, ids: set[str]) -> None:
         """D8: a coluna Pessoa oferece os membros ATIVOS da arvore da base. Quem
