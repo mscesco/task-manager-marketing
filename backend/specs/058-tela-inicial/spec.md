@@ -1,7 +1,7 @@
 # Spec 058 — Tela inicial do time
 
-**Status:** escrita em 14/10/2026, a partir da ideia dela e das três decisões
-que ela respondeu no mesmo dia (§4). **Aguarda aprovação** das propostas da §10.
+**Status:** escrita e **aprovada em 14/10/2026** — as três decisões dela (§4) e
+as seis propostas da §10, todas aceitas; na 4 ela acrescentou as bloqueadas.
 **Escopo:** backend (uma rota de leitura agregada e um verbo novo) e front (a
 tela `/inicio`, os cards e a troca da tela de entrada).
 **Placar na abertura:** backend **2202**, front **1750** (`main` em `b0cf6eb`).
@@ -98,16 +98,26 @@ depois 1, 4 e 11.
 
 - **Aberta** = em coluna **não terminal** (nem `DONE` nem `CANCELLED`), não
   arquivada, não apagada.
-- **Atrasada** = aberta, com prazo, e **a regra do front**: sem hora, vence no
+- **Cobra prazo** = em coluna com `notify_deadline` ligado — a mesma pergunta
+  do selo de prazo do quadro (`avisaPrazo`, `lib/coluna.ts`). ⚠️ É assim que
+  **"bloqueada"** entra (decisão dela, §10.4): a coluna Bloqueado nasce com o
+  aviso de prazo desligado, e o mesmo vale para qualquer coluna que a pessoa
+  crie assim ("Aguardando cliente"). Olhar o `status = BLOCKED` não serviria —
+  quadro de quatro colunas não tem esse status.
+- **Atrasada** = aberta, **cobra prazo**, com prazo, e **a regra do front**: sem hora, vence no
   fim do dia (`due_date < hoje`); com hora, `data + hora < agora`. A tela e o
   painel não podem discordar do selo vermelho do card no quadro.
 - **Concluída** = em coluna `DONE`, **arquivada ou não** (§10, proposta 6),
-  não apagada. **Cancelada não conta** nem como concluída nem no total da
-  semana (§10, proposta 4).
+  não apagada.
+- **O total da semana** = concluídas + abertas que **cobram prazo**.
+  **Cancelada e bloqueada ficam fora** (§10, proposta 4): "14 de 20" é de
+  tarefas que ainda valia a pena fazer agora.
 - **Da semana** = `due_date` entre segunda e domingo da semana corrente.
 - **Subtarefas contam** (§10, proposta 3): o trabalho existe nelas, e o
   responsável de uma subtarefa está mesmo ocupado com ela.
-- **Tarefa com dois responsáveis conta para os dois** no card 1.
+- **Tarefa com dois responsáveis conta para os dois** no card 1. A carga
+  conta TODA tarefa aberta (inclusive a bloqueada: ainda é dela); a parte
+  destacada é a das atrasadas.
 - **Do time** = a mesma conta de `under_team_id` da listagem de tarefas (o
   time e os subtimes), e **dentro da lente** de quem pergunta. A tela nunca
   conta tarefa que a pessoa não poderia abrir.
@@ -200,14 +210,14 @@ Sem migration: nada novo é gravado.
 
 ---
 
-## 10. Propostas que nenhuma pergunta cobriu — PRECISAM DA APROVAÇÃO DELA
+## 10. Propostas que nenhuma pergunta cobriu — APROVADAS EM 14/10
 
 1. **A tela inicial SUBSTITUI o quadro como entrada**, e o quadro fica a um
    clique ("Início" é o primeiro item do menu, "Quadros" continua logo abaixo).
 2. **Primeira entrega: cards 1, 2, 3, 4, 6 e 11.**
 3. **Subtarefas contam** em todos os cards (§5.1).
 4. **Cancelada fica fora** do total da semana: "14 de 20" é de tarefas que
-   ainda valia a pena fazer.
+   ainda valia a pena fazer. **Ela acrescentou: bloqueada também** (§5.1).
 5. **Card 1 mostra todos os membros do time, inclusive quem está com zero** —
    quem está livre é tão útil de ver quanto quem está cheio. Até 10 na tela, com
    "Ver todos".
