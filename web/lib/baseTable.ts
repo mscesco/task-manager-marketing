@@ -326,3 +326,68 @@ export function avisoDeLinhas(
 // --------------------------------------------------------------- excluir
 /** D26: excluir pede o nome -- a regra unica de `lib/confirmarNome.ts`. */
 export { nomeConfere } from "./confirmarNome";
+
+// ------------------------------------------------------- caber o conteúdo
+// Duplo clique na borda do cabeçalho (pedido dela, 14/10, "como no Notion"):
+// a coluna fica do tamanho do maior conteúdo numa linha só.
+
+/** O que a célula desenha, em pedaços que se medem. `capsula` = cada texto é
+ *  uma pílula (seleção, pessoa, link), com borda e respiro em volta. */
+export type PedacosDaCelula = {
+  textos: string[];
+  capsula: "nenhuma" | "simples" | "link";
+};
+
+export function pedacosDaCelula(
+  coluna: BaseColumn,
+  valor: BaseCellValue | undefined,
+  daArvore: ReadonlySet<string>,
+  todos: ReadonlyMap<string, PessoaConhecida>
+): PedacosDaCelula {
+  const ids = Array.isArray(valor)
+    ? (valor as unknown[]).filter((x): x is string => typeof x === "string")
+    : typeof valor === "string"
+      ? [valor]
+      : [];
+  switch (coluna.type) {
+    case "select":
+    case "multi_select":
+      return {
+        // Opção apagada não aparece na célula (D17), e não conta.
+        textos: ids.flatMap((id) => coluna.options.find((o) => o.id === id)?.label ?? []),
+        capsula: "simples",
+      };
+    case "person":
+      return { textos: ids.map((id) => rotuloDePessoa(id, daArvore, todos)), capsula: "simples" };
+    case "link":
+      return { textos: linksDaCelula(valor).map(nomeDoLink), capsula: "link" };
+    case "checkbox":
+      return { textos: [], capsula: "nenhuma" };
+    default: {
+      const t = textoDaCelula(coluna, valor);
+      return { textos: t ? [t] : [], capsula: "nenhuma" };
+    }
+  }
+}
+
+/** Respiro de uma pílula (px-2 e a borda); a de link tem também o ícone. */
+const RESPIRO_DA_CAPSULA = { nenhuma: 0, simples: 18, link: 34 } as const;
+/** O `gap-1` entre pílulas. */
+const ENTRE_CAPSULAS = 4;
+/** O `px-2` da célula, a borda e uma folga para a última letra não encostar. */
+export const RESPIRO_DA_CELULA = 26;
+
+/** A largura que o conteúdo pede, com `medir` dizendo quanto ocupa cada texto
+ *  (`pequeno` = o texto da pílula, `text-xs`). */
+export function larguraDoConteudo(
+  p: PedacosDaCelula,
+  medir: (texto: string, pequeno: boolean) => number
+): number {
+  if (p.textos.length === 0) return 0;
+  const pequeno = p.capsula !== "nenhuma";
+  const textos = p.textos.reduce((soma, t) => soma + medir(t, pequeno), 0);
+  const respiro =
+    p.textos.length * RESPIRO_DA_CAPSULA[p.capsula] +
+    (pequeno ? (p.textos.length - 1) * ENTRE_CAPSULAS : 0);
+  return textos + respiro + RESPIRO_DA_CELULA;
+}

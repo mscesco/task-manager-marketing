@@ -24,6 +24,8 @@ import { useRef, useState, type MutableRefObject, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import {
   ArrowDownUp,
+  ArrowLeft,
+  ArrowRight,
   ArrowLeftToLine,
   ArrowRightToLine,
   Calendar,
@@ -89,6 +91,7 @@ export default function CabecalhoDaColuna({
   onMudou,
   onApagou,
   onCriou,
+  moverPara,
 }: {
   baseId: string;
   coluna: BaseColumn;
@@ -103,6 +106,12 @@ export default function CabecalhoDaColuna({
   onApagou: (id: string) => void;
   /** Coluna nova (inserir, duplicar). A página recarrega -- as outras andaram. */
   onCriou: () => void;
+  /**
+   * Mover a coluna uma casa (14/10) -- a alternativa de TECLADO ao arrastar o
+   * cabeçalho (web/AGENTS.md: todo arraste tem um caminho sem mouse). Lado
+   * ausente = não dá para ir (a ponta, ou o título do lado).
+   */
+  moverPara?: { esquerda?: () => void; direita?: () => void };
 }) {
   const avisar = useAvisar();
   const eTitulo = coluna.type === "title";
@@ -273,6 +282,32 @@ export default function CabecalhoDaColuna({
                   }
                 />
               </ItemComSub>
+            )}
+
+            {moverPara && (moverPara.esquerda || moverPara.direita) && (
+              <>
+                <Separador />
+                {moverPara.esquerda && (
+                  <Item
+                    rotulo="Mover para a esquerda"
+                    icone={ArrowLeft}
+                    onClick={() => {
+                      fechar();
+                      moverPara.esquerda?.();
+                    }}
+                  />
+                )}
+                {moverPara.direita && (
+                  <Item
+                    rotulo="Mover para a direita"
+                    icone={ArrowRight}
+                    onClick={() => {
+                      fechar();
+                      moverPara.direita?.();
+                    }}
+                  />
+                )}
+              </>
             )}
 
             {podeEditarVisao && (

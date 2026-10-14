@@ -112,6 +112,28 @@ export function larguraArrastada(inicial: number, deslocamento: number): number 
   return Math.min(LARGURA_MAX, Math.max(LARGURA_MIN, Math.round(inicial + deslocamento)));
 }
 
+/** Duplo clique na borda (14/10): a maior das larguras pedidas, dentro dos
+ *  limites do servidor. Coluna vazia volta ao mínimo que o cabeçalho pede. */
+export function larguraQueCabe(pedidas: readonly number[]): number {
+  return larguraArrastada(0, Math.ceil(Math.max(0, ...pedidas)));
+}
+
+/** Arrastar a coluna (14/10): a ordem nova, levando `id` para o lugar de
+ *  `alvo`. É o que o servidor faz com as posições (`column.move`): indo para a
+ *  direita ela cai DEPOIS do alvo; para a esquerda, ANTES. */
+export function ordemAoArrastar<T extends { id: string }>(
+  colunas: readonly T[],
+  id: string,
+  alvo: string
+): T[] {
+  const de = colunas.findIndex((c) => c.id === id);
+  const para = colunas.findIndex((c) => c.id === alvo);
+  if (de < 0 || para < 0 || de === para) return [...colunas];
+  const resto = colunas.filter((c) => c.id !== id);
+  const lugar = resto.findIndex((c) => c.id === alvo) + (para > de ? 1 : 0);
+  return [...resto.slice(0, lugar), colunas[de], ...resto.slice(lugar)];
+}
+
 // --------------------------------------------------------------- operadores
 export type OpcaoDeOperador = { id: OperadorDeFiltro; label: string; precisaValor: boolean };
 

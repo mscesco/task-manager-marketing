@@ -130,6 +130,36 @@ class BaseColumnRepository(BaseRepository[BaseColumn]):
             .execution_options(synchronize_session="fetch")
         )
 
+    async def move(self, base_id: uuid.UUID, coluna: BaseColumn, destino: int) -> None:
+        """Leva `coluna` para `destino`, e as colunas no caminho andam uma casa
+        para o lado de onde ela saiu (vivas e apagadas, como `shift_from`).
+
+        ⚠️ ARRASTAR NAO PODE SO TROCAR O NUMERO (14/10): duas colunas com a
+        mesma posicao ficariam na ordem do id, e a que a pessoa soltou poderia
+        cair do outro lado da vizinha.
+        """
+        origem = coluna.position
+        if destino == origem:
+            return
+        if destino > origem:
+            faixa = (BaseColumn.position > origem) & (BaseColumn.position <= destino)
+            passo = -1
+        else:
+            faixa = (BaseColumn.position >= destino) & (BaseColumn.position < origem)
+            passo = 1
+        await self.session.execute(
+            update(BaseColumn)
+            .where(
+                self._tenant_clause(),
+                BaseColumn.base_id == base_id,
+                BaseColumn.id != coluna.id,
+                faixa,
+            )
+            .values(position=BaseColumn.position + passo)
+            .execution_options(synchronize_session="fetch")
+        )
+        coluna.position = destino
+
     async def next_position(self, base_id: uuid.UUID) -> int:
         """Depois da ultima -- contando as apagadas, para o desfazer devolver a
         coluna ao lugar dela sem colidir."""

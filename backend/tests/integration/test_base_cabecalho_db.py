@@ -117,3 +117,68 @@ async def test_congelar_e_aceito_na_config_da_visao(db) -> None:
             m["base"], m["visao_padrao"], config={"frozen_column": str(m["coluna"])}
         )
     assert visao.config == {"frozen_column": str(m["coluna"])}
+
+
+# ------------------------------------------------------------ arrastar (14/10)
+
+
+async def _tres_colunas(db, m: dict) -> None:
+    """Titulo (1), Plataforma (2), Data (3), Nota (4)."""
+    with _como(m):
+        svc = BaseService(db)
+        await svc.create_column(m["base"], name="Data", type="date")
+        await svc.create_column(m["base"], name="Nota", type="text")
+
+
+async def _id(db, m: dict, nome: str):
+    with _como(m):
+        detail = await BaseService(db).get_detail(m["base"])
+    return next(c.id for c in detail.columns if c.name == nome)
+
+
+async def test_arrastar_para_a_direita_toma_o_lugar_e_as_do_caminho_voltam(db) -> None:
+    m = await _mundo(db)
+    await _tres_colunas(db, m)
+    with _como(m):
+        await BaseService(db).update_column(
+            m["base"], m["coluna"], UpdateColumnCommand(position=4)
+        )
+    assert await _ordem(db, m) == ["Título", "Data", "Nota", "Plataforma"]
+    # ⚠️ sem posicao repetida: so trocar o numero deixaria duas no 4
+    with _como(m):
+        detail = await BaseService(db).get_detail(m["base"])
+    assert [c.position for c in detail.columns] == [1, 2, 3, 4]
+
+
+async def test_arrastar_para_a_esquerda(db) -> None:
+    m = await _mundo(db)
+    await _tres_colunas(db, m)
+    nota = await _id(db, m, "Nota")
+    with _como(m):
+        await BaseService(db).update_column(m["base"], nota, UpdateColumnCommand(position=2))
+    assert await _ordem(db, m) == ["Título", "Nota", "Plataforma", "Data"]
+
+
+async def test_o_ctrl_z_desfaz_o_arraste_inteiro(db) -> None:
+    m = await _mundo(db)
+    await _tres_colunas(db, m)
+    with _como(m):
+        await BaseService(db).update_column(
+            m["base"], m["coluna"], UpdateColumnCommand(position=4)
+        )
+        undo = UndoService(db)
+        r = await undo.undo(m["base"])
+        assert (r.applied, r.kind) == (True, "column.move")
+        assert await _ordem(db, m) == ["Título", "Plataforma", "Data", "Nota"]
+        assert (await undo.redo(m["base"])).applied
+    assert await _ordem(db, m) == ["Título", "Data", "Nota", "Plataforma"]
+
+
+async def test_renomear_nao_vira_movimento(db) -> None:
+    m = await _mundo(db)
+    with _como(m):
+        await BaseService(db).update_column(
+            m["base"], m["coluna"], UpdateColumnCommand(name="Rede")
+        )
+        r = await UndoService(db).undo(m["base"])
+    assert r.kind == "column.update"

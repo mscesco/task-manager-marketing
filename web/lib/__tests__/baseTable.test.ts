@@ -6,10 +6,12 @@ import {
   corDaPessoa,
   dataParaTela,
   interpretarDigitado,
+  larguraDoConteudo,
   linksDaCelula,
   nomeDoLink,
   mover,
   nomeConfere,
+  pedacosDaCelula,
   proximaCor,
   rotuloDePessoa,
   textoDaCelula,
@@ -202,5 +204,46 @@ describe("links da célula (fatia J)", () => {
         { title: "", url: "https://drive.google.com/x" },
       ])
     ).toBe("Post, drive.google.com");
+  });
+});
+
+describe("caber o conteúdo (duplo clique na borda, 14/10)", () => {
+  // Cada letra mede 10 (a pílula, 5): a conta fica legível.
+  const medir = (t: string, pequeno: boolean) => t.length * (pequeno ? 5 : 10);
+  const NINGUEM = new Set<string>();
+  const SEM_CADASTRO = new Map();
+
+  it("texto: o texto e o respiro da célula", () => {
+    const p = pedacosDaCelula(col("text"), "abcd", NINGUEM, SEM_CADASTRO);
+    expect(p).toEqual({ textos: ["abcd"], capsula: "nenhuma" });
+    expect(larguraDoConteudo(p, medir)).toBe(40 + 26);
+  });
+
+  it("seleção múltipla: cada pílula com o seu respiro, e o espaço entre elas", () => {
+    const c = {
+      ...col("multi_select"),
+      options: [
+        { id: "a", label: "Reels", color: "blue" },
+        { id: "b", label: "Post", color: "red" },
+      ],
+    } as BaseColumn;
+    const p = pedacosDaCelula(c, ["a", "b", "apagada"], NINGUEM, SEM_CADASTRO);
+    // ⚠️ a opção apagada não aparece na célula, e não conta
+    expect(p.textos).toEqual(["Reels", "Post"]);
+    expect(larguraDoConteudo(p, medir)).toBe(25 + 20 + 2 * 18 + 4 + 26);
+  });
+
+  it("pessoa mede o rótulo que a tela mostra", () => {
+    const p = pedacosDaCelula(
+      col("person"),
+      ["u1"],
+      NINGUEM,
+      new Map([["u1", { name: "Ana", is_active: false }]])
+    );
+    expect(p.textos).toEqual(["Ana (inativo)"]);
+  });
+
+  it("vazia não pede nada", () => {
+    expect(larguraDoConteudo(pedacosDaCelula(col("text"), undefined, NINGUEM, SEM_CADASTRO), medir)).toBe(0);
   });
 });

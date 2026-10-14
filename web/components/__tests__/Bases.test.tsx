@@ -386,6 +386,71 @@ describe("TabelaDaBase", () => {
     );
   });
 
+  it("duplo clique na borda: a coluna fica do tamanho do maior conteúdo (14/10)", async () => {
+    vi.mocked(api.updateBaseColumn).mockResolvedValue({ ...TITULO, width: 476 });
+    // jsdom não tem canvas (e reclama no console): a medida cai na estimativa.
+    const semCanvas = vi
+      .spyOn(HTMLCanvasElement.prototype, "getContext")
+      .mockReturnValue(null);
+    render(
+      <Montada
+        base={detalhe()}
+        linhas={[linha("r1", { "c-titulo": "curto" }), linha("r2", { "c-titulo": "x".repeat(50) })]}
+      />
+    );
+    const alca = screen.getByRole("separator", { name: "Largura da coluna Título" });
+    fireEvent.doubleClick(alca);
+    // jsdom não tem canvas: 9px por letra, mais o respiro da célula (26).
+    await waitFor(() =>
+      expect(api.updateBaseColumn).toHaveBeenCalledWith("b1", "c-titulo", { width: 50 * 9 + 26 })
+    );
+    semCanvas.mockRestore();
+  });
+
+  it("arrastar o cabeçalho leva a coluna para o lugar do alvo (14/10)", async () => {
+    vi.mocked(api.updateBaseColumn).mockResolvedValue({ ...NUMERO, position: 3 });
+    render(<Montada base={detalhe()} linhas={[]} />);
+    const ths = screen.getAllByRole("columnheader");
+    // jsdom não faz layout: cada cabeçalho ganha 100px, lado a lado.
+    ths.forEach((th, i) => {
+      th.getBoundingClientRect = () =>
+        ({ left: i * 100, right: (i + 1) * 100, top: 0, bottom: 30 }) as DOMRect;
+    });
+    const alcance = ths[1];
+    fireEvent.pointerDown(alcance, { button: 0, clientX: 150, clientY: 10, pointerId: 1 });
+    fireEvent.pointerMove(alcance, { clientX: 250, clientY: 10, pointerId: 1 });
+    expect(alcance.className).toContain("opacity-50");
+    fireEvent.pointerUp(alcance, { clientX: 250, clientY: 10, pointerId: 1 });
+    await waitFor(() =>
+      expect(api.updateBaseColumn).toHaveBeenCalledWith("b1", "c-num", { position: 3 })
+    );
+    // A ordem muda na hora, antes de o servidor responder.
+    const nomes = screen.getAllByRole("columnheader").map((th) => th.textContent);
+    expect(nomes.slice(0, 3)).toEqual(["Título", "Responsável", "Alcance"]);
+  });
+
+  it("⚠️ mexer menos de 5px é clique, e não arraste: nada se move", () => {
+    render(<Montada base={detalhe()} linhas={[]} />);
+    const alcance = screen.getAllByRole("columnheader")[1];
+    fireEvent.pointerDown(alcance, { button: 0, clientX: 150, clientY: 10, pointerId: 1 });
+    fireEvent.pointerMove(alcance, { clientX: 153, clientY: 10, pointerId: 1 });
+    fireEvent.pointerUp(alcance, { clientX: 153, clientY: 10, pointerId: 1 });
+    expect(api.updateBaseColumn).not.toHaveBeenCalled();
+    expect(alcance.className).not.toContain("opacity-50");
+  });
+
+  it("o teclado também move a coluna, pelo menu dela; o título não sai do lugar", async () => {
+    vi.mocked(api.updateBaseColumn).mockResolvedValue({ ...NUMERO, position: 3 });
+    render(<Montada base={detalhe()} linhas={[]} />);
+    fireEvent.click(screen.getByRole("button", { name: /^Coluna Alcance/ }));
+    // À esquerda está o título: não oferece.
+    expect(screen.queryByRole("button", { name: "Mover para a esquerda" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Mover para a direita" }));
+    await waitFor(() =>
+      expect(api.updateBaseColumn).toHaveBeenCalledWith("b1", "c-num", { position: 3 })
+    );
+  });
+
   it("⚠️ o servidor diz que não: sem nova linha, sem nova coluna, sem apagar, e a célula não edita", () => {
     render(
       <Montada

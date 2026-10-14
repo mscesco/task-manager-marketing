@@ -15,6 +15,8 @@ Os `kind` e o que cada `payload` carrega (a tabela da spec §9.2):
     column.update   {"column", "before": {campos}, "after": {campos}}
                     -- nome, posicao, largura e OPCOES (criar, renomear,
                        recolorir e reordenar opcao cabem aqui)
+    column.move     {"column", "from", "to"} -- arrastar a coluna (14/10); as do
+                    caminho andam uma casa, e o desfazer anda de volta
     column.retype   {"column", "before": {"type", "options"},
                      "after": {"type", "options"}, "values": {linha: valor}}
     column.delete   {"column"}
@@ -32,6 +34,7 @@ enquanto ela nao fez nada depois de desfazer, como em qualquer editor.
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -50,6 +53,7 @@ VERB_OF_KIND: dict[str, str] = {
     "column.create": "base_column.create",
     "column.update": "base_column.update",
     "column.retype": "base_column.update",
+    "column.move": "base_column.update",
     "column.delete": "base_column.delete",
     "option.delete": "base_column.delete",
     "view.create": "base_view.create",
@@ -67,7 +71,19 @@ async def record(
     repo = BaseChangeRepository(session)
     actor = require_tenant().user_id
     await repo.drop_undone(base_id, actor)
-    repo.add(BaseChange(base_id=base_id, actor_id=actor, kind=kind, payload=payload))
+    # ⚠️ O HORARIO VEM DAQUI, e nao do `now()` do banco (14/10): o `now()` e
+    # o da TRANSACAO, e duas acoes no mesmo pedido (ou num teste) empatavam --
+    # a pilha desempatava pelo uuid, ao acaso, e o Ctrl+Z podia desfazer a
+    # acao errada.
+    repo.add(
+        BaseChange(
+            base_id=base_id,
+            actor_id=actor,
+            kind=kind,
+            payload=payload,
+            created_at=datetime.now(UTC),
+        )
+    )
     await session.flush()
     # Fatia G: toda acao do diario e tambem um aviso ao vivo -- e sai no MESMO
     # commit. Um lugar so, para nenhuma acao esquecer de avisar.

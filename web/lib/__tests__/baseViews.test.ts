@@ -11,6 +11,8 @@ import {
   diasDesdeEpoca,
   janelaDoMes,
   larguraArrastada,
+  larguraQueCabe,
+  ordemAoArrastar,
   mesDaJanela,
   rotuloDoDia,
   somarDias,
@@ -281,5 +283,27 @@ describe("link em lista (fatia J)", () => {
       sorts: [{ column_id: "l", direction: "asc" }],
     }).map((l) => l.id);
     expect(ordem).toEqual(["a", "z"]);
+  });
+});
+
+describe("ajustar e arrastar a coluna (14/10)", () => {
+  it("larguraQueCabe: a maior, dentro dos limites", () => {
+    expect(larguraQueCabe([120.2, 300.4, 90])).toBe(301);
+    expect(larguraQueCabe([5000])).toBe(LARGURA_MAX);
+    expect(larguraQueCabe([0])).toBe(LARGURA_MIN);
+  });
+
+  const C = ["t", "a", "b", "c"].map((id) => ({ id }));
+  const ids = (cs: { id: string }[]) => cs.map((c) => c.id).join("");
+
+  it("para a direita cai DEPOIS do alvo, para a esquerda ANTES (como o servidor)", () => {
+    expect(ids(ordemAoArrastar(C, "a", "c"))).toBe("tbca");
+    expect(ids(ordemAoArrastar(C, "c", "a"))).toBe("tcab");
+    expect(ids(ordemAoArrastar(C, "a", "b"))).toBe("tbac");
+  });
+
+  it("o mesmo lugar, ou id desconhecido, não muda nada", () => {
+    expect(ids(ordemAoArrastar(C, "a", "a"))).toBe("tabc");
+    expect(ids(ordemAoArrastar(C, "x", "a"))).toBe("tabc");
   });
 });
