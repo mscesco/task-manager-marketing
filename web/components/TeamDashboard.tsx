@@ -8,10 +8,16 @@
 //
 // O DESENHO (pedido dela, 14/10, com uma referência de painel em blocos):
 // - em cima, QUATRO NÚMEROS GRANDES; o primeiro, a semana, em destaque;
-// - embaixo, uma grade de blocos de tamanhos diferentes: o círculo da semana
-//   GRANDE e quadrado (ocupa duas linhas), os próximos 7 dias em colunas, a
-//   carga por pessoa larga. `grid-flow-row-dense` deixa o navegador encaixar
-//   os blocos sem buraco.
+// - embaixo, uma grade de blocos de tamanhos diferentes, SEM BURACO (14/10,
+//   ela viu o canto de baixo vazio). No `xl`, quatro colunas:
+//
+//     gestor:   [círculo ][próximos][atrasadas][minhas ]
+//               [círculo ][ carga por pessoa  ][minhas ]
+//     operador: [círculo ][      minhas (3)             ]
+//               [círculo ][ próximos (2)     ][atrasadas]
+//
+//   O círculo ocupa duas linhas (o quadrado que ela pediu); "minhas" também,
+//   no gestor. Os tamanhos moram em `SPAN`, um lugar só.
 //
 // ANIMAÇÃO, com o `motion` que o app já usa:
 // - barras e colunas crescem por `scaleX`/`scaleY`, e NÃO por largura/altura
@@ -57,7 +63,13 @@ export default function TeamDashboard({ data, links }: { data: DashboardResponse
       </div>
       <div className="grid grid-flow-row-dense grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
         {layout.cards.map((c) => (
-          <Card key={c} card={c} data={data} links={links} wideMine={layout.wideMine} />
+          <Card
+            key={c}
+            card={c}
+            data={data}
+            links={links}
+            className={SPAN[layout.manager ? "manager" : "operator"][c]}
+          />
         ))}
       </div>
     </div>
@@ -184,37 +196,54 @@ function StatTile({
 }
 
 // ------------------------------------------------------------------ cards
+/** Quanto cada bloco ocupa na grade (ver o desenho no topo). */
+const SPAN: Record<"manager" | "operator", Record<DashboardCard, string>> = {
+  manager: {
+    weekRing: "md:row-span-2",
+    aheadChart: "",
+    overdueList: "",
+    workload: "md:col-span-2",
+    mine: "xl:row-span-2",
+  },
+  operator: {
+    weekRing: "md:row-span-2",
+    mine: "xl:col-span-3",
+    aheadChart: "xl:col-span-2",
+    overdueList: "",
+    workload: "",
+  },
+};
+
 function Card({
   card,
   data,
   links,
-  wideMine,
+  className,
 }: {
   card: DashboardCard;
   data: DashboardResponse;
   links: Links;
-  wideMine: boolean;
+  className: string;
 }) {
   switch (card) {
     case "weekRing":
-      return <WeekRingCard data={data} />;
+      return <WeekRingCard data={data} className={className} />;
     case "aheadChart":
-      return <AheadChartCard data={data} />;
+      return <AheadChartCard data={data} className={className} />;
     case "overdueList":
-      return <OverdueListCard data={data} />;
+      return <OverdueListCard data={data} className={className} />;
     case "workload":
-      return data.workload ? <WorkloadCard people={data.workload} /> : null;
+      return data.workload ? <WorkloadCard people={data.workload} className={className} /> : null;
     case "mine":
-      return <MineCard data={data} link={links.mine} wide={wideMine} />;
+      return <MineCard data={data} link={links.mine} className={className} />;
   }
 }
 
-function WeekRingCard({ data }: { data: DashboardResponse }) {
+function WeekRingCard({ data, className }: { data: DashboardResponse; className: string }) {
   const { done, total, start, end } = data.week;
   const pct = weekPercent(done, total);
   return (
-    // ⚠️ O quadrado: duas linhas de altura na grade (`row-span-2`).
-    <CardFrame title="Progresso da semana" subtitle={weekLabel(start, end)} className="md:row-span-2">
+    <CardFrame title="Progresso da semana" subtitle={weekLabel(start, end)} className={className}>
       <div className="flex flex-1 flex-col items-center justify-center gap-4 py-2">
         <ProgressRing percent={pct} size={188} stroke={18} label="Concluídas na semana" />
         <ul className="m-0 flex list-none flex-wrap justify-center gap-x-4 gap-y-1 p-0 text-sm">
@@ -238,11 +267,11 @@ function WeekRingCard({ data }: { data: DashboardResponse }) {
 }
 
 /** Colunas verticais, uma por dia -- hoje em destaque. */
-function AheadChartCard({ data }: { data: DashboardResponse }) {
+function AheadChartCard({ data, className }: { data: DashboardResponse; className: string }) {
   const reduce = useReducedMotion();
   const max = Math.max(1, ...data.due_ahead.map((d) => d.count));
   return (
-    <CardFrame title="Próximos 7 dias" subtitle="tarefas que vencem em cada dia">
+    <CardFrame title="Próximos 7 dias" subtitle="tarefas que vencem em cada dia" className={className}>
       <ul className="m-0 grid flex-1 list-none grid-cols-7 items-end gap-2 p-0 pt-2">
         {data.due_ahead.map((d, i) => {
           const today = d.date === data.today;
@@ -271,9 +300,9 @@ function AheadChartCard({ data }: { data: DashboardResponse }) {
   );
 }
 
-function OverdueListCard({ data }: { data: DashboardResponse }) {
+function OverdueListCard({ data, className }: { data: DashboardResponse; className: string }) {
   return (
-    <CardFrame title="Atrasadas" subtitle="as mais antigas primeiro">
+    <CardFrame title="Atrasadas" subtitle="as mais antigas primeiro" className={className}>
       {data.overdue_total === 0 ? (
         <Empty>Nenhuma tarefa atrasada.</Empty>
       ) : (
@@ -283,7 +312,13 @@ function OverdueListCard({ data }: { data: DashboardResponse }) {
   );
 }
 
-function WorkloadCard({ people }: { people: NonNullable<DashboardResponse["workload"]> }) {
+function WorkloadCard({
+  people,
+  className,
+}: {
+  people: NonNullable<DashboardResponse["workload"]>;
+  className: string;
+}) {
   const [showAll, setShowAll] = useState(false);
   const max = Math.max(1, ...people.map((p) => p.open));
   const shown = showAll ? people : people.slice(0, WORKLOAD_PREVIEW);
@@ -291,7 +326,7 @@ function WorkloadCard({ people }: { people: NonNullable<DashboardResponse["workl
     <CardFrame
       title="Tarefas abertas por pessoa"
       subtitle="a parte vermelha é a atrasada"
-      className="md:col-span-2"
+      className={className}
     >
       {people.length === 0 ? (
         <Empty>Ninguém neste time ainda.</Empty>
@@ -336,10 +371,18 @@ function WorkloadCard({ people }: { people: NonNullable<DashboardResponse["workl
   );
 }
 
-function MineCard({ data, link, wide }: { data: DashboardResponse; link: string; wide: boolean }) {
+function MineCard({
+  data,
+  link,
+  className,
+}: {
+  data: DashboardResponse;
+  link: string;
+  className: string;
+}) {
   const { overdue, overdue_total, due_today, due_today_total } = data.mine;
   return (
-    <CardFrame title="Minhas para hoje" className={wide ? "xl:col-span-3" : ""}>
+    <CardFrame title="Minhas para hoje" className={className}>
       {overdue_total + due_today_total === 0 ? (
         <Empty>Nada atrasado nem vencendo hoje.</Empty>
       ) : (

@@ -26,10 +26,10 @@ function resposta(over: Partial<DashboardResponse> = {}): DashboardResponse {
 }
 
 describe("dashboardLayout", () => {
-  it("operador (sem a carga): o que é dele logo depois do círculo, e larga", () => {
+  it("operador (sem a carga): o que é dele logo depois do círculo", () => {
     const l = dashboardLayout(resposta());
     expect(l.cards).toEqual(["weekRing", "mine", "aheadChart", "overdueList"]);
-    expect(l.wideMine).toBe(true);
+    expect(l.manager).toBe(false);
   });
 
   it("⚠️ sem a fila, o quarto número vira 'Minhas atrasadas' -- a fileira não fica com buraco", () => {
@@ -44,10 +44,10 @@ describe("dashboardLayout", () => {
     ).toEqual(["weekDone", "overdue", "dueToday", "queue"]);
   });
 
-  it("gestor: a carga entra, e 'Minhas' volta ao tamanho normal", () => {
+  it("gestor: a carga entra", () => {
     const l = dashboardLayout(resposta({ workload: [] }));
     expect(l.cards).toEqual(["weekRing", "aheadChart", "overdueList", "workload", "mine"]);
-    expect(l.wideMine).toBe(false);
+    expect(l.manager).toBe(true);
   });
 
   it("vencem hoje = o dia de hoje do gráfico", () => {

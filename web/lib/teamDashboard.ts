@@ -19,8 +19,8 @@ export type DashboardCard = "weekRing" | "aheadChart" | "overdueList" | "workloa
 export type DashboardLayout = {
   tiles: DashboardTile[];
   cards: DashboardCard[];
-  /** Sem a carga, "Minhas" ocupa o lugar dela e fica larga. */
-  wideMine: boolean;
+  /** Quem recebe a carga por pessoa desenha a grade de gestor. */
+  manager: boolean;
 };
 
 /**
@@ -42,7 +42,7 @@ export function dashboardLayout(d: DashboardResponse): DashboardLayout {
     cards: manager
       ? ["weekRing", "aheadChart", "overdueList", "workload", "mine"]
       : ["weekRing", "mine", "aheadChart", "overdueList"],
-    wideMine: !manager,
+    manager,
   };
 }
 
