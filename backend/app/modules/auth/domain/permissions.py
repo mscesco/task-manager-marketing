@@ -220,6 +220,12 @@ _ROLE_PERMISSIONS: dict[UserTeamRole, frozenset[str]] = {
             # Spec 056, fatia A -- a base inteira (ver o bloco no topo).
             *_BASE_ESTRUTURA,
             *_BASE_CONTEUDO,
+            # ⭐ Spec 058, fatia A (D1 dela, 14/10): ver a CARGA do time por
+            # pessoa, na tela inicial. ⚠️ O verbo libera o card; QUAIS tarefas
+            # entram nele continua sendo a lente (`visible_team_ids`) -- por
+            # isso nao entra em `_OWN_TEAM_ONLY`. O OPERATOR nao recebe: ele ve
+            # a parte pessoal e os numeros gerais, sem o ranking.
+            "team_workload.read",
         }
     ),
     UserTeamRole.MANAGER: frozenset(
@@ -282,6 +288,7 @@ _ROLE_PERMISSIONS: dict[UserTeamRole, frozenset[str]] = {
             # Spec 056, fatia A -- a base inteira, na arvore dele.
             *_BASE_ESTRUTURA,
             *_BASE_CONTEUDO,
+            "team_workload.read",  # Spec 058 -- ver o bloco do ADMIN
         }
     ),
     UserTeamRole.SUPERVISOR: frozenset(
@@ -336,6 +343,8 @@ _ROLE_PERMISSIONS: dict[UserTeamRole, frozenset[str]] = {
             # execucao a alcanca (`permissions_for_actor`) -- sem regra nova.
             *_BASE_ESTRUTURA,
             *_BASE_CONTEUDO,
+            # Spec 058 (D1): gestor E SUPERVISOR veem o time inteiro.
+            "team_workload.read",
         }
     ),
     UserTeamRole.OPERATOR: frozenset(
@@ -449,6 +458,8 @@ _ORG_ROLE_PERMISSIONS: dict[OrgRole, frozenset[str]] = {
             # `test_gestor_opera_mas_nao_desfaz_a_organizacao` confere.
             *_BASE_ESTRUTURA,
             *_BASE_CONTEUDO,
+            # Spec 058 (D1): ler, nao desfaz nada.
+            "team_workload.read",
         }
     ),
 }

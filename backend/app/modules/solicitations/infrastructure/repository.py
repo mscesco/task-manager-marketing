@@ -16,6 +16,7 @@ DOIS caminhos de acesso, de proposito:
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 
 from sqlalchemy import ColumnElement, Select, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -273,6 +274,21 @@ class SolicitationRepository(BaseRepository[Solicitation]):
         )
         return (await self.session.execute(stmt)).scalar_one()
 
+
+    async def oldest_pending_at(self, team_id: uuid.UUID | None) -> datetime | None:
+        """Quando chegou a PENDING mais antiga da fila (Spec 058, card 6).
+
+        ⚠️ O MESMO recorte de `count_pending`: o card diz "3 pendentes, a mais
+        antiga ha 5 dias", e os dois numeros tem de ser da mesma fila.
+        """
+        fila = (
+            self._base_select()
+            .where(*self._recorte_de_time(team_id))
+            .where(Solicitation.status == "PENDING")
+            .subquery()
+        )
+        stmt = select(func.min(fila.c.created_at))
+        return (await self.session.execute(stmt)).scalar_one()
 
 async def get_workspace_by_slug(
     session: AsyncSession, slug: str

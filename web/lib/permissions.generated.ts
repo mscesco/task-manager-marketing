@@ -65,6 +65,7 @@ export const PERMISSIONS = [
   "task.update",
   "team.create",
   "team.move",
+  "team_workload.read",
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];
