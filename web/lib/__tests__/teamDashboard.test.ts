@@ -78,7 +78,14 @@ describe("textos", () => {
   });
 
   it("prazo de tarefa citada", () => {
-    const t = { id: "t", title: "x", parent_task_id: null };
+    const t = {
+      id: "t",
+      title: "x",
+      parent_task_id: null,
+      priority: "MEDIUM",
+      column_name: "Backlog",
+      column_color: "var(--status-backlog-dot)",
+    };
     expect(dueLabel({ ...t, due_date: "2026-10-10", due_time: null }, "2026-10-14")).toBe("10/10");
     expect(dueLabel({ ...t, due_date: "2026-10-14", due_time: "14:00:00" }, "2026-10-14")).toBe(
       "hoje 14:00"

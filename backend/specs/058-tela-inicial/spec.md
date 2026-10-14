@@ -224,3 +224,28 @@ Sem migration: nada novo é gravado.
 6. **Arquivada conta como concluída** na semana, se foi concluída nela: a
    rotina de arquivamento tira do quadro tarefas terminadas, e sem isto o
    número da semana cairia sozinho no meio dela.
+
+---
+
+## 11. Depois da aprovação (14/10)
+
+- **Layout em blocos** (pedido dela, com uma referência): quatro números
+  grandes em cima (a semana em destaque; sem a fila, o quarto é "Minhas
+  atrasadas"), e embaixo uma grade sem buraco -- o círculo da semana grande e
+  quadrado, os próximos 7 dias em colunas. Animação com o `motion`, só
+  `transform` e `pathLength`, respeitando `useReducedMotion`.
+- **Filtros de subtime e pessoa** (pedido da chefe dela: *"Na visão de
+  supervisor/gerente, teria como eu filtrar por time e por pessoa?"*, e ela
+  quer que *"todo o relatório se ajuste"*):
+  - subtime: `under_team_id` passa a ser o subtime escolhido;
+  - pessoa: `GET /dashboard?assignee_id=` -- o relatório inteiro passa a ser
+    das tarefas dela, "Minhas" vira dela, e a carga mostra só a linha dela;
+  - ⚠️ a **fila de solicitações não filtra por pessoa**: solicitação não tem
+    responsável até virar tarefa;
+  - só para quem tem `team_workload.read` (o operador recebe **403**, e não um
+    filtro ignorado que mostraria o time inteiro dizendo que é de uma pessoa);
+  - os filtros moram na URL (`?subtime=`, `?pessoa=`); clicar num nome na
+    carga também filtra.
+- **As listas de tarefas** viraram blocos clicáveis com a coluna (e a cor dela),
+  a prioridade, o prazo em pílula e a seta de "abre".
+

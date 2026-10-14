@@ -30,8 +30,9 @@
 import Link from "next/link";
 import { useState, type ReactNode } from "react";
 import { motion, useReducedMotion, type Transition } from "motion/react";
-import { ArrowUpRight } from "lucide-react";
+import { ArrowUpRight, CalendarClock, ChevronRight } from "lucide-react";
 import type { DashboardResponse, DashboardTask } from "@/lib/api";
+import { PRIORITY_COLOR, PRIORITY_LABEL } from "@/lib/status";
 import {
   WORKLOAD_PREVIEW,
   ageLabel,
@@ -52,7 +53,19 @@ type Links = {
   queue: string;
 };
 
-export default function TeamDashboard({ data, links }: { data: DashboardResponse; links: Links }) {
+export default function TeamDashboard({
+  data,
+  links,
+  personName = null,
+  onPickPerson,
+}: {
+  data: DashboardResponse;
+  links: Links;
+  /** Filtrado por uma pessoa (14/10): "Minhas" vira dela. */
+  personName?: string | null;
+  /** Clicar num nome da carga filtra por ele. Ausente = sem o filtro. */
+  onPickPerson?: (userId: string) => void;
+}) {
   const layout = dashboardLayout(data);
   return (
     <div className="flex flex-col gap-4">
@@ -69,6 +82,8 @@ export default function TeamDashboard({ data, links }: { data: DashboardResponse
             data={data}
             links={links}
             className={SPAN[layout.manager ? "manager" : "operator"][c]}
+            personName={personName}
+            onPickPerson={onPickPerson}
           />
         ))}
       </div>
@@ -219,11 +234,15 @@ function Card({
   data,
   links,
   className,
+  personName,
+  onPickPerson,
 }: {
   card: DashboardCard;
   data: DashboardResponse;
   links: Links;
   className: string;
+  personName: string | null;
+  onPickPerson?: (userId: string) => void;
 }) {
   switch (card) {
     case "weekRing":
@@ -233,9 +252,11 @@ function Card({
     case "overdueList":
       return <OverdueListCard data={data} className={className} />;
     case "workload":
-      return data.workload ? <WorkloadCard people={data.workload} className={className} /> : null;
+      return data.workload ? (
+        <WorkloadCard people={data.workload} className={className} onPick={onPickPerson} />
+      ) : null;
     case "mine":
-      return <MineCard data={data} link={links.mine} className={className} />;
+      return <MineCard data={data} link={links.mine} className={className} personName={personName} />;
   }
 }
 
@@ -315,9 +336,11 @@ function OverdueListCard({ data, className }: { data: DashboardResponse; classNa
 function WorkloadCard({
   people,
   className,
+  onPick,
 }: {
   people: NonNullable<DashboardResponse["workload"]>;
   className: string;
+  onPick?: (userId: string) => void;
 }) {
   const [showAll, setShowAll] = useState(false);
   const max = Math.max(1, ...people.map((p) => p.open));
@@ -325,7 +348,7 @@ function WorkloadCard({
   return (
     <CardFrame
       title="Tarefas abertas por pessoa"
-      subtitle="a parte vermelha é a atrasada"
+      subtitle={onPick ? "clique num nome para ver o relatório dela" : "a parte vermelha é a atrasada"}
       className={className}
     >
       {people.length === 0 ? (
@@ -335,7 +358,17 @@ function WorkloadCard({
           {shown.map((p, i) => (
             <li key={p.user_id} className="text-sm">
               <div className="flex items-baseline justify-between gap-2">
-                <span className="min-w-0 truncate">{p.name}</span>
+                {onPick ? (
+                  <button
+                    type="button"
+                    className="min-w-0 truncate border-0 bg-transparent p-0 text-left text-sm text-ink hover:text-accent hover:underline"
+                    onClick={() => onPick(p.user_id)}
+                  >
+                    {p.name}
+                  </button>
+                ) : (
+                  <span className="min-w-0 truncate">{p.name}</span>
+                )}
                 <span className="shrink-0 text-ink-soft">
                   {p.open}
                   {p.overdue > 0 && (
@@ -375,27 +408,31 @@ function MineCard({
   data,
   link,
   className,
+  personName,
 }: {
   data: DashboardResponse;
   link: string;
   className: string;
+  personName: string | null;
 }) {
   const { overdue, overdue_total, due_today, due_today_total } = data.mine;
+  // Filtrado por pessoa, o card é DELA (o servidor já mandou as dela).
+  const title = personName ? `${personName.split(" ")[0]} para hoje` : "Minhas para hoje";
   return (
-    <CardFrame title="Minhas para hoje" className={className}>
+    <CardFrame title={title} className={className}>
       {overdue_total + due_today_total === 0 ? (
         <Empty>Nada atrasado nem vencendo hoje.</Empty>
       ) : (
         <div className="flex flex-col gap-3">
           {overdue_total > 0 && (
             <section>
-              <p className="m-0 mb-1 text-xs font-semibold text-danger">Atrasadas ({overdue_total})</p>
-              <TaskList tasks={overdue} today={data.today} />
+              <p className="m-0 mb-1.5 text-xs font-semibold text-danger">Atrasadas ({overdue_total})</p>
+              <TaskList tasks={overdue} today={data.today} danger />
             </section>
           )}
           {due_today_total > 0 && (
             <section>
-              <p className="m-0 mb-1 text-xs font-semibold text-ink-soft">
+              <p className="m-0 mb-1.5 text-xs font-semibold text-ink-soft">
                 Vencem hoje ({due_today_total})
               </p>
               <TaskList tasks={due_today} today={data.today} />
@@ -403,9 +440,11 @@ function MineCard({
           )}
         </div>
       )}
-      <Link href={link} className="mt-auto inline-block pt-2 text-sm text-accent">
-        Ver todas as minhas tarefas
-      </Link>
+      {!personName && (
+        <Link href={link} className="mt-auto inline-block pt-2 text-sm text-accent">
+          Ver todas as minhas tarefas
+        </Link>
+      )}
     </CardFrame>
   );
 }
@@ -436,6 +475,14 @@ function CardFrame({
   );
 }
 
+/**
+ * As tarefas citadas num card (14/10, ela: "achei meio básico, se tiver algum
+ * elemento que mostre melhor que são clicáveis").
+ *
+ * Cada uma é um BLOCO inteiro clicável: título, a coluna onde está (com a cor
+ * do quadro), a prioridade e o prazo em pílula -- e a seta à direita, que é o
+ * sinal de "abre".
+ */
 function TaskList({
   tasks,
   today,
@@ -446,15 +493,59 @@ function TaskList({
   danger?: boolean;
 }) {
   return (
-    <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
+    <ul className="m-0 flex list-none flex-col gap-2 p-0">
       {tasks.map((t) => (
-        <li key={t.id} className="flex items-baseline justify-between gap-2 text-sm">
-          <Link href={`/tarefa/${t.id}`} className="min-w-0 truncate text-ink hover:text-accent">
-            {t.title}
+        <li key={t.id}>
+          <Link
+            href={`/tarefa/${t.id}`}
+            className="group flex items-center gap-3 rounded-md border border-border bg-surface px-3 py-2.5 text-ink no-underline transition-[border-color,background-color] duration-150 hover:border-accent hover:bg-surface-2"
+          >
+            <span
+              className="h-8 w-1 shrink-0 rounded-full"
+              style={{ background: t.column_color }}
+              aria-hidden="true"
+            />
+            <span className="flex min-w-0 flex-1 flex-col gap-1">
+              <span className="truncate text-md font-semibold group-hover:text-accent">
+                {t.title}
+              </span>
+              <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-ink-faint">
+                <span className="flex items-center gap-1">
+                  <span
+                    className="h-2 w-2 rounded-full"
+                    style={{ background: t.column_color }}
+                    aria-hidden="true"
+                  />
+                  {t.column_name}
+                </span>
+                <span aria-hidden="true">·</span>
+                <span style={{ color: PRIORITY_COLOR[t.priority] }}>
+                  {PRIORITY_LABEL[t.priority] ?? t.priority}
+                </span>
+                {t.parent_task_id && (
+                  <>
+                    <span aria-hidden="true">·</span>
+                    <span>Subtarefa</span>
+                  </>
+                )}
+              </span>
+            </span>
+            {t.due_date && (
+              <span
+                className={`flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold ${
+                  danger ? "bg-danger/10 text-danger" : "bg-surface-2 text-ink-soft"
+                }`}
+              >
+                <CalendarClock size={12} aria-hidden="true" />
+                {dueLabel(t, today)}
+              </span>
+            )}
+            <ChevronRight
+              size={16}
+              className="shrink-0 text-ink-faint transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-accent"
+              aria-hidden="true"
+            />
           </Link>
-          <span className={`shrink-0 text-xs ${danger ? "text-danger" : "text-ink-faint"}`}>
-            {dueLabel(t, today)}
-          </span>
         </li>
       ))}
     </ul>

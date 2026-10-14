@@ -28,6 +28,10 @@ class DashboardTask(BaseModel):
     due_date: date | None
     due_time: time | None
     parent_task_id: uuid.UUID | None
+    priority: str
+    column_name: str
+    #: A cor da coluna como o quadro a desenha (`var(--status-...)`).
+    column_color: str
 
 
 class DashboardWeek(BaseModel):
@@ -86,6 +90,9 @@ def _task(i: DashboardItem) -> DashboardTask:
         due_date=i.due_date,
         due_time=i.due_time,
         parent_task_id=i.parent_id,
+        priority=i.priority,
+        column_name=i.column_name,
+        column_color=i.column_color,
     )
 
 
@@ -100,8 +107,15 @@ async def get_dashboard(
             "de GET /tasks). Ausente = todos os times que a pessoa ve."
         ),
     ),
+    assignee_id: uuid.UUID | None = Query(
+        None,
+        description=(
+            "So as tarefas desta pessoa: o relatorio inteiro passa a ser dela. "
+            "Exige `team_workload.read` no time (403 sem ele)."
+        ),
+    ),
 ) -> DashboardResponse:
-    d = await DashboardService(session).build(under_team_id)
+    d = await DashboardService(session).build(under_team_id, assignee_id=assignee_id)
     c = d.counts
     days = [d.now.today + timedelta(days=n) for n in range(DAYS_AHEAD)]
     return DashboardResponse(

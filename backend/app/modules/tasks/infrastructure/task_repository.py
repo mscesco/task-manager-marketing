@@ -74,6 +74,11 @@ class DashboardItem:
     due_date: date | None
     due_time: time | None
     parent_id: uuid.UUID | None
+    #: A lista mostra onde a tarefa esta e quao urgente e (pedido dela, 14/10:
+    #: "achei meio basico").
+    priority: str
+    column_name: str
+    column_color: str
 
 
 @dataclass(frozen=True)
@@ -1422,7 +1427,9 @@ class TaskRepository(BaseRepository[Task]):
     # ----------------------------------------------------
     # Tela inicial do time (Spec 058)
     # ----------------------------------------------------
-    def _dashboard_tasks(self, under_team_id: uuid.UUID | None) -> Subquery:
+    def _dashboard_tasks(
+        self, under_team_id: uuid.UUID | None, assignee_id: uuid.UUID | None = None
+    ) -> Subquery:
         """As tarefas que o painel conta: a MESMA consulta-base da listagem.
 
         ⚠️⚠️ COPIADA DE `list_page_with_filters`, e nao reescrita (AGENTS.md
@@ -1433,6 +1440,9 @@ class TaskRepository(BaseRepository[Task]):
 
         ⚠️ SEM o filtro de arquivada: a concluida arquivada CONTA na semana
         (§10.6). Cada pergunta (`_DashboardPredicates`) diz o que quer.
+
+        `assignee_id` (14/10, pedido da chefe dela): so as tarefas em que a
+        pessoa e responsavel -- e o relatorio INTEIRO passa a ser dela.
         """
         tenant = require_tenant()
         visible = team_scope.visible_team_ids(
@@ -1447,8 +1457,11 @@ class TaskRepository(BaseRepository[Task]):
                 Task.due_time,
                 Task.is_archived,
                 Task.parent_task_id,
+                Task.priority,
                 BoardColumn.semantic,
                 BoardColumn.notify_deadline,
+                BoardColumn.name.label("column_name"),
+                BoardColumn.color.label("column_color"),
             )
             .outerjoin(
                 Project,
@@ -1463,13 +1476,25 @@ class TaskRepository(BaseRepository[Task]):
             base = base.where(_lente_de_time(visible))
         if under_team_id is not None:
             base = base.where(_sob_o_time(under_team_id, tenant.team_tree))
+        if assignee_id is not None:
+            base = base.where(
+                exists().where(
+                    TaskAssignment.task_id == Task.id,
+                    TaskAssignment.user_id == assignee_id,
+                )
+            )
         return base.subquery("t")
 
     async def dashboard_counts(
-        self, under_team_id: uuid.UUID | None, now: WorkspaceNow, *, me: uuid.UUID
+        self,
+        under_team_id: uuid.UUID | None,
+        now: WorkspaceNow,
+        *,
+        me: uuid.UUID,
+        assignee_id: uuid.UUID | None = None,
     ) -> DashboardCounts:
         """Os numeros dos cards que todos veem (2, 3, 4 e 11)."""
-        t = self._dashboard_tasks(under_team_id)
+        t = self._dashboard_tasks(under_team_id, assignee_id)
         p = _DashboardPredicates(t, now)
 
         week = (
@@ -1492,7 +1517,14 @@ class TaskRepository(BaseRepository[Task]):
 
         def item_columns() -> Select:
             return select(
-                t.c.id, t.c.title, t.c.due_date, t.c.due_time, t.c.parent_task_id
+                t.c.id,
+                t.c.title,
+                t.c.due_date,
+                t.c.due_time,
+                t.c.parent_task_id,
+                t.c.priority,
+                t.c.column_name,
+                t.c.column_color,
             )
 
         oldest_first = (t.c.due_date, t.c.due_time.asc().nulls_last(), t.c.id)
@@ -1595,8 +1627,17 @@ class TaskRepository(BaseRepository[Task]):
 
     async def _dashboard_items(self, stmt: Select) -> list[DashboardItem]:
         return [
-            DashboardItem(id=i, title=tt, due_date=d, due_time=h, parent_id=m)
-            for i, tt, d, h, m in (await self.session.execute(stmt)).all()
+            DashboardItem(
+                id=i,
+                title=tt,
+                due_date=d,
+                due_time=h,
+                parent_id=m,
+                priority=str(getattr(pr, "value", pr)),
+                column_name=cn,
+                column_color=cc,
+            )
+            for i, tt, d, h, m, pr, cn, cc in (await self.session.execute(stmt)).all()
         ]
 
 

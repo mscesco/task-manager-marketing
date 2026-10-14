@@ -25,6 +25,7 @@ from app.modules.tasks.infrastructure.task_repository import (
     TaskRepository,
     Workload,
 )
+from app.shared.exceptions.base import AuthorizationError
 
 #: Card 1 -- a carga por pessoa (D1 dela: gestor e supervisor, nao operador).
 WORKLOAD_VERB = "team_workload.read"
@@ -52,17 +53,39 @@ class DashboardService:
         self._queue = SolicitationRepository(session)
 
     async def build(
-        self, under_team_id: uuid.UUID | None, *, at: datetime | None = None
+        self,
+        under_team_id: uuid.UUID | None,
+        *,
+        assignee_id: uuid.UUID | None = None,
+        at: datetime | None = None,
     ) -> Dashboard:
+        """`assignee_id` (14/10, pedido da chefe dela): o relatorio INTEIRO de
+        uma pessoa -- a semana, as atrasadas, os proximos dias, a lista "de hoje"
+        (que deixa de ser a de quem olha e passa a ser a dela) e a linha dela na
+        carga. A fila de solicitacoes NAO muda: solicitacao nao tem responsavel
+        ate virar tarefa.
+
+        ⚠️ SO PARA QUEM VE A CARGA: filtrar por pessoa e comparar pessoas, e o
+        operador nao tem o ranking (D1). Sem o verbo, 403 -- e nao um filtro
+        ignorado em silencio, que devolveria os numeros do time inteiro com a
+        tela dizendo que sao de uma pessoa.
+        """
         tenant = require_tenant()
+        can_see_workload = _allowed(WORKLOAD_VERB, under_team_id)
+        if assignee_id is not None and not can_see_workload:
+            raise AuthorizationError("Filtrar por pessoa e de quem ve a carga do time.")
         now = workspace_now(at)
-        counts = await self._tasks.dashboard_counts(under_team_id, now, me=tenant.user_id)
+        counts = await self._tasks.dashboard_counts(
+            under_team_id, now, me=assignee_id or tenant.user_id, assignee_id=assignee_id
+        )
 
         workload = None
-        if _allowed(WORKLOAD_VERB, under_team_id):
+        if can_see_workload:
             workload = await self._tasks.workload_by_person(
                 under_team_id, now, _member_teams(under_team_id)
             )
+            if assignee_id is not None:
+                workload = [w for w in workload if w.user_id == assignee_id]
 
         queue = None
         if _allowed(QUEUE_VERB, under_team_id):

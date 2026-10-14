@@ -8,15 +8,35 @@
 //
 // ⚠️ SEM AO VIVO: recarrega ao abrir e ao voltar para a aba
 // (`visibilitychange`). É um retrato do time, não um quadro em tempo real.
+//
+// FILTROS (14/10, pedido da chefe dela: "filtrar por time e por pessoa"):
+// - SUBTIME: a barra escolhe o time raiz; aqui se desce a um subtime dele;
+// - PESSOA: o relatório INTEIRO passa a ser daquela pessoa (só a fila de
+//   solicitações não muda -- ver `DashboardService.build`);
+// - só aparecem para quem vê a carga (a resposta traz `workload`), e o
+//   servidor recusa o filtro de pessoa para os outros;
+// - moram na URL (`?subtime=`, `?pessoa=`), lidos por `window.location`, e
+//   não por `useSearchParams` -- o mesmo cuidado da Base com o build.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import AppShell from "@/components/AppShell";
 import PageHeader from "@/components/PageHeader";
 import TeamDashboard from "@/components/TeamDashboard";
 import Loading from "@/components/Loading";
-import { ApiError, getDashboard, type DashboardResponse } from "@/lib/api";
+import {
+  ApiError,
+  getDashboard,
+  listMembersDoTime,
+  listTeamsAll,
+  type DashboardResponse,
+  type Member,
+  type Team,
+} from "@/lib/api";
 import { navHref } from "@/lib/activeTeam";
 import { useActiveTeam, useActiveTeamId } from "@/lib/useActiveTeam";
+
+const SUBTEAM_PARAM = "subtime";
+const PERSON_PARAM = "pessoa";
 
 export default function HomePage() {
   return (
@@ -32,12 +52,76 @@ function Home() {
   const [data, setData] = useState<DashboardResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // ⚠️ GUARDA DE CORRIDA: trocar de time na barra com um pedido em voo não
-  // pode deixar os números do time anterior na tela do novo.
+  // --- os filtros ---
+  const [subteamId, setSubteamId] = useState<string | null>(null);
+  const [personId, setPersonId] = useState<string | null>(null);
+  const [filtersRead, setFiltersRead] = useState(false);
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    setSubteamId(q.get(SUBTEAM_PARAM));
+    setPersonId(q.get(PERSON_PARAM));
+    setFiltersRead(true);
+  }, []);
+  function writeFilters(subteam: string | null, person: string | null) {
+    setSubteamId(subteam);
+    setPersonId(person);
+    const url = new URL(window.location.href);
+    if (subteam) url.searchParams.set(SUBTEAM_PARAM, subteam);
+    else url.searchParams.delete(SUBTEAM_PARAM);
+    if (person) url.searchParams.set(PERSON_PARAM, person);
+    else url.searchParams.delete(PERSON_PARAM);
+    window.history.replaceState(null, "", url);
+  }
+
+  // As opções: os subtimes do time da barra e quem alcança esse time.
+  const [subteams, setSubteams] = useState<Team[]>([]);
+  const [people, setPeople] = useState<Member[]>([]);
+  useEffect(() => {
+    if (!teamId) {
+      setSubteams([]);
+      setPeople([]);
+      return;
+    }
+    let alive = true;
+    Promise.all([listTeamsAll(), listMembersDoTime(teamId)])
+      .then(([teams, members]) => {
+        if (!alive) return;
+        setSubteams(
+          teams
+            .filter((t) => t.parent_team_id === teamId)
+            .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"))
+        );
+        setPeople(
+          members
+            .filter((m) => m.is_active)
+            .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"))
+        );
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [teamId]);
+
+  // ⚠️ Trocar o time na BARRA zera o subtime: ele era de outra árvore.
+  const lastTeam = useRef<string | null | undefined>(undefined);
+  useEffect(() => {
+    if (!filtersRead || active === null) return;
+    if (lastTeam.current !== undefined && lastTeam.current !== teamId) {
+      writeFilters(null, personId);
+    }
+    lastTeam.current = teamId;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [teamId, filtersRead, active === null]);
+
+  const scope = subteamId ?? teamId;
+
+  // ⚠️ GUARDA DE CORRIDA: trocar de time ou de filtro com um pedido em voo
+  // não pode deixar os números anteriores na tela.
   const latest = useRef(0);
   const load = useCallback(() => {
     const n = ++latest.current;
-    getDashboard(teamId)
+    getDashboard(scope, personId)
       .then((d) => {
         if (n !== latest.current) return;
         setData(d);
@@ -46,16 +130,15 @@ function Home() {
       .catch((e: ApiError) => {
         if (n === latest.current) setError(e.message || "Não consegui carregar o painel.");
       });
-  }, [teamId]);
+  }, [scope, personId]);
 
   useEffect(() => {
-    if (active === null) return;
-    setData(null);
+    if (active === null || !filtersRead) return;
     load();
     // ⚠️ `active === null` e não `active`: o objeto é novo a cada render da
     // barra (o defeito de 14/09 em "Minhas tarefas").
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [teamId, active === null]);
+  }, [scope, personId, filtersRead, active === null]);
 
   useEffect(() => {
     const onVisible = () => {
@@ -65,9 +148,37 @@ function Home() {
     return () => document.removeEventListener("visibilitychange", onVisible);
   }, [load, active]);
 
+  const person = people.find((p) => p.id === personId) ?? null;
+  // Os filtros são de quem vê a carga -- ou de quem já chegou com um na URL.
+  const showFilters = !!data && (data.workload !== null || !!personId || !!subteamId);
+
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader title={teamName ? `Início · ${teamName}` : "Início"} />
+      <PageHeader
+        title={teamName ? `Início · ${teamName}` : "Início"}
+        actions={
+          showFilters ? (
+            <div className="ml-auto flex flex-wrap items-center gap-2">
+              {subteams.length > 0 && (
+                <FilterSelect
+                  label="Subtime"
+                  value={subteamId}
+                  allLabel="Todos os subtimes"
+                  options={subteams.map((t) => ({ id: t.id, name: t.name }))}
+                  onChange={(v) => writeFilters(v, personId)}
+                />
+              )}
+              <FilterSelect
+                label="Pessoa"
+                value={personId}
+                allLabel="Todas as pessoas"
+                options={people.map((p) => ({ id: p.id, name: p.name }))}
+                onChange={(v) => writeFilters(subteamId, v)}
+              />
+            </div>
+          ) : undefined
+        }
+      />
       {error ? (
         <div className="error-box" role="alert">
           {error}
@@ -77,6 +188,8 @@ function Home() {
       ) : (
         <TeamDashboard
           data={data}
+          personName={person?.name ?? null}
+          onPickPerson={data.workload !== null ? (id) => writeFilters(subteamId, id) : undefined}
           links={{
             mine: navHref("/minhas-tarefas", active),
             queue: navHref("/solicitacoes", active),
@@ -84,5 +197,38 @@ function Home() {
         />
       )}
     </div>
+  );
+}
+
+function FilterSelect({
+  label,
+  value,
+  allLabel,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: string | null;
+  allLabel: string;
+  options: { id: string; name: string }[];
+  onChange: (v: string | null) => void;
+}) {
+  return (
+    <label className="flex items-center gap-1.5 text-sm text-ink-soft">
+      {label}
+      <select
+        className="input"
+        style={{ width: "auto", minWidth: 170 }}
+        value={value ?? ""}
+        onChange={(e) => onChange(e.target.value || null)}
+      >
+        <option value="">{allLabel}</option>
+        {options.map((o) => (
+          <option key={o.id} value={o.id}>
+            {o.name}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }

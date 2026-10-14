@@ -3670,6 +3670,10 @@ export type DashboardTask = {
   /** "18:00:00" -- com segundos, como todo `TIME` do Postgres. */
   due_time: string | null;
   parent_task_id: string | null;
+  priority: string;
+  /** Onde a tarefa está, como o quadro mostra: o nome e a cor da coluna. */
+  column_name: string;
+  column_color: string;
 };
 
 export type DashboardResponse = {
@@ -3690,8 +3694,17 @@ export type DashboardResponse = {
   queue: { pending: number; oldest_at: string | null } | null;
 };
 
-/** `teamId` null = "todos os times" da barra. */
-export async function getDashboard(teamId: string | null): Promise<DashboardResponse> {
-  const q = teamId ? `?under_team_id=${encodeURIComponent(teamId)}` : "";
-  return api<DashboardResponse>(`/api/v1/dashboard${q}`);
+/**
+ * `teamId` null = "todos os times" da barra. `assigneeId`: o relatório inteiro
+ * de uma pessoa -- só para quem vê a carga (o servidor responde 403 sem isso).
+ */
+export async function getDashboard(
+  teamId: string | null,
+  assigneeId: string | null = null
+): Promise<DashboardResponse> {
+  const q = new URLSearchParams();
+  if (teamId) q.set("under_team_id", teamId);
+  if (assigneeId) q.set("assignee_id", assigneeId);
+  const s = q.toString();
+  return api<DashboardResponse>(`/api/v1/dashboard${s ? `?${s}` : ""}`);
 }

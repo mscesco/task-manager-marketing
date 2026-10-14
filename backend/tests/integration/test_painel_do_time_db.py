@@ -242,3 +242,40 @@ async def test_a_rota_existe_e_devolve_os_sete_dias(db) -> None:
     assert len(corpo["due_ahead"]) == 7
     assert corpo["workload"] is None and corpo["queue"] is None
     assert set(corpo["week"]) == {"start", "end", "done", "total"}
+
+
+# ------------------------------------------------------------ filtrar por pessoa (14/10)
+
+
+async def test_filtrar_por_pessoa_ajusta_o_relatorio_inteiro(db) -> None:
+    """Pedido da chefe dela: o relatorio inteiro de uma pessoa. A do `op`:
+    t1, t2 (atrasadas), t3 (hoje), t6 (cancelada), t7 (bloqueada)."""
+    m = await _mundo(db)
+    with _como(m, "ger"):
+        p = await DashboardService(db).build(m["mkt"], assignee_id=m["op"], at=AGORA)
+    assert p.counts.overdue_count == 2
+    # semana: t2 e t3 (a cancelada e a bloqueada ficam fora), nenhuma concluida
+    assert (p.counts.done_this_week, p.counts.total_this_week) == (0, 2)
+    assert p.counts.due_by_day == {date(2026, 10, 14): 1}
+    # "de hoje" passa a ser a dela, e nao a do gerente que olha
+    assert [i.title for i in p.counts.my_due_today] == ["t3"]
+    # a carga: so a linha dela
+    assert [(w.name, w.open_count) for w in p.workload] == [("Op", 4)]
+    # a fila nao muda (solicitacao nao tem responsavel)
+    assert p.queue is not None
+
+
+async def test_operador_nao_filtra_por_pessoa(db) -> None:
+    from app.shared.exceptions.base import AuthorizationError
+
+    m = await _mundo(db)
+    with _como(m, "op"), pytest.raises(AuthorizationError):
+        await DashboardService(db).build(m["mkt"], assignee_id=m["sup"], at=AGORA)
+
+
+async def test_a_lista_traz_a_coluna_e_a_prioridade(db) -> None:
+    m = await _mundo(db)
+    p = await _painel(db, m, "ger")
+    t1 = p.counts.oldest_overdue[0]
+    assert (t1.title, t1.column_name, t1.priority) == ("t1", "Backlog", "MEDIUM")
+    assert t1.column_color
