@@ -16,7 +16,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { BatchItem } from "../api";
-import { rotuloDaCategoria } from "../rotuloDaCategoria";
+import { numeroDaRepeticao, rotuloDaCategoria } from "../rotuloDaCategoria";
 
 function item(over: Partial<BatchItem> = {}): BatchItem {
   return {
@@ -73,5 +73,23 @@ describe("rotuloDaCategoria", () => {
     // pedidos de julho. É a razão de um campo ser permanente e o outro não.
     const r = rotuloDaCategoria(item({ category: "foto", category_title: "Fotografia" }));
     expect(r.titulo).toBe("Fotografia");
+  });
+});
+
+describe("numeroDaRepeticao (Spec 059)", () => {
+  it("vazio quando a seção aparece uma vez no envio", () => {
+    const a = item({ id: "a", category: "foto", batch_seq: 1 });
+    const b = item({ id: "b", category: "arte", batch_seq: 2 });
+    expect(numeroDaRepeticao([a, b], a)).toBe("");
+  });
+
+  it("numera as repetições na ordem do batch_seq", () => {
+    const e2 = item({ id: "e2", category: "evento", batch_seq: 3 });
+    const a = item({ id: "a", category: "arte", batch_seq: 1 });
+    const e1 = item({ id: "e1", category: "evento", batch_seq: 2 });
+    const todos = [e2, a, e1];
+    expect(numeroDaRepeticao(todos, e1)).toBe(" #1");
+    expect(numeroDaRepeticao(todos, e2)).toBe(" #2");
+    expect(numeroDaRepeticao(todos, a)).toBe("");
   });
 });

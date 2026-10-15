@@ -182,6 +182,8 @@ class SolicitationPublicFormService:
                     emoji=s.emoji,
                     sla_text=s.sla_text,
                     summary_question_id=s.summary_question_id,
+                    repeatable=s.repeatable,
+                    repeat_label=s.repeat_label,
                     questions=por_secao[s.id],
                 )
                 for s in secoes

@@ -56,6 +56,9 @@ class PublicSection(BaseModel):
     #: a fila mostraria o assunto e mais nada, e quem tria precisaria abrir
     #: cada solicitacao para saber do que se trata.
     summary_question_id: uuid.UUID | None
+    #: Spec 059: a pessoa pode preencher a secao mais de uma vez no envio.
+    repeatable: bool = False
+    repeat_label: str | None = None
     questions: list[PublicQuestion] = Field(default_factory=list)
 
 

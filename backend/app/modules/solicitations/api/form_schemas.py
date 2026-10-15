@@ -92,6 +92,10 @@ class SectionUpdateRequest(BaseModel):
     title: str | None = Field(default=None, max_length=120)
     emoji: str | None = Field(default=None, max_length=16)
     sla_text: str | None = Field(default=None, max_length=200)
+    #: Spec 059: a pessoa preenche a secao mais de uma vez no envio.
+    repeatable: bool | None = None
+    #: "+ Adicionar outro <repeat_label>". Texto vazio limpa (volta ao titulo).
+    repeat_label: str | None = Field(default=None, max_length=60)
 
 
 class ResumoRequest(BaseModel):
@@ -169,6 +173,8 @@ class SectionResponse(BaseModel):
     sla_text: str | None
     summary_question_id: uuid.UUID | None
     position: int
+    repeatable: bool = False
+    repeat_label: str | None = None
     questions: list[QuestionResponse] = Field(default_factory=list)
 
 

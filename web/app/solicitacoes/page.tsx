@@ -34,7 +34,7 @@ import {
   type SolicitacaoStatus,
   STATUS_ACEITOS,
 } from "@/lib/api";
-import { rotuloDaCategoria } from "@/lib/rotuloDaCategoria";
+import { numeroDaRepeticao, rotuloDaCategoria } from "@/lib/rotuloDaCategoria";
 
 import Loading from "@/components/Loading";
 import { useActiveTeam, useActiveTeamId } from "@/lib/useActiveTeam";
@@ -356,7 +356,10 @@ function CardEnvio({
               return (
                 <li key={item.id} style={{ fontSize: 13 }}>
                   <span style={{ marginRight: 6 }}>{cat.emoji}</span>
-                  <strong>{cat.titulo}</strong>
+                  <strong>
+                    {cat.titulo}
+                    {numeroDaRepeticao(envio.items, item)}
+                  </strong>
                   {": "}
                   <span className="muted">{item.summary}</span>{" "}
                   <Badge tone="soft" size="sm" color={STATUS_COLOR[item.status]}>
@@ -458,7 +461,7 @@ function SecaoDemanda({
 
   function copiarBriefing() {
     const linhas = [
-      `[${cat.titulo}] ${item.summary}`,
+      `[${cat.titulo}${numeroDaRepeticao(envio.items, item)}] ${item.summary}`,
       // ⚠️⚠️ TEMPLATE LITERAL COM CAMPO OPCIONAL ESCREVE A STRING "null".
       // Este texto vai para a área de transferência e daí para o WhatsApp, o
       // e-mail, a descrição de uma tarefa -- ou seja, o "null" VAZA PARA FORA
@@ -497,6 +500,7 @@ function SecaoDemanda({
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
         <strong style={{ fontSize: 14 }}>
           {cat.emoji} {cat.titulo}
+          {numeroDaRepeticao(envio.items, item)}
         </strong>
         {cat.prazo && (
           <span className="muted" style={{ fontSize: 11 }}>⏱ {cat.prazo}</span>

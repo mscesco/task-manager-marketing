@@ -79,6 +79,8 @@ export function paraCategorias(form: FormularioPublico): Categoria[] {
         // para saber do que se trata. O primeiro campo é um palpite ruim, e
         // ainda assim melhor que vazio.
         resumoDe: s.summary_question_id ?? campos[0]?.id ?? "",
+        repetivel: s.repeatable ?? false,
+        rotuloRepeticao: s.repeat_label ?? null,
       };
     })
     .filter((c) => c.campos.length > 0);

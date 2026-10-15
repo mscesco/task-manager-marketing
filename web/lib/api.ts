@@ -2940,6 +2940,9 @@ export type SecaoDoEditor = {
   sla_text: string | null;
   summary_question_id: string | null;
   position: number;
+  /** Spec 059: seção repetível e o nome de cada repetição. */
+  repeatable?: boolean;
+  repeat_label?: string | null;
   questions: PerguntaDoEditor[];
 };
 
@@ -2975,7 +2978,13 @@ export async function criarSecao(
  */
 export async function editarSecao(
   sectionId: string,
-  patch: { title?: string; emoji?: string; sla_text?: string | null }
+  patch: {
+    title?: string;
+    emoji?: string;
+    sla_text?: string | null;
+    repeatable?: boolean;
+    repeat_label?: string;
+  }
 ): Promise<SecaoDoEditor> {
   return api<SecaoDoEditor>(`/api/v1/solicitacoes/secoes/${sectionId}`, {
     method: "PATCH",
@@ -3109,6 +3118,9 @@ export type SecaoPublica = {
   emoji: string;
   sla_text: string | null;
   summary_question_id: string | null;
+  /** Spec 059: a pessoa preenche a seção mais de uma vez no envio. */
+  repeatable?: boolean;
+  repeat_label?: string | null;
   questions: PerguntaPublica[];
 };
 

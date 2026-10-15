@@ -3,7 +3,7 @@
 // so quando o campo-dependencia tem EXATAMENTE o valor indicado.
 import { describe, expect, it } from "vitest";
 
-import { campoVisivel, type Campo } from "@/lib/solicitacaoForm";
+import { campoVisivel, novaRepeticao, type Campo } from "@/lib/solicitacaoForm";
 
 const SEMPRE: Campo = { id: "titulo", label: "Titulo", tipo: "texto" };
 
@@ -45,5 +45,15 @@ describe("campoVisivel", () => {
     // nunca da true -- logo, `mostrarSe` so funciona sobre campo de valor
     // unico. Fica registrado como limite conhecido.
     expect(campoVisivel(CONDICIONAL, { tem_evento: ["Sim"] })).toBe(false);
+  });
+});
+
+describe("novaRepeticao (Spec 059)", () => {
+  it("a primeira é o próprio slug; as outras, o menor #n livre", () => {
+    expect(novaRepeticao("evento", [])).toBe("evento");
+    expect(novaRepeticao("evento", ["evento"])).toBe("evento#2");
+    expect(novaRepeticao("evento", ["evento", "evento#2", "evento#3"])).toBe("evento#4");
+    // Removida a 2, a nova reaproveita o número -- as que ficam não renumeram.
+    expect(novaRepeticao("evento", ["evento", "evento#3"])).toBe("evento#2");
   });
 });

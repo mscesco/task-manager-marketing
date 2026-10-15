@@ -465,6 +465,8 @@ function Secao({
   const [titulo, setTitulo] = useState(secao.title);
   const [emoji, setEmoji] = useState(secao.emoji);
   const [prazo, setPrazo] = useState(secao.sla_text ?? "");
+  const [repetivel, setRepetivel] = useState(secao.repeatable ?? false);
+  const [rotuloRepeticao, setRotuloRepeticao] = useState(secao.repeat_label ?? "");
 
   const perguntas = ordenadasPorPosicao(secao.questions);
 
@@ -510,6 +512,11 @@ function Secao({
         {secao.sla_text && (
           <span className="muted" style={{ fontSize: 12 }}>
             {secao.sla_text}
+          </span>
+        )}
+        {secao.repeatable && (
+          <span className="muted" style={{ fontSize: 12 }}>
+            · repete até 20×
           </span>
         )}
 
@@ -595,6 +602,40 @@ function Secao({
               onChange={(e) => setPrazo(e.target.value)}
             />
           </div>
+          {/* Spec 059: a pessoa preenche a seção mais de uma vez no mesmo
+              envio (vários eventos); cada repetição vira um pedido na fila. */}
+          <div
+            style={{ flex: "1 1 100%", display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}
+          >
+            <label
+              style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, flex: "1 1 260px" }}
+            >
+              <input
+                type="checkbox"
+                checked={repetivel}
+                onChange={(e) => setRepetivel(e.target.checked)}
+              />
+              Pode ser preenchida mais de uma vez no mesmo envio (até 20)
+            </label>
+            {repetivel && (
+              <div className="field" style={{ flex: "1 1 220px" }}>
+                <label className="label" htmlFor={`r-${secao.id}`}>
+                  Cada repetição se chama
+                </label>
+                <input
+                  id={`r-${secao.id}`}
+                  className="input"
+                  placeholder={secao.title.toLowerCase()}
+                  value={rotuloRepeticao}
+                  maxLength={60}
+                  onChange={(e) => setRotuloRepeticao(e.target.value)}
+                />
+                <span className="muted" style={{ fontSize: 12 }}>
+                  O botão fica “+ Adicionar outro {(rotuloRepeticao.trim() || secao.title).toLowerCase()}”.
+                </span>
+              </div>
+            )}
+          </div>
           <div style={{ flex: "1 1 100%" }}>
             {/* ⚠️ O AVISO DO SLUG NÃO É DECORAÇÃO. Ele é o único campo da tela
                 que não dá para mudar, e o motivo é invisível: ele viaja gravado
@@ -623,6 +664,9 @@ function Secao({
                     title: titulo,
                     emoji,
                     sla_text: prazo.trim(),
+                    repeatable: repetivel,
+                    // String vazia limpa (volta ao título), como o prazo.
+                    repeat_label: rotuloRepeticao.trim(),
                   })
                 );
                 // ⚠️ SÓ FECHA SE DEU CERTO -- senão o painel some levando o
