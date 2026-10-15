@@ -71,7 +71,7 @@ export default function TeamDashboard({
     <div className="flex flex-col gap-4">
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {layout.tiles.map((t, i) => (
-          <Tile key={t} tile={t} data={data} links={links} order={i} />
+          <Tile key={t} tile={t} data={data} links={links} order={i} personName={personName} />
         ))}
       </div>
       <div className="grid grid-flow-row-dense grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -97,12 +97,17 @@ function Tile({
   data,
   links,
   order,
+  personName,
 }: {
   tile: DashboardTile;
   data: DashboardResponse;
   links: Links;
   order: number;
+  personName: string | null;
 }) {
+  // Filtrado por pessoa, os números são DELA (revisão de 15/10): "Minhas
+  // atrasadas" e "no time" diziam o contrário.
+  const firstName = personName?.split(" ")[0] ?? null;
   switch (tile) {
     case "weekDone":
       return (
@@ -120,7 +125,13 @@ function Tile({
         <StatTile
           label="Atrasadas"
           value={data.overdue_total}
-          note={data.overdue_total ? "no time, agora" : "nenhuma por aqui"}
+          note={
+            firstName
+              ? `de ${firstName}, agora`
+              : data.overdue_total
+                ? "no time, agora"
+                : "nenhuma por aqui"
+          }
           danger={data.overdue_total > 0}
           order={order}
         />
@@ -146,11 +157,11 @@ function Tile({
     case "myOverdue":
       return (
         <StatTile
-          label="Minhas atrasadas"
+          label={firstName ? `Atrasadas de ${firstName}` : "Minhas atrasadas"}
           value={data.mine.overdue_total}
-          note="designadas a você"
+          note={firstName ? "designadas a essa pessoa" : "designadas a você"}
           danger={data.mine.overdue_total > 0}
-          href={links.mine}
+          href={firstName ? undefined : links.mine}
           order={order}
         />
       );
@@ -205,7 +216,9 @@ function StatTile({
         </strong>
         {suffix && <span className={`text-lg ${highlight ? "" : "text-ink-soft"}`}>{suffix}</span>}
       </p>
-      <p className={`m-0 mt-2 text-sm ${highlight ? "opacity-90" : "text-ink-faint"}`}>{note}</p>
+      {/* ⚠️ Sem `opacity` no destaque: branco a 90% sobre o azul cai abaixo
+          de 4.5 (revisão de 15/10). */}
+      <p className={`m-0 mt-2 text-sm ${highlight ? "" : "text-ink-faint"}`}>{note}</p>
     </motion.section>
   );
 }
@@ -213,18 +226,21 @@ function StatTile({
 // ------------------------------------------------------------------ cards
 /** Quanto cada bloco ocupa na grade (ver o desenho no topo). */
 const SPAN: Record<"manager" | "operator", Record<DashboardCard, string>> = {
+  // ⚠️ O último bloco de cada desenho é LARGO no `md` (duas colunas): sem
+  // isso, ele sobrava sozinho numa linha com um buraco ao lado (revisão de
+  // 15/10). No `xl` ele volta ao lugar dele.
   manager: {
     weekRing: "md:row-span-2",
     aheadChart: "",
     overdueList: "",
     workload: "md:col-span-2",
-    mine: "xl:row-span-2",
+    mine: "md:col-span-2 xl:col-span-1 xl:row-span-2",
   },
   operator: {
     weekRing: "md:row-span-2",
     mine: "xl:col-span-3",
     aheadChart: "xl:col-span-2",
-    overdueList: "",
+    overdueList: "md:col-span-2 xl:col-span-1",
     workload: "",
   },
 };
@@ -380,6 +396,7 @@ function WorkloadCard({
                 ) : (
                   <span className="min-w-0 truncate">{p.name}</span>
                 )}
+                {!p.is_active && <span className="shrink-0 text-xs text-ink-faint">(inativo)</span>}
                 <span className="shrink-0 text-ink-soft">
                   {p.open}
                   {p.overdue > 0 && (
@@ -552,7 +569,9 @@ function TaskList({
             {t.due_date && (
               <span
                 className={`flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold ${
-                  danger ? "bg-danger/10 text-danger" : "bg-surface-2 text-ink-soft"
+                  // ⚠️ Borda, e não fundo tingido: o vermelho sobre o
+                  // tingido dele mesmo ficava abaixo de 4.5 (revisão de 15/10).
+                  danger ? "border border-danger/50 text-danger" : "bg-surface-2 text-ink-soft"
                 }`}
               >
                 <CalendarClock size={12} aria-hidden="true" />

@@ -62,6 +62,8 @@ class DashboardPerson(BaseModel):
     name: str
     open: int
     overdue: int
+    #: `false` = conta desativada que ainda tem tarefa aberta no time.
+    is_active: bool
 
 
 class DashboardQueue(BaseModel):
@@ -140,7 +142,11 @@ async def get_dashboard(
             if d.workload is None
             else [
                 DashboardPerson(
-                    user_id=w.user_id, name=w.name, open=w.open_count, overdue=w.overdue_count
+                    user_id=w.user_id,
+                    name=w.name,
+                    open=w.open_count,
+                    overdue=w.overdue_count,
+                    is_active=w.is_active,
                 )
                 for w in d.workload
             ]

@@ -102,6 +102,9 @@ class Workload:
     name: str
     open_count: int
     overdue_count: int
+    #: Conta desativada que ainda tem tarefa aberta (revisao de 15/10): e o
+    #: trabalho orfao que o gestor mais precisa ver, e a tela marca.
+    is_active: bool
 
 
 def _casa_busca_na_subarvore(
@@ -1617,19 +1620,25 @@ class TaskRepository(BaseRepository[Task]):
                     User.name,
                     open_count,
                     func.coalesce(counts_by_user.c.overdue_count, 0),
+                    User.is_active,
                 )
                 .outerjoin(counts_by_user, counts_by_user.c.user_id == User.id)
                 .where(
                     User.workspace_id == tenant.workspace_id,
-                    User.is_active.is_(True),
-                    or_(User.id.in_(members), counts_by_user.c.user_id.is_not(None)),
+                    # ⚠️ Desativado so entra se ainda tiver tarefa aberta no
+                    # time (revisao de 15/10): sumir com ele escondia o
+                    # trabalho orfao, que continuava contando nas atrasadas.
+                    or_(
+                        and_(User.is_active.is_(True), User.id.in_(members)),
+                        counts_by_user.c.user_id.is_not(None),
+                    ),
                 )
                 .order_by(open_count.desc(), User.name, User.id)
             )
         ).all()
         return [
-            Workload(user_id=u, name=n, open_count=a, overdue_count=x)
-            for u, n, a, x in rows
+            Workload(user_id=u, name=n, open_count=a, overdue_count=x, is_active=ativo)
+            for u, n, a, x, ativo in rows
         ]
 
     async def _dashboard_items(self, stmt: Select) -> list[DashboardItem]:

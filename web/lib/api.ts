@@ -3690,7 +3690,10 @@ export type DashboardResponse = {
     due_today: DashboardTask[];
     due_today_total: number;
   };
-  workload: { user_id: string; name: string; open: number; overdue: number }[] | null;
+  /** `is_active: false` = conta desativada que ainda tem tarefa aberta no time. */
+  workload:
+    | { user_id: string; name: string; open: number; overdue: number; is_active: boolean }[]
+    | null;
   queue: { pending: number; oldest_at: string | null } | null;
 };
 

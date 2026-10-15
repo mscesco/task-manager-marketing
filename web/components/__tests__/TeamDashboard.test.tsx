@@ -89,6 +89,7 @@ describe("TeamDashboard", () => {
       name: `Pessoa ${i}`,
       open: 12 - i,
       overdue: i === 0 ? 3 : 0,
+      is_active: true,
     }));
     render(
       <TeamDashboard
@@ -112,15 +113,29 @@ describe("TeamDashboard", () => {
     const escolhidos: string[] = [];
     render(
       <TeamDashboard
-        data={resposta({ workload: [{ user_id: "u1", name: "Ana Souza", open: 3, overdue: 0 }] })}
+        data={resposta({ workload: [{ user_id: "u1", name: "Ana Souza", open: 3, overdue: 0, is_active: true }] })}
         links={LINKS}
         personName="Ana Souza"
         onPickPerson={(id) => escolhidos.push(id)}
       />
     );
     expect(screen.getByRole("region", { name: "Ana para hoje" })).toBeTruthy();
+    // ⚠️ os números de cima também são dela (revisão de 15/10)
+    expect(screen.getByRole("region", { name: "Atrasadas de Ana" })).toBeTruthy();
     expect(screen.queryByRole("link", { name: "Ver todas as minhas tarefas" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Ana Souza" }));
     expect(escolhidos).toEqual(["u1"]);
+  });
+
+  it("conta desativada com tarefa aberta aparece na carga, marcada", () => {
+    render(
+      <TeamDashboard
+        data={resposta({
+          workload: [{ user_id: "u9", name: "Juliana", open: 2, overdue: 1, is_active: false }],
+        })}
+        links={LINKS}
+      />
+    );
+    expect(screen.getByText("(inativo)")).toBeTruthy();
   });
 });

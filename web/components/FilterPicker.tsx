@@ -38,11 +38,15 @@ export default function FilterPicker({
 }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
+  const panel = useAnchoredPanel<HTMLButtonElement>(open, () => close(), { larguraPainel: 280 });
+  // ⚠️ O foco VOLTA ao botão (revisão de 15/10): a busca focada some com o
+  // painel, e sem isto o teclado caía no `<body>`.
+  const anchor = panel.anchorRef;
   const close = useCallback(() => {
     setOpen(false);
     setSearch("");
-  }, []);
-  const panel = useAnchoredPanel<HTMLButtonElement>(open, close, { larguraPainel: 280 });
+    anchor.current?.focus();
+  }, [anchor]);
 
   const current = options.find((o) => o.id === value) ?? null;
   const shown = useMemo(() => {

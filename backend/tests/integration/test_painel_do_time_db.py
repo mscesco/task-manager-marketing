@@ -279,3 +279,59 @@ async def test_a_lista_traz_a_coluna_e_a_prioridade(db) -> None:
     t1 = p.counts.oldest_overdue[0]
     assert (t1.title, t1.column_name, t1.priority) == ("t1", "Backlog", "MEDIUM")
     assert t1.column_color
+
+
+# ------------------------------------------------------------ revisao de 15/10
+
+
+async def test_supervisor_nao_ve_o_subtime_vizinho_na_carga(db) -> None:
+    """O supervisor do SEO tem o verbo na raiz, mas a lente dele nao alcanca o
+    subtime vizinho (Ads): o Beto aparecia com zero tarefas -- "livre" para
+    quem nao enxerga as tarefas dele."""
+    m = await _mundo(db)
+    ads = await f.make_team(db, workspace_id=m["ws"], parent_team_id=m["mkt"], slug="ads")
+    beto = await f.make_user(db, workspace_id=m["ws"])
+    (await db.get(User, beto)).name = "Beto"
+    await f.add_member(db, workspace_id=m["ws"], user_id=beto, team_id=ads, role="OPERATOR")
+    t = await f.make_task(db, workspace_id=m["ws"], created_by=m["ger"], team_id=ads, title="ta")
+    await f.make_assignment(
+        db, workspace_id=m["ws"], task_id=t.id, user_id=beto, assigned_by=m["ger"]
+    )
+    arvore = (*m["arvore"], node(ads, m["mkt"]))
+
+    def como(quem, time_, papel):
+        return acting_as(
+            workspace_id=m["ws"], user_id=m[quem],
+            memberships=(mship(time_, papel),), team_tree=arvore,
+        )
+
+    with como("sup", m["seo"], "SUPERVISOR"):
+        p = await DashboardService(db).build(m["mkt"], at=AGORA)
+    assert "Beto" not in [w.name for w in p.workload]
+    # e o gerente, que enxerga a arvore inteira, ve o Beto com a tarefa dele
+    with como("ger", m["mkt"], "MANAGER"):
+        p = await DashboardService(db).build(m["mkt"], at=AGORA)
+    assert ("Beto", 1) in [(w.name, w.open_count) for w in p.workload]
+
+
+async def test_desativado_com_tarefa_aberta_continua_na_carga(db) -> None:
+    """Trabalho orfao: a conta saiu, as tarefas ficaram -- e seguem contando
+    nas atrasadas. A carga tem de mostrar de quem sao."""
+    m = await _mundo(db)
+    (await db.get(User, m["op"])).is_active = False
+    (await db.get(User, m["ana"])).is_active = False  # sem tarefa: sai
+    await db.flush()
+    p = await _painel(db, m, "ger")
+    carga = {w.name: (w.open_count, w.is_active) for w in p.workload}
+    assert carga["Op"] == (4, False)
+    assert "Ana" not in carga
+
+
+async def test_a_rota_recusa_filtro_de_pessoa_para_o_operador(db) -> None:
+    m = await _mundo(db)
+    with _como(m, "op") as ctx:
+        async with _client(db, ctx) as cli:
+            r = await cli.get(
+                f"/api/v1/dashboard?under_team_id={m['mkt']}&assignee_id={m['sup']}"
+            )
+    assert r.status_code == 403, r.text

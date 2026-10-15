@@ -107,12 +107,20 @@ def _allowed(verb: str, under_team_id: uuid.UUID | None) -> bool:
 
 
 def _member_teams(under_team_id: uuid.UUID | None) -> frozenset[uuid.UUID] | None:
-    """De quais times vem a lista de pessoas do card 1. `None` = todos."""
+    """De quais times vem a lista de pessoas do card 1. `None` = todos.
+
+    ⚠️ DENTRO DA LENTE de quem olha (revisao de 15/10). O supervisor de um
+    subtime tem o verbo tambem na RAIZ, e olhando a raiz recebia os membros
+    dos subtimes VIZINHOS -- com zero tarefas, porque as deles a lente nao
+    mostra. "Fulano esta livre" era mentira de quem nao enxerga.
+    """
     tenant = require_tenant()
+    visible = team_scope.visible_team_ids(
+        tenant.memberships, tenant.team_tree, org_role=tenant.org_role
+    )
     if under_team_id is None:
-        return team_scope.visible_team_ids(
-            tenant.memberships, tenant.team_tree, org_role=tenant.org_role
-        )
-    return frozenset(
+        return visible
+    times = frozenset(
         {under_team_id} | team_scope.descendants(under_team_id, tenant.team_tree)
     )
+    return times if visible is None else times & visible

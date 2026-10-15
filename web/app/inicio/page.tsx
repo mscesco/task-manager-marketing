@@ -77,10 +77,14 @@ function Home() {
   // As opções: os subtimes do time da barra e quem alcança esse time.
   const [subteams, setSubteams] = useState<Team[]>([]);
   const [people, setPeople] = useState<Member[]>([]);
+  // As listas chegaram para ESTE time -- só então dá para dizer que um filtro
+  // da URL não serve (ver o efeito logo abaixo).
+  const [optionsFor, setOptionsFor] = useState<string | null>(null);
   useEffect(() => {
     if (!teamId) {
       setSubteams([]);
       setPeople([]);
+      setOptionsFor(null);
       return;
     }
     let alive = true;
@@ -97,6 +101,7 @@ function Home() {
             .filter((m) => m.is_active)
             .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"))
         );
+        setOptionsFor(teamId);
       })
       .catch(() => {});
     return () => {
@@ -104,16 +109,29 @@ function Home() {
     };
   }, [teamId]);
 
-  // ⚠️ Trocar o time na BARRA zera o subtime: ele era de outra árvore.
+  // ⚠️ Trocar o time na BARRA zera OS DOIS filtros (revisão de 15/10): o
+  // subtime era de outra árvore, e a pessoa quase sempre também -- com ela
+  // mantida, a tela mostrava o relatório de alguém ausente com o seletor
+  // dizendo "Todas as pessoas".
   const lastTeam = useRef<string | null | undefined>(undefined);
   useEffect(() => {
     if (!filtersRead || active === null) return;
     if (lastTeam.current !== undefined && lastTeam.current !== teamId) {
-      writeFilters(null, personId);
+      writeFilters(null, null);
     }
     lastTeam.current = teamId;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [teamId, filtersRead, active === null]);
+
+  // ⚠️ Filtro da URL que NÃO É DESTE TIME (link velho, colado de outro time)
+  // sai, em vez de a tela dizer "Todos" sobre números filtrados.
+  useEffect(() => {
+    if (optionsFor === null || optionsFor !== teamId) return;
+    const subOk = !subteamId || subteams.some((t) => t.id === subteamId);
+    const personOk = !personId || people.some((p) => p.id === personId);
+    if (!subOk || !personOk) writeFilters(subOk ? subteamId : null, personOk ? personId : null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [optionsFor, teamId, subteams, people]);
 
   const scope = subteamId ?? teamId;
 
@@ -135,6 +153,10 @@ function Home() {
 
   useEffect(() => {
     if (active === null || !filtersRead) return;
+    // ⚠️ Filtro novo, números novos: sem limpar, o rótulo trocava na hora
+    // ("Ana para hoje") sobre os números antigos, do time inteiro.
+    setData(null);
+    setError(null);
     load();
     // ⚠️ `active === null` e não `active`: o objeto é novo a cada render da
     // barra (o defeito de 14/09 em "Minhas tarefas").
@@ -150,15 +172,17 @@ function Home() {
   }, [load, active]);
 
   const person = people.find((p) => p.id === personId) ?? null;
-  // Os filtros são de quem vê a carga -- ou de quem já chegou com um na URL.
-  const showFilters = !!data && (data.workload !== null || !!personId || !!subteamId);
+  // Os filtros são de quem vê a carga. O de PESSOA só para ela: o servidor o
+  // recusa para os outros (403).
+  const manager = !!data && data.workload !== null;
+  const hasFilter = !!personId || !!subteamId;
 
   return (
     <div className="flex flex-col gap-4">
       <PageHeader
         title={teamName ? `Início · ${teamName}` : "Início"}
         actions={
-          showFilters ? (
+          manager || (data && subteamId) ? (
             <div className="ml-auto flex flex-wrap items-center gap-2">
               {subteams.length > 0 && (
                 <FilterPicker
@@ -169,21 +193,31 @@ function Home() {
                   onChange={(v) => writeFilters(v, personId)}
                 />
               )}
-              <FilterPicker
-                label="Pessoa"
-                value={personId}
-                allLabel="Todas as pessoas"
-                options={people.map((p) => ({ id: p.id, name: p.name }))}
-                people
-                onChange={(v) => writeFilters(subteamId, v)}
-              />
+              {manager && (
+                <FilterPicker
+                  label="Pessoa"
+                  value={personId}
+                  allLabel="Todas as pessoas"
+                  options={people.map((p) => ({ id: p.id, name: p.name }))}
+                  people
+                  onChange={(v) => writeFilters(subteamId, v)}
+                />
+              )}
             </div>
           ) : undefined
         }
       />
       {error ? (
-        <div className="error-box" role="alert">
-          {error}
+        // ⚠️ Com filtro, o erro tem SAÍDA (revisão de 15/10): um link com
+        // `?pessoa=` aberto por quem não pode filtrar (403) prendia a tela
+        // numa caixa de erro sem nada para clicar.
+        <div className="error-box flex flex-wrap items-center gap-3" role="alert">
+          <span>{error}</span>
+          {hasFilter && (
+            <button type="button" className="btn" onClick={() => writeFilters(null, null)}>
+              Limpar filtros
+            </button>
+          )}
         </div>
       ) : data === null ? (
         <Loading />
