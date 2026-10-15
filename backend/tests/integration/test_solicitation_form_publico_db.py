@@ -491,3 +491,19 @@ async def test_rotulo_vazio_volta_ao_titulo(db) -> None:
         await svc.editar_secao(section_id=secao.id, repeat_label="evento")
         editada = await svc.editar_secao(section_id=secao.id, repeat_label="  ")
     assert editada.repeat_label is None
+
+
+async def test_a_fila_sabe_o_TITULO_do_formulario_do_pedido(db) -> None:
+    """15/10: a fila nao dizia por qual formulario o pedido entrou."""
+    ws, raiz, user, ctx = await _mundo(db)
+    form, secao, _ = await _form_publicado(db, ctx, raiz)
+    slug_ws = await _slug_do_ws(db, ws)
+    async with UnitOfWork(db) as uow:
+        criadas = await SolicitationService(db).create_public(
+            uow, _envio(slug_ws, categoria=secao.slug, form_id=form.id)
+        )
+    assert criadas is not None
+
+    with acting_as(**ctx):
+        titulos = await SolicitationService(db).titulos_dos_formularios(criadas)
+    assert titulos == {form.id: "Arte"}

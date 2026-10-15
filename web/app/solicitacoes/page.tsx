@@ -336,6 +336,12 @@ function CardEnvio({
               .join(" · ")}
           </div>
           <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>
+            {/* Por qual formulário entrou (15/10: a fila não dizia). */}
+            {envio.form_title && (
+              <>
+                Formulário <strong>{envio.form_title}</strong> ·{" "}
+              </>
+            )}
             Protocolo <strong>{envio.protocol}</strong> ·{" "}
             {new Date(envio.created_at).toLocaleDateString("pt-BR")} ·{" "}
             {envio.items.length} demanda{envio.items.length > 1 ? "s" : ""}

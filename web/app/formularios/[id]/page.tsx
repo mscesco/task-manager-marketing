@@ -172,16 +172,31 @@ function Editor() {
           secoes.length
         } ${secoes.length === 1 ? "seção" : "seções"}`}
         actions={
-          <button
-            type="button"
-            className="btn btn-primary"
-            disabled={ocupado}
-            onClick={() =>
-              agir(() => publicarFormulario(form.id, !form.is_published))
-            }
-          >
-            {form.is_published ? "Despublicar" : "Publicar"}
-          </button>
+          <>
+            {/* O formulário como quem pede vê (15/10: ela sentiu falta de
+                abrir a porta pública de dentro do editor). Rascunho não
+                abre -- a rota pública responde 404 para ele. */}
+            {form.is_published && (
+              <a
+                className="btn"
+                href={`/solicitar/${form.slug}`}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Abrir formulário ↗
+              </a>
+            )}
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={ocupado}
+              onClick={() =>
+                agir(() => publicarFormulario(form.id, !form.is_published))
+              }
+            >
+              {form.is_published ? "Despublicar" : "Publicar"}
+            </button>
+          </>
         }
       />
 

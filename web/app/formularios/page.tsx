@@ -353,9 +353,22 @@ function Formularios() {
               >
                 {f.title}
               </Link>
-              <code className="muted" style={{ fontSize: 12.5 }}>
-                /solicitar/{f.slug}
-              </code>
+              {f.is_published ? (
+                <a
+                  href={`/solicitar/${f.slug}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="muted"
+                  style={{ fontSize: 12.5, fontFamily: "var(--font-mono, monospace)" }}
+                  title="Abrir o formulário público"
+                >
+                  /solicitar/{f.slug}
+                </a>
+              ) : (
+                <code className="muted" style={{ fontSize: 12.5 }}>
+                  /solicitar/{f.slug}
+                </code>
+              )}
               <span className="muted" style={{ fontSize: 12.5 }}>
                 {nomeDoTime(f.team_id)}
               </span>

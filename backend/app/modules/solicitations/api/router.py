@@ -164,6 +164,7 @@ async def list_solicitations(
     todos = [item for lote in lotes for item in lote.items]
     rotulos = await service.rotulos_de_categoria(todos)
     titulos = await service.titulos_das_tarefas(todos)
+    formularios = await service.titulos_dos_formularios(todos)
 
     def _com_rotulo(item) -> BatchItemResponse:
         resposta = BatchItemResponse.model_validate(item)
@@ -192,6 +193,9 @@ async def list_solicitations(
                 requester_department=lote.requester_department,
                 requester_polo=lote.requester_polo,
                 created_at=lote.created_at,
+                # Um envio e de um formulario so: todos os itens tem o mesmo.
+                form_id=lote.items[0].form_id,
+                form_title=formularios.get(lote.items[0].form_id),
                 items=[_com_rotulo(item) for item in lote.items],
             )
             for lote in lotes

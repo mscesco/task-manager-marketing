@@ -1004,7 +1004,10 @@ function Pastilha({
         borderRadius: 999,
         padding: "4px 10px",
         cursor: "pointer",
-        font: "inherit",
+        // ⚠️ `fontFamily`, e não o atalho `font: inherit`: o atalho junto do
+        // `fontWeight` que muda a cada passo gerava aviso do React no console
+        // (15/10) -- e podia deixar o peso errado depois de rerender.
+        fontFamily: "inherit",
         fontSize: 12,
         maxWidth: 220,
         overflow: "hidden",

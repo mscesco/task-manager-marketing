@@ -3275,6 +3275,10 @@ export type Batch = {
   requester_department: string | null;
   requester_polo: string | null;
   created_at: string;
+  /** Por qual formulário o envio entrou (15/10). `null` = pedido antigo,
+   *  de antes de existir formulário por time. */
+  form_id?: string | null;
+  form_title?: string | null;
   items: BatchItem[];
 };
 

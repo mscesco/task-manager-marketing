@@ -104,9 +104,10 @@ describe("seção repetível", () => {
 
   it(`para em ${MAX_REPETICOES}`, () => {
     montar();
-    for (let i = 1; i < MAX_REPETICOES; i++) {
-      fireEvent.click(screen.getByRole("button", { name: "+ Adicionar outro evento" }));
-    }
+    // ⚠️ O BOTÃO É BUSCADO UMA VEZ: `getByRole` a cada volta (19 vezes) passava
+    // dos 5 s com a suíte inteira rodando. O nó é o mesmo entre renders.
+    const adicionar = screen.getByText("+ Adicionar outro evento");
+    for (let i = 1; i < MAX_REPETICOES; i++) fireEvent.click(adicionar);
     expect(campos()).toHaveLength(MAX_REPETICOES);
     expect(screen.queryByRole("button", { name: "+ Adicionar outro evento" })).toBeNull();
     expect(screen.getByText(/Limite de 20 por envio/)).toBeTruthy();

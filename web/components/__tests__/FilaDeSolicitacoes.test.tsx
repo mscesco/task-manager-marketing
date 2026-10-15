@@ -178,6 +178,27 @@ describe("a categoria vem do BANCO, e não de um arquivo do front", () => {
 // =====================================================================
 // ⚠️ O botão do cabeçalho
 // =====================================================================
+describe("o formulário de origem (15/10)", () => {
+  it("o card diz por qual formulário o envio entrou", async () => {
+    vi.mocked(api.listarEnvios).mockResolvedValue({
+      items: [{ ...envio(), form_id: "f1", form_title: "Solicitação ao Marketing" }],
+      total: 1,
+      page: 1,
+      size: 10,
+      pending_total: 1,
+      approved_without_task_total: 0,
+    });
+    render(<SolicitacoesPage />);
+    expect(await screen.findByText("Solicitação ao Marketing")).toBeTruthy();
+  });
+
+  it("pedido antigo, sem formulário, não mostra rótulo vazio", async () => {
+    montar();
+    await screen.findByText("Maria do Polo");
+    expect(screen.queryByText(/Formulário/)).toBeNull();
+  });
+});
+
 describe("o atalho do cabeçalho", () => {
   it("⚠️ leva a `/formularios`, e NÃO a um `/solicitar` fixo", async () => {
     // ⚠️ ELE APONTAVA PARA `/solicitar`, e isso era verdade enquanto existia

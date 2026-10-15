@@ -494,6 +494,30 @@ class SolicitationService:
             rotulos[(None, slug)] = rotulo
         return rotulos
 
+    async def titulos_dos_formularios(
+        self, itens: list[Solicitation]
+    ) -> dict[uuid.UUID, str]:
+        """O titulo do formulario de cada pedido desta pagina (15/10: a fila
+        nao dizia por qual formulario o pedido entrou).
+
+        ⚠️ FORMULARIO APAGADO ENTRA: o pedido continua na fila, e o nome de
+        onde ele veio continua verdadeiro. Pedido orfao (sem `form_id`, de
+        antes da Spec 043) fica de fora, e a tela nao mostra nada.
+        """
+        ids = {i.form_id for i in itens if i.form_id is not None}
+        if not ids:
+            return {}
+        tenant = require_tenant()
+        linhas = (
+            await self.session.execute(
+                select(SolicitationForm.id, SolicitationForm.title).where(
+                    SolicitationForm.id.in_(ids),
+                    SolicitationForm.workspace_id == tenant.workspace_id,
+                )
+            )
+        ).all()
+        return {fid: titulo for fid, titulo in linhas}
+
     async def titulos_das_tarefas(
         self, itens: list[Solicitation]
     ) -> dict[uuid.UUID, str]:
