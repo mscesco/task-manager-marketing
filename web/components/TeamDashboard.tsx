@@ -365,7 +365,7 @@ function AheadChartCard({ data, className }: { data: DashboardResponse; classNam
             // cima (a soma) primeiro, e as de baixo por cima dela.
             const layers = [
               { value: total, cls: "bg-danger" },
-              { value: b.done + b.on_time, cls: "bg-accent/45" },
+              { value: b.done + b.on_time, cls: ON_TIME_FILL },
               { value: b.done, cls: "bg-accent" },
             ];
             return (
@@ -404,7 +404,7 @@ function AheadChartCard({ data, className }: { data: DashboardResponse; classNam
           <span className="h-2 w-2 rounded-full bg-accent" aria-hidden="true" /> Concluídas
         </li>
         <li className="flex items-center gap-1">
-          <span className="h-2 w-2 rounded-full bg-accent/45" aria-hidden="true" /> No prazo
+          <span className={`h-2 w-2 rounded-full ${ON_TIME_FILL}`} aria-hidden="true" /> No prazo
         </li>
         <li className="flex items-center gap-1">
           <span className="h-2 w-2 rounded-full bg-danger" aria-hidden="true" /> Atrasadas
@@ -690,6 +690,15 @@ function Empty({ children }: { children: ReactNode }) {
 }
 
 // ------------------------------------------------------------------ animação
+/**
+ * O azul claro de "no prazo", OPACO.
+ *
+ * ⚠️ Era `bg-accent/45` -- translúcido --, e as camadas do gráfico se
+ * empilham: o vermelho das atrasadas, por baixo, vazava e virava ROXO (ela
+ * viu em 15/10). A mistura é feita aqui, com o fundo do card, e não na tela.
+ */
+const ON_TIME_FILL = "bg-[color-mix(in_srgb,var(--color-accent)_45%,var(--color-surface))]";
+
 /** A mola: sem quicar, curta o bastante para não atrasar quem abre todo dia. */
 const GROW: Transition = { type: "spring", duration: 0.7, bounce: 0 };
 /** Cada barra começa um pouco depois da anterior -- o gráfico "se desenha". */
