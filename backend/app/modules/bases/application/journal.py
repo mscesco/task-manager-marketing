@@ -15,6 +15,8 @@ Os `kind` e o que cada `payload` carrega (a tabela da spec §9.2):
     column.update   {"column", "before": {campos}, "after": {campos}}
                     -- nome, posicao, largura e OPCOES (criar, renomear,
                        recolorir e reordenar opcao cabem aqui)
+    rows.import     {"rows": [ids], "columns": [ids]} -- a planilha importada
+                    (Spec 057): o desfazer marca as linhas e as colunas novas
     column.move     {"column", "from", "to"} -- arrastar a coluna (14/10); as do
                     caminho andam uma casa, e o desfazer anda de volta
     column.retype   {"column", "before": {"type", "options"},
@@ -50,6 +52,7 @@ VERB_OF_KIND: dict[str, str] = {
     "cell.update": "base_row.update",
     "row.create": "base_row.create",
     "row.delete": "base_row.delete",
+    "rows.import": "base_row.create",
     "column.create": "base_column.create",
     "column.update": "base_column.update",
     "column.retype": "base_column.update",
