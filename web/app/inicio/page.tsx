@@ -29,8 +29,10 @@ import TeamDashboard from "@/components/TeamDashboard";
 import Loading from "@/components/Loading";
 import FilterPicker from "@/components/FilterPicker";
 import PeriodPicker from "@/components/PeriodPicker";
+import ExportMenu from "@/components/ExportMenu";
 import {
   ApiError,
+  exportDashboard,
   getDashboard,
   listMembersDoTime,
   listTeamsAll,
@@ -40,7 +42,7 @@ import {
 } from "@/lib/api";
 import { navHref } from "@/lib/activeTeam";
 import { useActiveTeam, useActiveTeamId } from "@/lib/useActiveTeam";
-import { isIsoDay, type Period } from "@/lib/teamDashboard";
+import { isIsoDay, periodLabel, type Period } from "@/lib/teamDashboard";
 
 const SUBTEAM_PARAM = "subtime";
 const PERSON_PARAM = "pessoa";
@@ -217,7 +219,7 @@ function Home() {
         title={teamName ? `Início · ${teamName}` : "Início"}
         actions={
           today ? (
-            <div className="ml-auto flex flex-wrap items-center gap-2">
+            <div className="ml-auto flex flex-wrap items-center gap-2 print:hidden">
               {/* O período vale para todos -- não depende de ver a carga. */}
               <PeriodPicker value={period} today={today} onChange={writePeriod} />
               {(manager || subteamId) && subteams.length > 0 && (
@@ -239,10 +241,23 @@ function Home() {
                   onChange={(v) => writeFilters(subteamId, v)}
                 />
               )}
+              <ExportMenu
+                onSpreadsheet={() => exportDashboard(scope, personId, period)}
+              />
             </div>
           ) : undefined
         }
       />
+      {/* Só no PDF (15/10): os filtros viram uma linha de texto, já que os
+          seletores não aparecem no papel. */}
+      {today && (
+        <p className="m-0 hidden text-sm text-ink-soft print:block">
+          {periodLabel(period, today)}
+          {subteamId && ` · ${subteams.find((t) => t.id === subteamId)?.name ?? ""}`}
+          {person && ` · ${person.name}`}
+          {` · gerado em ${today.slice(8, 10)}/${today.slice(5, 7)}/${today.slice(0, 4)}`}
+        </p>
+      )}
       {error ? (
         // ⚠️ Com filtro, o erro tem SAÍDA (revisão de 15/10): um link com
         // `?pessoa=` aberto por quem não pode filtrar (403) prendia a tela

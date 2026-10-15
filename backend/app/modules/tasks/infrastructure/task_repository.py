@@ -28,12 +28,14 @@ from sqlalchemy import (
     delete,
     exists,
     func,
+    literal_column,
     not_,
     or_,
     select,
     text,
     true,
 )
+from sqlalchemy.dialects.postgresql import aggregate_order_by
 from sqlalchemy.orm import aliased
 from sqlalchemy.sql.elements import ColumnElement
 
@@ -108,6 +110,20 @@ class DashboardCounts:
     my_overdue_total: int
     my_on_time: list[DashboardItem]
     my_on_time_total: int
+
+
+@dataclass(frozen=True)
+class DashboardExportRow:
+    """Uma tarefa da planilha do painel (15/10): o que o painel contou."""
+
+    title: str
+    state: str  # "done" | "on_time" | "overdue"
+    column_name: str
+    priority: str
+    due_date: date | None
+    due_time: time | None
+    assignees: str
+    parent_title: str | None
 
 
 @dataclass(frozen=True)
@@ -1608,6 +1624,74 @@ class TaskRepository(BaseRepository[Task]):
             my_on_time=my_on_time,
             my_on_time_total=my_counts[1],
         )
+
+    async def dashboard_export_rows(
+        self,
+        under_team_id: uuid.UUID | None,
+        now: WorkspaceNow,
+        *,
+        assignee_id: uuid.UUID | None = None,
+        period: Period | None = None,
+    ) -> list[DashboardExportRow]:
+        """As tarefas que o painel CONTOU (a planilha, 15/10): as do resumo
+        (concluidas e as que cobram prazo na janela) e as atrasadas do recorte.
+        Os MESMOS predicados dos numeros -- a planilha tem de bater com a tela."""
+        tenant = require_tenant()
+        t = self._dashboard_tasks(under_team_id, assignee_id)
+        p = _DashboardPredicates(t, now, period)
+        names = (
+            select(
+                TaskAssignment.task_id.label("task_id"),
+                func.string_agg(
+                    User.name, aggregate_order_by(literal_column("', '"), User.name)
+                ).label("names"),
+            )
+            .join(User, User.id == TaskAssignment.user_id)
+            .where(TaskAssignment.workspace_id == tenant.workspace_id)
+            .group_by(TaskAssignment.task_id)
+            .subquery("n")
+        )
+        parent = aliased(Task)
+        state = case(
+            (t.c.semantic == ColumnSemantic.DONE, "done"),
+            (p.overdue_any, "overdue"),
+            else_="on_time",
+        )
+        rows = (
+            await self.session.execute(
+                select(
+                    t.c.title,
+                    state,
+                    t.c.column_name,
+                    t.c.priority,
+                    t.c.due_date,
+                    t.c.due_time,
+                    func.coalesce(names.c.names, ""),
+                    parent.title,
+                )
+                .select_from(t)
+                .outerjoin(names, names.c.task_id == t.c.id)
+                .outerjoin(
+                    parent,
+                    and_(parent.id == t.c.parent_task_id, parent.deleted_at.is_(None)),
+                )
+                .where(or_(p.counted, p.overdue))
+                .order_by(t.c.due_date, t.c.due_time.asc().nulls_last(), t.c.title)
+            )
+        ).all()
+        return [
+            DashboardExportRow(
+                title=r[0],
+                state=r[1],
+                column_name=r[2],
+                priority=str(getattr(r[3], "value", r[3])),
+                due_date=r[4],
+                due_time=r[5],
+                assignees=r[6],
+                parent_title=r[7],
+            )
+            for r in rows
+        ]
 
     async def _bucket_counts(
         self, t: Subquery, p: _DashboardPredicates, buckets: list[Bucket]

@@ -407,3 +407,46 @@ async def test_periodo_invalido(db) -> None:
             r = await cli.get("/api/v1/dashboard?start=2026-10-01")
     assert r.status_code == 422, r.text
 
+
+
+# ------------------------------------------------------------ planilha (15/10)
+
+
+async def test_a_planilha_bate_com_o_painel(db) -> None:
+    import io
+
+    from openpyxl import load_workbook
+
+    m = await _mundo(db)
+    with _como(m, "ger") as ctx:
+        async with _client(db, ctx) as cli:
+            r = await cli.get(
+                f"/api/v1/dashboard/export?under_team_id={m['mkt']}"
+                "&start=2026-10-12&end=2026-10-18"
+            )
+    assert r.status_code == 200, r.text
+    assert "painel-marketing-2026-10-12-a-2026-10-18.xlsx" in r.headers["content-disposition"]
+    wb = load_workbook(io.BytesIO(r.content))
+    assert wb.sheetnames == ["Resumo", "Gráfico", "Tarefas", "Carga"]
+    resumo = {row[0]: row[1] for row in wb["Resumo"].iter_rows(values_only=True) if row[0]}
+    assert resumo["Time"] == "marketing"  # o nome que a factory da
+    tarefas = list(wb["Tarefas"].iter_rows(min_row=2, values_only=True))
+    # o total do resumo e as linhas da aba contam as mesmas tarefas (as
+    # atrasadas deste periodo ja estao dentro do total)
+    assert len(tarefas) == resumo["Total (concluídas + abertas com prazo)"]
+    estados = {t[0]: t[1] for t in tarefas}
+    assert estados["t5"] == "Concluída"  # arquivada conta
+    assert estados["t2"] == "Atrasada"
+
+
+async def test_a_planilha_do_operador_nao_tem_a_carga(db) -> None:
+    import io
+
+    from openpyxl import load_workbook
+
+    m = await _mundo(db)
+    with _como(m, "op") as ctx:
+        async with _client(db, ctx) as cli:
+            r = await cli.get(f"/api/v1/dashboard/export?under_team_id={m['mkt']}")
+    assert r.status_code == 200, r.text
+    assert "Carga" not in load_workbook(io.BytesIO(r.content)).sheetnames

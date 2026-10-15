@@ -405,7 +405,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           do <aside> e o ultimo recurso: se ate os blocos fixos (logo,
           retrair, rodape) nao couberem, a barra inteira rola. */}
       <aside
-        className={`sticky top-0 flex h-screen ${w} shrink-0 flex-col gap-1 overflow-y-auto border-r border-border bg-surface px-2 py-2 transition-[width] duration-200`}
+        // `print:hidden`: exportar o painel em PDF (15/10) imprime SÓ o conteúdo.
+        className={`sticky top-0 flex h-screen ${w} shrink-0 flex-col gap-1 overflow-y-auto border-r border-border bg-surface px-2 py-2 transition-[width] duration-200 print:hidden`}
       >
         {/* Logo */}
         <div className={`flex shrink-0 items-center gap-3 py-2 ${open ? "px-3" : "justify-center"}`}>
@@ -612,7 +613,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
       {/* Conteudo -- sino flutua no canto, conteudo recua no topo */}
       <div className="relative flex min-w-0 flex-1 flex-col">
-        <div className="pointer-events-none absolute right-4 top-3 z-20 sm:right-6">
+        <div className="pointer-events-none absolute right-4 top-3 z-20 sm:right-6 print:hidden">
           <div className="pointer-events-auto rounded-lg border border-border bg-surface shadow-card">
             <NotificationBell />
           </div>
@@ -622,7 +623,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             e as cinco telas recortadas perguntam com `useActiveTeam()`. O
             motivo de ser contexto e não cada tela resolvendo o seu está no
             topo de `lib/useActiveTeam.tsx`. */}
-        <main className="min-w-0 flex-1 px-4 pb-4 pt-16 sm:px-6 sm:pb-6">
+        <main className="min-w-0 flex-1 px-4 pb-4 pt-16 sm:px-6 sm:pb-6 print:p-0">
           <ActiveTeamProvider
             value={{
               // ⚠⚠ `publishedActiveTeam`, e NÃO `contexto` cru. Até 14/09 era o

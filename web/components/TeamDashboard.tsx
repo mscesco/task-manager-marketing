@@ -571,7 +571,7 @@ function CardFrame({
 }) {
   return (
     <section
-      className={`flex flex-col rounded-lg border border-border bg-surface p-4 ${className}`}
+      className={`flex flex-col rounded-lg border border-border bg-surface p-4 break-inside-avoid ${className}`}
       aria-label={title}
     >
       <div className="mb-3">
@@ -670,7 +670,8 @@ function TaskList({
 function Scroll({ className, children }: { className: string; children: ReactNode }) {
   return (
     <div
-      className={`-mr-1 overflow-y-auto overscroll-contain pr-1 ${className}`}
+      // Na impressão a lista aparece INTEIRA: rolar não existe no papel.
+      className={`-mr-1 overflow-y-auto overscroll-contain pr-1 print:max-h-none print:overflow-visible ${className}`}
       tabIndex={0}
       aria-label="Lista de tarefas, role para ver todas"
     >

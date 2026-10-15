@@ -8,11 +8,15 @@ from __future__ import annotations
 import uuid
 from datetime import date, datetime, time
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Response
 from pydantic import BaseModel
 
 from app.core.deps import SessionDep
 from app.modules.auth.api.dependencies import TenantContextDep
+from app.modules.tasks.application.dashboard_export import (
+    XLSX_MEDIA_TYPE,
+    build_dashboard_xlsx,
+)
 from app.modules.tasks.application.dashboard_service import DashboardService
 from app.modules.tasks.domain.dashboard import Period
 from app.modules.tasks.infrastructure.task_repository import DashboardItem
@@ -144,11 +148,7 @@ async def get_dashboard(
     ),
     end: date | None = Query(None, description="Fim do periodo, inclusive."),
 ) -> DashboardResponse:
-    if (start is None) != (end is None):
-        raise ValidationError(
-            "O periodo precisa de inicio e fim.", details={"field": "start"}
-        )
-    period = Period(start, end) if start is not None and end is not None else None
+    period = _period(start, end)
     d = await DashboardService(session).build(
         under_team_id, assignee_id=assignee_id, period=period
     )
@@ -197,3 +197,36 @@ async def get_dashboard(
             else DashboardQueue(pending=d.queue.pending, oldest_at=d.queue.oldest_at)
         ),
     )
+
+
+@router.get("/export", response_class=Response)
+async def export_dashboard(
+    _: TenantContextDep,
+    session: SessionDep,
+    under_team_id: uuid.UUID | None = None,
+    assignee_id: uuid.UUID | None = None,
+    start: date | None = None,
+    end: date | None = None,
+) -> Response:
+    """O painel em planilha (.xlsx), com os MESMOS filtros da tela (15/10).
+
+    As mesmas regras de `GET /dashboard`: o filtro de pessoa exige
+    `team_workload.read` (403), e a aba de carga so vem para quem a ve.
+    """
+    content, nome = await build_dashboard_xlsx(
+        session, under_team_id, assignee_id=assignee_id, period=_period(start, end)
+    )
+    return Response(
+        content=content,
+        media_type=XLSX_MEDIA_TYPE,
+        headers={"Content-Disposition": f'attachment; filename="{nome}"'},
+    )
+
+
+def _period(start: date | None, end: date | None) -> Period | None:
+    if (start is None) != (end is None):
+        raise ValidationError(
+            "O periodo precisa de inicio e fim.", details={"field": "start"}
+        )
+    return Period(start, end) if start is not None and end is not None else None
+

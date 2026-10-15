@@ -616,3 +616,28 @@ button:focus-visible,
 .texto-formatado ul[data-type="taskList"], .texto-formatado ul.contains-task-list { list-style: none; padding-left: 0.2em; }
 .texto-formatado ul[data-type="taskList"] li { display: flex; gap: 0.5em; align-items: flex-start; }
 .texto-formatado ul[data-type="taskList"] li > label { margin-top: 0.2em; }
+
+/* --- Impressão (Spec 058, 15/10: exportar o painel em PDF) -----------------
+   ⚠️ SEMPRE NO TEMA CLARO: o PDF vai para quem não escolheu o tema escuro, e
+   fundo escuro gasta tinta. ⚠️ `print-color-adjust: exact`: sem ele o
+   navegador tira os fundos (as barras e o círculo sumiriam do PDF). */
+@media print {
+  @page { size: A4 landscape; margin: 10mm; }
+  :root, [data-theme="escuro"] {
+    color-scheme: light;
+    --color-canvas: #ffffff;
+    --color-surface: #ffffff;
+    --color-surface-2: #f6f5f4;
+    --color-border: #e6e6e6;
+    --color-ink: #000000;
+    --color-ink-soft: #31302e;
+    --color-ink-faint: #615d59;
+    --color-accent: #0075de;
+    --color-accent-soft: #d6e8fb;
+    --color-danger: #dc2626;
+  }
+  [data-theme="escuro"] .tile-destaque { color: #ffffff; }
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body { background: #ffffff !important; }
+}
+

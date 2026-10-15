@@ -51,6 +51,9 @@ dependencies = [
     # normaliza para a forma fully-qualified -- regra que nao cabe numa faixa
     # de Unicode escrita a mao (spec 050, §4.3).
     "emoji==2.15.0",
+    # Spec 058/057 (15/10): exportar o painel e a Base em Excel, e IMPORTAR
+    # planilha na Base. Le e escreve .xlsx sem Excel instalado; puro Python.
+    "openpyxl==3.1.5",
 ]
 
 [project.optional-dependencies]
