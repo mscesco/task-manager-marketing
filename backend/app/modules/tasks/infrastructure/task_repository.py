@@ -24,6 +24,7 @@ from sqlalchemy import (
     Select,
     Subquery,
     and_,
+    case,
     delete,
     exists,
     func,
@@ -31,6 +32,7 @@ from sqlalchemy import (
     or_,
     select,
     text,
+    true,
 )
 from sqlalchemy.orm import aliased
 from sqlalchemy.sql.elements import ColumnElement
@@ -52,7 +54,13 @@ from app.db.repository import BaseRepository
 from app.modules.auth.domain import team_scope
 from app.modules.tasks.domain.archival import TERMINAL_STATUSES
 from app.modules.tasks.domain.board_semantics import TERMINAL_SEMANTICS
-from app.modules.tasks.domain.dashboard import DAYS_AHEAD, WorkspaceNow
+from app.modules.tasks.domain.dashboard import (
+    DAYS_AHEAD,
+    Bucket,
+    Period,
+    WorkspaceNow,
+    chart_buckets,
+)
 from app.modules.tasks.domain.history import HistoryEntry
 from app.modules.tasks.domain.perda_de_alcance import (
     RelacaoPerdida,
@@ -86,14 +94,29 @@ class DashboardCounts:
     """Os numeros dos cards que todos veem, como o banco os contou."""
 
     overdue_count: int
-    done_this_week: int
-    total_this_week: int
-    due_by_day: dict[date, int]
+    #: A janela do resumo: a semana corrente, ou o periodo escolhido.
+    summary_start: date
+    summary_end: date
+    done: int
+    total: int
+    #: Abertas e ainda no prazo: as que vencem HOJE, ou as do periodo.
+    on_time_total: int
+    bucket_unit: str
+    buckets: list[BucketCounts]
     oldest_overdue: list[DashboardItem]
     my_overdue: list[DashboardItem]
     my_overdue_total: int
-    my_due_today: list[DashboardItem]
-    my_due_today_total: int
+    my_on_time: list[DashboardItem]
+    my_on_time_total: int
+
+
+@dataclass(frozen=True)
+class BucketCounts:
+    start: date
+    end: date
+    done: int
+    on_time: int
+    overdue: int
 
 
 @dataclass(frozen=True)
@@ -1495,28 +1518,35 @@ class TaskRepository(BaseRepository[Task]):
         *,
         me: uuid.UUID,
         assignee_id: uuid.UUID | None = None,
+        period: Period | None = None,
     ) -> DashboardCounts:
-        """Os numeros dos cards que todos veem (2, 3, 4 e 11)."""
-        t = self._dashboard_tasks(under_team_id, assignee_id)
-        p = _DashboardPredicates(t, now)
+        """Os numeros dos cards que todos veem.
 
-        week = (
+        `period` (15/10): tudo passa a ser das tarefas com prazo nele, no
+        estado de hoje -- ver `_DashboardPredicates`.
+        """
+        t = self._dashboard_tasks(under_team_id, assignee_id)
+        p = _DashboardPredicates(t, now, period)
+
+        summary = (
             await self.session.execute(
                 select(
                     func.count().filter(p.overdue),
-                    func.count().filter(p.done_this_week),
-                    func.count().filter(p.counts_this_week),
+                    func.count().filter(p.done),
+                    func.count().filter(p.counted),
+                    func.count().filter(p.on_time),
                 ).select_from(t)
             )
         ).one()
 
-        due_by_day = (
-            await self.session.execute(
-                select(t.c.due_date, func.count())
-                .where(p.due_ahead)
-                .group_by(t.c.due_date)
-            )
-        ).all()
+        # O grafico: os 7 dias a partir de hoje, ou o periodo -- por dia, ou
+        # por semana quando o periodo passa de 14 dias.
+        if period is None:
+            window_start, window_end = now.today, now.today + timedelta(days=DAYS_AHEAD - 1)
+        else:
+            window_start, window_end = period.start, period.end
+        unit, buckets = chart_buckets(window_start, window_end)
+        buckets_counts = await self._bucket_counts(t, p, buckets)
 
         def item_columns() -> Select:
             return select(
@@ -1549,39 +1579,87 @@ class TaskRepository(BaseRepository[Task]):
             .order_by(*oldest_first)
             .limit(list_cap)
         )
-        my_due_today = await self._dashboard_items(
+        my_on_time = await self._dashboard_items(
             item_columns()
-            .where(p.due_today, assigned_to_me)
-            .order_by(t.c.due_time.asc().nulls_last(), t.c.id)
+            .where(p.on_time, assigned_to_me)
+            .order_by(*oldest_first)
             .limit(list_cap)
         )
         my_counts = (
             await self.session.execute(
-                select(
-                    func.count().filter(p.overdue), func.count().filter(p.due_today)
-                )
+                select(func.count().filter(p.overdue), func.count().filter(p.on_time))
                 .select_from(t)
                 .where(assigned_to_me)
             )
         ).one()
 
         return DashboardCounts(
-            overdue_count=week[0],
-            done_this_week=week[1],
-            total_this_week=week[2],
-            due_by_day=dict(due_by_day),
+            overdue_count=summary[0],
+            summary_start=p.summary_start,
+            summary_end=p.summary_end,
+            done=summary[1],
+            total=summary[2],
+            on_time_total=summary[3],
+            bucket_unit=unit,
+            buckets=buckets_counts,
             oldest_overdue=oldest_overdue,
             my_overdue=my_overdue,
             my_overdue_total=my_counts[0],
-            my_due_today=my_due_today,
-            my_due_today_total=my_counts[1],
+            my_on_time=my_on_time,
+            my_on_time_total=my_counts[1],
         )
+
+    async def _bucket_counts(
+        self, t: Subquery, p: _DashboardPredicates, buckets: list[Bucket]
+    ) -> list[BucketCounts]:
+        """Concluidas, no prazo e atrasadas por coluna do grafico, numa ida so.
+
+        ⚠️ O GRAFICO OLHA A SUA PROPRIA JANELA, e nao o recorte do periodo: sem
+        periodo, ele e "os proximos 7 dias", que nao e a semana do resumo.
+        """
+        if not buckets:
+            return []
+        c = t.c
+        janela = c.due_date.between(buckets[0].start, buckets[-1].end)
+        # A coluna de cada tarefa: o inicio do dia, ou da semana (truncado
+        # dentro da janela -- a primeira semana pode comecar no meio).
+        starts = [b.start for b in buckets]
+        key = case(
+            *[(c.due_date >= b.start, b.start) for b in reversed(buckets)],
+            else_=None,
+        ).label("bucket")
+        rows = (
+            await self.session.execute(
+                select(
+                    key,
+                    func.count().filter(c.semantic == ColumnSemantic.DONE),
+                    func.count().filter(p.charges_deadline, not_(p.overdue_any)),
+                    func.count().filter(p.overdue_any),
+                )
+                .select_from(t)
+                .where(janela)
+                .group_by(key)
+            )
+        ).all()
+        por_inicio = {r[0]: r for r in rows}
+        assert set(por_inicio) <= set(starts)
+        return [
+            BucketCounts(
+                start=b.start,
+                end=b.end,
+                done=por_inicio[b.start][1] if b.start in por_inicio else 0,
+                on_time=por_inicio[b.start][2] if b.start in por_inicio else 0,
+                overdue=por_inicio[b.start][3] if b.start in por_inicio else 0,
+            )
+            for b in buckets
+        ]
 
     async def workload_by_person(
         self,
         under_team_id: uuid.UUID | None,
         now: WorkspaceNow,
         member_teams: frozenset[uuid.UUID] | None,
+        period: Period | None = None,
     ) -> list[Workload]:
         """Card 1: tarefas ABERTAS de cada pessoa, e quantas delas atrasadas.
 
@@ -1594,7 +1672,7 @@ class TaskRepository(BaseRepository[Task]):
         """
         tenant = require_tenant()
         t = self._dashboard_tasks(under_team_id)
-        p = _DashboardPredicates(t, now)
+        p = _DashboardPredicates(t, now, period)
         counts_by_user = (
             select(
                 TaskAssignment.user_id.label("user_id"),
@@ -1603,7 +1681,7 @@ class TaskRepository(BaseRepository[Task]):
             )
             .select_from(t)
             .join(TaskAssignment, TaskAssignment.task_id == t.c.id)
-            .where(p.open, TaskAssignment.workspace_id == tenant.workspace_id)
+            .where(p.open_scoped, TaskAssignment.workspace_id == tenant.workspace_id)
             .group_by(TaskAssignment.user_id)
             .subquery("c")
         )
@@ -1662,9 +1740,14 @@ class _DashboardPredicates:
 
     ⚠️ ESTE E O LUGAR ONDE O PAINEL PODE MENTIR, e por isso cada pergunta tem
     nome e esta escrita uma vez: os cards reusam, e nao reescrevem.
+
+    ⚠️ COM PERIODO (15/10), o recorte e "prazo dentro do periodo" em TODAS as
+    perguntas que os cards usam -- atrasadas, carga, as minhas, o resumo. O
+    ESTADO e sempre o de hoje (decisao dela): `overdue` continua sendo "vencida
+    AGORA e ainda aberta".
     """
 
-    def __init__(self, t: Subquery, now: WorkspaceNow) -> None:
+    def __init__(self, t: Subquery, now: WorkspaceNow, period: Period | None = None) -> None:
         c = t.c
         #: nem DONE nem CANCELLED, e nao arquivada.
         self.open = and_(
@@ -1675,8 +1758,9 @@ class _DashboardPredicates:
         #: Bloqueado nasce com o aviso de prazo desligado.
         self.charges_deadline = and_(self.open, c.notify_deadline.is_(True))
         #: `estaAtrasada` do front (e `dashboard.is_overdue`): sem hora vence
-        #: quando o dia acaba; com hora, no minuto seguinte.
-        self.overdue = and_(
+        #: quando o dia acaba; com hora, no minuto seguinte. SEM o recorte do
+        #: periodo -- o grafico usa esta, na janela dele.
+        self.overdue_any = and_(
             self.charges_deadline,
             c.due_date.is_not(None),
             or_(
@@ -1688,20 +1772,23 @@ class _DashboardPredicates:
                 ),
             ),
         )
-        in_week = c.due_date.between(now.week_start, now.week_end)
+
+        if period is None:
+            in_scope = true()
+            self.summary_start, self.summary_end = now.week_start, now.week_end
+            #: Sem periodo, "no prazo" e o que vence HOJE e ainda nao venceu.
+            on_time_window = c.due_date == now.today
+        else:
+            in_scope = c.due_date.between(period.start, period.end)
+            self.summary_start, self.summary_end = period.start, period.end
+            on_time_window = in_scope
+        in_summary = c.due_date.between(self.summary_start, self.summary_end)
+
+        self.overdue = and_(self.overdue_any, in_scope)
+        #: A carga: as abertas (inclusive a bloqueada -- ainda e dela).
+        self.open_scoped = and_(self.open, in_scope)
         #: concluida arquivada CONTA (§10.6).
-        self.done_this_week = and_(c.semantic == ColumnSemantic.DONE, in_week)
+        self.done = and_(c.semantic == ColumnSemantic.DONE, in_summary)
         #: cancelada e bloqueada ficam fora (§10.4).
-        self.counts_this_week = or_(
-            self.done_this_week, and_(self.charges_deadline, in_week)
-        )
-        self.due_ahead = and_(
-            self.charges_deadline,
-            c.due_date.between(
-                now.today, now.today + timedelta(days=DAYS_AHEAD - 1)
-            ),
-            not_(self.overdue),
-        )
-        self.due_today = and_(
-            self.charges_deadline, c.due_date == now.today, not_(self.overdue)
-        )
+        self.counted = or_(self.done, and_(self.charges_deadline, in_summary))
+        self.on_time = and_(self.charges_deadline, on_time_window, not_(self.overdue_any))

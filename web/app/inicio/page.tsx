@@ -15,8 +15,12 @@
 //   solicitações não muda -- ver `DashboardService.build`);
 // - só aparecem para quem vê a carga (a resposta traz `workload`), e o
 //   servidor recusa o filtro de pessoa para os outros;
-// - moram na URL (`?subtime=`, `?pessoa=`), lidos por `window.location`, e
-//   não por `useSearchParams` -- o mesmo cuidado da Base com o build.
+// - PERÍODO (15/10): escolhida uma data, TUDO passa a ser das tarefas com
+//   prazo nela, no estado de hoje (a regra é do servidor). Vale para todos,
+//   e sobrevive à troca de time (data não é de time nenhum);
+// - moram na URL (`?subtime=`, `?pessoa=`, `?de=`, `?ate=`), lidos por
+//   `window.location`, e não por `useSearchParams` -- o mesmo cuidado da Base
+//   com o build.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import AppShell from "@/components/AppShell";
@@ -24,6 +28,7 @@ import PageHeader from "@/components/PageHeader";
 import TeamDashboard from "@/components/TeamDashboard";
 import Loading from "@/components/Loading";
 import FilterPicker from "@/components/FilterPicker";
+import PeriodPicker from "@/components/PeriodPicker";
 import {
   ApiError,
   getDashboard,
@@ -35,9 +40,12 @@ import {
 } from "@/lib/api";
 import { navHref } from "@/lib/activeTeam";
 import { useActiveTeam, useActiveTeamId } from "@/lib/useActiveTeam";
+import { isIsoDay, type Period } from "@/lib/teamDashboard";
 
 const SUBTEAM_PARAM = "subtime";
 const PERSON_PARAM = "pessoa";
+const START_PARAM = "de";
+const END_PARAM = "ate";
 
 export default function HomePage() {
   return (
@@ -52,17 +60,39 @@ function Home() {
   const teamId = useActiveTeamId();
   const [data, setData] = useState<DashboardResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // O "hoje" do servidor, guardado: os filtros ficam na tela enquanto um
+  // filtro novo carrega (sem ele, sumiam e voltavam a cada troca).
+  const [today, setToday] = useState<string | null>(null);
+  const [managerSeen, setManagerSeen] = useState(false);
 
   // --- os filtros ---
   const [subteamId, setSubteamId] = useState<string | null>(null);
   const [personId, setPersonId] = useState<string | null>(null);
+  const [period, setPeriod] = useState<Period | null>(null);
   const [filtersRead, setFiltersRead] = useState(false);
   useEffect(() => {
     const q = new URLSearchParams(window.location.search);
     setSubteamId(q.get(SUBTEAM_PARAM));
     setPersonId(q.get(PERSON_PARAM));
+    // Período da URL só se as duas datas valem e estão em ordem; senão, "Agora".
+    const de = q.get(START_PARAM);
+    const ate = q.get(END_PARAM);
+    if (isIsoDay(de) && isIsoDay(ate) && de <= ate) setPeriod({ start: de, end: ate });
     setFiltersRead(true);
   }, []);
+  function writePeriod(p: Period | null) {
+    setPeriod(p);
+    const url = new URL(window.location.href);
+    if (p) {
+      url.searchParams.set(START_PARAM, p.start);
+      url.searchParams.set(END_PARAM, p.end);
+    } else {
+      url.searchParams.delete(START_PARAM);
+      url.searchParams.delete(END_PARAM);
+    }
+    window.history.replaceState(null, "", url);
+  }
+  const periodKey = period ? `${period.start}/${period.end}` : "";
   function writeFilters(subteam: string | null, person: string | null) {
     setSubteamId(subteam);
     setPersonId(person);
@@ -140,16 +170,19 @@ function Home() {
   const latest = useRef(0);
   const load = useCallback(() => {
     const n = ++latest.current;
-    getDashboard(scope, personId)
+    getDashboard(scope, personId, period)
       .then((d) => {
         if (n !== latest.current) return;
         setData(d);
+        setToday(d.today);
+        setManagerSeen(d.workload !== null);
         setError(null);
       })
       .catch((e: ApiError) => {
         if (n === latest.current) setError(e.message || "Não consegui carregar o painel.");
       });
-  }, [scope, personId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scope, personId, periodKey]);
 
   useEffect(() => {
     if (active === null || !filtersRead) return;
@@ -161,7 +194,7 @@ function Home() {
     // ⚠️ `active === null` e não `active`: o objeto é novo a cada render da
     // barra (o defeito de 14/09 em "Minhas tarefas").
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scope, personId, filtersRead, active === null]);
+  }, [scope, personId, periodKey, filtersRead, active === null]);
 
   useEffect(() => {
     const onVisible = () => {
@@ -174,17 +207,20 @@ function Home() {
   const person = people.find((p) => p.id === personId) ?? null;
   // Os filtros são de quem vê a carga. O de PESSOA só para ela: o servidor o
   // recusa para os outros (403).
-  const manager = !!data && data.workload !== null;
-  const hasFilter = !!personId || !!subteamId;
+  // Guardado como `today`: os seletores não somem enquanto um filtro carrega.
+  const manager = managerSeen;
+  const hasFilter = !!personId || !!subteamId || !!period;
 
   return (
     <div className="flex flex-col gap-4">
       <PageHeader
         title={teamName ? `Início · ${teamName}` : "Início"}
         actions={
-          manager || (data && subteamId) ? (
+          today ? (
             <div className="ml-auto flex flex-wrap items-center gap-2">
-              {subteams.length > 0 && (
+              {/* O período vale para todos -- não depende de ver a carga. */}
+              <PeriodPicker value={period} today={today} onChange={writePeriod} />
+              {(manager || subteamId) && subteams.length > 0 && (
                 <FilterPicker
                   label="Subtime"
                   value={subteamId}
@@ -214,7 +250,14 @@ function Home() {
         <div className="error-box flex flex-wrap items-center gap-3" role="alert">
           <span>{error}</span>
           {hasFilter && (
-            <button type="button" className="btn" onClick={() => writeFilters(null, null)}>
+            <button
+              type="button"
+              className="btn"
+              onClick={() => {
+                writeFilters(null, null);
+                writePeriod(null);
+              }}
+            >
               Limpar filtros
             </button>
           )}

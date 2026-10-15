@@ -18,6 +18,7 @@ const LINKS = { mine: "/minhas-tarefas?time=mkt", queue: "/solicitacoes?time=mkt
 function resposta(over: Partial<DashboardResponse> = {}): DashboardResponse {
   return {
     today: "2026-10-14",
+    period: null,
     week: { start: "2026-10-12", end: "2026-10-18", done: 14, total: 20 },
     overdue_total: 2,
     oldest_overdue: [
@@ -32,11 +33,13 @@ function resposta(over: Partial<DashboardResponse> = {}): DashboardResponse {
         column_color: "var(--status-progress-dot)",
       },
     ],
-    due_ahead: [
-      { date: "2026-10-14", count: 2 },
-      { date: "2026-10-15", count: 0 },
+    on_time_total: 2,
+    bucket_unit: "day",
+    buckets: [
+      { start: "2026-10-14", end: "2026-10-14", done: 0, on_time: 2, overdue: 1 },
+      { start: "2026-10-15", end: "2026-10-15", done: 0, on_time: 0, overdue: 0 },
     ],
-    mine: { overdue: [], overdue_total: 0, due_today: [], due_today_total: 0 },
+    mine: { overdue: [], overdue_total: 0, on_time: [], on_time_total: 0 },
     workload: null,
     queue: null,
     ...over,
@@ -138,4 +141,20 @@ describe("TeamDashboard", () => {
     );
     expect(screen.getByText("(inativo)")).toBeTruthy();
   });
+
+  it("com período, os rótulos dizem período, e o gráfico empilha", () => {
+    render(
+      <TeamDashboard
+        data={resposta({ period: { start: "2026-10-01", end: "2026-10-05" } })}
+        links={LINKS}
+      />
+    );
+    expect(screen.getByRole("region", { name: "Concluídas no período" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Em aberto no prazo" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Progresso do período" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Minhas no período" })).toBeTruthy();
+    // a coluna diz o que tem dentro, para quem não vê as cores
+    expect(screen.getByLabelText("Hoje: 0 concluídas, 2 no prazo, 1 atrasadas")).toBeTruthy();
+  });
 });
+

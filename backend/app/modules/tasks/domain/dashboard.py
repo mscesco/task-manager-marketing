@@ -63,3 +63,54 @@ def is_overdue(
     if due_date < now.today:
         return True
     return due_date == now.today and due_time is not None and due_time < now.minute
+
+
+# ------------------------------------------------------------- periodo (15/10)
+# O filtro de DATA (pedido dela, 15/10). Escolhido um periodo, TUDO no painel
+# passa a ser das tarefas com prazo nele -- mas no ESTADO DE HOJE, e nao no de
+# entao (decisao dela): a tarefa que vencia em 05/10 e foi concluida no dia 10
+# conta como concluida. Reconstruir o passado seria aproximado; o hoje e exato.
+
+#: Teto do periodo: um ano. Mais que isso e relatorio, nao painel.
+MAX_PERIOD_DAYS = 366
+#: Ate 14 dias o grafico tem uma coluna POR DIA; acima, POR SEMANA.
+DAY_BUCKETS_MAX = 14
+
+
+@dataclass(frozen=True)
+class Period:
+    start: date
+    end: date
+
+    @property
+    def days(self) -> int:
+        return (self.end - self.start).days + 1
+
+
+@dataclass(frozen=True)
+class Bucket:
+    """Uma coluna do grafico: um dia, ou uma semana (segunda a domingo)."""
+
+    start: date
+    end: date
+
+
+def chart_buckets(start: date, end: date) -> tuple[str, list[Bucket]]:
+    """As colunas do grafico para a janela [start, end].
+
+    ⚠️ POR SEMANA, a primeira e a ultima podem ser PARCIAIS: um periodo de
+    quarta a sexta da semana seguinte tem a coluna da primeira semana de quarta
+    a domingo -- a coluna diz o que conta, e nao finge uma semana inteira.
+    """
+    if (end - start).days + 1 <= DAY_BUCKETS_MAX:
+        n = (end - start).days + 1
+        dias = [start + timedelta(days=i) for i in range(n)]
+        return "day", [Bucket(d, d) for d in dias]
+    out: list[Bucket] = []
+    cursor = start
+    while cursor <= end:
+        fim_da_semana = cursor + timedelta(days=6 - cursor.weekday())
+        out.append(Bucket(cursor, min(fim_da_semana, end)))
+        cursor = fim_da_semana + timedelta(days=1)
+    return "week", out
+

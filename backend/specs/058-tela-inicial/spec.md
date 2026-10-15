@@ -248,4 +248,16 @@ Sem migration: nada novo é gravado.
     carga também filtra.
 - **As listas de tarefas** viraram blocos clicáveis com a coluna (e a cor dela),
   a prioridade, o prazo em pílula e a seta de "abre".
+- **Filtro de período** (pedido dela, 15/10): atalhos (Agora, esta/última/
+  próxima semana, este mês, mês passado), personalizado (de/até, até 366 dias)
+  e setas que andam o período inteiro (mês anda por mês). Escolhido um período,
+  **tudo** passa a ser das tarefas com prazo nele -- concluídas, total,
+  atrasadas, "em aberto no prazo", carga, as minhas, e as solicitações que
+  chegaram nele --, **no estado de hoje** (decisão dela: a tarefa que vencia em
+  05/10 e foi concluída no dia 10 conta como concluída; reconstruir o passado
+  seria aproximado). Tarefa sem prazo não entra em período nenhum.
+  - O gráfico mostra uma coluna por dia (até 14 dias) ou por semana (acima),
+    empilhando concluídas, no prazo e atrasadas.
+  - Na URL: `?de=` e `?ate=`. Vale para todos os papéis, e sobrevive à troca
+    de time.
 

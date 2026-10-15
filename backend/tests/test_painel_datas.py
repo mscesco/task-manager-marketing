@@ -44,3 +44,14 @@ def test_atrasada_como_o_selo_do_quadro() -> None:
     assert not is_overdue(hoje, time(15, 0, 45), agora)  # segundos nao mudam
     assert not is_overdue(None, None, agora)
     assert not is_overdue(date(2026, 10, 15), time(0, 0), agora)
+
+
+def test_colunas_do_grafico_por_dia_ate_14_e_por_semana_acima() -> None:
+    from app.modules.tasks.domain.dashboard import chart_buckets
+
+    unidade, colunas = chart_buckets(date(2026, 10, 12), date(2026, 10, 25))
+    assert (unidade, len(colunas)) == ("day", 14)
+    unidade, colunas = chart_buckets(date(2026, 10, 15), date(2026, 10, 29))
+    # quinta a domingo, a semana inteira, e segunda a quinta
+    assert unidade == "week"
+    assert [(c.start.day, c.end.day) for c in colunas] == [(15, 18), (19, 25), (26, 29)]

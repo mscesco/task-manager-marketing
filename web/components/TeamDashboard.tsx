@@ -38,10 +38,9 @@ import {
   ageLabel,
   dashboardLayout,
   dueLabel,
-  dueTodayCount,
+  bucketLabel,
   weekLabel,
   weekPercent,
-  weekdayShort,
   type DashboardCard,
   type DashboardTile,
 } from "@/lib/teamDashboard";
@@ -108,11 +107,13 @@ function Tile({
   // Filtrado por pessoa, os números são DELA (revisão de 15/10): "Minhas
   // atrasadas" e "no time" diziam o contrário.
   const firstName = personName?.split(" ")[0] ?? null;
+  // Com período escolhido (15/10), os números são das tarefas com prazo nele.
+  const inPeriod = data.period !== null;
   switch (tile) {
     case "weekDone":
       return (
         <StatTile
-          label="Concluídas na semana"
+          label={inPeriod ? "Concluídas no período" : "Concluídas na semana"}
           value={data.week.done}
           suffix={`de ${data.week.total}`}
           note={weekLabel(data.week.start, data.week.end)}
@@ -126,11 +127,15 @@ function Tile({
           label="Atrasadas"
           value={data.overdue_total}
           note={
-            firstName
-              ? `de ${firstName}, agora`
-              : data.overdue_total
-                ? "no time, agora"
-                : "nenhuma por aqui"
+            inPeriod
+              ? firstName
+                ? `de ${firstName}, com prazo no período`
+                : "com prazo no período"
+              : firstName
+                ? `de ${firstName}, agora`
+                : data.overdue_total
+                  ? "no time, agora"
+                  : "nenhuma por aqui"
           }
           danger={data.overdue_total > 0}
           order={order}
@@ -138,7 +143,12 @@ function Tile({
       );
     case "dueToday":
       return (
-        <StatTile label="Vencem hoje" value={dueTodayCount(data)} note="ainda no prazo" order={order} />
+        <StatTile
+          label={inPeriod ? "Em aberto no prazo" : "Vencem hoje"}
+          value={data.on_time_total}
+          note={inPeriod ? "com prazo no período" : "ainda no prazo"}
+          order={order}
+        />
       );
     case "queue":
       return data.queue ? (
@@ -287,10 +297,20 @@ function Card({
 function WeekRingCard({ data, className }: { data: DashboardResponse; className: string }) {
   const { done, total, start, end } = data.week;
   const pct = weekPercent(done, total);
+  const inPeriod = data.period !== null;
   return (
-    <CardFrame title="Progresso da semana" subtitle={weekLabel(start, end)} className={className}>
+    <CardFrame
+      title={inPeriod ? "Progresso do período" : "Progresso da semana"}
+      subtitle={weekLabel(start, end)}
+      className={className}
+    >
       <div className="flex flex-1 flex-col items-center justify-center gap-4 py-2">
-        <ProgressRing percent={pct} size={188} stroke={18} label="Concluídas na semana" />
+        <ProgressRing
+          percent={pct}
+          size={188}
+          stroke={18}
+          label={inPeriod ? "Concluídas no período" : "Concluídas na semana"}
+        />
         <ul className="m-0 flex list-none flex-wrap justify-center gap-x-4 gap-y-1 p-0 text-sm">
           <li className="flex items-center gap-1.5">
             <span className="h-2.5 w-2.5 rounded-full bg-accent" aria-hidden="true" />
@@ -304,42 +324,91 @@ function WeekRingCard({ data, className }: { data: DashboardResponse; className:
       </div>
       <p className="muted m-0 text-xs">
         {total === 0
-          ? "Nenhuma tarefa com prazo nesta semana."
-          : "Tarefas com prazo de segunda a domingo; canceladas e bloqueadas ficam fora."}
+          ? inPeriod
+            ? "Nenhuma tarefa com prazo neste período."
+            : "Nenhuma tarefa com prazo nesta semana."
+          : inPeriod
+            ? "Tarefas com prazo no período, como estão hoje; canceladas e bloqueadas ficam fora."
+            : "Tarefas com prazo de segunda a domingo; canceladas e bloqueadas ficam fora."}
       </p>
     </CardFrame>
   );
 }
 
-/** Colunas verticais, uma por dia -- hoje em destaque. */
+/**
+ * Colunas verticais: os próximos 7 dias, ou o período (por dia até 14 dias,
+ * por semana acima). Cada coluna EMPILHA concluídas, no prazo e atrasadas --
+ * escolha minha, aprovada por ela em 15/10: a coluna conta como o dia (ou a
+ * semana) se saiu, e não só quantas venciam.
+ */
 function AheadChartCard({ data, className }: { data: DashboardResponse; className: string }) {
   const reduce = useReducedMotion();
-  const max = Math.max(1, ...data.due_ahead.map((d) => d.count));
+  const totals = data.buckets.map((b) => b.done + b.on_time + b.overdue);
+  const max = Math.max(1, ...totals);
+  const inPeriod = data.period !== null;
+  const title = !inPeriod ? "Próximos 7 dias" : data.bucket_unit === "week" ? "Por semana" : "Por dia";
+  // Muitas colunas (um ano por semana): rola na horizontal, sem espremer.
+  const many = data.buckets.length > 14;
   return (
-    <CardFrame title="Próximos 7 dias" subtitle="tarefas que vencem em cada dia" className={className}>
-      <ul className="m-0 grid flex-1 list-none grid-cols-7 items-end gap-2 p-0 pt-2">
-        {data.due_ahead.map((d, i) => {
-          const today = d.date === data.today;
-          return (
-            <li key={d.date} className="flex flex-col items-center gap-1.5">
-              <span className="text-sm font-semibold">{d.count}</span>
-              <span
-                className="relative block h-28 w-full max-w-[40px] overflow-hidden rounded-full bg-surface-2"
-                aria-hidden="true"
+    <CardFrame title={title} subtitle="tarefas com prazo em cada coluna" className={className}>
+      <div className={many ? "-mx-1 overflow-x-auto px-1" : ""}>
+        <ul
+          className="m-0 grid flex-1 list-none items-end gap-2 p-0 pt-2"
+          style={{
+            gridTemplateColumns: `repeat(${data.buckets.length}, minmax(${many ? 44 : 0}px, 1fr))`,
+          }}
+        >
+          {data.buckets.map((b, i) => {
+            const isToday = data.bucket_unit === "day" && b.start === data.today;
+            const total = totals[i];
+            // Camadas da trilha inteira, escaladas de baixo para cima: a de
+            // cima (a soma) primeiro, e as de baixo por cima dela.
+            const layers = [
+              { value: total, cls: "bg-danger" },
+              { value: b.done + b.on_time, cls: "bg-accent/45" },
+              { value: b.done, cls: "bg-accent" },
+            ];
+            return (
+              <li
+                key={b.start}
+                className="flex flex-col items-center gap-1.5"
+                aria-label={`${bucketLabel(b, data.bucket_unit, data.today)}: ${b.done} concluídas, ${b.on_time} no prazo, ${b.overdue} atrasadas`}
               >
-                <motion.span
-                  className={`absolute inset-0 origin-bottom rounded-full ${today ? "bg-accent" : "bg-accent/45"}`}
-                  initial={reduce ? false : { scaleY: 0 }}
-                  animate={{ scaleY: d.count / max }}
-                  transition={reduce ? { duration: 0 } : { ...GROW, delay: i * STAGGER }}
-                />
-              </span>
-              <span className={`text-xs ${today ? "font-semibold text-accent" : "text-ink-faint"}`}>
-                {today ? "Hoje" : weekdayShort(d.date)}
-              </span>
-            </li>
-          );
-        })}
+                <span className="text-sm font-semibold">{total}</span>
+                <span
+                  className="relative block h-28 w-full max-w-[40px] overflow-hidden rounded-full bg-surface-2"
+                  aria-hidden="true"
+                >
+                  {layers.map((l) => (
+                    <motion.span
+                      key={l.cls}
+                      className={`absolute inset-0 origin-bottom ${l.cls}`}
+                      initial={reduce ? false : { scaleY: 0 }}
+                      animate={{ scaleY: l.value / max }}
+                      transition={reduce ? { duration: 0 } : { ...GROW, delay: i * STAGGER }}
+                    />
+                  ))}
+                </span>
+                <span
+                  className={`whitespace-nowrap text-xs ${isToday ? "font-semibold text-accent" : "text-ink-faint"}`}
+                >
+                  {bucketLabel(b, data.bucket_unit, data.today)}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+      <ul className="m-0 mt-3 flex list-none flex-wrap gap-x-3 gap-y-1 p-0 text-xs text-ink-soft">
+        <li className="flex items-center gap-1">
+          <span className="h-2 w-2 rounded-full bg-accent" aria-hidden="true" /> Concluídas
+        </li>
+        <li className="flex items-center gap-1">
+          <span className="h-2 w-2 rounded-full bg-accent/45" aria-hidden="true" /> No prazo
+        </li>
+        <li className="flex items-center gap-1">
+          <span className="h-2 w-2 rounded-full bg-danger" aria-hidden="true" /> Atrasadas
+        </li>
       </ul>
     </CardFrame>
   );
@@ -446,13 +515,16 @@ function MineCard({
   /** Ocupa duas linhas da grade (o desenho do gestor). */
   tall: boolean;
 }) {
-  const { overdue, overdue_total, due_today, due_today_total } = data.mine;
-  // Filtrado por pessoa, o card é DELA (o servidor já mandou as dela).
-  const title = personName ? `${personName.split(" ")[0]} para hoje` : "Minhas para hoje";
+  const { overdue, overdue_total, on_time, on_time_total } = data.mine;
+  // Filtrado por pessoa, o card é DELA (o servidor já mandou as dela); com
+  // período, é do período, e "vencem hoje" vira "em aberto no prazo".
+  const inPeriod = data.period !== null;
+  const whose = personName ? personName.split(" ")[0] : "Minhas";
+  const title = `${whose} ${inPeriod ? "no período" : "para hoje"}`;
   return (
     <CardFrame title={title} className={className}>
-      {overdue_total + due_today_total === 0 ? (
-        <Empty>Nada atrasado nem vencendo hoje.</Empty>
+      {overdue_total + on_time_total === 0 ? (
+        <Empty>{inPeriod ? "Nada em aberto no período." : "Nada atrasado nem vencendo hoje."}</Empty>
       ) : (
         // No gestor o card ocupa duas linhas, e a área que rola acompanha.
         <Scroll className={tall ? "max-h-[560px]" : "max-h-[300px]"}>
@@ -464,13 +536,13 @@ function MineCard({
               <More shown={overdue.length} total={overdue_total} />
             </section>
           )}
-          {due_today_total > 0 && (
+          {on_time_total > 0 && (
             <section>
               <p className="m-0 mb-1.5 text-xs font-semibold text-ink-soft">
-                Vencem hoje ({due_today_total})
+                {inPeriod ? "Em aberto no prazo" : "Vencem hoje"} ({on_time_total})
               </p>
-              <TaskList tasks={due_today} today={data.today} />
-              <More shown={due_today.length} total={due_today_total} />
+              <TaskList tasks={on_time} today={data.today} />
+              <More shown={on_time.length} total={on_time_total} />
             </section>
           )}
           </div>

@@ -3676,19 +3676,33 @@ export type DashboardTask = {
   column_color: string;
 };
 
+export type DashboardBucket = {
+  start: string;
+  end: string;
+  done: number;
+  on_time: number;
+  overdue: number;
+};
+
 export type DashboardResponse = {
   /** O "hoje" do SERVIDOR, no fuso da organização: a tela não recalcula. */
   today: string;
+  /** O período escolhido; `null` = "Agora" (a semana corrente e os 7 dias). */
+  period: { start: string; end: string } | null;
+  /** O resumo: a semana corrente, ou o período. */
   week: { start: string; end: string; done: number; total: number };
   overdue_total: number;
   oldest_overdue: DashboardTask[];
-  /** Sete dias, de hoje em diante -- inclusive os com zero. */
-  due_ahead: { date: string; count: number }[];
+  /** Abertas e no prazo: as que vencem hoje, ou as do período. */
+  on_time_total: number;
+  /** "day" até 14 dias; "week" acima. */
+  bucket_unit: "day" | "week";
+  buckets: DashboardBucket[];
   mine: {
     overdue: DashboardTask[];
     overdue_total: number;
-    due_today: DashboardTask[];
-    due_today_total: number;
+    on_time: DashboardTask[];
+    on_time_total: number;
   };
   /** `is_active: false` = conta desativada que ainda tem tarefa aberta no time. */
   workload:
@@ -3703,11 +3717,16 @@ export type DashboardResponse = {
  */
 export async function getDashboard(
   teamId: string | null,
-  assigneeId: string | null = null
+  assigneeId: string | null = null,
+  period: { start: string; end: string } | null = null
 ): Promise<DashboardResponse> {
   const q = new URLSearchParams();
   if (teamId) q.set("under_team_id", teamId);
   if (assigneeId) q.set("assignee_id", assigneeId);
+  if (period) {
+    q.set("start", period.start);
+    q.set("end", period.end);
+  }
   const s = q.toString();
   return api<DashboardResponse>(`/api/v1/dashboard${s ? `?${s}` : ""}`);
 }

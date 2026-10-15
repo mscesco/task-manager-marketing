@@ -12,20 +12,26 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, time, timedelta
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.tenant import can_in, require_tenant
 from app.modules.auth.domain import team_scope
 from app.modules.solicitations.infrastructure.repository import SolicitationRepository
-from app.modules.tasks.domain.dashboard import WorkspaceNow, workspace_now
+from app.modules.tasks.domain.dashboard import (
+    MAX_PERIOD_DAYS,
+    TIMEZONE,
+    Period,
+    WorkspaceNow,
+    workspace_now,
+)
 from app.modules.tasks.infrastructure.task_repository import (
     DashboardCounts,
     TaskRepository,
     Workload,
 )
-from app.shared.exceptions.base import AuthorizationError
+from app.shared.exceptions.base import AuthorizationError, ValidationError
 
 #: Card 1 -- a carga por pessoa (D1 dela: gestor e supervisor, nao operador).
 WORKLOAD_VERB = "team_workload.read"
@@ -42,6 +48,7 @@ class RequestQueue:
 @dataclass(frozen=True)
 class Dashboard:
     now: WorkspaceNow
+    period: Period | None
     counts: DashboardCounts
     workload: list[Workload] | None
     queue: RequestQueue | None
@@ -57,6 +64,7 @@ class DashboardService:
         under_team_id: uuid.UUID | None,
         *,
         assignee_id: uuid.UUID | None = None,
+        period: Period | None = None,
         at: datetime | None = None,
     ) -> Dashboard:
         """`assignee_id` (14/10, pedido da chefe dela): o relatorio INTEIRO de
@@ -71,30 +79,59 @@ class DashboardService:
         tela dizendo que sao de uma pessoa.
         """
         tenant = require_tenant()
+        if period is not None:
+            _assert_period(period)
         can_see_workload = _allowed(WORKLOAD_VERB, under_team_id)
         if assignee_id is not None and not can_see_workload:
             raise AuthorizationError("Filtrar por pessoa e de quem ve a carga do time.")
         now = workspace_now(at)
         counts = await self._tasks.dashboard_counts(
-            under_team_id, now, me=assignee_id or tenant.user_id, assignee_id=assignee_id
+            under_team_id,
+            now,
+            me=assignee_id or tenant.user_id,
+            assignee_id=assignee_id,
+            period=period,
         )
 
         workload = None
         if can_see_workload:
             workload = await self._tasks.workload_by_person(
-                under_team_id, now, _member_teams(under_team_id)
+                under_team_id, now, _member_teams(under_team_id), period
             )
             if assignee_id is not None:
                 workload = [w for w in workload if w.user_id == assignee_id]
 
         queue = None
         if _allowed(QUEUE_VERB, under_team_id):
+            # Com periodo: as que CHEGARAM nele e seguem pendentes hoje.
+            chegada = _instants(period) if period is not None else None
             queue = RequestQueue(
-                pending=await self._queue.count_pending(under_team_id),
-                oldest_at=await self._queue.oldest_pending_at(under_team_id),
+                pending=await self._queue.count_pending(under_team_id, chegada),
+                oldest_at=await self._queue.oldest_pending_at(under_team_id, chegada),
             )
 
-        return Dashboard(now=now, counts=counts, workload=workload, queue=queue)
+        return Dashboard(
+            now=now, period=period, counts=counts, workload=workload, queue=queue
+        )
+
+
+def _assert_period(period: Period) -> None:
+    if period.end < period.start:
+        raise ValidationError(
+            "O fim do periodo vem antes do inicio.", details={"field": "end"}
+        )
+    if period.days > MAX_PERIOD_DAYS:
+        raise ValidationError(
+            f"O periodo passa de {MAX_PERIOD_DAYS} dias.", details={"field": "end"}
+        )
+
+
+def _instants(period: Period) -> tuple[datetime, datetime]:
+    """O periodo de DIAS como instantes `[inicio, fim)`, no fuso do sistema:
+    a solicitacao das 23h do ultimo dia ainda e do periodo."""
+    inicio = datetime.combine(period.start, time.min, tzinfo=TIMEZONE)
+    fim = datetime.combine(period.end + timedelta(days=1), time.min, tzinfo=TIMEZONE)
+    return inicio, fim
 
 
 def _allowed(verb: str, under_team_id: uuid.UUID | None) -> bool:

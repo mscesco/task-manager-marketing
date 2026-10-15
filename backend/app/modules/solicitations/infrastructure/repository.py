@@ -256,7 +256,11 @@ class SolicitationRepository(BaseRepository[Solicitation]):
         )
         return (await self.session.execute(stmt)).scalar_one()
 
-    async def count_pending(self, team_id: uuid.UUID | None) -> int:
+    async def count_pending(
+        self,
+        team_id: uuid.UUID | None,
+        created_between: tuple[datetime, datetime] | None = None,
+    ) -> int:
         """Total de PENDING da fila que a tela mostra (badge da aba).
 
         ⚠️ O `team_id` NAO TEM DEFAULT, nos tres metodos de leitura, pelo
@@ -270,12 +274,17 @@ class SolicitationRepository(BaseRepository[Solicitation]):
             self._base_select()
             .where(*self._recorte_de_time(team_id))
             .where(Solicitation.status == "PENDING")
+            .where(*_criada_entre(created_between))
             .subquery()
         )
         return (await self.session.execute(stmt)).scalar_one()
 
 
-    async def oldest_pending_at(self, team_id: uuid.UUID | None) -> datetime | None:
+    async def oldest_pending_at(
+        self,
+        team_id: uuid.UUID | None,
+        created_between: tuple[datetime, datetime] | None = None,
+    ) -> datetime | None:
         """Quando chegou a PENDING mais antiga da fila (Spec 058, card 6).
 
         ⚠️ O MESMO recorte de `count_pending`: o card diz "3 pendentes, a mais
@@ -285,10 +294,22 @@ class SolicitationRepository(BaseRepository[Solicitation]):
             self._base_select()
             .where(*self._recorte_de_time(team_id))
             .where(Solicitation.status == "PENDING")
+            .where(*_criada_entre(created_between))
             .subquery()
         )
         stmt = select(func.min(fila.c.created_at))
         return (await self.session.execute(stmt)).scalar_one()
+
+
+def _criada_entre(
+    intervalo: tuple[datetime, datetime] | None,
+) -> list[ColumnElement[bool]]:
+    """O filtro de periodo da tela inicial (Spec 058, 15/10): as que CHEGARAM
+    no periodo -- `[inicio, fim)`, ja convertido para instantes pelo chamador."""
+    if intervalo is None:
+        return []
+    inicio, fim = intervalo
+    return [Solicitation.created_at >= inicio, Solicitation.created_at < fim]
 
 async def get_workspace_by_slug(
     session: AsyncSession, slug: str

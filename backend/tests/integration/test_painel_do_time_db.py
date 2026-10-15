@@ -28,7 +28,7 @@ O MUNDO:
 SABOTAGENS (executadas em 14/10, resultado colado):
     1. `notify_deadline` fora de `charges_deadline` (a bloqueada entra):
        caem a semana, os proximos dias e o do operador. ✓
-    2. `is_archived.is_(False)` dentro de `done_this_week`:
+    2. `is_archived.is_(False)` dentro de `done`:
        caem a semana e o do operador. ✓
     3. `due_time < now.minute` -> `<=` (a t10 vira atrasada as 15:00:30):
        caem a de atrasada e a dos proximos dias. ✓
@@ -49,7 +49,7 @@ from app.db.unit_of_work import UnitOfWork
 from app.main import create_app
 from app.modules.auth.api.dependencies import get_tenant_context
 from app.modules.tasks.application.dashboard_service import DashboardService
-from app.modules.tasks.domain.dashboard import TIMEZONE
+from app.modules.tasks.domain.dashboard import TIMEZONE, Period
 from tests.integration import factories as f
 from tests.integration.conftest import acting_as, mship, node
 
@@ -121,6 +121,10 @@ def _como(m: dict, quem: str):
     )
 
 
+def _no_prazo_por_dia(p) -> dict:
+    return {b.start: b.on_time for b in p.counts.buckets if b.on_time}
+
+
 async def _painel(db, m, quem, under="mkt"):
     with _como(m, quem):
         return await DashboardService(db).build(m[under] if under else None, at=AGORA)
@@ -134,10 +138,10 @@ async def test_a_semana_conta_concluidas_e_abertas_que_cobram_prazo(db) -> None:
     p = await _painel(db, m, "ger")
     assert (p.now.week_start, p.now.week_end) == (date(2026, 10, 12), date(2026, 10, 18))
     # concluidas: t4 e t5 (arquivada conta)
-    assert p.counts.done_this_week == 2
+    assert p.counts.done == 2
     # total: t4, t5 + t2, t3, t10, t8, t9 -- sem a cancelada (t6), sem a
     # bloqueada (t7), sem a do Comercial (tc)
-    assert p.counts.total_this_week == 7
+    assert p.counts.total == 7
 
 
 async def test_atrasada_e_a_regra_do_selo_do_quadro(db) -> None:
@@ -151,18 +155,21 @@ async def test_atrasada_e_a_regra_do_selo_do_quadro(db) -> None:
 async def test_proximos_dias_sem_as_atrasadas(db) -> None:
     m = await _mundo(db)
     p = await _painel(db, m, "ger")
-    assert p.counts.due_by_day == {
+    assert _no_prazo_por_dia(p) == {
         date(2026, 10, 14): 2,  # t3 e t10
         date(2026, 10, 17): 1,  # t8
         date(2026, 10, 18): 1,  # t9, subtarefa
     }
+    # a t2 (hoje, 14:00) e a parte VERMELHA da coluna de hoje
+    assert p.counts.buckets[0].overdue == 1
+    assert (p.counts.bucket_unit, len(p.counts.buckets)) == ("day", 7)
 
 
 async def test_as_minhas(db) -> None:
     m = await _mundo(db)
     p = await _painel(db, m, "op")
     assert [i.title for i in p.counts.my_overdue] == ["t1", "t2"]
-    assert [i.title for i in p.counts.my_due_today] == ["t3"]
+    assert [i.title for i in p.counts.my_on_time] == ["t3"]
 
 
 # ------------------------------------------------------------ quem ve o que
@@ -190,7 +197,7 @@ async def test_operador_nao_ve_a_carga_nem_a_fila(db) -> None:
     p = await _painel(db, m, "op")
     assert p.workload is None
     assert p.queue is None
-    assert p.counts.total_this_week == 7  # os numeros gerais, sim
+    assert p.counts.total == 7  # os numeros gerais, sim
 
 
 async def test_gerente_ve_a_fila(db) -> None:
@@ -239,7 +246,7 @@ async def test_a_rota_existe_e_devolve_os_sete_dias(db) -> None:
             r = await cli.get(f"/api/v1/dashboard?under_team_id={m['mkt']}")
     assert r.status_code == 200, r.text
     corpo = r.json()
-    assert len(corpo["due_ahead"]) == 7
+    assert len(corpo["buckets"]) == 7 and corpo["period"] is None
     assert corpo["workload"] is None and corpo["queue"] is None
     assert set(corpo["week"]) == {"start", "end", "done", "total"}
 
@@ -255,10 +262,10 @@ async def test_filtrar_por_pessoa_ajusta_o_relatorio_inteiro(db) -> None:
         p = await DashboardService(db).build(m["mkt"], assignee_id=m["op"], at=AGORA)
     assert p.counts.overdue_count == 2
     # semana: t2 e t3 (a cancelada e a bloqueada ficam fora), nenhuma concluida
-    assert (p.counts.done_this_week, p.counts.total_this_week) == (0, 2)
-    assert p.counts.due_by_day == {date(2026, 10, 14): 1}
+    assert (p.counts.done, p.counts.total) == (0, 2)
+    assert _no_prazo_por_dia(p) == {date(2026, 10, 14): 1}
     # "de hoje" passa a ser a dela, e nao a do gerente que olha
-    assert [i.title for i in p.counts.my_due_today] == ["t3"]
+    assert [i.title for i in p.counts.my_on_time] == ["t3"]
     # a carga: so a linha dela
     assert [(w.name, w.open_count) for w in p.workload] == [("Op", 4)]
     # a fila nao muda (solicitacao nao tem responsavel)
@@ -335,3 +342,68 @@ async def test_a_rota_recusa_filtro_de_pessoa_para_o_operador(db) -> None:
                 f"/api/v1/dashboard?under_team_id={m['mkt']}&assignee_id={m['sup']}"
             )
     assert r.status_code == 403, r.text
+
+
+# ------------------------------------------------------------ periodo (15/10)
+# Decisao dela: escolhido um periodo, tudo e das tarefas com prazo nele, no
+# ESTADO DE HOJE -- a concluida depois do prazo conta como concluida.
+
+
+async def _no_periodo(db, m, quem, inicio, fim):
+    with _como(m, quem):
+        return await DashboardService(db).build(
+            m["mkt"], period=Period(inicio, fim), at=AGORA
+        )
+
+
+async def test_periodo_passado_mostra_o_estado_de_hoje(db) -> None:
+    """Semana passada (05 a 11/10): so a t1 (10/10) tem prazo nela -- aberta
+    e vencida HOJE, entao atrasada."""
+    m = await _mundo(db)
+    p = await _no_periodo(db, m, "ger", date(2026, 10, 5), date(2026, 10, 11))
+    assert (p.counts.summary_start, p.counts.summary_end) == (date(2026, 10, 5), date(2026, 10, 11))
+    assert (p.counts.done, p.counts.total) == (0, 1)
+    assert [i.title for i in p.counts.oldest_overdue] == ["t1"]
+    assert p.counts.on_time_total == 0
+    # a carga e so do periodo: o op tem a t1
+    assert ("Op", 1, 1) in [(w.name, w.open_count, w.overdue_count) for w in p.workload]
+
+
+async def test_periodo_recorta_as_atrasadas_e_o_no_prazo(db) -> None:
+    """Esta semana (12 a 18/10): a t1 (10/10) sai das atrasadas -- e de antes."""
+    m = await _mundo(db)
+    p = await _no_periodo(db, m, "ger", date(2026, 10, 12), date(2026, 10, 18))
+    assert (p.counts.done, p.counts.total) == (2, 7)
+    assert [i.title for i in p.counts.oldest_overdue] == ["t2"]
+    # no prazo: t3, t10, t8, t9 -- a bloqueada (t7) e a cancelada (t6), nao
+    assert p.counts.on_time_total == 4
+    por_dia = {b.start: (b.done, b.on_time, b.overdue) for b in p.counts.buckets}
+    assert por_dia[date(2026, 10, 12)] == (1, 0, 0)  # t5, arquivada
+    assert por_dia[date(2026, 10, 14)] == (0, 2, 1)  # t3, t10 / t2
+
+
+async def test_periodo_longo_agrupa_por_semana(db) -> None:
+    m = await _mundo(db)
+    p = await _no_periodo(db, m, "ger", date(2026, 10, 1), date(2026, 10, 30))
+    assert p.counts.bucket_unit == "week"
+    assert [(b.start.day, b.end.day) for b in p.counts.buckets] == [
+        (1, 4), (5, 11), (12, 18), (19, 25), (26, 30)
+    ]
+    # t1, t2 atrasadas; t3, t10, t8, t9 no prazo; t4, t5 concluidas -- a
+    # cancelada e a bloqueada nao entram no grafico
+    assert sum(b.done + b.on_time + b.overdue for b in p.counts.buckets) == 8
+
+
+async def test_periodo_invalido(db) -> None:
+    from app.shared.exceptions.base import ValidationError
+
+    m = await _mundo(db)
+    with pytest.raises(ValidationError):
+        await _no_periodo(db, m, "ger", date(2026, 10, 18), date(2026, 10, 12))
+    with pytest.raises(ValidationError):
+        await _no_periodo(db, m, "ger", date(2025, 1, 1), date(2026, 10, 12))
+    with _como(m, "op") as ctx:
+        async with _client(db, ctx) as cli:
+            r = await cli.get("/api/v1/dashboard?start=2026-10-01")
+    assert r.status_code == 422, r.text
+
