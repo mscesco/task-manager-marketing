@@ -18,7 +18,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import ColumnElement, Select, func, or_, select
+from sqlalchemy import ColumnElement, Select, String, cast, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.tenant import require_tenant
@@ -155,6 +155,9 @@ class SolicitationRepository(BaseRepository[Solicitation]):
         # que a receba sem querer mostra a fila de outro time.
         filtro: str | None = None,
         team_id: uuid.UUID | None,
+        search: str | None = None,
+        form_id: uuid.UUID | None = None,
+        without_task: bool = False,
     ) -> tuple[list[Solicitation], int]:
         """Pagina por ENVIO, nao por linha.
 
@@ -173,14 +176,25 @@ class SolicitationRepository(BaseRepository[Solicitation]):
         `filtro` (semantica de LOTE: o envio entra se QUALQUER demanda
         dele casar):
             PENDING/APPROVED/REJECTED -- envio com ao menos uma nesse status
+            ACTIVE                    -- aprovada OU em andamento (15/10)
             SEM_TAREFA                -- envio com aprovada sem tarefa criada
             None                      -- todos
+
+        `without_task` (15/10) soma "e sem tarefa" a qualquer filtro: a mesma
+        demanda tem de casar os dois. `search` e `form_id` recortam os
+        envios, e valem para os contadores das abas (`count_by_tab`).
         """
         recorte = self._recorte_de_time(team_id)
-        alvo = self._base_select().where(*recorte).subquery()
+        alvo = (
+            self._base_select()
+            .where(*recorte, *_busca(search, form_id))
+            .subquery()
+        )
 
         cond = None
-        if filtro == "SEM_TAREFA":
+        if filtro == "ACTIVE":
+            cond = alvo.c.status.in_(sorted(ACTIVE))
+        elif filtro == "SEM_TAREFA":
             # ⚠️ OS TRES ACEITOS, e nao so APPROVED (Spec 043, fatia D). Com a
             # comparacao antiga, mover um pedido para "em andamento" o tirava
             # deste filtro -- e o filtro existe justamente para achar o que foi
@@ -191,6 +205,9 @@ class SolicitationRepository(BaseRepository[Solicitation]):
             )
         elif filtro is not None:
             cond = alvo.c.status == filtro
+        if without_task:
+            sem = alvo.c.status.in_(sorted(ACEITOS)) & alvo.c.task_created_at.is_(None)
+            cond = sem if cond is None else (cond & sem)
 
         lotes = select(
             alvo.c.batch_id,
@@ -239,6 +256,56 @@ class SolicitationRepository(BaseRepository[Solicitation]):
             .all()
         )
         return linhas, total
+
+    async def count_by_tab(
+        self,
+        team_id: uuid.UUID | None,
+        search: str | None = None,
+        form_id: uuid.UUID | None = None,
+    ) -> dict[str, int]:
+        """Os numeros das abas da fila (15/10), em DEMANDAS e nao em envios
+        -- o mesmo que o "7 pendentes" de sempre.
+
+        ⚠️ COM A MESMA BUSCA E O MESMO FORMULARIO DA LISTA: o numero da aba diz
+        o que a aba vai mostrar.
+        """
+        fila = (
+            self._base_select()
+            .where(*self._recorte_de_time(team_id), *_busca(search, form_id))
+            .subquery()
+        )
+        sem = fila.c.status.in_(sorted(ACEITOS)) & fila.c.task_created_at.is_(None)
+        linha = (
+            await self.session.execute(
+                select(
+                    func.count().filter(fila.c.status == "PENDING"),
+                    func.count().filter(fila.c.status.in_(sorted(ACTIVE))),
+                    func.count().filter(fila.c.status == "DONE"),
+                    func.count().filter(fila.c.status == "REJECTED"),
+                    func.count(),
+                    func.count().filter(sem),
+                )
+            )
+        ).one()
+        chaves = ("PENDING", "ACTIVE", "DONE", "REJECTED", "ALL", "WITHOUT_TASK")
+        return dict(zip(chaves, (int(n) for n in linha), strict=True))
+
+    async def form_options(
+        self, team_id: uuid.UUID | None
+    ) -> list[tuple[uuid.UUID, str]]:
+        """Os formularios que tem pedido nesta fila -- as opcoes do filtro
+        (15/10). Vem da fila, e nao da lista de formularios: quem tria pode nao
+        ter permissao de gerir formulario, e formulario sem pedido nao filtra
+        nada."""
+        stmt = (
+            self._base_select()
+            .where(*self._recorte_de_time(team_id))
+            .where(Solicitation.form_id.is_not(None))
+            .with_only_columns(SolicitationForm.id, SolicitationForm.title)
+            .distinct()
+            .order_by(SolicitationForm.title)
+        )
+        return [(fid, titulo) for fid, titulo in (await self.session.execute(stmt)).all()]
 
     async def count_approved_without_task(self, team_id: uuid.UUID | None) -> int:
         """Aprovadas que ninguem transformou em tarefa (o buraco do fluxo)."""
@@ -299,6 +366,36 @@ class SolicitationRepository(BaseRepository[Solicitation]):
         )
         stmt = select(func.min(fila.c.created_at))
         return (await self.session.execute(stmt)).scalar_one()
+
+
+#: "Em andamento" na fila (15/10): aceita e ainda nao concluida.
+ACTIVE = frozenset({"APPROVED", "IN_PROGRESS"})
+
+
+def _busca(
+    search: str | None, form_id: uuid.UUID | None
+) -> list[ColumnElement[bool]]:
+    """Busca e formulario da fila (15/10).
+
+    A busca casa nome, e-mail ou PROTOCOLO -- o protocolo e o comeco do
+    `batch_id` em maiusculas, que e o que o solicitante leva embora.
+    """
+    out: list[ColumnElement[bool]] = []
+    termo = (search or "").strip()
+    if termo:
+        like = f"%{termo.replace('%', '').replace('_', '')}%"
+        out.append(
+            or_(
+                Solicitation.requester_name.ilike(like),
+                Solicitation.requester_email.ilike(like),
+                cast(Solicitation.batch_id, String).ilike(
+                    f"{termo.lower().replace('%', '').replace('_', '')}%"
+                ),
+            )
+        )
+    if form_id is not None:
+        out.append(Solicitation.form_id == form_id)
+    return out
 
 
 def _criada_entre(

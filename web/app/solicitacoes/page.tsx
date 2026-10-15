@@ -1,10 +1,14 @@
 "use client";
 // /solicitacoes — fila de triagem agrupada por ENVIO.
 //
-// UM CARD POR SUBMISSÃO, não por demanda: quem preenche o formulário
+// UMA LINHA POR SUBMISSÃO, não por demanda: quem preenche o formulário
 // escolhendo 4 categorias gerava 4 cards soltos, e ninguém enxergava que
-// eram da mesma pessoa. O card fechado mostra quem pediu + a lista do que
-// pediu; abrindo, aparece seção por seção.
+// eram da mesma pessoa.
+//
+// ⚠️ DUAS COLUNAS DESDE 15/10 (proposta aprovada por ela, "fica bem melhor"):
+// a lista de envios à esquerda e o envio escolhido à direita. O card que
+// abria e fechava fazia a página pular, e aprovar exigia abrir, achar a
+// seção e voltar. Os números no código (1 a 5) são os da proposta.
 //
 // A aprovação continua sendo POR SEÇÃO (aprovar a arte, rejeitar a
 // divulgação). O agrupamento é só de visualização.
@@ -13,7 +17,7 @@
 // contrário: o filtro "Aprovadas sem tarefa" mostra o que foi aceito e
 // nunca virou tarefa. Sem esse filtro, a marcação seria decorativa.
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import AppShell from "@/components/AppShell";
 import Badge from "@/components/Badge";
 import Card from "@/components/Card";
@@ -30,6 +34,7 @@ import {
   ApiError,
   type Batch,
   type BatchItem,
+  type FilaAba,
   type SolicitacaoFiltro,
   type SolicitacaoStatus,
   STATUS_ACEITOS,
@@ -39,7 +44,6 @@ import { numeroDaRepeticao, rotuloDaCategoria } from "@/lib/rotuloDaCategoria";
 import Loading from "@/components/Loading";
 import { useActiveTeam, useActiveTeamId } from "@/lib/useActiveTeam";
 import { navHref } from "@/lib/activeTeam";
-import { useDrawnOutline } from "@/components/AnimatedOutline";
 import Paginacao from "@/components/Paginacao";
 const STATUS_LABEL: Record<SolicitacaoStatus, string> = {
   PENDING: "Pendente",
@@ -61,11 +65,23 @@ const STATUS_COLOR: Record<SolicitacaoStatus, string> = {
   REJECTED: "#dc2626",
 };
 
-type Filtro = SolicitacaoFiltro | "ALL";
+// ⚠️ AS ABAS (15/10, proposta aprovada por ela): eram sete botões iguais aos
+// de ação, com número em só dois, e "Aprovadas" e "Aprovadas sem tarefa" se
+// sobrepondo. Agora são cinco situações, todas com número, e "só sem tarefa"
+// é uma caixinha que vale em qualquer aba onde faz sentido.
+type Aba = "PENDING" | "ACTIVE" | "DONE" | "REJECTED" | "ALL";
 
-// Spec 025/D6: dez ENVIOS por página. O card é agrupado e traz as
-// respostas de todas as seções, então dez já enchem a tela (R4).
-const TAMANHO_PAGINA = 10;
+const ABAS: { valor: Aba; label: string; semTarefa: boolean }[] = [
+  { valor: "PENDING", label: "Pendentes", semTarefa: false },
+  { valor: "ACTIVE", label: "Em andamento", semTarefa: true },
+  { valor: "DONE", label: "Concluídas", semTarefa: true },
+  { valor: "REJECTED", label: "Rejeitadas", semTarefa: false },
+  { valor: "ALL", label: "Todas", semTarefa: true },
+];
+
+// A lista ficou enxuta (as respostas moram no painel ao lado), então cabem
+// mais envios por página do que os dez do card antigo.
+const TAMANHO_PAGINA = 20;
 
 export default function SolicitacoesPage() {
   return (
@@ -86,15 +102,34 @@ function Solicitacoes() {
   // ali viraria uma fila que nunca carrega, sem erro nenhum na tela.
   const { active, teamName: nomeDoTime } = useActiveTeam();
   const timeAtivo = useActiveTeamId();
-  const [filtro, setFiltro] = useState<Filtro>("PENDING");
+  const [aba, setAba] = useState<Aba>("PENDING");
+  const [semTarefa, setSemTarefa] = useState(false);
+  const [busca, setBusca] = useState("");
+  const [buscaAtiva, setBuscaAtiva] = useState("");
+  const [formId, setFormId] = useState<string | null>(null);
   const [pagina, setPagina] = useState(1);
   const [envios, setEnvios] = useState<Batch[] | null>(null);
   const [totalEnvios, setTotalEnvios] = useState(0);
-  const [pendentes, setPendentes] = useState(0);
-  const [semTarefa, setSemTarefa] = useState(0);
+  const [totais, setTotais] = useState<Partial<Record<FilaAba, number>>>({});
+  const [formularios, setFormularios] = useState<{ id: string; title: string }[]>([]);
   const [erro, setErro] = useState<string | null>(null);
   const [semAcesso, setSemAcesso] = useState(false);
-  const [aberto, setAberto] = useState<string | null>(null);
+  // ⚠️ O ENVIO ESCOLHIDO É GUARDADO INTEIRO, e não só o id: aprovar tira o
+  // envio da aba "Pendentes", e o painel ao lado sumiria no meio da conversa
+  // -- levando o "Abrir a tarefa" que acabou de aparecer. Ele é relido pelo
+  // protocolo depois de cada ação (ver `recarregar`).
+  const [escolhido, setEscolhido] = useState<Batch | null>(null);
+  const [rejeitarItem, setRejeitarItem] = useState<string | null>(null);
+
+  const abaAtual = ABAS.find((a) => a.valor === aba)!;
+  const filtrandoSemTarefa = semTarefa && abaAtual.semTarefa;
+
+  // A busca espera a pessoa parar de digitar: uma ida ao servidor por tecla
+  // refaria a lista enquanto ela ainda escreve o nome.
+  useEffect(() => {
+    const t = setTimeout(() => setBuscaAtiva(busca), 300);
+    return () => clearTimeout(t);
+  }, [busca]);
 
   const carregar = useCallback(async () => {
     // ⚠⚠ ESPERA O TIME em vez de buscar sem recorte. Buscar antes mostraria a
@@ -105,15 +140,23 @@ function Solicitacoes() {
     setErro(null);
     try {
       const r = await listarEnvios({
-        ...(filtro === "ALL" ? {} : { filtro: filtro as SolicitacaoFiltro }),
+        ...(aba === "ALL" ? {} : { filtro: aba as SolicitacaoFiltro }),
         page: pagina,
         size: TAMANHO_PAGINA,
         teamId: timeAtivo,
+        busca: buscaAtiva,
+        formId,
+        semTarefa: filtrandoSemTarefa,
       });
       setEnvios(r.items);
       setTotalEnvios(r.total);
-      setPendentes(r.pending_total);
-      setSemTarefa(r.approved_without_task_total);
+      setTotais(
+        r.tab_totals ?? {
+          PENDING: r.pending_total,
+          WITHOUT_TASK: r.approved_without_task_total,
+        }
+      );
+      setFormularios(r.form_options ?? []);
     } catch (err) {
       const e = err as ApiError;
       // 403: quem não é admin/manager do time principal não vê a fila.
@@ -131,18 +174,40 @@ function Solicitacoes() {
     // ⚠️ `active === null` E NÃO `active`: o objeto é NOVO a cada render da
     // barra, e depender dele refazia o pedido a cada render -- vários pedidos
     // em voo, e o último a responder vencia (defeito de 14/09).
-  }, [filtro, pagina, timeAtivo, active === null]);
+  }, [aba, pagina, timeAtivo, active === null, buscaAtiva, formId, filtrandoSemTarefa]);
 
   useEffect(() => {
     setEnvios(null);
     carregar();
   }, [carregar]);
 
-  // Trocar de filtro reinicia a paginação: manter a página 3 ao passar de
-  // "Todas" para "Pendentes" costuma cair numa página que não existe mais.
+  // Trocar de aba, busca ou formulário reinicia a paginação: manter a página
+  // 3 costuma cair numa página que não existe mais.
   useEffect(() => {
     setPagina(1);
-  }, [filtro]);
+  }, [aba, buscaAtiva, formId, filtrandoSemTarefa]);
+
+  /** Depois de uma ação: a lista, e o envio do painel relido pelo protocolo. */
+  async function recarregar() {
+    await carregar();
+    if (!escolhido) return;
+    try {
+      const r = await listarEnvios({
+        teamId: timeAtivo,
+        busca: escolhido.protocol,
+        size: 5,
+      });
+      const novo = r.items.find((b) => b.batch_id === escolhido.batch_id);
+      if (novo) setEscolhido(novo);
+    } catch {
+      /* o painel fica com o que tinha; a lista já mostra o erro, se houver */
+    }
+  }
+
+  function escolher(envio: Batch, rejeitar: string | null = null) {
+    setEscolhido(envio);
+    setRejeitarItem(rejeitar);
+  }
 
   if (semAcesso) {
     return (
@@ -153,15 +218,7 @@ function Solicitacoes() {
     );
   }
 
-  const FILTROS: { valor: Filtro; label: string; contador?: number }[] = [
-    { valor: "PENDING", label: "Pendentes", contador: pendentes },
-    { valor: "SEM_TAREFA", label: "Aprovadas sem tarefa", contador: semTarefa },
-    { valor: "APPROVED", label: "Aprovadas" },
-    { valor: "IN_PROGRESS", label: "Em andamento" },
-    { valor: "DONE", label: "Concluídas" },
-    { valor: "REJECTED", label: "Rejeitadas" },
-    { valor: "ALL", label: "Todas" },
-  ];
+  const pendentes = totais.PENDING ?? 0;
 
   return (
     <div>
@@ -169,9 +226,7 @@ function Solicitacoes() {
         /* ⚠⚠ O NOME DO TIME NO TÍTULO (fatia D). A §7 da spec previu
            exatamente este risco: *"a fila filtrada pode ficar VAZIA e parecer
            quebrada (...) a tela precisa dizer 'a fila do Marketing está
-           vazia', e não mostrar um vazio sem contexto"*. Hoje quem tria vê
-           tudo; a partir desta fatia um gestor do Marketing deixa de ver a
-           fila do Comercial -- e sem o nome ele conclui que a fila sumiu. */
+           vazia', e não mostrar um vazio sem contexto"*. */
         title={nomeDoTime ? `Solicitações · ${nomeDoTime}` : "Solicitações"}
         count={
           pendentes > 0
@@ -180,250 +235,381 @@ function Solicitacoes() {
         }
         actions={
           // ⚠️ ESTE BOTÃO APONTAVA PARA `/solicitar` FIXO, e a Spec 043 tornou
-          // isso mentira: havia UM formulário público quando ele foi escrito,
-          // e agora há N, um por time. Mandar para o primeiro que a rota
-          // resolver esconde os outros e diz "o formulário público" como se
-          // só existisse um.
-          //
-          // Vai para a tela que LISTA os formulários -- de onde se chega a
-          // qualquer um deles, ao editor e ao link público de cada um. Sem
-          // `target="_blank"`: é navegação interna do app, não é mais "abrir
-          // o que o solicitante vê".
-          // ⚠️ O TIME VAI JUNTO (14/09): o caminho puro apagava o `?time=` e
-          // a tela de formulários caía na reserva -- saindo da fila do
-          // Comercial, abria os formulários do Marketing.
+          // isso mentira: há N formulários, um por time. Vai para a tela que
+          // LISTA os formulários. ⚠️ O TIME VAI JUNTO (14/09).
           <Link className="btn btn-ghost ml-auto" href={navHref("/formularios", active)}>
             Gerenciar formulários
           </Link>
         }
       />
 
-      <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
-        {FILTROS.map((f) => (
-          <button
-            key={f.valor}
-            className="btn"
-            onClick={() => setFiltro(f.valor)}
-            style={
-              filtro === f.valor
-                ? { borderColor: "var(--accent)", color: "var(--accent)", fontWeight: 600 }
-                : f.valor === "SEM_TAREFA" && (f.contador ?? 0) > 0
-                  ? { borderColor: "#d97706", color: "#d97706" }
-                  : undefined
-            }
+      {/* ---------- 1. as abas ---------- */}
+      <div
+        role="tablist"
+        aria-label="Situação"
+        style={{ display: "flex", gap: 4, flexWrap: "wrap", alignItems: "center", marginBottom: 10 }}
+      >
+        {ABAS.map((a) => {
+          const n = totais[a.valor];
+          const ativa = aba === a.valor;
+          return (
+            <button
+              key={a.valor}
+              role="tab"
+              aria-selected={ativa}
+              type="button"
+              className="btn btn-ghost"
+              onClick={() => setAba(a.valor)}
+              style={{
+                fontSize: 13,
+                padding: "5px 10px",
+                ...(ativa
+                  ? { background: "var(--surface-2)", boxShadow: "inset 0 0 0 1px var(--border-strong)", fontWeight: 600 }
+                  : { color: "var(--text-soft)" }),
+              }}
+            >
+              {a.label}
+              {n !== undefined && (
+                <span style={{ marginLeft: 6, fontVariantNumeric: "tabular-nums", fontWeight: 600 }}>{n}</span>
+              )}
+            </button>
+          );
+        })}
+        {abaAtual.semTarefa && (
+          <label
+            style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5 }}
+            className="muted"
           >
-            {f.label}
-            {f.contador !== undefined && f.contador > 0 ? ` (${f.contador})` : ""}
-          </button>
-        ))}
+            <input type="checkbox" checked={semTarefa} onChange={(e) => setSemTarefa(e.target.checked)} />
+            Só sem tarefa
+            {(totais.WITHOUT_TASK ?? 0) > 0 && (
+              <Badge tone="soft" size="sm" color="#d97706">
+                {totais.WITHOUT_TASK}
+              </Badge>
+            )}
+          </label>
+        )}
       </div>
 
-      {filtro === "SEM_TAREFA" && semTarefa > 0 && (
-        <p className="muted" style={{ fontSize: 12, marginBottom: 12 }}>
-          Demandas aprovadas que ninguém marcou como tarefa criada. Se já viraram
-          tarefa, marque abaixo — senão elas somem de vista até o solicitante
-          cobrar.
+      {filtrandoSemTarefa && (
+        <p className="muted" style={{ fontSize: 12, margin: "0 0 10px" }}>
+          Demandas aceitas que ninguém transformou em tarefa. Se já viraram
+          tarefa, marque — senão elas somem de vista até o solicitante cobrar.
         </p>
       )}
 
-      {erro && <div className="error-box" style={{ marginBottom: 16 }}>{erro}</div>}
-      {envios === null && <Loading />}
-
-      {envios !== null && envios.length === 0 && !erro && (
-        <EmptyState
-          title={
-            nomeDoTime ? `Nenhum envio em ${nomeDoTime}` : "Nenhum envio aqui"
-          }
-          description={
-            filtro === "PENDING"
-              ? "Quando alguém enviar o formulário público, o pedido aparece nesta fila."
-              : filtro === "SEM_TAREFA"
-                ? "Toda demanda aprovada já foi marcada como tarefa criada."
-                : "Nada com este filtro por enquanto."
-          }
+      {/* ---------- 2. busca e formulário ---------- */}
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
+        <input
+          className="input"
+          type="search"
+          aria-label="Buscar solicitações"
+          placeholder="Buscar por nome, e-mail ou protocolo"
+          value={busca}
+          onChange={(e) => setBusca(e.target.value)}
+          style={{ flex: "1 1 240px" }}
         />
-      )}
-
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        {envios?.map((envio) => (
-          <CardEnvio
-            key={envio.batch_id}
-            envio={envio}
-            aberto={aberto === envio.batch_id}
-            onToggle={() =>
-              setAberto(aberto === envio.batch_id ? null : envio.batch_id)
-            }
-            onMudou={carregar}
-          />
-        ))}
+        {formularios.length > 1 && (
+          <select
+            className="input"
+            aria-label="Formulário"
+            value={formId ?? ""}
+            onChange={(e) => setFormId(e.target.value || null)}
+            style={{ flex: "0 1 240px", width: "auto" }}
+          >
+            <option value="">Todos os formulários</option>
+            {formularios.map((f) => (
+              <option key={f.id} value={f.id}>
+                {f.title}
+              </option>
+            ))}
+          </select>
+        )}
       </div>
 
-      {/* `rotulo` explicito: "Envios", porque pending_total conta DEMANDAS (R5). */}
-      <Paginacao
-        pagina={pagina}
-        total={totalEnvios}
-        porPagina={TAMANHO_PAGINA}
-        rotulo="Envios"
-        onIr={(p) => {
-          setPagina(p);
-          setAberto(null); // card aberto de outra página não faz sentido
-          window.scrollTo({ top: 0 });
-        }}
-      />
+      {erro && <div className="error-box" style={{ marginBottom: 16 }}>{erro}</div>}
+
+      {/* ---------- 5. lista | envio escolhido ---------- */}
+      {/* ⚠️ NO CELULAR, UMA COLUNA DE CADA VEZ: escolhido, a lista some e o
+          painel ganha "‹ Voltar". Duas colunas de 180px não cabem nada. */}
+      <div className="grid gap-3 md:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] items-start">
+        <div className={escolhido ? "hidden md:block" : ""}>
+          {envios === null && <Loading />}
+          {envios !== null && envios.length === 0 && !erro && (
+            <EmptyState
+              title={nomeDoTime ? `Nenhum envio em ${nomeDoTime}` : "Nenhum envio aqui"}
+              description={
+                buscaAtiva.trim() || formId
+                  ? "Nada com esta busca. Tente outro nome, ou limpe o filtro."
+                  : aba === "PENDING"
+                    ? "Quando alguém enviar o formulário público, o pedido aparece nesta fila."
+                    : filtrandoSemTarefa
+                      ? "Toda demanda aceita já virou tarefa."
+                      : "Nada com este filtro por enquanto."
+              }
+            />
+          )}
+          {envios !== null && envios.length > 0 && (
+            <Card className="overflow-hidden p-0">
+              {envios.map((envio, i) => (
+                <LinhaDoEnvio
+                  key={envio.batch_id}
+                  envio={envio}
+                  primeira={i === 0}
+                  escolhido={escolhido?.batch_id === envio.batch_id}
+                  onEscolher={(rejeitar) => escolher(envio, rejeitar)}
+                  onMudou={recarregar}
+                />
+              ))}
+            </Card>
+          )}
+          {/* `rotulo` explicito: "Envios", porque os números das abas contam DEMANDAS (R5). */}
+          <Paginacao
+            pagina={pagina}
+            total={totalEnvios}
+            porPagina={TAMANHO_PAGINA}
+            rotulo="Envios"
+            onIr={(p) => {
+              setPagina(p);
+              window.scrollTo({ top: 0 });
+            }}
+          />
+        </div>
+
+        <div className={escolhido ? "" : "hidden md:block"}>
+          {escolhido ? (
+            <PainelDoEnvio
+              key={escolhido.batch_id}
+              envio={escolhido}
+              rejeitarItem={rejeitarItem}
+              onVoltar={() => setEscolhido(null)}
+              onMudou={recarregar}
+            />
+          ) : (
+            <div
+              className="muted"
+              style={{
+                border: "1px dashed var(--border)",
+                borderRadius: 12,
+                padding: 32,
+                textAlign: "center",
+                fontSize: 13,
+              }}
+            >
+              Escolha um envio na lista para ver as respostas e decidir.
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
 
-/** Card fechado: quem pediu + tópicos do que pediu. Aberto: seção por seção. */
-function CardEnvio({
+/** Quando chegou, curto: "hoje", "ontem", ou a data. */
+function quando(iso: string): string {
+  const d = new Date(iso);
+  const hoje = new Date();
+  const dia = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const dias = Math.round((dia(hoje) - dia(d)) / 86_400_000);
+  if (dias === 0) return "hoje";
+  if (dias === 1) return "ontem";
+  return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+}
+
+/**
+ * Uma linha da lista: quem pediu, de onde, e o que pediu.
+ *
+ * ⚠️ 3. AÇÃO SEM ABRIR (15/10): envio de UMA demanda pendente decide ali
+ * mesmo -- o resumo já está na linha. Envio de várias abre o painel e decide
+ * uma por uma: aprovar "o envio" de uma vez esconderia que cada demanda é
+ * triada separadamente (Spec 043).
+ */
+function LinhaDoEnvio({
   envio,
-  aberto,
-  onToggle,
+  primeira,
+  escolhido,
+  onEscolher,
   onMudou,
 }: {
   envio: Batch;
-  aberto: boolean;
-  onToggle: () => void;
+  primeira: boolean;
+  escolhido: boolean;
+  onEscolher: (rejeitar?: string | null) => void;
   onMudou: () => void;
 }) {
+  const [agindo, setAgindo] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+  const unico = envio.items.length === 1 ? envio.items[0] : null;
   const pendentes = envio.items.filter((i) => i.status === "PENDING").length;
-  const semTarefa = envio.items.filter(
-    (i) => i.status === "APPROVED" && !i.task_created_at
-  ).length;
 
-  // ⚠️⚠️ O CONTORNO TRAÇA O CARTÃO, e o clique mora no CABEÇALHO -- os dois não
-  // são o mesmo nó, de propósito. Desenhar o traço só em volta do cabeçalho
-  // daria um retângulo de cantos retos flutuando dentro de um cartão
-  // arredondado; e mover o clique para o cartão inteiro faria os botões de
-  // dentro (aprovar, recusar) alternarem a seção sem querer.
-  // ⚠️ `radius` 8 = o `rounded-lg` do `Card`.
-  const { target, outline } = useDrawnOutline();
+  async function aprovarECriar(item: BatchItem) {
+    setAgindo(true);
+    setErro(null);
+    try {
+      await aprovarSolicitacao(item.id);
+      await criarTarefaDaSolicitacao(item.id);
+      onMudou();
+    } catch (e) {
+      setErro((e as ApiError).message || "Não foi possível aprovar.");
+      onMudou();
+    } finally {
+      setAgindo(false);
+    }
+  }
 
   return (
-    <Card className="relative p-4">
-      {outline}
-      {/* ---------- cabeçalho: o solicitante ---------- */}
-      <div
-        onClick={onToggle}
-        {...target}
+    <div
+      style={{
+        borderTop: primeira ? undefined : "1px solid var(--border)",
+        background: escolhido ? "var(--surface-2)" : undefined,
+        boxShadow: escolhido ? "inset 3px 0 0 var(--accent)" : undefined,
+      }}
+    >
+      <button
+        type="button"
+        onClick={() => onEscolher(null)}
+        aria-current={escolhido || undefined}
         style={{
-          display: "flex", alignItems: "flex-start", gap: 12, flexWrap: "wrap",
+          display: "block",
+          width: "100%",
+          textAlign: "left",
+          background: "transparent",
+          border: 0,
+          padding: "10px 14px 4px",
           cursor: "pointer",
+          color: "var(--text)",
+          fontFamily: "inherit",
         }}
       >
-        <div style={{ flex: 1, minWidth: 220 }}>
-          <div style={{ fontWeight: 600, fontSize: 14 }}>
-            {envio.requester_name}
-          </div>
-          {/* ⚠️ `filter(Boolean)` E NAO SEPARADOR FIXO. Desde a fatia G,
-              `requester_department` e `requester_polo` podem ser `null` -- em
-              JSX o `null` some, mas o `·` e o `/` FICAM, e o card mostrava
-              "maria@x.ex ·  / ". Achado pela revisão de 31/08.
-
-              ⚠️ E OS DOIS SEPARADORES SÃO DIFERENTES DE PROPÓSITO: `·` separa
-              o e-mail do lugar, `/` separa área de polo. Na primeira correção
-              eu juntei tudo com `·` e mudei o desenho sem ninguém pedir -- a
-              Camila mandou voltar. O defeito era o separador ÓRFÃO, não a
-              escolha dele. */}
-          <div className="muted" style={{ fontSize: 12 }}>
-            {[
-              envio.requester_email,
-              [envio.requester_department, envio.requester_polo]
-                .filter(Boolean)
-                .join(" / "),
-            ]
-              .filter(Boolean)
-              .join(" · ")}
-          </div>
-          <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>
-            {/* Por qual formulário entrou (15/10: a fila não dizia). */}
-            {envio.form_title && (
-              <>
-                Formulário <strong>{envio.form_title}</strong> ·{" "}
-              </>
-            )}
-            Protocolo <strong>{envio.protocol}</strong> ·{" "}
-            {new Date(envio.created_at).toLocaleDateString("pt-BR")} ·{" "}
-            {envio.items.length} demanda{envio.items.length > 1 ? "s" : ""}
-          </div>
-
-          {/* Tópicos do que foi pedido — visível sem abrir o card. */}
-          <ul
-            style={{
-              margin: "10px 0 0",
-              paddingLeft: 18,
-              display: "flex",
-              flexDirection: "column",
-              gap: 4,
-            }}
-          >
-            {envio.items.map((item) => {
-              const cat = rotuloDaCategoria(item);
-              return (
-                <li key={item.id} style={{ fontSize: 13 }}>
-                  <span style={{ marginRight: 6 }}>{cat.emoji}</span>
-                  <strong>
-                    {cat.titulo}
-                    {numeroDaRepeticao(envio.items, item)}
-                  </strong>
-                  {": "}
-                  <span className="muted">{item.summary}</span>{" "}
-                  <Badge tone="soft" size="sm" color={STATUS_COLOR[item.status]}>
-                    {STATUS_LABEL[item.status]}
-                  </Badge>
-                  {item.status === "APPROVED" && (
-                    <span
-                      style={{
-                        fontSize: 11,
-                        marginLeft: 6,
-                        color: item.task_created_at ? "#16a34a" : "#d97706",
-                      }}
-                    >
-                      {item.task_created_at ? "✓ tarefa criada" : "⚠ sem tarefa"}
-                    </span>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-        </div>
-
-        <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-end" }}>
-          {pendentes > 0 && (
+        <span style={{ display: "flex", gap: 8, alignItems: "baseline" }}>
+          <span style={{ fontWeight: 600, fontSize: 14, flex: 1, minWidth: 0 }}>{envio.requester_name}</span>
+          {pendentes > 0 && !unico && (
             <Badge tone="soft" size="sm" color={STATUS_COLOR.PENDING}>
               {pendentes} pendente{pendentes > 1 ? "s" : ""}
             </Badge>
           )}
-          {semTarefa > 0 && (
-            <Badge tone="soft" size="sm" color="#d97706">
-              {semTarefa} sem tarefa
-            </Badge>
+          <span className="muted" style={{ fontSize: 11 }}>{quando(envio.created_at)}</span>
+        </span>
+        <span className="muted" style={{ display: "block", fontSize: 11.5, marginTop: 1 }}>
+          {/* Por qual formulário entrou (15/10: a fila não dizia). */}
+          {envio.form_title && (
+            <>
+              <strong style={{ fontWeight: 600 }}>{envio.form_title}</strong> ·{" "}
+            </>
           )}
-          <span className="muted" style={{ fontSize: 11 }}>
-            {aberto ? "▲ fechar" : "▼ abrir seções"}
-          </span>
-        </div>
-      </div>
+          {envio.items.length} demanda{envio.items.length > 1 ? "s" : ""}
+        </span>
+      </button>
 
-      {/* ---------- aberto: seção por seção ---------- */}
-      {aberto && (
-        <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 12 }}>
-          <div className="muted" style={{ fontSize: 12 }}>
-            Contato:{" "}
-            {[envio.requester_email, envio.requester_phone]
-              .filter(Boolean)
-              .join(" · ")}
-          </div>
-          {envio.items.map((item) => (
-            <SecaoDemanda
-              key={item.id}
-              envio={envio}
-              item={item}
-              onMudou={onMudou}
-            />
-          ))}
+      <ul style={{ listStyle: "none", margin: 0, padding: "2px 14px 10px", display: "flex", flexDirection: "column", gap: 3 }}>
+        {envio.items.map((item) => {
+          const cat = rotuloDaCategoria(item);
+          return (
+            <li key={item.id} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, minWidth: 0 }}>
+              <span aria-hidden>{cat.emoji}</span>
+              <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                <strong style={{ fontWeight: 600 }}>
+                  {cat.titulo}
+                  {numeroDaRepeticao(envio.items, item)}
+                </strong>
+                <span className="muted"> · {item.summary}</span>
+              </span>
+              {unico && item.status === "PENDING" ? (
+                <>
+                  <button
+                    type="button"
+                    className="btn"
+                    style={{ fontSize: 12, padding: "2px 8px" }}
+                    disabled={agindo}
+                    aria-label="Aprovar e criar tarefa"
+                    title="Aprovar e criar tarefa"
+                    onClick={() => aprovarECriar(item)}
+                  >
+                    {agindo ? "…" : "✓"}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn"
+                    style={{ fontSize: 12, padding: "2px 8px", color: "var(--danger)" }}
+                    disabled={agindo}
+                    aria-label="Rejeitar"
+                    title="Rejeitar (pede justificativa)"
+                    onClick={() => onEscolher(item.id)}
+                  >
+                    ✕
+                  </button>
+                </>
+              ) : (
+                <Badge tone="soft" size="sm" color={STATUS_COLOR[item.status]}>
+                  {STATUS_LABEL[item.status]}
+                </Badge>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+      {erro && (
+        <div className="error-box" role="alert" style={{ margin: "0 14px 10px", fontSize: 12 }}>
+          {erro}
         </div>
       )}
+    </div>
+  );
+}
+
+/** O envio escolhido: quem pediu, e cada demanda com a sua triagem. */
+function PainelDoEnvio({
+  envio,
+  rejeitarItem,
+  onVoltar,
+  onMudou,
+}: {
+  envio: Batch;
+  rejeitarItem: string | null;
+  onVoltar: () => void;
+  onMudou: () => void;
+}) {
+  return (
+    <Card className="p-4">
+      <button type="button" className="btn btn-ghost md:hidden" style={{ fontSize: 12, marginBottom: 8 }} onClick={onVoltar}>
+        ‹ Voltar
+      </button>
+      <div style={{ fontWeight: 600, fontSize: 15 }}>{envio.requester_name}</div>
+      {/* ⚠️ `filter(Boolean)` E NAO SEPARADOR FIXO. Desde a fatia G,
+          `requester_department` e `requester_polo` podem ser `null` -- em
+          JSX o `null` some, mas o `·` e o `/` FICAM (revisão de 31/08).
+
+          ⚠️ E OS DOIS SEPARADORES SÃO DIFERENTES DE PROPÓSITO: `·` separa
+          o e-mail do lugar, `/` separa área de polo. A Camila mandou voltar
+          quando eu juntei tudo com `·`. */}
+      <div className="muted" style={{ fontSize: 12 }}>
+        {[
+          [envio.requester_email, envio.requester_phone].filter(Boolean).join(" · "),
+          [envio.requester_department, envio.requester_polo].filter(Boolean).join(" / "),
+        ]
+          .filter(Boolean)
+          .join(" · ")}
+      </div>
+      <div className="muted" style={{ fontSize: 11, marginTop: 2, marginBottom: 12 }}>
+        {envio.form_title && (
+          <>
+            Formulário <strong>{envio.form_title}</strong> ·{" "}
+          </>
+        )}
+        Protocolo <strong>{envio.protocol}</strong> ·{" "}
+        {new Date(envio.created_at).toLocaleDateString("pt-BR")}
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {envio.items.map((item) => (
+          <SecaoDemanda
+            key={`${item.id}-${rejeitarItem === item.id}`}
+            envio={envio}
+            item={item}
+            rejeitarAoAbrir={rejeitarItem === item.id}
+            onMudou={onMudou}
+          />
+        ))}
+      </div>
     </Card>
   );
 }
@@ -432,17 +618,35 @@ function CardEnvio({
 function SecaoDemanda({
   envio,
   item,
+  rejeitarAoAbrir = false,
   onMudou,
 }: {
   envio: Batch;
   item: BatchItem;
+  /** Veio do ✕ da lista: já abre pedindo a justificativa. */
+  rejeitarAoAbrir?: boolean;
   onMudou: () => void;
 }) {
   const cat = rotuloDaCategoria(item);
   const aceito = STATUS_ACEITOS.includes(item.status);
   const [erro, setErro] = useState<string | null>(null);
   const [agindo, setAgindo] = useState(false);
-  const [rejeitando, setRejeitando] = useState(false);
+  const [rejeitando, setRejeitando] = useState(rejeitarAoAbrir);
+  const [menuAberto, setMenuAberto] = useState(false);
+  const menu = useRef<HTMLDivElement>(null);
+  const justificativaRef = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    if (rejeitarAoAbrir) justificativaRef.current?.focus();
+  }, [rejeitarAoAbrir]);
+  // O menu da seta fecha ao clicar fora, como qualquer menu.
+  useEffect(() => {
+    if (!menuAberto) return;
+    const fora = (e: MouseEvent) => {
+      if (!menu.current?.contains(e.target as Node)) setMenuAberto(false);
+    };
+    document.addEventListener("mousedown", fora);
+    return () => document.removeEventListener("mousedown", fora);
+  }, [menuAberto]);
   const [justificativa, setJustificativa] = useState("");
   const [marcandoTarefa, setMarcandoTarefa] = useState(false);
   // ⚠️ GUARDA O ID DA TAREFA RECÉM-CRIADA para oferecer "abrir a tarefa" sem
@@ -549,10 +753,7 @@ function SecaoDemanda({
       )}
 
       {/* ---- ações ---- */}
-      <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
-        <button className="btn" onClick={copiarBriefing}>
-          {copiado ? "Copiado ✓" : "Copiar briefing"}
-        </button>
+      <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap", alignItems: "center" }}>
 
         {/* ⚠️ O ANDAMENTO É UM SELETOR, e não um botão "avançar": volta-se de
             "concluída" para "em andamento" de propósito. Marcar concluída por
@@ -591,17 +792,81 @@ function SecaoDemanda({
           </label>
         )}
 
+        {/* ⚠️ 4. "APROVAR E CRIAR TAREFA" É O CAMINHO PRINCIPAL (15/10): quase
+            todo pedido aceito vira tarefa, e eram dois cliques em dois
+            momentos -- o segundo era o que se esquecia. Os outros dois
+            caminhos moram na seta. */}
         {item.status === "PENDING" && !rejeitando && (
           <>
-            <button
-              className="btn btn-primary"
-              disabled={agindo}
-              onClick={() =>
-                acao(() => aprovarSolicitacao(item.id), "Não foi possível aprovar.")
-              }
-            >
-              {agindo ? "…" : "Aprovar"}
-            </button>
+            <div ref={menu} style={{ position: "relative", display: "inline-flex" }}>
+              <button
+                className="btn btn-primary"
+                disabled={agindo}
+                style={{ borderTopRightRadius: 0, borderBottomRightRadius: 0 }}
+                onClick={() =>
+                  acao(async () => {
+                    await aprovarSolicitacao(item.id);
+                    const nova = await criarTarefaDaSolicitacao(item.id);
+                    setTarefaNova(nova.task_id);
+                  }, "Não foi possível aprovar.")
+                }
+              >
+                {agindo ? "…" : "Aprovar e criar tarefa"}
+              </button>
+              <button
+                className="btn btn-primary"
+                disabled={agindo}
+                aria-label="Outras formas de aprovar"
+                aria-expanded={menuAberto}
+                style={{ borderTopLeftRadius: 0, borderBottomLeftRadius: 0, borderLeft: "1px solid rgba(255,255,255,.35)", padding: "0 8px" }}
+                onClick={() => setMenuAberto((v) => !v)}
+              >
+                ▾
+              </button>
+              {menuAberto && (
+                <div
+                  role="menu"
+                  style={{
+                    position: "absolute",
+                    top: "calc(100% + 4px)",
+                    left: 0,
+                    zIndex: 20,
+                    minWidth: 220,
+                    background: "var(--surface)",
+                    border: "1px solid var(--border)",
+                    borderRadius: 10,
+                    padding: 4,
+                    boxShadow: "0 8px 24px rgba(0,0,0,.18)",
+                  }}
+                >
+                  <button
+                    role="menuitem"
+                    className="btn btn-ghost"
+                    style={{ width: "100%", justifyContent: "flex-start", fontSize: 13 }}
+                    onClick={() => {
+                      setMenuAberto(false);
+                      acao(() => aprovarSolicitacao(item.id), "Não foi possível aprovar.");
+                    }}
+                  >
+                    Aprovar sem tarefa
+                  </button>
+                  <button
+                    role="menuitem"
+                    className="btn btn-ghost"
+                    style={{ width: "100%", justifyContent: "flex-start", fontSize: 13 }}
+                    onClick={() => {
+                      setMenuAberto(false);
+                      acao(async () => {
+                        await aprovarSolicitacao(item.id);
+                        setMarcandoTarefa(true);
+                      }, "Não foi possível aprovar.");
+                    }}
+                  >
+                    Aprovar — já criei a tarefa
+                  </button>
+                </div>
+              )}
+            </div>
             <button
               className="btn"
               style={{ color: "var(--danger)" }}
@@ -654,6 +919,10 @@ function SecaoDemanda({
             Desmarcar tarefa
           </button>
         )}
+
+        <button className="btn btn-ghost" style={{ marginLeft: "auto" }} onClick={copiarBriefing}>
+          {copiado ? "Copiado ✓" : "Copiar briefing"}
+        </button>
       </div>
 
       {aceito && item.task_created_at && (
@@ -723,6 +992,7 @@ function SecaoDemanda({
             Justificativa da rejeição (obrigatória)
           </label>
           <textarea
+            ref={justificativaRef}
             id={`just-${item.id}`}
             className="input"
             rows={3}

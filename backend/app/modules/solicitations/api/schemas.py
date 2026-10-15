@@ -169,6 +169,11 @@ class BatchResponse(BaseModel):
     items: list[BatchItemResponse]
 
 
+class FormOption(BaseModel):
+    id: uuid.UUID
+    title: str
+
+
 class BatchListResponse(BaseModel):
     items: list[BatchResponse]
     total: int  # total de ENVIOS, nao de demandas
@@ -176,6 +181,11 @@ class BatchListResponse(BaseModel):
     size: int
     pending_total: int
     approved_without_task_total: int
+    #: Os numeros das abas (15/10), em demandas, com a mesma busca e o mesmo
+    #: formulario da lista: PENDING, ACTIVE, DONE, REJECTED, ALL, WITHOUT_TASK.
+    tab_totals: dict[str, int] = Field(default_factory=dict)
+    #: Os formularios que tem pedido nesta fila -- as opcoes do filtro.
+    form_options: list[FormOption] = Field(default_factory=list)
 
 
 class AndarRequest(BaseModel):

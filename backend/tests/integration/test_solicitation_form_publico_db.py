@@ -507,3 +507,53 @@ async def test_a_fila_sabe_o_TITULO_do_formulario_do_pedido(db) -> None:
     with acting_as(**ctx):
         titulos = await SolicitationService(db).titulos_dos_formularios(criadas)
     assert titulos == {form.id: "Arte"}
+
+
+# ----------------------------------------------------------
+# A fila nova (15/10): busca, formulario, "so sem tarefa" e abas
+# ----------------------------------------------------------
+async def test_fila_busca_formulario_e_abas(db) -> None:
+    from app.shared.pagination import PageParams
+
+    ws, raiz, user, ctx = await _mundo(db)
+    form, secao, _ = await _form_publicado(db, ctx, raiz)
+    slug_ws = await _slug_do_ws(db, ws)
+    async with UnitOfWork(db) as uow:
+        criadas = await SolicitationService(db).create_public(
+            uow, _envio(slug_ws, categoria=secao.slug, form_id=form.id)
+        )
+    assert criadas is not None
+    protocolo = str(criadas[0].batch_id).split("-")[0].upper()
+
+    with acting_as(**ctx):
+        svc = SolicitationService(db)
+        p = PageParams(size=50)
+        for termo in ("maria", "POLO.EX", protocolo):
+            lotes, total = await svc.list_batches(
+                params=p, filtro=None, team_id=None, search=termo
+            )
+            assert total == 1, termo
+        _, nada = await svc.list_batches(
+            params=p, filtro=None, team_id=None, search="ninguem"
+        )
+        assert nada == 0
+        _, do_form = await svc.list_batches(
+            params=p, filtro="PENDING", team_id=None, form_id=form.id
+        )
+        assert do_form == 1
+        _, ativos = await svc.list_batches(
+            params=p, filtro="ACTIVE", team_id=None
+        )
+        assert ativos == 0
+        _, sem = await svc.list_batches(
+            params=p, filtro=None, team_id=None, without_task=True
+        )
+        assert sem == 0
+
+        abas = await svc.count_by_tab(None)
+        assert abas == {
+            "PENDING": 1, "ACTIVE": 0, "DONE": 0, "REJECTED": 0,
+            "ALL": 1, "WITHOUT_TASK": 0,
+        }
+        assert (await svc.count_by_tab(None, "ninguem"))["ALL"] == 0
+        assert await svc.form_options(None) == [(form.id, "Arte")]
