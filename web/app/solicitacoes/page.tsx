@@ -70,6 +70,7 @@ import Loading from "@/components/Loading";
 import { useActiveTeam, useActiveTeamId } from "@/lib/useActiveTeam";
 import { navHref } from "@/lib/activeTeam";
 import Paginacao from "@/components/Paginacao";
+import AnchoredPanel, { useAnchoredPanel } from "@/components/AnchoredPanel";
 
 const STATUS_LABEL: Record<SolicitacaoStatus, string> = {
   PENDING: "Pendente",
@@ -831,26 +832,27 @@ function SecaoDemanda({
   const [agindo, setAgindo] = useState(false);
   const [rejeitando, setRejeitando] = useState(rejeitarAoAbrir);
   const [menuAberto, setMenuAberto] = useState(false);
-  const menu = useRef<HTMLDivElement>(null);
+  // ⚠️ O MENU DA SETA É `AnchoredPanel` (fixo), e não `absolute`: o painel
+  // rola por dentro e o recortava -- ela abria e tinha de rolar para ver
+  // (print dela, 15/10). Fixo, ele sobrepõe tudo e abre para cima quando o
+  // botão está no pé da tela.
+  const { anchorRef: menu, panelRef: painelDoMenu, box: caixaDoMenu } = useAnchoredPanel<HTMLDivElement>(
+    menuAberto,
+    () => setMenuAberto(false),
+    { larguraPainel: 240 }
+  );
   const justificativaRef = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
     if (rejeitarAoAbrir) justificativaRef.current?.focus();
   }, [rejeitarAoAbrir]);
-  // O menu da seta fecha ao clicar fora ou com Esc, como qualquer menu.
+  // Esc fecha o menu (o clique fora e a rolagem, o `useAnchoredPanel` já fecha).
   useEffect(() => {
     if (!menuAberto) return;
-    const fora = (e: MouseEvent) => {
-      if (!menu.current?.contains(e.target as Node)) setMenuAberto(false);
-    };
     const esc = (e: KeyboardEvent) => {
       if (e.key === "Escape") setMenuAberto(false);
     };
-    document.addEventListener("mousedown", fora);
     document.addEventListener("keydown", esc);
-    return () => {
-      document.removeEventListener("mousedown", fora);
-      document.removeEventListener("keydown", esc);
-    };
+    return () => document.removeEventListener("keydown", esc);
   }, [menuAberto]);
   const [justificativa, setJustificativa] = useState("");
   const [marcandoTarefa, setMarcandoTarefa] = useState(false);
@@ -1061,44 +1063,35 @@ function SecaoDemanda({
                   <ChevronDown aria-hidden size={15} />
                 </motion.span>
               </button>
-              <AnimatePresence>
-                {menuAberto && (
-                  <motion.div
-                    role="menu"
-                    initial={{ opacity: 0, y: -4, scale: 0.97 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: -4, scale: 0.97, transition: { duration: 0.12 } }}
-                    transition={MOLA}
-                    className="absolute left-0 top-[calc(100%+6px)] z-20 min-w-[230px] origin-top-left rounded-xl border border-border bg-surface p-1 shadow-[0_12px_32px_rgba(0,0,0,.2)]"
+              {menuAberto && caixaDoMenu && (
+                <AnchoredPanel box={caixaDoMenu} panelRef={painelDoMenu} role="menu" aria-label="Formas de aprovar" minWidth={240}>
+                  <button
+                    role="menuitem"
+                    className="btn btn-ghost"
+                    style={{ width: "100%", justifyContent: "flex-start", fontSize: 13 }}
+                    onClick={() => {
+                      setMenuAberto(false);
+                      acao(() => aprovarSolicitacao(item.id), "Não foi possível aprovar.");
+                    }}
                   >
-                    <button
-                      role="menuitem"
-                      className="btn btn-ghost"
-                      style={{ width: "100%", justifyContent: "flex-start", fontSize: 13 }}
-                      onClick={() => {
-                        setMenuAberto(false);
-                        acao(() => aprovarSolicitacao(item.id), "Não foi possível aprovar.");
-                      }}
-                    >
-                      Aprovar sem tarefa
-                    </button>
-                    <button
-                      role="menuitem"
-                      className="btn btn-ghost"
-                      style={{ width: "100%", justifyContent: "flex-start", fontSize: 13 }}
-                      onClick={() => {
-                        setMenuAberto(false);
-                        acao(async () => {
-                          await aprovarSolicitacao(item.id);
-                          setMarcandoTarefa(true);
-                        }, "Não foi possível aprovar.");
-                      }}
-                    >
-                      Aprovar — já criei a tarefa
-                    </button>
-                  </motion.div>
-                )}
-              </AnimatePresence>
+                    Aprovar sem tarefa
+                  </button>
+                  <button
+                    role="menuitem"
+                    className="btn btn-ghost"
+                    style={{ width: "100%", justifyContent: "flex-start", fontSize: 13 }}
+                    onClick={() => {
+                      setMenuAberto(false);
+                      acao(async () => {
+                        await aprovarSolicitacao(item.id);
+                        setMarcandoTarefa(true);
+                      }, "Não foi possível aprovar.");
+                    }}
+                  >
+                    Aprovar — já criei a tarefa
+                  </button>
+                </AnchoredPanel>
+              )}
             </div>
             <button
               className="btn"
