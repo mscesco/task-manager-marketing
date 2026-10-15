@@ -549,13 +549,12 @@ describe("as duas ações que a fila existe para fazer", () => {
     );
   });
 
-  it("✓ na LISTA aprova e cria a tarefa sem abrir o envio", async () => {
+  it("⚠️ ✓ na LISTA só aprova -- a tarefa se cria no painel (decisão dela)", async () => {
     vi.mocked(api.aprovarSolicitacao).mockResolvedValue({} as never);
-    vi.mocked(api.criarTarefaDaSolicitacao).mockResolvedValue({ task_id: "t-8", task_title: "x" });
     montar();
-    fireEvent.click(await screen.findByLabelText("Aprovar e criar tarefa"));
-    await waitFor(() => expect(api.criarTarefaDaSolicitacao).toHaveBeenCalledWith("i1"));
-    expect(api.aprovarSolicitacao).toHaveBeenCalledWith("i1");
+    fireEvent.click(await screen.findByLabelText("Aprovar"));
+    await waitFor(() => expect(api.aprovarSolicitacao).toHaveBeenCalledWith("i1"));
+    expect(api.criarTarefaDaSolicitacao).not.toHaveBeenCalled();
   });
 
   it("✕ na LISTA abre o envio já pedindo a justificativa", async () => {
@@ -568,7 +567,7 @@ describe("as duas ações que a fila existe para fazer", () => {
   it("⚠️ envio com VÁRIAS demandas não decide na lista -- uma por uma", async () => {
     montar([item(), item({ id: "i2", batch_seq: 2, category: "arte", category_title: "Arte" })]);
     await screen.findByText("Maria do Polo");
-    expect(screen.queryByLabelText("Aprovar e criar tarefa")).toBeNull();
+    expect(screen.queryByLabelText("Aprovar")).toBeNull();
   });
 
   it("⚠️ rejeitar EXIGE justificativa -- é o que a pessoa vai receber", async () => {

@@ -263,6 +263,9 @@ function Solicitacoes() {
               style={{
                 fontSize: 13,
                 padding: "5px 10px",
+                // Em tela estreita a aba desce inteira; "Em andamento" partido
+                // em duas linhas parecia duas abas (visto no celular, 15/10).
+                whiteSpace: "nowrap",
                 ...(ativa
                   ? { background: "var(--surface-2)", boxShadow: "inset 0 0 0 1px var(--border-strong)", fontWeight: 600 }
                   : { color: "var(--text-soft)" }),
@@ -376,7 +379,9 @@ function Solicitacoes() {
           />
         </div>
 
-        <div className={escolhido ? "" : "hidden md:block"}>
+        {/* O painel acompanha a rolagem: com a lista comprida, o envio aberto
+            não sobe junto e some da tela. */}
+        <div className={`${escolhido ? "" : "hidden md:block"} md:sticky md:top-4`}>
           {escolhido ? (
             <PainelDoEnvio
               key={escolhido.batch_id}
@@ -404,6 +409,13 @@ function Solicitacoes() {
     </div>
   );
 }
+
+/** O botão principal de cada demanda: contorno na cor de destaque. */
+const BOTAO_DE_DESTAQUE = {
+  borderColor: "var(--accent)",
+  color: "var(--accent)",
+  fontWeight: 600,
+} as const;
 
 /** Quando chegou, curto: "hoje", "ontem", ou a data. */
 function quando(iso: string): string {
@@ -440,18 +452,18 @@ function LinhaDoEnvio({
   const [agindo, setAgindo] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const unico = envio.items.length === 1 ? envio.items[0] : null;
-  const pendentes = envio.items.filter((i) => i.status === "PENDING").length;
 
-  async function aprovarECriar(item: BatchItem) {
+  // ⚠️ O ✓ DA LISTA SÓ APROVA (decisão dela, 15/10): criar a tarefa fica no
+  // painel, onde se vê o briefing antes. Aprovado sem tarefa, o pedido
+  // aparece em "Só sem tarefa" -- não some.
+  async function aprovar(item: BatchItem) {
     setAgindo(true);
     setErro(null);
     try {
       await aprovarSolicitacao(item.id);
-      await criarTarefaDaSolicitacao(item.id);
       onMudou();
     } catch (e) {
       setErro((e as ApiError).message || "Não foi possível aprovar.");
-      onMudou();
     } finally {
       setAgindo(false);
     }
@@ -483,11 +495,6 @@ function LinhaDoEnvio({
       >
         <span style={{ display: "flex", gap: 8, alignItems: "baseline" }}>
           <span style={{ fontWeight: 600, fontSize: 14, flex: 1, minWidth: 0 }}>{envio.requester_name}</span>
-          {pendentes > 0 && !unico && (
-            <Badge tone="soft" size="sm" color={STATUS_COLOR.PENDING}>
-              {pendentes} pendente{pendentes > 1 ? "s" : ""}
-            </Badge>
-          )}
           <span className="muted" style={{ fontSize: 11 }}>{quando(envio.created_at)}</span>
         </span>
         <span className="muted" style={{ display: "block", fontSize: 11.5, marginTop: 1 }}>
@@ -506,6 +513,22 @@ function LinhaDoEnvio({
           const cat = rotuloDaCategoria(item);
           return (
             <li key={item.id} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, minWidth: 0 }}>
+              {/* ⚠️ A SITUAÇÃO VIROU UM PONTO (15/10, vista na tela): a etiqueta
+                  "Pendente" em toda linha, mais "3 pendentes" no cabeçalho,
+                  repetia a aba em que a pessoa já está. O nome vai no `title`
+                  e no texto para leitor de tela; fora de "pendente", o nome
+                  também aparece, curto, no fim da linha. */}
+              <span
+                title={STATUS_LABEL[item.status]}
+                style={{
+                  width: 7,
+                  height: 7,
+                  borderRadius: 999,
+                  flexShrink: 0,
+                  background: STATUS_COLOR[item.status],
+                }}
+              />
+              <span className="sr-only">{STATUS_LABEL[item.status]}:</span>
               <span aria-hidden>{cat.emoji}</span>
               <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 <strong style={{ fontWeight: 600 }}>
@@ -521,9 +544,9 @@ function LinhaDoEnvio({
                     className="btn"
                     style={{ fontSize: 12, padding: "2px 8px" }}
                     disabled={agindo}
-                    aria-label="Aprovar e criar tarefa"
-                    title="Aprovar e criar tarefa"
-                    onClick={() => aprovarECriar(item)}
+                    aria-label="Aprovar"
+                    title="Aprovar"
+                    onClick={() => aprovar(item)}
                   >
                     {agindo ? "…" : "✓"}
                   </button>
@@ -540,9 +563,11 @@ function LinhaDoEnvio({
                   </button>
                 </>
               ) : (
-                <Badge tone="soft" size="sm" color={STATUS_COLOR[item.status]}>
-                  {STATUS_LABEL[item.status]}
-                </Badge>
+                item.status !== "PENDING" && (
+                  <span aria-hidden style={{ fontSize: 11, color: STATUS_COLOR[item.status], whiteSpace: "nowrap" }}>
+                    {STATUS_LABEL[item.status]}
+                  </span>
+                )
               )}
             </li>
           );
@@ -571,9 +596,14 @@ function PainelDoEnvio({
 }) {
   return (
     <Card className="p-4">
-      <button type="button" className="btn btn-ghost md:hidden" style={{ fontSize: 12, marginBottom: 8 }} onClick={onVoltar}>
-        ‹ Voltar
-      </button>
+      {/* ⚠️ O `md:hidden` FICA NUM DIV EM VOLTA, e não no botão: o `display`
+          do `.btn` vence a classe utilitária, e o "Voltar" aparecia no
+          computador (visto na tela, 15/10). */}
+      <div className="md:hidden" style={{ marginBottom: 8 }}>
+        <button type="button" className="btn btn-ghost" style={{ fontSize: 12 }} onClick={onVoltar}>
+          ‹ Voltar
+        </button>
+      </div>
       <div style={{ fontWeight: 600, fontSize: 15 }}>{envio.requester_name}</div>
       {/* ⚠️ `filter(Boolean)` E NAO SEPARADOR FIXO. Desde a fatia G,
           `requester_department` e `requester_polo` podem ser `null` -- em
@@ -644,8 +674,15 @@ function SecaoDemanda({
     const fora = (e: MouseEvent) => {
       if (!menu.current?.contains(e.target as Node)) setMenuAberto(false);
     };
+    const esc = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMenuAberto(false);
+    };
     document.addEventListener("mousedown", fora);
-    return () => document.removeEventListener("mousedown", fora);
+    document.addEventListener("keydown", esc);
+    return () => {
+      document.removeEventListener("mousedown", fora);
+      document.removeEventListener("keydown", esc);
+    };
   }, [menuAberto]);
   const [justificativa, setJustificativa] = useState("");
   const [marcandoTarefa, setMarcandoTarefa] = useState(false);
@@ -799,10 +836,12 @@ function SecaoDemanda({
         {item.status === "PENDING" && !rejeitando && (
           <>
             <div ref={menu} style={{ position: "relative", display: "inline-flex" }}>
+              {/* ⚠️ CONTORNO, E NÃO AZUL CHEIO (15/10, vista na tela): com três
+                  demandas eram três botões azuis cheios, um embaixo do outro. */}
               <button
-                className="btn btn-primary"
+                className="btn"
                 disabled={agindo}
-                style={{ borderTopRightRadius: 0, borderBottomRightRadius: 0 }}
+                style={{ ...BOTAO_DE_DESTAQUE, borderTopRightRadius: 0, borderBottomRightRadius: 0 }}
                 onClick={() =>
                   acao(async () => {
                     await aprovarSolicitacao(item.id);
@@ -814,11 +853,11 @@ function SecaoDemanda({
                 {agindo ? "…" : "Aprovar e criar tarefa"}
               </button>
               <button
-                className="btn btn-primary"
+                className="btn"
                 disabled={agindo}
                 aria-label="Outras formas de aprovar"
                 aria-expanded={menuAberto}
-                style={{ borderTopLeftRadius: 0, borderBottomLeftRadius: 0, borderLeft: "1px solid rgba(255,255,255,.35)", padding: "0 8px" }}
+                style={{ ...BOTAO_DE_DESTAQUE, borderTopLeftRadius: 0, borderBottomLeftRadius: 0, borderLeftWidth: 0, padding: "0 9px" }}
                 onClick={() => setMenuAberto((v) => !v)}
               >
                 ▾
