@@ -3588,6 +3588,17 @@ export async function createBaseRow(
   return api<BaseRow>(`/api/v1/bases/${baseId}/rows`, { method: "POST", body: { values } });
 }
 
+/** Várias linhas numa ação só (Spec 057: colar além da última linha). */
+export async function createBaseRows(
+  baseId: string,
+  rows: Record<string, BaseCellValue | null>[]
+): Promise<BaseRow[]> {
+  return api<BaseRow[]>(`/api/v1/bases/${baseId}/rows/batch`, {
+    method: "POST",
+    body: { rows: rows.map((values) => ({ values })) },
+  });
+}
+
 /** Uma ou mais células como UMA ação -- um Ctrl+Z desfaz o grupo. `null` esvazia. */
 export async function updateBaseCells(
   baseId: string,

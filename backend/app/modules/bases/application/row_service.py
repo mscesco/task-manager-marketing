@@ -84,6 +84,44 @@ class RowService:
         await journal.record(self._session, base.id, "row.create", {"row": str(linha.id)})
         return linha
 
+    async def create_rows(
+        self, base_id: uuid.UUID, values_list: list[dict[str, Any]]
+    ) -> list[BaseRow]:
+        """Varias linhas numa ACAO so do diario (Spec 057, 15/10): colar alem
+        da ultima linha cria as que faltam, e um Ctrl+Z desfaz a criacao toda --
+        o mesmo `rows.import` da importacao."""
+        base = await visible_base(self._bases, base_id)
+        require_verb("base_row.create", base.team_id)
+        if not values_list:
+            return []
+        if await self._rows.count_live(base.id) + len(values_list) > ROW_LIMIT:
+            raise BusinessRuleError(
+                f"Esta base chegou ao limite de {ROW_LIMIT} linhas.",
+                details={"limit": ROW_LIMIT},
+            )
+        colunas = await self._colunas_por_id(base)
+        pessoas: set[str] = set()
+        limpas: list[dict[str, Any]] = []
+        for values in values_list:
+            limpos, novas = self._limpar_com(colunas, values, {})
+            pessoas |= novas
+            limpas.append({k: v for k, v in limpos.items() if v is not None})
+        if pessoas:
+            await self._assert_pessoas_da_arvore(base, pessoas)
+        criadas = []
+        for values in limpas:
+            linha = BaseRow(base_id=base.id, values=values, created_by=require_tenant().user_id)
+            self._rows.add(linha)
+            criadas.append(linha)
+        await self._session.flush()
+        await journal.record(
+            self._session,
+            base.id,
+            "rows.import",
+            {"rows": [str(r.id) for r in criadas], "columns": []},
+        )
+        return criadas
+
     async def update_row(
         self, base_id: uuid.UUID, row_id: uuid.UUID, values: dict[str, Any]
     ) -> BaseRow:

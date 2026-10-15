@@ -183,3 +183,53 @@ async def test_exportar_e_importar_de_volta_da_o_mesmo(db) -> None:
         assert [c.value for c in wb.active[2]] == ["Collab", "Instagram"]
         p = BaseImportService(db).preview(conteudo, nome, sheet=None, header_row=1)
     assert [c.name for c in p.columns] == ["Título", "Plataforma"]
+
+
+# ------------------------------------------------------------ 15/10, o teste dela
+
+
+async def test_selecao_multipla_do_google_planilhas_separa_por_virgula(db) -> None:
+    """O Planilhas exporta os chips como "Formulario, Import, Site": eram UMA
+    opcao com o texto inteiro."""
+    from app.modules.bases.domain.spreadsheet import split_many, suggest_type
+
+    assert split_many("Formulário, Import, Site") == ["Formulário", "Import", "Site"]
+    assert suggest_type(["Formulário, Import", "Import, Sydle", "Site"]) == "multi_select"
+    # frase com virgula continua texto
+    assert suggest_type(["Revisar a landing da pós, ajustar o texto do banner principal"]) == "text"
+
+    m = await _mundo(db)
+    csv = "Tarefa;Fonte\nA;Formulário, Import, Site\nB;Import\n".encode()
+    with _como(m, "ana", "SUPERVISOR"):
+        await BaseImportService(db).run(
+            csv,
+            "f.csv",
+            ImportPlan(
+                columns=[
+                    ColumnPlan(0, "title"),
+                    ColumnPlan(1, "new", name="Fonte", type="multi_select"),
+                ],
+                base_id=m["base"],
+                dry_run=False,
+            ),
+        )
+    fonte = next(
+        c for c in (await db.execute(
+            BaseColumn.__table__.select().where(BaseColumn.base_id == m["base"])
+        )).all() if c.name == "Fonte"
+    )
+    assert [o["label"] for o in fonte.options] == ["Formulário", "Import", "Site"]
+
+
+async def test_criar_varias_linhas_e_uma_acao(db) -> None:
+    """Colar alem da ultima linha cria as que faltam -- um Ctrl+Z desfaz todas."""
+    from app.modules.bases.application.row_service import RowService
+
+    m = await _mundo(db)
+    with _como(m, "op", "OPERATOR"):
+        novas = await RowService(db).create_rows(
+            m["base"], [{str(m["titulo"]): "X"}, {str(m["titulo"]): "Y"}]
+        )
+        assert len(novas) == 2
+        u = await UndoService(db).undo(m["base"])
+    assert (u.applied, u.kind) == (True, "rows.import")

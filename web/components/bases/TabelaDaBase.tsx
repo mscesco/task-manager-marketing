@@ -51,7 +51,7 @@ import { useAvisar } from "@/components/Toasts";
 import EditorDeEscolha, { type Escolha } from "@/components/bases/EditorDeEscolha";
 import EditorDeLinksDaCelula from "@/components/bases/EditorDeLinksDaCelula";
 import CabecalhoDaColuna from "@/components/bases/CabecalhoDaColuna";
-import { NovaColuna, criarOpcao } from "@/components/bases/MenuDaColuna";
+import { NovaColuna, criarOpcao, criarOpcoes } from "@/components/bases/MenuDaColuna";
 import {
   LARGURA_MAX,
   LARGURA_MIN,
@@ -71,6 +71,7 @@ import { useGravarCelula } from "@/components/bases/useGravarCelula";
 import {
   ApiError,
   createBaseRow,
+  createBaseRows,
   updateBaseCells,
   deleteBaseRow,
   updateBaseColumn,
@@ -80,7 +81,14 @@ import {
   type BaseRow,
 } from "@/lib/api";
 import { acompanhar } from "@/lib/gravacoesDaBase";
-import { colarGrade, copiarFaixa, dentro, faixaEntre, lerGrade } from "@/lib/baseClipboard";
+import {
+  colarGrade,
+  copiarFaixa,
+  dentro,
+  faixaEntre,
+  lerGrade,
+  rotulosQueFaltam,
+} from "@/lib/baseClipboard";
 import {
   corDaOpcao,
   corDaPessoa,
@@ -195,7 +203,10 @@ export default function TabelaDaBase({
     cells: { row_id: string; column_id: string; value: BaseCellValue | null }[],
     aviso: string
   ) {
-    if (cells.length === 0) return avisar(aviso);
+    if (cells.length === 0) {
+      avisar(aviso);
+      return;
+    }
     try {
       const novas = await acompanhar(base.id, updateBaseCells(base.id, cells));
       const porId = new Map(novas.map((r) => [r.id, r]));
@@ -223,14 +234,46 @@ export default function TabelaDaBase({
     );
   }
 
-  function colar(texto: string) {
+  async function colar(texto: string) {
     if (!base.can_update_row) return;
     const inicio = faixa ? { linha: faixa.linha0, coluna: faixa.coluna0 } : ativa;
-    const r = colarGrade(lerGrade(texto), linhas, colunas, inicio, pessoaPorNome);
+    const grade = lerGrade(texto);
+    // 1. As opções que a coluna ainda não tem viram opções (como na
+    //    importação) -- se a pessoa pode mexer na coluna.
+    let cols = colunas;
+    const faltam = rotulosQueFaltam(grade, colunas, inicio.coluna);
+    if (faltam.size > 0 && base.can_update_column) {
+      try {
+        for (const [colId, rotulos] of faltam) {
+          const atual = cols.find((c) => c.id === colId);
+          if (!atual) continue;
+          const nova = await criarOpcoes(base.id, atual, rotulos);
+          cols = cols.map((c) => (c.id === nova.id ? nova : c));
+          onBase((b) => ({ ...b, columns: b.columns.map((x) => (x.id === nova.id ? nova : x)) }));
+        }
+      } catch (e) {
+        avisar((e as ApiError).message || "Não consegui criar as opções.");
+        return;
+      }
+    }
+    // 2. Converte e grava: as células das linhas que existem, e as linhas que
+    //    faltam (cada grupo numa ação só do diário).
+    const r = colarGrade(grade, linhas, cols, inicio, pessoaPorNome);
     const partes = [`${r.cells.length} ${r.cells.length === 1 ? "célula colada" : "células coladas"}`];
+    if (r.novas.length) partes.push(`${r.novas.length} ${r.novas.length === 1 ? "linha criada" : "linhas criadas"}`);
     if (r.invalidas) partes.push(`${r.invalidas} com valor que não serve à coluna`);
-    if (r.fora) partes.push(`${r.fora} fora da tabela`);
-    void gravarVarias(r.cells, `${partes.join("; ")}.`);
+    if (r.fora) partes.push(`${r.fora} além da última coluna`);
+    if (r.novas.length > 0 && base.can_create_row) {
+      try {
+        const criadas = await acompanhar(base.id, createBaseRows(base.id, r.novas));
+        for (const c of criadas) onLinhaCriada?.(c.id);
+        onLinhas((ls) => [...ls, ...criadas]);
+      } catch (e) {
+        avisar((e as ApiError).message || "Não consegui criar as linhas.");
+        return;
+      }
+    }
+    await gravarVarias(r.cells, `${partes.join("; ")}.`);
   }
 
   function limparFaixa() {
@@ -483,13 +526,24 @@ export default function TabelaDaBase({
           style={{ width: larguras.reduce((a, b) => a + b, 0) + 2 * LARGURA_DE_ACAO }}
           onKeyDown={teclaNaGrade}
           onPaste={(e) => {
-            // Editando, o campo cola sozinho; fora dele, a grade cola.
-            if (editando || escolhendo) return;
-            if (!(e.target as HTMLElement).dataset?.celula) return;
             const texto = e.clipboardData.getData("text/plain");
             if (!texto) return;
+            // ⚠️ UM CLIQUE JÁ ABRE A EDIÇÃO (fatia J), e o Ctrl+V ia para dentro
+            // do campo -- a planilha inteira numa célula só (15/10). Texto de
+            // VÁRIAS células (TAB ou quebra) sempre vai para a grade: a edição
+            // é cancelada e a colagem começa nesta célula. Um valor só, com o
+            // campo aberto, continua colando no campo.
+            const varias = /[\t\n]/.test(texto.replace(/\r?\n$/, ""));
+            if (editando || escolhendo) {
+              if (!varias) return;
+              confirmado.current = true;
+              setEditando(null);
+              setEscolhendo(false);
+            } else if (!(e.target as HTMLElement).dataset?.celula) {
+              return;
+            }
             e.preventDefault();
-            colar(texto);
+            void colar(texto);
           }}
         >
           <thead>

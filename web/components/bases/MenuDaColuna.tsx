@@ -188,6 +188,23 @@ export function NovaColuna({
 }
 
 /** A opção nova que a célula de seleção cria digitando. Devolve a coluna. */
+/** Várias opções novas numa ida só (Spec 057: colar rótulos que a coluna
+ *  ainda não tem -- os chips do Google Planilhas, por exemplo). */
+export async function criarOpcoes(
+  baseId: string,
+  coluna: BaseColumn,
+  rotulos: string[]
+): Promise<BaseColumn> {
+  const opcoes = coluna.options.map((o) => ({ id: o.id, label: o.label, color: o.color }));
+  const cores = coluna.options.map((o) => o.color);
+  const novas = rotulos.map((label) => {
+    const color = proximaCor(cores);
+    cores.push(color);
+    return { label, color };
+  });
+  return updateBaseColumn(baseId, coluna.id, { options: [...opcoes, ...novas] });
+}
+
 export async function criarOpcao(
   baseId: string,
   coluna: BaseColumn,

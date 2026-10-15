@@ -5,10 +5,13 @@
 // células por TAB. Copiar da Base e colar no Excel (e o contrário) funciona
 // sem nada no meio.
 //
-// ⚠️ COLAR SÓ PREENCHE O QUE EXISTE: linhas a mais no que foi copiado, além da
-// última linha da visão, são CONTADAS e ignoradas (a tela avisa). Criar linhas
-// colando ficou para depois -- cada linha criada é uma ação do diário, e um
-// Ctrl+Z não desfaria a colagem inteira.
+// ⚠️ COLAR ALÉM DA ÚLTIMA LINHA CRIA AS QUE FALTAM (15/10, ela colou duas e só
+// a primeira entrou): as linhas a mais saem em `novas`, e a tela as cria numa
+// ação só. Colunas a mais (além da última) continuam contadas e ignoradas.
+//
+// ⚠️ VÁRIOS VALORES NUMA CÉLULA: `;` OU `,` -- o Google Planilhas copia os chips
+// de seleção múltipla separados por vírgula (15/10: viravam UMA opção com o
+// texto inteiro). Link não separa por vírgula: ela aparece dentro de URL.
 
 import type { BaseCellValue, BaseColumn, BaseRow } from "./api";
 import { interpretarDigitado, linksDaCelula, textoDaCelula, type Posicao } from "./baseTable";
@@ -96,7 +99,7 @@ export function valorColado(
 ): BaseCellValue | null | undefined {
   const t = texto.trim();
   if (!t) return null;
-  const varios = t.split(/\s*;\s*/).filter(Boolean);
+  const varios = separarVarios(t);
   switch (coluna.type) {
     case "checkbox": {
       const k = t.toLowerCase();
@@ -117,7 +120,7 @@ export function valorColado(
       return ids.every(Boolean) ? (ids as string[]) : undefined;
     }
     case "link": {
-      const urls = varios.flatMap((v) => v.split(/\s+/));
+      const urls = t.split(/[;\s]+/).filter(Boolean);
       return urls.every((u) => /^https?:\/\/\S+$/i.test(u))
         ? urls.map((url) => ({ title: "", url }))
         : undefined;
@@ -129,8 +132,44 @@ export function valorColado(
   }
 }
 
+/** Os vários valores de uma célula (seleção múltipla, pessoa). */
+export function separarVarios(t: string): string[] {
+  return t
+    .split(/\s*[;,\n]\s*/)
+    .map((x) => x.trim())
+    .filter(Boolean);
+}
+
+/** Os rótulos colados que a coluna de SELEÇÃO ainda não tem -- a tela os cria
+ *  antes de colar, como a importação. */
+export function rotulosQueFaltam(
+  grade: string[][],
+  colunas: readonly BaseColumn[],
+  inicioColuna: number
+): Map<string, string[]> {
+  const out = new Map<string, string[]>();
+  grade.forEach((celulas) =>
+    celulas.forEach((texto, j) => {
+      const c = colunas[inicioColuna + j];
+      if (!c || (c.type !== "select" && c.type !== "multi_select")) return;
+      const rotulos = c.type === "select" ? [texto.trim()].filter(Boolean) : separarVarios(texto);
+      for (const r of rotulos) {
+        const tem = c.options.some((o) => o.label.toLowerCase() === r.toLowerCase());
+        const lista = out.get(c.id) ?? [];
+        if (!tem && !lista.some((x) => x.toLowerCase() === r.toLowerCase())) {
+          lista.push(r);
+          out.set(c.id, lista);
+        }
+      }
+    })
+  );
+  return out;
+}
+
 export type Colagem = {
   cells: { row_id: string; column_id: string; value: BaseCellValue | null }[];
+  /** As linhas da grade além da última linha da tabela: a tela as cria. */
+  novas: Record<string, BaseCellValue | null>[];
   /** Células com valor que não serve ao tipo da coluna. */
   invalidas: number;
   /** Células que caíram fora da tabela (linhas ou colunas a mais). */
@@ -145,12 +184,13 @@ export function colarGrade(
   inicio: Posicao,
   pessoaPorNome: (nome: string) => string | null
 ): Colagem {
-  const out: Colagem = { cells: [], invalidas: 0, fora: 0 };
+  const out: Colagem = { cells: [], novas: [], invalidas: 0, fora: 0 };
   grade.forEach((celulas, i) => {
     const linha = linhas[inicio.linha + i];
+    const nova: Record<string, BaseCellValue | null> = {};
     celulas.forEach((texto, j) => {
       const coluna = colunas[inicio.coluna + j];
-      if (!linha || !coluna) {
+      if (!coluna) {
         out.fora++;
         return;
       }
@@ -159,8 +199,10 @@ export function colarGrade(
         out.invalidas++;
         return;
       }
-      out.cells.push({ row_id: linha.id, column_id: coluna.id, value: v });
+      if (linha) out.cells.push({ row_id: linha.id, column_id: coluna.id, value: v });
+      else if (v !== null) nova[coluna.id] = v;
     });
+    if (!linha) out.novas.push(nova);
   });
   return out;
 }

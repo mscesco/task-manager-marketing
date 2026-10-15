@@ -429,6 +429,27 @@ async def create_row(
     return RowResponse.model_validate(linha)
 
 
+class _RowsBatchRequest(BaseModel):
+    rows: list[RowCreateRequest] = Field(min_length=1, max_length=1_000)
+
+
+@router.post(
+    "/{base_id}/rows/batch",
+    response_model=list[RowResponse],
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_permission("base_row.create"))],
+)
+async def create_rows(
+    base_id: uuid.UUID, payload: _RowsBatchRequest, uow: UoWDep
+) -> list[RowResponse]:
+    """Varias linhas, uma acao do diario (Spec 057: colar alem da ultima)."""
+    linhas = await RowService(uow.session).create_rows(
+        base_id, [r.values for r in payload.rows]
+    )
+    await uow.commit()
+    return [RowResponse.model_validate(linha) for linha in linhas]
+
+
 @router.patch(
     "/{base_id}/rows/{row_id}",
     response_model=RowResponse,

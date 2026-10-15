@@ -1,7 +1,15 @@
 // Spec 057 (15/10) -- copiar e colar várias células, no formato do Excel.
 import { describe, expect, it } from "vitest";
 import type { BaseColumn, BaseRow } from "@/lib/api";
-import { colarGrade, copiarFaixa, faixaEntre, lerGrade, valorColado } from "@/lib/baseClipboard";
+import {
+  colarGrade,
+  copiarFaixa,
+  faixaEntre,
+  lerGrade,
+  rotulosQueFaltam,
+  separarVarios,
+  valorColado,
+} from "@/lib/baseClipboard";
 import { interpretarDigitado } from "@/lib/baseTable";
 
 const col = (id: string, type: BaseColumn["type"], options: BaseColumn["options"] = []): BaseColumn => ({
@@ -40,7 +48,7 @@ describe("colar", () => {
     ]);
   });
 
-  it("converte pelo tipo da coluna, e conta o que não serve e o que sobra", () => {
+  it("converte pelo tipo da coluna; o que passa da última linha vira linha nova", () => {
     const r = colarGrade(
       lerGrade("Novo\t1.200\tInstagram\tAna\nOutro\tabc\tTikTok\tFulano\nTerceiro\t1"),
       LINHAS,
@@ -56,7 +64,9 @@ describe("colar", () => {
       { row_id: "r2", column_id: "t", value: "Outro" },
     ]);
     expect(r.invalidas).toBe(3); // abc, TikTok, Fulano
-    expect(r.fora).toBe(2); // a 3ª linha não existe
+    // ⚠️ a 3ª linha não existe: vira linha NOVA (15/10, só a 1ª entrava)
+    expect(r.novas).toEqual([{ t: "Terceiro", n: 1 }]);
+    expect(r.fora).toBe(0);
   });
 
   it("vazio limpa a célula; caixinha aceita sim/não", () => {
@@ -70,3 +80,25 @@ describe("colar", () => {
     expect(interpretarDigitado(NUM, "1.5")).toEqual({ ok: true, valor: 1.5 });
   });
 });
+
+describe("o que veio do Google Planilhas (15/10)", () => {
+  it("⚠️ os chips de seleção múltipla vêm separados por vírgula", () => {
+    expect(separarVarios("Formulário, Import, Site")).toEqual(["Formulário", "Import", "Site"]);
+    const multi = col("m", "multi_select", [
+      { id: "a", label: "Formulário", color: "blue" },
+      { id: "b", label: "Import", color: "red" },
+    ]);
+    expect(valorColado(multi, "Formulário, Import", pessoa)).toEqual(["a", "b"]);
+  });
+
+  it("os rótulos que a coluna não tem saem para a tela criar, sem repetir", () => {
+    const multi = col("m", "multi_select", [{ id: "a", label: "Import", color: "blue" }]);
+    const faltam = rotulosQueFaltam(
+      lerGrade("Import, Site\nSite, BQ"),
+      [multi],
+      0
+    );
+    expect(faltam.get("m")).toEqual(["Site", "BQ"]);
+  });
+});
+

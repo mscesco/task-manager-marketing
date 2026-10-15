@@ -27,8 +27,11 @@ from app.shared.exceptions.base import ValidationError
 MAX_FILE_BYTES = 5 * 1024 * 1024
 #: Quantas linhas a previa mostra.
 PREVIEW_ROWS = 20
-#: Separador de varios valores numa celula (selecao multipla, pessoa, link).
-MULTI_SEP = re.compile(r"\s*[;\n]\s*")
+#: Separador de varios valores numa celula (selecao multipla, pessoa).
+#: ⚠️ A VIRGULA TAMBEM (15/10): o Google Planilhas copia e exporta os chips de
+#: selecao multipla como "Formulario, Import, Site" -- sem ela, tudo virava UMA
+#: opcao com o texto inteiro.
+MULTI_SEP = re.compile(r"\s*[;,\n]\s*")
 
 _DATA_BR = re.compile(r"^(\d{1,2})/(\d{1,2})/(\d{2}|\d{4})$")
 _DATA_ISO = re.compile(r"^(\d{4})-(\d{2})-(\d{2})")
@@ -196,14 +199,17 @@ def to_checkbox(v: Any) -> bool | None:
 
 
 def split_many(v: Any) -> list[str]:
-    """Varios valores numa celula: separados por `;` ou quebra de linha."""
+    """Varios valores numa celula: separados por `;`, `,` ou quebra de linha."""
     if _vazio(v):
         return []
     return [p for p in MULTI_SEP.split(str(v).strip()) if p]
 
 
 def to_links(v: Any) -> list[dict[str, str]] | None:
-    partes = [p for parte in split_many(v) for p in parte.split()]
+    # ⚠️ Link NAO separa por virgula: ela aparece dentro de URL.
+    if _vazio(v):
+        return None
+    partes = [p for p in re.split(r"[;\s]+", str(v).strip()) if p]
     return [{"url": p} for p in partes] or None
 
 
@@ -237,7 +243,13 @@ def suggest_type(values: list[Any]) -> str:
     if all(re.match(r"^https?://", t) for t in textos):
         return "link"
     if any(MULTI_SEP.search(t) for t in textos):
-        return "multi_select"
+        # Só parece seleção múltipla se as PARTES são curtas e se repetem
+        # (chips), e não frases com vírgula.
+        partes = [p for t in textos for p in split_many(t)]
+        distintas = {p.casefold() for p in partes}
+        if len(distintas) <= 30 and sum(map(len, partes)) / max(1, len(partes)) <= 25:
+            return "multi_select"
+        return "text"
     distintos = {t.casefold() for t in textos}
     if len(distintos) <= 20 and len(distintos) <= max(2, len(textos) // 2):
         return "select"
