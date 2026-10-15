@@ -14,7 +14,7 @@
 // veio". Na fatia B a sabotagem do `form_id` passou verde por essa distinção.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 
 import SolicitacoesPage from "@/app/solicitacoes/page";
 import type { Batch, BatchItem } from "@/lib/api";
@@ -109,6 +109,11 @@ function envio(itens: BatchItem[] = [item()]): Batch {
  */
 async function abrirOCard() {
   fireEvent.click(await screen.findByText("Maria do Polo"));
+}
+
+/** O painel do envio escolhido -- "Rejeitar" também existe na linha da lista. */
+function painel() {
+  return within(screen.getByRole("region", { name: "Envio escolhido" }));
 }
 
 function montar(itens: BatchItem[] = [item()]) {
@@ -577,7 +582,7 @@ describe("as duas ações que a fila existe para fazer", () => {
     // aqui a frase "a rejeição exige uma justificativa" diz.
     montar();
     await abrirOCard();
-    fireEvent.click(await screen.findByText("Rejeitar"));
+    fireEvent.click(await painel().findByText("Rejeitar"));
     fireEvent.click(await screen.findByText("Confirmar rejeição"));
 
     expect(await screen.findByText(/exige uma justificativa/i)).toBeTruthy();
@@ -588,7 +593,7 @@ describe("as duas ações que a fila existe para fazer", () => {
     vi.mocked(api.rejeitarSolicitacao).mockResolvedValue({} as never);
     montar();
     await abrirOCard();
-    fireEvent.click(await screen.findByText("Rejeitar"));
+    fireEvent.click(await painel().findByText("Rejeitar"));
     fireEvent.change(screen.getByRole("textbox"), {
       target: { value: "  fora do escopo  " },
     });

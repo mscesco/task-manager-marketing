@@ -5,22 +5,46 @@
 // escolhendo 4 categorias gerava 4 cards soltos, e ninguém enxergava que
 // eram da mesma pessoa.
 //
-// ⚠️ DUAS COLUNAS DESDE 15/10 (proposta aprovada por ela, "fica bem melhor"):
-// a lista de envios à esquerda e o envio escolhido à direita. O card que
-// abria e fechava fazia a página pular, e aprovar exigia abrir, achar a
-// seção e voltar. Os números no código (1 a 5) são os da proposta.
+// ⚠️ CAIXA DE ENTRADA EM DUAS COLUNAS DESDE 15/10 (proposta aprovada por ela,
+// "fica bem melhor"; depois "quero algo mais bonito, mais dinâmico", com uma
+// referência de inbox): a lista de envios à esquerda e o envio escolhido à
+// direita. O card que abria e fechava fazia a página pular, e aprovar exigia
+// abrir, achar a seção e voltar. Os números no código (1 a 5) são os da
+// proposta.
+//
+// ⚠️ AS ANIMAÇÕES SÃO SÓ DE `transform` E `opacity` (§7 do `web/AGENTS.md`),
+// e o `MotionConfig reducedMotion="user"` as desliga para quem pediu menos
+// movimento no sistema -- o bloco global do CSS não alcança o `motion`.
 //
 // A aprovação continua sendo POR SEÇÃO (aprovar a arte, rejeitar a
 // divulgação). O agrupamento é só de visualização.
 //
 // "Tarefa criada" é autodeclarado — ninguém verifica. O valor está no
-// contrário: o filtro "Aprovadas sem tarefa" mostra o que foi aceito e
-// nunca virou tarefa. Sem esse filtro, a marcação seria decorativa.
+// contrário: o filtro "só sem tarefa" mostra o que foi aceito e nunca virou
+// tarefa. Sem esse filtro, a marcação seria decorativa.
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { AnimatePresence, MotionConfig, motion } from "motion/react";
+import {
+  ArrowLeft,
+  CalendarDays,
+  Check,
+  ChevronDown,
+  Clock,
+  Copy,
+  FileText,
+  Hash,
+  Inbox,
+  Mail,
+  MapPin,
+  Phone,
+  Search,
+  SquareCheckBig,
+  X,
+} from "lucide-react";
 import AppShell from "@/components/AppShell";
+import Avatar from "@/components/Avatar";
 import Badge from "@/components/Badge";
-import Card from "@/components/Card";
 import EmptyState from "@/components/EmptyState";
 import PageHeader from "@/components/PageHeader";
 import Link from "next/link";
@@ -40,11 +64,13 @@ import {
   STATUS_ACEITOS,
 } from "@/lib/api";
 import { numeroDaRepeticao, rotuloDaCategoria } from "@/lib/rotuloDaCategoria";
+import { demandaInicial, quandoChegou } from "@/lib/filaDeSolicitacoes";
 
 import Loading from "@/components/Loading";
 import { useActiveTeam, useActiveTeamId } from "@/lib/useActiveTeam";
 import { navHref } from "@/lib/activeTeam";
 import Paginacao from "@/components/Paginacao";
+
 const STATUS_LABEL: Record<SolicitacaoStatus, string> = {
   PENDING: "Pendente",
   APPROVED: "Aprovada",
@@ -65,6 +91,9 @@ const STATUS_COLOR: Record<SolicitacaoStatus, string> = {
   REJECTED: "#dc2626",
 };
 
+/** A mola de toda a tela: rápida, quase sem quique. */
+const MOLA = { type: "spring", duration: 0.32, bounce: 0.12 } as const;
+
 // ⚠️ AS ABAS (15/10, proposta aprovada por ela): eram sete botões iguais aos
 // de ação, com número em só dois, e "Aprovadas" e "Aprovadas sem tarefa" se
 // sobrepondo. Agora são cinco situações, todas com número, e "só sem tarefa"
@@ -83,10 +112,15 @@ const ABAS: { valor: Aba; label: string; semTarefa: boolean }[] = [
 // mais envios por página do que os dez do card antigo.
 const TAMANHO_PAGINA = 20;
 
+/** As duas colunas descem juntas e rolam por dentro, como uma caixa de entrada. */
+const ALTURA_DO_PAINEL = "md:h-[calc(100vh-170px)] md:min-h-[480px]";
+
 export default function SolicitacoesPage() {
   return (
     <AppShell>
-      <Solicitacoes />
+      <MotionConfig reducedMotion="user">
+        <Solicitacoes />
+      </MotionConfig>
     </AppShell>
   );
 }
@@ -243,145 +277,135 @@ function Solicitacoes() {
         }
       />
 
-      {/* ---------- 1. as abas ---------- */}
-      <div
-        role="tablist"
-        aria-label="Situação"
-        style={{ display: "flex", gap: 4, flexWrap: "wrap", alignItems: "center", marginBottom: 10 }}
-      >
-        {ABAS.map((a) => {
-          const n = totais[a.valor];
-          const ativa = aba === a.valor;
-          return (
-            <button
-              key={a.valor}
-              role="tab"
-              aria-selected={ativa}
-              type="button"
-              className="btn btn-ghost"
-              onClick={() => setAba(a.valor)}
-              style={{
-                fontSize: 13,
-                padding: "5px 10px",
-                // Em tela estreita a aba desce inteira; "Em andamento" partido
-                // em duas linhas parecia duas abas (visto no celular, 15/10).
-                whiteSpace: "nowrap",
-                ...(ativa
-                  ? { background: "var(--surface-2)", boxShadow: "inset 0 0 0 1px var(--border-strong)", fontWeight: 600 }
-                  : { color: "var(--text-soft)" }),
-              }}
-            >
-              {a.label}
-              {n !== undefined && (
-                <span style={{ marginLeft: 6, fontVariantNumeric: "tabular-nums", fontWeight: 600 }}>{n}</span>
-              )}
-            </button>
-          );
-        })}
-        {abaAtual.semTarefa && (
-          <label
-            style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5 }}
-            className="muted"
-          >
-            <input type="checkbox" checked={semTarefa} onChange={(e) => setSemTarefa(e.target.checked)} />
-            Só sem tarefa
-            {(totais.WITHOUT_TASK ?? 0) > 0 && (
-              <Badge tone="soft" size="sm" color="#d97706">
-                {totais.WITHOUT_TASK}
-              </Badge>
-            )}
-          </label>
-        )}
-      </div>
-
-      {filtrandoSemTarefa && (
-        <p className="muted" style={{ fontSize: 12, margin: "0 0 10px" }}>
-          Demandas aceitas que ninguém transformou em tarefa. Se já viraram
-          tarefa, marque — senão elas somem de vista até o solicitante cobrar.
-        </p>
-      )}
-
-      {/* ---------- 2. busca e formulário ---------- */}
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
-        <input
-          className="input"
-          type="search"
-          aria-label="Buscar solicitações"
-          placeholder="Buscar por nome, e-mail ou protocolo"
-          value={busca}
-          onChange={(e) => setBusca(e.target.value)}
-          style={{ flex: "1 1 240px" }}
-        />
-        {formularios.length > 1 && (
-          <select
-            className="input"
-            aria-label="Formulário"
-            value={formId ?? ""}
-            onChange={(e) => setFormId(e.target.value || null)}
-            style={{ flex: "0 1 240px", width: "auto" }}
-          >
-            <option value="">Todos os formulários</option>
-            {formularios.map((f) => (
-              <option key={f.id} value={f.id}>
-                {f.title}
-              </option>
-            ))}
-          </select>
-        )}
-      </div>
-
-      {erro && <div className="error-box" style={{ marginBottom: 16 }}>{erro}</div>}
-
       {/* ---------- 5. lista | envio escolhido ---------- */}
       {/* ⚠️ NO CELULAR, UMA COLUNA DE CADA VEZ: escolhido, a lista some e o
-          painel ganha "‹ Voltar". Duas colunas de 180px não cabem nada. */}
-      <div className="grid gap-3 md:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] items-start">
-        <div className={escolhido ? "hidden md:block" : ""}>
-          {envios === null && <Loading />}
-          {envios !== null && envios.length === 0 && !erro && (
-            <EmptyState
-              title={nomeDoTime ? `Nenhum envio em ${nomeDoTime}` : "Nenhum envio aqui"}
-              description={
-                buscaAtiva.trim() || formId
-                  ? "Nada com esta busca. Tente outro nome, ou limpe o filtro."
-                  : aba === "PENDING"
-                    ? "Quando alguém enviar o formulário público, o pedido aparece nesta fila."
-                    : filtrandoSemTarefa
-                      ? "Toda demanda aceita já virou tarefa."
-                      : "Nada com este filtro por enquanto."
-              }
-            />
-          )}
-          {envios !== null && envios.length > 0 && (
-            <Card className="overflow-hidden p-0">
-              {envios.map((envio, i) => (
-                <LinhaDoEnvio
-                  key={envio.batch_id}
-                  envio={envio}
-                  primeira={i === 0}
-                  escolhido={escolhido?.batch_id === envio.batch_id}
-                  onEscolher={(rejeitar) => escolher(envio, rejeitar)}
-                  onMudou={recarregar}
+          painel ganha "Voltar". Duas colunas de 180px não cabem nada. */}
+      <div className="grid items-start gap-4 md:grid-cols-[minmax(400px,11fr)_minmax(0,13fr)]">
+        <section
+          aria-label="Envios"
+          className={`${escolhido ? "hidden md:flex" : "flex"} ${ALTURA_DO_PAINEL} min-w-0 flex-col overflow-hidden rounded-xl border border-border bg-surface shadow-[var(--shadow-card)]`}
+        >
+          <div className="flex flex-col gap-3 border-b border-border p-4">
+            {/* ---------- 1. as abas ---------- */}
+            <div role="tablist" aria-label="Situação" className="flex gap-0.5 overflow-x-auto rounded-lg bg-surface-2 p-1">
+              {ABAS.map((a) => (
+                <Aba
+                  key={a.valor}
+                  label={a.label}
+                  numero={totais[a.valor]}
+                  ativa={aba === a.valor}
+                  onClick={() => setAba(a.valor)}
                 />
               ))}
-            </Card>
-          )}
-          {/* `rotulo` explicito: "Envios", porque os números das abas contam DEMANDAS (R5). */}
-          <Paginacao
-            pagina={pagina}
-            total={totalEnvios}
-            porPagina={TAMANHO_PAGINA}
-            rotulo="Envios"
-            onIr={(p) => {
-              setPagina(p);
-              window.scrollTo({ top: 0 });
-            }}
-          />
-        </div>
+            </div>
 
-        {/* O painel acompanha a rolagem: com a lista comprida, o envio aberto
-            não sobe junto e some da tela. */}
-        <div className={`${escolhido ? "" : "hidden md:block"} md:sticky md:top-4`}>
+            {/* ---------- 2. busca e formulário ---------- */}
+            <div className="relative">
+              <Search aria-hidden size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-faint" />
+              <input
+                className="input w-full"
+                type="search"
+                aria-label="Buscar solicitações"
+                placeholder="Buscar por nome, e-mail ou protocolo"
+                value={busca}
+                onChange={(e) => setBusca(e.target.value)}
+                style={{ paddingLeft: 34 }}
+              />
+            </div>
+
+            {(formularios.length > 1 || abaAtual.semTarefa) && (
+              <div className="flex flex-wrap items-center gap-2">
+                {formularios.length > 1 && (
+                  <select
+                    className="input min-w-0 flex-1"
+                    aria-label="Formulário"
+                    value={formId ?? ""}
+                    onChange={(e) => setFormId(e.target.value || null)}
+                    style={{ fontSize: 12.5, padding: "5px 8px" }}
+                  >
+                    <option value="">Todos os formulários</option>
+                    {formularios.map((f) => (
+                      <option key={f.id} value={f.id}>
+                        {f.title}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                {abaAtual.semTarefa && (
+                  <label className="ml-auto inline-flex cursor-pointer items-center gap-1.5 text-[12.5px] text-ink-soft">
+                    <input type="checkbox" checked={semTarefa} onChange={(e) => setSemTarefa(e.target.checked)} />
+                    Só sem tarefa
+                    {(totais.WITHOUT_TASK ?? 0) > 0 && (
+                      <Badge tone="soft" size="sm" color="#d97706">
+                        {totais.WITHOUT_TASK}
+                      </Badge>
+                    )}
+                  </label>
+                )}
+              </div>
+            )}
+          </div>
+
+          {erro && (
+            <div className="error-box" role="alert" style={{ margin: 12 }}>
+              {erro}
+            </div>
+          )}
+
+          <div className="min-h-0 flex-1 overflow-y-auto p-2">
+            {envios === null && <Loading />}
+            {envios !== null && envios.length === 0 && !erro && (
+              <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={MOLA}>
+                <EmptyState
+                  title={nomeDoTime ? `Nenhum envio em ${nomeDoTime}` : "Nenhum envio aqui"}
+                  description={
+                    buscaAtiva.trim() || formId
+                      ? "Nada com esta busca. Tente outro nome, ou limpe o filtro."
+                      : aba === "PENDING"
+                        ? "Quando alguém enviar o formulário público, o pedido aparece nesta fila."
+                        : filtrandoSemTarefa
+                          ? "Toda demanda aceita já virou tarefa."
+                          : "Nada com este filtro por enquanto."
+                  }
+                />
+              </motion.div>
+            )}
+            {envios !== null && envios.length > 0 && (
+              <ul className="m-0 flex list-none flex-col gap-0.5 p-0">
+                <AnimatePresence initial={false} mode="popLayout">
+                  {envios.map((envio, i) => (
+                    <LinhaDoEnvio
+                      key={envio.batch_id}
+                      envio={envio}
+                      ordem={i}
+                      escolhido={escolhido?.batch_id === envio.batch_id}
+                      onEscolher={(rejeitar) => escolher(envio, rejeitar)}
+                      onMudou={recarregar}
+                    />
+                  ))}
+                </AnimatePresence>
+              </ul>
+            )}
+          </div>
+
+          {/* `rotulo` explicito: "Envios", porque os números das abas contam DEMANDAS (R5). */}
+          {totalEnvios > TAMANHO_PAGINA && (
+            <div className="border-t border-border px-3">
+              <Paginacao
+                pagina={pagina}
+                total={totalEnvios}
+                porPagina={TAMANHO_PAGINA}
+                rotulo="Envios"
+                onIr={(p) => setPagina(p)}
+              />
+            </div>
+          )}
+        </section>
+
+        <section
+          aria-label="Envio escolhido"
+          className={`${escolhido ? "flex" : "hidden md:flex"} ${ALTURA_DO_PAINEL} min-w-0 flex-col overflow-hidden rounded-xl border border-border bg-surface shadow-[var(--shadow-card)]`}
+        >
           {escolhido ? (
             <PainelDoEnvio
               key={escolhido.batch_id}
@@ -391,41 +415,73 @@ function Solicitacoes() {
               onMudou={recarregar}
             />
           ) : (
-            <div
-              className="muted"
-              style={{
-                border: "1px dashed var(--border)",
-                borderRadius: 12,
-                padding: 32,
-                textAlign: "center",
-                fontSize: 13,
-              }}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center"
             >
-              Escolha um envio na lista para ver as respostas e decidir.
-            </div>
+              <span className="grid h-12 w-12 place-items-center rounded-full bg-surface-2 text-ink-faint">
+                <Inbox aria-hidden size={22} />
+              </span>
+              <p className="m-0 max-w-[260px] text-[13px] text-ink-faint">
+                Escolha um envio na lista para ver as respostas e decidir.
+              </p>
+            </motion.div>
           )}
-        </div>
+        </section>
       </div>
     </div>
   );
 }
 
-/** O botão principal de cada demanda: contorno na cor de destaque. */
-const BOTAO_DE_DESTAQUE = {
-  borderColor: "var(--accent)",
-  color: "var(--accent)",
-  fontWeight: 600,
-} as const;
-
-/** Quando chegou, curto: "hoje", "ontem", ou a data. */
-function quando(iso: string): string {
-  const d = new Date(iso);
-  const hoje = new Date();
-  const dia = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
-  const dias = Math.round((dia(hoje) - dia(d)) / 86_400_000);
-  if (dias === 0) return "hoje";
-  if (dias === 1) return "ontem";
-  return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+/** Uma aba do seletor de situação, com a pílula que desliza entre elas. */
+function Aba({
+  label,
+  numero,
+  ativa,
+  onClick,
+}: {
+  label: string;
+  numero: number | undefined;
+  ativa: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={ativa}
+      onClick={onClick}
+      className={`relative flex-1 cursor-pointer whitespace-nowrap rounded-md border-0 bg-transparent px-2 py-1.5 text-[12px] transition-colors duration-150 ${
+        ativa ? "font-semibold text-ink" : "text-ink-faint hover:text-ink-soft"
+      }`}
+    >
+      {/* ⚠️ A PÍLULA É UMA SÓ, e desliza (`layoutId`): cinco fundos que
+          piscam um de cada vez dariam a mesma informação sem dizer de onde
+          a seleção veio. */}
+      {ativa && (
+        <motion.span
+          layoutId="fila-aba-ativa"
+          transition={MOLA}
+          className="absolute inset-0 rounded-md bg-surface shadow-[var(--shadow-card)]"
+        />
+      )}
+      <span className="relative">
+        {label}
+        {numero !== undefined && (
+          <motion.span
+            key={numero}
+            initial={{ opacity: 0, y: -4 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={MOLA}
+            className={`ml-1.5 inline-block font-semibold ${ativa ? "text-accent" : ""}`}
+          >
+            {numero}
+          </motion.span>
+        )}
+      </span>
+    </button>
+  );
 }
 
 /**
@@ -438,13 +494,13 @@ function quando(iso: string): string {
  */
 function LinhaDoEnvio({
   envio,
-  primeira,
+  ordem,
   escolhido,
   onEscolher,
   onMudou,
 }: {
   envio: Batch;
-  primeira: boolean;
+  ordem: number;
   escolhido: boolean;
   onEscolher: (rejeitar?: string | null) => void;
   onMudou: () => void;
@@ -452,6 +508,7 @@ function LinhaDoEnvio({
   const [agindo, setAgindo] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const unico = envio.items.length === 1 ? envio.items[0] : null;
+  const temPendente = envio.items.some((i) => i.status === "PENDING");
 
   // ⚠️ O ✓ DA LISTA SÓ APROVA (decisão dela, 15/10): criar a tarefa fica no
   // painel, onde se vê o briefing antes. Aprovado sem tarefa, o pedido
@@ -470,114 +527,132 @@ function LinhaDoEnvio({
   }
 
   return (
-    <div
-      style={{
-        borderTop: primeira ? undefined : "1px solid var(--border)",
-        background: escolhido ? "var(--surface-2)" : undefined,
-        boxShadow: escolhido ? "inset 3px 0 0 var(--accent)" : undefined,
-      }}
+    <motion.li
+      layout
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0, transition: { ...MOLA, delay: Math.min(ordem, 10) * 0.03 } }}
+      exit={{ opacity: 0, x: -16, transition: { duration: 0.18 } }}
+      className="group relative rounded-lg"
     >
+      {/* O destaque do escolhido é UM só, e desliza de uma linha para outra. */}
+      {escolhido && (
+        <motion.span
+          layoutId="fila-envio-escolhido"
+          transition={MOLA}
+          className="absolute inset-0 rounded-lg bg-accent-soft"
+        />
+      )}
       <button
         type="button"
         onClick={() => onEscolher(null)}
         aria-current={escolhido || undefined}
-        style={{
-          display: "block",
-          width: "100%",
-          textAlign: "left",
-          background: "transparent",
-          border: 0,
-          padding: "10px 14px 4px",
-          cursor: "pointer",
-          color: "var(--text)",
-          fontFamily: "inherit",
-        }}
+        className={`relative flex w-full cursor-pointer items-start gap-3 rounded-lg border-0 bg-transparent px-3 pt-2.5 text-left text-ink transition-colors duration-150 ${
+          escolhido ? "" : "hover:bg-surface-2"
+        } ${unico && unico.status === "PENDING" ? "pb-1" : "pb-2.5"}`}
       >
-        <span style={{ display: "flex", gap: 8, alignItems: "baseline" }}>
-          <span style={{ fontWeight: 600, fontSize: 14, flex: 1, minWidth: 0 }}>{envio.requester_name}</span>
-          <span className="muted" style={{ fontSize: 11 }}>{quando(envio.created_at)}</span>
-        </span>
-        <span className="muted" style={{ display: "block", fontSize: 11.5, marginTop: 1 }}>
-          {/* Por qual formulário entrou (15/10: a fila não dizia). */}
-          {envio.form_title && (
-            <>
-              <strong style={{ fontWeight: 600 }}>{envio.form_title}</strong> ·{" "}
-            </>
-          )}
-          {envio.items.length} demanda{envio.items.length > 1 ? "s" : ""}
+        <Avatar name={envio.requester_name} id={envio.requester_email} size="lg" className="mt-0.5" />
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span className="flex items-baseline gap-2">
+            <span className="min-w-0 flex-1 truncate text-[13.5px] font-semibold">{envio.requester_name}</span>
+            <span className="shrink-0 text-[11px] text-ink-faint">{quandoChegou(envio.created_at)}</span>
+            {/* Como o "não lido" de uma caixa de entrada: tem decisão a tomar. */}
+            {temPendente && (
+              <span className="h-2 w-2 shrink-0 self-center rounded-full bg-accent" title="Tem demanda pendente" />
+            )}
+          </span>
+          <span className="truncate text-[11.5px] text-ink-faint">
+            {/* Por qual formulário entrou (15/10: a fila não dizia). */}
+            {envio.form_title && (
+              <>
+                <strong className="font-semibold text-ink-soft">{envio.form_title}</strong> ·{" "}
+              </>
+            )}
+            {envio.items.length} demanda{envio.items.length > 1 ? "s" : ""}
+          </span>
+          <span className="mt-1.5 flex flex-col gap-1">
+            {envio.items.map((item) => (
+              <TopicoDaDemanda key={item.id} envio={envio} item={item} />
+            ))}
+          </span>
         </span>
       </button>
 
-      <ul style={{ listStyle: "none", margin: 0, padding: "2px 14px 10px", display: "flex", flexDirection: "column", gap: 3 }}>
-        {envio.items.map((item) => {
-          const cat = rotuloDaCategoria(item);
-          return (
-            <li key={item.id} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, minWidth: 0 }}>
-              {/* ⚠️ A SITUAÇÃO VIROU UM PONTO (15/10, vista na tela): a etiqueta
-                  "Pendente" em toda linha, mais "3 pendentes" no cabeçalho,
-                  repetia a aba em que a pessoa já está. O nome vai no `title`
-                  e no texto para leitor de tela; fora de "pendente", o nome
-                  também aparece, curto, no fim da linha. */}
-              <span
-                title={STATUS_LABEL[item.status]}
-                style={{
-                  width: 7,
-                  height: 7,
-                  borderRadius: 999,
-                  flexShrink: 0,
-                  background: STATUS_COLOR[item.status],
-                }}
-              />
-              <span className="sr-only">{STATUS_LABEL[item.status]}:</span>
-              <span aria-hidden>{cat.emoji}</span>
-              <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                <strong style={{ fontWeight: 600 }}>
-                  {cat.titulo}
-                  {numeroDaRepeticao(envio.items, item)}
-                </strong>
-                <span className="muted"> · {item.summary}</span>
-              </span>
-              {unico && item.status === "PENDING" ? (
-                <>
-                  <button
-                    type="button"
-                    className="btn"
-                    style={{ fontSize: 12, padding: "2px 8px" }}
-                    disabled={agindo}
-                    aria-label="Aprovar"
-                    title="Aprovar"
-                    onClick={() => aprovar(item)}
-                  >
-                    {agindo ? "…" : "✓"}
-                  </button>
-                  <button
-                    type="button"
-                    className="btn"
-                    style={{ fontSize: 12, padding: "2px 8px", color: "var(--danger)" }}
-                    disabled={agindo}
-                    aria-label="Rejeitar"
-                    title="Rejeitar (pede justificativa)"
-                    onClick={() => onEscolher(item.id)}
-                  >
-                    ✕
-                  </button>
-                </>
-              ) : (
-                item.status !== "PENDING" && (
-                  <span aria-hidden style={{ fontSize: 11, color: STATUS_COLOR[item.status], whiteSpace: "nowrap" }}>
-                    {STATUS_LABEL[item.status]}
-                  </span>
-                )
-              )}
-            </li>
-          );
-        })}
-      </ul>
+      {unico && unico.status === "PENDING" && (
+        <div className="relative flex justify-end gap-1.5 px-3 pb-2.5 pl-[56px]">
+          <button
+            type="button"
+            className="inline-flex h-7 cursor-pointer items-center gap-1 rounded-md border border-border bg-surface px-2.5 text-[12px] font-semibold text-ink-soft transition-colors duration-150 hover:border-[#16a34a] hover:text-[#15803d] disabled:opacity-60"
+            disabled={agindo}
+            aria-label="Aprovar"
+            title="Aprovar (a tarefa você cria no painel)"
+            onClick={() => aprovar(unico)}
+          >
+            <Check aria-hidden size={14} />
+            <span aria-hidden>{agindo ? "…" : "Aprovar"}</span>
+          </button>
+          <button
+            type="button"
+            className="inline-flex h-7 cursor-pointer items-center gap-1 rounded-md border border-border bg-surface px-2.5 text-[12px] font-semibold text-ink-soft transition-colors duration-150 hover:border-danger hover:text-danger disabled:opacity-60"
+            disabled={agindo}
+            aria-label="Rejeitar"
+            title="Rejeitar (pede justificativa)"
+            onClick={() => onEscolher(unico.id)}
+          >
+            <X aria-hidden size={14} />
+            <span aria-hidden>Rejeitar</span>
+          </button>
+        </div>
+      )}
       {erro && (
-        <div className="error-box" role="alert" style={{ margin: "0 14px 10px", fontSize: 12 }}>
+        <div className="error-box relative" role="alert" style={{ margin: "0 12px 10px", fontSize: 12 }}>
           {erro}
         </div>
       )}
+    </motion.li>
+  );
+}
+
+/** Uma demanda na linha da lista: ponto da situação, seção e resumo. */
+function TopicoDaDemanda({ envio, item }: { envio: Batch; item: BatchItem }) {
+  const cat = rotuloDaCategoria(item);
+  return (
+    <span className="flex min-w-0 items-center gap-1.5 text-[12px]">
+      {/* ⚠️ A SITUAÇÃO É UM PONTO (15/10, vista na tela): a etiqueta
+          "Pendente" em toda linha repetia a aba em que a pessoa já está. O
+          nome vai no `title` e no texto para leitor de tela; fora de
+          "pendente", ele também aparece, curto, no fim da linha. */}
+      <span
+        title={STATUS_LABEL[item.status]}
+        className="h-1.5 w-1.5 shrink-0 rounded-full"
+        style={{ background: STATUS_COLOR[item.status] }}
+      />
+      <span className="sr-only">{STATUS_LABEL[item.status]}:</span>
+      <span aria-hidden>{cat.emoji}</span>
+      <span className="min-w-0 flex-1 truncate">
+        <strong className="font-semibold text-ink-soft">
+          {cat.titulo}
+          {numeroDaRepeticao(envio.items, item)}
+        </strong>
+        <span className="text-ink-faint"> · {item.summary}</span>
+      </span>
+      {item.status !== "PENDING" && (
+        <span aria-hidden className="shrink-0 text-[11px] font-semibold" style={{ color: STATUS_COLOR[item.status] }}>
+          {STATUS_LABEL[item.status]}
+        </span>
+      )}
+    </span>
+  );
+}
+
+/** Uma linha de propriedade do painel: ícone, rótulo e valor. */
+function Propriedade({ icone, rotulo, children }: { icone: ReactNode; rotulo: string; children: ReactNode }) {
+  return (
+    <div className="grid grid-cols-[minmax(110px,150px)_minmax(0,1fr)] items-baseline gap-3 py-1.5">
+      <dt className="flex items-center gap-2 text-[12.5px] text-ink-faint">
+        <span aria-hidden className="translate-y-[1px]">{icone}</span>
+        {rotulo}
+      </dt>
+      <dd className="m-0 min-w-0 break-words text-[13px] text-ink">{children}</dd>
     </div>
   );
 }
@@ -594,53 +669,146 @@ function PainelDoEnvio({
   onVoltar: () => void;
   onMudou: () => void;
 }) {
-  return (
-    <Card className="p-4">
-      {/* ⚠️ O `md:hidden` FICA NUM DIV EM VOLTA, e não no botão: o `display`
-          do `.btn` vence a classe utilitária, e o "Voltar" aparecia no
-          computador (visto na tela, 15/10). */}
-      <div className="md:hidden" style={{ marginBottom: 8 }}>
-        <button type="button" className="btn btn-ghost" style={{ fontSize: 12 }} onClick={onVoltar}>
-          ‹ Voltar
-        </button>
-      </div>
-      <div style={{ fontWeight: 600, fontSize: 15 }}>{envio.requester_name}</div>
-      {/* ⚠️ `filter(Boolean)` E NAO SEPARADOR FIXO. Desde a fatia G,
-          `requester_department` e `requester_polo` podem ser `null` -- em
-          JSX o `null` some, mas o `·` e o `/` FICAM (revisão de 31/08).
+  // Com várias demandas, uma de cada vez, por abas: empilhadas, a terceira
+  // ficava fora da tela, longe do nome de quem pediu.
+  const [ativa, setAtiva] = useState<string | null>(rejeitarItem ?? demandaInicial(envio));
+  const atual = envio.items.find((i) => i.id === ativa) ?? envio.items[0];
+  const [protocoloCopiado, setProtocoloCopiado] = useState(false);
+  const lugar = [envio.requester_department, envio.requester_polo].filter(Boolean).join(" / ");
+  const pendentes = envio.items.filter((i) => i.status === "PENDING").length;
 
-          ⚠️ E OS DOIS SEPARADORES SÃO DIFERENTES DE PROPÓSITO: `·` separa
-          o e-mail do lugar, `/` separa área de polo. A Camila mandou voltar
-          quando eu juntei tudo com `·`. */}
-      <div className="muted" style={{ fontSize: 12 }}>
-        {[
-          [envio.requester_email, envio.requester_phone].filter(Boolean).join(" · "),
-          [envio.requester_department, envio.requester_polo].filter(Boolean).join(" / "),
-        ]
-          .filter(Boolean)
-          .join(" · ")}
+  return (
+    <motion.div
+      initial={{ opacity: 0, x: 12 }}
+      animate={{ opacity: 1, x: 0 }}
+      transition={MOLA}
+      className="flex min-h-0 flex-1 flex-col overflow-y-auto"
+    >
+      <div className="border-b border-border p-5 pb-4">
+        {/* ⚠️ O `md:hidden` FICA NUM DIV EM VOLTA, e não no botão: o `display`
+            do `.btn` vence a classe utilitária, e o "Voltar" aparecia no
+            computador (visto na tela, 15/10). */}
+        <div className="mb-3 md:hidden">
+          <button type="button" className="btn btn-ghost" style={{ fontSize: 12, padding: "4px 8px" }} onClick={onVoltar}>
+            <ArrowLeft aria-hidden size={14} /> Voltar
+          </button>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <Avatar name={envio.requester_name} id={envio.requester_email} size="lg" className="h-11! w-11! text-[15px]!" />
+          <div className="min-w-0 flex-1">
+            <h2 className="m-0 truncate text-[19px] font-bold tracking-[-0.01em]">{envio.requester_name}</h2>
+            <p className="m-0 text-[12px] text-ink-faint">
+              {envio.items.length} demanda{envio.items.length > 1 ? "s" : ""}
+              {pendentes > 0 && ` · ${pendentes} pendente${pendentes > 1 ? "s" : ""}`}
+            </p>
+          </div>
+        </div>
+
+        {/* ⚠️ OS SEPARADORES: `/` entre área e polo é o desenho que ela
+            mandou voltar (revisão de 31/08), e campo `null` não deixa
+            separador pendurado -- cada propriedade só existe se tem valor. */}
+        <dl className="m-0 mt-4">
+          {envio.form_title && (
+            <Propriedade icone={<FileText size={14} />} rotulo="Formulário">
+              {envio.form_title}
+            </Propriedade>
+          )}
+          <Propriedade icone={<Hash size={14} />} rotulo="Protocolo">
+            <button
+              type="button"
+              className="inline-flex cursor-pointer items-center gap-1.5 rounded border-0 bg-transparent p-0 font-semibold tracking-[0.04em] text-ink hover:text-accent"
+              title="Copiar protocolo"
+              onClick={() =>
+                navigator.clipboard?.writeText(envio.protocol).then(() => {
+                  setProtocoloCopiado(true);
+                  setTimeout(() => setProtocoloCopiado(false), 1500);
+                })
+              }
+            >
+              {envio.protocol}
+              {protocoloCopiado ? <Check aria-hidden size={13} /> : <Copy aria-hidden size={12} className="opacity-60" />}
+            </button>
+          </Propriedade>
+          <Propriedade icone={<CalendarDays size={14} />} rotulo="Recebido">
+            {new Date(envio.created_at).toLocaleDateString("pt-BR")}
+          </Propriedade>
+          <Propriedade icone={<Mail size={14} />} rotulo="E-mail">
+            <a href={`mailto:${envio.requester_email}`} className="text-ink hover:text-accent">
+              {envio.requester_email}
+            </a>
+          </Propriedade>
+          {envio.requester_phone && (
+            <Propriedade icone={<Phone size={14} />} rotulo="Telefone">
+              {envio.requester_phone}
+            </Propriedade>
+          )}
+          {lugar && (
+            <Propriedade icone={<MapPin size={14} />} rotulo="Área / Polo">
+              {lugar}
+            </Propriedade>
+          )}
+        </dl>
       </div>
-      <div className="muted" style={{ fontSize: 11, marginTop: 2, marginBottom: 12 }}>
-        {envio.form_title && (
-          <>
-            Formulário <strong>{envio.form_title}</strong> ·{" "}
-          </>
-        )}
-        Protocolo <strong>{envio.protocol}</strong> ·{" "}
-        {new Date(envio.created_at).toLocaleDateString("pt-BR")}
-      </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        {envio.items.map((item) => (
-          <SecaoDemanda
-            key={`${item.id}-${rejeitarItem === item.id}`}
-            envio={envio}
-            item={item}
-            rejeitarAoAbrir={rejeitarItem === item.id}
-            onMudou={onMudou}
-          />
-        ))}
-      </div>
-    </Card>
+
+      {envio.items.length > 1 && (
+        <div role="tablist" aria-label="Demandas do envio" className="flex gap-1 overflow-x-auto border-b border-border px-4">
+          {envio.items.map((item) => {
+            const cat = rotuloDaCategoria(item);
+            const sel = item.id === atual.id;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                role="tab"
+                aria-selected={sel}
+                onClick={() => setAtiva(item.id)}
+                className={`relative flex shrink-0 cursor-pointer items-center gap-1.5 border-0 bg-transparent px-2.5 py-2.5 text-[12.5px] transition-colors duration-150 ${
+                  sel ? "font-semibold text-ink" : "text-ink-faint hover:text-ink-soft"
+                }`}
+              >
+                <span className="h-1.5 w-1.5 rounded-full" style={{ background: STATUS_COLOR[item.status] }} title={STATUS_LABEL[item.status]} />
+                <span aria-hidden>{cat.emoji}</span>
+                {cat.titulo}
+                {numeroDaRepeticao(envio.items, item)}
+                {sel && (
+                  <motion.span
+                    layoutId={`fila-demanda-${envio.batch_id}`}
+                    transition={MOLA}
+                    className="absolute inset-x-1 -bottom-px h-0.5 rounded-full bg-accent"
+                  />
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      <motion.div
+        key={atual.id}
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={MOLA}
+        className="p-5"
+      >
+        <SecaoDemanda
+          key={`${atual.id}-${rejeitarItem === atual.id}`}
+          envio={envio}
+          item={atual}
+          rejeitarAoAbrir={rejeitarItem === atual.id}
+          onMudou={onMudou}
+        />
+      </motion.div>
+    </motion.div>
+  );
+}
+
+/** Aparece suave de cima: formulário de rejeição, de marcar, aviso. */
+function Surge({ children, className = "" }: { children: ReactNode; className?: string }) {
+  return (
+    <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} transition={MOLA} className={className}>
+      {children}
+    </motion.div>
   );
 }
 
@@ -668,7 +836,7 @@ function SecaoDemanda({
   useEffect(() => {
     if (rejeitarAoAbrir) justificativaRef.current?.focus();
   }, [rejeitarAoAbrir]);
-  // O menu da seta fecha ao clicar fora, como qualquer menu.
+  // O menu da seta fecha ao clicar fora ou com Esc, como qualquer menu.
   useEffect(() => {
     if (!menuAberto) return;
     const fora = (e: MouseEvent) => {
@@ -743,31 +911,37 @@ function SecaoDemanda({
   }
 
   return (
-    <div style={{ border: "1px solid var(--border)", borderRadius: 10, padding: 14 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
-        <strong style={{ fontSize: 14 }}>
-          {cat.emoji} {cat.titulo}
+    <div>
+      <div className="mb-1 flex flex-wrap items-center gap-2">
+        <h3 className="m-0 text-[16px] font-bold">
+          <span aria-hidden className="mr-1.5">{cat.emoji}</span>
+          {cat.titulo}
           {numeroDaRepeticao(envio.items, item)}
-        </strong>
-        {cat.prazo && (
-          <span className="muted" style={{ fontSize: 11 }}>⏱ {cat.prazo}</span>
-        )}
-        <Badge tone="soft" size="sm" color={STATUS_COLOR[item.status]} className="ml-auto">
+        </h3>
+        <Badge tone="soft" size="sm" color={STATUS_COLOR[item.status]}>
           {STATUS_LABEL[item.status]}
         </Badge>
       </div>
+      {cat.prazo && (
+        <p className="m-0 flex items-center gap-1.5 text-[12px] text-ink-faint">
+          <Clock aria-hidden size={13} /> {cat.prazo}
+        </p>
+      )}
 
-      {erro && <div className="error-box" style={{ marginBottom: 10 }}>{erro}</div>}
+      {erro && (
+        <Surge className="mt-3">
+          <div className="error-box" role="alert">{erro}</div>
+        </Surge>
+      )}
 
-      <dl style={{ margin: 0, display: "flex", flexDirection: "column", gap: 8 }}>
+      <h4 className="mb-1 mt-5 text-[11px] font-semibold uppercase tracking-[0.06em] text-ink-faint">Respostas</h4>
+      <dl className="m-0 divide-y divide-border rounded-lg border border-border">
         {item.answers.map((a, i) => (
-          <div key={i}>
-            <dt style={{ fontSize: 11, fontWeight: 600, color: "var(--text-soft)" }}>
-              {a.label}
-            </dt>
-            <dd style={{ margin: "2px 0 0", fontSize: 13, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+          <div key={i} className="grid gap-1 px-3.5 py-2.5 sm:grid-cols-[minmax(140px,38%)_minmax(0,1fr)] sm:gap-4">
+            <dt className="text-[12.5px] text-ink-faint">{a.label}</dt>
+            <dd className="m-0 whitespace-pre-wrap text-[13px] [overflow-wrap:anywhere]">
               {/^https?:\/\//.test(a.value) ? (
-                <a href={a.value} target="_blank" rel="noreferrer" style={{ color: "var(--accent)" }}>
+                <a href={a.value} target="_blank" rel="noreferrer" className="text-accent">
                   {a.value}
                 </a>
               ) : (
@@ -779,30 +953,53 @@ function SecaoDemanda({
       </dl>
 
       {item.status === "REJECTED" && item.review_note && (
-        <div className="error-box" style={{ marginTop: 10 }}>
+        <div className="error-box" style={{ marginTop: 12 }}>
           Justificativa: {item.review_note}
         </div>
       )}
       {item.status === "APPROVED" && item.review_note && (
-        <p className="muted" style={{ fontSize: 12, marginTop: 10 }}>
-          Nota da aprovação: {item.review_note}
+        <p className="mt-3 text-[12px] text-ink-faint">Nota da aprovação: {item.review_note}</p>
+      )}
+
+      {aceito && item.task_created_at && (
+        <p className="mt-4 flex flex-wrap items-center gap-1.5 text-[12.5px] text-ink-soft">
+          <SquareCheckBig aria-hidden size={14} className="text-[#16a34a]" />
+          Tarefa criada em {new Date(item.task_created_at).toLocaleDateString("pt-BR")}
+          {/* ⚠️ TRÊS ESTADOS, e cada um diz a verdade sobre o que existe:
+              vinculada e viva (link), vinculada e apagada (sem nome, sem
+              link), ou só o `task_ref` de texto das marcações antigas. */}
+          {item.task_id && item.task_title && (
+            <>
+              {" · "}
+              <Link href={`/tarefa/${item.task_id}`}>{item.task_title}</Link>
+            </>
+          )}
+          {item.task_id && !item.task_title && " · tarefa vinculada"}
+          {!item.task_id && item.task_ref ? ` · ${item.task_ref}` : ""}
         </p>
       )}
 
-      {/* ---- ações ---- */}
-      <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap", alignItems: "center" }}>
+      {tarefaNova && (
+        <Surge className="mt-4">
+          <div className="flex items-center gap-2 rounded-lg border border-[#16a34a]/40 bg-[#16a34a]/10 px-3 py-2 text-[12.5px]">
+            <Check aria-hidden size={14} className="text-[#16a34a]" />
+            Tarefa criada.
+            <Link href={`/tarefa/${tarefaNova}`} className="font-semibold">
+              Abrir a tarefa
+            </Link>
+          </div>
+        </Surge>
+      )}
 
+      {/* ---- ações ---- */}
+      <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-border pt-4">
         {/* ⚠️ O ANDAMENTO É UM SELETOR, e não um botão "avançar": volta-se de
             "concluída" para "em andamento" de propósito. Marcar concluída por
             engano é comum, e sem a volta a saída seria pedir para alguém mexer
             no banco. O backend permite os dois sentidos; a tela também. */}
         {aceito && (
-          <label
-            style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
-          >
-            <span className="muted" style={{ fontSize: 12 }}>
-              Situação
-            </span>
+          <label className="inline-flex items-center gap-1.5">
+            <span className="text-[12px] text-ink-faint">Situação</span>
             <select
               className="input"
               style={{ fontSize: 12, padding: "4px 8px", width: "auto" }}
@@ -811,11 +1008,7 @@ function SecaoDemanda({
               disabled={agindo}
               onChange={(e) =>
                 acao(
-                  () =>
-                    andarSolicitacao(
-                      item.id,
-                      e.target.value as SolicitacaoStatus
-                    ),
+                  () => andarSolicitacao(item.id, e.target.value as SolicitacaoStatus),
                   "Não foi possível mudar a situação."
                 )
               }
@@ -832,16 +1025,15 @@ function SecaoDemanda({
         {/* ⚠️ 4. "APROVAR E CRIAR TAREFA" É O CAMINHO PRINCIPAL (15/10): quase
             todo pedido aceito vira tarefa, e eram dois cliques em dois
             momentos -- o segundo era o que se esquecia. Os outros dois
-            caminhos moram na seta. */}
+            caminhos moram na seta. Com as demandas em abas, há UM destes
+            por vez na tela -- por isso ele pode ser o azul cheio. */}
         {item.status === "PENDING" && !rejeitando && (
           <>
-            <div ref={menu} style={{ position: "relative", display: "inline-flex" }}>
-              {/* ⚠️ CONTORNO, E NÃO AZUL CHEIO (15/10, vista na tela): com três
-                  demandas eram três botões azuis cheios, um embaixo do outro. */}
+            <div ref={menu} className="relative inline-flex">
               <button
-                className="btn"
+                className="btn btn-primary"
                 disabled={agindo}
-                style={{ ...BOTAO_DE_DESTAQUE, borderTopRightRadius: 0, borderBottomRightRadius: 0 }}
+                style={{ borderTopRightRadius: 0, borderBottomRightRadius: 0 }}
                 onClick={() =>
                   acao(async () => {
                     await aprovarSolicitacao(item.id);
@@ -853,58 +1045,60 @@ function SecaoDemanda({
                 {agindo ? "…" : "Aprovar e criar tarefa"}
               </button>
               <button
-                className="btn"
+                className="btn btn-primary"
                 disabled={agindo}
                 aria-label="Outras formas de aprovar"
                 aria-expanded={menuAberto}
-                style={{ ...BOTAO_DE_DESTAQUE, borderTopLeftRadius: 0, borderBottomLeftRadius: 0, borderLeftWidth: 0, padding: "0 9px" }}
+                style={{
+                  borderTopLeftRadius: 0,
+                  borderBottomLeftRadius: 0,
+                  borderLeft: "1px solid rgba(255,255,255,.3)",
+                  padding: "0 9px",
+                }}
                 onClick={() => setMenuAberto((v) => !v)}
               >
-                ▾
+                <motion.span animate={{ rotate: menuAberto ? 180 : 0 }} transition={MOLA} className="inline-flex">
+                  <ChevronDown aria-hidden size={15} />
+                </motion.span>
               </button>
-              {menuAberto && (
-                <div
-                  role="menu"
-                  style={{
-                    position: "absolute",
-                    top: "calc(100% + 4px)",
-                    left: 0,
-                    zIndex: 20,
-                    minWidth: 220,
-                    background: "var(--surface)",
-                    border: "1px solid var(--border)",
-                    borderRadius: 10,
-                    padding: 4,
-                    boxShadow: "0 8px 24px rgba(0,0,0,.18)",
-                  }}
-                >
-                  <button
-                    role="menuitem"
-                    className="btn btn-ghost"
-                    style={{ width: "100%", justifyContent: "flex-start", fontSize: 13 }}
-                    onClick={() => {
-                      setMenuAberto(false);
-                      acao(() => aprovarSolicitacao(item.id), "Não foi possível aprovar.");
-                    }}
+              <AnimatePresence>
+                {menuAberto && (
+                  <motion.div
+                    role="menu"
+                    initial={{ opacity: 0, y: -4, scale: 0.97 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -4, scale: 0.97, transition: { duration: 0.12 } }}
+                    transition={MOLA}
+                    className="absolute left-0 top-[calc(100%+6px)] z-20 min-w-[230px] origin-top-left rounded-xl border border-border bg-surface p-1 shadow-[0_12px_32px_rgba(0,0,0,.2)]"
                   >
-                    Aprovar sem tarefa
-                  </button>
-                  <button
-                    role="menuitem"
-                    className="btn btn-ghost"
-                    style={{ width: "100%", justifyContent: "flex-start", fontSize: 13 }}
-                    onClick={() => {
-                      setMenuAberto(false);
-                      acao(async () => {
-                        await aprovarSolicitacao(item.id);
-                        setMarcandoTarefa(true);
-                      }, "Não foi possível aprovar.");
-                    }}
-                  >
-                    Aprovar — já criei a tarefa
-                  </button>
-                </div>
-              )}
+                    <button
+                      role="menuitem"
+                      className="btn btn-ghost"
+                      style={{ width: "100%", justifyContent: "flex-start", fontSize: 13 }}
+                      onClick={() => {
+                        setMenuAberto(false);
+                        acao(() => aprovarSolicitacao(item.id), "Não foi possível aprovar.");
+                      }}
+                    >
+                      Aprovar sem tarefa
+                    </button>
+                    <button
+                      role="menuitem"
+                      className="btn btn-ghost"
+                      style={{ width: "100%", justifyContent: "flex-start", fontSize: 13 }}
+                      onClick={() => {
+                        setMenuAberto(false);
+                        acao(async () => {
+                          await aprovarSolicitacao(item.id);
+                          setMarcandoTarefa(true);
+                        }, "Não foi possível aprovar.");
+                      }}
+                    >
+                      Aprovar — já criei a tarefa
+                    </button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
             <button
               className="btn"
@@ -921,10 +1115,6 @@ function SecaoDemanda({
             costuma ser criada quando o trabalho COMEÇA -- ou seja, com o
             pedido já em andamento. Exigir "aprovada" aqui esconderia o botão
             exatamente no momento em que ele é usado. */}
-        {/* ⚠️ CRIAR A TAREFA É O CAMINHO PRINCIPAL agora, e "marcar" virou o
-            secundário: quem já criou a tarefa à mão continua podendo registrar,
-            mas o fluxo de seis passos (copiar, sair, criar, colar, voltar,
-            marcar) deixou de ser o único. */}
         {aceito && !item.task_created_at && (
           <button
             className="btn btn-primary"
@@ -948,49 +1138,20 @@ function SecaoDemanda({
           <button
             className="btn btn-ghost"
             disabled={agindo}
-            onClick={() =>
-              acao(
-                () => marcarTarefaCriada(item.id, false),
-                "Não foi possível desmarcar."
-              )
-            }
+            onClick={() => acao(() => marcarTarefaCriada(item.id, false), "Não foi possível desmarcar.")}
           >
             Desmarcar tarefa
           </button>
         )}
 
         <button className="btn btn-ghost" style={{ marginLeft: "auto" }} onClick={copiarBriefing}>
+          {copiado ? <Check aria-hidden size={14} /> : <Copy aria-hidden size={14} />}
           {copiado ? "Copiado ✓" : "Copiar briefing"}
         </button>
       </div>
 
-      {aceito && item.task_created_at && (
-        <p className="muted" style={{ fontSize: 12, marginTop: 8 }}>
-          ✓ Tarefa criada em{" "}
-          {new Date(item.task_created_at).toLocaleDateString("pt-BR")}
-          {/* ⚠️ TRÊS ESTADOS, e cada um diz a verdade sobre o que existe:
-              vinculada e viva (link), vinculada e apagada (sem nome, sem
-              link), ou só o `task_ref` de texto das marcações antigas. */}
-          {item.task_id && item.task_title && (
-            <>
-              {" · "}
-              <Link href={`/tarefa/${item.task_id}`}>{item.task_title}</Link>
-            </>
-          )}
-          {item.task_id && !item.task_title && " · tarefa vinculada"}
-          {!item.task_id && item.task_ref ? ` · ${item.task_ref}` : ""}
-        </p>
-      )}
-
-      {tarefaNova && (
-        <p style={{ fontSize: 12, marginTop: 8 }}>
-          Tarefa criada.{" "}
-          <Link href={`/tarefa/${tarefaNova}`}>Abrir a tarefa</Link>
-        </p>
-      )}
-
       {marcandoTarefa && (
-        <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
+        <Surge className="mt-3 flex flex-col gap-2">
           <label className="label" htmlFor={`ref-${item.id}`}>
             Link ou identificador da tarefa (opcional)
           </label>
@@ -1001,7 +1162,7 @@ function SecaoDemanda({
             value={refTarefa}
             onChange={(e) => setRefTarefa(e.target.value)}
           />
-          <div style={{ display: "flex", gap: 8 }}>
+          <div className="flex gap-2">
             <button
               className="btn btn-primary"
               disabled={agindo}
@@ -1017,16 +1178,19 @@ function SecaoDemanda({
             <button
               className="btn btn-ghost"
               disabled={agindo}
-              onClick={() => { setMarcandoTarefa(false); setRefTarefa(""); }}
+              onClick={() => {
+                setMarcandoTarefa(false);
+                setRefTarefa("");
+              }}
             >
               Cancelar
             </button>
           </div>
-        </div>
+        </Surge>
       )}
 
       {rejeitando && (
-        <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
+        <Surge className="mt-3 flex flex-col gap-2">
           <label className="label" htmlFor={`just-${item.id}`}>
             Justificativa da rejeição (obrigatória)
           </label>
@@ -1040,7 +1204,7 @@ function SecaoDemanda({
             placeholder="Ex.: prazo insuficiente para o porte da demanda; reenviar com pelo menos 10 dias úteis."
             style={{ resize: "vertical" }}
           />
-          <div style={{ display: "flex", gap: 8 }}>
+          <div className="flex gap-2">
             <button
               className="btn"
               style={{ color: "var(--danger)" }}
@@ -1050,10 +1214,7 @@ function SecaoDemanda({
                   setErro("A rejeição exige uma justificativa.");
                   return;
                 }
-                acao(
-                  () => rejeitarSolicitacao(item.id, justificativa.trim()),
-                  "Não foi possível rejeitar."
-                );
+                acao(() => rejeitarSolicitacao(item.id, justificativa.trim()), "Não foi possível rejeitar.");
               }}
             >
               {agindo ? "…" : "Confirmar rejeição"}
@@ -1061,12 +1222,15 @@ function SecaoDemanda({
             <button
               className="btn btn-ghost"
               disabled={agindo}
-              onClick={() => { setRejeitando(false); setJustificativa(""); }}
+              onClick={() => {
+                setRejeitando(false);
+                setJustificativa("");
+              }}
             >
               Cancelar
             </button>
           </div>
-        </div>
+        </Surge>
       )}
     </div>
   );
