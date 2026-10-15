@@ -29,6 +29,7 @@ import {
   type BaseTrashItem,
   type Team,
 } from "@/lib/api";
+import ImportWizard from "@/components/bases/ImportWizard";
 import { agruparPorRaiz, dataParaTela } from "@/lib/baseTable";
 import { rootTeamOf } from "@/lib/areas";
 import { diaNoWorkspace } from "@/lib/prazo";
@@ -46,6 +47,7 @@ export default function ListaDeBases() {
   const [erro, setErro] = useState<string | null>(null);
 
   const [criando, setCriando] = useState(false);
+  const [importando, setImportando] = useState(false);
   const [nome, setNome] = useState("");
   const [raizId, setRaizId] = useState("");
   const [salvando, setSalvando] = useState(false);
@@ -129,12 +131,34 @@ export default function ListaDeBases() {
         count={plural(bases.length, "base", "bases")}
         actions={
           raizesQueCria.length > 0 && !criando ? (
-            <button className="btn btn-primary" onClick={() => setCriando(true)}>
-              Nova base
-            </button>
+            <div className="ml-auto flex gap-2">
+              {/* Spec 057: uma base nova a partir de uma planilha. */}
+              <button className="btn" onClick={() => setImportando(true)}>
+                Importar planilha
+              </button>
+              <button className="btn btn-primary" onClick={() => setCriando(true)}>
+                Nova base
+              </button>
+            </div>
           ) : undefined
         }
       />
+
+      {importando && (
+        <ImportWizard
+          target={{
+            kind: "new",
+            teams: raizesQueCria.map((r) => ({ id: r.id, name: r.name })),
+            defaultTeamId: raizId || (raizesQueCria.length === 1 ? raizesQueCria[0].id : null),
+          }}
+          onClose={() => setImportando(false)}
+          onDone={(r) => {
+            setImportando(false);
+            avisar(`${r.imported} linhas importadas.`);
+            if (r.base_id) router.push(`/bases/${r.base_id}`);
+          }}
+        />
+      )}
 
       {criando && (
         <Card className="flex max-w-[640px] flex-col gap-3">

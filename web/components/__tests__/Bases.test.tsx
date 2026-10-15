@@ -479,3 +479,32 @@ describe("TabelaDaBase", () => {
     expect(screen.queryByRole("separator")).toBeNull();
   });
 });
+
+describe("copiar e colar (Spec 057)", () => {
+  it("colar várias células grava numa ida só", async () => {
+    vi.mocked(api.updateBaseCells).mockResolvedValue([]);
+    render(<Montada base={detalhe()} linhas={[linha("r1", {}), linha("r2", {})]} />);
+    const celula = screen.getByRole("gridcell", { name: "Título, linha 1" });
+    const dados = { getData: () => "Um\t5\nDois\t7" } as unknown as DataTransfer;
+    fireEvent.paste(celula, { clipboardData: dados });
+    await waitFor(() => expect(api.updateBaseCells).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(api.updateBaseCells).mock.calls[0][1]).toEqual([
+      { row_id: "r1", column_id: "c-titulo", value: "Um" },
+      { row_id: "r1", column_id: "c-num", value: 5 },
+      { row_id: "r2", column_id: "c-titulo", value: "Dois" },
+      { row_id: "r2", column_id: "c-num", value: 7 },
+    ]);
+  });
+
+  it("Shift+clique seleciona a faixa sem abrir a edição", () => {
+    render(<Montada base={detalhe()} linhas={[linha("r1", {}), linha("r2", {})]} />);
+    fireEvent.keyDown(screen.getByRole("gridcell", { name: "Título, linha 1" }), { key: "ArrowRight" });
+    fireEvent.click(screen.getByRole("gridcell", { name: "Alcance, linha 2" }), { shiftKey: true });
+    expect(screen.queryByRole("textbox")).toBeNull();
+    // a âncora (Alcance, linha 1) até a clicada (Alcance, linha 2)
+    expect(screen.getByRole("gridcell", { name: "Alcance, linha 1" }).className).toContain("bg-accent-soft");
+    expect(screen.getByRole("gridcell", { name: "Alcance, linha 2" }).className).toContain("bg-accent-soft");
+    expect(screen.getByRole("gridcell", { name: "Título, linha 2" }).className).not.toContain("bg-accent-soft");
+  });
+});
+

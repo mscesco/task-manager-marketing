@@ -3766,9 +3766,19 @@ async function _rawRequest(path: string, init: RequestInit, isRetry = false): Pr
   return res;
 }
 
-/** Baixa um arquivo da API e o entrega ao navegador para salvar. */
-export async function downloadFile(path: string, fallbackName: string): Promise<void> {
-  const res = await _rawRequest(path, { method: "GET" });
+/** Baixa um arquivo da API e o entrega ao navegador para salvar. `body`
+ *  = POST com JSON (a exportação da Base manda as linhas da visão). */
+export async function downloadFile(
+  path: string,
+  fallbackName: string,
+  body?: unknown
+): Promise<void> {
+  const res = await _rawRequest(
+    path,
+    body === undefined
+      ? { method: "GET" }
+      : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
+  );
   const disposition = res.headers.get("Content-Disposition") ?? "";
   const name = /filename="([^"]+)"/.exec(disposition)?.[1] ?? fallbackName;
   const url = URL.createObjectURL(await res.blob());
@@ -3803,3 +3813,81 @@ export async function exportDashboard(
   const s = q.toString();
   await downloadFile(`/api/v1/dashboard/export${s ? `?${s}` : ""}`, "painel.xlsx");
 }
+
+// ---------------------------------------------------------------
+// BASE: PLANILHA (Spec 057, 15/10)
+// ---------------------------------------------------------------
+
+/** A Base em planilha, com as linhas e colunas DA VISÃO (na ordem da tela). */
+export async function exportBase(
+  baseId: string,
+  format: "xlsx" | "csv",
+  rowIds: string[],
+  columnIds: string[]
+): Promise<void> {
+  await downloadFile(`/api/v1/bases/${baseId}/export`, `base.${format}`, {
+    format,
+    row_ids: rowIds,
+    column_ids: columnIds,
+  });
+}
+
+export type ImportFile = {
+  filename: string;
+  content_base64: string;
+  sheet?: string | null;
+  header_row?: number;
+};
+
+export type ImportPreview = {
+  sheets: string[];
+  sheet: string;
+  header_row: number;
+  total_rows: number;
+  columns: { index: number; name: string; suggested_type: BaseColumnType; sample: string[] }[];
+};
+
+export type ImportColumnPlan = {
+  index: number;
+  action: "new" | "existing" | "title" | "ignore";
+  name?: string | null;
+  type?: BaseColumnType | null;
+  column_id?: string | null;
+};
+
+export type ImportResult = {
+  total: number;
+  valid: number;
+  error_count: number;
+  errors: { line: number; column: string; message: string }[];
+  imported: number;
+  base_id: string | null;
+};
+
+export async function previewImport(file: ImportFile): Promise<ImportPreview> {
+  return api<ImportPreview>("/api/v1/bases/import/preview", { method: "POST", body: file });
+}
+
+export async function runImport(
+  body: ImportFile & {
+    base_id?: string | null;
+    new_name?: string | null;
+    new_team_id?: string | null;
+    columns: ImportColumnPlan[];
+    dry_run: boolean;
+    skip_invalid: boolean;
+  }
+): Promise<ImportResult> {
+  return api<ImportResult>("/api/v1/bases/import", { method: "POST", body });
+}
+
+/** O conteúdo do arquivo em base64 (o corpo da importação é JSON). */
+export function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result).split(",", 2)[1] ?? "");
+    reader.onerror = () => reject(new ApiError(0, "Não consegui ler o arquivo."));
+    reader.readAsDataURL(file);
+  });
+}
+
