@@ -84,10 +84,3 @@ class UnitOfWork:
         """Desfaz a transacao corrente."""
         await self.session.rollback()
 
-    async def flush(self) -> None:
-        """Envia o SQL pendente ao banco SEM confirmar.
-
-        Util quando o caso de uso precisa do id gerado de um
-        objeto recem-adicionado antes do commit final.
-        """
-        await self.session.flush()

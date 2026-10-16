@@ -84,12 +84,6 @@ class TeamRepository(BaseRepository[Team]):
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
-    async def count(self) -> int:
-        """Conta as equipes do workspace corrente."""
-        base = self._base_select()
-        stmt = select(func.count()).select_from(base.subquery())
-        return (await self.session.execute(stmt)).scalar_one()
-
     # ----------------------------------------------------
     # Hierarquia
     # ----------------------------------------------------

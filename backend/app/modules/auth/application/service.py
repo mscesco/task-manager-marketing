@@ -162,8 +162,6 @@ class AuthService:
         """Emite um novo par de tokens a partir de um refresh token valido."""
         payload = decode_token(refresh_token, expected_type=TokenType.REFRESH)
 
-        import uuid
-
         try:
             user_id = uuid.UUID(payload["sub"])
             workspace_id = uuid.UUID(payload["ws"])
@@ -296,8 +294,6 @@ class AuthService:
     def _issue_tokens(
         *, user_id: object, workspace_id: object, token_version: int = 0
     ) -> TokenPair:
-        import uuid
-
         assert isinstance(user_id, uuid.UUID)
         assert isinstance(workspace_id, uuid.UUID)
         return TokenPair(

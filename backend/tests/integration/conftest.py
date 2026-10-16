@@ -51,6 +51,12 @@ TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
 def _bootstrapped_db_url() -> str:
     """Sobe o schema no banco de teste 1x por sessao. Pula se sem URL."""
     if not TEST_DATABASE_URL:
+        # ⚠️ NO CI, FALTAR A URL E ERRO, e nao "pular" (auditoria de 16/10).
+        # O skip sai com codigo 0: se alguem renomeasse a variavel no
+        # `ci.yml`, os testes de visibilidade sumiriam e o check continuaria
+        # verde. O GitHub Actions define `CI=true`; local continua pulando.
+        if os.getenv("CI"):
+            pytest.fail("TEST_DATABASE_URL ausente no CI -- a suite de integracao nao rodaria.")
         pytest.skip(
             "TEST_DATABASE_URL ausente -- suite de integracao pulada. "
             "Rode via: docker compose up -d db-test && docker compose run "

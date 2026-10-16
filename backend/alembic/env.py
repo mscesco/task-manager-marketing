@@ -45,8 +45,11 @@ import app.db.models  # noqa: F401
 
 config = context.config
 
-# Injeta a URL (sincrona p/ o Alembic) vinda do .env.
-config.set_main_option("sqlalchemy.url", settings.database_url_sync)
+# ⚠️ A URL NAO PASSA PELO `config` (auditoria de 16/10). Ela era gravada aqui
+# com `set_main_option` so para ser sobrescrita no modo online; o offline le
+# `settings` direto. E o ConfigParser interpreta `%`: uma senha com `%`
+# (caractere especial codificado na URL) derrubava o `alembic upgrade` no
+# meio do deploy, com a API subindo normal.
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
