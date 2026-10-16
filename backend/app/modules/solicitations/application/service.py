@@ -698,6 +698,18 @@ class SolicitationService:
         `can_in(p, None)` responde so pela organizacao.
         """
         solicitation = await self.repo.get_by_id_or_raise(solicitation_id)
+        # ⚠️ TRAVA O PEDIDO E RELE (auditoria de 16/10). Aprovar, rejeitar,
+        # criar tarefa e marcar conferem o estado e so depois gravam: duas
+        # pessoas aprovando e rejeitando ao mesmo tempo passavam as duas, a
+        # ultima gravacao vencia e o n8n mandava ao solicitante "aprovada" E
+        # "rejeitada"; dois "Criar tarefa" criavam duas tarefas. Com a trava, a
+        # segunda espera a primeira e ja ve o estado novo.
+        await self.session.execute(
+            select(Solicitation.id)
+            .where(Solicitation.id == solicitation.id)
+            .with_for_update()
+        )
+        await self.session.refresh(solicitation)
         time = None
         if solicitation.form_id is not None:
             time = (
@@ -767,7 +779,11 @@ class SolicitationService:
                 # mostrar o TITULO dela (`titulos_das_tarefas`). Fora da lente,
                 # a mesma resposta de tarefa inexistente: 404.
                 await TaskScopeGuards(self.session).assert_visible(tarefa)
-            solicitation.task_id = command.task_id
+                solicitation.task_id = command.task_id
+            # ⚠️ SEM `task_id`, O VINCULO QUE JA EXISTE FICA (auditoria de
+            # 16/10). "Ja criei -- so marcar" gravava `None` por cima: com a
+            # tela velha numa aba e "Criar tarefa" clicado na outra, a tarefa
+            # criada perdia o vinculo e virava so texto na fila.
         else:
             solicitation.task_created_at = None
             solicitation.task_marked_by_user_id = None

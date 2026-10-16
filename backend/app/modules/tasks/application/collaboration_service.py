@@ -223,6 +223,16 @@ class CollaborationService:
         await self._guards.assert_visible(task)
         await self._guards.assert_editable(task)
 
+        # ⚠️ TRAVA A TAREFA ANTES DE CONTAR (auditoria de 16/10). "Contar e
+        # depois apagar" sem trava deixava duas pessoas removerem, ao mesmo
+        # tempo, os dois ultimos responsaveis: cada uma via dois e passava, e a
+        # tarefa ficava sem dono -- o estado que a ADR 0031 fecha. Com a trava,
+        # a segunda remocao espera a primeira e conta um.
+        await self._session.execute(
+            select(Task.id)
+            .where(Task.id == task.id, Task.workspace_id == task.workspace_id)
+            .with_for_update()
+        )
         atuais = await self._assignees.list_user_ids(task_id)
         if user_id in atuais and len(atuais) == 1:
             raise ValidationError(
