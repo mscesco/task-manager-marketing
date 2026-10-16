@@ -134,6 +134,8 @@ class UndoService:
             # criar desfeito = apagar; apagar desfeito = trazer de volta
             marcar = (kind == "row.create") == desfazer
             await self._marca_linha(base_id, uuid.UUID(p["row"]), marcar=marcar)
+        elif kind == "rows.import":
+            await self._importacao(base_id, p, desfazer=desfazer)
         elif kind in ("column.create", "column.delete"):
             marcar = (kind == "column.create") == desfazer
             await self._marca_coluna(base_id, uuid.UUID(p["column"]), marcar=marcar)
@@ -181,6 +183,16 @@ class UndoService:
         if linha is None or (linha.deleted_at is None) != marcar:
             raise _Conflito
         _marcar(linha, marcar)
+
+    async def _importacao(
+        self, base_id: uuid.UUID, p: dict[str, Any], *, desfazer: bool
+    ) -> None:
+        """Desfazer a importacao (Spec 057) marca TODAS as linhas e colunas que
+        ela criou; refazer tira a marca. Uma acao, um Ctrl+Z."""
+        for row_id in p["rows"]:
+            await self._marca_linha(base_id, uuid.UUID(row_id), marcar=desfazer)
+        for column_id in p["columns"]:
+            await self._marca_coluna(base_id, uuid.UUID(column_id), marcar=desfazer)
 
     async def _marca_coluna(
         self, base_id: uuid.UUID, column_id: uuid.UUID, *, marcar: bool

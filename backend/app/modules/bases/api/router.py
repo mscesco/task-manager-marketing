@@ -43,6 +43,8 @@ Fatia I (o cabecalho como o do Notion):
 from __future__ import annotations
 
 import asyncio
+import base64
+import binascii
 import json
 import time
 import uuid
@@ -50,10 +52,11 @@ from collections.abc import AsyncIterator
 
 from fastapi import APIRouter, Depends, Response, status
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field
 
 from app.core.deps import SessionDep, UoWDep
 from app.core.logging import get_logger
-from app.modules.auth.api.dependencies import require_permission
+from app.modules.auth.api.dependencies import TenantContextDep, require_permission
 from app.modules.bases.api.schemas import (
     BaseCreateRequest,
     BaseResponse,
@@ -79,6 +82,12 @@ from app.modules.bases.application.base_service import (
     CreateBaseCommand,
     UpdateColumnCommand,
 )
+from app.modules.bases.application.export_service import BaseExportService
+from app.modules.bases.application.import_service import (
+    BaseImportService,
+    ColumnPlan,
+    ImportPlan,
+)
 from app.modules.bases.application.row_service import (
     ROW_LIMIT,
     ROW_WARNING,
@@ -88,6 +97,7 @@ from app.modules.bases.application.row_service import (
 from app.modules.bases.application.undo_service import UndoService
 from app.modules.bases.application.view_service import ViewService
 from app.modules.bases.infrastructure import live
+from app.shared.exceptions.base import ValidationError
 
 logger = get_logger(__name__)
 
@@ -119,6 +129,111 @@ async def create_base(payload: BaseCreateRequest, uow: UoWDep) -> BaseResponse:
     )
     await uow.commit()
     return BaseResponse.from_detail(detail)
+
+
+# --------------------------------------------------------------- planilha (Spec 057)
+class _ImportFile(BaseModel):
+    """O arquivo em base64 (sem `python-multipart`: o corpo continua JSON)."""
+
+    filename: str = Field(min_length=1, max_length=255)
+    content_base64: str = Field(min_length=1, max_length=7_200_000)
+    sheet: str | None = None
+    header_row: int = Field(default=1, ge=1, le=100)
+
+    def content(self) -> bytes:
+        try:
+            return base64.b64decode(self.content_base64, validate=True)
+        except (binascii.Error, ValueError) as exc:
+            raise ValidationError("Arquivo invalido.", details={"field": "file"}) from exc
+
+
+class _ImportColumn(BaseModel):
+    index: int = Field(ge=0, le=500)
+    action: str = Field(pattern="^(new|existing|title|ignore)$")
+    name: str | None = Field(default=None, max_length=120)
+    type: str | None = Field(default=None, max_length=30)
+    column_id: uuid.UUID | None = None
+
+
+class _ImportRequest(_ImportFile):
+    base_id: uuid.UUID | None = None
+    new_name: str | None = Field(default=None, max_length=120)
+    new_team_id: uuid.UUID | None = None
+    columns: list[_ImportColumn] = Field(max_length=500)
+    dry_run: bool = True
+    skip_invalid: bool = False
+
+
+@router.post("/import/preview")
+async def preview_import(_: TenantContextDep, payload: _ImportFile) -> dict:
+    """Le a planilha: abas, cabecalho, 20 linhas e o tipo sugerido de cada coluna.
+    Nao grava nada -- e o passo 1 do assistente."""
+    p = BaseImportService(None).preview(  # type: ignore[arg-type]
+        payload.content(), payload.filename, sheet=payload.sheet, header_row=payload.header_row
+    )
+    return {
+        "sheets": p.sheets,
+        "sheet": p.sheet,
+        "header_row": p.header_row,
+        "total_rows": p.total_rows,
+        "columns": [
+            {
+                "index": c.index,
+                "name": c.name,
+                "suggested_type": c.suggested_type,
+                "sample": c.sample,
+            }
+            for c in p.columns
+        ],
+    }
+
+
+@router.post("/import")
+async def run_import(_: TenantContextDep, payload: _ImportRequest, uow: UoWDep) -> dict:
+    """Valida (`dry_run`) ou importa a planilha -- numa base que existe
+    (`base_id`) ou numa nova (`new_name` + `new_team_id`). Uma acao do diario."""
+    plan = ImportPlan(
+        columns=[ColumnPlan(**c.model_dump()) for c in payload.columns],
+        sheet=payload.sheet,
+        header_row=payload.header_row,
+        base_id=payload.base_id,
+        new_name=payload.new_name,
+        new_team_id=payload.new_team_id,
+        dry_run=payload.dry_run,
+        skip_invalid=payload.skip_invalid,
+    )
+    r = await BaseImportService(uow.session).run(payload.content(), payload.filename, plan)
+    if not payload.dry_run:
+        await uow.commit()
+    return {
+        "total": r.total,
+        "valid": r.valid,
+        "error_count": r.error_count,
+        "errors": [{"line": e.line, "column": e.column, "message": e.message} for e in r.errors],
+        "imported": r.imported,
+        "base_id": str(r.base_id) if r.base_id else None,
+    }
+
+
+class _ExportRequest(BaseModel):
+    format: str = Field(default="xlsx", pattern="^(xlsx|csv)$")
+    row_ids: list[uuid.UUID] | None = Field(default=None, max_length=5_000)
+    column_ids: list[uuid.UUID] | None = Field(default=None, max_length=500)
+
+
+@router.post("/{base_id}/export", response_class=Response)
+async def export_base(
+    base_id: uuid.UUID, payload: _ExportRequest, _: TenantContextDep, session: SessionDep
+) -> Response:
+    """A base em planilha, com as linhas e colunas DA VISAO que a tela mandou."""
+    content, media, nome = await BaseExportService(session).export(
+        base_id, fmt=payload.format, row_ids=payload.row_ids, column_ids=payload.column_ids
+    )
+    return Response(
+        content=content,
+        media_type=media,
+        headers={"Content-Disposition": f'attachment; filename="{nome}"'},
+    )
 
 
 @router.get(
@@ -312,6 +427,27 @@ async def create_row(
     linha = await RowService(uow.session).create_row(base_id, payload.values)
     await uow.commit()
     return RowResponse.model_validate(linha)
+
+
+class _RowsBatchRequest(BaseModel):
+    rows: list[RowCreateRequest] = Field(min_length=1, max_length=1_000)
+
+
+@router.post(
+    "/{base_id}/rows/batch",
+    response_model=list[RowResponse],
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_permission("base_row.create"))],
+)
+async def create_rows(
+    base_id: uuid.UUID, payload: _RowsBatchRequest, uow: UoWDep
+) -> list[RowResponse]:
+    """Varias linhas, uma acao do diario (Spec 057: colar alem da ultima)."""
+    linhas = await RowService(uow.session).create_rows(
+        base_id, [r.values for r in payload.rows]
+    )
+    await uow.commit()
+    return [RowResponse.model_validate(linha) for linha in linhas]
 
 
 @router.patch(

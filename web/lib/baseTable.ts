@@ -210,9 +210,13 @@ export function interpretarDigitado(coluna: BaseColumn, bruto: string): Interpre
     case "number": {
       // "1.234,5" e "1234.5" e "1234,5" -- o ponto só é decimal se não houver
       // vírgula.
+      // ⚠️ E "1.200" sem vírgula é MIL E DUZENTOS (Spec 057, 15/10 -- colar
+      // do Excel trazia 1,2): ponto com grupos de 3 dígitos é milhar.
       const normal = texto.includes(",")
         ? texto.replace(/\./g, "").replace(",", ".")
-        : texto;
+        : /^-?\d{1,3}(\.\d{3})+$/.test(texto)
+          ? texto.replace(/\./g, "")
+          : texto;
       const n = Number(normal);
       return Number.isFinite(n) && /^-?[\d.]+$/.test(normal)
         ? { ok: true, valor: n }

@@ -51,7 +51,7 @@ import { useAvisar } from "@/components/Toasts";
 import EditorDeEscolha, { type Escolha } from "@/components/bases/EditorDeEscolha";
 import EditorDeLinksDaCelula from "@/components/bases/EditorDeLinksDaCelula";
 import CabecalhoDaColuna from "@/components/bases/CabecalhoDaColuna";
-import { NovaColuna, criarOpcao } from "@/components/bases/MenuDaColuna";
+import { NovaColuna, criarOpcao, criarOpcoes } from "@/components/bases/MenuDaColuna";
 import {
   LARGURA_MAX,
   LARGURA_MIN,
@@ -71,6 +71,8 @@ import { useGravarCelula } from "@/components/bases/useGravarCelula";
 import {
   ApiError,
   createBaseRow,
+  createBaseRows,
+  updateBaseCells,
   deleteBaseRow,
   updateBaseColumn,
   type BaseCellValue,
@@ -79,6 +81,14 @@ import {
   type BaseRow,
 } from "@/lib/api";
 import { acompanhar } from "@/lib/gravacoesDaBase";
+import {
+  colarGrade,
+  copiarFaixa,
+  dentro,
+  faixaEntre,
+  lerGrade,
+  rotulosQueFaltam,
+} from "@/lib/baseClipboard";
 import {
   corDaOpcao,
   corDaPessoa,
@@ -145,6 +155,10 @@ export default function TabelaDaBase({
   const esquerdas = deslocamentos(larguras);
   const congeladas = quantasCongeladas(colunas, config);
   const [ativa, setAtiva] = useState<Posicao>({ linha: 0, coluna: 0 });
+  // Spec 057 (15/10): a FAIXA selecionada, da âncora até a célula ativa
+  // (Shift+setas, Shift+clique). Sem âncora, a "faixa" é só a célula ativa.
+  const [ancora, setAncora] = useState<Posicao | null>(null);
+  const faixa = ancora ? faixaEntre(ancora, ativa) : null;
   const [editando, setEditando] = useState<{ rascunho: string } | null>(null);
   const [escolhendo, setEscolhendo] = useState(false);
   const celulas = useRef(new Map<string, HTMLTableCellElement>());
@@ -173,6 +187,109 @@ export default function TabelaDaBase({
 
   const gravar = useGravarCelula(base.id, onLinhas);
 
+  // --- copiar e colar várias células (Spec 057, 15/10) ---
+  const nomeDePessoa = (id: string) => pessoas.todos.get(id)?.name ?? "";
+  const pessoaPorNome = (nome: string): string | null => {
+    const k = nome.trim().toLowerCase();
+    for (const id of pessoas.daArvore) {
+      const p = pessoas.todos.get(id);
+      if (p?.is_active && p.name.trim().toLowerCase() === k) return id;
+    }
+    return null;
+  };
+
+  /** Grava várias células numa ida só -- UMA ação do diário (um Ctrl+Z). */
+  async function gravarVarias(
+    cells: { row_id: string; column_id: string; value: BaseCellValue | null }[],
+    aviso: string
+  ) {
+    if (cells.length === 0) {
+      avisar(aviso);
+      return;
+    }
+    try {
+      const novas = await acompanhar(base.id, updateBaseCells(base.id, cells));
+      const porId = new Map(novas.map((r) => [r.id, r]));
+      onLinhas((ls) =>
+        ls.map((l) => {
+          const n = porId.get(l.id);
+          return n && n.version >= l.version ? n : l;
+        })
+      );
+      avisar(aviso);
+    } catch (e) {
+      avisar((e as ApiError).message || "Não consegui colar.");
+    }
+  }
+
+  function copiar() {
+    const f = faixa ?? faixaEntre(ativa, ativa);
+    const texto = copiarFaixa(linhas, colunas, f, nomeDePessoa);
+    void navigator.clipboard?.writeText(texto).then(
+      () => {
+        const n = (f.linha1 - f.linha0 + 1) * (f.coluna1 - f.coluna0 + 1);
+        if (n > 1) avisar(`${n} células copiadas.`);
+      },
+      () => avisar("Não consegui copiar.")
+    );
+  }
+
+  async function colar(texto: string) {
+    if (!base.can_update_row) return;
+    const inicio = faixa ? { linha: faixa.linha0, coluna: faixa.coluna0 } : ativa;
+    const grade = lerGrade(texto);
+    // 1. As opções que a coluna ainda não tem viram opções (como na
+    //    importação) -- se a pessoa pode mexer na coluna.
+    let cols = colunas;
+    const faltam = rotulosQueFaltam(grade, colunas, inicio.coluna);
+    if (faltam.size > 0 && base.can_update_column) {
+      try {
+        for (const [colId, rotulos] of faltam) {
+          const atual = cols.find((c) => c.id === colId);
+          if (!atual) continue;
+          const nova = await criarOpcoes(base.id, atual, rotulos);
+          cols = cols.map((c) => (c.id === nova.id ? nova : c));
+          onBase((b) => ({ ...b, columns: b.columns.map((x) => (x.id === nova.id ? nova : x)) }));
+        }
+      } catch (e) {
+        avisar((e as ApiError).message || "Não consegui criar as opções.");
+        return;
+      }
+    }
+    // 2. Converte e grava: as células das linhas que existem, e as linhas que
+    //    faltam (cada grupo numa ação só do diário).
+    const r = colarGrade(grade, linhas, cols, inicio, pessoaPorNome);
+    const partes = [`${r.cells.length} ${r.cells.length === 1 ? "célula colada" : "células coladas"}`];
+    if (r.novas.length) partes.push(`${r.novas.length} ${r.novas.length === 1 ? "linha criada" : "linhas criadas"}`);
+    if (r.invalidas) partes.push(`${r.invalidas} com valor que não serve à coluna`);
+    if (r.fora) partes.push(`${r.fora} além da última coluna`);
+    if (r.novas.length > 0 && base.can_create_row) {
+      try {
+        const criadas = await acompanhar(base.id, createBaseRows(base.id, r.novas));
+        for (const c of criadas) onLinhaCriada?.(c.id);
+        onLinhas((ls) => [...ls, ...criadas]);
+      } catch (e) {
+        avisar((e as ApiError).message || "Não consegui criar as linhas.");
+        return;
+      }
+    }
+    await gravarVarias(r.cells, `${partes.join("; ")}.`);
+  }
+
+  function limparFaixa() {
+    if (!faixa || !base.can_update_row) return false;
+    const cells = [];
+    for (let i = faixa.linha0; i <= faixa.linha1; i++) {
+      for (let j = faixa.coluna0; j <= faixa.coluna1; j++) {
+        const l = linhas[i];
+        const c = colunas[j];
+        if (l && c && l.values[c.id] !== undefined) cells.push({ row_id: l.id, column_id: c.id, value: null });
+      }
+    }
+    void gravarVarias(cells, `${cells.length} células limpas. Ctrl+Z desfaz.`);
+    return true;
+  }
+
   // ⚠️ A posição vem EXPLÍCITA no clique: ali o `setAtiva` acabou de ser
   // pedido, e `linhaAtiva`/`colunaAtiva` ainda são os da célula anterior.
   function comecarEdicao(inicial?: string, em: Posicao = ativa) {
@@ -197,8 +314,16 @@ export default function TabelaDaBase({
   // Clicar noutra célula já fecha o editor antes, no `mousedown` (o blur do
   // campo, ou o "clique fora" do painel de escolha). Se o texto não passou na
   // validação, o editor fica onde está, e o clique não o arrasta junto.
-  function cliqueNaCelula(em: Posicao, tipo: BaseColumn["type"]) {
+  function cliqueNaCelula(em: Posicao, tipo: BaseColumn["type"], shift = false) {
     if (editando || escolhendo) return;
+    // Spec 057: Shift+clique estende a faixa, e NÃO abre a edição.
+    if (shift) {
+      setAncora((a) => a ?? ativa);
+      setAtiva(em);
+      celulas.current.get(chave(em))?.focus();
+      return;
+    }
+    setAncora(null);
     setAtiva(em);
     // A caixa de seleção já se marca pelo próprio `onChange`: alternar aqui
     // também a desmarcaria de volta.
@@ -293,8 +418,24 @@ export default function TabelaDaBase({
     if (editando || escolhendo) return;
     if (!(e.target as HTMLElement).dataset?.celula) return;
     const setas = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"] as const;
+    const mod = e.ctrlKey || e.metaKey;
+    if (mod && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "c") {
+      // Spec 057: a faixa (ou a célula) no formato do Excel. A colagem vem
+      // pelo evento `paste` da tabela, que traz o texto sem pedir permissão.
+      e.preventDefault();
+      copiar();
+      return;
+    }
+    if (e.key === "Escape" && ancora) {
+      e.preventDefault();
+      setAncora(null);
+      return;
+    }
     if ((setas as readonly string[]).includes(e.key)) {
       e.preventDefault();
+      // Shift+seta estende a faixa; seta sozinha a desfaz.
+      if (e.shiftKey) setAncora((a) => a ?? ativa);
+      else setAncora(null);
       setAtiva((p) => mover(p, e.key as (typeof setas)[number], linhas.length, colunas.length));
     } else if (e.key === "Tab") {
       const destino = mover(ativa, e.shiftKey ? "ShiftTab" : "Tab", linhas.length, colunas.length);
@@ -310,6 +451,7 @@ export default function TabelaDaBase({
       comecarEdicao();
     } else if ((e.key === "Delete" || e.key === "Backspace") && base.can_update_row) {
       e.preventDefault();
+      if (limparFaixa()) return;
       if (linhaAtiva && colunaAtiva) gravar(linhaAtiva, colunaAtiva, null);
     } else if (
       e.key.length === 1 &&
@@ -383,6 +525,26 @@ export default function TabelaDaBase({
           className="table-fixed border-separate border-spacing-0 text-base"
           style={{ width: larguras.reduce((a, b) => a + b, 0) + 2 * LARGURA_DE_ACAO }}
           onKeyDown={teclaNaGrade}
+          onPaste={(e) => {
+            const texto = e.clipboardData.getData("text/plain");
+            if (!texto) return;
+            // ⚠️ UM CLIQUE JÁ ABRE A EDIÇÃO (fatia J), e o Ctrl+V ia para dentro
+            // do campo -- a planilha inteira numa célula só (15/10). Texto de
+            // VÁRIAS células (TAB ou quebra) sempre vai para a grade: a edição
+            // é cancelada e a colagem começa nesta célula. Um valor só, com o
+            // campo aberto, continua colando no campo.
+            const varias = /[\t\n]/.test(texto.replace(/\r?\n$/, ""));
+            if (editando || escolhendo) {
+              if (!varias) return;
+              confirmado.current = true;
+              setEditando(null);
+              setEscolhendo(false);
+            } else if (!(e.target as HTMLElement).dataset?.celula) {
+              return;
+            }
+            e.preventDefault();
+            void colar(texto);
+          }}
         >
           <thead>
             <tr>
@@ -532,10 +694,13 @@ export default function TabelaDaBase({
                       tabIndex={ehAtiva ? 0 : -1}
                       aria-label={`${coluna.name}, linha ${li + 1}`}
                       aria-readonly={!base.can_update_row}
-                      onClick={() => cliqueNaCelula({ linha: li, coluna: ci }, coluna.type)}
+                      onClick={(e) => cliqueNaCelula({ linha: li, coluna: ci }, coluna.type, e.shiftKey)}
                       style={ci < congeladas ? { left: esquerdas[ci] } : undefined}
                       className={`h-9 overflow-hidden border-b border-r border-border px-2 align-middle ${
-                        ci < congeladas ? "sticky z-[1] bg-canvas" : ""
+                        // A coluna presa tem fundo próprio; na faixa, o da faixa.
+                        ci < congeladas
+                          ? `sticky z-[1] ${dentro(faixa, { linha: li, coluna: ci }) ? "" : "bg-canvas"}`
+                          : ""
                       } ${ci === 0 ? "border-l font-medium" : ""} ${
                         base.can_update_row ? "cursor-text" : ""
                       } ${
@@ -545,6 +710,8 @@ export default function TabelaDaBase({
                         // ou editando; fino com o mouse em cima. A célula ativa
                         // continua existindo para o teclado (o tabIndex 0), só
                         // não aparece quando a tabela não está em uso.
+                        dentro(faixa, { linha: li, coluna: ci }) ? "bg-accent-soft" : ""
+                      } ${
                         ehAtiva && (editando || escolhendo)
                           ? "outline outline-2 -outline-offset-2 outline-accent"
                           : "hover:outline hover:outline-1 hover:-outline-offset-1 hover:outline-accent focus:outline focus:outline-2 focus:-outline-offset-2 focus:outline-accent"

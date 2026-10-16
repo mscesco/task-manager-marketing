@@ -43,6 +43,8 @@ import {
   type BaseRow,
   type BaseRowList,
 } from "@/lib/api";
+import BaseFileMenu from "@/components/bases/BaseFileMenu";
+import ImportWizard from "@/components/bases/ImportWizard";
 import { esperarGravacoes, geracao, haGravando } from "@/lib/gravacoesDaBase";
 import { avisoDeLinhas, nomeConfere } from "@/lib/baseTable";
 import {
@@ -68,6 +70,7 @@ export default function PaginaDaBase({ id }: { id: string }) {
   const [pessoas, setPessoas] = useState<Pessoas>({ todos: new Map(), daArvore: new Set() });
   const [erro, setErro] = useState<string | null>(null);
   const ocupadoRef = useRef(false);
+  const [importando, setImportando] = useState(false);
   useDocumentTitle(base?.name);
 
   // --- a visão (fatia F) ---
@@ -345,8 +348,29 @@ export default function PaginaDaBase({ id }: { id: string }) {
             >
               <Redo2 size={14} aria-hidden="true" />
             </button>
+            <span className="mx-1 h-5 w-px bg-border" aria-hidden="true" />
+            {/* Spec 057: exportar O QUE A VISÃO MOSTRA, e importar. */}
+            <BaseFileMenu
+              baseId={base.id}
+              rowIds={daVisao.map((l) => l.id)}
+              columnIds={colunasVisiveis(base.columns, config).map((c) => c.id)}
+              canImport={base.can_create_row}
+              onImport={() => setImportando(true)}
+            />
           </div>
         </div>
+      )}
+
+      {importando && (
+        <ImportWizard
+          target={{ kind: "existing", baseId: base.id, columns: base.columns }}
+          onClose={() => setImportando(false)}
+          onDone={(r) => {
+            setImportando(false);
+            avisar(`${r.imported} linhas importadas. Ctrl+Z desfaz a importação inteira.`);
+            recarregar();
+          }}
+        />
       )}
 
       {visao?.layout === "board" ? (

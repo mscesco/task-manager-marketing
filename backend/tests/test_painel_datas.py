@@ -55,3 +55,13 @@ def test_colunas_do_grafico_por_dia_ate_14_e_por_semana_acima() -> None:
     # quinta a domingo, a semana inteira, e segunda a quinta
     assert unidade == "week"
     assert [(c.start.day, c.end.day) for c in colunas] == [(15, 18), (19, 25), (26, 29)]
+
+
+def test_numero_no_formato_brasileiro() -> None:
+    from app.modules.bases.domain.spreadsheet import to_number
+
+    assert to_number("1.200") == 1200  # milhar, e nao 1,2
+    assert to_number("1.234,5") == 1234.5
+    assert to_number("300,5") == 300.5
+    assert to_number("1234.5") == 1234.5
+    assert to_number("R$ 10,00") == 10

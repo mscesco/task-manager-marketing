@@ -39,6 +39,7 @@ vi.mock("@/lib/api", async (importOriginal) => {
     listTeamsAll: vi.fn(),
     restoreBase: vi.fn(),
     updateBaseCells: vi.fn(),
+    createBaseRows: vi.fn(),
     updateBaseColumn: vi.fn(),
     createBaseRow: vi.fn(),
     deleteBaseRow: vi.fn(),
@@ -479,3 +480,51 @@ describe("TabelaDaBase", () => {
     expect(screen.queryByRole("separator")).toBeNull();
   });
 });
+
+describe("copiar e colar (Spec 057)", () => {
+  it("colar várias células grava numa ida só", async () => {
+    vi.mocked(api.updateBaseCells).mockResolvedValue([]);
+    render(<Montada base={detalhe()} linhas={[linha("r1", {}), linha("r2", {})]} />);
+    const celula = screen.getByRole("gridcell", { name: "Título, linha 1" });
+    const dados = { getData: () => "Um\t5\nDois\t7" } as unknown as DataTransfer;
+    fireEvent.paste(celula, { clipboardData: dados });
+    await waitFor(() => expect(api.updateBaseCells).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(api.updateBaseCells).mock.calls[0][1]).toEqual([
+      { row_id: "r1", column_id: "c-titulo", value: "Um" },
+      { row_id: "r1", column_id: "c-num", value: 5 },
+      { row_id: "r2", column_id: "c-titulo", value: "Dois" },
+      { row_id: "r2", column_id: "c-num", value: 7 },
+    ]);
+  });
+
+  it("Shift+clique seleciona a faixa sem abrir a edição", () => {
+    render(<Montada base={detalhe()} linhas={[linha("r1", {}), linha("r2", {})]} />);
+    fireEvent.keyDown(screen.getByRole("gridcell", { name: "Título, linha 1" }), { key: "ArrowRight" });
+    fireEvent.click(screen.getByRole("gridcell", { name: "Alcance, linha 2" }), { shiftKey: true });
+    expect(screen.queryByRole("textbox")).toBeNull();
+    // a âncora (Alcance, linha 1) até a clicada (Alcance, linha 2)
+    expect(screen.getByRole("gridcell", { name: "Alcance, linha 1" }).className).toContain("bg-accent-soft");
+    expect(screen.getByRole("gridcell", { name: "Alcance, linha 2" }).className).toContain("bg-accent-soft");
+    expect(screen.getByRole("gridcell", { name: "Título, linha 2" }).className).not.toContain("bg-accent-soft");
+  });
+
+  it("⚠️ colar com a célula em edição vai para a grade, e cria as linhas que faltam", async () => {
+    vi.mocked(api.updateBaseCells).mockResolvedValue([]);
+    vi.mocked(api.createBaseRows).mockResolvedValue([linha("r9", { "c-titulo": "Dois" })]);
+    render(<Montada base={detalhe()} linhas={[linha("r1", {})]} />);
+    // um clique abre a edição (fatia J)
+    fireEvent.click(screen.getByRole("gridcell", { name: "Título, linha 1" }));
+    const campo = screen.getByRole("textbox");
+    const dados = { getData: () => "Um\nDois" } as unknown as DataTransfer;
+    fireEvent.paste(campo, { clipboardData: dados });
+    await waitFor(() => expect(api.createBaseRows).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(api.createBaseRows).mock.calls[0][1]).toEqual([{ "c-titulo": "Dois" }]);
+    await waitFor(() =>
+      expect(vi.mocked(api.updateBaseCells).mock.calls[0][1]).toEqual([
+        { row_id: "r1", column_id: "c-titulo", value: "Um" },
+      ])
+    );
+    expect(screen.queryByRole("textbox")).toBeNull();
+  });
+});
+
