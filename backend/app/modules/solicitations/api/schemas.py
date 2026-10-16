@@ -2,8 +2,10 @@
 
 O request PUBLICO tem limites defensivos rigorosos: e a unica
 porta da API alcancavel sem credencial. Limites (60 respostas,
-label 200, valor 5000) comportam com folga a maior ramificacao
-do formulario e cortam payload abusivo.
+label 300, valor 5000) comportam com folga a maior ramificacao
+do formulario e cortam payload abusivo. O teto do ENVIO INTEIRO e do
+servico (`MAX_CARACTERES_POR_ENVIO`): por campo, 60 x 60 x 5000 ainda
+dava ~19 MB por POST.
 """
 
 from __future__ import annotations
@@ -17,7 +19,10 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field
 class AnswerItem(BaseModel):
     """Par pergunta/resposta exatamente como exibido no formulario."""
 
-    label: str = Field(min_length=1, max_length=200)
+    # ⚠️ O MESMO TETO DO ENUNCIADO DA PERGUNTA (`form_schemas.QuestionCreateRequest`,
+    # 300): o label E o enunciado. Com 200, pergunta de 201 a 300 caracteres
+    # travava o envio inteiro com 422, numa rota sem login para avisar alguem.
+    label: str = Field(min_length=1, max_length=300)
     value: str = Field(max_length=5000)
 
 
