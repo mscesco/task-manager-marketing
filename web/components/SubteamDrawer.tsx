@@ -49,6 +49,7 @@ import type { Permission } from "@/lib/permissions.generated";
 import {
   confirmacaoValida,
   descreveConteudo,
+  estaVazio,
   podeApagarTime,
   podeEditar,
 } from "@/lib/gestaoTimes";
@@ -499,6 +500,8 @@ function DeleteTeam({
         projetos: previa.projetos,
         membros: previa.membros,
         filhos: previa.filhos,
+        quadros: previa.quadros,
+        formularios: previa.formularios,
       })
     : "";
   const temFilhos = (previa?.filhos ?? 0) > 0;
@@ -557,11 +560,19 @@ function DeleteTeam({
             try {
               // ⚠️ Vazio -> DELETE simples; com conteúdo -> esvazia e remove
               // numa transação. É a mesma escolha de rota da tela `/times`.
+              // ⚠️ "Vazio" conta a lixeira, os quadros e os formulários
+              // (auditoria de 16/10): eles seguram o time no banco, e o DELETE
+              // simples era recusado mesmo com a tela dizendo "vazio".
               const vazio =
                 previa !== null &&
-                previa.tarefas_vivas === 0 &&
-                previa.projetos === 0 &&
-                previa.membros === 0;
+                estaVazio({
+                  tarefas: previa.tarefas_vivas + previa.tarefas_na_lixeira,
+                  projetos: previa.projetos,
+                  membros: previa.membros,
+                  filhos: previa.filhos,
+                  quadros: previa.quadros,
+                  formularios: previa.formularios,
+                });
               if (vazio) {
                 await deleteTeam(team.id);
               } else {

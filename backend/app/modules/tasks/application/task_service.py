@@ -554,6 +554,11 @@ class TaskService:
         parent: Task | None = None
         if command.parent_task_id is not None:
             parent = await self._repo.get_by_id_or_raise(command.parent_task_id)
+            # ⚠️ O PAI TEM DE SER VISIVEL (auditoria de 16/10). `get_by_id`
+            # filtra so o workspace: com `team_id` explicito no corpo, um
+            # supervisor do SEO pendurava subtarefa numa tarefa do Design que
+            # ele nao enxerga. 404, como qualquer tarefa fora da lente.
+            await self._assert_visible_via_project(parent)
             if parent.project_id != command.project_id:
                 raise ValidationError(
                     "Task pai esta em projeto diferente do informado.",
@@ -616,15 +621,7 @@ class TaskService:
             # ⚠️ AQUI HAVIA UM `_assert_visible_to_current_user` e um
             # `not project.is_personal`, os dois do projeto pessoal. Sairam em
             # 10/09 com ele.
-            if project.team_id is not None:
-                allowed = {project.team_id} | team_scope.descendants(
-                    project.team_id, tenant.team_tree
-                )
-                if team_id not in allowed:
-                    raise ValidationError(
-                        "Time da task fora da subarvore do time do projeto.",
-                        details={"field": "team_id"},
-                    )
+            self._assert_time_no_projeto(project, team_id)
 
         # ⚠️ ADR 0031: NENHUMA tarefa nasce sem responsavel. A regra vivia so
         # no modal (`criacaoTarefa.motivoNaoCria`) -- ou seja, valia pra quem
@@ -689,6 +686,10 @@ class TaskService:
         # resultado e pai num quadro e filha em outro -- sem erro, sem tela.
         # Consistente com a ADR 0024, que ja manda a subtarefa herdar o time.
         if parent is not None:
+            # ⚠️ A MESMA TRAVA DO QUADRO PEDIDO, abaixo (auditoria de 16/10): a
+            # filha herda o quadro do pai, e com `team_id` explicito de outro
+            # time ela nascia num quadro avulso que nao e do time dela.
+            await self._assert_time_do_quadro(board_id=parent.board_id, team_id=team_id)
             task.board_id = parent.board_id
             # ⚠️ O STATUS VOLTA DA COLUNA (ADR 0042 D2), e nao e sempre o
             # pedido. O quadro do pai pode ser um quadro de quatro colunas, que
@@ -751,10 +752,17 @@ class TaskService:
                     "Nao consegui identificar a area do time desta tarefa.",
                     details={"field": "team_id", "team_id": str(team_id)},
                 )
-            task.board_id, task.column_id = await BoardRepository(
-                self._session
-            ).default_board_and_column_for_status(
+            quadros = BoardRepository(self._session)
+            task.board_id, _ = await quadros.default_board_and_column_for_status(
                 command.status, area_id=area_id
+            )
+            # ⚠️ MESMA REGRA DOS OUTROS DOIS RAMOS (ADR 0042 D2), que faltava
+            # aqui (auditoria de 16/10): o status VOLTA da coluna. Numa area
+            # nova (quatro colunas), `status=BLOCKED` caia em "Em andamento" e
+            # ficava `BLOCKED` -- coluna e status discordando, e a invariante 3
+            # do `invariantes.sql` saindo de zero.
+            task.column_id, task.status = await quadros.coluna_para_status(
+                board_id=task.board_id, status=command.status
             )
 
         self._repo.add(task)
@@ -1158,6 +1166,17 @@ class TaskService:
                     legacy_status=ponte, semantic=semantica
                 ),
             )
+        elif command.status is not None and command.status != task.status:
+            # ⚠️ O STATUS EFETIVO ANTES DO DIFF (auditoria de 16/10), como no
+            # caminho por coluna acima. Num quadro de quatro colunas, pedir
+            # `BLOCKED` cai em "Em andamento" e o status volta `IN_PROGRESS`
+            # (ADR 0042 D2) -- e o historico gravava `-> BLOCKED`, que nao
+            # aconteceu, sem registrar a troca de coluna, que aconteceu.
+            coluna, efetivo = await BoardRepository(self._session).coluna_para_status(
+                board_id=task.board_id, status=command.status
+            )
+            coluna_alvo = coluna
+            command = replace(command, status=efetivo)
 
         # Calcula entries ANTES de mutar (snapshot do estado antigo).
         entries = self._diff_for_update(task, command)
@@ -1209,6 +1228,10 @@ class TaskService:
             await self._assert_time_do_quadro(
                 board_id=task.board_id, team_id=command.team_id
             )
+            # E o time novo fica na subarvore do projeto (regra 8, 16/10).
+            if task.project_id is not None:
+                projeto = await self._projects.get_by_id_or_raise(task.project_id)
+                self._assert_time_no_projeto(projeto, command.team_id)
             trocou_de_time = task.team_id != command.team_id
             task.team_id = command.team_id
 
@@ -1406,12 +1429,18 @@ class TaskService:
         # `get_by_id_or_raise` ja escopa por tenant, e nao ha mais projeto que
         # um membro do workspace nao possa ver.
         if new_project_id is not None and new_project_id != task.project_id:
-            await self._projects.get_by_id_or_raise(new_project_id)
+            novo_projeto = await self._projects.get_by_id_or_raise(new_project_id)
+            # A regra 8 do `create` (auditoria de 16/10): sem ela, a tarefa do
+            # SEO ia para um projeto do Design -- quem VE passava a ser o
+            # Design (pelo projeto) e quem EDITA continuava o SEO (pelo time).
+            self._assert_time_no_projeto(novo_projeto, task.team_id)
 
         # Pai novo (se houver): existe, mesmo workspace, mesmo projeto final.
         new_parent: Task | None = None
         if new_parent_task_id is not None:
             new_parent = await self._repo.get_by_id_or_raise(new_parent_task_id)
+            # O pai novo tem de ser visivel -- mesma trava do `create`.
+            await self._assert_visible_via_project(new_parent)
             if new_parent.project_id != new_project_id:
                 raise ValidationError(
                     "Task pai esta em projeto diferente do informado.",
@@ -1632,6 +1661,13 @@ class TaskService:
         mudou_raiz = task.is_archived
         if mudou_raiz:
             task.is_archived = False
+            # ⚠️ O RELOGIO DA VARREDURA RECOMECA (auditoria de 16/10). Com o
+            # `terminal_since` velho, a tarefa concluida desarquivada voltava
+            # a ser elegivel e a varredura da madrugada a arquivava de novo --
+            # "desarquivar" se desfazia sozinho em ate um dia. A subarvore
+            # recomeca junto (`set_archived_subtree`).
+            if task.terminal_since is not None:
+                task.terminal_since = datetime.now(UTC)
 
         # ⚠️ Mesma decisao do `archive`: a cascata roda mesmo com a raiz ja
         # ativa. E o caminho de conserto para a arvore que ficou meio
@@ -1807,6 +1843,28 @@ class TaskService:
     # ----------------------------------------------------
     # Helpers privados
     # ----------------------------------------------------
+    @staticmethod
+    def _assert_time_no_projeto(project: Project, team_id: uuid.UUID) -> None:
+        """O time da tarefa fica na subarvore do time do projeto (regra 8).
+
+        ⚠️ VALE NOS TRES CAMINHOS -- criar, mover de projeto e trocar o time
+        (auditoria de 16/10). So o `create` conferia: a Spec 022 adiou o resto
+        ("Achado #1") ate existir um segundo time-pai, e com varias areas
+        (Spec 046) esse dia ja passou. Fora da regra, quem VE a tarefa (pelo
+        projeto) e quem a EDITA (pelo time) deixam de ser as mesmas pessoas.
+        """
+        if project.team_id is None:
+            return
+        tenant = require_tenant()
+        allowed = {project.team_id} | team_scope.descendants(
+            project.team_id, tenant.team_tree
+        )
+        if team_id not in allowed:
+            raise ValidationError(
+                "Time da task fora da subarvore do time do projeto.",
+                details={"field": "team_id"},
+            )
+
     async def _assert_visible_via_project(self, task: Task) -> None:
         """Bloqueia leitura/escrita em task que o usuario nao enxerga.
 

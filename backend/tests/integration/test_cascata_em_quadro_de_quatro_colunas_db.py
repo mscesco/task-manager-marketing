@@ -264,3 +264,67 @@ async def test_duplicacao_em_quadro_de_quatro_colunas_deriva_o_status(
         db, board_id=quadro4.id, nome="Em Andamento"
     )
     assert filha.board_id == quadro4.id
+
+# ------------------------------------------------------------ auditoria de 16/10
+
+
+async def test_tarefa_de_topo_em_area_de_quatro_colunas_tem_o_status_da_coluna(db) -> None:
+    """O asterisco (*) do levantamento acima virou realidade: area criada pela
+    tela nasce com QUATRO colunas (desde 10/09), e o ramo sem pai e sem quadro
+    gravava o status PEDIDO. `BLOCKED` caia em "Em Andamento" e ficava
+    `BLOCKED` -- coluna e status discordando (invariante 3)."""
+    import uuid
+
+    from app.db.models import Team
+    from app.modules.tasks.application.board_service import BoardService
+
+    ws = await f.make_workspace(db)
+    area = uuid.uuid4()
+    db.add(Team(id=area, workspace_id=ws, parent_team_id=None, name="Area nova", slug="area-nova"))
+    await db.flush()
+    await BoardService(db).create_default_board(workspace_id=ws, team_id=area, colunas=COLUNAS_BASE)
+    user = await f.make_user(db, workspace_id=ws)
+    await f.add_member(db, workspace_id=ws, user_id=user, team_id=area, role="ADMIN")
+    ctx = dict(
+        workspace_id=ws, user_id=user, memberships=(mship(area, "ADMIN"),), team_tree=(node(area),)
+    )
+
+    with acting_as(**ctx):
+        t = await TaskService(db).create(
+            CreateTaskCommand(
+                title="bloqueada", team_id=area, assignee_ids=[user], status=TaskStatus.BLOCKED
+            )
+        )
+    nome_da_coluna = (
+        await db.execute(select(BoardColumn.name).where(BoardColumn.id == t.column_id))
+    ).scalar_one()
+    assert (nome_da_coluna, t.status) == ("Em Andamento", TaskStatus.IN_PROGRESS)
+
+
+async def test_patch_por_status_grava_no_historico_o_que_aconteceu(db) -> None:
+    """O diff rodava ANTES de a coluna devolver o status efetivo: pedir
+    `BLOCKED` num quadro de quatro gravava `-> BLOCKED` (que nao aconteceu) e
+    nao registrava a troca de coluna (que aconteceu)."""
+    from app.db.models import TaskHistory
+
+    ctx, ws, raiz, user, quadro4 = await _mundo(db)
+    backlog = await _coluna_por_nome(db, board_id=quadro4.id, nome="Backlog")
+    andamento = await _coluna_por_nome(db, board_id=quadro4.id, nome="Em Andamento")
+    t = await f.make_task(db, workspace_id=ws, created_by=user, team_id=raiz, title="t")
+    t.board_id, t.column_id, t.status = quadro4.id, backlog, TaskStatus.BACKLOG
+    await db.flush()
+
+    with acting_as(**ctx):
+        await TaskService(db).update(
+            task_id=t.id,
+            command=UpdateTaskCommand(status=TaskStatus.BLOCKED, fields_set=frozenset({"status"})),
+        )
+    await db.flush()
+
+    linhas = (
+        await db.execute(select(TaskHistory).where(TaskHistory.task_id == t.id))
+    ).scalars().all()
+    por_campo = {h.field_name: h.new_value for h in linhas if h.field_name}
+    assert "BLOCKED" not in str(por_campo)
+    assert "IN_PROGRESS" in str(por_campo["status"])
+    assert str(andamento) in str(por_campo["column_id"])

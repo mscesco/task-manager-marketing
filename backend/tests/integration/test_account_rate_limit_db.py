@@ -21,8 +21,8 @@ from app.core.deps import get_db_session, get_uow
 from app.core.rate_limit import (
     account_key,
     account_login_limiter,
+    change_password_limiter,
     login_limiter,
-    refresh_limiter,
 )
 from app.db.models import User, Workspace
 from app.db.unit_of_work import UnitOfWork
@@ -45,11 +45,13 @@ _TETO_DE_TESTE = 3
 def _baldes_limpos():
     teto_real = account_login_limiter._max
     account_login_limiter._max = _TETO_DE_TESTE
-    for lim in (account_login_limiter, login_limiter, refresh_limiter):
+    change_password_limiter._max = _TETO_DE_TESTE
+    for lim in (account_login_limiter, login_limiter, change_password_limiter):
         lim._hits.clear()
     yield
     account_login_limiter._max = teto_real
-    for lim in (account_login_limiter, login_limiter, refresh_limiter):
+    change_password_limiter._max = teto_real
+    for lim in (account_login_limiter, login_limiter, change_password_limiter):
         lim._hits.clear()
 
 
@@ -263,3 +265,64 @@ async def test_balde_por_ip_continua_valendo(db) -> None:
             assert barrada.status_code == 429
     finally:
         login_limiter._max = login_limiter._max_backup
+
+# ------------------------------------------------------------ 16/10, a auditoria
+
+
+async def test_login_nao_diferencia_maiusculas_no_email(db) -> None:
+    """O cadastro grava em minusculas e o celular capitaliza a 1a letra:
+    `Fulano@...` com a senha certa recebia 401 e enchia o freio da conta."""
+    ws, user = await _pessoa(db)
+    await db.commit()
+    async with _client(db) as c:
+        r = await c.post("/api/v1/auth/login", json=_corpo(ws, user.email.upper(), _SENHA))
+    assert r.status_code == 200
+
+
+async def test_refresh_nao_tem_freio_por_ip(db) -> None:
+    """A instituicao sai toda por UM IP: o 11o refresh do minuto levava 429,
+    e o front deslogava quem tinha sessao valida."""
+    ws, user = await _pessoa(db)
+    await db.commit()
+    async with _client(db) as c:
+        par = (await c.post("/api/v1/auth/login", json=_corpo(ws, user.email, _SENHA))).json()
+        for _ in range(login_limiter._max + 5):
+            r = await c.post(
+                "/api/v1/auth/refresh",
+                json={"refresh_token": par["refresh_token"]},
+                headers={"X-Forwarded-For": "198.51.100.7"},
+            )
+            assert r.status_code == 200
+            par = r.json()
+
+
+async def test_troca_de_senha_freia_a_senha_atual_errada(db) -> None:
+    """Quem roubasse a sessao chutava a senha atual sem limite."""
+    ws, user = await _pessoa(db)
+    await db.commit()
+    # Lidos ANTES: cada 401 desfaz a transacao e expira os objetos.
+    email, slug = user.email, ws.slug
+    async with _client(db) as c:
+        par = (await c.post("/api/v1/auth/login", json=_corpo(ws, email, _SENHA))).json()
+        auth = {"Authorization": f"Bearer {par['access_token']}"}
+        nova = {"new_password": "outra-senha-boa-1"}
+        for _ in range(_TETO_DE_TESTE):
+            r = await c.post(
+                "/api/v1/auth/change-password",
+                json={"current_password": _ERRADA, **nova},
+                headers=auth,
+            )
+            assert r.status_code == 401
+        # A proxima e barrada -- mesmo com a senha atual CERTA.
+        barrada = await c.post(
+            "/api/v1/auth/change-password",
+            json={"current_password": _SENHA, **nova},
+            headers=auth,
+        )
+        assert barrada.status_code == 429
+        # Balde proprio: errar a senha atual nao tranca o login.
+        r = await c.post(
+            "/api/v1/auth/login",
+            json={"email": email, "password": _SENHA, "workspace_slug": slug},
+        )
+        assert r.status_code == 200

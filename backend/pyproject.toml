@@ -18,10 +18,9 @@ dependencies = [
     "pydantic-settings==2.7.0",
     # --- Auth ---
     "pyjwt==2.15.0",
-    "passlib[bcrypt]==1.7.4",
-    # bcrypt fixado em 4.0.1: versoes 4.1+ removeram o atributo
-    # __about__ que o passlib 1.7.4 ainda inspeciona, gerando
-    # um warning ruidoso a cada hash. 4.0.1 e a ultima compativel.
+    # bcrypt DIRETO desde 16/10 (o passlib saiu: sem manutencao desde 2020).
+    # Continua em 4.0.1 so para esta troca nao mexer em duas coisas de uma vez;
+    # subir de versao agora e um PR comum (a senha ja e cortada em 72 bytes).
     "bcrypt==4.0.1",
     # --- Logging estruturado ---
     "structlog==24.4.0",

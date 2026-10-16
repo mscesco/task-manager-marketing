@@ -71,7 +71,11 @@ def _error_body(
             "message": message,
             "details": details or {},
         },
-        "request_id": request.headers.get("X-Request-ID"),
+        # ⚠️ O ID QUE O MIDDLEWARE GEROU, e nao o cabecalho da REQUISICAO
+        # (auditoria de 16/10). O front nunca manda `X-Request-ID`, entao o
+        # corpo saia sempre `null` -- e no 500 nem o cabecalho de resposta
+        # existia: nada ligava o erro da tela a linha do log.
+        "request_id": getattr(request.state, "request_id", None),
     }
 
 
@@ -127,13 +131,18 @@ async def _unhandled_error_handler(
     para o log (com request_id), a resposta e generica.
     """
     logger.exception("unhandled_exception")
+    corpo = _error_body(
+        code="internal_error",
+        message="Erro interno inesperado.",
+        request=request,
+    )
+    # O 500 nao passa de volta pelo middleware (ele relanca): o cabecalho
+    # sai daqui.
+    headers = {"X-Request-ID": corpo["request_id"]} if corpo["request_id"] else None
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        content=_error_body(
-            code="internal_error",
-            message="Erro interno inesperado.",
-            request=request,
-        ),
+        content=corpo,
+        headers=headers,
     )
 
 

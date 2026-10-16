@@ -1,9 +1,9 @@
 """Rate limit em memoria para as rotas publicas de auth.
 
 ESCOPO (consultoria / spec rate-limit):
-    Freio por IP em /auth/login e /auth/refresh -- anti brute-force de senha
-    e martelo de refresh. NAO e rate-limit global da app; so as duas rotas
-    sem dono (publicas) que sao o alvo real.
+    Freio por IP em /auth/login -- anti brute-force de senha. NAO e
+    rate-limit global da app. (O /auth/refresh tinha o seu ate 16/10 -- ver
+    o comentario no lugar onde ele morava, la embaixo.)
 
 ESTRATEGIA:
     - Janela DESLIZANTE (sliding window): guarda os timestamps das tentativas
@@ -206,10 +206,11 @@ login_limiter = SlidingWindowRateLimiter(
     max_hits=settings.auth_rate_limit_max,
     window_seconds=settings.auth_rate_limit_window_seconds,
 )
-refresh_limiter = SlidingWindowRateLimiter(
-    max_hits=settings.auth_rate_limit_max,
-    window_seconds=settings.auth_rate_limit_window_seconds,
-)
+# ⚠️ O `/auth/refresh` NAO TEM FREIO POR IP DESDE 16/10 (auditoria). A
+# instituicao sai toda pelo MESMO IP (NAT), e cada aba renova a cada 15 min:
+# na chegada da manha, o 11o refresh do minuto levava 429 e o front deslogava
+# gente com sessao valida. E nao ha o que adivinhar ali -- a rota exige um
+# token ASSINADO, sem bcrypt nem senha.
 # Formulario publico de solicitacoes (FazAe): balde proprio, janela mais
 # longa -- envio de formulario e raro por natureza, ao contrario de login.
 public_form_limiter = SlidingWindowRateLimiter(
@@ -234,6 +235,12 @@ client_error_limiter = SlidingWindowRateLimiter(
 # que so um humano destrava seria pior -- viraria negacao de servico
 # permanente contra qualquer pessoa de e-mail conhecido.
 account_login_limiter = SlidingWindowRateLimiter(
+    max_hits=settings.account_login_limit_max,
+    window_seconds=settings.account_login_limit_window_seconds,
+)
+# Auditoria de 16/10: o mesmo freio, na SENHA ATUAL da troca de senha (chave =
+# id da pessoa). Balde proprio: errar a senha atual nao tranca o login.
+change_password_limiter = SlidingWindowRateLimiter(
     max_hits=settings.account_login_limit_max,
     window_seconds=settings.account_login_limit_window_seconds,
 )

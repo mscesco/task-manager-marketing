@@ -460,3 +460,19 @@ def test_envio_de_UM_item_nao_mostra_a_posicao() -> None:
         batch_total = 1
 
     assert "(1/1)" not in briefing(Sozinho())
+
+async def test_so_marcar_nao_apaga_o_vinculo_que_ja_existe(db) -> None:
+    """Auditoria de 16/10: "Já criei -- só marcar" sem `task_id` gravava `None`
+    por cima. Com a tela velha numa aba e "Criar tarefa" clicado na outra, a
+    tarefa criada perdia o vínculo e virava só texto na fila."""
+    ws, pedido, raiz, ctx = await _cena(db)
+    with acting_as(**ctx):
+        async with UnitOfWork(db) as uow:
+            _, tarefa = await SolicitationService(db).criar_tarefa(
+                uow, CriarTarefaCommand(solicitation_id=pedido.id)
+            )
+        async with UnitOfWork(db) as uow:
+            marcado = await SolicitationService(db).mark_task(
+                uow, MarkTaskCommand(solicitation_id=pedido.id, created=True, task_ref="feito")
+            )
+    assert marcado.task_id == tarefa.id

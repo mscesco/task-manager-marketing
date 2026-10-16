@@ -876,6 +876,11 @@ class TaskRepository(BaseRepository[Task]):
         ⚠️ UPDATE em massa NAO avisa o ORM. Objeto ja carregado na identity
         map continua com o valor ANTIGO em memoria -- quem testar isto tem de
         ler do BANCO (`db.refresh(...)`) ou vai medir memoria, nao banco.
+
+        ⚠️ DESARQUIVAR RECOMECA O `terminal_since` (auditoria de 16/10). Sem
+        isto as filhas concluidas voltavam com a data velha e a varredura da
+        madrugada (`list_stale_terminal`) as arquivava de novo, uma a uma --
+        "reativar" o projeto zerava o checklist no dia seguinte.
         """
         tenant = require_tenant()
         result = await self.session.execute(
@@ -883,6 +888,10 @@ class TaskRepository(BaseRepository[Task]):
                 """
                 UPDATE task
                 SET is_archived = :alvo,
+                    terminal_since = CASE
+                        WHEN :alvo OR terminal_since IS NULL THEN terminal_since
+                        ELSE NOW()
+                    END,
                     updated_at = NOW()
                 WHERE path <@ CAST(:task_path AS ltree)
                   AND id <> :task_id
@@ -960,11 +969,18 @@ class TaskRepository(BaseRepository[Task]):
         is_archived = false` -- e ai com medicao, nao por precaucao.
         """
         cutoff = now - timedelta(days=days)
-        stmt = self._base_select().where(
-            Task.is_archived.is_(False),
-            Task.status.in_(tuple(TERMINAL_STATUSES)),
-            Task.terminal_since.is_not(None),
-            Task.terminal_since < cutoff,
+        stmt = (
+            self._base_select()
+            .where(
+                Task.is_archived.is_(False),
+                Task.status.in_(tuple(TERMINAL_STATUSES)),
+                Task.terminal_since.is_not(None),
+                Task.terminal_since < cutoff,
+            )
+            # ⚠️ Duas varreduras ao mesmo tempo (o n8n refazendo o POST)
+            # arquivavam as mesmas tarefas e gravavam o historico em dobro
+            # (auditoria de 16/10). A segunda pula o que a primeira travou.
+            .with_for_update(skip_locked=True)
         )
         result = await self.session.execute(stmt)
         return list(result.scalars().all())

@@ -28,6 +28,7 @@ import {
 } from "@/lib/api";
 import {
   campoVisivel,
+  MAX_ITENS_POR_ENVIO,
   MAX_REPETICOES,
   novaRepeticao,
   rotuloDaRepeticao,
@@ -202,7 +203,7 @@ export default function FormularioSolicitacao({
 
   const camposVisiveis = useCallback(
     (cat: Categoria, chave: string = cat.slug) =>
-      cat.campos.filter((c) => campoVisivel(c, valores[chave] ?? {})),
+      cat.campos.filter((c) => campoVisivel(c, valores[chave] ?? {}, cat.campos)),
     [valores]
   );
 
@@ -213,9 +214,12 @@ export default function FormularioSolicitacao({
     return r && r.length > 0 ? r : [cat.slug];
   }
 
+  const podeRepetir = (cat: Categoria) =>
+    chavesDe(cat).length < MAX_REPETICOES && totalDeItens < MAX_ITENS_POR_ENVIO;
+
   function adicionarRepeticao(cat: Categoria) {
     const atuais = chavesDe(cat);
-    if (atuais.length >= MAX_REPETICOES) return;
+    if (!podeRepetir(cat)) return;
     setErro(null);
     setRepeticoes((p) => ({ ...p, [cat.slug]: [...atuais, novaRepeticao(cat.slug, atuais)] }));
   }
@@ -714,7 +718,7 @@ export default function FormularioSolicitacao({
                   ))}
                 </fieldset>
               ))}
-              {chavesDe(categoriaAtual).length < MAX_REPETICOES ? (
+              {podeRepetir(categoriaAtual) ? (
                 <button
                   type="button"
                   className="btn"
@@ -725,7 +729,10 @@ export default function FormularioSolicitacao({
                 </button>
               ) : (
                 <p className="muted" style={{ margin: 0, fontSize: 12 }}>
-                  Limite de {MAX_REPETICOES} por envio. Para mais, envie outra solicitação.
+                  {totalDeItens >= MAX_ITENS_POR_ENVIO
+                    ? `Limite de ${MAX_ITENS_POR_ENVIO} demandas por envio.`
+                    : `Limite de ${MAX_REPETICOES} por envio.`}{" "}
+                  Para mais, envie outra solicitação.
                 </p>
               )}
             </>

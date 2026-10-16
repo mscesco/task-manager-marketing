@@ -199,7 +199,11 @@ export function useAnchoredPanel<T extends HTMLElement>(
       }
     }
     function onEsc(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
+      if (e.key !== "Escape") return;
+      // Marca o Esc como usado: o modal de baixo (detalhe, criar tarefa) só
+      // fecha com Esc que ninguém de dentro usou.
+      e.preventDefault();
+      onClose();
     }
     // ⚠️⚠️ ROLAGEM DE DENTRO DO PAINEL NAO FECHA. O ouvinte e de captura na
     // janela, e por isso recebe a rolagem de QUALQUER elemento -- inclusive a

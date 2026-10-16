@@ -19,6 +19,10 @@ export type ContagensTime = {
   projetos: number;
   membros: number;
   filhos: number;
+  // Auditoria de 16/10: também seguram o time. Sem eles, a tela via tudo
+  // zerado, oferecia "remover" e o servidor dava 500.
+  quadros?: number;
+  formularios?: number;
 };
 
 export type TimeGerenciavel = ContagensTime & {
@@ -37,7 +41,7 @@ export function ehRaiz(time: { parent_team_id: string | null }): boolean {
 
 /** Zero em tudo. Unico estado em que o backend aceita o DELETE (D3-A). */
 export function estaVazio(c: ContagensTime): boolean {
-  return !(c.tarefas || c.projetos || c.membros || c.filhos);
+  return !(c.tarefas || c.projetos || c.membros || c.filhos || c.quadros || c.formularios);
 }
 
 /**
@@ -104,6 +108,8 @@ export function resumoDoEsvaziamento(p: {
   tarefas_na_lixeira: number;
   projetos: number;
   membros: number;
+  quadros?: number;
+  formularios?: number;
 }): string[] {
   const linhas: string[] = [];
   if (p.tarefas_vivas > 0) {
@@ -128,6 +134,16 @@ export function resumoDoEsvaziamento(p: {
   if (p.membros > 0) {
     linhas.push(
       `${p.membros} ${p.membros === 1 ? "membro irá" : "membros irão"} para o time principal`
+    );
+  }
+  const quadros = p.quadros ?? 0;
+  if (quadros > 0) {
+    linhas.push(`${quadros} ${quadros === 1 ? "quadro irá" : "quadros irão"} para o time principal`);
+  }
+  const formularios = p.formularios ?? 0;
+  if (formularios > 0) {
+    linhas.push(
+      `${formularios} ${formularios === 1 ? "formulário irá" : "formulários irão"} para o time principal`
     );
   }
   return linhas;
@@ -167,6 +183,8 @@ export function descreveConteudo(c: ContagensTime): string {
     [c.projetos, "projeto", "projetos"],
     [c.membros, "membro", "membros"],
     [c.filhos, "subtime", "subtimes"],
+    [c.quadros ?? 0, "quadro", "quadros"],
+    [c.formularios ?? 0, "formulário", "formulários"],
   ];
   return partes
     .filter(([n]) => n > 0)
