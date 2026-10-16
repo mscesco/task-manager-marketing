@@ -3759,12 +3759,13 @@ export async function getDashboard(
 }
 
 // ---------------------------------------------------------------
-// ARQUIVOS (15/10): baixar uma planilha, enviar uma planilha
+// ARQUIVOS (15/10): baixar uma planilha
 // ---------------------------------------------------------------
-// ⚠️ NÃO PASSAM POR `api()`: ela é JSON nos dois sentidos. Aqui o corpo é
-// binário (download) ou `FormData` (upload, sem `Content-Type` -- o navegador
-// põe o boundary). O resto é o mesmo: o token, UM refresh no 401, e o erro no
-// envelope `{ error: { code, message, details } }`.
+// ⚠️ NÃO PASSA POR `api()`: ela é JSON nos dois sentidos, e aqui a resposta é
+// binária. O resto é o mesmo: o token, UM refresh no 401, e o erro no
+// envelope `{ error: { code, message, details } }`. (O envio de planilha vai
+// em base64 no JSON -- ver `runImport` --, e o `uploadForm` daqui saiu em
+// 16/10 sem nunca ter tido chamador.)
 
 async function _rawRequest(path: string, init: RequestInit, isRetry = false): Promise<Response> {
   const headers = new Headers(init.headers);
@@ -3816,12 +3817,6 @@ export async function downloadFile(
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
-}
-
-/** Envia um formulário com arquivo e lê a resposta JSON. */
-export async function uploadForm<T>(path: string, form: FormData): Promise<T> {
-  const res = await _rawRequest(path, { method: "POST", body: form });
-  return (await res.json()) as T;
 }
 
 /** O painel em planilha, com os mesmos filtros da tela (Spec 058, 15/10). */
