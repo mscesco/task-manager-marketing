@@ -388,3 +388,56 @@ async def test_patch_para_time_dentro_da_lente_continua_passando(db) -> None:
         await db.execute(select(Task.team_id).where(Task.id == t.id))
     ).scalar_one_or_none()
     assert time_no_banco == m["raiz"]
+
+# ------------------------------------------------ auditoria de 16/10
+
+
+async def test_subtarefa_com_team_id_explicito_nao_pendura_em_pai_invisivel(db) -> None:
+    """O `team_id` explicito (SEO, na lente dela) e o responsavel do SEO
+    passavam pelas duas travas acima, e o pai do Design nunca era conferido:
+    201, com a filha pendurada numa tarefa que ela nao enxerga."""
+    m = await _setup(db)
+    pai = await f.make_task(
+        db, workspace_id=m["ws"], created_by=m["adm"], team_id=m["design"], title="Pai no Design"
+    )
+    async with _client(db, m["ctx_sup"]) as cli:
+        r = await cli.post(
+            "/api/v1/tasks",
+            json={
+                "title": "Filha",
+                "parent_task_id": str(pai.id),
+                "team_id": str(m["seo"]),
+                "assignee_ids": [str(m["sup"])],
+            },
+        )
+    assert r.status_code == 404, r.text
+    filhas = (await db.execute(select(Task).where(Task.parent_task_id == pai.id))).all()
+    assert filhas == []
+
+
+async def test_mover_para_projeto_de_outro_time_e_recusado(db) -> None:
+    """A regra 8 (time na subarvore do projeto) so valia no `create`: a tarefa
+    do SEO ia para o projeto do Design, e quem ve deixava de ser quem edita."""
+    m = await _setup(db)
+    projeto = await f.make_project(
+        db, workspace_id=m["ws"], created_by=m["adm"], team_id=m["design"]
+    )
+    tarefa = await f.make_task(db, workspace_id=m["ws"], created_by=m["adm"], team_id=m["seo"])
+    async with _client(db, m["ctx_adm"]) as cli:
+        r = await cli.post(f"/api/v1/tasks/{tarefa.id}/move", json={"project_id": str(projeto)})
+    assert r.status_code == 422, r.text
+    assert r.json()["error"]["details"]["field"] == "team_id"
+
+
+async def test_trocar_o_time_para_fora_do_projeto_e_recusado(db) -> None:
+    m = await _setup(db)
+    projeto = await f.make_project(
+        db, workspace_id=m["ws"], created_by=m["adm"], team_id=m["design"]
+    )
+    tarefa = await f.make_task(
+        db, workspace_id=m["ws"], created_by=m["adm"], team_id=m["design"], project_id=projeto
+    )
+    async with _client(db, m["ctx_adm"]) as cli:
+        r = await cli.patch(f"/api/v1/tasks/{tarefa.id}", json={"team_id": str(m["seo"])})
+    assert r.status_code == 422, r.text
+    assert r.json()["error"]["details"]["field"] == "team_id"

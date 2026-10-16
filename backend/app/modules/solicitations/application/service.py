@@ -74,6 +74,12 @@ from app.shared.pagination import PageParams
 MAX_ITENS_POR_LOTE = 60
 #: Spec 059 (15/10): quantas vezes a mesma secao repetivel entra num envio.
 MAX_REPETICOES_POR_SECAO = 20
+#: Texto do envio inteiro (resumos + perguntas + respostas). ⚠️ OS TETOS POR
+#: CAMPO NAO BASTAVAM: 60 itens x 60 respostas x 5000 caracteres e ~19 MB por
+#: POST, e a rota nao tem login -- um script enchia o disco e a fila carregava
+#: megabytes por pagina. 200 mil e ~40 respostas longas cheias; um envio de
+#: verdade fica bem abaixo.
+MAX_CARACTERES_POR_ENVIO = 200_000
 
 
 @dataclass(frozen=True, slots=True)
@@ -228,6 +234,15 @@ class SolicitationService:
         if len(command.items) > MAX_ITENS_POR_LOTE:
             raise ValidationError(
                 f"Envie no maximo {MAX_ITENS_POR_LOTE} solicitacoes de uma vez."
+            )
+        caracteres = sum(
+            len(item.summary) + sum(len(a["label"]) + len(a["value"]) for a in item.answers)
+            for item in command.items
+        )
+        if caracteres > MAX_CARACTERES_POR_ENVIO:
+            raise ValidationError(
+                "O envio ficou grande demais. Encurte as respostas mais longas "
+                "ou divida em mais de um envio."
             )
 
         # ⚠️ A VALIDACAO DA CATEGORIA TEM DOIS CAMINHOS (Spec 043, fatia B),

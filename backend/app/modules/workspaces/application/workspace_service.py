@@ -75,6 +75,9 @@ class PreviaRemocao:
     # ou quando o destino nao pode ser resolvido.
     destino_nome: str | None = None
     destino_team_id: uuid.UUID | None = None
+    #: Auditoria de 16/10: tambem sobem para a area (incluindo os apagados).
+    quadros: int = 0
+    formularios: int = 0
 
 
 def _descreve(c: TeamContagens) -> str:
@@ -88,6 +91,8 @@ def _descreve(c: TeamContagens) -> str:
         (c.projetos, "projeto", "projetos"),
         (c.membros, "membro", "membros"),
         (c.filhos, "subtime", "subtimes"),
+        (c.quadros, "quadro", "quadros"),
+        (c.formularios, "formulário", "formulários"),
     ]
     return ", ".join(
         f"{n} {sing if n == 1 else plur}" for n, sing, plur in partes if n
@@ -459,6 +464,8 @@ class TeamService:
                     "projetos": contagens.projetos,
                     "membros": contagens.membros,
                     "filhos": contagens.filhos,
+                    "quadros": contagens.quadros,
+                    "formularios": contagens.formularios,
                 },
             )
 
@@ -648,6 +655,8 @@ class TeamService:
             filhos=c.filhos,
             destino_team_id=destino_id,
             destino_nome=destino_nome,
+            quadros=c.quadros,
+            formularios=c.formularios,
         )
 
     async def esvaziar_e_remover(self, *, team_id: uuid.UUID) -> PreviaRemocao:
@@ -745,12 +754,45 @@ class TeamService:
                     user_id=tenant.user_id,
                     entries=[build_archived_entry()],
                 )
+                # ⚠️ A SUBARVORE VAI JUNTO, como no `TaskService.archive`. Uma
+                # filha de OUTRO time (o PATCH troca o time) ficava viva
+                # embaixo da mae arquivada -- o estado da consulta 11 do
+                # `invariantes.sql`, que nenhuma tela mostra.
+                await historico.set_archived_subtree(task=tarefa, archived=True)
             vivas += 1
 
         # --- 2. projetos ---
         projetos = await self._repo.projetos_do_time(team_id)
         for projeto in projetos:
             projeto.team_id = raiz_id
+
+        # --- 2b. quadros e formularios (auditoria de 16/10) ---
+        # Seguram o time por FK RESTRICT; sem mover, o DELETE do fim estourava
+        # e a transacao inteira voltava -- o subtime nunca saia. Sobem para a
+        # area como o resto do conteudo.
+        #
+        # ⚠️ O NOME DO QUADRO E UNICO POR TIME (entre os vivos): se a area ja
+        # tem um com o mesmo nome, o que sobe leva o nome do subtime junto.
+        # E "padrao" e um por time: o que sobe deixa de ser o padrao.
+        ocupados = await self._repo.nomes_de_quadros_vivos(raiz_id)
+        quadros = await self._repo.quadros_do_time(team_id)
+        for quadro in quadros:
+            if quadro.deleted_at is None and quadro.name in ocupados:
+                novo = f"{quadro.name} ({team.name})"[:255]
+                if novo in ocupados:
+                    raise BusinessRuleError(
+                        f"A área já tem um quadro chamado '{novo}'. "
+                        "Renomeie um dos dois antes de excluir o subtime.",
+                        details={"team_id": str(team_id), "quadro": quadro.name},
+                    )
+                quadro.name = novo
+            if quadro.deleted_at is None:
+                ocupados.add(quadro.name)
+            quadro.is_default = False
+            quadro.team_id = raiz_id
+        formularios = await self._repo.formularios_do_time(team_id)
+        for formulario in formularios:
+            formulario.team_id = raiz_id
 
         # --- 3. membros ---
         vinculos = await self._repo.vinculos_do_time(team_id)

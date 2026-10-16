@@ -18,22 +18,38 @@ from sqlalchemy import func, select
 from sqlalchemy.sql import Select
 
 from app.core.tenant import require_tenant
-from app.db.models import Project, Task, Team, UserTeam
+from app.db.models import Board, Project, SolicitationForm, Task, Team, UserTeam
 from app.db.repository import BaseRepository
 
 
 @dataclass(frozen=True)
 class TeamContagens:
-    """O que aponta para um time. Zero em tudo => removivel (Spec 029)."""
+    """O que aponta para um time. Zero em tudo => removivel (Spec 029).
+
+    ⚠️ QUADROS E FORMULARIOS DESDE 16/10 (auditoria). Os dois seguram o time
+    por FK RESTRICT (`board_team`, `solicitation_form_team`) e nao eram
+    contados: a tela mostrava tudo zerado, oferecia "remover", e o `DELETE`
+    estourava com 500 -- nos dois caminhos, porque o esvaziar tambem nao os
+    movia. Contam com a lixeira, pelo mesmo motivo das tarefas.
+    """
 
     tarefas: int
     projetos: int
     membros: int
     filhos: int
+    quadros: int = 0
+    formularios: int = 0
 
     @property
     def vazio(self) -> bool:
-        return not (self.tarefas or self.projetos or self.membros or self.filhos)
+        return not (
+            self.tarefas
+            or self.projetos
+            or self.membros
+            or self.filhos
+            or self.quadros
+            or self.formularios
+        )
 
 
 class TeamRepository(BaseRepository[Team]):
@@ -159,8 +175,10 @@ class TeamRepository(BaseRepository[Team]):
             _conta(Project.team_id, Project.workspace_id).scalar_subquery(),
             _conta(UserTeam.team_id, UserTeam.workspace_id).scalar_subquery(),
             _conta(Team.parent_team_id, Team.workspace_id).scalar_subquery(),
+            _conta(Board.team_id, Board.workspace_id).scalar_subquery(),
+            _conta(SolicitationForm.team_id, SolicitationForm.workspace_id).scalar_subquery(),
         )
-        tarefas, projetos, membros, filhos = (
+        tarefas, projetos, membros, filhos, quadros, formularios = (
             await self.session.execute(stmt)
         ).one()
         return TeamContagens(
@@ -168,6 +186,8 @@ class TeamRepository(BaseRepository[Team]):
             projetos=projetos,
             membros=membros,
             filhos=filhos,
+            quadros=quadros,
+            formularios=formularios,
         )
 
     async def remove(self, team: Team) -> None:
@@ -207,6 +227,8 @@ class TeamRepository(BaseRepository[Team]):
         p_sub = _sub(Project.team_id, Project.workspace_id)
         u_sub = _sub(UserTeam.team_id, UserTeam.workspace_id)
         f_sub = _sub(Team.parent_team_id, Team.workspace_id)
+        q_sub = _sub(Board.team_id, Board.workspace_id)
+        s_sub = _sub(SolicitationForm.team_id, SolicitationForm.workspace_id)
 
         stmt = (
             select(
@@ -215,19 +237,28 @@ class TeamRepository(BaseRepository[Team]):
                 func.coalesce(p_sub.c.n, 0),
                 func.coalesce(u_sub.c.n, 0),
                 func.coalesce(f_sub.c.n, 0),
+                func.coalesce(q_sub.c.n, 0),
+                func.coalesce(s_sub.c.n, 0),
             )
             .where(Team.workspace_id == ws)
             .outerjoin(t_sub, t_sub.c.tid == Team.id)
             .outerjoin(p_sub, p_sub.c.tid == Team.id)
             .outerjoin(u_sub, u_sub.c.tid == Team.id)
             .outerjoin(f_sub, f_sub.c.tid == Team.id)
+            .outerjoin(q_sub, q_sub.c.tid == Team.id)
+            .outerjoin(s_sub, s_sub.c.tid == Team.id)
         )
         linhas = (await self.session.execute(stmt)).all()
         return {
             tid: TeamContagens(
-                tarefas=tarefas, projetos=projetos, membros=membros, filhos=filhos
+                tarefas=tarefas,
+                projetos=projetos,
+                membros=membros,
+                filhos=filhos,
+                quadros=quadros,
+                formularios=formularios,
             )
-            for tid, tarefas, projetos, membros, filhos in linhas
+            for tid, tarefas, projetos, membros, filhos, quadros, formularios in linhas
         }
 
     # ----------------------------------------------------
@@ -304,6 +335,33 @@ class TeamRepository(BaseRepository[Team]):
         stmt = select(Project).where(
             Project.workspace_id == tenant.workspace_id,
             Project.team_id == team_id,
+        )
+        return list((await self.session.execute(stmt)).scalars().all())
+
+    async def quadros_do_time(self, team_id: uuid.UUID) -> list[Board]:
+        """Quadros do time, incluindo os apagados -- seguram `board_team`."""
+        tenant = require_tenant()
+        stmt = select(Board).where(
+            Board.workspace_id == tenant.workspace_id, Board.team_id == team_id
+        )
+        return list((await self.session.execute(stmt)).scalars().all())
+
+    async def nomes_de_quadros_vivos(self, team_id: uuid.UUID) -> set[str]:
+        """Os nomes ocupados no time (`board_nome_unico_por_time` ignora apagados)."""
+        tenant = require_tenant()
+        stmt = select(Board.name).where(
+            Board.workspace_id == tenant.workspace_id,
+            Board.team_id == team_id,
+            Board.deleted_at.is_(None),
+        )
+        return set((await self.session.execute(stmt)).scalars().all())
+
+    async def formularios_do_time(self, team_id: uuid.UUID) -> list[SolicitationForm]:
+        """Formularios do time, incluindo os apagados -- seguram a FK do time."""
+        tenant = require_tenant()
+        stmt = select(SolicitationForm).where(
+            SolicitationForm.workspace_id == tenant.workspace_id,
+            SolicitationForm.team_id == team_id,
         )
         return list((await self.session.execute(stmt)).scalars().all())
 
