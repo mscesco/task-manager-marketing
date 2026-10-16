@@ -35,11 +35,15 @@ class UserRepository(BaseRepository[User]):
         o conflito com mensagem de dominio clara. Considera
         tambem usuarios soft-deleted: o e-mail continua
         reservado por causa da constraint UNIQUE.
+
+        ⚠️ SEM DIFERENCIAR MAIUSCULAS, como o login (`AuthService.login`). A
+        UNIQUE do banco diferencia: sem isto, `camila@` entrava ao lado de um
+        `Camila@` antigo, e o login -- que compara em minusculas -- acharia dois.
         """
         stmt = (
             self._base_select(include_deleted=True)
             .with_only_columns(User.id)
-            .where(User.email == email)
+            .where(func.lower(User.email) == email.strip().lower())
             .limit(1)
         )
         result = await self.session.execute(stmt)
