@@ -722,7 +722,12 @@ function PainelDoEnvio({
       transition={MOLA}
       className="flex min-h-0 flex-1 flex-col overflow-y-auto"
     >
-      <div className="border-b border-border p-5 pb-4">
+      {/* ⚠️⚠️ TUDO AQUI DENTRO É `shrink-0`: o painel rola por dentro, e numa
+          coluna flex quem pode encolher encolhe. A barra das abas tem
+          `overflow-x-auto`, e caixa com overflow pode encolher até ZERO --
+          com um envio de seis demandas e respostas longas as abas sumiam, e
+          só a primeira demanda ficava alcançável (visto em produção, 16/10). */}
+      <div className="shrink-0 border-b border-border p-5 pb-4">
         {/* ⚠️ O `md:hidden` FICA NUM DIV EM VOLTA, e não no botão: o `display`
             do `.btn` vence a classe utilitária, e o "Voltar" aparecia no
             computador (visto na tela, 15/10). */}
@@ -790,7 +795,7 @@ function PainelDoEnvio({
       </div>
 
       {envio.items.length > 1 && (
-        <div role="tablist" aria-label="Demandas do envio" className="flex gap-1 overflow-x-auto border-b border-border px-4">
+        <div role="tablist" aria-label="Demandas do envio" className="flex shrink-0 gap-1 overflow-x-auto border-b border-border px-4">
           {envio.items.map((item) => {
             const cat = rotuloDaCategoria(item);
             const sel = item.id === atual.id;
@@ -827,7 +832,7 @@ function PainelDoEnvio({
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={MOLA}
-        className="p-5"
+        className="shrink-0 p-5"
       >
         <SecaoDemanda
           key={`${atual.id}-${rejeitarItem === atual.id}`}
