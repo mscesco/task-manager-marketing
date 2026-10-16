@@ -43,6 +43,8 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
     ) -> Response:
         # Reaproveita o request_id do cliente se vier; senao gera.
         request_id = request.headers.get(_REQUEST_ID_HEADER) or str(uuid.uuid4())
+        # Os handlers de erro leem daqui (`api/errors._error_body`).
+        request.state.request_id = request_id
 
         # Limpa e popula o contexto de logging desta requisicao.
         structlog.contextvars.clear_contextvars()

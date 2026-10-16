@@ -42,6 +42,7 @@ ali (outro stack). Um domínio só: o Traefik roteia `/api/*` → backend e o re
    cp backend/.env.prod.example backend/.env.prod
    # DATABASE_URL: taskmanager:SENHA@<container-do-postgres>:5432/task_manager
    # JWT_SECRET_KEY: openssl rand -hex 32
+   # SYSTEM_API_TOKEN: openssl rand -hex 32 (o mesmo no n8n; vazio = rotas de sistema desligadas)
    ```
 
 ---
