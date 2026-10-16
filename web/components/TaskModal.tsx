@@ -58,6 +58,7 @@ import {
   valoresIniciaisDaCopia,
 } from "@/lib/duplicacaoTarefa";
 import { useFecharAoClicarFora, useFecharAoClicarForaDe } from "@/lib/useCliqueFora";
+import { useWarnBeforeUnload } from "@/lib/useWarnBeforeUnload";
 import { timeDaTarefaNova, type NewTaskTeam } from "@/lib/escopoTarefa";
 import Avatar from "@/components/Avatar";
 import { nomeCurto } from "@/lib/people";
@@ -150,6 +151,13 @@ export default function TaskModal({
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
+  // O texto com que o modal ABRIU (vazio, ou o da copia na duplicacao): "sujo"
+  // e diferir dele. Sem isto a duplicacao, que ja abre preenchida, pediria
+  // confirmacao a quem nao digitou nada.
+  const textoInicial = useRef({ title: "", description: "" });
+  const sujo =
+    title.trim() !== textoInicial.current.title.trim() ||
+    description.trim() !== textoInicial.current.description.trim();
   // Spec 052, fatia B: links com nome. Na criacao nao ha lista salva: o que
   // estiver no editor e o que vai.
   const [rascunhoLinks, setRascunhoLinks] = useState<RascunhoLink[]>([]);
@@ -295,6 +303,7 @@ export default function TaskModal({
   // Limpa sempre que abre (o modo duplicar pre-preenche depois, ver abaixo).
   useEffect(() => {
     if (!open) return;
+    textoInicial.current = { title: "", description: "" };
     setTitle("");
     setDescription("");
     setPriority("MEDIUM");
@@ -370,7 +379,8 @@ export default function TaskModal({
   useEffect(() => {
     if (!open) return;
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape" && !saving) fechar();
+      // `defaultPrevented`: Esc já usado por um menu de dentro (ver TaskDetail).
+      if (e.key === "Escape" && !saving && !e.defaultPrevented) fechar();
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -529,6 +539,7 @@ export default function TaskModal({
       permitidosNaCopia,
       []
     );
+    textoInicial.current = { title: v.title, description: v.description };
     setTitle(v.title);
     setDescription(v.description);
     setPriority(v.priority);
@@ -629,11 +640,15 @@ export default function TaskModal({
   // ⚠️ ANTES do `if (!open)`: hook nao pode ficar depois de return
   // condicional. `fechar` e declaracao de funcao, entao ja esta no escopo.
   const scrimProps = useFecharAoClicarFora(fechar);
+  useWarnBeforeUnload(open && sujo && !saving);
 
   if (!open) return null;
 
   function fechar() {
     if (saving) return;
+    // ⚠️ Esc ou clique no fundo descartavam titulo e descricao sem perguntar
+    // (auditoria de 16/10; `web/AGENTS.md` §4).
+    if (sujo && !window.confirm("Descartar a tarefa que você estava criando?")) return;
     onClose();
   }
 
