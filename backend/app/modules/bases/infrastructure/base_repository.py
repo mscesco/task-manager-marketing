@@ -102,12 +102,17 @@ class BaseTableRepository(BaseRepository[BaseTable]):
 class BaseColumnRepository(BaseRepository[BaseColumn]):
     model = BaseColumn
 
-    async def list_for(self, base_id: uuid.UUID) -> list[BaseColumn]:
+    async def list_for(self, base_id: uuid.UUID, *, lock: bool = False) -> list[BaseColumn]:
+        """As colunas vivas, na ordem. `lock`: trava todas ate o commit -- a
+        troca da coluna principal (Spec 061) le "qual e o titulo" e muda dois
+        tipos, e duas trocas ao mesmo tempo deixariam a base com DOIS titulos."""
         stmt = (
             self._base_select()
             .where(BaseColumn.base_id == base_id)
             .order_by(BaseColumn.position, BaseColumn.id)
         )
+        if lock:
+            stmt = stmt.with_for_update().execution_options(populate_existing=True)
         return list((await self.session.execute(stmt)).scalars().all())
 
     async def get_in(self, base_id: uuid.UUID, column_id: uuid.UUID) -> BaseColumn | None:

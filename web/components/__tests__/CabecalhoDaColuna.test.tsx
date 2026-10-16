@@ -20,6 +20,7 @@ vi.mock("@/lib/api", async (importOriginal) => {
     updateBaseColumn: vi.fn(),
     createBaseColumn: vi.fn(),
     duplicateBaseColumn: vi.fn(),
+    makeBaseColumnTitle: vi.fn(),
     deleteBaseColumn: vi.fn(),
   };
 });
@@ -32,6 +33,9 @@ afterEach(() => {
 
 const DATA: BaseColumn = {
   id: "c-data", name: "Data", type: "date", options: [], position: 2, width: null, version: 1,
+};
+const PAUTA: BaseColumn = {
+  id: "c-pauta", name: "Pauta", type: "text", options: [], position: 3, width: null, version: 1,
 };
 const TITULO: BaseColumn = {
   id: "c-t", name: "Título", type: "title", options: [], position: 1, width: null, version: 1,
@@ -115,6 +119,31 @@ describe("CabecalhoDaColuna", () => {
     await waitFor(() =>
       expect(api.createBaseColumn).toHaveBeenLastCalledWith("b1", { name: "Nova coluna", type: "text", position: 3 })
     );
+  });
+
+  it("Spec 061: uma coluna de TEXTO vira a principal, e a página recarrega", async () => {
+    vi.mocked(api.makeBaseColumnTitle).mockResolvedValue({ ...PAUTA, type: "title" });
+    const p = montar(PAUTA);
+    fireEvent.click(screen.getByRole("button", { name: "Coluna Pauta, Texto" }));
+    fireEvent.click(screen.getByRole("button", { name: "Usar como coluna principal" }));
+    await waitFor(() => expect(api.makeBaseColumnTitle).toHaveBeenCalledWith("b1", "c-pauta"));
+    await waitFor(() => expect(p.onCriou).toHaveBeenCalled());
+  });
+
+  it("⚠️ só texto vira principal (decisão dela): nem data, nem o próprio título", () => {
+    montar(DATA);
+    fireEvent.click(screen.getByRole("button", { name: "Coluna Data, Data" }));
+    expect(screen.queryByRole("button", { name: "Usar como coluna principal" })).toBeNull();
+    cleanup();
+    montar(TITULO);
+    fireEvent.click(screen.getByRole("button", { name: /Coluna Título/ }));
+    expect(screen.queryByRole("button", { name: "Usar como coluna principal" })).toBeNull();
+  });
+
+  it("sem can_update_column, texto também não vira principal", () => {
+    montar(PAUTA, { podeEditar: false });
+    fireEvent.click(screen.getByRole("button", { name: "Coluna Pauta, Texto" }));
+    expect(screen.queryByRole("button", { name: "Usar como coluna principal" })).toBeNull();
   });
 
   it("a coluna de título não oferece inserir à esquerda, duplicar, ocultar nem excluir", () => {
