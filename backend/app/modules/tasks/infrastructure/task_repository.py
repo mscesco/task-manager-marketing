@@ -969,11 +969,18 @@ class TaskRepository(BaseRepository[Task]):
         is_archived = false` -- e ai com medicao, nao por precaucao.
         """
         cutoff = now - timedelta(days=days)
-        stmt = self._base_select().where(
-            Task.is_archived.is_(False),
-            Task.status.in_(tuple(TERMINAL_STATUSES)),
-            Task.terminal_since.is_not(None),
-            Task.terminal_since < cutoff,
+        stmt = (
+            self._base_select()
+            .where(
+                Task.is_archived.is_(False),
+                Task.status.in_(tuple(TERMINAL_STATUSES)),
+                Task.terminal_since.is_not(None),
+                Task.terminal_since < cutoff,
+            )
+            # ⚠️ Duas varreduras ao mesmo tempo (o n8n refazendo o POST)
+            # arquivavam as mesmas tarefas e gravavam o historico em dobro
+            # (auditoria de 16/10). A segunda pula o que a primeira travou.
+            .with_for_update(skip_locked=True)
         )
         result = await self.session.execute(stmt)
         return list(result.scalars().all())

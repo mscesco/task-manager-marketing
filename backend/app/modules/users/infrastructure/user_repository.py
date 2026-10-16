@@ -78,14 +78,21 @@ class UserRepository(BaseRepository[User]):
         ainda existe durante a transicao da fatia B, mas quem administra a
         organizacao daqui pra frente e quem tem o papel de organizacao.
         """
+        # ⚠️ TRAVA TODOS OS ADMINS, E SO DEPOIS EXCLUI (auditoria de 16/10).
+        # "Contar e depois gravar" sem trava: com dois admins, A rebaixando B
+        # e B rebaixando A ao mesmo tempo, cada um via "um outro" e a
+        # organizacao ficava sem admin nenhum. Travar as MESMAS linhas nas duas
+        # transacoes faz a segunda esperar a primeira -- e reler, ja sem o
+        # rebaixado. (`FOR UPDATE` nao convive com `count()` no Postgres: as
+        # linhas vem e a conta e aqui.)
         stmt = (
             self._base_select()
-            .with_only_columns(func.count())
+            .with_only_columns(User.id)
             .where(User.org_role == OrgRole.ADMIN, User.is_active.is_(True))
+            .with_for_update()
         )
-        if excluindo is not None:
-            stmt = stmt.where(User.id != excluindo)
-        return int((await self.session.execute(stmt)).scalar_one())
+        ids = (await self.session.execute(stmt)).scalars().all()
+        return sum(1 for i in ids if i != excluindo)
 
     async def list_all(self) -> list[User]:
         """Lista todos os usuarios ativos do workspace, por nome."""

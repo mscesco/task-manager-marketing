@@ -231,3 +231,51 @@ async def test_o_cadeado_concorda_com_o_patch(db) -> None:
             f"cadeado={cadeado} mas PATCH recusou={recusou} "
             f"-- ator {papel_do_ator}, alvo {papel_do_alvo}"
         )
+
+# ------------------------------------------------------------------
+# Auditoria de 16/10 -- conta desativada, pela ROTA
+# ------------------------------------------------------------------
+async def test_rota_do_membro_fecha_o_cadeado_de_conta_desativada(db) -> None:
+    """`/by-team` passava `alvo_ativo`; `/members/{id}/teams` (a gaveta do
+    membro) nao, e a funcao assumia "ativa": seletor de cargo oferecido e 409
+    ao salvar -- o caso de 10/09 ("Kaua inativo"), pela outra porta."""
+    from collections.abc import AsyncIterator
+
+    from httpx import ASGITransport, AsyncClient
+
+    from app.core.deps import get_db_session
+    from app.core.tenant import Membership, TenantContext, set_tenant
+    from app.db.models import User
+    from app.main import create_app
+    from app.modules.auth.api.dependencies import get_tenant_context
+    from app.modules.auth.domain.permissions import permissions_for_roles
+
+    ws, raiz, seo, admin = await _mundo(db)
+    alvo = await f.make_user(db, workspace_id=ws, email="inativo@t.dev")
+    await f.add_member(db, workspace_id=ws, user_id=alvo, team_id=seo, role="OPERATOR")
+    (await db.get(User, alvo)).is_active = False
+    await db.flush()
+
+    ctx = TenantContext(
+        workspace_id=ws,
+        user_id=admin,
+        roles=frozenset({"ADMIN"}),
+        permissions=permissions_for_roles(frozenset({"ADMIN"})),
+        memberships=(Membership(team_id=raiz, role="ADMIN"),),
+        team_tree=(node(raiz), node(seo, raiz)),
+    )
+    app = create_app()
+
+    async def _session() -> AsyncIterator:
+        yield db
+
+    async def _ctx() -> TenantContext:
+        set_tenant(ctx)
+        return ctx
+
+    app.dependency_overrides[get_db_session] = _session
+    app.dependency_overrides[get_tenant_context] = _ctx
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
+        r = await c.get(f"/api/v1/members/{alvo}/teams")
+    assert r.status_code == 200, r.text
+    assert [v["can_edit_role"] for v in r.json()] == [False]

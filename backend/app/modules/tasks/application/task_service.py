@@ -752,10 +752,17 @@ class TaskService:
                     "Nao consegui identificar a area do time desta tarefa.",
                     details={"field": "team_id", "team_id": str(team_id)},
                 )
-            task.board_id, task.column_id = await BoardRepository(
-                self._session
-            ).default_board_and_column_for_status(
+            quadros = BoardRepository(self._session)
+            task.board_id, _ = await quadros.default_board_and_column_for_status(
                 command.status, area_id=area_id
+            )
+            # ⚠️ MESMA REGRA DOS OUTROS DOIS RAMOS (ADR 0042 D2), que faltava
+            # aqui (auditoria de 16/10): o status VOLTA da coluna. Numa area
+            # nova (quatro colunas), `status=BLOCKED` caia em "Em andamento" e
+            # ficava `BLOCKED` -- coluna e status discordando, e a invariante 3
+            # do `invariantes.sql` saindo de zero.
+            task.column_id, task.status = await quadros.coluna_para_status(
+                board_id=task.board_id, status=command.status
             )
 
         self._repo.add(task)
@@ -1159,6 +1166,17 @@ class TaskService:
                     legacy_status=ponte, semantic=semantica
                 ),
             )
+        elif command.status is not None and command.status != task.status:
+            # ⚠️ O STATUS EFETIVO ANTES DO DIFF (auditoria de 16/10), como no
+            # caminho por coluna acima. Num quadro de quatro colunas, pedir
+            # `BLOCKED` cai em "Em andamento" e o status volta `IN_PROGRESS`
+            # (ADR 0042 D2) -- e o historico gravava `-> BLOCKED`, que nao
+            # aconteceu, sem registrar a troca de coluna, que aconteceu.
+            coluna, efetivo = await BoardRepository(self._session).coluna_para_status(
+                board_id=task.board_id, status=command.status
+            )
+            coluna_alvo = coluna
+            command = replace(command, status=efetivo)
 
         # Calcula entries ANTES de mutar (snapshot do estado antigo).
         entries = self._diff_for_update(task, command)

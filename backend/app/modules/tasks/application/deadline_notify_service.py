@@ -185,6 +185,12 @@ class DeadlineNotifyService:
                 Task.due_soon_notified_for.is_distinct_from(Task.due_date),
             )
 
+        # ⚠️ TRAVA AS LINHAS, PULANDO AS JA TRAVADAS (auditoria de 16/10). A
+        # dedup e "ler a marca e gravar depois": se o n8n refaz o POST por
+        # timeout com o primeiro ainda rodando, as duas execucoes liam as
+        # mesmas tarefas sem marca e o responsavel recebia o aviso em dobro.
+        # Com `SKIP LOCKED` a segunda so ve o que a primeira nao pegou.
+        stmt = stmt.with_for_update(skip_locked=True, of=Task)
         tasks = list((await self._session.execute(stmt)).scalars().all())
         for t in tasks:
             recipients, papel = await self._recipients(ws_id=ws_id, task=t)
