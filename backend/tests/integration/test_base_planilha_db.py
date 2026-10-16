@@ -15,6 +15,7 @@ O ARQUIVO (CSV com `;`, como o Excel em portugues salva):
 from __future__ import annotations
 
 import io
+import uuid
 
 import pytest
 from openpyxl import load_workbook
@@ -233,3 +234,130 @@ async def test_criar_varias_linhas_e_uma_acao(db) -> None:
         assert len(novas) == 2
         u = await UndoService(db).undo(m["base"])
     assert (u.applied, u.kind) == (True, "rows.import")
+
+
+# ------------------------------------------------------------ 16/10, a auditoria
+# Um teste por achado; cada um falhava antes do conserto.
+
+
+async def _vivas(db, base_id) -> list:
+    return (await db.execute(
+        BaseRow.__table__.select().where(
+            BaseRow.base_id == base_id, BaseRow.deleted_at.is_(None)
+        )
+    )).all()
+
+
+async def test_exporta_base_com_nome_que_o_excel_recusa_na_aba(db) -> None:
+    """`/ \\ ? * : [ ]` nao cabem em nome de aba: "Pautas 2026/1" dava 500."""
+    m = await _mundo(db)
+    from app.db.models.bases import BaseTable
+
+    (await db.get(BaseTable, m["base"])).name = "Pautas 2026/1: [Q4]"
+    with _como(m, "ana", "SUPERVISOR"):
+        conteudo, _, nome = await BaseExportService(db).export(m["base"], fmt="xlsx")
+    assert nome == "pautas-2026-1-q4.xlsx"
+    assert load_workbook(io.BytesIO(conteudo)).active.title == "Pautas 2026 1   Q4"
+
+
+async def test_texto_que_parece_formula_continua_texto(db) -> None:
+    """`=HYPERLINK(...)` virava link vivo no .xlsx; o `\\x0b` colado do
+    PowerPoint dava 500; no CSV, o apostrofo vai e volta."""
+    m = await _mundo(db)
+    linha = await db.get(BaseRow, m["linha"])
+    linha.values = {**linha.values, str(m["titulo"]): '=HYPERLINK("http://x";"y")\x0b'}
+    await db.flush()
+    with _como(m, "ana", "SUPERVISOR"):
+        xlsx, _, _ = await BaseExportService(db).export(m["base"], fmt="xlsx")
+        csv_, _, nome_csv = await BaseExportService(db).export(m["base"], fmt="csv")
+        p = BaseImportService.preview(csv_, nome_csv, sheet=None, header_row=1)
+    celula = load_workbook(io.BytesIO(xlsx)).active["A2"]
+    assert (celula.data_type, celula.value) == ("s", '=HYPERLINK("http://x";"y")')
+    assert "'=HYPERLINK" in csv_.decode("utf-8")
+    assert p.columns[0].sample == ['=HYPERLINK("http://x";"y")']
+
+
+async def test_visao_sem_nenhuma_linha_exporta_so_o_cabecalho(db) -> None:
+    """A visao com filtro que nao casa nada manda `[]` -- e exportava tudo."""
+    m = await _mundo(db)
+    with _como(m, "ana", "SUPERVISOR"):
+        conteudo, _, _ = await BaseExportService(db).export(m["base"], fmt="xlsx", row_ids=[])
+    assert load_workbook(io.BytesIO(conteudo)).active.max_row == 1
+
+
+async def test_desfazer_importacao_com_linha_apagada_por_outro_nao_desfaz_nada(db) -> None:
+    """Marcando linha a linha, as anteriores a do conflito iam para a lixeira e
+    a entrada saia da pilha: metade da importacao desfeita, sem refazer."""
+    from app.modules.bases.application.row_service import RowService
+
+    m = await _mundo(db)
+    with _como(m, "ana", "SUPERVISOR"):
+        r = await BaseImportService(db).run(
+            CSV, "posts.csv", _plano(m, dry_run=False, skip_invalid=True)
+        )
+    assert r.imported == 2
+    # ⚠️ A ULTIMA da importacao: com a primeira, o codigo velho tambem passava
+    # (o conflito vinha antes de marcar qualquer uma).
+    from app.db.models.bases import BaseChange
+
+    entrada = (await db.execute(
+        BaseChange.__table__.select().where(BaseChange.kind == "rows.import")
+    )).one()
+    primeira, ultima = (uuid.UUID(i) for i in entrada.payload["rows"])
+    with _como(m, "op", "OPERATOR"):
+        await RowService(db).delete_row(m["base"], ultima)
+    with _como(m, "ana", "SUPERVISOR"):
+        u = await UndoService(db).undo(m["base"])
+    assert (u.applied, u.conflict) == (False, True)
+    assert primeira in {x.id for x in await _vivas(db, m["base"])}
+
+
+async def test_desfazer_troca_de_tipo_devolve_o_valor_da_linha_na_lixeira(db) -> None:
+    """Os valores guardados eram so os das linhas vivas, e a troca zera todas:
+    a linha restaurada depois voltava com a celula vazia."""
+    from app.modules.bases.application.base_service import BaseService, UpdateColumnCommand
+    from app.modules.bases.application.row_service import RowService
+
+    m = await _mundo(db)
+    chave = str(m["coluna"])
+    with _como(m, "ana", "SUPERVISOR"):
+        await RowService(db).delete_row(m["base"], m["linha"])
+        await BaseService(db).update_column(
+            m["base"], m["coluna"],
+            UpdateColumnCommand(type="text", fields_set=frozenset({"type"})),
+        )
+        assert (await UndoService(db).undo(m["base"])).kind == "column.retype"
+        assert (await UndoService(db).undo(m["base"])).kind == "row.delete"
+    linha = await db.get(BaseRow, m["linha"])
+    await db.refresh(linha)
+    assert (linha.deleted_at, linha.values.get(chave)) == (None, m["opcao"])
+
+
+def test_csv_do_excel_brasileiro_le_travessao_e_aspas_curvas() -> None:
+    """O Excel em portugues grava cp1252; lido como latin-1, o travessao e as aspas curvas viravam
+    caracteres de controle, gravados sem aviso."""
+    from app.modules.bases.domain.spreadsheet import read_table
+
+    texto = "\u201cReunião\u201d \u2013 14h"  # aspas curvas e travessao
+    t = read_table(f"Tarefa\n{texto}\n".encode("cp1252"), "a.csv")
+    assert t.rows == [[texto]]
+
+
+def test_planilha_grande_demais_e_recusada_antes_de_ler_o_resto() -> None:
+    from app.modules.bases.domain.spreadsheet import MAX_RAW_ROWS, read_table
+    from app.shared.exceptions.base import ValidationError
+
+    with pytest.raises(ValidationError, match="passa de 3 linhas"):
+        read_table(b"T\na\nb\nc\nd\n", "a.csv", max_rows=3)
+    # linha em branco nao conta para o teto da base, mas conta para o de leitura
+    assert len(read_table(b"T\na\n\n\nb\n", "a.csv", max_rows=2).rows) == 2
+    with pytest.raises(ValidationError, match="contando as em branco"):
+        read_table(b"T\n" + b";\n" * (MAX_RAW_ROWS + 1), "a.csv")
+
+
+def test_csv_com_aspas_sem_fechar_e_422_e_nao_500() -> None:
+    from app.modules.bases.domain.spreadsheet import read_table
+    from app.shared.exceptions.base import ValidationError
+
+    with pytest.raises(ValidationError, match="aspas"):
+        read_table(b'T\n"' + b"x" * 200_000 + b"\n", "a.csv")

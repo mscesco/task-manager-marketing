@@ -270,11 +270,15 @@ class BaseRowRepository(BaseRepository[BaseRow]):
     async def values_of_column(
         self, base_id: uuid.UUID, column_id: uuid.UUID
     ) -> dict[str, object]:
-        """`{id da linha: valor}` das linhas VIVAS que tem a coluna preenchida --
-        o que a troca de tipo apaga, e o diario guarda (D27)."""
+        """`{id da linha: valor}` das linhas que tem a coluna preenchida -- o que
+        a troca de tipo apaga, e o diario guarda (D27).
+
+        ⚠️ INCLUSIVE AS DA LIXEIRA: `clear_column` zera todas, entao guardar so
+        as vivas fazia a linha restaurada depois de um Ctrl+Z da troca voltar
+        com a celula vazia, para sempre."""
         chave = str(column_id)
         stmt = (
-            self._base_select()
+            self._base_select(include_deleted=True)
             .with_only_columns(BaseRow.id, BaseRow.values[chave])
             .where(BaseRow.base_id == base_id, BaseRow.values.has_key(chave))
         )

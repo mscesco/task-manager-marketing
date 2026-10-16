@@ -82,6 +82,7 @@ import {
 } from "@/lib/api";
 import { acompanhar } from "@/lib/gravacoesDaBase";
 import {
+  colagemGrandeDemais,
   colarGrade,
   copiarFaixa,
   dentro,
@@ -238,6 +239,11 @@ export default function TabelaDaBase({
     if (!base.can_update_row) return;
     const inicio = faixa ? { linha: faixa.linha0, coluna: faixa.coluna0 } : ativa;
     const grade = lerGrade(texto);
+    const grandeDemais = colagemGrandeDemais(grade);
+    if (grandeDemais) {
+      avisar(grandeDemais);
+      return;
+    }
     // 1. As opções que a coluna ainda não tem viram opções (como na
     //    importação) -- se a pessoa pode mexer na coluna.
     let cols = colunas;
