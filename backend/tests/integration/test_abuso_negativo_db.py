@@ -305,11 +305,21 @@ async def test_preferencia_nao_atravessa_workspace_na_leitura(db) -> None:
 async def test_envio_publico_recusa_form_de_outro_workspace(db) -> None:
     """⚠️ O `form_id` vem do CLIENTE, e e ele que escolhe a fila que recebe a
     solicitacao. Copiar o id de um formulario de outro workspace nao pode por
-    nada na fila de la."""
+    nada na fila de la.
+
+    ⚠️ CONSERTADO EM 16/10 (auditoria da suite): o corpo nao mandava
+    `workspace_slug` nem `summary`, obrigatorios -- o Pydantic recusava antes
+    de qualquer regra, e o teste aceitava 400, 404 OU 422. Passava pelo motivo
+    errado. Agora o corpo e valido e so a regra do workspace pode recusar."""
+    from app.db.models import Workspace
+
     m = await _mundo(db)
     form_b, secao_b, pergunta_b = await _form_publicado(
         db, m["b"]["ctx_kwargs"], m["b"]["raiz"], slug="arte-do-b", titulo="Arte do B"
     )
+    slug_a = (
+        await db.execute(select(Workspace.slug).where(Workspace.id == m["a"]["ws"]))
+    ).scalar_one()
     await db.commit()
 
     # Sem sessao: a rota publica e a unica de escrita sem login.
@@ -331,6 +341,7 @@ async def test_envio_publico_recusa_form_de_outro_workspace(db) -> None:
         r = await cli.post(
             "/api/v1/solicitacoes/publico",
             json={
+                "workspace_slug": slug_a,
                 "requester_name": "Quem tenta",
                 "requester_email": "tenta@example.com",
                 "form_id": str(form_b.id),
@@ -340,6 +351,7 @@ async def test_envio_publico_recusa_form_de_outro_workspace(db) -> None:
                         # teste honesto: o que recusa e o WORKSPACE, e nao um
                         # nome de categoria invalido.
                         "category": secao_b.slug,
+                        "summary": "Pedido pendurado no B",
                         "answers": [{"label": pergunta_b.label, "value": "Sim"}],
                     }
                 ],
@@ -347,7 +359,10 @@ async def test_envio_publico_recusa_form_de_outro_workspace(db) -> None:
             headers={"X-Forwarded-For": "198.51.100.10"},
         )
 
-    assert r.status_code in (400, 404, 422), r.text
+    # A mesma recusa de categoria invalida, de proposito: um erro especifico
+    # confirmaria a quem sonda que o formulario existe noutro workspace.
+    assert r.status_code == 422, r.text
+    assert r.json()["error"]["message"] == "Categoria de solicitacao invalida."
     total = (
         await db.execute(text("SELECT count(*) FROM solicitation"))
     ).scalar_one()
