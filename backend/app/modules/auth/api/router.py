@@ -16,7 +16,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Response, status
 
 from app.core.deps import SessionDep, UoWDep
-from app.core.rate_limit import login_limiter, rate_limit, refresh_limiter
+from app.core.rate_limit import login_limiter, rate_limit
 from app.modules.auth.api.dependencies import CurrentUserDep, PendingUserDep
 from app.modules.auth.api.schemas import (
     ChangePasswordRequest,
@@ -56,13 +56,11 @@ async def login(payload: LoginRequest, session: SessionDep) -> TokenPair:
     )
 
 
-@router.post(
-    "/refresh",
-    response_model=TokenPair,
-    dependencies=[Depends(rate_limit(refresh_limiter))],
-)
+@router.post("/refresh", response_model=TokenPair)
 async def refresh(payload: RefreshRequest, session: SessionDep) -> TokenPair:
-    """Renova o access token a partir de um refresh token valido."""
+    """Renova o access token a partir de um refresh token valido.
+
+    Sem freio por IP desde 16/10 -- ver `core/rate_limit.py`, onde ele morava."""
     service = AuthService(session)
     return await service.refresh(refresh_token=payload.refresh_token)
 

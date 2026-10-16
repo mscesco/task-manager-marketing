@@ -14,14 +14,19 @@ tenant.
 
 from __future__ import annotations
 
+import math
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger
-from app.core.rate_limit import account_key, account_login_limiter
+from app.core.rate_limit import (
+    account_key,
+    account_login_limiter,
+    change_password_limiter,
+)
 from app.db.models import User, Workspace
 from app.modules.auth.api.schemas import TokenPair
 from app.modules.auth.infrastructure.security import (
@@ -35,6 +40,7 @@ from app.modules.auth.infrastructure.security import (
 )
 from app.shared.exceptions.base import (
     AuthenticationError,
+    RateLimitError,
     ValidationError,
 )
 
@@ -100,7 +106,11 @@ class AuthService:
             await self._session.execute(
                 select(User).where(
                     User.workspace_id == workspace.id,
-                    User.email == email,
+                    # ⚠️ Sem diferenciar maiusculas: o cadastro grava em
+                    # minusculas, o celular capitaliza a primeira letra, e
+                    # `Camila@...` com a senha certa recebia "credenciais
+                    # invalidas" -- e cada tentativa enchia o freio da conta.
+                    func.lower(User.email) == email.strip().lower(),
                 )
             )
         ).scalar_one_or_none()
@@ -197,9 +207,20 @@ class AuthService:
             # Token valido mas user sumiu -- inconsistente.
             raise AuthenticationError("Usuario nao encontrado.")
 
+        # ⚠️ O FREIO DA SENHA ATUAL (auditoria de 16/10). Sem ele, quem roubasse
+        # uma sessao chutava a senha atual sem limite e, ao acertar, trocava --
+        # e o roubo de sessao virava tomada da conta, sobrevivendo a logout e
+        # reset. Aqui o 429 pode ser explicito: a pessoa ja esta autenticada,
+        # nao ha conta a esconder (ao contrario do login).
+        chave = str(user_id)
+        decisao = change_password_limiter.check(chave)
+        if not decisao.allowed:
+            raise RateLimitError(retry_after=math.ceil(decisao.retry_after))
         if not verify_password(current_password, user.password_hash):
             logger.info("auth.change_password_bad_current", user_id=str(user_id))
+            change_password_limiter.record(chave)
             raise AuthenticationError("Senha atual incorreta.")
+        change_password_limiter.reset(chave)
 
         if new_password == current_password:
             raise ValidationError(
