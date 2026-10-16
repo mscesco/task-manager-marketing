@@ -19,6 +19,7 @@ tudo -- linhas e colunas criadas.
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from dataclasses import dataclass, field
 from types import SimpleNamespace
@@ -137,10 +138,12 @@ class BaseImportService:
         self._rows = BaseRowRepository(session)
 
     # ------------------------------------------------------------ previa
-    def preview(
-        self, content: bytes, filename: str, *, sheet: str | None, header_row: int
-    ) -> Preview:
-        table = read_table(content, filename, sheet=sheet, header_row=header_row)
+    @staticmethod
+    def preview(content: bytes, filename: str, *, sheet: str | None, header_row: int) -> Preview:
+        """Sem banco e CPU pura: a rota chama em `asyncio.to_thread`."""
+        table = read_table(
+            content, filename, sheet=sheet, header_row=header_row, max_rows=ROW_LIMIT
+        )
         cols = []
         for i, nome in enumerate(table.header):
             valores = [r[i] for r in table.rows]
@@ -162,7 +165,16 @@ class BaseImportService:
 
     # ------------------------------------------------------------ importar
     async def run(self, content: bytes, filename: str, plan: ImportPlan) -> ImportResult:
-        table = read_table(content, filename, sheet=plan.sheet, header_row=plan.header_row)
+        # ⚠️ Em thread: o openpyxl segura o processo por segundos numa planilha
+        # grande, e no loop do async isso congelava toda rota deste processo.
+        table = await asyncio.to_thread(
+            read_table,
+            content,
+            filename,
+            sheet=plan.sheet,
+            header_row=plan.header_row,
+            max_rows=ROW_LIMIT,
+        )
         tenant = require_tenant()
 
         # --- o destino, e quem pode

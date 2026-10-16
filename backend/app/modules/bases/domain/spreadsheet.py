@@ -15,6 +15,7 @@ import csv
 import io
 import math
 import re
+from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any
@@ -27,11 +28,20 @@ from app.shared.exceptions.base import ValidationError
 MAX_FILE_BYTES = 5 * 1024 * 1024
 #: Quantas linhas a previa mostra.
 PREVIEW_ROWS = 20
+#: Colunas lidas do arquivo -- o mesmo teto do mapeamento (`_ImportColumn.index`).
+MAX_COLUMNS = 500
+#: Linhas lidas do arquivo CONTANDO AS EM BRANCO. ⚠️ O Excel guarda linha so
+#: formatada como linha: sem este teto, uma planilha "vazia" de 1 milhao de
+#: linhas prende o processo por minutos antes de qualquer conferencia.
+MAX_RAW_ROWS = 50_000
 #: Separador de varios valores numa celula (selecao multipla, pessoa).
 #: ⚠️ A VIRGULA TAMBEM (15/10): o Google Planilhas copia e exporta os chips de
 #: selecao multipla como "Formulario, Import, Site" -- sem ela, tudo virava UMA
 #: opcao com o texto inteiro.
 MULTI_SEP = re.compile(r"\s*[;,\n]\s*")
+
+#: Primeiro caractere que faz o Excel ler a celula como formula.
+FORMULA_START = "=+-@"
 
 _DATA_BR = re.compile(r"^(\d{1,2})/(\d{1,2})/(\d{2}|\d{4})$")
 _DATA_ISO = re.compile(r"^(\d{4})-(\d{2})-(\d{2})")
@@ -49,10 +59,19 @@ class Table:
 
 
 def read_table(
-    content: bytes, filename: str, *, sheet: str | None = None, header_row: int = 1
+    content: bytes,
+    filename: str,
+    *,
+    sheet: str | None = None,
+    header_row: int = 1,
+    max_rows: int | None = None,
 ) -> Table:
     """O arquivo como cabecalho + linhas. `header_row` e 1-based (a linha do
-    cabecalho; as de cima sao ignoradas -- planilha com titulo em cima)."""
+    cabecalho; as de cima sao ignoradas -- planilha com titulo em cima).
+
+    `max_rows`: mais linhas com conteudo do que isso e recusa ANTES de ler o
+    resto do arquivo. ⚠️ E CPU pura (o openpyxl leva segundos numa planilha
+    grande): quem chama de rota async roda isto em `asyncio.to_thread`."""
     if len(content) > MAX_FILE_BYTES:
         raise ValidationError("O arquivo passa de 5 MB.", details={"field": "file"})
     if header_row < 1:
@@ -66,24 +85,55 @@ def read_table(
         raise ValidationError(
             "Envie uma planilha .xlsx ou .csv.", details={"field": "file"}
         )
-    linhas = linhas[header_row - 1 :]
-    if not linhas:
+    try:
+        cabecalho, corpo = _corpo(linhas, header_row, max_rows)
+    except csv.Error as exc:  # aspas sem fechar, campo gigante
+        raise ValidationError(
+            "Nao consegui ler o CSV (aspas sem fechar?).", details={"field": "file"}
+        ) from exc
+    finally:
+        close = getattr(linhas, "close", None)
+        if close:
+            close()  # fecha a planilha mesmo quando a leitura para no meio
+    return Table(sheets=sheets, sheet=escolhida, header=cabecalho, rows=corpo)
+
+
+def _corpo(
+    linhas: Iterator[list[Any]], header_row: int, max_rows: int | None
+) -> tuple[list[str], list[list[Any]]]:
+    for _ in range(header_row - 1):
+        next(linhas, None)
+    primeira = next(linhas, None)
+    if primeira is None:
         raise ValidationError("A planilha esta vazia.", details={"field": "file"})
-    cabecalho = [str(c).strip() if c is not None else "" for c in linhas[0]]
+    cabecalho = [str(c).strip() if c is not None else "" for c in primeira]
     largura = len(cabecalho)
     corpo: list[list[Any]] = []
-    for linha in linhas[1:]:
+    for lidas, linha in enumerate(linhas, start=1):
+        if lidas > MAX_RAW_ROWS:
+            raise ValidationError(
+                f"A planilha tem mais de {_milhar(MAX_RAW_ROWS)} linhas, contando as em "
+                "branco. Apague as linhas vazias do fim e tente de novo.",
+                details={"field": "file"},
+            )
         linha = list(linha) + [None] * (largura - len(linha))
         linha = linha[:largura]
         if all(_vazio(v) for v in linha):
             continue  # linha em branco no meio do arquivo nao vira linha na base
+        if max_rows is not None and len(corpo) >= max_rows:
+            raise ValidationError(
+                f"A planilha passa de {_milhar(max_rows)} linhas.",
+                details={"field": "file", "limit": max_rows},
+            )
         corpo.append(linha)
     # Coluna sem nome no cabecalho ganha um ("Coluna 3"), em vez de sumir.
     cabecalho = [h or f"Coluna {i + 1}" for i, h in enumerate(cabecalho)]
-    return Table(sheets=sheets, sheet=escolhida, header=cabecalho, rows=corpo)
+    return cabecalho, corpo
 
 
-def _ler_xlsx(content: bytes, sheet: str | None) -> tuple[list[str], str, list[list[Any]]]:
+def _ler_xlsx(
+    content: bytes, sheet: str | None
+) -> tuple[list[str], str, Iterator[list[Any]]]:
     try:
         wb = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
     except Exception as exc:  # arquivo corrompido ou que nao e xlsx
@@ -92,15 +142,28 @@ def _ler_xlsx(content: bytes, sheet: str | None) -> tuple[list[str], str, list[l
         ) from exc
     nomes = list(wb.sheetnames)
     escolhida = sheet if sheet in nomes else nomes[0]
-    linhas = [list(r) for r in wb[escolhida].iter_rows(values_only=True)]
-    wb.close()
-    return nomes, escolhida, linhas
+    ws = wb[escolhida]
+    # ⚠️ `max_col` COMPLETA a linha ate ele: com o teto puro, toda planilha
+    # viria com 500 colunas. A largura de verdade, limitada pelo teto.
+    largura = min(ws.max_column or MAX_COLUMNS, MAX_COLUMNS)
+
+    def linhas() -> Iterator[list[Any]]:
+        try:
+            for r in ws.iter_rows(values_only=True, max_col=largura):
+                yield list(r)
+        finally:
+            wb.close()
+
+    return nomes, escolhida, linhas()
 
 
-def _ler_csv(content: bytes) -> list[list[Any]]:
-    # ⚠️ utf-8 (com ou sem BOM) primeiro; o Excel brasileiro antigo salva em
-    # latin-1, e sem a segunda tentativa todo acento viraria lixo.
-    for codificacao in ("utf-8-sig", "latin-1"):
+def _ler_csv(content: bytes) -> Iterator[list[Any]]:
+    # ⚠️ utf-8 (com ou sem BOM) primeiro. Depois cp1252, que e o que o Excel em
+    # portugues grava: travessao, aspas curvas e "€" sao letras nele e
+    # caracteres de controle no latin-1 -- e o latin-1 nunca falha, entao o
+    # texto entrava estragado sem aviso. latin-1 fica de ultima rede (o cp1252
+    # recusa 5 bytes que o latin-1 aceita).
+    for codificacao in ("utf-8-sig", "cp1252", "latin-1"):
         try:
             texto = content.decode(codificacao)
             break
@@ -109,7 +172,11 @@ def _ler_csv(content: bytes) -> list[list[Any]]:
     amostra = texto[:4096]
     # O Excel em pt-BR separa por `;`; o resto do mundo, por `,`.
     sep = ";" if amostra.count(";") >= amostra.count(",") else ","
-    return [list(r) for r in csv.reader(io.StringIO(texto), delimiter=sep)]
+    return (r[:MAX_COLUMNS] for r in csv.reader(io.StringIO(texto), delimiter=sep))
+
+
+def _milhar(n: int) -> str:
+    return f"{n:,}".replace(",", ".")
 
 
 def _vazio(v: Any) -> bool:
@@ -130,7 +197,12 @@ def to_text(v: Any) -> str | None:
         return str(int(v))
     if isinstance(v, datetime | date):
         return to_date(v)  # data numa coluna de texto sai como a tela mostra
-    return str(v).strip()
+    s = str(v).strip()
+    # O apostrofo que o EXPORT poe na frente de `= + - @` (para o Excel nao ler
+    # como formula) sai na volta: exportar e importar da o mesmo.
+    if len(s) > 1 and s[0] == "'" and s[1] in FORMULA_START:
+        return s[1:]
+    return s
 
 
 def to_number(v: Any) -> int | float | None:
