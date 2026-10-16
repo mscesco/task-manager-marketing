@@ -223,7 +223,11 @@ async def list_solicitations(
         approved_without_task_total=await service.count_approved_without_task(
             team_id
         ),
-        tab_totals=await service.count_by_tab(team_id, q, form_id),
+        # A mesma caixinha e a mesma aba da lista: o numero de cada aba e o selo
+        # "sem tarefa" dizem o que a tela vai mostrar (revisao de 16/10).
+        tab_totals=await service.count_by_tab(
+            team_id, q, form_id, filtro=filtro, without_task=without_task
+        ),
         form_options=[
             FormOption(id=fid, title=titulo)
             for fid, titulo in await service.form_options(team_id)

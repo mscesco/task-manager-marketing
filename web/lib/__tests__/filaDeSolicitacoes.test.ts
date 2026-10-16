@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { Batch, BatchItem } from "../api";
-import { demandaInicial, quandoChegou } from "../filaDeSolicitacoes";
+import { demandaInicial, diaDoEnvio, quandoChegou } from "../filaDeSolicitacoes";
 
 // 15/10/2026 14:00 em Brasília (17:00 UTC).
 const AGORA = new Date("2026-10-15T17:00:00Z");
@@ -18,6 +18,13 @@ describe("quandoChegou", () => {
 
   it("antes de ontem, a data curta", () => {
     expect(quandoChegou("2026-10-10T15:00:00Z", AGORA)).toBe("10/10");
+  });
+});
+
+describe("diaDoEnvio", () => {
+  it("⚠️ 22h de Brasília continua no mesmo dia, mesmo já sendo amanhã em UTC", () => {
+    // 16/10 01:00 UTC = 15/10 22:00 em Brasília.
+    expect(diaDoEnvio("2026-10-16T01:00:00Z")).toBe("15/10/2026");
   });
 });
 

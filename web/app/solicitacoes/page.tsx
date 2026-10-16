@@ -64,7 +64,7 @@ import {
   STATUS_ACEITOS,
 } from "@/lib/api";
 import { numeroDaRepeticao, rotuloDaCategoria } from "@/lib/rotuloDaCategoria";
-import { demandaInicial, quandoChegou } from "@/lib/filaDeSolicitacoes";
+import { demandaInicial, diaDoEnvio, quandoChegou } from "@/lib/filaDeSolicitacoes";
 
 import Loading from "@/components/Loading";
 import { useActiveTeam, useActiveTeamId } from "@/lib/useActiveTeam";
@@ -159,12 +159,42 @@ function Solicitacoes() {
   const abaAtual = ABAS.find((a) => a.valor === aba)!;
   const filtrandoSemTarefa = semTarefa && abaAtual.semTarefa;
 
+  // ⚠️ TROCAR DE TIME ZERA O QUE ERA DO TIME ANTERIOR: o envio do painel (que
+  // seria de outro time), o formulário escolhido (que não existe neste) e a
+  // página. Na renderização, e não num efeito: num efeito a fila buscaria uma
+  // vez com o formulário velho e outra sem ele (revisão de 16/10).
+  const [timeDaFila, setTimeDaFila] = useState(timeAtivo);
+  if (timeDaFila !== timeAtivo) {
+    setTimeDaFila(timeAtivo);
+    setEscolhido(null);
+    setFormId(null);
+    setPagina(1);
+  }
+
+  // ⚠️ TROCAR DE ABA, BUSCA OU FORMULÁRIO VOLTA À PÁGINA 1 -- a página 3 costuma
+  // não existir no recorte novo. No mesmo clique, e não num efeito depois: o
+  // efeito buscava duas vezes (página velha, depois a 1), e a que respondesse
+  // por último ficava na tela (revisão de 16/10).
+  function filtrar(mudar: () => void) {
+    mudar();
+    setPagina(1);
+  }
+
   // A busca espera a pessoa parar de digitar: uma ida ao servidor por tecla
   // refaria a lista enquanto ela ainda escreve o nome.
   useEffect(() => {
-    const t = setTimeout(() => setBuscaAtiva(busca), 300);
+    const t = setTimeout(() => {
+      setBuscaAtiva(busca);
+      setPagina(1);
+    }, 300);
     return () => clearTimeout(t);
   }, [busca]);
+
+  // ⚠️⚠️ SÓ A RESPOSTA DO ÚLTIMO PEDIDO VALE. Trocar de aba com a anterior
+  // ainda em voo deixava a resposta atrasada sobrescrever a nova -- a aba
+  // "Rejeitadas" marcada, com a lista de "Pendentes" embaixo, e um ✓ que
+  // aprovava o que a pessoa achava já ter saído da fila (revisão de 16/10).
+  const ultimoPedido = useRef(0);
 
   const carregar = useCallback(async () => {
     // ⚠⚠ ESPERA O TIME em vez de buscar sem recorte. Buscar antes mostraria a
@@ -172,6 +202,7 @@ function Solicitacoes() {
     // lista qualquer: quem tria poderia APROVAR um pedido de outro time no
     // meio do pisca.
     if (active === null) return;
+    const meu = ++ultimoPedido.current;
     setErro(null);
     try {
       const r = await listarEnvios({
@@ -183,16 +214,19 @@ function Solicitacoes() {
         formId,
         semTarefa: filtrandoSemTarefa,
       });
+      if (meu !== ultimoPedido.current) return;
+      // Aprovar o último envio da última página a esvazia: volta para a que
+      // ainda existe, em vez de mostrar "nada com este filtro" com envios atrás.
+      if (r.items.length === 0 && pagina > 1) {
+        setPagina(Math.max(1, Math.ceil(r.total / TAMANHO_PAGINA)));
+        return;
+      }
       setEnvios(r.items);
       setTotalEnvios(r.total);
-      setTotais(
-        r.tab_totals ?? {
-          PENDING: r.pending_total,
-          WITHOUT_TASK: r.approved_without_task_total,
-        }
-      );
+      setTotais(r.tab_totals ?? {});
       setFormularios(r.form_options ?? []);
     } catch (err) {
+      if (meu !== ultimoPedido.current) return;
       const e = err as ApiError;
       // 403: quem não é admin/manager do time principal não vê a fila.
       // A aba some do menu, mas a URL direta continua alcançável — tratar
@@ -215,12 +249,6 @@ function Solicitacoes() {
     setEnvios(null);
     carregar();
   }, [carregar]);
-
-  // Trocar de aba, busca ou formulário reinicia a paginação: manter a página
-  // 3 costuma cair numa página que não existe mais.
-  useEffect(() => {
-    setPagina(1);
-  }, [aba, buscaAtiva, formId, filtrandoSemTarefa]);
 
   /** Depois de uma ação: a lista, e o envio do painel relido pelo protocolo. */
   async function recarregar() {
@@ -295,7 +323,7 @@ function Solicitacoes() {
                   label={a.label}
                   numero={totais[a.valor]}
                   ativa={aba === a.valor}
-                  onClick={() => setAba(a.valor)}
+                  onClick={() => filtrar(() => setAba(a.valor))}
                 />
               ))}
             </div>
@@ -321,7 +349,7 @@ function Solicitacoes() {
                     className="input min-w-0 flex-1"
                     aria-label="Formulário"
                     value={formId ?? ""}
-                    onChange={(e) => setFormId(e.target.value || null)}
+                    onChange={(e) => filtrar(() => setFormId(e.target.value || null))}
                     style={{ fontSize: 12.5, padding: "5px 8px" }}
                   >
                     <option value="">Todos os formulários</option>
@@ -334,7 +362,7 @@ function Solicitacoes() {
                 )}
                 {abaAtual.semTarefa && (
                   <label className="ml-auto inline-flex cursor-pointer items-center gap-1.5 text-[12.5px] text-ink-soft">
-                    <input type="checkbox" checked={semTarefa} onChange={(e) => setSemTarefa(e.target.checked)} />
+                    <input type="checkbox" checked={semTarefa} onChange={(e) => filtrar(() => setSemTarefa(e.target.checked))} />
                     Só sem tarefa
                     {(totais.WITHOUT_TASK ?? 0) > 0 && (
                       <Badge tone="soft" size="sm" color="#d97706">
@@ -504,7 +532,7 @@ function LinhaDoEnvio({
   ordem: number;
   escolhido: boolean;
   onEscolher: (rejeitar?: string | null) => void;
-  onMudou: () => void;
+  onMudou: () => Promise<void>;
 }) {
   const [agindo, setAgindo] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
@@ -514,12 +542,17 @@ function LinhaDoEnvio({
   // ⚠️ O ✓ DA LISTA SÓ APROVA (decisão dela, 15/10): criar a tarefa fica no
   // painel, onde se vê o briefing antes. Aprovado sem tarefa, o pedido
   // aparece em "Só sem tarefa" -- não some.
+  //
+  // ⚠️⚠️ O ✓ FICA DESLIGADO ATÉ A LISTA NOVA CHEGAR, e o segundo clique de um
+  // clique duplo é ignorado: o envio aprovado sai da aba e o de baixo sobe
+  // para o lugar dele -- o segundo clique aprovava o pedido de OUTRA pessoa,
+  // sem ninguém ver (revisão de 16/10).
   async function aprovar(item: BatchItem) {
     setAgindo(true);
     setErro(null);
     try {
       await aprovarSolicitacao(item.id);
-      onMudou();
+      await onMudou();
     } catch (e) {
       setErro((e as ApiError).message || "Não foi possível aprovar.");
     } finally {
@@ -585,8 +618,12 @@ function LinhaDoEnvio({
             className="inline-flex h-7 cursor-pointer items-center gap-1 rounded-md border border-border bg-surface px-2.5 text-[12px] font-semibold text-ink-soft transition-colors duration-150 hover:border-[#16a34a] hover:text-[#15803d] disabled:opacity-60"
             disabled={agindo}
             aria-label="Aprovar"
+            aria-busy={agindo || undefined}
             title="Aprovar (a tarefa você cria no painel)"
-            onClick={() => aprovar(unico)}
+            onClick={(e) => {
+              if (e.detail > 1) return;
+              aprovar(unico);
+            }}
           >
             <Check aria-hidden size={14} />
             <span aria-hidden>{agindo ? "…" : "Aprovar"}</span>
@@ -668,7 +705,7 @@ function PainelDoEnvio({
   envio: Batch;
   rejeitarItem: string | null;
   onVoltar: () => void;
-  onMudou: () => void;
+  onMudou: () => Promise<void>;
 }) {
   // Com várias demandas, uma de cada vez, por abas: empilhadas, a terceira
   // ficava fora da tela, longe do nome de quem pediu.
@@ -732,7 +769,7 @@ function PainelDoEnvio({
             </button>
           </Propriedade>
           <Propriedade icone={<CalendarDays size={14} />} rotulo="Recebido">
-            {new Date(envio.created_at).toLocaleDateString("pt-BR")}
+            {diaDoEnvio(envio.created_at)}
           </Propriedade>
           <Propriedade icone={<Mail size={14} />} rotulo="E-mail">
             <a href={`mailto:${envio.requester_email}`} className="text-ink hover:text-accent">
@@ -824,7 +861,7 @@ function SecaoDemanda({
   item: BatchItem;
   /** Veio do ✕ da lista: já abre pedindo a justificativa. */
   rejeitarAoAbrir?: boolean;
-  onMudou: () => void;
+  onMudou: () => Promise<void>;
 }) {
   const cat = rotuloDaCategoria(item);
   const aceito = STATUS_ACEITOS.includes(item.status);
@@ -845,15 +882,7 @@ function SecaoDemanda({
   useEffect(() => {
     if (rejeitarAoAbrir) justificativaRef.current?.focus();
   }, [rejeitarAoAbrir]);
-  // Esc fecha o menu (o clique fora e a rolagem, o `useAnchoredPanel` já fecha).
-  useEffect(() => {
-    if (!menuAberto) return;
-    const esc = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setMenuAberto(false);
-    };
-    document.addEventListener("keydown", esc);
-    return () => document.removeEventListener("keydown", esc);
-  }, [menuAberto]);
+  // Esc, clique fora e rolagem: quem fecha o menu é o `useAnchoredPanel`.
   const [justificativa, setJustificativa] = useState("");
   const [marcandoTarefa, setMarcandoTarefa] = useState(false);
   // ⚠️ GUARDA O ID DA TAREFA RECÉM-CRIADA para oferecer "abrir a tarefa" sem
@@ -863,14 +892,19 @@ function SecaoDemanda({
   const [refTarefa, setRefTarefa] = useState("");
   const [copiado, setCopiado] = useState(false);
 
+  // ⚠️ RECARREGA MESMO QUANDO FALHA: uma ação de dois passos (aprovar e
+  // criar a tarefa) pode falhar no segundo com o primeiro já feito, e a tela
+  // continuaria dizendo "pendente" de um pedido aprovado (revisão de 16/10).
   async function acao(fn: () => Promise<unknown>, msgErro: string) {
     setAgindo(true);
     setErro(null);
     try {
       await fn();
-      onMudou();
     } catch (e) {
       setErro((e as ApiError).message || msgErro);
+    }
+    try {
+      await onMudou();
     } finally {
       setAgindo(false);
     }
@@ -902,7 +936,7 @@ function SecaoDemanda({
               .join(" · "),
           ]
         : []),
-      `Protocolo: ${envio.protocol}${envio.items.length > 1 ? ` (${item.batch_seq}/${envio.items.length})` : ""} · Recebida em ${new Date(envio.created_at).toLocaleDateString("pt-BR")}`,
+      `Protocolo: ${envio.protocol}${envio.items.length > 1 ? ` (${item.batch_seq}/${envio.items.length})` : ""} · Recebida em ${diaDoEnvio(envio.created_at)}`,
       "",
       ...item.answers.map((a) => `${a.label}\n${a.value}\n`),
     ];
@@ -966,7 +1000,7 @@ function SecaoDemanda({
       {aceito && item.task_created_at && (
         <p className="mt-4 flex flex-wrap items-center gap-1.5 text-[12.5px] text-ink-soft">
           <SquareCheckBig aria-hidden size={14} className="text-[#16a34a]" />
-          Tarefa criada em {new Date(item.task_created_at).toLocaleDateString("pt-BR")}
+          Tarefa criada em {diaDoEnvio(item.task_created_at)}
           {/* ⚠️ TRÊS ESTADOS, e cada um diz a verdade sobre o que existe:
               vinculada e viva (link), vinculada e apagada (sem nome, sem
               link), ou só o `task_ref` de texto das marcações antigas. */}
@@ -1039,12 +1073,19 @@ function SecaoDemanda({
                 onClick={() =>
                   acao(async () => {
                     await aprovarSolicitacao(item.id);
-                    const nova = await criarTarefaDaSolicitacao(item.id);
-                    setTarefaNova(nova.task_id);
+                    try {
+                      const nova = await criarTarefaDaSolicitacao(item.id);
+                      setTarefaNova(nova.task_id);
+                    } catch (e) {
+                      const motivo = (e as ApiError).message;
+                      throw new Error(
+                        `O pedido foi aprovado, mas a tarefa não foi criada${motivo ? ` (${motivo})` : ""}. Tente "Criar tarefa".`
+                      );
+                    }
                   }, "Não foi possível aprovar.")
                 }
               >
-                {agindo ? "…" : "Aprovar e criar tarefa"}
+                {agindo ? "Aprovando…" : "Aprovar e criar tarefa"}
               </button>
               <button
                 className="btn btn-primary"
@@ -1119,7 +1160,7 @@ function SecaoDemanda({
               }, "Não foi possível criar a tarefa.")
             }
           >
-            {agindo ? "…" : "Criar tarefa"}
+            {agindo ? "Criando…" : "Criar tarefa"}
           </button>
         )}
         {aceito && !item.task_created_at && !marcandoTarefa && (

@@ -618,8 +618,13 @@ class SolicitationService:
         team_id: uuid.UUID | None,
         search: str | None = None,
         form_id: uuid.UUID | None = None,
+        *,
+        filtro: str | None = None,
+        without_task: bool = False,
     ) -> dict[str, int]:
-        return await self.repo.count_by_tab(team_id, search, form_id)
+        return await self.repo.count_by_tab(
+            team_id, search, form_id, filtro=filtro, without_task=without_task
+        )
 
     async def form_options(
         self, team_id: uuid.UUID | None

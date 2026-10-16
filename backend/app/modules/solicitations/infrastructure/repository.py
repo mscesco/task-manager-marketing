@@ -17,8 +17,9 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from typing import Any
 
-from sqlalchemy import ColumnElement, Select, String, cast, func, or_, select
+from sqlalchemy import ColumnElement, Select, String, cast, func, or_, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.tenant import require_tenant
@@ -192,21 +193,12 @@ class SolicitationRepository(BaseRepository[Solicitation]):
         )
 
         cond = None
-        if filtro == "ACTIVE":
-            cond = alvo.c.status.in_(sorted(ACTIVE))
-        elif filtro == "SEM_TAREFA":
-            # ⚠️ OS TRES ACEITOS, e nao so APPROVED (Spec 043, fatia D). Com a
-            # comparacao antiga, mover um pedido para "em andamento" o tirava
-            # deste filtro -- e o filtro existe justamente para achar o que foi
-            # aceito e nunca virou tarefa. Sumir dali por ter comecado e o
-            # oposto do que ele promete.
-            cond = alvo.c.status.in_(sorted(ACEITOS)) & (
-                alvo.c.task_created_at.is_(None)
-            )
+        if filtro == "SEM_TAREFA":
+            cond = _sem_tarefa(alvo.c)
         elif filtro is not None:
-            cond = alvo.c.status == filtro
+            cond = _da_aba(alvo.c, filtro)
         if without_task:
-            sem = alvo.c.status.in_(sorted(ACEITOS)) & alvo.c.task_created_at.is_(None)
+            sem = _sem_tarefa(alvo.c)
             cond = sem if cond is None else (cond & sem)
 
         lotes = select(
@@ -262,28 +254,43 @@ class SolicitationRepository(BaseRepository[Solicitation]):
         team_id: uuid.UUID | None,
         search: str | None = None,
         form_id: uuid.UUID | None = None,
+        *,
+        filtro: str | None = None,
+        without_task: bool = False,
     ) -> dict[str, int]:
         """Os numeros das abas da fila (15/10), em DEMANDAS e nao em envios
         -- o mesmo que o "7 pendentes" de sempre.
 
-        ⚠️ COM A MESMA BUSCA E O MESMO FORMULARIO DA LISTA: o numero da aba diz
-        o que a aba vai mostrar.
+        ⚠️ COM A MESMA BUSCA, O MESMO FORMULARIO E A MESMA CAIXINHA "SO SEM
+        TAREFA" DA LISTA: o numero da aba diz o que a aba vai mostrar. A
+        caixinha nao vale em Pendentes e Rejeitadas (nada ali tem tarefa).
+
+        `WITHOUT_TASK` e o selo ao lado da caixinha: quantas sem tarefa NA ABA
+        ATUAL (`filtro`), e nao na fila inteira. (Revisao de 16/10: com
+        "Concluidas" aberta, o selo contava as aprovadas tambem.)
         """
         fila = (
             self._base_select()
             .where(*self._recorte_de_time(team_id), *_busca(search, form_id))
             .subquery()
         )
-        sem = fila.c.status.in_(sorted(ACEITOS)) & fila.c.task_created_at.is_(None)
+        sem = _sem_tarefa(fila.c)
+
+        def _aba(chave: str) -> ColumnElement[bool]:
+            cond = _da_aba(fila.c, chave)
+            return cond & sem if without_task and chave in _ABAS_COM_TAREFA else cond
+
+        aba_atual = _da_aba(fila.c, filtro) if filtro else None
+        sem_na_aba = sem if aba_atual is None else (sem & aba_atual)
         linha = (
             await self.session.execute(
                 select(
-                    func.count().filter(fila.c.status == "PENDING"),
-                    func.count().filter(fila.c.status.in_(sorted(ACTIVE))),
-                    func.count().filter(fila.c.status == "DONE"),
-                    func.count().filter(fila.c.status == "REJECTED"),
-                    func.count(),
-                    func.count().filter(sem),
+                    func.count().filter(_aba("PENDING")),
+                    func.count().filter(_aba("ACTIVE")),
+                    func.count().filter(_aba("DONE")),
+                    func.count().filter(_aba("REJECTED")),
+                    func.count().filter(_aba("ALL")),
+                    func.count().filter(sem_na_aba),
                 )
             )
         ).one()
@@ -315,9 +322,8 @@ class SolicitationRepository(BaseRepository[Solicitation]):
             .where(
                 # ⚠️ MESMO CONJUNTO DO FILTRO, obrigatoriamente: o badge conta
                 # o que a lista mostra. Um contador que diverge da lista e pior
-                # que nao ter contador.
-                Solicitation.status.in_(sorted(ACEITOS)),
-                Solicitation.task_created_at.is_(None),
+                # que nao ter contador -- por isso a regra mora em `_sem_tarefa`.
+                _sem_tarefa(Solicitation)
             )
             .subquery()
         )
@@ -370,6 +376,40 @@ class SolicitationRepository(BaseRepository[Solicitation]):
 
 #: "Em andamento" na fila (15/10): aceita e ainda nao concluida.
 ACTIVE = frozenset({"APPROVED", "IN_PROGRESS"})
+#: As abas onde a caixinha "so sem tarefa" vale (nas outras, nada tem tarefa).
+_ABAS_COM_TAREFA = frozenset({"ACTIVE", "DONE", "ALL"})
+
+
+def _sem_tarefa(c: Any) -> ColumnElement[bool]:
+    """Aceita e sem tarefa criada -- a UNICA definicao (a lista, o filtro
+    `SEM_TAREFA`, a caixinha e os dois contadores usam esta).
+
+    ⚠️ OS TRES ACEITOS, e nao so APPROVED (Spec 043, fatia D): mover um pedido
+    para "em andamento" nao pode tira-lo daqui -- o filtro existe para achar o
+    que foi aceito e nunca virou tarefa. `c` e o model ou as colunas de uma
+    subconsulta (`.c`)."""
+    return c.status.in_(sorted(ACEITOS)) & c.task_created_at.is_(None)
+
+
+def _da_aba(c: Any, aba: str) -> ColumnElement[bool]:
+    """O que cada aba mostra. `ALL` e tudo; o resto e um status ou `ACTIVE`."""
+    if aba == "ALL":
+        return true()
+    if aba == "ACTIVE":
+        return c.status.in_(sorted(ACTIVE))
+    return c.status == aba
+
+
+def _sem_acento(coluna: Any, termo: str) -> ColumnElement[bool]:
+    """`termo` dentro de `coluna`, sem diferenciar maiuscula nem acento -- a
+    mesma dobra das outras buscas do projeto (`task_repository`), no Postgres.
+
+    ⚠️ `%` e `_` ESCAPADOS, e nao apagados (revisao de 16/10): apagar o `_`
+    fazia `maria_souza@...` virar `mariasouza@...` e nao achar nada."""
+    escapado = termo.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return func.unaccent(func.lower(coluna)).like(
+        func.unaccent(func.lower(f"%{escapado}%")), escape="\\"
+    )
 
 
 def _busca(
@@ -383,13 +423,12 @@ def _busca(
     out: list[ColumnElement[bool]] = []
     termo = (search or "").strip()
     if termo:
-        like = f"%{termo.replace('%', '').replace('_', '')}%"
         out.append(
             or_(
-                Solicitation.requester_name.ilike(like),
-                Solicitation.requester_email.ilike(like),
-                cast(Solicitation.batch_id, String).ilike(
-                    f"{termo.lower().replace('%', '').replace('_', '')}%"
+                _sem_acento(Solicitation.requester_name, termo),
+                _sem_acento(Solicitation.requester_email, termo),
+                cast(Solicitation.batch_id, String).istartswith(
+                    termo.lower(), autoescape=True
                 ),
             )
         )

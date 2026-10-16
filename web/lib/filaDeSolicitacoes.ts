@@ -22,6 +22,15 @@ export function quandoChegou(iso: string, agora: Date = new Date()): string {
 }
 
 /**
+ * O dia de um instante, `DD/MM/AAAA`, no fuso do workspace -- e não no da
+ * máquina, onde um pedido das 22h de Brasília apareceria no dia seguinte.
+ */
+export function diaDoEnvio(iso: string): string {
+  const [ano, mes, dia] = diaNoWorkspace(iso).split("-");
+  return `${dia}/${mes}/${ano}`;
+}
+
+/**
  * Qual demanda o painel abre primeiro: a primeira ainda PENDENTE (é a que
  * pede decisão), senão a primeira do envio.
  */

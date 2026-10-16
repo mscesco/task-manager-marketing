@@ -559,6 +559,50 @@ async def test_fila_busca_formulario_e_abas(db) -> None:
         assert await svc.form_options(None) == [(form.id, "Arte")]
 
 
+async def test_fila_busca_sem_acento_com_underline_e_abas_com_a_caixinha(db) -> None:
+    """Revisao de 16/10, antes do PR da 060:
+    - a busca APAGAVA `%` e `_`: `joao_silva@` virava `joaosilva@` e nao achava;
+    - a busca diferenciava acento: "conceicao" nao achava "Conceicao" com cedilha;
+    - os numeros das abas ignoravam a caixinha "so sem tarefa", e o selo dela
+      contava a fila inteira, e nao a aba aberta."""
+    from dataclasses import replace
+
+    from app.modules.solicitations.application.service import ReviewCommand
+    from app.shared.pagination import PageParams
+
+    ws, raiz, user, ctx = await _mundo(db)
+    form, secao, _ = await _form_publicado(db, ctx, raiz)
+    slug_ws = await _slug_do_ws(db, ws)
+    base = _envio(slug_ws, categoria=secao.slug, form_id=form.id)
+    async with UnitOfWork(db) as uow:
+        joao = await SolicitationService(db).create_public(
+            uow,
+            replace(base, requester_name="João da Conceição", requester_email="joao_silva@polo.ex"),
+        )
+    async with UnitOfWork(db) as uow:
+        await SolicitationService(db).create_public(uow, base)  # a Maria, pendente
+
+    with acting_as(**ctx):
+        svc = SolicitationService(db)
+        async with UnitOfWork(db) as uow:
+            aprovar = ReviewCommand(solicitation_id=joao[0].id, approve=True, note=None)
+            await svc.review(uow, aprovar)
+        p = PageParams(size=50)
+        casos = (("conceicao", 1), ("JOAO", 1), ("joao_silva", 1), ("joao%silva", 0))
+        for termo, esperado in casos:
+            _, total = await svc.list_batches(params=p, filtro=None, team_id=None, search=termo)
+            assert total == esperado, termo
+
+        com_caixinha = await svc.count_by_tab(None, filtro="ACTIVE", without_task=True)
+        assert com_caixinha == {
+            "PENDING": 1, "ACTIVE": 1, "DONE": 0, "REJECTED": 0,
+            "ALL": 1,  # so a do Joao: aceita e sem tarefa
+            "WITHOUT_TASK": 1,
+        }
+        # O selo e da aba aberta: em Concluidas, nenhuma sem tarefa.
+        assert (await svc.count_by_tab(None, filtro="DONE"))["WITHOUT_TASK"] == 0
+
+
 # ----------------------------------------------------------
 # 16/10, a auditoria
 # ----------------------------------------------------------
