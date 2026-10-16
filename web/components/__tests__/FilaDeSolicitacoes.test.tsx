@@ -296,6 +296,19 @@ describe("a lista não mente quando o servidor demora (revisão de 16/10)", () =
   });
 });
 
+describe("as abas das demandas no painel (16/10, produção)", () => {
+  // ⚠️ O jsdom não calcula layout, então o teste guarda a CLASSE: sem
+  // `shrink-0`, a barra com `overflow-x-auto` encolhia até zero no painel que
+  // rola por dentro, e as outras demandas do envio ficavam inalcançáveis.
+  it("⚠️ a barra das abas não encolhe quando as respostas são longas", async () => {
+    montar([item(), item({ id: "i2", batch_seq: 2, category: "arte", category_title: "Arte" })]);
+    await abrirOCard();
+    const abas = await screen.findByRole("tablist", { name: "Demandas do envio" });
+    expect(abas.className).toContain("shrink-0");
+    expect(within(abas).getAllByRole("tab")).toHaveLength(2);
+  });
+});
+
 describe("o atalho do cabeçalho", () => {
   it("⚠️ leva a `/formularios`, e NÃO a um `/solicitar` fixo", async () => {
     // ⚠️ ELE APONTAVA PARA `/solicitar`, e isso era verdade enquanto existia
