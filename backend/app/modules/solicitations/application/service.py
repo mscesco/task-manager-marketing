@@ -565,7 +565,14 @@ class SolicitationService:
         return {tid: titulo for tid, titulo in linhas}
 
     async def list_batches(
-        self, *, params: PageParams, filtro: str | None, team_id: uuid.UUID | None
+        self,
+        *,
+        params: PageParams,
+        filtro: str | None,
+        team_id: uuid.UUID | None,
+        search: str | None = None,
+        form_id: uuid.UUID | None = None,
+        without_task: bool = False,
     ) -> tuple[list[Batch], int]:
         """Fila agrupada por ENVIO (um card por submissao).
 
@@ -573,12 +580,17 @@ class SolicitationService:
         `None` = sem recorte. Sem default nos tres metodos de leitura, de
         proposito -- ver `SolicitationRepository.count_pending`.
         """
-        validos = set(SolicitationStatus) | {"SEM_TAREFA"}
+        validos = set(SolicitationStatus) | {"SEM_TAREFA", "ACTIVE"}
         if filtro is not None and filtro not in validos:
             raise ValidationError("Filtro invalido.")
 
         linhas, total = await self.repo.list_batches(
-            params=params, filtro=filtro, team_id=team_id
+            params=params,
+            filtro=filtro,
+            team_id=team_id,
+            search=search,
+            form_id=form_id,
+            without_task=without_task,
         )
 
         # Agrupa preservando a ordem devolvida pelo repositorio (envio mais
@@ -600,6 +612,24 @@ class SolicitationService:
             )
             for batch_id, itens in agrupado.items()
         ], total
+
+    async def count_by_tab(
+        self,
+        team_id: uuid.UUID | None,
+        search: str | None = None,
+        form_id: uuid.UUID | None = None,
+        *,
+        filtro: str | None = None,
+        without_task: bool = False,
+    ) -> dict[str, int]:
+        return await self.repo.count_by_tab(
+            team_id, search, form_id, filtro=filtro, without_task=without_task
+        )
+
+    async def form_options(
+        self, team_id: uuid.UUID | None
+    ) -> list[tuple[uuid.UUID, str]]:
+        return await self.repo.form_options(team_id)
 
     async def count_pending(self, team_id: uuid.UUID | None) -> int:
         return await self.repo.count_pending(team_id)

@@ -3248,7 +3248,11 @@ export async function enviarSolicitacaoPublica(payload: {
 
 export type SolicitacaoFiltro =
   | SolicitacaoStatus
+  | "ACTIVE" // aprovada ou em andamento (15/10)
   | "SEM_TAREFA"; // aprovadas que ninguém virou tarefa
+
+/** As abas da fila (15/10); `WITHOUT_TASK` é o "só sem tarefa". */
+export type FilaAba = "PENDING" | "ACTIVE" | "DONE" | "REJECTED" | "ALL" | "WITHOUT_TASK";
 
 export type BatchItem = {
   id: string;
@@ -3319,6 +3323,10 @@ export type BatchListResponse = {
   size: number;
   pending_total: number;
   approved_without_task_total: number;
+  /** Os números das abas, em demandas, com a mesma busca e formulário. */
+  tab_totals?: Partial<Record<FilaAba, number>>;
+  /** Os formulários que têm pedido nesta fila -- as opções do filtro. */
+  form_options?: { id: string; title: string }[];
 };
 
 /**
@@ -3339,10 +3347,18 @@ export async function listarEnvios(
     filtro?: SolicitacaoFiltro;
     page?: number;
     size?: number;
+    /** Nome, e-mail ou protocolo (15/10). */
+    busca?: string;
+    formId?: string | null;
+    /** Só demandas aceitas que ainda não viraram tarefa. */
+    semTarefa?: boolean;
   }
 ): Promise<BatchListResponse> {
   const q = new URLSearchParams();
   if (params.filtro) q.set("status", params.filtro);
+  if (params.busca?.trim()) q.set("q", params.busca.trim());
+  if (params.formId) q.set("form_id", params.formId);
+  if (params.semTarefa) q.set("without_task", "true");
   q.set("page", String(params.page ?? 1));
   q.set("size", String(params.size ?? 20));
   if (params.teamId) q.set("team_id", params.teamId);

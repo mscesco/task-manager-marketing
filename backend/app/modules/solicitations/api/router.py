@@ -41,6 +41,7 @@ from app.modules.solicitations.api.schemas import (
     BatchListResponse,
     BatchResponse,
     CriarTarefaRequest,
+    FormOption,
     MarkTaskRequest,
     PublicSolicitationCreateRequest,
     PublicSolicitationCreateResponse,
@@ -137,7 +138,7 @@ async def list_solicitations(
         None,
         alias="status",
         description=(
-            "PENDING | APPROVED | IN_PROGRESS | DONE | REJECTED | "
+            "PENDING | APPROVED | IN_PROGRESS | DONE | REJECTED | ACTIVE | "
             "SEM_TAREFA. Semantica de LOTE: o envio aparece se QUALQUER "
             "demanda dele casar."
         ),
@@ -149,6 +150,13 @@ async def list_solicitations(
             "dele. Ausente = tudo o que a lente permite."
         ),
     ),
+    q: str | None = Query(
+        None, max_length=120, description="Nome, e-mail ou protocolo (15/10)."
+    ),
+    form_id: uuid.UUID | None = Query(None, description="So deste formulario."),
+    without_task: bool = Query(
+        False, description="So demandas aceitas que ainda nao viraram tarefa."
+    ),
 ) -> BatchListResponse:
     """Fila de triagem agrupada por ENVIO -- um card por submissao.
 
@@ -157,7 +165,12 @@ async def list_solicitations(
     """
     service = SolicitationService(session)
     lotes, total = await service.list_batches(
-        params=PageParams(page=page, size=size), filtro=filtro, team_id=team_id
+        params=PageParams(page=page, size=size),
+        filtro=filtro,
+        team_id=team_id,
+        search=q,
+        form_id=form_id,
+        without_task=without_task,
     )
     # ⚠️ UMA CONSULTA SO PARA A PAGINA INTEIRA, e nao uma por item: dez envios
     # de quatro categorias seriam 40 idas ao banco para buscar um titulo.
@@ -210,6 +223,15 @@ async def list_solicitations(
         approved_without_task_total=await service.count_approved_without_task(
             team_id
         ),
+        # A mesma caixinha e a mesma aba da lista: o numero de cada aba e o selo
+        # "sem tarefa" dizem o que a tela vai mostrar (revisao de 16/10).
+        tab_totals=await service.count_by_tab(
+            team_id, q, form_id, filtro=filtro, without_task=without_task
+        ),
+        form_options=[
+            FormOption(id=fid, title=titulo)
+            for fid, titulo in await service.form_options(team_id)
+        ],
     )
 
 

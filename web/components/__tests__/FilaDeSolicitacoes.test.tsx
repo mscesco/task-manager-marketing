@@ -14,7 +14,7 @@
 // veio". Na fatia B a sabotagem do `form_id` passou verde por essa distinção.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 
 import SolicitacoesPage from "@/app/solicitacoes/page";
 import type { Batch, BatchItem } from "@/lib/api";
@@ -101,15 +101,19 @@ function envio(itens: BatchItem[] = [item()]): Batch {
 }
 
 /**
- * ⚠️ O CARD NASCE FECHADO, e abrir faz parte de montar a cena.
+ * ⚠️ O PAINEL NASCE VAZIO, e escolher o envio faz parte de montar a cena.
  *
- * Fechado ele mostra quem pediu e os tópicos do que pediu; prazo, respostas e
- * as ações de triagem só existem abertos. Os três primeiros testes que escrevi
- * aqui falharam por isso -- procuravam "Aprovar" numa tela que ainda não o
- * tinha desenhado.
+ * A lista mostra quem pediu e os tópicos do que pediu; prazo, respostas e as
+ * ações de triagem só existem no painel do envio escolhido (duas colunas desde
+ * 15/10 -- antes era um card que abria).
  */
 async function abrirOCard() {
   fireEvent.click(await screen.findByText("Maria do Polo"));
+}
+
+/** O painel do envio escolhido -- "Rejeitar" também existe na linha da lista. */
+function painel() {
+  return within(screen.getByRole("region", { name: "Envio escolhido" }));
 }
 
 function montar(itens: BatchItem[] = [item()]) {
@@ -199,6 +203,99 @@ describe("o formulário de origem (15/10)", () => {
   });
 });
 
+describe("abas, busca e formulário (15/10)", () => {
+  it("trocar de aba pede a situação ao servidor", async () => {
+    montar();
+    await screen.findByText("Maria do Polo");
+    fireEvent.click(screen.getByRole("tab", { name: /Em andamento/ }));
+    await waitFor(() =>
+      expect(api.listarEnvios).toHaveBeenLastCalledWith(expect.objectContaining({ filtro: "ACTIVE" }))
+    );
+  });
+
+  it("os números das abas vêm do servidor", async () => {
+    vi.mocked(api.listarEnvios).mockResolvedValue({
+      items: [envio()],
+      total: 1,
+      page: 1,
+      size: 20,
+      pending_total: 1,
+      approved_without_task_total: 0,
+      tab_totals: { PENDING: 7, ACTIVE: 12, DONE: 48, REJECTED: 3, ALL: 70, WITHOUT_TASK: 4 },
+    });
+    render(<SolicitacoesPage />);
+    expect((await screen.findByRole("tab", { name: /Concluídas/ })).textContent).toContain("48");
+  });
+
+  it("a busca vai ao servidor depois que a pessoa para de digitar", async () => {
+    montar();
+    await screen.findByText("Maria do Polo");
+    fireEvent.change(screen.getByLabelText("Buscar solicitações"), { target: { value: "FBC3" } });
+    await waitFor(() =>
+      expect(api.listarEnvios).toHaveBeenLastCalledWith(expect.objectContaining({ busca: "FBC3" }))
+    );
+  });
+
+  it("'só sem tarefa' não aparece em Pendentes, onde não faz sentido", async () => {
+    montar();
+    await screen.findByText("Maria do Polo");
+    expect(screen.queryByLabelText(/Só sem tarefa/)).toBeNull();
+    fireEvent.click(screen.getByRole("tab", { name: /Todas/ }));
+    fireEvent.click(await screen.findByLabelText(/Só sem tarefa/));
+    await waitFor(() =>
+      expect(api.listarEnvios).toHaveBeenLastCalledWith(expect.objectContaining({ semTarefa: true }))
+    );
+  });
+});
+
+describe("a lista não mente quando o servidor demora (revisão de 16/10)", () => {
+  function pagina(nome: string) {
+    return {
+      items: [{ ...envio(), requester_name: nome }],
+      total: 1,
+      page: 1,
+      size: 20,
+      pending_total: 1,
+      approved_without_task_total: 0,
+    };
+  }
+
+  it("⚠️ a resposta ATRASADA da aba anterior não sobrescreve a da aba nova", async () => {
+    let soltarPendentes!: (v: ReturnType<typeof pagina>) => void;
+    let soltarRejeitadas!: (v: ReturnType<typeof pagina>) => void;
+    vi.mocked(api.listarEnvios)
+      .mockImplementationOnce(() => new Promise((r) => (soltarPendentes = r)))
+      .mockImplementationOnce(() => new Promise((r) => (soltarRejeitadas = r)));
+    render(<SolicitacoesPage />);
+    await waitFor(() => expect(api.listarEnvios).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole("tab", { name: /Rejeitadas/ }));
+    await waitFor(() => expect(api.listarEnvios).toHaveBeenCalledTimes(2));
+
+    soltarRejeitadas(pagina("Rita Rejeitada"));
+    expect(await screen.findByText("Rita Rejeitada")).toBeTruthy();
+    soltarPendentes(pagina("Maria Pendente"));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(screen.queryByText("Maria Pendente")).toBeNull();
+    expect(screen.getByText("Rita Rejeitada")).toBeTruthy();
+  });
+
+  it("⚠️ trocar de aba na página 2 busca UMA vez, já na página 1", async () => {
+    vi.mocked(api.listarEnvios).mockResolvedValue({ ...pagina("Maria do Polo"), total: 45 });
+    render(<SolicitacoesPage />);
+    fireEvent.click(await screen.findByText("Próxima →"));
+    await waitFor(() =>
+      expect(api.listarEnvios).toHaveBeenLastCalledWith(expect.objectContaining({ page: 2 }))
+    );
+    await screen.findByText("Maria do Polo");
+    vi.mocked(api.listarEnvios).mockClear();
+    fireEvent.click(screen.getByRole("tab", { name: /Concluídas/ }));
+    await waitFor(() => expect(api.listarEnvios).toHaveBeenCalled());
+    await new Promise((r) => setTimeout(r, 20));
+    expect(api.listarEnvios).toHaveBeenCalledTimes(1);
+    expect(api.listarEnvios).toHaveBeenCalledWith(expect.objectContaining({ filtro: "DONE", page: 1 }));
+  });
+});
+
 describe("o atalho do cabeçalho", () => {
   it("⚠️ leva a `/formularios`, e NÃO a um `/solicitar` fixo", async () => {
     // ⚠️ ELE APONTAVA PARA `/solicitar`, e isso era verdade enquanto existia
@@ -268,7 +365,7 @@ describe("o andamento de um pedido ACEITO", () => {
   it("⚠️ pedido PENDENTE não tem seletor -- falta triar antes", async () => {
     montar([item({ status: "PENDING" })]);
     await abrirOCard();
-    await screen.findByText("Aprovar");
+    await screen.findByText("Aprovar e criar tarefa");
     expect(screen.queryByLabelText("Situação de Fotografia")).toBeNull();
   });
 
@@ -335,7 +432,7 @@ describe("criar a tarefa a partir do pedido", () => {
   it("⚠️ pedido PENDENTE não oferece criar -- falta triar antes", async () => {
     montar([item({ status: "PENDING" })]);
     await abrirOCard();
-    await screen.findByText("Aprovar");
+    await screen.findByText("Aprovar e criar tarefa");
     expect(screen.queryByText("Criar tarefa")).toBeNull();
   });
 
@@ -434,7 +531,7 @@ describe("um envio SEM telefone, área e polo", () => {
     // dois separadores são diferentes de propósito: `·` separa o e-mail do
     // lugar, `/` separa área de polo.
     montar();
-    await screen.findByText("Maria do Polo");
+    await abrirOCard();
     expect(document.body.textContent).toContain("Coordenação / Taboão");
   });
 
@@ -442,7 +539,8 @@ describe("um envio SEM telefone, área e polo", () => {
     // Em JSX o `null` some, mas o `·` e o `/` FICAM: o card mostrava
     // "maria@polo.ex ·  / ".
     montarMagro();
-    await screen.findByText("Maria");
+    fireEvent.click(await screen.findByText("Maria"));
+    await screen.findByText("Copiar briefing");
     expect(document.body.textContent).not.toMatch(/·\s*\/\s*$/m);
     expect(document.body.textContent).not.toContain("· /");
   });
@@ -475,15 +573,75 @@ describe("um envio SEM telefone, área e polo", () => {
 });
 
 describe("as duas ações que a fila existe para fazer", () => {
-  it("aprovar chama a API e recarrega", async () => {
+  it("'Aprovar e criar tarefa' aprova E cria, e oferece abrir a tarefa", async () => {
+    vi.mocked(api.aprovarSolicitacao).mockResolvedValue({} as never);
+    vi.mocked(api.criarTarefaDaSolicitacao).mockResolvedValue({
+      task_id: "t-7",
+      task_title: "[Fotografia] Preciso de fotos do evento",
+    });
+    montar();
+    await abrirOCard();
+    fireEvent.click(await screen.findByText("Aprovar e criar tarefa"));
+    await waitFor(() => expect(api.criarTarefaDaSolicitacao).toHaveBeenCalledWith("i1"));
+    expect(api.aprovarSolicitacao).toHaveBeenCalledWith("i1");
+    expect((await screen.findByText("Abrir a tarefa")).getAttribute("href")).toBe("/tarefa/t-7");
+  });
+
+  it("'Aprovar sem tarefa' (na seta) só aprova, e recarrega", async () => {
     vi.mocked(api.aprovarSolicitacao).mockResolvedValue({} as never);
     montar();
     await abrirOCard();
-    fireEvent.click(await screen.findByText("Aprovar"));
+    fireEvent.click(await screen.findByLabelText("Outras formas de aprovar"));
+    fireEvent.click(await screen.findByText("Aprovar sem tarefa"));
     await waitFor(() => expect(api.aprovarSolicitacao).toHaveBeenCalledWith("i1"));
+    expect(api.criarTarefaDaSolicitacao).not.toHaveBeenCalled();
     // ⚠️ RECARREGA em vez de costurar o novo status no estado local: aprovar
-    // muda contadores (`pending_total`) que a tela também mostra.
-    await waitFor(() => expect(api.listarEnvios).toHaveBeenCalledTimes(2));
+    // muda os números das abas, que a tela também mostra.
+    await waitFor(() =>
+      expect(vi.mocked(api.listarEnvios).mock.calls.length).toBeGreaterThan(1)
+    );
+  });
+
+  it("⚠️ ✓ na LISTA só aprova -- a tarefa se cria no painel (decisão dela)", async () => {
+    vi.mocked(api.aprovarSolicitacao).mockResolvedValue({} as never);
+    montar();
+    fireEvent.click(await screen.findByLabelText("Aprovar"));
+    await waitFor(() => expect(api.aprovarSolicitacao).toHaveBeenCalledWith("i1"));
+    expect(api.criarTarefaDaSolicitacao).not.toHaveBeenCalled();
+  });
+
+  it("⚠️ o segundo clique de um clique DUPLO no ✓ não aprova o envio que subiu", async () => {
+    vi.mocked(api.aprovarSolicitacao).mockResolvedValue({} as never);
+    montar();
+    const aprovar = await screen.findByLabelText("Aprovar");
+    fireEvent.click(aprovar, { detail: 2 });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(api.aprovarSolicitacao).not.toHaveBeenCalled();
+  });
+
+  it("⚠️ aprovado, mas a tarefa falhou: a tela diz isso e recarrega", async () => {
+    vi.mocked(api.aprovarSolicitacao).mockResolvedValue({} as never);
+    vi.mocked(api.criarTarefaDaSolicitacao).mockRejectedValue({ message: "quadro sem colunas" });
+    montar();
+    await abrirOCard();
+    vi.mocked(api.listarEnvios).mockClear();
+    fireEvent.click(await screen.findByText("Aprovar e criar tarefa"));
+    expect(await screen.findByText(/foi aprovado, mas a tarefa não foi criada \(quadro sem colunas\)/)).toBeTruthy();
+    // Recarrega: o pedido já não está pendente, e a tela precisa saber.
+    await waitFor(() => expect(api.listarEnvios).toHaveBeenCalled());
+  });
+
+  it("✕ na LISTA abre o envio já pedindo a justificativa", async () => {
+    montar();
+    fireEvent.click(await screen.findByLabelText("Rejeitar"));
+    expect(await screen.findByText("Confirmar rejeição")).toBeTruthy();
+    expect(api.rejeitarSolicitacao).not.toHaveBeenCalled();
+  });
+
+  it("⚠️ envio com VÁRIAS demandas não decide na lista -- uma por uma", async () => {
+    montar([item(), item({ id: "i2", batch_seq: 2, category: "arte", category_title: "Arte" })]);
+    await screen.findByText("Maria do Polo");
+    expect(screen.queryByLabelText("Aprovar")).toBeNull();
   });
 
   it("⚠️ rejeitar EXIGE justificativa -- é o que a pessoa vai receber", async () => {
@@ -493,7 +651,7 @@ describe("as duas ações que a fila existe para fazer", () => {
     // aqui a frase "a rejeição exige uma justificativa" diz.
     montar();
     await abrirOCard();
-    fireEvent.click(await screen.findByText("Rejeitar"));
+    fireEvent.click(await painel().findByText("Rejeitar"));
     fireEvent.click(await screen.findByText("Confirmar rejeição"));
 
     expect(await screen.findByText(/exige uma justificativa/i)).toBeTruthy();
@@ -504,7 +662,7 @@ describe("as duas ações que a fila existe para fazer", () => {
     vi.mocked(api.rejeitarSolicitacao).mockResolvedValue({} as never);
     montar();
     await abrirOCard();
-    fireEvent.click(await screen.findByText("Rejeitar"));
+    fireEvent.click(await painel().findByText("Rejeitar"));
     fireEvent.change(screen.getByRole("textbox"), {
       target: { value: "  fora do escopo  " },
     });
