@@ -136,6 +136,8 @@ def _secao_para_resposta(secao, perguntas) -> SectionResponse:
         sla_text=secao.sla_text,
         summary_question_id=secao.summary_question_id,
         position=secao.position,
+        repeatable=secao.repeatable,
+        repeat_label=secao.repeat_label,
         questions=[QuestionResponse.model_validate(q) for q in perguntas],
     )
 
@@ -284,6 +286,8 @@ async def editar_secao(
         title=payload.title,
         emoji=payload.emoji,
         sla_text=payload.sla_text,
+        repeatable=payload.repeatable,
+        repeat_label=payload.repeat_label,
     )
     resposta = _secao_para_resposta(
         secao, await servico.perguntas_da_secao(section_id)

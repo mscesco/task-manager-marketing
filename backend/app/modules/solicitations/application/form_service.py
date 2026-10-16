@@ -542,8 +542,10 @@ class SolicitationFormService:
         title: str | None = None,
         emoji: str | None = None,
         sla_text: str | None = None,
+        repeatable: bool | None = None,
+        repeat_label: str | None = None,
     ) -> SolicitationSection:
-        """Titulo, emoji e prazo. **O `slug` NAO entra, e isso e deliberado.**
+        """Titulo, emoji, prazo e repeticao (Spec 059). **O `slug` NAO entra, e isso e deliberado.**
 
         ⚠️ O SLUG DA SECAO E O QUE FICA GRAVADO EM CADA SOLICITACAO. Ele viaja
         como `solicitation_item.category` e e ele que a fila usa para dizer de
@@ -566,6 +568,10 @@ class SolicitationFormService:
             secao.emoji = emoji.strip()
         if sla_text is not None:
             secao.sla_text = sla_text.strip() or None
+        if repeatable is not None:
+            secao.repeatable = repeatable
+        if repeat_label is not None:
+            secao.repeat_label = repeat_label.strip() or None
         await self._session.flush()
         logger.info("solicitation_section.editada", section_id=str(secao.id))
         return secao

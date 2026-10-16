@@ -46,3 +46,19 @@ export function rotuloDaCategoria(item: BatchItem): RotuloDeCategoria {
     prazo: item.category_sla,
   };
 }
+
+/**
+ * " #2" quando o envio traz a MESMA seção mais de uma vez (Spec 059: seção
+ * repetível, vários eventos num envio); vazio quando ela aparece uma vez só.
+ * A ordem é a do `batch_seq` -- a ordem em que a pessoa preencheu.
+ */
+export function numeroDaRepeticao(
+  items: readonly Pick<BatchItem, "id" | "category" | "batch_seq">[],
+  item: Pick<BatchItem, "id" | "category">
+): string {
+  const irmaos = items
+    .filter((i) => i.category === item.category)
+    .sort((a, b) => a.batch_seq - b.batch_seq);
+  if (irmaos.length < 2) return "";
+  return ` #${irmaos.findIndex((i) => i.id === item.id) + 1}`;
+}

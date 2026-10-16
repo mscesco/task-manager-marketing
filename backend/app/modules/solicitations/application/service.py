@@ -68,9 +68,12 @@ from app.shared.exceptions.base import (
 )
 from app.shared.pagination import PageParams
 
-# Maximo de categorias num unico envio: o menu tem 11. Teto = tamanho do
-# menu (nao ha o que selecionar alem disso) e corta payload inflado.
-MAX_ITENS_POR_LOTE = 11
+# Maximo de itens num unico envio. Era 11 (o tamanho do menu); com a secao
+# repetivel (Spec 059) cada repeticao e um item, e o teto so corta payload
+# inflado -- a regra fina e `MAX_REPETICOES_POR_SECAO`.
+MAX_ITENS_POR_LOTE = 60
+#: Spec 059 (15/10): quantas vezes a mesma secao repetivel entra num envio.
+MAX_REPETICOES_POR_SECAO = 20
 
 
 @dataclass(frozen=True, slots=True)
@@ -224,8 +227,7 @@ class SolicitationService:
             raise ValidationError("Selecione ao menos um tipo de solicitacao.")
         if len(command.items) > MAX_ITENS_POR_LOTE:
             raise ValidationError(
-                "Selecione no maximo "
-                f"{MAX_ITENS_POR_LOTE} tipos de solicitacao por envio."
+                f"Envie no maximo {MAX_ITENS_POR_LOTE} solicitacoes de uma vez."
             )
 
         # ⚠️ A VALIDACAO DA CATEGORIA TEM DOIS CAMINHOS (Spec 043, fatia B),
@@ -247,10 +249,12 @@ class SolicitationService:
                 if item.category not in CATEGORIES:
                     raise ValidationError("Categoria de solicitacao invalida.")
 
-        # Categoria repetida no mesmo envio e erro de UI, nao pedido real:
-        # viraria duas linhas identicas na fila da triagem.
+        # Categoria repetida no mesmo envio so vale em SECAO REPETIVEL (Spec
+        # 059) -- conferido abaixo, com as secoes do formulario em maos. Sem
+        # formulario (o caminho antigo) nada repete.
         categorias = [i.category for i in command.items]
-        if len(set(categorias)) != len(categorias):
+        repetidas = {c: categorias.count(c) for c in categorias if categorias.count(c) > 1}
+        if repetidas and command.form_id is None:
             raise ValidationError(
                 "Cada tipo de solicitacao pode ser escolhido uma vez por envio."
             )
@@ -275,7 +279,7 @@ class SolicitationService:
         if command.form_id is not None:
             secoes = (
                 await self.session.execute(
-                    select(SolicitationSection.slug)
+                    select(SolicitationSection.slug, SolicitationSection.repeatable)
                     .join(
                         SolicitationForm,
                         (SolicitationForm.id == SolicitationSection.form_id)
@@ -292,11 +296,21 @@ class SolicitationService:
                         SolicitationSection.deleted_at.is_(None),
                     )
                 )
-            ).scalars().all()
-            validas = set(secoes)
+            ).all()
+            repetivel = {slug: rep for slug, rep in secoes}
             for item in command.items:
-                if item.category not in validas:
+                if item.category not in repetivel:
                     raise ValidationError("Categoria de solicitacao invalida.")
+            for slug, vezes in repetidas.items():
+                if not repetivel[slug]:
+                    raise ValidationError(
+                        "Cada tipo de solicitacao pode ser escolhido uma vez por envio."
+                    )
+                if vezes > MAX_REPETICOES_POR_SECAO:
+                    raise ValidationError(
+                        f"Uma secao repete no maximo {MAX_REPETICOES_POR_SECAO} "
+                        "vezes por envio."
+                    )
 
         # ⚠️⚠️ A IDENTIFICACAO E CONFERIDA CONTRA O CABECALHO DO FORMULARIO
         # (Spec 043, fatia G), e nao contra uma lista fixa. Ver
@@ -479,6 +493,30 @@ class SolicitationService:
             # ele e quem fica na chave sem form.
             rotulos[(None, slug)] = rotulo
         return rotulos
+
+    async def titulos_dos_formularios(
+        self, itens: list[Solicitation]
+    ) -> dict[uuid.UUID, str]:
+        """O titulo do formulario de cada pedido desta pagina (15/10: a fila
+        nao dizia por qual formulario o pedido entrou).
+
+        ⚠️ FORMULARIO APAGADO ENTRA: o pedido continua na fila, e o nome de
+        onde ele veio continua verdadeiro. Pedido orfao (sem `form_id`, de
+        antes da Spec 043) fica de fora, e a tela nao mostra nada.
+        """
+        ids = {i.form_id for i in itens if i.form_id is not None}
+        if not ids:
+            return {}
+        tenant = require_tenant()
+        linhas = (
+            await self.session.execute(
+                select(SolicitationForm.id, SolicitationForm.title).where(
+                    SolicitationForm.id.in_(ids),
+                    SolicitationForm.workspace_id == tenant.workspace_id,
+                )
+            )
+        ).all()
+        return {fid: titulo for fid, titulo in linhas}
 
     async def titulos_das_tarefas(
         self, itens: list[Solicitation]

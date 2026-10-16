@@ -392,3 +392,118 @@ async def test_SEM_form_id_o_caminho_antigo_continua_valendo(db) -> None:
 
     assert criadas is not None
     assert criadas[0].form_id is None
+
+
+# ----------------------------------------------------------
+# Secao repetivel (Spec 059, 15/10)
+#
+# A pessoa preenche a mesma secao mais de uma vez (varios eventos). Cada
+# repeticao e um item do lote -- a categoria se repete SO nessas secoes.
+# ----------------------------------------------------------
+def _envio_de(slug_ws: str, form_id, categorias: list[str]) -> CreatePublicCommand:
+    base = _envio(slug_ws, categoria=categorias[0], form_id=form_id)
+    return CreatePublicCommand(
+        **{
+            **{k: getattr(base, k) for k in base.__dataclass_fields__},
+            "items": [
+                SolicitationItem(category=c, summary=f"item {i}", answers=[])
+                for i, c in enumerate(categorias, start=1)
+            ],
+        }
+    )
+
+
+async def test_secao_repetivel_vira_UMA_solicitacao_por_repeticao(db) -> None:
+    ws, raiz, user, ctx = await _mundo(db)
+    form, secao, _ = await _form_publicado(db, ctx, raiz)
+    with acting_as(**ctx):
+        editada = await SolicitationFormService(db).editar_secao(
+            section_id=secao.id, repeatable=True, repeat_label="evento"
+        )
+    assert editada.repeatable is True
+    assert editada.repeat_label == "evento"
+    slug_ws = await _slug_do_ws(db, ws)
+
+    detalhe = await SolicitationPublicFormService(db).obter(
+        workspace_slug=slug_ws, form_slug="arte"
+    )
+    assert detalhe.sections[0].repeatable is True
+    assert detalhe.sections[0].repeat_label == "evento"
+
+    async with UnitOfWork(db) as uow:
+        criadas = await SolicitationService(db).create_public(
+            uow, _envio_de(slug_ws, form.id, ["briefing"] * 3)
+        )
+    assert criadas is not None
+    assert [c.batch_seq for c in criadas] == [1, 2, 3]
+    assert {c.batch_total for c in criadas} == {3}
+    assert len({c.batch_id for c in criadas}) == 1
+
+
+async def test_secao_NAO_repetivel_continua_recusando_repeticao(db) -> None:
+    ws, raiz, user, ctx = await _mundo(db)
+    form, secao, _ = await _form_publicado(db, ctx, raiz)
+    slug_ws = await _slug_do_ws(db, ws)
+
+    async with UnitOfWork(db) as uow:
+        with pytest.raises(ValidationError):
+            await SolicitationService(db).create_public(
+                uow, _envio_de(slug_ws, form.id, ["briefing", "briefing"])
+            )
+
+
+async def _repetivel(db):
+    ws, raiz, user, ctx = await _mundo(db)
+    form, secao, _ = await _form_publicado(db, ctx, raiz)
+    with acting_as(**ctx):
+        await SolicitationFormService(db).editar_secao(
+            section_id=secao.id, repeatable=True
+        )
+    return await _slug_do_ws(db, ws), form
+
+
+# ⚠️ OS DOIS LADOS DO TETO EM TESTES SEPARADOS: o envio recusado desfaz a
+# transacao do teste inteira (o workspace some), e o segundo envio cairia em
+# "Workspace nao encontrado".
+async def test_secao_repetivel_aceita_20(db) -> None:
+    slug_ws, form = await _repetivel(db)
+    async with UnitOfWork(db) as uow:
+        criadas = await SolicitationService(db).create_public(
+            uow, _envio_de(slug_ws, form.id, ["briefing"] * 20)
+        )
+    assert criadas is not None and len(criadas) == 20
+
+
+async def test_secao_repetivel_recusa_21(db) -> None:
+    slug_ws, form = await _repetivel(db)
+    async with UnitOfWork(db) as uow:
+        with pytest.raises(ValidationError, match="20"):
+            await SolicitationService(db).create_public(
+                uow, _envio_de(slug_ws, form.id, ["briefing"] * 21)
+            )
+
+
+async def test_rotulo_vazio_volta_ao_titulo(db) -> None:
+    ws, raiz, user, ctx = await _mundo(db)
+    _, secao, _ = await _form_publicado(db, ctx, raiz)
+    with acting_as(**ctx):
+        svc = SolicitationFormService(db)
+        await svc.editar_secao(section_id=secao.id, repeat_label="evento")
+        editada = await svc.editar_secao(section_id=secao.id, repeat_label="  ")
+    assert editada.repeat_label is None
+
+
+async def test_a_fila_sabe_o_TITULO_do_formulario_do_pedido(db) -> None:
+    """15/10: a fila nao dizia por qual formulario o pedido entrou."""
+    ws, raiz, user, ctx = await _mundo(db)
+    form, secao, _ = await _form_publicado(db, ctx, raiz)
+    slug_ws = await _slug_do_ws(db, ws)
+    async with UnitOfWork(db) as uow:
+        criadas = await SolicitationService(db).create_public(
+            uow, _envio(slug_ws, categoria=secao.slug, form_id=form.id)
+        )
+    assert criadas is not None
+
+    with acting_as(**ctx):
+        titulos = await SolicitationService(db).titulos_dos_formularios(criadas)
+    assert titulos == {form.id: "Arte"}

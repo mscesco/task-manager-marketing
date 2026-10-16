@@ -28,6 +28,9 @@ import {
 } from "@/lib/api";
 import {
   campoVisivel,
+  MAX_REPETICOES,
+  novaRepeticao,
+  rotuloDaRepeticao,
   type Campo,
   type Categoria,
 } from "@/lib/solicitacaoForm";
@@ -131,6 +134,9 @@ export default function FormularioSolicitacao({
   // ORDEM DE SELEÇÃO preservada: é a ordem das seções e do batch_seq.
   const [selecionadas, setSelecionadas] = useState<string[]>([]);
   const [valores, setValores] = useState<ValoresPorCategoria>({});
+  // Spec 059: as repetições de cada seção repetível, como chaves de `valores`
+  // (a primeira é o próprio slug). Seção sem entrada aqui vale uma vez.
+  const [repeticoes, setRepeticoes] = useState<Record<string, string[]>>({});
   const [honeypot, setHoneypot] = useState("");
   const [erro, setErro] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
@@ -171,8 +177,8 @@ export default function FormularioSolicitacao({
       Object.values(ident).some((v) => v.trim().length > 0);
     if (!temConteudo && !jaSalvou.current) return;
     jaSalvou.current = true;
-    salvarRascunho(formId, { ident, selecionadas, valores, passo });
-  }, [ident, selecionadas, valores, passo, hidratado, resultado]);
+    salvarRascunho(formId, { ident, selecionadas, valores, passo, repeticoes });
+  }, [ident, selecionadas, valores, passo, repeticoes, hidratado, resultado]);
 
   const categoriasSelecionadas: Categoria[] = useMemo(
     () =>
@@ -188,12 +194,42 @@ export default function FormularioSolicitacao({
       ? categoriasSelecionadas[passo - 1]
       : null;
   const naRevisao = passo === categoriasSelecionadas.length + 1;
+  // Spec 059: cada repetição é uma demanda -- o total de itens do envio.
+  const totalDeItens = categoriasSelecionadas.reduce(
+    (n, cat) => n + (cat.repetivel ? Math.max(1, repeticoes[cat.slug]?.length ?? 1) : 1),
+    0
+  );
 
   const camposVisiveis = useCallback(
-    (cat: Categoria) =>
-      cat.campos.filter((c) => campoVisivel(c, valores[cat.slug] ?? {})),
+    (cat: Categoria, chave: string = cat.slug) =>
+      cat.campos.filter((c) => campoVisivel(c, valores[chave] ?? {})),
     [valores]
   );
+
+  /** As repetições de uma seção (chaves de `valores`). Uma, se não repete. */
+  function chavesDe(cat: Categoria): string[] {
+    if (!cat.repetivel) return [cat.slug];
+    const r = repeticoes[cat.slug];
+    return r && r.length > 0 ? r : [cat.slug];
+  }
+
+  function adicionarRepeticao(cat: Categoria) {
+    const atuais = chavesDe(cat);
+    if (atuais.length >= MAX_REPETICOES) return;
+    setErro(null);
+    setRepeticoes((p) => ({ ...p, [cat.slug]: [...atuais, novaRepeticao(cat.slug, atuais)] }));
+  }
+
+  function removerRepeticao(cat: Categoria, chave: string) {
+    const atuais = chavesDe(cat);
+    if (atuais.length <= 1) return;
+    setErro(null);
+    setRepeticoes((p) => ({ ...p, [cat.slug]: atuais.filter((k) => k !== chave) }));
+    setValores((p) => {
+      const { [chave]: _fora, ...resto } = p;
+      return resto;
+    });
+  }
 
   function alternarCategoria(slug: string) {
     setErro(null);
@@ -223,23 +259,42 @@ export default function FormularioSolicitacao({
     return true;
   }
 
-  function setValor(slug: string, campoId: string, v: string | string[]) {
+  function setValor(chave: string, campoId: string, v: string | string[]) {
     setValores((prev) => ({
       ...prev,
-      [slug]: { ...(prev[slug] ?? {}), [campoId]: v },
+      [chave]: { ...(prev[chave] ?? {}), [campoId]: v },
     }));
   }
 
-  /** Primeiro campo obrigatório vazio de uma categoria (ou null). */
-  function faltando(cat: Categoria): Campo | null {
-    const vals = valores[cat.slug] ?? {};
-    for (const campo of camposVisiveis(cat)) {
+  /** Primeiro campo obrigatório vazio de UMA repetição da seção (ou null). */
+  function faltandoEm(cat: Categoria, chave: string): Campo | null {
+    const vals = valores[chave] ?? {};
+    for (const campo of camposVisiveis(cat, chave)) {
       if (!campo.obrigatorio) continue;
       const v = vals[campo.id];
       if (v === undefined || (typeof v === "string" && !v.trim())) return campo;
       if (Array.isArray(v) && v.length === 0) return campo;
     }
     return null;
+  }
+
+  /** O primeiro que falta na seção inteira (todas as repetições), e onde. */
+  function faltandoNaSecao(cat: Categoria): { campo: Campo; chave: string; n: number } | null {
+    const chaves = chavesDe(cat);
+    for (let i = 0; i < chaves.length; i++) {
+      const campo = faltandoEm(cat, chaves[i]);
+      if (campo) return { campo, chave: chaves[i], n: i + 1 };
+    }
+    return null;
+  }
+
+  function faltando(cat: Categoria): Campo | null {
+    return faltandoNaSecao(cat)?.campo ?? null;
+  }
+
+  /** " (evento 2)" quando a seção tem mais de uma repetição. */
+  function qual(cat: Categoria, n: number): string {
+    return chavesDe(cat).length > 1 ? ` (${rotuloDaRepeticao(cat)} ${n})` : "";
   }
 
   function avancar() {
@@ -263,11 +318,13 @@ export default function FormularioSolicitacao({
         return;
       }
     } else if (categoriaAtual) {
-      const falta = faltando(categoriaAtual);
+      const falta = faltandoNaSecao(categoriaAtual);
       if (falta) {
-        setErro(`Campo obrigatório não preenchido: "${falta.label}"`);
+        setErro(
+          `Campo obrigatório não preenchido: "${falta.campo.label}"${qual(categoriaAtual, falta.n)}`
+        );
         document
-          .getElementById(`campo-${categoriaAtual.slug}-${falta.id}`)
+          .getElementById(`campo-${falta.chave}-${falta.campo.id}`)
           ?.scrollIntoView({ block: "center" });
         return;
       }
@@ -288,23 +345,26 @@ export default function FormularioSolicitacao({
     window.scrollTo({ top: 0 });
   }
 
+  /** Um item do envio por REPETIÇÃO de cada seção (Spec 059), na ordem. */
   function montarItens(): SolicitacaoItemEnvio[] {
-    return categoriasSelecionadas.map((cat) => {
-      const vals = valores[cat.slug] ?? {};
-      const answers: SolicitacaoAnswer[] = [];
-      for (const campo of camposVisiveis(cat)) {
-        const v = vals[campo.id];
-        if (v === undefined) continue;
-        const texto = Array.isArray(v) ? v.join(", ") : v.trim();
-        if (!texto) continue;
-        answers.push({ label: campo.label, value: texto.slice(0, 5000) });
-      }
-      const resumoRaw = vals[cat.resumoDe];
-      const resumo =
-        (Array.isArray(resumoRaw) ? resumoRaw.join(", ") : resumoRaw)?.trim() ||
-        cat.titulo;
-      return { category: cat.slug, summary: resumo.slice(0, 500), answers };
-    });
+    return categoriasSelecionadas.flatMap((cat) => chavesDe(cat).map((chave) => montarItem(cat, chave)));
+  }
+
+  function montarItem(cat: Categoria, chave: string): SolicitacaoItemEnvio {
+    const vals = valores[chave] ?? {};
+    const answers: SolicitacaoAnswer[] = [];
+    for (const campo of camposVisiveis(cat, chave)) {
+      const v = vals[campo.id];
+      if (v === undefined) continue;
+      const texto = Array.isArray(v) ? v.join(", ") : v.trim();
+      if (!texto) continue;
+      answers.push({ label: campo.label, value: texto.slice(0, 5000) });
+    }
+    const resumoRaw = vals[cat.resumoDe];
+    const resumo =
+      (Array.isArray(resumoRaw) ? resumoRaw.join(", ") : resumoRaw)?.trim() ||
+      cat.titulo;
+    return { category: cat.slug, summary: resumo.slice(0, 500), answers };
   }
 
   async function enviar() {
@@ -312,10 +372,10 @@ export default function FormularioSolicitacao({
     // Revalida TUDO: a pessoa pode ter voltado e apagado algo.
     for (let i = 0; i < categoriasSelecionadas.length; i++) {
       const cat = categoriasSelecionadas[i];
-      const falta = faltando(cat);
+      const falta = faltandoNaSecao(cat);
       if (falta) {
         setErro(
-          `"${cat.titulo}" está incompleta: falta "${falta.label}". Clique em editar para corrigir.`
+          `"${cat.titulo}"${qual(cat, falta.n)} está incompleta: falta "${falta.campo.label}". Clique em editar para corrigir.`
         );
         return;
       }
@@ -364,6 +424,7 @@ export default function FormularioSolicitacao({
     setIdent(IDENT_VAZIO);
     setSelecionadas([]);
     setValores({});
+    setRepeticoes({});
     setPasso(0);
     jaSalvou.current = false;
   }
@@ -454,6 +515,13 @@ export default function FormularioSolicitacao({
             setIdent({ ...IDENT_VAZIO, ...rascunhoAchado.ident });
             setSelecionadas(vivas);
             setValores(rascunhoAchado.valores ?? {});
+            setRepeticoes(
+              Object.fromEntries(
+                Object.entries(rascunhoAchado.repeticoes ?? {}).filter(
+                  ([slug, ks]) => categoriaPorSlug[slug]?.repetivel && Array.isArray(ks)
+                )
+              )
+            );
             setPasso(perdeuAlguma ? 0 : rascunhoAchado.passo ?? 0);
             setRascunhoAchado(null);
             setHidratado(true);
@@ -584,15 +652,84 @@ export default function FormularioSolicitacao({
             </p>
           )}
 
-          {camposVisiveis(categoriaAtual).map((campo) => (
-            <CampoInput
-              key={campo.id}
-              slug={categoriaAtual.slug}
-              campo={campo}
-              valor={(valores[categoriaAtual.slug] ?? {})[campo.id]}
-              onChange={(v) => setValor(categoriaAtual.slug, campo.id, v)}
-            />
-          ))}
+          {!categoriaAtual.repetivel &&
+            camposVisiveis(categoriaAtual).map((campo) => (
+              <CampoInput
+                key={campo.id}
+                slug={categoriaAtual.slug}
+                campo={campo}
+                valor={(valores[categoriaAtual.slug] ?? {})[campo.id]}
+                onChange={(v) => setValor(categoriaAtual.slug, campo.id, v)}
+              />
+            ))}
+
+          {/* Spec 059: a seção repetível empilha uma caixa por repetição. */}
+          {categoriaAtual.repetivel && (
+            <>
+              {chavesDe(categoriaAtual).map((chave, i, todas) => (
+                <fieldset
+                  key={chave}
+                  style={{
+                    border: "1px solid var(--border)",
+                    borderRadius: 10,
+                    padding: 14,
+                    margin: 0,
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 14,
+                  }}
+                >
+                  <legend
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      padding: "0 6px",
+                      fontSize: 13,
+                      fontWeight: 600,
+                      textTransform: "capitalize",
+                    }}
+                  >
+                    {rotuloDaRepeticao(categoriaAtual)} {i + 1}
+                  </legend>
+                  {todas.length > 1 && (
+                    <button
+                      type="button"
+                      className="btn btn-ghost"
+                      style={{ alignSelf: "flex-end", fontSize: 12, padding: "2px 8px", marginTop: -8 }}
+                      aria-label={`Remover ${rotuloDaRepeticao(categoriaAtual)} ${i + 1}`}
+                      onClick={() => removerRepeticao(categoriaAtual, chave)}
+                    >
+                      Remover
+                    </button>
+                  )}
+                  {camposVisiveis(categoriaAtual, chave).map((campo) => (
+                    <CampoInput
+                      key={campo.id}
+                      slug={chave}
+                      campo={campo}
+                      valor={(valores[chave] ?? {})[campo.id]}
+                      onChange={(v) => setValor(chave, campo.id, v)}
+                    />
+                  ))}
+                </fieldset>
+              ))}
+              {chavesDe(categoriaAtual).length < MAX_REPETICOES ? (
+                <button
+                  type="button"
+                  className="btn"
+                  style={{ alignSelf: "flex-start" }}
+                  onClick={() => adicionarRepeticao(categoriaAtual)}
+                >
+                  + Adicionar outro {rotuloDaRepeticao(categoriaAtual)}
+                </button>
+              ) : (
+                <p className="muted" style={{ margin: 0, fontSize: 12 }}>
+                  Limite de {MAX_REPETICOES} por envio. Para mais, envie outra solicitação.
+                </p>
+              )}
+            </>
+          )}
 
           <NavPassos
             onVoltar={voltar}
@@ -612,8 +749,8 @@ export default function FormularioSolicitacao({
           <div>
             <h2 style={{ margin: 0, fontSize: 17 }}>Revisão</h2>
             <p className="muted" style={{ margin: "4px 0 0", fontSize: 13 }}>
-              {categoriasSelecionadas.length > 1
-                ? `${categoriasSelecionadas.length} demandas serão abertas com um mesmo protocolo. Cada uma é analisada separadamente.`
+              {totalDeItens > 1
+                ? `${totalDeItens} demandas serão abertas com um mesmo protocolo. Cada uma é analisada separadamente.`
                 : "Confira os dados antes de enviar."}
             </p>
           </div>
@@ -645,11 +782,13 @@ export default function FormularioSolicitacao({
             </button>
           </div>
 
-          {categoriasSelecionadas.map((cat, i) => {
-            const answers = montarItens()[i]?.answers ?? [];
+          {categoriasSelecionadas.flatMap((cat, i) =>
+            chavesDe(cat).map((chave, n, todas) => ({ cat, i, chave, n, todas }))
+          ).map(({ cat, i, chave, n, todas }) => {
+            const answers = montarItem(cat, chave).answers;
             return (
               <div
-                key={cat.slug}
+                key={chave}
                 style={{
                   border: "1px solid var(--border)",
                   borderRadius: 10,
@@ -667,6 +806,12 @@ export default function FormularioSolicitacao({
                 >
                   <strong style={{ fontSize: 14 }}>
                     {cat.emoji} {cat.titulo}
+                    {todas.length > 1 && (
+                      <span className="muted" style={{ fontWeight: 400 }}>
+                        {" "}
+                        · {rotuloDaRepeticao(cat)} {n + 1}
+                      </span>
+                    )}
                   </strong>
                   {cat.prazo && (
                     <span className="muted" style={{ fontSize: 11 }}>
@@ -716,8 +861,8 @@ export default function FormularioSolicitacao({
             >
               {enviando
                 ? "Enviando…"
-                : categoriasSelecionadas.length > 1
-                  ? `Enviar ${categoriasSelecionadas.length} solicitações`
+                : totalDeItens > 1
+                  ? `Enviar ${totalDeItens} solicitações`
                   : "Enviar solicitação"}
             </button>
           </div>
@@ -859,7 +1004,10 @@ function Pastilha({
         borderRadius: 999,
         padding: "4px 10px",
         cursor: "pointer",
-        font: "inherit",
+        // ⚠️ `fontFamily`, e não o atalho `font: inherit`: o atalho junto do
+        // `fontWeight` que muda a cada passo gerava aviso do React no console
+        // (15/10) -- e podia deixar o peso errado depois de rerender.
+        fontFamily: "inherit",
         fontSize: 12,
         maxWidth: 220,
         overflow: "hidden",

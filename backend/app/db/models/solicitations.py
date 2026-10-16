@@ -479,6 +479,13 @@ class SolicitationSection(
         PG_UUID(as_uuid=True), nullable=True
     )
     position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    #: Spec 059: a pessoa preenche a secao MAIS DE UMA VEZ no mesmo envio
+    #: (varios eventos). Cada repeticao vira uma solicitacao propria no lote.
+    repeatable: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false"), default=False
+    )
+    #: O que o botao diz: "+ Adicionar outro <repeat_label>". Vazio = o titulo.
+    repeat_label: Mapped[str | None] = mapped_column(String(60), nullable=True)
     deleted_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )

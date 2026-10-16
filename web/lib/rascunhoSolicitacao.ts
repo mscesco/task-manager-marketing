@@ -75,6 +75,9 @@ export type RascunhoSolicitacao = {
   selecionadas: string[];
   valores: Record<string, Record<string, string | string[]>>;
   passo: number;
+  /** Spec 059: as repetições de cada seção (chaves de `valores`). Opcional:
+   *  rascunho de antes dela não tem, e cada seção vale uma vez. */
+  repeticoes?: Record<string, string[]>;
 };
 
 /** Lê o rascunho. Devolve null se não existe, expirou ou está corrompido. */

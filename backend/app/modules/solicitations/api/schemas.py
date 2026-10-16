@@ -65,8 +65,9 @@ class PublicSolicitationCreateRequest(BaseModel):
     requester_department: str | None = Field(default=None, max_length=255)
     requester_polo: str | None = Field(default=None, max_length=255)
 
-    # Teto = tamanho do menu (11). Nao ha o que selecionar alem disso.
-    items: list[SolicitationItemRequest] = Field(min_length=1, max_length=11)
+    # Teto de payload. ⚠️ DEIXOU DE SER O TAMANHO DO MENU (11) com a secao
+    # repetivel (Spec 059): a regra fina (20 por secao) e do servico.
+    items: list[SolicitationItemRequest] = Field(min_length=1, max_length=60)
 
     # Honeypot anti-bot: input invisivel no form. Humano nao preenche.
     website: str = Field(default="", max_length=200)
@@ -161,6 +162,10 @@ class BatchResponse(BaseModel):
     requester_department: str | None
     requester_polo: str | None
     created_at: datetime
+    #: Por qual formulario o envio entrou. `None` = pedido de antes da Spec
+    #: 043, sem formulario.
+    form_id: uuid.UUID | None = None
+    form_title: str | None = None
     items: list[BatchItemResponse]
 
 
