@@ -2,10 +2,13 @@
 import { describe, expect, it } from "vitest";
 import type { BaseColumn, BaseRow } from "@/lib/api";
 import {
+  colagemGrandeDemais,
   colarGrade,
   copiarFaixa,
   faixaEntre,
   lerGrade,
+  MAX_CELULAS_COLADAS,
+  MAX_LINHAS_COLADAS,
   rotulosQueFaltam,
   separarVarios,
   valorColado,
@@ -102,3 +105,16 @@ describe("o que veio do Google Planilhas (15/10)", () => {
   });
 });
 
+// 16/10, a auditoria: o servidor recusava o segundo pedido (as células) com
+// erro em inglês depois de o primeiro já ter criado as linhas.
+describe("colagemGrandeDemais", () => {
+  const grade = (linhas: number, colunas: number) =>
+    Array.from({ length: linhas }, () => Array.from({ length: colunas }, () => "x"));
+
+  it("deixa passar no limite e recusa acima, em português", () => {
+    expect(colagemGrandeDemais(grade(MAX_LINHAS_COLADAS, 1))).toBeNull();
+    expect(colagemGrandeDemais(grade(MAX_LINHAS_COLADAS + 1, 1))).toMatch(/até 5\.000 linhas/);
+    expect(colagemGrandeDemais(grade(300, 20))).toBeNull(); // o caso da auditoria
+    expect(colagemGrandeDemais(grade(1_000, MAX_CELULAS_COLADAS / 1_000 + 1))).toMatch(/até 50\.000 células/);
+  });
+});
