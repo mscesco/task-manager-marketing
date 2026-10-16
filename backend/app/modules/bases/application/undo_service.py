@@ -188,11 +188,20 @@ class UndoService:
         self, base_id: uuid.UUID, p: dict[str, Any], *, desfazer: bool
     ) -> None:
         """Desfazer a importacao (Spec 057) marca TODAS as linhas e colunas que
-        ela criou; refazer tira a marca. Uma acao, um Ctrl+Z."""
-        for row_id in p["rows"]:
-            await self._marca_linha(base_id, uuid.UUID(row_id), marcar=desfazer)
-        for column_id in p["columns"]:
-            await self._marca_coluna(base_id, uuid.UUID(column_id), marcar=desfazer)
+        ela criou; refazer tira a marca. Uma acao, um Ctrl+Z.
+
+        ⚠️ CONFERE TUDO, DEPOIS MARCA (a regra do topo do arquivo). Marcando
+        linha a linha, uma linha apagada por outra pessoa no meio parava o
+        laco com as anteriores JA marcadas -- e o conflito tira a entrada da
+        pilha e grava: metade da importacao desfeita, sem refazer."""
+        ids = {uuid.UUID(r) for r in p["rows"]}
+        linhas = await self._rows.get_many(base_id, ids, include_deleted=True)
+        colunas = [await self._coluna(base_id, uuid.UUID(c)) for c in p["columns"]]
+        itens: list[BaseRow | BaseColumn] = [*linhas.values(), *colunas]
+        if len(linhas) != len(ids) or any((i.deleted_at is None) != desfazer for i in itens):
+            raise _Conflito
+        for item in itens:
+            _marcar(item, desfazer)
 
     async def _marca_coluna(
         self, base_id: uuid.UUID, column_id: uuid.UUID, *, marcar: bool
