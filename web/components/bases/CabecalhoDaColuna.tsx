@@ -6,7 +6,8 @@
 //   *"Tudo é clicável, nada de ter que clicar em 3 pontos pra editar"*
 //
 // O CABEÇALHO INTEIRO É O BOTÃO. Ele abre o menu da coluna: o nome editável no
-// topo, e embaixo Editar propriedade ›, Alterar tipo ›, Filtrar, Ordenar ›,
+// topo, e embaixo Editar propriedade ›, Alterar tipo ›, Usar como coluna
+// principal (Spec 061, só em texto), Filtrar, Ordenar ›,
 // Congelar, Ocultar, Inserir à esquerda/direita, Duplicar e Excluir. As setas
 // "›" abrem SUBMENU AO LADO (escolha dela), no `AnchoredPanel` com `aoLado`.
 //
@@ -57,6 +58,7 @@ import {
   deleteBaseColumn,
   deleteBaseOption,
   duplicateBaseColumn,
+  makeBaseColumnTitle,
   updateBaseColumn,
   type BaseColumn,
   type BaseColumnType,
@@ -104,7 +106,8 @@ export default function CabecalhoDaColuna({
   /** A coluna como o servidor a devolveu; `zerou` = trocou de tipo. */
   onMudou: (c: BaseColumn, zerou: boolean) => void;
   onApagou: (id: string) => void;
-  /** Coluna nova (inserir, duplicar). A página recarrega -- as outras andaram. */
+  /** Coluna nova (inserir, duplicar) ou coluna principal trocada. A página
+   *  recarrega -- as outras andaram. */
   onCriou: () => void;
   /**
    * Mover a coluna uma casa (14/10) -- a alternativa de TECLADO ao arrastar o
@@ -187,6 +190,15 @@ export default function CabecalhoDaColuna({
       fechar();
       onCriou();
     }, "Não consegui duplicar a coluna.");
+
+  // ⚠️ SÓ TEXTO (decisão dela, Spec 061): o título dos cards é texto. Sem
+  // confirmação: nenhum valor se perde, e o Ctrl+Z troca de volta.
+  const tornarPrincipal = () =>
+    rodar(async () => {
+      await makeBaseColumnTitle(baseId, coluna.id);
+      fechar();
+      onCriou();
+    }, "Não consegui trocar a coluna principal.");
 
   const excluir = () =>
     rodar(async () => {
@@ -282,6 +294,15 @@ export default function CabecalhoDaColuna({
                   }
                 />
               </ItemComSub>
+            )}
+
+            {podeEditar && coluna.type === "text" && (
+              <Item
+                rotulo="Usar como coluna principal"
+                icone={Type}
+                disabled={ocupado}
+                onClick={tornarPrincipal}
+              />
             )}
 
             {moverPara && (moverPara.esquerda || moverPara.direita) && (

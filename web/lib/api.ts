@@ -3605,6 +3605,16 @@ export async function duplicateBaseColumn(baseId: string, columnId: string): Pro
   });
 }
 
+/**
+ * Spec 061: a coluna de TEXTO vira a principal (o título dos cards), e a de
+ * antes vira texto. As duas trocam de lugar; os valores não mudam.
+ */
+export async function makeBaseColumnTitle(baseId: string, columnId: string): Promise<BaseColumn> {
+  return api<BaseColumn>(`/api/v1/bases/${baseId}/columns/${columnId}/make-title`, {
+    method: "POST",
+  });
+}
+
 export async function updateBaseColumn(
   baseId: string,
   columnId: string,

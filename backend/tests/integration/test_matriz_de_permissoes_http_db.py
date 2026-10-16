@@ -457,6 +457,8 @@ async def _mundo(db) -> dict:
         "base_mkt_excluida": b_excl["base"],
         "coluna_mkt": b_mkt["coluna"],
         "coluna_com": b_com["coluna"],
+        "titulo_mkt": b_mkt["titulo"],
+        "titulo_com": b_com["titulo"],
         "opcao_mkt": b_mkt["opcao"],
         "linha_mkt": b_mkt["linha"],
         "linha_com": b_com["linha"],
@@ -1040,6 +1042,14 @@ MATRIZ: tuple[Linha, ...] = (
     Linha("base_column.update", "trocar o tipo, na do Marketing", "patch",
           f"{T}/bases/{{base_mkt}}/columns/{{coluna_mkt}}", {"type": "text"},
           _TODOS),
+    # Spec 061: trocar a coluna principal e EDITAR coluna. Na propria coluna de
+    # titulo a troca nao muda nada (200) -- mede o portao, sem mexer no mundo.
+    Linha("base_column.update", "coluna principal, na do Marketing", "post",
+          f"{T}/bases/{{base_mkt}}/columns/{{titulo_mkt}}/make-title", None,
+          _TODOS),
+    Linha("base_column.update", "coluna principal, na do Comercial", "post",
+          f"{T}/bases/{{base_com}}/columns/{{titulo_com}}/make-title", None,
+          _COM_CONTEUDO),
     Linha("base_column.delete", "apagar opcao, na do Marketing", "delete",
           f"{T}/bases/{{base_mkt}}/columns/{{coluna_mkt}}/options/{{opcao_mkt}}", None,
           _TODOS),

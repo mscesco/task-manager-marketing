@@ -13,6 +13,8 @@ recusa e avisa -- desfazer nunca apaga o trabalho de outra pessoa. Por tipo:
                     colagem seria pior do que nao desfazer)
     column.retype   a coluna ainda e como ficou, E nenhuma celula dela foi
                     preenchida depois da troca
+    column.title    o titulo ainda e o que a acao deixou, e a outra continua
+                    texto (Spec 061)
     column.update,  os campos ainda tem o "depois"
     view.update
     marcas          a coisa continua marcada (ou viva), e a base existe
@@ -40,7 +42,7 @@ from app.core.logging import get_logger
 from app.core.tenant import require_tenant
 from app.db.models.bases import BaseChange, BaseColumn, BaseRow, BaseView
 from app.modules.bases.application.access import require_verb, visible_base
-from app.modules.bases.application.base_service import column_snapshot
+from app.modules.bases.application.base_service import column_snapshot, troca_principal
 from app.modules.bases.application.journal import VERB_OF_KIND
 from app.modules.bases.application.view_service import view_data
 from app.modules.bases.infrastructure.base_repository import (
@@ -149,6 +151,8 @@ class UndoService:
             await self._retype(base_id, p, desfazer=desfazer)
         elif kind == "column.move":
             await self._mover_coluna(base_id, p, desfazer=desfazer)
+        elif kind == "column.title":
+            await self._coluna_principal(base_id, p, desfazer=desfazer)
         elif kind == "view.update":
             await self._campos_visao(base_id, p, desfazer=desfazer)
         elif kind in ("view.create", "view.delete"):
@@ -249,6 +253,27 @@ class UndoService:
             raise _Conflito
         await self._columns.move(base_id, coluna, alvo)
         coluna.version += 1
+
+    async def _coluna_principal(
+        self, base_id: uuid.UUID, p: dict[str, Any], *, desfazer: bool
+    ) -> None:
+        """Troca a principal de volta (ou de novo). Conflito se alguma das duas
+        foi apagada, ou se o titulo de hoje nao e o que a acao deixou.
+
+        ⚠️ A POSICAO NAO E CONFERIDA: inserir uma coluna no meio empurra as
+        outras, e isso nao e mexer na principal -- as duas so trocam de lugar."""
+        await self._columns.list_for(base_id, lock=True)
+        de = await self._coluna(base_id, uuid.UUID(p["from"]))
+        para = await self._coluna(base_id, uuid.UUID(p["to"]))
+        titulo, texto = (para, de) if desfazer else (de, para)
+        if (
+            de.deleted_at is not None
+            or para.deleted_at is not None
+            or titulo.type != "title"
+            or texto.type != "text"
+        ):
+            raise _Conflito
+        troca_principal(titulo, texto)
 
     async def _retype(
         self, base_id: uuid.UUID, p: dict[str, Any], *, desfazer: bool
