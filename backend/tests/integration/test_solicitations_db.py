@@ -363,9 +363,37 @@ def _http(db, ctx: TenantContext | None = None) -> AsyncClient:
     return AsyncClient(transport=ASGITransport(app=app), base_url="http://t")
 
 
-def _payload(slug: str, **overrides) -> dict:
+async def _publico(db) -> tuple[str, str]:
+    """Workspace com um formulario PUBLICADO (secoes `email`, `arte`, `evento`).
+
+    ⚠️ A ROTA PUBLICA EXIGE `form_id` DESDE 16/10 (auditoria): o envio sem
+    formulario era a porta da Spec 043 para a aba aberta durante aquele deploy,
+    e ficou aberta a quem quisesse criar pedido orfao. O SERVICO continua
+    sabendo tratar orfao -- ha pedidos assim no banco --, e os testes de
+    servico daqui ainda os criam por `_criar_uma`.
+    """
+    from app.db.models import SolicitationForm, SolicitationSection
+
+    ws, slug = await _make_ws_with_slug(db)
+    time = await f.make_team(db, workspace_id=ws)
+    form = SolicitationForm(
+        id=uuid.uuid4(), workspace_id=ws, team_id=time, slug="pedidos",
+        title="Pedidos", is_published=True,
+    )
+    db.add(form)
+    await db.flush()
+    for posicao, secao in enumerate(("email", "arte", "evento")):
+        db.add(SolicitationSection(
+            workspace_id=ws, form_id=form.id, slug=secao, title=secao, position=posicao,
+        ))
+    await db.flush()
+    return slug, str(form.id)
+
+
+def _payload(slug: str, form_id: str, **overrides) -> dict:
     base = {
         "workspace_slug": slug,
+        "form_id": form_id,
         "requester_name": "Joao da Sede",
         "requester_email": "joao@teste.dev",
         "requester_phone": "11 98888-7777",
@@ -393,21 +421,34 @@ def _ip() -> dict:
 
 
 async def test_http_publico_cria_sem_auth(db) -> None:
-    _, slug = await _make_ws_with_slug(db)
+    slug, form = await _publico(db)
     async with _http(db) as client:
         r = await client.post(
-            "/api/v1/solicitacoes/publico", json=_payload(slug), headers=_ip()
+            "/api/v1/solicitacoes/publico", json=_payload(slug, form), headers=_ip()
         )
     assert r.status_code == 201
     assert r.json()["protocol"]
 
 
+async def test_http_publico_sem_form_id_e_recusado(db) -> None:
+    """Auditoria de 16/10: sem formulario, nascia um pedido ORFAO -- sem o
+    cabecalho do formulario e visivel na fila da organizacao inteira. A porta
+    era compatibilidade com uma aba aberta no deploy de agosto."""
+    slug, form = await _publico(db)
+    corpo = _payload(slug, form)
+    del corpo["form_id"]
+    async with _http(db) as client:
+        r = await client.post("/api/v1/solicitacoes/publico", json=corpo, headers=_ip())
+    assert r.status_code == 422
+    total = (await db.execute(text("SELECT count(*) FROM solicitation"))).scalar_one()
+    assert total == 0
+
 async def test_http_honeypot_responde_201_indistinguivel(db) -> None:
-    _, slug = await _make_ws_with_slug(db)
+    slug, form = await _publico(db)
     async with _http(db) as client:
         r = await client.post(
             "/api/v1/solicitacoes/publico",
-            json=_payload(slug, website="http://spam.example"),
+            json=_payload(slug, form, website="http://spam.example"),
             headers=_ip(),
         )
     assert r.status_code == 201
@@ -422,16 +463,16 @@ async def test_http_rate_limit_429_no_estouro(db) -> None:
     """Mesmo IP alem do limite configurado -> 429 com Retry-After."""
     from app.core.config import settings
 
-    _, slug = await _make_ws_with_slug(db)
+    slug, form = await _publico(db)
     ip = _ip()  # UM ip fixo pra este teste
     async with _http(db) as client:
         for _ in range(settings.public_form_rate_limit_max):
             ok = await client.post(
-                "/api/v1/solicitacoes/publico", json=_payload(slug), headers=ip
+                "/api/v1/solicitacoes/publico", json=_payload(slug, form), headers=ip
             )
             assert ok.status_code == 201
         bloqueada = await client.post(
-            "/api/v1/solicitacoes/publico", json=_payload(slug), headers=ip
+            "/api/v1/solicitacoes/publico", json=_payload(slug, form), headers=ip
         )
     assert bloqueada.status_code == 429
 
@@ -509,10 +550,10 @@ async def test_http_rota_publica_segue_aberta_apos_a_trava(db) -> None:
     A rota publica e como a demanda chega. Se a Spec 025/D11 vazasse pra
     ela, o formulario pararia de funcionar em silencio.
     """
-    _, slug = await _make_ws_with_slug(db)
+    slug, form = await _publico(db)
     async with _http(db) as client:  # sem contexto de auth
         r = await client.post(
-            "/api/v1/solicitacoes/publico", json=_payload(slug), headers=_ip()
+            "/api/v1/solicitacoes/publico", json=_payload(slug, form), headers=_ip()
         )
     assert r.status_code == 201
 
@@ -663,9 +704,10 @@ async def test_lote_vazio_rejeitado(db) -> None:
 
 async def test_http_lote_um_post_um_protocolo(db) -> None:
     """Multi-selecao NAO vira N requests: um POST so (o rate limit e por IP)."""
-    _, slug = await _make_ws_with_slug(db)
+    slug, form = await _publico(db)
     payload = _payload(
         slug,
+        form,
         items=[
             {
                 "category": "arte",
