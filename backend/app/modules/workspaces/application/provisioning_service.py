@@ -125,7 +125,8 @@ class WorkspaceProvisioningService:
         admin = User(
             workspace_id=workspace.id,
             name=command.admin_name,
-            email=command.admin_email,
+            # Em minusculas, como o cadastro de membro (`member_service`).
+            email=command.admin_email.strip().lower(),
             password_hash=hash_password(command.admin_password),
             is_active=True,
             # Entrega 7: o admin do bootstrap escolhe a propria senha e

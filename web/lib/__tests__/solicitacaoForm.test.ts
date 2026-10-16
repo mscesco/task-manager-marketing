@@ -1,6 +1,7 @@
 // Exibicao condicional dos campos do formulario publico (Spec 025).
 // Regra: sem `mostrarSe`, o campo aparece sempre; com `mostrarSe`, aparece
-// so quando o campo-dependencia tem EXATAMENTE o valor indicado.
+// so quando o campo-dependencia tem EXATAMENTE o valor indicado (ou o inclui,
+// se for de multipla escolha) e esta ele mesmo visivel.
 import { describe, expect, it } from "vitest";
 
 import { campoVisivel, novaRepeticao, type Campo } from "@/lib/solicitacaoForm";
@@ -40,11 +41,30 @@ describe("campoVisivel", () => {
     expect(campoVisivel(CONDICIONAL, { tem_evento: "Sim " })).toBe(false);
   });
 
-  it("dependencia de multipla escolha (array) nao satisfaz igualdade", () => {
-    // `valores` aceita string[] (campos multi). Comparar array com string
-    // nunca da true -- logo, `mostrarSe` so funciona sobre campo de valor
-    // unico. Fica registrado como limite conhecido.
-    expect(campoVisivel(CONDICIONAL, { tem_evento: ["Sim"] })).toBe(false);
+  it("gatilho de multipla escolha: vale quando a resposta INCLUI a alternativa", () => {
+    // 16/10, a auditoria: o editor e o servidor aceitam `multi` como gatilho,
+    // e a comparacao array === string deixava a dependente invisivel para
+    // sempre ("mostrar Data se Redes = Instagram").
+    expect(campoVisivel(CONDICIONAL, { tem_evento: ["Nao", "Sim"] })).toBe(true);
+    expect(campoVisivel(CONDICIONAL, { tem_evento: ["Nao"] })).toBe(false);
+    expect(campoVisivel(CONDICIONAL, { tem_evento: [] })).toBe(false);
+  });
+
+  it("em cadeia, gatilho escondido esconde a dependente", () => {
+    // P1 = Sim mostra P2; P2 = Presencial mostra P3. Voltar P1 para Nao
+    // escondia P2 mas deixava P3 na tela -- obrigatoria e enviada.
+    const p1: Campo = { id: "p1", label: "Tem evento?", tipo: "escolha" };
+    const p2: Campo = { id: "p2", label: "Formato", tipo: "escolha", mostrarSe: { campo: "p1", igual: "Sim" } };
+    const p3: Campo = { id: "p3", label: "Local", tipo: "texto", mostrarSe: { campo: "p2", igual: "Presencial" } };
+    const campos = [p1, p2, p3];
+    expect(campoVisivel(p3, { p1: "Sim", p2: "Presencial" }, campos)).toBe(true);
+    expect(campoVisivel(p3, { p1: "Nao", p2: "Presencial" }, campos)).toBe(false);
+  });
+
+  it("ciclo (que o servidor recusa) nao trava", () => {
+    const a: Campo = { id: "a", label: "A", tipo: "escolha", mostrarSe: { campo: "b", igual: "x" } };
+    const b: Campo = { id: "b", label: "B", tipo: "escolha", mostrarSe: { campo: "a", igual: "x" } };
+    expect(campoVisivel(a, { a: "x", b: "x" }, [a, b])).toBe(true);
   });
 });
 

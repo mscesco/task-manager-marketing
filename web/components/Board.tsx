@@ -77,6 +77,7 @@ import { quadroGeralDoTime, terminal, type Coluna } from "@/lib/coluna";
 import { listAllTasks, listAllProjects, listarFilhas, getTask, updateTask, listMembers, listSubteams, getRootTeamId, listBoards, colunaComContagem, aplicarLoteDeColunas, ApiError, type Task, type Team, type Quadro } from "@/lib/api";
 import { newTaskTeam } from "@/lib/escopoTarefa";
 import { mesclaTarefa } from "@/lib/mesclaTarefa";
+import { useWarnBeforeUnload } from "@/lib/useWarnBeforeUnload";
 import { sincronizarTaskNaUrl, lerTaskDaUrl } from "@/lib/urlTarefa";
 import { ORDENACOES, ordenar, type Ordenacao } from "@/lib/ordenacao";
 
@@ -256,6 +257,11 @@ export default function Board({
   // ⚠️ TODA A REGRA MORA EM `lib/rascunhoDeColunas`, TESTADA. Aqui só há
   // fiação: `onDragEnd` não roda em jsdom, e este arquivo já tem dois assim.
   const [rascunho, setRascunho] = useState<Rascunho | null>(null);
+  // F5 e a barra lateral (que recarrega a pagina) perdiam o lote em silencio;
+  // o "Sair" da tela ja perguntava (`fecharEdicao`). ⚠️ Pergunta no modo de
+  // edicao inteiro, e nao so com pendencia: as colunas do quadro, que
+  // `temPendencias` precisa, so existem depois dos `return` antecipados.
+  useWarnBeforeUnload(rascunho !== null);
   const [criandoColuna, setCriandoColuna] = useState(false);
   const [revisando, setRevisando] = useState(false);
   const [contagens, setContagens] = useState<Record<string, number> | null>(null);
@@ -416,7 +422,13 @@ export default function Board({
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
   );
 
+  // ⚠️ SO A ULTIMA RECARGA GRAVA (auditoria de 16/10). Ligar e desligar
+  // "arquivadas" depressa disparava duas cargas; a COM arquivadas pagina mais
+  // e chegava DEPOIS, e o quadro mostrava os cards arquivados com o filtro
+  // desligado. Mesmo defeito que `minhas-tarefas` ja tinha consertado.
+  const geracaoDaCarga = useRef(0);
   const recarregarTasks = useCallback(() => {
+    const minha = ++geracaoDaCarga.current;
     // ⚠️ SPEC 042 (B2) -- `root_only`. O quadro NUNCA desenhou subtarefa
     // (`depth === 0`), mas carregava a subarvore inteira porque tres coisas
     // dependiam dela. Medido em 19/08: 917 tarefas baixadas, 670 delas
@@ -428,10 +440,13 @@ export default function Board({
       root_only: true,
     })
       .then((r) => {
+        if (minha !== geracaoDaCarga.current) return;
         setTasks(r.items);
         setTruncadoTotal(r.truncated ? r.total : null);
       })
-      .catch((e: ApiError) => setErro(e.message));
+      .catch((e: ApiError) => {
+        if (minha === geracaoDaCarga.current) setErro(e.message);
+      });
   }, [projectId, mostrarArquivadas]);
 
   // ⚠️ A BUSCA POR TITULO DE SUBTAREFA VIROU CONSULTA (Spec 042, A2 + B2).
@@ -813,6 +828,12 @@ export default function Board({
     setTasks((prev) =>
       prev ? prev.map((t) => (t.id === taskId ? { ...t, assignee_ids: userIds } : t)) : prev
     );
+    // ⚠️ O FILTRO POR PESSOA LE `subtree_assignee_ids`, que o SERVIDOR agrega
+    // (a raiz e toda a subarvore). Trocar responsavel -- inclusive de uma
+    // subtarefa, que nem esta carregada -- deixava o filtro velho ate o F5:
+    // "Pessoa: Ana" nao mostrava o card em que ela acabou de entrar. A conta
+    // da subarvore so o servidor sabe fazer; recarregar e a resposta honesta.
+    recarregarTasks();
   }
 
   const activeTask = useMemo(

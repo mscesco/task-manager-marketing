@@ -95,38 +95,67 @@ type Options = {
 //      refresh. Se o refresh tambem falha (refresh expirado/revogado), a
 //      sessao esta morta -> limpa e manda pro login. Sem retentativa infinita.
 
-let _refreshing: Promise<string | null> | null = null;
+/**
+ * O resultado de renovar. ⚠️ "unavailable" NÃO É SESSÃO MORTA: 429 (freio),
+ * 5xx (o deploy reiniciando a API) e rede caída voltam assim. Antes toda falha
+ * derrubava a sessão -- e um 502 de um minuto no deploy deslogava todo mundo
+ * que estivesse com a tela aberta, com o refresh token ainda válido.
+ */
+export type RefreshOutcome = "renewed" | "dead" | "unavailable";
+
+let _refreshing: Promise<RefreshOutcome> | null = null;
 
 function getRefreshToken(): string | null {
   if (typeof window === "undefined") return null;
   return localStorage.getItem(REFRESH_KEY);
 }
 
+/** Recusa do servidor (4xx que não é o freio) = o refresh não vale mais. */
+export function refreshOutcomeOf(status: number): RefreshOutcome {
+  if (status >= 200 && status < 300) return "renewed";
+  if (status >= 400 && status < 500 && status !== 429) return "dead";
+  return "unavailable";
+}
+
 // Chama /auth/refresh DIRETO no fetch -- nao passa por api()/_request, senao
-// recursa no proprio tratamento de 401. Devolve o access novo, ou null se o
-// refresh tambem falhou (sessao morta).
-async function doRefresh(): Promise<string | null> {
+// recursa no proprio tratamento de 401.
+async function doRefresh(): Promise<RefreshOutcome> {
   const refresh = getRefreshToken();
-  if (!refresh) return null;
+  if (!refresh) return "dead";
   try {
     const res = await fetch(`${API_URL}/api/v1/auth/refresh`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ refresh_token: refresh }),
     });
-    if (!res.ok) return null;
-    const pair = (await res.json()) as TokenPair;
-    setTokens(pair.access_token, pair.refresh_token);
-    return pair.access_token;
+    const outcome = refreshOutcomeOf(res.status);
+    if (outcome === "renewed") {
+      const pair = (await res.json()) as TokenPair;
+      setTokens(pair.access_token, pair.refresh_token);
+    }
+    return outcome;
   } catch {
-    // Rede caiu no meio do refresh: trata como falha (nao derruba a sessao
-    // a forca; o proximo 401 tenta de novo).
-    return null;
+    return "unavailable"; // rede caiu: a sessao continua; a proxima acao tenta de novo
   }
 }
 
+/**
+ * O 401 de uma request com token: renova, ou encerra a sessão se o servidor
+ * recusou o refresh. Os dois caminhos de request (`_request` e `_rawRequest`)
+ * passam por aqui -- eram duas cópias da mesma decisão.
+ */
+async function renewOrEndSession(): Promise<void> {
+  const outcome = await refreshAccessToken();
+  if (outcome === "renewed") return;
+  if (outcome === "dead") {
+    killSession();
+    throw new ApiError(401, "Sessao expirada. Faca login novamente.");
+  }
+  throw new ApiError(503, "Não consegui renovar a sessão agora. Tente de novo em instantes.");
+}
+
 // Single-flight: se ja ha um refresh em voo, devolve a mesma promise.
-function refreshAccessToken(): Promise<string | null> {
+function refreshAccessToken(): Promise<RefreshOutcome> {
   if (_refreshing === null) {
     _refreshing = doRefresh().finally(() => {
       _refreshing = null;
@@ -182,13 +211,9 @@ async function _request<T>(
   // Tenta UM refresh (single-flight) + UM retry. So entra aqui quando a
   // request usa auth E mandou token -- 401 de rota publica (login) cai fora.
   if (res.status === 401 && auth && !isRetry && getToken()) {
-    const newToken = await refreshAccessToken();
-    if (newToken) {
-      // Retry pega o token novo via getToken() (isRetry=true: nao recursa).
-      return _request<T>(path, method, body, auth, true);
-    }
-    killSession();
-    throw new ApiError(401, "Sessao expirada. Faca login novamente.");
+    await renewOrEndSession();
+    // Retry pega o token novo via getToken() (isRetry=true: nao recursa).
+    return _request<T>(path, method, body, auth, true);
   }
 
   if (res.status === 204) return undefined as T;
@@ -3764,12 +3789,13 @@ export async function getDashboard(
 }
 
 // ---------------------------------------------------------------
-// ARQUIVOS (15/10): baixar uma planilha, enviar uma planilha
+// ARQUIVOS (15/10): baixar uma planilha
 // ---------------------------------------------------------------
-// ⚠️ NÃO PASSAM POR `api()`: ela é JSON nos dois sentidos. Aqui o corpo é
-// binário (download) ou `FormData` (upload, sem `Content-Type` -- o navegador
-// põe o boundary). O resto é o mesmo: o token, UM refresh no 401, e o erro no
-// envelope `{ error: { code, message, details } }`.
+// ⚠️ NÃO PASSA POR `api()`: ela é JSON nos dois sentidos, e aqui a resposta é
+// binária. O resto é o mesmo: o token, UM refresh no 401, e o erro no
+// envelope `{ error: { code, message, details } }`. (O envio de planilha vai
+// em base64 no JSON -- ver `runImport` --, e o `uploadForm` daqui saiu em
+// 16/10 sem nunca ter tido chamador.)
 
 async function _rawRequest(path: string, init: RequestInit, isRetry = false): Promise<Response> {
   const headers = new Headers(init.headers);
@@ -3782,9 +3808,8 @@ async function _rawRequest(path: string, init: RequestInit, isRetry = false): Pr
     throw new ApiError(0, "Não consegui falar com o servidor.");
   }
   if (res.status === 401 && !isRetry && getToken()) {
-    if (await refreshAccessToken()) return _rawRequest(path, init, true);
-    killSession();
-    throw new ApiError(401, "Sessao expirada. Faca login novamente.");
+    await renewOrEndSession();
+    return _rawRequest(path, init, true);
   }
   if (!res.ok) {
     let err: { code?: string; message?: string; details?: Record<string, any> } = {};
@@ -3821,12 +3846,6 @@ export async function downloadFile(
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
-}
-
-/** Envia um formulário com arquivo e lê a resposta JSON. */
-export async function uploadForm<T>(path: string, form: FormData): Promise<T> {
-  const res = await _rawRequest(path, { method: "POST", body: form });
-  return (await res.json()) as T;
 }
 
 /** O painel em planilha, com os mesmos filtros da tela (Spec 058, 15/10). */

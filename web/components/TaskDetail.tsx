@@ -600,7 +600,11 @@ export default function TaskDetail({
     // navegar pra outra pagina -- disparar isso com Esc seria surpresa.
     if (!task || modo !== "modal") return;
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") fecharSuave();
+      // ⚠️ `defaultPrevented` = um elemento de DENTRO já usou este Esc (a
+      // lista de @menção, um menu ancorado, o campo de nova subtarefa).
+      // Antes o Esc que fechava a listinha fechava o detalhe inteiro -- e o
+      // comentário que estava sendo escrito sumia (auditoria de 16/10).
+      if (e.key === "Escape" && !e.defaultPrevented) fecharSuave();
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -2680,6 +2684,7 @@ export default function TaskDetail({
                 onChange={(e) => setNovoTitulo(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === "Escape") {
+                    e.preventDefault(); // so fecha o campo, nao o detalhe
                     fecharCriacaoSub();
                     return;
                   }
