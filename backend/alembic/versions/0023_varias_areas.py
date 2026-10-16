@@ -22,8 +22,10 @@ e a mensagem nomeia o indice. Se isso acontecer:
 
     1. NAO force. A recusa esta dizendo que existe dado que o schema antigo
        nao comporta -- exatamente o que um downgrade deveria dizer.
-    2. Decida QUAL area continua sendo a unica, e mova as outras para baixo
-       dela (`POST /teams/{id}/move`) ou apague-as, ANTES de descer.
+    2. Decida QUAL area continua sendo a unica e resolva as outras POR SQL,
+       ANTES de descer. ⚠️ NAO HA CAMINHO PELA API (corrigido em 16/10: este
+       passo mandava usar `POST /teams/{id}/move`): o `move` recusa transformar
+       raiz em subtime e mover entre areas, e o `delete`/esvaziar recusam a raiz.
 
 Isso nao e um defeito desta migration: e a unica forma honesta de descer.
 Uma versao que "desse um jeito" escolheria por conta propria qual area some.

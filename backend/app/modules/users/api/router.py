@@ -34,6 +34,7 @@ import uuid
 from fastapi import APIRouter, Depends, Query, Response, status
 
 from app.core.deps import SessionDep, UoWDep
+from app.db.models import User
 from app.modules.auth.api.dependencies import (
     TenantContextDep,
     require_any_permission,
@@ -220,6 +221,12 @@ async def list_member_teams(
     """
     svc = MemberService(session)
     memberships = await svc.list_member_teams(user_id=user_id)
+    # ⚠️ CONTA DESATIVADA NAO TEM CADEADO ABERTO (auditoria de 16/10). Sem
+    # `alvo_ativo`, a funcao assumia "ativa": a gaveta de uma pessoa desativada
+    # oferecia o seletor de cargo e o PATCH devolvia 409 ao salvar -- o caso
+    # de 10/09 ("Kaua inativo"), corrigido so na rota do time (`/by-team`).
+    alvo = await session.get(User, user_id)
+    ativo = alvo is not None and alvo.is_active
     return [
         MemberTeamListItemResponse(
             team_id=m.team_id,
@@ -229,7 +236,10 @@ async def list_member_teams(
             # novo, e aqui a divergencia e silenciosa: cadeado aberto que da
             # 403 ao salvar, ou cadeado fechado escondendo acao permitida.
             can_edit_role=svc.pode_trocar_papel_do_vinculo(
-                user_id=user_id, team_id=m.team_id, papel_atual=m.role
+                user_id=user_id,
+                team_id=m.team_id,
+                papel_atual=m.role,
+                alvo_ativo=ativo,
             ),
         )
         for m in memberships

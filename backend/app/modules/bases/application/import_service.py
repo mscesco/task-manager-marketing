@@ -19,6 +19,7 @@ tudo -- linhas e colunas criadas.
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from dataclasses import dataclass, field
 from types import SimpleNamespace
@@ -137,10 +138,12 @@ class BaseImportService:
         self._rows = BaseRowRepository(session)
 
     # ------------------------------------------------------------ previa
-    def preview(
-        self, content: bytes, filename: str, *, sheet: str | None, header_row: int
-    ) -> Preview:
-        table = read_table(content, filename, sheet=sheet, header_row=header_row)
+    @staticmethod
+    def preview(content: bytes, filename: str, *, sheet: str | None, header_row: int) -> Preview:
+        """Sem banco e CPU pura: a rota chama em `asyncio.to_thread`."""
+        table = read_table(
+            content, filename, sheet=sheet, header_row=header_row, max_rows=ROW_LIMIT
+        )
         cols = []
         for i, nome in enumerate(table.header):
             valores = [r[i] for r in table.rows]
@@ -162,7 +165,16 @@ class BaseImportService:
 
     # ------------------------------------------------------------ importar
     async def run(self, content: bytes, filename: str, plan: ImportPlan) -> ImportResult:
-        table = read_table(content, filename, sheet=plan.sheet, header_row=plan.header_row)
+        # ⚠️ Em thread: o openpyxl segura o processo por segundos numa planilha
+        # grande, e no loop do async isso congelava toda rota deste processo.
+        table = await asyncio.to_thread(
+            read_table,
+            content,
+            filename,
+            sheet=plan.sheet,
+            header_row=plan.header_row,
+            max_rows=ROW_LIMIT,
+        )
         tenant = require_tenant()
 
         # --- o destino, e quem pode
@@ -188,11 +200,10 @@ class BaseImportService:
             existentes = {}
 
         titulo = next((c for c in existentes.values() if c.type == "title"), None)
-        alvos = self._resolver_plano(plan, table, existentes, titulo, team_id)
+        alvos = self._resolver_plano(plan, table, existentes, team_id)
 
         # --- converter linha a linha
         pessoas = await self._pessoas_da_arvore(team_id)
-        novas_opcoes: dict[str, list[str]] = {}  # coluna -> rotulos a criar
         linhas: list[dict[str, Any]] = []
         result = ImportResult(total=len(table.rows), valid=0)
         primeira_linha = plan.header_row + 1
@@ -201,9 +212,9 @@ class BaseImportService:
             erro_da_linha = False
             for alvo in alvos:
                 try:
-                    v = self._converter(alvo, row[alvo.index], pessoas, novas_opcoes)
+                    v = self._converter(alvo, row[alvo.index], pessoas)
                     if v is not None:
-                        valores[alvo.key] = clean_value(alvo.col, v, ja_tinha=alvo.pending_ids())
+                        valores[alvo.key] = clean_value(alvo.col, v)
                 except (ConversionError, ValidationError) as exc:
                     erro_da_linha = True
                     result.error_count += 1
@@ -240,7 +251,7 @@ class BaseImportService:
             )
             base = detalhe.base
             titulo = next(c for c in detalhe.columns if c.type == "title")
-        novas_colunas = await self._gravar_colunas(base, alvos, titulo, novas_opcoes)
+        novas_colunas = await self._gravar_colunas(base, alvos)
         criadas: list[BaseRow] = []
         for valores in linhas:
             gravados = {self._chave_final(k, alvos, titulo): v for k, v in valores.items()}
@@ -262,7 +273,7 @@ class BaseImportService:
         return result
 
     # ------------------------------------------------------------ apoio
-    def _resolver_plano(self, plan, table: Table, existentes, titulo, team_id) -> list[_Alvo]:
+    def _resolver_plano(self, plan, table: Table, existentes, team_id) -> list[_Alvo]:
         alvos: list[_Alvo] = []
         usadas: set[str] = set()
         nomes = {c.name.casefold() for c in existentes.values()}
@@ -289,6 +300,13 @@ class BaseImportService:
                 else:
                     chave = str(col.id)
             elif cp.action == "new":
+                # ⚠️ COLUNA NOVA NUMA BASE QUE JA EXISTE E CRIAR COLUNA (auditoria
+                # de 16/10): o mesmo verbo do `POST /columns`. So `base_row.create`
+                # era cobrado -- hoje os dois andam juntos nos papeis, e o furo
+                # abriria no dia em que se separassem. Base NOVA nao pergunta: quem
+                # tem `base.create` monta a estrutura dela.
+                if plan.base_id is not None:
+                    require_verb("base_column.create", team_id)
                 tipo = cp.type or "text"
                 check_new_type(tipo)
                 nome = clean_name(cp.name or rotulo)
@@ -315,7 +333,7 @@ class BaseImportService:
             )
         return alvos
 
-    def _converter(self, alvo: _Alvo, v: Any, pessoas, novas_opcoes) -> Any:
+    def _converter(self, alvo: _Alvo, v: Any, pessoas) -> Any:
         tipo = alvo.col.type
         if tipo in ("title", "text"):
             return to_text(v)
@@ -340,7 +358,7 @@ class BaseImportService:
                 rotulos = split_many(v)
             else:
                 rotulos = [to_text(v)] if to_text(v) else []
-            ids = [alvo.option_id(r, novas_opcoes) for r in rotulos]
+            ids = [alvo.option_id(r) for r in rotulos]
             if tipo == "select":
                 return ids[0] if ids else None
             return list(dict.fromkeys(ids)) or None
@@ -367,7 +385,7 @@ class BaseImportService:
             out[email.strip().casefold()] = str(uid)
         return out
 
-    async def _gravar_colunas(self, base, alvos, titulo, novas_opcoes) -> list[BaseColumn]:
+    async def _gravar_colunas(self, base, alvos) -> list[BaseColumn]:
         criadas: list[BaseColumn] = []
         proxima = await self._columns.next_position(base.id)
         for alvo in alvos:
@@ -416,7 +434,7 @@ class _Alvo:
         }
         self.added: list[dict[str, Any]] = []
 
-    def option_id(self, rotulo: str, _novas: dict) -> str:
+    def option_id(self, rotulo: str) -> str:
         chave = rotulo.strip().casefold()
         if chave in self.by_label:
             return self.by_label[chave]
@@ -438,9 +456,6 @@ class _Alvo:
             name=getattr(self.col, "name", ""),
         )
         return novo["id"]
-
-    def pending_ids(self) -> set[str]:
-        return set()
 
     def new_options(self) -> list[dict[str, Any]]:
         return list(self.added)

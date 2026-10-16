@@ -7,14 +7,14 @@
 # =====================================================
 
 # ---------- Stage 1: deps ----------
-FROM node:20-alpine AS deps
+FROM node:22-alpine AS deps
 WORKDIR /app
 # Instala dependencias com lockfile (build reprodutivel).
 COPY package.json package-lock.json ./
 RUN npm ci
 
 # ---------- Stage 2: builder ----------
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
 # Chave GIPHY: NEXT_PUBLIC_* e assada no bundle em BUILD TIME (nao em runtime).
@@ -28,7 +28,7 @@ COPY . .
 RUN mkdir -p public && npm run build
 
 # ---------- Stage 3: runner ----------
-FROM node:20-alpine AS runner
+FROM node:22-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \

@@ -249,3 +249,23 @@ describe("resumoDoEsvaziamento", () => {
     expect(resumoDoEsvaziamento(base)).toEqual([]);
   });
 });
+
+// Auditoria de 16/10: quadro e formulário seguram o time no banco. Sem eles
+// nas contas, a tela via o subtime "vazio", oferecia remover e o servidor
+// dava 500.
+describe("quadros e formulários contam como conteúdo", () => {
+  const zerado = { tarefas: 0, projetos: 0, membros: 0, filhos: 0 };
+
+  it("não está vazio com quadro ou formulário", () => {
+    expect(estaVazio(zerado)).toBe(true);
+    expect(estaVazio({ ...zerado, quadros: 1 })).toBe(false);
+    expect(estaVazio({ ...zerado, formularios: 2 })).toBe(false);
+  });
+
+  it("descreve e resume o que sobe para a área", () => {
+    expect(descreveConteudo({ ...zerado, quadros: 1, formularios: 2 })).toBe("1 quadro, 2 formulários");
+    expect(
+      resumoDoEsvaziamento({ tarefas_vivas: 0, tarefas_na_lixeira: 0, projetos: 0, membros: 0, quadros: 2 })
+    ).toEqual(["2 quadros irão para o time principal"]);
+  });
+});

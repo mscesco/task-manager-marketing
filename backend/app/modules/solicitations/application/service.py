@@ -74,6 +74,12 @@ from app.shared.pagination import PageParams
 MAX_ITENS_POR_LOTE = 60
 #: Spec 059 (15/10): quantas vezes a mesma secao repetivel entra num envio.
 MAX_REPETICOES_POR_SECAO = 20
+#: Texto do envio inteiro (resumos + perguntas + respostas). ⚠️ OS TETOS POR
+#: CAMPO NAO BASTAVAM: 60 itens x 60 respostas x 5000 caracteres e ~19 MB por
+#: POST, e a rota nao tem login -- um script enchia o disco e a fila carregava
+#: megabytes por pagina. 200 mil e ~40 respostas longas cheias; um envio de
+#: verdade fica bem abaixo.
+MAX_CARACTERES_POR_ENVIO = 200_000
 
 
 @dataclass(frozen=True, slots=True)
@@ -228,6 +234,15 @@ class SolicitationService:
         if len(command.items) > MAX_ITENS_POR_LOTE:
             raise ValidationError(
                 f"Envie no maximo {MAX_ITENS_POR_LOTE} solicitacoes de uma vez."
+            )
+        caracteres = sum(
+            len(item.summary) + sum(len(a["label"]) + len(a["value"]) for a in item.answers)
+            for item in command.items
+        )
+        if caracteres > MAX_CARACTERES_POR_ENVIO:
+            raise ValidationError(
+                "O envio ficou grande demais. Encurte as respostas mais longas "
+                "ou divida em mais de um envio."
             )
 
         # ⚠️ A VALIDACAO DA CATEGORIA TEM DOIS CAMINHOS (Spec 043, fatia B),
@@ -723,6 +738,18 @@ class SolicitationService:
         `can_in(p, None)` responde so pela organizacao.
         """
         solicitation = await self.repo.get_by_id_or_raise(solicitation_id)
+        # ⚠️ TRAVA O PEDIDO E RELE (auditoria de 16/10). Aprovar, rejeitar,
+        # criar tarefa e marcar conferem o estado e so depois gravam: duas
+        # pessoas aprovando e rejeitando ao mesmo tempo passavam as duas, a
+        # ultima gravacao vencia e o n8n mandava ao solicitante "aprovada" E
+        # "rejeitada"; dois "Criar tarefa" criavam duas tarefas. Com a trava, a
+        # segunda espera a primeira e ja ve o estado novo.
+        await self.session.execute(
+            select(Solicitation.id)
+            .where(Solicitation.id == solicitation.id)
+            .with_for_update()
+        )
+        await self.session.refresh(solicitation)
         time = None
         if solicitation.form_id is not None:
             time = (
@@ -792,7 +819,11 @@ class SolicitationService:
                 # mostrar o TITULO dela (`titulos_das_tarefas`). Fora da lente,
                 # a mesma resposta de tarefa inexistente: 404.
                 await TaskScopeGuards(self.session).assert_visible(tarefa)
-            solicitation.task_id = command.task_id
+                solicitation.task_id = command.task_id
+            # ⚠️ SEM `task_id`, O VINCULO QUE JA EXISTE FICA (auditoria de
+            # 16/10). "Ja criei -- so marcar" gravava `None` por cima: com a
+            # tela velha numa aba e "Criar tarefa" clicado na outra, a tarefa
+            # criada perdia o vinculo e virava so texto na fila.
         else:
             solicitation.task_created_at = None
             solicitation.task_marked_by_user_id = None

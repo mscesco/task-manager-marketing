@@ -45,6 +45,11 @@ export type Categoria = {
 
 /** Spec 059: quantas vezes a mesma seção entra num envio (o servidor confere). */
 export const MAX_REPETICOES = 20;
+/**
+ * Itens (demandas) num envio -- `MAX_ITENS_POR_LOTE` do servidor. Três seções
+ * repetíveis a 20 cada passavam de 60, e a pessoa só descobria no "Enviar".
+ */
+export const MAX_ITENS_POR_ENVIO = 60;
 
 /**
  * A chave de uma repetição nova da seção. A primeira é o próprio slug (o
@@ -63,12 +68,28 @@ export function rotuloDaRepeticao(cat: Categoria): string {
   return (cat.rotuloRepeticao || cat.titulo).trim().toLowerCase();
 }
 
-/** Um campo condicional está visível para o estado atual de respostas? */
+/**
+ * Um campo condicional está visível para o estado atual de respostas?
+ *
+ * ⚠️ GATILHO DE MÚLTIPLA ESCOLHA VALE QUANDO A RESPOSTA INCLUI A ALTERNATIVA.
+ * O editor e o servidor aceitam `multi` como gatilho; comparar o array com a
+ * string dava falso sempre, e a pergunta dependente sumia para sempre.
+ *
+ * ⚠️ E O GATILHO PRECISA ESTAR VISÍVEL (`campos` = os da seção). Com P1 → P2 →
+ * P3, voltar P1 escondia P2 mas deixava P3 na tela, obrigatória e enviada.
+ */
 export function campoVisivel(
   campo: Campo,
-  valores: Record<string, string | string[]>
+  valores: Record<string, string | string[]>,
+  campos: readonly Campo[] = []
 ): boolean {
   if (!campo.mostrarSe) return true;
-  const dep = valores[campo.mostrarSe.campo];
-  return dep === campo.mostrarSe.igual;
+  const { campo: idDoGatilho, igual } = campo.mostrarSe;
+  const gatilho = campos.find((c) => c.id === idDoGatilho);
+  // Sem o próprio campo na lista da volta: um ciclo (que o servidor recusa)
+  // não vira recursão infinita.
+  const outros = campos.filter((c) => c !== campo);
+  if (gatilho && !campoVisivel(gatilho, valores, outros)) return false;
+  const dep = valores[idDoGatilho];
+  return Array.isArray(dep) ? dep.includes(igual) : dep === igual;
 }

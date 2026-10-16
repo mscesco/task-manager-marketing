@@ -88,6 +88,24 @@ export function lerGrade(texto: string): string[][] {
   return linhas.map((l) => l.split("\t"));
 }
 
+// ⚠️ OS MESMOS TETOS DO SERVIDOR (`ROW_LIMIT` em `bases/application/row_service.py`
+// e `CELLS_BATCH_LIMIT` em `bases/api/schemas.py`). Conferir AQUI, antes do
+// primeiro pedido, é o que impede a colagem pela metade: o servidor recusava o
+// segundo pedido (as células) depois de o primeiro já ter criado as linhas.
+export const MAX_LINHAS_COLADAS = 5_000;
+export const MAX_CELULAS_COLADAS = 50_000;
+
+/** Por que a grade não cabe numa colagem, ou `null` se cabe. */
+export function colagemGrandeDemais(grade: readonly string[][]): string | null {
+  const celulas = grade.reduce((n, l) => n + l.length, 0);
+  const mil = (n: number) => n.toLocaleString("pt-BR");
+  if (grade.length > MAX_LINHAS_COLADAS)
+    return `Dá para colar até ${mil(MAX_LINHAS_COLADAS)} linhas de uma vez (vieram ${mil(grade.length)}). Para mais, use Importar planilha.`;
+  if (celulas > MAX_CELULAS_COLADAS)
+    return `Dá para colar até ${mil(MAX_CELULAS_COLADAS)} células de uma vez (vieram ${mil(celulas)}). Cole em partes ou use Importar planilha.`;
+  return null;
+}
+
 const SIM = new Set(["sim", "s", "x", "true", "verdadeiro", "1", "✓"]);
 const NAO = new Set(["não", "nao", "n", "false", "falso", "0", ""]);
 

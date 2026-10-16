@@ -176,6 +176,11 @@ vazia, a lixeira (`LIXEIRA`) e os cadeados de linha, visao e excluir.
       celula em que lente e verbo divergem, e a que a 051 ensinou a ter;
     - base em SUBTIME: 422 para quem tem `base.create` em algum lugar.
 
+⚠️ ROTA NOVA SEM LINHA AQUI DERRUBA `tests/test_rotas_na_matriz.py` (16/10).
+La moram, como DADO, as rotas fora da tabela por desenho (com o motivo) e a
+divida medida em 16/10 (`PENDENTE`, que so encolhe). A lista abaixo e a prosa
+de antes; o guardiao e quem cobra.
+
 O QUE ESTA TABELA NAO COBRE (de proposito, e anotado para quem estender):
     - base: desfazer e refazer (o esperado depende da pilha da pessoa, nao do
       papel -- fatia C, teste proprio), o canal ao vivo (fluxo, nao resposta --
@@ -584,6 +589,8 @@ _COM_CONTEUDO = (OK, OK, OCULTO, OCULTO, OCULTO, OK)
 #: tem o verbo em lugar nenhum), e DUAS_ARVORES le a base mas nao tem o verbo
 #: la: 403, a celula em que lente e verbo divergem.
 _COM_ESTRUTURA = (OK, OK, OCULTO, OCULTO, NEGADO, NEGADO)
+#: Spec 057: uma planilha minima ("Titulo" + uma linha), em base64.
+_CSV_DE_UMA_LINHA = "VGl0dWxvClgK"
 
 MATRIZ: tuple[Linha, ...] = (
     # ---------------------------------------------------------- organizacao
@@ -1056,6 +1063,36 @@ MATRIZ: tuple[Linha, ...] = (
     Linha("base_row.update", "lote de celulas, na do Comercial", "patch",
           f"{T}/bases/{{base_com}}/cells",
           {"cells": [{"row_id": "{linha_com}", "column_id": "{coluna_com}", "value": None}]},
+          _COM_CONTEUDO),
+    # Spec 057 (no ar desde 16/10) -- entraram pelo guardiao `test_rotas_na_
+    # matriz.py`, que pegou as quatro rotas fora da tabela. Exportar e LER; colar
+    # alem da ultima linha e CRIAR linha; a importacao em `dry_run` exercita a
+    # porta e o servico sem gravar.
+    Linha("base.read", "exportar, a do Marketing", "post",
+          f"{T}/bases/{{base_mkt}}/export", {"format": "csv"},
+          _TODOS),
+    Linha("base.read", "exportar, a do Comercial", "post",
+          f"{T}/bases/{{base_com}}/export", {"format": "csv"},
+          _COM_CONTEUDO),
+    Linha("base_row.create", "colar linhas novas, na do Marketing", "post",
+          f"{T}/bases/{{base_mkt}}/rows/batch", {"rows": [{"values": {}}]},
+          _TODOS),
+    Linha("base_row.create", "colar linhas novas, na do Comercial", "post",
+          f"{T}/bases/{{base_com}}/rows/batch", {"rows": [{"values": {}}]},
+          _COM_CONTEUDO),
+    Linha("base_row.create", "previa da importacao", "post",
+          f"{T}/bases/import/preview",
+          {"filename": "a.csv", "content_base64": _CSV_DE_UMA_LINHA},
+          _TODOS),
+    Linha("base_row.create", "validar importacao, na do Marketing", "post",
+          f"{T}/bases/import",
+          {"filename": "a.csv", "content_base64": _CSV_DE_UMA_LINHA, "base_id": "{base_mkt}",
+           "columns": [{"index": 0, "action": "title"}], "dry_run": True},
+          _TODOS),
+    Linha("base_row.create", "validar importacao, na do Comercial", "post",
+          f"{T}/bases/import",
+          {"filename": "a.csv", "content_base64": _CSV_DE_UMA_LINHA, "base_id": "{base_com}",
+           "columns": [{"index": 0, "action": "title"}], "dry_run": True},
           _COM_CONTEUDO),
     # Fatia C: desfazer com a pilha VAZIA -- 200 para quem le, e a base de outra
     # arvore continua escondida. O verbo da acao original e conferido so quando
