@@ -39,6 +39,7 @@ import {
   confirmacaoValida,
   descreveConteudo,
   ehRaiz,
+  estaVazio,
   motivoNaoRemove,
   ordenaParaTela,
   podeEditar,
@@ -55,6 +56,8 @@ function contagens(t: Team) {
     projetos: t.projetos ?? 0,
     membros: t.membros ?? 0,
     filhos: t.filhos ?? 0,
+    quadros: t.quadros ?? 0,
+    formularios: t.formularios ?? 0,
   };
 }
 
@@ -213,7 +216,9 @@ export default function TimesPage() {
       // Vazio -> DELETE simples. Com conteudo -> esvazia e remove numa
       // transacao. A tela escolhe a rota; o backend valida os dois casos.
       const c = contagens(removendo);
-      if (c.tarefas || c.projetos || c.membros) {
+      // Quadro e formulário também mandam para o esvaziar (16/10): o DELETE
+      // simples os recusa, e só o esvaziar os move para a área.
+      if (!estaVazio(c)) {
         await esvaziarERemoverTeam(removendo.id);
       } else {
         await deleteTeam(removendo.id);

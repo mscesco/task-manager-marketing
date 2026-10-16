@@ -342,26 +342,31 @@ async def test_trocar_time_tira_quem_perdeu_alcance_sem_avisar(db) -> None:
 
 async def test_trocar_projeto_tira_seguidor_da_subarvore(db) -> None:
     ws, r, a, b, gerente, op_a, op_b, forest = await _mundo(db)
+    # ⚠️ DO PROJETO DA RAIZ PARA O DO SUBTIME A, e nao mais "do A para o B"
+    # (auditoria de 16/10): mover tarefa do A para projeto do B passou a ser
+    # recusado (o time da tarefa fica na subarvore do projeto). O que este
+    # teste prende continua igual: o projeto decide quem ve -- no da raiz o
+    # operador do B via a tarefa, no do A deixa de ver, e sai de seguidor.
+    proj_r = await f.make_project(db, workspace_id=ws, created_by=gerente, team_id=r)
     proj_a = await f.make_project(db, workspace_id=ws, created_by=gerente, team_id=a)
-    proj_b = await f.make_project(db, workspace_id=ws, created_by=gerente, team_id=b)
     mae = await f.make_task(
-        db, workspace_id=ws, created_by=gerente, team_id=a, project_id=proj_a
+        db, workspace_id=ws, created_by=gerente, team_id=a, project_id=proj_r
     )
     filha = await f.make_task(
-        db, workspace_id=ws, created_by=gerente, team_id=a, project_id=proj_a,
+        db, workspace_id=ws, created_by=gerente, team_id=a, project_id=proj_r,
         parent=mae,
     )
-    await f.make_watcher(db, workspace_id=ws, task_id=filha.id, user_id=op_a)
+    await f.make_watcher(db, workspace_id=ws, task_id=filha.id, user_id=op_b)
 
     with _como_gerente(ws, r, gerente, forest):
         await TaskService(db).move(
-            task_id=mae.id, command=MoveTaskCommand(project_id=proj_b)
+            task_id=mae.id, command=MoveTaskCommand(project_id=proj_a)
         )
         await db.flush()
 
     assert await _seguidores(db, filha.id) == set()
     assert await _historico(db, filha.id, "unwatched") == [
-        {"target_user_id": str(op_a), "by_self": False, "reason": "lost_access"}
+        {"target_user_id": str(op_b), "by_self": False, "reason": "lost_access"}
     ]
 
 

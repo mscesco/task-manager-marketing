@@ -696,6 +696,8 @@ export type Team = {
   projetos?: number;
   membros?: number;
   filhos?: number;
+  quadros?: number;
+  formularios?: number;
   // Spec 049, fatia F: quem pergunta pode EDITAR este time? O CADEADO VEM DO
   // SERVIDOR, calculado pela mesma pergunta do PATCH -- a tela sabe "o que" a
   // pessoa pode, nunca "onde". Opcional como as contagens: só a listagem o
@@ -865,6 +867,9 @@ export type PreviaRemocao = {
   projetos: number;
   membros: number;
   filhos: number;
+  // Auditoria de 16/10: sobem para a área junto.
+  quadros?: number;
+  formularios?: number;
 };
 
 export async function previaRemocaoTeam(id: string): Promise<PreviaRemocao> {

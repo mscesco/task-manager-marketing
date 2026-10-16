@@ -106,6 +106,8 @@ async def list_teams(
                 projetos=c.projetos if c else 0,
                 membros=c.membros if c else 0,
                 filhos=c.filhos if c else 0,
+                quadros=c.quadros if c else 0,
+                formularios=c.formularios if c else 0,
                 # ⚠️ A MESMA PERGUNTA DO `TeamService.update`, na mesma ordem
                 # de efeito: raiz nunca (a regra recusa para todos), subtime se
                 # houver `subteam.update` NESTE time. Se as duas divergirem, a

@@ -66,6 +66,9 @@ class TeamListItem(TeamResponse):
     projetos: int = 0
     membros: int = 0
     filhos: int = 0
+    #: Auditoria de 16/10: tambem seguram o time (FK RESTRICT).
+    quadros: int = 0
+    formularios: int = 0
     #: Quem pergunta pode EDITAR este time? (Spec 049, fatia F)
     #:
     #: ⚠️⚠️ O CADEADO VEM DO SERVIDOR, e nao da tela -- mesma regra da Spec 047
@@ -170,6 +173,9 @@ class PreviaRemocaoResponse(BaseModel):
     # a operacao ja e recusada.
     destino_team_id: uuid.UUID | None = None
     destino_nome: str | None = None
+    #: Auditoria de 16/10: sobem para a area junto (incluindo os apagados).
+    quadros: int = 0
+    formularios: int = 0
 
 
 class TeamListResponse(BaseModel):
