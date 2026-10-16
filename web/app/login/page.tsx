@@ -19,7 +19,8 @@ export default function LoginPage() {
       setTokens(tokens.access_token, tokens.refresh_token);
       // primeiro acesso? backend marca must_change_password -> manda trocar
       const me = await getMe();
-      router.replace(me.must_change_password ? "/trocar-senha" : "/quadro");
+      // Spec 058 (§10.1): a entrada é a tela inicial, e não mais o quadro.
+      router.replace(me.must_change_password ? "/trocar-senha" : "/inicio");
     } catch (err) {
       const e = err as ApiError;
       // 401 = credencial errada/expirada (backend manda msg generica de proposito)

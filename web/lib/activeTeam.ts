@@ -72,6 +72,7 @@ const ROTAS_COM_TIME = ["/times/", "/quadro/"] as const;
  * não reescreve, ou vice-versa.
  */
 export const TEAM_PARAM_SCREENS = [
+  "/inicio", // Spec 058 -- a tela inicial é do time da barra (D2)
   "/minhas-tarefas",
   "/projetos",
   "/arquivadas",

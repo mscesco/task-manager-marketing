@@ -50,9 +50,10 @@ export default function TrocarSenhaPage() {
     setCarregando(true);
     try {
       await changePassword(atual, nova);
-      // Volta pra onde a pessoa estava: primeiro acesso cai no quadro (era o
-      // destino que o login queria); troca voluntaria volta pro perfil.
-      router.replace(forcado === false ? "/perfil" : "/quadro");
+      // Volta pra onde a pessoa estava: primeiro acesso cai na tela inicial
+      // (o destino que o login queria -- Spec 058); troca voluntaria volta
+      // pro perfil.
+      router.replace(forcado === false ? "/perfil" : "/inicio");
     } catch (err) {
       const e = err as ApiError;
       setErro(

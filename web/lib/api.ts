@@ -3655,3 +3655,151 @@ export async function deleteBaseView(baseId: string, viewId: string): Promise<vo
 export async function deleteBaseRow(baseId: string, rowId: string): Promise<BaseRow> {
   return api<BaseRow>(`/api/v1/bases/${baseId}/rows/${rowId}`, { method: "DELETE" });
 }
+
+// ---------------------------------------------------------------
+// TELA INICIAL DO TIME (Spec 058)
+// ---------------------------------------------------------------
+// ⚠️ UM PEDIDO, TODOS OS CARDS. E o servidor que decide quem ve o quê: card
+// sem permissão vem `null` (a carga sem `team_workload.read`, a fila sem
+// `solicitation.read`), e a tela só esconde.
+
+export type DashboardTask = {
+  id: string;
+  title: string;
+  due_date: string | null;
+  /** "18:00:00" -- com segundos, como todo `TIME` do Postgres. */
+  due_time: string | null;
+  parent_task_id: string | null;
+  priority: string;
+  /** Onde a tarefa está, como o quadro mostra: o nome e a cor da coluna. */
+  column_name: string;
+  column_color: string;
+};
+
+export type DashboardBucket = {
+  start: string;
+  end: string;
+  done: number;
+  on_time: number;
+  overdue: number;
+};
+
+export type DashboardResponse = {
+  /** O "hoje" do SERVIDOR, no fuso da organização: a tela não recalcula. */
+  today: string;
+  /** O período escolhido; `null` = "Agora" (a semana corrente e os 7 dias). */
+  period: { start: string; end: string } | null;
+  /** O resumo: a semana corrente, ou o período. */
+  week: { start: string; end: string; done: number; total: number };
+  overdue_total: number;
+  oldest_overdue: DashboardTask[];
+  /** Abertas e no prazo: as que vencem hoje, ou as do período. */
+  on_time_total: number;
+  /** "day" até 14 dias; "week" acima. */
+  bucket_unit: "day" | "week";
+  buckets: DashboardBucket[];
+  mine: {
+    overdue: DashboardTask[];
+    overdue_total: number;
+    on_time: DashboardTask[];
+    on_time_total: number;
+  };
+  /** `is_active: false` = conta desativada que ainda tem tarefa aberta no time. */
+  workload:
+    | { user_id: string; name: string; open: number; overdue: number; is_active: boolean }[]
+    | null;
+  queue: { pending: number; oldest_at: string | null } | null;
+};
+
+/**
+ * `teamId` null = "todos os times" da barra. `assigneeId`: o relatório inteiro
+ * de uma pessoa -- só para quem vê a carga (o servidor responde 403 sem isso).
+ */
+export async function getDashboard(
+  teamId: string | null,
+  assigneeId: string | null = null,
+  period: { start: string; end: string } | null = null
+): Promise<DashboardResponse> {
+  const q = new URLSearchParams();
+  if (teamId) q.set("under_team_id", teamId);
+  if (assigneeId) q.set("assignee_id", assigneeId);
+  if (period) {
+    q.set("start", period.start);
+    q.set("end", period.end);
+  }
+  const s = q.toString();
+  return api<DashboardResponse>(`/api/v1/dashboard${s ? `?${s}` : ""}`);
+}
+
+// ---------------------------------------------------------------
+// ARQUIVOS (15/10): baixar uma planilha, enviar uma planilha
+// ---------------------------------------------------------------
+// ⚠️ NÃO PASSAM POR `api()`: ela é JSON nos dois sentidos. Aqui o corpo é
+// binário (download) ou `FormData` (upload, sem `Content-Type` -- o navegador
+// põe o boundary). O resto é o mesmo: o token, UM refresh no 401, e o erro no
+// envelope `{ error: { code, message, details } }`.
+
+async function _rawRequest(path: string, init: RequestInit, isRetry = false): Promise<Response> {
+  const headers = new Headers(init.headers);
+  const token = getToken();
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}${path}`, { ...init, headers });
+  } catch {
+    throw new ApiError(0, "Não consegui falar com o servidor.");
+  }
+  if (res.status === 401 && !isRetry && getToken()) {
+    if (await refreshAccessToken()) return _rawRequest(path, init, true);
+    killSession();
+    throw new ApiError(401, "Sessao expirada. Faca login novamente.");
+  }
+  if (!res.ok) {
+    let err: { code?: string; message?: string; details?: Record<string, any> } = {};
+    try {
+      err = ((await res.json()) as { error?: typeof err }).error ?? {};
+    } catch {
+      /* corpo que não é JSON: fica a mensagem genérica */
+    }
+    throw new ApiError(res.status, err.message || `Erro ${res.status}`, err.code, err.details);
+  }
+  return res;
+}
+
+/** Baixa um arquivo da API e o entrega ao navegador para salvar. */
+export async function downloadFile(path: string, fallbackName: string): Promise<void> {
+  const res = await _rawRequest(path, { method: "GET" });
+  const disposition = res.headers.get("Content-Disposition") ?? "";
+  const name = /filename="([^"]+)"/.exec(disposition)?.[1] ?? fallbackName;
+  const url = URL.createObjectURL(await res.blob());
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+/** Envia um formulário com arquivo e lê a resposta JSON. */
+export async function uploadForm<T>(path: string, form: FormData): Promise<T> {
+  const res = await _rawRequest(path, { method: "POST", body: form });
+  return (await res.json()) as T;
+}
+
+/** O painel em planilha, com os mesmos filtros da tela (Spec 058, 15/10). */
+export async function exportDashboard(
+  teamId: string | null,
+  assigneeId: string | null,
+  period: { start: string; end: string } | null
+): Promise<void> {
+  const q = new URLSearchParams();
+  if (teamId) q.set("under_team_id", teamId);
+  if (assigneeId) q.set("assignee_id", assigneeId);
+  if (period) {
+    q.set("start", period.start);
+    q.set("end", period.end);
+  }
+  const s = q.toString();
+  await downloadFile(`/api/v1/dashboard/export${s ? `?${s}` : ""}`, "painel.xlsx");
+}

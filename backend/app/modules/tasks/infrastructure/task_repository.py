@@ -17,9 +17,25 @@ Metodos especificos:
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timedelta
+from dataclasses import dataclass
+from datetime import date, datetime, time, timedelta
 
-from sqlalchemy import and_, delete, exists, func, or_, select, text
+from sqlalchemy import (
+    Select,
+    Subquery,
+    and_,
+    case,
+    delete,
+    exists,
+    func,
+    literal_column,
+    not_,
+    or_,
+    select,
+    text,
+    true,
+)
+from sqlalchemy.dialects.postgresql import aggregate_order_by
 from sqlalchemy.orm import aliased
 from sqlalchemy.sql.elements import ColumnElement
 
@@ -32,11 +48,21 @@ from app.db.models import (
     TaskHistory,
     TaskWatcher,
     Team,
+    User,
+    UserTeam,
 )
+from app.db.models.enums import ColumnSemantic
 from app.db.repository import BaseRepository
 from app.modules.auth.domain import team_scope
 from app.modules.tasks.domain.archival import TERMINAL_STATUSES
 from app.modules.tasks.domain.board_semantics import TERMINAL_SEMANTICS
+from app.modules.tasks.domain.dashboard import (
+    DAYS_AHEAD,
+    Bucket,
+    Period,
+    WorkspaceNow,
+    chart_buckets,
+)
 from app.modules.tasks.domain.history import HistoryEntry
 from app.modules.tasks.domain.perda_de_alcance import (
     RelacaoPerdida,
@@ -47,6 +73,77 @@ from app.modules.tasks.domain.subtask_progress import (
     Progresso,
 )
 from app.shared.pagination import Page, PageParams
+
+
+@dataclass(frozen=True)
+class DashboardItem:
+    """Uma tarefa citada num card (Spec 058): o bastante para o link."""
+
+    id: uuid.UUID
+    title: str
+    due_date: date | None
+    due_time: time | None
+    parent_id: uuid.UUID | None
+    #: A lista mostra onde a tarefa esta e quao urgente e (pedido dela, 14/10:
+    #: "achei meio basico").
+    priority: str
+    column_name: str
+    column_color: str
+
+
+@dataclass(frozen=True)
+class DashboardCounts:
+    """Os numeros dos cards que todos veem, como o banco os contou."""
+
+    overdue_count: int
+    #: A janela do resumo: a semana corrente, ou o periodo escolhido.
+    summary_start: date
+    summary_end: date
+    done: int
+    total: int
+    #: Abertas e ainda no prazo: as que vencem HOJE, ou as do periodo.
+    on_time_total: int
+    bucket_unit: str
+    buckets: list[BucketCounts]
+    oldest_overdue: list[DashboardItem]
+    my_overdue: list[DashboardItem]
+    my_overdue_total: int
+    my_on_time: list[DashboardItem]
+    my_on_time_total: int
+
+
+@dataclass(frozen=True)
+class DashboardExportRow:
+    """Uma tarefa da planilha do painel (15/10): o que o painel contou."""
+
+    title: str
+    state: str  # "done" | "on_time" | "overdue"
+    column_name: str
+    priority: str
+    due_date: date | None
+    due_time: time | None
+    assignees: str
+    parent_title: str | None
+
+
+@dataclass(frozen=True)
+class BucketCounts:
+    start: date
+    end: date
+    done: int
+    on_time: int
+    overdue: int
+
+
+@dataclass(frozen=True)
+class Workload:
+    user_id: uuid.UUID
+    name: str
+    open_count: int
+    overdue_count: int
+    #: Conta desativada que ainda tem tarefa aberta (revisao de 15/10): e o
+    #: trabalho orfao que o gestor mais precisa ver, e a tela marca.
+    is_active: bool
 
 
 def _casa_busca_na_subarvore(
@@ -1368,3 +1465,414 @@ class TaskRepository(BaseRepository[Task]):
         for raiz_id, user_id in result.all():
             out.setdefault(raiz_id, []).append(user_id)
         return out
+
+    # ----------------------------------------------------
+    # Tela inicial do time (Spec 058)
+    # ----------------------------------------------------
+    def _dashboard_tasks(
+        self, under_team_id: uuid.UUID | None, assignee_id: uuid.UUID | None = None
+    ) -> Subquery:
+        """As tarefas que o painel conta: a MESMA consulta-base da listagem.
+
+        ⚠️⚠️ COPIADA DE `list_page_with_filters`, e nao reescrita (AGENTS.md
+        §3): tenant e apagada pelo `_base_select`, a LENTE (`_lente_de_time`) e
+        o RECORTE do time ativo (`_sob_o_time`). Uma segunda regra de "o que a
+        pessoa ve" divergiria da primeira, e o painel contaria tarefa que a
+        pessoa nao consegue abrir.
+
+        ⚠️ SEM o filtro de arquivada: a concluida arquivada CONTA na semana
+        (§10.6). Cada pergunta (`_DashboardPredicates`) diz o que quer.
+
+        `assignee_id` (14/10, pedido da chefe dela): so as tarefas em que a
+        pessoa e responsavel -- e o relatorio INTEIRO passa a ser dela.
+        """
+        tenant = require_tenant()
+        visible = team_scope.visible_team_ids(
+            tenant.memberships, tenant.team_tree, org_role=tenant.org_role
+        )
+        base = (
+            self._base_select()
+            .with_only_columns(
+                Task.id,
+                Task.title,
+                Task.due_date,
+                Task.due_time,
+                Task.is_archived,
+                Task.parent_task_id,
+                Task.priority,
+                BoardColumn.semantic,
+                BoardColumn.notify_deadline,
+                BoardColumn.name.label("column_name"),
+                BoardColumn.color.label("column_color"),
+            )
+            .outerjoin(
+                Project,
+                and_(
+                    Project.id == Task.project_id,
+                    Project.workspace_id == Task.workspace_id,
+                ),
+            )
+            .join(BoardColumn, BoardColumn.id == Task.column_id)
+        )
+        if visible is not None:
+            base = base.where(_lente_de_time(visible))
+        if under_team_id is not None:
+            base = base.where(_sob_o_time(under_team_id, tenant.team_tree))
+        if assignee_id is not None:
+            base = base.where(
+                exists().where(
+                    TaskAssignment.task_id == Task.id,
+                    TaskAssignment.user_id == assignee_id,
+                )
+            )
+        return base.subquery("t")
+
+    async def dashboard_counts(
+        self,
+        under_team_id: uuid.UUID | None,
+        now: WorkspaceNow,
+        *,
+        me: uuid.UUID,
+        assignee_id: uuid.UUID | None = None,
+        period: Period | None = None,
+    ) -> DashboardCounts:
+        """Os numeros dos cards que todos veem.
+
+        `period` (15/10): tudo passa a ser das tarefas com prazo nele, no
+        estado de hoje -- ver `_DashboardPredicates`.
+        """
+        t = self._dashboard_tasks(under_team_id, assignee_id)
+        p = _DashboardPredicates(t, now, period)
+
+        summary = (
+            await self.session.execute(
+                select(
+                    func.count().filter(p.overdue),
+                    func.count().filter(p.done),
+                    func.count().filter(p.counted),
+                    func.count().filter(p.on_time),
+                ).select_from(t)
+            )
+        ).one()
+
+        # O grafico: os 7 dias a partir de hoje, ou o periodo -- por dia, ou
+        # por semana quando o periodo passa de 14 dias.
+        if period is None:
+            window_start, window_end = now.today, now.today + timedelta(days=DAYS_AHEAD - 1)
+        else:
+            window_start, window_end = period.start, period.end
+        unit, buckets = chart_buckets(window_start, window_end)
+        buckets_counts = await self._bucket_counts(t, p, buckets)
+
+        def item_columns() -> Select:
+            return select(
+                t.c.id,
+                t.c.title,
+                t.c.due_date,
+                t.c.due_time,
+                t.c.parent_task_id,
+                t.c.priority,
+                t.c.column_name,
+                t.c.column_color,
+            )
+
+        oldest_first = (t.c.due_date, t.c.due_time.asc().nulls_last(), t.c.id)
+        # ⚠️ As listas ROLAM DENTRO do card (14/10, pedido dela: "conseguir ver
+        # tudo"). O teto e so uma rede para nao mandar milhares de linhas; o
+        # total de verdade vem nas contagens.
+        list_cap = 50
+        oldest_overdue = await self._dashboard_items(
+            item_columns().where(p.overdue).order_by(*oldest_first).limit(list_cap)
+        )
+
+        # As minhas: o mesmo conjunto, so as tarefas em que sou responsavel.
+        assigned_to_me = exists().where(
+            TaskAssignment.task_id == t.c.id, TaskAssignment.user_id == me
+        )
+        my_overdue = await self._dashboard_items(
+            item_columns()
+            .where(p.overdue, assigned_to_me)
+            .order_by(*oldest_first)
+            .limit(list_cap)
+        )
+        my_on_time = await self._dashboard_items(
+            item_columns()
+            .where(p.on_time, assigned_to_me)
+            .order_by(*oldest_first)
+            .limit(list_cap)
+        )
+        my_counts = (
+            await self.session.execute(
+                select(func.count().filter(p.overdue), func.count().filter(p.on_time))
+                .select_from(t)
+                .where(assigned_to_me)
+            )
+        ).one()
+
+        return DashboardCounts(
+            overdue_count=summary[0],
+            summary_start=p.summary_start,
+            summary_end=p.summary_end,
+            done=summary[1],
+            total=summary[2],
+            on_time_total=summary[3],
+            bucket_unit=unit,
+            buckets=buckets_counts,
+            oldest_overdue=oldest_overdue,
+            my_overdue=my_overdue,
+            my_overdue_total=my_counts[0],
+            my_on_time=my_on_time,
+            my_on_time_total=my_counts[1],
+        )
+
+    async def dashboard_export_rows(
+        self,
+        under_team_id: uuid.UUID | None,
+        now: WorkspaceNow,
+        *,
+        assignee_id: uuid.UUID | None = None,
+        period: Period | None = None,
+    ) -> list[DashboardExportRow]:
+        """As tarefas que o painel CONTOU (a planilha, 15/10): as do resumo
+        (concluidas e as que cobram prazo na janela) e as atrasadas do recorte.
+        Os MESMOS predicados dos numeros -- a planilha tem de bater com a tela."""
+        tenant = require_tenant()
+        t = self._dashboard_tasks(under_team_id, assignee_id)
+        p = _DashboardPredicates(t, now, period)
+        names = (
+            select(
+                TaskAssignment.task_id.label("task_id"),
+                func.string_agg(
+                    User.name, aggregate_order_by(literal_column("', '"), User.name)
+                ).label("names"),
+            )
+            .join(User, User.id == TaskAssignment.user_id)
+            .where(TaskAssignment.workspace_id == tenant.workspace_id)
+            .group_by(TaskAssignment.task_id)
+            .subquery("n")
+        )
+        parent = aliased(Task)
+        state = case(
+            (t.c.semantic == ColumnSemantic.DONE, "done"),
+            (p.overdue_any, "overdue"),
+            else_="on_time",
+        )
+        rows = (
+            await self.session.execute(
+                select(
+                    t.c.title,
+                    state,
+                    t.c.column_name,
+                    t.c.priority,
+                    t.c.due_date,
+                    t.c.due_time,
+                    func.coalesce(names.c.names, ""),
+                    parent.title,
+                )
+                .select_from(t)
+                .outerjoin(names, names.c.task_id == t.c.id)
+                .outerjoin(
+                    parent,
+                    and_(parent.id == t.c.parent_task_id, parent.deleted_at.is_(None)),
+                )
+                .where(or_(p.counted, p.overdue))
+                .order_by(t.c.due_date, t.c.due_time.asc().nulls_last(), t.c.title)
+            )
+        ).all()
+        return [
+            DashboardExportRow(
+                title=r[0],
+                state=r[1],
+                column_name=r[2],
+                priority=str(getattr(r[3], "value", r[3])),
+                due_date=r[4],
+                due_time=r[5],
+                assignees=r[6],
+                parent_title=r[7],
+            )
+            for r in rows
+        ]
+
+    async def _bucket_counts(
+        self, t: Subquery, p: _DashboardPredicates, buckets: list[Bucket]
+    ) -> list[BucketCounts]:
+        """Concluidas, no prazo e atrasadas por coluna do grafico, numa ida so.
+
+        ⚠️ O GRAFICO OLHA A SUA PROPRIA JANELA, e nao o recorte do periodo: sem
+        periodo, ele e "os proximos 7 dias", que nao e a semana do resumo.
+        """
+        if not buckets:
+            return []
+        c = t.c
+        janela = c.due_date.between(buckets[0].start, buckets[-1].end)
+        # A coluna de cada tarefa: o inicio do dia, ou da semana (truncado
+        # dentro da janela -- a primeira semana pode comecar no meio).
+        starts = [b.start for b in buckets]
+        key = case(
+            *[(c.due_date >= b.start, b.start) for b in reversed(buckets)],
+            else_=None,
+        ).label("bucket")
+        rows = (
+            await self.session.execute(
+                select(
+                    key,
+                    func.count().filter(c.semantic == ColumnSemantic.DONE),
+                    func.count().filter(p.charges_deadline, not_(p.overdue_any)),
+                    func.count().filter(p.overdue_any),
+                )
+                .select_from(t)
+                .where(janela)
+                .group_by(key)
+            )
+        ).all()
+        por_inicio = {r[0]: r for r in rows}
+        assert set(por_inicio) <= set(starts)
+        return [
+            BucketCounts(
+                start=b.start,
+                end=b.end,
+                done=por_inicio[b.start][1] if b.start in por_inicio else 0,
+                on_time=por_inicio[b.start][2] if b.start in por_inicio else 0,
+                overdue=por_inicio[b.start][3] if b.start in por_inicio else 0,
+            )
+            for b in buckets
+        ]
+
+    async def workload_by_person(
+        self,
+        under_team_id: uuid.UUID | None,
+        now: WorkspaceNow,
+        member_teams: frozenset[uuid.UUID] | None,
+        period: Period | None = None,
+    ) -> list[Workload]:
+        """Card 1: tarefas ABERTAS de cada pessoa, e quantas delas atrasadas.
+
+        ⚠️ QUEM ESTA COM ZERO APARECE (§10.5): a lista parte dos MEMBROS do
+        time (`times_dos_membros`; `None` = a organizacao inteira), e nao das
+        tarefas. Quem tem tarefa no time sem ser membro dele (um gestor da
+        organizacao designado) entra tambem -- a carga dele e real.
+
+        ⚠️ Tarefa com dois responsaveis conta para os DOIS.
+        """
+        tenant = require_tenant()
+        t = self._dashboard_tasks(under_team_id)
+        p = _DashboardPredicates(t, now, period)
+        counts_by_user = (
+            select(
+                TaskAssignment.user_id.label("user_id"),
+                func.count().label("open_count"),
+                func.count().filter(p.overdue).label("overdue_count"),
+            )
+            .select_from(t)
+            .join(TaskAssignment, TaskAssignment.task_id == t.c.id)
+            .where(p.open_scoped, TaskAssignment.workspace_id == tenant.workspace_id)
+            .group_by(TaskAssignment.user_id)
+            .subquery("c")
+        )
+        members = select(UserTeam.user_id).where(
+            UserTeam.workspace_id == tenant.workspace_id
+        )
+        if member_teams is not None:
+            members = members.where(UserTeam.team_id.in_(member_teams))
+        open_count = func.coalesce(counts_by_user.c.open_count, 0)
+        rows = (
+            await self.session.execute(
+                select(
+                    User.id,
+                    User.name,
+                    open_count,
+                    func.coalesce(counts_by_user.c.overdue_count, 0),
+                    User.is_active,
+                )
+                .outerjoin(counts_by_user, counts_by_user.c.user_id == User.id)
+                .where(
+                    User.workspace_id == tenant.workspace_id,
+                    # ⚠️ Desativado so entra se ainda tiver tarefa aberta no
+                    # time (revisao de 15/10): sumir com ele escondia o
+                    # trabalho orfao, que continuava contando nas atrasadas.
+                    or_(
+                        and_(User.is_active.is_(True), User.id.in_(members)),
+                        counts_by_user.c.user_id.is_not(None),
+                    ),
+                )
+                .order_by(open_count.desc(), User.name, User.id)
+            )
+        ).all()
+        return [
+            Workload(user_id=u, name=n, open_count=a, overdue_count=x, is_active=ativo)
+            for u, n, a, x, ativo in rows
+        ]
+
+    async def _dashboard_items(self, stmt: Select) -> list[DashboardItem]:
+        return [
+            DashboardItem(
+                id=i,
+                title=tt,
+                due_date=d,
+                due_time=h,
+                parent_id=m,
+                priority=str(getattr(pr, "value", pr)),
+                column_name=cn,
+                column_color=cc,
+            )
+            for i, tt, d, h, m, pr, cn, cc in (await self.session.execute(stmt)).all()
+        ]
+
+
+class _DashboardPredicates:
+    """As definicoes da Spec 058 §5.1, em SQL, sobre a subconsulta `t`.
+
+    ⚠️ ESTE E O LUGAR ONDE O PAINEL PODE MENTIR, e por isso cada pergunta tem
+    nome e esta escrita uma vez: os cards reusam, e nao reescrevem.
+
+    ⚠️ COM PERIODO (15/10), o recorte e "prazo dentro do periodo" em TODAS as
+    perguntas que os cards usam -- atrasadas, carga, as minhas, o resumo. O
+    ESTADO e sempre o de hoje (decisao dela): `overdue` continua sendo "vencida
+    AGORA e ainda aberta".
+    """
+
+    def __init__(self, t: Subquery, now: WorkspaceNow, period: Period | None = None) -> None:
+        c = t.c
+        #: nem DONE nem CANCELLED, e nao arquivada.
+        self.open = and_(
+            c.semantic.not_in(TERMINAL_SEMANTICS), c.is_archived.is_(False)
+        )
+        #: ⚠️ A mesma pergunta do selo de prazo (`avisaPrazo`). E por aqui que a
+        #: BLOQUEADA sai do total da semana (decisao dela, §10.4): a coluna
+        #: Bloqueado nasce com o aviso de prazo desligado.
+        self.charges_deadline = and_(self.open, c.notify_deadline.is_(True))
+        #: `estaAtrasada` do front (e `dashboard.is_overdue`): sem hora vence
+        #: quando o dia acaba; com hora, no minuto seguinte. SEM o recorte do
+        #: periodo -- o grafico usa esta, na janela dele.
+        self.overdue_any = and_(
+            self.charges_deadline,
+            c.due_date.is_not(None),
+            or_(
+                c.due_date < now.today,
+                and_(
+                    c.due_date == now.today,
+                    c.due_time.is_not(None),
+                    c.due_time < now.minute,
+                ),
+            ),
+        )
+
+        if period is None:
+            in_scope = true()
+            self.summary_start, self.summary_end = now.week_start, now.week_end
+            #: Sem periodo, "no prazo" e o que vence HOJE e ainda nao venceu.
+            on_time_window = c.due_date == now.today
+        else:
+            in_scope = c.due_date.between(period.start, period.end)
+            self.summary_start, self.summary_end = period.start, period.end
+            on_time_window = in_scope
+        in_summary = c.due_date.between(self.summary_start, self.summary_end)
+
+        self.overdue = and_(self.overdue_any, in_scope)
+        #: A carga: as abertas (inclusive a bloqueada -- ainda e dela).
+        self.open_scoped = and_(self.open, in_scope)
+        #: concluida arquivada CONTA (§10.6).
+        self.done = and_(c.semantic == ColumnSemantic.DONE, in_summary)
+        #: cancelada e bloqueada ficam fora (§10.4).
+        self.counted = or_(self.done, and_(self.charges_deadline, in_summary))
+        self.on_time = and_(self.charges_deadline, on_time_window, not_(self.overdue_any))
