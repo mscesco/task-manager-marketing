@@ -116,17 +116,6 @@ class BaseRepository(Generic[ModelT]):
             raise EntityNotFoundError(self.model.__name__, identifier=entity_id)
         return entity
 
-    async def exists(self, entity_id: uuid.UUID) -> bool:
-        """True se a entidade existe (ativa) no tenant corrente."""
-        stmt = (
-            self._base_select()
-            .with_only_columns(self.model.id)
-            .where(self.model.id == entity_id)
-            .limit(1)
-        )
-        result = await self.session.execute(stmt)
-        return result.scalar_one_or_none() is not None
-
     async def list_page(
         self,
         params: PageParams,

@@ -87,6 +87,26 @@ def test_password_hash_roundtrip() -> None:
     assert not verify_password("errado", h)
 
 
+# Hashes gerados pelo `passlib` 1.7.4 (o que gravou TODAS as senhas de hoje),
+# em 16/10, antes de ele sair. Se a troca para `bcrypt` direto tivesse mudado
+# formato, custo ou o corte de 72 bytes, ninguem mais entraria.
+_HASH_DO_PASSLIB = "$2b$12$zWiU5OT9Kcvj4sjVA.fM1uwWeGsTlhVBkAnYt5BhhNcACMWqUOq0C"
+_HASH_DO_PASSLIB_100_X = "$2b$12$gH70mJeJO9CSee8BAZGLvOjxW2Z7pZKIT4kKBqmh0yrY0DevrpqpG"
+
+
+def test_senha_gravada_pelo_passlib_continua_entrando() -> None:
+    assert verify_password("senha-gerada-pelo-passlib", _HASH_DO_PASSLIB)
+    assert not verify_password("outra", _HASH_DO_PASSLIB)
+    # Acima de 72 bytes, o passlib cortava -- e o corte e o mesmo.
+    assert verify_password("x" * 100, _HASH_DO_PASSLIB_100_X)
+    assert verify_password("x" * 72, _HASH_DO_PASSLIB_100_X)
+
+
+def test_hash_invalido_nao_levanta() -> None:
+    assert verify_password("qualquer", "") is False
+    assert verify_password("qualquer", "nao-e-bcrypt") is False
+
+
 def test_access_token_roundtrip() -> None:
     uid, wid = uuid.uuid4(), uuid.uuid4()
     token = create_access_token(user_id=uid, workspace_id=wid)
@@ -164,3 +184,32 @@ def test_protected_route_requires_auth() -> None:
     response = client.get("/api/v1/auth/me")
     assert response.status_code == 401
     assert response.json()["error"]["code"] == "authentication_failed"
+
+def test_erro_traz_o_request_id_do_log() -> None:
+    """Auditoria de 16/10: o corpo lia o `X-Request-ID` da REQUISICAO, que o
+    front nunca manda -- saia sempre `null`, e nada ligava a tela ao log."""
+    from starlette.testclient import TestClient
+
+    from app.main import create_app
+
+    r = TestClient(create_app()).get("/api/v1/auth/me")
+    assert r.status_code == 401
+    assert r.json()["request_id"]
+    assert r.json()["request_id"] == r.headers["X-Request-ID"]
+
+
+def test_token_de_sistema_com_acento_e_401_e_nao_500(monkeypatch) -> None:
+    """Com `str`, o `compare_digest` levantava TypeError com caractere fora do
+    ASCII: qualquer um na internet gerava 500 com stack no log."""
+    from starlette.testclient import TestClient
+
+    from app.core.config import settings
+    from app.main import create_app
+
+    monkeypatch.setattr(settings, "system_api_token", "token-certo")
+    client = TestClient(create_app(), raise_server_exceptions=False)
+    r = client.post(
+        "/api/v1/system/tasks/archive-stale",
+        headers={"X-System-Token": "tóken".encode()},
+    )
+    assert r.status_code == 401

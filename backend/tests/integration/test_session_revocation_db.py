@@ -49,7 +49,7 @@ _NOVA = "senha-de-teste-2"
 def _zera_limitadores():
     """Esvazia os baldes de rate limit entre os testes deste arquivo.
 
-    Necessario porque `login_limiter` e `refresh_limiter` sao singletons de
+    Necessario porque `login_limiter` e `change_password_limiter` sao singletons de
     MODULO: vivem no processo, nao na app. Como todo teste sai do mesmo
     "IP", o 11o login da sessao inteira levava 429 e derrubava testes que
     nada tem a ver com rate limit.
@@ -59,13 +59,13 @@ def _zera_limitadores():
     `--workers 2` em producao existem dois baldes independentes e o limite
     efetivo e ate 2x o configurado.
     """
-    from app.core.rate_limit import login_limiter, refresh_limiter
+    from app.core.rate_limit import change_password_limiter, login_limiter
 
     login_limiter._hits.clear()
-    refresh_limiter._hits.clear()
+    change_password_limiter._hits.clear()
     yield
     login_limiter._hits.clear()
-    refresh_limiter._hits.clear()
+    change_password_limiter._hits.clear()
 
 
 def _client(db) -> AsyncClient:

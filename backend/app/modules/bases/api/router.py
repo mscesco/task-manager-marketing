@@ -38,6 +38,11 @@ Fatia G:
 Fatia I (o cabecalho como o do Notion):
     POST   /bases/{id}/columns  com `position`           -- inserir no meio
     POST   /bases/{id}/columns/{column_id}/duplicate     -- base_column.create
+
+Spec 057 (planilha):
+    POST   /bases/import/preview                         -- base_row.create OU
+    POST   /bases/import                                    base.create
+    POST   /bases/{id}/export                            -- base.read (no servico)
 """
 
 from __future__ import annotations
@@ -56,7 +61,11 @@ from pydantic import BaseModel, Field
 
 from app.core.deps import SessionDep, UoWDep
 from app.core.logging import get_logger
-from app.modules.auth.api.dependencies import TenantContextDep, require_permission
+from app.modules.auth.api.dependencies import (
+    TenantContextDep,
+    require_any_permission,
+    require_permission,
+)
 from app.modules.bases.api.schemas import (
     BaseCreateRequest,
     BaseResponse,
@@ -164,12 +173,21 @@ class _ImportRequest(_ImportFile):
     skip_invalid: bool = False
 
 
-@router.post("/import/preview")
-async def preview_import(_: TenantContextDep, payload: _ImportFile) -> dict:
+#: Importar = criar linhas numa base que existe, ou criar uma base nova. A porta
+#: pede um dos dois; o servico confere NO TIME do destino.
+_PODE_IMPORTAR = Depends(require_any_permission("base_row.create", "base.create"))
+
+
+@router.post("/import/preview", dependencies=[_PODE_IMPORTAR])
+async def preview_import(payload: _ImportFile) -> dict:
     """Le a planilha: abas, cabecalho, 20 linhas e o tipo sugerido de cada coluna.
     Nao grava nada -- e o passo 1 do assistente."""
-    p = BaseImportService(None).preview(  # type: ignore[arg-type]
-        payload.content(), payload.filename, sheet=payload.sheet, header_row=payload.header_row
+    p = await asyncio.to_thread(
+        BaseImportService.preview,
+        payload.content(),
+        payload.filename,
+        sheet=payload.sheet,
+        header_row=payload.header_row,
     )
     return {
         "sheets": p.sheets,
@@ -188,8 +206,8 @@ async def preview_import(_: TenantContextDep, payload: _ImportFile) -> dict:
     }
 
 
-@router.post("/import")
-async def run_import(_: TenantContextDep, payload: _ImportRequest, uow: UoWDep) -> dict:
+@router.post("/import", dependencies=[_PODE_IMPORTAR])
+async def run_import(payload: _ImportRequest, uow: UoWDep) -> dict:
     """Valida (`dry_run`) ou importa a planilha -- numa base que existe
     (`base_id`) ou numa nova (`new_name` + `new_team_id`). Uma acao do diario."""
     plan = ImportPlan(
@@ -430,7 +448,9 @@ async def create_row(
 
 
 class _RowsBatchRequest(BaseModel):
-    rows: list[RowCreateRequest] = Field(min_length=1, max_length=1_000)
+    # O teto da base inteira: colar uma planilha cabe se a base couber. A tela
+    # confere antes de mandar (`MAX_LINHAS_COLADAS` em `web/lib/baseClipboard.ts`).
+    rows: list[RowCreateRequest] = Field(min_length=1, max_length=ROW_LIMIT)
 
 
 @router.post(

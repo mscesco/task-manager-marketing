@@ -39,8 +39,11 @@ def require_system_token(
     expected = settings.system_api_token
     if not expected:
         raise AuthenticationError("Endpoint de sistema indisponivel.")
+    # ⚠️ EM BYTES: com `str`, um caractere fora do ASCII no cabecalho fazia o
+    # `compare_digest` levantar `TypeError` -- 500 com stack no log, a partir
+    # de qualquer um na internet (auditoria de 16/10).
     if not x_system_token or not secrets.compare_digest(
-        x_system_token, expected
+        x_system_token.encode(), expected.encode()
     ):
         raise AuthenticationError("Token de sistema invalido.")
 

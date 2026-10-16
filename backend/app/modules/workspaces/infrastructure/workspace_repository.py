@@ -15,8 +15,6 @@ proprio workspace.
 
 from __future__ import annotations
 
-import uuid
-
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.tenant import require_tenant
@@ -45,7 +43,3 @@ class WorkspaceRepository:
                 "Workspace", identifier=tenant.workspace_id
             )
         return workspace
-
-    async def get_by_id(self, workspace_id: uuid.UUID) -> Workspace | None:
-        """Busca um workspace por id. Uso interno/provisionamento."""
-        return await self.session.get(Workspace, workspace_id)

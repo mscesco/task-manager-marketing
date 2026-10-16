@@ -507,3 +507,42 @@ async def test_a_fila_sabe_o_TITULO_do_formulario_do_pedido(db) -> None:
     with acting_as(**ctx):
         titulos = await SolicitationService(db).titulos_dos_formularios(criadas)
     assert titulos == {form.id: "Arte"}
+
+# ----------------------------------------------------------
+# 16/10, a auditoria
+# ----------------------------------------------------------
+def test_enunciado_de_ate_300_caracteres_cabe_no_envio() -> None:
+    """O editor aceita pergunta de 300 caracteres e o envio cortava em 200:
+    quem respondesse a ela recebia 422 depois de preencher tudo."""
+    from app.modules.solicitations.api.form_schemas import QuestionCreateRequest
+    from app.modules.solicitations.api.schemas import AnswerItem
+
+    teto = QuestionCreateRequest.model_fields["label"].metadata[0].max_length
+    AnswerItem(label="x" * teto, value="ok")  # nao levanta
+
+
+async def test_envio_grande_demais_e_recusado_antes_de_gravar(db) -> None:
+    """Por campo, 60 x 60 x 5000 passava (~19 MB por POST, sem login)."""
+    from app.modules.solicitations.application.service import MAX_CARACTERES_POR_ENVIO
+
+    ws, raiz, user, ctx = await _mundo(db)
+    form, secao, _ = await _form_publicado(db, ctx, raiz)
+    slug_ws = await _slug_do_ws(db, ws)
+    base = _envio(slug_ws, categoria=secao.slug, form_id=form.id)
+    resposta = {"label": "Descreva", "value": "x" * 5000}
+    gordo = CreatePublicCommand(
+        **{
+            **{k: getattr(base, k) for k in base.__dataclass_fields__},
+            "items": [
+                SolicitationItem(
+                    category=secao.slug,
+                    summary="grande",
+                    answers=[resposta] * (MAX_CARACTERES_POR_ENVIO // 5000 + 1),
+                )
+            ],
+        }
+    )
+
+    async with UnitOfWork(db) as uow:
+        with pytest.raises(ValidationError, match="grande demais"):
+            await SolicitationService(db).create_public(uow, gordo)

@@ -19,14 +19,21 @@ from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from typing import Any
 
+import bcrypt
 import jwt
-from passlib.context import CryptContext
 
 from app.core.config import settings
 from app.shared.exceptions.base import AuthenticationError
 
-# bcrypt: padrao solido para hashing de senha.
-_pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+#: O bcrypt so le os primeiros 72 BYTES da senha. O `passlib` cortava calado;
+#: o corte agora e explicito, e por isso hash antigo e novo concordam. (E o
+#: `bcrypt` 5 passou a RECUSAR senha maior -- cortar aqui e o que deixa subir
+#: de versao sem a senha longa de alguem virar 500.)
+_BCRYPT_MAX_BYTES = 72
+
+
+def _senha_em_bytes(plain_password: str) -> bytes:
+    return plain_password.encode("utf-8")[:_BCRYPT_MAX_BYTES]
 
 
 class TokenType(StrEnum):
@@ -38,13 +45,22 @@ class TokenType(StrEnum):
 # Senhas
 # --------------------------------------------------------
 def hash_password(plain_password: str) -> str:
-    """Gera o hash bcrypt de uma senha em texto puro."""
-    return _pwd_context.hash(plain_password)
+    """Gera o hash bcrypt (`$2b$`, custo 12) de uma senha em texto puro.
+
+    ⚠️ `bcrypt` DIRETO DESDE 16/10, e nao mais o `passlib` (sem manutencao
+    desde 2020, e que prendia o `bcrypt` em 4.0.1). Mesmo formato e mesmo
+    custo: os hashes gravados pelo `passlib` continuam valendo -- ha teste
+    com um hash gerado por ele (`tests/test_foundation.py`).
+    """
+    return bcrypt.hashpw(_senha_em_bytes(plain_password), bcrypt.gensalt()).decode("ascii")
 
 
 def verify_password(plain_password: str, password_hash: str) -> bool:
     """Confere uma senha contra seu hash. Nunca lanca -- retorna bool."""
-    return _pwd_context.verify(plain_password, password_hash)
+    try:
+        return bcrypt.checkpw(_senha_em_bytes(plain_password), password_hash.encode("ascii"))
+    except ValueError:  # hash que nao e bcrypt (vazio, corrompido)
+        return False
 
 
 # Alfabeto sem caracteres ambiguos (sem 0/O, 1/l/I) -- a provisoria

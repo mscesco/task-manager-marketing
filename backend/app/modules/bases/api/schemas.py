@@ -257,11 +257,17 @@ class CellRequest(BaseModel):
     value: Any = None
 
 
+#: Celulas num lote. ⚠️ A tela confere o MESMO numero antes de mandar
+#: (`MAX_CELULAS_COLADAS` em `web/lib/baseClipboard.ts`): com 5.000, colar
+#: 300 linhas x 20 colunas falhava inteiro com erro em ingles.
+CELLS_BATCH_LIMIT = 50_000
+
+
 class CellsUpdateRequest(BaseModel):
     """Varias celulas, de varias linhas, como UMA acao -- colar, ou arrastar um
     card que muda mais de uma celula. Um Ctrl+Z desfaz o grupo."""
 
-    cells: list[CellRequest] = Field(min_length=1, max_length=5_000)
+    cells: list[CellRequest] = Field(min_length=1, max_length=CELLS_BATCH_LIMIT)
 
 
 class ViewCreateRequest(BaseModel):

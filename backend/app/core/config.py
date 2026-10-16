@@ -40,7 +40,6 @@ class Settings(BaseSettings):
 
     # --- Ambiente ---
     app_env: AppEnv = AppEnv.DEVELOPMENT
-    app_debug: bool = False
 
     # --- Banco de dados ---
     database_url: PostgresDsn

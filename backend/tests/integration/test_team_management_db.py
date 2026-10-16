@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import AsyncIterator
+from datetime import UTC, datetime
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -613,3 +614,83 @@ async def test_falha_no_meio_nao_deixa_time_semi_esvaziado(db) -> None:
     assert linha.is_archived is False, "a tarefa nao pode ficar arquivada"
     assert linha.team_id == sub, "nem ter mudado de time"
     assert await _existe(db, sub), "e o time continua de pe"
+
+# ---------------------------------------------------------------
+# Auditoria de 16/10 -- quadro e formulario seguram o time
+# ---------------------------------------------------------------
+async def _formulario(db, ws, team_id) -> uuid.UUID:
+    from app.db.models import SolicitationForm
+
+    fid = uuid.uuid4()
+    db.add(
+        SolicitationForm(
+            id=fid, workspace_id=ws, team_id=team_id, slug=f"f-{fid.hex[:6]}", title="Pedidos"
+        )
+    )
+    await db.flush()
+    return fid
+
+
+async def test_subtime_com_quadro_ou_formulario_nao_sai_pelo_delete_e_diz_por_que(db) -> None:
+    """A contagem nao via quadro nem formulario: tela zerada, "remover"
+    oferecido, e o DELETE estourava em 500 na FK RESTRICT."""
+    ws, _raiz, sub, _ator, ctx = await _mundo(db)
+    await f.make_board(db, workspace_id=ws, team_id=sub, name="Interno")
+    await _formulario(db, ws, sub)
+    await db.commit()
+    async with _client(db, ctx) as c:
+        lista = await c.get("/api/v1/workspaces/current/teams")
+        resp = await c.delete(f"/api/v1/workspaces/current/teams/{sub}")
+    item = next(i for i in lista.json()["items"] if i["id"] == str(sub))
+    assert (item["quadros"], item["formularios"]) == (1, 1)
+    assert resp.status_code == 409
+    detalhes = resp.json()["error"]["details"]
+    assert (detalhes["quadros"], detalhes["formularios"]) == (1, 1)
+
+
+async def test_esvaziar_leva_quadros_e_formularios_para_a_area(db) -> None:
+    """O esvaziar tambem nao os movia: o DELETE do fim estourava e a transacao
+    inteira voltava -- o subtime nunca saia. Nome repetido na area ganha o
+    nome do subtime; o apagado sobe como esta."""
+    from app.db.models import Board, SolicitationForm
+
+    ws, raiz, sub, _ator, ctx = await _mundo(db)
+    nome_do_sub = (await db.get(Team, sub)).name
+    await f.make_board(db, workspace_id=ws, team_id=raiz, name="Pautas")
+    vivo = await f.make_board(db, workspace_id=ws, team_id=sub, name="Pautas")
+    apagado = await f.make_board(db, workspace_id=ws, team_id=sub, name="Velho")
+    apagado.deleted_at = datetime.now(UTC)
+    form = await _formulario(db, ws, sub)
+    await db.commit()
+
+    async with _client(db, ctx) as c:
+        previa = await c.get(f"/api/v1/workspaces/current/teams/{sub}/previa-remocao")
+        resp = await c.post(f"/api/v1/workspaces/current/teams/{sub}/esvaziar-e-remover")
+    assert (previa.json()["quadros"], previa.json()["formularios"]) == (2, 1)
+    assert resp.status_code == 200
+    assert not await _existe(db, sub)
+    quadros = {
+        b.id: (b.team_id, b.name)
+        for b in (
+            await db.execute(select(Board).where(Board.id.in_([vivo.id, apagado.id])))
+        ).scalars()
+    }
+    assert quadros[vivo.id] == (raiz, f"Pautas ({nome_do_sub})")
+    assert quadros[apagado.id] == (raiz, "Velho")
+    assert (await db.get(SolicitationForm, form)).team_id == raiz
+
+
+async def test_esvaziar_arquiva_a_subarvore(db) -> None:
+    """Uma filha de OUTRO time ficava viva embaixo da mae arquivada (a
+    consulta 11 do `invariantes.sql`)."""
+    ws, raiz, sub, ator, ctx = await _mundo(db)
+    mae = await f.make_task(db, workspace_id=ws, created_by=ator, team_id=sub)
+    filha = await f.make_task(db, workspace_id=ws, created_by=ator, team_id=raiz, parent=mae)
+    await db.commit()
+    async with _client(db, ctx) as c:
+        resp = await c.post(f"/api/v1/workspaces/current/teams/{sub}/esvaziar-e-remover")
+    assert resp.status_code == 200
+    arquivada = (
+        await db.execute(text("SELECT is_archived FROM task WHERE id = :i"), {"i": filha.id})
+    ).scalar_one()
+    assert arquivada is True
