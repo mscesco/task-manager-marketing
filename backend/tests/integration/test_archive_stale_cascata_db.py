@@ -184,3 +184,27 @@ async def test_filha_elegivel_sob_pai_vivo_nao_arrasta_o_pai(db) -> None:
         "automated": True,
         "reason": "stale_terminal",
     }
+
+# Auditoria de 16/10 -- desarquivar recomeca o relogio. Com o `terminal_since`
+# velho, a mae concluida desarquivada (e as filhas, que voltam junto) eram
+# elegiveis de novo, e a varredura seguinte as arquivava: "desarquivar" se
+# desfazia sozinho em ate um dia, e o checklist voltava zerado.
+async def test_desarquivar_tira_a_subarvore_da_proxima_varredura(db) -> None:
+    ctx, ws, team, user = await _ws_admin(db)
+    pai = await _mk(db, ws, user, team, "pai concluido")
+    _set_terminal(pai, status=TaskStatus.COMPLETED, completed_at=VELHO, when=VELHO)
+    filha = await _mk(db, ws, user, team, "filha concluida", parent=pai)
+    _set_terminal(filha, status=TaskStatus.COMPLETED, completed_at=VELHO, when=VELHO)
+    await db.flush()
+
+    with acting_as(**ctx):
+        svc = TaskService(db)
+        assert await svc.archive_stale(now=NOW, actor_user_id=user, days=DIAS) == 2
+        await svc.unarchive(task_id=pai.id)
+        # A varredura seguinte, na mesma "madrugada": nada a arquivar.
+        segunda = await svc.archive_stale(now=NOW, actor_user_id=user, days=DIAS)
+
+    assert segunda == 0
+    await db.refresh(pai)
+    await db.refresh(filha)
+    assert (pai.is_archived, filha.is_archived) == (False, False)
