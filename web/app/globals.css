@@ -306,8 +306,13 @@
   --status-planned-dot:  #6366f1;  --status-planned-text:  #4338ca; /*  7.90 */
   --status-progress-dot: #0ea5e9;  --status-progress-text: #0369a1; /*  5.93 */
   --status-review-dot:   #f59e0b;  --status-review-text:   #92400e; /*  7.09 */
-  --status-external-dot: #8b5cf6;  --status-external-text: #6d28d9; /*  7.10 */
-  --status-done-dot:     #22c55e;  --status-done-text:     #166534; /*  7.13 */
+  /* ⚠️ REDESIGN (19/10): externo e concluido passam a ser as cores de apoio,
+     dot E text no mesmo valor (o `--x` ja e texto medido sobre a surface).
+     O dot tambem alias porque a cor da coluna mora no BANCO como
+     `var(--status-done-dot)` -- so assim o filete do card acompanha o selo.
+     Com a tinta a 12%: violeta 5.86, teal 5.16 (sobre a surface: 7.11 / 6.13). */
+  --status-external-dot: var(--violet);  --status-external-text: var(--violet);
+  --status-done-dot:     var(--teal);    --status-done-text:     var(--teal);
   --status-cancel-dot:   #94a3b8;  --status-cancel-text:   #475569; /*  7.58 */
   --status-blocked-dot:  #ef4444;  --status-blocked-text:  #b91c1c; /*  6.47 */
 
@@ -370,8 +375,9 @@
   --status-planned-dot:  #818cf8;  --status-planned-text:  #a5b4fc; /*  8.36 */
   --status-progress-dot: #38bdf8;  --status-progress-text: #7dd3fc; /* 9.99 */
   --status-review-dot:   #fbbf24;  --status-review-text:   #fcd34d; /* 11.55 */
-  --status-external-dot: #a78bfa;  --status-external-text: #c4b5fd; /*  9.02 */
-  --status-done-dot:     #4ade80;  --status-done-text:     #86efac; /* 11.86 */
+  /* Cores de apoio (redesign 19/10), com a tinta: violeta 7.22, teal 7.19. */
+  --status-external-dot: var(--violet);  --status-external-text: var(--violet);
+  --status-done-dot:     var(--teal);    --status-done-text:     var(--teal);
   --status-cancel-dot:   #cbd5e1;  --status-cancel-text:   #cbd5e1; /* 11.22 */
   --status-blocked-dot:  #f87171;  --status-blocked-text:  #fca5a5; /*  8.78 */
 
@@ -510,6 +516,16 @@ button { font-family: inherit; cursor: pointer; }
 .modal-card  { animation: tm-card-entra var(--dur-2) var(--ease-out); }
 .modal-scrim[data-saindo="true"] { animation: tm-scrim-entra var(--dur-1) var(--ease-io) reverse forwards; }
 .modal-card[data-saindo="true"]  { animation: tm-card-entra var(--dur-1) var(--ease-io) reverse forwards; }
+
+/* --- Card do quadro: filete da coluna (redesign 19/10) ----------------
+   3px no topo com a cor da coluna. A borda inteira mora aqui porque o
+   shorthand `border` inline zeraria a largura do topo; so a COR do filete
+   entra inline (`borderTopColor`), que e a excecao de cor dinamica do
+   web/AGENTS.md §11 -- ela vem da coluna, inclusive do banco. */
+.card-stripe {
+  border: 1px solid var(--border);
+  border-top: 3px solid var(--border);
+}
 
 /* --- Card do quadro: elevacao no hover -------------------------------
    Substitui o outline duro do .tappable NESTE caso: em card arrastavel a
@@ -718,6 +734,8 @@ button:focus-visible,
     --color-accent: #0075de;
     --color-accent-soft: #d6e8fb;
     --color-danger: #dc2626;
+    /* O painel usa `bg-teal`/`stroke-teal` em "Concluídas" (redesign 19/10). */
+    --color-teal: #0a6e63;
   }
   [data-theme="escuro"] .tile-destaque { color: #ffffff; }
   * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }

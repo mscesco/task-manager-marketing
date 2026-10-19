@@ -79,17 +79,21 @@ const STATUS_LABEL: Record<SolicitacaoStatus, string> = {
   DONE: "Concluída",
   REJECTED: "Rejeitada",
 };
-// ⚠️ AZUL PARA "EM ANDAMENTO" E VERDE-ESCURO PARA "CONCLUÍDA", e não dois
-// verdes: "aprovada" e "concluída" são estados distantes no fluxo e precisam
-// se distinguir de relance numa lista. O `Badge tone="soft"` aplica a tinta,
-// e estas cores são as mesmas famílias já medidas para AA no tema claro e
-// escuro (Spec 031 §2.2b).
+// ⚠️ AZUL PARA "EM ANDAMENTO" E TEAL PARA "CONCLUÍDA", e não dois verdes:
+// são estados distantes no fluxo e precisam se distinguir de relance.
+//
+// Redesign (19/10): tokens no lugar de hex. Os hex antigos NÃO invertiam no
+// tema escuro e, medidos com a tinta do `Badge tone="soft"` no claro, pendente
+// (#d97706) dava 2.81 e aprovada (#16a34a) 2.89 -- reprovavam AA. Agora, com a
+// tinta, claro/escuro: âmbar 4.89/7.94, teal 5.16/7.19, azul 4.98/7.78,
+// vermelho 5.29/6.98. "Rejeitada" não usa `--danger` porque ele dá 4.01 com a
+// tinta no claro; usa o stop escuro de "bloqueado", a mesma família.
 const STATUS_COLOR: Record<SolicitacaoStatus, string> = {
-  PENDING: "#d97706",
-  APPROVED: "#16a34a",
-  IN_PROGRESS: "#2563eb",
-  DONE: "#15803d",
-  REJECTED: "#dc2626",
+  PENDING: "var(--amber)",
+  APPROVED: "var(--teal)",
+  IN_PROGRESS: "var(--status-progress-text)",
+  DONE: "var(--teal)",
+  REJECTED: "var(--status-blocked-text)",
 };
 
 /** A mola de toda a tela: rápida, quase sem quique. */
@@ -365,7 +369,7 @@ function Solicitacoes() {
                     <input type="checkbox" checked={semTarefa} onChange={(e) => filtrar(() => setSemTarefa(e.target.checked))} />
                     Só sem tarefa
                     {(totais.WITHOUT_TASK ?? 0) > 0 && (
-                      <Badge tone="soft" size="sm" color="#d97706">
+                      <Badge tone="soft" size="sm" color="var(--amber)">
                         {totais.WITHOUT_TASK}
                       </Badge>
                     )}
@@ -615,7 +619,7 @@ function LinhaDoEnvio({
         <div className="relative flex justify-end gap-1.5 px-3 pb-2.5 pl-[56px]">
           <button
             type="button"
-            className="inline-flex h-7 cursor-pointer items-center gap-1 rounded-md border border-border bg-surface px-2.5 text-[12px] font-semibold text-ink-soft transition-colors duration-150 hover:border-[#16a34a] hover:text-[#15803d] disabled:opacity-60"
+            className="inline-flex h-7 cursor-pointer items-center gap-1 rounded-md border border-border bg-surface px-2.5 text-[12px] font-semibold text-ink-soft transition-colors duration-150 hover:border-teal hover:text-teal disabled:opacity-60"
             disabled={agindo}
             aria-label="Aprovar"
             aria-busy={agindo || undefined}
@@ -1004,7 +1008,7 @@ function SecaoDemanda({
 
       {aceito && item.task_created_at && (
         <p className="mt-4 flex flex-wrap items-center gap-1.5 text-[12.5px] text-ink-soft">
-          <SquareCheckBig aria-hidden size={14} className="text-[#16a34a]" />
+          <SquareCheckBig aria-hidden size={14} className="text-teal" />
           Tarefa criada em {diaDoEnvio(item.task_created_at)}
           {/* ⚠️ TRÊS ESTADOS, e cada um diz a verdade sobre o que existe:
               vinculada e viva (link), vinculada e apagada (sem nome, sem
@@ -1022,8 +1026,8 @@ function SecaoDemanda({
 
       {tarefaNova && (
         <Surge className="mt-4">
-          <div className="flex items-center gap-2 rounded-lg border border-[#16a34a]/40 bg-[#16a34a]/10 px-3 py-2 text-[12.5px]">
-            <Check aria-hidden size={14} className="text-[#16a34a]" />
+          <div className="flex items-center gap-2 rounded-lg border border-teal/40 bg-teal-soft px-3 py-2 text-[12.5px]">
+            <Check aria-hidden size={14} className="text-teal" />
             Tarefa criada.
             <Link href={`/tarefa/${tarefaNova}`} className="font-semibold">
               Abrir a tarefa

@@ -313,7 +313,7 @@ function WeekRingCard({ data, className }: { data: DashboardResponse; className:
         />
         <ul className="m-0 flex list-none flex-wrap justify-center gap-x-4 gap-y-1 p-0 text-sm">
           <li className="flex items-center gap-1.5">
-            <span className="h-2.5 w-2.5 rounded-full bg-accent" aria-hidden="true" />
+            <span className="h-2.5 w-2.5 rounded-full bg-teal" aria-hidden="true" />
             Concluídas <strong>{done}</strong>
           </li>
           <li className="flex items-center gap-1.5">
@@ -366,7 +366,7 @@ function AheadChartCard({ data, className }: { data: DashboardResponse; classNam
             const layers = [
               { value: total, cls: "bg-danger" },
               { value: b.done + b.on_time, cls: ON_TIME_FILL },
-              { value: b.done, cls: "bg-accent" },
+              { value: b.done, cls: "bg-teal" },
             ];
             return (
               <li
@@ -401,7 +401,7 @@ function AheadChartCard({ data, className }: { data: DashboardResponse; classNam
       </div>
       <ul className="m-0 mt-3 flex list-none flex-wrap gap-x-3 gap-y-1 p-0 text-xs text-ink-soft">
         <li className="flex items-center gap-1">
-          <span className="h-2 w-2 rounded-full bg-accent" aria-hidden="true" /> Concluídas
+          <span className="h-2 w-2 rounded-full bg-teal" aria-hidden="true" /> Concluídas
         </li>
         <li className="flex items-center gap-1">
           <span className={`h-2 w-2 rounded-full ${ON_TIME_FILL}`} aria-hidden="true" /> No prazo
@@ -785,7 +785,7 @@ function ProgressRing({
           fill="none"
           strokeWidth={stroke}
           strokeLinecap="round"
-          className="stroke-accent"
+          className="stroke-teal"
           initial={reduce ? false : { pathLength: 0 }}
           animate={{ pathLength: percent / 100 }}
           transition={reduce ? { duration: 0 } : { ...GROW, duration: 1 }}

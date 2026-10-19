@@ -39,8 +39,11 @@ export const STATUSES = [
   { key: "PLANNED", label: "Planejado", color: "var(--status-planned-dot)" },
   { key: "IN_PROGRESS", label: "Em Andamento", color: "var(--status-progress-dot)" },
   { key: "IN_REVIEW", label: "Aprovação Interna", color: "var(--status-review-dot)" },
-  { key: "EXTERNAL_APPROVAL", label: "Aprovação Externa", color: "var(--status-external-dot)" },
-  { key: "COMPLETED", label: "Concluído", color: "var(--status-done-dot)" },
+  // Redesign (19/10): externo e concluido sao as cores de apoio. Os tokens
+  // `--status-external-*` / `--status-done-*` do globals.css apontam para as
+  // mesmas, porque a cor da coluna gravada no banco ainda usa esses nomes.
+  { key: "EXTERNAL_APPROVAL", label: "Aprovação Externa", color: "var(--violet)" },
+  { key: "COMPLETED", label: "Concluído", color: "var(--teal)" },
   { key: "CANCELLED", label: "Cancelado", color: "var(--status-cancel-dot)" },
   { key: "BLOCKED", label: "Bloqueado", color: "var(--status-blocked-dot)" },
 ] as const;
@@ -53,8 +56,8 @@ export const STATUS_TEXT: Record<string, string> = {
   PLANNED: "var(--status-planned-text)",
   IN_PROGRESS: "var(--status-progress-text)",
   IN_REVIEW: "var(--status-review-text)",
-  EXTERNAL_APPROVAL: "var(--status-external-text)",
-  COMPLETED: "var(--status-done-text)",
+  EXTERNAL_APPROVAL: "var(--violet)",
+  COMPLETED: "var(--teal)",
   CANCELLED: "var(--status-cancel-text)",
   BLOCKED: "var(--status-blocked-text)",
 };
@@ -70,10 +73,15 @@ export const PRIORITY_LABEL: Record<string, string> = {
 // o nome junto com o valor faria a fatia tocar arquivo que nao precisa mudar.
 // O que mudou e o VALOR -- agora e o token de TEXTO, que e como ele sempre foi
 // usado (Badge color=, style color=).
+//
+// ⚠️ REDESIGN (19/10): "Alta" e o ambar de apoio -- com a tinta do Badge
+// tone="soft": 4.89 no claro, 7.94 no escuro. URGENTE e MEDIA NAO viraram
+// `--danger` / `--accent` de proposito: medidos com a tinta no tema claro dao
+// 4.01 e 3.87, e REPROVAM AA. Ficam nos stops escuros da Spec 031.
 export const PRIORITY_COLOR: Record<string, string> = {
   LOW: "var(--prio-low-text)",
   MEDIUM: "var(--prio-medium-text)",
-  HIGH: "var(--prio-high-text)",
+  HIGH: "var(--amber)",
   URGENT: "var(--prio-urgent-text)",
 };
 
@@ -84,9 +92,12 @@ export type DeadlineTone = "overdue" | "soon" | null;
 // Usado como TEXTO no card e no detalhe, e como borda esquerda de 3px em
 // minhas-tarefas. Token de texto nos dois casos: a borda fica levemente mais
 // escura que antes, e continua cromatica.
+// Redesign (19/10): "vence hoje" e o ambar de apoio (5.82 sobre a surface no
+// claro, 10.39 no escuro). "Venceu" segue no vermelho da Spec 031: `--danger`
+// sobre a surface clara da 4.83, e o stop atual da 6.47.
 export const DEADLINE_COLOR: Record<"overdue" | "soon", string> = {
   overdue: "var(--due-overdue-text)",
-  soon: "var(--due-soon-text)",
+  soon: "var(--amber)",
 };
 
 // ===========================================================================
