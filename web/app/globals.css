@@ -26,6 +26,8 @@
   --color-amber-soft: #fbecd3;
   --color-violet: #6b2fd1;
   --color-violet-soft: #ece4fb;
+  /* Painel escuro da tela de entrada (fatia 4). Espelha `--panel`. */
+  --color-panel: #0b3d6b;
 
   --radius-sm: 8px;
   --radius-md: 10px;
@@ -123,6 +125,9 @@
   --teal: #0a6e63;        --teal-soft: #d7f0ea;    /* 5.12 / 6.13 */
   --amber: #9a5300;       --amber-soft: #fbecd3;   /* 5.00 / 5.82 */
   --violet: #6b2fd1;      --violet-soft: #ece4fb;  /* 5.78 / 7.11 */
+  /* Painel da tela de entrada (fatia 4): azul-marinho, texto branco por cima
+     (12.4 no claro). Nao e superficie de app: so o login o usa. */
+  --panel: #0b3d6b;
   --radius: 10px;    /* controle (botao, input, selo). Redesign 19/10: era 8 */
   --radius-lg: 12px; /* superficie (card, painel, modal) */
   /* ⚠️ MOVIMENTO (redesign, 19/10). Quatro duracoes e duas curvas; nenhuma
@@ -199,6 +204,7 @@
   --color-amber-soft: #3b2d0c;
   --color-violet: #c6b6fd;
   --color-violet-soft: #2d2352;
+  --color-panel: #0e2238;
 
   /* ⚠️ REDESIGN (19/10): a surface escura foi de #1f1e1c para #1e1d1a (um
      ponto mais escura) -- os 15 pares de selo abaixo sobem um pouco, nao
@@ -250,6 +256,7 @@
   --teal: #5ed2c2;        --teal-soft: #0f3833;    /* 7.02 / 9.21 */
   --amber: #f6c454;       --amber-soft: #3b2d0c;   /* 8.26 / 10.39 */
   --violet: #c6b6fd;      --violet-soft: #2d2352;  /* 7.81 / 9.24 */
+  --panel: #0e2238; /* branco por cima: 15.9 */
 
   /* Sombra no escuro precisa de mais opacidade: a de baixo relevo do tema
      claro simplesmente some e os cards perdem a separacao do fundo. */
@@ -521,6 +528,34 @@ button { font-family: inherit; cursor: pointer; }
 .modal-card  { animation: tm-card-entra var(--dur-2) var(--ease-out); }
 .modal-scrim[data-saindo="true"] { animation: tm-scrim-entra var(--dur-1) var(--ease-io) reverse forwards; }
 .modal-card[data-saindo="true"]  { animation: tm-card-entra var(--dur-1) var(--ease-io) reverse forwards; }
+
+/* --- Tela de entrada (fatia 4): os cartoezinhos que flutuam no painel ---
+   Decoracao pura (`aria-hidden`): sobem ao chegar e depois derivam devagar,
+   so com transform e opacity. O bloco global de prefers-reduced-motion acima
+   os deixa parados, e o `both` garante que apareçam no estado final. */
+@keyframes tm-rise {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes tm-drift {
+  0%, 100% { transform: translateY(0) rotate(-2deg); }
+  50%      { transform: translateY(-10px) rotate(-1deg); }
+}
+.login-tile {
+  position: absolute;
+  border-radius: 14px;
+  padding: 14px 16px;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  backdrop-filter: blur(6px);
+  box-shadow: 0 20px 40px -20px rgba(0, 0, 0, 0.5);
+  animation: tm-rise var(--dur-4) var(--ease-out) both, tm-drift 7s ease-in-out infinite;
+}
+.login-tile:nth-child(1) { animation-delay: 80ms, 0s; }
+.login-tile:nth-child(2) { animation-delay: 160ms, 0.8s; }
+.login-tile:nth-child(3) { animation-delay: 240ms, 1.6s; }
+.login-rise { animation: tm-rise var(--dur-4) var(--ease-out) both; animation-delay: 120ms; }
 
 /* --- Detalhe da tarefa (redesign 19/10) --------------------------------
    A lista de propriedades: rotulo numa coluna de 110px, o controle na outra.
