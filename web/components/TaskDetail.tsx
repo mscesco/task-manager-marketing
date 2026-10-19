@@ -1625,11 +1625,6 @@ export default function TaskDetail({
               valor={salvoNoLugar?.id === task.id && salvoNoLugar.title !== undefined ? salvoNoLugar.title : task.title}
               onSalvar={(novo) => salvarNoLugar({ title: novo })}
             />
-            {/* Criacao: data + quem criou (nome resolvido; sem nome -> so a data). */}
-            <div className="muted truncate" style={{ fontSize: 12 }}>
-              Criada em {criadoEm}
-              {criador ? ` por ${criador}` : ""}
-            </div>
           </div>
           {task.parent_task_id && (
             <Badge tone="soft" size="md" color="var(--accent)" className="shrink-0">
@@ -2330,6 +2325,14 @@ export default function TaskDetail({
             inativos={membrosInativos}
             foraDoEscopo={foraDoEscopoAqui}
           />
+          </div>
+
+          {/* Criacao: data + quem criou (nome resolvido; sem nome -> so a
+              data). Texto corrido no fim da lista, sem rotulo (pedido dela,
+              19/10). */}
+          <div className="muted pt-1" style={{ fontSize: 12 }}>
+            Criada em {criadoEm}
+            {criador ? ` por ${criador}` : ""}
           </div>
         </section>
 

@@ -581,8 +581,9 @@ button { font-family: inherit; cursor: pointer; }
    A lista de propriedades: rotulo numa coluna de 110px, o controle na outra.
    O balao do comentario: canto reto no alto a esquerda, apontando o avatar. */
 .prop-list {
-  display: flex; flex-direction: column; gap: 2px; padding: 6px 0;
-  border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
+  display: flex; flex-direction: column; gap: 2px; padding: 0 0 6px;
+  /* So a borda de baixo (ajuste dela, 19/10): a lista comeca logo sob a barra. */
+  border-bottom: 1px solid var(--border);
 }
 .prop {
   display: grid; grid-template-columns: 110px minmax(0, 1fr);
