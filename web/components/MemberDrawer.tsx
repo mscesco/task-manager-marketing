@@ -55,7 +55,6 @@ import {
 import type { Permission } from "@/lib/permissions.generated";
 
 const ROLE_LABEL: Record<MemberRole, string> = {
-  ADMIN: "Administrador",
   MANAGER: "Gerente",
   SUPERVISOR: "Supervisor",
   OPERATOR: "Operador",
@@ -72,7 +71,7 @@ const ORG_ROLE_LABEL: Record<OrgRole, string> = {
  * ⚠️ Espelha `COMMAND_ROLES` de `auth/domain/team_scope.py`. Vira a bolinha
  * cheia do seletor — ver `PillOption.comanda`.
  */
-const COMMAND_ROLES: MemberRole[] = ["ADMIN", "MANAGER"];
+const COMMAND_ROLES: MemberRole[] = ["MANAGER"];
 
 export default function MemberDrawer({
   member,

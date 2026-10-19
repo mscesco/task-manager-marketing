@@ -18,7 +18,7 @@ import type { Team, TeamMembership } from "@/lib/api";
 import { rootTeamOf } from "@/lib/areas";
 
 // Papeis que enxergam os descendentes (espelha _MANAGING_ROLES no backend).
-const MANAGING_ROLES = new Set(["MANAGER", "ADMIN"]);
+const MANAGING_ROLES = new Set(["MANAGER"]);
 
 // Papeis que veem TODOS os times, sem vinculo (Spec 051, fatia F -- ver
 // `computeLens`). Espelha `ORG_ROLES` do `team_scope`.
