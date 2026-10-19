@@ -35,8 +35,7 @@ VELHO = NOW - timedelta(days=30)
 async def _ws_with_admin(db):
     ws = await f.make_workspace(db)
     team = await f.make_team(db, workspace_id=ws)
-    admin = await f.make_user(db, workspace_id=ws)
-    await f.add_member(db, workspace_id=ws, user_id=admin, team_id=team, role="ADMIN")
+    admin = await f.make_user(db, workspace_id=ws, org_role="ADMIN")
     return ws, team, admin
 
 
@@ -89,7 +88,7 @@ async def test_workspace_sem_admin_e_pulado(db) -> None:
     ws = await f.make_workspace(db)
     team = await f.make_team(db, workspace_id=ws)
     user = await f.make_user(db, workspace_id=ws)
-    # Vincula como OPERATOR, nao ADMIN.
+    # Vincula como OPERATOR, sem org_role: ninguem e ADMIN de organizacao.
     await f.add_member(db, workspace_id=ws, user_id=user, team_id=team, role="OPERATOR")
     t = await _stale_completed(db, ws=ws, team=team, user=user)
     await db.flush()

@@ -16,7 +16,7 @@ POR QUE PELA ROTA, E NAO PELO SERVICO:
 A LENTE, e de onde ela vem (ADR 0035 D3, confirmando a 0030):
     `team_scope.visible_team_ids` ja responde exatamente o que a spec pede, e
     NAO ha eixo novo de permissao:
-      - ADMIN            -> `None` = todos os times (do PROPRIO workspace);
+      - ADMIN (de org.)  -> `None` = todos os times (do PROPRIO workspace);
       - MANAGER da raiz  -> raiz + descendentes, entao VE os quadros internos;
       - SUPERVISOR/OPERATOR de X -> X + raiz, entao ve o quadro geral e os do
         proprio subtime, e NAO ve os de outro subtime.
@@ -71,7 +71,10 @@ from app.core.tenant import Membership, TenantContext, set_tenant
 from app.db.unit_of_work import UnitOfWork
 from app.main import create_app
 from app.modules.auth.api.dependencies import get_tenant_context
-from app.modules.auth.domain.permissions import permissions_for_roles
+from app.modules.auth.domain.permissions import (
+    permissions_for_actor,
+    permissions_for_roles,
+)
 from app.modules.tasks.domain.board_defaults import COLUNAS_PADRAO
 from tests.integration import factories as f
 from tests.integration.conftest import node
@@ -119,9 +122,9 @@ async def _setup(db):
     await f.add_member(
         db, workspace_id=ws, user_id=sup, team_id=seo, role="SUPERVISOR"
     )
-    adm = await f.make_user(db, workspace_id=ws, email="admin@t.dev")
-    await f.add_member(
-        db, workspace_id=ws, user_id=adm, team_id=raiz, role="ADMIN"
+    # ADMIN e papel de ORGANIZACAO: sem vinculo de time.
+    adm = await f.make_user(
+        db, workspace_id=ws, email="admin@t.dev", org_role="ADMIN"
     )
 
     arvore = (node(raiz), node(seo, raiz), node(crm, raiz))
@@ -138,9 +141,11 @@ async def _setup(db):
         workspace_id=ws,
         user_id=adm,
         roles=frozenset({"ADMIN"}),
-        permissions=permissions_for_roles(frozenset({"ADMIN"})),
-        memberships=(Membership(team_id=raiz, role="ADMIN"),),
+        permissions=permissions_for_actor(
+            memberships=(), tree=arvore, org_role="ADMIN"
+        ),
         team_tree=arvore,
+        org_role="ADMIN",
     )
 
     return {

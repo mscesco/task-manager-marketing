@@ -34,7 +34,7 @@ from app.db.models import Task
 from app.db.models.enums import TaskStatus
 from app.modules.tasks.infrastructure.task_repository import TaskRepository
 from tests.integration import factories as f
-from tests.integration.conftest import acting_as, mship, node
+from tests.integration.conftest import acting_as, node
 
 pytestmark = pytest.mark.integration
 
@@ -65,14 +65,11 @@ def _ago(days: float) -> datetime:
 async def _mundo(db):
     ws = await f.make_workspace(db)
     team = await f.make_team(db, workspace_id=ws)
-    admin = await f.make_user(db, workspace_id=ws)
-    await f.add_member(
-        db, workspace_id=ws, user_id=admin, team_id=team, role="ADMIN"
-    )
+    admin = await f.make_user(db, workspace_id=ws, org_role="ADMIN")
     ctx = dict(
         workspace_id=ws,
         user_id=admin,
-        memberships=(mship(team, "ADMIN"),),
+        org_role="ADMIN",
         team_tree=(node(team),),
     )
     return ws, team, admin, ctx

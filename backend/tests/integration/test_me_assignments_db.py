@@ -110,11 +110,13 @@ async def test_mesma_task_duas_relacoes_um_item_relations_completo(db) -> None:
 
 async def test_soft_deleted_nao_aparece(db) -> None:
     ws, r, a, b = await _tree(db)
-    me = await f.make_user(db, workspace_id=ws)
-    await f.add_member(db, workspace_id=ws, user_id=me, team_id=a, role="ADMIN")
+    # ADMIN de organizacao; o vinculo OPERATOR em A fica porque `me` e o
+    # responsavel da tarefa (a validacao consulta `user_team`).
+    me = await f.make_user(db, workspace_id=ws, org_role="ADMIN")
+    await f.add_member(db, workspace_id=ws, user_id=me, team_id=a, role="OPERATOR")
     proj = await f.make_project(db, workspace_id=ws, created_by=me, team_id=a)
     with acting_as(
-        workspace_id=ws, user_id=me, memberships=(mship(a, "ADMIN"),), team_tree=_forest(r, a, b)
+        workspace_id=ws, user_id=me, team_tree=_forest(r, a, b), org_role="ADMIN"
     ):
         from app.modules.tasks.application.task_service import CreateTaskCommand
 
@@ -184,20 +186,19 @@ async def test_dentro_da_lente_aparece(db) -> None:
 
 
 async def test_admin_ve_de_qualquer_subtime(db) -> None:
-    """Lente `None` = ADMIN: sem filtro de TIME (o de workspace continua).
+    """Lente `None` = ADMIN de organizacao: sem filtro de TIME (o de workspace continua).
 
     ⚠️ ESTE E O TESTE QUE IMPEDE `_lente_de_time` DE SER CHAMADA COM `None`.
     Escrever a camada (B) sem o `if visible is not None` barraria o admin em
     tudo -- e os dois testes acima passariam do mesmo jeito.
     """
     ws, r, a, b = await _tree(db)
-    admin = await f.make_user(db, workspace_id=ws)
-    await f.add_member(db, workspace_id=ws, user_id=admin, team_id=r, role="ADMIN")
+    admin = await f.make_user(db, workspace_id=ws, org_role="ADMIN")
     outro = await f.make_user(db, workspace_id=ws)
     t = await f.make_task(db, workspace_id=ws, created_by=outro, team_id=b, project_id=None)
     await f.make_assignment(db, workspace_id=ws, task_id=t.id, user_id=admin, assigned_by=outro)
     with acting_as(
-        workspace_id=ws, user_id=admin, memberships=(mship(r, "ADMIN"),), team_tree=_forest(r, a, b)
+        workspace_id=ws, user_id=admin, team_tree=_forest(r, a, b), org_role="ADMIN"
     ):
         page = await _list(db)
     assert any(row.task.id == t.id for row in page.items)

@@ -154,23 +154,22 @@ async def test_DESATIVAR_o_ultimo_admin_e_recusado(db) -> None:
     (`_assert_pode_agir_sobre_a_conta`: so ADMIN mexe em conta de ADMIN), e
     leva 403 antes de chegar aqui. A primeira metade abaixo prende isso.
 
-    ⚠️ QUEM AINDA ALCANCA A TRAVA DO ULTIMO ADMIN e o vinculo ADMIN ANTIGO de
-    time: `is_admin` o reconhece como administrador (passa pela trava de
-    papel), mas ele nao conta como ADMIN de ORGANIZACAO ativo. Um segundo admin
-    de organizacao no comando cairia na trava de "nao desativar a propria
-    conta" -- ou nao seria o ultimo -- e nao provaria nada.
+    ⚠️ A TRAVA DO ULTIMO ADMIN EM `deactivate_member` FICOU SEM CAMINHO QUE A
+    ALCANCE, e fica como defesa em profundidade. Quem a alcancava era o vinculo
+    ADMIN antigo de time (passava pela trava de papel sem contar como ADMIN de
+    organizacao ativo), e ele deixou de existir na migration 0031. Um segundo
+    admin de organizacao no comando cairia na trava de "nao desativar a propria
+    conta" -- ou nao seria o ultimo. Por isso o teste prende so o 403.
 
     ⚠️ E a saida seria SQL na mao, como no rebaixamento: sem ADMIN ninguem tem
     `organization.update`, e so ADMIN promove ADMIN.
 
-    Sabotagem: remover a chamada a `_assert_nao_e_o_ultimo_admin` de
-    `deactivate_member` faz a segunda metade passar direto.
+    Sabotagem: remover a chamada a `_assert_pode_agir_sobre_a_conta` de
+    `deactivate_member` faz o MANAGER desligar a ultima admin.
     """
     ws, raiz, dona = await _mundo(db)
     mgr = await f.make_user(db, workspace_id=ws, email="mgr@t.dev")
     await f.add_member(db, workspace_id=ws, user_id=mgr, team_id=raiz, role="MANAGER")
-    legado = await f.make_user(db, workspace_id=ws, email="legado@t.dev")
-    await f.add_member(db, workspace_id=ws, user_id=legado, team_id=raiz, role="ADMIN")
     # ⚠️ A dona ganha um vinculo na raiz, e por dois motivos: sem time, so
     # papel de ORGANIZACAO a alcanca (`_assert_reaches_person`), e o ator
     # antigo levaria 403 de ALCANCE antes da trava do ultimo admin; e, com o
@@ -178,22 +177,13 @@ async def test_DESATIVAR_o_ultimo_admin_e_recusado(db) -> None:
     # a de alcance.
     await f.add_member(db, workspace_id=ws, user_id=dona, team_id=raiz, role="OPERATOR")
 
-    # 1) o MANAGER ja nao chega a trava do ultimo admin: e 403 antes.
+    # O MANAGER ja nao chega a trava do ultimo admin: e 403 antes.
     with acting_as(
         workspace_id=ws,
         user_id=mgr,
         memberships=(Membership(team_id=raiz, role="MANAGER"),),
     ):
         with pytest.raises(AuthorizationError):
-            await MemberService(db).deactivate_member(user_id=dona)
-
-    # 2) quem passa pela trava de papel ainda esbarra na do ultimo admin.
-    with acting_as(
-        workspace_id=ws,
-        user_id=legado,
-        memberships=(Membership(team_id=raiz, role="ADMIN"),),
-    ):
-        with pytest.raises(BusinessRuleError):
             await MemberService(db).deactivate_member(user_id=dona)
 
     # E a conta continua ativa -- a recusa nao pode ter passado pela escrita.

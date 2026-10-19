@@ -241,28 +241,28 @@ async def test_supervisor_remove_par_supervisor(db) -> None:
     assert restantes == {c["crm"]}
 
 
-async def test_supervisor_nao_mexe_em_manager_nem_admin(db) -> None:
-    """Criterio 5 da spec: alvo MANAGER/ADMIN -> 403.
+async def test_supervisor_nao_mexe_em_manager(db) -> None:
+    """Criterio 5 da spec: alvo MANAGER -> 403.
 
     ⚠️ Ate a Spec 049, fatia H, quem barrava era a trava "so OPERATOR" (a D2),
     que saiu. Hoje barram duas outras, e este teste e o que prova que sobrou
-    alguma: gerente e admin moram na RAIZ, onde o supervisor nao tem
+    alguma: o gerente mora na RAIZ, onde o supervisor nao tem
     `membership.delete` (D1), e a matriz C2 recusa o alvo.
+
+    ⚠️ O alvo ADMIN saiu daqui com a migration `0031`: ADMIN e papel de
+    ORGANIZACAO e nao tem vinculo de time para ser removido.
     """
     c = await _cenario(db)
-    for papel in ("MANAGER", "ADMIN"):
-        chefe = await f.make_user(
-            db, workspace_id=c["ws"], email=f"{papel.lower()}@t.dev"
-        )
-        await f.add_member(
-            db, workspace_id=c["ws"], user_id=chefe,
-            team_id=c["raiz"], role=papel,
-        )
-        with _como_supervisor(c):
-            with pytest.raises(AuthorizationError):
-                await MemberService(db).remove_member_from_team(
-                    user_id=chefe, team_id=c["raiz"]
-                )
+    chefe = await f.make_user(db, workspace_id=c["ws"], email="manager@t.dev")
+    await f.add_member(
+        db, workspace_id=c["ws"], user_id=chefe,
+        team_id=c["raiz"], role="MANAGER",
+    )
+    with _como_supervisor(c):
+        with pytest.raises(AuthorizationError):
+            await MemberService(db).remove_member_from_team(
+                user_id=chefe, team_id=c["raiz"]
+            )
 
 
 # ----------------------------------------------------------------- D4
@@ -346,14 +346,12 @@ async def test_papeis_divergentes_o_escopo_segue_o_vinculo(db) -> None:
 
     # A pessoa nasce supervisora do SEO e ganha, PELO SERVICO, um vinculo de
     # OPERATOR no CRM -- o que a trava recusava.
-    admin = await f.make_user(db, workspace_id=c["ws"], email="adm@t.dev")
-    await f.add_member(
-        db, workspace_id=c["ws"], user_id=admin, team_id=c["raiz"], role="ADMIN"
+    admin = await f.make_user(
+        db, workspace_id=c["ws"], email="adm@t.dev", org_role="ADMIN"
     )
     with acting_as(
         workspace_id=c["ws"], user_id=admin,
-        memberships=(Membership(team_id=c["raiz"], role="ADMIN"),),
-        team_tree=c["arvore"],
+        team_tree=c["arvore"], org_role="ADMIN",
     ):
         await MemberService(db).assign_to_team(
             user_id=c["sup_seo"], team_id=c["crm"], role=UserTeamRole.OPERATOR
@@ -404,13 +402,19 @@ async def test_quem_administra_membro_de_subtime_no_mapa(db) -> None:
     e para ADMIN/MANAGER o "onde" e a arvore deles -- nao os subtimes que
     supervisionam. Os testes de escopo deste arquivo sao a contraprova disso.
     """
-    from app.modules.auth.domain.permissions import permissions_for_roles
+    from app.modules.auth.domain.permissions import (
+        permissions_for_org_role,
+        permissions_for_roles,
+    )
 
-    # Os tres papeis de comando e supervisao a tem; o OPERATOR nao.
-    for papel in ("ADMIN", "MANAGER", "SUPERVISOR"):
+    # Os papeis de comando e supervisao a tem; o OPERATOR nao.
+    for papel in ("MANAGER", "SUPERVISOR"):
         assert "membership.create" in permissions_for_roles(
             frozenset({papel})
         ), f"{papel} deveria administrar membro de subtime pelo MAPA"
+    # ⚠️ O ADMIN e de ORGANIZACAO (migration `0031`): o verbo vem do mapa de
+    # `org_role`, e nao do de time.
+    assert "membership.create" in permissions_for_org_role("ADMIN")
     assert "membership.create" not in permissions_for_roles(
         frozenset({"OPERATOR"})
     )

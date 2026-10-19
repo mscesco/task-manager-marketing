@@ -53,7 +53,7 @@ def _membership(*, pending: bool) -> WorkspaceMembership:
     return WorkspaceMembership(
         user_id=uuid.uuid4(),
         workspace_id=uuid.uuid4(),
-        roles=frozenset({"ADMIN"}),
+        roles=frozenset({"MANAGER"}),
         is_active=True,
         must_change_password=pending,
     )

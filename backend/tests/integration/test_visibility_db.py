@@ -139,11 +139,10 @@ async def test_admin_ve_TUDO_sem_excecao(db) -> None:
     regra, e uma regra sem teste e uma regra que alguem estreita sem perceber.
     """
     ws, r, a, b = await _tree(db)
-    admin = await f.make_user(db, workspace_id=ws)
-    await f.add_member(db, workspace_id=ws, user_id=admin, team_id=r, role="ADMIN")
+    admin = await f.make_user(db, workspace_id=ws, org_role="ADMIN")
     outro = await f.make_user(db, workspace_id=ws)
     avulsa_b = await f.make_task(db, workspace_id=ws, created_by=outro, team_id=b, project_id=None)
     with acting_as(
-        workspace_id=ws, user_id=admin, memberships=(mship(r, "ADMIN"),), team_tree=_forest(r, a, b)
+        workspace_id=ws, user_id=admin, org_role="ADMIN", team_tree=_forest(r, a, b)
     ):
         assert (await TaskService(db).get(avulsa_b.id)).id == avulsa_b.id

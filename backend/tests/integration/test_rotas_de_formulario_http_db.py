@@ -28,11 +28,11 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from app.core.deps import get_db_session, get_uow
-from app.core.tenant import Membership, TenantContext, set_tenant
+from app.core.tenant import TenantContext, set_tenant
 from app.db.unit_of_work import UnitOfWork
 from app.main import create_app
 from app.modules.auth.api.dependencies import get_tenant_context
-from app.modules.auth.domain.permissions import permissions_for_roles
+from app.modules.auth.domain.permissions import permissions_for_actor
 from tests.integration import factories as f
 from tests.integration.conftest import node
 
@@ -42,18 +42,18 @@ pytestmark = pytest.mark.integration
 async def _mundo(db):
     ws = await f.make_workspace(db)
     raiz = await f.make_team(db, workspace_id=ws)
-    adm = await f.make_user(db, workspace_id=ws)
-    await f.add_member(
-        db, workspace_id=ws, user_id=adm, team_id=raiz, role="ADMIN"
-    )
+    # ADMIN e papel de ORGANIZACAO: sem vinculo de time.
+    adm = await f.make_user(db, workspace_id=ws, org_role="ADMIN")
     await db.flush()
     ctx = TenantContext(
         workspace_id=ws,
         user_id=adm,
         roles=frozenset({"ADMIN"}),
-        permissions=permissions_for_roles(frozenset({"ADMIN"})),
-        memberships=(Membership(team_id=raiz, role="ADMIN"),),
+        permissions=permissions_for_actor(
+            memberships=(), tree=(node(raiz),), org_role="ADMIN"
+        ),
         team_tree=(node(raiz),),
+        org_role="ADMIN",
     )
     return ws, raiz, ctx
 

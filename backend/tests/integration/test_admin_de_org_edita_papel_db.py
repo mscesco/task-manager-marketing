@@ -247,36 +247,6 @@ async def test_a_listagem_por_time_diz_quem_esta_inativo(db):
     assert ativos[sup] is True
 
 
-async def test_ADMIN_nao_e_papel_de_time(db):
-    """⚠️⚠️ A Camila achou um "Administrador" como cargo de TIME no Marketing:
-    *"por algum motivo e permitido ter um administrador no time do marketing"*.
-
-    Este teste responde a pergunta que importa: o servidor ainda ACEITA criar
-    um? Nao -- a invariante de nivel da Spec 045 (fatia D) recusa ADMIN em
-    nivel de time, nas duas portas. Ou seja, a linha que ela viu e RESIDUO DE
-    DADO, anterior aquela spec, e nao um gate aberto.
-
-    ⚠️ O residuo nao some sozinho: `user_team` guarda o que gravaram antes da
-    regra existir, e nenhuma migration o reescreveu. E limpeza de DADO.
-    """
-    ws, raiz, sub, dona, op, sup = await _mundo(db)
-    svc = MemberService(db)
-    novo = await f.make_user(db, workspace_id=ws, email="novo@t.dev")
-    await db.flush()
-
-    with _como_dona(ws, dona, raiz, sub):
-        # Porta 1: vincular ja como ADMIN.
-        with pytest.raises((BusinessRuleError, ValueError)):
-            await svc.assign_to_team(
-                user_id=novo, team_id=raiz, role=UserTeamRole.ADMIN
-            )
-        # Porta 2: promover a ADMIN um vinculo que existe.
-        with pytest.raises((BusinessRuleError, ValueError)):
-            await svc.change_member_role(
-                user_id=op, team_id=sub, new_role=UserTeamRole.ADMIN
-            )
-
-
 async def test_quem_manda_pela_organizacao_mexe_no_PROPRIO_vinculo(db):
     """⭐⭐ A pergunta da Camila em 10/09, e ela estava certa.
 

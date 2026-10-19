@@ -41,12 +41,11 @@ from __future__ import annotations
 
 import pytest
 
-from app.core.tenant import Membership
 from app.db.models.enums import UserTeamRole
 from app.modules.users.application.member_service import MemberService
 from app.shared.exceptions.base import BusinessRuleError
 from tests.integration import factories as f
-from tests.integration.conftest import acting_as
+from tests.integration.conftest import acting_as, node
 
 pytestmark = pytest.mark.integration
 
@@ -60,25 +59,23 @@ async def _mundo(db):
     social = await f.make_team(
         db, workspace_id=ws, parent_team_id=marketing, slug="social"
     )
-    admin = await f.make_user(db, workspace_id=ws, email="admin@t.dev")
-    # ⚠️ VINCULO ADMIN NO ATOR, e nao `org_role`: `acting_as` deriva as
-    # permissoes das memberships e nao aceita papel de organizacao -- nem
-    # `tenant_scope` o repassa. E uma lacuna da fatia C que so aparece em
-    # teste; a fonte velha continua valendo em `is_admin`, entao o ator fica
-    # assim ate alguem fechar essa lacuna.
-    await f.add_member(
-        db, workspace_id=ws, user_id=admin, team_id=marketing, role="ADMIN"
+    admin = await f.make_user(
+        db, workspace_id=ws, email="admin@t.dev", org_role="ADMIN"
     )
     alvo = await f.make_user(db, workspace_id=ws, email="alvo@t.dev")
     await db.flush()
     return ws, marketing, seo, social, admin, alvo
 
 
-def _como_admin(ws, marketing, admin):
+def _como_admin(ws, admin, marketing, seo, social):
+    # ⚠️ A ARVORE E OBRIGATORIA aqui: sem `team_tree`, `acting_as` monta as
+    # permissoes por `permissions_for_roles`, que so conhece papel de TIME --
+    # o ADMIN de organizacao ficaria sem permissao nenhuma.
     return acting_as(
         workspace_id=ws,
         user_id=admin,
-        memberships=(Membership(team_id=marketing, role="ADMIN"),),
+        team_tree=(node(marketing), node(seo, marketing), node(social, marketing)),
+        org_role="ADMIN",
     )
 
 
@@ -92,7 +89,7 @@ async def test_manager_da_raiz_nao_entra_em_subtime_dela(db) -> None:
         db, workspace_id=ws, user_id=alvo, team_id=marketing, role="MANAGER"
     )
 
-    with _como_admin(ws, marketing, admin):
+    with _como_admin(ws, admin, marketing, seo, social):
         with pytest.raises(BusinessRuleError) as exc:
             await MemberService(db).assign_to_team(
                 user_id=alvo, team_id=seo, role=UserTeamRole.OPERATOR
@@ -122,7 +119,7 @@ async def test_promover_na_raiz_quem_ja_tem_subtime_e_recusado(db) -> None:
         db, workspace_id=ws, user_id=alvo, team_id=seo, role="OPERATOR"
     )
 
-    with _como_admin(ws, marketing, admin):
+    with _como_admin(ws, admin, marketing, seo, social):
         with pytest.raises(BusinessRuleError):
             await MemberService(db).change_member_role(
                 user_id=alvo, team_id=marketing, new_role=UserTeamRole.MANAGER
@@ -149,7 +146,7 @@ async def test_operator_da_raiz_entra_em_subtime_normalmente(db) -> None:
         db, workspace_id=ws, user_id=alvo, team_id=marketing, role="OPERATOR"
     )
 
-    with _como_admin(ws, marketing, admin):
+    with _como_admin(ws, admin, marketing, seo, social):
         vinculo = await MemberService(db).assign_to_team(
             user_id=alvo, team_id=seo, role=UserTeamRole.OPERATOR
         )
@@ -162,7 +159,7 @@ async def test_sem_vinculo_na_raiz_o_subtime_passa(db) -> None:
     cadastrado na raiz. Tratar ausencia como comando barraria todo mundo."""
     ws, marketing, seo, social, admin, alvo = await _mundo(db)
 
-    with _como_admin(ws, marketing, admin):
+    with _como_admin(ws, admin, marketing, seo, social):
         vinculo = await MemberService(db).assign_to_team(
             user_id=alvo, team_id=seo, role=UserTeamRole.SUPERVISOR
         )
@@ -178,7 +175,7 @@ async def test_dois_subtimes_sem_vinculo_na_raiz_continua_passando(db) -> None:
         db, workspace_id=ws, user_id=alvo, team_id=seo, role="OPERATOR"
     )
 
-    with _como_admin(ws, marketing, admin):
+    with _como_admin(ws, admin, marketing, seo, social):
         vinculo = await MemberService(db).assign_to_team(
             user_id=alvo, team_id=social, role=UserTeamRole.OPERATOR
         )

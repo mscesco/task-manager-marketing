@@ -30,7 +30,7 @@ from app.modules.solicitations.application.service import (
 )
 from app.modules.solicitations.infrastructure import aviso_de_status
 from tests.integration import factories as f
-from tests.integration.conftest import acting_as, mship, node
+from tests.integration.conftest import acting_as, node
 from tests.integration.test_solicitations_db import (
     _criar_uma,
     _make_ws_with_slug,
@@ -81,20 +81,15 @@ def n8n(monkeypatch):
 async def _cena(db):
     ws, slug = await _make_ws_with_slug(db)
     raiz = await f.make_team(db, workspace_id=ws)
-    user = await f.make_user(db, workspace_id=ws)
-    await f.add_member(
-        db, workspace_id=ws, user_id=user, team_id=raiz, role="ADMIN"
-    )
+    user = await f.make_user(db, workspace_id=ws, org_role="ADMIN")
     await db.flush()
     pedido = await _criar_uma(db, slug)
     ctx = dict(
         workspace_id=ws,
         user_id=user,
-        memberships=(mship(raiz, "ADMIN"),),
         team_tree=(node(raiz),),
         # ⚠️ Spec 051, fatia B: o pedido desta cena e ORFAO (a rota publica sem
         # formulario), e orfa passou a ser so de quem administra a ORGANIZACAO.
-        # O vinculo ADMIN antigo de time, sozinho, ja nao o encontra (404).
         org_role="ADMIN",
     )
     return ws, pedido, ctx

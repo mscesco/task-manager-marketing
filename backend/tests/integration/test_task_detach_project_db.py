@@ -21,17 +21,16 @@ from app.modules.tasks.application.task_service import (
 )
 from app.shared.exceptions.base import ValidationError
 from tests.integration import factories as f
-from tests.integration.conftest import acting_as, mship, node
+from tests.integration.conftest import acting_as, node
 
 pytestmark = pytest.mark.integration
 
 
 async def _ctx_dois_projetos(db):
-    """ws + team + admin + projeto A e projeto B (mesmo time)."""
+    """ws + team + admin de organizacao + projeto A e projeto B (mesmo time)."""
     ws = await f.make_workspace(db)
     team = await f.make_team(db, workspace_id=ws)
-    user = await f.make_user(db, workspace_id=ws)
-    await f.add_member(db, workspace_id=ws, user_id=user, team_id=team, role="ADMIN")
+    user = await f.make_user(db, workspace_id=ws, org_role="ADMIN")
     proj_a = await f.make_project(
         db, workspace_id=ws, created_by=user, team_id=team, title="A"
     )
@@ -41,8 +40,8 @@ async def _ctx_dois_projetos(db):
     ctx = dict(
         workspace_id=ws,
         user_id=user,
-        memberships=(mship(team, "ADMIN"),),
         team_tree=(node(team),),
+        org_role="ADMIN",
     )
     return ctx, proj_a, proj_b, team
 

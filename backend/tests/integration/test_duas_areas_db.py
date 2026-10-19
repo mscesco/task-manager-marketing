@@ -59,16 +59,15 @@ async def _duas_areas(db):
     seo = await f.make_team(db, workspace_id=ws, parent_team_id=marketing, slug="seo")
     ti = await f.make_team(db, workspace_id=ws, slug="ti")
     infra = await f.make_team(db, workspace_id=ws, parent_team_id=ti, slug="infra")
-    admin = await f.make_user(db, workspace_id=ws, email="admin@t.dev")
-    await f.add_member(
-        db, workspace_id=ws, user_id=admin, team_id=marketing, role="ADMIN"
+    admin = await f.make_user(
+        db, workspace_id=ws, email="admin@t.dev", org_role="ADMIN"
     )
     await db.flush()
 
     ctx = dict(
         workspace_id=ws,
         user_id=admin,
-        memberships=(mship(marketing, "ADMIN"),),
+        org_role="ADMIN",
         team_tree=(
             node(marketing),
             node(seo, marketing),
@@ -338,11 +337,10 @@ async def test_esvaziar_subtime_do_TI_nao_despeja_no_marketing(db) -> None:
         )
         await db.flush()
 
-    # ⚠️ Spec 051, fatia D: ESVAZIAR COMO ADMIN DE ORGANIZACAO. O vinculo ADMIN
-    # antigo no Marketing e comando SO naquela arvore, e esvaziar o Infra (do
-    # TI) passou a conferir `subteam.delete` no time. O que este teste mede e o
-    # destino do esvaziamento, e para isso o ator precisa alcancar as duas.
-    with acting_as(**{**ctx, "org_role": "ADMIN"}):
+    # ⚠️ Spec 051, fatia D: esvaziar o Infra (do TI) confere `subteam.delete`
+    # no time. O que este teste mede e o destino do esvaziamento, e para isso
+    # o ator precisa alcancar as duas areas -- o ADMIN de organizacao do `ctx`.
+    with acting_as(**ctx):
         previa = await TeamService(db).esvaziar_e_remover(team_id=infra)
 
     await db.refresh(tarefa)
@@ -489,6 +487,9 @@ async def test_gerente_NAO_administra_gente_de_outra_area(db) -> None:
     como_gerente = dict(ctx)
     como_gerente["user_id"] = gerente
     como_gerente["memberships"] = (mship(marketing, "MANAGER"),)
+    # ⚠️ O `ctx` e de um ADMIN de organizacao; herda-lo faria a gerente
+    # alcancar tudo e o teste ficaria verde pelo motivo errado.
+    como_gerente["org_role"] = None
 
     with acting_as(**como_gerente):
         svc = MemberService(db)
@@ -527,6 +528,7 @@ async def test_gerente_CONTINUA_administrando_a_propria_arvore(db) -> None:
     como_gerente = dict(ctx)
     como_gerente["user_id"] = gerente
     como_gerente["memberships"] = (mship(marketing, "MANAGER"),)
+    como_gerente["org_role"] = None  # ver o teste acima
 
     with acting_as(**como_gerente):
         svc = MemberService(db)

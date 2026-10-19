@@ -32,7 +32,6 @@ from __future__ import annotations
 
 import pytest
 
-from app.core.tenant import Membership
 from app.db.models.enums import UserTeamRole
 from app.modules.auth.domain.team_scope import (
     assert_raiz_nao_menor_que_subtime,
@@ -50,9 +49,9 @@ async def _mundo(db):
     ws = await f.make_workspace(db)
     raiz = await f.make_team(db, workspace_id=ws, slug="marketing")
     seo = await f.make_team(db, workspace_id=ws, parent_team_id=raiz, slug="seo")
-    admin = await f.make_user(db, workspace_id=ws, email="admin@t.dev")
-    await f.add_member(
-        db, workspace_id=ws, user_id=admin, team_id=raiz, role="ADMIN"
+    # ADMIN de organizacao: sem vinculo de time (desde a 0031).
+    admin = await f.make_user(
+        db, workspace_id=ws, email="admin@t.dev", org_role="ADMIN"
     )
     alvo = await f.make_user(db, workspace_id=ws, email="alvo@t.dev")
     await db.flush()
@@ -60,11 +59,7 @@ async def _mundo(db):
 
 
 def _como_admin(ws, raiz, admin):
-    return acting_as(
-        workspace_id=ws,
-        user_id=admin,
-        memberships=(Membership(team_id=raiz, role="ADMIN"),),
-    )
+    return acting_as(workspace_id=ws, user_id=admin, org_role="ADMIN")
 
 
 async def test_operador_na_raiz_nao_vira_supervisor_no_subtime(db) -> None:

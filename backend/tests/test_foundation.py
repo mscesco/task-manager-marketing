@@ -143,13 +143,17 @@ def test_tenant_context_carries_roles_and_permissions() -> None:
 
 def test_permissions_derived_from_roles() -> None:
     """O mapa estatico deriva permissoes da uniao dos papeis."""
-    from app.modules.auth.domain.permissions import permissions_for_roles
+    from app.modules.auth.domain.permissions import (
+        permissions_for_org_role,
+        permissions_for_roles,
+    )
 
     operator = permissions_for_roles(frozenset({"OPERATOR"}))
     assert "task.create" in operator
     assert "project.delete" not in operator  # operator nao deleta projeto
 
-    admin = permissions_for_roles(frozenset({"ADMIN"}))
+    # ADMIN e papel de ORGANIZACAO (nao de time): vem do mapa de org.
+    admin = permissions_for_org_role("ADMIN")
     assert "organization.update" in admin
 
     # Uniao de papeis acumula permissoes; papel invalido e ignorado.

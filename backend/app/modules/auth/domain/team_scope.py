@@ -27,7 +27,7 @@ from collections.abc import Sequence
 from app.core.tenant import Membership, TeamNode
 from app.shared.exceptions.base import BusinessRuleError
 
-_MANAGING_ROLES = frozenset({"ADMIN", "MANAGER"})
+_MANAGING_ROLES = frozenset({"MANAGER"})
 
 #: Papéis de ORGANIZAÇÃO -- sem time, e por isso sem lente a calcular.
 ORG_ROLES = frozenset({"ADMIN", "GESTOR"})
@@ -78,23 +78,14 @@ def is_subteam(team_id: uuid.UUID, tree: tuple[TeamNode, ...]) -> bool:
     return _parent_map(tree).get(team_id) is not None
 
 
-def is_admin(
-    memberships: tuple[Membership, ...], *, org_role: str | None = None
-) -> bool:
-    """Quem enxerga tudo.
+def is_admin(org_role: str | None) -> bool:
+    """Quem administra a organização.
 
-    ⚠️ DUAS FONTES, DE PROPOSITO (Spec 045, fatia B). Até esta spec havia uma:
-    um vínculo ADMIN em ``user_team``. Agora ADMIN é papel de ORGANIZAÇÃO, e
-    durante a transição o cadastro tem os dois -- a migration ``0022`` preenche
-    o novo sem remover o velho, para que nenhuma janela de deploy deixe o
-    workspace sem quem administre.
-
-    A fonte velha sai numa fatia posterior, quando o cadastro estiver limpo.
-    Enquanto isso, qualquer uma das duas basta.
+    Uma fonte só, ``users.org_role``. Até 19/10/2026 havia uma segunda, o
+    vínculo ADMIN em ``user_team`` (anterior à Spec 045); a migration ``0031``
+    tirou o valor do tipo do banco, e ele não pode mais existir.
     """
-    if org_role == "ADMIN":
-        return True
-    return any(m.role == "ADMIN" for m in memberships)
+    return org_role == "ADMIN"
 
 
 def visible_team_ids(
@@ -105,7 +96,7 @@ def visible_team_ids(
 ) -> frozenset[uuid.UUID] | None:
     """Times cujas tasks o usuário ENXERGA. ``None`` = todos (admin).
 
-    MANAGER/ADMIN de T: T + descendentes.
+    MANAGER de T: T + descendentes.
     SUPERVISOR/OPERATOR de X: X + raiz (time geral).
 
     ⚠️ ``org_role`` é opcional e o default é ``None`` -- ou seja, quem esquecer
@@ -120,7 +111,7 @@ def visible_team_ids(
     eram de organização (`unscoped`), a lente não. Achado pela tabela da fatia
     0, que é onde isto está provado.
     """
-    if org_role in ORG_ROLES or is_admin(memberships, org_role=org_role):
+    if org_role in ORG_ROLES:
         return None
     out: set[uuid.UUID] = set()
     for m in memberships:
@@ -183,11 +174,9 @@ def editable_team_ids(
 # Duas mudancas, e elas doem em lugares diferentes:
 #
 #   1. ADMIN SAI DO NIVEL DE TIME. Ele virou papel de ORGANIZACAO na fatia B;
-#      `user_team` deixou de ser lugar valido para ele.
-#      ⚠️ E ELE NAO PODE CAIR NO RAMO DE "papel desconhecido": quem tenta
-#      cadastrar um admin leria "nao e possivel definir em que nivel ele pode
-#      existir" e concluiria que o sistema perdeu o papel. A mensagem tem de
-#      dizer PARA ONDE ele foi.
+#      `user_team` deixou de ser lugar valido para ele. Desde a migration
+#      0031 (19/10/2026) o valor nem existe no tipo do banco, e a API recusa
+#      `role=ADMIN` na validacao do corpo (422), antes de chegar aqui.
 #
 #   2. SUPERVISOR SAI DA RAIZ. Supervisor e dono de UM braco operacional; na
 #      raiz ele nao supervisiona nada. Pior: `_subtimes_supervisionados`
@@ -222,24 +211,8 @@ def editable_team_ids(
 _ROOT_ROLES = frozenset({"MANAGER", "OPERATOR"})
 #: Papeis validos num SUBTIME.
 _SUBTEAM_ROLES = frozenset({"SUPERVISOR", "OPERATOR"})
-#: Papel que existe em `UserTeamRole` mas nao cabe em nivel de time NENHUM --
-#: desde a fatia B ele mora em `users.org_role`.
-#:
-#: ⚠️⚠️ CONTINUA NO ENUM DE PROPOSITO, e nao por esquecimento. Producao teve
-#: vinculos `user_team.role = 'ADMIN'` ate 08/09/2026, e o valor de um tipo
-#: ENUM do Postgres nao se remove -- `ALTER TYPE ... DROP VALUE` nao existe.
-#: Tirar o membro do enum Python faria toda leitura daquelas linhas explodir
-#: no mapeamento, em vez de recusar na escrita, que e onde a regra mora.
-_ORG_LEVEL_ROLES = frozenset({"ADMIN"})
-
 #: Papeis que MANDAM na arvore, e nao apenas nela trabalham.
-#:
-#: ⚠️ ADMIN esta aqui por causa do cadastro LEGADO. Ele nao pode mais ser
-#: gravado em `user_team` (`_ORG_LEVEL_ROLES`), mas linhas antigas ainda
-#: podem existir em bases que nao passaram pela limpeza manual da `0022`, e
-#: uma trava de comando que nao as reconhecesse trataria um admin legado como
-#: se fosse operador.
-COMMAND_ROLES: frozenset[str] = frozenset({"ADMIN", "MANAGER"})
+COMMAND_ROLES: frozenset[str] = frozenset({"MANAGER"})
 
 
 def roles_permitidos_no_nivel(is_root: bool) -> frozenset[str]:
@@ -248,9 +221,8 @@ def roles_permitidos_no_nivel(is_root: bool) -> frozenset[str]:
     Raiz    -> MANAGER, OPERATOR
     Subtime -> SUPERVISOR, OPERATOR
 
-    ⚠️ A UNIAO DOS DOIS NAO E O ENUM INTEIRO: `ADMIN` nao cabe em nivel de
-    time nenhum (ver `_ORG_LEVEL_ROLES`). Quem escrever um teste de cobertura
-    do enum a partir daqui precisa descontar isso de propósito.
+    A uniao dos dois e o enum inteiro: desde a migration 0031 (19/10/2026)
+    `UserTeamRole` nao tem mais ADMIN, que e papel de organizacao.
     """
     return _ROOT_ROLES if is_root else _SUBTEAM_ROLES
 
@@ -277,16 +249,7 @@ def assert_role_permitido_no_nivel(role: object, *, is_root: bool) -> None:
         return
 
     valor = str(getattr(role, "value", role))
-    if valor in _ORG_LEVEL_ROLES:
-        # ⚠️ RAMO PROPRIO, e nao o de "desconhecido". ADMIN nao sumiu -- ele
-        # MUDOU DE NIVEL na fatia B. Quem esta cadastrando gente precisa sair
-        # daqui sabendo onde promover um admin, senao conclui que o sistema
-        # perdeu o papel e vai procurar no lugar errado.
-        motivo = (
-            "ADMIN e papel de organizacao, nao de time. "
-            "Promova pela tela da organizacao, sem escolher time."
-        )
-    elif valor in _ROOT_ROLES:
+    if valor in _ROOT_ROLES:
         # Sobra so MANAGER: OPERATOR esta nos dois niveis e nunca cai aqui.
         motivo = (
             "MANAGER so existe no time principal. "
@@ -340,7 +303,6 @@ _POSTO: dict[str, int] = {
     "OPERATOR": 1,
     "SUPERVISOR": 2,
     "MANAGER": 3,
-    "ADMIN": 4,
 }
 
 

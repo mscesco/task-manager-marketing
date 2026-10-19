@@ -46,7 +46,20 @@ def test_is_subteam():
 
 # ---- lente de visibilidade ----
 def test_admin_ve_tudo():
-    assert team_scope.visible_team_ids(_m(MKT, "ADMIN"), TREE) is None
+    # Admin e papel de ORGANIZACAO (`users.org_role`), sem vinculo de time.
+    assert team_scope.visible_team_ids((), TREE, org_role="ADMIN") is None
+
+
+def test_is_admin_so_pelo_org_role():
+    assert team_scope.is_admin("ADMIN") is True
+    assert team_scope.is_admin("GESTOR") is False
+    assert team_scope.is_admin(None) is False
+
+
+def test_vinculo_ADMIN_em_time_nao_concede_nada():
+    """O vinculo ADMIN em `user_team` deixou de existir (migration 0031); se
+    um chegar mesmo assim, e papel desconhecido -- nao vira lente total."""
+    assert team_scope.visible_team_ids(_m(MKT, "ADMIN"), TREE) is not None
 
 
 def test_manager_ve_time_e_subtimes():
@@ -78,17 +91,17 @@ def test_editable_igual_visible():
 def test_posto_tem_ordem_explicita():
     """⚠️⚠️ O TESTE QUE PROTEGE CONTRA A ARMADILHA DO `StrEnum`.
 
-    `UserTeamRole` NAO tem ordem -- os quatro estao declarados em ordem
+    `UserTeamRole` NAO tem ordem -- os tres estao declarados em ordem
     decrescente por coincidencia de leitura. Qualquer comparacao que dependa
     disso mente sem erro nenhum (mesma classe do `ColumnSemantic`,
     AGENTS.md §9). Este teste afirma a ordem que a regra usa.
     """
     postos = [
         team_scope.posto_do_papel(p)
-        for p in ("OPERATOR", "SUPERVISOR", "MANAGER", "ADMIN")
+        for p in ("OPERATOR", "SUPERVISOR", "MANAGER")
     ]
     assert postos == sorted(postos)
-    assert len(set(postos)) == 4
+    assert len(set(postos)) == 3
 
 
 def test_posto_de_papel_desconhecido_falha_fechado():

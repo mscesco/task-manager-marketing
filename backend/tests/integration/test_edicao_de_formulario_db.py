@@ -63,9 +63,13 @@ async def _mundo(db):
     return ws, raiz, mkt, design, user, (node(raiz), node(mkt, raiz), node(design, raiz))
 
 
-def _ctx(ws, user, arvore, *membros):
+def _ctx(ws, user, arvore, *membros, org_role=None):
     return dict(
-        workspace_id=ws, user_id=user, memberships=tuple(membros), team_tree=arvore
+        workspace_id=ws,
+        user_id=user,
+        memberships=tuple(membros),
+        team_tree=arvore,
+        org_role=org_role,
     )
 
 
@@ -421,7 +425,7 @@ async def test_o_MESMO_endereco_em_formularios_DIFERENTES_e_permitido(db) -> Non
     Marketing e "arte" no do Design são coisas distintas -- e a fila resolve o
     rótulo por `(form_id, slug)`, então não há ambiguidade."""
     ws, raiz, mkt, design, user, arvore = await _mundo(db)
-    with acting_as(**_ctx(ws, user, arvore, mship(raiz, "ADMIN"))):
+    with acting_as(**_ctx(ws, user, arvore, org_role="ADMIN")):
         svc = SolicitationFormService(db)
         um = await svc.criar_formulario(team_id=mkt, slug="mkt", title="Mkt")
         outro = await svc.criar_formulario(team_id=design, slug="dsg", title="Dsg")
@@ -463,7 +467,7 @@ async def test_ADMIN_com_time_inexistente_leva_404_e_nao_500(db) -> None:
     padrão que o `_assert_tarefa_do_workspace` da fatia E já tratava.
     """
     ws, raiz, mkt, design, user, arvore = await _mundo(db)
-    with acting_as(**_ctx(ws, user, arvore, mship(raiz, "ADMIN"))):
+    with acting_as(**_ctx(ws, user, arvore, org_role="ADMIN")):
         with pytest.raises(EntityNotFoundError):
             await SolicitationFormService(db).criar_formulario(
                 team_id=uuid.uuid4(), slug="fantasma", title="Fantasma"
@@ -477,7 +481,7 @@ async def test_time_de_OUTRO_workspace_tambem_e_recusado(db) -> None:
     intruso = await f.make_team(db, workspace_id=outro_ws)
     await db.flush()
 
-    with acting_as(**_ctx(ws, user, arvore, mship(raiz, "ADMIN"))):
+    with acting_as(**_ctx(ws, user, arvore, org_role="ADMIN")):
         with pytest.raises(EntityNotFoundError):
             await SolicitationFormService(db).criar_formulario(
                 team_id=intruso, slug="invasor", title="Invasor"

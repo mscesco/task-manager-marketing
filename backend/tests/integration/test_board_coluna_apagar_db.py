@@ -63,12 +63,13 @@ async def _mundo(db):
     return ws, raiz, sub_a, sub_b, user, arvore
 
 
-def _ctx(ws, user, arvore, *membros):
+def _ctx(ws, user, arvore, *membros, org_role=None):
     return dict(
         workspace_id=ws,
         user_id=user,
         memberships=tuple(membros),
         team_tree=arvore,
+        org_role=org_role,
     )
 
 
@@ -618,8 +619,8 @@ async def test_NAO_apaga_coluna_COM_PONTE_do_quadro_geral(db) -> None:
     ).scalar_one()
     alguma = _por_nome(await _colunas(db, geral.id), "Bloqueado")
 
-    # ⚠️ ADMIN: a recusa e sobre o QUADRO, e nao sobre quem pede.
-    with acting_as(**_ctx(ws, user, arvore, mship(raiz, "ADMIN"))):
+    # ⚠️ ADMIN de organizacao: a recusa e sobre o QUADRO, e nao sobre quem pede.
+    with acting_as(**_ctx(ws, user, arvore, org_role="ADMIN")):
         with pytest.raises(ValidationError):
             await BoardService(db).apagar_coluna(
                 board_id=geral.id, column_id=alguma.id, destino_id=None
@@ -647,7 +648,7 @@ async def test_APAGA_coluna_SEM_ponte_do_quadro_geral(db) -> None:
         )
     ).scalar_one()
 
-    with acting_as(**_ctx(ws, user, arvore, mship(raiz, "ADMIN"))):
+    with acting_as(**_ctx(ws, user, arvore, org_role="ADMIN")):
         svc = BoardService(db)
         nova = await svc.criar_coluna(
             board_id=geral.id,

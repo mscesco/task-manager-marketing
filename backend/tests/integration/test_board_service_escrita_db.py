@@ -7,7 +7,7 @@ isto alem destes testes.
 
   | papel      | quadro da raiz | quadro do PROPRIO subtime | de subtime alheio |
   |------------|----------------|---------------------------|-------------------|
-  | ADMIN      | pode           | pode                      | pode              |
+  | ADMIN (org)| pode           | pode                      | pode              |
   | MANAGER    | pode           | pode                      | pode              |
   | SUPERVISOR | NAO            | pode                      | NAO               |
   | OPERATOR   | NAO            | NAO                       | NAO               |
@@ -17,6 +17,9 @@ unica que o mapa de permissao sozinho responde ERRADO: `board.manage.subteam`
 diz \"o que\", nao \"onde\". Sem `_assert_pode_gerir`, qualquer supervisor
 administra o quadro de qualquer subtime e as outras onze celulas continuam
 verdes.
+
+⚠️ ADMIN aqui e ADMIN DE ORGANIZACAO (`org_role`); desde a 0031 nao existe
+vinculo ADMIN de time.
 
 ⚠️ `ADMIN x subtime` NAO E OBVIA e por isso tem teste proprio: o ADMIN nao e
 SUPERVISOR de subtime nenhum, entao a pergunta de escopo o barraria. E a saida
@@ -55,12 +58,14 @@ async def _mundo(db):
     return ws, raiz, sub_a, sub_b, user, arvore
 
 
-def _ctx(ws, user, arvore, *membros):
+def _ctx(ws, user, arvore, *membros, org_role=None):
+    # ⚠️ ADMIN entra por `org_role`: desde a 0031 nao e mais papel de time.
     return dict(
         workspace_id=ws,
         user_id=user,
         memberships=tuple(membros),
         team_tree=arvore,
+        org_role=org_role,
     )
 
 
@@ -69,7 +74,7 @@ def _ctx(ws, user, arvore, *membros):
 
 async def test_admin_cria_quadro_na_raiz(db) -> None:
     ws, raiz, sub_a, sub_b, user, arvore = await _mundo(db)
-    with acting_as(**_ctx(ws, user, arvore, mship(raiz, "ADMIN"))):
+    with acting_as(**_ctx(ws, user, arvore, org_role="ADMIN")):
         quadro = await BoardService(db).criar_quadro(
             team_id=raiz, nome="Campanhas"
         )
@@ -160,7 +165,7 @@ async def test_admin_cria_quadro_em_subtime_de_que_nao_e_supervisor(db) -> None:
     `board.manage.root`, e tirar essa saida quebra so este teste.
     """
     ws, raiz, sub_a, sub_b, user, arvore = await _mundo(db)
-    with acting_as(**_ctx(ws, user, arvore, mship(raiz, "ADMIN"))):
+    with acting_as(**_ctx(ws, user, arvore, org_role="ADMIN")):
         quadro = await BoardService(db).criar_quadro(
             team_id=sub_a, nome="Quadro que o admin montou"
         )
@@ -203,7 +208,7 @@ async def test_time_de_outro_workspace_nao_e_alcancavel(db) -> None:
     time_alheio = await f.make_team(db, workspace_id=outro_ws)
     await db.flush()
 
-    with acting_as(**_ctx(ws, user, arvore, mship(raiz, "ADMIN"))):
+    with acting_as(**_ctx(ws, user, arvore, org_role="ADMIN")):
         with pytest.raises(EntityNotFoundError):
             await BoardService(db).criar_quadro(
                 team_id=time_alheio, nome="Invasao"
@@ -213,7 +218,7 @@ async def test_time_de_outro_workspace_nao_e_alcancavel(db) -> None:
 @pytest.mark.parametrize("nome", ["", "   ", "\n\t "])
 async def test_nome_vazio_e_recusado_com_422(db, nome) -> None:
     ws, raiz, sub_a, sub_b, user, arvore = await _mundo(db)
-    with acting_as(**_ctx(ws, user, arvore, mship(raiz, "ADMIN"))):
+    with acting_as(**_ctx(ws, user, arvore, org_role="ADMIN")):
         with pytest.raises(ValidationError):
             await BoardService(db).criar_quadro(team_id=raiz, nome=nome)
 
@@ -222,7 +227,7 @@ async def test_nome_longo_demais_e_recusado_antes_do_banco(db) -> None:
     """⚠️ `String(255)` no Postgres RECUSA com `StringDataRightTruncation`, que
     sai como 500. A trava no servico e o que faz virar 422."""
     ws, raiz, sub_a, sub_b, user, arvore = await _mundo(db)
-    with acting_as(**_ctx(ws, user, arvore, mship(raiz, "ADMIN"))):
+    with acting_as(**_ctx(ws, user, arvore, org_role="ADMIN")):
         with pytest.raises(ValidationError):
             await BoardService(db).criar_quadro(team_id=raiz, nome="x" * 256)
 
@@ -350,7 +355,7 @@ async def test_admin_renomeia_o_quadro_geral(db) -> None:
     ).scalars().first()
     assert geral is not None
 
-    with acting_as(**_ctx(ws, user, arvore, mship(raiz, "ADMIN"))):
+    with acting_as(**_ctx(ws, user, arvore, org_role="ADMIN")):
         await BoardService(db).renomear_quadro(
             board_id=geral.id, nome="Quadro do Marketing"
         )

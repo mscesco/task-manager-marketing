@@ -20,8 +20,11 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass
 
-from app.db.models.enums import UserTeamRole
-from app.modules.auth.domain.permissions import permissions_for_roles
+from app.db.models.enums import OrgRole, UserTeamRole
+from app.modules.auth.domain.permissions import (
+    permissions_for_org_role,
+    permissions_for_roles,
+)
 from app.modules.tasks.application.task_guards import task_editable, task_visible
 from app.modules.tasks.domain.history import (
     TaskHistoryEventType,
@@ -62,7 +65,9 @@ def test_operator_now_has_task_assign() -> None:
 
 
 def test_admin_still_has_task_assign() -> None:
-    perms = permissions_for_roles(frozenset({UserTeamRole.ADMIN.value}))
+    # ADMIN e papel de ORGANIZACAO desde a 0031 -- o mapa plano de time nao o
+    # conhece mais.
+    perms = permissions_for_org_role(OrgRole.ADMIN.value)
     assert "task.assign" in perms
 
 

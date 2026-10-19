@@ -38,7 +38,7 @@ from app.modules.tasks.application.task_service import (
     UpdateTaskCommand,
 )
 from tests.integration import factories as f
-from tests.integration.conftest import acting_as, mship, node
+from tests.integration.conftest import acting_as, node
 
 pytestmark = pytest.mark.integration
 
@@ -47,11 +47,8 @@ async def _mundo(db):
     ws = await f.make_workspace(db)
     raiz = await f.make_team(db, workspace_id=ws)
     sub = await f.make_team(db, workspace_id=ws, parent_team_id=raiz)
-    admin = await f.make_user(db, workspace_id=ws)
+    admin = await f.make_user(db, workspace_id=ws, org_role="ADMIN")
     ana = await f.make_user(db, workspace_id=ws)
-    await f.add_member(
-        db, workspace_id=ws, user_id=admin, team_id=raiz, role="ADMIN"
-    )
     await f.add_member(
         db, workspace_id=ws, user_id=ana, team_id=sub, role="OPERATOR"
     )
@@ -61,7 +58,7 @@ async def _mundo(db):
     ctx = dict(
         workspace_id=ws,
         user_id=admin,
-        memberships=(mship(raiz, "ADMIN"),),
+        org_role="ADMIN",
         team_tree=(node(raiz), node(sub, raiz)),
     )
     return ws, raiz, sub, admin, ana, proj, ctx

@@ -45,20 +45,17 @@ pytestmark = pytest.mark.integration
 # Mundo
 # ----------------------------------------------------------
 async def _mundo(db):
-    """Raiz R com um ADMIN e um projeto comum."""
+    """Raiz R com um ADMIN de organizacao e um projeto comum."""
     ws = await f.make_workspace(db)
     team = await f.make_team(db, workspace_id=ws)
-    user = await f.make_user(db, workspace_id=ws)
-    await f.add_member(
-        db, workspace_id=ws, user_id=user, team_id=team, role="ADMIN"
-    )
+    user = await f.make_user(db, workspace_id=ws, org_role="ADMIN")
     proj = await f.make_project(
         db, workspace_id=ws, created_by=user, team_id=team
     )
     ctx = dict(
         workspace_id=ws,
         user_id=user,
-        memberships=(mship(team, "ADMIN"),),
+        org_role="ADMIN",
         team_tree=(node(team),),
     )
     return ws, team, user, proj, ctx

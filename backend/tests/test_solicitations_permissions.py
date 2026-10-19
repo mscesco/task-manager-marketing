@@ -1,7 +1,8 @@
 """Logica pura do modulo de Solicitacoes (sem banco).
 
 Trava o contrato de autorizacao e a maquina de estados:
-    - solicitation.review: SOMENTE ADMIN e MANAGER (Spec 025/D11).
+    - solicitation.review: SOMENTE ADMIN e MANAGER (Spec 025/D11) -- o ADMIN
+      pelo papel de organizacao, desde a migration 0031 o unico que existe.
       ⚠️ ATE A SPEC 045 (fatia D) a leitura era "admin ou manager do time
       principal", porque a Spec 024 punha os dois papeis na raiz. ADMIN saiu
       do nivel de time: hoje quem tria e o MANAGER da raiz **ou** quem tem
@@ -16,7 +17,6 @@ from __future__ import annotations
 
 from app.db.models.enums import OrgRole
 from app.modules.auth.domain.permissions import permissions_for_roles
-from app.modules.auth.domain.team_scope import _ORG_LEVEL_ROLES
 from app.modules.solicitations.domain.solicitation import (
     CATEGORIES,
     SolicitationStatus,
@@ -24,10 +24,9 @@ from app.modules.solicitations.domain.solicitation import (
 )
 
 
-def test_review_concedida_a_admin_e_manager() -> None:
-    for role in ("ADMIN", "MANAGER"):
-        perms = permissions_for_roles(frozenset({role}))
-        assert "solicitation.review" in perms, role
+def test_review_concedida_a_manager() -> None:
+    """O ADMIN tria pelo papel de ORGANIZACAO -- ver o teste de baixo."""
+    assert "solicitation.review" in permissions_for_roles(frozenset({"MANAGER"}))
 
 
 def test_review_negada_a_supervisor_e_operator() -> None:
@@ -65,9 +64,8 @@ def test_review_pertence_exatamente_aos_papeis_de_raiz() -> None:
     so_na_raiz = roles_permitidos_no_nivel(True) - roles_permitidos_no_nivel(False)
     com_review = {
         r
-        for r in ("ADMIN", "MANAGER", "SUPERVISOR", "OPERATOR")
+        for r in ("MANAGER", "SUPERVISOR", "OPERATOR")
         if "solicitation.review" in permissions_for_roles(frozenset({r}))
-        and r not in _ORG_LEVEL_ROLES
     }
     assert com_review == so_na_raiz
 

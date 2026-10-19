@@ -42,15 +42,23 @@ async def _mundo(db):
     ws = await f.make_workspace(db)
     raiz = await f.make_team(db, workspace_id=ws, slug="marketing")
     seo = await f.make_team(db, workspace_id=ws, parent_team_id=raiz, slug="seo")
-    admin = await f.make_user(db, workspace_id=ws, email="admin@t.dev")
-    await f.add_member(
-        db, workspace_id=ws, user_id=admin, team_id=raiz, role="ADMIN"
+    admin = await f.make_user(
+        db, workspace_id=ws, email="admin@t.dev", org_role="ADMIN"
     )
     await db.flush()
     return ws, raiz, seo, admin
 
 
 def _como(ws, user, raiz, seo, papel):
+    # ADMIN e papel de ORGANIZACAO, sem vinculo de time; os outros moram num
+    # time (SUPERVISOR no subtime, MANAGER na raiz).
+    if papel == "ADMIN":
+        return acting_as(
+            workspace_id=ws,
+            user_id=user,
+            team_tree=(node(raiz), node(seo, raiz)),
+            org_role="ADMIN",
+        )
     return acting_as(
         workspace_id=ws,
         user_id=user,
@@ -79,15 +87,23 @@ async def test_admin_edita_qualquer_vinculo(db) -> None:
 async def test_ninguem_edita_o_PROPRIO_papel(db) -> None:
     """⭐ C3, o anti-lockout -- e o cadeado tem de mostrar isso.
 
-    ⚠️ Sem este caso, a tela ofereceria a quem e admin a chance de se
+    ⚠️ Sem este caso, a tela ofereceria a quem e gerente a chance de se
     rebaixar, e o 403 chegaria depois do clique. E o cadeado fechado aqui e
     honesto: a operacao E impossivel, nao e falta de permissao.
-    """
-    ws, raiz, seo, admin = await _mundo(db)
 
-    with _como(ws, admin, raiz, seo, "ADMIN"):
+    ⚠️ O ATOR E UM MANAGER, e nao o ADMIN: a C3 abre para quem manda pela
+    organizacao (ver `pode_trocar_papel_do_vinculo`), e desde a `0031` todo
+    ADMIN e de organizacao.
+    """
+    ws, raiz, seo, _admin = await _mundo(db)
+    gerente = await f.make_user(db, workspace_id=ws, email="mgr@t.dev")
+    await f.add_member(
+        db, workspace_id=ws, user_id=gerente, team_id=raiz, role="MANAGER"
+    )
+
+    with _como(ws, gerente, raiz, seo, "MANAGER"):
         assert not MemberService(db).pode_trocar_papel_do_vinculo(
-            user_id=admin, team_id=raiz, papel_atual=UserTeamRole.ADMIN
+            user_id=gerente, team_id=raiz, papel_atual=UserTeamRole.MANAGER
         )
 
 
@@ -244,11 +260,11 @@ async def test_rota_do_membro_fecha_o_cadeado_de_conta_desativada(db) -> None:
     from httpx import ASGITransport, AsyncClient
 
     from app.core.deps import get_db_session
-    from app.core.tenant import Membership, TenantContext, set_tenant
+    from app.core.tenant import TenantContext, set_tenant
     from app.db.models import User
     from app.main import create_app
     from app.modules.auth.api.dependencies import get_tenant_context
-    from app.modules.auth.domain.permissions import permissions_for_roles
+    from app.modules.auth.domain.permissions import permissions_for_actor
 
     ws, raiz, seo, admin = await _mundo(db)
     alvo = await f.make_user(db, workspace_id=ws, email="inativo@t.dev")
@@ -256,13 +272,16 @@ async def test_rota_do_membro_fecha_o_cadeado_de_conta_desativada(db) -> None:
     (await db.get(User, alvo)).is_active = False
     await db.flush()
 
+    arvore = (node(raiz), node(seo, raiz))
     ctx = TenantContext(
         workspace_id=ws,
         user_id=admin,
         roles=frozenset({"ADMIN"}),
-        permissions=permissions_for_roles(frozenset({"ADMIN"})),
-        memberships=(Membership(team_id=raiz, role="ADMIN"),),
-        team_tree=(node(raiz), node(seo, raiz)),
+        permissions=permissions_for_actor(
+            memberships=(), tree=arvore, org_role="ADMIN"
+        ),
+        team_tree=arvore,
+        org_role="ADMIN",
     )
     app = create_app()
 

@@ -330,7 +330,7 @@ async def test_admin_reordena_o_quadro_de_qualquer_subtime(db) -> None:
     quadro = await _quadro_avulso(db, ws, user, arvore, sub_a)
     atuais = await _colunas(db, quadro.id)
 
-    with acting_as(**_ctx(ws, user, arvore, mship(raiz, "ADMIN"))):
+    with acting_as(**_ctx(ws, user, arvore), org_role="ADMIN"):
         devolvidas = await BoardService(db).reordenar_colunas(
             board_id=quadro.id, column_ids=[c.id for c in reversed(atuais)]
         )
@@ -362,7 +362,7 @@ async def test_o_QUADRO_GERAL_SE_reordena_por_ADMIN(db) -> None:
     ).scalar_one()
     colunas = await _colunas(db, geral.id)
 
-    with acting_as(**_ctx(ws, user, arvore, mship(raiz, "ADMIN"))):
+    with acting_as(**_ctx(ws, user, arvore), org_role="ADMIN"):
         devolvidas = await BoardService(db).reordenar_colunas(
             board_id=geral.id, column_ids=[c.id for c in reversed(colunas)]
         )

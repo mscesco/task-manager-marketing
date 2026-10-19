@@ -86,9 +86,9 @@ async def _setup(db):
     await f.add_member(
         db, workspace_id=ws, user_id=sup, team_id=seo, role="SUPERVISOR"
     )
-    adm = await f.make_user(db, workspace_id=ws, email="admin@t.dev")
-    await f.add_member(
-        db, workspace_id=ws, user_id=adm, team_id=raiz, role="ADMIN"
+    # ADMIN e papel de ORGANIZACAO: sem vinculo de time.
+    adm = await f.make_user(
+        db, workspace_id=ws, email="admin@t.dev", org_role="ADMIN"
     )
     op = await f.make_user(db, workspace_id=ws, email="op@t.dev")
     await f.add_member(
@@ -98,18 +98,21 @@ async def _setup(db):
 
     arvore = (node(raiz), node(seo, raiz), node(crm, raiz))
 
-    def _ctx(user_id, team_id, papel):
+    def _ctx(user_id, team_id, papel, org_role=None):
         # ⚠️ PERMISSOES COM ESCOPO (Spec 049, fatia B) -- mesmo motivo do
         # `test_boards_escrita_http_db`: com `frozenset`, o 403 do supervisor em
         # subtime alheio dependia de a trava recalcular o subtime a mao.
-        vinculos = (Membership(team_id=team_id, role=papel),)
+        vinculos = (Membership(team_id=team_id, role=papel),) if papel else ()
         return TenantContext(
             workspace_id=ws,
             user_id=user_id,
-            roles=frozenset({papel}),
-            permissions=permissions_for_actor(memberships=vinculos, tree=arvore),
+            roles=frozenset({papel or org_role}),
+            permissions=permissions_for_actor(
+                memberships=vinculos, tree=arvore, org_role=org_role
+            ),
             memberships=vinculos,
             team_tree=arvore,
+            org_role=org_role,
         )
 
     # O quadro avulso do SEO, criado pelo caminho de produto.
@@ -139,7 +142,7 @@ async def _setup(db):
         "geral": geral,
         "sup": sup,
         "ctx_sup": _ctx(sup, seo, "SUPERVISOR"),
-        "ctx_adm": _ctx(adm, raiz, "ADMIN"),
+        "ctx_adm": _ctx(adm, None, None, org_role="ADMIN"),
         "ctx_op": _ctx(op, seo, "OPERATOR"),
     }
 

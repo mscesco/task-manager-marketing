@@ -78,21 +78,24 @@ async def _mundo(db):
     raiz = await f.make_team(db, workspace_id=ws)
     sub_a = await f.make_team(db, workspace_id=ws, parent_team_id=raiz)
     sub_b = await f.make_team(db, workspace_id=ws, parent_team_id=raiz)
-    user = await f.make_user(db, workspace_id=ws)
+    # ADMIN de organizacao (o teste do quadro alheio age assim); o vinculo
+    # MANAGER na raiz fica so pela validacao de responsavel acima.
+    user = await f.make_user(db, workspace_id=ws, org_role="ADMIN")
     await f.add_member(
-        db, workspace_id=ws, user_id=user, team_id=raiz, role="ADMIN"
+        db, workspace_id=ws, user_id=user, team_id=raiz, role="MANAGER"
     )
     await db.flush()
     arvore = (node(raiz), node(sub_a, raiz), node(sub_b, raiz))
     return ws, raiz, sub_a, sub_b, user, arvore
 
 
-def _ctx(ws, user, arvore, *membros):
+def _ctx(ws, user, arvore, *membros, org_role=None):
     return dict(
         workspace_id=ws,
         user_id=user,
         memberships=tuple(membros),
         team_tree=arvore,
+        org_role=org_role,
     )
 
 
@@ -351,7 +354,7 @@ async def test_no_QUADRO_GERAL_o_time_continua_livre(db) -> None:
 async def test_CRIAR_no_quadro_avulso_com_time_alheio_RECUSA(db) -> None:
     """⚠️ ALCANCE NAO E PROPRIEDADE, e `_assert_board_in_reach` so via alcance.
 
-    Quem age aqui e ADMIN da raiz: ele ALCANCA o quadro do sub_a, entao aquela
+    Quem age aqui e ADMIN de organizacao: ele ALCANCA o quadro do sub_a, entao aquela
     trava deixa passar. A pergunta que faltava era outra -- a tarefa pertence
     ao time do quadro? Sem esta recusa, dava para semear a tela de um subtime
     com tarefa de outro pela API.
@@ -359,7 +362,7 @@ async def test_CRIAR_no_quadro_avulso_com_time_alheio_RECUSA(db) -> None:
     ws, raiz, sub_a, sub_b, user, arvore = await _mundo(db)
     quadro = await _quadro_avulso(db, ws, user, arvore, sub_a)
 
-    with acting_as(**_ctx(ws, user, arvore, mship(raiz, "ADMIN"))):
+    with acting_as(**_ctx(ws, user, arvore, org_role="ADMIN")):
         with pytest.raises(ValidationError) as erro:
             await TaskService(db).create(
                 command=CreateTaskCommand(

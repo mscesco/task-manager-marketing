@@ -33,15 +33,21 @@ async def _mundo(db):
         db, workspace_id=ws, parent_team_id=seo, slug="seo-junior"
     )
     ti = await f.make_team(db, workspace_id=ws, slug="ti")
-    admin = await f.make_user(db, workspace_id=ws, email="admin@t.dev")
+    admin = await f.make_user(
+        db, workspace_id=ws, email="admin@t.dev", org_role="ADMIN"
+    )
+    # ⚠️ O vinculo de MANAGER e o que poe o admin NA area -- e o que
+    # `test_vinculo_SO_NA_AREA_conta_como_area` mede. Ser ADMIN de organizacao
+    # nao e vinculo de time e nao aparece aqui.
     await f.add_member(
-        db, workspace_id=ws, user_id=admin, team_id=marketing, role="ADMIN"
+        db, workspace_id=ws, user_id=admin, team_id=marketing, role="MANAGER"
     )
     await db.flush()
     ctx = dict(
         workspace_id=ws,
         user_id=admin,
-        memberships=(mship(marketing, "ADMIN"),),
+        memberships=(mship(marketing, "MANAGER"),),
+        org_role="ADMIN",
         team_tree=(
             node(marketing),
             node(seo, marketing),

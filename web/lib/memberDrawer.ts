@@ -43,7 +43,7 @@ export type DrawerMembership = {
  * e as duas divergiriam no primeiro papel novo.
  */
 
-const COMANDO: MemberRole[] = ["ADMIN", "MANAGER"];
+const COMANDO: MemberRole[] = ["MANAGER"];
 
 /**
  * Monta as linhas do painel a partir dos vínculos e da árvore.
@@ -120,8 +120,6 @@ export function roleConsequence(
   nomeDoTime: string,
 ): string {
   switch (role) {
-    case "ADMIN":
-      return `Enxerga e administra tudo — não só ${nomeDoTime}.`;
     case "MANAGER":
       return `Manda em ${nomeDoTime} e em todos os subtimes dela: administra as pessoas, monta os quadros e tria as solicitações.`;
     case "SUPERVISOR":
