@@ -230,8 +230,8 @@ function Perfil() {
         </section>
       </div>
 
-      {/* Easter egg (decisao dela): o personagem, parado no canto, marchando
-          no lugar. Decoracao: `aria-hidden`, sem alt, sem clique. */}
+      {/* Easter egg (decisao dela): o personagem no canto da tela. O PNG e
+          animado e anda sozinho. Decoracao: `aria-hidden`, sem alt, sem clique. */}
       <div className="tibia-egg print:hidden" aria-hidden="true">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/tibia.png" alt="" width={96} height={96} />

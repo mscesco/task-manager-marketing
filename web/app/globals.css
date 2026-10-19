@@ -565,34 +565,16 @@ button { font-family: inherit; cursor: pointer; }
 .login-rise { animation: tm-rise var(--dur-4) var(--ease-out) both; animation-delay: 120ms; }
 
 /* --- Meu perfil (fatia 4): o personagem do Tibia no canto -------------
-   Parado no lugar, marchando: `steps(2)` de 0,56s, sobe 3px e inclina ±2°;
-   a sombra eliptica respira no mesmo passo. So transform; o bloco global de
-   prefers-reduced-motion o deixa parado. `pixelated` porque o sprite e 64px
-   desenhado a 96. So esta tela o usa. */
-@keyframes tm-step {
-  0%   { transform: translateY(0) rotate(-2deg); }
-  50%  { transform: translateY(-3px) rotate(0deg); }
-  100% { transform: translateY(0) rotate(2deg); }
-}
-@keyframes tm-shadow-breathe {
-  0%, 100% { transform: scaleX(1); }
-  50%      { transform: scaleX(0.85); }
-}
+   O `tibia.png` e um PNG ANIMADO (16 quadros): ele anda sozinho, sem CSS por
+   cima. `fixed` para ficar sempre inteiro na tela, fora do fluxo do main.
+   `pixelated` porque o sprite e 64px desenhado a 96. So esta tela o usa. */
 .tibia-egg {
-  position: absolute; right: 28px; bottom: 14px;
+  position: fixed; right: 28px; bottom: 28px;
   width: 96px; height: 96px; pointer-events: none;
 }
 .tibia-egg img {
   width: 96px; height: 96px; display: block;
   image-rendering: pixelated;
-  transform-origin: 50% 90%;
-  animation: tm-step 0.56s steps(2) infinite;
-}
-.tibia-egg::after {
-  content: ""; position: absolute; left: 30px; right: 30px; bottom: 8px;
-  height: 6px; border-radius: 999px;
-  background: color-mix(in srgb, var(--text) 18%, transparent);
-  animation: tm-shadow-breathe 0.56s steps(2) infinite;
 }
 
 /* --- Detalhe da tarefa (redesign 19/10) --------------------------------
