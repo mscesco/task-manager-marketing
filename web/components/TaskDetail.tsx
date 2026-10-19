@@ -1610,15 +1610,36 @@ export default function TaskDetail({
               </span>
             </button>
           )}
+          {/* O titulo mora na barra (ajuste dela, 19/10): 22/700, uma linha
+              com reticencias; "Criada em" logo abaixo. Spec 052, fatia D:
+              clicar edita; Enter ou clicar fora salva, Esc desiste. `key`
+              pelo id: trocar de tarefa com o campo aberto nao pode levar o
+              rascunho para a outra. */}
+          <div className="flex min-w-0 flex-1 flex-col">
+            <TituloEditavel
+              key={task.id}
+              // ⚠️ `h1` SÓ NA ROTA `/tarefa/[id]`, onde a tarefa É a página. No
+              // quadro e em "Minhas tarefas" ela mora embaixo do `<h1>` da tela.
+              level={modo === "pagina" ? "h1" : "h2"}
+              compacto
+              valor={salvoNoLugar?.id === task.id && salvoNoLugar.title !== undefined ? salvoNoLugar.title : task.title}
+              onSalvar={(novo) => salvarNoLugar({ title: novo })}
+            />
+            {/* Criacao: data + quem criou (nome resolvido; sem nome -> so a data). */}
+            <div className="muted truncate" style={{ fontSize: 12 }}>
+              Criada em {criadoEm}
+              {criador ? ` por ${criador}` : ""}
+            </div>
+          </div>
           {task.parent_task_id && (
-            <Badge tone="soft" size="md" color="var(--accent)">
+            <Badge tone="soft" size="md" color="var(--accent)" className="shrink-0">
               Subtarefa
             </Badge>
           )}
           {task.is_archived && (
-            <span className="muted" style={{ fontSize: 12.5 }}>arquivada</span>
+            <span className="muted shrink-0" style={{ fontSize: 12.5 }}>arquivada</span>
           )}
-          <span className="ml-auto flex items-center gap-1">
+          <span className="flex shrink-0 items-center gap-1">
             {/* Spec 053 (D5): o gesto de um clique, no topo. */}
             <BotaoSeguir
               estado={seguidores}
@@ -1646,32 +1667,17 @@ export default function TaskDetail({
               : "flex flex-col min-[900px]:grid min-[900px]:grid-cols-[minmax(0,1fr)_420px]"
           }
         >
+          {/* A coluna principal: o conteudo rola por dentro e o rodape de
+              acoes fica fixo embaixo, fora da area que rola (ajuste dela,
+              19/10). */}
+          <div className="flex min-w-0 min-h-0 flex-col">
           <div
             className={
               modo === "modal"
-                ? "flex min-w-0 min-h-0 flex-col gap-5 px-7 pb-6 pt-5 min-[900px]:overflow-y-auto"
+                ? "flex min-w-0 min-h-0 flex-1 flex-col gap-5 px-7 pb-6 pt-5 min-[900px]:overflow-y-auto"
                 : "flex min-w-0 flex-col gap-5 px-7 pb-6 pt-5 min-[900px]:max-h-[70vh] min-[900px]:overflow-y-auto"
             }
           >
-
-        <div className="flex flex-col gap-1.5">
-          {/* Spec 052, fatia D: clicar no título edita; Enter ou clicar fora
-              salva, Esc desiste. `key` pelo id: trocar de tarefa com o campo
-              aberto não pode levar o rascunho para a outra. */}
-          <TituloEditavel
-            key={task.id}
-            // ⚠️ `h1` SÓ NA ROTA `/tarefa/[id]`, onde a tarefa É a página. No
-            // quadro e em "Minhas tarefas" ela mora embaixo do `<h1>` da tela.
-            level={modo === "pagina" ? "h1" : "h2"}
-            valor={salvoNoLugar?.id === task.id && salvoNoLugar.title !== undefined ? salvoNoLugar.title : task.title}
-            onSalvar={(novo) => salvarNoLugar({ title: novo })}
-          />
-          {/* Criacao: data + quem criou (nome resolvido; sem nome -> so a data). */}
-          <div className="muted" style={{ fontSize: 12 }}>
-            Criada em {criadoEm}
-            {criador ? ` por ${criador}` : ""}
-          </div>
-        </div>
 
         {/* ---- Propriedades (redesign 19/10): lista rotulo/valor em duas
             colunas. Cada valor continua sendo o MESMO controle de antes --
@@ -2823,6 +2829,7 @@ export default function TaskDetail({
             <div className="error-box" style={{ marginTop: 8 }}>{erroSub}</div>
           )}
         </div>
+          </div>
 
           <RodapeDaTarefa
             task={task}
@@ -3121,7 +3128,7 @@ function RodapeDaTarefa({
   onDuplicar: (task: Task) => void;
 }) {
   return (
-    <div className="mt-auto flex flex-col gap-2 border-t border-border pt-3">
+    <div className="flex shrink-0 flex-col gap-2 border-t border-border bg-surface px-7 py-3">
         {confirmandoExcluir && (
           <div
             style={{

@@ -38,10 +38,13 @@ export default function TituloEditavel({
   valor,
   onSalvar,
   level = "h2",
+  compacto = false,
 }: {
   valor: string;
   /** `h1` quando a tarefa é a página inteira; `h2` no painel e no modal. */
   level?: "h1" | "h2";
+  /** Uma linha so, com reticencias (a barra do detalhe, fatia 4). */
+  compacto?: boolean;
   /**
    * Grava o título novo. ⚠️ Em erro, LANÇA com a mensagem já pronta para a
    * tela: o campo reabre com o que a pessoa digitou e a mensagem embaixo.
@@ -177,7 +180,9 @@ export default function TituloEditavel({
             // título. A instrução vai no `title`, que vira a DESCRIÇÃO (ver o
             // topo do arquivo).
             title="Editar o título"
-            className="w-full rounded-md text-left hover:bg-[var(--surface-2)]"
+            className={`w-full rounded-md text-left hover:bg-[var(--surface-2)] ${
+              compacto ? "truncate" : ""
+            }`}
             style={{
               font: "inherit",
               letterSpacing: "inherit",
@@ -187,7 +192,7 @@ export default function TituloEditavel({
               margin: "-2px -6px",
               cursor: emVoo !== null ? "progress" : "pointer",
               opacity: emVoo !== null ? 0.6 : 1,
-              overflowWrap: "anywhere",
+              overflowWrap: compacto ? undefined : "anywhere",
             }}
           >
             {emVoo ?? valor}

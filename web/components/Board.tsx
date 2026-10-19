@@ -843,8 +843,13 @@ export default function Board({
     [activeId, tasks]
   );
 
+  // A largura do card arrastado, medida na coluna (ajuste dela, 19/10): o
+  // fantasma do `DragOverlay` tinha 256 cravados e saia maior que o card.
+  const [larguraDoArraste, setLarguraDoArraste] = useState<number | null>(null);
   function onDragStart(e: DragStartEvent) {
     setActiveId(String(e.active.id));
+    const el = document.querySelector<HTMLElement>(`[data-card="${e.active.id}"]`);
+    setLarguraDoArraste(el?.offsetWidth ?? null);
   }
 
   async function onDragEnd(e: DragEndEvent) {
@@ -2426,7 +2431,7 @@ export default function Board({
                 lista simplesmente nao ganha fantasma de arrasto. O `!`
                 esconderia o dia em que essa combinacao passar a existir. */}
             {activeTask && colunaPorId.get(activeTask.column_id) ? (
-              <div style={{ width: 256, cursor: "grabbing" }}>
+              <div style={{ width: larguraDoArraste ?? 256, cursor: "grabbing" }}>
                 <TaskCard
                   task={activeTask}
                   coluna={colunaPorId.get(activeTask.column_id) as Coluna}
@@ -2640,7 +2645,10 @@ function ColunaKanban({
         // o card quebrar em muitas linhas.
         //
         // Redesign (fatia 4): a raia tem fundo `--lane`, borda e raio 14.
-        flex: 1, minWidth: 240, minHeight: 0, borderRadius: 14, padding: 10,
+        // ⚠️ 262 = os 240 de antes MAIS a moldura nova (10 de padding e 1 de
+        // borda de cada lado): o card por dentro continua com a largura que
+        // tinha antes da fatia 4 (ajuste dela, 19/10).
+        flex: 1, minWidth: 262, minHeight: 0, borderRadius: 14, padding: 10,
         display: "flex", flexDirection: "column",
         background: isOver ? "var(--surface-2)" : "var(--lane)",
         border: "1px solid var(--border)",

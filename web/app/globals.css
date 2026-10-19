@@ -632,12 +632,11 @@ button { font-family: inherit; cursor: pointer; }
   transition: transform var(--dur-2) var(--ease-out), box-shadow var(--dur-2) var(--ease-out);
 }
 /* Redesign 19/10: sobe 3px e a sombra e tingida do `--accent` -- o token muda
-   por tema, entao uma regra serve aos dois. O anel de 1px e o que le como
-   "pegavel" sobre o canvas escuro, onde sombra preta some. */
+   por tema, entao uma regra serve aos dois. Sem anel de 1px (ajuste dela,
+   19/10): ele brigava com o filete colorido do topo do card. */
 .card-elev:hover {
   transform: translateY(-3px);
-  box-shadow: 0 0 0 1px var(--accent),
-    0 10px 28px -10px color-mix(in srgb, var(--accent) 35%, transparent);
+  box-shadow: 0 10px 28px -10px color-mix(in srgb, var(--accent) 35%, transparent);
 }
 
 /* --- Esqueleto (redesign 19/10): a forma da tela que vem ---------------
