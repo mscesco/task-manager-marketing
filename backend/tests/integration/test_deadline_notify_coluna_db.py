@@ -37,10 +37,7 @@ OVERDUE = date(2026, 6, 24)  # ontem
 async def _ws(db):
     ws = await f.make_workspace(db)
     team = await f.make_team(db, workspace_id=ws)
-    user = await f.make_user(db, workspace_id=ws)
-    await f.add_member(
-        db, workspace_id=ws, user_id=user, team_id=team, role="ADMIN"
-    )
+    user = await f.make_user(db, workspace_id=ws, org_role="ADMIN")
     return ws, team, user
 
 

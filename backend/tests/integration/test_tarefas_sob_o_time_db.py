@@ -113,7 +113,7 @@ def _como_admin(m):
     return acting_as(
         workspace_id=m["ws"],
         user_id=m["user"],
-        memberships=(mship(m["marketing"], "ADMIN"),),
+        memberships=(),
         team_tree=m["arvore"],
         org_role="ADMIN",
     )

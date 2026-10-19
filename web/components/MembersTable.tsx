@@ -45,7 +45,6 @@ import { type Member, type MemberRole } from "@/lib/api";
 import { type TeamRow } from "@/lib/teamScreen";
 
 export const ROLE_LABEL: Record<MemberRole, string> = {
-  ADMIN: "Administrador",
   MANAGER: "Gerente",
   SUPERVISOR: "Supervisor",
   OPERATOR: "Operador",

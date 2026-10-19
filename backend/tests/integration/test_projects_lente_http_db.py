@@ -68,7 +68,10 @@ from app.core.tenant import Membership, TenantContext, set_tenant
 from app.db.unit_of_work import UnitOfWork
 from app.main import create_app
 from app.modules.auth.api.dependencies import get_tenant_context
-from app.modules.auth.domain.permissions import permissions_for_roles
+from app.modules.auth.domain.permissions import (
+    permissions_for_actor,
+    permissions_for_roles,
+)
 from tests.integration import factories as f
 from tests.integration.conftest import node
 
@@ -87,9 +90,8 @@ async def _setup(db):
     await f.add_member(
         db, workspace_id=ws, user_id=sup, team_id=seo, role="SUPERVISOR"
     )
-    adm = await f.make_user(db, workspace_id=ws, email="admin@t.dev")
-    await f.add_member(
-        db, workspace_id=ws, user_id=adm, team_id=marketing, role="ADMIN"
+    adm = await f.make_user(
+        db, workspace_id=ws, email="admin@t.dev", org_role="ADMIN"
     )
 
     p_marketing = await f.make_project(
@@ -116,15 +118,18 @@ async def _setup(db):
         memberships=(Membership(team_id=seo, role="SUPERVISOR"),),
         team_tree=arvore,
     )
-    # ⚠️ `org_role="ADMIN"` E O QUE FAZ A LENTE SER `None`. Sem ele este
-    # contexto seria "ADMIN de um time", que e outra coisa -- e os testes do
-    # recorte por time passariam pelo motivo errado.
+    # ⚠️ `org_role="ADMIN"` E O QUE FAZ A LENTE SER `None`. Desde a 0031 nao
+    # existe mais "ADMIN de um time": quem administra e a ORGANIZACAO, sem
+    # vinculo -- e as permissoes vem de `permissions_for_actor`, porque o mapa
+    # plano so conhece papel de time e ignoraria o ADMIN.
     ctx_adm = TenantContext(
         workspace_id=ws,
         user_id=adm,
         roles=frozenset({"ADMIN"}),
-        permissions=permissions_for_roles(frozenset({"ADMIN"})),
-        memberships=(Membership(team_id=marketing, role="ADMIN"),),
+        permissions=permissions_for_actor(
+            memberships=(), tree=arvore, org_role="ADMIN"
+        ),
+        memberships=(),
         team_tree=arvore,
         org_role="ADMIN",
     )

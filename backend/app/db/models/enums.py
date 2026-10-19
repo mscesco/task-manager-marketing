@@ -6,7 +6,7 @@ estes enums Python para os tipos nativos do banco.
 
 Schema v5::
 
-    user_team_role : ADMIN, MANAGER, SUPERVISOR, OPERATOR
+    user_team_role : MANAGER, SUPERVISOR, OPERATOR   (ADMIN saiu na 0031)
     org_role       : ADMIN, GESTOR   (Spec 045 -- migration 0022)
     project_status : PLANNING, ACTIVE, BLOCKED, COMPLETED, CANCELLED
     task_status    : BACKLOG, PLANNED, IN_PROGRESS, IN_REVIEW,
@@ -20,7 +20,9 @@ from enum import StrEnum
 
 
 class UserTeamRole(StrEnum):
-    ADMIN = "ADMIN"
+    """Papel num TIME. ADMIN nao e papel de time desde a Spec 045 -- mora em
+    `OrgRole` --, e a migration 0031 (19/10/2026) o tirou do tipo do banco."""
+
     MANAGER = "MANAGER"
     SUPERVISOR = "SUPERVISOR"
     OPERATOR = "OPERATOR"

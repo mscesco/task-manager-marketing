@@ -91,7 +91,7 @@ async def _mundo(db):
     with acting_as(
         workspace_id=ws,
         user_id=user,
-        memberships=(mship(marketing, "ADMIN"), mship(comercial, "ADMIN")),
+        memberships=(),
         team_tree=arvore,
         org_role="ADMIN",
     ):
@@ -124,7 +124,7 @@ def _como_admin(m):
     return acting_as(
         workspace_id=m["ws"],
         user_id=m["user"],
-        memberships=(mship(m["marketing"], "ADMIN"),),
+        memberships=(),
         team_tree=m["arvore"],
         org_role="ADMIN",
     )

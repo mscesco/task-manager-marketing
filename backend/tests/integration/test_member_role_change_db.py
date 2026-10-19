@@ -6,7 +6,7 @@ Matriz (C2), como ficou na Spec 051 (fatia C, decisao 6 de 16/09):
     MANAGER -> so alvo SUPERVISOR/OPERATOR; atribui ate MANAGER ("so promove").
 Anti-lockout (C3): ninguem altera o proprio papel.
 
-Cobre: ADMIN promove p/ qualquer papel de time, MANAGER OPERATOR->SUPERVISOR,
+Cobre: ADMIN (de organizacao) promove p/ papel de time, MANAGER OPERATOR->SUPERVISOR,
 MANAGER promove a MANAGER e nao rebaixa o par, MANAGER bloqueado ao atribuir
 ADMIN, MANAGER bloqueado ao mexer em alvo MANAGER/ADMIN, auto-alteracao
 bloqueada, vinculo inexistente -> 404.
@@ -43,26 +43,16 @@ async def _papel_atual(db, *, user_id, team_id) -> UserTeamRole:
 async def test_admin_troca_para_qualquer_papel_de_time(db) -> None:
     ws = await f.make_workspace(db)
     raiz = await f.make_team(db, workspace_id=ws, slug="marketing")
-    admin = await f.make_user(db, workspace_id=ws, email="admin@t.dev")
-    await f.add_member(db, workspace_id=ws, user_id=admin, team_id=raiz, role="ADMIN")
+    admin = await f.make_user(
+        db, workspace_id=ws, email="admin@t.dev", org_role="ADMIN"
+    )
     alvo = await f.make_user(db, workspace_id=ws, email="alvo@t.dev")
     await f.add_member(db, workspace_id=ws, user_id=alvo, team_id=raiz, role="OPERATOR")
 
-    with acting_as(
-        workspace_id=ws,
-        user_id=admin,
-        memberships=(Membership(team_id=raiz, role="ADMIN"),),
-    ):
-        # ⭐ Spec 045, fatia D: ADMIN saiu do nivel de TIME. Ate aqui esta
-        # linha dizia "ADMIN pode ate promover a ADMIN" e o teste se chamava
-        # `..._para_qualquer_papel` -- hoje "qualquer papel" nao inclui ADMIN
-        # em lugar nenhum, porque nao ha time que o aceite.
-        # Quem promove um administrador usa `change_organization_role`.
-        with pytest.raises(BusinessRuleError):
-            await MemberService(db).change_member_role(
-                user_id=alvo, team_id=raiz, new_role=UserTeamRole.ADMIN
-            )
-        # E o papel de raiz que ele PODE dar continua funcionando.
+    with acting_as(workspace_id=ws, user_id=admin, org_role="ADMIN"):
+        # ⭐ Spec 045, fatia D: ADMIN saiu do nivel de TIME, e desde a migration
+        # `0031` nem existe no enum de time -- "qualquer papel de time" nao o
+        # inclui. Quem promove um administrador usa `change_organization_role`.
         await MemberService(db).change_member_role(
             user_id=alvo, team_id=raiz, new_role=UserTeamRole.MANAGER
         )
@@ -157,35 +147,34 @@ async def test_manager_nao_mexe_em_alvo_manager(db) -> None:
 
 
 async def test_nao_altera_proprio_papel(db) -> None:
+    """⚠️ O ator e um MANAGER, e nao o ADMIN de organizacao: quem manda pela
+    organizacao e a excecao da C3 (`_autoridade_vem_da_organizacao`)."""
     ws = await f.make_workspace(db)
     raiz = await f.make_team(db, workspace_id=ws, slug="marketing")
-    admin = await f.make_user(db, workspace_id=ws, email="admin@t.dev")
-    await f.add_member(db, workspace_id=ws, user_id=admin, team_id=raiz, role="ADMIN")
+    mgr = await f.make_user(db, workspace_id=ws, email="mgr@t.dev")
+    await f.add_member(db, workspace_id=ws, user_id=mgr, team_id=raiz, role="MANAGER")
 
     with acting_as(
         workspace_id=ws,
-        user_id=admin,
-        memberships=(Membership(team_id=raiz, role="ADMIN"),),
+        user_id=mgr,
+        memberships=(Membership(team_id=raiz, role="MANAGER"),),
     ):
         with pytest.raises(BusinessRuleError):
             await MemberService(db).change_member_role(
-                user_id=admin, team_id=raiz, new_role=UserTeamRole.OPERATOR
+                user_id=mgr, team_id=raiz, new_role=UserTeamRole.OPERATOR
             )
 
 
 async def test_vinculo_inexistente_404(db) -> None:
     ws = await f.make_workspace(db)
     raiz = await f.make_team(db, workspace_id=ws, slug="marketing")
-    admin = await f.make_user(db, workspace_id=ws, email="admin@t.dev")
-    await f.add_member(db, workspace_id=ws, user_id=admin, team_id=raiz, role="ADMIN")
+    admin = await f.make_user(
+        db, workspace_id=ws, email="admin@t.dev", org_role="ADMIN"
+    )
     # alvo existe mas NAO tem vinculo com a raiz
     alvo = await f.make_user(db, workspace_id=ws, email="solto@t.dev")
 
-    with acting_as(
-        workspace_id=ws,
-        user_id=admin,
-        memberships=(Membership(team_id=raiz, role="ADMIN"),),
-    ):
+    with acting_as(workspace_id=ws, user_id=admin, org_role="ADMIN"):
         with pytest.raises(EntityNotFoundError):
             await MemberService(db).change_member_role(
                 user_id=alvo, team_id=raiz, new_role=UserTeamRole.SUPERVISOR

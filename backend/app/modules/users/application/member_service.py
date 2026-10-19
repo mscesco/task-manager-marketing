@@ -480,26 +480,6 @@ class MemberService:
             raise ValidationError(
                 "E-mail invalido.", details={"field": "email"}
             )
-        # --- Spec 045, fatia D: ADMIN nao e papel de TIME ---
-        #
-        # ⚠️⚠️ ESTE CASO DE USO E O DO VINCULO DE TIME, e `ADMIN` deixou de ser
-        # isso: virou papel de ORGANIZACAO (fatia B), sem time. Aceitar aqui
-        # exigiria um `team_id` que a rota recebe e ignora -- e `team_id` e
-        # OBRIGATORIO neste comando desde a Spec 014 ("nao ha mais membro
-        # orfao"). Um endpoint com dois significados conforme o valor de um
-        # campo e o que ninguem lembra seis meses depois.
-        #
-        # ⚠️ O GATE ANTERIOR ERA "so um ADMIN cria outro ADMIN" (D2), e some
-        # junto -- ele guardava um caminho que deixou de existir. Quem promove
-        # alguem a ADMIN usa `PATCH /members/{id}/organization-role`, cujo
-        # portao e `workspace.manage` (so o ADMIN de organizacao o tem).
-        if command.role is UserTeamRole.ADMIN:
-            raise BusinessRuleError(
-                "ADMIN é papel da organização, não de time. Cadastre a pessoa "
-                "com um papel de time e depois defina o papel de organização.",
-                details={"field": "role", "rota": "PATCH /members/{id}/organization-role"},
-            )
-
         # --- unicidade de e-mail ---
         if await self._users.email_exists(email):
             raise ConflictError(
@@ -1026,13 +1006,7 @@ class MemberService:
         cria o vinculo no time de quem cadastra.
         """
         tenant = require_tenant()
-        # ⚠️ "ORGANIZACAO" INCLUI O VINCULO ADMIN ANTIGO DE TIME, pelo mesmo
-        # `is_admin` da trava de conta (#57, `_assert_pode_agir_sobre_a_conta`):
-        # as duas regras dizem "so quem administra", e com criterios diferentes
-        # o mesmo ator juntaria arvores e nao resetaria senha, ou o contrario.
-        if tenant.org_role is not None or is_admin(
-            tenant.memberships, org_role=tenant.org_role
-        ):
+        if tenant.org_role is not None:
             return
         raiz = root_of(team_id, tenant.team_tree)
         vinculos = await self._users.list_team_memberships(user_id=user_id)
@@ -1335,14 +1309,11 @@ class MemberService:
         # como destino nem tocar em quem ja e ADMIN. As duas metades, porque
         # sao dois caminhos para o mesmo estrago -- criar um admin, ou tirar um.
         #
-        # ⚠️ `is_admin`, e nao `org_role == "ADMIN"`: conta tambem o vinculo
-        # ADMIN antigo (`user_team`), a mesma fonte dupla da lente.
-        #
         # ⚠️ O SERVICO AINDA NAO DISTINGUE `grant` DE `revoke`, e nao precisa:
         # os dois verbos estao nos mesmos papeis. A fatia A tentou separar e
         # mudou comportamento de quem chama o servico direto; o teto e o que a
         # regra dela pede, e ele e sobre ADMIN, nao sobre conceder ou tirar.
-        ator_e_admin = is_admin(tenant.memberships, org_role=tenant.org_role)
+        ator_e_admin = is_admin(tenant.org_role)
         if not ator_e_admin and (
             new_role is OrgRole.ADMIN or user.org_role is OrgRole.ADMIN
         ):
@@ -1703,28 +1674,23 @@ class MemberService:
         aplicadas a conta:
 
             ator ADMIN                -> qualquer conta;
-            alvo ADMIN                -> so ADMIN (org_role OU vinculo antigo --
-                                         `is_admin`, a mesma fonte dupla do
-                                         teto e da lente);
+            alvo ADMIN                -> so ADMIN;
             ator GESTOR               -> GESTOR e abaixo;
             ator de time (MANAGER)    -> so quem nao tem papel de organizacao e
-                                         nao e MANAGER nem ADMIN em time nenhum.
+                                         nao e MANAGER em time nenhum.
 
         ⚠️ SO PAPEL, e nunca "onde": o alcance ja foi decidido antes, por
         `_assert_reaches_person`. As duas perguntas ficam separadas para que a
         mensagem do 403 diga qual das duas falhou.
         """
         tenant = require_tenant()
-        if is_admin(tenant.memberships, org_role=tenant.org_role):
+        if is_admin(tenant.org_role):
             return
 
         vinculos = await self._users.list_team_memberships(user_id=user.id)
-        papeis_de_time = tuple(
-            Membership(team_id=v.team_id, role=v.role.value) for v in vinculos
-        )
         alvo_org = user.org_role.value if user.org_role else None
 
-        if is_admin(papeis_de_time, org_role=alvo_org):
+        if is_admin(alvo_org):
             raise AuthorizationError(
                 "So um administrador reseta a senha ou desativa a conta de um "
                 "administrador.",
@@ -1735,7 +1701,7 @@ class MemberService:
             return
 
         if alvo_org is not None or any(
-            v.role in (UserTeamRole.MANAGER, UserTeamRole.ADMIN) for v in vinculos
+            v.role is UserTeamRole.MANAGER for v in vinculos
         ):
             raise AuthorizationError(
                 "Gerente so reseta a senha ou desativa a conta de supervisor e "
@@ -1769,7 +1735,7 @@ class MemberService:
         `None` = em todos. Ver `_assert_actor_can_target`.
         """
         tenant = require_tenant()
-        if tenant.has_role("ADMIN"):
+        if is_admin(tenant.org_role):
             return None
         if tenant.org_role == OrgRole.GESTOR.value:
             return _PAPEIS_ATE_GERENTE
@@ -1787,9 +1753,6 @@ class MemberService:
         so promove"*. Depois de promovido, o novo gerente e um PAR, e rebaixar,
         tirar ou mover um par continua com gestor e admin. Sem isso, dois
         gerentes da mesma arvore podiam se rebaixar um ao outro.
-
-        ⚠️ Vinculo ADMIN antigo de time continua so do ADMIN (`has_role`
-        reconhece os dois niveis) -- a mesma regra da conta, no #57.
         """
         alcance = self._papeis_que_mira()
         if alcance is not None and current_role not in alcance:
@@ -1801,7 +1764,7 @@ class MemberService:
     @staticmethod
     def _papeis_que_atribui() -> frozenset[UserTeamRole] | None:
         """Que papeis de vinculo o ator DA. `None` = todos. Ver abaixo."""
-        if require_tenant().has_role("ADMIN"):
+        if is_admin(require_tenant().org_role):
             return None
         return _PAPEIS_ATE_GERENTE
 

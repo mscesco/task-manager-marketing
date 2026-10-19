@@ -1,7 +1,7 @@
 """Spec 016 -- adicionar membro existente a um time, agora pela matriz.
 
 assign_to_team passa a chamar _assert_actor_can_assign (Spec 015): ADMIN
-atribui qualquer papel; MANAGER so SUPERVISOR/OPERATOR. Adicionar e aditivo
+(de organizacao) atribui qualquer papel; MANAGER so SUPERVISOR/OPERATOR. Adicionar e aditivo
 (sem self-guard). Mantem o 409 (ja no time).
 
 ⚠️ O 422 DO SEGUNDO SUBTIME SAIU NA SPEC 044, FATIA 3. O teste que o afirmava
@@ -30,18 +30,19 @@ pytestmark = pytest.mark.integration
 
 
 async def test_admin_adiciona_qualquer_papel(db) -> None:
-    """Matriz da Spec 016: ADMIN alcanca qualquer papel.
+    """Matriz da Spec 016: ADMIN (de organizacao) alcanca qualquer papel.
 
-    A Spec 024 acrescentou um limite ORTOGONAL a esta matriz: ADMIN e
-    MANAGER so existem no time raiz. A matriz continua valendo (quem o
+    A Spec 024 acrescentou um limite ORTOGONAL a esta matriz: MANAGER so
+    existe no time raiz. A matriz continua valendo (quem o
     ator alcanca); o que a invariante decide e ONDE o papel pode ser
     aplicado. Este teste passou a cobrir as duas coisas.
     """
     ws = await f.make_workspace(db)
     raiz = await f.make_team(db, workspace_id=ws, slug="marketing")
     seo = await f.make_team(db, workspace_id=ws, parent_team_id=raiz, slug="seo")
-    admin = await f.make_user(db, workspace_id=ws, email="admin@t.dev")
-    await f.add_member(db, workspace_id=ws, user_id=admin, team_id=raiz, role="ADMIN")
+    admin = await f.make_user(
+        db, workspace_id=ws, email="admin@t.dev", org_role="ADMIN"
+    )
     # ⚠️ SEM VINCULO NA RAIZ, e a ausencia e o ponto. Ate a Spec 044 fatia 5
     # este alvo era OPERATOR na raiz -- e virou o cadastro que a regra da
     # Camila proibe: papel na raiz MENOR que no subtime. "Ausencia nao e
@@ -51,7 +52,7 @@ async def test_admin_adiciona_qualquer_papel(db) -> None:
 
     with acting_as(
         workspace_id=ws, user_id=admin,
-        memberships=(Membership(team_id=raiz, role="ADMIN"),),
+        org_role="ADMIN",
     ):
         svc = MemberService(db)
         # Papel de execucao em subtime: a matriz permite e o nivel aceita.
@@ -61,11 +62,11 @@ async def test_admin_adiciona_qualquer_papel(db) -> None:
         assert ut.team_id == seo
         assert ut.role == UserTeamRole.SUPERVISOR
 
-        # Spec 024: ADMIN em SUBTIME e recusado -- mesmo o ator sendo ADMIN.
+        # Spec 024: MANAGER em SUBTIME e recusado -- mesmo o ator sendo ADMIN.
         # Nao e a matriz que barra (ela permite), e a invariante de nivel.
         with pytest.raises(BusinessRuleError):
             await svc.assign_to_team(
-                user_id=outro, team_id=seo, role=UserTeamRole.ADMIN
+                user_id=outro, team_id=seo, role=UserTeamRole.MANAGER
             )
 
 
@@ -99,7 +100,7 @@ async def test_manager_adiciona_supervisor(db) -> None:
         assert ut.role == UserTeamRole.SUPERVISOR
 
 
-async def test_manager_nao_adiciona_admin(db) -> None:
+async def test_manager_nao_adiciona_manager(db) -> None:
     ws = await f.make_workspace(db)
     raiz = await f.make_team(db, workspace_id=ws, slug="marketing")
     seo = await f.make_team(db, workspace_id=ws, parent_team_id=raiz, slug="seo")
@@ -114,10 +115,6 @@ async def test_manager_nao_adiciona_admin(db) -> None:
     ):
         with pytest.raises(AuthorizationError):
             await MemberService(db).assign_to_team(
-                user_id=alvo, team_id=seo, role=UserTeamRole.ADMIN
-            )
-        with pytest.raises(AuthorizationError):
-            await MemberService(db).assign_to_team(
                 user_id=alvo, team_id=seo, role=UserTeamRole.MANAGER
             )
 
@@ -125,14 +122,15 @@ async def test_manager_nao_adiciona_admin(db) -> None:
 async def test_adicionar_no_time_que_ja_esta_409(db) -> None:
     ws = await f.make_workspace(db)
     raiz = await f.make_team(db, workspace_id=ws, slug="marketing")
-    admin = await f.make_user(db, workspace_id=ws, email="admin@t.dev")
-    await f.add_member(db, workspace_id=ws, user_id=admin, team_id=raiz, role="ADMIN")
+    admin = await f.make_user(
+        db, workspace_id=ws, email="admin@t.dev", org_role="ADMIN"
+    )
     alvo = await f.make_user(db, workspace_id=ws, email="alvo@t.dev")
     await f.add_member(db, workspace_id=ws, user_id=alvo, team_id=raiz, role="OPERATOR")
 
     with acting_as(
         workspace_id=ws, user_id=admin,
-        memberships=(Membership(team_id=raiz, role="ADMIN"),),
+        org_role="ADMIN",
     ):
         with pytest.raises(ConflictError):
             await MemberService(db).assign_to_team(
@@ -164,8 +162,9 @@ async def test_segundo_subtime_agora_e_aceito_pelo_servico(db) -> None:
         db, workspace_id=ws, parent_team_id=raiz, slug="midias-sociais"
     )
     seo = await f.make_team(db, workspace_id=ws, parent_team_id=raiz, slug="seo")
-    admin = await f.make_user(db, workspace_id=ws, email="admin@t.dev")
-    await f.add_member(db, workspace_id=ws, user_id=admin, team_id=raiz, role="ADMIN")
+    admin = await f.make_user(
+        db, workspace_id=ws, email="admin@t.dev", org_role="ADMIN"
+    )
     redatora = await f.make_user(db, workspace_id=ws, email="redatora@t.dev")
     await f.add_member(
         db, workspace_id=ws, user_id=redatora, team_id=midias, role="OPERATOR"
@@ -173,7 +172,7 @@ async def test_segundo_subtime_agora_e_aceito_pelo_servico(db) -> None:
 
     with acting_as(
         workspace_id=ws, user_id=admin,
-        memberships=(Membership(team_id=raiz, role="ADMIN"),),
+        org_role="ADMIN",
     ):
         svc = MemberService(db)
         ut = await svc.assign_to_team(
@@ -199,14 +198,15 @@ async def test_vinculo_repetido_no_mesmo_time_continua_409(db) -> None:
     ws = await f.make_workspace(db)
     raiz = await f.make_team(db, workspace_id=ws, slug="marketing")
     seo = await f.make_team(db, workspace_id=ws, parent_team_id=raiz, slug="seo")
-    admin = await f.make_user(db, workspace_id=ws, email="admin@t.dev")
-    await f.add_member(db, workspace_id=ws, user_id=admin, team_id=raiz, role="ADMIN")
+    admin = await f.make_user(
+        db, workspace_id=ws, email="admin@t.dev", org_role="ADMIN"
+    )
     alvo = await f.make_user(db, workspace_id=ws, email="alvo@t.dev")
     await f.add_member(db, workspace_id=ws, user_id=alvo, team_id=seo, role="OPERATOR")
 
     with acting_as(
         workspace_id=ws, user_id=admin,
-        memberships=(Membership(team_id=raiz, role="ADMIN"),),
+        org_role="ADMIN",
     ):
         with pytest.raises(ConflictError):
             await MemberService(db).assign_to_team(

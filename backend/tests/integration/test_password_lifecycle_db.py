@@ -25,7 +25,7 @@ from app.modules.users.application.member_service import (
 )
 from app.shared.exceptions.base import AuthenticationError, ValidationError
 from tests.integration import factories as f
-from tests.integration.conftest import acting_as, mship, node
+from tests.integration.conftest import acting_as, node
 
 pytestmark = pytest.mark.integration
 
@@ -35,10 +35,8 @@ _WS_SLUG_HOLDER: dict[str, str] = {}
 async def _ws_admin(db):
     ws = await f.make_workspace(db)
     team = await f.make_team(db, workspace_id=ws)
-    user = await f.make_user(db, workspace_id=ws)
-    await f.add_member(
-        db, workspace_id=ws, user_id=user, team_id=team, role="ADMIN"
-    )
+    # ADMIN de organizacao: sem vinculo de time (desde a 0031).
+    user = await f.make_user(db, workspace_id=ws, org_role="ADMIN")
     return ws, team, user
 
 
@@ -47,8 +45,8 @@ async def _create_member(db, ws, team, admin):
     with acting_as(
         workspace_id=ws,
         user_id=admin,
-        memberships=(mship(team, "ADMIN"),),
         team_tree=(node(team),),
+        org_role="ADMIN",
     ):
         return await MemberService(db).create_member(
             CreateMemberCommand(
@@ -166,8 +164,8 @@ async def test_reset_password_rearms_pending_with_new_secret(db) -> None:
     with acting_as(
         workspace_id=ws,
         user_id=admin,
-        memberships=(mship(team, "ADMIN"),),
         team_tree=(node(team),),
+        org_role="ADMIN",
     ):
         reset = await MemberService(db).reset_password(
             user_id=provisioned.user.id

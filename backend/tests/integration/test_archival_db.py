@@ -21,7 +21,7 @@ from app.db.models import TaskHistory
 from app.db.models.enums import TaskStatus
 from app.modules.tasks.application.task_service import TaskService
 from tests.integration import factories as f
-from tests.integration.conftest import acting_as, mship, node
+from tests.integration.conftest import acting_as, node
 
 pytestmark = pytest.mark.integration
 
@@ -31,12 +31,11 @@ NOW = datetime(2026, 6, 25, 12, 0, tzinfo=UTC)
 async def _ws_admin(db):
     ws = await f.make_workspace(db)
     team = await f.make_team(db, workspace_id=ws)
-    user = await f.make_user(db, workspace_id=ws)
-    await f.add_member(db, workspace_id=ws, user_id=user, team_id=team, role="ADMIN")
+    user = await f.make_user(db, workspace_id=ws, org_role="ADMIN")
     ctx = dict(
         workspace_id=ws,
         user_id=user,
-        memberships=(mship(team, "ADMIN"),),
+        org_role="ADMIN",
         team_tree=(node(team),),
     )
     return ctx, ws, team, user

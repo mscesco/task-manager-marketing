@@ -46,7 +46,7 @@ from app.modules.tasks.application.task_service import (
 )
 from app.modules.tasks.domain.board_defaults import COLUNAS_BASE
 from tests.integration import factories as f
-from tests.integration.conftest import acting_as, mship, node
+from tests.integration.conftest import acting_as, node
 
 pytestmark = pytest.mark.integration
 
@@ -54,10 +54,8 @@ pytestmark = pytest.mark.integration
 async def _mundo(db):
     ws = await f.make_workspace(db)
     raiz = await f.make_team(db, workspace_id=ws)
-    user = await f.make_user(db, workspace_id=ws)
-    await f.add_member(
-        db, workspace_id=ws, user_id=user, team_id=raiz, role="ADMIN"
-    )
+    # ADMIN de organizacao: sem vinculo de time (desde a 0031).
+    user = await f.make_user(db, workspace_id=ws, org_role="ADMIN")
     quadro4 = await f.make_board(
         db,
         workspace_id=ws,
@@ -69,8 +67,8 @@ async def _mundo(db):
     ctx = dict(
         workspace_id=ws,
         user_id=user,
-        memberships=(mship(raiz, "ADMIN"),),
         team_tree=(node(raiz),),
+        org_role="ADMIN",
     )
     return ctx, ws, raiz, user, quadro4
 
@@ -283,10 +281,9 @@ async def test_tarefa_de_topo_em_area_de_quatro_colunas_tem_o_status_da_coluna(d
     db.add(Team(id=area, workspace_id=ws, parent_team_id=None, name="Area nova", slug="area-nova"))
     await db.flush()
     await BoardService(db).create_default_board(workspace_id=ws, team_id=area, colunas=COLUNAS_BASE)
-    user = await f.make_user(db, workspace_id=ws)
-    await f.add_member(db, workspace_id=ws, user_id=user, team_id=area, role="ADMIN")
+    user = await f.make_user(db, workspace_id=ws, org_role="ADMIN")
     ctx = dict(
-        workspace_id=ws, user_id=user, memberships=(mship(area, "ADMIN"),), team_tree=(node(area),)
+        workspace_id=ws, user_id=user, team_tree=(node(area),), org_role="ADMIN"
     )
 
     with acting_as(**ctx):

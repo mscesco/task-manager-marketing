@@ -34,13 +34,13 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 
 from app.core.deps import get_db_session, get_uow
-from app.core.tenant import Membership, TenantContext, set_tenant
+from app.core.tenant import TenantContext, set_tenant
 from app.db.models.boards import BoardColumn
 from app.db.models.enums import ColumnSemantic, TaskStatus
 from app.db.unit_of_work import UnitOfWork
 from app.main import create_app
 from app.modules.auth.api.dependencies import get_tenant_context
-from app.modules.auth.domain.permissions import permissions_for_roles
+from app.modules.auth.domain.permissions import permissions_for_actor
 from app.modules.tasks.application.board_service import BoardService
 from app.modules.tasks.application.task_service import (
     CODIGO_QUADRO_FORA_DE_ALCANCE,
@@ -75,21 +75,25 @@ async def _mundo(db):
     raiz = await f.make_team(db, workspace_id=ws)
     sub_a = await f.make_team(db, workspace_id=ws, parent_team_id=raiz)
     sub_b = await f.make_team(db, workspace_id=ws, parent_team_id=raiz)
-    user = await f.make_user(db, workspace_id=ws)
+    # ⚠️ ADMIN DE ORGANIZACAO e, ALEM disso, MANAGER da raiz: o papel de
+    # organizacao nao grava `user_team`, e o vinculo e o que o torna
+    # designavel (acima).
+    user = await f.make_user(db, workspace_id=ws, org_role="ADMIN")
     await f.add_member(
-        db, workspace_id=ws, user_id=user, team_id=raiz, role="ADMIN"
+        db, workspace_id=ws, user_id=user, team_id=raiz, role="MANAGER"
     )
     await db.flush()
     arvore = (node(raiz), node(sub_a, raiz), node(sub_b, raiz))
     return ws, raiz, sub_a, sub_b, user, arvore
 
 
-def _ctx(ws, user, arvore, *membros):
+def _ctx(ws, user, arvore, *membros, org_role=None):
     return dict(
         workspace_id=ws,
         user_id=user,
         memberships=tuple(membros),
         team_tree=arvore,
+        org_role=org_role,
     )
 
 
@@ -123,7 +127,7 @@ async def test_sem_board_id_a_tarefa_nasce_no_quadro_GERAL(db) -> None:
     ws, raiz, sub_a, sub_b, user, arvore = await _mundo(db)
     await _quadro_avulso(db, ws, user, arvore, sub_a)
 
-    with acting_as(**_ctx(ws, user, arvore, mship(raiz, "ADMIN"))):
+    with acting_as(**_ctx(ws, user, arvore, org_role="ADMIN")):
         tarefa = await TaskService(db).create(
             command=CreateTaskCommand(
                 title="Sem quadro pedido", team_id=raiz, assignee_ids=[user]
@@ -249,14 +253,14 @@ async def test_quadro_inexistente_e_recusado_PELA_TRAVA(db) -> None:
 async def test_admin_alcanca_o_quadro_de_qualquer_subtime(db) -> None:
     """⚠️ A celula que uma trava escrita so com "sou supervisor daqui" erraria.
 
-    O ADMIN nao e supervisor de subtime nenhum, e a lente dele e o workspace
+    O ADMIN (de organizacao) nao e supervisor de subtime nenhum, e a lente dele e o workspace
     inteiro (`list_visible` devolve `None` para o filtro de time). Sem este
     caso, uma trava por pertencimento passaria em todos os outros testes.
     """
     ws, raiz, sub_a, sub_b, user, arvore = await _mundo(db)
     quadro = await _quadro_avulso(db, ws, user, arvore, sub_a)
 
-    with acting_as(**_ctx(ws, user, arvore, mship(raiz, "ADMIN"))):
+    with acting_as(**_ctx(ws, user, arvore, org_role="ADMIN")):
         tarefa = await TaskService(db).create(
             command=CreateTaskCommand(
                 title="ADMIN criou aqui",
@@ -280,7 +284,7 @@ async def test_SUBTAREFA_ignora_o_board_id_e_herda_o_do_pai(db) -> None:
     ws, raiz, sub_a, sub_b, user, arvore = await _mundo(db)
     quadro = await _quadro_avulso(db, ws, user, arvore, sub_a)
 
-    with acting_as(**_ctx(ws, user, arvore, mship(raiz, "ADMIN"))):
+    with acting_as(**_ctx(ws, user, arvore, org_role="ADMIN")):
         servico = TaskService(db)
         pai = await servico.create(
             command=CreateTaskCommand(
@@ -337,9 +341,11 @@ def _client(db, ws, user, team_id, arvore):
         workspace_id=ws,
         user_id=user,
         roles=frozenset({"ADMIN"}),
-        permissions=permissions_for_roles(frozenset({"ADMIN"})),
-        memberships=(Membership(team_id=team_id, role="ADMIN"),),
+        permissions=permissions_for_actor(
+            memberships=(), tree=arvore, org_role="ADMIN"
+        ),
         team_tree=arvore,
+        org_role="ADMIN",
     )
 
     async def _tenant():

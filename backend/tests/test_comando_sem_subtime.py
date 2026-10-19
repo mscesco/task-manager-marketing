@@ -63,16 +63,6 @@ def test_manager_e_comando_operator_e_supervisor_nao() -> None:
     assert not is_command_role("SUPERVISOR")
 
 
-def test_admin_legado_ainda_conta_como_comando() -> None:
-    """⚠️ ADMIN nao pode mais ser gravado em `user_team`, mas linha ANTIGA
-    pode existir em base que nao passou pela limpeza manual da `0022`.
-
-    Se ele nao contasse aqui, um admin legado seria tratado como se nao
-    tivesse comando nenhum -- exatamente onde a regra importa.
-    """
-    assert is_command_role("ADMIN")
-
-
 def test_papel_desconhecido_nao_ganha_comando_por_omissao() -> None:
     """⚠️ AQUI A FALHA FECHADA SERIA ERRADA, ao contrario da R5 do nivel.
 

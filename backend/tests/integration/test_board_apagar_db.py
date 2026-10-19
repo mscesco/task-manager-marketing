@@ -44,10 +44,7 @@ async def _mundo(db):
     ws = await f.make_workspace(db)
     raiz = await f.make_team(db, workspace_id=ws)
     sub_a = await f.make_team(db, workspace_id=ws, parent_team_id=raiz)
-    user = await f.make_user(db, workspace_id=ws)
-    await f.add_member(
-        db, workspace_id=ws, user_id=user, team_id=raiz, role="ADMIN"
-    )
+    user = await f.make_user(db, workspace_id=ws, org_role="ADMIN")
     await db.flush()
     arvore = (node(raiz), node(sub_a, raiz))
     return ws, raiz, sub_a, user, arvore
@@ -182,7 +179,7 @@ async def test_o_quadro_PADRAO_recusa(db) -> None:
         )
     ).scalar_one()
 
-    with acting_as(**_ctx(ws, user, arvore, mship(raiz, "ADMIN"))):
+    with acting_as(**_ctx(ws, user, arvore), org_role="ADMIN"):
         with pytest.raises(ValidationError) as erro:
             await BoardService(db).apagar_quadro(board_id=padrao.id)
     assert erro.value.code == CODIGO_QUADRO_PADRAO

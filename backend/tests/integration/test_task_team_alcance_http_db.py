@@ -32,7 +32,7 @@ POR QUE PELA ROTA, E NAO PELO SERVICO:
 O MUNDO (montado em `_setup`):
     raiz Marketing + subtime SEO + subtime Design.
     - `sup`   : SUPERVISOR do SEO   -> lente = {SEO, raiz}
-    - `adm`   : ADMIN da raiz       -> lente = None (todos os times)
+    - `adm`   : ADMIN de organizacao -> lente = None (todos os times)
     - `dsg`   : OPERATOR do Design  -> existe para ser responsavel valido de
                 tarefa do Design (ADR 0031 exige responsavel, e o responsavel
                 precisa alcancar a tarefa)
@@ -68,7 +68,10 @@ from app.db.models import Task
 from app.db.unit_of_work import UnitOfWork
 from app.main import create_app
 from app.modules.auth.api.dependencies import get_tenant_context
-from app.modules.auth.domain.permissions import permissions_for_roles
+from app.modules.auth.domain.permissions import (
+    permissions_for_actor,
+    permissions_for_roles,
+)
 from tests.integration import factories as f
 from tests.integration.conftest import node
 
@@ -90,9 +93,8 @@ async def _setup(db):
     await f.add_member(
         db, workspace_id=ws, user_id=sup, team_id=seo, role="SUPERVISOR"
     )
-    adm = await f.make_user(db, workspace_id=ws, email="admin@t.dev")
-    await f.add_member(
-        db, workspace_id=ws, user_id=adm, team_id=raiz, role="ADMIN"
+    adm = await f.make_user(
+        db, workspace_id=ws, email="admin@t.dev", org_role="ADMIN"
     )
     dsg = await f.make_user(db, workspace_id=ws, email="op-design@t.dev")
     await f.add_member(
@@ -120,9 +122,13 @@ async def _setup(db):
         workspace_id=ws,
         user_id=adm,
         roles=frozenset({"ADMIN"}),
-        permissions=permissions_for_roles(frozenset({"ADMIN"})),
-        memberships=(Membership(team_id=raiz, role="ADMIN"),),
+        # ⚠️ ADMIN nao e papel de TIME: `permissions_for_roles` o ignora. As
+        # permissoes dele saem de `org_role`, como em `get_tenant_context`.
+        permissions=permissions_for_actor(
+            memberships=(), tree=arvore, org_role="ADMIN"
+        ),
         team_tree=arvore,
+        org_role="ADMIN",
     )
 
     return {

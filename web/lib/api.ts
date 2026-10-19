@@ -1742,7 +1742,7 @@ export async function listMembersDoTime(teamId: string): Promise<Member[]> {
 // GESTAO DE MEMBROS  (Entrega 15) -- exige team.manage no backend
 // ---------------------------------------------------------------
 
-export type MemberRole = "ADMIN" | "MANAGER" | "SUPERVISOR" | "OPERATOR";
+export type MemberRole = "MANAGER" | "SUPERVISOR" | "OPERATOR";
 
 // Spec 015, Fatia 1: vinculo (time, papel) de um membro. Alimenta a UI de
 // administracao de papel (mostrar o papel atual antes de oferecer alterar).

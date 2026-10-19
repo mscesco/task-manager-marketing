@@ -40,25 +40,25 @@ from app.modules.tasks.application.task_service import (
 )
 from app.shared.exceptions.base import ValidationError
 from tests.integration import factories as f
-from tests.integration.conftest import acting_as, mship, node
+from tests.integration.conftest import acting_as, node
 
 pytestmark = pytest.mark.integration
 
 
 async def _mundo(db):
-    """Raiz com ADMIN + duas pessoas que alcancam tudo (tarefa da raiz)."""
+    """Raiz com ADMIN de organizacao + duas pessoas que alcancam tudo (tarefa da raiz)."""
     ws = await f.make_workspace(db)
     team = await f.make_team(db, workspace_id=ws)
-    admin = await f.make_user(db, workspace_id=ws)
+    admin = await f.make_user(db, workspace_id=ws, org_role="ADMIN")
     ana = await f.make_user(db, workspace_id=ws)
     bia = await f.make_user(db, workspace_id=ws)
-    for u in (admin, ana, bia):
+    for u in (ana, bia):
         await f.add_member(
             db,
             workspace_id=ws,
             user_id=u,
             team_id=team,
-            role="ADMIN" if u == admin else "OPERATOR",
+            role="OPERATOR",
         )
     proj = await f.make_project(
         db, workspace_id=ws, created_by=admin, team_id=team
@@ -66,7 +66,7 @@ async def _mundo(db):
     ctx = dict(
         workspace_id=ws,
         user_id=admin,
-        memberships=(mship(team, "ADMIN"),),
+        org_role="ADMIN",
         team_tree=(node(team),),
     )
     return ws, team, admin, ana, bia, proj, ctx

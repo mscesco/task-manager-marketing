@@ -48,13 +48,13 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import func, select, text
 
 from app.core.deps import get_db_session, get_uow
-from app.core.tenant import Membership, TenantContext, set_tenant
+from app.core.tenant import TenantContext, set_tenant
 from app.db.models import Notification, TaskAssignment, TaskWatcher
 from app.db.models.enums import TaskStatus
 from app.db.unit_of_work import UnitOfWork
 from app.main import create_app
 from app.modules.auth.api.dependencies import get_tenant_context
-from app.modules.auth.domain.permissions import permissions_for_roles
+from app.modules.auth.domain.permissions import permissions_for_actor
 from tests.integration import factories as f
 from tests.integration.conftest import node
 
@@ -89,9 +89,8 @@ async def _mundo(db):
         db, workspace_id=ws, parent_team_id=raiz, slug="design"
     )
 
-    ator = await f.make_user(db, workspace_id=ws, email="ator@t.dev")
-    await f.add_member(
-        db, workspace_id=ws, user_id=ator, team_id=raiz, role="ADMIN"
+    ator = await f.make_user(
+        db, workspace_id=ws, email="ator@t.dev", org_role="ADMIN"
     )
     gi = await f.make_user(db, workspace_id=ws, email="gi@t.dev")
     await f.add_member(
@@ -107,9 +106,11 @@ async def _mundo(db):
         workspace_id=ws,
         user_id=ator,
         roles=frozenset({"ADMIN"}),
-        permissions=permissions_for_roles(frozenset({"ADMIN"})),
-        memberships=(Membership(team_id=raiz, role="ADMIN"),),
+        permissions=permissions_for_actor(
+            memberships=(), tree=arvore, org_role="ADMIN"
+        ),
         team_tree=arvore,
+        org_role="ADMIN",
     )
 
     return {

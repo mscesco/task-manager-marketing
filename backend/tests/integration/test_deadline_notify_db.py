@@ -34,8 +34,7 @@ OVERDUE = date(2026, 6, 24)   # ontem   -> overdue
 async def _ws(db):
     ws = await f.make_workspace(db)
     team = await f.make_team(db, workspace_id=ws)
-    user = await f.make_user(db, workspace_id=ws)
-    await f.add_member(db, workspace_id=ws, user_id=user, team_id=team, role="ADMIN")
+    user = await f.make_user(db, workspace_id=ws, org_role="ADMIN")
     return ws, team, user
 
 
@@ -256,8 +255,7 @@ async def test_criador_inativo_sem_responsavel_nao_notifica_ninguem(db) -> None:
     # ⚠️ O workspace precisa de UM usuario ativo para o `_resolve_ctx_user` nao
     # pular o workspace inteiro -- sem ele este teste passaria verde por
     # ausencia de varredura, e nao por ausencia de destinatario.
-    vivo = await f.make_user(db, workspace_id=ws)
-    await f.add_member(db, workspace_id=ws, user_id=vivo, team_id=team, role="ADMIN")
+    vivo = await f.make_user(db, workspace_id=ws, org_role="ADMIN")
     criador = await f.make_user(db, workspace_id=ws, is_active=False)
     await f.add_member(
         db, workspace_id=ws, user_id=criador, team_id=team, role="OPERATOR"

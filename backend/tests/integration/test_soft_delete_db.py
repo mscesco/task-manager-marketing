@@ -11,7 +11,7 @@ from app.modules.tasks.application.task_service import (
 )
 from app.shared.exceptions.base import EntityNotFoundError
 from tests.integration import factories as f
-from tests.integration.conftest import acting_as, mship, node
+from tests.integration.conftest import acting_as, node
 
 pytestmark = pytest.mark.integration
 
@@ -19,11 +19,15 @@ pytestmark = pytest.mark.integration
 async def _admin_proj(db):
     ws = await f.make_workspace(db)
     team = await f.make_team(db, workspace_id=ws)
-    user = await f.make_user(db, workspace_id=ws)
-    await f.add_member(db, workspace_id=ws, user_id=user, team_id=team, role="ADMIN")
+    # ADMIN de organizacao; o vinculo MANAGER fica so para ele poder ser
+    # responsavel das tarefas que cria (designacao consulta `user_team`).
+    user = await f.make_user(db, workspace_id=ws, org_role="ADMIN")
+    await f.add_member(
+        db, workspace_id=ws, user_id=user, team_id=team, role="MANAGER"
+    )
     proj = await f.make_project(db, workspace_id=ws, created_by=user, team_id=team)
     ctx = dict(
-        workspace_id=ws, user_id=user, memberships=(mship(team, "ADMIN"),), team_tree=(node(team),)
+        workspace_id=ws, user_id=user, org_role="ADMIN", team_tree=(node(team),)
     )
     return ctx, proj, team
 

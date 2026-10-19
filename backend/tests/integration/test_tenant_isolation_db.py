@@ -12,7 +12,7 @@ from app.modules.tasks.application.task_service import (
 )
 from app.shared.pagination import PageParams
 from tests.integration import factories as f
-from tests.integration.conftest import acting_as, mship, node
+from tests.integration.conftest import acting_as, node
 
 pytestmark = pytest.mark.integration
 
@@ -20,8 +20,10 @@ pytestmark = pytest.mark.integration
 async def _ws_admin(db):
     ws = await f.make_workspace(db)
     team = await f.make_team(db, workspace_id=ws)
-    user = await f.make_user(db, workspace_id=ws)
-    await f.add_member(db, workspace_id=ws, user_id=user, team_id=team, role="ADMIN")
+    # ADMIN de organizacao; o vinculo MANAGER fica porque ele e o responsavel
+    # das tarefas (a validacao de responsavel consulta `user_team`).
+    user = await f.make_user(db, workspace_id=ws, org_role="ADMIN")
+    await f.add_member(db, workspace_id=ws, user_id=user, team_id=team, role="MANAGER")
     return ws, team, user
 
 
@@ -32,8 +34,8 @@ async def test_base_select_filtra_por_workspace(db) -> None:
     with acting_as(
         workspace_id=ws_a,
         user_id=user_a,
-        memberships=(mship(team_a, "ADMIN"),),
         team_tree=(node(team_a),),
+        org_role="ADMIN",
     ):
         await TaskService(db).create(
             CreateTaskCommand(title="A", project_id=proj_a, team_id=team_a, assignee_ids=[user_a])
@@ -43,8 +45,8 @@ async def test_base_select_filtra_por_workspace(db) -> None:
     with acting_as(
         workspace_id=ws_b,
         user_id=user_b,
-        memberships=(mship(team_b, "ADMIN"),),
         team_tree=(node(team_b),),
+        org_role="ADMIN",
     ):
         page = await TaskService(db).list_page(PageParams(size=100), TaskFilters())
     assert page.total == 0
@@ -55,7 +57,7 @@ async def test_soft_deleted_excluido_por_padrao(db) -> None:
     ws, team, user = await _ws_admin(db)
     proj = await f.make_project(db, workspace_id=ws, created_by=user, team_id=team)
     with acting_as(
-        workspace_id=ws, user_id=user, memberships=(mship(team, "ADMIN"),), team_tree=(node(team),)
+        workspace_id=ws, user_id=user, team_tree=(node(team),), org_role="ADMIN"
     ):
         svc = TaskService(db)
         task = await svc.create(CreateTaskCommand(
@@ -74,7 +76,7 @@ async def test_workspace_id_gravado_corresponde_ao_tenant(db) -> None:
     ws, team, user = await _ws_admin(db)
     proj = await f.make_project(db, workspace_id=ws, created_by=user, team_id=team)
     with acting_as(
-        workspace_id=ws, user_id=user, memberships=(mship(team, "ADMIN"),), team_tree=(node(team),)
+        workspace_id=ws, user_id=user, team_tree=(node(team),), org_role="ADMIN"
     ):
         task = await TaskService(db).create(
             CreateTaskCommand(title="X", project_id=proj, team_id=team, assignee_ids=[user])

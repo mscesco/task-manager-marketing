@@ -20,7 +20,7 @@ from app.modules.tasks.application.task_service import (
     TaskService,
 )
 from tests.integration import factories as f
-from tests.integration.conftest import acting_as, mship, node
+from tests.integration.conftest import acting_as, node
 
 pytestmark = pytest.mark.integration
 
@@ -28,10 +28,7 @@ pytestmark = pytest.mark.integration
 async def _ctx(db):
     ws = await f.make_workspace(db)
     team = await f.make_team(db, workspace_id=ws)
-    user = await f.make_user(db, workspace_id=ws)
-    await f.add_member(
-        db, workspace_id=ws, user_id=user, team_id=team, role="ADMIN"
-    )
+    user = await f.make_user(db, workspace_id=ws, org_role="ADMIN")
     # Dois alvos pra designar -- MEMBROS do time da task, senao nao a
     # alcancam (o backend valida o alcance do designado -> 422).
     a = await f.make_user(db, workspace_id=ws, email="a@t.dev")
@@ -45,7 +42,7 @@ async def _ctx(db):
     ctx = dict(
         workspace_id=ws,
         user_id=user,
-        memberships=(mship(team, "ADMIN"),),
+        org_role="ADMIN",
         team_tree=(node(team),),
     )
     return ctx, team, a, b

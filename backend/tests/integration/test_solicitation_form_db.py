@@ -112,7 +112,7 @@ async def test_slug_repetido_no_workspace_e_recusado(db) -> None:
     """⚠️ UNICO POR WORKSPACE, e nao por time: dois times nao podem disputar
     `/solicitar/arte`."""
     ws, raiz, mkt, design, user, arvore = await _mundo(db)
-    with acting_as(**_ctx(ws, user, arvore, mship(raiz, "ADMIN"))):
+    with acting_as(**_ctx(ws, user, arvore, org_role="ADMIN")):
         svc = SolicitationFormService(db)
         await svc.criar_formulario(team_id=mkt, slug="arte", title="Arte")
         with pytest.raises(ValidationError) as erro:
@@ -139,7 +139,7 @@ async def test_MANAGER_de_um_time_nao_edita_o_formulario_de_OUTRO(db) -> None:
 async def test_ADMIN_cria_para_qualquer_time(db) -> None:
     """`editable_team_ids` devolve `None` para ADMIN -- "sem filtro de time"."""
     ws, raiz, mkt, design, user, arvore = await _mundo(db)
-    with acting_as(**_ctx(ws, user, arvore, mship(raiz, "ADMIN"))):
+    with acting_as(**_ctx(ws, user, arvore, org_role="ADMIN")):
         form = await SolicitationFormService(db).criar_formulario(
             team_id=design, slug="design", title="Pedidos de design"
         )
@@ -242,7 +242,7 @@ async def test_apagar_pergunta_NAO_toca_nas_respostas(db) -> None:
 async def test_fila_mostra_so_o_time_do_FORMULARIO(db) -> None:
     """Decisao da Camila: "a fila e de acordo com o formulario e o time"."""
     ws, raiz, mkt, design, user, arvore = await _mundo(db)
-    with acting_as(**_ctx(ws, user, arvore, mship(raiz, "ADMIN"))):
+    with acting_as(**_ctx(ws, user, arvore, org_role="ADMIN")):
         svc = SolicitationFormService(db)
         f_mkt = await svc.criar_formulario(team_id=mkt, slug="arte", title="Arte")
         f_dsg = await svc.criar_formulario(
@@ -324,7 +324,7 @@ async def test_contadores_respeitam_o_mesmo_recorte(db) -> None:
     badge que conta a fila do workspace inteiro sobre uma lista que mostra so
     o meu time e pior que nao ter badge."""
     ws, raiz, mkt, design, user, arvore = await _mundo(db)
-    with acting_as(**_ctx(ws, user, arvore, mship(raiz, "ADMIN"))):
+    with acting_as(**_ctx(ws, user, arvore, org_role="ADMIN")):
         svc = SolicitationFormService(db)
         f_mkt = await svc.criar_formulario(team_id=mkt, slug="arte", title="Arte")
         f_dsg = await svc.criar_formulario(

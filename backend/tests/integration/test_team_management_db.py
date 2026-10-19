@@ -26,7 +26,7 @@ from app.db.models import Team
 from app.db.unit_of_work import UnitOfWork
 from app.main import create_app
 from app.modules.auth.api.dependencies import get_tenant_context
-from app.modules.auth.domain.permissions import permissions_for_roles
+from app.modules.auth.domain.permissions import permissions_for_actor
 from tests.integration import factories as f
 
 pytestmark = pytest.mark.integration
@@ -54,12 +54,21 @@ def _client(db, ctx: TenantContext) -> AsyncClient:
 
 
 async def _mundo(db, *, papel: str = "ADMIN"):
-    """Workspace com raiz + um subtime vazio, e um ator no papel pedido."""
+    """Workspace com raiz + um subtime vazio, e um ator no papel pedido.
+
+    ⚠️ `papel="ADMIN"` e ADMIN DE ORGANIZACAO (`org_role`), sem vinculo de
+    time: desde a 0031 ADMIN nao existe mais em `user_team`. Os outros papeis
+    entram como vinculo na raiz.
+    """
     ws = await f.make_workspace(db)
     raiz = await f.make_team(db, workspace_id=ws, slug="marketing")
     sub = await f.make_team(db, workspace_id=ws, parent_team_id=raiz, slug="copy")
-    ator = await f.make_user(db, workspace_id=ws)
-    await f.add_member(db, workspace_id=ws, user_id=ator, team_id=raiz, role=papel)
+    org_role = "ADMIN" if papel == "ADMIN" else None
+    ator = await f.make_user(db, workspace_id=ws, org_role=org_role)
+    vinculos: tuple[Membership, ...] = ()
+    if org_role is None:
+        await f.add_member(db, workspace_id=ws, user_id=ator, team_id=raiz, role=papel)
+        vinculos = (Membership(team_id=raiz, role=papel),)
     floresta = (
         TeamNode(team_id=raiz, parent_team_id=None),
         TeamNode(team_id=sub, parent_team_id=raiz),
@@ -68,9 +77,14 @@ async def _mundo(db, *, papel: str = "ADMIN"):
         workspace_id=ws,
         user_id=ator,
         roles=frozenset({papel}),
-        permissions=permissions_for_roles(frozenset({papel})),
-        memberships=(Membership(team_id=raiz, role=papel),),
+        # ⚠️ `permissions_for_actor`, e nao `permissions_for_roles`: o mapa
+        # plano so conhece papel de TIME e ignoraria o ADMIN de organizacao.
+        permissions=permissions_for_actor(
+            memberships=vinculos, tree=floresta, org_role=org_role
+        ),
+        memberships=vinculos,
         team_tree=floresta,
+        org_role=org_role,
     )
     return ws, raiz, sub, ator, ctx
 
@@ -302,6 +316,12 @@ async def test_listagem_traz_contagens_em_lote(db) -> None:
         db, workspace_id=ws, user_id=outro, team_id=sub, role="OPERATOR"
     )
     vazio = await f.make_team(db, workspace_id=ws, parent_team_id=raiz, slug="vazio")
+    # O ator e ADMIN de organizacao, sem vinculo; a raiz ganha um membro a mao
+    # para a contagem dela nao ser um zero que nao prova nada.
+    na_raiz = await f.make_user(db, workspace_id=ws)
+    await f.add_member(
+        db, workspace_id=ws, user_id=na_raiz, team_id=raiz, role="OPERATOR"
+    )
     await db.commit()
 
     async with _client(db, ctx) as c:
@@ -313,7 +333,7 @@ async def test_listagem_traz_contagens_em_lote(db) -> None:
     assert por_id[str(sub)]["membros"] == 1
     assert por_id[str(vazio)]["tarefas"] == 0
     assert por_id[str(vazio)]["membros"] == 0
-    # A raiz tem dois filhos (sub + vazio) e o ator como membro.
+    # A raiz tem dois filhos (sub + vazio) e um membro.
     assert por_id[str(raiz)]["filhos"] == 2
     assert por_id[str(raiz)]["membros"] == 1
 
@@ -466,7 +486,7 @@ async def test_membro_ja_na_raiz_so_perde_o_subtime(db) -> None:
     OPERATOR num subtime ao mesmo tempo (a raiz nao conta na regra de "um
     subtime por pessoa").
     """
-    ws, raiz, sub, ator, ctx = await _mundo(db)
+    ws, raiz, sub, ator, ctx = await _mundo(db, papel="MANAGER")
     # o proprio ator tambem entra no subtime -> vinculo duplo
     await f.add_member(
         db, workspace_id=ws, user_id=ator, team_id=sub, role="OPERATOR"
@@ -489,7 +509,7 @@ async def test_membro_ja_na_raiz_so_perde_o_subtime(db) -> None:
             text("SELECT role FROM user_team WHERE user_id = :u"), {"u": ator}
         )
     ).scalar_one()
-    assert str(papel) in ("UserTeamRole.ADMIN", "ADMIN"), (
+    assert str(papel) in ("UserTeamRole.MANAGER", "MANAGER"), (
         "o papel na raiz nao pode ser rebaixado pelo esvaziamento"
     )
 

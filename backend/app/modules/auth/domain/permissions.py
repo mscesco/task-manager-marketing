@@ -21,21 +21,24 @@ POR QUE ESTE MAPA IGNORA O TIME (Spec 024 -- leia antes de "consertar"):
     e era, ate a Spec 024.
 
     A correcao NAO foi criar permissao por time. Foi restringir ONDE
-    cada papel pode existir: ADMIN e MANAGER so existem no time RAIZ
-    (`team_scope.assert_role_permitido_no_nivel`, aplicado nas quatro
-    portas do MemberService). Como quem carrega esses papeis e
-    necessariamente membro da raiz, "uniao dos papeis" e "autoridade
-    sobre a arvore" (`team_scope.visible_team_ids`) coincidem por
-    construcao.
+    cada papel pode existir (`team_scope.assert_role_permitido_no_nivel`,
+    aplicado nas portas do MemberService): MANAGER so existe no time
+    RAIZ, e ADMIN nem cabe mais em time -- mora em `users.org_role`.
+    Como quem carrega MANAGER e necessariamente membro da raiz, "uniao
+    dos papeis" e "autoridade sobre a arvore"
+    (`team_scope.visible_team_ids`) coincidem por construcao.
 
     Consequencia pratica: este mapa CONTINUA sendo o unico lugar a
     editar quando surgir permissao nova. Se voce esta aqui pensando em
     adicionar escopo de time a uma permissao, provavelmente a resposta
     e outra -- confira se a invariante de nivel ja resolve.
 
-    Cuidado: SUPERVISOR e OPERATOR existem nos DOIS niveis (estar so no
-    time geral e estado valido -- Spec 003, decisoes 7 e 17). A
-    exclusividade vale so pra ADMIN e MANAGER.
+    Cuidado: so OPERATOR existe nos DOIS niveis. SUPERVISOR e dono de um
+    subtime e so existe ali -- a raiz o recusa, e quem vai para a raiz
+    troca o papel para OPERATOR antes. MANAGER e o espelho: so na raiz.
+    A tabela e `team_scope._ROOT_ROLES` / `_SUBTEAM_ROLES`; o que a Spec
+    003 (decisoes 7 e 17) dizia sobre supervisor no time geral nao vale
+    mais.
 
 CONVENCAO de nome de permissao: "<componente>.<verbo>", ex.
 "task.create", "project.archive", "organization.update" -- desde a Spec 049
@@ -104,130 +107,6 @@ _BASE_CONTEUDO: frozenset[str] = frozenset(
 # Este mapa e o unico lugar a editar quando uma permissao
 # nova surgir. Mantido deliberadamente simples e legivel.
 _ROLE_PERMISSIONS: dict[UserTeamRole, frozenset[str]] = {
-    UserTeamRole.ADMIN: frozenset(
-        {
-            # ⭐ Spec 049, fatia A: `workspace.manage` CORTADO EM CINCO. Ele
-            # protegia mais do que o nome dizia -- alem de renomear a
-            # organizacao, era o portao de dar papel de organizacao e de mover,
-            # apagar e esvaziar time. Ver spec §4.2-bis.
-            "organization.update",
-            "org_role.grant",
-            "org_role.revoke",
-            "subteam.delete",
-            "team.move",
-            # Spec 049, fatia A: LER a fila separado de TRIAR -- hoje os mesmos
-            # papeis, e por isso nada muda; o nome passa a dizer a acao.
-            "solicitation.read",
-            "solicitation.review",
-            # Spec 043 (fatia A). ⚠️ DISTINTA de `solicitation.review`, e a
-            # diferenca e de assunto: `review` e TRIAR o que chegou;
-            # `form.manage` e definir O QUE SE PERGUNTA. Quem responde a fila
-            # nao e necessariamente quem desenha a porta de entrada.
-            # (Spec 049, fatia A: `solicitation_form.manage` virou os cinco.)
-            "form.read",
-            "form.create",
-            "form.update",
-            "form.publish",
-            "form.delete",
-            # ⭐ Spec 049, fatia A: `team.manage` CORTADO EM SETE -- era o pacote
-            # mais largo do sistema (subtime, pessoa, senha, conta, cargo).
-            "subteam.create",
-            "subteam.update",
-            "person.create",
-            "person.update",
-            "person.deactivate",
-            # ⭐ 06/10/2026: REATIVAR, que nao existia -- a conta desativada por
-            # engano (a da Juliana, 18:21 do dia do cadastro) so voltava por SQL.
-            # Verbo PROPRIO, e nao o de desativar: sao as duas perguntas que um
-            # dia podem ter respostas diferentes (o mesmo argumento de
-            # `base.restore` x `base.delete`, Spec 056 §5.2). Hoje, os mesmos
-            # papeis que desativam.
-            "person.reactivate",
-            "membership.update",
-            "membership.move",
-            # ⭐ Spec 046, fatia 2 (§4.1). CRIAR AREA -- time raiz, sem pai.
-            #
-            # ⚠️⚠️ ELA EXISTE PORQUE `team.manage` DEIXOU DE SERVIR PARA A
-            # PERGUNTA. Ate aqui "criar time" era uma coisa so; com N areas
-            # viram duas, com donos diferentes: quem cria SUBTIME e o MANAGER,
-            # na propria arvore; quem cria AREA e o papel de ORGANIZACAO. Um
-            # MANAGER de Marketing criando a area "TI" e a definicao de
-            # extrapolar a arvore dele.
-            #
-            # ⚠️ E O GATE NAO PODE MORAR NA ROTA, que e o lugar obvio: a MESMA
-            # rota (`POST /teams`) cria os dois, e o que distingue e o
-            # `parent_team_id` do corpo. Por isso a checagem e no servico
-            # (`TeamService.create`), e nao um `require_permission` a mais.
-            #
-            # ⚠️ SO PAPEL DE ORGANIZACAO A RECEBE, e isso e consequencia, nao
-            # coincidencia: este conjunto e a FONTE de `_ORG_ROLE_PERMISSIONS`
-            # (mais abaixo), e `ADMIN` deixou de ser papel de time na Spec 045.
-            # Escrever a linha aqui concede a ADMIN e GESTOR de organizacao --
-            # exatamente os dois que a §4.1 nomeia -- e a ninguem mais.
-            # (Spec 049, fatia A: era `area.create`.)
-            "team.create",
-            # ⭐ Spec 045, fatia A. Decisao da Camila (02/09): "manager e admin
-            # administram absolutamente tudo do time e sua arvore inteira".
-            #
-            # ⚠️⚠️ ESTE MAPA MENTIA. `member.manage.subteam` existia SO no
-            # SUPERVISOR, e o mapa -- o documento que diz quem pode o que --
-            # afirmava que ADMIN e MANAGER nao administram membro de subtime.
-            # Eles sempre administraram: `MemberService._assert_escopo_supervisor`
-            # faz *early return* para quem tem `team.manage`. Uma linha de codigo
-            # contradizia o mapa, e nada acusava.
-            #
-            # ⚠️ A NAO-MONOTONICIDADE ERA REAL, e nao teorica: a Spec 044
-            # §4.1-bis registrou que `MANAGER@raiz + SUPERVISOR@sub` ganhava uma
-            # permissao vinda de BAIXO. Com esta linha, some.
-            #
-            # ⚠️ O ESCOPO NAO MUDA COM ISTO. Continua sendo o servico quem diz
-            # "onde", e para ADMIN/MANAGER o "onde" e a arvore deles
-            # (`visible/editable_team_ids`), nao os subtimes que supervisionam.
-            # O *early return* FICA -- ele nao e gambiarra, e a camada de
-            # escopo funcionando (briefing, armadilha 3).
-            # (Spec 049, fatia A: `member.manage.subteam` virou os dois.)
-            "membership.create",
-            "membership.delete",
-            "project.create",
-            "project.update",
-            # Spec 049, fatia A: arquivar e desarquivar deixam de ser `update`.
-            "project.archive",
-            "project.delete",
-            "task.create",
-            "task.update",
-            "task.archive",
-            "task.delete",
-            "task.assign",
-            # Spec 036 fatia 5b. Duas permissoes e nao uma: sem a `.root`, o
-            # ADMIN nao cria quadro nenhum; sem a `.subteam`, o ADMIN nao
-            # alcanca o quadro que o supervisor criou. Nao ha hierarquia neste
-            # mapa -- sao listas literais, e quem exerce as duas precisa das
-            # duas escritas.
-            # (Spec 049, fatia A: `board.manage.root` e `.subteam` viraram
-            # tres verbos cada; o `.root` FICA ate a fatia B -- §3.3.)
-            "board.create.root",
-            "board.update.root",
-            "board.delete.root",
-            "board.create",
-            "board.update",
-            "board.delete",
-            # Spec 049, fatia A: coluna ganha verbo proprio, SEM `.root`. Nao
-            # abre o quadro geral ao supervisor: `_OWN_TEAM_ONLY` o prende ao
-            # proprio subtime.
-            "column.create",
-            "column.update",
-            "column.delete",
-            # Spec 056, fatia A -- a base inteira (ver o bloco no topo).
-            *_BASE_ESTRUTURA,
-            *_BASE_CONTEUDO,
-            # ⭐ Spec 058, fatia A (D1 dela, 14/10): ver a CARGA do time por
-            # pessoa, na tela inicial. ⚠️ O verbo libera o card; QUAIS tarefas
-            # entram nele continua sendo a lente (`visible_team_ids`) -- por
-            # isso nao entra em `_OWN_TEAM_ONLY`. O OPERATOR nao recebe: ele ve
-            # a parte pessoal e os numeros gerais, sem o ranking.
-            "team_workload.read",
-        }
-    ),
     UserTeamRole.MANAGER: frozenset(
         {
             "subteam.create",
@@ -373,14 +252,136 @@ _ROLE_PERMISSIONS: dict[UserTeamRole, frozenset[str]] = {
 # `UserTeamRole` e ser ignorada em silencio (ela ignora papel desconhecido de
 # proposito) -- o GESTOR nasceria sem permissao alguma e nada acusaria.
 #
-# ⚠️ O ADMIN DE ORGANIZACAO RECEBE EXATAMENTE O QUE O ADMIN DE TIME JA TINHA.
-# Nao e preguica: durante a transicao as duas fontes convivem, e um conjunto
-# menor aqui faria a Camila PERDER poderes no instante em que o vinculo dela
-# saisse de `user_team`. Afinar a diferenca entre "definir" e "operar" a
-# organizacao e trabalho das telas (Spec 047), com o cadastro ja limpo.
+# ⚠️ O ADMIN SO EXISTE AQUI desde 19/10/2026 (migration 0031). Ate entao o
+# conjunto dele morava no mapa de TIME, como `UserTeamRole.ADMIN`, e esta
+# linha o copiava -- as duas fontes conviveram enquanto o cadastro tinha
+# vinculos ADMIN em `user_team`. Producao zerou esses vinculos em 16/10, e o
+# valor saiu do tipo do banco.
 # ---------------------------------------------------------------------
 _ORG_ROLE_PERMISSIONS: dict[OrgRole, frozenset[str]] = {
-    OrgRole.ADMIN: _ROLE_PERMISSIONS[UserTeamRole.ADMIN],
+    OrgRole.ADMIN: frozenset(
+        {
+            # ⭐ Spec 049, fatia A: `workspace.manage` CORTADO EM CINCO. Ele
+            # protegia mais do que o nome dizia -- alem de renomear a
+            # organizacao, era o portao de dar papel de organizacao e de mover,
+            # apagar e esvaziar time. Ver spec §4.2-bis.
+            "organization.update",
+            "org_role.grant",
+            "org_role.revoke",
+            "subteam.delete",
+            "team.move",
+            # Spec 049, fatia A: LER a fila separado de TRIAR -- hoje os mesmos
+            # papeis, e por isso nada muda; o nome passa a dizer a acao.
+            "solicitation.read",
+            "solicitation.review",
+            # Spec 043 (fatia A). ⚠️ DISTINTA de `solicitation.review`, e a
+            # diferenca e de assunto: `review` e TRIAR o que chegou;
+            # `form.manage` e definir O QUE SE PERGUNTA. Quem responde a fila
+            # nao e necessariamente quem desenha a porta de entrada.
+            # (Spec 049, fatia A: `solicitation_form.manage` virou os cinco.)
+            "form.read",
+            "form.create",
+            "form.update",
+            "form.publish",
+            "form.delete",
+            # ⭐ Spec 049, fatia A: `team.manage` CORTADO EM SETE -- era o pacote
+            # mais largo do sistema (subtime, pessoa, senha, conta, cargo).
+            "subteam.create",
+            "subteam.update",
+            "person.create",
+            "person.update",
+            "person.deactivate",
+            # ⭐ 06/10/2026: REATIVAR, que nao existia -- a conta desativada por
+            # engano (a da Juliana, 18:21 do dia do cadastro) so voltava por SQL.
+            # Verbo PROPRIO, e nao o de desativar: sao as duas perguntas que um
+            # dia podem ter respostas diferentes (o mesmo argumento de
+            # `base.restore` x `base.delete`, Spec 056 §5.2). Hoje, os mesmos
+            # papeis que desativam.
+            "person.reactivate",
+            "membership.update",
+            "membership.move",
+            # ⭐ Spec 046, fatia 2 (§4.1). CRIAR AREA -- time raiz, sem pai.
+            #
+            # ⚠️⚠️ ELA EXISTE PORQUE `team.manage` DEIXOU DE SERVIR PARA A
+            # PERGUNTA. Ate aqui "criar time" era uma coisa so; com N areas
+            # viram duas, com donos diferentes: quem cria SUBTIME e o MANAGER,
+            # na propria arvore; quem cria AREA e o papel de ORGANIZACAO. Um
+            # MANAGER de Marketing criando a area "TI" e a definicao de
+            # extrapolar a arvore dele.
+            #
+            # ⚠️ E O GATE NAO PODE MORAR NA ROTA, que e o lugar obvio: a MESMA
+            # rota (`POST /teams`) cria os dois, e o que distingue e o
+            # `parent_team_id` do corpo. Por isso a checagem e no servico
+            # (`TeamService.create`), e nao um `require_permission` a mais.
+            #
+            # ⚠️ SO PAPEL DE ORGANIZACAO A RECEBE: este conjunto e o do ADMIN
+            # de organizacao, e o GESTOR tem a linha na lista dele, logo
+            # abaixo. Escrever a linha aqui concede a ADMIN e GESTOR --
+            # exatamente os dois que a §4.1 nomeia -- e a ninguem mais.
+            # (Spec 049, fatia A: era `area.create`.)
+            "team.create",
+            # ⭐ Spec 045, fatia A. Decisao da Camila (02/09): "manager e admin
+            # administram absolutamente tudo do time e sua arvore inteira".
+            #
+            # ⚠️⚠️ ESTE MAPA MENTIA. `member.manage.subteam` existia SO no
+            # SUPERVISOR, e o mapa -- o documento que diz quem pode o que --
+            # afirmava que ADMIN e MANAGER nao administram membro de subtime.
+            # Eles sempre administraram: `MemberService._assert_escopo_supervisor`
+            # faz *early return* para quem tem `team.manage`. Uma linha de codigo
+            # contradizia o mapa, e nada acusava.
+            #
+            # ⚠️ A NAO-MONOTONICIDADE ERA REAL, e nao teorica: a Spec 044
+            # §4.1-bis registrou que `MANAGER@raiz + SUPERVISOR@sub` ganhava uma
+            # permissao vinda de BAIXO. Com esta linha, some.
+            #
+            # ⚠️ O ESCOPO NAO MUDA COM ISTO. Continua sendo o servico quem diz
+            # "onde", e para ADMIN/MANAGER o "onde" e a arvore deles
+            # (`visible/editable_team_ids`), nao os subtimes que supervisionam.
+            # O *early return* FICA -- ele nao e gambiarra, e a camada de
+            # escopo funcionando (briefing, armadilha 3).
+            # (Spec 049, fatia A: `member.manage.subteam` virou os dois.)
+            "membership.create",
+            "membership.delete",
+            "project.create",
+            "project.update",
+            # Spec 049, fatia A: arquivar e desarquivar deixam de ser `update`.
+            "project.archive",
+            "project.delete",
+            "task.create",
+            "task.update",
+            "task.archive",
+            "task.delete",
+            "task.assign",
+            # Spec 036 fatia 5b. Duas permissoes e nao uma: sem a `.root`, o
+            # ADMIN nao cria quadro nenhum; sem a `.subteam`, o ADMIN nao
+            # alcanca o quadro que o supervisor criou. Nao ha hierarquia neste
+            # mapa -- sao listas literais, e quem exerce as duas precisa das
+            # duas escritas.
+            # (Spec 049, fatia A: `board.manage.root` e `.subteam` viraram
+            # tres verbos cada; o `.root` FICA ate a fatia B -- §3.3.)
+            "board.create.root",
+            "board.update.root",
+            "board.delete.root",
+            "board.create",
+            "board.update",
+            "board.delete",
+            # Spec 049, fatia A: coluna ganha verbo proprio, SEM `.root`. Nao
+            # abre o quadro geral ao supervisor: `_OWN_TEAM_ONLY` o prende ao
+            # proprio subtime.
+            "column.create",
+            "column.update",
+            "column.delete",
+            # Spec 056, fatia A -- a base inteira (ver o bloco no topo).
+            *_BASE_ESTRUTURA,
+            *_BASE_CONTEUDO,
+            # ⭐ Spec 058, fatia A (D1 dela, 14/10): ver a CARGA do time por
+            # pessoa, na tela inicial. ⚠️ O verbo libera o card; QUAIS tarefas
+            # entram nele continua sendo a lente (`visible_team_ids`) -- por
+            # isso nao entra em `_OWN_TEAM_ONLY`. O OPERATOR nao recebe: ele ve
+            # a parte pessoal e os numeros gerais, sem o ranking.
+            "team_workload.read",
+        }
+    ),
     # GESTOR opera a organizacao, mas nao a desfaz.
     #
     # ⚠️⚠️ LISTA EXPLICITA, E NAO "ADMIN MENOS ALGO" -- Spec 049, fatia C. Ate
@@ -569,7 +570,7 @@ _OWN_TEAM_ONLY: frozenset[str] = frozenset(
 )
 
 #: Papeis cuja autoridade desce a arvore.
-_COMMAND_ROLES: frozenset[str] = frozenset({"ADMIN", "MANAGER"})
+_COMMAND_ROLES: frozenset[str] = frozenset({"MANAGER"})
 
 
 @dataclass(frozen=True, slots=True)

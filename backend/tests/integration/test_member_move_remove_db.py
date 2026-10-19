@@ -3,7 +3,7 @@
 Regras:
     C1 -- ao remover, a pessoa perde acesso; tarefas ficam (nao testavel
           aqui, pois e dormente: tudo roda na raiz).
-    C2 -- matriz: ADMIN qualquer; MANAGER so SUPERVISOR/OPERATOR.
+    C2 -- matriz: ADMIN (de organizacao) qualquer; MANAGER so SUPERVISOR/OPERATOR.
     C3 -- ninguem remove a si mesmo.
 
 ⚠️ O BLOCO B2 (MOVER DE SUBTIME) SAIU EM 17/09/2026, com a rota
@@ -44,8 +44,9 @@ async def test_admin_remove_vinculo(db) -> None:
     ws = await f.make_workspace(db)
     raiz = await f.make_team(db, workspace_id=ws, slug="marketing")
     seo = await f.make_team(db, workspace_id=ws, parent_team_id=raiz, slug="seo")
-    admin = await f.make_user(db, workspace_id=ws, email="admin@t.dev")
-    await f.add_member(db, workspace_id=ws, user_id=admin, team_id=raiz, role="ADMIN")
+    admin = await f.make_user(
+        db, workspace_id=ws, email="admin@t.dev", org_role="ADMIN"
+    )
     # alvo em raiz + subtime -> remover o subtime e seguro (sobra a raiz).
     alvo = await f.make_user(db, workspace_id=ws, email="op@t.dev")
     await f.add_member(db, workspace_id=ws, user_id=alvo, team_id=raiz, role="OPERATOR")
@@ -53,7 +54,7 @@ async def test_admin_remove_vinculo(db) -> None:
 
     with acting_as(
         workspace_id=ws, user_id=admin,
-        memberships=(Membership(team_id=raiz, role="ADMIN"),),
+        org_role="ADMIN",
     ):
         await MemberService(db).remove_member_from_team(user_id=alvo, team_id=seo)
         assert await _membership(db, user_id=alvo, team_id=seo) is None
@@ -65,14 +66,15 @@ async def test_nao_remove_ultimo_vinculo(db) -> None:
     """Remover o unico vinculo orfanaria o membro -> BusinessRuleError."""
     ws = await f.make_workspace(db)
     raiz = await f.make_team(db, workspace_id=ws, slug="marketing")
-    admin = await f.make_user(db, workspace_id=ws, email="admin@t.dev")
-    await f.add_member(db, workspace_id=ws, user_id=admin, team_id=raiz, role="ADMIN")
+    admin = await f.make_user(
+        db, workspace_id=ws, email="admin@t.dev", org_role="ADMIN"
+    )
     alvo = await f.make_user(db, workspace_id=ws, email="op@t.dev")
     await f.add_member(db, workspace_id=ws, user_id=alvo, team_id=raiz, role="OPERATOR")
 
     with acting_as(
         workspace_id=ws, user_id=admin,
-        memberships=(Membership(team_id=raiz, role="ADMIN"),),
+        org_role="ADMIN",
     ):
         with pytest.raises(BusinessRuleError):
             await MemberService(db).remove_member_from_team(
@@ -103,29 +105,34 @@ async def test_manager_nao_remove_alvo_manager(db) -> None:
 async def test_nao_remove_proprio_vinculo(db) -> None:
     ws = await f.make_workspace(db)
     raiz = await f.make_team(db, workspace_id=ws, slug="marketing")
-    admin = await f.make_user(db, workspace_id=ws, email="admin@t.dev")
-    await f.add_member(db, workspace_id=ws, user_id=admin, team_id=raiz, role="ADMIN")
+    # ⚠️ UM MANAGER, e nao o ADMIN: a C3 abre para quem manda pela
+    # organizacao (ele pode se tirar de um time e se recolocar). A trava e de
+    # quem tem a autoridade SO pelo vinculo.
+    mgr = await f.make_user(db, workspace_id=ws, email="mgr@t.dev")
+    await f.add_member(db, workspace_id=ws, user_id=mgr, team_id=raiz, role="MANAGER")
 
     with acting_as(
-        workspace_id=ws, user_id=admin,
-        memberships=(Membership(team_id=raiz, role="ADMIN"),),
+        workspace_id=ws, user_id=mgr,
+        memberships=(Membership(team_id=raiz, role="MANAGER"),),
     ):
         with pytest.raises(BusinessRuleError):
             await MemberService(db).remove_member_from_team(
-                user_id=admin, team_id=raiz
+                user_id=mgr, team_id=raiz
             )
+        assert await _membership(db, user_id=mgr, team_id=raiz) is not None
 
 
 async def test_remove_vinculo_inexistente_404(db) -> None:
     ws = await f.make_workspace(db)
     raiz = await f.make_team(db, workspace_id=ws, slug="marketing")
-    admin = await f.make_user(db, workspace_id=ws, email="admin@t.dev")
-    await f.add_member(db, workspace_id=ws, user_id=admin, team_id=raiz, role="ADMIN")
+    admin = await f.make_user(
+        db, workspace_id=ws, email="admin@t.dev", org_role="ADMIN"
+    )
     solto = await f.make_user(db, workspace_id=ws, email="solto@t.dev")
 
     with acting_as(
         workspace_id=ws, user_id=admin,
-        memberships=(Membership(team_id=raiz, role="ADMIN"),),
+        org_role="ADMIN",
     ):
         with pytest.raises(EntityNotFoundError):
             await MemberService(db).remove_member_from_team(
