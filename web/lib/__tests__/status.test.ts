@@ -154,9 +154,17 @@ describe("cor virou token (Spec 031)", () => {
     );
   });
 
-  it("dot e text sao tokens DIFERENTES -- se forem iguais, o AA evapora", () => {
+  // Redesign (19/10): as cores de apoio (--teal, --violet, --amber) sao
+  // MEDIDAS como texto, entao podem servir de traco e de texto ao mesmo tempo.
+  // Para as demais familias a regra continua: dot cromatico != text escuro.
+  const APOIO = ["var(--teal)", "var(--violet)", "var(--amber)"];
+  it("dot e text sao tokens DIFERENTES, salvo cor de apoio -- se forem iguais, o AA evapora", () => {
     for (const s of STATUSES) {
-      expect(STATUS_TEXT[s.key]).not.toBe(s.color);
+      if (APOIO.includes(s.color)) {
+        expect(STATUS_TEXT[s.key]).toBe(s.color);
+      } else {
+        expect(STATUS_TEXT[s.key]).not.toBe(s.color);
+      }
     }
   });
 

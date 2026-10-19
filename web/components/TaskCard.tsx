@@ -114,8 +114,11 @@ export default function TaskCard({
       // ajustar o numero. Com a ancora, o teste continua achando o card e passa
       // a quebrar so quando o CARD sumir.
       data-card={task.id}
+      // Redesign (19/10): a borda mora na classe; so a cor do filete e inline,
+      // porque vem da coluna (excecao de cor dinamica do web/AGENTS.md §11).
+      className="card-stripe"
       style={{
-        background: "var(--surface)", border: "1px solid var(--border)",
+        background: "var(--surface)", borderTopColor: coluna.color,
         borderRadius: 8, padding: "10px 12px",
         // ⚠️ NO MODO DE EDICAO O CARD PERDE A SOMBRA, e so ela (Spec 039, F8).
         // Sem sombra ele para de flutuar e vira ladrilho chato sobre o fundo
