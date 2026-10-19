@@ -7,7 +7,7 @@ mesmo com outro MANAGER. Em producao (PR #51) nem a pergunta de alcance existia.
 
 As regras NAO sao novas -- sao as da troca de papel, aplicadas a conta:
     ADMIN      -> qualquer conta
-    alvo ADMIN -> so ADMIN (org_role ou o vinculo ADMIN antigo)
+    alvo ADMIN -> so ADMIN (de organizacao)
     GESTOR     -> GESTOR e abaixo
     MANAGER    -> so SUPERVISOR e OPERATOR, sem papel de organizacao
 
@@ -52,7 +52,6 @@ async def _mundo(db) -> dict:
         # alvos -- os de organizacao TEM vinculo no Marketing (ver o cabecalho)
         "admin2": await pessoa("admin2@t.dev", org_role="ADMIN", vinculos=((mkt, "OPERATOR"),)),
         "gestor2": await pessoa("gestor2@t.dev", org_role="GESTOR", vinculos=((mkt, "OPERATOR"),)),
-        "legado": await pessoa("legado@t.dev", vinculos=((mkt, "ADMIN"),)),
         "manager2": await pessoa("manager2@t.dev", vinculos=((mkt, "MANAGER"),)),
         "sup": await pessoa("sup@t.dev", vinculos=((seo, "SUPERVISOR"),)),
         "op": await pessoa("op@t.dev", vinculos=((seo, "OPERATOR"),)),
@@ -88,8 +87,6 @@ async def test_gestor_nao_reseta_nem_desativa_admin(db) -> None:
         await _recusa(svc.reset_password(user_id=m["admin2"]))
         await _recusa(svc.reset_password(user_id=m["dona"]))
         await _recusa(svc.deactivate_member(user_id=m["admin2"]))
-        # ⚠️ o vinculo ADMIN antigo tambem conta como admin (`is_admin`)
-        await _recusa(svc.reset_password(user_id=m["legado"]))
 
 
 async def test_gestor_administra_gestor_e_papeis_de_time(db) -> None:
@@ -116,7 +113,7 @@ async def test_manager_nao_reseta_nem_desativa_par_nem_organizacao(db) -> None:
     m = await _mundo(db)
     with _como(m, "manager"):
         svc = MemberService(db)
-        for alvo in ("manager2", "admin2", "gestor2", "legado"):
+        for alvo in ("manager2", "admin2", "gestor2"):
             await _recusa(svc.reset_password(user_id=m[alvo]))
         await _recusa(svc.deactivate_member(user_id=m["manager2"]))
         await _recusa(svc.deactivate_member(user_id=m["gestor2"]))
@@ -148,6 +145,5 @@ async def test_admin_administra_admin(db) -> None:
     with _como(m, "dona"):
         svc = MemberService(db)
         assert (await svc.reset_password(user_id=m["admin2"])).temporary_password
-        assert (await svc.reset_password(user_id=m["legado"])).temporary_password
         # nao e o ultimo: a propria dona continua ativa
         assert (await svc.deactivate_member(user_id=m["admin2"])).is_active is False

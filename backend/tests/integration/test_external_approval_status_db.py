@@ -162,10 +162,7 @@ async def test_cascata_engole_filho_em_external_approval(
 async def test_prazo_dispara_para_external_approval(db: AsyncSession) -> None:
     ws = await f.make_workspace(db)
     team = await f.make_team(db, workspace_id=ws)
-    user = await f.make_user(db, workspace_id=ws)
-    await f.add_member(
-        db, workspace_id=ws, user_id=user, team_id=team, role="ADMIN"
-    )
+    user = await f.make_user(db, workspace_id=ws, org_role="ADMIN")
     t = await f.make_task(
         db, workspace_id=ws, created_by=user, team_id=team, title="externa"
     )

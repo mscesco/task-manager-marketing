@@ -33,7 +33,7 @@ from app.modules.tasks.application.task_service import (
 )
 from app.shared.exceptions.base import ValidationError
 from tests.integration import factories as f
-from tests.integration.conftest import acting_as, mship, node
+from tests.integration.conftest import acting_as, node
 
 pytestmark = pytest.mark.integration
 
@@ -41,23 +41,18 @@ pytestmark = pytest.mark.integration
 async def _mundo(db):
     ws = await f.make_workspace(db)
     team = await f.make_team(db, workspace_id=ws)
-    admin = await f.make_user(db, workspace_id=ws)
+    admin = await f.make_user(db, workspace_id=ws, org_role="ADMIN")
     ana = await f.make_user(db, workspace_id=ws)
-    for u in (admin, ana):
-        await f.add_member(
-            db,
-            workspace_id=ws,
-            user_id=u,
-            team_id=team,
-            role="ADMIN" if u == admin else "OPERATOR",
-        )
+    await f.add_member(
+        db, workspace_id=ws, user_id=ana, team_id=team, role="OPERATOR"
+    )
     proj = await f.make_project(
         db, workspace_id=ws, created_by=admin, team_id=team
     )
     ctx = dict(
         workspace_id=ws,
         user_id=admin,
-        memberships=(mship(team, "ADMIN"),),
+        org_role="ADMIN",
         team_tree=(node(team),),
     )
     return ws, team, admin, ana, proj, ctx

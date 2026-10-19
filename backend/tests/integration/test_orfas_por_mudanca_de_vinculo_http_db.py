@@ -29,7 +29,7 @@ se alguem unificar os dois, esse teste avisa qual mudou.
 O MUNDO (`_mundo`): raiz Marketing + subtimes SEO e Design.
     `gi` : OPERATOR do Design, unica responsavel por UMA tarefa BACKLOG do
            Design. Lente hoje = {Design, raiz}.
-    `ator`: ADMIN da raiz, quem executa as operacoes.
+    `ator`: ADMIN de organizacao, quem executa as operacoes.
 
 SABOTAGEM DESTA FATIA (executada, resultado no handoff):
     Remover a chamada INTEIRA a `_assert_nao_deixa_orfa` do
@@ -49,12 +49,12 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from app.core.deps import get_db_session, get_uow
-from app.core.tenant import Membership, TenantContext, set_tenant
+from app.core.tenant import TenantContext, set_tenant
 from app.db.models.enums import TaskStatus
 from app.db.unit_of_work import UnitOfWork
 from app.main import create_app
 from app.modules.auth.api.dependencies import get_tenant_context
-from app.modules.auth.domain.permissions import permissions_for_roles
+from app.modules.auth.domain.permissions import permissions_for_actor
 from tests.integration import factories as f
 from tests.integration.conftest import node
 
@@ -89,16 +89,15 @@ async def _mundo(db, *, papel_da_gi: str = "OPERATOR", com_tarefa: bool = True):
         db, workspace_id=ws, parent_team_id=raiz, slug="design"
     )
 
-    ator = await f.make_user(db, workspace_id=ws, email="ator@t.dev")
-    await f.add_member(
-        db, workspace_id=ws, user_id=ator, team_id=raiz, role="ADMIN"
+    ator = await f.make_user(
+        db, workspace_id=ws, email="ator@t.dev", org_role="ADMIN"
     )
 
-    # ⚠️ MANAGER mora na RAIZ (invariante da Spec 024): ADMIN e MANAGER so
-    # existem no time raiz. O cenario de rebaixamento e MANAGER da raiz ->
+    # ⚠️ MANAGER mora na RAIZ (invariante da Spec 024): MANAGER so existe no
+    # time raiz. O cenario de rebaixamento e MANAGER da raiz ->
     # OPERATOR da raiz, que troca "raiz + descendentes" por "raiz" e derruba
     # os subtimes de uma vez.
-    time_da_gi = raiz if papel_da_gi in ("ADMIN", "MANAGER") else design
+    time_da_gi = raiz if papel_da_gi == "MANAGER" else design
     gi = await f.make_user(db, workspace_id=ws, email="gi@t.dev")
     await f.add_member(
         db, workspace_id=ws, user_id=gi, team_id=time_da_gi, role=papel_da_gi
@@ -127,9 +126,11 @@ async def _mundo(db, *, papel_da_gi: str = "OPERATOR", com_tarefa: bool = True):
         workspace_id=ws,
         user_id=ator,
         roles=frozenset({"ADMIN"}),
-        permissions=permissions_for_roles(frozenset({"ADMIN"})),
-        memberships=(Membership(team_id=raiz, role="ADMIN"),),
+        permissions=permissions_for_actor(
+            memberships=(), tree=arvore, org_role="ADMIN"
+        ),
         team_tree=arvore,
+        org_role="ADMIN",
     )
 
     return {

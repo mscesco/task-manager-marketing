@@ -118,8 +118,9 @@ async def test_edicao_so_autor(db) -> None:
     ws, r, a, b = await _tree(db)
     autor = await f.make_user(db, workspace_id=ws, email="autor@t.dev")
     await f.add_member(db, workspace_id=ws, user_id=autor, team_id=r, role="OPERATOR")
-    admin = await f.make_user(db, workspace_id=ws, email="admin@t.dev")
-    await f.add_member(db, workspace_id=ws, user_id=admin, team_id=r, role="ADMIN")
+    admin = await f.make_user(
+        db, workspace_id=ws, email="admin@t.dev", org_role="ADMIN"
+    )
     task = await f.make_task(db, workspace_id=ws, created_by=autor, team_id=r)
 
     with acting_as(workspace_id=ws, user_id=autor,
@@ -137,7 +138,7 @@ async def test_edicao_so_autor(db) -> None:
 
     # admin NAO edita comentario alheio (D2) -> 403
     with acting_as(workspace_id=ws, user_id=admin,
-                   memberships=(mship(r, "ADMIN"),), team_tree=_forest(r, a, b)):
+                   team_tree=_forest(r, a, b), org_role="ADMIN"):
         with pytest.raises(AuthorizationError):
             await CommentService(db).edit_comment(
                 task_id=task.id, comment_id=c.id, content="hack"

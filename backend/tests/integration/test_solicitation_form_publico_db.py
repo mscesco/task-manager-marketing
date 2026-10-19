@@ -35,7 +35,7 @@ from app.modules.solicitations.application.service import (
 )
 from app.shared.exceptions.base import EntityNotFoundError, ValidationError
 from tests.integration import factories as f
-from tests.integration.conftest import acting_as, mship, node
+from tests.integration.conftest import acting_as, node
 
 pytestmark = pytest.mark.integration
 
@@ -49,8 +49,8 @@ async def _mundo(db):
     ctx = dict(
         workspace_id=ws,
         user_id=user,
-        memberships=(mship(raiz, "ADMIN"),),
         team_tree=arvore,
+        org_role="ADMIN",
     )
     return ws, raiz, user, ctx
 

@@ -31,7 +31,7 @@ from app.modules.tasks.application.task_service import (
 )
 from app.modules.tasks.domain.board_defaults import COLUNAS_PADRAO
 from tests.integration import factories as f
-from tests.integration.conftest import acting_as, mship, node
+from tests.integration.conftest import acting_as, node
 
 pytestmark = pytest.mark.integration
 
@@ -47,10 +47,7 @@ async def _mundo(db):
     ws = await f.make_workspace(db)
     raiz = await f.make_team(db, workspace_id=ws)
     subtime = await f.make_team(db, workspace_id=ws, parent_team_id=raiz)
-    user = await f.make_user(db, workspace_id=ws)
-    await f.add_member(
-        db, workspace_id=ws, user_id=user, team_id=raiz, role="ADMIN"
-    )
+    user = await f.make_user(db, workspace_id=ws, org_role="ADMIN")
     quadro2 = await BoardService(db).create_default_board(
         workspace_id=ws, team_id=subtime,
         colunas=COLUNAS_PADRAO,
@@ -59,7 +56,7 @@ async def _mundo(db):
     ctx = dict(
         workspace_id=ws,
         user_id=user,
-        memberships=(mship(raiz, "ADMIN"),),
+        org_role="ADMIN",
         team_tree=(node(raiz), node(subtime, raiz)),
     )
     return ctx, ws, raiz, subtime, user, quadro2

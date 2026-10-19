@@ -24,7 +24,7 @@ from app.db.models.enums import TaskStatus
 from app.modules.tasks.infrastructure.board_repository import BoardRepository
 from app.shared.exceptions.base import ValidationError
 from tests.integration import factories as f
-from tests.integration.conftest import acting_as, mship, node
+from tests.integration.conftest import acting_as, node
 
 pytestmark = pytest.mark.integration
 
@@ -78,8 +78,7 @@ async def test_deleted_at_grava_e_le(db) -> None:
 async def test_quadro_apagado_nao_e_descoberto_como_quadro_geral(db) -> None:
     ws = await f.make_workspace(db)
     raiz = await f.make_team(db, workspace_id=ws)
-    user = await f.make_user(db, workspace_id=ws)
-    await f.add_member(db, workspace_id=ws, user_id=user, team_id=raiz, role="ADMIN")
+    user = await f.make_user(db, workspace_id=ws, org_role="ADMIN")
 
     geral = (
         await db.execute(
@@ -92,7 +91,7 @@ async def test_quadro_apagado_nao_e_descoberto_como_quadro_geral(db) -> None:
     ctx = dict(
         workspace_id=ws,
         user_id=user,
-        memberships=(mship(raiz, "ADMIN"),),
+        org_role="ADMIN",
         team_tree=(node(raiz),),
     )
 
@@ -121,8 +120,7 @@ async def test_apagar_quadro_interno_nao_afeta_o_geral(db) -> None:
     ws = await f.make_workspace(db)
     raiz = await f.make_team(db, workspace_id=ws)
     sub = await f.make_team(db, workspace_id=ws, parent_team_id=raiz)
-    user = await f.make_user(db, workspace_id=ws)
-    await f.add_member(db, workspace_id=ws, user_id=user, team_id=raiz, role="ADMIN")
+    user = await f.make_user(db, workspace_id=ws, org_role="ADMIN")
     interno = await f.make_board(db, workspace_id=ws, team_id=sub)
 
     geral = (
@@ -138,7 +136,7 @@ async def test_apagar_quadro_interno_nao_afeta_o_geral(db) -> None:
     ctx = dict(
         workspace_id=ws,
         user_id=user,
-        memberships=(mship(raiz, "ADMIN"),),
+        org_role="ADMIN",
         team_tree=(node(raiz), node(sub, raiz)),
     )
     with acting_as(**ctx):

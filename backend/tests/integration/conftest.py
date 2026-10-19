@@ -38,6 +38,7 @@ from sqlalchemy.ext.asyncio import (
 from app.core.tenant import Membership, TeamNode, TenantContext, tenant_scope
 from app.modules.auth.domain.permissions import (
     permissions_for_actor,
+    permissions_for_org_role,
     permissions_for_roles,
 )
 
@@ -164,7 +165,11 @@ def acting_as(
                 memberships=memberships, tree=team_tree, org_role=org_role
             )
             if team_tree
-            else permissions_for_roles(roles)
+            # ⚠️ AS DUAS PARCELAS, como em `get_tenant_context`. Ate 19/10 o
+            # admin dos testes sem arvore era um vinculo ADMIN de TIME, e
+            # `permissions_for_roles` o mapeava; com o ADMIN so de organizacao
+            # (migration 0031), sem a segunda parcela ele nao podia nada.
+            else permissions_for_roles(roles) | permissions_for_org_role(org_role)
         ),
         memberships=memberships,
         team_tree=team_tree,

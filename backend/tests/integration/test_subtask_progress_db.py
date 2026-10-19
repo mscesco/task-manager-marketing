@@ -30,7 +30,7 @@ from app.modules.tasks.domain.subtask_progress import (
 )
 from app.modules.tasks.infrastructure.task_repository import TaskRepository
 from tests.integration import factories as f
-from tests.integration.conftest import acting_as, mship, node
+from tests.integration.conftest import acting_as, node
 
 pytestmark = pytest.mark.integration
 
@@ -46,10 +46,7 @@ async def _cenario(db):
     """
     ws = await f.make_workspace(db)
     team = await f.make_team(db, workspace_id=ws)
-    user = await f.make_user(db, workspace_id=ws)
-    await f.add_member(
-        db, workspace_id=ws, user_id=user, team_id=team, role="ADMIN"
-    )
+    user = await f.make_user(db, workspace_id=ws, org_role="ADMIN")
 
     comum = {"workspace_id": ws, "created_by": user, "team_id": team}
     raiz = await f.make_task(db, **comum, title="Raiz")
@@ -110,7 +107,7 @@ async def test_contagem_bate_com_a_regra_pura(db):
     with acting_as(
         workspace_id=ws,
         user_id=user,
-        memberships=(mship(team, "ADMIN"),),
+        org_role="ADMIN",
         team_tree=(node(team),),
     ):
         pela_query = await TaskRepository(db).subtask_progress_for_tasks(
@@ -132,10 +129,7 @@ async def test_id_sem_filha_volta_zero_e_nao_some_do_mapa(db):
     """
     ws = await f.make_workspace(db)
     team = await f.make_team(db, workspace_id=ws)
-    user = await f.make_user(db, workspace_id=ws)
-    await f.add_member(
-        db, workspace_id=ws, user_id=user, team_id=team, role="ADMIN"
-    )
+    user = await f.make_user(db, workspace_id=ws, org_role="ADMIN")
     sozinha = await f.make_task(
         db, workspace_id=ws, created_by=user, team_id=team, title="Sozinha"
     )
@@ -144,7 +138,7 @@ async def test_id_sem_filha_volta_zero_e_nao_some_do_mapa(db):
     with acting_as(
         workspace_id=ws,
         user_id=user,
-        memberships=(mship(team, "ADMIN"),),
+        org_role="ADMIN",
         team_tree=(node(team),),
     ):
         out = await TaskRepository(db).subtask_progress_for_tasks([sozinha.id])
@@ -180,7 +174,7 @@ async def test_responsaveis_da_subarvore_incluem_raiz_filha_e_neta(db):
     with acting_as(
         workspace_id=ws,
         user_id=user,
-        memberships=(mship(team, "ADMIN"),),
+        org_role="ADMIN",
         team_tree=(node(team),),
     ):
         out = await TaskRepository(db).subtree_assignee_ids_for_tasks(
@@ -212,7 +206,7 @@ async def test_responsavel_de_filha_arquivada_segue_o_include_archived(db):
     with acting_as(
         workspace_id=ws,
         user_id=user,
-        memberships=(mship(team, "ADMIN"),),
+        org_role="ADMIN",
         team_tree=(node(team),),
     ):
         repo = TaskRepository(db)
@@ -236,7 +230,7 @@ async def test_nao_vaza_entre_workspaces(db):
     with acting_as(
         workspace_id=ws_a,
         user_id=user_a,
-        memberships=(mship(team_a, "ADMIN"),),
+        org_role="ADMIN",
         team_tree=(node(team_a),),
     ):
         out = await TaskRepository(db).subtask_progress_for_tasks([raiz_a.id])

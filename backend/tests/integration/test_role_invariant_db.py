@@ -24,7 +24,7 @@ import uuid
 
 import pytest
 from sqlalchemy import text
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import DBAPIError, IntegrityError
 
 from app.db.models.enums import UserTeamRole
 from app.modules.users.application.member_service import (
@@ -43,14 +43,11 @@ pytestmark = pytest.mark.integration
 
 
 async def _mundo(db):
-    """Workspace com raiz + um subtime + um ADMIN na raiz."""
+    """Workspace com raiz + um subtime + um ADMIN de organizacao."""
     ws = await f.make_workspace(db)
     raiz = await f.make_team(db, workspace_id=ws, slug="marketing")
     sub = await f.make_team(db, workspace_id=ws, parent_team_id=raiz, slug="crm")
-    admin = await f.make_user(db, workspace_id=ws)
-    await f.add_member(
-        db, workspace_id=ws, user_id=admin, team_id=raiz, role="ADMIN"
-    )
+    admin = await f.make_user(db, workspace_id=ws, org_role="ADMIN")
     return ws, raiz, sub, admin
 
 
@@ -58,8 +55,9 @@ def _como_admin(ws, raiz, sub, admin):
     return acting_as(
         workspace_id=ws,
         user_id=admin,
-        memberships=(mship(raiz, "ADMIN"),),
+        memberships=(),
         team_tree=(node(raiz), node(sub, raiz)),
+        org_role="ADMIN",
     )
 
 
@@ -75,12 +73,11 @@ def _cmd(team_id: uuid.UUID, role: UserTeamRole) -> CreateMemberCommand:
 # ------------------------------------------------------------------
 # 1-2. create_member
 # ------------------------------------------------------------------
-@pytest.mark.parametrize("role", [UserTeamRole.ADMIN, UserTeamRole.MANAGER])
-async def test_create_member_recusa_admin_manager_em_subtime(db, role) -> None:
+async def test_create_member_recusa_manager_em_subtime(db) -> None:
     ws, raiz, sub, admin = await _mundo(db)
     with _como_admin(ws, raiz, sub, admin):
         with pytest.raises(BusinessRuleError):
-            await MemberService(db).create_member(_cmd(sub, role))
+            await MemberService(db).create_member(_cmd(sub, UserTeamRole.MANAGER))
 
     # nada gravado
     total = (
@@ -409,3 +406,22 @@ async def test_raiz_de_workspaces_diferentes_nao_conflita(db) -> None:
         )
     ).all()
     assert sorted(n for _, n in linhas) == [1, 1]
+
+
+async def test_o_banco_recusa_vinculo_ADMIN(db) -> None:
+    """Migration 0031: ADMIN saiu do tipo `user_team_role`.
+
+    A regra de nivel recusa ADMIN no servico; isto e a mesma regra no banco,
+    para que nenhum caminho fora do servico (SQL a mao, script de seed) traga
+    de volta o vinculo que a Spec 045 aposentou.
+    """
+    ws, raiz, _sub, _admin = await _mundo(db)
+    pessoa = await f.make_user(db, workspace_id=ws)
+    with pytest.raises(DBAPIError, match="user_team_role"):
+        await db.execute(
+            text(
+                "INSERT INTO user_team (id, workspace_id, user_id, team_id, role) "
+                "VALUES (gen_random_uuid(), :w, :u, :t, 'ADMIN')"
+            ),
+            {"w": ws, "u": pessoa, "t": raiz},
+        )

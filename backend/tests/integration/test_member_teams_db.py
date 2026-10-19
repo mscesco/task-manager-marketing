@@ -65,12 +65,11 @@ async def test_lista_papeis_raiz_e_subtime(db) -> None:
 
 async def test_usuario_inexistente_404(db) -> None:
     ws = await f.make_workspace(db)
-    raiz = await f.make_team(db, workspace_id=ws, slug="marketing")
-    admin = await f.make_user(db, workspace_id=ws, email="admin@t.dev")
-    await f.add_member(
-        db, workspace_id=ws, user_id=admin, team_id=raiz, role="ADMIN"
+    await f.make_team(db, workspace_id=ws, slug="marketing")
+    admin = await f.make_user(
+        db, workspace_id=ws, email="admin@t.dev", org_role="ADMIN"
     )
 
-    with acting_as(workspace_id=ws, user_id=admin):
+    with acting_as(workspace_id=ws, user_id=admin, org_role="ADMIN"):
         with pytest.raises(EntityNotFoundError):
             await MemberService(db).list_member_teams(user_id=uuid.uuid4())

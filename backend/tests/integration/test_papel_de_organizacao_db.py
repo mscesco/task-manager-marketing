@@ -11,13 +11,11 @@ O que este arquivo prova:
     2. ... e lente `None` (ve tudo)
     3. GESTOR -> tudo do admin MENOS `workspace.manage`
     4. quem nao tem papel de organizacao nao ganha nada
-    5. a fonte VELHA continua valendo (vinculo ADMIN em `user_team`)
-    6. o job de arquivamento acha o admin pela fonte nova
+    5. o job de arquivamento acha o admin pela fonte nova
 
-⚠️ O ITEM 5 NAO E ZELO EXCESSIVO: e a razao de a migration `0022` ser aditiva.
-Entre o `alembic upgrade` e o container novo subir, o codigo velho le
-`user_team`; se a fatia tivesse removido os vinculos, essa janela deixaria o
-workspace sem quem administre.
+⚠️ A FONTE VELHA (vinculo ADMIN em `user_team`) SAIU EM 19/10/2026, com a
+migration `0031`: o valor nao existe mais no tipo do banco, e o teste que a
+afirmava saiu junto.
 
 Roda so com db-test de pe + TEST_DATABASE_URL (senao e PULADO).
 """
@@ -29,8 +27,8 @@ import pytest
 from app.db.models.enums import OrgRole
 from app.modules.auth.domain import team_scope
 from app.modules.auth.domain.permissions import (
+    ALL_PERMISSIONS,
     permissions_for_org_role,
-    permissions_for_roles,
 )
 from app.modules.tasks.application.stale_archival_service import (
     StaleArchivalService,
@@ -58,16 +56,14 @@ async def _com_org_role(db, *, workspace_id, user_id, papel):
 
 
 def test_admin_de_organizacao_tem_o_cartao_completo():
-    """⭐ Ele recebe EXATAMENTE o que o ADMIN de time ja tinha.
+    """⭐ Ele recebe o vocabulario INTEIRO -- toda permissao que algum papel
+    concede.
 
-    ⚠️ Nao e preguica de recorte: durante a transicao as duas fontes convivem,
-    e um conjunto menor aqui faria a pessoa PERDER poderes no instante em que
-    o vinculo dela saisse de `user_team`. Afinar "definir" x "operar" a
-    organizacao e trabalho da Spec 047, com o cadastro ja limpo.
+    ⚠️ Ate 19/10 a comparacao era com o ADMIN de time; ele saiu (migration
+    `0031`), e o que sobra da garantia e esta: nao ha verbo que algum papel
+    tenha e o ADMIN de organizacao nao.
     """
-    assert permissions_for_org_role("ADMIN") == permissions_for_roles(
-        frozenset({"ADMIN"})
-    )
+    assert permissions_for_org_role("ADMIN") == ALL_PERMISSIONS
 
 
 def test_gestor_opera_mas_nao_desfaz_a_organizacao():
@@ -132,25 +128,9 @@ def test_admin_de_organizacao_ve_tudo_sem_ter_time():
     raiz = __import__("uuid").uuid4()
     arvore = (node(raiz),)
 
-    assert team_scope.is_admin((), org_role="ADMIN") is True
+    assert team_scope.is_admin("ADMIN") is True
     assert team_scope.visible_team_ids((), arvore, org_role="ADMIN") is None
     assert team_scope.editable_team_ids((), arvore, org_role="ADMIN") is None
-
-
-def test_a_fonte_velha_continua_valendo():
-    """⚠️ E o que torna a migration `0022` segura de rodar.
-
-    Sabotagem: tirar o ramo `any(m.role == "ADMIN")` de `is_admin` faz este
-    teste cair -- e e o cenario da janela de deploy, em que o cadastro ainda
-    nao foi limpo.
-    """
-    from app.core.tenant import Membership
-
-    raiz = __import__("uuid").uuid4()
-    vinculo_admin = (Membership(team_id=raiz, role="ADMIN"),)
-
-    assert team_scope.is_admin(vinculo_admin) is True
-    assert team_scope.is_admin(vinculo_admin, org_role=None) is True
 
 
 def test_gestor_ve_tudo_sem_ser_admin():
@@ -172,7 +152,7 @@ def test_gestor_ve_tudo_sem_ser_admin():
     lente e decidida pelo papel de organizacao, em `visible_team_ids`.
     """
     raiz = __import__("uuid").uuid4()
-    assert team_scope.is_admin((), org_role="GESTOR") is False
+    assert team_scope.is_admin("GESTOR") is False
     assert team_scope.visible_team_ids((), (node(raiz),), org_role="GESTOR") is None
     assert team_scope.editable_team_ids((), (node(raiz),), org_role="GESTOR") is None
 

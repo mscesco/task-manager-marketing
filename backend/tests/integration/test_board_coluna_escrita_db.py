@@ -56,12 +56,14 @@ async def _mundo(db):
     return ws, raiz, sub_a, sub_b, user, arvore
 
 
-def _ctx(ws, user, arvore, *membros):
+def _ctx(ws, user, arvore, *membros, org_role=None):
+    # ⚠️ ADMIN entra por `org_role`: desde a 0031 nao e mais papel de time.
     return dict(
         workspace_id=ws,
         user_id=user,
         memberships=tuple(membros),
         team_tree=arvore,
+        org_role=org_role,
     )
 
 
@@ -300,7 +302,7 @@ async def test_ADMIN_cria_coluna_no_quadro_geral(db) -> None:
     padrao. Ela nasceu como guarda tecnica e virou regra de produto sem nunca
     ter sido decidida -- o docstring dela dizia "vale enquanto a 5c nao
     existir". A decisao de produto de 13/08 e que o Quadro geral e tao
-    personalizavel quanto os outros, e so por ADMIN e MANAGER da raiz.
+    personalizavel quanto os outros, e so por ADMIN (de organizacao) e MANAGER da raiz.
 
     ⚠️ CRIAR NAO TEM RISCO TECNICO: a coluna nasce vazia, com `legacy_status`
     NULL e `is_default_target` False. Nada em `default_board_and_column_for_status`
@@ -309,7 +311,7 @@ async def test_ADMIN_cria_coluna_no_quadro_geral(db) -> None:
     ws, raiz, sub_a, sub_b, user, arvore = await _mundo(db)
     geral = await _quadro_geral(db, raiz)
 
-    with acting_as(**_ctx(ws, user, arvore, mship(raiz, "ADMIN"))):
+    with acting_as(**_ctx(ws, user, arvore, org_role="ADMIN")):
         nova = await BoardService(db).criar_coluna(
             board_id=geral.id,
             nome="Em Revisão",
@@ -355,7 +357,7 @@ async def test_ADMIN_renomeia_coluna_do_quadro_geral(db) -> None:
     alguma = (await _colunas(db, geral.id))[0]
     ponte_antes = alguma.legacy_status
 
-    with acting_as(**_ctx(ws, user, arvore, mship(raiz, "ADMIN"))):
+    with acting_as(**_ctx(ws, user, arvore, org_role="ADMIN")):
         renomeada = await BoardService(db).renomear_coluna(
             board_id=geral.id, column_id=alguma.id, nome="Outro nome"
         )
@@ -490,7 +492,7 @@ async def test_admin_mexe_em_coluna_de_subtime_de_que_nao_e_supervisor(
     ws, raiz, sub_a, sub_b, user, arvore = await _mundo(db)
     quadro = await _quadro_avulso(db, ws, user, arvore, sub_a)
 
-    with acting_as(**_ctx(ws, user, arvore, mship(raiz, "ADMIN"))):
+    with acting_as(**_ctx(ws, user, arvore, org_role="ADMIN")):
         coluna = await BoardService(db).criar_coluna(
             board_id=quadro.id,
             nome="Em Revisão",

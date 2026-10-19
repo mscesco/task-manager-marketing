@@ -215,15 +215,12 @@ async def test_par_emitido_no_change_password_ja_vale(db) -> None:
 # ------------------------------------------------------------------
 async def test_reset_pelo_gestor_derruba_sessao_do_alvo(db) -> None:
     """Criterio 3: e a acao de resposta a 'a conta de fulano vazou'."""
-    from app.core.tenant import Membership, TeamNode
+    from app.core.tenant import TeamNode
     from app.modules.users.application.member_service import MemberService
     from tests.integration.conftest import acting_as
 
     ws, team, alvo = await _pessoa(db)
-    gestor = await f.make_user(db, workspace_id=ws.id)
-    await f.add_member(
-        db, workspace_id=ws.id, user_id=gestor, team_id=team, role="ADMIN"
-    )
+    gestor = await f.make_user(db, workspace_id=ws.id, org_role="ADMIN")
     await db.commit()
 
     async with _client(db) as c:
@@ -235,8 +232,8 @@ async def test_reset_pelo_gestor_derruba_sessao_do_alvo(db) -> None:
         with acting_as(
             workspace_id=ws.id,
             user_id=gestor,
-            memberships=(Membership(team_id=team, role="ADMIN"),),
             team_tree=(TeamNode(team_id=team, parent_team_id=None),),
+            org_role="ADMIN",
         ):
             await MemberService(db).reset_password(user_id=alvo.id)
         await db.commit()

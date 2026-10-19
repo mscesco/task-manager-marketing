@@ -38,7 +38,7 @@ from app.shared.exceptions.base import (
     EntityNotFoundError,
 )
 from tests.integration import factories as f
-from tests.integration.conftest import acting_as, mship, node
+from tests.integration.conftest import acting_as, node
 from tests.integration.test_solicitations_db import (
     _criar_uma,
     _make_ws_with_slug,
@@ -48,7 +48,7 @@ pytestmark = pytest.mark.integration
 
 
 async def _cena(db, *, com_formulario: bool = True):
-    """Workspace com um pedido já APROVADO e um triador ADMIN.
+    """Workspace com um pedido já APROVADO e um triador ADMIN de organização.
 
     ⚠️ ADMIN e não MANAGER: `TaskService.create` confere se o `team_id` está
     no alcance de quem cria, e o time da tarefa vem do FORMULÁRIO. Com ADMIN
@@ -57,20 +57,15 @@ async def _cena(db, *, com_formulario: bool = True):
     """
     ws, slug = await _make_ws_with_slug(db)
     raiz = await f.make_team(db, workspace_id=ws)
-    user = await f.make_user(db, workspace_id=ws)
-    await f.add_member(
-        db, workspace_id=ws, user_id=user, team_id=raiz, role="ADMIN"
-    )
+    user = await f.make_user(db, workspace_id=ws, org_role="ADMIN")
     await db.flush()
     arvore = (node(raiz),)
     ctx = dict(
         workspace_id=ws,
         user_id=user,
-        memberships=(mship(raiz, "ADMIN"),),
         team_tree=arvore,
         # ⚠️ Spec 051, fatia B: com `com_formulario=False` o pedido e ORFAO, e
-        # orfa e so de quem administra a ORGANIZACAO -- o vinculo ADMIN antigo
-        # de time ja nao a encontra.
+        # orfa e so de quem administra a ORGANIZACAO.
         org_role="ADMIN",
     )
 
@@ -171,17 +166,13 @@ async def test_pedido_PENDENTE_nao_vira_tarefa(db) -> None:
     lateral -- a mesma razão de `andar` recusar PENDING."""
     ws, slug = await _make_ws_with_slug(db)
     raiz = await f.make_team(db, workspace_id=ws)
-    user = await f.make_user(db, workspace_id=ws)
-    await f.add_member(
-        db, workspace_id=ws, user_id=user, team_id=raiz, role="ADMIN"
-    )
+    user = await f.make_user(db, workspace_id=ws, org_role="ADMIN")
     await db.flush()
     pedido = await _criar_uma(db, slug)
 
     with acting_as(
         workspace_id=ws,
         user_id=user,
-        memberships=(mship(raiz, "ADMIN"),),
         team_tree=(node(raiz),),
         org_role="ADMIN",  # pedido orfao -- ver `_cena`
     ):

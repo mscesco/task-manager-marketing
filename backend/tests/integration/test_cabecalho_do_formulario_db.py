@@ -30,7 +30,7 @@ from app.modules.solicitations.application.service import (
 )
 from app.shared.exceptions.base import ValidationError
 from tests.integration import factories as f
-from tests.integration.conftest import acting_as, mship, node
+from tests.integration.conftest import acting_as, node
 from tests.integration.test_solicitations_db import _make_ws_with_slug
 
 pytestmark = pytest.mark.integration
@@ -40,15 +40,12 @@ async def _formulario(db, *, rotulos: dict | None = None):
     """Um formulário publicado, com uma seção e uma pergunta."""
     ws, slug = await _make_ws_with_slug(db)
     raiz = await f.make_team(db, workspace_id=ws)
-    user = await f.make_user(db, workspace_id=ws)
-    await f.add_member(
-        db, workspace_id=ws, user_id=user, team_id=raiz, role="ADMIN"
-    )
+    user = await f.make_user(db, workspace_id=ws, org_role="ADMIN")
     await db.flush()
     ctx = dict(
         workspace_id=ws,
         user_id=user,
-        memberships=(mship(raiz, "ADMIN"),),
+        org_role="ADMIN",
         team_tree=(node(raiz),),
     )
     with acting_as(**ctx):

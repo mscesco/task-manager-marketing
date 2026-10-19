@@ -48,7 +48,7 @@ async def _setup(db):
     """Raiz + SEO. Um quadro avulso do SEO com uma tarefa em Backlog.
 
     - `sup` (SUPERVISOR do SEO) faz os gestos;
-    - `adm` (ADMIN da raiz) CRIOU a tarefa;
+    - `adm` (ADMIN de organizacao) CRIOU a tarefa;
     - `op` (OPERATOR do SEO) SEGUE a tarefa;
     - `resp` (OPERATOR do SEO) e RESPONSAVEL.
     """
@@ -57,8 +57,7 @@ async def _setup(db):
     seo = await f.make_team(db, workspace_id=ws, parent_team_id=raiz, slug="seo")
     sup = await f.make_user(db, workspace_id=ws)
     await f.add_member(db, workspace_id=ws, user_id=sup, team_id=seo, role="SUPERVISOR")
-    adm = await f.make_user(db, workspace_id=ws)
-    await f.add_member(db, workspace_id=ws, user_id=adm, team_id=raiz, role="ADMIN")
+    adm = await f.make_user(db, workspace_id=ws, org_role="ADMIN")
     op = await f.make_user(db, workspace_id=ws)
     await f.add_member(db, workspace_id=ws, user_id=op, team_id=seo, role="OPERATOR")
     resp = await f.make_user(db, workspace_id=ws)
@@ -88,19 +87,22 @@ async def _setup(db):
     }
     await db.commit()
 
-    def _ctx(user_id, team_id, papel):
-        vinculos = (Membership(team_id=team_id, role=papel),)
+    def _ctx(user_id, team_id, papel, org_role=None):
+        vinculos = (Membership(team_id=team_id, role=papel),) if papel else ()
+        papeis = frozenset(p for p in (papel, org_role) if p)
         return TenantContext(
-            workspace_id=ws, user_id=user_id, roles=frozenset({papel}),
-            permissions=permissions_for_actor(memberships=vinculos, tree=arvore),
-            memberships=vinculos, team_tree=arvore,
+            workspace_id=ws, user_id=user_id, roles=papeis,
+            permissions=permissions_for_actor(
+                memberships=vinculos, tree=arvore, org_role=org_role
+            ),
+            memberships=vinculos, team_tree=arvore, org_role=org_role,
         )
 
     return {
         "ws": ws, "seo": seo, "quadro": quadro, "tarefa": tarefa, "colunas": colunas,
         "sup": sup, "adm": adm, "op": op, "resp": resp,
         "ctx_sup": _ctx(sup, seo, "SUPERVISOR"),
-        "ctx_adm": _ctx(adm, raiz, "ADMIN"),
+        "ctx_adm": _ctx(adm, None, None, org_role="ADMIN"),
     }
 
 

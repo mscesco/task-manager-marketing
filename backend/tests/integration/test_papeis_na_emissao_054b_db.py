@@ -184,8 +184,8 @@ async def test_mencao_nasce_sem_papel(db) -> None:
 async def _mundo_de_prazo(db):
     ws = await f.make_workspace(db)
     team = await f.make_team(db, workspace_id=ws)
-    criador = await f.make_user(db, workspace_id=ws)
-    await f.add_member(db, workspace_id=ws, user_id=criador, team_id=team, role="ADMIN")
+    # ADMIN de organizacao: sem vinculo de time (desde a 0031).
+    criador = await f.make_user(db, workspace_id=ws, org_role="ADMIN")
     tarefa = await f.make_task(
         db,
         workspace_id=ws,

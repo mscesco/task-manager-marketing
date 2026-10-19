@@ -38,7 +38,7 @@ from app.main import create_app
 from app.modules.auth.api.dependencies import get_tenant_context
 from app.modules.auth.domain.permissions import permissions_for_actor
 from tests.integration import factories as f
-from tests.integration.conftest import mship, node
+from tests.integration.conftest import node
 from tests.integration.test_solicitation_form_publico_db import _form_publicado
 
 pytestmark = pytest.mark.integration
@@ -53,10 +53,7 @@ async def _mundo(db):
     for marca in ("a", "b"):
         ws = await f.make_workspace(db, name=f"WS {marca.upper()}")
         raiz = await f.make_team(db, workspace_id=ws)
-        dono = await f.make_user(db, workspace_id=ws)
-        await f.add_member(
-            db, workspace_id=ws, user_id=dono, team_id=raiz, role="ADMIN"
-        )
+        dono = await f.make_user(db, workspace_id=ws, org_role="ADMIN")
         tarefa = await f.make_task(
             db,
             workspace_id=ws,
@@ -65,7 +62,6 @@ async def _mundo(db):
             title=f"Tarefa do {marca.upper()}",
         )
         arvore = (node(raiz),)
-        vinculos = (Membership(team_id=raiz, role="ADMIN"),)
         # ⚠️ UMA SEGUNDA PESSOA NO MESMO WORKSPACE. Sem ela, "a preferencia de
         # uma nao vaza para a outra" seria provado por duas pessoas em
         # workspaces diferentes -- e ai quem separa e o filtro de WORKSPACE,
@@ -90,16 +86,18 @@ async def _mundo(db):
             "ctx_kwargs": dict(
                 workspace_id=ws,
                 user_id=dono,
-                memberships=(mship(raiz, "ADMIN"),),
                 team_tree=arvore,
+                org_role="ADMIN",
             ),
             "ctx": TenantContext(
                 workspace_id=ws,
                 user_id=dono,
                 roles=frozenset({"ADMIN"}),
-                permissions=permissions_for_actor(memberships=vinculos, tree=arvore),
-                memberships=vinculos,
+                permissions=permissions_for_actor(
+                    memberships=(), tree=arvore, org_role="ADMIN"
+                ),
                 team_tree=arvore,
+                org_role="ADMIN",
             ),
             "colega": colega,
             "ctx_colega": TenantContext(

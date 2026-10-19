@@ -4,7 +4,8 @@ Trava a regra sem banco:
 
     - raiz    -> MANAGER, OPERATOR
     - subtime -> SUPERVISOR, OPERATOR
-    - ADMIN   -> nivel NENHUM: e papel de ORGANIZACAO (`users.org_role`)
+    - ADMIN   -> nao e papel de time: mora em `users.org_role`, e saiu do
+                 enum `UserTeamRole` na migration 0031 (19/10/2026)
     - papel desconhecido -> recusado em QUALQUER nivel (falha fechada, R5)
 
 ⚠️⚠️ SETE TESTES DESTE ARQUIVO AFIRMAVAM A REGRA ANTERIOR e foram
@@ -35,7 +36,6 @@ import pytest
 
 from app.db.models.enums import UserTeamRole
 from app.modules.auth.domain.team_scope import (
-    _ORG_LEVEL_ROLES,
     assert_role_permitido_no_nivel,
     role_permitido_no_nivel,
     roles_permitidos_no_nivel,
@@ -88,11 +88,10 @@ def test_operator_e_o_unico_papel_dos_dois_niveis() -> None:
     assert nos_dois == {"OPERATOR"}
 
 
-@pytest.mark.parametrize("role", ["ADMIN", "MANAGER"])
-def test_admin_e_manager_recusados_em_subtime(role: str) -> None:
-    assert not role_permitido_no_nivel(role, is_root=SUBTIME)
+def test_manager_recusado_em_subtime() -> None:
+    assert not role_permitido_no_nivel("MANAGER", is_root=SUBTIME)
     with pytest.raises(BusinessRuleError):
-        assert_role_permitido_no_nivel(role, is_root=SUBTIME)
+        assert_role_permitido_no_nivel("MANAGER", is_root=SUBTIME)
 
 
 def test_operator_aceito_na_raiz() -> None:
@@ -135,7 +134,8 @@ def test_admin_recusado_em_TODO_nivel_de_time(nivel: bool) -> None:
     """⭐ Sucessor de `test_admin_e_manager_aceitos_na_raiz` (fatia D).
 
     ADMIN deixou de ser papel de time: ele mora em `users.org_role` desde a
-    fatia B. Nao ha mais nivel de time que o aceite.
+    fatia B, e desde a 0031 nem existe no enum. Nao ha nivel de time que o
+    aceite -- ele cai no ramo de papel desconhecido.
 
     Sabotagem: devolver ADMIN a `_ROOT_ROLES` faz este teste cair no caso
     RAIZ, e so nele -- o caso SUBTIME ja era recusado antes.
@@ -143,21 +143,6 @@ def test_admin_recusado_em_TODO_nivel_de_time(nivel: bool) -> None:
     assert not role_permitido_no_nivel("ADMIN", is_root=nivel)
     with pytest.raises(BusinessRuleError):
         assert_role_permitido_no_nivel("ADMIN", is_root=nivel)
-
-
-def test_mensagem_do_admin_diz_para_onde_ele_foi() -> None:
-    """⚠️ ADMIN NAO PODE CAIR NO RAMO DE "papel desconhecido".
-
-    Quem tenta cadastrar um admin leria "nao e possivel definir em que nivel
-    ele pode existir" e concluiria que o sistema perdeu o papel -- e iria
-    procura-lo no lugar errado. A mensagem tem de dizer que ele existe, em
-    outro nivel.
-    """
-    with pytest.raises(BusinessRuleError) as exc:
-        assert_role_permitido_no_nivel("ADMIN", is_root=RAIZ)
-    texto = str(exc.value).lower()
-    assert "organizacao" in texto
-    assert "desconhecido" not in texto
 
 
 def test_mensagem_do_supervisor_na_raiz_orienta_a_saida() -> None:
@@ -180,8 +165,6 @@ def test_aceita_o_enum_alem_da_string() -> None:
     assert_role_permitido_no_nivel(UserTeamRole.SUPERVISOR, is_root=SUBTIME)
     with pytest.raises(BusinessRuleError):
         assert_role_permitido_no_nivel(UserTeamRole.MANAGER, is_root=SUBTIME)
-    with pytest.raises(BusinessRuleError):
-        assert_role_permitido_no_nivel(UserTeamRole.ADMIN, is_root=RAIZ)
 
 
 def test_papel_desconhecido_falha_fechada_nos_dois_niveis() -> None:
@@ -196,25 +179,14 @@ def test_papel_desconhecido_falha_fechada_nos_dois_niveis() -> None:
 def test_todo_papel_do_enum_esta_classificado() -> None:
     """Guarda contra o enum crescer sem alguem atualizar a regra.
 
-    ⚠️⚠️ ESTE TESTE AFIRMAVA `do_enum == cobertos`, e a fatia D o quebrou de
-    verdade: ADMIN passou a nao caber em nivel de time nenhum. A correcao
-    NAO foi afrouxar para `>=` -- isso mataria o guardiao, porque qualquer
-    papel novo tambem passaria calado.
-
-    A forma nova continua exata: o que sobra do enum, depois de descontar os
-    dois niveis, tem de ser EXATAMENTE o conjunto declarado como de
-    organizacao. Papel novo aparece nessa diferenca e reprova aqui.
+    Exato, e nao `>=`: com `>=` qualquer papel novo passaria calado. Entre a
+    fatia D da Spec 045 e a migration 0031 o enum tinha um papel sem nivel
+    (ADMIN), e este teste o descontava de proposito; desde 19/10/2026 os
+    dois niveis cobrem o enum inteiro.
     """
     cobertos = roles_permitidos_no_nivel(RAIZ) | roles_permitidos_no_nivel(SUBTIME)
     do_enum = {r.value for r in UserTeamRole}
-    sem_nivel_de_time = do_enum - cobertos
-    assert sem_nivel_de_time == set(_ORG_LEVEL_ROLES), (
-        "Papel do enum sem nivel definido (ou vice-versa): "
-        f"{sem_nivel_de_time ^ set(_ORG_LEVEL_ROLES)}"
-    )
-    # E nada foi inventado do lado dos niveis: tudo que eles aceitam existe
-    # no enum de verdade.
-    assert cobertos <= do_enum
+    assert do_enum == cobertos, f"Papel sem nivel definido: {do_enum ^ cobertos}"
 
 
 def test_mensagem_de_erro_orienta_o_usuario() -> None:

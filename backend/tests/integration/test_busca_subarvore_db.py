@@ -24,7 +24,7 @@ from app.db.models.enums import TaskStatus
 from app.modules.tasks.infrastructure.task_repository import TaskRepository
 from app.shared.pagination import PageParams
 from tests.integration import factories as f
-from tests.integration.conftest import acting_as, mship, node
+from tests.integration.conftest import acting_as, node
 
 pytestmark = pytest.mark.integration
 
@@ -37,10 +37,7 @@ async def _cenario(db):
     """
     ws = await f.make_workspace(db)
     team = await f.make_team(db, workspace_id=ws)
-    user = await f.make_user(db, workspace_id=ws)
-    await f.add_member(
-        db, workspace_id=ws, user_id=user, team_id=team, role="ADMIN"
-    )
+    user = await f.make_user(db, workspace_id=ws, org_role="ADMIN")
     comum = {"workspace_id": ws, "created_by": user, "team_id": team}
 
     raiz = await f.make_task(db, **comum, title="Campanha de fim de ano")
@@ -63,7 +60,7 @@ async def _busca(db, *, ws, team, user, termo, include_archived=False):
     with acting_as(
         workspace_id=ws,
         user_id=user,
-        memberships=(mship(team, "ADMIN"),),
+        org_role="ADMIN",
         team_tree=(node(team),),
     ):
         pagina = await TaskRepository(db).list_page_with_filters(
@@ -157,10 +154,7 @@ async def test_busca_na_tela_de_ARQUIVADAS_encontra(db):
     """
     ws = await f.make_workspace(db)
     team = await f.make_team(db, workspace_id=ws)
-    user = await f.make_user(db, workspace_id=ws)
-    await f.add_member(
-        db, workspace_id=ws, user_id=user, team_id=team, role="ADMIN"
-    )
+    user = await f.make_user(db, workspace_id=ws, org_role="ADMIN")
     arquivada = await f.make_task(
         db,
         workspace_id=ws,
@@ -175,7 +169,7 @@ async def test_busca_na_tela_de_ARQUIVADAS_encontra(db):
     with acting_as(
         workspace_id=ws,
         user_id=user,
-        memberships=(mship(team, "ADMIN"),),
+        org_role="ADMIN",
         team_tree=(node(team),),
     ):
         pagina = await TaskRepository(db).list_page_with_filters(

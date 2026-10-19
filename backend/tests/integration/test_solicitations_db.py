@@ -32,7 +32,10 @@ from app.db.models import Workspace
 from app.db.unit_of_work import UnitOfWork
 from app.main import create_app
 from app.modules.auth.api.dependencies import get_tenant_context
-from app.modules.auth.domain.permissions import permissions_for_roles
+from app.modules.auth.domain.permissions import (
+    permissions_for_actor,
+    permissions_for_roles,
+)
 from app.modules.solicitations.application.service import (
     CreatePublicCommand,
     MarkTaskCommand,
@@ -526,18 +529,33 @@ async def test_http_sem_permissao_403_em_tudo_inclusive_leitura(db, role) -> Non
 
 @pytest.mark.parametrize("role", ["ADMIN", "MANAGER"])
 async def test_http_admin_e_manager_acessam_a_fila(db, role) -> None:
-    """Criterio 19: o outro lado da trava -- quem deve entrar, entra."""
+    """Criterio 19: o outro lado da trava -- quem deve entrar, entra.
+
+    ADMIN e papel de ORGANIZACAO (sem vinculo de time); MANAGER, de time.
+    """
     ws, slug = await _make_ws_with_slug(db)
     await _criar_uma(db, slug)
 
-    team, usuario = await _reviewer(db, ws, role=role)
-    ctx = TenantContext(
-        workspace_id=ws,
-        user_id=usuario,
-        roles=frozenset({role}),
-        permissions=permissions_for_roles(frozenset({role})),
-        memberships=(Membership(team_id=team, role=role),),
-    )
+    if role == "ADMIN":
+        usuario = await f.make_user(db, workspace_id=ws, org_role="ADMIN")
+        ctx = TenantContext(
+            workspace_id=ws,
+            user_id=usuario,
+            roles=frozenset({role}),
+            permissions=permissions_for_actor(
+                memberships=(), tree=(), org_role="ADMIN"
+            ),
+            org_role="ADMIN",
+        )
+    else:
+        team, usuario = await _reviewer(db, ws, role=role)
+        ctx = TenantContext(
+            workspace_id=ws,
+            user_id=usuario,
+            roles=frozenset({role}),
+            permissions=permissions_for_roles(frozenset({role})),
+            memberships=(Membership(team_id=team, role=role),),
+        )
     async with _http(db, ctx) as client:
         lista = await client.get("/api/v1/solicitacoes")
     assert lista.status_code == 200

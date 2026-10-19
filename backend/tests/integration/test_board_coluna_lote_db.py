@@ -389,7 +389,7 @@ async def test_ADMIN_aplica_lote_no_quadro_geral(db) -> None:
         )
     ).scalar_one()
 
-    with acting_as(**_ctx(ws, user, arvore, mship(raiz, "ADMIN"))):
+    with acting_as(**_ctx(ws, user, arvore), org_role="ADMIN"):
         colunas, _ = await BoardService(db).aplicar_lote(
             board_id=geral.id,
             criar=[
