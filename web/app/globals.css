@@ -28,6 +28,8 @@
   --color-violet-soft: #ece4fb;
   /* Painel escuro da tela de entrada (fatia 4). Espelha `--panel`. */
   --color-panel: #0b3d6b;
+  /* Raia do quadro (fatia 4). Espelha `--lane`. */
+  --color-lane: #ece9e3;
 
   --radius-sm: 8px;
   --radius-md: 10px;
@@ -128,6 +130,9 @@
   /* Painel da tela de entrada (fatia 4): azul-marinho, texto branco por cima
      (12.4 no claro). Nao e superficie de app: so o login o usa. */
   --panel: #0b3d6b;
+  /* Raia do quadro (fatia 4): um ponto mais escura que o fundo, para o card
+     branco pousar nela. `--text-faint` por cima: 5.3 (o "—" da coluna vazia). */
+  --lane: #ece9e3;
   --radius: 10px;    /* controle (botao, input, selo). Redesign 19/10: era 8 */
   --radius-lg: 12px; /* superficie (card, painel, modal) */
   /* ⚠️ MOVIMENTO (redesign, 19/10). Quatro duracoes e duas curvas; nenhuma
@@ -205,6 +210,7 @@
   --color-violet: #c6b6fd;
   --color-violet-soft: #2d2352;
   --color-panel: #0e2238;
+  --color-lane: #191815;
 
   /* ⚠️ REDESIGN (19/10): a surface escura foi de #1f1e1c para #1e1d1a (um
      ponto mais escura) -- os 15 pares de selo abaixo sobem um pouco, nao
@@ -257,6 +263,7 @@
   --amber: #f6c454;       --amber-soft: #3b2d0c;   /* 8.26 / 10.39 */
   --violet: #c6b6fd;      --violet-soft: #2d2352;  /* 7.81 / 9.24 */
   --panel: #0e2238; /* branco por cima: 15.9 */
+  --lane: #191815;  /* `--text-faint` por cima: 5.6 */
 
   /* Sombra no escuro precisa de mais opacidade: a de baixo relevo do tema
      claro simplesmente some e os cards perdem a separacao do fundo. */
@@ -621,7 +628,7 @@ button { font-family: inherit; cursor: pointer; }
    teclado continua vindo da regra [tabindex]:focus-visible abaixo. */
 .card-elev {
   cursor: grab;
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius); /* o mesmo raio 10 do TaskCard (fatia 4) */
   transition: transform var(--dur-2) var(--ease-out), box-shadow var(--dur-2) var(--ease-out);
 }
 /* Redesign 19/10: sobe 3px e a sombra e tingida do `--accent` -- o token muda
