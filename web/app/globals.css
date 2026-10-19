@@ -9,16 +9,23 @@
      utilitarias do Tailwind v4, `--*` alimenta o inline e as classes .btn/
      .input. Mexeu num, mexa no outro -- metade da tela mudando de cor e o
      sintoma de ter esquecido. */
-  --color-canvas: #f6f5f4;
+  --color-canvas: #f4f2ee;
   --color-surface: #ffffff;
-  --color-surface-2: #f6f5f4;
-  --color-border: #e6e6e6;
+  --color-surface-2: #f0ede7;
+  --color-border: #e3dfd8;
   --color-ink: #000000;
   --color-ink-soft: #31302e;
   --color-ink-faint: #615d59;
   --color-accent: #0075de;
   --color-accent-soft: #d6e8fb;
   --color-danger: #dc2626;
+  /* Cores de apoio do redesign (19/10). Espelham `--teal` etc. do :root. */
+  --color-teal: #0a6e63;
+  --color-teal-soft: #d7f0ea;
+  --color-amber: #9a5300;
+  --color-amber-soft: #fbecd3;
+  --color-violet: #6b2fd1;
+  --color-violet-soft: #ece4fb;
 
   --radius-sm: 8px;
   --radius-md: 10px;
@@ -68,10 +75,13 @@
      ⚠️ E O TEMA ESCURO NAO MUDOU NESTA FATIA. Ele e paleta desenhada, nao o
      claro invertido, e refaze-lo e a F2. Ate la os dois convivem: quem estiver
      no escuro ve exatamente o que via ontem. */
-  --bg: #f6f5f4;         /* Notion `canvas-soft` -- o off-white quente */
+  /* ⚠️ REDESIGN (19/10): fundo, superficie-2 e borda ficaram um ponto mais
+     quentes e mais separados do branco. `--text-faint` sobre o fundo novo: 5.84;
+     sobre a surface-2 nova: 5.58 (ambos AA). Borda vs surface: 1.33. */
+  --bg: #f4f2ee;         /* era o Notion `canvas-soft` #f6f5f4 */
   --surface: #ffffff;    /* Notion `surface` */
-  --surface-2: #f6f5f4;  /* Notion `canvas-soft` */
-  --border: #e6e6e6;     /* Notion `hairline` */
+  --surface-2: #f0ede7;  /* era #f6f5f4 */
+  --border: #e3dfd8;     /* era o Notion `hairline` #e6e6e6 */
   --text: #000000;       /* Notion `ink` */
   --text-soft: #31302e;  /* Notion `ink-secondary` */
   /* ⚠️ ISTO CONSERTA UMA LACUNA CONHECIDA. O `#8a94a3` anterior REPROVAVA AA
@@ -105,7 +115,26 @@
      serve a dois papeis (texto sobre superficie E fundo de selo); no tema
      escuro ele clareia, e branco por cima deixaria de ser legivel. */
   --on-danger: #ffffff;
-  --radius: 8px;  /* Notion `rounded.md` -- era 10 */
+  /* ⚠️ COR DE APOIO (redesign, 19/10): tres familias com par suave, para selo e
+     realce sem roubar o papel do `--accent`. Cada `--x` e TEXTO sobre `--x-soft`
+     E sobre `--surface`; os dois numeros estao ao lado (sobre soft / sobre
+     surface). O teal da proposta (#0b7a6e) dava 4.36 sobre o suave e REPROVAVA
+     AA; este escurecido e o mais claro que aprova com margem. */
+  --teal: #0a6e63;        --teal-soft: #d7f0ea;    /* 5.12 / 6.13 */
+  --amber: #9a5300;       --amber-soft: #fbecd3;   /* 5.00 / 5.82 */
+  --violet: #6b2fd1;      --violet-soft: #ece4fb;  /* 5.78 / 7.11 */
+  --radius: 10px;    /* controle (botao, input, selo). Redesign 19/10: era 8 */
+  --radius-lg: 12px; /* superficie (card, painel, modal) */
+  /* ⚠️ MOVIMENTO (redesign, 19/10). Quatro duracoes e duas curvas; nenhuma
+     regra deste arquivo crava mais segundos. `--dur-1` e o maximo que a saida do
+     modal pode ter: `useSaidaAnimada` segura o unmount por 140ms, e a animacao
+     precisa terminar antes. */
+  --dur-1: 120ms;
+  --dur-2: 200ms;
+  --dur-3: 320ms;
+  --dur-4: 560ms;
+  --ease-out: cubic-bezier(.22, 1, .36, 1);
+  --ease-io: cubic-bezier(.65, 0, .35, 1);
   /* Elevacao da Notion: camadas quase transparentes em vez de uma sombra
      dura. O nivel 0 dela e SO o hairline; estas duas sao o nivel 1. */
   --shadow: 0 0.8px 2.9px rgba(0, 0, 0, 0.02), 0 2px 7.8px rgba(0, 0, 0, 0.027),
@@ -154,21 +183,31 @@
 [data-theme="escuro"] {
   color-scheme: dark;
 
-  --color-canvas: #161514;
-  --color-surface: #1f1e1c;
-  --color-surface-2: #292826;
-  --color-border: #37342f;
+  --color-canvas: #141311;
+  --color-surface: #1e1d1a;
+  --color-surface-2: #292723;
+  --color-border: #37342e;
   --color-ink: #f2f1ef;
   --color-ink-soft: #bdb9b4;
   --color-ink-faint: #918d88;
   --color-accent: #5aabf2;
   --color-accent-soft: #14304a;
   --color-danger: #f87171;
+  --color-teal: #5ed2c2;
+  --color-teal-soft: #0f3833;
+  --color-amber: #f6c454;
+  --color-amber-soft: #3b2d0c;
+  --color-violet: #c6b6fd;
+  --color-violet-soft: #2d2352;
 
-  --bg: #161514;
-  --surface: #1f1e1c;
-  --surface-2: #292826;
-  --border: #37342f;
+  /* ⚠️ REDESIGN (19/10): a surface escura foi de #1f1e1c para #1e1d1a (um
+     ponto mais escura) -- os 15 pares de selo abaixo sobem um pouco, nao
+     descem. `--text-faint` sobre: fundo 5.63, surface 5.11, surface-2 4.52
+     (o mais justo). Borda vs surface: 1.36. */
+  --bg: #141311;
+  --surface: #1e1d1a;
+  --surface-2: #292723;
+  --border: #37342e;
   --text: #f2f1ef;
   --text-soft: #bdb9b4;
   --text-faint: #918d88;
@@ -206,6 +245,11 @@
   /* Texto sobre fundo --danger: branco daria 2.77 de contraste sobre este
      vermelho claro (reprova AA). Este marrom quase preto da 6.47. */
   --on-danger: #2a0f0f;
+  /* Cores de apoio: texto claro sobre o par suave escuro (sobre soft / sobre
+     surface). */
+  --teal: #5ed2c2;        --teal-soft: #0f3833;    /* 7.02 / 9.21 */
+  --amber: #f6c454;       --amber-soft: #3b2d0c;   /* 8.26 / 10.39 */
+  --violet: #c6b6fd;      --violet-soft: #2d2352;  /* 7.81 / 9.24 */
 
   /* Sombra no escuro precisa de mais opacidade: a de baixo relevo do tema
      claro simplesmente some e os cards perdem a separacao do fundo. */
@@ -383,7 +427,8 @@ button { font-family: inherit; cursor: pointer; }
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
   border: 1px solid var(--border); background: var(--surface);
   color: var(--text); padding: 9px 16px; border-radius: var(--radius);
-  font-size: 14px; font-weight: 600; transition: background .12s, border-color .12s;
+  font-size: 14px; font-weight: 600;
+  transition: background var(--dur-1) var(--ease-out), border-color var(--dur-1) var(--ease-out);
 }
 .btn:hover { background: var(--surface-2); }
 .btn:disabled { opacity: .55; cursor: not-allowed; }
@@ -416,7 +461,7 @@ button { font-family: inherit; cursor: pointer; }
 .input {
   border: 1px solid var(--border); border-radius: var(--radius);
   padding: 10px 12px; font-size: 14px; background: var(--surface); color: var(--text);
-  transition: border-color .12s, box-shadow .12s;
+  transition: border-color var(--dur-1) var(--ease-out), box-shadow var(--dur-1) var(--ease-out);
 }
 .input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 
@@ -446,10 +491,11 @@ button { font-family: inherit; cursor: pointer; }
 }
 
 /* --- Animacao de entrada/saida do modal de tarefa ---------------------
-   Curtas de proposito (150ms): o suficiente pra tirar o "corte seco",
-   curto o bastante pra nao atrasar quem usa o app o dia inteiro.
+   Curtas de proposito (entrada --dur-2, saida --dur-1): o suficiente pra tirar
+   o "corte seco", curto o bastante pra nao atrasar quem usa o app o dia inteiro.
    A saida e disparada por estado no TaskDetail (data-saindo), que segura
-   o unmount pelo mesmo tempo. O bloco de prefers-reduced-motion acima
+   o unmount por 140ms (`useSaidaAnimada`) -- por isso ela usa o `--dur-1`
+   (120ms), e nao o `--dur-2`. O bloco de prefers-reduced-motion acima
    desliga as duas -- e o JS pula a espera, senao fechar ficaria lento
    sem animacao nenhuma pra justificar. */
 @keyframes tm-scrim-entra {
@@ -460,10 +506,10 @@ button { font-family: inherit; cursor: pointer; }
   from { opacity: 0; transform: translateY(8px) scale(0.985); }
   to   { opacity: 1; transform: none; }
 }
-.modal-scrim { animation: tm-scrim-entra .15s ease-out; }
-.modal-card  { animation: tm-card-entra .15s ease-out; }
-.modal-scrim[data-saindo="true"] { animation: tm-scrim-entra .14s ease-in reverse forwards; }
-.modal-card[data-saindo="true"]  { animation: tm-card-entra .14s ease-in reverse forwards; }
+.modal-scrim { animation: tm-scrim-entra var(--dur-2) var(--ease-out); }
+.modal-card  { animation: tm-card-entra var(--dur-2) var(--ease-out); }
+.modal-scrim[data-saindo="true"] { animation: tm-scrim-entra var(--dur-1) var(--ease-io) reverse forwards; }
+.modal-card[data-saindo="true"]  { animation: tm-card-entra var(--dur-1) var(--ease-io) reverse forwards; }
 
 /* --- Card do quadro: elevacao no hover -------------------------------
    Substitui o outline duro do .tappable NESTE caso: em card arrastavel a
@@ -471,8 +517,8 @@ button { font-family: inherit; cursor: pointer; }
    teclado continua vindo da regra [tabindex]:focus-visible abaixo. */
 .card-elev {
   cursor: grab;
-  border-radius: var(--radius);
-  transition: transform .12s ease-out, box-shadow .12s ease-out;
+  border-radius: var(--radius-lg);
+  transition: transform var(--dur-1) var(--ease-out), box-shadow var(--dur-1) var(--ease-out);
 }
 .card-elev:hover {
   transform: translateY(-1px);
@@ -521,7 +567,7 @@ button { font-family: inherit; cursor: pointer; }
    controle, e nao pela janela. Hoje nenhum painel e filho de um `.tappable`
    (no `PillSelect` e no papel de organizacao o painel e IRMAO do botao), mas
    quem puser um la dentro vai ver o painel saltar no hover. */
-.tappable { cursor: pointer; transition: filter .12s ease-out; }
+.tappable { cursor: pointer; transition: filter var(--dur-1) var(--ease-out); }
 .tappable:hover { filter: brightness(.93); }
 [data-theme="escuro"] .tappable:hover { filter: brightness(1.25); }
 
@@ -664,8 +710,8 @@ button:focus-visible,
     color-scheme: light;
     --color-canvas: #ffffff;
     --color-surface: #ffffff;
-    --color-surface-2: #f6f5f4;
-    --color-border: #e6e6e6;
+    --color-surface-2: #f0ede7;
+    --color-border: #e3dfd8;
     --color-ink: #000000;
     --color-ink-soft: #31302e;
     --color-ink-faint: #615d59;
