@@ -880,7 +880,8 @@ export default function TaskModal({
         style={{
           width: 700, maxWidth: "100%", maxHeight: "88vh", overflowY: "auto",
           background: "var(--surface)",
-          border: "1px solid var(--border)", borderRadius: 14, padding: 24,
+          // Raio 16: o mesmo do detalhe da tarefa (redesign 19/10).
+          border: "1px solid var(--border)", borderRadius: 16, padding: 24,
           boxShadow: "var(--shadow)", display: "flex", flexDirection: "column", gap: 16,
         }}
       >

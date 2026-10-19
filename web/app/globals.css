@@ -522,6 +522,23 @@ button { font-family: inherit; cursor: pointer; }
 .modal-scrim[data-saindo="true"] { animation: tm-scrim-entra var(--dur-1) var(--ease-io) reverse forwards; }
 .modal-card[data-saindo="true"]  { animation: tm-card-entra var(--dur-1) var(--ease-io) reverse forwards; }
 
+/* --- Detalhe da tarefa (redesign 19/10) --------------------------------
+   A lista de propriedades: rotulo numa coluna de 110px, o controle na outra.
+   O balao do comentario: canto reto no alto a esquerda, apontando o avatar. */
+.prop-list {
+  display: flex; flex-direction: column; gap: 2px; padding: 6px 0;
+  border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
+}
+.prop {
+  display: grid; grid-template-columns: 110px minmax(0, 1fr);
+  align-items: center; gap: 8px; min-height: 34px;
+}
+.prop-lbl { font-size: 12px; font-weight: 600; color: var(--text-faint); }
+.comment-bubble {
+  background: var(--surface); border: 1px solid var(--border);
+  padding: 10px 12px; border-radius: 0 12px 12px 12px; margin-top: 4px;
+}
+
 /* --- Card do quadro: filete da coluna (redesign 19/10) ----------------
    3px no topo com a cor da coluna. A borda inteira mora aqui porque o
    shorthand `border` inline zeraria a largura do topo; so a COR do filete
