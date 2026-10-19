@@ -21,6 +21,7 @@ Casos de uso:
     BaseService.update             -- nome e texto do topo (D15, D19)
     BaseService.create_column
     BaseService.update_column      -- inclusive trocar o tipo (D18, D24)
+    BaseService.make_title         -- troca a coluna principal (Spec 061)
     BaseService.delete_column
     BaseService.delete_option      -- esvazia as celulas (D17)
 """
@@ -72,6 +73,15 @@ def column_snapshot(coluna: BaseColumn) -> dict[str, Any]:
         "position": coluna.position,
         "width": coluna.width,
     }
+
+def troca_principal(titulo: BaseColumn, texto: BaseColumn) -> None:
+    """`texto` vira o titulo e `titulo` vira texto, trocando de lugar (Spec 061).
+    A troca e o proprio inverso: o desfazer chama com os papeis trocados."""
+    titulo.type, texto.type = "text", "title"
+    titulo.position, texto.position = texto.position, titulo.position
+    titulo.version += 1
+    texto.version += 1
+
 
 #: Os nomes com que a base nasce (D2). Sao DADOS, e nao rotulo de tela: a
 #: equipe renomeia como quiser.
@@ -444,6 +454,45 @@ class BaseService:
                 {"column": str(coluna.id), "from": movida[0], "to": movida[1]},
             )
         return coluna
+
+    async def make_title(self, base_id: uuid.UUID, column_id: uuid.UUID) -> BaseColumn:
+        """Faz de uma coluna de TEXTO a coluna principal (Spec 061, pedido dela
+        em 16/10): ela vira o titulo, e o titulo de antes vira texto.
+
+        ⚠️ OS VALORES NAO MUDAM: titulo e texto guardam a mesma string, entao a
+        troca e so de tipo -- nenhuma celula se perde, e o diario guarda so os
+        dois ids.
+
+        ⚠️ AS DUAS TROCAM DE LUGAR: a tabela prende o titulo na primeira
+        posicao (rolagem, arrastar), entao a nova vai para o lugar do titulo e
+        o antigo vai para o lugar dela.
+
+        ⚠️ SO TEXTO (decisao dela): data, selecao ou numero como titulo pediria
+        uma regra para o card que ninguem pediu. Ja ser o titulo nao e erro.
+        """
+        base = await self._visible(base_id)
+        self._exigir("base_column.update", base.team_id)
+        colunas = await self._columns.list_for(base.id, lock=True)
+        nova = next((c for c in colunas if c.id == column_id), None)
+        if nova is None:
+            raise EntityNotFoundError("BaseColumn", identifier=column_id)
+        if nova.type == "title":
+            return nova
+        if nova.type != "text":
+            raise ValidationError(
+                "So uma coluna de texto vira a coluna principal.",
+                details={"field": "type"},
+            )
+        antiga = next(c for c in colunas if c.type == "title")
+        troca_principal(antiga, nova)
+        await self._session.flush()
+        await journal.record(
+            self._session,
+            base.id,
+            "column.title",
+            {"from": str(antiga.id), "to": str(nova.id)},
+        )
+        return nova
 
     async def delete_column(self, base_id: uuid.UUID, column_id: uuid.UUID) -> BaseColumn:
         """Marca a coluna como apagada. Os valores FICAM nas linhas: o desfazer

@@ -58,6 +58,7 @@ const NOME_DA_ACAO: Record<string, string> = {
   "column.update": "a mudança na coluna",
   "column.retype": "a troca de tipo",
   "column.move": "a coluna movida",
+  "column.title": "a troca da coluna principal",
   "column.delete": "a coluna apagada",
   "option.delete": "a opção apagada",
   "view.create": "a visão criada",

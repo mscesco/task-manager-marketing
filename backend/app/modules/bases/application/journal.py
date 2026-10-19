@@ -22,6 +22,9 @@ Os `kind` e o que cada `payload` carrega (a tabela da spec §9.2):
     column.retype   {"column", "before": {"type", "options"},
                      "after": {"type", "options"}, "values": {linha: valor}}
     column.delete   {"column"}
+    column.title    {"from", "to"} -- a coluna principal passou de "from" para
+                    "to" (Spec 061): as duas trocam tipo e posicao, e o
+                    desfazer troca de volta
     option.delete   {"column", "option"}
     view.create     {"view", "data"}
     view.update     {"view", "before", "after"}
@@ -58,6 +61,7 @@ VERB_OF_KIND: dict[str, str] = {
     "column.retype": "base_column.update",
     "column.move": "base_column.update",
     "column.delete": "base_column.delete",
+    "column.title": "base_column.update",
     "option.delete": "base_column.delete",
     "view.create": "base_view.create",
     "view.update": "base_view.update",

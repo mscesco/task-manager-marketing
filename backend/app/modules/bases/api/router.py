@@ -11,6 +11,7 @@ Rotas:
     PATCH  /bases/{id}                                   -- base.update
     POST   /bases/{id}/columns                           -- base_column.create
     PATCH  /bases/{id}/columns/{column_id}               -- base_column.update
+    POST   /bases/{id}/columns/{column_id}/make-title    -- base_column.update
     DELETE /bases/{id}/columns/{column_id}               -- base_column.delete
     DELETE /bases/{id}/columns/{column_id}/options/{oid} -- base_column.delete
 
@@ -387,6 +388,20 @@ async def update_column(
             fields_set=frozenset(payload.model_fields_set),
         ),
     )
+    await uow.commit()
+    return ColumnResponse.from_model(coluna)
+
+
+@router.post(
+    "/{base_id}/columns/{column_id}/make-title",
+    response_model=ColumnResponse,
+    dependencies=[Depends(require_permission("base_column.update"))],
+)
+async def make_title(
+    base_id: uuid.UUID, column_id: uuid.UUID, uow: UoWDep
+) -> ColumnResponse:
+    """Spec 061: a coluna de texto vira a principal; o titulo de antes, texto."""
+    coluna = await BaseService(uow.session).make_title(base_id, column_id)
     await uow.commit()
     return ColumnResponse.from_model(coluna)
 
