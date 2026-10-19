@@ -20,6 +20,7 @@
 import Gaveta from "@/components/Gaveta";
 import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
+import { DUR } from "@/lib/motion";
 import Badge from "@/components/Badge";
 import MenuSelect from "@/components/MenuSelect";
 import PillSelect from "@/components/PillSelect";
@@ -172,7 +173,7 @@ export default function SubteamDrawer({
                       initial={{ opacity: 0, x: 16 }}
                       animate={{ opacity: 1, x: 0 }}
                       exit={{ opacity: 0, x: -16 }}
-                      transition={{ type: "spring", duration: 0.32, bounce: 0 }}
+                      transition={{ type: "spring", duration: DUR[3], bounce: 0 }}
                       className="flex flex-wrap items-center gap-2 rounded border border-border p-2"
                     >
                     <strong className="text-sm">{member.name}</strong>

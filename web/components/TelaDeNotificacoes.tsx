@@ -23,7 +23,7 @@ import { X } from "lucide-react";
 
 import Badge from "@/components/Badge";
 import EmptyState from "@/components/EmptyState";
-import Loading from "@/components/Loading";
+import Loading, { Esqueleto } from "@/components/Loading";
 import PageHeader from "@/components/PageHeader";
 import Paginacao from "@/components/Paginacao";
 import Tabs from "@/components/Tabs";
@@ -239,7 +239,7 @@ export default function TelaDeNotificacoes() {
 
       <div className="mt-5">
         {itens === null && !erro ? (
-          <Loading tamanho="linha" rotulo="Carregando as notificações" />
+          <Esqueleto forma="linhas" rotulo="Carregando as notificações" />
         ) : itens && itens.length === 0 ? (
           <EmptyState
             title={

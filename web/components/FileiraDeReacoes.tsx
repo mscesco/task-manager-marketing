@@ -1,6 +1,7 @@
 "use client";
 
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { DUR } from "@/lib/motion";
 
 import { rotuloDeQuemReagiu, type Reacao } from "@/lib/reacoes";
 
@@ -8,7 +9,7 @@ import { rotuloDeQuemReagiu, type Reacao } from "@/lib/reacoes";
  * Mesma mola da lista animada da gaveta de subtime (`SubteamDrawer`):
  * criticamente amortecida -- chega e para, sem o tranco de um overshoot.
  */
-const MOLA = { type: "spring", duration: 0.32, bounce: 0 } as const;
+const MOLA = { type: "spring", duration: DUR[3], bounce: 0 } as const;
 
 /**
  * A fileira de reacoes de um comentario (Spec 050, §4.7).

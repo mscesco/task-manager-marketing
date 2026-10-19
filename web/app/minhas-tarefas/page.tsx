@@ -56,7 +56,9 @@ import { ORDENACOES, ordenar, type Ordenacao } from "@/lib/ordenacao";
 import { ALL_TEAMS, withTeam } from "@/lib/activeTeam";
 import { useActiveTeam, useActiveTeamId } from "@/lib/useActiveTeam";
 
-import Loading from "@/components/Loading";
+import { motion } from "motion/react";
+import { Esqueleto } from "@/components/Loading";
+import { useEntrada } from "@/components/Entrada";
 import { useAvisar } from "@/components/Toasts";
 import { useDrawnOutline } from "@/components/AnimatedOutline";
 const RELATION_LABEL: Record<string, string> = {
@@ -799,7 +801,7 @@ function Minhas() {
   // ate as colunas chegarem, em vez de pintar sem filtro e reordenar depois --
   // lista que pisca mostrando concluidas que ninguem pediu e pior que meio
   // segundo de "Carregando".
-  if (!items || !colunas) return <Loading />;
+  if (!items || !colunas) return <Esqueleto forma="colunas" rotulo="Carregando tarefas" />;
 
   // Detalhe e subtarefas SEMPRE sobre a lista completa (um filtro ativo nao
   // pode quebrar abrir/navegar uma task que esta fora do filtro atual).
@@ -1305,8 +1307,8 @@ function Minhas() {
                   paddingBottom: 8, height: alturaColunas ?? undefined,
                 }}
               >
-                {(colunas ?? []).map((c) => (
-                  <ColunaMinhas key={c.id} coluna={c} count={porColuna[c.id]?.length ?? 0}>
+                {(colunas ?? []).map((c, i) => (
+                  <ColunaMinhas key={c.id} ordem={i} coluna={c} count={porColuna[c.id]?.length ?? 0}>
                     {(porColuna[c.id] ?? []).map((t) => {
                       // ⚠️ `?? []` e nao `!`: a coluna vem de um mapa e pode
                       // faltar. Sem coluna o card nao desenha -- e o `!`
@@ -1494,17 +1496,22 @@ function ColunaMinhas({
   coluna,
   count,
   children,
+  ordem = 0,
 }: {
   coluna: Coluna;
   count: number;
   children: React.ReactNode;
+  /** Posicao na fileira: a entrada escalona por coluna, nunca por card. */
+  ordem?: number;
 }) {
   // ⚠️ O `id` do droppable e o `column_id` (fatia 4c-2). E o que o `onDragEnd`
   // recebe em `e.over.id`, e o que o PATCH agora aceita.
   const { setNodeRef, isOver } = useDroppable({ id: coluna.id });
+  const entrada = useEntrada(ordem);
   return (
-    <div
+    <motion.div
       ref={setNodeRef}
+      {...entrada}
       // ⚠️ ANCORA ESTAVEL DA COLUNA. O teste de montagem achava a coluna com
       // `closest("div[style*='min-width']")` -- seletor que casa com QUALQUER
       // div cujo estilo inline mencione min-width. Em 21/08 o titulo do card
@@ -1545,7 +1552,7 @@ function ColunaMinhas({
           <div className="muted" style={{ fontSize: 12, padding: "8px 2px" }}>—</div>
         )}
       </div>
-    </div>
+    </motion.div>
   );
 }
 

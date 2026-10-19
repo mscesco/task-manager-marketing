@@ -21,6 +21,7 @@
 // e o `motion` respeita a mesma media query por conta própria.
 
 import { AnimatePresence, motion } from "motion/react";
+import { DUR } from "@/lib/motion";
 import type { ReactNode } from "react";
 
 export default function Reveal({
@@ -37,7 +38,7 @@ export default function Reveal({
           initial={{ opacity: 0, height: 0 }}
           animate={{ opacity: 1, height: "auto" }}
           exit={{ opacity: 0, height: 0 }}
-          transition={{ type: "spring", duration: 0.3, bounce: 0 }}
+          transition={{ type: "spring", duration: DUR[3], bounce: 0 }}
           style={{ overflow: "hidden" }}
         >
           {children}

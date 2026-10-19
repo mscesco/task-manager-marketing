@@ -34,6 +34,7 @@
 // `include` do vitest (§7 da spec).
 
 import { motion } from "motion/react";
+import { DUR } from "@/lib/motion";
 
 export type Tab<T extends string> = {
   readonly id: T;
@@ -45,7 +46,7 @@ export type Tab<T extends string> = {
 // Curtas de propósito, no mesmo espírito dos 150ms do modal: o suficiente
 // para tirar o corte seco, curto o bastante para não atrasar quem usa o app o
 // dia inteiro.
-const SPRING = { type: "spring", duration: 0.3, bounce: 0.18 } as const;
+const SPRING = { type: "spring", duration: DUR[3], bounce: 0.18 } as const;
 
 export default function Tabs<T extends string>({
   tabs,

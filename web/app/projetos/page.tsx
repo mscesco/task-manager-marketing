@@ -4,7 +4,8 @@ import AppShell from "@/components/AppShell";
 import EmptyState from "@/components/EmptyState";
 import Card from "@/components/Card";
 import PageHeader from "@/components/PageHeader";
-import Loading from "@/components/Loading";
+import { Esqueleto } from "@/components/Loading";
+import Entrada from "@/components/Entrada";
 import { useActiveTeam, useActiveTeamId } from "@/lib/useActiveTeam";
 import { useDrawnOutline } from "@/components/AnimatedOutline";
 import {
@@ -172,7 +173,7 @@ function Projetos() {
   }
 
   if (erro) return <div className="error-box" style={{ maxWidth: 480 }}>{erro}</div>;
-  if (!items) return <Loading />;
+  if (!items) return <Esqueleto forma="linhas" rotulo="Carregando projetos" />;
 
   return (
     <div>
@@ -319,9 +320,11 @@ function Projetos() {
             overflow: "hidden",
           }}
         >
-          {items.map((p, i) => (
-            <LinhaDeProjeto key={p.id} p={p} primeira={i === 0} />
-          ))}
+          <Entrada>
+            {items.map((p, i) => (
+              <LinhaDeProjeto key={p.id} p={p} primeira={i === 0} />
+            ))}
+          </Entrada>
         </div>
       )}
     </div>
