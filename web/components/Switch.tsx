@@ -27,6 +27,7 @@
 // e o `motion` respeita a mesma media query por conta própria.
 
 import { motion } from "motion/react";
+import { DUR } from "@/lib/motion";
 
 export default function Switch({
   checked,
@@ -61,7 +62,7 @@ export default function Switch({
     >
       <motion.span
         layout
-        transition={{ type: "spring", duration: 0.25, bounce: 0.2 }}
+        transition={{ type: "spring", duration: DUR[2], bounce: 0.2 }}
         aria-hidden
         className="block h-4.5 w-4.5 rounded-full bg-surface"
         style={{ height: 18, width: 18, boxShadow: "var(--shadow)" }}

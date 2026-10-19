@@ -30,6 +30,8 @@
 import Link from "next/link";
 import { useState, type ReactNode } from "react";
 import { motion, useReducedMotion, type Transition } from "motion/react";
+import { useEntrada, ENTRADA_PASSO } from "@/components/Entrada";
+import { DUR } from "@/lib/motion";
 import { ArrowUpRight, CalendarClock, ChevronRight } from "lucide-react";
 import type { DashboardResponse, DashboardTask } from "@/lib/api";
 import { PRIORITY_COLOR, PRIORITY_LABEL } from "@/lib/status";
@@ -197,16 +199,14 @@ function StatTile({
   danger?: boolean;
   order: number;
 }) {
-  const reduce = useReducedMotion();
+  const entrada = useEntrada(order);
   return (
     <motion.section
       aria-label={label}
       className={`relative flex min-h-[132px] flex-col justify-between rounded-lg border p-4 ${
         highlight ? "tile-destaque border-transparent" : "border-border bg-surface"
       }`}
-      initial={reduce ? false : { opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={reduce ? { duration: 0 } : { ...GROW, delay: order * 0.05 }}
+      {...entrada}
     >
       <div className="flex items-start justify-between gap-2">
         <h2 className={`m-0 text-md font-semibold ${highlight ? "" : "text-ink-soft"}`}>{label}</h2>
@@ -701,9 +701,9 @@ function Empty({ children }: { children: ReactNode }) {
 const ON_TIME_FILL = "bg-[color-mix(in_srgb,var(--color-accent)_45%,var(--color-surface))]";
 
 /** A mola: sem quicar, curta o bastante para não atrasar quem abre todo dia. */
-const GROW: Transition = { type: "spring", duration: 0.7, bounce: 0 };
+const GROW: Transition = { type: "spring", duration: DUR[4], bounce: 0 };
 /** Cada barra começa um pouco depois da anterior -- o gráfico "se desenha". */
-const STAGGER = 0.04;
+const STAGGER = ENTRADA_PASSO;
 
 /**
  * Uma barra horizontal. Cada parte é uma camada da largura INTEIRA da trilha,

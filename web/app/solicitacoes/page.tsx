@@ -66,7 +66,9 @@ import {
 import { numeroDaRepeticao, rotuloDaCategoria } from "@/lib/rotuloDaCategoria";
 import { demandaInicial, diaDoEnvio, quandoChegou } from "@/lib/filaDeSolicitacoes";
 
-import Loading from "@/components/Loading";
+import { Esqueleto } from "@/components/Loading";
+import { useEntrada } from "@/components/Entrada";
+import { DUR } from "@/lib/motion";
 import { useActiveTeam, useActiveTeamId } from "@/lib/useActiveTeam";
 import { navHref } from "@/lib/activeTeam";
 import Paginacao from "@/components/Paginacao";
@@ -97,7 +99,7 @@ const STATUS_COLOR: Record<SolicitacaoStatus, string> = {
 };
 
 /** A mola de toda a tela: rápida, quase sem quique. */
-const MOLA = { type: "spring", duration: 0.32, bounce: 0.12 } as const;
+const MOLA = { type: "spring", duration: DUR[3], bounce: 0.12 } as const;
 
 // ⚠️ AS ABAS (15/10, proposta aprovada por ela): eram sete botões iguais aos
 // de ação, com número em só dois, e "Aprovadas" e "Aprovadas sem tarefa" se
@@ -386,7 +388,7 @@ function Solicitacoes() {
           )}
 
           <div className="min-h-0 flex-1 overflow-y-auto p-2">
-            {envios === null && <Loading />}
+            {envios === null && <Esqueleto forma="linhas" rotulo="Carregando envios" />}
             {envios !== null && envios.length === 0 && !erro && (
               <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={MOLA}>
                 <EmptyState
@@ -541,6 +543,8 @@ function LinhaDoEnvio({
   const [agindo, setAgindo] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const unico = envio.items.length === 1 ? envio.items[0] : null;
+  // A entrada escalonada do redesign; a saída e a mola continuam da fila.
+  const entrada = useEntrada(ordem);
   const temPendente = envio.items.some((i) => i.status === "PENDING");
 
   // ⚠️ O ✓ DA LISTA SÓ APROVA (decisão dela, 15/10): criar a tarefa fica no
@@ -567,9 +571,8 @@ function LinhaDoEnvio({
   return (
     <motion.li
       layout
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0, transition: { ...MOLA, delay: Math.min(ordem, 10) * 0.03 } }}
-      exit={{ opacity: 0, x: -16, transition: { duration: 0.18 } }}
+      {...entrada}
+      exit={{ opacity: 0, x: -16, transition: { duration: DUR[2] } }}
       className="group relative rounded-lg"
     >
       {/* O destaque do escolhido é UM só, e desliza de uma linha para outra. */}

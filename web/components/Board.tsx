@@ -81,7 +81,9 @@ import { useWarnBeforeUnload } from "@/lib/useWarnBeforeUnload";
 import { sincronizarTaskNaUrl, lerTaskDaUrl } from "@/lib/urlTarefa";
 import { ORDENACOES, ordenar, type Ordenacao } from "@/lib/ordenacao";
 
-import Loading from "@/components/Loading";
+import { motion } from "motion/react";
+import { Esqueleto } from "@/components/Loading";
+import { useEntrada } from "@/components/Entrada";
 import PageTitle from "@/components/PageTitle";
 import { useAvisar } from "@/components/Toasts";
 // Spec 031 (C3): `normalizar` saiu daqui pra lib/filtrosQuadro (agora
@@ -988,22 +990,22 @@ export default function Board({
   }
 
   if (erro) return <div className="error-box" style={{ maxWidth: 480 }}>{erro}</div>;
-  if (!tasks) return <Loading rotulo="Carregando tarefas" />;
+  if (!tasks) return <Esqueleto forma="colunas" rotulo="Carregando tarefas" />;
   // Quadro geral/subtime dependem do rootId pro filtro. Espera ele
   // carregar pra nao piscar tasks que o filtro vai esconder. Projeto
   // (projectId) nao usa rootId -> nao espera.
   if (!projectId && !rootCarregado)
-    return <Loading rotulo="Carregando tarefas" />;
+    return <Esqueleto forma="colunas" rotulo="Carregando tarefas" />;
   // Modo SUBTIME depende TAMBEM dos membros: o filtro hibrido usa memberTeam
   // pra decidir as "compartilhadas". Espera os membros pra elas nao aparecerem
   // atrasadas. Geral e projeto nao dependem disso -> nao esperam.
   if (!projectId && subteamId && !membrosCarregados)
-    return <Loading rotulo="Carregando tarefas" />;
+    return <Esqueleto forma="colunas" rotulo="Carregando tarefas" />;
   // §8: o modo SUBTIME tambem depende dos PROJETOS -- a pill e o filtro de
   // origem classificam pelo time do projeto. Sem esperar, tudo nasce
   // "indefinido" (sem pill) e se corrige sozinho na tela um instante depois.
   if (!projectId && subteamId && !projetosCarregados)
-    return <Loading rotulo="Carregando tarefas" />;
+    return <Esqueleto forma="colunas" rotulo="Carregando tarefas" />;
   // ⚠️ O ERRO DE `/boards` VEM ANTES DA ESPERA, e ate 13/08 ele nao existia.
   //
   // O `catch` gravava `[]` e seguia. Com `boardId`, `[]` fazia a busca do
@@ -1031,7 +1033,7 @@ export default function Board({
       </div>
     );
   // Fatia 4c: sem as colunas nao ha kanban. Espera igual aos outros.
-  if (!quadros) return <Loading rotulo="Carregando tarefas" />;
+  if (!quadros) return <Esqueleto forma="colunas" rotulo="Carregando tarefas" />;
 
   // ---- As colunas deste quadro (fatia 4c) ----
   //
@@ -1149,7 +1151,7 @@ export default function Board({
     // transformaria um quadro apagado numa tela que bate no servidor para
     // sempre, que e o defeito ANTERIOR (a espera eterna) com custo de rede.
     if (quadrosPara !== boardId || buscasSemOQuadro < 2) {
-      return <Loading rotulo="Carregando tarefas" />;
+      return <Esqueleto forma="colunas" rotulo="Carregando tarefas" />;
     }
     return (
       <div className="error-box" role="alert" style={{ maxWidth: 480 }}>
@@ -2325,9 +2327,10 @@ export default function Board({
               // disputar o mesmo gesto no quadro normal.
               disabled={!modoEdicao}
             >
-              {colunasVisiveis.map((c) => (
+              {colunasVisiveis.map((c, i) => (
               <ColunaKanban
                 key={c.id}
+                ordem={i}
                 coluna={c}
                 count={(porColuna[c.id] || []).length}
                 cabecalho={
@@ -2588,17 +2591,22 @@ function ColunaKanban({
   count,
   children,
   cabecalho,
+  ordem = 0,
 }: {
   coluna: Coluna;
   count: number;
   children: React.ReactNode;
   /** Trocado no modo de edicao. Ausente = o cabecalho normal. */
   cabecalho?: React.ReactNode;
+  /** Posicao na fileira: a entrada escalona POR COLUNA, nunca por card. */
+  ordem?: number;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: coluna.id });
+  const entrada = useEntrada(ordem);
   return (
-    <div
+    <motion.div
       ref={setNodeRef}
+      {...entrada}
       style={{
         // ⚠️ 240 E DELIBERADO, E A ROLAGEM HORIZONTAL DO QUADRO TAMBEM.
         // Confirmado pela Camila em 21/08: "o scroll do quadro com muitas
@@ -2677,7 +2685,7 @@ function ColunaKanban({
           <div className="muted" style={{ fontSize: 12, padding: "8px 2px" }}>—</div>
         )}
       </div>
-    </div>
+    </motion.div>
   );
 }
 

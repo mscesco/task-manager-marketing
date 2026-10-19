@@ -136,6 +136,51 @@ export default function Loading({
   );
 }
 
+/**
+ * O esqueleto (redesign 19/10): a FORMA da tela que vem, no lugar dos pontos.
+ *
+ * ⚠️ SÓ ONDE A FORMA É ÓBVIA: um quadro são colunas de cards; uma lista são
+ * linhas. Onde não é (a sessão, uma gaveta), o `Loading` de cima continua.
+ *
+ * ⚠️ O mesmo `role="status"` + `aria-label` dos pontos: os testes do quadro
+ * procuram a espera pelo nome, e o leitor de tela também. `aria-busy` diz que a
+ * região ainda vai mudar. As barras são decoração (`aria-hidden`).
+ *
+ * O brilho mora na classe `.skeleton` do `globals.css` (1,4s em `--ease-io`,
+ * só `transform`); quem pede menos movimento vê as barras paradas.
+ */
+export function Esqueleto({
+  forma,
+  rotulo = "Carregando",
+}: {
+  forma: "linhas" | "colunas";
+  rotulo?: string;
+}) {
+  // Larguras variadas para parecer texto, e não uma régua.
+  const larguras = ["w-[72%]", "w-[88%]", "w-3/5", "w-4/5", "w-2/3"];
+  const linha = (i: number) => <div key={i} className={`skeleton h-4 ${larguras[i % 5]}`} />;
+  return (
+    <div role="status" aria-busy="true" aria-label={rotulo} className="w-full">
+      {forma === "linhas" ? (
+        <div aria-hidden="true" className="flex flex-col gap-3 py-2">
+          {[0, 1, 2, 3, 4, 5].map(linha)}
+        </div>
+      ) : (
+        <div aria-hidden="true" className="flex gap-3.5 overflow-hidden">
+          {[0, 1, 2].map((c) => (
+            <div key={c} className="flex min-w-[240px] flex-1 flex-col gap-2 p-1">
+              <div className="skeleton mb-2 h-4 w-1/2" />
+              {[0, 1, 2].map((k) => (
+                <div key={k} className="skeleton h-20 rounded-[var(--radius-lg)]" />
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** A tela inteira, centrada — o estado antes de qualquer conteúdo existir. */
 export function LoadingScreen({ rotulo }: { rotulo?: string }) {
   return (

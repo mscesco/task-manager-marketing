@@ -27,6 +27,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { motion } from "motion/react";
+import { DUR } from "@/lib/motion";
 import { ChevronDown, Plus } from "lucide-react";
 import AnchoredPanel, { useAnchoredPanel } from "@/components/AnchoredPanel";
 import { useAvisar } from "@/components/Toasts";
@@ -50,7 +51,7 @@ const NOME_DO_LAYOUT: Record<BaseView["layout"], string> = {
 /** Quanto o menu pelo mouse espera um possível segundo clique. */
 export const ESPERA_DO_DUPLO = 250;
 
-const MOLA = { type: "spring", duration: 0.3, bounce: 0.18 } as const;
+const MOLA = { type: "spring", duration: DUR[3], bounce: 0.18 } as const;
 
 export default function BarraDeVisoes({
   base,

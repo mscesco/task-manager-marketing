@@ -32,6 +32,7 @@
 
 import { useCallback, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
+import { DUR } from "@/lib/motion";
 import { Building2, Check, ChevronDown } from "lucide-react";
 import AnchoredPanel, {
   PANEL_ITEM,
@@ -141,7 +142,7 @@ export default function ContextSwitcher({
             <motion.span
               className="inline-flex shrink-0"
               animate={{ rotate: isOpen ? 180 : 0 }}
-              transition={{ type: "spring", duration: 0.3, bounce: 0 }}
+              transition={{ type: "spring", duration: DUR[3], bounce: 0 }}
             >
               <ChevronDown size={15} aria-hidden="true" />
             </motion.span>

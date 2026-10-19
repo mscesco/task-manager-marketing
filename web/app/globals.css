@@ -509,10 +509,15 @@ button { font-family: inherit; cursor: pointer; }
   to   { opacity: 1; }
 }
 @keyframes tm-card-entra {
-  from { opacity: 0; transform: translateY(8px) scale(0.985); }
+  from { opacity: 0; transform: translateY(8px) scale(0.97); }
   to   { opacity: 1; transform: none; }
 }
-.modal-scrim { animation: tm-scrim-entra var(--dur-2) var(--ease-out); }
+/* O desfoque do veu (redesign 19/10) nao e animado: `backdrop-filter` nao e
+   transform nem opacity, e a opacidade do proprio veu ja faz a entrada. */
+.modal-scrim {
+  animation: tm-scrim-entra var(--dur-2) var(--ease-out);
+  backdrop-filter: blur(6px);
+}
 .modal-card  { animation: tm-card-entra var(--dur-2) var(--ease-out); }
 .modal-scrim[data-saindo="true"] { animation: tm-scrim-entra var(--dur-1) var(--ease-io) reverse forwards; }
 .modal-card[data-saindo="true"]  { animation: tm-card-entra var(--dur-1) var(--ease-io) reverse forwards; }
@@ -534,11 +539,38 @@ button { font-family: inherit; cursor: pointer; }
 .card-elev {
   cursor: grab;
   border-radius: var(--radius-lg);
-  transition: transform var(--dur-1) var(--ease-out), box-shadow var(--dur-1) var(--ease-out);
+  transition: transform var(--dur-2) var(--ease-out), box-shadow var(--dur-2) var(--ease-out);
 }
+/* Redesign 19/10: sobe 3px e a sombra e tingida do `--accent` -- o token muda
+   por tema, entao uma regra serve aos dois. O anel de 1px e o que le como
+   "pegavel" sobre o canvas escuro, onde sombra preta some. */
 .card-elev:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 2px 4px rgba(16, 24, 40, 0.07), 0 4px 12px rgba(16, 24, 40, 0.08);
+  transform: translateY(-3px);
+  box-shadow: 0 0 0 1px var(--accent),
+    0 10px 28px -10px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+/* --- Esqueleto (redesign 19/10): a forma da tela que vem ---------------
+   Linhas na `--surface-2` com um brilho que atravessa em 1,4s. So `transform`
+   anima (o brilho e um pseudo-elemento que desliza); o bloco de
+   prefers-reduced-motion acima o para, e as linhas paradas ainda leem como
+   "espere". Cores dos tokens: no escuro `--surface-2` clareia junto. */
+@keyframes tm-shimmer {
+  from { transform: translateX(-100%); }
+  to   { transform: translateX(100%); }
+}
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+.skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--surface) 70%, transparent), transparent);
+  animation: tm-shimmer 1.4s var(--ease-io) infinite;
 }
 
 /* --- Affordance de clique: hover + foco visivel por teclado (C1/C2) ---

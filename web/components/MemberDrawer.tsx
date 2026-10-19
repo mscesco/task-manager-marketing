@@ -20,6 +20,7 @@ import Gaveta from "@/components/Gaveta";
 import { useAvisar } from "@/components/Toasts";
 import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
+import { DUR } from "@/lib/motion";
 import { ChevronRight } from "lucide-react";
 import Badge from "@/components/Badge";
 import MenuSelect from "@/components/MenuSelect";
@@ -173,7 +174,7 @@ export default function MemberDrawer({
                 initial={{ opacity: 0, y: -8, height: 0 }}
                 animate={{ opacity: 1, y: 0, height: "auto" }}
                 exit={{ opacity: 0, y: -8, height: 0 }}
-                transition={{ type: "spring", duration: 0.32, bounce: 0 }}
+                transition={{ type: "spring", duration: DUR[3], bounce: 0 }}
                 style={{ overflow: "hidden" }}
               >
                 <TemporaryPassword

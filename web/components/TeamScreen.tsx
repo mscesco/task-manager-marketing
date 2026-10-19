@@ -81,6 +81,7 @@ import {
 import { lerEstadoDaTela, gravarEstadoDaTela } from "@/lib/estadoDaTela";
 
 import Loading from "@/components/Loading";
+import { DUR } from "@/lib/motion";
 import { useDocumentTitle } from "@/lib/useDocumentTitle";
 type View = "people" | "structure";
 type RevealedPassword = { title: string; email: string; password: string };
@@ -312,7 +313,7 @@ export default function TeamScreen({ teamId }: { teamId: string }) {
             initial={{ y: 10, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: -10, opacity: 0 }}
-            transition={{ duration: 0.2 }}
+            transition={{ duration: DUR[2] }}
           >
             {view === "people" ? (
               <>
@@ -394,7 +395,7 @@ export default function TeamScreen({ teamId }: { teamId: string }) {
                         initial={{ opacity: 0, y: 6 }}
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: -6 }}
-                        transition={{ duration: 0.18 }}
+                        transition={{ duration: DUR[2] }}
                       >
                         {visiveis.length === 0 ? (
                           <div className="muted rounded-lg border border-border bg-surface p-4 text-sm">
