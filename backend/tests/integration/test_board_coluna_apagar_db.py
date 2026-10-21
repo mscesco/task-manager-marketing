@@ -252,6 +252,41 @@ async def test_o_status_e_reescrito_pela_coluna_que_RECEBEU(db) -> None:
     assert tarefa.terminal_since is not None
 
 
+async def test_mae_e_filha_na_mesma_coluna_concluem_UMA_vez(db) -> None:
+    """⚠️ A FILHA VAI ANTES DA MAE (auditoria de 21/10).
+
+    Concluir a mae conclui a subarvore por SQL. Com a mae primeiro, a filha
+    ainda "em andamento" na memoria era concluida de novo pelo laco, e o
+    `completed_at` dela ficava DEPOIS do da mae -- historico que mente.
+    """
+    ws, raiz, sub_a, sub_b, user, arvore = await _mundo(db)
+    quadro = await _quadro_avulso(db, ws, user, arvore, sub_a)
+    colunas = await _colunas(db, quadro.id)
+    andamento = _por_nome(colunas, "Em Andamento")
+    concluido = _por_nome(colunas, "Concluído")
+    mae = await _tarefa_na_coluna(
+        db, ws=ws, time=sub_a, user=user, coluna=andamento, titulo="Mae"
+    )
+    filha = await f.make_task(
+        db, workspace_id=ws, created_by=user, team_id=sub_a, title="Filha", parent=mae
+    )
+    filha.column_id = andamento.id
+    await db.flush()
+
+    with acting_as(**_ctx(ws, user, arvore, mship(sub_a, "SUPERVISOR"))):
+        movidas = await BoardService(db).apagar_coluna(
+            board_id=quadro.id, column_id=andamento.id, destino_id=concluido.id
+        )
+    await db.flush()
+    await db.refresh(mae)
+    await db.refresh(filha)
+
+    assert movidas == 2
+    assert (mae.status, filha.status) == (TaskStatus.COMPLETED, TaskStatus.COMPLETED)
+    assert filha.column_id == concluido.id
+    assert filha.completed_at <= mae.completed_at
+
+
 async def test_destino_igual_a_coluna_apagada_e_recusado(db) -> None:
     ws, raiz, sub_a, sub_b, user, arvore = await _mundo(db)
     quadro = await _quadro_avulso(db, ws, user, arvore, sub_a)

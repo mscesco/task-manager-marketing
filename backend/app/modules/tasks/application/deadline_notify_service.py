@@ -3,7 +3,8 @@
 Roda FORA de contexto de tenant (igual StaleArchivalService): lista todos os
 workspaces e, por workspace, entra em `tenant_scope` e emite:
   - TASK_DUE_SOON  -- task aberta com due_date em [hoje, hoje+2] ainda nao avisada;
-  - TASK_OVERDUE   -- task aberta com due_date < hoje ainda nao avisada.
+  - TASK_OVERDUE   -- task aberta com due_date < hoje, ou hoje com `due_time` ja
+    passada (a mesma regra de `dashboard.is_overdue`), ainda nao avisada.
 
 Destinatarios (D2): responsaveis ATIVOS da task; se nao houver nenhum ativo, o
 criador -- e so se ele tambem estiver ativo (filtro `is_active` acrescentado em
@@ -25,11 +26,10 @@ consciente: at-most-once (perder 1 aviso) e melhor que re-notificar em loop.
 from __future__ import annotations
 
 import uuid
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from typing import Final
-from zoneinfo import ZoneInfo
 
-from sqlalchemy import and_, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger
@@ -39,10 +39,10 @@ from app.modules.notifications.application.notification_emitter import (
     NotificationEmitter,
 )
 from app.modules.tasks.domain.board_semantics import TERMINAL_SEMANTICS
+from app.modules.tasks.domain.dashboard import workspace_now
 
 logger = get_logger(__name__)
 
-_TZ_SP = ZoneInfo("America/Sao_Paulo")
 # Espelho SQL de `board_semantics.TERMINAL_SEMANTICS`. Tupla ORDENADA, e nao o
 # frozenset direto: a ordem de um frozenset varia entre execucoes e faria o SQL
 # gerado mudar de forma sem nada ter mudado -- ruim para ler EXPLAIN e pior
@@ -75,7 +75,8 @@ class DeadlineNotifyService:
 
     async def run(self, *, now: datetime) -> dict:
         """Executa a varredura. `now` (UTC) e convertido pra data local (D7)."""
-        hoje = now.astimezone(_TZ_SP).date()
+        agora = workspace_now(now)
+        hoje = agora.today
         limite_soon = hoje + timedelta(days=2)
 
         ws_ids = list(
@@ -98,12 +99,14 @@ class DeadlineNotifyService:
                     soon = await self._run_kind(
                         ws_id=ws_id,
                         hoje=hoje,
+                        minuto=agora.minute,
                         limite_soon=limite_soon,
                         overdue=False,
                     )
                     over = await self._run_kind(
                         ws_id=ws_id,
                         hoje=hoje,
+                        minuto=agora.minute,
                         limite_soon=limite_soon,
                         overdue=True,
                     )
@@ -137,6 +140,7 @@ class DeadlineNotifyService:
         *,
         ws_id: uuid.UUID,
         hoje: date,
+        minuto: time,
         limite_soon: date,
         overdue: bool,
     ) -> int:
@@ -173,15 +177,26 @@ class DeadlineNotifyService:
                 Task.deleted_at.is_(None),
             )
         )
+        # A HORA CONTA (auditoria de 21/10): "hoje as 9h" ja passou as 10h, e
+        # e o que o selo do quadro e a tela inicial dizem. Sem isto o aviso de
+        # atraso so saia no dia seguinte.
         if overdue:
             stmt = base.where(
-                Task.due_date < hoje,
+                or_(
+                    Task.due_date < hoje,
+                    and_(Task.due_date == hoje, Task.due_time < minuto),
+                ),
                 Task.overdue_notified_for.is_distinct_from(Task.due_date),
             )
         else:
             stmt = base.where(
                 Task.due_date >= hoje,
                 Task.due_date <= limite_soon,
+                or_(
+                    Task.due_date > hoje,
+                    Task.due_time.is_(None),
+                    Task.due_time >= minuto,
+                ),
                 Task.due_soon_notified_for.is_distinct_from(Task.due_date),
             )
 

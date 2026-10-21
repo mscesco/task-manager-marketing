@@ -1340,6 +1340,10 @@ class BoardService:
             )
 
             servico = TaskService(self._session)
+            # FILHAS ANTES DA MAE (auditoria de 21/10). Concluir a mae conclui a
+            # subarvore por SQL; a filha ainda "em andamento" na memoria era
+            # concluida DE NOVO pelo laco, com `completed_at` depois do da mae.
+            vivas.sort(key=lambda t: -t.depth)
             for tarefa in vivas:
                 await servico.update(
                     task_id=tarefa.id,
