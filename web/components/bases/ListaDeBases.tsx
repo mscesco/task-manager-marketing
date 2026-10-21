@@ -16,6 +16,7 @@ import Link from "next/link";
 import { Plus, Table2 } from "lucide-react";
 import Card from "@/components/Card";
 import EmptyState from "@/components/EmptyState";
+import Entrada from "@/components/Entrada";
 import Loading from "@/components/Loading";
 import PageHeader from "@/components/PageHeader";
 import { useAvisar } from "@/components/Toasts";
@@ -246,10 +247,13 @@ export default function ListaDeBases() {
             )}
             {/* Redesign (fatia 7): grade de cards com uma miniatura de tabela,
                 como a prancha. A miniatura e decoracao (`aria-hidden`). */}
-            <ul className="m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-4 p-0">
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-4">
+              {/* A entrada escalonada, como em Projetos (21/10). `Entrada`
+                  embrulha cada card num bloco, por isso a grade é `div`. */}
+              <Entrada className="min-w-0">
               {g.bases.map((b) => (
-                <li key={b.id} className="min-w-0">
                   <Link
+                    key={b.id}
                     href={`/bases/${b.id}`}
                     // O nome acessivel e so o da base; a data e detalhe visual.
                     aria-label={b.name}
@@ -276,10 +280,10 @@ export default function ListaDeBases() {
                       </span>
                     )}
                   </Link>
-                </li>
               ))}
+              </Entrada>
               {raizesQueCria.some((r) => r.id === g.raiz?.id) && !criando && (
-                <li className="min-w-0">
+                <div className="min-w-0">
                   <button
                     type="button"
                     onClick={() => {
@@ -292,9 +296,9 @@ export default function ListaDeBases() {
                     Nova base
                     <span className="text-xs font-medium">começa com uma coluna de texto</span>
                   </button>
-                </li>
+                </div>
               )}
-            </ul>
+            </div>
           </section>
         ))
       )}
