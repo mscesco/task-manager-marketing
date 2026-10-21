@@ -2929,8 +2929,13 @@ export default function TaskDetail({
                 </span>
               ) : (
                 <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                  {/* ⚠️ O MAIS NOVO PRIMEIRO (pedido dela, 21/10). A API manda em
+                      ordem crescente e o comentário novo entra no fim da lista,
+                      então inverter aqui serve aos dois casos. As respostas
+                      continuam em ordem de conversa, embaixo da raiz. */}
                   {comentarios
                     .filter((c) => !c.parent_comment_id)
+                    .reverse()
                     .map((c) => (
                       <div key={c.id} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                         <LinhaComentario
