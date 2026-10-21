@@ -44,12 +44,18 @@ async def test_criar_subtarefa_sob_pai_ARQUIVADO_e_recusado(db) -> None:
     raiz, _sub, proj, ctx, user = await _mundo(db)
     with acting_as(**ctx):
         svc = TaskService(db)
-        pai = await svc.create(CreateTaskCommand(title="pai", project_id=proj, team_id=raiz, assignee_ids=[user]))
+        pai = await svc.create(
+            CreateTaskCommand(title="pai", project_id=proj, team_id=raiz, assignee_ids=[user])
+        )
         await svc.archive(task_id=pai.id)
         with pytest.raises(ValidationError):
             await svc.create(
                 CreateTaskCommand(
-                    title="filha", project_id=proj, team_id=raiz, parent_task_id=pai.id, assignee_ids=[user]
+                    title="filha",
+                    project_id=proj,
+                    team_id=raiz,
+                    parent_task_id=pai.id,
+                    assignee_ids=[user],
                 )
             )
 
@@ -58,8 +64,12 @@ async def test_mover_para_pai_ARQUIVADO_e_recusado(db) -> None:
     raiz, _sub, proj, ctx, user = await _mundo(db)
     with acting_as(**ctx):
         svc = TaskService(db)
-        pai = await svc.create(CreateTaskCommand(title="pai", project_id=proj, team_id=raiz, assignee_ids=[user]))
-        solta = await svc.create(CreateTaskCommand(title="solta", project_id=proj, team_id=raiz, assignee_ids=[user]))
+        pai = await svc.create(
+            CreateTaskCommand(title="pai", project_id=proj, team_id=raiz, assignee_ids=[user])
+        )
+        solta = await svc.create(
+            CreateTaskCommand(title="solta", project_id=proj, team_id=raiz, assignee_ids=[user])
+        )
         await svc.archive(task_id=pai.id)
         with pytest.raises(ValidationError):
             await svc.move(task_id=solta.id, command=MoveTaskCommand(parent_task_id=pai.id))
@@ -69,9 +79,17 @@ async def test_trocar_time_com_subtarefa_viva_e_recusado(db) -> None:
     raiz, sub, proj, ctx, user = await _mundo(db)
     with acting_as(**ctx):
         svc = TaskService(db)
-        pai = await svc.create(CreateTaskCommand(title="pai", project_id=proj, team_id=raiz, assignee_ids=[user]))
+        pai = await svc.create(
+            CreateTaskCommand(title="pai", project_id=proj, team_id=raiz, assignee_ids=[user])
+        )
         await svc.create(
-            CreateTaskCommand(title="filha", project_id=proj, team_id=raiz, parent_task_id=pai.id, assignee_ids=[user])
+            CreateTaskCommand(
+                title="filha",
+                project_id=proj,
+                team_id=raiz,
+                parent_task_id=pai.id,
+                assignee_ids=[user],
+            )
         )
         with pytest.raises(ValidationError):
             await svc.update(task_id=pai.id, command=UpdateTaskCommand(team_id=sub))
