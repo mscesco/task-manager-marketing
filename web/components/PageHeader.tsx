@@ -32,7 +32,9 @@ export default function PageHeader({
   className?: string;
 }) {
   return (
-    <div className={`mb-[18px] flex items-center gap-3 ${className}`.trim()}>
+    // `flex-wrap` (redesign, fatia 7): quando as ações não cabem ao lado do
+    // título, descem para uma segunda linha em vez de espremer o título.
+    <div className={`mb-[18px] flex flex-wrap items-center gap-3 ${className}`.trim()}>
       {/* ⚠️ Spec 039 (F1): cabeçalho de tela = 26px / 800. Sem segunda família,
           o PESO é que faz a hierarquia -- ver a tabela em §5.2 da spec.
           O `tracking` foi mantido: apertar título é medição própria na Raleway,
