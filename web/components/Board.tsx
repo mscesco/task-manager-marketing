@@ -82,6 +82,7 @@ import { sincronizarTaskNaUrl, lerTaskDaUrl } from "@/lib/urlTarefa";
 import { ORDENACOES, ordenar, type Ordenacao } from "@/lib/ordenacao";
 
 import { motion } from "motion/react";
+import { soltarConfete } from "@/lib/confete";
 import { Esqueleto } from "@/components/Loading";
 import { useEntrada } from "@/components/Entrada";
 import PageTitle from "@/components/PageTitle";
@@ -915,6 +916,15 @@ export default function Board({
     // banco; aqui so mexemos no que esta carregado em `tasks` (que pode vir
     // truncado).
     const concluindo = colunaDestino.semantic === "DONE";
+    // O confete sai de onde o card foi SOLTO (pedido dela, 21/10): o retangulo
+    // do arrasto no momento do drop, lido agora -- depois do `await` o card ja
+    // mudou de coluna. So quando a tarefa VIRA concluida, nao entre duas
+    // colunas de conclusao.
+    const soltoEm = e.active.rect.current.translated;
+    const origemDoConfete =
+      concluindo && colunaPorId.get(colunaAnterior)?.semantic !== "DONE" && soltoEm
+        ? { x: soltoEm.left + soltoEm.width / 2, y: soltoEm.top + soltoEm.height / 2 }
+        : null;
     const prefixo = atual.path + ".";
     // ⚠️ GUARDA OS DOIS CAMPOS, porque a atualizacao otimista mexe nos dois.
     // Guardar so a coluna deixaria a subtarefa revertida para a coluna certa
@@ -970,6 +980,7 @@ export default function Board({
           t.id === taskId ? mesclaTarefa(atualizada, t) : t
         )
       );
+      soltarConfete(origemDoConfete);
     } catch (err) {
       setTasks((prev) =>
         prev!.map((t) => {

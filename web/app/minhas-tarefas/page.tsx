@@ -42,6 +42,7 @@ import {
   type OrigemDaColuna,
 } from "@/lib/coluna";
 import { normalizarBusca } from "@/lib/filtrosQuadro";
+import { soltarConfete } from "@/lib/confete";
 import {
   listAllMyAssignments,
   quadroGeralComIndice,
@@ -569,6 +570,12 @@ function Minhas() {
     // Deixar um dos dois para tras foi o defeito que a conferencia manual de
     // 10/08 pegou. A metade `status` morre com o ultimo leitor dela.
     const concluindo = colunaDestino.semantic === "DONE";
+    // O confete sai de onde o card foi solto (o mesmo desenho do `Board.tsx`).
+    const soltoEm = e.active.rect.current.translated;
+    const origemDoConfete =
+      concluindo && indice?.get(colunaAnterior)?.coluna.semantic !== "DONE" && soltoEm
+        ? { x: soltoEm.left + soltoEm.width / 2, y: soltoEm.top + soltoEm.height / 2 }
+        : null;
     const prefixo = atual.path + ".";
     const anteriores = new Map<string, { coluna: string; status: string }>();
     if (concluindo) {
@@ -604,6 +611,7 @@ function Minhas() {
       // o status certo vem NA RESPOSTA.
       const atualizada = await updateTask(taskId, { column_id: destino });
       aoUpsert(atualizada); // re-merge do servidor, preservando relations/assignees
+      soltarConfete(origemDoConfete);
     } catch (err) {
       setItems((prev) =>
         prev
