@@ -4,8 +4,12 @@ import { useRouter } from "next/navigation";
 import AppShell from "@/components/AppShell";
 import EmptyState from "@/components/EmptyState";
 import PageHeader from "@/components/PageHeader";
+import Avatar from "@/components/Avatar";
 import Badge from "@/components/Badge";
 import TaskDetail from "@/components/TaskDetail";
+import { dataParaTela } from "@/lib/baseTable";
+import { nomeCurto } from "@/lib/people";
+import { diaNoWorkspace } from "@/lib/prazo";
 import TaskModal from "@/components/TaskModal";
 import { useAvisar } from "@/components/Toasts";
 import {
@@ -215,7 +219,7 @@ function Arquivadas() {
   if (!tasks) return <Loading rotulo="Carregando arquivadas" />;
 
   return (
-    <div style={{ maxWidth: 720 }}>
+    <div style={{ maxWidth: 1100 }}>
       {/* ⚠️ O NOME DO TIME, pelo mesmo motivo das outras três telas: lista
           recortada que não diz pelo quê parece a lista inteira, e quem não
           encontra uma tarefa arquivada conclui que ela foi apagada -- justamente
@@ -235,17 +239,33 @@ function Arquivadas() {
           description="Tarefas concluídas ou canceladas antigas aparecem aqui."
         />
       ) : (
-        <div style={{ border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden" }}>
-          {tasks.map((t, i) => (
-            <LinhaArquivada
-              key={t.id}
-              t={t}
-              rotuloDaColuna={rotuloDeColuna(indice?.get(t.column_id))}
-              primeira={i === 0}
-              onReativou={() => carregar(page)}
-              onAbrir={abrirDetalhe}
-            />
-          ))}
+        // Redesign (fatia 7): tabela com colunas, como a prancha.
+        <div className="overflow-x-auto rounded-xl border border-border bg-surface">
+          <table className="w-full border-collapse text-base">
+            <thead>
+              <tr className="border-b border-border">
+                <th scope="col" className="label px-3 py-2.5 text-left">Tarefa</th>
+                <th scope="col" className="label px-3 py-2.5 text-left">Projeto</th>
+                <th scope="col" className="label px-3 py-2.5 text-left">Coluna</th>
+                <th scope="col" className="label px-3 py-2.5 text-left">Concluída em</th>
+                <th scope="col" className="label px-3 py-2.5 text-left">Responsável</th>
+                <th scope="col" className="px-3 py-2.5"><span className="sr-only">Ações</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              {tasks.map((t) => (
+                <LinhaArquivada
+                  key={t.id}
+                  t={t}
+                  rotuloDaColuna={rotuloDeColuna(indice?.get(t.column_id))}
+                  projeto={t.project_id ? projectNames.get(t.project_id) ?? null : null}
+                  responsaveis={(t.assignee_ids ?? []).map((id) => ({ id, nome: members.get(id)?.name ?? "" }))}
+                  onReativou={() => carregar(page)}
+                  onAbrir={abrirDetalhe}
+                />
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
 
@@ -318,7 +338,8 @@ function Arquivadas() {
 function LinhaArquivada({
   t,
   rotuloDaColuna,
-  primeira,
+  projeto,
+  responsaveis,
   onReativou,
   onAbrir,
 }: {
@@ -337,7 +358,9 @@ function LinhaArquivada({
    * tarefa.
    */
   rotuloDaColuna: string | null;
-  primeira: boolean;
+  /** Nome do projeto, se a tarefa tem um e o mapa já chegou. */
+  projeto: string | null;
+  responsaveis: { id: string; nome: string }[];
   onReativou: () => void;
   onAbrir: (t: Task) => void;
 }) {
@@ -362,67 +385,101 @@ function LinhaArquivada({
     }
   }
 
+  // Redesign (fatia 7): uma linha de tabela; a confirmacao de reativar e o erro
+  // abrem numa segunda linha, abaixo da tarefa.
   return (
-    <div
-      style={{
-        display: "flex", flexDirection: "column", gap: 8, padding: "12px 16px",
-        borderTop: primeira ? "none" : "1px solid var(--border)",
-        background: "var(--surface)",
-      }}
-    >
-      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
+    <>
+      <tr className="border-b border-border transition-colors duration-150 last:border-b-0 hover:bg-surface-2">
+        <td className="max-w-[360px] px-3 py-2 align-middle">
           {/* Spec 031 (C5): o TITULO abre o detalhe -- nao a linha inteira,
               que ja tem botoes dentro e produziria clique fantasma. */}
           <button
             type="button"
-            className="tappable"
+            className="tappable block w-full truncate text-left font-semibold text-ink"
             onClick={() => onAbrir(t)}
             title="Abrir a tarefa"
-            style={{
-              display: "block", width: "100%", textAlign: "left",
-              border: "none", background: "transparent", padding: 0,
-              font: "inherit", fontSize: 14, fontWeight: 600, color: "var(--text)",
-              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-            }}
+            style={{ border: "none", background: "transparent", padding: 0, font: "inherit", fontWeight: 600 }}
           >
             {t.title}
           </button>
-        </div>
-        <Badge tone="outline" size="md" weight="normal" color={STATUS_COLOR[t.status]} className="shrink-0">
-          {/* Nome da coluna; reserva no rotulo do status. A COR continua
-              vindo de `STATUS_TEXT` -- `coluna.color` e token de traco e
-              reprova AA como texto (Spec 031 §2.2b); a derivacao acessivel de
-              cor arbitraria nunca foi feita. */}
-          {rotuloDaColuna ?? STATUS_LABEL[t.status] ?? t.status}
-        </Badge>
-
-        {!confirmar && (
-          <button
-            className="btn btn-ghost"
-            onClick={() => { setErro(null); setConfirmar(true); }}
-            style={{ padding: "4px 10px", fontSize: 12, flexShrink: 0 }}
-          >
-            Reativar
-          </button>
-        )}
-      </div>
-
-      {confirmar && (
-        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-          <span className="muted" style={{ fontSize: 12.5 }}>
-            Reativar <strong>{t.title}</strong>? Volta ao quadro em <strong>Backlog</strong>.
-          </span>
-          <button className="btn btn-primary" onClick={reativar} disabled={busy} style={{ padding: "4px 12px", fontSize: 12 }}>
-            {busy ? "…" : "Reativar"}
-          </button>
-          <button className="btn btn-ghost" onClick={() => setConfirmar(false)} disabled={busy} style={{ padding: "4px 12px", fontSize: 12 }}>
-            Cancelar
-          </button>
-        </div>
+        </td>
+        <td className="px-3 py-2 align-middle">
+          {projeto ? (
+            <Badge tone="neutral" size="sm" weight="semibold" className="bg-surface-2 text-ink-soft">
+              {projeto}
+            </Badge>
+          ) : (
+            <span className="muted text-xs">—</span>
+          )}
+        </td>
+        <td className="px-3 py-2 align-middle">
+          <Badge tone="soft" size="sm" color={STATUS_COLOR[t.status]}>
+            {/* Nome da coluna; reserva no rotulo do status. A COR continua
+                vindo de `STATUS_TEXT` -- `coluna.color` e token de traco e
+                reprova AA como texto (Spec 031 §2.2b); a derivacao acessivel de
+                cor arbitraria nunca foi feita. */}
+            {rotuloDaColuna ?? STATUS_LABEL[t.status] ?? t.status}
+          </Badge>
+        </td>
+        <td className="whitespace-nowrap px-3 py-2 align-middle text-ink-soft">
+          {t.completed_at ? dataParaTela(diaNoWorkspace(t.completed_at)) : <span className="muted">—</span>}
+        </td>
+        <td className="px-3 py-2 align-middle">
+          {responsaveis.length === 0 ? (
+            <span className="muted text-xs">sem responsável</span>
+          ) : (
+            <span className="flex items-center gap-1.5">
+              <span className="flex">
+                {responsaveis.slice(0, 3).map((r, i) => (
+                  <Avatar
+                    key={r.id}
+                    id={r.id}
+                    name={r.nome}
+                    size="sm"
+                    title={r.nome || "Responsável"}
+                    className="border-[1.5px] border-surface"
+                    style={{ marginLeft: i === 0 ? 0 : -6 }}
+                  />
+                ))}
+              </span>
+              <span className="truncate text-sm">
+                {responsaveis.length === 1 ? nomeCurto(responsaveis[0].nome) : `${responsaveis.length} pessoas`}
+              </span>
+            </span>
+          )}
+        </td>
+        <td className="whitespace-nowrap px-3 py-2 text-right align-middle">
+          {!confirmar && (
+            <button
+              className="btn btn-ghost"
+              onClick={() => { setErro(null); setConfirmar(true); }}
+              style={{ padding: "4px 10px", fontSize: 12 }}
+            >
+              Reativar
+            </button>
+          )}
+        </td>
+      </tr>
+      {(confirmar || erro) && (
+        <tr className="border-b border-border last:border-b-0">
+          <td colSpan={6} className="px-3 pb-3 pt-1">
+            {confirmar && (
+              <div className="flex flex-wrap items-center gap-2.5">
+                <span className="muted text-sm">
+                  Reativar <strong>{t.title}</strong>? Volta ao quadro em <strong>Backlog</strong>.
+                </span>
+                <button className="btn btn-primary" onClick={reativar} disabled={busy} style={{ padding: "4px 12px", fontSize: 12 }}>
+                  {busy ? "…" : "Reativar"}
+                </button>
+                <button className="btn btn-ghost" onClick={() => setConfirmar(false)} disabled={busy} style={{ padding: "4px 12px", fontSize: 12 }}>
+                  Cancelar
+                </button>
+              </div>
+            )}
+            {erro && <div className="error-box mt-2">{erro}</div>}
+          </td>
+        </tr>
       )}
-
-      {erro && <div className="error-box">{erro}</div>}
-    </div>
+    </>
   );
 }
