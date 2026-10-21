@@ -18,6 +18,7 @@ como convertê-las em id. Os dois convivem.
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime
 
 import pytest
 
@@ -372,12 +373,10 @@ class _Falso:
     batch_total = 3
     answers = [{"label": "O que precisa?", "value": "um banner"}]  # noqa: RUF012 -- dublê
 
-    class _Data:
-        @staticmethod
-        def strftime(_):
-            return "26/08/2026"
-
-    created_at = _Data()
+    # ⚠️ 02:30 UTC de 27/08 = 23:30 de 26/08 em Brasilia. O briefing tem de
+    # dizer 26/08 (auditoria de 21/10: dizia 27/08). Um dublê de `strftime`
+    # aqui esconderia exatamente isso.
+    created_at = datetime(2026, 8, 27, 2, 30, tzinfo=UTC)
 
 
 def test_titulo_e_cortado_em_255() -> None:
