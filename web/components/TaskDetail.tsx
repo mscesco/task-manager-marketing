@@ -1669,8 +1669,8 @@ export default function TaskDetail({
           <div
             className={
               modo === "modal"
-                ? "flex min-w-0 min-h-0 flex-1 flex-col gap-5 px-7 pb-6 pt-5 min-[900px]:overflow-y-auto"
-                : "flex min-w-0 flex-col gap-5 px-7 pb-6 pt-5 min-[900px]:max-h-[70vh] min-[900px]:overflow-y-auto"
+                ? "flex min-w-0 min-h-0 flex-1 flex-col gap-4 px-7 pb-5 pt-4 min-[900px]:overflow-y-auto"
+                : "flex min-w-0 flex-col gap-4 px-7 pb-5 pt-4 min-[900px]:max-h-[70vh] min-[900px]:overflow-y-auto"
             }
           >
 
@@ -2411,7 +2411,7 @@ export default function TaskDetail({
               do pai (a caixa marca -> a barra enche na hora, sem esperar a API;
               reverte se o PATCH falhar). Proporcao = concluidas / filhos ATIVOS. */}
           {colunas && totalSub > 0 && (
-            <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 8 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <div
                 role="progressbar"
                 aria-valuenow={concluidas}
@@ -2447,7 +2447,7 @@ export default function TaskDetail({
           )}
 
           {linhasSub.length > 0 && (
-            <div style={{ border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden", marginTop: 8 }}>
+            <div style={{ border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden" }}>
               {linhasSub.map((f, i) => {
                 // ⚠️ A MARCA SAI DA COLUNA (fatia 4c-2), igual a conta logo
                 // acima. Se sair de `status`, a caixa fica desmarcada com a
