@@ -2331,7 +2331,8 @@ export default function Board({
           <div
             ref={colunasRef}
             style={{
-              display: "flex", gap: 14, overflowX: "auto", overflowY: "hidden",
+              // `gap` 8: era 14 (pedido dela, 21/10 -- ver a coluna).
+              display: "flex", gap: 8, overflowX: "auto", overflowY: "hidden",
               paddingBottom: 8, height: alturaColunas ?? undefined,
             }}
           >
@@ -2648,10 +2649,13 @@ function ColunaKanban({
         // o card quebrar em muitas linhas.
         //
         // Redesign (fatia 4): a raia tem fundo `--lane`, borda e raio 14.
-        // ⚠️ 262 = os 240 de antes MAIS a moldura nova (10 de padding e 1 de
-        // borda de cada lado): o card por dentro continua com a largura que
-        // tinha antes da fatia 4 (ajuste dela, 19/10).
-        flex: 1, minWidth: 262, minHeight: 0, borderRadius: 14, padding: 10,
+        //
+        // ⚠️ 292 / 6 (pedido dela, 21/10, com oito colunas na tela): "as
+        // colunas muito pequenas, o espaçamento entre o card e a borda da
+        // coluna muito grande". O card por dentro passa de 240 para 278
+        // (292 - 6 de padding - 1 de borda de cada lado); o vão entre colunas
+        // desceu de 14 para 8 no mesmo pedido (ver o `gap` da fileira).
+        flex: 1, minWidth: 292, minHeight: 0, borderRadius: 14, padding: 6,
         display: "flex", flexDirection: "column",
         background: isOver ? "var(--surface-2)" : "var(--lane)",
         border: "1px solid var(--border)",
