@@ -269,9 +269,12 @@ export default function ListaDeBases() {
                       <span className="min-w-0 flex-1 truncate text-md font-bold">{b.name}</span>
                       <Table2 size={15} aria-hidden className="mt-0.5 shrink-0 text-ink-faint" />
                     </span>
-                    <span className="muted text-xs">
-                      editada em {dataParaTela(diaNoWorkspace(b.updated_at))}
-                    </span>
+                    {/* Sem data valida (fixture velha, resposta parcial), a linha some. */}
+                    {b.updated_at && !Number.isNaN(Date.parse(b.updated_at)) && (
+                      <span className="muted text-xs">
+                        editada em {dataParaTela(diaNoWorkspace(b.updated_at))}
+                      </span>
+                    )}
                   </Link>
                 </li>
               ))}

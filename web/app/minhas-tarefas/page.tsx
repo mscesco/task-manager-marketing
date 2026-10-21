@@ -15,7 +15,10 @@ import AppShell from "@/components/AppShell";
 import EmptyState from "@/components/EmptyState";
 import PageHeader from "@/components/PageHeader";
 import { ChevronRight, CornerDownRight } from "lucide-react";
+import Avatar from "@/components/Avatar";
 import Badge from "@/components/Badge";
+import { nomeCurto } from "@/lib/people";
+import { agoraNoWorkspace } from "@/lib/prazo";
 import TaskModal from "@/components/TaskModal";
 import TaskDetail from "@/components/TaskDetail";
 import TaskCard from "@/components/TaskCard";
@@ -729,20 +732,35 @@ function Minhas() {
   // Agrupa por data de entrega (D, estilo Runrunit): so aparece o dia que tem
   // tarefa; grupos em ordem cronologica; sem-prazo por ultimo. Agrupa sobre a
   // lista FILTRADA. due_date e "YYYY-MM-DD" -> ordenacao por string ja e cronologica.
+  //
+  // Redesign (fatia 7): os grupos passam a ser POR URGÊNCIA, como a prancha --
+  // Atrasadas, Vencem hoje, Próximas (por data) e Sem prazo. Quem decide
+  // "atrasada" é a coluna (`deadlineTonePorColuna`), a mesma regra do card.
   const grupos = useMemo(() => {
-    const map = new Map<string, MyTaskItem[]>();
+    const hoje = agoraNoWorkspace().data;
+    const porId = new Map((colunas ?? []).map((c) => [c.id, c]));
+    const atrasadas: MyTaskItem[] = [];
+    const vencemHoje: MyTaskItem[] = [];
+    const proximas: MyTaskItem[] = [];
+    const semData: MyTaskItem[] = [];
     for (const t of filtrados) {
-      const key = t.due_date ?? "";
-      const arr = map.get(key);
-      if (arr) arr.push(t);
-      else map.set(key, [t]);
+      if (!t.due_date) {
+        semData.push(t);
+        continue;
+      }
+      // A mesma busca de `colunaDe`, que so e declarada mais abaixo.
+      const col = posicaoDaTarefa.get(t.id)?.origem.coluna ?? porId.get(t.column_id);
+      const tone = col ? deadlineTonePorColuna(col, t.due_date, t.is_archived, t.due_time) : null;
+      if (tone === "overdue") atrasadas.push(t);
+      else if (t.due_date === hoje) vencemHoje.push(t);
+      else proximas.push(t);
     }
-    const comData = [...map.entries()]
-      .filter(([k]) => k !== "")
-      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
-    const semData = map.get("") ?? [];
-    return { comData, semData };
-  }, [filtrados]);
+    const porData = (a: MyTaskItem, b: MyTaskItem) =>
+      (a.due_date ?? "") < (b.due_date ?? "") ? -1 : (a.due_date ?? "") > (b.due_date ?? "") ? 1 : 0;
+    atrasadas.sort(porData);
+    proximas.sort(porData);
+    return { atrasadas, vencemHoje, proximas, semData };
+  }, [filtrados, posicaoDaTarefa, colunas]);
 
   // Modo QUADRO: filtra so por relacao (o status vira coluna, nao filtro) e
   // agrupa por status.
@@ -857,7 +875,7 @@ function Minhas() {
     visiveis === items.length ? `${items.length} tarefas` : `${visiveis} de ${items.length}`;
 
   // Uma linha de tarefa. A data saiu daqui — agora vive no cabeçalho do grupo.
-  function linhaTarefa(t: MyTaskItem, i: number) {
+  function linhaTarefa(t: MyTaskItem) {
     // Spec 023: cor de prazo por-card (respeita status/arquivada). null = sem
     // alerta. Barra lateral colorida + chip com o motivo.
     const col = colunaDe(t);
@@ -866,22 +884,24 @@ function Minhas() {
     // Sem coluna resolvida nao ha como decidir -> sem alerta, que e o lado
     // seguro (o contrario pintaria de vermelho por falta de dado).
     const dueTone = col ? deadlineTonePorColuna(col, t.due_date, t.is_archived, t.due_time) : null;
+    const ids = t.assignee_ids ?? [];
+    // Redesign (fatia 7): cada tarefa e um cartao-linha, com o filete da cor da
+    // COLUNA a esquerda (a prancha), os selos no meio e a seta que diz "abre".
     return (
       <FaixaClicavel
         key={t.id}
         onAbrir={() => abrirDetalhe(t)}
+        className="card-elev rounded-xl border border-border bg-surface"
         style={{
-          display: "flex", alignItems: "center", gap: 14, padding: "12px 16px",
-          borderTop: i === 0 ? "none" : "1px solid var(--border)",
-          // Reserva sempre a borda (transparente) pra nao deslocar o texto.
-          borderLeft: `3px solid ${dueTone ? DEADLINE_COLOR[dueTone] : "transparent"}`,
+          display: "flex", alignItems: "center", gap: 14, padding: "10px 14px 10px 10px",
         }}
       >
         <span
+          aria-hidden
           title={rotuloDe(t) ?? t.status}
           style={{
-            width: 9, height: 9, borderRadius: 999, flexShrink: 0,
-            background: col?.color ?? "#999",
+            width: 4, height: 36, borderRadius: 4, flexShrink: 0,
+            background: col?.color ?? "var(--border)",
           }}
         />
         <div style={{ minWidth: 0, flex: 1 }}>
@@ -950,6 +970,25 @@ function Minhas() {
         <Badge tone="soft" size="sm" color={PRIORITY_COLOR[t.priority]} className="shrink-0">
           {PRIORITY_LABEL[t.priority] || t.priority}
         </Badge>
+        {ids.length > 0 && (
+          <span className="flex shrink-0 items-center">
+            {ids.slice(0, 2).map((id, i) => {
+              const nome = members.get(id)?.name ?? "";
+              return (
+                <Avatar
+                  key={id}
+                  id={id}
+                  name={nome}
+                  size="sm"
+                  title={nome ? nomeCurto(nome) : "Responsável"}
+                  className="border-[1.5px] border-surface"
+                  style={{ marginLeft: i === 0 ? 0 : -6 }}
+                />
+              );
+            })}
+            {ids.length > 2 && <span className="muted ml-1 text-xs font-bold">+{ids.length - 2}</span>}
+          </span>
+        )}
         <ChevronRight size={16} aria-hidden className="shrink-0 text-ink-faint" />
       </FaixaClicavel>
     );
@@ -1264,22 +1303,34 @@ function Minhas() {
               </div>
             ) : (
               <>
-                {grupos.comData.map(([data, tarefas]) => (
-                  <section key={data} className="mb-5">
-                    <h2 className="mb-2 text-base font-semibold text-ink-soft">{rotuloData(data)}</h2>
-                    <div className="overflow-hidden rounded-lg border border-border bg-surface">
-                      {tarefas.map((t, i) => linhaTarefa(t, i))}
-                    </div>
-                  </section>
-                ))}
-                {grupos.semData.length > 0 && (
-                  <section className="mb-5">
-                    <h2 className="mb-2 text-base font-semibold text-ink-soft">Sem prazo</h2>
-                    <div className="overflow-hidden rounded-lg border border-border bg-surface">
-                      {grupos.semData.map((t, i) => linhaTarefa(t, i))}
-                    </div>
-                  </section>
-                )}
+                {(
+                  [
+                    { chave: "atrasadas", titulo: "Atrasadas", tom: "danger", tarefas: grupos.atrasadas },
+                    { chave: "hoje", titulo: "Vencem hoje", tom: "amber", tarefas: grupos.vencemHoje },
+                    { chave: "proximas", titulo: "Próximas", tom: "faint", tarefas: grupos.proximas },
+                    { chave: "sem", titulo: "Sem prazo", tom: "faint", tarefas: grupos.semData },
+                  ] as const
+                )
+                  .filter((g) => g.tarefas.length > 0)
+                  .map((g) => (
+                    <section key={g.chave} className="mb-5 flex flex-col gap-2">
+                      <h2
+                        className={`m-0 flex items-center gap-2 text-xs font-bold ${
+                          g.tom === "danger" ? "text-danger" : g.tom === "amber" ? "text-amber" : "text-ink-faint"
+                        }`}
+                      >
+                        {g.titulo}
+                        <Badge
+                          tone="soft"
+                          size="sm"
+                          color={g.tom === "danger" ? "var(--danger)" : g.tom === "amber" ? "var(--amber)" : "var(--text-soft)"}
+                        >
+                          {g.tarefas.length}
+                        </Badge>
+                      </h2>
+                      {g.tarefas.map((t) => linhaTarefa(t))}
+                    </section>
+                  ))}
               </>
             )
           ) : porRelacao.length === 0 ? (
@@ -1462,10 +1513,12 @@ function Minhas() {
 function FaixaClicavel({
   onAbrir,
   style,
+  className,
   children,
 }: {
   onAbrir: () => void;
   style: React.CSSProperties;
+  className?: string;
   children: React.ReactNode;
 }) {
   const { target, outline } = useDrawnOutline();
@@ -1473,6 +1526,7 @@ function FaixaClicavel({
     <div
       role="button"
       tabIndex={0}
+      className={className}
       onClick={onAbrir}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
