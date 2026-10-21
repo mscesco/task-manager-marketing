@@ -114,6 +114,37 @@ describe("useGravarCelula", () => {
   });
 });
 
+describe("useGravarCelula -- reverter (auditoria de 21/10)", () => {
+  it("⚠️ a falha da edição velha NÃO desfaz a nova que já deu certo", async () => {
+    // A→B (req1) e B→C (req2); req2 responde primeiro, req1 falha. O servidor
+    // tem C; reverter para A deixaria a tela com um valor que não existe.
+    const r1 = adiada<BaseRow[]>();
+    const r2 = adiada<BaseRow[]>();
+    vi.mocked(api.updateBaseCells)
+      .mockReturnValueOnce(r1.p)
+      .mockReturnValueOnce(r2.p);
+    const t = tela([linha({ "col-a": "A" }, 1)]);
+
+    let g1!: Promise<void>;
+    let g2!: Promise<void>;
+    act(() => {
+      g1 = t.gravar(t.linhas()[0], A, "B");
+    });
+    act(() => {
+      g2 = t.gravar(t.linhas()[0], A, "C");
+    });
+    await act(async () => {
+      r2.soltar([linha({ "col-a": "C" }, 3)]);
+      await g2;
+      r1.falhar(new Error("recusado"));
+      await g1;
+    });
+
+    expect(t.linhas()[0].values).toEqual({ "col-a": "C" });
+    expect(t.linhas()[0].version).toBe(3);
+  });
+});
+
 describe("gravacoesDaBase", () => {
   it("conta em voo, sobe a geração e espera inclusive a que falha", async () => {
     const g0 = geracao("b-x");

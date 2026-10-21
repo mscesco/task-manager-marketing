@@ -126,6 +126,31 @@ async def test_a_escuta_reabre_depois_de_cair() -> None:
         await hub.close()
 
 
+async def test_a_conexao_caida_e_DEVOLVIDA_e_nao_so_esquecida() -> None:
+    """Auditoria de 21/10: a queda devolve a vaga do pool na hora, em vez de
+    deixar a conexao morta presa ate o coletor de lixo passar."""
+    devolvidas: list[object] = []
+
+    async def conectar():
+        pg = await asyncpg.connect(_dsn())
+
+        async def fechar() -> None:
+            devolvidas.append(pg)
+            await pg.close()
+
+        return pg, fechar
+
+    hub = LiveHub(conectar=conectar)
+    try:
+        await hub.subscribe(uuid.uuid4())
+        await hub._pg.close()  # simula a queda
+        await asyncio.sleep(0.1)
+        assert len(devolvidas) == 1
+        assert hub._pg is None
+    finally:
+        await hub.close()
+
+
 async def test_toda_acao_do_diario_publica(db, monkeypatch) -> None:
     """Um lugar so publica (`journal.record`), para nenhuma acao esquecer."""
     chamadas: list[tuple[str, str]] = []

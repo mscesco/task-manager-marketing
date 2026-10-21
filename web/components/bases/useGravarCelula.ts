@@ -41,8 +41,15 @@ export function useGravarCelula(
         );
         onLinhas((ls) => ls.map((l) => (l.id === nova.id && nova.version >= l.version ? nova : l)));
       } catch (e) {
+        // Só volta se a linha ainda é a que esta edição viu: uma edição
+        // posterior que já deu certo trouxe `version` nova, e desfazê-la
+        // deixaria a tela com um valor que não existe no banco (21/10).
         onLinhas((ls) =>
-          ls.map((l) => (l.id === linha.id ? comCelula(l, coluna.id, antes ?? null) : l))
+          ls.map((l) =>
+            l.id === linha.id && l.version === linha.version
+              ? comCelula(l, coluna.id, antes ?? null)
+              : l
+          )
         );
         avisar((e as ApiError).message || "Não consegui salvar a célula.");
       }
