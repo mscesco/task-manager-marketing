@@ -559,6 +559,15 @@ class TaskService:
             # supervisor do SEO pendurava subtarefa numa tarefa do Design que
             # ele nao enxerga. 404, como qualquer tarefa fora da lente.
             await self._assert_visible_via_project(parent)
+            # ⚠️ PAI ARQUIVADO NAO GANHA FILHA (auditoria de 21/10). Era a
+            # quarta porta do estado "subtarefa ativa sob pai arquivado", que
+            # duplicar, arquivar e desarquivar ja fecham: a filha nascia e
+            # nenhuma tela a mostrava.
+            if parent.is_archived:
+                raise ValidationError(
+                    "A tarefa pai esta arquivada. Desarquive-a antes.",
+                    details={"field": "parent_task_id"},
+                )
             if parent.project_id != command.project_id:
                 raise ValidationError(
                     "Task pai esta em projeto diferente do informado.",
@@ -1233,6 +1242,19 @@ class TaskService:
                 projeto = await self._projects.get_by_id_or_raise(task.project_id)
                 self._assert_time_no_projeto(projeto, command.team_id)
             trocou_de_time = task.team_id != command.team_id
+            # ⚠️ COM SUBTAREFA VIVA, NAO TROCA (auditoria de 21/10). Este PATCH
+            # escrevia so na tarefa de topo: as filhas ficavam no time antigo,
+            # com os seguidores e os avisos de la -- quem perdia a mae
+            # continuava vendo as filhas. Recusar e menor que cascatear: a
+            # cascata teria de refazer as travas de quadro e projeto por filha.
+            if trocou_de_time and await self._repo.list_children(
+                parent_task_id=task.id
+            ):
+                raise ValidationError(
+                    "Esta tarefa tem subtarefas e nao troca de time. "
+                    "Arquive ou mova as subtarefas antes.",
+                    details={"field": "team_id"},
+                )
             task.team_id = command.team_id
 
         # Status com ajuste de completed_at.
@@ -1441,6 +1463,12 @@ class TaskService:
             new_parent = await self._repo.get_by_id_or_raise(new_parent_task_id)
             # O pai novo tem de ser visivel -- mesma trava do `create`.
             await self._assert_visible_via_project(new_parent)
+            # E nao pode estar arquivado -- mesma trava do `create` (21/10).
+            if new_parent.is_archived:
+                raise ValidationError(
+                    "A tarefa pai esta arquivada. Desarquive-a antes.",
+                    details={"field": "parent_task_id"},
+                )
             if new_parent.project_id != new_project_id:
                 raise ValidationError(
                     "Task pai esta em projeto diferente do informado.",
