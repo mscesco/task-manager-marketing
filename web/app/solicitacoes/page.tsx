@@ -312,6 +312,22 @@ function Solicitacoes() {
         }
       />
 
+      {/* ---------- 1. as abas (redesign, fatia 7): fora da lista, numa linha
+          própria -- no cabeçalho elas não cabiam ao lado do título a 1366px. */}
+      <div className="mb-4 flex">
+        <div role="tablist" aria-label="Situação" className="flex gap-0.5 overflow-x-auto rounded-full border border-border bg-surface-2 p-1">
+          {ABAS.map((a) => (
+            <Aba
+              key={a.valor}
+              label={a.label}
+              numero={totais[a.valor]}
+              ativa={aba === a.valor}
+              onClick={() => filtrar(() => setAba(a.valor))}
+            />
+          ))}
+        </div>
+      </div>
+
       {/* ---------- 5. lista | envio escolhido ---------- */}
       {/* ⚠️ NO CELULAR, UMA COLUNA DE CADA VEZ: escolhido, a lista some e o
           painel ganha "Voltar". Duas colunas de 180px não cabem nada. */}
@@ -321,19 +337,6 @@ function Solicitacoes() {
           className={`${escolhido ? "hidden md:flex" : "flex"} ${ALTURA_DO_PAINEL} min-w-0 flex-col overflow-hidden rounded-xl border border-border bg-surface shadow-[var(--shadow-card)]`}
         >
           <div className="flex flex-col gap-3 border-b border-border p-4">
-            {/* ---------- 1. as abas ---------- */}
-            <div role="tablist" aria-label="Situação" className="flex gap-0.5 overflow-x-auto rounded-lg bg-surface-2 p-1">
-              {ABAS.map((a) => (
-                <Aba
-                  key={a.valor}
-                  label={a.label}
-                  numero={totais[a.valor]}
-                  ativa={aba === a.valor}
-                  onClick={() => filtrar(() => setAba(a.valor))}
-                />
-              ))}
-            </div>
-
             {/* ---------- 2. busca e formulário ---------- */}
             <div className="relative">
               <Search aria-hidden size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-faint" />
@@ -487,7 +490,7 @@ function Aba({
       role="tab"
       aria-selected={ativa}
       onClick={onClick}
-      className={`relative flex-1 cursor-pointer whitespace-nowrap rounded-md border-0 bg-transparent px-2 py-1.5 text-[12px] transition-colors duration-150 ${
+      className={`relative cursor-pointer whitespace-nowrap rounded-full border-0 bg-transparent px-3 py-1.5 text-[12.5px] transition-colors duration-150 ${
         ativa ? "font-semibold text-ink" : "text-ink-faint hover:text-ink-soft"
       }`}
     >
@@ -498,7 +501,7 @@ function Aba({
         <motion.span
           layoutId="fila-aba-ativa"
           transition={MOLA}
-          className="absolute inset-0 rounded-md bg-surface shadow-[var(--shadow-card)]"
+          className="absolute inset-0 rounded-full bg-surface shadow-[var(--shadow-card)]"
         />
       )}
       <span className="relative">
