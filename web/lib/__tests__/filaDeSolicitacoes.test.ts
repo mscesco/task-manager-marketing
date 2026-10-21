@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { Batch, BatchItem } from "../api";
-import { demandaInicial, diaDoEnvio, quandoChegou } from "../filaDeSolicitacoes";
+import { demandaInicial, diaDoEnvio, quandoChegou, rotuloDoDia } from "../filaDeSolicitacoes";
 
 // 15/10/2026 14:00 em Brasília (17:00 UTC).
 const AGORA = new Date("2026-10-15T17:00:00Z");
@@ -18,6 +18,14 @@ describe("quandoChegou", () => {
 
   it("antes de ontem, a data curta", () => {
     expect(quandoChegou("2026-10-10T15:00:00Z", AGORA)).toBe("10/10");
+  });
+});
+
+describe("rotuloDoDia", () => {
+  it("hoje, ontem e a data curta -- no dia de Brasília", () => {
+    expect(rotuloDoDia("2026-10-15T12:30:00Z", AGORA)).toBe("Hoje");
+    expect(rotuloDoDia("2026-10-15T02:00:00Z", AGORA)).toBe("Ontem");
+    expect(rotuloDoDia("2026-10-10T15:00:00Z", AGORA)).toBe("10/10");
   });
 });
 

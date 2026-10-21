@@ -26,6 +26,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { AnimatePresence, MotionConfig, motion } from "motion/react";
 import {
+  AlertCircle,
   ArrowLeft,
   CalendarDays,
   Check,
@@ -64,7 +65,7 @@ import {
   STATUS_ACEITOS,
 } from "@/lib/api";
 import { numeroDaRepeticao, rotuloDaCategoria } from "@/lib/rotuloDaCategoria";
-import { demandaInicial, diaDoEnvio, quandoChegou } from "@/lib/filaDeSolicitacoes";
+import { demandaInicial, diaDoEnvio, quandoChegou, rotuloDoDia } from "@/lib/filaDeSolicitacoes";
 
 import { Esqueleto } from "@/components/Loading";
 import { useEntrada } from "@/components/Entrada";
@@ -303,30 +304,31 @@ function Solicitacoes() {
             : undefined
         }
         actions={
-          // ⚠️ ESTE BOTÃO APONTAVA PARA `/solicitar` FIXO, e a Spec 043 tornou
-          // isso mentira: há N formulários, um por time. Vai para a tela que
-          // LISTA os formulários. ⚠️ O TIME VAI JUNTO (14/09).
-          <Link className="btn btn-ghost ml-auto" href={navHref("/formularios", active)}>
-            Gerenciar formulários
-          </Link>
+          // ---------- 1. as abas, no cabeçalho, junto de "Gerenciar
+          // formulários" (a prancha; pedido dela em 21/10). As duas num grupo
+          // só: quando não cabem ao lado do título (1366px), descem JUNTAS para
+          // a segunda linha, à direita, em vez de o link ficar sozinho.
+          <div className="ml-auto flex flex-wrap items-center gap-2">
+            <div role="tablist" aria-label="Situação" className="flex gap-0.5 overflow-x-auto rounded-full border border-border bg-surface-2 p-1">
+              {ABAS.map((a) => (
+                <Aba
+                  key={a.valor}
+                  label={a.label}
+                  numero={totais[a.valor]}
+                  ativa={aba === a.valor}
+                  onClick={() => filtrar(() => setAba(a.valor))}
+                />
+              ))}
+            </div>
+            {/* ⚠️ ESTE BOTÃO APONTAVA PARA `/solicitar` FIXO, e a Spec 043 tornou
+                isso mentira: há N formulários, um por time. Vai para a tela que
+                LISTA os formulários. ⚠️ O TIME VAI JUNTO (14/09). */}
+            <Link className="btn btn-ghost" href={navHref("/formularios", active)}>
+              Gerenciar formulários
+            </Link>
+          </div>
         }
       />
-
-      {/* ---------- 1. as abas (redesign, fatia 7): fora da lista, numa linha
-          própria -- no cabeçalho elas não cabiam ao lado do título a 1366px. */}
-      <div className="mb-4 flex">
-        <div role="tablist" aria-label="Situação" className="flex gap-0.5 overflow-x-auto rounded-full border border-border bg-surface-2 p-1">
-          {ABAS.map((a) => (
-            <Aba
-              key={a.valor}
-              label={a.label}
-              numero={totais[a.valor]}
-              ativa={aba === a.valor}
-              onClick={() => filtrar(() => setAba(a.valor))}
-            />
-          ))}
-        </div>
-      </div>
 
       {/* ---------- 5. lista | envio escolhido ---------- */}
       {/* ⚠️ NO CELULAR, UMA COLUNA DE CADA VEZ: escolhido, a lista some e o
@@ -411,16 +413,34 @@ function Solicitacoes() {
             {envios !== null && envios.length > 0 && (
               <ul className="m-0 flex list-none flex-col gap-0.5 p-0">
                 <AnimatePresence initial={false} mode="popLayout">
-                  {envios.map((envio, i) => (
-                    <LinhaDoEnvio
-                      key={envio.batch_id}
-                      envio={envio}
-                      ordem={i}
-                      escolhido={escolhido?.batch_id === envio.batch_id}
-                      onEscolher={(rejeitar) => escolher(envio, rejeitar)}
-                      onMudou={recarregar}
-                    />
-                  ))}
+                  {envios.flatMap((envio, i) => {
+                    // O cabeçalho de dia ("Hoje", "Ontem", a data) entra onde
+                    // o dia muda -- a lista vem do servidor do mais novo ao
+                    // mais velho (a prancha, 21/10).
+                    const dia = rotuloDoDia(envio.created_at);
+                    const anterior = i > 0 ? rotuloDoDia(envios[i - 1].created_at) : null;
+                    return [
+                      ...(dia !== anterior
+                        ? [
+                            <motion.li
+                              key={`dia-${dia}`}
+                              layout
+                              className="px-3.5 pb-1 pt-2.5 text-[11px] font-bold uppercase tracking-[0.07em] text-ink-faint"
+                            >
+                              {dia}
+                            </motion.li>,
+                          ]
+                        : []),
+                      <LinhaDoEnvio
+                        key={envio.batch_id}
+                        envio={envio}
+                        ordem={i}
+                        escolhido={escolhido?.batch_id === envio.batch_id}
+                        onEscolher={(rejeitar) => escolher(envio, rejeitar)}
+                        onMudou={recarregar}
+                      />,
+                    ];
+                  })}
                 </AnimatePresence>
               </ul>
             )}
@@ -576,25 +596,31 @@ function LinhaDoEnvio({
       layout
       {...entrada}
       exit={{ opacity: 0, x: -16, transition: { duration: DUR[2] } }}
-      className="group relative rounded-lg"
+      // A prancha (21/10): a linha é um cartão de cantos 12, desliza 2px no
+      // hover, e a escolhida ganha borda e filete à esquerda no azul.
+      className={`group relative rounded-xl border transition-[border-color,transform] duration-200 ${
+        escolhido ? "border-accent" : "border-transparent hover:translate-x-0.5"
+      }`}
     >
       {/* O destaque do escolhido é UM só, e desliza de uma linha para outra. */}
       {escolhido && (
         <motion.span
           layoutId="fila-envio-escolhido"
           transition={MOLA}
-          className="absolute inset-0 rounded-lg bg-accent-soft"
-        />
+          className="absolute inset-0 rounded-[11px] bg-accent-soft"
+        >
+          <span className="absolute -left-px bottom-3 top-3 w-[3px] rounded-full bg-accent" />
+        </motion.span>
       )}
       <button
         type="button"
         onClick={() => onEscolher(null)}
         aria-current={escolhido || undefined}
-        className={`relative flex w-full cursor-pointer items-start gap-3 rounded-lg border-0 bg-transparent px-3 pt-2.5 text-left text-ink transition-colors duration-150 ${
+        className={`relative flex w-full cursor-pointer items-start gap-3 rounded-[11px] border-0 bg-transparent px-3.5 pt-3 text-left text-ink transition-colors duration-150 ${
           escolhido ? "" : "hover:bg-surface-2"
-        } ${unico && unico.status === "PENDING" ? "pb-1" : "pb-2.5"}`}
+        } ${unico && unico.status === "PENDING" ? "pb-1" : "pb-3"}`}
       >
-        <Avatar name={envio.requester_name} id={envio.requester_email} size="lg" className="mt-0.5" />
+        <Avatar name={envio.requester_name} id={envio.requester_email} size="lg" className="mt-0.5" style={{ borderRadius: 10 }} />
         <span className="flex min-w-0 flex-1 flex-col">
           <span className="flex items-baseline gap-2">
             <span className="min-w-0 flex-1 truncate text-[13.5px] font-semibold">{envio.requester_name}</span>
@@ -622,10 +648,13 @@ function LinhaDoEnvio({
       </button>
 
       {unico && unico.status === "PENDING" && (
-        <div className="relative flex justify-end gap-1.5 px-3 pb-2.5 pl-[56px]">
+        <div className="relative flex justify-end gap-1.5 px-3.5 pb-3 pl-[58px]">
+          {/* Os botões da prancha: aprovar em teal suave, rejeitar sem fundo. */}
           <button
             type="button"
-            className="inline-flex h-7 cursor-pointer items-center gap-1 rounded-md border border-border bg-surface px-2.5 text-[12px] font-semibold text-ink-soft transition-colors duration-150 hover:border-teal hover:text-teal disabled:opacity-60"
+            className="btn btn-ok"
+            // Inline: o `.btn` vence as utilitárias de tamanho (regra 4 do AGENTS).
+            style={{ padding: "0 10px", height: 28, fontSize: 12, gap: 4 }}
             disabled={agindo}
             aria-label="Aprovar"
             aria-busy={agindo || undefined}
@@ -640,7 +669,8 @@ function LinhaDoEnvio({
           </button>
           <button
             type="button"
-            className="inline-flex h-7 cursor-pointer items-center gap-1 rounded-md border border-border bg-surface px-2.5 text-[12px] font-semibold text-ink-soft transition-colors duration-150 hover:border-danger hover:text-danger disabled:opacity-60"
+            className="btn btn-no"
+            style={{ padding: "0 10px", height: 28, fontSize: 12, gap: 4 }}
             disabled={agindo}
             aria-label="Rejeitar"
             title="Rejeitar (pede justificativa)"
@@ -802,6 +832,17 @@ function PainelDoEnvio({
             </Propriedade>
           )}
         </dl>
+
+        {/* O aviso âmbar da prancha: quantas ainda pedem decisão, e o que
+            aprovar faz. */}
+        {pendentes > 0 && (
+          <p className="m-0 mt-3 flex items-center gap-2 rounded-[10px] bg-amber-soft px-3 py-2.5 text-[13px] font-semibold text-amber">
+            <AlertCircle aria-hidden size={15} className="shrink-0" />
+            {pendentes === 1
+              ? "1 demanda aguardando triagem. Aprovar cria a tarefa no quadro geral."
+              : `${pendentes} demandas aguardando triagem. Aprove ou rejeite cada uma; aprovar cria a tarefa no quadro geral.`}
+          </p>
+        )}
       </div>
 
       {envio.items.length > 1 && (
@@ -962,10 +1003,15 @@ function SecaoDemanda({
   }
 
   return (
-    <div>
-      <div className="mb-1 flex flex-wrap items-center gap-2">
-        <h3 className="m-0 text-[16px] font-bold">
-          <span aria-hidden className="mr-1.5">{cat.emoji}</span>
+    // A seção da prancha (21/10): um cartão por demanda, com a categoria em
+    // pílula, as respostas numa grade de três colunas (a longa ocupa a linha
+    // inteira) e as ações embaixo.
+    <div className="flex flex-col gap-3 rounded-xl border border-border bg-surface px-4 py-3.5">
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge tone="soft" size="sm" color="var(--violet)">
+          <span aria-hidden>{cat.emoji}</span>
+        </Badge>
+        <h3 className="m-0 flex-1 text-[15px] font-bold">
           {cat.titulo}
           {numeroDaRepeticao(envio.items, item)}
         </h3>
@@ -974,33 +1020,36 @@ function SecaoDemanda({
         </Badge>
       </div>
       {cat.prazo && (
-        <p className="m-0 flex items-center gap-1.5 text-[12px] text-ink-faint">
+        <p className="m-0 -mt-1.5 flex items-center gap-1.5 text-[12px] text-ink-faint">
           <Clock aria-hidden size={13} /> {cat.prazo}
         </p>
       )}
 
       {erro && (
-        <Surge className="mt-3">
+        <Surge>
           <div className="error-box" role="alert">{erro}</div>
         </Surge>
       )}
 
-      <h4 className="mb-1 mt-5 text-[11px] font-semibold uppercase tracking-[0.06em] text-ink-faint">Respostas</h4>
-      <dl className="m-0 divide-y divide-border rounded-lg border border-border">
-        {item.answers.map((a, i) => (
-          <div key={i} className="grid gap-1 px-3.5 py-2.5 sm:grid-cols-[minmax(140px,38%)_minmax(0,1fr)] sm:gap-4">
-            <dt className="text-[12.5px] text-ink-faint">{a.label}</dt>
-            <dd className="m-0 whitespace-pre-wrap text-[13px] [overflow-wrap:anywhere]">
-              {/^https?:\/\//.test(a.value) ? (
-                <a href={a.value} target="_blank" rel="noreferrer" className="text-accent">
-                  {a.value}
-                </a>
-              ) : (
-                a.value
-              )}
-            </dd>
-          </div>
-        ))}
+      <dl className="m-0 grid gap-x-4 gap-y-2.5 sm:grid-cols-2 lg:grid-cols-3">
+        {item.answers.map((a, i) => {
+          // Link também ocupa a linha: numa célula estreita ele quebra no meio.
+          const longa = a.value.length > 60 || a.value.includes("\n") || /^https?:\/\//.test(a.value);
+          return (
+            <div key={i} className={`flex min-w-0 flex-col gap-0.5 ${longa ? "sm:col-span-2 lg:col-span-3" : ""}`}>
+              <dt className="text-[11px] font-bold uppercase tracking-[0.06em] text-ink-faint">{a.label}</dt>
+              <dd className="m-0 whitespace-pre-wrap text-[13.5px] [overflow-wrap:anywhere]">
+                {/^https?:\/\//.test(a.value) ? (
+                  <a href={a.value} target="_blank" rel="noreferrer" className="text-accent">
+                    {a.value}
+                  </a>
+                ) : (
+                  a.value
+                )}
+              </dd>
+            </div>
+          );
+        })}
       </dl>
 
       {item.status === "REJECTED" && item.review_note && (
@@ -1043,7 +1092,7 @@ function SecaoDemanda({
       )}
 
       {/* ---- ações ---- */}
-      <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-border pt-4">
+      <div className="mt-1 flex flex-wrap items-center gap-2 border-t border-border pt-3">
         {/* ⚠️ O ANDAMENTO É UM SELETOR, e não um botão "avançar": volta-se de
             "concluída" para "em andamento" de propósito. Marcar concluída por
             engano é comum, e sem a volta a saída seria pedir para alguém mexer
@@ -1081,8 +1130,9 @@ function SecaoDemanda({
         {item.status === "PENDING" && !rejeitando && (
           <>
             <div ref={menu} className="relative inline-flex">
+              {/* Teal suave, como a prancha: o azul cheio fica para "Criar". */}
               <button
-                className="btn btn-primary"
+                className="btn btn-ok"
                 disabled={agindo}
                 style={{ borderTopRightRadius: 0, borderBottomRightRadius: 0 }}
                 onClick={() =>
@@ -1100,17 +1150,18 @@ function SecaoDemanda({
                   }, "Não foi possível aprovar.")
                 }
               >
+                {!agindo && <Check aria-hidden size={15} strokeWidth={2.4} />}
                 {agindo ? "Aprovando…" : "Aprovar e criar tarefa"}
               </button>
               <button
-                className="btn btn-primary"
+                className="btn btn-ok"
                 disabled={agindo}
                 aria-label="Outras formas de aprovar"
                 aria-expanded={menuAberto}
                 style={{
                   borderTopLeftRadius: 0,
                   borderBottomLeftRadius: 0,
-                  borderLeft: "1px solid rgba(255,255,255,.3)",
+                  borderLeft: "1px solid color-mix(in srgb, var(--teal) 30%, transparent)",
                   padding: "0 9px",
                 }}
                 onClick={() => setMenuAberto((v) => !v)}
@@ -1149,12 +1200,7 @@ function SecaoDemanda({
                 </AnchoredPanel>
               )}
             </div>
-            <button
-              className="btn"
-              style={{ color: "var(--danger)" }}
-              disabled={agindo}
-              onClick={() => setRejeitando(true)}
-            >
+            <button className="btn btn-no" disabled={agindo} onClick={() => setRejeitando(true)}>
               Rejeitar
             </button>
           </>
