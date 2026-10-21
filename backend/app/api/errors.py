@@ -22,6 +22,7 @@ from __future__ import annotations
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import IntegrityError
 
 from app.core.logging import get_logger
 from app.shared.exceptions.base import (
@@ -122,6 +123,24 @@ async def _validation_error_handler(
     )
 
 
+async def _integrity_error_handler(
+    request: Request, exc: IntegrityError
+) -> JSONResponse:
+    """Dois pedidos iguais ao mesmo tempo (2 workers) passam na consulta "ja
+    existe?" e o segundo estoura no indice (auditoria de 21/10). E conflito,
+    nao defeito do servidor: 409, sem stack no log."""
+    logger.warning("integrity_error", detail=str(exc.orig))
+    return JSONResponse(
+        status_code=status.HTTP_409_CONFLICT,
+        content=_error_body(
+            code="conflict",
+            message="Alguem gravou o mesmo registro agora mesmo. "
+            "Recarregue e tente de novo.",
+            request=request,
+        ),
+    )
+
+
 async def _unhandled_error_handler(
     request: Request, exc: Exception
 ) -> JSONResponse:
@@ -152,4 +171,5 @@ def register_exception_handlers(app: FastAPI) -> None:
     app.add_exception_handler(
         RequestValidationError, _validation_error_handler  # type: ignore[arg-type]
     )
+    app.add_exception_handler(IntegrityError, _integrity_error_handler)  # type: ignore[arg-type]
     app.add_exception_handler(Exception, _unhandled_error_handler)
