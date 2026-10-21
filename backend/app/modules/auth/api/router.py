@@ -13,10 +13,9 @@ Rotas:
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Response, status
+from fastapi import APIRouter, Response, status
 
 from app.core.deps import SessionDep, UoWDep
-from app.core.rate_limit import login_limiter, rate_limit
 from app.modules.auth.api.dependencies import CurrentUserDep, PendingUserDep
 from app.modules.auth.api.schemas import (
     ChangePasswordRequest,
@@ -41,11 +40,12 @@ from app.shared.exceptions.base import AuthenticationError
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
-@router.post(
-    "/login",
-    response_model=TokenPair,
-    dependencies=[Depends(rate_limit(login_limiter))],
-)
+# ⚠️ SEM FREIO POR IP (auditoria de 21/10): a instituicao sai toda pelo MESMO
+# IP (NAT), e 10 logins por minuto contava os ACERTOS -- na segunda de manha,
+# a 11a pessoa levava 429 com a senha certa. Foi o mesmo motivo que tirou o
+# freio do `/refresh` em 16/10. Forca bruta fica com o freio POR CONTA (Spec
+# 030, D5), que so conta falha.
+@router.post("/login", response_model=TokenPair)
 async def login(payload: LoginRequest, session: SessionDep) -> TokenPair:
     """Autentica por e-mail + senha + workspace e devolve o par de tokens."""
     service = AuthService(session)

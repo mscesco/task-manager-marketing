@@ -65,3 +65,18 @@ def test_numero_no_formato_brasileiro() -> None:
     assert to_number("300,5") == 300.5
     assert to_number("1234.5") == 1234.5
     assert to_number("R$ 10,00") == 10
+    # en-US (Sheets em ingles): o ultimo separador e o decimal (21/10).
+    assert to_number("1,234.56") == 1234.56
+    assert to_number("12,345,678.9") == 12345678.9
+
+
+def test_caixa_vazia_do_csv_e_None_e_nao_Nao() -> None:
+    """⚠️ No CSV a celula em branco chega como "" -- e "" esta no conjunto de
+    'nao'. Importar de volta uma exportacao enchia a coluna de "Nao" (21/10)."""
+    from app.modules.bases.domain.spreadsheet import to_checkbox
+
+    assert to_checkbox("") is None
+    assert to_checkbox("   ") is None
+    assert to_checkbox(None) is None
+    assert to_checkbox("nao") is False
+    assert to_checkbox("sim") is True

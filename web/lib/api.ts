@@ -210,7 +210,14 @@ async function _request<T>(
   // 401 com token anexado, e ainda nao e a retentativa: access expirou.
   // Tenta UM refresh (single-flight) + UM retry. So entra aqui quando a
   // request usa auth E mandou token -- 401 de rota publica (login) cai fora.
-  if (res.status === 401 && auth && !isRetry && getToken()) {
+  if (res.status === 401 && auth && !isRetry) {
+    // ⚠️ SEM TOKEN NENHUM, A SESSAO JA ACABOU (auditoria de 21/10): saiu em
+    // outra aba, ou o storage foi limpo. Antes, este ramo exigia token e a
+    // aba ficava viva dando 401 em toda acao, sem nunca ir para o login.
+    if (!getToken()) {
+      killSession();
+      throw new ApiError(401, "Sessao expirada. Faca login novamente.");
+    }
     await renewOrEndSession();
     // Retry pega o token novo via getToken() (isRetry=true: nao recursa).
     return _request<T>(path, method, body, auth, true);
@@ -1621,7 +1628,13 @@ export async function moveTask(
   id: string,
   input: TaskMoveInput
 ): Promise<Task> {
-  return api<Task>(`/api/v1/tasks/${id}/move`, { method: "POST", body: input });
+  const t = await api<Task>(`/api/v1/tasks/${id}/move`, { method: "POST", body: input });
+  // ⚠️ O projeto decide quem ALCANCA a tarefa (30/09), e o cache de membros
+  // por tarefa e por sessao: sem esta linha, mover de projeto deixava o
+  // seletor de responsavel com a gente do projeto antigo ate um F5
+  // (auditoria de 21/10).
+  _membersPorTarefa.delete(id);
+  return t;
 }
 
 // ---------------------------------------------------------------

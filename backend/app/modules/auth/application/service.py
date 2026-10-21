@@ -180,10 +180,16 @@ class AuthService:
         if token_version_of(payload) != user.token_version:
             raise AuthenticationError("Sessao revogada. Faca login novamente.")
 
+        # ⚠️ O REFRESH NAO SE RENOVA (auditoria de 21/10). Emitir um refresh
+        # novo a cada chamada deixava a sessao sem fim: um refresh copiado do
+        # localStorage e usado uma vez por semana valia para sempre. Devolvendo
+        # o MESMO, a sessao morre 7 dias depois do login, e a pessoa entra de
+        # novo -- a Spec 030 (D4) recusou a denylist, nao o teto.
         return self._issue_tokens(
             user_id=user_id,
             workspace_id=workspace_id,
             token_version=user.token_version,
+            refresh_token=refresh_token,
         )
 
     async def change_password(
@@ -204,6 +210,20 @@ class AuthService:
         if user is None:
             # Token valido mas user sumiu -- inconsistente.
             raise AuthenticationError("Usuario nao encontrado.")
+
+        # ⚠️ PROVISORIA VENCIDA NAO TROCA (auditoria de 21/10). O login ja
+        # recusava, mas a sessao aberta com a provisoria ainda valida renovava
+        # pelo refresh (7 dias) e chegava aqui depois das 72h -- e a troca
+        # passava. O prazo da ADR 0019 e da CREDENCIAL, nao so do primeiro uso.
+        if (
+            user.must_change_password
+            and user.password_expires_at is not None
+            and user.password_expires_at < datetime.now(UTC)
+        ):
+            logger.info("auth.change_password_expired_temp", user_id=str(user_id))
+            raise AuthenticationError(
+                "A senha provisoria venceu. Peca um novo reset ao gestor."
+            )
 
         # ⚠️ O FREIO DA SENHA ATUAL (auditoria de 16/10). Sem ele, quem roubasse
         # uma sessao chutava a senha atual sem limite e, ao acertar, trocava --
@@ -292,8 +312,14 @@ class AuthService:
 
     @staticmethod
     def _issue_tokens(
-        *, user_id: object, workspace_id: object, token_version: int = 0
+        *,
+        user_id: object,
+        workspace_id: object,
+        token_version: int = 0,
+        refresh_token: str | None = None,
     ) -> TokenPair:
+        """`refresh_token` dado = reaproveita (o `refresh`); ausente = emite
+        um novo (o login)."""
         assert isinstance(user_id, uuid.UUID)
         assert isinstance(workspace_id, uuid.UUID)
         return TokenPair(
@@ -302,7 +328,8 @@ class AuthService:
                 workspace_id=workspace_id,
                 token_version=token_version,
             ),
-            refresh_token=create_refresh_token(
+            refresh_token=refresh_token
+            or create_refresh_token(
                 user_id=user_id,
                 workspace_id=workspace_id,
                 token_version=token_version,
