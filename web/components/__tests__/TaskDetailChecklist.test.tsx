@@ -349,6 +349,24 @@ describe("TaskDetail -- a checklist conta pela coluna (fatia 4c-2)", () => {
     expect(screen.getByTitle("Ana")).toBeTruthy();
   });
 
+  it("⚠️ o servidor recusou: a caixinha VOLTA e a tela diz (auditoria de 21/10)", async () => {
+    const f = task({
+      id: "f1",
+      title: "Filha",
+      parent_task_id: "pai",
+      path: "pai.f1",
+      depth: 1,
+      column_id: "col-planejado",
+    });
+    vi.mocked(api.updateTask).mockRejectedValue(new Error("recusado"));
+
+    montar([f]);
+    fireEvent.click(await screen.findByTitle("Concluir"));
+    await screen.findByText("Não consegui atualizar a subtarefa.");
+
+    expect((screen.getByTitle("Concluir") as HTMLInputElement).checked).toBe(false);
+  });
+
   it("marcar manda `column_id`, e NUNCA `status`", async () => {
     const f = task({
       id: "f1",

@@ -57,6 +57,52 @@ describe("401 sem token nenhum (auditoria de 21/10)", () => {
   });
 });
 
+/** A request volta 401 com o token velho; o refresh renova; a retentativa com
+ *  o token novo volta 200. Devolve as chamadas, com o Bearer de cada uma. */
+function servidorQueRenova() {
+  const chamadas: { url: string; auth: string | undefined }[] = [];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url: string, init?: RequestInit) => {
+      const auth = (init?.headers as Record<string, string> | undefined)?.Authorization;
+      chamadas.push({ url, auth });
+      if (url.endsWith("/auth/refresh")) {
+        return new Response(
+          JSON.stringify({ access_token: "access-novo", refresh_token: "refresh-novo", token_type: "bearer" }),
+          { status: 200 }
+        );
+      }
+      if (auth === "Bearer access-novo") return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      return new Response(null, { status: 401 });
+    })
+  );
+  return chamadas;
+}
+
+describe("o caminho feliz do refresh (auditoria de 21/10)", () => {
+  it("renovou: a retentativa leva o token NOVO e a resposta chega", async () => {
+    const chamadas = servidorQueRenova();
+    expect(await api("/api/v1/tasks")).toEqual({ ok: true });
+    expect(getToken()).toBe("access-novo");
+    expect(chamadas.map((c) => c.auth)).toEqual(["Bearer access-velho", undefined, "Bearer access-novo"]);
+  });
+
+  it("três 401 ao mesmo tempo fazem UM refresh só", async () => {
+    const chamadas = servidorQueRenova();
+    await Promise.all([api("/api/v1/a"), api("/api/v1/b"), api("/api/v1/c")]);
+    expect(chamadas.filter((c) => c.url.endsWith("/auth/refresh"))).toHaveLength(1);
+  });
+
+  it("refresh RECUSADO (401): a sessão morre e vai para o login", async () => {
+    servidor(401);
+    const replace = vi.fn();
+    vi.stubGlobal("location", { ...window.location, pathname: "/quadro", replace });
+    await expect(api("/api/v1/tasks")).rejects.toMatchObject({ status: 401 });
+    expect(getToken()).toBeNull();
+    expect(replace).toHaveBeenCalledWith("/login");
+  });
+});
+
 describe("401 com o refresh indisponível", () => {
   it.each([429, 502])("refresh %i: avisa e MANTÉM a sessão", async (status) => {
     servidor(status);
