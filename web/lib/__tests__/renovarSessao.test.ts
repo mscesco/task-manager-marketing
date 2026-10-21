@@ -43,6 +43,20 @@ describe("refreshOutcomeOf", () => {
   });
 });
 
+describe("401 sem token nenhum (auditoria de 21/10)", () => {
+  it("encerra a sessão em vez de ficar dando 401 para sempre", async () => {
+    localStorage.clear();
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(null, { status: 401 })));
+    const replace = vi.fn();
+    vi.stubGlobal("location", { ...window.location, pathname: "/quadro", replace });
+    await expect(api("/api/v1/tasks")).rejects.toMatchObject({ status: 401 });
+    expect(getToken()).toBeNull();
+    expect(replace).toHaveBeenCalledWith("/login");
+    // Nenhum refresh: nao ha o que renovar.
+    expect(vi.mocked(fetch).mock.calls.some(([u]) => String(u).endsWith("/auth/refresh"))).toBe(false);
+  });
+});
+
 describe("401 com o refresh indisponível", () => {
   it.each([429, 502])("refresh %i: avisa e MANTÉM a sessão", async (status) => {
     servidor(status);
