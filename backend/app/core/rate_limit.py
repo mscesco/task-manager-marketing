@@ -1,9 +1,10 @@
-"""Rate limit em memoria para as rotas publicas de auth.
+"""Rate limit em memoria para as rotas publicas.
 
 ESCOPO (consultoria / spec rate-limit):
-    Freio por IP em /auth/login -- anti brute-force de senha. NAO e
-    rate-limit global da app. (O /auth/refresh tinha o seu ate 16/10 -- ver
-    o comentario no lugar onde ele morava, la embaixo.)
+    Freio por IP no formulario publico e no coletor de erros, e freio por
+    CONTA no login e na troca de senha. NAO e rate-limit global da app. (O
+    /auth/login e o /auth/refresh tiveram freio por IP ate 21/10 e 16/10 --
+    ver os comentarios no lugar onde eles moravam, la embaixo.)
 
 ESTRATEGIA:
     - Janela DESLIZANTE (sliding window): guarda os timestamps das tentativas
@@ -187,7 +188,7 @@ def rate_limit(limiter: SlidingWindowRateLimiter) -> Callable[[Request], None]:
 
     Uso::
 
-        @router.post("/login", dependencies=[Depends(rate_limit(login_limiter))])
+        @router.post("/", dependencies=[Depends(rate_limit(public_form_limiter))])
 
     Lanca RateLimitError (-> 429 + Retry-After) quando o IP estoura.
     """
@@ -201,11 +202,12 @@ def rate_limit(limiter: SlidingWindowRateLimiter) -> Callable[[Request], None]:
 
 
 # Limitadores singleton, um por rota-alvo (baldes separados). Numeros vem da
-# config (env). login e refresh nao compartilham contador.
-login_limiter = SlidingWindowRateLimiter(
-    max_hits=settings.auth_rate_limit_max,
-    window_seconds=settings.auth_rate_limit_window_seconds,
-)
+# config (env).
+#
+# ⚠️ O `/auth/login` NAO TEM FREIO POR IP DESDE 21/10 (auditoria): contava os
+# ACERTOS, e a instituicao inteira sai por um IP -- a 11a pessoa a entrar no
+# minuto levava 429 com a senha certa. Forca bruta fica com o freio POR CONTA
+# (`account_login_limiter`, abaixo), que so conta falha.
 # ⚠️ O `/auth/refresh` NAO TEM FREIO POR IP DESDE 16/10 (auditoria). A
 # instituicao sai toda pelo MESMO IP (NAT), e cada aba renova a cada 15 min:
 # na chegada da manha, o 11o refresh do minuto levava 429 e o front deslogava

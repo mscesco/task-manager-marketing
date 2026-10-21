@@ -22,7 +22,6 @@ from app.core.rate_limit import (
     account_key,
     account_login_limiter,
     change_password_limiter,
-    login_limiter,
 )
 from app.db.models import User, Workspace
 from app.db.unit_of_work import UnitOfWork
@@ -46,12 +45,12 @@ def _baldes_limpos():
     teto_real = account_login_limiter._max
     account_login_limiter._max = _TETO_DE_TESTE
     change_password_limiter._max = _TETO_DE_TESTE
-    for lim in (account_login_limiter, login_limiter, change_password_limiter):
+    for lim in (account_login_limiter, change_password_limiter):
         lim._hits.clear()
     yield
     account_login_limiter._max = teto_real
     change_password_limiter._max = teto_real
-    for lim in (account_login_limiter, login_limiter, change_password_limiter):
+    for lim in (account_login_limiter, change_password_limiter):
         lim._hits.clear()
 
 
@@ -237,34 +236,20 @@ async def test_caixa_do_email_nao_burla_o_freio(db) -> None:
         assert bloqueada.status_code == 401
 
 
-async def test_balde_por_ip_continua_valendo(db) -> None:
-    """Criterio 12: a fatia nova nao pode ter desligado a antiga.
-
-    Todas as tentativas do MESMO IP, com e-mails sempre diferentes -- entao
-    o balde por conta nunca enche e quem barra so pode ser o balde por IP.
-    """
+async def test_login_NAO_tem_freio_por_ip(db) -> None:
+    """Auditoria de 21/10: o freio por IP contava acertos e barrava a
+    instituicao inteira atras do NAT. Varias contas do MESMO IP, cada uma
+    dentro do seu balde, passam -- quem barra e so o balde por conta."""
     ws, _user = await _pessoa(db)
     await db.commit()
-    login_limiter._max_backup = login_limiter._max
-    login_limiter._max = 3
-    try:
-        async with _client(db) as c:
-            for i in range(3):
-                r = await c.post(
-                    "/api/v1/auth/login",
-                    json=_corpo(ws, f"cada-um-diferente-{i}@x.com", _ERRADA),
-                    headers={"X-Forwarded-For": "198.51.100.7"},
-                )
-                assert r.status_code == 401
-
-            barrada = await c.post(
+    async with _client(db) as c:
+        for i in range(_TETO_DE_TESTE + 2):
+            r = await c.post(
                 "/api/v1/auth/login",
-                json=_corpo(ws, "mais-um@x.com", _ERRADA),
+                json=_corpo(ws, f"cada-um-diferente-{i}@x.com", _ERRADA),
                 headers={"X-Forwarded-For": "198.51.100.7"},
             )
-            assert barrada.status_code == 429
-    finally:
-        login_limiter._max = login_limiter._max_backup
+            assert r.status_code == 401
 
 # ------------------------------------------------------------ 16/10, a auditoria
 
@@ -286,7 +271,7 @@ async def test_refresh_nao_tem_freio_por_ip(db) -> None:
     await db.commit()
     async with _client(db) as c:
         par = (await c.post("/api/v1/auth/login", json=_corpo(ws, user.email, _SENHA))).json()
-        for _ in range(login_limiter._max + 5):
+        for _ in range(15):
             r = await c.post(
                 "/api/v1/auth/refresh",
                 json={"refresh_token": par["refresh_token"]},
