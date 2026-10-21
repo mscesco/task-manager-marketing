@@ -52,7 +52,7 @@ export default function ExportMenu({ onSpreadsheet }: { onSpreadsheet: () => Pro
         aria-expanded={open}
         disabled={busy}
         onClick={() => (open ? close() : setOpen(true))}
-        className="flex h-9 items-center gap-2 rounded-full border border-border bg-surface px-3 text-base font-semibold transition-[border-color] duration-150 hover:border-accent disabled:opacity-60"
+        className="flex h-9 items-center gap-2 rounded-[10px] border border-border bg-surface px-3 text-base font-semibold transition-[border-color] duration-150 hover:border-accent disabled:opacity-60"
       >
         <Download size={14} className="text-ink-faint" aria-hidden="true" />
         {busy ? "Gerando…" : "Exportar"}

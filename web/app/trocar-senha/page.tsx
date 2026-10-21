@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { Lock } from "lucide-react";
 import { changePassword, getToken, getMe, ApiError } from "@/lib/api";
 
 export default function TrocarSenhaPage() {
@@ -65,26 +66,28 @@ export default function TrocarSenhaPage() {
 
   return (
     <div className="center-screen">
+      {/* Redesign (fatia 6): o mesmo cartão do login (raio 16, sombra). */}
       <form
         onSubmit={trocar}
-        style={{
-          width: 380, background: "var(--surface)", border: "1px solid var(--border)",
-          borderRadius: 14, padding: 32, boxShadow: "var(--shadow)",
-          display: "flex", flexDirection: "column", gap: 16,
-        }}
+        className="login-rise flex w-full max-w-[440px] flex-col gap-5 rounded-2xl border border-border bg-surface p-9 shadow-[var(--shadow)]"
       >
-        <div>
-          <h1 style={{ margin: 0, fontSize: 20, letterSpacing: "-0.02em" }}>
-            {forcado === false ? "Trocar senha" : "Defina sua senha"}
-          </h1>
-          {/* Enquanto nao sei (null), o texto do primeiro acesso e o palpite
-              seguro: quem chega aqui obrigado e a maioria, e a frase some
-              sozinha quando a resposta chega. */}
-          {forcado !== false && (
-            <p className="muted" style={{ margin: "6px 0 0", fontSize: 13 }}>
-              No primeiro acesso você precisa trocar a senha provisória por uma sua.
-            </p>
-          )}
+        <div className="flex items-center gap-3">
+          <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-accent-soft text-accent">
+            <Lock size={18} aria-hidden />
+          </span>
+          <div className="flex flex-col gap-0.5">
+            <h1 className="m-0 text-[22px] font-extrabold tracking-[-0.02em]">
+              {forcado === false ? "Trocar senha" : "Defina sua senha"}
+            </h1>
+            {/* Enquanto nao sei (null), o texto do primeiro acesso e o palpite
+                seguro: quem chega aqui obrigado e a maioria, e a frase some
+                sozinha quando a resposta chega. */}
+            {forcado !== false && (
+              <p className="muted m-0 text-base">
+                Troque a senha provisória por uma sua para continuar.
+              </p>
+            )}
+          </div>
         </div>
 
         {erro && <div className="error-box">{erro}</div>}

@@ -379,8 +379,8 @@ export default function OrganizacaoPage() {
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
-              gap: 14,
+              gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))",
+              gap: 16,
             }}
           >
             {cards.map((card) => (
@@ -392,9 +392,9 @@ export default function OrganizacaoPage() {
                 produto — a grade é feita de áreas. Some sozinho quando a
                 lista está vazia. */}
             {semArea.length > 0 && (
-              <div className="rounded-lg border border-dashed border-border p-4">
-                <strong className="text-[15px]">Pessoas sem time</strong>
-                <div className="muted mt-1.5 text-xs">
+              <div className="rounded-xl border border-dashed border-border p-[18px]">
+                <strong className="text-md font-bold">Pessoas sem time</strong>
+                <div className="muted mt-2 text-sm">
                   {semArea.length}{" "}
                   {semArea.length === 1 ? "pessoa" : "pessoas"} sem vínculo
                 </div>
@@ -442,14 +442,19 @@ function CartaoDeArea({ card }: { card: AreaCard }) {
       href={`/times/${area.id}`}
       // ⚠️ `relative` é o que faz o contorno medir ESTE cartão. Sem ela ele
       // mediria o ancestral posicionado mais próximo — a grade inteira.
-      className="relative block cursor-pointer rounded-lg border border-border bg-surface p-4"
+      // Redesign (fatia 6): raio 12 e um filete teal no topo, como a prancha.
+      className="relative block cursor-pointer rounded-xl border border-border border-t-[3px] border-t-teal bg-surface p-[18px]"
       {...target}
     >
       {outline}
-      <strong className="text-[15px]">{area.name}</strong>
-      <div className="muted mt-1.5 text-xs">
-        {pessoas} {pessoas === 1 ? "pessoa" : "pessoas"} · {subteams}{" "}
-        {subteams === 1 ? "subtime" : "subtimes"}
+      <span className="flex items-center gap-2">
+        <strong className="min-w-0 flex-1 truncate text-md font-bold">{area.name}</strong>
+        <Badge tone="neutral" size="sm" weight="semibold" className="shrink-0 bg-surface-2 text-ink-soft">
+          {pessoas} {pessoas === 1 ? "pessoa" : "pessoas"}
+        </Badge>
+      </span>
+      <div className="muted mt-2 text-sm">
+        {subteams} {subteams === 1 ? "subtime" : "subtimes"}
       </div>
     </Link>
   );

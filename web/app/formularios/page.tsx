@@ -16,6 +16,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 
 import AppShell from "@/components/AppShell";
+import Badge from "@/components/Badge";
 import PageHeader from "@/components/PageHeader";
 import { useActiveTeam, useActiveTeamId } from "@/lib/useActiveTeam";
 import Loading from "@/components/Loading";
@@ -200,7 +201,7 @@ function Formularios() {
           !criando && (
             <button
               type="button"
-              className="btn btn-primary"
+              className="btn btn-primary ml-auto"
               onClick={() => setCriando(true)}
             >
               + Novo formulário
@@ -372,12 +373,16 @@ function Formularios() {
               <span className="muted" style={{ fontSize: 12.5 }}>
                 {nomeDoTime(f.team_id)}
               </span>
-              <span
-                className="muted"
-                style={{ fontSize: 12, marginLeft: "auto", flexShrink: 0 }}
-              >
-                {f.is_published ? "Publicado" : "Rascunho"}
-              </span>
+              {/* Redesign (fatia 6): a situação em pílula, teal quando publicado. */}
+              {f.is_published ? (
+                <Badge tone="soft" size="sm" color="var(--teal)" className="ml-auto shrink-0">
+                  Publicado
+                </Badge>
+              ) : (
+                <Badge tone="neutral" size="sm" weight="semibold" className="ml-auto shrink-0 bg-surface-2 text-ink-soft">
+                  Rascunho
+                </Badge>
+              )}
               {podeGerir && (
                 <>
                   <button
