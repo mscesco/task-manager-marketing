@@ -32,7 +32,27 @@
 // ⚠️ Spec 038, fatia B: a regra de "atrasou?" mora em `lib/prazo.ts`, e este
 // arquivo a CONSOME. Ela saiu daqui de proposito -- atraso com hora e uma
 // pergunta sobre um INSTANTE, e tudo neste modulo raciocina em DIAS.
+import type { ProjectStatus } from "@/lib/api";
 import { agoraNoWorkspace, estaAtrasada } from "@/lib/prazo";
+
+// Status de PROJETO (proprio; difere do status de TASK abaixo). Vivia copiado
+// nas duas telas de projeto e ja tinha divergido -- o detalhe ficou com hex
+// que nao vira no tema escuro (auditoria de 21/10). Contraste medido com a
+// tinta no globals.css: teal 5.16/7.19, bloqueado e cancelado pelos stops da
+// Spec 031.
+export const PROJECT_STATUS: { key: ProjectStatus; label: string; color: string }[] = [
+  { key: "PLANNING", label: "Planejamento", color: "var(--status-backlog-text)" },
+  { key: "ACTIVE", label: "Ativo", color: "var(--teal)" },
+  { key: "BLOCKED", label: "Bloqueado", color: "var(--status-blocked-text)" },
+  { key: "COMPLETED", label: "Concluído", color: "var(--status-progress-text)" },
+  { key: "CANCELLED", label: "Cancelado", color: "var(--status-cancel-text)" },
+];
+export const PROJECT_STATUS_LABEL: Record<string, string> = Object.fromEntries(
+  PROJECT_STATUS.map((s) => [s.key, s.label])
+);
+export const PROJECT_STATUS_COLOR: Record<string, string> = Object.fromEntries(
+  PROJECT_STATUS.map((s) => [s.key, s.color])
+);
 
 export const STATUSES = [
   { key: "BACKLOG", label: "Backlog", color: "var(--status-backlog-dot)" },

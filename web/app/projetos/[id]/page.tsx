@@ -33,27 +33,16 @@ import {
   temErro,
   type RascunhoLink,
 } from "@/lib/links";
-import { PRIORITY_LABEL } from "@/lib/status";
+import {
+  PRIORITY_LABEL,
+  PROJECT_STATUS,
+  PROJECT_STATUS_COLOR,
+  PROJECT_STATUS_LABEL,
+} from "@/lib/status";
 
 import Loading from "@/components/Loading";
 import { withTeam } from "@/lib/activeTeam";
 import { useDocumentTitle } from "@/lib/useDocumentTitle";
-// Status de PROJETO (proprio; difere do status de TASK em lib/status).
-// Duplicado de app/projetos/page.tsx de proposito, para manter esta
-// entrega em UM arquivo. Divida cosmetica: extrair para lib se desejado.
-const PROJECT_STATUS: { key: ProjectStatus; label: string; color: string }[] = [
-  { key: "PLANNING", label: "Planejamento", color: "#8b8f9a" },
-  { key: "ACTIVE", label: "Ativo", color: "#2e7d32" },
-  { key: "BLOCKED", label: "Bloqueado", color: "#c62828" },
-  { key: "COMPLETED", label: "Concluído", color: "#1565c0" },
-  { key: "CANCELLED", label: "Cancelado", color: "#9e9e9e" },
-];
-const STATUS_LABEL: Record<string, string> = Object.fromEntries(
-  PROJECT_STATUS.map((s) => [s.key, s.label])
-);
-const STATUS_COLOR: Record<string, string> = Object.fromEntries(
-  PROJECT_STATUS.map((s) => [s.key, s.color])
-);
 const PRIORITY_KEYS = ["LOW", "MEDIUM", "HIGH", "URGENT"];
 
 // YYYY-MM-DD -> DD/MM/YYYY sem passar por Date (evita o parse UTC que
@@ -193,10 +182,10 @@ function Projeto() {
           aria-hidden
           style={{
             width: 8, height: 8, borderRadius: 999, flexShrink: 0,
-            background: STATUS_COLOR[project.status] || "#999",
+            background: PROJECT_STATUS_COLOR[project.status] || "var(--border)",
           }}
         />
-        {STATUS_LABEL[project.status] || project.status}
+        {PROJECT_STATUS_LABEL[project.status] || project.status}
       </span>
       <span>Prioridade: {PRIORITY_LABEL[project.priority] || project.priority}</span>
       {project.start_date && <span>Início: {dataBR(project.start_date)}</span>}
