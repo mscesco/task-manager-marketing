@@ -133,7 +133,7 @@ export default function PillSelect<T extends string>({
                       setIsOpen(false);
                       onSelect(o.id);
                     }}
-                    className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[13px] ${
+                    className={`flex min-h-9 w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[13px] ${
                       selecionada
                         ? "bg-accent-soft font-semibold text-accent"
                         : "text-ink-soft hover:bg-surface-2"

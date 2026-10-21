@@ -35,6 +35,7 @@
 // e o `motion` respeita a mesma media query por conta própria.
 
 import { motion } from "motion/react";
+import { DUR } from "@/lib/motion";
 
 export type ToggleSide<T extends string> = {
   readonly id: T;
@@ -71,7 +72,7 @@ export default function Toggle<T extends string>({
         // Curta de propósito, no mesmo espírito dos 150ms do modal: o
         // suficiente para tirar o corte seco, curto o bastante para não
         // atrasar quem usa o app o dia inteiro.
-        transition={{ type: "spring", duration: 0.3, bounce: 0.18 }}
+        transition={{ type: "spring", duration: DUR[3], bounce: 0.18 }}
         className="h-full w-1/2 rounded-md bg-surface"
         style={{ boxShadow: "var(--shadow)" }}
       />

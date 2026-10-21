@@ -71,6 +71,10 @@ export default function Badge({
   size = "md",
   weight = "bold",
   color,
+  // Redesign (fatia 4): a opcao da Base e "etiqueta" (raio 5, estilo Notion);
+  // o resto continua pilula. Prop, e nao `className`, porque duas classes de
+  // raio na mesma camada disputariam sem ordem garantida.
+  forma = "pilula",
   className = "",
   children,
 }: {
@@ -78,6 +82,7 @@ export default function Badge({
   size?: BadgeSize;
   weight?: BadgeWeight;
   color?: string;
+  forma?: "pilula" | "etiqueta";
   className?: string;
   children: ReactNode;
 }) {
@@ -95,7 +100,8 @@ export default function Badge({
   }
   // neutral: estrutura só; fundo/cor/borda vêm via className.
 
-  const cls = `inline-flex items-center min-w-0 overflow-hidden text-ellipsis whitespace-nowrap rounded-full ${SIZE[size]} ${WEIGHT[weight]} ${toneCls} ${className}`
+  const raio = forma === "etiqueta" ? "rounded-[5px] h-5 py-0" : "rounded-full";
+  const cls = `inline-flex items-center min-w-0 overflow-hidden text-ellipsis whitespace-nowrap ${raio} ${SIZE[size]} ${WEIGHT[weight]} ${toneCls} ${className}`
     .replace(/\s+/g, " ")
     .trim();
 

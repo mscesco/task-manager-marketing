@@ -26,6 +26,10 @@
   --color-amber-soft: #fbecd3;
   --color-violet: #6b2fd1;
   --color-violet-soft: #ece4fb;
+  /* Painel escuro da tela de entrada (fatia 4). Espelha `--panel`. */
+  --color-panel: #0b3d6b;
+  /* Raia do quadro (fatia 4). Espelha `--lane`. */
+  --color-lane: #ece9e3;
 
   --radius-sm: 8px;
   --radius-md: 10px;
@@ -123,6 +127,12 @@
   --teal: #0a6e63;        --teal-soft: #d7f0ea;    /* 5.12 / 6.13 */
   --amber: #9a5300;       --amber-soft: #fbecd3;   /* 5.00 / 5.82 */
   --violet: #6b2fd1;      --violet-soft: #ece4fb;  /* 5.78 / 7.11 */
+  /* Painel da tela de entrada (fatia 4): azul-marinho, texto branco por cima
+     (12.4 no claro). Nao e superficie de app: so o login o usa. */
+  --panel: #0b3d6b;
+  /* Raia do quadro (fatia 4): um ponto mais escura que o fundo, para o card
+     branco pousar nela. `--text-faint` por cima: 5.3 (o "—" da coluna vazia). */
+  --lane: #ece9e3;
   --radius: 10px;    /* controle (botao, input, selo). Redesign 19/10: era 8 */
   --radius-lg: 12px; /* superficie (card, painel, modal) */
   /* ⚠️ MOVIMENTO (redesign, 19/10). Quatro duracoes e duas curvas; nenhuma
@@ -199,6 +209,8 @@
   --color-amber-soft: #3b2d0c;
   --color-violet: #c6b6fd;
   --color-violet-soft: #2d2352;
+  --color-panel: #0e2238;
+  --color-lane: #191815;
 
   /* ⚠️ REDESIGN (19/10): a surface escura foi de #1f1e1c para #1e1d1a (um
      ponto mais escura) -- os 15 pares de selo abaixo sobem um pouco, nao
@@ -250,6 +262,8 @@
   --teal: #5ed2c2;        --teal-soft: #0f3833;    /* 7.02 / 9.21 */
   --amber: #f6c454;       --amber-soft: #3b2d0c;   /* 8.26 / 10.39 */
   --violet: #c6b6fd;      --violet-soft: #2d2352;  /* 7.81 / 9.24 */
+  --panel: #0e2238; /* branco por cima: 15.9 */
+  --lane: #191815;  /* `--text-faint` por cima: 5.6 */
 
   /* Sombra no escuro precisa de mais opacidade: a de baixo relevo do tema
      claro simplesmente some e os cards perdem a separacao do fundo. */
@@ -306,8 +320,13 @@
   --status-planned-dot:  #6366f1;  --status-planned-text:  #4338ca; /*  7.90 */
   --status-progress-dot: #0ea5e9;  --status-progress-text: #0369a1; /*  5.93 */
   --status-review-dot:   #f59e0b;  --status-review-text:   #92400e; /*  7.09 */
-  --status-external-dot: #8b5cf6;  --status-external-text: #6d28d9; /*  7.10 */
-  --status-done-dot:     #22c55e;  --status-done-text:     #166534; /*  7.13 */
+  /* ⚠️ REDESIGN (19/10): externo e concluido passam a ser as cores de apoio,
+     dot E text no mesmo valor (o `--x` ja e texto medido sobre a surface).
+     O dot tambem alias porque a cor da coluna mora no BANCO como
+     `var(--status-done-dot)` -- so assim o filete do card acompanha o selo.
+     Com a tinta a 12%: violeta 5.86, teal 5.16 (sobre a surface: 7.11 / 6.13). */
+  --status-external-dot: var(--violet);  --status-external-text: var(--violet);
+  --status-done-dot:     var(--teal);    --status-done-text:     var(--teal);
   --status-cancel-dot:   #94a3b8;  --status-cancel-text:   #475569; /*  7.58 */
   --status-blocked-dot:  #ef4444;  --status-blocked-text:  #b91c1c; /*  6.47 */
 
@@ -370,8 +389,9 @@
   --status-planned-dot:  #818cf8;  --status-planned-text:  #a5b4fc; /*  8.36 */
   --status-progress-dot: #38bdf8;  --status-progress-text: #7dd3fc; /* 9.99 */
   --status-review-dot:   #fbbf24;  --status-review-text:   #fcd34d; /* 11.55 */
-  --status-external-dot: #a78bfa;  --status-external-text: #c4b5fd; /*  9.02 */
-  --status-done-dot:     #4ade80;  --status-done-text:     #86efac; /* 11.86 */
+  /* Cores de apoio (redesign 19/10), com a tinta: violeta 7.22, teal 7.19. */
+  --status-external-dot: var(--violet);  --status-external-text: var(--violet);
+  --status-done-dot:     var(--teal);    --status-done-text:     var(--teal);
   --status-cancel-dot:   #cbd5e1;  --status-cancel-text:   #cbd5e1; /* 11.22 */
   --status-blocked-dot:  #f87171;  --status-blocked-text:  #fca5a5; /*  8.78 */
 
@@ -454,6 +474,13 @@ button { font-family: inherit; cursor: pointer; }
    reprova AA. Ver o comentario do token. */
 .btn-danger { background: var(--danger); border-color: var(--danger); color: var(--on-danger); }
 .btn-danger:hover { filter: brightness(0.92); }
+/* Redesign (21/10), a prancha da fila: aprovar e um botao TEAL SUAVE, e rejeitar
+   um botao sem fundo que so fica vermelho no hover -- o azul cheio fica para
+   criar. Os tokens mudam por tema, entao uma regra serve aos dois. */
+.btn-ok { background: var(--teal-soft); border-color: transparent; color: var(--teal); }
+.btn-ok:hover { background: color-mix(in srgb, var(--teal) 22%, var(--teal-soft)); }
+.btn-no { background: transparent; border-color: transparent; color: var(--danger); }
+.btn-no:hover { background: color-mix(in srgb, var(--danger) 12%, transparent); }
 
 /* inputs */
 .field { display: flex; flex-direction: column; gap: 6px; }
@@ -503,13 +530,87 @@ button { font-family: inherit; cursor: pointer; }
   to   { opacity: 1; }
 }
 @keyframes tm-card-entra {
-  from { opacity: 0; transform: translateY(8px) scale(0.985); }
+  from { opacity: 0; transform: translateY(8px) scale(0.97); }
   to   { opacity: 1; transform: none; }
 }
-.modal-scrim { animation: tm-scrim-entra var(--dur-2) var(--ease-out); }
+/* O desfoque do veu (redesign 19/10) nao e animado: `backdrop-filter` nao e
+   transform nem opacity, e a opacidade do proprio veu ja faz a entrada. */
+.modal-scrim {
+  animation: tm-scrim-entra var(--dur-2) var(--ease-out);
+  backdrop-filter: blur(6px);
+}
 .modal-card  { animation: tm-card-entra var(--dur-2) var(--ease-out); }
 .modal-scrim[data-saindo="true"] { animation: tm-scrim-entra var(--dur-1) var(--ease-io) reverse forwards; }
 .modal-card[data-saindo="true"]  { animation: tm-card-entra var(--dur-1) var(--ease-io) reverse forwards; }
+
+/* --- Tela de entrada (fatia 4): os cartoezinhos que flutuam no painel ---
+   Decoracao pura (`aria-hidden`): sobem ao chegar e depois derivam devagar,
+   so com transform e opacity. O bloco global de prefers-reduced-motion acima
+   os deixa parados, e o `both` garante que apareçam no estado final. */
+@keyframes tm-rise {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes tm-drift {
+  0%, 100% { transform: translateY(0) rotate(-2deg); }
+  50%      { transform: translateY(-10px) rotate(-1deg); }
+}
+.login-tile {
+  position: absolute;
+  border-radius: 14px;
+  padding: 14px 16px;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  backdrop-filter: blur(6px);
+  box-shadow: 0 20px 40px -20px rgba(0, 0, 0, 0.5);
+  animation: tm-rise var(--dur-4) var(--ease-out) both, tm-drift 7s ease-in-out infinite;
+}
+.login-tile:nth-child(1) { animation-delay: 80ms, 0s; }
+.login-tile:nth-child(2) { animation-delay: 160ms, 0.8s; }
+.login-tile:nth-child(3) { animation-delay: 240ms, 1.6s; }
+.login-rise { animation: tm-rise var(--dur-4) var(--ease-out) both; animation-delay: 120ms; }
+
+/* --- Meu perfil (fatia 4): o personagem do Tibia no canto -------------
+   O `tibia.png` e um PNG ANIMADO (16 quadros): ele anda sozinho, sem CSS por
+   cima. `fixed` para ficar sempre inteiro na tela, fora do fluxo do main.
+   `pixelated` porque o sprite e 64px desenhado a 96. So esta tela o usa. */
+.tibia-egg {
+  position: fixed; right: 28px; bottom: 28px;
+  width: 96px; height: 96px; pointer-events: none;
+}
+.tibia-egg img {
+  width: 96px; height: 96px; display: block;
+  image-rendering: pixelated;
+}
+
+/* --- Detalhe da tarefa (redesign 19/10) --------------------------------
+   A lista de propriedades: rotulo numa coluna de 110px, o controle na outra.
+   O balao do comentario: canto reto no alto a esquerda, apontando o avatar. */
+.prop-list {
+  display: flex; flex-direction: column; gap: 2px; padding: 0 0 6px;
+  /* So a borda de baixo (ajuste dela, 19/10): a lista comeca logo sob a barra. */
+  border-bottom: 1px solid var(--border);
+}
+.prop {
+  display: grid; grid-template-columns: 110px minmax(0, 1fr);
+  align-items: center; gap: 8px; min-height: 34px;
+}
+.prop-lbl { font-size: 12px; font-weight: 600; color: var(--text-faint); }
+.comment-bubble {
+  background: var(--surface); border: 1px solid var(--border);
+  padding: 10px 12px; border-radius: 0 12px 12px 12px; margin-top: 4px;
+}
+
+/* --- Card do quadro: filete da coluna (redesign 19/10) ----------------
+   3px no topo com a cor da coluna. A borda inteira mora aqui porque o
+   shorthand `border` inline zeraria a largura do topo; so a COR do filete
+   entra inline (`borderTopColor`), que e a excecao de cor dinamica do
+   web/AGENTS.md §11 -- ela vem da coluna, inclusive do banco. */
+.card-stripe {
+  border: 1px solid var(--border);
+  border-top: 3px solid var(--border);
+}
 
 /* --- Card do quadro: elevacao no hover -------------------------------
    Substitui o outline duro do .tappable NESTE caso: em card arrastavel a
@@ -517,12 +618,38 @@ button { font-family: inherit; cursor: pointer; }
    teclado continua vindo da regra [tabindex]:focus-visible abaixo. */
 .card-elev {
   cursor: grab;
-  border-radius: var(--radius-lg);
-  transition: transform var(--dur-1) var(--ease-out), box-shadow var(--dur-1) var(--ease-out);
+  border-radius: var(--radius); /* o mesmo raio 10 do TaskCard (fatia 4) */
+  transition: transform var(--dur-2) var(--ease-out), box-shadow var(--dur-2) var(--ease-out);
 }
+/* Redesign 19/10: sobe 3px e a sombra e tingida do `--accent` -- o token muda
+   por tema, entao uma regra serve aos dois. Sem anel de 1px (ajuste dela,
+   19/10): ele brigava com o filete colorido do topo do card. */
 .card-elev:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 2px 4px rgba(16, 24, 40, 0.07), 0 4px 12px rgba(16, 24, 40, 0.08);
+  transform: translateY(-3px);
+  box-shadow: 0 10px 28px -10px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+/* --- Esqueleto (redesign 19/10): a forma da tela que vem ---------------
+   Linhas na `--surface-2` com um brilho que atravessa em 1,4s. So `transform`
+   anima (o brilho e um pseudo-elemento que desliza); o bloco de
+   prefers-reduced-motion acima o para, e as linhas paradas ainda leem como
+   "espere". Cores dos tokens: no escuro `--surface-2` clareia junto. */
+@keyframes tm-shimmer {
+  from { transform: translateX(-100%); }
+  to   { transform: translateX(100%); }
+}
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+.skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--surface) 70%, transparent), transparent);
+  animation: tm-shimmer 1.4s var(--ease-io) infinite;
 }
 
 /* --- Affordance de clique: hover + foco visivel por teclado (C1/C2) ---
@@ -718,6 +845,8 @@ button:focus-visible,
     --color-accent: #0075de;
     --color-accent-soft: #d6e8fb;
     --color-danger: #dc2626;
+    /* O painel usa `bg-teal`/`stroke-teal` em "Concluídas" (redesign 19/10). */
+    --color-teal: #0a6e63;
   }
   [data-theme="escuro"] .tile-destaque { color: #ffffff; }
   * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }

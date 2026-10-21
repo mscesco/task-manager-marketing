@@ -483,7 +483,7 @@ export default function FormularioSolicitacao({
   return (
     <MolduraPublica>
       <header style={{ marginBottom: 20 }}>
-        <h1 style={{ margin: 0, fontSize: 22, letterSpacing: "-0.02em" }}>
+        <h1 style={{ margin: 0, fontSize: 28, fontWeight: 800, letterSpacing: "-0.02em", lineHeight: 1.15 }}>
           {titulo}
         </h1>
         <p className="muted" style={{ margin: "6px 0 0", fontSize: 14 }}>
@@ -544,14 +544,14 @@ export default function FormularioSolicitacao({
         />
       )}
 
-      {selecionadas.length > 0 && (
-        <Stepper
-          categorias={categoriasSelecionadas}
-          passo={passo}
-          onIr={irPara}
-          completa={(cat) => faltando(cat) === null}
-        />
-      )}
+      {/* Redesign (fatia 7): os passos aparecem SEMPRE, numerados, como a
+          prancha -- antes so depois de marcar um tipo de demanda. */}
+      <Stepper
+        categorias={categoriasSelecionadas}
+        passo={passo}
+        onIr={irPara}
+        completa={(cat) => faltando(cat) === null}
+      />
 
       {/* ⚠️ `role="alert"` FALTAVA AQUI, e esta é a única rota pública do
           produto -- quem usa leitor de tela não era avisado de que o envio
@@ -958,20 +958,26 @@ function Stepper({
   onIr: (i: number) => void;
   completa: (cat: Categoria) => boolean;
 }) {
+  // Redesign (fatia 7): passos NUMERADOS. Sem tipo marcado, o meio e um passo
+  // so ("O que precisa"); cada tipo marcado vira o seu proprio passo.
+  const ultimo = categorias.length + 1;
   return (
     <div
       style={{
         display: "flex",
-        gap: 6,
+        gap: 16,
         flexWrap: "wrap",
-        marginBottom: 16,
-        fontSize: 12,
+        marginBottom: 18,
       }}
     >
-      <Pastilha ativo={passo === 0} onClick={() => onIr(0)} rotulo="Seus dados" />
+      <Pastilha numero={1} ativo={passo === 0} ok={passo > 0} onClick={() => onIr(0)} rotulo="Seus dados" />
+      {categorias.length === 0 && (
+        <Pastilha numero={2} ativo={false} onClick={() => onIr(0)} rotulo="O que precisa" />
+      )}
       {categorias.map((cat, i) => (
         <Pastilha
           key={cat.slug}
+          numero={i + 2}
           ativo={passo === i + 1}
           onClick={() => onIr(i + 1)}
           rotulo={`${cat.emoji} ${cat.titulo}`}
@@ -979,8 +985,9 @@ function Stepper({
         />
       ))}
       <Pastilha
-        ativo={passo === categorias.length + 1}
-        onClick={() => onIr(categorias.length + 1)}
+        numero={ultimo + 1}
+        ativo={passo === ultimo}
+        onClick={() => onIr(ultimo)}
         rotulo="Revisão"
       />
     </div>
@@ -988,11 +995,13 @@ function Stepper({
 }
 
 function Pastilha({
+  numero,
   ativo,
   ok,
   rotulo,
   onClick,
 }: {
+  numero: number;
   ativo: boolean;
   ok?: boolean;
   rotulo: string;
@@ -1002,28 +1011,46 @@ function Pastilha({
     <button
       type="button"
       onClick={onClick}
+      aria-current={ativo ? "step" : undefined}
       className="tappable"
       style={{
-        border: `1px solid ${ativo ? "var(--accent)" : "var(--border)"}`,
-        color: ativo ? "var(--accent)" : "var(--text-soft)",
-        fontWeight: ativo ? 600 : 400,
+        border: "none",
         background: "transparent",
-        borderRadius: 999,
-        padding: "4px 10px",
+        padding: 0,
         cursor: "pointer",
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 8,
         // ⚠️ `fontFamily`, e não o atalho `font: inherit`: o atalho junto do
         // `fontWeight` que muda a cada passo gerava aviso do React no console
         // (15/10) -- e podia deixar o peso errado depois de rerender.
         fontFamily: "inherit",
         fontSize: 12,
-        maxWidth: 220,
-        overflow: "hidden",
-        textOverflow: "ellipsis",
-        whiteSpace: "nowrap",
+        fontWeight: 700,
+        color: ativo ? "var(--accent)" : ok ? "var(--teal)" : "var(--text-faint)",
+        maxWidth: 240,
       }}
     >
-      {ok ? "✓ " : ""}
-      {rotulo}
+      <span
+        aria-hidden
+        style={{
+          width: 22,
+          height: 22,
+          borderRadius: 999,
+          flexShrink: 0,
+          display: "inline-grid",
+          placeItems: "center",
+          fontSize: 11,
+          border: `1.5px solid ${ativo ? "var(--accent)" : ok ? "var(--teal)" : "var(--border)"}`,
+          background: ativo ? "var(--accent)" : ok ? "var(--teal)" : "transparent",
+          color: ativo || ok ? "#fff" : "var(--text-faint)",
+        }}
+      >
+        {ok && !ativo ? "✓" : numero}
+      </span>
+      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        {rotulo}
+      </span>
     </button>
   );
 }
@@ -1198,9 +1225,9 @@ function CartaoDeCategoria({
       {...target}
       style={{
         textAlign: "left",
-        background: "var(--surface)",
-        border: `1px solid ${marcada ? "var(--accent)" : "var(--border)"}`,
-        boxShadow: marcada ? "0 0 0 1px var(--accent) inset" : undefined,
+        // Redesign (fatia 7): marcada = fundo azul suave, como a prancha.
+        background: marcada ? "var(--accent-soft)" : "var(--surface)",
+        border: `1.5px solid ${marcada ? "var(--accent)" : "var(--border)"}`,
         borderRadius: 12,
         padding: 16,
         cursor: "pointer",

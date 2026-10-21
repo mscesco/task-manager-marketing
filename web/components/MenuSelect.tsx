@@ -18,6 +18,7 @@
 
 import { useCallback, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
+import { DUR } from "@/lib/motion";
 import { Check, ChevronDown } from "lucide-react";
 import AnchoredPanel, {
   PANEL_ITEM,
@@ -78,7 +79,7 @@ export default function MenuSelect<T extends string>({
         <motion.span
           className="inline-flex shrink-0"
           animate={{ rotate: isOpen ? 180 : 0 }}
-          transition={{ type: "spring", duration: 0.3, bounce: 0 }}
+          transition={{ type: "spring", duration: DUR[3], bounce: 0 }}
         >
           <ChevronDown size={15} aria-hidden="true" />
         </motion.span>
@@ -102,7 +103,7 @@ export default function MenuSelect<T extends string>({
                       setIsOpen(false);
                       onSelect(o.id);
                     }}
-                    className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[13px] font-medium ${
+                    className={`flex min-h-9 w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[13px] font-medium ${
                       selecionada
                         ? "bg-accent-soft text-accent"
                         : "text-ink-soft hover:bg-surface-2"

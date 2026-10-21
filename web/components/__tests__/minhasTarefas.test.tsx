@@ -663,7 +663,10 @@ describe("minhas-tarefas -- tarefa de outro quadro (fatia 5b-5b)", () => {
     render(<MinhasTarefasPage />);
     await screen.findByText("Tarefa do Campanhas");
 
-    expect(screen.getByText(/atrasad/i)).toBeTruthy();
+    // `getAll`: desde a fatia 7 do redesign a lista agrupa em "Atrasadas", e o
+    // cabeçalho do grupo também casa com /atrasad/ -- o que se afirma aqui é
+    // que o ALERTA existe, e com ele o grupo.
+    expect(screen.getAllByText(/atrasad/i).length).toBeGreaterThan(0);
   });
 
   it("⚠️ coluna com notify_deadline false NAO ganha alerta pela equivalente", async () => {

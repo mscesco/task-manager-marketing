@@ -14,8 +14,10 @@
 import { timePadraoDoFormulario, timesQueCriamFormulario } from "@/lib/timesDoFormulario";
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { Link2 } from "lucide-react";
 
 import AppShell from "@/components/AppShell";
+import Badge from "@/components/Badge";
 import PageHeader from "@/components/PageHeader";
 import { useActiveTeam, useActiveTeamId } from "@/lib/useActiveTeam";
 import Loading from "@/components/Loading";
@@ -200,7 +202,7 @@ function Formularios() {
           !criando && (
             <button
               type="button"
-              className="btn btn-primary"
+              className="btn btn-primary ml-auto"
               onClick={() => setCriando(true)}
             >
               + Novo formulário
@@ -316,92 +318,84 @@ function Formularios() {
           solicitações por um endereço próprio.
         </p>
       ) : (
-        <div
-          style={{
-            display: "flex", flexDirection: "column", maxWidth: 1100,
-            border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden",
-          }}
-        >
-          {itens.map((f, i) => (
+        /* Redesign (fatia 7): cards, como a coluna da esquerda da prancha. O
+           editor abre em /formularios/<id>, com esta mesma lista ao lado. */
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(320px,1fr))] gap-4">
+          {itens.map((f) => (
             <div
               key={f.id}
-              style={{
-                display: "flex", alignItems: "center", gap: 12,
-                minHeight: 56, padding: "12px 20px", background: "var(--surface)",
-                borderTop: i === 0 ? "none" : "1px solid var(--border)",
-                opacity: ocupado === f.id ? 0.6 : 1,
-              }}
+              className="flex flex-col gap-3 rounded-xl border border-border bg-surface p-[18px] transition-[border-color,box-shadow] duration-200 hover:border-accent"
+              style={{ opacity: ocupado === f.id ? 0.6 : 1 }}
             >
-              <span
-                aria-hidden
-                title={f.is_published ? "Publicado" : "Rascunho"}
-                style={{
-                  width: 9, height: 9, borderRadius: 999, flexShrink: 0,
-                  background: f.is_published
-                    ? "var(--status-done-dot)"
-                    : "var(--border)",
-                }}
-              />
-              {/* ⚠️ O TÍTULO É O LINK PARA O EDITOR, e é a razão de a Camila
-                  ter perguntado "consigo criar mas onde eu edito?" (26/08): a
-                  fatia C1 criava formulários que não tinham para onde ir, e o
-                  primeiro deles bateu em "um formulário sem perguntas não pode
-                  ser publicado" sem nenhum lugar onde pôr perguntas. */}
-              <Link
-                href={`/formularios/${f.id}`}
-                style={{ fontSize: 15, fontWeight: 600, minWidth: 0 }}
-              >
-                {f.title}
-              </Link>
-              {f.is_published ? (
-                <a
-                  href={`/solicitar/${f.slug}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="muted"
-                  style={{ fontSize: 12.5, fontFamily: "var(--font-mono, monospace)" }}
-                  title="Abrir o formulário público"
+              <span className="flex items-start gap-2">
+                {/* ⚠️ O TÍTULO É O LINK PARA O EDITOR, e é a razão de a Camila
+                    ter perguntado "consigo criar mas onde eu edito?" (26/08): a
+                    fatia C1 criava formulários que não tinham para onde ir, e o
+                    primeiro deles bateu em "um formulário sem perguntas não pode
+                    ser publicado" sem nenhum lugar onde pôr perguntas. */}
+                <Link
+                  href={`/formularios/${f.id}`}
+                  className="min-w-0 flex-1 truncate text-md font-bold text-ink no-underline hover:text-accent"
                 >
-                  /solicitar/{f.slug}
-                </a>
-              ) : (
-                <code className="muted" style={{ fontSize: 12.5 }}>
-                  /solicitar/{f.slug}
-                </code>
-              )}
-              <span className="muted" style={{ fontSize: 12.5 }}>
-                {nomeDoTime(f.team_id)}
+                  {f.title}
+                </Link>
+                {/* Redesign (fatia 6): a situação em pílula, teal quando publicado. */}
+                {f.is_published ? (
+                  <Badge tone="soft" size="sm" color="var(--teal)" className="shrink-0">
+                    Publicado
+                  </Badge>
+                ) : (
+                  <Badge tone="neutral" size="sm" weight="semibold" className="shrink-0 bg-surface-2 text-ink-soft">
+                    Rascunho
+                  </Badge>
+                )}
               </span>
-              <span
-                className="muted"
-                style={{ fontSize: 12, marginLeft: "auto", flexShrink: 0 }}
-              >
-                {f.is_published ? "Publicado" : "Rascunho"}
-              </span>
-              {podeGerir && (
-                <>
-                  <button
-                    type="button"
-                    className="btn btn-ghost"
-                    style={{ fontSize: 12 }}
-                    disabled={ocupado === f.id}
-                    onClick={() => alternarPublicacao(f)}
+              <span className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-ink-faint">
+                {f.is_published ? (
+                  <a
+                    href={`/solicitar/${f.slug}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 font-mono hover:text-accent"
+                    title="Abrir o formulário público"
                   >
-                    {f.is_published ? "Despublicar" : "Publicar"}
-                  </button>
-                  {podeApagar && (
+                    <Link2 size={12} aria-hidden />
+                    /solicitar/{f.slug}
+                  </a>
+                ) : (
+                  <code>/solicitar/{f.slug}</code>
+                )}
+                <span>{nomeDoTime(f.team_id)}</span>
+              </span>
+              <span className="mt-auto flex items-center gap-1 border-t border-border pt-2">
+                <Link href={`/formularios/${f.id}`} className="btn btn-ghost" style={{ fontSize: 12, padding: "4px 10px" }}>
+                  Editar perguntas
+                </Link>
+                {podeGerir && (
+                  <>
                     <button
                       type="button"
                       className="btn btn-ghost"
-                      style={{ fontSize: 12, color: "var(--danger)" }}
+                      style={{ fontSize: 12, padding: "4px 10px" }}
                       disabled={ocupado === f.id}
-                      onClick={() => apagar(f)}
+                      onClick={() => alternarPublicacao(f)}
                     >
-                      Excluir
+                      {f.is_published ? "Despublicar" : "Publicar"}
                     </button>
-                  )}
-                </>
-              )}
+                    {podeApagar && (
+                      <button
+                        type="button"
+                        className="btn btn-ghost ml-auto"
+                        style={{ fontSize: 12, padding: "4px 10px", color: "var(--danger)" }}
+                        disabled={ocupado === f.id}
+                        onClick={() => apagar(f)}
+                      >
+                        Excluir
+                      </button>
+                    )}
+                  </>
+                )}
+              </span>
             </div>
           ))}
         </div>

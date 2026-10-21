@@ -1,12 +1,16 @@
 "use client";
 import { useEffect, useState } from "react";
 import AppShell from "@/components/AppShell";
+import Badge from "@/components/Badge";
 import EmptyState from "@/components/EmptyState";
 import Card from "@/components/Card";
 import PageHeader from "@/components/PageHeader";
-import Loading from "@/components/Loading";
+import { Esqueleto } from "@/components/Loading";
+import Entrada from "@/components/Entrada";
 import { useActiveTeam, useActiveTeamId } from "@/lib/useActiveTeam";
-import { useDrawnOutline } from "@/components/AnimatedOutline";
+import { CalendarClock, Plus } from "lucide-react";
+import { dataParaTela } from "@/lib/baseTable";
+import { diaNoWorkspace } from "@/lib/prazo";
 import {
   listProjects,
   createProject,
@@ -21,12 +25,15 @@ import { rootsForPerson } from "@/lib/contextSwitcher";
 import { semMarcacao } from "@/lib/markdown";
 
 // Projeto e "pasta" -- tudo no time raiz, todos veem. Designar e so nas tasks.
+// Redesign (fatia 5): tokens no lugar de hex, para a cor virar no tema escuro e
+// servir de texto no `Badge tone="soft"` (contraste medido com a tinta no
+// globals.css: teal 5.16/7.19, bloqueado e cancelado pelos stops da Spec 031).
 const PROJECT_STATUS: { key: ProjectStatus; label: string; color: string }[] = [
-  { key: "PLANNING", label: "Planejamento", color: "#8b8f9a" },
-  { key: "ACTIVE", label: "Ativo", color: "#2e7d32" },
-  { key: "BLOCKED", label: "Bloqueado", color: "#c62828" },
-  { key: "COMPLETED", label: "Concluído", color: "#1565c0" },
-  { key: "CANCELLED", label: "Cancelado", color: "#9e9e9e" },
+  { key: "PLANNING", label: "Planejamento", color: "var(--status-backlog-text)" },
+  { key: "ACTIVE", label: "Ativo", color: "var(--teal)" },
+  { key: "BLOCKED", label: "Bloqueado", color: "var(--status-blocked-text)" },
+  { key: "COMPLETED", label: "Concluído", color: "var(--status-progress-text)" },
+  { key: "CANCELLED", label: "Cancelado", color: "var(--status-cancel-text)" },
 ];
 const STATUS_LABEL: Record<string, string> = Object.fromEntries(
   PROJECT_STATUS.map((s) => [s.key, s.label])
@@ -172,7 +179,7 @@ function Projetos() {
   }
 
   if (erro) return <div className="error-box" style={{ maxWidth: 480 }}>{erro}</div>;
-  if (!items) return <Loading />;
+  if (!items) return <Esqueleto forma="linhas" rotulo="Carregando projetos" />;
 
   return (
     <div>
@@ -192,7 +199,7 @@ function Projetos() {
         }
         actions={
           podeCriar && !criando && (
-            <button type="button" className="btn btn-primary" onClick={() => setCriando(true)}>
+            <button type="button" className="btn btn-primary ml-auto" onClick={() => setCriando(true)}>
               + Novo projeto
             </button>
           )
@@ -307,21 +314,27 @@ function Projetos() {
            de alturas diferentes. Em linha, os nomes ficam alinhados na mesma
            coluna e a lista se lê de cima para baixo, que é como se procura um
            projeto pelo nome. */
-        <div
-          style={{
-            // ⚠️ 1100, e não 860 (22/08). A Camila viu na tela: "tá muito
-            // pequeno". Em 860 a lista ficava um bloco estreito perdido numa
-            // tela de 1440, e o desenho mostra a faixa ocupando quase toda a
-            // largura útil. Continua com teto: largura cheia num monitor
-            // grande jogaria o status a meio metro do nome.
-            display: "flex", flexDirection: "column", gap: 0, maxWidth: 1100,
-            border: "1px solid var(--border)", borderRadius: 12,
-            overflow: "hidden",
-          }}
-        >
-          {items.map((p, i) => (
-            <LinhaDeProjeto key={p.id} p={p} primeira={i === 0} />
-          ))}
+        /* Redesign (fatia 7): grade de cards com o filete do status no topo,
+           como a prancha. As faixas de 22/08 saem; o que elas carregavam (nome,
+           resumo e status) continua, agora com o prazo e a data da última
+           mudança. ⚠️ Sem barra de progresso nem avatares: a lista de projetos
+           não traz contagem de tarefas nem responsáveis -- é backend. */
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-4">
+          <Entrada>
+            {items.map((p) => (
+              <CartaoDeProjeto key={p.id} p={p} />
+            ))}
+          </Entrada>
+          {podeCriar && !criando && (
+            <button
+              type="button"
+              onClick={() => setCriando(true)}
+              className="flex min-h-[150px] flex-col items-center justify-center gap-2 rounded-xl border-[1.5px] border-dashed border-border bg-transparent text-sm font-semibold text-ink-faint transition-colors duration-200 hover:border-accent hover:bg-accent-soft hover:text-accent"
+            >
+              <Plus size={22} aria-hidden />
+              Novo projeto
+            </button>
+          )}
         </div>
       )}
     </div>
@@ -341,73 +354,44 @@ function Projetos() {
  * contêiner, e as faixas se dividem por borda. Passar 12 aqui desenharia o
  * traco arredondado no meio de uma lista de cantos retos.
  */
-function LinhaDeProjeto({ p, primeira }: { p: Project; primeira: boolean }) {
-  const { target, outline } = useDrawnOutline();
+/** Um card da grade de projetos (redesign, fatia 7). */
+function CartaoDeProjeto({ p }: { p: Project }) {
+  const resumo = p.description?.trim() ? semMarcacao(p.description) : "";
   return (
-            <a
-              href={`/projetos/${p.id}`}
-              {...target}
-              style={{
-                // ⚠️ `relative` e o que faz o contorno medir ESTA faixa.
-                position: "relative",
-                cursor: "pointer",
-                background: "var(--surface)", textDecoration: "none", color: "inherit",
-                // A borda de cima faz a divisória entre linhas; a primeira não
-                // tem, senão dobraria com a borda do container.
-                borderTop: primeira ? "none" : "1px solid var(--border)",
-                // ⚠️ ALTURA MÍNIMA, e não só padding maior: sem ela a linha
-                // encolhe de volta quando não há descrição, e a lista fica com
-                // faixas de alturas diferentes -- que é justamente o que sair
-                // da grade veio consertar.
-                minHeight: 56, padding: "14px 20px",
-                display: "flex", alignItems: "center", gap: 12,
-              }}
-            >
-              {outline}
-              <span
-                aria-hidden
-                style={{
-                  width: 10, height: 10, borderRadius: 999, flexShrink: 0,
-                  background: STATUS_COLOR[p.status] || "#999",
-                }}
-              />
-              {/* ⚠️ `minWidth: 0` no que encolhe: sem ele, um nome longo
-                  empurra o status para fora da linha em vez de truncar. Mesma
-                  armadilha do título do card, registrada no `web/AGENTS.md`. */}
-              <span
-                style={{
-                  fontSize: 15, fontWeight: 600, minWidth: 0,
-                  overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                }}
-              >
-                {p.title}
-              </span>
-              {p.description && p.description.trim().length > 0 && (
-                <span
-                  className="muted"
-                  title={semMarcacao(p.description)}
-                  style={{
-                    fontSize: 13, minWidth: 0, flex: 1,
-                    overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                  }}
-                >
-                  {/* Spec 052, fatia C: o resumo sai SEM a marcação -- `**` e
-                      `##` numa linha cortada parecem defeito. */}
-                  {semMarcacao(p.description)}
-                </span>
-              )}
-              {/* O status vai para a DIREITA e é o que a Camila nomeou junto do
-                  título como o conteúdo da faixa. `marginLeft: auto` só quando
-                  não há descrição ocupando o meio. */}
-              <span
-                className="muted"
-                style={{
-                  fontSize: 12.5, flexShrink: 0,
-                  marginLeft: p.description?.trim() ? undefined : "auto",
-                }}
-              >
-                {STATUS_LABEL[p.status] || p.status}
-              </span>
-            </a>
+    <a
+      href={`/projetos/${p.id}`}
+      className="flex min-h-[150px] flex-col gap-3 rounded-xl border border-border bg-surface p-[18px] text-ink no-underline transition-[transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:shadow-[var(--glow)]"
+      // So a COR do filete e inline: ela vem do status (web/AGENTS.md §11).
+      style={{ borderTop: `3px solid ${STATUS_COLOR[p.status] || "var(--border)"}` }}
+    >
+      <span className="flex items-start gap-2.5">
+        {/* `min-w-0` + truncagem: nome longo nao empurra o selo para fora. */}
+        <strong className="min-w-0 flex-1 text-md font-bold leading-snug [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2] overflow-hidden">
+          {p.title}
+        </strong>
+        <Badge tone="soft" size="sm" color={STATUS_COLOR[p.status]} className="shrink-0">
+          {STATUS_LABEL[p.status] || p.status}
+        </Badge>
+      </span>
+      {/* Spec 052, fatia C: o resumo sai SEM a marcação -- `**` e `##` numa
+          linha cortada parecem defeito. */}
+      {resumo && (
+        <span
+          className="muted text-sm leading-snug [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2] overflow-hidden"
+          title={resumo}
+        >
+          {resumo}
+        </span>
+      )}
+      <span className="mt-auto flex items-center gap-3 text-xs text-ink-faint">
+        {p.due_date && (
+          <span className="inline-flex items-center gap-1">
+            <CalendarClock size={12} aria-hidden />
+            até {dataParaTela(p.due_date)}
+          </span>
+        )}
+        <span className="ml-auto">atualizado em {dataParaTela(diaNoWorkspace(p.updated_at))}</span>
+      </span>
+    </a>
   );
 }

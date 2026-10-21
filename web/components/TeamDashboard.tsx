@@ -30,6 +30,8 @@
 import Link from "next/link";
 import { useState, type ReactNode } from "react";
 import { motion, useReducedMotion, type Transition } from "motion/react";
+import { useEntrada, ENTRADA_PASSO } from "@/components/Entrada";
+import { DUR } from "@/lib/motion";
 import { ArrowUpRight, CalendarClock, ChevronRight } from "lucide-react";
 import type { DashboardResponse, DashboardTask } from "@/lib/api";
 import { PRIORITY_COLOR, PRIORITY_LABEL } from "@/lib/status";
@@ -115,6 +117,7 @@ function Tile({
         <StatTile
           label={inPeriod ? "Concluídas no período" : "Concluídas na semana"}
           value={data.week.done}
+          total={data.week.total}
           suffix={`de ${data.week.total}`}
           note={weekLabel(data.week.start, data.week.end)}
           highlight
@@ -182,6 +185,7 @@ function StatTile({
   label,
   value,
   suffix,
+  total,
   note,
   href,
   highlight = false,
@@ -191,22 +195,22 @@ function StatTile({
   label: string;
   value: number;
   suffix?: string;
+  /** Com `total`, o tile ganha uma barra de progresso (o destaque da semana). */
+  total?: number;
   note: string;
   href?: string;
   highlight?: boolean;
   danger?: boolean;
   order: number;
 }) {
-  const reduce = useReducedMotion();
+  const entrada = useEntrada(order);
   return (
     <motion.section
       aria-label={label}
       className={`relative flex min-h-[132px] flex-col justify-between rounded-lg border p-4 ${
         highlight ? "tile-destaque border-transparent" : "border-border bg-surface"
       }`}
-      initial={reduce ? false : { opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={reduce ? { duration: 0 } : { ...GROW, delay: order * 0.05 }}
+      {...entrada}
     >
       <div className="flex items-start justify-between gap-2">
         <h2 className={`m-0 text-md font-semibold ${highlight ? "" : "text-ink-soft"}`}>{label}</h2>
@@ -220,12 +224,15 @@ function StatTile({
           </Link>
         )}
       </div>
-      <p className="m-0 mt-3 flex items-baseline gap-1.5">
-        <strong className={`text-[40px] font-bold leading-none ${danger ? "text-danger" : ""}`}>
+      <p className="m-0 mt-3 flex items-baseline gap-2">
+        <strong className={`text-[44px] font-extrabold leading-none tracking-[-0.03em] ${danger ? "text-danger" : ""}`}>
           {value}
         </strong>
-        {suffix && <span className={`text-lg ${highlight ? "" : "text-ink-soft"}`}>{suffix}</span>}
+        {suffix && <span className={`text-lg font-semibold ${highlight ? "" : "text-ink-soft"}`}>{suffix}</span>}
       </p>
+      {total !== undefined && total > 0 && (
+        <Bar className="mt-3" parts={[{ fraction: value / total, tone: highlight ? "contrast" : "accent" }]} />
+      )}
       {/* ⚠️ Sem `opacity` no destaque: branco a 90% sobre o azul cai abaixo
           de 4.5 (revisão de 15/10). */}
       <p className={`m-0 mt-2 text-sm ${highlight ? "" : "text-ink-faint"}`}>{note}</p>
@@ -313,7 +320,7 @@ function WeekRingCard({ data, className }: { data: DashboardResponse; className:
         />
         <ul className="m-0 flex list-none flex-wrap justify-center gap-x-4 gap-y-1 p-0 text-sm">
           <li className="flex items-center gap-1.5">
-            <span className="h-2.5 w-2.5 rounded-full bg-accent" aria-hidden="true" />
+            <span className="h-2.5 w-2.5 rounded-full bg-teal" aria-hidden="true" />
             Concluídas <strong>{done}</strong>
           </li>
           <li className="flex items-center gap-1.5">
@@ -366,7 +373,7 @@ function AheadChartCard({ data, className }: { data: DashboardResponse; classNam
             const layers = [
               { value: total, cls: "bg-danger" },
               { value: b.done + b.on_time, cls: ON_TIME_FILL },
-              { value: b.done, cls: "bg-accent" },
+              { value: b.done, cls: "bg-teal" },
             ];
             return (
               <li
@@ -401,7 +408,7 @@ function AheadChartCard({ data, className }: { data: DashboardResponse; classNam
       </div>
       <ul className="m-0 mt-3 flex list-none flex-wrap gap-x-3 gap-y-1 p-0 text-xs text-ink-soft">
         <li className="flex items-center gap-1">
-          <span className="h-2 w-2 rounded-full bg-accent" aria-hidden="true" /> Concluídas
+          <span className="h-2 w-2 rounded-full bg-teal" aria-hidden="true" /> Concluídas
         </li>
         <li className="flex items-center gap-1">
           <span className={`h-2 w-2 rounded-full ${ON_TIME_FILL}`} aria-hidden="true" /> No prazo
@@ -701,9 +708,9 @@ function Empty({ children }: { children: ReactNode }) {
 const ON_TIME_FILL = "bg-[color-mix(in_srgb,var(--color-accent)_45%,var(--color-surface))]";
 
 /** A mola: sem quicar, curta o bastante para não atrasar quem abre todo dia. */
-const GROW: Transition = { type: "spring", duration: 0.7, bounce: 0 };
+const GROW: Transition = { type: "spring", duration: DUR[4], bounce: 0 };
 /** Cada barra começa um pouco depois da anterior -- o gráfico "se desenha". */
-const STAGGER = 0.04;
+const STAGGER = ENTRADA_PASSO;
 
 /**
  * Uma barra horizontal. Cada parte é uma camada da largura INTEIRA da trilha,
@@ -715,20 +722,23 @@ function Bar({
   order = 0,
   className = "",
 }: {
-  parts: { fraction: number; tone: "accent" | "danger" }[];
+  /** `contrast` = branco, para a barra dentro do tile azul de destaque. */
+  parts: { fraction: number; tone: "accent" | "danger" | "contrast" }[];
   order?: number;
   className?: string;
 }) {
   const reduce = useReducedMotion();
   return (
     <span
-      className={`relative block h-2 overflow-hidden rounded-full bg-surface-2 ${className}`}
+      className={`relative block h-2 overflow-hidden rounded-full ${parts.some((p) => p.tone === "contrast") ? "bg-white/25" : "bg-surface-2"} ${className}`}
       aria-hidden="true"
     >
       {parts.map((part, i) => (
         <motion.span
           key={i}
-          className={`absolute inset-0 origin-left ${part.tone === "danger" ? "bg-danger" : "bg-accent"}`}
+          className={`absolute inset-0 origin-left ${
+            part.tone === "danger" ? "bg-danger" : part.tone === "contrast" ? "bg-white" : "bg-accent"
+          }`}
           initial={reduce ? false : { scaleX: 0 }}
           animate={{ scaleX: Math.min(1, Math.max(0, part.fraction)) }}
           transition={reduce ? { duration: 0 } : { ...GROW, delay: order * STAGGER }}
@@ -785,7 +795,7 @@ function ProgressRing({
           fill="none"
           strokeWidth={stroke}
           strokeLinecap="round"
-          className="stroke-accent"
+          className="stroke-teal"
           initial={reduce ? false : { pathLength: 0 }}
           animate={{ pathLength: percent / 100 }}
           transition={reduce ? { duration: 0 } : { ...GROW, duration: 1 }}

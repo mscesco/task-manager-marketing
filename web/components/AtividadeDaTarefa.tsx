@@ -70,7 +70,11 @@ export default function AtividadeDaTarefa({
       ) : (
         <ol className="flex flex-col gap-3">
           {grupos.map((g) => (
-            <li key={g.chave} className="flex flex-col gap-0.5">
+            // Redesign 19/10: a bolinha da linha do tempo a esquerda de cada
+            // gesto. `aria-hidden`: e so marca visual.
+            <li key={g.chave} className="flex gap-2.5">
+              <span aria-hidden className="mt-2 h-2 w-2 shrink-0 rounded-full bg-border" />
+              <span className="flex min-w-0 flex-col gap-0.5">
               <div className="flex flex-wrap items-baseline gap-x-2">
                 <span className="text-base font-semibold">
                   {nomes.pessoa(g.autorId) ?? "Alguém"}
@@ -86,6 +90,7 @@ export default function AtividadeDaTarefa({
                   {f}
                 </span>
               ))}
+              </span>
             </li>
           ))}
         </ol>

@@ -1,10 +1,13 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { Pencil } from "lucide-react";
+import { Columns3, LayoutDashboard, Pencil } from "lucide-react";
 import AppShell from "@/components/AppShell";
 import Board from "@/components/Board";
 import Card from "@/components/Card";
+import PageHeader from "@/components/PageHeader";
+import ResumoDoProjeto from "@/components/ResumoDoProjeto";
+import { useActiveTeam } from "@/lib/useActiveTeam";
 import SobreOProjeto from "@/components/SobreOProjeto";
 import EditorDeDescricao from "@/components/EditorDeDescricaoAdiado";
 import EditorDeLinks from "@/components/EditorDeLinks";
@@ -87,6 +90,10 @@ function Projeto() {
   // APAGANDO os links do projeto.
   const [links, setLinks] = useState<LinkItem[] | null>(null);
   const [falhouLinks, setFalhouLinks] = useState(false);
+  // Redesign (21/10, a prancha "Projeto"): a página abre no RESUMO -- números,
+  // tarefas em aberto, pessoas -- e o quadro fica a um clique. Sessão-only.
+  const [vista, setVista] = useState<"resumo" | "quadro">("resumo");
+  const { teams } = useActiveTeam();
 
   // A resposta só vale para o projeto que ainda está na tela.
   const idAtual = useRef(id);
@@ -200,6 +207,76 @@ function Projeto() {
     </div>
   );
 
+  // O lápis e o que fica abaixo do cabeçalho são os mesmos nas duas vistas:
+  // no resumo a página os desenha; no quadro, entrega ao `Board`.
+  const lapis =
+    editavel && !editando ? (
+      <button
+        type="button"
+        className="btn btn-ghost"
+        onClick={() => setEditando(true)}
+        aria-label="Editar projeto"
+        title="Editar projeto"
+        style={{ padding: 4, height: 28, lineHeight: 0 }}
+      >
+        <Pencil size={15} strokeWidth={2} aria-hidden />
+      </button>
+    ) : undefined;
+
+  const abaixoDoCabecalho = (
+    <div style={{ maxWidth: 860 }}>
+      {erroExcluir && (
+        <div className="error-box" style={{ marginBottom: 12 }} role="alert">
+          {erroExcluir}
+        </div>
+      )}
+      {editavel && editando ? (
+        <EditPanel
+          project={project}
+          excluivel={excluivel}
+          excluindo={excluindo}
+          onExcluir={excluir}
+          onCancel={() => setEditando(false)}
+          links={links}
+          falhouLinks={falhouLinks}
+          onRecarregarLinks={carregarLinks}
+          onSaved={(p, salvos) => {
+            setProject(p);
+            setLinks(salvos);
+            setEditando(false);
+          }}
+        />
+      ) : (
+        <>
+          {metaDoProjeto}
+          {/* Sem descrição, sem bloco -- nada de "Sem descrição" ocupando
+              espaço acima do quadro. */}
+          {project.description && project.description.trim().length > 0 && (
+            <SobreOProjeto texto={project.description} />
+          )}
+        </>
+      )}
+    </div>
+  );
+
+  const alternarVista = (
+    <button
+      type="button"
+      className="btn ml-auto"
+      onClick={() => setVista((v) => (v === "resumo" ? "quadro" : "resumo"))}
+    >
+      {vista === "resumo" ? (
+        <>
+          <Columns3 size={15} aria-hidden /> Ver no quadro
+        </>
+      ) : (
+        <>
+          <LayoutDashboard size={15} aria-hidden /> Ver resumo
+        </>
+      )}
+    </button>
+  );
+
   return (
     <div>
       {/* ⚠️ EU APAGUEI ESTE LINK AO REFAZER O CABEÇALHO, e a Camila pegou na
@@ -235,62 +312,31 @@ function Projeto() {
           regra que a Camila confirmou em 22/08: "no quadro de projeto não é pra
           ser possível editar o quadro". Fica escrito para ninguém "corrigir" a
           ausência achando que é esquecimento. */}
-      <Board
-        podeEditarColunas={false}
-        podeApagarColunas={false}
-        acoesDoQuadro={null}
-        projectId={id}
-        title={project.title}
-        acoesDoTitulo={
-          editavel && !editando ? (
-            <button
-              type="button"
-              className="btn btn-ghost"
-              onClick={() => setEditando(true)}
-              aria-label="Editar projeto"
-              title="Editar projeto"
-              style={{ padding: 4, height: 28, lineHeight: 0 }}
-            >
-              <Pencil size={15} strokeWidth={2} aria-hidden />
-            </button>
-          ) : undefined
-        }
-        abaixoDoCabecalho={
-          <div style={{ maxWidth: 860 }}>
-            {erroExcluir && (
-              <div className="error-box" style={{ marginBottom: 12 }} role="alert">
-                {erroExcluir}
-              </div>
-            )}
-            {editavel && editando ? (
-              <EditPanel
-                project={project}
-                excluivel={excluivel}
-                excluindo={excluindo}
-                onExcluir={excluir}
-                onCancel={() => setEditando(false)}
-                links={links}
-                falhouLinks={falhouLinks}
-                onRecarregarLinks={carregarLinks}
-                onSaved={(p, salvos) => {
-                  setProject(p);
-                  setLinks(salvos);
-                  setEditando(false);
-                }}
-              />
-            ) : (
-              <>
-                {metaDoProjeto}
-                {/* Sem descrição, sem bloco -- nada de "Sem descrição" ocupando
-                    espaço acima do quadro. */}
-                {project.description && project.description.trim().length > 0 && (
-                  <SobreOProjeto texto={project.description} />
-                )}
-              </>
-            )}
-          </div>
-        }
-      />
+      {vista === "resumo" ? (
+        <>
+          <PageHeader title={project.title} titleAddon={lapis} actions={alternarVista} />
+          {abaixoDoCabecalho}
+          <ResumoDoProjeto
+            project={project}
+            nomeDoTime={teams.find((t) => t.id === project.team_id)?.name}
+          />
+        </>
+      ) : (
+        <Board
+          podeEditarColunas={false}
+          podeApagarColunas={false}
+          acoesDoQuadro={null}
+          projectId={id}
+          title={project.title}
+          acoesDoTitulo={
+            <>
+              {lapis}
+              {alternarVista}
+            </>
+          }
+          abaixoDoCabecalho={abaixoDoCabecalho}
+        />
+      )}
     </div>
   );
 }

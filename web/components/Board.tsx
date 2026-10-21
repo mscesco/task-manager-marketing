@@ -8,7 +8,7 @@
 import { useFecharAoClicarForaDe } from "@/lib/useCliqueFora";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { SlidersHorizontal } from "lucide-react";
+import { Plus, Search, SlidersHorizontal } from "lucide-react";
 import { agoraNoWorkspace, estaAtrasada } from "@/lib/prazo";
 import {
   SortableContext,
@@ -81,7 +81,10 @@ import { useWarnBeforeUnload } from "@/lib/useWarnBeforeUnload";
 import { sincronizarTaskNaUrl, lerTaskDaUrl } from "@/lib/urlTarefa";
 import { ORDENACOES, ordenar, type Ordenacao } from "@/lib/ordenacao";
 
-import Loading from "@/components/Loading";
+import { motion } from "motion/react";
+import { soltarConfete } from "@/lib/confete";
+import { Esqueleto } from "@/components/Loading";
+import { useEntrada } from "@/components/Entrada";
 import PageTitle from "@/components/PageTitle";
 import { useAvisar } from "@/components/Toasts";
 // Spec 031 (C3): `normalizar` saiu daqui pra lib/filtrosQuadro (agora
@@ -841,8 +844,13 @@ export default function Board({
     [activeId, tasks]
   );
 
+  // A largura do card arrastado, medida na coluna (ajuste dela, 19/10): o
+  // fantasma do `DragOverlay` tinha 256 cravados e saia maior que o card.
+  const [larguraDoArraste, setLarguraDoArraste] = useState<number | null>(null);
   function onDragStart(e: DragStartEvent) {
     setActiveId(String(e.active.id));
+    const el = document.querySelector<HTMLElement>(`[data-card="${e.active.id}"]`);
+    setLarguraDoArraste(el?.offsetWidth ?? null);
   }
 
   async function onDragEnd(e: DragEndEvent) {
@@ -908,6 +916,15 @@ export default function Board({
     // banco; aqui so mexemos no que esta carregado em `tasks` (que pode vir
     // truncado).
     const concluindo = colunaDestino.semantic === "DONE";
+    // O confete sai de onde o card foi SOLTO (pedido dela, 21/10): o retangulo
+    // do arrasto no momento do drop, lido agora -- depois do `await` o card ja
+    // mudou de coluna. So quando a tarefa VIRA concluida, nao entre duas
+    // colunas de conclusao.
+    const soltoEm = e.active.rect.current.translated;
+    const origemDoConfete =
+      concluindo && colunaPorId.get(colunaAnterior)?.semantic !== "DONE" && soltoEm
+        ? { x: soltoEm.left + soltoEm.width / 2, y: soltoEm.top + soltoEm.height / 2 }
+        : null;
     const prefixo = atual.path + ".";
     // ⚠️ GUARDA OS DOIS CAMPOS, porque a atualizacao otimista mexe nos dois.
     // Guardar so a coluna deixaria a subtarefa revertida para a coluna certa
@@ -963,6 +980,7 @@ export default function Board({
           t.id === taskId ? mesclaTarefa(atualizada, t) : t
         )
       );
+      soltarConfete(origemDoConfete);
     } catch (err) {
       setTasks((prev) =>
         prev!.map((t) => {
@@ -988,22 +1006,22 @@ export default function Board({
   }
 
   if (erro) return <div className="error-box" style={{ maxWidth: 480 }}>{erro}</div>;
-  if (!tasks) return <Loading rotulo="Carregando tarefas" />;
+  if (!tasks) return <Esqueleto forma="colunas" rotulo="Carregando tarefas" />;
   // Quadro geral/subtime dependem do rootId pro filtro. Espera ele
   // carregar pra nao piscar tasks que o filtro vai esconder. Projeto
   // (projectId) nao usa rootId -> nao espera.
   if (!projectId && !rootCarregado)
-    return <Loading rotulo="Carregando tarefas" />;
+    return <Esqueleto forma="colunas" rotulo="Carregando tarefas" />;
   // Modo SUBTIME depende TAMBEM dos membros: o filtro hibrido usa memberTeam
   // pra decidir as "compartilhadas". Espera os membros pra elas nao aparecerem
   // atrasadas. Geral e projeto nao dependem disso -> nao esperam.
   if (!projectId && subteamId && !membrosCarregados)
-    return <Loading rotulo="Carregando tarefas" />;
+    return <Esqueleto forma="colunas" rotulo="Carregando tarefas" />;
   // §8: o modo SUBTIME tambem depende dos PROJETOS -- a pill e o filtro de
   // origem classificam pelo time do projeto. Sem esperar, tudo nasce
   // "indefinido" (sem pill) e se corrige sozinho na tela um instante depois.
   if (!projectId && subteamId && !projetosCarregados)
-    return <Loading rotulo="Carregando tarefas" />;
+    return <Esqueleto forma="colunas" rotulo="Carregando tarefas" />;
   // ⚠️ O ERRO DE `/boards` VEM ANTES DA ESPERA, e ate 13/08 ele nao existia.
   //
   // O `catch` gravava `[]` e seguia. Com `boardId`, `[]` fazia a busca do
@@ -1031,7 +1049,7 @@ export default function Board({
       </div>
     );
   // Fatia 4c: sem as colunas nao ha kanban. Espera igual aos outros.
-  if (!quadros) return <Loading rotulo="Carregando tarefas" />;
+  if (!quadros) return <Esqueleto forma="colunas" rotulo="Carregando tarefas" />;
 
   // ---- As colunas deste quadro (fatia 4c) ----
   //
@@ -1149,7 +1167,7 @@ export default function Board({
     // transformaria um quadro apagado numa tela que bate no servidor para
     // sempre, que e o defeito ANTERIOR (a espera eterna) com custo de rede.
     if (quadrosPara !== boardId || buscasSemOQuadro < 2) {
-      return <Loading rotulo="Carregando tarefas" />;
+      return <Esqueleto forma="colunas" rotulo="Carregando tarefas" />;
     }
     return (
       <div className="error-box" role="alert" style={{ maxWidth: 480 }}>
@@ -1794,24 +1812,37 @@ export default function Board({
         </div>
       ) : (
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 18, flexWrap: "wrap" }}>
-        {heading ?? <PageTitle>{title}</PageTitle>}
-        <span className="muted" style={{ fontSize: 13 }}>
-          {temFiltro ? `${raizes.length} de ${visiveis.length}` : raizes.length} tarefas
-        </span>
-        {/* Junto do contador, como no `Quadro Projeto.png` -- e antes da busca,
-            que é onde a linha muda de assunto (do QUE se olha para COMO se
-            procura). */}
-        {acoesDoTitulo}
-        <input
-          value={busca}
-          onChange={(e) => setBusca(e.target.value)}
-          placeholder="Buscar por título…"
-          style={{
-            fontSize: 13, padding: "6px 10px", borderRadius: 8,
-            border: "1px solid var(--border)", background: "var(--surface)",
-            color: "var(--text)", minWidth: 170,
-          }}
-        />
+        {/* Redesign (fatia 4): titulo com o subtitulo de contagem embaixo. */}
+        <div className="mr-auto flex min-w-0 flex-col gap-0.5">
+          <div className="flex flex-wrap items-center gap-3">
+            {heading ?? <PageTitle>{title}</PageTitle>}
+            {/* Junto do titulo, como no `Quadro Projeto.png` -- e antes da
+                busca, que é onde a linha muda de assunto (do QUE se olha para
+                COMO se procura). */}
+            {acoesDoTitulo}
+          </div>
+          <span className="muted" style={{ fontSize: 13 }}>
+            {temFiltro ? `${raizes.length} de ${visiveis.length}` : raizes.length} tarefas
+          </span>
+        </div>
+        <div className="relative">
+          <Search
+            size={15}
+            aria-hidden
+            className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-faint"
+          />
+          <input
+            value={busca}
+            onChange={(e) => setBusca(e.target.value)}
+            placeholder="Buscar por título…"
+            aria-label="Buscar tarefa"
+            style={{
+              fontSize: 13, padding: "7px 10px 7px 30px", borderRadius: "var(--radius)",
+              border: "1px solid var(--border)", background: "var(--surface)",
+              color: "var(--text)", minWidth: 220,
+            }}
+          />
+        </div>
         {/* ⚠️ ORDENAR E "MOSTRAR ARQUIVADAS" MUDARAM PARA DENTRO DO PAINEL
             (Spec 039, F4/F5 -- decisao da Camila em 21/08). O cabecalho tinha
             SEIS controles competindo; ficaram quatro.
@@ -1829,18 +1860,23 @@ export default function Board({
             onClick={() => setPainelAberto((v) => !v)}
             aria-expanded={painelAberto}
             aria-label="Filtros"
-            style={{
-              display: "inline-flex", alignItems: "center", gap: 6,
-              fontSize: 13, padding: "6px 10px", borderRadius: 8,
-              border: "1px solid var(--border)",
-              background: qtdFiltros > 0 ? "var(--accent-soft)" : "var(--surface)",
-              color: qtdFiltros > 0 ? "var(--accent)" : "var(--text)",
-              fontWeight: qtdFiltros > 0 ? 600 : 400,
-              cursor: "pointer",
-            }}
+            className="btn"
+            // `.btn` vence o Tailwind (web/AGENTS.md §11): fonte e padding inline.
+            style={{ fontSize: 13, padding: "7px 12px", fontWeight: 600 }}
           >
-            <SlidersHorizontal size={14} />
+            <SlidersHorizontal size={14} aria-hidden />
             Filtros
+            {/* Redesign (fatia 4): a contagem numa pilula. `aria-hidden`
+                porque o nome do botao continua "Filtros" (as pastilhas abaixo
+                ja dizem QUAIS); o numero e reforco visual. */}
+            {qtdFiltros > 0 && (
+              <span
+                aria-hidden
+                className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-accent-soft px-1.5 text-xs font-bold text-accent"
+              >
+                {qtdFiltros}
+              </span>
+            )}
           </button>
 
           {painelAberto && (
@@ -2070,7 +2106,10 @@ export default function Board({
         <button
           className="btn btn-primary"
           onClick={() => setCriando(true)}
-          style={{ marginLeft: "auto", padding: "8px 14px" }}
+          // Sem `marginLeft: auto` (passada visual de 21/10): o titulo ja
+          // empurra os controles para a direita, e o `auto` aqui abria um
+          // buraco entre o lapis e este botao.
+          style={{ padding: "8px 14px" }}
         >
           + Nova tarefa
         </button>
@@ -2100,13 +2139,7 @@ export default function Board({
               type="button"
               onClick={() => LIMPA[c.campo]?.()}
               title={`Remover filtro: ${c.rotulo}`}
-              style={{
-                display: "inline-flex", alignItems: "center", gap: 6,
-                height: 26, padding: "0 8px 0 10px", borderRadius: 999,
-                border: "1px solid var(--border)",
-                background: "var(--accent-soft)", color: "var(--accent)",
-                fontSize: 12, fontWeight: 600, cursor: "pointer", lineHeight: 1,
-              }}
+              className="inline-flex h-[26px] cursor-pointer items-center gap-1.5 rounded-full border-0 bg-accent-soft pl-2.5 pr-2 text-sm font-bold leading-none text-accent"
             >
               {c.rotulo}
               <span aria-hidden="true" style={{ fontSize: 13, opacity: 0.8 }}>×</span>
@@ -2309,7 +2342,8 @@ export default function Board({
           <div
             ref={colunasRef}
             style={{
-              display: "flex", gap: 14, overflowX: "auto", overflowY: "hidden",
+              // `gap` 8: era 14 (pedido dela, 21/10 -- ver a coluna).
+              display: "flex", gap: 8, overflowX: "auto", overflowY: "hidden",
               paddingBottom: 8, height: alturaColunas ?? undefined,
             }}
           >
@@ -2325,11 +2359,16 @@ export default function Board({
               // disputar o mesmo gesto no quadro normal.
               disabled={!modoEdicao}
             >
-              {colunasVisiveis.map((c) => (
+              {colunasVisiveis.map((c, i) => (
               <ColunaKanban
                 key={c.id}
+                ordem={i}
                 coluna={c}
                 count={(porColuna[c.id] || []).length}
+                // Casca (fatia 4): os dois "+" da coluna abrem o MESMO modal
+                // de criar; a coluna nao e pre-escolhida. Fora do modo de
+                // edicao, como o "+ Nova tarefa" da barra.
+                onNova={modoEdicao ? undefined : () => setCriando(true)}
                 cabecalho={
                   modoEdicao ? (
                     <CabecalhoSortavel
@@ -2407,7 +2446,7 @@ export default function Board({
                 lista simplesmente nao ganha fantasma de arrasto. O `!`
                 esconderia o dia em que essa combinacao passar a existir. */}
             {activeTask && colunaPorId.get(activeTask.column_id) ? (
-              <div style={{ width: 256, cursor: "grabbing" }}>
+              <div style={{ width: larguraDoArraste ?? 256, cursor: "grabbing" }}>
                 <TaskCard
                   task={activeTask}
                   coluna={colunaPorId.get(activeTask.column_id) as Coluna}
@@ -2588,17 +2627,25 @@ function ColunaKanban({
   count,
   children,
   cabecalho,
+  ordem = 0,
+  onNova,
 }: {
   coluna: Coluna;
   count: number;
   children: React.ReactNode;
   /** Trocado no modo de edicao. Ausente = o cabecalho normal. */
   cabecalho?: React.ReactNode;
+  /** Posicao na fileira: a entrada escalona POR COLUNA, nunca por card. */
+  ordem?: number;
+  /** Abre o modal de criar (o "+" do cabecalho e o botao do fim). Ausente = sem os dois. */
+  onNova?: () => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: coluna.id });
+  const entrada = useEntrada(ordem);
   return (
-    <div
+    <motion.div
       ref={setNodeRef}
+      {...entrada}
       style={{
         // ⚠️ 240 E DELIBERADO, E A ROLAGEM HORIZONTAL DO QUADRO TAMBEM.
         // Confirmado pela Camila em 21/08: "o scroll do quadro com muitas
@@ -2611,27 +2658,34 @@ function ColunaKanban({
         // coluna nao tinha nada a ver com o problema, e so piorava a leitura.
         // Nao baixe este numero sem alguem PEDIR: coluna estreita e o que faz
         // o card quebrar em muitas linhas.
-        flex: 1, minWidth: 240, minHeight: 0, borderRadius: 10, padding: 4,
+        //
+        // Redesign (fatia 4): a raia tem fundo `--lane`, borda e raio 14.
+        //
+        // ⚠️ 292 / 6 (pedido dela, 21/10, com oito colunas na tela): "as
+        // colunas muito pequenas, o espaçamento entre o card e a borda da
+        // coluna muito grande". O card por dentro passa de 240 para 278
+        // (292 - 6 de padding - 1 de borda de cada lado); o vão entre colunas
+        // desceu de 14 para 8 no mesmo pedido (ver o `gap` da fileira).
+        flex: 1, minWidth: 292, minHeight: 0, borderRadius: 14, padding: 6,
         display: "flex", flexDirection: "column",
-        background: isOver ? "var(--surface-2)" : "transparent",
-        // O fundo sozinho e quase invisivel (surface-2 x canvas = ~2% de
-        // diferenca). O anel na cor da propria coluna diz PARA ONDE o card
-        // vai. `outline` (nao `border`) de proposito: nao ocupa espaco, entao
-        // as colunas nao pulam de largura quando o alvo muda.
+        background: isOver ? "var(--surface-2)" : "var(--lane)",
+        border: "1px solid var(--border)",
+        // O anel na cor da propria coluna diz PARA ONDE o card vai. `outline`
+        // (nao `border`) de proposito: nao ocupa espaco, entao as colunas nao
+        // pulam de largura quando o alvo muda.
         outline: isOver ? `2px solid ${coluna.color}` : "none",
         outlineOffset: -2,
-        transition: "background .12s",
+        transition: "background var(--dur-1) var(--ease-out)",
       }}
     >
       {cabecalho ?? (
         <div
           style={{
             display: "flex", alignItems: "center", gap: 8, marginBottom: 10,
-            paddingBottom: 8, borderBottom: `2px solid ${coluna.color}`,
-            flexShrink: 0,
+            padding: "2px 4px", flexShrink: 0,
           }}
         >
-          <span style={{ width: 8, height: 8, borderRadius: 999, background: coluna.color, flexShrink: 0 }} />
+          <span style={{ width: 9, height: 9, borderRadius: 999, background: coluna.color, flexShrink: 0 }} />
           {/* ⚠️ `minWidth: 0` E A LINHA QUE FAZ O TRUNCAR FUNCIONAR, e sem ela
               as outras tres nao servem de nada. Em flexbox um filho de texto
               NAO encolhe abaixo do conteudo sem `min-width: 0` -- entao o
@@ -2663,21 +2717,44 @@ function ColunaKanban({
           >
             {coluna.name}
           </span>
-          <span className="muted" style={{ fontSize: 12, marginLeft: "auto", flexShrink: 0 }}>{count}</span>
+          <span className="muted" style={{ fontSize: 12, fontWeight: 600, flexShrink: 0 }}>{count}</span>
+          {onNova && (
+            <button
+              type="button"
+              onClick={onNova}
+              aria-label={`Nova tarefa em ${coluna.name}`}
+              title="Nova tarefa"
+              className="ml-auto inline-flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-md border-0 bg-transparent text-ink-faint hover:bg-surface-2 hover:text-ink"
+            >
+              <Plus size={14} strokeWidth={2.4} aria-hidden />
+            </button>
+          )}
         </div>
       )}
       <div
         style={{
-          display: "flex", flexDirection: "column", gap: 8,
+          display: "flex", flexDirection: "column", gap: 10,
           flex: 1, minHeight: 0, overflowY: "auto",
         }}
       >
         {children}
-        {count === 0 && (
+        {count === 0 && !onNova && (
           <div className="muted" style={{ fontSize: 12, padding: "8px 2px" }}>—</div>
         )}
+        {onNova && (
+          // ⚠️ "Nova tarefa", sem o "+" no texto: o "+ Nova tarefa" e o botao
+          // da barra, e o teste o procura pelo texto exato.
+          <button
+            type="button"
+            onClick={onNova}
+            className="min-h-9 shrink-0 cursor-pointer rounded-md border border-dashed border-border bg-transparent text-sm font-semibold text-ink-faint hover:bg-surface-2 hover:text-ink"
+          >
+            <Plus size={13} strokeWidth={2.4} aria-hidden className="mr-1 inline" />
+            Nova tarefa
+          </button>
+        )}
       </div>
-    </div>
+    </motion.div>
   );
 }
 

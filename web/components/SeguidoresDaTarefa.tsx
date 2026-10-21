@@ -160,8 +160,9 @@ export function LinhaDeSeguidores({
   );
 
   return (
+    // Sem `rotulo`: o detalhe poe "Seguidores" na coluna de rotulos da lista
+    // de propriedades (redesign 19/10).
     <SeletorDePessoas
-      rotulo="Seguidores"
       marcados={marcados}
       nomes={nomes}
       inativos={inativos}

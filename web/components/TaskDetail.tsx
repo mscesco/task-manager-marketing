@@ -91,11 +91,12 @@ import { acaoDaPilula } from "@/lib/reacoes";
 import { isGiphyUrl } from "@/lib/giphy";
 import AtividadeDaTarefa from "@/components/AtividadeDaTarefa";
 import CommentText from "@/components/CommentText";
-import Toggle from "@/components/Toggle";
+import Tabs from "@/components/Tabs";
 import MentionTextarea from "@/components/MentionTextarea";
 import { nomeCurto } from "@/lib/people";
 import { checklist } from "@/lib/subtarefas";
 import { deadlineTonePorColuna, type Coluna } from "@/lib/coluna";
+import { soltarConfete } from "@/lib/confete";
 import type { TaskHistoryEvent } from "@/lib/api";
 import {
   acaoDoEnterNoTitulo,
@@ -1176,6 +1177,8 @@ export default function TaskDetail({
       const t = await updateTask(tid, { column_id: destino });
       setAbertoCol(false);
       onSubtaskUpsert(t);
+      // O confete sai do seletor (pedido dela, 21/10).
+      if (viraConcluida) soltarConfete(painelCol.anchorRef.current);
       if (viraConcluida && filhos.length > 0) void recarregarFilhos();
     } catch (e) {
       const err = e as ApiError;
@@ -1302,7 +1305,7 @@ export default function TaskDetail({
    * dado para descobrir a coluna real de antes. Ler o historico e entrega
    * propria.
    */
-  async function alternarConclusao(f: Task) {
+  async function alternarConclusao(f: Task, caixa?: HTMLElement | null) {
     if (!colunas) return; // colunas ainda chegando: a caixa nem esta desenhada
     const concluida = colunaPorId.get(f.column_id)?.semantic === "DONE";
 
@@ -1351,6 +1354,8 @@ export default function TaskDetail({
       const atualizada = await updateTask(f.id, { column_id: destino });
       upsertFilhaLocal(atualizada);
       onSubtaskUpsert(atualizada);
+      // O confete sai da caixinha (pedido dela, 21/10); reabrir não solta.
+      if (!concluida) soltarConfete(caixa);
     } catch (e) {
       upsertFilhaLocal(f); // revert
       onSubtaskUpsert(f); // revert
@@ -1568,21 +1573,15 @@ export default function TaskDetail({
         ].filter(Boolean).join(" ") || undefined}
         data-saindo={saindo ? "true" : undefined}
         style={{
-          // ⚠️ 1040 e nao 700 (Spec 055): a coluna lateral so cabe com
-          // largura. `maxWidth: 100%` continua mandando em tela estreita.
-          width: 1040, maxWidth: "100%",
+          // ⚠️ 1160 (redesign 19/10; era 1040 na Spec 055): a lateral passou
+          // a 420. `maxWidth: 100%` continua mandando em tela estreita.
+          width: 1160, maxWidth: "100%",
           background: "var(--surface)",
-          border: "1px solid var(--border)", borderRadius: 14,
-          // ⚠️ MOLDURA DESIGUAL, e de proposito (tres rodadas de ajuste com ela
-          // em 30/09): 20 em cima e nos lados, 14 embaixo. Comecou em 24 (vazio
-          // demais), foi a 14 (o titulo e as pilulas ficaram colados na borda) e
-          // parou aqui. Embaixo pode ser menor porque quem encosta na borda e a
-          // fileira de botoes, que ja tem respiro proprio.
-          padding: "20px 20px 14px",
+          border: "1px solid var(--border)", borderRadius: 16,
+          // ⚠️ SEM MOLDURA NO CARTAO (redesign 19/10): a lateral tem fundo
+          // proprio e encosta nas bordas; cada coluna poe o seu respiro.
+          padding: 0, overflow: "hidden",
           boxShadow: "var(--shadow)", display: "flex", flexDirection: "column",
-          // ⚠️ 12 e nao 16: e o respiro ENTRE as secoes, e era ele que abria o
-          // vao branco entre a ultima subtarefa e a fileira do "Arquivar".
-          gap: 12,
           // Modal: altura travada e rolagem POR DENTRO do card (a pagina atras
           // nao rola). Pagina: sem trava -- quem rola e a propria pagina, senao
           // o card ganharia uma segunda barra de rolagem aninhada.
@@ -1591,91 +1590,101 @@ export default function TaskDetail({
           ...(modo === "modal" ? { maxHeight: "88vh" } : { margin: "0 auto" }),
         }}
       >
-        {temVoltar && (
-          <button
-            type="button" className="btn btn-ghost" onClick={onVoltar}
-            style={{
-              alignSelf: "flex-start", padding: "2px 8px", fontSize: 13,
-              maxWidth: "100%", overflow: "hidden", whiteSpace: "nowrap",
-              display: "inline-flex", alignItems: "center", gap: 4,
-              // `overflow: hidden` zera o min-height automatico deste flex item
-              // (CSS Flexbox 4.5). Sem flexShrink 0, o botao encolhe na vertical
-              // quando o conteudo do modal estoura 88vh e o texto sai cortado
-              // pela metade. NAO remover junto com o overflow.
-              flexShrink: 0,
-              lineHeight: 1.6,
-            }}
-            title={pai ? `Voltar para ${pai.title}` : "Voltar"}
-          >
-            <ChevronLeft size={13} strokeWidth={2} aria-hidden style={{ flexShrink: 0 }} />
-            <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
-              Voltar{pai ? ` para ${pai.title}` : ""}
-            </span>
-          </button>
-        )}
-
-        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
-          {/* Spec 039 (F1): título do painel = 22px / 700. */}
-          {/* `overflowWrap` pelo mesmo motivo do título do card: título é texto
-              de usuário e pode vir sem espaço nenhum. Aqui o painel é largo e
-              disfarça, mas o buraco é o mesmo. */}
-          {/* Spec 052, fatia D: clicar no título edita; Enter ou clicar fora
-              salva, Esc desiste. `key` pelo id: trocar de tarefa com o campo
-              aberto não pode levar o rascunho para a outra. */}
-          <TituloEditavel
-            key={task.id}
-            // ⚠️ `h1` SÓ NA ROTA `/tarefa/[id]`, onde a tarefa É a página. No
-            // quadro e em "Minhas tarefas" ela mora embaixo do `<h1>` da tela.
-            level={modo === "pagina" ? "h1" : "h2"}
-            valor={salvoNoLugar?.id === task.id && salvoNoLugar.title !== undefined ? salvoNoLugar.title : task.title}
-            onSalvar={(novo) => salvarNoLugar({ title: novo })}
-          />
-          {/* Spec 053 (D5): o gesto de um clique, no topo. */}
-          <BotaoSeguir
-            estado={seguidores}
-            meuId={me?.id ?? null}
-            arquivada={task.is_archived}
-          />
-          <button
-            type="button" className="btn btn-ghost" onClick={fecharSuave}
-            style={{ padding: "4px 10px", flexShrink: 0 }} aria-label="Fechar"
-          >
-            <X size={15} strokeWidth={2} aria-hidden />
-          </button>
+        {/* Cabecalho (redesign 19/10): voltar ou os selos de contexto a
+            esquerda; seguir e fechar a direita. O titulo desceu para o corpo. */}
+        <div className="flex shrink-0 items-center gap-2 border-b border-border px-5 py-3">
+          {temVoltar && (
+            <button
+              type="button" className="btn btn-ghost" onClick={onVoltar}
+              style={{
+                padding: "2px 8px", fontSize: 13,
+                maxWidth: "100%", overflow: "hidden", whiteSpace: "nowrap",
+                display: "inline-flex", alignItems: "center", gap: 4,
+                // `overflow: hidden` zera o min-height automatico deste flex item
+                // (CSS Flexbox 4.5). Sem flexShrink 0, o botao encolhe na vertical
+                // quando o conteudo do modal estoura 88vh e o texto sai cortado
+                // pela metade. NAO remover junto com o overflow.
+                flexShrink: 0,
+                lineHeight: 1.6,
+              }}
+              title={pai ? `Voltar para ${pai.title}` : "Voltar"}
+            >
+              <ChevronLeft size={13} strokeWidth={2} aria-hidden style={{ flexShrink: 0 }} />
+              <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
+                Voltar{pai ? ` para ${pai.title}` : ""}
+              </span>
+            </button>
+          )}
+          {/* O titulo mora na barra (ajuste dela, 19/10): 22/700, uma linha
+              com reticencias; "Criada em" logo abaixo. Spec 052, fatia D:
+              clicar edita; Enter ou clicar fora salva, Esc desiste. `key`
+              pelo id: trocar de tarefa com o campo aberto nao pode levar o
+              rascunho para a outra. */}
+          <div className="flex min-w-0 flex-1 flex-col">
+            <TituloEditavel
+              key={task.id}
+              // ⚠️ `h1` SÓ NA ROTA `/tarefa/[id]`, onde a tarefa É a página. No
+              // quadro e em "Minhas tarefas" ela mora embaixo do `<h1>` da tela.
+              level={modo === "pagina" ? "h1" : "h2"}
+              compacto
+              valor={salvoNoLugar?.id === task.id && salvoNoLugar.title !== undefined ? salvoNoLugar.title : task.title}
+              onSalvar={(novo) => salvarNoLugar({ title: novo })}
+            />
+          </div>
+          {task.parent_task_id && (
+            <Badge tone="soft" size="md" color="var(--accent)" className="shrink-0">
+              Subtarefa
+            </Badge>
+          )}
+          {task.is_archived && (
+            <span className="muted shrink-0" style={{ fontSize: 12.5 }}>arquivada</span>
+          )}
+          <span className="flex shrink-0 items-center gap-1">
+            {/* Spec 053 (D5): o gesto de um clique, no topo. */}
+            <BotaoSeguir
+              estado={seguidores}
+              meuId={me?.id ?? null}
+              arquivada={task.is_archived}
+            />
+            <button
+              type="button" className="btn btn-ghost" onClick={fecharSuave}
+              style={{ padding: "4px 10px", flexShrink: 0 }} aria-label="Fechar"
+            >
+              <X size={15} strokeWidth={2} aria-hidden />
+            </button>
+          </span>
         </div>
         {/* ⚠️⚠️ DUAS COLUNAS (Spec 055): a esquerda e o que a tarefa E, a
             direita e o que ACONTECEU com ela. Empilham abaixo de 900px --
             lado a lado num notebook pequeno, a direita esmagaria a
-            esquerda, e a descricao e a checklist vivem la. */}
+            esquerda, e a descricao e a checklist vivem la.
+            Redesign 19/10: grade `minmax(0,1fr) 420px`, lateral com fundo
+            `--bg` e borda a esquerda. */}
         <div
           className={
             modo === "modal"
-              // ⚠️ `gap-0` LADO A LADO (pedido dela, 30/09): o vao entre as
-              // colunas era o `gap` da linha MAIS o `pr` da esquerda MAIS o
-              // `pl` da direita -- tres espacos somados, e a divisoria ficava
-              // num corredor vazio. Agora o respiro e so o `pr-3`/`pl-3`, 12px
-              // de cada lado da linha. Empilhado o `gap-4` volta: ali ele
-              // separa as duas colunas de verdade.
-              ? "flex min-h-0 flex-col gap-4 min-[900px]:flex-1 min-[900px]:flex-row min-[900px]:gap-0"
-              : "flex flex-col gap-4 min-[900px]:flex-row min-[900px]:gap-0"
+              ? "flex min-h-0 flex-col min-[900px]:grid min-[900px]:flex-1 min-[900px]:grid-cols-[minmax(0,1fr)_420px]"
+              : "flex flex-col min-[900px]:grid min-[900px]:grid-cols-[minmax(0,1fr)_420px]"
           }
         >
-          {/* ⚠️ `pr-4`: a barra da esquerda encosta na divisória, e o texto
-              nao passa por baixo dela. */}
+          {/* A coluna principal: o conteudo rola por dentro e o rodape de
+              acoes fica fixo embaixo, fora da area que rola (ajuste dela,
+              19/10). */}
+          <div className="flex min-w-0 min-h-0 flex-col">
           <div
             className={
               modo === "modal"
-                ? "flex min-w-0 min-h-0 flex-1 flex-col gap-4 min-[900px]:overflow-y-auto min-[900px]:pr-3"
-                : "flex min-w-0 flex-1 flex-col gap-4 min-[900px]:max-h-[70vh] min-[900px]:overflow-y-auto min-[900px]:pr-3"
+                ? "flex min-w-0 min-h-0 flex-1 flex-col gap-4 px-7 pb-5 pt-4 min-[900px]:overflow-y-auto"
+                : "flex min-w-0 flex-col gap-4 px-7 pb-5 pt-4 min-[900px]:max-h-[70vh] min-[900px]:overflow-y-auto"
             }
           >
 
-        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-          {task.parent_task_id && (
-            <Badge tone="soft" size="md" color="var(--accent)">
-              Subtarefa
-            </Badge>
-          )}
+        {/* ---- Propriedades (redesign 19/10): lista rotulo/valor em duas
+            colunas. Cada valor continua sendo o MESMO controle de antes --
+            so o lugar mudou. ---- */}
+        <section aria-label="Propriedades" className="prop-list">
+          <div className="prop">
+          <span className="prop-lbl">Coluna</span>
           {/* ⚠️ O ROTULO SAI DA COLUNA (fatia 4c-2) -- e o nome que a pessoa
               ve no kanban e que a fatia 5 vai deixar editar. A COR continua
               vindo de `STATUS_TEXT`, e isso NAO e esquecimento: `coluna.color`
@@ -1757,6 +1766,9 @@ export default function TaskDetail({
               </AnchoredPanel>
             )}
           </div>
+          </div>
+          <div className="prop">
+          <span className="prop-lbl">Prioridade</span>
           {/* ---- Prioridade (Spec 039, F6) --------------------------------
               ⚠️ A PILULA VIROU O CONTROLE. Ate aqui ela era rotulo morto: para
               trocar um enum de QUATRO valores a pessoa abria o modal inteiro
@@ -1819,6 +1831,9 @@ export default function TaskDetail({
               </AnchoredPanel>
             )}
           </div>
+          </div>
+          <div className="prop">
+          <span className="prop-lbl">Prazo</span>
           {/* Spec 031 (C8): a pilula de projeto SAIU daqui. Ela era read-only e
               o controle de projeto ficava 200px abaixo, dizendo a mesma coisa --
               duas representacoes do mesmo dado na mesma tela. Agora ha UMA, na
@@ -2041,7 +2056,126 @@ export default function TaskDetail({
               </AnchoredPanel>
             )}
           </div>
+          </div>
 
+          {/* -- Responsaveis -- */}
+          <div className="prop">
+          <span className="prop-lbl">Responsáveis</span>
+          <div
+            style={{
+              position: "relative", display: "flex", flexWrap: "wrap",
+              alignItems: "center", gap: 6, minWidth: 0,
+            }}
+          >
+            {assignees.length > 0 ? (
+              assignees.map((id) => {
+                const nome = members.get(id)?.name ?? "";
+                const inativo = membrosInativos.has(id);
+                return (
+                  <span
+                    key={id}
+                    // Responsavel desativado precisa ser VISIVEL como tal: a
+                    // tarefa esta designada pra quem nao entra mais no sistema.
+                    title={inativo ? `${nome} (desativado)` : nome}
+                    style={{
+                      display: "inline-flex", alignItems: "center", gap: 6,
+                      background: "var(--surface-2)", borderRadius: 999,
+                      padding: "2px 10px 2px 2px", fontSize: 12.5, maxWidth: 180,
+                      overflow: "hidden", whiteSpace: "nowrap",
+                      color: inativo ? "var(--text-faint)" : undefined,
+                      textDecoration: inativo ? "line-through" : undefined,
+                    }}
+                  >
+                    <Avatar id={id} name={nome} size="sm" />
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
+                      {nome ? nomeCurto(nome) : "Responsável"}
+                    </span>
+                  </span>
+                );
+              })
+            ) : (
+              <span className="muted" style={{ fontSize: 12.5 }}>ninguém</span>
+            )}
+
+            <button
+              type="button"
+              ref={painelResp.anchorRef}
+              onClick={() => setAbertoResp((v) => !v)}
+              aria-label="Designar responsável"
+              aria-expanded={abertoResp}
+              title="Designar"
+              style={GATILHO_STYLE}
+            >
+              {abertoResp ? (
+                <X size={13} strokeWidth={2.2} aria-hidden />
+              ) : (
+                <Plus size={13} strokeWidth={2.2} aria-hidden />
+              )}
+            </button>
+
+            {abertoResp && painelResp.box && (
+              <AnchoredPanel box={painelResp.box} panelRef={painelResp.panelRef} role="dialog" aria-label="Responsáveis" minWidth={300}>
+                <input
+                  className="input"
+                  placeholder="Buscar pessoa…"
+                  value={busca}
+                  autoFocus
+                  onChange={(e) => setBusca(e.target.value)}
+                />
+                <div
+                  style={{
+                    maxHeight: 240, overflowY: "auto", marginTop: 6,
+                    border: "1px solid var(--border)", borderRadius: 8,
+                  }}
+                >
+                  {filtrados.length === 0 ? (
+                    <div className="muted" style={{ fontSize: 13, padding: "10px 12px" }}>
+                      Ninguém encontrado.
+                    </div>
+                  ) : (
+                    filtrados.map((m, i) => {
+                      const marcado = assignees.includes(m.id);
+                      const ocupado = saving.has(m.id);
+                      return (
+                        <label
+                          key={m.id}
+                          style={{
+                            display: "flex", alignItems: "center", gap: 10,
+                            padding: "8px 12px", cursor: ocupado ? "wait" : "pointer",
+                            borderTop: i === 0 ? "none" : "1px solid var(--border)",
+                            opacity: ocupado ? 0.6 : 1,
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={marcado}
+                            disabled={ocupado}
+                            onChange={() => toggle(m.id)}
+                          />
+                          <Avatar id={m.id} name={m.name} size="sm" />
+                          <span style={{ fontSize: 13.5 }}>{m.name}</span>
+                          {/* So aparece porque JA esta designado. O selo diz
+                              por que ela esta aqui e nao na busca. */}
+                          {m.inativo && (
+                            <span
+                              className="muted"
+                              style={{ fontSize: 11, marginLeft: "auto" }}
+                            >
+                              inativo
+                            </span>
+                          )}
+                        </label>
+                      );
+                    })
+                  )}
+                </div>
+              </AnchoredPanel>
+            )}
+          </div>
+          </div>
+
+          <div className="prop">
+          <span className="prop-lbl">Projeto</span>
           {/* ---- Projeto (Spec 039, F6-c) ------------------------------
               ⚠️ ELE MORAVA NA FAIXA DE METADADOS, com o rotulo "Projeto" ao
               lado e um lapis separado da pilula. Subiu para ca a pedido da
@@ -2180,160 +2314,13 @@ export default function TaskDetail({
               </AnchoredPanel>
             )}
           </div>
-          {task.is_archived && (
-            <span className="muted" style={{ fontSize: 12.5 }}>arquivada</span>
-          )}
-        </div>
-
-        {/* Criacao: data + quem criou (nome resolvido; sem nome -> so a data). */}
-        <div className="muted" style={{ fontSize: 12.5 }}>
-          Criada em {criadoEm}
-          {criador ? ` por ${criador}` : ""}
-        </div>
-
-        {/* ---- Faixa de metadados (Spec 031, C8) -------------------------
-             Responsaveis e Projeto eram DOIS blocos `field` empilhados, ~104px
-             para dizer "duas pessoas" e "nenhum projeto". Viraram uma linha
-             so, ACIMA da descricao: metadado primeiro, conteudo depois.
-
-             ⚠️ E O PROJETO SAIU DAQUI EM 22/08 (Spec 039, F6-c): ele subiu
-             para a linha de pilulas, ao lado de Coluna, Prioridade e Datas --
-             que e onde o desenho da Camila sempre o pos. Sobrou o
-             Responsaveis, e a faixa continua de pe com um item so.
-
-             ⚠️ A JUSTIFICATIVA DA C8 CONTINUA VALENDO, e nao foi revertida.
-             Ela dizia que o bloco de projeto "repetia a pilula do cabecalho";
-             o conserto de la foi apagar a DUPLICATA, e a apagada foi a de
-             cima. Agora ha de novo UMA pilula so -- a de cima. Nao e a C8
-             desfeita, e a mesma regra com a copia sobrevivente trocada.
-
-             O popover do Responsaveis continua com wrapper `position:
-             relative` proprio, senao abriria relativo a faixa inteira. ---- */}
-        <div
-          style={{
-            display: "flex", flexWrap: "wrap", alignItems: "center",
-            gap: 18, rowGap: 10,
-          }}
-        >
-          {/* -- Responsaveis -- */}
-          <div
-            style={{
-              position: "relative", display: "flex", flexWrap: "wrap",
-              alignItems: "center", gap: 6, minWidth: 0,
-            }}
-          >
-            <span style={{ fontSize: 12, color: "var(--text-soft)", flexShrink: 0 }}>
-              Responsáveis
-            </span>
-            {assignees.length > 0 ? (
-              assignees.map((id) => {
-                const nome = members.get(id)?.name ?? "";
-                const inativo = membrosInativos.has(id);
-                return (
-                  <span
-                    key={id}
-                    // Responsavel desativado precisa ser VISIVEL como tal: a
-                    // tarefa esta designada pra quem nao entra mais no sistema.
-                    title={inativo ? `${nome} (desativado)` : nome}
-                    style={{
-                      display: "inline-flex", alignItems: "center", gap: 6,
-                      background: "var(--surface-2)", borderRadius: 999,
-                      padding: "2px 10px 2px 2px", fontSize: 12.5, maxWidth: 180,
-                      overflow: "hidden", whiteSpace: "nowrap",
-                      color: inativo ? "var(--text-faint)" : undefined,
-                      textDecoration: inativo ? "line-through" : undefined,
-                    }}
-                  >
-                    <Avatar id={id} name={nome} size="sm" />
-                    <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
-                      {nome ? nomeCurto(nome) : "Responsável"}
-                    </span>
-                  </span>
-                );
-              })
-            ) : (
-              <span className="muted" style={{ fontSize: 12.5 }}>ninguém</span>
-            )}
-
-            <button
-              type="button"
-              ref={painelResp.anchorRef}
-              onClick={() => setAbertoResp((v) => !v)}
-              aria-label="Designar responsável"
-              aria-expanded={abertoResp}
-              title="Designar"
-              style={GATILHO_STYLE}
-            >
-              {abertoResp ? (
-                <X size={13} strokeWidth={2.2} aria-hidden />
-              ) : (
-                <Plus size={13} strokeWidth={2.2} aria-hidden />
-              )}
-            </button>
-
-            {abertoResp && painelResp.box && (
-              <AnchoredPanel box={painelResp.box} panelRef={painelResp.panelRef} role="dialog" aria-label="Responsáveis" minWidth={300}>
-                <input
-                  className="input"
-                  placeholder="Buscar pessoa…"
-                  value={busca}
-                  autoFocus
-                  onChange={(e) => setBusca(e.target.value)}
-                />
-                <div
-                  style={{
-                    maxHeight: 240, overflowY: "auto", marginTop: 6,
-                    border: "1px solid var(--border)", borderRadius: 8,
-                  }}
-                >
-                  {filtrados.length === 0 ? (
-                    <div className="muted" style={{ fontSize: 13, padding: "10px 12px" }}>
-                      Ninguém encontrado.
-                    </div>
-                  ) : (
-                    filtrados.map((m, i) => {
-                      const marcado = assignees.includes(m.id);
-                      const ocupado = saving.has(m.id);
-                      return (
-                        <label
-                          key={m.id}
-                          style={{
-                            display: "flex", alignItems: "center", gap: 10,
-                            padding: "8px 12px", cursor: ocupado ? "wait" : "pointer",
-                            borderTop: i === 0 ? "none" : "1px solid var(--border)",
-                            opacity: ocupado ? 0.6 : 1,
-                          }}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={marcado}
-                            disabled={ocupado}
-                            onChange={() => toggle(m.id)}
-                          />
-                          <Avatar id={m.id} name={m.name} size="sm" />
-                          <span style={{ fontSize: 13.5 }}>{m.name}</span>
-                          {/* So aparece porque JA esta designado. O selo diz
-                              por que ela esta aqui e nao na busca. */}
-                          {m.inativo && (
-                            <span
-                              className="muted"
-                              style={{ fontSize: 11, marginLeft: "auto" }}
-                            >
-                              inativo
-                            </span>
-                          )}
-                        </label>
-                      );
-                    })
-                  )}
-                </div>
-              </AnchoredPanel>
-            )}
           </div>
 
-          {/* -- Seguidores (Spec 053, D5): logo abaixo de Responsaveis, mesmo
-              desenho. O `+` so aparece para quem pode por OUTRA pessoa
+          {/* -- Seguidores (Spec 053, D5): mesmo desenho dos responsaveis.
+              O `+` so aparece para quem pode por OUTRA pessoa
               (`can_manage_watchers`, do servidor); arquivada e so leitura. -- */}
+          <div className="prop">
+          <span className="prop-lbl">Seguidores</span>
           <LinhaDeSeguidores
             estado={seguidores}
             meuId={me?.id ?? null}
@@ -2343,8 +2330,16 @@ export default function TaskDetail({
             inativos={membrosInativos}
             foraDoEscopo={foraDoEscopoAqui}
           />
+          </div>
 
-        </div>
+          {/* Criacao: data + quem criou (nome resolvido; sem nome -> so a
+              data). Texto corrido no fim da lista, sem rotulo (pedido dela,
+              19/10). */}
+          <div className="muted pt-1" style={{ fontSize: 12 }}>
+            Criada em {criadoEm}
+            {criador ? ` por ${criador}` : ""}
+          </div>
+        </section>
 
         {/* Erro do move fica FORA da faixa: dentro dela a caixa de erro
             espremeria os controles e sumiria junto com o painel. */}
@@ -2421,7 +2416,7 @@ export default function TaskDetail({
               do pai (a caixa marca -> a barra enche na hora, sem esperar a API;
               reverte se o PATCH falhar). Proporcao = concluidas / filhos ATIVOS. */}
           {colunas && totalSub > 0 && (
-            <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 8 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <div
                 role="progressbar"
                 aria-valuenow={concluidas}
@@ -2457,7 +2452,7 @@ export default function TaskDetail({
           )}
 
           {linhasSub.length > 0 && (
-            <div style={{ border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden", marginTop: 8 }}>
+            <div style={{ border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden" }}>
               {linhasSub.map((f, i) => {
                 // ⚠️ A MARCA SAI DA COLUNA (fatia 4c-2), igual a conta logo
                 // acima. Se sair de `status`, a caixa fica desmarcada com a
@@ -2496,7 +2491,7 @@ export default function TaskDetail({
                       checked={concluida}
                       disabled={ocupado}
                       title={concluida ? "Reabrir" : "Concluir"}
-                      onChange={() => alternarConclusao(f)}
+                      onChange={(e) => alternarConclusao(f, e.currentTarget)}
                       style={{ cursor: ocupado ? "wait" : "pointer", flexShrink: 0 }}
                     />
                     <button
@@ -2842,36 +2837,58 @@ export default function TaskDetail({
             <div className="error-box" style={{ marginTop: 8 }}>{erroSub}</div>
           )}
         </div>
+          </div>
 
+          <RodapeDaTarefa
+            task={task}
+            filhos={filhos}
+            confirmandoExcluir={confirmandoExcluir}
+            setConfirmandoExcluir={setConfirmandoExcluir}
+            excluindo={excluindo}
+            excluir={() => void excluir()}
+            copiaErro={copiaErro}
+            arquivando={arquivando}
+            alternarArquivo={() => void alternarArquivo()}
+            copiarLink={() => void copiarLink()}
+            copiado={copiado}
+            me={me}
+            onDuplicar={onDuplicar}
+          />
           </div>
 
           {/* A coluna lateral. `aside`: e conteudo relacionado, e nao a
               tarefa em si. */}
           {/* ⚠️ A DIVISÓRIA (pedido dela, 30/09): borda À ESQUERDA quando as
               colunas estão lado a lado, e EM CIMA quando empilham -- na
-              vertical, uma borda lateral não separaria nada. Sem
-              `items-start` na linha, a borda corre a altura inteira em vez de
-              parar onde o conteúdo da lateral acaba. */}
-          <aside className="flex w-full min-h-0 shrink-0 flex-col gap-3 border-t border-border pt-4 min-[900px]:w-[380px] min-[900px]:border-l min-[900px]:border-t-0 min-[900px]:pl-3 min-[900px]:pt-0">
-            {/* ⚠️ O MESMO `Toggle` da tela de time (decisao dela, 30/09),
-                com a mesma animacao: a pastilha ANDA. */}
-            <Toggle
-              sides={[
-                {
-                  id: "comentarios" as const,
-                  label: "Comentários",
-                  count: comentarios?.length,
-                },
-                {
-                  id: "atividade" as const,
-                  label: "Atividade",
-                  count: totalAtividade,
-                },
-              ]}
-              active={abaLateral}
-              onSelect={setAbaLateral}
-              aria-label="Comentários ou atividade"
-            />
+              vertical, uma borda lateral não separaria nada.
+              Redesign 19/10: fundo `--bg`, abas em cima, lista rolando no
+              meio e o campo de escrever fixo embaixo sobre `--surface`. */}
+          <aside
+            aria-label="Comentários e atividade"
+            className="flex w-full min-h-0 shrink-0 flex-col border-t border-border bg-canvas min-[900px]:border-l min-[900px]:border-t-0"
+          >
+            {/* Redesign 19/10: as abas (`Tabs`, indicador que desliza) no
+                lugar do `Toggle` de 30/09. */}
+            <div className="shrink-0 px-4 pt-3">
+              <Tabs
+                group="lateral"
+                tabs={[
+                  {
+                    id: "comentarios" as const,
+                    label: "Comentários",
+                    count: comentarios?.length,
+                  },
+                  {
+                    id: "atividade" as const,
+                    label: "Atividade",
+                    count: totalAtividade,
+                  },
+                ]}
+                active={abaLateral}
+                onSelect={setAbaLateral}
+                aria-label="Comentários ou atividade"
+              />
+            </div>
 
             {/* ⚠️⚠️ A LATERAL ROLA POR DENTRO, e esta é a correção do que ela
                 viu em 30/09: com 18 eventos, a aba de atividade esticava o
@@ -2889,8 +2906,8 @@ export default function TaskDetail({
               data-rolagem="lateral"
               className={
                 modo === "modal"
-                  ? "min-h-0 min-[900px]:flex-1 min-[900px]:overflow-y-auto"
-                  : "min-[900px]:max-h-[70vh] min-[900px]:overflow-y-auto"
+                  ? "min-h-0 p-4 min-[900px]:flex-1 min-[900px]:overflow-y-auto"
+                  : "p-4 min-[900px]:max-h-[70vh] min-[900px]:overflow-y-auto"
               }
             >
             {abaLateral === "atividade" ? (
@@ -2917,8 +2934,13 @@ export default function TaskDetail({
                 </span>
               ) : (
                 <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                  {/* ⚠️ O MAIS NOVO PRIMEIRO (pedido dela, 21/10). A API manda em
+                      ordem crescente e o comentário novo entra no fim da lista,
+                      então inverter aqui serve aos dois casos. As respostas
+                      continuam em ordem de conversa, embaixo da raiz. */}
                   {comentarios
                     .filter((c) => !c.parent_comment_id)
+                    .reverse()
                     .map((c) => (
                       <div key={c.id} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                         <LinhaComentario
@@ -3043,9 +3065,9 @@ export default function TaskDetail({
                 comentarios exigia rolar ate o fim primeiro. Agora a lista rola
                 por baixo e a caixa fica onde a mao ja esta. */}
             {abaLateral === "comentarios" && (
-              // ⚠️ `mt-2`: a linha desce um pouco (pedido dela, 30/09) -- colada
-              // no ultimo comentario, ela parecia cortar o texto de cima.
-              <div className="mt-2 shrink-0 border-t border-border pt-3">
+              // Redesign 19/10: o campo de escrever e um rodape fixo sobre
+              // `--surface`, separado da lista pela borda.
+              <div className="shrink-0 border-t border-border bg-surface px-4 pb-4 pt-3">
                 {/* caixa de novo comentario (quem ve a tarefa pode comentar) */}
                 <MentionTextarea
                   ref={topComentRef}
@@ -3057,7 +3079,6 @@ export default function TaskDetail({
                   placeholder="Escreva um comentário… (@ menciona)"
                   disabled={enviandoComent}
                   maxLength={5000}
-                  wrapperStyle={{ marginTop: 10 }}
                   style={{ resize: "vertical" }}
                 />
                 <GifDraftStrip
@@ -3093,7 +3114,34 @@ export default function TaskDetail({
             )}
           </aside>
         </div>
+      </div>
+    </div>
+  );
+}
 
+/* O rodape da coluna principal: confirmacao de exclusao, fallback do copiar e
+   a fileira de acoes. Redesign 19/10: mora no fim da coluna esquerda, e nao
+   mais no cartao inteiro (a lateral agora vai ate o chao). */
+function RodapeDaTarefa({
+  task, filhos, confirmandoExcluir, setConfirmandoExcluir, excluindo, excluir,
+  copiaErro, arquivando, alternarArquivo, copiarLink, copiado, me, onDuplicar,
+}: {
+  task: Task;
+  filhos: Task[];
+  confirmandoExcluir: boolean;
+  setConfirmandoExcluir: (v: boolean) => void;
+  excluindo: boolean;
+  excluir: () => void;
+  copiaErro: string | null;
+  arquivando: boolean;
+  alternarArquivo: () => void;
+  copiarLink: () => void;
+  copiado: boolean;
+  me: CurrentUser | null;
+  onDuplicar: (task: Task) => void;
+}) {
+  return (
+    <div className="flex shrink-0 flex-col gap-2 border-t border-border bg-surface px-7 py-3">
         {confirmandoExcluir && (
           <div
             style={{
@@ -3178,7 +3226,6 @@ export default function TaskDetail({
               </button>
             )}
         </div>
-      </div>
     </div>
   );
 }
@@ -3443,6 +3490,9 @@ function LinhaComentario({
           </div>
         ) : (
           <div
+            // Redesign 19/10: o balao -- borda, fundo `--surface` e raio
+            // 0 12 12 12 (o canto reto aponta para o avatar).
+            className="comment-bubble"
             style={{
               fontSize: 13.5, lineHeight: 1.45, whiteSpace: "pre-wrap",
               wordBreak: "break-word",
