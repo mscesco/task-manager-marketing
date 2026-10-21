@@ -19,7 +19,8 @@ import type { ReactNode } from "react";
  */
 export default function PageTitle({ children }: { children: ReactNode }) {
   return (
-    <h1 className="m-0 text-[26px] font-extrabold leading-[1.23] tracking-[-0.02em]">
+    // Redesign (fatia 4): 30px, como no canvas das telas. Era 26 (Spec 039).
+    <h1 className="m-0 text-[30px] font-extrabold leading-[1.1] tracking-[-0.02em]">
       {children}
     </h1>
   );

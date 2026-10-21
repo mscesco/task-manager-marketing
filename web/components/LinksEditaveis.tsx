@@ -137,7 +137,8 @@ export default function LinksEditaveis({
             type="button"
             className="btn btn-ghost inline-flex items-center gap-1"
             onClick={abrir}
-            style={{ padding: "2px 8px", fontSize: 13 }}
+            // Mesmo recuo zero do "Ver mais" logo acima: os dois alinham à esquerda.
+            style={{ padding: "2px 0", fontSize: 13 }}
           >
             <Plus size={14} aria-hidden /> Adicionar link
           </button>

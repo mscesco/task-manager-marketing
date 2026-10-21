@@ -264,12 +264,14 @@ describe("TabelaDaBase", () => {
     render(<Montada base={detalhe()} linhas={[linha("r1", { "c-titulo": "Collab" })]} />);
     const celula = screen.getByRole("gridcell", { name: "Título, linha 1" });
     fireEvent.click(celula);
-    expect(celula.className.split(" ")).toContain("outline-2");
+    // Redesign (fatia 4): o anel e INTERNO (sombra de 2px no accent), e nao
+    // mais `outline`. A regra da fatia J e a mesma: fixo so editando.
+    const ANEL = "shadow-[inset_0_0_0_2px_var(--accent)]";
+    expect(celula.className.split(" ")).toContain(ANEL);
     fireEvent.keyDown(screen.getByLabelText("Editar Título"), { key: "Escape" });
-    // Sobra só o contorno de foco e o de passar o mouse (as variantes
-    // `focus:` e `hover:`), e nenhum contorno fixo.
-    expect(celula.className.split(" ")).not.toContain("outline-2");
-    expect(celula.className).toContain("focus:outline-2");
+    // Sobra só o anel de foco (a variante `focus:`), e nenhum anel fixo.
+    expect(celula.className.split(" ")).not.toContain(ANEL);
+    expect(celula.className).toContain(`focus:${ANEL}`);
   });
 
   it("⚠️ clicar DENTRO do editor não recomeça a edição (o rascunho fica)", () => {

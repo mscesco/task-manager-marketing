@@ -35,6 +35,7 @@ import NotificationBell from "@/components/NotificationBell";
 import ContextSwitcher from "@/components/ContextSwitcher";
 import TeamParamReader from "@/components/TeamParamReader";
 import { ActiveTeamProvider } from "@/lib/useActiveTeam";
+import { TemaProvider } from "@/lib/useTema";
 import {
   ownRootTeams,
   peopleEntryFor,
@@ -129,10 +130,12 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     return observarTemaDoSistema(() => aplicarTema("sistema"));
   }, [tema]);
 
-  function trocarTema() {
-    const prox = proximoTema(tema);
+  function mudarTema(prox: Tema) {
     setTema(prox);
     gravarTema(prox); // grava so quando a pessoa AGE, nao a cada montagem
+  }
+  function trocarTema() {
+    mudarTema(proximoTema(tema));
   }
 
   useEffect(() => {
@@ -642,7 +645,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               teams: preferidos,
             }}
           >
-            {children}
+            {/* O Perfil le e troca o tema por aqui (fatia 4). */}
+            <TemaProvider value={{ tema, mudarTema }}>{children}</TemaProvider>
           </ActiveTeamProvider>
         </main>
       </div>

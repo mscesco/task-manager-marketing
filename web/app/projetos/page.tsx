@@ -193,7 +193,7 @@ function Projetos() {
         }
         actions={
           podeCriar && !criando && (
-            <button type="button" className="btn btn-primary" onClick={() => setCriando(true)}>
+            <button type="button" className="btn btn-primary ml-auto" onClick={() => setCriando(true)}>
               + Novo projeto
             </button>
           )

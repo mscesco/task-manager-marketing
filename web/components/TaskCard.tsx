@@ -119,7 +119,8 @@ export default function TaskCard({
       className="card-stripe"
       style={{
         background: "var(--surface)", borderTopColor: coluna.color,
-        borderRadius: 8, padding: "10px 12px",
+        // Raio 10 (redesign, fatia 4): o mesmo do `--radius` dos controles.
+        borderRadius: 10, padding: "12px 12px 10px",
         // ⚠️ NO MODO DE EDICAO O CARD PERDE A SOMBRA, e so ela (Spec 039, F8).
         // Sem sombra ele para de flutuar e vira ladrilho chato sobre o fundo
         // esmaecido -- o quadro inteiro le como "parado". O FUNDO do card

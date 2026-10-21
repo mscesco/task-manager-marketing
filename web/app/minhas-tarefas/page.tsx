@@ -982,7 +982,8 @@ function Minhas() {
     return (
       <div
         style={{
-          display: "flex", flexWrap: "wrap", alignItems: "center", gap: 10,
+          // Um gap so entre controles (passada visual de 21/10): 8px.
+          display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8,
           marginBottom: 18,
         }}
       >
@@ -1111,7 +1112,7 @@ function Minhas() {
           <>
             <span style={{ width: 1, height: 22, background: "var(--border)", flexShrink: 0 }} />
 
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
           {/* ⚠️ `colunas ?? []` e nao `colunas`: o guard de carregamento la em
               cima ja garante que nao e null, mas este bloco vive dentro de
               `barraFiltros()`, declarada DEPOIS do guard -- e o `tsc` perde o

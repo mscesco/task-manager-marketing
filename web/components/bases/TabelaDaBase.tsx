@@ -562,9 +562,12 @@ export default function TabelaDaBase({
                     else cabecalhos.current.delete(c.id);
                   }}
                   scope="col"
-                  className={`border-y border-r border-border bg-canvas px-2 py-1.5 text-left font-normal text-ink-soft ${
+                  // Redesign (fatia 4), estilo Notion: so linhas finas -- sem
+                  // moldura em volta (nem a esquerda, nem em cima); 12/600 em
+                  // `--ink-faint` sobre o fundo da pagina.
+                  className={`border-b border-r border-border bg-canvas px-2.5 py-1.5 text-left text-sm font-semibold text-ink-faint ${
                     i < congeladas ? "sticky z-10" : "relative"
-                  } ${i === 0 ? "border-l" : ""} ${arraste?.id === c.id ? "opacity-50" : ""} ${
+                  } ${arraste?.id === c.id ? "opacity-50" : ""} ${
                     arraste ? "cursor-grabbing select-none" : ""
                   }`}
                   style={{
@@ -685,7 +688,7 @@ export default function TabelaDaBase({
           </thead>
           <tbody>
             {linhas.map((linha, li) => (
-              <tr key={linha.id} className="group">
+              <tr key={linha.id} className="group hover:bg-surface-2">
                 {colunas.map((coluna, ci) => {
                   const ehAtiva = ativa.linha === li && ativa.coluna === ci;
                   return (
@@ -702,25 +705,29 @@ export default function TabelaDaBase({
                       aria-readonly={!base.can_update_row}
                       onClick={(e) => cliqueNaCelula({ linha: li, coluna: ci }, coluna.type, e.shiftKey)}
                       style={ci < congeladas ? { left: esquerdas[ci] } : undefined}
-                      className={`h-9 overflow-hidden border-b border-r border-border px-2 align-middle ${
+                      // Redesign (fatia 4): linha de 38px, sem a borda da
+                      // esquerda (a tabela nao tem moldura).
+                      className={`h-[38px] overflow-hidden border-b border-r border-border px-2.5 align-middle ${
                         // A coluna presa tem fundo próprio; na faixa, o da faixa.
                         ci < congeladas
                           ? `sticky z-[1] ${dentro(faixa, { linha: li, coluna: ci }) ? "" : "bg-canvas"}`
                           : ""
-                      } ${ci === 0 ? "border-l font-medium" : ""} ${
+                      } ${ci === 0 ? "font-medium" : ""} ${
                         base.can_update_row ? "cursor-text" : ""
                       } ${
                         // Fatia J, pedido dela: o contorno NÃO marca mais a
                         // "célula ativa" para sempre -- clicar fora o apagava
-                        // e ele ficava. Agora: forte com o FOCO (setas, Enter)
-                        // ou editando; fino com o mouse em cima. A célula ativa
-                        // continua existindo para o teclado (o tabIndex 0), só
-                        // não aparece quando a tabela não está em uso.
+                        // e ele ficava. Agora: so com o FOCO (setas, Enter) ou
+                        // editando. A célula ativa continua existindo para o
+                        // teclado (o tabIndex 0), só não aparece quando a
+                        // tabela não está em uso.
                         dentro(faixa, { linha: li, coluna: ci }) ? "bg-accent-soft" : ""
                       } ${
+                        // Redesign (fatia 4): anel INTERNO de 2px no accent, e
+                        // nada no hover -- a linha inteira ja escurece.
                         ehAtiva && (editando || escolhendo)
-                          ? "outline outline-2 -outline-offset-2 outline-accent"
-                          : "hover:outline hover:outline-1 hover:-outline-offset-1 hover:outline-accent focus:outline focus:outline-2 focus:-outline-offset-2 focus:outline-accent"
+                          ? "shadow-[inset_0_0_0_2px_var(--accent)] outline-none"
+                          : "outline-none focus:shadow-[inset_0_0_0_2px_var(--accent)]"
                       }`}
                     >
                       {ehAtiva && editando ? (
@@ -779,7 +786,7 @@ export default function TabelaDaBase({
       </div>
       {base.can_create_row && !noTeto && (
         <div>
-          <button className="btn btn-ghost text-sm" onClick={novaLinha}>
+          <button className="btn btn-primary" onClick={novaLinha}>
             <Plus size={14} aria-hidden="true" /> Nova linha
           </button>
         </div>
@@ -1030,7 +1037,9 @@ function Celula({
                 <Badge
                   key={id}
                   tone="soft"
+                  size="sm"
                   weight="semibold"
+                  forma="etiqueta"
                   color={corDaOpcao(corDaPessoa(id, pessoas.daArvore, pessoas.todos))}
                   className="max-w-full"
                 >
@@ -1041,7 +1050,8 @@ function Celula({
                 // Opção apagada: a célula guarda o id, e aparece vazia (D17).
                 const o = coluna.options.find((x) => x.id === id);
                 return o ? (
-                  <Badge key={id} tone="soft" color={corDaOpcao(o.color)}>
+                  // Redesign (fatia 4): pilula de opcao com raio 5 e 20px.
+                  <Badge key={id} tone="soft" size="sm" weight="semibold" forma="etiqueta" color={corDaOpcao(o.color)}>
                     {o.label}
                   </Badge>
                 ) : null;
