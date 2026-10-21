@@ -96,6 +96,7 @@ import MentionTextarea from "@/components/MentionTextarea";
 import { nomeCurto } from "@/lib/people";
 import { checklist } from "@/lib/subtarefas";
 import { deadlineTonePorColuna, type Coluna } from "@/lib/coluna";
+import { soltarConfete } from "@/lib/confete";
 import type { TaskHistoryEvent } from "@/lib/api";
 import {
   acaoDoEnterNoTitulo,
@@ -1176,6 +1177,8 @@ export default function TaskDetail({
       const t = await updateTask(tid, { column_id: destino });
       setAbertoCol(false);
       onSubtaskUpsert(t);
+      // O confete sai do seletor (pedido dela, 21/10).
+      if (viraConcluida) soltarConfete(painelCol.anchorRef.current);
       if (viraConcluida && filhos.length > 0) void recarregarFilhos();
     } catch (e) {
       const err = e as ApiError;
@@ -1302,7 +1305,7 @@ export default function TaskDetail({
    * dado para descobrir a coluna real de antes. Ler o historico e entrega
    * propria.
    */
-  async function alternarConclusao(f: Task) {
+  async function alternarConclusao(f: Task, caixa?: HTMLElement | null) {
     if (!colunas) return; // colunas ainda chegando: a caixa nem esta desenhada
     const concluida = colunaPorId.get(f.column_id)?.semantic === "DONE";
 
@@ -1351,6 +1354,8 @@ export default function TaskDetail({
       const atualizada = await updateTask(f.id, { column_id: destino });
       upsertFilhaLocal(atualizada);
       onSubtaskUpsert(atualizada);
+      // O confete sai da caixinha (pedido dela, 21/10); reabrir não solta.
+      if (!concluida) soltarConfete(caixa);
     } catch (e) {
       upsertFilhaLocal(f); // revert
       onSubtaskUpsert(f); // revert
@@ -2486,7 +2491,7 @@ export default function TaskDetail({
                       checked={concluida}
                       disabled={ocupado}
                       title={concluida ? "Reabrir" : "Concluir"}
-                      onChange={() => alternarConclusao(f)}
+                      onChange={(e) => alternarConclusao(f, e.currentTarget)}
                       style={{ cursor: ocupado ? "wait" : "pointer", flexShrink: 0 }}
                     />
                     <button
@@ -2929,8 +2934,13 @@ export default function TaskDetail({
                 </span>
               ) : (
                 <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                  {/* ⚠️ O MAIS NOVO PRIMEIRO (pedido dela, 21/10). A API manda em
+                      ordem crescente e o comentário novo entra no fim da lista,
+                      então inverter aqui serve aos dois casos. As respostas
+                      continuam em ordem de conversa, embaixo da raiz. */}
                   {comentarios
                     .filter((c) => !c.parent_comment_id)
+                    .reverse()
                     .map((c) => (
                       <div key={c.id} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                         <LinhaComentario

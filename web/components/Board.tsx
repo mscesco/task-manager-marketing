@@ -82,6 +82,7 @@ import { sincronizarTaskNaUrl, lerTaskDaUrl } from "@/lib/urlTarefa";
 import { ORDENACOES, ordenar, type Ordenacao } from "@/lib/ordenacao";
 
 import { motion } from "motion/react";
+import { soltarConfete } from "@/lib/confete";
 import { Esqueleto } from "@/components/Loading";
 import { useEntrada } from "@/components/Entrada";
 import PageTitle from "@/components/PageTitle";
@@ -915,6 +916,15 @@ export default function Board({
     // banco; aqui so mexemos no que esta carregado em `tasks` (que pode vir
     // truncado).
     const concluindo = colunaDestino.semantic === "DONE";
+    // O confete sai de onde o card foi SOLTO (pedido dela, 21/10): o retangulo
+    // do arrasto no momento do drop, lido agora -- depois do `await` o card ja
+    // mudou de coluna. So quando a tarefa VIRA concluida, nao entre duas
+    // colunas de conclusao.
+    const soltoEm = e.active.rect.current.translated;
+    const origemDoConfete =
+      concluindo && colunaPorId.get(colunaAnterior)?.semantic !== "DONE" && soltoEm
+        ? { x: soltoEm.left + soltoEm.width / 2, y: soltoEm.top + soltoEm.height / 2 }
+        : null;
     const prefixo = atual.path + ".";
     // ⚠️ GUARDA OS DOIS CAMPOS, porque a atualizacao otimista mexe nos dois.
     // Guardar so a coluna deixaria a subtarefa revertida para a coluna certa
@@ -970,6 +980,7 @@ export default function Board({
           t.id === taskId ? mesclaTarefa(atualizada, t) : t
         )
       );
+      soltarConfete(origemDoConfete);
     } catch (err) {
       setTasks((prev) =>
         prev!.map((t) => {
@@ -2331,7 +2342,8 @@ export default function Board({
           <div
             ref={colunasRef}
             style={{
-              display: "flex", gap: 14, overflowX: "auto", overflowY: "hidden",
+              // `gap` 8: era 14 (pedido dela, 21/10 -- ver a coluna).
+              display: "flex", gap: 8, overflowX: "auto", overflowY: "hidden",
               paddingBottom: 8, height: alturaColunas ?? undefined,
             }}
           >
@@ -2648,10 +2660,13 @@ function ColunaKanban({
         // o card quebrar em muitas linhas.
         //
         // Redesign (fatia 4): a raia tem fundo `--lane`, borda e raio 14.
-        // ⚠️ 262 = os 240 de antes MAIS a moldura nova (10 de padding e 1 de
-        // borda de cada lado): o card por dentro continua com a largura que
-        // tinha antes da fatia 4 (ajuste dela, 19/10).
-        flex: 1, minWidth: 262, minHeight: 0, borderRadius: 14, padding: 10,
+        //
+        // ⚠️ 292 / 6 (pedido dela, 21/10, com oito colunas na tela): "as
+        // colunas muito pequenas, o espaçamento entre o card e a borda da
+        // coluna muito grande". O card por dentro passa de 240 para 278
+        // (292 - 6 de padding - 1 de borda de cada lado); o vão entre colunas
+        // desceu de 14 para 8 no mesmo pedido (ver o `gap` da fileira).
+        flex: 1, minWidth: 292, minHeight: 0, borderRadius: 14, padding: 6,
         display: "flex", flexDirection: "column",
         background: isOver ? "var(--surface-2)" : "var(--lane)",
         border: "1px solid var(--border)",

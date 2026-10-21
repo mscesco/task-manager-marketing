@@ -474,6 +474,13 @@ button { font-family: inherit; cursor: pointer; }
    reprova AA. Ver o comentario do token. */
 .btn-danger { background: var(--danger); border-color: var(--danger); color: var(--on-danger); }
 .btn-danger:hover { filter: brightness(0.92); }
+/* Redesign (21/10), a prancha da fila: aprovar e um botao TEAL SUAVE, e rejeitar
+   um botao sem fundo que so fica vermelho no hover -- o azul cheio fica para
+   criar. Os tokens mudam por tema, entao uma regra serve aos dois. */
+.btn-ok { background: var(--teal-soft); border-color: transparent; color: var(--teal); }
+.btn-ok:hover { background: color-mix(in srgb, var(--teal) 22%, var(--teal-soft)); }
+.btn-no { background: transparent; border-color: transparent; color: var(--danger); }
+.btn-no:hover { background: color-mix(in srgb, var(--danger) 12%, transparent); }
 
 /* inputs */
 .field { display: flex; flex-direction: column; gap: 6px; }

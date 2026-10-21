@@ -13,8 +13,10 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { Plus, Table2 } from "lucide-react";
 import Card from "@/components/Card";
 import EmptyState from "@/components/EmptyState";
+import Entrada from "@/components/Entrada";
 import Loading from "@/components/Loading";
 import PageHeader from "@/components/PageHeader";
 import { useAvisar } from "@/components/Toasts";
@@ -243,18 +245,60 @@ export default function ListaDeBases() {
             {variasRaizes && (
               <h2 className="label m-0">{g.raiz?.name ?? "Outros times"}</h2>
             )}
-            <ul className="m-0 flex list-none flex-col gap-1 p-0">
+            {/* Redesign (fatia 7): grade de cards com uma miniatura de tabela,
+                como a prancha. A miniatura e decoracao (`aria-hidden`). */}
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-4">
+              {/* A entrada escalonada, como em Projetos (21/10). `Entrada`
+                  embrulha cada card num bloco, por isso a grade é `div`. */}
+              <Entrada className="min-w-0">
               {g.bases.map((b) => (
-                <li key={b.id}>
                   <Link
+                    key={b.id}
                     href={`/bases/${b.id}`}
-                    className="tappable flex min-w-0 items-center rounded-md border border-border bg-surface px-3 py-2 text-ink no-underline"
+                    // O nome acessivel e so o da base; a data e detalhe visual.
+                    aria-label={b.name}
+                    className="flex h-full flex-col gap-3 rounded-xl border border-border bg-surface p-4 text-ink no-underline transition-[transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:shadow-[var(--shadow)]"
                   >
-                    <span className="truncate">{b.name}</span>
+                    <span aria-hidden className="grid grid-cols-[1.4fr_1fr_1fr] gap-px overflow-hidden rounded-lg border border-border bg-border">
+                      {Array.from({ length: 12 }, (_, i) => (
+                        <span key={i} className={`h-3.5 ${i < 3 ? "bg-surface-2" : "bg-surface"}`}>
+                          <span
+                            className={`mx-1.5 mt-1 block h-1.5 rounded-sm ${i % 3 === 2 && i > 2 ? "bg-accent-soft" : "bg-border"}`}
+                            style={{ width: `${45 + ((i * 17) % 40)}%` }}
+                          />
+                        </span>
+                      ))}
+                    </span>
+                    <span className="flex items-start gap-2">
+                      <span className="min-w-0 flex-1 truncate text-md font-bold">{b.name}</span>
+                      <Table2 size={15} aria-hidden className="mt-0.5 shrink-0 text-ink-faint" />
+                    </span>
+                    {/* Sem data valida (fixture velha, resposta parcial), a linha some. */}
+                    {b.updated_at && !Number.isNaN(Date.parse(b.updated_at)) && (
+                      <span className="muted text-xs">
+                        editada em {dataParaTela(diaNoWorkspace(b.updated_at))}
+                      </span>
+                    )}
                   </Link>
-                </li>
               ))}
-            </ul>
+              </Entrada>
+              {raizesQueCria.some((r) => r.id === g.raiz?.id) && !criando && (
+                <div className="min-w-0">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRaizId(g.raiz?.id ?? raizId);
+                      setCriando(true);
+                    }}
+                    className="flex h-full min-h-[150px] w-full flex-col items-center justify-center gap-2 rounded-xl border-[1.5px] border-dashed border-border bg-transparent text-sm font-semibold text-ink-faint transition-colors duration-200 hover:border-accent hover:bg-accent-soft hover:text-accent"
+                  >
+                    <Plus size={22} aria-hidden />
+                    Nova base
+                    <span className="text-xs font-medium">começa com uma coluna de texto</span>
+                  </button>
+                </div>
+              )}
+            </div>
           </section>
         ))
       )}

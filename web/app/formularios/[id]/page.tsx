@@ -17,6 +17,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 
 import AppShell from "@/components/AppShell";
+import Badge from "@/components/Badge";
 import PageHeader from "@/components/PageHeader";
 import Loading from "@/components/Loading";
 import { useAvisar } from "@/components/Toasts";
@@ -32,11 +33,13 @@ import {
   definirResumo,
   editarPergunta,
   editarSecao,
+  listarFormularios,
   obterFormulario,
   publicarFormulario,
   renomearFormulario,
   reordenarPerguntas,
   reordenarSecoes,
+  type Formulario,
   type FormularioDetalhado,
   type PerguntaDoEditor,
   type SecaoDoEditor,
@@ -90,6 +93,22 @@ function Editor() {
         )
       );
   }, [formId]);
+
+  // Redesign (fatia 7): os outros formulários do mesmo time ficam numa coluna
+  // à esquerda, para trocar de formulário sem voltar à lista. ⚠️ Acessório:
+  // se a lista falhar, a coluna fica só com este, e o editor segue.
+  const [lista, setLista] = useState<Formulario[]>([]);
+  const teamId = form?.team_id ?? null;
+  useEffect(() => {
+    if (!teamId) return;
+    let vivo = true;
+    listarFormularios(teamId)
+      .then((fs) => vivo && Array.isArray(fs) && setLista(fs))
+      .catch(() => {});
+    return () => {
+      vivo = false;
+    };
+  }, [teamId]);
 
   /**
    * ⚠️ TODA ESCRITA PASSA POR AQUI, E RECARREGA O FORMULÁRIO INTEIRO.
@@ -149,23 +168,54 @@ function Editor() {
   const secoes = ordenadasPorPosicao(form.sections);
   const total = contaPerguntas(secoes);
 
+  const vizinhos = lista.length > 0 ? lista : [form];
+
   return (
-    <div style={{ maxWidth: 900 }}>
-      {/* ⚠️ O VOLTAR EXISTE PORQUE ELE JÁ FOI ESQUECIDO UMA VEZ, na tela de
-          projeto (Spec 039). Sem ele a única saída é o menu lateral.
+    <div className="grid items-start gap-5 md:grid-cols-[340px_minmax(0,1fr)]">
+      {/* ---- a coluna dos formulários do time (redesign, fatia 7) ---- */}
+      <aside className="flex flex-col gap-2" aria-label="Formulários do time">
+        {/* ⚠️ O VOLTAR EXISTE PORQUE ELE JÁ FOI ESQUECIDO UMA VEZ, na tela de
+            projeto (Spec 039). Sem ele a única saída é o menu lateral.
 
-          ⚠⚠ E LEVA O TIME DO FORMULÁRIO (14/09). O caminho puro apagava o
-          time, e a lista caía na reserva: editando um formulário do Comercial,
-          voltar abria os do Marketing. Esta rota não tem `?time=`; quem sabe
-          o time certo é o formulário. */}
-      <Link
-        href={withTeam("/formularios", "", form.team_id)}
-        className="muted"
-        style={{ fontSize: 13 }}
-      >
-        ‹ Formulários
-      </Link>
+            ⚠⚠ E LEVA O TIME DO FORMULÁRIO (14/09). O caminho puro apagava o
+            time, e a lista caía na reserva: editando um formulário do Comercial,
+            voltar abria os do Marketing. Esta rota não tem `?time=`; quem sabe
+            o time certo é o formulário. */}
+        <Link
+          href={withTeam("/formularios", "", form.team_id)}
+          className="muted mb-1"
+          style={{ fontSize: 13 }}
+        >
+          ‹ Formulários
+        </Link>
+        {vizinhos.map((f) => {
+          const atual = f.id === form.id;
+          return (
+            <Link
+              key={f.id}
+              href={`/formularios/${f.id}`}
+              aria-current={atual ? "page" : undefined}
+              className={`flex flex-col gap-1.5 rounded-xl border bg-surface p-3.5 text-ink no-underline transition-[border-color,box-shadow] duration-200 hover:border-accent ${
+                atual ? "border-accent shadow-[0_0_0_3px_var(--accent-soft)]" : "border-border"
+              }`}
+            >
+              <span className="flex items-center gap-2">
+                <strong className="min-w-0 flex-1 truncate text-base">{f.title}</strong>
+                {f.is_published ? (
+                  <Badge tone="soft" size="sm" color="var(--teal)" className="shrink-0">Publicado</Badge>
+                ) : (
+                  <Badge tone="neutral" size="sm" weight="semibold" className="shrink-0 bg-surface-2 text-ink-soft">Rascunho</Badge>
+                )}
+              </span>
+              <code className="muted truncate text-xs">/solicitar/{f.slug}</code>
+            </Link>
+          );
+        })}
+      </aside>
 
+      {/* O editor ocupa o resto da largura (21/10: o teto de 900px deixava um
+          vão enorme à direita a 1920). */}
+      <div className="min-w-0">
       <PageHeader
         title={form.title}
         count={`${total} ${total === 1 ? "pergunta" : "perguntas"} em ${
@@ -250,6 +300,7 @@ function Editor() {
         ocupado={ocupado}
         aoCriar={(entrada) => agir(() => criarSecao(form.id, entrada))}
       />
+      </div>
     </div>
   );
 }

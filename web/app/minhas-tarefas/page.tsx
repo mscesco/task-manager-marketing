@@ -15,7 +15,10 @@ import AppShell from "@/components/AppShell";
 import EmptyState from "@/components/EmptyState";
 import PageHeader from "@/components/PageHeader";
 import { ChevronRight, CornerDownRight } from "lucide-react";
+import Avatar from "@/components/Avatar";
 import Badge from "@/components/Badge";
+import { nomeCurto } from "@/lib/people";
+import { agoraNoWorkspace } from "@/lib/prazo";
 import TaskModal from "@/components/TaskModal";
 import TaskDetail from "@/components/TaskDetail";
 import TaskCard from "@/components/TaskCard";
@@ -39,6 +42,7 @@ import {
   type OrigemDaColuna,
 } from "@/lib/coluna";
 import { normalizarBusca } from "@/lib/filtrosQuadro";
+import { soltarConfete } from "@/lib/confete";
 import {
   listAllMyAssignments,
   quadroGeralComIndice,
@@ -58,9 +62,8 @@ import { useActiveTeam, useActiveTeamId } from "@/lib/useActiveTeam";
 
 import { motion } from "motion/react";
 import { Esqueleto } from "@/components/Loading";
-import { useEntrada } from "@/components/Entrada";
+import Entrada, { useEntrada } from "@/components/Entrada";
 import { useAvisar } from "@/components/Toasts";
-import { useDrawnOutline } from "@/components/AnimatedOutline";
 const RELATION_LABEL: Record<string, string> = {
   assignee: "Responsável",
   creator: "Criei",
@@ -567,6 +570,12 @@ function Minhas() {
     // Deixar um dos dois para tras foi o defeito que a conferencia manual de
     // 10/08 pegou. A metade `status` morre com o ultimo leitor dela.
     const concluindo = colunaDestino.semantic === "DONE";
+    // O confete sai de onde o card foi solto (o mesmo desenho do `Board.tsx`).
+    const soltoEm = e.active.rect.current.translated;
+    const origemDoConfete =
+      concluindo && indice?.get(colunaAnterior)?.coluna.semantic !== "DONE" && soltoEm
+        ? { x: soltoEm.left + soltoEm.width / 2, y: soltoEm.top + soltoEm.height / 2 }
+        : null;
     const prefixo = atual.path + ".";
     const anteriores = new Map<string, { coluna: string; status: string }>();
     if (concluindo) {
@@ -602,6 +611,7 @@ function Minhas() {
       // o status certo vem NA RESPOSTA.
       const atualizada = await updateTask(taskId, { column_id: destino });
       aoUpsert(atualizada); // re-merge do servidor, preservando relations/assignees
+      soltarConfete(origemDoConfete);
     } catch (err) {
       setItems((prev) =>
         prev
@@ -729,7 +739,13 @@ function Minhas() {
   // Agrupa por data de entrega (D, estilo Runrunit): so aparece o dia que tem
   // tarefa; grupos em ordem cronologica; sem-prazo por ultimo. Agrupa sobre a
   // lista FILTRADA. due_date e "YYYY-MM-DD" -> ordenacao por string ja e cronologica.
+  //
+  //
+  // ⚠️ POR DIA, e não por urgência (decisão dela, 21/10: "quero continuar com
+  // o formato de separar por data de entrega"). O redesign fica só no desenho
+  // da linha e na COR do cabeçalho: dia passado em vermelho, hoje em âmbar.
   const grupos = useMemo(() => {
+    const hoje = agoraNoWorkspace().data;
     const map = new Map<string, MyTaskItem[]>();
     for (const t of filtrados) {
       const key = t.due_date ?? "";
@@ -739,7 +755,12 @@ function Minhas() {
     }
     const comData = [...map.entries()]
       .filter(([k]) => k !== "")
-      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      .map(([data, tarefas]) => ({
+        data,
+        tarefas,
+        tom: data < hoje ? "danger" : data === hoje ? "amber" : "faint",
+      }));
     const semData = map.get("") ?? [];
     return { comData, semData };
   }, [filtrados]);
@@ -857,7 +878,7 @@ function Minhas() {
     visiveis === items.length ? `${items.length} tarefas` : `${visiveis} de ${items.length}`;
 
   // Uma linha de tarefa. A data saiu daqui — agora vive no cabeçalho do grupo.
-  function linhaTarefa(t: MyTaskItem, i: number) {
+  function linhaTarefa(t: MyTaskItem) {
     // Spec 023: cor de prazo por-card (respeita status/arquivada). null = sem
     // alerta. Barra lateral colorida + chip com o motivo.
     const col = colunaDe(t);
@@ -866,22 +887,24 @@ function Minhas() {
     // Sem coluna resolvida nao ha como decidir -> sem alerta, que e o lado
     // seguro (o contrario pintaria de vermelho por falta de dado).
     const dueTone = col ? deadlineTonePorColuna(col, t.due_date, t.is_archived, t.due_time) : null;
+    const ids = t.assignee_ids ?? [];
+    // Redesign (fatia 7): cada tarefa e um cartao-linha, com o filete da cor da
+    // COLUNA a esquerda (a prancha), os selos no meio e a seta que diz "abre".
     return (
       <FaixaClicavel
         key={t.id}
         onAbrir={() => abrirDetalhe(t)}
+        className="card-elev rounded-xl border border-border bg-surface"
         style={{
-          display: "flex", alignItems: "center", gap: 14, padding: "12px 16px",
-          borderTop: i === 0 ? "none" : "1px solid var(--border)",
-          // Reserva sempre a borda (transparente) pra nao deslocar o texto.
-          borderLeft: `3px solid ${dueTone ? DEADLINE_COLOR[dueTone] : "transparent"}`,
+          display: "flex", alignItems: "center", gap: 14, padding: "10px 14px 10px 10px",
         }}
       >
         <span
+          aria-hidden
           title={rotuloDe(t) ?? t.status}
           style={{
-            width: 9, height: 9, borderRadius: 999, flexShrink: 0,
-            background: col?.color ?? "#999",
+            width: 4, height: 36, borderRadius: 4, flexShrink: 0,
+            background: col?.color ?? "var(--border)",
           }}
         />
         <div style={{ minWidth: 0, flex: 1 }}>
@@ -950,6 +973,25 @@ function Minhas() {
         <Badge tone="soft" size="sm" color={PRIORITY_COLOR[t.priority]} className="shrink-0">
           {PRIORITY_LABEL[t.priority] || t.priority}
         </Badge>
+        {ids.length > 0 && (
+          <span className="flex shrink-0 items-center">
+            {ids.slice(0, 2).map((id, i) => {
+              const nome = members.get(id)?.name ?? "";
+              return (
+                <Avatar
+                  key={id}
+                  id={id}
+                  name={nome}
+                  size="sm"
+                  title={nome ? nomeCurto(nome) : "Responsável"}
+                  className="border-[1.5px] border-surface"
+                  style={{ marginLeft: i === 0 ? 0 : -6 }}
+                />
+              );
+            })}
+            {ids.length > 2 && <span className="muted ml-1 text-xs font-bold">+{ids.length - 2}</span>}
+          </span>
+        )}
         <ChevronRight size={16} aria-hidden className="shrink-0 text-ink-faint" />
       </FaixaClicavel>
     );
@@ -1263,24 +1305,34 @@ function Minhas() {
                 </button>
               </div>
             ) : (
-              <>
-                {grupos.comData.map(([data, tarefas]) => (
-                  <section key={data} className="mb-5">
-                    <h2 className="mb-2 text-base font-semibold text-ink-soft">{rotuloData(data)}</h2>
-                    <div className="overflow-hidden rounded-lg border border-border bg-surface">
-                      {tarefas.map((t, i) => linhaTarefa(t, i))}
-                    </div>
-                  </section>
-                ))}
-                {grupos.semData.length > 0 && (
-                  <section className="mb-5">
-                    <h2 className="mb-2 text-base font-semibold text-ink-soft">Sem prazo</h2>
-                    <div className="overflow-hidden rounded-lg border border-border bg-surface">
-                      {grupos.semData.map((t, i) => linhaTarefa(t, i))}
-                    </div>
-                  </section>
-                )}
-              </>
+              // `Entrada` embrulha cada grupo: a lista chega escalonada também
+              // quando se volta do quadro (21/10), e não só na primeira vez.
+              <Entrada>
+                {[
+                  ...grupos.comData.map((g) => ({ chave: g.data, titulo: rotuloData(g.data), tom: g.tom, tarefas: g.tarefas })),
+                  { chave: "sem", titulo: "Sem prazo", tom: "faint", tarefas: grupos.semData },
+                ]
+                  .filter((g) => g.tarefas.length > 0)
+                  .map((g) => (
+                    <section key={g.chave} className="mb-5 flex flex-col gap-2">
+                      <h2
+                        className={`m-0 flex items-center gap-2 text-xs font-bold ${
+                          g.tom === "danger" ? "text-danger" : g.tom === "amber" ? "text-amber" : "text-ink-faint"
+                        }`}
+                      >
+                        {g.titulo}
+                        <Badge
+                          tone="soft"
+                          size="sm"
+                          color={g.tom === "danger" ? "var(--danger)" : g.tom === "amber" ? "var(--amber)" : "var(--text-soft)"}
+                        >
+                          {g.tarefas.length}
+                        </Badge>
+                      </h2>
+                      {g.tarefas.map((t) => linhaTarefa(t))}
+                    </section>
+                  ))}
+              </Entrada>
             )
           ) : porRelacao.length === 0 ? (
             <div className="muted" style={{ padding: "20px 2px", fontSize: 14 }}>
@@ -1439,21 +1491,17 @@ function Minhas() {
 // --- Kanban do minhas-tarefas (duplicado do Board de proposito: mantem o
 // quadro geral intocado). Coluna droppable + card draggable, reusando TaskCard. ---
 /**
- * Uma faixa clicável da lista — só a casca, com o contorno desenhado.
+ * Uma faixa clicável da lista — só a casca.
  *
- * ⚠️⚠️ ELA EXISTE PARA O CONTORNO, e não é só embrulho: o anel duro do
- * `.tappable:hover` saiu do CSS global em 10/09 e deu lugar ao traço que
- * corre, e o gancho que o desenha não pode ser chamado de dentro de
- * `linhaTarefa` -- aquela função roda uma vez por tarefa.
+ * ⚠️ O CONTORNO AZUL QUE CORRIA SAIU (decisão dela, 21/10: "quero só a
+ * animaçãozinha mesmo, igual rolou no quadro geral"): a linha é `card-elev`,
+ * sobe no hover como o card do quadro, e o foco de teclado vem da regra
+ * global `[tabindex]:focus-visible`.
  *
  * ⚠️ E ELA LEVA SÓ `onAbrir` E `style`, e não a tarefa: passar `t` faria esta
  * casca conhecer o formato da linha, e aí ela deixaria de ser casca. O
  * conteúdo continua sendo montado em `linhaTarefa`, onde estão `colunaDe`,
  * `rotuloDe` e o resto do fechamento.
- *
- * ⚠️ `radius` 0: a faixa não tem raio -- as linhas se dividem por borda dentro
- * de um contêiner que tem o raio. Um traço arredondado no meio de uma lista de
- * cantos retos é pior que nenhum.
  *
  * ⚠️ O `onKeyDown` vem junto: a faixa é `role="button"`, então Enter e Espaço
  * TÊM de abrir. Deixá-lo em `linhaTarefa` faria a casca prometer um papel que
@@ -1462,17 +1510,19 @@ function Minhas() {
 function FaixaClicavel({
   onAbrir,
   style,
+  className,
   children,
 }: {
   onAbrir: () => void;
   style: React.CSSProperties;
+  className?: string;
   children: React.ReactNode;
 }) {
-  const { target, outline } = useDrawnOutline();
   return (
     <div
       role="button"
       tabIndex={0}
+      className={className}
       onClick={onAbrir}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
@@ -1480,11 +1530,8 @@ function FaixaClicavel({
           onAbrir();
         }
       }}
-      {...target}
-      // ⚠️ `position: relative` é o que faz o contorno medir ESTA faixa.
-      style={{ position: "relative", cursor: "pointer", ...style }}
+      style={{ cursor: "pointer", ...style }}
     >
-      {outline}
       {children}
     </div>
   );

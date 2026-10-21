@@ -22,6 +22,20 @@ export function quandoChegou(iso: string, agora: Date = new Date()): string {
 }
 
 /**
+ * O cabeçalho de dia da lista (21/10, a prancha): "Hoje", "Ontem", e a data
+ * curta antes disso. O mesmo dia de Brasília de `quandoChegou`.
+ */
+export function rotuloDoDia(iso: string, agora: Date = new Date()): string {
+  const hoje = agoraNoWorkspace(agora).data;
+  const dia = diaNoWorkspace(iso);
+  if (dia === hoje) return "Hoje";
+  const ontem = agoraNoWorkspace(new Date(agora.getTime() - 86_400_000)).data;
+  if (dia === ontem) return "Ontem";
+  const [, mes, d] = dia.split("-");
+  return `${d}/${mes}`;
+}
+
+/**
  * O dia de um instante, `DD/MM/AAAA`, no fuso do workspace -- e não no da
  * máquina, onde um pedido das 22h de Brasília apareceria no dia seguinte.
  */
