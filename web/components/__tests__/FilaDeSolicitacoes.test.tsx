@@ -14,7 +14,7 @@
 // veio". Na fatia B a sabotagem do `form_id` passou verde por essa distinção.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 
 import SolicitacoesPage from "@/app/solicitacoes/page";
 import type { Batch, BatchItem } from "@/lib/api";
@@ -613,6 +613,33 @@ describe("as duas ações que a fila existe para fazer", () => {
     await waitFor(() =>
       expect(vi.mocked(api.listarEnvios).mock.calls.length).toBeGreaterThan(1)
     );
+  });
+
+  it("⚠️ aprovar em A e abrir B enquanto A recarrega: o painel FICA em B", async () => {
+    // Auditoria de 21/10: o `recarregar` relia A pelo protocolo e, ao chegar,
+    // devolvia o painel para A -- quem tria lia A achando que era B.
+    const a = envio();
+    const b = { ...envio(), batch_id: "b2", protocol: "XYZ789", requester_name: "João do Polo" };
+    const lista = { items: [a, b], total: 2, page: 1, size: 10, pending_total: 2, approved_without_task_total: 0 };
+    let soltarA!: (r: typeof lista) => void;
+    const buscaDeA = new Promise<typeof lista>((s) => {
+      soltarA = s;
+    });
+    vi.mocked(api.listarEnvios).mockImplementation(async (q) =>
+      q.busca === "ABC123" ? buscaDeA : lista
+    );
+    vi.mocked(api.aprovarSolicitacao).mockResolvedValue({} as never);
+    render(<SolicitacoesPage />);
+    await abrirOCard();
+    fireEvent.click(await screen.findByLabelText("Outras formas de aprovar"));
+    fireEvent.click(await screen.findByText("Aprovar sem tarefa"));
+    await waitFor(() => expect(api.aprovarSolicitacao).toHaveBeenCalledWith("i1"));
+
+    fireEvent.click(screen.getByText("João do Polo"));
+    await act(async () => {
+      soltarA({ ...lista, items: [a] });
+    });
+    expect(painel().getByText("João do Polo")).toBeTruthy();
   });
 
   it("⚠️ ✓ na LISTA só aprova -- a tarefa se cria no painel (decisão dela)", async () => {
