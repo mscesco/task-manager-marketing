@@ -14,7 +14,7 @@ import {
 import AppShell from "@/components/AppShell";
 import EmptyState from "@/components/EmptyState";
 import PageHeader from "@/components/PageHeader";
-import { CornerDownRight } from "lucide-react";
+import { ChevronRight, CornerDownRight } from "lucide-react";
 import Badge from "@/components/Badge";
 import TaskModal from "@/components/TaskModal";
 import TaskDetail from "@/components/TaskDetail";
@@ -940,20 +940,17 @@ function Minhas() {
               </Badge>
             ))}
             {dueTone && t.due_date && (
-              <span
-                style={{
-                  fontSize: 11.5, fontWeight: 600, color: DEADLINE_COLOR[dueTone],
-                  flexShrink: 0,
-                }}
-              >
+              // Redesign (fatia 5): o prazo em pilula, como o card do painel inicial.
+              <Badge tone="soft" size="sm" color={DEADLINE_COLOR[dueTone]} className="shrink-0">
                 {deadlineLabel(t.due_date, t.due_time)}
-              </span>
+              </Badge>
             )}
           </div>
         </div>
         <Badge tone="soft" size="sm" color={PRIORITY_COLOR[t.priority]} className="shrink-0">
           {PRIORITY_LABEL[t.priority] || t.priority}
         </Badge>
+        <ChevronRight size={16} aria-hidden className="shrink-0 text-ink-faint" />
       </FaixaClicavel>
     );
   }
