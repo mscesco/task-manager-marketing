@@ -19,14 +19,44 @@
 import { useFecharAoClicarForaDe } from "@/lib/useCliqueFora";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { X } from "lucide-react";
+import {
+  Archive,
+  ArrowRight,
+  Bell,
+  Clock,
+  EyeOff,
+  MessageCircle,
+  Smile,
+  UserRound,
+  X,
+  type LucideIcon,
+} from "lucide-react";
+
+/** O ícone e a cor de cada tipo de aviso (redesign, fatia 7). */
+const ICONE_DO_TIPO: Partial<Record<string, { Icone: LucideIcon; cor: string }>> = {
+  TASK_COMMENTED: { Icone: MessageCircle, cor: "bg-violet-soft text-violet" },
+  TASK_MENTIONED: { Icone: MessageCircle, cor: "bg-violet-soft text-violet" },
+  TASK_COMMENT_REACTED: { Icone: Smile, cor: "bg-violet-soft text-violet" },
+  TASK_ASSIGNED: { Icone: UserRound, cor: "bg-accent-soft text-accent" },
+  TASK_WATCH_ADDED: { Icone: UserRound, cor: "bg-accent-soft text-accent" },
+  TASK_WATCH_REMOVED: { Icone: UserRound, cor: "bg-accent-soft text-accent" },
+  TASK_DUE_SOON: { Icone: Clock, cor: "bg-amber-soft text-amber" },
+  TASK_OVERDUE: { Icone: Clock, cor: "bg-danger/10 text-danger" },
+  TASK_DUE_CHANGED: { Icone: Clock, cor: "bg-amber-soft text-amber" },
+  TASK_COLUMN_CHANGED: { Icone: ArrowRight, cor: "bg-teal-soft text-teal" },
+  TASK_ARCHIVED: { Icone: Archive, cor: "bg-surface-2 text-ink-soft" },
+  TASK_UNARCHIVED: { Icone: Archive, cor: "bg-surface-2 text-ink-soft" },
+  TASK_DELETED: { Icone: Archive, cor: "bg-surface-2 text-ink-soft" },
+  ACCESS_LOST: { Icone: EyeOff, cor: "bg-danger/10 text-danger" },
+};
+const ICONE_PADRAO = { Icone: Bell, cor: "bg-surface-2 text-ink-soft" };
 
 import Badge from "@/components/Badge";
 import EmptyState from "@/components/EmptyState";
 import Loading, { Esqueleto } from "@/components/Loading";
 import PageHeader from "@/components/PageHeader";
 import Paginacao from "@/components/Paginacao";
-import Tabs from "@/components/Tabs";
+import AbasEmPilula from "@/components/AbasEmPilula";
 import {
   listNotifications,
   listNotificationTargets,
@@ -155,6 +185,15 @@ export default function TelaDeNotificacoes() {
         count={naoLidas === 1 ? "1 não lida" : `${naoLidas} não lidas`}
         actions={
           <div className="ml-auto flex items-center gap-2">
+            {/* Redesign (fatia 7): as abas em pílula, no cabeçalho, com a
+                contagem de não lidas. */}
+            <AbasEmPilula<Aba>
+              abas={ABAS.map((a) => (a.id === "nao-lidas" ? { ...a, count: naoLidas } : a))}
+              ativa={estado.aba}
+              onSelect={(aba) => mudar({ aba })}
+              aria-label="Quais notificações"
+              group="notificacoes"
+            />
             {/* Spec 054 (§9.6): o link mora AQUI, e nao no sino -- o sino e
                 para ler o aviso, nao para configurar. */}
             <Link href="/perfil#notificacoes" className="btn btn-ghost">
@@ -172,15 +211,7 @@ export default function TelaDeNotificacoes() {
         }
       />
 
-      <Tabs<Aba>
-        tabs={ABAS}
-        active={estado.aba}
-        onSelect={(aba) => mudar({ aba })}
-        aria-label="Quais notificações"
-        group="notificacoes"
-      />
-
-      <div className="mt-4 flex flex-wrap items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         <label className="sr-only" htmlFor="filtro-tipo">
           Tipo
         </label>
@@ -269,10 +300,10 @@ export default function TelaDeNotificacoes() {
         ) : (
           grupos.map((g) => (
             <section key={g.rotulo} className="mb-5">
-              <h2 className="mb-2 text-sm font-semibold uppercase tracking-[0.06em] text-ink-faint">
+              <h2 className="mb-2 text-xs font-bold uppercase tracking-[0.07em] text-ink-faint">
                 {g.rotulo}
               </h2>
-              <ul className="overflow-hidden rounded-lg border border-border bg-surface">
+              <ul className="m-0 flex list-none flex-col gap-2 p-0">
                 {g.itens.map((n) => (
                   <LinhaDeAviso
                     key={n.id}
@@ -341,12 +372,16 @@ function LinhaDeAviso({
     markNotificationRead(aviso.id).catch(() => {});
   }
 
+  // Redesign (fatia 7): um ícone por tipo, na cor da família, como na prancha.
+  const { Icone, cor } = ICONE_DO_TIPO[aviso.type] ?? ICONE_PADRAO;
   const conteudo = (
     <>
       <span
         aria-hidden
-        className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${naoLida ? "bg-accent" : "bg-transparent"}`}
-      />
+        className={`inline-flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-[10px] ${cor}`}
+      >
+        <Icone size={16} />
+      </span>
       <span className="min-w-0 flex-1">
         <span className={`block text-md ${inacessivel ? "text-ink-faint" : "text-ink"}`}>
           {naoLida && <span className="sr-only">Não lida: </span>}
@@ -366,11 +401,10 @@ function LinhaDeAviso({
 
   return (
     <li
-      // Redesign (fatia 5): nao lida = filete no bordo esquerdo + bolinha, e nao
-      // a linha inteira tingida -- com cinco nao lidas seguidas o tingido virava
-      // um bloco azul sem separacao.
-      className={`flex items-start gap-2 border-b border-border py-2.5 pr-3 last:border-b-0 ${
-        naoLida ? "border-l-[3px] border-l-accent pl-2.5" : "border-l-[3px] border-l-transparent pl-2.5"
+      // Redesign (fatias 5 e 7): cada aviso e um cartao; nao lida = filete no
+      // bordo esquerdo, e nao a linha inteira tingida.
+      className={`flex items-start gap-3 rounded-xl border border-border bg-surface py-3 pr-3 transition-[border-color] duration-200 hover:border-accent ${
+        naoLida ? "border-l-[3px] border-l-accent pl-3" : "border-l-[3px] border-l-transparent pl-3"
       }`}
     >
       {destino ? (
