@@ -61,9 +61,8 @@ import { useActiveTeam, useActiveTeamId } from "@/lib/useActiveTeam";
 
 import { motion } from "motion/react";
 import { Esqueleto } from "@/components/Loading";
-import { useEntrada } from "@/components/Entrada";
+import Entrada, { useEntrada } from "@/components/Entrada";
 import { useAvisar } from "@/components/Toasts";
-import { useDrawnOutline } from "@/components/AnimatedOutline";
 const RELATION_LABEL: Record<string, string> = {
   assignee: "Responsável",
   creator: "Criei",
@@ -733,34 +732,30 @@ function Minhas() {
   // tarefa; grupos em ordem cronologica; sem-prazo por ultimo. Agrupa sobre a
   // lista FILTRADA. due_date e "YYYY-MM-DD" -> ordenacao por string ja e cronologica.
   //
-  // Redesign (fatia 7): os grupos passam a ser POR URGÊNCIA, como a prancha --
-  // Atrasadas, Vencem hoje, Próximas (por data) e Sem prazo. Quem decide
-  // "atrasada" é a coluna (`deadlineTonePorColuna`), a mesma regra do card.
+  //
+  // ⚠️ POR DIA, e não por urgência (decisão dela, 21/10: "quero continuar com
+  // o formato de separar por data de entrega"). O redesign fica só no desenho
+  // da linha e na COR do cabeçalho: dia passado em vermelho, hoje em âmbar.
   const grupos = useMemo(() => {
     const hoje = agoraNoWorkspace().data;
-    const porId = new Map((colunas ?? []).map((c) => [c.id, c]));
-    const atrasadas: MyTaskItem[] = [];
-    const vencemHoje: MyTaskItem[] = [];
-    const proximas: MyTaskItem[] = [];
-    const semData: MyTaskItem[] = [];
+    const map = new Map<string, MyTaskItem[]>();
     for (const t of filtrados) {
-      if (!t.due_date) {
-        semData.push(t);
-        continue;
-      }
-      // A mesma busca de `colunaDe`, que so e declarada mais abaixo.
-      const col = posicaoDaTarefa.get(t.id)?.origem.coluna ?? porId.get(t.column_id);
-      const tone = col ? deadlineTonePorColuna(col, t.due_date, t.is_archived, t.due_time) : null;
-      if (tone === "overdue") atrasadas.push(t);
-      else if (t.due_date === hoje) vencemHoje.push(t);
-      else proximas.push(t);
+      const key = t.due_date ?? "";
+      const arr = map.get(key);
+      if (arr) arr.push(t);
+      else map.set(key, [t]);
     }
-    const porData = (a: MyTaskItem, b: MyTaskItem) =>
-      (a.due_date ?? "") < (b.due_date ?? "") ? -1 : (a.due_date ?? "") > (b.due_date ?? "") ? 1 : 0;
-    atrasadas.sort(porData);
-    proximas.sort(porData);
-    return { atrasadas, vencemHoje, proximas, semData };
-  }, [filtrados, posicaoDaTarefa, colunas]);
+    const comData = [...map.entries()]
+      .filter(([k]) => k !== "")
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      .map(([data, tarefas]) => ({
+        data,
+        tarefas,
+        tom: data < hoje ? "danger" : data === hoje ? "amber" : "faint",
+      }));
+    const semData = map.get("") ?? [];
+    return { comData, semData };
+  }, [filtrados]);
 
   // Modo QUADRO: filtra so por relacao (o status vira coluna, nao filtro) e
   // agrupa por status.
@@ -1302,15 +1297,13 @@ function Minhas() {
                 </button>
               </div>
             ) : (
-              <>
-                {(
-                  [
-                    { chave: "atrasadas", titulo: "Atrasadas", tom: "danger", tarefas: grupos.atrasadas },
-                    { chave: "hoje", titulo: "Vencem hoje", tom: "amber", tarefas: grupos.vencemHoje },
-                    { chave: "proximas", titulo: "Próximas", tom: "faint", tarefas: grupos.proximas },
-                    { chave: "sem", titulo: "Sem prazo", tom: "faint", tarefas: grupos.semData },
-                  ] as const
-                )
+              // `Entrada` embrulha cada grupo: a lista chega escalonada também
+              // quando se volta do quadro (21/10), e não só na primeira vez.
+              <Entrada>
+                {[
+                  ...grupos.comData.map((g) => ({ chave: g.data, titulo: rotuloData(g.data), tom: g.tom, tarefas: g.tarefas })),
+                  { chave: "sem", titulo: "Sem prazo", tom: "faint", tarefas: grupos.semData },
+                ]
                   .filter((g) => g.tarefas.length > 0)
                   .map((g) => (
                     <section key={g.chave} className="mb-5 flex flex-col gap-2">
@@ -1331,7 +1324,7 @@ function Minhas() {
                       {g.tarefas.map((t) => linhaTarefa(t))}
                     </section>
                   ))}
-              </>
+              </Entrada>
             )
           ) : porRelacao.length === 0 ? (
             <div className="muted" style={{ padding: "20px 2px", fontSize: 14 }}>
@@ -1490,21 +1483,17 @@ function Minhas() {
 // --- Kanban do minhas-tarefas (duplicado do Board de proposito: mantem o
 // quadro geral intocado). Coluna droppable + card draggable, reusando TaskCard. ---
 /**
- * Uma faixa clicável da lista — só a casca, com o contorno desenhado.
+ * Uma faixa clicável da lista — só a casca.
  *
- * ⚠️⚠️ ELA EXISTE PARA O CONTORNO, e não é só embrulho: o anel duro do
- * `.tappable:hover` saiu do CSS global em 10/09 e deu lugar ao traço que
- * corre, e o gancho que o desenha não pode ser chamado de dentro de
- * `linhaTarefa` -- aquela função roda uma vez por tarefa.
+ * ⚠️ O CONTORNO AZUL QUE CORRIA SAIU (decisão dela, 21/10: "quero só a
+ * animaçãozinha mesmo, igual rolou no quadro geral"): a linha é `card-elev`,
+ * sobe no hover como o card do quadro, e o foco de teclado vem da regra
+ * global `[tabindex]:focus-visible`.
  *
  * ⚠️ E ELA LEVA SÓ `onAbrir` E `style`, e não a tarefa: passar `t` faria esta
  * casca conhecer o formato da linha, e aí ela deixaria de ser casca. O
  * conteúdo continua sendo montado em `linhaTarefa`, onde estão `colunaDe`,
  * `rotuloDe` e o resto do fechamento.
- *
- * ⚠️ `radius` 0: a faixa não tem raio -- as linhas se dividem por borda dentro
- * de um contêiner que tem o raio. Um traço arredondado no meio de uma lista de
- * cantos retos é pior que nenhum.
  *
  * ⚠️ O `onKeyDown` vem junto: a faixa é `role="button"`, então Enter e Espaço
  * TÊM de abrir. Deixá-lo em `linhaTarefa` faria a casca prometer um papel que
@@ -1521,7 +1510,6 @@ function FaixaClicavel({
   className?: string;
   children: React.ReactNode;
 }) {
-  const { target, outline } = useDrawnOutline();
   return (
     <div
       role="button"
@@ -1534,11 +1522,8 @@ function FaixaClicavel({
           onAbrir();
         }
       }}
-      {...target}
-      // ⚠️ `position: relative` é o que faz o contorno medir ESTA faixa.
-      style={{ position: "relative", cursor: "pointer", ...style }}
+      style={{ cursor: "pointer", ...style }}
     >
-      {outline}
       {children}
     </div>
   );
