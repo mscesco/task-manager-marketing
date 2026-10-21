@@ -68,7 +68,7 @@ export default function FilterPicker({
         aria-haspopup="dialog"
         aria-expanded={open}
         onClick={() => (open ? close() : setOpen(true))}
-        className={`flex h-9 min-w-[190px] max-w-[260px] items-center gap-2 rounded-full border bg-surface px-3 text-base transition-[border-color] duration-150 hover:border-accent ${
+        className={`flex h-9 min-w-[190px] max-w-[260px] items-center gap-2 rounded-[10px] border bg-surface px-3 text-base transition-[border-color] duration-150 hover:border-accent ${
           current ? "border-accent" : "border-border"
         }`}
       >

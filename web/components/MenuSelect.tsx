@@ -103,7 +103,7 @@ export default function MenuSelect<T extends string>({
                       setIsOpen(false);
                       onSelect(o.id);
                     }}
-                    className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[13px] font-medium ${
+                    className={`flex min-h-9 w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[13px] font-medium ${
                       selecionada
                         ? "bg-accent-soft text-accent"
                         : "text-ink-soft hover:bg-surface-2"

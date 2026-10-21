@@ -222,7 +222,7 @@ function SwitcherItem({
       <a
         href={href}
         role="menuitem"
-        className={`flex items-center gap-2 rounded-lg px-2 py-1.5 text-[13px] font-medium ${
+        className={`flex min-h-9 items-center gap-2 rounded-lg px-2.5 py-1.5 text-[13px] font-medium ${
           active ? "bg-accent-soft text-accent" : "text-ink-soft hover:bg-surface-2"
         }`}
       >
