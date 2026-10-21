@@ -171,7 +171,7 @@ function Editor() {
   const vizinhos = lista.length > 0 ? lista : [form];
 
   return (
-    <div className="grid items-start gap-5 md:grid-cols-[280px_minmax(0,1fr)]">
+    <div className="grid items-start gap-5 md:grid-cols-[340px_minmax(0,1fr)]">
       {/* ---- a coluna dos formulários do time (redesign, fatia 7) ---- */}
       <aside className="flex flex-col gap-2" aria-label="Formulários do time">
         {/* ⚠️ O VOLTAR EXISTE PORQUE ELE JÁ FOI ESQUECIDO UMA VEZ, na tela de
@@ -213,7 +213,9 @@ function Editor() {
         })}
       </aside>
 
-      <div className="min-w-0 max-w-[900px]">
+      {/* O editor ocupa o resto da largura (21/10: o teto de 900px deixava um
+          vão enorme à direita a 1920). */}
+      <div className="min-w-0">
       <PageHeader
         title={form.title}
         count={`${total} ${total === 1 ? "pergunta" : "perguntas"} em ${
