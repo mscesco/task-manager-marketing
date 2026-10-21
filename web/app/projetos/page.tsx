@@ -24,23 +24,9 @@ import {
 import { rootsForPerson } from "@/lib/contextSwitcher";
 import { semMarcacao } from "@/lib/markdown";
 
+import { PROJECT_STATUS, PROJECT_STATUS_COLOR, PROJECT_STATUS_LABEL } from "@/lib/status";
+
 // Projeto e "pasta" -- tudo no time raiz, todos veem. Designar e so nas tasks.
-// Redesign (fatia 5): tokens no lugar de hex, para a cor virar no tema escuro e
-// servir de texto no `Badge tone="soft"` (contraste medido com a tinta no
-// globals.css: teal 5.16/7.19, bloqueado e cancelado pelos stops da Spec 031).
-const PROJECT_STATUS: { key: ProjectStatus; label: string; color: string }[] = [
-  { key: "PLANNING", label: "Planejamento", color: "var(--status-backlog-text)" },
-  { key: "ACTIVE", label: "Ativo", color: "var(--teal)" },
-  { key: "BLOCKED", label: "Bloqueado", color: "var(--status-blocked-text)" },
-  { key: "COMPLETED", label: "Concluído", color: "var(--status-progress-text)" },
-  { key: "CANCELLED", label: "Cancelado", color: "var(--status-cancel-text)" },
-];
-const STATUS_LABEL: Record<string, string> = Object.fromEntries(
-  PROJECT_STATUS.map((s) => [s.key, s.label])
-);
-const STATUS_COLOR: Record<string, string> = Object.fromEntries(
-  PROJECT_STATUS.map((s) => [s.key, s.color])
-);
 
 export default function ProjetosPage() {
   return (
@@ -362,15 +348,15 @@ function CartaoDeProjeto({ p }: { p: Project }) {
       href={`/projetos/${p.id}`}
       className="flex min-h-[150px] flex-col gap-3 rounded-xl border border-border bg-surface p-[18px] text-ink no-underline transition-[transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:shadow-[var(--glow)]"
       // So a COR do filete e inline: ela vem do status (web/AGENTS.md §11).
-      style={{ borderTop: `3px solid ${STATUS_COLOR[p.status] || "var(--border)"}` }}
+      style={{ borderTop: `3px solid ${PROJECT_STATUS_COLOR[p.status] || "var(--border)"}` }}
     >
       <span className="flex items-start gap-2.5">
         {/* `min-w-0` + truncagem: nome longo nao empurra o selo para fora. */}
         <strong className="min-w-0 flex-1 text-md font-bold leading-snug [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2] overflow-hidden">
           {p.title}
         </strong>
-        <Badge tone="soft" size="sm" color={STATUS_COLOR[p.status]} className="shrink-0">
-          {STATUS_LABEL[p.status] || p.status}
+        <Badge tone="soft" size="sm" color={PROJECT_STATUS_COLOR[p.status]} className="shrink-0">
+          {PROJECT_STATUS_LABEL[p.status] || p.status}
         </Badge>
       </span>
       {/* Spec 052, fatia C: o resumo sai SEM a marcação -- `**` e `##` numa

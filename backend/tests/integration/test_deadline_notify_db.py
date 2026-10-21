@@ -7,7 +7,7 @@ local = 2026-06-25. Cobre os criterios 1-8 da spec + o endpoint trancado.
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, time
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -275,6 +275,24 @@ async def test_criador_inativo_sem_responsavel_nao_notifica_ninguem(db) -> None:
     # ESTA linha que muda de cor primeiro.
     await db.refresh(t)
     assert t.overdue_notified_for == OVERDUE
+
+
+# 12 -- a hora conta (auditoria de 21/10). NOW e 09:00 em Sao Paulo: vencer hoje
+# as 8h ja e atraso; as 10h ainda e "em breve" -- como o selo do quadro diz.
+async def test_hoje_com_hora_passada_e_atrasada_e_nao_em_breve(db) -> None:
+    ws, team, user = await _ws(db)
+    passou = await _task(db, ws=ws, team=team, user=user, due=HOJE, title="8h")
+    passou.due_time = time(8, 0)
+    ainda = await _task(db, ws=ws, team=team, user=user, due=HOJE, title="10h")
+    ainda.due_time = time(10, 0)
+    await db.flush()
+
+    r = await DeadlineNotifyService(db).run(now=NOW)
+    assert (r["overdue_count"], r["due_soon_count"]) == (1, 1)
+    assert await _count(db, recipient=user, type_="TASK_OVERDUE", task_id=passou.id) == 1
+    assert await _count(db, recipient=user, type_="TASK_DUE_SOON", task_id=passou.id) == 0
+    assert await _count(db, recipient=user, type_="TASK_DUE_SOON", task_id=ainda.id) == 1
+    assert await _count(db, recipient=user, type_="TASK_OVERDUE", task_id=ainda.id) == 0
 
 
 # 7 -- endpoint trancado: sem token / token errado -> 401; token certo -> 200.

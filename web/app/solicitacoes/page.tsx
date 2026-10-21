@@ -161,6 +161,9 @@ function Solicitacoes() {
   // -- levando o "Abrir a tarefa" que acabou de aparecer. Ele é relido pelo
   // protocolo depois de cada ação (ver `recarregar`).
   const [escolhido, setEscolhido] = useState<Batch | null>(null);
+  // O escolhido de AGORA, para o `recarregar` em voo não devolver o painel ao
+  // envio anterior (auditoria de 21/10).
+  const escolhidoRef = useRef<Batch | null>(null);
   const [rejeitarItem, setRejeitarItem] = useState<string | null>(null);
 
   const abaAtual = ABAS.find((a) => a.valor === aba)!;
@@ -268,13 +271,17 @@ function Solicitacoes() {
         size: 5,
       });
       const novo = r.items.find((b) => b.batch_id === escolhido.batch_id);
-      if (novo) setEscolhido(novo);
+      if (novo && escolhidoRef.current?.batch_id === novo.batch_id) {
+        escolhidoRef.current = novo;
+        setEscolhido(novo);
+      }
     } catch {
       /* o painel fica com o que tinha; a lista já mostra o erro, se houver */
     }
   }
 
   function escolher(envio: Batch, rejeitar: string | null = null) {
+    escolhidoRef.current = envio;
     setEscolhido(envio);
     setRejeitarItem(rejeitar);
   }

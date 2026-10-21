@@ -109,20 +109,33 @@ class LiveHub:
             await self._soltar()
             self._pg, self._fechar = await self._conectar()
             await self._pg.add_listener(CANAL, self._ao_avisar)
-            # Caiu a conexao: esquece; o proximo `subscribe` reabre. Os canais
-            # abertos vencem em 60 s e reconectam -- e ai reabrem a escuta.
-            self._pg.add_termination_listener(lambda _c: self._esquecer())
+            # Caiu a conexao: devolve a vaga; o proximo `subscribe` reabre. Os
+            # canais abertos vencem em 60 s e reconectam -- e ai reabrem a escuta.
+            self._pg.add_termination_listener(self._caiu)
             logger.info("base.live.listening")
 
-    def _esquecer(self) -> None:
+    def _caiu(self, conexao: Any) -> None:
+        """A conexao de escuta caiu. DEVOLVE a vaga do pool agora (auditoria de
+        21/10) -- antes so zerava os ponteiros, e a vaga ficava presa ate o
+        coletor passar. Captura e zera ANTES de agendar: se um `subscribe`
+        reabrir antes da tarefa rodar, ela nao pode fechar a conexao nova."""
+        if conexao is not self._pg:
+            return
+        pg, fechar = self._pg, self._fechar
         self._pg = None
         self._fechar = None
         logger.warning("base.live.connection_lost")
+        asyncio.get_running_loop().create_task(self._devolver(pg, fechar))
 
     async def _soltar(self) -> None:
         pg, fechar = self._pg, self._fechar
         self._pg = None
         self._fechar = None
+        await self._devolver(pg, fechar)
+
+    async def _devolver(
+        self, pg: Any, fechar: Callable[[], Awaitable[None]] | None
+    ) -> None:
         if pg is not None and not pg.is_closed():
             with contextlib.suppress(Exception):
                 await pg.remove_listener(CANAL, self._ao_avisar)

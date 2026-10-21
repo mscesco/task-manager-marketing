@@ -12,6 +12,7 @@ a coluna em seguida. Sem ela, a tela pede a escolha em vez de desenhar.
 
 from __future__ import annotations
 
+import json
 import uuid
 from typing import Any
 
@@ -35,9 +36,17 @@ _LISTAS = ("filters", "sorts", "hidden_columns", "column_order")
 #: `frozen_column` (fatia I): "Congelar" -- a coluna ATE a qual a tabela fica
 #: presa na rolagem horizontal. Ausente = so o titulo.
 _TEXTOS = ("group_by", "date_column", "frozen_column")
+#: Teto do `config` (auditoria de 21/10): ele vai para TODO leitor da base, e
+#: um `filters` de megabytes gravado por um PATCH deixaria a tela de todos lenta.
+CONFIG_MAX_BYTES = 20_000
 
 
 def clean_config(config: dict[str, Any]) -> dict[str, Any]:
+    if len(json.dumps(config)) > CONFIG_MAX_BYTES:
+        raise ValidationError(
+            "Configuracao de visao grande demais.",
+            details={"field": "config", "max_bytes": CONFIG_MAX_BYTES},
+        )
     desconhecidas = set(config) - set(_LISTAS) - set(_TEXTOS)
     if desconhecidas:
         raise ValidationError(

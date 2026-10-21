@@ -11,8 +11,13 @@ objeto `ValueError`, que o `json.dumps` do Starlette recusa -- sai **500, nao
 from __future__ import annotations
 
 import uuid
+from typing import Annotated
 
 from pydantic import BaseModel, Field
+
+#: Opcoes de uma pergunta (auditoria de 21/10): a lista vai SEM LOGIN no
+#: formulario publico, entao tem teto -- 200 opcoes de ate 120 caracteres.
+Opcoes = list[Annotated[str, Field(max_length=120)]]
 
 
 class FormCreateRequest(BaseModel):
@@ -73,7 +78,7 @@ class QuestionCreateRequest(BaseModel):
     #: Um dos `QuestionKind`. A recusa e do dominio -- ver o topo do modulo.
     kind: str = Field(max_length=20)
     required: bool = False
-    options: list[str] = Field(default_factory=list)
+    options: Opcoes = Field(default_factory=list, max_length=200)
     placeholder: str | None = Field(default=None, max_length=200)
     help: str | None = Field(default=None, max_length=300)
 
@@ -118,7 +123,7 @@ class QuestionUpdateRequest(BaseModel):
     label: str | None = Field(default=None, max_length=300)
     kind: str | None = Field(default=None, max_length=20)
     required: bool | None = None
-    options: list[str] | None = None
+    options: Opcoes | None = Field(default=None, max_length=200)
     placeholder: str | None = Field(default=None, max_length=200)
     help: str | None = Field(default=None, max_length=300)
 

@@ -28,6 +28,7 @@ import uuid
 from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime, time
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -1519,6 +1520,21 @@ class TaskService:
                         "parent_board_id": str(new_parent.board_id),
                     },
                 )
+            # TRAVA AS DUAS LINHAS antes de conferir o ciclo (auditoria de
+            # 21/10): dois `/move` cruzados (A sob B, B sob A) passavam na
+            # checagem e o segundo gravava um ciclo no `ltree`. Em ordem de id,
+            # para os dois pedidos travarem na mesma ordem; `populate_existing`
+            # recarrega `path` dos dois depois que o outro pedido commitou.
+            await self._session.execute(
+                select(Task)
+                .where(
+                    Task.id.in_((task.id, new_parent.id)),
+                    Task.workspace_id == task.workspace_id,
+                )
+                .order_by(Task.id)
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            )
             # Ciclo: novo pai eh descendente da task?
             if await self._repo.detect_cycle(
                 task=task, new_parent_id=new_parent_task_id
