@@ -117,6 +117,7 @@ function Tile({
         <StatTile
           label={inPeriod ? "Concluídas no período" : "Concluídas na semana"}
           value={data.week.done}
+          total={data.week.total}
           suffix={`de ${data.week.total}`}
           note={weekLabel(data.week.start, data.week.end)}
           highlight
@@ -184,6 +185,7 @@ function StatTile({
   label,
   value,
   suffix,
+  total,
   note,
   href,
   highlight = false,
@@ -193,6 +195,8 @@ function StatTile({
   label: string;
   value: number;
   suffix?: string;
+  /** Com `total`, o tile ganha uma barra de progresso (o destaque da semana). */
+  total?: number;
   note: string;
   href?: string;
   highlight?: boolean;
@@ -220,12 +224,15 @@ function StatTile({
           </Link>
         )}
       </div>
-      <p className="m-0 mt-3 flex items-baseline gap-1.5">
-        <strong className={`text-[40px] font-bold leading-none ${danger ? "text-danger" : ""}`}>
+      <p className="m-0 mt-3 flex items-baseline gap-2">
+        <strong className={`text-[44px] font-extrabold leading-none tracking-[-0.03em] ${danger ? "text-danger" : ""}`}>
           {value}
         </strong>
-        {suffix && <span className={`text-lg ${highlight ? "" : "text-ink-soft"}`}>{suffix}</span>}
+        {suffix && <span className={`text-lg font-semibold ${highlight ? "" : "text-ink-soft"}`}>{suffix}</span>}
       </p>
+      {total !== undefined && total > 0 && (
+        <Bar className="mt-3" parts={[{ fraction: value / total, tone: highlight ? "contrast" : "accent" }]} />
+      )}
       {/* ⚠️ Sem `opacity` no destaque: branco a 90% sobre o azul cai abaixo
           de 4.5 (revisão de 15/10). */}
       <p className={`m-0 mt-2 text-sm ${highlight ? "" : "text-ink-faint"}`}>{note}</p>
@@ -715,20 +722,23 @@ function Bar({
   order = 0,
   className = "",
 }: {
-  parts: { fraction: number; tone: "accent" | "danger" }[];
+  /** `contrast` = branco, para a barra dentro do tile azul de destaque. */
+  parts: { fraction: number; tone: "accent" | "danger" | "contrast" }[];
   order?: number;
   className?: string;
 }) {
   const reduce = useReducedMotion();
   return (
     <span
-      className={`relative block h-2 overflow-hidden rounded-full bg-surface-2 ${className}`}
+      className={`relative block h-2 overflow-hidden rounded-full ${parts.some((p) => p.tone === "contrast") ? "bg-white/25" : "bg-surface-2"} ${className}`}
       aria-hidden="true"
     >
       {parts.map((part, i) => (
         <motion.span
           key={i}
-          className={`absolute inset-0 origin-left ${part.tone === "danger" ? "bg-danger" : "bg-accent"}`}
+          className={`absolute inset-0 origin-left ${
+            part.tone === "danger" ? "bg-danger" : part.tone === "contrast" ? "bg-white" : "bg-accent"
+          }`}
           initial={reduce ? false : { scaleX: 0 }}
           animate={{ scaleX: Math.min(1, Math.max(0, part.fraction)) }}
           transition={reduce ? { duration: 0 } : { ...GROW, delay: order * STAGGER }}

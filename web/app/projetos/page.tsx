@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import AppShell from "@/components/AppShell";
+import Badge from "@/components/Badge";
 import EmptyState from "@/components/EmptyState";
 import Card from "@/components/Card";
 import PageHeader from "@/components/PageHeader";
@@ -22,12 +23,15 @@ import { rootsForPerson } from "@/lib/contextSwitcher";
 import { semMarcacao } from "@/lib/markdown";
 
 // Projeto e "pasta" -- tudo no time raiz, todos veem. Designar e so nas tasks.
+// Redesign (fatia 5): tokens no lugar de hex, para a cor virar no tema escuro e
+// servir de texto no `Badge tone="soft"` (contraste medido com a tinta no
+// globals.css: teal 5.16/7.19, bloqueado e cancelado pelos stops da Spec 031).
 const PROJECT_STATUS: { key: ProjectStatus; label: string; color: string }[] = [
-  { key: "PLANNING", label: "Planejamento", color: "#8b8f9a" },
-  { key: "ACTIVE", label: "Ativo", color: "#2e7d32" },
-  { key: "BLOCKED", label: "Bloqueado", color: "#c62828" },
-  { key: "COMPLETED", label: "Concluído", color: "#1565c0" },
-  { key: "CANCELLED", label: "Cancelado", color: "#9e9e9e" },
+  { key: "PLANNING", label: "Planejamento", color: "var(--status-backlog-text)" },
+  { key: "ACTIVE", label: "Ativo", color: "var(--teal)" },
+  { key: "BLOCKED", label: "Bloqueado", color: "var(--status-blocked-text)" },
+  { key: "COMPLETED", label: "Concluído", color: "var(--status-progress-text)" },
+  { key: "CANCELLED", label: "Cancelado", color: "var(--status-cancel-text)" },
 ];
 const STATUS_LABEL: Record<string, string> = Object.fromEntries(
   PROJECT_STATUS.map((s) => [s.key, s.label])
@@ -402,15 +406,14 @@ function LinhaDeProjeto({ p, primeira }: { p: Project; primeira: boolean }) {
               {/* O status vai para a DIREITA e é o que a Camila nomeou junto do
                   título como o conteúdo da faixa. `marginLeft: auto` só quando
                   não há descrição ocupando o meio. */}
-              <span
-                className="muted"
-                style={{
-                  fontSize: 12.5, flexShrink: 0,
-                  marginLeft: p.description?.trim() ? undefined : "auto",
-                }}
+              <Badge
+                tone="soft"
+                size="sm"
+                color={STATUS_COLOR[p.status]}
+                className={p.description?.trim() ? "shrink-0" : "ml-auto shrink-0"}
               >
                 {STATUS_LABEL[p.status] || p.status}
-              </span>
+              </Badge>
             </a>
   );
 }

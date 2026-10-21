@@ -366,8 +366,11 @@ function LinhaDeAviso({
 
   return (
     <li
-      className={`flex items-start gap-2 border-b border-border px-3 py-2.5 last:border-b-0 ${
-        naoLida ? "bg-accent-soft" : ""
+      // Redesign (fatia 5): nao lida = filete no bordo esquerdo + bolinha, e nao
+      // a linha inteira tingida -- com cinco nao lidas seguidas o tingido virava
+      // um bloco azul sem separacao.
+      className={`flex items-start gap-2 border-b border-border py-2.5 pr-3 last:border-b-0 ${
+        naoLida ? "border-l-[3px] border-l-accent pl-2.5" : "border-l-[3px] border-l-transparent pl-2.5"
       }`}
     >
       {destino ? (
