@@ -54,15 +54,17 @@ export default function LoginPage() {
           </span>
         </div>
 
-        <div className="relative my-auto h-[420px]" aria-hidden="true">
-          <div className="login-tile left-0 top-6 w-[300px]">
+        {/* Posicoes em porcentagem: o painel estreita com a janela e os
+            cartoezinhos nao podem vazar pela borda. */}
+        <div className="relative my-auto h-[420px] w-full max-w-[500px]" aria-hidden="true">
+          <div className="login-tile left-0 top-6 w-[60%]">
             <b className="block text-base font-bold">Campanha de matrícula 2027.1</b>
             <small className="mt-0.5 block text-sm opacity-85">Em andamento · vence sexta</small>
             <span className="mt-2.5 block h-1.5 rounded-full bg-white/20">
               <span className="block h-full w-[64%] rounded-full bg-accent" />
             </span>
           </div>
-          <div className="login-tile left-[230px] top-[140px] w-[260px]">
+          <div className="login-tile left-[46%] top-[140px] w-[52%]">
             <b className="block text-base font-bold">Semana da Psicologia</b>
             <small className="mt-0.5 block text-sm opacity-85">Arte aprovada · 3 subtarefas</small>
             <span className="mt-2.5 inline-flex gap-1.5">
@@ -70,7 +72,7 @@ export default function LoginPage() {
               <span className="rounded-full bg-amber-soft px-2 text-xs font-bold text-amber">Alta</span>
             </span>
           </div>
-          <div className="login-tile left-[60px] top-[262px] w-[240px]">
+          <div className="login-tile left-[12%] top-[262px] w-[48%]">
             <b className="block text-base font-bold">4 solicitações novas</b>
             <small className="mt-0.5 block text-sm opacity-85">a mais antiga chegou há 2 h</small>
           </div>

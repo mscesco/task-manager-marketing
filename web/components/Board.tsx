@@ -2095,7 +2095,10 @@ export default function Board({
         <button
           className="btn btn-primary"
           onClick={() => setCriando(true)}
-          style={{ marginLeft: "auto", padding: "8px 14px" }}
+          // Sem `marginLeft: auto` (passada visual de 21/10): o titulo ja
+          // empurra os controles para a direita, e o `auto` aqui abria um
+          // buraco entre o lapis e este botao.
+          style={{ padding: "8px 14px" }}
         >
           + Nova tarefa
         </button>
