@@ -19,6 +19,11 @@ Nao vale um request so para copiar.
 from __future__ import annotations
 
 from typing import Protocol
+from zoneinfo import ZoneInfo
+
+# O mesmo fuso de `tasks/domain/dashboard.py:TIMEZONE`; repetido aqui para o
+# modulo de dominio das solicitacoes nao importar o de tarefas.
+_FUSO = ZoneInfo("America/Sao_Paulo")
 
 
 class _Pedido(Protocol):
@@ -67,7 +72,10 @@ def briefing(pedido: _Pedido, rotulo: str | None = None) -> str:
         if pedido.batch_total > 1
         else ""
     )
-    recebida = getattr(pedido.created_at, "strftime", lambda _: "")("%d/%m/%Y")
+    # ⚠️ NO DIA DE BRASILIA (auditoria de 21/10): `created_at` e UTC, e um
+    # pedido das 21h30 virava "Recebida em" no dia SEGUINTE, para sempre, na
+    # descricao da tarefa.
+    recebida = pedido.created_at.astimezone(_FUSO).strftime("%d/%m/%Y")
 
     # ⚠️⚠️ NADA DE f-STRING COM CAMPO OPCIONAL AQUI. `f"{None}"` produz o
     # literal **"None"**, e este briefing vira a DESCRICAO de uma tarefa no

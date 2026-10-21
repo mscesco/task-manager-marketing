@@ -215,11 +215,18 @@ def to_number(v: Any) -> int | float | None:
             raise ConversionError("Numero invalido.")
         return int(v) if isinstance(v, float) and v.is_integer() else v
     s = str(v).strip().replace("R$", "").replace("%", "").replace(" ", "")
-    # "1.234,5" (pt-BR) e "1234.5" (ponto decimal): a virgula decide.
+    # "1.234,5" (pt-BR) e "1,234.56" (en-US, o que o Sheets em ingles exporta):
+    # com os DOIS separadores, o que aparece por ULTIMO e o decimal (auditoria
+    # de 21/10 -- tratar toda virgula como decimal fazia "1,234.56" virar 1,23).
+    # So virgula: decimal pt-BR.
     # ⚠️ E "1.200" SEM virgula e MIL E DUZENTOS, e nao 1,2 (o teste pegou):
     # ponto seguido de grupos de 3 digitos e separador de milhar.
-    if "," in s:
-        s = s.replace(".", "").replace(",", ".")
+    if "," in s and "." in s:
+        decimal = "," if s.rfind(",") > s.rfind(".") else "."
+        milhar = "." if decimal == "," else ","
+        s = s.replace(milhar, "").replace(decimal, ".")
+    elif "," in s:
+        s = s.replace(",", ".")
     elif _MILHAR.match(s):
         s = s.replace(".", "")
     try:
@@ -256,7 +263,10 @@ def to_date(v: Any) -> str | None:
 
 
 def to_checkbox(v: Any) -> bool | None:
-    if v is None:
+    # ⚠️ `_vazio`, e nao `is None`: no CSV a celula em branco chega como "",
+    # que esta em `_NAO` -- importar de volta uma exportacao enchia de "Nao"
+    # tudo o que estava vazio (auditoria de 21/10).
+    if _vazio(v):
         return None
     if isinstance(v, bool):
         return v

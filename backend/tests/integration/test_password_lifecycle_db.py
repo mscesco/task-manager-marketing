@@ -105,6 +105,42 @@ async def test_login_with_expired_temp_password_is_rejected(db) -> None:
         )
 
 
+async def test_refresh_devolve_o_MESMO_refresh_token(db) -> None:
+    """⚠️ Auditoria de 21/10: o refresh emitia um refresh novo de 7 dias a
+    cada chamada, e a sessao nunca vencia. Agora o refresh e o do login."""
+    ws, team, admin = await _ws_admin(db)
+    provisioned = await _create_member(db, ws, team, admin)
+    ws_row = await db.get(Workspace, ws)
+
+    svc = AuthService(db)
+    tokens = await svc.login(
+        email=provisioned.user.email,
+        password=provisioned.temporary_password,
+        workspace_slug=ws_row.slug,
+    )
+    renovados = await svc.refresh(refresh_token=tokens.refresh_token)
+    assert renovados.access_token
+    assert renovados.refresh_token == tokens.refresh_token
+
+
+async def test_change_password_com_provisoria_VENCIDA_e_recusada(db) -> None:
+    """⚠️ Auditoria de 21/10: so o login checava o vencimento. A sessao aberta
+    antes das 72h chegava aqui pelo refresh e trocava a senha vencida."""
+    ws, team, admin = await _ws_admin(db)
+    provisioned = await _create_member(db, ws, team, admin)
+    provisioned.user.password_expires_at = datetime.now(UTC) - timedelta(hours=1)
+    await db.flush()
+
+    with pytest.raises(AuthenticationError):
+        await AuthService(db).change_password(
+            user_id=provisioned.user.id,
+            current_password=provisioned.temporary_password,
+            new_password="novaSenhaForte123",
+        )
+    refreshed = await db.get(User, provisioned.user.id)
+    assert refreshed.must_change_password is True
+
+
 # --------------------------------------------------------
 # Troca de senha (destrava o gate)
 # --------------------------------------------------------
