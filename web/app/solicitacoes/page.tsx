@@ -290,7 +290,7 @@ function Solicitacoes() {
     return (
       <EmptyState
         title="Você não tem acesso às solicitações"
-        description="A fila de solicitações é do time principal — apenas administradores e gestores podem visualizá-la. Se você precisa acompanhar uma demanda, fale com o time de marketing."
+        description="A fila de solicitações é do time principal — apenas administradores e gestores podem visualizá-la. Se você precisa acompanhar uma demanda, fale com o gestor do seu time."
       />
     );
   }

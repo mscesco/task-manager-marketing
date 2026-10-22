@@ -879,7 +879,7 @@ export default function FormularioSolicitacao({
       <footer style={{ marginTop: 32, textAlign: "center" }}>
         <p className="muted" style={{ fontSize: 12 }}>
           Os prazos são estimados e contados a partir da aprovação da solicitação
-          pelo time de marketing.
+          pelo time responsável.
           {hidratado && passo > 0 && " Seu preenchimento fica salvo neste navegador."}
         </p>
       </footer>
