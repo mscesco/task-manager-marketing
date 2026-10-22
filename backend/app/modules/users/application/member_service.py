@@ -15,6 +15,7 @@ Work, acionado no router.
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -534,7 +535,7 @@ class MemberService:
         user = User(
             name=name,
             email=email,
-            password_hash=hash_password(temporary_password),
+            password_hash=await asyncio.to_thread(hash_password, temporary_password),
             is_active=True,
             must_change_password=True,
             password_expires_at=_temp_password_expiry(),
@@ -598,7 +599,7 @@ class MemberService:
             )
 
         temporary_password = generate_temporary_password()
-        user.password_hash = hash_password(temporary_password)
+        user.password_hash = await asyncio.to_thread(hash_password, temporary_password)
         user.must_change_password = True
         user.password_expires_at = _temp_password_expiry()
         # Spec 030 (D3): derruba as sessoes ATIVAS do alvo. E esta a acao de
