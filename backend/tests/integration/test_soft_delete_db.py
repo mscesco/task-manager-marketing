@@ -110,3 +110,41 @@ async def test_history_deleted_com_cascade_count(db) -> None:
     )
     assert len(rows) == 1
     assert rows[0]["cascade_count"] == 1
+
+
+async def test_apagar_PROJETO_deixa_as_tarefas_avulsas_e_abriveis(db) -> None:
+    """⚠️ Auditoria de 21/10: apagar o projeto so marcava `project.deleted_at`.
+
+    As tarefas continuavam nas listas (o join com projeto nao filtra apagado),
+    mas abrir, editar ou arquivar dava 404 ate para o ADMIN: a guarda de
+    visibilidade nao acha o projeto e trata como inconsistencia. A tela promete
+    que elas "ficam no quadro sem projeto" -- e e isso que o teste prende.
+    """
+    from app.modules.tasks.application.project_service import ProjectService
+
+    ctx, proj, team = await _admin_proj(db)
+    with acting_as(**ctx):
+        svc = TaskService(db)
+        mae = await svc.create(
+            CreateTaskCommand(
+                title="mae",
+                project_id=proj,
+                team_id=team,
+                assignee_ids=[ctx["user_id"]],
+            )
+        )
+        filha = await svc.create(
+            CreateTaskCommand(
+                title="filha",
+                project_id=proj,
+                team_id=team,
+                parent_task_id=mae.id,
+                assignee_ids=[ctx["user_id"]],
+            )
+        )
+        await ProjectService(db).soft_delete(project_id=proj)
+        await db.flush()
+
+        for t in (mae, filha):
+            aberta = await svc.get(t.id)
+            assert aberta.project_id is None

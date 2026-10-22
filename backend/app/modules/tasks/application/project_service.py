@@ -43,12 +43,12 @@ import uuid
 from dataclasses import dataclass
 from datetime import date
 
-from sqlalchemy import func
+from sqlalchemy import func, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger
 from app.core.tenant import require_tenant
-from app.db.models import Project
+from app.db.models import Project, Task
 from app.db.models.enums import PriorityLevel, ProjectStatus
 from app.modules.auth.domain import team_scope
 from app.modules.tasks.domain.dates import validate_dates
@@ -387,9 +387,40 @@ class ProjectService:
         self._assert_verbo_no_time("project.delete", project.team_id)
 
         project.deleted_at = func.now()  # type: ignore[assignment]
+        # ⚠️ AS TAREFAS FICAM, AVULSAS (auditoria de 21/10). So marcar o projeto
+        # deixava as tarefas nas listas e 404 ao abrir: a guarda de
+        # visibilidade nao acha projeto apagado e trata como inconsistencia.
+        # A tela ja promete "ficam no quadro sem projeto".
+        soltas = list(
+            (
+                await self._session.execute(
+                    update(Task)
+                    .where(
+                        Task.project_id == project.id,
+                        Task.workspace_id == project.workspace_id,
+                    )
+                    .values(project_id=None)
+                    .returning(Task.id)
+                )
+            )
+            .scalars()
+            .all()
+        )
         await self._session.flush()
+        if soltas:
+            from app.modules.tasks.application.collaboration_service import (
+                CollaborationService,
+            )
 
-        logger.info("project.deleted", project_id=str(project.id))
+            # Sem projeto, quem ve e o time da tarefa: seguidor que so via
+            # pelo time do projeto sai, como no `move` (Spec 053, D12).
+            await CollaborationService(
+                self._session
+            ).remove_watchers_without_reach(task_ids=soltas)
+
+        logger.info(
+            "project.deleted", project_id=str(project.id), tasks_released=len(soltas)
+        )
         return project
 
     @staticmethod
