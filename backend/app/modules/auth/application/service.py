@@ -14,6 +14,7 @@ tenant.
 
 from __future__ import annotations
 
+import asyncio
 import math
 import uuid
 from datetime import UTC, datetime
@@ -85,7 +86,9 @@ class AuthService:
         # recusas (401, nunca 429): um 429 diferenciado avisaria ao atacante
         # que a conta existe e que ele esta no alvo certo.
         if not account_login_limiter.check(chave_conta).allowed:
-            verify_password(password, _TIMING_EQUALIZER_HASH)
+            # ⚠️ TODO bcrypt deste arquivo roda em thread (auditoria de 21/10):
+            # ~250 ms de CPU no loop congelavam o worker inteiro a cada login.
+            await asyncio.to_thread(verify_password, password, _TIMING_EQUALIZER_HASH)
             logger.info("auth.login_blocked_account")
             raise AuthenticationError("Credenciais invalidas.")
 
@@ -97,7 +100,7 @@ class AuthService:
         ).scalar_one_or_none()
         if workspace is None:
             # Equaliza o tempo: roda bcrypt mesmo sem workspace (ver constante).
-            verify_password(password, _TIMING_EQUALIZER_HASH)
+            await asyncio.to_thread(verify_password, password, _TIMING_EQUALIZER_HASH)
             account_login_limiter.record(chave_conta)
             raise AuthenticationError("Credenciais invalidas.")
 
@@ -116,7 +119,7 @@ class AuthService:
         ).scalar_one_or_none()
         if user is None or not user.is_active:
             # Equaliza o tempo: roda bcrypt mesmo sem usuario (ver constante).
-            verify_password(password, _TIMING_EQUALIZER_HASH)
+            await asyncio.to_thread(verify_password, password, _TIMING_EQUALIZER_HASH)
             # Spec 030 (D5): conta INEXISTENTE tambem enche o balde. Se so a
             # conta real freasse, o proprio freio viraria sonda -- bastaria
             # mandar 11 tentativas para descobrir se um e-mail tem conta.
@@ -124,7 +127,7 @@ class AuthService:
             raise AuthenticationError("Credenciais invalidas.")
 
         # 3. Confere a senha.
-        if not verify_password(password, user.password_hash):
+        if not await asyncio.to_thread(verify_password, password, user.password_hash):
             logger.info("auth.login_failed", workspace_id=str(workspace.id))
             account_login_limiter.record(chave_conta)
             raise AuthenticationError("Credenciais invalidas.")
@@ -234,7 +237,9 @@ class AuthService:
         decisao = change_password_limiter.check(chave)
         if not decisao.allowed:
             raise RateLimitError(retry_after=math.ceil(decisao.retry_after))
-        if not verify_password(current_password, user.password_hash):
+        if not await asyncio.to_thread(
+            verify_password, current_password, user.password_hash
+        ):
             logger.info("auth.change_password_bad_current", user_id=str(user_id))
             change_password_limiter.record(chave)
             raise AuthenticationError("Senha atual incorreta.")
@@ -246,7 +251,7 @@ class AuthService:
                 details={"field": "new_password"},
             )
 
-        user.password_hash = hash_password(new_password)
+        user.password_hash = await asyncio.to_thread(hash_password, new_password)
         user.must_change_password = False
         user.password_expires_at = None
         # Spec 030 (D3): derruba TODAS as sessoes desta pessoa. E o cenario

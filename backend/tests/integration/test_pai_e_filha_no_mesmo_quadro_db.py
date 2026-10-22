@@ -299,6 +299,42 @@ async def test_a_invariante_vale_para_a_SUBARVORE_inteira(db) -> None:
     assert filha.depth == 2
 
 
+async def test_mover_um_pai_reescreve_o_PATH_das_filhas_sem_repetir_rotulo(
+    db,
+) -> None:
+    """⚠️ O teste acima so olhava `depth`, e o `path` saia torto (21/10).
+
+    `reparent_subtree` cortava o path antigo com `subpath(path, old_depth)`, que
+    MANTEM o rotulo da propria tarefa: mover o Pai (com a Filha) para debaixo
+    do Avo deixava a Filha em `avo.pai.pai.filha`. Os filtros por `<@` seguiam
+    funcionando, entao nada na tela denunciava.
+    """
+    ws, _raiz, sub_a, _sub_b, user, arvore = await _mundo(db)
+    quadro = await _quadro_avulso(db, ws, user, arvore, sub_a)
+    avo = await _tarefa(db, ws, user, arvore, sub_a, "Avo", board_id=quadro.id)
+    pai = await _tarefa(db, ws, user, arvore, sub_a, "Pai", board_id=quadro.id)
+    filha = await _tarefa(
+        db, ws, user, arvore, sub_a, "Filha", board_id=quadro.id
+    )
+    rotulo = {t.id: str(t.path).split(".")[-1] for t in (avo, pai, filha)}
+
+    with acting_as(**_ctx(ws, user, arvore, mship(sub_a, "SUPERVISOR"))):
+        await TaskService(db).move(
+            task_id=filha.id, command=MoveTaskCommand(parent_task_id=pai.id)
+        )
+        await db.flush()
+        await TaskService(db).move(
+            task_id=pai.id, command=MoveTaskCommand(parent_task_id=avo.id)
+        )
+    await db.flush()
+
+    await db.refresh(filha)
+    assert str(filha.path) == (
+        f"{rotulo[avo.id]}.{rotulo[pai.id]}.{rotulo[filha.id]}"
+    )
+    assert filha.depth == 2
+
+
 # ------------------------------------------- o time da tarefa e o do quadro
 
 

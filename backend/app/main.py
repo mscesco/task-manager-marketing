@@ -28,7 +28,7 @@ from app.api.errors import register_exception_handlers
 from app.api.router import api_v1_router, infra_router
 from app.core.config import settings
 from app.core.logging import configure_logging, get_logger
-from app.core.middleware import RequestContextMiddleware
+from app.core.middleware import BodySizeLimitMiddleware, RequestContextMiddleware
 from app.db.session import db_manager
 
 logger = get_logger(__name__)
@@ -80,6 +80,8 @@ def create_app() -> FastAPI:
             allow_headers=["*"],
         )
     app.add_middleware(RequestContextMiddleware)
+    # Por ultimo = roda primeiro: o teto vale antes de qualquer leitura.
+    app.add_middleware(BodySizeLimitMiddleware)
 
     # --- Exception handlers ---
     register_exception_handlers(app)
