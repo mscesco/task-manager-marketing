@@ -10,10 +10,11 @@ codigo do mesmo PR. Esta migration so conserta o que eles deixaram gravado.
 1. PATH REPETIDO. `reparent_subtree` cortava o path antigo um nivel cedo
    demais, e mover uma tarefa COM FILHAS repetia o rotulo dela no path de cada
    descendente (`avo.pai.pai.filha`). O `depth` saia certo. Aqui o path de
-   TODA tarefa e refeito pela cadeia de `parent_task_id`, mantendo o rotulo
-   proprio (o ultimo do path, que o defeito nunca trocou). Tarefa ja certa
-   recebe o mesmo valor; so as tortas mudam. A consulta 12 do
-   `scripts/invariantes.sql` mede antes e depois.
+   TODA tarefa e refeito pela cadeia de `parent_task_id`. O rotulo de cada
+   uma sai do proprio id (`t` + uuid sem hifens, ADR 0002), e nao do path
+   gravado: nao depende de o defeito ter poupado parte nenhuma. Tarefa ja
+   certa recebe o mesmo valor; so as tortas mudam. Producao, 22/10: 161 pela
+   consulta 12 do `scripts/invariantes.sql`, que mede antes e depois.
 
 2. TAREFA EM PROJETO APAGADO. Apagar projeto so marcava o projeto, e as
    tarefas dele davam 404 ao abrir. O codigo novo solta as tarefas na hora;
@@ -45,13 +46,13 @@ def upgrade() -> None:
         """
         WITH RECURSIVE arvore AS (
             SELECT id,
-                   subpath(path, nlevel(path) - 1) AS novo,
+                   text2ltree('t' || replace(id::text, '-', '')) AS novo,
                    0 AS nivel
             FROM task
             WHERE parent_task_id IS NULL
             UNION ALL
             SELECT t.id,
-                   a.novo || subpath(t.path, nlevel(t.path) - 1),
+                   a.novo || text2ltree('t' || replace(t.id::text, '-', '')),
                    a.nivel + 1
             FROM task t
             JOIN arvore a ON t.parent_task_id = a.id
