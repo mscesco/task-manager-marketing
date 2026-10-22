@@ -678,14 +678,17 @@ class TaskRepository(BaseRepository[Task]):
 
         # UPDATE 2: DESCENDENTES (se houver). Reescrever path com
         # subpath() e ajustar depth e project_id.
-        # subpath(path, old_depth) corta o prefixo antigo da task.
-        # Concatenamos com o novo path da task.
+        # subpath(path, old_depth + 1) corta o path antigo da task INTEIRO,
+        # rotulo dela incluido: o indice do subpath comeca em 0, e a raiz tem
+        # depth 0. Com `old_depth` sozinho o rotulo da task ficava e saia
+        # repetido em toda filha (auditoria de 21/10; migration 0032 repara).
         # Excluimos a propria task (ja atualizada acima).
         await self.session.execute(
             text(
                 """
                 UPDATE task
-                SET path = CAST(:new_self_path AS ltree) || subpath(path, :old_depth),
+                SET path = CAST(:new_self_path AS ltree)
+                           || subpath(path, :old_depth + 1),
                     depth = depth + :depth_delta,
                     project_id = :new_project
                 WHERE path <@ CAST(:old_path AS ltree)

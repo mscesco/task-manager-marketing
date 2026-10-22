@@ -358,3 +358,19 @@ JOIN task a
  AND a.workspace_id = d.workspace_id
 WHERE d.deleted_at IS NULL AND d.is_archived = false
   AND a.deleted_at IS NULL AND a.is_archived = true;
+
+-- ---------------------------------------------------------------------------
+-- 12. PATH QUE NAO BATE COM O PAI (auditoria de 21/10 -- migration 0032).
+--
+-- `reparent_subtree` cortava o path antigo um nivel cedo demais, e mover uma
+-- tarefa COM FILHAS repetia o rotulo dela no path de cada descendente
+-- (`avo.pai.pai.filha`). Nada na tela mostrava: os filtros por `<@` seguiam
+-- achando a subarvore. A 0032 refaz todo path pela cadeia de
+-- `parent_task_id`; depois dela, isto e 0. Se voltar a crescer, ha caminho de
+-- escrita novo mexendo em path, e o conserto e no codigo.
+\echo '=== 12. path que nao bate com depth ou com o pai (0 depois da 0032) ==='
+SELECT count(*) AS path_torto
+FROM task t
+LEFT JOIN task p ON p.id = t.parent_task_id
+WHERE nlevel(t.path) <> t.depth + 1
+   OR (p.id IS NOT NULL AND subpath(t.path, 0, nlevel(t.path) - 1) <> p.path);
