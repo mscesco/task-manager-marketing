@@ -25,13 +25,13 @@
 // nome errado -- só um menos preciso.
 
 /** O nome do produto, do lado direito da aba. */
-export const APP_NAME = "Gestor de Tarefas";
+export const APP_NAME = "Oniros";
 
 /**
  * O título completo de uma tela.
  *
  * ⚠️ O ESPECÍFICO VEM PRIMEIRO porque a aba corta pela DIREITA: com o produto
- * na frente, dez abas viram dez "Gestor de Tarefas — …" indistinguíveis.
+ * na frente, dez abas viram dez "Oniros — …" indistinguíveis.
  *
  * ⚠️ É O MESMO MODELO do `title.template` do `app/layout.tsx` -- as duas peças
  * têm de produzir a mesma frase, senão a aba muda de formato quando o hook
