@@ -22,9 +22,11 @@ import uuid
 from collections.abc import Awaitable, Callable
 
 import structlog
+from starlette.exceptions import HTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app.core.logging import get_logger
 
@@ -71,3 +73,50 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
         )
         response.headers[_REQUEST_ID_HEADER] = request_id
         return response
+
+
+#: 10 MB. A maior requisicao legitima e a importacao de planilha da Base:
+#: ate 7,2 MB de base64 (`_ImportFile.content_base64`). Subir aquele teto
+#: exige subir este.
+MAX_BODY_BYTES = 10 * 1024 * 1024
+
+
+class BodySizeLimitMiddleware:
+    """Recusa com 413 o corpo acima de `max_bytes`, ENQUANTO ele chega.
+
+    ⚠️ Auditoria de 21/10: nada (Traefik, uvicorn, app) limitava o corpo, e o
+    FastAPI le e decodifica o JSON inteiro ANTES de qualquer dependencia -- o
+    freio por IP e os `max_length` do formulario publico rodavam depois. Um
+    POST anonimo de 1 GB ocupava a memoria de um worker.
+
+    Conta os bytes no `receive`, e nao pelo `Content-Length`: corpo em
+    `chunked` nao traz o cabecalho. ASGI puro porque o `BaseHTTPMiddleware`
+    nao deixa trocar o `receive`.
+
+    ⚠️ TEM DE SER o `HTTPException` do Starlette: o FastAPI troca qualquer
+    outro erro levantado na leitura do corpo por 400 "error parsing the body",
+    e so deixa passar este (`fastapi/routing.py`).
+    """
+
+    def __init__(self, app: ASGIApp, max_bytes: int = MAX_BODY_BYTES) -> None:
+        self.app = app
+        self.max_bytes = max_bytes
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        recebidos = 0
+
+        async def receive_com_teto() -> Message:
+            nonlocal recebidos
+            message = await receive()
+            if message["type"] == "http.request":
+                recebidos += len(message.get("body", b""))
+                if recebidos > self.max_bytes:
+                    raise HTTPException(
+                        status_code=413, detail="O conteudo enviado e grande demais."
+                    )
+            return message
+
+        await self.app(scope, receive_com_teto, send)
