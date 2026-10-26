@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Eye, EyeOff } from "lucide-react";
 import { login, getMe, setTokens, ApiError } from "@/lib/api";
+import OnirosMark from "@/components/OnirosMark";
 
 // Redesign (fatia 4): duas colunas a partir de 900px -- o painel azul com
 // tres cartoezinhos decorativos a esquerda, o formulario num card a direita.
@@ -45,8 +46,8 @@ export default function LoginPage() {
           porque o texto deles e cenario, nao conteudo. */}
       <section className="relative hidden flex-col justify-between overflow-hidden bg-panel p-14 text-white min-[900px]:flex">
         <div className="relative flex items-center gap-3">
-          <span className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-white text-md font-extrabold text-panel">
-            O
+          <span className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-white text-panel" aria-hidden="true">
+            <OnirosMark className="h-8 w-8" />
           </span>
           <strong className="text-md font-bold tracking-[-0.01em]">Oniros</strong>
         </div>
