@@ -140,20 +140,28 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
+// ⚠️ SEM `*ByRole` NESTE ARQUIVO: ele percorre a árvore de acessibilidade do
+// TaskDetail inteiro a cada tentativa, e na suíte cheia da máquina dela passou
+// dos 5 s (26/10). O texto acha o mesmo botão; o `aria-expanded` segue conferido.
+function seta() {
+  const b = screen.getByText("2 respostas").closest("button");
+  if (!b) throw new Error("a seta não é um botão");
+  return b;
+}
+
 describe("respostas de um comentário", () => {
   it("a seta mostra quantas são, e recolhe e abre pelo botão", async () => {
     render(montar());
-    const seta = await screen.findByRole("button", { name: "2 respostas" });
-    expect(seta.getAttribute("aria-expanded")).toBe("true");
-    expect(screen.getByText("primeira resposta")).toBeDefined();
+    await screen.findByText("primeira resposta");
+    expect(seta().getAttribute("aria-expanded")).toBe("true");
 
-    fireEvent.click(seta);
-    expect(seta.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(seta());
+    expect(seta().getAttribute("aria-expanded")).toBe("false");
     expect(screen.queryByText("primeira resposta")).toBeNull();
     // o comentário raiz continua; só as respostas somem
     expect(screen.getByText("comentário raiz")).toBeDefined();
 
-    fireEvent.click(seta);
+    fireEvent.click(seta());
     expect(screen.getByText("segunda resposta")).toBeDefined();
   });
 
@@ -164,7 +172,7 @@ describe("respostas de um comentário", () => {
       [...document.querySelectorAll("[data-comment-id]")].map((e) => e.getAttribute("data-comment-id"));
     expect(ids()).toEqual(["c1", "r2", "r1"]);
 
-    fireEvent.click(screen.getByRole("button", { name: "Responder" }));
+    fireEvent.click(screen.getByText("Responder"));
     const campo = screen.getByPlaceholderText("Responder… (@ menciona)");
     const primeira = screen.getByText("segunda resposta");
     // DOCUMENT_POSITION_FOLLOWING: a resposta vem DEPOIS do campo
@@ -175,7 +183,8 @@ describe("respostas de um comentário", () => {
 describe("comentário apontado pela notificação", () => {
   it("abre a thread recolhida e destaca a resposta", async () => {
     const { rerender } = render(montar());
-    fireEvent.click(await screen.findByRole("button", { name: "2 respostas" }));
+    await screen.findByText("segunda resposta");
+    fireEvent.click(seta());
     expect(screen.queryByText("segunda resposta")).toBeNull();
 
     // o clique na notificação muda só o `?comentario=` da rota
@@ -183,8 +192,6 @@ describe("comentário apontado pela notificação", () => {
     const alvo = await screen.findByText("segunda resposta");
     expect(alvo.closest("[data-comment-id]")?.getAttribute("data-comment-id")).toBe("r2");
     expect(alvo.closest("[data-comment-id]")?.className).toContain("comentario-destaque");
-    expect(
-      screen.getByRole("button", { name: "2 respostas" }).getAttribute("aria-expanded"),
-    ).toBe("true");
+    expect(seta().getAttribute("aria-expanded")).toBe("true");
   });
 });
