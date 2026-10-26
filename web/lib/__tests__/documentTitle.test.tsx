@@ -103,7 +103,7 @@ describe("o título de cada rota", () => {
 
   it("o título da rota é só o nome da tela, sem o produto", () => {
     // O produto vem do `title.template` do `app/layout.tsx`. Repeti-lo aqui
-    // daria "Projetos · Gestor de Tarefas · Gestor de Tarefas".
+    // daria "Projetos · Oniros · Oniros".
     const repetem = rotas().filter((rota) => {
       const layout = join(APP, rota, "layout.tsx");
       try {

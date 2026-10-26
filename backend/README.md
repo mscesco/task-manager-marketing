@@ -1,4 +1,4 @@
-# Task Manager — Backend
+# Oniros — Backend
 
 Backend do sistema de gestão de demandas/tarefas multi-tenant.
 Modular Monolith com FastAPI, SQLAlchemy 2.0 async e PostgreSQL.

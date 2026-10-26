@@ -48,7 +48,7 @@ export default function SolicitarPage() {
       <MolduraPublica>
         <AvisoPublico
           titulo="Não consegui carregar os formulários"
-          texto="Tente de novo em instantes. Se continuar assim, avise a equipe de marketing."
+          texto="Tente de novo em instantes. Se continuar assim, avise quem enviou este link."
         />
       </MolduraPublica>
     );
@@ -70,7 +70,7 @@ export default function SolicitarPage() {
       <MolduraPublica>
         <AvisoPublico
           titulo="Nenhum formulário disponível"
-          texto="Ainda não há formulários publicados. Avise a equipe de marketing se você esperava encontrar um aqui."
+          texto="Ainda não há formulários publicados. Avise quem enviou este link se você esperava encontrar um aqui."
         />
       </MolduraPublica>
     );

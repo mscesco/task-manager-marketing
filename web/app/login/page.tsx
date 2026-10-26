@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Eye, EyeOff } from "lucide-react";
 import { login, getMe, setTokens, ApiError } from "@/lib/api";
+import OnirosMark from "@/components/OnirosMark";
 
 // Redesign (fatia 4): duas colunas a partir de 900px -- o painel azul com
 // tres cartoezinhos decorativos a esquerda, o formulario num card a direita.
@@ -45,28 +46,25 @@ export default function LoginPage() {
           porque o texto deles e cenario, nao conteudo. */}
       <section className="relative hidden flex-col justify-between overflow-hidden bg-panel p-14 text-white min-[900px]:flex">
         <div className="relative flex items-center gap-3">
-          <span className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-white text-md font-extrabold text-panel">
-            GT
+          <span className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-white text-panel" aria-hidden="true">
+            <OnirosMark className="h-8 w-8" />
           </span>
-          <strong className="text-md font-bold tracking-[-0.01em]">Gestor de Tarefas</strong>
-          <span className="rounded-full border border-white/25 px-2.5 py-0.5 text-sm font-semibold opacity-75">
-            UniFECAF
-          </span>
+          <strong className="text-md font-bold tracking-[-0.01em]">Oniros</strong>
         </div>
 
         {/* Posicoes em porcentagem: o painel estreita com a janela e os
             cartoezinhos nao podem vazar pela borda. */}
         <div className="relative my-auto h-[420px] w-full max-w-[500px]" aria-hidden="true">
           <div className="login-tile left-0 top-6 w-[60%]">
-            <b className="block text-base font-bold">Campanha de matrícula 2027.1</b>
+            <b className="block text-base font-bold">Planejamento do trimestre</b>
             <small className="mt-0.5 block text-sm opacity-85">Em andamento · vence sexta</small>
             <span className="mt-2.5 block h-1.5 rounded-full bg-white/20">
               <span className="block h-full w-[64%] rounded-full bg-accent" />
             </span>
           </div>
           <div className="login-tile left-[46%] top-[140px] w-[52%]">
-            <b className="block text-base font-bold">Semana da Psicologia</b>
-            <small className="mt-0.5 block text-sm opacity-85">Arte aprovada · 3 subtarefas</small>
+            <b className="block text-base font-bold">Revisão do processo</b>
+            <small className="mt-0.5 block text-sm opacity-85">Aprovada · 3 subtarefas</small>
             <span className="mt-2.5 inline-flex gap-1.5">
               <span className="rounded-full bg-teal-soft px-2 text-xs font-bold text-teal">Concluída</span>
               <span className="rounded-full bg-amber-soft px-2 text-xs font-bold text-amber">Alta</span>
@@ -77,8 +75,6 @@ export default function LoginPage() {
             <small className="mt-0.5 block text-sm opacity-85">a mais antiga chegou há 2 h</small>
           </div>
         </div>
-
-        <div className="relative text-sm opacity-60">Marketing · UniFECAF</div>
       </section>
 
       <section className="flex items-center justify-center px-8 py-12">
@@ -100,7 +96,7 @@ export default function LoginPage() {
             <input
               id="email" className="input" type="email" autoComplete="username"
               value={email} onChange={(e) => setEmail(e.target.value)}
-              placeholder="seu.nome@unifecaf.com.br" required
+              placeholder="seu.nome@empresa.com" required
             />
           </div>
           <div className="field">

@@ -52,9 +52,9 @@ export const metadata: Metadata = {
   // só se sabe depois de carregar. As duas peças têm de produzir a mesma frase.
   title: {
     template: `%s · ${APP_NAME}`,
-    default: `${APP_NAME} — UniFECAF`,
+    default: APP_NAME,
   },
-  description: "Gestor de demandas dos times da UniFECAF",
+  description: "Tarefas, projetos e solicitações dos times",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
