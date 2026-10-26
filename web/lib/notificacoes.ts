@@ -41,6 +41,8 @@ export type NotificacaoNavegavel = {
   task_id: string | null;
   /** Spec 053 (E): "gone" = excluida ou sem acesso -> sem destino. */
   task_access?: "ok" | "gone" | null;
+  /** Menção, comentário e reação apontam o comentário: o detalhe rola até ele. */
+  comment_id?: string | null;
 };
 
 /**
@@ -54,6 +56,7 @@ export function destinoDaNotificacao(n: NotificacaoNavegavel): string | null {
   // o link levaria a um 404. A tela desenha o aviso apagado e sem link.
   if (n.task_access === "gone") return null;
   if (!n.task_id) return "/minhas-tarefas";
+  if (n.comment_id) return `/tarefa/${n.task_id}?comentario=${n.comment_id}`;
   return `/tarefa/${n.task_id}`;
 }
 

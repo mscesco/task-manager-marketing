@@ -19,6 +19,7 @@ import {
   Plus,
   Calendar,
   ChevronLeft,
+  ChevronRight,
   // ⚠️ `FolderOpen`, e a barra lateral usa `FolderKanban` para "Projetos" --
   // conferido, nao suposto. Dois icones parecidos para coisas diferentes ja
   // aconteceu aqui (o mesmo `Network` em "Times" e "Time Principal", corrigido
@@ -174,6 +175,7 @@ export default function TaskDetail({
   mostrarArquivadas,
   membrosInativos,
   modo = "modal",
+  comentarioEmFoco = null,
 }: {
   task: Task | null; // tarefa focada; null => fechado
   members: Map<string, { name: string }>;
@@ -257,6 +259,11 @@ export default function TaskDetail({
   //                        cima de uma pagina vazia pareceria bug e Esc
   //                        "fechando" (= navegar pra outra rota) surpreende.
   modo?: "modal" | "pagina";
+  // Comentário que a notificação apontou (`/tarefa/<id>?comentario=<id>`):
+  // a aba abre nele, desdobra a thread e o destaca. Opcional porque só a rota
+  // canônica recebe link de notificação; os outros três chamadores não têm o
+  // que passar.
+  comentarioEmFoco?: string | null;
 }) {
   // ⚠️ SPEC 042 (B1) -- AS FILHAS SAO BUSCADAS AQUI, e nao mais recebidas.
   // Ate aqui os quatro chamadores derivavam `filhos` da lista que ja tinham
@@ -424,6 +431,12 @@ export default function TaskDetail({
   const [enviandoComent, setEnviandoComent] = useState(false);
   const [respondendoId, setRespondendoId] = useState<string | null>(null);
   const [textoResposta, setTextoResposta] = useState("");
+  // Pedido de 26/10: a seta de cada comentário recolhe as respostas dele. É
+  // por comentário (nem o "Comentários ›" que a 055 tirou, nem um botão para a
+  // aba toda), e o padrão é aberto.
+  const [respostasRecolhidas, setRespostasRecolhidas] = useState<Set<string>>(new Set());
+  const [comentarioDestacado, setComentarioDestacado] = useState<string | null>(null);
+  const focoConsumido = useRef<string | null>(null);
   // ⚠️ O COLAPSO DA THREAD SAIU NA SPEC 055: com as abas, ele virou um segundo
   // jeito de esconder a mesma coisa. O que sobrou dele e a ideia de nivel de
   // SESSAO -- a aba escolhida nao volta ao padrao a cada tarefa aberta (§9.4).
@@ -577,6 +590,8 @@ export default function TaskDetail({
     setEnviandoResp(false);
     setGifsNovo([]);
     setGifsResp([]);
+    setRespostasRecolhidas(new Set());
+    setComentarioDestacado(null);
   }, [task?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Ao trocar/fechar a resposta, zera os GIFs de rascunho da resposta.
@@ -677,6 +692,48 @@ export default function TaskDetail({
       vivo = false;
     };
   }, [task?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Veio de notificação: abre a aba, desdobra a thread e destaca o comentário.
+  // ⚠️ UMA VEZ por (tarefa, comentário): sem a marca, todo comentário novo
+  // (que troca `comentarios`) roubaria a rolagem de volta para o antigo.
+  useEffect(() => {
+    if (!task || !comentarioEmFoco || !comentarios) return;
+    const chave = `${task.id}:${comentarioEmFoco}`;
+    if (focoConsumido.current === chave) return;
+    const alvo = comentarios.find((c) => c.id === comentarioEmFoco);
+    if (!alvo) return; // apagado de vez, ou além dos 100 carregados
+    focoConsumido.current = chave;
+    setAbaLateral("comentarios");
+    const raiz = alvo.parent_comment_id ?? alvo.id;
+    setRespostasRecolhidas((s) => {
+      if (!s.has(raiz)) return s;
+      const n = new Set(s);
+      n.delete(raiz);
+      return n;
+    });
+    setComentarioDestacado(alvo.id);
+  }, [task?.id, comentarioEmFoco, comentarios]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Depois do render que pôs a marca: rola até ela e a tira em 2,5 s. A
+  // animação mora no `globals.css` (`.comentario-destaque`).
+  useEffect(() => {
+    if (!comentarioDestacado) return;
+    const el = document.querySelector(`[data-comment-id="${comentarioDestacado}"]`);
+    const semMovimento = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    // `?.`: o jsdom nao implementa scrollIntoView.
+    el?.scrollIntoView?.({ block: "center", behavior: semMovimento ? "auto" : "smooth" });
+    const t = window.setTimeout(() => setComentarioDestacado(null), 2500);
+    return () => window.clearTimeout(t);
+  }, [comentarioDestacado]);
+
+  function alternarRespostas(id: string) {
+    setRespostasRecolhidas((s) => {
+      const n = new Set(s);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+  }
 
   // Atividade da tarefa focada, primeira pagina (Spec 055).
   //
@@ -2937,42 +2994,90 @@ export default function TaskDetail({
                   {/* ⚠️ O MAIS NOVO PRIMEIRO (pedido dela, 21/10). A API manda em
                       ordem crescente e o comentário novo entra no fim da lista,
                       então inverter aqui serve aos dois casos. As respostas
-                      continuam em ordem de conversa, embaixo da raiz. */}
+                      também, desde 26/10: a mais nova logo abaixo da seta. */}
                   {comentarios
                     .filter((c) => !c.parent_comment_id)
                     .reverse()
-                    .map((c) => (
-                      <div key={c.id} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                        <LinhaComentario
-                          c={c}
-                          members={members}
-                          excluidos={foraDoAutocompletar}
-                          me={me}
-                          taskId={tid}
-                          podeModerar={task.can_delete}
-                          onEditado={aoEditado}
-                          onApagado={recarregarComentarios}
-                        />
+                    .map((c) => {
+                      const respostas = comentarios
+                        .filter((r) => r.parent_comment_id === c.id)
+                        .reverse();
+                      const aberto = !respostasRecolhidas.has(c.id);
+                      const respondendo = respondendoId === c.id;
+                      const idThread = `respostas-${c.id}`;
+                      return (
+                      <div key={c.id} className="flex flex-col gap-1.5">
+                        <div
+                          data-comment-id={c.id}
+                          className={comentarioDestacado === c.id ? "comentario-destaque" : undefined}
+                        >
+                          <LinhaComentario
+                            c={c}
+                            members={members}
+                            excluidos={foraDoAutocompletar}
+                            me={me}
+                            taskId={tid}
+                            podeModerar={task.can_delete}
+                            onEditado={aoEditado}
+                            onApagado={recarregarComentarios}
+                          />
+                        </div>
 
-                        {comentarios
-                          .filter((r) => r.parent_comment_id === c.id)
-                          .map((r) => (
-                            <div key={r.id} style={{ marginLeft: 30 }}>
-                              <LinhaComentario
-                                c={r}
-                                members={members}
-                                excluidos={foraDoAutocompletar}
-                                me={me}
-                                taskId={tid}
-                                podeModerar={task.can_delete}
-                                onEditado={aoEditado}
-                                onApagado={recarregarComentarios}
-                              />
-                            </div>
-                          ))}
+                        {(respostas.length > 0 || (!c.is_deleted && !respondendo)) && (
+                          <div className="ml-[30px] flex items-center gap-1">
+                            {respostas.length > 0 && (
+                              <button
+                                type="button"
+                                className="btn btn-ghost"
+                                aria-expanded={aberto}
+                                aria-controls={aberto ? idThread : undefined}
+                                onClick={() => alternarRespostas(c.id)}
+                                style={{ padding: "4px 8px", fontSize: 12, gap: 4 }}
+                              >
+                                <ChevronRight
+                                  size={13}
+                                  strokeWidth={2}
+                                  aria-hidden
+                                  className={`transition-transform ${aberto ? "rotate-90" : ""}`}
+                                />
+                                {respostas.length === 1 ? "1 resposta" : `${respostas.length} respostas`}
+                              </button>
+                            )}
+                            {!c.is_deleted && !respondendo && (
+                              <button
+                                type="button"
+                                className="btn btn-ghost"
+                                onClick={() => {
+                                  setRespondendoId(c.id);
+                                  setTextoResposta("");
+                                  // responder numa thread recolhida a abre
+                                  setRespostasRecolhidas((s) => {
+                                    if (!s.has(c.id)) return s;
+                                    const n = new Set(s);
+                                    n.delete(c.id);
+                                    return n;
+                                  });
+                                }}
+                                style={{ padding: "4px 8px", fontSize: 12 }}
+                              >
+                                Responder
+                              </button>
+                            )}
+                          </div>
+                        )}
 
-                        {respondendoId === c.id ? (
-                          <div style={{ marginLeft: 30, display: "flex", flexDirection: "column", gap: 6 }}>
+                        {/* A linha à esquerda (o desenho que a usuária mandou)
+                            é o que separa resposta de comentário novo: antes
+                            só o recuo de 30px dizia isso, e não bastava. */}
+                        {aberto && (respostas.length > 0 || respondendo) && (
+                          <div
+                            id={idThread}
+                            className="ml-[14px] flex flex-col gap-1.5 border-l-2 border-border pl-3"
+                          >
+                        {/* O campo fica no topo porque a resposta nova entra
+                            em cima (pedido dela, 26/10). */}
+                        {respondendo && (
+                          <div className="flex flex-col gap-1.5">
                             <MentionTextarea
                               ref={respostaRef}
                               value={textoResposta}
@@ -3033,26 +3138,30 @@ export default function TaskDetail({
                               </button>
                             </div>
                           </div>
-                        ) : (
-                          !c.is_deleted && (
-                            <button
-                              type="button"
-                              className="btn btn-ghost"
-                              onClick={() => {
-                                setRespondendoId(c.id);
-                                setTextoResposta("");
-                              }}
-                              style={{
-                                marginLeft: 30, alignSelf: "flex-start",
-                                padding: "2px 8px", fontSize: 12,
-                              }}
+                        )}
+                        {respostas.map((r) => (
+                            <div
+                              key={r.id}
+                              data-comment-id={r.id}
+                              className={comentarioDestacado === r.id ? "comentario-destaque" : undefined}
                             >
-                              Responder
-                            </button>
-                          )
+                              <LinhaComentario
+                                c={r}
+                                members={members}
+                                excluidos={foraDoAutocompletar}
+                                me={me}
+                                taskId={tid}
+                                podeModerar={task.can_delete}
+                                onEditado={aoEditado}
+                                onApagado={recarregarComentarios}
+                              />
+                            </div>
+                          ))}
+                          </div>
                         )}
                       </div>
-                    ))}
+                      );
+                    })}
                 </div>
               )}
 

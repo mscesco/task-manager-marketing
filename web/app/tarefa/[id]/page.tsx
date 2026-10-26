@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import AppShell from "@/components/AppShell";
 import TaskDetail from "@/components/TaskDetail";
 import TaskModal from "@/components/TaskModal";
@@ -52,6 +52,9 @@ function Tarefa() {
   const params = useParams();
   const router = useRouter();
   const id = typeof params.id === "string" ? params.id : "";
+  // `?comentario=` vem do link da notificação (`lib/notificacoes.ts`). Rota
+  // dinâmica (`ƒ` no build), então `useSearchParams` não pede Suspense aqui.
+  const comentarioEmFoco = useSearchParams().get("comentario");
 
   const [task, setTask] = useState<Task | null>(null);
   // A aba passa a se chamar pela tarefa (o layout da rota diz so "Tarefa").
@@ -232,6 +235,7 @@ function Tarefa() {
     <>
       <TaskDetail
         modo="pagina"
+        comentarioEmFoco={comentarioEmFoco}
         task={task}
         members={members}
         projects={projectNames}
