@@ -21,6 +21,12 @@ describe("destinoDaNotificacao", () => {
   it("sem tarefa associada, cai no painel padrao", () => {
     expect(destinoDaNotificacao({ task_id: null })).toBe("/minhas-tarefas");
   });
+
+  it("com comentario, aponta para ele -- o detalhe rola e destaca", () => {
+    expect(destinoDaNotificacao({ task_id: "t1", comment_id: "c9" })).toBe(
+      "/tarefa/t1?comentario=c9",
+    );
+  });
 });
 
 describe("textoDaNotificacao", () => {
