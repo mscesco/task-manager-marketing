@@ -60,7 +60,7 @@ def create_app() -> FastAPI:
     configure_logging()
 
     app = FastAPI(
-        title="Task Manager API",
+        title="Oniros API",
         version="0.1.0",
         description="Sistema de gestao de demandas/tarefas multi-tenant.",
         # Docs interativas so fora de producao.

@@ -287,6 +287,10 @@
 [data-theme="escuro"] .tile-destaque { color: #0d1117; }
 [data-theme="escuro"] .tile-destaque .text-ink-soft { color: inherit; }
 
+/* O "O" do logo na barra lateral: mesma regra de texto do .btn-primary. */
+.logo-marca { background: var(--color-accent); color: #ffffff; }
+[data-theme="escuro"] .logo-marca { color: #0d1117; }
+
 /* .error-box tinha as tres cores cravadas (rosa claro) -- sumia no escuro. */
 [data-theme="escuro"] .error-box {
   background: #3a1a1d;

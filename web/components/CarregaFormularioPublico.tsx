@@ -82,7 +82,7 @@ export default function CarregaFormularioPublico({
         titulo="Não consegui carregar o formulário"
         // ⚠️ AQUI NÃO SE PEDE PARA CONFERIR O LINK: ele está certo, e o
         // problema é nosso.
-        texto="Tente de novo em instantes. Se continuar assim, avise a equipe de marketing."
+        texto="Tente de novo em instantes. Se continuar assim, avise quem enviou este link."
       />
     );
   }
