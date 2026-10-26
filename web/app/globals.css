@@ -543,6 +543,29 @@ button { font-family: inherit; cursor: pointer; }
 .modal-scrim[data-saindo="true"] { animation: tm-scrim-entra var(--dur-1) var(--ease-io) reverse forwards; }
 .modal-card[data-saindo="true"]  { animation: tm-card-entra var(--dur-1) var(--ease-io) reverse forwards; }
 
+/* --- Comentario apontado pela notificacao (26/10) -----------------------
+   Uma camada `--accent-soft` POR TRAS do comentario pisca duas vezes, so com
+   opacity. ⚠️ A opacidade de repouso e 1 de proposito: com
+   prefers-reduced-motion o bloco global corta a animacao, e o comentario fica
+   destacado parado -- o JS tira a classe em 2,5 s nos dois casos. */
+@keyframes tm-destaque {
+  0%, 45%, 100% { opacity: 0; }
+  20%, 70%      { opacity: 1; }
+}
+.comentario-destaque { position: relative; isolation: isolate; }
+.comentario-destaque::before {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  z-index: -1;
+  border-radius: var(--radius-lg);
+  background: var(--accent-soft);
+  /* o balão é opaco e cobre o meio da camada: o anel é o que se vê */
+  border: 2px solid var(--accent);
+  opacity: 1;
+  animation: tm-destaque 2.4s var(--ease-io) forwards;
+}
+
 /* --- Tela de entrada (fatia 4): os cartoezinhos que flutuam no painel ---
    Decoracao pura (`aria-hidden`): sobem ao chegar e depois derivam devagar,
    so com transform e opacity. O bloco global de prefers-reduced-motion acima
