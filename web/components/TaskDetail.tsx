@@ -2994,12 +2994,14 @@ export default function TaskDetail({
                   {/* ⚠️ O MAIS NOVO PRIMEIRO (pedido dela, 21/10). A API manda em
                       ordem crescente e o comentário novo entra no fim da lista,
                       então inverter aqui serve aos dois casos. As respostas
-                      continuam em ordem de conversa, embaixo da raiz. */}
+                      também, desde 26/10: a mais nova logo abaixo da seta. */}
                   {comentarios
                     .filter((c) => !c.parent_comment_id)
                     .reverse()
                     .map((c) => {
-                      const respostas = comentarios.filter((r) => r.parent_comment_id === c.id);
+                      const respostas = comentarios
+                        .filter((r) => r.parent_comment_id === c.id)
+                        .reverse();
                       const aberto = !respostasRecolhidas.has(c.id);
                       const respondendo = respondendoId === c.id;
                       const idThread = `respostas-${c.id}`;
@@ -3072,25 +3074,8 @@ export default function TaskDetail({
                             id={idThread}
                             className="ml-[14px] flex flex-col gap-1.5 border-l-2 border-border pl-3"
                           >
-                        {respostas.map((r) => (
-                            <div
-                              key={r.id}
-                              data-comment-id={r.id}
-                              className={comentarioDestacado === r.id ? "comentario-destaque" : undefined}
-                            >
-                              <LinhaComentario
-                                c={r}
-                                members={members}
-                                excluidos={foraDoAutocompletar}
-                                me={me}
-                                taskId={tid}
-                                podeModerar={task.can_delete}
-                                onEditado={aoEditado}
-                                onApagado={recarregarComentarios}
-                              />
-                            </div>
-                          ))}
-
+                        {/* O campo fica no topo porque a resposta nova entra
+                            em cima (pedido dela, 26/10). */}
                         {respondendo && (
                           <div className="flex flex-col gap-1.5">
                             <MentionTextarea
@@ -3154,6 +3139,24 @@ export default function TaskDetail({
                             </div>
                           </div>
                         )}
+                        {respostas.map((r) => (
+                            <div
+                              key={r.id}
+                              data-comment-id={r.id}
+                              className={comentarioDestacado === r.id ? "comentario-destaque" : undefined}
+                            >
+                              <LinhaComentario
+                                c={r}
+                                members={members}
+                                excluidos={foraDoAutocompletar}
+                                me={me}
+                                taskId={tid}
+                                podeModerar={task.can_delete}
+                                onEditado={aoEditado}
+                                onApagado={recarregarComentarios}
+                              />
+                            </div>
+                          ))}
                           </div>
                         )}
                       </div>

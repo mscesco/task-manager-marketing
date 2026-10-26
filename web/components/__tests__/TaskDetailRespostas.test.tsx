@@ -156,6 +156,20 @@ describe("respostas de um comentário", () => {
     fireEvent.click(seta);
     expect(screen.getByText("segunda resposta")).toBeDefined();
   });
+
+  it("a mais nova vem em cima, e o campo de responder fica acima delas", async () => {
+    render(montar());
+    await screen.findByText("primeira resposta");
+    const ids = () =>
+      [...document.querySelectorAll("[data-comment-id]")].map((e) => e.getAttribute("data-comment-id"));
+    expect(ids()).toEqual(["c1", "r2", "r1"]);
+
+    fireEvent.click(screen.getByRole("button", { name: "Responder" }));
+    const campo = screen.getByPlaceholderText("Responder… (@ menciona)");
+    const primeira = screen.getByText("segunda resposta");
+    // DOCUMENT_POSITION_FOLLOWING: a resposta vem DEPOIS do campo
+    expect(campo.compareDocumentPosition(primeira) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
 });
 
 describe("comentário apontado pela notificação", () => {
