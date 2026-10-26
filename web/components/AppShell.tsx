@@ -32,6 +32,7 @@ import {
   gravarQuadrosAberto,
 } from "@/lib/sidebar";
 import NotificationBell from "@/components/NotificationBell";
+import OnirosMark from "@/components/OnirosMark";
 import ContextSwitcher from "@/components/ContextSwitcher";
 import TeamParamReader from "@/components/TeamParamReader";
 import { ActiveTeamProvider } from "@/lib/useActiveTeam";
@@ -413,13 +414,18 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       >
         {/* Logo */}
         <div className={`flex shrink-0 items-center gap-3 py-2 ${open ? "px-3" : "justify-center"}`}>
-          <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-accent">
-            <img src="/fecaf-simbolo.png" alt="UniFECAF" className="h-5 w-5 object-contain" />
+          <span
+            className="inline-flex h-8 w-8 shrink-0 items-center justify-center logo-marca rounded-md"
+            aria-hidden="true"
+          >
+            <OnirosMark className="h-6 w-6" />
           </span>
-          {open && (
+          {open ? (
             <strong className="min-w-0 flex-1 truncate text-[15px] font-bold tracking-[-0.01em]">
-              Gestor de Tarefas
+              Oniros
             </strong>
+          ) : (
+            <span className="sr-only">Oniros</span>
           )}
         </div>
 

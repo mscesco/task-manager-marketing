@@ -1,4 +1,4 @@
-# DEPLOY.md — subir o task-manager no servidor
+# DEPLOY.md — subir o Oniros no servidor
 
 Imagens Docker numa VPS, **anexadas** a um Traefik e a um Postgres que já rodam
 ali (outro stack). Um domínio só: o Traefik roteia `/api/*` → backend e o resto

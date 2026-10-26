@@ -231,7 +231,7 @@ function Formularios() {
               id="f-titulo"
               className="input"
               autoFocus
-              placeholder="Ex.: Solicitação ao Marketing"
+              placeholder="Ex.: Pedido de suporte"
               value={titulo}
               maxLength={120}
               disabled={salvando}
@@ -243,7 +243,7 @@ function Formularios() {
             <input
               id="f-slug"
               className="input"
-              placeholder="marketing"
+              placeholder="pedido-de-suporte"
               value={slug}
               maxLength={60}
               disabled={salvando}
