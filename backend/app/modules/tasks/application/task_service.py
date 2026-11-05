@@ -40,6 +40,7 @@ from app.modules.auth.domain import team_scope
 from app.modules.tasks.application.task_guards import (
     TaskScopeGuards,
     user_can_view_task,
+    user_ids_that_can_view_task,
 )
 from app.modules.tasks.domain.archival import is_terminal
 from app.modules.tasks.domain.board_semantics import status_da_coluna
@@ -277,6 +278,43 @@ class MoveTaskCommand:
     parent_task_id: uuid.UUID | None = None
     project_id: uuid.UUID | None = None
     detach_project: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class RelocateCommand:
+    """Destino de `relocate` (Spec 062).
+
+    Com `parent_task_id`, quadro, time e projeto vem da nova mae, e
+    `board_id`/`team_id` sao ignorados. Sem ele, a tarefa vira principal no
+    `board_id`; `team_id` so escolhe a lente de subtime no Quadro geral.
+    """
+
+    board_id: uuid.UUID | None = None
+    team_id: uuid.UUID | None = None
+    parent_task_id: uuid.UUID | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class PessoaQueSai:
+    user_id: uuid.UUID
+    nome: str
+    tarefas: int
+
+
+@dataclass(frozen=True, slots=True)
+class RelocateResult:
+    """O que o `relocate` fez -- ou faria, no `dry_run`.
+
+    `task` e `None` no `dry_run`: o savepoint desfeito expira o objeto.
+    """
+
+    task: Task | None
+    mudou: bool
+    subtarefas: int = 0
+    projeto_antes: str | None = None
+    projeto_depois: str | None = None
+    saem: tuple[PessoaQueSai, ...] = ()
+    assume: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -1605,6 +1643,313 @@ class TaskService:
         )
         return task
 
+    async def relocate(
+        self, *, task_id: uuid.UUID, command: RelocateCommand, dry_run: bool
+    ) -> RelocateResult:
+        """Move a tarefa, com a subarvore, para outro quadro e/ou outra mae.
+
+        Spec 062 -- a "operacao propria" que o `move` recusa desde 18/08
+        (`CODIGO_PAI_EM_OUTRO_QUADRO`). O `move` continua como esta: o n8n usa.
+
+        ⚠️ O `dry_run` RODA A OPERACAO DE VERDADE num savepoint e desfaz. A
+        previa da tela (quem sai, quem assume, o projeto) sai do mesmo codigo
+        que grava -- duas contas separadas divergiriam no primeiro caso raro.
+        Os avisos so saem fora do `dry_run`.
+        """
+        if not dry_run:
+            return await self._relocate(task_id=task_id, command=command, avisar=True)
+        async with self._session.begin_nested() as savepoint:
+            resultado = await self._relocate(
+                task_id=task_id, command=command, avisar=False
+            )
+            await savepoint.rollback()
+        return replace(resultado, task=None)
+
+    async def _relocate(
+        self, *, task_id: uuid.UUID, command: RelocateCommand, avisar: bool
+    ) -> RelocateResult:
+        task = await self._repo.get_by_id_or_raise(task_id)
+        await self._assert_visible_via_project(task)
+        await self._assert_editable(task)
+        if task.is_archived:
+            raise ValidationError(
+                "Esta tarefa esta arquivada. Desarquive-a antes de mover.",
+                details={"field": "task_id"},
+            )
+
+        # --- o destino: quadro, time, projeto e mae -------------------------
+        mae: Task | None = None
+        if command.parent_task_id is not None:
+            if command.parent_task_id == task.id:
+                raise ValidationError(
+                    "A tarefa nao pode ir para dentro dela mesma.",
+                    details={"field": "parent_task_id"},
+                )
+            mae = await self._repo.get_by_id_or_raise(command.parent_task_id)
+            await self._assert_visible_via_project(mae)
+            if mae.is_archived:
+                raise ValidationError(
+                    "A tarefa de destino esta arquivada. Desarquive-a antes.",
+                    details={"field": "parent_task_id"},
+                )
+            # Mesma trava do `move` contra dois pedidos cruzados (21/10).
+            await self._session.execute(
+                select(Task)
+                .where(
+                    Task.id.in_((task.id, mae.id)),
+                    Task.workspace_id == task.workspace_id,
+                )
+                .order_by(Task.id)
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            )
+            if await self._repo.detect_cycle(task=task, new_parent_id=mae.id):
+                raise ValidationError(
+                    "A tarefa nao pode ir para dentro de uma das proprias "
+                    "subtarefas.",
+                    details={"field": "parent_task_id"},
+                )
+            board_id, team_id, project_id = mae.board_id, mae.team_id, mae.project_id
+        else:
+            if command.board_id is None:
+                raise ValidationError(
+                    "Diga para qual quadro a tarefa vai.",
+                    details={"field": "board_id"},
+                )
+            await self._assert_board_in_reach(command.board_id)
+            dono = await BoardRepository(self._session).dono_do_quadro(
+                command.board_id
+            )
+            if dono is None:  # o `_assert_board_in_reach` ja recusou antes
+                raise ValidationError(
+                    "Quadro inexistente.", details={"field": "board_id"}
+                )
+            board_id = command.board_id
+            team_id = command.team_id or dono[0]
+            await self._assert_time_do_quadro(board_id=board_id, team_id=team_id)
+            project_id = task.project_id
+            if project_id is not None:
+                projeto = await self._projects.get_by_id_or_raise(project_id)
+                if not self._time_cabe_no_projeto(projeto, team_id):
+                    project_id = None
+        # Criar no destino: a mesma regra do `create` (Spec 037, E1).
+        self._assert_team_in_reach(team_id)
+
+        mae_id = mae.id if mae is not None else None
+        if (
+            board_id == task.board_id
+            and team_id == task.team_id
+            and mae_id == task.parent_task_id
+            and project_id == task.project_id
+        ):
+            return RelocateResult(task=task, mudou=False)
+
+        tenant = require_tenant()
+        antes = {
+            "board_id": task.board_id,
+            "team_id": task.team_id,
+            "project_id": task.project_id,
+            "parent_task_id": task.parent_task_id,
+        }
+        ids = await self._repo.ids_da_subarvore(path=task.path)
+
+        # --- path, mae e projeto da subarvore inteira -----------------------
+        await self._repo.reparent_subtree(
+            task=task,
+            old_path=task.path,
+            old_depth=task.depth,
+            new_parent_path=mae.path if mae is not None else None,
+            new_parent_depth=mae.depth if mae is not None else None,
+            new_parent_task_id=mae_id,
+            new_project_id=project_id,
+        )
+
+        # --- quadro, time e coluna: decisao 2, tudo vira o do destino -------
+        # A coluna e a do MESMO status no quadro novo, pelos dois degraus da
+        # ADR 0042 -- a mesma regra de quem cria tarefa naquele quadro.
+        tarefas = (
+            await self._session.execute(
+                select(Task)
+                .where(Task.id.in_(ids))
+                .execution_options(populate_existing=True)
+            )
+        ).scalars().all()
+        colunas: dict[TaskStatus, tuple[uuid.UUID, TaskStatus]] = {}
+        quadros = BoardRepository(self._session)
+        for t in tarefas:
+            if t.status not in colunas:
+                colunas[t.status] = await quadros.coluna_para_status(
+                    board_id=board_id, status=t.status
+                )
+            t.column_id, t.status = colunas[t.status]
+            t.board_id = board_id
+            t.team_id = team_id
+        await self._session.flush()
+
+        # --- pessoas: decisoes 3 e 6 ----------------------------------------
+        saem, assume = await self._tirar_quem_nao_alcanca(
+            raiz=task, ids=ids, avisar=avisar
+        )
+
+        # Uma linha so, na raiz, com `cascade_count` -- a forma do arquivar e do
+        # apagar em cascata (ADR 0005).
+        entrada = build_move_entry(
+            old_project_id=antes["project_id"],
+            new_project_id=project_id,
+            old_parent_task_id=antes["parent_task_id"],
+            new_parent_task_id=mae_id,
+        )
+        entrada.metadata.update(
+            old_board_id=str(antes["board_id"]),
+            new_board_id=str(board_id),
+            old_team_id=str(antes["team_id"]),
+            new_team_id=str(team_id),
+            cascade_count=len(ids) - 1,
+        )
+        await self._repo.write_history(
+            task=task, user_id=tenant.user_id, entries=[entrada]
+        )
+        await self._session.flush()
+
+        titulos = {}
+        for pid in {antes["project_id"], project_id} - {None}:
+            p = await self._projects.get_by_id(pid)
+            if p is not None:
+                titulos[pid] = p.title
+        logger.info(
+            "task.relocated",
+            task_id=str(task.id),
+            board_id=str(board_id),
+            team_id=str(team_id),
+            parent_task_id=str(mae_id),
+            subtarefas=len(ids) - 1,
+            saem=len(saem),
+            assume=assume,
+        )
+        return RelocateResult(
+            task=task,
+            mudou=True,
+            subtarefas=len(ids) - 1,
+            projeto_antes=titulos.get(antes["project_id"]),
+            projeto_depois=titulos.get(project_id),
+            saem=tuple(saem),
+            assume=assume,
+        )
+
+    async def _tirar_quem_nao_alcanca(
+        self, *, raiz: Task, ids: list[uuid.UUID], avisar: bool
+    ) -> tuple[list[PessoaQueSai], int]:
+        """Decisao 3: quem nao enxerga o destino sai, com aviso. Decisao 6: a
+        tarefa que ficaria sem responsavel ganha quem moveu.
+
+        ⚠️ UMA CONTA DE ALCANCE SO, NA RAIZ: depois do `relocate` a subarvore
+        inteira tem o mesmo time e o mesmo projeto, entao quem enxerga a raiz
+        enxerga todas.
+        """
+        from app.db.models import User
+        from app.modules.notifications.application.notification_emitter import (
+            NotificationEmitter,
+        )
+        from app.modules.tasks.domain.history import (
+            MotivoDoSeguidor,
+            build_assigned_entry,
+            build_unassigned_entry,
+            build_unwatched_entry,
+        )
+        from app.modules.tasks.infrastructure.collaboration_repository import (
+            TaskAssignmentRepository,
+            TaskWatcherRepository,
+        )
+
+        tenant = require_tenant()
+        responsaveis_repo = TaskAssignmentRepository(self._session)
+        responsaveis = await responsaveis_repo.list_user_ids_for_tasks(ids)
+        seguidores = await TaskWatcherRepository(
+            self._session
+        ).list_user_ids_for_tasks(ids)
+        pessoas = {u for lista in responsaveis.values() for u in lista} | {
+            u for lista in seguidores.values() for u in lista
+        }
+        alcancam = await user_ids_that_can_view_task(
+            self._session, task=raiz, user_ids=list(pessoas)
+        )
+        perdem = pessoas - alcancam
+        if not perdem:
+            return [], 0
+
+        por_tarefa = {t.id: t for t in (
+            await self._session.execute(select(Task).where(Task.id.in_(ids)))
+        ).scalars()}
+        contagem: dict[uuid.UUID, int] = {}
+        for uid in perdem:
+            _, seguia_em = await self._repo.apagar_relacoes(user_id=uid, task_ids=ids)
+            era_responsavel = [tid for tid in ids if uid in responsaveis.get(tid, [])]
+            for tid in era_responsavel:
+                await self._repo.write_history(
+                    task=por_tarefa[tid],
+                    user_id=tenant.user_id,
+                    entries=[build_unassigned_entry(user_id=uid)],
+                )
+            for tid in seguia_em:
+                await self._repo.write_history(
+                    task=por_tarefa[tid],
+                    user_id=tenant.user_id,
+                    entries=[
+                        build_unwatched_entry(
+                            user_id=uid,
+                            by=tenant.user_id,
+                            reason=MotivoDoSeguidor.LOST_ACCESS,
+                        )
+                    ],
+                )
+            contagem[uid] = len(set(era_responsavel) | set(seguia_em))
+
+        # Decisao 6: quem moveu alcanca o destino (so move para onde cria).
+        assume = 0
+        for tid in ids:
+            antes = responsaveis.get(tid, [])
+            if antes and all(u in perdem for u in antes):
+                responsaveis_repo.add(
+                    task_id=tid, user_id=tenant.user_id, assigned_by=tenant.user_id
+                )
+                await self._repo.write_history(
+                    task=por_tarefa[tid],
+                    user_id=tenant.user_id,
+                    entries=[
+                        build_assigned_entry(
+                            user_id=tenant.user_id, assigned_by=tenant.user_id
+                        )
+                    ],
+                )
+                assume += 1
+        await self._session.flush()
+
+        if avisar:
+            emissor = NotificationEmitter(self._session)
+            for uid, quantidade in contagem.items():
+                await emissor.alcance_perdido(
+                    recipient_id=uid,
+                    actor_id=tenant.user_id,
+                    quantidade=quantidade,
+                    subtimes=[],
+                )
+
+        nomes = dict(
+            (
+                await self._session.execute(
+                    select(User.id, User.name).where(User.id.in_(perdem))
+                )
+            ).all()
+        )
+        saem = sorted(
+            (
+                PessoaQueSai(user_id=uid, nome=nomes.get(uid, ""), tarefas=n)
+                for uid, n in contagem.items()
+            ),
+            key=lambda p: p.nome,
+        )
+        return saem, assume
+
     async def archive(self, *, task_id: uuid.UUID) -> ArchiveResult:
         """Arquiva a task E TODA A SUBARVORE (05/08). Idempotente.
 
@@ -1897,17 +2242,21 @@ class TaskService:
         (Spec 046) esse dia ja passou. Fora da regra, quem VE a tarefa (pelo
         projeto) e quem a EDITA (pelo time) deixam de ser as mesmas pessoas.
         """
-        if project.team_id is None:
-            return
-        tenant = require_tenant()
-        allowed = {project.team_id} | team_scope.descendants(
-            project.team_id, tenant.team_tree
-        )
-        if team_id not in allowed:
+        if not TaskService._time_cabe_no_projeto(project, team_id):
             raise ValidationError(
                 "Time da task fora da subarvore do time do projeto.",
                 details={"field": "team_id"},
             )
+
+    @staticmethod
+    def _time_cabe_no_projeto(project: Project, team_id: uuid.UUID) -> bool:
+        """A regra 8 sem levantar: o `relocate` tira o projeto em vez de recusar."""
+        if project.team_id is None:
+            return True
+        allowed = {project.team_id} | team_scope.descendants(
+            project.team_id, require_tenant().team_tree
+        )
+        return team_id in allowed
 
     async def _assert_visible_via_project(self, task: Task) -> None:
         """Bloqueia leitura/escrita em task que o usuario nao enxerga.

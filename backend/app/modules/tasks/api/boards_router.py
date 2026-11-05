@@ -72,7 +72,7 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Query, status
 from sqlalchemy import select
 
 from app.core.deps import SessionDep, UoWDep
@@ -88,6 +88,7 @@ from app.modules.tasks.api.schemas import (
     BoardDetailResponse,
     BoardRenameRequest,
     BoardResponse,
+    TaskSearchHitResponse,
 )
 from app.modules.tasks.application.board_service import (
     BoardService,
@@ -97,6 +98,7 @@ from app.modules.tasks.application.board_service import (
     LoteRenomear,
 )
 from app.modules.tasks.infrastructure.board_repository import BoardRepository
+from app.modules.tasks.infrastructure.task_repository import TaskRepository
 
 router = APIRouter(prefix="/boards", tags=["boards"])
 
@@ -251,6 +253,37 @@ async def get_board(
             quadro.id
         ),
     )
+
+
+@router.get(
+    "/{board_id}/tasks/search", response_model=list[TaskSearchHitResponse]
+)
+async def search_board_tasks(
+    board_id: uuid.UUID,
+    _: TenantContextDep,
+    session: SessionDep,
+    q: str = Query("", max_length=200),
+    exclude_task_id: uuid.UUID | None = None,
+) -> list[TaskSearchHitResponse]:
+    """Spec 062: tarefas de qualquer nivel do quadro, com o caminho.
+
+    Alimenta o "Subtarefa de..." do mover. `exclude_task_id` tira a tarefa que
+    esta sendo movida e a subarvore dela. Quadro fora da lente: 404.
+    """
+    await BoardService(session).quadro_visivel(board_id)
+    repo = TaskRepository(session)
+    excluir = (
+        await repo.get_by_id_or_raise(exclude_task_id)
+        if exclude_task_id is not None
+        else None
+    )
+    achados = await repo.buscar_no_quadro(board_id=board_id, q=q, excluir=excluir)
+    return [
+        TaskSearchHitResponse(
+            id=t.id, title=t.title, team_id=t.team_id, depth=t.depth, caminho=caminho
+        )
+        for t, caminho in achados
+    ]
 
 
 @router.delete("/{board_id}", response_model=BoardDeleteResponse)

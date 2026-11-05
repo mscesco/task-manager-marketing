@@ -869,6 +869,17 @@ MATRIZ: tuple[Linha, ...] = (
     Linha("task.update", "do Comercial", "patch", f"{T}/tasks/{{tarefa_com}}",
           {"title": "Outro"},
           (OK, OK, OCULTO, OCULTO, OCULTO, OK)),
+    # Spec 062: mover pede editar a ORIGEM (a porta) e criar no DESTINO (o
+    # servico, como no `create`). Previa (`dry_run`): a linha mede a regra, e
+    # nao muda o mundo das outras.
+    Linha("task.update", "mover a do Marketing para o Comercial", "post",
+          f"{T}/tasks/{{tarefa_mkt}}/relocate",
+          {"board_id": "{geral_com}", "dry_run": True},
+          (OK, OK, 422, 422, 422, OK)),
+    Linha("task.update", "mover a do Marketing para o secundario dele", "post",
+          f"{T}/tasks/{{tarefa_mkt}}/relocate",
+          {"board_id": "{secundario_mkt}", "dry_run": True},
+          (OK, OK, OK, OK, OK, OK)),
     Linha("task.archive", "do Marketing", "post", f"{T}/tasks/{{tarefa_mkt}}/archive",
           None,
           (OK, OK, OK, OK, OK, OK)),

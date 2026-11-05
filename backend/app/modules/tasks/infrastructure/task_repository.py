@@ -486,6 +486,82 @@ class TaskRepository(BaseRepository[Task]):
         rows = (await self.session.execute(stmt)).scalars().all()
         return {t.id: t.title for t in rows}
 
+    async def buscar_no_quadro(
+        self,
+        *,
+        board_id: uuid.UUID,
+        q: str,
+        excluir: Task | None,
+        limite: int = 20,
+    ) -> list[tuple[Task, list[str]]]:
+        """Tarefas de QUALQUER nivel do quadro, pelo titulo, com o caminho.
+
+        Spec 062: o seletor de "Subtarefa de..." do mover. Devolve
+        `(tarefa, titulos das ancestrais da raiz para baixo)`.
+
+        Pela lente de quem busca, como `list_page_with_filters`; sem arquivadas
+        (nao recebem subtarefa); sem a `excluir` e a subarvore dela (mover para
+        dentro de si mesma).
+        """
+        tenant = require_tenant()
+        stmt = self._base_select().outerjoin(
+            Project,
+            and_(
+                Project.id == Task.project_id,
+                Project.workspace_id == Task.workspace_id,
+            ),
+        )
+        visible = team_scope.visible_team_ids(
+            tenant.memberships, tenant.team_tree, org_role=tenant.org_role
+        )
+        if visible is not None:
+            stmt = stmt.where(_lente_de_time(visible))
+        stmt = stmt.where(
+            Task.board_id == board_id,
+            Task.is_archived.is_(False),
+        )
+        termo = q.strip()
+        if termo:
+            # A dobra de acento da busca do quadro (`_casa_busca_na_subarvore`).
+            stmt = stmt.where(
+                func.unaccent(func.lower(Task.title)).like(
+                    func.unaccent(func.lower(f"%{termo}%"))
+                )
+            )
+        if excluir is not None:
+            stmt = stmt.where(~Task.path.op("<@")(excluir.path))
+        stmt = stmt.order_by(Task.depth, Task.title, Task.id).limit(limite)
+        tarefas = list((await self.session.execute(stmt)).scalars().all())
+
+        # O caminho: os rotulos do `path` sao `t` + hex do id (ADR 0002).
+        ancestrais = {
+            uuid.UUID(hex=rotulo[1:])
+            for t in tarefas
+            for rotulo in t.path.split(".")[:-1]
+        }
+        titulos: dict[uuid.UUID, str] = {}
+        if ancestrais:
+            titulos = dict(
+                (
+                    await self.session.execute(
+                        select(Task.id, Task.title).where(
+                            Task.workspace_id == tenant.workspace_id,
+                            Task.id.in_(ancestrais),
+                        )
+                    )
+                ).all()
+            )
+        return [
+            (
+                t,
+                [
+                    titulos.get(uuid.UUID(hex=rotulo[1:]), "")
+                    for rotulo in t.path.split(".")[:-1]
+                ],
+            )
+            for t in tarefas
+        ]
+
     async def list_my_relations(
         self,
         params: PageParams,

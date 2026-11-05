@@ -332,6 +332,49 @@ class TaskMoveRequest(BaseModel):
     detach_project: bool = False
 
 
+class TaskRelocateRequest(BaseModel):
+    """Spec 062: mover para outro quadro e/ou outra mae, com a subarvore.
+
+    Com `parent_task_id`, quadro e time vem da mae. Sem ele, a tarefa vira
+    principal no `board_id`; `team_id` so escolhe a lente de subtime no
+    Quadro geral. `dry_run=true` devolve a previa sem gravar.
+    """
+
+    board_id: uuid.UUID | None = None
+    team_id: uuid.UUID | None = None
+    parent_task_id: uuid.UUID | None = None
+    dry_run: bool = False
+
+
+class PessoaQueSaiResponse(BaseModel):
+    user_id: uuid.UUID
+    nome: str
+    tarefas: int
+
+
+class TaskRelocateResponse(BaseModel):
+    """`task` vem `null` na previa (`dry_run`)."""
+
+    task: TaskResponse | None
+    mudou: bool
+    subtarefas: int
+    projeto_antes: str | None
+    projeto_depois: str | None
+    saem: list[PessoaQueSaiResponse]
+    assume: int
+
+
+class TaskSearchHitResponse(BaseModel):
+    """Spec 062: um resultado da busca do mover. `caminho` = titulos das
+    ancestrais, da raiz para baixo (vazio para tarefa principal)."""
+
+    id: uuid.UUID
+    title: str
+    team_id: uuid.UUID | None
+    depth: int
+    caminho: list[str]
+
+
 class TaskListItem(TaskResponse):
     """Item da listagem do quadro: TaskResponse + responsaveis (so IDs).
 
