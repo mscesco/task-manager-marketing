@@ -1333,6 +1333,22 @@ class MemberService:
             )
 
         user.org_role = new_role
+        # Auditoria de 21/10 (item 5): perder o papel de organizacao encolhe a
+        # lente de "tudo" para a dos vinculos -- as mesmas travas das outras
+        # portas. Vem DEPOIS de gravar porque os dois leem o papel do alvo pelo
+        # `_org_role_de`; se o assert barrar, o rollback do UoW desfaz a troca.
+        vinculos = [
+            (v.team_id, v.role)
+            for v in await self._users.list_team_memberships(user_id=user_id)
+        ]
+        await self._assert_nao_deixa_orfa(
+            user_id=user_id,
+            vinculos_depois=vinculos,
+            acao="change_organization_role",
+        )
+        await self._remover_relacoes_perdidas(
+            user_id=user_id, vinculos_depois=vinculos
+        )
         logger.info(
             "member.organization_role_changed",
             user_id=str(user_id),

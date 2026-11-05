@@ -174,7 +174,8 @@ async def test_change_password_rejects_wrong_current(db) -> None:
     ws, team, admin = await _ws_admin(db)
     provisioned = await _create_member(db, ws, team, admin)
 
-    with pytest.raises(AuthenticationError):
+    # 422, e nao 401: o front le 401 como sessao vencida (auditoria 21/10).
+    with pytest.raises(ValidationError):
         await AuthService(db).change_password(
             user_id=provisioned.user.id,
             current_password="senha-errada-qualquer",

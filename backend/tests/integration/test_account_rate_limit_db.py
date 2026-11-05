@@ -285,7 +285,7 @@ async def test_troca_de_senha_freia_a_senha_atual_errada(db) -> None:
     """Quem roubasse a sessao chutava a senha atual sem limite."""
     ws, user = await _pessoa(db)
     await db.commit()
-    # Lidos ANTES: cada 401 desfaz a transacao e expira os objetos.
+    # Lidos ANTES: cada recusa desfaz a transacao e expira os objetos.
     email, slug = user.email, ws.slug
     async with _client(db) as c:
         par = (await c.post("/api/v1/auth/login", json=_corpo(ws, email, _SENHA))).json()
@@ -297,7 +297,7 @@ async def test_troca_de_senha_freia_a_senha_atual_errada(db) -> None:
                 json={"current_password": _ERRADA, **nova},
                 headers=auth,
             )
-            assert r.status_code == 401
+            assert r.status_code == 422
         # A proxima e barrada -- mesmo com a senha atual CERTA.
         barrada = await c.post(
             "/api/v1/auth/change-password",

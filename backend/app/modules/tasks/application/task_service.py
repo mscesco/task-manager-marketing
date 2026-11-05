@@ -449,6 +449,24 @@ class TaskService:
             return
         time_do_quadro, eh_padrao = dono
         if eh_padrao:
+            # ⚠️ LIVRE, MAS DENTRO DA AREA DO QUADRO (auditoria de 21/10, item
+            # 12): com varias areas, o geral do Marketing aceitava o time do
+            # Comercial -- o Marketing perdia a tarefa e o Comercial nao via o
+            # quadro.
+            arvore = require_tenant().team_tree
+            if team_scope.root_of(team_id, arvore) != team_scope.root_of(
+                time_do_quadro, arvore
+            ):
+                raise ValidationError(
+                    "Este quadro e de outra area. O time da tarefa tem de ser "
+                    "a area do quadro ou um subtime dela.",
+                    code=CODIGO_TIME_FORA_DO_QUADRO,
+                    details={
+                        "field": "team_id",
+                        "team_id": str(team_id),
+                        "board_team_id": str(time_do_quadro),
+                    },
+                )
             return
         if team_id != time_do_quadro:
             raise ValidationError(
@@ -1248,12 +1266,14 @@ class TaskService:
             # com os seguidores e os avisos de la -- quem perdia a mae
             # continuava vendo as filhas. Recusar e menor que cascatear: a
             # cascata teria de refazer as travas de quadro e projeto por filha.
+            # ⚠️ ARQUIVADAS CONTAM (auditoria de 21/10, item 8): desarquivar a
+            # filha depois recriaria a filha no time antigo.
             if trocou_de_time and await self._repo.list_children(
-                parent_task_id=task.id
+                parent_task_id=task.id, include_archived=True
             ):
                 raise ValidationError(
-                    "Esta tarefa tem subtarefas e nao troca de time. "
-                    "Arquive ou mova as subtarefas antes.",
+                    "Esta tarefa tem subtarefas, inclusive arquivadas, e nao "
+                    "troca de time. Mova as subtarefas antes.",
                     details={"field": "team_id"},
                 )
             task.team_id = command.team_id
@@ -1456,7 +1476,10 @@ class TaskService:
             # A regra 8 do `create` (auditoria de 16/10): sem ela, a tarefa do
             # SEO ia para um projeto do Design -- quem VE passava a ser o
             # Design (pelo projeto) e quem EDITA continuava o SEO (pelo time).
-            self._assert_time_no_projeto(novo_projeto, task.team_id)
+            # ⚠️ A SUBARVORE INTEIRA vai junto (auditoria de 21/10, item 9):
+            # uma filha de outro subtime tambem precisa caber no projeto.
+            for team_id in await self._repo.subtree_team_ids(task):
+                self._assert_time_no_projeto(novo_projeto, team_id)
 
         # Pai novo (se houver): existe, mesmo workspace, mesmo projeto final.
         new_parent: Task | None = None
