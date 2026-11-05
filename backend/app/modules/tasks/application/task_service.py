@@ -453,10 +453,10 @@ class TaskService:
             # 12): com varias areas, o geral do Marketing aceitava o time do
             # Comercial -- o Marketing perdia a tarefa e o Comercial nao via o
             # quadro.
-            area = {time_do_quadro} | team_scope.descendants(
-                time_do_quadro, require_tenant().team_tree
-            )
-            if team_id not in area:
+            arvore = require_tenant().team_tree
+            if team_scope.root_of(team_id, arvore) != team_scope.root_of(
+                time_do_quadro, arvore
+            ):
                 raise ValidationError(
                     "Este quadro e de outra area. O time da tarefa tem de ser "
                     "a area do quadro ou um subtime dela.",
