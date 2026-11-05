@@ -148,6 +148,10 @@ def _celula(coluna: Any, valor: Any, nomes: dict[str, str], fmt: str) -> Any:
     if tipo == "checkbox":
         return "Sim" if valor else "Não"
     if tipo == "number":
+        # No CSV, virgula decimal (auditoria de 21/10, item 7): "2.125" volta
+        # pela importacao -- e pelo Excel em portugues -- como dois mil e cento.
+        if fmt == "csv" and isinstance(valor, float):
+            return str(valor).replace(".", ",")
         return valor
     if tipo in ("select", "multi_select"):
         rotulos = {o["id"]: o["label"] for o in live_options(list(coluna.options))}
