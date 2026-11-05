@@ -479,6 +479,31 @@ async def test_esvaziar_sobe_membro_e_rebaixa_supervisor(db) -> None:
     assert str(papel) in ("UserTeamRole.OPERATOR", "OPERATOR")
 
 
+async def test_supervisor_de_OUTRO_subtime_nao_ganha_a_raiz(db) -> None:
+    """Auditoria de 21/10 (item 11). Ana, OPERATOR no Copy e SUPERVISOR em
+    Midias, virava OPERATOR na raiz -- a inversao que o resto recusa (409 em
+    toda mudanca seguinte do cadastro dela). A lente de SUPERVISOR ja inclui a
+    raiz: ela continua vendo o que subiu."""
+    ws, raiz, sub, _ator, ctx = await _mundo(db)
+    midias = await f.make_team(db, workspace_id=ws, parent_team_id=raiz, slug="midias")
+    ana = await f.make_user(db, workspace_id=ws)
+    await f.add_member(db, workspace_id=ws, user_id=ana, team_id=sub, role="OPERATOR")
+    await f.add_member(db, workspace_id=ws, user_id=ana, team_id=midias, role="SUPERVISOR")
+    await db.commit()
+
+    async with _client(db, ctx) as c:
+        resp = await c.post(
+            f"/api/v1/workspaces/current/teams/{sub}/esvaziar-e-remover"
+        )
+    assert resp.status_code == 200, resp.text[:300]
+    times = (
+        await db.execute(
+            text("SELECT team_id FROM user_team WHERE user_id = :u"), {"u": ana}
+        )
+    ).scalars().all()
+    assert times == [midias]
+
+
 async def test_membro_ja_na_raiz_so_perde_o_subtime(db) -> None:
     """Sem esta regra, criar o vinculo duplicado violaria o UNIQUE.
 

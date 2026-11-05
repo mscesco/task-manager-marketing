@@ -248,7 +248,9 @@ def to_date(v: Any) -> str | None:
     m = _DATA_BR.match(s)
     if m:
         dia, mes, ano = int(m[1]), int(m[2]), int(m[3])
-        ano = ano + 2000 if ano < 100 else ano
+        # Ano com dois digitos: o corte do Excel (00-29 -> 20xx, 30-99 -> 19xx).
+        if ano < 100:
+            ano += 2000 if ano < 30 else 1900
         try:
             return date(ano, mes, dia).isoformat()
         except ValueError as exc:

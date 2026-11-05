@@ -1568,6 +1568,16 @@ class TaskRepository(BaseRepository[Task]):
             out.setdefault(raiz_id, []).append(user_id)
         return out
 
+    async def subtree_team_ids(self, task: Task) -> set[uuid.UUID | None]:
+        """Times da subarvore da task, ela inclusa e arquivadas tambem."""
+        stmt = (
+            self._base_select()
+            .with_only_columns(Task.team_id)
+            .where(Task.path.op("<@")(task.path))
+            .distinct()
+        )
+        return set((await self.session.execute(stmt)).scalars().all())
+
     # ----------------------------------------------------
     # Tela inicial do time (Spec 058)
     # ----------------------------------------------------

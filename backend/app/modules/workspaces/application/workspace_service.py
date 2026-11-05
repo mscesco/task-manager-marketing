@@ -23,6 +23,7 @@ import re
 import uuid
 from dataclasses import dataclass
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger
@@ -400,6 +401,21 @@ class TeamService:
         await self._session.flush()
         logger.info("team.updated", team_id=str(team_id))
         return team
+
+    async def _supervisiona_outro_subtime(
+        self, *, user_id: uuid.UUID, raiz_id: uuid.UUID, saindo: uuid.UUID
+    ) -> bool:
+        """A pessoa e SUPERVISOR de outro subtime desta area?"""
+        stmt = select(UserTeam.team_id).where(
+            UserTeam.workspace_id == require_tenant().workspace_id,
+            UserTeam.user_id == user_id,
+            UserTeam.role == UserTeamRole.SUPERVISOR,
+            UserTeam.team_id != saindo,
+        )
+        for tid in (await self._session.execute(stmt)).scalars():
+            if await self._repo.area_de(tid) == raiz_id:
+                return True
+        return False
 
     @staticmethod
     def _assert_apaga_subtime(team_id: uuid.UUID) -> None:
@@ -800,6 +816,16 @@ class TeamService:
             ja_na_raiz = await self._repo.vinculo(
                 user_id=vinculo.user_id, team_id=raiz_id
             )
+            # ⚠️ SUPERVISOR DE OUTRO SUBTIME DA AREA NAO GANHA A RAIZ (auditoria
+            # de 21/10, item 11). OPERATOR na raiz + SUPERVISOR em Midias e a
+            # inversao que `_assert_posto_coerente` recusa -- toda mudanca
+            # seguinte no cadastro dela dava 409. A lente do SUPERVISOR ja
+            # inclui a raiz, entao o conteudo que sobe continua visivel.
+            if ja_na_raiz is None and await self._supervisiona_outro_subtime(
+                user_id=vinculo.user_id, raiz_id=raiz_id, saindo=team_id
+            ):
+                await self._session.delete(vinculo)
+                continue
             if ja_na_raiz is None:
                 # Sobe preservando o papel, mas SUPERVISOR vira OPERATOR: o
                 # poder de gerir o proprio subtime nao faz sentido sem subtime.

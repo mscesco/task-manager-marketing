@@ -205,8 +205,9 @@ class AuthService:
         password_expires_at -- a senha definitiva nao expira.
 
         Erros:
-            AuthenticationError -- senha atual incorreta (401).
-            ValidationError     -- nova senha igual a atual (422).
+            AuthenticationError -- provisoria vencida (401).
+            ValidationError     -- senha atual incorreta, ou nova igual a
+                                   atual (422).
                                    (tamanho minimo ja validado no schema)
         """
         user = await self._session.get(User, user_id)
@@ -242,7 +243,13 @@ class AuthService:
         ):
             logger.info("auth.change_password_bad_current", user_id=str(user_id))
             change_password_limiter.record(chave)
-            raise AuthenticationError("Senha atual incorreta.")
+            # 422, e nao 401 (auditoria de 21/10, item 10): o front le 401 como
+            # sessao vencida, renova e manda de novo -- cada erro contava duas
+            # vezes no freio, e a pessoa travava em 5 tentativas, nao em 10.
+            raise ValidationError(
+                "Senha atual incorreta.",
+                details={"field": "current_password"},
+            )
         change_password_limiter.reset(chave)
 
         if new_password == current_password:

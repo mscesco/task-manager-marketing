@@ -47,6 +47,7 @@ from collections.abc import AsyncIterator
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import text
 
 from app.core.deps import get_db_session, get_uow
 from app.core.tenant import TenantContext, set_tenant
@@ -246,6 +247,60 @@ async def test_promocao_nao_barra(db) -> None:
         )
 
     assert r.status_code == 200, r.text
+
+
+# ------------------------------------------ 3b. tirar o papel de organizacao
+
+
+async def _gestor_com_tarefa_no_design(db, *, responsavel: bool):
+    """`ana`: GESTOR de organizacao + OPERATOR na raiz, ligada a uma tarefa do
+    Design. Lente hoje = tudo; sem o papel = {raiz}."""
+    m = await _mundo(db, com_tarefa=True)
+    ana = await f.make_user(
+        db, workspace_id=m["ws"], email="ana@t.dev", org_role="GESTOR"
+    )
+    await f.add_member(
+        db, workspace_id=m["ws"], user_id=ana, team_id=m["raiz"],
+        role="OPERATOR",
+    )
+    ligar = f.make_assignment if responsavel else f.make_watcher
+    extra = {"assigned_by": m["ator"]} if responsavel else {}
+    await ligar(
+        db, workspace_id=m["ws"], task_id=m["tarefa"].id, user_id=ana, **extra
+    )
+    # A `gi` sai da tarefa, senao ela continua alcancando e nada barra.
+    await db.execute(
+        text("DELETE FROM task_assignment WHERE user_id = :u"), {"u": m["gi"]}
+    )
+    return m, ana
+
+
+async def test_tirar_o_papel_de_organizacao_barra(db) -> None:
+    """Auditoria de 21/10 (item 5): a quarta porta que encolhe a lente."""
+    m, ana = await _gestor_com_tarefa_no_design(db, responsavel=True)
+    async with _client(db, m["ctx"]) as cli:
+        r = await cli.patch(
+            f"/api/v1/members/{ana}/organization-role", json={"role": None}
+        )
+
+    assert r.status_code == 422, r.text
+    assert r.json()["error"]["details"]["acao"] == "change_organization_role"
+
+
+async def test_tirar_o_papel_de_organizacao_apaga_o_seguidor(db) -> None:
+    """Sem ser responsavel, a relacao perdida sai -- como nas outras portas."""
+    m, ana = await _gestor_com_tarefa_no_design(db, responsavel=False)
+    async with _client(db, m["ctx"]) as cli:
+        r = await cli.patch(
+            f"/api/v1/members/{ana}/organization-role", json={"role": None}
+        )
+
+    assert r.status_code == 200, r.text
+    segue = await db.scalar(
+        text("SELECT count(*) FROM task_watcher WHERE user_id = :u"),
+        {"u": ana},
+    )
+    assert segue == 0
 
 
 # ------------------------------------------------------------ 4. o corpo (E8)
