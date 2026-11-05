@@ -99,3 +99,54 @@ async def test_trocar_time_com_subtarefa_viva_e_recusado(db) -> None:
         )
         movida = await svc.update(task_id=sozinha.id, command=UpdateTaskCommand(team_id=sub))
         assert movida.team_id == sub
+
+
+async def test_trocar_time_com_subtarefa_ARQUIVADA_tambem_e_recusado(db) -> None:
+    """Auditoria de 21/10 (item 8): desarquivar a filha recriaria o estado."""
+    raiz, sub, proj, ctx, user = await _mundo(db)
+    with acting_as(**ctx):
+        svc = TaskService(db)
+        pai = await svc.create(
+            CreateTaskCommand(title="pai", project_id=proj, team_id=raiz, assignee_ids=[user])
+        )
+        filha = await svc.create(
+            CreateTaskCommand(
+                title="filha",
+                project_id=proj,
+                team_id=raiz,
+                parent_task_id=pai.id,
+                assignee_ids=[user],
+            )
+        )
+        await svc.archive(task_id=filha.id)
+        with pytest.raises(ValidationError):
+            await svc.update(task_id=pai.id, command=UpdateTaskCommand(team_id=sub))
+
+
+async def test_mudar_de_projeto_confere_o_time_das_FILHAS(db) -> None:
+    """Auditoria de 21/10 (item 9): a filha do `sub` nao cabe no projeto do
+    `outro` -- e ia junto, porque so o time da mae era conferido."""
+    raiz, sub, proj, ctx, user = await _mundo(db)
+    outro = await f.make_team(
+        db, workspace_id=ctx["workspace_id"], parent_team_id=raiz, slug="outro"
+    )
+    proj_outro = await f.make_project(
+        db, workspace_id=ctx["workspace_id"], created_by=user, team_id=outro
+    )
+    ctx["team_tree"] = (*ctx["team_tree"], node(outro, parent_team_id=raiz))
+    with acting_as(**ctx):
+        svc = TaskService(db)
+        pai = await svc.create(
+            CreateTaskCommand(title="pai", project_id=proj, team_id=outro, assignee_ids=[user])
+        )
+        await svc.create(
+            CreateTaskCommand(
+                title="filha",
+                project_id=proj,
+                team_id=sub,
+                parent_task_id=pai.id,
+                assignee_ids=[user],
+            )
+        )
+        with pytest.raises(ValidationError):
+            await svc.move(task_id=pai.id, command=MoveTaskCommand(project_id=proj_outro))
