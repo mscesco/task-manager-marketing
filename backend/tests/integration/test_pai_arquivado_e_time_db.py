@@ -123,6 +123,24 @@ async def test_trocar_time_com_subtarefa_ARQUIVADA_tambem_e_recusado(db) -> None
             await svc.update(task_id=pai.id, command=UpdateTaskCommand(team_id=sub))
 
 
+async def test_quadro_geral_nao_aceita_o_time_de_OUTRA_area(db) -> None:
+    """Auditoria de 21/10 (item 12): o geral do Marketing aceitava o time do
+    Comercial pela API -- o Marketing perdia a tarefa e o Comercial nao via o
+    quadro. O subtime da propria area continua livre."""
+    raiz, sub, _proj, ctx, user = await _mundo(db)
+    comercial = await f.make_team(db, workspace_id=ctx["workspace_id"], slug="comercial")
+    ctx["team_tree"] = (*ctx["team_tree"], node(comercial))
+    with acting_as(**ctx):
+        svc = TaskService(db)
+        t = await svc.create(
+            CreateTaskCommand(title="avulsa", team_id=raiz, assignee_ids=[user])
+        )
+        interna = await svc.update(task_id=t.id, command=UpdateTaskCommand(team_id=sub))
+        assert interna.team_id == sub
+        with pytest.raises(ValidationError):
+            await svc.update(task_id=t.id, command=UpdateTaskCommand(team_id=comercial))
+
+
 async def test_mudar_de_projeto_confere_o_time_das_FILHAS(db) -> None:
     """Auditoria de 21/10 (item 9): a filha do `sub` nao cabe no projeto do
     `outro` -- e ia junto, porque so o time da mae era conferido."""

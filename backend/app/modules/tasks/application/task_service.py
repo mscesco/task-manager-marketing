@@ -449,6 +449,24 @@ class TaskService:
             return
         time_do_quadro, eh_padrao = dono
         if eh_padrao:
+            # ⚠️ LIVRE, MAS DENTRO DA AREA DO QUADRO (auditoria de 21/10, item
+            # 12): com varias areas, o geral do Marketing aceitava o time do
+            # Comercial -- o Marketing perdia a tarefa e o Comercial nao via o
+            # quadro.
+            area = {time_do_quadro} | team_scope.descendants(
+                time_do_quadro, require_tenant().team_tree
+            )
+            if team_id not in area:
+                raise ValidationError(
+                    "Este quadro e de outra area. O time da tarefa tem de ser "
+                    "a area do quadro ou um subtime dela.",
+                    code=CODIGO_TIME_FORA_DO_QUADRO,
+                    details={
+                        "field": "team_id",
+                        "team_id": str(team_id),
+                        "board_team_id": str(time_do_quadro),
+                    },
+                )
             return
         if team_id != time_do_quadro:
             raise ValidationError(
