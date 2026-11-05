@@ -33,6 +33,8 @@ from app.modules.tasks.api.schemas import (
     TaskListItem,
     TaskListResponse,
     TaskMoveRequest,
+    TaskRelocateRequest,
+    TaskRelocateResponse,
     TaskResponse,
     TaskUpdateRequest,
 )
@@ -44,6 +46,7 @@ from app.modules.tasks.application.task_service import (
     CreateTaskCommand,
     DuplicateTaskCommand,
     MoveTaskCommand,
+    RelocateCommand,
     TaskFilters,
     TaskService,
     UpdateTaskCommand,
@@ -382,6 +385,48 @@ async def move_task(
     )
     await uow.commit()
     return TaskResponse.model_validate(task)
+
+
+@router.post(
+    "/{task_id}/relocate",
+    response_model=TaskRelocateResponse,
+    dependencies=[Depends(require_permission("task.update"))],
+)
+async def relocate_task(
+    task_id: uuid.UUID, payload: TaskRelocateRequest, uow: UoWDep
+) -> TaskRelocateResponse:
+    """Spec 062: move para outro quadro e/ou outra mae, levando a subarvore.
+
+    O verbo da rota e o de editar a ORIGEM; criar no DESTINO e conferido no
+    servico, como no `create`.
+    """
+    resultado = await TaskService(uow.session).relocate(
+        task_id=task_id,
+        command=RelocateCommand(
+            board_id=payload.board_id,
+            team_id=payload.team_id,
+            parent_task_id=payload.parent_task_id,
+        ),
+        dry_run=payload.dry_run,
+    )
+    if not payload.dry_run:
+        await uow.commit()
+    return TaskRelocateResponse(
+        task=(
+            TaskResponse.model_validate(resultado.task)
+            if resultado.task is not None
+            else None
+        ),
+        mudou=resultado.mudou,
+        subtarefas=resultado.subtarefas,
+        projeto_antes=resultado.projeto_antes,
+        projeto_depois=resultado.projeto_depois,
+        saem=[
+            {"user_id": p.user_id, "nome": p.nome, "tarefas": p.tarefas}
+            for p in resultado.saem
+        ],
+        assume=resultado.assume,
+    )
 
 
 @router.post(

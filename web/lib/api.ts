@@ -20,6 +20,7 @@ import {
   quadroGeralDoTime,
 } from "@/lib/coluna";
 import { soleRootTeam } from "@/lib/areas";
+import type { AchadoDaBusca, CorpoDoMover, PreviaDoMover } from "@/lib/moverTarefa";
 import type { Permission } from "@/lib/permissions.generated";
 
 // Cliente unico de acesso ao backend FastAPI. Centraliza:
@@ -1635,6 +1636,38 @@ export async function moveTask(
   // (auditoria de 21/10).
   _membersPorTarefa.delete(id);
   return t;
+}
+
+/** Spec 062: a resposta do `relocate`. `task` e `null` na previa. */
+export type RespostaDoMover = PreviaDoMover & { task: Task | null };
+
+/**
+ * Spec 062: move para outro quadro e/ou outra mae, levando a subarvore. Com
+ * `dry_run`, so devolve a previa (quem sai, quem assume, o projeto).
+ */
+export async function relocateTask(
+  id: string,
+  corpo: CorpoDoMover,
+  dryRun: boolean,
+): Promise<RespostaDoMover> {
+  const r = await api<RespostaDoMover>(`/api/v1/tasks/${id}/relocate`, {
+    method: "POST",
+    body: { ...corpo, dry_run: dryRun },
+  });
+  // Mesmo motivo do `moveTask`: o time e o projeto mudam quem alcanca.
+  // As subtarefas foram junto, e o alcance delas mudou tambem.
+  if (!dryRun) _membersPorTarefa.clear();
+  return r;
+}
+
+/** Spec 062: tarefas de qualquer nivel do quadro, com o caminho. */
+export async function searchBoardTasks(
+  boardId: string,
+  q: string,
+  excludeTaskId: string,
+): Promise<AchadoDaBusca[]> {
+  const params = new URLSearchParams({ q, exclude_task_id: excludeTaskId });
+  return api<AchadoDaBusca[]>(`/api/v1/boards/${boardId}/tasks/search?${params}`);
 }
 
 // ---------------------------------------------------------------

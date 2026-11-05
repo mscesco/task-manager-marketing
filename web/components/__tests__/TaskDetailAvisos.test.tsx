@@ -162,8 +162,9 @@ describe("TaskDetail -- falha de escrita vira aviso", () => {
     vi.mocked(api.deleteTask).mockRejectedValue(new ApiError(403, "proibido"));
     montar({ can_delete: true });
 
-    fireEvent.click(await screen.findByText("Excluir"));
-    // O botão de confirmar também se chama "Excluir": é o que sobra na tela.
+    fireEvent.click(await screen.findByRole("button", { name: "Mais ações" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Excluir" }));
+    // O menu fecha: o "Excluir" que sobra na tela e o de confirmar.
     const confirmar = screen.getAllByText("Excluir").at(-1)!;
     fireEvent.click(confirmar);
 
@@ -176,7 +177,8 @@ describe("TaskDetail -- falha de escrita vira aviso", () => {
     vi.mocked(api.deleteTask).mockRejectedValue(new ApiError(500, "boom"));
     montar({ can_delete: true });
 
-    fireEvent.click(await screen.findByText("Excluir"));
+    fireEvent.click(await screen.findByRole("button", { name: "Mais ações" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Excluir" }));
     fireEvent.click(screen.getAllByText("Excluir").at(-1)!);
 
     expect(await screen.findByText("Não consegui excluir a tarefa.")).toBeTruthy();

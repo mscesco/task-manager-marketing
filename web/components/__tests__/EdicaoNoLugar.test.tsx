@@ -432,7 +432,7 @@ describe("TaskDetail -- edição no lugar (Spec 052, fatia D)", () => {
 
   it("⭐ não há mais o \"Editar\" do rodapé", async () => {
     montar();
-    expect(await screen.findByText("Copiar link")).toBeTruthy();
+    expect(await screen.findByRole("button", { name: "Copiar link da tarefa" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Editar" })).toBeNull();
   });
 
