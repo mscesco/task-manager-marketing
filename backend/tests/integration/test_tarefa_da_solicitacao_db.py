@@ -21,8 +21,9 @@ import uuid
 from datetime import UTC, datetime
 
 import pytest
+from sqlalchemy import func
 
-from app.db.models import Task
+from app.db.models import SolicitationForm, Task
 from app.db.unit_of_work import UnitOfWork
 from app.modules.solicitations.application.service import (
     CriarTarefaCommand,
@@ -218,6 +219,23 @@ async def test_pedido_ORFAO_ainda_vira_tarefa(db) -> None:
     assert tarefa.title.startswith("[arte]")
 
 
+async def test_formulario_APAGADO_ainda_da_o_time_com_DUAS_raizes(db) -> None:
+    """Auditoria de 21/10 (item 6). Sem o time do formulário, a tarefa caía
+    em "a única área" -- 422 com duas raízes, depois de já ter aprovado."""
+    ws, pedido, raiz, ctx = await _cena(db)
+    await f.make_team(db, workspace_id=ws, slug="comercial")
+    form = await db.get(SolicitationForm, pedido.form_id)
+    form.deleted_at = func.now()
+    await db.flush()
+
+    with acting_as(**ctx):
+        async with UnitOfWork(db) as uow:
+            _, tarefa = await SolicitationService(db).criar_tarefa(
+                uow, CriarTarefaCommand(solicitation_id=pedido.id)
+            )
+    assert tarefa.team_id == raiz
+
+
 # ==========================================================
 # Vincular uma tarefa que já existe
 # ==========================================================
@@ -348,8 +366,6 @@ async def test_tarefa_APAGADA_some_dos_titulos(db) -> None:
                 uow, CriarTarefaCommand(solicitation_id=pedido.id)
             )
         alvo = await db.get(Task, tarefa.id)
-        from sqlalchemy import func
-
         alvo.deleted_at = func.now()
         await db.flush()
 

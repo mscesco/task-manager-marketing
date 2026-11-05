@@ -771,18 +771,20 @@ class SolicitationService:
     async def _time_do_pedido(self, solicitation: Solicitation):
         """O time dono do FORMULARIO por onde o pedido entrou.
 
-        ⚠️ `None` PARA PEDIDO ORFAO (anterior a esta spec, ou de formulario
-        apagado), e `None` no `CreateTaskCommand` significa "o subtime de quem
-        cria" -- que e o comportamento de sempre. E a unica saida honesta: nao
-        ha time para herdar.
+        ⚠️ `None` SO PARA PEDIDO ORFAO (anterior a esta spec, sem `form_id`), e
+        `None` no `CreateTaskCommand` significa "o subtime de quem cria".
+
+        ⚠️ FORMULARIO APAGADO AINDA TEM TIME (auditoria de 21/10, item 6), como
+        no `_para_triar`, que ja deixou o pedido ser triado por esse time. O
+        filtro de `deleted_at` que havia aqui devolvia `None`, e com mais de um
+        time raiz o "subtime de quem cria" da 422: aprovava e nao criava.
         """
         if solicitation.form_id is None:
             return None
         return (
             await self.session.execute(
                 select(SolicitationForm.team_id).where(
-                    SolicitationForm.id == solicitation.form_id,
-                    SolicitationForm.deleted_at.is_(None),
+                    SolicitationForm.id == solicitation.form_id
                 )
             )
         ).scalar_one_or_none()
