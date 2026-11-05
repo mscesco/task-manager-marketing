@@ -1655,7 +1655,8 @@ export async function relocateTask(
     body: { ...corpo, dry_run: dryRun },
   });
   // Mesmo motivo do `moveTask`: o time e o projeto mudam quem alcanca.
-  if (!dryRun) _membersPorTarefa.delete(id);
+  // As subtarefas foram junto, e o alcance delas mudou tambem.
+  if (!dryRun) _membersPorTarefa.clear();
   return r;
 }
 

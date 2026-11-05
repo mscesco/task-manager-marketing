@@ -272,10 +272,10 @@ async def search_board_tasks(
     """
     await BoardService(session).quadro_visivel(board_id)
     repo = TaskRepository(session)
+    # Sem 404: id inexistente ou fora da lente so nao exclui nada -- um 404
+    # aqui diria se a tarefa existe (revisao de 05/11).
     excluir = (
-        await repo.get_by_id_or_raise(exclude_task_id)
-        if exclude_task_id is not None
-        else None
+        await repo.get_by_id(exclude_task_id) if exclude_task_id is not None else None
     )
     achados = await repo.buscar_no_quadro(board_id=board_id, q=q, excluir=excluir)
     return [

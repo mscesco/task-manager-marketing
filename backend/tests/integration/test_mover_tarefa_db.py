@@ -29,9 +29,9 @@ from app.modules.tasks.application.task_service import (
     RelocateCommand,
     TaskService,
 )
-from app.shared.exceptions.base import ValidationError
+from app.shared.exceptions.base import AuthorizationError, ValidationError
 from tests.integration import factories as f
-from tests.integration.conftest import acting_as, node
+from tests.integration.conftest import acting_as, mship, node
 
 pytestmark = pytest.mark.integration
 
@@ -416,3 +416,58 @@ async def test_busca_em_quadro_fora_da_lente_e_404(db, m) -> None:
     async with _client(db, m, como=m["gi"]) as cli:
         r = await cli.get(f"/api/v1/boards/{m['geral_com']}/tasks/search")
     assert r.status_code == 404
+
+
+# ------------------------------------------------- revisao de 05/11 (antes do deploy)
+
+
+async def test_quem_nao_edita_uma_FILHA_nao_move_a_mae(db, m) -> None:
+    """Editar a origem vale para a subarvore: a filha do Design tambem muda de
+    quadro e time, e um SUPERVISOR do SEO nao edita o Design."""
+    sup = await f.make_user(db, workspace_id=m["ws"], email="sup@t.dev")
+    await f.add_member(db, workspace_id=m["ws"], user_id=sup, team_id=m["seo"], role="SUPERVISOR")
+    mae = await f.make_task(
+        db, workspace_id=m["ws"], created_by=m["ator"], team_id=m["seo"],
+        board_id=m["geral_mkt"], title="mae do seo",
+    )
+    await f.make_task(
+        db, workspace_id=m["ws"], created_by=m["ator"], team_id=m["design"],
+        parent=mae, title="filha do design",
+    )
+    destino = await f.make_task(
+        db, workspace_id=m["ws"], created_by=m["ator"], team_id=m["seo"],
+        board_id=m["geral_mkt"], title="destino do seo",
+    )
+    with acting_as(
+        workspace_id=m["ws"], user_id=sup, memberships=(mship(m["seo"], "SUPERVISOR"),),
+        team_tree=m["ctx"]["team_tree"],
+    ):
+        with pytest.raises(AuthorizationError):
+            await TaskService(db).relocate(
+                task_id=mae.id,
+                command=RelocateCommand(parent_task_id=destino.id),
+                dry_run=True,
+            )
+
+
+async def test_busca_nao_mostra_o_titulo_de_ancestral_fora_da_lente(db, m) -> None:
+    """A filha do Design e visivel para a `gi`; a mae, do SEO, nao."""
+    mae_seo = await f.make_task(
+        db, workspace_id=m["ws"], created_by=m["ator"], team_id=m["seo"],
+        board_id=m["geral_mkt"], title="segredo do seo",
+    )
+    await f.make_task(
+        db, workspace_id=m["ws"], created_by=m["ator"], team_id=m["design"],
+        parent=mae_seo, title="filha do design",
+    )
+    async with _client(db, m, como=m["gi"]) as cli:
+        r = await cli.get(f"/api/v1/boards/{m['geral_mkt']}/tasks/search?q=filha")
+    assert [(h["title"], h["caminho"]) for h in r.json()] == [("filha do design", ["…"])]
+
+
+async def test_excluir_id_inexistente_nao_e_404(db, m) -> None:
+    async with _client(db, m) as cli:
+        r = await cli.get(
+            f"/api/v1/boards/{m['geral_mkt']}/tasks/search?exclude_task_id={uuid.uuid4()}"
+        )
+    assert r.status_code == 200

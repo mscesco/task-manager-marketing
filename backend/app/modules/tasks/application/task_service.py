@@ -1752,6 +1752,15 @@ class TaskService:
             "parent_task_id": task.parent_task_id,
         }
         ids = await self._repo.ids_da_subarvore(path=task.path)
+        # Editar a ORIGEM vale para a subarvore inteira: uma filha de outro
+        # subtime tambem tem quadro e time reescritos (revisao de 05/11).
+        conferidos: set[tuple[uuid.UUID | None, uuid.UUID | None]] = set()
+        for t in (
+            await self._session.execute(select(Task).where(Task.id.in_(ids)))
+        ).scalars():
+            if (t.team_id, t.project_id) not in conferidos:
+                conferidos.add((t.team_id, t.project_id))
+                await self._assert_editable(t)
 
         # --- path, mae e projeto da subarvore inteira -----------------------
         await self._repo.reparent_subtree(
@@ -1816,16 +1825,18 @@ class TaskService:
             p = await self._projects.get_by_id(pid)
             if p is not None:
                 titulos[pid] = p.title
-        logger.info(
-            "task.relocated",
-            task_id=str(task.id),
-            board_id=str(board_id),
-            team_id=str(team_id),
-            parent_task_id=str(mae_id),
-            subtarefas=len(ids) - 1,
-            saem=len(saem),
-            assume=assume,
-        )
+        # So o movimento de verdade: a previa roda este mesmo codigo.
+        if avisar:
+            logger.info(
+                "task.relocated",
+                task_id=str(task.id),
+                board_id=str(board_id),
+                team_id=str(team_id),
+                parent_task_id=str(mae_id),
+                subtarefas=len(ids) - 1,
+                saem=len(saem),
+                assume=assume,
+            )
         return RelocateResult(
             task=task,
             mudou=True,

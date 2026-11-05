@@ -541,21 +541,28 @@ class TaskRepository(BaseRepository[Task]):
         }
         titulos: dict[uuid.UUID, str] = {}
         if ancestrais:
-            titulos = dict(
-                (
-                    await self.session.execute(
-                        select(Task.id, Task.title).where(
-                            Task.workspace_id == tenant.workspace_id,
-                            Task.id.in_(ancestrais),
-                        )
-                    )
-                ).all()
+            # Pela MESMA lente: ancestral que a pessoa nao ve vira "…", e nao
+            # o titulo dele (revisao de 05/11).
+            consulta = (
+                self._base_select()
+                .with_only_columns(Task.id, Task.title)
+                .outerjoin(
+                    Project,
+                    and_(
+                        Project.id == Task.project_id,
+                        Project.workspace_id == Task.workspace_id,
+                    ),
+                )
+                .where(Task.id.in_(ancestrais))
             )
+            if visible is not None:
+                consulta = consulta.where(_lente_de_time(visible))
+            titulos = dict((await self.session.execute(consulta)).all())
         return [
             (
                 t,
                 [
-                    titulos.get(uuid.UUID(hex=rotulo[1:]), "")
+                    titulos.get(uuid.UUID(hex=rotulo[1:]), "…")
                     for rotulo in t.path.split(".")[:-1]
                 ],
             )
