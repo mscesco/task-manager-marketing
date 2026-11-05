@@ -175,8 +175,16 @@ export function fraseDoEvento(
       // ⚠️ SEM NOME DE PROJETO NEM DE TAREFA MÃE, pelo mesmo motivo do time: a
       // tela não os tem em mãos. A frase diz O QUE mudou, e a tarefa em si
       // mostra onde ela está agora.
-      if (paiNovo && !paiVelho) return "tornou esta tarefa uma subtarefa";
-      if (!paiNovo && paiVelho) return "tirou esta tarefa de subtarefa";
+      // Spec 062: o `relocate` grava o quadro e conta as subtarefas que foram
+      // junto (`quantas`).
+      const quadroNovo = texto(meta(e, "new_board_id"));
+      const quadroVelho = texto(meta(e, "old_board_id"));
+      if (paiNovo && !paiVelho) return `tornou esta tarefa uma subtarefa${quantas(e)}`;
+      if (!paiNovo && paiVelho) return `tirou esta tarefa de subtarefa${quantas(e)}`;
+      if (paiNovo && paiVelho && paiNovo !== paiVelho)
+        return `pôs esta tarefa dentro de outra${quantas(e)}`;
+      if (quadroNovo && quadroVelho && quadroNovo !== quadroVelho)
+        return `moveu a tarefa${quantas(e)} para outro quadro`;
       if (projetoNovo && !projetoVelho) return "pôs a tarefa num projeto";
       if (!projetoNovo && projetoVelho) return "tirou a tarefa do projeto";
       if (projetoNovo && projetoVelho && projetoNovo !== projetoVelho)

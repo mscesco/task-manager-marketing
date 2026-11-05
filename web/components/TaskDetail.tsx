@@ -109,6 +109,7 @@ import {
 } from "@/lib/criacaoTarefa";
 
 import Loading from "@/components/Loading";
+import MoverTarefa from "@/components/MoverTarefa";
 import { useAvisar } from "@/components/Toasts";
 // ⚠️ RESERVA DO BADGE, e so isso (fatia 4c-2). O rotulo do badge passou a sair
 // de `coluna.name`; este mapa responde pelo caso em que a coluna da tarefa nao
@@ -422,6 +423,8 @@ export default function TaskDetail({
   const [copiaErro, setCopiaErro] = useState<string | null>(null);
   // Exclusao (soft-delete cascateado). Confirmacao inline mostra o estrago.
   const [confirmandoExcluir, setConfirmandoExcluir] = useState(false);
+  // Spec 062: o modal "Mover…".
+  const [movendoTarefa, setMovendoTarefa] = useState(false);
   const [excluindo, setExcluindo] = useState(false);
 
   // ---- Comentarios (Entrega 14, Fatia 2) ----
@@ -2910,7 +2913,20 @@ export default function TaskDetail({
             copiado={copiado}
             me={me}
             onDuplicar={onDuplicar}
+            onMover={() => setMovendoTarefa(true)}
           />
+          {movendoTarefa && (
+            <MoverTarefa
+              task={task}
+              onFechar={() => setMovendoTarefa(false)}
+              onMovida={(t) => {
+                // O quadro recarrega pelo canal de sempre (`onTaskMoved`):
+                // a tarefa pode ter saido dele, e as subtarefas foram junto.
+                onTaskMoved(t);
+                avisar("Tarefa movida.");
+              }}
+            />
+          )}
           </div>
 
           {/* A coluna lateral. `aside`: e conteudo relacionado, e nao a
@@ -3234,6 +3250,7 @@ export default function TaskDetail({
 function RodapeDaTarefa({
   task, filhos, confirmandoExcluir, setConfirmandoExcluir, excluindo, excluir,
   copiaErro, arquivando, alternarArquivo, copiarLink, copiado, me, onDuplicar,
+  onMover,
 }: {
   task: Task;
   filhos: Task[];
@@ -3248,6 +3265,7 @@ function RodapeDaTarefa({
   copiado: boolean;
   me: CurrentUser | null;
   onDuplicar: (task: Task) => void;
+  onMover: () => void;
 }) {
   return (
     <div className="flex shrink-0 flex-col gap-2 border-t border-border bg-surface px-7 py-3">
@@ -3332,6 +3350,20 @@ function RodapeDaTarefa({
                 title="Criar uma cópia desta tarefa"
               >
                 Duplicar
+              </button>
+            )}
+          {/* Spec 062. A porta do servidor e `task.update` (editar a origem);
+              arquivada nao se move. Criar no destino e conferido na previa. */}
+          {(me?.permissions.includes("task.update") ?? false) &&
+            !task.is_archived &&
+            !confirmandoExcluir && (
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={onMover}
+                title="Mover para outro quadro ou para dentro de outra tarefa"
+              >
+                Mover…
               </button>
             )}
         </div>

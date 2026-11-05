@@ -194,6 +194,21 @@ describe("os eventos da tarefa", () => {
       }),
     ).toBe("tirou a tarefa do projeto");
   });
+
+  it("Spec 062: outro quadro e outra mae, com as subtarefas que foram junto", () => {
+    expect(
+      frase({
+        event_type: "moved",
+        event_metadata: { old_board_id: "a", new_board_id: "b", cascade_count: 2 },
+      }),
+    ).toBe("moveu a tarefa e 2 subtarefas para outro quadro");
+    expect(
+      frase({
+        event_type: "moved",
+        event_metadata: { old_parent_task_id: "m1", new_parent_task_id: "m2" },
+      }),
+    ).toBe("pôs esta tarefa dentro de outra");
+  });
 });
 
 describe("⚠️⚠️ as reservas", () => {

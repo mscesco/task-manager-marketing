@@ -1,7 +1,6 @@
 # Spec 062 — Mover tarefa e subtarefa para qualquer lugar
 
-**Status:** rascunho de 05/11/2026, com as seis decisões dela. Falta a
-aprovação para começar o código.
+**Status:** aprovada por ela em 05/11/2026, com as seis decisões abaixo.
 
 Pedido dela (05/11): mover tarefas e subtarefas, em qualquer nível e de
 qualquer time. No seletor, a pessoa escolhe o **quadro** (entre os que ela vê),
@@ -60,13 +59,15 @@ Esta spec é a "operação própria" que a decisão de 18/08 deixou para depois.
 
 ## O que entrega
 
-**Onde aparece:** **"Mover…"** no menu da tarefa (no card e no `TaskDetail`),
-para quem pode editar a tarefa.
+**Onde aparece:** **"Mover…"** no rodapé do detalhe da tarefa, ao lado de
+"Duplicar", para quem pode editar a tarefa. Vale para principal e subtarefa
+(as duas abrem no mesmo detalhe). O card do quadro não tem menu hoje; criar um
+ficou fora desta spec.
 
 **O modal**
-1. **Quadro:** o mesmo seletor do quadro (quadros avulsos + Quadro geral +
-   lentes), só com os destinos onde a pessoa pode criar tarefa. Abre no quadro
-   atual.
+1. **Quadro:** os quadros que a pessoa alcança, agrupados por área: o
+   Quadro geral, a lente de cada subtime e os quadros avulsos. Abre no quadro
+   atual. Se ela não puder criar no destino, a prévia diz e o botão desliga.
 2. **Vai como:** "Tarefa principal" ou "Subtarefa de…".
 3. **Subtarefa de…:** a busca descrita na decisão 5. Ficam de fora a própria
    tarefa e as subtarefas dela (não dá para pôr uma tarefa dentro dela mesma)
@@ -74,17 +75,18 @@ para quem pode editar a tarefa.
 4. **Prévia, antes do botão:** "Leva junto N subtarefas"; "Fica sem o projeto
    X", quando for o caso; a lista de pessoas que vão sair, com o motivo; e
    "Você vira responsável por N tarefas", quando for o caso (decisão 6).
-5. **Mover.** Depois, um aviso com o destino e um link para ele.
+5. **Mover.** Depois, o aviso "Tarefa movida." e o quadro recarrega.
 
 **O que acontece com a tarefa e as subtarefas**
 - **Quadro e time:** os do destino (decisão 2).
 - **Coluna:** cada tarefa vai para a coluna do destino que tem o **mesmo
   significado** da atual (a lógica que a conclusão em cascata já usa:
   `semantic` + coluna padrão). O status não muda.
-- **Posição:** no fim da coluna, ou no fim das subtarefas da nova mãe.
 - **Projeto:** decisão 4.
-- **Histórico:** uma linha em cada tarefa movida, com o caminho de onde saiu e
-  para onde foi. A linha "deixou de seguir" de quem saiu já existe.
+- **Histórico:** uma linha só, na tarefa movida, com quantas subtarefas
+  foram junto (a forma do arquivar e do excluir). Quem saiu ganha a linha de
+  "tirou dos responsáveis" ou "deixou de seguir" em cada tarefa; quem assume,
+  a de "designou".
 
 **Recusas (422, com a mensagem dizendo o que fazer)**
 - Mover para dentro de si mesma ou de uma das próprias subtarefas.
@@ -100,9 +102,10 @@ para quem pode editar a tarefa.
   `{ board_id, team_id, parent_task_id | null, dry_run }`. Com
   `dry_run: true`, devolve a prévia (subtarefas, projeto, pessoas que saem) e
   não grava nada. Sem ele, grava, numa transação só.
-- `GET /api/v1/boards/{id}/tasks/search?q=&team_id=` devolve as tarefas de
-  qualquer nível daquele quadro (ou daquela lente), cada uma com o caminho.
-  Limite de 20 resultados. Corta pela lente de quem busca.
+- `GET /api/v1/boards/{id}/tasks/search?q=&exclude_task_id=` devolve as
+  tarefas de qualquer nível daquele quadro, cada uma com o caminho, sem a
+  tarefa que está sendo movida nem as subtarefas dela. Limite de 20
+  resultados. Corta pela lente de quem busca.
 - O `/move` atual fica como está (n8n e telas antigas). O `relocate` reaproveita
   o `reparent_subtree` (path, depth, projeto) e as travas de quadro, time e
   projeto que já existem.
@@ -112,7 +115,7 @@ para quem pode editar a tarefa.
 
 - **A — servidor:** `relocate` com `dry_run` e a busca, com testes de cada
   decisão e de cada recusa.
-- **B — tela:** o modal "Mover…" no card e no `TaskDetail`, com a prévia.
+- **B — tela:** o modal "Mover…" no `TaskDetail`, com a prévia.
   Conferido no navegador, nos dois temas.
 
 ## Fora
