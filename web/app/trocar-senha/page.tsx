@@ -57,9 +57,9 @@ export default function TrocarSenhaPage() {
       router.replace(forcado === false ? "/perfil" : "/inicio");
     } catch (err) {
       const e = err as ApiError;
-      setErro(
-        e.status === 401 ? "Senha atual incorreta." : e.message || "Não foi possível trocar."
-      );
+      // Senha atual errada vem como 422 com o texto do servidor; 401 aqui so
+      // e a provisoria vencida, que tambem traz a propria mensagem.
+      setErro(e.message || "Não foi possível trocar.");
       setCarregando(false);
     }
   }
