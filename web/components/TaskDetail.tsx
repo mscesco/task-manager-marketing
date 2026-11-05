@@ -28,7 +28,10 @@ import {
   // Spec 050: a lixeira do comentario entrou na capsula de acoes, e o emoji
   // 🗑 que ela era destoava dos icones do lapis e do reagir.
   Trash2,
+  Share2,
+  Check,
 } from "lucide-react";
+import MenuDaTarefa from "@/components/MenuDaTarefa";
 
 import { mesclaTarefa } from "@/lib/mesclaTarefa";
 import { useSaidaAnimada } from "@/lib/useSaidaAnimada";
@@ -1706,6 +1709,41 @@ export default function TaskDetail({
               meuId={me?.id ?? null}
               arquivada={task.is_archived}
             />
+            {/* Pedido dela (05/11): o "Copiar link" virou o icone de
+                compartilhar, e as outras acoes foram para o "⋯". */}
+            <button
+              type="button" className="btn btn-ghost" onClick={() => void copiarLink()}
+              style={{ padding: "4px 8px", flexShrink: 0 }}
+              aria-label={copiado ? "Link copiado" : "Copiar link da tarefa"}
+              title={copiado ? "Link copiado!" : "Copiar link da tarefa"}
+            >
+              {copiado ? (
+                <Check size={15} strokeWidth={2} aria-hidden />
+              ) : (
+                <Share2 size={15} strokeWidth={2} aria-hidden />
+              )}
+            </button>
+            <MenuDaTarefa
+              arquivada={task.is_archived}
+              arquivando={arquivando}
+              onAlternarArquivo={() => void alternarArquivo()}
+              // Spec 062. A porta do servidor e `task.update` (editar a
+              // origem); arquivada nao se move.
+              onMover={
+                (me?.permissions.includes("task.update") ?? false) && !task.is_archived
+                  ? () => setMovendoTarefa(true)
+                  : undefined
+              }
+              // Spec 033. Exige `task.create`: duplicar E criar.
+              onDuplicar={
+                (me?.permissions.includes("task.create") ?? false)
+                  ? () => onDuplicar(task)
+                  : undefined
+              }
+              // Spec 051, fatia A: o cadeado vem da TAREFA (`task.delete` no
+              // time dela), e nao de `me.permissions`.
+              onExcluir={task.can_delete ? () => setConfirmandoExcluir(true) : undefined}
+            />
             <button
               type="button" className="btn btn-ghost" onClick={fecharSuave}
               style={{ padding: "4px 10px", flexShrink: 0 }} aria-label="Fechar"
@@ -2899,22 +2937,20 @@ export default function TaskDetail({
         </div>
           </div>
 
-          <RodapeDaTarefa
-            task={task}
-            filhos={filhos}
-            confirmandoExcluir={confirmandoExcluir}
-            setConfirmandoExcluir={setConfirmandoExcluir}
-            excluindo={excluindo}
-            excluir={() => void excluir()}
-            copiaErro={copiaErro}
-            arquivando={arquivando}
-            alternarArquivo={() => void alternarArquivo()}
-            copiarLink={() => void copiarLink()}
-            copiado={copiado}
-            me={me}
-            onDuplicar={onDuplicar}
-            onMover={() => setMovendoTarefa(true)}
-          />
+          {/* As acoes moraram aqui ate 05/11; foram para o "⋯" do cabecalho.
+              O rodape so aparece para confirmar a exclusao ou mostrar o link
+              que a copia nao conseguiu pôr na area de transferencia. */}
+          {(confirmandoExcluir || copiaErro) && (
+            <RodapeDaTarefa
+              task={task}
+              filhos={filhos}
+              confirmandoExcluir={confirmandoExcluir}
+              setConfirmandoExcluir={setConfirmandoExcluir}
+              excluindo={excluindo}
+              excluir={() => void excluir()}
+              copiaErro={copiaErro}
+            />
+          )}
           {movendoTarefa && (
             <MoverTarefa
               task={task}
@@ -3249,8 +3285,7 @@ export default function TaskDetail({
    mais no cartao inteiro (a lateral agora vai ate o chao). */
 function RodapeDaTarefa({
   task, filhos, confirmandoExcluir, setConfirmandoExcluir, excluindo, excluir,
-  copiaErro, arquivando, alternarArquivo, copiarLink, copiado, me, onDuplicar,
-  onMover,
+  copiaErro,
 }: {
   task: Task;
   filhos: Task[];
@@ -3259,13 +3294,6 @@ function RodapeDaTarefa({
   excluindo: boolean;
   excluir: () => void;
   copiaErro: string | null;
-  arquivando: boolean;
-  alternarArquivo: () => void;
-  copiarLink: () => void;
-  copiado: boolean;
-  me: CurrentUser | null;
-  onDuplicar: (task: Task) => void;
-  onMover: () => void;
 }) {
   return (
     <div className="flex shrink-0 flex-col gap-2 border-t border-border bg-surface px-7 py-3">
@@ -3315,58 +3343,6 @@ function RodapeDaTarefa({
           </div>
         )}
 
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-          <button
-            type="button" className="btn btn-ghost" onClick={alternarArquivo}
-            disabled={arquivando} style={{ marginRight: "auto" }}
-          >
-            {arquivando ? "…" : task.is_archived ? "Desarquivar" : "Arquivar"}
-          </button>
-          <button
-            type="button" className="btn btn-ghost" onClick={copiarLink}
-            title="Copia o endereço desta tarefa pra compartilhar"
-          >
-            {copiado ? "Copiado!" : "Copiar link"}
-          </button>
-          {/* Spec 051, fatia A: o cadeado vem da TAREFA (`task.delete` no time
-              dela), e não de `me.permissions` -- que diz "o que", nunca "onde". */}
-          {task.can_delete && !confirmandoExcluir && (
-            <button
-              type="button" className="btn btn-ghost"
-              onClick={() => setConfirmandoExcluir(true)}
-              style={{ color: "var(--danger, #b42318)" }}
-            >
-              Excluir
-            </button>
-          )}
-          {/* Spec 033. Exige `task.create`: duplicar E criar. Sem a checagem,
-              quem so pode comentar veria o botao e levaria 403 no salvar. */}
-          {(me?.permissions.includes("task.create") ?? false) &&
-            !confirmandoExcluir && (
-              <button
-                type="button"
-                className="btn btn-ghost"
-                onClick={() => onDuplicar(task)}
-                title="Criar uma cópia desta tarefa"
-              >
-                Duplicar
-              </button>
-            )}
-          {/* Spec 062. A porta do servidor e `task.update` (editar a origem);
-              arquivada nao se move. Criar no destino e conferido na previa. */}
-          {(me?.permissions.includes("task.update") ?? false) &&
-            !task.is_archived &&
-            !confirmandoExcluir && (
-              <button
-                type="button"
-                className="btn btn-ghost"
-                onClick={onMover}
-                title="Mover para outro quadro ou para dentro de outra tarefa"
-              >
-                Mover…
-              </button>
-            )}
-        </div>
     </div>
   );
 }

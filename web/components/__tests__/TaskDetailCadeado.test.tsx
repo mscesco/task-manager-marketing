@@ -13,7 +13,7 @@
 // só o `can_delete` da tarefa.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 
 import TaskDetail from "@/components/TaskDetail";
 import type { Coluna } from "@/lib/coluna";
@@ -160,9 +160,10 @@ describe("TaskDetail -- o cadeado vem da tarefa (Spec 051, fatia A)", () => {
     montar({ can_delete: false });
     // O comentário carregou (e com ele o `me`): a partir daqui a ausência vale.
     expect(await screen.findByText("comentário de outra pessoa")).toBeTruthy();
-    expect(await screen.findByText("Copiar link")).toBeTruthy();
-
-    expect(screen.queryByText("Excluir")).toBeNull();
+    // Excluir mora no "⋯" desde 05/11: abre o menu antes de afirmar a ausencia.
+    fireEvent.click(await screen.findByRole("button", { name: "Mais ações" }));
+    expect(await screen.findByRole("menuitem", { name: "Arquivar" })).toBeTruthy();
+    expect(screen.queryByRole("menuitem", { name: "Excluir" })).toBeNull();
     expect(screen.queryByLabelText("Apagar comentário")).toBeNull();
   });
 
@@ -170,7 +171,8 @@ describe("TaskDetail -- o cadeado vem da tarefa (Spec 051, fatia A)", () => {
     montar({ can_delete: true });
     expect(await screen.findByText("comentário de outra pessoa")).toBeTruthy();
 
-    expect(await screen.findByText("Excluir")).toBeTruthy();
+    fireEvent.click(await screen.findByRole("button", { name: "Mais ações" }));
+    expect(await screen.findByRole("menuitem", { name: "Excluir" })).toBeTruthy();
     expect(await screen.findByLabelText("Apagar comentário")).toBeTruthy();
   });
 });

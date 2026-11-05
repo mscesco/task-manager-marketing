@@ -652,8 +652,9 @@ describe("Board -- depois de duplicar, abre a CÓPIA", () => {
     await screen.findByText("Tarefa original");
 
     fireEvent.click(screen.getByText("Tarefa original"));
-    await screen.findByRole("button", { name: "Duplicar" });
-    fireEvent.click(screen.getByRole("button", { name: "Duplicar" }));
+    // Duplicar mora no "⋯" do cabecalho desde 05/11.
+    fireEvent.click(await screen.findByRole("button", { name: "Mais ações" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Duplicar" }));
 
     // Modal de duplicar aberto, já pré-preenchido.
     await screen.findByText("Duplicar tarefa");
@@ -746,8 +747,9 @@ describe("Board -- depois de duplicar, a CÓPIA aparece com as subtarefas", () =
     await screen.findByText("Tarefa original");
 
     fireEvent.click(screen.getByText("Tarefa original"));
-    await screen.findByRole("button", { name: "Duplicar" });
-    fireEvent.click(screen.getByRole("button", { name: "Duplicar" }));
+    // Duplicar mora no "⋯" do cabecalho desde 05/11.
+    fireEvent.click(await screen.findByRole("button", { name: "Mais ações" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Duplicar" }));
 
     await screen.findByText("Duplicar tarefa");
     // A caixa da D7 conta a filha viva -- se ela sumir, o defeito é outro.
