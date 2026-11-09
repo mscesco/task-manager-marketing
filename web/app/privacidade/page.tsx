@@ -14,7 +14,7 @@ export default function PrivacidadePage() {
 
       <h2>1. Quem é o responsável</h2>
       <ul>
-        <li>Controlador: <Marcador>razão social</Marcador>, CNPJ <Marcador>CNPJ</Marcador>.</li>
+        <li>Controlador: UniFECAF, instituição do grupo Federal Educacional Ltda., CNPJ 17.238.945/0001-49, com sede na Avenida Vida Nova, 166, Jardim Maria Rosa, Taboão da Serra/SP, CEP 06764-045.</li>
         <li>Encarregado pelo tratamento de dados (DPO): <Marcador>nome</Marcador>, <Marcador>e-mail</Marcador>.</li>
         <li>Canal para exercer seus direitos: <Marcador>canal do titular</Marcador>.</li>
       </ul>

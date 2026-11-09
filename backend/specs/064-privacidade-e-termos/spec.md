@@ -11,7 +11,7 @@ login e no formulário público. Só mexe no front: sem migration e sem rota de 
 
 | # | Pergunta | Decisão |
 |---|---|---|
-| D1 | Razão social, CNPJ, encarregado, canal do titular, foro, país da VPS | **Marcadores visíveis** até ela ter os dados |
+| D1 | Razão social, CNPJ, encarregado, canal do titular, foro, país da VPS | **Marcadores visíveis** até ela ter os dados. Depois ela pediu para usar o site oficial: CNPJ, grupo, sede e foro vieram de `unifecaf.com.br` (home e `/termos-e-condicoes`, 09/11). O encarregado e um canal para o titular não estão publicados lá |
 | D2 | Prazos de retenção | **Descrever o que existe hoje**: sem eliminação automática na maior parte dos dados; elimina-se ou anonimiza-se a pedido, à mão |
 | D3 | Alcance dos termos | **Equipe e quem envia o formulário**, com uma seção para cada |
 | D4 | Aceite registrado | **Basta o link**: sem migration. A jurídica confirma se a base legal permite |
@@ -92,7 +92,7 @@ Página sem `AppShell` já é pública, e a CSP e o Traefik não pedem exceção
 **A faixa de rascunho e os marcadores têm de sair antes de a página valer.** Falta:
 
 1. Revisão jurídica, incluindo as bases legais, que aqui são proposta.
-2. Razão social, CNPJ, encarregado, canal do titular e foro.
+2. Encarregado, canal do titular e a confirmação de que a Federal Educacional Ltda. é o controlador e de que o foro do contrato educacional serve aqui.
 3. País da VPS da Hostinger.
 4. Prazo das execuções guardadas no n8n, que têm dados do solicitante.
 5. Prazo dos backups semanais da Hostinger.
