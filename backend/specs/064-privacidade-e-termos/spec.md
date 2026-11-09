@@ -1,7 +1,7 @@
 # Spec 064 — Política de privacidade e termos de uso
 
-**Status:** perguntas respondidas por ela em 09/11/2026. **Os textos são um
-rascunho técnico, fiel ao produto, e precisam de revisão jurídica antes de valer.**
+**Status:** perguntas respondidas por ela em 09/11/2026. **Versão básica, fiel ao
+produto e ainda sem revisão jurídica**, o que a própria página informa (D5).
 
 Pedido: o Oniros não tinha política de privacidade nem termos. Esta spec cria os
 dois textos, em português e conforme a LGPD, em páginas públicas, com link no
@@ -15,6 +15,7 @@ login e no formulário público. Só mexe no front: sem migration e sem rota de 
 | D2 | Prazos de retenção | **Descrever o que existe hoje**: sem eliminação automática na maior parte dos dados; elimina-se ou anonimiza-se a pedido, à mão |
 | D3 | Alcance dos termos | **Equipe e quem envia o formulário**, com uma seção para cada |
 | D4 | Aceite registrado | **Basta o link**: sem migration. A jurídica confirma se a base legal permite |
+| D5 | Sem os dados jurídicos | **Versão básica, sem marcadores** (revoga os marcadores de D1): responsável é a UniFECAF, e não ela como pessoa; contato é a página oficial `unifecaf.com.br/contato`; sai a seção de titularidade do conteúdo |
 
 ## O que o produto faz com dados pessoais (lido no código, 09/11)
 
@@ -82,24 +83,26 @@ departamento, polo e respostas para a descrição da tarefa
 - `LinksLegais` no login e dentro de `MolduraPublica`, o que cobre `/solicitar`,
   `/solicitar/<slug>`, os avisos de erro e as duas páginas novas. Abrem em aba
   nova para não tirar a pessoa do formulário ou do login.
-- Faixa de rascunho no topo das duas páginas e marcador `[A PREENCHER: …]` em cada
-  dado faltante.
+- Linha "Versão inicial de 09/11/2026, ainda sem revisão jurídica" no topo das
+  duas páginas.
 
 Página sem `AppShell` já é pública, e a CSP e o Traefik não pedem exceção.
 
-## Antes de ir ao ar
+## Para completar depois
 
-**A faixa de rascunho e os marcadores têm de sair antes de a página valer.** Falta:
+A versão básica deixa estes pontos em aberto. O art. 41 da LGPD pede encarregado
+identificado, e o item 2 é a lacuna legal mais clara.
 
-1. Revisão jurídica, incluindo as bases legais, que aqui são proposta.
-2. Encarregado, canal do titular e a confirmação de que a Federal Educacional Ltda. é o controlador e de que o foro do contrato educacional serve aqui.
-3. País da VPS da Hostinger.
+1. Revisão jurídica, incluindo as bases legais, que são proposta técnica.
+2. Encarregado, canal próprio do titular, a confirmação de que a Federal Educacional Ltda. é o controlador e de que o foro do contrato educacional serve aqui.
+3. País da VPS da Hostinger, que o texto trata como possível transferência.
 4. Prazo das execuções guardadas no n8n, que têm dados do solicitante.
 5. Prazo dos backups semanais da Hostinger.
 6. Se o GIPHY está ligado em produção. O texto diz "quando ativo", o que vale nos dois casos.
 7. Conferir na VPS o log de acesso do uvicorn, o do Traefik e a rotação do Docker.
    O texto afirma o que o código permite afirmar e diz que não há prazo definido.
 8. Se menores de idade podem usar o formulário público (art. 14 da LGPD).
+9. Titularidade do conteúdo produzido no Oniros, que saiu dos termos.
 
 ## Fora de escopo
 

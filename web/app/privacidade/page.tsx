@@ -1,7 +1,7 @@
 // /privacidade -- publica, sem login (Spec 064). Cada frase aqui descreve o que
 // o codigo faz: mudou o tratamento de dados, muda este texto.
 
-import TextoLegal, { Marcador } from "@/components/TextoLegal";
+import TextoLegal from "@/components/TextoLegal";
 
 export default function PrivacidadePage() {
   return (
@@ -15,8 +15,7 @@ export default function PrivacidadePage() {
       <h2>1. Quem é o responsável</h2>
       <ul>
         <li>Controlador: UniFECAF, instituição do grupo Federal Educacional Ltda., CNPJ 17.238.945/0001-49, com sede na Avenida Vida Nova, 166, Jardim Maria Rosa, Taboão da Serra/SP, CEP 06764-045.</li>
-        <li>Encarregado pelo tratamento de dados (DPO): <Marcador>nome</Marcador>, <Marcador>e-mail</Marcador>.</li>
-        <li>Canal para exercer seus direitos: <Marcador>canal do titular</Marcador>.</li>
+        <li>Dúvidas e pedidos sobre seus dados: pelos canais de atendimento em <a href="https://www.unifecaf.com.br/contato">unifecaf.com.br/contato</a>, citando o Oniros.</li>
       </ul>
 
       <h2>2. A quem esta política se aplica</h2>
@@ -67,7 +66,6 @@ export default function PrivacidadePage() {
       </p>
 
       <h2>4. Para que usamos e com qual base legal</h2>
-      <p>As bases legais abaixo são uma proposta, sujeita à revisão jurídica (art. 7º da LGPD).</p>
       <ul>
         <li>Permitir o acesso e organizar o trabalho dos times: execução de contrato e legítimo interesse.</li>
         <li>Receber, analisar e atender solicitações, e avisar o solicitante sobre o andamento: legítimo interesse e procedimentos preliminares ou execução de contrato.</li>
@@ -96,9 +94,9 @@ export default function PrivacidadePage() {
 
       <h2>7. Transferência internacional</h2>
       <p>
-        Os servidores da Hostinger usados pelo Oniros ficam em <Marcador>país da VPS</Marcador>.
-        Google e GIPHY são empresas com operações fora do Brasil, e os dados tratados
-        por elas podem ser transferidos para outros países (arts. 33 a 36 da LGPD).
+        Hostinger, Google e GIPHY são empresas com operações fora do Brasil, e os
+        dados tratados por elas podem ser armazenados ou transferidos para outros
+        países (arts. 33 a 36 da LGPD).
       </p>
 
       <h2>8. Por quanto tempo guardamos</h2>
@@ -115,8 +113,7 @@ export default function PrivacidadePage() {
         <li>Tarefas, projetos e comentários excluídos: deixam de aparecer, mas continuam no banco de dados.</li>
         <li>Bases excluídas: apagadas após 10 dias. Linhas e colunas excluídas de uma Base: após 1 dia.</li>
         <li>Backup do banco de dados: diário, mantido por 14 dias. Um dado apagado ainda pode existir nos backups até esse prazo.</li>
-        <li>Backups semanais da Hostinger, com cópia do servidor inteiro: <Marcador>prazo de retenção</Marcador>.</li>
-        <li>Execuções guardadas no n8n, com dados do solicitante: <Marcador>prazo de retenção</Marcador>.</li>
+        <li>Backups semanais do servidor inteiro, feitos pela Hostinger, e execuções guardadas no n8n, com dados do solicitante: seguem a configuração dessas ferramentas.</li>
         <li>E-mails de aviso: permanecem nas contas Gmail que os enviaram e na caixa de quem os recebeu.</li>
         <li>Registros técnicos: sem prazo definido.</li>
         <li>Sessão: o acesso expira em 15 minutos e é renovado por até 7 dias. Sair da conta encerra as sessões.</li>

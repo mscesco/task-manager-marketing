@@ -1,6 +1,6 @@
 // /termos -- publica, sem login (Spec 064).
 
-import TextoLegal, { Marcador } from "@/components/TextoLegal";
+import TextoLegal from "@/components/TextoLegal";
 
 export default function TermosPage() {
   return (
@@ -39,10 +39,7 @@ export default function TermosPage() {
         <li>O envio automatizado ou abusivo pode ser bloqueado.</li>
       </ul>
 
-      <h2>4. Conteúdo e propriedade intelectual</h2>
-      <p><Marcador>regra de titularidade do conteúdo, a definir pela jurídica</Marcador></p>
-
-      <h2>5. Disponibilidade</h2>
+      <h2>4. Disponibilidade</h2>
       <p>
         O Oniros é oferecido como está, sem garantia de funcionamento contínuo. O
         sistema pode ficar indisponível para manutenção ou atualização, e as funções
@@ -50,13 +47,13 @@ export default function TermosPage() {
         afetada.
       </p>
 
-      <h2>6. Mudanças nestes termos</h2>
+      <h2>5. Mudanças nestes termos</h2>
       <p>
         Esta página será atualizada quando os termos mudarem, com a data da nova
         versão indicada no topo.
       </p>
 
-      <h2>7. Lei e foro</h2>
+      <h2>6. Lei e foro</h2>
       <p>
         Estes termos seguem a legislação brasileira. Fica eleito o foro da Comarca
         de Taboão da Serra/SP.
