@@ -121,7 +121,7 @@ const ABAS: { valor: Aba; label: string; semTarefa: boolean }[] = [
 const TAMANHO_PAGINA = 20;
 
 /** As duas colunas descem juntas e rolam por dentro, como uma caixa de entrada. */
-const ALTURA_DO_PAINEL = "md:h-[calc(100vh-170px)] md:min-h-[480px]";
+const ALTURA_DO_PAINEL = "md:h-[calc(100dvh-170px)] md:min-h-[480px]";
 
 export default function SolicitacoesPage() {
   return (

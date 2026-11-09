@@ -515,7 +515,13 @@ button { font-family: inherit; cursor: pointer; }
 .muted { color: var(--text-faint); }
 
 /* utilitarios de layout */
-.center-screen { min-height: 100vh; display: grid; place-items: center; padding: 24px; }
+.center-screen { min-height: 100dvh; display: grid; place-items: center; padding: 24px; }
+
+/* Spec 063: o iPhone da zoom na pagina ao focar campo menor que 16px, e nao
+   volta sozinho. `!important` porque ha `fontSize` inline nos campos antigos. */
+@media (max-width: 767px), (pointer: coarse) {
+  input, select, textarea { font-size: 16px !important; }
+}
 
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
