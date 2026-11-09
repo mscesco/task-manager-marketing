@@ -268,7 +268,7 @@ export default function PaginaDaBase({ id }: { id: string }) {
 
   return (
     <div className="flex min-w-0 flex-col gap-4">
-      <Link href="/bases" className="flex items-center gap-1 text-sm text-ink-soft no-underline">
+      <Link href="/bases" className="flex items-center gap-1 text-sm text-ink-soft no-underline max-md:min-h-6">
         <ChevronLeft size={14} aria-hidden="true" /> Bases
       </Link>
 

@@ -69,8 +69,10 @@ export default function EditorPage() {
 
 // Spec 063, decisao 1: montar formulario e so em tela grande.
 function EditorOuAviso() {
-  const faixa = useFaixaDeTela();
-  if (faixa !== "celular") return <Editor />;
+  // Decide UMA vez, ao abrir: cruzar 768 px no meio da edicao (janela
+  // estreitada, aparelho girado) desmontaria o editor e perderia o rascunho.
+  const [faixaAoAbrir] = useState(useFaixaDeTela());
+  if (faixaAoAbrir !== "celular") return <Editor />;
   return (
     <EmptyState
       title="Abra no computador"

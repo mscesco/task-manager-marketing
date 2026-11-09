@@ -520,7 +520,10 @@ button { font-family: inherit; cursor: pointer; }
 /* Spec 063: o iPhone da zoom na pagina ao focar campo menor que 16px, e nao
    volta sozinho. `!important` porque ha `fontSize` inline nos campos antigos. */
 @media (max-width: 767px), (pointer: coarse) {
-  input, select, textarea { font-size: 16px !important; }
+  input, select, textarea, [contenteditable="true"] { font-size: 16px !important; }
+  /* Alvo de toque de pelo menos 24px (web/AGENTS.md, secao 3). */
+  button, [role="button"], select { min-height: 24px; min-width: 24px; }
+  input[type="checkbox"], input[type="radio"] { width: 24px; height: 24px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -660,7 +663,7 @@ button { font-family: inherit; cursor: pointer; }
 /* Spec 063: sem isto, o toque longo que comeca o arraste abre o menu do
    navegador e seleciona o texto do card. */
 @media (hover: none) {
-  .card-elev { -webkit-touch-callout: none; user-select: none; }
+  .card-elev { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
 }
 .card-elev:hover {
   transform: translateY(-3px);

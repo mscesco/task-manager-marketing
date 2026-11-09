@@ -846,7 +846,7 @@ function AlcaDeLargura({
       title="Arraste para mudar a largura; clique duas vezes para caber o conteúdo"
       // Estreita no desenho, larga no alvo (web/AGENTS.md §3): a linha azul
       // aparece no meio dos 9px, em cima da borda da célula.
-      className="absolute -right-[5px] top-0 z-20 flex h-full w-[9px] cursor-col-resize touch-none justify-center opacity-0 hover:opacity-100 focus-visible:opacity-100"
+      className="absolute -right-[5px] top-0 z-20 flex h-full w-[9px] cursor-col-resize touch-none [@media(hover:none)]:hidden justify-center opacity-0 hover:opacity-100 focus-visible:opacity-100"
       onClick={(e) => e.stopPropagation()}
       onDoubleClick={(e) => {
         e.stopPropagation();

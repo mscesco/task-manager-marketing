@@ -39,8 +39,9 @@ type Choice = { action: ImportColumnPlan["action"]; type: BaseColumnType; column
 
 // Spec 063, decisao 1: importar planilha e so em tela grande.
 export default function ImportWizard(props: Parameters<typeof Assistente>[0]) {
-  const faixa = useFaixaDeTela();
-  if (faixa !== "celular") return <Assistente {...props} />;
+  // Decide UMA vez, ao abrir: ver `EditorOuAviso` em formularios/[id].
+  const [faixaAoAbrir] = useState(useFaixaDeTela());
+  if (faixaAoAbrir !== "celular") return <Assistente {...props} />;
   return (
     <CaixaDeDialogo ariaLabel="Importar planilha" largura={420} onEsc={props.onClose} onFundo={props.onClose}>
       <div className="text-[15px] font-bold">Abra no computador</div>

@@ -281,7 +281,7 @@ function Projeto() {
           lado. */}
       <a
         href={listaDoTime}
-        className="muted"
+        className="muted max-md:min-h-6"
         style={{ fontSize: 13, display: "inline-block", marginBottom: 10 }}
       >
         ‹ Projetos

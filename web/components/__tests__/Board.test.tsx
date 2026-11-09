@@ -484,6 +484,17 @@ describe("Board -- guardas de carregamento", () => {
   });
 
   /**
+   * Spec 063: `none` impediria rolar a coluna com o dedo, e no celular o card
+   * ocupa quase toda a largura. O arraste por toque e o toque longo.
+   */
+  it("o card nao prende o gesto de rolar", async () => {
+    montarApi([task({ id: "t8", title: "Card no toque", team_id: CRM })], []);
+    render(<Board acoesDoQuadro={null} podeEditarColunas={false} podeApagarColunas={false} subteamId={CRM} title="CRM e Automação" />);
+    const card = (await screen.findByText("Card no toque")).closest(".card-elev") as HTMLElement;
+    expect(card.style.touchAction).toBe("manipulation");
+  });
+
+  /**
    * ⚠️ O outro lado da guarda, e o mais facil de errar: se `listAllProjects`
    * FALHAR e a flag ficar em false, o quadro trava em "Carregando" para
    * sempre. Por isso ela vira true no `.finally`, nao no `.then`.

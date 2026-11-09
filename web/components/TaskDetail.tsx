@@ -1650,7 +1650,7 @@ export default function TaskDetail({
           // o card ganharia uma segunda barra de rolagem aninhada.
           // ⚠️ `overflowY` saiu daqui para a `className` acima: ele precisa
           // mudar com a largura da tela, e estilo inline nao tem media query.
-          ...(modo === "modal" ? { maxHeight: "88vh" } : { margin: "0 auto" }),
+          ...(modo === "modal" ? { maxHeight: "88dvh" } : { margin: "0 auto" }),
         }}
       >
         {/* Cabecalho (redesign 19/10): voltar ou os selos de contexto a

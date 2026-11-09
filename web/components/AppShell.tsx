@@ -106,12 +106,16 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     if (!sobreposta) return;
     retrairRef.current?.focus();
     const aoTeclar = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      setGaveta(false);
-      gatilhoDaGavetaRef.current?.focus();
+      if (e.key === "Escape") setGaveta(false);
     };
     window.addEventListener("keydown", aoTeclar);
-    return () => window.removeEventListener("keydown", aoTeclar);
+    return () => {
+      window.removeEventListener("keydown", aoTeclar);
+      // Devolve o foco por qualquer caminho de fechar. Aqui, e nao no clique:
+      // antes do commit o botao ainda esta `inert` e recusaria o foco. O
+      // tablet nao tem o botao da barra: o foco volta ao "Retrair".
+      (gatilhoDaGavetaRef.current ?? retrairRef.current)?.focus();
+    };
   }, [sobreposta]);
   // Trocar de tela ou girar o aparelho fecha a gaveta.
   useEffect(() => setGaveta(false), [pathname, faixa]);
@@ -450,8 +454,15 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             : faixa === "tablet"
               ? `fixed inset-y-0 left-0 transition-[width] ${w} ${gaveta ? "z-50" : "z-30"}`
               : // `invisible` tira os links do Tab enquanto a gaveta esta fechada.
-                `fixed inset-y-0 left-0 z-50 w-64 max-w-[85vw] transition-[transform,visibility] ${
-                  gaveta ? "translate-x-0" : "invisible -translate-x-full"
+                // ⚠️ ABERTA, SEM `translate` NENHUM: ele faz o aside conter os
+                // filhos `fixed`, e o `AnchoredPanel` (seletor de time) ficaria
+                // recortado pelo `overflow` daqui.
+                // A visibilidade so anima ao FECHAR: ao abrir, ainda invisivel
+                // no instante do `focus()`, a gaveta recusaria o foco.
+                `fixed inset-y-0 left-0 z-50 w-64 max-w-[85vw] ${
+                  gaveta
+                    ? "transition-[translate]"
+                    : "invisible -translate-x-full transition-[translate,visibility]"
                 }`
         }`}
       >
