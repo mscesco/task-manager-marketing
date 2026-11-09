@@ -764,8 +764,8 @@ export default function TabelaDaBase({
                 <td className="px-1 align-middle">
                   {base.can_delete_row && (
                     <button
-                      className="btn btn-ghost text-ink-faint opacity-0 hover:text-danger group-hover:opacity-100 focus:opacity-100"
-                      style={{ padding: "2px 4px" }}
+                      className="btn btn-ghost text-ink-faint opacity-0 [@media(hover:none)]:opacity-100 hover:text-danger group-hover:opacity-100 focus:opacity-100"
+                      style={{ padding: 4 }}
                       title="Apagar a linha"
                       aria-label={`Apagar a linha ${
                         titulo ? textoDaCelula(titulo, linha.values[titulo.id]) || li + 1 : li + 1
