@@ -1,13 +1,11 @@
 "use client";
+import { useSensoresDeArraste } from "@/lib/useSensoresDeArraste";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   DndContext,
   DragEndEvent,
   DragStartEvent,
   DragOverlay,
-  PointerSensor,
-  useSensor,
-  useSensors,
   useDroppable,
   useDraggable,
 } from "@dnd-kit/core";
@@ -201,9 +199,7 @@ function Minhas() {
   // Drag no modo quadro (mesmo padrao do Board).
   const [activeId, setActiveId] = useState<string | null>(null);
   const avisar = useAvisar();
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
-  );
+  const sensors = useSensoresDeArraste();
   const suprimirClique = useRef(false);
 
   // --- Trava a vista QUADRO na altura da viewport (scroll por coluna) ---
@@ -1647,7 +1643,7 @@ function CardArrastavelMinhas({
       className="card-elev"
       style={{
         opacity: isDragging ? 0.4 : task.is_archived ? 0.55 : 1,
-        touchAction: "none",
+        touchAction: "manipulation",
         ...(isDragging ? { transform: "none", boxShadow: "none" } : null),
       }}
     >

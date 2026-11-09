@@ -657,6 +657,11 @@ button { font-family: inherit; cursor: pointer; }
 /* Redesign 19/10: sobe 3px e a sombra e tingida do `--accent` -- o token muda
    por tema, entao uma regra serve aos dois. Sem anel de 1px (ajuste dela,
    19/10): ele brigava com o filete colorido do topo do card. */
+/* Spec 063: sem isto, o toque longo que comeca o arraste abre o menu do
+   navegador e seleciona o texto do card. */
+@media (hover: none) {
+  .card-elev { -webkit-touch-callout: none; user-select: none; }
+}
 .card-elev:hover {
   transform: translateY(-3px);
   box-shadow: 0 10px 28px -10px color-mix(in srgb, var(--accent) 35%, transparent);

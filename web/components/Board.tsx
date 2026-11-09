@@ -19,9 +19,6 @@ import {
   DndContext,
   DragOverlay,
   closestCenter,
-  PointerSensor,
-  useSensor,
-  useSensors,
   useDraggable,
   useDroppable,
   type DragStartEvent,
@@ -46,6 +43,8 @@ import TaskModal from "@/components/TaskModal";
 import TaskDetail from "@/components/TaskDetail";
 import { explicaRecusa, mensagemDeDivergencia } from "@/lib/edicaoDeColunas";
 import { Pencil } from "lucide-react";
+import { useSensoresDeArraste } from "@/lib/useSensoresDeArraste";
+import { useFaixaDeTela } from "@/lib/useFaixaDeTela";
 import CabecalhoDeColunaEditavel from "@/components/CabecalhoDeColunaEditavel";
 import FormNovaColuna from "@/components/FormNovaColuna";
 import RevisaoDaEdicao from "@/components/RevisaoDaEdicao";
@@ -421,9 +420,8 @@ export default function Board({
     medirAltura();
   });
 
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
-  );
+  const sensors = useSensoresDeArraste();
+  const faixa = useFaixaDeTela();
 
   // ⚠️ SO A ULTIMA RECARGA GRAVA (auditoria de 16/10). Ligar e desligar
   // "arquivadas" depressa disparava duas cargas; a COM arquivadas pagina mais
@@ -2090,7 +2088,12 @@ export default function Board({
         {quadroEditavel && podeEditarColunas && (
           <button
             className="btn btn-ghost"
-            onClick={abrirEdicao}
+            // Spec 063, decisao 1: editar colunas e so em tela grande.
+            onClick={() =>
+              faixa === "celular"
+                ? avisar("Editar as colunas precisa de uma tela maior. Abra no computador ou no tablet.")
+                : abrirEdicao()
+            }
             aria-label="Editar colunas"
             title="Editar colunas"
             style={{ display: "inline-flex", alignItems: "center", padding: "6px 10px" }}
@@ -2813,10 +2816,9 @@ function CardArrastavel({
       className={travado ? undefined : "card-elev"}
       style={{
         opacity: isDragging ? 0.4 : task.is_archived ? 0.55 : 1,
-        // ⚠️ `touchAction` VOLTA AO PADRAO QUANDO TRAVADO. `none` existe para o
-        // arraste por toque funcionar; mantido no modo de edicao, ele impediria
-        // rolar a coluna com o dedo sem dar arraste nenhum em troca.
-        touchAction: travado ? undefined : "none",
+        // Spec 063: nunca `none`, que impediria rolar a coluna com o dedo. O
+        // arraste por toque e o toque longo do `useSensoresDeArraste`.
+        touchAction: "manipulation",
         cursor: travado ? "pointer" : undefined,
         // Enquanto arrasta, sem elevacao: o card ja esta com o ghost do
         // dnd-kit e a sombra dupla ficava suja por cima dele.
