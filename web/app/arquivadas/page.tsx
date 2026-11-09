@@ -240,7 +240,7 @@ function Arquivadas() {
         />
       ) : (
         // Redesign (fatia 7): tabela com colunas, como a prancha.
-        <div className="overflow-x-auto rounded-xl border border-border bg-surface">
+        <div className="relative overflow-x-auto rounded-xl border border-border bg-surface">
           <table className="w-full border-collapse text-base">
             <thead>
               <tr className="border-b border-border">
