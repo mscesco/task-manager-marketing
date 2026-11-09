@@ -764,8 +764,8 @@ export default function TabelaDaBase({
                 <td className="px-1 align-middle">
                   {base.can_delete_row && (
                     <button
-                      className="btn btn-ghost text-ink-faint opacity-0 hover:text-danger group-hover:opacity-100 focus:opacity-100"
-                      style={{ padding: "2px 4px" }}
+                      className="btn btn-ghost text-ink-faint opacity-0 [@media(hover:none)]:opacity-100 hover:text-danger group-hover:opacity-100 focus:opacity-100"
+                      style={{ padding: 4 }}
                       title="Apagar a linha"
                       aria-label={`Apagar a linha ${
                         titulo ? textoDaCelula(titulo, linha.values[titulo.id]) || li + 1 : li + 1
@@ -846,7 +846,7 @@ function AlcaDeLargura({
       title="Arraste para mudar a largura; clique duas vezes para caber o conteúdo"
       // Estreita no desenho, larga no alvo (web/AGENTS.md §3): a linha azul
       // aparece no meio dos 9px, em cima da borda da célula.
-      className="absolute -right-[5px] top-0 z-20 flex h-full w-[9px] cursor-col-resize touch-none justify-center opacity-0 hover:opacity-100 focus-visible:opacity-100"
+      className="absolute -right-[5px] top-0 z-20 flex h-full w-[9px] cursor-col-resize touch-none [@media(hover:none)]:hidden justify-center opacity-0 hover:opacity-100 focus-visible:opacity-100"
       onClick={(e) => e.stopPropagation()}
       onDoubleClick={(e) => {
         e.stopPropagation();

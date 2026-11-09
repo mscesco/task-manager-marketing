@@ -55,7 +55,7 @@ export default function CaixaDeDialogo({
     >
       <div
         ref={caixaRef}
-        className="modal-card max-h-[84vh] max-w-full overflow-y-auto rounded-[14px] border border-border bg-surface p-5 shadow-[var(--shadow)]"
+        className="modal-card max-h-[84dvh] max-w-full overflow-y-auto rounded-[14px] border border-border bg-surface p-5 shadow-[var(--shadow)]"
         role="dialog"
         aria-modal="true"
         aria-label={ariaLabel}

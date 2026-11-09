@@ -8,6 +8,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  barraExpandida,
+  faixaDaLargura,
   CHAVE_BARRA_ABERTA,
   CHAVE_QUADROS_ABERTO,
   gravarBarraAberta,
@@ -70,5 +72,22 @@ describe("lerQuadrosAberto", () => {
     expect(lerQuadrosAberto()).toBe(false);
     expect(lerBarraAberta()).toBe(false); // segue o que foi gravado antes
     expect(window.localStorage.getItem(CHAVE_QUADROS_ABERTO)).toBe("false");
+  });
+});
+
+describe("Spec 063: o menu conforme a largura", () => {
+  it("corta em 768 e 1024", () => {
+    expect(faixaDaLargura(767)).toBe("celular");
+    expect(faixaDaLargura(768)).toBe("tablet");
+    expect(faixaDaLargura(1023)).toBe("tablet");
+    expect(faixaDaLargura(1024)).toBe("computador");
+  });
+
+  it("a preferencia de Retrair so vale no computador", () => {
+    expect(barraExpandida("computador", false, true)).toBe(false);
+    expect(barraExpandida("computador", true, false)).toBe(true);
+    expect(barraExpandida("tablet", true, false)).toBe(false);
+    expect(barraExpandida("tablet", false, true)).toBe(true);
+    expect(barraExpandida("celular", false, false)).toBe(true);
   });
 });

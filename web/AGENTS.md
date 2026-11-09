@@ -65,7 +65,11 @@ Estão aqui para não virarem promessa falsa. Cada uma tem motivo.
 - ⚠️ **Não há alternativa de teclado para o arraste.** Sem `KeyboardSensor`. O
   `onDragEnd` não roda em jsdom, não tem guardião e não vai ter. **Aceita, sem
   dono.** Reabrir custa um `KeyboardSensor` + smoke humano.
-- ⚠️ **Zero responsivo.** O produto é ferramenta interna de desktop.
+- ⚠️ **No celular, as telas de configuração não abrem** (editar formulário,
+  editar colunas, importar planilha): mostram "abra no computador". Decisão da
+  Spec 063. O resto funciona em 375, 768 e 1024 px — confira nas três ao mexer
+  em tela. A largura decide o layout (`lib/useFaixaDeTela.ts`), e o toque, o que
+  depende de mouse em cima (`[@media(hover:none)]`).
 - **Sem índice em `task.column_id`.**
 - **O desfazer do lote de colunas nunca foi validado** — a bancada de teste não
   alcança o rollback.

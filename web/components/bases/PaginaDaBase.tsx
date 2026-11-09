@@ -268,7 +268,7 @@ export default function PaginaDaBase({ id }: { id: string }) {
 
   return (
     <div className="flex min-w-0 flex-col gap-4">
-      <Link href="/bases" className="flex items-center gap-1 text-sm text-ink-soft no-underline">
+      <Link href="/bases" className="flex items-center gap-1 text-sm text-ink-soft no-underline max-md:min-h-6">
         <ChevronLeft size={14} aria-hidden="true" /> Bases
       </Link>
 
@@ -461,7 +461,7 @@ function Cabecalho({
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex min-w-0 items-center gap-3">
+      <div className="flex min-w-0 flex-wrap items-center gap-3">
         {renomeando ? (
           <input
             className="input max-w-[560px] flex-1 text-xl font-semibold"
@@ -479,7 +479,7 @@ function Cabecalho({
             }}
           />
         ) : (
-          <h1 className="m-0 min-w-0 truncate text-3xl font-bold">{base.name}</h1>
+          <h1 className="m-0 min-w-0 truncate text-3xl font-bold max-md:basis-full">{base.name}</h1>
         )}
         <div className="ml-auto flex shrink-0 gap-2">
           {base.can_update && !renomeando && (

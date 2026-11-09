@@ -21,7 +21,7 @@ import type { ReactNode } from "react";
 export default function CapsulaDeAcoes({ children }: { children: ReactNode }) {
   return (
     <span
-      className="ml-auto flex items-center gap-0.5 rounded-full border border-border bg-surface px-1 py-0.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100 has-[[aria-expanded=true]]:opacity-100"
+      className="ml-auto flex items-center gap-0.5 rounded-full border border-border bg-surface px-1 py-0.5 opacity-0 transition-opacity duration-150 [@media(hover:none)]:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100 has-[[aria-expanded=true]]:opacity-100"
     >
       {children}
     </span>

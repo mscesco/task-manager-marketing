@@ -70,3 +70,34 @@ export function lerQuadrosAberto(): boolean {
 export function gravarQuadrosAberto(aberto: boolean): void {
   gravarBooleano(CHAVE_QUADROS_ABERTO, aberto);
 }
+
+// ---------------------------------------------------------------
+// Spec 063: o menu muda de forma com a largura da tela.
+// ---------------------------------------------------------------
+
+export type FaixaDeTela = "celular" | "tablet" | "computador";
+
+/** Por largura, e nunca por modelo de aparelho. Mesmos cortes de `md` e `lg`. */
+export function faixaDaLargura(largura: number): FaixaDeTela {
+  if (largura < 768) return "celular";
+  if (largura < 1024) return "tablet";
+  return "computador";
+}
+
+/**
+ * O menu mostra os rotulos?
+ *
+ * ⚠️ `preferencia` (o "Retrair" gravado no localStorage) SO VALE NO COMPUTADOR.
+ * Quem abre o Oniros no celular nao pode mudar como o menu aparece na mesa: por
+ * isso a gaveta e um estado a parte, que nao e gravado.
+ */
+export function barraExpandida(
+  faixa: FaixaDeTela,
+  preferencia: boolean,
+  gavetaAberta: boolean,
+): boolean {
+  if (faixa === "computador") return preferencia;
+  // No celular a gaveta fechada nem aparece: quando abre, e sempre com rotulos.
+  if (faixa === "celular") return true;
+  return gavetaAberta;
+}

@@ -1,5 +1,5 @@
 "use client";
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import {
   getMe,
@@ -30,7 +30,9 @@ import {
   gravarBarraAberta,
   lerQuadrosAberto,
   gravarQuadrosAberto,
+  barraExpandida,
 } from "@/lib/sidebar";
+import { useFaixaDeTela } from "@/lib/useFaixaDeTela";
 import NotificationBell from "@/components/NotificationBell";
 import OnirosMark from "@/components/OnirosMark";
 import ContextSwitcher from "@/components/ContextSwitcher";
@@ -57,6 +59,7 @@ import {
   Archive,
   User,
   LogOut,
+  Menu,
   PanelLeftClose,
   PanelLeftOpen,
   ChevronDown,
@@ -90,7 +93,32 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   // 21/08. Ler no inicializador e seguro pelo mesmo motivo ja escrito abaixo
   // para o tema: com `loading` comecando true, a barra so desenha depois do
   // check de auth, ja no cliente.
-  const [open, setOpen] = useState(lerBarraAberta);
+  const [preferenciaAberta, setPreferenciaAberta] = useState(lerBarraAberta);
+  // Spec 063: no celular e no tablet o menu abre POR CIMA do conteudo. Estado
+  // a parte da preferencia, e nao gravado: ver `barraExpandida`.
+  const faixa = useFaixaDeTela();
+  const [gaveta, setGaveta] = useState(false);
+  const sobreposta = faixa !== "computador" && gaveta;
+  const open = barraExpandida(faixa, preferenciaAberta, gaveta);
+  const gatilhoDaGavetaRef = useRef<HTMLButtonElement | null>(null);
+  const retrairRef = useRef<HTMLButtonElement | null>(null);
+  useEffect(() => {
+    if (!sobreposta) return;
+    retrairRef.current?.focus();
+    const aoTeclar = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setGaveta(false);
+    };
+    window.addEventListener("keydown", aoTeclar);
+    return () => {
+      window.removeEventListener("keydown", aoTeclar);
+      // Devolve o foco por qualquer caminho de fechar. Aqui, e nao no clique:
+      // antes do commit o botao ainda esta `inert` e recusaria o foco. O
+      // tablet nao tem o botao da barra: o foco volta ao "Retrair".
+      (gatilhoDaGavetaRef.current ?? retrairRef.current)?.focus();
+    };
+  }, [sobreposta]);
+  // Trocar de tela ou girar o aparelho fecha a gaveta.
+  useEffect(() => setGaveta(false), [pathname, faixa]);
   const [teams, setTeams] = useState<Team[]>([]);
   // ⚠️ O NOME DA ORGANIZAÇÃO É DA BARRA desde 10/09: o rodapé o mostra em toda
   // tela que não tem área na URL. `getWorkspace` é memoizado em módulo, então
@@ -387,7 +415,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <AvisosProvider>
-    <div className="flex min-h-screen">
+    <div className="flex min-h-dvh">
       {/* ⚠️⚠️ A FRONTEIRA DE `Suspense` DO PRODUTO INTEIRO PARA O `?time=`.
           IRMÃO, e não ancestral: envolver a barra e o `children` faria as telas
           remontarem (e refazerem os `fetch`) quando a query resolvesse.
@@ -408,9 +436,35 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           conteudo, e o `overflow` nunca chega a valer. O `overflow-y-auto`
           do <aside> e o ultimo recurso: se ate os blocos fixos (logo,
           retrair, rodape) nao couberem, a barra inteira rola. */}
+      {/* Spec 063: o tablet reserva a largura dos icones, e o menu aberto passa
+          por cima sem empurrar o conteudo. */}
+      {faixa === "tablet" && <div className="w-16 shrink-0 print:hidden" aria-hidden="true" />}
+      {sobreposta && (
+        <div
+          className="fixed inset-0 z-40 bg-[rgba(16,24,40,0.45)] print:hidden"
+          aria-hidden="true"
+          onClick={() => setGaveta(false)}
+        />
+      )}
       <aside
         // `print:hidden`: exportar o painel em PDF (15/10) imprime SÓ o conteúdo.
-        className={`sticky top-0 flex h-screen ${w} shrink-0 flex-col gap-1 overflow-y-auto border-r border-border bg-surface px-2 py-2 transition-[width] duration-200 print:hidden`}
+        className={`flex shrink-0 flex-col gap-1 overflow-y-auto border-r border-border bg-surface px-2 py-2 duration-200 print:hidden ${
+          faixa === "computador"
+            ? `sticky top-0 h-dvh transition-[width] ${w}`
+            : faixa === "tablet"
+              ? `fixed inset-y-0 left-0 transition-[width] ${w} ${gaveta ? "z-50" : "z-30"}`
+              : // `invisible` tira os links do Tab enquanto a gaveta esta fechada.
+                // ⚠️ ABERTA, SEM `translate` NENHUM: ele faz o aside conter os
+                // filhos `fixed`, e o `AnchoredPanel` (seletor de time) ficaria
+                // recortado pelo `overflow` daqui.
+                // A visibilidade so anima ao FECHAR: ao abrir, ainda invisivel
+                // no instante do `focus()`, a gaveta recusaria o foco.
+                `fixed inset-y-0 left-0 z-50 w-64 max-w-[85vw] ${
+                  gaveta
+                    ? "transition-[translate]"
+                    : "invisible -translate-x-full transition-[translate,visibility]"
+                }`
+        }`}
       >
         {/* Logo */}
         <div className={`flex shrink-0 items-center gap-3 py-2 ${open ? "px-3" : "justify-center"}`}>
@@ -438,8 +492,13 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           // sobrescrever a escolha da pessoa no dia em que a leitura falhar e
           // cair no padrao. Mesma disciplina do `gravarTema`, que so grava
           // "quando a pessoa AGE".
+          ref={retrairRef}
           onClick={() => {
-            setOpen((v) => {
+            if (faixa !== "computador") {
+              setGaveta((v) => !v);
+              return;
+            }
+            setPreferenciaAberta((v) => {
               gravarBarraAberta(!v);
               return !v;
             });
@@ -621,18 +680,41 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       </aside>
 
       {/* Conteudo -- sino flutua no canto, conteudo recua no topo */}
-      <div className="relative flex min-w-0 flex-1 flex-col">
-        <div className="pointer-events-none absolute right-4 top-3 z-20 sm:right-6 print:hidden">
-          <div className="pointer-events-auto rounded-lg border border-border bg-surface shadow-card">
-            <NotificationBell />
+      {/* `inert`: com a gaveta aberta, o foco e o toque ficam so nela. */}
+      <div className="relative flex min-w-0 flex-1 flex-col" inert={sobreposta}>
+        {faixa === "celular" ? (
+          <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-2 border-b border-border bg-surface px-2 print:hidden">
+            <button
+              ref={gatilhoDaGavetaRef}
+              type="button"
+              aria-label="Abrir menu"
+              aria-expanded={gaveta}
+              onClick={() => setGaveta(true)}
+              className="flex h-10 w-10 items-center justify-center rounded-lg text-ink-soft hover:bg-surface-2"
+            >
+              <Menu size={20} aria-hidden="true" />
+            </button>
+            <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center logo-marca rounded-md" aria-hidden="true">
+              <OnirosMark className="h-5 w-5" />
+            </span>
+            <strong className="text-[15px] font-bold tracking-[-0.01em]">Oniros</strong>
+            <div className="ml-auto">
+              <NotificationBell />
+            </div>
+          </header>
+        ) : (
+          <div className="pointer-events-none absolute right-4 top-3 z-20 sm:right-6 print:hidden">
+            <div className="pointer-events-auto rounded-lg border border-border bg-surface shadow-card">
+              <NotificationBell />
+            </div>
           </div>
-        </div>
+        )}
         {/* ⚠️ O TIME ATIVO DESCE PARA AS TELAS AQUI (fatia C). A barra já
             resolveu o time -- ela tem a query, a árvore e quem está olhando --,
             e as cinco telas recortadas perguntam com `useActiveTeam()`. O
             motivo de ser contexto e não cada tela resolvendo o seu está no
             topo de `lib/useActiveTeam.tsx`. */}
-        <main className="min-w-0 flex-1 px-4 pb-4 pt-16 sm:px-6 sm:pb-6 print:p-0">
+        <main className={`min-w-0 flex-1 px-4 pb-4 sm:px-6 sm:pb-6 print:p-0 ${faixa === "celular" ? "pt-4" : "pt-16"}`}>
           <ActiveTeamProvider
             value={{
               // ⚠⚠ `publishedActiveTeam`, e NÃO `contexto` cru. Até 14/09 era o

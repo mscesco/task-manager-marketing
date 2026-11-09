@@ -97,7 +97,7 @@ function Perfil() {
     <div className="max-w-[1100px]">
       <PageHeader title="Meu perfil" />
 
-      <div className="grid items-start gap-[18px] min-[900px]:grid-cols-[480px_minmax(0,1fr)]">
+      <div className="grid grid-cols-1 items-start gap-[18px] min-[900px]:grid-cols-[480px_minmax(0,1fr)]">
         <Card className="flex flex-col gap-[18px]">
           <div className="flex items-center gap-3.5">
             {/* Cor de runtime (`corAvatar`): a excecao do inline. */}
@@ -133,7 +133,7 @@ function Perfil() {
             <div className="flex gap-2">
               <input
                 id="perfil-nome"
-                className="input flex-1"
+                className="input min-w-0 flex-1"
                 value={nome}
                 maxLength={NOME_MAXIMO}
                 disabled={salvando}

@@ -184,7 +184,7 @@ export default function TelaDeNotificacoes() {
         title="Notificações"
         count={naoLidas === 1 ? "1 não lida" : `${naoLidas} não lidas`}
         actions={
-          <div className="ml-auto flex items-center gap-2">
+          <div className="ml-auto flex max-w-full flex-wrap items-center gap-2">
             {/* Redesign (fatia 7): as abas em pílula, no cabeçalho, com a
                 contagem de não lidas. */}
             <AbasEmPilula<Aba>

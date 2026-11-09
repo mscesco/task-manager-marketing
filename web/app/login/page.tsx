@@ -41,7 +41,7 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="grid min-h-screen min-[900px]:grid-cols-[1.1fr_1fr]">
+    <div className="grid min-h-dvh min-[900px]:grid-cols-[1.1fr_1fr]">
       {/* O painel: so decoracao e identidade. `aria-hidden` nos cartoezinhos,
           porque o texto deles e cenario, nao conteudo. */}
       <section className="relative hidden flex-col justify-between overflow-hidden bg-panel p-14 text-white min-[900px]:flex">

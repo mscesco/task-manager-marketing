@@ -121,7 +121,7 @@ const ABAS: { valor: Aba; label: string; semTarefa: boolean }[] = [
 const TAMANHO_PAGINA = 20;
 
 /** As duas colunas descem juntas e rolam por dentro, como uma caixa de entrada. */
-const ALTURA_DO_PAINEL = "md:h-[calc(100vh-170px)] md:min-h-[480px]";
+const ALTURA_DO_PAINEL = "md:h-[calc(100dvh-170px)] md:min-h-[480px]";
 
 export default function SolicitacoesPage() {
   return (
@@ -315,8 +315,8 @@ function Solicitacoes() {
           // formulários" (a prancha; pedido dela em 21/10). As duas num grupo
           // só: quando não cabem ao lado do título (1366px), descem JUNTAS para
           // a segunda linha, à direita, em vez de o link ficar sozinho.
-          <div className="ml-auto flex flex-wrap items-center gap-2">
-            <div role="tablist" aria-label="Situação" className="flex gap-0.5 overflow-x-auto rounded-full border border-border bg-surface-2 p-1">
+          <div className="ml-auto flex min-w-0 max-w-full flex-wrap items-center gap-2">
+            <div role="tablist" aria-label="Situação" className="flex max-w-full gap-0.5 overflow-x-auto rounded-full border border-border bg-surface-2 p-1">
               {ABAS.map((a) => (
                 <Aba
                   key={a.valor}

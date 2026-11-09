@@ -12,7 +12,7 @@ import type { ReactNode } from "react";
 /** O fundo e o respiro do produto, para nenhum estado ficar solto na tela. */
 export function MolduraPublica({ children }: { children: ReactNode }) {
   return (
-    <div className="min-h-screen bg-canvas px-4 py-8">
+    <div className="min-h-dvh bg-canvas px-4 py-8">
       <div className="mx-auto max-w-[760px]">{children}</div>
     </div>
   );

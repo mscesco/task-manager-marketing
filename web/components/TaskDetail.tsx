@@ -1650,12 +1650,12 @@ export default function TaskDetail({
           // o card ganharia uma segunda barra de rolagem aninhada.
           // ⚠️ `overflowY` saiu daqui para a `className` acima: ele precisa
           // mudar com a largura da tela, e estilo inline nao tem media query.
-          ...(modo === "modal" ? { maxHeight: "88vh" } : { margin: "0 auto" }),
+          ...(modo === "modal" ? { maxHeight: "88dvh" } : { margin: "0 auto" }),
         }}
       >
         {/* Cabecalho (redesign 19/10): voltar ou os selos de contexto a
             esquerda; seguir e fechar a direita. O titulo desceu para o corpo. */}
-        <div className="flex shrink-0 items-center gap-2 border-b border-border px-5 py-3">
+        <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-5 py-3">
           {temVoltar && (
             <button
               type="button" className="btn btn-ghost" onClick={onVoltar}
@@ -1683,7 +1683,7 @@ export default function TaskDetail({
               clicar edita; Enter ou clicar fora salva, Esc desiste. `key`
               pelo id: trocar de tarefa com o campo aberto nao pode levar o
               rascunho para a outra. */}
-          <div className="flex min-w-0 flex-1 flex-col">
+          <div className="flex min-w-0 flex-1 flex-col max-md:basis-full">
             <TituloEditavel
               key={task.id}
               // ⚠️ `h1` SÓ NA ROTA `/tarefa/[id]`, onde a tarefa É a página. No
@@ -1702,7 +1702,7 @@ export default function TaskDetail({
           {task.is_archived && (
             <span className="muted shrink-0" style={{ fontSize: 12.5 }}>arquivada</span>
           )}
-          <span className="flex shrink-0 items-center gap-1">
+          <span className="flex shrink-0 items-center gap-1 max-md:ml-auto">
             {/* Spec 053 (D5): o gesto de um clique, no topo. */}
             <BotaoSeguir
               estado={seguidores}
