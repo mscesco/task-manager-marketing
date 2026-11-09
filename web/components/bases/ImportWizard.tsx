@@ -17,6 +17,7 @@
 
 import { useMemo, useState } from "react";
 import CaixaDeDialogo from "@/components/CaixaDeDialogo";
+import { useFaixaDeTela } from "@/lib/useFaixaDeTela";
 import {
   ApiError,
   fileToBase64,
@@ -36,7 +37,26 @@ type Target =
 
 type Choice = { action: ImportColumnPlan["action"]; type: BaseColumnType; columnId: string | null };
 
-export default function ImportWizard({
+// Spec 063, decisao 1: importar planilha e so em tela grande.
+export default function ImportWizard(props: Parameters<typeof Assistente>[0]) {
+  const faixa = useFaixaDeTela();
+  if (faixa !== "celular") return <Assistente {...props} />;
+  return (
+    <CaixaDeDialogo ariaLabel="Importar planilha" largura={420} onEsc={props.onClose} onFundo={props.onClose}>
+      <div className="text-[15px] font-bold">Abra no computador</div>
+      <p className="muted mt-2 text-[13px]">
+        Importar uma planilha precisa de uma tela maior. Abra no computador ou no tablet.
+      </p>
+      <div className="mt-4 flex justify-end">
+        <button type="button" className="btn btn-ghost" onClick={props.onClose}>
+          Fechar
+        </button>
+      </div>
+    </CaixaDeDialogo>
+  );
+}
+
+function Assistente({
   target,
   onClose,
   onDone,

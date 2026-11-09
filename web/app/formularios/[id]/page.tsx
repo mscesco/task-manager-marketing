@@ -15,6 +15,8 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
+import EmptyState from "@/components/EmptyState";
+import { useFaixaDeTela } from "@/lib/useFaixaDeTela";
 
 import AppShell from "@/components/AppShell";
 import Badge from "@/components/Badge";
@@ -60,8 +62,25 @@ import {
 export default function EditorPage() {
   return (
     <AppShell>
-      <Editor />
+      <EditorOuAviso />
     </AppShell>
+  );
+}
+
+// Spec 063, decisao 1: montar formulario e so em tela grande.
+function EditorOuAviso() {
+  const faixa = useFaixaDeTela();
+  if (faixa !== "celular") return <Editor />;
+  return (
+    <EmptyState
+      title="Abra no computador"
+      description="Editar um formulário precisa de uma tela maior. Abra no computador ou no tablet."
+      action={
+        <Link href="/formularios" className="btn btn-ghost">
+          Voltar aos formulários
+        </Link>
+      }
+    />
   );
 }
 
