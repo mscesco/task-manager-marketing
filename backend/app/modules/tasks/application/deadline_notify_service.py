@@ -29,13 +29,14 @@ import uuid
 from datetime import date, datetime, time, timedelta
 from typing import Final
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger
 from app.core.tenant import tenant_scope
 from app.db.models import BoardColumn, Task, TaskAssignment, User, Workspace
 from app.modules.notifications.application.notification_emitter import (
+    AvisoDePrazo,
     NotificationEmitter,
 )
 from app.modules.tasks.domain.board_semantics import TERMINAL_SEMANTICS
@@ -207,37 +208,33 @@ class DeadlineNotifyService:
         # Com `SKIP LOCKED` a segunda so ve o que a primeira nao pegou.
         stmt = stmt.with_for_update(skip_locked=True, of=Task)
         tasks = list((await self._session.execute(stmt)).scalars().all())
-        for t in tasks:
-            recipients, papel = await self._recipients(ws_id=ws_id, task=t)
-            papeis = {uid: [papel] for uid in recipients}
-            due_iso = t.due_date.isoformat()  # type: ignore[union-attr]
-            if overdue:
-                await emitter.overdue(
-                    recipient_ids=recipients,
-                    task_id=t.id,
-                    task_title=t.title,
-                    due_date_iso=due_iso,
-                    papeis=papeis,
-                )
-                t.overdue_notified_for = t.due_date
-            else:
-                await emitter.due_soon(
-                    recipient_ids=recipients,
-                    task_id=t.id,
-                    task_title=t.title,
-                    due_date_iso=due_iso,
-                    papeis=papeis,
-                )
-                t.due_soon_notified_for = t.due_date
+        destinatarios = await self._recipients(ws_id=ws_id, tasks=tasks)
+        await emitter.prazos(
+            overdue=overdue,
+            avisos=[AvisoDePrazo(t, *destinatarios[t.id]) for t in tasks],
+        )
+        # A marca de "avisado" num UPDATE so (auditoria de 11/11, item 18).
+        if tasks:
+            marca = Task.overdue_notified_for if overdue else Task.due_soon_notified_for
+            await self._session.execute(
+                update(Task)
+                .where(Task.id.in_([t.id for t in tasks]))
+                .values({marca: Task.due_date})
+                .execution_options(synchronize_session=False)
+            )
 
         return len(tasks)
 
     async def _recipients(
-        self, *, ws_id: uuid.UUID, task: Task
-    ) -> tuple[list[uuid.UUID], str]:
-        """Responsaveis ATIVOS da task; se nao houver, o criador se ATIVO.
+        self, *, ws_id: uuid.UUID, tasks: list[Task]
+    ) -> dict[uuid.UUID, tuple[list[uuid.UUID], str]]:
+        """Por tarefa: responsaveis ATIVOS; se nao houver, o criador se ATIVO.
 
-        Devolve `(ids, papel)` -- `assignee` ou `creator` (Spec 054, D12). Os
+        ⚠️ DUAS CONSULTAS PARA O LOTE INTEIRO (auditoria de 11/11, item 18):
+        uma para os responsaveis de todas as tarefas, outra para os criadores
+        das que ficaram sem nenhum. Antes eram uma ou duas POR tarefa.
+
+        Devolve `task.id -> (ids, papel)` -- `assignee` ou `creator` (Spec 054, D12). Os
         dois caminhos sao limpos, entao o papel sai daqui sem adivinhar.
         ⚠️ NUNCA `watcher`: aviso de prazo nao vai para seguidor, e a tela de
         preferencias nao tem esse toggle -- com o papel, estes avisos nunca
@@ -269,12 +266,14 @@ class DeadlineNotifyService:
         `due_date` mudar. Nao e defeito desta entrega; e o preco conhecido do
         vies, e esta escrito aqui para nao ser redescoberto como surpresa.
         """
+        if not tasks:
+            return {}
         # ⚠️ O `workspace_id` entra no ON junto com o `id`, igual ao join de
         # `_run_kind`. O `id` sozinho e PK e bastaria; o par e o padrao do
         # schema e o que impede que uma copia futura desta consulta cruze
         # tenant sem ninguem notar.
         stmt = (
-            select(TaskAssignment.user_id)
+            select(TaskAssignment.task_id, TaskAssignment.user_id)
             .join(
                 User,
                 and_(
@@ -283,32 +282,40 @@ class DeadlineNotifyService:
                 ),
             )
             .where(
-                TaskAssignment.task_id == task.id,
+                TaskAssignment.task_id.in_([t.id for t in tasks]),
                 TaskAssignment.workspace_id == ws_id,
                 User.is_active.is_(True),
             )
         )
-        ids = list((await self._session.execute(stmt)).scalars().all())
-        if ids:
-            return ids, "assignee"
-        return await self._criador_se_ativo(ws_id=ws_id, task=task), "creator"
+        responsaveis: dict[uuid.UUID, list[uuid.UUID]] = {}
+        for task_id, user_id in (await self._session.execute(stmt)).all():
+            responsaveis.setdefault(task_id, []).append(user_id)
 
-    async def _criador_se_ativo(
-        self, *, ws_id: uuid.UUID, task: Task
-    ) -> list[uuid.UUID]:
-        """O criador da task, se ele ainda estiver ativo. Lista vazia se nao.
+        sem_responsavel = [t for t in tasks if t.id not in responsaveis]
+        criadores_ativos: set[uuid.UUID] = set()
+        if sem_responsavel:
+            criadores_ativos = set(
+                (
+                    await self._session.execute(
+                        select(User.id).where(
+                            User.id.in_({t.created_by for t in sem_responsavel}),
+                            User.workspace_id == ws_id,
+                            User.is_active.is_(True),
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
 
-        ⚠️ UMA CONSULTA A MAIS, e so no caminho do fallback. `task.created_by`
-        e um id cru: sem ir ao banco nao ha como saber se a conta continua
-        ativa. O caminho comum (task com responsavel ativo) nao paga nada.
-        """
-        stmt = select(User.id).where(
-            User.id == task.created_by,
-            User.workspace_id == ws_id,
-            User.is_active.is_(True),
-        )
-        achado = (await self._session.execute(stmt)).scalars().first()
-        return [achado] if achado else []
+        resultado: dict[uuid.UUID, tuple[list[uuid.UUID], str]] = {}
+        for t in tasks:
+            if t.id in responsaveis:
+                resultado[t.id] = (responsaveis[t.id], "assignee")
+            else:
+                criador = [t.created_by] if t.created_by in criadores_ativos else []
+                resultado[t.id] = (criador, "creator")
+        return resultado
 
     async def _resolve_ctx_user(
         self, workspace_id: uuid.UUID
