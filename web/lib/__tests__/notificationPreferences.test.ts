@@ -1,7 +1,8 @@
 // Spec 054, fatia D -- a regra do cartao de preferencias (`lib/`).
 //
 // O que se prende aqui:
-//   - sao 24 interruptores + 3 linhas travadas, como a spec conta (§5);
+//   - sao 25 interruptores + 3 linhas travadas: os 24 da spec (§5) + a resposta
+//     ao seu comentario (auditoria 11/11);
 //   - ⚠️ prazo NAO tem coluna de seguidor -- o aviso nunca chega por seguir, e
 //     um toggle ali seria um interruptor que nao silencia nada;
 //   - ⚠️ celula AUSENTE conta como LIGADO (a ausencia de mute significa ligado
@@ -31,10 +32,10 @@ function toggle(over: Partial<NotificationToggle> = {}): NotificationToggle {
 }
 
 describe("o catalogo da tela", () => {
-  it("tem 24 interruptores e 3 linhas travadas", () => {
+  it("tem 25 interruptores e 3 linhas travadas", () => {
     const soltaveis = ROWS.filter((r) => !r.locked);
     const quantos = soltaveis.reduce((n, r) => n + r.roles.length, 0);
-    expect(quantos).toBe(24);
+    expect(quantos).toBe(25);
     expect(ROWS.filter((r) => r.locked).length).toBe(3);
   });
 

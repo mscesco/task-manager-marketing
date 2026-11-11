@@ -2637,6 +2637,8 @@ export type NotificationType =
   | "TASK_MENTIONED"
   // Spec 050 (fatia B): reagiram ao comentario da pessoa.
   | "TASK_COMMENT_REACTED"
+  // Auditoria 11/11 (item 13): responderam ao comentario da pessoa.
+  | "TASK_COMMENT_REPLIED"
   // ⚠️ Os tres abaixo o backend emite desde as Specs 023 e 037, e o front nao
   // os conhecia: caiam no texto generico "Atualização em ..." (Spec 053, A).
   | "TASK_DUE_SOON"

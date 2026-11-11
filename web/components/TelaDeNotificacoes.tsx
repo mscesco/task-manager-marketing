@@ -36,6 +36,7 @@ import {
 const ICONE_DO_TIPO: Partial<Record<string, { Icone: LucideIcon; cor: string }>> = {
   TASK_COMMENTED: { Icone: MessageCircle, cor: "bg-violet-soft text-violet" },
   TASK_MENTIONED: { Icone: MessageCircle, cor: "bg-violet-soft text-violet" },
+  TASK_COMMENT_REPLIED: { Icone: MessageCircle, cor: "bg-violet-soft text-violet" },
   TASK_COMMENT_REACTED: { Icone: Smile, cor: "bg-violet-soft text-violet" },
   TASK_ASSIGNED: { Icone: UserRound, cor: "bg-accent-soft text-accent" },
   TASK_WATCH_ADDED: { Icone: UserRound, cor: "bg-accent-soft text-accent" },

@@ -92,6 +92,12 @@ export const SECTIONS: readonly PreferenceSection[] = [
     title: "Sobre você",
     rows: [
       {
+        group: "reply",
+        label: "Resposta ao seu comentário",
+        roles: SINGLE,
+        locked: false,
+      },
+      {
         group: "reaction",
         label: "Reação ao seu comentário",
         roles: SINGLE,

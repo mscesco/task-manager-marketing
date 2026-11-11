@@ -211,6 +211,37 @@ class NotificationEmitter:
 
         await self._emit_safely("TASK_COMMENT_REACTED", _do)
 
+    async def comment_replied(
+        self,
+        *,
+        recipient_id: uuid.UUID,
+        actor_id: uuid.UUID,
+        task_id: uuid.UUID,
+        task_title: str,
+        comment_id: uuid.UUID,
+    ) -> None:
+        """Avisa o autor de que responderam ao comentario dele (auditoria
+        11/11, item 13). No-op para quem responde a si mesmo."""
+        if recipient_id == actor_id:
+            return
+
+        async def _do() -> None:
+            if not await self._so_quem_alcanca(task_id, [recipient_id]):
+                return
+            self._repo.create(
+                recipient_id=recipient_id,
+                actor_id=actor_id,
+                type=NotificationType.TASK_COMMENT_REPLIED.value,
+                task_id=task_id,
+                comment_id=comment_id,
+                payload={
+                    "actor_name": await self._actor_name(actor_id),
+                    "task_title": task_title,
+                },
+            )
+
+        await self._emit_safely("TASK_COMMENT_REPLIED", _do)
+
     async def watch_added(
         self,
         *,
