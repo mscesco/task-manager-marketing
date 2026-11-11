@@ -42,16 +42,14 @@ _TETO_DE_TESTE = 3
 
 @pytest.fixture(autouse=True)
 def _baldes_limpos():
+    """So o teto: a contagem mora no banco desde 11/11 e volta com o rollback
+    de cada teste."""
     teto_real = account_login_limiter._max
     account_login_limiter._max = _TETO_DE_TESTE
     change_password_limiter._max = _TETO_DE_TESTE
-    for lim in (account_login_limiter, change_password_limiter):
-        lim._hits.clear()
     yield
     account_login_limiter._max = teto_real
     change_password_limiter._max = teto_real
-    for lim in (account_login_limiter, change_password_limiter):
-        lim._hits.clear()
 
 
 def _client(db) -> AsyncClient:
@@ -194,11 +192,10 @@ async def test_email_inexistente_responde_igual_e_tambem_enche_o_balde(db) -> No
         # sabotagem). A unica forma de provar que o balde encheu e olhar o
         # balde.
         assert (
-            account_login_limiter.check(
-                account_key(email="ninguem@aqui.com", workspace_slug=ws.slug)
-            ).allowed
-            is False
-        )
+            await account_login_limiter.check(
+                db, account_key(email="ninguem@aqui.com", workspace_slug=ws.slug)
+            )
+        ).allowed is False
 
 
 async def test_bloqueio_de_uma_conta_nao_afeta_outra(db) -> None:

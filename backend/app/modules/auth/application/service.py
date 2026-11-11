@@ -85,7 +85,7 @@ class AuthService:
         # 0. Balde da conta cheio? Mesma mensagem e MESMO status das demais
         # recusas (401, nunca 429): um 429 diferenciado avisaria ao atacante
         # que a conta existe e que ele esta no alvo certo.
-        if not account_login_limiter.check(chave_conta).allowed:
+        if not (await account_login_limiter.check(self._session, chave_conta)).allowed:
             # ⚠️ TODO bcrypt deste arquivo roda em thread (auditoria de 21/10):
             # ~250 ms de CPU no loop congelavam o worker inteiro a cada login.
             await asyncio.to_thread(verify_password, password, _TIMING_EQUALIZER_HASH)
@@ -101,7 +101,7 @@ class AuthService:
         if workspace is None:
             # Equaliza o tempo: roda bcrypt mesmo sem workspace (ver constante).
             await asyncio.to_thread(verify_password, password, _TIMING_EQUALIZER_HASH)
-            account_login_limiter.record(chave_conta)
+            await account_login_limiter.record(self._session, chave_conta)
             raise AuthenticationError("Credenciais invalidas.")
 
         # 2. Resolve o usuario pelo par (workspace, email).
@@ -123,13 +123,13 @@ class AuthService:
             # Spec 030 (D5): conta INEXISTENTE tambem enche o balde. Se so a
             # conta real freasse, o proprio freio viraria sonda -- bastaria
             # mandar 11 tentativas para descobrir se um e-mail tem conta.
-            account_login_limiter.record(chave_conta)
+            await account_login_limiter.record(self._session, chave_conta)
             raise AuthenticationError("Credenciais invalidas.")
 
         # 3. Confere a senha.
         if not await asyncio.to_thread(verify_password, password, user.password_hash):
             logger.info("auth.login_failed", workspace_id=str(workspace.id))
-            account_login_limiter.record(chave_conta)
+            await account_login_limiter.record(self._session, chave_conta)
             raise AuthenticationError("Credenciais invalidas.")
 
         # 4. Entrega 7 (ADR 0019): provisoria expirada nao loga. Mesma
@@ -148,7 +148,7 @@ class AuthService:
 
         # Acertou: zera o balde. Sem isto, quem loga varias vezes ao longo
         # do dia acumularia registros e acabaria travado pelo proprio acerto.
-        account_login_limiter.reset(chave_conta)
+        await account_login_limiter.reset(self._session, chave_conta)
 
         logger.info(
             "auth.login_success",
@@ -235,14 +235,14 @@ class AuthService:
         # reset. Aqui o 429 pode ser explicito: a pessoa ja esta autenticada,
         # nao ha conta a esconder (ao contrario do login).
         chave = str(user_id)
-        decisao = change_password_limiter.check(chave)
+        decisao = await change_password_limiter.check(self._session, chave)
         if not decisao.allowed:
             raise RateLimitError(retry_after=math.ceil(decisao.retry_after))
         if not await asyncio.to_thread(
             verify_password, current_password, user.password_hash
         ):
             logger.info("auth.change_password_bad_current", user_id=str(user_id))
-            change_password_limiter.record(chave)
+            await change_password_limiter.record(self._session, chave)
             # 422, e nao 401 (auditoria de 21/10, item 10): o front le 401 como
             # sessao vencida, renova e manda de novo -- cada erro contava duas
             # vezes no freio, e a pessoa travava em 5 tentativas, nao em 10.
@@ -250,7 +250,7 @@ class AuthService:
                 "Senha atual incorreta.",
                 details={"field": "current_password"},
             )
-        change_password_limiter.reset(chave)
+        await change_password_limiter.reset(self._session, chave)
 
         if new_password == current_password:
             raise ValidationError(
