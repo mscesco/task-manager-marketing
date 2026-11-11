@@ -1699,6 +1699,21 @@ class TaskService:
         task = await self._repo.get_by_id_or_raise(task_id)
         await self._assert_visible_via_project(task)
         await self._assert_editable(task)
+        # A trava vem ANTES de ler path, mae e "arquivada", nos dois ramos
+        # (auditoria 11/11, item 5): o ramo "para o nivel de cima" nao travava
+        # nada, e um movimento cruzado deixava as filhas com o path de antes
+        # -- e o `detect_cycle`, que confia no path, aceitava um ciclo depois.
+        # `populate_existing` relê a tarefa (e a mae) ja travadas.
+        await self._session.execute(
+            select(Task)
+            .where(
+                Task.id.in_({task.id, command.parent_task_id} - {None}),
+                Task.workspace_id == task.workspace_id,
+            )
+            .order_by(Task.id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
         if task.is_archived:
             raise ValidationError(
                 "Esta tarefa esta arquivada. Desarquive-a antes de mover.",
@@ -1720,17 +1735,6 @@ class TaskService:
                     "A tarefa de destino esta arquivada. Desarquive-a antes.",
                     details={"field": "parent_task_id"},
                 )
-            # Mesma trava do `move` contra dois pedidos cruzados (21/10).
-            await self._session.execute(
-                select(Task)
-                .where(
-                    Task.id.in_((task.id, mae.id)),
-                    Task.workspace_id == task.workspace_id,
-                )
-                .order_by(Task.id)
-                .with_for_update()
-                .execution_options(populate_existing=True)
-            )
             if await self._repo.detect_cycle(task=task, new_parent_id=mae.id):
                 raise ValidationError(
                     "A tarefa nao pode ir para dentro de uma das proprias "

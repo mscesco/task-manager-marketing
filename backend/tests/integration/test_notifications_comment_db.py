@@ -141,3 +141,58 @@ async def test_replica_tambem_notifica(db) -> None:
         n = await _comment_notifs(db, resp)
 
     assert len(n) == 2  # comentario + replica, ambos notificam o responsavel
+
+
+async def _tipos(db, recipient_id) -> list[str]:
+    return list(
+        (
+            await db.execute(
+                select(Notification.type).where(Notification.recipient_id == recipient_id)
+            )
+        ).scalars().all()
+    )
+
+
+async def test_resposta_avisa_quem_perguntou_mesmo_sem_seguir(db) -> None:
+    """Auditoria 11/11, item 13 (decisao da Camila): quem pergunta sem seguir,
+    ser responsavel ou criador recebia NADA quando respondiam. Agora recebe um
+    TASK_COMMENT_REPLIED -- e so ele, nao o TASK_COMMENTED junto."""
+    ws, r, a, manager, proj, task, forest, mgr_ctx = await _world(db)
+    pergunta = await _op(db, ws, a)  # ve a task, nao segue, nao e responsavel
+    resp = await _op(db, ws, a)
+    await f.make_assignment(
+        db, workspace_id=ws, task_id=task.id, user_id=resp, assigned_by=manager
+    )
+    with acting_as(**_op_ctx(ws, a, forest, pergunta)):
+        pai = await CommentService(db).create_comment(task_id=task.id, content="e o prazo?")
+        await db.flush()
+    with acting_as(**_op_ctx(ws, a, forest, resp)):
+        await CommentService(db).create_comment(
+            task_id=task.id, content="sexta", parent_comment_id=pai.id
+        )
+        await db.flush()
+
+    assert await _tipos(db, pergunta) == ["TASK_COMMENT_REPLIED"]
+
+
+async def test_resposta_a_quem_ja_recebe_o_comentario_vira_um_aviso_so(db) -> None:
+    """O responsavel que perguntou recebe a resposta como TASK_COMMENT_REPLIED,
+    e nao TASK_COMMENTED em dobro; responder a si mesmo nao avisa ninguem."""
+    ws, r, a, manager, proj, task, forest, mgr_ctx = await _world(db)
+    resp = await _op(db, ws, a)
+    await f.make_assignment(
+        db, workspace_id=ws, task_id=task.id, user_id=resp, assigned_by=manager
+    )
+    with acting_as(**_op_ctx(ws, a, forest, resp)):
+        pai = await CommentService(db).create_comment(task_id=task.id, content="duvida")
+        await CommentService(db).create_comment(
+            task_id=task.id, content="achei", parent_comment_id=pai.id
+        )
+        await db.flush()
+    assert await _tipos(db, resp) == []
+    with acting_as(**mgr_ctx):
+        await CommentService(db).create_comment(
+            task_id=task.id, content="ok", parent_comment_id=pai.id
+        )
+        await db.flush()
+    assert await _tipos(db, resp) == ["TASK_COMMENT_REPLIED"]

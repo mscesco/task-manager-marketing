@@ -463,13 +463,15 @@ async def test_http_honeypot_responde_201_indistinguivel(db) -> None:
 
 
 async def test_http_rate_limit_429_no_estouro(db) -> None:
-    """Mesmo IP alem do limite configurado -> 429 com Retry-After."""
+    """Mesmo IP alem do teto do ENVIO -> 429; LER o formulario continua
+    liberado, porque o envio tem balde proprio (auditoria 11/11, item 11)."""
     from app.core.config import settings
 
+    assert settings.public_submit_rate_limit_max == 15  # decisao dela
     slug, form = await _publico(db)
     ip = _ip()  # UM ip fixo pra este teste
     async with _http(db) as client:
-        for _ in range(settings.public_form_rate_limit_max):
+        for _ in range(settings.public_submit_rate_limit_max):
             ok = await client.post(
                 "/api/v1/solicitacoes/publico", json=_payload(slug, form), headers=ip
             )
@@ -477,7 +479,11 @@ async def test_http_rate_limit_429_no_estouro(db) -> None:
         bloqueada = await client.post(
             "/api/v1/solicitacoes/publico", json=_payload(slug, form), headers=ip
         )
+        leitura = await client.get(
+            f"/api/v1/solicitacoes/publico/formularios?workspace={slug}", headers=ip
+        )
     assert bloqueada.status_code == 429
+    assert leitura.status_code == 200
 
 
 async def test_http_fila_sem_token_401(db) -> None:

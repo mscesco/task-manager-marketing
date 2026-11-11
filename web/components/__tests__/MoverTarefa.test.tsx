@@ -84,3 +84,56 @@ it("no lugar onde ja esta, o Mover fica desligado e a tela diz por que", async (
   expect(await screen.findByText("A tarefa já está nesse lugar.")).toBeTruthy();
   expect((screen.getByRole("button", { name: "Mover" }) as HTMLButtonElement).disabled).toBe(true);
 });
+
+const TAREFA = { id: "t", title: "Arte", board_id: "g-mkt", team_id: "mkt", parent_task_id: null };
+
+it("auditoria 11/11 (7): depois de um Mover que falhou, da para tentar de novo", async () => {
+  vi.mocked(api.relocateTask).mockImplementation(async (_id, _corpo, dry) => {
+    if (dry) return PREVIA;
+    throw new Error("rede caiu");
+  });
+  render(<MoverTarefa task={TAREFA} onMovida={vi.fn()} onFechar={vi.fn()} />);
+  fireEvent.click(await screen.findByLabelText("Subtarefa de…"));
+  fireEvent.click(await screen.findByRole("button", { name: /Instagram/ }));
+  const botao = (await screen.findByRole("button", { name: "Mover" })) as HTMLButtonElement;
+  await waitFor(() => expect(botao.disabled).toBe(false));
+
+  fireEvent.click(botao);
+  expect(await screen.findByRole("alert")).toBeTruthy();
+  await waitFor(() => expect(botao.disabled).toBe(false));
+});
+
+it("auditoria 11/11 (8): buscar de novo desfaz a escolha que sumiu da lista", async () => {
+  render(<MoverTarefa task={TAREFA} onMovida={vi.fn()} onFechar={vi.fn()} />);
+  fireEvent.click(await screen.findByLabelText("Subtarefa de…"));
+  fireEvent.click(await screen.findByRole("button", { name: /Instagram/ }));
+  await screen.findByText("Gi não vê o destino e sai de 2 tarefas (recebe um aviso).");
+
+  fireEvent.change(screen.getByLabelText("Buscar a tarefa principal"), {
+    target: { value: "Natal" },
+  });
+  expect(await screen.findByText("Escolha a tarefa principal.")).toBeTruthy();
+  expect((screen.getByRole("button", { name: "Mover" }) as HTMLButtonElement).disabled).toBe(true);
+});
+
+it("auditoria 11/11 (6): o Esc durante o Movendo… nao escapa para o detalhe", async () => {
+  vi.mocked(api.relocateTask).mockImplementation(async (_id, _corpo, dry) =>
+    dry ? PREVIA : new Promise(() => {}),
+  );
+  const escNoDetalhe = vi.fn();
+  window.addEventListener("keydown", escNoDetalhe);
+  try {
+    render(<MoverTarefa task={TAREFA} onMovida={vi.fn()} onFechar={vi.fn()} />);
+    fireEvent.click(await screen.findByLabelText("Subtarefa de…"));
+    fireEvent.click(await screen.findByRole("button", { name: /Instagram/ }));
+    const botao = (await screen.findByRole("button", { name: "Mover" })) as HTMLButtonElement;
+    await waitFor(() => expect(botao.disabled).toBe(false));
+    fireEvent.click(botao);
+    await screen.findByRole("button", { name: /Movendo/ });
+
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+    expect(escNoDetalhe).not.toHaveBeenCalled();
+  } finally {
+    window.removeEventListener("keydown", escNoDetalhe);
+  }
+});

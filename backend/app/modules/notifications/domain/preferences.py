@@ -82,6 +82,9 @@ GRUPOS: tuple[GrupoDeToggle, ...] = (
         "reaction", (NotificationType.TASK_COMMENT_REACTED.value,), (PAPEL_UNICO,)
     ),
     GrupoDeToggle(
+        "reply", (NotificationType.TASK_COMMENT_REPLIED.value,), (PAPEL_UNICO,)
+    ),
+    GrupoDeToggle(
         "watch",
         (
             NotificationType.TASK_WATCH_ADDED.value,

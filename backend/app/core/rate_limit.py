@@ -1,4 +1,5 @@
-"""Rate limit em memoria para as rotas publicas.
+"""Freios de tentativa: formulario publico, coletor de erros, login e troca
+de senha.
 
 ESCOPO (consultoria / spec rate-limit):
     Freio por IP no formulario publico e no coletor de erros, e freio por
@@ -7,22 +8,21 @@ ESCOPO (consultoria / spec rate-limit):
     ver os comentarios no lugar onde eles moravam, la embaixo.)
 
 ESTRATEGIA:
-    - Janela DESLIZANTE (sliding window): guarda os timestamps das tentativas
-      dentro da janela e poda os que sairam. Evita o "burst de borda" do
-      fixed-window (2x no limiar). Memoria por chave limitada ao numero de
-      hits dentro da janela.
-    - Store EM MEMORIA, POR PROCESSO. ATENCAO: o entrypoint de producao
-      sobe `uvicorn --workers 2`, entao existem DOIS baldes independentes.
-      Efeito real: o limite efetivo e ate 2x o configurado e o corte e
-      nao-deterministico (depende de qual worker atende a requisicao).
-      A premissa original deste modulo era processo unico; ela deixou de
-      valer quando o `--workers 2` entrou no entrypoint. Correcao esta em
-      decisao aberta (offload+1 worker, limite no Traefik, ou store
-      compartilhado em Redis/Postgres) -- ao mudar o numero de workers ou
-      o store, ATUALIZAR este docstring. Dentro de um processo a checagem
-      e sincrona (sem await no meio) => atomica entre corrotinas.
-    - Relogio via `time.monotonic` (nao afetado por ajuste de relogio de
-      parede). Injetavel pra teste (fake clock).
+    - Janela DESLIZANTE (sliding window): conta as tentativas dentro da
+      janela. Evita o "burst de borda" do fixed-window (2x no limiar).
+    - Contagem NO BANCO (`rate_limit_hit`, auditoria de 11/11, item 10). Ate
+      11/11 ela morava na memoria de cada processo, e producao sobe
+      `uvicorn --workers 2`: o limite real era ate o dobro, o corte dependia
+      de qual worker atendia, e todo deploy zerava. A escolha dela foi manter
+      os dois workers (sem fila atras de um export) e contar num lugar so.
+    - ⚠️ O FREIO CONFIRMA (commit) SOZINHO -- excecao a regra "so o Unit of
+      Work faz commit". A tentativa que ele conta e justamente a que FALHA, e
+      a falha desfaz a transacao da requisicao: sem o commit aqui, a senha
+      errada nunca seria registrada. O freio so grava antes de qualquer
+      escrita da requisicao (ou no lugar dela), entao nao confirma nada alheio.
+    - Registrar trava a chave (`pg_advisory_xact_lock`) ate o commit: dois
+      workers no mesmo balde nao contam a mesma vaga duas vezes.
+    - Relogio do banco (`clock_timestamp()`), e nao o de cada processo.
 
 IP REAL ATRAS DO TRAEFIK (decisao da spec, opcao A):
     A app so e alcancada via Traefik (nao expoe porta no host). O IP do
@@ -35,14 +35,14 @@ IP REAL ATRAS DO TRAEFIK (decisao da spec, opcao A):
 from __future__ import annotations
 
 import math
-import time
-from collections import defaultdict, deque
-from collections.abc import Callable
 from dataclasses import dataclass
 
 from fastapi import Request
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.deps import SessionDep
 from app.shared.exceptions.base import RateLimitError
 
 
@@ -58,111 +58,84 @@ class RateLimitDecision:
     retry_after: float
 
 
-class SlidingWindowRateLimiter:
-    """Limitador de janela deslizante, em memoria. Puro -- nao conhece HTTP.
+class RateLimiter:
+    """Janela deslizante de `max_hits` tentativas por `window_seconds`, por
+    chave, num balde (`bucket`) da tabela `rate_limit_hit`.
 
-    `max_hits` tentativas por `window_seconds`, por chave. A chamada `hit`
-    registra a tentativa SE couber; uma tentativa bloqueada NAO e registrada
-    (nao estende a janela -- padrao). Testavel isolado com `now` fake.
+    `hit` decide e registra no mesmo passo (rotas publicas: toda tentativa
+    conta). O trio `check`/`record`/`reset` separa decidir de registrar, para
+    o freio por CONTA (Spec 030, D5): so FALHA conta, e o acerto zera.
+    Uma tentativa bloqueada NAO e registrada (nao estende a janela).
     """
 
-    def __init__(
-        self,
-        *,
-        max_hits: int,
-        window_seconds: float,
-        now: Callable[[], float] = time.monotonic,
-        max_keys: int = 10_000,
-    ) -> None:
+    def __init__(self, *, bucket: str, max_hits: int, window_seconds: float) -> None:
         if max_hits < 1:
             raise ValueError("max_hits deve ser >= 1")
+        self.bucket = bucket
         self._max = max_hits
         self._window = float(window_seconds)
-        self._now = now
-        self._max_keys = max_keys
-        self._hits: dict[str, deque[float]] = defaultdict(deque)
 
-    def _prune(self, bucket: deque[float], now: float) -> None:
-        """Remove timestamps que ja sairam da janela."""
-        limit = now - self._window
-        while bucket and bucket[0] <= limit:
-            bucket.popleft()
-
-    def _sweep(self) -> None:
-        """Limpeza preguicosa: se o store cresceu demais (muitos IPs), dropa
-        as chaves sem hit recente. Evita crescimento ilimitado sob ataque
-        distribuido. Barato e raro (so quando passa do teto de chaves).
-        """
-        if len(self._hits) <= self._max_keys:
-            return
-        now = self._now()
-        for key in list(self._hits.keys()):
-            self._prune(self._hits[key], now)
-            if not self._hits[key]:
-                del self._hits[key]
-
-    def hit(self, key: str) -> RateLimitDecision:
-        """Registra/avalia uma tentativa da `key`. Sincrona e atomica."""
-        now = self._now()
-        bucket = self._hits[key]
-        self._prune(bucket, now)
-
-        if len(bucket) >= self._max:
-            # Bloqueada: libera quando o hit mais antigo sair da janela.
-            retry_after = self._window - (now - bucket[0])
-            return RateLimitDecision(
-                allowed=False, retry_after=max(0.0, retry_after)
+    async def check(self, session: AsyncSession, key: str) -> RateLimitDecision:
+        """Avalia a `key` SEM registrar tentativa."""
+        n, idade_do_mais_velho = (
+            await session.execute(
+                text(
+                    "SELECT count(*), extract(epoch FROM clock_timestamp() - min(at)) "
+                    "FROM rate_limit_hit WHERE bucket = :b AND key = :k "
+                    "AND at > clock_timestamp() - make_interval(secs => :w)"
+                ),
+                {"b": self.bucket, "k": key, "w": self._window},
             )
-
-        bucket.append(now)
-        self._sweep()
+        ).one()
+        if n >= self._max:
+            # Libera quando a tentativa mais antiga sair da janela.
+            espera = self._window - float(idade_do_mais_velho)
+            return RateLimitDecision(allowed=False, retry_after=max(0.0, espera))
         return RateLimitDecision(allowed=True, retry_after=0.0)
 
-    # ----------------------------------------------------------------
-    # Spec 030 (D5) -- trio para o freio POR CONTA.
-    #
-    # `hit()` decide e registra no mesmo passo, que serve ao login por IP:
-    # toda tentativa conta. Por CONTA a regra e outra -- so FALHA conta, e
-    # o acerto zera o balde -- e isso exige separar decidir de registrar.
-    #
-    # `hit()` NAO foi alterado: ele ja tem teste e ja esta em producia nas
-    # tres rotas publicas. O trio abaixo e adicao, nao reescrita.
-    # ----------------------------------------------------------------
-    def check(self, key: str) -> RateLimitDecision:
-        """Avalia a `key` SEM registrar tentativa.
+    async def hit(self, session: AsyncSession, key: str) -> RateLimitDecision:
+        """Avalia e, se couber, registra uma tentativa da `key`."""
+        await self._travar(session, key)
+        decision = await self.check(session, key)
+        if decision.allowed:
+            await self._gravar(session, key)
+        await session.commit()
+        return decision
 
-        ⚠️ Usa `.get`, nao `self._hits[key]`. O store e um defaultdict: ler
-        pelo indice CRIA um balde vazio, e uma sondagem de milhares de
-        e-mails inexistentes viraria crescimento de memoria por consulta.
-        """
-        bucket = self._hits.get(key)
-        if bucket is None:
-            return RateLimitDecision(allowed=True, retry_after=0.0)
-
-        now = self._now()
-        self._prune(bucket, now)
-        if len(bucket) >= self._max:
-            retry_after = self._window - (now - bucket[0])
-            return RateLimitDecision(
-                allowed=False, retry_after=max(0.0, retry_after)
-            )
-        return RateLimitDecision(allowed=True, retry_after=0.0)
-
-    def record(self, key: str) -> None:
+    async def record(self, session: AsyncSession, key: str) -> None:
         """Registra uma ocorrencia da `key` (no login por conta: uma FALHA)."""
-        now = self._now()
-        bucket = self._hits[key]
-        self._prune(bucket, now)
-        bucket.append(now)
-        self._sweep()
+        await self._travar(session, key)
+        await self._gravar(session, key)
+        await session.commit()
 
-    def reset(self, key: str) -> None:
-        """Esvazia o balde da `key` (no login por conta: acertou a senha).
+    async def reset(self, session: AsyncSession, key: str) -> None:
+        """Esvazia o balde da `key` (no login por conta: acertou a senha)."""
+        await session.execute(
+            text("DELETE FROM rate_limit_hit WHERE bucket = :b AND key = :k"),
+            {"b": self.bucket, "k": key},
+        )
+        await session.commit()
 
-        Remove a chave em vez de esvaziar o deque -- nao deixa entrada morta
-        ocupando espaco ate o proximo `_sweep`.
-        """
-        self._hits.pop(key, None)
+    async def _travar(self, session: AsyncSession, key: str) -> None:
+        await session.execute(
+            text("SELECT pg_advisory_xact_lock(hashtextextended(:c, 0))"),
+            {"c": f"rate_limit:{self.bucket}:{key}"},
+        )
+
+    async def _gravar(self, session: AsyncSession, key: str) -> None:
+        # Apaga os vencidos do balde inteiro: a tabela fica do tamanho da
+        # janela, inclusive sob ataque distribuido (milhares de IPs).
+        await session.execute(
+            text(
+                "DELETE FROM rate_limit_hit WHERE bucket = :b "
+                "AND at <= clock_timestamp() - make_interval(secs => :w)"
+            ),
+            {"b": self.bucket, "w": self._window},
+        )
+        await session.execute(
+            text("INSERT INTO rate_limit_hit (bucket, key) VALUES (:b, :k)"),
+            {"b": self.bucket, "k": key},
+        )
 
 
 def client_ip(request: Request) -> str:
@@ -183,7 +156,7 @@ def client_ip(request: Request) -> str:
     return "unknown"
 
 
-def rate_limit(limiter: SlidingWindowRateLimiter) -> Callable[[Request], None]:
+def rate_limit(limiter: RateLimiter):
     """Fabrica de dependency: aplica `limiter` por IP na rota.
 
     Uso::
@@ -193,8 +166,8 @@ def rate_limit(limiter: SlidingWindowRateLimiter) -> Callable[[Request], None]:
     Lanca RateLimitError (-> 429 + Retry-After) quando o IP estoura.
     """
 
-    def _guard(request: Request) -> None:
-        decision = limiter.hit(client_ip(request))
+    async def _guard(request: Request, session: SessionDep) -> None:
+        decision = await limiter.hit(session, client_ip(request))
         if not decision.allowed:
             raise RateLimitError(retry_after=math.ceil(decision.retry_after))
 
@@ -215,13 +188,22 @@ def rate_limit(limiter: SlidingWindowRateLimiter) -> Callable[[Request], None]:
 # token ASSINADO, sem bcrypt nem senha.
 # Formulario publico de solicitacoes (FazAe): balde proprio, janela mais
 # longa -- envio de formulario e raro por natureza, ao contrario de login.
-public_form_limiter = SlidingWindowRateLimiter(
+public_form_limiter = RateLimiter(
+    bucket="public_form",
     max_hits=settings.public_form_rate_limit_max,
     window_seconds=settings.public_form_rate_limit_window_seconds,
 )
+# O ENVIO do formulario publico (auditoria de 11/11, item 11): balde proprio,
+# separado da leitura -- ver o bloco em `config.py`.
+public_submit_limiter = RateLimiter(
+    bucket="public_submit",
+    max_hits=settings.public_submit_rate_limit_max,
+    window_seconds=settings.public_submit_rate_limit_window_seconds,
+)
 # Coletor de erros do front: publico, sem auth, e cada requisicao vira LINHA DE
 # LOG. Ver o bloco em `config.py`.
-client_error_limiter = SlidingWindowRateLimiter(
+client_error_limiter = RateLimiter(
+    bucket="client_error",
     max_hits=settings.client_error_rate_limit_max,
     window_seconds=settings.client_error_rate_limit_window_seconds,
 )
@@ -236,13 +218,15 @@ client_error_limiter = SlidingWindowRateLimiter(
 # alguem consegue trancar essa pessoa por, no maximo, a janela. Um bloqueio
 # que so um humano destrava seria pior -- viraria negacao de servico
 # permanente contra qualquer pessoa de e-mail conhecido.
-account_login_limiter = SlidingWindowRateLimiter(
+account_login_limiter = RateLimiter(
+    bucket="account_login",
     max_hits=settings.account_login_limit_max,
     window_seconds=settings.account_login_limit_window_seconds,
 )
 # Auditoria de 16/10: o mesmo freio, na SENHA ATUAL da troca de senha (chave =
 # id da pessoa). Balde proprio: errar a senha atual nao tranca o login.
-change_password_limiter = SlidingWindowRateLimiter(
+change_password_limiter = RateLimiter(
+    bucket="change_password",
     max_hits=settings.account_login_limit_max,
     window_seconds=settings.account_login_limit_window_seconds,
 )

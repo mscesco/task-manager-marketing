@@ -197,6 +197,7 @@ class CommentService:
         await self._guards.assert_visible(task)
         clean = normalize_content(content)
 
+        parent: Comment | None = None
         if parent_comment_id is not None:
             parent = await self._comments.get_by_id(parent_comment_id)
             if parent is None:  # inexistente ou ja apagado
@@ -227,12 +228,24 @@ class CommentService:
             task=task, comment_id=comment.id, conteudo=clean
         )
 
-        # 2) Comentario: fan-out pros SEGUIDORES (Spec 053, D15), responsaveis
+        # 2) Resposta: o autor do comentario respondido ganha aviso proprio,
+        #    mesmo sem seguir a tarefa (auditoria 11/11, item 13). A mencao tem
+        #    prioridade (D3) e, recebida a resposta, ele sai do fan-out abaixo.
+        avisados = set(mencionados)
+        if parent is not None and parent.user_id not in avisados:
+            await self._notify.comment_replied(
+                recipient_id=parent.user_id,
+                actor_id=tenant.user_id,
+                task_id=task_id,
+                task_title=task.title,
+                comment_id=comment.id,
+            )
+            avisados.add(parent.user_id)
+
+        # 3) Comentario: fan-out pros SEGUIDORES (Spec 053, D15), responsaveis
         #    e criador, menos o autor
-        #    (emitter) e MENOS quem ja foi mencionado (D3: a mencao tem
-        #    prioridade -- ninguem recebe duas notificacoes pelo mesmo
-        #    comentario). Replica tambem notifica.
-        mencionados_set = set(mencionados)
+        #    (emitter) e MENOS quem ja foi avisado acima (D3: ninguem recebe
+        #    duas notificacoes pelo mesmo comentario). Replica tambem notifica.
         # Spec 054 (D12): cada destinatario leva o PAPEL que tem na tarefa.
         papeis: dict[uuid.UUID, list[str]] = {}
         for uid in await self._watchers.list_user_ids(task_id):
@@ -240,7 +253,7 @@ class CommentService:
         for uid in await self._assignees.list_user_ids(task_id):
             papeis.setdefault(uid, []).append("assignee")
         papeis.setdefault(task.created_by, []).append("creator")
-        recipient_ids = [u for u in papeis if u not in mencionados_set]
+        recipient_ids = [u for u in papeis if u not in avisados]
         await self._notify.comment_on_task(
             recipient_ids=recipient_ids,
             papeis=papeis,

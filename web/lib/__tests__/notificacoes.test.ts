@@ -41,6 +41,12 @@ describe("textoDaNotificacao", () => {
     ).toBe('Ana reagiu com 👍 ao seu comentário em "Banner home"');
   });
 
+  it("auditoria 11/11: resposta diz quem respondeu e em qual tarefa", () => {
+    expect(textoDaNotificacao({ type: "TASK_COMMENT_REPLIED", payload })).toBe(
+      'Ana respondeu ao seu comentário em "Banner home"',
+    );
+  });
+
   it("reacao sem emoji no payload nao mostra 'undefined'", () => {
     const texto = textoDaNotificacao({
       type: "TASK_COMMENT_REACTED",

@@ -29,7 +29,11 @@ export type OpcaoDeTipo = {
 };
 
 export const OPCOES_DE_TIPO: readonly OpcaoDeTipo[] = [
-  { chave: "comentarios", rotulo: "Comentários", tipos: ["TASK_COMMENTED"] },
+  {
+    chave: "comentarios",
+    rotulo: "Comentários",
+    tipos: ["TASK_COMMENTED", "TASK_COMMENT_REPLIED"],
+  },
   { chave: "mencoes", rotulo: "Menções", tipos: ["TASK_MENTIONED"] },
   { chave: "reacoes", rotulo: "Reações", tipos: ["TASK_COMMENT_REACTED"] },
   { chave: "designacoes", rotulo: "Designações", tipos: ["TASK_ASSIGNED"] },

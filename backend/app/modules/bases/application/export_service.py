@@ -12,6 +12,7 @@ exportar e importar de volta da o mesmo.
 
 from __future__ import annotations
 
+import asyncio
 import csv
 import io
 import re
@@ -74,46 +75,9 @@ class BaseExportService:
             linhas = [por_id_l[i] for i in row_ids if i in por_id_l]
         nomes = await self._nomes(linhas, colunas)
 
-        cabecalho = [_texto(c.name, fmt) for c in colunas]
-        corpo = [
-            [_texto(_celula(c, r.values.get(str(c.id)), nomes, fmt), fmt) for c in colunas]
-            for r in linhas
-        ]
-        nome = _slug(base.name)
-        if fmt == "csv":
-            buf = io.StringIO()
-            # ⚠️ `;` e BOM: e o que o Excel em portugues abre sem perguntar nada.
-            w = csv.writer(buf, delimiter=";")
-            w.writerow(cabecalho)
-            w.writerows(corpo)
-            return ("﻿" + buf.getvalue()).encode("utf-8"), CSV_MEDIA_TYPE, f"{nome}.csv"
-
-        wb = Workbook()
-        ws = wb.active
-        ws.title = _aba(base.name)
-        ws.append(cabecalho)
-        for cell in ws[1]:
-            cell.font = Font(bold=True, color="FFFFFF")
-            cell.fill = PatternFill("solid", fgColor="0075DE")
-        for linha in corpo:
-            ws.append(linha)
-        # O openpyxl le texto que comeca com `=` como FORMULA: `=HYPERLINK(...)`
-        # digitado numa celula virava link vivo no arquivo do gestor, e
-        # `=== Secao ===` virava arquivo "corrompido". Texto fica texto.
-        for row in ws.iter_rows():
-            for cell in row:
-                if cell.data_type == "f":
-                    cell.data_type = "s"
-        for i, c in enumerate(colunas, start=1):
-            largura = max([len(c.name)] + [len(str(r[i - 1] or "")) for r in corpo[:200]] + [8])
-            ws.column_dimensions[get_column_letter(i)].width = min(largura + 2, 60)
-            if c.type == "date":
-                for (cell,) in ws.iter_rows(min_row=2, min_col=i, max_col=i):
-                    cell.number_format = "DD/MM/YYYY"
-        ws.freeze_panes = "A2"
-        out = io.BytesIO()
-        wb.save(out)
-        return out.getvalue(), XLSX_MEDIA_TYPE, f"{nome}.xlsx"
+        # Montar a planilha e CPU puro (5 mil linhas x 20 colunas = segundos):
+        # no loop async, congelava o worker inteiro (auditoria 11/11, item 9).
+        return await asyncio.to_thread(_arquivo, base.name, colunas, linhas, nomes, fmt)
 
     async def _nomes(self, linhas, colunas) -> dict[str, str]:
         ids: set[str] = set()
@@ -165,6 +129,50 @@ def _celula(coluna: Any, valor: Any, nomes: dict[str, str], fmt: str) -> Any:
         return "; ".join(i.get("url", "") for i in itens if isinstance(i, dict)) or None
     return str(valor)
 
+
+
+def _arquivo(nome_base: str, colunas, linhas, nomes: dict[str, str], fmt: str):
+    """O arquivo, o tipo e o nome -- sem banco, roda numa thread."""
+    cabecalho = [_texto(c.name, fmt) for c in colunas]
+    corpo = [
+        [_texto(_celula(c, r.values.get(str(c.id)), nomes, fmt), fmt) for c in colunas]
+        for r in linhas
+    ]
+    nome = _slug(nome_base)
+    if fmt == "csv":
+        buf = io.StringIO()
+        # ⚠️ `;` e BOM: e o que o Excel em portugues abre sem perguntar nada.
+        w = csv.writer(buf, delimiter=";")
+        w.writerow(cabecalho)
+        w.writerows(corpo)
+        return ("﻿" + buf.getvalue()).encode("utf-8"), CSV_MEDIA_TYPE, f"{nome}.csv"
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = _aba(nome_base)
+    ws.append(cabecalho)
+    for cell in ws[1]:
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill("solid", fgColor="0075DE")
+    for linha in corpo:
+        ws.append(linha)
+    # O openpyxl le texto que comeca com `=` como FORMULA: `=HYPERLINK(...)`
+    # digitado numa celula virava link vivo no arquivo do gestor, e
+    # `=== Secao ===` virava arquivo "corrompido". Texto fica texto.
+    for row in ws.iter_rows():
+        for cell in row:
+            if cell.data_type == "f":
+                cell.data_type = "s"
+    for i, c in enumerate(colunas, start=1):
+        largura = max([len(c.name)] + [len(str(r[i - 1] or "")) for r in corpo[:200]] + [8])
+        ws.column_dimensions[get_column_letter(i)].width = min(largura + 2, 60)
+        if c.type == "date":
+            for (cell,) in ws.iter_rows(min_row=2, min_col=i, max_col=i):
+                cell.number_format = "DD/MM/YYYY"
+    ws.freeze_panes = "A2"
+    out = io.BytesIO()
+    wb.save(out)
+    return out.getvalue(), XLSX_MEDIA_TYPE, f"{nome}.xlsx"
 
 def _texto(valor: Any, fmt: str) -> Any:
     """Texto que o Excel aceita e nao executa."""

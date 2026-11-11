@@ -15,7 +15,7 @@ from collections.abc import AsyncIterator
 
 import pytest
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import select, text
+from sqlalchemy import event, select, text
 
 from app.core.deps import get_db_session, get_uow
 from app.core.tenant import Membership, TenantContext, set_tenant
@@ -116,6 +116,28 @@ async def m(db):
     mundo = await _mundo(db)
     mundo["db"] = db
     return mundo
+
+
+async def test_para_o_nivel_de_cima_trava_a_tarefa_antes_de_escrever(
+    db, m, connection
+) -> None:
+    """Auditoria 11/11, item 5: so o ramo "subtarefa de..." travava. Sem a
+    trava, um movimento cruzado deixava as filhas com o path de antes. A
+    corrida em si nao cabe num teste de uma conexao so; o que se prova aqui e
+    que a linha e travada ANTES da primeira escrita."""
+    _, filha, _ = await _arvore(db, m)
+    sqls: list[str] = []
+
+    def _anota(conn, cursor, statement, *args) -> None:
+        sqls.append(" ".join(statement.split()).upper())
+
+    event.listen(connection.sync_connection, "before_cursor_execute", _anota)
+    try:
+        await _mover(m, filha.id, board_id=m["avulso"])
+    finally:
+        event.remove(connection.sync_connection, "before_cursor_execute", _anota)
+    primeira_escrita = next(i for i, q in enumerate(sqls) if q.startswith("UPDATE TASK"))
+    assert any("FOR UPDATE" in q for q in sqls[:primeira_escrita])
 
 
 # ------------------------------------------------ decisoes 1 e 2: tudo vai junto
@@ -504,3 +526,26 @@ async def test_excluir_id_inexistente_nao_e_404(db, m) -> None:
             f"/api/v1/boards/{m['geral_mkt']}/tasks/search?exclude_task_id={uuid.uuid4()}"
         )
     assert r.status_code == 200
+
+
+async def test_operadora_nao_joga_a_tarefa_num_time_fora_da_lente(db, m) -> None:
+    """Auditoria 11/11, item 15: a conferencia "criar no destino" (o
+    `_assert_team_in_reach` do relocate) nao tinha teste que falhasse sem ela
+    -- os outros rodam como ADMIN, sem lente. A `gi` (OPERATOR do Design)
+    alcanca o Quadro geral do Marketing, e o SEO e da mesma area; so a lente
+    impede a tarefa dela de ir para o SEO, que ela nao ve."""
+    minha = await f.make_task(
+        db, workspace_id=m["ws"], created_by=m["gi"], team_id=m["design"],
+        board_id=m["geral_mkt"], title="minha",
+    )
+    with acting_as(
+        workspace_id=m["ws"], user_id=m["gi"],
+        memberships=(mship(m["design"], "OPERATOR"),),
+        team_tree=m["ctx"]["team_tree"],
+    ):
+        with pytest.raises(ValidationError):
+            await TaskService(db).relocate(
+                task_id=minha.id,
+                command=RelocateCommand(board_id=m["geral_mkt"], team_id=m["seo"]),
+                dry_run=True,
+            )

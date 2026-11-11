@@ -58,10 +58,10 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe("a grade", () => {
-  it("nasce com 27 interruptores, todos ligados", async () => {
+  it("nasce com 28 interruptores, todos ligados", async () => {
     render(<NotificationPreferences />);
     const interruptores = await screen.findAllByRole("switch");
-    expect(interruptores.length).toBe(27); // 24 + as 3 travadas
+    expect(interruptores.length).toBe(28); // 25 + as 3 travadas (resposta: 11/11)
     expect(interruptores.every((b) => b.getAttribute("aria-checked") === "true")).toBe(true);
     expect(screen.getByText("Você recebe todos os avisos.")).toBeTruthy();
   });

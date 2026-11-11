@@ -32,6 +32,10 @@ class NotificationType(str, Enum):
     # Spec 050 (fatia B): alguem reagiu ao comentario da pessoa. So quando a
     # reacao NASCE -- trocar o emoji nao notifica (decisao da Camila, 15/09).
     TASK_COMMENT_REACTED = "TASK_COMMENT_REACTED"
+    # Auditoria 11/11 (item 13): alguem respondeu ao comentario da pessoa --
+    # mesmo que ela nao siga a tarefa. Tipo proprio, silenciavel a parte
+    # (decisao da Camila).
+    TASK_COMMENT_REPLIED = "TASK_COMMENT_REPLIED"
     # Spec 053, fatia B (D17): OUTRA pessoa colocou ou tirou alguem como
     # seguidor. Quem se inscreve sozinho nao se avisa.
     TASK_WATCH_ADDED = "TASK_WATCH_ADDED"

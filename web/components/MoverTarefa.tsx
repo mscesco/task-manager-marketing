@@ -50,6 +50,9 @@ export default function MoverTarefa({
   const [mae, setMae] = useState<AchadoDaBusca | null>(null);
   const [previa, setPrevia] = useState<PreviaDoMover | null>(null);
   const [erro, setErro] = useState<string | null>(null);
+  // O erro do MOVER mora separado do da previa (auditoria 11/11, item 7):
+  // juntos, uma falha de rede desligava o botao ate trocar de destino.
+  const [erroAoMover, setErroAoMover] = useState<string | null>(null);
   const [movendo, setMovendo] = useState(false);
   const seletorRef = useRef<HTMLSelectElement | null>(null);
 
@@ -98,6 +101,7 @@ export default function MoverTarefa({
   useEffect(() => {
     setPrevia(null);
     setErro(null);
+    setErroAoMover(null);
     if (!corpo) return;
     let vivo = true;
     const t = setTimeout(() => {
@@ -114,13 +118,13 @@ export default function MoverTarefa({
   async function mover() {
     if (!corpo || movendo) return;
     setMovendo(true);
-    setErro(null);
+    setErroAoMover(null);
     try {
       const r = await relocateTask(task.id, corpo, false);
       if (r.task) onMovida(r.task);
       onFechar();
     } catch (e) {
-      setErro(mensagemDeErro(e));
+      setErroAoMover(mensagemDeErro(e));
       setMovendo(false);
     }
   }
@@ -133,7 +137,10 @@ export default function MoverTarefa({
     <CaixaDeDialogo
       ariaLabel={`Mover a tarefa ${task.title}`}
       largura={520}
-      onEsc={movendo ? undefined : onFechar}
+      // Durante o "Movendo…" o Esc e ENGOLIDO, e nao ignorado (auditoria
+      // 11/11, item 6): sem dono, ele subia ao detalhe, que fechava -- e o
+      // erro de um movimento que falhasse nao aparecia em lugar nenhum.
+      onEsc={movendo ? () => {} : onFechar}
       onFundo={movendo ? undefined : onFechar}
     >
       <div className="text-[15px] font-bold">
@@ -210,7 +217,13 @@ export default function MoverTarefa({
             autoComplete="off"
             disabled={movendo}
             onKeyDown={(e) => e.stopPropagation()}
-            onChange={(e) => setBusca(e.target.value)}
+            onChange={(e) => {
+              setBusca(e.target.value);
+              // A escolhida sai da lista com a busca nova: valendo escondida,
+              // a tarefa ia para baixo de quem a tela nao mostra mais
+              // (auditoria 11/11, item 8).
+              setMae(null);
+            }}
           />
           <ul
             className="mt-2 max-h-56 overflow-y-auto rounded-lg border border-border"
@@ -249,9 +262,9 @@ export default function MoverTarefa({
       )}
 
       <div className="mt-4 min-h-10 text-[13px]" aria-live="polite">
-        {erro ? (
+        {erro || erroAoMover ? (
           <div role="alert" className="error-text">
-            {erro}
+            {erro ?? erroAoMover}
           </div>
         ) : modo === "subtarefa" && !mae ? (
           <div className="muted">Escolha a tarefa principal.</div>

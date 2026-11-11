@@ -57,6 +57,7 @@ import { sincronizarTaskNaUrl } from "@/lib/urlTarefa";
 import { ORDENACOES, ordenar, type Ordenacao } from "@/lib/ordenacao";
 import { ALL_TEAMS, withTeam } from "@/lib/activeTeam";
 import { useActiveTeam, useActiveTeamId } from "@/lib/useActiveTeam";
+import { criarUltimaVez } from "@/lib/ultimaVez";
 
 import { motion } from "motion/react";
 import { Esqueleto } from "@/components/Loading";
@@ -201,6 +202,8 @@ function Minhas() {
   const avisar = useAvisar();
   const sensors = useSensoresDeArraste();
   const suprimirClique = useRef(false);
+  // Dois arrastes do mesmo card: so a resposta do ultimo vale (`lib/ultimaVez`).
+  const vezDoArraste = useRef(criarUltimaVez()).current;
 
   // --- Trava a vista QUADRO na altura da viewport (scroll por coluna) ---
   // Mesma tecnica do componente Board: mede o topo real das colunas e trava a
@@ -602,13 +605,16 @@ function Minhas() {
         : prev
     );
 
+    const aindaEhOUltimo = vezDoArraste.nova(taskId);
     try {
       // ⚠️ MANDA SO `column_id`: os dois campos juntos e 422 (ADR 0041, D3), e
       // o status certo vem NA RESPOSTA.
       const atualizada = await updateTask(taskId, { column_id: destino });
+      if (!aindaEhOUltimo()) return;
       aoUpsert(atualizada); // re-merge do servidor, preservando relations/assignees
       soltarConfete(origemDoConfete);
     } catch (err) {
+      if (!aindaEhOUltimo()) return;
       setItems((prev) =>
         prev
           ? prev.map((t) => {

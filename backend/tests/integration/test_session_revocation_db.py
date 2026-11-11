@@ -45,25 +45,6 @@ _SENHA = "senha-de-teste-1"
 _NOVA = "senha-de-teste-2"
 
 
-@pytest.fixture(autouse=True)
-def _zera_limitadores():
-    """Esvazia os baldes de rate limit entre os testes deste arquivo.
-
-    Necessario porque `change_password_limiter` e singleton de MODULO: vive
-    no processo, nao na app. (O `login_limiter` por IP saiu em 21/10.)
-
-    ⚠️ Isto e a prova, em ambiente controlado, do que o docstring de
-    `app/core/rate_limit.py` descreve: o balde e por PROCESSO. Com
-    `--workers 2` em producao existem dois baldes independentes e o limite
-    efetivo e ate 2x o configurado.
-    """
-    from app.core.rate_limit import change_password_limiter
-
-    change_password_limiter._hits.clear()
-    yield
-    change_password_limiter._hits.clear()
-
-
 def _client(db) -> AsyncClient:
     """App real, so com sessao/UoW apontando para o teste.
 

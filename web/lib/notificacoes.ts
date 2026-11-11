@@ -87,6 +87,9 @@ export function textoDaNotificacao(
   if (n.type === "TASK_ASSIGNED") return `${ator} designou você em ${q(task)}`;
   if (n.type === "TASK_COMMENTED") return `${ator} comentou em ${q(task)}`;
   if (n.type === "TASK_MENTIONED") return `${ator} mencionou você em ${q(task)}`;
+  if (n.type === "TASK_COMMENT_REPLIED") {
+    return `${ator} respondeu ao seu comentário em ${q(task)}`;
+  }
   if (n.type === "TASK_COMMENT_REACTED") {
     const emoji = n.payload?.emoji;
     return emoji

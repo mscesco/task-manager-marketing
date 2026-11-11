@@ -30,7 +30,7 @@ import uuid
 from fastapi import APIRouter, Depends, Query, status
 
 from app.core.deps import SessionDep, UoWDep
-from app.core.rate_limit import public_form_limiter, rate_limit
+from app.core.rate_limit import public_submit_limiter, rate_limit
 from app.modules.auth.api.dependencies import (
     TenantContextDep,
     require_permission,
@@ -70,7 +70,7 @@ router = APIRouter(prefix="/solicitacoes", tags=["solicitacoes"])
     "/publico",
     response_model=PublicSolicitationCreateResponse,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(rate_limit(public_form_limiter))],
+    dependencies=[Depends(rate_limit(public_submit_limiter))],
 )
 async def create_public_solicitation(
     payload: PublicSolicitationCreateRequest,

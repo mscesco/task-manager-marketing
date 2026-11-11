@@ -76,6 +76,7 @@ import { quadroGeralDoTime, terminal, type Coluna } from "@/lib/coluna";
 import { listAllTasks, listAllProjects, listarFilhas, getTask, updateTask, listMembers, listSubteams, getRootTeamId, listBoards, colunaComContagem, aplicarLoteDeColunas, ApiError, type Task, type Team, type Quadro } from "@/lib/api";
 import { newTaskTeam } from "@/lib/escopoTarefa";
 import { mesclaTarefa } from "@/lib/mesclaTarefa";
+import { criarUltimaVez } from "@/lib/ultimaVez";
 import { useWarnBeforeUnload } from "@/lib/useWarnBeforeUnload";
 import { sincronizarTaskNaUrl, lerTaskDaUrl } from "@/lib/urlTarefa";
 import { ORDENACOES, ordenar, type Ordenacao } from "@/lib/ordenacao";
@@ -387,6 +388,8 @@ export default function Board({
 
   // Guarda contra "clique fantasma" logo apos um arrasto.
   const suprimirClique = useRef(false);
+  // Dois arrastes do mesmo card: so a resposta do ultimo vale (`lib/ultimaVez`).
+  const vezDoArraste = useRef(criarUltimaVez()).current;
 
   // Fecha o painel ao clicar fora (mesmo padrao do picker de responsavel).
   useFecharAoClicarForaDe(painelRef, painelAberto, () => setPainelAberto(false));
@@ -966,11 +969,13 @@ export default function Board({
       })
     );
 
+    const aindaEhOUltimo = vezDoArraste.nova(taskId);
     try {
       // ⚠️ MANDA SO `column_id`. Mandar os dois campos e 422 (ADR 0041, D3), e
       // o status certo vem NA RESPOSTA -- e por isso que a linha abaixo troca
       // a task inteira pela devolvida, em vez de remendar so a coluna.
       const atualizada = await updateTask(taskId, { column_id: destino });
+      if (!aindaEhOUltimo()) return;
       setTasks((prev) =>
         prev!.map((t) =>
           // ⚠️ `mesclaTarefa` e nao spread cru: a resposta do PATCH nao traz os
@@ -980,6 +985,7 @@ export default function Board({
       );
       soltarConfete(origemDoConfete);
     } catch (err) {
+      if (!aindaEhOUltimo()) return;
       setTasks((prev) =>
         prev!.map((t) => {
           if (t.id === taskId)
