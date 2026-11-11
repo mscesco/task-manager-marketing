@@ -193,6 +193,13 @@ public_form_limiter = RateLimiter(
     max_hits=settings.public_form_rate_limit_max,
     window_seconds=settings.public_form_rate_limit_window_seconds,
 )
+# O ENVIO do formulario publico (auditoria de 11/11, item 11): balde proprio,
+# separado da leitura -- ver o bloco em `config.py`.
+public_submit_limiter = RateLimiter(
+    bucket="public_submit",
+    max_hits=settings.public_submit_rate_limit_max,
+    window_seconds=settings.public_submit_rate_limit_window_seconds,
+)
 # Coletor de erros do front: publico, sem auth, e cada requisicao vira LINHA DE
 # LOG. Ver o bloco em `config.py`.
 client_error_limiter = RateLimiter(

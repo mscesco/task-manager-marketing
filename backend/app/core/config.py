@@ -84,6 +84,14 @@ class Settings(BaseSettings):
     # se aparecer abuso real, aperta; se barrar gente de boa-fe, afrouxa.
     public_form_rate_limit_max: int = 30
     public_form_rate_limit_window_seconds: int = 60
+    # ⚠️ Desde 11/11 (auditoria, item 11) o numero acima vale so para LER o
+    # formulario (lista e detalhe). O ENVIO tem balde proprio, mais apertado:
+    # com 30/min, um script de um IP gravava ~6 MB por minuto, para sempre, no
+    # Postgres que o n8n tambem usa (200 mil caracteres por envio). Decisao
+    # dela: 15 envios a cada 10 min por IP -- a instituicao sai por um IP so,
+    # entao o teto e da rede inteira; o rascunho sobrevive ao 429.
+    public_submit_rate_limit_max: int = 15
+    public_submit_rate_limit_window_seconds: int = 600
 
     # --- Rate limit (coletor de erros do front) -- revisao de seguranca 23/09
     # `/client-errors` e PUBLICO e ESCREVE NO LOG: e a unica rota sem auth que
