@@ -450,3 +450,26 @@ async def test_a_planilha_do_operador_nao_tem_a_carga(db) -> None:
             r = await cli.get(f"/api/v1/dashboard/export?under_team_id={m['mkt']}")
     assert r.status_code == 200, r.text
     assert "Carga" not in load_workbook(io.BytesIO(r.content)).sheetnames
+
+
+async def test_titulo_que_parece_formula_continua_texto_na_planilha(db) -> None:
+    """Auditoria 11/11: o `\x0b` colado do PowerPoint dava 500 no export, e
+    `=HYPERLINK(...)` virava link vivo -- a regra que o export da Base ja tinha."""
+    import io
+
+    from openpyxl import load_workbook
+    from sqlalchemy import select
+
+    from app.db.models import Task
+
+    m = await _mundo(db)
+    t1 = (await db.execute(select(Task).where(Task.title == "t1"))).scalar_one()
+    t1.title = '=HYPERLINK("http://x";"y")\x0b'
+    await db.flush()
+    with _como(m, "ger") as ctx:
+        async with _client(db, ctx) as cli:
+            r = await cli.get(f"/api/v1/dashboard/export?under_team_id={m['mkt']}")
+    assert r.status_code == 200, r.text
+    linhas = load_workbook(io.BytesIO(r.content))["Tarefas"].iter_rows(min_row=2)
+    celula = next(lin[0] for lin in linhas if "HYPERLINK" in str(lin[0].value))
+    assert (celula.data_type, celula.value) == ("s", '=HYPERLINK("http://x";"y")')

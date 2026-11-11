@@ -21,6 +21,7 @@ import uuid
 from datetime import datetime
 
 from openpyxl import Workbook
+from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
 from openpyxl.styles import Font, PatternFill
 from openpyxl.utils import get_column_letter
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -41,13 +42,23 @@ def _dia(d) -> str:
     return d.strftime("%d/%m/%Y") if d else ""
 
 
+def _linha(ws, valores: list) -> None:
+    """Uma linha que o Excel aceita e nao executa (a regra do export da Base):
+    o `\x0b` colado do PowerPoint dava 500, e um titulo `=HYPERLINK(...)`
+    virava link vivo -- o titulo pode vir ate do formulario publico."""
+    ws.append([ILLEGAL_CHARACTERS_RE.sub("", v) if isinstance(v, str) else v for v in valores])
+    for cell in ws[ws.max_row]:
+        if cell.data_type == "f":
+            cell.data_type = "s"
+
+
 def _table(ws, header: list[str], rows: list[list]) -> None:
-    ws.append(header)
+    _linha(ws, header)
     for cell in ws[1]:
         cell.font = _HEAD
         cell.fill = _HEAD_FILL
     for r in rows:
-        ws.append(r)
+        _linha(ws, r)
     for i, titulo in enumerate(header, start=1):
         largura = max([len(str(titulo))] + [len(str(r[i - 1])) for r in rows] + [8])
         ws.column_dimensions[get_column_letter(i)].width = min(largura + 2, 60)
@@ -102,7 +113,7 @@ async def build_dashboard_xlsx(
     if d.queue is not None:
         linhas.append(["Solicitações pendentes", d.queue.pending])
     for linha in linhas:
-        resumo.append(linha)
+        _linha(resumo, linha)
     for cell in resumo["A"]:
         cell.font = Font(bold=True)
     resumo.column_dimensions["A"].width = 40
