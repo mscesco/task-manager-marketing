@@ -27,6 +27,7 @@ from openpyxl.styles import Font, PatternFill
 from openpyxl.utils import get_column_letter
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.tenant import require_tenant
 from app.db.models import Team, User
 from app.modules.tasks.application.dashboard_service import DashboardService
 from app.modules.tasks.domain.dashboard import TIMEZONE, Period
@@ -80,14 +81,20 @@ async def build_dashboard_xlsx(
     rows = await TaskRepository(session).dashboard_export_rows(
         under_team_id, d.now, assignee_id=assignee_id, period=period
     )
+    # ⚠️ O `session.get` nao confere a organizacao (auditoria de 11/11, item
+    # 20): um `under_team_id` de outra organizacao punha o nome daquele time
+    # no cabecalho, com os numeros zerados. Time ou pessoa de fora = ausente.
+    ws_id = require_tenant().workspace_id
     time_nome = "Todos os times"
     if under_team_id is not None:
         team = await session.get(Team, under_team_id)
-        time_nome = team.name if team else time_nome
+        if team is not None and team.workspace_id == ws_id:
+            time_nome = team.name
     pessoa_nome = ""
     if assignee_id is not None:
         user = await session.get(User, assignee_id)
-        pessoa_nome = user.name if user else ""
+        if user is not None and user.workspace_id == ws_id:
+            pessoa_nome = user.name
     # Montar a planilha e CPU puro: no loop async, congelava o worker inteiro
     # (auditoria 11/11, item 9).
     return await asyncio.to_thread(_planilha, d, rows, time_nome, pessoa_nome)

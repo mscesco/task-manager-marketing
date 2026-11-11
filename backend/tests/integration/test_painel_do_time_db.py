@@ -473,3 +473,34 @@ async def test_titulo_que_parece_formula_continua_texto_na_planilha(db) -> None:
     linhas = load_workbook(io.BytesIO(r.content))["Tarefas"].iter_rows(min_row=2)
     celula = next(lin[0] for lin in linhas if "HYPERLINK" in str(lin[0].value))
     assert (celula.data_type, celula.value) == ("s", '=HYPERLINK("http://x";"y")')
+
+
+async def test_planilha_nao_le_nome_de_time_nem_de_pessoa_de_outra_organizacao(db) -> None:
+    """Auditoria 11/11, item 20: o `session.get` pulava a organizacao, e um
+    `under_team_id` de fora punha o nome daquele time no cabecalho."""
+    import io
+
+    from openpyxl import load_workbook
+
+    from app.modules.tasks.application.dashboard_export import build_dashboard_xlsx
+
+    m = await _mundo(db)
+    outra = await f.make_workspace(db)
+    time_de_fora = await f.make_team(db, workspace_id=outra, slug="segredo")
+    pessoa_de_fora = await f.make_user(db, workspace_id=outra)
+    (await db.get(User, pessoa_de_fora)).name = "Fulano de Fora"
+    await db.flush()
+    with acting_as(
+        workspace_id=m["ws"], user_id=m["ger"], org_role="ADMIN", team_tree=m["arvore"]
+    ):
+        conteudo, nome = await build_dashboard_xlsx(
+            db, time_de_fora, assignee_id=pessoa_de_fora
+        )
+    resumo = {
+        row[0]: row[1]
+        for row in load_workbook(io.BytesIO(conteudo))["Resumo"].iter_rows(values_only=True)
+        if row[0]
+    }
+    assert resumo["Time"] == "Todos os times"
+    assert resumo["Pessoa"] == "Todas"
+    assert "segredo" not in nome
