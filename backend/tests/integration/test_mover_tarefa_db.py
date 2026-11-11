@@ -526,3 +526,26 @@ async def test_excluir_id_inexistente_nao_e_404(db, m) -> None:
             f"/api/v1/boards/{m['geral_mkt']}/tasks/search?exclude_task_id={uuid.uuid4()}"
         )
     assert r.status_code == 200
+
+
+async def test_operadora_nao_joga_a_tarefa_num_time_fora_da_lente(db, m) -> None:
+    """Auditoria 11/11, item 15: a conferencia "criar no destino" (o
+    `_assert_team_in_reach` do relocate) nao tinha teste que falhasse sem ela
+    -- os outros rodam como ADMIN, sem lente. A `gi` (OPERATOR do Design)
+    alcanca o Quadro geral do Marketing, e o SEO e da mesma area; so a lente
+    impede a tarefa dela de ir para o SEO, que ela nao ve."""
+    minha = await f.make_task(
+        db, workspace_id=m["ws"], created_by=m["gi"], team_id=m["design"],
+        board_id=m["geral_mkt"], title="minha",
+    )
+    with acting_as(
+        workspace_id=m["ws"], user_id=m["gi"],
+        memberships=(mship(m["design"], "OPERATOR"),),
+        team_tree=m["ctx"]["team_tree"],
+    ):
+        with pytest.raises(ValidationError):
+            await TaskService(db).relocate(
+                task_id=minha.id,
+                command=RelocateCommand(board_id=m["geral_mkt"], team_id=m["seo"]),
+                dry_run=True,
+            )
