@@ -13,8 +13,30 @@ import type { ReactNode } from "react";
 export function MolduraPublica({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-dvh bg-canvas px-4 py-8">
-      <div className="mx-auto max-w-[760px]">{children}</div>
+      <div className="mx-auto max-w-[760px]">
+        {children}
+        <LinksLegais className="mt-8" />
+      </div>
     </div>
+  );
+}
+
+/** Spec 064. Aba nova para não tirar a pessoa do formulário ou do login. */
+export function LinksLegais({ className = "" }: { className?: string }) {
+  // `!`: o `a { text-decoration: none }` do globals.css nao tem camada e venceria.
+  const estilo = "inline-flex min-h-6 items-center underline!";
+  return (
+    <nav
+      aria-label="Documentos legais"
+      className={`muted flex flex-wrap justify-center gap-x-4 text-sm ${className}`}
+    >
+      <a href="/privacidade" target="_blank" rel="noopener" className={estilo}>
+        Política de privacidade
+      </a>
+      <a href="/termos" target="_blank" rel="noopener" className={estilo}>
+        Termos de uso
+      </a>
+    </nav>
   );
 }
 

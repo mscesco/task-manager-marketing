@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { Eye, EyeOff } from "lucide-react";
 import { login, getMe, setTokens, ApiError } from "@/lib/api";
 import OnirosMark from "@/components/OnirosMark";
+import { LinksLegais } from "@/components/MolduraPublica";
 
 // Redesign (fatia 4): duas colunas a partir de 900px -- o painel azul com
 // tres cartoezinhos decorativos a esquerda, o formulario num card a direita.
@@ -130,6 +131,7 @@ export default function LoginPage() {
           <p className="muted m-0 text-center text-sm">
             Primeiro acesso? Entre com a senha provisória; o sistema pedirá uma nova.
           </p>
+          <LinksLegais />
         </form>
       </section>
     </div>
