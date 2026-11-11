@@ -426,6 +426,10 @@ async def relocate_task(
             for p in resultado.saem
         ],
         assume=resultado.assume,
+        status_muda=[
+            {"de": de, "para": para, "tarefas": n}
+            for de, para, n in resultado.status_muda
+        ],
     )
 
 

@@ -87,7 +87,10 @@ it("caminhoDoAchado poe a propria tarefa no fim", () => {
 });
 
 describe("frasesDaPrevia", () => {
-  const base = { mudou: true, subtarefas: 0, projeto_antes: null, projeto_depois: null, saem: [], assume: 0 };
+  const base = {
+    mudou: true, subtarefas: 0, projeto_antes: null, projeto_depois: null, saem: [], assume: 0,
+    status_muda: [],
+  };
   it("nada muda, nada a dizer", () => {
     expect(frasesDaPrevia({ ...base, mudou: false, subtarefas: 3 })).toEqual([]);
   });
@@ -105,6 +108,20 @@ describe("frasesDaPrevia", () => {
       'Fica sem o projeto "Natal", que é de outro time.',
       "Gi não vê o destino e sai de 3 tarefas (recebe um aviso).",
       "Você vira responsável por 1 tarefa que ficaria sem ninguém.",
+    ]);
+  });
+  it("avisa o status que muda, com o nome da tela (auditoria 11/11)", () => {
+    expect(
+      frasesDaPrevia({
+        ...base,
+        status_muda: [
+          { de: "BLOCKED", para: "IN_PROGRESS", tarefas: 1 },
+          { de: "PLANNED", para: "BACKLOG", tarefas: 3 },
+        ],
+      }),
+    ).toEqual([
+      "1 tarefa muda de status: Bloqueado → Em Andamento (o destino não tem essa coluna).",
+      "3 tarefas mudam de status: Planejado → Backlog (o destino não tem essa coluna).",
     ]);
   });
   it("trocar de projeto e diferente de perder", () => {
