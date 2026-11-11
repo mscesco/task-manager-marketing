@@ -45,6 +45,7 @@ FORA_POR_DESENHO: dict[tuple[str, str], str] = {
     ("post", "/api/v1/solicitacoes/publico"): "publica (test_solicitation_form_publico_db)",
     # n8n, por token de sistema.
     ("post", "/api/v1/system/bases/purge"): "token de sistema (test_system_auth)",
+    ("post", "/api/v1/system/notifications/purge"): "token de sistema (test_system_auth)",
     ("post", "/api/v1/system/tasks/archive-stale"): "token de sistema (test_system_auth)",
     ("post", "/api/v1/system/tasks/notify-deadlines"): "token de sistema (test_system_auth)",
     # Os proprios avisos: o recorte e "meus", nao papel.

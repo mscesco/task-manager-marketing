@@ -1441,6 +1441,37 @@ class TaskRepository(BaseRepository[Task]):
         )
         return [r[0] for r in rows.all()]
 
+    async def travar_subarvore(self, *, path: str) -> None:
+        """Trava (`FOR UPDATE`) a tarefa de `path` e todas as descendentes.
+
+        Auditoria de 11/11, item 19: o mover le a lista da subarvore uma vez
+        e reescreve quadro e time de cada uma. Uma subtarefa criada nesse
+        meio-tempo ganhava o path novo (o `reparent_subtree` casa por path)
+        mas ficava com o quadro e o time antigos. Com a subarvore travada, o
+        `create` -- que trava a mae com `FOR SHARE` -- espera o mover acabar.
+
+        ⚠️ CHAMAR ANTES de `ids_da_subarvore`, e nao no lugar dele: se esta
+        consulta esperou por um `create`, a filha que ele gravou nao esta no
+        resultado DESTA consulta (o snapshot e de antes). A consulta seguinte
+        ja a ve, e nenhuma outra pode nascer, porque as maes estao travadas.
+
+        EXCECAO AUTORIZADA ao `_base_select` (ADR 0003), mesma razao do
+        `ids_da_subarvore`: ltree. Tenant explicito.
+        """
+        await self.session.execute(
+            text(
+                """
+                SELECT id FROM task
+                WHERE path <@ CAST(:path AS ltree)
+                  AND workspace_id = :tenant_id
+                  AND deleted_at IS NULL
+                ORDER BY id
+                FOR UPDATE
+                """
+            ),
+            {"path": path, "tenant_id": require_tenant().workspace_id},
+        )
+
     # ----------------------------------------------------
     # Agregacao de subtarefa para a listagem (Spec 042)
     # ----------------------------------------------------

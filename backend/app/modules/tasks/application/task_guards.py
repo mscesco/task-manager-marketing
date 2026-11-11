@@ -216,31 +216,47 @@ async def user_ids_that_can_view_task(
     nao a alcanca no momento do envio -- responsavel ou criador que perdeu o
     time continuavam recebendo o aviso de comentario, com o titulo da tarefa.
 
-    ⚠️ Duas consultas para o grupo inteiro (usuarios + papeis), mais o projeto
-    uma vez. A regra e a MESMA de `user_can_view_task` (`_lente_de` +
-    `task_visible`) -- ha teste afirmando que as duas respondem igual.
+    E a versao de UMA tarefa de `user_ids_that_can_view_tasks`, que guarda a
+    regra. Ha teste afirmando que ela responde igual a `user_can_view_task`.
     """
-    ids = list(dict.fromkeys(user_ids))
-    if not ids:
-        return set()
+    alcance = await user_ids_that_can_view_tasks(session, alvos=[(task, user_ids)])
+    return alcance.get(task.id, set())
+
+
+async def user_ids_that_can_view_tasks(
+    session: AsyncSession, *, alvos: list[tuple[Task, list[uuid.UUID]]]
+) -> dict[uuid.UUID, set[uuid.UUID]]:
+    """A trava dos avisos para VARIAS tarefas: `task.id -> quem a enxerga`.
+
+    ⚠️ Tres consultas para o lote INTEIRO (usuarios + papeis, projetos,
+    arvore), qualquer que seja o numero de tarefas. Existe por causa do aviso
+    diario de prazo (auditoria de 11/11, item 18): tarefa por tarefa eram
+    umas 7 consultas cada, com as linhas travadas o tempo todo.
+
+    A regra e a de `user_can_view_task` (`_lente_de` + `task_visible`).
+    """
+    todos = list(dict.fromkeys(uid for _, ids in alvos for uid in ids))
+    if not todos:
+        return {}
     tenant = require_tenant()
     vinculos = await MembershipRepository(session).get_memberships(
-        user_ids=ids, workspace_id=tenant.workspace_id
+        user_ids=todos, workspace_id=tenant.workspace_id
     )
-    project = (
-        await ProjectRepository(session).get_by_id(task.project_id)
-        if task.project_id is not None
-        else None
+    projetos = await ProjectRepository(session).get_many_by_ids(
+        list({t.project_id for t, _ in alvos if t.project_id is not None})
     )
     arvore = await _arvore_de_times(session)
-    alcancam: set[uuid.UUID] = set()
-    for uid in ids:
-        visible = _lente_de(vinculos.get(uid), arvore)
-        if visible is _SEM_ACESSO:
-            continue
-        if task_visible(task=task, project=project, visible=visible):  # type: ignore[arg-type]
-            alcancam.add(uid)
-    return alcancam
+    lentes = {uid: _lente_de(vinculos.get(uid), arvore) for uid in todos}
+    alcance: dict[uuid.UUID, set[uuid.UUID]] = {}
+    for task, ids in alvos:
+        project = projetos.get(task.project_id) if task.project_id else None
+        alcance[task.id] = {
+            uid
+            for uid in ids
+            if lentes[uid] is not _SEM_ACESSO
+            and task_visible(task=task, project=project, visible=lentes[uid])  # type: ignore[arg-type]
+        }
+    return alcance
 
 
 async def user_can_view_team(

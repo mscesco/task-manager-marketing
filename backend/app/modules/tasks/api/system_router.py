@@ -17,6 +17,9 @@ from fastapi import APIRouter, Depends, Header
 from app.core.config import settings
 from app.core.deps import SessionDep
 from app.modules.bases.application.purge_service import BasePurgeService
+from app.modules.notifications.application.purge_service import (
+    NotificationPurgeService,
+)
 from app.modules.tasks.application.deadline_notify_service import (
     DeadlineNotifyService,
 )
@@ -85,3 +88,16 @@ async def notify_deadlines(session: SessionDep) -> dict:
     o servico converte pra data em America/Sao_Paulo.
     """
     return await DeadlineNotifyService(session).run(now=datetime.now(UTC))
+
+
+@router.post(
+    "/notifications/purge",
+    dependencies=[Depends(require_system_token)],
+)
+async def purge_notifications(session: SessionDep) -> dict:
+    """Apaga os avisos ja lidos com mais de 6 meses (auditoria de 11/11, item
+    17). Nao lido nunca sai.
+
+    Idempotente. Disparada por job diario (n8n), como o `bases/purge`.
+    """
+    return await NotificationPurgeService(session).run(now=datetime.now(UTC))
