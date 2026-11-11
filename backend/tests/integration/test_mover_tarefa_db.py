@@ -26,6 +26,7 @@ from app.main import create_app
 from app.modules.auth.api.dependencies import get_tenant_context
 from app.modules.auth.domain.permissions import permissions_for_actor
 from app.modules.tasks.application.task_service import (
+    CreateTaskCommand,
     RelocateCommand,
     TaskService,
 )
@@ -138,6 +139,53 @@ async def test_para_o_nivel_de_cima_trava_a_tarefa_antes_de_escrever(
         event.remove(connection.sync_connection, "before_cursor_execute", _anota)
     primeira_escrita = next(i for i, q in enumerate(sqls) if q.startswith("UPDATE TASK"))
     assert any("FOR UPDATE" in q for q in sqls[:primeira_escrita])
+
+
+def _capturar(connection):
+    sqls: list[str] = []
+
+    def _anota(conn, cursor, statement, *args) -> None:
+        sqls.append(" ".join(statement.split()).upper())
+
+    return sqls, _anota
+
+
+async def test_mover_trava_a_subarvore_antes_de_listar(db, m, connection) -> None:
+    """Auditoria 11/11, item 19: a lista da subarvore era tirada sem trava, e
+    uma subtarefa criada no meio ficava com o quadro antigo. A trava vem antes
+    da lista, numa consulta separada (a lista precisa de snapshot novo)."""
+    mae, _, _ = await _arvore(db, m)
+    sqls, _anota = _capturar(connection)
+    event.listen(connection.sync_connection, "before_cursor_execute", _anota)
+    try:
+        await _mover(m, mae.id, board_id=m["avulso"])
+    finally:
+        event.remove(connection.sync_connection, "before_cursor_execute", _anota)
+    subarvore = [
+        i for i, q in enumerate(sqls) if "WHERE PATH <@" in q and q.startswith("SELECT ID")
+    ]
+    trava = next(i for i in subarvore if sqls[i].endswith("FOR UPDATE"))
+    lista = next(i for i in subarvore if not sqls[i].endswith("FOR UPDATE"))
+    assert trava < lista
+
+
+async def test_criar_subtarefa_trava_a_mae_para_leitura(db, m, connection) -> None:
+    """Auditoria 11/11, item 19, o outro lado: o `create` trava a mae com
+    `FOR SHARE`, e por isso espera um mover que a esteja levando."""
+    mae, _, _ = await _arvore(db, m)
+    sqls, _anota = _capturar(connection)
+    event.listen(connection.sync_connection, "before_cursor_execute", _anota)
+    try:
+        with acting_as(**m["ctx"]):
+            await TaskService(db).create(
+                CreateTaskCommand(
+                    title="nova", parent_task_id=mae.id, assignee_ids=[m["ator"]]
+                )
+            )
+    finally:
+        event.remove(connection.sync_connection, "before_cursor_execute", _anota)
+    primeira_escrita = next(i for i, q in enumerate(sqls) if q.startswith("INSERT INTO TASK "))
+    assert any(q.endswith("FOR SHARE") for q in sqls[:primeira_escrita])
 
 
 # ------------------------------------------------ decisoes 1 e 2: tudo vai junto
