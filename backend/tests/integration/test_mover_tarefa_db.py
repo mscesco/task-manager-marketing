@@ -15,7 +15,7 @@ from collections.abc import AsyncIterator
 
 import pytest
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import select, text
+from sqlalchemy import event, select, text
 
 from app.core.deps import get_db_session, get_uow
 from app.core.tenant import Membership, TenantContext, set_tenant
@@ -116,6 +116,28 @@ async def m(db):
     mundo = await _mundo(db)
     mundo["db"] = db
     return mundo
+
+
+async def test_para_o_nivel_de_cima_trava_a_tarefa_antes_de_escrever(
+    db, m, connection
+) -> None:
+    """Auditoria 11/11, item 5: so o ramo "subtarefa de..." travava. Sem a
+    trava, um movimento cruzado deixava as filhas com o path de antes. A
+    corrida em si nao cabe num teste de uma conexao so; o que se prova aqui e
+    que a linha e travada ANTES da primeira escrita."""
+    _, filha, _ = await _arvore(db, m)
+    sqls: list[str] = []
+
+    def _anota(conn, cursor, statement, *args) -> None:
+        sqls.append(" ".join(statement.split()).upper())
+
+    event.listen(connection.sync_connection, "before_cursor_execute", _anota)
+    try:
+        await _mover(m, filha.id, board_id=m["avulso"])
+    finally:
+        event.remove(connection.sync_connection, "before_cursor_execute", _anota)
+    primeira_escrita = next(i for i, q in enumerate(sqls) if q.startswith("UPDATE TASK"))
+    assert any("FOR UPDATE" in q for q in sqls[:primeira_escrita])
 
 
 # ------------------------------------------------ decisoes 1 e 2: tudo vai junto
