@@ -29,6 +29,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     ForeignKeyConstraint,
+    Index,
     String,
     UniqueConstraint,
     func,
@@ -52,6 +53,14 @@ class Notification(UUIDPrimaryKeyMixin, Base):
             ["users.id", "users.workspace_id"],
             ondelete="CASCADE",
             name="fk_notification_recipient",
+        ),
+        # A ordenacao do sino e da pagina "Todas" (auditoria de 11/11, item
+        # 17; migration 0034).
+        Index(
+            "ix_notification_recipient_updated",
+            "recipient_id",
+            text("updated_at DESC"),
+            text("id DESC"),
         ),
         # COMMENT da TABELA no schema v5 (dict de opcoes vai por ULTIMO).
         {
