@@ -23,7 +23,7 @@ const api = await import("@/lib/api");
 
 const PREVIA = {
   task: null, mudou: true, subtarefas: 1, projeto_antes: null, projeto_depois: null,
-  saem: [{ user_id: "gi", nome: "Gi", tarefas: 2 }], assume: 0,
+  saem: [{ user_id: "gi", nome: "Gi", tarefas: 2 }], assume: 0, status_muda: [],
 };
 
 beforeEach(() => {

@@ -25,6 +25,7 @@ docs/adr/0002 / 0003 / 0004 / 0005):
 from __future__ import annotations
 
 import uuid
+from collections import Counter
 from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime, time
 
@@ -315,6 +316,10 @@ class RelocateResult:
     projeto_depois: str | None = None
     saem: tuple[PessoaQueSai, ...] = ()
     assume: int = 0
+    #: (status antes, status depois, quantas tarefas) -- o quadro de destino
+    #: sem a coluna do status muda o status (ADR 0042, degrau 2). Auditoria
+    #: 11/11: a previa avisa, em vez de mudar calado.
+    status_muda: tuple[tuple[TaskStatus, TaskStatus, int], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -1808,12 +1813,16 @@ class TaskService:
         ).scalars().all()
         colunas: dict[TaskStatus, tuple[uuid.UUID, TaskStatus]] = {}
         quadros = BoardRepository(self._session)
+        status_muda: Counter[tuple[TaskStatus, TaskStatus]] = Counter()
         for t in tarefas:
             if t.status not in colunas:
                 colunas[t.status] = await quadros.coluna_para_status(
                     board_id=board_id, status=t.status
                 )
+            antes_status = t.status
             t.column_id, t.status = colunas[t.status]
+            if t.status != antes_status:
+                status_muda[(antes_status, t.status)] += 1
             t.board_id = board_id
             t.team_id = team_id
         await self._session.flush()
@@ -1838,6 +1847,11 @@ class TaskService:
             new_team_id=str(team_id),
             cascade_count=len(ids) - 1,
         )
+        if status_muda:
+            entrada.metadata["status_changes"] = [
+                {"from": de.value, "to": para.value, "count": n}
+                for (de, para), n in status_muda.items()
+            ]
         await self._repo.write_history(
             task=task, user_id=tenant.user_id, entries=[entrada]
         )
@@ -1868,6 +1882,7 @@ class TaskService:
             projeto_depois=titulos.get(project_id),
             saem=tuple(saem),
             assume=assume,
+            status_muda=tuple((de, para, n) for (de, para), n in status_muda.items()),
         )
 
     async def _tirar_quem_nao_alcanca(

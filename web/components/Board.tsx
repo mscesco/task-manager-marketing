@@ -2520,7 +2520,13 @@ export default function Board({
         onAssigneesChange={aoMudarResponsaveis}
         onAbrirSubtarefa={abrirSubtarefa}
         onSubtaskUpsert={aoUpsert}
-        onTaskMoved={() => recarregarTasks()}
+        onTaskMoved={(t) => {
+          // A tarefa pode ter saido do quadro (Mover, Spec 062): sem isto o
+          // detalhe aberto caia no `detalhe` de antes -- colunas do quadro
+          // velho, e a troca de coluna seguinte voltava 422 (auditoria 11/11).
+          setDetalhe((d) => (d && d.id === t.id ? mesclaTarefa(t, d) : d));
+          recarregarTasks();
+        }}
         onExcluir={aoExcluir}
         mostrarArquivadas={mostrarArquivadas}
         membrosInativos={membrosInativos}

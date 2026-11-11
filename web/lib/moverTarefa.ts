@@ -7,6 +7,7 @@
  */
 
 import type { Quadro, Team } from "./api";
+import { STATUSES } from "./status";
 
 /** Um lugar para onde a tarefa pode ir como PRINCIPAL. */
 export type Destino = {
@@ -150,7 +151,12 @@ export type PreviaDoMover = {
   projeto_depois: string | null;
   saem: { user_id: string; nome: string; tarefas: number }[];
   assume: number;
+  status_muda: { de: string; para: string; tarefas: number }[];
 };
+
+const ROTULO_DO_STATUS: Record<string, string> = Object.fromEntries(
+  STATUSES.map((s) => [s.key, s.label]),
+);
 
 /**
  * As frases da previa, na ordem da spec. Vazio quando nada muda (o botao
@@ -172,6 +178,16 @@ export function frasesDaPrevia(p: PreviaDoMover): string[] {
     );
   } else if (!p.projeto_antes && p.projeto_depois) {
     frases.push(`Entra no projeto "${p.projeto_depois}".`);
+  }
+  // O quadro de destino sem a coluna do status muda o status (ADR 0042).
+  for (const m of p.status_muda) {
+    const de = ROTULO_DO_STATUS[m.de] ?? m.de;
+    const para = ROTULO_DO_STATUS[m.para] ?? m.para;
+    frases.push(
+      m.tarefas === 1
+        ? `1 tarefa muda de status: ${de} → ${para} (o destino não tem essa coluna).`
+        : `${m.tarefas} tarefas mudam de status: ${de} → ${para} (o destino não tem essa coluna).`,
+    );
   }
   for (const s of p.saem) {
     frases.push(

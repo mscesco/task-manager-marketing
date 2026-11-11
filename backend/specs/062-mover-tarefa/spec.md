@@ -81,7 +81,11 @@ ficou fora desta spec.
 - **Quadro e time:** os do destino (decisão 2).
 - **Coluna:** cada tarefa vai para a coluna do destino que tem o **mesmo
   significado** da atual (a lógica que a conclusão em cascata já usa:
-  `semantic` + coluna padrão). O status não muda.
+  `semantic` + coluna padrão). O status só muda quando o quadro de destino
+  não tem a coluna dele (ex.: "Bloqueado" num quadro de quatro colunas vira o
+  status da coluna de mesmo significado, ADR 0042). **Decisão de 11/11
+  (auditoria):** o movimento continua permitido, a prévia avisa quantas
+  tarefas mudam de status (de → para) e a linha do histórico grava as trocas.
 - **Projeto:** decisão 4.
 - **Histórico:** uma linha só, na tarefa movida, com quantas subtarefas
   foram junto (a forma do arquivar e do excluir). Quem saiu ganha a linha de

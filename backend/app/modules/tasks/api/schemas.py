@@ -352,6 +352,12 @@ class PessoaQueSaiResponse(BaseModel):
     tarefas: int
 
 
+class StatusQueMudaResponse(BaseModel):
+    de: TaskStatus
+    para: TaskStatus
+    tarefas: int
+
+
 class TaskRelocateResponse(BaseModel):
     """`task` vem `null` na previa (`dry_run`)."""
 
@@ -362,6 +368,7 @@ class TaskRelocateResponse(BaseModel):
     projeto_depois: str | None
     saem: list[PessoaQueSaiResponse]
     assume: int
+    status_muda: list[StatusQueMudaResponse] = []
 
 
 class TaskSearchHitResponse(BaseModel):

@@ -34,6 +34,7 @@ import {
 import MenuDaTarefa from "@/components/MenuDaTarefa";
 
 import { mesclaTarefa } from "@/lib/mesclaTarefa";
+import { todasAsPaginas } from "@/lib/todasAsPaginas";
 import { useSaidaAnimada } from "@/lib/useSaidaAnimada";
 import { useFecharAoClicarFora } from "@/lib/useCliqueFora";
 import {
@@ -679,17 +680,16 @@ export default function TaskDetail({
       .catch(() => {});
   }, []);
 
-  // Carrega o thread ao abrir/trocar de tarefa. size 100 cobre threads do
-  // tamanho do time sem UI de paginacao (limite conhecido: acima disso,
-  // trunca -- aceitavel em v1).
+  // Carrega o thread ao abrir/trocar de tarefa -- inteiro, sem UI de
+  // paginacao (ver `todasAsPaginas`).
   useEffect(() => {
     if (!task) return;
     let vivo = true;
     setComentarios(null);
     setErroCom(null);
-    listComments(task.id, { size: 100 })
-      .then((r) => {
-        if (vivo) setComentarios(r.items);
+    todasAsPaginas((page, size) => listComments(task.id, { page, size }))
+      .then((itens) => {
+        if (vivo) setComentarios(itens);
       })
       .catch((e: ApiError) => {
         if (vivo) setErroCom(e.message || "Não consegui carregar os comentários.");
@@ -1596,8 +1596,7 @@ export default function TaskDetail({
   // recarrego o thread -- o backend decide.
   async function recarregarComentarios() {
     try {
-      const r = await listComments(tid, { size: 100 });
-      setComentarios(r.items);
+      setComentarios(await todasAsPaginas((page, size) => listComments(tid, { page, size })));
     } catch (e) {
       setErroCom((e as ApiError).message || "Não consegui recarregar os comentários.");
     }

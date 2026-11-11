@@ -19,7 +19,7 @@ from sqlalchemy import select, text
 
 from app.core.deps import get_db_session, get_uow
 from app.core.tenant import Membership, TenantContext, set_tenant
-from app.db.models import Board, Task
+from app.db.models import Board, Task, TaskHistory
 from app.db.models.enums import TaskStatus
 from app.db.unit_of_work import UnitOfWork
 from app.main import create_app
@@ -29,6 +29,7 @@ from app.modules.tasks.application.task_service import (
     RelocateCommand,
     TaskService,
 )
+from app.modules.tasks.domain.board_defaults import COLUNAS_BASE
 from app.shared.exceptions.base import AuthorizationError, ValidationError
 from tests.integration import factories as f
 from tests.integration.conftest import acting_as, mship, node
@@ -118,6 +119,38 @@ async def m(db):
 
 
 # ------------------------------------------------ decisoes 1 e 2: tudo vai junto
+async def test_status_sem_coluna_no_destino_muda_e_a_previa_avisa(db, m) -> None:
+    """Auditoria 11/11: num quadro de quatro colunas, `BLOCKED` vira outro
+    status (ADR 0042, degrau 2). Mudava calado; agora a previa conta e o
+    historico grava o antes e o depois."""
+    quatro = await f.make_board(
+        db, workspace_id=m["ws"], team_id=m["design"], name="Quatro", colunas=COLUNAS_BASE
+    )
+    mae, _, _ = await _arvore(db, m)
+    mae.status = TaskStatus.BLOCKED
+    await db.flush()
+    mae_id = mae.id  # o savepoint desfeito da previa expira o objeto
+
+    previa = await _mover(m, mae_id, board_id=quatro.id, dry_run=True)
+    (mae,) = await _recarregar(db, mae_id)
+    assert mae.status == TaskStatus.BLOCKED  # a previa nao grava
+    [(de, para, n)] = [s for s in previa.status_muda if s[0] == TaskStatus.BLOCKED]
+    assert (de, n) == (TaskStatus.BLOCKED, 1) and para != TaskStatus.BLOCKED
+
+    r = await _mover(m, mae_id, board_id=quatro.id)
+    assert r.status_muda == previa.status_muda
+    (mae,) = await _recarregar(db, mae_id)
+    assert mae.status == para
+    meta = (
+        await db.execute(
+            select(TaskHistory.event_metadata).where(
+                TaskHistory.task_id == mae.id, TaskHistory.event_type == "moved"
+            )
+        )
+    ).scalar_one()
+    assert {"from": "BLOCKED", "to": para.value, "count": 1} in meta["status_changes"]
+
+
 
 
 async def test_principal_para_outro_quadro_leva_a_subarvore_e_o_time(db, m) -> None:
