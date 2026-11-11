@@ -115,6 +115,7 @@ import {
 import Loading from "@/components/Loading";
 import MoverTarefa from "@/components/MoverTarefa";
 import { useAvisar } from "@/components/Toasts";
+import { useLadoALado } from "@/lib/useLadoALado";
 // ⚠️ RESERVA DO BADGE, e so isso (fatia 4c-2). O rotulo do badge passou a sair
 // de `coluna.name`; este mapa responde pelo caso em que a coluna da tarefa nao
 // esta na lista carregada -- quadro sem alcance, coluna apagada na fatia 5, ou
@@ -360,6 +361,8 @@ export default function TaskDetail({
   // arquivar e excluir passaram a acontecer em silencio. Agora e a mesma
   // pilha de avisos do app (`components/Toasts.tsx`, montada no AppShell).
   const avisar = useAvisar();
+  // Onde moram as acoes do topo (`acoes`, logo antes do `return`).
+  const ladoALado = useLadoALado();
 
   // Projeto (Spec 022): eco local do project_id exibido -- atualiza no sucesso
   // do move sem depender do round-trip do pai. abertoProj abre o seletor;
@@ -1602,6 +1605,63 @@ export default function TaskDetail({
     }
   }
 
+  // As acoes do topo (Seguir, compartilhar, "⋯", fechar). ⚠️ MORAM EM DOIS
+  // LUGARES, um de cada vez (pedido dela, 11/11): lado a lado, no topo da
+  // LATERAL, para que o titulo de duas linhas cresca so na coluna da esquerda e
+  // nao empurre os comentarios; empilhado, no cabecalho, porque a lateral
+  // fica la embaixo. Uma copia so no DOM: duas dariam dois "Fechar".
+  const acoes = (
+    <span className="flex shrink-0 items-center gap-1 max-[899px]:ml-auto">
+      {/* Spec 053 (D5): o gesto de um clique, no topo. */}
+      <BotaoSeguir
+        estado={seguidores}
+        meuId={me?.id ?? null}
+        arquivada={task.is_archived}
+      />
+      {/* Pedido dela (05/11): o "Copiar link" virou o icone de
+          compartilhar, e as outras acoes foram para o "⋯". */}
+      <button
+        type="button" className="btn btn-ghost" onClick={() => void copiarLink()}
+        style={{ padding: "4px 8px", flexShrink: 0 }}
+        aria-label={copiado ? "Link copiado" : "Copiar link da tarefa"}
+        title={copiado ? "Link copiado!" : "Copiar link da tarefa"}
+      >
+        {copiado ? (
+          <Check size={15} strokeWidth={2} aria-hidden />
+        ) : (
+          <Share2 size={15} strokeWidth={2} aria-hidden />
+        )}
+      </button>
+      <MenuDaTarefa
+        arquivada={task.is_archived}
+        arquivando={arquivando}
+        onAlternarArquivo={() => void alternarArquivo()}
+        // Spec 062. A porta do servidor e `task.update` (editar a
+        // origem); arquivada nao se move.
+        onMover={
+          (me?.permissions.includes("task.update") ?? false) && !task.is_archived
+            ? () => setMovendoTarefa(true)
+            : undefined
+        }
+        // Spec 033. Exige `task.create`: duplicar E criar.
+        onDuplicar={
+          (me?.permissions.includes("task.create") ?? false)
+            ? () => onDuplicar(task)
+            : undefined
+        }
+        // Spec 051, fatia A: o cadeado vem da TAREFA (`task.delete` no
+        // time dela), e nao de `me.permissions`.
+        onExcluir={task.can_delete ? () => setConfirmandoExcluir(true) : undefined}
+      />
+      <button
+        type="button" className="btn btn-ghost" onClick={fecharSuave}
+        style={{ padding: "4px 10px", flexShrink: 0 }} aria-label="Fechar"
+      >
+        <X size={15} strokeWidth={2} aria-hidden />
+      </button>
+    </span>
+  );
+
   return (
     <div
       // Modo modal: o scrim inteiro e clicavel pra fechar -- mas so no CLIQUE,
@@ -1652,15 +1712,40 @@ export default function TaskDetail({
           ...(modo === "modal" ? { maxHeight: "88dvh" } : { margin: "0 auto" }),
         }}
       >
-        {/* Cabecalho (redesign 19/10): voltar ou os selos de contexto a
-            esquerda; seguir e fechar a direita. O titulo desceu para o corpo. */}
-        <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-5 py-3">
+        {/* ⚠️⚠️ DUAS COLUNAS (Spec 055): a esquerda e o que a tarefa E, a
+            direita e o que ACONTECEU com ela. Empilham abaixo de 900px --
+            lado a lado num notebook pequeno, a direita esmagaria a
+            esquerda, e a descricao e a checklist vivem la.
+            Redesign 19/10: grade `minmax(0,1fr) 420px`, lateral com fundo
+            `--bg` e borda a esquerda. */}
+        <div
+          className={
+            modo === "modal"
+              ? "flex min-h-0 flex-col min-[900px]:grid min-[900px]:flex-1 min-[900px]:grid-cols-[minmax(0,1fr)_420px]"
+              : "flex flex-col min-[900px]:grid min-[900px]:grid-cols-[minmax(0,1fr)_420px]"
+          }
+        >
+          {/* A coluna principal: o conteudo rola por dentro e o rodape de
+              acoes fica fixo embaixo, fora da area que rola (ajuste dela,
+              19/10). */}
+          <div className="flex min-w-0 min-h-0 flex-col">
+        {/* Cabecalho (redesign 19/10; pedido dela 11/11): voltar, titulo e
+            selos. ⚠️ MORA NA COLUNA DA ESQUERDA desde 11/11: o titulo quebra
+            em ate duas linhas, e cresce so desta coluna -- a lateral comeca
+            no topo e a divisoria vai ate em cima. */}
+        <div className="flex shrink-0 flex-col items-start gap-1 border-b border-border px-5 py-3">
+          {/* O "Voltar" numa linha SO DELE, acima do titulo (11/11): na mesma
+              linha, os dois disputavam a largura e, em 1000px, o titulo
+              ficava com 150px. */}
           {temVoltar && (
             <button
               type="button" className="btn btn-ghost" onClick={onVoltar}
               style={{
                 padding: "2px 8px", fontSize: 13,
-                maxWidth: "100%", overflow: "hidden", whiteSpace: "nowrap",
+                // ⚠️ TETO DE LARGURA (pedido dela, 11/11): com a mae de titulo
+                // longo, o "Voltar para..." comia a linha e o titulo virava
+                // "Aplicar ...". O nome inteiro continua no `title`.
+                maxWidth: "min(360px, 100%)", overflow: "hidden", whiteSpace: "nowrap",
                 display: "inline-flex", alignItems: "center", gap: 4,
                 // `overflow: hidden` zera o min-height automatico deste flex item
                 // (CSS Flexbox 4.5). Sem flexShrink 0, o botao encolhe na vertical
@@ -1677,9 +1762,10 @@ export default function TaskDetail({
               </span>
             </button>
           )}
-          {/* O titulo mora na barra (ajuste dela, 19/10): 22/700, uma linha
-              com reticencias; "Criada em" logo abaixo. Spec 052, fatia D:
-              clicar edita; Enter ou clicar fora salva, Esc desiste. `key`
+          <div className="flex w-full flex-wrap items-center gap-2">
+          {/* O titulo mora na barra (ajuste dela, 19/10): 22/700, ate DUAS
+              linhas com reticencias (pedido dela, 11/11; era uma); "Criada
+              em" logo abaixo. Spec 052, fatia D: clicar edita; Enter ou clicar fora salva, Esc desiste. `key`
               pelo id: trocar de tarefa com o campo aberto nao pode levar o
               rascunho para a outra. */}
           <div className="flex min-w-0 flex-1 flex-col max-md:basis-full">
@@ -1701,73 +1787,9 @@ export default function TaskDetail({
           {task.is_archived && (
             <span className="muted shrink-0" style={{ fontSize: 12.5 }}>arquivada</span>
           )}
-          <span className="flex shrink-0 items-center gap-1 max-md:ml-auto">
-            {/* Spec 053 (D5): o gesto de um clique, no topo. */}
-            <BotaoSeguir
-              estado={seguidores}
-              meuId={me?.id ?? null}
-              arquivada={task.is_archived}
-            />
-            {/* Pedido dela (05/11): o "Copiar link" virou o icone de
-                compartilhar, e as outras acoes foram para o "⋯". */}
-            <button
-              type="button" className="btn btn-ghost" onClick={() => void copiarLink()}
-              style={{ padding: "4px 8px", flexShrink: 0 }}
-              aria-label={copiado ? "Link copiado" : "Copiar link da tarefa"}
-              title={copiado ? "Link copiado!" : "Copiar link da tarefa"}
-            >
-              {copiado ? (
-                <Check size={15} strokeWidth={2} aria-hidden />
-              ) : (
-                <Share2 size={15} strokeWidth={2} aria-hidden />
-              )}
-            </button>
-            <MenuDaTarefa
-              arquivada={task.is_archived}
-              arquivando={arquivando}
-              onAlternarArquivo={() => void alternarArquivo()}
-              // Spec 062. A porta do servidor e `task.update` (editar a
-              // origem); arquivada nao se move.
-              onMover={
-                (me?.permissions.includes("task.update") ?? false) && !task.is_archived
-                  ? () => setMovendoTarefa(true)
-                  : undefined
-              }
-              // Spec 033. Exige `task.create`: duplicar E criar.
-              onDuplicar={
-                (me?.permissions.includes("task.create") ?? false)
-                  ? () => onDuplicar(task)
-                  : undefined
-              }
-              // Spec 051, fatia A: o cadeado vem da TAREFA (`task.delete` no
-              // time dela), e nao de `me.permissions`.
-              onExcluir={task.can_delete ? () => setConfirmandoExcluir(true) : undefined}
-            />
-            <button
-              type="button" className="btn btn-ghost" onClick={fecharSuave}
-              style={{ padding: "4px 10px", flexShrink: 0 }} aria-label="Fechar"
-            >
-              <X size={15} strokeWidth={2} aria-hidden />
-            </button>
-          </span>
+          {!ladoALado && acoes}
+          </div>
         </div>
-        {/* ⚠️⚠️ DUAS COLUNAS (Spec 055): a esquerda e o que a tarefa E, a
-            direita e o que ACONTECEU com ela. Empilham abaixo de 900px --
-            lado a lado num notebook pequeno, a direita esmagaria a
-            esquerda, e a descricao e a checklist vivem la.
-            Redesign 19/10: grade `minmax(0,1fr) 420px`, lateral com fundo
-            `--bg` e borda a esquerda. */}
-        <div
-          className={
-            modo === "modal"
-              ? "flex min-h-0 flex-col min-[900px]:grid min-[900px]:flex-1 min-[900px]:grid-cols-[minmax(0,1fr)_420px]"
-              : "flex flex-col min-[900px]:grid min-[900px]:grid-cols-[minmax(0,1fr)_420px]"
-          }
-        >
-          {/* A coluna principal: o conteudo rola por dentro e o rodape de
-              acoes fica fixo embaixo, fora da area que rola (ajuste dela,
-              19/10). */}
-          <div className="flex min-w-0 min-h-0 flex-col">
           <div
             className={
               modo === "modal"
@@ -2975,6 +2997,9 @@ export default function TaskDetail({
             aria-label="Comentários e atividade"
             className="flex w-full min-h-0 shrink-0 flex-col border-t border-border bg-canvas min-[900px]:border-l min-[900px]:border-t-0"
           >
+            {ladoALado && (
+              <div className="flex shrink-0 justify-end px-3 pt-3">{acoes}</div>
+            )}
             {/* Redesign 19/10: as abas (`Tabs`, indicador que desliza) no
                 lugar do `Toggle` de 30/09. */}
             <div className="shrink-0 px-4 pt-3">

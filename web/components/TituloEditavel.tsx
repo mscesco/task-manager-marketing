@@ -43,7 +43,11 @@ export default function TituloEditavel({
   valor: string;
   /** `h1` quando a tarefa é a página inteira; `h2` no painel e no modal. */
   level?: "h1" | "h2";
-  /** Uma linha so, com reticencias (a barra do detalhe, fatia 4). */
+  /**
+   * Ate DUAS linhas, com reticencias (a barra do detalhe). Era uma so, e o
+   * titulo longo virava "Aplicar ..." (pedido dela, 11/11): titulo nao e
+   * paragrafo, entao o teto e duas. O texto inteiro aparece ao editar.
+   */
   compacto?: boolean;
   /**
    * Grava o título novo. ⚠️ Em erro, LANÇA com a mensagem já pronta para a
@@ -181,7 +185,7 @@ export default function TituloEditavel({
             // topo do arquivo).
             title="Editar o título"
             className={`w-full rounded-md text-left hover:bg-[var(--surface-2)] ${
-              compacto ? "truncate" : ""
+              compacto ? "line-clamp-2" : ""
             }`}
             style={{
               font: "inherit",
@@ -192,7 +196,7 @@ export default function TituloEditavel({
               margin: "-2px -6px",
               cursor: emVoo !== null ? "progress" : "pointer",
               opacity: emVoo !== null ? 0.6 : 1,
-              overflowWrap: compacto ? undefined : "anywhere",
+              overflowWrap: "anywhere",
             }}
           >
             {emVoo ?? valor}
