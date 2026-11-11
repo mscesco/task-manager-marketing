@@ -16,6 +16,7 @@ que a pessoa estava olhando quando clicou em exportar.
 
 from __future__ import annotations
 
+import asyncio
 import io
 import uuid
 from datetime import datetime
@@ -87,6 +88,13 @@ async def build_dashboard_xlsx(
     if assignee_id is not None:
         user = await session.get(User, assignee_id)
         pessoa_nome = user.name if user else ""
+    # Montar a planilha e CPU puro: no loop async, congelava o worker inteiro
+    # (auditoria 11/11, item 9).
+    return await asyncio.to_thread(_planilha, d, rows, time_nome, pessoa_nome)
+
+
+def _planilha(d, rows, time_nome: str, pessoa_nome: str) -> tuple[bytes, str]:
+    """O arquivo e o nome -- sem banco, roda numa thread."""
     c = d.counts
 
     wb = Workbook()
