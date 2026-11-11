@@ -12,6 +12,7 @@ import uuid
 
 import pytest
 
+from app.core.rate_limit import RateLimitDecision
 from app.modules.auth.application import service as auth_service
 from app.modules.auth.application.service import AuthService
 from app.shared.exceptions.base import AuthenticationError
@@ -28,12 +29,23 @@ class _SemWorkspace:
         return _Resultado()
 
 
+class _FreioLivre:
+    """O freio por conta conta no banco desde 11/11; aqui nao ha banco."""
+
+    async def check(self, _session, _key) -> RateLimitDecision:
+        return RateLimitDecision(allowed=True, retry_after=0.0)
+
+    async def record(self, _session, _key) -> None:
+        return None
+
+
 async def test_login_confere_a_senha_SEM_parar_o_loop(monkeypatch) -> None:
     def bcrypt_lento(*_args) -> bool:
         time.sleep(0.3)
         return False
 
     monkeypatch.setattr(auth_service, "verify_password", bcrypt_lento)
+    monkeypatch.setattr(auth_service, "account_login_limiter", _FreioLivre())
 
     batidas = 0
 

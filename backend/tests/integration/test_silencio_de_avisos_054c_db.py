@@ -248,7 +248,8 @@ async def test_travado_nunca_silencia(db) -> None:
 # ---------------------------------------------------------------- a rota /me
 async def test_tudo_nasce_ligado_e_travado_vem_marcado(db) -> None:
     """D11: quem nunca mexeu nao tem linha nenhuma, e a rota mostra tudo
-    ligado. Sao 24 toggles + 3 travados (§5)."""
+    ligado. Sao 25 toggles + 3 travados: os 24 do §5 + a resposta ao seu
+    comentario (auditoria 11/11)."""
     m = await _mundo(db)
     await db.commit()
 
@@ -257,10 +258,10 @@ async def test_tudo_nasce_ligado_e_travado_vem_marcado(db) -> None:
     assert r.status_code == 200, r.text
     itens = r.json()["items"]
 
-    assert len(itens) == 27
+    assert len(itens) == 28
     assert all(i["enabled"] for i in itens)
     assert sum(1 for i in itens if i["locked"]) == 3
-    assert sum(1 for i in itens if not i["locked"]) == 24
+    assert sum(1 for i in itens if not i["locked"]) == 25
     travados = {i["type_group"] for i in itens if i["locked"]}
     assert travados == {"mention", "assigned", "access_lost"}
 
