@@ -25,11 +25,11 @@ from app.db.unit_of_work import UnitOfWork
 from app.main import create_app
 from app.modules.auth.api.dependencies import get_tenant_context
 from app.modules.auth.domain.permissions import permissions_for_actor
-from app.modules.tasks.domain.board_defaults import COLUNAS_BASE
 from app.modules.tasks.application.task_service import (
     RelocateCommand,
     TaskService,
 )
+from app.modules.tasks.domain.board_defaults import COLUNAS_BASE
 from app.shared.exceptions.base import AuthorizationError, ValidationError
 from tests.integration import factories as f
 from tests.integration.conftest import acting_as, mship, node
