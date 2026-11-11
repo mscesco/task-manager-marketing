@@ -16,6 +16,7 @@ login e no formulário público. Só mexe no front: sem migration e sem rota de 
 | D3 | Alcance dos termos | **Equipe e quem envia o formulário**, com uma seção para cada |
 | D4 | Aceite registrado | **Basta o link**: sem migration. A jurídica confirma se a base legal permite |
 | D5 | Sem os dados jurídicos | **Versão básica, sem marcadores** (revoga os marcadores de D1): responsável é a UniFECAF, e não ela como pessoa; contato é a página oficial `unifecaf.com.br/contato`; sai a seção de titularidade do conteúdo |
+| D6 | Quem é o responsável (11/11) | **Ela, Camila Cesco Ferreira, como pessoa física** (revoga a UniFECAF de D1 e D5), avisada de que a responsabilidade legal passa a ser dela; contato `cescoferreira@gmail.com`, escolhido por ela; sem foro nos termos |
 
 ## O que o produto faz com dados pessoais (lido no código, 09/11)
 
@@ -90,11 +91,14 @@ Página sem `AppShell` já é pública, e a CSP e o Traefik não pedem exceção
 
 ## Para completar depois
 
-A versão básica deixa estes pontos em aberto. O art. 41 da LGPD pede encarregado
-identificado, e o item 2 é a lacuna legal mais clara.
+A versão básica deixa estes pontos em aberto.
 
 1. Revisão jurídica, incluindo as bases legais, que são proposta técnica.
-2. Encarregado, canal próprio do titular, a confirmação de que a Federal Educacional Ltda. é o controlador e de que o foro do contrato educacional serve aqui.
+2. Se uma pessoa física pode ser a controladora de um sistema usado pelos times
+   da UniFECAF, ou se a instituição o é, e ela, operadora ou encarregada. O
+   encarregado do art. 41 pode ser dispensado para agente de pequeno porte
+   (Resolução CD/ANPD nº 2/2022) se houver canal de contato, que é o e-mail
+   publicado; a confirmar.
 3. País da VPS da Hostinger, que o texto trata como possível transferência.
 4. Prazo das execuções guardadas no n8n, que têm dados do solicitante.
 5. Prazo dos backups semanais da Hostinger.

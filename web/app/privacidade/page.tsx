@@ -7,15 +7,15 @@ export default function PrivacidadePage() {
   return (
     <TextoLegal titulo="Política de privacidade">
       <p>
-        Esta política explica como o Oniros, o gerenciador de tarefas e
-        solicitações da UniFECAF, trata dados pessoais, nos termos da Lei Geral
-        de Proteção de Dados (Lei nº 13.709/2018, LGPD).
+        Esta política explica como o Oniros, um gerenciador de tarefas e
+        solicitações, trata dados pessoais, nos termos da Lei Geral de Proteção
+        de Dados (Lei nº 13.709/2018, LGPD).
       </p>
 
       <h2>1. Quem é o responsável</h2>
       <ul>
-        <li>Controlador: UniFECAF, instituição do grupo Federal Educacional Ltda., CNPJ 17.238.945/0001-49, com sede na Avenida Vida Nova, 166, Jardim Maria Rosa, Taboão da Serra/SP, CEP 06764-045.</li>
-        <li>Dúvidas e pedidos sobre seus dados: pelos canais de atendimento em <a href="https://www.unifecaf.com.br/contato">unifecaf.com.br/contato</a>, citando o Oniros.</li>
+        <li>Controladora: Camila Cesco Ferreira, que desenvolve e mantém o Oniros.</li>
+        <li>Dúvidas e pedidos sobre seus dados: <a href="mailto:cescoferreira@gmail.com">cescoferreira@gmail.com</a>.</li>
       </ul>
 
       <h2>2. A quem esta política se aplica</h2>

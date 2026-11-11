@@ -7,8 +7,8 @@ export default function TermosPage() {
     <TextoLegal titulo="Termos de uso">
       <p>
         Estes termos regem o uso do Oniros, o gerenciador de tarefas e solicitações
-        mantido pela UniFECAF, instituição do grupo Federal Educacional Ltda., CNPJ
-        17.238.945/0001-49, com sede em Taboão da Serra/SP.
+        desenvolvido e mantido por Camila Cesco Ferreira. Contato:{" "}
+        <a href="mailto:cescoferreira@gmail.com">cescoferreira@gmail.com</a>.
         O tratamento de dados pessoais está descrito na{" "}
         <a href="/privacidade">Política de privacidade</a>.
       </p>
@@ -53,11 +53,8 @@ export default function TermosPage() {
         versão indicada no topo.
       </p>
 
-      <h2>6. Lei e foro</h2>
-      <p>
-        Estes termos seguem a legislação brasileira. Fica eleito o foro da Comarca
-        de Taboão da Serra/SP.
-      </p>
+      <h2>6. Lei aplicável</h2>
+      <p>Estes termos seguem a legislação brasileira.</p>
     </TextoLegal>
   );
 }
