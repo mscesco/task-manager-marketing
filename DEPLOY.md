@@ -209,4 +209,6 @@ O bootstrap não se repete.
   O que olhar é a **ausência de `'unsafe-eval'`** no `script-src`: se aparecer, o
   build subiu com `NODE_ENV` de desenvolvimento.
 - **Rotas de sistema** (`/api/v1/system/*`) são chamadas pelo n8n com o header
-  `X-System-Token`. A Base precisa da `POST /api/v1/system/bases/purge` diária.
+  `X-System-Token`. A Base precisa da `POST /api/v1/system/bases/purge` diária,
+  e as notificações da `POST /api/v1/system/notifications/purge` diária (apaga
+  as lidas com mais de 6 meses; sem ela, nada é apagado).

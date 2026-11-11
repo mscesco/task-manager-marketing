@@ -38,13 +38,14 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from datetime import timedelta
 
 from sqlalchemy import select
 
 from app.core.logging import get_logger
 from app.core.tenant import require_tenant
-from app.db.models import User
+from app.db.models import Task, User
 from app.modules.notifications.domain.notification import NotificationType
 from app.modules.notifications.infrastructure.notification_repository import (
     NotificationRepository,
@@ -56,6 +57,16 @@ logger = get_logger(__name__)
 JANELA_DE_JUNCAO = timedelta(minutes=10)
 
 _T = NotificationType
+
+
+@dataclass(frozen=True)
+class AvisoDePrazo:
+    """Uma tarefa do aviso diario de prazo, com quem deve ser avisado e por
+    qual papel (`assignee` ou `creator`, Spec 054 D12)."""
+
+    task: Task
+    recipient_ids: list[uuid.UUID]
+    papel: str
 
 
 class NotificationEmitter:
@@ -364,68 +375,56 @@ class NotificationEmitter:
 
         await self._emit_safely(tipo.value, _do)
 
-    async def due_soon(
-        self,
-        *,
-        recipient_ids: list[uuid.UUID],
-        task_id: uuid.UUID,
-        task_title: str,
-        due_date_iso: str,
-        papeis: dict[uuid.UUID, list[str]] | None = None,
-    ) -> None:
-        """Spec 023: avisa os destinatarios que a task vence em ~2 dias.
+    async def prazos(self, *, overdue: bool, avisos: list[AvisoDePrazo]) -> None:
+        """Spec 023: os avisos de prazo do dia -- vence em ~2 dias
+        (`overdue=False`) ou atrasou (`True`) -- para um lote de tarefas.
 
-        Notificacao de SISTEMA -- `actor_id=None`, sem _actor_name. Fan-out com
-        DEDUP. Sem auto-exclusao (nao ha ator). Se nao houver destinatario,
-        nao emite.
+        Notificacao de SISTEMA: `actor_id=None`, sem auto-exclusao. Destinatario
+        repetido sai uma vez; tarefa sem destinatario nao emite.
+
+        ⚠️ EM LOTE (auditoria de 11/11, item 18): a trava de alcance roda UMA
+        vez para todas as tarefas, os avisos vao num INSERT so, e o savepoint e
+        um so. Antes eram umas 7
+        consultas por tarefa, com as linhas travadas pelo job. O preco: uma
+        falha aqui perde os avisos do lote inteiro, nao so de uma tarefa -- e
+        o job grava a marca de "avisado" assim mesmo, o vies at-most-once que
+        ele ja tinha.
         """
-        alvos = list(dict.fromkeys(recipient_ids))
-        if not alvos:
+        from app.modules.tasks.application.task_guards import (
+            user_ids_that_can_view_tasks,
+        )
+
+        lote = [
+            (a.task, list(dict.fromkeys(a.recipient_ids)))
+            for a in avisos
+            if a.recipient_ids
+        ]
+        if not lote:
             return
+        tipo = _T.TASK_OVERDUE if overdue else _T.TASK_DUE_SOON
+        papel = {a.task.id: a.papel for a in avisos}
 
         async def _do() -> None:
-            for rid in await self._so_quem_alcanca(task_id, alvos):
-                self._repo.create(
-                    recipient_id=rid,
-                    actor_id=None,
-                    type=NotificationType.TASK_DUE_SOON.value,
-                    task_id=task_id,
-                    payload={"task_title": task_title, "due_date": due_date_iso},
-                    roles=self._papel_de(papeis, rid),
-                )
+            alcance = await user_ids_that_can_view_tasks(self._session, alvos=lote)
+            await self._repo.create_many(
+                type=tipo.value,
+                rows=[
+                    (
+                        rid,
+                        task.id,
+                        {
+                            "task_title": task.title,
+                            "due_date": task.due_date.isoformat(),  # type: ignore[union-attr]
+                        },
+                        (papel[task.id],),
+                    )
+                    for task, ids in lote
+                    for rid in ids
+                    if rid in alcance.get(task.id, set())
+                ],
+            )
 
-        await self._emit_safely("TASK_DUE_SOON", _do)
-
-    async def overdue(
-        self,
-        *,
-        recipient_ids: list[uuid.UUID],
-        task_id: uuid.UUID,
-        task_title: str,
-        due_date_iso: str,
-        papeis: dict[uuid.UUID, list[str]] | None = None,
-    ) -> None:
-        """Spec 023: avisa os destinatarios que a task atrasou.
-
-        Notificacao de SISTEMA -- `actor_id=None`, sem _actor_name. Fan-out com
-        DEDUP. Sem auto-exclusao. Se nao houver destinatario, nao emite.
-        """
-        alvos = list(dict.fromkeys(recipient_ids))
-        if not alvos:
-            return
-
-        async def _do() -> None:
-            for rid in await self._so_quem_alcanca(task_id, alvos):
-                self._repo.create(
-                    recipient_id=rid,
-                    actor_id=None,
-                    type=NotificationType.TASK_OVERDUE.value,
-                    task_id=task_id,
-                    payload={"task_title": task_title, "due_date": due_date_iso},
-                    roles=self._papel_de(papeis, rid),
-                )
-
-        await self._emit_safely("TASK_OVERDUE", _do)
+        await self._emit_safely(tipo.value, _do)
 
     async def alcance_perdido(
         self,

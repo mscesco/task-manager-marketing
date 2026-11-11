@@ -11,7 +11,7 @@ from __future__ import annotations
 import uuid
 from datetime import timedelta
 
-from sqlalchemy import delete, func, select, text, update
+from sqlalchemy import delete, func, insert, select, text, update
 
 from app.core.tenant import require_tenant
 from app.db.models import Notification, Task
@@ -153,6 +153,38 @@ class NotificationRepository(BaseRepository[Notification]):
         )
         self.session.add(row)
         return row
+
+    async def create_many(
+        self,
+        *,
+        type: str,
+        rows: list[tuple[uuid.UUID, uuid.UUID, dict, tuple[str, ...]]],
+    ) -> None:
+        """Varias notificacoes de SISTEMA (sem ator) num INSERT so.
+
+        `rows` = `(recipient_id, task_id, payload, roles)`. Existe para o aviso
+        diario de prazo (auditoria de 11/11, item 18): com `create` em laco, o
+        flush mandava um INSERT por aviso, com as tarefas travadas pelo job.
+        """
+        if not rows:
+            return
+        ws = require_tenant().workspace_id
+        await self.session.execute(
+            insert(Notification).values(
+                [
+                    {
+                        "workspace_id": ws,
+                        "recipient_id": recipient_id,
+                        "actor_id": None,
+                        "type": type,
+                        "task_id": task_id,
+                        "payload": payload,
+                        "roles": list(roles),
+                    }
+                    for recipient_id, task_id, payload, roles in rows
+                ]
+            )
+        )
 
     async def list_for_me(
         self,

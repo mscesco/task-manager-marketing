@@ -321,3 +321,47 @@ async def test_endpoint_trancado(db, monkeypatch) -> None:
             headers={"X-System-Token": "tok-correto-123"},
         )
         assert r_ok.status_code == 200
+
+
+# Auditoria de 11/11, item 18 -- o job faz o MESMO numero de consultas com 1
+# tarefa ou com 4: destinatarios, trava de alcance e insercao saem em lote.
+# Antes eram umas 7 por tarefa, com as linhas travadas pelo `FOR UPDATE`.
+async def test_consultas_nao_crescem_com_as_tarefas(db, connection) -> None:
+    from sqlalchemy import event
+
+    ws, team, user = await _ws(db)
+    resp = await f.make_user(db, workspace_id=ws)
+    await f.add_member(db, workspace_id=ws, user_id=resp, team_id=team, role="OPERATOR")
+
+    async def _vencidas(n: int) -> list:
+        tarefas = []
+        for i in range(n):
+            t = await _task(db, ws=ws, team=team, user=user, due=OVERDUE, title=f"t{i}")
+            await f.make_assignment(
+                db, workspace_id=ws, task_id=t.id, user_id=resp, assigned_by=user
+            )
+            tarefas.append(t)
+        await db.flush()
+        return tarefas
+
+    async def _sqls_do_job() -> int:
+        sqls: list[str] = []
+
+        def _anota(conn, cursor, statement, *args) -> None:
+            sqls.append(statement)
+
+        event.listen(connection.sync_connection, "before_cursor_execute", _anota)
+        try:
+            await DeadlineNotifyService(db).run(now=NOW)
+        finally:
+            event.remove(connection.sync_connection, "before_cursor_execute", _anota)
+        return len(sqls)
+
+    await _vencidas(1)
+    com_uma = await _sqls_do_job()
+    quatro = await _vencidas(4)
+    com_quatro = await _sqls_do_job()
+
+    assert com_quatro == com_uma
+    for t in quatro:
+        assert await _count(db, recipient=resp, type_="TASK_OVERDUE", task_id=t.id) == 1

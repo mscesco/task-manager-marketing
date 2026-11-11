@@ -616,6 +616,17 @@ class TaskService:
         parent: Task | None = None
         if command.parent_task_id is not None:
             parent = await self._repo.get_by_id_or_raise(command.parent_task_id)
+            # ⚠️ A MAE TRAVADA PARA LEITURA (auditoria de 11/11, item 19): se
+            # um mover esta levando a mae para outro quadro, a filha espera
+            # ele acabar e nasce com o path, o quadro e o time de DEPOIS --
+            # `populate_existing` rele a mae ja movida. Sem a trava, ela
+            # nascia com o quadro de antes, fora da lista que o mover reescreve.
+            await self._session.execute(
+                select(Task)
+                .where(Task.id == parent.id)
+                .with_for_update(read=True)
+                .execution_options(populate_existing=True)
+            )
             # ⚠️ O PAI TEM DE SER VISIVEL (auditoria de 16/10). `get_by_id`
             # filtra so o workspace: com `team_id` explicito no corpo, um
             # supervisor do SEO pendurava subtarefa numa tarefa do Design que
@@ -1783,6 +1794,9 @@ class TaskService:
             "project_id": task.project_id,
             "parent_task_id": task.parent_task_id,
         }
+        # Trava a subarvore antes de listar (auditoria de 11/11, item 19): uma
+        # subtarefa criada agora ficaria fora da lista, com o quadro antigo.
+        await self._repo.travar_subarvore(path=task.path)
         ids = await self._repo.ids_da_subarvore(path=task.path)
         # Editar a ORIGEM vale para a subarvore inteira: uma filha de outro
         # subtime tambem tem quadro e time reescritos (revisao de 05/11).
