@@ -44,6 +44,7 @@ class _FakeTask:
     team_id: uuid.UUID | None = None
     start_date: date | None = None
     due_date: date | None = None
+    due_time: time | None = None
     path: str = ""
     depth: int = 0
 
@@ -238,6 +239,24 @@ def test_diff_omitted_date_writes_nothing(campo) -> None:
     task = _fake_task(**{campo: date(2026, 8, 19)})
     entries = TaskService._diff_for_update(task, UpdateTaskCommand())  # type: ignore[arg-type]
     assert entries == []
+
+
+def test_diff_due_time_writes_history() -> None:
+    task = _fake_task(due_date=date(2026, 8, 19), due_time=time(18, 0))
+    cmd = UpdateTaskCommand(due_time=time(9, 30), fields_set=frozenset({"due_time"}))
+    entries = TaskService._diff_for_update(task, cmd)  # type: ignore[arg-type]
+    assert [(e.field_name, e.old_value, e.new_value) for e in entries] == [
+        ("due_time", {"value": "18:00:00"}, {"value": "09:30:00"})
+    ]
+
+
+def test_diff_clearing_due_time_writes_history() -> None:
+    task = _fake_task(due_date=date(2026, 8, 19), due_time=time(18, 0))
+    cmd = UpdateTaskCommand(fields_set=frozenset({"due_time"}))
+    entries = TaskService._diff_for_update(task, cmd)  # type: ignore[arg-type]
+    assert [(e.field_name, e.new_value) for e in entries] == [
+        ("due_time", {"value": None})
+    ]
 
 
 def test_diff_team_change() -> None:

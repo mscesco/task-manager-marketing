@@ -1748,5 +1748,13 @@ class TaskService:
                     new=command.due_date,
                 )
             )
+        if "due_time" in command.fields_set and command.due_time != task.due_time:
+            entries.append(
+                build_field_update_entry(
+                    field_name="due_time",
+                    old=task.due_time,
+                    new=command.due_time,
+                )
+            )
 
         return entries

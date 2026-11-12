@@ -109,6 +109,15 @@ function fraseDeCampo(e: EventoDeHistorico, nomes: NomesDoHistorico): string {
       if (de) return `tirou o ${qual}`;
       return `mudou o ${qual}`;
     }
+    case "due_time": {
+      // O Postgres devolve TIME como "18:00:00".
+      const antes = de?.slice(0, 5);
+      const depois = para?.slice(0, 5);
+      if (antes && depois) return `mudou a hora do prazo de ${antes} para ${depois}`;
+      if (depois) return `definiu a hora do prazo para ${depois}`;
+      if (antes) return "tirou a hora do prazo";
+      return "mudou a hora do prazo";
+    }
     case "team_id":
       // Sem nome: o detalhe da tarefa não carrega a lista de times.
       return "mudou o time da tarefa";

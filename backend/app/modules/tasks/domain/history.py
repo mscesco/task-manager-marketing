@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, time
 from enum import Enum
 from typing import Any
 
@@ -44,14 +44,14 @@ class HistoryEntry:
 
 
 def _stringify(value: Any) -> Any:
-    """Converte UUID, Enum, date e datetime para forma serializavel em JSON."""
+    """Converte UUID, Enum, date, datetime e time para forma serializavel em JSON."""
     if value is None:
         return None
     if isinstance(value, uuid.UUID):
         return str(value)
     if isinstance(value, Enum):
         return value.value
-    if isinstance(value, datetime | date):
+    if isinstance(value, datetime | date | time):
         return value.isoformat()
     return value
 
