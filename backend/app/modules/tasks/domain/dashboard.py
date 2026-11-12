@@ -1,12 +1,7 @@
-"""A tela inicial do time (Spec 058) -- as regras de DATA, puras.
+"""Regras de data da tela inicial do time, puras.
 
-⚠️ "AGORA" E DAQUI, e a resposta diz qual semana usou: o front mostra, nao
-recalcula. Duas contas de "que semana e hoje" (uma no navegador, outra no
-servidor) discordariam no domingo a noite de quem esta noutro fuso.
-
-⚠️ O FUSO E O FIXO DO SISTEMA (`America/Sao_Paulo`), o mesmo de
-`web/lib/prazo.ts` e de `deadline_notify_service` -- a organizacao nao tem
-campo de fuso (Spec 058 §8).
+"Agora" e calculado aqui e a resposta diz qual semana usou; o front nao
+recalcula. Fuso fixo `America/Sao_Paulo`, o mesmo de `web/lib/prazo.ts`.
 """
 
 from __future__ import annotations
@@ -26,10 +21,7 @@ class WorkspaceNow:
     """O agora do painel, no fuso do sistema, ja no formato das perguntas."""
 
     today: date
-    #: ⚠️ TRUNCADO NO MINUTO -- e a regra de `estaAtrasada` no front, que
-    #: compara "HH:MM". Prazo "18:00" vence as 18:01, e nao as 18:00:01: com o
-    #: minuto cheio aqui, `due_time < agora` responde o mesmo que o selo do
-    #: quadro, inclusive para um `due_time` gravado com segundos.
+    #: Truncado no minuto, como `estaAtrasada` no front: prazo "18:00" vence as 18:01.
     minute: time
     week_start: date
     week_end: date
@@ -39,7 +31,7 @@ def workspace_now(now: datetime | None = None) -> WorkspaceNow:
     """O agora no fuso do sistema. `agora` existe para o teste fixar o relogio."""
     local_now = (now or datetime.now(TIMEZONE)).astimezone(TIMEZONE)
     today = local_now.date()
-    # D3 dela (14/10): a semana comeca na SEGUNDA. `weekday()` e 0 na segunda.
+    # A semana comeca na segunda (`weekday()` == 0).
     monday = today - timedelta(days=today.weekday())
     return WorkspaceNow(
         today=today,
@@ -52,11 +44,10 @@ def workspace_now(now: datetime | None = None) -> WorkspaceNow:
 def is_overdue(
     due_date: date | None, due_time: time | None, now: WorkspaceNow
 ) -> bool:
-    """A mesma regra de `web/lib/prazo.ts::estaAtrasada`, em Python.
+    """A regra de `web/lib/prazo.ts::estaAtrasada`, em Python.
 
-    Sem hora, vence quando o DIA acaba; com hora, no minuto seguinte. Existe
-    para o teste comparar com a versao SQL (`TaskRepository`) caso a caso --
-    a tela inicial e o selo do quadro nao podem discordar.
+    Sem hora, vence quando o dia acaba; com hora, no minuto seguinte. Um teste
+    compara com a versao SQL do `TaskRepository`.
     """
     if due_date is None:
         return False
@@ -65,15 +56,12 @@ def is_overdue(
     return due_date == now.today and due_time is not None and due_time < now.minute
 
 
-# ------------------------------------------------------------- periodo (15/10)
-# O filtro de DATA (pedido dela, 15/10). Escolhido um periodo, TUDO no painel
-# passa a ser das tarefas com prazo nele -- mas no ESTADO DE HOJE, e nao no de
-# entao (decisao dela): a tarefa que vencia em 05/10 e foi concluida no dia 10
-# conta como concluida. Reconstruir o passado seria aproximado; o hoje e exato.
+# ------------------------------------------------------------- periodo
+# Filtro de data: o painel mostra as tarefas com prazo no periodo, no estado de hoje.
 
 #: Teto do periodo: um ano. Mais que isso e relatorio, nao painel.
 MAX_PERIOD_DAYS = 366
-#: Ate 14 dias o grafico tem uma coluna POR DIA; acima, POR SEMANA.
+#: Ate 14 dias o grafico tem uma coluna por dia; acima, por semana.
 DAY_BUCKETS_MAX = 14
 
 
@@ -98,9 +86,7 @@ class Bucket:
 def chart_buckets(start: date, end: date) -> tuple[str, list[Bucket]]:
     """As colunas do grafico para a janela [start, end].
 
-    ⚠️ POR SEMANA, a primeira e a ultima podem ser PARCIAIS: um periodo de
-    quarta a sexta da semana seguinte tem a coluna da primeira semana de quarta
-    a domingo -- a coluna diz o que conta, e nao finge uma semana inteira.
+    Por semana, a primeira e a ultima colunas podem ser parciais.
     """
     if (end - start).days + 1 <= DAY_BUCKETS_MAX:
         n = (end - start).days + 1

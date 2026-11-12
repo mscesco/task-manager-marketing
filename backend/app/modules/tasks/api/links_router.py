@@ -1,15 +1,6 @@
-"""Links com nome de PROJETO e de TAREFA (Spec 052, fatia B).
+"""Links de projeto e de tarefa. `PUT` substitui a lista inteira numa transacao.
 
-Rotas:
-    GET /tasks/{task_id}/links         -- quem enxerga a tarefa
-    PUT /tasks/{task_id}/links         -- quem edita a tarefa (substitui a lista)
-    GET /projects/{project_id}/links   -- quem enxerga o projeto
-    PUT /projects/{project_id}/links   -- quem edita o projeto (substitui a lista)
-
-⚠️ `PUT` COM A LISTA INTEIRA, e nao uma rota por link (§4.2): a tela edita a
-lista num painel so e salva de uma vez, e aqui e uma transacao -- ou a lista
-nova inteira, ou nada. O portao da rota e o verbo "em algum lugar"; o "neste
-time" e a lente moram no `LinkService`.
+A rota exige o verbo em algum time; o "neste time" e a lente ficam no `LinkService`.
 """
 
 from __future__ import annotations

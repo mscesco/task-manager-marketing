@@ -1,11 +1,7 @@
-"""A tela inicial do time (Spec 058) -- quem ve qual card, e os numeros.
+"""A tela inicial do time -- quem ve qual card, e os numeros.
 
-⚠️ O SERVIDOR NAO CALCULA O QUE NAO VAI MOSTRAR. Sem o verbo, o card vem
-`None`, e a tela o esconde -- em vez de calcular a carga de todo mundo e
-confiar que o front nao a desenhe.
-
-Quais tarefas entram em cada numero e pergunta do `TaskRepository`
-(`_dashboard_tasks` e `_DashboardPredicates`), e nao daqui.
+Sem o verbo, o card vem `None` (nao e calculado). Quais tarefas entram em cada
+numero e decidido no `TaskRepository` (`_dashboard_tasks`).
 """
 
 from __future__ import annotations
@@ -33,7 +29,7 @@ from app.modules.tasks.infrastructure.task_repository import (
 )
 from app.shared.exceptions.base import AuthorizationError, ValidationError
 
-#: Card 1 -- a carga por pessoa (D1 dela: gestor e supervisor, nao operador).
+#: Card 1 -- a carga por pessoa (gestor e supervisor, nao operador).
 WORKLOAD_VERB = "team_workload.read"
 #: Card 6 -- a fila de solicitacoes: quem ja pode ver a fila.
 QUEUE_VERB = "solicitation.read"
@@ -67,16 +63,9 @@ class DashboardService:
         period: Period | None = None,
         at: datetime | None = None,
     ) -> Dashboard:
-        """`assignee_id` (14/10, pedido da chefe dela): o relatorio INTEIRO de
-        uma pessoa -- a semana, as atrasadas, os proximos dias, a lista "de hoje"
-        (que deixa de ser a de quem olha e passa a ser a dela) e a linha dela na
-        carga. A fila de solicitacoes NAO muda: solicitacao nao tem responsavel
-        ate virar tarefa.
-
-        ⚠️ SO PARA QUEM VE A CARGA: filtrar por pessoa e comparar pessoas, e o
-        operador nao tem o ranking (D1). Sem o verbo, 403 -- e nao um filtro
-        ignorado em silencio, que devolveria os numeros do time inteiro com a
-        tela dizendo que sao de uma pessoa.
+        """`assignee_id` troca todos os cards pelo relatorio dessa pessoa (menos a
+        fila de solicitacoes, que nao tem responsavel). Exige ver a carga: sem o
+        verbo, 403, e nao um filtro ignorado em silencio.
         """
         tenant = require_tenant()
         if period is not None:
@@ -146,10 +135,8 @@ def _allowed(verb: str, under_team_id: uuid.UUID | None) -> bool:
 def _member_teams(under_team_id: uuid.UUID | None) -> frozenset[uuid.UUID] | None:
     """De quais times vem a lista de pessoas do card 1. `None` = todos.
 
-    ⚠️ DENTRO DA LENTE de quem olha (revisao de 15/10). O supervisor de um
-    subtime tem o verbo tambem na RAIZ, e olhando a raiz recebia os membros
-    dos subtimes VIZINHOS -- com zero tarefas, porque as deles a lente nao
-    mostra. "Fulano esta livre" era mentira de quem nao enxerga.
+    Recorta pela lente de quem olha: senao entrariam membros de subtimes que ele
+    nao enxerga, aparecendo com zero tarefas.
     """
     tenant = require_tenant()
     visible = team_scope.visible_team_ids(

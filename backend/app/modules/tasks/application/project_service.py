@@ -1,40 +1,8 @@
 """Casos de uso de projetos.
 
-Project e o container de tasks. Toda regra de negocio fica aqui --
-o router so delega. Commit eh responsabilidade do Unit of Work,
-acionado no router (ou no service-caller, no caso do provisioning).
-
-Casos de uso (publicos):
-    ProjectService.create                    -- cria projeto comum
-    ProjectService.get                       -- obtem projeto
-    ProjectService.list_page                 -- lista paginada
-    ProjectService.update                    -- atualiza campos
-    ProjectService.soft_delete               -- deleted_at=now()
-
-Decisoes-chave (ver specs/001-projects/spec.md):
-
-  - ⚠️ ARQUIVAR PROJETO SAIU EM 17/09/2026 (`archive`/`unarchive` e as duas
-    rotas), por decisao da Camila: com projeto apagavel, arquivar nao tinha
-    uso. `project.is_archived` CONTINUA no modelo e e LIDO (filtro
-    `include_archived` da listagem, campo da resposta), mas NAO TEM MAIS
-    ESCRITOR no produto -- ver `ProjectFilters.include_archived`.
-  - status livre + auto-marcacao de completed_at.
-  - start_date <= due_date quando ambos informados.
-  - PATCH "campo ausente = nao mexer".
-
-⚠️⚠️ O PROJETO PESSOAL SAIU EM 10/09/2026, e com ele a ADR 0001 (marcada como
-revertida la). Decisao dela: *"nao sei como implementar projeto pessoal, muito
-confuso, minha intencao e tirar, pois foi pensado de outra forma"*.
-
-⚠️ E O QUE SAIU JUNTO E O QUE VALE LEMBRAR: era a UNICA regra de privacidade do
-produto -- tarefa em projeto pessoal era invisivel para todo mundo, inclusive
-para o ADMIN, e o dono a editava mesmo fora dos times que ele alcanca. Hoje nao
-ha nada privado neste sistema: tudo o que existe pertence a um time, e quem
-alcanca o time ve. Se um dia voltar a fazer sentido esconder algo de todos,
-isto e um recorte novo -- e nao a volta de uma flag.
-
-⚠️ A remocao foi limpa por sorte de medicao: 29 pessoais no banco, TODOS com
-zero tarefas, e sem tela nenhuma que os expusesse.
+Project e o container de tasks. O commit e do Unit of Work, acionado no router.
+`project.is_archived` ainda e lido (filtro da listagem), mas nao tem mais
+escritor no produto.
 """
 
 from __future__ import annotations
@@ -70,7 +38,7 @@ class CreateProjectCommand:
     """Dados para criar um projeto."""
 
     title: str
-    team_id: uuid.UUID  # Entrega 3: time dono (obrigatorio em comum).
+    team_id: uuid.UUID
     description: str = ""
     status: ProjectStatus = ProjectStatus.PLANNING
     priority: PriorityLevel = PriorityLevel.MEDIUM
@@ -80,11 +48,7 @@ class CreateProjectCommand:
 
 @dataclass(frozen=True, slots=True)
 class UpdateProjectCommand:
-    """Patch parcial. Campo None = "nao mexer".
-
-    `created_by` ausente por DESIGN -- nao e editavel em nenhuma
-    circunstancia.
-    """
+    """Patch parcial. Campo None = "nao mexer"."""
 
     title: str | None = None
     description: str | None = None
@@ -96,19 +60,13 @@ class UpdateProjectCommand:
 
 @dataclass(frozen=True, slots=True)
 class ProjectFilters:
-    """Filtros de listagem suportados nesta entrega."""
+    """Filtros de listagem."""
 
     status: ProjectStatus | None = None
     priority: PriorityLevel | None = None
-    #: ⚠️ SEM ESCRITOR DESDE 17/09/2026: arquivar projeto saiu do produto, e
-    #: nenhum caminho grava `is_archived=True` num projeto. O filtro ficou
-    #: porque o front ainda manda o parametro e le o campo -- mas um projeto
-    #: arquivado ANTES dessa data continua escondido por padrao, e nao ha
-    #: mais rota para desarquiva-lo (so SQL).
+    #: Nenhuma rota grava mais `is_archived=True`; o filtro segue porque o front manda.
     include_archived: bool = False
-    #: Recorte por TIME (Spec 048). ``None`` = sem recorte -- a lente decide
-    #: sozinha. Quando vem, casa o time E seus descendentes: projeto criado num
-    #: subtime continua aparecendo no contexto da raiz dele.
+    #: Recorte por time: casa o time e seus descendentes. ``None`` = so a lente.
     team_id: uuid.UUID | None = None
 
 
@@ -122,11 +80,8 @@ class ProjectService:
         self._repo = ProjectRepository(session)
         self._session = session
 
-    # ----------------------------------------------------
-    # CRUD-de-casos-de-uso (publico)
-    # ----------------------------------------------------
     async def create(self, command: CreateProjectCommand) -> Project:
-        """Cria um projeto COMUM no workspace corrente.
+        """Cria um projeto no workspace corrente.
 
         Erros:
             ValidationError -- title vazio, start > due.
@@ -140,16 +95,13 @@ class ProjectService:
         self._validate_dates(command.start_date, command.due_date)
 
         tenant = require_tenant()
-        # Entrega 3: o time tem que existir no workspace (arvore do contexto).
+        # O time tem de existir no workspace.
         if command.team_id not in {n.team_id for n in tenant.team_tree}:
             raise ValidationError(
                 "Time informado nao existe neste workspace.",
                 details={"field": "team_id"},
             )
-        # ⚠️⚠️ E TEM DE ESTAR NA LENTE de quem cria (Spec 049, fatia 0b). Ate
-        # 14/09 bastava existir: o MANAGER do Marketing criava projeto no
-        # Comercial. Mesma forma e mesma mensagem do `POST /tasks` (Spec 037):
-        # 422 no campo, porque o time e um VALOR que o corpo trouxe.
+        # E estar na lente de quem cria (422 no campo).
         editavel = team_scope.editable_team_ids(
             tenant.memberships, tenant.team_tree, org_role=tenant.org_role
         )
@@ -158,10 +110,7 @@ class ProjectService:
                 "Time informado esta fora do seu alcance.",
                 details={"field": "team_id"},
             )
-        # ⚠️⚠️ Spec 051, fatia A: E O VERBO NAQUELE TIME. A lente acima responde
-        # "trabalho la?"; quem e OPERATOR no Comercial trabalha, e a rota ja
-        # tinha visto `project.create` -- no Marketing, onde a pessoa e MANAGER.
-        # Fora da lente continua 422 no campo; na lente sem o verbo, 403.
+        # E a pessoa precisa do verbo naquele time (403).
         self._assert_verbo_no_time("project.create", command.team_id)
         project = Project(
             title=title,
@@ -173,12 +122,10 @@ class ProjectService:
             created_by=tenant.user_id,
             team_id=command.team_id,
         )
-        # Se ja vem como COMPLETED, marca completed_at na criacao.
         if command.status == ProjectStatus.COMPLETED:
             project.completed_at = func.now()  # type: ignore[assignment]
 
-        # workspace_id e injetado pelo BaseRepository.add a partir
-        # do tenant corrente.
+        # workspace_id e injetado pelo BaseRepository.add.
         self._repo.add(project)
         await self._session.flush()
 
@@ -196,14 +143,7 @@ class ProjectService:
         Erros:
             EntityNotFoundError -- projeto nao existe, esta em outro
               workspace, OU o time dele esta fora da lente de quem pergunta.
-
-        ⚠️ 404 E NAO 403, de proposito: a mesma convencao que o projeto pessoal
-        usava ("privacy-preserving") -- responder 403 confirmaria que aquele id
-        existe. Aqui nem o nome do projeto de outro time raiz deve escapar.
-
-        ⚠️ SEM ISTO A LENTE DA LISTAGEM SERIA ENFEITE: esconder o projeto da
-        lista e entrega-lo por `GET /projects/<id>` protege contra navegar, nao
-        contra pedir. Um unico chamador (o router), entao a trava mora aqui.
+              404 e nao 403, para nao confirmar que o id existe.
         """
         project = await self._repo.get_by_id_or_raise(project_id)
         tenant = require_tenant()
@@ -213,10 +153,7 @@ class ProjectService:
             org_role=tenant.org_role,
         )
         if visible is not None and project.team_id not in visible:
-            # ⚠️ A MESMA FORMA que o `get_by_id_or_raise` levanta quando o id
-            # nao existe (`_base_select` -> `EntityNotFoundError(model, id)`).
-            # Uma mensagem propria aqui tornaria as duas respostas
-            # DISTINGUIVEIS, e distinguir e justamente o que o 404 nega.
+            # Mesma forma do 404 de id inexistente, para serem indistinguiveis.
             raise EntityNotFoundError(Project.__name__, identifier=project_id)
         return project
 
@@ -225,43 +162,10 @@ class ProjectService:
         params: PageParams,
         filters: ProjectFilters,
     ) -> Page[Project]:
-        """Listagem paginada, escopada ao tenant, A LENTE e (opcionalmente) a um time.
+        """Listagem paginada, escopada ao tenant, a lente e (opcionalmente) a um time.
 
-        Filtros aplicados:
-            - status, priority (opcionais, igualdade exata);
-            - include_archived (default False);
-            - LENTE DE TIME (sempre, exceto admin);
-            - team_id (opcional): aquele time e seus descendentes.
-
-        ⚠️ NAO HA MAIS PREDICADO DE PRIVACIDADE. Ate 10/09 este metodo injetava
-        `(is_personal = false) OR (created_by = me)` para esconder o pessoal
-        alheio.
-
-        ⚠️⚠️ E ATE 11/09 NAO HAVIA PREDICADO DE TIME NENHUM -- O ESCOPO ERA O
-        WORKSPACE INTEIRO. Quando tirei a privacidade eu escrevi aqui que "a
-        lente do time responde sozinha". ERA FALSO: os filtros eram status,
-        priority e arquivado, e o `_base_select` do `BaseRepository` fecha por
-        `workspace_id` e soft delete -- nada olhava `Project.team_id`.
-        Reportado na tela: o seletor de projeto oferecia projeto de outro time
-        raiz. (Achado LENDO `BaseRepository._base_select`, e nao a spec.)
-
-        ⚠️⚠️ E A LENTE AQUI NAO E FEATURE NOVA: e a ADR 0007, por escrito, desde
-        o dia em que `project.team_id` nasceu -- *"a visibilidade de um projeto
-        passa a depender de project.team_id estar na lente de time do usuario"*.
-        Ela foi implementada para as TASKS (`_lente_de_time`, que casa por
-        `Project.team_id`) e esquecida na listagem dos PROJETOS. O vazamento
-        era de METADADO, nao de trabalho: dava para ler o nome de um projeto de
-        outro time raiz, nunca as tarefas dele.
-
-        ⚠️ SAO DOIS RECORTES, E SO UM RESOLVE O QUE ELA REPORTOU:
-          - a LENTE responde "posso ver?", e para o ADMIN ela e `None` (ve
-            tudo) -- portanto sozinha ela NAO tira o projeto do Comercial da
-            tela de quem administra;
-          - `team_id` responde "estou olhando qual time?", e vale para todos.
-        Confundir os dois teria fechado o furo de seguranca e deixado o defeito
-        da tela de pe.
-
-        Ordenacao fixa: created_at DESC.
+        A lente responde "posso ver?" (``None`` para admin); `team_id` responde
+        "qual time estou olhando?" e vale para todos. Ordenacao: created_at DESC.
         """
         tenant = require_tenant()
         extra_filters = []
@@ -272,8 +176,7 @@ class ProjectService:
         if not filters.include_archived:
             extra_filters.append(Project.is_archived.is_(False))
 
-        # (A) A lente. `None` = admin de organizacao, sem filtro de TIME -- e
-        # nao "sem filtro": o `workspace_id` entra sempre, no `_base_select`.
+        # `None` = admin; o `workspace_id` entra sempre, no `_base_select`.
         visible = team_scope.visible_team_ids(
             tenant.memberships,
             tenant.team_tree,
@@ -282,26 +185,12 @@ class ProjectService:
         if visible is not None:
             extra_filters.append(Project.team_id.in_(visible))
 
-        # (B) O recorte por time pedido pela tela.
         if filters.team_id is not None:
-            # ⚠️ O TIME E SEUS DESCENDENTES, e nao igualdade. Projeto criado
-            # num SUBTIME pertence ao contexto da raiz dele -- pedir a raiz e
-            # receber so o que e dela mesma esconderia esse projeto de toda
-            # tela que recorta por raiz.
+            # Time e descendentes: projeto de subtime aparece no contexto da raiz.
             alvo = {filters.team_id} | team_scope.descendants(
                 filters.team_id, tenant.team_tree
             )
-            # ⚠️ O PARAMETRO ESTREITA, NUNCA ALARGA -- e isso e ESTRUTURAL, nao
-            # uma checagem. Os dois predicados entram na MESMA lista e o repo os
-            # combina com AND: pedir um time fora da lente devolve a intersecao
-            # vazia sozinho.
-            #
-            # ⚠️ EU TINHA ESCRITO UM `alvo &= set(visible)` AQUI, com um
-            # comentario dizendo que sem ele `?team_id=<time alheio>` furaria a
-            # lente. Sabotei a linha para conferir: NENHUM teste caiu. Era
-            # codigo morto, e o comentario afirmava uma protecao que o AND ja
-            # dava -- pior que a ausencia, porque o proximo leitor confiaria
-            # nela em vez de procurar quem protege de verdade.
+            # Combinado com a lente por AND: time fora da lente da vazio.
             extra_filters.append(Project.team_id.in_(alvo))
         return await self._repo.list_page(
             params,
@@ -317,7 +206,7 @@ class ProjectService:
     ) -> Project:
         """Atualiza campos editaveis com semantica PATCH.
 
-            - title eh normalizado com strip() se vier;
+            - title e normalizado com strip() se vier;
             - start_date <= due_date sobre o estado RESULTANTE
               (apos o merge);
             - transicao para COMPLETED -> seta completed_at;
@@ -327,16 +216,10 @@ class ProjectService:
             EntityNotFoundError -- projeto nao existe.
             ValidationError     -- title invalido ou datas inconsistentes.
         """
-        # ⚠️⚠️ PELO `get`, E NAO PELO REPOSITORIO (Spec 049, fatia 0b): o `get`
-        # tem a lente, e o repositorio so o workspace. Ate 14/09 as escritas
-        # daqui (eram quatro; arquivar saiu em 17/09) buscavam direto -- a
-        # lente de 11/09 protegia o LER e deixava o ESCREVER aberto, e o
-        # SUPERVISOR do SEO editou projeto do Comercial. Fora da lente e 404, como no `get`.
+        # Pelo `get`, que aplica a lente (404); o repositorio so ve o workspace.
         project = await self.get(project_id)
-        # Spec 051, fatia A: a lente (404) e do `get`; o verbo no time, daqui.
         self._assert_verbo_no_time("project.update", project.team_id)
 
-        # Aplica o patch campo a campo. None = nao mexer.
         if command.title is not None:
             title = command.title.strip()
             if not title:
@@ -352,12 +235,10 @@ class ProjectService:
         if command.priority is not None:
             project.priority = command.priority
 
-        # Transicao de status com ajuste de completed_at.
         if command.status is not None and command.status != project.status:
             if command.status == ProjectStatus.COMPLETED:
                 project.completed_at = func.now()  # type: ignore[assignment]
             elif project.status == ProjectStatus.COMPLETED:
-                # Saindo de COMPLETED para qualquer outro: limpa.
                 project.completed_at = None
             project.status = command.status
 
@@ -366,7 +247,7 @@ class ProjectService:
         if command.due_date is not None:
             project.due_date = command.due_date
 
-        # Valida o ESTADO RESULTANTE (apos o merge).
+        # Valida o estado resultante (apos o merge).
         self._validate_dates(project.start_date, project.due_date)
 
         await self._session.flush()
@@ -387,10 +268,7 @@ class ProjectService:
         self._assert_verbo_no_time("project.delete", project.team_id)
 
         project.deleted_at = func.now()  # type: ignore[assignment]
-        # ⚠️ AS TAREFAS FICAM, AVULSAS (auditoria de 21/10). So marcar o projeto
-        # deixava as tarefas nas listas e 404 ao abrir: a guarda de
-        # visibilidade nao acha projeto apagado e trata como inconsistencia.
-        # A tela ja promete "ficam no quadro sem projeto".
+        # As tarefas ficam, sem projeto; senao sobravam nas listas e davam 404 ao abrir.
         soltas = list(
             (
                 await self._session.execute(
@@ -412,8 +290,7 @@ class ProjectService:
                 CollaborationService,
             )
 
-            # Sem projeto, quem ve e o time da tarefa: seguidor que so via
-            # pelo time do projeto sai, como no `move` (Spec 053, D12).
+            # Sem projeto, quem ve e o time da tarefa: seguidor sem alcance sai.
             await CollaborationService(
                 self._session
             ).remove_watchers_without_reach(task_ids=soltas)
@@ -425,14 +302,9 @@ class ProjectService:
 
     @staticmethod
     def _assert_verbo_no_time(verbo: str, team_id: uuid.UUID | None) -> None:
-        """403 se quem chama nao tem `verbo` NO TIME do projeto. Spec 051, fatia A.
+        """403 se quem chama nao tem `verbo` no time do projeto.
 
-        ⚠️ SEMPRE DEPOIS DA LENTE (o `get`, ou o 422 do `create`): o que chega
-        aqui a pessoa ja enxerga, entao o 403 nao vaza existencia.
-
-        ⚠️ `team_id` NULO so existe em projeto antigo sem time, e `can_in(p,
-        None)` responde so pela organizacao -- o mesmo "sem time nao e curinga"
-        da Spec 045.
+        Sempre depois da lente, para o 403 nao vazar existencia.
         """
         if not require_tenant().has_permission_in(verbo, team_id):
             raise AuthorizationError(

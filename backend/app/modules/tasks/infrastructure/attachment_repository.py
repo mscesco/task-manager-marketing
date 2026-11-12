@@ -1,11 +1,7 @@
-"""Anexos (links) de projeto e de tarefa. Spec 052, fatia B.
+"""Anexos (links) de projeto e de tarefa.
 
-Repository nao comita -- o UoW do router e quem commita.
-
-⚠️ SO `kind = 'LINK'` passa por aqui. A tabela tambem guarda o lugar de
-arquivo (FILE), que nao existe no produto ainda; quando existir, a leitura e a
-substituicao desta classe NAO podem apagar arquivos ao salvar a lista de links
--- por isso todo filtro abaixo diz `kind = 'LINK'` explicitamente.
+So `kind = 'LINK'`: todo filtro diz isso explicitamente para nunca apagar FILE
+ao salvar a lista de links.
 """
 
 from __future__ import annotations
@@ -67,13 +63,7 @@ class AttachmentRepository:
         task_id: uuid.UUID | None = None,
         project_id: uuid.UUID | None = None,
     ) -> list[Attachment]:
-        """Troca a lista INTEIRA de links do dono. Mesma transacao do chamador.
-
-        ⚠️ APAGAR E INSERIR, e nao comparar linha a linha: a tela manda a lista
-        como a pessoa a deixou (renomeada, reordenada, com itens a menos), e a
-        lista e pequena (ate 20). Um diff aqui seria codigo a mais para o mesmo
-        resultado -- e a posicao recalculada de 0 a N-1 nunca fica com buraco.
-        """
+        """Troca a lista inteira de links do dono (apaga e insere). Mesma transacao do chamador."""
         tenant = require_tenant()
         await self._session.execute(
             delete(Attachment).where(
@@ -102,11 +92,7 @@ class AttachmentRepository:
     async def copy_task_links(
         self, *, from_task_id: uuid.UUID, to_task_id: uuid.UUID
     ) -> None:
-        """Copia os links de uma tarefa para outra -- duplicar (§4.4).
-
-        ⚠️ QUEM COPIA VIRA `uploaded_by` DA COPIA, e nao o autor do original: o
-        campo diz quem pos o link NAQUELA tarefa, e quem pos foi quem duplicou.
-        """
+        """Copia os links de uma tarefa para outra (duplicar). Quem copia vira `uploaded_by`."""
         origem = await self.list_links(task_id=from_task_id)
         if not origem:
             return

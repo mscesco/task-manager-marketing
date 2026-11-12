@@ -1,7 +1,4 @@
-"""A planilha da tela inicial (Spec 058, 15/10) -- o painel em Excel.
-
-Pedido dela: exportar o painel em PDF (isso é da tela, pela impressão) e em
-planilha, para quem quer mexer nos números. Quatro abas:
+"""A planilha da tela inicial -- o painel em Excel. Quatro abas:
 
     Resumo     o time, o período, a pessoa, e os números dos cards de cima;
     Gráfico    as colunas (por dia ou por semana): concluídas, no prazo,
@@ -9,9 +6,7 @@ planilha, para quem quer mexer nos números. Quatro abas:
     Tarefas    as tarefas que o painel CONTOU, com o estado de hoje;
     Carga      a carga por pessoa -- só para quem a vê na tela.
 
-⚠️ OS NÚMEROS SAEM DO MESMO `DashboardService` DA TELA, e as tarefas dos
-mesmos predicados (`dashboard_export_rows`): a planilha não pode discordar do
-que a pessoa estava olhando quando clicou em exportar.
+Os números saem do mesmo `DashboardService` da tela, para não discordar dela.
 """
 
 from __future__ import annotations
@@ -45,9 +40,8 @@ def _dia(d) -> str:
 
 
 def _linha(ws, valores: list) -> None:
-    """Uma linha que o Excel aceita e nao executa (a regra do export da Base):
-    o `\x0b` colado do PowerPoint dava 500, e um titulo `=HYPERLINK(...)`
-    virava link vivo -- o titulo pode vir ate do formulario publico."""
+    """Uma linha que o Excel aceita e nao executa: tira caractere de controle
+    (dava 500) e neutraliza formula (`=HYPERLINK(...)` viraria link vivo)."""
     ws.append([ILLEGAL_CHARACTERS_RE.sub("", v) if isinstance(v, str) else v for v in valores])
     for cell in ws[ws.max_row]:
         if cell.data_type == "f":
@@ -81,9 +75,7 @@ async def build_dashboard_xlsx(
     rows = await TaskRepository(session).dashboard_export_rows(
         under_team_id, d.now, assignee_id=assignee_id, period=period
     )
-    # ⚠️ O `session.get` nao confere a organizacao (auditoria de 11/11, item
-    # 20): um `under_team_id` de outra organizacao punha o nome daquele time
-    # no cabecalho, com os numeros zerados. Time ou pessoa de fora = ausente.
+    # `session.get` nao confere a organizacao: time ou pessoa de fora = ausente.
     ws_id = require_tenant().workspace_id
     time_nome = "Todos os times"
     if under_team_id is not None:
@@ -95,8 +87,7 @@ async def build_dashboard_xlsx(
         user = await session.get(User, assignee_id)
         if user is not None and user.workspace_id == ws_id:
             pessoa_nome = user.name
-    # Montar a planilha e CPU puro: no loop async, congelava o worker inteiro
-    # (auditoria 11/11, item 9).
+    # Montar a planilha e CPU puro: no loop async congelaria o worker.
     return await asyncio.to_thread(_planilha, d, rows, time_nome, pessoa_nome)
 
 

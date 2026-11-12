@@ -1,27 +1,7 @@
-"""Router do submodulo Projects (dentro do modulo tasks).
+"""Router /projects. Leitura para qualquer autenticado; escrita por
+project.create / project.update / project.delete. Regra de negocio no ProjectService.
 
-Regra de ouro: o router so cuida de request/response, validacao,
-DI, status code e autorizacao. A regra de negocio (incluindo
-proteces e privacidade do pessoal) vive no ProjectService.
-
-Transacao: rotas de escrita usam UoWDep e chamam uow.commit() ao
-final do caso de uso. Leituras nao precisam de commit.
-
-Autorizacao:
-    - leitura (list/get): qualquer usuario autenticado.
-    - escrita: project.create / project.update / project.delete.
-
-Rotas:
-    GET    /projects                   -- list (filtros + paginacao)
-    POST   /projects                   -- create (project.create)
-    GET    /projects/{id}              -- get
-    PATCH  /projects/{id}              -- update (project.update)
-    DELETE /projects/{id}              -- soft delete (project.delete)
-
-⚠️ ARQUIVAR PROJETO SAIU EM 17/09/2026 (`POST /projects/{id}/archive` e
-`/unarchive`), por decisao da Camila: com projeto apagavel, arquivar nao tinha
-mais uso, e nenhuma tela chamava as rotas. A COLUNA `project.is_archived`
-FICOU no banco, sem escritor -- ver `ProjectFilters.include_archived`.
+A coluna `project.is_archived` existe no banco mas nao tem mais escritor.
 """
 
 from __future__ import annotations
@@ -70,16 +50,9 @@ async def list_projects(
         ),
     ),
 ) -> ProjectListResponse:
-    """Lista projetos do workspace, paginado, com filtros.
+    """Lista projetos do workspace dentro da lente de time, paginado.
 
-    VISIBILIDADE: a lente de time filtra no service (ADR 0007) -- projeto de
-    time fora da lente nao aparece. `team_id` recorta ainda mais, e e o que as
-    telas usam para seguir o time ativo (Spec 048).
-
-    ⚠️ `team_id` e OPCIONAL no contrato de proposito: as telas que mostram um
-    SELO de projeto (o mapa id -> titulo) precisam de todos os que a pessoa
-    alcanca, senao a tarefa aparece sem o nome do projeto dela. Quem oferece
-    ESCOLHA e que recorta.
+    `team_id` e opcional de proposito: o selo de projeto precisa de todos que a pessoa alcanca.
     """
     page_result = await ProjectService(session).list_page(
         params=PageParams(page=page, size=size),
@@ -181,7 +154,7 @@ async def update_project(
 async def delete_project(
     project_id: uuid.UUID, uow: UoWDep
 ) -> ProjectResponse:
-    """Soft-delete: marca deleted_at. 200 com body (decisao da spec).
+    """Soft-delete: marca deleted_at. 200 com body.
 
     Pessoal NAO pode ser deletado (409).
     """

@@ -1,10 +1,4 @@
-"""Repository da entidade Project.
-
-Project possui workspace_id; herda o BaseRepository com filtro
-automatico de tenant e de soft delete. As queries de listagem
-usam o list_page do base (com `filters` adicionais injetados pelo
-service). Queries especificas de projeto vivem aqui.
-"""
+"""Repository de Project (tenant e soft delete filtrados pelo BaseRepository)."""
 
 from __future__ import annotations
 

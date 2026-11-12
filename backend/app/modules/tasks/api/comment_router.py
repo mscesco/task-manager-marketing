@@ -1,18 +1,7 @@
-"""Router de comentarios -- Entrega 14.
+"""Router de comentarios, reacoes e historico (sob /tasks/{task_id}).
 
-Rotas (sob /tasks/{task_id}):
-    GET    /history                -- historico da tarefa (exige ver a task)
-    GET    /comments               -- lista o thread (exige ver a task)
-    POST   /comments               -- comenta (exige ver a task -- D1)
-    PATCH  /comments/{comment_id}  -- edita (so o autor -- D2)
-    DELETE /comments/{comment_id}  -- apaga (autor ou moderador task.delete -- D3)
-    PUT    /comments/{comment_id}/reaction -- poe ou troca a propria reacao (Spec 050)
-    DELETE /comments/{comment_id}/reaction -- tira a propria reacao (Spec 050)
-
-NENHUMA rota usa require_permission (igual ao watcher da E4): "quem ve,
-comenta", e a alcada de edicao/moderacao e resolvida no CommentService.
-Proteger a rota com permissao quebraria o D1. Por isso dependem so de
-TenantContextDep (autenticacao). Regra de negocio mora no service; commit no UoW.
+Nenhuma rota usa require_permission: quem ve a tarefa, comenta; edicao e
+moderacao sao resolvidas no CommentService.
 """
 
 from __future__ import annotations
@@ -47,12 +36,9 @@ async def list_history(
     page: int = 1,
     size: int = 20,
 ) -> HistoryListResponse:
-    """Historico da tarefa, mais NOVO primeiro. 404 se nao ve a task.
+    """Historico da tarefa, mais novo primeiro. 404 se nao ve a task.
 
-    ⚠️ MORA NESTE ROUTER, junto dos comentarios, porque tem a MESMA regra:
-    quem ve a tarefa, le -- sem `require_permission`. Po-la no `tasks_router`,
-    que e trancado por permissao no nivel do router, exigiria abrir uma
-    excecao la dentro.
+    Fica aqui porque, como os comentarios, nao exige permissao (o `tasks_router` exige).
     """
     result = await TaskHistoryService(session).list_for_task(
         task_id=task_id, params=PageParams(page=page, size=size)
@@ -141,7 +127,7 @@ async def set_comment_reaction(
     _: TenantContextDep,
     uow: UoWDep,
 ) -> CommentResponse:
-    """Poe ou troca a reacao de quem chama (Spec 050). Quem ve a task, reage.
+    """Poe ou troca a reacao de quem chama. Quem ve a task, reage.
 
     `PUT` porque e idempotente: "a minha reacao aqui passa a ser X". Devolve o
     comentario inteiro, para a tela trocar a fileira sem recarregar o thread.
@@ -158,11 +144,7 @@ async def set_comment_reaction(
 async def remove_comment_reaction(
     task_id: uuid.UUID, comment_id: uuid.UUID, _: TenantContextDep, uow: UoWDep
 ) -> CommentResponse:
-    """Tira a reacao de quem chama (Spec 050).
-
-    ⚠️ 200 COM CORPO, e nao 204: a tela precisa da fileira atualizada. Mesmo
-    desenho do `remove_watcher`. Tirar reacao que nao existe tambem e 200.
-    """
+    """Tira a reacao de quem chama. 200 com corpo (a tela precisa da fileira); idempotente."""
     dto = await CommentService(uow.session).remove_reaction(
         task_id=task_id, comment_id=comment_id
     )

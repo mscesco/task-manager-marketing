@@ -1,7 +1,6 @@
 """Casos de uso de tasks. Commit e do router (UoW).
 
-Move e soft-delete usam SQL textual com predicado de tenant manual; soft-delete
-cascateia para a subarvore; `task_history` e escrito na mesma transacao.
+Move e soft-delete usam SQL textual com predicado de tenant manual.
 """
 
 from __future__ import annotations
@@ -55,16 +54,13 @@ from app.shared.pagination import Page, PageParams
 
 logger = get_logger(__name__)
 
-#: Recusa de `board_id` fora do alcance; o codigo separa "fora de alcance" de
-#: "quadro inexistente", que tambem da `ValidationError`.
+#: `board_id` fora do alcance (separa de "quadro inexistente", tambem 422).
 CODIGO_QUADRO_FORA_DE_ALCANCE = "board_fora_de_alcance"
 
-#: Pai e filha ficariam em quadros diferentes; separa da recusa de "pai em
-#: projeto diferente", que e 422 no mesmo campo. Lido pelo n8n.
+#: Pai e filha ficariam em quadros diferentes. Lido pelo n8n.
 CODIGO_PAI_EM_OUTRO_QUADRO = "pai_em_outro_quadro"
 
-#: Tarefa em quadro avulso pertencendo a outro time. No Quadro geral o time e
-#: livre (tarefa interna de subtime), desde que na mesma raiz.
+#: Time da tarefa fora do time do quadro.
 CODIGO_TIME_FORA_DO_QUADRO = "time_fora_do_quadro"
 
 
@@ -89,7 +85,7 @@ class CreateTaskCommand:
     due_time: time | None = None
     # Aplicados depois de a tarefa nascer; invalido -> 422 e a criacao reverte.
     assignee_ids: list[uuid.UUID] = field(default_factory=list)
-    # Seguidores, tambem atomicos. `duplicate` nao os repassa (a copia nao leva).
+    # Seguidores, tambem atomicos.
     watcher_ids: list[uuid.UUID] = field(default_factory=list)
 
 
@@ -139,12 +135,8 @@ class DuplicateResult:
 
 @dataclass(frozen=True, slots=True)
 class UpdateTaskCommand:
-    """Patch parcial. None = nao mexer -- EXCETO nos campos nullable (datas),
-    onde None significa LIMPAR. Pra distinguir "omitido" de "null explicito"
-    nesses campos, o router preenche `fields_set` com os campos que vieram no
-    JSON (Pydantic model_fields_set); o apply consulta esse conjunto.
-
-    project_id e parent_task_id NAO entram aqui -- usar move.
+    """Patch parcial. None = nao mexer, exceto nas datas, onde None limpa;
+    `fields_set` distingue omitido de null. Projeto e pai mudam por `move`.
     """
 
     title: str | None = None
@@ -164,15 +156,10 @@ class UpdateTaskCommand:
 
 @dataclass(frozen=True, slots=True)
 class MoveTaskCommand:
-    """Move pra outro pai e/ou projeto.
+    """Move pra outro pai e/ou projeto; None = nao mexe naquele campo.
 
-    Pelo menos um deve vir. None = nao mexe naquele campo. No-op
-    silencioso se nada muda no final.
-
-    `detach_project=True` tira a task de projeto (avulsa). Sinal
-    EXPLICITO -- `project_id=None` continua significando "nao mexe no projeto",
-    entao null nao serve pra desassociar. So vale em task de topo; nao combina
-    com project_id/parent_task_id preenchidos.
+    `detach_project=True` torna avulsa (`project_id=None` significa "nao mexe").
+    So em task de topo, sem project_id/parent_task_id.
     """
 
     parent_task_id: uuid.UUID | None = None
@@ -242,8 +229,6 @@ class TaskFilters:
 
 @dataclass(frozen=True, slots=True)
 class SoftDeleteResult:
-    """Resultado de soft_delete (cascade)."""
-
     task: Task
     cascade_count: int
 
@@ -291,7 +276,6 @@ class TaskService:
         if not roots:
             # Sem time raiz: vira o 422 generico de quem chama.
             return None
-        # Mensagem propria: o problema e ambiguidade, nao formato.
         raise ValidationError(
             "Este workspace tem mais de um time raiz: diga em qual a tarefa "
             "nasce, informando `team_id` ou `board_id`.",
@@ -313,7 +297,6 @@ class TaskService:
             return
         time_do_quadro, eh_padrao = dono
         if eh_padrao:
-            # Livre, mas dentro da raiz do quadro.
             arvore = require_tenant().team_tree
             if team_scope.root_of(team_id, arvore) != team_scope.root_of(
                 time_do_quadro, arvore
@@ -400,7 +383,6 @@ class TaskService:
                 .with_for_update(read=True)
                 .execution_options(populate_existing=True)
             )
-            # O pai tem de ser visivel (404 como qualquer tarefa fora da lente).
             await self._assert_visible_via_project(parent)
             # Pai arquivado nao ganha filha: nenhuma tela a mostraria.
             if parent.is_archived:
@@ -433,16 +415,12 @@ class TaskService:
         if command.team_id is not None:
             self._assert_team_in_reach(command.team_id)
 
-        # Projeto (opcional). Se informado: deve existir e ser visivel.
         project: Project | None = None
         if command.project_id is not None:
             project = await self._projects.get_by_id_or_raise(command.project_id)
-            # O time da tarefa fica na subarvore do time do projeto.
             self._assert_time_no_projeto(project, team_id)
 
-        # Toda tarefa nasce com responsavel, para qualquer cliente. Nao retroage:
-        # a regra vale so na escrita de responsavel, nunca no PATCH de outros
-        # campos.
+        # Toda tarefa nasce com responsavel; nao vale no PATCH de outros campos.
         if not command.assignee_ids:
             raise ValidationError(
                 "Toda tarefa precisa de pelo menos um responsável.",
@@ -469,12 +447,10 @@ class TaskService:
             path=path,
             depth=depth,
         )
-        # Se ja vem como COMPLETED, marca completed_at.
         if command.status == TaskStatus.COMPLETED:
             task.completed_at = datetime.now(UTC)  # type: ignore[assignment]
 
-        # Relogio do arquivamento: nasce terminal (COMPLETED ou CANCELLED) ja
-        # com `terminal_since`.
+        # Relogio do arquivamento.
         if is_terminal(command.status):
             task.terminal_since = datetime.now(UTC)  # type: ignore[assignment]
 
@@ -500,7 +476,6 @@ class TaskService:
                 board_id=command.board_id, team_id=team_id
             )
             task.board_id = command.board_id
-            # O status volta da coluna, como na subtarefa.
             task.column_id, task.status = await BoardRepository(
                 self._session
             ).coluna_para_status(
@@ -519,7 +494,6 @@ class TaskService:
             task.board_id, _ = await quadros.default_board_and_column_for_status(
                 command.status, root_team_id=root_team_id
             )
-            # O status volta da coluna, como nos outros ramos.
             task.column_id, task.status = await quadros.coluna_para_status(
                 board_id=task.board_id, status=command.status
             )
@@ -527,7 +501,6 @@ class TaskService:
         self._repo.add(task)
         await self._session.flush()
 
-        # History
         entry = build_created_entry(
             title=title,
             project_id=command.project_id,
@@ -608,7 +581,6 @@ class TaskService:
             )
         )
 
-        # A copia leva os links da origem, na mesma ordem.
         await AttachmentRepository(self._session).copy_task_links(
             from_task_id=source.id, to_task_id=novo.id
         )
@@ -674,7 +646,6 @@ class TaskService:
                     origem=filho, destino=destino, pulados=pulados
                 )
             if not escolhidos:
-                # A mensagem nomeia a subtarefa que travou.
                 raise ValidationError(
                     f"A subtarefa \"{filho.title}\" ficaria sem responsável "
                     "na cópia. Escolha quem vai fazer, ou não a leve junto.",
@@ -693,7 +664,6 @@ class TaskService:
                     assignee_ids=escolhidos,
                 )
             )
-            # A subtarefa copiada leva os links dela, como o pai.
             await AttachmentRepository(self._session).copy_task_links(
                 from_task_id=filho.id, to_task_id=copia.id
             )
@@ -803,8 +773,7 @@ class TaskService:
     async def update(
         self, *, task_id: uuid.UUID, command: UpdateTaskCommand
     ) -> Task:
-        """Patch parcial. 1 linha em history por campo alterado.
-        Status vira STATUS_CHANGED. parent/project NAO mexem (usar move)."""
+        """Patch parcial; 1 linha de history por campo alterado."""
         task = await self._repo.get_by_id_or_raise(task_id)
         await self._assert_visible_via_project(task)
         await self._assert_editable(task)
@@ -835,7 +804,7 @@ class TaskService:
             coluna_alvo = coluna
             command = replace(command, status=efetivo)
 
-        # Calcula entries ANTES de mutar (snapshot do estado antigo).
+        # Antes de mutar: o diff le o estado antigo.
         entries = self._diff_for_update(task, command)
 
         # A coluna gera historico proprio (mover entre colunas de mesmo status).
@@ -849,7 +818,6 @@ class TaskService:
                 )
             )
 
-        # Aplica patch campo a campo. None = nao mexer.
         if command.title is not None:
             title = command.title.strip()
             if not title:
@@ -866,14 +834,11 @@ class TaskService:
             task.priority = command.priority
 
         if command.team_id is not None:
-            # Mesma lente do `create` para o time novo.
             self._assert_team_in_reach(command.team_id)
-            # E o time novo tem de ser o do quadro avulso; recusa em vez de
-            # mover a tarefa de quadro por baixo do PATCH.
+            # Recusa em vez de mover a tarefa de quadro por baixo do PATCH.
             await self._assert_time_do_quadro(
                 board_id=task.board_id, team_id=command.team_id
             )
-            # E fica na subarvore do time do projeto.
             if task.project_id is not None:
                 projeto = await self._projects.get_by_id_or_raise(task.project_id)
                 self._assert_time_no_projeto(projeto, command.team_id)
@@ -890,7 +855,6 @@ class TaskService:
                 )
             task.team_id = command.team_id
 
-        # Status com ajuste de completed_at.
         virou_concluido = False
         if command.status is not None and command.status != task.status:
             if command.status == TaskStatus.COMPLETED:
@@ -917,7 +881,6 @@ class TaskService:
                     board_id=task.board_id, status=command.status
                 )
             else:
-                # Escrita por `column_id`: coluna e status ja resolvidos acima.
                 status_efetivo = command.status
 
             task.status = status_efetivo
@@ -935,7 +898,6 @@ class TaskService:
         if "due_time" in command.fields_set:
             task.due_time = command.due_time
 
-        # Valida estado resultante.
         self._validate_dates(task.start_date, task.due_date)
         # Sobre o estado resultante: apagar so `due_date` nao deixa hora orfa.
         self._validate_hora(task.due_date, task.due_time)
@@ -972,17 +934,12 @@ class TaskService:
     async def move(
         self, *, task_id: uuid.UUID, command: MoveTaskCommand
     ) -> Task:
-        """Move pra novo pai e/ou projeto.
-
-        No-op silencioso se nada muda.
-        """
-        # Pelo menos um dos tres (pai, projeto, ou detach).
+        """Move pra novo pai e/ou projeto. No-op silencioso se nada muda."""
         if (
             command.parent_task_id is None
             and command.project_id is None
             and not command.detach_project
         ):
-            # Nada informado -- nao eh erro, eh no-op.
             task = await self._repo.get_by_id_or_raise(task_id)
             await self._assert_visible_via_project(task)
             return task
@@ -991,8 +948,6 @@ class TaskService:
         await self._assert_visible_via_project(task)
         await self._assert_editable(task)
 
-        # Detach (tornar avulsa): sinal explicito, nao combina com projeto/pai
-        # e so vale em task de topo.
         if command.detach_project:
             if command.project_id is not None or command.parent_task_id is not None:
                 raise ValidationError(
@@ -1005,8 +960,6 @@ class TaskService:
                     details={"field": "detach_project"},
                 )
 
-        # Estado resultante. Detach zera projeto (e pai, por coerencia -- avulsa
-        # nao tem pai; ja garantimos acima que a task e de topo).
         if command.detach_project:
             new_project_id: uuid.UUID | None = None
             new_parent_task_id: uuid.UUID | None = None
@@ -1018,21 +971,18 @@ class TaskService:
                 else task.parent_task_id
             )
 
-        # Se nao mudou nada de fato, no-op.
         if (
             new_project_id == task.project_id
             and new_parent_task_id == task.parent_task_id
         ):
             return task
 
-        # Move pra si mesmo.
         if new_parent_task_id == task.id:
             raise BusinessRuleError(
                 "Task nao pode ser pai de si mesma.",
                 details={"task_id": str(task.id)},
             )
 
-        # Projeto novo deve existir (detach pula).
         if new_project_id is not None and new_project_id != task.project_id:
             novo_projeto = await self._projects.get_by_id_or_raise(new_project_id)
             # Toda a subarvore tem de caber no projeto novo, para quem ve (pelo
@@ -1040,13 +990,10 @@ class TaskService:
             for team_id in await self._repo.subtree_team_ids(task):
                 self._assert_time_no_projeto(novo_projeto, team_id)
 
-        # Pai novo (se houver): existe, mesmo workspace, mesmo projeto final.
         new_parent: Task | None = None
         if new_parent_task_id is not None:
             new_parent = await self._repo.get_by_id_or_raise(new_parent_task_id)
-            # O pai novo tem de ser visivel -- mesma trava do `create`.
             await self._assert_visible_via_project(new_parent)
-            # E nao pode estar arquivado -- mesma trava do `create`.
             if new_parent.is_archived:
                 raise ValidationError(
                     "A tarefa pai esta arquivada. Desarquive-a antes.",
@@ -1083,7 +1030,6 @@ class TaskService:
                 .with_for_update()
                 .execution_options(populate_existing=True)
             )
-            # Ciclo: novo pai eh descendente da task?
             if await self._repo.detect_cycle(
                 task=task, new_parent_id=new_parent_task_id
             ):
@@ -1095,7 +1041,6 @@ class TaskService:
                     },
                 )
 
-        # Snapshot para o history.
         old_project_id = task.project_id
         old_parent_task_id = task.parent_task_id
         old_path = task.path
@@ -1109,7 +1054,6 @@ class TaskService:
             else []
         )
 
-        # Reparent: atualiza task e subtree via SQL textual.
         await self._repo.reparent_subtree(
             task=task,
             old_path=old_path,
@@ -1120,7 +1064,6 @@ class TaskService:
             new_project_id=new_project_id,
         )
 
-        # History
         tenant = require_tenant()
         entry = build_move_entry(
             old_project_id=old_project_id,
@@ -1505,8 +1448,6 @@ class TaskService:
                 task_id=str(task.id),
                 cascade_count=cascade_count,
             )
-        # Nada mudou (raiz e subarvore ja arquivadas) -> no-op silencioso.
-
         return ArchiveResult(task=task, cascade_count=cascade_count)
 
     async def unarchive(self, *, task_id: uuid.UUID) -> ArchiveResult:
@@ -1586,7 +1527,6 @@ class TaskService:
         cascateadas = 0
         for task in stale:
             if any(task.path.startswith(f"{p}.") for p in processados):
-                # Ja foi arquivada pela cascata de um ancestral NESTA rodada.
                 continue
 
             task.is_archived = True
@@ -1629,12 +1569,8 @@ class TaskService:
         return count
 
     async def soft_delete(self, *, task_id: uuid.UUID) -> SoftDeleteResult:
-        """Soft-delete cascateado.
-
-        Apaga a task e toda a subtree. 1 linha em history para a
-        task raiz com event_metadata.cascade_count. Filhas apagadas
-        em cascade NAO geram history individual.
-        """
+        """Soft-delete da task e da subarvore; 1 linha de history so na raiz,
+        com `cascade_count`."""
         task = await self._repo.get_by_id_or_raise(task_id)
         await self._assert_visible_via_project(task)
         await self._assert_editable(task)
@@ -1683,7 +1619,7 @@ class TaskService:
 
     @staticmethod
     def _time_cabe_no_projeto(project: Project, team_id: uuid.UUID) -> bool:
-        """A regra 8 sem levantar: o `relocate` tira o projeto em vez de recusar."""
+        """`_assert_time_no_projeto` sem levantar: o `relocate` tira o projeto."""
         if project.team_id is None:
             return True
         allowed = {project.team_id} | team_scope.descendants(
@@ -1692,18 +1628,13 @@ class TaskService:
         return team_id in allowed
 
     async def _assert_visible_via_project(self, task: Task) -> None:
-        """Bloqueia leitura/escrita em task que o usuario nao enxerga.
-
-        Delega ao guard compartilhado (`task_guards`). Levanta
-        EntityNotFoundError (404), nao 403, pra nao vazar existencia.
-        """
+        """404 (nao 403) em task que o usuario nao enxerga: nao vaza existencia."""
         await self._guards.assert_visible(task)
 
     async def _assert_editable(self, task: Task) -> None:
-        """403 se o usuario ve a task mas nao pode edita-la.
+        """403 se ve mas nao edita; chamar depois de `_assert_visible_via_project`.
 
-        Chamar APOS _assert_visible_via_project. Editavel depende SO do
-        time da task -- assignment/criador nao concedem edicao.
+        So o time da task conta; responsavel e criador nao ganham edicao.
         """
         await self._guards.assert_editable(task)
 
@@ -1742,16 +1673,9 @@ class TaskService:
     def _diff_for_update(
         task: Task, command: UpdateTaskCommand
     ) -> list[HistoryEntry]:
-        """Calcula HistoryEntry list pra um update. Puro.
-
-        Regras:
-            - 0 entries se nada mudou de fato;
-            - 1 entry por campo alterado;
-            - status vira STATUS_CHANGED, nao UPDATED.
-        """
+        """Uma HistoryEntry por campo alterado; status vira STATUS_CHANGED."""
         entries: list[HistoryEntry] = []
 
-        # Title (apos strip).
         if command.title is not None:
             new_title = command.title.strip()
             if new_title and new_title != task.title:
@@ -1761,7 +1685,6 @@ class TaskService:
                     )
                 )
 
-        # Description.
         if (
             command.description is not None
             and command.description != task.description
@@ -1774,7 +1697,6 @@ class TaskService:
                 )
             )
 
-        # Priority.
         if command.priority is not None and command.priority != task.priority:
             entries.append(
                 build_field_update_entry(
@@ -1784,7 +1706,6 @@ class TaskService:
                 )
             )
 
-        # Team_id.
         if command.team_id is not None and command.team_id != task.team_id:
             entries.append(
                 build_field_update_entry(
@@ -1794,7 +1715,6 @@ class TaskService:
                 )
             )
 
-        # Status: evento dedicado.
         if command.status is not None and command.status != task.status:
             completed_changed = (
                 command.status == TaskStatus.COMPLETED
@@ -1808,8 +1728,7 @@ class TaskService:
                 )
             )
 
-        # Datas: presenca no PATCH manda (mesmo motivo do apply). Assim limpar
-        # uma data (None) tambem entra no historico (old=data, new=None).
+        # Presenca no PATCH manda: limpar uma data tambem entra no historico.
         if (
             "start_date" in command.fields_set
             and command.start_date != task.start_date

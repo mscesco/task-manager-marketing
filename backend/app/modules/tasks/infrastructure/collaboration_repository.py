@@ -1,10 +1,4 @@
-"""Repositorios de colaboracao (assignees / watchers) -- Entrega 4.
-
-Padrao: herdam BaseRepository (filtro automatico de tenant via
-`_base_select`). As tabelas tem `workspace_id` mas NAO tem `deleted_at`
--- nao ha soft-delete de assignment/watcher; remover e DELETE fisico.
-Toda query parte de `_base_select()`. Repository nao comita.
-"""
+"""Repositorios de responsaveis e seguidores. Sem soft-delete: remover e DELETE fisico."""
 
 from __future__ import annotations
 
@@ -36,7 +30,7 @@ class TaskAssignmentRepository(BaseRepository[TaskAssignment]):
     async def list_user_ids_for_tasks(
         self, task_ids: list[uuid.UUID]
     ) -> dict[uuid.UUID, list[uuid.UUID]]:
-        """assignees de VARIAS tasks em UMA query (evita N+1 no quadro).
+        """assignees de varias tasks em uma query (evita N+1 no quadro).
 
         Devolve {task_id: [user_id, ...]} com toda task pedida presente
         (lista vazia se nao tem responsavel). Ordem estavel por assigned_at.
@@ -103,8 +97,6 @@ class TaskWatcherRepository(BaseRepository[TaskWatcher]):
     model = TaskWatcher
 
     async def list_user_ids(self, task_id: uuid.UUID) -> list[uuid.UUID]:
-        # ⚠️ Por `created_at` desde a Spec 053 (B): era por `id` (UUID), uma
-        # ordem sem sentido para quem le a lista "Seguidores" na tela.
         stmt = (
             self._base_select()
             .with_only_columns(TaskWatcher.user_id)
@@ -136,7 +128,7 @@ class TaskWatcherRepository(BaseRepository[TaskWatcher]):
     async def list_user_ids_for_tasks(
         self, task_ids: list[uuid.UUID]
     ) -> dict[uuid.UUID, list[uuid.UUID]]:
-        """Seguidores de VARIAS tarefas em UMA consulta (Spec 053, B).
+        """Seguidores de varias tarefas em uma consulta.
 
         Toda tarefa pedida aparece, com lista vazia se ninguem segue.
         """

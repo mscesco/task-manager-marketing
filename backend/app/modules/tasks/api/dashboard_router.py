@@ -1,7 +1,4 @@
-"""Router /dashboard -- a tela inicial do time (Spec 058).
-
-Uma rota so, com todos os cards: a tela abre com UM pedido, e nao seis.
-"""
+"""Router /dashboard -- a tela inicial do time, todos os cards numa rota so."""
 
 from __future__ import annotations
 
@@ -40,8 +37,7 @@ class DashboardTask(BaseModel):
 
 
 class DashboardWeek(BaseModel):
-    """O resumo: a semana corrente, ou o periodo escolhido.
-    ⚠️ `start`/`end` vem daqui: a tela mostra, nao recalcula."""
+    """O resumo: a semana corrente, ou o periodo escolhido. A tela nao recalcula `start`/`end`."""
 
     start: date
     end: date
@@ -208,7 +204,7 @@ async def export_dashboard(
     start: date | None = None,
     end: date | None = None,
 ) -> Response:
-    """O painel em planilha (.xlsx), com os MESMOS filtros da tela (15/10).
+    """O painel em planilha (.xlsx), com os mesmos filtros da tela.
 
     As mesmas regras de `GET /dashboard`: o filtro de pessoa exige
     `team_workload.read` (403), e a aba de carga so vem para quem a ve.

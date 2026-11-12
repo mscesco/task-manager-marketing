@@ -1,18 +1,10 @@
-"""Dominio do task_history.
+"""Que linhas escrever em task_history, sem DB; o repository persiste.
 
-Encapsula a logica de "que linhas escrever em task_history" sem
-depender de DB. Service constroi entries puras aqui e o
-repository persiste depois.
-
-Modelo hibrido -- ver ADR 0004:
     - eventos atomicos (CREATED, MOVED, ARCHIVED, UNARCHIVED, DELETED):
-      1 linha, field_name=None, old/new_value=None, metadata com contexto;
-    - eventos de update por campo (UPDATED): 1 linha por campo;
-    - status_changed: evento dedicado.
-
-Cascata de soft-delete (ADR 0005):
-    - DELETED da raiz carrega `cascade_count` no metadata;
-    - filhas apagadas em cascade NAO geram entries individuais.
+      1 linha, field_name=None, metadata com contexto;
+    - UPDATED: 1 linha por campo;
+    - STATUS_CHANGED: evento dedicado.
+Em cascata, so a raiz ganha linha, com `cascade_count`; as filhas nao.
 """
 
 from __future__ import annotations
@@ -36,8 +28,6 @@ class TaskHistoryEventType(str, Enum):
     DELETED = "deleted"
     ASSIGNED = "assigned"
     UNASSIGNED = "unassigned"
-    # Spec 053 (D13): seguir entra no historico, revogando a ADR 0012 na parte
-    # de observador. Sem migration: `event_type` e `String(80)`.
     WATCHED = "watched"
     UNWATCHED = "unwatched"
 
@@ -54,11 +44,7 @@ class HistoryEntry:
 
 
 def _stringify(value: Any) -> Any:
-    """Converte tipos nao-serializaveis em JSON (UUID, date, datetime,
-    Enum) para representacao serializavel.
-
-    Mantem None, str, int, float, bool intocados.
-    """
+    """Converte UUID, Enum, date e datetime para forma serializavel em JSON."""
     if value is None:
         return None
     if isinstance(value, uuid.UUID):
@@ -122,7 +108,7 @@ def build_move_entry(
     old_parent_task_id: uuid.UUID | None,
     new_parent_task_id: uuid.UUID | None,
 ) -> HistoryEntry:
-    """Evento atomico de move. project_id pode ser None (avulsa, Spec 022)."""
+    """Evento atomico de move. project_id pode ser None (avulsa)."""
     return HistoryEntry(
         event_type=TaskHistoryEventType.MOVED,
         metadata={
@@ -142,16 +128,8 @@ def build_archived_entry(
 ) -> HistoryEntry:
     """Evento de arquivamento.
 
-    `automated=True` (varredura de auto-arquivamento, Spec 013) marca o
-    metadata para a auditoria distinguir acao humana de job. Chamada sem
-    args permanece identica ao comportamento anterior (metadata None).
-
-    ⚠️ `cascade_count` (05/08) so entra no metadata quando e MAIOR QUE ZERO.
-    Arquivar folha continua gerando `metadata=None`, identico ao que sempre
-    foi -- a auditoria antiga nao passa a ter um campo novo com 0 em toda
-    linha, e as asercoes que ja existiam continuam validas. Mesma forma do
-    `build_deleted_entry`: a contagem NAO inclui a propria task, e as filhas
-    cascateadas NAO ganham linha propria de history.
+    `automated=True` marca acao do job de auto-arquivamento. `cascade_count`
+    (descendentes, sem a propria task) so entra quando > 0; sem nada, metadata None.
     """
     metadata: dict[str, Any] | None = None
     if automated:
@@ -184,7 +162,7 @@ def build_deleted_entry(*, cascade_count: int) -> HistoryEntry:
 def build_assigned_entry(
     *, user_id: uuid.UUID, assigned_by: uuid.UUID
 ) -> HistoryEntry:
-    """Evento de designacao de responsavel (Entrega 4 -- ADR 0012)."""
+    """Evento de designacao de responsavel."""
     return HistoryEntry(
         event_type=TaskHistoryEventType.ASSIGNED,
         metadata={
@@ -195,7 +173,7 @@ def build_assigned_entry(
 
 
 class MotivoDoSeguidor(str, Enum):
-    """Por que alguem entrou ou saiu como seguidor (Spec 053, §6.9)."""
+    """Por que alguem entrou ou saiu como seguidor."""
 
     MANUAL = "manual"  # o gesto de seguir / deixar de seguir / por / tirar
     CREATED_WITH = "created_with"  # escolhido no modal de criar tarefa
@@ -205,11 +183,7 @@ class MotivoDoSeguidor(str, Enum):
 def build_watched_entry(
     *, user_id: uuid.UUID, by: uuid.UUID, reason: MotivoDoSeguidor
 ) -> HistoryEntry:
-    """Alguem passou a seguir a tarefa (Spec 053, D13).
-
-    `by_self` separa "passou a seguir" de "foi posto para seguir" sem que a
-    leitura precise comparar o `user_id` da linha com o alvo.
-    """
+    """Alguem passou a seguir a tarefa. `by_self` separa "seguiu" de "foi posto"."""
     return HistoryEntry(
         event_type=TaskHistoryEventType.WATCHED,
         metadata={
@@ -223,12 +197,9 @@ def build_watched_entry(
 def build_unwatched_entry(
     *, user_id: uuid.UUID, by: uuid.UUID, reason: MotivoDoSeguidor
 ) -> HistoryEntry:
-    """Alguem deixou de seguir a tarefa (Spec 053, D13).
+    """Alguem deixou de seguir a tarefa.
 
-    ⚠️ Com `reason=LOST_ACCESS`, `by` e quem fez a mudanca que tirou o alcance
-    (trocou o time da tarefa, ou o vinculo da pessoa) -- e `by_self` e falso
-    mesmo que tenha sido a propria pessoa, porque ela nao deixou de seguir:
-    foi tirada.
+    Com `LOST_ACCESS`, `by` e quem tirou o alcance e `by_self` e sempre falso.
     """
     return HistoryEntry(
         event_type=TaskHistoryEventType.UNWATCHED,
@@ -241,7 +212,7 @@ def build_unwatched_entry(
 
 
 def build_unassigned_entry(*, user_id: uuid.UUID) -> HistoryEntry:
-    """Evento de remocao de responsavel (Entrega 4 -- ADR 0012)."""
+    """Evento de remocao de responsavel."""
     return HistoryEntry(
         event_type=TaskHistoryEventType.UNASSIGNED,
         metadata={"user_id": _stringify(user_id)},
