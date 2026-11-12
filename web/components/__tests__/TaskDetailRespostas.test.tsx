@@ -58,6 +58,7 @@ const TASK: Task = {
   depth: 0,
   position: 0,
   completed_at: null,
+  terminal_since: null,
   is_archived: false,
   created_by: OUTRA,
   created_at: "2026-10-22T12:00:00Z",

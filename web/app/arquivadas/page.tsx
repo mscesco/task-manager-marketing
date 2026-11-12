@@ -181,7 +181,7 @@ function Arquivadas() {
                 <th scope="col" className="label px-3 py-2.5 text-left">Tarefa</th>
                 <th scope="col" className="label px-3 py-2.5 text-left">Projeto</th>
                 <th scope="col" className="label px-3 py-2.5 text-left">Coluna</th>
-                <th scope="col" className="label px-3 py-2.5 text-left">Concluída em</th>
+                <th scope="col" className="label px-3 py-2.5 text-left">Encerrada em</th>
                 <th scope="col" className="label px-3 py-2.5 text-left">Responsável</th>
                 <th scope="col" className="px-3 py-2.5"><span className="sr-only">Ações</span></th>
               </tr>
@@ -286,6 +286,7 @@ function LinhaArquivada({
   const [confirmar, setConfirmar] = useState(false);
   const [busy, setBusy] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  const encerradaEm = t.completed_at ?? t.terminal_since;
 
   async function reativar() {
     setBusy(true);
@@ -337,7 +338,7 @@ function LinhaArquivada({
           </Badge>
         </td>
         <td className="whitespace-nowrap px-3 py-2 align-middle text-ink-soft">
-          {t.completed_at ? dataParaTela(diaNoWorkspace(t.completed_at)) : <span className="muted">—</span>}
+          {encerradaEm ? dataParaTela(diaNoWorkspace(encerradaEm)) : <span className="muted">—</span>}
         </td>
         <td className="px-3 py-2 align-middle">
           {responsaveis.length === 0 ? (

@@ -146,6 +146,8 @@ class TaskResponse(BaseModel):
     # `None` = vence no dia. Hora sem data e recusada pelo service (422).
     due_time: time | None
     completed_at: datetime | None
+    # Quando entrou em coluna terminal (concluida ou cancelada).
+    terminal_since: datetime | None
     is_archived: bool
     created_by: uuid.UUID
     created_at: datetime
