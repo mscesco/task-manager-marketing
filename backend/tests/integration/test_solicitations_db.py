@@ -417,6 +417,17 @@ async def test_http_publico_sem_form_id_e_recusado(db) -> None:
     [
         {"requester_name": None},
         {"requester_name": "M"},
+        {"requester_name": "   "},
+        {"requester_name": " M "},
+        {
+            "items": [
+                {
+                    "category": "email",
+                    "summary": "   ",
+                    "answers": [{"label": "O que deseja comunicar?", "value": "x"}],
+                }
+            ]
+        },
         {"requester_email": None},
         {"requester_email": "nao-e-email"},
     ],

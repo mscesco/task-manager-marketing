@@ -8,8 +8,9 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, StringConstraints
 
 
 class AnswerItem(BaseModel):
@@ -24,7 +25,10 @@ class SolicitationItemRequest(BaseModel):
     """Uma categoria preenchida dentro do envio."""
 
     category: str = Field(min_length=1, max_length=60)
-    summary: str = Field(min_length=1, max_length=500)
+    # O tamanho conta depois do strip: so espacos e vazio.
+    summary: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=500)
+    ]
     answers: list[AnswerItem] = Field(min_length=1, max_length=60)
 
 
@@ -39,7 +43,9 @@ class PublicSolicitationCreateRequest(BaseModel):
     #: De qual formulario veio o envio; conferido contra o workspace do slug no servico.
     form_id: uuid.UUID
 
-    requester_name: str = Field(min_length=2, max_length=255)
+    requester_name: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=2, max_length=255)
+    ]
     requester_email: EmailStr
     # Opcionais aqui: quem decide se sao exigidos e o formulario, no servico.
     requester_phone: str | None = Field(default=None, max_length=50)
