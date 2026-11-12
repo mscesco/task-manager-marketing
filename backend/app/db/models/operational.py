@@ -1,12 +1,8 @@
-"""Models ORM operacionais: project e task.
+"""Models de project e task.
 
-task e o agregado central do sistema. Pontos de atencao:
-    - hierarquia via parent_task_id + LTREE (path) + depth;
-    - subtask NAO tem tabela propria -- tudo e task;
-    - ciclos indiretos (A->B->C->A) sao validados na
-      service layer usando LTREE (o banco so impede
-      self-reference direta);
-    - soft delete + archive coexistem.
+Subtarefa e task com parent_task_id; hierarquia em LTREE (`path`) + `depth`.
+O banco so impede auto-referencia direta: ciclos indiretos sao validados no
+servico.
 """
 
 from __future__ import annotations
@@ -42,13 +38,7 @@ from app.db.models.enums import PriorityLevel, ProjectStatus, TaskStatus
 
 
 class Ltree(UserDefinedType):
-    """Tipo LTREE do PostgreSQL (extensao ltree).
-
-    Mapeado como string no lado Python. Operacoes de
-    hierarquia (ancestral, descendente, @>, <@) sao feitas
-    com SQL textual na service/repository de task -- nao
-    precisamos de um ORM-type sofisticado para a foundation.
-    """
+    """Tipo LTREE, string no Python; os operadores ficam em SQL textual no repository."""
 
     cache_ok = True
 
@@ -59,14 +49,7 @@ class Ltree(UserDefinedType):
 class Project(
     UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, ArchivableMixin, Base
 ):
-    """Projeto. Container de tasks. Pertence a um TIME.
-
-    ⚠️⚠️ `is_personal` SAIU EM 10/09/2026, com o projeto pessoal (ADR 0001,
-    marcada como revertida). Ele era o unico jeito de um projeto existir SEM
-    time -- e por isso o CHECK abaixo tinha um `is_personal OR` na frente.
-    Sem ele a invariante fica mais simples e mais forte: **projeto vivo tem
-    time**, sem excecao.
-    """
+    """Projeto: container de tasks. Projeto vivo sempre tem time."""
 
     __tablename__ = "project"
     __table_args__ = (
@@ -77,15 +60,13 @@ class Project(
             ondelete="RESTRICT",
             name="project_created_by",
         ),
-        # Entrega 3: time dono do projeto (FK composta).
         ForeignKeyConstraint(
             ["team_id", "workspace_id"],
             ["team.id", "team.workspace_id"],
             ondelete="RESTRICT",
             name="project_team",
         ),
-        # Entrega 3 (ADR 0007): projeto exige time. So o soft-deleted fica
-        # isento -- o `deleted_at` cobre a linha antiga que ja perdeu o time.
+        # So o projeto apagado pode ficar sem time.
         CheckConstraint(
             "team_id IS NOT NULL OR deleted_at IS NOT NULL",
             name="project_team_required_when_common",
@@ -117,7 +98,7 @@ class Project(
         DateTime(timezone=True), nullable=True
     )
     created_by: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
-    # Entrega 3: time dono do projeto. Nulo no pessoal (ver CHECK).
+    # Nulo so em projeto apagado (ver CHECK).
     team_id: Mapped[uuid.UUID | None] = mapped_column(
         PG_UUID(as_uuid=True), nullable=True
     )
@@ -158,18 +139,13 @@ class Task(
             "parent_task_id IS NULL OR parent_task_id <> id",
             name="task_no_self_parent",
         ),
-        # Spec 035: tenancy do quadro, no mesmo formato dos outros.
         ForeignKeyConstraint(
             ["board_id", "workspace_id"],
             ["board.id", "board.workspace_id"],
             ondelete="RESTRICT",
             name="task_board",
         ),
-        # ⚠️ A FK COMPOSTA E O PONTO, nao detalhe: ela torna impossivel NO
-        # BANCO que uma tarefa aponte pra coluna de OUTRO quadro. Sem ela esse
-        # estado e questao de tempo, nao aparece na tela, e entra na mesma
-        # familia de `path`/`depth` -- corrupcao sem sintoma e sem conserto
-        # por deploy.
+        # Composta: a tarefa nao pode apontar para coluna de outro quadro.
         ForeignKeyConstraint(
             ["column_id", "board_id"],
             ["board_column.id", "board_column.board_id"],
@@ -185,7 +161,7 @@ class Task(
         ForeignKey("workspace.id", ondelete="RESTRICT"),
         nullable=False,
     )
-    # Entrega 3: nullable -> tarefa avulsa (sem projeto). ADR 0006.
+    # Nulo = tarefa avulsa (sem projeto).
     project_id: Mapped[uuid.UUID | None] = mapped_column(
         PG_UUID(as_uuid=True), nullable=True
     )
@@ -195,39 +171,19 @@ class Task(
     team_id: Mapped[uuid.UUID | None] = mapped_column(
         PG_UUID(as_uuid=True), nullable=True
     )
-    # Spec 035, fatia 3b: OBRIGATORIOS desde a `0011`. Toda tarefa vive num
-    # quadro e numa coluna.
-    #
-    # ⚠️ NASCERAM NULLABLE na `0008` DE PROPOSITO, e a trava so veio duas
-    # migrations depois. Criar ja obrigatorio quebra em qualquer banco com
-    # dados -- e, pior, trava a tabela contra o PROPRIO codigo enquanto ele
-    # ainda nao preenche o campo. A primeira versao da `0008` fez isso e
-    # derrubou 196 testes de uma vez. Expande/contrai: coluna e backfill numa
-    # migration, trava depois que o codigo escreve.
-    #
-    # ⚠️ Esta declaracao tem de acompanhar a `0011`. Deixar `| None` aqui com
-    # NOT NULL no banco poe o portao de drift vermelho para sempre -- o
-    # autogenerate propoe `alter_column(..., nullable=True)` toda vez, e
-    # portao que mente vira ruido que as pessoas aprendem a ignorar.
+    # Toda tarefa vive num quadro e numa coluna.
     board_id: Mapped[uuid.UUID] = mapped_column(
         PG_UUID(as_uuid=True), nullable=False
     )
     column_id: Mapped[uuid.UUID] = mapped_column(
         PG_UUID(as_uuid=True), nullable=False
     )
-    # ⚠️ RELOGIO DO ARQUIVAMENTO (Spec 035, D6). Gravado quando a tarefa ENTRA
-    # numa coluna terminal, limpo quando sai. Nao e refatoracao: quando a
-    # semantica de uma coluna puder ser editada, marcar "Aprovacao" como
-    # terminal numa terca a tarde faria o job arquivar de madrugada tudo que
-    # esta parado ali ha mais de 20 dias -- de uma vez, sem aviso. E o formato
-    # do incidente das 177 emissoes. Com esta coluna, mudar a semantica grava
-    # `now()` e o relogio recomeca.
+    # Relogio do arquivamento: gravado quando a tarefa entra em coluna
+    # terminal, limpo quando sai. Tornar uma coluna terminal reinicia a
+    # contagem, em vez de arquivar de uma vez tudo o que ja estava parado ali.
     terminal_since: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
-        # ⚠️ O COMMENT esta no BANCO (migration 0008) e por isso precisa ser
-        # DECLARADO aqui, palavra por palavra -- senao o autogenerate propoe
-        # apagar a documentacao a cada rodada e o portao de drift nunca fecha.
         comment=(
             "Spec 035: quando a tarefa ENTROU em coluna terminal. Relogio "
             "do arquivamento automatico -- editar a semantica de uma coluna "
@@ -259,8 +215,7 @@ class Task(
     depth: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default="0", default=0
     )
-    # path LTREE: NOT NULL no schema. Setado pela service de task
-    # ao criar/mover a task.
+    # Setado pelo servico de task ao criar/mover.
     path: Mapped[str] = mapped_column(
         Ltree(),
         nullable=False,
@@ -268,34 +223,15 @@ class Task(
     )
     start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
-    # Spec 038, fatia B: a HORA do prazo. `None` = "vence no dia", que e o
-    # comportamento de sempre e o de 100% das 1085 tarefas de 18/08.
-    #
-    # ⚠️ COLUNA SEPARADA, E NAO `due_date` VIRANDO `timestamptz`. Horario e
-    # OPCIONAL (decisao da Camila, 18/08), e um timestamp unico nao distingue
-    # "vence dia 19" de "vence dia 19 a meia-noite" -- sao dois estados de
-    # produto e um valor so. Aqui "sem hora" E o `NULL`, e nao um valor
-    # especial.
-    #
-    # ⚠️ E FOI ISSO QUE EVITOU MEXER EM 1085 LINHAS. Trocar o tipo de `due_date`
-    # exigiria backfill (e `00:00` poria toda tarefa com prazo hoje em atraso de
-    # manha), mais a troca de tipo dos DOIS campos de dedup abaixo -- e se eles
-    # divergissem de `due_date`, o job passaria a notificar todo dia, todas as
-    # tarefas com prazo, para as 26 pessoas. Coluna nova e nula nao faz nada
-    # disso: o codigo velho nunca pergunta por ela.
-    #
-    # ⚠️ `Time` SEM FUSO, E ISSO E DELIBERADO. E relogio de parede -- "18:00" e
-    # o que a pessoa digita. O fuso entra UMA vez, na hora de comparar, e e
-    # `America/Sao_Paulo` (decisao da Camila, 18/08) -- o MESMO que o
-    # `DeadlineNotifyService` ja usa desde a Spec 023 (D7). A tela e o job
-    # passam a concordar por construcao.
+    # Hora opcional do prazo; `None` = vence no dia (um timestamp unico nao
+    # distinguiria "dia 19" de "dia 19 a meia-noite"). Relogio de parede, sem
+    # fuso: a comparacao usa America/Sao_Paulo, como o `DeadlineNotifyService`.
     due_time: Mapped[time | None] = mapped_column(Time, nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
-    # Spec 023: dedup do aviso de prazo. Cada coluna guarda o due_date pra qual
-    # aquele aviso JA saiu. O job so notifica se difere do due_date atual --
-    # se o prazo mudar, reabilita sozinho (self-healing). So o job escreve aqui.
+    # Dedup do aviso de prazo: o due_date para o qual o aviso ja saiu. Mudou o
+    # prazo, reabilita sozinho. So o job escreve aqui.
     due_soon_notified_for: Mapped[date | None] = mapped_column(
         Date,
         nullable=True,

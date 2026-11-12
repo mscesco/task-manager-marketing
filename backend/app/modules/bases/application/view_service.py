@@ -1,13 +1,8 @@
-"""Visoes da Base (Spec 056, fatia C) -- salvas e COMPARTILHADAS (D14).
+"""Visoes da Base, salvas e compartilhadas por todos que a leem.
 
-`config` (spec §8): `filters`, `sorts`, `group_by`, `date_column`,
-`hidden_columns`, `column_order`. O servidor confere a FORMA e as chaves; o
-significado (filtrar, ordenar, agrupar) e do navegador, que tem a base inteira
-(§8.1).
-
-⚠️ `group_by` e `date_column` NAO sao obrigatorios na criacao, embora o quadro
-e o calendario precisem deles: a visao nasce pelo "+ Visao" e a pessoa escolhe
-a coluna em seguida. Sem ela, a tela pede a escolha em vez de desenhar.
+O servidor confere so a forma e as chaves do `config`; filtrar, ordenar e
+agrupar e do navegador. `group_by` e `date_column` nao sao obrigatorios na
+criacao: a pessoa escolhe a coluna depois.
 """
 
 from __future__ import annotations
@@ -33,11 +28,10 @@ from app.shared.exceptions.base import (
 )
 
 _LISTAS = ("filters", "sorts", "hidden_columns", "column_order")
-#: `frozen_column` (fatia I): "Congelar" -- a coluna ATE a qual a tabela fica
-#: presa na rolagem horizontal. Ausente = so o titulo.
+#: `frozen_column`: a coluna ate a qual a tabela fica presa na rolagem
+#: horizontal. Ausente = so o titulo.
 _TEXTOS = ("group_by", "date_column", "frozen_column")
-#: Teto do `config` (auditoria de 21/10): ele vai para TODO leitor da base, e
-#: um `filters` de megabytes gravado por um PATCH deixaria a tela de todos lenta.
+#: O `config` vai para todo leitor da base; sem teto, deixaria a tela lenta.
 CONFIG_MAX_BYTES = 20_000
 
 
@@ -67,7 +61,7 @@ def clean_config(config: dict[str, Any]) -> dict[str, Any]:
 
 
 def view_data(v: BaseView) -> dict[str, Any]:
-    """O que o diario guarda para RECRIAR uma visao (spec §9.2)."""
+    """O que o diario guarda para recriar uma visao."""
     return {
         "name": v.name,
         "layout": v.layout,
@@ -151,7 +145,7 @@ class ViewService:
         require_verb("base_view.delete", base.team_id)
         visao = await self._visao(base.id, view_id)
         if visao.is_default:
-            # D25: a base sempre tem pelo menos uma visao de tabela.
+            # A base sempre tem pelo menos uma visao de tabela.
             raise BusinessRuleError(
                 "A visao padrao nao se apaga.", details={"view_id": str(view_id)}
             )

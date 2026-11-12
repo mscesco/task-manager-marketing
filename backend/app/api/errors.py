@@ -1,9 +1,4 @@
-"""Traducao de excecoes de dominio para respostas HTTP.
-
-ESTE E O UNICO LUGAR que conhece ao mesmo tempo as
-excecoes de dominio E o HTTP. As camadas de dominio,
-aplicacao e repositories lancam AppError (e subclasses) sem
-saber que existe HTTP -- aqui isso vira status code + JSON.
+"""Traducao de AppError (e subclasses) para status HTTP + JSON.
 
 Formato de erro (estavel, para o frontend consumir)::
 
@@ -72,10 +67,7 @@ def _error_body(
             "message": message,
             "details": details or {},
         },
-        # ⚠️ O ID QUE O MIDDLEWARE GEROU, e nao o cabecalho da REQUISICAO
-        # (auditoria de 16/10). O front nunca manda `X-Request-ID`, entao o
-        # corpo saia sempre `null` -- e no 500 nem o cabecalho de resposta
-        # existia: nada ligava o erro da tela a linha do log.
+        # O id gerado pelo middleware; o front nao manda `X-Request-ID`.
         "request_id": getattr(request.state, "request_id", None),
     }
 
@@ -126,9 +118,7 @@ async def _validation_error_handler(
 async def _integrity_error_handler(
     request: Request, exc: IntegrityError
 ) -> JSONResponse:
-    """Dois pedidos iguais ao mesmo tempo (2 workers) passam na consulta "ja
-    existe?" e o segundo estoura no indice (auditoria de 21/10). E conflito,
-    nao defeito do servidor: 409, sem stack no log."""
+    """Corrida entre dois pedidos iguais que estoura no indice unico: 409."""
     logger.warning("integrity_error", detail=str(exc.orig))
     return JSONResponse(
         status_code=status.HTTP_409_CONFLICT,
@@ -144,11 +134,7 @@ async def _integrity_error_handler(
 async def _unhandled_error_handler(
     request: Request, exc: Exception
 ) -> JSONResponse:
-    """Rede de seguranca: qualquer excecao nao prevista vira 500 limpo.
-
-    NUNCA vaza stacktrace para o cliente -- o detalhe vai
-    para o log (com request_id), a resposta e generica.
-    """
+    """Excecao nao prevista vira 500 generico; o stacktrace so vai para o log."""
     logger.exception("unhandled_exception")
     corpo = _error_body(
         code="internal_error",

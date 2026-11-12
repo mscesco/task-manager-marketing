@@ -1,11 +1,8 @@
-"""Contratos HTTP da Base (Spec 056).
+"""Contratos HTTP da Base.
 
-⚠️⚠️ OS CADEADOS (`can_*`) SAO DO SERVIDOR, POR BASE (spec §5.6). Hoje todo
-mundo da arvore edita celula, e seria tentador a tela mostrar tudo. Se fizesse,
-no dia em que um verbo fosse desligado para alguem a tela continuaria
-oferecendo o botao -- e o servidor recusaria. E o defeito que a Spec 044 deixou
-("um botao que a tela oferece e o servidor recusa"). Cada campo e a MESMA
-pergunta do servico: `has_permission_in(verbo, team_id)`.
+Os cadeados (`can_*`) vem do servidor, por base, para a tela nunca oferecer um
+botao que o servidor recusa. Cada um e a mesma pergunta do servico:
+`has_permission_in(verbo, team_id)`.
 """
 
 from __future__ import annotations
@@ -19,17 +16,15 @@ from pydantic import BaseModel, Field, computed_field
 from app.core.tenant import can_in
 from app.modules.bases.domain.columns import NAME_MAX, live_options
 
-#: ⚠️ Sem teto, `position` passava direto para uma coluna `integer`, e um
-#: numero alem de 2^31 virava 500 do asyncpg (revisao de 08/10). O piso (1) e
-#: do servico, que da a mensagem certa.
+#: Teto para nao estourar a coluna `integer`; o piso (1) e do servico.
 POSITION_MAX = 10_000
 
-#: O texto do topo (D15) -- generoso, como a descricao de tarefa.
+#: O texto do topo, generoso como a descricao de tarefa.
 _DESCRIPTION_MAX = 50_000
 
 
 class _Cadeados(BaseModel):
-    """Os botoes de UMA base, para quem pergunta."""
+    """Os botoes de uma base, para quem pergunta."""
 
     team_id: uuid.UUID
 
@@ -51,8 +46,8 @@ class OptionResponse(BaseModel):
 
 
 class ColumnResponse(BaseModel):
-    """Uma coluna viva. ⚠️ As opcoes APAGADAS nao saem: a celula que guarda o id
-    de uma delas aparece vazia (D17)."""
+    """Uma coluna viva. As opcoes apagadas nao saem: a celula que guarda o id
+    de uma delas aparece vazia."""
 
     id: uuid.UUID
     name: str
@@ -90,7 +85,7 @@ class ViewResponse(BaseModel):
 
 
 class BaseSummaryResponse(_Cadeados):
-    """Uma base na LISTA (menu lateral). Sem colunas: a lista nao as desenha."""
+    """Uma base na lista (menu lateral). Sem colunas: a lista nao as desenha."""
 
     model_config = {"from_attributes": True}
 
@@ -100,7 +95,7 @@ class BaseSummaryResponse(_Cadeados):
 
 
 class BaseTrashItemResponse(BaseModel):
-    """Uma base na LIXEIRA (D5): quando foi excluida, por quem, e ate quando
+    """Uma base na lixeira: quando foi excluida, por quem, e ate quando
     volta. `can_restore` e a mesma pergunta do `restore`."""
 
     id: uuid.UUID
@@ -117,7 +112,7 @@ class BaseTrashItemResponse(BaseModel):
 
 
 class BaseResponse(_Cadeados):
-    """A base aberta: colunas, visoes e todos os cadeados (spec §5.6)."""
+    """A base aberta: colunas, visoes e todos os cadeados."""
 
     id: uuid.UUID
     name: str
@@ -212,14 +207,13 @@ class ColumnCreateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=NAME_MAX)
     type: str
     options: list[OptionRequest] | None = None
-    #: Fatia I ("Inserir a esquerda/direita"): a posicao da coluna nova; as de
-    #: la em diante andam uma casa. Ausente = no fim.
+    #: A posicao da coluna nova; as de la em diante andam uma casa. Ausente = no fim.
     position: int | None = Field(default=None, le=POSITION_MAX)
 
 
 class RowResponse(BaseModel):
     """Uma linha. `values` e `{id da coluna: valor}`, cru: a chave de uma coluna
-    APAGADA pode estar la (o desfazer precisa dela), e a tela so desenha as
+    apagada pode estar la (o desfazer precisa dela), e a tela so desenha as
     colunas vivas que recebeu da base."""
 
     model_config = {"from_attributes": True}
@@ -235,8 +229,7 @@ class RowResponse(BaseModel):
 class RowListResponse(BaseModel):
     items: list[RowResponse]
     total: int
-    #: O teto (5.000) e o ponto do aviso (4.000) -- spec §8.1. A tela mostra o
-    #: aviso a quem tem `base.update` quando `total >= warning_at`.
+    #: A tela mostra o aviso a quem tem `base.update` quando `total >= warning_at`.
     limit: int
     warning_at: int
 
@@ -246,7 +239,7 @@ class RowCreateRequest(BaseModel):
 
 
 class RowUpdateRequest(BaseModel):
-    """As celulas de UMA linha. `null` esvazia a celula."""
+    """As celulas de uma linha. `null` esvazia a celula."""
 
     values: dict[str, Any]
 
@@ -257,15 +250,12 @@ class CellRequest(BaseModel):
     value: Any = None
 
 
-#: Celulas num lote. ⚠️ A tela confere o MESMO numero antes de mandar
-#: (`MAX_CELULAS_COLADAS` em `web/lib/baseClipboard.ts`): com 5.000, colar
-#: 300 linhas x 20 colunas falhava inteiro com erro em ingles.
+#: Celulas num lote. Tem de bater com `MAX_CELULAS_COLADAS` em `web/lib/baseClipboard.ts`.
 CELLS_BATCH_LIMIT = 50_000
 
 
 class CellsUpdateRequest(BaseModel):
-    """Varias celulas, de varias linhas, como UMA acao -- colar, ou arrastar um
-    card que muda mais de uma celula. Um Ctrl+Z desfaz o grupo."""
+    """Varias celulas, de varias linhas, como uma acao: um Ctrl+Z desfaz o grupo."""
 
     cells: list[CellRequest] = Field(min_length=1, max_length=CELLS_BATCH_LIMIT)
 
@@ -283,9 +273,8 @@ class ViewUpdateRequest(BaseModel):
 
 
 class UndoResponse(BaseModel):
-    """`applied`: aconteceu. `conflict`: recusado porque alguem mexeu depois --
-    a tela avisa, e o proximo Ctrl+Z tenta a acao anterior. Os dois falsos: nao
-    havia nada. ⚠️ A tela RECARREGA a base depois de um `applied`."""
+    """`applied`: aconteceu. `conflict`: recusado porque alguem mexeu depois (o
+    proximo Ctrl+Z tenta a acao anterior). Os dois falsos: nao havia nada."""
 
     applied: bool
     conflict: bool
@@ -295,7 +284,7 @@ class UndoResponse(BaseModel):
 class ColumnUpdateRequest(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=NAME_MAX)
     type: str | None = None
-    #: A lista VIVA inteira, na ordem da tela. Sumir daqui NAO apaga (422).
+    #: A lista viva inteira, na ordem da tela. Sumir daqui nao apaga (422).
     options: list[OptionRequest] | None = None
     position: int | None = Field(default=None, le=POSITION_MAX)
     width: int | None = None

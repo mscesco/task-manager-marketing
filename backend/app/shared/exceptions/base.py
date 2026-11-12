@@ -1,10 +1,4 @@
-"""Hierarquia de excecoes da aplicacao.
-
-PRINCIPIO: estas excecoes NAO conhecem FastAPI nem HTTP.
-Sao excecoes de dominio/aplicacao puras. A traducao para
-respostas HTTP acontece em um unico lugar -- os exception
-handlers em app.api.errors -- mantendo as camadas de
-dominio e aplicacao desacopladas do framework web.
+"""Excecoes da aplicacao, sem HTTP: a traducao fica em app.api.errors.
 
 Hierarquia::
 
@@ -20,9 +14,7 @@ Hierarquia::
     +-- InfrastructureError       (falha tecnica)
         +-- MissingTenantContextError
 
-Cada excecao carrega um `code` estavel (string) que vai
-para o JSON de erro -- o frontend pode reagir a ele sem
-depender de mensagens humanas.
+O `code` e estavel e vai no JSON de erro, para o front reagir sem ler a mensagem.
 """
 
 from __future__ import annotations
@@ -108,23 +100,15 @@ class BusinessRuleError(DomainError):
 
 
 class PasswordChangeRequiredError(DomainError):
-    """Conta com senha provisoria pendente de troca (Entrega 7, ADR 0020).
-
-    O token e valido (nao e 401) e nao falta permissao (nao e 403): o
-    ESTADO da conta impede a operacao ate a troca. -> HTTP 409.
-    """
+    """Senha provisoria pendente de troca: e o estado da conta, nao 401/403. -> HTTP 409."""
 
     code = "password_change_required"
     message = "Troca de senha obrigatoria antes de prosseguir."
 
 
 class RateLimitError(AppError):
-    """Limite de requisicoes excedido (anti brute-force). -> HTTP 429.
-
-    Nao e erro de dominio nem de auth: e um freio de borda. Carrega
-    `retry_after` (segundos) em details -- o handler usa para o header
-    Retry-After. Mensagem generica de proposito (nao revela o alvo).
-    """
+    """Limite de tentativas excedido. -> HTTP 429 com Retry-After (de `details`).
+    Mensagem generica para nao revelar o alvo."""
 
     code = "rate_limited"
     message = "Muitas tentativas. Tente novamente em instantes."
@@ -168,12 +152,7 @@ class InfrastructureError(AppError):
 
 
 class MissingTenantContextError(InfrastructureError):
-    """Tentativa de operar dados sem contexto de tenant.
-
-    Lancada por app.core.tenant.require_tenant(). Quase sempre
-    indica um BUG (acesso a dados fora de request/job valido),
-    nao um erro do usuario -- por isso vira HTTP 500.
-    """
+    """Dados acessados sem contexto de tenant (`require_tenant`). E bug -> HTTP 500."""
 
     code = "missing_tenant_context"
     message = "Contexto de tenant ausente."

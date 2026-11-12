@@ -1,13 +1,8 @@
-"""Contagem dos freios de tentativa (auditoria de 11/11, item 10).
+"""Contagem dos freios de tentativa (`core/rate_limit.py`), no banco para
+valer entre os workers.
 
-Os freios moravam na memoria de cada processo, e producao sobe DOIS workers:
-cada um contava sozinho, o limite real era ate o dobro do configurado, e todo
-deploy zerava a contagem. Aqui a contagem e uma so, no banco.
-
-Uma linha por tentativa que conta, como os timestamps da janela deslizante
-em memoria. SEM tenant: a chave ja carrega o que separa (e-mail + workspace,
-id da pessoa ou IP), e as rotas publicas nem tem workspace. A tabela fica do
-tamanho da janela -- cada registro novo apaga os vencidos do mesmo balde.
+Uma linha por tentativa. Sem tenant: a chave ja separa (e-mail + workspace,
+id da pessoa ou IP). Cada registro novo apaga os vencidos do balde.
 """
 
 from __future__ import annotations

@@ -1,13 +1,8 @@
-"""Linhas da Base (Spec 056, fatia C).
+"""Linhas da Base.
 
-⚠️⚠️ EDITAR GRAVA SO A CELULA (spec §6): `values || {col: valor}`, e nunca a
-linha inteira. Duas pessoas em celulas diferentes da mesma linha nao se
-atropelam; na mesma celula vale a ultima gravacao (o ao vivo da fatia G mostra
-para as duas).
-
-⚠️ COLAR VARIAS CELULAS (ou arrastar um card que muda mais de uma) E UMA ACAO
-SO no diario: um Ctrl+Z desfaz o grupo inteiro (spec §9.2). Por isso
-`update_cells` recebe uma lista, e a rota de uma linha so e o caso de uma.
+Editar grava so a celula, nunca a linha inteira: duas pessoas em celulas
+diferentes da mesma linha nao se atropelam. Colar varias celulas e uma acao so
+no diario (um Ctrl+Z desfaz o grupo), por isso `update_cells` recebe uma lista.
 """
 
 from __future__ import annotations
@@ -38,9 +33,8 @@ from app.shared.exceptions.base import (
     ValidationError,
 )
 
-#: O teto de linhas por base (spec §8.1, D23). Filtro e ordenacao acontecem no
-#: navegador com a base inteira carregada; passou disso, o filtro vai para o
-#: servidor, numa spec propria. O aviso dos 4.000 e da tela (fatia E).
+#: O teto de linhas por base: filtro e ordenacao acontecem no navegador com a
+#: base inteira carregada.
 ROW_LIMIT = 5_000
 ROW_WARNING = 4_000
 
@@ -87,9 +81,8 @@ class RowService:
     async def create_rows(
         self, base_id: uuid.UUID, values_list: list[dict[str, Any]]
     ) -> list[BaseRow]:
-        """Varias linhas numa ACAO so do diario (Spec 057, 15/10): colar alem
-        da ultima linha cria as que faltam, e um Ctrl+Z desfaz a criacao toda --
-        o mesmo `rows.import` da importacao."""
+        """Varias linhas numa acao so do diario (`rows.import`): colar alem da
+        ultima linha cria as que faltam, e um Ctrl+Z desfaz a criacao toda."""
         base = await visible_base(self._bases, base_id)
         require_verb("base_row.create", base.team_id)
         if not values_list:
@@ -125,7 +118,7 @@ class RowService:
     async def update_row(
         self, base_id: uuid.UUID, row_id: uuid.UUID, values: dict[str, Any]
     ) -> BaseRow:
-        """As celulas de UMA linha -- o caso de um de `update_cells`. Corpo vazio
+        """As celulas de uma linha: o caso de um de `update_cells`. Corpo vazio
         nao grava nada, mas passa pelas mesmas perguntas (404, 403)."""
         cells = []
         for chave, valor in values.items():
@@ -150,7 +143,7 @@ class RowService:
     async def update_cells(
         self, base_id: uuid.UUID, cells: list[CellWrite]
     ) -> list[BaseRow]:
-        """Grava as celulas dadas, de uma ou mais linhas, como UMA acao."""
+        """Grava as celulas dadas, de uma ou mais linhas, como uma acao."""
         base = await visible_base(self._bases, base_id)
         require_verb("base_row.update", base.team_id)
         if not cells:
@@ -164,8 +157,7 @@ class RowService:
         for c in cells:
             por_linha.setdefault(c.row_id, {})[str(c.column_id)] = c.value
 
-        # ⚠️ AS COLUNAS E AS PESSOAS SAO LIDAS UMA VEZ POR PEDIDO (revisao de
-        # 08/10): eram uma consulta por linha, e uma colagem pode ter 5.000.
+        # Colunas e pessoas lidas uma vez por pedido: uma colagem pode ter 5.000 linhas.
         colunas = await self._colunas_por_id(base)
         limpos_por_linha: dict[uuid.UUID, dict[str, Any]] = {}
         pessoas: set[str] = set()
@@ -202,7 +194,7 @@ class RowService:
         return [linhas[r] for r in por_linha]
 
     async def delete_row(self, base_id: uuid.UUID, row_id: uuid.UUID) -> BaseRow:
-        """Marca a linha. O Ctrl+Z de 1 dia tira a marca (D13)."""
+        """Marca a linha. O Ctrl+Z de 1 dia tira a marca."""
         base = await visible_base(self._bases, base_id)
         require_verb("base_row.delete", base.team_id)
         linha = await self._rows.get_in(base.id, row_id)
@@ -219,7 +211,7 @@ class RowService:
     async def _limpar(
         self, base: BaseTable, valores: dict[str, Any]
     ) -> dict[str, Any]:
-        """`{id da coluna: valor limpo}` de uma linha NOVA. Coluna desconhecida
+        """`{id da coluna: valor limpo}` de uma linha nova. Coluna desconhecida
         ou apagada e 422."""
         if not valores:
             return {}
@@ -237,11 +229,8 @@ class RowService:
     ) -> tuple[dict[str, Any], set[str]]:
         """Os valores limpos e as pessoas a conferir na arvore.
 
-        ⚠️ SO O QUE A CELULA AINDA NAO TINHA E CONFERIDO (revisao de 08/10).
-        Conferir tudo travava a celula: com a Juliana desativada numa celula
-        Pessoa, acrescentar a Ana dava 422 "fora do time" -- a tela devolve
-        os ids que ja estavam --, e o mesmo com uma opcao apagada numa selecao
-        multipla. D8/D17: quem saiu FICA na celula, so nao e escolhido de novo.
+        So o que a celula ainda nao tinha e conferido: pessoa desativada ou
+        opcao apagada que ja estava ali fica, so nao e escolhida de novo.
         """
         limpos: dict[str, Any] = {}
         pessoas: set[str] = set()
@@ -265,9 +254,7 @@ class RowService:
         return limpos, pessoas
 
     async def _assert_pessoas_da_arvore(self, base: BaseTable, ids: set[str]) -> None:
-        """D8: a coluna Pessoa oferece os membros ATIVOS da arvore da base. Quem
-        saiu continua na celula (com o rotulo da tela), mas nao e escolhido de
-        novo -- a tela nao o oferece, e o servidor confere o mesmo."""
+        """A coluna Pessoa aceita so membros ativos da arvore do time da base."""
         tenant = require_tenant()
         times = {base.team_id} | descendants(base.team_id, tenant.team_tree)
         stmt = (

@@ -1,8 +1,5 @@
-"""Utilitario de DESENVOLVIMENTO: define o papel EXCLUSIVO de um membro.
-
-Apaga todos os vinculos de time do usuario no workspace e cria UM novo
-(time por slug + papel). Serve para alternar estados de teste da
-Entrega 3, ex.:
+"""Utilitario de desenvolvimento: troca todos os vinculos de time de um
+usuario por um so (time por slug + papel). Ex.:
 
     # caminho feliz: ve/edita tudo via hierarquia
     docker compose run --rm api-dev python -m scripts.set_member_role \\
@@ -14,8 +11,7 @@ Entrega 3, ex.:
         --workspace-slug unifecaf --user-email admin@unifecaf.com.br \\
         --team-slug crm-e-automacao --role OPERATOR
 
-NAO use em producao -- e ferramenta de teste. Substitui, nao acumula:
-deixa o usuario com exatamente um papel em um time.
+Nao use em producao.
 """
 
 from __future__ import annotations
@@ -76,7 +72,6 @@ async def _run(args: argparse.Namespace) -> None:
             if team is None:
                 raise SystemExit(f"Time '{args.team_slug}' nao existe.")
 
-            # Substitui: apaga todos os vinculos do usuario e cria um.
             await session.execute(
                 delete(UserTeam).where(
                     UserTeam.workspace_id == ws.id,

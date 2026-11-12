@@ -1,25 +1,12 @@
-"""Base -- a tabela que a equipe monta (Spec 056).
+"""Models da Base, a tabela que a equipe monta: base, base_column, base_row,
+base_view e base_change (diario do desfazer).
 
-Cinco tabelas, todas da migration `0029_base`:
+Os valores da linha sao guardados pelo id da coluna, e a celula de opcao
+guarda o id da opcao: renomear nao toca linha nenhuma.
 
-    base          -- a base em si; pertence a um TIME RAIZ (D6)
-    base_column   -- as colunas que a equipe define (tipo, opcoes em JSONB)
-    base_row      -- as linhas; os valores num JSONB por id de coluna
-    base_view     -- as visoes salvas e compartilhadas (D14)
-    base_change   -- o diario de acoes do desfazer (D27, spec §9)
-
-⚠️⚠️ OS VALORES DA LINHA SAO GUARDADOS PELO ID DA COLUNA, nunca pelo nome
-(spec §6). Renomear coluna nao toca linha nenhuma -- e e por isso que a celula
-de uma opcao guarda o id da OPCAO, e nao o rotulo.
-
-⚠️ SEM `TimestampMixin` E SEM `SoftDeleteMixin`, de proposito: os dois trazem
-`comment` de coluna, e a migration teria de repetir cada um palavra por palavra
-para o portao de drift ficar quieto. As colunas sao declaradas aqui, sem
-comentario, e o `BaseRepository` reconhece `deleted_at` pelo nome.
-
-⚠️ NOMES DE UNIQUE E DE INDICE SAO EXPLICITOS e iguais aos da migration: o
-`autogenerate` compara esses dois pelo nome. Os de FK e CHECK nao entram na
-comparacao, mas seguem o mesmo nome para quem ler o banco.
+Sem `TimestampMixin`/`SoftDeleteMixin` porque eles trazem `comment` de coluna
+que a migration nao tem. Nomes de unique e indice iguais aos da migration (o
+autogenerate compara pelo nome).
 """
 
 from __future__ import annotations
@@ -47,7 +34,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
 from app.db.mixins import UUIDPrimaryKeyMixin, workspace_fk_column
 
-#: Os tipos de coluna (spec §7.1). Lista FECHADA: tipo novo e decisao de spec.
+#: Tipos de coluna (lista fechada, espelhada no CHECK).
 COLUMN_TYPES: tuple[str, ...] = (
     "title",
     "text",
@@ -60,7 +47,6 @@ COLUMN_TYPES: tuple[str, ...] = (
     "checkbox",
 )
 
-#: Os layouts de visao (spec §8).
 VIEW_LAYOUTS: tuple[str, ...] = ("table", "calendar", "board")
 
 
@@ -79,11 +65,8 @@ def _quando_opcional() -> Mapped[datetime | None]:
 
 
 class BaseTable(UUIDPrimaryKeyMixin, Base):
-    """A base. ⚠️ `team_id` e SEMPRE um time raiz -- quem garante e o servico
-    (`BaseService.create`, 422), e nao o banco: "e raiz" depende de outra linha.
-
-    `BaseTable`, e nao `Base`, porque `Base` ja e a declarativa do SQLAlchemy.
-    """
+    """A base. `team_id` e sempre um time raiz, garantido pelo servico
+    (`BaseService.create`), nao pelo banco. `Base` ja e a declarativa."""
 
     __tablename__ = "base"
     __table_args__ = (
@@ -106,8 +89,7 @@ class BaseTable(UUIDPrimaryKeyMixin, Base):
     workspace_id: Mapped[uuid.UUID] = workspace_fk_column()
     team_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
     name: Mapped[str] = mapped_column(String(120), nullable=False)
-    #: O texto livre do topo (D15), em Markdown -- o editor da descricao de
-    #: tarefa (Spec 052) grava Markdown.
+    #: Texto livre do topo, em Markdown.
     description: Mapped[str] = mapped_column(
         Text, nullable=False, server_default=text("''"), default=""
     )
@@ -119,7 +101,7 @@ class BaseTable(UUIDPrimaryKeyMixin, Base):
         onupdate=func.now(),
         nullable=False,
     )
-    #: Excluida (D5): fica 10 dias recuperavel, e a rotina diaria apaga de vez.
+    #: Fica 10 dias recuperavel; depois a rotina diaria apaga de vez.
     deleted_at: Mapped[datetime | None] = _quando_opcional()
     deleted_by: Mapped[uuid.UUID | None] = mapped_column(
         PG_UUID(as_uuid=True), nullable=True
@@ -128,7 +110,7 @@ class BaseTable(UUIDPrimaryKeyMixin, Base):
 
 class BaseColumn(UUIDPrimaryKeyMixin, Base):
     """Uma coluna. `options` e a lista de `{id, label, color, deleted_at}` dos
-    tipos de selecao; a celula guarda o `id` da opcao (spec §6)."""
+    tipos de selecao; a celula guarda o `id` da opcao."""
 
     __tablename__ = "base_column"
     __table_args__ = (
@@ -152,7 +134,7 @@ class BaseColumn(UUIDPrimaryKeyMixin, Base):
     )
     position: Mapped[int] = mapped_column(Integer, nullable=False)
     width: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    #: Sobe a cada gravacao -- a regra de conflito do desfazer le isto (§9.3).
+    #: Sobe a cada gravacao; o conflito do desfazer le isto.
     version: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default=text("1"), default=1
     )
@@ -165,8 +147,8 @@ class BaseColumn(UUIDPrimaryKeyMixin, Base):
 class BaseRow(UUIDPrimaryKeyMixin, Base):
     """Uma linha. `values` e `{id da coluna (texto): valor}`.
 
-    ⚠️ Editar uma celula grava SO aquela chave (`values || {col: valor}`), nunca
-    a linha inteira: duas pessoas em celulas diferentes nao se atropelam.
+    Editar uma celula grava so aquela chave (`values || {col: valor}`): duas
+    pessoas em celulas diferentes nao se atropelam.
     """
 
     __tablename__ = "base_row"
@@ -210,11 +192,11 @@ class BaseRow(UUIDPrimaryKeyMixin, Base):
 
 
 class BaseView(UUIDPrimaryKeyMixin, Base):
-    """Uma visao salva e compartilhada (D14). `config` guarda filtros,
-    ordenacao, agrupamento, coluna de data e colunas visiveis (spec §8).
+    """Visao salva e compartilhada. `config` guarda filtros, ordenacao,
+    agrupamento, coluna de data e colunas visiveis.
 
-    ⚠️ `is_default`: a visao de tabela com que a base nasce (D2), e a unica que
-    nao se apaga (D25). Uma por base -- o indice unico parcial garante.
+    `is_default`: a visao de tabela com que a base nasce, que nao se apaga
+    (uma por base, pelo indice parcial).
     """
 
     __tablename__ = "base_view"
@@ -249,9 +231,8 @@ class BaseView(UUIDPrimaryKeyMixin, Base):
 
 
 class BaseChange(UUIDPrimaryKeyMixin, Base):
-    """O diario de acoes (D27, spec §9): o que cada pessoa fez, com o valor de
-    antes, para o Ctrl+Z rodar ao contrario. A rotina diaria apaga o que passou
-    de 1 dia. Gravado a partir da fatia C."""
+    """Diario de acoes: o que cada pessoa fez, com o valor de antes, para o
+    Ctrl+Z rodar ao contrario. A rotina diaria apaga o que passou de 1 dia."""
 
     __tablename__ = "base_change"
     __table_args__ = (

@@ -1,16 +1,7 @@
 """Repository da entidade Workspace.
 
-DECISAO: Workspace NAO usa o BaseRepository.
-
-O BaseRepository injeta o filtro `workspace_id = <tenant>`
-em toda query -- mas a tabela `workspace` e a RAIZ do
-tenant e nao possui a coluna workspace_id. Aplicar o filtro
-nela nao faz sentido.
-
-Em vez disso, este repository e escopado pelo PROPRIO id do
-workspace corrente: as operacoes so atuam sobre o workspace
-do TenantContext ativo. Um usuario so enxerga e edita o
-proprio workspace.
+Nao usa o BaseRepository (a tabela nao tem `workspace_id`): escopa pelo id
+do workspace do TenantContext.
 """
 
 from __future__ import annotations
@@ -29,13 +20,7 @@ class WorkspaceRepository:
         self.session = session
 
     async def get_current(self) -> Workspace:
-        """Carrega o workspace do TenantContext ativo.
-
-        Falha alto (MissingTenantContextError) se nao houver
-        tenant -- via require_tenant. Lanca EntityNotFoundError
-        se o workspace do token nao existir mais no banco
-        (situacao inconsistente).
-        """
+        """Carrega o workspace do TenantContext ativo."""
         tenant = require_tenant()
         workspace = await self.session.get(Workspace, tenant.workspace_id)
         if workspace is None:

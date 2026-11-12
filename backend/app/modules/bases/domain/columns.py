@@ -1,10 +1,8 @@
-"""Regras puras de coluna e opcao da Base (Spec 056, §7). Sem banco.
+"""Regras puras de coluna e opcao da Base. Sem banco.
 
-⚠️ A OPCAO TEM ID, e a celula guarda o id (spec §6): renomear "Embaixadores"
-nao toca linha nenhuma. Por isso as regras abaixo trabalham sobre ids, e a
-opcao apagada fica MARCADA (`deleted_at`) em vez de sumir da lista -- as
-celulas que a tinham continuam guardando o id, a tela as mostra vazias (D17),
-e o desfazer so tira a marca. A rotina diaria apaga de vez depois de 1 dia.
+A celula guarda o id da opcao, entao renomear nao toca linha nenhuma. Opcao
+apagada fica marcada (`deleted_at`) em vez de sumir: as celulas mantem o id, a
+tela as mostra vazias e o desfazer so tira a marca.
 """
 
 from __future__ import annotations
@@ -16,11 +14,10 @@ from typing import Any
 from app.db.models.bases import COLUMN_TYPES
 from app.shared.exceptions.base import ValidationError
 
-#: Tipos que tem OPCOES.
+#: Tipos que tem opcoes.
 SELECT_TYPES: frozenset[str] = frozenset({"select", "multi_select"})
 
-#: A paleta fixa das opcoes (spec §12): o front tem um token para cada uma, em
-#: claro e escuro. Cor fora daqui e 422 -- a tela nao saberia pintar.
+#: A paleta fixa das opcoes: o front tem um token para cada uma.
 OPTION_COLORS: tuple[str, ...] = (
     "gray",
     "brown",
@@ -49,8 +46,7 @@ def clean_name(name: str, *, field: str = "name") -> str:
 
 
 def check_new_type(new_type: str) -> None:
-    """Tipo de coluna CRIADA ou TROCADA. `title` nao: ha uma so por base, e ela
-    nasce com a base (D2)."""
+    """Tipo de coluna criada ou trocada. `title` nao: ha uma so, e nasce com a base."""
     if new_type not in COLUMN_TYPES:
         raise ValidationError(
             "Tipo de coluna desconhecido.",
@@ -73,16 +69,14 @@ def merge_options(
 ) -> list[dict[str, Any]]:
     """A lista nova de opcoes, a partir do que a tela mandou.
 
-    `incoming` e a lista VIVA inteira, na ordem da tela: com `id` = opcao que ja
-    existe (renomear, recolorir, reordenar); sem `id` = opcao nova.
+    `incoming` e a lista viva inteira, na ordem da tela: com `id` = opcao que ja
+    existe; sem `id` = opcao nova.
 
-    ⚠️⚠️ SUMIR DA LISTA NAO APAGA. Uma opcao viva que nao veio e 422: apagar
-    opcao esvazia celulas (D17) e e outro verbo (`base_column.delete`), com a
-    rota propria. Sem esta trava, quem so tem `base_column.update` apagaria
-    opcao por aqui -- e o dia em que alguem desligar o verbo de apagar, ele
-    continuaria apagando.
+    Sumir da lista nao apaga: e 422. Apagar opcao exige outro verbo
+    (`base_column.delete`) e tem rota propria; sem esta trava, quem so tem
+    `base_column.update` apagaria por aqui.
 
-    As apagadas (marcadas) ficam no fim, intocadas: o desfazer precisa delas.
+    As apagadas ficam no fim, intocadas: o desfazer precisa delas.
     """
     por_id = {o["id"]: o for o in current}
     vivas = {o["id"] for o in live_options(current)}

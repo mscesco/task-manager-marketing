@@ -1,4 +1,4 @@
-"""Schemas de API de notificacoes (Spec 018, F4)."""
+"""Schemas de API de notificacoes."""
 
 from __future__ import annotations
 
@@ -21,12 +21,10 @@ class NotificationResponse(BaseModel):
     payload: dict | None
     read_at: datetime | None
     created_at: datetime
-    # Spec 053 (C): a ultima mudanca -- difere de `created_at` quando avisos
-    # seguidos se juntaram. E o horario que a tela mostra.
+    # Difere de `created_at` quando avisos seguidos se juntaram; e o horario da tela.
     updated_at: datetime
-    # Spec 053 (E, D27): "ok" | "gone" (excluida ou sem acesso) | null (sem
-    # tarefa). Com "gone" o servidor ja tirou `task_title` do payload -- menos
-    # no proprio aviso de exclusao, que o mostra (§9.2).
+    # "ok" | "gone" (excluida ou sem acesso) | null (sem tarefa). Com "gone" o
+    # servidor tira `task_title` do payload, menos no proprio aviso de exclusao.
     task_access: str | None = None
 
 
@@ -40,7 +38,7 @@ class NotificationListResponse(BaseModel):
 
 
 class AlvoResponse(BaseModel):
-    """Uma sugestao do filtro "Tarefa ou projeto" (Spec 053, D23)."""
+    """Uma sugestao do filtro "Tarefa ou projeto"."""
 
     model_config = {"from_attributes": True}
 
@@ -66,15 +64,14 @@ class MarkAllReadResponse(BaseModel):
 
 
 class ToggleResponse(BaseModel):
-    """Um toggle da tela de preferencias (Spec 054, §6.5)."""
+    """Um toggle da tela de preferencias."""
 
     model_config = {"from_attributes": True}
 
     type_group: str
     role: str
     enabled: bool
-    #: Travado (D3): sempre ligado, e o PUT recusa 422. A tela desenha a
-    #: linha desabilitada com a explicacao do porque.
+    #: Travado: sempre ligado, e o PUT recusa com 422.
     locked: bool
 
 
@@ -85,7 +82,7 @@ class PreferencesResponse(BaseModel):
 
 
 class SetTogglePayload(BaseModel):
-    """Liga ou desliga UM toggle."""
+    """Liga ou desliga um toggle."""
 
     type_group: str
     role: str

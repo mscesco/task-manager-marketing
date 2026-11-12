@@ -1,20 +1,13 @@
-"""Importar planilha numa Base (Spec 057, 15/10).
+"""Importar planilha numa Base, em tres passos:
 
-O assistente da tela tem tres passos, e o servidor os mesmos tres:
-
-    preview   le o arquivo: abas, cabecalho, 20 linhas e o TIPO SUGERIDO de
+    preview   le o arquivo: abas, cabecalho, 20 linhas e o tipo sugerido de
               cada coluna;
-    dry_run   aplica o mapeamento coluna a coluna SEM gravar, e devolve os
-              problemas linha por linha ("linha 12: data invalida");
-    import    grava -- numa base que ja existe, ou numa NOVA (as duas, decisao
-              dela) -- e pula as linhas com problema se a pessoa escolheu.
+    dry_run   aplica o mapeamento sem gravar e devolve os problemas por linha;
+    import    grava, numa base existente ou nova, e pula as linhas com
+              problema se a pessoa escolheu.
 
-⚠️ O ARQUIVO VIAJA NAS DUAS CHAMADAS (previa e importacao), e nao fica guardado
-no servidor: sem estado entre os passos, nada para limpar, e o mesmo arquivo da
-previa e o que se importa.
-
-⚠️ A IMPORTACAO INTEIRA E UMA ACAO DO DIARIO (`rows.import`): um Ctrl+Z desfaz
-tudo -- linhas e colunas criadas.
+O arquivo viaja nas duas chamadas e nao fica guardado no servidor. A
+importacao inteira e uma acao do diario (`rows.import`): um Ctrl+Z desfaz tudo.
 """
 
 from __future__ import annotations
@@ -70,7 +63,7 @@ MAX_ERRORS = 200
 
 @dataclass(frozen=True)
 class ColumnPlan:
-    """O que fazer com UMA coluna do arquivo.
+    """O que fazer com uma coluna do arquivo.
 
     `action`: "new" (cria coluna `name` do tipo `type`), "existing" (junta com
     a coluna `column_id`), "title" (vai para o titulo) ou "ignore".
@@ -98,7 +91,7 @@ class ImportPlan:
 
 @dataclass(frozen=True)
 class RowError:
-    line: int  # a linha NO ARQUIVO, como a pessoa a ve no Excel
+    line: int  # a linha no arquivo, como a pessoa a ve no Excel
     column: str
     message: str
 
@@ -165,8 +158,7 @@ class BaseImportService:
 
     # ------------------------------------------------------------ importar
     async def run(self, content: bytes, filename: str, plan: ImportPlan) -> ImportResult:
-        # ⚠️ Em thread: o openpyxl segura o processo por segundos numa planilha
-        # grande, e no loop do async isso congelava toda rota deste processo.
+        # Em thread: o openpyxl leva segundos numa planilha grande e travaria o loop.
         table = await asyncio.to_thread(
             read_table,
             content,
@@ -300,11 +292,8 @@ class BaseImportService:
                 else:
                     chave = str(col.id)
             elif cp.action == "new":
-                # ⚠️ COLUNA NOVA NUMA BASE QUE JA EXISTE E CRIAR COLUNA (auditoria
-                # de 16/10): o mesmo verbo do `POST /columns`. So `base_row.create`
-                # era cobrado -- hoje os dois andam juntos nos papeis, e o furo
-                # abriria no dia em que se separassem. Base NOVA nao pergunta: quem
-                # tem `base.create` monta a estrutura dela.
+                # Coluna nova numa base existente exige o verbo de criar coluna;
+                # numa base nova, `base.create` ja basta.
                 if plan.base_id is not None:
                     require_verb("base_column.create", team_id)
                 tipo = cp.type or "text"
@@ -365,7 +354,7 @@ class BaseImportService:
         raise ConversionError("Tipo de coluna desconhecido.")
 
     async def _pessoas_da_arvore(self, team_id: uuid.UUID) -> dict[str, str]:
-        """Nome e e-mail (casefold) -> id, dos membros ATIVOS da arvore (D8)."""
+        """Nome e e-mail (casefold) -> id, dos membros ativos da arvore."""
         tenant = require_tenant()
         times = {team_id} | team_scope.descendants(team_id, tenant.team_tree)
         rows = (
@@ -420,7 +409,7 @@ class BaseImportService:
 
 
 class _Alvo:
-    """Uma coluna de DESTINO, com as opcoes que a importacao vai criar nela."""
+    """Uma coluna de destino, com as opcoes que a importacao vai criar nela."""
 
     def __init__(self, index: int, key: str, label: str, col: Any, can_create: bool) -> None:
         self.index = index

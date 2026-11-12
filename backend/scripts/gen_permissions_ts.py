@@ -1,19 +1,12 @@
-"""Gera `web/lib/permissions.generated.ts` a partir do mapa de permissoes.
-
-Spec 049, fatia A (§4.8). O front consultava permissao por STRING solta
-(`me.permissions.includes("team.manage")`), e renomear uma permissao no backend
-fazia o botao sumir sem erro nenhum -- com os quatro portoes verdes. Com o
-arquivo gerado, `permissions` passa a ser `Permission[]` e o `tsc` recusa o
-nome que nao existe mais.
+"""Gera `web/lib/permissions.generated.ts` a partir do mapa de permissoes,
+para o `tsc` recusar nome de permissao que nao existe.
 
 Uso (de `backend/`):
 
     docker compose run --rm api-dev python -m scripts.gen_permissions_ts
 
-⚠️ O ARQUIVO E COMMITADO, e nao gerado no build: o job `front` do CI nao tem
-Python, e o `next build` do dev dela nao deve depender do backend. Quem garante
-que ele esta em dia e `tests/test_permissions_generated_ts.py`, que compara o
-que este script geraria com o que esta no disco.
+O arquivo e commitado (o CI do front nao tem Python);
+`tests/test_permissions_generated_ts.py` acusa se ficar atrasado.
 """
 
 from __future__ import annotations
@@ -22,9 +15,7 @@ from pathlib import Path
 
 from app.modules.auth.domain.permissions import ALL_PERMISSIONS
 
-#: `backend/scripts/` -> raiz do repositorio -> `web/lib/`.
-#: ⚠️ No container `api-dev` o backend e `/app`, e o `docker-compose.yml` monta
-#: `./web/lib` em `/web/lib` -- o mesmo caminho relativo que no CI.
+#: No container `api-dev` o compose monta `./web/lib` em `/web/lib`: mesmo caminho relativo.
 TARGET = Path(__file__).resolve().parents[2] / "web" / "lib" / "permissions.generated.ts"
 
 

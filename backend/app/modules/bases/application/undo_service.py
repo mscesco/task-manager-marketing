@@ -1,32 +1,15 @@
-"""Desfazer e refazer na Base (Spec 056, §9, D12, D13, D27).
+"""Desfazer e refazer na Base.
 
-O Ctrl+Z roda AO CONTRARIO a acao mais recente da pessoa naquela base, dentro
-de 1 dia; o refazer roda de novo a ultima desfeita, enquanto ela nao fizer nada
-novo (o diario apaga as desfeitas na acao seguinte -- `journal.record`).
+O Ctrl+Z roda ao contrario a acao mais recente da pessoa naquela base, dentro
+de 1 dia; o refazer roda de novo a ultima desfeita.
 
-⚠️⚠️ A REGRA DE CONFLITO (D12, opcao b): antes de desfazer, o servidor confere
-se o que esta la AINDA E O QUE A PESSOA DEIXOU. Se outra pessoa mexeu depois,
-recusa e avisa -- desfazer nunca apaga o trabalho de outra pessoa. Por tipo:
+Conflito: antes de aplicar, o servidor confere se o que esta la ainda e o que
+a acao deixou; se outra pessoa mexeu depois, recusa (desfazer nunca apaga
+trabalho alheio). Em `cell.update`, uma celula diferente recusa o grupo todo.
 
-    cell.update     cada celula do grupo ainda tem o "depois" registrado; UMA
-                    diferente recusa o grupo inteiro (desfazer metade de uma
-                    colagem seria pior do que nao desfazer)
-    column.retype   a coluna ainda e como ficou, E nenhuma celula dela foi
-                    preenchida depois da troca
-    column.title    o titulo ainda e o que a acao deixou, e a outra continua
-                    texto (Spec 061)
-    column.update,  os campos ainda tem o "depois"
-    view.update
-    marcas          a coisa continua marcada (ou viva), e a base existe
-
-⚠️ CONFLITO NAO E ERRO HTTP. A entrada SAI DA PILHA (o proximo Ctrl+Z tenta a
-anterior, spec §9.3), e isso e uma gravacao: com 409 a transacao voltaria e a
-entrada ficaria la, recusando para sempre. A resposta e 200 com
-`conflict=True`, e a tela mostra o aviso.
-
-⚠️ DESFAZER EXIGE O VERBO DA ACAO ORIGINAL, conferido AGORA (§9.4) -- quem
-perdeu o verbo nao desfaz. Sem o verbo e 403, e a entrada fica: devolvido o
-verbo, ela volta a servir.
+Conflito nao e erro HTTP: a entrada sai da pilha (uma gravacao, que um 409
+desfaria) e a resposta e 200 com `conflict=True`. Sem o verbo da acao original
+e 403, e a entrada fica.
 """
 
 from __future__ import annotations
@@ -56,7 +39,7 @@ from app.modules.bases.infrastructure.live import publicar
 
 logger = get_logger(__name__)
 
-#: D13/D27: tudo se desfaz por 1 dia.
+#: Tudo se desfaz por 1 dia.
 UNDO_WINDOW = timedelta(days=1)
 
 
@@ -111,14 +94,13 @@ class UndoService:
                 kind=entrada.kind,
                 undo=desfazer,
             )
-            # ⚠️ Nada foi gravado antes do conflito: cada `_aplicar` confere
-            # TUDO antes de mudar qualquer coisa.
+            # Nada foi gravado: cada `_aplicar` confere tudo antes de mudar algo.
             await self._changes.remove(entrada)
             return UndoResult(applied=False, conflict=True, kind=entrada.kind)
 
         entrada.undone_at = datetime.now(UTC) if desfazer else None
         await self._session.flush()
-        # Desfazer tambem e uma gravacao (spec §9.5): os outros sao avisados.
+        # Desfazer tambem e uma gravacao: os outros sao avisados.
         await publicar(
             self._session, base.id, "undo" if desfazer else "redo", ator
         )
@@ -191,13 +173,8 @@ class UndoService:
     async def _importacao(
         self, base_id: uuid.UUID, p: dict[str, Any], *, desfazer: bool
     ) -> None:
-        """Desfazer a importacao (Spec 057) marca TODAS as linhas e colunas que
-        ela criou; refazer tira a marca. Uma acao, um Ctrl+Z.
-
-        ⚠️ CONFERE TUDO, DEPOIS MARCA (a regra do topo do arquivo). Marcando
-        linha a linha, uma linha apagada por outra pessoa no meio parava o
-        laco com as anteriores JA marcadas -- e o conflito tira a entrada da
-        pilha e grava: metade da importacao desfeita, sem refazer."""
+        """Desfazer a importacao marca todas as linhas e colunas que ela criou;
+        refazer tira a marca. Confere tudo antes de marcar qualquer uma."""
         ids = {uuid.UUID(r) for r in p["rows"]}
         linhas = await self._rows.get_many(base_id, ids, include_deleted=True)
         colunas = [await self._coluna(base_id, uuid.UUID(c)) for c in p["columns"]]
@@ -246,7 +223,7 @@ class UndoService:
         self, base_id: uuid.UUID, p: dict[str, Any], *, desfazer: bool
     ) -> None:
         """Anda de volta (ou de novo). Conflito se a coluna nao esta mais onde
-        a acao a deixou -- alguem moveu ou inseriu coluna no meio tempo."""
+        a acao a deixou."""
         coluna = await self._coluna(base_id, uuid.UUID(p["column"]))
         esperado, alvo = (p["to"], p["from"]) if desfazer else (p["from"], p["to"])
         if coluna.deleted_at is not None or coluna.position != esperado:
@@ -258,10 +235,8 @@ class UndoService:
         self, base_id: uuid.UUID, p: dict[str, Any], *, desfazer: bool
     ) -> None:
         """Troca a principal de volta (ou de novo). Conflito se alguma das duas
-        foi apagada, ou se o titulo de hoje nao e o que a acao deixou.
-
-        ⚠️ A POSICAO NAO E CONFERIDA: inserir uma coluna no meio empurra as
-        outras, e isso nao e mexer na principal -- as duas so trocam de lugar."""
+        foi apagada, ou se o titulo de hoje nao e o que a acao deixou. A posicao
+        nao e conferida: inserir coluna no meio empurra as outras."""
         await self._columns.list_for(base_id, lock=True)
         de = await self._coluna(base_id, uuid.UUID(p["from"]))
         para = await self._coluna(base_id, uuid.UUID(p["to"]))
@@ -285,7 +260,7 @@ class UndoService:
             raise _Conflito
         valores: dict[str, Any] = p["values"]
         if desfazer:
-            # ⚠️ "nenhuma celula preenchida depois da troca": a coluna esta vazia
+            # Celula preenchida depois da troca e trabalho de alguem.
             if await self._rows.values_of_column(base_id, coluna.id):
                 raise _Conflito
             linhas = await self._rows.get_many(
@@ -297,8 +272,7 @@ class UndoService:
                     linha.values = {**linha.values, chave: valor}
                     linha.version += 1
         else:
-            # refazer = zerar de novo. Cada celula preenchida tem de ser a que o
-            # desfazer devolveu -- uma editada depois e trabalho de alguem.
+            # Refazer = zerar de novo; cada celula tem de ser a que o desfazer devolveu.
             atuais = await self._rows.values_of_column(base_id, coluna.id)
             if any(valores.get(r) != v for r, v in atuais.items()):
                 raise _Conflito
@@ -355,17 +329,13 @@ def _marcar(item: BaseRow | BaseColumn, marcar: bool) -> None:
 
 
 def _moveu(p: dict[str, Any]) -> bool:
-    """A acao registrada mudou a POSICAO da coluna?"""
+    """A acao registrada mudou a posicao da coluna?"""
     return p["before"].get("position") != p["after"].get("position")
 
 
 def _confere(coluna: BaseColumn, esperado: dict[str, Any], p: dict[str, Any]) -> bool:
-    """A coluna ainda e como a acao a deixou?
-
-    ⚠️ A POSICAO SO CONTA SE A PROPRIA ACAO A MUDOU (fatia I). "Inserir a
-    esquerda" empurra as outras colunas uma casa -- e sem esta regra o Ctrl+Z de
-    um simples renomear acusaria conflito sem ninguem ter mexido na coluna.
-    """
+    """A coluna ainda e como a acao a deixou? A posicao so conta se a propria
+    acao a mudou: inserir coluna ao lado empurra as outras uma casa."""
     atual = column_snapshot(coluna)
     if not _moveu(p):
         atual = {k: v for k, v in atual.items() if k != "position"}

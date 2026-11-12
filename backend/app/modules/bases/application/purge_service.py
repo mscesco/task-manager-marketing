@@ -1,21 +1,13 @@
-"""A rotina diaria da Base (Spec 056, §11) -- apaga de vez o que passou do prazo.
+"""A rotina diaria da Base: apaga de vez o que passou do prazo.
 
     base excluida ha mais de 10 dias       -> some, com tudo (CASCADE)
     linha, coluna, opcao marcadas ha 1 dia -> somem; coluna e opcao saem
                                               tambem das celulas
     diario com mais de 1 dia               -> some (o Ctrl+Z vale 1 dia)
 
-⚠️⚠️ RODA FORA DE CONTEXTO DE TENANT, e de proposito: e uma rota de maquina
-(`POST /system/bases/purge`, `X-System-Token`), chamada pelo n8n, que varre
-TODOS os workspaces -- como o `archive-stale`. Por isso nao passa pelo
-`BaseRepository` (que exige tenant). Ela nunca decide NADA: so apaga o que uma
-pessoa ja marcou e cujo prazo de desfazer ja acabou. Nao ha dado vivo em jogo.
-
-⚠️ OS PRAZOS SAO OS MESMOS DO DESFAZER, e a ordem importa pouco por isso: uma
-marca com mais de 1 dia ja nao tem entrada no diario que a desfaca (o diario
-de mais de 1 dia some na mesma passada).
-
-Idempotente: rodar duas vezes no dia apaga nada na segunda.
+Roda fora de contexto de tenant (rota de maquina que varre todos os
+workspaces), por isso nao usa o `BaseRepository`. So apaga o que alguem ja
+marcou e cujo prazo de desfazer acabou. Idempotente.
 """
 
 from __future__ import annotations
@@ -92,10 +84,10 @@ class BasePurgeService:
         return int(r.rowcount or 0)
 
     async def _opcoes(self, corte: datetime) -> int:
-        """Opcao marcada ha mais de 1 dia: sai da lista E das celulas.
+        """Opcao marcada ha mais de 1 dia: sai da lista e das celulas.
 
-        So olha colunas que tem ALGUMA opcao marcada (o filtro JSONB), e a
-        data de cada uma decide no Python -- poucas colunas, poucas opcoes.
+        O filtro JSONB pega as colunas com alguma opcao marcada; a data de
+        cada opcao decide no Python.
         """
         colunas = (
             await self._session.execute(

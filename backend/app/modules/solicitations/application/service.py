@@ -1,20 +1,7 @@
-"""Service de Solicitacoes.
+"""Service de Solicitacoes: envio publico, fila de triagem, triagem e andamento.
 
-Casos de uso:
-    - create_public : entrada do formulario PUBLICO (sem auth).
-    - list_batches  : fila de triagem AGRUPADA POR ENVIO (autenticado).
-    - get           : detalhe (autenticado).
-    - review        : aprovar/rejeitar (autenticado + permissao,
-                      guard de permissao fica na rota).
-
-SEGURANCA DA ROTA PUBLICA (alem do rate limit por IP na rota):
-    - workspace resolvido por SLUG; slug invalido => 404 generico
-      (nao confirma quais slugs existem).
-    - categoria validada contra a lista do dominio;
-    - limites de tamanho no schema Pydantic (anti-payload gigante);
-    - honeypot: o campo `website` do form e invisivel pra humanos.
-      Preenchido => bot. A service DESCARTA silenciosamente e
-      responde como sucesso -- nao ensina o bot a se corrigir.
+No envio publico, slug de workspace invalido da 404 generico e o honeypot
+(`website` preenchido) e descartado em silencio, respondendo como sucesso.
 """
 
 from __future__ import annotations
@@ -68,17 +55,12 @@ from app.shared.exceptions.base import (
 )
 from app.shared.pagination import PageParams
 
-# Maximo de itens num unico envio. Era 11 (o tamanho do menu); com a secao
-# repetivel (Spec 059) cada repeticao e um item, e o teto so corta payload
-# inflado -- a regra fina e `MAX_REPETICOES_POR_SECAO`.
+# Maximo de itens num envio (cada repeticao de secao e um item); corta payload inflado.
 MAX_ITENS_POR_LOTE = 60
-#: Spec 059 (15/10): quantas vezes a mesma secao repetivel entra num envio.
+#: Quantas vezes a mesma secao repetivel entra num envio.
 MAX_REPETICOES_POR_SECAO = 20
-#: Texto do envio inteiro (resumos + perguntas + respostas). ⚠️ OS TETOS POR
-#: CAMPO NAO BASTAVAM: 60 itens x 60 respostas x 5000 caracteres e ~19 MB por
-#: POST, e a rota nao tem login -- um script enchia o disco e a fila carregava
-#: megabytes por pagina. 200 mil e ~40 respostas longas cheias; um envio de
-#: verdade fica bem abaixo.
+#: Texto do envio inteiro (resumos + perguntas + respostas). Os tetos por campo
+#: ainda permitiam ~19 MB por POST numa rota sem login; 200 mil folga um envio real.
 MAX_CARACTERES_POR_ENVIO = 200_000
 
 
@@ -95,40 +77,29 @@ class SolicitationItem:
 class CreatePublicCommand:
     """Um envio do formulario = N itens (multi-selecao de categorias).
 
-    Os dados do solicitante sao do ENVIO (preenchidos uma vez) e ficam
-    replicados em cada linha filha -- de proposito: cada solicitacao
-    precisa ser autoexplicativa na fila, sem join.
+    Os dados do solicitante sao replicados em cada linha, para cada solicitacao
+    ser autoexplicativa na fila, sem join.
     """
 
     workspace_slug: str
     requester_name: str
     requester_email: str
-    #: ⚠️ OPCIONAIS DESDE A FATIA G: quem decide se sao exigidos e o
-    #: FORMULARIO, e nao o schema. `None` = "este formulario nao perguntou".
+    #: `None` = o formulario nao perguntou este campo.
     requester_phone: str | None
     requester_department: str | None
     requester_polo: str | None
     items: list[SolicitationItem]
     honeypot: str = ""
-    #: Spec 043 (fatia B). De qual formulario veio o envio.
-    #:
-    #: ⚠️ NO FIM DA CLASSE E COM DEFAULT, e nao por estetica: `dataclass` recusa
-    #: campo sem default depois de um com default, e eu o tinha posto no meio
-    #: -- `CreatePublicCommand(**base)` dos testes existentes quebraria antes de
-    #: qualquer regra ser exercitada.
-    #:
-    #: ⚠️ E O `None` E COMPATIBILIDADE: cliente que ainda nao conhece o campo
-    #: continua enviando, e cai na validacao antiga contra `CATEGORIES`.
+    #: De qual formulario veio o envio. `None` cai na validacao contra `CATEGORIES`.
     form_id: uuid.UUID | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class RotuloDeCategoria:
-    """Como uma categoria se APRESENTA na fila -- e nao o que ela e.
+    """Como uma categoria se apresenta na fila.
 
-    ⚠️ A CHAVE E O `slug`, QUE FICA GRAVADO NO PEDIDO; isto aqui e a etiqueta,
-    resolvida na hora de mostrar. Por isso o slug da secao nao pode mudar e o
-    titulo pode: renomear arruma a fila inteira, inclusive o passado.
+    A chave e o `slug`, gravado no pedido; titulo e emoji sao resolvidos na hora,
+    entao renomear a secao arruma a fila inteira.
     """
 
     title: str
@@ -155,34 +126,20 @@ class MarkTaskCommand:
     solicitation_id: uuid.UUID
     created: bool
     task_ref: str | None = None
-    #: A tarefa DE VERDADE (Spec 043, fatia E).
-    #:
-    #: ⚠️ NO FIM E COM DEFAULT -- `dataclass` recusa campo sem default depois
-    #: de um com default, e todo `MarkTaskCommand(...)` que ja existe continua
-    #: valendo.
+    #: A tarefa vinculada (`task_ref` e o texto livre legado).
     task_id: uuid.UUID | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class CriarTarefaCommand:
-    """Criar a tarefa A PARTIR do pedido, ja vinculada (Spec 043, fatia E).
+    """Criar a tarefa a partir do pedido, ja vinculada.
 
-    ⚠️ O `board_id` E OPCIONAL e `None` significa o Quadro geral -- o mesmo
-    contrato do `CreateTaskCommand`. O time NAO e parametro: ele vem do
-    FORMULARIO por onde o pedido entrou, e deixar quem tria escolher abriria a
-    porta para a tarefa nascer no time errado, longe de quem vai fazer.
+    `board_id=None` = quadro geral. O time vem do formulario, nao de quem tria.
     """
 
     solicitation_id: uuid.UUID
     board_id: uuid.UUID | None = None
-    #: Quem fica responsavel. VAZIO = quem esta triando.
-    #:
-    #: ⚠️⚠️ TODA TAREFA PRECISA DE AO MENOS UM RESPONSAVEL neste produto
-    #: (regra de 05/08, em `TaskService.create`) -- descobri isto com a criacao
-    #: explodindo em `ValidationError`. O padrao ser quem tria e a unica opcao
-    #: honesta: e a pessoa que acabou de aceitar o pedido, e portanto quem
-    #: responde por ele ate repassar. Deixar sem dono faria a tarefa nascer
-    #: invisivel em "Minhas tarefas" de todo mundo.
+    #: Responsaveis. Vazio = quem esta triando (toda tarefa exige um responsavel).
     assignee_ids: list[uuid.UUID] = field(default_factory=list)
 
 
@@ -212,19 +169,12 @@ class SolicitationService:
     async def create_public(
         self, uow: UnitOfWork, command: CreatePublicCommand
     ) -> list[Solicitation] | None:
-        """Cria UMA linha por categoria selecionada, todas no mesmo lote.
+        """Cria uma linha por categoria selecionada, todas no mesmo lote.
 
-        Cada linha nasce PENDING e e triada de forma independente: o
-        aprovador pode aceitar a arte e rejeitar a divulgacao do mesmo
-        envio. O `batch_id` compartilhado gera o protocolo unico que o
-        solicitante leva embora.
+        Cada linha nasce PENDING e e triada separadamente; o `batch_id`
+        compartilhado vira o protocolo. Tudo-ou-nada num unico commit.
 
-        Tudo-ou-nada na CRIACAO (um unico commit): se uma categoria for
-        invalida, nenhuma linha e gravada -- o solicitante nao fica com
-        meio pedido no ar.
-
-        Retorna None quando o honeypot pegou um bot -- a rota responde
-        201 mesmo assim (descarte silencioso).
+        Retorna None quando o honeypot pegou um bot (a rota responde 201 assim mesmo).
         """
         if command.honeypot.strip():
             return None  # bot; finge sucesso, nao persiste
@@ -245,28 +195,15 @@ class SolicitationService:
                 "ou divida em mais de um envio."
             )
 
-        # ⚠️ A VALIDACAO DA CATEGORIA TEM DOIS CAMINHOS (Spec 043, fatia B),
-        # e o segundo esta morrendo:
-        #
-        #   - COM `form_id`: as categorias validas sao as SECOES daquele
-        #     formulario, lidas do banco. E o caminho novo, e o unico que sabe
-        #     de formulario criado por gente.
-        #   - SEM `form_id`: cai na lista fixa `CATEGORIES` do dominio, que e o
-        #     comportamento de sempre. ⚠️ ISSO E COMPATIBILIDADE, e nao a
-        #     regra: existe para a aba que ficou aberta durante o deploy nao
-        #     receber 422 numa rota sem login. Quando o front antigo sumir de
-        #     circulacao, este ramo e a `CATEGORIES` saem juntos -- e e por
-        #     isso que o `frozenset` continua ali por enquanto.
-        #
-        # Valida TODAS antes de gravar QUALQUER uma.
+        # Com `form_id`, as categorias validas sao as secoes daquele formulario;
+        # sem ele, a lista fixa `CATEGORIES`. Valida todas antes de gravar.
         if command.form_id is None:
             for item in command.items:
                 if item.category not in CATEGORIES:
                     raise ValidationError("Categoria de solicitacao invalida.")
 
-        # Categoria repetida no mesmo envio so vale em SECAO REPETIVEL (Spec
-        # 059) -- conferido abaixo, com as secoes do formulario em maos. Sem
-        # formulario (o caminho antigo) nada repete.
+        # Categoria repetida so vale em secao repetivel (conferido abaixo); sem
+        # formulario nada repete.
         categorias = [i.category for i in command.items]
         repetidas = {c: categorias.count(c) for c in categorias if categorias.count(c) > 1}
         if repetidas and command.form_id is None:
@@ -281,16 +218,8 @@ class SolicitationService:
             # 404 generico de proposito (nao enumera slugs).
             raise EntityNotFoundError("Workspace", identifier=command.workspace_slug)
 
-        # ⚠️⚠️ O FORMULARIO E CONFERIDO CONTRA O WORKSPACE DO SLUG, E TEM DE
-        # ESTAR PUBLICADO. Sem as duas condicoes, um `form_id` copiado de outro
-        # lugar penduraria a solicitacao no formulario de OUTRO cliente -- numa
-        # rota sem credencial, onde nao ha usuario para culpar depois. E
-        # aceitar rascunho deixaria entrar pedido por uma porta que ninguem
-        # abriu ainda.
-        #
-        # ⚠️ E A RECUSA E A MESMA DE CATEGORIA INVALIDA, de proposito: um erro
-        # especifico ("este formulario e de outro workspace") confirmaria a
-        # existencia dele para quem esta sondando.
+        # O formulario tem de ser deste workspace e estar publicado. A recusa e a
+        # mesma de categoria invalida, para nao confirmar a existencia dele.
         if command.form_id is not None:
             secoes = (
                 await self.session.execute(
@@ -327,17 +256,14 @@ class SolicitationService:
                         "vezes por envio."
                     )
 
-        # ⚠️⚠️ A IDENTIFICACAO E CONFERIDA CONTRA O CABECALHO DO FORMULARIO
-        # (Spec 043, fatia G), e nao contra uma lista fixa. Ver
-        # `_identificacao_conferida`.
+        # Identificacao conferida contra o cabecalho do formulario.
         contato = await self._identificacao_conferida(command, workspace.id)
 
         batch_id = uuid.uuid4()
         total = len(command.items)
         criadas: list[Solicitation] = []
 
-        # A ordem da lista E a ordem de selecao do solicitante -- batch_seq
-        # a preserva pra fila mostrar "1 de 3", "2 de 3" na mesma sequencia.
+        # A ordem da lista e a ordem de selecao; `batch_seq` a preserva.
         for posicao, item in enumerate(command.items, start=1):
             solicitation = Solicitation(
                 requester_name=command.requester_name.strip(),
@@ -351,10 +277,7 @@ class SolicitationService:
                 category=item.category,
                 summary=item.summary.strip()[:500],
                 answers=item.answers,
-                # ⚠️ E ELE QUE FAZ A FILA SABER DE QUEM E A SOLICITACAO. Sem
-                # este campo ela nasce orfa: continua na fila (o JOIN e LEFT),
-                # mas visivel a quem tem `solicitation.review` no workspace
-                # inteiro, em vez do time dono do formulario.
+                # Sem `form_id` o pedido nasce orfao e aparece fora do time dono.
                 form_id=command.form_id,
                 status=SolicitationStatus.PENDING,
             )
@@ -376,21 +299,8 @@ class SolicitationService:
     ) -> dict[str, str | None]:
         """Telefone, area e polo: o formulario pede? entao tem de vir.
 
-        ⚠️⚠️ A OBRIGATORIEDADE MUDOU DE LUGAR NA FATIA G. Ela era do schema
-        (`min_length`), o que recusava o pedido antes de o servidor saber por
-        qual porta ele entrou -- e o formulario de TI, que nao pergunta polo,
-        levaria 422 em toda submissao. Agora quem decide e o CABECALHO do
-        formulario: rotulo preenchido = pergunta e exige; `NULL` = nao
-        pergunta.
-
-        ⚠️ E O QUE NAO E PEDIDO E DESCARTADO, e nao apenas ignorado. Um cliente
-        antigo (ou uma aba aberta desde antes do deploy) continua mandando os
-        cinco campos; gravar um "Polo: Taboão" que o formulario nao perguntou
-        poria na fila um dado que ninguem pediu e que a tela nao sabe rotular.
-
-        ⚠️ SEM `form_id` NADA MUDA: cai no comportamento antigo, com os tres
-        exigidos. E o mesmo ramo de compatibilidade da validacao de categoria,
-        e ele morre junto com ela.
+        Rotulo preenchido no cabecalho = pergunta e exige; `NULL` = nao pergunta
+        e o valor enviado e descartado. Sem `form_id`, os tres sao exigidos.
         """
         vindos = {
             "phone": (command.requester_phone or "").strip(),
@@ -447,26 +357,9 @@ class SolicitationService:
     ) -> dict[tuple[uuid.UUID | None, str], RotuloDeCategoria]:
         """Titulo, emoji e prazo de cada categoria que aparece nestes pedidos.
 
-        ⚠️⚠️ ATE 26/08 A FILA LIA ISTO DE UM ARQUIVO ESTATICO NO FRONT
-        (`CATEGORIA_POR_SLUG`, em `web/lib/solicitacaoForm.ts`). A fatia B
-        trocou a fonte do formulario PUBLICO e nao a da fila -- e funcionava,
-        porque a migration 0017 copiou os mesmos slugs. **A primeira secao
-        criada pelo editor da fatia C2 apareceria la como slug cru e "❓".**
-        Divergencia silenciosa: nada quebra, nada avisa, so fica feio para uma
-        categoria e certo para as outras.
-
-        ⚠️ E O ROTULO E RESOLVIDO AGORA, e nao gravado no pedido. E o oposto da
-        regra das RESPOSTAS, que sao retrato do dia (`{label, value}`), e a
-        diferenca e proposital: renomear "Foto" para "Fotografia" deve arrumar
-        a fila inteira, inclusive o passado. Por isso o `slug` da secao nao
-        pode mudar e o titulo pode -- um e a chave, o outro e a etiqueta.
-
-        ⚠️ O PEDIDO ORFAO (sem `form_id`) TAMBEM GANHA ROTULO. Sao os
-        anteriores a esta spec; eles chegaram pelo formulario estatico, cujas
-        categorias sao exatamente as secoes que a 0017 criou. Procurar o slug
-        entre todas as secoes do workspace devolve o titulo certo para eles --
-        e resolver so por `form_id` seria uma regressao visivel: dois pedidos
-        de julho perderiam o titulo que hoje tem.
+        Resolvido na hora (renomear a secao arruma o passado). Pedido sem
+        `form_id` tambem ganha rotulo, procurando o slug entre todas as secoes
+        do workspace.
         """
         tenant = require_tenant()
         slugs = {i.category for i in itens if i.category}
@@ -492,10 +385,7 @@ class SolicitationService:
                     SolicitationSection.deleted_at.is_(None),
                     SolicitationForm.deleted_at.is_(None),
                 )
-                # ⚠️ ORDEM PARA O DESEMPATE DO ORFAO: dois formularios podem
-                # ter uma secao de mesmo slug. Sem `form_id` para escolher, o
-                # mais ANTIGO vence -- e o mais antigo e justamente aquele de
-                # onde os pedidos orfaos vieram.
+                # Desempate do pedido sem formulario: o formulario mais antigo vence.
                 .order_by(SolicitationForm.created_at.desc())
             )
         ).all()
@@ -512,12 +402,9 @@ class SolicitationService:
     async def titulos_dos_formularios(
         self, itens: list[Solicitation]
     ) -> dict[uuid.UUID, str]:
-        """O titulo do formulario de cada pedido desta pagina (15/10: a fila
-        nao dizia por qual formulario o pedido entrou).
+        """O titulo do formulario de cada pedido desta pagina.
 
-        ⚠️ FORMULARIO APAGADO ENTRA: o pedido continua na fila, e o nome de
-        onde ele veio continua verdadeiro. Pedido orfao (sem `form_id`, de
-        antes da Spec 043) fica de fora, e a tela nao mostra nada.
+        Formulario apagado entra; pedido sem `form_id` fica de fora.
         """
         ids = {i.form_id for i in itens if i.form_id is not None}
         if not ids:
@@ -536,18 +423,9 @@ class SolicitationService:
     async def titulos_das_tarefas(
         self, itens: list[Solicitation]
     ) -> dict[uuid.UUID, str]:
-        """O titulo de cada tarefa vinculada nesta pagina da fila.
+        """O titulo de cada tarefa vinculada nesta pagina, numa consulta so.
 
-        ⚠️ RESOLVIDO NA HORA, e nao gravado no pedido: renomear a tarefa no
-        quadro arruma o link na fila. Mesma regra do rotulo da categoria -- o
-        `task_id` e a chave, o titulo e a etiqueta.
-
-        ⚠️ E TAREFA APAGADA NAO ENTRA. Ela sai do dicionario, a tela cai no
-        "tarefa vinculada" sem nome, e o pedido volta a aparecer como algo a
-        resolver -- que e a verdade.
-
-        ⚠️ UMA CONSULTA PARA A PAGINA INTEIRA: dez envios de quatro categorias
-        seriam 40 idas ao banco para buscar um titulo.
+        Resolvido na hora; tarefa apagada nao entra.
         """
         ids = {i.task_id for i in itens if i.task_id is not None}
         if not ids:
@@ -574,11 +452,10 @@ class SolicitationService:
         form_id: uuid.UUID | None = None,
         without_task: bool = False,
     ) -> tuple[list[Batch], int]:
-        """Fila agrupada por ENVIO (um card por submissao).
+        """Fila agrupada por envio (um card por submissao).
 
-        `team_id` recorta a fila pelo time do FORMULARIO (Spec 048, fatia D).
-        `None` = sem recorte. Sem default nos tres metodos de leitura, de
-        proposito -- ver `SolicitationRepository.count_pending`.
+        `team_id` recorta pelo time do formulario; `None` = sem recorte. Sem
+        default de proposito -- ver `SolicitationRepository.count_pending`.
         """
         validos = set(SolicitationStatus) | {"SEM_TAREFA", "ACTIVE"}
         if filtro is not None and filtro not in validos:
@@ -638,15 +515,10 @@ class SolicitationService:
         return await self.repo.count_approved_without_task(team_id)
 
     async def _assert_tarefa_do_workspace(self, task_id: uuid.UUID) -> Task:
-        """A tarefa existe, e VIVA e e deste workspace?
+        """A tarefa existe, esta viva e e deste workspace? Senao, 404 com texto.
 
-        ⚠️ A FK COMPOSTA JA IMPEDIRIA apontar para outro cliente -- mas o erro
-        viria do banco como violacao de integridade, feio e sem explicacao.
-        Aqui vira 404 com texto.
-
-        ⚠️ E O `deleted_at` IMPORTA: tarefa arquivada some das telas, e
-        vincular o pedido a uma delas seria criar um botao que leva a lugar
-        nenhum. A FK nao sabe de soft delete.
+        A FK composta ja barraria outro workspace, mas com erro de integridade, e
+        nao sabe de soft delete.
         """
         tenant = require_tenant()
         tarefa = (
@@ -665,22 +537,10 @@ class SolicitationService:
     async def criar_tarefa(
         self, uow: UnitOfWork, command: CriarTarefaCommand
     ) -> tuple[Solicitation, Task]:
-        """Cria a tarefa A PARTIR do pedido e ja a vincula.
+        """Cria a tarefa a partir do pedido e ja a vincula.
 
-        ⚠️⚠️ ISTO SUBSTITUI UM COPIA-E-COLA, e o rastro dele estava na tela: o
-        botao "Copiar briefing" existe desde a Spec 025 porque o fluxo real era
-        copiar, sair da fila, abrir o quadro, criar a tarefa, colar, voltar e
-        marcar "tarefa criada". Seis passos, e o ultimo era o que mais se
-        esquecia -- dai o filtro "aprovadas sem tarefa" ter valor.
-
-        ⚠️ O TIME VEM DO FORMULARIO, e nao de quem clica. O pedido entrou por
-        uma porta que pertence a um time; a tarefa nasce nesse mesmo time. Usar
-        o time de quem tria faria a tarefa nascer longe de quem vai faze-la
-        sempre que um ADMIN triasse a fila de outra equipe.
-
-        ⚠️ E O PEDIDO PRECISA ESTAR ACEITO. Criar tarefa de pedido pendente
-        pularia a triagem por um caminho lateral -- a mesma razao de `andar`
-        recusar PENDING.
+        O time vem do formulario por onde o pedido entrou, nao de quem clica. O
+        pedido precisa estar aceito.
         """
         solicitation = await self._para_triar(command.solicitation_id)
         if solicitation.status not in ACEITOS:
@@ -688,17 +548,13 @@ class SolicitationService:
                 "Aprove a solicitação antes de criar a tarefa."
             )
         if solicitation.task_id is not None:
-            # ⚠️ RECUSA EM VEZ DE CRIAR A SEGUNDA: dois cliques no mesmo botao,
-            # ou duas abas, dariam duas tarefas identicas no quadro -- e a
-            # segunda ficaria orfa, porque o vinculo e um so.
+            # Recusa a segunda (duplo clique, duas abas): o vinculo e um so.
             raise BusinessRuleError(
                 "Esta solicitação já tem uma tarefa vinculada."
             )
 
         time = await self._time_do_pedido(solicitation)
-        # ⚠️ O ROTULO BONITO DA CATEGORIA, e nao o slug: a tarefa se chama
-        # "[Fotografia] ..." e nao "[foto] ...". Se a secao nao existir mais, o
-        # slug e a reserva -- a mesma regra da fila.
+        # Titulo da secao, e nao o slug; se a secao sumiu, o slug e a reserva.
         rotulos = await self.rotulos_de_categoria([solicitation])
         rotulo = rotulos.get((solicitation.form_id, solicitation.category))
         nome = rotulo.title if rotulo else None
@@ -710,8 +566,7 @@ class SolicitationService:
                 description=briefing(solicitation, nome),
                 team_id=time,
                 board_id=command.board_id,
-                # ⚠️ QUEM TRIA VIRA RESPONSAVEL quando ninguem e indicado --
-                # ver `CriarTarefaCommand.assignee_ids`.
+                # Ninguem indicado: quem tria vira responsavel.
                 assignee_ids=command.assignee_ids or [tenant.user_id],
             )
         )
@@ -724,31 +579,19 @@ class SolicitationService:
         return solicitation, tarefa
 
     async def _para_triar(self, solicitation_id: uuid.UUID) -> Solicitation:
-        """O pedido, se quem chama o TRIA. Spec 051, fatia B.
-
-        Duas perguntas, nesta ordem:
+        """O pedido, se quem chama o tria.
 
             ler   -- o `_base_select` do repositorio ja recorta por
                      `solicitation.read` no time do formulario: fora dele, 404;
-            triar -- `solicitation.review` NO TIME DO FORMULARIO: sem ele, 403.
+            triar -- `solicitation.review` no time do formulario: sem ele, 403.
 
-        ⚠️ HOJE OS DOIS VERBOS ESTAO NOS MESMOS PAPEIS, e o 403 nao acontece por
-        nenhum papel pre-definido. A pergunta fica porque a rota so ve
-        `solicitation.review` "em algum lugar" -- e o dia em que um papel ler
-        sem triar e o dia em que ele triaria a fila de outro time.
-
-        ⚠️ O TIME E O DO FORMULARIO MESMO APAGADO, como no `_base_select` (que
-        junta sem olhar `deleted_at`): a fila e o triar tem de concordar sobre
-        de quem e o pedido. Orfa de verdade (sem `form_id`) nao tem time, e
-        `can_in(p, None)` responde so pela organizacao.
+        A rota so confere `solicitation.review` "em algum lugar"; aqui e no time.
+        O time e o do formulario mesmo apagado, como no `_base_select`. Pedido sem
+        `form_id` nao tem time e `None` responde so pela organizacao.
         """
         solicitation = await self.repo.get_by_id_or_raise(solicitation_id)
-        # ⚠️ TRAVA O PEDIDO E RELE (auditoria de 16/10). Aprovar, rejeitar,
-        # criar tarefa e marcar conferem o estado e so depois gravam: duas
-        # pessoas aprovando e rejeitando ao mesmo tempo passavam as duas, a
-        # ultima gravacao vencia e o n8n mandava ao solicitante "aprovada" E
-        # "rejeitada"; dois "Criar tarefa" criavam duas tarefas. Com a trava, a
-        # segunda espera a primeira e ja ve o estado novo.
+        # Trava a linha e rele: sem isso, aprovar e rejeitar ao mesmo tempo (ou
+        # dois "Criar tarefa") passariam as duas verificacoes.
         await self.session.execute(
             select(Solicitation.id)
             .where(Solicitation.id == solicitation.id)
@@ -769,15 +612,10 @@ class SolicitationService:
         return solicitation
 
     async def _time_do_pedido(self, solicitation: Solicitation):
-        """O time dono do FORMULARIO por onde o pedido entrou.
+        """O time dono do formulario por onde o pedido entrou.
 
-        ⚠️ `None` SO PARA PEDIDO ORFAO (anterior a esta spec, sem `form_id`), e
-        `None` no `CreateTaskCommand` significa "o subtime de quem cria".
-
-        ⚠️ FORMULARIO APAGADO AINDA TEM TIME (auditoria de 21/10, item 6), como
-        no `_para_triar`, que ja deixou o pedido ser triado por esse time. O
-        filtro de `deleted_at` que havia aqui devolvia `None`, e com mais de um
-        time raiz o "subtime de quem cria" da 422: aprovava e nao criava.
+        `None` so para pedido sem `form_id` (no `CreateTaskCommand`, "o subtime
+        de quem cria"). Formulario apagado ainda tem time, como no `_para_triar`.
         """
         if solicitation.form_id is None:
             return None
@@ -792,18 +630,14 @@ class SolicitationService:
     async def mark_task(
         self, uow: UnitOfWork, command: MarkTaskCommand
     ) -> Solicitation:
-        """Marca/desmarca "tarefa criada" numa solicitacao APROVADA.
+        """Marca/desmarca "tarefa criada" numa solicitacao aceita.
 
-        E autodeclarado -- ninguem verifica se a tarefa existe mesmo. O
-        valor esta no CONTRARIO: o que fica sem marca aparece no filtro
-        "aprovadas sem tarefa" e para de ser invisivel.
+        Autodeclarado: ninguem verifica se a tarefa existe. O que fica sem marca
+        aparece no filtro "aprovadas sem tarefa".
         """
         solicitation = await self._para_triar(command.solicitation_id)
 
-        # ⚠️ OS TRES ACEITOS (Spec 043, fatia D), e nao so APPROVED. Um pedido
-        # EM ANDAMENTO e justamente aquele em que a tarefa foi criada -- exigir
-        # APPROVED aqui tornaria impossivel marcar a tarefa depois de comecar o
-        # trabalho, que e quando isso normalmente acontece.
+        # Os tres aceitos, e nao so APPROVED: a tarefa costuma ser marcada ja em andamento.
         if solicitation.status not in ACEITOS:
             raise BusinessRuleError(
                 "So solicitacao aprovada pode ser marcada como tarefa criada."
@@ -815,29 +649,16 @@ class SolicitationService:
             solicitation.task_marked_by_user_id = tenant.user_id
             solicitation.task_ref = (command.task_ref or "").strip()[:500] or None
             if command.task_id is not None:
-                # ⚠️ CONFERIDA CONTRA O WORKSPACE, e nao aceita crua. A FK
-                # composta ja impediria apontar para outro cliente, mas o erro
-                # viria do banco como violacao de integridade -- feio e sem
-                # explicacao. Aqui vira 404 com texto.
                 tarefa = await self._assert_tarefa_do_workspace(command.task_id)
-                # ⚠️⚠️ Spec 051, fatia B: E ESTAR NA LENTE de quem marca. So o
-                # workspace era conferido -- um gerente do Marketing vinculava
-                # uma tarefa do Comercial (bastava o id) e a fila passava a
-                # mostrar o TITULO dela (`titulos_das_tarefas`). Fora da lente,
-                # a mesma resposta de tarefa inexistente: 404.
+                # E precisa estar na lente de quem marca; fora dela, 404.
                 await TaskScopeGuards(self.session).assert_visible(tarefa)
                 solicitation.task_id = command.task_id
-            # ⚠️ SEM `task_id`, O VINCULO QUE JA EXISTE FICA (auditoria de
-            # 16/10). "Ja criei -- so marcar" gravava `None` por cima: com a
-            # tela velha numa aba e "Criar tarefa" clicado na outra, a tarefa
-            # criada perdia o vinculo e virava so texto na fila.
+            # Sem `task_id`, o vinculo que ja existe fica.
         else:
             solicitation.task_created_at = None
             solicitation.task_marked_by_user_id = None
             solicitation.task_ref = None
-            # ⚠️ DESMARCAR SOLTA O VINCULO TAMBEM. Deixar `task_id` apontando
-            # para uma tarefa depois de "esta solicitacao nao tem tarefa" seria
-            # a tela dizendo duas coisas opostas ao mesmo tempo.
+            # Desmarcar solta o vinculo tambem.
             solicitation.task_id = None
 
         await uow.commit()
@@ -850,17 +671,10 @@ class SolicitationService:
     async def _monta_aviso(
         self, solicitation: Solicitation, anterior: str
     ) -> AvisoDeStatus | None:
-        """O retrato do pedido para o n8n, montado AINDA COM A SESSAO VIVA.
+        """O retrato do pedido para o n8n, montado ainda com a sessao viva.
 
-        ⚠️⚠️ MONTAR ANTES E ENVIAR DEPOIS DO COMMIT e o coracao da regra 1 do
-        §8. Se o envio acontecesse dentro da transacao, um n8n lento seguraria
-        a linha no banco e um n8n fora do ar **desfaria a aprovacao**. Mas
-        depois do commit a sessao pode nao servir mais para ler relacionamento
-        -- entao os VALORES sao lidos aqui, e o que atravessa e um dataclass
-        congelado, sem nenhum caminho de volta ao banco.
-
-        ⚠️ E ELE SO CONSULTA SE O RECURSO ESTIVER LIGADO. Sem `N8N_WEBHOOK_URL`
-        nao ha razao para duas consultas a cada aprovacao.
+        Monta antes e envia depois do commit (ver `aviso_de_status`). So consulta
+        se o recurso estiver ligado.
         """
         if not aviso_de_status.esta_ligado():
             return None
@@ -910,7 +724,7 @@ class SolicitationService:
         )
 
     async def _avisar_status(self, aviso: AvisoDeStatus | None) -> None:
-        """Dispara o aviso. **Nunca levanta** -- ver `aviso_de_status`."""
+        """Dispara o aviso. Nunca levanta -- ver `aviso_de_status`."""
         if aviso is None:
             return
         await aviso_de_status.avisar(aviso)
@@ -918,17 +732,9 @@ class SolicitationService:
     async def andar(
         self, uow: UnitOfWork, command: AndarCommand
     ) -> Solicitation:
-        """Move um pedido ACEITO entre aprovada, em andamento e concluida.
+        """Move um pedido aceito entre aprovada, em andamento e concluida.
 
-        ⚠️ ISTO NAO E TRIAGEM, e a separacao e o ponto da fatia D. `review`
-        decide se o pedido vale; `andar` conta em que pe ele esta. Por isso
-        este metodo **nao toca** em `reviewed_by_user_id` nem em `reviewed_at`:
-        eles registram quem decidiu e quando, e sao o que sobra para responder
-        quando alguem cobrar meses depois.
-
-        ⚠️ E POR ISSO A PERMISSAO E A MESMA (`solicitation.review`) mas a
-        GUARDA E OUTRA: `can_review` continua exigindo PENDING, e este caminho
-        exige o contrario -- ja ter saido de PENDING.
+        Nao e triagem: nao toca em `reviewed_by_user_id` nem em `reviewed_at`.
         """
         solicitation = await self._para_triar(command.solicitation_id)
 
@@ -937,8 +743,7 @@ class SolicitationService:
                 "Situação inválida: use aprovada, em andamento ou concluída."
             )
         if not pode_andar(solicitation.status, command.novo_status):
-            # ⚠️ A MENSAGEM SEPARA OS DOIS MOTIVOS, porque as saidas sao
-            # diferentes: de PENDING falta triar, de REJECTED nao ha saida.
+            # Mensagens distintas: de PENDING falta triar, de REJECTED nao ha saida.
             if solicitation.status == SolicitationStatus.PENDING:
                 raise BusinessRuleError(
                     "Esta solicitação ainda não foi triada — aprove antes de "
@@ -965,9 +770,7 @@ class SolicitationService:
     ) -> Solicitation:
         """Aprova ou rejeita uma solicitacao PENDING.
 
-        Rejeicao EXIGE justificativa: e o unico retorno que o
-        solicitante tera (nao ha conta/notificacao pra ele) -- a
-        justificativa fica registrada pra quando ele cobrar.
+        Rejeicao exige justificativa: e o unico retorno que o solicitante recebe.
         """
         solicitation = await self._para_triar(command.solicitation_id)
 
@@ -994,7 +797,7 @@ class SolicitationService:
         solicitation.reviewed_by_user_id = tenant.user_id
         solicitation.reviewed_at = datetime.now(UTC)
 
-        # ⚠️ MONTADO ANTES DO COMMIT, ENVIADO DEPOIS -- ver `_avisar_status`.
+        # Montado antes do commit, enviado depois.
         aviso = await self._monta_aviso(solicitation, anterior)
         await uow.commit()
         await self.session.refresh(solicitation)

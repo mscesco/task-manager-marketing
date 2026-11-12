@@ -1,8 +1,7 @@
-"""Rotas da Base (Spec 056) -- base e coluna (fatia B).
+"""Rotas da Base.
 
-Cada rota cobra o VERBO da acao no portao (`require_permission`: "tem em ALGUM
-lugar?"); o servico pergunta o mesmo verbo NO TIME DA BASE. Ver o topo de
-`BaseService` para a ordem das respostas (403, 404, 403, 422/409).
+Cada rota cobra o verbo da acao no portao (`require_permission`: "tem em algum
+lugar?"); o servico pergunta o mesmo verbo no time da base.
 
 Rotas:
     GET    /bases                                        -- base.read
@@ -10,12 +9,11 @@ Rotas:
     GET    /bases/{id}                                   -- base.read
     PATCH  /bases/{id}                                   -- base.update
     POST   /bases/{id}/columns                           -- base_column.create
+    POST   /bases/{id}/columns/{column_id}/duplicate     -- base_column.create
     PATCH  /bases/{id}/columns/{column_id}               -- base_column.update
     POST   /bases/{id}/columns/{column_id}/make-title    -- base_column.update
     DELETE /bases/{id}/columns/{column_id}               -- base_column.delete
     DELETE /bases/{id}/columns/{column_id}/options/{oid} -- base_column.delete
-
-Fatia C:
     GET    /bases/{id}/rows                              -- base.read
     POST   /bases/{id}/rows                              -- base_row.create
     PATCH  /bases/{id}/rows/{row_id}                     -- base_row.update
@@ -26,24 +24,15 @@ Fatia C:
     DELETE /bases/{id}/views/{view_id}                   -- base_view.delete
     POST   /bases/{id}/undo                              -- base.read (+ o verbo
     POST   /bases/{id}/redo                                 da acao, no servico)
-
-Fatia D:
     GET    /bases/trash                                  -- base.restore
     DELETE /bases/{id}                                   -- base.delete
     POST   /bases/{id}/restore                           -- base.restore
-    (e a rotina diaria, em `/system/bases/purge` -- `tasks/api/system_router`)
-
-Fatia G:
     GET    /bases/{id}/events                            -- base.read (SSE)
-
-Fatia I (o cabecalho como o do Notion):
-    POST   /bases/{id}/columns  com `position`           -- inserir no meio
-    POST   /bases/{id}/columns/{column_id}/duplicate     -- base_column.create
-
-Spec 057 (planilha):
     POST   /bases/import/preview                         -- base_row.create OU
     POST   /bases/import                                    base.create
     POST   /bases/{id}/export                            -- base.read (no servico)
+
+A rotina diaria fica em `/system/bases/purge` (`tasks/api/system_router`).
 """
 
 from __future__ import annotations
@@ -141,7 +130,7 @@ async def create_base(payload: BaseCreateRequest, uow: UoWDep) -> BaseResponse:
     return BaseResponse.from_detail(detail)
 
 
-# --------------------------------------------------------------- planilha (Spec 057)
+# --------------------------------------------------------------- planilha
 class _ImportFile(BaseModel):
     """O arquivo em base64 (sem `python-multipart`: o corpo continua JSON)."""
 
@@ -175,14 +164,14 @@ class _ImportRequest(_ImportFile):
 
 
 #: Importar = criar linhas numa base que existe, ou criar uma base nova. A porta
-#: pede um dos dois; o servico confere NO TIME do destino.
+#: pede um dos dois; o servico confere no time do destino.
 _PODE_IMPORTAR = Depends(require_any_permission("base_row.create", "base.create"))
 
 
 @router.post("/import/preview", dependencies=[_PODE_IMPORTAR])
 async def preview_import(payload: _ImportFile) -> dict:
     """Le a planilha: abas, cabecalho, 20 linhas e o tipo sugerido de cada coluna.
-    Nao grava nada -- e o passo 1 do assistente."""
+    Nao grava nada."""
     p = await asyncio.to_thread(
         BaseImportService.preview,
         payload.content(),
@@ -244,7 +233,7 @@ class _ExportRequest(BaseModel):
 async def export_base(
     base_id: uuid.UUID, payload: _ExportRequest, _: TenantContextDep, session: SessionDep
 ) -> Response:
-    """A base em planilha, com as linhas e colunas DA VISAO que a tela mandou."""
+    """A base em planilha, com as linhas e colunas da visao que a tela mandou."""
     content, media, nome = await BaseExportService(session).export(
         base_id, fmt=payload.format, row_ids=payload.row_ids, column_ids=payload.column_ids
     )
@@ -261,8 +250,7 @@ async def export_base(
     dependencies=[Depends(require_permission("base.restore"))],
 )
 async def list_trash(session: SessionDep) -> list[BaseTrashItemResponse]:
-    """⚠️ DECLARADA ANTES de `/{base_id}`: na ordem inversa, "trash" seria lido
-    como id da base e daria 422."""
+    """Declarada antes de `/{base_id}`, senao "trash" seria lido como id."""
     bases = await BaseService(session).list_trash()
     return [
         BaseTrashItemResponse(
@@ -307,8 +295,7 @@ async def update_base(
     dependencies=[Depends(require_permission("base.delete"))],
 )
 async def delete_base(base_id: uuid.UUID, uow: UoWDep) -> BaseSummaryResponse:
-    """Exclui (D5): fica 10 dias na lixeira. A confirmacao pelo nome (D26) e da
-    tela."""
+    """Exclui: fica 10 dias na lixeira."""
     base = await BaseService(uow.session).delete(base_id)
     await uow.commit()
     return BaseSummaryResponse.model_validate(base)
@@ -355,7 +342,7 @@ async def create_column(
 async def duplicate_column(
     base_id: uuid.UUID, column_id: uuid.UUID, uow: UoWDep
 ) -> ColumnResponse:
-    """Fatia I: "Duplicar propriedade" -- com os valores, logo a direita."""
+    """"Duplicar propriedade": com os valores, logo a direita."""
     coluna = await BaseService(uow.session).duplicate_column(base_id, column_id)
     await uow.commit()
     return ColumnResponse.from_model(coluna)
@@ -400,7 +387,7 @@ async def update_column(
 async def make_title(
     base_id: uuid.UUID, column_id: uuid.UUID, uow: UoWDep
 ) -> ColumnResponse:
-    """Spec 061: a coluna de texto vira a principal; o titulo de antes, texto."""
+    """A coluna de texto vira a principal; o titulo de antes, texto."""
     coluna = await BaseService(uow.session).make_title(base_id, column_id)
     await uow.commit()
     return ColumnResponse.from_model(coluna)
@@ -477,7 +464,7 @@ class _RowsBatchRequest(BaseModel):
 async def create_rows(
     base_id: uuid.UUID, payload: _RowsBatchRequest, uow: UoWDep
 ) -> list[RowResponse]:
-    """Varias linhas, uma acao do diario (Spec 057: colar alem da ultima)."""
+    """Varias linhas, uma acao do diario (colar alem da ultima)."""
     linhas = await RowService(uow.session).create_rows(
         base_id, [r.values for r in payload.rows]
     )
@@ -599,13 +586,8 @@ async def redo(base_id: uuid.UUID, uow: UoWDep) -> UndoResponse:
 
 
 # --------------------------------------------------------------- ao vivo
-#: Quanto um canal vive antes de se fechar (spec §10, fatia G).
-#:
-#: ⚠️⚠️ CURTO DE PROPOSITO. Cada reconexao passa de novo pelo portao e pelo
-#: `base.read` NO TIME DA BASE -- e essa e a "releitura do verbo a cada 60 s"
-#: da spec §5.7, sem um laco extra aqui dentro: quem perdeu o acesso (saiu do
-#: time, conta desativada, papel trocado) nao reabre. E o token que vence
-#: tambem nao reabre, e o front renova na recarga que faz ao reconectar.
+#: Quanto um canal vive antes de se fechar. Curto de proposito: cada reconexao
+#: confere de novo o `base.read` e o token, entao quem perdeu acesso nao reabre.
 CANAL_SEGUNDOS = 60.0
 #: Comentario SSE a cada tanto, para proxy nenhum fechar o canal por silencio.
 PING_SEGUNDOS = 15.0
@@ -616,23 +598,19 @@ PING_SEGUNDOS = 15.0
     dependencies=[Depends(require_permission("base.read"))],
 )
 async def base_events(base_id: uuid.UUID, session: SessionDep) -> StreamingResponse:
-    """O canal ao vivo de UMA base (Server-Sent Events).
+    """O canal ao vivo de uma base (Server-Sent Events).
 
-    Cada `data:` e `{base_id, kind, actor_id}` -- so o AVISO de que mudou; quem
-    recebe recarrega (ver `infrastructure/live.py`). `event: end` = o canal
-    venceu, reconecte.
+    Cada `data:` e `{base_id, kind, actor_id}`, so o aviso de que mudou; quem
+    recebe recarrega. `event: end` = o canal venceu, reconecte.
 
-    ⚠️ A SESSAO E FECHADA ANTES DE TRANSMITIR: o canal fica aberto 60 s, e uma
-    conexao do pool presa por navegador esgotaria o pool com uma dezena de
-    pessoas olhando a mesma base.
+    A sessao e fechada antes de transmitir: uma conexao do pool presa por
+    navegador esgotaria o pool.
     """
     await BaseService(session).get_detail(base_id)  # 404 se nao le
     await session.close()
 
     async def fluxo() -> AsyncIterator[str]:
-        # ⚠️ A inscricao mora DENTRO do gerador: fora dele, um navegador que
-        # desistisse antes de a transmissao comecar deixaria a fila inscrita
-        # para sempre (o `finally` so roda se o gerador rodou).
+        # A inscricao mora dentro do gerador: o `finally` so roda se ele rodou.
         try:
             fila = await live.hub.subscribe(base_id)
         except Exception:  # a escuta nao abriu: o front cai na recarga de 10 s
@@ -659,8 +637,7 @@ async def base_events(base_id: uuid.UUID, session: SessionDep) -> StreamingRespo
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache, no-transform",
-            # Para proxy que bufferiza por padrao (nginx); o Traefik nao
-            # bufferiza, e a fatia confere na VPS com `curl -N`.
+            # Para proxy que bufferiza por padrao (nginx).
             "X-Accel-Buffering": "no",
         },
     )

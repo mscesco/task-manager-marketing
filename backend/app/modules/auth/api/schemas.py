@@ -42,8 +42,7 @@ class RenameSelfResponse(BaseModel):
 
 
 class TeamMembershipOut(BaseModel):
-    """Um vinculo (time, papel) do usuario. Base para o front derivar a
-    lente: quais quadros de time mostrar e qual e a raiz. So leitura."""
+    """Um vinculo (time, papel) do usuario; o front deriva a lente daqui."""
 
     team_id: uuid.UUID
     role: str

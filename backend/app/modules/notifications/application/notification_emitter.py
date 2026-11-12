@@ -1,37 +1,13 @@
-"""Emissor de notificacoes (Spec 018) -- PONTO UNICO DE EMISSAO.
+"""Emissor de notificacoes: ponto unico de emissao, um metodo por tipo de evento.
 
-Os services que disparam eventos (designar responsavel, comentar)
-instanciam um `NotificationEmitter(session)` e chamam UM metodo por tipo
-de evento. Nada de `if` de notificacao espalhado pelos services: cada
-tipo novo no futuro = um metodo novo aqui, chamado de um lugar so.
+Best-effort: cada emissao roda num savepoint com flush dentro dele. Sem o
+savepoint, um INSERT que falhasse no commit abortaria a transacao inteira,
+levando junto a acao principal; aqui a falha so loga e nunca propaga.
 
-BEST-EFFORT (blindagem): a emissao roda num SAVEPOINT (`begin_nested`) com
-flush forcado dentro dele. Se a notificacao falhar por QUALQUER motivo
-(tabela ausente, constraint, erro de query), faz rollback SO do savepoint
--- a acao principal (assignment/comentario), ja flushada ANTES, sobrevive
--- e loga loud. A emissao NUNCA propaga excecao: notificacao e efeito
-colateral e jamais pode derrubar a acao que a disparou.
-
-Por que savepoint e nao try/except simples: o INSERT da notificacao, se
-adiado pro commit da transacao compartilhada, aborta a transacao INTEIRA
-no Postgres quando falha -- envenenando tambem a acao principal. O flush
-DENTRO do savepoint faz a falha acontecer isolada e reversivel.
-
-⚠️ O PAPEL (Spec 054, D12): todo aviso de tarefa grava POR QUE chegou para cada
-destinatario -- `watcher`, `assignee`, `creator` --, e quem chama informa em
-`papeis`. E o que a tela de preferencias usa para silenciar por papel. Os tipos
-pessoais gravam vazio, e vazio nunca e silenciado.
-
-⚠️ A TRAVA (Spec 053, fatia A): nenhum aviso de TAREFA vai para quem nao a
-alcanca no momento do envio. Mora AQUI, e nao em cada service, para que um
-tipo novo nao dependa de alguem lembrar -- foi assim que o aviso de comentario
-passou meses mandando o titulo da tarefa para responsavel e criador que tinham
-perdido o time. A checagem roda dentro do savepoint: se ela falhar, o aviso nao
-sai (e a acao principal continua).
-
-Snapshot de exibicao (D1): no momento da emissao gravamos
-`{actor_name, task_title}` no payload. O read fica barato (scan de 1
-tabela) ao custo de o titulo ficar "congelado" se a task for renomeada.
+Todo aviso de tarefa passa pela trava de alcance (`_so_quem_alcanca`) e grava
+o papel do destinatario (`watcher`, `assignee`, `creator`), usado pelas
+preferencias; tipos pessoais gravam papel vazio, que nunca e silenciado.
+O payload guarda `{actor_name, task_title}` como snapshot do momento.
 """
 
 from __future__ import annotations
@@ -53,7 +29,7 @@ from app.modules.notifications.infrastructure.notification_repository import (
 
 logger = get_logger(__name__)
 
-#: Spec 053, D18: avisos seguidos do mesmo autor se juntam dentro desta janela.
+#: Avisos seguidos do mesmo autor se juntam dentro desta janela.
 JANELA_DE_JUNCAO = timedelta(minutes=10)
 
 _T = NotificationType
@@ -61,8 +37,7 @@ _T = NotificationType
 
 @dataclass(frozen=True)
 class AvisoDePrazo:
-    """Uma tarefa do aviso diario de prazo, com quem deve ser avisado e por
-    qual papel (`assignee` ou `creator`, Spec 054 D12)."""
+    """Uma tarefa do aviso diario de prazo, quem avisar e por qual papel."""
 
     task: Task
     recipient_ids: list[uuid.UUID]
@@ -84,10 +59,7 @@ class NotificationEmitter:
         task_id: uuid.UUID,
         task_title: str,
     ) -> None:
-        """Notifica o designado de que virou responsavel pela task.
-
-        No-op se o ator designou a si mesmo (nao faz sentido se notificar).
-        """
+        """Notifica o designado de que virou responsavel pela task (exceto a si mesmo)."""
         if recipient_id == actor_id:
             return
 
@@ -117,13 +89,8 @@ class NotificationEmitter:
         comment_id: uuid.UUID,
         papeis: dict[uuid.UUID, list[str]] | None = None,
     ) -> None:
-        """Notifica a audiencia da task de que houve um comentario.
-
-        Fan-out: uma notificacao por destinatario, com DEDUP (mesmo id nao
-        notifica duas vezes) e EXCLUINDO o autor do comentario. Se nao
-        sobrar ninguem, nao emite nada.
-        """
-        # dict.fromkeys: dedup preservando ordem; depois tira o autor.
+        """Notifica a audiencia da task de um comentario: sem repetidos e sem o autor."""
+        # dict.fromkeys: dedup preservando ordem.
         alvos = [r for r in dict.fromkeys(recipient_ids) if r != actor_id]
         if not alvos:
             return
@@ -152,12 +119,7 @@ class NotificationEmitter:
         task_title: str,
         comment_id: uuid.UUID,
     ) -> None:
-        """Notifica quem foi @mencionado num comentario (Spec 019).
-
-        Fan-out com DEDUP e EXCLUINDO o autor (auto-mencao nao notifica). Se
-        nao sobrar ninguem, nao emite. Mesmo savepoint best-effort: falha aqui
-        nunca derruba o comentario.
-        """
+        """Notifica quem foi @mencionado num comentario: sem repetidos e sem o autor."""
         alvos = [r for r in dict.fromkeys(recipient_ids) if r != actor_id]
         if not alvos:
             return
@@ -186,20 +148,10 @@ class NotificationEmitter:
         comment_id: uuid.UUID,
         emoji: str,
     ) -> None:
-        """Avisa o autor de que reagiram ao comentario dele (Spec 050, fatia B).
+        """Avisa o autor de que reagiram ao comentario dele (exceto a si mesmo).
 
-        No-op se o autor reagiu ao proprio comentario (decisao da Camila).
-
-        ⚠️ "SO QUANDO NASCE" NAO E DECIDIDO AQUI, e sim por quem chama: o
-        emissor nao sabe se foi reacao nova ou troca de emoji. Quem sabe e o
-        banco, no mesmo comando do upsert (`CommentReactionRepository.upsert`).
-
-        ⚠️ O ALCANCE e conferido duas vezes: pelo service, que sai cedo sem
-        carregar nada a mais, e pela trava geral deste emissor (Spec 053, A).
-
-        `emoji` vai no payload: o texto do sino mostra qual foi, e a notificacao
-        e snapshot -- se a pessoa trocar depois, o aviso continua dizendo o que
-        aconteceu naquele momento.
+        So quem chama sabe se a reacao e nova ou troca de emoji (pelo upsert de
+        `CommentReactionRepository`); troca nao deve chegar aqui.
         """
         if recipient_id == actor_id:
             return
@@ -231,8 +183,7 @@ class NotificationEmitter:
         task_title: str,
         comment_id: uuid.UUID,
     ) -> None:
-        """Avisa o autor de que responderam ao comentario dele (auditoria
-        11/11, item 13). No-op para quem responde a si mesmo."""
+        """Avisa o autor de que responderam ao comentario dele (exceto a si mesmo)."""
         if recipient_id == actor_id:
             return
 
@@ -261,10 +212,7 @@ class NotificationEmitter:
         task_id: uuid.UUID,
         task_title: str,
     ) -> None:
-        """Outra pessoa colocou `recipient_id` para seguir a tarefa (Spec 053, D17).
-
-        No-op quando a pessoa seguiu sozinha: ela sabe o que fez.
-        """
+        """Outra pessoa colocou `recipient_id` para seguir a tarefa (no-op se foi ela)."""
         if recipient_id == actor_id:
             return
 
@@ -293,11 +241,9 @@ class NotificationEmitter:
         task_id: uuid.UUID,
         task_title: str,
     ) -> None:
-        """Outra pessoa tirou `recipient_id` dos seguidores (Spec 053, D17).
+        """Outra pessoa tirou `recipient_id` dos seguidores (no-op se foi ela).
 
-        No-op quando a pessoa saiu sozinha. ⚠️ A saida AUTOMATICA por perda de
-        alcance (§6.8) nao passa por aqui: avisar mostraria o titulo de uma
-        tarefa que ela nao pode mais ver -- e a trava barraria de todo jeito.
+        A saida automatica por perda de alcance nao passa por aqui.
         """
         if recipient_id == actor_id:
             return
@@ -330,17 +276,10 @@ class NotificationEmitter:
         extra: dict | None = None,
         papeis: dict[uuid.UUID, list[str]] | None = None,
     ) -> None:
-        """Os avisos de mudanca da Spec 053 (fatia C): coluna, prazo, descricao,
-        arquivar, desarquivar e excluir.
+        """Avisos de mudanca: coluna, prazo, descricao, arquivar, desarquivar, excluir.
 
-        Um metodo so, e nao seis, porque os seis tem a MESMA forma -- fan-out
-        para a audiencia da tarefa, menos o autor, pela trava, com juncao. O que
-        muda entre eles e o `extra` do payload e a regra de juntar
-        (`_combinar`).
-
-        ⚠️ QUEM CHAMA DECIDE SE FOI GESTO DIRETO (D16). Este metodo nao sabe se
-        a mudanca de coluna veio do arraste ou do laco de apagar coluna -- e
-        por isso ele e chamado das ROTAS, e nunca de dentro do `TaskService`.
+        Chamado das rotas, nunca do `TaskService`: so a rota sabe se foi gesto
+        direto (arraste) ou efeito colateral (apagar coluna).
         """
         alvos = [r for r in dict.fromkeys(recipient_ids) if r != actor_id]
         if not alvos:
@@ -351,8 +290,7 @@ class NotificationEmitter:
             opostos = (_T.TASK_UNARCHIVED,)
         elif tipo is _T.TASK_UNARCHIVED:
             opostos = (_T.TASK_ARCHIVED,)
-            # §6.5: "Reativar" e PATCH de coluna + desarquivar. Um gesto, um
-            # aviso: o desarquivar leva junto a mudanca de coluna recente.
+            # "Reativar" e PATCH de coluna + desarquivar: um gesto, um aviso.
             absorve = (_T.TASK_COLUMN_CHANGED,)
 
         async def _do() -> None:
@@ -376,19 +314,10 @@ class NotificationEmitter:
         await self._emit_safely(tipo.value, _do)
 
     async def prazos(self, *, overdue: bool, avisos: list[AvisoDePrazo]) -> None:
-        """Spec 023: os avisos de prazo do dia -- vence em ~2 dias
-        (`overdue=False`) ou atrasou (`True`) -- para um lote de tarefas.
+        """Avisos de prazo do dia (vence em breve ou atrasou) para um lote de tarefas.
 
-        Notificacao de SISTEMA: `actor_id=None`, sem auto-exclusao. Destinatario
-        repetido sai uma vez; tarefa sem destinatario nao emite.
-
-        ⚠️ EM LOTE (auditoria de 11/11, item 18): a trava de alcance roda UMA
-        vez para todas as tarefas, os avisos vao num INSERT so, e o savepoint e
-        um so. Antes eram umas 7
-        consultas por tarefa, com as linhas travadas pelo job. O preco: uma
-        falha aqui perde os avisos do lote inteiro, nao so de uma tarefa -- e
-        o job grava a marca de "avisado" assim mesmo, o vies at-most-once que
-        ele ja tinha.
+        Notificacao de sistema (`actor_id=None`). Trava, INSERT e savepoint sao
+        um so para o lote: uma falha perde os avisos do lote inteiro.
         """
         from app.modules.tasks.application.task_guards import (
             user_ids_that_can_view_tasks,
@@ -434,28 +363,9 @@ class NotificationEmitter:
         quantidade: int,
         subtimes: list[str],
     ) -> None:
-        """Avisa que ela perdeu acesso a N tarefas (Spec 037 E9).
+        """Avisa que a pessoa perdeu acesso a N tarefas: um aviso por movimentacao.
 
-        ⚠️ "ACESSO", e nao "deixou de ser responsavel": esta linha dizia isso
-        ate a Spec 053, e a `quantidade` nunca foi so de responsavel -- conta
-        tambem as tarefas em que a pessoa so observava
-        (`member_service._remover_relacoes_perdidas`).
-
-        ⚠️ UMA notificacao por MOVIMENTACAO, nunca uma por tarefa. Medido em
-        06/08: duas pessoas carregam 30 das 33 tarefas que travariam hoje --
-        fan-out por tarefa entregaria 18 notificacoes de uma vez a mesma
-        pessoa, no mesmo segundo, e isso nao e aviso, e ruido que ensina a
-        ignorar o sino.
-
-        ⚠️ SEM `task_id`, e a ausencia e o ponto: a notificacao NAO aponta para
-        uma tarefa, porque ela fala de um conjunto. Alem disso, a pessoa acabou
-        de perder o alcance -- um link levaria a um 404.
-
-        ⚠️ `subtimes` no PLURAL. Rebaixar um MANAGER da raiz tira oito subtimes
-        de uma vez; a mensagem tem de caber nesse caso, nao so no de mover
-        alguem de um subtime para outro.
-
-        No-op se `quantidade == 0`: sem perda, sem aviso.
+        Sem `task_id` de proposito: fala de um conjunto, e um link daria 404.
         """
         if quantidade <= 0:
             return
@@ -487,9 +397,7 @@ class NotificationEmitter:
         absorve: tuple[NotificationType, ...] = (),
         roles: tuple[str, ...] = (),
     ) -> None:
-        """A JUNCAO DE AVISOS (Spec 053, D18), para UM destinatario.
-
-        Na ordem:
+        """Juncao de avisos para um destinatario. Na ordem:
           1. `absorve`: aviso recente destes tipos some (o desarquivar leva a
              mudanca de coluna do "Reativar");
           2. `opostos`: se ha um aviso recente do tipo OPOSTO, os dois se anulam
@@ -500,8 +408,7 @@ class NotificationEmitter:
           4. senao, cria.
 
         "Recente" = nao lido, mesmo autor, mesma tarefa, dentro de
-        `JANELA_DE_JUNCAO`. ⚠️ Aviso JA LIDO nunca e tocado: quem leu "moveu
-        para B" nao pode ver a frase mudar para "moveu para C".
+        `JANELA_DE_JUNCAO`. Aviso ja lido nunca e tocado.
         """
         for t in absorve:
             velho = await self._repo.recente_nao_lida(
@@ -542,23 +449,15 @@ class NotificationEmitter:
     def _papel_de(
         papeis: dict[uuid.UUID, list[str]] | None, rid: uuid.UUID
     ) -> tuple[str, ...]:
-        """Os papeis de UM destinatario, como tupla estavel.
-
-        Sem `papeis` (ou sem entrada para a pessoa) devolve vazio -- e vazio
-        nunca e silenciado por toggle de papel (Spec 054, D13).
-        """
+        """Os papeis de um destinatario; vazio se nao informado (nunca silenciado)."""
         return tuple((papeis or {}).get(rid, ()))
 
     async def _so_quem_alcanca(
         self, task_id: uuid.UUID, ids: list[uuid.UUID]
     ) -> list[uuid.UUID]:
-        """A TRAVA: dos `ids`, so quem enxerga a tarefa agora, na mesma ordem.
+        """A trava: dos `ids`, so quem enxerga a tarefa agora, na mesma ordem.
 
-        Tarefa que nao existe mais -> ninguem.
-
-        ⚠️ IMPORT TARDIO de proposito: `task_guards` vive em `tasks`, e os
-        services de `tasks` importam este emissor. No topo do modulo, o ciclo
-        dependeria da ordem de import de quem subir primeiro.
+        Import tardio: os services de `tasks` importam este emissor (ciclo).
         """
         from app.db.models import Task
         from app.modules.tasks.application.task_guards import (
@@ -576,17 +475,12 @@ class NotificationEmitter:
     async def _emit_safely(
         self, tipo: str, do: Callable[[], Awaitable[None]]
     ) -> None:
-        """Roda a criacao de notificacao(oes) num SAVEPOINT, best-effort.
-
-        Em caso de falha: rollback SO do savepoint (a acao principal
-        sobrevive) + log loud. NUNCA propaga.
-        """
+        """Roda a criacao num savepoint; na falha, desfaz so ele e loga, sem propagar."""
         try:
             async with self._session.begin_nested():
                 await do()
                 await self._session.flush()
         except Exception:
-            # logger.exception captura o traceback -> loud no log do deploy.
             logger.exception("notification.emit_failed", tipo=tipo)
 
     async def _actor_name(self, actor_id: uuid.UUID) -> str:
@@ -600,7 +494,7 @@ class NotificationEmitter:
 
 
 def _combinar(tipo: NotificationType, velho: dict, novo: dict) -> dict | None:
-    """O payload de dois avisos do MESMO tipo juntados. `None` = se anularam.
+    """O payload de dois avisos do mesmo tipo juntados. `None` = se anularam.
 
     - coluna: guarda a coluna de ORIGEM do primeiro e a de destino do ultimo;
       origem == destino (foi e voltou) -> some;

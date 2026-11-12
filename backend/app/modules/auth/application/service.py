@@ -1,15 +1,7 @@
-"""Service de autenticacao -- regra de negocio do login/refresh.
+"""Service de autenticacao: login, refresh, troca de senha, nome e logout.
 
-Mantem a regra FORA dos routers (regra da foundation:
-"FastAPI nao deve conter regra de negocio"). O router de
-auth so chama este service.
-
-Este service e um caso especial: ele roda ANTES de existir
-um tenant autenticado, entao NAO usa o BaseRepository
-(que exige TenantContext). Ele consulta workspace/users
-diretamente pela sessao -- e o unico lugar autorizado a
-fazer isso, justamente porque o login precisa descobrir o
-tenant.
+Roda antes de existir tenant, entao consulta workspace/users direto pela
+sessao, sem BaseRepository.
 """
 
 from __future__ import annotations
@@ -47,13 +39,9 @@ from app.shared.exceptions.base import (
 
 logger = get_logger(__name__)
 
-#: Hash bcrypt descartavel, calculado UMA vez no import com o MESMO custo das
-#: senhas reais. Serve para equalizar o tempo do login quando o workspace ou o
-#: usuario NAO existe: sem isso, o caminho "nao existe" retorna sem rodar bcrypt
-#: (~100ms a menos que o caminho de senha errada), e essa diferenca de tempo
-#: denuncia quais e-mails/workspaces existem (enumeracao de contas). Nesses
-#: caminhos rodamos um verify_password contra este hash e descartamos o
-#: resultado -- so pelo custo de CPU equivalente. (achado da auditoria.)
+#: Hash descartavel com o custo das senhas reais: toda recusa do login roda um
+#: bcrypt contra ele, para "conta nao existe" e "senha errada" levarem o mesmo
+#: tempo (evita enumeracao de contas).
 _TIMING_EQUALIZER_HASH = hash_password("timing-equalizer-not-a-real-password")
 
 
@@ -68,73 +56,50 @@ class AuthService:
     ) -> TokenPair:
         """Autentica por e-mail + senha dentro de um workspace.
 
-        Mensagens de erro sao GENERICAS de proposito -- nao
-        revelam se foi o e-mail, a senha ou o workspace que
-        falhou (evita enumeracao de contas).
-
-        FREIO POR CONTA (Spec 030, D5): mora AQUI, e nao no router como o
-        freio por IP, por causa do equalizador de tempo. Toda recusa deste
-        metodo gasta um bcrypt de proposito, para "nao existe" e "senha
-        errada" levarem o mesmo tempo. Se a recusa por balde cheio saisse do
-        router, ela responderia ~100ms mais rapido que as outras e essa
-        diferenca diria ao atacante que ele acertou o alvo -- desfazendo em
-        parte o trabalho que a constante _TIMING_EQUALIZER_HASH faz.
+        Mensagens genericas de proposito (evita enumeracao). O freio por conta
+        mora aqui, e nao no router, para a recusa por balde cheio tambem gastar
+        o bcrypt do equalizador e nao denunciar a conta pelo tempo.
         """
         chave_conta = account_key(email=email, workspace_slug=workspace_slug)
 
-        # 0. Balde da conta cheio? Mesma mensagem e MESMO status das demais
-        # recusas (401, nunca 429): um 429 diferenciado avisaria ao atacante
-        # que a conta existe e que ele esta no alvo certo.
+        # 401, nunca 429: um status diferente diria que a conta existe.
         if not (await account_login_limiter.check(self._session, chave_conta)).allowed:
-            # ⚠️ TODO bcrypt deste arquivo roda em thread (auditoria de 21/10):
-            # ~250 ms de CPU no loop congelavam o worker inteiro a cada login.
+            # Todo bcrypt roda em thread: no loop, congela o worker.
             await asyncio.to_thread(verify_password, password, _TIMING_EQUALIZER_HASH)
             logger.info("auth.login_blocked_account")
             raise AuthenticationError("Credenciais invalidas.")
 
-        # 1. Resolve o workspace pelo slug.
         workspace = (
             await self._session.execute(
                 select(Workspace).where(Workspace.slug == workspace_slug)
             )
         ).scalar_one_or_none()
         if workspace is None:
-            # Equaliza o tempo: roda bcrypt mesmo sem workspace (ver constante).
             await asyncio.to_thread(verify_password, password, _TIMING_EQUALIZER_HASH)
             await account_login_limiter.record(self._session, chave_conta)
             raise AuthenticationError("Credenciais invalidas.")
 
-        # 2. Resolve o usuario pelo par (workspace, email).
         user = (
             await self._session.execute(
                 select(User).where(
                     User.workspace_id == workspace.id,
-                    # ⚠️ Sem diferenciar maiusculas: o cadastro grava em
-                    # minusculas, o celular capitaliza a primeira letra, e
-                    # `Camila@...` com a senha certa recebia "credenciais
-                    # invalidas" -- e cada tentativa enchia o freio da conta.
+                    # Sem diferenciar maiusculas: o celular capitaliza o e-mail.
                     func.lower(User.email) == email.strip().lower(),
                 )
             )
         ).scalar_one_or_none()
         if user is None or not user.is_active:
-            # Equaliza o tempo: roda bcrypt mesmo sem usuario (ver constante).
             await asyncio.to_thread(verify_password, password, _TIMING_EQUALIZER_HASH)
-            # Spec 030 (D5): conta INEXISTENTE tambem enche o balde. Se so a
-            # conta real freasse, o proprio freio viraria sonda -- bastaria
-            # mandar 11 tentativas para descobrir se um e-mail tem conta.
+            # Conta inexistente tambem enche o balde, senao o freio vira sonda.
             await account_login_limiter.record(self._session, chave_conta)
             raise AuthenticationError("Credenciais invalidas.")
 
-        # 3. Confere a senha.
         if not await asyncio.to_thread(verify_password, password, user.password_hash):
             logger.info("auth.login_failed", workspace_id=str(workspace.id))
             await account_login_limiter.record(self._session, chave_conta)
             raise AuthenticationError("Credenciais invalidas.")
 
-        # 4. Entrega 7 (ADR 0019): provisoria expirada nao loga. Mesma
-        # mensagem generica -- nao revela que era provisoria. A provisoria
-        # VALIDA loga normalmente; o gate (ADR 0020) e que restringe depois.
+        # Provisoria expirada nao loga; a valida loga e cai no gate de troca.
         if (
             user.must_change_password
             and user.password_expires_at is not None
@@ -146,8 +111,7 @@ class AuthService:
             )
             raise AuthenticationError("Credenciais invalidas.")
 
-        # Acertou: zera o balde. Sem isto, quem loga varias vezes ao longo
-        # do dia acumularia registros e acabaria travado pelo proprio acerto.
+        # Zera o balde, senao quem loga varias vezes trava pelos acertos.
         await account_login_limiter.reset(self._session, chave_conta)
 
         logger.info(
@@ -171,23 +135,16 @@ class AuthService:
         except (KeyError, ValueError) as exc:
             raise AuthenticationError("Refresh token malformado.") from exc
 
-        # Revalida o usuario -- pode ter sido desativado desde a emissao.
+        # Pode ter sido desativado desde a emissao.
         user = await self._session.get(User, user_id)
         if user is None or not user.is_active or user.workspace_id != workspace_id:
             raise AuthenticationError("Sessao invalida.")
 
-        # Spec 030: esta rota NAO passa por get_tenant_context, entao precisa
-        # da sua propria checagem de revogacao. Sem ela, o refresh token
-        # sobrevive a troca de senha e renova a sessao indefinidamente -- que
-        # era exatamente o buraco que a Spec 030 fecha.
+        # Esta rota nao passa por get_tenant_context: confere a revogacao aqui.
         if token_version_of(payload) != user.token_version:
             raise AuthenticationError("Sessao revogada. Faca login novamente.")
 
-        # ⚠️ O REFRESH NAO SE RENOVA (auditoria de 21/10). Emitir um refresh
-        # novo a cada chamada deixava a sessao sem fim: um refresh copiado do
-        # localStorage e usado uma vez por semana valia para sempre. Devolvendo
-        # o MESMO, a sessao morre 7 dias depois do login, e a pessoa entra de
-        # novo -- a Spec 030 (D4) recusou a denylist, nao o teto.
+        # Devolve o mesmo refresh: a sessao morre no prazo dele, contado do login.
         return self._issue_tokens(
             user_id=user_id,
             workspace_id=workspace_id,
@@ -198,27 +155,15 @@ class AuthService:
     async def change_password(
         self, *, user_id: uuid.UUID, current_password: str, new_password: str
     ) -> None:
-        """Troca a senha do proprio usuario (Entrega 7).
+        """Troca a senha do proprio usuario (1o acesso ou voluntaria).
 
-        Serve ao 1o acesso (destrava o gate, ADR 0020) e a troca
-        voluntaria. Ao concluir, zera must_change_password e
-        password_expires_at -- a senha definitiva nao expira.
-
-        Erros:
-            AuthenticationError -- provisoria vencida (401).
-            ValidationError     -- senha atual incorreta, ou nova igual a
-                                   atual (422).
-                                   (tamanho minimo ja validado no schema)
+        Zera a pendencia e a expiracao, e derruba todas as sessoes.
         """
         user = await self._session.get(User, user_id)
         if user is None:
-            # Token valido mas user sumiu -- inconsistente.
             raise AuthenticationError("Usuario nao encontrado.")
 
-        # ⚠️ PROVISORIA VENCIDA NAO TROCA (auditoria de 21/10). O login ja
-        # recusava, mas a sessao aberta com a provisoria ainda valida renovava
-        # pelo refresh (7 dias) e chegava aqui depois das 72h -- e a troca
-        # passava. O prazo da ADR 0019 e da CREDENCIAL, nao so do primeiro uso.
+        # Provisoria vencida nao troca, mesmo com sessao ainda aberta.
         if (
             user.must_change_password
             and user.password_expires_at is not None
@@ -229,11 +174,8 @@ class AuthService:
                 "A senha provisoria venceu. Peca um novo reset ao gestor."
             )
 
-        # ⚠️ O FREIO DA SENHA ATUAL (auditoria de 16/10). Sem ele, quem roubasse
-        # uma sessao chutava a senha atual sem limite e, ao acertar, trocava --
-        # e o roubo de sessao virava tomada da conta, sobrevivendo a logout e
-        # reset. Aqui o 429 pode ser explicito: a pessoa ja esta autenticada,
-        # nao ha conta a esconder (ao contrario do login).
+        # Freio da senha atual: sem ele, sessao roubada vira tomada da conta.
+        # Aqui o 429 pode ser explicito, nao ha conta a esconder.
         chave = str(user_id)
         decisao = await change_password_limiter.check(self._session, chave)
         if not decisao.allowed:
@@ -243,9 +185,7 @@ class AuthService:
         ):
             logger.info("auth.change_password_bad_current", user_id=str(user_id))
             await change_password_limiter.record(self._session, chave)
-            # 422, e nao 401 (auditoria de 21/10, item 10): o front le 401 como
-            # sessao vencida, renova e manda de novo -- cada erro contava duas
-            # vezes no freio, e a pessoa travava em 5 tentativas, nao em 10.
+            # 422, nao 401: o front reenviaria o 401 e contaria duas vezes.
             raise ValidationError(
                 "Senha atual incorreta.",
                 details={"field": "current_password"},
@@ -261,9 +201,7 @@ class AuthService:
         user.password_hash = await asyncio.to_thread(hash_password, new_password)
         user.must_change_password = False
         user.password_expires_at = None
-        # Spec 030 (D3): derruba TODAS as sessoes desta pessoa. E o cenario
-        # motivador da spec -- senha provisoria entregue a mao que vazou.
-        # Quem trocou a senha tambem cai; o front ja manda para o login.
+        # Derruba todas as sessoes, inclusive a de quem trocou.
         user.token_version += 1
         logger.info(
             "auth.password_changed",
@@ -272,21 +210,9 @@ class AuthService:
         )
 
     async def rename_self(self, *, user_id: uuid.UUID, name: str) -> User:
-        """Troca o NOME do proprio usuario. Spec 051, fatia E (decisao 8).
+        """Troca o nome do proprio usuario (o `user_id` vem do token).
 
-        ⚠️⚠️ SO O PROPRIO, e isso e a regra inteira -- *"liberar somente para
-        proprio, eu posso editar meu proprio nome"* (Camila, 16/09). Por isso
-        NAO ha permissao nem alvo: o `user_id` vem do token, nunca do corpo, e
-        ninguem edita o nome de outra pessoa -- admin incluido. Nao nasce
-        `person.update` para isto: esse verbo e o reset de senha.
-
-        ⚠️ NAO MEXE EM `token_version`, ao contrario da troca de senha: o nome
-        nao e credencial, e derrubar as sessoes por ele seria punir quem so
-        corrigiu um acento.
-
-        Erros:
-            AuthenticationError -- token valido e usuario sumido (inconsistente).
-            ValidationError     -- nome vazio depois de aparado (422).
+        Ninguem edita o nome de outra pessoa. Nao mexe em `token_version`.
         """
         user = await self._session.get(User, user_id)
         if user is None:
@@ -301,18 +227,10 @@ class AuthService:
         return user
 
     async def logout(self, *, user_id: uuid.UUID) -> None:
-        """Encerra TODAS as sessoes do usuario (Spec 030, D4).
+        """Encerra todas as sessoes do usuario, em todos os aparelhos.
 
-        Incrementa o contador de versao: access e refresh de todos os
-        aparelhos morrem juntos.
-
-        Por que todas e nao so a atual: no contexto real (computador
-        compartilhado), sair no notebook TEM de matar a sessao esquecida na
-        maquina compartilhada. Revogar por dispositivo exigiria denylist de
-        `jti` e faria o oposto -- ver Spec 030 D4.
-
-        Idempotente do ponto de vista de quem chama: chamar duas vezes so
-        avanca o contador de novo.
+        Todas, e nao so a atual: sair num aparelho tem de matar a sessao
+        esquecida no computador compartilhado.
         """
         user = await self._session.get(User, user_id)
         if user is None:

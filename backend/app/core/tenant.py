@@ -1,33 +1,8 @@
-"""Contexto de tenant da requisicao corrente.
+"""Contexto de tenant da requisicao corrente, num ContextVar.
 
-ESTRATEGIA (decidida na foundation):
-    ContextVar implicito + assercao explicita.
-
-O `ContextVar` carrega o TenantContext da requisicao. Ele e
-populado de duas formas:
-    1. Em requisicoes HTTP: pela dependency get_tenant_context,
-       a partir do JWT + dados do banco.
-    2. Em jobs/workers/N8N (futuro): explicitamente, via
-       `tenant_scope(...)`, no inicio do job.
-
-Nenhum router, service ou repository precisa receber
-workspace_id como parametro -- ele e lido daqui. O
-BaseRepository SEMPRE chama `require_tenant()` antes de
-qualquer query: se o contexto nao foi setado, a aplicacao
-FALHA ALTO (MissingTenantContextError) em vez de vazar
-dados entre tenants.
-
-ContextVar e seguro com async: cada task asyncio enxerga
-seu proprio valor, sem vazamento entre requisicoes
-concorrentes.
-
-SOBRE roles/permissions:
-    `roles` sao os papeis do usuario nas equipes do
-    workspace (enum user_team_role do schema v5).
-    `permissions` sao derivadas dos roles por um mapa
-    estatico simples (app.modules.auth.domain.permissions)
-    -- NAO ha tabela de RBAC. E um ponto de partida
-    pragmatico, evoluivel sem quebrar este contrato.
+Populado pela dependency de auth (HTTP) ou por `tenant_scope` (jobs). O
+BaseRepository chama `require_tenant()` antes de toda query: sem contexto,
+falha em vez de vazar dados entre tenants.
 """
 
 from __future__ import annotations
@@ -44,10 +19,7 @@ from app.shared.exceptions.base import MissingTenantContextError
 
 @dataclass(frozen=True, slots=True)
 class Membership:
-    """Vinculo (time, papel) do usuario. Entrega 3.
-
-    `role` e o valor do enum user_team_role (ex. "MANAGER").
-    """
+    """Vinculo (time, papel do enum user_team_role) do usuario."""
 
     team_id: uuid.UUID
     role: str
@@ -55,11 +27,7 @@ class Membership:
 
 @dataclass(frozen=True, slots=True)
 class TeamNode:
-    """No da arvore de times do workspace (id + pai). Entrega 3.
-
-    Carregado uma vez por requisicao; consumido pelo team_scope (puro)
-    para resolver visibilidade/edicao por hierarquia.
-    """
+    """No da arvore de times do workspace, carregada uma vez por requisicao."""
 
     team_id: uuid.UUID
     parent_team_id: uuid.UUID | None
@@ -67,64 +35,31 @@ class TeamNode:
 
 @dataclass(frozen=True, slots=True)
 class TenantContext:
-    """Identidade e autorizacao resolvidas da requisicao corrente.
-
-    Imutavel: uma vez setado para a requisicao, nao muda.
-
-    Campos:
-        workspace_id : o tenant ativo.
-        user_id      : o usuario autenticado.
-        roles        : papeis do usuario no workspace (strings
-                       do enum user_team_role). Pode ser vazio.
-        permissions  : permissoes derivadas dos roles.
-        memberships  : pares (time, papel) do usuario (Entrega 3).
-        team_tree    : arvore de times do workspace (Entrega 3).
-    """
+    """Identidade e autorizacao da requisicao corrente (imutavel)."""
 
     workspace_id: uuid.UUID
     user_id: uuid.UUID
     roles: frozenset[str] = field(default_factory=frozenset)
-    #: ⚠️ DOIS FORMATOS ACEITOS, e o `str` no tipo e o legado (Spec 045,
-    #: fatia C). Todo caminho de requisicao real monta `ActorPermissions`, que
-    #: carrega o TIME de cada permissao; um `frozenset` plano ainda entra por
-    #: `tenant_scope` em job de fundo e em teste antigo. As duas formas
-    #: respondem `in` com a mesma semantica ("em algum lugar"), entao
-    #: `has_permission` funciona para as duas -- so `has_permission_in` sabe a
-    #: diferenca.
+    #: `ActorPermissions` (com o time de cada permissao) nas requisicoes; um
+    #: `frozenset` plano em jobs e testes. Os dois respondem `in` ("em algum lugar").
     permissions: frozenset[str] | Any = field(default_factory=frozenset)
     memberships: tuple[Membership, ...] = ()
     team_tree: tuple[TeamNode, ...] = ()
-    #: Papel na ORGANIZACAO -- sem time (Spec 045, fatia B). `None` = nenhum.
-    #: Quem tem papel aqui NAO precisa de vinculo de time nenhum.
+    #: Papel na organizacao, que nao depende de time. `None` = nenhum.
     org_role: str | None = None
 
     def has_role(self, role: str) -> bool:
-        """True se o usuario tem o papel informado no workspace.
-
-        ⚠️ RESPONDE PELOS DOIS NIVEIS (Spec 045, fatia B). `has_role("ADMIN")`
-        e usado pela matriz C2 do `MemberService` para decidir quem administra
-        quem; se ele olhasse so os papeis de TIME, o ADMIN de organizacao --
-        que por desenho nao tem time nenhum -- deixaria de administrar qualquer
-        pessoa no instante em que o vinculo dele saisse de `user_team`.
-        """
+        """Papel no workspace, de time ou de organizacao (o ADMIN de
+        organizacao nao tem time)."""
         return role in self.roles or role == self.org_role
 
     def has_permission_in(
         self, permission: str, team_id: uuid.UUID | None
     ) -> bool:
-        """Tem esta permissao NAQUELE time? (Spec 045, fatia C)
+        """Tem esta permissao naquele time? A pergunta do servico, que ja
+        conhece o alvo; `has_permission` e a do portao de rota.
 
-        ⚠️ A PERGUNTA DO SERVICO, e nao a do portao de rota. `has_permission`
-        responde "em algum lugar" -- e o suficiente para a rota, que ainda nao
-        conhece o alvo. Quem ja tem o `team_id` em maos deve perguntar aqui:
-        com N raizes (Spec 046), "tem `team.manage`" e "tem `team.manage`
-        NAQUELA arvore" deixam de ser a mesma coisa.
-
-        ⚠️ CAI PARA A PERGUNTA AMPLA quando o contexto foi montado SEM escopo
-        -- job de fundo que entra por `tenant_scope` sem permissoes, e testes
-        antigos que passam um `frozenset`. E fail-OPEN, e esta escrito aqui de
-        proposito: enquanto houver uma raiz so, as duas respostas coincidem em
-        todo caso real. A fatia D estreita isto quando o cadastro permitir.
+        Contexto sem escopo (`frozenset`) cai para a pergunta ampla (fail-open).
         """
         can_in = getattr(self.permissions, "can_in", None)
         if can_in is None:
@@ -134,15 +69,10 @@ class TenantContext:
     def teams_with_permission(
         self, permission: str
     ) -> frozenset[uuid.UUID] | None:
-        """Em QUAIS times tem esta permissao? `None` = todos. Spec 051, fatia A.
+        """Em quais times tem esta permissao? `None` = todos.
 
-        A irma de `has_permission_in` para quem nao tem UM item, e sim uma lista
-        a filtrar -- ver `ActorPermissions.teams_with`.
-
-        ⚠️ HERDA O MESMO FAIL-OPEN, escrito pelo mesmo motivo: contexto sem
-        escopo (`frozenset`, job de fundo e teste antigo) nao sabe "onde", e
-        responde `None` ("todos") se tiver a permissao em algum lugar. Sem ela,
-        e o conjunto vazio.
+        Para filtrar listas. Contexto sem escopo responde `None` se tiver a
+        permissao em algum lugar (mesmo fail-open de `has_permission_in`).
         """
         teams_with = getattr(self.permissions, "teams_with", None)
         if teams_with is None:
@@ -150,26 +80,17 @@ class TenantContext:
         return teams_with(permission)
 
     def has_permission(self, permission: str) -> bool:
-        """True se o usuario tem a permissao informada.
-
-        Usado por dependencies/guards de autorizacao. NAO lanca
-        -- quem chama decide o que fazer com o False.
-        """
+        """Tem a permissao em algum lugar? Nao lanca."""
         return permission in self.permissions
 
 
-# O ContextVar em si. `default=None` => "nao setado".
 _tenant_ctx: ContextVar[TenantContext | None] = ContextVar(
     "tenant_context", default=None
 )
 
 
 def set_tenant(context: TenantContext) -> Token[TenantContext | None]:
-    """Seta o contexto de tenant. Retorna um Token para reset posterior.
-
-    Usado pela dependency de auth. Para jobs, prefira o
-    context manager `tenant_scope()`, que cuida do reset.
-    """
+    """Seta o contexto de tenant. Em jobs, prefira `tenant_scope()`, que faz o reset."""
     return _tenant_ctx.set(context)
 
 
@@ -179,28 +100,16 @@ def current_tenant() -> TenantContext | None:
 
 
 def can_in(permission: str, team_id: uuid.UUID | None) -> bool:
-    """O cadeado de um item: o verbo no time dele, pelo contexto da requisicao.
-
-    E a MESMA pergunta que o servico faz antes de agir, so que sem lancar: os
-    schemas de resposta (`can_update`, `can_delete`...) a usam para dizer a
-    tela se mostra o botao. Era repetida igual em `tasks/api/schemas.py`
-    (Spec 051) e `bases/api/schemas.py` (Spec 056); revisao de 07/10/2026.
-
-    ⚠️ PURO: le o contexto, nao o banco -- sem N+1 numa pagina de tarefas.
-    ⚠️ SEM CONTEXTO (serializacao fora de requisicao) responde False: na
-    duvida o botao nao aparece, e o servidor recusa de qualquer jeito.
+    """O verbo no time do item, sem lancar: os schemas (`can_update`...) usam
+    para a tela saber se mostra o botao. Le so o contexto (sem N+1); sem
+    contexto, False.
     """
     tenant = _tenant_ctx.get()
     return tenant is not None and tenant.has_permission_in(permission, team_id)
 
 
 def require_tenant() -> TenantContext:
-    """Retorna o contexto corrente ou falha alto.
-
-    Esta e a funcao que o BaseRepository chama. Se ela lanca
-    MissingTenantContextError, e um BUG: alguem tentou acessar
-    dados operacionais fora de um contexto de tenant valido.
-    """
+    """Contexto corrente; sem ele, MissingTenantContextError (e bug de quem chamou)."""
     context = _tenant_ctx.get()
     if context is None:
         raise MissingTenantContextError(
@@ -221,15 +130,7 @@ def tenant_scope(
     team_tree: tuple[TeamNode, ...] = (),
     org_role: str | None = None,
 ) -> Iterator[TenantContext]:
-    """Context manager para setar tenant em jobs/workers/scripts.
-
-    Exemplo (job futuro do N8N ou worker de fila)::
-
-        with tenant_scope(ws_id, system_user_id):
-            await task_service.do_something()
-
-    Garante o reset do contexto ao sair do bloco, mesmo em erro.
-    """
+    """Seta o tenant em jobs e scripts, com reset garantido ao sair."""
     context = TenantContext(
         workspace_id=workspace_id,
         user_id=user_id,

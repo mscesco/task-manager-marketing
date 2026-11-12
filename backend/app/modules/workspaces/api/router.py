@@ -1,26 +1,4 @@
-"""Router do modulo workspaces -- workspace e equipes.
-
-Regra de ouro: o router so cuida de request/response,
-validacao, DI, status code e autorizacao. A regra de
-negocio esta nos services.
-
-Transacao: as rotas de escrita usam o Unit of Work (UoWDep)
-e chamam uow.commit() ao final do caso de uso. As de
-leitura nao precisam de commit.
-
-Autorizacao: cada rota de escrita cobra o VERBO da acao dela
-(`organization.update`, `subteam.update`, `subteam.delete`, `team.move`;
-criar time cobra `team.create` ou `subteam.create`). Ate a Spec 049 (fatia A)
-era um pacote so, `workspace.manage`, para quase todas.
-
-Rotas:
-    GET   /workspaces/current               -- ver o workspace atual
-    PATCH /workspaces/current               -- renomear (workspace.manage)
-    GET   /workspaces/current/teams         -- listar equipes
-    POST  /workspaces/current/teams         -- criar equipe (workspace.manage)
-    POST  /workspaces/current/teams/{id}/move
-                                            -- mover equipe (workspace.manage)
-"""
+"""Rotas do workspace corrente e dos times dele."""
 
 from __future__ import annotations
 
@@ -73,7 +51,7 @@ async def get_current_workspace(
 async def update_current_workspace(
     payload: WorkspaceUpdateRequest, uow: UoWDep
 ) -> WorkspaceResponse:
-    """Renomeia o workspace corrente. Exige permissao workspace.manage."""
+    """Renomeia o workspace corrente."""
     workspace = await WorkspaceService(uow.session).rename(new_name=payload.name)
     await uow.commit()
     return WorkspaceResponse.model_validate(workspace)
@@ -86,13 +64,7 @@ async def update_current_workspace(
 async def list_teams(
     ctx: TenantContextDep, session: SessionDep
 ) -> TeamListResponse:
-    """Lista todas as equipes do workspace corrente.
-
-    Cada item traz as contagens do que aponta para o time (Spec 029): a tela
-    de gestao usa para mostrar "14 tarefas, 2 membros" e desabilitar o botao
-    de remover. Vem em LOTE -- uma query para a lista inteira, nao uma por
-    time.
-    """
+    """Lista os times, com as contagens do que aponta para cada um (em lote)."""
     service = TeamService(session)
     teams = await service.list_teams()
     contagens = await service.contagens_de_todos()
@@ -108,11 +80,8 @@ async def list_teams(
                 filhos=c.filhos if c else 0,
                 quadros=c.quadros if c else 0,
                 formularios=c.formularios if c else 0,
-                # ⚠️ A MESMA PERGUNTA DO `TeamService.update`, na mesma ordem
-                # de efeito: raiz nunca (a regra recusa para todos), subtime se
-                # houver `subteam.update` NESTE time. Se as duas divergirem, a
-                # tela oferece o lapis e o PATCH recusa -- ou esconde o que
-                # funcionaria. Spec 049, fatia F.
+                # Mesma pergunta do `TeamService.update`; se divergirem, a tela
+                # oferece o que o PATCH recusa.
                 can_update=(
                     t.parent_team_id is not None
                     and ctx.has_permission_in("subteam.update", t.id)
@@ -136,8 +105,8 @@ async def list_teams(
     "/current/teams",
     response_model=TeamResponse,
     status_code=status.HTTP_201_CREATED,
-    # ⚠️ OS DOIS, e o servico decide qual vale pelo `parent_team_id` do corpo
-    # (Spec 049, fatia A): sem pai e `team.create`, com pai e `subteam.create`.
+    # O servico decide pelo `parent_team_id`: sem pai `team.create`, com pai
+    # `subteam.create`.
     dependencies=[
         Depends(require_any_permission("team.create", "subteam.create"))
     ],
@@ -145,15 +114,7 @@ async def list_teams(
 async def create_team(
     payload: TeamCreateRequest, uow: UoWDep
 ) -> TeamResponse:
-    """Cria uma equipe no workspace corrente. Exige team.manage.
-
-    Informe `parent_team_id` para criar como subtime (ex.:
-    Marketing > CRM); omita ou envie null para criar como raiz.
-
-    Spec 029/D1: o gate desceu de `workspace.manage` (so ADMIN) para
-    `team.manage` (ADMIN + MANAGER). Criar equipe e reversivel -- remover
-    nao, e por isso o DELETE abaixo segue restrito a ADMIN.
-    """
+    """Cria um time; com `parent_team_id` nasce subtime, sem ele nasce raiz."""
     team = await TeamService(uow.session).create(
         name=payload.name,
         slug=payload.slug,
@@ -173,11 +134,7 @@ async def move_team(
     payload: TeamMoveRequest,
     uow: UoWDep,
 ) -> TeamResponse:
-    """Move uma equipe na arvore. Exige workspace.manage.
-
-    `new_parent_id=null` torna a equipe raiz. A operacao falha
-    com 409 (business rule) se a movimentacao criar um ciclo.
-    """
+    """Move um time na arvore. 409 se criar ciclo."""
     team = await TeamService(uow.session).move(
         team_id=team_id, new_parent_id=payload.new_parent_id
     )
@@ -195,11 +152,7 @@ async def update_team(
     payload: TeamUpdateRequest,
     uow: UoWDep,
 ) -> TeamResponse:
-    """Renomeia uma equipe. Exige team.manage. (Spec 029/D6)
-
-    O slug NAO e editavel -- e identificador estavel. Editar o time raiz
-    devolve 409.
-    """
+    """Renomeia um subtime (o slug nao muda). Time raiz devolve 409."""
     team = await TeamService(uow.session).update(
         team_id=team_id,
         name=payload.name,
@@ -216,17 +169,10 @@ async def update_team(
     dependencies=[Depends(require_permission("subteam.delete"))],
 )
 async def delete_team(team_id: uuid.UUID, uow: UoWDep) -> Response:
-    """Remove uma equipe VAZIA. Exige workspace.manage -- so ADMIN.
+    """Remove um time vazio.
 
-    (Spec 029/D1 e D3-A.) Deliberadamente MAIS restrito que criar/editar:
-    remover nao tem volta. Devolve 409 se o time for a raiz ou se ainda
-    houver tarefa, projeto, membro ou subtime apontando para ele -- a
-    contagem inclui itens na lixeira, que a tela nao mostra mas o banco
-    ainda enxerga.
-
-    Responde 204 sem corpo (response_class=Response evita o FastAPI inferir
-    um response_model a partir do retorno) -- mesmo padrao do DELETE de
-    vinculo de membro.
+    409 se for a raiz ou se algo ainda apontar para ele, incluindo itens na
+    lixeira.
     """
     await TeamService(uow.session).delete(team_id=team_id)
     await uow.commit()
@@ -241,13 +187,7 @@ async def delete_team(team_id: uuid.UUID, uow: UoWDep) -> Response:
 async def previa_remocao(
     team_id: uuid.UUID, _: TenantContextDep, session: SessionDep
 ) -> PreviaRemocaoResponse:
-    """O que sai junto se o time for esvaziado e removido. (Spec 029/D3-B)
-
-    Somente leitura. A tela chama ANTES de pedir a confirmacao, para a pessoa
-    ver "10 tarefas serao arquivadas, 3 membros irao para Marketing" em vez de
-    descobrir depois. Os numeros vem do banco AGORA -- os da listagem podem
-    ter envelhecido desde o carregamento.
-    """
+    """O que sai junto se o time for esvaziado e removido (so leitura)."""
     previa = await TeamService(session).previa_remocao(team_id=team_id)
     return PreviaRemocaoResponse.model_validate(previa)
 
@@ -262,13 +202,8 @@ async def esvaziar_e_remover_team(
 ) -> PreviaRemocaoResponse:
     """Move o conteudo para o time principal, arquiva as tarefas e apaga.
 
-    (Spec 029/D3-B.) Exige workspace.manage -- so ADMIN, mesmo gate do DELETE
-    simples: e a mesma acao destrutiva, com mais consequencia.
-
-    Tudo numa transacao: se qualquer passo falhar, nada e aplicado. Devolve o
-    que FOI feito, para a tela confirmar em numeros.
-
-    409 se for a raiz ou se houver subtime filho (remova os filhos antes).
+    Numa transacao so; devolve o que foi feito. 409 se for a raiz ou tiver
+    subtime filho.
     """
     feito = await TeamService(uow.session).esvaziar_e_remover(team_id=team_id)
     await uow.commit()

@@ -1,20 +1,5 @@
-"""Gerenciamento de conexao e sessao com o banco (async).
-
-Centraliza:
-    - a criacao do AsyncEngine (pool de conexoes);
-    - a factory de AsyncSession;
-    - o ciclo de vida (startup/shutdown).
-
-O Postgres e EXTERNO (instancia da VPS). Este modulo so
-abre conexoes via DATABASE_URL -- nao gerencia o servidor
-de banco.
-
-Regra de uso de sessao:
-    - Em requisicoes HTTP: a sessao vem por DI
-      (app.core.deps.get_db_session), com escopo de request.
-    - Em jobs/scripts: use o context manager `session_scope()`.
-Nunca instancie AsyncSession manualmente fora destes pontos.
-"""
+"""Engine e sessoes async. Em HTTP a sessao vem por DI (core.deps); em jobs,
+por `session_scope()`."""
 
 from __future__ import annotations
 
@@ -52,8 +37,7 @@ class DatabaseManager:
             pool_size=settings.db_pool_size,
             max_overflow=settings.db_max_overflow,
             pool_timeout=settings.db_pool_timeout,
-            # pool_pre_ping evita usar conexoes mortas pelo
-            # firewall/idle-timeout da VPS.
+            # Conexoes ociosas morrem no firewall da VPS.
             pool_pre_ping=True,
         )
         self._sessionmaker = async_sessionmaker(
@@ -86,13 +70,7 @@ class DatabaseManager:
 
     @asynccontextmanager
     async def session_scope(self) -> AsyncIterator[AsyncSession]:
-        """Context manager de sessao para jobs/scripts/workers.
-
-        Faz commit ao sair sem erro, rollback em excecao, e
-        sempre fecha a sessao. Para requisicoes HTTP, use a
-        dependency get_db_session (que delega o commit ao
-        Unit of Work).
-        """
+        """Sessao para jobs e scripts: commit ao sair sem erro, rollback em excecao."""
         session = self.sessionmaker()
         try:
             yield session
@@ -104,5 +82,4 @@ class DatabaseManager:
             await session.close()
 
 
-# Instancia unica usada por toda a aplicacao.
 db_manager = DatabaseManager()

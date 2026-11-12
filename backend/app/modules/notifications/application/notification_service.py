@@ -1,12 +1,7 @@
-"""Casos de uso de LEITURA de notificacoes (Spec 018, F4).
+"""Leitura de notificacoes do usuario logado: feed, contagem, marcar como lida.
 
-Camada fina sobre o repository: pagina o feed, conta nao-lidas, marca
-lida (1 ou todas). A escrita (emissao) NAO vive aqui -- vive no
-NotificationEmitter, chamado pelos services de dominio. Commit no UoW
-(router).
-
-Tudo e PESSOAL: o repository ja filtra por recipient == usuario logado.
-Marcar uma notificacao que nao e sua -> EntityNotFoundError (404).
+A emissao vive no `NotificationEmitter`. O repository ja filtra por
+recipient == usuario logado; marcar a de outro da 404.
 """
 
 from __future__ import annotations
@@ -32,7 +27,7 @@ from app.modules.tasks.application.task_guards import task_visible
 from app.shared.exceptions.base import EntityNotFoundError
 from app.shared.pagination import Page, PageParams
 
-#: Quantas sugestoes o campo "Tarefa ou projeto" mostra (Spec 053, §9.6).
+#: Quantas sugestoes o campo "Tarefa ou projeto" mostra.
 LIMITE_DE_SUGESTOES = 10
 
 
@@ -72,8 +67,7 @@ class NotificationService:
         )
 
     async def count_unread(self, *, muted: bool = False) -> int:
-        """Nao-lidas de quem esta lendo. ⚠️ Silenciada nao entra no numero
-        do sino (Spec 054, D14) -- `muted=True` conta so as da aba."""
+        """Nao-lidas do sino, sem as silenciadas; `muted=True` conta so elas."""
         return await self._repo.count_unread(muted=muted)
 
     async def mark_read(self, notification_id: uuid.UUID) -> None:
@@ -90,10 +84,9 @@ class NotificationService:
         project_id: uuid.UUID | None = None,
         muted: bool = False,
     ) -> int:
-        """Marca as nao-lidas do usuario -- todas, ou so as do filtro (D25).
+        """Marca as nao-lidas do usuario -- todas, ou so as do filtro.
 
-        ⚠️ Os filtros sao os MESMOS da listagem (`repository.filtrar`), e o
-        recorte de silencio tambem (Spec 054, §6.4): o botao marca o que a
+        Usa os mesmos filtros e recorte de silencio da listagem: marca o que a
         aba mostra, nunca o que ela esconde.
         """
         return await self._repo.mark_all_read(
@@ -101,15 +94,11 @@ class NotificationService:
         )
 
     async def alvos(self, termo: str) -> list[AlvoDeFiltro]:
-        """Sugestoes do campo "Tarefa ou projeto" (Spec 053, D23).
+        """Sugestoes do campo "Tarefa ou projeto".
 
-        So tarefas e projetos que aparecem nas notificacoes de quem pergunta,
-        que ele AINDA alcanca, e cujo titulo casa com o termo (sem acento e sem
-        caixa, pela dobra do Postgres -- a mesma da busca do quadro). Projetos
-        primeiro, depois tarefas, ate `LIMITE_DE_SUGESTOES`.
-
-        ⚠️ Termo vazio nao sugere nada: a lista inteira de uma pessoa com meses
-        de aviso seria uma parede, e o campo so abre quando ela digita.
+        So tarefas e projetos das notificacoes de quem pergunta, que ele ainda
+        alcanca, com titulo casando o termo (sem acento e sem caixa). Projetos
+        primeiro. Termo vazio nao sugere nada.
         """
         termo = termo.strip()
         if not termo:
@@ -183,10 +172,9 @@ class NotificationService:
     async def _acesso_as_tarefas(
         self, task_ids: list[uuid.UUID]
     ) -> dict[uuid.UUID, bool]:
-        """Para cada tarefa, quem le ainda a alcanca? Em LOTE (Spec 053, D27).
+        """Para cada tarefa, quem le ainda a alcanca? Em lote para a pagina inteira.
 
-        `False` para excluida (soft-delete), inexistente ou fora da lente. Duas
-        consultas para a pagina inteira: tarefas e projetos.
+        `False` para excluida (soft-delete), inexistente ou fora da lente.
         """
         ids = list(dict.fromkeys(task_ids))
         if not ids:
@@ -225,12 +213,10 @@ class NotificationService:
     def _com_acesso(
         dto: NotificationDTO, acesso: dict[uuid.UUID, bool]
     ) -> NotificationDTO:
-        """Marca `task_access` e, sem acesso, tira o titulo do payload (D27).
+        """Marca `task_access` e, sem acesso, tira o titulo do payload.
 
-        ⚠️ A TRAVA E DO SERVIDOR, e nao da tela: o titulo nao sai da API para
-        quem nao alcanca mais a tarefa. A excecao e o proprio aviso de EXCLUSAO,
-        que mostra o titulo (§9.2 -- quem o recebeu via a tarefa ate aquele
-        instante).
+        A excecao e o aviso de exclusao, que mantem o titulo: quem o recebeu via
+        a tarefa ate aquele instante.
         """
         if dto.task_id is None:
             return dto

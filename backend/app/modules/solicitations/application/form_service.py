@@ -1,14 +1,4 @@
-"""CRUD do formulario de solicitacao (Spec 043, fatia A).
-
-⚠️ ESTE SERVICO NAO E LIDO PELO FORMULARIO PUBLICO AINDA. A fatia A cria a
-estrutura e a API; quem troca a FONTE do `/solicitar` e a fatia B. Ate la o
-publico continua lendo o `web/lib/solicitacaoForm.ts`, e nada muda para quem
-usa.
-
-A separacao e deliberada: a rota publica e a UNICA escrita sem credencial da
-API, e trocar a fonte dela no mesmo movimento em que o modelo nasce seria
-mudar duas coisas de uma vez num caminho que nao tem login para culpar.
-"""
+"""CRUD autenticado do formulario de solicitacao (formulario, secoes, perguntas)."""
 
 from __future__ import annotations
 
@@ -68,35 +58,16 @@ class SolicitationFormService:
     # Guardas
     # ------------------------------------------------------------------
     def _assert_pode_gerir(self, verbo: str, team_id: uuid.UUID) -> None:
-        """O ator tem `verbo` NESTE time?
-
-        ⚠️ A PERMISSAO DA ROTA SOZINHA NAO BASTA, e e por isso que esta funcao
-        existe. `form.*` esta em ADMIN e MANAGER (decisao da Camila, 22/08) --
-        mas MANAGER e um papel de TIME. Sem esta conferencia, o gestor de
-        Design editaria a porta de entrada do Marketing.
-
-        ⚠️⚠️ Spec 049, fatia B: ATE AQUI O "ONDE" VINHA DA LENTE DE TRABALHO
-        (`editable_team_ids`), e nao da permissao. Davam a mesma resposta por
-        coincidencia -- MANAGER edita a arvore nas duas, e SUPERVISOR/OPERATOR
-        nem tem `form.*` --, mas eram DUAS regras para uma pergunta: a lente
-        de trabalho do supervisor inclui a RAIZ, e no dia em que um papel de
-        execucao ganhasse `form.update`, ele editaria o formulario do time
-        principal por esta linha. A permissao com escopo e a regra unica.
-        """
+        """O ator tem `verbo` neste time? A permissao da rota sozinha nao basta."""
         if not require_tenant().has_permission_in(verbo, team_id):
             raise AuthorizationError(
                 "Você não gerencia formulários deste time."
             )
 
     async def _proxima_posicao(self, modelo, condicao) -> int:
-        """A posicao seguinte a maior JA USADA -- incluindo as apagadas.
+        """A posicao seguinte a maior ja usada, incluindo as apagadas.
 
-        ⚠️ CONTA A MAIOR, E NAO QUANTOS EXISTEM. `len(vivos)` colide depois de
-        um soft delete, porque apagar nao compacta as posicoes dos irmaos.
-
-        ⚠️ E O FILTRO **NAO** EXCLUI `deleted_at`, de proposito: a posicao de
-        uma linha morta continua ocupada para efeito de numeracao. Ignora-la
-        traria de volta exatamente a colisao.
+        Contar os vivos colide depois de um soft delete, que nao compacta posicoes.
         """
         maior = (
             await self._session.execute(
@@ -108,13 +79,7 @@ class SolicitationFormService:
         return int(maior) + 1
 
     def _assert_slug_valido(self, slug: str) -> str:
-        """Minusculas, numeros e hifen. Nada mais.
-
-        ⚠️ ELE VIRA URL PUBLICA (`/solicitar/<slug>`), entao espaco, acento e
-        barra nao sao questao de gosto: quebram o endereco que alguem vai
-        divulgar. A recusa e do DOMINIO e nao do Pydantic -- validador custom
-        neste projeto devolve 500 no lugar de 422.
-        """
+        """Minusculas, numeros e hifen: o slug vira URL publica (`/solicitar/<slug>`)."""
         limpo = slug.strip().lower()
         if not limpo or not set(limpo) <= _SLUG_OK:
             raise ValidationError(
@@ -145,22 +110,10 @@ class SolicitationFormService:
     async def _assert_slug_de_secao_livre(
         self, *, form_id: uuid.UUID, slug: str
     ) -> None:
-        """Este formulario ja tem uma secao com este endereco?
+        """Este formulario ja tem uma secao viva com este endereco?
 
-        ⚠️⚠️ ELE FALTAVA, E O SLUG DA SECAO E CHAVE DE DADO. Ele viaja gravado
-        em cada pedido (`solicitation_item.category`), e duas secoes com o
-        mesmo slug tornam o pedido AMBIGUO: a fila monta o dicionario de
-        rotulos por `(form_id, slug)` e a segunda linha SOBRESCREVE a primeira,
-        entao o pedido aparece com o titulo e o emoji da secao ERRADA. No
-        front, `porSlug()` faz o mesmo -- uma das duas some do mapa.
-
-        ⚠️ E EU PROTEGI O LADO ERRADO NA FATIA C2: escrevi, com todas as
-        letras, que o slug da secao NAO PODE MUDAR porque fica gravado no
-        pedido -- e nunca impedi que dois nascessem iguais. Os dois quebram a
-        mesma coisa. Achado pela revisao de 31/08.
-
-        ⚠️ SO CONTA AS VIVAS: reaproveitar o slug de uma secao apagada e
-        legitimo, e o indice unico da 0021 tambem e parcial.
+        O slug da secao fica gravado em cada pedido e a fila monta os rotulos por
+        `(form_id, slug)`; dois iguais mostrariam o pedido com a secao errada.
         """
         existe = (
             await self._session.execute(
@@ -179,19 +132,10 @@ class SolicitationFormService:
             )
 
     async def _assert_time_existe(self, team_id: uuid.UUID) -> None:
-        """O time existe NESTE workspace?
+        """O time existe neste workspace? Senao, 404.
 
-        ⚠️ ELA VEM ANTES DE `_assert_pode_gerir`, e isso e o contrato: um id
-        que nao existe (ou e de outro workspace) responde 404, e nao 403 --
-        o 403 confirmaria que ha algo ali. Ate a Spec 049 (fatia B) esta
-        funcao "so importava para ADMIN", porque a lente de trabalho deixava o
-        ADMIN passar sem filtro; com a permissao com escopo, ela e a primeira
-        pergunta para todo mundo.
-
-        ⚠️ SEM ISTO O ERRO VEM DO BANCO: a FK composta
-        `(team_id, workspace_id)` recusa, e sai **500** em vez de 404. Mesmo
-        motivo do `_assert_tarefa_do_workspace` na fatia E -- violacao de
-        integridade e feia e nao explica nada a quem chamou.
+        Vem antes de `_assert_pode_gerir` (404, e nao 403, para id inexistente) e
+        evita o 500 da FK composta `(team_id, workspace_id)`.
         """
         tenant = require_tenant()
         existe = (
@@ -224,19 +168,7 @@ class SolicitationFormService:
     # Formulario
     # ------------------------------------------------------------------
     async def obter_formulario(self, form_id: uuid.UUID) -> SolicitationForm:
-        """Um formulario que quem chama LE, ou 404.
-
-        ⚠️⚠️ Spec 051, fatia B: ATE AQUI A LEITURA NAO CONFERIA TIME NENHUM, e o
-        motivo escrito era "conferir devolveria 403 para um ADMIN olhando o
-        formulario de outro time". Com permissao com escopo isso deixou de ser
-        verdade -- o ADMIN tem `form.read` em todo lugar -- e o que sobrou foi
-        o buraco: o MANAGER do Marketing abria, pelo id, o formulario do
-        Comercial, rascunho inclusive.
-
-        ⚠️ 404 E NAO 403: e LEITURA pelo id, e 403 confirmaria que existe. A
-        escrita em formulario de outra arvore continua 403, como toda a gestao
-        (quadro, time, vinculo) -- decisao registrada na spec, §3.6.
-        """
+        """Um formulario que quem chama le (`form.read` no time), ou 404."""
         form = await self._form_do_workspace(form_id)
         if not require_tenant().has_permission_in("form.read", form.team_id):
             raise EntityNotFoundError("Formulário não encontrado.")
@@ -250,17 +182,8 @@ class SolicitationFormService:
         title: str,
         description: str = "",
     ) -> SolicitationForm:
-        """⚠️ NASCE DESPUBLICADO, SEMPRE, e `is_published` nao e parametro.
-
-        Formulario nasce vazio -- sem secao e sem pergunta. Publicado na
-        criacao, ele apareceria na lista publica como uma porta que nao
-        pergunta nada. Publicar e um gesto proprio, depois de montar.
-        """
-        # ⚠️ 404 ANTES DE 403, e a ordem virou obrigatoria na Spec 049 (fatia
-        # B). Com a lente de trabalho, um ADMIN passava pela permissao por
-        # "sem filtro" e chegava aqui; com a permissao COM ESCOPO, um time que
-        # nao existe nunca esta na arvore de ninguem, e a recusa vinha antes --
-        # 403 para um id inexistente. Existir e a primeira pergunta.
+        """Nasce despublicado e vazio; publicar e um gesto proprio, depois de montar."""
+        # 404 antes de 403: existir e a primeira pergunta.
         await self._assert_time_existe(team_id)
         self._assert_pode_gerir("form.create", team_id)
         limpo = self._assert_slug_valido(slug)
@@ -289,32 +212,11 @@ class SolicitationFormService:
     async def listar_formularios(
         self, team_id: uuid.UUID | None
     ) -> list[SolicitationForm]:
-        """Os formularios que o papel ALCANCA, publicados ou nao.
+        """Os formularios que o papel le, publicados ou nao.
 
-        ⚠️ FILTRA POR TIME PELO MESMO MOTIVO DA FILA (§11.3 da spec): o
-        formulario e do time, e quem nao alcanca o time nao tem o que fazer
-        com o formulario dele.
-
-        ⚠⚠ SAO DOIS RECORTES, e a §3.6 da Spec 048 dizia que nao havia nenhum.
-        Estava ERRADO -- a LENTE abaixo existe desde a Spec 043. O que faltava
-        era o `team_id`:
-
-            a LENTE      responde "posso ver?"   -- `None` para papel de
-                         organizacao, ou seja ela NAO tira o formulario do
-                         Comercial da tela de quem administra;
-            o `team_id`  responde "estou olhando qual time?" -- vale para todos.
-
-        (Terceira afirmacao desta spec que nao sobreviveu a leitura do codigo:
-        as outras duas foram o `list_page` de projetos e a §3.5, da fila. As
-        tres tinham a mesma origem -- escrevi a partir das notas da spec
-        anterior em vez de abrir o arquivo.)
-
-        ⚠️ `team_id` SEM DEFAULT, como na fatia D: `None` = a organizacao
-        inteira, e a diferenca e grande demais para sair de um valor omitido.
-
-        ⚠️ O TIME E SEUS DESCENDENTES. Formulario de subtime pertence ao
-        contexto da raiz dele -- e e assim que a tela do Marketing mostra o
-        formulario do SEO.
+        Dois recortes: `form.read` ("posso ver?", `None` para papel de
+        organizacao) e `team_id` ("qual time estou olhando?", com descendentes).
+        `team_id` sem default: `None` = a organizacao inteira.
         """
         tenant = require_tenant()
         stmt = (
@@ -325,10 +227,6 @@ class SolicitationFormService:
             )
             .order_by(SolicitationForm.title)
         )
-        # ⚠️⚠️ Spec 051, fatia B: O RECORTE E `form.read`, E NAO A LENTE. Quem e
-        # MANAGER no Marketing e OPERATOR no Comercial trabalha no Comercial (a
-        # lente o inclui) e nao gerencia formulario la. A lista mostrava os
-        # formularios do Comercial, e cada botao deles dava 403.
         leitura = tenant.teams_with_permission("form.read")
         if leitura is not None:
             stmt = stmt.where(SolicitationForm.team_id.in_(leitura))
@@ -346,14 +244,7 @@ class SolicitationFormService:
         slug: str | None = None,
         rotulos: dict[str, str | None] | None = None,
     ) -> SolicitationForm:
-        """⚠️ `team_id` NAO ENTRA, e a ausencia e a trava.
-
-        Mudar o time do formulario e mudar QUEM TRIA as solicitacoes dele --
-        inclusive as que ja chegaram, porque a fila as encontra pelo time do
-        formulario. Seria uma operacao de visibilidade disfarcada de edicao,
-        que e o mesmo motivo pelo qual `BoardRenameRequest` nao aceita
-        `team_id`.
-        """
+        """Sem `team_id`: mudar o time mudaria quem tria, inclusive os pedidos ja recebidos."""
         form = await self._form_do_workspace(form_id)
         self._assert_pode_gerir("form.update", form.team_id)
         if slug is not None:
@@ -365,17 +256,11 @@ class SolicitationFormService:
         if description is not None:
             form.description = description.strip()
 
-        # ⚠️⚠️ OS ROTULOS DA IDENTIFICACAO (Spec 043, fatia G) usam `None` para
-        # DESLIGAR o campo, e nao para "nao mexa" -- o oposto dos tres acima.
-        # Por isso eles chegam num dicionario do que FOI ENVIADO
-        # (`model_fields_set` do Pydantic, montado no router), e nao como
-        # parametros com default: aqui nao ha como distinguir os dois sentidos
-        # de `None` numa assinatura comum.
+        # Rotulos da identificacao: `None` desliga o campo. Chegam so os enviados
+        # (`model_fields_set`, no router).
         for campo, rotulo in (rotulos or {}).items():
             limpo = rotulo.strip() if isinstance(rotulo, str) else None
-            # ⚠️ ROTULO SO DE ESPACO E O MESMO QUE DESLIGAR: um campo com nome
-            # em branco apareceria no formulario publico como uma caixa sem
-            # pergunta, e quem preenche nao teria como saber o que escrever.
+            # Rotulo so de espacos tambem desliga.
             setattr(form, campo, limpo or None)
 
         await self._session.flush()
@@ -384,12 +269,7 @@ class SolicitationFormService:
     async def publicar(
         self, *, form_id: uuid.UUID, publicado: bool
     ) -> SolicitationForm:
-        """Liga ou desliga a porta publica.
-
-        ⚠️ PUBLICAR EXIGE AO MENOS UMA PERGUNTA. Formulario vazio publicado e
-        um endereco que a pessoa abre, le o titulo e nao tem o que responder --
-        e ela vai achar que o site quebrou. Despublicar nao exige nada.
-        """
+        """Liga ou desliga a porta publica. Publicar exige ao menos uma pergunta."""
         form = await self._form_do_workspace(form_id)
         self._assert_pode_gerir("form.publish", form.team_id)
         if publicado:
@@ -422,23 +302,11 @@ class SolicitationFormService:
         return form
 
     async def apagar_formulario(self, *, form_id: uuid.UUID) -> None:
-        """Soft delete.
-
-        ⚠️ AS SOLICITACOES QUE VIERAM DELE NAO SAO TOCADAS. Elas guardam as
-        respostas em `answers` (texto da pergunta + valor) e continuam
-        legiveis sem o formulario -- e continuam na fila, porque o `JOIN` dela
-        e `LEFT`. Apagar a porta nao apaga quem entrou por ela.
-        """
+        """Soft delete. As solicitacoes que vieram dele nao sao tocadas."""
         form = await self._form_do_workspace(form_id)
         self._assert_pode_gerir("form.delete", form.team_id)
 
-        # ⚠️ AS SECOES E PERGUNTAS VAO JUNTO (ADR-0005), e ate a revisao de
-        # 31/08 nao iam. Era inerte -- todo caminho que as alcancaria passa
-        # pelo `_form_do_workspace`, que devolve 404 para formulario apagado --,
-        # mas deixava estado inconsistente com o proprio `apagar_secao`, que
-        # cascateia para as perguntas com a justificativa escrita. Qualquer
-        # consulta futura que parta de `solicitation_section` sem passar pelo
-        # formulario enxergaria secoes que o produto considera apagadas.
+        # Secoes e perguntas vao junto, como em `apagar_secao`.
         secoes = list(
             (
                 await self._session.execute(
@@ -493,13 +361,7 @@ class SolicitationFormService:
         await self._assert_slug_de_secao_livre(form_id=form.id, slug=limpo)
         tenant = require_tenant()
 
-        # Posicao no FIM, sempre. Reordenar e gesto proprio (fatia C).
-        #
-        # ⚠️⚠️ `MAX(position) + 1`, E NAO `len(vivos)`. Contar os vivos COLIDE
-        # depois de um soft delete: criar A, B, C (0, 1, 2), apagar B, criar D
-        # -> `len(vivos)` e 2, e D nasce em cima de C. O soft delete NAO
-        # compacta as posicoes, e o indice nao e unico, entao a colisao passa
-        # em silencio. Achado pela revisao de 31/08.
+        # Posicao no fim (MAX + 1, ver `_proxima_posicao`).
         proxima = await self._proxima_posicao(
             SolicitationSection,
             SolicitationSection.form_id == form.id,
@@ -545,18 +407,10 @@ class SolicitationFormService:
         repeatable: bool | None = None,
         repeat_label: str | None = None,
     ) -> SolicitationSection:
-        """Titulo, emoji, prazo e repeticao (Spec 059). **O `slug` NAO entra, e isso e deliberado.**
+        """Titulo, emoji, prazo e repeticao. O `slug` nao entra.
 
-        ⚠️ O SLUG DA SECAO E O QUE FICA GRAVADO EM CADA SOLICITACAO. Ele viaja
-        como `solicitation_item.category` e e ele que a fila usa para dizer de
-        que categoria o pedido e. Troca-lo hoje nao muda os pedidos de ontem:
-        eles continuam com o slug velho e passam a aparecer na fila como texto
-        cru, sem titulo e sem emoji -- para sempre, e sem erro nenhum.
-
-        Titulo e emoji podem mudar a vontade justamente porque NAO sao
-        gravados: a fila os resolve pelo slug, entao renomear a secao arruma o
-        passado junto com o presente. E essa a diferenca entre os dois campos,
-        e e por isso que um e editavel e o outro nao.
+        O slug fica gravado em cada pedido (`category`) e e por ele que a fila acha
+        titulo e emoji; troca-lo deixaria os pedidos antigos com texto cru.
         """
         secao = await self._secao_do_workspace(section_id)
         form = await self._form_do_workspace(secao.form_id)
@@ -579,13 +433,9 @@ class SolicitationFormService:
     async def definir_resumo(
         self, *, section_id: uuid.UUID, question_id: uuid.UUID | None
     ) -> SolicitationSection:
-        """Qual pergunta vira o TITULO do pedido na fila.
+        """Qual pergunta vira o titulo do pedido na fila.
 
-        ⚠️ GESTO PROPRIO PELO MESMO MOTIVO DA CONDICIONAL: limpar e mandar
-        `null`, e num PATCH `null` se confunde com "nao mexe".
-
-        ⚠️ E SEM ESCOLHA HA RESERVA -- o front usa o primeiro campo da secao.
-        Entao `None` aqui e "volta ao padrao", e nao "fica sem titulo".
+        `None` volta ao padrao (o front usa o primeiro campo da secao).
         """
         secao = await self._secao_do_workspace(section_id)
         form = await self._form_do_workspace(secao.form_id)
@@ -604,16 +454,9 @@ class SolicitationFormService:
         return secao
 
     async def apagar_secao(self, *, section_id: uuid.UUID) -> None:
-        """Soft delete da secao E das perguntas dela.
+        """Soft delete da secao e das perguntas dela.
 
-        ⚠️ AS PERGUNTAS VAO JUNTO DE PROPOSITO (ADR-0005). Deixa-las vivas
-        penduradas numa secao morta faria elas voltarem inteiras se a secao
-        fosse restaurada -- mas, pior, elas continuariam servindo de alvo para
-        condicionais de perguntas que ninguem consegue mais ver.
-
-        ⚠️ E OS PEDIDOS QUE JA CHEGARAM POR ESTA SECAO NAO SAO TOCADOS. Eles
-        guardam o texto das perguntas que responderam; o que se perde e o
-        titulo bonito na fila, que passa a mostrar o slug cru.
+        Os pedidos que ja chegaram nao sao tocados; na fila passam a mostrar o slug.
         """
         secao = await self._secao_do_workspace(section_id)
         form = await self._form_do_workspace(secao.form_id)
@@ -632,11 +475,7 @@ class SolicitationFormService:
             .all()
         )
 
-        # ⚠️ DEPENDENTE DE FORA DA SECAO NAO EXISTE HOJE (a condicional e
-        # obrigatoriamente da mesma secao, e os 25 herdados foram conferidos um
-        # a um), mas dado antigo pode ter escapado -- e apagar em silencio uma
-        # secao que deixa pergunta invisivel em OUTRA e exatamente o defeito
-        # que esta spec inteira tenta nao cometer.
+        # Condicional e sempre da mesma secao, mas dado antigo pode ter escapado.
         dentro = {p.id for p in perguntas}
         for p in perguntas:
             for dep in await self._dependentes(p.id):
@@ -700,14 +539,7 @@ class SolicitationFormService:
         placeholder: str | None = None,
         help_text: str | None = None,
     ) -> SolicitationQuestion:
-        """⚠️ AS DUAS RECUSAS AQUI SAO SOBRE O FORMULARIO PUBLICO, e nao sobre
-        higiene de dado:
-
-          - `kind` desconhecido vira um campo que a tela NAO SABE DESENHAR --
-            e o publico descobre isso como um buraco no meio do formulario;
-          - `escolha`/`multi` sem alternativa e um beco: se for obrigatoria,
-            TRAVA o envio, e quem responde nao tem como saber por que.
-        """
+        """Recusa `kind` que a tela nao sabe desenhar e escolha sem alternativas."""
         secao = await self._secao_do_workspace(section_id)
         form = await self._form_do_workspace(secao.form_id)
         self._assert_pode_gerir("form.update", form.team_id)
@@ -727,11 +559,7 @@ class SolicitationFormService:
             )
 
         tenant = require_tenant()
-        # ⚠️ MESMA ARMADILHA DA SECAO, e aqui ela DOI MAIS: a regra ordinal da
-        # condicional (`alvo.position >= pergunta.position`) recusa uma
-        # configuracao legitima quando duas perguntas dividem a posicao. A
-        # pessoa ve "a condicao precisa usar uma pergunta que vem ANTES desta"
-        # apontando para uma pergunta que aparece ANTES na tela.
+        # MAX + 1: posicao repetida faria a regra ordinal da condicional recusar errado.
         proxima = await self._proxima_posicao(
             SolicitationQuestion,
             SolicitationQuestion.section_id == secao.id,
@@ -755,7 +583,7 @@ class SolicitationFormService:
     async def perguntas_da_secao(
         self, section_id: uuid.UUID
     ) -> list[SolicitationQuestion]:
-        """As perguntas VIVAS de uma secao, em ordem."""
+        """As perguntas vivas de uma secao, em ordem."""
         return list(
             (
                 await self._session.execute(
@@ -791,14 +619,10 @@ class SolicitationFormService:
     async def _dependentes(
         self, question_id: uuid.UUID
     ) -> list[SolicitationQuestion]:
-        """As perguntas VIVAS cuja condicional aponta para esta.
+        """As perguntas vivas cuja condicional aponta para esta.
 
-        ⚠️ ELAS SAO O MOTIVO DE METADE DAS RECUSAS DESTE ARQUIVO. Uma pergunta
-        condicional so aparece quando a pergunta-alvo tem certo valor; se o
-        alvo some, muda de tipo ou perde a alternativa citada, a dependente
-        NAO da erro -- ela simplesmente nunca mais aparece no formulario
-        publico. Quem edita nao ve nada acontecer, e o buraco so vira noticia
-        quando alguem reclama que "sumiu a pergunta da data".
+        Se o alvo some, muda de tipo ou perde a alternativa citada, a dependente
+        deixa de aparecer no formulario publico sem erro nenhum.
         """
         return list(
             (
@@ -834,17 +658,9 @@ class SolicitationFormService:
         placeholder: str | None = None,
         help_text: str | None = None,
     ) -> SolicitationQuestion:
-        """⚠️ AS DUAS RECUSAS NOVAS AQUI SAO SOBRE AS DEPENDENTES.
+        """Recusa mudar tipo ou alternativas de que uma dependente precisa.
 
-        Trocar o tipo de `escolha` para `texto`, ou tirar da lista a
-        alternativa que uma condicional cita, deixa a dependente invisivel
-        para sempre -- sem erro, sem aviso. Recusar nomeando quem depende e a
-        unica forma de quem edita descobrir isso ANTES.
-
-        ⚠️ E MUDAR `label` E SEGURO, por mais que pareca o contrario: a
-        resposta antiga guarda o TEXTO perguntado no dia
-        (`solicitation.answers` = `{label, value}`). Renomear a pergunta hoje
-        nao reescreve o que alguem respondeu ontem.
+        Mudar `label` e seguro: as respostas guardam o texto perguntado no dia.
         """
         pergunta = await self._pergunta_do_workspace(question_id)
         await self._assert_pode_mexer_na_pergunta(pergunta)
@@ -857,17 +673,14 @@ class SolicitationFormService:
                 details={"kind": novo_kind},
             )
 
-        # ⚠️ `options` so e reescrito quando VEM. `None` aqui e "nao mexe", e
-        # nao "esvazia" -- esvaziar uma lista de alternativas por omissao seria
-        # apagar o formulario de quem so quis corrigir uma vírgula no titulo.
+        # `options=None` e "nao mexe", e nao "esvazia".
         novas_opcoes = (
             pergunta.options
             if options is None
             else [o.strip() for o in options if o.strip()]
         )
         if not exige_opcoes(novo_kind):
-            # Tipo sem alternativas nao carrega lista: guardar uma lista morta
-            # faria a tela de edicao mostrar opcoes que o publico nao ve.
+            # Tipo sem alternativas nao guarda lista.
             novas_opcoes = []
         elif not novas_opcoes:
             raise ValidationError(
@@ -925,23 +738,9 @@ class SolicitationFormService:
         alvo_id: uuid.UUID | None,
         valor: str | None,
     ) -> SolicitationQuestion:
-        """Liga (ou desliga) o "só aparece quando…" de uma pergunta.
+        """Liga (ou desliga, com `alvo_id=None`) o "so aparece quando..." de uma pergunta.
 
-        ⚠️ GESTO PROPRIO, E NAO UM CAMPO DO `PATCH`, por um motivo bobo e
-        decisivo: DESLIGAR a condicional e mandar `null`, e num PATCH `null`
-        se confunde com "nao mexe". Aqui os dois argumentos sao obrigatorios,
-        entao nao ha ambiguidade nenhuma.
-
-        As tres regras sao as mesmas que os 25 condicionais herdados do
-        formulario do Marketing ja cumpriam -- foram conferidos um a um:
-
-          - **mesma secao**: o publico responde uma secao de cada vez, e uma
-            condicional que atravessa secao dependeria de resposta que ainda
-            nao existe na tela;
-          - **para tras**: alvo depois da dependente e uma pergunta que se
-            revela por algo que ainda nao foi perguntado;
-          - **alvo de escolha**: comparar com `igual` so faz sentido contra
-            uma lista de alternativas.
+        O alvo tem de ser da mesma secao, vir antes desta e ser de escolha.
         """
         pergunta = await self._pergunta_do_workspace(question_id)
         await self._assert_pode_mexer_na_pergunta(pergunta)
@@ -990,18 +789,7 @@ class SolicitationFormService:
         return pergunta
 
     async def apagar_pergunta(self, *, question_id: uuid.UUID) -> None:
-        """Soft delete.
-
-        ⚠️ E ELE NAO TOCA EM RESPOSTA NENHUMA -- nem poderia. As respostas
-        vivem em `solicitation.answers` como `{label, value}`, com o TEXTO da
-        pergunta. Apagar a pergunta hoje nao muda o que alguem respondeu
-        ontem, e e por isso que o formulario pode ser editavel sem medo.
-
-        ⚠️ MAS ELE RECUSA QUANDO OUTRAS DEPENDEM DELA. Sem esta guarda, as
-        dependentes ficariam apontando para uma pergunta morta: nunca mais
-        apareceriam no formulario, sem erro nenhum no caminho. Some UMA e
-        somem TRES -- e so a primeira foi pedida.
-        """
+        """Soft delete. Nao toca nas respostas; recusa se outras perguntas dependem dela."""
         pergunta = await self._pergunta_do_workspace(question_id)
         secao = await self._assert_pode_mexer_na_pergunta(pergunta)
 
@@ -1015,9 +803,7 @@ class SolicitationFormService:
                 details={"dependentes": [str(d.id) for d in dependentes]},
             )
 
-        # ⚠️ A PERGUNTA-RESUMO NAO PODE FICAR APONTANDO PARA UM MORTO. O front
-        # tem reserva (`resumoDe` cai no primeiro campo), entao limpar aqui e
-        # honesto: a secao volta ao padrao em vez de guardar um id fantasma.
+        # A pergunta-resumo nao pode apontar para pergunta apagada; volta ao padrao.
         if secao.summary_question_id == pergunta.id:
             secao.summary_question_id = None
 
@@ -1027,12 +813,9 @@ class SolicitationFormService:
     async def reordenar_perguntas(
         self, *, section_id: uuid.UUID, ids: list[uuid.UUID]
     ) -> list[SolicitationQuestion]:
-        """A nova ordem das perguntas de UMA secao.
+        """A nova ordem das perguntas de uma secao.
 
-        ⚠️ REORDENAR PODE QUEBRAR CONDICIONAL, e por isso a conferencia no fim
-        e obrigatoria: arrastar a dependente para cima do alvo faz dela uma
-        pergunta que se revela por algo ainda nao perguntado. A regra e a
-        mesma de `definir_condicional`, so que aplicada ao movimento inverso.
+        Recusa se uma dependente ficar antes do alvo da condicional.
         """
         secao = await self._secao_do_workspace(section_id)
         form = await self._form_do_workspace(secao.form_id)
@@ -1079,13 +862,9 @@ class SolicitationFormService:
     def _assert_ordem_completa(
         self, vivos: list, ids: list[uuid.UUID], oque: str
     ) -> dict:
-        """A lista recebida e EXATAMENTE o conjunto vivo?
+        """A lista recebida e exatamente o conjunto vivo?
 
-        ⚠️ ACEITAR LISTA PARCIAL SERIA O DEFEITO SILENCIOSO CLASSICO desta
-        tela: duas abas abertas, uma cria uma secao, a outra arrasta e envia a
-        ordem ANTIGA -- e a secao nova ficaria com a posicao de outra. Exigir
-        o conjunto inteiro faz a aba velha receber um erro em vez de apagar o
-        trabalho da outra.
+        Lista parcial deixaria uma aba velha sobrescrever a ordem de quem criou um item.
         """
         por_id = {v.id: v for v in vivos}
         if len(ids) != len(set(ids)) or set(ids) != set(por_id):
@@ -1100,7 +879,7 @@ class SolicitationFormService:
     async def perguntas_do_form(
         self, form_id: uuid.UUID
     ) -> tuple[list[SolicitationSection], list[SolicitationQuestion]]:
-        """As secoes e perguntas VIVAS de um formulario, em ordem."""
+        """As secoes e perguntas vivas de um formulario, em ordem."""
         form = await self._form_do_workspace(form_id)
         secoes = list(
             (

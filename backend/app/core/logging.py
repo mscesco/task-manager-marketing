@@ -1,12 +1,6 @@
-"""Logging estruturado com structlog.
+"""Logging estruturado com structlog (console no dev, JSON em producao).
 
-Em desenvolvimento: saida colorida e legivel no console.
-Em staging/producao: JSON, pronto para ser coletado por
-qualquer stack de observabilidade (Loki, ELK, Datadog).
-
-Todo log carrega automaticamente o contexto da requisicao
-(request_id, workspace_id, user_id) quando disponivel --
-ver app.core.middleware, que popula esse contexto.
+O contexto da requisicao (request_id etc.) vem de app.core.middleware.
 """
 
 from __future__ import annotations
@@ -22,7 +16,6 @@ from app.core.config import LogFormat, settings
 def configure_logging() -> None:
     """Configura structlog + stdlib logging. Chamar uma vez no startup."""
 
-    # Processadores comuns a todos os ambientes.
     shared_processors: list[structlog.types.Processor] = [
         structlog.contextvars.merge_contextvars,  # injeta request_id etc.
         structlog.stdlib.add_log_level,
@@ -45,8 +38,7 @@ def configure_logging() -> None:
         cache_logger_on_first_use=True,
     )
 
-    # Alinha o logging padrao da stdlib (usado por uvicorn, sqlalchemy)
-    # ao nivel configurado, evitando ruido duplicado.
+    # stdlib (uvicorn, sqlalchemy) no mesmo nivel.
     logging.basicConfig(
         format="%(message)s",
         stream=sys.stdout,
@@ -55,12 +47,8 @@ def configure_logging() -> None:
 
 
 def get_logger(name: str | None = None) -> structlog.stdlib.BoundLogger:
-    """Retorna um logger estruturado. Use o __name__ do modulo como nome.
-
-    O nome e vinculado como um campo `logger` do evento -- sem
-    depender do processador add_logger_name da stdlib, que exige
-    um logger da stdlib (incompativel com o PrintLogger usado).
-    """
+    """Logger estruturado; o nome vai no campo `logger` (add_logger_name nao
+    funciona com o PrintLogger)."""
     logger = structlog.get_logger()
     if name is not None:
         return logger.bind(logger=name)

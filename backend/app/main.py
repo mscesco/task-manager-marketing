@@ -1,17 +1,5 @@
-"""Bootstrap da aplicacao FastAPI.
-
-Este arquivo so MONTA a aplicacao -- nenhuma regra de
-negocio. Responsabilidades:
-    - configurar logging;
-    - gerenciar o ciclo de vida (lifespan): abrir/fechar o
-      pool de conexoes do banco;
-    - registrar middlewares;
-    - registrar exception handlers;
-    - registrar os routers.
-
-A instancia `app` daqui e o que o uvicorn sobe
-(app.main:app).
-"""
+"""Monta a aplicacao FastAPI (app.main:app): logging, lifespan, middlewares,
+handlers e rotas."""
 
 from __future__ import annotations
 
@@ -21,8 +9,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from starlette.middleware.cors import CORSMiddleware
 
-# Garante que TODOS os models sejam registrados no metadata
-# (necessario antes de qualquer uso do ORM / Alembic).
+# Registra todos os models no metadata antes de qualquer uso do ORM.
 import app.db.models
 from app.api.errors import register_exception_handlers
 from app.api.router import api_v1_router, infra_router
@@ -36,18 +23,13 @@ logger = get_logger(__name__)
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-    """Ciclo de vida da aplicacao.
-
-    Startup: inicializa o pool de conexoes com o Postgres
-    externo. Shutdown: fecha o pool de forma limpa.
-    """
+    """Abre o pool do banco no startup e fecha no shutdown."""
     logger.info("app.starting", env=settings.app_env.value)
     db_manager.init()
     try:
         yield
     finally:
-        # Spec 056, fatia G: a conexao de escuta do ao vivo sai do pool, e
-        # volta para ele ANTES de o pool fechar.
+        # A conexao de escuta do ao vivo sai do pool e tem de voltar antes de ele fechar.
         from app.modules.bases.infrastructure.live import hub
 
         await hub.close()
@@ -56,7 +38,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 
 
 def create_app() -> FastAPI:
-    """Factory da aplicacao. Facilita testes (cada teste cria a sua)."""
+    """Factory da aplicacao (testes criam a sua)."""
     configure_logging()
 
     app = FastAPI(
@@ -83,10 +65,8 @@ def create_app() -> FastAPI:
     # Por ultimo = roda primeiro: o teto vale antes de qualquer leitura.
     app.add_middleware(BodySizeLimitMiddleware)
 
-    # --- Exception handlers ---
     register_exception_handlers(app)
 
-    # --- Rotas ---
     app.include_router(infra_router)
     app.include_router(api_v1_router)
 
@@ -94,5 +74,4 @@ def create_app() -> FastAPI:
     return app
 
 
-# Instancia que o uvicorn carrega.
 app = create_app()

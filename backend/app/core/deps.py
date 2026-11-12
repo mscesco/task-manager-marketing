@@ -1,15 +1,4 @@
-"""Dependency Injection central da aplicacao.
-
-Aqui ficam as dependencies de INFRAESTRUTURA, usadas por
-todos os modulos: sessao de banco e Unit of Work.
-
-As dependencies de DOMINIO (usuario corrente, repositories
-e services especificos) ficam em cada modulo -- ex.
-app.modules.auth.api.dependencies, app.modules.tasks.api.dependencies.
-
-Padrao FastAPI: estas funcoes sao usadas com Depends() nas
-rotas. O escopo de uma sessao/UoW e UMA requisicao.
-"""
+"""Dependencies de infraestrutura (sessao e Unit of Work), com escopo de requisicao."""
 
 from __future__ import annotations
 
@@ -25,13 +14,7 @@ from app.db.unit_of_work import UnitOfWork
 
 
 async def get_db_session() -> AsyncIterator[AsyncSession]:
-    """Fornece uma AsyncSession com escopo de requisicao.
-
-    A sessao e fechada ao fim da requisicao. O commit NAO e
-    feito aqui -- e responsabilidade do Unit of Work, acionado
-    pelo service. Em caso de excecao nao tratada, faz rollback
-    defensivo antes de fechar.
-    """
+    """AsyncSession da requisicao. O commit e do Unit of Work, nao daqui."""
     session = db_manager.sessionmaker()
     try:
         yield session
@@ -45,17 +28,11 @@ async def get_db_session() -> AsyncIterator[AsyncSession]:
 async def get_uow(
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> AsyncIterator[UnitOfWork]:
-    """Fornece um Unit of Work sobre a sessao da requisicao.
-
-    Cada modulo que precisar de um UoW com repositories
-    especificos pode definir sua propria subclasse e
-    dependency -- esta entrega o UoW base.
-    """
+    """Unit of Work base sobre a sessao da requisicao."""
     async with UnitOfWork(session) as uow:
         yield uow
 
 
-# Type aliases para deixar as assinaturas das rotas limpas.
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 SessionDep = Annotated[AsyncSession, Depends(get_db_session)]
 UoWDep = Annotated[UnitOfWork, Depends(get_uow)]

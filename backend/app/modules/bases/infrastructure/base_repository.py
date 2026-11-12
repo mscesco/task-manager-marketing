@@ -1,4 +1,4 @@
-"""Acesso a dados da Base (Spec 056). Tudo pelo `BaseRepository`: o filtro de
+"""Acesso a dados da Base. Tudo pelo `BaseRepository`: o filtro de
 tenant e o de `deleted_at` ja vem de `_base_select()`."""
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ from app.db.repository import BaseRepository
 
 
 class BaseChangeRepository(BaseRepository[BaseChange]):
-    """O diario do desfazer (spec §9). A PILHA e por (base, pessoa)."""
+    """O diario do desfazer. A pilha e por (base, pessoa)."""
 
     model = BaseChange
 
@@ -53,8 +53,7 @@ class BaseChangeRepository(BaseRepository[BaseChange]):
         return (await self.session.execute(stmt)).scalar_one_or_none()
 
     async def drop_undone(self, base_id: uuid.UUID, actor_id: uuid.UUID) -> None:
-        """Acao nova da pessoa: o que ela tinha desfeito nao se refaz mais --
-        como em qualquer editor."""
+        """Acao nova da pessoa: o que ela tinha desfeito nao se refaz mais."""
         await self.session.execute(
             delete(BaseChange).where(
                 self._tenant_clause(),
@@ -86,7 +85,7 @@ class BaseTableRepository(BaseRepository[BaseTable]):
     async def list_deleted_in_teams(
         self, team_ids: frozenset[uuid.UUID] | None, since: datetime
     ) -> list[BaseTable]:
-        """A lixeira: excluidas DENTRO do prazo, mais recente primeiro."""
+        """A lixeira: excluidas dentro do prazo, mais recente primeiro."""
         stmt = (
             self._base_select(include_deleted=True)
             .where(BaseTable.deleted_at.is_not(None), BaseTable.deleted_at >= since)
@@ -103,9 +102,8 @@ class BaseColumnRepository(BaseRepository[BaseColumn]):
     model = BaseColumn
 
     async def list_for(self, base_id: uuid.UUID, *, lock: bool = False) -> list[BaseColumn]:
-        """As colunas vivas, na ordem. `lock`: trava todas ate o commit -- a
-        troca da coluna principal (Spec 061) le "qual e o titulo" e muda dois
-        tipos, e duas trocas ao mesmo tempo deixariam a base com DOIS titulos."""
+        """As colunas vivas, na ordem. `lock`: trava todas ate o commit, para duas
+        trocas da coluna principal ao mesmo tempo nao deixarem dois titulos."""
         stmt = (
             self._base_select()
             .where(BaseColumn.base_id == base_id)
@@ -123,7 +121,7 @@ class BaseColumnRepository(BaseRepository[BaseColumn]):
 
     async def shift_from(self, base_id: uuid.UUID, position: int) -> None:
         """Empurra uma casa as colunas (vivas e apagadas) de `position` em
-        diante -- abre a vaga de "Inserir a esquerda/direita"."""
+        diante: abre a vaga de "Inserir a esquerda/direita"."""
         await self.session.execute(
             update(BaseColumn)
             .where(
@@ -138,10 +136,7 @@ class BaseColumnRepository(BaseRepository[BaseColumn]):
     async def move(self, base_id: uuid.UUID, coluna: BaseColumn, destino: int) -> None:
         """Leva `coluna` para `destino`, e as colunas no caminho andam uma casa
         para o lado de onde ela saiu (vivas e apagadas, como `shift_from`).
-
-        ⚠️ ARRASTAR NAO PODE SO TROCAR O NUMERO (14/10): duas colunas com a
-        mesma posicao ficariam na ordem do id, e a que a pessoa soltou poderia
-        cair do outro lado da vizinha.
+        So trocar o numero deixaria duas colunas na mesma posicao.
         """
         origem = coluna.position
         if destino == origem:
@@ -166,7 +161,7 @@ class BaseColumnRepository(BaseRepository[BaseColumn]):
         coluna.position = destino
 
     async def next_position(self, base_id: uuid.UUID) -> int:
-        """Depois da ultima -- contando as apagadas, para o desfazer devolver a
+        """Depois da ultima, contando as apagadas, para o desfazer devolver a
         coluna ao lugar dela sem colidir."""
         stmt = select(func.coalesce(func.max(BaseColumn.position), 0)).where(
             self._tenant_clause(), BaseColumn.base_id == base_id
@@ -202,9 +197,8 @@ class BaseRowRepository(BaseRepository[BaseRow]):
     model = BaseRow
 
     async def list_for(self, base_id: uuid.UUID) -> list[BaseRow]:
-        """Todas as linhas vivas, na ordem em que nasceram. ⚠️ SEM PAGINA, de
-        proposito (spec §8.1): filtro e ordenacao acontecem no navegador, e o
-        teto de 5.000 por base e o que mantem isso barato."""
+        """Todas as linhas vivas, na ordem em que nasceram. Sem pagina: filtro e
+        ordenacao acontecem no navegador, e o teto de linhas mantem isso barato."""
         stmt = (
             self._base_select()
             .where(BaseRow.base_id == base_id)
@@ -223,15 +217,11 @@ class BaseRowRepository(BaseRepository[BaseRow]):
     async def get_many(
         self, base_id: uuid.UUID, row_ids: set[uuid.UUID], *, include_deleted: bool = False
     ) -> dict[uuid.UUID, BaseRow]:
-        """As linhas para REGRAVAR `values` -- travadas ate o fim da transacao.
+        """As linhas para regravar `values`, travadas ate o fim da transacao.
 
-        ⚠️ SEM A TRAVA, DUAS EDICOES NA MESMA LINHA PERDIAM UMA (revisao de
-        08/10): quem grava monta o `values` inteiro em Python e devolve; A
-        (coluna X) e B (coluna Y) liam a mesma linha velha, e o ultimo commit
-        apagava a celula do outro. Com `FOR UPDATE`, B espera o commit de A e
-        le a linha ja com X. A ordem por id evita deadlock entre duas colagens
-        que pegam as mesmas linhas; `populate_existing` garante que o objeto da
-        sessao recebe o valor relido, e nao o que ja estava em memoria.
+        Quem grava monta o `values` inteiro em Python; sem `FOR UPDATE`, duas
+        edicoes na mesma linha perderiam uma. A ordem por id evita deadlock;
+        `populate_existing` faz a sessao receber o valor relido.
         """
         if not row_ids:
             return {}
@@ -254,7 +244,7 @@ class BaseRowRepository(BaseRepository[BaseRow]):
         self, base_id: uuid.UUID, origem: uuid.UUID, destino: uuid.UUID
     ) -> None:
         """Copia o valor de `origem` para `destino` em toda linha (viva ou
-        apagada) que o tem -- "Duplicar propriedade". So a chave nova entra."""
+        apagada) que o tem ("Duplicar propriedade"). So a chave nova entra."""
         de, para = str(origem), str(destino)
         await self.session.execute(
             update(BaseRow)
@@ -275,12 +265,9 @@ class BaseRowRepository(BaseRepository[BaseRow]):
     async def values_of_column(
         self, base_id: uuid.UUID, column_id: uuid.UUID
     ) -> dict[str, object]:
-        """`{id da linha: valor}` das linhas que tem a coluna preenchida -- o que
-        a troca de tipo apaga, e o diario guarda (D27).
-
-        ⚠️ INCLUSIVE AS DA LIXEIRA: `clear_column` zera todas, entao guardar so
-        as vivas fazia a linha restaurada depois de um Ctrl+Z da troca voltar
-        com a celula vazia, para sempre."""
+        """`{id da linha: valor}` das linhas que tem a coluna preenchida: o que
+        a troca de tipo apaga e o diario guarda. Inclui as da lixeira, porque
+        `clear_column` zera todas."""
         chave = str(column_id)
         stmt = (
             self._base_select(include_deleted=True)
@@ -290,11 +277,8 @@ class BaseRowRepository(BaseRepository[BaseRow]):
         return {str(i): v for i, v in (await self.session.execute(stmt)).all()}
 
     async def clear_column(self, base_id: uuid.UUID, column_id: uuid.UUID) -> int:
-        """Tira a chave da coluna de toda linha que a tem (troca de tipo, D18).
-
-        ⚠️ SO A CHAVE (`values - 'col'`), e nao a linha: as outras celulas ficam.
-        `version` sobe em cada linha tocada -- e uma gravacao como qualquer outra.
-        Devolve quantas linhas mudaram.
+        """Tira a chave da coluna de toda linha que a tem (troca de tipo); as
+        outras celulas ficam e `version` sobe. Devolve quantas linhas mudaram.
         """
         chave = str(column_id)
         stmt = (

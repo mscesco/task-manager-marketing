@@ -1,12 +1,4 @@
-"""Configuracao centralizada da aplicacao.
-
-Toda configuracao vem de variaveis de ambiente, validada por
-pydantic-settings. Nenhum outro modulo deve ler os.environ
-diretamente -- todos importam `settings` daqui.
-
-A instancia `settings` e criada uma unica vez (cacheada) e
-injetada onde necessario via app.core.deps.
-"""
+"""Configuracao da aplicacao, lida do ambiente. Nenhum modulo le os.environ direto."""
 
 from __future__ import annotations
 
@@ -54,92 +46,41 @@ class Settings(BaseSettings):
     jwt_access_token_expire_minutes: int = 15
     jwt_refresh_token_expire_days: int = 7
 
-    # --- Senha temporaria (Entrega 7) ---
-    # Janela de validade da senha provisoria gerada no cadastro/reset.
-    # Provisoria expirada => login 401 (ADR 0019). 72h por decisao.
+    # --- Senha provisoria (cadastro/reset); expirada => login 401 ---
     temporary_password_ttl_hours: int = 72
 
-    # --- Rate limit (formulario publico de solicitacoes) ---
-    # Unica rota de escrita publica alem do auth.
-    #
-    # A premissa antiga era "ninguem de boa-fe envia mais de 5 solicitacoes
-    # em 10 minutos do mesmo IP". Isso vale por PESSOA e falha por IP: os
-    # times que usam o formulario saem pela rede da instituicao, entao
-    # dezenas de pessoas compartilham UM endereco publico (NAT). O balde e
-    # por IP, logo o teto antigo era 5 envios por 10 min para a instituicao
-    # INTEIRA -- 30 por hora no total. No dia em que o link e divulgado,
-    # que e justamente quando os envios se concentram, isso barra gente de
-    # boa-fe.
-    #
-    # A JANELA importa mais que o teto. Com 600s, quem esbarra fica preso
-    # ate 10 minutos; com 60s, destrava em um minuto. Como o formulario
-    # PRESERVA o rascunho no erro (limparRascunho() so roda no sucesso), a
-    # pessoa so precisa reenviar -- e esperar 1 min e aceitavel, 10 nao.
-    #
-    # O freio contra bot aqui nunca foi este limite: e o honeypot + os
-    # tetos de payload (11 itens x 60 respostas x 5000 chars). Este numero
-    # e anti-enxurrada, nao cota por pessoa.
-    #
-    # Ajustavel por env (PUBLIC_FORM_RATE_LIMIT_MAX) sem mexer no codigo:
-    # se aparecer abuso real, aperta; se barrar gente de boa-fe, afrouxa.
+    # --- Rate limit do formulario publico, por IP ---
+    # A instituicao inteira sai por um IP so (NAT): o teto e da rede, nao da
+    # pessoa. Janela curta porque o rascunho sobrevive ao 429. Leitura:
     public_form_rate_limit_max: int = 30
     public_form_rate_limit_window_seconds: int = 60
-    # ⚠️ Desde 11/11 (auditoria, item 11) o numero acima vale so para LER o
-    # formulario (lista e detalhe). O ENVIO tem balde proprio, mais apertado:
-    # com 30/min, um script de um IP gravava ~6 MB por minuto, para sempre, no
-    # Postgres que o n8n tambem usa (200 mil caracteres por envio). Decisao
-    # dela: 15 envios a cada 10 min por IP -- a instituicao sai por um IP so,
-    # entao o teto e da rede inteira; o rascunho sobrevive ao 429.
+    # Envio (cada um grava ate ~200 mil caracteres):
     public_submit_rate_limit_max: int = 15
     public_submit_rate_limit_window_seconds: int = 600
 
-    # --- Rate limit (coletor de erros do front) -- revisao de seguranca 23/09
-    # `/client-errors` e PUBLICO e ESCREVE NO LOG: e a unica rota sem auth que
-    # produz linha de log por requisicao. O teto de 20 do sensor e do CLIENTE,
-    # e quem abusa nao usa o cliente -- sem freio aqui, qualquer pessoa na
-    # internet enche o disco da VPS compartilhada e afoga o grep de deteccao,
-    # que procura exatamente o token `app_error` que esta rota escreve.
-    #
-    # 30/min por IP: uma pagina em loop de verdade cabe (o sensor manda no
-    # maximo 20 por carregamento), e a enxurrada nao.
+    # --- Rate limit do coletor de erros do front (publico, escreve no log) ---
+    # O sensor manda no maximo 20 por carregamento de pagina.
     client_error_rate_limit_max: int = 30
     client_error_rate_limit_window_seconds: int = 60
 
-    # --- Rate limit (login, por CONTA) -- Spec 030 D5 ---
-    # O freio por IP acima nao ve o atacante que distribui as tentativas por
-    # varios enderecos. Este balde e por (e-mail + workspace) e conta apenas
-    # FALHA -- acertar a senha zera. 10 falhas / 15 min: ninguem erra a
-    # propria senha dez vezes em quinze minutos de boa-fe.
-    #
-    # Janela deslizante, sem bloqueio permanente (ver rate_limit.py): o
-    # destravamento e automatico, para o freio nao virar arma de negacao de
-    # servico contra quem tem e-mail conhecido.
+    # --- Rate limit de login por conta (e-mail + workspace) ---
+    # Conta so falha; acertar zera. Janela deslizante, sem bloqueio permanente.
     account_login_limit_max: int = 10
     account_login_limit_window_seconds: int = 900
 
-    # --- Auto-arquivamento (Spec 013) ---
-    # Tarefa COMPLETED/CANCELLED parada ha mais de N dias e auto-arquivada
-    # pela varredura (job diario via n8n). CANCELLED medido por updated_at,
-    # COMPLETED por completed_at (DECISAO A da spec).
+    # --- Auto-arquivamento ---
+    # Tarefa concluida/cancelada parada ha mais de N dias (varredura diaria do n8n).
     stale_archive_days: int = 20
 
-    # Token de maquina-a-maquina do endpoint de varredura (Fatia 2). VAZIO =
-    # endpoint DESLIGADO (fail closed). Em prod, gere: openssl rand -hex 32.
+    # Token do endpoint de varredura. Vazio = endpoint desligado (fail closed).
     system_api_token: str = ""
 
-    # --- Aviso de mudanca de status ao solicitante (Spec 043, fatia F) ---
-    #
-    # ⚠️ URL VAZIA = RECURSO DESLIGADO, e nao erro. E a regra 4 do §8 da spec:
-    # ambiente sem n8n configurado (o de teste, o de quem clona o repo) nao
-    # pode falhar por causa disto. Diferente do `system_api_token`, que e fail
-    # CLOSED porque protege uma porta de entrada -- aqui e uma saida opcional.
+    # --- Aviso de mudanca de status ao solicitante (webhook do n8n) ---
+    # URL vazia = recurso desligado, sem erro.
     n8n_webhook_url: str = ""
-    # ⚠️ VAI NO HEADER `X-Webhook-Token`, mesma familia do `system_api_token`.
-    # Quem conhece a URL do n8n consegue disparar e-mail em nome do sistema;
-    # o segredo e o que separa o backend de qualquer um na internet.
+    # Vai no header `X-Webhook-Token`.
     n8n_webhook_token: str = ""
-    # ⚠️ TIMEOUT CURTO E OBRIGATORIO (regra 2 do §8): sem ele, quem clicou
-    # "Aprovar" fica esperando o tempo de resposta de um servico externo.
+    # Curto: quem clicou "Aprovar" espera esta resposta.
     n8n_webhook_timeout_seconds: float = 5.0
 
     # --- Logging ---
@@ -147,9 +88,7 @@ class Settings(BaseSettings):
     log_format: LogFormat = LogFormat.CONSOLE
 
     # --- CORS ---
-    # Lido como string crua (separada por virgula) para evitar
-    # que o pydantic-settings tente fazer parse JSON. A lista
-    # tratada e exposta pela property `cors_origins`.
+    # String separada por virgula, para o pydantic-settings nao tentar parse JSON.
     cors_allow_origins: str = ""
 
     @property
@@ -173,14 +112,8 @@ class Settings(BaseSettings):
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
-    """Retorna a instancia unica de Settings (cacheada).
-
-    Usar esta funcao -- e nao instanciar Settings() diretamente --
-    garante que o .env seja lido apenas uma vez.
-    """
+    """Instancia unica de Settings (o .env e lido uma vez)."""
     return Settings()  # type: ignore[call-arg]
 
 
-# Atalho para imports diretos. Para testes que precisam sobrescrever
-# config, prefira depender de get_settings via DI.
 settings = get_settings()

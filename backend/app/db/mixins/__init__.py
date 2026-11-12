@@ -1,18 +1,7 @@
-"""Mixins reutilizaveis para os models ORM.
+"""Mixins de colunas comuns dos models.
 
-Cada mixin reflete um padrao JA presente no schema_v5.sql.
-Eles existem para que os models nao repitam as mesmas
-colunas, e para garantir consistencia com o banco.
-
-IMPORTANTE sobre defaults e o banco:
-    O schema v5 ja define DEFAULT gen_random_uuid() e
-    DEFAULT now() no proprio Postgres. Os mixins replicam
-    isso com `server_default`, de modo que:
-        - o banco continua sendo a fonte da verdade do default;
-        - INSERTs feitos fora do ORM (psql, N8N) seguem validos.
-    `updated_at` NAO tem trigger no banco (decisao do schema:
-    "setado pelo backend via SQLAlchemy onupdate") -- por isso
-    usamos `onupdate=now()` no lado do ORM.
+Defaults ficam no banco (`server_default`), para INSERT fora do ORM valer.
+`updated_at` nao tem trigger: quem atualiza e o `onupdate` do ORM.
 """
 
 from __future__ import annotations
@@ -36,12 +25,7 @@ class UUIDPrimaryKeyMixin:
 
 
 class TimestampMixin:
-    """created_at / updated_at, alinhados ao schema v5.
-
-    created_at : server_default now(), imutavel.
-    updated_at : server_default now() + onupdate no lado ORM
-                 (o banco NAO tem trigger; e o backend que seta).
-    """
+    """created_at / updated_at (este pelo `onupdate` do ORM)."""
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -53,11 +37,8 @@ class TimestampMixin:
         server_default=func.now(),
         onupdate=func.now(),
         nullable=False,
-        # COMMENT do schema v5. Declarado aqui pra o autogenerate nao
-        # propor apagar a documentacao que esta no banco.
-        # ⚠️ `solicitation` usa este mixin e NAO tem o comment no banco
-        # (0005 foi escrita a mao e esqueceu) -- por isso o model
-        # Solicitation redeclara updated_at sem comment.
+        # Igual ao COMMENT do banco. `Solicitation` redeclara a coluna sem
+        # comment porque no banco dela ele nao existe.
         comment=(
             "Nao atualiza sozinho. Setado pelo backend via "
             "SQLAlchemy onupdate."
@@ -66,12 +47,7 @@ class TimestampMixin:
 
 
 class SoftDeleteMixin:
-    """deleted_at -- soft delete real.
-
-    NULL = ativo. Queries operacionais DEVEM filtrar
-    deleted_at IS NULL. O BaseRepository aplica esse filtro
-    automaticamente (ver app.db.repository).
-    """
+    """Soft delete: NULL = ativo. O BaseRepository filtra sozinho."""
 
     deleted_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
@@ -89,12 +65,7 @@ class SoftDeleteMixin:
 
 
 class ArchivableMixin:
-    """is_archived -- ocultacao operacional reversivel.
-
-    archived != deleted. Arquivar nao remove a entidade; ela
-    segue valida. O filtro de is_archived depende da tela e
-    NAO e aplicado automaticamente pelo repository.
-    """
+    """Arquivado nao e apagado. O filtro depende da tela; o repository nao aplica."""
 
     is_archived: Mapped[bool] = mapped_column(
         Boolean,
@@ -109,14 +80,9 @@ class ArchivableMixin:
 
 
 def workspace_fk_column() -> Mapped[uuid.UUID]:
-    """`workspace_id` NOT NULL com FK simples para workspace(id), SEM indice.
-
-    ⚠️ DIFERE DO `WorkspaceScopedMixin` SO NO INDICE, e de proposito: as tabelas
-    que usam isto (colaboracao, Base) nasceram sem indice nessa coluna, porque
-    a consulta delas parte da tarefa ou da base, nao do workspace. Trocar pelo
-    mixin criaria indices novos -- e uma migration. Era repetida igual em
-    `models/collaboration.py` (`_ws_fk`) e `models/bases.py` (`_workspace_id`);
-    revisao de 07/10/2026.
+    """`workspace_id` com FK, sem indice: difere do `WorkspaceScopedMixin` so
+    nisso. Essas tabelas sao consultadas pela tarefa ou pela base; trocar pelo
+    mixin criaria indices (uma migration).
     """
     return mapped_column(
         PG_UUID(as_uuid=True),
@@ -126,17 +92,8 @@ def workspace_fk_column() -> Mapped[uuid.UUID]:
 
 
 class WorkspaceScopedMixin:
-    """workspace_id NOT NULL -- coluna de tenant.
-
-    Presente em toda tabela operacional do schema v5. A FK
-    para workspace(id) com ON DELETE RESTRICT tambem e
-    declarada aqui. As FKs COMPOSTAS (id, workspace_id) das
-    demais relacoes sao declaradas em cada model, pois variam
-    de tabela para tabela.
-
-    A presenca desta coluna e o que permite ao BaseRepository
-    aplicar o predicado de tenant automaticamente.
-    """
+    """Coluna de tenant, usada pelo BaseRepository. FKs compostas
+    (id, workspace_id) ficam em cada model."""
 
     workspace_id: Mapped[uuid.UUID] = mapped_column(
         PG_UUID(as_uuid=True),
