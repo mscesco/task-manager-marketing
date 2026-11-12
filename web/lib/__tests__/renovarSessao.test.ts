@@ -3,7 +3,7 @@
 // deploy não podem deslogar quem tem o refresh token ainda válido.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { api, ApiError, getToken, refreshOutcomeOf, setTokens } from "@/lib/api";
+import { api, ApiError, downloadFile, getToken, refreshOutcomeOf, setTokens } from "@/lib/api";
 
 beforeEach(() => {
   localStorage.clear();
@@ -49,6 +49,43 @@ describe("401 sem token nenhum", () => {
     expect(replace).toHaveBeenCalledWith("/login");
     // Nenhum refresh: nao ha o que renovar.
     expect(vi.mocked(fetch).mock.calls.some(([u]) => String(u).endsWith("/auth/refresh"))).toBe(false);
+  });
+});
+
+describe("download com 401", () => {
+  it("sem token nenhum: encerra a sessão em vez de mostrar 'Erro 401'", async () => {
+    localStorage.clear();
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(null, { status: 401 })));
+    const replace = vi.fn();
+    vi.stubGlobal("location", { ...window.location, pathname: "/base", replace });
+    await expect(downloadFile("/api/v1/x.csv", "x.csv")).rejects.toMatchObject({
+      status: 401,
+      message: "Sessao expirada. Faca login novamente.",
+    });
+    expect(replace).toHaveBeenCalledWith("/login");
+    expect(vi.mocked(fetch).mock.calls.some(([u]) => String(u).endsWith("/auth/refresh"))).toBe(false);
+  });
+
+  it("com token: renova e retenta uma vez com o token novo", async () => {
+    const chamadas: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        if (url.endsWith("/auth/refresh")) {
+          chamadas.push("refresh");
+          return new Response(
+            JSON.stringify({ access_token: "access-novo", refresh_token: "refresh-novo", token_type: "bearer" }),
+            { status: 200 }
+          );
+        }
+        const auth = new Headers(init?.headers).get("Authorization");
+        chamadas.push(String(auth));
+        // 404 na retentativa: prova que ela aconteceu sem precisar de Blob no jsdom.
+        return new Response(null, { status: auth === "Bearer access-novo" ? 404 : 401 });
+      })
+    );
+    await expect(downloadFile("/api/v1/x.csv", "x.csv")).rejects.toMatchObject({ status: 404 });
+    expect(chamadas).toEqual(["Bearer access-velho", "refresh", "Bearer access-novo"]);
   });
 });
 

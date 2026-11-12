@@ -2791,7 +2791,11 @@ async function _rawRequest(path: string, init: RequestInit, isRetry = false): Pr
   } catch {
     throw new ApiError(0, "Não consegui falar com o servidor.");
   }
-  if (res.status === 401 && !isRetry && getToken()) {
+  if (res.status === 401 && !isRetry) {
+    if (!getToken()) {
+      killSession();
+      throw new ApiError(401, "Sessao expirada. Faca login novamente.");
+    }
     await renewOrEndSession();
     return _rawRequest(path, init, true);
   }
