@@ -37,8 +37,8 @@ from app.modules.notifications.application.notification_emitter import (
 from app.modules.tasks.application.project_service import ProjectService
 from app.modules.tasks.application.task_guards import (
     TaskScopeGuards,
-    user_can_view_task,
     user_can_view_team,
+    user_ids_that_can_view_task,
 )
 from app.modules.tasks.domain.history import (
     MotivoDoSeguidor,
@@ -506,12 +506,10 @@ class MemberService:
             reaches_task_id
         )
         await TaskScopeGuards(self._session).assert_visible(task)
-        alcancam = []
-        for m in todos:
-            if await user_can_view_task(
-                self._session, task=task, user_id=m.user.id
-            ):
-                alcancam.append(m)
+        ids = await user_ids_that_can_view_task(
+            self._session, task=task, user_ids=[m.user.id for m in todos]
+        )
+        alcancam = [m for m in todos if m.user.id in ids]
         logger.info(
             "members.listed_for_task",
             task_id=str(reaches_task_id),
