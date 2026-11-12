@@ -1,7 +1,5 @@
-// lib/baseTable.ts
-// A regra pura da tela da Base (Spec 056) -- o que a tabela DECIDE, separado
-// do que ela desenha (a fronteira da Spec 027). Testada em
-// `lib/__tests__/baseTable.test.ts`.
+// A regra pura da tela da Base: o que a tabela decide, separado do que ela
+// desenha.
 
 import type {
   BaseCellValue,
@@ -14,8 +12,8 @@ import type {
 } from "@/lib/api";
 
 // --------------------------------------------------------------- cor
-/** A cor da opção, como `var()` para o `Badge` -- os tokens `--opt-*` do
- *  `globals.css`, medidos COM a tinta nos dois temas. */
+/** A cor da opção, como `var()` para o `Badge` (tokens `--opt-*` do
+ *  `globals.css`). */
 export function corDaOpcao(cor: BaseOptionColor): string {
   return `var(--opt-${cor})`;
 }
@@ -65,7 +63,7 @@ export const NOME_DO_TIPO: Record<BaseColumnType, string> = {
 };
 
 /** Os tipos que a pessoa escolhe ao criar ou trocar -- o título é único e
- *  nasce com a base (D2). */
+ *  nasce com a base. */
 export const TIPOS_ESCOLHIVEIS: readonly BaseColumnType[] = [
   "text",
   "number",
@@ -79,14 +77,12 @@ export const TIPOS_ESCOLHIVEIS: readonly BaseColumnType[] = [
 
 /** Tipos cuja célula se edita digitando num campo de texto. */
 export function editaComTexto(tipo: BaseColumnType): boolean {
-  // Fatia J: o link saiu daqui -- virou lista, editada num painel.
   return ["title", "text", "number", "date"].includes(tipo);
 }
 
 // --------------------------------------------------------------- link
-/** Os links de uma célula. ⚠️ Antes da fatia J a célula guardava UM texto
- *  solto, e as gravadas naquela época continuam assim no banco (o servidor só
- *  normaliza na próxima gravação). Por isso toda leitura passa por aqui. */
+/** Os links de uma célula. Células antigas guardam um texto solto (o servidor
+ *  só normaliza na próxima gravação); toda leitura passa por aqui. */
 export function linksDaCelula(valor: BaseCellValue | undefined): BaseLinkValue[] {
   if (typeof valor === "string") return valor ? [{ title: "", url: valor }] : [];
   if (!Array.isArray(valor)) return [];
@@ -104,11 +100,8 @@ export function nomeDoLink(l: BaseLinkValue): string {
 }
 
 // --------------------------------------------------------------- data
-/** "2026-08-05" -> "05/08/2026".
- *
- *  ⚠️ SEM `Date` E SEM `Intl`, de propósito (web/AGENTS.md §0.1): a célula de
- *  data é só DIA, sem hora e sem fuso, e reformatar a string não tem como errar
- *  o dia entre 00:00 e 03:00 -- que é o defeito que o §0.1 existe para evitar. */
+/** "2026-08-05" -> "05/08/2026". Reformata a string, sem `Date`: a célula é
+ *  só dia, e `Date` erraria o dia entre 00:00 e 03:00. */
 export function dataParaTela(iso: string): string {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
   return m ? `${m[3]}/${m[2]}/${m[1]}` : iso;
@@ -117,15 +110,12 @@ export function dataParaTela(iso: string): string {
 // --------------------------------------------------------------- pessoa
 export type PessoaConhecida = { name: string; is_active: boolean };
 
-/** O rótulo de quem está numa célula de Pessoa (D8, D22).
+/** O rótulo de quem está numa célula de Pessoa.
  *
  *  - ativo e da árvore            -> "Ana"
  *  - conta desativada             -> "Ana (inativo)"
  *  - conta ativa, fora da árvore  -> "Ana (fora do time)"
- *  - desconhecido (nem no cadastro) -> "Pessoa removida"
- *
- *  ⚠️ Chamar de inativo quem só trocou de time seria mentir -- por isso os dois
- *  rótulos. E o NOME fica: ele diz quem fez aquele post. */
+ *  - desconhecido (nem no cadastro) -> "Pessoa removida" */
 export function rotuloDePessoa(
   id: string,
   daArvore: ReadonlySet<string>,
@@ -138,11 +128,8 @@ export function rotuloDePessoa(
   return p.name;
 }
 
-/** Fatia J: a cor da cápsula de uma pessoa, pedido dela (*"igual a seleção,
- *  como uma cápsula colorida com o nome"*). Sai do ID, e não da ordem na
- *  célula: a mesma pessoa tem a mesma cor em toda linha e em toda base. O
- *  cinza fica de fora -- é dele quem está inativo ou fora do time, para a
- *  cápsula apagada se distinguir sem depender só do rótulo. */
+/** A cor da cápsula de uma pessoa. Sai do id, para a mesma pessoa ter a
+ *  mesma cor em toda base; o cinza fica para inativo ou fora do time. */
 export function corDaPessoa(
   id: string,
   daArvore: ReadonlySet<string>,
@@ -208,10 +195,8 @@ export function interpretarDigitado(coluna: BaseColumn, bruto: string): Interpre
     case "text":
       return { ok: true, valor: texto };
     case "number": {
-      // "1.234,5" e "1234.5" e "1234,5" -- o ponto só é decimal se não houver
-      // vírgula.
-      // ⚠️ E "1.200" sem vírgula é MIL E DUZENTOS (Spec 057, 15/10 -- colar
-      // do Excel trazia 1,2): ponto com grupos de 3 dígitos é milhar.
+      // Com vírgula, ela é o decimal. Sem vírgula, ponto com grupos de 3
+      // dígitos é milhar ("1.200" = 1200, como vem do Excel).
       const normal = texto.includes(",")
         ? texto.replace(/\./g, "").replace(",", ".")
         : /^-?\d{1,3}(\.\d{3})+$/.test(texto)
@@ -250,7 +235,7 @@ function dataExiste(iso: string): boolean {
 // --------------------------------------------------------------- teclado
 export type Posicao = { linha: number; coluna: number };
 
-/** A célula seguinte, para as setas, o Tab e o Enter (spec §12). Para na
+/** A célula seguinte, para as setas, o Tab e o Enter. Para na
  *  borda, em vez de dar a volta -- a volta faz o foco "sumir" para quem não vê
  *  a tela. Tab no fim da linha vai para a primeira célula da próxima. */
 export function mover(
@@ -306,7 +291,7 @@ function ordenarPorNome(bases: BaseSummary[]): BaseSummary[] {
 }
 
 // --------------------------------------------------------------- teto
-/** O aviso de linhas (D23, spec §8.1). `null` = nada a dizer. */
+/** O aviso de linhas perto do teto. `null` = nada a dizer. */
 export function avisoDeLinhas(
   total: number,
   avisoEm: number,
@@ -328,12 +313,11 @@ export function avisoDeLinhas(
 }
 
 // --------------------------------------------------------------- excluir
-/** D26: excluir pede o nome -- a regra unica de `lib/confirmarNome.ts`. */
+/** Excluir pede o nome. */
 export { nomeConfere } from "./confirmarNome";
 
 // ------------------------------------------------------- caber o conteúdo
-// Duplo clique na borda do cabeçalho (pedido dela, 14/10, "como no Notion"):
-// a coluna fica do tamanho do maior conteúdo numa linha só.
+// Duplo clique na borda do cabeçalho: a coluna fica do tamanho do maior conteúdo numa linha só.
 
 /** O que a célula desenha, em pedaços que se medem. `capsula` = cada texto é
  *  uma pílula (seleção, pessoa, link), com borda e respiro em volta. */
@@ -357,7 +341,7 @@ export function pedacosDaCelula(
     case "select":
     case "multi_select":
       return {
-        // Opção apagada não aparece na célula (D17), e não conta.
+        // Opção apagada não aparece na célula, e não conta.
         textos: ids.flatMap((id) => coluna.options.find((o) => o.id === id)?.label ?? []),
         capsula: "simples",
       };

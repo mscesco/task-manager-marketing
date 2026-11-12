@@ -5,13 +5,13 @@
 import type { Team } from "./api";
 import { rootTeamOf } from "./rootTeams";
 
-/** O nome do parâmetro na URL. Um lugar só — ninguém redigita a string. */
+/** O nome do parâmetro na URL. */
 export const TEAM_PARAM = "time";
 
 /** "Todos os times" -- só Minhas tarefas oferece. */
 export const ALL_TEAMS = "tudo";
 
-/** As rotas que carregam o time no CAMINHO, e onde ele está nele. */
+/** As rotas que carregam o time no caminho. */
 const ROTAS_COM_TIME = ["/times/", "/quadro/"] as const;
 
 /**

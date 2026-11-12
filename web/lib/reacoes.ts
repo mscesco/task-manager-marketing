@@ -1,11 +1,6 @@
 /**
- * Spec 050 -- as decisoes da fileira de reacoes, sem React.
- *
- * FRONTEIRA (Spec 027): isto e DECISAO, entao mora em `lib/` -- funcao pura,
- * testavel. O componente desenha; nao decide.
- *
- * ESTE ARQUIVO NAO E SEGURANCA: o servidor e quem recusa (404 fora do alcance,
- * 422 no que nao e emoji). Aqui so evitamos oferecer o que ele vai recusar.
+ * Regras da fileira de reações. Não é segurança: o servidor recusa (404 fora
+ * do alcance, 422 no que não é emoji); aqui só se evita oferecer.
  */
 
 import type { Comment } from "./api";
@@ -14,11 +9,8 @@ import type { Comment } from "./api";
 export type Reacao = Comment["reactions"][number];
 
 /**
- * Os dois que aparecem primeiro, maiores, no seletor -- pedido dela em 15/09
- * (*"recomendando o joia e o coração em primeiro"*).
- *
- * ⚠️ NA FORMA COMPLETA. `❤️` sem o U+FE0F e outra sequencia, e o servidor
- * normaliza -- a pilula voltaria com um emoji diferente do que o botao mostrou.
+ * Os dois que aparecem primeiro no seletor. Na forma completa: `❤️` sem o
+ * U+FE0F é outra sequência, e o servidor normaliza.
  */
 export const REACOES_SUGERIDAS = ["👍", "❤️"] as const;
 
@@ -59,13 +51,8 @@ export function acaoDaPilula(
 }
 
 /**
- * "Ana, Bruno e você" -- quem reagiu, para o titulo da pilula.
- *
- * ⚠️ "VOCE" VAI POR ULTIMO, e nao na ordem em que reagiu: a frase e lida por
- * quem esta olhando, e "você, Ana" soa como se a pessoa fosse a primeira.
- *
- * ⚠️ Quem nao esta no mapa de membros (saiu da empresa, ou a lista ainda nao
- * carregou) entra como "alguém" -- nunca como id cru na tela.
+ * "Ana, Bruno e você" -- quem reagiu, para o título da pílula. "você" vai
+ * por último; quem não está no mapa de membros vira "alguém".
  */
 export function rotuloDeQuemReagiu(
   userIds: readonly string[],
@@ -84,14 +71,9 @@ export function rotuloDeQuemReagiu(
 }
 
 /**
- * Busca no catalogo: casa no nome E nas etiquetas, sem acento e sem caixa.
- *
- * ⚠️ SEM ACENTO DOS DOIS LADOS. "coracao" tem de achar "coração", senao a
- * busca exige que a pessoa acerte o acento de uma palavra que ela nao ve.
- *
- * ⚠️ `limite` existe porque a grade desenha o que voltar: 1.949 emojis de uma
- * vez sao 1.949 botoes no DOM. Busca vazia devolve `[]` -- quem chama mostra
- * os grupos, e nao "tudo".
+ * Busca no catálogo: casa no nome e nas etiquetas, sem acento e sem caixa dos
+ * dois lados. `limite` porque a grade desenha um botão por resultado. Busca
+ * vazia devolve `[]` (quem chama mostra os grupos).
  */
 export function filtrarCatalogo(
   catalogo: readonly EmojiDoCatalogo[],
@@ -119,13 +101,8 @@ function semAcento(texto: string): string {
     .toLowerCase();
 }
 
-/**
- * O catalogo em grupos, na ordem em que os grupos aparecem nele.
- *
- * ⚠️ A ORDEM VEM DO ARQUIVO GERADO, e nao de uma lista escrita aqui: ela e a
- * do proprio Unicode (sorrisos primeiro, bandeiras no fim). Uma segunda lista
- * divergiria no dia em que um grupo novo aparecesse.
- */
+/** O catálogo em grupos, na ordem em que aparecem no arquivo gerado (a do
+ *  Unicode). */
 export function porGrupo(
   catalogo: readonly EmojiDoCatalogo[],
 ): { grupo: string; itens: EmojiDoCatalogo[] }[] {

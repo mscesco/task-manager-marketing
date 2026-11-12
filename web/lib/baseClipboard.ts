@@ -1,17 +1,8 @@
-// lib/baseClipboard.ts
-// Copiar e colar várias células na Base (Spec 057, 15/10) -- a regra, pura.
-//
-// O formato é o do Excel e do Google Planilhas: linhas separadas por quebra,
-// células por TAB. Copiar da Base e colar no Excel (e o contrário) funciona
-// sem nada no meio.
-//
-// ⚠️ COLAR ALÉM DA ÚLTIMA LINHA CRIA AS QUE FALTAM (15/10, ela colou duas e só
-// a primeira entrou): as linhas a mais saem em `novas`, e a tela as cria numa
-// ação só. Colunas a mais (além da última) continuam contadas e ignoradas.
-//
-// ⚠️ VÁRIOS VALORES NUMA CÉLULA: `;` OU `,` -- o Google Planilhas copia os chips
-// de seleção múltipla separados por vírgula (15/10: viravam UMA opção com o
-// texto inteiro). Link não separa por vírgula: ela aparece dentro de URL.
+// Copiar e colar várias células na Base, no formato do Excel e do Google
+// Planilhas: linhas separadas por quebra, células por TAB. Colar além da
+// última linha cria as que faltam (`novas`); colunas a mais são contadas e
+// ignoradas. Vários valores numa célula: `;` ou `,` (link só `;`, porque a
+// vírgula aparece em URL).
 
 import type { BaseCellValue, BaseColumn, BaseRow } from "./api";
 import { interpretarDigitado, linksDaCelula, textoDaCelula, type Posicao } from "./baseTable";
@@ -57,7 +48,7 @@ export function textoParaCopiar(
         .map((l) => l.url)
         .join("; ");
     default:
-      // ⚠️ Sem TAB nem quebra dentro da célula: elas partiriam a grade.
+      // Sem TAB nem quebra dentro da célula: elas partiriam a grade.
       return textoDaCelula(coluna, valor).replace(/[\t\r\n]+/g, " ");
   }
 }
@@ -88,10 +79,9 @@ export function lerGrade(texto: string): string[][] {
   return linhas.map((l) => l.split("\t"));
 }
 
-// ⚠️ OS MESMOS TETOS DO SERVIDOR (`ROW_LIMIT` em `bases/application/row_service.py`
-// e `CELLS_BATCH_LIMIT` em `bases/api/schemas.py`). Conferir AQUI, antes do
-// primeiro pedido, é o que impede a colagem pela metade: o servidor recusava o
-// segundo pedido (as células) depois de o primeiro já ter criado as linhas.
+// Os mesmos tetos do servidor (`ROW_LIMIT` em `row_service.py`,
+// `CELLS_BATCH_LIMIT` em `schemas.py`). Conferir antes do primeiro pedido
+// evita a colagem pela metade (linhas criadas, células recusadas).
 export const MAX_LINHAS_COLADAS = 5_000;
 export const MAX_CELULAS_COLADAS = 50_000;
 

@@ -1,11 +1,8 @@
-// lib/people.ts
-// Apresentacao de pessoas no front (NAO e cliente de API -- nao mora no api.ts).
-// O backend guarda o nome como um campo unico (users.name), sem first/last.
-// Daqui saem o nome curto do selo, as iniciais e a cor estavel do avatar.
+// Apresentação de pessoas: nome curto do selo, iniciais e cor estável do
+// avatar. O backend guarda o nome num campo só (users.name).
 //
-// Regra do nome curto (Entrega 10, decisao da Camila -- a ingenua, sem tratar
-// particula): primeiro token + inicial do ultimo + ".". Nome de uma palavra
-// fica inteiro. Ex.: "Camila Cesco" -> "Camila C."; "Maria da Silva" -> "Maria S.".
+// Nome curto: primeiro token + inicial do último + "." (sem tratar
+// partícula). Ex.: "Camila Cesco" -> "Camila C."; "Maria da Silva" -> "Maria S.".
 
 function _tokens(name: string): string[] {
   return name.trim().split(/\s+/).filter(Boolean);

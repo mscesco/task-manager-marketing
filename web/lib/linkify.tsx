@@ -1,17 +1,8 @@
 import React from "react";
 
-// Transforma URLs em <a> clicavel, devolvendo NOS REACT (nunca HTML cru --
-// nao existe dangerouslySetInnerHTML em lugar nenhum do app e isso nao muda
-// aqui). Usado na descricao da task e nos trechos de texto do comentario.
-//
-// SEGURANCA -- por que so http/https:
-// O React 18 NAO bloqueia href="javascript:...", so emite warning e renderiza
-// mesmo assim. Como comentario e conteudo de usuario, casar esquema livre
-// (\S+:) seria vetor de XSS. A regex abaixo exige literalmente `http://` ou
-// `https://`, entao javascript:/data:/file: nunca viram link -- ficam texto.
-//
-// Nao casa "www.x.com" sem esquema de proposito: exigiria inventar o https://
-// e adivinhar intencao. Se aparecer necessidade, e uma decisao separada.
+// Transforma URLs em <a> clicável, devolvendo nós React (nunca HTML cru).
+// Só http/https: o React não bloqueia href="javascript:...", e o texto é do
+// usuário. "www.x.com" sem esquema não vira link.
 
 // Corpo da URL: para no primeiro espaco ou em caractere que costuma
 // delimitar (aspas, sinal de menor/maior, crase de markdown).

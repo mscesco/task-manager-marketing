@@ -1,14 +1,6 @@
-// Ordenacao de lista de tarefas (criacao / prazo / prioridade).
-//
-// Vivia dentro do `Board.tsx`. Saiu pra ca quando "Minhas tarefas" pediu o
-// MESMO seletor: duas copias do comparador dariam duas ordens diferentes com
-// o mesmo rotulo na tela -- o tipo de divergencia que ninguem percebe olhando
-// uma tela de cada vez.
-//
-// Empate SEMPRE cai em created_at desc (mais nova primeiro). Sem esse
-// desempate a ordem de itens equivalentes fica por conta do `sort` do
-// browser sobre a ordem de chegada da API, e a coluna "treme" a cada
-// recarga sem nada ter mudado.
+// Ordenação de lista de tarefas (criação / prazo / prioridade), usada pelo
+// quadro e por "Minhas tarefas". Empate sempre cai em created_at desc, para a
+// coluna não "tremer" a cada recarga.
 
 import type { Task } from "@/lib/api";
 
@@ -37,9 +29,7 @@ export function comparador(
 ): (a: Ordenavel, b: Ordenavel) => number {
   if (ordenacao === "prazo") {
     return (a, b) => {
-      // Sem prazo vai pro FIM (nao pro topo, que e onde string vazia cairia
-      // numa comparacao ingenua). Entre os com prazo, vencimento mais
-      // proximo primeiro.
+      // Sem prazo vai para o fim; entre os com prazo, o mais próximo primeiro.
       const da = a.due_date ?? "";
       const db = b.due_date ?? "";
       if (!da && !db) return porData(a, b);

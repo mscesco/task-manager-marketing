@@ -1,11 +1,5 @@
-// lib/solicitacaoForm.ts
-// Os TIPOS do formulário de solicitação e a regra de campo condicional.
-//
-// ⚠️ OS DADOS NÃO MORAM MAIS AQUI. Este arquivo era a definição declarativa
-// do formulário do Marketing (`CATEGORIAS`, 11 categorias e 108 perguntas);
-// desde a Spec 043 o formulário vem do banco -- a migration 0017 copiou o
-// array -- e a lista estática ficou sem leitor. Saiu na limpeza de 17/09/2026;
-// quem precisar do original acha no commit `2979442`.
+// Os tipos do formulário de solicitação (os dados vêm do banco) e a regra de
+// campo condicional.
 
 export type CampoTipo =
   | "texto"
@@ -36,24 +30,21 @@ export type Categoria = {
   campos: Campo[];
   // id do campo cujo valor vira o `summary` na fila de triagem.
   resumoDe: string;
-  // Spec 059: a pessoa preenche a seção mais de uma vez (vários eventos).
-  // Cada repetição vira uma solicitação própria no mesmo protocolo.
+  // A pessoa preenche a seção mais de uma vez; cada repetição vira uma
+  // solicitação própria no mesmo protocolo.
   repetivel?: boolean;
   // "+ Adicionar outro <rotuloRepeticao>". Vazio = o título da seção.
   rotuloRepeticao?: string | null;
 };
 
-/** Spec 059: quantas vezes a mesma seção entra num envio (o servidor confere). */
+/** Quantas vezes a mesma seção entra num envio (o servidor confere). */
 export const MAX_REPETICOES = 20;
-/**
- * Itens (demandas) num envio -- `MAX_ITENS_POR_LOTE` do servidor. Três seções
- * repetíveis a 20 cada passavam de 60, e a pessoa só descobria no "Enviar".
- */
+/** Itens (demandas) num envio -- `MAX_ITENS_POR_LOTE` do servidor. */
 export const MAX_ITENS_POR_ENVIO = 60;
 
 /**
  * A chave de uma repetição nova da seção. A primeira é o próprio slug (o
- * rascunho e as respostas de antes da Spec 059 continuam valendo); as outras,
+ * rascunho antigo continua valendo); as outras,
  * `slug#n`, com o menor `n` livre -- remover do meio não renumera as que ficam.
  */
 export function novaRepeticao(slug: string, existentes: readonly string[]): string {
@@ -71,12 +62,9 @@ export function rotuloDaRepeticao(cat: Categoria): string {
 /**
  * Um campo condicional está visível para o estado atual de respostas?
  *
- * ⚠️ GATILHO DE MÚLTIPLA ESCOLHA VALE QUANDO A RESPOSTA INCLUI A ALTERNATIVA.
- * O editor e o servidor aceitam `multi` como gatilho; comparar o array com a
- * string dava falso sempre, e a pergunta dependente sumia para sempre.
- *
- * ⚠️ E O GATILHO PRECISA ESTAR VISÍVEL (`campos` = os da seção). Com P1 → P2 →
- * P3, voltar P1 escondia P2 mas deixava P3 na tela, obrigatória e enviada.
+ * Gatilho de múltipla escolha vale quando a resposta inclui a alternativa. E o
+ * gatilho precisa estar visível (`campos` = os da seção), para a cadeia
+ * P1 → P2 → P3 esconder P3 junto com P2.
  */
 export function campoVisivel(
   campo: Campo,

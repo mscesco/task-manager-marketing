@@ -14,17 +14,12 @@ const ROLES_QUE_VEEM_TUDO = ["ADMIN", "GESTOR"] as const;
 export type TeamLens = {
   /** Id do time raiz (parent_team_id === null). null se nao houver. */
   rootId: string | null;
-  /** Ids de TODOS os times cujas tasks o usuario enxerga (raiz + subtimes). */
+  /** Ids dos times cujas tasks o usuario enxerga (raiz + subtimes). */
   visibleTeamIds: Set<string>;
-  /**
-   * Times de SUBTIME (nao-raiz) que viram sub-aba de quadro para este
-   * usuario, ja ordenados por nome. Um manager/admin ve os descendentes;
-   * um operador ve so o(s) subtime(s) em que esta.
-   */
+  /** Subtimes que viram sub-aba de quadro para este usuario, por nome. */
   boardSubteams: Team[];
 };
 
-/** Filhos diretos de um time na arvore. */
 function childrenOf(teamId: string, teams: Team[]): Team[] {
   return teams.filter((t) => t.parent_team_id === teamId);
 }
@@ -57,7 +52,6 @@ export function computeLens(
   roles: readonly string[],
   activeRootId: string | null
 ): TeamLens {
-  // A raiz vem de fora e sem default, para o `tsc` apontar quem não a passa.
   const rootId = activeRootId;
 
   // Papel de organização (e o vínculo ADMIN antigo) enxerga a árvore inteira.

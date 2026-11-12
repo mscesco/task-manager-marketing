@@ -1,15 +1,7 @@
-// lib/responsaveis.ts
-// As frases de quando mexer nos responsaveis do DETALHE da tarefa da errado.
-//
-// ⚠️ NASCEU DE UM DEFEITO VISTO NA TELA (17/09): tirar o ULTIMO responsavel
-// mostrava "Essa pessoa nao alcanca esta tarefa (fora do time)". O servidor
-// recusa com 422 por DOIS motivos diferentes, e a tela traduzia todo 422 como
-// o primeiro:
-//   - `details.field = "assignee_ids"`: toda tarefa precisa de pelo menos um
-//     responsavel (ADR 0031, `CollaborationService.remove_assignee`);
-//   - `details.field = "user_id"`: a pessoa nao alcanca a tarefa.
-// O defeito ficou invisivel ate a limpeza de 17/09, porque o detalhe nao
-// mostrava erro nenhum.
+// As frases de quando mexer nos responsáveis do detalhe da tarefa dá errado.
+// O servidor recusa com 422 por dois motivos, distinguidos por `details.field`:
+//   - "assignee_ids": toda tarefa precisa de pelo menos um responsável;
+//   - "user_id": a pessoa não alcança a tarefa.
 
 /** A mesma frase do servidor (`remove_assignee`), para os dois caminhos. */
 export const PRECISA_DE_UM_RESPONSAVEL =
@@ -17,10 +9,8 @@ export const PRECISA_DE_UM_RESPONSAVEL =
 
 /**
  * Tirar este responsavel deixaria a tarefa sem ninguem? Devolve a frase, ou
- * `null` quando pode.
- *
- * ⚠️ CONFERE ANTES DE PEDIR: sem isto, a pilula some (otimista), o servidor
- * recusa, e ela volta -- um pisca-pisca para dizer o que a tela ja sabia.
+ * `null` quando pode. Confere antes de pedir, para a
+ * pílula otimista não sumir e voltar.
  */
 export function bloqueioAoTirar(atuais: readonly string[], userId: string): string | null {
   return atuais.length === 1 && atuais[0] === userId ? PRECISA_DE_UM_RESPONSAVEL : null;

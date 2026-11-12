@@ -1,14 +1,6 @@
-// web/lib/links.ts
-// =====================================================================
-// Links com nome de projeto e de tarefa (Spec 052, fatia B).
-//
-// Fronteira da Spec 027: `lib/` decide, `components/` desenha. O editor da
-// lista pergunta aqui o que é válido, o que mudou e como reordenar.
-//
-// ⚠️ O SERVIDOR É QUEM GARANTE: nome não vazio, `http`/`https`, até 20. Isto só
-// evita mandar o que vai voltar com 422 -- e completa o `https://` que quase
-// todo mundo esquece ao colar do Drive.
-// =====================================================================
+// Links com nome de projeto e de tarefa: validação, mudança e reordenação no
+// editor. O servidor garante as regras; aqui só se evita o 422 e se completa
+// o `https://`.
 
 import type { LinkItem } from "./api";
 
@@ -40,9 +32,8 @@ export function linhaVazia(): RascunhoLink {
  * Completa o esquema quando falta: `drive.google.com/x` vira
  * `https://drive.google.com/x`.
  *
- * ⚠️ SÓ QUANDO NÃO HÁ ESQUEMA NENHUM. `javascript:` e `ftp:` ficam como estão,
- * e o servidor os recusa -- colar um `https://` na frente de `javascript:...`
- * transformaria a tentativa num link "válido" e estranho.
+ * Só quando não há esquema nenhum: `javascript:` fica como está, e o servidor
+ * recusa.
  */
 export function completarEndereco(url: string): string {
   const limpo = url.trim();
@@ -59,8 +50,7 @@ const URL_VALIDA = /^https?:\/\/\S+$/i;
  */
 export function errosDosLinks(
   rascunho: readonly RascunhoLink[],
-  /** Spec 056, fatia J: na célula da Base o nome é opcional -- sem ele, a
-   *  cápsula mostra o domínio. Na tarefa e no projeto continua obrigatório. */
+  /** Na célula da Base o nome é opcional (a cápsula mostra o domínio). */
   { nomeOpcional = false }: { nomeOpcional?: boolean } = {},
 ): ErroDoLink[] {
   return rascunho.map((l) => {
@@ -122,10 +112,8 @@ export function moverLink<T>(lista: readonly T[], i: number, delta: -1 | 1): T[]
 /**
  * A lista a ENVIAR ao salvar, ou `null` para não mexer nos links.
  *
- * ⚠️⚠️ SÓ COM OS DOIS LADOS CONHECIDOS (revisão de 16/09). `salvos === null` é
- * "a lista salva ainda não chegou, ou a busca falhou" -- e não "sem links".
- * Comparar um rascunho com uma lista que a tela nunca viu fazia o `PUT` mandar
- * a lista vazia (ou só o link novo) e APAGAR os links que existiam.
+ * `salvos === null` é "ainda não chegou ou falhou", não "sem links": comparar
+ * com isso faria o `PUT` apagar os links existentes.
  */
 export function linksParaEnviar(
   salvos: readonly LinkItem[] | null,

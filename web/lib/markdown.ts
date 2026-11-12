@@ -1,31 +1,12 @@
-// web/lib/markdown.ts
-// =====================================================================
-// Formatação nas descrições de projeto e tarefa (Spec 052, fatia C).
-//
-// Fronteira da Spec 027: `lib/` decide, `components/` desenha. Aqui mora:
-//   - o que o renderizador PODE desenhar (a lista do que é permitido);
-//   - quais endereços viram link;
-//   - o texto sem marcação, para os resumos.
-//
-// ⚠️ A BARRA QUE ESCREVIA ASTERISCOS (`aplicarNaSelecao`) SAIU na fatia E: o
-// editor agora mostra formatado, e a configuração dele mora em
-// `lib/editorDeDescricao.ts`.
-//
-// ⚠️ A SEGURANÇA MORA NA LISTA DO QUE É PERMITIDO (spec §4.3). O que não está em
-// `ELEMENTOS_PERMITIDOS` é desembrulhado (fica o texto) ou some. HTML escrito à
-// mão NUNCA vira HTML: sem `rehype-raw`, o `react-markdown` o desenha como
-// texto -- medido em 16/09, e preso em teste.
-// =====================================================================
+// Formatação nas descrições de projeto e tarefa: o que o renderizador pode
+// desenhar, quais endereços viram link e o texto sem marcação para resumos.
+// A segurança está na lista do que é permitido; HTML escrito à mão nunca vira
+// HTML (sem `rehype-raw`, o `react-markdown` o desenha como texto).
 
 /**
- * O que a descrição desenha.
- *
- * ⚠️ AMPLIADA NA REVISÃO DE 16/09. A primeira lista deixava de fora código,
- * citação, risco, linha, tabela e imagem -- e o editor da fatia E, seguindo a
- * lista, APAGAVA esse conteúdo ao salvar. Agora o editor preserva tudo, e aqui
- * se desenha o mesmo. Imagem não vira `<img>` (endereço externo carregado
- * sozinho na tela de todo mundo): vira LINK com o texto alternativo, como no
- * editor. Caixa de tarefa (`input`) só desenhada desabilitada.
+ * O que a descrição desenha; o mesmo que o editor preserva. Imagem vira link
+ * com o texto alternativo (não carrega endereço externo sozinha); a caixa de
+ * tarefa (`input`) só aparece desabilitada.
  */
 export const ELEMENTOS_PERMITIDOS: readonly string[] = [
   "p",
@@ -60,14 +41,9 @@ export const ELEMENTOS_PERMITIDOS: readonly string[] = [
 const ESQUEMAS_PERMITIDOS = new Set(["http:", "https:", "mailto:"]);
 
 /**
- * O endereço de um link, ou `null` se ele não pode virar link.
- *
- * ⚠️ `null`, e não string vazia: o componente desenha o texto SEM `<a>`. Um
- * `<a href="">` recarregaria a página ao ser clicado.
- *
- * ⚠️ ENDEREÇO SEM ESQUEMA (`/tarefa/x`, `#algo`) TAMBÉM NÃO: a descrição é texto
- * de usuário, e link relativo levaria a lugares do próprio app que ninguém
- * pretendeu -- inclusive à rota de API.
+ * O endereço de um link, ou `null` se ele não pode virar link (o componente
+ * desenha o texto sem `<a>`). Endereço sem esquema também não: link relativo
+ * levaria a rotas do próprio app.
  */
 export function enderecoSeguro(url: string | null | undefined): string | null {
   if (!url) return null;
@@ -82,18 +58,13 @@ export function enderecoSeguro(url: string | null | undefined): string | null {
 }
 
 /**
- * O texto sem a marcação, para onde a descrição aparece RESUMIDA (a lista de
- * projetos). Um resumo com `**` e `##` parece defeito (spec §4.3).
- *
- * ⚠️ NÃO É UM PARSER, e não precisa ser: o resultado vai para uma linha cortada
- * com reticências e para um `title`. Errar num caso raro deixa um asterisco à
- * mostra, e não quebra nada. O renderizador de verdade é o `react-markdown`.
+ * O texto sem a marcação, para onde a descrição aparece resumida. Não é um
+ * parser: errar num caso raro só deixa um asterisco à mostra.
  */
 export function semMarcacao(texto: string): string {
-  // ⚠️ O EDITOR DA FATIA E ESCAPA o que pareceria marcação (`\[Design\]`,
-  // `2 \* 3`). O escape é GUARDADO antes das regras -- senão o `\*` de uma conta
-  // viraria um asterisco solto que a regra do itálico comeria -- e devolvido no
-  // fim, já sem a barra.
+  // O editor escapa o que pareceria marcação (`2 \* 3`). O escape é guardado
+  // antes das regras, para a do itálico não o comer, e devolvido no fim sem a
+  // barra.
   const guardados: string[] = [];
   return texto
     .replace(/\\([\\`*_{}[\]()#+\-.!|~<>])/g, (_, c: string) => {
@@ -115,10 +86,8 @@ export function semMarcacao(texto: string): string {
     .replace(/(^|\W)_(?=\S)([^_\n]*?\S)_(?!\w)/g, "$1$2")
     .replace(/~~(?=\S)([\s\S]*?\S)~~/g, "$1")
     .replace(/`([^`\n]+)`/g, "$1")
-    // ⚠️ O EDITOR TAMBÉM GRAVA `<` E `>` COMO `&lt;`/`&gt;` (revisão de 16/09):
-    // sem isto, "Trocar <nome do cliente>" aparecia como "&lt;nome do
-    // cliente&gt;" na lista de projetos. `&amp;` por último, para `&amp;lt;`
-    // virar `&lt;` literal, e não `<`.
+    // O editor grava `<`/`>` como entidades. `&amp;` por último, para
+    // `&amp;lt;` virar `&lt;` literal, e não `<`.
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
     .replace(/&quot;/g, '"')

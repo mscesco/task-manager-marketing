@@ -1,36 +1,22 @@
-// lib/alcance.ts
-// O ALCANCE de uma gestao: onde o ator pode agir. Era escrito duas vezes,
-// com o mesmo corpo -- para membros (`lib/permissoesMembros.ts`) e para
-// quadros (`lib/seletorDeQuadro.ts`) -- trocando so os dois verbos
-// (revisao de 07/10).
+// Alcance de uma gestao (membros, quadros): onde o ator pode agir.
 
 import type { Permission } from "./permissions.generated";
 
 export type Alcance =
-  /** Tem o verbo AMPLO: alcanca qualquer time. */
+  /** Tem o verbo amplo: alcanca qualquer time. */
   | { readonly tipo: "amplo" }
-  /**
-   * Tem so o verbo de SUBTIME: alcanca os subtimes onde ELE e supervisor. A
-   * lista importa -- sem ela, o mapa de permissao sozinho deixaria qualquer
-   * supervisor agir no subtime de qualquer outro.
-   */
+  /** So o verbo de subtime: alcanca os subtimes onde ele e supervisor. */
   | { readonly tipo: "subtime"; readonly subtimes: readonly string[] }
   /** Nenhum dos dois: a tela vira somente leitura. */
   | { readonly tipo: "nenhum" };
 
-/** So o que precisamos do usuario autenticado -- facilita testar. */
+/** So o que precisamos do usuario autenticado. */
 export type AtorMinimo = {
   permissions: Permission[];
   teams: { team_id: string; role: string }[];
 };
 
-/**
- * Deriva o alcance do `/auth/me`.
- *
- * ⚠️ O AMPLO GANHA. Quem tem os dois verbos -- ADMIN e MANAGER tem, porque o
- * mapa de permissoes e uniao de papeis -- fica com o alcance maior. Testar so
- * o supervisor deixaria esta ordem invertida passar.
- */
+/** Deriva o alcance do `/auth/me`. Quem tem os dois verbos fica com o amplo. */
 export function alcancePor(
   me: AtorMinimo | null | undefined,
   amplo: Permission,

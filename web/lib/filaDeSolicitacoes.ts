@@ -1,15 +1,11 @@
-// lib/filaDeSolicitacoes.ts
-// A regra da fila de Solicitações (15/10) que não é desenho.
+// Regras da fila de Solicitações que não são desenho.
 
 import type { Batch } from "./api";
 import { agoraNoWorkspace, diaNoWorkspace } from "./prazo";
 
 /**
  * Quando o envio chegou, como uma caixa de entrada mostra: a hora se foi hoje,
- * "Ontem", e a data curta antes disso.
- *
- * ⚠️ O DIA É O DE BRASÍLIA (`diaNoWorkspace`), e não o da máquina -- a regra
- * 0.1 do `web/AGENTS.md`: um envio das 23h viraria "amanhã" num runner em UTC.
+ * "Ontem", e a data curta antes disso. O dia é o do workspace, não o da máquina.
  */
 export function quandoChegou(iso: string, agora: Date = new Date()): string {
   const hoje = agoraNoWorkspace(agora).data;
@@ -22,7 +18,7 @@ export function quandoChegou(iso: string, agora: Date = new Date()): string {
 }
 
 /**
- * O cabeçalho de dia da lista (21/10, a prancha): "Hoje", "Ontem", e a data
+ * O cabeçalho de dia da lista: "Hoje", "Ontem", e a data
  * curta antes disso. O mesmo dia de Brasília de `quandoChegou`.
  */
 export function rotuloDoDia(iso: string, agora: Date = new Date()): string {

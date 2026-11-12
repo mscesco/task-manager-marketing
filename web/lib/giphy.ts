@@ -1,11 +1,6 @@
-// lib/giphy.ts
-// Cliente GIPHY para GIF em comentarios.
-//
-// A GIPHY EXIGE que as chamadas sejam feitas direto do client (sem proxy),
-// entao a key vive no browser via NEXT_PUBLIC_GIPHY_KEY -- semi-publica por
-// design (key beta). rating=g pra manter o conteudo apropriado ao ambiente de
-// trabalho. Atribuicao "Powered by GIPHY" e obrigatoria onde a API aparece
-// (fica no picker, Fatia 2).
+// Cliente GIPHY para GIF em comentarios. A GIPHY exige chamada direta do
+// client, entao a key fica no browser (NEXT_PUBLIC_GIPHY_KEY). O picker tem de
+// mostrar "Powered by GIPHY".
 
 const GIPHY_KEY = process.env.NEXT_PUBLIC_GIPHY_KEY || "";
 
@@ -21,9 +16,7 @@ export type Gif = {
   height: number;
 };
 
-// TRAVA DE SEGURANCA: so aceitamos/renderizamos URLs do dominio da GIPHY. Um
-// token de GIF com URL arbitraria NUNCA vira <img> (evita pixel de rastreio /
-// URL maliciosa injetada no texto do comentario).
+// So URL do dominio da GIPHY vira <img>: evita pixel de rastreio injetado no comentario.
 export function isGiphyUrl(url: string): boolean {
   try {
     const u = new URL(url);

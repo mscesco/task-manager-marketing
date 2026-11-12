@@ -128,13 +128,7 @@ export function motivoNaoRemove(time: TimeGerenciavel): string | null {
 /**
  * Lista so o que EXISTE, em portugues. Espelha `_descreve` do backend.
  *
- * "3 tarefas, 2 membros" e acionavel; "3 tarefas, 0 projetos, 2 membros,
- * 0 subtimes" faz a pessoa procurar o que importa no meio de zeros.
- *
- * ⚠️ "tarefas" INCLUI as que estao na lixeira. Elas sumiram da tela mas
- * seguram a chave estrangeira, e o banco recusa o DELETE por causa delas.
- * Um numero que nao bate com o quadro e melhor do que um botao que promete
- * e falha.
+ * "tarefas" inclui as da lixeira: seguram a FK e o banco recusa o DELETE.
  */
 export function descreveConteudo(c: ContagensTime): string {
   const partes: Array<[number, string, string]> = [
@@ -161,10 +155,7 @@ export function confirmacaoValida(digitado: string, nomeDoTime: string): boolean
 
 /**
  * Sugere um slug a partir do nome, para o formulario de criacao.
- *
- * O backend so aceita `^[a-z0-9-]+$`; sem isto, digitar "CRM e Automação"
- * devolveria 422 e a pessoa teria que adivinhar a regra. A sugestao e
- * editavel -- e palpite, nao imposicao.
+ * O backend só aceita `^[a-z0-9-]+$`; a sugestão é editável.
  */
 export function sugereSlug(nome: string): string {
   return nome

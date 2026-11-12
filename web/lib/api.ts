@@ -77,7 +77,7 @@ export function refreshOutcomeOf(status: number): RefreshOutcome {
   return "unavailable";
 }
 
-// Chama /auth/refresh DIRETO no fetch -- nao passa por api()/_request, senao
+// Chama /auth/refresh direto no fetch -- nao passa por api()/_request, senao
 // recursa no proprio tratamento de 401.
 async function doRefresh(): Promise<RefreshOutcome> {
   const refresh = getRefreshToken();
@@ -275,17 +275,14 @@ export type Task = {
    * O botão vem daqui, não de `me.permissions`. Vem em toda resposta de tarefa.
    */
   can_delete: boolean;
-  /** Pode pôr e tirar OUTRA pessoa como seguidora; calculado no servidor. */
+  /** Pode pôr e tirar outra pessoa como seguidora; calculado no servidor. */
   can_manage_watchers?: boolean;
-  /**
-   * Os três abaixo só vêm na listagem. Opcionais: respostas de mutação não os trazem, e o upsert
-   * tem de preservá-los ao substituir a task no estado (como `assignee_ids`).
-   */
-  /** Filhas DIRETAS vivas (arquivada fora). Denominador do `☑ x/y`. */
+  // Os três abaixo só vêm na listagem; o upsert tem de preservá-los (como `assignee_ids`).
+  /** Filhas diretas vivas (arquivada fora). Denominador do `☑ x/y`. */
   subtask_total?: number;
   /** Filhas diretas vivas em coluna `DONE`. Numerador. */
   subtask_done?: number;
-  /** Responsaveis da SUBARVORE inteira, raiz junto. Filtro por pessoa/subtime. */
+  /** Responsaveis da subarvore inteira, raiz junto. Filtro por pessoa/subtime. */
   subtree_assignee_ids?: string[];
   start_date: string | null;
   due_date: string | null;
@@ -297,8 +294,8 @@ export type Task = {
   created_at: string;
   updated_at: string;
   // So a listagem (GET /tasks) traz isto, em lote (selo do card). As
-  // respostas de mutacao (POST/PATCH/move) NAO trazem -> opcional, e o
-  // estado local PRESERVA o valor no merge (nao sobrescrever com undefined).
+  // respostas de mutacao (POST/PATCH/move) nao trazem -> opcional, e o
+  // estado local preserva o valor no merge (nao sobrescrever com undefined).
   assignee_ids?: string[];
 };
 
@@ -456,7 +453,7 @@ export type AllMyAssignmentsResult = {
   truncated: boolean;
 };
 
-/** `teamId` vai em TODAS as páginas, senão a partir da 2ª a lista vem sem recorte. */
+/** `teamId` vai em todas as páginas, senão a partir da 2ª a lista vem sem recorte. */
 export async function listAllMyAssignments(
   teamId: string | null
 ): Promise<AllMyAssignmentsResult> {
@@ -699,11 +696,7 @@ export async function listBoards(): Promise<Quadro[]> {
 
 
 /**
- * Colunas do quadro padrão + índice de todas as colunas alcançáveis, numa requisição.
- * Sem quadro padrão: `colunas` sai `[]` e o índice continua cheio.
- */
-/**
- * Colunas do quadro geral de UM time + índice de todos os alcançáveis.
+ * Colunas do quadro geral de um time + índice de todos os alcançáveis.
  * `null` = sem time: colunas vazias (kanban não espelha dois quadros). O índice não é recortado: rotula tarefa de quadro avulso.
  */
 export async function quadroGeralComIndice(teamId: string | null): Promise<{
@@ -730,8 +723,7 @@ export async function createBoard(input: {
   return api<Quadro>("/api/v1/boards", { method: "POST", body: input });
 }
 
-/** Renomeia um quadro. Só o nome vai no corpo (`team_id` decide visibilidade; o backend ignoraria chave a mais). */
-/** `GET /boards/{id}` -- o quadro com a CONTAGEM de tarefas vivas. */
+/** `GET /boards/{id}` -- o quadro com a contagem de tarefas vivas. */
 export type QuadroComContagem = Quadro & { task_count: number };
 
 /** Um quadro com a contagem de tarefas, para a confirmação de apagar. O número envelhece: o DELETE devolve quantas apagou. */
@@ -752,6 +744,7 @@ export async function deleteBoard(
   });
 }
 
+/** Renomeia um quadro. Só o nome vai no corpo. */
 export async function renameBoard(
   boardId: string,
   name: string
@@ -1459,7 +1452,7 @@ export async function getTaskLinks(taskId: string): Promise<LinkItem[]> {
   return api<LinkItem[]>(`/api/v1/tasks/${taskId}/links`);
 }
 
-/** Substitui a lista INTEIRA de links da tarefa, na ordem dada. */
+/** Substitui a lista inteira de links da tarefa, na ordem dada. */
 export async function putTaskLinks(
   taskId: string,
   links: { title: string; url: string }[],
@@ -1476,7 +1469,7 @@ export async function getProjectLinks(projectId: string): Promise<LinkItem[]> {
   return api<LinkItem[]>(`/api/v1/projects/${projectId}/links`);
 }
 
-/** Substitui a lista INTEIRA de links do projeto, na ordem dada. */
+/** Substitui a lista inteira de links do projeto, na ordem dada. */
 export async function putProjectLinks(
   projectId: string,
   links: { title: string; url: string }[],
@@ -1864,7 +1857,7 @@ export async function listNotificationPreferences(): Promise<NotificationToggle[
   return r.items;
 }
 
-// Liga ou desliga UM toggle. Devolve a lista INTEIRA -- os grupos que governam
+// Liga ou desliga um toggle. Devolve a lista inteira -- os grupos que governam
 // dois tipos mudam junto, e a tela nao precisa adivinhar o que o servidor fez.
 export async function setNotificationPreference(pref: {
   type_group: string;
@@ -1907,7 +1900,7 @@ export type SolicitacaoStatus =
   | "DONE"
   | "REJECTED";
 
-/** Os estados de um pedido ACEITO -- e entre eles se anda nos dois sentidos. */
+/** Os estados de um pedido aceito -- e entre eles se anda nos dois sentidos. */
 export const STATUS_ACEITOS: SolicitacaoStatus[] = [
   "APPROVED",
   "IN_PROGRESS",
@@ -2284,7 +2277,7 @@ export async function enviarSolicitacaoPublica(payload: {
   );
 }
 
-// ---- Fila agrupada por ENVIO (visão principal da triagem) ----
+// ---- Fila agrupada por envio (visão principal da triagem) ----
 
 export type SolicitacaoFiltro =
   | SolicitacaoStatus
@@ -2376,7 +2369,7 @@ export async function listarEnvios(
   return api<BatchListResponse>(`/api/v1/solicitacoes?${q.toString()}`);
 }
 
-/** Marca/desmarca "tarefa criada" numa solicitação APROVADA. */
+/** Marca/desmarca "tarefa criada" numa solicitação aprovada. */
 /** Cria a tarefa a partir do pedido e já a vincula. Sem `assignee_ids`, quem clica vira responsável. */
 export async function criarTarefaDaSolicitacao(
   id: string,
@@ -2738,7 +2731,7 @@ export type DashboardBucket = {
 };
 
 export type DashboardResponse = {
-  /** O "hoje" do SERVIDOR, no fuso da organização: a tela não recalcula. */
+  /** O "hoje" do servidor, no fuso da organização: a tela não recalcula. */
   today: string;
   /** O período escolhido; `null` = "Agora" (a semana corrente e os 7 dias). */
   period: { start: string; end: string } | null;
@@ -2856,7 +2849,7 @@ export async function exportDashboard(
 
 // ---- Base: planilha.
 
-/** A Base em planilha, com as linhas e colunas DA VISÃO (na ordem da tela). */
+/** A Base em planilha, com as linhas e colunas da visão (na ordem da tela). */
 export async function exportBase(
   baseId: string,
   format: "xlsx" | "csv",

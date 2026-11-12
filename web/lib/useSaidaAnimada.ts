@@ -1,19 +1,6 @@
-// =====================================================
-// useSaidaAnimada -- fechar com animacao de saida (Spec 027, D4)
-// -----------------------------------------------------
-// Extraido de dentro do TaskDetail (1545 linhas), onde a mesma logica so
-// seria alcancavel por um teste caro. Aqui e uma unidade fechada, coberta
-// pelo proprio arquivo de teste ao lado.
-//
-// FRONTEIRA (Spec 027): `lib/` decide, `components/` desenha. Este arquivo
-// e a aplicacao pratica dessa regra -- o bug de 2026-07-22 nasceu de uma
-// maquina de estados escondida na camada de apresentacao.
-//
-// O PROBLEMA QUE ELE RESOLVE: quem consome (Board, minhas-tarefas) mantem o
-// componente SEMPRE MONTADO, passando `task={null}` quando fechado. Logo o
-// estado interno SOBREVIVE ao fechamento e precisa ser zerado na reabertura
-// -- inclusive quando a tarefa reaberta e a MESMA de antes.
-// =====================================================
+// Fechar com animação de saída. Quem consome mantém o componente sempre
+// montado (`task={null}` quando fechado), então o estado sobrevive ao
+// fechamento e é zerado na reabertura, inclusive da mesma tarefa.
 import { useCallback, useEffect, useRef, useState } from "react";
 
 /** Duracao padrao, casada com a animacao `.modal-card` do globals.css. */
@@ -54,10 +41,8 @@ export function useSaidaAnimada({
     };
   }, []);
 
-  // Zera `saindo` na reabertura. Ajuste durante o RENDER (padrao do React
-  // para estado derivado de prop): roda antes da pintura, entao nao existe
-  // um frame com o conteudo ja invisivel. Comparar por id -- e nao por um
-  // booleano "abriu" -- e o que cobre reabrir a MESMA tarefa.
+  // Zera `saindo` na reabertura, durante o render (antes da pintura, sem um
+  // frame invisível). Comparar por id cobre reabrir a mesma tarefa.
   const [idVisivel, setIdVisivel] = useState<string | null>(null);
   if (idAtual !== idVisivel) {
     setIdVisivel(idAtual);
@@ -65,9 +50,7 @@ export function useSaidaAnimada({
   }
 
   const fecharSuave = useCallback(() => {
-    // Sem animacao (modo pagina) ou com menos movimento pedido: fecha direto.
-    // Esperar a duracao com a animacao desligada pelo CSS seria so lentidao
-    // sem contrapartida visual.
+    // Sem animação (modo página) ou com menos movimento pedido: fecha direto.
     if (!animar || preferindoMenosMovimento()) {
       onFechar();
       return;
@@ -75,8 +58,7 @@ export function useSaidaAnimada({
     if (timer.current !== null) return; // ja esta saindo
     setSaindo(true);
     timer.current = window.setTimeout(() => {
-      // Libera o ref ANTES de fechar: ele e o guard de "ja esta saindo", e
-      // sem zerar aqui o segundo fechamento seria ignorado para sempre.
+      // Libera o ref antes de fechar: é o guard de "já está saindo".
       timer.current = null;
       onFechar();
     }, duracaoMs);

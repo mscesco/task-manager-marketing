@@ -1,19 +1,8 @@
 /**
- * Passo 2 da duplicação: quem responde por cada subtarefa (ADR 0031).
- *
- * FRONTEIRA (Spec 027): isto é DECISÃO -> mora em `lib/`, puro, sem React.
- *
- * ⚠️ POR QUE ESTA CAMADA EXISTE SEPARADA, e não dentro do `TaskModal`. Aquele
- * componente produziu TRÊS regressões em produção numa única sessão, todas
- * envolvendo dados que chegam da rede DEPOIS de o modal abrir (`membros`,
- * `alcancamTime`, `filhosDaOrigem` com referência nova a cada render do pai).
- * O passo 2 acrescenta exatamente mais dessa matéria-prima. Aqui as regras
- * são testadas sem React, sem rede e sem timing; lá sobra desenhar.
- *
- * A regra que o passo 2 serve: **nenhuma subtarefa copiada nasce sem
- * responsável** (ADR 0031). Quando o responsável original não pode assumir a
- * cópia — desativado, ou sem alcance no destino — quem clicou escolhe outro
- * ou tira a subtarefa da cópia. Não existe terceira saída.
+ * Passo 2 da duplicação: quem responde por cada subtarefa copiada. Nenhuma
+ * nasce sem responsável: quando o original não pode assumir (desativado ou
+ * sem alcance no destino), quem duplica escolhe outro ou deixa a subtarefa de
+ * fora.
  */
 
 /** Subtarefa da origem, no mínimo que o passo 2 precisa. */
@@ -24,13 +13,7 @@ export type FilhaDaOrigem = {
   assignee_ids?: string[];
 };
 
-/**
- * Por que a linha está pendente.
- *
- * A distinção não é cosmética: "ninguém respondia por ela desde antes" e "o
- * responsável não pode mais" pedem frases diferentes na tela, e a segunda é a
- * que a pessoa não tem como adivinhar sozinha.
- */
+/** Por que a linha está pendente; cada motivo tem sua frase na tela. */
 export type MotivoPendencia = "sem-responsavel" | "responsaveis-invalidos";
 
 export type LinhaDeSubtarefa = {
@@ -45,16 +28,9 @@ export type LinhaDeSubtarefa = {
 };
 
 /**
- * Classifica as filhas DIRETAS da origem contra a lista de quem pode.
- *
- * ⚠️ ARQUIVADA NÃO ENTRA (D10 da Spec 033): ela não é copiada, então perguntar
- * quem responde por ela seria pedir decisão sobre algo que não vai existir.
- *
- * ⚠️ `permitidos` é lista de QUEM PODE, nunca de quem não pode. Regra negativa
- * só exclui quem ela conhece: em 04/08 o responsável DESATIVADO não estava em
- * conjunto nenhum, sobrevivia ao filtro e o salvar dava 422. Quem sumiu da
- * lista de membros simplesmente não está em `permitidos`, e é isso que fecha
- * o buraco.
+ * Classifica as filhas diretas da origem contra quem pode assumir. Arquivada
+ * não é copiada e fica de fora. `permitidos` é lista positiva: quem sumiu da
+ * lista de membros (ex.: desativado) simplesmente não está nela.
  */
 export function linhasDasSubtarefas(
   filhas: readonly FilhaDaOrigem[],
@@ -77,28 +53,14 @@ export function linhasDasSubtarefas(
 }
 
 /**
- * O passo 2 precisa APARECER?
- *
- * Só quando alguma linha nasce pendente. Herdando responsáveis válidos, a
- * pessoa clica e duplica — o passo 2 não pode virar pedágio no caso comum.
- *
- * ⚠️ NÃO olha escolhas nem puladas, e isso é o ponto. Uma versão anterior
- * escondia o bloco assim que não faltava mais nada a decidir — resultado: a
- * pessoa escolhia o responsável e a linha SUMIA embaixo do cursor, sem como
- * revisar ou corrigir. Quem responde "já posso salvar?" é
- * `motivoNaoDuplicar`; esta função responde "há assunto aqui?", e o assunto
- * não deixa de existir por ter sido resolvido.
+ * O passo 2 aparece? Só quando alguma linha nasce pendente. Não olha escolhas
+ * nem puladas, para a linha não sumir embaixo do cursor depois de resolvida.
  */
 export function haPendencias(linhas: readonly LinhaDeSubtarefa[]): boolean {
   return linhas.some((l) => l.pendente !== null);
 }
 
-/**
- * Por que o botão de duplicar está travado — ou `null` se pode seguir.
- *
- * Espelha `criacaoTarefa.motivoNaoCria`: a tela mostra o motivo, não some com
- * o botão. Botão sumido é a pessoa procurando o que fez de errado.
- */
+/** Por que o botão de duplicar está travado, ou `null` se pode seguir. */
 export function motivoNaoDuplicar(
   linhas: readonly LinhaDeSubtarefa[],
   escolhas: Readonly<Record<string, string[]>>,
@@ -123,18 +85,9 @@ export type PayloadDasSubtarefas = {
 };
 
 /**
- * Monta as duas chaves do `POST /tasks/{id}/duplicate`.
- *
- * ⚠️ NUNCA emite lista vazia. O backend recusa com 422 (e faz bem: lista
- * vazia em `assign_many_or_fail` é no-op silencioso, e a filha nasceria órfã
- * com 200 na resposta). Quem não vai, vai em `skip_subtasks`.
- *
- * ⚠️ PULADA GANHA de escolha. Se a pessoa escolheu alguém e depois marcou
- * "não levar", o que vale é o último gesto — mandar as duas coisas faria o
- * backend recusar por incoerência, e ela não saberia por quê.
- *
- * Linha resolvida e sem escolha explícita NÃO entra: ausência significa
- * "herda como sempre", e é o que mantém o comportamento antigo intacto.
+ * Monta as duas chaves do `POST /tasks/{id}/duplicate`. Nunca manda lista
+ * vazia (o backend recusa). Pulada ganha de escolha. Linha sem escolha
+ * explícita não entra: ausência = herda os responsáveis.
  */
 export function payloadDasSubtarefas(
   linhas: readonly LinhaDeSubtarefa[],

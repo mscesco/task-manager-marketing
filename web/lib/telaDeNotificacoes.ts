@@ -1,21 +1,13 @@
-// lib/telaDeNotificacoes.ts
-// As regras da tela `/notificacoes` (Spec 053, fatia F).
-//
-// ⚠️ `lib/` DECIDE (Spec 027): o que a URL guarda, que tipos o filtro oferece,
-// como os avisos se agrupam por dia e o que o botao de marcar diz. O
-// componente (`components/TelaDeNotificacoes.tsx`) so desenha.
+// As regras da tela `/notificacoes`: o que a URL guarda, os tipos do filtro,
+// o agrupamento por dia e o que o botão de marcar diz.
 
 import type { AppNotification, FiltroDeNotificacoes } from "./api";
 import { type Agora, diaNoWorkspace } from "./prazo";
 
-/** Avisos por pagina (Spec 053, §9.6). */
+/** Avisos por página. */
 export const POR_PAGINA = 20;
 
-/**
- * ⚠️ "silenciadas" e uma aba de VERDADE, e nao um filtro: o que esta
- * silenciado nao aparece nas outras duas (Spec 054, D5), entao ela e o
- * unico lugar onde esse aviso existe.
- */
+/** "silenciadas" é aba, não filtro: o silenciado não aparece nas outras. */
 export type Aba = "nao-lidas" | "todas" | "silenciadas";
 
 /**
@@ -79,10 +71,7 @@ export const ESTADO_INICIAL: EstadoDaTelaDeNotificacoes = {
 
 /**
  * Le o estado da barra de enderecos (`?aba=todas&tipo=prazos&tarefa=<id>&nome=…&pagina=2`).
- *
- * ⚠️ VALOR DESCONHECIDO CAI NO PADRAO, pela mesma razao de `estadoDaTela.ts`:
- * a URL e digitavel, e um `?tipo=lixo` que virasse filtro daria uma lista vazia
- * sem explicacao.
+ * Valor desconhecido cai no padrão: a URL é digitável.
  */
 export function lerEstado(busca: string): EstadoDaTelaDeNotificacoes {
   const p = new URLSearchParams(busca);
@@ -118,12 +107,8 @@ export function queryDoEstado(e: EstadoDaTelaDeNotificacoes): string {
   return q ? `?${q}` : "";
 }
 
-/** O que vai para a API -- a listagem E o "marcar estas" usam o mesmo (D25).
- *
- * ⚠️ `muted` SAI DA ABA, e entra aqui junto com os filtros: e o que faz o
- * botao de marcar tocar exatamente o que a aba mostrou (Spec 054, D14). Na
- * aba "Silenciadas" ele marca so silenciadas; nas outras, nunca as toca.
- */
+/** O que vai para a API; a listagem e o "marcar estas" usam o mesmo. `muted`
+ *  sai da aba, para o marcar tocar exatamente o que a aba mostrou. */
 export function filtroDaApi(e: EstadoDaTelaDeNotificacoes): FiltroDeNotificacoes {
   return {
     types: e.tipo ? TIPO_POR_CHAVE.get(e.tipo)?.tipos ?? [] : [],
@@ -141,11 +126,7 @@ export function temFiltro(e: EstadoDaTelaDeNotificacoes): boolean {
 /**
  * O que o "marcar" manda. Sem recorte de tipo ou tarefa ele vai VAZIO -- e o
  * "marcar todas" de sempre, o mesmo do sino.
- *
- * ⚠️ MENOS O `muted`, QUE NUNCA PODE FALTAR (Spec 054, D14). Na aba
- * "Silenciadas" sem nenhum filtro, um objeto vazio faria o botao marcar as
- * notificacoes das OUTRAS abas -- as que a pessoa nem estava vendo -- e deixar
- * intactas as que ela tinha na frente.
+ * Na aba "Silenciadas" vai sempre com `muted`, senão marcaria as das outras abas.
  */
 export function filtroDeMarcar(e: EstadoDaTelaDeNotificacoes): FiltroDeNotificacoes {
   if (temFiltro(e)) return filtroDaApi(e);
@@ -153,7 +134,7 @@ export function filtroDeMarcar(e: EstadoDaTelaDeNotificacoes): FiltroDeNotificac
 }
 
 /**
- * O rotulo do botao de marcar (D25). Com filtro, diz QUANTAS -- e marca so
+ * O rotulo do botao de marcar. Com filtro, diz QUANTAS -- e marca so
  * essas. `naoLidasNoFiltro` e o total de nao lidas do recorte.
  */
 export function rotuloDoBotaoMarcar(filtrado: boolean, naoLidasNoFiltro: number): string {
@@ -174,9 +155,7 @@ function diaAnterior(dia: string): string {
 /**
  * Agrupa por dia, na ordem em que os avisos vieram (ultima mudanca primeiro).
  * Rotulos: "Hoje", "Ontem", ou `DD/MM` (com o ano quando nao e o atual).
- *
- * ⚠️ O DIA E O DA ULTIMA MUDANCA (`updated_at`), e no FUSO DO WORKSPACE: um
- * aviso das 23h de Brasilia nao pode aparecer em "amanha" num navegador em UTC.
+ * O dia é o da última mudança (`updated_at`), no fuso do workspace.
  */
 export function agruparPorDia(itens: AppNotification[], agora: Agora): GrupoDoDia[] {
   const ontem = diaAnterior(agora.data);

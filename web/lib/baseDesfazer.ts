@@ -1,11 +1,5 @@
-// lib/baseDesfazer.ts
-// O Ctrl+Z da Base na tela (Spec 056, fatia H, §9). Regra pura, testada em
-// `lib/__tests__/baseDesfazer.test.ts`.
-//
-// ⚠️⚠️ CTRL+Z DENTRO DE UM CAMPO DE TEXTO DESFAZ O TEXTO, não a base (§9.4).
-// A pilha da base só responde com o foco FORA de um campo -- numa célula da
-// grade, num botão, no corpo da página. Sem isto, apagar uma letra com Ctrl+Z
-// desfaria a última gravação de alguém.
+// O Ctrl+Z da Base. Dentro de um campo de texto o Ctrl+Z desfaz o texto, não
+// a base: a pilha da base só responde com o foco fora de um campo.
 
 export type AcaoDeDesfazer = "undo" | "redo";
 
@@ -74,8 +68,8 @@ export function mensagemDoDesfazer(acao: AcaoDeDesfazer, r: ResultadoDoDesfazer)
   const oQue = (r.kind && NOME_DA_ACAO[r.kind]) || "a última ação";
   if (r.applied) return acao === "undo" ? `Desfeito: ${oQue}.` : `Refeito: ${oQue}.`;
   if (r.conflict) {
-    // D12: recusado sem sobrescrever. A entrada saiu da pilha -- o próximo
-    // Ctrl+Z tenta a anterior, e o aviso diz isso.
+    // Recusado sem sobrescrever; a entrada saiu da pilha e o próximo Ctrl+Z
+    // tenta a anterior.
     return acao === "undo"
       ? `Não dá para desfazer ${oQue}: alguém mudou isso depois. O próximo Ctrl+Z tenta a ação anterior.`
       : `Não dá para refazer ${oQue}: alguém mudou isso depois.`;
