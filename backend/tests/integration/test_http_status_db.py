@@ -8,41 +8,15 @@ servico nao ve: a traducao de excecao para codigo HTTP no router/errors.
 from __future__ import annotations
 
 import uuid
-from collections.abc import AsyncIterator
 
 import pytest
-from httpx import ASGITransport, AsyncClient
 
-from app.core.deps import get_db_session, get_uow
-from app.core.tenant import Membership, TeamNode, TenantContext, set_tenant
-from app.db.unit_of_work import UnitOfWork
-from app.main import create_app
-from app.modules.auth.api.dependencies import get_tenant_context
+from app.core.tenant import Membership, TeamNode, TenantContext
 from app.modules.auth.domain.permissions import permissions_for_roles
 from tests.integration import factories as f
+from tests.integration.conftest import cliente
 
 pytestmark = pytest.mark.integration
-
-
-def _client(db, ctx: TenantContext) -> AsyncClient:
-    """App com sessao/UoW/auth apontando para o teste."""
-    app = create_app()
-
-    async def _session() -> AsyncIterator:
-        yield db
-
-    async def _uow() -> AsyncIterator[UnitOfWork]:
-        async with UnitOfWork(db) as uow:
-            yield uow
-
-    async def _ctx() -> TenantContext:
-        set_tenant(ctx)
-        return ctx
-
-    app.dependency_overrides[get_db_session] = _session
-    app.dependency_overrides[get_uow] = _uow
-    app.dependency_overrides[get_tenant_context] = _ctx
-    return AsyncClient(transport=ASGITransport(app=app), base_url="http://t")
 
 
 async def _world(db):
@@ -70,7 +44,7 @@ async def test_post_assignee_201_e_200_noop(db) -> None:
     await f.add_member(db, workspace_id=ws, user_id=alvo, team_id=a, role="OPERATOR")
     task = await f.make_task(db, workspace_id=ws, created_by=manager, team_id=a, project_id=proj)
     await db.commit()  # fixa o seed no savepoint antes dos requests
-    async with _client(db, ctx) as c:
+    async with cliente(db, ctx) as c:
         url = f"/api/v1/tasks/{task.id}/assignees"
         r1 = await c.post(url, json={"user_id": str(alvo)})
         r2 = await c.post(url, json={"user_id": str(alvo)})
@@ -82,7 +56,7 @@ async def test_assignee_inexistente_422(db) -> None:
     ws, r, a, manager, proj, ctx = await _world(db)
     task = await f.make_task(db, workspace_id=ws, created_by=manager, team_id=a, project_id=proj)
     await db.commit()
-    async with _client(db, ctx) as c:
+    async with cliente(db, ctx) as c:
         resp = await c.post(
             f"/api/v1/tasks/{task.id}/assignees", json={"user_id": str(uuid.uuid4())}
         )
@@ -93,7 +67,7 @@ async def test_remove_assignee_ausente_404(db) -> None:
     ws, r, a, manager, proj, ctx = await _world(db)
     task = await f.make_task(db, workspace_id=ws, created_by=manager, team_id=a, project_id=proj)
     await db.commit()
-    async with _client(db, ctx) as c:
+    async with cliente(db, ctx) as c:
         resp = await c.delete(f"/api/v1/tasks/{task.id}/assignees/{uuid.uuid4()}")
     assert resp.status_code == 404
 
@@ -132,6 +106,6 @@ async def test_watcher_terceiro_fora_do_escopo_de_edicao_403(db) -> None:
         memberships=(Membership(team_id=a, role="OPERATOR"),),
         team_tree=forest_b,
     )
-    async with _client(db, ctx_op) as c:
+    async with cliente(db, ctx_op) as c:
         resp = await c.post(f"/api/v1/tasks/{task_b.id}/watchers", json={"user_id": str(outro)})
     assert resp.status_code == 403, resp.text

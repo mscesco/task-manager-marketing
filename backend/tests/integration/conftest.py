@@ -8,6 +8,7 @@ pulados (no CI, falham).
 
 from __future__ import annotations
 
+import functools
 import os
 import subprocess
 import sys
@@ -17,6 +18,8 @@ from contextlib import contextmanager
 
 import pytest
 import pytest_asyncio
+from fastapi import FastAPI
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import (
     AsyncConnection,
     AsyncEngine,
@@ -24,7 +27,17 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
-from app.core.tenant import Membership, TeamNode, TenantContext, tenant_scope
+from app.core.deps import get_db_session, get_uow
+from app.core.tenant import (
+    Membership,
+    TeamNode,
+    TenantContext,
+    set_tenant,
+    tenant_scope,
+)
+from app.db.unit_of_work import UnitOfWork
+from app.main import create_app
+from app.modules.auth.api.dependencies import get_tenant_context
 from app.modules.auth.domain.permissions import (
     permissions_for_actor,
     permissions_for_org_role,
@@ -137,3 +150,74 @@ def mship(team_id: uuid.UUID, role: str) -> Membership:
 def node(team_id: uuid.UUID, parent_team_id: uuid.UUID | None = None) -> TeamNode:
     """Atalho para montar um TeamNode (arvore de times) nos testes."""
     return TeamNode(team_id=team_id, parent_team_id=parent_team_id)
+
+
+# --------------------------------------------------------
+# Cliente HTTP contra o app real
+# --------------------------------------------------------
+@functools.cache
+def _app_compartilhado() -> FastAPI:
+    # `create_app()` custa ~160 ms; montado uma vez, os testes so trocam os
+    # overrides. Teste que mexe em settings lidas na montagem chama `create_app()`.
+    return create_app()
+
+
+_clientes_abertos = 0
+
+
+class _Cliente(AsyncClient):
+    async def __aexit__(self, *exc) -> None:
+        global _clientes_abertos
+        _clientes_abertos -= 1
+        await super().__aexit__(*exc)
+
+
+def cliente(
+    db: AsyncSession,
+    ctx: TenantContext | None = None,
+    *,
+    overrides: dict | None = None,
+) -> AsyncClient:
+    """App real com sessao e UoW do teste; com `ctx`, tambem o tenant.
+
+    Sem `ctx`, `get_tenant_context` roda de verdade (autenticacao pelo token).
+    Os overrides vivem no app compartilhado: dois clientes abertos no mesmo
+    teste se sobrescreveriam, por isso o segundo levanta.
+    """
+    global _clientes_abertos
+    if _clientes_abertos:
+        raise RuntimeError(
+            "Ja ha um cliente aberto neste teste: feche o primeiro (async with) "
+            "antes de abrir outro."
+        )
+    app = _app_compartilhado()
+    app.dependency_overrides.clear()
+
+    async def _session() -> AsyncIterator[AsyncSession]:
+        yield db
+
+    async def _uow() -> AsyncIterator[UnitOfWork]:
+        async with UnitOfWork(db) as uow:
+            yield uow
+
+    app.dependency_overrides[get_db_session] = _session
+    app.dependency_overrides[get_uow] = _uow
+    if ctx is not None:
+
+        async def _tenant() -> TenantContext:
+            set_tenant(ctx)
+            return ctx
+
+        app.dependency_overrides[get_tenant_context] = _tenant
+    app.dependency_overrides.update(overrides or {})
+    _clientes_abertos += 1
+    return _Cliente(transport=ASGITransport(app=app), base_url="http://t")
+
+
+@pytest.fixture(autouse=True)
+def _limpa_o_app_compartilhado() -> Iterator[None]:
+    yield
+    global _clientes_abertos
+    _clientes_abertos = 0
+    if _app_compartilhado.cache_info().currsize:
+        _app_compartilhado().dependency_overrides.clear()

@@ -28,7 +28,8 @@ from app.modules.tasks.application.deadline_notify_service import (
     DeadlineNotifyService,
 )
 from tests.integration import factories as f
-from tests.integration.test_avisos_de_mudanca_db import _cliente, _setup
+from tests.integration.conftest import cliente
+from tests.integration.test_avisos_de_mudanca_db import _setup
 
 pytestmark = pytest.mark.integration
 
@@ -64,7 +65,7 @@ async def test_mover_de_coluna_grava_o_papel_de_cada_um(db) -> None:
     """Os tres papeis no mesmo gesto: `op` segue, `resp` e responsavel, `adm`
     criou. Um aviso so para cada, e cada um com o SEU papel."""
     c = await _setup(db)
-    async with _cliente(db, c["ctx_sup"]) as cli:
+    async with cliente(db, c["ctx_sup"]) as cli:
         r = await cli.patch(
             _url(c), json={"column_id": str(c["colunas"]["Em Andamento"].id)}
         )
@@ -87,7 +88,7 @@ async def test_quem_tem_dois_papeis_leva_os_dois(db) -> None:
         db, workspace_id=c["ws"], task_id=c["tarefa"].id, user_id=c["resp"]
     )
     await db.commit()
-    async with _cliente(db, c["ctx_sup"]) as cli:
+    async with cliente(db, c["ctx_sup"]) as cli:
         r = await cli.patch(
             _url(c), json={"column_id": str(c["colunas"]["Em Andamento"].id)}
         )
@@ -109,7 +110,7 @@ async def test_a_juncao_une_os_papeis(db) -> None:
     seguir.
     """
     c = await _setup(db)
-    async with _cliente(db, c["ctx_sup"]) as cli:
+    async with cliente(db, c["ctx_sup"]) as cli:
         r1 = await cli.patch(
             _url(c), json={"column_id": str(c["colunas"]["Em Andamento"].id)}
         )
@@ -142,7 +143,7 @@ async def test_a_juncao_une_os_papeis(db) -> None:
 # --------------------------------------------------------------- comentario
 async def test_comentario_grava_o_papel(db) -> None:
     c = await _setup(db)
-    async with _cliente(db, c["ctx_sup"]) as cli:
+    async with cliente(db, c["ctx_sup"]) as cli:
         r = await cli.post(f"{_url(c)}/comments", json={"content": "olha isso"})
     assert r.status_code == 201, r.text
 
@@ -160,7 +161,7 @@ async def test_mencao_nasce_sem_papel(db) -> None:
     fica de fora do fan-out de comentario e recebe so a mencao.
     """
     c = await _setup(db)
-    async with _cliente(db, c["ctx_sup"]) as cli:
+    async with cliente(db, c["ctx_sup"]) as cli:
         r = await cli.post(
             f"{_url(c)}/comments",
             json={"content": f"@[Op]({c['op']}) olha isso"},

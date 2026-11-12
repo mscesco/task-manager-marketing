@@ -13,18 +13,11 @@ A tela diz "seguir"; o codigo e o banco continuam dizendo `watcher`.
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
-
 import pytest
-from httpx import ASGITransport, AsyncClient
 from sqlalchemy import func, select, text
 
-from app.core.deps import get_db_session, get_uow
-from app.core.tenant import Membership, TenantContext, set_tenant
+from app.core.tenant import Membership, TenantContext
 from app.db.models import Notification, TaskWatcher
-from app.db.unit_of_work import UnitOfWork
-from app.main import create_app
-from app.modules.auth.api.dependencies import get_tenant_context
 from app.modules.auth.domain.permissions import permissions_for_roles
 from app.modules.tasks.application.collaboration_service import (
     CollaborationService,
@@ -36,7 +29,7 @@ from app.modules.tasks.application.task_service import (
 )
 from app.shared.exceptions.base import AuthorizationError, ValidationError
 from tests.integration import factories as f
-from tests.integration.conftest import acting_as, mship, node
+from tests.integration.conftest import acting_as, cliente, mship, node
 
 pytestmark = pytest.mark.integration
 
@@ -227,26 +220,6 @@ async def test_por_terceiro_exige_permissao_no_time_da_tarefa(db) -> None:
 # ----------------------------------------------------------
 # criacao com seguidores, pelo HTTP
 # ----------------------------------------------------------
-def _cliente(db, ctx: TenantContext) -> AsyncClient:
-    app = create_app()
-
-    async def _session() -> AsyncIterator:
-        yield db
-
-    async def _uow() -> AsyncIterator[UnitOfWork]:
-        async with UnitOfWork(db) as uow:
-            yield uow
-
-    async def _ctx() -> TenantContext:
-        set_tenant(ctx)
-        return ctx
-
-    app.dependency_overrides[get_db_session] = _session
-    app.dependency_overrides[get_uow] = _uow
-    app.dependency_overrides[get_tenant_context] = _ctx
-    return AsyncClient(transport=ASGITransport(app=app), base_url="http://t")
-
-
 def _ctx_gerente(ws, r, gerente, forest) -> TenantContext:
     return TenantContext(
         workspace_id=ws,
@@ -261,7 +234,7 @@ def _ctx_gerente(ws, r, gerente, forest) -> TenantContext:
 async def test_http_cria_com_seguidor(db) -> None:
     ws, r, a, b, gerente, op_a, op_b, forest = await _mundo(db)
     await db.commit()
-    async with _cliente(db, _ctx_gerente(ws, r, gerente, forest)) as c:
+    async with cliente(db, _ctx_gerente(ws, r, gerente, forest)) as c:
         resp = await c.post(
             "/api/v1/tasks",
             json={
@@ -288,7 +261,7 @@ async def test_http_seguidor_sem_alcance_recusa_a_criacao_inteira(db) -> None:
     antes = (
         await db.execute(text("SELECT count(*) FROM task WHERE workspace_id=:w"), {"w": ws})
     ).scalar_one()
-    async with _cliente(db, _ctx_gerente(ws, r, gerente, forest)) as c:
+    async with cliente(db, _ctx_gerente(ws, r, gerente, forest)) as c:
         resp = await c.post(
             "/api/v1/tasks",
             json={
@@ -385,7 +358,7 @@ async def test_http_can_manage_watchers_segue_a_regra_do_servico(db) -> None:
         permissions=permissions_for_actor(memberships=vinculos_op, tree=forest),
         memberships=vinculos_op, team_tree=forest,
     )
-    async with _cliente(db, ctx_op) as c:
+    async with cliente(db, ctx_op) as c:
         visto_pelo_op = await c.get(f"/api/v1/tasks/{task_b.id}")
     vinculos_ger = (Membership(team_id=r, role="MANAGER"),)
     ctx_ger = TenantContext(
@@ -393,7 +366,7 @@ async def test_http_can_manage_watchers_segue_a_regra_do_servico(db) -> None:
         permissions=permissions_for_actor(memberships=vinculos_ger, tree=forest),
         memberships=vinculos_ger, team_tree=forest,
     )
-    async with _cliente(db, ctx_ger) as c:
+    async with cliente(db, ctx_ger) as c:
         visto_pelo_gerente = await c.get(f"/api/v1/tasks/{task_b.id}")
 
     assert visto_pelo_op.status_code == 200, visto_pelo_op.text

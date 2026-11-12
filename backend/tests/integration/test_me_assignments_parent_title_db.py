@@ -7,16 +7,11 @@ esta na lista. Por isso o titulo vem do backend, em lote.
 from __future__ import annotations
 
 import pytest
-from httpx import ASGITransport, AsyncClient
 
-from app.core.deps import get_db_session, get_uow
-from app.core.tenant import Membership, TenantContext, set_tenant
-from app.db.unit_of_work import UnitOfWork
-from app.main import create_app
-from app.modules.auth.api.dependencies import get_tenant_context
+from app.core.tenant import Membership, TenantContext
 from app.modules.auth.domain.permissions import permissions_for_roles
 from tests.integration import factories as f
-from tests.integration.conftest import node
+from tests.integration.conftest import cliente, node
 
 pytestmark = pytest.mark.integration
 
@@ -57,26 +52,6 @@ async def _setup(db):
             "mae": mae, "filha": filha, "ctx": ctx}
 
 
-def _client(db, ctx):
-    app = create_app()
-
-    async def _session():
-        yield db
-
-    async def _uow():
-        async with UnitOfWork(db) as uow:
-            yield uow
-
-    async def _ctx():
-        set_tenant(ctx)
-        return ctx
-
-    app.dependency_overrides[get_db_session] = _session
-    app.dependency_overrides[get_uow] = _uow
-    app.dependency_overrides[get_tenant_context] = _ctx
-    return AsyncClient(transport=ASGITransport(app=app), base_url="http://t")
-
-
 async def _designar(db, c, task):
     """make_assignment exige workspace_id e assigned_by (insere direto)."""
     await f.make_assignment(
@@ -96,7 +71,7 @@ async def test_parent_title_quando_a_mae_NAO_esta_na_minha_lista(db) -> None:
     c = await _setup(db)
     await _designar(db, c, c["filha"])
     await db.commit()
-    async with _client(db, c["ctx"]) as cli:
+    async with cliente(db, c["ctx"]) as cli:
         r = await cli.get("/api/v1/me/assignments")
     assert r.status_code == 200, r.text
     corpo = r.json()
@@ -111,7 +86,7 @@ async def test_parent_title_quando_a_mae_ESTA_na_lista(db) -> None:
     await _designar(db, c, c["mae"])
     await _designar(db, c, c["filha"])
     await db.commit()
-    async with _client(db, c["ctx"]) as cli:
+    async with cliente(db, c["ctx"]) as cli:
         r = await cli.get("/api/v1/me/assignments")
     corpo = r.json()
     assert _por_id(corpo, c["filha"])["parent_title"] == "Campanha Black Friday"
@@ -123,7 +98,7 @@ async def test_task_raiz_tem_parent_title_none(db) -> None:
     c = await _setup(db)
     await _designar(db, c, c["mae"])
     await db.commit()
-    async with _client(db, c["ctx"]) as cli:
+    async with cliente(db, c["ctx"]) as cli:
         r = await cli.get("/api/v1/me/assignments")
     item = _por_id(r.json(), c["mae"])
     assert item["parent_task_id"] is None
@@ -139,7 +114,7 @@ async def test_neto_traz_a_mae_DIRETA_nao_a_raiz(db) -> None:
     )
     await _designar(db, c, neta)
     await db.commit()
-    async with _client(db, c["ctx"]) as cli:
+    async with cliente(db, c["ctx"]) as cli:
         r = await cli.get("/api/v1/me/assignments")
     assert _por_id(r.json(), neta)["parent_title"] == "Peca para Instagram"
 
@@ -176,7 +151,7 @@ async def test_lote_nao_faz_n_mais_1(db, connection) -> None:
 
         event.listen(connection.sync_connection, "before_cursor_execute", _anota)
         try:
-            async with _client(db, c["ctx"]) as cli:
+            async with cliente(db, c["ctx"]) as cli:
                 r = await cli.get("/api/v1/me/assignments?size=50")
         finally:
             event.remove(connection.sync_connection, "before_cursor_execute", _anota)

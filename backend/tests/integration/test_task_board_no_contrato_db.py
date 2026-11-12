@@ -14,16 +14,11 @@ from __future__ import annotations
 import uuid
 
 import pytest
-from httpx import ASGITransport, AsyncClient
 
-from app.core.deps import get_db_session, get_uow
-from app.core.tenant import Membership, TenantContext, set_tenant
-from app.db.unit_of_work import UnitOfWork
-from app.main import create_app
-from app.modules.auth.api.dependencies import get_tenant_context
+from app.core.tenant import Membership, TenantContext
 from app.modules.auth.domain.permissions import permissions_for_roles
 from tests.integration import factories as f
-from tests.integration.conftest import node
+from tests.integration.conftest import cliente, node
 
 pytestmark = pytest.mark.integration
 
@@ -64,27 +59,6 @@ async def _setup(db):
     }
 
 
-def _client(db, ctx):
-    """App real com sessao/UoW/tenant do teste injetados."""
-    app = create_app()
-
-    async def _session():
-        yield db
-
-    async def _uow():
-        async with UnitOfWork(db) as uow:
-            yield uow
-
-    async def _ctx():
-        set_tenant(ctx)
-        return ctx
-
-    app.dependency_overrides[get_db_session] = _session
-    app.dependency_overrides[get_uow] = _uow
-    app.dependency_overrides[get_tenant_context] = _ctx
-    return AsyncClient(transport=ASGITransport(app=app), base_url="http://t")
-
-
 # ------------------------------------------------------ 1. contrato, detalhe
 
 
@@ -103,7 +77,7 @@ async def test_detalhe_carrega_board_id_e_column_id(db) -> None:
     )
     await db.commit()
 
-    async with _client(db, c["ctx_sup"]) as cli:
+    async with cliente(db, c["ctx_sup"]) as cli:
         r = await cli.get(f"/api/v1/tasks/{t.id}")
     assert r.status_code == 200, r.text
     body = r.json()
@@ -128,7 +102,7 @@ async def test_listagem_carrega_board_id_e_column_id(db) -> None:
     )
     await db.commit()
 
-    async with _client(db, c["ctx_sup"]) as cli:
+    async with cliente(db, c["ctx_sup"]) as cli:
         r = await cli.get("/api/v1/tasks")
     assert r.status_code == 200, r.text
     itens = {uuid.UUID(i["id"]): i for i in r.json()["items"]}
@@ -159,7 +133,7 @@ async def test_o_board_id_devolvido_esta_na_lista_de_quadros_de_quem_pergunta(
     )
     await db.commit()
 
-    async with _client(db, c["ctx_sup"]) as cli:
+    async with cliente(db, c["ctx_sup"]) as cli:
         r_task = await cli.get(f"/api/v1/tasks/{t.id}")
         r_boards = await cli.get("/api/v1/boards")
 

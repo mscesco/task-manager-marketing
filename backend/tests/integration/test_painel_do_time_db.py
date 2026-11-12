@@ -30,19 +30,13 @@ from __future__ import annotations
 from datetime import date, datetime, time
 
 import pytest
-from httpx import ASGITransport, AsyncClient
 
-from app.core.deps import get_db_session, get_uow
-from app.core.tenant import set_tenant
 from app.db.models import User
 from app.db.models.enums import TaskStatus
-from app.db.unit_of_work import UnitOfWork
-from app.main import create_app
-from app.modules.auth.api.dependencies import get_tenant_context
 from app.modules.tasks.application.dashboard_service import DashboardService
 from app.modules.tasks.domain.dashboard import TIMEZONE, Period
 from tests.integration import factories as f
-from tests.integration.conftest import acting_as, mship, node
+from tests.integration.conftest import acting_as, cliente, mship, node
 
 pytestmark = pytest.mark.integration
 
@@ -208,31 +202,11 @@ async def test_todos_os_times_sem_o_verbo_na_organizacao_nao_tem_carga(db) -> No
 # ------------------------------------------------------------ a rota
 
 
-def _client(db, ctx):
-    app = create_app()
-
-    async def _session():
-        yield db
-
-    async def _uow():
-        async with UnitOfWork(db) as uow:
-            yield uow
-
-    async def _ctx():
-        set_tenant(ctx)
-        return ctx
-
-    app.dependency_overrides[get_db_session] = _session
-    app.dependency_overrides[get_uow] = _uow
-    app.dependency_overrides[get_tenant_context] = _ctx
-    return AsyncClient(transport=ASGITransport(app=app), base_url="http://t")
-
-
 async def test_a_rota_existe_e_devolve_os_sete_dias(db) -> None:
     """O relogio aqui e o de verdade, entao o teste so confere a FORMA."""
     m = await _mundo(db)
     with _como(m, "op") as ctx:
-        async with _client(db, ctx) as cli:
+        async with cliente(db, ctx) as cli:
             r = await cli.get(f"/api/v1/dashboard?under_team_id={m['mkt']}")
     assert r.status_code == 200, r.text
     corpo = r.json()
@@ -319,7 +293,7 @@ async def test_desativado_com_tarefa_aberta_continua_na_carga(db) -> None:
 async def test_a_rota_recusa_filtro_de_pessoa_para_o_operador(db) -> None:
     m = await _mundo(db)
     with _como(m, "op") as ctx:
-        async with _client(db, ctx) as cli:
+        async with cliente(db, ctx) as cli:
             r = await cli.get(
                 f"/api/v1/dashboard?under_team_id={m['mkt']}&assignee_id={m['sup']}"
             )
@@ -385,7 +359,7 @@ async def test_periodo_invalido(db) -> None:
     with pytest.raises(ValidationError):
         await _no_periodo(db, m, "ger", date(2025, 1, 1), date(2026, 10, 12))
     with _como(m, "op") as ctx:
-        async with _client(db, ctx) as cli:
+        async with cliente(db, ctx) as cli:
             r = await cli.get("/api/v1/dashboard?start=2026-10-01")
     assert r.status_code == 422, r.text
 
@@ -401,7 +375,7 @@ async def test_a_planilha_bate_com_o_painel(db) -> None:
 
     m = await _mundo(db)
     with _como(m, "ger") as ctx:
-        async with _client(db, ctx) as cli:
+        async with cliente(db, ctx) as cli:
             r = await cli.get(
                 f"/api/v1/dashboard/export?under_team_id={m['mkt']}"
                 "&start=2026-10-12&end=2026-10-18"
@@ -428,7 +402,7 @@ async def test_a_planilha_do_operador_nao_tem_a_carga(db) -> None:
 
     m = await _mundo(db)
     with _como(m, "op") as ctx:
-        async with _client(db, ctx) as cli:
+        async with cliente(db, ctx) as cli:
             r = await cli.get(f"/api/v1/dashboard/export?under_team_id={m['mkt']}")
     assert r.status_code == 200, r.text
     assert "Carga" not in load_workbook(io.BytesIO(r.content)).sheetnames
@@ -449,7 +423,7 @@ async def test_titulo_que_parece_formula_continua_texto_na_planilha(db) -> None:
     t1.title = '=HYPERLINK("http://x";"y")\x0b'
     await db.flush()
     with _como(m, "ger") as ctx:
-        async with _client(db, ctx) as cli:
+        async with cliente(db, ctx) as cli:
             r = await cli.get(f"/api/v1/dashboard/export?under_team_id={m['mkt']}")
     assert r.status_code == 200, r.text
     linhas = load_workbook(io.BytesIO(r.content))["Tarefas"].iter_rows(min_row=2)

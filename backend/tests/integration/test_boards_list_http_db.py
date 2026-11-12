@@ -29,20 +29,15 @@ import uuid
 from datetime import UTC, datetime
 
 import pytest
-from httpx import ASGITransport, AsyncClient
 
-from app.core.deps import get_db_session, get_uow
-from app.core.tenant import Membership, TenantContext, set_tenant
-from app.db.unit_of_work import UnitOfWork
-from app.main import create_app
-from app.modules.auth.api.dependencies import get_tenant_context
+from app.core.tenant import Membership, TenantContext
 from app.modules.auth.domain.permissions import (
     permissions_for_actor,
     permissions_for_roles,
 )
 from app.modules.tasks.domain.board_defaults import COLUNAS_PADRAO
 from tests.integration import factories as f
-from tests.integration.conftest import node
+from tests.integration.conftest import cliente, node
 
 pytestmark = pytest.mark.integration
 
@@ -125,27 +120,6 @@ async def _setup(db):
     }
 
 
-def _client(db, ctx):
-    """App real com sessao/UoW/tenant do teste injetados."""
-    app = create_app()
-
-    async def _session():
-        yield db
-
-    async def _uow():
-        async with UnitOfWork(db) as uow:
-            yield uow
-
-    async def _ctx():
-        set_tenant(ctx)
-        return ctx
-
-    app.dependency_overrides[get_db_session] = _session
-    app.dependency_overrides[get_uow] = _uow
-    app.dependency_overrides[get_tenant_context] = _ctx
-    return AsyncClient(transport=ASGITransport(app=app), base_url="http://t")
-
-
 async def _ids(cli) -> set[uuid.UUID]:
     """Chama a rota e devolve o conjunto de ids, ja como UUID.
 
@@ -174,7 +148,7 @@ async def test_supervisor_do_seo_nao_ve_quadro_interno_do_crm(db) -> None:
     c = await _setup(db)
     await db.commit()
 
-    async with _client(db, c["ctx_sup"]) as cli:
+    async with cliente(db, c["ctx_sup"]) as cli:
         vistos = await _ids(cli)
 
     assert c["interno_seo"].id in vistos, (
@@ -198,7 +172,7 @@ async def test_admin_ve_todos_os_quadros_do_proprio_workspace(db) -> None:
     c = await _setup(db)
     await db.commit()
 
-    async with _client(db, c["ctx_adm"]) as cli:
+    async with cliente(db, c["ctx_adm"]) as cli:
         vistos = await _ids(cli)
 
     assert c["interno_seo"].id in vistos
@@ -221,9 +195,9 @@ async def test_quadro_apagado_nao_aparece(db) -> None:
     c = await _setup(db)
     await db.commit()
 
-    async with _client(db, c["ctx_sup"]) as cli:
+    async with cliente(db, c["ctx_sup"]) as cli:
         vistos_sup = await _ids(cli)
-    async with _client(db, c["ctx_adm"]) as cli:
+    async with cliente(db, c["ctx_adm"]) as cli:
         vistos_adm = await _ids(cli)
 
     assert c["apagado_seo"].id not in vistos_sup, (
@@ -246,7 +220,7 @@ async def test_a_resposta_traz_as_colunas_do_quadro(db) -> None:
     c = await _setup(db)
     await db.commit()
 
-    async with _client(db, c["ctx_adm"]) as cli:
+    async with cliente(db, c["ctx_adm"]) as cli:
         r = await cli.get("/api/v1/boards")
         assert r.status_code == 200, r.text
         corpo = r.json()

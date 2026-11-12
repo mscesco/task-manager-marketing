@@ -5,19 +5,14 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
-from httpx import ASGITransport, AsyncClient
 
-from app.core.deps import get_db_session, get_uow
-from app.core.tenant import Membership, TenantContext, set_tenant
-from app.db.unit_of_work import UnitOfWork
-from app.main import create_app
-from app.modules.auth.api.dependencies import get_tenant_context
+from app.core.tenant import Membership, TenantContext
 from app.modules.auth.domain.permissions import permissions_for_roles
 from app.modules.tasks.application.me_service import MeService
 from app.modules.tasks.application.task_service import TaskService
 from app.shared.pagination import PageParams
 from tests.integration import factories as f
-from tests.integration.conftest import acting_as, mship, node
+from tests.integration.conftest import acting_as, cliente, mship, node
 
 pytestmark = pytest.mark.integration
 
@@ -221,26 +216,6 @@ async def test_ordena_updated_at_desc(db) -> None:
 # ----------------------------------------------------------
 # HTTP
 # ----------------------------------------------------------
-def _client(db, ctx):
-    app = create_app()
-
-    async def _session():
-        yield db
-
-    async def _uow():
-        async with UnitOfWork(db) as uow:
-            yield uow
-
-    async def _ctx():
-        set_tenant(ctx)
-        return ctx
-
-    app.dependency_overrides[get_db_session] = _session
-    app.dependency_overrides[get_uow] = _uow
-    app.dependency_overrides[get_tenant_context] = _ctx
-    return AsyncClient(transport=ASGITransport(app=app), base_url="http://t")
-
-
 async def _ctx_for(ws, team, user, forest, role="OPERATOR"):
     return TenantContext(
         workspace_id=ws,
@@ -260,7 +235,7 @@ async def test_http_200_default(db) -> None:
     await f.make_task(db, workspace_id=ws, created_by=me, team_id=a, project_id=proj)
     await db.commit()
     ctx = await _ctx_for(ws, a, me, _forest(r, a, b))
-    async with _client(db, ctx) as c:
+    async with cliente(db, ctx) as c:
         resp = await c.get("/api/v1/me/assignments")
     assert resp.status_code == 200
     body = resp.json()
@@ -274,7 +249,7 @@ async def test_http_relation_invalido_422(db) -> None:
     await f.add_member(db, workspace_id=ws, user_id=me, team_id=a, role="OPERATOR")
     await db.commit()
     ctx = await _ctx_for(ws, a, me, _forest(r, a, b))
-    async with _client(db, ctx) as c:
+    async with cliente(db, ctx) as c:
         resp = await c.get("/api/v1/me/assignments", params={"relation": "xpto"})
     assert resp.status_code == 422
 
@@ -290,7 +265,7 @@ async def test_http_paginacao(db) -> None:
         )
     await db.commit()
     ctx = await _ctx_for(ws, a, me, _forest(r, a, b))
-    async with _client(db, ctx) as c:
+    async with cliente(db, ctx) as c:
         resp = await c.get("/api/v1/me/assignments", params={"page": 1, "size": 2})
     body = resp.json()
     assert resp.status_code == 200
@@ -317,7 +292,7 @@ async def test_http_item_traz_assignee_ids(db) -> None:
     )
     await db.commit()
     ctx = await _ctx_for(ws, a, me, _forest(r, a, b))
-    async with _client(db, ctx) as c:
+    async with cliente(db, ctx) as c:
         resp = await c.get("/api/v1/me/assignments")
     assert resp.status_code == 200, resp.text
     body = resp.json()

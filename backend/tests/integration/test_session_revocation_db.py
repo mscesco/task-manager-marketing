@@ -6,52 +6,30 @@ A revogacao vive em tres pontos independentes, nenhum deles no service:
     3. `AuthService.refresh`       -- nao passa por dependency nenhuma
 Cada um tem um teste que fica vermelho sem ele.
 
-O `_client` daqui sobrescreve so a sessao e a UoW (nao `get_tenant_context`)
+O `cliente(db)` daqui sobrescreve so a sessao e a UoW (nao `get_tenant_context`)
 e manda `Authorization: Bearer <token>` de verdade.
 """
 
 from __future__ import annotations
 
 import uuid
-from collections.abc import AsyncIterator
 
 import pytest
-from httpx import ASGITransport, AsyncClient
+from httpx import AsyncClient
 
-from app.core.deps import get_db_session, get_uow
 from app.db.models import User, Workspace
-from app.db.unit_of_work import UnitOfWork
-from app.main import create_app
 from app.modules.auth.infrastructure.security import (
     create_access_token,
     create_refresh_token,
     hash_password,
 )
 from tests.integration import factories as f
+from tests.integration.conftest import cliente
 
 pytestmark = pytest.mark.integration
 
 _SENHA = "senha-de-teste-1"
 _NOVA = "senha-de-teste-2"
-
-
-def _client(db) -> AsyncClient:
-    """App real, so com sessao/UoW apontando para o teste.
-
-    ⚠️ NAO sobrescreve `get_tenant_context`: e ele que se quer testar.
-    """
-    app = create_app()
-
-    async def _session() -> AsyncIterator:
-        yield db
-
-    async def _uow() -> AsyncIterator[UnitOfWork]:
-        async with UnitOfWork(db) as uow:
-            yield uow
-
-    app.dependency_overrides[get_db_session] = _session
-    app.dependency_overrides[get_uow] = _uow
-    return AsyncClient(transport=ASGITransport(app=app), base_url="http://t")
 
 
 async def _pessoa(db, *, pendente: bool = False):
@@ -94,7 +72,7 @@ async def test_troca_de_senha_derruba_outra_sessao(db) -> None:
     """Dois browsers: troca a senha num, o outro cai no proximo clique."""
     ws, _team, user = await _pessoa(db)
     await db.commit()
-    async with _client(db) as c:
+    async with cliente(db) as c:
         sessao_a = await _login(c, ws, user)
         sessao_b = await _login(c, ws, user)
 
@@ -120,7 +98,7 @@ async def test_troca_de_senha_invalida_refresh_antigo(db) -> None:
     """O refresh guardado antes da troca de senha para de renovar."""
     ws, _team, user = await _pessoa(db)
     await db.commit()
-    async with _client(db) as c:
+    async with cliente(db) as c:
         sessao = await _login(c, ws, user)
 
         ok = await c.post(
@@ -147,7 +125,7 @@ async def test_par_emitido_no_change_password_ja_vale(db) -> None:
     """Depois da troca, o login com a senha nova funciona de primeira."""
     ws, _team, user = await _pessoa(db)
     await db.commit()
-    async with _client(db) as c:
+    async with cliente(db) as c:
         sessao = await _login(c, ws, user)
         await c.post(
             "/api/v1/auth/change-password",
@@ -182,7 +160,7 @@ async def test_reset_pelo_gestor_derruba_sessao_do_alvo(db) -> None:
     gestor = await f.make_user(db, workspace_id=ws.id, org_role="ADMIN")
     await db.commit()
 
-    async with _client(db) as c:
+    async with cliente(db) as c:
         sessao = await _login(c, ws, alvo)
         assert (
             await c.get("/api/v1/auth/me", headers=_auth(sessao["access_token"]))
@@ -224,7 +202,7 @@ async def test_reset_pelo_gestor_nao_derruba_terceiros(db) -> None:
     )
     await db.commit()
 
-    async with _client(db) as c:
+    async with cliente(db) as c:
         sessao_outro = await _login(c, ws, outro)
 
         with acting_as(
@@ -250,7 +228,7 @@ async def test_logout_invalida_refresh(db) -> None:
     """Logout invalida o refresh e o access da propria sessao."""
     ws, _team, user = await _pessoa(db)
     await db.commit()
-    async with _client(db) as c:
+    async with cliente(db) as c:
         sessao = await _login(c, ws, user)
 
         saiu = await c.post(
@@ -273,7 +251,7 @@ async def test_logout_derruba_todos_os_aparelhos(db) -> None:
     """Logout derruba todas as sessoes da pessoa, de proposito (nao e por `jti`)."""
     ws, _team, user = await _pessoa(db)
     await db.commit()
-    async with _client(db) as c:
+    async with cliente(db) as c:
         compartilhada = await _login(c, ws, user)
         notebook = await _login(c, ws, user)
 
@@ -296,7 +274,7 @@ async def test_logout_de_um_nao_afeta_outro_usuario(db) -> None:
     )
     await db.commit()
 
-    async with _client(db) as c:
+    async with cliente(db) as c:
         s_user = await _login(c, ws, user)
         s_outro = await _login(c, ws, outro)
 
@@ -314,7 +292,7 @@ async def test_logout_funciona_com_troca_de_senha_pendente(db) -> None:
     """
     ws, _team, user = await _pessoa(db, pendente=True)
     await db.commit()
-    async with _client(db) as c:
+    async with cliente(db) as c:
         sessao = await _login(c, ws, user)
         # Confirma que o gate esta mesmo ativo nesta sessao.
         bloqueada = await c.get(
@@ -357,7 +335,7 @@ async def test_token_sem_claim_tv_e_recusado(db) -> None:
         algorithm=settings.jwt_algorithm,
     )
 
-    async with _client(db) as c:
+    async with cliente(db) as c:
         r = await c.get("/api/v1/auth/me", headers=_auth(token_antigo))
         assert r.status_code == 401
         assert "invalido" in r.text.lower()
@@ -375,7 +353,7 @@ async def test_token_com_tv_defasado_e_recusado(db) -> None:
     defasado = create_access_token(
         user_id=user.id, workspace_id=ws.id, token_version=4
     )
-    async with _client(db) as c:
+    async with cliente(db) as c:
         r = await c.get("/api/v1/auth/me", headers=_auth(defasado))
         assert r.status_code == 401
         assert "revogada" in r.text.lower()
@@ -389,7 +367,7 @@ async def test_rota_de_negocio_recusa_token_revogado(db) -> None:
     """
     ws, _team, user = await _pessoa(db)
     await db.commit()
-    async with _client(db) as c:
+    async with cliente(db) as c:
         sessao = await _login(c, ws, user)
         viva = await c.get("/api/v1/tasks", headers=_auth(sessao["access_token"]))
         assert viva.status_code == 200
@@ -414,7 +392,7 @@ async def test_refresh_com_tv_defasado_e_recusado(db) -> None:
     defasado = create_refresh_token(
         user_id=user.id, workspace_id=ws.id, token_version=2
     )
-    async with _client(db) as c:
+    async with cliente(db) as c:
         r = await c.post(
             "/api/v1/auth/refresh", json={"refresh_token": defasado}
         )

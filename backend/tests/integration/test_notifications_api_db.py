@@ -7,42 +7,17 @@ as minhas, unread-count, mark-read (flipa read_at), mark-read de outro =
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from httpx import ASGITransport, AsyncClient
 
-from app.core.deps import get_db_session, get_uow
-from app.core.tenant import Membership, TeamNode, TenantContext, set_tenant
+from app.core.tenant import Membership, TeamNode, TenantContext
 from app.db.models import Notification
-from app.db.unit_of_work import UnitOfWork
-from app.main import create_app
-from app.modules.auth.api.dependencies import get_tenant_context
 from app.modules.auth.domain.permissions import permissions_for_roles
 from tests.integration import factories as f
+from tests.integration.conftest import cliente
 
 pytestmark = pytest.mark.integration
-
-
-def _client(db, ctx: TenantContext) -> AsyncClient:
-    app = create_app()
-
-    async def _session() -> AsyncIterator:
-        yield db
-
-    async def _uow() -> AsyncIterator[UnitOfWork]:
-        async with UnitOfWork(db) as uow:
-            yield uow
-
-    async def _ctx() -> TenantContext:
-        set_tenant(ctx)
-        return ctx
-
-    app.dependency_overrides[get_db_session] = _session
-    app.dependency_overrides[get_uow] = _uow
-    app.dependency_overrides[get_tenant_context] = _ctx
-    return AsyncClient(transport=ASGITransport(app=app), base_url="http://t")
 
 
 async def _world(db):
@@ -81,7 +56,7 @@ async def test_feed_so_as_minhas(db) -> None:
     db.add(_notif(ws, me))
     db.add(_notif(ws, other))
     await db.commit()
-    async with _client(db, ctx) as c:
+    async with cliente(db, ctx) as c:
         resp = await c.get("/api/v1/notifications")
     assert resp.status_code == 200
     body = resp.json()
@@ -94,7 +69,7 @@ async def test_unread_count(db) -> None:
     db.add(_notif(ws, me))
     db.add(_notif(ws, me))
     await db.commit()
-    async with _client(db, ctx) as c:
+    async with cliente(db, ctx) as c:
         resp = await c.get("/api/v1/notifications/unread-count")
     assert resp.status_code == 200
     assert resp.json()["count"] == 2
@@ -107,7 +82,7 @@ async def test_mark_read_flipa_e_baixa_contagem(db) -> None:
     await db.flush()
     nid = n.id
     await db.commit()
-    async with _client(db, ctx) as c:
+    async with cliente(db, ctx) as c:
         r1 = await c.post(f"/api/v1/notifications/{nid}/read")
         r2 = await c.get("/api/v1/notifications/unread-count")
         # Idempotente: remarcar a mesma nao vira 404.
@@ -124,7 +99,7 @@ async def test_mark_read_de_outro_404(db) -> None:
     await db.flush()
     nid = n.id
     await db.commit()
-    async with _client(db, ctx) as c:
+    async with cliente(db, ctx) as c:
         resp = await c.post(f"/api/v1/notifications/{nid}/read")
     assert resp.status_code == 404
 
@@ -134,7 +109,7 @@ async def test_unread_only_filtra(db) -> None:
     db.add(_notif(ws, me, read=True))
     db.add(_notif(ws, me, read=False))
     await db.commit()
-    async with _client(db, ctx) as c:
+    async with cliente(db, ctx) as c:
         resp = await c.get("/api/v1/notifications", params={"unread_only": "true"})
     assert resp.status_code == 200
     assert resp.json()["total"] == 1
@@ -145,7 +120,7 @@ async def test_read_all(db) -> None:
     for _ in range(3):
         db.add(_notif(ws, me))
     await db.commit()
-    async with _client(db, ctx) as c:
+    async with cliente(db, ctx) as c:
         r1 = await c.post("/api/v1/notifications/read-all")
         r2 = await c.get("/api/v1/notifications/unread-count")
     assert r1.status_code == 200
@@ -159,7 +134,7 @@ async def test_paginacao(db) -> None:
     for i in range(3):
         db.add(_notif(ws, me, created_at=base + timedelta(minutes=i)))
     await db.commit()
-    async with _client(db, ctx) as c:
+    async with cliente(db, ctx) as c:
         p1 = (await c.get("/api/v1/notifications", params={"page": 1, "size": 2})).json()
         p2 = (await c.get("/api/v1/notifications", params={"page": 2, "size": 2})).json()
     assert p1["total"] == 3 and len(p1["items"]) == 2

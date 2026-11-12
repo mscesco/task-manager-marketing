@@ -21,22 +21,16 @@ SABOTAGENS (medidas):
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 
 import pytest
-from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
 
-from app.core.deps import get_db_session, get_uow
-from app.core.tenant import Membership, TenantContext, set_tenant
+from app.core.tenant import Membership, TenantContext
 from app.db.models import Notification
-from app.db.unit_of_work import UnitOfWork
-from app.main import create_app
-from app.modules.auth.api.dependencies import get_tenant_context
 from app.modules.auth.domain.permissions import permissions_for_actor
 from tests.integration import factories as f
-from tests.integration.conftest import node
+from tests.integration.conftest import cliente, node
 
 pytestmark = pytest.mark.integration
 
@@ -96,26 +90,6 @@ async def _aviso(db, m, *, tipo, task, minuto, titulo=None, lida=False):
     return n
 
 
-def _cliente(db, ctx) -> AsyncClient:
-    app = create_app()
-
-    async def _session() -> AsyncIterator:
-        yield db
-
-    async def _uow() -> AsyncIterator[UnitOfWork]:
-        async with UnitOfWork(db) as uow:
-            yield uow
-
-    async def _tenant() -> TenantContext:
-        set_tenant(ctx)
-        return ctx
-
-    app.dependency_overrides[get_db_session] = _session
-    app.dependency_overrides[get_uow] = _uow
-    app.dependency_overrides[get_tenant_context] = _tenant
-    return AsyncClient(transport=ASGITransport(app=app), base_url="http://t")
-
-
 # ------------------------------------------------------------------- filtros
 async def test_filtra_por_tipo_repetido_tarefa_e_projeto(db) -> None:
     m = await _mundo(db)
@@ -125,7 +99,7 @@ async def test_filtra_por_tipo_repetido_tarefa_e_projeto(db) -> None:
     await _aviso(db, m, tipo="TASK_ASSIGNED", task=m["relatorio"], minuto=4)
     await db.commit()
 
-    async with _cliente(db, m["ctx"]) as c:
+    async with cliente(db, m["ctx"]) as c:
         por_tipo = await c.get(
             "/api/v1/notifications", params=[("type", "TASK_COMMENTED"), ("type", "TASK_MENTIONED")]
         )
@@ -152,7 +126,7 @@ async def test_marcar_estas_marca_so_o_filtro(db) -> None:
     await _aviso(db, m, tipo="TASK_MENTIONED", task=m["relatorio"], minuto=3)
     await db.commit()
 
-    async with _cliente(db, m["ctx"]) as c:
+    async with cliente(db, m["ctx"]) as c:
         r = await c.post(
             "/api/v1/notifications/read-all", params={"task_id": str(m["relatorio"].id)}
         )
@@ -168,7 +142,7 @@ async def test_marcar_todas_sem_filtro_continua_marcando_tudo(db) -> None:
     await _aviso(db, m, tipo="ACCESS_LOST", task=None, minuto=2)
     await db.commit()
 
-    async with _cliente(db, m["ctx"]) as c:
+    async with cliente(db, m["ctx"]) as c:
         r = await c.post("/api/v1/notifications/read-all")
     assert r.json()["updated"] == 2
 
@@ -180,7 +154,7 @@ async def test_tarefa_sem_acesso_vem_gone_e_sem_titulo(db) -> None:
     await _aviso(db, m, tipo="TASK_COMMENTED", task=m["relatorio"], minuto=2)
     await db.commit()
 
-    async with _cliente(db, m["ctx"]) as c:
+    async with cliente(db, m["ctx"]) as c:
         itens = (await c.get("/api/v1/notifications")).json()["items"]
     por_tarefa = {n["task_id"]: n for n in itens}
 
@@ -202,7 +176,7 @@ async def test_excluida_vem_gone_e_so_o_aviso_de_exclusao_mostra_o_titulo(db) ->
     )
     await db.commit()
 
-    async with _cliente(db, m["ctx"]) as c:
+    async with cliente(db, m["ctx"]) as c:
         itens = (await c.get("/api/v1/notifications")).json()["items"]
     por_tipo = {n["type"]: n for n in itens}
 
@@ -216,7 +190,7 @@ async def test_aviso_sem_tarefa_vem_sem_task_access(db) -> None:
     m = await _mundo(db)
     await _aviso(db, m, tipo="ACCESS_LOST", task=None, minuto=1)
     await db.commit()
-    async with _cliente(db, m["ctx"]) as c:
+    async with cliente(db, m["ctx"]) as c:
         item = (await c.get("/api/v1/notifications")).json()["items"][0]
     assert item["task_access"] is None
 
@@ -227,7 +201,7 @@ async def test_sugestoes_ignoram_acento_e_caixa(db) -> None:
     await _aviso(db, m, tipo="TASK_COMMENTED", task=m["acai"], minuto=1)
     await db.commit()
 
-    async with _cliente(db, m["ctx"]) as c:
+    async with cliente(db, m["ctx"]) as c:
         tarefa = (await c.get("/api/v1/notifications/targets", params={"q": "ACAI"})).json()
         projeto = (
             await c.get("/api/v1/notifications/targets", params={"q": "matricula"})
@@ -247,7 +221,7 @@ async def test_sugestoes_so_do_que_tem_aviso_e_do_que_alcanca(db) -> None:
     await _aviso(db, m, tipo="TASK_COMMENTED", task=m["segredo"], minuto=1)
     await db.commit()
 
-    async with _cliente(db, m["ctx"]) as c:
+    async with cliente(db, m["ctx"]) as c:
         segredo = (await c.get("/api/v1/notifications/targets", params={"q": "segredo"})).json()
         relatorio = (
             await c.get("/api/v1/notifications/targets", params={"q": "relat"})

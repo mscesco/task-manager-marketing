@@ -11,22 +11,15 @@ Monta uma tarefa com vida (editar, mover de coluna, designar) e confere:
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
-
 import pytest
-from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 
-from app.core.deps import get_db_session, get_uow
-from app.core.tenant import Membership, TenantContext, set_tenant
+from app.core.tenant import Membership, TenantContext
 from app.db.models import BoardColumn
-from app.db.unit_of_work import UnitOfWork
-from app.main import create_app
-from app.modules.auth.api.dependencies import get_tenant_context
 from app.modules.auth.domain.permissions import permissions_for_actor
 from app.modules.tasks.application.board_service import BoardService
 from tests.integration import factories as f
-from tests.integration.conftest import acting_as, mship, node
+from tests.integration.conftest import acting_as, cliente, mship, node
 
 pytestmark = pytest.mark.integration
 
@@ -41,26 +34,6 @@ def _ctx(ws, user, team, papel, arvore):
         memberships=vinculos,
         team_tree=arvore,
     )
-
-
-def _cliente(db, ctx) -> AsyncClient:
-    app = create_app()
-
-    async def _session() -> AsyncIterator:
-        yield db
-
-    async def _uow() -> AsyncIterator[UnitOfWork]:
-        async with UnitOfWork(db) as uow:
-            yield uow
-
-    async def _tenant() -> TenantContext:
-        set_tenant(ctx)
-        return ctx
-
-    app.dependency_overrides[get_db_session] = _session
-    app.dependency_overrides[get_uow] = _uow
-    app.dependency_overrides[get_tenant_context] = _tenant
-    return AsyncClient(transport=ASGITransport(app=app), base_url="http://t")
 
 
 async def _mundo(db):
@@ -139,7 +112,7 @@ async def _tarefa_com_vida(cli, m) -> str:
 
 async def test_historico_conta_a_vida_da_tarefa(db) -> None:
     m = await _mundo(db)
-    async with _cliente(db, m["ctx_sup"]) as cli:
+    async with cliente(db, m["ctx_sup"]) as cli:
         tid = await _tarefa_com_vida(cli, m)
         r = await cli.get(f"/api/v1/tasks/{tid}/history")
 
@@ -160,7 +133,7 @@ async def test_historico_conta_a_vida_da_tarefa(db) -> None:
 async def test_mais_novo_primeiro(db) -> None:
     """Ninguem abre o historico para ler o comeco."""
     m = await _mundo(db)
-    async with _cliente(db, m["ctx_sup"]) as cli:
+    async with cliente(db, m["ctx_sup"]) as cli:
         tid = await _tarefa_com_vida(cli, m)
         r = await cli.get(f"/api/v1/tasks/{tid}/history")
 
@@ -186,7 +159,7 @@ async def test_paginacao_nao_repete_nem_pula(db) -> None:
     e constante na transacao. Sem desempate por `id`, a pagina 2 devolveria
     linha que a 1 ja mostrou."""
     m = await _mundo(db)
-    async with _cliente(db, m["ctx_sup"]) as cli:
+    async with cliente(db, m["ctx_sup"]) as cli:
         tid = await _tarefa_com_vida(cli, m)
         p1 = await cli.get(f"/api/v1/tasks/{tid}/history?page=1&size=2")
         p2 = await cli.get(f"/api/v1/tasks/{tid}/history?page=2&size=2")
@@ -201,7 +174,7 @@ async def test_paginacao_nao_repete_nem_pula(db) -> None:
 async def test_comentario_nao_entra_no_historico(db) -> None:
     """Comentario e conversa, nao auditoria."""
     m = await _mundo(db)
-    async with _cliente(db, m["ctx_sup"]) as cli:
+    async with cliente(db, m["ctx_sup"]) as cli:
         tid = await _tarefa_com_vida(cli, m)
         antes = (await cli.get(f"/api/v1/tasks/{tid}/history")).json()["total"]
         r = await cli.post(f"/api/v1/tasks/{tid}/comments", json={"content": "oi"})
@@ -214,7 +187,7 @@ async def test_comentario_nao_entra_no_historico(db) -> None:
 async def test_o_total_e_o_da_tarefa(db) -> None:
     """Duas tarefas na mesma tela: o historico de uma nao conta a outra."""
     m = await _mundo(db)
-    async with _cliente(db, m["ctx_sup"]) as cli:
+    async with cliente(db, m["ctx_sup"]) as cli:
         tid = await _tarefa_com_vida(cli, m)
         outra = await _tarefa_com_vida(cli, m)
         r1 = await cli.get(f"/api/v1/tasks/{tid}/history")
@@ -231,10 +204,10 @@ async def test_quem_nao_ve_a_tarefa_nao_le_o_historico(db) -> None:
     tarefa -- titulo velho, quem foi designado, quando mudou de coluna -- para
     quem toma 404 na tarefa em si."""
     m = await _mundo(db)
-    async with _cliente(db, m["ctx_sup"]) as cli:
+    async with cliente(db, m["ctx_sup"]) as cli:
         tid = await _tarefa_com_vida(cli, m)
 
-    async with _cliente(db, m["ctx_fora"]) as cli:
+    async with cliente(db, m["ctx_fora"]) as cli:
         a_tarefa = await cli.get(f"/api/v1/tasks/{tid}")
         o_historico = await cli.get(f"/api/v1/tasks/{tid}/history")
 
@@ -247,10 +220,10 @@ async def test_quem_ve_a_tarefa_le_sem_permissao_nenhuma(db) -> None:
     """O outro lado da mesma regra: o OPERATOR do SEO nao tem verbo de
     administracao, e le o historico porque ENXERGA a tarefa."""
     m = await _mundo(db)
-    async with _cliente(db, m["ctx_sup"]) as cli:
+    async with cliente(db, m["ctx_sup"]) as cli:
         tid = await _tarefa_com_vida(cli, m)
 
-    async with _cliente(db, m["ctx_colega"]) as cli:
+    async with cliente(db, m["ctx_colega"]) as cli:
         r = await cli.get(f"/api/v1/tasks/{tid}/history")
 
     assert r.status_code == 200, r.text

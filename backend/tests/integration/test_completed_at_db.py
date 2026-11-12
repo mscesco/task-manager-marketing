@@ -9,37 +9,13 @@ endpoint real, unico caminho onde o erro aparece.
 from __future__ import annotations
 
 import pytest
-from httpx import ASGITransport, AsyncClient
 
-from app.core.deps import get_db_session, get_uow
-from app.core.tenant import Membership, TeamNode, TenantContext, set_tenant
-from app.db.unit_of_work import UnitOfWork
-from app.main import create_app
-from app.modules.auth.api.dependencies import get_tenant_context
+from app.core.tenant import Membership, TeamNode, TenantContext
 from app.modules.auth.domain.permissions import permissions_for_roles
 from tests.integration import factories as f
+from tests.integration.conftest import cliente
 
 pytestmark = pytest.mark.integration
-
-
-def _client(db, ctx: TenantContext) -> AsyncClient:
-    app = create_app()
-
-    async def _session():
-        yield db
-
-    async def _uow():
-        async with UnitOfWork(db) as uow:
-            yield uow
-
-    async def _ctx():
-        set_tenant(ctx)
-        return ctx
-
-    app.dependency_overrides[get_db_session] = _session
-    app.dependency_overrides[get_uow] = _uow
-    app.dependency_overrides[get_tenant_context] = _ctx
-    return AsyncClient(transport=ASGITransport(app=app), base_url="http://t")
 
 
 async def _world(db):
@@ -64,7 +40,7 @@ async def test_patch_status_para_completed_200_e_completed_at_setado(db) -> None
     ws, r, a, manager, ctx = await _world(db)
     task = await f.make_task(db, workspace_id=ws, created_by=manager, team_id=a, project_id=None)
     await db.commit()
-    async with _client(db, ctx) as c:
+    async with cliente(db, ctx) as c:
         resp = await c.patch(f"/api/v1/tasks/{task.id}", json={"status": "COMPLETED"})
     assert resp.status_code == 200
     assert resp.json()["completed_at"] is not None
@@ -74,7 +50,7 @@ async def test_patch_status_saindo_de_completed_zera_completed_at(db) -> None:
     ws, r, a, manager, ctx = await _world(db)
     task = await f.make_task(db, workspace_id=ws, created_by=manager, team_id=a, project_id=None)
     await db.commit()
-    async with _client(db, ctx) as c:
+    async with cliente(db, ctx) as c:
         r1 = await c.patch(f"/api/v1/tasks/{task.id}", json={"status": "COMPLETED"})
         r2 = await c.patch(f"/api/v1/tasks/{task.id}", json={"status": "IN_PROGRESS"})
     assert r1.status_code == 200
@@ -85,7 +61,7 @@ async def test_patch_status_saindo_de_completed_zera_completed_at(db) -> None:
 async def test_post_task_ja_completed_201_e_completed_at_setado(db) -> None:
     ws, r, a, manager, ctx = await _world(db)
     await db.commit()
-    async with _client(db, ctx) as c:
+    async with cliente(db, ctx) as c:
         resp = await c.post(
             "/api/v1/tasks",
             json={

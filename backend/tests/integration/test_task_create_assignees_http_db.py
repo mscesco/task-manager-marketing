@@ -7,17 +7,12 @@ task nasceria sem responsavel e sem erro), o que o teste de service nao ve.
 from __future__ import annotations
 
 import pytest
-from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
 
-from app.core.deps import get_db_session, get_uow
-from app.core.tenant import Membership, TenantContext, set_tenant
-from app.db.unit_of_work import UnitOfWork
-from app.main import create_app
-from app.modules.auth.api.dependencies import get_tenant_context
+from app.core.tenant import Membership, TenantContext
 from app.modules.auth.domain.permissions import permissions_for_roles
 from tests.integration import factories as f
-from tests.integration.conftest import node
+from tests.integration.conftest import cliente, node
 
 pytestmark = pytest.mark.integration
 
@@ -51,27 +46,6 @@ async def _setup(db):
     return ws, a, b, manager, op_a, op_b, proj, ctx
 
 
-def _client(db, ctx):
-    """App real com a sessao/UoW/tenant do teste injetados."""
-    app = create_app()
-
-    async def _session():
-        yield db
-
-    async def _uow():
-        async with UnitOfWork(db) as uow:
-            yield uow
-
-    async def _ctx():
-        set_tenant(ctx)
-        return ctx
-
-    app.dependency_overrides[get_db_session] = _session
-    app.dependency_overrides[get_uow] = _uow
-    app.dependency_overrides[get_tenant_context] = _ctx
-    return AsyncClient(transport=ASGITransport(app=app), base_url="http://t")
-
-
 async def _count_tasks(db, ws):
     return (
         await db.execute(
@@ -85,7 +59,7 @@ async def test_http_cria_com_assignee_valido_anexa(db) -> None:
     responsavel. O front usa o corpo do POST para inserir o card."""
     ws, a, b, manager, op_a, op_b, proj, ctx = await _setup(db)
     await db.commit()
-    async with _client(db, ctx) as c:
+    async with cliente(db, ctx) as c:
         resp = await c.post(
             "/api/v1/tasks",
             json={
@@ -107,7 +81,7 @@ async def test_http_post_sem_responsavel_e_422(db) -> None:
     """Criar sem responsavel e recusado na API, nao so no modal."""
     ws, a, b, manager, op_a, op_b, proj, ctx = await _setup(db)
     await db.commit()
-    async with _client(db, ctx) as c:
+    async with cliente(db, ctx) as c:
         resp = await c.post(
             "/api/v1/tasks",
             json={"title": "Sem ninguem", "project_id": str(proj), "team_id": str(a)},
@@ -121,7 +95,7 @@ async def test_http_patch_NAO_traz_assignee_ids(db) -> None:
     zeraria o selo de responsavel ao editar."""
     ws, a, b, manager, op_a, op_b, proj, ctx = await _setup(db)
     await db.commit()
-    async with _client(db, ctx) as c:
+    async with cliente(db, ctx) as c:
         criada = await c.post(
             "/api/v1/tasks",
             json={
@@ -148,7 +122,7 @@ async def test_http_cria_com_assignee_invalido_422_nomeia_e_nao_persiste(db) -> 
     e NENHUMA task persiste (atomicidade ponta-a-ponta pela requisicao)."""
     ws, a, b, manager, op_a, op_b, proj, ctx = await _setup(db)
     await db.commit()
-    async with _client(db, ctx) as c:
+    async with cliente(db, ctx) as c:
         resp = await c.post(
             "/api/v1/tasks",
             json={

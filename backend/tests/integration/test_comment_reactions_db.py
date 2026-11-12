@@ -16,15 +16,10 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from httpx import ASGITransport, AsyncClient
 from sqlalchemy import func, select, update
 
-from app.core.deps import get_db_session, get_uow
-from app.core.tenant import Membership, TenantContext, set_tenant
+from app.core.tenant import Membership, TenantContext
 from app.db.models import Comment, CommentReaction
-from app.db.unit_of_work import UnitOfWork
-from app.main import create_app
-from app.modules.auth.api.dependencies import get_tenant_context
 from app.modules.auth.domain.permissions import permissions_for_actor
 from app.modules.tasks.application.comment_service import CommentService
 from app.modules.tasks.application.task_service import TaskService
@@ -34,7 +29,7 @@ from app.modules.tasks.infrastructure.comment_reaction_repository import (
 from app.shared.exceptions.base import EntityNotFoundError, ValidationError
 from app.shared.pagination import PageParams
 from tests.integration import factories as f
-from tests.integration.conftest import acting_as, node
+from tests.integration.conftest import acting_as, cliente, node
 
 pytestmark = pytest.mark.integration
 
@@ -345,27 +340,6 @@ async def test_editar_o_comentario_mantem_as_reacoes(db) -> None:
 # ------------------------------------------------------------- 6 (a rota)
 
 
-def _client(db, ctx):
-    """App real com sessao/UoW/tenant do teste injetados."""
-    app = create_app()
-
-    async def _session():
-        yield db
-
-    async def _uow():
-        async with UnitOfWork(db) as uow:
-            yield uow
-
-    async def _ctx():
-        set_tenant(ctx)
-        return ctx
-
-    app.dependency_overrides[get_db_session] = _session
-    app.dependency_overrides[get_uow] = _uow
-    app.dependency_overrides[get_tenant_context] = _ctx
-    return AsyncClient(transport=ASGITransport(app=app), base_url="http://t")
-
-
 def _contexto(m: dict, quem: str) -> TenantContext:
     """Como `get_tenant_context` monta -- permissoes COM escopo."""
     user_id, vinculos = m["pessoas"][quem]
@@ -386,7 +360,7 @@ def _url(m: dict) -> str:
 async def test_http_por_e_tirar_devolvem_a_fileira(db) -> None:
     m = await _mundo(db)
     await db.commit()
-    async with _client(db, _contexto(m, "ana")) as cli:
+    async with cliente(db, _contexto(m, "ana")) as cli:
         pos = await cli.put(_url(m), json={"emoji": "❤"})
         tirou = await cli.delete(_url(m))
         tirou_de_novo = await cli.delete(_url(m))
@@ -404,9 +378,9 @@ async def test_http_por_e_tirar_devolvem_a_fileira(db) -> None:
 async def test_http_422_e_404(db) -> None:
     m = await _mundo(db)
     await db.commit()
-    async with _client(db, _contexto(m, "ana")) as cli:
+    async with cliente(db, _contexto(m, "ana")) as cli:
         lixo = await cli.put(_url(m), json={"emoji": "oi"})
-    async with _client(db, _contexto(m, "forasteiro")) as cli:
+    async with cliente(db, _contexto(m, "forasteiro")) as cli:
         de_fora = await cli.put(_url(m), json={"emoji": "👍"})
 
     assert lixo.status_code == 422, lixo.text
@@ -417,7 +391,7 @@ async def test_http_a_listagem_traz_reactions(db) -> None:
     """O campo novo existe no contrato da listagem, e nao so no PUT."""
     m = await _mundo(db)
     await db.commit()
-    async with _client(db, _contexto(m, "ana")) as cli:
+    async with cliente(db, _contexto(m, "ana")) as cli:
         await cli.put(_url(m), json={"emoji": "👍"})
         lista = await cli.get(f"/api/v1/tasks/{m['task_id']}/comments")
 

@@ -9,19 +9,14 @@ um com o seu Quadro geral; o Design tem um quadro avulso.
 from __future__ import annotations
 
 import uuid
-from collections.abc import AsyncIterator
 
 import pytest
-from httpx import ASGITransport, AsyncClient
+from httpx import AsyncClient
 from sqlalchemy import event, select, text
 
-from app.core.deps import get_db_session, get_uow
-from app.core.tenant import Membership, TenantContext, set_tenant
+from app.core.tenant import Membership, TenantContext
 from app.db.models import Board, Task, TaskHistory
 from app.db.models.enums import TaskStatus
-from app.db.unit_of_work import UnitOfWork
-from app.main import create_app
-from app.modules.auth.api.dependencies import get_tenant_context
 from app.modules.auth.domain.permissions import permissions_for_actor
 from app.modules.tasks.application.task_service import (
     CreateTaskCommand,
@@ -31,7 +26,7 @@ from app.modules.tasks.application.task_service import (
 from app.modules.tasks.domain.board_defaults import COLUNAS_BASE
 from app.shared.exceptions.base import AuthorizationError, ValidationError
 from tests.integration import factories as f
-from tests.integration.conftest import acting_as, mship, node
+from tests.integration.conftest import acting_as, cliente, mship, node
 
 pytestmark = pytest.mark.integration
 
@@ -417,7 +412,6 @@ async def test_lente_que_nao_e_do_quadro_avulso_e_recusada(db, m) -> None:
 
 def _client(db, m, *, como: uuid.UUID | None = None) -> AsyncClient:
     """Como o `ator` (ADMIN), ou como a `gi` (OPERATOR do Design)."""
-    app = create_app()
     if como is None:
         ctx = TenantContext(
             workspace_id=m["ws"], user_id=m["ator"], roles=frozenset({"ADMIN"}),
@@ -436,21 +430,7 @@ def _client(db, m, *, como: uuid.UUID | None = None) -> AsyncClient:
             memberships=vinculos, team_tree=m["ctx"]["team_tree"],
         )
 
-    async def _session() -> AsyncIterator:
-        yield db
-
-    async def _uow() -> AsyncIterator[UnitOfWork]:
-        async with UnitOfWork(db) as uow:
-            yield uow
-
-    async def _ctx() -> TenantContext:
-        set_tenant(ctx)
-        return ctx
-
-    app.dependency_overrides[get_db_session] = _session
-    app.dependency_overrides[get_uow] = _uow
-    app.dependency_overrides[get_tenant_context] = _ctx
-    return AsyncClient(transport=ASGITransport(app=app), base_url="http://t")
+    return cliente(db, ctx)
 
 
 async def test_rota_previa_e_depois_move(db, m) -> None:

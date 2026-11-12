@@ -13,16 +13,11 @@ from __future__ import annotations
 import uuid
 
 import pytest
-from httpx import ASGITransport, AsyncClient
 
-from app.core.deps import get_db_session, get_uow
-from app.core.tenant import TenantContext, set_tenant
-from app.db.unit_of_work import UnitOfWork
-from app.main import create_app
-from app.modules.auth.api.dependencies import get_tenant_context
+from app.core.tenant import TenantContext
 from app.modules.auth.domain.permissions import permissions_for_actor
 from tests.integration import factories as f
-from tests.integration.conftest import node
+from tests.integration.conftest import cliente, node
 
 pytestmark = pytest.mark.integration
 
@@ -46,30 +41,10 @@ async def _mundo(db):
     return ws, raiz, ctx
 
 
-def _client(db, ctx):
-    app = create_app()
-
-    async def _session():
-        yield db
-
-    async def _uow():
-        async with UnitOfWork(db) as uow:
-            yield uow
-
-    async def _tenant():
-        set_tenant(ctx)
-        return ctx
-
-    app.dependency_overrides[get_db_session] = _session
-    app.dependency_overrides[get_uow] = _uow
-    app.dependency_overrides[get_tenant_context] = _tenant
-    return AsyncClient(transport=ASGITransport(app=app), base_url="http://t")
-
-
 async def test_listar_formularios_NAO_cai_na_rota_de_solicitacao(db) -> None:
     """⚠️ O TESTE QUE FALTAVA. Com a ordem invertida isto e 422."""
     ws, raiz, ctx = await _mundo(db)
-    async with _client(db, ctx) as cli:
+    async with cliente(db, ctx) as cli:
         r = await cli.get("/api/v1/solicitacoes/formularios")
 
     assert r.status_code != 422, (
@@ -84,7 +59,7 @@ async def test_listar_formularios_NAO_cai_na_rota_de_solicitacao(db) -> None:
 async def test_criar_formulario_responde_no_POST_certo(db) -> None:
     """O POST tem o mesmo endereco, e o mesmo risco de colisao."""
     ws, raiz, ctx = await _mundo(db)
-    async with _client(db, ctx) as cli:
+    async with cliente(db, ctx) as cli:
         r = await cli.post(
             "/api/v1/solicitacoes/formularios",
             json={
@@ -110,7 +85,7 @@ async def test_a_rota_de_UMA_solicitacao_continua_funcionando(db) -> None:
     existe), e o que nao pode e virar 422 ou bater no handler errado.
     """
     ws, raiz, ctx = await _mundo(db)
-    async with _client(db, ctx) as cli:
+    async with cliente(db, ctx) as cli:
         r = await cli.get(f"/api/v1/solicitacoes/{uuid.uuid4()}")
 
     assert r.status_code == 404, r.text
@@ -128,7 +103,7 @@ async def test_as_rotas_de_DOIS_segmentos_da_solicitacao_tambem_chegam(db) -> No
     teste e o que garante que continua assim.
     """
     ws, raiz, ctx = await _mundo(db)
-    async with _client(db, ctx) as cli:
+    async with cliente(db, ctx) as cli:
         r = await cli.post(f"/api/v1/solicitacoes/{uuid.uuid4()}/aprovar", json={})
 
     assert r.status_code != 403, "uma rota de formulario engoliu /{id}/aprovar"
@@ -138,7 +113,7 @@ async def test_as_rotas_de_DOIS_segmentos_da_solicitacao_tambem_chegam(db) -> No
 async def test_a_fila_continua_respondendo_na_raiz(db) -> None:
     """O outro lado: `GET /solicitacoes` (sem nada depois) e a fila."""
     ws, raiz, ctx = await _mundo(db)
-    async with _client(db, ctx) as cli:
+    async with cliente(db, ctx) as cli:
         r = await cli.get("/api/v1/solicitacoes")
 
     assert r.status_code == 200, r.text

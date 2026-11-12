@@ -29,17 +29,15 @@ import uuid
 from dataclasses import dataclass
 
 import pytest
-from httpx import ASGITransport, AsyncClient
+import pytest_asyncio
+from httpx import AsyncClient
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
-from app.core.deps import get_db_session, get_uow
-from app.core.tenant import Membership, TenantContext, set_tenant
-from app.db.models import Solicitation, User
+from app.core.tenant import Membership, TenantContext
+from app.db.models import BaseTable, Solicitation, User
 from app.db.models.boards import Board, BoardColumn
 from app.db.models.enums import TaskStatus
-from app.db.unit_of_work import UnitOfWork
-from app.main import create_app
-from app.modules.auth.api.dependencies import get_tenant_context
 from app.modules.auth.domain.permissions import permissions_for_actor
 from app.modules.solicitations.application.form_service import (
     SolicitationFormService,
@@ -47,7 +45,7 @@ from app.modules.solicitations.application.form_service import (
 from app.modules.tasks.application.comment_service import CommentService
 from app.modules.tasks.domain.board_defaults import COLUNAS_BASE
 from tests.integration import factories as f
-from tests.integration.conftest import acting_as, mship, node
+from tests.integration.conftest import acting_as, cliente, mship, node
 
 pytestmark = pytest.mark.integration
 
@@ -326,6 +324,57 @@ async def _mundo(db) -> dict:
     }
 
 
+# ---------------------------------------------------------------- o mundo
+
+# O mundo e montado uma vez por modulo, numa transacao externa; cada teste roda
+# num SAVEPOINT desfeito no fim, entao o que um teste grava o proximo nao ve.
+pytestmark = pytest.mark.asyncio(loop_scope="module")
+
+
+@pytest_asyncio.fixture(scope="module", loop_scope="module")
+async def _conexao_com_mundo(_bootstrapped_db_url: str):
+    eng = create_async_engine(_bootstrapped_db_url, future=True)
+    try:
+        async with eng.connect() as conn:
+            trans = await conn.begin()
+            try:
+                async with AsyncSession(
+                    bind=conn,
+                    join_transaction_mode="create_savepoint",
+                    expire_on_commit=False,
+                ) as s:
+                    m = await _mundo(s)
+                    # Fechar a sessao desfaz o savepoint aberto: o commit o fixa
+                    # (vira RELEASE SAVEPOINT; a transacao externa segue aberta).
+                    await s.commit()
+                yield conn, m
+            finally:
+                await trans.rollback()
+    finally:
+        await eng.dispose()
+
+
+@pytest.fixture
+def mundo(_conexao_com_mundo) -> dict:
+    return _conexao_com_mundo[1]
+
+
+@pytest_asyncio.fixture(loop_scope="module")
+async def db(_conexao_com_mundo):
+    conn, _ = _conexao_com_mundo
+    ponto = await conn.begin_nested()
+    try:
+        async with AsyncSession(
+            bind=conn,
+            join_transaction_mode="create_savepoint",
+            expire_on_commit=False,
+        ) as s:
+            yield s
+    finally:
+        if ponto.is_active:
+            await ponto.rollback()
+
+
 def _contexto(m: dict, papel: str) -> TenantContext:
     """O contexto do papel, montado como `get_tenant_context` monta."""
     user_id, memberships, org_role = m["atores"][papel]
@@ -344,24 +393,7 @@ def _contexto(m: dict, papel: str) -> TenantContext:
 
 
 def _client(db, ctx: TenantContext) -> AsyncClient:
-    """App real com sessao/UoW/tenant do teste injetados."""
-    app = create_app()
-
-    async def _session():
-        yield db
-
-    async def _uow():
-        async with UnitOfWork(db) as uow:
-            yield uow
-
-    async def _tenant():
-        set_tenant(ctx)
-        return ctx
-
-    app.dependency_overrides[get_db_session] = _session
-    app.dependency_overrides[get_uow] = _uow
-    app.dependency_overrides[get_tenant_context] = _tenant
-    return AsyncClient(transport=ASGITransport(app=app), base_url="http://t")
+    return cliente(db, ctx)
 
 
 # ---------------------------------------------------------------- a tabela
@@ -940,8 +972,8 @@ def _canal_ao_vivo_curto(monkeypatch):
 
 
 @pytest.mark.parametrize(("linha", "papel", "esperado"), list(_casos()))
-async def test_matriz(db, linha: Linha, papel: str, esperado) -> None:
-    m = await _mundo(db)
+async def test_matriz(db, mundo, linha: Linha, papel: str, esperado) -> None:
+    m = mundo
     url = _preencher(linha.caminho, m["ids"])
     corpo = _preencher(linha.corpo, m["ids"])
 
@@ -960,7 +992,7 @@ async def test_matriz(db, linha: Linha, papel: str, esperado) -> None:
     )
 
 
-def test_linha_com_meta_ainda_nao_chegou_la() -> None:
+async def test_linha_com_meta_ainda_nao_chegou_la() -> None:
     """Linha com `meta` igual ao `esperado` ja chegou no alvo: apague a marca."""
     for linha in MATRIZ:
         if not linha.meta:
@@ -1003,13 +1035,13 @@ CADEADOS_DE_ITEM = (
 
 
 @pytest.mark.parametrize("papel", PAPEIS)
-async def test_o_cadeado_do_item_concorda_com_a_matriz(db, papel: str) -> None:
+async def test_o_cadeado_do_item_concorda_com_a_matriz(db, mundo, papel: str) -> None:
     """O botao do item vem do servidor e bate com a matriz.
 
     Item fora da lente da 404 na leitura e nao tem botao; a linha diz OCULTO ou
     NEGADO.
     """
-    m = await _mundo(db)
+    m = mundo
     idx = PAPEIS.index(papel)
     async with _client(db, _contexto(m, papel)) as cli:
         for caminho, campo, (acao, alvo) in CADEADOS_DE_ITEM:
@@ -1045,9 +1077,9 @@ CONTAS = (
 
 
 @pytest.mark.parametrize("papel", PAPEIS)
-async def test_o_cadeado_da_conta_concorda_com_a_matriz(db, papel: str) -> None:
+async def test_o_cadeado_da_conta_concorda_com_a_matriz(db, mundo, papel: str) -> None:
     """Os botoes de resetar senha, desativar e reativar batem com a matriz."""
-    m = await _mundo(db)
+    m = mundo
     idx = PAPEIS.index(papel)
     async with _client(db, _contexto(m, papel)) as cli:
         for pessoa, senha, desativar, reativar in CONTAS:
@@ -1071,9 +1103,9 @@ async def test_o_cadeado_da_conta_concorda_com_a_matriz(db, papel: str) -> None:
 
 
 @pytest.mark.parametrize("papel", PAPEIS)
-async def test_o_cadeado_do_vinculo_de_gerente_concorda_com_a_matriz(db, papel: str) -> None:
+async def test_o_cadeado_do_vinculo_de_gerente_concorda_com_a_matriz(db, mundo, papel: str) -> None:
     """`can_edit_role` no vinculo de um gerente bate com "rebaixar outro MANAGER"."""
-    m = await _mundo(db)
+    m = mundo
     idx = PAPEIS.index(papel)
     esperado = _linha("membership.update", "rebaixar outro MANAGER do Marketing").esperado[idx]
     async with _client(db, _contexto(m, papel)) as cli:
@@ -1106,9 +1138,9 @@ FORMULARIOS = {
 
 
 @pytest.mark.parametrize("papel", PAPEIS)
-async def test_fila_e_formularios_pelo_verbo_e_nao_pela_lente(db, papel: str) -> None:
+async def test_fila_e_formularios_pelo_verbo_e_nao_pela_lente(db, mundo, papel: str) -> None:
     """Fila e formularios pelo verbo. A orfa so aparece para a organizacao."""
-    m = await _mundo(db)
+    m = mundo
     nome_do_id = {v: k for k, v in m["ids"].items()}
     async with _client(db, _contexto(m, papel)) as cli:
         fila = await cli.get(f"{T}/solicitacoes", params={"size": 50})
@@ -1144,8 +1176,8 @@ CRIA_PROJETO = {
 
 
 @pytest.mark.parametrize("papel", PAPEIS)
-async def test_listagem_de_times_diz_onde_cada_papel_cria_projeto(db, papel: str) -> None:
-    m = await _mundo(db)
+async def test_listagem_de_times_diz_onde_cada_papel_cria_projeto(db, mundo, papel: str) -> None:
+    m = mundo
     async with _client(db, _contexto(m, papel)) as cli:
         r = await cli.get(f"{T}/workspaces/current/teams")
     assert r.status_code == 200, r.text
@@ -1208,9 +1240,9 @@ LIXEIRA = {
 
 
 @pytest.mark.parametrize("papel", PAPEIS)
-async def test_lixeira_de_bases_pelo_verbo(db, papel: str) -> None:
+async def test_lixeira_de_bases_pelo_verbo(db, mundo, papel: str) -> None:
     """Quem pode criar base ve a lixeira; bate com `base.restore`."""
-    m = await _mundo(db)
+    m = mundo
     async with _client(db, _contexto(m, papel)) as cli:
         r = await cli.get(f"{T}/bases/trash")
     if LIXEIRA[papel] is None:
@@ -1226,8 +1258,8 @@ async def test_lixeira_de_bases_pelo_verbo(db, papel: str) -> None:
 
 
 @pytest.mark.parametrize("papel", PAPEIS)
-async def test_listagem_de_times_diz_onde_cada_papel_cria_base(db, papel: str) -> None:
-    m = await _mundo(db)
+async def test_listagem_de_times_diz_onde_cada_papel_cria_base(db, mundo, papel: str) -> None:
+    m = mundo
     async with _client(db, _contexto(m, papel)) as cli:
         r = await cli.get(f"{T}/workspaces/current/teams")
     assert r.status_code == 200, r.text
@@ -1241,8 +1273,8 @@ async def test_listagem_de_times_diz_onde_cada_papel_cria_base(db, papel: str) -
 
 
 @pytest.mark.parametrize("papel", PAPEIS)
-async def test_listagem_de_times_diz_onde_cada_papel_cria_formulario(db, papel: str) -> None:
-    m = await _mundo(db)
+async def test_listagem_de_times_diz_onde_cada_papel_cria_formulario(db, mundo, papel: str) -> None:
+    m = mundo
     async with _client(db, _contexto(m, papel)) as cli:
         r = await cli.get(f"{T}/workspaces/current/teams")
     assert r.status_code == 200, r.text
@@ -1257,9 +1289,9 @@ async def test_listagem_de_times_diz_onde_cada_papel_cria_formulario(db, papel: 
 
 
 @pytest.mark.parametrize("papel", PAPEIS)
-async def test_lista_de_bases_pelo_verbo(db, papel: str) -> None:
+async def test_lista_de_bases_pelo_verbo(db, mundo, papel: str) -> None:
     """A lista usa `teams_with("base.read")`, nao a lente; bate com `base.read`."""
-    m = await _mundo(db)
+    m = mundo
     async with _client(db, _contexto(m, papel)) as cli:
         r = await cli.get(f"{T}/bases")
     assert r.status_code == 200, r.text
@@ -1294,9 +1326,9 @@ APAGA = {
 
 
 @pytest.mark.parametrize("papel", PAPEIS)
-async def test_listagem_de_times_diz_o_que_cada_papel_apaga(db, papel: str) -> None:
+async def test_listagem_de_times_diz_o_que_cada_papel_apaga(db, mundo, papel: str) -> None:
     """`can_delete` de `GET /teams` bate com as linhas `subteam.delete`."""
-    m = await _mundo(db)
+    m = mundo
     async with _client(db, _contexto(m, papel)) as cli:
         r = await cli.get(f"{T}/workspaces/current/teams")
     assert r.status_code == 200, r.text
@@ -1312,9 +1344,9 @@ async def test_listagem_de_times_diz_o_que_cada_papel_apaga(db, papel: str) -> N
 
 
 @pytest.mark.parametrize("papel", PAPEIS)
-async def test_listagem_de_times_diz_o_que_cada_papel_edita(db, papel: str) -> None:
+async def test_listagem_de_times_diz_o_que_cada_papel_edita(db, mundo, papel: str) -> None:
     """`can_update` de `GET /teams` bate com as linhas `subteam.update`."""
-    m = await _mundo(db)
+    m = mundo
     async with _client(db, _contexto(m, papel)) as cli:
         r = await cli.get(f"{T}/workspaces/current/teams")
     assert r.status_code == 200, r.text
@@ -1324,3 +1356,16 @@ async def test_listagem_de_times_diz_o_que_cada_papel_edita(db, papel: str) -> N
         nome_do_id[item["id"]] for item in r.json()["items"] if item["can_update"]
     }
     assert editaveis == EDITA[papel], f"{papel} edita {editaveis}"
+
+
+# O mundo e compartilhado: o que um teste grava nao pode chegar no seguinte.
+# Os dois rodam nesta ordem (pytest segue a ordem do arquivo).
+async def test_isolamento_um_teste_apaga_a_base(db, mundo) -> None:
+    base = await db.get(BaseTable, uuid.UUID(mundo["ids"]["base_mkt"]))
+    await db.delete(base)
+    await db.commit()
+    assert await db.get(BaseTable, base.id) is None
+
+
+async def test_isolamento_o_seguinte_ainda_ve_a_base(db, mundo) -> None:
+    assert await db.get(BaseTable, uuid.UUID(mundo["ids"]["base_mkt"])) is not None

@@ -7,22 +7,17 @@ em `/api/v1/auth/login` de verdade.
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
-
 import pytest
-from httpx import ASGITransport, AsyncClient
 
-from app.core.deps import get_db_session, get_uow
 from app.core.rate_limit import (
     account_key,
     account_login_limiter,
     change_password_limiter,
 )
 from app.db.models import User, Workspace
-from app.db.unit_of_work import UnitOfWork
-from app.main import create_app
 from app.modules.auth.infrastructure.security import hash_password
 from tests.integration import factories as f
+from tests.integration.conftest import cliente
 
 pytestmark = pytest.mark.integration
 
@@ -47,21 +42,6 @@ def _baldes_limpos():
     change_password_limiter._max = teto_real
 
 
-def _client(db) -> AsyncClient:
-    app = create_app()
-
-    async def _session() -> AsyncIterator:
-        yield db
-
-    async def _uow() -> AsyncIterator[UnitOfWork]:
-        async with UnitOfWork(db) as uow:
-            yield uow
-
-    app.dependency_overrides[get_db_session] = _session
-    app.dependency_overrides[get_uow] = _uow
-    return AsyncClient(transport=ASGITransport(app=app), base_url="http://t")
-
-
 async def _pessoa(db):
     ws_id = await f.make_workspace(db)
     ws = await db.get(Workspace, ws_id)
@@ -83,7 +63,7 @@ def _corpo(ws: Workspace, email: str, senha: str) -> dict:
 async def test_bloqueia_apos_o_teto_de_falhas(db) -> None:
     ws, user = await _pessoa(db)
     await db.commit()
-    async with _client(db) as c:
+    async with cliente(db) as c:
         for _ in range(_TETO_DE_TESTE):
             r = await c.post(
                 "/api/v1/auth/login", json=_corpo(ws, user.email, _ERRADA)
@@ -101,7 +81,7 @@ async def test_acerto_zera_o_balde(db) -> None:
     """Quem erra, acerta e erra de novo nao acumula."""
     ws, user = await _pessoa(db)
     await db.commit()
-    async with _client(db) as c:
+    async with cliente(db) as c:
         for _ in range(_TETO_DE_TESTE - 1):
             await c.post("/api/v1/auth/login", json=_corpo(ws, user.email, _ERRADA))
 
@@ -130,7 +110,7 @@ async def test_email_inexistente_responde_igual_e_tambem_enche_o_balde(db) -> No
     """
     ws, user = await _pessoa(db)
     await db.commit()
-    async with _client(db) as c:
+    async with cliente(db) as c:
         real = await c.post("/api/v1/auth/login", json=_corpo(ws, user.email, _ERRADA))
         fake = await c.post(
             "/api/v1/auth/login", json=_corpo(ws, "ninguem@aqui.com", _ERRADA)
@@ -172,7 +152,7 @@ async def test_bloqueio_de_uma_conta_nao_afeta_outra(db) -> None:
     outro.password_hash = hash_password(_SENHA)
     await db.commit()
 
-    async with _client(db) as c:
+    async with cliente(db) as c:
         for _ in range(_TETO_DE_TESTE):
             await c.post("/api/v1/auth/login", json=_corpo(ws, user.email, _ERRADA))
 
@@ -188,7 +168,7 @@ async def test_caixa_do_email_nao_burla_o_freio(db) -> None:
     """
     ws, user = await _pessoa(db)
     await db.commit()
-    async with _client(db) as c:
+    async with cliente(db) as c:
         for _ in range(_TETO_DE_TESTE):
             await c.post(
                 "/api/v1/auth/login",
@@ -206,7 +186,7 @@ async def test_login_NAO_tem_freio_por_ip(db) -> None:
     conta."""
     ws, _user = await _pessoa(db)
     await db.commit()
-    async with _client(db) as c:
+    async with cliente(db) as c:
         # 11: acima dos 10/min que um freio por IP usaria.
         for i in range(11):
             r = await c.post(
@@ -223,7 +203,7 @@ async def test_login_nao_diferencia_maiusculas_no_email(db) -> None:
     `Fulano@...` com a senha certa entra."""
     ws, user = await _pessoa(db)
     await db.commit()
-    async with _client(db) as c:
+    async with cliente(db) as c:
         r = await c.post("/api/v1/auth/login", json=_corpo(ws, user.email.upper(), _SENHA))
     assert r.status_code == 200
 
@@ -233,7 +213,7 @@ async def test_refresh_nao_tem_freio_por_ip(db) -> None:
     sessao valida."""
     ws, user = await _pessoa(db)
     await db.commit()
-    async with _client(db) as c:
+    async with cliente(db) as c:
         par = (await c.post("/api/v1/auth/login", json=_corpo(ws, user.email, _SENHA))).json()
         for _ in range(15):
             r = await c.post(
@@ -251,7 +231,7 @@ async def test_troca_de_senha_freia_a_senha_atual_errada(db) -> None:
     await db.commit()
     # Lidos ANTES: cada recusa desfaz a transacao e expira os objetos.
     email, slug = user.email, ws.slug
-    async with _client(db) as c:
+    async with cliente(db) as c:
         par = (await c.post("/api/v1/auth/login", json=_corpo(ws, email, _SENHA))).json()
         auth = {"Authorization": f"Bearer {par['access_token']}"}
         nova = {"new_password": "outra-senha-boa-1"}
