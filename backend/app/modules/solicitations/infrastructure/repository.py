@@ -32,20 +32,19 @@ class SolicitationRepository(BaseRepository[Solicitation]):
         """Tenant + recorte pelo time do formulario. Toda leitura passa por aqui.
 
         A solicitacao nao tem time: ele vem de `form_id -> solicitation_form.team_id`.
-        O JOIN e LEFT para nao sumir com a orfa (sem formulario), e incondicional
-        porque `_recorte_de_time` tambem precisa de `SolicitationForm` no FROM.
+        O JOIN e incondicional porque `_recorte_de_time` tambem precisa de
+        `SolicitationForm` no FROM.
         """
         stmt = (
             super()
             ._base_select(include_deleted=include_deleted)
-            .outerjoin(
+            .join(
                 SolicitationForm,
                 (SolicitationForm.id == Solicitation.form_id)
                 & (SolicitationForm.workspace_id == Solicitation.workspace_id),
             )
         )
-        # Recorta pelo verbo (`solicitation.read`), nao pela lente. A orfa so
-        # aparece para quem le em todos os times (`None`): o papel de organizacao.
+        # Recorta pelo verbo (`solicitation.read`), nao pela lente.
         leitura = require_tenant().teams_with_permission("solicitation.read")
         if leitura is None:  # organizacao (ou contexto legado com o verbo)
             return stmt
@@ -57,16 +56,13 @@ class SolicitationRepository(BaseRepository[Solicitation]):
         """O recorte da tela: a fila do time olhado e dos seus descendentes.
 
         Diferente da permissao do `_base_select` ("posso ver?"). `None` = sem
-        recorte. Para papel de organizacao a orfa aparece em toda fila de time.
+        recorte.
         """
         if team_id is None:
             return []
         tenant = require_tenant()
         alvo = {team_id} | team_scope.descendants(team_id, tenant.team_tree)
-        do_time = SolicitationForm.team_id.in_(alvo)
-        if tenant.org_role is not None:
-            return [or_(do_time, Solicitation.form_id.is_(None))]
-        return [do_time]
+        return [SolicitationForm.team_id.in_(alvo)]
 
     async def list_batches(
         self,

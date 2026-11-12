@@ -286,8 +286,7 @@ def _envio(slug_ws: str, *, categoria: str, form_id) -> CreatePublicCommand:
 
 
 async def test_envio_COM_form_id_grava_o_vinculo(db) -> None:
-    """Sem o vinculo a solicitacao nasce orfa -- continua na fila (o JOIN e
-    LEFT), mas visivel ao workspace inteiro em vez do time dono."""
+    """O vinculo decide o time dono do pedido."""
     ws, raiz, user, ctx = await _mundo(db)
     form, secao, _ = await _form_publicado(db, ctx, raiz)
     slug_ws = await _slug_do_ws(db, ws)

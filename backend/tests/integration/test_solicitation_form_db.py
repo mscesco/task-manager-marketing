@@ -1,7 +1,6 @@
 """Formulario de solicitacao como dado, e a fila recortada pelo time do formulario.
 
-Pontos sensiveis: a solicitacao sem formulario (`form_id` NULL) tem de seguir na
-fila (o JOIN e LEFT), e `None` em `visible_team_ids` significa "sem filtro", nao
+Ponto sensivel: `None` em `visible_team_ids` significa "sem filtro", nao
 conjunto vazio.
 """
 
@@ -10,6 +9,7 @@ from __future__ import annotations
 import uuid
 
 import pytest
+from sqlalchemy.exc import IntegrityError
 
 from app.db.models import Solicitation
 from app.modules.solicitations.application.form_service import (
@@ -53,7 +53,7 @@ def _ctx(ws, user, arvore, *membros, org_role=None):
     )
 
 
-async def _solicitacao(db, ws, *, form_id=None, category="arte"):
+async def _solicitacao(db, ws, *, form_id, category="arte"):
     """Solicitacao crua no banco."""
     s = Solicitation(
         workspace_id=ws,
@@ -237,29 +237,9 @@ async def test_fila_mostra_so_o_time_do_FORMULARIO(db) -> None:
     assert [s.form_id for s in linhas] == [f_mkt.id]
 
 
-async def test_solicitacao_SEM_formulario_continua_na_fila_da_ORGANIZACAO(db) -> None:
-    """Solicitacao sem formulario continua na fila, mas so para quem administra a
-    organizacao. O JOIN e LEFT: interno, ela sumiria em silencio.
-    """
-    ws, raiz, mkt, design, user, arvore = await _mundo(db)
-    await _solicitacao(db, ws, form_id=None)
-
-    with acting_as(**_ctx(ws, user, arvore, org_role="ADMIN")):
-        linhas, total = await SolicitationRepository(db).list_batches(
-            params=PageParams(page=1, size=50), team_id=None)
-    assert total == 1
-    assert [s.form_id for s in linhas] == [None]
-
-    with acting_as(**_ctx(ws, user, arvore, mship(raiz, "MANAGER"))):
-        _, total_do_gerente = await SolicitationRepository(db).list_batches(
-            params=PageParams(page=1, size=50), team_id=None)
-    assert total_do_gerente == 0
-
-
 async def test_ADMIN_ve_a_fila_inteira(db) -> None:
     """`None` em `visible_team_ids` e "sem filtro": o ADMIN ve a fila inteira."""
     ws, raiz, mkt, design, user, arvore = await _mundo(db)
-    # ADMIN de organizacao: a orfa so aparece para quem le em todos os times.
     with acting_as(**_ctx(ws, user, arvore, org_role="ADMIN")):
         svc = SolicitationFormService(db)
         f_mkt = await svc.criar_formulario(team_id=mkt, slug="arte", title="Arte")
@@ -268,13 +248,12 @@ async def test_ADMIN_ve_a_fila_inteira(db) -> None:
         )
         await _solicitacao(db, ws, form_id=f_mkt.id)
         await _solicitacao(db, ws, form_id=f_dsg.id)
-        await _solicitacao(db, ws, form_id=None)
 
         linhas, total = await SolicitationRepository(db).list_batches(
             params=PageParams(page=1, size=50), team_id=None)
 
-    assert total == 3
-    assert len(linhas) == 3
+    assert total == 2
+    assert len(linhas) == 2
 
 
 async def test_contadores_respeitam_o_mesmo_recorte(db) -> None:
@@ -340,22 +319,6 @@ async def test_renomear_a_secao_arruma_tambem_os_pedidos_ANTIGOS(db) -> None:
     assert antigo.category == "foto"
 
 
-async def test_pedido_ORFAO_tambem_ganha_rotulo(db) -> None:
-    """Pedido sem `form_id` tambem ganha rotulo, pelas secoes do workspace."""
-    ws, raiz, mkt, design, user, arvore = await _mundo(db)
-    with acting_as(**_ctx(ws, user, arvore, mship(mkt, "MANAGER"))):
-        svc = SolicitationFormService(db)
-        form = await svc.criar_formulario(team_id=mkt, slug="arte", title="Arte")
-        await svc.criar_secao(
-            form_id=form.id, slug="foto", title="Foto", emoji="📷"
-        )
-        orfao = await _solicitacao(db, ws, form_id=None, category="foto")
-
-        rotulos = await SolicitationService(db).rotulos_de_categoria([orfao])
-
-    assert rotulos[(None, "foto")].title == "Foto"
-
-
 async def test_secao_APAGADA_nao_tem_rotulo_e_a_fila_cai_no_slug(db) -> None:
     """Secao apagada nao tem rotulo; o front cai no slug e o pedido continua na fila."""
     ws, raiz, mkt, design, user, arvore = await _mundo(db)
@@ -369,3 +332,13 @@ async def test_secao_APAGADA_nao_tem_rotulo_e_a_fila_cai_no_slug(db) -> None:
         rotulos = await SolicitationService(db).rotulos_de_categoria([pedido])
 
     assert rotulos == {}
+
+
+@pytest.mark.parametrize("sem_formulario", ["nulo", "inexistente"])
+async def test_o_banco_recusa_pedido_sem_formulario(db, sem_formulario) -> None:
+    """O time do pedido vem do formulario: o banco nao aceita pedido sem um."""
+    ws, *_ = await _mundo(db)
+    form_id = None if sem_formulario == "nulo" else uuid.uuid4()
+    with pytest.raises(IntegrityError):
+        async with db.begin_nested():
+            await _solicitacao(db, ws, form_id=form_id)

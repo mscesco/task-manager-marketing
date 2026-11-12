@@ -328,15 +328,14 @@ class SolicitationService:
 
     async def rotulos_de_categoria(
         self, itens: list[Solicitation]
-    ) -> dict[tuple[uuid.UUID | None, str], RotuloDeCategoria]:
+    ) -> dict[tuple[uuid.UUID, str], RotuloDeCategoria]:
         """Titulo, emoji e prazo de cada categoria que aparece nestes pedidos.
 
-        Resolvido na hora (renomear a secao arruma o passado). Pedido sem
-        `form_id` tambem ganha rotulo, procurando o slug entre todas as secoes
-        do workspace.
+        Resolvido na hora (renomear a secao arruma o passado).
         """
         tenant = require_tenant()
         slugs = {i.category for i in itens if i.category}
+        forms = {i.form_id for i in itens}
         if not slugs:
             return {}
 
@@ -355,32 +354,27 @@ class SolicitationService:
                 )
                 .where(
                     SolicitationSection.workspace_id == tenant.workspace_id,
+                    SolicitationSection.form_id.in_(forms),
                     SolicitationSection.slug.in_(slugs),
                     SolicitationSection.deleted_at.is_(None),
                     SolicitationForm.deleted_at.is_(None),
                 )
-                # Desempate do pedido sem formulario: o formulario mais antigo vence.
-                .order_by(SolicitationForm.created_at.desc())
             )
         ).all()
 
-        rotulos: dict[tuple[uuid.UUID | None, str], RotuloDeCategoria] = {}
-        for form_id, slug, title, emoji, sla in linhas:
-            rotulo = RotuloDeCategoria(title=title, emoji=emoji, sla_text=sla)
-            rotulos[(form_id, slug)] = rotulo
-            # `desc()` acima faz o mais antigo ser escrito por ULTIMO, entao
-            # ele e quem fica na chave sem form.
-            rotulos[(None, slug)] = rotulo
-        return rotulos
+        return {
+            (form_id, slug): RotuloDeCategoria(title=title, emoji=emoji, sla_text=sla)
+            for form_id, slug, title, emoji, sla in linhas
+        }
 
     async def titulos_dos_formularios(
         self, itens: list[Solicitation]
     ) -> dict[uuid.UUID, str]:
         """O titulo do formulario de cada pedido desta pagina.
 
-        Formulario apagado entra; pedido sem `form_id` fica de fora.
+        Formulario apagado entra.
         """
-        ids = {i.form_id for i in itens if i.form_id is not None}
+        ids = {i.form_id for i in itens}
         if not ids:
             return {}
         tenant = require_tenant()
@@ -554,8 +548,7 @@ class SolicitationService:
             triar -- `solicitation.review` no time do formulario: sem ele, 403.
 
         A rota so confere `solicitation.review` "em algum lugar"; aqui e no time.
-        O time e o do formulario mesmo apagado, como no `_base_select`. Pedido sem
-        `form_id` nao tem time e `None` responde so pela organizacao.
+        O time e o do formulario mesmo apagado, como no `_base_select`.
         """
         solicitation = await self.repo.get_by_id_or_raise(solicitation_id)
         # Trava a linha e rele: sem isso, aprovar e rejeitar ao mesmo tempo (ou
@@ -566,27 +559,13 @@ class SolicitationService:
             .with_for_update()
         )
         await self.session.refresh(solicitation)
-        time = None
-        if solicitation.form_id is not None:
-            time = (
-                await self.session.execute(
-                    select(SolicitationForm.team_id).where(
-                        SolicitationForm.id == solicitation.form_id
-                    )
-                )
-            ).scalar_one_or_none()
+        time = await self._time_do_pedido(solicitation)
         if not require_tenant().has_permission_in("solicitation.review", time):
             raise AuthorizationError("Você não tria as solicitações deste time.")
         return solicitation
 
     async def _time_do_pedido(self, solicitation: Solicitation):
-        """O time dono do formulario por onde o pedido entrou.
-
-        `None` so para pedido sem `form_id` (no `CreateTaskCommand`, "o subtime
-        de quem cria"). Formulario apagado ainda tem time, como no `_para_triar`.
-        """
-        if solicitation.form_id is None:
-            return None
+        """O time dono do formulario por onde o pedido entrou (apagado tambem)."""
         return (
             await self.session.execute(
                 select(SolicitationForm.team_id).where(
@@ -650,25 +629,17 @@ class SolicitationService:
         rotulos = await self.rotulos_de_categoria([solicitation])
         rotulo = rotulos.get((solicitation.form_id, solicitation.category))
 
-        form_slug = form_titulo = form_time = None
-        if solicitation.form_id is not None:
-            linha = (
-                await self.session.execute(
-                    select(
-                        SolicitationForm.slug,
-                        SolicitationForm.title,
-                        Team.name,
-                    )
-                    .join(
-                        Team,
-                        (Team.id == SolicitationForm.team_id)
-                        & (Team.workspace_id == SolicitationForm.workspace_id),
-                    )
-                    .where(SolicitationForm.id == solicitation.form_id)
+        form_slug, form_titulo, form_time = (
+            await self.session.execute(
+                select(SolicitationForm.slug, SolicitationForm.title, Team.name)
+                .join(
+                    Team,
+                    (Team.id == SolicitationForm.team_id)
+                    & (Team.workspace_id == SolicitationForm.workspace_id),
                 )
-            ).one_or_none()
-            if linha is not None:
-                form_slug, form_titulo, form_time = linha
+                .where(SolicitationForm.id == solicitation.form_id)
+            )
+        ).one()
 
         return AvisoDeStatus(
             solicitation_id=solicitation.id,

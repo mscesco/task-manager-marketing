@@ -49,9 +49,9 @@ class AvisoDeStatus:
     requester_phone: str | None
     requester_department: str | None
     requester_polo: str | None
-    form_slug: str | None
-    form_titulo: str | None
-    form_time: str | None
+    form_slug: str
+    form_titulo: str
+    form_time: str
 
     def corpo(self, agora: datetime) -> dict:
         """O JSON do contrato com o workflow do n8n."""
@@ -87,16 +87,11 @@ class AvisoDeStatus:
                 "area": self.requester_department,
                 "polo": self.requester_polo,
             },
-            # `null` em solicitacao sem formulario (antiga ou de formulario apagado).
-            "formulario": (
-                {
-                    "slug": self.form_slug,
-                    "titulo": self.form_titulo,
-                    "time": self.form_time,
-                }
-                if self.form_slug is not None
-                else None
-            ),
+            "formulario": {
+                "slug": self.form_slug,
+                "titulo": self.form_titulo,
+                "time": self.form_time,
+            },
         }
 
 

@@ -67,7 +67,7 @@ async def _quadro_padrao(db, team_id: uuid.UUID) -> uuid.UUID:
     ).scalar_one()
 
 
-async def _solicitacao(db, ws: uuid.UUID, form_id: uuid.UUID | None) -> uuid.UUID:
+async def _solicitacao(db, ws: uuid.UUID, form_id: uuid.UUID) -> uuid.UUID:
     s = Solicitation(
         workspace_id=ws,
         requester_name="Fulana",
@@ -221,8 +221,6 @@ async def _mundo(db) -> dict:
         form_com = await forms.criar_formulario(team_id=com, slug="metas", title="Metas")
     sol_mkt = await _solicitacao(db, ws, form_mkt.id)
     sol_com = await _solicitacao(db, ws, form_com.id)
-    # Orfa (sem formulario): so a organizacao a ve.
-    sol_orfa = await _solicitacao(db, ws, None)
     # Aprovada, para marcar tarefa.
     sol_aprovada_mkt = await _solicitacao(db, ws, form_mkt.id)
     (await db.get(Solicitation, sol_aprovada_mkt)).status = "APPROVED"
@@ -322,7 +320,7 @@ async def _mundo(db) -> dict:
                 "comentario_com": comentario_com.id,
                 "misto_design": misto_design, "desativado": desativado,
                 "desativado_com": desativado_com,
-                "sol_orfa": sol_orfa, "sol_aprovada_mkt": sol_aprovada_mkt,
+                "sol_aprovada_mkt": sol_aprovada_mkt,
                 **base,
             }.items()
         },
@@ -811,9 +809,6 @@ MATRIZ: tuple[Linha, ...] = (
     Linha("solicitation.review", "aprovar do Comercial", "post",
           f"{T}/solicitacoes/{{sol_com}}/aprovar", {},
           (OK, OK, OCULTO, NEGADO, NEGADO, OCULTO)),
-    Linha("solicitation.review", "aprovar a orfa (sem formulario)", "post",
-          f"{T}/solicitacoes/{{sol_orfa}}/aprovar", {},
-          (OK, OK, OCULTO, NEGADO, NEGADO, OCULTO)),
     # Marcar tarefa fora da lente e 404 (senao a fila mostraria o titulo dela).
     Linha("solicitation.review", "marcar tarefa do Comercial na do Marketing", "post",
           f"{T}/solicitacoes/{{sol_aprovada_mkt}}/tarefa", {"task_id": "{tarefa_com}"},
@@ -1154,8 +1149,8 @@ async def test_o_cadeado_do_vinculo_de_gerente_concorda_com_a_matriz(db, mundo, 
 
 #: O que cada papel ve na fila e nos formularios. `None` = a rota recusa (403).
 FILA = {
-    "ADMIN": {"sol_mkt", "sol_com", "sol_orfa", "sol_aprovada_mkt"},
-    "GESTOR": {"sol_mkt", "sol_com", "sol_orfa", "sol_aprovada_mkt"},
+    "ADMIN": {"sol_mkt", "sol_com", "sol_aprovada_mkt"},
+    "GESTOR": {"sol_mkt", "sol_com", "sol_aprovada_mkt"},
     "MANAGER": {"sol_mkt", "sol_aprovada_mkt"},
     "SUPERVISOR": None,
     "OPERATOR": None,
@@ -1174,7 +1169,7 @@ FORMULARIOS = {
 
 @pytest.mark.parametrize("papel", PAPEIS)
 async def test_fila_e_formularios_pelo_verbo_e_nao_pela_lente(db, mundo, papel: str) -> None:
-    """Fila e formularios pelo verbo. A orfa so aparece para a organizacao."""
+    """Fila e formularios pelo verbo."""
     m = mundo
     nome_do_id = {v: k for k, v in m["ids"].items()}
     async with _client(db, _contexto(m, papel)) as cli:
