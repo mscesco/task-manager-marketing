@@ -32,7 +32,7 @@ export function clearTokens() {
   // Os times, a lista de membros e o usuario logado sao por-sessao; ao
   // trocar de sessao, descarta os caches.
   _teams = undefined;
-  _members = undefined;
+  invalidateMembers();
   _me = undefined;
   _workspace = undefined;
 }
